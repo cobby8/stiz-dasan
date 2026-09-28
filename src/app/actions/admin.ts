@@ -4180,17 +4180,18 @@ export async function updateTrialLead(
         const scheduledClassId = data.scheduledClassId !== undefined
             ? data.scheduledClassId
             : previousLead?.scheduledClassId ?? previousLead?.scheduledclassid;
+        if (typeof scheduledClassId !== "string" || !scheduledClassId.trim()) {
+            throw new Error("체험 일정을 저장하려면 날짜에 맞는 수업을 선택해주세요.");
+        }
         const selectedDate = resolvedScheduledDate ? seoulDateInputValue(resolvedScheduledDate) : "";
         if (!selectedDate) {
             throw new Error("체험수업 일정을 확정하려면 올바른 수업 날짜와 시간을 입력해주세요.");
         }
         let slotKey = previousLead?.preferredSlotKey ?? previousLead?.preferredslotkey ?? null;
-        if (typeof scheduledClassId === "string" && scheduledClassId.trim()) {
-            const classes = await prisma.$queryRawUnsafe<Array<{ slotKey: string | null }>>(
-                `SELECT "slotKey" FROM "Class" WHERE id=$1 LIMIT 1`, scheduledClassId.trim(),
-            );
-            slotKey = classes[0]?.slotKey ?? null;
-        }
+        const classes = await prisma.$queryRawUnsafe<Array<{ slotKey: string | null }>>(
+            `SELECT "slotKey" FROM "Class" WHERE id=$1 LIMIT 1`, scheduledClassId.trim(),
+        );
+        slotKey = classes[0]?.slotKey ?? null;
         if (!slotKey) throw new Error("체험수업 희망 시간표를 찾을 수 없습니다.");
         const canonical = await resolveCanonicalTrialSchedule({ selectedDate, slotKey, scheduledClassId: scheduledClassId || null });
         // 관리자가 시간을 명시했다면 관계만 검증하고 그 시각을 보존한다. 날짜뿐이거나 누락된 경우에만 시간표 시작시간을 채운다.

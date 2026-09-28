@@ -218,6 +218,16 @@ function isDateOnlySchedulePlaceholder(dateStr: string | null) {
     return Boolean(dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim()));
 }
 
+const DAY_CODE_BY_UTC_INDEX = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+// 날짜 입력값은 서울 정오로 해석한다. 관리자 PC의 시간대와 관계없이 그 날짜의 요일을 고른다.
+function dayCodeForSelectedDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const date = new Date(`${value}T12:00:00+09:00`);
+    if (Number.isNaN(date.getTime())) return null;
+    return DAY_CODE_BY_UTC_INDEX[date.getUTCDay()] ?? null;
+}
+
 /** 자동 입력에서는 오래된 Class.startTime fallback을 확정값으로 사용하지 않는다. */
 function resolveConfirmedTrialScheduleStartTime(classInfo: ClassInfo | null | undefined, selectedDate: string) {
     return resolveTrialScheduleStartTime(classInfo ? { ...classInfo, startTime: "" } : null, selectedDate);
@@ -428,6 +438,7 @@ function TrialEditModal({
                     체험 신청 수정
                 </h2>
                 <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">상담 중 확인한 신청 내용을 바로 정리합니다.</p>
+                <p className="mb-4 rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-900 dark:text-gray-400">체험 날짜와 수업 반 변경은 상세 화면의 「일정 변경」에서 처리합니다.</p>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {formError && (
                         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">
@@ -520,12 +531,15 @@ function TrialScheduleModal({
     onSubmit: (data: Record<string, unknown>) => void;
     busy: boolean;
 }) {
+    const initialScheduledDate = dateInputValue(lead.scheduledDate || lead.trialDate);
+    const initialDayCode = dayCodeForSelectedDate(initialScheduledDate);
     const initialClass =
         (lead.scheduledClassId ? classes.find((classInfo) => classInfo.id === lead.scheduledClassId) : null) ||
         getPreferredClass(lead, classes) ||
         null;
-    const [scheduledClassId, setScheduledClassId] = useState(initialClass?.id ?? "");
-    const initialScheduledDate = dateInputValue(lead.scheduledDate || lead.trialDate);
+    const [scheduledClassId, setScheduledClassId] = useState(
+        initialClass?.dayOfWeek === initialDayCode ? initialClass.id : "",
+    );
     const [scheduledDate, setScheduledDate] = useState(initialScheduledDate);
     const [scheduledTime, setScheduledTime] = useState(
         lead.scheduledDate && !isDateOnlySchedulePlaceholder(lead.scheduledDate)
@@ -535,23 +549,41 @@ function TrialScheduleModal({
     const [memo, setMemo] = useState(lead.memo ?? "");
     const [formError, setFormError] = useState("");
     const preferredSchedule = formatPreferredSchedule(lead, classes);
+    const selectedDayCode = dayCodeForSelectedDate(scheduledDate);
+    const classesForSelectedDate = selectedDayCode
+        ? classes.filter((classInfo) => classInfo.dayOfWeek === selectedDayCode)
+        : [];
 
     function handleClassChange(classId: string) {
         setScheduledClassId(classId);
         const selectedClass = classes.find((classInfo) => classInfo.id === classId);
-        setScheduledTime(resolveConfirmedTrialScheduleStartTime(selectedClass, scheduledDate));
+        setScheduledTime(selectedClass ? resolveConfirmedTrialScheduleStartTime(selectedClass, scheduledDate) : "");
     }
 
     function handleDateChange(date: string) {
         setScheduledDate(date);
+        const nextDayCode = dayCodeForSelectedDate(date);
         const selectedClass = classes.find((classInfo) => classInfo.id === scheduledClassId);
-        if (selectedClass) setScheduledTime(resolveConfirmedTrialScheduleStartTime(selectedClass, date));
+        if (!selectedClass || selectedClass.dayOfWeek !== nextDayCode) {
+            setScheduledClassId("");
+            setScheduledTime("");
+            return;
+        }
+        setScheduledTime(resolveConfirmedTrialScheduleStartTime(selectedClass, date));
     }
 
     function handleSubmit(event: FormEvent) {
         event.preventDefault();
-        if (!scheduledDate || !scheduledTime) {
-            setFormError("확정할 날짜와 시간을 모두 입력해주세요.");
+        if (!scheduledDate) {
+            setFormError("확정할 날짜를 선택해주세요.");
+            return;
+        }
+        if (!scheduledClassId) {
+            setFormError("선택한 날짜에 열리는 체험 수업을 선택해주세요.");
+            return;
+        }
+        if (!scheduledTime) {
+            setFormError("확정 시간을 확인해주세요.");
             return;
         }
         const scheduledAt = toSeoulScheduledDateTime(scheduledDate, scheduledTime);
@@ -597,30 +629,34 @@ function TrialScheduleModal({
                             <p className="mt-1 font-black">{preferredSchedule}</p>
                         </div>
                     </div>
-                    <FormField label="확정 수업">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <FormField label="확정 날짜 *">
+                            <input type="date" value={scheduledDate} onChange={(e) => handleDateChange(e.target.value)} className={MODAL_INPUT_CLASS} />
+                        </FormField>
+                        <FormField label="확정 시간 *">
+                            <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={MODAL_INPUT_CLASS} disabled={!scheduledClassId} />
+                        </FormField>
+                    </div>
+                    <FormField label="확정 수업 *">
                         <select
                             value={scheduledClassId}
                             onChange={(event) => handleClassChange(event.target.value)}
                             className={MODAL_INPUT_CLASS}
+                            disabled={!scheduledDate || classesForSelectedDate.length === 0}
                         >
-                            <option value="">반 선택 안 함</option>
-                            {classes.map((classInfo) => (
+                            <option value="">{scheduledDate ? "수업을 선택하세요" : "날짜를 먼저 선택하세요"}</option>
+                            {classesForSelectedDate.map((classInfo) => (
                                 <option key={classInfo.id} value={classInfo.id}>
                                     {formatClassLabel(classInfo)}
                                 </option>
                             ))}
                         </select>
                     </FormField>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <FormField label="확정 날짜 *">
-                            <input type="date" value={scheduledDate} onChange={(e) => handleDateChange(e.target.value)} className={MODAL_INPUT_CLASS} />
-                        </FormField>
-                        <FormField label="확정 시간 *">
-                            <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={MODAL_INPUT_CLASS} />
-                        </FormField>
-                    </div>
+                    {scheduledDate && classesForSelectedDate.length === 0 && (
+                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">선택한 날짜에 열리는 수업이 없습니다. 다른 날짜를 선택해주세요.</p>
+                    )}
                     <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                        확정 수업을 선택하면 해당 반의 시작 시간이 자동으로 들어갑니다. 실제 체험 시간이 다르면 시간만 직접 바꿔주세요.
+                        선택한 날짜의 수업만 표시합니다. 수업을 선택하면 시작 시간이 자동으로 들어가며, 실제 체험 시간이 다르면 시간만 직접 바꿔주세요.
                     </p>
                     <FormField label="관리 메모">
                         <textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} className={`${MODAL_INPUT_CLASS} resize-none`} />

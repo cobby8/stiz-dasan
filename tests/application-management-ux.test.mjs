@@ -39,7 +39,7 @@ test("체험 신청은 수정, 일정 변경, 취소 모달로 관리할 수 있
   assert.match(trialModals, /function TrialEditModal/);
   assert.match(trialModals, /function TrialScheduleModal/);
   assert.match(trialModals, /function TrialCancelModal/);
-  assert.match(trialModals, /label="확정 수업"/);
+  assert.match(trialModals, /label="확정 수업 \*"/);
   assert.match(trialModals, /label="확정 날짜 \*"/);
   assert.match(trialModals, /label="확정 시간 \*"/);
   assert.match(trialModals, /scheduledClassId/);
@@ -47,6 +47,16 @@ test("체험 신청은 수정, 일정 변경, 취소 모달로 관리할 수 있
   assert.match(adminAction, /"childSchool",\s*"basketballExp"/);
   assert.match(adminAction, /"preferredDay",\s*"preferredPeriod"/);
   assert.match(adminAction, /"trialDate",\s*"trialFeeConfirmed"/);
+});
+
+test("체험 일정은 선택한 날짜에 열리는 수업만 고르고 실제 반 선택을 필수로 한다", () => {
+  assert.match(trialModals, /function dayCodeForSelectedDate/);
+  assert.match(trialModals, /const classesForSelectedDate = selectedDayCode[\s\S]*classes\.filter/);
+  assert.match(trialModals, /classesForSelectedDate\.map/);
+  assert.doesNotMatch(trialModals, /\{classes\.map\(\(classInfo\) => \(/);
+  assert.match(trialModals, /if \(!scheduledClassId\)[\s\S]*날짜에 열리는 체험 수업을 선택/);
+  assert.match(trialModals, /selectedClass\.dayOfWeek !== nextDayCode/);
+  assert.match(adminAction, /체험 일정을 저장하려면 날짜에 맞는 수업을 선택/);
 });
 
 test("체험 신청 수정은 최신 목록 반영을 확인한 뒤에만 성공으로 처리한다", () => {

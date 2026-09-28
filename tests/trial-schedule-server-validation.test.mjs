@@ -35,3 +35,9 @@ test("기존 확정값을 사용하는 상태 변경도 검증하며 관리자 �
   assert.match(updateTrialLead, /hasExplicitScheduledTime \? explicitScheduledDate : canonical\.scheduledDate/);
   assert.match(updateTrialLead, /data\.scheduledDate = nextScheduledDate/);
 });
+
+test("체험 일정은 실제 반을 반드시 선택해야 저장된다", () => {
+  assert.match(updateTrialLead, /typeof scheduledClassId !== "string" \|\| !scheduledClassId\.trim\(\)/);
+  assert.match(updateTrialLead, /체험 일정을 저장하려면 날짜에 맞는 수업을 선택해주세요/);
+  assert.match(updateTrialLead, /SELECT "slotKey" FROM "Class" WHERE id=\$1 LIMIT 1/);
+});
