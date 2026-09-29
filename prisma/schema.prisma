@@ -2907,3 +2907,24 @@ model PosReconcileRun {
   @@index([targetMonth, startedAt(sort: Desc)])
   @@index([startedAt(sort: Desc)])
 }
+
+/// 토스플레이스 웹훅 수신 기록. 받은 사실만 남긴다(청구서·결제는 건드리지 않는다).
+/// webhookId 가 유일값인 것이 중복 처리 방지의 핵심 — 토스는 2xx 를 못 받으면 같은 알림을 다시 보낸다.
+model PosWebhookEvent {
+  id          String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  /// x-toss-webhook-id — 재시도해도 같은 값이라 중복 판별의 기준이 된다
+  webhookId   String    @unique
+  /// x-toss-delivery-id — 재시도마다 바뀐다
+  deliveryId  String?
+  eventId     String?
+  eventType   String?
+  merchantId  String?
+  payload     Json
+  status      String    @default("RECEIVED") // RECEIVED | IGNORED | MATCHED | HELD
+  note        String?
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt DateTime? @db.Timestamptz(6)
+
+  @@index([receivedAt(sort: Desc)])
+  @@index([eventType, receivedAt(sort: Desc)])
+}
