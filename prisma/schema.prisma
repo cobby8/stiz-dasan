@@ -355,16 +355,16 @@ model Class {
 
 /// 학생의 한 달 장부. 기존 Enrollment/Payment나 시트를 자동 변경하지 않는다.
 model MonthlyEnrollmentRegister {
-  id          String @id @default(uuid())
+  id          String                              @id @default(uuid())
   studentId   String
   month       String
-  version     Int @default(1)
-  status      String @default("DRAFT")
+  version     Int                                 @default(1)
+  status      String                              @default("DRAFT")
   /// 반별 기간·금액·감면 근거와 학생 월 단위 셔틀비의 명시적 스냅샷.
   payload     Json
   updatedBy   String
-  updatedAt   DateTime @default(now()) @db.Timestamptz(6)
-  confirmedAt DateTime? @db.Timestamptz(6)
+  updatedAt   DateTime                            @default(now()) @db.Timestamptz(6)
+  confirmedAt DateTime?                           @db.Timestamptz(6)
   revisions   MonthlyEnrollmentRegisterRevision[]
 
   @@unique([studentId, month])
@@ -373,7 +373,7 @@ model MonthlyEnrollmentRegister {
 
 /// 수정 전후 버전을 남기는 감사 기록. 확정 해제도 기존 버전을 지우지 않는다.
 model MonthlyEnrollmentRegisterRevision {
-  id          String @id @default(uuid())
+  id          String                    @id @default(uuid())
   registerId  String
   studentId   String
   month       String
@@ -383,7 +383,7 @@ model MonthlyEnrollmentRegisterRevision {
   action      String
   reason      String
   actorUserId String
-  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt   DateTime                  @default(now()) @db.Timestamptz(6)
   register    MonthlyEnrollmentRegister @relation(fields: [registerId], references: [id], onDelete: Restrict)
 
   @@unique([registerId, version])
@@ -2878,4 +2878,32 @@ model MakeupCredit {
   @@index([studentId, status])
   @@index([status, expiresAt]) // 만료 처리 크론이 쓰는 인덱스
   @@index([makeupSessionId])
+}
+
+/// 토스POS ↔ 사이트 결제 대사 실행 기록.
+/// Vercel 은 실행마다 파일이 사라져 결과를 파일로 못 남긴다. 관리자 화면이 읽는 원본이다.
+/// 이 표는 기록만 담는다 — 청구서·결제를 바꾸는 값은 들어가지 않는다.
+model PosReconcileRun {
+  id             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  targetMonth    String // 'YYYY-MM' (DB CHECK 제약으로 형식 고정)
+  status         String    @default("OK") // OK | FAILED
+  error          String?
+  source         String    @default("CRON") // CRON | MANUAL
+  siteCount      Int       @default(0)
+  siteAmount     BigInt    @default(0)
+  posCount       Int       @default(0)
+  posAmount      BigInt    @default(0)
+  matchedCount   Int       @default(0)
+  heldCount      Int       @default(0)
+  siteOnlyCount  Int       @default(0)
+  posOnlyCount   Int       @default(0)
+  diffAmount     BigInt    @default(0)
+  /// 대조표 전문. 화면에서 다시 계산하지 않는다.
+  reportMarkdown String?
+  startedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  finishedAt     DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([targetMonth, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
 }

@@ -162,3 +162,15 @@
 - **발견자**: developer
 - **내용**: 돈을 맞추는 스크립트(`scripts/tossplace-reconcile.mjs` + 순수 로직 `scripts/lib/tossplace-match.mjs`)의 기준. ①**쓰기 불가 3중 방어** — `BEGIN READ ONLY` + 항상 ROLLBACK / 실행 전후 `SELECT count(*), max("updatedAt")` 를 리포트에 "쓰기 없음 증빙"으로 기록 / 외부 API 클라이언트는 GET·허용 경로 외 요청을 **보내기 전에** 예외(`assertReadOnlyTossRequest`). ②**추측 금지** — 주문번호 일치 → 같은 날·같은 금액 1:1 까지만 자동 매칭하고, ±3일 근접·같은 날 금액 상이·건수 불일치는 전부 `HELD(확인 필요)` 로 빼서 후보만 보여준다. 잘못 묶인 1건은 아무도 못 찾지만 보류된 1건은 눈에 띈다. ③**자체 검산** — `전체 차이 == Σ(짝 못 찾은 상대쪽) − Σ(짝 못 찾은 이쪽)` 을 항상 계산해 리포트에 찍는다(집계 구멍 감지). ④**계산 로직은 I/O 없는 순수 모듈로 분리**해 `node --test` 가 실제로 실행하게 한다. ⑤개인정보가 든 리포트는 `outputs/reconcile/` 로 빼고 .gitignore 에 넣는다. 실측 사실: **PgBouncer(DATABASE_URL) 경유여도 `pg` 의 파라미터 바인딩 쿼리가 트랜잭션 안에서는 정상 동작**한다(그래도 실패 시 정규식 검증 리터럴로 폴백 유지). 토스플레이스 Open API 응답 시각은 **UTC(Z) 표기**로 실측 확인(2026-09-18), 사이트 `Payment.paidDate` 는 tz 없는 UTC 라 KST 변환을 **두 번** 걸어야 한다. ⑥**사람이 손으로 적은 메모가 날짜·금액보다 강한 단서다** — 토스POS 주문의 `lineItems[].memo`/`order.memo` 에 `토4 이시윤 9월` 형태로 원생 이름이 적혀 있어, 매칭 순서를 `주문번호 → 메모 이름 → 날짜·금액` 으로 둔다. 단 성 생략 표기(`대건`→김대건)는 **후보가 정확히 1명일 때만** 인정하고, 동명이인(`시우`→3명)·한 결제 다(多)원생(형제 합산)·금액 불일치는 전부 보류한다. 명단에 없는 이름은 조용히 버리지 말고 전용 섹션으로 드러낸다(퇴원·오타·타지점 신호).
 - **참조횟수**: 0
+
+### [2026-09-29] CLI 와 웹앱이 같은 계산을 쓰면 모듈은 `src/lib/**` 에 `.mjs` 한 벌로 둔다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 돈을 맞추는 계산(`src/lib/pos/tossplace-match.mjs`)을 CLI(`scripts/`)와 Next 앱이 **둘 다** 써야 할 때, 파일을 복사하면 한쪽만 고쳐져 "어제까지 맞던 금액"이 조용히 갈린다. 해결: 순수 ESM `.mjs` 를 `src/lib/` 아래 두고 **CLI 는 상대경로로, 앱은 `.mjs` 확장자를 붙여** 그대로 import 한다(Next·Turbopack 모두 그대로 번들하고, `tsconfig.include` 는 `.mjs` 를 타입검사 대상에 넣지 않아 tsc 도 조용하다. 단 `allowJs` 는 켜져 있어야 앱 쪽 import 가 풀린다). 네트워크 클라이언트처럼 **타입이 필요한 공유 코드는 `.ts` 로 두고 CLI 가 `import ... from "../src/lib/pos/tossplaceClient.ts"`** 로 부른다 — node 22.18+/25.x 가 타입만 걷어내고 실행한다. ⚠️ 이때 그 `.ts` 는 **타입만 지우면 되는 문법(erasable syntax)** 만 써야 한다(enum·namespace·파라미터 프로퍼티를 쓰면 CLI 가 죽는다). 사본이 다시 생기는 것은 `tests/*.test.mjs` 에서 **저장소를 걸어 같은 파일명이 1개인지** 단언해 막는다. ⚠️ 순수 JS 모듈을 TS 에서 호출하면 `students = []` 같은 기본값이 `never[]` 로 추론돼 tsc 가 막는다 — 호출부마다 캐스팅하지 말고 **모듈 상단에서 느슨한 시그니처 상수 하나**(`const reconcile = buildReconciliation as (...) => any`)로 받는다.
+- **참조횟수**: 0
+
+### [2026-09-29] prisma 를 import 하는 서비스도 "가짜 prisma"를 끼워 실제로 실행해 검증한다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: `tests/_ts-module.mjs` 는 순수 모듈 전용이라 `@/lib/prisma` 를 쓰는 파일에는 못 쓴다. 그렇다고 소스 문자열 검사만 하면 "키가 없을 때 예외를 던지는가 / 기록이 정확히 한 줄인가" 같은 **동작**은 절대 못 잡는다. 방법: 테스트에서 `ts.transpileModule` 로 서비스 파일을 올린 뒤 import 스펙(`"@/lib/prisma"`·`"./tossplaceClient"`)만 **가짜 모듈 data URL 로 치환**해 실행한다. 가짜 prisma 는 `$queryRawUnsafe`/`$executeRawUnsafe` 호출을 `globalThis` 배열에 기록해, 테스트가 **"쓰기는 1회, INSERT 대상은 이 표 하나"** 를 직접 세도록 한다. 환경변수는 `withEnv()` 로 잠깐 바꿨다가 `finally` 에서 반드시 되돌린다(다른 테스트가 같은 프로세스에서 돈다). 돈을 다루는 코드는 여기에 더해 **소스 계약**(`UPDATE "Payment"`·`DELETE FROM "Student"` 부재를 `doesNotMatch` 로)을 함께 단정한다 — 실행 검증은 "지금 경로"만, 소스 검증은 "앞으로 생길 경로"까지 막는다.
+- **참조횟수**: 0

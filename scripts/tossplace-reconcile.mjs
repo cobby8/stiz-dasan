@@ -20,8 +20,6 @@ import process from "node:process";
 import nextEnv from "@next/env";
 import pg from "pg";
 import {
-  TOSS_API_BASE,
-  assertReadOnlyTossRequest,
   buildReconciliation,
   classifyBranch,
   flattenTossOrders,
@@ -34,11 +32,13 @@ import {
   renderCsv,
   renderMarkdown,
   sumAmount,
-} from "./lib/tossplace-match.mjs";
+} from "../src/lib/pos/tossplace-match.mjs";
+// 토스 조회 클라이언트는 웹앱(자동 대사)과 **같은 한 벌**을 쓴다. 사본을 만들면 한쪽만 고쳐진다.
+// node 가 .ts 의 타입을 걷어내고 그대로 실행한다(node 22.18+ / 25.x).
+import { fetchTossOrders } from "../src/lib/pos/tossplaceClient.ts";
 
 const DEFAULT_MERCHANT_ID = "324744";
 const MERCHANT_LABEL = "스티즈농구교실 다산2호점";
-const PAGE_SIZE = 500;
 
 // ───────────────────────── 인자 파싱 ─────────────────────────
 
@@ -87,80 +87,6 @@ function loadEnv() {
 }
 
 const readEnv = (name) => (typeof process.env[name] === "string" ? process.env[name].trim() : "");
-
-// ───────────────────── 토스 API (조회 전용) ─────────────────────
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function createTossClient({ accessKey, secretKey }) {
-  return async function request(method, pathname, query) {
-    assertReadOnlyTossRequest(method, pathname); // GET·주문목록 외에는 여기서 막힌다
-    const url = new URL(`${TOSS_API_BASE}${pathname}`);
-    for (const [key, value] of Object.entries(query ?? {})) {
-      if (value != null && value !== "") url.searchParams.set(key, String(value));
-    }
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "x-access-key": accessKey,
-          "x-secret-key": secretKey,
-          "Content-Type": "application/json",
-        },
-      });
-      const eventId = response.headers.get("x-toss-event-id") ?? "(없음)";
-      if (response.status === 429) {
-        // 초당 10건 제한. reset 헤더(유닉스 ms)까지 기다렸다가 다시 시도한다.
-        const reset = Number(response.headers.get("x-ratelimit-reset"));
-        const waitMs = Number.isFinite(reset) ? Math.max(200, reset - Date.now()) : 1000 * (attempt + 1);
-        await sleep(Math.min(waitMs, 10_000));
-        continue;
-      }
-      const text = await response.text();
-      let body = null;
-      try {
-        body = text ? JSON.parse(text) : null;
-      } catch {
-        body = null;
-      }
-      if (!response.ok || body?.resultType === "FAIL") {
-        const code = body?.error?.errorCode ?? "";
-        const reason = body?.error?.reason ?? "";
-        const error = new Error(
-          `토스플레이스 API 오류 (HTTP ${response.status}${code ? `, 오류코드 ${code}` : ""})` +
-            `${reason ? `: ${reason}` : ""} — 이벤트 ID ${eventId}`,
-        );
-        error.httpStatus = response.status;
-        error.errorCode = code;
-        error.eventId = eventId;
-        throw error;
-      }
-      return { data: body?.success ?? [], eventId };
-    }
-    throw new Error("토스플레이스 API 호출 제한(429)이 계속돼 조회를 포기했습니다. 잠시 후 다시 실행해 주세요.");
-  };
-}
-
-async function fetchTossOrders({ merchantId, from, to, accessKey, secretKey }) {
-  const request = createTossClient({ accessKey, secretKey });
-  const pathname = `/merchants/${merchantId}/order/orders`;
-  const orders = [];
-  let lastEventId = "";
-  for (let page = 1; page <= 200; page += 1) {
-    const { data, eventId } = await request("GET", pathname, {
-      from,
-      to,
-      page,
-      size: PAGE_SIZE,
-      sortOrder: "ASC",
-    });
-    lastEventId = eventId;
-    const list = Array.isArray(data) ? data : [];
-    orders.push(...list);
-    if (list.length < PAGE_SIZE) break; // 마지막 페이지
-  }
-  return { orders, eventId: lastEventId };
-}
 
 // ───────────────────── 사이트 DB (읽기 전용) ─────────────────────
 

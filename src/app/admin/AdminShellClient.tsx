@@ -43,6 +43,7 @@ const OPS_PATHS = [
     "/admin/shuttle",
     "/admin/payment-confirmations",
     "/admin/payment-requests",
+    "/admin/pos-reconcile",
     "/admin/enrollment-changes",
     "/admin/media-revocations",
     "/admin/uniform",
@@ -63,6 +64,7 @@ const MORE_OPS_PATHS = [
     "/admin/shuttle",
     "/admin/payment-confirmations",
     "/admin/payment-requests",
+    "/admin/pos-reconcile",
     "/admin/enrollment-changes",
     "/admin/media-revocations",
     "/admin/uniform",
@@ -239,6 +241,8 @@ export default function AdminShellClient({
                                     <NavItem href="/admin/import" active={pathname.startsWith("/admin/import")} icon="📥" label="수강생 이관" compact />
                                     <NavItem href="/admin/staff" active={pathname.startsWith("/admin/staff")} icon="👥" label="스태프" compact />
                                     <NavItem href="/admin/payment-confirmations" active={pathname.startsWith("/admin/payment-confirmations")} icon="💵" label="현장 수납 승인" compact />
+                                    {/* 토스 단말기(POS) 결제와 사이트 기록을 맞춰 보는 화면 — 매일 새벽 자동 대조 결과를 읽는다 */}
+                                    <NavItem href="/admin/pos-reconcile" active={pathname.startsWith("/admin/pos-reconcile")} icon="🧮" label="POS 결제 대사" compact />
                                     {/* 사진 사용 동의 철회 처리 화면 — 링크가 없어 URL 직접 입력으로만 접근되던 문제를 해결 */}
                                     <NavItem href="/admin/media-revocations" active={pathname.startsWith("/admin/media-revocations")} icon="🔐" label="사진 공개 회수" compact />
                                     <div className="pt-1">

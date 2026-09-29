@@ -25,7 +25,7 @@ import {
   renderMarkdown,
   summarize,
   toKst,
-} from "../scripts/lib/tossplace-match.mjs";
+} from "../src/lib/pos/tossplace-match.mjs";
 
 // ───────────── 테스트용 행 만들기 ─────────────
 
