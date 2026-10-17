@@ -9,7 +9,7 @@ import { createNotificationRecord } from "@/lib/notification";
 export const KAKAO_INTAKE_NOTIFICATION_TYPE = "KAKAO_PARENT_INTAKE";
 
 /** 알림 한 건의 제목·본문. 원문은 길 수 있어 80자까지만 싣는다(전체는 접수함에서 본다). */
-export function buildKakaoIntakeAlert(input: { kindLabel: string; studentName: string | null; sourceText: string }) {
+export function buildKakaoIntakeAlert(input: { kindLabel: string; studentName: string | null; sourceText: string; linkUrl?: string }) {
   const chars = [...input.sourceText.replace(/\s+/g, " ").trim()];
   const quote = chars.length > 80 ? `${chars.slice(0, 79).join("")}…` : chars.join("");
   const who = input.studentName ? `${input.studentName} 학생` : "자녀 미확인";
@@ -17,6 +17,8 @@ export function buildKakaoIntakeAlert(input: { kindLabel: string; studentName: s
     title: `새 카카오 접수: ${input.kindLabel}`,
     message: `${who} · “${quote}”`,
     linkUrl: "/admin/kakao-requests",
+    // 바로 처리된 건(카카오 보강 예약 등)은 그 업무 화면으로 보낸다 — 접수함 '처리 필요'에는 안 보이기 때문
+    ...(input.linkUrl ? { linkUrl: input.linkUrl } : {}),
   };
 }
 
@@ -25,6 +27,7 @@ export async function notifyAdminsOfKakaoIntake(input: {
   kindLabel: string;
   studentName: string | null;
   sourceText: string;
+  linkUrl?: string;
 }): Promise<number> {
   const alert = buildKakaoIntakeAlert(input);
   const admins = await prisma.$queryRawUnsafe<Array<{ id: string }>>(

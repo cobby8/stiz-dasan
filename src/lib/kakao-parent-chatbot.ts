@@ -12,6 +12,7 @@ import {
 } from "@/lib/kakao-chatbot-contract";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { LINKED_ESCALATE_LEAD, isLinkedPolicyCandidate, parsePolicyIntakeShortcut, type KakaoReply } from "@/lib/kakao-policy-qa";
+import { handleMakeupConversation } from "@/lib/kakao-makeup-flow";
 
 export { classifyParentUtterance, getKakaoUserKey } from "@/lib/kakao-chatbot-contract";
 export type { KakaoSkillPayload, ParentRequestKind } from "@/lib/kakao-chatbot-contract";
@@ -34,7 +35,6 @@ const DIRECT_REQUEST_LINKS: Record<string, { label: string; path: string; descri
 const DIRECT_KIND_LINKS: Partial<Record<ParentRequestKind, { label: string; path: string; description: string }>> = {
   REGULAR_ABSENCE: DIRECT_REQUEST_LINKS["정규수업 결석"],
   SEASONAL_ABSENCE: DIRECT_REQUEST_LINKS["방학특강 결석"],
-  MAKEUP: DIRECT_REQUEST_LINKS["보강 예약"],
   SHUTTLE_SKIP: DIRECT_REQUEST_LINKS["오늘 셔틀 안 타요"],
   SHUTTLE_LOCATION: DIRECT_REQUEST_LINKS["오늘 다른 곳에서 타요"],
   PAYMENT_CONFIRM: DIRECT_REQUEST_LINKS["입금했어요"],
@@ -355,6 +355,18 @@ export async function handleLinkedMessage(
     );
   }
 
+  // 보강 신청·취소는 화면 링크 대신 대화 안에서 끝낸다(사이트 오픈 전 마이페이지 대체).
+  // 보강과 무관한 말이면 null → 아래 기존 흐름 그대로. 마이페이지 보강 화면은 보조 버튼으로 남긴다.
+  const makeupLink = DIRECT_REQUEST_LINKS["보강 예약"];
+  const makeup = await handleMakeupConversation({
+    identityId: identity.id,
+    parentUserId: identity.parentUserId,
+    children,
+    text,
+    webLink: { label: makeupLink.label, url: siteUrl(makeupLink.path) },
+  });
+  if (makeup) return makeup;
+
   const draft = await latestDraft(identity.id);
   if (draft && (CANCEL_WORDS.test(text) || text === "다시 말할게요")) {
     await prisma.$executeRawUnsafe(`UPDATE "KakaoParentIntake" SET status='CANCELED',"updatedAt"=now() WHERE id=$1 AND status IN ('DRAFT','NEEDS_DETAILS')`, draft.id);
@@ -398,7 +410,7 @@ export async function handleLinkedMessage(
   }
 
   const submenu: Record<string, string[]> = {
-    "결석·보강": ["정규수업 결석", "방학특강 결석", "보강 예약", "조퇴 상담"],
+    "결석·보강": ["정규수업 결석", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"],
     "셔틀": ["오늘 셔틀 안 타요", "오늘 다른 곳에서 타요", "정규 셔틀 신청·중단", "탑승 장소·시간 변경", "셔틀비 문의"],
     "청구·영수증": ["입금했어요", "청구 금액 확인", "영수증 요청", "환불·결제 취소 상담"],
     "수강 변경": ["반·요일·시간 변경", "수업 추가", "휴원", "복귀", "퇴원"],

@@ -73,3 +73,9 @@
 - **발견자**: developer
 - **내용**: 판단 로직은 `src/lib/kakao-policy-qa.ts`(순수: 질문 판별·주입 방어 프롬프트·`[ESCALATE]` 해석·시간 제한·`runPolicyFlow` 동기/콜백 분기)에 두고, DB·Gemini·콜백 전송·after() 는 `kakao-policy-qa-service.ts` 가 주입한다 → 테스트는 가짜 Gemini 로 흐름 전체를 실행한다. 학부모 챗봇은 `handleLinkedMessage(..., policyHook)` 연결점만 받고, hook 이 null 이면(킬 스위치 꺼짐·DB 미준비·키 없음) 기존 접수 흐름 그대로. 못 답하면 escalate = 기존 `createIntakeReply`(+안내 한 줄). 게스트는 라우트에서 인증 판별 뒤·기본 카드 앞. Gemini 모델·키는 `src/lib/gemini-client.ts` 한 곳(웹 `/api/chat` 도 사용). SDK 0.24.1 타입엔 thinkingConfig 가 없지만 generationConfig 는 본문에 그대로 실려 형 변환으로 넘긴다. 챗봇 파일에 import 를 늘리면 `tests/kakao-parent-connect-flow.test.mjs` 의 손 치환 목록에도 넣어야 한다(안 넣으면 ERR_INVALID_URL).
 - **참조횟수**: 0
+
+### [2026-10-17] 카카오 보강 신청·취소 = 대화 상태는 KakaoParentIntake 한 행(status MAKEUP_FLOW), 규칙은 parent-makeup 그대로
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `src/lib/kakao-makeup-flow.ts` 가 `handleLinkedMessage` 에서 재확인 링크 바로 뒤·작성 중 접수 앞에 불린다(무관한 말이면 null). 상태는 스키마 변경 없이 `KakaoParentIntake`(kind MAKEUP, status `MAKEUP_FLOW`, structuredJson 에 단계·서버가 만든 목록)에 두고 `updatedAt` 30분이 지나면 무시한다. 끝나면 APPLIED, 그만두면 CANCELED. 학부모는 번호만 보내고(id 는 상태에서만 꺼냄), 단계 이동은 `"structuredJson"->>'step'` 조건 UPDATE 로 한 번만 진행된다. 예약·취소는 웹과 같은 `bookMakeup`/`cancelMakeupBooking` 을 직접 부르고, 그 직전에 보호자 소유·후보 유효를 다시 조회한다. 바로가기 문장은 모두 '보강'을 품어 상태가 만료돼도 처음부터 다시 시작된다. 단 메뉴 버튼 「결석·보강」은 MAKEUP 으로 분류되므로 반드시 제외해야 한다(제외하지 않으면 하위 메뉴가 사라진다). 챗봇에 import 를 늘렸으므로 테스트 2곳(connect-flow·policy-qa)의 손 치환 목록에 대역을 넣었다.
+- **참조횟수**: 0

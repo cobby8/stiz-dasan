@@ -43,7 +43,9 @@ async function loadChatbot(live) {
     .split('"@/lib/kakao-intake-admin-alert"').join(`"${stub}"`)
     .split('"@/lib/kakao-policy-qa"').join(`"${policyQa}"`)
     .split('"@/lib/kakao-chatbot-contract"').join(`"${contract}"`);
-  return import(toDataUrl(code));
+  // 보강 대화(kakao-makeup-flow)는 tests/kakao-makeup-flow.test.mjs 가 따로 실행 검증한다 — 여기선 "보강과 무관"(null)
+  const makeupStub = toDataUrl(`export async function handleMakeupConversation() { return null; }`);
+  return import(toDataUrl(code.split('"@/lib/kakao-makeup-flow"').join(`"${makeupStub}"`)));
 }
 
 async function withSecret(fn) {
