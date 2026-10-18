@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 학부모 홈 중복 카드 정리, 요청 5메뉴·기록 접기·가족 자료 범위 구분. 브라우저10·회귀65·독립UI25·tsc·검토 통과. architecture/decisions 갱신, 지식 문서 수 5 유지. docs/parent-workspace-ux.md 참조. 운영 쓰기·푸시·배포 없음.
+
 > 2026-10-19: 관리자 업무 화면·메뉴 정리. 독립 UI 25·브라우저 4·tsc·독립 검토 통과. 확대 회귀 145/146, 기존 작업 사본 탐색 실패 1건 분리. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/admin-workspace-ux.md 참조. 미배포.
 
 > 2026-10-19: 승인된 라벤더·퍼플 학원 UI를 4역할 대표 화면에 적용. 공통 시각 경계·공식 로고·라이트 고정과 공개 테마 복귀. architecture/decisions/errors/conventions 갱신, 지식 문서 수 5 유지. `docs/academy-lavender-ui.md` 참조. 운영 쓰기·푸시·배포 없음.
