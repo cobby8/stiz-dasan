@@ -17,6 +17,8 @@ async function run(name, role, props, respond, exercise) {
   console.log(`${t.cases.at(-1).pass ? 'PASS' : 'FAIL'} ${name}`);
 }
 async function compose(page) {
+  const tools = page.locator('details').filter({ has: page.locator('button').filter({ hasText: '수업 공지' }) }).first();
+  await tools.locator('summary').click();
   await page.getByRole('button', { name: /수업 공지/ }).click();
   await page.getByPlaceholder('공지 제목').fill('검사용 공지');
   await page.getByPlaceholder('공지 내용을 입력해 주세요.').fill('검사용 본문');

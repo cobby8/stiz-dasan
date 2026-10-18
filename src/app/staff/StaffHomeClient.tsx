@@ -103,9 +103,10 @@ export default function StaffHomeClient({
   }, [noticeTarget?.id]);
 
   const runningClass = classes.find((lesson) => lesson.sessionStatus === "IN_PROGRESS");
-  const focusClass = runningClass || classes.find((lesson) => lesson.sessionStatus !== "COMPLETED") || classes[0];
-  const otherClasses = classes.filter((lesson) => lesson.scheduleKey !== focusClass?.scheduleKey);
-  const completedCount = classes.filter((lesson) => lesson.sessionStatus === "COMPLETED").length;
+  const focusClass = runningClass || classes.find((lesson) => lesson.sessionStatus !== "COMPLETED");
+  const otherClasses = classes.filter((lesson) => lesson.sessionStatus !== "COMPLETED" && lesson.scheduleKey !== focusClass?.scheduleKey);
+  const completedClasses = classes.filter((lesson) => lesson.sessionStatus === "COMPLETED");
+  const completedCount = completedClasses.length;
 
   function openContent(lesson: StaffTodayClass) {
     setError(null);
@@ -195,18 +196,13 @@ export default function StaffHomeClient({
 
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 pb-8 pt-5">
-      <header className="academy-hero">
-        <p className="text-sm font-bold text-[var(--brand-accent)]">{dateKey}</p>
-        <div className="mt-1 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="academy-heading text-2xl font-black tracking-tight">오늘 수업</h1>
-          </div>
-          <span className="material-symbols-outlined rounded-2xl bg-[var(--brand-accent)] p-3 text-[var(--brand-accent-contrast)]">school</span>
-        </div>
+      <header className="flex items-end justify-between gap-3">
+        <h1 className="academy-heading text-2xl font-black tracking-tight">오늘 수업</h1>
+        <p className="text-sm font-bold text-[var(--color-academy-muted)]">{dateKey}</p>
       </header>
 
       {classes.length > 0 && (
-        <section aria-label="오늘 수업 요약" className="grid grid-cols-3 gap-2">
+        <section aria-label="오늘 수업 요약" className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-xl bg-[var(--color-academy-surface)] px-4 py-3 text-sm">
           <SummaryItem label="전체" value={classes.length} />
           <SummaryItem label="진행 중" value={runningClass ? 1 : 0} accent={Boolean(runningClass)} />
           <SummaryItem label="완료" value={completedCount} />
@@ -214,15 +210,14 @@ export default function StaffHomeClient({
       )}
 
       {classes.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-gray-300 bg-white p-10 text-center dark:border-gray-700 dark:bg-gray-900">
-          <span className="material-symbols-outlined text-5xl text-gray-400">event_available</span>
-          <p className="mt-3 font-black text-gray-700 dark:text-gray-200">오늘 배정된 수업이 없습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-6 text-center">
+          <p className="font-bold text-[var(--color-academy-muted)]">오늘 배정된 수업이 없습니다.</p>
         </div>
       ) : focusClass ? (
         <>
           {runningClass && (
             <p role="status" className="rounded-2xl bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              현재 수업을 종료하기 전에는 다른 수업을 시작할 수 없습니다.
+              현재 수업을 종료한 뒤 다음 수업을 시작할 수 있습니다.
             </p>
           )}
           <section>
@@ -244,10 +239,7 @@ export default function StaffHomeClient({
                   <span className="flex items-center gap-1"><span className="material-symbols-outlined text-lg">groups</span>학생 {focusClass.studentCount}명</span>
                   <span className="flex items-center gap-1"><span className="material-symbols-outlined text-lg">location_on</span>{focusClass.location || "장소 미정"}</span>
                 </div>
-                <div className="mt-3 rounded-xl bg-[var(--color-academy-surface)] p-3">
-                  <p className="text-xs font-bold text-[var(--color-academy-muted)]">미리 작성한 수업 내용</p>
-                  <p className="mt-1 line-clamp-2 text-sm leading-5">{focusClass.plannedContent || "아직 작성한 수업 내용이 없습니다."}</p>
-                </div>
+                {focusClass.plannedContent && <p className="mt-3 line-clamp-2 text-sm leading-5 text-[var(--color-academy-muted)]">{focusClass.plannedContent}</p>}
               </div>
               {focusClass.sessionStatus !== "COMPLETED" && (
                 <div className="space-y-2 px-4 pb-4">
@@ -255,12 +247,15 @@ export default function StaffHomeClient({
                     <span className="material-symbols-outlined">{focusClass.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
                     {focusClass.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : "수업 시작"}
                   </button>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="수업 빠른 메뉴">
-                    <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
-                    <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
-                    <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />
-                    <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />
-                  </div>
+                  <details className="rounded-xl bg-[var(--color-academy-surface)]">
+                    <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold text-[var(--color-academy-muted)]">수업 준비·관리</summary>
+                    <div className="grid grid-cols-2 gap-2 p-2" aria-label="수업 빠른 메뉴">
+                      <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
+                      <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
+                      <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />
+                      <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />
+                    </div>
+                  </details>
                 </div>
               )}
             </article>
@@ -269,7 +264,7 @@ export default function StaffHomeClient({
           {otherClasses.length > 0 && (
             <section>
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-black dark:text-white">오늘 일정</h2>
+                <h2 className="text-base font-black dark:text-white">남은 수업</h2>
                 <span className="text-sm font-bold text-gray-500">{otherClasses.length}개</span>
               </div>
               <div className="space-y-3">
@@ -280,7 +275,18 @@ export default function StaffHomeClient({
             </section>
           )}
         </>
-      ) : null}
+      ) : (
+        <p role="status" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-4 py-5 font-bold text-[var(--brand-accent)]">오늘 수업을 모두 마쳤습니다.</p>
+      )}
+
+      {completedClasses.length > 0 && (
+        <details className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+          <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-bold text-[var(--color-academy-muted)]">완료한 수업 {completedCount}개</summary>
+          <div className="space-y-2 px-3 pb-3">
+            {completedClasses.map((lesson) => <CompactClassCard key={lesson.scheduleKey} lesson={lesson} startLocked={false} onStart={openPrimaryAction} onContent={openContent} onContacts={openContacts} onBilling={(target) => setBillingTarget({ lesson: target })} onNotice={(target) => { setError(null); setNoticeTarget(target); }} />)}
+          </div>
+        </details>
+      )}
 
       {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={(student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); }} />}
       {billingTarget && <ClassBillingSheet key={`${billingTarget.lesson.id}:${billingTarget.student?.id || "all"}`} open classId={billingTarget.lesson.id} className={billingTarget.lesson.name} student={billingTarget.student} onClose={() => setBillingTarget(null)} />}
@@ -323,7 +329,7 @@ export default function StaffHomeClient({
 }
 
 function SummaryItem({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
-  return <div className={`rounded-2xl p-3 text-center ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "bg-white dark:bg-gray-900"}`}><p className="text-2xl font-black">{value}</p><p className={`mt-0.5 text-xs font-bold ${accent ? "opacity-80" : "text-gray-500"}`}>{label}</p></div>;
+  return <p className={accent ? "font-bold text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)]"}>{label} <strong className="ml-1 font-black tabular-nums">{value}</strong></p>;
 }
 
 function StatusBadge({ status, inverted = false }: { status: StaffTodayClass["sessionStatus"]; inverted?: boolean }) {
@@ -335,19 +341,28 @@ function SeasonalBadge({ inverted = false }: { inverted?: boolean }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-black ${inverted ? "bg-sky-400/20 text-sky-100" : "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200"}`}>특강</span>;
 }
 
-function SecondaryButton({ icon, label, onClick, disabled = false, inverted = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean; inverted?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className={`flex min-h-11 items-center justify-center gap-1 rounded-xl px-2 text-xs font-bold disabled:opacity-40 ${inverted ? "bg-white/10 text-white" : "academy-button-secondary"}`}><span className="material-symbols-outlined text-lg">{icon}</span>{label}</button>;
+function SecondaryButton({ icon, label, onClick, disabled = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" disabled={disabled} onClick={onClick} className="academy-button-secondary flex min-h-11 items-center justify-center gap-1 rounded-xl px-2 text-sm font-bold disabled:opacity-40"><span aria-hidden="true" className="material-symbols-outlined text-lg">{icon}</span>{label}</button>;
 }
 
 function CompactClassCard({ lesson, startLocked, onStart, onContent, onContacts, onBilling, onNotice }: { lesson: StaffTodayClass; startLocked: boolean; onStart: (lesson: StaffTodayClass) => void; onContent: (lesson: StaffTodayClass) => void; onContacts: (lesson: StaffTodayClass) => void; onBilling: (lesson: StaffTodayClass) => void; onNotice: (lesson: StaffTodayClass) => void }) {
   const completed = lesson.sessionStatus === "COMPLETED";
-  return <article className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-black text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</p><div className="mt-0.5 flex flex-wrap items-center gap-2"><h3 className="text-lg font-black dark:text-white">{lesson.name}</h3>{isSeasonalLesson(lesson) && <SeasonalBadge />}</div><p className="mt-1 text-xs text-gray-500">학생 {lesson.studentCount}명 · {lesson.location || "장소 미정"}</p></div><StatusBadge status={lesson.sessionStatus} /></div>
-    {!completed && <div className="mt-3 space-y-2"><button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onStart(lesson)} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] px-4 font-black text-[var(--brand-accent-contrast)] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500 dark:disabled:bg-gray-800">{lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작"}</button><div className="grid grid-cols-4 gap-2" aria-label="수업 빠른 메뉴"><CompactAction icon="edit_note" label="내용" onClick={() => onContent(lesson)} /><CompactAction icon="groups" label="학생" onClick={() => onContacts(lesson)} /><CompactAction icon="receipt_long" label="청구" onClick={() => onBilling(lesson)} /><CompactAction icon="campaign" label="공지" onClick={() => onNotice(lesson)} /></div></div>}
+  return <article className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
+    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-black text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</p><div className="mt-0.5 flex flex-wrap items-center gap-2"><h3 className="text-base font-black text-[var(--color-academy-ink)]">{lesson.name}</h3>{isSeasonalLesson(lesson) && <SeasonalBadge />}</div><p className="mt-1 text-sm text-[var(--color-academy-muted)]">학생 {lesson.studentCount}명 · {lesson.location || "장소 미정"}</p></div><StatusBadge status={lesson.sessionStatus} /></div>
+    {!completed && <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
+      <details className="min-w-0 flex-1 rounded-xl bg-[var(--color-academy-primary-soft)]">
+        <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold text-[var(--color-academy-muted)]">수업 준비·관리</summary>
+        <div className="grid grid-cols-2 gap-2 p-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
+          <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => onContent(lesson)} />
+          <SecondaryButton icon="groups" label="학생 정보" onClick={() => onContacts(lesson)} />
+          <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onBilling(lesson)} />
+          <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onNotice(lesson)} />
+        </div>
+      </details>
+      <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onStart(lesson)} className="academy-button-secondary min-h-11 rounded-xl px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50">{lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작"}</button>
+    </div>}
   </article>;
 }
-
-function CompactAction({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="flex min-h-12 flex-col items-center justify-center rounded-xl border border-gray-200 text-xs font-bold dark:border-gray-700"><span className="material-symbols-outlined text-lg text-[var(--brand-accent)]">{icon}</span>{label}</button>; }
 
 function Modal({ title, subtitle, onClose, labelledBy, children }: { title: string; subtitle: string; onClose: () => void; labelledBy: string; children: React.ReactNode }) {
   const dialogRef = useRef<HTMLDivElement>(null);
