@@ -282,7 +282,7 @@ test("기사님 카드의 길안내는 시간 아래 작은 버튼이며 학생 
   const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
   // 길안내는 시간과 같은 오른쪽 열에 두고, 이전의 카드 폭 전체 버튼을 다시 만들지 않는다.
   assert.match(src, /row-span-2 flex shrink-0 flex-col items-end gap-1/);
-  assert.match(src, /inline-flex h-8 items-center gap-1 rounded-lg border-2 border-blue-500/);
+  assert.match(src, /inline-flex h-8 items-center gap-1 rounded-lg border border-\[var\(--color-academy-primary\)\]/);
   assert.match(src, /🧭 길안내/);
   assert.doesNotMatch(src, /flex h-12 items-center justify-center gap-1\.5 rounded-xl bg-blue-600/);
   // 배지는 이름 바로 아래로 붙고, 전화 링크와 탑승 버튼은 한 행을 유지한다.

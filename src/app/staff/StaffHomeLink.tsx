@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { prepareStaffNavigation } from "./staffNavigation";
 
-export default function StaffHomeLink() {
+export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean }) {
   const pathname = usePathname();
   const inSession = pathname.startsWith("/staff/sessions/");
   const [open, setOpen] = useState(false);
@@ -72,8 +73,9 @@ export default function StaffHomeLink() {
   return (
     <>
       <Link ref={triggerRef} href="/staff" onClick={(event) => { if (!inSession) return; event.preventDefault(); setOpen(true); }} className="flex min-h-12 items-center gap-2 rounded-xl pr-2 text-brand-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] dark:text-white" aria-label="교사용 홈으로 이동">
-        <span className="grid size-9 place-items-center rounded-xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" aria-hidden="true"><span className="material-symbols-outlined text-[1.25rem]">sports_soccer</span></span>
-        <span><span className="block text-base font-black leading-tight">STIZ</span><span className="block text-[0.68rem] font-bold leading-tight text-gray-500 dark:text-gray-400">선생님 앱</span></span>
+        {/* 실제 공식 로고를 유지해 역할이 바뀌어도 같은 학원 앱임을 알립니다. */}
+        <Image src="/stiz-logo.png" alt="스티즈 농구교실" width={92} height={40} className="h-10 w-[92px] shrink-0 object-contain" />
+        <span className="text-xs font-bold text-[var(--color-academy-muted)]">{isDriver ? "기사님 앱" : "선생님 앱"}</span>
       </Link>
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 sm:items-center" onMouseDown={(event) => !saving && event.target === event.currentTarget && close()}>

@@ -138,10 +138,11 @@ export default function StaffShuttleDashboardClient({
 
   return (
     <main className="mx-auto min-h-[calc(100dvh-9rem)] max-w-lg px-4 py-5">
-      <section className="rounded-3xl bg-brand-navy-900 p-5 text-white shadow-xl">
+      {/* 운행 대시보드도 교사 홈과 같은 밝은 역할 헤더를 사용합니다. */}
+      <section className="academy-hero rounded-3xl p-5 text-[var(--color-academy-ink)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-white/65">셔틀 기사 앱</p>
+            <p className="text-sm font-bold text-[var(--color-academy-muted)]">셔틀 기사 앱</p>
             <h1 className="mt-1 text-2xl font-black">오늘 운행</h1>
           </div>
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]">

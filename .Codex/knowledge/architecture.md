@@ -253,3 +253,7 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - `/request/reconfirm/[token]`은 관리자 보완 내용을 읽기 전용으로 표시하고 `src/app/actions/kakao-parent-reconfirmation.ts`가 학생·보호자·접수·운영 요청·명령 관계와 payload 해시를 다시 검증한다.
 - `ParentOperationsRequestLink.purpose`는 `GENERAL`과 `KAKAO_RECONFIRMATION`을 DB 제약으로 구분해 링크 경로 혼용을 차단한다.
 - 학부모 확정은 `parentConfirmed`와 감사로그만 갱신하며 시트·Rallyz·사이트 실행, 청구, 알림은 수행하지 않는다.
+# 2026-10-19: 학원 역할별 공통 시각 경계
+- `src/components/academy/AcademyTheme.tsx`: 서버·클라이언트에서 사용할 수 있는 순수 wrapper. `academy-app`과 `data-academy-role`로 관리자/학부모/교사/기사 범위를 구분한다.
+- `src/app/academy-theme.css`: 라벤더 팔레트·고딕 글꼴·카드·버튼·상태와 420px 이하 기사 학생 행. RootLayout에서 가져오지만 선택자는 업무 영역에 한정한다.
+- `src/lib/academyTheme.ts`: 학원 경로 판별과 PWA 테마 색상. ThemeProvider·ThemeColorUpdater가 같은 경계를 사용한다. 기존 `/shuttle/run`·`/shuttle/regular`도 포함한다.

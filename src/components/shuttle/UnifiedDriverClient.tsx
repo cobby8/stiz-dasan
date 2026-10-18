@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import AcademyTheme from "@/components/academy/AcademyTheme";
 import type { PointerEvent } from "react";
 import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
 import DriverDateNav from "@/components/shuttle/DriverDateNav";
@@ -209,10 +211,11 @@ export default function UnifiedDriverClient({
   let seq = 0;
 
   return (
-    <div className="mx-auto max-w-lg px-3 pb-28 text-gray-900" style={{ colorScheme: "light" }}>
-      <header className="sticky top-0 z-10 -mx-3 mb-3 flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-4">
-        <div>
-          <p className="text-[20px] font-black text-gray-900">🚌 스티즈 셔틀 운행</p>
+    <AcademyTheme role="driver" className="mx-auto max-w-lg px-3 pb-28">
+      {/* 작은 운행 시작 버튼과 길안내 위치는 유지하고 브랜드·표면만 통일합니다. */}
+      <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-3 flex items-center justify-between gap-3 border-b px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1></div>
           <p className="mt-0.5 text-[15px] font-bold text-gray-600">
             {fmtDate(date)} · {initialBoardingReliable ? `체크 ${progress.boarded}/${progress.total}` : "체크 기록 확인 필요"}
             {progress.noshow > 0 ? ` · 결석 ${progress.noshow}` : ""}
@@ -307,7 +310,7 @@ export default function UnifiedDriverClient({
               onPointerEnter={() => editable && dragKey && moveDraggedRow(row)}
               onPointerUp={() => setDragKey(null)}
               onPointerCancel={() => setDragKey(null)}
-              className={`rounded-2xl border-2 p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
+              className={`academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
               editing ? "border-blue-200 bg-blue-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
             }`}>
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5">
@@ -319,7 +322,7 @@ export default function UnifiedDriverClient({
                       className="h-7 w-7 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▼</button>
                   </div>
                 ) : (
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[15px] font-black text-white ${row.isHub ? "bg-green-600" : "bg-brand-orange-500"}`}>
+                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[15px] font-black text-white ${row.isHub ? "bg-green-600" : "bg-[var(--color-academy-primary)]"}`}>
                     {row.isHub ? "🆓" : seq}
                   </span>
                 )}
@@ -334,9 +337,9 @@ export default function UnifiedDriverClient({
                   />
                 ) : (
                   <div className="row-span-2 flex shrink-0 flex-col items-end gap-1">
-                    <span className={`text-[28px] font-black leading-none ${displayTime(row) ? "text-blue-600" : "text-gray-400"}`}>{displayTime(row) ?? "시간 미정"}</span>
+                    <span className={`text-[26px] font-black leading-none ${displayTime(row) ? "text-[var(--color-academy-primary)]" : "text-gray-400"}`}>{displayTime(row) ?? "시간 미정"}</span>
                     {url && (
-                      <a href={url} className="inline-flex h-8 items-center gap-1 rounded-lg border-2 border-blue-500 px-2 text-[13px] font-black text-blue-600 active:bg-blue-50">
+                      <a href={url} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--color-academy-primary)] px-2 text-[13px] font-bold text-[var(--color-academy-primary)] active:bg-[var(--color-academy-primary-soft)]">
                         🧭 길안내
                       </a>
                     )}
@@ -369,9 +372,9 @@ export default function UnifiedDriverClient({
                     const lockedAbsent = rider.absent && rider.kind === "REGULAR";
                     const rowKey = `${row.key}:${rider.checkId}`;
                     return (
-                      <div key={rowKey} className={`rounded-xl px-2.5 py-1.5 ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
-                        <div className="flex items-center gap-2">
-                          <div className="min-w-0 flex-1">
+                      <div key={rowKey} className={`academy-driver-rider rounded-xl px-2.5 py-2 ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
+                        <div className="academy-driver-rider-main flex items-center gap-2">
+                          <div className="academy-driver-rider-info min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               <span className={`text-[19px] font-black ${lockedAbsent ? "text-gray-400 line-through" : "text-gray-900"}`}>{rider.name}</span>
                               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
@@ -423,6 +426,6 @@ export default function UnifiedDriverClient({
       </ol>
 
       <p className="mt-3 text-center text-[14px] font-semibold text-gray-400">탭 한 번으로 저장됩니다 · 다시 누르면 대기로 돌아갑니다</p>
-    </div>
+    </AcademyTheme>
   );
 }

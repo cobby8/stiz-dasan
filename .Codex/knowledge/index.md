@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 승인된 라벤더·퍼플 학원 UI를 4역할 대표 화면에 적용. 공통 시각 경계·공식 로고·라이트 고정과 공개 테마 복귀. architecture/decisions/errors/conventions 갱신, 지식 문서 수 5 유지. `docs/academy-lavender-ui.md` 참조. 운영 쓰기·푸시·배포 없음.
+
 > 2026-10-19: 저장·업무 반영·사이트 알림·푸시 접수 분리 1차 개선 로컬 검증 완료. 관련 회귀121·격리 브라우저22·tsc·독립 검토 통과, 기존 lint74잔여. decisions/errors/architecture/conventions 갱신, 지식 문서 수 5 유지. `docs/storage-delivery-status.md`에 명령·검증 경계 기록. 운영 쓰기·발송·배포 미실행.
 
 > 2026-09-29 갱신: 체험 일정 수정은 선택 날짜의 운영 가능 수업만 제시하고 서버에서 반·요일을 재검증한다. 확정일 기준 목록 필터와 저장/문자 분리를 적용했다. 상세는 errors.md, 운영 DB·발송·배포는 미실행.

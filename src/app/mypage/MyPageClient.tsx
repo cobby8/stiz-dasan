@@ -325,73 +325,53 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
 
     return (
         <div className="space-y-6">
-            {/* 학생 카드 — navy 배경 유지, 장식 도형 추가 (about 히어로 패턴과 통일) */}
-            <div className="bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white rounded-2xl p-6 shadow-lg relative overflow-hidden">
-                {/* 장식 도형들 — 공개 페이지 히어로와 동일한 패턴 */}
-                <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute right-0 top-0 w-40 h-40 border-[15px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
-                    <div className="absolute left-0 bottom-0 w-28 h-28 border-[10px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+            {/* 자녀와 다음 행동을 먼저 보여주고, 출결 통계는 짧은 보조 정보로 유지한다. */}
+            <section aria-labelledby="parent-child-heading" className="academy-hero p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                        <p className="mb-1 text-xs font-bold text-[var(--color-academy-primary)]">우리 아이의 농구 생활</p>
+                        <h1 id="parent-child-heading" className="academy-heading text-2xl font-extrabold">{child.name} 학생</h1>
+                        <p className="mt-2 text-sm leading-relaxed text-[var(--color-academy-muted)]">
+                            {enrollSummary || "수강 중인 반이 없습니다"}
+                        </p>
+                    </div>
+                    <span aria-hidden="true" className="material-symbols-outlined rounded-2xl bg-[var(--color-academy-surface)] p-3 text-[var(--color-academy-primary)]">sports_basketball</span>
                 </div>
-                <div className="relative z-10">
-                    <div className="flex justify-between items-center mb-4">
-                        <h1 className="text-2xl font-bold">
-                            {child.name} <span className="text-brand-orange-500 dark:text-brand-neon-lime text-lg font-medium">학생</span>
-                        </h1>
-                        {data.children.length > 1 && (
-                            <select
-                                value={selectedIdx}
-                                onChange={(e) => setSelectedIdx(Number(e.target.value))}
-                                className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full text-xs font-bold text-white transition border border-white/20"
+                {data.children.length > 1 && (
+                    <div role="group" aria-label="자녀 선택" className="mt-4 flex flex-wrap gap-2">
+                        {data.children.map((c, i) => (
+                            <button
+                                key={c.id}
+                                type="button"
+                                aria-pressed={selectedIdx === i}
+                                onClick={() => setSelectedIdx(i)}
+                                className={`min-h-11 rounded-full border px-4 text-sm font-bold transition-colors ${selectedIdx === i
+                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
+                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-primary)]"}`}
                             >
-                                {data.children.map((c, i) => (
-                                    <option key={c.id} value={i} className="text-gray-900 dark:text-white">{c.name}</option>
-                                ))}
-                            </select>
-                        )}
+                                {c.name}
+                            </button>
+                        ))}
                     </div>
-                    <p className="text-gray-300 text-sm mb-6">
-                        {enrollSummary || "수강 중인 반이 없습니다"}
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-white dark:bg-gray-800/10 rounded-xl p-3 backdrop-blur-sm border border-white/5">
-                            <div className="text-white/60 text-xs font-medium mb-1">이번 달 출석</div>
-                            <div className="text-xl font-bold">
-                                {child.attendance.present}
-                                <span className="text-sm font-normal text-white/60"> / {child.attendance.total}회</span>
-                            </div>
-                        </div>
-                        <div className="bg-white dark:bg-gray-800/10 rounded-xl p-3 backdrop-blur-sm border border-white/5">
-                            <div className="text-white/60 text-xs font-medium mb-1">결석/지각</div>
-                            <div className="text-xl font-bold">
-                                {child.attendance.absent > 0 ? (
-                                    <span className="text-red-400">{child.attendance.absent}</span>
-                                ) : (
-                                    <span className="text-green-400">0</span>
-                                )}
-                                {child.attendance.late > 0 && (
-                                    <span className="text-yellow-400 text-sm ml-1">지각 {child.attendance.late}</span>
-                                )}
-                                {child.attendance.absent === 0 && child.attendance.late === 0 && (
-                                    <span className="text-sm font-normal text-white/60"> 없음</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                )}
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--color-academy-line)] pt-3 text-xs text-[var(--color-academy-muted)]">
+                    <span>이번 달 출석 <strong className="text-[var(--color-academy-ink)]">{child.attendance.present} / {child.attendance.total}회</strong></span>
+                    <span>결석 <strong className="text-[var(--color-academy-ink)]">{child.attendance.absent}회</strong></span>
+                    <span>지각 <strong className="text-[var(--color-academy-ink)]">{child.attendance.late}회</strong></span>
                 </div>
-            </div>
+            </section>
 
             {/* ── "오늘/이번주 우리 아이" 한눈 요약 카드 (표시 전용·상단 배치) ──
                 반/출결/셔틀/미납/피드백으로 흩어진 정보를 선택 자녀 기준으로 재조합해 보여준다.
                 각 줄은 값이 있을 때만 렌더하고, 전부 없으면 카드 자체를 숨긴다. */}
             {hasSummary && (
-                <section aria-labelledby="mypage-summary-heading" className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <section aria-labelledby="mypage-summary-heading" className="academy-panel p-5">
                     <div className="mb-3 flex items-center gap-2">
                         <div className="rounded-full bg-brand-orange-50 p-1.5 dark:bg-brand-neon-lime/10">
                             <SymbolIcon name="today" size={18} className="text-brand-orange-500 dark:text-brand-neon-lime" />
                         </div>
                         <h2 id="mypage-summary-heading" className="font-bold text-gray-900 dark:text-white">
-                            {child.name} 학생 한눈에 보기
+                            오늘과 다음 일정
                         </h2>
                     </div>
 
@@ -401,7 +381,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-enrollments")}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="event" size={18} className="text-brand-navy-900 dark:text-gray-200" />
@@ -419,7 +399,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-shuttle")}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="airport_shuttle" size={18} className="text-blue-600 dark:text-blue-300" />
@@ -444,7 +424,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-payment-alert")}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl bg-red-50 px-4 py-3 text-left transition hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-red-50 px-4 py-3 text-left transition hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="credit_card" size={18} className="text-red-600 dark:text-red-300" />
@@ -461,7 +441,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-feedback")}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="star" size={18} className="text-brand-orange-500 dark:text-brand-neon-lime" />
@@ -475,6 +455,20 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                     </div>
                 </section>
             )}
+
+            {/* 이미 제공 중인 전용 신청 화면으로 바로 연결해 긴 목록 탐색을 줄인다. */}
+            <nav aria-label="자주 하는 요청" className="grid grid-cols-3 gap-2 sm:gap-3">
+                {[
+                    { href: "#parent-absence-hub", icon: "event_busy", label: "결석 알리기" },
+                    { href: "/mypage/shuttle", icon: "airport_shuttle", label: "셔틀 변경" },
+                    { href: "/mypage/payments", icon: "receipt_long", label: "청구·수납" },
+                ].map((item) => (
+                    <Link key={item.href} href={item.href} className="academy-panel flex min-h-24 flex-col items-center justify-center gap-2 p-3 text-center text-sm font-bold transition-colors hover:border-[var(--color-academy-primary)]">
+                        <SymbolIcon name={item.icon} size={24} className="text-[var(--color-academy-primary)]" />
+                        <span>{item.label}</span>
+                    </Link>
+                ))}
+            </nav>
 
             {/* 방학특강 신청 자녀(전환 대기중) — 정식 학생으로 아직 전환되지 않아
                 위 대시보드에 안 뜨는 자녀를 별도 섹션으로 안내한다. 목록이 비면 통째로 숨김. */}
@@ -1121,7 +1115,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
             {/* 결석 미리 알리기 허브 — 결석 경로 혼동을 없애기 위한 단일 진입점.
                 방학특강·정규 둘 다 구조화 신고이고, 신고하면 그날 셔틀에서 자동으로 빠진다.
                 (예전에는 정규가 '학원에 요청하기'로 들어오는 수기 처리였다) */}
-            <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm mb-4">
+            <div id="parent-absence-hub" className="academy-panel scroll-mt-24 p-4 mb-4">
                 <div className="flex items-center gap-2 mb-1">
                     <span className="material-symbols-outlined text-xl text-brand-orange-500 dark:text-brand-neon-lime">event_busy</span>
                     <p className="font-bold text-brand-navy-900">결석 미리 알리기</p>

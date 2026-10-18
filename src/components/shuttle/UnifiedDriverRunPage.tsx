@@ -2,6 +2,7 @@ import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import RememberDriverToken from "./RememberDriverToken";
 import { loadUnifiedDriverRun } from "@/lib/shuttle/unifiedDriverRun";
 import UnifiedDriverClient from "./UnifiedDriverClient";
+import AcademyTheme from "@/components/academy/AcademyTheme";
 
 /**
  * 기사님 통합 운행 화면(서버) — /shuttle/run/[token], /shuttle/regular/[token], /driver/[token] 셋이 공유한다.
@@ -29,7 +30,7 @@ function addDays(dateIso: string, n: number): string {
 
 export function DriverLightError({ title, sub }: { title: string; sub: string }) {
   return (
-    <div className="min-h-screen bg-white text-gray-900" style={{ colorScheme: "light" }}>
+    <AcademyTheme role="driver" className="min-h-screen text-[var(--color-academy-ink)]">
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         <div>
           <p className="text-5xl">🚌</p>
@@ -37,7 +38,7 @@ export function DriverLightError({ title, sub }: { title: string; sub: string })
           <p className="mt-1 text-base text-gray-500">{sub}</p>
         </div>
       </div>
-    </div>
+    </AcademyTheme>
   );
 }
 
@@ -57,7 +58,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
   const { rows, boarding, boardingReliable, driverLabel } = await loadUnifiedDriverRun(viewDate);
 
   return (
-    <div className="min-h-screen bg-white py-2" style={{ colorScheme: "light" }}>
+    <AcademyTheme role="driver" className="min-h-screen py-2">
       <UnifiedDriverClient
         key={viewDate}
         token={token}
@@ -74,6 +75,6 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
           아이콘이 매번 "유효하지 않은 링크" 화면을 여는 꼴이 된다.
           설치된 앱의 영역(/driver/)에 있는 주소에서만 켠다. */}
       {rememberToken && <RememberDriverToken token={token} />}
-    </div>
+    </AcademyTheme>
   );
 }

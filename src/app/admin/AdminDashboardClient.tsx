@@ -124,7 +124,7 @@ function DashboardPrimarySkeleton() {
         <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[...Array(4)].map((_, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 animate-pulse">
+                    <div key={i} className="academy-panel p-4 animate-pulse">
                         <div className="flex justify-between items-start">
                             <div>
                                 <div className="h-3 bg-gray-200 rounded w-16 mb-2" />
@@ -145,7 +145,7 @@ function SlowSectionSkeleton() {
         <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[...Array(4)].map((_, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 animate-pulse">
+                    <div key={i} className="academy-panel p-4 animate-pulse">
                         <div className="h-3 bg-gray-200 rounded w-20 mb-2" />
                         <div className="h-7 bg-gray-200 rounded w-24" />
                     </div>
@@ -153,7 +153,7 @@ function SlowSectionSkeleton() {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 animate-pulse">
+                    <div key={i} className="academy-panel p-5 animate-pulse">
                         <div className="h-4 bg-gray-200 rounded w-40 mb-4" />
                         <div className="h-40 bg-gray-100 dark:bg-gray-800 rounded" />
                     </div>
@@ -161,7 +161,7 @@ function SlowSectionSkeleton() {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {[...Array(2)].map((_, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 animate-pulse">
+                    <div key={i} className="academy-panel p-5 animate-pulse">
                         <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
                         <div className="space-y-3">
                             {[...Array(3)].map((_, j) => (
@@ -173,7 +173,7 @@ function SlowSectionSkeleton() {
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {[...Array(3)].map((_, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 animate-pulse">
+                    <div key={i} className="academy-panel p-5 animate-pulse">
                         <div className="h-4 bg-gray-200 rounded w-32 mb-4" />
                         <div className="space-y-3">
                             {[...Array(3)].map((_, j) => (
@@ -195,7 +195,7 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold dark:bg-brand-neon-lime dark:text-brand-navy-900"
             >
                 다시 시도
             </button>
@@ -289,10 +289,19 @@ export default function AdminDashboardClient({
     }, [hasInitialData, hydrateFullData, loadDashboard]);
 
     return (
-        <div className="max-w-7xl mx-auto space-y-6">
-            <div>
-                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">경영 대시보드</h1>
-            </div>
+        <div className="max-w-7xl mx-auto space-y-5">
+            {/* 먼저 처리할 일과 수업 동선을 보여주고 운영 통계는 아래에서 확인한다. */}
+            <section className="academy-hero flex flex-wrap items-center justify-between gap-4 p-5 md:p-6">
+                <div className="relative z-10">
+                    <p className="mb-1 text-sm font-semibold text-[var(--color-academy-primary)]">STIZ · 학원 운영</p>
+                    <h1 className="academy-heading">오늘의 업무</h1>
+                    <p className="mt-2 text-sm text-[var(--color-academy-muted)]">학부모 요청과 오늘 수업을 먼저 확인하세요.</p>
+                </div>
+                <div className="relative z-10 flex flex-wrap gap-2">
+                    <Link href="/admin/students" prefetch={false} className="academy-button-secondary">원생 찾기</Link>
+                    <Link href="/staff" prefetch={false} className="academy-button-primary">수업·출결 열기 <SymbolIcon name="arrow_forward" size={17} /></Link>
+                </div>
+            </section>
 
             {loading && !data && <DashboardPrimarySkeleton />}
             {!loading && !data && error && <ErrorState onRetry={() => void loadDashboard(true)} />}
@@ -353,41 +362,33 @@ function DashboardContent({
 
     return (
         <>
-            {pendingCount > 0 && (
-                <Link href="/admin/requests" prefetch={false}
-                    className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-2xl p-4 hover:bg-yellow-100 transition shadow-sm">
-                    <div className="bg-yellow-400 text-white p-2 rounded-full">
-                        <SymbolIcon name="forum" size={20} />
+            {/* 요청 수는 전체, 아래 목록은 서버가 제공한 최근 요청만 표시한다. */}
+            <section className="academy-panel overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-academy-line)] px-5 py-4">
+                    <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 요청 <span className="academy-status">{pendingCount}건</span></h2>
+                    <Link href="/admin/requests" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
+                </div>
+                {pendingRequests.length > 0 ? (
+                    <div className="divide-y divide-[var(--color-academy-line)]">
+                        {pendingRequests.map((request) => (
+                            <Link key={request.id} href="/admin/requests" prefetch={false} className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--color-academy-soft)]">
+                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--color-academy-primary-soft)] font-bold text-[var(--color-academy-primary)]">{(request.studentName ?? request.parentName ?? "요청").slice(0, 1)}</span>
+                                <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-[var(--color-academy-ink)]">{request.studentName ?? request.parentName ?? "학부모 요청"}</p><p className="mt-0.5 break-words text-sm text-[var(--color-academy-muted)]">{request.title}</p></div>
+                                <span className="shrink-0 text-xs font-bold text-[var(--color-academy-warning)]">미처리</span>
+                                <SymbolIcon name="chevron_right" className="shrink-0 text-[var(--color-academy-muted)]" />
+                            </Link>
+                        ))}
                     </div>
-                    <div className="flex-1">
-                        <p className="font-bold text-yellow-800">미처리 요청 {pendingCount}건</p>
-                        <p className="text-xs text-yellow-600 mt-0.5">
-                            {pendingRequests.slice(0, 2).map((r) => `${r.studentName ?? "-"} - ${r.title}`).join(" / ")}
-                            {pendingCount > 2 && ` 외 ${pendingCount - 2}건`}
-                        </p>
-                    </div>
-                    <span className="text-yellow-600 text-sm font-bold">처리하기 &rarr;</span>
-                </Link>
-            )}
-
-            {enrollStats.PENDING > 0 && (
-                <Link href="/admin/apply" prefetch={false}
-                    className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-2xl p-4 hover:bg-blue-100 transition shadow-sm">
-                    <div className="bg-blue-500 text-white p-2 rounded-full">
-                        <SymbolIcon name="person_add" size={20} />
-                    </div>
-                    <div className="flex-1">
-                        <p className="font-bold text-blue-800">수강 신청 대기 {enrollStats.PENDING}건</p>
-                    </div>
-                    <span className="text-blue-600 text-sm font-bold">처리하기 &rarr;</span>
-                </Link>
-            )}
+                ) : <p className="px-5 py-6 text-sm text-[var(--color-academy-muted)]">{pendingCount > 0 ? "요청 목록에서 처리할 내용을 확인하세요." : "현재 처리할 학부모 요청이 없습니다."}</p>}
+                {enrollStats.PENDING > 0 && <Link href="/admin/apply" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
+            </section>
+            {detailsLoaded && <TodayAndRecentSection todayClasses={todayClasses} todayLabel={todayLabel} recentStudents={recentStudents} pendingRequests={[]} />}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard title="등록 원생" value={`${stats.studentCount}명`}
                     icon={<SymbolIcon name="groups" size={20} className="text-blue-500" />} href="/admin/students" />
                 <StatCard title="운영 프로그램" value={`${stats.programCount}개`}
-                    icon={<SymbolIcon name="menu_book" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />} href="/admin/programs" />
+                    icon={<SymbolIcon name="menu_book" size={20} className="text-[var(--color-academy-primary)] dark:text-brand-neon-lime" />} href="/admin/programs" />
                 <StatCard title="코치/강사진" value={`${stats.coachCount}명`}
                     icon={<SymbolIcon name="person_check" size={20} className="text-emerald-500" />} href="/admin/coaches" />
                 <StatCard title="개설 반" value={`${stats.classCount}개`}
@@ -396,8 +397,11 @@ function DashboardContent({
 
             {detailsLoaded ? (
                 <>
+            <details className="academy-panel p-5">
+                <summary className="cursor-pointer text-sm font-bold text-[var(--color-academy-ink)]">매출·출석 추이와 운영 통계</summary>
+                <div className="mt-5 space-y-5">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">이번 달 매출</p>
                     <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
                     {extendedStats.lastMonthRevenue > 0 && (
@@ -407,11 +411,11 @@ function DashboardContent({
                         </div>
                     )}
                 </div>
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">이번 달 출석률</p>
                     <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{extendedStats.attendanceRate}%</h3>
                 </div>
-                <Link href="/admin/finance" prefetch={false} className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 hover:border-red-200 transition">
+                <Link href="/admin/finance" prefetch={false} className="academy-panel p-4 hover:border-red-200 transition">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">미납 현황</p>
                     <h3 className={`text-2xl font-extrabold ${extendedStats.unpaidCount > 0 ? "text-red-600" : "text-gray-900 dark:text-white"}`}>
                         {extendedStats.unpaidCount}건
@@ -422,29 +426,27 @@ function DashboardContent({
                         </p>
                     )}
                 </Link>
-                <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">전월 매출</p>
                     <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
                 </div>
             </div>
 
-            <Link href="/admin/stats" prefetch={false} className="flex items-center justify-between bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-4 hover:from-indigo-100 hover:to-purple-100 transition shadow-sm">
+            <Link href="/admin/stats" prefetch={false} className="flex items-center justify-between bg-[var(--color-academy-primary-soft)] border border-[var(--color-academy-line)] rounded-2xl p-4 hover:opacity-90 transition shadow-sm">
                 <div className="flex items-center gap-3">
-                    <SymbolIcon name="monitoring" size={28} className="text-indigo-600" />
+                    <SymbolIcon name="monitoring" size={28} className="text-[var(--color-academy-primary)]" />
                     <div>
-                        <p className="font-bold text-indigo-800">상세 운영 통계</p>
+                        <p className="font-bold text-[var(--color-academy-primary)]">상세 운영 통계</p>
                     </div>
                 </div>
-                <span className="text-indigo-600 text-sm font-bold">보러가기 &rarr;</span>
+                <span className="text-[var(--color-academy-primary)] text-sm font-bold">보러가기 &rarr;</span>
             </Link>
 
             <ChartsSection extendedStats={extendedStats} maxRevenue={maxRevenue} />
-            <TodayAndRecentSection
-                todayClasses={todayClasses}
-                todayLabel={todayLabel}
-                recentStudents={recentStudents}
-                pendingRequests={pendingRequests}
-            />
+
+
+                </div>
+            </details>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <ProgramStudentsCard programStudents={extendedStats.programStudents} />
@@ -501,7 +503,7 @@ function DeferredDetailsCard({ loading, onLoad }: { loading: boolean; onLoad: ()
                     type="button"
                     onClick={onLoad}
                     disabled={loading}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
                 >
                     <SymbolIcon name={loading ? "sync" : "download"} size={18} />
                     {loading ? "불러오는 중" : "상세 데이터 불러오기"}
@@ -514,7 +516,7 @@ function DeferredDetailsCard({ loading, onLoad }: { loading: boolean; onLoad: ()
 function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedStats; maxRevenue: number }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="academy-panel p-5">
                 <h3 className="font-bold text-gray-900 dark:text-white mb-4">매출 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyRevenue.map((m, i) => (
@@ -524,7 +526,7 @@ function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedS
                             </span>
                             <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-t-lg relative" style={{ height: "120px" }}>
                                 <div
-                                    className="absolute bottom-0 left-0 right-0 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-t-lg transition-all duration-500"
+                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-t-lg transition-all duration-500"
                                     style={{ height: `${maxRevenue > 0 ? (m.amount / maxRevenue) * 100 : 0}%` }}
                                 />
                             </div>
@@ -534,7 +536,7 @@ function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedS
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="academy-panel p-5">
                 <h3 className="font-bold text-gray-900 dark:text-white mb-4">출석률 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyAttendance.map((m, i) => (
@@ -570,9 +572,9 @@ function TodayAndRecentSection({
 }) {
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+            <div className="academy-panel p-5">
                 <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                    <SymbolIcon name="event_available" size={18} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                    <SymbolIcon name="event_available" size={18} className="text-[var(--color-academy-primary)] dark:text-brand-neon-lime" />
                     오늘의 수업 ({todayLabel})
                 </h3>
                 {todayClasses.length === 0 ? (
@@ -599,7 +601,7 @@ function TodayAndRecentSection({
             </div>
 
             <div className="space-y-6">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+                <div className="academy-panel p-5">
                     <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <SymbolIcon name="person_add" size={18} className="text-emerald-500" />
                         신규 원생 (최근 7일)
@@ -631,7 +633,7 @@ function TodayAndRecentSection({
                                 <SymbolIcon name="schedule" size={18} className="text-yellow-500" />
                                 대기중 요청
                             </h3>
-                            <Link href="/admin/requests" prefetch={false} className="text-xs text-brand-orange-500 dark:text-brand-neon-lime hover:underline">전체보기</Link>
+                            <Link href="/admin/requests" prefetch={false} className="text-xs text-[var(--color-academy-primary)] dark:text-brand-neon-lime hover:underline">전체보기</Link>
                         </div>
                         <div className="space-y-2">
                             {pendingRequests.map((request) => (
@@ -658,7 +660,7 @@ function ProgramStudentsCard({ programStudents }: { programStudents: { name: str
     const maxCnt = Math.max(...programStudents.map((item) => item.count), 1);
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <div className="academy-panel p-5">
             <h3 className="font-bold text-gray-900 dark:text-white mb-4">프로그램별 원생 수</h3>
             {programStudents.length === 0 ? (
                 <p className="text-sm text-gray-400">프로그램을 추가하세요</p>
@@ -686,7 +688,7 @@ function ProgramStudentsCard({ programStudents }: { programStudents: { name: str
 
 function QuickManagementCard() {
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <div className="academy-panel p-5">
             <h3 className="font-bold text-gray-900 dark:text-white mb-4">빠른 관리</h3>
             <div className="grid grid-cols-2 gap-3">
                 <QuickLink title="출결 관리" href="/admin/attendance" color="orange" />
@@ -730,7 +732,7 @@ function SiteOpsBotCard({
                 : "bg-yellow-100 text-yellow-700";
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <div className="academy-panel p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                     <h3 className="font-bold text-gray-900 dark:text-white">사이트 점검 봇</h3>
@@ -750,7 +752,7 @@ function SiteOpsBotCard({
                 type="button"
                 onClick={onRun}
                 disabled={loading}
-                className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
             >
                 <SymbolIcon name={loading ? "sync" : "smart_toy"} size={18} />
                 {loading ? "점검 중" : "점검 실행"}
@@ -809,7 +811,7 @@ function SiteOpsBotCard({
                                         </span>
                                     </div>
                                     {item.actionHref && item.actionLabel && (
-                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-bold text-brand-orange-500 dark:text-brand-neon-lime">
+                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-bold text-[var(--color-academy-primary)] dark:text-brand-neon-lime">
                                             {item.actionLabel} &rarr;
                                         </Link>
                                     )}
@@ -851,14 +853,14 @@ function SystemStatusCard({
     }
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800">
+        <div className="academy-panel p-4">
             <div className="mb-3 flex items-center justify-between">
                 <h3 className="font-bold text-gray-900 dark:text-white">시스템 상태</h3>
                 <button
                     type="button"
                     onClick={onRetry}
                     disabled={systemLoading}
-                    className="text-xs font-bold text-brand-orange-500 transition hover:text-orange-600 disabled:cursor-wait disabled:opacity-60 dark:text-brand-neon-lime"
+                    className="text-xs font-bold text-[var(--color-academy-primary)] transition hover:text-orange-600 disabled:cursor-wait disabled:opacity-60 dark:text-brand-neon-lime"
                 >
                     {systemLoading ? "확인 중" : systemError ? "다시 시도" : systemStatus ? "새로고침" : "확인"}
                 </button>
@@ -907,7 +909,7 @@ function StatCard({ title, value, icon, href }: {
     href?: string;
 }) {
     const content = (
-        <div className={`bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 ${href ? "hover:border-brand-orange-300 dark:border-brand-neon-lime transition-colors cursor-pointer" : ""}`}>
+        <div className={`academy-panel p-4 ${href ? "hover:border-[var(--color-academy-primary)] dark:border-brand-neon-lime transition-colors cursor-pointer" : ""}`}>
             <div className="flex justify-between items-start">
                 <div>
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{title}</p>
@@ -921,16 +923,10 @@ function StatCard({ title, value, icon, href }: {
     return content;
 }
 
-function QuickLink({ title, href, color }: { title: string; href: string; color: string }) {
-    const colorMap: Record<string, string> = {
-        orange: "bg-orange-50 border-orange-200 hover:border-brand-orange-400",
-        blue: "bg-blue-50 border-blue-200 hover:border-blue-400",
-        green: "bg-green-50 border-green-200 hover:border-green-400",
-        purple: "bg-purple-50 border-purple-200 hover:border-purple-400",
-    };
+function QuickLink({ title, href }: { title: string; href: string; color: string }) {
     return (
-        <Link href={href} prefetch={false} className={`p-3 rounded-xl border transition-colors text-center ${colorMap[color] || colorMap.orange}`}>
-            <span className="font-bold text-sm text-gray-900 dark:text-white">{title}</span>
+        <Link href={href} prefetch={false} className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-center transition-colors hover:border-[var(--color-academy-primary)]">
+            <span className="text-sm font-bold text-[var(--color-academy-ink)]">{title}</span>
         </Link>
     );
 }

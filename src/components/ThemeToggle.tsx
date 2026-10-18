@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import FontFreeIcon from "./ui/FontFreeIcon";
 
 export function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme, forcedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -15,6 +15,8 @@ export function ThemeToggle() {
   if (!mounted) {
     return <div className="h-10 w-10" aria-hidden="true" />;
   }
+
+  if (forcedTheme) return null;
 
   const isDark = resolvedTheme === "dark";
   const label = isDark ? "라이트 모드로 변경" : "다크 모드로 변경";

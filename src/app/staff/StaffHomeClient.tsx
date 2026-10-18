@@ -194,12 +194,12 @@ export default function StaffHomeClient({
   }
 
   return (
-    <main className="mx-auto max-w-lg space-y-6 px-4 pb-8 pt-5">
-      <header>
+    <main className="mx-auto max-w-lg space-y-4 px-4 pb-8 pt-5">
+      <header className="academy-hero">
         <p className="text-sm font-bold text-[var(--brand-accent)]">{dateKey}</p>
         <div className="mt-1 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-brand-navy-900 dark:text-white">오늘 수업</h1>
+            <h1 className="academy-heading text-2xl font-black tracking-tight">오늘 수업</h1>
           </div>
           <span className="material-symbols-outlined rounded-2xl bg-[var(--brand-accent)] p-3 text-[var(--brand-accent-contrast)]">school</span>
         </div>
@@ -227,38 +227,39 @@ export default function StaffHomeClient({
           )}
           <section>
             <p className="mb-2 text-sm font-black text-gray-500">{focusClass.sessionStatus === "IN_PROGRESS" ? "현재 수업" : "다음 수업"}</p>
-            <article className="overflow-hidden rounded-3xl bg-brand-navy-900 text-white shadow-lg dark:border dark:border-gray-700">
-              <div className="p-5">
+            {/* 다음 수업을 짧게 읽고 바로 시작할 수 있도록 밝은 카드에 핵심을 모읍니다. */}
+            <article className="academy-focus-class overflow-hidden rounded-3xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
+              <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-black text-[var(--brand-accent)]">{focusClass.startTime}–{focusClass.endTime}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <h2 className="text-2xl font-black">{focusClass.name}</h2>
-                      {isSeasonalLesson(focusClass) && <SeasonalBadge inverted />}
+                      <h2 className="text-xl font-black">{focusClass.name}</h2>
+                      {isSeasonalLesson(focusClass) && <SeasonalBadge />}
                     </div>
                   </div>
-                  <StatusBadge status={focusClass.sessionStatus} inverted />
+                  <StatusBadge status={focusClass.sessionStatus} />
                 </div>
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-300">
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--color-academy-muted)]">
                   <span className="flex items-center gap-1"><span className="material-symbols-outlined text-lg">groups</span>학생 {focusClass.studentCount}명</span>
                   <span className="flex items-center gap-1"><span className="material-symbols-outlined text-lg">location_on</span>{focusClass.location || "장소 미정"}</span>
                 </div>
-                <div className="mt-5 rounded-2xl bg-white/10 p-4">
-                  <p className="text-xs font-black text-gray-300">미리 작성한 수업 내용</p>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-white">{focusClass.plannedContent || "아직 작성한 수업 내용이 없습니다."}</p>
+                <div className="mt-3 rounded-xl bg-[var(--color-academy-surface)] p-3">
+                  <p className="text-xs font-bold text-[var(--color-academy-muted)]">미리 작성한 수업 내용</p>
+                  <p className="mt-1 line-clamp-2 text-sm leading-5">{focusClass.plannedContent || "아직 작성한 수업 내용이 없습니다."}</p>
                 </div>
               </div>
               {focusClass.sessionStatus !== "COMPLETED" && (
-                <div className="space-y-2 bg-white/5 p-4">
-                  <button type="button" onClick={() => openPrimaryAction(focusClass)} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--brand-accent)] px-4 text-lg font-black text-[var(--brand-accent-contrast)]">
+                <div className="space-y-2 px-4 pb-4">
+                  <button type="button" onClick={() => openPrimaryAction(focusClass)} className="academy-button-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-black">
                     <span className="material-symbols-outlined">{focusClass.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
                     {focusClass.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : "수업 시작"}
                   </button>
-                  <div className="grid grid-cols-2 gap-2" aria-label="수업 빠른 메뉴">
-                    <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} inverted />
-                    <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} inverted />
-                    <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} inverted />
-                    <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} inverted />
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="수업 빠른 메뉴">
+                    <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => openContent(focusClass)} disabled={focusClass.sessionStatus === "IN_PROGRESS"} />
+                    <SecondaryButton icon="groups" label="학생 정보" onClick={() => setPeopleTarget(focusClass)} />
+                    <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => setBillingTarget({ lesson: focusClass })} />
+                    <SecondaryButton icon="campaign" label="수업 공지" onClick={() => { setError(null); setNoticeTarget(focusClass); }} />
                   </div>
                 </div>
               )}
@@ -335,7 +336,7 @@ function SeasonalBadge({ inverted = false }: { inverted?: boolean }) {
 }
 
 function SecondaryButton({ icon, label, onClick, disabled = false, inverted = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean; inverted?: boolean }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className={`flex min-h-16 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold disabled:opacity-40 ${inverted ? "bg-white/10 text-white" : "border border-gray-200 dark:border-gray-700"}`}><span className="material-symbols-outlined text-xl">{icon}</span>{label}</button>;
+  return <button type="button" disabled={disabled} onClick={onClick} className={`flex min-h-11 items-center justify-center gap-1 rounded-xl px-2 text-xs font-bold disabled:opacity-40 ${inverted ? "bg-white/10 text-white" : "academy-button-secondary"}`}><span className="material-symbols-outlined text-lg">{icon}</span>{label}</button>;
 }
 
 function CompactClassCard({ lesson, startLocked, onStart, onContent, onContacts, onBilling, onNotice }: { lesson: StaffTodayClass; startLocked: boolean; onStart: (lesson: StaffTodayClass) => void; onContent: (lesson: StaffTodayClass) => void; onContacts: (lesson: StaffTodayClass) => void; onBilling: (lesson: StaffTodayClass) => void; onNotice: (lesson: StaffTodayClass) => void }) {

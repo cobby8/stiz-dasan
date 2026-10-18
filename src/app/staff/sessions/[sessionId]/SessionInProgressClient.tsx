@@ -454,17 +454,18 @@ export default function SessionInProgressClient({
 
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 pb-40">
-      <section className="sticky top-0 z-30 -mx-4 rounded-b-3xl bg-brand-navy-900 px-5 pb-5 pt-[max(1rem,env(safe-area-inset-top))] text-white shadow-lg">
+      {/* 진행 상태는 밝은 라벤더 안에서 읽고 출결 경고는 의미색으로 따로 구분합니다. */}
+      <section className="sticky top-0 z-30 -mx-4 rounded-b-3xl border-b border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-[var(--color-academy-ink)]">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-[var(--brand-accent)]">{session.startTime}~{session.endTime}</p>
             <h1 className="mt-0.5 text-xl font-black">{session.className}</h1>
-            <p className="mt-1 text-xs text-gray-300">{session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
+            <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
           </div>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold">수업 중</span>
+          <span className="academy-status rounded-full px-3 py-1 text-xs font-bold">수업 중</span>
         </div>
-        <div className="mt-3 flex items-end justify-between border-t border-white/10 pt-3">
-          <div><p className="text-xs font-bold text-gray-300">수업 경과 시간</p><p className={`mt-1 text-xs font-black ${counts.UNCHECKED > 0 ? "text-amber-300" : "text-green-300"}`}>{counts.UNCHECKED > 0 ? `출석 미확인 ${counts.UNCHECKED}명` : "출석 확인 완료"}</p></div>
+        <div className="mt-3 flex items-end justify-between border-t border-[var(--color-academy-line)] pt-3">
+          <div><p className="text-xs font-bold text-[var(--color-academy-muted)]">수업 경과 시간</p><p className={`mt-1 text-xs font-black ${counts.UNCHECKED > 0 ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-success)]"}`}>{counts.UNCHECKED > 0 ? `출석 미확인 ${counts.UNCHECKED}명` : "출석 확인 완료"}</p></div>
           <p className="font-mono text-3xl font-black tabular-nums" aria-label={`수업 경과 ${formatElapsed(elapsed)}`}>{formatElapsed(elapsed)}</p>
         </div>
       </section>

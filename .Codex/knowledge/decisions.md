@@ -656,3 +656,8 @@
 - 승인 이벤트 날짜는 실제 수강 시작일이 아니다. G3a는 신청·학생·반·명령·수강 ID와 타깃별 재조회 내역만 표시하고 외부 등록 CHECK_REQUIRED를 유지한다.
 - 다반 전체 충족·후속 변경·중복 명령 판정과 실제 시작일 확정은 후속이다. G3b 반별 확정 기록 후보는 docs/registration-start-date-design.md에 있으며 미래 ACTIVE 정책을 추정하지 않는다.
 - 모델10·실제 페이지 SSR2(가짜 DB/권한)·tsc·lint 및 운영 독립검토 통과. 실제 DB/브라우저 검증·운영 쓰기·발송·배포는 없다.
+# 2026-10-19: 학원 앱 라벤더·퍼플과 라이트 경계
+- 사용자가 6안 중 라벤더·퍼플을 확정하고 실제 4역할 화면 적용·검증을 승인했다. 공식 `public/stiz-logo.png`는 재색칠·왜곡하지 않는다.
+- `AcademyTheme`/`academy-theme.css`의 역할 범위에서만 팔레트·글꼴·카드·버튼을 통일한다. 공개 홈페이지 브랜드와 업무 상태 의미색은 보존한다.
+- `ThemeProvider`는 학원 경로에서 `forcedTheme=light`만 적용한다. `defaultTheme`/`enableSystem`을 경로에 따라 바꾸지 않아 공개 화면으로 복귀할 때 기존 저장 설정을 복원한다.
+- 실제 API·권한·저장/전달/GPS 로직을 유지한 UI 변경이며 운영 반영·푸시·배포는 결과 확인 뒤 별도 승인 대상이다. 상세 `docs/academy-lavender-ui.md`.

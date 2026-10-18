@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { logout } from "@/app/actions/auth";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import AcademyTheme from "@/components/academy/AcademyTheme";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AppBackButton from "@/components/AppBackButton";
 
@@ -101,9 +101,9 @@ export default function AdminShellClient({
     const [systemToolsOpen, setSystemToolsOpen] = useState(false);
     const moreOpsActive = useMemo(() => MORE_OPS_PATHS.some((p) => pathname.startsWith(p)), [pathname]);
     // 현재 URL 경로를 기반으로 활성 탭을 자동 결정
-    // "/admin" 첫 진입은 사이트 관리부터 보여준다.
+    // 첫 화면에서도 학원 업무 메뉴를 바로 찾을 수 있도록 운영 탭을 기본으로 둔다.
     const autoTab = useMemo(() => {
-        if (pathname === "/admin") return "site" as const;
+        if (pathname === "/admin") return "ops" as const;
         if (OPS_PATHS.some((p) => pathname.startsWith(p))) return "ops" as const;
         return "site" as const;
     }, [pathname]);
@@ -119,7 +119,7 @@ export default function AdminShellClient({
     }, [autoTab, pathname]);
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+        <AcademyTheme role="admin" className="min-h-screen flex">
             {mobileMenuOpen && (
                 <button
                     type="button"
@@ -135,19 +135,19 @@ export default function AdminShellClient({
                     mobileMenuOpen
                         ? "fixed inset-y-0 left-0 z-40 flex h-dvh w-72 max-w-[85vw]"
                         : "hidden"
-                } flex-shrink-0 flex-col bg-brand-navy-900 text-white md:fixed md:inset-y-0 md:left-0 md:z-10 md:flex md:h-full md:w-64 md:max-w-none`}
+                } flex-shrink-0 flex-col border-r border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] md:fixed md:inset-y-0 md:left-0 md:z-10 md:flex md:h-full md:w-64 md:max-w-none`}
             >
-                <div className="p-6 border-b border-white/10 flex items-center gap-3 flex-shrink-0">
-                    <div className="bg-white dark:bg-white px-3 py-2 rounded-md flex items-center justify-center">
+                <div className="px-5 py-5 border-b border-[var(--color-academy-line)] flex items-center gap-3 flex-shrink-0">
+                    <div className="bg-white rounded-md flex items-center justify-center">
                         <Image
                             src="/stiz-logo.png"
                             alt="STIZ Admin"
-                            width={130}
-                            height={32}
-                            className="h-8 w-auto object-contain"
+                            width={124}
+                            height={54}
+                            className="h-[54px] w-[124px] shrink-0 object-contain"
                         />
                     </div>
-                    <span className="font-bold text-white tracking-tight ml-2">Admin</span>
+                    <span className="text-xs font-bold text-[var(--color-academy-muted)] tracking-tight">학원 운영</span>
                 </div>
                 {/* 탭 전환 버튼 — 로고 바로 아래, 메뉴 목록 위 */}
                 <div className="px-4 pt-4 pb-2 flex gap-1 flex-shrink-0">
@@ -155,8 +155,8 @@ export default function AdminShellClient({
                         onClick={() => setActiveTab("site")}
                         className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
                             activeTab === "site"
-                                ? "bg-white text-brand-navy-900 dark:bg-white/10 dark:text-white"
-                                : "text-white/60 hover:bg-white/10 hover:text-white"
+                                ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] "
+                                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                         }`}
                     >
                         사이트
@@ -165,8 +165,8 @@ export default function AdminShellClient({
                         onClick={() => setActiveTab("ops")}
                         className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
                             activeTab === "ops"
-                                ? "bg-white text-brand-navy-900 dark:bg-white/10 dark:text-white"
-                                : "text-white/60 hover:bg-white/10 hover:text-white"
+                                ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] "
+                                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                         }`}
                     >
                         학원운영
@@ -178,19 +178,19 @@ export default function AdminShellClient({
                     {activeTab === "site" && (
                         <>
                             {/* 학원 소개 */}
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase px-4 py-2 mt-1">학원 소개</p>
+                            <p className="text-gray-500 text-xs font-bold uppercase px-4 py-2 mt-1">학원 소개</p>
                             <NavItem href="/admin/settings" active={pathname.startsWith("/admin/settings")} icon="🏫" label="학원 소개 관리" />
                             <NavItem href="/admin/coaches" active={pathname.startsWith("/admin/coaches")} icon="👤" label="코치/강사진 관리" />
 
                             {/* 수업 안내 */}
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase px-4 py-2 mt-3">수업 안내</p>
+                            <p className="text-gray-500 text-xs font-bold uppercase px-4 py-2 mt-3">수업 안내</p>
                             {/* 선생님(수업 진행) 화면으로 바로 가기 — 관리자도 오늘 수업을 시작·출결할 수 있다. */}
                             <NavItem href="/staff" active={false} icon="🧑‍🏫" label="선생님 수업 화면" />
                             <NavItem href="/admin/programs" active={pathname.startsWith("/admin/programs")} icon="📋" label="프로그램 관리" />
                             <NavItem href="/admin/schedule" active={pathname.startsWith("/admin/schedule")} icon="📅" label="수업시간표 관리" />
 
                             {/* 소식/안내 */}
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase px-4 py-2 mt-3">소식/안내</p>
+                            <p className="text-gray-500 text-xs font-bold uppercase px-4 py-2 mt-3">소식/안내</p>
                             <NavItem href="/admin/notices" active={pathname.startsWith("/admin/notices")} icon="📢" label="공지사항 관리" />
                             <NavItem href="/admin/gallery" active={pathname.startsWith("/admin/gallery")} icon="📸" label="사진/영상 갤러리" />
                             <NavItem href="/staff/quick-post" active={pathname.startsWith("/staff/quick-post")} icon="⚡" label="사진 빠른 업로드" />
@@ -199,11 +199,11 @@ export default function AdminShellClient({
                             <NavItem href="/admin/terms" active={pathname.startsWith("/admin/terms")} icon="📜" label="이용약관 관리" />
                             <NavItem href="/admin/privacy" active={pathname.startsWith("/admin/privacy")} icon="🔐" label="개인정보처리방침" />
 
-                            <div className="mt-4 border-t border-white/10 pt-4">
+                            <div className="mt-4 border-t border-[var(--color-academy-line)] pt-4">
                                 <Link
                                     href="/"
                                     prefetch={false}
-                                    className="flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-white hover:text-brand-navy-900"
+                                    className="flex items-center justify-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-ink)] transition-colors hover:bg-white hover:text-brand-navy-900"
                                 >
                                     <FontFreeIcon name="home" size={18} />
                                     <span>홈페이지 보기</span>
@@ -216,7 +216,7 @@ export default function AdminShellClient({
                     {/* ===== 학원운영 탭 메뉴 ===== */}
                     {activeTab === "ops" && (
                         <>
-                            <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase px-4 py-2">주요 업무</p>
+                            <p className="text-gray-500 text-xs font-bold uppercase px-4 py-2">주요 업무</p>
                             <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="대시보드" />
                             <NavItem href="/admin/apply" active={pathname.startsWith("/admin/apply")} icon="📝" label="신청 관리" />
                             <NavItem href="/admin/students" active={pathname.startsWith("/admin/students")} icon="🧑‍🎓" label="원생 관리" />
@@ -230,12 +230,12 @@ export default function AdminShellClient({
                             <NavItem href="/admin/seasonal/dispatch" active={isShuttlePath(pathname)} icon="🚌" label="셔틀 관리" />
 
                             <details className="group mt-4" open={moreOpsActive}>
-                                <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-3 text-gray-300 transition-colors hover:bg-white/10 hover:text-white">
+                                <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]">
                                     <FontFreeIcon name="more_horiz" size={20} />
                                     <span className="flex-1 truncate text-sm font-bold">기타 운영</span>
                                     <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
                                 </summary>
-                                <div className="mt-1 space-y-1 border-l border-white/10 pl-2">
+                                <div className="mt-1 space-y-1 border-l border-[var(--color-academy-line)] pl-2">
                                     <NavItem href="/admin/attendance/report" active={pathname.startsWith("/admin/attendance/report")} icon="📝" label="수업 리포트" compact />
                                     <NavItem href="/admin/requests" active={pathname.startsWith("/admin/requests")} icon="📩" label="학부모 요청" compact />
                                     <NavItem href="/admin/kakao-requests" active={pathname.startsWith("/admin/kakao-requests")} icon="💬" label="카카오 접수함" compact />
@@ -258,7 +258,7 @@ export default function AdminShellClient({
                                             aria-controls="admin-system-tools"
                                             aria-expanded={systemToolsOpen}
                                             onClick={() => setSystemToolsOpen((current) => !current)}
-                                            className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                                            className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-sm text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                                         >
                                             <FontFreeIcon name="sync" size={18} />
                                             <span className="flex-1 truncate">시스템 도구</span>
@@ -281,20 +281,20 @@ export default function AdminShellClient({
                 </nav>
 
                 {/* 사용자 정보 + 로그아웃 */}
-                <div className="p-4 border-t border-white/10 flex-shrink-0">
+                <div className="p-4 border-t border-[var(--color-academy-line)] flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                        <div className="w-9 h-9 bg-[var(--color-academy-primary-soft)] rounded-full flex items-center justify-center text-[var(--color-academy-ink)] font-bold text-sm flex-shrink-0">
                             {userName.charAt(0) || "A"}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-white truncate">{userName}</p>
+                            <p className="text-sm font-medium text-[var(--color-academy-ink)] truncate">{userName}</p>
                             <p className="text-xs text-gray-400 truncate">{userEmail}</p>
                         </div>
                         <form action={logout} className="flex-shrink-0">
                             <button
                                 type="submit"
                                 title="로그아웃"
-                                className="p-1.5 text-gray-400 hover:bg-white/10 hover:text-white rounded-lg transition-colors"
+                                className="p-1.5 text-gray-400 hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)] rounded-lg transition-colors"
                             >
                                 <FontFreeIcon name="logout" size={18} />
                             </button>
@@ -316,25 +316,27 @@ export default function AdminShellClient({
                             <FontFreeIcon name="menu" size={22} />
                         </button>
                         <AppBackButton fallbackHref="/admin" />
-                        <h2 className="truncate font-bold text-gray-700 dark:text-gray-200">관리자 시스템</h2>
+                        <h2 className="truncate font-bold text-gray-700 dark:text-gray-200">학원 관리</h2>
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2 md:gap-4">
                         {/* 알림 벨 — 읽지 않은 알림 수 배지 + 드롭다운 */}
                         <LazyNotificationBell />
-                        <ThemeToggle />
                         <span className="hidden text-sm font-medium text-gray-600 dark:text-gray-300 sm:inline">{userName}님, 환영합니다.</span>
-                        <div className="w-8 h-8 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        <div className="w-8 h-8 bg-[var(--color-academy-primary)] rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                             {userName.charAt(0) || "A"}
                         </div>
                     </div>
                 </header>
-                <div className="admin-table-scope w-full min-w-0 flex-1 p-4 md:p-8">
+                <div className="admin-table-scope w-full min-w-0 flex-1 p-4 md:p-6 xl:p-8">
                     {children}
                 </div>
             </main>
-        </div>
+        </AcademyTheme>
     );
 }
+
+// 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (
@@ -342,11 +344,11 @@ function NavItem({ href, active, icon, label, badge, compact = false }: { href: 
             href={href}
             prefetch={false}
             className={`flex items-center gap-3 px-4 ${compact ? "py-2.5 text-sm" : "py-3"} rounded-lg transition-colors ${active
-                ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold"
-                : "text-gray-300 hover:bg-white/10 hover:text-white"
+                ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] font-bold"
+                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                 }`}
         >
-            <span className={compact ? "text-lg" : "text-xl"}>{icon}</span>
+            <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">{NAV_SYMBOLS[icon] ?? "folder"}</span>
             <span className="flex-1">{label}</span>
             {/* 배지 — 새 신청 건수 등 알림 표시 */}
             {badge != null && badge > 0 && (
