@@ -179,7 +179,7 @@ type MyPageData = {
 const REQUEST_STATUS: Record<string, { label: string; color: string; iconName: string }> = {
     PENDING: { label: "대기중", color: "bg-yellow-100 text-yellow-700", iconName: "schedule" },
     CONFIRMED: { label: "확인됨", color: "bg-blue-100 text-blue-700", iconName: "check_circle" },
-    COMPLETED: { label: "처리완료", color: "bg-green-100 text-green-700", iconName: "check_circle" },
+    COMPLETED: { label: "상담 종결", color: "bg-green-100 text-green-700", iconName: "check_circle" },
     REJECTED: { label: "반려", color: "bg-red-100 text-red-700", iconName: "cancel" },
 };
 

@@ -19,6 +19,8 @@ const CHANNEL_FILTERS = {
 
 type DeliveryRow = {
   id: string;
+  stableEventKey: string | null;
+  recipientUserId: string | null;
   eventType: string;
   trigger: string | null;
   channel: string;
@@ -29,6 +31,9 @@ type DeliveryRow = {
   recipientName: string | null;
   recipientRole: string | null;
   updatedAt: Date;
+  sentAt: Date | null;
+  failedAt: Date | null;
+  nextAttemptAt: Date | null;
 };
 
 function safeErrorMessage(code: string | null) {
@@ -54,7 +59,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const rows = await prisma.$queryRawUnsafe<DeliveryRow[]>(
-      `SELECT d.id,d."eventType",d.trigger,d.channel,d.status,d."attemptCount",d."errorCode",d."updatedAt",
+      `SELECT d.id,d."stableEventKey",d."recipientUserId",d."eventType",d.trigger,d.channel,d.status,d."attemptCount",d."errorCode",d."updatedAt",d."sentAt",d."failedAt",d."nextAttemptAt",
               s.name AS "studentName",u.name AS "recipientName",u.role::text AS "recipientRole"
          FROM "NotificationDelivery" d
          LEFT JOIN "Student" s ON s.id=d."studentId"
@@ -73,16 +78,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       deliveries: rows.map((row) => ({
         id: row.id,
+        stableEventKey: row.stableEventKey,
+        recipientUserId: row.recipientUserId,
         eventType: row.eventType,
         trigger: row.trigger,
         channel: row.channel,
         status: row.status,
         attemptCount: row.attemptCount,
         errorMessage: safeErrorMessage(row.errorCode),
+        partialRetry: row.errorCode === "PARTIAL_DELIVERY_RETRY_SCHEDULED",
         studentName: row.studentName,
         recipientName: row.recipientName,
         recipientRole: row.recipientRole,
         updatedAt: row.updatedAt.toISOString(),
+        sentAt: row.sentAt?.toISOString() ?? null,
+        failedAt: row.failedAt?.toISOString() ?? null,
+        nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
       })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

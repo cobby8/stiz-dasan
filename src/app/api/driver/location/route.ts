@@ -53,8 +53,7 @@ export async function POST(request: Request) {
     );
 
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[driver/location POST]", e);
+  } catch {
     return NextResponse.json({ error: "저장 실패" }, { status: 500 });
   }
 }

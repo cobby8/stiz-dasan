@@ -54,7 +54,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
   const prevDate = addDays(viewDate, -1);
   const nextDate = addDays(viewDate, 1);
 
-  const { rows, boarding, driverLabel } = await loadUnifiedDriverRun(viewDate);
+  const { rows, boarding, boardingReliable, driverLabel } = await loadUnifiedDriverRun(viewDate);
 
   return (
     <div className="min-h-screen bg-white py-2" style={{ colorScheme: "light" }}>
@@ -64,6 +64,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         date={viewDate}
         rows={rows}
         initialBoarding={boarding}
+        initialBoardingReliable={boardingReliable}
         prevDate={prevDate}
         nextDate={nextDate}
         today={today}

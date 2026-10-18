@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { resolveRunToken, getBoardingMap, setBoarding, type BoardingStatus } from "@/lib/seasonal/shuttleRun";
+import { resolveRunToken, setBoarding, type BoardingStatus } from "@/lib/seasonal/shuttleRun";
+import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 // 기사님 화면이 하나로 합쳐져(그날 특강+정규 한 목록), 정규 링크로 열어도 특강 행을 체크할 수 있어야 한다.
 import { isRegularRunToken } from "@/lib/shuttle/regularRun";
 
@@ -25,11 +26,17 @@ function validDate(s: unknown): string | null {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const run = await resolveRunToken(url.searchParams.get("token") ?? "");
-  if (!run) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
+  const regularOk = run ? false : await isRegularRunToken(url.searchParams.get("token") ?? "");
+  if (!run && !regularOk) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
   // 화면이 표시하는 날짜(effectiveDate)로 조회한다. date 쿼리가 유효하면 그 날, 없으면 링크 날짜(run.date)로 폴백(하위호환).
-  const date = validDate(url.searchParams.get("date")) ?? run.date;
-  const [pickup, dropoff] = await Promise.all([getBoardingMap(date, "PICKUP"), getBoardingMap(date, "DROPOFF")]);
-  return NextResponse.json({ boarding: { PICKUP: pickup, DROPOFF: dropoff } }, { headers: { "Cache-Control": "no-store" } });
+  const date = validDate(url.searchParams.get("date")) ?? run?.date;
+  if (!date) return NextResponse.json({ error: "날짜를 확인해주세요." }, { status: 400 });
+  try {
+    const [pickup, dropoff] = await Promise.all([readDriverBoarding(date, "PICKUP"), readDriverBoarding(date, "DROPOFF")]);
+    return NextResponse.json({ ok: true, boarding: { PICKUP: pickup.boarding, DROPOFF: dropoff.boarding }, checkedAt: { PICKUP: pickup.checkedAt, DROPOFF: dropoff.checkedAt } }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "저장 상태를 조회하지 못했습니다." }, { status: 503 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -55,8 +62,7 @@ export async function POST(request: Request) {
       status, studentName: body.studentName ?? null, via: "driver",
     });
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[shuttle/boarding POST]", e);
+  } catch {
     return NextResponse.json({ error: "저장하지 못했습니다." }, { status: 500 });
   }
 }

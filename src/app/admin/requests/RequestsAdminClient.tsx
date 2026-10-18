@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { updateRequestStatus, deleteParentRequest } from "@/app/actions/admin";
+import { updateRequestStatus, getParentRequestStatusForAdmin, deleteParentRequest } from "@/app/actions/admin";
 
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
     ABSENCE: { label: "결석 신청", color: "bg-red-100 text-red-700" },
@@ -13,7 +13,7 @@ const TYPE_LABELS: Record<string, { label: string; color: string }> = {
 const STATUS_OPTIONS = [
     { value: "PENDING", label: "대기중", color: "bg-yellow-100 text-yellow-700", iconName: "schedule" },
     { value: "CONFIRMED", label: "확인됨", color: "bg-blue-100 text-blue-700", iconName: "check_circle" },
-    { value: "COMPLETED", label: "처리완료", color: "bg-green-100 text-green-700", iconName: "check_circle" },
+    { value: "COMPLETED", label: "상담 종결", color: "bg-green-100 text-green-700", iconName: "check_circle" },
     { value: "REJECTED", label: "반려", color: "bg-red-100 text-red-700", iconName: "cancel" },
 ];
 
@@ -162,6 +162,8 @@ export default function RequestsAdminClient({
     const [filter, setFilter] = useState<string>(initialStatusFilter);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
+    const [feedback, setFeedback] = useState<string | null>(null);
+    const [uncertain, setUncertain] = useState<Record<string, { status: string; note: string }>>({});
     const [isPending, startTransition] = useTransition();
     const requestedInitialLoad = useRef(false);
 
@@ -226,9 +228,12 @@ export default function RequestsAdminClient({
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div>
-                {/* 설명문구 제거: 제목 + 아래 유형 배지로 이미 자명 */}
+                {/* 일반 메시지의 상담 상태를 실제 운영 반영과 구분한다. */}
                 <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">학부모 요청 관리</h1>
+                <p className="mt-2 text-sm text-gray-500">상담 상태와 답변을 관리합니다. 상담 종결은 출결·셔틀 변경 완료를 의미하지 않습니다.</p>
             </div>
+            {feedback && <p role="status" className="rounded-xl border border-gray-200 p-3 text-sm">{feedback}</p>}
+            {loadError && requests.length > 0 && <p role="alert" className="text-sm text-red-600">목록을 새로 불러오지 못했습니다. 이전 내용을 표시합니다.</p>}
 
             {/* 필터 탭 */}
             <div className="flex gap-2 flex-wrap">
@@ -236,7 +241,7 @@ export default function RequestsAdminClient({
                     { value: "ALL", label: "전체" },
                     { value: "PENDING", label: "대기중" },
                     { value: "CONFIRMED", label: "확인됨" },
-                    { value: "COMPLETED", label: "처리완료" },
+                    { value: "COMPLETED", label: "상담 종결" },
                 ].map(f => (
                     <button key={f.value}
                         onClick={() => {
@@ -323,6 +328,7 @@ export default function RequestsAdminClient({
                                         <div>
                                             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">관리자 메모/답변</label>
                                             <textarea
+                                                disabled={isPending || !!uncertain[req.id]}
                                                 value={adminNotes[req.id] ?? req.adminNote ?? ""}
                                                 onChange={e => setAdminNotes(prev => ({ ...prev, [req.id]: e.target.value }))}
                                                 placeholder="학부모에게 전달할 답변을 작성하세요"
@@ -331,15 +337,44 @@ export default function RequestsAdminClient({
                                             />
                                         </div>
 
+                                        {uncertain[req.id] && <button type="button" disabled={isPending} className="text-sm font-bold underline" onClick={() => startTransition(async () => {
+                                            try {
+                                                const stored = await getParentRequestStatusForAdmin(req.id);
+                                                const expected = uncertain[req.id];
+                                                if (!stored) { setFeedback("요청을 찾을 수 없습니다. 입력한 답변은 유지됩니다."); return; }
+                                                if (stored.status === expected.status && (stored.adminNote ?? "") === expected.note) {
+                                                    setFeedback("상담 상태 저장을 확인했습니다. 알림 결과는 확인되지 않아 다시 보내지 않습니다.");
+                                                } else {
+                                                    setFeedback("현재 저장 내용이 입력값과 다릅니다. 답변을 유지했으니 현재 상태를 확인하고 다시 처리해 주세요.");
+                                                }
+                                                setUncertain(prev => { const next = { ...prev }; delete next[req.id]; return next; });
+                                                await loadRequests({ status: filter, offset: 0 });
+                                            } catch { setFeedback("현재 상태도 조회하지 못했습니다. 입력한 답변을 유지하고 중복 처리를 막았습니다."); }
+                                        })}>저장 상태 다시 조회</button>}
                                         {/* 상태 변경 버튼 */}
                                         <div className="flex gap-2 flex-wrap">
                                             {STATUS_OPTIONS.filter(s => s.value !== req.status).map(s => {
                                                 return (
                                                     <button key={s.value}
-                                                        disabled={isPending}
+                                                        disabled={isPending || !!uncertain[req.id]}
                                                         onClick={() => startTransition(async () => {
-                                                            await updateRequestStatus(req.id, s.value, adminNotes[req.id] ?? req.adminNote ?? undefined);
-                                                            await loadRequests({ status: filter, offset: 0 });
+                                                            const note = adminNotes[req.id] ?? req.adminNote ?? "";
+                                                            setFeedback(null);
+                                                            try {
+                                                                const result = await updateRequestStatus(req.id, s.value, note);
+                                                                if (!result.saved) {
+                                                                    setUncertain(prev => ({ ...prev, [req.id]: { status: s.value, note } }));
+                                                                    setFeedback("저장 결과 확인이 필요합니다. 입력한 답변은 유지됩니다. 상태를 다시 조회해 주세요.");
+                                                                    return;
+                                                                }
+                                                                setFeedback(result.notification === "REGISTERED"
+                                                                    ? `상담 상태 저장 완료 · 사이트 알림 등록 완료 · ${result.push === "SENT" ? "푸시 전송 접수" : result.push === "NO_SUBSCRIPTION" ? "푸시 미등록" : result.push === "NOT_CONFIGURED" ? "푸시 설정 필요" : result.push === "PARTIAL" ? "푸시 일부 실패" : result.push === "FAILED" ? "푸시 전송 실패" : "푸시 결과 확인 필요"}`
+                                                                    : result.notification === "UNCHANGED" ? "기존 저장 상태를 확인했습니다. 알림은 다시 보내지 않았습니다." : "상담 상태 저장 완료 · 사이트 알림 등록 결과 확인 필요. 자동 재발송하지 않습니다.");
+                                                                await loadRequests({ status: filter, offset: 0 });
+                                                            } catch {
+                                                                setUncertain(prev => ({ ...prev, [req.id]: { status: s.value, note } }));
+                                                                setFeedback("저장 응답을 확인하지 못했습니다. 입력한 답변은 유지됩니다. 먼저 상태를 다시 조회해 주세요.");
+                                                            }
                                                         })}
                                                         className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition hover:shadow-sm ${s.color}`}
                                                     >
@@ -348,7 +383,7 @@ export default function RequestsAdminClient({
                                                 );
                                             })}
                                             <button
-                                                disabled={isPending}
+                                                disabled={isPending || !!uncertain[req.id]}
                                                 onClick={() => {
                                                     if (confirm("이 요청을 삭제하시겠습니까?")) {
                                                         startTransition(async () => {

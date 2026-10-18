@@ -3,6 +3,7 @@ import { setRegularBoarding, type BoardingStatus } from "@/lib/shuttle/regularRu
 // 기사님 화면이 하나로 합쳐져(그날 특강+정규 한 목록), 어느 쪽 링크로 열어도 정규 행을 체크할 수 있어야 한다.
 // 판정 함수 자체는 기존 것(isRegularRunToken / resolveRunToken)을 그대로 쓴다.
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
+import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,18 @@ function validDate(s: unknown): string | null {
   return ok ? s : null;
 }
 
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  if (!(await isAnyDriverRunToken(url.searchParams.get("token") ?? ""))) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 403 });
+  const date = validDate(url.searchParams.get("date"));
+  if (!date) return NextResponse.json({ error: "날짜를 확인해주세요." }, { status: 400 });
+  try {
+    return NextResponse.json({ ok: true, ...await readDriverBoarding(date, "REGULAR") }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ error: "저장 상태를 조회하지 못했습니다." }, { status: 503 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => null)) as
@@ -37,8 +50,7 @@ export async function POST(request: Request) {
     const date = validDate(body?.date) ?? todayKST();
     await setRegularBoarding({ date, rowId, status, studentName: body?.studentName ?? null });
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[regular-boarding POST]", e);
+  } catch {
     return NextResponse.json({ error: "저장하지 못했습니다." }, { status: 500 });
   }
 }

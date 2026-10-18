@@ -56,6 +56,11 @@
 
 # Architecture
 
+## 2026-10-19: 저장·전달 결과 확인 계층
+- `parent-staff-status.ts`는 학생·수신자별 채널 결과를 요약한다. 부모 셔틀 GET은 소유 자녀만, 교사 공지 작업 조회는 작성자·담당 반만 허용한다. 기존 Notice ID·NotificationDelivery를 재사용한다.
+- 기사 `driverStatusRead/driverStatusClient`는 기존 정규·특강 저장 경로를 유지한 POST→GET 대조를 제공한다. `driverGpsController`는 위치 수집과 전송·중단 응답을 분리한다.
+- `admin-delivery-status.ts`는 기존 내부 결석·셔틀 장부의 안정 사건·수신자 키로 채널을 묶는다. 일반 문의는 별도 관리자 재조회 액션이며 실제 출결·배차 변경을 수행하지 않는다.
+
 ## 스태프/기사 모바일 역할 구조 (2026-07-21)
 - `Role.DRIVER`는 셔틀 기사 전용 스태프 역할이다. 로그인 후 기본 이동 경로는 `/staff/shuttle`이며, 코치/강사는 기존 `/staff` 수업 홈을 유지한다.
 - 스태프 초대는 코치/강사(`INSTRUCTOR`)와 셔틀 기사(`DRIVER`) 모두 개인 초대 링크와 휴대폰 OTP 기반 가입 흐름을 사용한다.

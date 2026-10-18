@@ -11,6 +11,7 @@ import {
   type ShuttleExceptionKind,
 } from "@/lib/shuttle/dayExceptionRules";
 import type { ShuttleExceptionOptions } from "@/lib/shuttle/parent-shuttle-exception";
+import { deliveryStatusText, matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 
 export default function ShuttleExceptionClient({ initial }: { initial: ShuttleExceptionOptions }) {
   const router = useRouter();
@@ -23,21 +24,51 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [uncertain, setUncertain] = useState<Record<string, unknown> | null>(null);
+
+  async function reconcile(body: Record<string, unknown>) {
+    try {
+      const response = await fetch(`/api/mypage/shuttle-exception${body.action === "cancel" ? `?id=${encodeURIComponent(String(body.id))}` : ""}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("LOOKUP_FAILED");
+      const data = await response.json();
+      const found = body.action === "cancel" ? (data.record?.canceled ? data.record : null) :
+        (data.upcoming as ShuttleExceptionOptions["upcoming"]).find((row) => matchesShuttleChange(row, body));
+      if (!found) throw new Error("NOT_CONFIRMED");
+      setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 운행 명단 변경 기록 저장됨. ${deliveryStatusText(found.notificationStatus)}`);
+      setUncertain(null);
+      setError("");
+      router.refresh();
+      return true;
+    } catch {
+      setError("결과 확인 필요: 저장 여부를 아직 확인하지 못했습니다. 다시 제출하지 말고 저장 결과를 확인해 주세요.");
+      setUncertain(body);
+      return false;
+    }
+  }
 
   async function send(body: Record<string, unknown>) {
     setError("");
     setDone("");
+    try {
     const response = await fetch("/api/mypage/shuttle-exception", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json();
     if (!response.ok) {
+      if (response.status >= 500) return reconcile(body);
       setError(data?.error || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       return false;
     }
+    if (!data.ok) return reconcile(body);
+    const status: DeliveryStatusSummary | null = data.notificationStatus ?? null;
+    setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 운행 명단 변경 기록 저장됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${deliveryStatusText(status)}${status && !status.driverLinked ? " · 담당 기사 연결·알림 확인 필요" : ""}`);
+    setUncertain(null);
     return true;
+    } catch {
+      return reconcile(body);
+    }
   }
 
   function submit() {
@@ -51,7 +82,6 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         note,
       });
       if (!ok) return;
-      setDone("기사님께 전달됐습니다.");
       setLocation("");
       setNote("");
       router.refresh();
@@ -61,7 +91,6 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
   function cancel(id: string) {
     startTransition(async () => {
       if (!(await send({ action: "cancel", id }))) return;
-      setDone("취소했습니다.");
       router.refresh();
     });
   }
@@ -83,14 +112,15 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">셔틀 당일 변경</h1>
         {/* 결석과 헷갈리지 않게 선을 긋는다. 안 그러면 결석인데 여기에 적는다. */}
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          수업은 오지만 <b>셔틀만</b> 바꿀 때 쓰세요. 기사님 화면에 바로 표시됩니다.
+          수업은 오지만 <b>셔틀만</b> 바꿀 때 쓰세요. 변경은 운행 명단에 사용할 기록으로 저장됩니다.
           <br />
           수업 자체를 빠지시면 <b>결석 미리 알리기</b>에서 신고해 주세요.
         </p>
       </div>
 
-      {done && <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
+      {done && <p role="status" className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {uncertain && <button type="button" disabled={pending} onClick={() => startTransition(async () => { await reconcile(uncertain); })} className="min-h-11 rounded-xl border px-3 text-sm font-bold">저장 결과 다시 확인</button>}
 
       {initial.upcoming.length > 0 && (
         <section className="space-y-2">
@@ -101,6 +131,8 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                 <p className="text-sm font-black text-blue-900 dark:text-blue-200">
                   {item.serviceDate} · {item.studentName}
                 </p>
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">변경 저장 완료 · {deliveryStatusText(item.notificationStatus)}</p>
+                {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사 연결·알림 확인 필요</p>}
                 <p className="text-xs font-bold text-blue-800 dark:text-blue-300">
                   {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction} ·{" "}
                   {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}
@@ -109,7 +141,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
               </div>
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || Boolean(uncertain)}
                 onClick={() => cancel(item.id)}
                 className="min-h-11 shrink-0 rounded-xl border border-blue-300 px-3 text-xs font-bold text-blue-900 disabled:opacity-50 dark:border-blue-800 dark:text-blue-200"
               >
@@ -120,7 +152,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         </section>
       )}
 
-      <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm dark:bg-gray-800">
+      <fieldset disabled={pending || Boolean(uncertain)} aria-label="셔틀 변경 내용" className="min-w-0 space-y-4 rounded-2xl border-0 bg-white p-5 shadow-sm dark:bg-gray-800">
         {initial.children.length > 1 && (
           <select
             value={studentId}
@@ -221,13 +253,13 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
 
         <button
           type="button"
-          disabled={pending || !studentId || (kind === "LOCATION" && !location.trim())}
+          disabled={pending || Boolean(uncertain) || !studentId || (kind === "LOCATION" && !location.trim())}
           onClick={submit}
           className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
         >
-          {pending ? "보내는 중..." : "기사님께 알리기"}
+          {pending ? "저장·알림 결과 확인 중..." : "변경 저장하고 알림 요청"}
         </button>
-      </section>
+      </fieldset>
     </main>
   );
 }

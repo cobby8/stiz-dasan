@@ -2124,40 +2124,68 @@ export async function createParentRequest(data: {
     revalidatePath("/admin/requests");
 }
 
-// 관리자가 요청 상태 변경 + 메모 작성
+// 일반 메시지 상담 상태이며 실제 출결·배차 반영을 의미하지 않는다.
 export async function updateRequestStatus(id: string, status: string, adminNote?: string) {
     await requireAdmin();
-    try {
-        await prisma.$executeRawUnsafe(
-            `UPDATE "ParentRequest" SET status = $1, "adminNote" = $2, "updatedAt" = NOW() WHERE id = $3`,
-            status, adminNote || null, id,
-        );
-
-        // 학부모에게 처리 결과 알림
-        const reqRows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT "userId", title FROM "ParentRequest" WHERE id = $1`, id
-        );
-        if (reqRows[0]) {
-            const parentId = reqRows[0].userId ?? reqRows[0].userid;
-            const statusLabels: Record<string, string> = {
-                CONFIRMED: "확인됨", COMPLETED: "처리 완료", REJECTED: "반려"
-            };
-            await createNotificationRecord({
-                userId: parentId,
-                type: "REQUEST",
-                title: "요청 처리 알림",
-                message: `"${reqRows[0].title}" → ${statusLabels[status] || status}`,
-                linkUrl: "/mypage",
-            });
-        }
-    } catch (e) {
-        console.error("Failed to update request status:", e);
-        throw new Error("요청 상태 변경 실패");
+    if (!id || !["PENDING", "CONFIRMED", "COMPLETED", "REJECTED"].includes(status)) {
+        throw new Error("허용되지 않은 상담 상태입니다.");
     }
+    if (adminNote !== undefined && adminNote.length > 2000) throw new Error("답변은 2,000자 이내로 입력해 주세요.");
+    const before = await getParentRequestStatusForAdmin(id);
+    if (!before) throw new Error("요청을 찾을 수 없습니다. 목록을 다시 확인해 주세요.");
+    const note = adminNote === undefined ? before.adminNote : adminNote || null;
+    // 이미 저장된 동일 상태/메모는 재전송하지 않는다.
+    if (before.status === status && before.adminNote === note) {
+        return { saved: true as const, notification: "UNCHANGED" as const };
+    }
+    let updated;
+    try {
+        updated = await prisma.$queryRawUnsafe<{ id: string }[]>(
+            `UPDATE "ParentRequest" SET status = $1, "adminNote" = $2, "updatedAt" = NOW()
+             WHERE id = $3 AND status = $4 AND "adminNote" IS NOT DISTINCT FROM $5 RETURNING id`,
+            status, note, id, before.status, before.adminNote,
+        );
+    } catch {
+        return { saved: false as const, notification: "UNKNOWN" as const };
+    }
+    if (!updated.length) return { saved: false as const, notification: "UNKNOWN" as const };
     revalidateRequestAdminCaches();
     revalidatePath("/admin/requests");
     revalidatePath("/admin");
     revalidatePath("/mypage");
+
+    let notification: "REGISTERED" | "FAILED" | "UNKNOWN" = "UNKNOWN";
+    try {
+        // 이 액션만 알림 등록 결과를 반환한다. 공용 알림 함수의 다른 호출은 변경하지 않는다.
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
+             VALUES (gen_random_uuid()::text, $1, 'REQUEST', '메시지 상담 상태 안내', $2, '/mypage', false, NOW())`,
+            before.userId,
+            `"${before.title}" → ${({ PENDING: "상담 대기", CONFIRMED: "내용 확인", COMPLETED: "상담 종결", REJECTED: "반려" } as Record<string, string>)[status]}. 출결·셔틀 변경 여부는 해당 화면에서 확인해 주세요.`,
+        );
+        notification = "REGISTERED";
+    } catch {
+        // 응답 유실 시 실제 등록됐을 수 있으므로 자동 재발송하지 않는다.
+        notification = "UNKNOWN";
+    }
+    let push: string = "NOT_ATTEMPTED";
+    if (notification === "REGISTERED") {
+        try {
+            const { sendPushToUser } = await import("@/lib/pushNotification");
+            push = (await sendPushToUser(before.userId, {
+                title: "메시지 상담 상태 안내", body: "상담 상태가 변경되었습니다. 보낸 메시지에서 확인해 주세요.", url: "/mypage", tag: "REQUEST",
+            })).status;
+        } catch { push = "UNKNOWN"; }
+    }
+    return { saved: true as const, notification, push };
+}
+
+export async function getParentRequestStatusForAdmin(id: string) {
+    await requireAdmin();
+    const rows = await prisma.$queryRawUnsafe<{ id: string; userId: string; title: string; status: string; adminNote: string | null }[]>(
+        `SELECT id, "userId", title, status, "adminNote" FROM "ParentRequest" WHERE id = $1`, id,
+    );
+    return rows[0] ?? null;
 }
 
 // 요청 삭제 (관리자)

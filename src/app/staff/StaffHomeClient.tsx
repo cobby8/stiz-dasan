@@ -7,7 +7,8 @@ import {
   savePlannedClassContent,
   startClassSession,
 } from "@/app/actions/staff-sessions";
-import { createStaffClassNotice } from "@/app/actions/staff-notices";
+import { createStaffClassNotice, getStaffClassNoticeStatus } from "@/app/actions/staff-notices";
+import { deliveryStatusText, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
@@ -40,10 +41,66 @@ export default function StaffHomeClient({
   const [noticeTarget, setNoticeTarget] = useState<StaffTodayClass | null>(null);
   const [noticeTitle, setNoticeTitle] = useState("");
   const [noticeContent, setNoticeContent] = useState("");
+  const noticeOperation = useRef<{ classId: string; id: string } | null>(null);
+  const [noticeResult, setNoticeResult] = useState("");
+  const [noticeSaved, setNoticeSaved] = useState(false);
+  const [noticeUncertain, setNoticeUncertain] = useState(false);
+  const [noticeResumeNeeded, setNoticeResumeNeeded] = useState(false);
   const [peopleTarget, setPeopleTarget] = useState<StaffTodayClass | null>(null);
   const [billingTarget, setBillingTarget] = useState<{ lesson: StaffTodayClass; student?: { id: string; name: string } } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  function describeNotice(result: { ok: false; message: string } | { ok: true; notificationStatus: DeliveryStatusSummary | null; recipientCount?: number | null; deliveryLookupFailed?: boolean; deliveryAttemptFailedCount?: number }) {
+    if (!result.ok) { setError(result.message); return false; }
+    const targetMismatch = typeof result.recipientCount === "number" && result.notificationStatus != null && result.recipientCount !== result.notificationStatus.recipientCount;
+    const attention = Boolean(result.deliveryLookupFailed || result.deliveryAttemptFailedCount || targetMismatch);
+    setNoticeSaved(true);
+    setNoticeUncertain(false);
+    const deliveryText = result.recipientCount === 0 && result.notificationStatus?.recipientCount === 0
+      ? "연결된 학부모 수신자 0명 — 알림 대상이 없습니다."
+      : deliveryStatusText(result.notificationStatus);
+    setNoticeResult(`공지 저장 완료. ${deliveryText}${attention ? " 수신 대상·전달 결과 확인이 필요합니다." : ""}`);
+    setNoticeResumeNeeded(Boolean(attention || result.notificationStatus?.unknownCount || (result.recipientCount && !result.notificationStatus?.recipientCount)));
+    setError(null);
+    return true;
+  }
+
+  async function checkNotice() {
+    const operation = noticeOperation.current;
+    if (!operation) return;
+    try {
+      const result = await getStaffClassNoticeStatus({ classId: operation.classId, operationId: operation.id });
+      if (noticeOperation.current?.id !== operation.id) return;
+      if (!result.ok && "code" in result && result.code === "NOT_FOUND") {
+        // 조회 성공·기록 없음은 조회 실패와 다르다. 작업 ID를 유지한 재시도만 허용한다.
+        setNoticeSaved(false); setNoticeUncertain(false); setError(result.message);
+        return;
+      }
+      if (result.ok) { setNoticeTitle(result.savedTitle); setNoticeContent(result.savedContent); }
+      if (!describeNotice(result)) setNoticeUncertain(true);
+    } catch {
+      if (noticeOperation.current?.id !== operation.id) return;
+      setNoticeUncertain(true);
+      setError("결과 확인 필요: 저장 여부를 조회하지 못했습니다. 새 공지를 만들지 말고 저장 결과를 다시 확인해 주세요.");
+    }
+  }
+
+  useEffect(() => {
+    if (!noticeTarget) return;
+    setNoticeResult(""); setNoticeSaved(false); setNoticeUncertain(false); setNoticeResumeNeeded(false); setError(null);
+    let stored: string | null = null;
+    try { stored = sessionStorage.getItem(`staff-notice-operation:${noticeTarget.id}`); } catch { /* 저장소가 차단되어도 현재 작업 ID는 ref에 남긴다. */ }
+    if (stored) {
+      noticeOperation.current = { classId: noticeTarget.id, id: stored };
+      setNoticeUncertain(true);
+      void checkNotice();
+    } else if (noticeOperation.current?.classId !== noticeTarget.id) {
+      noticeOperation.current = null; setNoticeTitle(""); setNoticeContent("");
+    }
+    // 모달을 다시 열면 기존 작업을 먼저 조회한다. 새 공지·알림은 만들지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noticeTarget?.id]);
 
   const runningClass = classes.find((lesson) => lesson.sessionStatus === "IN_PROGRESS");
   const focusClass = runningClass || classes.find((lesson) => lesson.sessionStatus !== "COMPLETED") || classes[0];
@@ -97,20 +154,30 @@ export default function StaffHomeClient({
     setPeopleTarget(lesson);
   }
 
-  function sendNotice() {
+  function sendNotice(resumeDelivery = false) {
     if (!noticeTarget) return;
+    if (noticeSaved && !resumeDelivery) return;
     if (!window.confirm("이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까?")) return;
+    const operation = noticeOperation.current?.classId === noticeTarget.id ? noticeOperation.current : { classId: noticeTarget.id, id: crypto.randomUUID() };
+    noticeOperation.current = operation;
+    try { sessionStorage.setItem(`staff-notice-operation:${noticeTarget.id}`, operation.id); } catch { /* 현재 열린 화면의 ref로 중복을 막는다. */ }
     setError(null);
     startTransition(async () => {
-      const result = await createStaffClassNotice({ classId: noticeTarget.id, title: noticeTitle, content: noticeContent });
+      try {
+      const result = await createStaffClassNotice({ classId: noticeTarget.id, title: noticeTitle, content: noticeContent, operationId: operation.id, resumeDelivery });
+      if (noticeOperation.current?.id !== operation.id) return;
       if (!result.ok) {
         setError(result.message);
         return;
       }
-      window.alert(`${result.recipientCount}명에게 공지를 발송했습니다.`);
-      setNoticeTarget(null);
-      setNoticeTitle("");
-      setNoticeContent("");
+      describeNotice(result);
+      if (result.deliveryLookupFailed) setError("공지는 저장되었습니다. 수신자·알림 결과 확인이 필요합니다. 같은 공지의 결과를 확인해 주세요.");
+      if ("deliveryResumeHeld" in result && result.deliveryResumeHeld) { setNoticeResumeNeeded(false); setError("기존 수신자 근거가 없어 알림 재처리를 보류했습니다. 공지는 저장되어 있으며 학원 관리자에게 확인해 주세요."); }
+      if ("deliveryAttemptFailedCount" in result && result.deliveryAttemptFailedCount) setError("공지는 저장되었습니다. 일부 알림 장부 생성에 실패했습니다. 같은 공지에서 누락된 알림만 재처리할 수 있습니다.");
+      } catch {
+        setNoticeUncertain(true);
+        await checkNotice();
+      }
     });
   }
 
@@ -219,11 +286,15 @@ export default function StaffHomeClient({
 
       {noticeTarget && (
         <Modal title="수업 공지 작성" subtitle={`${noticeTarget.name} 학부모에게만 발송합니다.`} onClose={() => setNoticeTarget(null)} labelledBy="notice-title">
-          <input value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="공지 제목" className="mt-4 min-h-12 w-full rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800" />
-          <textarea value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="mt-3 w-full rounded-xl border border-gray-200 bg-white p-3 leading-6 dark:border-gray-700 dark:bg-gray-800" />
-          <VoiceToTextButton onText={(text) => setNoticeContent((current) => current ? `${current}\n${text}` : text)} />
+          <input disabled={noticeSaved || noticeUncertain || pending} value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="공지 제목" className="mt-4 min-h-12 w-full rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800" />
+          <textarea disabled={noticeSaved || noticeUncertain || pending} value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="mt-3 w-full rounded-xl border border-gray-200 bg-white p-3 leading-6 dark:border-gray-700 dark:bg-gray-800" />
+          {!noticeSaved && !noticeUncertain && !pending && <VoiceToTextButton onText={(text) => setNoticeContent((current) => current ? `${current}\n${text}` : text)} />}
           <ErrorMessage error={error} />
-          <ModalActions pending={pending} onCancel={() => setNoticeTarget(null)} onConfirm={sendNotice} confirmLabel="공지 발송" disabled={!noticeTitle.trim() || !noticeContent.trim()} />
+          {noticeResult && <p role="status" className="mt-3 rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-800">{noticeResult}<br />푸시 접수는 학부모 열람을 의미하지 않습니다. 일부 기기 실패·재시도 대기 건수는 접수 건수와 합산하지 않습니다.</p>}
+          {(noticeSaved || noticeUncertain) && <button type="button" disabled={pending} onClick={() => startTransition(checkNotice)} className="mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">저장·전달 결과 다시 확인</button>}
+          {noticeSaved && noticeResumeNeeded && <button type="button" disabled={pending} onClick={() => sendNotice(true)} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">같은 공지의 누락 알림 재처리</button>}
+          {noticeSaved && <button type="button" disabled={pending} onClick={() => { noticeOperation.current = null; try { sessionStorage.removeItem(`staff-notice-operation:${noticeTarget.id}`); } catch {} setNoticeSaved(false); setNoticeUncertain(false); setNoticeResult(""); setNoticeTitle(""); setNoticeContent(""); setError(null); }} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">새 공지 작성</button>}
+          <ModalActions pending={pending} onCancel={() => setNoticeTarget(null)} onConfirm={() => sendNotice()} confirmLabel="공지 저장·알림 요청" disabled={noticeSaved || noticeUncertain || !noticeTitle.trim() || !noticeContent.trim()} />
         </Modal>
       )}
 
@@ -289,4 +360,4 @@ function Modal({ title, subtitle, onClose, labelledBy, children }: { title: stri
 }
 
 function ModalActions({ pending, onCancel, onConfirm, confirmLabel, disabled = false }: { pending: boolean; onCancel: () => void; onConfirm: () => void; confirmLabel: string; disabled?: boolean }) { return <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" disabled={pending} onClick={onCancel} className="min-h-12 rounded-xl border border-gray-200 font-bold dark:border-gray-700">취소</button><button type="button" disabled={pending || disabled} onClick={onConfirm} className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">{confirmLabel}</button></div>; }
-function ErrorMessage({ error }: { error: string | null }) { return error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null; }
+function ErrorMessage({ error }: { error: string | null }) { return error ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null; }

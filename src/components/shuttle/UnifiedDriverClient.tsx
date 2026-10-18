@@ -6,6 +6,7 @@ import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
 import DriverDateNav from "@/components/shuttle/DriverDateNav";
 import GpsShareBar from "@/components/shuttle/GpsShareBar";
 import { useGpsShare } from "@/hooks/useGpsShare";
+import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { countProgress, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
@@ -30,12 +31,13 @@ function fmtDate(iso: string): string {
 }
 
 export default function UnifiedDriverClient({
-  token, date, rows, initialBoarding, prevDate, nextDate, today, driverLabel,
+  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel,
 }: {
   token: string;
   date: string;
   rows: UnifiedRow[];
   initialBoarding: Record<string, Status>;
+  initialBoardingReliable?: boolean;
   prevDate: string | null;
   nextDate: string | null;
   today: string;
@@ -43,6 +45,10 @@ export default function UnifiedDriverClient({
 }) {
   const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [saveStates, setSaveStates] = useState<Record<string, { state: "saving" | "saved" | "failed" | "unknown"; message: string }>>({});
+  const locks = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "ended">("idle");
 
@@ -55,7 +61,7 @@ export default function UnifiedDriverClient({
   const [savingOrder, setSavingOrder] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const { state: gpsState, lastSentAt, accuracy, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
+  const { state: gpsState, transmission, lastSentAt, accuracy, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
   function handleRunStart() { setRunState("running"); gpsStart(); }
   async function handleRunEnd() { await gpsStop(); setRunState("ended"); }
 
@@ -155,25 +161,31 @@ export default function UnifiedDriverClient({
     }
   }
 
-  async function setStatus(rider: UnifiedRider, next: Status) {
+  async function setStatus(rider: UnifiedRider, next: Status, verifyOnly = false) {
     const key = rider.key;
-    if (busy[key]) return;
+    if (!initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
+    locks.current.add(key);
     const cur = boarding[key] ?? null;
     const target: Status | null = cur === next ? null : next; // 같은 버튼 다시 누르면 대기로
-    setBoarding((b) => { const n = { ...b }; if (target) n[key] = target; else delete n[key]; return n; });
     setBusy((x) => ({ ...x, [key]: true }));
+    setSaveStates((states) => ({ ...states, [key]: { state: "saving", message: verifyOnly ? "저장 상태 확인 중…" : "저장 중…" } }));
     try {
       // 🚨 저장 경로는 종류별로 예전 그대로. 파라미터 이름·저장 키를 바꾸면 과거 기록과 끊긴다.
       const url = rider.kind === "SEASONAL" ? "/api/shuttle/boarding" : "/api/shuttle/regular-boarding";
       const body = rider.kind === "SEASONAL"
         ? { token, direction: rider.direction, shuttleRequestId: rider.checkId, status: target, studentName: rider.name, date }
         : { token, rowId: rider.checkId, status: target, studentName: rider.name, date };
-      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!r.ok) throw new Error();
+      const read = () => readBoardingResult(url, token, date, rider.checkId, rider.kind === "SEASONAL" ? rider.direction : undefined);
+      const result = verifyOnly ? { ...await read(), matched: true } : await saveAndVerifyBoarding(url, body, read);
+      if (!mounted.current) return;
+      setBoarding((b) => { const n = { ...b }; if (result.status) n[key] = result.status; else delete n[key]; return n; });
+      const time = result.checkedAt ? new Date(result.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : null;
+      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "서버 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : "변경 미반영 · 서버의 현재 상태를 표시합니다" } }));
     } catch {
-      setBoarding((b) => { const n = { ...b }; if (cur) n[key] = cur; else delete n[key]; return n; });
+      if (mounted.current) setSaveStates((states) => ({ ...states, [key]: { state: "unknown", message: "결과 확인 필요 · 저장 상태를 다시 확인해주세요" } }));
     } finally {
-      setBusy((x) => ({ ...x, [key]: false }));
+      locks.current.delete(key);
+      if (mounted.current) setBusy((x) => ({ ...x, [key]: false }));
     }
   }
 
@@ -202,7 +214,7 @@ export default function UnifiedDriverClient({
         <div>
           <p className="text-[20px] font-black text-gray-900">🚌 스티즈 셔틀 운행</p>
           <p className="mt-0.5 text-[15px] font-bold text-gray-600">
-            {fmtDate(date)} · 체크 {progress.boarded}/{progress.total}
+            {fmtDate(date)} · {initialBoardingReliable ? `체크 ${progress.boarded}/${progress.total}` : "체크 기록 확인 필요"}
             {progress.noshow > 0 ? ` · 결석 ${progress.noshow}` : ""}
             {progress.self > 0 ? ` · 자차 ${progress.self}` : ""}
           </p>
@@ -232,7 +244,7 @@ export default function UnifiedDriverClient({
       {/* 운행 중 */}
       {runState === "running" && (
         <div className="mb-3">
-          <GpsShareBar gpsState={gpsState} lastSentAt={lastSentAt} accuracy={accuracy} />
+          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={gpsStart} />
           <button type="button" onClick={handleRunEnd}
             className="mt-2 h-13 w-full rounded-2xl border-2 border-red-300 bg-white py-3 text-[17px] font-black text-red-600 active:bg-red-50">
             🏁 운행 종료
@@ -244,10 +256,12 @@ export default function UnifiedDriverClient({
       {runState === "ended" && (
         <div className="mb-4 rounded-2xl bg-gray-100 px-4 py-5 text-center">
           <p className="text-[17px] font-black text-gray-600">✅ 운행이 종료되었습니다</p>
+          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} />
         </div>
       )}
 
       <DriverDateNav date={date} prevDate={prevDate} nextDate={nextDate} today={today} />
+      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-bold text-red-700">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 
       {/* 순서 편집 */}
       {stopRows.length > 0 && (
@@ -348,7 +362,8 @@ export default function UnifiedDriverClient({
                   {row.riders.map((rider) => {
                     const status = boarding[rider.key] ?? null;
                     const parent = digits(rider.parentPhone), child = digits(rider.studentPhone);
-                    const isBusy = busy[rider.key];
+                    const saveState = saveStates[rider.key];
+                    const isBusy = busy[rider.key] || !initialBoardingReliable || saveState?.state === "unknown";
                     const selfLabel = isPickup ? "자차등원" : "자차하원";
                     // 정규는 그날 결석 신고가 자동 매칭되면 아예 체크 대상에서 뺀다(종전 동작 그대로).
                     const lockedAbsent = rider.absent && rider.kind === "REGULAR";
@@ -381,13 +396,14 @@ export default function UnifiedDriverClient({
                                 className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "BOARDED" ? "bg-green-600 text-white" : "border-2 border-green-400 text-green-700"}`}>
                                 {isPickup ? "탑승" : "하차"}
                               </button>
-                              <button type="button" onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
+                              <button type="button" disabled={isBusy} onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
                                 className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "NOSHOW" || status === "SELF" ? "bg-gray-700 text-white" : "border-2 border-gray-300 text-gray-600"}`}>
                                 미{isPickup ? "탑승" : "하차"}
                               </button>
                             </>
                           )}
                         </div>
+                        {saveState && <p role="status" className={`mt-1 text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-red-700" : "text-gray-600"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 underline">저장 상태 확인</button>}</p>}
                         {!lockedAbsent && menuKey === rowKey && (
                           <div className="mt-2 flex gap-2">
                             <button type="button" disabled={isBusy} onClick={() => { setStatus(rider, "NOSHOW"); setMenuKey(null); }}
