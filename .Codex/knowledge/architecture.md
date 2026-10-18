@@ -1,4 +1,8 @@
 ## 2026-09-04 사이트 월 운영 장부
+
+## 2026-10-19: 관리자 화면 구성
+- AdminDashboardClient는 요청·오늘 수업을 우선 렌더링하고 운영 현황·관리 도구를 접는다. AdminShellClient는 주요 6메뉴·보조 2그룹으로 기존 주소를 유지한다. API·저장 구조 변경 없음.
+
 - `/admin/finance/monthly-register` 및 동명 관리자 API는 학생·월 단일 봉투에 반별 금액/기간/근거를 JSON으로 보존한다. 월 셔틀비는 봉투당 하나이며 기존 Payment/Enrollment에는 쓰지 않는다.
 - `MonthlyEnrollmentRegister`와 `MonthlyEnrollmentRegisterRevision`은 현재 버전과 전체 변경 스냅샷을 분리한다. 학생 행 잠금·장부 버전 비교·감사 동일 거래로 중복/덮어쓰기를 차단한다.
 - 공용 순수 모델과 서비스·API·화면을 분리하고 관리자 DB 역할 인증, 같은 사이트 요청, 실제 128KiB 상한, READ ONLY 조회 및 no-store를 적용한다. 저장 설정은 기본 off다.

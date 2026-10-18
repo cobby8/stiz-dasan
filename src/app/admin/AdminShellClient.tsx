@@ -50,27 +50,23 @@ const OPS_PATHS = [
     "/admin/uniform",
 ];
 
-const MORE_OPS_PATHS = [
+// 자주 쓰는 여섯 메뉴 밖의 기능은 업무 의미별로 묶되 직접 주소는 그대로 유지한다.
+const CLASS_WORK_PATHS = [
+    "/admin/absence", "/admin/enrollment-changes", "/admin/payment-requests",
+    "/admin/seasonal", "/admin/uniform", "/admin/requests", "/admin/makeup",
     "/admin/attendance/report",
-    "/admin/requests",
-    "/admin/kakao-requests",
-    "/admin/kakao-policy",
-    "/admin/notification-deliveries",
-    "/admin/feedback",
-    "/admin/waitlist",
-    "/admin/makeup",
-    "/admin/stats",
-    "/admin/sms",
-    "/admin/import",
-    "/admin/staff",
-    "/admin/shuttle",
-    "/admin/payment-confirmations",
-    "/admin/payment-requests",
-    "/admin/pos-reconcile",
-    "/admin/enrollment-changes",
-    "/admin/media-revocations",
-    "/admin/uniform",
 ];
+const OPERATING_PATHS = [
+    "/admin/kakao-requests", "/admin/kakao-policy", "/admin/notification-deliveries",
+    "/admin/feedback", "/admin/waitlist", "/admin/stats", "/admin/sms", "/admin/import",
+    "/admin/staff", "/admin/payment-confirmations", "/admin/pos-reconcile",
+    "/admin/media-revocations",
+];
+
+// 접두사가 비슷한 다른 화면까지 활성 메뉴로 표시하지 않도록 경로 경계를 확인한다.
+function matchesNavPath(pathname: string, path: string): boolean {
+    return pathname === path || pathname.startsWith(`${path}/`);
+}
 
 // 셔틀 관리 메뉴에 속하는 경로 판정 — 방학특강 배차/명단은 /admin/seasonal 하위지만
 // 사이드바에서는 "셔틀 관리"로 묶어 표시하므로, 방학특강 메뉴와 겹치지 않게 여기서 걸러낸다.
@@ -99,12 +95,14 @@ export default function AdminShellClient({
     const userEmail = initialUserEmail;
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [systemToolsOpen, setSystemToolsOpen] = useState(false);
-    const moreOpsActive = useMemo(() => MORE_OPS_PATHS.some((p) => pathname.startsWith(p)), [pathname]);
+    const classWorkActive = CLASS_WORK_PATHS.some((path) => matchesNavPath(pathname, path)) && !isShuttlePath(pathname);
+    const operatingActive = OPERATING_PATHS.some((path) => matchesNavPath(pathname, path));
     // 현재 URL 경로를 기반으로 활성 탭을 자동 결정
     // 첫 화면에서도 학원 업무 메뉴를 바로 찾을 수 있도록 운영 탭을 기본으로 둔다.
     const autoTab = useMemo(() => {
         if (pathname === "/admin") return "ops" as const;
-        if (OPS_PATHS.some((p) => pathname.startsWith(p))) return "ops" as const;
+        // 접힌 그룹의 주소로 직접 들어와도 사이트 탭으로 잘못 이동하지 않는다.
+        if ([...OPS_PATHS, ...CLASS_WORK_PATHS, ...OPERATING_PATHS].some((path) => matchesNavPath(pathname, path))) return "ops" as const;
         return "site" as const;
     }, [pathname]);
 
@@ -217,32 +215,43 @@ export default function AdminShellClient({
                     {activeTab === "ops" && (
                         <>
                             <p className="text-gray-500 text-xs font-bold uppercase px-4 py-2">주요 업무</p>
-                            <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="대시보드" />
-                            <NavItem href="/admin/apply" active={pathname.startsWith("/admin/apply")} icon="📝" label="신청 관리" />
-                            <NavItem href="/admin/students" active={pathname.startsWith("/admin/students")} icon="🧑‍🎓" label="원생 관리" />
-                            <NavItem href="/admin/attendance" active={pathname.startsWith("/admin/attendance")} icon="✅" label="출결 관리" />
-                            <NavItem href="/admin/absence" active={pathname.startsWith("/admin/absence")} icon="🙅" label="정규 결석 신고" />
-                            <NavItem href="/admin/enrollment-changes" active={pathname.startsWith("/admin/enrollment-changes")} icon="🔁" label="수강 변경 신청" />
-                            <NavItem href="/admin/payment-requests" active={pathname.startsWith("/admin/payment-requests")} icon="🧾" label="입금 확인·영수증" />
-                            <NavItem href="/admin/finance" active={pathname.startsWith("/admin/finance")} icon="💳" label="수납/청구" />
-                            <NavItem href="/admin/uniform" active={pathname.startsWith("/admin/uniform")} icon="👕" label="유니폼 주문" />
-                            <NavItem href="/admin/seasonal" active={pathname.startsWith("/admin/seasonal") && !isShuttlePath(pathname)} icon="🏀" label="방학특강" />
+                            <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="오늘 업무" />
+                            <NavItem href="/admin/apply" active={matchesNavPath(pathname, "/admin/apply")} icon="📝" label="신청 관리" />
+                            <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생 관리" />
+                            <NavItem href="/admin/attendance" active={matchesNavPath(pathname, "/admin/attendance") && !matchesNavPath(pathname, "/admin/attendance/report")} icon="✅" label="수업·출결" />
+                            <NavItem href="/admin/finance" active={matchesNavPath(pathname, "/admin/finance")} icon="💳" label="수납·청구" />
                             <NavItem href="/admin/seasonal/dispatch" active={isShuttlePath(pathname)} icon="🚌" label="셔틀 관리" />
 
-                            <details className="group mt-4" open={moreOpsActive}>
+                            {/* 경로마다 새로 열림 상태를 계산하여 내부 화면 직접 방문도 놓치지 않는다. */}
+                            <details key={`class-work-${pathname}`} className="group mt-4" open={classWorkActive}>
                                 <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]">
-                                    <FontFreeIcon name="more_horiz" size={20} />
-                                    <span className="flex-1 truncate text-sm font-bold">기타 운영</span>
+                                    <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">assignment</span>
+                                    <span className="flex-1 truncate text-sm font-bold">신청·수업 업무</span>
                                     <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
                                 </summary>
                                 <div className="mt-1 space-y-1 border-l border-[var(--color-academy-line)] pl-2">
-                                    <NavItem href="/admin/attendance/report" active={pathname.startsWith("/admin/attendance/report")} icon="📝" label="수업 리포트" compact />
-                                    <NavItem href="/admin/requests" active={pathname.startsWith("/admin/requests")} icon="📩" label="학부모 요청" compact />
+                                    <NavItem href="/admin/absence" active={matchesNavPath(pathname, "/admin/absence")} icon="🙅" label="정규 결석 신고" compact />
+                                    <NavItem href="/admin/enrollment-changes" active={matchesNavPath(pathname, "/admin/enrollment-changes")} icon="🔁" label="수강 변경 신청" compact />
+                                    <NavItem href="/admin/payment-requests" active={matchesNavPath(pathname, "/admin/payment-requests")} icon="🧾" label="입금 확인·영수증" compact />
+                                    <NavItem href="/admin/seasonal" active={matchesNavPath(pathname, "/admin/seasonal") && !isShuttlePath(pathname)} icon="🏀" label="방학특강" compact />
+                                    <NavItem href="/admin/uniform" active={matchesNavPath(pathname, "/admin/uniform")} icon="👕" label="유니폼 주문" compact />
+                                    <NavItem href="/admin/requests" active={matchesNavPath(pathname, "/admin/requests")} icon="📩" label="학부모 요청" compact />
+                                    <NavItem href="/admin/makeup" active={matchesNavPath(pathname, "/admin/makeup")} icon="🔄" label="보강" compact />
+                                    <NavItem href="/admin/attendance/report" active={matchesNavPath(pathname, "/admin/attendance/report")} icon="📝" label="수업 리포트" compact />
+                                </div>
+                            </details>
+
+                            <details key={`operating-${pathname}`} className="group mt-2" open={operatingActive}>
+                                <summary className="flex cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]">
+                                    <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">settings</span>
+                                    <span className="flex-1 truncate text-sm font-bold">학원 운영 설정</span>
+                                    <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
+                                </summary>
+                                <div className="mt-1 space-y-1 border-l border-[var(--color-academy-line)] pl-2">
                                     <NavItem href="/admin/kakao-requests" active={pathname.startsWith("/admin/kakao-requests")} icon="💬" label="카카오 접수함" compact />
                                     {/* 카카오 채널 정책 질문에 문서 기반으로 답하는 기능 — 정책 문서 편집·켜기/끄기·답변 기록 */}
                                     <NavItem href="/admin/kakao-policy" active={pathname.startsWith("/admin/kakao-policy")} icon="📘" label="카카오 정책 답변" compact />
                                     <NavItem href="/admin/notification-deliveries" active={pathname.startsWith("/admin/notification-deliveries")} icon="🔔" label="담당자 전달 장부" compact />
-                                    <NavItem href="/admin/makeup" active={pathname.startsWith("/admin/makeup")} icon="🔄" label="보강" compact />
                                     <NavItem href="/admin/stats" active={pathname.startsWith("/admin/stats")} icon="📊" label="상세 통계" compact />
                                     <NavItem href="/admin/sms" active={pathname.startsWith("/admin/sms")} icon="💬" label="문자/템플릿" compact />
                                     <NavItem href="/admin/import" active={pathname.startsWith("/admin/import")} icon="📥" label="수강생 이관" compact />
@@ -321,10 +330,6 @@ export default function AdminShellClient({
                     <div className="flex flex-shrink-0 items-center gap-2 md:gap-4">
                         {/* 알림 벨 — 읽지 않은 알림 수 배지 + 드롭다운 */}
                         <LazyNotificationBell />
-                        <span className="hidden text-sm font-medium text-gray-600 dark:text-gray-300 sm:inline">{userName}님, 환영합니다.</span>
-                        <div className="w-8 h-8 bg-[var(--color-academy-primary)] rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                            {userName.charAt(0) || "A"}
-                        </div>
                     </div>
                 </header>
                 <div className="admin-table-scope w-full min-w-0 flex-1 p-4 md:p-6 xl:p-8">
@@ -343,6 +348,7 @@ function NavItem({ href, active, icon, label, badge, compact = false }: { href: 
         <Link
             href={href}
             prefetch={false}
+            aria-current={active ? "page" : undefined}
             className={`flex items-center gap-3 px-4 ${compact ? "py-2.5 text-sm" : "py-3"} rounded-lg transition-colors ${active
                 ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] font-bold"
                 : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"

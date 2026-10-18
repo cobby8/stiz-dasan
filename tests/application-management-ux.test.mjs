@@ -209,8 +209,9 @@ test("신청 수정, 일정 변경, 취소는 운영 이력으로 남고 관리�
 
 test("관리자 신청 화면은 제목과 한 줄 설명만 남기고 중복 요약을 제거한다", () => {
   assert.match(adminShell, /label="신청 관리"/);
-  assert.match(adminShell, /label="수납\/청구"/);
-  assert.match(adminShell, /기타 운영/);
+  assert.match(adminShell, /label="수납·청구"/);
+  assert.match(adminShell, /신청·수업 업무/);
+  assert.match(adminShell, /학원 운영 설정/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);
   assert.match(applyClient, /체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다\./);
