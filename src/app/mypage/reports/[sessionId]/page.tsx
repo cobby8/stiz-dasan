@@ -4,6 +4,8 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { notFound } from "next/navigation";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import Link from "next/link";
+import ReportPhoto from "@/components/parent/ReportPhoto";
+import { toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
 
 // 학부모 리포트 상세는 실시간 데이터 필요 (보안 체크)
 export const dynamic = "force-dynamic";
@@ -102,10 +104,7 @@ export default async function ParentReportDetailPage({
     const noteMap = new Map(myNotes.map((n: any) => [n.studentId ?? n.studentid, n]));
 
     // 사진 파싱
-    let photos: string[] = [];
-    try {
-        photos = JSON.parse(session.photosJSON ?? session.photosjson ?? "[]");
-    } catch { photos = []; }
+    const photos = toSessionReportPhotoViews(session.photosJSON ?? session.photosjson, sessionId);
 
     // 날짜 포맷
     const dateStr = new Date(session.date).toLocaleDateString("ko-KR", {
@@ -158,15 +157,11 @@ export default async function ParentReportDetailPage({
                         수업 사진
                     </h2>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {photos.map((url, i) => (
-                            <img
-                                key={i}
-                                src={url}
+                        {photos.map((photo, i) => (
+                            <ReportPhoto
+                                key={`${photo.index}:${photo.src}`}
+                                src={photo.src}
                                 alt={`수업 사진 ${i + 1}`}
-                                className="w-full h-40 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
-                                onError={(e) => {
-                                    (e.target as HTMLImageElement).style.display = "none";
-                                }}
                             />
                         ))}
                     </div>

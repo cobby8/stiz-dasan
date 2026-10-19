@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   PAYMENT_METHODS,
@@ -31,21 +31,37 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const sending = useRef(false);
+  const [uncertainSource, setUncertainSource] = useState<ParentPaymentRow[] | null>(null);
+  const uncertain = uncertainSource !== null;
 
   async function send(body: Record<string, unknown>) {
+    if (sending.current || uncertain) return false;
+    sending.current = true;
     setError("");
     setDone("");
-    const response = await fetch("/api/mypage/payment-request", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(data?.error || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    try {
+      const response = await fetch("/api/mypage/payment-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // 서버가 처리한 뒤 응답만 잃었을 수 있어 곧바로 재전송하지 않습니다.
+      if (response.status >= 500) throw new Error("결과 확인 필요");
+      const data = await response.json();
+      if (!response.ok) {
+        setError(typeof data?.error === "string" ? data.error : "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요.");
+        return false;
+      }
+      if (data?.ok !== true) throw new Error("결과 확인 필요");
+      return true;
+    } catch {
+      setUncertainSource(rows);
+      setError("응답을 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 목록의 확인 중·처리 결과를 확인해 주세요.");
       return false;
+    } finally {
+      sending.current = false;
     }
-    return true;
   }
 
   function submitClaim(paymentId: string) {
@@ -91,6 +107,18 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
 
       {done && <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {uncertain && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+            {pending ? "확인 중..." : "접수 결과 다시 확인"}
+          </button>
+          {uncertainSource !== rows && (
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+              내역 확인했어요
+            </button>
+          )}
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <p className="rounded-2xl bg-white p-8 text-center text-sm text-gray-400 shadow-sm dark:bg-gray-900">
@@ -141,7 +169,7 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
                         </p>
                         <button
                           type="button"
-                          disabled={pending}
+                          disabled={pending || uncertain}
                           onClick={() => cancel(item!.id)}
                           className="min-h-9 shrink-0 rounded-lg border border-amber-300 px-2 text-xs font-bold text-amber-900 disabled:opacity-50 dark:border-amber-800 dark:text-amber-200"
                         >
@@ -232,7 +260,7 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
                     </div>
                     <button
                       type="button"
-                      disabled={pending || !paidOn}
+                      disabled={pending || uncertain || !paidOn}
                       onClick={() => submitClaim(row.paymentId)}
                       className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
                     >
@@ -279,7 +307,7 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
                     </div>
                     <button
                       type="button"
-                      disabled={pending || !receiptTarget.trim()}
+                      disabled={pending || uncertain || !receiptTarget.trim()}
                       onClick={() => submitReceipt(row.paymentId)}
                       className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
                     >

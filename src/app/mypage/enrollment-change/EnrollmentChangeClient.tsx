@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   CHANGE_KIND_LABEL,
@@ -31,6 +31,9 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const sending = useRef(false);
+  const [uncertainSource, setUncertainSource] = useState<EnrollmentChangeOptions | null>(null);
+  const uncertain = uncertainSource !== null;
 
   const child = initial.children[childIdx];
   // 지금 다니는 반은 고를 수 없다. 골라봐야 아무것도 바뀌지 않는다.
@@ -40,19 +43,32 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   );
 
   async function send(body: Record<string, unknown>) {
+    if (sending.current || uncertain) return false;
+    sending.current = true;
     setError("");
     setDone("");
-    const response = await fetch("/api/mypage/enrollment-change", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(data?.error || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+    try {
+      const response = await fetch("/api/mypage/enrollment-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // 전송 실패와 미접수는 다릅니다. 결과 확인 전에는 중복 신청을 막습니다.
+      if (response.status >= 500) throw new Error("결과 확인 필요");
+      const data = await response.json();
+      if (!response.ok) {
+        setError(typeof data?.error === "string" ? data.error : "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요.");
+        return false;
+      }
+      if (data?.ok !== true) throw new Error("결과 확인 필요");
+      return true;
+    } catch {
+      setUncertainSource(initial);
+      setError("응답을 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 현재 신청 내역을 확인해 주세요.");
       return false;
+    } finally {
+      sending.current = false;
     }
-    return true;
   }
 
   function submit() {
@@ -106,6 +122,20 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         </p>
       </div>
 
+      {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {uncertain && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+            {pending ? "확인 중..." : "접수 결과 다시 확인"}
+          </button>
+          {uncertainSource !== initial && (
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+              내역 확인했어요
+            </button>
+          )}
+        </div>
+      )}
+
       {initial.children.length > 1 && (
         <select
           value={childIdx}
@@ -132,7 +162,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           </p>
           <button
             type="button"
-            disabled={pending}
+            disabled={pending || uncertain}
             onClick={() => cancel(child.pending!.id)}
             className="mt-3 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:border-amber-800 dark:bg-gray-900 dark:text-amber-200"
           >
@@ -239,11 +269,9 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             />
           </div>
 
-          {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-
           <button
             type="button"
-            disabled={pending || (kind === "CLASS_CHANGE" && !toClassId)}
+            disabled={pending || uncertain || (kind === "CLASS_CHANGE" && !toClassId)}
             onClick={submit}
             className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
           >
