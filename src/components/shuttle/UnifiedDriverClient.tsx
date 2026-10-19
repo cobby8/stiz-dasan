@@ -223,12 +223,18 @@ export default function UnifiedDriverClient({
       <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1></div>
-          {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">운행이 종료되었습니다</p>}
+          {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">{transmission === "stop-unknown" ? "위치 수집 중단 · 서버 종료 확인 필요" : "운행이 종료되었습니다"}</p>}
         </div>
-        {runState === "idle" && (
+        {(runState === "idle" || (runState === "ended" && transmission !== "stop-unknown")) && (
           <button type="button" onClick={handleRunStart}
             className="h-11 shrink-0 rounded-xl bg-[var(--color-academy-primary)] px-3 text-[14px] font-black text-white active:opacity-80">
-            운행 시작
+            {runState === "ended" ? "다시 운행 시작" : "운행 시작"}
+          </button>
+        )}
+        {runState === "ended" && transmission === "stop-unknown" && (
+          <button type="button" onClick={handleRunEnd}
+            className="h-11 shrink-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 text-[14px] font-bold text-[var(--color-academy-primary)]">
+            종료 재확인
           </button>
         )}
         {runState === "running" && <button type="button" disabled={transmission === "stopping"} onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}

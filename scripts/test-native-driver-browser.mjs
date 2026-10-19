@@ -79,6 +79,29 @@ try {
     await page.evaluate(() => window.mountDriver()); await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot', 'snapshot']);
   }, { state: 'active', transmission: 'sent', running: true });
+  await check('종료 후 재진입은 자동 시작 없이 다시 운행 시작을 제공', async page => {
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot']);
+    await page.reload();
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot', 'start']);
+    await page.evaluate(() => window.emitNative({ state: 'requesting', transmission: 'idle', running: false }));
+    await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    await page.evaluate(() => window.emitNative({ state: 'active', transmission: 'sent', running: true, lastSentAt: new Date().toISOString() }));
+    await page.getByRole('status').filter({ hasText: '위치 공유 중' }).waitFor();
+  }, { state: 'off', transmission: 'stopped', running: false });
+  await check('종료 미확인은 재시작 대신 종료 재확인 후에만 새 시작을 허용', async page => {
+    await page.getByRole('button', { name: '종료 재확인', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: /^(다시 )?운행 시작$/ }).count(), 0);
+    assert.equal(await page.getByText('운행이 종료되었습니다', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: '종료 재확인', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.nativeCalls.at(-1).action), 'stop');
+    await page.evaluate(() => window.emitNative({ state: 'off', transmission: 'stopping', running: false }));
+    assert.equal(await page.getByRole('button', { name: '종료 확인 중', exact: true }).isDisabled(), true);
+    await page.evaluate(() => window.emitNative({ state: 'off', transmission: 'stopped', running: false }));
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.nativeCalls.some(x => x.action === 'start')), false);
+  }, { state: 'off', transmission: 'stop-unknown', running: false });
   await check('강제 중단 후 복귀는 서버 종료 완료로 표시하지 않는다', async page => {
     await page.getByRole('alert').filter({ hasText: '운행 화면에서 다시 시작해 주세요.' }).waitFor();
     assert.equal(await page.getByText(/서버 중단 접수 완료/).count(), 0);
