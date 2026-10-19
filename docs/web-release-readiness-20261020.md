@@ -60,3 +60,5 @@
 - 토스 운영 키 준비 후에도 자동 배포 재허용은 별도 변경이다. 먼저 환경·DB·대상 버전을 확인하고 실행 직전 승인 범위에 맞춰 배포한다.
 - 설정 근거: [Vercel Git 설정 공식 문서](https://vercel.com/docs/project-configuration/git-configuration).
 - 독립 검증: 공식 JSON 스키마의 boolean 허용과 기존 설정 대비 변경 항목을 확인했다. `npx.cmd tsc --noEmit --incremental false` 및 `git diff --check` 통과. 별도 `.github/workflows` 배포 경로는 없었다.
+
+- 푸시 결과: 기존 46개와 차단 설정 커밋 `53409816`을 일반 푸시했고 원격 main과 로컬 HEAD의 전체 해시 일치·미푸시 0을 확인했다. 푸시 후 Vercel 최신 3개 배포 목록은 이전과 같으며 기존 운영 배포가 READY 상태를 유지했다. 이 결과 기록도 같은 차단 설정을 유지한 채 후속 문서 커밋으로 푸시한다.
