@@ -79,6 +79,9 @@ async function prepareBundle() {
   const files = {
     'entry.js': `import{createElement}from'react';import{createRoot}from'react-dom/client';import Driver from '@/components/shuttle/UnifiedDriverClient';const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const id='11111111-1111-4111-8111-111111111111';const row={key:'device-test-stop',label:'기기 검증 정류장',time:'16:00',minutes:960,seq:1,kind:'REGULAR',direction:'PICKUP',groupKey:'device-test-group',groupLabel:'기기 검증 수업',subLabel:null,lat:null,lng:null,isHub:false,isTerminal:false,pending:false,warn:false,riders:[{key:'R:'+id,checkId:id,kind:'REGULAR',direction:'PICKUP',name:'검증 학생',grade:null,parentPhone:null,studentPhone:null,absent:false}]};createRoot(document.getElementById('root')).render(createElement(Driver,{token:'device-test-only',date,today:date,prevDate:null,nextDate:null,driverLabel:'기기 검증',initialBoarding:{},rows:[row]}));`,
     'loader.cjs': `const ts=require(${JSON.stringify(require.resolve('typescript'))});module.exports=function(source){return ts.transpileModule(source,{fileName:this.resourcePath,compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;};`,
+    // 클래스는 원문 이름으로 연결하고 CSS 본문은 아래 screen.css에 합친다.
+    // 인라인 style 삽입 없이 기존 style-src 'self' 보안 정책을 유지한다.
+    'css-loader.cjs': `module.exports=function(source){const names=[...source.matchAll(/\\.([a-zA-Z_][a-zA-Z0-9_-]*)/g)].map(match=>match[1]);return 'export default '+JSON.stringify(Object.fromEntries(names.map(name=>[name,name])))+';';};`,
     'navigation.js': `export function useRouter(){return{refresh(){},push(url){location.assign(url);}};}export function usePathname(){return location.pathname;}`,
     'link.js': `import{createElement}from'react';export default function Link({children,...props}){return createElement('a',props,children);}`,
     'image.js': `import{createElement}from'react';export default function Image({priority,fill,unoptimized,...props}){return createElement('img',props);}`,
@@ -88,16 +91,25 @@ async function prepareBundle() {
   const compiler = webpack({ mode: 'development', context: output, target: 'web', devtool: false, cache: false,
     entry: path.join(output, 'entry.js'), output: { path: output, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js'], modules: [path.join(root, 'node_modules')], alias: { '@': path.join(root, 'src'), 'next/navigation$': path.join(output, 'navigation.js'), 'next/link$': path.join(output, 'link.js'), 'next/image$': path.join(output, 'image.js') } },
-    module: { rules: [{ test: /\.tsx?$/, use: [path.join(output, 'loader.cjs')] }] },
+    module: { rules: [
+      { test: /\.tsx?$/, use: [path.join(output, 'loader.cjs')] },
+      { test: /\.module\.css$/, use: [path.join(output, 'css-loader.cjs')] },
+    ] },
     plugins: [{ apply(current) { current.hooks.compilation.tap('IsolatedDevice', compilation => { compilation.hooks.finishModules.tap('IsolatedDevice', modules => {
       for (const item of modules) if (/\/src\/(?:app\/actions\/|lib\/(?:prisma|auth-guard|notification))/.test(item.resource?.replaceAll('\\', '/') ?? '')) throw new Error('시험 번들에 서버 모듈이 들어왔습니다.');
     }); }); } }],
   });
-  try { await new Promise((resolve, reject) => compiler.run((error, result) => error || result?.hasErrors() ? reject(new Error('시험 번들 빌드 실패')) : resolve())); }
+  let moduleCssFiles = [];
+  try { await new Promise((resolve, reject) => compiler.run((error, result) => {
+    if (error || !result || result.hasErrors()) { reject(new Error('시험 번들 빌드 실패')); return; }
+    moduleCssFiles = [...result.compilation.fileDependencies].filter(file => /\.module\.css$/.test(file));
+    resolve();
+  })); }
   finally { await new Promise(resolve => compiler.close(resolve)); }
   // 렌더링은 원본, 색상은 원본 academy-theme. 이 시험은 기능/위치 검증이며 시각 QA를 대체하지 않는다.
   const theme = await readFile(path.join(root, 'src/app/academy-theme.css'), 'utf8');
-  const css = await postcss([tailwind({ base: root })]).process(`@import "tailwindcss" source(none);\n@source "${path.join(root, 'src/components/shuttle').replaceAll('\\', '/')}";\n@source "${path.join(root, 'src/components/academy').replaceAll('\\', '/')}";\n${theme}\nbody{margin:0;font-family:system-ui,sans-serif}.material-symbols-outlined{font-size:16px}`, { from: path.join(output, 'screen.input.css') });
+  const moduleCss = (await Promise.all(moduleCssFiles.map(file => readFile(file, 'utf8')))).join('\n').replace(/:global\(([^)]+)\)/g, '$1');
+  const css = await postcss([tailwind({ base: root })]).process(`@import "tailwindcss" source(none);\n@source "${path.join(root, 'src/components/shuttle').replaceAll('\\', '/')}";\n@source "${path.join(root, 'src/components/academy').replaceAll('\\', '/')}";\n${theme}\n${moduleCss}\nbody{margin:0;font-family:system-ui,sans-serif}.material-symbols-outlined{font-size:16px}`, { from: path.join(output, 'screen.input.css') });
   await writeFile(path.join(output, 'screen.css'), css.css);
   await writeFile(path.join(output, 'index.html'), '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIZ 격리 기기 시험</title><link rel="stylesheet" href="/screen.css"></head><body><div id="root"></div><script src="/bundle.js"></script></body></html>');
 }

@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 실제기사UI라벤더시안적용·기기현재시각강조/시안미리보기제외·GPS상세통합. 회귀82·JSX/CSS91·기존10/네이티브10·독립16/18·tsc/lint통과. architecture/decisions갱신·지식문서5유지. docs/driver-lavender-implementation.md. 순서재조회불일치후속승인진행·운영/배포없음.
+
 > 2026-10-19: 외부 기사시안 연락버튼 이름우측·360px이상 학생행56px, 11폭·독립178 통과. 실제iPhone Safari세로/검색·메모키보드·가로874×402·세로복원 확인. 임시측정과 실제OS/스크린샷검증 구분, errors1항목 추가. docs/academy-responsive-mock-validation.md 갱신, 지식문서5 유지·배포없음.
 
 > 2026-10-19: 외부시안 관리자메뉴 mobile약60.9px로접기·PC버튼숨김 보완. 독립104, 실제 SM-F971N Android17 Chrome33/adb터치10/실제회전16 통과, free/세로복원. iPhone·네이티브앱·운영미검증. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md 및 출시계획 갱신. 배포없음.

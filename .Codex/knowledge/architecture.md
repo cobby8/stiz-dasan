@@ -286,3 +286,8 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - `src/components/academy/AcademyTheme.tsx`: 서버·클라이언트에서 사용할 수 있는 순수 wrapper. `academy-app`과 `data-academy-role`로 관리자/학부모/교사/기사 범위를 구분한다.
 - `src/app/academy-theme.css`: 라벤더 팔레트·고딕 글꼴·카드·버튼·상태와 420px 이하 기사 학생 행. RootLayout에서 가져오지만 선택자는 업무 영역에 한정한다.
 - `src/lib/academyTheme.ts`: 학원 경로 판별과 PWA 테마 색상. ThemeProvider·ThemeColorUpdater가 같은 경계를 사용한다. 기존 `/shuttle/run`·`/shuttle/regular`도 포함한다.
+
+## 2026-10-19 기사 화면 시안 실제 적용
+- 실제 세 기사 링크는 UnifiedDriverRunPage→UnifiedDriverClient 하나를 공유한다. DriverWorkspace.module.css로 역할별 범위를 좁혔고 DriverGpsIndicator는 기존 GpsShareBar를 상세창에 재사용한다.
+- driverUpcoming 순수 계산과 useDriverUpcoming은 기기의 로컬 날짜·시각으로 당일 다음 예정만15초/focus/visibility마다 표시한다. API/탑승/GPS 동작과 시계 표시는 분리한다.
+- docs/driver-lavender-implementation.md에 기존 기능 대조와 검증 증거·한계를 기록했다. 정규 순서 저장과 확정 배차 읽기 불일치는 별도 승인 후속 그룹이다.

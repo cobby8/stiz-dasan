@@ -6,8 +6,10 @@ import AcademyTheme from "@/components/academy/AcademyTheme";
 import type { PointerEvent } from "react";
 import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
 import DriverDateNav from "@/components/shuttle/DriverDateNav";
-import GpsShareBar from "@/components/shuttle/GpsShareBar";
+import DriverGpsIndicator from "@/components/shuttle/DriverGpsIndicator";
 import { useGpsShare } from "@/hooks/useGpsShare";
+import { useDriverUpcoming } from "@/hooks/useDriverUpcoming";
+import styles from "./DriverWorkspace.module.css";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 
@@ -135,6 +137,10 @@ export default function UnifiedDriverClient({
     return timeOverride[row.key] ?? row.time;
   }
 
+  // 휴대폰의 시계로 강조만 갱신한다. 운행 순서와 서버의 탑승 기록은 바꾸지 않는다.
+  const upcomingStops = useMemo(() => ordered.map((row) => ({ key: row.key, time: timeOverride[row.key] ?? row.time, isTerminal: row.isTerminal })), [ordered, timeOverride]);
+  const upcoming = useDriverUpcoming(upcomingStops, date);
+
   async function saveRegularOrder() {
     const regularRows = ordered.filter((r) => r.kind === "REGULAR" && !r.isTerminal);
     const updates = regularRows.flatMap((row, index) => {
@@ -218,13 +224,17 @@ export default function UnifiedDriverClient({
   let seq = 0;
 
   return (
-    <AcademyTheme role="driver" className="mx-auto max-w-lg px-3 pb-28">
+    <AcademyTheme role="driver" className={`${styles.workspace} mx-auto px-3 pb-8`}>
       {/* 운행 동작은 헤더 한 곳에 두고, 날짜는 아래 날짜 탐색에만 표시합니다. */}
       <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1></div>
           {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">{transmission === "stop-unknown" ? "위치 수집 중단 · 서버 종료 확인 필요" : "운행이 종료되었습니다"}</p>}
         </div>
+        <div className={styles.headerActions}>
+        {(runState === "running" || runState === "ended" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (
+          <DriverGpsIndicator gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={runState !== "ended" ? gpsStart : undefined} mode={gpsMode} nativeMessage={nativeMessage} />
+        )}
         {(runState === "idle" || (runState === "ended" && transmission !== "stop-unknown")) && (
           <button type="button" onClick={handleRunStart}
             className="h-11 shrink-0 rounded-xl bg-[var(--color-academy-primary)] px-3 text-[14px] font-black text-white active:opacity-80">
@@ -238,6 +248,7 @@ export default function UnifiedDriverClient({
           </button>
         )}
         {runState === "running" && <button type="button" disabled={transmission === "stopping"} onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
+        </div>
       </header>
 
       {/* PWA 설치 배너 */}
@@ -250,27 +261,13 @@ export default function UnifiedDriverClient({
         </div>
       )}
 
-      {/* 운행 중 */}
-      {(runState === "running" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (
-        <div className="mb-2">
-          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={gpsStart} mode={gpsMode} nativeMessage={nativeMessage} />
-        </div>
-      )}
-
-      {/* 운행 종료 후 */}
-      {runState === "ended" && (
-        <div className="mb-2">
-          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} mode={gpsMode} nativeMessage={nativeMessage} />
-        </div>
-      )}
-
       <DriverDateNav date={date} prevDate={prevDate} nextDate={nextDate} today={today} />
-      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-bold text-red-700">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
+      {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-bold text-red-700">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 
       {/* 순서 편집 */}
       {stopRows.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[14px] font-bold text-gray-600">운행 순서 · {stopRows.length}곳<br /><span className="text-[13px] font-semibold text-[var(--color-academy-primary)]">{initialBoardingReliable ? summary.total > 0 ? `체크 ${summary.checked}/${summary.total}` : "체크 대상 없음" : "기록 확인 필요"}</span></p>
+          <p className={styles.runSummary}>운행 순서 · {stopRows.length}곳 <span>{initialBoardingReliable ? summary.total > 0 ? `체크 ${summary.checked}/${summary.total}` : "체크 대상 없음" : "기록 확인 필요"}</span>{upcoming.clockLabel && <span>{upcoming.isViewingToday ? `현재 ${upcoming.clockLabel} · 예정 시각 기준` : "선택한 날짜의 운행"}</span>}</p>
           {orderControls}
         </div>
       )}
@@ -278,7 +275,7 @@ export default function UnifiedDriverClient({
       {saveMessage && <p className="mb-2 rounded-xl bg-gray-100 px-3 py-2 text-[13px] font-black text-gray-700">{saveMessage}</p>}
 
       {stopRows.length === 0 && (
-        <p className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-[16px] font-bold text-gray-400">오늘은 운행이 없습니다.</p>
+        <p className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-[16px] font-bold text-gray-400">선택한 날짜에는 운행이 없습니다.</p>
       )}
 
       <ol className="space-y-2.5">
@@ -297,6 +294,7 @@ export default function UnifiedDriverClient({
           const isPickup = row.direction === "PICKUP";
           const url = tmapNavigationCoordinateUrl({ latitude: row.lat, longitude: row.lng, name: row.label });
           const editable = editing && row.kind === "REGULAR";
+          const isUpcoming = !editing && upcoming.nextKey === row.key;
           const checks = checkSummary(row.riders);
           return (
             <li
@@ -312,10 +310,12 @@ export default function UnifiedDriverClient({
               onPointerEnter={() => editable && dragKey && moveDraggedRow(row)}
               onPointerUp={() => setDragKey(null)}
               onPointerCancel={() => setDragKey(null)}
-              className={`academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
+              data-upcoming={isUpcoming || undefined}
+              aria-current={isUpcoming ? "step" : undefined}
+              className={`${styles.stop} ${isUpcoming ? styles.upcoming : ""} academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
               editing ? "border-blue-200 bg-blue-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
             }`}>
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2">
+              <div className={styles.stopHeading}>
                 {editable ? (
                   <div className="flex shrink-0 flex-col gap-0.5" aria-label="순서 변경">
                     <button type="button" onClick={() => moveRow(row, -1)}
@@ -324,11 +324,11 @@ export default function UnifiedDriverClient({
                       aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▼</button>
                   </div>
                 ) : (
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[15px] font-black text-white ${row.isHub ? "bg-green-600" : "bg-[var(--color-academy-primary)]"}`}>
+                  <span className={styles.sequence}>
                     {seq}
                   </span>
                 )}
-                <div className="min-w-0"><span className="text-[18px] font-black leading-tight text-gray-900">{row.label}</span><p className="mt-1 text-[13px] font-bold text-gray-500">{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : row.riders.some((rider) => rider.kind === "REGULAR" && rider.absent) ? "사전 결석 · 체크 대상 없음" : "체크 대상 없음" : "기록 확인 필요"}</p></div>
+                <div className={styles.stopName}><span>{row.label}</span></div>
                 {editable ? (
                   <input
                     type="time"
@@ -338,28 +338,31 @@ export default function UnifiedDriverClient({
                     aria-label={`${row.label} 정차 시간`}
                   />
                 ) : (
-                  <div className="flex shrink-0 flex-col items-end">
-                    <span className={`${displayTime(row) ? "text-[26px] text-[var(--color-academy-primary)]" : "text-[15px] text-gray-400"} whitespace-nowrap font-black leading-none`}>{displayTime(row) ?? "시간 미정"}</span>
+                  <div className={styles.timeNavigation}>
+                    <span className={displayTime(row) ? styles.time : styles.unknownTime}>{displayTime(row) ?? "시간 미정"}</span>
                     {url && (
-                      <a href={url} className="inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] active:bg-[var(--color-academy-primary-soft)]">
+                      <a href={url} className={styles.navigation}>
                         <span aria-hidden="true" className="material-symbols-outlined text-[17px]">near_me</span> 길안내
                       </a>
                     )}
                   </div>
                 )}
-                <div className="col-span-3 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-semibold text-gray-500">
+                <div className={styles.stopMeta}>
                   <span className="font-bold text-[var(--color-academy-primary)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
                   {row.groupLabel && <span>{row.groupLabel}</span>}
+                  {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
+                  <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : row.riders.some((rider) => rider.kind === "REGULAR" && rider.absent) ? "사전 결석 · 체크 대상 없음" : "체크 대상 없음" : "기록 확인 필요"}</span>
                   {row.isHub && <span className="font-bold text-green-700">무료 거점</span>}
                   {row.pending && <span className="font-bold text-amber-700">순서 확인 필요</span>}
                   {row.warn && <span className="font-bold text-amber-700">노선 밖 승객 · 정차 확인 필요</span>}
+                  {isUpcoming && <span className={styles.upcomingBadge}>{upcoming.remainingMinutes != null && upcoming.remainingMinutes <= 5 ? upcoming.remainingMinutes === 0 ? "곧 도착 · 예정 시각" : `곧 도착 · ${upcoming.remainingMinutes}분 후` : `다음 정류장 · ${upcoming.remainingMinutes}분 후`}</span>}
                 </div>
               </div>
 
               {row.isHub && row.riders.length === 0 && <p className="mt-1.5 text-[15px] font-bold text-green-700">무료 거점(워크인, 정원 별도)</p>}
 
               {row.riders.length > 0 && (
-                <div className="mt-1.5 space-y-1">
+                <div className={`${styles.riders} space-y-1`}>
                   {row.riders.map((rider) => {
                     const status = boarding[rider.key] ?? null;
                     const parent = digits(rider.parentPhone), child = digits(rider.studentPhone);
@@ -370,12 +373,36 @@ export default function UnifiedDriverClient({
                     const lockedAbsent = rider.absent && rider.kind === "REGULAR";
                     const rowKey = `${row.key}:${rider.checkId}`;
                     return (
-                      <div key={rowKey} className={`academy-driver-rider rounded-xl px-2.5 py-2 ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
-                        <div className="academy-driver-rider-main grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                          <div className="academy-driver-rider-info min-w-0">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <div key={rowKey} className={`${styles.rider} academy-driver-rider rounded-xl ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
+                        <div className={styles.riderMain}>
+                          <div className={styles.riderInfo}>
+                            <div className={styles.identity}>
                               <span className={`break-all text-[19px] font-black ${lockedAbsent ? "text-gray-400 line-through" : "text-gray-900"}`}>{rider.name}</span>
                               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
+                            </div>
+                            {!lockedAbsent && (parent || child) && <div className={styles.contacts}>
+                              {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학부모</a>}
+                              {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학생</a>}
+                            </div>}
+                          </div>
+                          {lockedAbsent ? (
+                            <span className="rounded-xl border-2 border-red-300 px-3 py-2 text-[15px] font-black text-red-500">미{isPickup ? "탑승" : "하차"}(결석)</span>
+                          ) : (
+                            <div className={styles.boardingActions}>
+                              <button type="button" disabled={isBusy} onClick={() => { setMenuKey(null); setStatus(rider, "BOARDED"); }}
+                                aria-pressed={status === "BOARDED"}
+                                className={`h-11 rounded-xl text-[15px] font-black ${status === "BOARDED" ? "bg-green-600 text-white" : "border-2 border-green-400 text-green-700"}`}>
+                                {isPickup ? "탑승" : "하차"}
+                              </button>
+                              <button type="button" disabled={isBusy} onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
+                                aria-pressed={status === "NOSHOW" || status === "SELF"} aria-expanded={menuKey === rowKey}
+                                className={`h-11 rounded-xl text-[15px] font-black ${status === "NOSHOW" || status === "SELF" ? "bg-gray-700 text-white" : "border-2 border-gray-300 text-gray-600"}`}>
+                                미{isPickup ? "탑승" : "하차"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {(lockedAbsent || rider.shuttleNote || (rider.absent && status !== "BOARDED" && status !== "SELF") || status === "NOSHOW" || status === "SELF") && <div className={styles.riderNotes}>
                               {lockedAbsent && <span className="rounded-md bg-red-500 px-2 py-0.5 text-[13px] font-black text-white">오늘 결석</span>}
                               {rider.absent && !lockedAbsent && status !== "BOARDED" && status !== "SELF" && (
                                 <span className="rounded-md bg-amber-400 px-2 py-0.5 text-[13px] font-black text-white">결석예정</span>
@@ -385,28 +412,8 @@ export default function UnifiedDriverClient({
                               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
                               {rider.shuttleNote && <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[13px] font-black text-white">{rider.shuttleNote}</span>}
-                              {!lockedAbsent && parent && <a href={`tel:${parent}`} className="inline-flex min-h-11 items-center text-[14px] font-bold text-blue-600">학부모 전화</a>}
-                              {!lockedAbsent && child && <a href={`tel:${child}`} className="inline-flex min-h-11 items-center text-[14px] font-bold text-green-600">학생 전화</a>}
-                            </div>
-                          </div>
-                          {lockedAbsent ? (
-                            <span className="rounded-xl border-2 border-red-300 px-3 py-2 text-[15px] font-black text-red-500">미{isPickup ? "탑승" : "하차"}(결석)</span>
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <button type="button" disabled={isBusy} onClick={() => { setMenuKey(null); setStatus(rider, "BOARDED"); }}
-                                aria-pressed={status === "BOARDED"}
-                                className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "BOARDED" ? "bg-green-600 text-white" : "border-2 border-green-400 text-green-700"}`}>
-                                {isPickup ? "탑승" : "하차"}
-                              </button>
-                              <button type="button" disabled={isBusy} onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
-                                aria-pressed={status === "NOSHOW" || status === "SELF"} aria-expanded={menuKey === rowKey}
-                                className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "NOSHOW" || status === "SELF" ? "bg-gray-700 text-white" : "border-2 border-gray-300 text-gray-600"}`}>
-                                미{isPickup ? "탑승" : "하차"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        {saveState && <p role="status" className={`mt-1 text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-red-700" : "text-gray-600"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 underline">저장 상태 확인</button>}</p>}
+                        </div>}
+                        {saveState && <p role="status" className={`mt-1 text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-red-700" : "text-gray-600"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>}
                         {!lockedAbsent && menuKey === rowKey && (
                           <div className="mt-2 flex gap-2">
                             <button type="button" disabled={isBusy} onClick={() => { setStatus(rider, "NOSHOW"); setMenuKey(null); }}

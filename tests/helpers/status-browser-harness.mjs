@@ -17,6 +17,13 @@ export async function startStatusBrowserHarness({ entry, mocks = {}, css = "", a
     'entry.js': entry,
     'loader.cjs': `const ts = require(${JSON.stringify(require.resolve('typescript'))});
 module.exports = function(source) { return ts.transpileModule(source, {fileName:this.resourcePath, compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText; };`,
+    // 격리 브라우저에서도 실제 CSS Module 내용을 적용한다. 클래스 이름만 해시 대신 원문으로 매핑한다.
+    'css-loader.cjs': `module.exports = function(source) {
+const names = [...source.matchAll(/\\.([a-zA-Z_][a-zA-Z0-9_-]*)/g)].map(match => match[1]);
+const classes = Object.fromEntries(names.map(name => [name, name]));
+const css = source.replace(/:global\\(([^)]+)\\)/g, '$1');
+return 'const style=document.createElement("style");style.textContent='+JSON.stringify(css)+';document.head.append(style);export default '+JSON.stringify(classes)+';';
+};`,
     'navigation.js': `export function useRouter(){return {refresh(){window.dispatchEvent(new Event('test:refresh'));},push(url){window.dispatchEvent(new CustomEvent('test:navigate',{detail:url}));}};} export function usePathname(){return '/';}`,
     'link.js': `import {createElement} from 'react'; export default function Link({children,...props}){return createElement('a',props,children);}`,
     'dynamic.js': `export default function dynamic(){return function IsolatedUnusedSheet(){return null;};}`,
@@ -38,7 +45,10 @@ module.exports = function(source) { return ts.transpileModule(source, {fileName:
     mode: 'development', context: outputDir, target: 'web', devtool: false, cache: false,
     entry: path.join(outputDir, 'entry.js'), output: { path: outputDir, filename: 'bundle.js' },
     resolve: { extensions: ['.tsx', '.ts', '.js'], modules: [path.join(root, 'node_modules')], alias: aliases },
-    module: { rules: [{ test: /\.tsx?$/, use: [path.join(outputDir, 'loader.cjs')] }] },
+    module: { rules: [
+      { test: /\.tsx?$/, use: [path.join(outputDir, 'loader.cjs')] },
+      { test: /\.css$/, use: [path.join(outputDir, 'css-loader.cjs')] },
+    ] },
     plugins: [{ apply(current) {
       current.hooks.compilation.tap('IsolatedStatusScreens', compilation => {
         compilation.hooks.finishModules.tap('IsolatedStatusScreens', modules => {
@@ -60,11 +70,12 @@ module.exports = function(source) { return ts.transpileModule(source, {fileName:
   const bundle = await readFile(path.join(outputDir, 'bundle.js'));
   const html = '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>학원 화면 격리 검사</title><style>' + css + '</style></head><body><div id="root"></div><script src="/bundle.js"></script></body></html>';
   const server = createServer((request, response) => {
-    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'");
     response.setHeader('Cache-Control', 'no-store');
     const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
     if (request.method === 'GET' && Object.hasOwn(assets, pathname)) {
-      response.writeHead(200, { 'Content-Type': 'image/png' }); response.end(assets[pathname]); return;
+      const asset = assets[pathname];
+      response.writeHead(200, { 'Content-Type': asset.contentType ?? 'image/png' }); response.end(asset.body ?? asset); return;
     }
     if (request.method !== 'GET' || !['/', '/bundle.js'].includes(pathname)) {
       response.writeHead(404); response.end('격리 검사에는 운영 API가 없습니다.'); return;

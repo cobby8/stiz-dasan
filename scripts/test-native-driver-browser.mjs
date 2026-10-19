@@ -13,6 +13,9 @@ window.mountDriver=()=>root.render(React.createElement(Driver,props));
 window.hideDriver=()=>root.render(null); window.mountDriver();` });
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
 const results = [];
+async function gpsDetails(page) {
+  await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
+}
 async function check(name, test, initial = {}) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   try {
@@ -33,6 +36,7 @@ async function check(name, test, initial = {}) {
 try {
   await check('재진입 시 기기 운행 복구·웹 위치 수집 없음', async page => {
     await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    await gpsDetails(page);
     await page.getByText(/화면을 끄거나 길안내 앱으로 이동해도/).waitFor();
     assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot']);
   }, { state: 'active', transmission: 'sent', running: true, lastSentAt: new Date().toISOString() });
@@ -40,12 +44,14 @@ try {
     await page.getByRole('button', { name: '운행 시작', exact: true }).click();
     assert.equal(await page.evaluate(() => window.nativeCalls.at(-1).action), 'start');
     await page.evaluate(() => window.emitNative({ state: 'requesting', running: false }));
+    await gpsDetails(page);
     await page.getByText('새 기기 위치를 기다리는 중…').waitFor();
     assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
     await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
   });
   await check('기기 권한 거부·시작 실패를 숨기지 않는다', async page => {
     await page.evaluate(() => window.emitNative({ state: 'denied', transmission: 'error', running: false, error: '정확한 위치 권한을 허용해 주세요.' }));
+    await gpsDetails(page);
     await page.getByRole('alert').filter({ hasText: '정확한 위치 권한을 허용해 주세요.' }).waitFor();
     await page.getByRole('button', { name: '위치 연결 다시 시도' }).waitFor();
     assert.equal(await page.getByRole('button', { name: '운행 종료', exact: true }).count(), 0);
@@ -53,6 +59,7 @@ try {
   await check('새 위치 지연 안내는 일반 오류 없이 마지막 접수를 보존', async page => {
     await page.evaluate(() => window.emitNative({ state: 'requesting', transmission: 'idle', running: true,
       lastSentAt: new Date(Date.now() - 60_000).toISOString(), error: '위치 갱신이 지연되고 있습니다. 휴대폰 위치 설정과 GPS 수신 환경을 확인해 주세요.' }));
+    await gpsDetails(page);
     await page.getByRole('status').filter({ hasText: '위치 갱신이 지연되고 있습니다.' }).waitFor();
     await page.getByText(/마지막 서버 접수 ·/).waitFor();
     await page.getByText(/현재 위치는 확인이 필요합니다/).waitFor();
@@ -61,6 +68,7 @@ try {
   await check('전송 실패는 실제 원인과 마지막 접수를 함께 표시', async page => {
     await page.evaluate(() => window.emitNative({ state: 'error', transmission: 'error', running: true,
       lastSentAt: new Date().toISOString(), error: '서버 연결에 실패했습니다.' }));
+    await gpsDetails(page);
     await page.getByRole('alert').filter({ hasText: '서버 연결에 실패했습니다.' }).waitFor();
     await page.getByText(/마지막 서버 접수 ·/).waitFor();
     await page.getByText(/다음 전송에서 재시도합니다/).waitFor();
@@ -71,6 +79,7 @@ try {
     await page.evaluate(() => window.emitNative({ state: 'off', running: false, transmission: 'stopping' }));
     assert.equal(await page.getByRole('button', { name: '종료 확인 중' }).isDisabled(), true);
     await page.evaluate(() => window.emitNative({ state: 'off', running: false, transmission: 'stop-unknown' }));
+    await gpsDetails(page);
     await page.getByText(/기기 위치 수집은 중단됨 · 서버 공유 중단은 확인 필요/).waitFor();
   }, { state: 'active', transmission: 'sent', running: true });
   await check('화면 해제·복귀가 서비스 운행을 종료하거나 재시작하지 않는다', async page => {
@@ -103,6 +112,7 @@ try {
     assert.equal(await page.evaluate(() => window.nativeCalls.some(x => x.action === 'start')), false);
   }, { state: 'off', transmission: 'stop-unknown', running: false });
   await check('강제 중단 후 복귀는 서버 종료 완료로 표시하지 않는다', async page => {
+    await gpsDetails(page);
     await page.getByRole('alert').filter({ hasText: '운행 화면에서 다시 시작해 주세요.' }).waitFor();
     assert.equal(await page.getByText(/서버 중단 접수 완료/).count(), 0);
     await page.getByRole('button', { name: '운행 시작', exact: true }).waitFor();

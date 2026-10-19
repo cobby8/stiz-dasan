@@ -1,0 +1,64 @@
+.workspace {
+  width: 100%;
+  max-width: 1120px;
+  color: var(--color-academy-ink);
+}
+
+.runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 800; }
+.runSummary span { color: var(--color-academy-muted); font-size: 13px; font-weight: 600; }
+.headerActions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+
+.workspace .stop {
+  padding: 10px;
+  border: 1px solid var(--color-academy-line);
+  border-radius: 16px;
+  min-width: 0;
+}
+
+/* 강조선이 번호와 조작 버튼에 붙지 않도록 안쪽 여백을 확보한다. */
+.workspace.workspace .stop.upcoming[data-upcoming][aria-current] {
+  border: 3px solid var(--color-academy-primary);
+  padding: 8px;
+  background: var(--color-academy-primary-soft);
+}
+
+.stopHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.stopHeading input[type="time"] { flex-basis: 100%; }
+.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 17px; font-weight: 900; }
+.upcoming .sequence { background: var(--color-academy-primary); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
+.stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
+.timeNavigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; margin-inline-start: auto; }
+.time { color: var(--color-academy-primary); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.upcoming .time { font-size: 28px; }
+.unknownTime { color: var(--color-academy-muted); font-size: 14px; font-weight: 700; }
+.navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 800; }
+.navigation:focus-visible, .contacts a:focus-visible { outline: 3px solid var(--color-academy-primary); outline-offset: 2px; }
+.stopMeta { flex: 1 0 calc(100% - 38px); margin-inline-start: 38px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--color-academy-muted); font-size: 13px; line-height: 1.4; font-weight: 600; }
+.upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-primary); font-size: 14px; font-weight: 900; }
+.riders { margin-top: 8px; min-width: 0; }
+.rider { padding: 6px 8px; min-width: 0; }
+.riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; min-height: 44px; flex-wrap: wrap; }
+.riderInfo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; min-width: 0; max-width: 100%; flex: 1 0 auto; }
+.identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.contacts { display: flex; align-items: center; gap: 0 2px; }
+.contacts a { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 44px; color: var(--color-academy-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.contacts a span { font-size: 18px; }
+.riderMain > :last-child { flex-shrink: 0; }
+.boardingActions { display: flex; align-items: center; gap: 4px; }
+.boardingActions button { min-width: 52px; }
+.riderNotes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
+.rider button:disabled { opacity: .55; }
+
+@media (max-width: 600px) {
+  .stopName { font-size: 18px; }
+  .identity > :first-child { font-size: 18px; }
+  .identity > :nth-child(2) { font-size: 12px; }
+  .contacts a { font-size: 12px; gap: 2px; }
+  .contacts a span { font-size: 14px; }
+}
+
+/* 태블릿과 PC에서도 운행 순서는 세로로 유지하고 정류장 옆에 명단을 둔다. */
+@media (min-width: 701px) {
+  .workspace .stop { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.3fr); gap: 8px 20px; align-items: start; }
+  .riders { margin-top: 0; }
+}

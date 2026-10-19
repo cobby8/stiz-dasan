@@ -278,18 +278,19 @@ test("통합 화면은 종류별 기존 저장 API·기존 파라미터를 그�
   assert.match(src, /SELF/);
 });
 
-test("기사님 카드의 길안내는 시간 아래 작은 버튼이며 학생 행은 압축한다", async () => {
+test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 유지한다", async () => {
   const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
-  // 길안내는 시간과 같은 오른쪽 열에 두고, 이전의 카드 폭 전체 버튼을 다시 만들지 않는다.
-  assert.match(src, /flex shrink-0 flex-col items-end/);
-  assert.match(src, /inline-flex min-h-11 items-center gap-1 rounded-lg/);
+  const css = await readFile("src/components/shuttle/DriverWorkspace.module.css", "utf8");
+  // 실제 크기·겹침은 별도 브라우저 검사에서 확인한다. 이 가드는 연결 누락만 확인한다.
+  assert.match(src, /className=\{styles\.timeNavigation\}/);
+  assert.match(src, /className=\{styles\.navigation\}/);
+  assert.match(css, /\.timeNavigation\s*\{[^}]*display:\s*flex/);
   assert.match(src, /near_me<\/span> 길안내/);
   assert.doesNotMatch(src, /flex h-12 items-center justify-center gap-1\.5 rounded-xl bg-blue-600/);
-  // 배지는 이름 바로 아래로 붙고, 전화 링크와 탑승 버튼은 한 행을 유지한다.
-  assert.match(src, /grid grid-cols-\[auto_minmax\(0,1fr\)_auto\] items-start gap-x-2/);
-  assert.match(src, /col-span-3 mt-1 flex flex-wrap items-center/);
-  assert.match(src, /academy-driver-rider-main grid grid-cols-\[minmax\(0,1fr\)_auto\]/);
-  assert.match(src, /h-11 min-w-\[60px\]/);
+  assert.match(src, /className=\{styles\.contacts\}/);
+  assert.match(src, /className=\{styles\.riderMain\}/);
+  assert.match(src, /className=\{styles\.boardingActions\}/);
+  assert.match(css, /\.boardingActions button\s*\{[^}]*min-width:\s*52px/);
 });
 
 test("운행 시작은 헤더 오른쪽에만 두고 순서·시간 수정은 목록 제목 옆에 둔다", async () => {

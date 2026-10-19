@@ -105,9 +105,13 @@ try {
   }, { props: { initialBoardingReliable: false } });
   await check('시작·종료는 헤더 한곳에 있고 GPS 실패·중단 불확실을 남긴다', async page => {
     await page.getByRole('button', { name: /운행 시작/ }).click();
+    await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
     await page.getByText(/위치 권한 거부됨/).waitFor();
+    await page.getByRole('button', { name: '위치 공유 상세 닫기' }).click();
     assert.equal(await page.locator('header').getByRole('button', { name: /운행 종료/ }).count(), 1);
-    await page.getByRole('button', { name: /운행 종료/ }).click(); await page.getByText(/서버 공유 중단은 확인 필요/).waitFor();
+    await page.getByRole('button', { name: /운행 종료/ }).click();
+    await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
+    await page.getByText(/서버 공유 중단은 확인 필요/).waitFor();
     assert.equal(await page.evaluate(() => window.__gpsStarts), 1); assert.equal(await page.evaluate(() => window.__gpsStops), 1);
   });
   await check('설치 안내는 명시적으로 누를 때만 설치 창을 요청한다', async page => {
