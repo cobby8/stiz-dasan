@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 외부 기사시안 연락버튼 이름우측·360px이상 학생행56px, 11폭·독립178 통과. 실제iPhone Safari세로/검색·메모키보드·가로874×402·세로복원 확인. 임시측정과 실제OS/스크린샷검증 구분, errors1항목 추가. docs/academy-responsive-mock-validation.md 갱신, 지식문서5 유지·배포없음.
+
 > 2026-10-19: 외부시안 관리자메뉴 mobile약60.9px로접기·PC버튼숨김 보완. 독립104, 실제 SM-F971N Android17 Chrome33/adb터치10/실제회전16 통과, free/세로복원. iPhone·네이티브앱·운영미검증. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md 및 출시계획 갱신. 배포없음.
 
 > 2026-10-19: 외부 미리보기 HTTP charset 누락 수정·24 HTTP검사 통과. 사용자 첨부 깨짐은 옆 브라우저, SM-F971N 현재 관리자 홈 단일 캡처 한글 정상. 실물8화면 미검증·모바일 관리자 메뉴 세로 적층 보완 필요. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md.
