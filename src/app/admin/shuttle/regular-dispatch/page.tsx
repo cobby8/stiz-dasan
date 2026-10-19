@@ -58,7 +58,7 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
 
   return (
     <>
-      <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" subtitle="정규 수업 셔틀을 요일별로 자동 배차합니다(학생 신청서 좌표 기반)." />
+      <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" />
       <ShuttleSectionTabs />
       {/* 1회용 준비 작업: 좌표 없는 정류장이 있으면 좌표 채우기 패널을 배차 위에 노출 */}
       <RegularStopGeocodePanel

@@ -207,14 +207,15 @@ test("신청 수정, 일정 변경, 취소는 운영 이력으로 남고 관리�
   assert.match(applyModals, /원생 상세 열기/);
 });
 
-test("관리자 신청 화면은 제목과 한 줄 설명만 남기고 중복 요약을 제거한다", () => {
+test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약을 제거한다", () => {
   assert.match(adminShell, /label="신청 관리"/);
   assert.match(adminShell, /label="수납·청구"/);
   assert.match(adminShell, /신청·수업 업무/);
   assert.match(adminShell, /학원 운영 설정/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);
-  assert.match(applyClient, /체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다\./);
+  assert.match(applyClient, /체험\/수강신청 관리/);
+  assert.doesNotMatch(applyClient, /체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다/);
   assert.doesNotMatch(applyClient, /신청 페이지 미리보기/);
   assert.doesNotMatch(applyClient, /오늘 먼저/);
   assert.doesNotMatch(applyClient, /새 체험/);
@@ -280,7 +281,7 @@ test("신청 관리에는 유입경로 통계를 탭에서 지연 로딩한다",
   assert.match(applyClient, /activeTab !== "sources"/);
   assert.match(applyClient, /function renderSourceStats\(\)/);
   assert.match(applyClient, /등록 전환/);
-  assert.match(applyClient, /체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다/);
+  assert.doesNotMatch(applyClient, /체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다/);
   assert.match(applyClient, /activeTab === "sources" \?[\s\S]*renderSourceStats\(\)/);
   assert.match(adminReadPayloads, /getCachedAdminApplySourceStatsPayload/);
   assert.match(adminReadPayloads, /FROM "TrialLead"/);

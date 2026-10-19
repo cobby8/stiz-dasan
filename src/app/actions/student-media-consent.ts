@@ -1,5 +1,6 @@
 "use server";
 
+import { userFacingError } from "@/lib/user-facing-error";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
@@ -72,7 +73,7 @@ export async function recordStudentMediaConsent(input: {
     return { ok: true, message: "사진 사용 동의를 새 이력으로 기록했습니다." };
   } catch (error) {
     console.error("Failed to record student media consent", error);
-    return { ok: false, message: error instanceof Error ? error.message : "동의를 기록하지 못했습니다." };
+    return { ok: false, message: userFacingError(error, "동의를 기록하지 못했습니다.") };
   }
 }
 
@@ -104,6 +105,6 @@ export async function revokeStudentMediaConsent(input: {
     return { ok: true, message: "동의를 철회했습니다. 새 사진 공개는 즉시 차단됩니다." };
   } catch (error) {
     console.error("Failed to revoke student media consent", error);
-    return { ok: false, message: error instanceof Error ? error.message : "동의를 철회하지 못했습니다." };
+    return { ok: false, message: userFacingError(error, "동의를 철회하지 못했습니다.") };
   }
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
+import { addDaysKst, kstDow } from "@/lib/datetime/kst";
 // 저장 시점 이후의 수강상태 변동(결석·수강취소·폐강 등)을 "읽을 때" 반영하기 위해 유효 명단 게이트웨이를 쓴다.
 // ⚠️ 순환 import 주의: shuttleRoster.ts는 dispatchRoute를 import하지 않으므로(단방향) 여기서 가져와도 안전하다.
 //    shuttle-optimize.ts는 dispatchRoute를 import하므로, 반대로 여기서 shuttle-optimize를 import하면 순환이 된다.
@@ -52,6 +53,18 @@ function normDir(v: unknown): "PICKUP" | "DROPOFF" | null {
   return v === "PICKUP" || v === "DROPOFF" ? v : null;
 }
 
+// 날짜가 속한 시즌이 하나일 때만 요일 노선을 공유한다. 겹치는 시즌은 추측하지 않는다.
+async function seasonalRouteScope(date: string): Promise<{ first: string; last: string }> {
+  const rows = await prisma.$queryRawUnsafe<{ first: string; last: string }[]>(
+    `SELECT ("startsAt" AT TIME ZONE 'Asia/Seoul')::date::text AS first,
+            ("endsAt" AT TIME ZONE 'Asia/Seoul')::date::text AS last
+       FROM "SpecialProgramSeason"
+      WHERE $1::date BETWEEN ("startsAt" AT TIME ZONE 'Asia/Seoul')::date
+                         AND ("endsAt" AT TIME ZONE 'Asia/Seoul')::date`, date);
+  if (rows.length !== 1) throw new Error("운행 날짜의 특강 기간을 확인해 주세요.");
+  return rows[0];
+}
+
 /**
  * 그 날짜·방향의 저장된 노선. 없으면 null.
  *
@@ -64,12 +77,13 @@ function normDir(v: unknown): "PICKUP" | "DROPOFF" | null {
 export async function getSavedDispatchRoute(
   date: string | null,
   direction: string,
-  opts?: { attendanceDate?: string | null },
+  opts?: { attendanceDate?: string | null; strict?: boolean; raw?: boolean },
 ): Promise<SavedDispatchRoute | null> {
   const d = normDate(date), dir = normDir(direction);
   const attendanceDate = normDate(opts?.attendanceDate) ?? d;
   if (!d || !dir) return null;
   try {
+    const scope = await seasonalRouteScope(d);
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
       // 노선은 **요일 단위**다. 그 날짜에 저장 행이 없으면 같은 요일의 대표일(가장 이른 날) 것을 쓴다.
       //   이게 없으면 화면에서 날짜를 바꾸는 순간(예: 8/10 월요일) 저장 행이 없다고 판단해
@@ -82,11 +96,12 @@ export async function getSavedDispatchRoute(
         --    "operator does not exist: text = date"로 쿼리가 통째로 실패하고,
         --    바깥 try/catch가 이를 삼켜 "저장 노선 없음"으로 보인다(노선이 화면에서 사라진다).
         WHERE "direction" = $2
+          AND "serviceDate" BETWEEN $3 AND $4
           AND ("serviceDate" = $1
                OR EXTRACT(DOW FROM "serviceDate"::date) = EXTRACT(DOW FROM $1::date))
-        ORDER BY ("serviceDate" = $1) DESC, "serviceDate" ASC
+        ORDER BY "serviceDate" ASC
         LIMIT 1`,
-      d, dir,
+      d, dir, scope.first, scope.last,
     );
     const r = rows[0];
     if (!r) return null;
@@ -100,7 +115,7 @@ export async function getSavedDispatchRoute(
     // 변동 감지 결과(Phase 2a). 명단 조회가 안 되면 빈 배열로 둔다(배너가 안 뜰 뿐, 저장본은 그대로 보인다).
     let added: SavedRouteChange[] = [];
     let locationChanged: SavedRouteChange[] = [];
-    if (d) {
+    if (d && !opts?.raw) {
       try {
         // ★ 노선 소속(validIds) = **그 요일에 수업이 하나라도 있는 사람**.
         //   대표일 하루로 판정하면 시즌 중간 합류자가 그 요일 노선에 영원히 못 들어간다
@@ -155,7 +170,8 @@ export async function getSavedDispatchRoute(
         };
         added = diff.added.map(enrich);
         locationChanged = diff.locationChanged.map(enrich);
-      } catch {
+      } catch (error) {
+        if (opts?.strict) throw error;
         // 유효 명단 조회가 실패하면(테이블 없음 등) 저장본을 그대로 보여 준다 — 화면이 비는 것보다 안전하다.
         vehicles = savedVehicles;
         added = [];
@@ -171,7 +187,8 @@ export async function getSavedDispatchRoute(
       added,
       locationChanged,
     };
-  } catch {
+  } catch (error) {
+    if (opts?.strict) throw error;
     // 테이블이 아직 없는 환경 → 저장 없음으로 취급(화면은 자동 제안 그대로).
     return null;
   }
@@ -259,7 +276,7 @@ function stripDerivedFlags(vehicles: unknown[]): unknown[] {
 
 /** 조정된 노선을 저장(덮어쓰기). 원장/관리자만. */
 export async function saveDispatchRoute(input: {
-  date: string; direction: string; vehicles: unknown[]; classStart?: string | null; classEnd?: string | null;
+  date: string; direction: string; vehicles: unknown[]; classStart?: string | null; classEnd?: string | null; expectedSavedAt?: string | null;
 }): Promise<{ savedAt: string | null }> {
   const admin = await requireAdmin();
   const d = normDate(input.date), dir = normDir(input.direction);
@@ -267,44 +284,50 @@ export async function saveDispatchRoute(input: {
   const vehicles = stripDerivedFlags(Array.isArray(input.vehicles) ? input.vehicles : []);
   const payloadJson = JSON.stringify({ vehicles });
 
-  // 노선은 **요일당 한 벌**이다. 같은 요일 노선이 이미 있으면 그 행에 덮어쓴다.
-  //   8/10(월) 화면에서 저장했다고 8/10 행을 새로 만들면 월요일 노선이 7/27·8/10 두 벌로 갈라지고,
-  //   날짜마다 다른 노선이 보이기 시작한다. 요일 노선이라는 전제가 무너지므로 반드시 한 행으로 모은다.
+  const scope = await seasonalRouteScope(d);
   const existing = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    // serviceDate는 text 컬럼이라 EXTRACT 전에 반드시 ::date 캐스팅해야 한다.
-    `SELECT "serviceDate" AS d
-       FROM "SeasonalDispatchRoute"
-      WHERE "direction" = $2
+    `SELECT "serviceDate" AS d FROM "SeasonalDispatchRoute"
+      WHERE "direction" = $2 AND "serviceDate" BETWEEN $3 AND $4
         AND EXTRACT(DOW FROM "serviceDate"::date) = EXTRACT(DOW FROM $1::date)
-      ORDER BY "serviceDate" ASC
-      LIMIT 1`,
-    d, dir,
+      ORDER BY "serviceDate" ASC LIMIT 1`, d, dir, scope.first, scope.last,
   );
-  const targetDate = normDate(existing[0]?.d) ?? d;
+  // 신규 노선은 기간 안의 첫 같은 요일을 정본 키로 삼아 동시 첫 저장도 한 행에 모은다.
+  const firstWeekdayDate = addDaysKst(scope.first, (kstDow(d) - kstDow(scope.first) + 7) % 7);
+  const targetDate = normDate(existing[0]?.d) ?? firstWeekdayDate;
 
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
     `INSERT INTO "SeasonalDispatchRoute" ("serviceDate","direction","payload","classStart","classEnd","savedByUserId","updatedAt")
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, now())
+     SELECT $1, $2, $3::jsonb, $4, $5, $6, now()
+     WHERE NOT $7::boolean OR $8::timestamptz IS NULL OR EXISTS (
+       SELECT 1 FROM "SeasonalDispatchRoute" WHERE "serviceDate"=$1 AND "direction"=$2
+         AND date_trunc('milliseconds',"updatedAt")=$8::timestamptz)
      ON CONFLICT ("serviceDate","direction") DO UPDATE SET
        "payload" = EXCLUDED."payload",
        "classStart" = EXCLUDED."classStart",
        "classEnd" = EXCLUDED."classEnd",
        "savedByUserId" = EXCLUDED."savedByUserId",
        "updatedAt" = now()
+     WHERE NOT $7::boolean OR date_trunc('milliseconds',"SeasonalDispatchRoute"."updatedAt")=$8::timestamptz
      RETURNING "updatedAt"`,
     targetDate, dir, payloadJson,
     input.classStart ?? null, input.classEnd ?? null, admin.appUserId ?? null,
+    input.expectedSavedAt !== undefined, input.expectedSavedAt ?? null,
   );
+  if (!rows.length) throw new Error("다른 창에서 노선이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.");
   return { savedAt: isoOrNull(rows[0]?.updatedAt) };
 }
 
 /** 저장된 노선을 삭제한다(그 날짜·방향). 삭제 후에는 자동 제안이 다시 기준이 된다. 원장/관리자만. */
-export async function deleteDispatchRoute(date: string, direction: string): Promise<{ deleted: number }> {
+export async function deleteDispatchRoute(date: string, direction: string, expectedSavedAt?: string | null): Promise<{ deleted: number }> {
   await requireAdmin();
   const d = normDate(date), dir = normDir(direction);
   if (!d || !dir) throw new Error("날짜 또는 방향이 올바르지 않습니다.");
+  const scope = await seasonalRouteScope(d);
   const n = await prisma.$executeRawUnsafe(
-    `DELETE FROM "SeasonalDispatchRoute" WHERE "serviceDate" = $1 AND "direction" = $2`, d, dir,
+    `DELETE FROM "SeasonalDispatchRoute" WHERE "direction" = $2 AND "serviceDate" BETWEEN $3 AND $4
+      AND EXTRACT(DOW FROM "serviceDate"::date) = EXTRACT(DOW FROM $1::date)
+      AND (NOT $5::boolean OR date_trunc('milliseconds',"updatedAt")=$6::timestamptz)`, d, dir, scope.first, scope.last, expectedSavedAt !== undefined, expectedSavedAt ?? null,
   );
+  if (!Number(n) && expectedSavedAt !== undefined) throw new Error("다른 창에서 노선이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.");
   return { deleted: Number(n) || 0 };
 }

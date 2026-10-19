@@ -7,7 +7,7 @@
  * Phase 2 변경사항:
  * - 히어로 섹션을 좌 텍스트 + 우 이미지 분할 레이아웃으로 변경
  * - 듀얼 CTA: "체험 신청"(Primary) + "프로그램 보기"(Ghost)
- * - TrustBadges, ProgramHighlight, ProcessSteps, TestimonialCarousel, CTABanner 추가
+ * - TrustBadges, ProcessSteps, TestimonialCarousel, CTABanner 추가
  * - 기존 유튜브/갤러리 섹션은 SectionLayout으로 감싸서 스타일 개선
  * - settings 데이터 의존성 유지 (introductionTitle, introductionText, youtubeUrl)
  * - 갤러리 하이라이트는 관리자 갤러리 `GalleryPost` 공개 이미지 사용

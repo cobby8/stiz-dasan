@@ -1083,7 +1083,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <span className="material-symbols-outlined text-2xl text-brand-orange-500 dark:text-brand-neon-lime">sports_basketball</span>
                             <div>
                                 <p className="break-keep font-bold text-brand-navy-900">방학특강 결석 신고 · 보강</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">사전 신고하면 그날 셔틀 배차에서 자동 제외돼요. 결석한 회차 보강 신청도 여기서.</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">신고한 결석은 선생님과 기사님에게 표시됩니다. 보강도 신청할 수 있습니다.</p>
                             </div>
                         </div>
                         <span className="material-symbols-outlined text-gray-300">chevron_right</span>
@@ -1100,7 +1100,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <span className="material-symbols-outlined text-2xl text-gray-400 dark:text-gray-300">edit_calendar</span>
                             <div>
                                 <p className="font-bold text-brand-navy-900">정규수업 결석 신고</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">다가오는 수업 날짜를 골라 사유와 함께 미리 신고해요. 그날 셔틀에서도 자동으로 빠집니다.</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">날짜와 사유를 골라 신고하세요. 신고한 결석은 선생님과 기사님에게 표시됩니다.</p>
                             </div>
                         </div>
                         <span className="material-symbols-outlined text-gray-300">chevron_right</span>

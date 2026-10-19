@@ -1,5 +1,7 @@
 "use client";
 
+import { formatPhoneInput, formatClassLabel } from "@/lib/application-display-format";
+
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
     approveEnrollApplication,
@@ -173,13 +175,6 @@ function dateInputValue(dateStr: string | null) {
     return date.toISOString().slice(0, 10);
 }
 
-function formatPhoneInput(value: string) {
-    const nums = value.replace(/\D/g, "").slice(0, 11);
-    if (nums.length > 7) return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
-    if (nums.length > 3) return `${nums.slice(0, 3)}-${nums.slice(3)}`;
-    return nums;
-}
-
 function FormField({ label, children }: { label: string; children: ReactNode }) {
     return (
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -198,12 +193,6 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
             <span className="text-gray-900 dark:text-white font-medium">{displayValue}</span>
         </div>
     );
-}
-
-function formatClassLabel(classInfo: ClassInfo) {
-    const dayLabel = DAY_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const programName = classInfo.program?.name ? ` · ${classInfo.program.name}` : "";
-    return `${dayLabel} ${classInfo.startTime}~${classInfo.endTime} · ${classInfo.name}${programName}`;
 }
 
 function formatPreferredSlots(slotKeys: string | null, classes: ClassInfo[]) {

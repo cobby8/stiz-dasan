@@ -782,7 +782,6 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h3 className="text-base font-black text-gray-900 dark:text-white">셔틀 명단</h3>
-            <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">정규 셔틀 이용 학생을 요일·수업별로 관리합니다. 신규·퇴원·반이동은 여기서 바로 고칩니다.</p>
             <p className="mt-0.5 text-[11.5px] text-gray-400">이번 달·다음 달 명단은 직전 달을 복사해 자동으로 만들어집니다. 다음 달 변경은 월을 바꿔 미리 고쳐 두세요.</p>
           </div>
           <label className="flex flex-col gap-1 text-[11px] font-bold text-gray-500">월

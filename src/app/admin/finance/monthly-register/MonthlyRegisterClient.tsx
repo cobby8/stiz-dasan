@@ -198,7 +198,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
     <header><h1 className="text-2xl font-bold">학생별 월 운영 장부</h1><p className="mt-2">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·Rallyz에는 반영하지 않습니다.</p></header>
     <div className="rounded border border-[var(--color-brand-orange-500)] p-4">이 화면의 확정은 장부 내용 확인입니다. 청구서 발행이나 운영 시스템 전환을 뜻하지 않습니다. 빈 금액과 날짜를 자동으로 채우지 않습니다.</div>
     <form onSubmit={(event) => { event.preventDefault(); chooseTarget(); }} className="flex flex-wrap items-end gap-3">
-      <label className="grid gap-1">학생 ID<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="rounded border p-2" /></label>
+      <label className="grid gap-1">원생 번호<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="rounded border p-2" /></label>
       <label className="grid gap-1">적용 월<input type="month" value={month} disabled={saving || Boolean(preview)} onChange={(event) => setMonth(event.target.value)} className="rounded border p-2" /></label>
       <button disabled={saving || Boolean(preview) || loading} className="rounded border px-4 py-2 disabled:opacity-50">조회 / 새로고침</button>
     </form>
@@ -207,9 +207,9 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
     {error && <p role="alert" className="rounded border p-3">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {ready && view && target && <>
-      <div className="rounded border p-4"><h2 className="text-lg font-bold">{view.studentName} · {target.month}</h2><p className="break-all text-sm">학생 ID: {target.studentId}</p>
-        <p>{view.record ? `${view.record.status === "CONFIRMED" ? "확정" : "초안"} · 버전 ${view.record.version}` : "저장된 장부 없음"}</p>
-        {!view.writesEnabled && <p className="mt-2 font-bold">운영 준비 중: 서버의 저장 기능이 꺼져 있어 조회만 가능합니다.</p>}
+      <div className="rounded border p-4"><h2 className="text-lg font-bold">{view.studentName} · {target.month}</h2><p className="break-all text-sm">원생 번호: {target.studentId}</p>
+        <p>{view.record ? `${view.record.status === "CONFIRMED" ? "확정" : "초안"} · 기록 ${view.record.version}차` : "저장된 장부 없음"}</p>
+        {!view.writesEnabled && <p className="mt-2 font-bold">현재 조회만 가능합니다. 저장 기능은 준비 중입니다.</p>}
         {hasUnknownClasses && <p className="mt-2 font-bold">현재 등록 후보에 없는 과거 반이 있어 확인보류합니다. 내용을 조회할 수 있지만 수정·확정은 잠겨 있습니다.</p>}
         {confirmed && <p>확정 장부는 편집할 수 없습니다. 사유를 입력하고 수정용으로 다시 열어 주세요.</p>}
         {view.record && <p>저장된 수강료 {money(view.record.totals.tuitionAmount)} + 월 셔틀비 {money(view.record.totals.shuttleAmount)} = 합계 {money(view.record.totals.totalAmount)}</p>}
@@ -246,7 +246,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
       {dirty && !confirmed && <p>저장하지 않은 편집이 있습니다. 확정 전에 초안을 저장해야 합니다.</p>}
       {preview && <section aria-label="작업 미리보기" className="space-y-3 rounded border-2 border-[var(--color-brand-orange-500)] p-4">
         <h2 className="text-lg font-bold">{actions[preview.action]} 전 최종 확인</h2>
-        <p>{view.studentName} · {preview.target.month} · 기준 버전 {preview.version}</p><p className="break-all text-xs">학생 ID: {preview.target.studentId}</p>
+        <p>{view.studentName} · {preview.target.month} · 기준 버전 {preview.version}</p><p className="break-all text-xs">원생 번호: {preview.target.studentId}</p>
         {preview.payload.classes.map((row) => <div key={row.classId} className="border-b pb-2"><p>{className(row.classId)} · {statuses[row.status]} · {row.periodStart} ~ {row.periodEnd}</p><p className="break-all text-xs">반 ID: {row.classId}</p><p>기본 {money(row.baseAmount)} − 할인 {money(row.discountAmount)} − 이월 {money(row.carryAmount)} − 일할 {money(row.prorationAmount)} = {money(preview.totals.rows.find((item) => item.classId === row.classId)?.amount ?? 0)}</p><p>근거: {row.basis}</p></div>)}
         <p>월 셔틀비 {money(preview.payload.shuttleAmount)} · {preview.payload.shuttleBasis}</p><p>작업 사유: {preview.reason}</p>
         <p className="font-bold">수강료 합계 {money(preview.totals.tuitionAmount)} + 월 셔틀비 {money(preview.totals.shuttleAmount)} = 월 총액 {money(preview.totals.totalAmount)}</p>

@@ -1685,9 +1685,6 @@ function TrialLeadDetailModal({
                         <h2 id="trial-detail-modal-title" className="mt-2 text-xl font-black text-gray-900 dark:text-white">
                             {lead.childName} 체험 신청 상세
                         </h2>
-                        <p className="mt-1 text-sm font-bold text-gray-500 dark:text-gray-400">
-                            행 목록에서는 핵심만 보고, 상세 정보는 여기서 확인합니다.
-                        </p>
                     </div>
                     <a
                         href={phoneHref(lead.parentPhone)}

@@ -111,7 +111,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                 </p>
               )}
               {req.type === "ORDER" && (
-                <p className="text-[12px] text-gray-400 mb-3">새 순서 payload 첨부됨</p>
+                <p className="text-[12px] text-gray-400 mb-3">변경할 운행 순서가 첨부되었습니다.</p>
               )}
               <div className="flex gap-2">
                 <button type="button" disabled={busy[req.id]}

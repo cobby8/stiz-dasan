@@ -127,7 +127,6 @@ export default function ClubShopClient() {
           <ShopNotice
             icon="sports_basketball"
             title="판매 가능한 상품을 준비 중입니다"
-            body="구매 가능한 상품이 등록되면 이 화면에 바로 표시됩니다."
             onRetry={() => window.location.reload()}
           />
         )}
@@ -239,7 +238,7 @@ function ShopNotice({
 }: {
   icon: FontFreeIconName;
   title: string;
-  body: string;
+  body?: string;
   onRetry: () => void;
 }) {
   return (
@@ -248,7 +247,7 @@ function ShopNotice({
         <FontFreeIcon name={icon} size={28} />
       </div>
       <h3 className="mt-4 break-keep text-xl font-black text-gray-950 dark:text-white">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{body}</p>
+      {body && <p className="mx-auto mt-2 max-w-md break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{body}</p>}
       <button
         type="button"
         onClick={onRetry}

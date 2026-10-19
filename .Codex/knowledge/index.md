@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-20: 승인운영문구·미사용5/표시함수2공유·내부오류안내·배차저장조회정리. 전체278파일2193/보호5·소스검사1299해시일치, 독립G1 59/10/18·G2 44/5/9·G3 33/PG26통과. 지식문서5유지·architecture/conventions/decisions/errors갱신. 원본sharp2버전이미지빌드충돌은추가승인대기, docs/operating-copy-code-dispatch-cleanup.md. 운영쓰기/푸시/배포없음.
+
 > 2026-10-20: 웹배포전3그룹감사완료. cb97cb20 전체2143/보호5·src860·관련76 통과. 운영49변수와Vercel대상일치확인, 토스온라인키2항목부재·사용자미발급으로배포보류. 필수환경/운영DB검사미완료, 심사/POS키대체금지. 지식문서5유지, docs/web-release-readiness-20261020.md. 운영쓰기/푸시/배포없음.
 
 > 2026-10-20: 기사360정류장끝1글자보완. 모바일균등줄바꿈+공백명칭단어보존,326/91/53·lint·생산/tsc·src860일치. PM실제컴파일320/360/375/390전후Range·글씨/전화/시간/길안내/탑승크기동일확인. 매우긴공백명칭필요3행예외명시. 지식문서5 유지·errors/decisions갱신, docs/narrow-phone-verification.md. PM4053→4069/PG55470·구시험정리·미배포.

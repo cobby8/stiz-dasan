@@ -34,7 +34,7 @@ export default function GpsShareBar({
   const title = message || (
     transmission === "error" ? "위치 전송을 확인해 주세요" :
     gpsState === "requesting" ? (mode === "native" ? "새 기기 위치를 기다리는 중…" : "위치 권한 요청 중…") :
-    gpsState === "active" ? (lastSentAt ? "위치 공유 중" : "GPS 위치 획득 · 서버 접수 대기") :
+    gpsState === "active" ? (lastSentAt ? "위치 공유 중" : "위치 확인됨 · 전송 확인 대기") :
     gpsState === "denied" ? (mode === "native" ? "위치 권한이 필요합니다 · 앱 설정에서 허용해주세요" : "위치 권한 거부됨 — 브라우저 설정에서 허용해주세요") :
     gpsState === "error" ? "위치를 가져오지 못했습니다" : "위치 공유 꺼짐"
   );
@@ -43,15 +43,15 @@ export default function GpsShareBar({
       <p role={failed ? "alert" : "status"} className={`text-[14px] font-bold ${needsAttention ? "text-[var(--color-amber-800)]" : "text-[var(--color-green-800)]"}`}>
         📍 {title}
       </p>
-      {lastSentAt && <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-slate-700)]">{`마지막 서버 접수 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}</p>}
+      {lastSentAt && <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-slate-700)]">{`마지막 위치 수신 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}</p>}
       {(gpsState === "denied" || gpsState === "error") && onRetry && <button type="button" className="text-[12px] font-bold underline" onClick={onRetry}>위치 연결 다시 시도</button>}
       <p role="status" className="mt-0.5 text-[12px] font-semibold text-[var(--color-amber-700)]">
         {transmission === "sending" && "위치 전송 중…"}
         {transmission === "error" && "위치 전송 확인 필요 · 다음 전송에서 재시도합니다"}
-        {delayed && gpsState !== "off" && !stopping && <span className="block">마지막 서버 접수 이후 30초 이상 지났습니다 · 현재 위치는 확인이 필요합니다</span>}
-        {transmission === "stopping" && "기기 위치 수집 중단 · 서버 중단 접수 확인 중"}
-        {transmission === "stopped" && "기기 위치 수집 중단 · 서버 중단 접수 완료"}
-        {transmission === "stop-unknown" && "기기 위치 수집은 중단됨 · 서버 공유 중단은 확인 필요"}
+        {delayed && gpsState !== "off" && !stopping && <span className="block">30초 이상 새 위치를 받지 못했습니다 · 현재 위치를 확인해 주세요</span>}
+        {transmission === "stopping" && "위치 수집 중단 · 공유 종료 확인 중"}
+        {transmission === "stopped" && "위치 수집 중단 · 공유 종료 확인 완료"}
+        {transmission === "stop-unknown" && "위치 수집은 중단됨 · 공유 종료 확인 필요"}
       </p>
       {(gpsState === "active" || gpsState === "requesting") && (
         <p className="mt-0.5 text-[12px] font-semibold text-[var(--color-amber-700)]">

@@ -18,7 +18,7 @@ function kakaoMapUrl(label: string | null, lat: number, lng: number): string {
 
 function StatusDot({ sharing, secondsAgo }: { sharing: boolean; secondsAgo: number }) {
   if (!sharing) return <span className="h-3 w-3 rounded-full bg-gray-400 shrink-0" title="공유 중단" />;
-  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-green-500 shrink-0" title="최근 서버 접수" />;
+  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-green-500 shrink-0" title="최근 위치 수신" />;
   if (secondsAgo < 120) return <span className="h-3 w-3 rounded-full bg-yellow-500 shrink-0" title="지연" />;
   return <span className="h-3 w-3 rounded-full bg-red-400 shrink-0" title="끊김" />;
 }
@@ -113,7 +113,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
                   </p>
                   <p className="text-[13px] text-gray-500 dark:text-gray-400">
                     {loc.sharing
-                      ? `마지막 서버 접수 ${elapsedLabel(loc.secondsAgo)}${loc.accuracy != null ? ` · 정확도 ${Math.round(loc.accuracy)}m` : ""}${loc.secondsAgo >= 120 ? " · 위치 확인 필요" : ""}`
+                      ? `마지막 위치 수신 ${elapsedLabel(loc.secondsAgo)}${loc.accuracy != null ? ` · 정확도 ${Math.round(loc.accuracy)}m` : ""}${loc.secondsAgo >= 120 ? " · 위치 확인 필요" : ""}`
                       : "위치 공유 중단"}
                   </p>
                 </div>

@@ -28,10 +28,15 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   drivers: { id: string; name: string }[];
 }) {
   const router = useRouter();
-  const [day, setDay] = useState<string>(initialDay);
+  const [selectedDay, setDay] = useState<string>(initialDay);
+  // 월 이동 뒤 이전 요일에 명단이 없으면 새 달의 선택 가능한 요일로 즉시 맞춘다.
+  const day = weekdays.length > 0 && !weekdays.includes(selectedDay)
+    ? (weekdays.includes(initialDay) ? initialDay : weekdays[0]) : selectedDay;
   const [timelinePickup, setTimelinePickup] = useState<DispatchSuggestion>(initialPickup);
   const [timelineDropoff, setTimelineDropoff] = useState<DispatchSuggestion>(initialDropoff);
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [pickupReady, setPickupReady] = useState(true);
+  const [dropoffReady, setDropoffReady] = useState(true);
+  const timelineLoading = !pickupReady || !dropoffReady || timelinePickup.date !== day || timelineDropoff.date !== day;
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const visibleMismatches = classTimeMismatches.filter((row) => row.dayOfWeek === day);
   const timelineRows = useMemo(() => buildTimelineRows(timelinePickup, timelineDropoff), [timelinePickup, timelineDropoff]);
@@ -58,39 +63,12 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   }, []);
   useEffect(() => { loadPendingRequestCount(); }, [loadPendingRequestCount]);
 
-  useEffect(() => {
-    if (day === initialDay) {
-      setTimelinePickup(initialPickup);
-      setTimelineDropoff(initialDropoff);
-      return;
-    }
-    let cancelled = false;
-    async function load(direction: "PICKUP" | "DROPOFF") {
-      const response = await fetch(REGULAR_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ direction, date: day, serviceMonth }),
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json?.error || "노선을 불러오지 못했습니다.");
-      return json as DispatchSuggestion;
-    }
-    setTimelineLoading(true);
-    setTimelineError(null);
-    Promise.all([load("PICKUP"), load("DROPOFF")])
-      .then(([pickup, dropoff]) => {
-        if (cancelled) return;
-        setTimelinePickup(pickup);
-        setTimelineDropoff(dropoff);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setTimelineError(error instanceof Error ? error.message : "노선을 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        if (!cancelled) setTimelineLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [day, initialDay, initialPickup, initialDropoff, serviceMonth]);
+  const onPickupRoute = useCallback((route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => {
+    setTimelinePickup({ ...route, loadedFromSaved: state.saved }); setPickupReady(state.ready); setTimelineError(null);
+  }, []);
+  const onDropoffRoute = useCallback((route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => {
+    setTimelineDropoff({ ...route, loadedFromSaved: state.saved }); setDropoffReady(state.ready); setTimelineError(null);
+  }, []);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
@@ -117,11 +95,11 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
         {/* 원장 결정(2026-10-02): 지금 기사님 화면은 「셔틀 명단」 순서(폴백)로 운행 중이 기준이다.
             여기서 저장하면 그 요일·방향 기사님 화면이 저장 노선으로 바뀌므로 먼저 알린다. */}
         <p className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] font-bold text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
-          ⚠ 지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다. 여기서 💾 저장하면 그 요일·방향의 기사님 화면이 이 노선으로 바뀝니다.
+          ⚠ 저장한 노선은 선택한 월·요일·방향의 기사님 화면에 반영됩니다. 저장 전 변경은 기사님에게 보이지 않습니다.
         </p>
-        {/* 조작 설명은 뺐다. 좌표의 출처(학생 신청서)는 데이터 출처 정보라 반드시 남긴다. */}
+
         <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
-          좌표는 <b>학생 신청서</b>에서 자동으로 가져옵니다.
+          정류장 위치는 셔틀 명단에 저장된 정보를 사용합니다.
         </p>
 
         {/* 요일 탭 — 노선 관리 단위 */}
@@ -140,7 +118,7 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
         <p className="mt-3 text-[12.5px] font-black text-gray-700 dark:text-gray-200">📅 {DOW_LABEL[day] ?? day} 시간순 노선</p>
         <div className="mt-2 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between bg-brand-navy-900 px-4 py-2.5 text-white">
-            <span className="font-black">🚐 하루 운행 흐름</span>
+            <span className="font-black">🚐 하루 운행 흐름 · {dirtyPickup || dirtyDropoff ? "저장 전 변경" : timelinePickup.loadedFromSaved && timelineDropoff.loadedFromSaved ? "저장 노선" : "표시 노선"}</span>
             <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold">{timelineRows.length}개 정차</span>
           </div>
           {timelineLoading && <p className="px-4 py-3 text-sm font-bold text-gray-500 dark:text-gray-300">노선을 다시 계산 중입니다…</p>}
@@ -148,7 +126,7 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
           {!timelineLoading && !timelineError && timelineRows.length === 0 && (
             <p className="px-4 py-6 text-center text-sm font-bold text-gray-400">이 요일에 표시할 셔틀 정차가 없습니다.</p>
           )}
-          {timelineRows.length > 0 && (
+          {!timelineLoading && timelineRows.length > 0 && (
             <ol className="divide-y divide-gray-100 dark:divide-gray-700">
               {timelineRows.map((row, index) => (
                 <li key={`${row.direction}-${row.vehicle}-${row.time}-${row.label}-${index}`} className="flex items-start gap-2.5 px-3 py-2.5">
@@ -172,10 +150,10 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
         {/* 실제 편집 영역 — 기본으로 펼쳐 둔다(위 타임라인은 요약). 문구 "방향별 세부 조정 열기"는 테스트가 지킨다. */}
         <details open className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
           <summary className="cursor-pointer text-sm font-black text-gray-800 dark:text-gray-100">방향별 세부 조정 열기</summary>
-          <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">등원·하원을 따로 고치고 각각 💾 저장하세요. 정차 「→ 차량 이동」, 학생 옆 ⇄·×로 옮기거나 뺍니다.</p>
+          <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">등원·하원은 각각 저장합니다.</p>
           <div className="mt-3 space-y-3">
-            <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onPickupDirty} />
-            <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onDropoffDirty} />
+            <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onPickupDirty} onRouteChange={onPickupRoute} />
+            <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onDropoffDirty} onRouteChange={onDropoffRoute} />
           </div>
         </details>
       </div>

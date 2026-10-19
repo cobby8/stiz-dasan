@@ -1,5 +1,6 @@
 "use server";
 
+import { userFacingError, loginErrorMessage } from "@/lib/user-facing-error";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -61,7 +62,7 @@ export async function login(formData: FormData) {
     if (error.message === "Email not confirmed") {
       return { error: "이메일 인증이 필요합니다. 받은 인증 메일을 확인해주세요." };
     }
-    return { error: `로그인 오류: ${error.message}` };
+    return { error: loginErrorMessage(error) };
   }
 
   // 실제 권한은 DB 역할만 신뢰합니다. DB에 없는 계정은 안전한 학부모로 제한합니다.
@@ -96,9 +97,7 @@ export async function login(formData: FormData) {
     } catch (linkError) {
       await supabase.auth.signOut();
       return {
-        error: linkError instanceof Error
-          ? linkError.message
-          : "수강신청서를 계정에 연결하지 못했습니다.",
+        error: userFacingError(linkError, "수강신청서를 계정에 연결하지 못했습니다."),
       };
     }
   }

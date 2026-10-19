@@ -609,7 +609,7 @@ export default function StaffClient({
                     <div className="p-4 bg-red-50 rounded-lg border border-red-100">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="inline-block w-3 h-3 rounded-full bg-red-500" />
-                            <span className="font-semibold text-red-800">원장 (ADMIN)</span>
+                            <span className="font-semibold text-red-800">원장</span>
                         </div>
                         <ul className="text-xs text-red-700 space-y-1">
                             <li>- 모든 관리 기능 사용 가능</li>
@@ -620,7 +620,7 @@ export default function StaffClient({
                     <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="inline-block w-3 h-3 rounded-full bg-orange-500" />
-                            <span className="font-semibold text-orange-800">부원장 (VICE_ADMIN)</span>
+                            <span className="font-semibold text-orange-800">부원장</span>
                         </div>
                         <ul className="text-xs text-orange-700 space-y-1">
                             <li>- 원장과 동일한 관리 권한</li>

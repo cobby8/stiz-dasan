@@ -58,7 +58,7 @@ test('전송 실패는 마지막 정상 접수를 보존하고 전송 확인을 
   assert.match(buttonText(html), /전송 확인/);
   assert.match(headerButton(html), /위치 전송 실패/);
   assert.match(html, /role="alert"/);
-  assert.match(html, /마지막 서버 접수/);
+  assert.match(html, /마지막 위치 수신/);
   assert.match(html, /다음 전송에서 재시도합니다/);
 });
 test('접수 29초는 정상이고 31초는 위치 지연으로 표시한다', () => {
@@ -67,7 +67,7 @@ test('접수 29초는 정상이고 31초는 위치 지연으로 표시한다', (
   const stale = render({ lastSentAt: new Date(now - 31_000) });
   assert.match(buttonText(stale), /location_searching위치 지연/);
   assert.match(headerButton(stale), /trigger warning/);
-  assert.match(stale, /30초 이상 지났습니다/);
+  assert.match(stale, /30초 이상 새 위치를 받지 못했습니다/);
   assert.doesNotMatch(stale, /role="alert"/);
 });
 test('최초 권한·위치 요청 대기는 오류로 처리하지 않는다', () => {
@@ -79,7 +79,7 @@ test('최초 권한·위치 요청 대기는 오류로 처리하지 않는다', 
 test('기기 위치를 얻어도 서버 최초 접수 전에는 정상 공유로 표시하지 않는다', () => {
   const html = render({ lastSentAt: null, transmission: 'sending' });
   assert.match(buttonText(html), /위치 대기/);
-  assert.match(html, /GPS 위치 획득 · 서버 접수 대기/);
+  assert.match(html, /위치 확인됨 · 전송 확인 대기/);
   assert.match(html, /위치 전송 중/);
 });
 test('오래된 접수가 있어도 공유 꺼짐은 지연으로 표시하지 않는다', () => {
@@ -93,7 +93,7 @@ test('수집 중단 후 서버 확인 중인 상태는 위치 대기·지연과 
   const html = render({ gpsState: 'off', transmission: 'stopping', lastSentAt: new Date(Date.now() - 90_000) });
   assert.match(buttonText(html), /location_off중단 중/);
   assert.match(headerButton(html), /위치 공유 중단 확인 중/);
-  assert.match(html, /서버 중단 접수 확인 중/);
+  assert.match(html, /공유 종료 확인 중/);
   assert.doesNotMatch(html, /30초 이상|위치 대기/);
 });
 test('중단 완료는 이전 active 상태가 남아도 정상 공유 아이콘을 표시하지 않는다', () => {
@@ -101,18 +101,18 @@ test('중단 완료는 이전 active 상태가 남아도 정상 공유 아이콘
   assert.equal(buttonText(html), 'location_off');
   assert.match(headerButton(html), /trigger neutral/);
   assert.match(headerButton(html), /위치 공유 중단 완료/);
-  assert.match(html, /서버 중단 접수 완료/);
+  assert.match(html, /공유 종료 확인 완료/);
 });
 test('중단 미확인은 수집 중단과 서버 확인 필요를 동시에 보존한다', () => {
   const html = render({ gpsState: 'off', transmission: 'stop-unknown', lastSentAt: new Date(Date.now() - 90_000) });
   assert.match(buttonText(html), /location_disabled중단 확인/);
   assert.match(html, /role="alert">공유 중단 확인 필요/);
-  assert.match(html, /기기 위치 수집은 중단됨 · 서버 공유 중단은 확인 필요/);
+  assert.match(html, /위치 수집은 중단됨 · 공유 종료 확인 필요/);
   assert.doesNotMatch(html, /30초 이상/);
 });
 test('기존 상세창의 정확도·서버 접수 시간과 웹 중단 제약을 보존한다', () => {
   const html = render();
-  assert.match(html, /마지막 서버 접수/);
+  assert.match(html, /마지막 위치 수신/);
   assert.match(html, /정확도 8m/);
   assert.match(html, /웹에서는 화면 잠금·다른 앱 이동 시 위치 공유가 멈출 수 있습니다/);
   assert.doesNotMatch(html, /화면을 끄거나 길안내 앱으로 이동해도 위치 공유를 계속합니다/);

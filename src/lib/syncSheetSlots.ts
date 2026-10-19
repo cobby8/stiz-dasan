@@ -17,12 +17,12 @@ export async function syncSheetSlots(): Promise<{ synced: number; syncedAt: stri
             `SELECT "googleSheetsScheduleUrl" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`
         );
         sheetUrl = rows[0]?.googleSheetsScheduleUrl ?? rows[0]?.googlesheetsscheduleurl ?? null;
-    } catch (e) {
-        return { error: `설정 조회 실패: ${(e as Error).message}` };
+    } catch {
+        return { error: "시간표 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." };
     }
 
     if (!sheetUrl) {
-        return { error: "구글 시트 URL이 설정되지 않았습니다. /admin/settings에서 먼저 설정하세요." };
+        return { error: "연결할 구글 시트를 학원 설정에서 먼저 등록해 주세요." };
     }
 
     // 2. 구글 시트 CSV 파싱 (캐시 없이 최신 데이터)
@@ -38,8 +38,8 @@ export async function syncSheetSlots(): Promise<{ synced: number; syncedAt: stri
              ON CONFLICT (id) DO UPDATE SET "slotsJson" = $1, "syncedAt" = now()`,
             slotsJson
         );
-    } catch (e) {
-        return { error: `DB 저장 실패: ${(e as Error).message}` };
+    } catch {
+        return { error: "시간표를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
     }
 
     return { synced: slots.length, syncedAt: now };

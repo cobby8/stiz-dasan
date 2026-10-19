@@ -165,9 +165,6 @@ export default function UniformOrdersClient({
         <div>
           <p className="text-xs font-black uppercase text-[var(--brand-accent)]">UNIFORM</p>
           <h1 className="mt-1 text-2xl font-black text-gray-900 dark:text-white">유니폼 주문 관리</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            홈페이지 유니폼 신청과 STIZ 본사 접수 상태를 한곳에서 확인합니다.
-          </p>
         </div>
         <Link
           href="/apply/uniform"
@@ -182,7 +179,7 @@ export default function UniformOrdersClient({
       {loadError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
           {loadError}
-          <p className="mt-1 text-xs font-medium">운영 DB에 유니폼 주문 테이블이 적용됐는지 확인해 주세요.</p>
+          <p className="mt-1 text-xs font-medium">계속 불러오지 못하면 담당자에게 문의해 주세요.</p>
         </div>
       )}
 

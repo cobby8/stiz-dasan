@@ -313,3 +313,8 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 
 ## 2026-10-20: 수강신청의 명시적 보호자 선택
 - approval-parent.ts가 후보·직접 Auth 연결·명시 선택·재검토 트랜잭션을 담당하고 admin.ts는 관리자 가드·조회 시간 제한·재검증을 연결한다. ApplyAdminModals는 기존 parentUserId를 잠그고 신규 선택값을 명시 전달한다. 스키마·대표 role 변경은 없다. 상세 docs/enrollment-parent-link.md.
+
+## 2026-10-20: 화면 안내와 배차 저장 상태
+- application-display-format.ts는 체험/수강신청 화면의 전화번호·수업명 표시를 공유한다. user-facing-error.ts는 내부 장애와 공개할 업무 안내를 분리한다.
+- 공용 RouteSection은 정규/특강의 범위와 저장 메타데이터를 유지하고, 실제 표시 노선을 정규 상단 시간표에 전달한다. saved API는 관리자 인증 후 저장 확인용 조회와 이전 저장 시각 비교를 연결한다.
+- 신규 DB 테이블·migration 없이 기존 저장 노선의 updatedAt와 특강 시즌 기간을 사용한다. 운영 반영과 앱 출시는 별도다.

@@ -1,4 +1,5 @@
 import "server-only";
+import { userFacingError } from "@/lib/user-facing-error";
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -367,7 +368,7 @@ export async function sendParentClaimOtp(rawToken: string) {
         reservedOtpHash,
       ).catch(() => undefined);
     }
-    return { error: error instanceof Error ? error.message : "인증번호를 발송하지 못했습니다." };
+    return { error: userFacingError(error, "인증번호를 발송하지 못했습니다.") };
   }
 }
 
@@ -539,6 +540,6 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
         processingAttemptId,
       ).catch(() => undefined);
     }
-    return { error: error instanceof Error ? error.message : "계정을 활성화하지 못했습니다." };
+    return { error: userFacingError(error, "계정을 활성화하지 못했습니다.") };
   }
 }

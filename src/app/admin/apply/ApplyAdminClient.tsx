@@ -1,5 +1,7 @@
 "use client";
 
+import { formatClassLabel } from "@/lib/application-display-format";
+
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -289,22 +291,6 @@ const SOURCE_STATS_RANGES: Array<{ value: SourceStatsRange; label: string }> = [
     { value: "THIS_MONTH", label: "이번 달" },
     { value: "ALL", label: "전체" },
 ];
-
-const DAY_LABELS: Record<string, string> = {
-    Mon: "월",
-    Tue: "화",
-    Wed: "수",
-    Thu: "목",
-    Fri: "금",
-    Sat: "토",
-    Sun: "일",
-};
-
-function formatClassLabel(classInfo: ClassInfo) {
-    const dayLabel = DAY_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const programName = classInfo.program?.name ? ` · ${classInfo.program.name}` : "";
-    return `${dayLabel} ${classInfo.startTime}~${classInfo.endTime} · ${classInfo.name}${programName}`;
-}
 
 function formatPreferredSlots(slotKeys: string | null, classesBySlotKey: Map<string, ClassInfo>) {
     if (!slotKeys) return null;
@@ -677,7 +663,6 @@ export default function ApplyAdminClient({
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
                             <h2 className="text-lg font-black text-gray-900 dark:text-white">유입경로 통계</h2>
-                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다.</p>
                         </div>
                         <div className="flex items-center gap-2">
                             <select
@@ -965,7 +950,6 @@ export default function ApplyAdminClient({
                     <span className="material-symbols-outlined text-3xl text-brand-orange-500 dark:text-brand-neon-lime">how_to_reg</span>
                     체험/수강신청 관리
                 </h1>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다.</p>
                 <Link href="/admin/registration-readiness" className="mt-2 inline-block text-sm underline" prefetch={false}>입학 완료 확인 · 등록·청구·초대 체크리스트</Link>
             </div>
 

@@ -109,13 +109,16 @@ try {
         } });
       });
       await page.reload(); await page.getByRole('button', { name: /운행 시작/ }).click();
-      if (accepted) await page.getByText(/마지막 서버 접수/).waitFor();
+      await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
+      if (accepted) await page.getByText(/마지막 위치 수신/).waitFor();
       else {
         await page.getByText(/위치 전송 확인 필요/).waitFor();
-        assert.doesNotMatch(await page.locator('body').innerText(), /마지막 서버 접수 ·/);
+        assert.doesNotMatch(await page.locator('body').innerText(), /마지막 위치 수신 ·/);
       }
+      await page.getByRole('button', { name: '위치 공유 상세 닫기' }).click();
       await page.getByRole('button', { name: /운행 종료/ }).click();
-      await page.getByText(accepted ? /서버 중단 접수 완료/ : /서버 공유 중단은 확인 필요/).waitFor();
+      await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
+      await page.getByText(accepted ? /공유 종료 확인 완료/ : /공유 종료 확인 필요/).waitFor();
     });
   }
   await run('관리자 조회 오류는 빈 목록 아님', 'delivery', {}, route => json(route, { error: '검사용 조회 실패' }, 500), async ({ page }) => {

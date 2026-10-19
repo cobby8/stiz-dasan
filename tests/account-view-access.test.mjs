@@ -12,6 +12,7 @@ function load(source, dependencies) {
   }, exports);
   return exports;
 }
+const publicErrors = load(await readFile('src/lib/user-facing-error.ts', 'utf8'), {});
 const routes = load(await readFile('src/lib/auth-routes.ts', 'utf8'), {});
 const views = load(await readFile('src/lib/account-views.ts', 'utf8'), {});
 const accessSource = await readFile('src/lib/account-view-access.ts', 'utf8');
@@ -96,6 +97,7 @@ function authFlowFixture(role, hasOwnChildren) {
       getUser: async () => ({ data: { user }, error: null }),
       updateUser: async () => ({ error: null }),
     } }) },
+    '@/lib/user-facing-error': publicErrors,
     '@/lib/enrollment-account-handoff': { linkEnrollmentAccount: async () => { throw new Error('Unexpected account write'); } },
     '@/lib/account-view-access': { getParentViewAccessForAuthUser: async principal => {
       assert.equal(principal.id, user.id); childChecks++; return { hasOwnChildren, canUseParentView: hasOwnChildren || role === 'PARENT' };

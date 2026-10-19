@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -395,7 +396,7 @@ export async function GET() {
   } catch (error) {
     console.error("[api/admin/import-students/reconcile] preview failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "수강 등록 정합성 점검에 실패했습니다." },
+      { error: userFacingError(error, "수강 등록 정합성 점검에 실패했습니다.") },
       { status: 500 },
     );
   }
@@ -484,7 +485,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[api/admin/import-students/reconcile] apply failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "수강 등록 정합성 적용에 실패했습니다." },
+      { error: userFacingError(error, "수강 등록 정합성 적용에 실패했습니다.") },
       { status: 500 },
     );
   }

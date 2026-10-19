@@ -62,9 +62,9 @@ test('관리자 실제 렌더 함수는 조회 실패 중에도 시각이 경과
   const render = () => { index = 0; return panel({ onClose() {} }); };
   const text = tree => tree == null || tree === false ? '' : Array.isArray(tree) ? tree.map(text).join(' ') : typeof tree === 'object' ? text(tree.props?.children) : String(tree);
   render(); effects[0](); await new Promise(resolve => setImmediate(resolve));
-  assert.match(text(render()), /마지막 서버 접수 10초 전/);
+  assert.match(text(render()), /마지막 위치 수신 10초 전/);
   fail = true; now += 130000;
   timers.find(timer => timer.ms === 30000).fn(); await new Promise(resolve => setImmediate(resolve));
   timers.find(timer => timer.ms === 1000).fn();
-  const output = text(render()); assert.match(output, /위치 조회에 실패했습니다/); assert.match(output, /마지막 서버 접수 2분 전/); assert.match(output, /위치 확인 필요/); assert.match(output, /최근 2분 내 접수\s+0\s*대/);
+  const output = text(render()); assert.match(output, /위치 조회에 실패했습니다/); assert.match(output, /마지막 위치 수신 2분 전/); assert.match(output, /위치 확인 필요/); assert.match(output, /최근 2분 내 접수\s+0\s*대/);
 });

@@ -406,7 +406,7 @@ export default function ScheduleAdminModals({
                             </div>
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
                                 <p className="font-bold mb-1">운영 방식</p>
-                                <p>화면은 저장된 DB 시간표를 읽고, 구글시트는 아래 “지금 동기화”를 눌렀을 때만 가져옵니다.</p>
+                                <p>저장된 시간표를 표시합니다. 구글시트 변경 내용은 “지금 동기화”를 눌러 가져오세요.</p>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">구글시트 URL</label>

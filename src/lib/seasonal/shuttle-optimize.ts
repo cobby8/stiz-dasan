@@ -104,6 +104,8 @@ type Run = {
 };
 
 export type DispatchSuggestion = {
+  savedAt?: string | null;
+  loadedFromSaved?: boolean;
   direction: DispatchDirection;
   date: string | null; dow: string | null;
   classStart: string | null; classEnd: string | null;
@@ -260,9 +262,9 @@ export async function getDispatchForView(date: string | null, direction: Dispatc
   const canonicalDate = resolvedDate ? firstDateOfSameWeekday(base.availableDates, resolvedDate) : null;
   // 노선은 대표일(canonicalDate)에서 꺼내되, **결석 판정은 실제로 보고 있는 날짜(resolvedDate)** 기준이어야 한다.
   const saved = canonicalDate
-    ? await getSavedDispatchRoute(canonicalDate, direction, { attendanceDate: resolvedDate })
+    ? await getSavedDispatchRoute(canonicalDate, direction, { attendanceDate: resolvedDate, strict: allowTmap })
     : null;
-  if (saved && Array.isArray(saved.vehicles) && saved.vehicles.length) {
+  if (saved && Array.isArray(saved.vehicles)) {
     // hub stop label을 현재 DB 거점 이름으로 실시간 교체 — 거점 이름 변경 시 재계산 없이도 반영된다.
     const currentHubName = base.hub?.name;
     const vehicles = (currentHubName
@@ -279,6 +281,7 @@ export async function getDispatchForView(date: string | null, direction: Dispatc
     );
     return {
       ...base,
+      savedAt: saved.savedAt, loadedFromSaved: true,
       vehicles,
       totalRiders: savedRiderCount,
       classStart: saved.classStart ?? base.classStart,

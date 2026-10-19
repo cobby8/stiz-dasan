@@ -38,8 +38,8 @@ export default function DriverGpsIndicator(props: DriverGpsIndicatorProps) {
     transmission === "error" ? "위치 전송 실패 · 다음 전송에서 다시 시도합니다" :
     gpsState === "denied" ? "위치 권한을 허용해 주세요" :
     gpsState === "error" ? "기기 위치를 확인해 주세요" :
-    delayed ? "위치 접수 지연 · 마지막 접수 후 30초 이상 지났습니다" :
-    waiting ? (mode === "native" && nativeMessage?.trim() ? nativeMessage.trim() : "새 위치와 서버 접수를 기다리는 중") :
+    delayed ? "위치 수신 지연 · 30초 이상 새 위치를 받지 못했습니다" :
+    waiting ? (mode === "native" && nativeMessage?.trim() ? nativeMessage.trim() : "새 위치와 전송 확인을 기다리는 중") :
     gpsState === "active" ? "위치 공유 중" : "위치 공유 꺼짐";
   const shortLabel = transmission === "stop-unknown" ? "중단 확인" :
     transmission === "stopping" ? "중단 중" :

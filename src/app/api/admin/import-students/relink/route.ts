@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
@@ -666,7 +667,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[api/admin/import-students/relink] preview failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "학생 재연결 점검에 실패했습니다." },
+      { error: userFacingError(error, "학생 재연결 점검에 실패했습니다.") },
       { status: 500 }
     );
   }
@@ -786,7 +787,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("[api/admin/import-students/relink] apply failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "학생 재연결 적용에 실패했습니다." },
+      { error: userFacingError(error, "학생 재연결 적용에 실패했습니다.") },
       { status: 500 }
     );
   }

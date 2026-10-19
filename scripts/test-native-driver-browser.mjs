@@ -61,8 +61,8 @@ try {
       lastSentAt: new Date(Date.now() - 60_000).toISOString(), error: '위치 갱신이 지연되고 있습니다. 휴대폰 위치 설정과 GPS 수신 환경을 확인해 주세요.' }));
     await gpsDetails(page);
     await page.getByRole('status').filter({ hasText: '위치 갱신이 지연되고 있습니다.' }).waitFor();
-    await page.getByText(/마지막 서버 접수 ·/).waitFor();
-    await page.getByText(/현재 위치는 확인이 필요합니다/).waitFor();
+    await page.getByText(/마지막 위치 수신 ·/).waitFor();
+    await page.getByText(/현재 위치를 확인해 주세요/).waitFor();
     assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
   });
   await check('전송 실패는 실제 원인과 마지막 접수를 함께 표시', async page => {
@@ -70,7 +70,7 @@ try {
       lastSentAt: new Date().toISOString(), error: '서버 연결에 실패했습니다.' }));
     await gpsDetails(page);
     await page.getByRole('alert').filter({ hasText: '서버 연결에 실패했습니다.' }).waitFor();
-    await page.getByText(/마지막 서버 접수 ·/).waitFor();
+    await page.getByText(/마지막 위치 수신 ·/).waitFor();
     await page.getByText(/다음 전송에서 재시도합니다/).waitFor();
     assert.equal(await page.getByText(/위치를 가져오지 못|위치 공유 중/).count(), 0);
   });
@@ -80,7 +80,7 @@ try {
     assert.equal(await page.getByRole('button', { name: '종료 확인 중' }).isDisabled(), true);
     await page.evaluate(() => window.emitNative({ state: 'off', running: false, transmission: 'stop-unknown' }));
     await gpsDetails(page);
-    await page.getByText(/기기 위치 수집은 중단됨 · 서버 공유 중단은 확인 필요/).waitFor();
+    await page.getByText(/위치 수집은 중단됨 · 공유 종료 확인 필요/).waitFor();
   }, { state: 'active', transmission: 'sent', running: true });
   await check('화면 해제·복귀가 서비스 운행을 종료하거나 재시작하지 않는다', async page => {
     await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
@@ -114,7 +114,7 @@ try {
   await check('강제 중단 후 복귀는 서버 종료 완료로 표시하지 않는다', async page => {
     await gpsDetails(page);
     await page.getByRole('alert').filter({ hasText: '운행 화면에서 다시 시작해 주세요.' }).waitFor();
-    assert.equal(await page.getByText(/서버 중단 접수 완료/).count(), 0);
+    assert.equal(await page.getByText(/공유 종료 확인 완료/).count(), 0);
     await page.getByRole('button', { name: '운행 시작', exact: true }).waitFor();
   }, { state: 'error', transmission: 'error', running: false, error: '위치 공유가 중단되었습니다. 운행 화면에서 다시 시작해 주세요.' });
 } finally { await browser.close(); await harness.close(); }

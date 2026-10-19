@@ -585,7 +585,7 @@ function CurrentRosterReportBox({ report }: { report: CurrentRosterReport }) {
 
                 {report.duplicateStudentGroups.length > 0 && (
                     <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-300/10 dark:text-amber-100">
-                        <p className="font-bold">같은 보호자 연락처의 중복 Student 의심</p>
+                        <p className="font-bold">같은 보호자 연락처의 중복 원생 의심</p>
                         <div className="mt-2 space-y-1">
                             {report.duplicateStudentGroups.map((group) => (
                                 <p key={`${group.studentName}-${group.parentPhone}`}>
