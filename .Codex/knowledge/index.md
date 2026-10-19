@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-20: 실제 동일 세션 관리자·교사 접근 재확인, 지정 자녀는 정식 학생·연결0/반려 신청1로 학부모 검증 미완료. 읽기 전용 조회·운영쓰기0, 독립권한59통과. Android USB0대·등록경로 사용자확인 대기. docs/role-followup-verification.md. 지식문서5 유지·미배포.
+
 > 2026-10-20: 승인 중복필터 개편 신청·원생·특강 완료. 독립230/54/45·최신전체2128/보호5·tsc·최종생산12/소스19해시·실제iPhone3화면/선택46.75px·날짜296px 경계통과. architecture/conventions/decisions/errors갱신, 지식문서5 유지. docs/admin-compact-filters.md. Android재검증·운영자녀연결 별도, 미배포.
 
 > 2026-10-20: iPhone 실제750×292/세로복원·3역할키보드 확인. 짧은 관리자메뉴·교사3확인창 보완, 독립68/종료12상태/이동8상태·실제재검사 통과. errors/lessons 갱신, 지식문서5 유지. 사용자 승인 중복필터 개편은 별도 진행·미배포. docs/role-followup-verification.md.
