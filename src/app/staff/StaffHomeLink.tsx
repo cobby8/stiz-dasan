@@ -72,10 +72,10 @@ export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean
 
   return (
     <>
-      <Link ref={triggerRef} href="/staff" onClick={(event) => { if (!inSession) return; event.preventDefault(); setOpen(true); }} className="flex min-h-12 items-center gap-2 rounded-xl pr-2 text-brand-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] dark:text-white" aria-label="교사용 홈으로 이동">
+      <Link ref={triggerRef} href="/staff" onClick={(event) => { if (!inSession) return; event.preventDefault(); setOpen(true); }} className="flex min-h-12 shrink-0 items-center gap-2 rounded-xl text-brand-navy-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] dark:text-white" aria-label="교사용 홈으로 이동">
         {/* 실제 공식 로고를 유지해 역할이 바뀌어도 같은 학원 앱임을 알립니다. */}
-        <Image src="/stiz-logo.png" alt="스티즈 농구교실" width={92} height={40} className="h-10 w-[92px] shrink-0 object-contain" />
-        <span className="text-xs font-bold text-[var(--color-academy-muted)]">{isDriver ? "기사님 앱" : "선생님 앱"}</span>
+        <Image src="/stiz-logo.png" alt="스티즈 농구교실" width={92} height={40} className="h-10 w-20 shrink-0 object-contain sm:w-[92px]" />
+        <span className="shrink-0 whitespace-nowrap text-xs font-bold text-[var(--color-academy-muted)]">{isDriver ? "기사님 앱" : "선생님 앱"}</span>
       </Link>
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 sm:items-center" onMouseDown={(event) => !saving && event.target === event.currentTarget && close()}>

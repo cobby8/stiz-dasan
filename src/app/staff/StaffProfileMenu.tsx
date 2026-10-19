@@ -104,14 +104,18 @@ export default function StaffProfileMenu({ staffName, staffRole }: { staffName: 
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={isOpen ? "staff-profile-menu" : undefined}
-        className="flex min-h-12 max-w-[11rem] items-center gap-2 rounded-full bg-gray-100 px-3 text-left transition-colors hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] dark:bg-gray-900 dark:hover:bg-gray-800"
+        aria-label={`${staffName} ${staffRole === "DRIVER" ? "기사님" : "선생님"} 메뉴 열기`}
+        title={`${staffName} ${staffRole === "DRIVER" ? "기사님" : "선생님"}`}
+        className="flex min-h-12 min-w-0 max-w-[11rem] flex-1 items-center gap-1.5 rounded-full bg-gray-100 px-2 text-left transition-colors hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] sm:gap-2 sm:px-3 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
-        <span className="material-symbols-outlined text-xl text-[var(--brand-accent)]" aria-hidden="true">account_circle</span>
+        <span className="material-symbols-outlined shrink-0 text-xl text-[var(--brand-accent)]" aria-hidden="true">account_circle</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-bold text-gray-700 dark:text-gray-200">{staffName} {staffRole === "DRIVER" ? "기사님" : "선생님"}</span>
-          <span className="block text-[0.65rem] font-bold text-gray-500 dark:text-gray-400">메뉴 열기</span>
+          <span className="block whitespace-nowrap text-[0.65rem] font-bold text-gray-500 dark:text-gray-400">메뉴 열기</span>
         </span>
-        <span className="material-symbols-outlined text-lg text-gray-500" aria-hidden="true">expand_more</span>
+        <span className="hidden shrink-0 sm:block" aria-hidden="true">
+          <span className="material-symbols-outlined text-lg text-gray-500">expand_more</span>
+        </span>
       </button>
 
       {isOpen && (
