@@ -9,6 +9,10 @@
 - /api/driver/mobile/session은 기본 비활성이다. DriverMobileTrackingSession 수동 SQL에 단일 활성 세션·만료·비밀 해시·전송 순서·측정/접수 시각을 저장하고 DriverLocation 최신 행을 갱신한다. legacy 위치는 같은 운행 잠금에 참여한다. 운영 SQL/env 적용 없음.
 - 기존 정규 토큰은 ROLLING×REGULAR 공용 하나이며 현재 1대 운행이라고 사용자가 확인했다. token당 한 기기로 진행하며 여러 차량 증차 시 별도 자격 범위가 필요하다. 업턴랩스 출시 주체 확인, 실제 폰/스토어 접근 미확인.
 
+## 2026-10-19: USB 실기기 시험 연결
+- driver-device-test-server.mjs는 원본 React화면/native adapter/API/Prisma와 loopback HTTPS8443·새 PG55435를 연결한다. 실제 좌표는 최신 한 행만 받으며 관리키로 보호된 상태 요약은 좌표/비밀/기기ID를 제외한다. 실행·준비·조회 CLI가 분리되고 소유 DB/개인키 정리를 확인한다.
+- stizDeviceTest=true+localhost:8443+공개CA 디렉터리인 debug에서만 별도 패키지 kr.stiz.driver.devicetest와 localhost 신뢰를 생성한다. release는 운영주소443, CA/별도패키지 미포함. 443 reverse가 기기 권한상 불가해 보안 우회 없이 비특권 포트로 분리했다.
+
 ## 2026-10-19: 교사 출석 명단의 금액 조회
 - staff-monthly-fees.ts와 순수 policy/types가 세션 권한·로스터·당월 Payment/Invoice·확정 월수강대장·특강 좌석 근거를 묶는다. staff-billing.ts에 읽기 액션 2개만 추가했다.
 - SessionInProgressClient에서 출결과 독립적으로 요약을 읽고 실제 ClassBillingSheet로 연결한다. StaffMonthlyFeeSummary는 총청구액/순수수강료/특강기간을 구분한다. 상세 최신값은 해당 명단 행에 반영한다. 새 스키마·운영 DDL·쓰기 함수 변경 없음.

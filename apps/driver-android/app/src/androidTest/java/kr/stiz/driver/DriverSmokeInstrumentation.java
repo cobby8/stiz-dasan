@@ -29,10 +29,10 @@ public final class DriverSmokeInstrumentation extends Instrumentation {
             verify(MainActivity.trusted(Uri.parse(origin + "/driver/test/")));
             verify(!MainActivity.trusted(Uri.parse(origin.replace("https:", "http:") + "/driver/test")));
             verify(!MainActivity.trusted(Uri.parse("https://evil.invalid/driver/test")));
-            verify(!MainActivity.trusted(Uri.parse(origin + ".evil.invalid/driver/test")));
+            verify(!MainActivity.trusted(Uri.parse("https://" + Uri.parse(origin).getHost() + ".evil.invalid/driver/test")));
             verify(!MainActivity.trusted(Uri.parse(origin + "/admin")));
             verify(!MainActivity.trusted(Uri.parse(origin + "/driver/test/nested")));
-            verify(!MainActivity.trusted(Uri.parse(origin + ":444/driver/test")));
+            verify(!MainActivity.trusted(Uri.parse("https://" + Uri.parse(origin).getHost() + ":444/driver/test")));
             verify(!MainActivity.trusted(Uri.parse("file:///driver/test")));
             verify(!MainActivity.trusted(Uri.parse(origin.replace("https://", "https://user@") + "/driver/test")));
             SessionStore store = new SessionStore(isolated);

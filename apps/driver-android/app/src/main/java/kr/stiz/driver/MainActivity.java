@@ -24,8 +24,9 @@ public final class MainActivity extends Activity {
         @Override public void onReceive(Context context, Intent intent) { publish(intent.getStringExtra("detail")); }
     };
     static boolean trusted(Uri uri) {
+        Uri expected = Uri.parse(BuildConfig.STIZ_ORIGIN);
         return uri != null && "https".equals(uri.getScheme()) && Uri.parse(BuildConfig.STIZ_ORIGIN).getHost().equals(uri.getHost())
-            && (uri.getPort() == -1 || uri.getPort() == 443) && uri.getUserInfo() == null
+            && (uri.getPort() == -1 ? 443 : uri.getPort()) == (expected.getPort() == -1 ? 443 : expected.getPort()) && uri.getUserInfo() == null
             && uri.getPath() != null && uri.getPath().matches("/driver/[A-Za-z0-9_-]+/?");
     }
     @Override public void onCreate(Bundle saved) {

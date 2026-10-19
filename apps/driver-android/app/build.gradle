@@ -1,8 +1,42 @@
 plugins { id 'com.android.application' }
 def configuredOrigin = providers.gradleProperty('stizOrigin').getOrElse('https://www.stiz-dasan.kr')
+def deviceTest = providers.gradleProperty('stizDeviceTest').getOrElse('false') == 'true'
 def originUri = new URI(configuredOrigin)
-if (originUri.scheme != 'https' || originUri.host == null || originUri.userInfo != null || originUri.query != null || originUri.fragment != null || !(originUri.path in ['', '/']) || !(originUri.port in [-1, 443])) throw new GradleException('stizOrigin must be one exact HTTPS origin on port 443')
-configuredOrigin = 'https://' + originUri.host
+def localDevicePort = deviceTest && originUri.host == 'localhost' && originUri.port == 8443
+if (originUri.scheme != 'https' || originUri.host == null || originUri.userInfo != null || originUri.query != null || originUri.fragment != null || !(originUri.path in ['', '/']) || (!(originUri.port in [-1, 443]) && !localDevicePort)) throw new GradleException('stizOrigin must be one exact HTTPS origin on port 443; device tests may use localhost:8443')
+configuredOrigin = 'https://' + originUri.host + (localDevicePort ? ':8443' : '')
+def localTlsDirectory = providers.gradleProperty('stizLocalTlsDir').orNull
+if (localTlsDirectory != null && (originUri.host != 'localhost' || !deviceTest)) throw new GradleException('Local TLS requires a localhost HTTPS origin and stizDeviceTest=true')
+def localTlsOutput = layout.buildDirectory.dir('generated/localTlsDebug')
+def generateLocalTls = null
+if (localTlsDirectory != null) {
+    def caFile = rootProject.file(localTlsDirectory).toPath().resolve('ca.crt').toFile()
+    generateLocalTls = tasks.register('generateLocalTlsDebug') {
+        inputs.file(caFile)
+        outputs.dir(localTlsOutput)
+        doLast {
+            // Read the public CA only. No server key or directory tree is copied.
+            java.security.cert.X509Certificate certificate
+            caFile.withInputStream { stream -> certificate = (java.security.cert.X509Certificate) java.security.cert.CertificateFactory.getInstance('X.509').generateCertificate(stream) }
+            certificate.checkValidity()
+            if (certificate.basicConstraints < 0) throw new GradleException('ca.crt must be a CA certificate')
+            def output = localTlsOutput.get().asFile
+            def raw = new File(output, 'res/raw'); raw.mkdirs()
+            new File(raw, 'driver_test_ca.cer').bytes = certificate.encoded
+            def xml = new File(output, 'res/xml'); xml.mkdirs()
+            new File(xml, 'local_test_network_security.xml').text = '''<network-security-config>
+    <base-config cleartextTrafficPermitted="false"><trust-anchors><certificates src="system" /></trust-anchors></base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">localhost</domain>
+        <trust-anchors><certificates src="system" /><certificates src="@raw/driver_test_ca" /></trust-anchors>
+    </domain-config>
+</network-security-config>'''
+            new File(output, 'AndroidManifest.xml').text = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <application android:label="STIZ 기사님 기기검증" tools:replace="android:label" android:networkSecurityConfig="@xml/local_test_network_security" />
+</manifest>'''
+        }
+    }
+}
 android {
     namespace 'kr.stiz.driver'
     compileSdk 36
@@ -10,8 +44,20 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
     buildTypes {
-        debug { buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"' }
+        debug {
+            if (deviceTest) applicationIdSuffix '.devicetest'
+            buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"'
+        }
         release { minifyEnabled false; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
     }
+    if (localTlsDirectory != null) {
+        sourceSets {
+            debug {
+                manifest.srcFile localTlsOutput.get().file('AndroidManifest.xml').asFile
+                res.srcDir localTlsOutput.get().dir('res').asFile
+            }
+        }
+    }
 }
+if (generateLocalTls != null) tasks.configureEach { task -> if (task.name == 'preDebugBuild') task.dependsOn generateLocalTls }
 dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0' }

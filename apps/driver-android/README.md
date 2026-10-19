@@ -12,6 +12,9 @@
 - 오프라인 Android 실행환경 검사: `./gradlew.bat :app:assembleDebugAndroidTest` 후 테스트 APK까지 설치하고 `adb shell am instrument -w kr.stiz.driver.test/kr.stiz.driver.DriverSmokeInstrumentation`. 허용 URL 10건과 별도 테스트 저장소의 실제 KeyStore 암복호화 3건을 검사하며 서버 호출·위치 수집을 하지 않는다.
 - 디버그 APK: `app/build/outputs/apk/debug/app-debug.apk`. 개발 서명이며 고객 배포·Play 출시용이 아니다.
 - 승인된 HTTPS 미리보기 서버 검증 시 `./gradlew.bat :app:assembleDebug -PstizOrigin=https://승인된-호스트`로 해당 **정확한 origin 하나**를 빌드에 고정한다. WebView와 API 모두 동일한 상수를 사용한다. release는 이 옵션과 관계없이 공식 운영 origin으로 고정된다. HTTP·임의 포트·SSL 우회는 제공하지 않는다.
+- 삼성 탭 실기기의 격리 서버 검증 빌드: `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug -PstizOrigin=https://localhost:8443 -PstizDeviceTest=true -PstizLocalTlsDir=C:/0.programing/stiz-academy-A/.tmp/driver-device-test/tls`. 공개 `ca.crt` 한 파일만 debug 리소스로 변환하고 localhost에만 추가 신뢰한다. 다른 도메인은 시스템 CA만 신뢰하며 HTTP는 전부 차단한다. 공개 CA의 유효기간·CA 여부도 빌드 때 확인한다. 8443 예외는 `stizDeviceTest=true`인 localhost에만 허용하며 일반 빌드는 기존 HTTPS 443 제한을 유지한다.
+- 이 옵션의 설치 패키지는 `kr.stiz.driver.devicetest`, 테스트 패키지는 `kr.stiz.driver.devicetest.test`다. 기존 앱 데이터와 분리한다. release에는 debug 전용 CA·networkSecurityConfig·패키지 접미사가 포함되지 않는다. 개인키는 읽거나 복사하지 않는다. OS 전역 CA 설치나 인증서 오류 무시는 하지 않는다.
+- `https://localhost:8443`의 단말 연결을 host 8443으로 이어 주는 설정과 기기 설치·조작은 담당 PM 한 명만 수행한다. 삼성 탭은 비특권 앱의 443 listener가 거부되어 테스트용 8443을 사용한다. 빌드 담당자는 단말을 조작하지 않는다. 공개 CA/서버 인증서의 하루 유효기간이 지나면 재생성·재빌드한다.
 - release 서명키·스토어 계정·출시 메타데이터는 포함하지 않는다. SDK 라이선스를 자동 승인하지 않는다.
 
 ## 운행

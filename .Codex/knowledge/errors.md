@@ -399,3 +399,9 @@
 - 만료 선처리로 ACTIVE→EXPIRED가 된 뒤 stop의 ACTIVE 분기만 실행하면 sharing=true가 남는다. EXPIRED도 다른 활성 세션이 없을 때만 끄며 실제 PG 두 경계(만료 직후/새 운행 보존)를 검증했다.
 - LocationManager 거리 제한이 있으면 정차 때 fresh 표본이 끊길 수 있다. 거리0·새 표본만 전송, 통신 구간 제한 wake lock을 적용하되 실기기 검증 전 지속성 통과를 주장하지 않는다.
 - PostgreSQL void 반환 잠금을 Prisma queryRaw로 읽을 수 없으므로 트랜잭션 advisory lock은 executeRaw로 실행한다. 임시 실제 Prisma 통합으로 확인했다.
+
+## 2026-10-19: 삼성 태블릿의 설치·USB 시험 연결
+- Android13 기본 프로필만 대상으로 조회한다. 전체 목록 조회가 별도 보호 프로필 때문에 거부되어도 그 프로필을 열거나 잠금을 해제하지 않는다.
+- ADB 스트리밍 설치 실패 뒤 설치 상태를 재조회하고, 미설치를 확인한 경우에만 동일 시험 앱을 no-streaming으로 설치했다. 후속 명령은 성공 코드 확인 후 실행한다.
+- 비특권 USB reverse의 443 바인딩은 이 단말에서 거부됐다. OS 권한을 바꾸지 않고 deviceTest+localhost:8443만 debug 예외로 허용했다. production release는 443·정확한 운영 origin과 CA 미포함을 유지한다.
+- 자동 승인 검토가 앱 화면 열기/UI 읽기를 정책 차단하면 같은 행위를 명령 분리·다른 도구로 우회하지 않는다. 사용자 수동 조작과 PC 서버의 좌표 없는 상태 확인으로 경계를 나눈다.

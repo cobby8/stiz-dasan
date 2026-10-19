@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 승인된 Android13 삼성 태블릿에 별도 localhost 시험 앱 설치, 실제 계측13·release분리14·포트거부2·정책21·tsc/lint/리뷰 통과. PC HTTPS8443/격리PG55435 준비, 자동승인검토 UI거절로 수동시작대기. 위치지속성 미검증. architecture/decisions/errors 갱신·지식문서5 유지. docs/driver-device-validation.md.
+
 > 2026-10-19: 업턴랩스 출시 예정 안드로이드 기사앱 1차 검증본. 현재1대 운행 확인. 네이티브 위치·운행 세션·웹 bridge·관리자 노후 상태. 회귀98·앱브라우저6/기존10·상태18·실제Prisma/PG18항목·Android13·빌드/tsc/lint/독립리뷰 통과. 지식 문서 수 5 유지, architecture/decisions/errors 갱신. docs/driver-android-background-tracking.md. 실기기·운영 활성화·정식 출시 미완료.
 
 > 2026-10-19: 기사 운행 순서·시각·학생 체크 우선, 중복 카드/안내 축소. 회귀84·브라우저10·상태18·독립QA43·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/driver-workspace-ux.md 참조. 미배포.
