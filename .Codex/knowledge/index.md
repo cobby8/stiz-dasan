@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 전체117경로 로컬전수·승인8오류보완. 회귀2108·공개120/보호228+재검사·실제Next수강료/청구창3폭·탭90/독립QA통과. architecture/decisions/errors갱신·지식문서5유지. docs/all-pages-verification.md. 긴교사명/전환경고·실인증/기기 후속, 운영/배포없음.
+
 > 2026-10-19: 사용자확대승인 정규순서저장/확정배차재조회수정. 원본대조·함께저장·이동시간칸/이전편집잔류보완. 회귀106·API24/화면9 독립재검증·실제격리PG8·UI91·tsc/lint 통과. architecture/decisions/errors갱신·지식문서5유지. docs/driver-order-persistence.md. 월·요일공통이며 운영/배포없음.
 
 > 2026-10-19: 실제기사UI라벤더시안적용·기기현재시각강조/시안미리보기제외·GPS상세통합. 회귀82·JSX/CSS91·기존10/네이티브10·독립16/18·tsc/lint통과. architecture/decisions갱신·지식문서5유지. docs/driver-lavender-implementation.md. 순서재조회불일치후속승인진행·운영/배포없음.

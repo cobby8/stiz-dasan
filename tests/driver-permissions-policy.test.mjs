@@ -40,4 +40,3 @@ for (const [pathname, expected] of [
 ]) {
   test(`${pathname} 기존 예외 정책 최종값 유지`, () => assert.equal(policies(pathname).at(-1), expected));
 }
-

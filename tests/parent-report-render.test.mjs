@@ -28,14 +28,14 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         const code = ts.transpileModule(readFileSync(file, "utf8"), {
             compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
         }).outputText;
-        const module = { exports: {} };
+        const testModule = { exports: {} };
         const safeRequire = (name) => {
             if (Object.hasOwn(mocks, name)) return mocks[name];
             if (["react", "react/jsx-runtime"].includes(name)) return require(name);
             throw new Error(`검사에서 서버 의존성 접근 금지: ${name}`);
         };
-        vm.runInNewContext(`(function(require,module,exports){${code}\n})`, {}, { filename: file })(safeRequire, module, module.exports);
-        return module.exports;
+        vm.runInNewContext(`(function(require,module,exports){${code}\n})`, {}, { filename: file })(safeRequire, testModule, testModule.exports);
+        return testModule.exports;
     }
     const photos = compile("src/lib/sessionPhotoEntries.ts");
     const privatePhoto = { id: "photo-private", type: "image", url: "https://invalid.example/private-leak.jpg", storageBucket: "staff-session-private", storagePath: "class/session/photo.jpg", visibility: "PRIVATE" };

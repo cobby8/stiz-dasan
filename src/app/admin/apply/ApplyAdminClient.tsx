@@ -975,7 +975,7 @@ export default function ApplyAdminClient({
     }
 
     return (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
             <div>
                 <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-white">
                     <span className="material-symbols-outlined text-3xl text-brand-orange-500 dark:text-brand-neon-lime">how_to_reg</span>
@@ -985,16 +985,17 @@ export default function ApplyAdminClient({
                 <Link href="/admin/registration-readiness" className="mt-2 inline-block text-sm underline" prefetch={false}>입학 완료 확인 · 등록·청구·초대 체크리스트</Link>
             </div>
 
-            <div className="flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+            <div role="group" aria-label="신청 관리 메뉴" className="flex min-w-0 max-w-full flex-nowrap gap-1 overflow-x-auto overscroll-x-contain rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
                 <button
                     onClick={() => setActiveTab("trial")}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                    aria-pressed={activeTab === "trial"}
+                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
                         activeTab === "trial"
                             ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
                             : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
                     }`}
                 >
-                    <span className="material-symbols-outlined text-lg">diversity_3</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-lg">diversity_3</span>
                     체험 문의
                     {(initialTrialStats?.NEW ?? 0) > 0 && (
                         <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
@@ -1004,13 +1005,14 @@ export default function ApplyAdminClient({
                 </button>
                 <button
                     onClick={() => setActiveTab("applications")}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                    aria-pressed={activeTab === "applications"}
+                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
                         activeTab === "applications"
                             ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
                             : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
                     }`}
                 >
-                    <span className="material-symbols-outlined text-lg">assignment</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-lg">assignment</span>
                     수강신청
                     {stats.PENDING > 0 && (
                         <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
@@ -1020,35 +1022,38 @@ export default function ApplyAdminClient({
                 </button>
                 <button
                     onClick={() => setActiveTab("waitlist")}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                    aria-pressed={activeTab === "waitlist"}
+                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
                         activeTab === "waitlist"
                             ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
                             : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
                     }`}
                 >
-                    <span className="material-symbols-outlined text-lg">hourglass_top</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-lg">hourglass_top</span>
                     대기자
                 </button>
                 <button
                     onClick={() => setActiveTab("sources")}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                    aria-pressed={activeTab === "sources"}
+                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
                         activeTab === "sources"
                             ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
                             : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
                     }`}
                 >
-                    <span className="material-symbols-outlined text-lg">query_stats</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-lg">query_stats</span>
                     유입 통계
                 </button>
                 <button
                     onClick={() => setActiveTab("settings")}
-                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                    aria-pressed={activeTab === "settings"}
+                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
                         activeTab === "settings"
                             ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
                             : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
                     }`}
                 >
-                    <span className="material-symbols-outlined text-lg">settings</span>
+                    <span aria-hidden="true" className="material-symbols-outlined text-lg">settings</span>
                     안내 설정
                 </button>
             </div>
