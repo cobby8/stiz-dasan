@@ -33,6 +33,12 @@ export async function getPublicAccountRole(): Promise<AppRole | null> {
       email ||= user.email ?? null;
     }
 
+    // 초대·소셜 로그인은 앱 ID가 달라도 명시적인 Auth 연결이 가장 정확합니다.
+    const boundUser = authUserId
+      ? await prisma.user.findUnique({ where: { authUserId }, select: { role: true } })
+      : null;
+    if (boundUser) return parseAppRole(boundUser.role);
+
     // Supabase 계정 ID와 앱 User ID가 같은 신규 계정은 ID로 가장 정확하게 찾는다.
     const userById = authUserId
       ? await prisma.user.findUnique({

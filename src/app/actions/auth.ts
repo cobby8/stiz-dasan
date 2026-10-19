@@ -10,14 +10,15 @@ import {
   type AppRole,
 } from "@/lib/auth-routes";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
+import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
 
 async function getRoleForAuthUser(user?: { id?: string | null; email?: string | null }): Promise<AppRole | null> {
   if (!user?.id && !user?.email) return null;
 
   const rows = await prisma.$queryRawUnsafe<Array<{ role: string }>>(
     `SELECT role FROM "User"
-     WHERE id = $1 OR LOWER(email) = LOWER($2)
-     ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
+     WHERE "authUserId" = $1 OR id = $1 OR LOWER(email) = LOWER($2)
+     ORDER BY CASE WHEN "authUserId" = $1 THEN 0 WHEN id = $1 THEN 1 ELSE 2 END
      LIMIT 1`,
     user.id || "",
     user.email || "",
@@ -65,8 +66,12 @@ export async function login(formData: FormData) {
 
   // 실제 권한은 DB 역할만 신뢰합니다. DB에 없는 계정은 안전한 학부모로 제한합니다.
   const role = (await getRoleForAuthUser(data.user)) || "PARENT";
+  // 로그인 직후도 계속 화면과 같이, 본인에게 직접 연결된 자녀만 인정합니다.
+  const parentView = data.user ? await getParentViewAccessForAuthUser(data.user) : { hasOwnChildren: false };
   let destination = resolveRedirectForRole(role, redirectTo, {
     preferRoleHome: loginContext === "staff" && redirectTo === "/staff",
+    stayInStaffApp: loginContext === "staff-app",
+    hasOwnChildren: parentView.hasOwnChildren,
   });
 
   if (enrollmentHandoff) {

@@ -9,6 +9,8 @@ import { logout } from "@/app/actions/auth";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import AppBackButton from "@/components/AppBackButton";
+import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import type { AccountViewOption } from "@/lib/account-views";
 
 const LazyBackupButtons = dynamic(() => import("./AdminBackupButtons"), {
     ssr: false,
@@ -83,12 +85,14 @@ export default function AdminShellClient({
     initialUserName,
     initialUserEmail,
     sheetRetired = false,
+    accountViews = [],
 }: {
     children: React.ReactNode;
     initialUserName: string;
     initialUserEmail: string;
     // 구글 시트 원장 은퇴 여부 — 백업 버튼 묶음의 「시트 동기화」 표시 여부로만 쓴다
     sheetRetired?: boolean;
+    accountViews?: AccountViewOption[];
 }) {
     const pathname = usePathname() || "/admin";
     const userName = initialUserName;
@@ -291,6 +295,9 @@ export default function AdminShellClient({
 
                 {/* 사용자 정보 + 로그아웃 */}
                 <div className="p-4 border-t border-[var(--color-academy-line)] flex-shrink-0">
+                    {accountViews.length > 1 && <div className="mb-1 flex justify-end">
+                        <AccountViewSwitcher views={accountViews} placement="above" />
+                    </div>}
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-[var(--color-academy-primary-soft)] rounded-full flex items-center justify-center text-[var(--color-academy-ink)] font-bold text-sm flex-shrink-0">
                             {userName.charAt(0) || "A"}

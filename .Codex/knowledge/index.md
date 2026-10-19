@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 긴교사명헤더168·다중화면전환104·로그인/자녀자격·Next16.2.12의418수정완료. 회귀2128/학생가드5·tsc·독립QA통과. 정상생산빌드/교사27·역할15, 실제iPhone세로3역할/동일합성계정전환확인. 물리회전·키보드/Android·운영자녀연결은별도후속. 지식문서5갱신, docs/role-followup-verification.md. 미배포.
+
 > 2026-10-19: 전체117경로 로컬전수·승인8오류보완. 회귀2108·공개120/보호228+재검사·실제Next수강료/청구창3폭·탭90/독립QA통과. architecture/decisions/errors갱신·지식문서5유지. docs/all-pages-verification.md. 긴교사명/전환경고·실인증/기기 후속, 운영/배포없음.
 
 > 2026-10-19: 사용자확대승인 정규순서저장/확정배차재조회수정. 원본대조·함께저장·이동시간칸/이전편집잔류보완. 회귀106·API24/화면9 독립재검증·실제격리PG8·UI91·tsc/lint 통과. architecture/decisions/errors갱신·지식문서5유지. docs/driver-order-persistence.md. 월·요일공통이며 운영/배포없음.

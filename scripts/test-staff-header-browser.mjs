@@ -31,6 +31,7 @@ const harness = await startStatusBrowserHarness({ css,
   mocks: {
     '@/app/actions/auth': `export function logoutStaff(){throw Error('로그아웃 조작 금지')}`,
     '@/lib/auth-guard': `export async function requireStaff(){const p=new URLSearchParams(location.search);return{appUserName:p.get('name')||'김선생',appUserRole:p.get('role')||'INSTRUCTOR'}}`,
+    '@/lib/account-view-access': `export async function getAccountViewAccess(){return{role:'INSTRUCTOR',views:[]}}`,
     'next/navigation': `export function usePathname(){return new URLSearchParams(location.search).get('path')||'/staff'}export function useRouter(){return{refresh(){},push(){},back(){}}}`,
     'next/image': `import{createElement}from'react';export default function Image({priority,fill,unoptimized,...props}){return createElement('img',props)}`,
   },

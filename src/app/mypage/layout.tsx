@@ -8,6 +8,8 @@ import AppBackButton from "@/components/AppBackButton";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import MyPageBottomNav from "./MyPageBottomNav";
 import AcademyTheme from "@/components/academy/AcademyTheme";
+import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import { getAccountViewAccess } from "@/lib/account-view-access";
 
 // 학부모 앱의 시작 주소가 /mypage 다. 여기서 공용 manifest(id "/")를 내려주면
 // 브라우저가 "이 앱은 공식 앱이었나?" 하고 신원을 헷갈린다. 교사용(/staff)과 같은 구조로
@@ -35,12 +37,13 @@ export default async function MyPageLayout({
     // /mypage/continue 로 가는 이유: /auth/continue 는 학부모 앱의 영역(/mypage) 밖이라
     // 설치된 앱이 주소표시줄을 띄우며 브라우저로 새어 나간다.
     await requireVerifiedParent().catch(() => redirect("/mypage/continue?bounced=1"));
+    const { views } = await getAccountViewAccess();
 
     return (
         // 학부모 앱에만 라이트 라벤더를 적용해 공개 홈페이지 테마와 분리한다.
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
             {/* 모바일 상단 헤더 — 기존 구조 유지, 그림자/보더 디자인 토큰 통일 */}
-            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_1fr_auto] items-center gap-3 px-4 py-3 md:hidden">
+            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-3 md:hidden">
                 {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
                     브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
                 <AppBackButton fallbackHref="/" scopeHref="/mypage" size="sm" />
@@ -48,9 +51,9 @@ export default async function MyPageLayout({
                     제 범위를 벗어나 주소표시줄이 뜨고 돌아올 길이 없어진다.
                     (선생님 앱의 로고가 /staff 로 가는 것과 같은 구조) */}
                 <Link href="/mypage" className="flex items-center gap-2">
-                    <Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-auto object-contain" />
+                    <Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-20 shrink-0 object-contain" />
                 </Link>
-                <span className="text-center font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>
+                {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="text-center font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
                 <form action={logout}>
                     <button
                         type="submit"
@@ -73,6 +76,7 @@ export default async function MyPageLayout({
                     </Link>
                 </div>
                 <nav className="flex shrink-0 items-center gap-4 text-sm font-bold text-[var(--color-academy-muted)]">
+                    <AccountViewSwitcher views={views} />
                     <Link href="/mypage" className="text-[var(--color-academy-primary)] transition-colors">마이페이지</Link>
                     {/* 브라우저로 들어온 학부모에게는 홈페이지로 가는 길이 필요하지만,
                         설치된 앱에서는 나가면 돌아올 길이 없어 감춘다. */}

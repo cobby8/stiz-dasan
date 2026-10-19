@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { logoutStaff } from "@/app/actions/auth";
 import { prepareStaffNavigation } from "./staffNavigation";
+import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import type { AccountViewOption } from "@/lib/account-views";
 
 // 공개 홈페이지 링크(홈·공지·프로그램·시간표·갤러리)는 두지 않는다.
 // 선생님 앱은 manifest scope 가 /staff 라, 홈페이지로 나가면 설치된 앱을 벗어나
@@ -12,7 +14,7 @@ import { prepareStaffNavigation } from "./staffNavigation";
 
 const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function StaffProfileMenu({ staffName, staffRole }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" }) {
+export default function StaffProfileMenu({ staffName, staffRole, accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; accountViews?: AccountViewOption[] }) {
   const pathname = usePathname();
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   const [isOpen, setIsOpen] = useState(false);
@@ -136,19 +138,9 @@ export default function StaffProfileMenu({ staffName, staffRole }: { staffName: 
               </p>
             )}
 
-            {/* 원장·부원장만. 관리자 화면은 앱 영역(/staff) 밖이라 누르면 브라우저로 나간다 —
-                관리자 일은 큰 화면에서 보는 게 맞아 그대로 둔다.
-                수업 진행 중이면 다른 링크와 같이 저장 확인을 먼저 거친다. */}
-            {(staffRole === "ADMIN" || staffRole === "VICE_ADMIN") && (
-              <Link
-                href="/admin"
-                onClick={(event) => requestPublicNavigation(event, "/admin")}
-                className="mb-2 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--brand-accent)_14%,transparent)] text-sm font-bold text-[var(--brand-accent)] hover:bg-[color-mix(in_srgb,var(--brand-accent)_22%,transparent)]"
-              >
-                <span className="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
-                관리자 화면
-              </Link>
-            )}
+            {staffRole !== "DRIVER" && accountViews.length > 1 && <div className="mb-3">
+              <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
+            </div>}
 
             <div className="grid grid-cols-2 gap-2">
               <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gray-100 text-sm font-bold text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
