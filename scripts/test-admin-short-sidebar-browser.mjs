@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import ts from 'typescript';
 import postcss from 'postcss';
 import tailwind from '@tailwindcss/postcss';
 import { chromium } from 'playwright';
@@ -7,23 +9,30 @@ import { startStatusBrowserHarness } from '../tests/helpers/status-browser-harne
 
 const out = '.tmp/admin-short-sidebar';
 await mkdir(out, { recursive: true });
+const file = 'src/app/admin/AdminShellClient.tsx';
+const before = execFileSync('git', ['show', `012e347b7cad20250f5a534a537d29725491a489:${file}`], { encoding: 'utf8' });
+const after = await readFile(file, 'utf8');
+assert.equal(after.replaceAll('max-height:500px', 'max-height:450px').replaceAll('\r\n', '\n'), before.replaceAll('\r\n', '\n'), '제품 변경은 기존 짧은 화면 경계 450→500px만');
+// 비교 대상 453px/900px에서는 원본 450px 조건이 적용되지 않으므로 같은 CSS로 원본 치수를 대조할 수 있습니다.
+const baselineJs = ts.transpileModule(before.replaceAll('"./AdminBackupButtons"', '"@/app/admin/AdminBackupButtons"').replaceAll('"./AdminNotificationBell"', '"@/app/admin/AdminNotificationBell"'), { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
 const globals = await readFile('src/app/globals.css', 'utf8');
 const css = (await postcss([tailwind()]).process(globals.replace('@import "tailwindcss";', '@import "tailwindcss" source(none); @source "./admin/AdminShellClient.tsx"; @source "../components/AccountViewSwitcher.tsx"; @source "../components/AppBackButton.tsx"; @source "../components/academy"; @source "../components/ui";'), { from: 'src/app/globals.css' })).css + await readFile('src/app/academy-theme.css', 'utf8') + `
 @font-face{font-family:'Material Symbols Outlined';src:url('/material.woff2')}body{margin:0;font-family:system-ui,sans-serif}#root{min-width:0}`;
 const harness = await startStatusBrowserHarness({ css,
   assets: { '/material.woff2': { body: await readFile('.tmp/staff-header/material-full.woff2'), contentType: 'font/woff2' }, '/stiz-logo.png': await readFile('public/stiz-logo.png') },
   mocks: {
+    '@/qa/short-sidebar-before': baselineJs,
     '@/app/actions/auth': `export function logout(){throw Error('로그아웃 실행 금지')}`,
     'next/navigation': `export function usePathname(){return'/admin'}export function useRouter(){return{refresh(){},push(){},back(){}}}`,
     'next/image': `import{createElement}from'react';export default function Image({priority,fill,unoptimized,...props}){return createElement('img',props)}`,
   },
-  entry: `import React from'react';import{createRoot}from'react-dom/client';import Shell from'@/app/admin/AdminShellClient';const views=[{key:'admin',label:'관리자',href:'/admin'},{key:'teacher',label:'선생님',href:'/staff'},{key:'parent',label:'학부모',href:'/mypage'}];createRoot(document.getElementById('root')).render(React.createElement(Shell,{initialUserName:'긴이름관리자검사',initialUserEmail:'',accountViews:views},React.createElement('p',{},'격리 메뉴 검사')));`,
+  entry: `import React from'react';import{createRoot}from'react-dom/client';import After from'@/app/admin/AdminShellClient';import Before from'@/qa/short-sidebar-before';const Shell=location.search.includes('before')?Before:After;const views=[{key:'admin',label:'관리자',href:'/admin'},{key:'teacher',label:'선생님',href:'/staff'},{key:'parent',label:'학부모',href:'/mypage'}];createRoot(document.getElementById('root')).render(React.createElement(Shell,{initialUserName:'긴이름관리자검사',initialUserEmail:'',accountViews:views},React.createElement('p',{},'격리 메뉴 검사')));`,
 });
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
 const cases = [];
 const check = (name, passed, details) => { cases.push({ name, passed: !!passed, details }); assert.ok(passed, `${name} ${JSON.stringify(details)}`); };
 try {
-  for (const [width, height] of [[750,292],[874,402],[402,714],[390,844],[834,1112],[1440,900]]) {
+  for (const [width, height] of [[750,292],[830,453],[874,402],[402,714],[390,844],[834,1112],[1440,900]]) {
     const page = await browser.newPage({ viewport: { width, height }, hasTouch: true });
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.route('**/*', route => route.request().url().startsWith(harness.url + '/') ? route.continue() : route.abort());
@@ -37,14 +46,14 @@ try {
       const nav=e.querySelector('nav'); const children=[...e.children].map(n=>({height:n.getBoundingClientRect().height}));
       return { children, navHeight:nav.clientHeight, navScroll:nav.scrollHeight, asideHeight:e.getBoundingClientRect().height, pageWidth:document.documentElement.scrollWidth, viewport:innerWidth };
     });
-    check(`${key} 업무 명단 공간 확보`, metrics.navHeight >= (height <= 450 ? height - 165 : height - 340), metrics);
+    check(`${key} 업무 명단 공간 확보`, metrics.navHeight >= (height <= 500 ? height - 165 : height - 340), metrics);
     check(`${key} 사이드바 뷰포트 높이·가로 넘침 없음`, Math.abs(metrics.asideHeight - height) < 2 && metrics.pageWidth <= width, metrics);
-    if (height <= 450) check(`${key} 로고·탭·계정 공간 절약`, metrics.children[0].height <= 48 && metrics.children[1].height <= 48 && metrics.children.at(-1).height <= 66, metrics);
+    if (height <= 500) check(`${key} 로고·탭·계정 공간 절약`, metrics.children[0].height <= 48 && metrics.children[1].height <= 48 && metrics.children.at(-1).height <= 66, metrics);
     else check(`${key} 기존 로고 크기 보존`, await aside.locator('img').evaluate(e => Math.abs(e.getBoundingClientRect().height - 54) < 1));
     const nav=aside.locator('nav').first();
     for (const tab of ['사이트', '학원운영']) {
       const button=aside.getByRole('button',{name:tab,exact:true}); await button.click();
-      if (height <= 450) check(`${key} ${tab} 탭 44px`, await button.evaluate(e => e.getBoundingClientRect().height >= 44));
+      if (height <= 500) check(`${key} ${tab} 탭 44px`, await button.evaluate(e => e.getBoundingClientRect().height >= 44));
       await nav.locator('details').evaluateAll(elements => elements.forEach(e => { e.open=true; }));
       const links=nav.getByRole('link'); const count=await links.count();
       const reached=[];
@@ -53,7 +62,7 @@ try {
         reached.push(await link.evaluate(e => { const r=e.getBoundingClientRect(); const n=e.closest('nav').getBoundingClientRect();return{href:e.getAttribute('href'),height:r.height,inside:r.top>=n.top-1&&r.bottom<=n.bottom+1,topmost:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}; }));
       }
       check(`${key} ${tab} 모든 업무 메뉴 스크롤·터치 접근`, count > 10 && reached.every(r=>r.inside&&r.topmost), reached);
-      if (height <= 450) check(`${key} ${tab} 업무 버튼 44px`, reached.every(r=>r.height >= 44), reached);
+      if (height <= 500) check(`${key} ${tab} 업무 버튼 44px`, reached.every(r=>r.height >= 44), reached);
     }
     await aside.getByRole('button',{name:'화면 전환',exact:true}).click();
     const switcher=aside.getByRole('navigation',{name:'이용 화면 전환',exact:true});
@@ -66,6 +75,17 @@ try {
     await page.screenshot({ path:`${out}/${key}.png` });
     check(`${key} JS 오류 없음`, errors.length===0,errors);
     await page.close();
+    if (height === 453 || (width === 1440 && height === 900)) {
+      const baseline = await browser.newPage({ viewport: { width, height }, hasTouch: true });
+      await baseline.route('**/*', route => route.request().url().startsWith(harness.url + '/') ? route.continue() : route.abort());
+      await baseline.goto(harness.url + '/?before');
+      await baseline.locator('aside').waitFor();
+      await baseline.evaluate(async () => { await document.fonts.load('20px "Material Symbols Outlined"'); document.documentElement.classList.add('material-symbols-ready'); });
+      const old = await baseline.locator('aside').evaluate(e => ({ navHeight: e.querySelector('nav').clientHeight, children: [...e.children].map(n => n.getBoundingClientRect().height) }));
+      if (height === 453) check(`${key} 원본보다 메뉴 공간 증가`, metrics.navHeight > old.navHeight + 50, { before: old, after: metrics });
+      else check(`${key} 기본 PC 원본 치수 불변`, metrics.navHeight === old.navHeight && JSON.stringify(metrics.children.map(n => n.height)) === JSON.stringify(old.children), { before: old, after: metrics });
+      await baseline.close();
+    }
   }
 } finally { await browser.close(); await harness.close(); }
 await writeFile(`${out}/browser.json`,JSON.stringify({source:'원본 AdminShellClient/공통전환/실제 Tailwind·Academy CSS·공식 로고·Material폰트, 외부 API/인증/운영/물리기기 미사용',passed:cases.length,cases},null,2));

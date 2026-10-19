@@ -310,3 +310,6 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 ## 2026-10-20: 목록 필터 공통 UI
 - `src/components/academy/CompactListFilters.tsx`가 검색·주요 동작·필터 펼침·선택 요약을 배치한다. 조건 값과 조회·초기화 함수는 기존 체험/수강신청·원생·특강 화면이 소유한다.
 - 업무/보기/시즌 같은 대상 선택과 목록 조건을 구분하고 API·조건 계산은 옮기지 않는다. 상세 docs/admin-compact-filters.md.
+
+## 2026-10-20: 수강신청의 명시적 보호자 선택
+- approval-parent.ts가 후보·직접 Auth 연결·명시 선택·재검토 트랜잭션을 담당하고 admin.ts는 관리자 가드·조회 시간 제한·재검증을 연결한다. ApplyAdminModals는 기존 parentUserId를 잠그고 신규 선택값을 명시 전달한다. 스키마·대표 role 변경은 없다. 상세 docs/enrollment-parent-link.md.

@@ -5,6 +5,8 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
+import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import { requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
 import {
@@ -4832,10 +4834,38 @@ class ApprovalAbort extends Error {
     }
 }
 
+/** 서버 전용 Auth 조회다. 실패하거나 삭제된 계정이면 연결하지 않는다. */
+async function verifyEnrollmentParentAuth(id: string) {
+    const { data, error } = await createAdminClient({ fetch: approvalAuthFetch() }).auth.admin.getUserById(id);
+    if (error) throw new Error("보호자 로그인 계정 확인에 실패했습니다. 잠시 후 다시 조회해 주세요.");
+    return isActiveApprovalAuthUser(data.user, id);
+}
+
+export async function getEnrollmentParentCandidates(applicationId: string) {
+    const admin = await requireAdmin();
+    const [app] = await prisma.$queryRawUnsafe<Array<{ parentPhone: string | null; parentUserId: string | null }>>(
+        `SELECT "parentPhone", "parentUserId" FROM "EnrollmentApplication" WHERE id = $1`, applicationId,
+    );
+    if (!app) throw new Error("신청서를 찾을 수 없습니다.");
+    return listApprovalParentCandidates(prisma, app, admin.appUserId, verifyEnrollmentParentAuth);
+}
+
+export async function reopenEnrollApplicationForReview(applicationId: string, data: { reason: string }) {
+    const admin = await requireAdmin();
+    await ensureApplicationContactLogInfrastructure();
+    const result = await prisma.$transaction((tx) => reopenEnrollmentForReview(tx, applicationId, data.reason, {
+        id: admin.appUserId, name: admin.appUserName,
+    }));
+    revalidatePath("/admin/apply");
+    revalidatePath("/admin");
+    revalidateApplyAdminCaches();
+    return result;
+}
+
 /**
  * 수강 신청서 승인 — 핵심 비즈니스 로직
  * 1. EnrollmentApplication 조회
- * 2. User SELECT (parentPhone 기준) → 없으면 INSERT (role=PARENT)
+ * 2. 명시 보호자 선택·Auth 연결 확인 → 후보가 없을 때만 새 PARENT 생성
  * 3. Student SELECT (name + parentId) → 없으면 INSERT
  * 4. Guardian INSERT (ON CONFLICT 무시)
  * 5. 각 classId에 대해 Enrollment 생성/활성화 + 운영 동기화 원장 적재
@@ -4848,6 +4878,7 @@ export async function approveEnrollApplication(
         classIds: string[];       // 배정할 반 ID 배열
         processedNote?: string;   // 관리자 메모
         force?: boolean;          // A. 정원 초과 경고를 무시하고 강행할지(관리자 재확인 후 true)
+        parentUserId?: string;    // 관리자가 직접 선택한 기존 보호자 계정 ID(대표 역할 유지)
         resolvedStudentId?: string; // B. 동명 형제로 학생이 모호할 때 관리자가 지정한 학생 id
     }
 ) {
@@ -4927,7 +4958,7 @@ export async function approveEnrollApplication(
         const app = apps[0];
 
         // PENDING 상태만 승인 가능
-        if (app.status !== "PENDING") {
+        if (app.status !== "PENDING" || app.convertedStudentId || app.convertedstudentid) {
             throw new Error(`이미 처리된 신청서입니다. (현재 상태: ${app.status})`);
         }
 
@@ -4990,55 +5021,20 @@ export async function approveEnrollApplication(
         }
         const shouldCopyShuttleLocations = shuttleNeeded && completeLocations && hasCompleteCurrentConsent;
 
-        // 2. 학부모 User 조회/생성
-        //    ⚠️ 여기서 기존 학부모를 놓치면 계정과 학생이 통째로 복제된다.
-        //    그러면 학부모가 로그인하는 계정에는 자녀가 0명으로 남아 앱에서 아무것도 못 본다
-        //    (2026-08~09 실측 4가족). 그래서 두 가지를 순서대로 본다.
+        // 2. 전화는 후보 검색에만 사용한다. 명시 선택한 계정을 다시 검증하고 대표 역할은 유지한다.
         const parentPhone = app.parentPhone ?? app.parentphone;
         const parentName = app.parentName ?? app.parentname;
         const parentPhoneDigitsValue = parentPhoneDigits(parentPhone);
-        const linkedParentUserId = app.parentUserId ?? app.parentuserid ?? null;
         let parentId: string;
-
-        // (1) 신청서에 이미 연결된 가입 계정이 있으면 그것이 정답이다.
-        //     가입 절차에서 번호를 확인하고 연결해 둔 값이라 전화번호 조회보다 믿을 수 있다.
-        const linkedUsers = linkedParentUserId
-            ? await tx.$queryRawUnsafe<any[]>(
-                `SELECT id FROM "User" WHERE id = $1 AND role = 'PARENT' LIMIT 1`,
-                linkedParentUserId,
-            )
-            : [];
-
-        // (2) 없으면 전화번호로 찾되 **숫자만 남겨** 비교한다.
-        //     저장 형식이 '010-1234-5678'(신청서)과 '01012345678'(가입)로 섞여 있어
-        //     글자 그대로 비교하면 기존 학부모 90%를 못 찾는다.
-        //     빈 번호·자리채움 번호는 열쇠로 쓰지 않는다(빈 값끼리 묶이면 남의 자녀가 붙는다).
-        const existingUsers = linkedUsers.length === 0 && isUsablePhoneKey(parentPhoneDigitsValue)
-            ? await tx.$queryRawUnsafe<any[]>(
-                `SELECT id FROM "User"
-                  WHERE role = 'PARENT'
-                    AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
-                  ORDER BY ("authUserId" IS NOT NULL) DESC, "createdAt" ASC
-                  LIMIT 1`,
-                parentPhoneDigitsValue,
-            )
-            : [];
-
-        if (linkedUsers.length > 0) {
-            parentId = linkedUsers[0].id;
-        } else if (existingUsers.length > 0) {
-            // 실제로 로그인에 쓰이는 계정(authUserId 연결)을 우선한다.
-            parentId = existingUsers[0].id;
+        const selectedParentId = await resolveApprovalParent(tx, app, data.parentUserId, verifyEnrollmentParentAuth);
+        if (selectedParentId) {
+            parentId = selectedParentId;
         } else {
-            // 정말 처음 보는 학부모일 때만 새로 만든다.
-            // 번호는 숫자만으로 저장한다 — 가입 경로와 형식을 맞춰 다음 조회가 또 어긋나지 않게 한다.
             const newUsers = await tx.$queryRawUnsafe<any[]>(
                 `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
                  VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
                  RETURNING id`,
-                `parent_${parentPhoneDigitsValue}@stiz.local`,
-                parentName,
-                parentPhoneDigitsValue || parentPhone,
+                `parent_${parentPhoneDigitsValue}@stiz.local`, parentName, parentPhoneDigitsValue || parentPhone,
             );
             parentId = newUsers[0].id;
         }
@@ -5256,12 +5252,14 @@ export async function approveEnrollApplication(
                  "processedAt" = NOW(),
                  "processedNote" = $2,
                  "assignedClassId" = $3,
+                 "parentUserId" = $5,
                  "updatedAt" = NOW()
              WHERE id = $4`,
             studentId,
             data.processedNote || null,
             data.classIds.join(","),
             applicationId,
+            parentId,
         );
 
         // 7. 연결된 TrialLead가 있으면 CONVERTED로 업데이트
@@ -5282,6 +5280,9 @@ export async function approveEnrollApplication(
         // 학생 모호(STUDENT_AMBIGUOUS) 등 '중단 신호'는 에러가 아니라 정상 반환값으로 돌려준다(트랜잭션은 롤백됨).
         if (e instanceof ApprovalAbort) {
             return e.payload;
+        }
+        if (e instanceof ParentSelectionRequired) {
+            return { ok: false as const, code: "PARENT_SELECTION_REQUIRED" as const, message: e.message };
         }
         console.error("Failed to approve enrollment application:", e);
         throw new Error((e as Error).message || "수강 신청 승인 실패");

@@ -453,6 +453,7 @@ export default function ApplyAdminClient({
     const [showDetailModal, setShowDetailModal] = useState<EnrollApplication | null>(null);
     const [showEditModal, setShowEditModal] = useState<EnrollApplication | null>(null);
     const [showCancelModal, setShowCancelModal] = useState<EnrollApplication | null>(null);
+    const [showReopenModal, setShowReopenModal] = useState<EnrollApplication | null>(null);
     const [contactModal, setContactModal] = useState<ContactModalState>(null);
     const [manualSmsModal, setManualSmsModal] = useState<ManualSmsModalState>(null);
     const [contactBusyId, setContactBusyId] = useState<string | null>(null);
@@ -640,7 +641,7 @@ export default function ApplyAdminClient({
     useEffect(() => {
         setVisibleLimit(APPLICATION_PAGE_SIZE);
     }, [filter, searchQuery, workFilter]);
-    const hasApplyModal = Boolean(showApproveModal || showRejectModal || showDetailModal || showEditModal || showCancelModal);
+    const hasApplyModal = Boolean(showApproveModal || showRejectModal || showDetailModal || showEditModal || showCancelModal || showReopenModal);
 
     // 날짜 포맷
     function formatDate(dateStr: string | null) {
@@ -914,6 +915,7 @@ export default function ApplyAdminClient({
                                                     <span className="material-symbols-outlined text-base">edit_note</span>
                                                     메모
                                                 </button>
+                                                {app.status === "REJECTED" && !app.convertedStudentId && <button type="button" onClick={() => { setOpenQuickActionId(null); setShowReopenModal(app); }} className={LIST_ACTION_ITEM_CLASS}><span className="material-symbols-outlined text-base">restart_alt</span>재검토로 되돌리기</button>}
                                                 {app.status === "PENDING" && (
                                                     <>
                                                         {/* 승인 전에 상담 결과를 반영해 신청 내용을 고칠 수 있다.
@@ -1014,7 +1016,7 @@ export default function ApplyAdminClient({
                         onReset={() => { setFilter("ALL"); setWorkFilter("ALL"); }}
                         search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
                             <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
-                            <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none" />
+                            <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
                             {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
                         </label>}
                     >
@@ -1092,12 +1094,14 @@ export default function ApplyAdminClient({
                     detailApp={showDetailModal}
                     editApp={showEditModal}
                     cancelApp={showCancelModal}
+                    reopenApp={showReopenModal}
                     classes={classes}
                     onCloseApprove={() => setShowApproveModal(null)}
                     onCloseReject={() => setShowRejectModal(null)}
                     onCloseDetail={() => setShowDetailModal(null)}
                     onCloseEdit={() => setShowEditModal(null)}
                     onCloseCancel={() => setShowCancelModal(null)}
+                    onCloseReopen={() => setShowReopenModal(null)}
                     onSaved={loadApplyData}
                     onFeedback={showFeedback}
                 />

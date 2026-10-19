@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-20: 명시적 보호자 선택·관리자/교사 역할 보존·반려 재검토/원사유 이력 보완 완료. 전체275파일2143·독립PG18/후속8·UI43·검색14/메뉴77 통과, 최종생산 src860해시 일치. 실제Android17 세로554×756/가로830×453·키보드·동일계정3역할/청구창·기사명단 확인, 회전설정복원. 지정자녀 운영등록0·시작일/실행승인대기. 지식문서5 유지, docs/enrollment-parent-link.md 및 role-followup-verification.md. 미배포.
+
 > 2026-10-20: 실제 동일 세션 관리자·교사 접근 재확인, 지정 자녀는 정식 학생·연결0/반려 신청1로 학부모 검증 미완료. 읽기 전용 조회·운영쓰기0, 독립권한59통과. Android USB0대·등록경로 사용자확인 대기. docs/role-followup-verification.md. 지식문서5 유지·미배포.
 
 > 2026-10-20: 승인 중복필터 개편 신청·원생·특강 완료. 독립230/54/45·최신전체2128/보호5·tsc·최종생산12/소스19해시·실제iPhone3화면/선택46.75px·날짜296px 경계통과. architecture/conventions/decisions/errors갱신, 지식문서5 유지. docs/admin-compact-filters.md. Android재검증·운영자녀연결 별도, 미배포.
