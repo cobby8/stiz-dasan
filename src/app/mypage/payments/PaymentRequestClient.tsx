@@ -215,13 +215,13 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
                   <div className="mt-3 space-y-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
                     <div>
                       <p className="mb-1 text-xs font-bold text-gray-500 dark:text-gray-400">어떻게 결제하셨나요?</p>
-                      <div className="grid grid-cols-4 gap-1.5">
+                      <div className="grid grid-cols-2 gap-1.5 min-[375px]:grid-cols-4">
                         {PAYMENT_METHODS.map((value) => (
                           <button
                             key={value}
                             type="button"
                             onClick={() => setMethod(value)}
-                            className={`min-h-11 rounded-lg border text-xs font-bold ${
+                            className={`min-h-11 whitespace-nowrap rounded-lg border text-xs font-bold ${
                               method === value
                                 ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
                                 : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-200"

@@ -444,7 +444,7 @@ export default function SessionInProgressClient({
             <p className="text-sm font-bold text-[var(--brand-accent)]">{session.className}</p>
             <h1 className="text-2xl font-black text-brand-navy-900 dark:text-white">출석 확인</h1>
           </div>
-          <button type="button" onClick={() => setView("main")} className="min-h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm font-black dark:border-gray-700 dark:bg-gray-900">
+          <button type="button" onClick={() => setView("main")} className="min-h-11 break-keep rounded-xl border border-gray-200 bg-white px-4 text-sm font-black dark:border-gray-700 dark:bg-gray-900">
             수업으로 돌아가기
           </button>
         </div>

@@ -184,7 +184,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 key={value}
                 type="button"
                 onClick={() => setKind(value)}
-                className={`min-h-11 rounded-xl border text-sm font-bold ${
+                className={`min-h-11 break-keep rounded-xl border text-sm font-bold ${
                   kind === value
                     ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
                     : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"

@@ -6,7 +6,7 @@
 
 .runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 800; }
 .runSummary span { color: var(--color-academy-muted); font-size: 13px; font-weight: 600; }
-.headerActions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+.headerActions { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 6px; }
 
 .workspace .stop {
   padding: 10px;
@@ -37,14 +37,17 @@
 .upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-primary); font-size: 14px; font-weight: 900; }
 .riders { margin-top: 8px; min-width: 0; }
 .rider { padding: 6px 8px; min-width: 0; }
-.riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; min-height: 44px; flex-wrap: wrap; }
-.riderInfo { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; min-width: 0; max-width: 100%; flex: 1 0 auto; }
+.riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 3px; min-height: 44px; flex-wrap: wrap; }
+/* 좁은 화면에서는 긴 이름만 줄바꿈하고, 전화 두 개는 이름 오른쪽에 함께 둔다. */
+.riderInfo { display: flex; align-items: center; gap: 0 2px; min-width: 0; max-width: 100%; flex: 1 0 auto; }
 .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.contacts { display: flex; align-items: center; gap: 0 2px; }
+.identity > :first-child { min-width: 0; max-width: 100%; }
+.identity > :nth-child(2) { flex-shrink: 0; white-space: nowrap; }
+.contacts { display: flex; flex-shrink: 0; align-items: center; gap: 0 2px; }
 .contacts a { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 44px; color: var(--color-academy-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
 .contacts a span { font-size: 18px; }
 .riderMain > :last-child { flex-shrink: 0; }
-.boardingActions { display: flex; align-items: center; gap: 4px; }
+.boardingActions { display: flex; align-items: center; gap: 4px; margin-inline-start: auto; }
 .boardingActions button { min-width: 52px; }
 .riderNotes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
 .rider button:disabled { opacity: .55; }
@@ -55,6 +58,14 @@
   .identity > :nth-child(2) { font-size: 12px; }
   .contacts a { font-size: 12px; gap: 2px; }
   .contacts a span { font-size: 14px; }
+}
+
+/* 매우 긴 명칭만 넓은 행을 확보하고, 짧은 정류장과 시간은 기존 한 행을 유지한다. */
+@media (max-width: 380px) {
+  .longStopName { flex-basis: auto; min-width: 0; max-width: calc(100% - 38px); }
+}
+@media (max-width: 340px) {
+  .stopName { flex-basis: auto; min-width: 0; max-width: calc(100% - 38px); }
 }
 
 /* 태블릿과 PC에서도 운행 순서는 세로로 유지하고 정류장 옆에 명단을 둔다. */

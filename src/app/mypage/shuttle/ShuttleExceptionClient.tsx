@@ -188,7 +188,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                 key={value}
                 type="button"
                 onClick={() => setDirection(value)}
-                className={`min-h-11 rounded-lg border px-1 text-xs font-bold ${
+                className={`min-h-11 break-keep rounded-lg border px-1 text-xs font-bold ${
                   direction === value
                     ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
                     : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-200"
@@ -208,7 +208,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                 key={value}
                 type="button"
                 onClick={() => setKind(value)}
-                className={`min-h-11 rounded-lg border text-sm font-bold ${
+                className={`min-h-11 break-keep rounded-lg border text-sm font-bold ${
                   kind === value
                     ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
                     : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-200"

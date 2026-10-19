@@ -2097,7 +2097,7 @@ export default function StudentManagementClient({
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200 max-sm:!table-auto max-sm:[&_th]:whitespace-nowrap">
                             <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>
                                     <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">이름</th>
@@ -2114,7 +2114,7 @@ export default function StudentManagementClient({
                                 {visibleStudents.map((s) => (
                                     <tr key={s.id} className="hover:bg-gray-50 dark:bg-gray-900 transition-colors">
                                         {/* 이름: 항상 표시, 클릭하면 상세 페이지로 이동 */}
-                                        <td className="px-4 py-2">
+                                        <td className="whitespace-nowrap px-4 py-2">
                                             <Link
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
@@ -2124,7 +2124,7 @@ export default function StudentManagementClient({
                                             </Link>
                                         </td>
                                         {/* 학년: 항상 표시, shortenGrade로 "초4" 형태 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
+                                        <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
                                             {shortenGrade(s.grade)}
                                         </td>
                                         {/* 학교: 모바일 숨김 */}

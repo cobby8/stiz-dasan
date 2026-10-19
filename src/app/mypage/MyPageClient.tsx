@@ -383,7 +383,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                 </span>
                                 <span className="min-w-0 text-right text-sm font-bold text-gray-900 dark:text-white">
                                     {nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}
-                                    <span className="ml-1 truncate font-normal text-gray-500 dark:text-gray-400">· {nextClass.className}</span>
+                                    <span className="ml-1 break-words font-normal text-gray-500 dark:text-gray-400">· {nextClass.className}</span>
                                 </span>
                             </button>
                         )}
@@ -431,7 +431,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             onClick={item.href.startsWith("#") ? () => scrollToSection(item.href.slice(1)) : undefined}
                             className="flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-academy-canvas)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)] transition-colors hover:bg-[var(--color-academy-primary-soft)]">
                             <SymbolIcon name={item.icon} size={19} className="shrink-0 text-[var(--color-academy-primary)]" />
-                            <span>{item.label}</span>
+                            <span className="break-keep">{item.label}</span>
                         </Link>
                     ))}
                 </div>
@@ -642,7 +642,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                 <details id="mypage-shuttle" className="academy-panel scroll-mt-24">
                     <summary className="cursor-pointer p-4 text-sm font-bold text-[var(--color-academy-ink)]">셔틀 배정 상세 <span className="ml-2 font-normal text-[var(--color-academy-muted)]">{child.name} · {childShuttleOverview.length}건</span></summary>
                     <div className="border-t border-[var(--color-academy-line)] p-4">
-                    <div className="mb-4 flex items-start justify-between gap-3">
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <div className="flex items-center gap-2">
                                 <SymbolIcon name="airport_shuttle" size={20} className="text-blue-600 dark:text-blue-300" />
@@ -650,7 +650,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             </div>
                             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{child.name} 학생의 신청 및 배정 현황입니다.</p>
                         </div>
-                        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:items-start">
+                        <div className="flex flex-wrap items-stretch gap-2">
                             {shuttleDriverContact?.phone && (
                                 <a
                                     href={`tel:${shuttleDriverContact.phone.replace(/[^0-9]/g, "")}`}
@@ -742,13 +742,13 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                 <div className="flex flex-wrap gap-2">
                     <button
                         onClick={() => { setShowRequestForm(!showRequestForm); setShowRequests(false); }}
-                        className="flex-1 flex items-center justify-center gap-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold py-3 rounded-2xl hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition shadow-sm"
+                        className="flex-1 basis-44 flex items-center justify-center gap-2 whitespace-nowrap bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold px-3 py-3 rounded-2xl hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition shadow-sm"
                     >
                         <SymbolIcon name="send" size={16} /> 학원에 메시지 보내기
                     </button>
                     <button
                         onClick={() => { setShowRequests(!showRequests); setShowRequestForm(false); }}
-                        className="flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-bold px-4 py-3 rounded-2xl hover:bg-gray-50 dark:bg-gray-900 transition shadow-sm"
+                        className="flex shrink-0 items-center justify-center gap-2 whitespace-nowrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-bold px-4 py-3 rounded-2xl hover:bg-gray-50 dark:bg-gray-900 transition shadow-sm"
                     >
                         <SymbolIcon name="forum" size={16} />
                         보낸 메시지
@@ -1082,7 +1082,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                         <div className="flex items-center gap-3">
                             <span className="material-symbols-outlined text-2xl text-brand-orange-500 dark:text-brand-neon-lime">sports_basketball</span>
                             <div>
-                                <p className="font-bold text-brand-navy-900">방학특강 결석 신고 · 보강</p>
+                                <p className="break-keep font-bold text-brand-navy-900">방학특강 결석 신고 · 보강</p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">사전 신고하면 그날 셔틀 배차에서 자동 제외돼요. 결석한 회차 보강 신청도 여기서.</p>
                             </div>
                         </div>
