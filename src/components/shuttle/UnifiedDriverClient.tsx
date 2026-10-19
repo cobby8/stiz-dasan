@@ -9,7 +9,7 @@ import DriverDateNav from "@/components/shuttle/DriverDateNav";
 import GpsShareBar from "@/components/shuttle/GpsShareBar";
 import { useGpsShare } from "@/hooks/useGpsShare";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
-import { countProgress, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
+import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
 // 기사님은 위에서부터 순서대로 다니면 된다.
@@ -25,12 +25,6 @@ type Status = "BOARDED" | "NOSHOW" | "SELF";
 type SortKey = { minutes: number | null; seq: number };
 
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
-function fmtDate(iso: string): string {
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return iso;
-  const dow = ["일", "월", "화", "수", "목", "금", "토"][new Date(`${iso}T12:00:00+09:00`).getUTCDay()] ?? "";
-  return `${Number(m[2])}/${Number(m[3])}${dow ? ` (${dow})` : ""}`;
-}
 
 export default function UnifiedDriverClient({
   token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel,
@@ -191,74 +185,71 @@ export default function UnifiedDriverClient({
     }
   }
 
-  const progress = countProgress(rows, boarding);
+  // 화면 요약만 계산한다. 저장 중이거나 서버 확인이 안 된 기록은 완료로 세지 않는다.
+  function checkSummary(riders: UnifiedRider[]) {
+    const targets = [...new Map(riders.filter((rider) => !(rider.kind === "REGULAR" && rider.absent)).map((rider) => [rider.key, rider])).values()];
+    const checked = targets.filter((rider) => {
+      const state = saveStates[rider.key]?.state;
+      return initialBoardingReliable && (!state || state === "saved") && ["BOARDED", "NOSHOW", "SELF"].includes(boarding[rider.key]);
+    }).length;
+    return { total: targets.length, checked };
+  }
+  const summary = checkSummary(rows.filter((row) => !row.isTerminal).flatMap((row) => row.riders));
   const stopRows = ordered.filter((r) => !r.isTerminal);
   const orderControls = stopRows.length > 0 && (!editing ? (
     <button type="button" onClick={() => setEditing(true)}
-      className="shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-black text-gray-600 active:bg-gray-100">
+      className="min-h-11 shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1 text-[13px] font-bold text-gray-600 active:bg-gray-100">
       ↕ 순서·시간 수정
     </button>
   ) : (
     <div className="flex shrink-0 gap-1">
       <button type="button" disabled={savingOrder} onClick={saveRegularOrder}
-        className="rounded-lg bg-blue-600 px-2 py-1 text-[11px] font-black text-white active:bg-blue-700">
-        {savingOrder ? "저장 중..." : "💾 저장"}
+        className="min-h-11 rounded-lg bg-blue-600 px-3 py-1 text-[13px] font-bold text-white active:bg-blue-700">
+        {savingOrder ? "저장 중..." : "저장"}
       </button>
       <button type="button" onClick={() => { setEditing(false); setSortOverride({}); setTimeOverride({}); }}
-        className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-black text-gray-600">취소</button>
+        className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 py-1 text-[13px] font-bold text-gray-600">취소</button>
     </div>
   ));
   let seq = 0;
 
   return (
     <AcademyTheme role="driver" className="mx-auto max-w-lg px-3 pb-28">
-      {/* 작은 운행 시작 버튼과 길안내 위치는 유지하고 브랜드·표면만 통일합니다. */}
-      <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-3 flex items-center justify-between gap-3 border-b px-4 py-3">
+      {/* 운행 동작은 헤더 한 곳에 두고, 날짜는 아래 날짜 탐색에만 표시합니다. */}
+      <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1></div>
-          <p className="mt-0.5 text-[15px] font-bold text-gray-600">
-            {fmtDate(date)} · {initialBoardingReliable ? `체크 ${progress.boarded}/${progress.total}` : "체크 기록 확인 필요"}
-            {progress.noshow > 0 ? ` · 결석 ${progress.noshow}` : ""}
-            {progress.self > 0 ? ` · 자차 ${progress.self}` : ""}
-          </p>
+          {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">운행이 종료되었습니다</p>}
         </div>
         {runState === "idle" && (
           <button type="button" onClick={handleRunStart}
-            className="h-10 shrink-0 rounded-xl bg-green-600 px-3 text-[14px] font-black text-white active:bg-green-700">
-            🚦 운행 시작
+            className="h-11 shrink-0 rounded-xl bg-[var(--color-academy-primary)] px-3 text-[14px] font-black text-white active:opacity-80">
+            운행 시작
           </button>
         )}
+        {runState === "running" && <button type="button" onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">운행 종료</button>}
       </header>
 
       {/* PWA 설치 배너 */}
       {showInstallBanner && (
-        <div className="mb-3 flex items-center gap-3 rounded-2xl border-2 border-indigo-300 bg-indigo-50 px-4 py-3">
-          <span className="text-[28px]">📲</span>
-          <div className="flex-1">
-            <p className="text-[15px] font-black text-indigo-900">홈 화면에 추가하세요</p>
-            <p className="text-[12px] font-semibold text-indigo-700">앱처럼 빠르게 열 수 있어요</p>
-          </div>
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-2">
+          <p className="min-w-0 flex-1 text-[14px] font-bold text-[var(--color-academy-ink)]">홈 화면에서 빠르게 열기</p>
           <button type="button" onClick={installPwa}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-[14px] font-black text-white active:bg-indigo-700">설치</button>
-          <button type="button" onClick={() => setShowInstallBanner(false)} className="text-[20px] text-indigo-300">✕</button>
+            className="min-h-11 min-w-11 text-[14px] font-bold text-[var(--color-academy-primary)]">설치</button>
+          <button type="button" onClick={() => setShowInstallBanner(false)} aria-label="설치 안내 닫기" className="h-11 w-11 shrink-0 text-[20px] text-[var(--color-academy-primary)]">×</button>
         </div>
       )}
 
       {/* 운행 중 */}
       {runState === "running" && (
-        <div className="mb-3">
+        <div className="mb-2">
           <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={gpsStart} />
-          <button type="button" onClick={handleRunEnd}
-            className="mt-2 h-13 w-full rounded-2xl border-2 border-red-300 bg-white py-3 text-[17px] font-black text-red-600 active:bg-red-50">
-            🏁 운행 종료
-          </button>
         </div>
       )}
 
       {/* 운행 종료 후 */}
       {runState === "ended" && (
-        <div className="mb-4 rounded-2xl bg-gray-100 px-4 py-5 text-center">
-          <p className="text-[17px] font-black text-gray-600">✅ 운행이 종료되었습니다</p>
+        <div className="mb-2">
           <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} />
         </div>
       )}
@@ -269,7 +260,7 @@ export default function UnifiedDriverClient({
       {/* 순서 편집 */}
       {stopRows.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-[14px] font-black text-gray-600">확정 운행 순서</p>
+          <p className="text-[14px] font-bold text-gray-600">운행 순서 · {stopRows.length}곳<br /><span className="text-[13px] font-semibold text-[var(--color-academy-primary)]">{initialBoardingReliable ? summary.total > 0 ? `체크 ${summary.checked}/${summary.total}` : "체크 대상 없음" : "기록 확인 필요"}</span></p>
           {orderControls}
         </div>
       )}
@@ -296,6 +287,7 @@ export default function UnifiedDriverClient({
           const isPickup = row.direction === "PICKUP";
           const url = tmapNavigationCoordinateUrl({ latitude: row.lat, longitude: row.lng, name: row.label });
           const editable = editing && row.kind === "REGULAR";
+          const checks = checkSummary(row.riders);
           return (
             <li
               key={row.key}
@@ -313,48 +305,44 @@ export default function UnifiedDriverClient({
               className={`academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
               editing ? "border-blue-200 bg-blue-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
             }`}>
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5">
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2">
                 {editable ? (
                   <div className="flex shrink-0 flex-col gap-0.5" aria-label="순서 변경">
                     <button type="button" onClick={() => moveRow(row, -1)}
-                      className="h-7 w-7 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▲</button>
+                      aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▲</button>
                     <button type="button" onClick={() => moveRow(row, 1)}
-                      className="h-7 w-7 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▼</button>
+                      aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▼</button>
                   </div>
                 ) : (
                   <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[15px] font-black text-white ${row.isHub ? "bg-green-600" : "bg-[var(--color-academy-primary)]"}`}>
-                    {row.isHub ? "🆓" : seq}
+                    {seq}
                   </span>
                 )}
-                <span className="min-w-0 text-[18px] font-black leading-tight text-gray-900">{row.label}</span>
+                <div className="min-w-0"><span className="text-[18px] font-black leading-tight text-gray-900">{row.label}</span><p className="mt-1 text-[13px] font-bold text-gray-500">{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : row.riders.some((rider) => rider.kind === "REGULAR" && rider.absent) ? "사전 결석 · 체크 대상 없음" : "체크 대상 없음" : "기록 확인 필요"}</p></div>
                 {editable ? (
                   <input
                     type="time"
                     value={displayTime(row) ?? ""}
                     onChange={(event) => setTimeOverride((current) => ({ ...current, [row.key]: event.target.value }))}
-                    className="h-12 w-[118px] shrink-0 rounded-xl border-2 border-blue-200 bg-white px-2 text-[24px] font-black text-blue-700"
+                    className="col-span-3 mt-2 h-12 w-full min-w-0 rounded-xl border-2 border-blue-200 bg-white px-3 text-[22px] font-black text-blue-700"
                     aria-label={`${row.label} 정차 시간`}
                   />
                 ) : (
-                  <div className="row-span-2 flex shrink-0 flex-col items-end gap-1">
-                    <span className={`text-[26px] font-black leading-none ${displayTime(row) ? "text-[var(--color-academy-primary)]" : "text-gray-400"}`}>{displayTime(row) ?? "시간 미정"}</span>
+                  <div className="flex shrink-0 flex-col items-end">
+                    <span className={`${displayTime(row) ? "text-[26px] text-[var(--color-academy-primary)]" : "text-[15px] text-gray-400"} whitespace-nowrap font-black leading-none`}>{displayTime(row) ?? "시간 미정"}</span>
                     {url && (
-                      <a href={url} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--color-academy-primary)] px-2 text-[13px] font-bold text-[var(--color-academy-primary)] active:bg-[var(--color-academy-primary-soft)]">
-                        🧭 길안내
+                      <a href={url} className="inline-flex min-h-11 items-center gap-1 rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] active:bg-[var(--color-academy-primary-soft)]">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[17px]">near_me</span> 길안내
                       </a>
                     )}
                   </div>
                 )}
-                {/* 종류·방향 배지는 정류장명 바로 아래에 둬, 오른쪽 길안내 버튼 높이만큼 카드가 비지 않게 한다. */}
-                <div className="col-start-2 mt-1 flex flex-wrap items-center gap-1.5">
-                  <span className={`rounded-md px-2 py-0.5 text-[13px] font-black text-white ${row.kind === "SEASONAL" ? "bg-indigo-600" : "bg-teal-600"}`}>
-                    {row.kind === "SEASONAL" ? "특강" : "정규"}
-                  </span>
-                  <span className={`rounded-md px-2 py-0.5 text-[13px] font-black text-white ${isPickup ? "bg-blue-600" : "bg-orange-600"}`}>
-                    {isPickup ? "⬆ 등원" : "⬇ 하원"}
-                  </span>
-                  {row.groupLabel && <span className="text-[13px] font-bold text-gray-500">{row.groupLabel}</span>}
-                  {row.pending && <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[12px] font-black text-green-700">확정 순서</span>}
+                <div className="col-span-3 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-semibold text-gray-500">
+                  <span className="font-bold text-[var(--color-academy-primary)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
+                  {row.groupLabel && <span>{row.groupLabel}</span>}
+                  {row.isHub && <span className="font-bold text-green-700">무료 거점</span>}
+                  {row.pending && <span className="font-bold text-amber-700">순서 확인 필요</span>}
+                  {row.warn && <span className="font-bold text-amber-700">노선 밖 승객 · 정차 확인 필요</span>}
                 </div>
               </div>
 
@@ -373,10 +361,10 @@ export default function UnifiedDriverClient({
                     const rowKey = `${row.key}:${rider.checkId}`;
                     return (
                       <div key={rowKey} className={`academy-driver-rider rounded-xl px-2.5 py-2 ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
-                        <div className="academy-driver-rider-main flex items-center gap-2">
-                          <div className="academy-driver-rider-info min-w-0 flex-1">
+                        <div className="academy-driver-rider-main grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                          <div className="academy-driver-rider-info min-w-0">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className={`text-[19px] font-black ${lockedAbsent ? "text-gray-400 line-through" : "text-gray-900"}`}>{rider.name}</span>
+                              <span className={`break-all text-[19px] font-black ${lockedAbsent ? "text-gray-400 line-through" : "text-gray-900"}`}>{rider.name}</span>
                               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
                               {lockedAbsent && <span className="rounded-md bg-red-500 px-2 py-0.5 text-[13px] font-black text-white">오늘 결석</span>}
                               {rider.absent && !lockedAbsent && status !== "BOARDED" && status !== "SELF" && (
@@ -387,23 +375,25 @@ export default function UnifiedDriverClient({
                               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
                               {rider.shuttleNote && <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[13px] font-black text-white">{rider.shuttleNote}</span>}
-                              {!lockedAbsent && parent && <a href={`tel:${parent}`} className="text-[15px] font-black text-blue-600">📞 학부모</a>}
-                              {!lockedAbsent && child && <a href={`tel:${child}`} className="text-[15px] font-black text-green-600">📞 학생</a>}
+                              {!lockedAbsent && parent && <a href={`tel:${parent}`} className="inline-flex min-h-11 items-center text-[14px] font-bold text-blue-600">학부모 전화</a>}
+                              {!lockedAbsent && child && <a href={`tel:${child}`} className="inline-flex min-h-11 items-center text-[14px] font-bold text-green-600">학생 전화</a>}
                             </div>
                           </div>
                           {lockedAbsent ? (
                             <span className="rounded-xl border-2 border-red-300 px-3 py-2 text-[15px] font-black text-red-500">미{isPickup ? "탑승" : "하차"}(결석)</span>
                           ) : (
-                            <>
+                            <div className="flex items-center gap-1.5">
                               <button type="button" disabled={isBusy} onClick={() => { setMenuKey(null); setStatus(rider, "BOARDED"); }}
+                                aria-pressed={status === "BOARDED"}
                                 className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "BOARDED" ? "bg-green-600 text-white" : "border-2 border-green-400 text-green-700"}`}>
                                 {isPickup ? "탑승" : "하차"}
                               </button>
                               <button type="button" disabled={isBusy} onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
+                                aria-pressed={status === "NOSHOW" || status === "SELF"} aria-expanded={menuKey === rowKey}
                                 className={`h-11 min-w-[60px] rounded-xl text-[15px] font-black ${status === "NOSHOW" || status === "SELF" ? "bg-gray-700 text-white" : "border-2 border-gray-300 text-gray-600"}`}>
                                 미{isPickup ? "탑승" : "하차"}
                               </button>
-                            </>
+                            </div>
                           )}
                         </div>
                         {saveState && <p role="status" className={`mt-1 text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-red-700" : "text-gray-600"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 underline">저장 상태 확인</button>}</p>}
@@ -425,7 +415,7 @@ export default function UnifiedDriverClient({
         })}
       </ol>
 
-      <p className="mt-3 text-center text-[14px] font-semibold text-gray-400">탭 한 번으로 저장됩니다 · 다시 누르면 대기로 돌아갑니다</p>
+      <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 같은 버튼을 다시 누르면 대기로 돌아갑니다. 미탑승에서는 결석·자차를 구분할 수 있습니다.</p></details>
     </AcademyTheme>
   );
 }

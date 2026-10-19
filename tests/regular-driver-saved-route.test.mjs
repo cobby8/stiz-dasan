@@ -171,7 +171,9 @@ test("기사님 화면이 저장 노선 게이트웨이를 쓰고, 탑승 체크
   // 그날 무엇을 띄울지는 게이트웨이 한곳에서만 만든다.
   const loader = await readFile("src/lib/shuttle/unifiedDriverRun.ts", "utf8");
   assert.match(loader, /getRegularDriverClasses/);
-  assert.match(loader, /getRegularBoardingMap/);
+  // 조회 실패를 빈 미체크로 숨기지 않는 공통 reader로 이미 전환되었다.
+  assert.match(loader, /readDriverBoarding\(viewDate, "REGULAR"\)/);
+  assert.match(loader, /boardingReliable = reads\.every\(\(read\) => read\.status === "fulfilled"\)/);
   // 화면이 시트 명단을 직접 정렬해 그리던 옛 경로는 남아 있으면 안 된다(중복 판정 방지).
   assert.doesNotMatch(loader, /groupDriverStops/);
   const runSrc = await readFile("src/lib/shuttle/regularRun.ts", "utf8");

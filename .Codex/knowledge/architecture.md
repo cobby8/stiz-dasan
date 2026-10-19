@@ -1,5 +1,9 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-19: 기사 통합 운행 화면 정리
+- UnifiedDriverClient 한 파일에서 헤더 시작/종료·날짜 단일화·정차 순서/시각·학생 체크 행을 정리했다. 공용 DriverDateNav/GpsShareBar·저장 API/키·GPS hook은 그대로다.
+- 화면 전용 checkSummary는 중복 승객 키·정규 사전결석을 제외하고 확인된 최종 기록만 센다. 실제 운행 위치·차량 진행 완료는 추정하지 않는다. 독립 검증과 상세 경계는 docs/driver-workspace-ux.md.
+
 ## 2026-10-19: 교사 출석 명단의 금액 조회
 - staff-monthly-fees.ts와 순수 policy/types가 세션 권한·로스터·당월 Payment/Invoice·확정 월수강대장·특강 좌석 근거를 묶는다. staff-billing.ts에 읽기 액션 2개만 추가했다.
 - SessionInProgressClient에서 출결과 독립적으로 요약을 읽고 실제 ClassBillingSheet로 연결한다. StaffMonthlyFeeSummary는 총청구액/순수수강료/특강기간을 구분한다. 상세 최신값은 해당 명단 행에 반영한다. 새 스키마·운영 DDL·쓰기 함수 변경 없음.

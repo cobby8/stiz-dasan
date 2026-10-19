@@ -92,7 +92,7 @@ try {
     assert.equal(requests.filter(query => query.method === 'POST').length, 1);
   });
   await run('기사 최초 조회 실패는 미체크로 오인하지 않음', 'driver', { ...driverProps, initialBoardingReliable: false }, route => json(route, boarding), async ({ page, requests }) => {
-    await page.getByText(/체크 기록 확인 필요/).waitFor();
+    await page.getByRole('alert').filter({ hasText: /체크 기록을 불러오지 못했습니다/ }).waitFor();
     assert.equal(await page.getByRole('button', { name: '탑승', exact: true }).isDisabled(), true); assert.equal(requests.length, 0);
   });
   await run('기사 연속 클릭은 한 번만 저장', 'driver', driverProps, (route, query) => json(route, query.method === 'POST' ? { ok: true } : boarding), async ({ page, requests }) => {
