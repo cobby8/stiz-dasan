@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 외부 8시안 기기별 배치 보완. PM171·독립352/기능38·작은폰후속81 통과(중복합산 금지), 실물 미검증. 일반 STIZ iOS/Android 3역할+Android 기사 2앱 출시 준비 기준, 결정1항목 추가·지식문서5 유지. docs/academy-app-release-plan.md, docs/academy-responsive-mock-validation.md. 실제서비스/운영/배포/스토어 변경 없음.
+
 > 2026-10-19: USB 태블릿 단기시험 완료. 사용자복귀·상태유지·수동종료와 서버STOPPED/활성0/sharing=false, 최종위치232·55초추가0 확인. 서버/격리DB/개인키/관리키/잠금 정리·시험USB전달해제 확인. 잠금+10/T맵+18·오류0. 실외장기/배터리·운영·출시 미검증, docs/driver-device-validation.md. 지식문서5 유지.
 
 > 2026-10-19: 수정본 실제 태블릿 수동재시작/정상표시 확인. 잠금189초 위치+10, T맵193초 +18·오류0, 독립 요약10개/키191 대조 통과. 추정 정확도100→약15m, 실제거리/인과 미확인. 최종복귀·종료·정리 대기. docs/driver-device-validation.md; 지식문서5 유지.
