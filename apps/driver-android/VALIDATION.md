@@ -24,7 +24,7 @@
 - custom CA는 localhost domain-config에만 한정했다. 다른 origin은 시스템 CA만 사용하며 cleartext/SSL 우회/OS CA 설치를 허용하지 않는다.
 - local TLS 옵션을 그대로 넣은 `assembleRelease` 성공. release APK·manifest·BuildConfig와 debug trust 범위 자동 검사 **14/14 통과**: release CA/설정/접미사 미포함, 운영 origin 고정, debug 패키지 격리, 정확한 localhost 테스트 포트, localhost 외 custom CA·HTTP 허용 없음. 추가로 외부 도메인 8443·deviceTest 미지정 localhost 8443 빌드 거부 2건을 통과했다.
 - debug + androidTest + Lint 빌드 성공, **오류 0·경고 4**. 초기 빌드와 같은 경고 범위다.
-- 기기용 APK SHA256: `AEE3739B64953A8C93292E12B22042F0137A638116A146FADD58B049BA5CD588` (아래 권한 복귀·snapshot 경쟁 상태 수정 포함).
+- 기기용 APK SHA256: `DBF1F10DEA427377A2D59F2C88E9BFEE0D63CB543D90A22384E6786CA131BE0E` (아래 권한 복귀·snapshot 경쟁 상태·위치 대기 구분 수정 포함).
 - 계측 APK SHA256: `06C8C5F36F7F9422A464DF429C22B8F5A82C8AE01D0EE1C9C67083241BB7B38E`.
 - 근거: `app/build/local-tls-debug-build.log`, `app/build/release-local-tls-isolation-build.log`, `app/build/local-tls-isolation-check.log`. 재검사: `./verify-local-tls-build.ps1 -AndroidSdk <SDK경로>`.
 - 운영 배포·실제 청구/알림·스토어 업로드·release 서명은 수행하지 않았다.
@@ -38,3 +38,10 @@
 - 실제 정책 함수 javac/java 실행 **33개 조건 통과**, 독립 reviewer 추가 정책 **9개 시나리오 통과**. resume 전 결과·중복 resume·동의 없음·거절·취소·다른 token·만료·늦은 콜백을 검사했다. 근거: `app/build/pending-start-test.log`, `tests/PendingRunStartTest.java`.
 - 수정 소스로 debug/test/release 빌드 성공, Lint 오류 0·경고 4 유지, debug/release TLS 격리 14건 및 잘못된 포트 빌드 거부 2건 재통과.
 - 기존 Android 계측 13건 APK는 재빌드했으며 계측 APK 해시는 그대로다. 수정 앱의 실제 권한 복귀 동작과 서버 요청 수신은 PM의 단일 실기기 검증으로 확인한다. 앱 작업자는 기기·서버·CA를 조작하지 않았다.
+
+## 정상 위치 대기와 위치 지연·전송 실패 구분
+
+- `LocationSamplePolicy`는 Android에 의존하지 않는 실제 서비스 판단 함수다. 최초 위치를 25초까지 기다릴 때는 오류를 만들지 않고, 그 뒤에도 없거나 표본이 25초보다 오래되면 `requesting/idle`과 위치 갱신 지연 안내를 전달한다. 미래 monotonic 표본도 보내지 않는다.
+- 신선한 동일·역순 표본은 상태를 바꾸지 않고 보내지 않는다. 대기·지연으로 이전 전송 실패를 덮지 않는다. 송신 10초 간격, 표본 신선도 25초, 순서 증가, 과거 표본 재생 금지와 실제 응답 후 접수 시각 갱신은 유지한다.
+- 자체 Java 위치 정책 **13개 경계**, 기존 권한 복귀 **33개 조건**, 독립 QA 위치 정책 **14개 경계** 통과. 독립 QA는 서비스의 duplicate no-op·전송 오류 보존·응답 이후 접수 시각 갱신도 읽기 검토했다.
+- debug/test/release 빌드·Lint 재통과(오류 0·기존 경고 4), TLS debug/release 격리 **14개 통과**, `git diff --check` 통과. 최종 APK 해시는 위와 같다. 이 수정의 실제 기기 설치·화면·배경 지속성은 PM 검증 결과로 별도 기록한다.

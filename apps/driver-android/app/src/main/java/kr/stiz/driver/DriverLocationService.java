@@ -27,7 +27,7 @@ public final class DriverLocationService extends Service implements LocationList
     private volatile boolean stopRequested;
     boolean isRunning() { return localRunning; }
     private boolean starting, stopped, subscribed;
-    private long lastSample, stopSince;
+    private long lastSample, stopSince, collectionStartedAt;
     private long lastAttempt;
     private JSONObject call(String action, JSONObject body) throws Exception {
         PowerManager.WakeLock lock = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "stiz:driver-network");
@@ -84,6 +84,7 @@ public final class DriverLocationService extends Service implements LocationList
             session.put("expiresAt", response.getString("expiresAt")).put("sequence", Math.max(session.optLong("sequence"), response.optLong("lastSequence")));
             if (stopRequested) { starting = false; persist(); stopRun(); return; }
             persist(); localRunning = true; starting = false; stopped = false;
+            collectionStartedAt = SystemClock.elapsedRealtimeNanos();
             main.post(this::subscribe);
             emit("requesting", "idle", null);
             worker.scheduleWithFixedDelay(this::tick, 1, 10, TimeUnit.SECONDS);
@@ -127,9 +128,17 @@ public final class DriverLocationService extends Service implements LocationList
             if (Instant.now().isAfter(Instant.parse(session.getString("expiresAt")))) { stopRun(); return; }
             Location sample = latest;
             long now = SystemClock.elapsedRealtimeNanos();
-            // Never replay cached or queued coordinates after network recovery.
-            if (sample == null || now - sample.getElapsedRealtimeNanos() > TimeUnit.SECONDS.toNanos(25) || sample.getElapsedRealtimeNanos() <= lastSample) {
-                emit(sample == null && !session.has("lastSentAt") ? "requesting" : "error", "error", "새 위치를 기다리는 중입니다. 마지막 서버 접수 시각을 확인해 주세요."); return;
+            // A repeated fresh fix is ordinary waiting, not a failure or another send.
+            LocationSamplePolicy.Decision decision = LocationSamplePolicy.decide(now, collectionStartedAt,
+                sample != null, sample == null ? 0 : sample.getElapsedRealtimeNanos(), lastSample);
+            if (decision == LocationSamplePolicy.Decision.DUPLICATE) return;
+            if (decision != LocationSamplePolicy.Decision.SEND) {
+                // Waiting never acknowledges delivery or hides the last network failure.
+                if (!"error".equals(currentTransmission)) {
+                    emit("requesting", "idle", decision == LocationSamplePolicy.Decision.WAIT_INITIAL ? null
+                        : "위치 갱신이 지연되고 있습니다. 휴대폰 위치 설정과 GPS 수신 환경을 확인해 주세요.");
+                }
+                return;
             }
             lastSample = sample.getElapsedRealtimeNanos();
             lastAttempt = SystemClock.elapsedRealtime();

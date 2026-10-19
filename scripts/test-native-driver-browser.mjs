@@ -40,15 +40,31 @@ try {
     await page.getByRole('button', { name: '운행 시작', exact: true }).click();
     assert.equal(await page.evaluate(() => window.nativeCalls.at(-1).action), 'start');
     await page.evaluate(() => window.emitNative({ state: 'requesting', running: false }));
-    await page.getByText('기기 위치 연결 중…').waitFor();
+    await page.getByText('새 기기 위치를 기다리는 중…').waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
     await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
   });
   await check('기기 권한 거부·시작 실패를 숨기지 않는다', async page => {
     await page.evaluate(() => window.emitNative({ state: 'denied', transmission: 'error', running: false, error: '정확한 위치 권한을 허용해 주세요.' }));
-    await page.getByText(/위치 권한 거부됨/).waitFor();
     await page.getByRole('alert').filter({ hasText: '정확한 위치 권한을 허용해 주세요.' }).waitFor();
     await page.getByRole('button', { name: '위치 연결 다시 시도' }).waitFor();
     assert.equal(await page.getByRole('button', { name: '운행 종료', exact: true }).count(), 0);
+  });
+  await check('새 위치 지연 안내는 일반 오류 없이 마지막 접수를 보존', async page => {
+    await page.evaluate(() => window.emitNative({ state: 'requesting', transmission: 'idle', running: true,
+      lastSentAt: new Date(Date.now() - 60_000).toISOString(), error: '위치 갱신이 지연되고 있습니다. 휴대폰 위치 설정과 GPS 수신 환경을 확인해 주세요.' }));
+    await page.getByRole('status').filter({ hasText: '위치 갱신이 지연되고 있습니다.' }).waitFor();
+    await page.getByText(/마지막 서버 접수 ·/).waitFor();
+    await page.getByText(/현재 위치는 확인이 필요합니다/).waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
+  });
+  await check('전송 실패는 실제 원인과 마지막 접수를 함께 표시', async page => {
+    await page.evaluate(() => window.emitNative({ state: 'error', transmission: 'error', running: true,
+      lastSentAt: new Date().toISOString(), error: '서버 연결에 실패했습니다.' }));
+    await page.getByRole('alert').filter({ hasText: '서버 연결에 실패했습니다.' }).waitFor();
+    await page.getByText(/마지막 서버 접수 ·/).waitFor();
+    await page.getByText(/다음 전송에서 재시도합니다/).waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못|위치 공유 중/).count(), 0);
   });
   await check('종료 확인 대기·서버 미확인 상태 구분', async page => {
     await page.getByRole('button', { name: '운행 종료', exact: true }).click();

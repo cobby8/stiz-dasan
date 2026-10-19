@@ -70,3 +70,5 @@ Play Console 조직 계정, 패키지 이름 확정, release 서명, 개인정�
 검증 로그와 한계는 상위 `docs/driver-android-background-tracking.md` 또는 해당 작업 보고에 남긴다.
 
 권한 복귀 순수 Java 회귀는 실제 `PendingRunStart` 정책 함수를 실행한다. JDK에서 `javac --release 17 -d app/build/pending-start-test app/src/main/java/kr/stiz/driver/PendingRunStart.java tests/PendingRunStartTest.java` 후 `java -ea -cp app/build/pending-start-test kr.stiz.driver.PendingRunStartTest`로 33개 조건을 확인한다. Android 화면·권한 동작 자체의 실기기 검증은 별도로 필요하다.
+
+위치 샘플 대기는 실패와 구분한다. 최초 수집 25초까지는 `requesting/idle`, 그 이후에도 새 표본이 없거나 표본이 오래되면 위치 갱신 지연을 안내한다. 아직 신선한 동일 표본은 아무 상태도 바꾸지 않으며 재전송하지 않는다. 대기·지연은 직전 전송 실패를 성공으로 지우지 않으며 새 위치의 실제 서버 응답만 접수 시각을 갱신한다. `LocationSamplePolicy.java`와 `tests/LocationSamplePolicyTest.java`를 `javac`로 함께 컴파일하고 `java -ea -cp <출력폴더> kr.stiz.driver.LocationSamplePolicyTest`로 13개 경계를 확인한다.

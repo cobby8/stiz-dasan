@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 실제 운행시작1·위치26·실패0 접수 확인 후 대기를 오류로 표시하는 문제 수정. Java13/독립14·권한33·브라우저8/독립10·SSR8·회귀45/29·tsc/lint·빌드/TLS14 통과. 운행종료 확인 후 새앱 재설치 대기; 잠금/T맵 미검증. errors/decisions 갱신, 지식문서5 유지.
+
 > 2026-10-19: Android 권한 복귀 시 명시적 시작 유실·오류 안내 덮임 수정. 정책33·독립9·최종 리뷰·빌드/Lint·TLS14/포트2·수정 APK 실제 단말 계측13 통과. 수동 운행 재시작 대기, 실제 위치/잠금/T맵 미검증. errors 갱신, 지식 문서5 유지. docs/driver-device-validation.md.
 
 > 2026-10-19: 승인된 Android13 삼성 태블릿에 별도 localhost 시험 앱 설치, 실제 계측13·release분리14·포트거부2·정책21·tsc/lint/리뷰 통과. PC HTTPS8443/격리PG55435 준비, 자동승인검토 UI거절로 수동시작대기. 위치지속성 미검증. architecture/decisions/errors 갱신·지식문서5 유지. docs/driver-device-validation.md.
