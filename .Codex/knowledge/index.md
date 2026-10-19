@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 업턴랩스 출시 예정 안드로이드 기사앱 1차 검증본. 현재1대 운행 확인. 네이티브 위치·운행 세션·웹 bridge·관리자 노후 상태. 회귀98·앱브라우저6/기존10·상태18·실제Prisma/PG18항목·Android13·빌드/tsc/lint/독립리뷰 통과. 지식 문서 수 5 유지, architecture/decisions/errors 갱신. docs/driver-android-background-tracking.md. 실기기·운영 활성화·정식 출시 미완료.
+
 > 2026-10-19: 기사 운행 순서·시각·학생 체크 우선, 중복 카드/안내 축소. 회귀84·브라우저10·상태18·독립QA43·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/driver-workspace-ux.md 참조. 미배포.
 
 > 2026-10-19: 출석 명단 당월 금액·상태/청구미발행 근거 표시, 실제 학생별 청구창 연결. 회귀116·기존브라우저10·원본SQL/액션/로컬PG/실제UI통합9·독립모달4·명단반영3·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/staff-attendance-fees.md 참조. 미배포.

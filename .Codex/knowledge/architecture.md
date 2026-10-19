@@ -4,6 +4,11 @@
 - UnifiedDriverClient 한 파일에서 헤더 시작/종료·날짜 단일화·정차 순서/시각·학생 체크 행을 정리했다. 공용 DriverDateNav/GpsShareBar·저장 API/키·GPS hook은 그대로다.
 - 화면 전용 checkSummary는 중복 승객 키·정규 사전결석을 제외하고 확인된 최종 기록만 센다. 실제 운행 위치·차량 진행 완료는 추정하지 않는다. 독립 검증과 상세 경계는 docs/driver-workspace-ux.md.
 
+## 2026-10-19: 안드로이드 기사 위치 검증본
+- apps/driver-android는 Java WebView와 별도 location foreground service, AndroidKeyStore 암호화 저장, Gradle wrapper와 오프라인 runtime 검사를 포함한다. nativeDriverGps→useGpsShare는 origin-bound 메시지를 받고 화면 해제 때 native 수집을 끄지 않는다. 기존 웹 controller는 보존한다.
+- /api/driver/mobile/session은 기본 비활성이다. DriverMobileTrackingSession 수동 SQL에 단일 활성 세션·만료·비밀 해시·전송 순서·측정/접수 시각을 저장하고 DriverLocation 최신 행을 갱신한다. legacy 위치는 같은 운행 잠금에 참여한다. 운영 SQL/env 적용 없음.
+- 기존 정규 토큰은 ROLLING×REGULAR 공용 하나이며 현재 1대 운행이라고 사용자가 확인했다. token당 한 기기로 진행하며 여러 차량 증차 시 별도 자격 범위가 필요하다. 업턴랩스 출시 주체 확인, 실제 폰/스토어 접근 미확인.
+
 ## 2026-10-19: 교사 출석 명단의 금액 조회
 - staff-monthly-fees.ts와 순수 policy/types가 세션 권한·로스터·당월 Payment/Invoice·확정 월수강대장·특강 좌석 근거를 묶는다. staff-billing.ts에 읽기 액션 2개만 추가했다.
 - SessionInProgressClient에서 출결과 독립적으로 요약을 읽고 실제 ClassBillingSheet로 연결한다. StaffMonthlyFeeSummary는 총청구액/순수수강료/특강기간을 구분한다. 상세 최신값은 해당 명단 행에 반영한다. 새 스키마·운영 DDL·쓰기 함수 변경 없음.

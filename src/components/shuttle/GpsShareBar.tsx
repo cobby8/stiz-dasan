@@ -13,13 +13,15 @@ function elapsedLabel(date: Date, clock: number): string {
 }
 
 export default function GpsShareBar({
-  gpsState, lastSentAt, accuracy, transmission, onRetry,
+  gpsState, lastSentAt, accuracy, transmission, onRetry, mode = "web", nativeMessage,
 }: {
   gpsState: GpsState;
   lastSentAt: Date | null;
   accuracy: number | null;
   transmission?: GpsTransmission;
   onRetry?: () => void;
+  mode?: "web" | "native";
+  nativeMessage?: string | null;
 }) {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 10_000); return () => clearInterval(timer); }, []);
@@ -28,7 +30,7 @@ export default function GpsShareBar({
     <div className="mb-2 rounded-xl border border-green-300 bg-green-50 px-4 py-2.5">
       <p className="text-[14px] font-bold text-green-800">
         📍{" "}
-        {gpsState === "requesting" && "위치 권한 요청 중…"}
+        {gpsState === "requesting" && (mode === "native" ? "기기 위치 연결 중…" : "위치 권한 요청 중…")}
         {gpsState === "active" && !lastSentAt && "GPS 위치 획득 · 서버 접수 대기"}
         {gpsState === "active" && lastSentAt && `마지막 서버 접수 · ${elapsedLabel(lastSentAt, clock)}${accuracy != null ? ` · 정확도 ${Math.round(accuracy)}m` : ""}`}
         {gpsState === "denied" && "⚠️ 위치 권한 거부됨 — 브라우저 설정에서 허용해주세요"}
@@ -36,6 +38,7 @@ export default function GpsShareBar({
         {gpsState === "off"    && "위치 공유 꺼짐"}
       </p>
       {(gpsState === "denied" || gpsState === "error") && onRetry && <button type="button" className="text-[12px] font-bold underline" onClick={onRetry}>위치 연결 다시 시도</button>}
+      {mode === "native" && nativeMessage && <p role="alert" className="mt-1 text-[13px] font-semibold text-amber-700">{nativeMessage}</p>}
       <p role="status" className="mt-0.5 text-[12px] font-semibold text-amber-700">
         {transmission === "sending" && "위치 전송 중…"}
         {transmission === "error" && "위치 전송 확인 필요 · 다음 전송에서 재시도합니다"}
@@ -46,7 +49,7 @@ export default function GpsShareBar({
       </p>
       {(gpsState === "active" || gpsState === "requesting") && (
         <p className="mt-0.5 text-[12px] font-semibold text-amber-700">
-          ⚠️ 화면이 꺼지거나 다른 앱으로 이동하면 위치 공유가 중단됩니다
+          {mode === "native" ? "운행 중에는 화면을 끄거나 길안내 앱으로 이동해도 위치 공유를 계속합니다. 운행 종료 시 수집을 멈춥니다." : "⚠️ 웹에서는 화면 잠금·다른 앱 이동 시 위치 공유가 멈출 수 있습니다"}
         </p>
       )}
     </div>

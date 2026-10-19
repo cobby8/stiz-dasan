@@ -1,0 +1,17 @@
+plugins { id 'com.android.application' }
+def configuredOrigin = providers.gradleProperty('stizOrigin').getOrElse('https://www.stiz-dasan.kr')
+def originUri = new URI(configuredOrigin)
+if (originUri.scheme != 'https' || originUri.host == null || originUri.userInfo != null || originUri.query != null || originUri.fragment != null || !(originUri.path in ['', '/']) || !(originUri.port in [-1, 443])) throw new GradleException('stizOrigin must be one exact HTTPS origin on port 443')
+configuredOrigin = 'https://' + originUri.host
+android {
+    namespace 'kr.stiz.driver'
+    compileSdk 36
+    defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 1; versionName '0.1.0'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug { buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"' }
+        release { minifyEnabled false; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
+    }
+}
+dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0' }

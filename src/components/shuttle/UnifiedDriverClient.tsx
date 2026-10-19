@@ -57,9 +57,13 @@ export default function UnifiedDriverClient({
   const [savingOrder, setSavingOrder] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const { state: gpsState, transmission, lastSentAt, accuracy, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
-  function handleRunStart() { setRunState("running"); gpsStart(); }
-  async function handleRunEnd() { await gpsStop(); setRunState("ended"); }
+  const { state: gpsState, transmission, lastSentAt, accuracy, mode: gpsMode = "web", nativeRunning = false, nativeMessage, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
+  useEffect(() => {
+    if (gpsMode !== "native") return;
+    setRunState(nativeRunning || gpsState === "requesting" || transmission === "stopping" ? "running" : transmission === "stopped" || transmission === "stop-unknown" ? "ended" : "idle");
+  }, [gpsMode, nativeRunning, gpsState, transmission]);
+  function handleRunStart() { if (gpsMode === "web") setRunState("running"); gpsStart(); }
+  async function handleRunEnd() { await gpsStop(); if (gpsMode === "web") setRunState("ended"); }
 
   // PWA 설치 배너
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
@@ -227,7 +231,7 @@ export default function UnifiedDriverClient({
             운행 시작
           </button>
         )}
-        {runState === "running" && <button type="button" onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">운행 종료</button>}
+        {runState === "running" && <button type="button" disabled={transmission === "stopping"} onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
       </header>
 
       {/* PWA 설치 배너 */}
@@ -241,16 +245,16 @@ export default function UnifiedDriverClient({
       )}
 
       {/* 운행 중 */}
-      {runState === "running" && (
+      {(runState === "running" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (
         <div className="mb-2">
-          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={gpsStart} />
+          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={gpsStart} mode={gpsMode} nativeMessage={nativeMessage} />
         </div>
       )}
 
       {/* 운행 종료 후 */}
       {runState === "ended" && (
         <div className="mb-2">
-          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} />
+          <GpsShareBar gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} mode={gpsMode} nativeMessage={nativeMessage} />
         </div>
       )}
 

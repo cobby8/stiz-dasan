@@ -18,7 +18,7 @@ function kakaoMapUrl(label: string | null, lat: number, lng: number): string {
 
 function StatusDot({ sharing, secondsAgo }: { sharing: boolean; secondsAgo: number }) {
   if (!sharing) return <span className="h-3 w-3 rounded-full bg-gray-400 shrink-0" title="공유 중단" />;
-  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-green-500 shrink-0 animate-pulse" title="실시간" />;
+  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-green-500 shrink-0" title="최근 서버 접수" />;
   if (secondsAgo < 120) return <span className="h-3 w-3 rounded-full bg-yellow-500 shrink-0" title="지연" />;
   return <span className="h-3 w-3 rounded-full bg-red-400 shrink-0" title="끊김" />;
 }
@@ -27,17 +27,22 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
   const [locations, setLocations] = useState<DriverLocationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [error, setError] = useState(false);
+  const [clock, setClock] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/driver-locations");
-      if (!res.ok) return;
+      const res = await fetch("/api/admin/driver-locations", { cache: "no-store" });
+      if (!res.ok) throw new Error("조회 실패");
       const data = await res.json() as { locations: DriverLocationRow[] };
+      if (!Array.isArray(data.locations)) throw new Error("응답 오류");
       setLocations(data.locations);
       setLastRefresh(new Date());
+      setClock(Date.now());
+      setError(false);
     } catch {
-      // 일시 오류 무시
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -46,10 +51,14 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
   useEffect(() => {
     void load();
     timerRef.current = setInterval(() => void load(), 30_000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    const clockTimer = setInterval(() => setClock(Date.now()), 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); clearInterval(clockTimer); };
   }, [load]);
 
-  const activeCount = locations.filter((l) => l.sharing && l.secondsAgo < 120).length;
+  // 조회 실패 중에도 시간은 흐른다. 마지막 성공 자료가 계속 '실시간'처럼 보이지 않게 한다.
+  const elapsed = lastRefresh ? Math.max(0, Math.floor((clock - lastRefresh.getTime()) / 1000)) : 0;
+  const visibleLocations = locations.map((loc) => ({ ...loc, secondsAgo: Math.max(0, loc.secondsAgo) + elapsed }));
+  const activeCount = visibleLocations.filter((l) => l.sharing && l.secondsAgo < 120).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -61,7 +70,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <div>
             <h2 className="text-[17px] font-black text-gray-900 dark:text-white">
-              🚌 실시간 차량 위치
+              🚌 차량 마지막 위치
             </h2>
             {lastRefresh && (
               <p className="text-[12px] text-gray-400 mt-0.5">
@@ -74,16 +83,20 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
 
         {/* 본문 */}
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
+          {error && <div role="alert" className="rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-sm">
+            위치 조회에 실패했습니다. {locations.length > 0 ? "마지막으로 확인한 위치입니다." : "현재 위치를 확인할 수 없습니다."}
+            <button type="button" onClick={() => void load()} className="ml-2 min-h-11 underline">다시 확인</button>
+          </div>}
           {loading && (
             <p className="py-8 text-center text-sm text-gray-400">불러오는 중…</p>
           )}
-          {!loading && locations.length === 0 && (
+          {!loading && !error && locations.length === 0 && (
             <div className="py-8 text-center">
               <p className="text-[15px] font-bold text-gray-500">현재 위치를 공유 중인 기사님이 없습니다</p>
               <p className="mt-1 text-[13px] text-gray-400">기사님 화면에서 위치 공유를 켜면 여기에 표시됩니다</p>
             </div>
           )}
-          {locations.map((loc) => (
+          {visibleLocations.map((loc) => (
             <div
               key={loc.token}
               className={`rounded-xl border-2 p-4 ${
@@ -100,7 +113,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
                   </p>
                   <p className="text-[13px] text-gray-500 dark:text-gray-400">
                     {loc.sharing
-                      ? `${elapsedLabel(loc.secondsAgo)} 업데이트${loc.accuracy != null ? ` · 정확도 ${Math.round(loc.accuracy)}m` : ""}`
+                      ? `마지막 서버 접수 ${elapsedLabel(loc.secondsAgo)}${loc.accuracy != null ? ` · 정확도 ${Math.round(loc.accuracy)}m` : ""}${loc.secondsAgo >= 120 ? " · 위치 확인 필요" : ""}`
                       : "위치 공유 중단"}
                   </p>
                 </div>
@@ -122,7 +135,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
         {/* 하단 요약 */}
         {!loading && locations.length > 0 && (
           <div className="border-t border-gray-200 px-5 py-3 text-[13px] text-gray-500 dark:border-gray-700">
-            활성 {activeCount}대 · 전체 {locations.length}대 (최근 10분 기준)
+            최근 2분 내 접수 {activeCount}대 · 조회된 차량 {locations.length}대
           </div>
         )}
       </div>
