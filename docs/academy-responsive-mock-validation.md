@@ -42,3 +42,15 @@ PM 화면 검사 증거는 외부 시안 폴더의 `checks/responsive/results.js
 - 종전 갤럭시 탭 GPS 단기 검증은 `docs/driver-device-validation.md`에 따로 있으며 이번 최종 시안의 실물 검증으로 전용하지 않는다.
 - 앱 구성은 일반 STIZ(iOS/Android, 학부모·선생님·관리자 역할 분기)와 Android 기사 앱 2종을 준비 기준으로 한다. 실제 구현·운영 전환·스토어 제출은 별도 승인 대상이다.
 - 실물과 실제 앱 기능 검증 전에는 전체 검증 완료 또는 출시 준비 완료로 표시하지 않는다.
+
+## HTTP 인코딩 수정과 최초 폰 화면 관찰
+
+사용자 첨부의 한글 깨짐은 옆 브라우저 HTTP 미리보기였다. 파일은 UTF-8이었지만 HTTP 헤더의 charset 및 파일 앞부분의 charset 선언이 없었다. 최신 시안·기존 시안 2종·board-base의 맨앞에 UTF-8 meta 선언을 추가했다. PC 실제 Chrome에서 HTTP 경로의 390/834/1440 × 8화면 24건을 다시 검사하여 document.characterSet UTF-8·한글 정상·대체문자 U+FFFD 없음이 확인됐다. 증거 `.tmp/stiz-encoding-check/results.json`과 `http-390.png`.
+
+인코딩 선언만 추가한 최신 시안 SHA256은 `D815F69A8E3054A477B42E983556084FDC9DC429089039D5DDC3D18DB53CBC1A`이다. 앞선 배치 검증 SHA는 인코딩 수정 전 바이트를 가리킨다.
+
+연결된 SM-F971N / Android 17의 기본 표시 해상도는 1248×1972, 물리 밀도420/재정의360이다. 사용자 수동 열기 후 일반 adb screencap으로 현재 화면 한 장을 관찰했다. 관리자 홈에서 한글·공식 로고·아이콘이 정상 보인다. 캡처는 `.tmp/stiz-device-view-encoding/device-screen.png`이며 민감정보 노출을 피하기 위해 Git에는 넣지 않는다. 이 한 장으로 8화면·회전·iPhone·키보드 검증을 통과 처리하지 않는다.
+
+관찰된 별도 UX 보완: 작은 폭의 관리자 메뉴 6개가 세로로 길게 쌓여 주요 본문을 아래로 밀어낸다. 브라우저 모의검사의 가로 넘침 0과 별개이며, 실기기 전체 합격은 보류한다. 이번 인코딩 수정에서는 배치를 추가 변경하지 않았다.
+
+REA 캡처 도구는 adb 경로가 설정되지 않아 실행되지 않았다. 기기 자동 열기 명령의 정책 차단은 우회하지 않았으며, 사용자가 이미 연 기기의 현재 화면만 일반 adb로 읽었다. Android 17 screencap stdout에는 다중 표시장치 경고 뒤 PNG가 들어왔으므로 PNG 시작 시그니처부터 저장했다. REA Evidence로 표기하지 않는다.

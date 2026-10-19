@@ -1,5 +1,10 @@
 # Errors And Traps
 
+## HTTP 미리보기 한글 깨짐과 검사 경로 차이 (2026-10-19)
+- 원인: HTML 파일은 UTF-8로 정상 저장됐지만 Python 정적 서버의 `Content-Type: text/html`에 charset이 없고 문서 앞부분에도 charset 선언이 없었다. 파일로 열거나 setContent로 검사한 결과만으로 HTTP 경로의 문자 해석을 검증하지 못했다. 사용자 첨부 깨짐은 옆 브라우저이며 휴대폰 캡처가 아니었다.
+- 대응: 외부 최신/기존 시안과 원본 board-base 맨앞에 `<meta charset="utf-8">` 추가. 실제 HTTP Chrome 390/834/1440 × 8화면 24건에서 UTF-8·한글·U+FFFD 없음 확인. 운영 서비스 변경 없음.
+- 예방: 실제 전달 주소의 HTTP 응답과 document.characterSet을 확인하고 원본 파일의 UTF-8 저장만으로 완료 판정하지 않는다. 로컬 파일/HTTP/실기기/옆 브라우저 검증 증거를 구분한다.
+
 ## 청구서 없는 원장과 전체 청구액을 수강료로 오인 (2026-10-19)
 - 원인: 기존 청구 조회는 Invoice INNER JOIN이어서 미발행 Payment가 빠지고, 월 필터 없이 이력을 보여줬다. 월 청구 총액에는 셔틀비가 포함될 수도 있다.
 - 대응: 새 출석 경로는 Payment LEFT JOIN Invoice와 정확한 year/month/classId로 읽고, 무결제는 확정 월수강대장으로 보완한다. 총청구액과 순수수강료 라벨을 분리하고 배부근거없는 차액은 추정하지 않는다.
