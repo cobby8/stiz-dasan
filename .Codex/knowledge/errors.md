@@ -1,5 +1,10 @@
 # Errors And Traps
 
+## 모바일 메뉴 숨김 우선순위와 실제 기기 입력 좌표 (2026-10-19)
+- 원인: `.sidebar button`의 display 규칙이 더 약한 `.admin-mobile-toggle { display:none }`을 덮어 PC에 모바일 버튼이 남았다. 독립 경계 검사에서 발견했다.
+- 대응: 701px 이상에서 `.sidebar.admin-nav-ready .admin-mobile-toggle`을 명시적으로 숨기고 104항목 재검증 통과. 모바일은 약60.9px 한 행으로 시작한다.
+- 검사 도구 함정: Android CDP touch 연속 입력 때 페이지 확대1.3과 시각 viewport 좌표 불일치가 생겨 클릭 미작동으로 오인했다. 원배율로 복귀한 뒤 실기기 CDP 마우스33·별도 adb 실제터치10·실제회전16으로 재검증했다. 결과를 모의 브라우저나 실제 손가락 검사로 잘못 표기하지 않는다. free만 복원하면 가로각도가 남을 수 있어 원래 세로각도0을 적용한 뒤 free를 복원하고 실제폭을 재조회했다.
+
 ## HTTP 미리보기 한글 깨짐과 검사 경로 차이 (2026-10-19)
 - 원인: HTML 파일은 UTF-8로 정상 저장됐지만 Python 정적 서버의 `Content-Type: text/html`에 charset이 없고 문서 앞부분에도 charset 선언이 없었다. 파일로 열거나 setContent로 검사한 결과만으로 HTTP 경로의 문자 해석을 검증하지 못했다. 사용자 첨부 깨짐은 옆 브라우저이며 휴대폰 캡처가 아니었다.
 - 대응: 외부 최신/기존 시안과 원본 board-base 맨앞에 `<meta charset="utf-8">` 추가. 실제 HTTP Chrome 390/834/1440 × 8화면 24건에서 UTF-8·한글·U+FFFD 없음 확인. 운영 서비스 변경 없음.

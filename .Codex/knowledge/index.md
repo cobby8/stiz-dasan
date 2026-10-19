@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 외부시안 관리자메뉴 mobile약60.9px로접기·PC버튼숨김 보완. 독립104, 실제 SM-F971N Android17 Chrome33/adb터치10/실제회전16 통과, free/세로복원. iPhone·네이티브앱·운영미검증. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md 및 출시계획 갱신. 배포없음.
+
 > 2026-10-19: 외부 미리보기 HTTP charset 누락 수정·24 HTTP검사 통과. 사용자 첨부 깨짐은 옆 브라우저, SM-F971N 현재 관리자 홈 단일 캡처 한글 정상. 실물8화면 미검증·모바일 관리자 메뉴 세로 적층 보완 필요. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md.
 
 > 2026-10-19: 외부 8시안 기기별 배치 보완. PM171·독립352/기능38·작은폰후속81 통과(중복합산 금지), 실물 미검증. 일반 STIZ iOS/Android 3역할+Android 기사 2앱 출시 준비 기준, 결정1항목 추가·지식문서5 유지. docs/academy-app-release-plan.md, docs/academy-responsive-mock-validation.md. 실제서비스/운영/배포/스토어 변경 없음.
