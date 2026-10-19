@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 출석 명단 당월 금액·상태/청구미발행 근거 표시, 실제 학생별 청구창 연결. 회귀116·기존브라우저10·원본SQL/액션/로컬PG/실제UI통합9·독립모달4·명단반영3·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/staff-attendance-fees.md 참조. 미배포.
+
 > 2026-10-19: 선생님 홈·진행·출결 중복 정리. 브라우저10·상태18·회귀87·독립UI34·tsc·lint·검토 통과. architecture/decisions/conventions/errors 갱신, 지식 문서 수 5 유지. docs/staff-workspace-ux.md 참조. 미배포.
 
 > 2026-10-19: 학부모 홈 중복 카드 정리, 요청 5메뉴·기록 접기·가족 자료 범위 구분. 브라우저10·회귀65·독립UI25·tsc·검토 통과. architecture/decisions 갱신, 지식 문서 수 5 유지. docs/parent-workspace-ux.md 참조. 운영 쓰기·푸시·배포 없음.

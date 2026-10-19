@@ -14,6 +14,9 @@ import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
 import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
+import { loadStaffSessionMonthlyFees } from "@/app/actions/staff-billing";
+import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
+import { monthlyFeeLabel } from "@/components/staff/StaffMonthlyFeeSummary";
 import type {
   StaffSessionDetail,
   StaffSessionStudent,
@@ -72,6 +75,11 @@ export default function SessionInProgressClient({
   const [publishReport, setPublishReport] = useState(true);
   const [showPeople, setShowPeople] = useState(false);
   const [billingStudent, setBillingStudent] = useState<{ id: string; name: string } | null | undefined>(undefined);
+  const [feeData, setFeeData] = useState<{ month: string; items: StaffMonthlyFeeSummary[] } | null>(null);
+  const [feeLoading, setFeeLoading] = useState(true);
+  const [feeError, setFeeError] = useState("");
+  const [feeReload, setFeeReload] = useState(0);
+  const [attendanceBillingTarget, setAttendanceBillingTarget] = useState<StaffSessionStudent | null>(null);
   const [pending, startTransition] = useTransition();
   const endDialogRef = useRef<HTMLDivElement>(null);
   const memoRef = useRef(memo);
@@ -81,6 +89,30 @@ export default function SessionInProgressClient({
   const voiceBusyRef = useRef(voiceBusy);
   const closeEndDialog = useCallback(() => setShowEndConfirm(false), []);
   useStaffDialog(showEndConfirm, endDialogRef, closeEndDialog, !pending);
+
+  // 수강료 조회가 늦거나 실패해도 출석 버튼과 수업 저장은 계속 사용할 수 있습니다.
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) { setFeeLoading(true); setFeeError(""); setFeeData(null); }
+    });
+    void loadStaffSessionMonthlyFees({ sessionId: session.id })
+      .then((result) => { if (active) setFeeData(result); })
+      .catch((reason: unknown) => {
+        if (active) setFeeError(reason instanceof Error ? reason.message : "수강료 정보를 불러오지 못했습니다.");
+      })
+      .finally(() => { if (active) setFeeLoading(false); });
+    return () => { active = false; };
+  }, [feeReload, session.id]);
+
+  const feesByRoster = useMemo(() => new Map(feeData?.items.map((item) => [item.rosterId, item]) ?? []), [feeData]);
+  const closeAttendanceBilling = useCallback(() => setAttendanceBillingTarget(null), []);
+  const syncLoadedFee = useCallback((month: string, summary: StaffMonthlyFeeSummary) => {
+    setFeeData((current) => current?.month === month ? {
+      ...current,
+      items: [...current.items.filter((item) => item.rosterId !== summary.rosterId), summary],
+    } : current);
+  }, []);
 
   useEffect(() => {
     memoRef.current = memo;
@@ -394,6 +426,16 @@ export default function SessionInProgressClient({
     });
   }
 
+  const attendanceBillingSheet = attendanceBillingTarget && <ClassBillingSheet
+    key={`${session.id}:${attendanceBillingTarget.id}`}
+    open classId={session.classId} className={session.className}
+    student={{ id: attendanceBillingTarget.studentId || attendanceBillingTarget.id, name: attendanceBillingTarget.name }}
+    attendanceContext={{ sessionId: session.id, rosterId: attendanceBillingTarget.id }}
+    onSummaryLoaded={syncLoadedFee}
+    onUpdated={() => setFeeReload((value) => value + 1)}
+    onClose={closeAttendanceBilling}
+  />;
+
   if (view === "attendance") {
     return (
       <main className="mx-auto max-w-lg space-y-4 px-4 py-5 pb-32">
@@ -419,13 +461,33 @@ export default function SessionInProgressClient({
         </button>
         {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{message}</p>}
 
+        <div aria-live="polite" className="text-xs font-bold text-[var(--color-academy-muted)]">
+          {feeLoading ? "수강료 조회 중 · 출석 확인은 바로 할 수 있습니다." : feeError ? <div role="alert" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
+            <p>{feeError}</p>
+            <button type="button" onClick={() => setFeeReload((value) => value + 1)} className="mt-1 min-h-11 text-[var(--brand-accent)]">수강료 다시 불러오기</button>
+          </div> : feeData ? `${feeData.month.replace("-", "년 ")}월 기준 · 발행된 청구 또는 수강 정보` : "수강료 확인 필요"}
+        </div>
+
         <section aria-label="학생 출결 명단" className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
-          {students.map((student) => (
-            <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
+          {students.map((student) => {
+            const fee = feesByRoster.get(student.id);
+            return <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
               <div className="flex items-center justify-between">
                 <strong className="text-base dark:text-white">{student.name}</strong>
                 <span className="text-xs font-bold text-gray-500">{student.status ? STATUS_LABEL[student.status] : "미확인"}</span>
               </div>
+              <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
+                <span className="text-xs font-bold text-[var(--color-academy-ink)]">
+                  {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
+                    <span className="text-[var(--color-academy-muted)]">{feeData ? monthlyFeeLabel(feeData.month, fee?.period, fee?.sourceLabel) : "수강료"} </span>
+                    {fee?.amount != null ? `${fee.amount.toLocaleString("ko-KR")}원` : "금액 확인 필요"}
+                  </>}
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--brand-accent)]">
+                  {!feeLoading && !feeError && (fee?.statusLabel || "확인 필요")}
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">chevron_right</span>
+                </span>
+              </button>
               {/* 학부모가 미리 넣은 결석 신고. 이게 안 보이면 선생님이 모르고 출석을 찍어
                   학부모가 미리 알린 의미가 사라진다. 확정건은 원장이 확인한 것이라 따로 표시한다. */}
               {student.absenceReport && (
@@ -445,9 +507,10 @@ export default function SessionInProgressClient({
                   </button>
                 ))}
               </div>
-            </article>
-          ))}
+            </article>;
+          })}
         </section>
+        {attendanceBillingSheet}
       </main>
     );
   }

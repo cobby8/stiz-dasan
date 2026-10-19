@@ -14,6 +14,8 @@ const session = {
 const action = name => `export async function ${name}(value){const r=await fetch('/test-action/${name}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});if(!r.ok)throw new Error('격리 통신 오류');return r.json();}`;
 const harness = await startStatusBrowserHarness({
   mocks: {
+    // 이 회귀는 출결·종료 동작에 집중한다. 수강료 원본 조회는 별도 PostgreSQL 통합 검사에서 확인한다.
+    '@/app/actions/staff-billing': `export async function loadStaffSessionMonthlyFees(){return{month:'2026-10',items:[]};}export async function loadStaffAttendanceBilling(){return{month:'2026-10',summary:null,items:[]};}export async function loadStaffClassBilling(){return{items:[]};}export async function requestStaffPaymentConfirmation(){return{ok:false,message:'격리 검사 미사용'};}`,
     '@/app/actions/staff-sessions': ['savePlannedClassContent', 'startClassSession', 'cancelClassSession', 'completeClassSession', 'saveSessionMemo', 'saveStaffAttendance'].map(action).join('\n'),
     '@/app/actions/staff-notices': ['createStaffClassNotice', 'getStaffClassNoticeStatus'].map(action).join('\n'),
     '@/components/staff/SessionPhotoUploader': `import{createElement}from'react';export function SessionPhotoUploader(){return createElement('p',null,'검증 사진 업로더');}`,

@@ -1,5 +1,9 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-19: 교사 출석 명단의 금액 조회
+- staff-monthly-fees.ts와 순수 policy/types가 세션 권한·로스터·당월 Payment/Invoice·확정 월수강대장·특강 좌석 근거를 묶는다. staff-billing.ts에 읽기 액션 2개만 추가했다.
+- SessionInProgressClient에서 출결과 독립적으로 요약을 읽고 실제 ClassBillingSheet로 연결한다. StaffMonthlyFeeSummary는 총청구액/순수수강료/특강기간을 구분한다. 상세 최신값은 해당 명단 행에 반영한다. 새 스키마·운영 DDL·쓰기 함수 변경 없음.
+
 ## 2026-10-19: 선생님 수업 화면 구성
 - StaffHomeClient는 현재·다음 수업/남은 수업/접힌 완료 목록을 나누고 각 수업의 준비·관리 도구를 접는다.
 - SessionInProgressClient는 단일 출결 요약, 접힌 보조 관리, 실제 사진·메모 입력, 종료 바를 유지한다. 출석 명단은 하나의 컨테이너이며 데이터·액션·고정 메뉴 구조는 불변이다.

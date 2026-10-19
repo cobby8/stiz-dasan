@@ -5,12 +5,24 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, requireStaff } from "@/lib/auth-guard";
 import { requireStaffStudentAccess } from "@/lib/staff-class-access";
 import { resolveStaffBillingGuard } from "@/lib/staff-billing-policy";
+import { getStaffAttendanceBilling, getStaffSessionMonthlyFees } from "@/lib/staff-monthly-fees";
+import type { StaffSessionMonthlyFees } from "@/lib/staff-monthly-fee-types";
 import {
   getStaffClassBilling,
   type StaffClassBillingItem,
 } from "@/lib/staff-class-billing";
 
 const METHODS = new Set(["CASH", "BANK_TRANSFER"]);
+
+export async function loadStaffSessionMonthlyFees(input: { sessionId: string }): Promise<StaffSessionMonthlyFees> {
+  return getStaffSessionMonthlyFees(input.sessionId?.trim());
+}
+
+export async function loadStaffAttendanceBilling(input: { sessionId: string; rosterId: string }) {
+  const rosterId = input.rosterId?.trim();
+  if (!rosterId || rosterId.length > 128) throw new Error('학생 정보가 올바르지 않습니다.');
+  return getStaffAttendanceBilling(input.sessionId?.trim(), rosterId);
+}
 
 export type SerializedStaffClassBillingItem = Omit<
   StaffClassBillingItem,
