@@ -1,6 +1,6 @@
 # STIZ Knowledge Index
 
-> 2026-10-20: 승인운영문구·미사용5/표시함수2공유·내부오류안내·배차저장조회정리. 전체278파일2193/보호5·소스검사1299해시일치, 독립G1 59/10/18·G2 44/5/9·G3 33/PG26통과. 지식문서5유지·architecture/conventions/decisions/errors갱신. 원본sharp2버전이미지빌드충돌은추가승인대기. 후보복사본build/소스857·4역할40화면/API9·실제저장재실행/기사전달·사진변환통과, docs/operating-copy-code-dispatch-cleanup.md. 운영쓰기/푸시/배포없음.
+> 2026-10-20: 승인운영문구·미사용5/표시함수2공유·내부오류안내·배차저장조회정리. 전체278파일2193/보호5·소스검사1299해시일치, 독립G1 59/10/18·G2 44/5/9·G3 33/PG26통과. 지식문서5유지·architecture/conventions/decisions/errors갱신. sharp충돌은후속승인후0.34.5로고정·Next동일모듈통합, 최종build/정적66/HTTP5·사진13·861해시일치로해결. 후보복사본build/소스857·4역할40화면/API9·실제저장재실행/기사전달·사진변환통과, docs/operating-copy-code-dispatch-cleanup.md. 운영쓰기/푸시/배포없음.
 
 > 2026-10-20: 웹배포전3그룹감사완료. cb97cb20 전체2143/보호5·src860·관련76 통과. 운영49변수와Vercel대상일치확인, 토스온라인키2항목부재·사용자미발급으로배포보류. 필수환경/운영DB검사미완료, 심사/POS키대체금지. 지식문서5유지, docs/web-release-readiness-20261020.md. 운영쓰기/푸시/배포없음.
 
