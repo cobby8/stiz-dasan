@@ -6,6 +6,12 @@ export type DriverUpcomingState = {
   isViewingToday: boolean;
 };
 
+export function parseDriverScheduleTime(time: string | null): number | null {
+  if (!time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  const [hour, minute] = time.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
 /** 휴대폰의 달력·시계로 표시만 계산합니다. 탑승 완료나 실제 도착을 판단하지 않습니다. */
 export function getDriverUpcoming(stops: readonly DriverScheduledStop[], viewDate: string, now: Date): DriverUpcomingState {
   if (!Number.isFinite(now.getTime())) return { nextKey: null, remainingMinutes: null, clockLabel: null, isViewingToday: false };
@@ -17,9 +23,8 @@ export function getDriverUpcoming(stops: readonly DriverScheduledStop[], viewDat
   let next: { key: string; minutes: number } | null = null;
   if (isViewingToday) {
     for (const stop of stops) {
-      if (stop.isTerminal || !stop.time || !/^([01]\d|2[0-3]):[0-5]\d$/.test(stop.time)) continue;
-      const [hour, minute] = stop.time.split(":").map(Number);
-      const minutes = hour * 60 + minute;
+      const minutes = parseDriverScheduleTime(stop.time);
+      if (stop.isTerminal || minutes === null) continue;
       // 같은 시각은 현재 운행 목록 순서를 유지하고, 시간 미정·차고지 안내는 제외합니다.
       if (minutes >= current && (!next || minutes < next.minutes)) next = { key: stop.key, minutes };
     }

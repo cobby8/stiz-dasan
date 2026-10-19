@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import type { PointerEvent } from "react";
 import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
@@ -9,6 +10,7 @@ import DriverDateNav from "@/components/shuttle/DriverDateNav";
 import DriverGpsIndicator from "@/components/shuttle/DriverGpsIndicator";
 import { useGpsShare } from "@/hooks/useGpsShare";
 import { useDriverUpcoming } from "@/hooks/useDriverUpcoming";
+import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
 import styles from "./DriverWorkspace.module.css";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
@@ -41,6 +43,7 @@ export default function UnifiedDriverClient({
   today: string;
   driverLabel: string;
 }) {
+  const router = useRouter();
   const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [saveStates, setSaveStates] = useState<Record<string, { state: "saving" | "saved" | "failed" | "unknown"; message: string }>>({});
@@ -51,13 +54,17 @@ export default function UnifiedDriverClient({
   const [runState, setRunState] = useState<"idle" | "running" | "ended">("idle");
 
   // 순서 편집 — 기사님이 실제 운행 현장에서 카드 순서와 시간을 조정해 바로 저장한다.
-  // 기존 탑승 체크 키(rowId)는 그대로 두고 RegularShuttleStop.sortOrder/arriveTime 만 바꾼다.
+  // 탑승 체크 키(rowId)는 유지하고 명단·확정 배차의 순서와 시각을 함께 저장한다.
   const [editing, setEditing] = useState(false);
+  const [orderSourceRows, setOrderSourceRows] = useState(rows);
   const [sortOverride, setSortOverride] = useState<Record<string, SortKey>>({});
   const [timeOverride, setTimeOverride] = useState<Record<string, string>>({});
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  // 새 서버 자료가 도착하면 이전 저장의 표시용 덮어쓰기는 무시한다.
+  // 편집 중에는 원본 스냅샷을 유지해 다른 화면의 변경을 baseline 검증으로 잡는다.
+  const useOrderOverrides = editing || orderSourceRows === rows;
 
   const { state: gpsState, transmission, lastSentAt, accuracy, mode: gpsMode = "web", nativeRunning = false, nativeMessage, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
   useEffect(() => {
@@ -87,24 +94,30 @@ export default function UnifiedDriverClient({
 
   // 화면에 그릴 순서 = 서버가 준 시각순 + (편집했다면) 바뀐 정렬키.
   const ordered = useMemo(() => {
-    const keyOf = (r: UnifiedRow): SortKey => sortOverride[r.key] ?? { minutes: r.minutes, seq: r.seq };
-    return [...rows].sort((a, b) => {
+    const keyOf = (r: UnifiedRow): SortKey => {
+      const base = (useOrderOverrides ? sortOverride[r.key] : undefined) ?? { minutes: r.minutes, seq: r.seq };
+      return useOrderOverrides && timeOverride[r.key] !== undefined ? { ...base, minutes: parseDriverScheduleTime(timeOverride[r.key]) } : base;
+    };
+    return [...(editing ? orderSourceRows : rows)].sort((a, b) => {
       const ka = keyOf(a), kb = keyOf(b);
       if (ka.minutes == null && kb.minutes == null) return ka.seq - kb.seq;
       if (ka.minutes == null) return 1;   // 시간 미정은 언제나 맨 끝
       if (kb.minutes == null) return -1;
       return ka.minutes === kb.minutes ? ka.seq - kb.seq : ka.minutes - kb.minutes;
     });
-  }, [rows, sortOverride]);
+  }, [rows, sortOverride, timeOverride, editing, orderSourceRows, useOrderOverrides]);
 
   function moveRow(row: UnifiedRow, dir: -1 | 1) {
     const sameGroup = ordered.filter((r) => r.groupKey === row.groupKey && !r.isTerminal);
     const idx = sameGroup.findIndex((r) => r.key === row.key);
     const other = sameGroup[idx + dir];
     if (!other) return;
-    const keyOf = (r: UnifiedRow): SortKey => sortOverride[r.key] ?? { minutes: r.minutes, seq: r.seq };
+    const keyOf = (r: UnifiedRow): SortKey => ({ minutes: parseDriverScheduleTime(displayTime(r)), seq: sortOverride[r.key]?.seq ?? r.seq });
     const a = keyOf(row), b = keyOf(other);
     setSortOverride((o) => ({ ...o, [row.key]: b, [other.key]: a }));
+    // 정차를 다른 시각 칸으로 옮길 때 표시·저장 시각도 함께 옮겨 재조회 정렬과 일치시킨다.
+    const rowTime = displayTime(row), otherTime = displayTime(other);
+    setTimeOverride((current) => ({ ...current, [row.key]: otherTime ?? "", [other.key]: rowTime ?? "" }));
   }
 
   function moveDraggedRow(target: UnifiedRow) {
@@ -119,11 +132,14 @@ export default function UnifiedDriverClient({
     next.splice(fromIdx, 1);
     next.splice(toIdx, 0, from);
     const nextOverride: Record<string, SortKey> = {};
+    const nextTimes: Record<string, string> = {};
     sameGroup.forEach((row, index) => {
       const targetOrder = next[index];
-      nextOverride[targetOrder.key] = sortOverride[row.key] ?? { minutes: row.minutes, seq: row.seq };
+      nextOverride[targetOrder.key] = { minutes: parseDriverScheduleTime(displayTime(row)), seq: sortOverride[row.key]?.seq ?? row.seq };
+      nextTimes[targetOrder.key] = displayTime(row) ?? "";
     });
     setSortOverride((current) => ({ ...current, ...nextOverride }));
+    setTimeOverride((current) => ({ ...current, ...nextTimes }));
   }
 
   function startCardDrag(event: PointerEvent, row: UnifiedRow) {
@@ -134,19 +150,21 @@ export default function UnifiedDriverClient({
   }
 
   function displayTime(row: UnifiedRow): string | null {
-    return timeOverride[row.key] ?? row.time;
+    return useOrderOverrides && timeOverride[row.key] !== undefined ? timeOverride[row.key] || null : row.time;
   }
 
   // 휴대폰의 시계로 강조만 갱신한다. 운행 순서와 서버의 탑승 기록은 바꾸지 않는다.
-  const upcomingStops = useMemo(() => ordered.map((row) => ({ key: row.key, time: timeOverride[row.key] ?? row.time, isTerminal: row.isTerminal })), [ordered, timeOverride]);
+  const upcomingStops = useMemo(() => ordered.map((row) => ({ key: row.key, time: useOrderOverrides ? timeOverride[row.key] ?? row.time : row.time, isTerminal: row.isTerminal })), [ordered, timeOverride, useOrderOverrides]);
   const upcoming = useDriverUpcoming(upcomingStops, date);
 
   async function saveRegularOrder() {
-    const regularRows = ordered.filter((r) => r.kind === "REGULAR" && !r.isTerminal);
-    const updates = regularRows.flatMap((row, index) => {
+    const makeOrderPayload = (source: UnifiedRow[], getTime: (row: UnifiedRow) => string | null) => source.filter((r) => r.kind === "REGULAR" && !r.isTerminal).flatMap((row) => {
       const rowIds = [...new Set(row.riders.map((r) => r.checkId).filter((id) => /^[0-9a-f-]{20,}$/i.test(id)))];
-      return rowIds.length > 0 ? [{ rowIds, sortOrder: index, arriveTime: displayTime(row) }] : [];
-    });
+      return rowIds.length > 0 ? [{ rowIds, sortOrder: 0, arriveTime: getTime(row) }] : [];
+    }).map((item, index) => ({ ...item, sortOrder: index }));
+    const updates = makeOrderPayload(ordered, displayTime);
+    // 화면을 연 뒤 관리자가 바꾼 내용을 덮어쓰지 않도록 마지막 조회 원본도 대조한다.
+    const baseline = makeOrderPayload(orderSourceRows, (row) => row.time);
     if (updates.length === 0 || savingOrder) return;
     setSavingOrder(true);
     setSaveMessage(null);
@@ -154,12 +172,15 @@ export default function UnifiedDriverClient({
       const res = await fetch("/api/shuttle/regular-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, date, updates }),
+        body: JSON.stringify({ token, date, updates, baseline }),
       });
-      const json = await res.json().catch(() => null) as { updated?: number; error?: string } | null;
+      const json = await res.json().catch(() => null) as { ok?: boolean; verified?: boolean; updated?: number; error?: string } | null;
       if (!res.ok) throw new Error(json?.error || "저장하지 못했습니다.");
+      const expected = new Set(updates.flatMap((item) => item.rowIds)).size;
+      if (!json?.ok || !json.verified || json.updated !== expected) throw new Error("저장 결과를 확인하지 못했습니다. 편집 내용을 유지합니다. 다시 열기 전에 저장 상태를 확인해 주세요.");
       setSaveMessage(`저장 완료 · ${json?.updated ?? 0}개 행 반영`);
       setEditing(false);
+      router.refresh();
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
     } finally {
@@ -207,7 +228,7 @@ export default function UnifiedDriverClient({
   const summary = checkSummary(rows.filter((row) => !row.isTerminal).flatMap((row) => row.riders));
   const stopRows = ordered.filter((r) => !r.isTerminal);
   const orderControls = stopRows.length > 0 && (!editing ? (
-    <button type="button" onClick={() => setEditing(true)}
+    <button type="button" onClick={() => { setOrderSourceRows(rows); setSortOverride({}); setTimeOverride({}); setEditing(true); }}
       className="min-h-11 shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1 text-[13px] font-bold text-gray-600 active:bg-gray-100">
       ↕ 순서·시간 수정
     </button>
@@ -271,7 +292,7 @@ export default function UnifiedDriverClient({
           {orderControls}
         </div>
       )}
-      {editing && <p className="mb-2 rounded-xl bg-blue-50 px-3 py-2 text-[13px] font-bold text-blue-700">카드를 끌어서 순서를 바꾸고, 시간을 눌러 수정한 뒤 저장하세요. 정규 셔틀만 저장됩니다.</p>}
+      {editing && <p className="mb-2 rounded-xl bg-blue-50 px-3 py-2 text-[13px] font-bold text-blue-700">순서를 바꾸면 해당 시각 칸으로 함께 이동합니다. 시간을 직접 수정할 수도 있습니다. 정규 셔틀만 저장됩니다.</p>}
       {saveMessage && <p className="mb-2 rounded-xl bg-gray-100 px-3 py-2 text-[13px] font-black text-gray-700">{saveMessage}</p>}
 
       {stopRows.length === 0 && (

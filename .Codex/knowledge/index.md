@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-19: 사용자확대승인 정규순서저장/확정배차재조회수정. 원본대조·함께저장·이동시간칸/이전편집잔류보완. 회귀106·API24/화면9 독립재검증·실제격리PG8·UI91·tsc/lint 통과. architecture/decisions/errors갱신·지식문서5유지. docs/driver-order-persistence.md. 월·요일공통이며 운영/배포없음.
+
 > 2026-10-19: 실제기사UI라벤더시안적용·기기현재시각강조/시안미리보기제외·GPS상세통합. 회귀82·JSX/CSS91·기존10/네이티브10·독립16/18·tsc/lint통과. architecture/decisions갱신·지식문서5유지. docs/driver-lavender-implementation.md. 순서재조회불일치후속승인진행·운영/배포없음.
 
 > 2026-10-19: 외부 기사시안 연락버튼 이름우측·360px이상 학생행56px, 11폭·독립178 통과. 실제iPhone Safari세로/검색·메모키보드·가로874×402·세로복원 확인. 임시측정과 실제OS/스크린샷검증 구분, errors1항목 추가. docs/academy-responsive-mock-validation.md 갱신, 지식문서5 유지·배포없음.

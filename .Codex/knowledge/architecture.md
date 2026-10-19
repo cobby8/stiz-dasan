@@ -290,4 +290,8 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 ## 2026-10-19 기사 화면 시안 실제 적용
 - 실제 세 기사 링크는 UnifiedDriverRunPage→UnifiedDriverClient 하나를 공유한다. DriverWorkspace.module.css로 역할별 범위를 좁혔고 DriverGpsIndicator는 기존 GpsShareBar를 상세창에 재사용한다.
 - driverUpcoming 순수 계산과 useDriverUpcoming은 기기의 로컬 날짜·시각으로 당일 다음 예정만15초/focus/visibility마다 표시한다. API/탑승/GPS 동작과 시계 표시는 분리한다.
-- docs/driver-lavender-implementation.md에 기존 기능 대조와 검증 증거·한계를 기록했다. 정규 순서 저장과 확정 배차 읽기 불일치는 별도 승인 후속 그룹이다.
+- docs/driver-lavender-implementation.md에 기존 기능 대조와 검증 증거·한계를 기록했다. 사용자 후속 승인으로 저장·재조회 불일치도 해결했다.
+
+## 2026-10-19 정규 순서·시각 저장 재조회
+- regular-order API는 driverOrderPlan의 기존 기사 조립 재사용·원본 대조 후 명단과 확정 배차를 Serializable 거래로 함께 변경·재조회한다. getRegularShuttleRiders는 선택적 거래 DB를 받아 기존 SQL을 동일 거래에서 사용한다.
+- UnifiedDriverClient는 편집 원본을 고정하고 이동 시 시각 칸도 이동한다. 확인된 저장 후 router.refresh하며 새 서버 자료에 이전 임시값을 씌우지 않는다. 적용 범위는 기존 월·요일 공통이며 docs/driver-order-persistence.md에 검증과 한계를 기록했다.

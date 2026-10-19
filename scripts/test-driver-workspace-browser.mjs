@@ -30,7 +30,7 @@ async function check(name, exercise, options = {}) {
     if (req.method() === 'GET' && ['/', '/bundle.js'].includes(url.pathname)) return route.continue();
     const body = req.method() === 'POST' ? req.postDataJSON() : null;
     requests.push({ path: url.pathname, method: req.method(), body, date: url.searchParams.get('date') });
-    if (url.pathname === '/api/shuttle/regular-order') return route.fulfill({ json: { updated: 1 } });
+    if (url.pathname === '/api/shuttle/regular-order') return route.fulfill({ json: { ok: true, verified: true, updated: 1 } });
     if (!['/api/shuttle/regular-boarding', '/api/shuttle/boarding'].includes(url.pathname)) return route.fulfill({ status: 404, json: { error: '격리 검사 범위 밖' } });
     if (req.method() === 'POST') {
       if (!options.dontSave) {
