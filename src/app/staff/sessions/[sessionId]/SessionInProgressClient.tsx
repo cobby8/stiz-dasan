@@ -630,7 +630,7 @@ export default function SessionInProgressClient({
 
       {showEndConfirm && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
-          <div ref={endDialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
+          <div ref={endDialogRef} className="max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
             <h2 id="end-session-title" className="text-xl font-black dark:text-white">수업을 종료하시겠습니까?</h2>
             <p className="mt-1 text-sm text-gray-500">종료하면 학부모에게 수업 종료 알림이 전송됩니다.</p>
             <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs font-bold">

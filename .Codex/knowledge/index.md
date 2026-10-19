@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-20: iPhone 실제750×292/세로복원·3역할키보드 확인. 짧은 관리자메뉴·교사3확인창 보완, 독립68/종료12상태/이동8상태·실제재검사 통과. errors/lessons 갱신, 지식문서5 유지. 사용자 승인 중복필터 개편은 별도 진행·미배포. docs/role-followup-verification.md.
+
 > 2026-10-19: 긴교사명헤더168·다중화면전환104·로그인/자녀자격·Next16.2.12의418수정완료. 회귀2128/학생가드5·tsc·독립QA통과. 정상생산빌드/교사27·역할15, 실제iPhone세로3역할/동일합성계정전환확인. 물리회전·키보드/Android·운영자녀연결은별도후속. 지식문서5갱신, docs/role-followup-verification.md. 미배포.
 
 > 2026-10-19: 전체117경로 로컬전수·승인8오류보완. 회귀2108·공개120/보호228+재검사·실제Next수강료/청구창3폭·탭90/독립QA통과. architecture/decisions/errors갱신·지식문서5유지. docs/all-pages-verification.md. 긴교사명/전환경고·실인증/기기 후속, 운영/배포없음.

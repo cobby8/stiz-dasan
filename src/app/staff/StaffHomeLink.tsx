@@ -79,7 +79,7 @@ export default function StaffHomeLink({ isDriver = false }: { isDriver?: boolean
       </Link>
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 sm:items-center" onMouseDown={(event) => !saving && event.target === event.currentTarget && close()}>
-          <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-900">
+          <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="max-h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-900">
             <span className="material-symbols-outlined mb-3 text-3xl text-[var(--brand-accent)]" aria-hidden="true">home</span>
             <h2 id={titleId} className="text-lg font-black text-gray-900 dark:text-white">수업 화면을 나갈까요?</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">작성한 수업 내용을 먼저 저장한 뒤 선생님 홈으로 이동합니다.</p>

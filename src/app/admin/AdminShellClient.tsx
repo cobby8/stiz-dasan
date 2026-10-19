@@ -139,23 +139,23 @@ export default function AdminShellClient({
                         : "hidden"
                 } flex-shrink-0 flex-col border-r border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] md:fixed md:inset-y-0 md:left-0 md:z-10 md:flex md:h-full md:w-64 md:max-w-none`}
             >
-                <div className="px-5 py-5 border-b border-[var(--color-academy-line)] flex items-center gap-3 flex-shrink-0">
+                <div className="px-5 py-5 border-b border-[var(--color-academy-line)] flex items-center gap-3 flex-shrink-0 [@media(max-height:450px)]:min-h-11 [@media(max-height:450px)]:px-3 [@media(max-height:450px)]:py-0">
                     <div className="bg-white rounded-md flex items-center justify-center">
                         <Image
                             src="/stiz-logo.png"
                             alt="STIZ Admin"
                             width={124}
                             height={54}
-                            className="h-[54px] w-[124px] shrink-0 object-contain"
+                            className="h-[54px] w-[124px] shrink-0 object-contain [@media(max-height:450px)]:h-8 [@media(max-height:450px)]:w-20"
                         />
                     </div>
                     <span className="text-xs font-bold text-[var(--color-academy-muted)] tracking-tight">학원 운영</span>
                 </div>
                 {/* 탭 전환 버튼 — 로고 바로 아래, 메뉴 목록 위 */}
-                <div className="px-4 pt-4 pb-2 flex gap-1 flex-shrink-0">
+                <div className="px-4 pt-4 pb-2 flex gap-1 flex-shrink-0 [@media(max-height:450px)]:px-2 [@media(max-height:450px)]:py-0">
                     <button
                         onClick={() => setActiveTab("site")}
-                        className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors [@media(max-height:450px)]:min-h-11 [@media(max-height:450px)]:py-0 ${
                             activeTab === "site"
                                 ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] "
                                 : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
@@ -165,7 +165,7 @@ export default function AdminShellClient({
                     </button>
                     <button
                         onClick={() => setActiveTab("ops")}
-                        className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                        className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors [@media(max-height:450px)]:min-h-11 [@media(max-height:450px)]:py-0 ${
                             activeTab === "ops"
                                 ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] "
                                 : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
@@ -175,7 +175,7 @@ export default function AdminShellClient({
                     </button>
                 </div>
 
-                <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
+                <nav className="min-h-0 p-4 space-y-1 flex-1 overflow-y-auto [@media(max-height:450px)]:p-2">
                     {/* ===== 사이트 탭 메뉴 ===== */}
                     {activeTab === "site" && (
                         <>
@@ -294,15 +294,15 @@ export default function AdminShellClient({
                 </nav>
 
                 {/* 사용자 정보 + 로그아웃 */}
-                <div className="p-4 border-t border-[var(--color-academy-line)] flex-shrink-0">
-                    {accountViews.length > 1 && <div className="mb-1 flex justify-end">
+                <div className="p-4 border-t border-[var(--color-academy-line)] flex-shrink-0 [@media(max-height:450px)]:flex [@media(max-height:450px)]:items-center [@media(max-height:450px)]:gap-2 [@media(max-height:450px)]:p-2">
+                    {accountViews.length > 1 && <div className="mb-1 flex justify-end [@media(max-height:450px)]:mb-0 [@media(max-height:450px)]:min-w-0 [@media(max-height:450px)]:flex-1">
                         <AccountViewSwitcher views={accountViews} placement="above" />
                     </div>}
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-[var(--color-academy-primary-soft)] rounded-full flex items-center justify-center text-[var(--color-academy-ink)] font-bold text-sm flex-shrink-0">
+                        <div className="w-9 h-9 bg-[var(--color-academy-primary-soft)] rounded-full flex items-center justify-center text-[var(--color-academy-ink)] font-bold text-sm flex-shrink-0 [@media(max-height:450px)]:hidden">
                             {userName.charAt(0) || "A"}
                         </div>
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 [@media(max-height:450px)]:hidden">
                             <p className="text-sm font-medium text-[var(--color-academy-ink)] truncate">{userName}</p>
                             <p className="text-xs text-gray-400 truncate">{userEmail}</p>
                         </div>
@@ -310,7 +310,7 @@ export default function AdminShellClient({
                             <button
                                 type="submit"
                                 title="로그아웃"
-                                className="p-1.5 text-gray-400 hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)] rounded-lg transition-colors"
+                                className="p-1.5 text-gray-400 hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)] rounded-lg transition-colors [@media(max-height:450px)]:inline-flex [@media(max-height:450px)]:h-11 [@media(max-height:450px)]:w-11 [@media(max-height:450px)]:items-center [@media(max-height:450px)]:justify-center"
                             >
                                 <FontFreeIcon name="logout" size={18} />
                             </button>
@@ -356,7 +356,7 @@ function NavItem({ href, active, icon, label, badge, compact = false }: { href: 
             href={href}
             prefetch={false}
             aria-current={active ? "page" : undefined}
-            className={`flex items-center gap-3 px-4 ${compact ? "py-2.5 text-sm" : "py-3"} rounded-lg transition-colors ${active
+            className={`flex items-center gap-3 px-4 ${compact ? "py-2.5 text-sm" : "py-3"} rounded-lg transition-colors [@media(max-height:450px)]:min-h-11 ${active
                 ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] font-bold"
                 : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                 }`}
