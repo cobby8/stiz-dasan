@@ -109,6 +109,32 @@ try {
       await page.locator('.academy-driver-rider').first().waitFor();
       check(`${width} 전화 없음·하나·긴 이름 넘침 없음`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     }
+    // 실제 글자마다 Range를 만들어 마지막 한 글자만 다음 줄로 밀리는지 검사한다.
+    const labels = ['합성 첫 정류장','합성 둘째 정류장','가나 다라 마바','가나 다라 마바사','가나 다라 마바사아','합성정류장가','합성정류장가나','합성정류장가나다','가'.repeat(18),'가'.repeat(19)];
+    for (const [index,label] of labels.entries()) {
+      await page.evaluate(({index,label})=>{
+        window.gpsPatch=undefined;
+        window.showDriver({fixtureKey:`word-wrap-${index}`,rows:[{...window.fixture.rows[0],label},{...window.fixture.rows[1],label}]});
+      },{index,label});
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const names=await page.locator('.academy-driver-stop').evaluateAll(cards=>cards.map(card=>{
+        const name=card.querySelector('.stopName span'),text=name.firstChild,style=getComputedStyle(name.parentElement),lines=[];
+        for(let i=0;i<text.length;i++){
+          if(!text.textContent[i].trim())continue;
+          const range=document.createRange();range.setStart(text,i);range.setEnd(text,i+1);
+          const rect=range.getBoundingClientRect(),top=Math.round(rect.top*10)/10;
+          let line=lines.find(line=>Math.abs(line.top-top)<1);
+          if(!line){line={top,text:''};lines.push(line);}line.text+=text.textContent[i];
+        }
+        const rect=card.getBoundingClientRect(),time=card.querySelector('.time').getBoundingClientRect(),nav=card.querySelector('.navigation').getBoundingClientRect();
+        return{lines,cardHeight:rect.height,nameFont:style.fontSize,lineHeight:style.lineHeight,timeFont:getComputedStyle(card.querySelector('.time')).fontSize,navigation:{width:nav.width,height:nav.height},timeBeforeNavigation:time.right<=nav.x+1&&Math.abs(time.y+time.height/2-nav.y-nav.height/2)<2,overflow:document.documentElement.scrollWidth>innerWidth+1};
+      }));
+      // 이번 변경은 모바일(600px 이하)에 한정한다. PC의 기존 줄 배치는 아래 회귀 측정으로 남긴다.
+      if(width<=600)check(`${width} ${label} 끝 한 글자 줄바꿈 방지`,names.every(name=>name.lines.length===1||name.lines.at(-1).text.length>1),names);
+      if(width<=600&&/\s/.test(label))check(`${width} ${label} 공백 단어 보존`,names.every(name=>label.split(/\s+/).every(word=>name.lines.some(line=>line.text.includes(word)))),names);
+      check(`${width} ${label} 글씨·길안내 유지`,names.every(name=>!name.overflow&&parseFloat(name.nameFont)>=18&&parseFloat(name.timeFont)>=25&&name.navigation.width>=44&&name.navigation.height>=44&&name.timeBeforeNavigation),names);
+      if(index<=1)await page.screenshot({path:`${out}/${width}-station-names-${index}.png`,fullPage:true});
+    }
     check(`${width} 오류·외부·운영 요청 없음`,errors.length===0&&blocked.length===0,{errors,blocked});
     await page.close();
   }

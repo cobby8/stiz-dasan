@@ -349,7 +349,7 @@ export default function UnifiedDriverClient({
                     {seq}
                   </span>
                 )}
-                <div className={`${styles.stopName} ${row.label.length > 18 ? styles.longStopName : ""}`}><span>{row.label}</span></div>
+                <div className={`${styles.stopName} ${row.label.length > 18 ? styles.longStopName : ""} ${/\s/.test(row.label) ? styles.spacedStopName : ""}`}><span>{row.label}</span></div>
                 {editable ? (
                   <input
                     type="time"

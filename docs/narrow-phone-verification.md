@@ -54,3 +54,12 @@
 - 학부모 `MyPageClient.tsx`, `EnrollmentChangeClient.tsx`, `PaymentRequestClient.tsx`, `ShuttleExceptionClient.tsx`.
 - 선생님 `StaffStudentsClient.tsx`, `SessionInProgressClient.tsx`, `ClassBillingSheet.tsx`.
 - 세 역할별 검증 스크립트 외 공통 테마·API·DB·패키지 버전은 바꾸지 않는다.
+
+## 기사님 정류장명 끝 한 글자 후속 보완
+
+- 사용자 추가 승인으로360px의 `합성 둘째 정류 / 장`을 보완했다.600px 이하 정류장명에 균등 줄바꿈을 적용하고, 공백 있는 명칭만 단어 단위로 보호하는 표시 클래스를 붙인다. 실제 값·정류장 순서·시간·위치·탑승 처리는 유지한다.
+- 공백·무공백6/7/8/18/19자와320/360/375/390/554px를 포함한326/326, 기존 기사 브라우저91/91·관련 회귀53/53·TSX lint를 통과했다.834/1280px는 기존 배치 유지 검사로 구분한다. 구현자는 캡처21개를 직접 대조했다. `.tmp/driver-word-wrap-final/`, `.tmp/driver-word-wrap-regression-{browser,unit}.log`.
+- 실제 원본문구는 `합성 둘째 / 정류장`으로 표시하며 글씨·버튼·시간/길안내 크기는 유지한다. 매우 긴 공백 명칭은 단어를 보존하기 위해320/360px에서2→3줄·카드24.30px 증가가 필요하다. 이는 모든 이름을 억지로 줄이거나 글씨를 축소하는 대신 허용한 필요한 줄바꿈이다.
+- PM은 기존 컴파일 화면에서360px 마지막 한 글자 현상을 실제 글자 Range로 먼저 재현했다. `.tmp/driver-stop-name-fix/before.json`. 후보 CSS를 임시 주입한 비교와 최종 소스 전체를 다시 컴파일한 후속 결과는 별도로 구분한다.
+- 최종 `.tmp/driver-stop-name-final/` 생산 빌드·TypeScript·정적66개 출력이 성공했고 src860개 해시가 현재 원본과 일치했다. PM이 실제 새 빌드에서320/360/375/390px를 재검사했다.360px `합성둘째정류 / 장`→`합성둘째 / 정류장`, 나머지 폭은 기존 한 줄을 유지했다. 이름 글씨·줄 높이·굵기와 시간·전화·길안내·탑승의 글씨/폭/높이를 수정 전 값과 대조해 모두 같음을 확인했다. 문서 넘침0, 최종 캡처도 직접 확인했다. `.tmp/driver-stop-name-fix/{before,after}.json`, `after-{width}.png`.
+- 최신 읽기 전용 시험 연결은4053→4069/PG55470이다. 이전4068/PG55469는 종료·정리했다. 실제 기기 설정·운영 DB·푸시·배포는 변경하지 않았다. 앞선 네 역할40조합과 이번 기사님4폭 후속 대조를 중복 합산하지 않는다.
