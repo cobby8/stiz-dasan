@@ -53,9 +53,14 @@ public final class DriverLocationService extends Service implements LocationList
         if (!START.equals(action) || starting || localRunning) return START_NOT_STICKY;
         stopRequested = false;
         starting = true;
-        try { startForeground(NOTIFICATION, notification("서버 연결 확인 중")); }
-        catch (RuntimeException failure) { starting = false; stopSelf(); return START_NOT_STICKY; }
         final String token = intent.getStringExtra("token");
+        try { startForeground(NOTIFICATION, notification("서버 연결 확인 중")); }
+        catch (RuntimeException failure) {
+            starting = false; localRunning = false;
+            try { session = new JSONObject().put("token", token); } catch (Exception ignored) { }
+            emit("error", "error", "위치 공유 알림 서비스를 시작하지 못했습니다. 알림·위치 권한을 확인한 뒤 다시 시도해 주세요.");
+            stopSelf(); return START_NOT_STICKY;
+        }
         worker.execute(() -> startRun(token));
         return START_NOT_STICKY;
     }

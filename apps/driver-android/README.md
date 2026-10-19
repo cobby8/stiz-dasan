@@ -21,6 +21,7 @@
 
 1. 관리자에게 받은 `https://www.stiz-dasan.kr/driver/<token>` 링크를 입력하거나 링크를 앱으로 연다.
 2. 운행 시작을 직접 누른 뒤 위치 공유 설명에 동의하고 정확한 위치와 알림 권한을 허용한다.
+   권한 창 때문에 운행 화면이 잠시 비활성화되면 동의한 같은 운행을 최대 2분 동안만 기다린다. 실제 화면으로 돌아온 뒤 권한을 다시 확인해 한 번만 시작하며, 거절·취소·종료·다른 링크 전환 시 시작 대기를 지운다. 백그라운드에서 임의로 시작하지 않는다.
 3. 알림을 유지하며 GPS/네트워크 위치의 새 표본만 약 10초마다 전송한다. 정차 중에도 새 표본을 요청한다.
 4. 화면 또는 알림의 운행 종료는 즉시 기기 수집을 중단한다. 서버 확인에 실패하면 종료 미확인 상태를 보존하고 제한된 재시도 후 앱 복귀 시 다시 확인한다.
 5. 앱/기기 재시작 시 몰래 위치 수집을 시작하지 않는다. 남은 세션은 사용자 시작 시에만 재사용하며 서버가 끝난 세션이라고 확인하면 다음 시작에서 새 세션을 생성한다.
@@ -37,6 +38,7 @@
 - 25초 이상 오래된 위치나 이미 시도한 표본을 재전송하지 않는다. 위치를 디스크에 쌓지 않는다. 통신 구간에만 최대 30초 wake lock을 잡는다.
 - 세션 비밀·sequence·종료 미확인 상태를 AndroidKeyStore AES-GCM으로 암호화하여 저장한다. 클라우드 백업·기기 이전을 제외한다. 로그에 토큰·비밀·좌표를 쓰지 않는다.
 - `serverStopConfirmed`는 서버의 실제 종료 접수 응답에서만 기록한다. 단말 중단·인증 만료를 서버 접수 성공으로 표시하지 않는다.
+- 권한 거절·foreground service 승격 실패는 같은 운행 화면의 오류로 보존한다. 화면 복귀 때 빈 초기 상태로 덮지 않으며 새로운 명시적 시작이나 실제 서비스 상태에서 갱신한다.
 - 한 운행 중 다른 token 링크에서 시작/종료하려 하면 기존 링크에서 확인하도록 막는다.
 - 실제 로고는 `public/stiz-logo.png` 원본을 그대로 복사했다. 출시용 adaptive launcher icon·스토어 아이콘은 별도 마무리가 필요하다.
 
@@ -66,3 +68,5 @@ Play Console 조직 계정, 패키지 이름 확정, release 서명, 개인정�
 - [Google Play 위치 이용 심사](https://support.google.com/googleplay/android-developer/answer/9799150)
 
 검증 로그와 한계는 상위 `docs/driver-android-background-tracking.md` 또는 해당 작업 보고에 남긴다.
+
+권한 복귀 순수 Java 회귀는 실제 `PendingRunStart` 정책 함수를 실행한다. JDK에서 `javac --release 17 -d app/build/pending-start-test app/src/main/java/kr/stiz/driver/PendingRunStart.java tests/PendingRunStartTest.java` 후 `java -ea -cp app/build/pending-start-test kr.stiz.driver.PendingRunStartTest`로 33개 조건을 확인한다. Android 화면·권한 동작 자체의 실기기 검증은 별도로 필요하다.

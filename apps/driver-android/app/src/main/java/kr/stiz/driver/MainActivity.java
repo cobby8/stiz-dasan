@@ -18,10 +18,25 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private WebView web;
     private boolean visible;
-    private String pendingToken;
+    private final PendingRunStart pendingStart = new PendingRunStart();
+    private boolean consentDialogOpen;
+    private String lastErrorDetail, lastErrorToken;
     private final java.util.concurrent.ExecutorService worker = Executors.newSingleThreadExecutor();
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) { publish(intent.getStringExtra("detail")); }
+        @Override public void onReceive(Context context, Intent intent) {
+            String detail = intent.getStringExtra("detail");
+            try {
+                JSONObject value = new JSONObject(detail);
+                String transmission = value.optString("transmission");
+                if (value.optString("token").equals(pendingStart.token()) && ("stopping".equals(transmission) || "stopped".equals(transmission) || "stop-unknown".equals(transmission))) pendingStart.cancel();
+                if (value.optString("token").equals(pageToken())) {
+                    String state = value.optString("state");
+                    if ("error".equals(state) || "denied".equals(state)) { lastErrorDetail = detail; lastErrorToken = pageToken(); }
+                    else if ("active".equals(state) || "requesting".equals(state) || "stopped".equals(transmission) || "stop-unknown".equals(transmission)) clearError();
+                }
+            } catch (Exception ignored) { }
+            publish(detail);
+        }
     };
     static boolean trusted(Uri uri) {
         Uri expected = Uri.parse(BuildConfig.STIZ_ORIGIN);
@@ -113,43 +128,60 @@ public final class MainActivity extends Activity {
     }
     private void executeAction(String action) {
         if ("stop".equals(action)) {
+            pendingStart.cancel();
             startService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.STOP)); return;
         }
         if (!"start".equals(action)) return;
-        pendingToken = pageToken();
+        if (consentDialogOpen || pendingStart.token() != null) return;
+        clearError();
+        final String consentToken = pageToken();
+        consentDialogOpen = true;
         new AlertDialog.Builder(this).setTitle("운행 중 위치 공유")
             .setMessage("운행을 시작하면 화면 잠금·지도 앱 사용 중에도 위치가 관리자에게 공유됩니다. 알림의 운행 종료로 중단할 수 있습니다. 강제 종료·권한 해제·배터리 제한·통신 장애 시 중단될 수 있습니다.")
-            .setPositiveButton("동의하고 시작", (dialog, which) -> requestPermissionsAndStart()).setNegativeButton("취소", (dialog, which) -> error("위치 공유 시작을 취소했습니다.")).show();
+            .setPositiveButton("동의하고 시작", (dialog, which) -> {
+                if (pendingStart.consent(consentToken, SystemClock.elapsedRealtime())) requestPermissionsAndStart();
+            }).setNegativeButton("취소", (dialog, which) -> { pendingStart.cancel(); error("위치 공유 시작을 취소했습니다."); })
+            .setOnCancelListener(dialog -> { pendingStart.cancel(); error("위치 공유 시작을 취소했습니다."); })
+            .setOnDismissListener(dialog -> consentDialogOpen = false).show();
     }
     private void requestPermissionsAndStart() {
-        if (!visible) return;
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 10); return;
+        String token = pendingStart.token();
+        PendingRunStart.Step step = pendingStart.next(pageToken(), visible, SystemClock.elapsedRealtime(),
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED,
+            Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+        if (token != null && step == PendingRunStart.Step.NONE && pendingStart.token() == null) error("시작 동의가 만료되었거나 운행 화면이 바뀌었습니다. 운행 시작을 다시 눌러 주세요.");
+        try {
+            if (step == PendingRunStart.Step.LOCATION_PERMISSION) requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 10);
+            else if (step == PendingRunStart.Step.NOTIFICATION_PERMISSION && Build.VERSION.SDK_INT >= 33) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 11);
+            else if (step == PendingRunStart.Step.START) launchRun(token);
+        } catch (RuntimeException failure) {
+            pendingStart.cancel(); error("권한 요청을 시작하지 못했습니다. 운행 화면에서 다시 시도해 주세요.");
         }
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 11); return;
-        }
-        launchRun();
     }
-    private void launchRun() {
-        if (!visible || pendingToken == null || !pendingToken.equals(pageToken())) { error("운행 화면에서 시작해 주세요."); return; }
-        try { startForegroundService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.START).putExtra("token", pendingToken)); }
+    private void launchRun(String token) {
+        if (!visible || token == null || !token.equals(pageToken())) { error("운행 화면에서 시작해 주세요."); return; }
+        try { startForegroundService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.START).putExtra("token", token)); }
         catch (RuntimeException failure) { error("휴대폰 위치 권한과 위치 설정을 확인해 주세요."); }
-        pendingToken = null;
     }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == 10) {
-            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) requestPermissionsAndStart();
+            boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            pendingStart.permissionResult(granted);
+            if (granted) requestPermissionsAndStart();
             else error("정확한 위치 권한이 필요합니다. 휴대폰 설정에서 허용해 주세요.");
         } else if (request == 11) {
-            if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) launchRun();
+            boolean granted = Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+            pendingStart.permissionResult(granted);
+            if (granted) requestPermissionsAndStart();
             else error("화면 밖에서도 운행 종료를 할 수 있도록 알림 권한을 허용해 주세요.");
         }
     }
     private void snapshot() {
         if (DriverLocationService.instance != null) { DriverLocationService.instance.snapshot(); return; }
         final String token = pageToken();
+        if (lastErrorDetail != null && token.equals(lastErrorToken)) { publish(lastErrorDetail); return; }
+        if (lastErrorDetail != null) clearError();
         worker.execute(() -> {
             try {
                 JSONObject value = new SessionStore(this).read();
@@ -162,19 +194,31 @@ public final class MainActivity extends Activity {
                     .put("lastLocationAt", value.opt("lastLocationAt") == null ? JSONObject.NULL : value.opt("lastLocationAt"))
                     .put("accuracy", value.opt("accuracy") == null ? JSONObject.NULL : value.opt("accuracy"));
                 if (value.has("sessionId") && !confirmed && !pending) detail.put("state", "error").put("error", "이전 위치 공유가 중단되었거나 인증이 종료되었습니다. 운행 화면에서 확인해 주세요.");
-                publish(detail.toString());
+                publishSnapshot(detail.toString());
             } catch (Exception failure) { error("안전한 운행 저장소를 읽을 수 없습니다. 관리자에게 문의해 주세요."); }
         });
     }
     private void error(String message) {
-        runOnUiThread(() -> { try { publish(new JSONObject().put("token", pageToken()).put("state", "error").put("transmission", "error").put("running", DriverLocationService.instance != null && DriverLocationService.instance.isRunning()).put("error", message).toString()); } catch (Exception ignored) { } });
+        runOnUiThread(() -> { try {
+            lastErrorToken = pageToken();
+            lastErrorDetail = new JSONObject().put("token", lastErrorToken).put("state", "error").put("transmission", "error").put("running", DriverLocationService.instance != null && DriverLocationService.instance.isRunning()).put("error", message).toString();
+            publish(lastErrorDetail);
+        } catch (Exception ignored) { } });
+    }
+    private void clearError() { lastErrorDetail = null; lastErrorToken = null; }
+    private void publishSnapshot(String detail) {
+        runOnUiThread(() -> {
+            if (DriverLocationService.instance != null) { DriverLocationService.instance.snapshot(); return; }
+            if (lastErrorDetail != null && pageToken().equals(lastErrorToken)) publish(lastErrorDetail);
+            else publish(detail);
+        });
     }
     private void publish(String detail) {
         if (detail == null) return;
         runOnUiThread(() -> { if (web != null && trusted(Uri.parse(web.getUrl() == null ? "" : web.getUrl()))) web.evaluateJavascript("window.dispatchEvent(new CustomEvent('stiz-driver-gps',{detail:" + detail + "}));", null); });
     }
-    @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); } }
+    @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
     @Override protected void onPause() { visible = false; if (web != null) web.onPause(); super.onPause(); }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); if (web != null && trusted(intent.getData())) web.loadUrl(intent.getData().toString()); }
-    @Override protected void onDestroy() { if (web != null) { unregisterReceiver(receiver); web.destroy(); } worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trusted(intent.getData())) web.loadUrl(intent.getData().toString()); }
+    @Override protected void onDestroy() { pendingStart.cancel(); if (web != null) { unregisterReceiver(receiver); web.destroy(); } worker.shutdownNow(); super.onDestroy(); }
 }

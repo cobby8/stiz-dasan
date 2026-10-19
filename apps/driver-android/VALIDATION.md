@@ -24,7 +24,17 @@
 - custom CA는 localhost domain-config에만 한정했다. 다른 origin은 시스템 CA만 사용하며 cleartext/SSL 우회/OS CA 설치를 허용하지 않는다.
 - local TLS 옵션을 그대로 넣은 `assembleRelease` 성공. release APK·manifest·BuildConfig와 debug trust 범위 자동 검사 **14/14 통과**: release CA/설정/접미사 미포함, 운영 origin 고정, debug 패키지 격리, 정확한 localhost 테스트 포트, localhost 외 custom CA·HTTP 허용 없음. 추가로 외부 도메인 8443·deviceTest 미지정 localhost 8443 빌드 거부 2건을 통과했다.
 - debug + androidTest + Lint 빌드 성공, **오류 0·경고 4**. 초기 빌드와 같은 경고 범위다.
-- 기기용 APK SHA256: `CD509F3A87520E05A7796286CAD8E5F10D091441F61846B04949F79BBEC5F94E`.
+- 기기용 APK SHA256: `AEE3739B64953A8C93292E12B22042F0137A638116A146FADD58B049BA5CD588` (아래 권한 복귀·snapshot 경쟁 상태 수정 포함).
 - 계측 APK SHA256: `06C8C5F36F7F9422A464DF429C22B8F5A82C8AE01D0EE1C9C67083241BB7B38E`.
 - 근거: `app/build/local-tls-debug-build.log`, `app/build/release-local-tls-isolation-build.log`, `app/build/local-tls-isolation-check.log`. 재검사: `./verify-local-tls-build.ps1 -AndroidSdk <SDK경로>`.
 - 운영 배포·실제 청구/알림·스토어 업로드·release 서명은 수행하지 않았다.
+
+## 권한 창 복귀 시 시작 요청 유실 수정
+
+- Android 13 권한 결과가 onResume보다 먼저 전달될 수 있는데 기존 visible 검사에서 다음 단계를 버리고 있었다. 실제 OS 원본 `ActivityThread.handleSendResult`의 pause → deliverResults → resume 순서와 현재 코드 경로를 확인했다.
+- `PendingRunStart` 순수 Java 정책으로 명시적 동의, 같은 token, 2분 유효기간, 권한 창 대기, 화면 재개, 한 번만 시작을 구분했다. 동의 버튼을 누르기 전에는 대기를 만들지 않으며 거절/취소/종료/다른 링크/화면 파기에서는 취소한다. 보이는 화면 조건을 삭제하지 않았다.
+- foreground service 승격 실패는 intent token을 포함한 error/running=false로 전달한다. 권한 거절·서비스 실패 메시지를 Activity가 같은 token에서 보존하여 빈 snapshot이 덮어쓰지 않도록 했다.
+- worker가 예전 vault snapshot을 읽는 동안 새 서비스가 시작되었다면 UI 반영 시 실제 서비스 snapshot을 다시 요청하고 예전 값을 버린다. 서비스의 requesting/error를 오래된 off/idle이 덮지 않는다.
+- 실제 정책 함수 javac/java 실행 **33개 조건 통과**, 독립 reviewer 추가 정책 **9개 시나리오 통과**. resume 전 결과·중복 resume·동의 없음·거절·취소·다른 token·만료·늦은 콜백을 검사했다. 근거: `app/build/pending-start-test.log`, `tests/PendingRunStartTest.java`.
+- 수정 소스로 debug/test/release 빌드 성공, Lint 오류 0·경고 4 유지, debug/release TLS 격리 14건 및 잘못된 포트 빌드 거부 2건 재통과.
+- 기존 Android 계측 13건 APK는 재빌드했으며 계측 APK 해시는 그대로다. 수정 앱의 실제 권한 복귀 동작과 서버 요청 수신은 PM의 단일 실기기 검증으로 확인한다. 앱 작업자는 기기·서버·CA를 조작하지 않았다.
