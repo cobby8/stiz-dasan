@@ -222,7 +222,11 @@ test("관리자 신청 화면은 제목과 한 줄 설명만 남기고 중복 �
   assert.doesNotMatch(trialClient, /체험 문의 관리/);
   assert.match(trialClient, /체험 신청 등록/);
   assert.match(applyClient, /학생, 보호자, 전화번호로 검색/);
-  assert.match(applyClient, /<select\s+value=\{filter\}/);
+  assert.match(applyClient, /<select\b[^>]*value=\{filter\}/);
+  assert.match(applyClient, /aria-label="신청 관리 업무"/);
+  assert.match(applyClient, /<CompactListFilters/);
+  assert.match(trialClient, /<CompactListFilters/);
+  assert.doesNotMatch(applyClient, /aria-label="신청 관리 메뉴"/);
   assert.match(applyClient, /LIST_ACTION_TRIGGER_CLASS/);
   assert.match(applyClient, /LIST_ACTION_MENU_CLASS/);
   assert.match(applyClient, /setShowDetailModal\(app\)/);

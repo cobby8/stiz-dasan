@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import AdminModal from "@/components/admin/AdminModal";
+import CompactListFilters from "@/components/academy/CompactListFilters";
 import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 import {
@@ -600,37 +601,11 @@ function trialLeadMatchesSearch(lead: TrialLead, query: string) {
 
 function TrialCrmLoadingFallback() {
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                    <div className="h-8 w-48 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-80 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                </div>
-                <div className="h-11 w-36 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                {Array.from({ length: 7 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-28 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
-            </div>
-            <div className="flex gap-2 flex-wrap">
-                {Array.from({ length: 6 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-8 w-20 rounded-full bg-gray-100 dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
-            </div>
-            <div className="grid gap-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-40 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
+        <div role="status" aria-live="polite" className="min-w-0 space-y-3">
+            <p className="text-sm text-[var(--color-academy-muted)]">체험 목록을 불러오는 중…</p>
+            <div aria-hidden="true" className="h-11 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
+            <div aria-hidden="true" className="space-y-2">
+                {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" />)}
             </div>
         </div>
     );
@@ -1386,107 +1361,35 @@ export default function TrialCrmClient({
                 </div>
             )}
 
-            {/* ── 한 줄 파이프라인 필터 ── */}
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <button
-                    onClick={() => setFilter("ALL")}
-                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-sm font-bold transition-colors ${
-                        filter === "ALL"
-                            ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200"
-                    }`}
-                >
-                    전체 ({stats.total})
-                </button>
-                {STATUS_ORDER.map((s) => {
-                    const cfg = STATUS_CONFIG[s];
-                    const count = stats[s as keyof TrialStats] as number;
-                    return (
-                        <button
-                            key={s}
-                            onClick={() => setFilter(filter === s ? "ALL" : s)}
-                            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-sm font-bold transition-colors ${
-                                filter === s
-                                    ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                    : `${cfg.color} hover:opacity-80`
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
-                            {cfg.label} ({count})
-                        </button>
-                    );
-                })}
-                <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 text-sm font-black text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    <span className="material-symbols-outlined text-sm">trending_up</span>
-                    전환율 {stats.conversionRate}%
-                </span>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                    <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 focus-within:border-brand-orange-400 focus-within:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:focus-within:border-brand-neon-lime">
-                        <span className="material-symbols-outlined text-lg text-gray-400">search</span>
-                        <input
-                            type="search"
-                            value={searchQuery}
-                            onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder="학생, 보호자, 전화번호, 학교, 메모로 검색"
-                            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-400"
-                        />
-                        {searchQuery && (
-                            <button
-                                type="button"
-                                onClick={() => setSearchQuery("")}
-                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                                title="검색어 지우기"
-                            >
-                                <span className="material-symbols-outlined text-base">close</span>
-                            </button>
-                        )}
-                    </label>
-                    <label className="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                        <span className="material-symbols-outlined text-lg text-gray-400">event</span>
-                        <span className="sr-only">체험일 필터</span>
-                        <select
-                            value={dateFilter}
-                            onChange={(event) => setDateFilter(event.target.value as TrialDateFilter)}
-                            className="bg-transparent text-sm font-black outline-none"
-                        >
-                            {TRIAL_DATE_FILTERS.map((item) => (
-                                <option key={item.value} value={item.value}>
-                                    {item.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <button
-                        type="button"
-                        onClick={() => setShowAddModal(true)}
-                        className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-orange-500 px-3 text-sm font-black text-white transition-colors hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
-                    >
-                        <span className="material-symbols-outlined text-lg">person_add</span>
-                        체험 신청 등록
-                    </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                    {TRIAL_WORK_FILTERS.map((item) => (
-                        <button
-                            key={item.value}
-                            type="button"
-                            onClick={() => setWorkFilter(item.value)}
-                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                                workFilter === item.value
-                                    ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700"
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-sm">{item.icon}</span>
-                            {item.label}
-                            <span className="font-black">{workFilterCounts[item.value]}</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
+            <CompactListFilters
+                activeCount={Number(filter !== "ALL") + Number(dateFilter !== "ALL") + Number(workFilter !== "ALL")}
+                summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, dateFilter !== "ALL" ? TRIAL_DATE_FILTERS.find(item => item.value === dateFilter)?.label : null, workFilter !== "ALL" ? TRIAL_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || `전체 조건 · 전환율 ${stats.conversionRate}%`}
+                resultCount={`${filteredLeads.length}건`}
+                onReset={() => { setFilter("ALL"); setDateFilter("ALL"); setWorkFilter("ALL"); }}
+                search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
+                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
+                    <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호, 학교, 메모로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none" />
+                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                </label>}
+                actions={<button type="button" onClick={() => setShowAddModal(true)} aria-label="체험 신청 등록" title="체험 신청 등록" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-2 text-sm font-bold text-[var(--color-academy-on-primary)] sm:px-3"><span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span><span className="hidden sm:inline">체험 신청 등록</span></button>}
+            >
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">신청 상태
+                    <select aria-label="체험 신청 상태" value={filter} onChange={event => setFilter(event.target.value)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        <option value="ALL">전체 {stats.total}</option>
+                        {STATUS_ORDER.map(status => <option key={status} value={status}>{STATUS_CONFIG[status].label} {stats[status]}</option>)}
+                    </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">체험일
+                    <select aria-label="체험일 필터" value={dateFilter} onChange={event => setDateFilter(event.target.value as TrialDateFilter)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        {TRIAL_DATE_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">업무 조건
+                    <select aria-label="체험 업무 조건" value={workFilter} onChange={event => setWorkFilter(event.target.value as TrialWorkFilter)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        {TRIAL_WORK_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label} {workFilterCounts[item.value]}</option>)}
+                    </select>
+                </label>
+            </CompactListFilters>
 
             {/* ── 리드 목록 ── */}
             {filteredLeads.length === 0 ? (
@@ -1513,7 +1416,7 @@ export default function TrialCrmClient({
             ) : (
                 <div className="grid gap-4">
                     {renderTrialList()}
-                    <div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                    {hasMoreLeads && (<div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {filteredLeads.length}건 중 {visibleLeads.length}건 표시
                         </span>
@@ -1527,7 +1430,7 @@ export default function TrialCrmClient({
                                 {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                             </button>
                         )}
-                    </div>
+                    </div>)}
                 </div>
             )}
 

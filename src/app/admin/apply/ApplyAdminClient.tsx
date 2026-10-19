@@ -6,6 +6,7 @@ import Link from "next/link";
 import { recordApplicationContact, sendManualSms } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import ManualSmsModal from "./ManualSmsModal";
+import CompactListFilters from "@/components/academy/CompactListFilters";
 
 const ApplyAdminModals = dynamic(() => import("./ApplyAdminModals"), {
     loading: () => null,
@@ -384,30 +385,11 @@ function applicationMatchesSearch(app: EnrollApplication, preferredSlotLabel: st
 
 function ApplyLoadingFallback() {
     return (
-        <div className="space-y-6">
-            <div className="flex items-start justify-between gap-4">
-                <div className="space-y-2">
-                    <div className="h-8 w-52 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-64 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                </div>
-                <div className="h-10 w-36 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            </div>
-            <div className="h-12 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {Array.from({ length: 5 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-28 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
-            </div>
-            <div className="space-y-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-36 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
+        <div role="status" aria-live="polite" className="min-w-0 space-y-3">
+            <p className="text-sm text-[var(--color-academy-muted)]">신청 목록을 불러오는 중…</p>
+            <div aria-hidden="true" className="h-11 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
+            <div aria-hidden="true" className="space-y-2">
+                {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" />)}
             </div>
         </div>
     );
@@ -985,78 +967,16 @@ export default function ApplyAdminClient({
                 <Link href="/admin/registration-readiness" className="mt-2 inline-block text-sm underline" prefetch={false}>입학 완료 확인 · 등록·청구·초대 체크리스트</Link>
             </div>
 
-            <div role="group" aria-label="신청 관리 메뉴" className="flex min-w-0 max-w-full flex-nowrap gap-1 overflow-x-auto overscroll-x-contain rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
-                <button
-                    onClick={() => setActiveTab("trial")}
-                    aria-pressed={activeTab === "trial"}
-                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-                        activeTab === "trial"
-                            ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                    }`}
-                >
-                    <span aria-hidden="true" className="material-symbols-outlined text-lg">diversity_3</span>
-                    체험 문의
-                    {(initialTrialStats?.NEW ?? 0) > 0 && (
-                        <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                            {initialTrialStats?.NEW}
-                        </span>
-                    )}
-                </button>
-                <button
-                    onClick={() => setActiveTab("applications")}
-                    aria-pressed={activeTab === "applications"}
-                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-                        activeTab === "applications"
-                            ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                    }`}
-                >
-                    <span aria-hidden="true" className="material-symbols-outlined text-lg">assignment</span>
-                    수강신청
-                    {stats.PENDING > 0 && (
-                        <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                            {stats.PENDING}
-                        </span>
-                    )}
-                </button>
-                <button
-                    onClick={() => setActiveTab("waitlist")}
-                    aria-pressed={activeTab === "waitlist"}
-                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-                        activeTab === "waitlist"
-                            ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                    }`}
-                >
-                    <span aria-hidden="true" className="material-symbols-outlined text-lg">hourglass_top</span>
-                    대기자
-                </button>
-                <button
-                    onClick={() => setActiveTab("sources")}
-                    aria-pressed={activeTab === "sources"}
-                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-                        activeTab === "sources"
-                            ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                    }`}
-                >
-                    <span aria-hidden="true" className="material-symbols-outlined text-lg">query_stats</span>
-                    유입 통계
-                </button>
-                <button
-                    onClick={() => setActiveTab("settings")}
-                    aria-pressed={activeTab === "settings"}
-                    className={`flex-none sm:flex-1 min-h-11 flex items-center justify-center gap-2 whitespace-nowrap px-3 py-2.5 rounded-lg text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 ${
-                        activeTab === "settings"
-                            ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                    }`}
-                >
-                    <span aria-hidden="true" className="material-symbols-outlined text-lg">settings</span>
-                    안내 설정
-                </button>
-            </div>
+            <label className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">
+                업무
+                <select aria-label="신청 관리 업무" value={activeTab} onChange={event => setActiveTab(event.target.value as TabType)} className="h-11 min-h-11 min-w-0 max-w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] font-bold text-[var(--color-academy-ink)]">
+                    <option value="trial">체험 문의{(initialTrialStats?.NEW ?? 0) > 0 ? ` · 신규 ${initialTrialStats?.NEW}` : ""}</option>
+                    <option value="applications">수강신청{stats.PENDING > 0 ? ` · 대기 ${stats.PENDING}` : ""}</option>
+                    <option value="waitlist">대기자</option>
+                    <option value="sources">유입 통계</option>
+                    <option value="settings">안내 설정</option>
+                </select>
+            </label>
 
             {feedback && (
                 <div
@@ -1087,67 +1007,29 @@ export default function ApplyAdminClient({
                     loadError ? <ApplyErrorState onRetry={loadApplyData} /> : <ApplyLoadingFallback />
                 ) : (
                 <>
-                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 focus-within:border-brand-orange-400 focus-within:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:focus-within:border-brand-neon-lime">
-                                <span className="material-symbols-outlined text-lg text-gray-400">search</span>
-                                <input
-                                    type="search"
-                                    value={searchQuery}
-                                    onChange={(event) => setSearchQuery(event.target.value)}
-                                    placeholder="학생, 보호자, 전화번호로 검색"
-                                    className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-400"
-                                />
-                                {searchQuery && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setSearchQuery("")}
-                                        className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                                        title="검색어 지우기"
-                                    >
-                                        <span className="material-symbols-outlined text-base">close</span>
-                                    </button>
-                                )}
-                            </label>
-                            <label className="flex items-center gap-2 text-sm font-bold text-gray-600 dark:text-gray-300">
-                                상태
-                                <select
-                                    value={filter}
-                                    onChange={(event) => setFilter(event.target.value)}
-                                    className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-bold text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                                >
-                                    <option value="ALL">전체 {stats.total}</option>
-                                    {STATUS_ORDER.map((s) => {
-                                        const cfg = STATUS_CONFIG[s];
-                                        const count = stats[s as keyof EnrollStats] as number;
-                                        return (
-                                            <option key={s} value={s}>
-                                                {cfg.label} {count}
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                            </label>
-                        </div>
-                        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                            {APPLICATION_WORK_FILTERS.map((item) => (
-                                <button
-                                    key={item.value}
-                                    type="button"
-                                    onClick={() => setWorkFilter(item.value)}
-                                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                                        workFilter === item.value
-                                            ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700"
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-sm">{item.icon}</span>
-                                    {item.label}
-                                    <span className="font-black">{workFilterCounts[item.value]}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    <CompactListFilters
+                        activeCount={Number(filter !== "ALL") + Number(workFilter !== "ALL")}
+                        summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, workFilter !== "ALL" ? APPLICATION_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || "전체 조건"}
+                        resultCount={`${filteredApps.length}건`}
+                        onReset={() => { setFilter("ALL"); setWorkFilter("ALL"); }}
+                        search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
+                            <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
+                            <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none" />
+                            {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                        </label>}
+                    >
+                        <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">신청 상태
+                            <select aria-label="수강신청 상태" value={filter} onChange={event => setFilter(event.target.value)} className="h-11 block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                                <option value="ALL">전체 {stats.total}</option>
+                                {STATUS_ORDER.map(status => <option key={status} value={status}>{STATUS_CONFIG[status].label} {stats[status]}</option>)}
+                            </select>
+                        </label>
+                        <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">업무 조건
+                            <select aria-label="수강신청 업무 조건" value={workFilter} onChange={event => setWorkFilter(event.target.value as ApplicationWorkFilter)} className="h-11 block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                                {APPLICATION_WORK_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label} {workFilterCounts[item.value]}</option>)}
+                            </select>
+                        </label>
+                    </CompactListFilters>
 
                     {/* 신청서 목록 */}
                     {filteredApps.length === 0 ? (
@@ -1174,7 +1056,7 @@ export default function ApplyAdminClient({
                     ) : (
                         <div className="grid gap-2.5">
                             {renderApplicationList()}
-                            <div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                            {hasMoreApps && (<div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
                                 <span>
                                     {filteredApps.length}건 중 {visibleApps.length}건 표시
                                 </span>
@@ -1188,7 +1070,7 @@ export default function ApplyAdminClient({
                                         {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                                     </button>
                                 )}
-                            </div>
+                            </div>)}
                         </div>
                     )}
                 </>

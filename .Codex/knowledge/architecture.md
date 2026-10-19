@@ -306,3 +306,7 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - account-views는 서버가 검증한 자격으로 고정된 관리자/선생님/학부모 주소 목록을 만드는 순수 모듈이다. account-view-access는 직접 Auth 연결과 본인 자녀 존재를 조회하며 인증 실패 시 빈 메뉴로 축소한다.
 - AccountViewSwitcher는 관리자 프로필·선생님 메뉴·학부모 헤더·공개 계정 버튼이 공유한다. API account-role의 기존 role을 보존하고 views만 추가하며 ID·자녀 정보는 공개하지 않는다. 각 화면의 실제 권한 가드는 그대로 적용된다.
 - 최신 초기 화면 경고 수정은 Next16.2.12의 정식 내장 React 복원 코드로 처리한다. 별도 React19.2.3과 기존 UI 데이터 흐름은 유지한다.
+
+## 2026-10-20: 목록 필터 공통 UI
+- `src/components/academy/CompactListFilters.tsx`가 검색·주요 동작·필터 펼침·선택 요약을 배치한다. 조건 값과 조회·초기화 함수는 기존 체험/수강신청·원생·특강 화면이 소유한다.
+- 업무/보기/시즌 같은 대상 선택과 목록 조건을 구분하고 API·조건 계산은 옮기지 않는다. 상세 docs/admin-compact-filters.md.

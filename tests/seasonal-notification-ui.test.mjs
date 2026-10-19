@@ -112,8 +112,9 @@ test("관리자 상태 변경 실패는 열린 신청 항목 안에서 알린다
 
 test("신청 관리 안에 신청별·반별 명단 보기를 제공한다", () => {
   assert.match(client, /type ApplicationsMode = "applications" \| "roster"/);
-  assert.match(client, />신청별<\/button>/);
-  assert.match(client, />반별 명단<\/button>/);
+  assert.match(client, /aria-label="신청 관리 보기"/);
+  assert.match(client, /<option value="applications">신청별<\/option>/);
+  assert.match(client, /<option value="roster">반별 명단<\/option>/);
   assert.match(client, /mode === "roster" \? <RosterView/);
 });
 
