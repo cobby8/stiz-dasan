@@ -73,24 +73,12 @@ const DEFAULT_FAQ_DATA = [
   },
 ];
 
-// 위치와 셔틀 안내도 같은 질문 목록에서 찾을 수 있게 유지합니다.
-const LOCAL_FAQ_DATA = [
-  {
-    question: "스티즈농구교실 다산점은 지금 어디에 있나요?",
-    answer: "2026년 3월부터 다산2호점 한 곳에서 수업을 운영하고 있습니다. 현재 위치는 경기도 남양주시 다산중앙로20번길 10-32, 1층입니다. 예전 1호점 위치로 방문하지 않도록 현재 주소를 확인해 주세요.",
-  },
-  {
-    question: "다산·도농에서 차량을 이용할 수 있나요?",
-    answer: "다산과 도농 생활권의 차량 이용은 실제 운행 노선과 수업 시간에 따라 확인합니다. 같은 지역 안에서도 탑승 가능 여부가 다를 수 있으므로 아이의 수업 시간과 승하차 희망 위치를 상담할 때 알려주세요.",
-  },
-];
-
 // --- FAQ 아코디언 아이템 --- 질문을 클릭하면 답변이 토글된다
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   return (
     <details className="group border-b border-gray-100 dark:border-gray-800 last:border-b-0">
       <summary
-        className="w-full flex items-center justify-between min-h-11 py-4 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
       >
         <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
         {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}
@@ -108,7 +96,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
           />
         </svg>
       </summary>
-      <div className="pb-4 px-1">
+      <div className="pb-5 px-1">
         <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed">{answer}</p>
       </div>
     </details>
@@ -117,17 +105,16 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
 
 export default function FaqClient({ faqData }: FaqClientProps) {
   // DB FAQ가 있으면 사용, 없으면 기본 FAQ fallback
-  const primaryFaqs = faqData && faqData.length > 0 ? faqData : DEFAULT_FAQ_DATA;
-  const questionKeys = new Set(primaryFaqs.map((faq) => faq.question.trim()));
-  const displayFaqs = [...primaryFaqs, ...LOCAL_FAQ_DATA.filter((faq) => !questionKeys.has(faq.question.trim()))];
+  const displayFaqs =
+    faqData && faqData.length > 0 ? faqData : DEFAULT_FAQ_DATA;
 
   return (
     // SectionLayout 대신 단순 section+div로 교체 — 독립 페이지에서는 섹션 래퍼 불필요
-    <section className="public-section !py-6">
-      <div className="public-container">
+    <section className="py-12 md:py-16 bg-white dark:bg-gray-950 transition-colors duration-300">
+      <div className="max-w-6xl mx-auto px-6 md:px-4">
         <AnimateOnScroll>
           <Card variant="default" className="!p-0 max-w-3xl mx-auto">
-            <div className="px-4 py-1 md:px-5">
+            <div className="px-6 py-2">
               {displayFaqs.map((faq, i) => (
                 <FAQItem key={i} question={faq.question} answer={faq.answer} />
               ))}

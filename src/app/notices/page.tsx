@@ -19,7 +19,7 @@ export default async function NoticesPage() {
     // DB에서 공지사항과 학원 설정을 병렬로 가져온다
     const [notices, settings] = await Promise.all([
         getNotices({ limit: 50 }),
-        getAcademySettings() as Promise<{ contactPhone?: string | null }>,
+        getAcademySettings() as Promise<any>,
     ]);
 
     // 공개 페이지에서는 전체 공지만 표시
@@ -29,18 +29,25 @@ export default async function NoticesPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 (about/programs와 동일 패턴) */}
-            <section className="public-page-intro">
-        <div className="public-container">
-          <h1>공지사항</h1>
-          <p>학원 소식과 중요한 안내를 확인하세요.</p>
-        </div>
-      </section>
+            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
+                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+                </div>
+                <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
+                    <AnimateOnScroll>
+                        <p className="text-brand-orange-500 dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">NOTICES</p>
+                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">공지사항</h1>
+                        <p className="text-blue-200 text-lg max-w-xl">학원 소식과 안내사항을 확인하세요</p>
+                    </AnimateOnScroll>
+                </div>
+            </section>
 
             {/* 공지사항 리스트 */}
             <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
-                <div className="public-container !max-w-4xl py-6 md:py-8">
+                <div className="max-w-4xl mx-auto px-4 py-16 md:py-24">
                     {publicNotices.length === 0 ? (
-                        <div className="public-card px-5 py-10 text-center text-gray-500">
+                        <div className="text-center py-20 text-gray-400">
                             <p className="text-lg font-medium">아직 공지사항이 없습니다</p>
                         </div>
                     ) : (
@@ -52,13 +59,16 @@ export default async function NoticesPage() {
                                 // 목록 썸네일용 — 첫 이미지 첨부
                                 const firstImage = atts.find(isImageAttachment);
 
+                                // 공지 카테고리 결정 — 고정된 공지는 "중요", 아니면 "안내"
+                                const category = n.isPinned ? "important" : "general";
+
                                 return (
                                     <AnimateOnScroll key={n.id} delay={i * 50}>
                                         <Link
                                             href={`/notices/${n.id}`}
                                             className="block bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-brand-orange-200 dark:hover:border-brand-orange-500 dark:border-brand-neon-lime transition-all duration-200 overflow-hidden"
                                         >
-                                            <div className="flex items-start gap-3 p-4">
+                                            <div className="flex items-start gap-4 p-5 md:p-6">
                                                 {/* 좌측: 날짜 블록 — 월/일 강조 */}
                                                 <div className="hidden sm:flex flex-col items-center justify-center w-16 h-16 rounded-xl bg-brand-navy-900/5 dark:bg-brand-neon-cobalt/10 shrink-0 transition-colors">
                                                     <span className="text-sm text-gray-400 font-medium">
@@ -83,7 +93,7 @@ export default async function NoticesPage() {
                                                             <Badge variant="info" size="sm">안내</Badge>
                                                         )}
                                                         {/* 제목 */}
-                                                        <h2 className="font-bold text-gray-900 dark:text-white line-clamp-2 transition-colors">{n.title}</h2>
+                                                        <h2 className="font-bold text-gray-900 dark:text-white truncate transition-colors">{n.title}</h2>
                                                     </div>
 
                                                     {/* 내용 미리보기 — 2줄 제한. HTML 공지는 태그를 제거해 순수 텍스트만 노출(raw 태그 노출 방지) */}

@@ -13,7 +13,6 @@
 
 import { useState, useMemo } from "react";
 import Image from "next/image";
-import { publicScheduleNotice } from "../schedule/publicSchedulePresentation";
 import Link from "next/link";
 import { GRADE_ORDER, type Grade } from "@/lib/googleSheetsSchedule";
 import { type MergedSlot } from "@/app/schedule/ScheduleClient";
@@ -176,7 +175,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
             <div className="max-w-2xl mx-auto px-6">
 
                 {/* 단계 표시 바 — 현재 진행 상황을 시각적으로 보여준다 */}
-                <div className="flex items-center justify-center gap-2 mb-5">
+                <div className="flex items-center justify-center gap-2 mb-10">
                     {[1, 2, 3].map((s) => (
                         <div key={s} className="flex items-center gap-2">
                             <div
@@ -471,9 +470,9 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                         </div>
 
                                                         {/* 메모 */}
-                                                        {publicScheduleNotice(slot.note) && (
+                                                        {slot.note && (
                                                             <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">
-                                                                {publicScheduleNotice(slot.note)}
+                                                                &#x1F4CC; {slot.note}
                                                             </p>
                                                         )}
                                                     </div>

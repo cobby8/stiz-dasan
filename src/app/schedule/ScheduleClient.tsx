@@ -1,13 +1,27 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter, useSearchParams } from "next/navigation";
-import { publicScheduleNotice } from "./publicSchedulePresentation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import ScheduleTableView from "@/components/ScheduleTableView";
 
 // 요일 순서 — 월~일 표시용
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// 요일별 헤더 배경색 — 각 요일을 시각적으로 구분
+const DAY_BG: Record<string, string> = {
+    Mon: "bg-blue-600", Tue: "bg-green-600", Wed: "bg-yellow-500",
+    Thu: "bg-purple-600", Fri: "bg-red-500", Sat: "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900",
+    Sun: "bg-gray-500",
+};
+
+// 요일별 카드 영역 배경색 — 헤더 색상과 어울리는 연한 톤
+const DAY_CARD_BG: Record<string, string> = {
+    Mon: "bg-blue-50/50 border-blue-100", Tue: "bg-green-50/50 border-green-100",
+    Wed: "bg-yellow-50/50 border-yellow-100", Thu: "bg-purple-50/50 border-purple-100",
+    Fri: "bg-red-50/50 border-red-100", Sat: "bg-orange-50/50 border-orange-100",
+    Sun: "bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800",
+};
 
 export type MergedSlot = {
     slotKey: string;
@@ -33,7 +47,6 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     phone: string;
 }) {
     const searchParams = useSearchParams();
-    const router = useRouter();
     const filterProgramId = searchParams.get("program") ?? undefined;
     // 카드 보기 / 표 보기 전환 상태 ("card" 기본)
     const [viewMode, setViewMode] = useState<"card" | "table">("card");
@@ -51,24 +64,86 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     }, {});
     const activeDays = DAY_ORDER.filter((d) => byDay[d].length > 0);
     const hasData = slots.length > 0;
+    const selectedProgram = programs.find((p) => p.id === filterProgramId);
 
     return (
         <>
-            <section className="public-section">
-                <div className="public-container">
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                        <label className="flex min-w-0 flex-1 items-center gap-2 text-sm font-semibold">
-                            <span className="shrink-0">프로그램</span>
-                            <select aria-label="프로그램 선택" value={filterProgramId ?? ""} onChange={(event) => router.push(event.target.value ? `/schedule?program=${encodeURIComponent(event.target.value)}` : "/schedule")} className="min-h-11 min-w-0 max-w-full rounded-xl border border-[var(--color-public-border)] bg-[var(--color-public-surface)] px-3 text-base">
-                                <option value="">전체 수업</option>{programs.map((program) => <option key={program.id} value={program.id}>{program.name}</option>)}
-                            </select>
-                        </label>
-                        <span className="text-sm text-[var(--color-public-muted)]">{slots.length}개 수업</span>
-                        <div className="flex shrink-0 gap-1" role="group" aria-label="시간표 보기 방식">
-                            <button type="button" aria-pressed={viewMode === "card"} onClick={() => setViewMode("card")} className={viewMode === "card" ? "public-button" : "public-button-secondary"}>카드</button>
-                            <button type="button" aria-pressed={viewMode === "table"} onClick={() => setViewMode("table")} className={viewMode === "table" ? "public-button" : "public-button-secondary"}>표</button>
+            {/* 프로그램 필터 탭 — 디자인 개선 (둥글고 부드러운 pill 스타일) */}
+            {programs.length > 0 && (
+                <div className="bg-white dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 sticky top-0 z-10">
+                    {/* 수평 스크롤 칩 + 뷰 토글 — 모바일에서 자연스러운 좌우 스와이프 */}
+                    <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2 items-center overflow-x-auto scrollbar-hide">
+                        <a
+                            href="/schedule"
+                            className={`shrink-0 text-sm font-bold px-5 py-2 rounded-full transition-all duration-200 whitespace-nowrap ${
+                                !filterProgramId
+                                    ? "bg-brand-navy-900 text-white shadow-md"
+                                    : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
+                            }`}
+                        >
+                            전체
+                        </a>
+                        {programs.map((p) => (
+                            <a
+                                key={p.id}
+                                href={`/schedule?program=${p.id}`}
+                                className={`shrink-0 text-sm font-bold px-5 py-2 rounded-full transition-all duration-200 whitespace-nowrap ${
+                                    filterProgramId === p.id
+                                        ? "bg-brand-navy-900 text-white shadow-md"
+                                        : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
+                                }`}
+                            >
+                                {p.name}
+                            </a>
+                        ))}
+
+                    </div>
+                </div>
+            )}
+
+            {/* 시간표 그리드 — 배경색을 따뜻한 톤으로 변경 */}
+            <section className="py-16 md:py-20 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
+                <div className="max-w-6xl mx-auto px-4">
+                    {/* 뷰 토글 — 수업 카드 영역 오른쪽 위 */}
+                    <div className="flex justify-end mb-4">
+                        <div className="flex rounded-full border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                            <button
+                                onClick={() => setViewMode("card")}
+                                className={`flex items-center gap-1 px-4 py-2 text-xs font-bold transition-colors ${
+                                    viewMode === "card"
+                                        ? "bg-brand-navy-900 text-white"
+                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900"
+                                }`}
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>grid_view</span>
+                                카드
+                            </button>
+                            <button
+                                onClick={() => setViewMode("table")}
+                                className={`flex items-center gap-1 px-4 py-2 text-xs font-bold transition-colors ${
+                                    viewMode === "table"
+                                        ? "bg-brand-navy-900 text-white"
+                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900"
+                                }`}
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>table_chart</span>
+                                표
+                            </button>
                         </div>
                     </div>
+
+                    {/* 프로그램 필터 표시 배너 — 선택 시 상단에 안내 */}
+                    {filterProgramId && selectedProgram && (
+                        <div className="mb-6 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-6 py-4 flex items-center justify-between gap-4 shadow-sm transition-colors">
+                            <div>
+                                <p className="text-sm text-gray-400 mb-0.5 font-medium">프로그램 필터</p>
+                                <p className="font-bold text-gray-900 dark:text-white">{selectedProgram.name}</p>
+                            </div>
+                            <a href="/schedule" className="text-sm text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400 font-bold transition">
+                                전체 보기
+                            </a>
+                        </div>
+                    )}
 
                     {/* 데이터 없을 때 안내 메시지 */}
                     {!hasData ? (
@@ -83,17 +158,17 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                         /* 표 보기 모드 — ScheduleTableView 렌더링 */
                         <ScheduleTableView slots={slots} />
                     ) : (
-                        <div data-tour-target="schedule-grid" className="space-y-5">
+                        <div data-tour-target="schedule-grid" className="space-y-8">
                             {activeDays.map((dayKey) => (
-                                <div key={dayKey} className="public-card overflow-hidden">
+                                <div key={dayKey} className={`rounded-2xl border ${DAY_CARD_BG[dayKey]} dark:bg-gray-900 dark:border-gray-800 overflow-hidden shadow-sm transition-colors`}>
                                     {/* 요일 헤더 — 색상 바 + 클래스 수 표시 */}
-                                    <div className="flex items-center gap-3 bg-[var(--color-public-soft)] px-4 py-3 text-[var(--color-public-text)]">
+                                    <div className={`${DAY_BG[dayKey]} text-white px-6 py-3.5 flex items-center gap-3`}>
                                         <span className="font-black text-lg">{byDay[dayKey][0].dayLabel}</span>
-                                        <span className="text-[var(--color-public-muted)] text-sm font-medium">{byDay[dayKey].length}개 클래스</span>
+                                        <span className="text-white/70 text-sm font-medium">{byDay[dayKey].length}개 클래스</span>
                                     </div>
 
                                     {/* 클래스 카드 그리드 */}
-                                    <div className="p-3 md:p-4">
+                                    <div className="p-4 md:p-5">
                                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                             {byDay[dayKey].map((slot) => (
                                                 <div
@@ -138,8 +213,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                 </div>
                                                             </div>
                                                             {/* 메모 — 있을 때만 표시 */}
-                                                            {publicScheduleNotice(slot.note) && (
-                                                                <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">{publicScheduleNotice(slot.note)}</p>
+                                                            {slot.note && (
+                                                                <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">📌 {slot.note}</p>
                                                             )}
                                                         </div>
 

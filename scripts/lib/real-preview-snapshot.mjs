@@ -4,13 +4,13 @@ import { randomUUID } from 'node:crypto';
 const FIELDS = {
   User: 'id name role username phone phoneVerifiedAt createdAt updatedAt',
   Student: 'id name birthDate gender parentId branch phone school grade enrollDate uniformStatus mergedIntoStudentId mergedAt createdAt updatedAt',
-  Program: 'id name description imageUrl targetAge frequency price order days priceWeek1 priceWeek2 priceWeek3 priceDaily shuttleFeeOverride weeklyFrequency runsShuttle deletedAt createdAt updatedAt',
+  Program: 'id name targetAge frequency price order days priceWeek1 priceWeek2 priceWeek3 priceDaily shuttleFeeOverride weeklyFrequency runsShuttle deletedAt createdAt updatedAt',
   Class: 'id programId instructorId name dayOfWeek startTime endTime location capacity slotKey createdAt updatedAt',
   Enrollment: 'id studentId classId status createdAt updatedAt',
   EnrollmentChangeRequest: 'id studentId enrollmentId fromClassId toClassId kind effectiveFrom resumeOn status waitlisted requestedByUserId decidedByUserId decidedAt appliedAt createdAt updatedAt',
   ParentRequest: 'id userId studentId type title content date status createdAt updatedAt',
   ApplicationContactLog: 'id targetType trialLeadId enrollmentApplicationId action nextFollowUpAt followUpCompletedAt createdByUserId createdAt updatedAt',
-  Coach: 'id name role description imageUrl userId order phone createdAt updatedAt',
+  Coach: 'id name role userId order phone createdAt updatedAt',
   ClassSlotOverride: 'id slotKey label isHidden capacity startTimeOverride endTimeOverride coachId programId createdAt updatedAt',
   CustomClassSlot: 'id dayKey startTime endTime label gradeRange enrolled capacity isHidden coachId programId createdAt updatedAt',
   ScheduleSlot: 'id slotKey source period dayKey dayLabel isWeekend startTime endTime label gradeRange gradesJSON enrolledSnapshot capacity isHidden displayOrder activeFrom activeTo coachId programId createdAt updatedAt',
@@ -27,12 +27,8 @@ const FIELDS = {
   RegularShuttleStop: 'id serviceMonth weekday classTime arriveTime stopName direction studentName studentId studentPhone parentPhone sortOrder importedAt',
   RegularDispatchRoute: 'id serviceMonth dayOfWeek direction payload classStart classEnd savedByUserId createdAt updatedAt',
   ShuttleVehicle: 'id name capacity isActive createdAt updatedAt',
-  AcademySettings: 'id introductionTitle introductionText shuttleInfoText operatingHours privacyPolicy termsOfService footerDescription footerCopyright trialTitle trialContent trialFormUrl enrollTitle enrollContent enrollFormUrl youtubeUrl instagramUrl kakaoChannelUrl philosophyText facilitiesText facilitiesImagesJSON galleryImagesJSON naverPlaceUrl uniformFormUrl classDays siteBodyFont siteHeadingFont useBuiltInTrialForm useBuiltInEnrollForm academyPlaceName shuttleHubName shuttleHubDropoffName shuttleRosterConfirmedMode createdAt updatedAt',
+  AcademySettings: 'id classDays siteBodyFont siteHeadingFont useBuiltInTrialForm useBuiltInEnrollForm academyPlaceName shuttleHubName shuttleHubDropoffName shuttleRosterConfirmedMode createdAt updatedAt',
   AnnualEvent: 'id title date endDate category createdAt updatedAt',
-  Notice: 'id title content targetType isPinned createdAt updatedAt',
-  GalleryPost: 'id title caption mediaJSON classId isPublic createdAt updatedAt',
-  Testimonial: 'id name info text rating order isPublic createdAt updatedAt',
-  Faq: 'id question answer order isPublic createdAt updatedAt',
 };
 const JSON_KEYS = new Set(('vehicles stops riders passengers students unassigned requestIds studentIds shuttleRequestIds id studentId requestId shuttleRequestId vehicleId vehicleIndex vehicleIdx index order sortOrder sequence count capacity totalMinutes totalDistanceM travelMinutes travelSeconds durationMinutes distanceMeters routeDurationMin routeDistanceKm departureTime arrivalTime arriveTime eta etaMinutes etaLabel time timeLabel startTime endTime classStart classEnd classTime pickupTime dropoffTime dwellMinutes waitMinutes direction dayOfWeek weekday label name studentName stopName grade childGrade period dayKey dayLabel slotKey isWeekend start end enrolled enrolledSnapshot grades gradeRange programId coachId isHidden displayOrder').split(' '));
 const PRIVATE_PHONE = '비공개';
@@ -41,46 +37,6 @@ const hasPrivateText = (s) => /https?:\/\/|@|(?:\+?82[- ]?)?01[016789][- ]?\d{3,
 const hasPossibleBirthDate = (s) => /(?:19|20)\d{2}[-./]\d{1,2}[-./]\d{1,2}|\b(?:19|20)\d{6}\b/.test(s);
 const isBusinessKey = (key) => /^(?:id|.*Id|.*Ids|sessionKey|slotKey|slotKeys|selectedSlotKeysJSON|registrationMonth|serviceMonth|monthLabel|dayKey)$/.test(key);
 const JSON_DISPLAY_KEYS = new Set(['label', 'name', 'studentName', 'stopName', 'grade', 'childGrade', 'gradeRange']);
-
-// 공개 URL만 남기며 서명·인증·개인정보가 포함된 주소는 복사하지 않습니다.
-export function sanitizePublicPreviewUrl(value) {
-  if (typeof value !== 'string' || !value.trim() || value.includes('\\')) return null;
-  const raw = value.trim();
-  if (/^\/(?:uploads|images)\/[A-Za-z0-9_./%-]+$/.test(raw) && !raw.includes('..') && !/private|token|secret/i.test(raw)) return raw;
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== 'https:' || url.username || url.password || url.port || url.hash) return null;
-    if (/token|secret|signature|credential|auth|key|private|session/i.test(url.pathname)) return null;
-    const host = url.hostname.toLowerCase();
-    if (host.endsWith('.supabase.co')) {
-      if (!url.pathname.startsWith('/storage/v1/object/public/') || url.search) return null;
-      return url.toString();
-    }
-    const allowed = new Set(['stiz.kr', 'www.stiz.kr', 'www.stiz-dasan.kr', 'stiz-dasan.kr', 'images.unsplash.com', 'www.youtube.com', 'youtube.com', 'youtu.be', 'www.instagram.com', 'instagram.com', 'pf.kakao.com', 'place.naver.com', 'm.place.naver.com', 'naver.me', 'forms.gle', 'docs.google.com']);
-    if (!allowed.has(host)) return null;
-    if (host === 'docs.google.com' && !/^\/forms\/d\/e\/[A-Za-z0-9_-]+\/viewform$/.test(url.pathname)) return null;
-    // YouTube 동영상 ID와 공개 폼의 고정 표시 옵션만 허용합니다.
-    for (const [key, entry] of url.searchParams) {
-      if (!(key === 'v' && /^(?:www\.)?youtube\.com$/.test(host) && /^[A-Za-z0-9_-]{11}$/.test(entry)) && !(host === 'docs.google.com' && key === 'embedded' && entry === 'true')) return null;
-    }
-    return url.toString();
-  } catch { return null; }
-}
-
-const PUBLIC_URL_FIELDS = new Set(['imageUrl', 'trialFormUrl', 'enrollFormUrl', 'youtubeUrl', 'instagramUrl', 'kakaoChannelUrl', 'naverPlaceUrl', 'uniformFormUrl']);
-const PUBLIC_MEDIA_FIELDS = new Set(['mediaJSON', 'facilitiesImagesJSON', 'galleryImagesJSON']);
-function sanitizePublicMedia(value, stats) {
-  try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-    if (!Array.isArray(parsed)) return '[]';
-    return JSON.stringify(parsed.flatMap((entry) => {
-      const url = sanitizePublicPreviewUrl(typeof entry === 'string' ? entry : entry?.url);
-      if (!url) { stats.jsonFieldsRemoved++; return []; }
-      if (typeof entry === 'string') return [url];
-      return [{ type: entry.type === 'video' ? 'video' : 'image', url }];
-    }));
-  } catch { stats.jsonFieldsRemoved++; return '[]'; }
-}
 
 function sanitizeJson(value, stats, field = '') {
   if (Array.isArray(value)) return value.map((v) => sanitizeJson(v, stats, field));
@@ -125,11 +81,11 @@ export async function capturePreviewSnapshot(sourceClient, { now = new Date(), a
   const adminId = selected.rows[0].id;
   const stats = { phonesMasked: 0, birthDatesMasked: 0, emailsReplaced: 0, authIdsReplaced: 0, jsonFieldsRemoved: 0, textFieldsMasked: 0, requestBodiesReplaced: 0, omittedTables: [], omittedColumns: 0 };
   const tables = [], byName = new Map();
-  async function read(name, where = '', params = [], suffix = '') {
+  async function read(name, where = '', params = []) {
     const cols = schema.get(name);
     if (!cols) { stats.omittedTables.push(name); return []; }
     // 필터 컬럼이 없는 옛 DB를 무범위 조회로 바꾸지 않고 해당 표만 생략한다.
-    if ([...(where + suffix).matchAll(/"([A-Za-z][A-Za-z0-9]*)"/g)].some((match) => !cols.has(match[1]))) {
+    if ([...where.matchAll(/"([A-Za-z][A-Za-z0-9]*)"/g)].some((match) => !cols.has(match[1]))) {
       stats.omittedTables.push(name);
       return [];
     }
@@ -146,12 +102,10 @@ export async function capturePreviewSnapshot(sourceClient, { now = new Date(), a
       return q(field);
     });
     if (!expressions.length) return [];
-    const result = await sourceClient.query(`SELECT ${expressions.join(', ')} FROM "public".${q(name)}${where ? ` WHERE ${where}` : ''}${suffix}`, params);
+    const result = await sourceClient.query(`SELECT ${expressions.join(', ')} FROM "public".${q(name)}${where ? ` WHERE ${where}` : ''}`, params);
     const rows = result.rows.map((original) => {
       const row = { ...original };
       for (const key of Object.keys(row)) {
-        if (PUBLIC_URL_FIELDS.has(key)) { row[key] = sanitizePublicPreviewUrl(row[key]); continue; }
-        if (PUBLIC_MEDIA_FIELDS.has(key)) { row[key] = sanitizePublicMedia(row[key], stats); continue; }
         if (/phone$/i.test(key) && row[key] !== null) stats.phonesMasked++;
         if (/birthDate$/i.test(key) && row[key] !== null) stats.birthDatesMasked++;
         if (['slotsJson', 'gradesJSON', 'selectedSlotKeysJSON'].includes(key) && typeof row[key] === 'string') {
@@ -174,10 +128,6 @@ export async function capturePreviewSnapshot(sourceClient, { now = new Date(), a
     return rows;
   }
   for (const name of ['User', 'Student', 'Program', 'Coach', 'Class', 'Enrollment', 'ClassSlotOverride', 'CustomClassSlot', 'ScheduleSlot', 'SheetSlotCache', 'TrialLead', 'EnrollmentApplication', 'EnrollmentChangeRequest', 'ParentRequest', 'ApplicationContactLog', 'AcademySettings', 'ShuttleVehicle', 'AnnualEvent']) await read(name);
-  // 공개 판정 컬럼이 없는 옛 DB는 무조건 조회하지 않고 해당 표를 생략합니다.
-  await read('Notice', '"targetType" = $1', ['ALL'], ' ORDER BY "createdAt" DESC LIMIT 30');
-  await read('GalleryPost', '"isPublic" = true', [], ' ORDER BY "createdAt" DESC LIMIT 24');
-  for (const name of ['Testimonial', 'Faq']) await read(name, '"isPublic" = true', [], ' ORDER BY "order" ASC LIMIT 100');
   const annual = byName.get('AnnualEvent');
   if (annual && calendarEvents.length) for (const event of calendarEvents) {
     annual.push({ id: event.id, title: hasPrivateText(event.title) ? '비공개' : event.title, date: event.date, endDate: event.endDate, category: event.category, createdAt: event.createdAt, updatedAt: event.updatedAt });

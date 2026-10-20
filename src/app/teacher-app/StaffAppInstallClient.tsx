@@ -144,7 +144,7 @@ export default function StaffAppInstallClient() {
       <div className="mx-auto max-w-lg">
         <header className="flex min-h-11 items-center gap-2 text-brand-navy-900 dark:text-white">
           <span className="grid size-10 place-items-center rounded-xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" aria-hidden="true">
-            <span className="material-symbols-outlined">sports_basketball</span>
+            <span className="material-symbols-outlined">sports_soccer</span>
           </span>
           <div>
             <p className="text-lg font-black leading-tight">STIZ</p>

@@ -9,7 +9,6 @@ import CTABanner from "@/components/landing/CTABanner";
 import CoachBioToggle from "./CoachBioToggle";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
-import { publicIntroduction } from "@/lib/public-design";
 
 export const revalidate = 60;
 export const metadata = buildPublicMetadata({
@@ -80,7 +79,20 @@ export default async function AboutPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 (Phase 0 패턴 적용) */}
-            <section className="public-page-intro"><div className="public-container"><h1>학원 소개</h1><p>교육 철학과 코치진, 시설을 확인하세요.</p></div></section>
+            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+                {/* 배경 장식 도형들 */}
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
+                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+                </div>
+                <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
+                    <AnimateOnScroll>
+                        <p className="text-brand-orange-500 dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">ABOUT US</p>
+                        <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">학원/멤버소개</h1>
+                        <p className="text-blue-200 text-lg max-w-xl">스티즈 농구교실 다산2호점의 교육 철학과 전문 코치진을 소개합니다.</p>
+                    </AnimateOnScroll>
+                </div>
+            </section>
 
             {/* 학원 소개 — 좌 인사말 + 우 대표원장 사진 */}
             <SectionLayout label="INTRODUCTION" title="원장 인사말" bgColor="white">
@@ -95,7 +107,7 @@ export default async function AboutPage() {
                                         className="rich-content prose prose-gray dark:prose-invert dark:[&_*]:!text-gray-100 prose-p:text-base prose-p:leading-relaxed max-w-none transition-colors"
                                         dangerouslySetInnerHTML={{
                                             __html: renderHtml(
-                                                publicIntroduction(settings.introductionText || ""),
+                                                settings.introductionText,
                                                 "<p>안녕하세요, 스티즈 농구교실 다산2호점입니다.</p><p>저희 학원은 아이들이 농구를 통해 협동심, 책임감, 그리고 건강한 체력을 기를 수 있도록 최선을 다해 지도하고 있습니다.</p><p>전문 코치진과 체계적인 커리큘럼으로 아이들의 가능성을 이끌어 드리겠습니다.</p>"
                                             ),
                                         }}
@@ -249,7 +261,7 @@ export default async function AboutPage() {
 
             {/* 오시는 길 — 카카오맵 embed + 주소 표시 */}
             {settings.address && (
-                <SectionLayout id="location" label="LOCATION" title="오시는 길" bgColor="white">
+                <SectionLayout label="LOCATION" title="오시는 길" bgColor="white">
                     <AnimateOnScroll>
                         <div className="max-w-4xl mx-auto">
                             {/* 카카오맵 iframe — 주소 검색 기반 embed */}

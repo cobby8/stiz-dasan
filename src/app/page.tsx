@@ -12,7 +12,9 @@ import { getAcademySettings, getGalleryPosts, getNotices, getPublicTestimonials 
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 import LandingPageClient from "./LandingPageClient";
-import PublicHelp from "@/components/PublicHelp";
+import ChatBotButton from "@/components/chat/ChatBotButton";
+// 가이드 투어: 메인 페이지에서도 플로팅 버튼 표시
+import GuideTourLazyTrigger from "@/components/guide-tour/GuideTourLazyTrigger";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const revalidate = 60;
@@ -25,10 +27,10 @@ export const metadata = buildPublicMetadata({
 });
 
 export default async function Home() {
-  let settings: Awaited<ReturnType<typeof getAcademySettings>> | null = null;
-  let testimonials: Awaited<ReturnType<typeof getPublicTestimonials>> = [];
-  let galleryPosts: Awaited<ReturnType<typeof getGalleryPosts>> = [];
-  let notices: Awaited<ReturnType<typeof getNotices>> = [];
+  let settings: any = null;
+  let testimonials: any[] = [];
+  let galleryPosts: any[] = [];
+  let notices: any[] = [];
   try {
     // 학원 설정 + 공개 후기 + 갤러리 + 공지를 병렬로 조회 (성능 최적화)
     [settings, testimonials, galleryPosts, notices] = await Promise.all([
@@ -69,7 +71,7 @@ export default async function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white flex flex-col">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusiness).replace(/</g, "\\u003c") }}
@@ -105,7 +107,11 @@ export default async function Home() {
         kakaoChannelUrl={kakaoChannelUrl}
       />
 
-      <PublicHelp />
+      {/* 챗봇 버튼 — 다른 페이지는 PublicPageLayout에서 렌더링하지만, 메인 페이지는 직접 추가 */}
+      <ChatBotButton />
+
+      {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
+      <GuideTourLazyTrigger />
     </div>
   );
 }

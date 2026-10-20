@@ -17,7 +17,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
     // DB에서 공지사항 상세와 학원 설정을 병렬로 가져온다
     const [notice, settings] = await Promise.all([
         getNoticeById(id),
-        getAcademySettings() as Promise<{ contactPhone?: string | null }>,
+        getAcademySettings() as Promise<any>,
     ]);
 
     if (!notice) notFound();
@@ -41,22 +41,51 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 + 공지 제목/날짜 */}
-            <section className="public-page-intro">
-                <div className="public-container !max-w-4xl">
-                    <Link href="/notices" className="public-link mb-3 inline-flex min-h-11 items-center gap-1.5 text-sm">
-                        <FontFreeIcon name="arrow_back" size={16} /> 공지 목록
-                    </Link>
-                    {notice.isPinned && <div className="mb-2"><Badge variant="error" size="sm">중요 공지</Badge></div>}
-                    <h1 className="break-keep">{notice.title}</h1>
-                    <p>{new Date(notice.createdAt).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}</p>
+            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
+                <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
+                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+                </div>
+                <div className="max-w-4xl mx-auto px-6 md:px-4 relative">
+                    <AnimateOnScroll>
+                        {/* 목록으로 돌아가기 링크 */}
+                        <Link
+                            href="/notices"
+                            className="inline-flex items-center gap-1.5 text-blue-200/70 hover:text-white text-sm mb-6 transition-colors"
+                        >
+                            <FontFreeIcon name="arrow_back" size={16} /> 목록으로 돌아가기
+                        </Link>
+
+                        {/* 고정 공지 뱃지 */}
+                        {notice.isPinned && (
+                            <div className="mb-3">
+                                <Badge variant="error" size="md">
+                                    <FontFreeIcon name="push_pin" size={12} className="mr-1" />
+                                    중요 공지
+                                </Badge>
+                            </div>
+                        )}
+
+                        {/* 공지 제목 */}
+                        <h1 className="text-3xl md:text-4xl font-black leading-tight mb-3 break-keep">{notice.title}</h1>
+
+                        {/* 날짜 */}
+                        <p className="text-blue-200/60 text-sm">
+                            {new Date(notice.createdAt).toLocaleDateString("ko-KR", {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric",
+                            })}
+                        </p>
+                    </AnimateOnScroll>
                 </div>
             </section>
 
             {/* 공지 본문 + 첨부파일 */}
             <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
-                <div className="public-container !max-w-4xl py-6 md:py-8">
+                <div className="max-w-4xl mx-auto px-4 py-12 md:py-16">
                     <AnimateOnScroll>
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 shadow-sm p-5 md:p-7">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 shadow-sm p-6 md:p-10">
                             {/* 본문 — 새 공지(리치 에디터 HTML)와 옛 공지(순수 텍스트)를 판별해 각기 안전하게 렌더 */}
                             {isHtmlContent(notice.content) ? (
                                 // 리치 에디터로 작성된 HTML 공지: XSS 제거(sanitizeHtml, jsdom 미사용) 후 .notice-content 서식 적용

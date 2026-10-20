@@ -65,10 +65,17 @@ function LoginContent() {
 
   return (
     // surface-warm 배경 — 공개 페이지와 동일한 따뜻한 톤
-    <div className="min-h-screen bg-surface-warm dark:bg-gray-950 flex items-center justify-center px-4 py-6 relative">
+    <div className="min-h-screen bg-surface-warm dark:bg-gray-950 flex items-center justify-center px-4 relative overflow-hidden">
+      {/* 배경 장식 도형 — 공개 페이지 히어로 패턴과 통일된 반투명 원형 */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute right-0 top-0 w-96 h-96 border-[30px] border-brand-navy-900/5 rounded-full translate-x-1/3 -translate-y-1/3" />
+        <div className="absolute left-0 bottom-0 w-64 h-64 border-[20px] border-brand-orange-500 dark:border-brand-neon-lime/5 rounded-full -translate-x-1/4 translate-y-1/4" />
+        <div className="absolute right-1/4 bottom-1/4 w-32 h-32 border-[10px] border-brand-orange-500 dark:border-brand-neon-lime/5 rounded-full" />
+      </div>
+
       <div className="w-full max-w-md relative z-10">
         {/* 로고 & 타이틀 — STIZ 실제 로고 사용 + 용도 명확화 */}
-        <div className="text-center mb-5">
+        <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <Image
               src="/stiz-logo.png"
@@ -89,7 +96,7 @@ function LoginContent() {
         </div>
 
         {/* 카드 — 기존 구조 유지, 디자인 토큰 적용 */}
-        <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-5 sm:p-6">
+        <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
           {/* 탭 — 기존 구조 유지 */}
           {!isStaffMode && <div className="flex mb-6 bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
             <button

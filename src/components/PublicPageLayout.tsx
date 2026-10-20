@@ -16,7 +16,9 @@
 import { getAcademySettings } from "@/lib/queries";
 import PublicHeader from "./PublicHeader";
 import PublicFooter from "./PublicFooter";
-import PublicHelp from "./PublicHelp";
+import ChatBotButton from "./chat/ChatBotButton";
+// 가이드 투어: 버튼은 가볍게, 실제 투어 로직은 필요할 때 로드
+import GuideTourLazyTrigger from "./guide-tour/GuideTourLazyTrigger";
 
 export default async function PublicPageLayout({
   children,
@@ -61,9 +63,10 @@ export default async function PublicPageLayout({
       />
 
       {/* 학부모 상담 챗봇 — 모든 공개 페이지 우하단에 플로팅 버튼 */}
-      <PublicHelp />
+      <ChatBotButton />
 
       {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
+      <GuideTourLazyTrigger />
     </div>
   );
 }

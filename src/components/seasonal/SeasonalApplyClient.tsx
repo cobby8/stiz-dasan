@@ -400,9 +400,9 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   return (
     <form onSubmit={handleSubmit} className="bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
       <div className="mx-auto max-w-5xl space-y-6">
-        <header className="public-page-intro !py-0">
+        <header>
           <Link href={`/seasonal/${slug}`} className="text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
-          <p className="public-eyebrow mt-3">방학특강 신청</p>
+          <p className="mt-5 text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime">방학특강 신청</p>
           <h1 className="mt-2 text-3xl font-black text-gray-900 dark:text-white">{program.title}</h1>
           {program.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{program.summary}</p>}
         </header>
