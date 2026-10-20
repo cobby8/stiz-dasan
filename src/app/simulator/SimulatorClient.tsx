@@ -469,12 +469,6 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                             </div>
                                                         </div>
 
-                                                        {/* 메모 */}
-                                                        {slot.note && (
-                                                            <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">
-                                                                &#x1F4CC; {slot.note}
-                                                            </p>
-                                                        )}
                                                     </div>
 
                                                     {/* 우측: 코치 프로필 (있을 때만 표시) */}

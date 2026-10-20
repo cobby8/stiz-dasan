@@ -212,10 +212,6 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                     />
                                                                 </div>
                                                             </div>
-                                                            {/* 메모 — 있을 때만 표시 */}
-                                                            {slot.note && (
-                                                                <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">📌 {slot.note}</p>
-                                                            )}
                                                         </div>
 
                                                         {/* 우측: 코치 프로필 — 있을 때만 표시 */}

@@ -19,6 +19,14 @@ test('화면 조회는 허용하고 저장·운영 경로는 차단한다', () =
   for (const pathname of ['/api/cron/push-outbox', '/api/auth/login', '/auth/callback', '/api/admin/send-notice', '/api/unknown', '/sw.js', '/manifest.json']) assert.equal(allowPreviewRequest({ method: 'GET', pathname }), false, pathname);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal(allowPreviewRequest({ method, pathname: '/api/admin/apply' }), false);
 });
+test('공개 시간표와 수업 찾기는 조회만 허용한다', () => {
+  for (const pathname of ['/schedule', '/simulator']) {
+    for (const method of ['GET', 'HEAD']) assert.equal(allowPreviewRequest({ method, pathname }), true);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal(allowPreviewRequest({ method, pathname }), false);
+    assert.equal(allowPreviewRequest({ method: 'GET', pathname: pathname + '/save' }), false);
+  }
+});
+
 test('두 수강료 조회 액션만 허용한다', () => {
   const actions = { read: 'loadStaffSessionMonthlyFees', write: 'sendMessage' };
   assert.equal(allowPreviewRequest({ method: 'POST', pathname: '/staff/sessions/local', actionId: 'read', actions }), true);
