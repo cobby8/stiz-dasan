@@ -130,8 +130,8 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
     return (
         <>
             {/* 메인 일정 영역 — 따뜻한 배경색으로 통일 */}
-            <section className="py-8 md:py-12 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
-                <div className="max-w-6xl mx-auto px-4">
+            <section className="public-section">
+                <div className="public-container">
 
                     {/* 연도 선택 — 가로 스크롤 */}
                     <div className="flex items-center gap-3 mb-6">
@@ -158,10 +158,10 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
                         <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 text-gray-400 shadow-sm">
                             <div className="text-5xl mb-4">🏀</div>
                             <p className="text-lg font-bold text-gray-500 dark:text-gray-400">{selectedYear}년 등록된 일정이 없습니다.</p>
-                            <p className="text-sm mt-2">관리자가 일정을 등록하면 여기에 표시됩니다.</p>
+                            <p className="text-sm mt-2">수업일과 행사 일정이 정해지면 안내드립니다.</p>
                         </div>
                     ) : (
-                        <div className="space-y-10">
+                        <div className="space-y-6">
                             {activeMonths.map(mon => {
                                 const dateMap     = byMonthDate[mon];
                                 const schedule    = yearlySchedules[selectedYear]?.[mon];

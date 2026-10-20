@@ -25,6 +25,14 @@ test('두 수강료 조회 액션만 허용한다', () => {
   for (const actionId of ['write', 'unknown', undefined]) assert.equal(allowPreviewRequest({ method: 'POST', pathname: '/staff/sessions/local', actionId, actions }), false);
   assert.equal(allowPreviewRequest({ method: 'POST', pathname: '/admin', actionId: 'read', actions }), false);
 });
+
+test('공개 홈페이지의 안내·신청 화면은 조회만 허용한다', () => {
+  for (const pathname of ['/about','/schedule','/annual','/simulator','/seasonal','/seasonal/public-season','/apply','/apply/trial','/apply/enroll','/apply/uniform','/notices/public-id']) {
+    assert.equal(allowPreviewRequest({method:'GET',pathname}),true,pathname);
+    assert.equal(allowPreviewRequest({method:'POST',pathname}),false,pathname);
+  }
+  for (const pathname of ['/api/trial','/auth/callback','/api/payments/confirm']) assert.equal(allowPreviewRequest({method:'POST',pathname}),false);
+});
 test('청구 검토표는 조회만 허용하고 발행·수정은 실제 자료 미리보기에서 차단한다', () => {
   assert.equal(allowPreviewRequest({ method: 'GET', pathname: '/api/admin/billing-workbench' }), true);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) assert.equal(allowPreviewRequest({ method, pathname: '/api/admin/billing-workbench' }), false);

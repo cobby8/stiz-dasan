@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { isPastSeasonalProgram, publicSeasonalDate } from "./publicPresentation";
 import { useEffect, useState } from "react";
 import { formatWon, normalizeProgram, programClasses, statusLabel, type SeasonalClass, type SeasonalProgram } from "./types";
 
@@ -26,24 +27,24 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
   if (failed) return <Message text="특강 정보를 찾을 수 없습니다." />;
   if (!program) return <Message text="특강 정보를 불러오고 있어요." />;
   const offerings = programClasses(program);
-  const canApply = program.status === "OPEN" && offerings.some((item) => item.capacity === null || (item.remaining ?? 0) > 0 || item.waitlistEnabled);
+  const canApply = !isPastSeasonalProgram(program) && program.status === "OPEN" && offerings.some((item) => item.capacity === null || (item.remaining ?? 0) > 0 || item.waitlistEnabled);
 
   return (
     <>
-      <section className="bg-brand-navy-900 px-5 py-10 text-white">
-        <div className="mx-auto max-w-4xl">
-          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{statusLabel(program.status)}</span>
+      <section className="public-page-intro">
+        <div className="public-container">
+          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{isPastSeasonalProgram(program) ? "운영 종료" : statusLabel(program.status)}</span>
           <h1 className="mt-4 text-3xl font-black break-keep">{program.title}</h1>
           {program.summary && <p className="mt-3 max-w-2xl text-blue-100 break-keep">{program.summary}</p>}
           <div className="mt-5 flex flex-wrap gap-4 text-sm">
-            <Detail icon="calendar_today" text={[program.operationStart, program.operationEnd].filter(Boolean).join(" ~ ") || "일정 준비 중"} />
+            <Detail icon="calendar_today" text={[program.operationStart, program.operationEnd].map(publicSeasonalDate).filter(Boolean).join(" ~ ") || "일정 준비 중"} />
             <Detail icon="location_on" text={program.location || "장소 준비 중"} />
           </div>
         </div>
       </section>
       <section className="bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
         <div className="mx-auto max-w-4xl space-y-6">
-          <div><h2 className="text-xl font-black">수업을 선택하세요</h2><p className="mt-1 text-sm text-gray-500">신청 화면에서 여러 수업을 함께 선택할 수 있습니다.</p></div>
+          <div><h2 className="text-xl font-black">수업 안내</h2><p className="mt-1 text-sm text-gray-500">신청 화면에서 여러 수업을 함께 선택할 수 있습니다.</p></div>
           <div className="grid gap-3 md:grid-cols-2">{offerings.length ? offerings.map((item) => <Offering key={item.id} item={item} />) : <Message text="등록된 수업 일정이 없습니다." />}</div>
           {program.shuttleNotice && <Notice title="셔틀 안내" icon="directions_bus" text={program.shuttleNotice} />}
           {program.refundPolicy && <Notice title="취소·환불 안내" icon="policy" text={program.refundPolicy} />}

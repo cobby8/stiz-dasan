@@ -10,6 +10,7 @@ import pg from 'pg';
 import dotenv from 'dotenv';
 import { capturePreviewSnapshot } from './lib/real-preview-snapshot.mjs';
 import { capturePreviewCalendar } from './lib/real-preview-calendar.mjs';
+import { cachePublicPreviewImages } from './lib/real-preview-images.mjs';
 import { createPreviewProxy, LOCAL_DRIVER_TOKEN } from './lib/real-preview-proxy.mjs';
 
 const root = process.cwd();
@@ -52,7 +53,7 @@ async function cleanup() {
   }
   if (target) {
     // 개인정보가 담긴 로컬 DB와 인증 대체 빌드는 미리보기 종료 시 함께 정리합니다.
-    for (const name of ['src/lib/supabase/qa-fixture.ts', '.next']) {
+    for (const name of ['src/lib/supabase/qa-fixture.ts', '.next', 'public/__public_media']) {
       const p = path.join(target, name); assert.ok(path.resolve(p).startsWith(path.resolve(target) + path.sep));
       await rm(p, { recursive: true, force: true });
     }
@@ -103,7 +104,8 @@ try {
   target = await mkdtemp(path.join(os.tmpdir(), 'stiz-real-preview-app-'));
   for (const name of ['src', 'prisma', 'package.json', 'package-lock.json', 'tsconfig.json', 'next-env.d.ts', 'next.config.ts', 'postcss.config.mjs']) await cp(path.join(root, name), path.join(target, name), { recursive: true });
   await symlink(path.join(root, 'node_modules'), path.join(target, 'node_modules'), 'junction');
-  await symlink(path.join(root, 'public'), path.join(target, 'public'), 'junction');
+  await cp(path.join(root, 'public'), path.join(target, 'public'), { recursive: true });
+  summary.publicImages = await cachePublicPreviewImages(snapshot, { directory: path.join(target, 'public', '__public_media') });
   await cp(path.join(root, 'scripts/lib/real-preview-guard.cjs'), path.join(target, 'preview-guard.cjs'));
   const identities = Object.fromEntries(Object.entries(snapshot.accounts).map(([role, value]) => [role, { id: value.authId, email: value.email, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {} }]));
   const fixture = `// LOCAL COPY ONLY. This file is never part of the real application.\nconst identities=${JSON.stringify(identities)};\nexport function createServerClient(_url:any,_key:any,options:{cookies:{getAll:()=>Array<{name:string;value:string}>,setAll?:(items:any[])=>void}}):any{const role=options.cookies.getAll().find((c:any)=>c.name==='qa-role')?.value;const user=(identities as any)[role??'']??null;return{auth:{getClaims:async()=>({data:{claims:user?{sub:user.id,email:user.email,aud:user.aud,role:user.role,app_metadata:{},user_metadata:{}}:null},error:null}),getUser:async()=>({data:{user},error:null})}};}\n`;

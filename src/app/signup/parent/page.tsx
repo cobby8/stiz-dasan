@@ -9,7 +9,7 @@ export default function ParentSignupPage() {
       <div className="mx-auto w-full max-w-md">
         <div className="mb-6 text-center">
           <Link href="/" aria-label="STIZ 홈">
-            <Image src="/stiz-logo.png" alt="STIZ 축구교실" width={160} height={40} className="mx-auto h-10 w-auto object-contain" />
+            <Image src="/stiz-logo.png" alt="STIZ 농구교실" width={160} height={40} className="mx-auto h-10 w-auto object-contain" />
           </Link>
         </div>
         <section className="rounded-2xl border border-gray-200 bg-white p-6 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white sm:p-8">

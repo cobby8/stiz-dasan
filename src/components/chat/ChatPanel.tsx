@@ -149,7 +149,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           fixed z-50
           inset-0 sm:inset-auto
           sm:bottom-6 sm:right-6
-          sm:w-96 sm:h-[500px]
+          public-chat-panel sm:w-96 sm:h-[min(500px,calc(100dvh-48px))]
           bg-white dark:bg-gray-800 sm:rounded-2xl shadow-2xl
           flex flex-col overflow-hidden
           border border-gray-200 dark:border-gray-700
@@ -160,7 +160,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           <h3 className="font-bold text-base">STIZ 상담</h3>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-orange-600 rounded-full transition-colors"
+            className="inline-flex h-11 w-11 items-center justify-center hover:bg-orange-600 rounded-full transition-colors"
             aria-label="채팅 닫기"
           >
             <SymbolIcon name="close" size={20} />

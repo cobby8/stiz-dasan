@@ -15,23 +15,16 @@ export const metadata = buildPublicMetadata({
 
 export default async function TermsPage() {
   // DB에서 이용약관 텍스트를 가져온다
-  const settings = (await getAcademySettings()) as any;
+  const settings = (await getAcademySettings()) as { termsOfService?: string | null };
   const termsOfService: string | null = settings.termsOfService ?? null;
 
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
-          <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
-        </div>
-        <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
-          <AnimateOnScroll>
-            <p className="text-brand-orange-500 dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">TERMS OF SERVICE</p>
-            <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">이용약관</h1>
-            <p className="text-blue-200 text-lg max-w-xl">수강 규정 및 환불 정책을 확인하세요.</p>
-          </AnimateOnScroll>
+      <section className="public-page-intro">
+        <div className="public-container">
+          <h1>이용약관</h1>
+          <p>수강 규정과 환불·보강 기준을 확인하세요.</p>
         </div>
       </section>
 
@@ -42,7 +35,7 @@ export default async function TermsPage() {
             <ProgramAccordionTerms termsText={termsOfService} hideHeader />
           </AnimateOnScroll>
         ) : (
-          <div className="text-center py-20 text-gray-400">
+          <div className="public-card p-6 text-center text-gray-500">
             <p className="text-lg font-medium">이용약관이 아직 등록되지 않았습니다.</p>
           </div>
         )}

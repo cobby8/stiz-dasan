@@ -2,11 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Card from "@/components/ui/Card";
-import Badge from "@/components/ui/Badge";
-import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
-import SectionLayout from "@/components/ui/SectionLayout";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 // FAQ 데이터 타입 (DB에서 가져온 FAQ 항목)
 type FaqItem = { id: string; question: string; answer: string };
@@ -119,133 +114,32 @@ export default function ApplyPageClient({
 
     return (
         <>
-            {/* 체험수업 / 수강신청 카드 섹션 */}
-            <SectionLayout label="APPLY NOW" title="신청하기" description="체험수업 또는 수강신청을 선택하세요" bgColor="section">
-                <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-                    {/* 체험수업 카드 — 앵커 id="trial"로 챗봇에서 바로 스크롤 가능 */}
-                    <AnimateOnScroll>
-                        <Card id="trial" variant="default" className="overflow-hidden !p-0 h-full">
-                            {/* 카드 헤더 — 네이비 배경 */}
-                            <div className="bg-brand-navy-900 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Badge variant="default" size="sm">Trial Class</Badge>
-                                </div>
-                                <h3 className="text-xl font-black text-white">{trialTitle}</h3>
-                            </div>
-                            {/* 카드 본문 */}
-                            <div className="px-6 py-6">
-                                {/* 체험 혜택 강조 태그들 */}
-                                <div className="flex flex-wrap gap-2 mb-4">
-                                    <Badge variant="success" size="sm">체험비 1만원</Badge>
-                                    <Badge variant="info" size="sm">준비물: 운동복, 실내화</Badge>
-                                </div>
-
-                                {trialContentHtml ? (
-                                    <ContentBlock html={trialContentHtml} />
-                                ) : (
-                                    <p className="text-gray-400 text-base italic">체험수업 안내 내용이 아직 등록되지 않았습니다.</p>
-                                )}
-
-                                <div className="mt-6">
-                                    {/* 체험수업 신청 — 항상 자체 신청 페이지(/apply/trial)로 이동 */}
-                                    <Link
-                                        href="/apply/trial"
-                                        data-tour-target="trial-apply-btn"
-                                        className="inline-flex items-center justify-center px-6 py-3 text-base font-medium bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white hover:bg-brand-orange-600 dark:hover:bg-lime-400 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime/50 focus:ring-offset-2 rounded-xl transition-all duration-200"
-                                    >
-                                        체험수업 신청하기
-                                    </Link>
-                                    {/* 약관 안내 — 독립 이용약관 페이지로 링크 */}
-                                    <p className="mt-3 text-xs text-gray-400">
-                                        신청 시{" "}
-                                        <a
-                                            href="/terms"
-                                            className="underline underline-offset-2 hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors"
-                                        >
-                                            이용약관
-                                        </a>
-                                        에 동의한 것으로 간주합니다.
-                                    </p>
-                                </div>
-                            </div>
-                        </Card>
-                    </AnimateOnScroll>
-
-                    {/* 수강신청 카드 — 앵커 id="enroll"로 챗봇에서 바로 스크롤 가능 */}
-                    <AnimateOnScroll delay={150}>
-                        <Card id="enroll" variant="default" className="overflow-hidden !p-0 h-full">
-                            {/* 카드 헤더 — 오렌지 배경으로 차별화 */}
-                            <div className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="inline-flex items-center rounded-full font-medium px-2 py-0.5 text-xs bg-white/20 text-white dark:bg-brand-navy-900/30 dark:text-brand-neon-lime">Enrollment</span>
-                                </div>
-                                <h3 className="text-xl font-black text-white dark:text-brand-navy-900">{enrollTitle}</h3>
-                            </div>
-                            {/* 카드 본문 */}
-                            <div className="px-6 py-6">
-                                {enrollContentHtml ? (
-                                    <ContentBlock html={enrollContentHtml} />
-                                ) : (
-                                    <p className="text-gray-400 text-base italic">수강신청 안내 내용이 아직 등록되지 않았습니다.</p>
-                                )}
-
-                                <div className="mt-6">
-                                    {/* 수강신청 — 항상 자체 신청 페이지(/apply/enroll)로 이동 */}
-                                    <Link
-                                        href="/apply/enroll"
-                                        className="inline-flex items-center justify-center px-6 py-3 text-base font-medium bg-brand-navy-900 text-white hover:bg-brand-navy-800 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] focus:ring-2 focus:ring-brand-navy-500/50 focus:ring-offset-2 rounded-xl transition-all duration-200"
-                                    >
-                                        수강신청하기
-                                    </Link>
-                                </div>
-                            </div>
-                        </Card>
-                    </AnimateOnScroll>
+            <section className="public-section">
+                <div className="public-container">
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <article id="trial" className="public-card flex flex-col gap-4 p-5">
+                            <div><p className="public-eyebrow">처음 방문하신다면</p><h2 className="mt-1 text-xl font-bold">{trialTitle}</h2></div>
+                            <p className="text-sm">체험비 1만원 · 운동복과 실내화 준비</p>
+                            <Link href="/apply/trial" data-tour-target="trial-apply-btn" className="public-button self-start">체험수업 신청하기</Link>
+                            {trialContentHtml && <details className="border-t border-[var(--color-public-border)] pt-3"><summary className="cursor-pointer text-sm font-semibold">체험수업 안내</summary><div className="pt-3"><ContentBlock html={trialContentHtml} /></div></details>}
+                            <p className="text-xs text-[var(--color-public-muted)]">신청 시 <Link href="/terms" className="public-link">이용약관</Link>에 동의한 것으로 간주합니다.</p>
+                        </article>
+                        <article id="enroll" className="public-card flex flex-col gap-4 p-5">
+                            <div><p className="public-eyebrow">등록을 결정하셨다면</p><h2 className="mt-1 text-xl font-bold">{enrollTitle}</h2></div>
+                            <p className="text-sm">학생·보호자 정보와 희망 수업을 접수합니다.</p>
+                            <Link href="/apply/enroll" className="public-button-secondary self-start">수강신청하기</Link>
+                            {enrollContentHtml && <details className="border-t border-[var(--color-public-border)] pt-3"><summary className="cursor-pointer text-sm font-semibold">수강신청 안내</summary><div className="pt-3"><ContentBlock html={enrollContentHtml} /></div></details>}
+                        </article>
+                    </div>
+                    <div id="uniform" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-public-border)] px-4 py-3">
+                        <div><h2 className="text-sm font-bold">유니폼 추가 주문</h2><p className="text-sm text-[var(--color-public-muted)]">형제·자매도 한 번에 신청 · 금액은 접수 후 본사 기준으로 안내</p></div>
+                        <Link href="/apply/uniform" className="public-link inline-flex min-h-11 items-center gap-1 font-semibold">유니폼 신청<span className="material-symbols-outlined" aria-hidden="true">arrow_forward</span></Link>
+                    </div>
                 </div>
-            </SectionLayout>
-
-            <SectionLayout label="UNIFORM" title="유니폼 신청" description="우리 학원 유니폼을 신청하세요" bgColor="white">
-                <div className="max-w-md mx-auto">
-                    <AnimateOnScroll>
-                        <Card id="uniform" variant="default" className="overflow-hidden !p-0 h-full">
-                            <div className="bg-emerald-600 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">Uniform</span>
-                                </div>
-                                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                                    <FontFreeIcon name="checkroom" size={24} />
-                                    유니폼 신청
-                                </h3>
-                            </div>
-                            <div className="px-6 py-6">
-                                <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
-                                    형제·자매 유니폼도 한 번에 접수할 수 있습니다. 금액은 접수 후 STIZ 본사 기준으로 안내됩니다.
-                                </p>
-                                <Link
-                                    href="/apply/uniform"
-                                    className="inline-flex items-center justify-center rounded-xl bg-brand-navy-900 px-6 py-3 text-base font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:bg-brand-navy-800 active:scale-[0.98] focus:ring-2 focus:ring-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
-                                >
-                                    유니폼 신청하기
-                                </Link>
-                            </div>
-                        </Card>
-                    </AnimateOnScroll>
-                </div>
-            </SectionLayout>
-
-            {/* FAQ 섹션 — 아코디언 형태의 자주 묻는 질문 */}
-            <SectionLayout id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
-                <AnimateOnScroll>
-                    <Card variant="default" className="!p-0 max-w-3xl mx-auto">
-                        <div className="px-6 py-2">
-                            {displayFaqs.map((faq, i) => (
-                                <FAQItem key={i} question={faq.question} answer={faq.answer} />
-                            ))}
-                        </div>
-                    </Card>
-                </AnimateOnScroll>
-            </SectionLayout>
-
+            </section>
+            <section id="faq" className="public-section">
+                <div className="public-container"><h2 className="mb-4 text-xl font-bold">자주 묻는 질문</h2><div className="public-card px-5">{displayFaqs.map((faq, i) => <FAQItem key={i} question={faq.question} answer={faq.answer} />)}</div></div>
+            </section>
         </>
     );
 }

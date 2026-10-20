@@ -11,7 +11,7 @@ export function allowPreviewRequest({ method, pathname, actionId, actions = {} }
   if (/^\/api\//.test(pathname) && /(?:send|dispatch-message|reconcile|sync|publish|backup|delete|confirm|cancel|location-session)/i.test(pathname)) return false;
   if (['GET', 'HEAD'].includes(method)) {
     if (pathname.startsWith('/api/')) return /^\/api\/admin\/(?:billing-workbench|apply(?:\/(?:source-stats|settings))?|students(?:\/import-summary|\/[^/]+\/activity)?|student-options|driver-requests|regular\/dispatch\/saved|seasonal\/dispatch\/saved)$/.test(pathname) || pathname === '/api/staff/shuttle';
-    return pathname === '/' || /^\/(?:admin|staff|mypage|driver|_next)(?:\/|$)/.test(pathname) || /^\/[\w/-]+\.(?:png|svg|ico|jpg|jpeg|webp|woff2?|ttf|css)$/.test(pathname) || ['/programs', '/intro', '/gallery', '/notices', '/terms', '/privacy', '/faq', '/opengraph-image'].includes(pathname);
+    return pathname === '/' || /^\/(?:admin|staff|mypage|driver|_next)(?:\/|$)/.test(pathname) || /^\/[\w/-]+\.(?:png|svg|ico|jpg|jpeg|webp|woff2?|ttf|css)$/.test(pathname) || /^\/(?:notices|seasonal)\/[a-zA-Z0-9_-]+(?:\/apply)?$/.test(pathname) || ['/about', '/programs', '/programs/order', '/schedule', '/annual', '/simulator', '/seasonal', '/apply', '/apply/trial', '/apply/enroll', '/apply/uniform', '/intro', '/gallery', '/notices', '/terms', '/privacy', '/faq', '/opengraph-image'].includes(pathname);
   }
   return method === 'POST' && /^\/staff\/sessions\/[^/]+$/.test(pathname) && ['loadStaffSessionMonthlyFees', 'loadStaffAttendanceBilling'].includes(actions[actionId]);
 }

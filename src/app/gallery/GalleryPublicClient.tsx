@@ -26,8 +26,8 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
     // 빈 갤러리 — 아이콘 + 안내 메시지 표시
     if (items.length === 0) {
         return (
-            <div className="text-center py-20 text-gray-400">
-                <FontFreeIcon name="image" size={64} className="mx-auto mb-4 text-gray-300" />
+            <div className="public-card px-5 py-10 text-center text-gray-500">
+                <FontFreeIcon name="image" size={32} className="mx-auto mb-3 text-gray-400" />
                 <p className="text-lg font-medium">아직 갤러리가 비어있습니다</p>
                 <p className="text-sm mt-1">곧 수업 사진이 업로드됩니다.</p>
             </div>
@@ -93,7 +93,7 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
             </div>
 
             {hasMoreItems && (
-                <div className="mt-10 flex justify-center">
+                <div className="mt-6 flex justify-center">
                     <button
                         type="button"
                         onClick={() => setVisibleCount((current) => Math.min(current + VISIBLE_ITEM_INCREMENT, items.length))}
