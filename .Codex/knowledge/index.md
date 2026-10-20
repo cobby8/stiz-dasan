@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-20: 실제자료개발미리보기 승인.26테이블가림·운영SELECT전용연결종료후로컬DB만사용·최신메뉴36유지, 보호16/외부차단6·소스857·최종빌드/4역할9화면/메뉴36/차단4통과. docs/real-data-development-preview.md; localhost4090실행유지·미배포.
+
 > 2026-10-20: 검증46커밋푸시와Git자동배포차단 사용자승인. vercel.json git.deploymentEnabled:false, 기존운영배포dbe3ff86유지확인대상. 토스운영키미발급·수동배포/운영쓰기보류. docs/web-release-readiness-20261020.md.
 
 > 2026-10-20: 승인운영문구·미사용5/표시함수2공유·내부오류안내·배차저장조회정리. 전체278파일2193/보호5·소스검사1299해시일치, 독립G1 59/10/18·G2 44/5/9·G3 33/PG26통과. 지식문서5유지·architecture/conventions/decisions/errors갱신. sharp충돌은후속승인후0.34.5로고정·Next동일모듈통합, 최종build/정적66/HTTP5·사진13·861해시일치로해결. 후보복사본build/소스857·4역할40화면/API9·실제저장재실행/기사전달·사진변환통과, docs/operating-copy-code-dispatch-cleanup.md. 운영쓰기/푸시/배포없음.
