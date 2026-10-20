@@ -944,25 +944,29 @@ export default function ApplyAdminClient({
     }
 
     return (
-        <div className="min-w-0 space-y-6">
-            <div>
-                <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-white">
-                    <span className="material-symbols-outlined text-3xl text-brand-orange-500 dark:text-brand-neon-lime">how_to_reg</span>
+        <div className="min-w-0 space-y-4">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-primary)]" aria-hidden="true">how_to_reg</span>
                     체험/수강신청 관리
                 </h1>
-                <Link href="/admin/registration-readiness" className="mt-2 inline-block text-sm underline" prefetch={false}>입학 완료 확인 · 등록·청구·초대 체크리스트</Link>
+                <div className="flex max-w-full flex-wrap items-center gap-2">
+                    <label className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">
+                        <span className="sr-only">업무</span>
+                        <select aria-label="신청 관리 업무" value={activeTab} onChange={event => setActiveTab(event.target.value as TabType)} className="h-11 min-h-11 min-w-0 max-w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] font-bold text-[var(--color-academy-ink)]">
+                            <option value="trial">체험 문의{(initialTrialStats?.NEW ?? 0) > 0 ? ` · 신규 ${initialTrialStats?.NEW}` : ""}</option>
+                            <option value="applications">수강신청{stats.PENDING > 0 ? ` · 대기 ${stats.PENDING}` : ""}</option>
+                            <option value="waitlist">대기자</option>
+                            <option value="sources">유입 통계</option>
+                            <option value="settings">안내 설정</option>
+                        </select>
+                    </label>
+                    <Link href="/admin/registration-readiness" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]" prefetch={false}>
+                        <span className="material-symbols-outlined text-lg" aria-hidden="true">checklist</span>
+                        입학 점검
+                    </Link>
+                </div>
             </div>
-
-            <label className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">
-                업무
-                <select aria-label="신청 관리 업무" value={activeTab} onChange={event => setActiveTab(event.target.value as TabType)} className="h-11 min-h-11 min-w-0 max-w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] font-bold text-[var(--color-academy-ink)]">
-                    <option value="trial">체험 문의{(initialTrialStats?.NEW ?? 0) > 0 ? ` · 신규 ${initialTrialStats?.NEW}` : ""}</option>
-                    <option value="applications">수강신청{stats.PENDING > 0 ? ` · 대기 ${stats.PENDING}` : ""}</option>
-                    <option value="waitlist">대기자</option>
-                    <option value="sources">유입 통계</option>
-                    <option value="settings">안내 설정</option>
-                </select>
-            </label>
 
             {feedback && (
                 <div

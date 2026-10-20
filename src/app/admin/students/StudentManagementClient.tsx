@@ -1637,6 +1637,136 @@ export default function StudentManagementClient({
 
     return (
         <div className="max-w-5xl mx-auto">
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
+                <p className="text-xs text-[var(--color-academy-muted)]">
+                    {sheetImportSummary?.studentStatusCounts ? "시트 기준" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
+                    {" · "}활성 {statusCounts.active} · 휴원 {statusCounts.paused} · 퇴원 {statusCounts.withdrawn} · 미배정 {statusCounts.noEnrollment}
+                </p>
+            </div>
+
+            <CompactListFilters
+                activeCount={activeFilterCount}
+                summary={filterSummary}
+                resultCount={`${filtered.length}명${!allStudentsLoaded ? " · 전체 동기화 중" : ""}`}
+                onReset={() => {
+                    setFilterClass("");
+                    setFilterGrade("");
+                    setFilterSchool("");
+                    setFilterStatus("ACTIVE");
+                    requestFullStudentLoad();
+                }}
+                search={
+                    <input
+                        type="search"
+                        aria-label="원생 검색"
+                        placeholder="이름·학부모·연락처·학교 검색"
+                        value={search}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            if (e.target.value.trim()) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    />
+                }
+                actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!allStudentsLoaded && (
+                            <button
+                                type="button"
+                                onClick={() => void loadData({ background: true })}
+                                disabled={backgroundLoading}
+                                className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                            >
+                                {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
+                            </button>
+                        )}
+                        {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
+                        <button
+                            onClick={() => setShowExcelUpload(true)}
+                            className="min-h-11 bg-emerald-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
+                        >
+                            엑셀 업로드
+                        </button>
+                        {/* 기존 1명씩 수동 등록 버튼 */}
+                        <button
+                            onClick={() => { resetForm(); setShowForm(true); }}
+                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
+                        >
+                            + 원생 등록
+                        </button>
+                    </div>
+                }
+            >
+                <div className="col-span-full grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* 반(Class) 필터 */}
+                    <select
+                        aria-label="반"
+                        value={filterClass}
+                        onChange={(e) => {
+                            setFilterClass(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 반</option>
+                        {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                                {c.name} ({DAY_LABELS[c.dayOfWeek] || c.dayOfWeek} {c.startTime})
+                            </option>
+                        ))}
+                    </select>
+                    {/* 학년 필터 */}
+                    <select
+                        aria-label="학년"
+                        value={filterGrade}
+                        onChange={(e) => {
+                            setFilterGrade(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 학년</option>
+                        {gradeOptions.map((g) => (
+                            <option key={g} value={g}>{g}</option>
+                        ))}
+                    </select>
+                    {/* 학교 필터 */}
+                    <select
+                        aria-label="학교"
+                        value={filterSchool}
+                        onChange={(e) => {
+                            setFilterSchool(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 학교</option>
+                        {schoolOptions.map((sc) => (
+                            <option key={sc} value={sc}>{sc}</option>
+                        ))}
+                    </select>
+                    {/* 수강 상태 필터 */}
+                    <select
+                        aria-label="수강 상태"
+                        value={filterStatus}
+                        onChange={(e) => applyStatusFilter(e.target.value)}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 상태</option>
+                        <option value="ACTIVE">활성</option>
+                        <option value="PAUSED">휴원</option>
+                        <option value="WITHDRAWN">퇴원</option>
+                        <option value="NONE">미배정</option>
+                    </select>
+
+                </div>
+            </CompactListFilters>
+
+            {/* Form */}
+            <details className="mt-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-muted)]">원생 자료 점검</summary>
+                <div className="pt-2">
             {!sheetImportSummary && (
                 <div className="mb-5 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -1843,133 +1973,9 @@ export default function StudentManagementClient({
                 </div>
             )}
 
-            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
-                <p className="text-xs text-[var(--color-academy-muted)]">
-                    {sheetImportSummary?.studentStatusCounts ? "시트 기준" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
-                    {" · "}활성 {statusCounts.active} · 휴원 {statusCounts.paused} · 퇴원 {statusCounts.withdrawn} · 미배정 {statusCounts.noEnrollment}
-                </p>
-            </div>
-
-            <CompactListFilters
-                activeCount={activeFilterCount}
-                summary={filterSummary}
-                resultCount={`${filtered.length}명${!allStudentsLoaded ? " · 전체 동기화 중" : ""}`}
-                onReset={() => {
-                    setFilterClass("");
-                    setFilterGrade("");
-                    setFilterSchool("");
-                    setFilterStatus("ACTIVE");
-                    requestFullStudentLoad();
-                }}
-                search={
-                    <input
-                        type="search"
-                        aria-label="원생 검색"
-                        placeholder="이름·학부모·연락처·학교 검색"
-                        value={search}
-                        onChange={(e) => {
-                            setSearch(e.target.value);
-                            if (e.target.value.trim()) requestFullStudentLoad();
-                        }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                    />
-                }
-                actions={
-                    <div className="flex flex-wrap items-center gap-2">
-                        {!allStudentsLoaded && (
-                            <button
-                                type="button"
-                                onClick={() => void loadData({ background: true })}
-                                disabled={backgroundLoading}
-                                className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                            >
-                                {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
-                            </button>
-                        )}
-                        {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
-                        <button
-                            onClick={() => setShowExcelUpload(true)}
-                            className="min-h-11 bg-emerald-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
-                        >
-                            엑셀 업로드
-                        </button>
-                        {/* 기존 1명씩 수동 등록 버튼 */}
-                        <button
-                            onClick={() => { resetForm(); setShowForm(true); }}
-                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
-                        >
-                            + 원생 등록
-                        </button>
-                    </div>
-                }
-            >
-                <div className="col-span-full grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {/* 반(Class) 필터 */}
-                    <select
-                        aria-label="반"
-                        value={filterClass}
-                        onChange={(e) => {
-                            setFilterClass(e.target.value);
-                            if (e.target.value) requestFullStudentLoad();
-                        }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                    >
-                        <option value="">전체 반</option>
-                        {classes.map((c) => (
-                            <option key={c.id} value={c.id}>
-                                {c.name} ({DAY_LABELS[c.dayOfWeek] || c.dayOfWeek} {c.startTime})
-                            </option>
-                        ))}
-                    </select>
-                    {/* 학년 필터 */}
-                    <select
-                        aria-label="학년"
-                        value={filterGrade}
-                        onChange={(e) => {
-                            setFilterGrade(e.target.value);
-                            if (e.target.value) requestFullStudentLoad();
-                        }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                    >
-                        <option value="">전체 학년</option>
-                        {gradeOptions.map((g) => (
-                            <option key={g} value={g}>{g}</option>
-                        ))}
-                    </select>
-                    {/* 학교 필터 */}
-                    <select
-                        aria-label="학교"
-                        value={filterSchool}
-                        onChange={(e) => {
-                            setFilterSchool(e.target.value);
-                            if (e.target.value) requestFullStudentLoad();
-                        }}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                    >
-                        <option value="">전체 학교</option>
-                        {schoolOptions.map((sc) => (
-                            <option key={sc} value={sc}>{sc}</option>
-                        ))}
-                    </select>
-                    {/* 수강 상태 필터 */}
-                    <select
-                        aria-label="수강 상태"
-                        value={filterStatus}
-                        onChange={(e) => applyStatusFilter(e.target.value)}
-                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                    >
-                        <option value="">전체 상태</option>
-                        <option value="ACTIVE">활성</option>
-                        <option value="PAUSED">휴원</option>
-                        <option value="WITHDRAWN">퇴원</option>
-                        <option value="NONE">미배정</option>
-                    </select>
-
                 </div>
-            </CompactListFilters>
+            </details>
 
-            {/* Form */}
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">{editingId ? "원생 수정" : "새 원생 등록"}</h3>

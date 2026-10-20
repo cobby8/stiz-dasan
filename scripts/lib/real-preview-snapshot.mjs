@@ -28,6 +28,7 @@ const FIELDS = {
   RegularDispatchRoute: 'id serviceMonth dayOfWeek direction payload classStart classEnd savedByUserId createdAt updatedAt',
   ShuttleVehicle: 'id name capacity isActive createdAt updatedAt',
   AcademySettings: 'id classDays siteBodyFont siteHeadingFont useBuiltInTrialForm useBuiltInEnrollForm academyPlaceName shuttleHubName shuttleHubDropoffName shuttleRosterConfirmedMode createdAt updatedAt',
+  AnnualEvent: 'id title date endDate category createdAt updatedAt',
 };
 const JSON_KEYS = new Set(('vehicles stops riders passengers students unassigned requestIds studentIds shuttleRequestIds id studentId requestId shuttleRequestId vehicleId vehicleIndex vehicleIdx index order sortOrder sequence count capacity totalMinutes totalDistanceM travelMinutes travelSeconds durationMinutes distanceMeters routeDurationMin routeDistanceKm departureTime arrivalTime arriveTime eta etaMinutes etaLabel time timeLabel startTime endTime classStart classEnd classTime pickupTime dropoffTime dwellMinutes waitMinutes direction dayOfWeek weekday label name studentName stopName grade childGrade period dayKey dayLabel slotKey isWeekend start end enrolled enrolledSnapshot grades gradeRange programId coachId isHidden displayOrder').split(' '));
 const PRIVATE_PHONE = '비공개';
@@ -65,7 +66,7 @@ function serviceMonths(now) {
 }
 
 /** 연결·트랜잭션·파일 저장은 호출자가 담당한다. 이 함수는 SELECT만 실행한다. */
-export async function capturePreviewSnapshot(sourceClient, { now = new Date(), adminEmail = 'cobby8@stiz.kr' } = {}) {
+export async function capturePreviewSnapshot(sourceClient, { now = new Date(), adminEmail = 'cobby8@stiz.kr', calendarEvents = [] } = {}) {
   const window = serviceMonths(now);
   const metadata = await sourceClient.query(`SELECT table_name, column_name, is_nullable, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ANY($1::text[])`, [Object.keys(FIELDS)]);
   const schema = new Map();
@@ -126,7 +127,11 @@ export async function capturePreviewSnapshot(sourceClient, { now = new Date(), a
     tables.push({ name, rows }); byName.set(name, rows);
     return rows;
   }
-  for (const name of ['User', 'Student', 'Program', 'Coach', 'Class', 'Enrollment', 'ClassSlotOverride', 'CustomClassSlot', 'ScheduleSlot', 'SheetSlotCache', 'TrialLead', 'EnrollmentApplication', 'EnrollmentChangeRequest', 'ParentRequest', 'ApplicationContactLog', 'AcademySettings', 'ShuttleVehicle']) await read(name);
+  for (const name of ['User', 'Student', 'Program', 'Coach', 'Class', 'Enrollment', 'ClassSlotOverride', 'CustomClassSlot', 'ScheduleSlot', 'SheetSlotCache', 'TrialLead', 'EnrollmentApplication', 'EnrollmentChangeRequest', 'ParentRequest', 'ApplicationContactLog', 'AcademySettings', 'ShuttleVehicle', 'AnnualEvent']) await read(name);
+  const annual = byName.get('AnnualEvent');
+  if (annual && calendarEvents.length) for (const event of calendarEvents) {
+    annual.push({ id: event.id, title: hasPrivateText(event.title) ? '비공개' : event.title, date: event.date, endDate: event.endDate, category: event.category, createdAt: event.createdAt, updatedAt: event.updatedAt });
+  }
   // 장부는 YYYY-MM / YYYY년 M월 등 실제 쓰이는 표기를 같은 월로 비교한다.
   const ledgerHasMonth = schema.get('StudentRegistrationLedger')?.has('registrationMonth');
   const monthParts = window.current.split('-').map(Number);

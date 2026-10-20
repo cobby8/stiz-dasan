@@ -20,11 +20,6 @@ export default async function AdminFinancePage() {
 
     return (
         <>
-            <div className="mb-4">
-                <Link href="/admin/finance/monthly-ledger" className="underline">
-                    월별·반별 장부 점검 (조회 전용)
-                </Link>
-            </div>
             <FinanceClient
                 initialPayments={payments}
                 initialYear={initialYear}
@@ -37,6 +32,7 @@ export default async function AdminFinancePage() {
                 // 시트 원장 은퇴(2026-10~) 면 「시트 점검」 버튼·패널을 숨긴다("0" 이면 옛 화면)
                 sheetRetired={isSheetSyncRetired(process.env)}
             />
+            <details className="mt-4 text-sm text-gray-500"><summary className="min-h-11 cursor-pointer py-3">장부 점검</summary><Link href="/admin/finance/monthly-ledger" className="inline-flex min-h-11 items-center underline">월별·반별 장부 점검 (조회 전용)</Link></details>
         </>
     );
 }

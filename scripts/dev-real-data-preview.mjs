@@ -9,6 +9,7 @@ import net from 'node:net';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { capturePreviewSnapshot } from './lib/real-preview-snapshot.mjs';
+import { capturePreviewCalendar } from './lib/real-preview-calendar.mjs';
 import { createPreviewProxy, LOCAL_DRIVER_TOKEN } from './lib/real-preview-proxy.mjs';
 
 const root = process.cwd();
@@ -73,7 +74,15 @@ try {
   await source.connect(); await source.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   assert.equal((await source.query('SHOW transaction_read_only')).rows[0].transaction_read_only, 'on');
   summary.sourceReadOnly = true;
-  snapshot = await capturePreviewSnapshot(source);
+  // 달력을 읽지 못해도 목록 검토는 허용하되, 부분 일정으로 청구를 계산하지 않습니다.
+  const calendarSnapshot = await capturePreviewCalendar(source).catch(() => ({ events: [], kind: 'UNAVAILABLE' }));
+  snapshot = await capturePreviewSnapshot(source, { calendarEvents: calendarSnapshot.events });
+  if (calendarSnapshot.kind === 'UNAVAILABLE') {
+    const annual = snapshot.tables.find(table => table.name === 'AnnualEvent');
+    if (annual) annual.rows = [];
+    snapshot.summary.tablecounts.AnnualEvent = 0;
+  }
+  summary.annualCalendar = { kind: calendarSnapshot.kind, eventCount: calendarSnapshot.events.length };
   summary.capturedAt = new Date().toISOString();
   assert.equal((await source.query('SHOW transaction_read_only')).rows[0].transaction_read_only, 'on');
   await source.query('ROLLBACK'); await source.end(); source = null; productionEnv = null;

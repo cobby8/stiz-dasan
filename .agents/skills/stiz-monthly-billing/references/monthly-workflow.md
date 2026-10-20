@@ -3,7 +3,7 @@
 ## 1. Establish the billing scope
 
 - Confirm academy branch, target year/month, annual-schedule billing period, and invoice due date.
-- Read the exact Google Sheet metadata and bounded target-month rows.
+- For maintained historical periods, read the exact Google Sheet metadata and bounded target-month rows. Do not create or require a new October 2026 Sheet ledger.
 - Read current Rallyz invoice candidates for the same branch and month.
 - Read the website's active enrollments, pending change requests, billing preview, and prior invoices.
 
@@ -22,12 +22,14 @@ Name aliases such as `A/B` suffixes or parenthesized Rallyz names must be explic
 
 ## 4. Reconcile fees
 
-- Use the Sheet's approved tuition and shuttle amounts during the transition period.
+- Use the site's confirmed period/class amounts for current operations. Use approved Sheet amounts only when reconciling a maintained historical period.
 - Validate those amounts against the policy reference and website calculations.
 - In Rallyz, represent tuition discounts as discounts and shuttle fees as a separately named `셔틀비` expense.
 - Do not bury shuttle fees inside tuition or apply a second discount to an already discounted Sheet amount.
 
 ## 5. Pre-issue gate
+
+For the new workbench, first verify original absence, one compensation choice, official scheduled class dates, discount-adjusted source tuition, carry balance allocation, and the saved period/version. Block stale or unsupported evidence instead of substituting a fixed template amount. Site issue, Rallyz reflection, delivery, and payment are separate states.
 
 Block issue unless every Sheet billing row has one intended Rallyz item, every intended invoice has a website record or pending-sync record, missing students and unexplained mismatches are zero, totals match, zero-won invoices are excluded, excluded students are not selected, the annual-schedule period is correct, and notification choice is explicit.
 

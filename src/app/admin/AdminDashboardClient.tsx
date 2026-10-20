@@ -244,7 +244,7 @@ export default function AdminDashboardClient({
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <Link href="/admin/students" prefetch={false} className="academy-button-secondary">원생 찾기</Link>
-                    <Link href="/staff" prefetch={false} className="academy-button-primary">수업·출결 열기</Link>
+                    <Link href="/staff" prefetch={false} className="academy-button-primary">수업 진행</Link>
                 </div>
             </header>
 
@@ -311,9 +311,9 @@ function DashboardContent({
     return (
         <>
             {/* 초기 응답에 이미 포함된 수업은 상세 통계 조회를 기다리지 않는다. */}
-            <div className="grid items-start gap-4 xl:grid-cols-2">
+            <div className={`grid items-start gap-3 ${pendingCount > 0 || enrollStats.PENDING > 0 ? "xl:grid-cols-2" : ""}`}>
             <section className="academy-panel overflow-hidden">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-academy-line)] px-5 py-4">
+                <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${pendingCount > 0 ? "border-b border-[var(--color-academy-line)]" : ""}`}>
                     <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 요청 <span className="academy-status">{pendingCount}건</span></h2>
                     <Link href="/admin/requests" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
                 </div>
@@ -328,14 +328,15 @@ function DashboardContent({
                             </Link>
                         ))}
                     </div>
-                ) : <p className="px-5 py-6 text-sm text-[var(--color-academy-muted)]">{pendingCount > 0 ? "요청 목록에서 처리할 내용을 확인하세요." : "현재 처리할 학부모 요청이 없습니다."}</p>}
+                ) : pendingCount > 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
                 {enrollStats.PENDING > 0 && <Link href="/admin/apply" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
             </section>
                 <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
             </div>
 
-            <details className="academy-panel p-4 md:p-5">
-                <summary className="cursor-pointer text-sm font-bold text-[var(--color-academy-ink)]">운영 현황</summary>
+            <div className="grid items-start gap-2 sm:grid-cols-2">
+            <details className="academy-panel px-4 py-2 [&[open]]:col-span-full">
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">운영 현황</summary>
                 <div className="mt-5 space-y-5">
                     {/* 미조회 값의 0과 빈 배열은 실제 현황으로 보여주지 않는다. */}
                     {detailsError && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">상세 운영 현황을 불러오지 못했습니다. 현재 표시 중인 정보는 유지됩니다. 다시 불러와 주세요.</p>}
@@ -406,13 +407,14 @@ function DashboardContent({
             </details>
 
             {/* 펼치기는 표시만 바꾼다. 조회와 조치는 각 도구의 명시적 버튼에서만 실행한다. */}
-            <details className="academy-panel p-4 md:p-5">
-                <summary className="cursor-pointer text-sm font-bold text-[var(--color-academy-ink)]">관리 도구</summary>
+            <details className="academy-panel px-4 py-2 [&[open]]:col-span-full">
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">관리 도구</summary>
                 <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
                     <SiteOpsBotCard result={siteOpsResult} loading={siteOpsLoading} error={siteOpsError} onRun={onRunSiteOpsBot} />
                     <SystemStatusCard systemStatus={systemStatus} systemLoading={systemLoading} systemError={systemError} onRetry={onRetrySystem} />
                 </div>
             </details>
+            </div>
         </>
     );
 }

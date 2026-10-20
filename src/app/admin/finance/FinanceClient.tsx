@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import {
@@ -8,8 +10,6 @@ import {
     cancelUnpaidPayment,
     updatePaymentStatus,
     deletePayment,
-    previewMonthlyInvoices,
-    generateMonthlyInvoices,
     refreshPaymentLedger,
     sendInvoiceLinksForMonth,
     sendUnpaidReminders,
@@ -134,66 +134,6 @@ type PaymentReconcilePreview = {
     }[];
 };
 
-type MonthlyInvoicePreview = {
-    year: number;
-    month: number;
-    activeTemplateCount: number;
-    targetStudentCount: number;
-    createCount: number;
-    skipCount: number;
-    reviewCount: number;
-    createAmount: number;
-    skipAmount: number;
-    samples: {
-        studentId: string;
-        studentName: string;
-        className: string | null;
-        classCount: number;
-        classNames: string[];
-        parentName: string | null;
-        parentPhone: string | null;
-        parentEmail: string | null;
-        templateName: string;
-        type: string;
-        amount: number;
-        dueDay: number;
-        dueDate: string;
-        existingPaymentId: string | null;
-        existingStatus: string | null;
-        existingAmount: number | null;
-        existingInvoiceNo: string | null;
-        existingInvoiceStatus: string | null;
-        existingSentAt: string | null;
-        issueReason: string | null;
-        action: "CREATE" | "SKIP" | "REVIEW";
-    }[];
-    items: {
-        studentId: string;
-        studentName: string;
-        className: string | null;
-        classCount: number;
-        classNames: string[];
-        parentName: string | null;
-        parentPhone: string | null;
-        parentEmail: string | null;
-        templateName: string;
-        type: string;
-        amount: number;
-        dueDay: number;
-        dueDate: string;
-        existingPaymentId: string | null;
-        existingStatus: string | null;
-        existingAmount: number | null;
-        existingInvoiceNo: string | null;
-        existingInvoiceStatus: string | null;
-        existingSentAt: string | null;
-        issueReason: string | null;
-        action: "CREATE" | "SKIP" | "REVIEW";
-    }[];
-};
-
-type MonthlyInvoicePreviewItem = MonthlyInvoicePreview["items"][number];
-
 const EMPTY_SUMMARY: Summary = {
     totalCount: 0,
     totalAmount: 0,
@@ -202,13 +142,6 @@ const EMPTY_SUMMARY: Summary = {
     paidCount: 0,
     unpaidCount: 0,
 };
-
-const MONTHLY_INVOICE_ACTION_LABELS: Record<string, string> = {
-    CREATE: "생성 예정",
-    SKIP: "기존 청구 유지",
-};
-
-type InvoicePreviewFilter = "ALL" | "CREATE" | "SKIP" | "ATTENTION";
 
 // 상태 라벨 + 색상 매핑
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -286,13 +219,6 @@ function toAbsoluteHref(href: string) {
     if (/^https?:\/\//i.test(href)) return href;
     const normalizedHref = href.startsWith("/") ? href : `/${href}`;
     return `${window.location.origin}${normalizedHref}`;
-}
-
-function needsInvoiceAttention(item: MonthlyInvoicePreviewItem) {
-    if (item.action === "REVIEW") return true;
-    if (item.existingAmount != null && item.existingAmount !== item.amount) return true;
-    if (!item.issueReason) return false;
-    return !item.issueReason.includes("이미 같은 유형");
 }
 
 function FinanceLoadingFallback({ year, month }: { year: number; month: number }) {
@@ -379,10 +305,15 @@ export default function FinanceClient({
 }) {
     // 잠금이면 「링크 발송」「미납 알림」 버튼을 막고 "랠리즈에서 발송" 으로 안내한다
     const parentSendLocked = !billingParentSendEnabled;
+    const searchParams = useSearchParams();
+    const [focusedStudentId, setFocusedStudentId] = useState(searchParams.get("studentId") ?? "");
     const now = new Date();
     const fallbackYear = now.getFullYear();
     const fallbackMonth = now.getMonth() + 1;
     const hasInitialData = Boolean(initialPayments && initialSummary);
+    const [paymentSearch, setPaymentSearch] = useState("");
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState("");
+    const [paymentClassFilter, setPaymentClassFilter] = useState("");
     const [payments, setPayments] = useState(initialPayments ?? []);
     const [year, setYear] = useState(initialYear ?? fallbackYear);
     const [month, setMonth] = useState(initialMonth ?? fallbackMonth);
@@ -422,13 +353,6 @@ export default function FinanceClient({
     const [sheetPreviewLoading, setSheetPreviewLoading] = useState(false);
     const [sheetApplying, setSheetApplying] = useState(false);
     const [sheetError, setSheetError] = useState<string | null>(null);
-    const [invoicePreview, setInvoicePreview] = useState<MonthlyInvoicePreview | null>(null);
-    const [invoicePreviewLoading, setInvoicePreviewLoading] = useState(false);
-    const [invoiceGenerating, setInvoiceGenerating] = useState(false);
-    const [billingRunLoading, setBillingRunLoading] = useState(false);
-    const [invoiceFilter, setInvoiceFilter] = useState<InvoicePreviewFilter>("ALL");
-    const [invoiceError, setInvoiceError] = useState<string | null>(null);
-    const [excludedStudentIds, setExcludedStudentIds] = useState<Set<string>>(new Set());
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
     const [terminalTarget, setTerminalTarget] = useState<Payment | null>(null);
     const [terminalApprovalNo, setTerminalApprovalNo] = useState("");
@@ -469,7 +393,7 @@ export default function FinanceClient({
     const [amount, setAmount] = useState(0);
     const [dueDate, setDueDate] = useState("");
     const [status, setStatus] = useState("PENDING");
-    const [paymentType, setPaymentType] = useState("MONTHLY");
+    const [paymentType, setPaymentType] = useState("OTHER");
     const [description, setDescription] = useState("");
     const [notifyParent, setNotifyParent] = useState(false);
     const [createPreviewOpen, setCreatePreviewOpen] = useState(false);
@@ -490,10 +414,7 @@ export default function FinanceClient({
         setLoadError(null);
         setSheetPreview(null);
         setSheetError(null);
-        setInvoicePreview(null);
-        setInvoiceError(null);
         setFinanceNotice(null);
-        setInvoiceFilter("ALL");
         setSelectedIds(new Set()); // 선택 초기화
         try {
             const res = await fetch(`/api/admin/finance?year=${y}&month=${m}`);
@@ -533,6 +454,10 @@ export default function FinanceClient({
     // 수납 기록 수동 생성
     function handleCreate(e: React.FormEvent) {
         e.preventDefault();
+        if (["MONTHLY", "SHUTTLE"].includes(paymentType)) {
+            setFinanceNotice("월 수강료와 셔틀비는 ‘이번 달 청구 준비’에서 검토해주세요.");
+            return;
+        }
         if (!studentId || !amount || !dueDate) return;
         if (classRequired && !classId) {
             alert("수강료와 셔틀 청구에는 수업을 선택해 주세요.");
@@ -558,7 +483,7 @@ export default function FinanceClient({
             setAmount(0);
             setDueDate("");
             setStatus("PENDING");
-            setPaymentType("MONTHLY");
+            setPaymentType("OTHER");
             setDescription("");
             setNotifyParent(false);
             await loadMonth(year, month);
@@ -692,113 +617,6 @@ export default function FinanceClient({
             alert(getErrorMessage(err, "삭제 실패"));
         } finally {
             setBusy(false);
-        }
-    }
-
-    // 이달 청구서 생성 대상 미리보기
-    async function handlePreviewInvoices() {
-        setInvoicePreviewLoading(true);
-        setInvoiceError(null);
-        setFinanceNotice(null);
-
-        try {
-            const preview = await previewMonthlyInvoices(year, month);
-            setInvoicePreview(preview);
-            const attentionCount = preview.items.filter(needsInvoiceAttention).length;
-            setInvoiceFilter(attentionCount > 0 ? "ATTENTION" : preview.createCount > 0 ? "CREATE" : "ALL");
-            setFinanceNotice(`${year}년 ${month}월 청구 대상 ${preview.targetStudentCount}명, 생성 예정 ${preview.createCount}건, 다반 확인 필요 ${preview.reviewCount}건을 확인했습니다.`);
-        } catch (err: unknown) {
-            setInvoiceError(getErrorMessage(err, "청구 대상 확인 실패"));
-            setInvoicePreview(null);
-        } finally {
-            setInvoicePreviewLoading(false);
-        }
-    }
-
-    // 이달 청구서 생성 (excludeIds: 특정 학생 제외, 미지정 시 전체 발행)
-    async function handleGenerateInvoices(excludeIds?: string[]) {
-        if (!invoicePreview) {
-            await handlePreviewInvoices();
-            return;
-        }
-
-        const excluded = excludeIds ?? Array.from(excludedStudentIds);
-        const allItems = invoicePreview.items ?? invoicePreview.samples ?? [];
-        const targetItems = allItems.filter(
-            (item) => item.action === "CREATE" && !excluded.includes(item.studentId),
-        );
-
-        if (targetItems.length === 0) {
-            alert("새로 생성할 청구서가 없습니다.");
-            return;
-        }
-
-        const totalAmount = targetItems.reduce((sum, item) => sum + item.amount, 0);
-        const confirmMessage =
-            `${year}년 ${month}월 청구서를 발행할까요?\n` +
-            `대상 ${targetItems.length}건 · 총 ${formatAmount(totalAmount)}\n` +
-            (excluded.length > 0 ? `(${excluded.length}명 제외됨)` : "");
-
-        if (!confirm(confirmMessage)) return;
-
-        setInvoiceGenerating(true);
-        setInvoiceError(null);
-
-        try {
-            const result = await generateMonthlyInvoices(year, month, excluded.length > 0 ? excluded : undefined);
-            await loadMonth(year, month);
-            const updatedPreview = await previewMonthlyInvoices(year, month);
-            setInvoicePreview(updatedPreview);
-            setExcludedStudentIds(new Set());
-            // 학부모 청구 안내는 랠리즈 전담 — 사이트 청구는 장부용임을 안내한다.
-            setFinanceNotice(`${result.message}. 청구서는 랠리즈에서 생성·발송합니다. 사이트 청구는 장부용입니다.`);
-        } catch (err: unknown) {
-            setInvoiceError(getErrorMessage(err, "청구서 생성 실패"));
-        } finally {
-            setInvoiceGenerating(false);
-        }
-    }
-
-    async function handleSmartBillingRun() {
-        const confirmMessage =
-            `${year}년 ${month}월 청구서를 자동으로 확인하고 정리할까요?\n` +
-            "새 청구서는 생성하고, 이미 생성된 청구서는 그대로 유지합니다.\n" +
-            "청구서는 랠리즈에서 생성·발송합니다. 사이트 청구는 장부용이며 학부모에게 알림을 보내지 않습니다.";
-
-        if (!confirm(confirmMessage)) return;
-
-        setBillingRunLoading(true);
-        setInvoiceError(null);
-        setFinanceNotice(`${year}년 ${month}월 청구 대상을 확인하고 있습니다...`);
-
-        try {
-            const preview = await previewMonthlyInvoices(year, month);
-            setInvoicePreview(preview);
-
-            let creationMessage = "새로 생성할 청구서가 없습니다.";
-            if (preview.activeTemplateCount === 0) {
-                setInvoiceFilter("ALL");
-                setFinanceNotice("활성 청구 템플릿이 없어 자동 생성할 수 없습니다. 먼저 템플릿을 확인해 주세요.");
-                return;
-            }
-
-            if (preview.createCount > 0) {
-                const generated = await generateMonthlyInvoices(year, month);
-                creationMessage = generated.message;
-            }
-
-            const ledger = await refreshPaymentLedger(year, month);
-            await loadMonth(year, month);
-
-            const updatedPreview = await previewMonthlyInvoices(year, month);
-            const attentionCount = updatedPreview.items.filter(needsInvoiceAttention).length;
-            setInvoicePreview(updatedPreview);
-            setInvoiceFilter(attentionCount > 0 ? "ATTENTION" : "ALL");
-            setFinanceNotice(`${creationMessage}. 청구서 ${ledger.invoices}건과 연체 ${ledger.overdue}건을 정리했습니다. 청구서는 랠리즈에서 생성·발송합니다. 사이트 청구는 장부용입니다.`);
-        } catch (err: unknown) {
-            setInvoiceError(getErrorMessage(err, "청구서 자동 생성/정리 실패"));
-        } finally {
-            setBillingRunLoading(false);
         }
     }
 
@@ -940,15 +758,22 @@ export default function FinanceClient({
         }
     }
 
+    const visiblePayments = payments.filter((payment) => {
+        const needle = paymentSearch.trim().toLocaleLowerCase();
+        return (!focusedStudentId || payment.studentId === focusedStudentId) && (!needle || `${payment.studentName} ${payment.className ?? ""} ${payment.description ?? ""}`.toLocaleLowerCase().includes(needle))
+            && (!paymentStatusFilter || (paymentStatusFilter === "UNPAID" ? ["PENDING", "OVERDUE"].includes(payment.status) : payment.status === paymentStatusFilter))
+            && (!paymentClassFilter || payment.classId === paymentClassFilter);
+    });
+    const paymentClasses = Array.from(new Map(payments.filter((payment) => payment.classId).map((payment) => [payment.classId!, payment.className ?? "반 이름 없음"])).entries());
+
     // 체크박스: 전체 선택/해제
     function toggleSelectAll() {
         if (!canManageCriticalFinance) return;
 
-        if (selectedIds.size === payments.length) {
-            setSelectedIds(new Set());
-        } else {
-            setSelectedIds(new Set(payments.map((p) => p.id)));
-        }
+        const allVisibleSelected = visiblePayments.length > 0 && visiblePayments.every((payment) => selectedIds.has(payment.id));
+        const next = new Set(selectedIds);
+        visiblePayments.forEach((payment) => { if (allVisibleSelected) next.delete(payment.id); else next.add(payment.id); });
+        setSelectedIds(next);
     }
 
     // 체크박스: 개별 토글
@@ -968,20 +793,6 @@ export default function FinanceClient({
     const sheetApplyCount = sheetPreview
         ? sheetPreview.summary.create + sheetPreview.summary.update
         : 0;
-    const invoiceCreateCount = invoicePreview?.createCount ?? 0;
-    const invoiceItems = invoicePreview?.items ?? invoicePreview?.samples ?? [];
-    const invoiceAttentionCount = invoiceItems.filter(needsInvoiceAttention).length;
-    const invoiceFilterOptions: { value: InvoicePreviewFilter; label: string; count: number }[] = [
-        { value: "ALL", label: "전체", count: invoiceItems.length },
-        { value: "CREATE", label: "생성 예정", count: invoiceItems.filter((item) => item.action === "CREATE").length },
-        { value: "SKIP", label: "기존 유지", count: invoiceItems.filter((item) => item.action === "SKIP").length },
-        { value: "ATTENTION", label: "확인 필요", count: invoiceAttentionCount },
-    ];
-    const filteredInvoiceItems = invoiceItems.filter((item) => {
-        if (invoiceFilter === "ALL") return true;
-        if (invoiceFilter === "ATTENTION") return needsInvoiceAttention(item);
-        return item.action === invoiceFilter;
-    });
     const invoiceGeneratedCount = payments.filter((payment) => Boolean(payment.invoiceId)).length;
     const invoiceOpenCount = payments.filter((payment) => ["PENDING", "OVERDUE"].includes(payment.status)).length;
     const invoiceUnsentCount = payments.filter((payment) =>
@@ -1158,30 +969,10 @@ export default function FinanceClient({
 
             <section className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex flex-wrap items-center gap-2">
-                    <span className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-black ${
-                        paymentProvider.providerReady
-                            ? "bg-green-100 text-green-800 dark:bg-green-500/15 dark:text-green-100"
-                            : "bg-yellow-100 text-yellow-900 dark:bg-brand-neon-lime/15 dark:text-brand-neon-lime"
-                    }`}>
-                        <span className="material-symbols-outlined text-[17px]">payments</span>
-                        온라인 결제 {paymentProvider.providerReady ? "사용 가능" : "준비 필요"}
-                    </span>
-                    <span className="inline-flex h-9 items-center rounded-full bg-gray-100 px-3 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                        결제 모드 {paymentModeLabel}
-                    </span>
-                    <span className="inline-flex h-9 items-center rounded-full bg-gray-100 px-3 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                        청구 대상 {invoicePreview ? `${invoicePreview.targetStudentCount}명` : "미확인"}
-                    </span>
-                    <span className="inline-flex h-9 items-center rounded-full bg-gray-100 px-3 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                        생성 {invoiceCreateCount}건
-                    </span>
-                    <span className="inline-flex h-9 items-center rounded-full bg-gray-100 px-3 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                        발송대기 {invoiceUnsentCount}건
-                    </span>
-                    <span className="inline-flex h-9 items-center rounded-full bg-gray-100 px-3 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
-                        미납 {invoiceOpenCount}건
-                    </span>
-
+                    <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-bold text-[var(--brand-accent-contrast)]">
+                        <span className="material-symbols-outlined" aria-hidden="true">receipt_long</span>이번 달 청구 준비
+                    </Link>
+                    {!paymentProvider.providerReady && <span className="text-xs font-semibold text-gray-500">온라인 결제 준비 중</span>}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                         {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
                         {!sheetRetired && (
@@ -1195,57 +986,35 @@ export default function FinanceClient({
                             {sheetPreviewLoading ? "점검 중" : "시트 점검"}
                         </button>
                         )}
-                        <div className="inline-flex h-9 items-center gap-2 rounded-full bg-gray-100 pl-3 pr-1 text-xs font-black text-gray-700 dark:bg-gray-800 dark:text-gray-100">
+                        <details className="relative text-xs font-bold"><summary className="inline-flex min-h-11 cursor-pointer items-center px-3">기타 청구 작업</summary><div className="absolute right-0 z-20 rounded-xl border bg-white p-3 shadow-lg">
                             청구 작업
                             <AdminQuickActionMenu
                                 label="청구 빠른 작업"
                                 actions={[
                                     {
-                                        key: "smart-billing",
-                                        label: billingRunLoading ? "처리 중" : "자동 생성/정리",
-                                        icon: "auto_mode",
-                                        tone: "primary",
-                                        disabled: busy || invoicePreviewLoading || invoiceGenerating || billingRunLoading,
-                                        onSelect: handleSmartBillingRun,
-                                    },
-                                    {
-                                        key: "preview-invoices",
-                                        label: invoicePreviewLoading ? "확인 중" : "대상 확인",
-                                        icon: "fact_check",
-                                        disabled: busy || invoicePreviewLoading || invoiceGenerating || billingRunLoading,
-                                        onSelect: handlePreviewInvoices,
-                                    },
-                                    {
-                                        key: "generate-invoices",
-                                        label: invoiceGenerating ? "생성 중" : "청구서 생성",
-                                        icon: "receipt_long",
-                                        disabled: !invoicePreview || invoiceGenerating || billingRunLoading || invoiceCreateCount === 0,
-                                        onSelect: handleGenerateInvoices,
-                                    },
-                                    {
                                         key: "send-links",
                                         label: parentSendLocked ? "링크 발송 · 랠리즈에서 발송" : "링크 발송",
                                         icon: "send",
-                                        disabled: parentSendLocked || busy || billingRunLoading || invoiceGeneratedCount === 0 || invoiceUnsentCount === 0,
+                                        disabled: parentSendLocked || busy || invoiceGeneratedCount === 0 || invoiceUnsentCount === 0,
                                         onSelect: handleSendInvoiceLinks,
                                     },
                                     {
                                         key: "send-reminders",
                                         label: parentSendLocked ? "미납 알림 · 랠리즈에서 발송" : "미납 알림",
                                         icon: "notifications_active",
-                                        disabled: parentSendLocked || busy || billingRunLoading || invoiceOpenCount === 0,
+                                        disabled: parentSendLocked || busy || invoiceOpenCount === 0,
                                         onSelect: handleSendReminders,
                                     },
                                     {
                                         key: "refresh-ledger",
                                         label: "상태 새로고침",
                                         icon: "sync",
-                                        disabled: busy || billingRunLoading,
+                                        disabled: busy,
                                         onSelect: handleRefreshPaymentLedger,
                                     },
                                 ]}
                             />
-                        </div>
+                        </div></details>
                         {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림)는 랠리즈에서 보낸다 */}
                         {parentSendLocked && (
                             <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
@@ -1271,6 +1040,7 @@ export default function FinanceClient({
 
                 <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                     <summary className="cursor-pointer font-extrabold text-gray-800 dark:text-gray-100">결제 설정 보기</summary>
+                    <p className="mt-2">결제 모드: {paymentModeLabel}</p>
                     <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <p>온라인 결제 상태: {paymentProvider.providerReady ? `${paymentProvider.providerLabel} 온라인 결제를 사용할 수 있습니다.` : `준비 필요${paymentProviderMissing.length > 0 ? `: ${paymentProviderMissing.join(", ")}` : ""}`}</p>
                         <p>복귀 주소: {paymentProvider.siteUrlValid ? "준비됨" : "확인 필요"}</p>
@@ -1283,268 +1053,6 @@ export default function FinanceClient({
                     )}
                 </details>
             </section>
-
-            {invoiceError && (
-                <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-200">
-                    {invoiceError}
-                </p>
-            )}
-
-            {invoicePreview && (
-                <div className="mb-4 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                    {/* 헤더 */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
-                        <div>
-                            <p className="text-sm font-extrabold text-gray-900 dark:text-white">
-                                {year}년 {month}월 청구 검수
-                            </p>
-                            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                대상 {invoicePreview.targetStudentCount}명 · 발행 예정 {invoicePreview.createCount}건 · 기존 유지 {invoicePreview.skipCount}건
-                                {invoiceAttentionCount > 0 && <span className="ml-1 font-bold text-amber-600 dark:text-amber-300">· 확인 필요 {invoiceAttentionCount}건</span>}
-                                {excludedStudentIds.size > 0 && <span className="ml-1 font-bold text-red-500">· {excludedStudentIds.size}명 제외</span>}
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {excludedStudentIds.size > 0 && (
-                                <button type="button" onClick={() => setExcludedStudentIds(new Set())} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300">
-                                    전체 선택 복원
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                disabled={invoiceGenerating || invoicePreview.createCount === 0}
-                                onClick={() => void handleGenerateInvoices()}
-                                className="rounded-lg bg-brand-orange-500 px-4 py-1.5 text-xs font-extrabold text-white disabled:opacity-40 dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                            >
-                                {invoiceGenerating ? "발행 중…" : excludedStudentIds.size > 0 ? `선택 ${invoicePreview.createCount - excludedStudentIds.size}건 발행` : `전체 ${invoicePreview.createCount}건 발행`}
-                            </button>
-                        </div>
-                    </div>
-
-                    {invoicePreview.activeTemplateCount === 0 && (
-                        <p className="px-4 py-3 text-sm font-semibold text-amber-700 dark:text-amber-300">
-                            활성 청구 템플릿이 없습니다. 청구 템플릿을 먼저 등록해야 월별 청구서를 발행할 수 있습니다.
-                        </p>
-                    )}
-
-                    {invoicePreview.reviewCount > 0 && (
-                        <p className="px-4 py-3 text-sm text-[var(--color-brand-orange-700)] dark:text-[var(--color-brand-neon-lime)]">
-                            다반 확인 필요 {invoicePreview.reviewCount}건은 발행에서 제외됩니다. 반별 수강료·할인·기존 납부를 확인해 주세요. 템플릿 금액을 반 수만큼 곱하지 않습니다.
-                        </p>
-                    )}
-
-                    {/* 필터 탭 */}
-                    {invoiceItems.length > 0 && (
-                        <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-2 dark:border-gray-800">
-                            {invoiceFilterOptions.map((option) => (
-                                <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => setInvoiceFilter(option.value)}
-                                    className={`rounded-full px-3 py-1 text-xs font-bold transition ${invoiceFilter === option.value
-                                        ? "bg-brand-orange-500 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                        : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                                        }`}
-                                >
-                                    {option.label} {option.count}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* 반별 그룹 목록 */}
-                    {filteredInvoiceItems.length === 0 ? (
-                        <p className="px-4 py-8 text-center text-sm font-semibold text-gray-500 dark:text-gray-400">
-                            선택한 조건에 해당하는 청구 대상이 없습니다.
-                        </p>
-                    ) : (() => {
-                        // 반별 그룹핑 → 학생별 그룹핑
-                        const classMap = new Map<string, MonthlyInvoicePreviewItem[]>();
-                        for (const item of filteredInvoiceItems) {
-                            const key = item.action === "REVIEW" ? "다반 수강 · 확인 필요" : item.className ?? "수업 미지정";
-                            const arr = classMap.get(key) ?? [];
-                            arr.push(item);
-                            classMap.set(key, arr);
-                        }
-                        const sortedClasses = Array.from(classMap.entries()).sort(([a], [b]) => a.localeCompare(b, "ko"));
-
-                        return (
-                            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                                {sortedClasses.map(([className, classItems]) => {
-                                    const studentMap = new Map<string, MonthlyInvoicePreviewItem[]>();
-                                    for (const item of classItems) {
-                                        const arr = studentMap.get(item.studentId) ?? [];
-                                        arr.push(item);
-                                        studentMap.set(item.studentId, arr);
-                                    }
-                                    const students = Array.from(studentMap.entries()).sort(([, a], [, b]) =>
-                                        a[0].studentName.localeCompare(b[0].studentName, "ko"),
-                                    );
-                                    const classCreateStudents = students.filter(([, items]) => items.some((i) => i.action === "CREATE"));
-                                    const classTotalAmount = classItems.reduce((sum, item) => sum + (item.action === "REVIEW" ? 0 : item.amount), 0);
-                                    const classExcluded = classCreateStudents.every(([sid]) => excludedStudentIds.has(sid));
-                                    const classAllSelected = classCreateStudents.length > 0 && classCreateStudents.every(([sid]) => !excludedStudentIds.has(sid));
-
-                                    function toggleClass() {
-                                        setExcludedStudentIds((prev) => {
-                                            const next = new Set(prev);
-                                            if (classAllSelected) {
-                                                classCreateStudents.forEach(([sid]) => next.add(sid));
-                                            } else {
-                                                classCreateStudents.forEach(([sid]) => next.delete(sid));
-                                            }
-                                            return next;
-                                        });
-                                    }
-
-                                    return (
-                                        <div key={className}>
-                                            {/* 반 헤더 */}
-                                            <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 py-2 dark:bg-gray-800/60">
-                                                <div className="flex items-center gap-3">
-                                                    {classCreateStudents.length > 0 && (
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={classAllSelected}
-                                                            onChange={toggleClass}
-                                                            className="h-4 w-4 rounded accent-brand-orange-500"
-                                                            aria-label={`${className} 전체 선택`}
-                                                        />
-                                                    )}
-                                                    <div>
-                                                        <span className="text-sm font-extrabold text-gray-900 dark:text-white">{className}</span>
-                                                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{students.length}명 · {classItems.every((item) => item.action === "REVIEW") ? "금액 산정 보류" : formatAmount(classTotalAmount)}</span>
-                                                    </div>
-                                                </div>
-                                                {classCreateStudents.length > 0 && (
-                                                    <button
-                                                        type="button"
-                                                        disabled={invoiceGenerating || classExcluded}
-                                                        onClick={() => {
-                                                            const allStudentIds = Array.from(studentMap.keys());
-                                                            const nonClassExcluded = Array.from(excludedStudentIds).filter((id) => !allStudentIds.includes(id));
-                                                            void handleGenerateInvoices(nonClassExcluded);
-                                                        }}
-                                                        className="rounded-lg border border-brand-orange-200 px-3 py-1 text-xs font-bold text-brand-orange-600 hover:bg-brand-orange-50 disabled:opacity-40 dark:border-brand-neon-lime/30 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/10"
-                                                    >
-                                                        이 반 발행
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {/* 학생 행 */}
-                                            <div className="divide-y divide-gray-50 dark:divide-gray-800/50">
-                                                {students.map(([studentId, studentItems]) => {
-                                                    const first = studentItems[0];
-                                                    const hasCreate = studentItems.some((i) => i.action === "CREATE");
-                                                    const hasReview = studentItems.some((i) => i.action === "REVIEW");
-                                                    const isExcluded = excludedStudentIds.has(studentId);
-                                                    const totalAmount = studentItems.reduce((sum, i) => sum + (i.action === "REVIEW" ? 0 : i.amount), 0);
-                                                    const hasAttention = studentItems.some(needsInvoiceAttention);
-                                                    const existingStatus = first.existingStatus ? STATUS_LABELS[first.existingStatus] : null;
-
-                                                    return (
-                                                        <div
-                                                            key={studentId}
-                                                            className={`flex flex-wrap items-start gap-3 px-4 py-3 ${isExcluded ? "opacity-40" : ""}`}
-                                                        >
-                                                            {/* 체크박스 (발행 예정인 경우만) */}
-                                                            <div className="flex w-4 shrink-0 items-center pt-0.5">
-                                                                {hasCreate ? (
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={!isExcluded}
-                                                                        onChange={() => {
-                                                                            setExcludedStudentIds((prev) => {
-                                                                                const next = new Set(prev);
-                                                                                if (isExcluded) next.delete(studentId);
-                                                                                else next.add(studentId);
-                                                                                return next;
-                                                                            });
-                                                                        }}
-                                                                        className="h-4 w-4 rounded accent-brand-orange-500"
-                                                                        aria-label={`${first.studentName} 포함`}
-                                                                    />
-                                                                ) : (
-                                                                    <span className="block h-4 w-4" />
-                                                                )}
-                                                            </div>
-
-                                                            {/* 학생 정보 */}
-                                                            <div className="min-w-[100px] flex-1">
-                                                                <p className="font-bold text-gray-900 dark:text-white">{first.studentName}</p>
-                                                                {hasReview && (
-                                                                    <p className="mt-0.5 text-xs">{first.classCount}개 반: {first.classNames.join(" · ")}</p>
-                                                                )}
-                                                                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                                                    {first.parentName ?? "학부모 미지정"} · {first.parentPhone || first.parentEmail || "연락처 확인 필요"}
-                                                                </p>
-                                                            </div>
-
-                                                            {/* 청구 항목 목록 */}
-                                                            <div className="min-w-[180px] flex-1">
-                                                                {studentItems.map((item, idx) => (
-                                                                    <div key={idx} className="flex items-center justify-between gap-2 text-sm">
-                                                                        <span className="text-gray-600 dark:text-gray-300">
-                                                                            {TYPE_LABELS[item.type] ?? item.type}
-                                                                        </span>
-                                                                        <span className="font-mono font-semibold text-gray-800 dark:text-gray-100">
-                                                                            {item.action === "REVIEW" ? "금액 산정 보류" : formatAmount(item.amount)}
-                                                                        </span>
-                                                                    </div>
-                                                                ))}
-                                                                {studentItems.length > 1 && !hasReview && (
-                                                                    <div className="mt-1 flex items-center justify-between gap-2 border-t border-gray-200 pt-1 text-sm dark:border-gray-700">
-                                                                        <span className="font-bold text-gray-700 dark:text-gray-200">합계</span>
-                                                                        <span className="font-mono font-extrabold text-gray-900 dark:text-white">{formatAmount(totalAmount)}</span>
-                                                                    </div>
-                                                                )}
-                                                                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">납부기한 {first.dueDate}</p>
-                                                            </div>
-
-                                                            {/* 상태 배지 */}
-                                                            <div className="flex shrink-0 flex-wrap items-center gap-1">
-                                                                {hasCreate ? (
-                                                                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700 dark:bg-green-950/40 dark:text-green-200">
-                                                                        발행 예정
-                                                                    </span>
-                                                                ) : hasReview ? (
-                                                                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-[var(--color-brand-orange-700)] dark:text-[var(--color-brand-neon-lime)]">
-                                                                        확인 필요 · 발행 제외
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                                                                        기존 유지
-                                                                    </span>
-                                                                )}
-                                                                {existingStatus && (
-                                                                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${existingStatus.color}`}>
-                                                                        {existingStatus.label}
-                                                                    </span>
-                                                                )}
-                                                                {hasAttention && (
-                                                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-                                                                        확인 필요
-                                                                    </span>
-                                                                )}
-                                                                {studentItems.some((i) => i.issueReason) && (
-                                                                    <p className="w-full text-xs text-amber-600 dark:text-amber-300">
-                                                                        {studentItems.find((i) => i.issueReason)?.issueReason}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        );
-                    })()}
-                </div>
-            )}
 
             {/* 시트 원장 기준 수납 점검 패널 — 시트 원장 은퇴면 숨김 */}
             {!sheetRetired && (sheetError || sheetPreview) && (
@@ -1680,6 +1188,7 @@ export default function FinanceClient({
             {showForm && (
                 <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">새 수납 기록</h3>
+                    <p className="text-sm text-gray-500">월 수강료·셔틀비는 <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="font-bold underline">청구 준비에서 계산·발행</Link>해주세요.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">원생 *</label>
@@ -1773,8 +1282,6 @@ export default function FinanceClient({
                                 onChange={(e) => setPaymentType(e.target.value)}
                                 className="w-full border border-gray-300 dark:border-gray-600 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime bg-white dark:bg-gray-800"
                             >
-                                <option value="MONTHLY">월 수강료</option>
-                                <option value="SHUTTLE">셔틀</option>
                                 <option value="UNIFORM">유니폼</option>
                                 <option value="OTHER">기타</option>
                             </select>
@@ -1836,10 +1343,20 @@ export default function FinanceClient({
                 </form>
             )}
 
+            {focusedStudentId && <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">선택한 원생의 수납만 표시 중<button type="button" className="min-h-11 px-3 underline" onClick={() => setFocusedStudentId("")}>전체 원생 보기</button></p>}
+            <section aria-label="수납 검색과 필터" className="mb-3 flex flex-wrap items-center gap-2">
+                <label className="min-w-0 flex-1"><span className="sr-only">학생·반·내용 검색</span><input value={paymentSearch} onChange={(event) => { setPaymentSearch(event.target.value); setSelectedIds(new Set()); }} placeholder="학생·반·내용 검색" className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-base" /></label>
+                <details className="relative"><summary className="flex min-h-11 cursor-pointer items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span>필터{paymentStatusFilter || paymentClassFilter ? " · 적용 중" : ""}</summary><div className="absolute right-0 z-20 grid w-60 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border bg-white p-3 shadow-lg">
+                    <label className="grid gap-1 text-sm">납부 상태<select aria-label="납부 상태 필터" value={paymentStatusFilter} onChange={(event) => { setPaymentStatusFilter(event.target.value); setSelectedIds(new Set()); }} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체</option><option value="UNPAID">미납·연체</option><option value="PAID">납부 완료</option><option value="CANCELLED">취소</option></select></label>
+                    <label className="grid gap-1 text-sm">반<select aria-label="반 필터" value={paymentClassFilter} onChange={(event) => { setPaymentClassFilter(event.target.value); setSelectedIds(new Set()); }} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체 반</option>{paymentClasses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+                    <button type="button" className="min-h-11 text-sm font-bold" onClick={() => { setPaymentClassFilter(""); setPaymentStatusFilter(""); setSelectedIds(new Set()); }}>필터 초기화</button>
+                </div></details>
+                <span className="text-sm text-gray-500">{visiblePayments.length} / {payments.length}건</span>
+            </section>
             {/* 수납 목록 테이블 */}
-            {payments.length === 0 ? (
+            {visiblePayments.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
-                    {year}년 {month}월 수납 기록이 없습니다.
+                    {payments.length ? "검색 조건에 맞는 수납 기록이 없습니다." : `${year}년 ${month}월 수납 기록이 없습니다.`}
                 </div>
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
@@ -1851,7 +1368,7 @@ export default function FinanceClient({
                                         <th className="px-3 py-3 text-center">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedIds.size === payments.length && payments.length > 0}
+                                                checked={visiblePayments.length > 0 && visiblePayments.every((payment) => selectedIds.has(payment.id))}
                                                 onChange={toggleSelectAll}
                                                 className="rounded border-gray-300"
                                             />
@@ -1867,7 +1384,7 @@ export default function FinanceClient({
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {payments.map((p) => {
+                                {visiblePayments.map((p) => {
                                     const statusInfo = STATUS_LABELS[p.status] || STATUS_LABELS.PENDING;
                                     const invoiceHref = getInvoiceHref(p);
                                     const rowActions: AdminQuickAction[] = [

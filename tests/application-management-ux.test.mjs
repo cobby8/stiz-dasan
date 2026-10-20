@@ -208,10 +208,10 @@ test("신청 수정, 일정 변경, 취소는 운영 이력으로 남고 관리�
 });
 
 test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약을 제거한다", () => {
-  assert.match(adminShell, /label="신청 관리"/);
-  assert.match(adminShell, /label="수납·청구"/);
-  assert.match(adminShell, /신청·수업 업무/);
-  assert.match(adminShell, /학원 운영 설정/);
+  assert.match(adminShell, /label="신청·상담"/);
+  assert.match(adminShell, /label="청구·수납"/);
+  assert.match(adminShell, /업무별 상세 메뉴/);
+  assert.match(adminShell, /설정·도구/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);
   assert.match(applyClient, /체험\/수강신청 관리/);

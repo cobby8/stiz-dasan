@@ -11,6 +11,7 @@ export interface GoogleCalendarEvent {
     url?: string;
     source: "google";
 }
+export type GoogleCalendarReadOptions = { strict?: boolean; fresh?: boolean };
 
 // isRecurring: Google Calendar 반복 이벤트 여부 (recurringEventId 또는 recurrenceid 존재 시 true)
 // 텍스트 키워드 기반 분류가 우선이고, 키워드 매칭이 안 되면 반복 여부로 "정기행사" 판별
@@ -52,6 +53,7 @@ function extractCalendarId(icsUrl: string): string | null {
 async function fetchViaCalendarAPI(
     calendarId: string,
     apiKey: string,
+    options: GoogleCalendarReadOptions = {},
 ): Promise<GoogleCalendarEvent[]> {
     const now = new Date();
     const timeMin = new Date(Date.UTC(now.getUTCFullYear() - 1, 0, 1)).toISOString();
@@ -63,12 +65,13 @@ async function fetchViaCalendarAPI(
         `?key=${apiKey}&singleEvents=true&maxResults=2500` +
         `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`;
 
-    const res = await fetch(url, { next: { revalidate: 300 } });
+    const res = await fetch(url, options.fresh ? { cache: "no-store" } : { next: { revalidate: 300 } });
     if (!res.ok) {
         const body = await res.text();
         throw new Error(`Google Calendar API ${res.status}: ${body.slice(0, 200)}`);
     }
     const data: any = await res.json();
+    if (options.strict && (!Array.isArray(data.items) || data.nextPageToken)) throw new Error("공식 일정 전체를 확인하지 못했습니다.");
 
     const result: GoogleCalendarEvent[] = [];
     for (const item of data.items ?? []) {
@@ -117,10 +120,11 @@ async function fetchViaCalendarAPI(
 }
 
 /** ICS 파싱 방식 (fallback) */
-async function fetchViaICS(icsUrl: string): Promise<GoogleCalendarEvent[]> {
-    const res = await fetch(icsUrl, { next: { revalidate: 300 } });
+async function fetchViaICS(icsUrl: string, options: GoogleCalendarReadOptions = {}): Promise<GoogleCalendarEvent[]> {
+    const res = await fetch(icsUrl, options.fresh ? { cache: "no-store" } : { next: { revalidate: 300 } });
     if (!res.ok) throw new Error(`ICS fetch failed: ${res.status}`);
     const icsText = await res.text();
+    if (options.strict && (!icsText.includes("BEGIN:VCALENDAR") || !icsText.includes("END:VCALENDAR"))) throw new Error("공식 일정 형식이 올바르지 않습니다.");
     const events = ical.sync.parseICS(icsText) as Record<string, any>;
     const result: GoogleCalendarEvent[] = [];
 
@@ -133,7 +137,10 @@ async function fetchViaICS(icsUrl: string): Promise<GoogleCalendarEvent[]> {
         const end = event.end;
         if (!start) continue;
 
-        if ((event as any).rrule) continue;
+        if ((event as any).rrule) {
+            if (options.strict) throw new Error("반복 일정 전체를 확인하지 못했습니다.");
+            continue;
+        }
 
         const isAllDay = (event as any).datetype === "date";
         const startDate = isAllDay ? normalizeAllDayDate(new Date(start)) : new Date(start);
@@ -170,7 +177,7 @@ async function fetchViaICS(icsUrl: string): Promise<GoogleCalendarEvent[]> {
     return result.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
-export async function fetchGoogleCalendarEvents(icsUrl: string): Promise<GoogleCalendarEvent[]> {
+export async function fetchGoogleCalendarEvents(icsUrl: string, options: GoogleCalendarReadOptions = {}): Promise<GoogleCalendarEvent[]> {
     const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
 
     // API 키가 있으면 Google Calendar API v3 사용 (실시간, 캐시 없음)
@@ -178,17 +185,18 @@ export async function fetchGoogleCalendarEvents(icsUrl: string): Promise<GoogleC
         const calendarId = extractCalendarId(icsUrl);
         if (calendarId) {
             try {
-                return await fetchViaCalendarAPI(calendarId, apiKey);
+                return await fetchViaCalendarAPI(calendarId, apiKey, options);
             } catch (e) {
-                console.error("Calendar API failed, falling back to ICS:", e);
+                if (!options.strict) console.error("Calendar API failed, falling back to ICS:", e);
             }
         }
     }
 
     // fallback: ICS 파싱
     try {
-        return await fetchViaICS(icsUrl);
+        return await fetchViaICS(icsUrl, options);
     } catch (e) {
+        if (options.strict) throw new Error("공식 일정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         console.error("Failed to fetch Google Calendar ICS:", e);
         return [];
     }

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { recommendClasses, summarize, type ClassCandidate } from "./credit-rules";
+import { recommendClasses, summarize, type ClassCandidate, type MakeupCreditStatus } from "./credit-rules";
+import { assertMakeupSessionAllowed, assertRegularMakeupAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 
 // 학부모용 보강 — 보강권 조회 · 반 추천 · 예약 · 취소.
 //
@@ -54,7 +55,11 @@ export type ParentMakeupOverview = {
 
 /** 내 자녀들의 보강권 전체. 만료는 지금 시점으로 판정해 보여 준다. */
 export async function getMakeupOverviewForParent(parentUserId: string): Promise<ParentMakeupOverview> {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    id: string; studentId: string; studentName: string; studentGrade: string | null;
+    sourceType: string; absenceDate: Date; expiresAt: Date; status: MakeupCreditStatus;
+    makeupSessionId: string | null; bookedDate: Date | null; bookedClassName: string | null;
+  }>>(
     `SELECT mc.id, mc."studentId", s.name AS "studentName", s.grade AS "studentGrade",
             mc."sourceType", mc."absenceDate", mc."expiresAt", mc.status,
             mc."makeupSessionId",
@@ -114,7 +119,10 @@ export async function getMakeupOptionsForCredit(
   creditId: string,
 ): Promise<{ ok: true; options: MakeupOption[]; expiresYmd: string } | { ok: false; message: string }> {
   // ★ 부모 소유 확인이 여기서 끝난다. 이후 쿼리는 이 결과만 신뢰한다.
-  const own = await prisma.$queryRawUnsafe<any[]>(
+  const own = await prisma.$queryRawUnsafe<Array<{
+    id: string; studentId: string; studentGrade: string | null; originClassId: string | null;
+    status: MakeupCreditStatus; expiresAt: Date;
+  }>>(
     `SELECT mc.id, mc."studentId", s.grade AS "studentGrade", mc."originClassId",
             mc.status, mc."expiresAt"
        FROM "MakeupCredit" mc
@@ -131,7 +139,10 @@ export async function getMakeupOptionsForCredit(
   }
 
   // 반 + 시간표 학년구성 + 현재 인원 + 이미 잡힌 보강 수
-  const rows = await prisma.$queryRawUnsafe<any[]>(
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    classId: string; className: string; dayOfWeek: string; startTime: string; endTime: string;
+    capacity: number; gradesJson: string | null; enrolled: number; booked: number;
+  }>>(
     `SELECT c.id AS "classId", c.name AS "className", c."dayOfWeek", c."startTime", c."endTime",
             c.capacity, ss."gradesJSON" AS "gradesJson",
             (SELECT COUNT(*) FROM "Enrollment" e
@@ -198,7 +209,9 @@ export async function bookMakeup(
 ): Promise<{ ok: boolean; message: string }> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dateYmd)) return { ok: false, message: "날짜가 올바르지 않습니다." };
 
-  const own = await prisma.$queryRawUnsafe<any[]>(
+  const own = await prisma.$queryRawUnsafe<Array<{
+    id: string; studentId: string; originClassId: string | null; absenceDate: Date; expiresAt: Date; studentGrade: string | null;
+  }>>(
     `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", s.grade AS "studentGrade"
        FROM "MakeupCredit" mc JOIN "Student" s ON s.id = mc."studentId"
       WHERE mc.id = $1 AND s."parentId" = $2 AND mc.status = 'AVAILABLE' LIMIT 1`,
@@ -221,16 +234,20 @@ export async function bookMakeup(
     return { ok: false, message: "그 수업이 열리지 않는 날짜입니다." };
   }
 
-  // 보강권 선점(동시 클릭 방지)
-  const locked = await prisma.$executeRawUnsafe(
-    `UPDATE "MakeupCredit" SET status='RESERVED', "updatedAt"=now()
-      WHERE id=$1 AND status='AVAILABLE'`,
-    input.creditId,
-  );
-  if (Number(locked) === 0) return { ok: false, message: "이미 예약 처리된 보강권입니다." };
-
   try {
-    const created = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    await prisma.$transaction(async tx => {
+      await lockCompensation(tx);
+      if (credit.originClassId) await assertRegularMakeupAllowed(tx, {
+        studentId: credit.studentId, classId: credit.originClassId, dateYmd: kstYmd(credit.absenceDate),
+      });
+      // 이월 전환과 같은 잠금을 잡고 예약·권 연결을 함께 저장한다.
+      const locked = await tx.$executeRawUnsafe(
+        `UPDATE "MakeupCredit" SET status='RESERVED', "updatedAt"=now()
+          WHERE id=$1 AND status='AVAILABLE'
+            AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND s."parentId"=$2 AND s."mergedIntoStudentId" IS NULL)`, input.creditId, parentUserId,
+      );
+      if (Number(locked) === 0) throw new Error("MAKEUP_ALREADY_RESERVED");
+      const created = await tx.$queryRawUnsafe<{ id: string }[]>(
       `INSERT INTO "MakeupSession"
          (id,"studentId","originalClassId","originalDate","makeupClassId","makeupDate",status,"createdAt","updatedAt")
        VALUES (gen_random_uuid()::text,$1,$2,$3::timestamptz,$4,$5::timestamptz,'BOOKED',now(),now())
@@ -238,18 +255,17 @@ export async function bookMakeup(
       credit.studentId, credit.originClassId ?? input.classId,
       new Date(credit.absenceDate).toISOString(), input.classId, bookAt.toISOString(),
     );
-    await prisma.$executeRawUnsafe(
+      await tx.$executeRawUnsafe(
       `UPDATE "MakeupCredit" SET "makeupSessionId"=$2, "updatedAt"=now() WHERE id=$1`,
       input.creditId, created[0].id,
-    );
+      );
+    });
     return { ok: true, message: `${target.className} ${dayLabel(bookAt)} 보강이 예약되었습니다.` };
   } catch (error) {
-    // 예약 생성이 실패하면 선점을 풀어 준다. 안 그러면 보강권이 잠긴 채 남는다.
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MakeupCredit" SET status='AVAILABLE', "makeupSessionId"=NULL, "updatedAt"=now() WHERE id=$1`,
-      input.creditId,
-    );
-    console.error("[bookMakeup] 예약 생성 실패 — 보강권 복구함", { creditId: input.creditId, error });
+    // 실패한 거래는 되돌린다. 별도 복구 UPDATE로 회수된 권을 되살리지 않는다.
+    if (error instanceof CompensationConflict) return { ok: false, message: error.message };
+    if (error instanceof Error && error.message === "MAKEUP_ALREADY_RESERVED") return { ok: false, message: "이미 예약 처리된 보강권입니다." };
+    console.error("[bookMakeup] 예약 생성 실패 — 거래 취소", error);
     return { ok: false, message: "예약에 실패했습니다. 잠시 후 다시 시도해 주세요." };
   }
 }
@@ -262,7 +278,9 @@ export async function cancelMakeupBooking(
   parentUserId: string,
   creditId: string,
 ): Promise<{ ok: boolean; message: string }> {
-  const own = await prisma.$queryRawUnsafe<any[]>(
+  const own = await prisma.$queryRawUnsafe<Array<{
+    id: string; makeupSessionId: string | null; makeupDate: Date | null;
+  }>>(
     `SELECT mc.id, mc."makeupSessionId", ms."makeupDate"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
@@ -277,15 +295,29 @@ export async function cancelMakeupBooking(
     return { ok: false, message: "이미 지난 보강은 취소할 수 없습니다. 학원으로 문의해 주세요." };
   }
 
-  if (row.makeupSessionId) {
-    await prisma.$executeRawUnsafe(
+  try {
+    await prisma.$transaction(async tx => {
+      await lockCompensation(tx);
+      if (row.makeupSessionId) await assertMakeupSessionAllowed(tx, row.makeupSessionId);
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "MakeupCredit" WHERE id=$1 AND status='RESERVED'
+          AND "makeupSessionId" IS NOT DISTINCT FROM $2
+          AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND s."parentId"=$3 AND s."mergedIntoStudentId" IS NULL)
+          FOR UPDATE`, creditId, row.makeupSessionId, parentUserId,
+      );
+      if (!locked.length) throw new Error("MAKEUP_NOT_RESERVED");
+      if (row.makeupSessionId) await tx.$executeRawUnsafe(
       `UPDATE "MakeupSession" SET status='CANCELLED', "updatedAt"=now() WHERE id=$1`,
       row.makeupSessionId,
-    );
-  }
-  await prisma.$executeRawUnsafe(
+      );
+      await tx.$executeRawUnsafe(
     `UPDATE "MakeupCredit" SET status='AVAILABLE', "makeupSessionId"=NULL, "updatedAt"=now() WHERE id=$1`,
     creditId,
-  );
+      );
+    });
+  } catch (error) {
+    if (error instanceof CompensationConflict) return { ok: false, message: error.message };
+    return { ok: false, message: "예약 상태가 변경됐습니다. 다시 확인해 주세요." };
+  }
   return { ok: true, message: "예약을 취소했습니다. 보강권은 그대로 유지됩니다." };
 }

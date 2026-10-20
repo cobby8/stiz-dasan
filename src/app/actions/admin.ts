@@ -3,6 +3,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
@@ -1556,6 +1557,11 @@ export async function createPayment(data: {
             throw new Error("수강료와 셔틀 청구에는 연결할 수업을 선택해 주세요.");
         }
         const invoice = await prisma.$transaction(async (tx) => {
+            if (["MONTHLY", "SHUTTLE"].includes(paymentType)) {
+                await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))");
+                const installed = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS found`);
+                if (installed[0]?.found) throw new Error("수강료·셔틀비는 이번 달 청구 준비에서 검토해 주세요.");
+            }
             if (classId) {
                 const enrollment = await tx.$queryRawUnsafe<{ id: string }[]>(
                     `SELECT id FROM "Enrollment"
@@ -3307,6 +3313,10 @@ export async function generateMonthlyInvoices(year: number, month: number, exclu
         // 구조 보강은 거래 밖에서 마치고, 납부와 청구서는 함께 성공하거나 함께 취소한다.
         await ensurePaymentInfrastructure();
         const { insertedRows, invoiceResult } = await prisma.$transaction(async (tx) => {
+            // 새 청구가 설치되면 구형 고정액 생성으로 이월·0원 정산을 우회하지 못하게 한다.
+            await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))");
+            const installed = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS found`);
+            if (installed[0]?.found) throw new Error("이번 달 청구 준비에서 금액을 확인해 발행해 주세요.");
             // 이 월청구 경로의 같은 연월 실행만 순서대로 처리한다(다른 수납 경로의 전체 잠금은 아님).
             await tx.$executeRawUnsafe(
                 `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
@@ -4752,7 +4762,10 @@ export async function bookMakeupSession(data: {
     // (try 바깥에 두어 "이미 정원이 찼습니다..." 문구가 그대로 원장에게 전달되게 한다)
     await assertMakeupSeatAvailable(data.makeupClassId, data.makeupDate);
     try {
-        await prisma.$executeRawUnsafe(
+        await prisma.$transaction(async tx => {
+            await lockCompensation(tx);
+            await assertRegularMakeupAllowed(tx, { studentId: data.studentId, classId: data.originalClassId, dateYmd: data.originalDate.slice(0, 10) });
+            await tx.$executeRawUnsafe(
             `INSERT INTO "MakeupSession"
                 (id, "studentId", "originalClassId", "originalDate", "makeupClassId", "makeupDate", status, "requestId", "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3::timestamptz, $4, $5::timestamptz, 'BOOKED', $6, NOW(), NOW())`,
@@ -4762,8 +4775,10 @@ export async function bookMakeupSession(data: {
             data.makeupClassId,
             data.makeupDate,
             data.requestId || null,
-        );
+            );
+        });
     } catch (e) {
+        if (e instanceof CompensationConflict) throw e;
         console.error("Failed to book makeup session:", e);
         throw new Error("보강 예약 실패");
     }
@@ -4800,12 +4815,17 @@ export async function updateMakeupStatus(id: string, status: string) {
         throw new Error("잘못된 상태값입니다");
     }
     try {
-        await prisma.$executeRawUnsafe(
+        await prisma.$transaction(async tx => {
+            await lockCompensation(tx);
+            if (status !== "CANCELLED") await assertMakeupSessionAllowed(tx, id);
+            await tx.$executeRawUnsafe(
             `UPDATE "MakeupSession" SET status = $1, "updatedAt" = NOW() WHERE id = $2`,
             status,
             id,
-        );
+            );
+        });
     } catch (e) {
+        if (e instanceof CompensationConflict) throw e;
         console.error("Failed to update makeup status:", e);
         throw new Error("보강 상태 변경 실패");
     }

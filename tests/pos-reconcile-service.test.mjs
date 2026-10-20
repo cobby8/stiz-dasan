@@ -232,11 +232,12 @@ test("크론은 CRON_SECRET 을 확인한다", async () => {
 test("관리자 메뉴에서 도달할 수 있다", async () => {
     // 실제 사고(2026-08-05·2026-08-09): 화면·권한까지 다 만들고 사이드바 링크만 빠져
     // URL 을 직접 치지 않는 한 아무도 못 쓰는 화면이 남았다. 빌드·타입검사는 전부 통과한다.
-    const shell = await readFile(SHELL, "utf8");
+    const { renderAdminNavigation } = await import('./helpers/admin-navigation-render.mjs');
+    const shell = renderAdminNavigation('/admin/pos-reconcile');
     assert.match(shell, /href="\/admin\/pos-reconcile"/);
     assert.ok(
-        (shell.match(/"\/admin\/pos-reconcile"/g) || []).length >= 3,
-        "NavItem 과 탭 경로 배열 두 곳(OPS_PATHS·MORE_OPS_PATHS)에 모두 등록돼야 합니다.",
+        /href="\/admin\/pos-reconcile"[^>]*aria-current="page"/.test(shell),
+        "결제 대조 업무가 실제 메뉴에서 활성화되어야 합니다.",
     );
 });
 
@@ -269,7 +270,9 @@ test("매칭 로직은 저장소 안에 딱 한 벌만 존재한다", async () =
             else if (entry.name === "tossplace-match.mjs") found.push(p.split(path.sep).join("/"));
         }
     }
-    await walk(".");
+    // 실행 코드만 검사한다. 임시 검증 복사본·다른 작업자의 checkout은 실행 원본이 아니다.
+    await walk("src");
+    await walk("scripts");
     assert.deepEqual(found.map((f) => f.replace(/^\.\//, "")), [MATCH_MODULE]);
 
     // CLI 도 같은 파일을 쓴다(사본을 만들지 않았다는 증거).

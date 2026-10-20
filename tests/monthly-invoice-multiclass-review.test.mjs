@@ -41,10 +41,12 @@ test("월 발행은 이번에 생성된 Payment ID만 전달하고 0건도 빈 �
     const calls = [];
     let locked = false;
     const tx = { $executeRawUnsafe: async (query, key) => {
+      if (query.includes("hashtext('STIZ_BILLING_WORKBENCH')")) return;
       assert.match(query, /pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/);
       assert.equal(key, "monthly-invoice:2026:9");
       locked = true;
     }, $queryRawUnsafe: async (query, ...args) => {
+      if (query.includes('to_regclass')) return [{ found: null }];
       assert.equal(locked, true, "동일 연월 잠금 이후에만 INSERT합니다.");
       assert.match(query, /WHERE action = 'CREATE'[\s\S]*RETURNING id/);
       assert.equal(args[3], "excluded-student");
@@ -75,7 +77,8 @@ test("청구서 실패 시 신규 납부도 롤백하고 재시도할 수 있다
   const prisma = { $transaction: async (callback) => {
     order.push("transaction");
     const pending = [];
-    const tx = { $executeRawUnsafe: async () => { order.push("lock"); }, $queryRawUnsafe: async () => {
+    const tx = { $executeRawUnsafe: async () => { order.push("lock"); }, $queryRawUnsafe: async (sql) => {
+      if (sql.includes('to_regclass')) return [{ found: null }];
       const rows = [{ id: "new-payment" }];
       pending.push(...rows);
       return rows;
@@ -100,7 +103,7 @@ test("청구서 실패 시 신규 납부도 롤백하고 재시도할 수 있다
   );
   await assert.rejects(testModule.exports.generateMonthlyInvoices(2026, 9), /월별 청구서 생성 실패/);
   assert.deepEqual(committed, []);
-  assert.deepEqual(order, ["infrastructure", "transaction", "lock"]);
+  assert.deepEqual(order, ["infrastructure", "transaction", "lock", "lock"]);
   failInvoice = false;
   const result = await testModule.exports.generateMonthlyInvoices(2026, 9);
   assert.equal(result.created, 1);
@@ -136,11 +139,28 @@ test("미리보기는 CREATE/SKIP/REVIEW 및 전체 반 정보를 직렬화한�
   assert.ok(queryCalls.every(call => call.args[0] === 2026 && call.args[1] === 9));
 });
 
-test("화면은 다반 이름과 발행 제외를 표시하고 발행 후보는 CREATE만 선택한다", () => {
-  assert.match(ui, /if \(item\.action === "REVIEW"\) return true/);
-  assert.match(ui, /first\.classNames\.join\(" · "\)/);
-  assert.match(ui, /확인 필요 · 발행 제외/);
-  assert.match(ui, /item\.action === "REVIEW" \? "금액 산정 보류"/);
-  assert.match(ui, /item\.action === "CREATE" && !excluded\.includes\(item\.studentId\)/);
-  assert.match(ui, /const hasCreate = studentItems\.some\(\(i\) => i\.action === "CREATE"\)/);
+test("구형 고정액 생성 입구 대신 반별 청구 검토표로 이동한다", () => {
+  assert.doesNotMatch(ui, /handleGenerateInvoices|handleSmartBillingRun|generateMonthlyInvoices\(/);
+  assert.match(ui, /\/admin\/finance\/prepare\?month=/);
+  const workbench = readFileSync('src/app/admin/finance/prepare/BillingWorkbench.tsx', 'utf8');
+  assert.match(workbench, /selectedRows\.some/);
+  assert.match(workbench, /hasHardBlock\(row\)/);
+});
+
+test("새 청구 구조 설치 후 구형 생성 API로 이월 정산을 우회할 수 없다", async () => {
+  const loaded = { exports: {} };
+  let inserts = 0;
+  const compiled = ts.transpile(generateSource, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
+  const prisma = { $transaction: async work => work({
+    $executeRawUnsafe: async () => 1,
+    $queryRawUnsafe: async sql => {
+      if (sql.includes('to_regclass')) return [{ found: 'BillingWorkbenchDraft' }];
+      inserts++; return [];
+    },
+  }) };
+  new Function('module', 'exports', 'prisma', 'requireAdmin', 'ensurePaymentColumns', 'ensureBillingTemplateTable', 'previewMonthlyInvoices', 'ensurePaymentInfrastructure', 'console', compiled)(
+    loaded, loaded.exports, prisma, async () => {}, async () => {}, async () => {}, async () => ({ activeTemplateCount: 1 }), async () => {}, { error() {} },
+  );
+  await assert.rejects(loaded.exports.generateMonthlyInvoices(2026, 10), /월별 청구서 생성 실패/);
+  assert.equal(inserts, 0);
 });

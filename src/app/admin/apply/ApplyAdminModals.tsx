@@ -1192,11 +1192,11 @@ function DetailModal({
                             원생 상세 열기
                         </a>
                         <a
-                            href="/admin/finance/billing"
+                            href={`/admin/finance?studentId=${encodeURIComponent(app.convertedStudentId)}`}
                             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:text-green-200 dark:hover:bg-green-950/40"
                         >
                             <span className="material-symbols-outlined text-lg">receipt_long</span>
-                            청구서 관리
+                            이 학생 청구·수납
                         </a>
                     </div>
                 )}
