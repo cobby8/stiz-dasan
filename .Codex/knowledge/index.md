@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-22: 승인헤더 actual-fit 완료. 고정1280/1600폐기→기존DOM폭합계/가용공간·안전4/재확장4·관찰자/글씨/폰트/계정재계산·Guide실제속성연결. 전체2320/학생5·fit5/관련29·tsc·신규lint0·생산src881/1cbb·독립87(40/32/11/3/1)/JS0·개별해시일치. docs/public-header-fit.md 및 .tmp/public-header-fit/qa/final-independent-report.json 정본, 지식본문5유지·구조/결정/오류갱신. 4106합성GET전용·브라우저폭검증·운영/푸시/배포없음.
+
 > 2026-10-22: 승인공개원문·서식/헤더/신청안내 완료. 임의QA인사말·시설복제/정책평탄화 원인제거·공개캡처해시복원·로컬4필드만변경. UI6파일 한줄헤더/유니폼섹션제거·긴약관표시/중복여백·가이드폭/글씨전환보완. 전체2312/학생5·원문4/관련26·tsc·생산src879/4f1488·독립50→배송8/JS0통과. docs/public-header-content-repair.md 및 .tmp/public-header-content-repair/qa/final-independent-report.json 정본. 지식본문5개유지·구조/결정/오류/교훈갱신, 합성4106/브라우저폭·실물폰과구분·운영/푸시/배포없음.
 
 > 2026-10-22: 나머지 공개36경로·320/360폭 전수 완료. KST게시일/수강월·공지당시/현재구분·체험일정/오류가시성·가입연결·상세복귀·상품오류 정리. 전체2305/학생5·관련24/17·tsc·생산src879/00bb4fa7·독립92/JS0통과. docs/public-pages-date-navigation-audit.md 및 .tmp/public-all-pages-audit/final-independent-report.json 정본. 지식본문5개 유지·구조/결정/오류/교훈/관례 갱신. 합성4106 GET전용·실물폰/실접수와구분,운영/푸시/배포없음.

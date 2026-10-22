@@ -1,6 +1,7 @@
 ## 2026-09-04 사이트 월 운영 장부
 
 ## 2026-10-22 공개 게시일·신청·이동 표시
+- `useHeaderMenuFit`는 기존 헤더 DOM의 실제 크기를 관찰하고 `navigation/headerFit.ts`가 가용 폭·합계·작은 경계 여유로 모드를 정한다. Header는 표시·inert/aria-hidden·data-menu-layout를 함께 반영한다. 계정 조회·권한·메뉴 항목·Guide 기존 단계 구조는 유지한다.
 - 공개 헤더는 스포츠 CSS의 한 행·전체 메뉴 모드를 사용한다. 가이드 공통 생성기의 메뉴 가시성 보호는 폭/큰 글씨 변경 시 기존 종료 정리 후 기존 저장 Phase의 메뉴 안내만 재시작하며, 새 라우팅·권한·저장 정책을 만들지 않는다.
 - 공개 게시일과 수강 월 표시의 새 순수 함수는 유일한 날짜 창구인 `lib/datetime/kst.ts`의 `formatKstDate`·`kstMonthLabels`를 사용한다. 기존 날짜 저장/계산 함수는 그대로다.
 - `apply/trial/trialScheduleSelection.ts`는 공개 폼이 받은 슬롯만으로 날짜·요일·교시·과거일·마감을 검사한다. UI 단계/기존 신청 로드/제출 전 검사에 공유하며 서버 접수 정책은 변경하지 않는다.

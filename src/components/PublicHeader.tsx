@@ -20,6 +20,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import FontFreeIcon from "./ui/FontFreeIcon";
 import type { AppRole } from "@/lib/auth-routes";
 import AppBackButton from "@/components/AppBackButton";
+import { useHeaderMenuFit } from "./useHeaderMenuFit";
 
 const MOBILE_ACCOUNT_FALLBACK_ACTION_CLASS = [
   "flex min-h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-sm font-bold",
@@ -131,6 +132,7 @@ export default function PublicHeader({
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
+  const { collapsed, rowRef, brandRef, navRef, actionsRef, accountsRef } = useHeaderMenuFit();
 
   // 스크롤 위치 추적 — 스크롤하면 헤더 배경을 불투명하게 만든다 (glassmorphism)
   const [isScrolled, setIsScrolled] = useState(false);
@@ -210,13 +212,10 @@ export default function PublicHeader({
 
   // 서랍을 연 채 넓은 화면으로 바꾸면 가려진 메뉴와 스크롤 잠금을 해제한다.
   useEffect(() => {
-    const closeHiddenDrawer = () => {
-      if (mobileMenuTriggerRef.current?.getClientRects().length === 0) setIsMobileMenuOpen(false);
-    };
-    window.addEventListener("resize", closeHiddenDrawer);
-    closeHiddenDrawer();
-    return () => window.removeEventListener("resize", closeHiddenDrawer);
-  }, [isLargeFont]);
+    if (collapsed) return;
+    const frame = requestAnimationFrame(() => setIsMobileMenuOpen(false));
+    return () => cancelAnimationFrame(frame);
+  }, [collapsed]);
 
   return (
     <>
@@ -247,6 +246,7 @@ export default function PublicHeader({
 
       {/* 메인 헤더 — 스크롤 시 glassmorphism 효과 적용 */}
       <header
+        data-menu-layout={collapsed ? "drawer" : "expanded"}
         className={[
           "public-site-header sticky top-0 z-50 transition-all duration-300",
           isScrolled
@@ -254,9 +254,9 @@ export default function PublicHeader({
             : "bg-white dark:bg-gray-900 shadow-sm border-b border-gray-100 dark:border-gray-800",
         ].join(" ")}
       >
-        <div className="public-header-row max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
+        <div ref={rowRef} className="public-header-row max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
           {/* 로고 + 지점명 */}
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div ref={brandRef} className="flex min-w-0 items-center gap-2 sm:gap-3">
             <AppBackButton fallbackHref="/" size="sm" />
             <Link href="/" className="flex min-w-0 items-center gap-2 sm:gap-3">
               <Image
@@ -275,7 +275,7 @@ export default function PublicHeader({
 
           {/* ===== 데스크탑 네비게이션 ===== */}
           {/* 순서: 학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기] */}
-          <nav aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
+          <nav ref={navRef} inert={collapsed} aria-hidden={collapsed} aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
             {/* 학원 소개 — 독립 링크, 맨 앞 배치 */}
             <Link
               href="/about"
@@ -334,7 +334,7 @@ export default function PublicHeader({
             </Link>
           </nav>
 
-          <div className="public-header-actions flex items-center gap-1 sm:gap-2 text-gray-700 dark:text-gray-300">
+          <div ref={actionsRef} className="public-header-actions flex items-center gap-1 sm:gap-2 text-gray-700 dark:text-gray-300">
             <ThemeToggle />
             {/* 큰글씨 모드 토글 (모바일 전용) — 유틸리티 바가 안 보이는 모바일에서도 접근 가능 */}
             <button
@@ -350,7 +350,9 @@ export default function PublicHeader({
               <span className="text-sm font-black leading-none">가</span>
             </button>
 
-            <DesktopAccountControls initialRole={accountRole} />
+            <div ref={accountsRef} className="public-desktop-accounts flex items-center gap-1 sm:gap-2" inert={collapsed} aria-hidden={collapsed}>
+              <DesktopAccountControls initialRole={accountRole} />
+            </div>
 
             {/* CTA 버튼 — "신청하기"로 변경 */}
             <Link

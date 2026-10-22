@@ -72,11 +72,13 @@
 .stiz-public-sport .public-header-row > :first-child { flex-shrink: 0; }
 .stiz-public-sport .public-header-row img[alt="STIZ"] { height: 40px; max-width: 160px; }
 .stiz-public-sport .public-header-row > :first-child > a > span { font-size: 15px; }
-.stiz-public-sport .public-desktop-nav { gap: 0; white-space: nowrap; }
+.stiz-public-sport .public-desktop-nav { display: flex; flex: none; width: max-content; gap: 0; white-space: nowrap; }
 .stiz-public-sport .public-nav-group[data-public-tour-open="true"] > .public-nav-panel { visibility: visible; opacity: 1; }
 .stiz-public-sport .public-desktop-nav > a,
 .stiz-public-sport .public-desktop-nav > div > button { padding-inline: 10px; }
 .stiz-public-sport .public-header-actions { flex-shrink: 0; }
+.stiz-public-sport .public-desktop-accounts { flex: none; width: max-content; }
+.stiz-public-sport .public-desktop-accounts > .hidden { display: inline-flex; }
 .stiz-public-sport .public-header-actions > a[href="/apply"],
 .stiz-public-sport .public-mobile-menu a[href="/apply"] {
   background: var(--color-public-accent);
@@ -154,25 +156,18 @@
 .stiz-public-sport .public-footer-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; row-gap: 4px; }
 .stiz-public-sport .public-footer-links > li { margin-top: 0; }
 .stiz-public-sport .public-footer-links a { display: inline-flex; align-items: center; min-height: 36px; }
-/* 공간이 부족하면 같은 헤더의 전체 메뉴로 모으고 두 번째 행은 만들지 않는다. */
-@media (max-width: 1279px) {
-  .stiz-public-sport .public-desktop-nav { display: none; }
-  .stiz-public-sport .public-menu-trigger { display: inline-flex; }
-  .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
-  .stiz-public-sport .public-header-actions > a[aria-label="사진 올리기"] { display: none; }
-  .stiz-public-sport .public-header-row > :first-child > a > span { display: none; }
+/* 접힌 상태에도 실제 너비를 잰다. 축소한 숨김 요소는 화면 넘침·포커스를 만들지 않는다. */
+.stiz-public-sport .public-site-header[data-menu-layout="drawer"] :is(.public-desktop-nav, .public-desktop-accounts) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0);
+  transform-origin: top left;
 }
-@media (min-width: 1280px) {
-  .stiz-public-sport .public-desktop-nav { display: flex; }
-  .stiz-public-sport .public-menu-trigger { display: none; }
-}
-/* 큰 글씨와 계정 버튼도 겹치지 않도록 더 넓은 폭에서 메뉴를 함께 펼친다. */
-@media (min-width: 1280px) and (max-width: 1599px) {
-  .text-large .stiz-public-sport .public-desktop-nav { display: none; }
-  .text-large .stiz-public-sport .public-menu-trigger { display: inline-flex; }
-  .text-large .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
-  .text-large .stiz-public-sport .public-header-actions > a[aria-label="사진 올리기"] { display: none; }
-}
+.stiz-public-sport .public-site-header[data-menu-layout="drawer"] .public-menu-trigger { display: inline-flex; }
+.stiz-public-sport .public-site-header[data-menu-layout="expanded"] .public-menu-trigger { display: none; }
 .stiz-public-sport .public-menu-trigger { align-items: center; justify-content: center; gap: 4px; min-height: 44px; }
 @media (max-width: 639px) {
   .stiz-public-sport .public-menu-prefix { display: none; }

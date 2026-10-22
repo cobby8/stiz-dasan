@@ -40,9 +40,12 @@ function harness() {
     window, Event, document: { documentElement: {}, querySelector: (selector) => targets.get(selector) },
     getComputedStyle: (node) => ({ visibility: node.visibility }),
     MutationObserver: class {
-      constructor(callback) { this.callback = callback; this.connected = false; observers.push(this); }
-      observe() { this.connected = true; }
-      disconnect() { this.connected = false; }
+      constructor(callback) { this.callback = callback; this.connected = false; this.targets = new Map(); observers.push(this); }
+      observe(target, options) { this.connected = true; this.targets.set(target, options); }
+      disconnect() { this.connected = false; this.targets.clear(); }
+      mutate(target, attributeName) {
+        if (this.targets.get(target)?.attributeFilter.includes(attributeName)) this.callback();
+      }
     },
     module: { exports: {} },
     require: (name) => name === "driver.js" ? { driver } : {},
@@ -157,4 +160,54 @@ test("400ms 대기 뒤에도 실제 서랍 메뉴가 보일 때만 이어간다"
     assert.equal(shown, visible ? 1 : 0);
     assert.equal(restarted, visible ? 0 : 1);
   }
+});
+
+test("헤더 모드 속성만 바뀌어도 실제 숨은 메뉴 안내를 양방향 재시작한다", async () => {
+  for (const fromDrawer of [false, true]) {
+    const h = harness();
+    const header = {};
+    const trigger = h.element("hamburger");
+    h.targets.set("header.public-site-header[data-menu-layout]", header);
+    h.targets.set('[data-tour-target="hamburger"]', trigger);
+    const create = await h.loadDriver();
+    let restarted = 0;
+    h.window.addEventListener("stiz:tour-menu-layout-change", () => { restarted += 1; });
+    const d = create({});
+    const target = h.element(fromDrawer ? "mobile-nav-programs" : "nav-programs");
+    d.highlight(target);
+    h.observers[0].mutate(header, "data-menu-layout");
+    assert.equal(d.destroyed, 0);
+    if (fromDrawer) trigger.getClientRects = () => [];
+    else target.getClientRects = () => [];
+    h.observers[0].mutate(header, "data-menu-layout");
+    assert.deepEqual([d.destroyed, restarted], [1, 1]);
+  }
+});
+
+test("안내 종료 후에는 헤더 모드 변경 감시도 함께 해제한다", async () => {
+  const h = harness();
+  const header = {};
+  h.targets.set("header.public-site-header[data-menu-layout]", header);
+  const create = await h.loadDriver();
+  const d = create({});
+  const target = h.element("nav-programs");
+  d.highlight(target);
+  assert.equal(h.observers[0].targets.has(header), true);
+  d.destroy();
+  target.getClientRects = () => [];
+  h.observers[0].mutate(header, "data-menu-layout");
+  assert.equal(d.destroyed, 1);
+  assert.equal(h.observers[0].targets.size, 0);
+});
+
+test("헤더 모드 변경만으로 정보 카드 안내를 중단하거나 다음 단계로 넘기지 않는다", async () => {
+  const h = harness();
+  const header = {};
+  h.targets.set("header.public-site-header[data-menu-layout]", header);
+  const create = await h.loadDriver();
+  let progressed = 0;
+  const d = create({ onDestroyed: () => { progressed += 1; } });
+  d.highlight(h.element("program-cards", { getClientRects: () => [] }));
+  h.observers[0].mutate(header, "data-menu-layout");
+  assert.deepEqual([d.destroyed, progressed], [0, 0]);
 });

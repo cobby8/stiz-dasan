@@ -109,6 +109,9 @@ async function loadDriver() {
       onHighlighted: (...args) => {
         window.addEventListener("resize", checkMenuLayout);
         fontObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+        // 헤더가 실제 여유 공간을 측정한 뒤 메뉴를 바꾸는 시점도 확인한다.
+        const header = document.querySelector("header.public-site-header[data-menu-layout]");
+        if (header) fontObserver.observe(header, { attributes: true, attributeFilter: ["data-menu-layout"] });
         config?.onHighlighted?.(...args);
       },
       onDestroyed: (...args) => {
