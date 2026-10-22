@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import ParentSignupClient from "@/components/auth/ParentSignupClient";
+import ParentLoginLink from "@/components/auth/ParentLoginLink";
 import PublicSiteTheme from "@/components/PublicSiteTheme";
 
 export default function ParentSignupPage() {
@@ -19,7 +20,7 @@ export default function ParentSignupPage() {
             <ParentSignupClient />
           </Suspense>
         </section>
-        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-300">이미 계정이 있나요? <Link href="/login" className="font-bold text-brand-orange-500">로그인</Link></p>
+        <p className="mt-6 text-center text-sm text-gray-600 dark:text-gray-300">이미 계정이 있나요? <Suspense fallback={<span>로그인</span>}><ParentLoginLink /></Suspense></p>
       </div>
     </main>
     </PublicSiteTheme>

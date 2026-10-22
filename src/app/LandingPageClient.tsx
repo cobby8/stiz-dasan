@@ -6,6 +6,7 @@ import CTABanner from "@/components/landing/CTABanner";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
+import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 import "@/components/landing/public-home.css";
 
 type GalleryPost = { id: string; title: string | null; caption: string | null; mediaJSON: string; createdAt: Date | string; className?: string | null };
@@ -63,7 +64,7 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
           <ul>{notices.map((notice) => <li key={notice.id}><Link href={`/notices/${notice.id}`}>
             {notice.isPinned && <span className="public-home-notices__pin">중요</span>}
             <span className="public-home-notices__title">{notice.title}</span>
-            <time dateTime={new Date(notice.createdAt).toISOString()}>{new Date(notice.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}</time>
+            <time dateTime={toKstYmd(notice.createdAt) || undefined}>{formatKstDate(notice.createdAt, { year: "numeric", month: "short", day: "numeric" })}</time>
           </Link></li>)}</ul>
         </section>}
       </div>

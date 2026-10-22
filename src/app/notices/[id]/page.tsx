@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeContent";
 import { sanitizeHtml } from "@/lib/sanitize";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 export const revalidate = 60;
 
@@ -71,11 +72,17 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
                         {/* 날짜 */}
                         <p className="text-blue-200/60 text-sm">
-                            {new Date(notice.createdAt).toLocaleDateString("ko-KR", {
+                            게시일 · {" "}
+                            {formatKstDate(notice.createdAt, {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
                             })}
+                        </p>
+                        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-blue-200/70">
+                            <span>공지 내용은 게시 당시 기준입니다.</span>
+                            <Link href="/schedule" className="underline underline-offset-2">현재 시간표</Link>
+                            <Link href="/seasonal" className="underline underline-offset-2">방학특강 모집 확인</Link>
                         </p>
                     </AnimateOnScroll>
                 </div>

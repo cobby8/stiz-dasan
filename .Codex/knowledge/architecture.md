@@ -1,5 +1,10 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-22 공개 게시일·신청·이동 표시
+- 공개 게시일과 수강 월 표시의 새 순수 함수는 유일한 날짜 창구인 `lib/datetime/kst.ts`의 `formatKstDate`·`kstMonthLabels`를 사용한다. 기존 날짜 저장/계산 함수는 그대로다.
+- `apply/trial/trialScheduleSelection.ts`는 공개 폼이 받은 슬롯만으로 날짜·요일·교시·과거일·마감을 검사한다. UI 단계/기존 신청 로드/제출 전 검사에 공유하며 서버 접수 정책은 변경하지 않는다.
+- `auth-entry-navigation.ts`는 로그인/가입 UI 링크에 필요한 내부 복귀/신청 연결 정보만 재구성한다. `navigation/publicHistory.ts`는 공개 경로의 이전 동출처 항목 읽기와 부모 경로 대체만 담당한다. 인증·역할별 접근·설치 앱 범위는 기존 모듈이 유지한다.
+
 ## 2026-10-22 공개 일정 표시 계층
 - 연간 일정은 `AnnualEventsClient`가 연도/월 선택을 관리하고 `annualPeriod.ts`가 한국 현재 월을 계산한다. `annual-months.css`는 공개 스포츠 영역만 꾸민다. 공식 수강월 매핑·기존 서버 조회·상세창은 유지한다.
 - 특강의 날짜 정규화·공개 상태 표시는 `components/seasonal/types.ts`로 공유한다. 목록·상세·신청은 같은 표시 기준을 사용하며 서버의 모집/가격/접수 판단은 변경하지 않는다.

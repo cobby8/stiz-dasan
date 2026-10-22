@@ -105,7 +105,7 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           <p className="text-[11px] font-black text-brand-orange-600 dark:text-brand-neon-lime">STIZ CLUB SHOP</p>
           <div className="flex min-w-0 items-baseline gap-2">
             <h1 className="truncate text-sm font-black sm:text-base">
-              {state.status === "ready" ? state.product.name : "상품 불러오는 중"}
+              {state.status === "ready" ? state.product.name : state.status === "unavailable" ? "상품을 열 수 없습니다" : "상품 불러오는 중"}
             </h1>
             {state.status === "ready" && (
               <span className="shrink-0 text-xs font-bold text-gray-500 dark:text-gray-300 sm:text-sm">

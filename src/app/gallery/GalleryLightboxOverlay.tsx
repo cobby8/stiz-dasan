@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { type GalleryLightboxItem } from "./GalleryLightboxController";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 export default function GalleryLightboxOverlay({
     items,
@@ -126,7 +127,7 @@ export default function GalleryLightboxOverlay({
                             <p className="text-white/60 text-sm mt-1 leading-relaxed">{item.caption}</p>
                         )}
                         <p className="text-white/30 text-xs mt-3">
-                            {new Date(item.createdAt).toLocaleDateString("ko-KR", {
+                            {formatKstDate(item.createdAt, {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
