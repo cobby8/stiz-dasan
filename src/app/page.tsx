@@ -15,6 +15,7 @@ import LandingPageClient from "./LandingPageClient";
 import ChatBotButton from "@/components/chat/ChatBotButton";
 // 가이드 투어: 메인 페이지에서도 플로팅 버튼 표시
 import GuideTourLazyTrigger from "@/components/guide-tour/GuideTourLazyTrigger";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const revalidate = 60;
@@ -71,7 +72,7 @@ export default async function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white flex flex-col">
+    <PublicSiteTheme className="min-h-screen flex flex-col">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusiness).replace(/</g, "\\u003c") }}
@@ -112,6 +113,6 @@ export default async function Home() {
 
       {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
       <GuideTourLazyTrigger />
-    </div>
+    </PublicSiteTheme>
   );
 }

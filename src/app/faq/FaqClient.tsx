@@ -78,7 +78,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
   return (
     <details className="group border-b border-gray-100 dark:border-gray-800 last:border-b-0">
       <summary
-        className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
       >
         <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
         {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}
@@ -110,11 +110,11 @@ export default function FaqClient({ faqData }: FaqClientProps) {
 
   return (
     // SectionLayout 대신 단순 section+div로 교체 — 독립 페이지에서는 섹션 래퍼 불필요
-    <section className="py-12 md:py-16 bg-white dark:bg-gray-950 transition-colors duration-300">
+    <section className="public-content-section py-6 md:py-8 bg-white dark:bg-gray-950 transition-colors duration-300">
       <div className="max-w-6xl mx-auto px-6 md:px-4">
         <AnimateOnScroll>
-          <Card variant="default" className="!p-0 max-w-3xl mx-auto">
-            <div className="px-6 py-2">
+          <Card variant="default" className="public-card !p-0 max-w-3xl mx-auto">
+            <div className="px-4 sm:px-6 py-2">
               {displayFaqs.map((faq, i) => (
                 <FAQItem key={i} question={faq.question} answer={faq.answer} />
               ))}

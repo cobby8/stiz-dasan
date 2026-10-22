@@ -29,7 +29,7 @@ export default async function NoticesPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 (about/programs와 동일 패턴) */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
                     <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -45,7 +45,7 @@ export default async function NoticesPage() {
 
             {/* 공지사항 리스트 */}
             <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
-                <div className="max-w-4xl mx-auto px-4 py-16 md:py-24">
+                <div className="public-content-section max-w-4xl mx-auto px-4 py-16 md:py-24">
                     {publicNotices.length === 0 ? (
                         <div className="text-center py-20 text-gray-400">
                             <p className="text-lg font-medium">아직 공지사항이 없습니다</p>

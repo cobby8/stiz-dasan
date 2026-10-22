@@ -79,7 +79,7 @@ export default async function AboutPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 (Phase 0 패턴 적용) */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 {/* 배경 장식 도형들 */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
@@ -95,7 +95,7 @@ export default async function AboutPage() {
             </section>
 
             {/* 학원 소개 — 좌 인사말 + 우 대표원장 사진 */}
-            <SectionLayout label="INTRODUCTION" title="원장 인사말" bgColor="white">
+            <SectionLayout className="public-content-section" label="INTRODUCTION" title="원장 인사말" bgColor="white">
                 {(() => {
                     const headCoach = (coaches as any[]).find((c: any) => c.role === '대표원장');
                     return (
@@ -141,7 +141,7 @@ export default async function AboutPage() {
 
             {/* 교육 이념 — 가로 4칸 컴팩트 카드 */}
             {settings.philosophyText ? (
-                <SectionLayout label="PHILOSOPHY" title="교육 이념" bgColor="section">
+                <SectionLayout className="public-content-section" label="PHILOSOPHY" title="교육 이념" bgColor="section">
                     <AnimateOnScroll>
                         <div
                             className="rich-content prose prose-gray max-w-none text-center mb-8"
@@ -164,7 +164,7 @@ export default async function AboutPage() {
                     </AnimateOnScroll>
                 </SectionLayout>
             ) : (
-                <SectionLayout label="PHILOSOPHY" title="교육 이념" description="STIZ 농구교실이 추구하는 가치" bgColor="section">
+                <SectionLayout className="public-content-section" label="PHILOSOPHY" title="교육 이념" description="STIZ 농구교실이 추구하는 가치" bgColor="section">
                     <AnimateOnScroll>
                         <Card variant="default" className="!p-0">
                             <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-700">
@@ -182,7 +182,7 @@ export default async function AboutPage() {
 
             {/* 코치진 소개 — 확대된 카드형 레이아웃 (가로형 사진 + 정보) */}
             {coaches.length > 0 && (
-                <SectionLayout label="COACHES" title="코치진 소개" description="자격증을 보유한 전문 코치진이 지도합니다" bgColor="white">
+                <SectionLayout className="public-content-section" label="COACHES" title="코치진 소개" description="자격증을 보유한 전문 코치진이 지도합니다" bgColor="white">
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {coaches.map((coach, i) => (
                             <AnimateOnScroll key={coach.id} delay={i * 100}>
@@ -223,7 +223,7 @@ export default async function AboutPage() {
 
             {/* 시설 소개 — 이미지 갤러리 + 시설 특장점 리스트 */}
             {(settings.facilitiesText || facilityImages.length > 0) && (
-                <SectionLayout label="FACILITIES" title="시설 소개" description="쾌적하고 안전한 환경에서 수업합니다" bgColor="section">
+                <SectionLayout className="public-content-section" label="FACILITIES" title="시설 소개" description="쾌적하고 안전한 환경에서 수업합니다" bgColor="section">
                     {/* 시설 설명 텍스트 */}
                     {settings.facilitiesText && (
                         <AnimateOnScroll>
@@ -261,7 +261,7 @@ export default async function AboutPage() {
 
             {/* 오시는 길 — 카카오맵 embed + 주소 표시 */}
             {settings.address && (
-                <SectionLayout label="LOCATION" title="오시는 길" bgColor="white">
+                <SectionLayout className="public-content-section" label="LOCATION" title="오시는 길" bgColor="white">
                     <AnimateOnScroll>
                         <div className="max-w-4xl mx-auto">
                             {/* 카카오맵 iframe — 주소 검색 기반 embed */}

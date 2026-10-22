@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import StaffAppInstallClient from "./StaffAppInstallClient";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const metadata: Metadata = {
@@ -20,5 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function TeacherAppInstallPage() {
-  return <StaffAppInstallClient />;
+  return <PublicSiteTheme><StaffAppInstallClient /></PublicSiteTheme>;
 }

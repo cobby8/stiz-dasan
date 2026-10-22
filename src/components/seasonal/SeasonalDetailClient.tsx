@@ -30,7 +30,7 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
 
   return (
     <>
-      <section className="bg-brand-navy-900 px-5 py-10 text-white">
+      <section className="public-page-hero bg-brand-navy-900 px-5 py-10 text-white">
         <div className="mx-auto max-w-4xl">
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{statusLabel(program.status)}</span>
           <h1 className="mt-4 text-3xl font-black break-keep">{program.title}</h1>
@@ -41,7 +41,7 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
           </div>
         </div>
       </section>
-      <section className="bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
+      <section className="public-content-section public-seasonal-detail bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
         <div className="mx-auto max-w-4xl space-y-6">
           <div><h2 className="text-xl font-black">수업을 선택하세요</h2><p className="mt-1 text-sm text-gray-500">신청 화면에서 여러 수업을 함께 선택할 수 있습니다.</p></div>
           <div className="grid gap-3 md:grid-cols-2">{offerings.length ? offerings.map((item) => <Offering key={item.id} item={item} />) : <Message text="등록된 수업 일정이 없습니다." />}</div>
@@ -61,7 +61,7 @@ function Offering({ item }: { item: SeasonalClass }) {
   const remaining = item.remaining ?? 0;
   const wait = !unlimited && remaining <= 0;
   const badge = unlimited ? "접수 가능" : wait ? item.waitlistEnabled ? "대기 가능" : "마감" : `잔여 ${remaining}석`;
-  return <article className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold text-brand-orange-500">{item.dayLabel} {item.dateLabel}</p><h3 className="mt-1 text-lg font-black">{item.name}</h3></div><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${wait ? "bg-gray-100 text-gray-600" : unlimited || remaining > 2 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{badge}</span></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><Pair label="시간" value={`${item.startTime}~${item.endTime}`} /><Pair label="대상" value={item.targetGrade || "전체"} /><Pair label="장소" value={item.location || "학원"} /><Pair label="수강료" value={formatWon(item.price)} /></dl><SessionSchedule item={item} /></article>;
+  return <article className="public-card min-w-0 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-brand-orange-500">{item.dayLabel} {item.dateLabel}</p><h3 className="mt-1 text-lg font-black">{item.name}</h3></div><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${wait ? "bg-gray-100 text-gray-600" : unlimited || remaining > 2 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{badge}</span></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><Pair label="시간" value={`${item.startTime}~${item.endTime}`} /><Pair label="대상" value={item.targetGrade || "전체"} /><Pair label="장소" value={item.location || "학원"} /><Pair label="수강료" value={formatWon(item.price)} /></dl><SessionSchedule item={item} /></article>;
 }
 
 function SessionSchedule({ item }: { item: SeasonalClass }) {

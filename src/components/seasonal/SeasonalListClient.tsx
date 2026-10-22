@@ -35,7 +35,7 @@ export default function SeasonalListClient() {
         const seats = offerings.reduce((sum, item) => sum + Math.max(item.remaining ?? 0, 0), 0);
         const minPrice = Math.min(...offerings.map((item) => item.price).filter((price) => price >= 0));
         return (
-          <article key={program.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <article key={program.id} className="public-card min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="bg-brand-navy-900 px-5 py-5 text-white">
               <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{statusLabel(program.status)}</span>
               <h2 className="mt-3 text-2xl font-black break-keep">{program.title}</h2>

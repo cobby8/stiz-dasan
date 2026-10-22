@@ -12,7 +12,7 @@
  *   + FAQ, 이용약관은 "소식/안내" 드롭다운 하위에 배치
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import Image from "next/image";
@@ -128,6 +128,9 @@ export default function PublicHeader({
 }: PublicHeaderProps) {
   // 모바일 사이드바 열림/닫힘 상태
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
 
   // 스크롤 위치 추적 — 스크롤하면 헤더 배경을 불투명하게 만든다 (glassmorphism)
   const [isScrolled, setIsScrolled] = useState(false);
@@ -169,22 +172,46 @@ export default function PublicHeader({
     }
   };
 
-  // 모바일 메뉴가 열려있을 때 body 스크롤 방지
+  // 메뉴가 열린 동안만 스크롤과 키보드 포커스를 메뉴 안에 유지한다.
   useEffect(() => {
-    if (isMobileMenuOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-    }
+    if (!isMobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const returnFocus = mobileMenuTriggerRef.current;
+    document.body.style.overflow = "hidden";
+    const focusFrame = requestAnimationFrame(() => mobileMenuCloseRef.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const menu = mobileMenuRef.current;
+      const controls = Array.from(menu?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? []).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0 && !element.closest("[inert]"));
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (!menu?.contains(active) || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = "";
+      cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (returnFocus?.isConnected) returnFocus.focus();
     };
   }, [isMobileMenuOpen]);
 
   return (
     <>
       {/* 유틸리티 바 — 운영시간 + 전화번호 (데스크탑만 표시) */}
-      <div className="bg-brand-navy-900 dark:bg-black text-white text-xs py-2 hidden md:block border-b border-white/10 dark:border-white/5">
+      <div className="public-utility-bar bg-brand-navy-900 dark:bg-black text-white text-xs py-2 hidden md:block border-b border-white/10 dark:border-white/5">
         <div className="max-w-6xl mx-auto px-4 flex justify-between items-center">
           <span className="text-gray-300">{displayOperatingHours}</span>
           <div className="flex items-center gap-3">
@@ -211,13 +238,13 @@ export default function PublicHeader({
       {/* 메인 헤더 — 스크롤 시 glassmorphism 효과 적용 */}
       <header
         className={[
-          "sticky top-0 z-50 transition-all duration-300",
+          "public-site-header sticky top-0 z-50 transition-all duration-300",
           isScrolled
             ? "bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-md border-b border-gray-100 dark:border-gray-800"
             : "bg-white dark:bg-gray-900 shadow-sm border-b border-gray-100 dark:border-gray-800",
         ].join(" ")}
       >
-        <div className="max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
+        <div className="public-header-row max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
           {/* 로고 + 지점명 */}
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <AppBackButton fallbackHref="/" size="sm" />
@@ -238,7 +265,7 @@ export default function PublicHeader({
 
           {/* ===== 데스크탑 네비게이션 ===== */}
           {/* 순서: 학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기] */}
-          <nav className="hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
+          <nav className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
             {/* 학원 소개 — 독립 링크, 맨 앞 배치 */}
             <Link
               href="/about"
@@ -261,7 +288,7 @@ export default function PublicHeader({
                 </button>
 
                 {/* 드롭다운 패널 — group-hover로 보이기/숨기기 */}
-                <div className="absolute top-full left-0 pt-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200">
+                <div className="absolute top-full left-0 pt-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-all duration-200">
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 py-2 min-w-[180px]">
                     {group.items.map((item) => (
                       <Link
@@ -297,13 +324,13 @@ export default function PublicHeader({
             </Link>
           </nav>
 
-          <div className="flex items-center gap-1 sm:gap-2 text-gray-700 dark:text-gray-300">
+          <div className="public-header-actions flex items-center gap-1 sm:gap-2 text-gray-700 dark:text-gray-300">
             <ThemeToggle />
             {/* 큰글씨 모드 토글 (모바일 전용) — 유틸리티 바가 안 보이는 모바일에서도 접근 가능 */}
             <button
               onClick={toggleFontSize}
               className={[
-                "md:hidden flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-colors",
+                "public-mobile-font md:hidden flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-colors",
                 isLargeFont
                   ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
                   : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700",
@@ -330,10 +357,12 @@ export default function PublicHeader({
 
             {/* 모바일 햄버거 버튼 */}
             <button
+              ref={mobileMenuTriggerRef}
               data-tour-target="hamburger"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
+              className="public-menu-trigger md:hidden p-2 rounded-lg hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
               aria-label="메뉴 열기"
+              aria-expanded={isMobileMenuOpen}
             >
               <FontFreeIcon name="menu" size={24} />
             </button>
@@ -352,8 +381,14 @@ export default function PublicHeader({
 
       {/* ===== 모바일 사이드바 — 카테고리 라벨 + 구분선으로 그룹핑 ===== */}
       <div
+        ref={mobileMenuRef}
+        role="dialog"
+        aria-label="전체 메뉴"
+        aria-modal={isMobileMenuOpen ? true : undefined}
+        aria-hidden={!isMobileMenuOpen}
+        inert={!isMobileMenuOpen}
         className={[
-          "fixed top-0 right-0 z-[70] flex h-full w-72 flex-col bg-white dark:bg-gray-900 shadow-2xl",
+          "public-mobile-menu fixed top-0 right-0 z-[70] flex h-full w-72 flex-col bg-white dark:bg-gray-900 shadow-2xl",
           "transform transition-transform duration-300 ease-in-out",
           isMobileMenuOpen ? "translate-x-0" : "translate-x-full",
         ].join(" ")}
@@ -362,6 +397,7 @@ export default function PublicHeader({
         <div className="flex shrink-0 items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
           <span className="font-bold text-brand-navy-900 dark:text-white">메뉴</span>
           <button
+            ref={mobileMenuCloseRef}
             onClick={() => setIsMobileMenuOpen(false)}
             className="p-2 rounded-lg hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
             aria-label="메뉴 닫기"

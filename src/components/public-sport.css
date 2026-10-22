@@ -1,0 +1,180 @@
+/* 공개 홈페이지 전용. 역할별 업무 화면의 라벤더 토큰에는 영향을 주지 않는다. */
+.stiz-public-sport {
+  --color-public-ink: #15181c;
+  --color-public-paper: #ffffff;
+  --color-public-accent: #b94118;
+  --color-public-strong: #933111;
+  --color-public-orange: #f4753a;
+  --color-public-muted: #62676f;
+  --color-public-tint: #f7f3ef;
+  --color-public-line: #e3e4e6;
+  --color-public-dark: #15181c;
+  --color-public-white: #ffffff;
+  --color-public-dark-muted: #c0c5ca;
+  --color-public-dark-line: #383c42;
+  --color-public-focus: #c6471c;
+  --color-public-radius: 4px;
+  --color-brand-orange-50: var(--color-public-tint);
+  --color-brand-orange-100: var(--color-public-tint);
+  --color-brand-orange-200: var(--color-public-line);
+  --color-brand-orange-300: var(--color-public-orange);
+  --color-brand-orange-400: var(--color-public-orange);
+  --color-brand-orange-500: var(--color-public-accent);
+  --color-brand-orange-600: var(--color-public-strong);
+  --color-brand-orange-700: var(--color-public-strong);
+  --color-brand-navy-700: var(--color-public-ink);
+  --color-brand-navy-800: var(--color-public-dark);
+  --color-brand-navy-900: var(--color-public-dark);
+  --color-brand-neon-lime: var(--color-public-orange);
+  --color-brand-neon-cobalt: var(--color-public-accent);
+  --color-brand-neon-pink: var(--color-public-orange);
+  --color-surface-warm: var(--color-public-paper);
+  --color-surface-section: var(--color-public-tint);
+  background: var(--color-public-paper);
+  color: var(--color-public-ink);
+  font-family: var(--font-body, sans-serif);
+  line-height: 1.6;
+  min-width: 0;
+  overflow-x: clip;
+}
+.dark .stiz-public-sport {
+  --color-public-paper: #1d2025;
+  --color-public-ink: #f4f4f5;
+  --color-public-muted: #bdc2c9;
+  --color-public-tint: #262a30;
+  --color-public-line: #41464e;
+  --color-public-accent: #f4753a;
+  --color-public-strong: #fd925c;
+  --color-public-focus: #fd925c;
+}
+.stiz-public-sport :is(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--color-public-focus);
+  outline-offset: 3px;
+}
+.stiz-public-sport :is(button, a) { touch-action: manipulation; }
+.stiz-public-sport .public-utility-bar {
+  background: var(--color-public-dark);
+  color: var(--color-public-white);
+  padding-block: 6px;
+}
+.stiz-public-sport .public-site-header {
+  background: var(--color-public-paper);
+  border-color: var(--color-public-line);
+  box-shadow: none;
+}
+.stiz-public-sport .public-header-row {
+  max-width: 1248px;
+  min-height: 76px;
+  padding-block: 10px;
+  gap: 12px;
+}
+.stiz-public-sport .public-header-row > :first-child { flex-shrink: 0; }
+.stiz-public-sport .public-header-row img[alt="STIZ"] { height: 40px; max-width: 160px; }
+.stiz-public-sport .public-header-row > :first-child > a > span { font-size: 15px; }
+.stiz-public-sport .public-desktop-nav { gap: 0; white-space: nowrap; }
+.stiz-public-sport .public-desktop-nav > a,
+.stiz-public-sport .public-desktop-nav > div > button { padding-inline: 10px; }
+.stiz-public-sport .public-header-actions { flex-shrink: 0; }
+.stiz-public-sport .public-header-actions > a[href="/apply"],
+.stiz-public-sport .public-mobile-menu a[href="/apply"] {
+  background: var(--color-public-accent);
+  color: var(--color-public-white);
+  border-radius: var(--color-public-radius);
+  min-height: 44px;
+  justify-content: center;
+}
+.dark .stiz-public-sport .public-header-actions > a[href="/apply"],
+.dark .stiz-public-sport .public-mobile-menu a[href="/apply"] { color: var(--color-public-dark); }
+.stiz-public-sport .public-mobile-menu {
+  width: min(320px, 100vw);
+  height: 100dvh;
+  background: var(--color-public-paper);
+  color: var(--color-public-ink);
+}
+.stiz-public-sport .public-mobile-menu > :last-child { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.stiz-public-sport .public-mobile-menu nav a { min-height: 44px; padding-block: 10px; }
+.stiz-public-sport .public-mobile-menu nav > div > div:first-child { padding-top: 10px; }
+.stiz-public-sport .public-page-hero {
+  background: var(--color-public-dark);
+  background-image: none;
+  color: var(--color-public-white);
+  padding-block: clamp(24px, 4vw, 44px);
+}
+.stiz-public-sport .public-page-hero :is(h1, h2) {
+  color: var(--color-public-white);
+  letter-spacing: -.045em;
+  font-weight: 900;
+  font-size: clamp(26px, 4vw, 42px);
+  line-height: 1.25;
+  margin-bottom: 10px;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.stiz-public-sport .public-page-hero p { color: var(--color-public-dark-muted); max-width: 720px; }
+.stiz-public-sport .public-content-section { padding-block: clamp(24px, 4vw, 44px); }
+.stiz-public-sport section.public-content-section > .max-w-6xl { padding-block: 0; }
+.stiz-public-sport section.public-content-section > .max-w-6xl > .text-center { margin-bottom: 28px; }
+.stiz-public-sport .public-page-wrap { min-width: 0; }
+.stiz-public-sport .public-card {
+  border: 1px solid var(--color-public-line);
+  border-radius: var(--color-public-radius);
+  background: var(--color-public-paper);
+  color: var(--color-public-ink);
+  box-shadow: none;
+}
+.stiz-public-sport .public-table { border-color: var(--color-public-line); }
+.stiz-public-sport .public-table :is(th, td) { padding: 12px 14px; }
+.stiz-public-sport .public-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.stiz-public-sport .public-actions :is(a, button) { min-height: 44px; border-radius: var(--color-public-radius); }
+.stiz-public-sport.public-auth-page > div > .absolute { display: none; }
+.stiz-public-sport.public-auth-page :is(.rounded-2xl, .rounded-xl) { border-radius: var(--color-public-radius); }
+.stiz-public-sport.public-auth-page [class~="bg-white"] { background: var(--color-public-paper); }
+.stiz-public-sport .public-stepper { margin-bottom: 24px; }
+.stiz-public-sport .public-form-card { border-radius: var(--color-public-radius); }
+.stiz-public-sport .public-filter-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; overflow-x: auto; }
+.stiz-public-sport .public-filter-row > * { flex-shrink: 0; }
+.stiz-public-sport .public-form-card > .public-stepper { margin-bottom: 0; }
+.stiz-public-sport .public-seasonal-detail { padding-bottom: max(7rem, calc(6rem + env(safe-area-inset-bottom))); }
+.stiz-public-sport .public-product-header { background: var(--color-public-paper); border-color: var(--color-public-line); box-shadow: none; }
+.stiz-public-sport .public-site-footer {
+  background: var(--color-public-dark);
+  color: var(--color-public-dark-muted);
+  border-color: var(--color-public-orange);
+  border-top-width: 3px;
+  padding-top: 32px;
+  padding-bottom: 24px;
+}
+.stiz-public-sport .public-site-footer :is(p, ul, a, li, span) { color: inherit; }
+.stiz-public-sport .public-site-footer h4 { color: var(--color-public-white); margin-bottom: 12px; }
+.stiz-public-sport .public-site-footer a:hover { color: var(--color-public-orange); }
+.stiz-public-sport .public-site-footer > div > :last-child { border-color: var(--color-public-dark-line); padding-top: 18px; }
+.stiz-public-sport .public-footer-grid { gap: 24px; margin-bottom: 24px; }
+.stiz-public-sport .public-footer-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; row-gap: 4px; }
+.stiz-public-sport .public-footer-links > li { margin-top: 0; }
+.stiz-public-sport .public-footer-links a { display: inline-flex; align-items: center; min-height: 36px; }
+/* 태블릿은 메뉴 전체를 서랍에 유지해 로그인/다중 역할 버튼과 겹치지 않게 한다. */
+@media (max-width: 1279px) {
+  .stiz-public-sport .public-desktop-nav { display: none; }
+  .stiz-public-sport .public-menu-trigger { display: inline-flex; }
+  .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
+}
+@media (min-width: 1280px) {
+  .stiz-public-sport .public-desktop-nav { display: flex; }
+  .stiz-public-sport .public-menu-trigger { display: none; }
+}
+/* 큰 글씨를 선택했을 때에도 메뉴를 접어 기능이나 글자를 잘라내지 않는다. */
+.text-large .stiz-public-sport .public-desktop-nav { display: none; }
+.text-large .stiz-public-sport .public-menu-trigger { display: inline-flex; }
+.text-large .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
+@media (max-width: 639px) {
+  .stiz-public-sport .public-header-row { min-height: 64px; padding-inline: 12px; gap: 6px; }
+  .stiz-public-sport .public-header-row img[alt="STIZ"] { max-width: 120px; height: 34px; }
+  .stiz-public-sport .public-header-actions { gap: 4px; }
+  .stiz-public-sport .public-footer-grid { gap: 20px; }
+  .stiz-public-sport .public-site-footer { padding-top: 24px; }
+  .stiz-public-sport .public-table :is(th, td) { padding: 10px; }
+  .stiz-public-sport .public-fee-table :is(th, td) { padding-inline: 6px; overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stiz-public-sport :is(.public-site-header, .public-mobile-menu) { transition: none; }
+}

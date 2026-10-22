@@ -15,7 +15,7 @@ export const metadata = buildPublicMetadata({
 export default function UniformApplyPage() {
   return (
     <PublicPageLayout>
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
+      <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full border-[20px] border-white/5 transition-colors duration-300 dark:border-brand-neon-cobalt/10" />
           <div className="absolute bottom-0 left-0 h-48 w-48 -translate-x-1/4 translate-y-1/4 rounded-full border-[15px] border-brand-orange-500/10 transition-colors duration-300 dark:border-brand-neon-lime/10" />
@@ -31,7 +31,7 @@ export default function UniformApplyPage() {
         </div>
       </section>
 
-      <section className="bg-gray-50 py-8 dark:bg-gray-900 md:py-12">
+      <section className="public-content-section bg-gray-50 py-8 dark:bg-gray-900 md:py-12">
         <div className="mx-auto max-w-3xl px-4">
           <UniformApplicationForm />
         </div>

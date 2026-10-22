@@ -398,7 +398,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   if (submitState === "done") return <DoneView slug={slug} result={result} offerings={offerings} message={message} />;
 
   return (
-    <form onSubmit={handleSubmit} className="bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
+    <form onSubmit={handleSubmit} className="public-seasonal-form bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
           <Link href={`/seasonal/${slug}`} className="text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
@@ -426,7 +426,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
               const shuttleAvailable = selected && priceItem.shuttleAvailable;
               return (
                 <article key={item.id} className={`rounded-2xl border bg-white p-5 shadow-sm dark:bg-gray-800 ${selected ? "border-brand-orange-500 ring-2 ring-brand-orange-100 dark:border-brand-neon-lime dark:ring-brand-neon-lime/20" : "border-gray-200 dark:border-gray-700"} ${disabled ? "opacity-60" : ""}`}>
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-xs font-bold text-brand-orange-500 dark:text-brand-neon-lime">{item.dayLabel} {item.dateLabel}</p>
                       <h3 className="mt-1 text-lg font-black text-gray-900 dark:text-white">{item.name}</h3>

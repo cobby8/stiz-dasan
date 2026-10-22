@@ -16,6 +16,7 @@
 import { getAcademySettings } from "@/lib/queries";
 import PublicHeader from "./PublicHeader";
 import PublicFooter from "./PublicFooter";
+import PublicSiteTheme from "./PublicSiteTheme";
 import ChatBotButton from "./chat/ChatBotButton";
 // 가이드 투어: 버튼은 가볍게, 실제 투어 로직은 필요할 때 로드
 import GuideTourLazyTrigger from "./guide-tour/GuideTourLazyTrigger";
@@ -38,7 +39,7 @@ export default async function PublicPageLayout({
   const kakaoChannelUrl = (settings as any).kakaoChannelUrl || "";
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
+    <PublicSiteTheme className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
       {/* 통합 헤더 — Client Component (모바일 햄버거 메뉴 때문) */}
       <PublicHeader
         phone={phone}
@@ -67,6 +68,6 @@ export default async function PublicPageLayout({
 
       {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
       <GuideTourLazyTrigger />
-    </div>
+    </PublicSiteTheme>
   );
 }

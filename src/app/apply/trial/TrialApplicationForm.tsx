@@ -304,8 +304,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     }
 
     return (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-            <div className="border-b border-gray-100 bg-gray-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
+            <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-3 dark:border-gray-800 dark:bg-gray-900">
                 <div className="mx-auto flex max-w-sm items-center justify-between">
                     {[1, 2, 3].map((number) => (
                         <div key={number} className="flex items-center">
@@ -321,7 +321,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
                 {error && (
                     <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                         <FontFreeIcon name="error" size={18} />

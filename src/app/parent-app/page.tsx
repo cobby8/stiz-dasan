@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ParentAppInstallClient from "./ParentAppInstallClient";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const metadata: Metadata = {
@@ -21,5 +22,5 @@ export const metadata: Metadata = {
 };
 
 export default function ParentAppInstallPage() {
-  return <ParentAppInstallClient />;
+  return <PublicSiteTheme><ParentAppInstallClient /></PublicSiteTheme>;
 }

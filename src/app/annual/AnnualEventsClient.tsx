@@ -130,13 +130,13 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
     return (
         <>
             {/* 메인 일정 영역 — 따뜻한 배경색으로 통일 */}
-            <section className="py-8 md:py-12 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
+            <section className="public-content-section py-6 md:py-8 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-4">
 
                     {/* 연도 선택 — 가로 스크롤 */}
                     <div className="flex items-center gap-3 mb-6">
                         <span className="text-sm font-bold text-gray-400 shrink-0">연도</span>
-                        <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                        <div className="public-filter-row min-w-0 flex gap-2 overflow-x-auto scrollbar-hide">
                             {availableYears.map(year => (
                                 <button
                                     key={year}
@@ -161,7 +161,7 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
                             <p className="text-sm mt-2">관리자가 일정을 등록하면 여기에 표시됩니다.</p>
                         </div>
                     ) : (
-                        <div className="space-y-10">
+                        <div className="space-y-6">
                             {activeMonths.map(mon => {
                                 const dateMap     = byMonthDate[mon];
                                 const schedule    = yearlySchedules[selectedYear]?.[mon];
@@ -180,7 +180,7 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
                                         {/* 월 헤더 (클릭으로 접기/펼치기) — 스타일 개선 */}
                                         <button
                                             onClick={() => toggleMonth(mon)}
-                                            className="w-full flex items-center gap-3 mb-4 group text-left"
+                                            className="w-full flex flex-wrap items-center gap-2 mb-3 group text-left"
                                         >
                                             <h2 className="text-xl font-black text-brand-navy-900 dark:text-white flex items-center gap-2.5 transition-colors">
                                                 {/* 월 숫자 원형 뱃지 */}
@@ -290,7 +290,7 @@ export default function AnnualEventsClient({ allEvents, classDays, yearlySchedul
                                                 return (
                                                     <div
                                                         key={dateKey}
-                                                        className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200"
+                                                        className="public-card bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200"
                                                     >
                                                         {/* 날짜 헤더 — 더 깔끔한 디자인 */}
                                                         <div className="px-5 py-2.5 bg-gray-50/80 dark:bg-gray-700/80 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2 transition-colors">

@@ -34,7 +34,7 @@ function Notice({ title, message, href = "/programs", linkLabel = "프로그램 
 }) {
     return (
         <PublicPageLayout>
-            <section className="bg-gray-50 px-4 py-16 dark:bg-gray-950">
+            <section className="public-content-section bg-gray-50 px-4 py-16 dark:bg-gray-950">
                 <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
                     <h1 className="text-xl font-black text-gray-900 dark:text-white">{title}</h1>
                     <p className="mt-4 break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{message}</p>
@@ -113,7 +113,7 @@ export default async function ProgramOrderPage({
 
     return (
         <PublicPageLayout>
-            <section className="bg-gray-50 px-4 py-10 dark:bg-gray-950 md:py-14">
+            <section className="public-content-section bg-gray-50 px-4 py-10 dark:bg-gray-950 md:py-14">
                 <div className="mx-auto w-full max-w-2xl">
                     <Link href="/programs" className="text-sm font-bold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">
                         ← 프로그램 안내

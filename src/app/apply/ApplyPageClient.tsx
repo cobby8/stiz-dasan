@@ -120,11 +120,11 @@ export default function ApplyPageClient({
     return (
         <>
             {/* 체험수업 / 수강신청 카드 섹션 */}
-            <SectionLayout label="APPLY NOW" title="신청하기" description="체험수업 또는 수강신청을 선택하세요" bgColor="section">
+            <SectionLayout className="public-content-section" bgColor="section">
                 <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                     {/* 체험수업 카드 — 앵커 id="trial"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll>
-                        <Card id="trial" variant="default" className="overflow-hidden !p-0 h-full">
+                        <Card id="trial" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 네이비 배경 */}
                             <div className="bg-brand-navy-900 px-6 py-5">
                                 <div className="flex items-center gap-2 mb-2">
@@ -173,7 +173,7 @@ export default function ApplyPageClient({
 
                     {/* 수강신청 카드 — 앵커 id="enroll"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll delay={150}>
-                        <Card id="enroll" variant="default" className="overflow-hidden !p-0 h-full">
+                        <Card id="enroll" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 오렌지 배경으로 차별화 */}
                             <div className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 px-6 py-5">
                                 <div className="flex items-center gap-2 mb-2">
@@ -204,10 +204,10 @@ export default function ApplyPageClient({
                 </div>
             </SectionLayout>
 
-            <SectionLayout label="UNIFORM" title="유니폼 신청" description="우리 학원 유니폼을 신청하세요" bgColor="white">
+            <SectionLayout className="public-content-section" label="UNIFORM" title="유니폼 신청" description="우리 학원 유니폼을 신청하세요" bgColor="white">
                 <div className="max-w-md mx-auto">
                     <AnimateOnScroll>
-                        <Card id="uniform" variant="default" className="overflow-hidden !p-0 h-full">
+                        <Card id="uniform" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             <div className="bg-emerald-600 px-6 py-5">
                                 <div className="flex items-center gap-2 mb-2">
                                     <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">Uniform</span>
@@ -234,7 +234,7 @@ export default function ApplyPageClient({
             </SectionLayout>
 
             {/* FAQ 섹션 — 아코디언 형태의 자주 묻는 질문 */}
-            <SectionLayout id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
+            <SectionLayout className="public-content-section" id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
                 <AnimateOnScroll>
                     <Card variant="default" className="!p-0 max-w-3xl mx-auto">
                         <div className="px-6 py-2">

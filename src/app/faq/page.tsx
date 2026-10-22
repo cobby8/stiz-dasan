@@ -29,7 +29,7 @@ export default async function FaqPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 — 다른 공개 페이지와 동일한 그라데이션 패턴 */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-16 md:py-20 transition-colors duration-300">
+      <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-16 md:py-20 transition-colors duration-300">
         {/* 배경 장식 도형들 */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
@@ -53,7 +53,7 @@ export default async function FaqPage() {
       {/* FAQ 아코디언 — 클라이언트 컴포넌트 */}
       <FaqClient faqData={faqData} />
 
-      <section className="bg-gray-50 px-6 py-12 text-gray-900 dark:bg-gray-900 dark:text-white">
+      <section className="public-content-section bg-gray-50 px-6 py-12 text-gray-900 dark:bg-gray-900 dark:text-white">
         <div className="mx-auto max-w-3xl space-y-6">
           <h2 className="text-2xl font-bold">다산 지역 학부모님께 안내드립니다</h2>
           <div>

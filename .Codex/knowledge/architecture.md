@@ -1,5 +1,10 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-21 공개 홈페이지 스포츠 스타일 경계
+- `src/lib/public-site-path.ts`는 공개 안내·상세·신청·공개 로그인/설치 경로를 선택한다. `PublicSiteTheme`와 `public-sport.css`는 공개 렌더링에만 공통 토큰·간격·헤더/푸터 규격을 적용한다.
+- 홈은 `LandingPageClient` + `landing/public-home.css`이며 기존 설정·공지·갤러리·후기를 그대로 받는다. 개별 공개 페이지는 공통 hero/content/card/form 클래스로 정리한다.
+- `ThemeProvider`는 공개 저장 키와 라이트 기본값을 분리하되, `/admin`, `/staff`, `/mypage`, `/driver` 업무 화면의 기존 테마 경계는 유지한다. QA 전용 재구성 DB·차단 프록시는 `.tmp` 소유 실행기이며 제품 소스에 포함하지 않는다.
+
 ## 2026-10-19: 기사 통합 운행 화면 정리
 - UnifiedDriverClient 한 파일에서 헤더 시작/종료·날짜 단일화·정차 순서/시각·학생 체크 행을 정리했다. 공용 DriverDateNav/GpsShareBar·저장 API/키·GPS hook은 그대로다.
 - 화면 전용 checkSummary는 중복 승객 키·정규 사전결석을 제외하고 확인된 최종 기록만 센다. 실제 운행 위치·차량 진행 완료는 추정하지 않는다. 독립 검증과 상세 경계는 docs/driver-workspace-ux.md.

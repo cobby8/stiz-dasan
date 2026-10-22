@@ -92,9 +92,9 @@ export default function PublicFooter({
   ].filter((link) => link.href);
 
   return (
-    <footer className="bg-gray-50 dark:bg-black text-gray-600 dark:text-gray-300 pt-12 pb-8 border-t-4 border-brand-orange-500 dark:border-brand-neon-lime">
+    <footer className="public-site-footer bg-gray-50 dark:bg-black text-gray-600 dark:text-gray-300 pt-12 pb-8 border-t-4 border-brand-orange-500 dark:border-brand-neon-lime">
       <div className="max-w-6xl mx-auto px-4">
-        <div className="grid md:grid-cols-3 gap-8 mb-8">
+        <div className="public-footer-grid grid md:grid-cols-3 gap-8 mb-8">
           {/* 학원 로고 + 소개 */}
           <div>
             <div className="bg-white dark:bg-gray-900 px-4 py-2.5 rounded-lg inline-flex items-center justify-center mb-4">
@@ -156,7 +156,7 @@ export default function PublicFooter({
           {/* 퀵 링크 */}
           <div>
             <h4 className="text-gray-900 dark:text-white font-bold mb-4">바로가기</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <ul className="public-footer-links space-y-2 text-sm text-gray-600 dark:text-gray-400">
               {QUICK_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link

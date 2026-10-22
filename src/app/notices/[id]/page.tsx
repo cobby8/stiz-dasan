@@ -41,7 +41,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 + 공지 제목/날짜 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
                     <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />

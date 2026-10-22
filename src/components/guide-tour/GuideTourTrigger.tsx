@@ -195,10 +195,16 @@ function setupLinkCapture(
 // ========================================
 // Phase 1: 메인(/) -> 프로그램안내 메뉴 클릭 유도
 // ========================================
+function usesDrawerNavigation(): boolean {
+  // 태블릿·큰 글씨도 실제 보이는 메뉴를 따라 안내한다.
+  const trigger = document.querySelector<HTMLElement>('[data-tour-target="hamburger"]');
+  return !!trigger && trigger.getClientRects().length > 0 && getComputedStyle(trigger).visibility !== "hidden";
+}
+
 async function runPhase1(routerPush: (url: string) => void) {
   savePhase("1"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = usesDrawerNavigation();
 
   if (isMobile) {
     // 모바일: 먼저 햄버거 버튼을 하이라이트하여 메뉴 열기 유도
@@ -329,7 +335,7 @@ async function runPhase1(routerPush: (url: string) => void) {
 async function runPhase2(routerPush: (url: string) => void) {
   savePhase("2"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = usesDrawerNavigation();
 
   // 첫 번째 프로그램 카드만 하이라이트 — 전체 그리드는 viewport보다 커서 하이라이트 효과가 없음
   const cardEl = await waitForElement('[data-tour-target="program-cards"] > div:first-child');
@@ -511,7 +517,7 @@ function highlightScheduleNav(
 async function runPhase3(routerPush: (url: string) => void) {
   savePhase("3"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
-  const isMobile = window.innerWidth < 768;
+  const isMobile = usesDrawerNavigation();
 
   const gridEl = await waitForElement('[data-tour-target="schedule-grid"]');
 

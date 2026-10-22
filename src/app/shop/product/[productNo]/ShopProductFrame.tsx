@@ -90,8 +90,8 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
   }, [productNo]);
 
   return (
-    <main className="flex h-dvh min-h-[32rem] flex-col overflow-hidden bg-white text-gray-950 dark:bg-gray-950 dark:text-white">
-      <header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 sm:px-5">
+    <main className="public-product-frame flex h-dvh min-h-0 flex-col overflow-hidden bg-white text-gray-950 dark:bg-gray-950 dark:text-white">
+      <header className="public-product-header flex min-h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 sm:px-5">
         <Link
           href="/shop"
           title="클럽샵으로 돌아가기"

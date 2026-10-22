@@ -149,7 +149,7 @@ function ProductCard({ product }: { product: ClubShopProduct }) {
   const detailHref = `/shop/product/${product.productNo}`;
 
   return (
-    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+    <article className="public-card min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
       {disabled ? (
         <ProductImage src={product.image} name={product.name} />
       ) : (
@@ -204,7 +204,7 @@ function ProductImage({ src, name }: { src: string; name: string }) {
         />
       )}
       {failed && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[linear-gradient(135deg,#111827,#f97316)] p-5 text-center text-white dark:bg-[linear-gradient(135deg,#020617,#1e3a8a)]">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[linear-gradient(135deg,var(--color-public-ink),var(--color-public-accent))] p-5 text-center text-white ">
           <img src="/stiz-logo.png" alt="" className="h-12 w-auto rounded bg-white p-2" />
           <p className="break-keep text-sm font-black">상품 이미지 준비 중</p>
         </div>

@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { login, signup } from "@/app/actions/auth";
 import Image from "next/image";
 import Link from "next/link";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { usePathname, useSearchParams } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 
@@ -369,8 +370,10 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
+    <PublicSiteTheme className="public-auth-page">
     <Suspense fallback={<div className="min-h-screen bg-surface-warm dark:bg-gray-950" />}>
       <LoginContent />
     </Suspense>
+    </PublicSiteTheme>
   );
 }
