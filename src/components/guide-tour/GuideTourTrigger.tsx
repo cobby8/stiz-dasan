@@ -21,6 +21,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import FontFreeIcon from "../ui/FontFreeIcon";
+import type { Driver } from "driver.js";
 
 // 투어 완료 여부를 localStorage에 저장하는 키
 const STORAGE_KEY = "stiz_tour_completed";
@@ -46,6 +47,9 @@ function markCompleted() {
 // 투어 중단/재개를 위한 Phase 저장 함수들
 // ========================================
 const PHASE_KEY = "stiz_tour_phase";
+const MENU_LAYOUT_CHANGE_EVENT = "stiz:tour-menu-layout-change";
+let driverGeneration = 0;
+let releaseMenuResizeGuard = () => {};
 
 // 현재 진행 중인 Phase를 localStorage에 저장
 function savePhase(phase: string) {
@@ -78,12 +82,80 @@ async function loadDriver() {
   const { driver } = await import("driver.js");
   await import("driver.js/dist/driver.css");
   await import("./tourStyles.css");
-  return (config: Parameters<typeof driver>[0]) => driver({
-    // 강조 전환 도중 빠르게 확인하면 다음 단계가 생략되는 경합을 없앤다.
-    animate: false,
-    onPopoverRender: prepareTourPopover,
+  return (config: Parameters<typeof driver>[0]) => {
+    releaseMenuResizeGuard();
+    driverGeneration += 1;
+    const removeResizeGuard = () => {
+      window.removeEventListener("resize", checkMenuLayout);
+      fontObserver.disconnect();
+    };
+    const checkMenuLayout = () => {
+      const element = instance.getActiveElement();
+      const step = instance.getActiveStep();
+      if (!step || !isHiddenTourMenuTarget(element)) return;
+      // 확인 카드의 자동 진행을 호출하지 않고 실제 닫기 경로로 정리한다.
+      const close = step.popover?.onCloseClick ?? instance.getConfig().onCloseClick;
+      if (close) close(element, step, { driver: instance, config: instance.getConfig(), state: instance.getState() });
+      else instance.destroy();
+      window.dispatchEvent(new Event(MENU_LAYOUT_CHANGE_EVENT));
+    };
+    const fontObserver = new MutationObserver(checkMenuLayout);
+    releaseMenuResizeGuard = removeResizeGuard;
+    const instance = driver({
+      // 강조 전환 도중 빠르게 확인하면 다음 단계가 생략되는 경합을 없앤다.
+      animate: false,
+      onPopoverRender: prepareTourPopover,
+      ...config,
+      onHighlighted: (...args) => {
+        window.addEventListener("resize", checkMenuLayout);
+        fontObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+        config?.onHighlighted?.(...args);
+      },
+      onDestroyed: (...args) => {
+        removeResizeGuard();
+        config?.onDestroyed?.(...args);
+      },
+    });
+    return instance;
+  };
+}
+
+function isHiddenTourMenuTarget(element: Element | undefined) {
+  const target = element?.getAttribute("data-tour-target") ?? "";
+  if (!element || (target !== "hamburger" && !target.startsWith("nav-") && !target.startsWith("mobile-nav-"))) return false;
+  // 서랍 닫힘의 React 반영보다 먼저 발생한 폭·글씨 변경도 놓치지 않는다.
+  if (target.startsWith("mobile-nav-") && !usesDrawerNavigation()) return true;
+  const rect = element.getBoundingClientRect();
+  return element.getClientRects().length === 0 || !!element.closest("[inert]") || getComputedStyle(element).visibility === "hidden"
+    || rect.right <= 0 || rect.left >= window.innerWidth || rect.bottom <= 0 || rect.top >= window.innerHeight;
+}
+
+function waitForOpenedTourMenu(instance: Driver, selector: string, showMenu: () => void) {
+  const button = document.querySelector('[data-tour-target="hamburger"]');
+  if (!button) return;
+  const generation = driverGeneration;
+  const openMenu = () => {
+    instance.destroy();
+    window.setTimeout(() => {
+      // 이전 안내의 늦은 콜백이 새 안내를 덮지 않도록 한다.
+      if (generation !== driverGeneration) return;
+      const target = document.querySelector(selector);
+      if (!usesDrawerNavigation() || !target || isHiddenTourMenuTarget(target)) {
+        window.dispatchEvent(new Event(MENU_LAYOUT_CHANGE_EVENT));
+        return;
+      }
+      showMenu();
+    }, 400);
+  };
+  const config = instance.getConfig();
+  instance.setConfig({
     ...config,
+    onDestroyed: (...args) => {
+      button.removeEventListener("click", openMenu);
+      config.onDestroyed?.(...args);
+    },
   });
+  button.addEventListener("click", openMenu, { once: true });
 }
 
 /**
@@ -262,16 +334,7 @@ async function runPhase1(routerPush: (url: string) => void) {
     d.drive();
 
     // 햄버거 클릭 감지 -> 사이드바 열린 후 메뉴 링크 하이라이트
-    const btn = document.querySelector(
-      '[data-tour-target="hamburger"]'
-    ) as HTMLElement;
-    if (btn) {
-      btn.addEventListener(
-        "click",
-        () => {
-          d.destroy();
-          // 사이드바 열림 애니메이션 대기(400ms) 후 메뉴 링크 하이라이트
-          setTimeout(() => {
+    waitForOpenedTourMenu(d, '[data-tour-target="mobile-nav-programs"]', () => {
             // href 복원 함수를 저장할 변수
             let restoreHref: (() => void) | null = null;
 
@@ -309,11 +372,7 @@ async function runPhase1(routerPush: (url: string) => void) {
               d2,
               routerPush
             );
-          }, 400);
-        },
-        { once: true }
-      );
-    }
+    });
   } else {
     // PC: 데스크탑 네비의 "프로그램안내" 링크 하이라이트
     const restoreMenu = revealDesktopTourMenu('[data-tour-target="nav-programs"]');
@@ -368,14 +427,12 @@ async function runPhase1(routerPush: (url: string) => void) {
 async function runPhase2(routerPush: (url: string) => void) {
   savePhase("2"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
-  const isMobile = usesDrawerNavigation();
-
   // 첫 번째 프로그램 카드만 하이라이트 — 전체 그리드는 viewport보다 커서 하이라이트 효과가 없음
   const cardEl = await waitForElement('[data-tour-target="program-cards"] > div:first-child');
 
   // 요소를 못 찾으면 카드 하이라이트를 건너뛰고 네비 안내로 스킵
   if (!cardEl) {
-    highlightScheduleNav(driverFn, routerPush, isMobile);
+    highlightScheduleNav(driverFn, routerPush);
     return;
   }
 
@@ -415,7 +472,7 @@ async function runPhase2(routerPush: (url: string) => void) {
     onDestroyed: () => {
       if (closedByUser) return; // X로 닫으면 다음 단계 실행 안 함
       setTimeout(
-        () => highlightScheduleNav(driverFn, routerPush, isMobile),
+        () => highlightScheduleNav(driverFn, routerPush),
         100
       );
     },
@@ -429,9 +486,8 @@ async function runPhase2(routerPush: (url: string) => void) {
 function highlightScheduleNav(
   driverFn: any,
   routerPush: (url: string) => void,
-  isMobile: boolean
 ) {
-  if (isMobile) {
+  if (usesDrawerNavigation()) {
     // 모바일: 햄버거 -> 사이드바 -> 시간표 링크
     const d = driverFn({
       showProgress: false,
@@ -454,15 +510,7 @@ function highlightScheduleNav(
       ],
     });
     d.drive();
-    const btn = document.querySelector(
-      '[data-tour-target="hamburger"]'
-    ) as HTMLElement;
-    if (btn) {
-      btn.addEventListener(
-        "click",
-        () => {
-          d.destroy();
-          setTimeout(() => {
+    waitForOpenedTourMenu(d, '[data-tour-target="mobile-nav-schedule"]', () => {
             let restoreHref: (() => void) | null = null;
 
             const d2 = driverFn({
@@ -498,11 +546,7 @@ function highlightScheduleNav(
               d2,
               routerPush
             );
-          }, 400);
-        },
-        { once: true }
-      );
-    }
+    });
   } else {
     // PC: 데스크탑 네비의 "수업시간표" 링크
     const restoreMenu = revealDesktopTourMenu('[data-tour-target="nav-schedule"]');
@@ -553,12 +597,10 @@ function highlightScheduleNav(
 async function runPhase3(routerPush: (url: string) => void) {
   savePhase("3"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
-  const isMobile = usesDrawerNavigation();
-
   const gridEl = await waitForElement('[data-tour-target="schedule-grid"]');
 
   if (!gridEl) {
-    highlightSimulatorNav(driverFn, routerPush, isMobile);
+    highlightSimulatorNav(driverFn, routerPush);
     return;
   }
 
@@ -596,7 +638,7 @@ async function runPhase3(routerPush: (url: string) => void) {
     onDestroyed: () => {
       if (closedByUser) return; // X로 닫으면 다음 단계 실행 안 함
       setTimeout(
-        () => highlightSimulatorNav(driverFn, routerPush, isMobile),
+        () => highlightSimulatorNav(driverFn, routerPush),
         100
       );
     },
@@ -610,9 +652,8 @@ async function runPhase3(routerPush: (url: string) => void) {
 function highlightSimulatorNav(
   driverFn: any,
   routerPush: (url: string) => void,
-  isMobile: boolean
 ) {
-  if (isMobile) {
+  if (usesDrawerNavigation()) {
     // 모바일: 햄버거 -> 사이드바 -> 수업 찾기 링크
     const d = driverFn({
       showProgress: false,
@@ -635,15 +676,7 @@ function highlightSimulatorNav(
       ],
     });
     d.drive();
-    const btn = document.querySelector(
-      '[data-tour-target="hamburger"]'
-    ) as HTMLElement;
-    if (btn) {
-      btn.addEventListener(
-        "click",
-        () => {
-          d.destroy();
-          setTimeout(() => {
+    waitForOpenedTourMenu(d, '[data-tour-target="mobile-nav-simulator"]', () => {
             let restoreHref: (() => void) | null = null;
 
             const d2 = driverFn({
@@ -678,11 +711,7 @@ function highlightSimulatorNav(
               d2,
               routerPush
             );
-          }, 400);
-        },
-        { once: true }
-      );
-    }
+    });
   } else {
     // PC: 데스크탑 네비의 "우리 아이 수업 찾기" 링크
     let restoreHref: (() => void) | null = null;
@@ -1053,6 +1082,22 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
     (url: string) => routerRef.current.push(url),
     []
   );
+
+  useEffect(() => {
+    const restartMenuGuide = async () => {
+      const phase = getSavedPhase();
+      if (phase === "1") {
+        await runPhase1(routerPush);
+      } else if (phase === "2" || phase === "3") {
+        const driverFn = await loadDriver();
+        // 이미 확인한 정보 카드는 반복하지 않고 현재 메뉴 안내만 다시 연다.
+        if (phase === "2") highlightScheduleNav(driverFn, routerPush);
+        else highlightSimulatorNav(driverFn, routerPush);
+      }
+    };
+    window.addEventListener(MENU_LAYOUT_CHANGE_EVENT, restartMenuGuide);
+    return () => window.removeEventListener(MENU_LAYOUT_CHANGE_EVENT, restartMenuGuide);
+  }, [routerPush]);
 
   // ?tour=N 파라미터에 따라 해당 Phase 자동 실행 (1회만)
   const hasRunPhase = useRef<string | null>(null);

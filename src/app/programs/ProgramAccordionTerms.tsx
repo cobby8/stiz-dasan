@@ -47,13 +47,10 @@ export default function ProgramAccordionTerms({
   const lines = termsText.split("\n");
 
   return (
-    <Card variant="default" className="!p-0 overflow-hidden">
+    <Card variant="default" className="!p-0 overflow-hidden [&>div]:p-0">
       {/* 헤더 — hideHeader가 false일 때만 표시 */}
       {!hideHeader && (
         <div className="py-5 px-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-          <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime" style={{ fontSize: 24 }}>
-            gavel
-          </span>
           <h3 className="font-bold text-gray-900 dark:text-white text-xl">이용약관</h3>
         </div>
       )}
@@ -79,10 +76,10 @@ export default function ProgramAccordionTerms({
                   className="flex items-start gap-2 bg-amber-50 dark:bg-brand-neon-lime/10 border-l-4 border-amber-400 dark:border-brand-neon-lime rounded-r-lg px-4 py-2.5 -mx-1 transition-colors"
                 >
                   <span
-                    className="material-symbols-outlined text-amber-500 dark:text-brand-neon-lime shrink-0 mt-0.5"
-                    style={{ fontSize: 18 }}
+                    aria-hidden="true"
+                    className="text-amber-500 dark:text-brand-neon-lime shrink-0 mt-0.5 font-bold"
                   >
-                    priority_high
+                    !
                   </span>
                   <p className="text-gray-800 dark:text-gray-100 text-base leading-relaxed font-medium">
                     {trimmed}

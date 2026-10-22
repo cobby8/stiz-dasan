@@ -63,10 +63,11 @@
   box-shadow: none;
 }
 .stiz-public-sport .public-header-row {
-  max-width: 1248px;
+  max-width: 1440px;
   min-height: 76px;
   padding-block: 10px;
   gap: 12px;
+  flex-wrap: nowrap;
 }
 .stiz-public-sport .public-header-row > :first-child { flex-shrink: 0; }
 .stiz-public-sport .public-header-row img[alt="STIZ"] { height: 40px; max-width: 160px; }
@@ -153,31 +154,28 @@
 .stiz-public-sport .public-footer-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; row-gap: 4px; }
 .stiz-public-sport .public-footer-links > li { margin-top: 0; }
 .stiz-public-sport .public-footer-links a { display: inline-flex; align-items: center; min-height: 36px; }
-/* 휴대폰만 서랍으로 접고, 태블릿·좁은 PC는 메뉴를 두 번째 줄에 보여준다. */
-@media (max-width: 767px) {
+/* 공간이 부족하면 같은 헤더의 전체 메뉴로 모으고 두 번째 행은 만들지 않는다. */
+@media (max-width: 1279px) {
   .stiz-public-sport .public-desktop-nav { display: none; }
   .stiz-public-sport .public-menu-trigger { display: inline-flex; }
   .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
   .stiz-public-sport .public-header-actions > a[aria-label="사진 올리기"] { display: none; }
   .stiz-public-sport .public-header-row > :first-child > a > span { display: none; }
 }
-@media (min-width: 768px) {
+@media (min-width: 1280px) {
   .stiz-public-sport .public-desktop-nav { display: flex; }
   .stiz-public-sport .public-menu-trigger { display: none; }
 }
-@media (min-width: 768px) and (max-width: 1279px) {
-  .stiz-public-sport .public-header-row { flex-wrap: wrap; row-gap: 4px; padding-block: 8px; }
-  .stiz-public-sport .public-desktop-nav { order: 3; flex-basis: 100%; justify-content: center; border-top: 1px solid var(--color-public-line); padding-top: 4px; }
-  .stiz-public-sport .public-header-actions { margin-left: auto; }
-}
-/* 큰 글씨에서도 PC 메뉴를 없애지 않고 한 줄을 따로 확보한다. */
-@media (min-width: 768px) {
-  .text-large .stiz-public-sport .public-header-row { flex-wrap: wrap; row-gap: 4px; }
-  .text-large .stiz-public-sport .public-desktop-nav { order: 3; flex-basis: 100%; justify-content: center; flex-wrap: wrap; border-top: 1px solid var(--color-public-line); padding-top: 4px; }
-  .text-large .stiz-public-sport .public-header-actions { margin-left: auto; }
+/* 큰 글씨와 계정 버튼도 겹치지 않도록 더 넓은 폭에서 메뉴를 함께 펼친다. */
+@media (min-width: 1280px) and (max-width: 1599px) {
+  .text-large .stiz-public-sport .public-desktop-nav { display: none; }
+  .text-large .stiz-public-sport .public-menu-trigger { display: inline-flex; }
+  .text-large .stiz-public-sport .public-header-actions > .hidden:not([href="/apply"]) { display: none; }
+  .text-large .stiz-public-sport .public-header-actions > a[aria-label="사진 올리기"] { display: none; }
 }
 .stiz-public-sport .public-menu-trigger { align-items: center; justify-content: center; gap: 4px; min-height: 44px; }
 @media (max-width: 639px) {
+  .stiz-public-sport .public-menu-prefix { display: none; }
   .stiz-public-sport .public-header-row { min-height: 64px; padding-inline: 12px; gap: 6px; }
   .stiz-public-sport .public-header-row img[alt="STIZ"] { max-width: 120px; height: 34px; }
   .stiz-public-sport .public-header-actions { gap: 4px; }

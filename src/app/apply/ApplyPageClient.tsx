@@ -6,7 +6,6 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import SectionLayout from "@/components/ui/SectionLayout";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 // FAQ 데이터 타입 (DB에서 가져온 FAQ 항목)
 type FaqItem = { id: string; question: string; answer: string };
@@ -198,35 +197,6 @@ export default function ApplyPageClient({
                                         수강신청하기
                                     </Link>
                                 </div>
-                            </div>
-                        </Card>
-                    </AnimateOnScroll>
-                </div>
-            </SectionLayout>
-
-            <SectionLayout className="public-content-section" label="UNIFORM" title="유니폼 신청" description="우리 학원 유니폼을 신청하세요" bgColor="white">
-                <div className="max-w-md mx-auto">
-                    <AnimateOnScroll>
-                        <Card id="uniform" variant="default" className="public-card overflow-hidden !p-0 h-full">
-                            <div className="bg-emerald-600 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">Uniform</span>
-                                </div>
-                                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                                    <FontFreeIcon name="checkroom" size={24} />
-                                    유니폼 신청
-                                </h3>
-                            </div>
-                            <div className="px-6 py-6">
-                                <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
-                                    형제·자매 유니폼도 한 번에 접수할 수 있습니다. 금액은 접수 후 STIZ 본사 기준으로 안내됩니다.
-                                </p>
-                                <Link
-                                    href="/apply/uniform"
-                                    className="inline-flex items-center justify-center rounded-xl bg-brand-navy-900 px-6 py-3 text-base font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:bg-brand-navy-800 active:scale-[0.98] focus:ring-2 focus:ring-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
-                                >
-                                    유니폼 신청하기
-                                </Link>
                             </div>
                         </Card>
                     </AnimateOnScroll>

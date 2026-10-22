@@ -4,8 +4,8 @@
  * PublicHeader — 통합 공개 페이지 헤더
  *
  * 카테고리 드롭다운 방식:
- * - PC(md 이상): group/group-hover CSS 드롭다운 (JS 상태 불필요)
- * - 모바일(md 미만): 카테고리 라벨 + 구분선으로 시각 그룹핑
+ * - 넓은 PC: 같은 헤더 안의 드롭다운 메뉴
+ * - 공간이 좁은 화면·큰 글씨: 같은 헤더의 전체 메뉴 버튼
  *
  * 메뉴 구조:
  *   학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기]
@@ -208,6 +208,16 @@ export default function PublicHeader({
     };
   }, [isMobileMenuOpen]);
 
+  // 서랍을 연 채 넓은 화면으로 바꾸면 가려진 메뉴와 스크롤 잠금을 해제한다.
+  useEffect(() => {
+    const closeHiddenDrawer = () => {
+      if (mobileMenuTriggerRef.current?.getClientRects().length === 0) setIsMobileMenuOpen(false);
+    };
+    window.addEventListener("resize", closeHiddenDrawer);
+    closeHiddenDrawer();
+    return () => window.removeEventListener("resize", closeHiddenDrawer);
+  }, [isLargeFont]);
+
   return (
     <>
       {/* 유틸리티 바 — 운영시간 + 전화번호 (데스크탑만 표시) */}
@@ -365,7 +375,7 @@ export default function PublicHeader({
               aria-expanded={isMobileMenuOpen}
             >
               <FontFreeIcon name="menu" size={24} />
-              <span className="public-menu-label text-sm font-bold">메뉴</span>
+              <span className="public-menu-label text-sm font-bold"><span className="public-menu-prefix">전체 </span>메뉴</span>
             </button>
           </div>
         </div>
