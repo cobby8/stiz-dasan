@@ -265,7 +265,7 @@ export default function PublicHeader({
 
           {/* ===== 데스크탑 네비게이션 ===== */}
           {/* 순서: 학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기] */}
-          <nav className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
+          <nav aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
             {/* 학원 소개 — 독립 링크, 맨 앞 배치 */}
             <Link
               href="/about"
@@ -277,7 +277,7 @@ export default function PublicHeader({
 
             {/* 카테고리 드롭다운 그룹 — group/group-hover CSS로 구현 (JS 상태 불필요) */}
             {NAV_GROUPS.map((group) => (
-              <div key={group.label} className="relative group">
+              <div key={group.label} className="public-nav-group relative group">
                 {/* 카테고리 라벨 버튼 — hover 시 드롭다운이 열린다 */}
                 <button
                   className="flex items-center gap-1 px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
@@ -288,7 +288,7 @@ export default function PublicHeader({
                 </button>
 
                 {/* 드롭다운 패널 — group-hover로 보이기/숨기기 */}
-                <div className="absolute top-full left-0 pt-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-all duration-200">
+                <div className="public-nav-panel absolute top-full left-0 pt-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-all duration-200">
                   <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 py-2 min-w-[180px]">
                     {group.items.map((item) => (
                       <Link
@@ -365,6 +365,7 @@ export default function PublicHeader({
               aria-expanded={isMobileMenuOpen}
             >
               <FontFreeIcon name="menu" size={24} />
+              <span className="public-menu-label text-sm font-bold">메뉴</span>
             </button>
           </div>
         </div>

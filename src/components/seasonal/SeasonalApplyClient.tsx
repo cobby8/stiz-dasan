@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
-import { formatWon, normalizeProgram, programClasses, type SeasonalClass, type SeasonalProgram } from "./types";
+import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
 type SubmitState = "idle" | "submitting" | "done" | "error";
@@ -130,7 +130,7 @@ function isFull(item: SeasonalClass) {
 }
 
 function remainingText(item: SeasonalClass) {
-  if (item.capacity === null) return "접수 가능";
+  if (item.capacity === null || item.remaining === null) return "학원 문의";
   const remaining = item.remaining ?? 0;
   if (remaining > 0) return `${remaining}석`;
   return item.waitlistEnabled ? "대기 가능" : "마감";
@@ -148,10 +148,7 @@ function shuttleFeeForDraft(offering: SeasonalClass | undefined, draft?: Shuttle
 }
 
 function statusText(status: string) {
-  if (status === "WAITLISTED") return "대기 접수";
-  if (status === "APPROVED") return "승인";
-  if (status === "PENDING") return "접수";
-  return status;
+  return seasonalApplicationStatusLabel(status);
 }
 
 function applicantPrice(item: SeasonalClass, applicantType: ApplicantType | "") {
@@ -396,6 +393,18 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   if (state === "loading") return <StatusBox icon="progress_activity" text="신청 정보를 불러오고 있어요." />;
   if (state === "error" || !program) return <StatusBox icon="error" text={message || "신청 정보를 불러오지 못했습니다."} retry />;
   if (submitState === "done") return <DoneView slug={slug} result={result} offerings={offerings} message={message} />;
+  const display = seasonalDisplayState(program);
+  if (!display.canApply) return (
+    <section className="public-content-section bg-gray-50 px-4 py-8 dark:bg-gray-900">
+      <div className="public-card mx-auto max-w-3xl space-y-4 p-5">
+        <p className="text-sm font-bold text-brand-orange-500">{display.label}</p>
+        <h1 className="text-2xl font-black break-keep">{program.title}</h1>
+        <p>{display.message}</p>
+        <p className="text-sm text-gray-500">운영 기간 · {formatSeasonalPeriod(program.operationStart, program.operationEnd)}</p>
+        <div className="public-actions"><Link href={`/seasonal/${slug}`} className="inline-flex items-center rounded-xl border border-gray-300 px-4 font-bold">특강 내용 보기</Link><Link href="/seasonal" className="inline-flex items-center rounded-xl border border-gray-300 px-4 font-bold">다른 특강 보기</Link></div>
+      </div>
+    </section>
+  );
 
   return (
     <form onSubmit={handleSubmit} className="public-seasonal-form bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">

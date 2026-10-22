@@ -78,7 +78,12 @@ async function loadDriver() {
   const { driver } = await import("driver.js");
   await import("driver.js/dist/driver.css");
   await import("./tourStyles.css");
-  return driver;
+  return (config: Parameters<typeof driver>[0]) => driver({
+    // 강조 전환 도중 빠르게 확인하면 다음 단계가 생략되는 경합을 없앤다.
+    animate: false,
+    onPopoverRender: prepareTourPopover,
+    ...config,
+  });
 }
 
 /**
@@ -201,6 +206,30 @@ function usesDrawerNavigation(): boolean {
   return !!trigger && trigger.getClientRects().length > 0 && getComputedStyle(trigger).visibility !== "hidden";
 }
 
+function revealDesktopTourMenu(selector: string): () => void {
+  // 안내 대상이 하위 메뉴라면 안내가 끝날 때까지 실제 메뉴도 펼쳐 둔다.
+  const group = document.querySelector(selector)?.closest<HTMLElement>(".public-nav-group");
+  if (!group) return () => {};
+  const previous = group.getAttribute("data-public-tour-open");
+  group.setAttribute("data-public-tour-open", "true");
+  return () => {
+    if (previous === null) group.removeAttribute("data-public-tour-open");
+    else group.setAttribute("data-public-tour-open", previous);
+  };
+}
+
+function refreshTourAfterHighlight(_element: unknown, _step: unknown, { driver }: {
+  driver: { refresh: () => void };
+}) {
+  // 첫 표시의 스타일·위치 계산이 끝난 다음 프레임에 다시 정렬한다.
+  driver.refresh();
+}
+
+function prepareTourPopover({ wrapper }: { wrapper: HTMLElement }) {
+  // 첫 측정부터 폭을 확정해 큰 글씨의 최초 안내도 화면 밖으로 밀리지 않게 한다.
+  wrapper.style.width = "min(340px, calc(100vw - 24px))";
+}
+
 async function runPhase1(routerPush: (url: string) => void) {
   savePhase("1"); // 재개 기능용 Phase 저장
   const driverFn = await loadDriver();
@@ -287,6 +316,7 @@ async function runPhase1(routerPush: (url: string) => void) {
     }
   } else {
     // PC: 데스크탑 네비의 "프로그램안내" 링크 하이라이트
+    const restoreMenu = revealDesktopTourMenu('[data-tour-target="nav-programs"]');
     // href 복원 함수를 저장할 변수
     let restoreHref: (() => void) | null = null;
 
@@ -294,6 +324,8 @@ async function runPhase1(routerPush: (url: string) => void) {
       showProgress: false,
       allowClose: true,
       smoothScroll: false, // B-1: sticky 헤더 스크롤 충돌 방지
+      // 최초 스타일 적용과 메뉴 전개가 끝난 위치로 안내 말풍선을 다시 맞춘다.
+      onHighlighted: refreshTourAfterHighlight,
       overlayColor: "rgba(0,0,0,0.6)",
       stageRadius: 8,
       stagePadding: 10,
@@ -314,6 +346,7 @@ async function runPhase1(routerPush: (url: string) => void) {
       // B-2: driver 종료 시 href 복원
       onDestroyed: () => {
         if (restoreHref) restoreHref();
+        restoreMenu();
       },
     });
     d.drive();
@@ -472,12 +505,14 @@ function highlightScheduleNav(
     }
   } else {
     // PC: 데스크탑 네비의 "수업시간표" 링크
+    const restoreMenu = revealDesktopTourMenu('[data-tour-target="nav-schedule"]');
     let restoreHref: (() => void) | null = null;
 
     const d = driverFn({
       showProgress: false,
       allowClose: true,
       smoothScroll: false, // B-1: sticky 헤더 스크롤 충돌 방지
+      onHighlighted: refreshTourAfterHighlight,
       overlayColor: "rgba(0,0,0,0.6)",
       stageRadius: 8,
       stagePadding: 10,
@@ -496,6 +531,7 @@ function highlightScheduleNav(
       ],
       onDestroyed: () => {
         if (restoreHref) restoreHref();
+        restoreMenu();
       },
     });
     d.drive();

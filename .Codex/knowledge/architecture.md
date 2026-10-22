@@ -1,5 +1,9 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-22 공개 일정 표시 계층
+- 연간 일정은 `AnnualEventsClient`가 연도/월 선택을 관리하고 `annualPeriod.ts`가 한국 현재 월을 계산한다. `annual-months.css`는 공개 스포츠 영역만 꾸민다. 공식 수강월 매핑·기존 서버 조회·상세창은 유지한다.
+- 특강의 날짜 정규화·공개 상태 표시는 `components/seasonal/types.ts`로 공유한다. 목록·상세·신청은 같은 표시 기준을 사용하며 서버의 모집/가격/접수 판단은 변경하지 않는다.
+
 ## 2026-10-21 공개 홈페이지 스포츠 스타일 경계
 - `src/lib/public-site-path.ts`는 공개 안내·상세·신청·공개 로그인/설치 경로를 선택한다. `PublicSiteTheme`와 `public-sport.css`는 공개 렌더링에만 공통 토큰·간격·헤더/푸터 규격을 적용한다.
 - 홈은 `LandingPageClient` + `landing/public-home.css`이며 기존 설정·공지·갤러리·후기를 그대로 받는다. 개별 공개 페이지는 공통 hero/content/card/form 클래스로 정리한다.

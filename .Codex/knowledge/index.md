@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-22: 공개홈페이지 사용자후속3항목 완료. 특강KST 날짜/종료·만석·수업없음·코드노출정리, 연간 현재월/가로선택·회전,768이상메뉴복원·휴대폰메뉴표시. 가이드cold폭/빠른확인경합도수정. 전체2281/학생5·tsc·생산src875/9153f95b·독립85(레이아웃42/특강27/기능9/가이드4/경계3)·JS0통과. docs/public-sport-homepage.md와.tmp/public-followup-qa/final9153-independent-report.json 정본,지식본문5유지·architecture/decisions/errors/lessons갱신. 4106합성GET전용·실물폰/운영접수와구분,운영/푸시/배포없음.
+
 > 2026-10-22: 선택된 스포츠 컨셉을 실제 공개 홈페이지 전체에 적용. 공통/개별/홈 병렬구현·독립리뷰·모바일메뉴focus/특강bar/가이드실제표시분기 보완. 최종tsc·전체2261/학생5·생산빌드/src873·26화면×5폭130/기능30·HTTP29/fixture18 통과. 공개자료 재구성 합성QA4106 유지, 실물폰/운영접수와 구분. docs/public-sport-homepage.md 및 .tmp/sport-public-qa/qa-final 정본, architecture/decisions/errors 갱신·지식본문5 유지. 운영DB/푸시/배포없음.
 
 > 2026-10-20: 홈페이지3컨셉을 실제 공개 전체구조/자료/상세·신청 흐름으로 보완. 별도4095 읽기전용, 원제품/운영 불변. 독립192→36·체험3/수강4합성·메뉴/사진닫기/프로그램320·영상153 보완 통과. 대화 산출물 stiz-home-complete-20261020/README.md·data·qa-independent, decisions/errors 갱신·지식본문5 유지. 갤러리원31/표시6·상품원9/판매8 구분, 푸시/배포없음.
