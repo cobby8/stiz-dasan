@@ -9,6 +9,8 @@ import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
+import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
+import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import { requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
 import {
     createNotificationRecord,
@@ -4170,6 +4172,17 @@ export async function updateTrialLead(
             });
         }
 
+        // 체험 기록의 아이 이름·보호자 번호를 고쳤다면(오타 수정 등), 아직 체험과 연결되지 않은
+        // 수강 신청서와 다시 비교해 확실한 경우(AUTO)에만 연결한다. 문자는 보내지 않는다.
+        // 실패해도 체험 기록 저장 자체는 성공으로 둔다(연결은 관리자 화면 [연결] 버튼으로도 가능).
+        if (data.childName !== undefined || data.parentPhone !== undefined) {
+            try {
+                await autoLinkApplicationsForTrialLead(id, { appUserId: admin.appUserId, appUserName: admin.appUserName });
+            } catch (linkError) {
+                console.warn("[updateTrialLead] enroll application auto link failed:", (linkError as Error).message);
+            }
+        }
+
         // 일정 저장과 외부 발송은 별도 승인 대상이다. 기본 저장은 절대 문자를 보내지 않는다.
         if (data.status === "SCHEDULED" && history?.sendScheduleNotification === true) {
             scheduledSmsResult.attempted = true;
@@ -5318,6 +5331,45 @@ export async function approveEnrollApplication(
     // 외부 알림은 이 승인 액션에서 실행하지 않습니다. 정확한 수신자·문구 미리보기와
     // 별도 승인 원장을 갖춘 전용 발송 액션에서만 처리해야 합니다.
     return { approved: true, sms: smsResult };
+}
+
+/**
+ * 수강 신청 목록용 — 체험과 연결되지 않은 신청서별 "체험 기록 후보".
+ * 읽기 전용이며 관리자만 호출할 수 있다.
+ */
+export async function getEnrollTrialLinkSuggestions(): Promise<Record<string, TrialLinkSuggestion[]>> {
+    await requireAdmin();
+    await ensureTrialLeadTable();
+    try {
+        return await getTrialLinkSuggestions();
+    } catch (error) {
+        console.warn("[getEnrollTrialLinkSuggestions] failed:", (error as Error).message);
+        return {};
+    }
+}
+
+/**
+ * 관리자가 [연결] 버튼으로 신청서와 체험 기록을 직접 연결한다.
+ * 이미 연결된 쪽은 덮어쓰지 않고, 문자·알림은 보내지 않는다.
+ */
+export async function linkEnrollApplicationToTrialLead(applicationId: string, trialLeadId: string) {
+    const admin = await requireAdmin();
+    await ensureTrialLeadTable();
+    const result = await linkTrialLeadToApplication({
+        applicationId,
+        trialLeadId,
+        actor: { appUserId: admin.appUserId, appUserName: admin.appUserName },
+        note: "관리자가 체험 기록 후보를 직접 연결",
+    });
+    // 운영 빌드는 서버 액션의 throw 메시지를 가리므로, 실패 사유는 반환값으로 돌려준다.
+    if (!result.linked) return result;
+
+    revalidatePath("/admin/apply");
+    revalidatePath("/admin/trial");
+    revalidatePath("/admin");
+    revalidateApplyAdminCaches();
+    revalidateTrialAdminCaches();
+    return result;
 }
 
 /**
