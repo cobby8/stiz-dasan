@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { ensureTrialLeadTable } from "@/app/actions/admin";
 import { notifyAdmins } from "@/lib/notification";
+import { buildContactSaveName } from "@/lib/contactSaveName";
 import {
     issueEnrollmentAccountHandoff,
 } from "@/lib/enrollment-account-handoff";
@@ -431,6 +432,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             childGrade: data.childGrade || "학년 미입력",
             parentName,
             parentPhone: normalizedParentPhone,
+            // 연락처 저장용 이름 `2610 이성빈 목7 초6` — 관리자 알림 문자에서 복사해 쓴다.
+            contactSaveName: buildContactSaveName({ childName, childGrade: data.childGrade, slotKeys: preferredSlotKey }),
         };
         const trialLeadId = rows[0]?.id || "ok";
 
@@ -1162,6 +1165,8 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             childGrade: data.childGrade || "학년 미입력",
             parentName,
             parentPhone: normalizePhone(parentPhone),
+            // 연락처 저장용 이름 `2610 이성빈 화6목6 초6` — 관리자 알림 문자에서 복사해 쓴다.
+            contactSaveName: buildContactSaveName({ childName, childGrade: data.childGrade, slotKeys: data.preferredSlotKeys }),
         };
 
         // 관리자에게 알림을 보냅니다. 발송 실패가 신청 저장을 막지는 않습니다.

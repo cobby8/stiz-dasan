@@ -46,9 +46,9 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "TRIAL_NEW_ADMIN",
         "체험 신청 접수 (관리자)",
         "ADMIN",
-        "[STIZ] 새 체험수업 신청\n{{childName}} ({{childGrade}}) - {{parentName}}",
-        "학부모가 체험수업을 신청하면 관리자에게 발송",
-        '["childName","childGrade","parentName","parentPhone"]',
+        "[STIZ] 새 체험수업 신청\n{{contactSaveName}}\n{{parentPhone}}",
+        "학부모가 체험수업을 신청하면 관리자에게 발송 (둘째 줄 = 연락처 저장용 이름)",
+        '["contactSaveName","childName","childGrade","parentName","parentPhone"]',
     ],
     [
         "TRIAL_NEW_COACH",
@@ -70,9 +70,9 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "ENROLL_NEW_ADMIN",
         "수강 신청 접수 (관리자)",
         "ADMIN",
-        "[STIZ] 새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}",
-        "학부모가 수강 신청하면 관리자에게 발송",
-        '["childName","childGrade","parentName","parentPhone"]',
+        "[STIZ] 새 수강 신청\n{{contactSaveName}}\n{{parentPhone}}",
+        "학부모가 수강 신청하면 관리자에게 발송 (둘째 줄 = 연락처 저장용 이름)",
+        '["contactSaveName","childName","childGrade","parentName","parentPhone"]',
     ],
     [
         "ENROLL_NEW_COACH",
@@ -329,6 +329,7 @@ export const KEYWORD_TO_VARIABLE: Record<string, string> = {
     "아이이름": "{{childName}}", "학생이름": "{{childName}}", "수강생이름": "{{childName}}",
     // childGrade
     "학년": "{{childGrade}}",
+    "저장용이름": "{{contactSaveName}}", "연락처저장이름": "{{contactSaveName}}",
     // parentName
     "학부모이름": "{{parentName}}", "보호자이름": "{{parentName}}", "부모이름": "{{parentName}}",
     // parentPhone

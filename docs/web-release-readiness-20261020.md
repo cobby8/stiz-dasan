@@ -62,3 +62,25 @@
 - 독립 검증: 공식 JSON 스키마의 boolean 허용과 기존 설정 대비 변경 항목을 확인했다. `npx.cmd tsc --noEmit --incremental false` 및 `git diff --check` 통과. 별도 `.github/workflows` 배포 경로는 없었다.
 
 - 푸시 결과: 기존 46개와 차단 설정 커밋 `53409816`을 일반 푸시했고 원격 main과 로컬 HEAD의 전체 해시 일치·미푸시 0을 확인했다. 푸시 후 Vercel 최신 3개 배포 목록은 이전과 같으며 기존 운영 배포가 READY 상태를 유지했다. 이 결과 기록도 같은 차단 설정을 유지한 채 후속 문서 커밋으로 푸시한다.
+
+## 배포 당일 추가: 신청 알림 문자에 연락처 저장용 이름 (2026-10-23)
+
+- 코드: 체험·수강 신청 관리자 알림에 `{{contactSaveName}}` 변수(`2610 이성빈 목7 초6`)를 넘긴다(`src/lib/contactSaveName.ts`, 테스트 `tests/contact-save-name.test.mjs`).
+- 운영 DB 문구는 원장님이 직접 고친 문구라 기본값 변경이 적용되지 않는다. **배포가 READY 된 뒤** 아래 SQL 로 바꾼다. 배포 전에 바꾸면 새 칸이 빈 채로 나간다.
+- 2026-10-23 운영 DB 현재 문구(되돌림 기준):
+  - `TRIAL_NEW_ADMIN`: `새로운 체험수업이 접수되었습니다!\n{{childName}}{{childGrade}} - {{parentPhone}}`
+  - `ENROLL_NEW_ADMIN`: `새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}`
+
+```sql
+-- 적용 (기존 문구가 그대로일 때만 바뀐다)
+UPDATE "SmsTemplate" SET body = E'새로운 체험수업이 접수되었습니다!\n{{contactSaveName}}\n{{parentPhone}}', "updatedAt" = NOW()
+ WHERE trigger = 'TRIAL_NEW_ADMIN' AND body = E'새로운 체험수업이 접수되었습니다!\n{{childName}}{{childGrade}} - {{parentPhone}}';
+UPDATE "SmsTemplate" SET body = E'새 수강 신청\n{{contactSaveName}}\n{{parentPhone}}', "updatedAt" = NOW()
+ WHERE trigger = 'ENROLL_NEW_ADMIN' AND body = E'새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}';
+
+-- 되돌림
+UPDATE "SmsTemplate" SET body = E'새로운 체험수업이 접수되었습니다!\n{{childName}}{{childGrade}} - {{parentPhone}}', "updatedAt" = NOW() WHERE trigger = 'TRIAL_NEW_ADMIN';
+UPDATE "SmsTemplate" SET body = E'새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}', "updatedAt" = NOW() WHERE trigger = 'ENROLL_NEW_ADMIN';
+```
+
+- 사후 확인: 두 행의 body 를 SELECT 하고, 다음 실제 신청 알림에서 둘째 줄이 `yymm 이름 반 학년` 으로 오는지 본다.
