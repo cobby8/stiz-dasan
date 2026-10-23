@@ -84,8 +84,8 @@ test("연결된 학부모 — 일반 요청은 접수, 질문만 정책 답변, 
   assert.equal(linked("수강료는 얼마인가요?"), true);
   assert.equal(linked("셔틀비는 얼마인가요?"), true);
   assert.equal(linked("방학에도 수업 있나요?"), true);
-  // 기존 분류기는 '주차 '의 '차 '를 셔틀로 본다(SHUTTLE_CHANGE) → 접수로 간다. 분류기는 이번 작업에서 바꾸지 않았다.
-  assert.equal(linked("주차 가능한가요?"), false);
+  // 2026-10-23 분류기 수정: '주차 '의 '차 '를 더는 셔틀로 보지 않는다 → 정책 답변 후보(원장 승인 「14. 수정해」)
+  assert.equal(linked("주차 가능한가요?"), true);
   // 사람·연락처 변경은 질문이어도 접수
   assert.equal(linked("원장님과 상담 가능한가요?"), false);
   assert.equal(linked("전화번호 변경 어떻게 하나요?"), false);
@@ -526,4 +526,19 @@ test("연결된 학부모: 답 아래 바로가기를 누르면 원래 질문이
   // 「원장님께 문의」 → 상담원 연결 접수, 원문에 원래 질문이 들어간다
   const ask = await chatbot.handleLinkedMessage(IDENTITY, "원장님께 문의: 환불 규정이 어떻게 되나요?", "req-4", neverCalled);
   assert.match(ask.template.outputs[0].simpleText.text, /‘상담원 연결’ 요청으로 이해했어요\.\n\n“원장님께 문의: 환불 규정이 어떻게 되나요\?”/);
+});
+
+test("연결된 학부모: 「주차 가능한가요?」는 셔틀 접수가 아니라 정책 답변 연결점으로 간다", async () => {
+  const chatbot = await loadLinkedChatbot();
+  const kind = contract.classifyParentUtterance("주차 가능한가요?");
+  assert.doesNotMatch(kind, /^SHUTTLE_/);
+  assert.ok(qa.LINKED_POLICY_KINDS.has(kind), `정책 답변 후보 종류여야 한다: ${kind}`);
+  const seen = [];
+  const reply = await chatbot.handleLinkedMessage(IDENTITY, "주차 가능한가요?", "req-park", async (question, _escalate, hookKind) => {
+    seen.push([question, hookKind]);
+    return qa.policyAnswerResponse("학원 건물 주차장을 이용할 수 있어요.");
+  });
+  assert.deepEqual(seen, [["주차 가능한가요?", kind]], "정책 연결점이 한 번 불린다");
+  assert.match(reply.template.outputs[0].simpleText.text, /주차장/);
+  assert.equal(globalThis.__policyCalls.some((sql) => /INSERT INTO "KakaoParentIntake"/.test(sql)), false, "셔틀 접수 초안을 만들지 않는다");
 });

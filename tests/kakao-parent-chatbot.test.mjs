@@ -73,3 +73,16 @@ test("인증 보호자는 연결 자녀만으로 안전한 표시명을 만든�
   assert.match(source, /WHERE "parentId"=\$1 AND "mergedIntoStudentId" IS NULL/);
   assert.doesNotMatch(source, /SELECT[^`]*(?:phone|"User"|parent\.name)/i);
 });
+
+test("셔틀 판정의 「차」는 독립 단어만 — 주차·자차·차감 같은 합성어는 셔틀이 아니다", () => {
+  // 셔틀이 아니어야 하는 말(예전 /차\s/ 가 「주차 가능한가요?」를 셔틀 접수로 보냈다)
+  for (const source of ["주차 가능한가요?", "주차장 있나요", "자차로 갈게요", "차감되나요", "정차 없이 바로 가나요", "차례대로 하나요"]) {
+    assert.doesNotMatch(classifyParentUtterance(source), /^SHUTTLE_/, source);
+  }
+  // 진짜 셔틀 표현은 그대로 셔틀
+  for (const source of ["차 안 타요", "오늘 차량 안 타요", "셔틀 시간 알려주세요", "하차 장소 바꿔주세요", "오늘 버스 안 타요", "승차 위치 바꿔주세요"]) {
+    assert.match(classifyParentUtterance(source), /^SHUTTLE_/, source);
+  }
+  assert.equal(classifyParentUtterance("차 안 타요"), "SHUTTLE_SKIP");
+  assert.equal(classifyParentUtterance("오늘 차량 안 타요"), "SHUTTLE_SKIP");
+});
