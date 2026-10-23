@@ -5,7 +5,8 @@ import { formatClassLabel } from "@/lib/application-display-format";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { recordApplicationContact, sendManualSms } from "@/app/actions/admin";
+import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
+import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import AdminModal from "@/components/admin/AdminModal";
 import ManualSmsModal from "./ManualSmsModal";
 import CompactListFilters from "@/components/academy/CompactListFilters";
@@ -445,6 +446,9 @@ export default function ApplyAdminClient({
     const [contactBusyId, setContactBusyId] = useState<string | null>(null);
     const [manualSmsBusy, setManualSmsBusy] = useState(false);
     const [openQuickActionId, setOpenQuickActionId] = useState<string | null>(null);
+    // 체험과 연결되지 않은 신청서별 "체험 기록 후보"(신청서 id → 후보). 수강신청 탭을 열 때 한 번 읽는다.
+    const [trialSuggestions, setTrialSuggestions] = useState<Record<string, TrialLinkSuggestion[]> | null>(null);
+    const [trialLinkBusyId, setTrialLinkBusyId] = useState<string | null>(null);
 
     const hasAnyData = applications.length > 0 || classes.length > 0 || stats.total > 0;
 
@@ -500,6 +504,20 @@ export default function ApplyAdminClient({
         void loadApplyData();
     }, [activeTab, applyLoaded, loading, loadApplyData]);
 
+    // 체험 기록 후보는 목록 표시를 막지 않도록 신청 목록을 받은 뒤 따로 읽는다(실패하면 후보만 안 보인다).
+    const loadTrialSuggestions = useCallback(async () => {
+        try {
+            setTrialSuggestions(await getEnrollTrialLinkSuggestions());
+        } catch {
+            setTrialSuggestions({});
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab !== "applications" || !applyLoaded || trialSuggestions !== null) return;
+        void loadTrialSuggestions();
+    }, [activeTab, applyLoaded, trialSuggestions, loadTrialSuggestions]);
+
     useEffect(() => {
         if (activeTab !== "sources") return;
         if (sourceStatsData?.range === sourceStatsRange) return;
@@ -541,6 +559,31 @@ export default function ApplyAdminClient({
             setContactBusyId(null);
         }
     }, [loadApplyData, showFeedback]);
+
+    // [연결] — 관리자가 확인한 체험 기록을 신청서에 붙인다(문자 발송 없음).
+    async function handleLinkTrial(app: EnrollApplication, suggestion: TrialLinkSuggestion) {
+        if (trialLinkBusyId) return;
+        const ok = window.confirm(`${app.childName} 신청서를 체험 기록 「${suggestion.childName}」과 연결할까요?
+(${suggestion.reason})
+문자는 발송되지 않습니다.`);
+        if (!ok) return;
+        setTrialLinkBusyId(app.id);
+        try {
+            const result = await linkEnrollApplicationToTrialLead(app.id, suggestion.trialLeadId);
+            if (!result.linked) {
+                showFeedback("error", result.reason);
+                await loadTrialSuggestions();
+                return;
+            }
+            await loadApplyData();
+            await loadTrialSuggestions();
+            showFeedback("success", `${app.childName} 신청서를 체험 기록과 연결했습니다.`);
+        } catch (error) {
+            showFeedback("error", getErrorMessage(error, "체험 기록 연결에 실패했습니다. 새로고침 후 다시 시도해주세요."));
+        } finally {
+            setTrialLinkBusyId(null);
+        }
+    }
 
     async function handleSendManualSms(app: EnrollApplication, message: string) {
         if (manualSmsBusy) return;
@@ -817,6 +860,11 @@ export default function ApplyAdminClient({
                                 ? [app.shuttlePickup, app.shuttleDropoff, app.shuttleTime].filter(Boolean).join(" / ") || "이용"
                                 : "미이용";
                             const isActionOpen = openQuickActionId === app.id;
+                            // 체험과 아직 연결 안 된 신청서에만 후보 1건(가장 유력한 것)을 한 줄로 보여준다.
+                            const trialSuggestion = !app.trialLeadId ? trialSuggestions?.[app.id]?.[0] ?? null : null;
+                            const trialSuggestionLabel = trialSuggestion
+                                ? `체험 기록 후보: ${trialSuggestion.childName}(${[trialSuggestion.trialYmd, trialSuggestion.classLabel].filter(Boolean).join("·") || "일정 미정"})`
+                                : "";
                             return (
                                 <tr
                                     key={`${app.id}-list`}
@@ -844,6 +892,20 @@ export default function ApplyAdminClient({
                                         <span className="block truncate font-black text-gray-900 dark:text-white" title={studentSummary}>
                                             {studentSummary}
                                         </span>
+                                        {trialSuggestion && (
+                                            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-bold text-[var(--color-academy-muted)]" onClick={(event) => event.stopPropagation()}>
+                                                <span className="truncate" title={`${trialSuggestionLabel} · ${trialSuggestion.reason}`}>{trialSuggestionLabel}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleLinkTrial(app, trialSuggestion)}
+                                                    disabled={trialLinkBusyId !== null}
+                                                    className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-surface)] disabled:opacity-50"
+                                                    aria-label={`${app.childName} 신청서를 체험 기록 ${trialSuggestion.childName}과 연결`}
+                                                >
+                                                    {trialLinkBusyId === app.id ? "연결 중" : "연결"}
+                                                </button>
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-3 py-1.5 align-middle">
                                         <span className="block truncate font-bold text-gray-800 dark:text-gray-100" title={applySummary}>

@@ -73,3 +73,9 @@
 - **발견자**: developer
 - **내용**: 판단 로직은 `src/lib/kakao-policy-qa.ts`(순수: 질문 판별·주입 방어 프롬프트·`[ESCALATE]` 해석·시간 제한·`runPolicyFlow` 동기/콜백 분기)에 두고, DB·Gemini·콜백 전송·after() 는 `kakao-policy-qa-service.ts` 가 주입한다 → 테스트는 가짜 Gemini 로 흐름 전체를 실행한다. 학부모 챗봇은 `handleLinkedMessage(..., policyHook)` 연결점만 받고, hook 이 null 이면(킬 스위치 꺼짐·DB 미준비·키 없음) 기존 접수 흐름 그대로. 못 답하면 escalate = 기존 `createIntakeReply`(+안내 한 줄). 게스트는 라우트에서 인증 판별 뒤·기본 카드 앞. Gemini 모델·키는 `src/lib/gemini-client.ts` 한 곳(웹 `/api/chat` 도 사용). SDK 0.24.1 타입엔 thinkingConfig 가 없지만 generationConfig 는 본문에 그대로 실려 형 변환으로 넘긴다. 챗봇 파일에 import 를 늘리면 `tests/kakao-parent-connect-flow.test.mjs` 의 손 치환 목록에도 넣어야 한다(안 넣으면 ERR_INVALID_URL).
 - **참조횟수**: 0
+
+### 2026-10-23 체험(TrialLead) ↔ 수강 신청서 연결은 판정 모듈 + 연결부 한 곳에서
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 연결 판정은 순수 모듈 `src/lib/enrollment/trialLeadMatch.ts`(`decideTrialLeadMatch` → AUTO/SUGGEST/NONE, 한글 음절 편집거리), DB 읽기·저장은 `src/lib/enrollment/trialLeadLinkService.ts` 한 곳(`linkTrialLeadToApplication` = 조건부 UPDATE 한 트랜잭션, 승인된 신청서면 체험 CONVERTED, ApplicationContactLog UPDATED 2줄, 문자 없음). 비교 시점 3곳: 신청 제출(`submitEnrollApplication`, accessCode 없을 때 AUTO 만), 체험 이름·번호 수정(`updateTrialLead` → `autoLinkApplicationsForTrialLead`), 관리자 신청 목록 후보+[연결](`getEnrollTrialLinkSuggestions`/`linkEnrollApplicationToTrialLead`). 새 연결 경로를 만들면 SQL 을 또 쓰지 말고 이 두 파일을 쓴다. 테스트 `tests/enrollment-trial-lead-match.test.mjs`.
+- **참조횟수**: 0
