@@ -85,4 +85,8 @@ test("셔틀 판정의 「차」는 독립 단어만 — 주차·자차·차감 
   }
   assert.equal(classifyParentUtterance("차 안 타요"), "SHUTTLE_SKIP");
   assert.equal(classifyParentUtterance("오늘 차량 안 타요"), "SHUTTLE_SKIP");
+  // 검수 회귀: 셔틀을 부르는 합성어(학원차·통학차·봉고차·노란차)와 붙여쓰기 「안타요」는 그대로 당일 미탑승
+  for (const source of ["학원차 안 타요", "통학차 안 타요", "봉고차 안 타요", "노란차 안 타요", "오늘 학원차 안타요", "차 안타요"]) {
+    assert.equal(classifyParentUtterance(source), "SHUTTLE_SKIP", source);
+  }
 });

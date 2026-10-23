@@ -116,10 +116,13 @@ function makeDb({ credits = null, students = null } = {}) {
         .map((row) => ({ id: row.id, absenceDate: row.absenceDate, expiresAt: row.expiresAt, sourceType: row.sourceType, originClassName: db.classes.find((c) => c.id === row.originClassId)?.name ?? null }));
     }
     if (/mc\.status='RESERVED' AND \(\$2::text IS NULL/.test(sql)) {
+      // SQL 의 ms."makeupDate">=$3 (오늘 KST 자정) 를 그대로 흉내 낸다 — 앱의 JS 거르기와 별개로 DB 단계에서 빠지는지 본다
+      assert.match(sql, /ms\."makeupDate">=\$3::timestamptz/);
+      db.reservationSince = args[2];
       return db.credits
         .filter((row) => owns(row, args[0]) && row.status === "RESERVED" && (args[1] === null || row.studentId === args[1]))
         .map((row) => ({ row, session: db.sessions.find((s) => s.id === row.makeupSessionId && s.status === "BOOKED") }))
-        .filter((item) => item.session)
+        .filter((item) => item.session && item.session.makeupDate.getTime() >= new Date(args[2]).getTime())
         .sort((a, b) => a.session.makeupDate - b.session.makeupDate)
         .map(({ row, session }) => {
           const cls = db.classes.find((c) => c.id === session.makeupClassId);
@@ -263,7 +266,8 @@ test("보강 신청 → 보강권 선택 → 수업 선택 → 확인 → 웹과
     `3. ${kst.kstLabel(day(8))} 18:00 주중경기반`,
     `4. ${kst.kstLabel(day(9))} 10:00 주말기본반`,
   ]);
-  assert.deepEqual(replies(options), ["보강 수업 1번", "보강 수업 2번", "보강 수업 3번", "보강 수업 4번", "보강 신청", "보강 그만"]);
+  // 「다른 보강권」은 학생 이름을 붙여 보낸다(자녀가 여럿이어도 같은 학생으로 돌아간다)
+  assert.deepEqual(replies(options), ["보강 수업 1번", "보강 수업 2번", "보강 수업 3번", "보강 수업 4번", "지유 보강 신청", "보강 그만"]);
 
   const confirm = await say("보강 수업 2번");
   assertKakaoFormat(confirm);
@@ -422,6 +426,69 @@ test("「취소할게요」는 보강 신청 확인으로 읽지 않는다(그�
   const res = await say("취소할게요");
   assert.match(textOf(res), /보강 신청을 그만했어요/);
   assert.equal(db.sessions.length, 0);
+});
+
+test("확인 단계의 긍정 답: 넵·네!·네 신청할게요·좋아요 모두 신청 확정", async () => {
+  for (const yes of ["넵", "네!", "네 신청할게요", "좋아요", "예약해주세요", "네~"]) {
+    const db = makeDb();
+    await say("보강 신청");
+    await say("보강권 1번");
+    await say("보강 수업 1번");
+    assert.match(textOf(await say(yes)), /^보강 예약 완료/, yes);
+    assert.equal(db.sessions.length, 1, yes);
+  }
+});
+
+test("대화 중 짧은 엉뚱한 말은 대화를 닫지 않고 단계를 다시 보여 준다 — 업무 말·메뉴는 기존 흐름", async () => {
+  const db = makeDb();
+  await say("보강 신청");
+  await say("보강권 1번");
+  await say("보강 수업 1번");
+  for (const stray of ["ㅇㅋ", "글쎄요", "음..", "잠깐만요"]) {
+    assert.match(textOf(await say(stray)), /지금 단계의 버튼을 눌러 주세요[\s\S]*보강 신청할까요/, stray);
+    assert.equal(flowRow(db).status, "MAKEUP_FLOW", `${stray}: 대화는 살아 있다`);
+  }
+  // 분류되는 업무(입금)·메뉴 버튼(셔틀)은 붙잡지 않는다
+  assert.equal(await say("입금했어요"), null);
+  assert.equal(flowRow(db).status, "CANCELED");
+  await say("보강 신청");
+  assert.equal(await say("셔틀"), null, "메뉴 버튼은 메뉴를 연다");
+
+  // 취소 단계도 같은 원칙: 「네 취소할게요」= 확정, 짧은 엉뚱한 말 = 재질문
+  const db2 = makeDb();
+  db2.credits.find((row) => row.id === "mc2").status = "RESERVED";
+  db2.credits.find((row) => row.id === "mc2").makeupSessionId = "ms-later";
+  db2.sessions.push({ id: "ms-later", studentId: "s1", makeupClassId: "cB", makeupDate: at(day(2)), status: "BOOKED" });
+  await say("보강 취소");
+  await say("보강 취소 1번");
+  assert.match(textOf(await say("ㅇㅋ")), /지금 단계의 버튼을 눌러 주세요[\s\S]*취소할까요/);
+  assert.match(textOf(await say("네 취소할게요")), /^보강 예약을 취소했어요/);
+  assert.equal(db2.sessions[0].status, "CANCELLED");
+});
+
+test("자녀 이름: 정확히 일치 먼저, 없으면 가장 긴 이름(이준·이준호 형제)", async () => {
+  const kids = [{ id: "a", name: "이준" }, { id: "b", name: "이준호" }];
+  assert.equal(flowModule.pickChildByName(kids, "이준 보강 신청").id, "a");
+  assert.equal(flowModule.pickChildByName(kids, "이준호 보강 신청").id, "b");
+  assert.equal(flowModule.pickChildByName(kids, "이준호보강").id, "b", "붙여 써도 가장 긴 이름");
+  assert.equal(flowModule.pickChildByName(kids, "보강 신청"), null);
+  // 실제 흐름에서도 이준호 학생 보강권 목록으로 간다
+  makeDb({
+    students: [{ id: "s1", parentId: "p1", name: "이준", grade: "초5" }, { id: "s2", parentId: "p1", name: "이준호", grade: "초5" }],
+    credits: [{ id: "mcB", studentId: "s2", status: "AVAILABLE", sourceType: "REGULAR", originClassId: "cO", absenceDate: at(day(-2)), expiresAt: at(day(50)), makeupSessionId: null }],
+  });
+  const res = await say("이준호 보강 신청", [{ id: "s1", name: "이준" }, { id: "s2", name: "이준호" }]);
+  assert.match(textOf(res), /이준호 학생 · /);
+});
+
+test("예약 목록은 DB 에서 오늘 KST 자정 이후만 조회한다", async () => {
+  const db = makeDb();
+  db.credits.find((row) => row.id === "mc1").status = "RESERVED";
+  db.credits.find((row) => row.id === "mc1").makeupSessionId = "ms-past";
+  db.sessions.push({ id: "ms-past", studentId: "s1", makeupClassId: "cA", makeupDate: at(day(-1)), status: "BOOKED" });
+  const res = await say("보강 취소");
+  assert.match(textOf(res), /취소할 수 있는 보강 예약이 없어요/);
+  assert.equal(new Date(db.reservationSince).getTime(), kst.kstAt(TODAY), "기준 시각 = 오늘 KST 0시");
 });
 
 test("30분 만료 · 대화 중 다른 업무 · 짧은 답", async () => {

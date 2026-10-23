@@ -45,7 +45,8 @@ export function classifyParentUtterance(source: string): ParentRequestKind {
   if (/반\s*변경|요일.*변경|시간.*변경|옮기/.test(text)) return "CLASS_CHANGE";
   // 「차」는 독립 단어(앞에 한글이 붙지 않고, 뒤가 띄어쓰기·끝·「를」)일 때만 셔틀로 본다.
   // 예전 /차\s/ 는 「주차 가능한가요?」의 「차 」까지 잡아 정책 질문이 셔틀 접수로 샜다(주차·자차·정차·차감·차례 등 합성어 제외).
-  if (/셔틀|차량|버스|탑승|승차|하차|(?<![가-힣])차(?=\s|$|를)/.test(text)) {
+  // 단 학원차·통학차·봉고차·노란차·픽업차·승합차는 셔틀을 부르는 말이라 앞말 예외로 허용한다(검수 회귀 수정).
+  if (/셔틀|차량|버스|탑승|승차|하차|(?:(?<![가-힣])|학원|통학|봉고|노란|픽업|승합)차(?=\s|$|를)/.test(text)) {
     if (/안\s*타|미탑승/.test(text)) return "SHUTTLE_SKIP";
     if (/다른\s*(곳|장소)|장소.*타/.test(text)) return "SHUTTLE_LOCATION";
     if (/신청|시작|중단|이용\s*안/.test(text)) return "SHUTTLE_START_STOP";

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { bookMakeup, cancelMakeupBooking, getMakeupOptionsForCredit } from "@/lib/makeup/parent-makeup";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { buildKakaoSkillResponse, classifyParentUtterance, KAKAO_TEXT_CARD_DESCRIPTION_MAX, type KakaoQuickReply } from "@/lib/kakao-chatbot-contract";
-import { addDaysKst, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { addDaysKst, kstAt, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
 
 // ── 카카오 「보강 신청·취소」 대화 흐름 (연결된 학부모 전용) ─────────────────────
 //
@@ -70,9 +70,11 @@ const STOP_REPLY = { label: "그만하기", messageText: STOP };
 const MAIN_MENU = ["결석·보강", "셔틀", "청구·영수증", "수강 변경", "정보·상담"];
 
 // 확인 단어는 신청·취소를 나눈다 — 「취소할게요」가 보강 "신청" 확인으로 읽히면 안 된다.
-const YES = /^(네|예|확인|맞아요|진행)$/;
-const BOOK_YES = /^(신청|신청할게요)$/;
-const CANCEL_YES = /^(취소할게요)$/;
+// 판정 전에 끝의 문장부호·물결을 뗀다(「네!」「넵~」→「네」「넵」).
+const YES = /^(네|넵|넹|예|응|확인|맞아요|좋아요|좋습니다|그래요|진행|진행해 ?주세요)$/;
+const BOOK_YES = /^((네|넵|예|좋아요) ?)?(신청|신청할게요|신청해 ?주세요|예약|예약할게요|예약해 ?주세요)$/;
+const CANCEL_YES = /^((네|넵|예) ?)?(취소할게요|취소해 ?주세요)$/;
+const answerOf = (text: string) => text.replace(/[!.~?,\s]+$/u, "").trim();
 const ABORT = /^(그만|그만하기|그만할게요|아니요|아니오|취소|취소할게요|보강 그만)$/;
 // 대화 중에 들어온 짧은 답(번호·네)은 다른 업무로 새지 않게 지금 단계를 다시 보여 준다.
 const SHORT_ANSWER = /^(\d{1,2}\s*번?|네|예|확인|맞아요|진행|신청|신청할게요)$/;
@@ -158,8 +160,11 @@ async function upcomingReservations(parentUserId: string, studentId: string | nu
        JOIN "MakeupSession" ms ON ms.id=mc."makeupSessionId" AND ms.status='BOOKED'
        LEFT JOIN "Class" c ON c.id=ms."makeupClassId"
       WHERE mc.status='RESERVED' AND ($2::text IS NULL OR mc."studentId"=$2)
+        AND ms."makeupDate">=$3::timestamptz
       ORDER BY ms."makeupDate" ASC LIMIT 20`,
-    parentUserId, studentId,
+    // 오늘 KST 자정부터(지난 보강이 LIMIT 20 을 차지하지 않게 DB 에서 거른다). makeupDate 는 timestamptz 라
+    // 절대 시각 하나와 비교하면 된다 — 시간대 변환은 kst 모듈의 kstAt 한 번뿐.
+    parentUserId, studentId, new Date(kstAt(today)).toISOString(),
   );
   return rows
     .map((row) => {
@@ -263,7 +268,7 @@ function creditListReply(state: FlowState, webLink: WebLink | null, lead = ""): 
 function optionListReply(state: FlowState, webLink: WebLink | null, lead = ""): Reply {
   const options = state.options ?? [];
   const lines = options.map((option, index) => `${index + 1}. ${option.label}`).join("\n");
-  const extra: KakaoQuickReply[] = (state.credits?.length ?? 0) > 1 ? [{ label: "다른 보강권", messageText: "보강 신청" }] : [];
+  const extra: KakaoQuickReply[] = (state.credits?.length ?? 0) > 1 ? [otherCreditReply(state)] : [];
   return reply(
     `${lead}${state.studentName} 학생 · ${state.credit?.absenceLabel} 결석분 보강권(${state.credit?.expiresLabel}까지)\n앞으로 2주 안에 신청할 수 있는 수업이에요. 번호를 골라 주세요.\n\n${lines}`,
     [...numberReplies(options.length, PICK_OPTION), ...extra, STOP_REPLY],
@@ -329,7 +334,7 @@ async function candidatesFor(parentUserId: string, creditId: string, today: stri
 function noOptionReply(state: FlowState, webLink: WebLink | null, lead = ""): Reply {
   return reply(
     `${lead}${state.studentName} 학생 ${state.credit?.absenceLabel} 결석분 보강권으로 앞으로 2주 안에 신청할 수 있는 수업이 없어요(학년이 맞고 자리가 남은 수업 기준). 며칠 뒤 다시 확인하시거나 원장님께 문의해 주세요.`,
-    [ASK_DIRECTOR, ...((state.credits?.length ?? 0) > 1 ? [{ label: "다른 보강권", messageText: "보강 신청" }] : []), "메뉴"],
+    [ASK_DIRECTOR, ...((state.credits?.length ?? 0) > 1 ? [otherCreditReply(state)] : []), "메뉴"],
     webLink,
   );
 }
@@ -481,7 +486,7 @@ async function continueFlow(input: FlowInput, flow: FlowRow): Promise<Reply | nu
   const today = todayKst();
 
   // 취소 확인 단계의 「취소」·「취소할게요」는 그만두기가 아니다(아래에서 확인·재질문으로 처리).
-  if (ABORT.test(text) && !(state.step === "CANCEL_CONFIRM" && /^취소(할게요)?$/.test(text))) {
+  if (ABORT.test(answerOf(text)) && !(state.step === "CANCEL_CONFIRM" && /^취소(할게요)?$/.test(answerOf(text)))) {
     await closeFlow(flow.id, "CANCELED");
     return reply(state.mode === "BOOK" ? "보강 신청을 그만했어요. 필요하면 언제든 「보강 신청」이라고 말씀해 주세요." : "보강 취소를 그만했어요. 예약은 그대로 유지돼요.", MAIN_MENU);
   }
@@ -504,7 +509,7 @@ async function continueFlow(input: FlowInput, flow: FlowRow): Promise<Reply | nu
       return confirmReply(next);
     }
     case "CONFIRM": {
-      if (text === CONFIRM_BOOK || YES.test(text) || BOOK_YES.test(text)) return confirmBooking(input, flow, today);
+      if (text === CONFIRM_BOOK || YES.test(answerOf(text)) || BOOK_YES.test(answerOf(text))) return confirmBooking(input, flow, today);
       if (text === OTHER_OPTION) {
         // 후보는 그 사이 바뀌었을 수 있어 새로 계산한다.
         return toOptionStep(flow.id, "CONFIRM", state, state.credit!, today, webLink);
@@ -525,7 +530,7 @@ async function continueFlow(input: FlowInput, flow: FlowRow): Promise<Reply | nu
       return cancelConfirmReply(next);
     }
     case "CANCEL_CONFIRM": {
-      if (text === CONFIRM_CANCEL || YES.test(text) || CANCEL_YES.test(text)) return confirmCancel(input, flow, today);
+      if (text === CONFIRM_CANCEL || YES.test(answerOf(text)) || CANCEL_YES.test(answerOf(text))) return confirmCancel(input, flow, today);
       if (text === "취소") return renderStep(state, today, webLink, "예약을 취소하려면 「취소할게요」, 그대로 두려면 「그만하기」를 눌러 주세요.\n\n");
       break;
     }
@@ -534,7 +539,7 @@ async function continueFlow(input: FlowInput, flow: FlowRow): Promise<Reply | nu
   }
 
   // 이 단계의 입력은 아니지만 보강 관련 버튼·문장이면 지금 단계를 다시 보여 준다.
-  if (STALE_CONTROL.test(text) || SHORT_ANSWER.test(text)) return renderStep(state, today, webLink, "지금 단계의 버튼을 눌러 주세요.\n\n");
+  if (STALE_CONTROL.test(text) || SHORT_ANSWER.test(answerOf(text)) || isStrayShortReply(text)) return renderStep(state, today, webLink, "지금 단계의 버튼을 눌러 주세요.\n\n");
   return null;
 }
 
@@ -548,7 +553,39 @@ export type FlowInput = {
 };
 
 // 메뉴 버튼 문장. 「결석·보강」은 '보강'을 품고 있지만 하위 메뉴를 여는 버튼이라 보강 업무가 아니다.
-const MENU_TEXT = /^(결석·보강|메뉴|처음|시작)$/;
+// 다른 메뉴 버튼도 보강 대화에 붙잡히지 않고 그대로 메뉴를 열어야 한다.
+const MENU_TEXT = /^(결석·보강|셔틀|청구·영수증|수강 변경|정보·상담|메뉴|처음|시작)$/;
+
+/**
+ * 대화 중 들어온 6자 이하의 짧은 말 중 어떤 업무로도 분류되지 않는 것(「ㅇㅋ」「글쎄요」 등).
+ * 대화를 닫으면 그 말이 엉뚱한 접수로 새므로 지금 단계를 다시 보여 준다.
+ * 메뉴 버튼·분류되는 업무 말(「휴원」「입금했어요」 등)은 기존 흐름으로 보낸다.
+ */
+function isStrayShortReply(text: string): boolean {
+  return [...text].length <= 6 && !MENU_TEXT.test(text) && classifyParentUtterance(text) === "UNKNOWN";
+}
+
+/**
+ * 자녀 이름 고르기: 띄어쓰기로 나눈 말 중 이름과 정확히 같은 것을 먼저 보고, 없으면 포함된 이름 중 가장 긴 것.
+ * 「이준」「이준호」 형제에서 「이준호 보강 신청」이 둘 다 포함으로 걸려 고르지 못하던 문제를 막는다.
+ * 가장 긴 이름이 둘 이상이면(동명 등) 고르지 않는다.
+ */
+export function pickChildByName<T extends { name: string }>(children: T[], text: string): T | null {
+  const words = new Set(text.split(/\s+/).filter(Boolean));
+  const exact = children.filter((child) => words.has(child.name));
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  const hits = children.filter((child) => child.name && text.includes(child.name));
+  if (hits.length === 0) return null;
+  const longest = Math.max(...hits.map((child) => [...child.name].length));
+  const top = hits.filter((child) => [...child.name].length === longest);
+  return top.length === 1 ? top[0] : null;
+}
+
+/** 「다른 보강권」: 그 학생 이름을 붙여 보내 자녀가 여럿이어도 같은 학생 보강권 목록으로 돌아간다. */
+function otherCreditReply(state: FlowState): KakaoQuickReply {
+  return { label: "다른 보강권", messageText: state.studentName ? `${state.studentName} 보강 신청` : "보강 신청" };
+}
 
 /** 보강을 시작·취소하는 말인가(연결된 학부모의 업무 분류가 MAKEUP 인 말, 메뉴 버튼 제외). */
 export function isMakeupUtterance(text: string): boolean {
@@ -582,7 +619,7 @@ export async function handleMakeupConversation(input: FlowInput): Promise<Reply 
     : "";
   const named = input.children.length === 1
     ? input.children[0]
-    : (() => { const hits = input.children.filter((child) => input.text.includes(child.name)); return hits.length === 1 ? hits[0] : null; })();
+    : pickChildByName(input.children, input.text);
 
   if (/취소/.test(input.text)) return startCancel(input, named, lead);
 
