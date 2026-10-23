@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store, max-age=0" };
 const writesEnabled = () => process.env.MONTHLY_REGISTER_WRITES_ENABLED === "true";
 const fail = (error: unknown) => NextResponse.json({ error: error instanceof MonthlyRegisterError
-  ? error.message : "월 장부를 처리하지 못했습니다. DB 준비 상태를 확인한 뒤 다시 조회해 주세요." },
+  ? error.message : "월 장부를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." },
 { status: error instanceof MonthlyRegisterError ? error.status : 500, headers });
 
 export async function GET(request: NextRequest) {

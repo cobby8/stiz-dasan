@@ -64,6 +64,9 @@ test("직원 계정의 학부모 화면 통과는 자녀 조회로만 결정한�
 
 test("로그인 직후 판별도 DB 의 자녀 유무를 그대로 쓴다", async () => {
   const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8");
-  assert.match(continuePage, /EXISTS \(SELECT 1 FROM "Student" s WHERE s\."parentId" = "User"\.id\)/);
-  assert.match(continuePage, /hasOwnChildren: Boolean\(rows\[0\]\?\.hasOwnChildren\)/);
+  assert.match(continuePage, /getParentViewAccessForAuthUser\(user\)/);
+  assert.match(continuePage, /hasOwnChildren: parentView\.hasOwnChildren/);
+  const access = await readFile("src/lib/account-view-access.ts", "utf8");
+  assert.match(access, /EXISTS \(SELECT 1 FROM "Student" s WHERE s\."parentId" = u\.id\)/);
+  assert.match(access, /u\."authUserId" = \$1 OR \(u\."authUserId" IS NULL AND u\.id = \$1\)/);
 });

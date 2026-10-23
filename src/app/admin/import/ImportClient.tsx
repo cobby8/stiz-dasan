@@ -253,7 +253,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
   }, []);
 
   const handleExecute = useCallback(async () => {
-    if (!confirm("이관을 실행하시겠습니까? DB에 데이터가 삽입됩니다.")) return;
+    if (!confirm("자료를 가져오시겠습니까? 확인한 자료가 사이트에 등록됩니다.")) return;
 
     setLoading(true);
     setError(null);
@@ -360,7 +360,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
                     구글시트에서 바로 가져오기
                   </p>
                   <p className="mt-1 text-xs text-blue-700 dark:text-blue-200">
-                    등록, 차량, 변동내역, 대표팀 명단 탭을 한 번에 읽어 DB 이관 미리보기를 만듭니다.
+                    등록·차량·변경 내역·대표팀 명단을 읽어 등록할 내용을 미리 확인합니다.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 md:flex-row">
@@ -994,7 +994,7 @@ function DetailRowCard({ type, row }: { type: ImportDetailType; row: ImportDetai
           {detailText(row, "grade")} · {detailText(row, "branch")} · {detailText(row, "phone")}
         </p>
         <p className="mt-1 text-gray-500 dark:text-gray-400">
-          DB 연결 {detailText(row, "studentId") !== "-" ? "완료" : "확인 필요"}
+          원생 연결 {detailText(row, "studentId") !== "-" ? "완료" : "확인 필요"}
         </p>
       </div>
     );

@@ -1,4 +1,5 @@
 import "server-only";
+import { userFacingError } from "@/lib/user-facing-error";
 
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@prisma/client";
@@ -233,7 +234,7 @@ export async function startParentSignup(input: {
       );
     });
     return { ok: true, token };
-  } catch (error) { return { error: error instanceof Error ? error.message : "가입 인증을 시작하지 못했습니다." }; }
+  } catch (error) { return { error: userFacingError(error, "가입 인증을 시작하지 못했습니다.") }; }
 }
 
 export async function sendParentSignupOtp(token: string, requestKey = "unknown") {
@@ -289,7 +290,7 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
       prisma.$executeRawUnsafe(`UPDATE "ParentSignupOtpSend" SET status='FAILED' WHERE "verificationId"=$1 AND status='RESERVED'`, failedRow.id),
       prisma.$executeRawUnsafe(`UPDATE "ParentSignupVerification" SET "otpHash"=NULL,"otpExpiresAt"=NULL WHERE id=$1 AND "otpHash"=$2`, failedRow.id, reserved),
     ]).catch(() => undefined);
-    return { error: error instanceof Error ? error.message : "인증번호를 보내지 못했습니다." };
+    return { error: userFacingError(error, "인증번호를 보내지 못했습니다.") };
   }
 }
 
@@ -395,6 +396,6 @@ export async function completeParentSignup(input: {
   } catch (error) {
     if (createdAuth && authUserId) await createAdminClient().auth.admin.deleteUser(authUserId).catch(() => undefined);
     if (row) await prisma.$executeRawUnsafe(`UPDATE "ParentSignupVerification" SET status='VERIFIED',"processingAt"=NULL,"processingAttemptId"=NULL,"lastError"=$2 WHERE id=$1 AND status='PROCESSING' AND "processingAttemptId"=$3`, row.id, error instanceof Error ? error.message.slice(0, 1000) : "SIGNUP_FAILED", attemptId).catch(() => undefined);
-    return { error: error instanceof Error ? error.message : "회원가입을 완료하지 못했습니다." };
+    return { error: userFacingError(error, "회원가입을 완료하지 못했습니다.") };
   }
 }

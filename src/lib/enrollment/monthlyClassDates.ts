@@ -1,5 +1,6 @@
 import { getAcademySettings, getAnnualEvents } from "@/lib/queries";
 import { fetchGoogleCalendarEvents } from "@/lib/googleCalendar";
+import type { GoogleCalendarReadOptions } from "@/lib/googleCalendar";
 import {
   computeClassDatesFromRange,
   getMonthClassSchedule,
@@ -28,14 +29,19 @@ type CalendarEvent = { title: string; date: string; endDate?: string };
 
 /** 캘린더 이벤트를 한 번만 읽어 여러 반에 재사용한다(승인 화면에서 여러 건을 계산한다). */
 export async function loadAnnualPlanEvents(): Promise<CalendarEvent[]> {
-  const [settings, dbEvents] = await Promise.all([
+  return (await loadAnnualPlanEventsWithSource()).events;
+}
+
+/** 청구는 실패를 숨기지 않고, 거래 밖에서 읽은 동일 공식 일정을 검토·발행에 사용한다. */
+export async function loadAnnualPlanEventsWithSource(options: GoogleCalendarReadOptions = {}, storedSource?: {settings:{googleCalendarIcsUrl?:string|null}|null;dbEvents:Array<{title:string;date:Date|string;endDate?:Date|string|null}>}): Promise<{ kind: "DB" | "DB_AND_ICS"; events: CalendarEvent[] }> {
+  const [settings, dbEvents] = storedSource ? [storedSource.settings,storedSource.dbEvents] : await Promise.all([
     getAcademySettings() as Promise<any>,
     getAnnualEvents() as Promise<any[]>,
   ]);
   const icsUrl = settings?.googleCalendarIcsUrl as string | null;
-  const googleEvents = icsUrl ? await fetchGoogleCalendarEvents(icsUrl) : [];
+  const googleEvents = icsUrl ? await fetchGoogleCalendarEvents(icsUrl, options) : [];
 
-  return [
+  return { kind: icsUrl ? "DB_AND_ICS" : "DB", events: [
     ...googleEvents.map((event) => ({
       title: event.title,
       date: event.date.toISOString(),
@@ -46,7 +52,7 @@ export async function loadAnnualPlanEvents(): Promise<CalendarEvent[]> {
       date: new Date(event.date).toISOString(),
       endDate: event.endDate ? new Date(event.endDate).toISOString() : undefined,
     })),
-  ];
+  ] };
 }
 
 /** "학원 휴무·휴강" 이벤트가 덮는 날짜(다일 이벤트 포함). */

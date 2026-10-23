@@ -21,7 +21,8 @@ test("체험 신청은 한글 요일이 아니라 DB 슬롯키로 담당 코치 
 
 test("체험 신청 폼은 실제 빈자리 슬롯의 slotKey를 서버로 넘긴다", () => {
   assert.match(trialForm, /availableSlots/);
-  assert.match(trialForm, /function getSlotPeriod/);
+  // 일정 검증과 같은 교시 해석을 사용하며, 실제 전송은 아래 slotKey 검사를 유지한다.
+  assert.match(trialForm, /trialSlotPeriod as getSlotPeriod/);
   assert.match(trialForm, /selectedSlot\?\.slotKey/);
   // 시각 표시 대신 잔여 인원·마감을 보여주도록 바뀌었다.
   // 이 테스트가 지키려는 "실제 빈자리"에는 오히려 이쪽이 맞다.

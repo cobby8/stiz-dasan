@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getPublicAccountRole } from "@/lib/public-account";
+import { getAccountViewAccess } from "@/lib/account-view-access";
 
 export async function GET() {
-  const role = await getPublicAccountRole();
+  const { role, views } = await getAccountViewAccess();
 
   return NextResponse.json(
-    { role },
+    { role, views },
     {
       headers: {
         "Cache-Control": "private, no-store, max-age=0",

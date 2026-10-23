@@ -90,8 +90,8 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
   }, [productNo]);
 
   return (
-    <main className="flex h-dvh min-h-[32rem] flex-col overflow-hidden bg-white text-gray-950 dark:bg-gray-950 dark:text-white">
-      <header className="flex min-h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 sm:px-5">
+    <main className="public-product-frame flex h-dvh min-h-0 flex-col overflow-hidden bg-white text-gray-950 dark:bg-gray-950 dark:text-white">
+      <header className="public-product-header flex min-h-16 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 sm:px-5">
         <Link
           href="/shop"
           title="클럽샵으로 돌아가기"
@@ -105,7 +105,7 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           <p className="text-[11px] font-black text-brand-orange-600 dark:text-brand-neon-lime">STIZ CLUB SHOP</p>
           <div className="flex min-w-0 items-baseline gap-2">
             <h1 className="truncate text-sm font-black sm:text-base">
-              {state.status === "ready" ? state.product.name : "상품 불러오는 중"}
+              {state.status === "ready" ? state.product.name : state.status === "unavailable" ? "상품을 열 수 없습니다" : "상품 불러오는 중"}
             </h1>
             {state.status === "ready" && (
               <span className="shrink-0 text-xs font-bold text-gray-500 dark:text-gray-300 sm:text-sm">

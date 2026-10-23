@@ -65,7 +65,12 @@ test("앱 로그인과 브라우저 로그인을 다른 값으로 구분해 넘�
 
 test("선생님 앱의 관리자 바로가기는 원장·부원장에게만 보인다", async () => {
   const menu = await readFile("src/app/staff/StaffProfileMenu.tsx", "utf8");
-  assert.match(menu, /staffRole === "ADMIN" \|\| staffRole === "VICE_ADMIN"[\s\S]{0,600}href="\/admin"/);
+  const viewSource = await readFile("src/lib/account-views.ts", "utf8");
+  const compiledViews = ts.transpileModule(viewSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const { resolveAccountViews } = await import(`data:text/javascript;base64,${Buffer.from(compiledViews).toString("base64")}`);
+  for (const role of ["ADMIN", "VICE_ADMIN"]) assert.equal(resolveAccountViews(role, false).some(view => view.href === "/admin"), true);
+  for (const role of ["INSTRUCTOR", "PARENT", "DRIVER"]) assert.equal(resolveAccountViews(role, true).some(view => view.href === "/admin"), false);
+  assert.match(menu, /AccountViewSwitcher views=\{accountViews\}/);
   // 수업 진행 중 이동은 다른 링크와 같은 저장 확인을 거쳐야 한다.
-  assert.match(menu, /href="\/admin"[\s\S]{0,200}requestPublicNavigation\(event, "\/admin"\)/);
+  assert.match(menu, /onNavigate=\{\(event, view\) => requestPublicNavigation\(event, view\.href\)\}/);
 });

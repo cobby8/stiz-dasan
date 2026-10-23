@@ -6,6 +6,8 @@ import { logout } from "@/app/actions/auth";
 import { defaultPathForRole, type AppRole } from "@/lib/auth-routes";
 import { createClient } from "@/lib/supabase/client";
 import FontFreeIcon from "./ui/FontFreeIcon";
+import AccountViewSwitcher from "./AccountViewSwitcher";
+import type { AccountViewOption } from "@/lib/account-views";
 
 const DESKTOP_ACCOUNT_CLASS = [
   "hidden md:inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold",
@@ -36,6 +38,7 @@ type AccountControlsProps = {
 
 function useAccountState(initialRole: AppRole | null = null) {
   const [appRole, setAppRole] = useState<AppRole | null>(initialRole);
+  const [accountViews, setAccountViews] = useState<AccountViewOption[]>([]);
 
   useEffect(() => {
     setAppRole(initialRole);
@@ -46,13 +49,16 @@ function useAccountState(initialRole: AppRole | null = null) {
       const response = await fetch("/api/auth/account-role", { cache: "no-store" });
       if (!response.ok) {
         setAppRole(null);
+        setAccountViews([]);
         return;
       }
 
-      const data = (await response.json().catch(() => ({}))) as { role?: AppRole | null };
+      const data = (await response.json().catch(() => ({}))) as { role?: AppRole | null; views?: AccountViewOption[] };
       setAppRole(data.role ?? null);
+      setAccountViews(data.views ?? []);
     } catch {
       setAppRole(null);
+      setAccountViews([]);
     }
   }, []);
 
@@ -68,6 +74,7 @@ function useAccountState(initialRole: AppRole | null = null) {
     } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         setAppRole(null);
+        setAccountViews([]);
         return;
       }
 
@@ -93,16 +100,18 @@ function useAccountState(initialRole: AppRole | null = null) {
   const canAccessAdmin = appRole === "ADMIN" || appRole === "VICE_ADMIN";
   const isStaffPrimary = appRole === "INSTRUCTOR";
 
-  return { accountHref, accountLabel, canAccessAdmin, isLoggedIn: appRole !== null, isStaffPrimary };
+  return { accountHref, accountLabel, canAccessAdmin, isLoggedIn: appRole !== null, isStaffPrimary, accountViews };
 }
 
 export function DesktopAccountControls({ initialRole = null }: AccountControlsProps) {
-  const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary } =
+  const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary, accountViews } =
     useAccountState(initialRole);
 
   return (
     <>
-      <Link
+      {accountViews.length > 1 ? (
+        <div className="academy-app hidden rounded-xl md:block"><AccountViewSwitcher views={accountViews} /></div>
+      ) : <Link
         href={accountHref}
         aria-label={isStaffPrimary ? "선생님 앱" : undefined}
         title={isStaffPrimary ? "선생님 앱" : undefined}
@@ -116,7 +125,7 @@ export function DesktopAccountControls({ initialRole = null }: AccountControlsPr
         ) : (
           accountLabel
         )}
-      </Link>
+      </Link>}
 
       {canAccessAdmin && (
         <Link href="/staff/quick-post" aria-label="사진 올리기" title="사진 올리기" className={HEADER_ICON_ACTION_CLASS}>
@@ -140,12 +149,14 @@ export function MobileAccountControls({
   onNavigate,
   initialRole = null,
 }: AccountControlsProps & { onNavigate?: () => void }) {
-  const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary } =
+  const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary, accountViews } =
     useAccountState(initialRole);
 
   return (
-    <div className="grid grid-cols-2 gap-2 mb-3">
-      <Link
+    <div className="grid grid-cols-2 gap-2 mb-3" data-account-controls="mobile">
+      {accountViews.length > 1 ? (
+        <div className="academy-app flex min-h-11 items-center justify-center rounded-xl"><AccountViewSwitcher views={accountViews} onNavigate={() => onNavigate?.()} /></div>
+      ) : <Link
         href={accountHref}
         onClick={onNavigate}
         className="flex min-h-11 items-center justify-center rounded-xl border border-brand-orange-200 bg-white text-sm font-bold text-brand-orange-600 transition-colors hover:bg-brand-orange-50 dark:border-brand-neon-lime/30 dark:bg-gray-900 dark:text-brand-neon-lime"
@@ -160,7 +171,7 @@ export function MobileAccountControls({
         ) : (
           accountLabel
         )}
-      </Link>
+      </Link>}
 
       {canAccessAdmin ? (
         <Link

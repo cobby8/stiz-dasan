@@ -1,0 +1,123 @@
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { chromium } from 'playwright';
+import { startStatusBrowserHarness } from '../tests/helpers/status-browser-harness.mjs';
+
+// 실제 화면·hook·bridge adapter를 연결한다. Android 서비스 자체는 별도 APK/기기 검증 대상이다.
+const harness = await startStatusBrowserHarness({ entry: `
+import React from 'react'; import {createRoot} from 'react-dom/client';
+import Driver from '@/components/shuttle/UnifiedDriverClient';
+const root=createRoot(document.getElementById('root'));
+const props={token:'synthetic-native-driver',date:'2026-10-19',today:'2026-10-19',prevDate:null,nextDate:null,driverLabel:'검증 기사',initialBoarding:{},rows:[]};
+window.mountDriver=()=>root.render(React.createElement(Driver,props));
+window.hideDriver=()=>root.render(null); window.mountDriver();` });
+const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+const results = [];
+async function gpsDetails(page) {
+  await page.getByRole('button', { name: /위치 공유 상세 보기/ }).click();
+}
+async function check(name, test, initial = {}) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.addInitScript(({ initial }) => {
+      window.nativeCalls = []; window.gpsCalls = 0;
+      Object.defineProperty(navigator, 'geolocation', { value: { watchPosition() { window.gpsCalls++; return 1; }, clearWatch() {} } });
+      window.nativeState = { token: 'synthetic-native-driver', state: 'off', transmission: 'idle', running: false, lastSentAt: null, lastLocationAt: null, accuracy: null, ...initial };
+      window.emitNative = patch => { Object.assign(window.nativeState, patch); window.dispatchEvent(new CustomEvent('stiz-driver-gps', { detail: { ...window.nativeState } })); };
+      window.StizDriverGpsTransport = { postMessage(raw) { const message = JSON.parse(raw); window.nativeCalls.push(message); if (message.action === 'snapshot') window.emitNative({}); } };
+    }, { initial });
+    await page.goto(harness.url); await page.waitForFunction(() => window.nativeCalls.length > 0);
+    await test(page);
+    assert.equal(await page.evaluate(() => window.gpsCalls), 0, '앱에서 웹 GPS를 중복 실행하면 안 됨');
+    results.push({ name, pass: true }); console.log('PASS', name);
+  } catch (error) { results.push({ name, pass: false, error: error.message }); console.error('FAIL', name, error.message); }
+  finally { await page.close(); }
+}
+try {
+  await check('재진입 시 기기 운행 복구·웹 위치 수집 없음', async page => {
+    await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    await gpsDetails(page);
+    await page.getByText(/화면을 끄거나 길안내 앱으로 이동해도/).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot']);
+  }, { state: 'active', transmission: 'sent', running: true, lastSentAt: new Date().toISOString() });
+  await check('시작 요청만으로 성공 단정 없이 실제 기기 상태를 표시', async page => {
+    await page.getByRole('button', { name: '운행 시작', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.nativeCalls.at(-1).action), 'start');
+    await page.evaluate(() => window.emitNative({ state: 'requesting', running: false }));
+    await gpsDetails(page);
+    await page.getByText('새 기기 위치를 기다리는 중…').waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
+    await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+  });
+  await check('기기 권한 거부·시작 실패를 숨기지 않는다', async page => {
+    await page.evaluate(() => window.emitNative({ state: 'denied', transmission: 'error', running: false, error: '정확한 위치 권한을 허용해 주세요.' }));
+    await gpsDetails(page);
+    await page.getByRole('alert').filter({ hasText: '정확한 위치 권한을 허용해 주세요.' }).waitFor();
+    await page.getByRole('button', { name: '위치 연결 다시 시도' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '운행 종료', exact: true }).count(), 0);
+  });
+  await check('새 위치 지연 안내는 일반 오류 없이 마지막 접수를 보존', async page => {
+    await page.evaluate(() => window.emitNative({ state: 'requesting', transmission: 'idle', running: true,
+      lastSentAt: new Date(Date.now() - 60_000).toISOString(), error: '위치 갱신이 지연되고 있습니다. 휴대폰 위치 설정과 GPS 수신 환경을 확인해 주세요.' }));
+    await gpsDetails(page);
+    await page.getByRole('status').filter({ hasText: '위치 갱신이 지연되고 있습니다.' }).waitFor();
+    await page.getByText(/마지막 위치 수신 ·/).waitFor();
+    await page.getByText(/현재 위치를 확인해 주세요/).waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못/).count(), 0);
+  });
+  await check('전송 실패는 실제 원인과 마지막 접수를 함께 표시', async page => {
+    await page.evaluate(() => window.emitNative({ state: 'error', transmission: 'error', running: true,
+      lastSentAt: new Date().toISOString(), error: '서버 연결에 실패했습니다.' }));
+    await gpsDetails(page);
+    await page.getByRole('alert').filter({ hasText: '서버 연결에 실패했습니다.' }).waitFor();
+    await page.getByText(/마지막 위치 수신 ·/).waitFor();
+    await page.getByText(/다음 전송에서 재시도합니다/).waitFor();
+    assert.equal(await page.getByText(/위치를 가져오지 못|위치 공유 중/).count(), 0);
+  });
+  await check('종료 확인 대기·서버 미확인 상태 구분', async page => {
+    await page.getByRole('button', { name: '운행 종료', exact: true }).click();
+    await page.evaluate(() => window.emitNative({ state: 'off', running: false, transmission: 'stopping' }));
+    assert.equal(await page.getByRole('button', { name: '종료 확인 중' }).isDisabled(), true);
+    await page.evaluate(() => window.emitNative({ state: 'off', running: false, transmission: 'stop-unknown' }));
+    await gpsDetails(page);
+    await page.getByText(/위치 수집은 중단됨 · 공유 종료 확인 필요/).waitFor();
+  }, { state: 'active', transmission: 'sent', running: true });
+  await check('화면 해제·복귀가 서비스 운행을 종료하거나 재시작하지 않는다', async page => {
+    await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    await page.evaluate(() => window.hideDriver()); await page.locator('header').waitFor({ state: 'hidden' });
+    await page.evaluate(() => window.mountDriver()); await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot', 'snapshot']);
+  }, { state: 'active', transmission: 'sent', running: true });
+  await check('종료 후 재진입은 자동 시작 없이 다시 운행 시작을 제공', async page => {
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot']);
+    await page.reload();
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => window.nativeCalls.map(x => x.action)), ['snapshot', 'start']);
+    await page.evaluate(() => window.emitNative({ state: 'requesting', transmission: 'idle', running: false }));
+    await page.getByRole('button', { name: '운행 종료', exact: true }).waitFor();
+    await page.evaluate(() => window.emitNative({ state: 'active', transmission: 'sent', running: true, lastSentAt: new Date().toISOString() }));
+    await page.getByRole('status').filter({ hasText: '위치 공유 중' }).waitFor();
+  }, { state: 'off', transmission: 'stopped', running: false });
+  await check('종료 미확인은 재시작 대신 종료 재확인 후에만 새 시작을 허용', async page => {
+    await page.getByRole('button', { name: '종료 재확인', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: /^(다시 )?운행 시작$/ }).count(), 0);
+    assert.equal(await page.getByText('운행이 종료되었습니다', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: '종료 재확인', exact: true }).click();
+    assert.equal(await page.evaluate(() => window.nativeCalls.at(-1).action), 'stop');
+    await page.evaluate(() => window.emitNative({ state: 'off', transmission: 'stopping', running: false }));
+    assert.equal(await page.getByRole('button', { name: '종료 확인 중', exact: true }).isDisabled(), true);
+    await page.evaluate(() => window.emitNative({ state: 'off', transmission: 'stopped', running: false }));
+    await page.getByRole('button', { name: '다시 운행 시작', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.nativeCalls.some(x => x.action === 'start')), false);
+  }, { state: 'off', transmission: 'stop-unknown', running: false });
+  await check('강제 중단 후 복귀는 서버 종료 완료로 표시하지 않는다', async page => {
+    await gpsDetails(page);
+    await page.getByRole('alert').filter({ hasText: '운행 화면에서 다시 시작해 주세요.' }).waitFor();
+    assert.equal(await page.getByText(/공유 종료 확인 완료/).count(), 0);
+    await page.getByRole('button', { name: '운행 시작', exact: true }).waitFor();
+  }, { state: 'error', transmission: 'error', running: false, error: '위치 공유가 중단되었습니다. 운행 화면에서 다시 시작해 주세요.' });
+} finally { await browser.close(); await harness.close(); }
+await mkdir('.tmp/native-tracking-qa', { recursive: true });
+await writeFile('.tmp/native-tracking-qa/native-browser.json', JSON.stringify({ results }, null, 2));
+assert.equal(results.every(x => x.pass), true, JSON.stringify(results.filter(x => !x.pass)));

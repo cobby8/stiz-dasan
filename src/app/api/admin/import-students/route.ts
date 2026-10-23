@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 /**
  * 수강생 이관 API — 스프레드시트 CSV를 파싱하여 DB에 삽입
  *
@@ -206,9 +207,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          err instanceof Error
-            ? err.message
-            : "이관 처리 중 오류가 발생했습니다.",
+          userFacingError(err, "이관 처리 중 오류가 발생했습니다."),
       },
       { status: 500 }
     );
@@ -459,7 +458,7 @@ async function executeImport(
       result.failed.push({
         rowNumber: s.rowNumber,
         name: s.name,
-        reason: err instanceof Error ? err.message : "알 수 없는 오류",
+        reason: userFacingError(err, "학생 자료를 처리하지 못했습니다. 다시 시도해 주세요."),
       });
     }
   }

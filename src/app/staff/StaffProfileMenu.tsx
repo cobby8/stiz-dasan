@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { logoutStaff } from "@/app/actions/auth";
 import { prepareStaffNavigation } from "./staffNavigation";
+import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import type { AccountViewOption } from "@/lib/account-views";
 
 // 공개 홈페이지 링크(홈·공지·프로그램·시간표·갤러리)는 두지 않는다.
 // 선생님 앱은 manifest scope 가 /staff 라, 홈페이지로 나가면 설치된 앱을 벗어나
@@ -12,7 +14,7 @@ import { prepareStaffNavigation } from "./staffNavigation";
 
 const focusableSelector = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export default function StaffProfileMenu({ staffName, staffRole }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" }) {
+export default function StaffProfileMenu({ staffName, staffRole, accountViews = [] }: { staffName: string; staffRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER"; accountViews?: AccountViewOption[] }) {
   const pathname = usePathname();
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   const [isOpen, setIsOpen] = useState(false);
@@ -104,14 +106,18 @@ export default function StaffProfileMenu({ staffName, staffRole }: { staffName: 
         aria-haspopup="dialog"
         aria-expanded={isOpen}
         aria-controls={isOpen ? "staff-profile-menu" : undefined}
-        className="flex min-h-12 max-w-[11rem] items-center gap-2 rounded-full bg-gray-100 px-3 text-left transition-colors hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] dark:bg-gray-900 dark:hover:bg-gray-800"
+        aria-label={`${staffName} ${staffRole === "DRIVER" ? "기사님" : "선생님"} 메뉴 열기`}
+        title={`${staffName} ${staffRole === "DRIVER" ? "기사님" : "선생님"}`}
+        className="flex min-h-12 min-w-0 max-w-[11rem] flex-1 items-center gap-1.5 rounded-full bg-gray-100 px-2 text-left transition-colors hover:bg-gray-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-accent)] sm:gap-2 sm:px-3 dark:bg-gray-900 dark:hover:bg-gray-800"
       >
-        <span className="material-symbols-outlined text-xl text-[var(--brand-accent)]" aria-hidden="true">account_circle</span>
+        <span className="material-symbols-outlined shrink-0 text-xl text-[var(--brand-accent)]" aria-hidden="true">account_circle</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-bold text-gray-700 dark:text-gray-200">{staffName} {staffRole === "DRIVER" ? "기사님" : "선생님"}</span>
-          <span className="block text-[0.65rem] font-bold text-gray-500 dark:text-gray-400">메뉴 열기</span>
+          <span className="block whitespace-nowrap text-[0.65rem] font-bold text-gray-500 dark:text-gray-400">메뉴 열기</span>
         </span>
-        <span className="material-symbols-outlined text-lg text-gray-500" aria-hidden="true">expand_more</span>
+        <span className="hidden shrink-0 sm:block" aria-hidden="true">
+          <span className="material-symbols-outlined text-lg text-gray-500">expand_more</span>
+        </span>
       </button>
 
       {isOpen && (
@@ -132,19 +138,9 @@ export default function StaffProfileMenu({ staffName, staffRole }: { staffName: 
               </p>
             )}
 
-            {/* 원장·부원장만. 관리자 화면은 앱 영역(/staff) 밖이라 누르면 브라우저로 나간다 —
-                관리자 일은 큰 화면에서 보는 게 맞아 그대로 둔다.
-                수업 진행 중이면 다른 링크와 같이 저장 확인을 먼저 거친다. */}
-            {(staffRole === "ADMIN" || staffRole === "VICE_ADMIN") && (
-              <Link
-                href="/admin"
-                onClick={(event) => requestPublicNavigation(event, "/admin")}
-                className="mb-2 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[color-mix(in_srgb,var(--brand-accent)_14%,transparent)] text-sm font-bold text-[var(--brand-accent)] hover:bg-[color-mix(in_srgb,var(--brand-accent)_22%,transparent)]"
-              >
-                <span className="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
-                관리자 화면
-              </Link>
-            )}
+            {staffRole !== "DRIVER" && accountViews.length > 1 && <div className="mb-3">
+              <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
+            </div>}
 
             <div className="grid grid-cols-2 gap-2">
               <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gray-100 text-sm font-bold text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
@@ -168,7 +164,7 @@ export default function StaffProfileMenu({ staffName, staffRole }: { staffName: 
 
       {pendingHref && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-3 sm:items-center" onMouseDown={(event) => !leaving && event.target === event.currentTarget && closeAndRestoreFocus()}>
-          <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-900">
+          <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby={titleId} className="max-h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-900">
             <span className="material-symbols-outlined mb-3 text-3xl text-[var(--brand-accent)]" aria-hidden="true">timer</span>
             <h2 id={titleId} className="text-lg font-black text-gray-900 dark:text-white">수업 중 다른 화면으로 이동할까요?</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">이동하기 전에 작성한 수업 내용을 저장합니다. 저장이 완료되지 않으면 현재 화면에 머무릅니다.</p>

@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth-guard";
@@ -593,7 +594,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[api/admin/import-students/current-roster] failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "최신 원생목록 점검에 실패했습니다." },
+      { error: userFacingError(error, "최신 원생목록 점검에 실패했습니다.") },
       { status: 500 }
     );
   }

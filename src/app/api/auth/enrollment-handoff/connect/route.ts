@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { userFacingError } from "@/lib/user-facing-error";
 import { prisma } from "@/lib/prisma";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { createClient } from "@/lib/supabase/server";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "수강신청을 계정에 연결하지 못했습니다." },
+      { error: userFacingError(error, "수강신청을 계정에 연결하지 못했습니다.") },
       { status: 400 },
     );
   }

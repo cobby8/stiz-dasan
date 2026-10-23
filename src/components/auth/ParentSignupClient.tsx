@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 
 // existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
 type Step = "method" | "phone" | "account" | "existing" | "done";
@@ -167,7 +168,7 @@ export default function ParentSignupClient() {
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {/* 간편가입 세션이 끊긴 경우(카카오톡 안 브라우저에서 잦다) — 휴대폰 인증 방식으로 바로 이어 간다 */}
       {socialSignup && socialSessionMissing && (
-        <a href={`/signup/parent?${new URLSearchParams({ existing: "1", next }).toString()}`} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-brand-orange-500 px-4 text-sm font-bold text-brand-orange-500">
+        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-brand-orange-500 px-4 text-sm font-bold text-brand-orange-500">
           아이디·휴대폰 인증으로 계속
         </a>
       )}

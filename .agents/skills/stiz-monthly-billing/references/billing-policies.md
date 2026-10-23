@@ -2,8 +2,8 @@
 
 These are the currently confirmed operating rules.
 
-- Last reviewed: 2026-08-29
-- Transition authority: the approved monthly operating Sheet, checked against the website policy source.
+- Last reviewed: 2026-10-20 (current website terms and explicit user policy answers).
+- Current authority: confirmed site period/class records and official annual schedule. The approved Sheet remains evidence only for maintained historical periods; no new October 2026 Sheet ledger is required.
 - Effective month and policy source must be re-read at execution time. If the live source differs from this reference, place the invoice on `HELD` instead of using this file as authority.
 
 ## Billable and excluded states
@@ -19,10 +19,20 @@ These are the currently confirmed operating rules.
 ## Tuition and discounts
 
 - One Sheet row represents one class; multi-class monthly tuition is the sum of billable rows.
-- During transition, approved Sheet amounts control issuance but must be checked against website policy calculations.
+- Current issue proposals use confirmed site period/class amounts; historical Sheet amounts are compared only for maintained periods.
 - Do not apply sibling or multi-session discounts twice.
 - Preserve Rallyz discounts separately with understandable reasons.
 - Unexplained, partial-period, or stale recurring discounts require review.
+
+## Absence, makeup, and carry credit (2026-10-20 approval)
+
+- One absence receives either makeup or monetary carry, never both. Carry confirmation revokes an unused makeup credit and cancels a reserved seat in the same transaction. Used/attended/no-show compensation requires manual review instead of automatic carry.
+- Illness/injury and direct-family ceremonial events require evidence confirmation before carry approval. Personal absence, travel, and ordinary events are not monetary carry reasons. Do not copy evidence attachments or medical text into billing records.
+- Divide the original period's confirmed tuition after discounts by its actual scheduled class count. Preserve original period/start/end/class-date evidence; do not guess four classes from a calendar month.
+- Sum fractional carry before rounding the applicable total to whole won. Preserve excess balance for future periods and link every consumption to its source credits and issued bill.
+- Shuttle is excluded from absence carry reductions. A multi-class student keeps class-specific bills with one monthly shuttle charge assigned to a single bill.
+- Changed source attendance, schedule, tuition, or canceled/refunded usage requires reconciliation. Never silently delete prior issue/usage evidence or restore balances.
+- Do not retroactively issue historical makeup credits before the existing 2026-10-05 cutoff. Legacy seasonal credits require explicit source/use reconciliation before migration, not duplicate automatic accrual.
 
 ## Shuttle
 

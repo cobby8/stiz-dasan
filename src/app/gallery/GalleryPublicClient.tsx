@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import GalleryLightboxController, { type GalleryLightboxItem } from "./GalleryLightboxController";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
+import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 
 type GalleryPost = {
     id: string;
@@ -118,7 +119,6 @@ function getGalleryItems(posts: GalleryPost[]): GalleryLightboxItem[] {
         media.forEach((item, mediaIdx) => {
             if (!isDurableGalleryMediaUrl(item.url)) return;
 
-            const createdAt = new Date(post.createdAt);
             items.push({
                 url: item.url,
                 type: item.type === "video" ? "video" : "image",
@@ -126,8 +126,8 @@ function getGalleryItems(posts: GalleryPost[]): GalleryLightboxItem[] {
                 caption: post.caption,
                 postId: post.id,
                 mediaIdx,
-                createdAt: createdAt.toISOString(),
-                displayDate: createdAt.toLocaleDateString("ko-KR"),
+                createdAt: typeof post.createdAt === "string" ? post.createdAt : toKstYmd(post.createdAt),
+                displayDate: formatKstDate(post.createdAt),
             });
         });
     });

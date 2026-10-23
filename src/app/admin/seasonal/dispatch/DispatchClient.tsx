@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import RouteSection from "@/components/seasonal/RouteSection";
 import { firstDateOfSameWeekday, weekdayOptions } from "@/lib/seasonal/weekday";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
@@ -14,6 +14,10 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
   const weekdays = weekdayOptions(availableDates); // 요일 탭(월→금) + 각 요일의 대표 날짜
   // 노선 관리용 날짜 = 선택한 요일의 '대표 날짜'(그 요일 첫 운행일). 초기값은 첫 운행일의 요일.
   const [date, setDate] = useState<string>(initialPickup.date ? firstDateOfSameWeekday(availableDates, initialPickup.date) : "");
+  const [pickupDirty, setPickupDirty] = useState(false);
+  const [dropoffDirty, setDropoffDirty] = useState(false);
+  const onPickupDirty = useCallback((dirty: boolean) => setPickupDirty(dirty), []);
+  const onDropoffDirty = useCallback((dirty: boolean) => setDropoffDirty(dirty), []);
   const refreshKey = 0; // 기준위치 편집이 이 화면에서 빠져 재계산 트리거가 없다(날짜 변경만으로 재조회).
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -31,7 +35,7 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
       const url = `${window.location.origin}${j.path}`;
       try { await navigator.clipboard.writeText(url); setMsg("기사 고정 링크를 복사했습니다(매일 열면 오늘 운행)"); }
       catch { setMsg(`기사 고정 링크: ${url}`); }
-    } catch (e: any) { setErr(e?.message || "링크를 만들지 못했습니다."); }
+    } catch (e: unknown) { setErr((e instanceof Error ? e.message : "") || "링크를 만들지 못했습니다."); }
   }
 
   const activeWeekdayLabel = weekdays.find((w) => w.canonicalDate === date)?.label ?? "";
@@ -50,7 +54,7 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
         <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-900">
           {weekdays.length === 0 && <span className="px-2 py-1 text-sm font-bold text-gray-400">운행 요일이 없습니다.</span>}
           {weekdays.map((w) => (
-            <button key={w.weekday} onClick={() => setDate(w.canonicalDate)}
+            <button key={w.weekday} onClick={() => { if (date === w.canonicalDate || (!(pickupDirty || dropoffDirty) || window.confirm("저장하지 않은 변경이 있습니다. 이동할까요?"))) setDate(w.canonicalDate); }}
               className={`min-h-9 rounded-lg px-4 text-sm font-black ${date === w.canonicalDate ? "bg-white text-brand-navy-900 shadow dark:bg-gray-700 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"}`}>
               {w.label}
             </button>
@@ -70,8 +74,8 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
 
         {/* 하루 타임라인: 등원 → 하원 */}
         <div className="mt-2 space-y-3">
-          <RouteSection initial={initialPickup} date={date} refreshKey={refreshKey} />
-          <RouteSection initial={initialDropoff} date={date} refreshKey={refreshKey} />
+          <RouteSection initial={initialPickup} date={date} refreshKey={refreshKey} onDirtyChange={onPickupDirty} />
+          <RouteSection initial={initialDropoff} date={date} refreshKey={refreshKey} onDirtyChange={onDropoffDirty} />
         </div>
       </div>
     </div>

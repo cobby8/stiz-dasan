@@ -40,7 +40,7 @@
     "googleapis": "^171.4.0",
     "lucide-react": "^0.575.0",
     "lzutf8": "^0.6.3",
-    "next": "16.1.6",
+    "next": "16.2.12",
     "next-themes": "^0.4.6",
     "node-ical": "^0.25.4",
     "re-resizable": "^6.11.2",
@@ -50,7 +50,7 @@
     "react-image-crop": "^11.0.10",
     "react-rnd": "^10.5.2",
     "sanitize-html": "^2.17.5",
-    "sharp": "^0.35.3",
+    "sharp": "0.34.5",
     "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },

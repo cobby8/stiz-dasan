@@ -1,0 +1,93 @@
+.stiz-public-sport .annual-year-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    min-width: 0;
+}
+.stiz-public-sport .annual-year-controls > .public-filter-row { flex: 1; }
+.stiz-public-sport .annual-year-controls button { min-height: 44px; }
+.stiz-public-sport .annual-current-month {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--color-public-line);
+    border-radius: var(--color-public-radius);
+    color: var(--color-public-accent);
+    background: var(--color-public-paper);
+    font-size: .875rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.stiz-public-sport .annual-month-strip {
+    position: relative;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 8px 4px 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--color-public-line);
+    scrollbar-width: thin;
+}
+.stiz-public-sport .annual-month-tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 58px;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-public-line);
+    border-radius: var(--color-public-radius);
+    background: var(--color-public-paper);
+    color: var(--color-public-ink);
+    font-weight: 700;
+    font-size: .875rem;
+    white-space: nowrap;
+}
+.stiz-public-sport .annual-month-tab[aria-selected="true"] {
+    background: var(--color-public-dark);
+    color: var(--color-public-white);
+    border-color: var(--color-public-dark);
+}
+.stiz-public-sport .annual-month-tab:hover { border-color: var(--color-public-accent); }
+.stiz-public-sport .annual-month-current-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.stiz-public-sport .annual-selected-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.stiz-public-sport .annual-selected-heading h2 {
+    font-size: 1.25rem;
+    font-weight: 900;
+    color: var(--color-public-ink);
+}
+.stiz-public-sport :is(.annual-current-label, .annual-next-label) {
+    padding: 4px 8px;
+    border-radius: var(--color-public-radius);
+    background: var(--color-public-tint);
+    color: var(--color-public-accent);
+    font-size: .75rem;
+    font-weight: 700;
+}
+.stiz-public-sport .annual-event-count {
+    margin-left: auto;
+    color: var(--color-public-muted);
+    font-size: .75rem;
+}
+.stiz-public-sport .annual-empty-month {
+    padding: 20px;
+    margin-bottom: 16px;
+    color: var(--color-public-muted);
+    font-size: .875rem;
+    line-height: 1.8;
+}
+.stiz-public-sport .annual-event-row { min-width: 0; min-height: 44px; }

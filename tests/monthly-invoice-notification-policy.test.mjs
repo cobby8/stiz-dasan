@@ -42,9 +42,9 @@ test("학부모 청구 알림은 0원과 명시적 HELD 건을 제외한다", ()
 test("청구 생성과 알림 발송은 분리하고, 청구 안내는 랠리즈 전담임을 안내한다", () => {
   assert.doesNotMatch(financeClient, /링크 발송 \(필수\)/);
   assert.doesNotMatch(financeClient, /링크 발송이 필수|반드시 링크 발송|반드시 발송해야/);
-  assert.match(financeClient, /청구서는 랠리즈에서 생성·발송합니다\. 사이트 청구는 장부용/);
-
-  const generateAt = financeClient.indexOf("generateMonthlyInvoices(year, month");
-  const sendAt = financeClient.indexOf("sendInvoiceLinksForMonth(year, month)");
-  assert.ok(generateAt >= 0 && sendAt > generateAt, "생성과 발송 함수는 분리되어야 합니다.");
+  const workbench = readFileSync('src/app/admin/finance/prepare/BillingWorkbench.tsx', 'utf8');
+  assert.match(workbench, /랠리즈 발행·학부모 전달은 별도로 확인합니다/);
+  assert.match(workbench, /사이트 청구/);
+  assert.doesNotMatch(workbench, /sendInvoiceLinksForMonth\(|sendUnpaidReminders\(/);
+  assert.match(financeClient, /sendInvoiceLinksForMonth\(year, month\)/);
 });

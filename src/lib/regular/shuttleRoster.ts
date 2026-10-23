@@ -129,6 +129,7 @@ function toRawRider(r: RawRow): RegularShuttleRawRider {
  */
 export async function getRegularShuttleRiders(
   opts: GetRegularShuttleRidersOptions,
+  db: Pick<typeof prisma, "$queryRawUnsafe"> = prisma,
 ): Promise<RegularShuttleRosterResult> {
   const dayOfWeek = opts.dayOfWeek ?? (opts.date ? weekdayNameFromDate(opts.date) : null);
   if (!dayOfWeek) {
@@ -140,7 +141,7 @@ export async function getRegularShuttleRiders(
   }
   const stopDir = stopDirectionFor(opts.direction);
 
-  const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+  const rows = await db.$queryRawUnsafe<RawRow[]>(
     `SELECT
         -- 매칭된 Student.id, 없으면 정차 행 id 에 접두사('stop:')를 붙여 유일한 식별키를 보장한다.
         -- (접두사 덕분에 실제 Student.id(uuid)와 절대 충돌하지 않아 학부모 ETA 오매칭이 없다.)

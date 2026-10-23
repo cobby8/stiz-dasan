@@ -1,5 +1,7 @@
 "use client";
 
+import { formatPhoneInput } from "@/lib/application-display-format";
+
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { createTrialLead, convertTrialToStudent, updateTrialLead } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
@@ -192,13 +194,6 @@ export default function TrialCrmModals({
             )}
         </>
     );
-}
-
-function formatPhoneInput(value: string) {
-    const nums = value.replace(/\D/g, "").slice(0, 11);
-    if (nums.length > 7) return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
-    if (nums.length > 3) return `${nums.slice(0, 3)}-${nums.slice(3)}`;
-    return nums;
 }
 
 function dateInputValue(dateStr: string | null) {
@@ -416,7 +411,6 @@ function TrialEditModal({
                     <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">edit</span>
                     체험 신청 수정
                 </h2>
-                <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">상담 중 확인한 신청 내용을 바로 정리합니다.</p>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {formError && (
                         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">

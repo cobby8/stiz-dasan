@@ -1,5 +1,89 @@
 # STIZ Knowledge Index
 
+> 2026-10-22: 승인헤더 actual-fit 완료. 고정1280/1600폐기→기존DOM폭합계/가용공간·안전4/재확장4·관찰자/글씨/폰트/계정재계산·Guide실제속성연결. 전체2320/학생5·fit5/관련29·tsc·신규lint0·생산src881/1cbb·독립87(40/32/11/3/1)/JS0·개별해시일치. docs/public-header-fit.md 및 .tmp/public-header-fit/qa/final-independent-report.json 정본, 지식본문5유지·구조/결정/오류갱신. 4106합성GET전용·브라우저폭검증·운영/푸시/배포없음.
+
+> 2026-10-22: 승인공개원문·서식/헤더/신청안내 완료. 임의QA인사말·시설복제/정책평탄화 원인제거·공개캡처해시복원·로컬4필드만변경. UI6파일 한줄헤더/유니폼섹션제거·긴약관표시/중복여백·가이드폭/글씨전환보완. 전체2312/학생5·원문4/관련26·tsc·생산src879/4f1488·독립50→배송8/JS0통과. docs/public-header-content-repair.md 및 .tmp/public-header-content-repair/qa/final-independent-report.json 정본. 지식본문5개유지·구조/결정/오류/교훈갱신, 합성4106/브라우저폭·실물폰과구분·운영/푸시/배포없음.
+
+> 2026-10-22: 나머지 공개36경로·320/360폭 전수 완료. KST게시일/수강월·공지당시/현재구분·체험일정/오류가시성·가입연결·상세복귀·상품오류 정리. 전체2305/학생5·관련24/17·tsc·생산src879/00bb4fa7·독립92/JS0통과. docs/public-pages-date-navigation-audit.md 및 .tmp/public-all-pages-audit/final-independent-report.json 정본. 지식본문5개 유지·구조/결정/오류/교훈/관례 갱신. 합성4106 GET전용·실물폰/실접수와구분,운영/푸시/배포없음.
+
+> 2026-10-22: 공개홈페이지 사용자후속3항목 완료. 특강KST 날짜/종료·만석·수업없음·코드노출정리, 연간 현재월/가로선택·회전,768이상메뉴복원·휴대폰메뉴표시. 가이드cold폭/빠른확인경합도수정. 전체2281/학생5·tsc·생산src875/9153f95b·독립85(레이아웃42/특강27/기능9/가이드4/경계3)·JS0통과. docs/public-sport-homepage.md와.tmp/public-followup-qa/final9153-independent-report.json 정본,지식본문5유지·architecture/decisions/errors/lessons갱신. 4106합성GET전용·실물폰/운영접수와구분,운영/푸시/배포없음.
+
+> 2026-10-22: 선택된 스포츠 컨셉을 실제 공개 홈페이지 전체에 적용. 공통/개별/홈 병렬구현·독립리뷰·모바일메뉴focus/특강bar/가이드실제표시분기 보완. 최종tsc·전체2261/학생5·생산빌드/src873·26화면×5폭130/기능30·HTTP29/fixture18 통과. 공개자료 재구성 합성QA4106 유지, 실물폰/운영접수와 구분. docs/public-sport-homepage.md 및 .tmp/sport-public-qa/qa-final 정본, architecture/decisions/errors 갱신·지식본문5 유지. 운영DB/푸시/배포없음.
+
+> 2026-10-20: 홈페이지3컨셉을 실제 공개 전체구조/자료/상세·신청 흐름으로 보완. 별도4095 읽기전용, 원제품/운영 불변. 독립192→36·체험3/수강4합성·메뉴/사진닫기/프로그램320·영상153 보완 통과. 대화 산출물 stiz-home-complete-20261020/README.md·data·qa-independent, decisions/errors 갱신·지식본문5 유지. 갤러리원31/표시6·상품원9/판매8 구분, 푸시/배포없음.
+
+> 2026-10-20: 사용자 승인 종료 수업 시간표 설정만 운영2행 삭제. 목16:30~17:55 카드 제거·16시Class/보관Class2/수강이력9·다른시간표 전후 해시 일치, 독립READ ONLY8검사 통과·운영화면 제거 확인. 백업/원장 .tmp/class-removal-thu1630, HANDOFF·decisions 갱신·지식본문5 유지. 코드/청구/발송/푸시/배포 변경 없음, 개발 미리보기4090 build/src867일치·대상 카드 제거 확인 완료.
+
+> 2026-10-20: 기존 디자인 유지·공개 시간표/수업찾기 주황색 운영 메모 표시만 제거. UI2파일/10줄·DB/API 불변·독립관련14/tsc통과. 미리보기 두 공개경로 GET/HEAD 허용·쓰기차단. 빌드1회 실패/재사용준비실패 후 신규build/src867·GET200/POST403·실제토7카드 메모제거 확인완료, 지식본문5 유지·errors 갱신. 운영쓰기/푸시/배포 없음.
+
+> 2026-10-20: 사용자 요청으로 신규 공개 홈페이지 3테마 a56cdcfc만 철회. 기존 e3f3c9a8 관리자·역할·청구 기능과 홈페이지 디자인 보존. 독립 전체2258/학생5·tsc·이전소스 일치 통과, 기존 홈페이지4090 재빌드/화면 확인·src867 일치 완료. 지식본문5 유지·결정/교훈 갱신, 운영쓰기/푸시/배포 없음.
+
+> 2026-10-20: 승인 관리자6메뉴·청구검토표·단일보상 구현/독립검토완료. 전체2258/학생가드5·실제합성PG20·브라우저20/4폭·계산/일정49·tsc/lint통과. 할인후원기간·합계반올림·분수잔액보존, 공식일정실패/미전개반복차단. docs/billing-workbench-upgrade.md. 지식본문5개 갱신(목차제외), 운영SQL/저장활성/발행/발송/푸시/배포없음. 실제자료 최신빌드 확인 후 실행유지.
+
+> 2026-10-20: 실제자료개발미리보기 승인.26테이블가림·운영SELECT전용연결종료후로컬DB만사용·최신메뉴36유지, 보호16/외부차단6·소스857·최종빌드/4역할9화면/메뉴36/차단4통과. docs/real-data-development-preview.md; localhost4090실행유지·미배포.
+
+> 2026-10-20: 검증46커밋푸시와Git자동배포차단 사용자승인. vercel.json git.deploymentEnabled:false, 기존운영배포dbe3ff86유지확인대상. 토스운영키미발급·수동배포/운영쓰기보류. docs/web-release-readiness-20261020.md.
+
+> 2026-10-20: 승인운영문구·미사용5/표시함수2공유·내부오류안내·배차저장조회정리. 전체278파일2193/보호5·소스검사1299해시일치, 독립G1 59/10/18·G2 44/5/9·G3 33/PG26통과. 지식문서5유지·architecture/conventions/decisions/errors갱신. sharp충돌은후속승인후0.34.5로고정·Next동일모듈통합, 최종build/정적66/HTTP5·사진13·861해시일치로해결. 후보복사본build/소스857·4역할40화면/API9·실제저장재실행/기사전달·사진변환통과, docs/operating-copy-code-dispatch-cleanup.md. 운영쓰기/푸시/배포없음.
+
+> 2026-10-20: 웹배포전3그룹감사완료. cb97cb20 전체2143/보호5·src860·관련76 통과. 운영49변수와Vercel대상일치확인, 토스온라인키2항목부재·사용자미발급으로배포보류. 필수환경/운영DB검사미완료, 심사/POS키대체금지. 지식문서5유지, docs/web-release-readiness-20261020.md. 운영쓰기/푸시/배포없음.
+
+> 2026-10-20: 기사360정류장끝1글자보완. 모바일균등줄바꿈+공백명칭단어보존,326/91/53·lint·생산/tsc·src860일치. PM실제컴파일320/360/375/390전후Range·글씨/전화/시간/길안내/탑승크기동일확인. 매우긴공백명칭필요3행예외명시. 지식문서5 유지·errors/decisions갱신, docs/narrow-phone-verification.md. PM4053→4069/PG55470·구시험정리·미배포.
+
+> 2026-10-20: 좁은폰320/360/375/390 네역할 UI완료. 독립기사181·관리자258·학부모/교사32상태140조건·tsc/lint오류0(기존img경고1), 기존회귀유지. 최종생산src860일치·실제컴파일40조합/수강료청구창4폭통과. TSX9개클래스외문법동일·글씨/기사터치보존. 브라우저폭재현이며좁은실물폰과구분. 지식문서5 유지, docs/narrow-phone-verification.md. PM미리보기4053→4068/PG55469, 구시험정리·미배포.
+
+> 2026-10-20: 명시적 보호자 선택·관리자/교사 역할 보존·반려 재검토/원사유 이력 보완 완료. 전체275파일2143·독립PG18/후속8·UI43·검색14/메뉴77 통과, 최종생산 src860해시 일치. 실제Android17 세로554×756/가로830×453·키보드·동일계정3역할/청구창·기사명단 확인, 회전설정복원. 지정자녀 운영등록0·시작일/실행승인대기. 지식문서5 유지, docs/enrollment-parent-link.md 및 role-followup-verification.md. 미배포.
+
+> 2026-10-20: 실제 동일 세션 관리자·교사 접근 재확인, 지정 자녀는 정식 학생·연결0/반려 신청1로 학부모 검증 미완료. 읽기 전용 조회·운영쓰기0, 독립권한59통과. Android USB0대·등록경로 사용자확인 대기. docs/role-followup-verification.md. 지식문서5 유지·미배포.
+
+> 2026-10-20: 승인 중복필터 개편 신청·원생·특강 완료. 독립230/54/45·최신전체2128/보호5·tsc·최종생산12/소스19해시·실제iPhone3화면/선택46.75px·날짜296px 경계통과. architecture/conventions/decisions/errors갱신, 지식문서5 유지. docs/admin-compact-filters.md. Android재검증·운영자녀연결 별도, 미배포.
+
+> 2026-10-20: iPhone 실제750×292/세로복원·3역할키보드 확인. 짧은 관리자메뉴·교사3확인창 보완, 독립68/종료12상태/이동8상태·실제재검사 통과. errors/lessons 갱신, 지식문서5 유지. 사용자 승인 중복필터 개편은 별도 진행·미배포. docs/role-followup-verification.md.
+
+> 2026-10-19: 긴교사명헤더168·다중화면전환104·로그인/자녀자격·Next16.2.12의418수정완료. 회귀2128/학생가드5·tsc·독립QA통과. 정상생산빌드/교사27·역할15, 실제iPhone세로3역할/동일합성계정전환확인. 물리회전·키보드/Android·운영자녀연결은별도후속. 지식문서5갱신, docs/role-followup-verification.md. 미배포.
+
+> 2026-10-19: 전체117경로 로컬전수·승인8오류보완. 회귀2108·공개120/보호228+재검사·실제Next수강료/청구창3폭·탭90/독립QA통과. architecture/decisions/errors갱신·지식문서5유지. docs/all-pages-verification.md. 긴교사명/전환경고·실인증/기기 후속, 운영/배포없음.
+
+> 2026-10-19: 사용자확대승인 정규순서저장/확정배차재조회수정. 원본대조·함께저장·이동시간칸/이전편집잔류보완. 회귀106·API24/화면9 독립재검증·실제격리PG8·UI91·tsc/lint 통과. architecture/decisions/errors갱신·지식문서5유지. docs/driver-order-persistence.md. 월·요일공통이며 운영/배포없음.
+
+> 2026-10-19: 실제기사UI라벤더시안적용·기기현재시각강조/시안미리보기제외·GPS상세통합. 회귀82·JSX/CSS91·기존10/네이티브10·독립16/18·tsc/lint통과. architecture/decisions갱신·지식문서5유지. docs/driver-lavender-implementation.md. 순서재조회불일치후속승인진행·운영/배포없음.
+
+> 2026-10-19: 외부 기사시안 연락버튼 이름우측·360px이상 학생행56px, 11폭·독립178 통과. 실제iPhone Safari세로/검색·메모키보드·가로874×402·세로복원 확인. 임시측정과 실제OS/스크린샷검증 구분, errors1항목 추가. docs/academy-responsive-mock-validation.md 갱신, 지식문서5 유지·배포없음.
+
+> 2026-10-19: 외부시안 관리자메뉴 mobile약60.9px로접기·PC버튼숨김 보완. 독립104, 실제 SM-F971N Android17 Chrome33/adb터치10/실제회전16 통과, free/세로복원. iPhone·네이티브앱·운영미검증. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md 및 출시계획 갱신. 배포없음.
+
+> 2026-10-19: 외부 미리보기 HTTP charset 누락 수정·24 HTTP검사 통과. 사용자 첨부 깨짐은 옆 브라우저, SM-F971N 현재 관리자 홈 단일 캡처 한글 정상. 실물8화면 미검증·모바일 관리자 메뉴 세로 적층 보완 필요. errors1항목 추가·지식문서5 유지. docs/academy-responsive-mock-validation.md.
+
+> 2026-10-19: 외부 8시안 기기별 배치 보완. PM171·독립352/기능38·작은폰후속81 통과(중복합산 금지), 실물 미검증. 일반 STIZ iOS/Android 3역할+Android 기사 2앱 출시 준비 기준, 결정1항목 추가·지식문서5 유지. docs/academy-app-release-plan.md, docs/academy-responsive-mock-validation.md. 실제서비스/운영/배포/스토어 변경 없음.
+
+> 2026-10-19: USB 태블릿 단기시험 완료. 사용자복귀·상태유지·수동종료와 서버STOPPED/활성0/sharing=false, 최종위치232·55초추가0 확인. 서버/격리DB/개인키/관리키/잠금 정리·시험USB전달해제 확인. 잠금+10/T맵+18·오류0. 실외장기/배터리·운영·출시 미검증, docs/driver-device-validation.md. 지식문서5 유지.
+
+> 2026-10-19: 수정본 실제 태블릿 수동재시작/정상표시 확인. 잠금189초 위치+10, T맵193초 +18·오류0, 독립 요약10개/키191 대조 통과. 추정 정확도100→약15m, 실제거리/인과 미확인. 최종복귀·종료·정리 대기. docs/driver-device-validation.md; 지식문서5 유지.
+
+> 2026-10-19: ended 복원 후 시작버튼 누락 수정, 종료 확인 시 다시 시작·미확인 시 종료 재확인 제공. 독립 native Chrome10/웹10·회귀38·PM15·tsc/lint/diff 통과. 웹 시험번들만 갱신, 태블릿 재열기·수동 새운행 확인 대기. errors 갱신, 지식문서5 유지.
+
+> 2026-10-19: 실제 운행시작1·위치26·실패0 접수 확인 후 대기를 오류로 표시하는 문제 수정. Java13/독립14·권한33·브라우저8/독립10·SSR8·회귀45/29·tsc/lint·빌드/TLS14 통과. 운행종료 확인 후 새앱 재설치 대기; 잠금/T맵 미검증. errors/decisions 갱신, 지식문서5 유지.
+
+> 2026-10-19: Android 권한 복귀 시 명시적 시작 유실·오류 안내 덮임 수정. 정책33·독립9·최종 리뷰·빌드/Lint·TLS14/포트2·수정 APK 실제 단말 계측13 통과. 수동 운행 재시작 대기, 실제 위치/잠금/T맵 미검증. errors 갱신, 지식 문서5 유지. docs/driver-device-validation.md.
+
+> 2026-10-19: 승인된 Android13 삼성 태블릿에 별도 localhost 시험 앱 설치, 실제 계측13·release분리14·포트거부2·정책21·tsc/lint/리뷰 통과. PC HTTPS8443/격리PG55435 준비, 자동승인검토 UI거절로 수동시작대기. 위치지속성 미검증. architecture/decisions/errors 갱신·지식문서5 유지. docs/driver-device-validation.md.
+
+> 2026-10-19: 업턴랩스 출시 예정 안드로이드 기사앱 1차 검증본. 현재1대 운행 확인. 네이티브 위치·운행 세션·웹 bridge·관리자 노후 상태. 회귀98·앱브라우저6/기존10·상태18·실제Prisma/PG18항목·Android13·빌드/tsc/lint/독립리뷰 통과. 지식 문서 수 5 유지, architecture/decisions/errors 갱신. docs/driver-android-background-tracking.md. 실기기·운영 활성화·정식 출시 미완료.
+
+> 2026-10-19: 기사 운행 순서·시각·학생 체크 우선, 중복 카드/안내 축소. 회귀84·브라우저10·상태18·독립QA43·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/driver-workspace-ux.md 참조. 미배포.
+
+> 2026-10-19: 출석 명단 당월 금액·상태/청구미발행 근거 표시, 실제 학생별 청구창 연결. 회귀116·기존브라우저10·원본SQL/액션/로컬PG/실제UI통합9·독립모달4·명단반영3·tsc·lint·리뷰 통과. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/staff-attendance-fees.md 참조. 미배포.
+
+> 2026-10-19: 선생님 홈·진행·출결 중복 정리. 브라우저10·상태18·회귀87·독립UI34·tsc·lint·검토 통과. architecture/decisions/conventions/errors 갱신, 지식 문서 수 5 유지. docs/staff-workspace-ux.md 참조. 미배포.
+
+> 2026-10-19: 학부모 홈 중복 카드 정리, 요청 5메뉴·기록 접기·가족 자료 범위 구분. 브라우저10·회귀65·독립UI25·tsc·검토 통과. architecture/decisions 갱신, 지식 문서 수 5 유지. docs/parent-workspace-ux.md 참조. 운영 쓰기·푸시·배포 없음.
+
+> 2026-10-19: 관리자 업무 화면·메뉴 정리. 독립 UI 25·브라우저 4·tsc·독립 검토 통과. 확대 회귀 145/146, 기존 작업 사본 탐색 실패 1건 분리. architecture/decisions/errors 갱신, 지식 문서 수 5 유지. docs/admin-workspace-ux.md 참조. 미배포.
+
+> 2026-10-19: 승인된 라벤더·퍼플 학원 UI를 4역할 대표 화면에 적용. 공통 시각 경계·공식 로고·라이트 고정과 공개 테마 복귀. architecture/decisions/errors/conventions 갱신, 지식 문서 수 5 유지. `docs/academy-lavender-ui.md` 참조. 운영 쓰기·푸시·배포 없음.
+
+> 2026-10-19: 저장·업무 반영·사이트 알림·푸시 접수 분리 1차 개선 로컬 검증 완료. 관련 회귀121·격리 브라우저22·tsc·독립 검토 통과, 기존 lint74잔여. decisions/errors/architecture/conventions 갱신, 지식 문서 수 5 유지. `docs/storage-delivery-status.md`에 명령·검증 경계 기록. 운영 쓰기·발송·배포 미실행.
+
 > 2026-09-29 갱신: 체험 일정 수정은 선택 날짜의 운영 가능 수업만 제시하고 서버에서 반·요일을 재검증한다. 확정일 기준 목록 필터와 저장/문자 분리를 적용했다. 상세는 errors.md, 운영 DB·발송·배포는 미실행.
 
 > 2026-09-09 갱신: G2 상담 종결·후속 경로 및 마이크로초 버전 충돌 방지. errors/decisions 각 1항목 추가, 지식 문서 수 5 유지. 실제 DB·발송·배포 없이 검증하며 운영 인증·브라우저 통합 검증은 별도.

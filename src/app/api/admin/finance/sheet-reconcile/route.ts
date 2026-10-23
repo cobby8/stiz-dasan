@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth-guard";
@@ -306,7 +307,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[api/admin/finance/sheet-reconcile] preview failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "시트 기준 수납 점검에 실패했습니다." },
+      { error: userFacingError(error, "시트 기준 수납 점검에 실패했습니다.") },
       { status: 500 },
     );
   }
@@ -323,7 +324,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "시트 대조 권한을 확인할 수 없습니다." },
+      { error: userFacingError(error, "시트 대조 권한을 확인할 수 없습니다.") },
       { status: 400 },
     );
   }

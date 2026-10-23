@@ -60,6 +60,7 @@ export async function getSavedRegularDispatchRoute(
   dayOfWeek: string,
   direction: string,
   serviceMonth?: string,
+  opts?: { strict?: boolean; raw?: boolean },
 ): Promise<SavedRegularDispatchRoute | null> {
   const dow = normDow(dayOfWeek), dir = normDir(direction);
   if (!dow || !dir) return null;
@@ -81,6 +82,7 @@ export async function getSavedRegularDispatchRoute(
     let added: SavedRouteChange[] = [];
     let locationChanged: SavedRouteChange[] = [];
     try {
+      if (opts?.raw) return { vehicles: savedVehicles, classStart: (r.classStart as string | null) ?? null, classEnd: (r.classEnd as string | null) ?? null, savedAt: isoOrNull(r.updatedAt), added: [], locationChanged: [] };
       // 유효 라이더 = 그 요일 × 방향 정규 명단. 좌표 없는 이용자(unassigned)도 "유효 재적"으로 쳐서
       // reconcile 이 살려 두게 한다(좌표만 나중에 채우면 자연 복귀). 식별키 = studentId(= shuttleRequestId 대입).
       const roster = await getRegularShuttleRiders({ direction: dir, dayOfWeek: dow, serviceMonth });
@@ -112,7 +114,8 @@ export async function getSavedRegularDispatchRoute(
       };
       added = diff.added.map(enrich);
       locationChanged = diff.locationChanged.map(enrich);
-    } catch {
+    } catch (error) {
+      if (opts?.strict) throw error;
       // 유효 명단을 확인하지 못한 저장본은 휴원·퇴원생이 섞였는지 알 수 없어 사용하지 않는다.
       // 빈 배열이면 기사 화면은 월별 시트 원본으로 안전하게 폴백한다.
       vehicles = [];
@@ -128,7 +131,8 @@ export async function getSavedRegularDispatchRoute(
       added,
       locationChanged,
     };
-  } catch {
+  } catch (error) {
+    if (opts?.strict) throw error;
     // 테이블이 아직 없는 환경 → 저장 없음으로 취급(화면은 자동 제안 그대로).
     return null;
   }
@@ -216,6 +220,7 @@ export async function saveRegularDispatchRoute(input: {
   dayOfWeek: string; direction: string; vehicles: unknown[];
   serviceMonth?: string;
   classStart?: string | null; classEnd?: string | null;
+  expectedSavedAt?: string | null;
 }): Promise<{ savedAt: string | null }> {
   const admin = await requireAdmin();
   const dow = normDow(input.dayOfWeek), dir = normDir(input.direction);
@@ -239,31 +244,39 @@ export async function saveRegularDispatchRoute(input: {
   if (!isServiceMonth(serviceMonth)) throw new Error("적용 월은 YYYY-MM 형식이어야 합니다.");
   const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
     `INSERT INTO "RegularDispatchRoute" ("serviceMonth","dayOfWeek","direction","payload","classStart","classEnd","savedByUserId","updatedAt")
-     VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, now())
+     SELECT $1, $2, $3, $4::jsonb, $5, $6, $7, now()
+     WHERE NOT $8::boolean OR $9::timestamptz IS NULL OR EXISTS (
+       SELECT 1 FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 AND "direction"=$3
+         AND date_trunc('milliseconds',"updatedAt")=$9::timestamptz)
      ON CONFLICT ("serviceMonth","dayOfWeek","direction") DO UPDATE SET
        "payload" = EXCLUDED."payload",
        "classStart" = EXCLUDED."classStart",
        "classEnd" = EXCLUDED."classEnd",
        "savedByUserId" = EXCLUDED."savedByUserId",
        "updatedAt" = now()
+     WHERE NOT $8::boolean OR date_trunc('milliseconds',"RegularDispatchRoute"."updatedAt")=$9::timestamptz
      RETURNING "updatedAt"`,
     serviceMonth, dow, dir, payloadJson,
     input.classStart ?? null, input.classEnd ?? null, admin.appUserId ?? null,
+    input.expectedSavedAt !== undefined, input.expectedSavedAt ?? null,
   );
+  if (!rows.length) throw new Error("다른 창에서 노선이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.");
   return { savedAt: isoOrNull(rows[0]?.updatedAt) };
 }
 
 /** 해당 월·요일·방향의 저장 노선만 삭제한다. 자동 제안 원본 차량표는 삭제하지 않는다. */
-export async function deleteRegularDispatchRoute(dayOfWeek: string, direction: string, serviceMonth?: string): Promise<boolean> {
+export async function deleteRegularDispatchRoute(dayOfWeek: string, direction: string, serviceMonth?: string, expectedSavedAt?: string | null): Promise<boolean> {
   await requireAdmin();
   const dow = normDow(dayOfWeek), dir = normDir(direction);
   if (!dow || !dir) throw new Error("요일 또는 방향이 올바르지 않습니다.");
   const month = serviceMonth ?? koreaServiceMonth();
   if (!isServiceMonth(month)) throw new Error("적용 월은 YYYY-MM 형식이어야 합니다.");
   const count = await prisma.$executeRawUnsafe(
-    `DELETE FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 AND "direction"=$3`,
-    month, dow, dir,
+    `DELETE FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 AND "direction"=$3
+      AND (NOT $4::boolean OR date_trunc('milliseconds',"updatedAt")=$5::timestamptz)`,
+    month, dow, dir, expectedSavedAt !== undefined, expectedSavedAt ?? null,
   );
+  if (!Number(count) && expectedSavedAt !== undefined) throw new Error("다른 창에서 노선이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.");
   return Number(count) > 0;
 }
 
@@ -281,11 +294,13 @@ export async function getRegularDispatchForView(
   const dow = normDow(dayOfWeek) ?? "Mon";
   // 먼저 T맵 없이 기준정보를 얻는다(직선 추정 base).
   const base = await computeRegularDispatch({ direction, dayOfWeek: dow, serviceMonth, localOnly: true });
-  const saved = await getSavedRegularDispatchRoute(dow, direction, serviceMonth);
-  if (saved && Array.isArray(saved.vehicles) && saved.vehicles.length) {
+  const saved = await getSavedRegularDispatchRoute(dow, direction, serviceMonth, { strict: allowTmap });
+  if (saved && Array.isArray(saved.vehicles)) {
     return {
       ...base,
+      savedAt: saved.savedAt, loadedFromSaved: true,
       vehicles: saved.vehicles as DispatchSuggestion["vehicles"],
+      totalRiders: (saved.vehicles as DispatchSuggestion["vehicles"]).reduce((count, vehicle) => count + vehicle.stops.reduce((total, stop) => total + stop.students.length, 0), 0),
       classStart: saved.classStart ?? base.classStart,
       classEnd: saved.classEnd ?? base.classEnd,
       routingProvider: "TMAP",

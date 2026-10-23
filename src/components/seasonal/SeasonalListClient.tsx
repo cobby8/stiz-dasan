@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { extractPrograms, formatWon, programClasses, statusLabel, type SeasonalListResponse, type SeasonalProgram } from "./types";
+import { extractPrograms, formatSeasonalPeriod, formatWon, programClasses, seasonalDisplayState, type SeasonalListResponse, type SeasonalProgram } from "./types";
 
 export default function SeasonalListClient() {
   const [programs, setPrograms] = useState<SeasonalProgram[]>([]);
@@ -31,24 +31,28 @@ export default function SeasonalListClient() {
     <div className="grid gap-4 md:grid-cols-2">
       {programs.map((program) => {
         const offerings = programClasses(program);
+        const display = seasonalDisplayState(program);
         const hasOpenCapacity = offerings.some((item) => item.capacity === null);
+        const hasUnknownSeats = offerings.some((item) => item.capacity !== null && item.remaining === null);
         const seats = offerings.reduce((sum, item) => sum + Math.max(item.remaining ?? 0, 0), 0);
         const minPrice = Math.min(...offerings.map((item) => item.price).filter((price) => price >= 0));
         return (
-          <article key={program.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <article key={program.id} className="public-card min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <div className="bg-brand-navy-900 px-5 py-5 text-white">
-              <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{statusLabel(program.status)}</span>
+              <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{display.label}</span>
               <h2 className="mt-3 text-2xl font-black break-keep">{program.title}</h2>
               {program.summary && <p className="mt-2 text-sm leading-6 text-blue-100 break-keep">{program.summary}</p>}
             </div>
             <div className="space-y-3 p-5">
-              <Info icon="calendar_today" text={[program.operationStart, program.operationEnd].filter(Boolean).join(" ~ ") || "운영 일정 준비 중"} />
+              <Info icon="calendar_today" text={`운영 기간 · ${formatSeasonalPeriod(program.operationStart, program.operationEnd)}`} />
+              {(program.applicationStart || program.applicationEnd) && <Info icon="event_available" text={`신청 기간 · ${formatSeasonalPeriod(program.applicationStart, program.applicationEnd)}`} />}
               <Info icon="location_on" text={program.location || "장소 준비 중"} />
               <div className="flex items-end justify-between gap-4 border-t border-gray-100 pt-4 dark:border-gray-700">
                 <div><p className="text-xs text-gray-500">수강료</p><p className="font-black text-brand-navy-900 dark:text-white">{Number.isFinite(minPrice) ? `${formatWon(minPrice)}부터` : "안내 예정"}</p></div>
-                <div className="text-right"><p className="text-xs text-gray-500">전체 잔여석</p><p className="font-bold text-emerald-600">{hasOpenCapacity ? "접수 가능" : seats > 0 ? `${seats}석` : "대기 가능"}</p></div>
+                {display.showSeats && offerings.length > 0 && <div className="text-right"><p className="text-xs text-gray-500">전체 잔여석</p><p className="font-bold text-emerald-600">{hasOpenCapacity || hasUnknownSeats ? "학원 문의" : seats > 0 ? `${seats}석` : offerings.some((item) => item.waitlistEnabled) ? "대기 가능" : "마감"}</p></div>}
               </div>
-              <Link href={`/seasonal/${program.slug}`} className="flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-orange-500">자세히 보고 신청하기</Link>
+              {!display.canApply && <p className="text-sm text-gray-500">{display.message}</p>}
+              <Link href={`/seasonal/${program.slug}`} className="flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white transition hover:bg-orange-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-orange-500">{display.actionLabel}</Link>
             </div>
           </article>
         );
@@ -58,7 +62,7 @@ export default function SeasonalListClient() {
 }
 
 function Info({ icon, text }: { icon: string; text: string }) {
-  return <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300"><span className="material-symbols-outlined" aria-hidden="true">{icon}</span><span>{text}</span></div>;
+  return <div className="flex min-w-0 items-start gap-2 text-sm text-gray-600 dark:text-gray-300"><span className="material-symbols-outlined shrink-0" aria-hidden="true">{icon}</span><span className="min-w-0 break-keep [overflow-wrap:anywhere]">{text}</span></div>;
 }
 
 function StatusBox({ icon, text, retry }: { icon: string; text: string; retry?: boolean }) {

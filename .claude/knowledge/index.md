@@ -3,7 +3,7 @@
 ## 파일별 요약
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
-| architecture.md | 13 | 2026-10-17 |
+| architecture.md | 14 | 2026-10-23 |
 | errors.md | 8 | 2026-08-09 |
 | conventions.md | 29 | 2026-10-02 |
 | decisions.md | 20 | 2026-10-06 |
@@ -19,8 +19,8 @@
 - **apiSuccess snake_case 자동변환** · **IDOR** · **`prisma db push` 금지** → errors / decisions
 
 ## 최근 추가된 지식 (최근 5건)
-1. [architecture] 카카오 보강 신청·취소 대화 = KakaoParentIntake(MAKEUP_FLOW) 상태 + parent-makeup 함수 그대로, 「결석·보강」 메뉴 제외 (2026-10-17)
-2. [architecture] 카카오 정책 답변 = 순수 엔진(kakao-policy-qa)+연결부(service)+챗봇 hook, null 이면 기존 흐름 (2026-10-09)
-3. [decision] 청구 안내=랠리즈 전담(사이트 발송 기본 잠금)·시트 원장 은퇴(SHEET SKIPPED)·장부 원천=랠리즈 (2026-10-06)
-4. [convention] CLI·웹앱이 같이 쓰는 계산은 `src/lib/**` 에 `.mjs` 한 벌 — 사본 0을 테스트로 고정
-5. [convention] prisma 를 쓰는 서비스도 "가짜 prisma"를 끼워 실제로 실행해 검증(쓰기 1회·INSERT 대상 단정)
+1. [architecture] 체험↔수강신청 연결 = 순수 판정(trialLeadMatch)+연결부(trialLeadLinkService) 한 곳, 비교 시점 3곳 (2026-10-23)
+2. [architecture] 카카오 보강 신청·취소 대화 = KakaoParentIntake(MAKEUP_FLOW) 상태 + parent-makeup 함수 그대로, 「결석·보강」 메뉴 제외 (2026-10-17)
+3. [architecture] 카카오 정책 답변 = 순수 엔진(kakao-policy-qa)+연결부(service)+챗봇 hook, null 이면 기존 흐름 (2026-10-09)
+4. [decision] 청구 안내=랠리즈 전담(사이트 발송 기본 잠금)·시트 원장 은퇴(SHEET SKIPPED)·장부 원천=랠리즈 (2026-10-06)
+5. [convention] CLI·웹앱이 같이 쓰는 계산은 `src/lib/**` 에 `.mjs` 한 벌 — 사본 0을 테스트로 고정

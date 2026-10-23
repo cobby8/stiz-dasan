@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth-guard";
@@ -75,6 +76,9 @@ export async function GET() {
     return NextResponse.json({
       batches: batches.map((batch) => ({
         ...batch,
+        message: batch.status === "FAILED"
+          ? userFacingError(new Error(batch.message || ""), "자료 가져오기를 완료하지 못했습니다. 다시 시도해 주세요.")
+          : batch.message,
         createdAt: batch.createdAt.toISOString(),
         completedAt: batch.completedAt?.toISOString() ?? null,
         issues: (issuesByBatch.get(batch.id) ?? []).map((issue) => ({
@@ -92,9 +96,7 @@ export async function GET() {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "최근 이관 기록을 불러오지 못했습니다.",
+          userFacingError(error, "최근 이관 기록을 불러오지 못했습니다."),
       },
       { status: 500 }
     );

@@ -1,4 +1,49 @@
 ## 2026-09-04 사이트 월 운영 장부
+
+## 2026-10-22 공개 게시일·신청·이동 표시
+- `useHeaderMenuFit`는 기존 헤더 DOM의 실제 크기를 관찰하고 `navigation/headerFit.ts`가 가용 폭·합계·작은 경계 여유로 모드를 정한다. Header는 표시·inert/aria-hidden·data-menu-layout를 함께 반영한다. 계정 조회·권한·메뉴 항목·Guide 기존 단계 구조는 유지한다.
+- 공개 헤더는 스포츠 CSS의 한 행·전체 메뉴 모드를 사용한다. 가이드 공통 생성기의 메뉴 가시성 보호는 폭/큰 글씨 변경 시 기존 종료 정리 후 기존 저장 Phase의 메뉴 안내만 재시작하며, 새 라우팅·권한·저장 정책을 만들지 않는다.
+- 공개 게시일과 수강 월 표시의 새 순수 함수는 유일한 날짜 창구인 `lib/datetime/kst.ts`의 `formatKstDate`·`kstMonthLabels`를 사용한다. 기존 날짜 저장/계산 함수는 그대로다.
+- `apply/trial/trialScheduleSelection.ts`는 공개 폼이 받은 슬롯만으로 날짜·요일·교시·과거일·마감을 검사한다. UI 단계/기존 신청 로드/제출 전 검사에 공유하며 서버 접수 정책은 변경하지 않는다.
+- `auth-entry-navigation.ts`는 로그인/가입 UI 링크에 필요한 내부 복귀/신청 연결 정보만 재구성한다. `navigation/publicHistory.ts`는 공개 경로의 이전 동출처 항목 읽기와 부모 경로 대체만 담당한다. 인증·역할별 접근·설치 앱 범위는 기존 모듈이 유지한다.
+
+## 2026-10-22 공개 일정 표시 계층
+- 연간 일정은 `AnnualEventsClient`가 연도/월 선택을 관리하고 `annualPeriod.ts`가 한국 현재 월을 계산한다. `annual-months.css`는 공개 스포츠 영역만 꾸민다. 공식 수강월 매핑·기존 서버 조회·상세창은 유지한다.
+- 특강의 날짜 정규화·공개 상태 표시는 `components/seasonal/types.ts`로 공유한다. 목록·상세·신청은 같은 표시 기준을 사용하며 서버의 모집/가격/접수 판단은 변경하지 않는다.
+
+## 2026-10-21 공개 홈페이지 스포츠 스타일 경계
+- `src/lib/public-site-path.ts`는 공개 안내·상세·신청·공개 로그인/설치 경로를 선택한다. `PublicSiteTheme`와 `public-sport.css`는 공개 렌더링에만 공통 토큰·간격·헤더/푸터 규격을 적용한다.
+- 홈은 `LandingPageClient` + `landing/public-home.css`이며 기존 설정·공지·갤러리·후기를 그대로 받는다. 개별 공개 페이지는 공통 hero/content/card/form 클래스로 정리한다.
+- `ThemeProvider`는 공개 저장 키와 라이트 기본값을 분리하되, `/admin`, `/staff`, `/mypage`, `/driver` 업무 화면의 기존 테마 경계는 유지한다. QA 전용 재구성 DB·차단 프록시는 `.tmp` 소유 실행기이며 제품 소스에 포함하지 않는다.
+
+## 2026-10-19: 기사 통합 운행 화면 정리
+- UnifiedDriverClient 한 파일에서 헤더 시작/종료·날짜 단일화·정차 순서/시각·학생 체크 행을 정리했다. 공용 DriverDateNav/GpsShareBar·저장 API/키·GPS hook은 그대로다.
+- 화면 전용 checkSummary는 중복 승객 키·정규 사전결석을 제외하고 확인된 최종 기록만 센다. 실제 운행 위치·차량 진행 완료는 추정하지 않는다. 독립 검증과 상세 경계는 docs/driver-workspace-ux.md.
+
+## 2026-10-19: 안드로이드 기사 위치 검증본
+- apps/driver-android는 Java WebView와 별도 location foreground service, AndroidKeyStore 암호화 저장, Gradle wrapper와 오프라인 runtime 검사를 포함한다. nativeDriverGps→useGpsShare는 origin-bound 메시지를 받고 화면 해제 때 native 수집을 끄지 않는다. 기존 웹 controller는 보존한다.
+- /api/driver/mobile/session은 기본 비활성이다. DriverMobileTrackingSession 수동 SQL에 단일 활성 세션·만료·비밀 해시·전송 순서·측정/접수 시각을 저장하고 DriverLocation 최신 행을 갱신한다. legacy 위치는 같은 운행 잠금에 참여한다. 운영 SQL/env 적용 없음.
+- 기존 정규 토큰은 ROLLING×REGULAR 공용 하나이며 현재 1대 운행이라고 사용자가 확인했다. token당 한 기기로 진행하며 여러 차량 증차 시 별도 자격 범위가 필요하다. 업턴랩스 출시 주체 확인, 실제 폰/스토어 접근 미확인.
+
+## 2026-10-19: USB 실기기 시험 연결
+- driver-device-test-server.mjs는 원본 React화면/native adapter/API/Prisma와 loopback HTTPS8443·새 PG55435를 연결한다. 실제 좌표는 최신 한 행만 받으며 관리키로 보호된 상태 요약은 좌표/비밀/기기ID를 제외한다. 실행·준비·조회 CLI가 분리되고 소유 DB/개인키 정리를 확인한다.
+- stizDeviceTest=true+localhost:8443+공개CA 디렉터리인 debug에서만 별도 패키지 kr.stiz.driver.devicetest와 localhost 신뢰를 생성한다. release는 운영주소443, CA/별도패키지 미포함. 443 reverse가 기기 권한상 불가해 보안 우회 없이 비특권 포트로 분리했다.
+
+## 2026-10-19: 교사 출석 명단의 금액 조회
+- staff-monthly-fees.ts와 순수 policy/types가 세션 권한·로스터·당월 Payment/Invoice·확정 월수강대장·특강 좌석 근거를 묶는다. staff-billing.ts에 읽기 액션 2개만 추가했다.
+- SessionInProgressClient에서 출결과 독립적으로 요약을 읽고 실제 ClassBillingSheet로 연결한다. StaffMonthlyFeeSummary는 총청구액/순수수강료/특강기간을 구분한다. 상세 최신값은 해당 명단 행에 반영한다. 새 스키마·운영 DDL·쓰기 함수 변경 없음.
+
+## 2026-10-19: 선생님 수업 화면 구성
+- StaffHomeClient는 현재·다음 수업/남은 수업/접힌 완료 목록을 나누고 각 수업의 준비·관리 도구를 접는다.
+- SessionInProgressClient는 단일 출결 요약, 접힌 보조 관리, 실제 사진·메모 입력, 종료 바를 유지한다. 출석 명단은 하나의 컨테이너이며 데이터·액션·고정 메뉴 구조는 불변이다.
+
+## 2026-10-19: 학부모 홈 정보 배치
+- MyPageClient에서 자녀 선택·다음 수업·오늘 셔틀·통합 요청 메뉴·실제 청구·알림을 우선 배치한다. 셔틀 배정/수강·출결·수납/결석·보강/피드백 상세는 기본 접기이며 해시 진입이 상위 접기를 연다.
+- page.tsx·layout·하단 탐색·API·조회·저장 구조는 변경하지 않았다.
+
+## 2026-10-19: 관리자 화면 구성
+- AdminDashboardClient는 요청·오늘 수업을 우선 렌더링하고 운영 현황·관리 도구를 접는다. AdminShellClient는 주요 6메뉴·보조 2그룹으로 기존 주소를 유지한다. API·저장 구조 변경 없음.
+
 - `/admin/finance/monthly-register` 및 동명 관리자 API는 학생·월 단일 봉투에 반별 금액/기간/근거를 JSON으로 보존한다. 월 셔틀비는 봉투당 하나이며 기존 Payment/Enrollment에는 쓰지 않는다.
 - `MonthlyEnrollmentRegister`와 `MonthlyEnrollmentRegisterRevision`은 현재 버전과 전체 변경 스냅샷을 분리한다. 학생 행 잠금·장부 버전 비교·감사 동일 거래로 중복/덮어쓰기를 차단한다.
 - 공용 순수 모델과 서비스·API·화면을 분리하고 관리자 DB 역할 인증, 같은 사이트 요청, 실제 128KiB 상한, READ ONLY 조회 및 no-store를 적용한다. 저장 설정은 기본 off다.
@@ -55,6 +100,11 @@
 - 월별 수납 조건은 `EXTRACT(YEAR/MONTH FROM dueDate)` 대신 `dueDate >= 월 시작 AND dueDate < 다음 달 시작` 범위 조건을 쓴다.
 
 # Architecture
+
+## 2026-10-19: 저장·전달 결과 확인 계층
+- `parent-staff-status.ts`는 학생·수신자별 채널 결과를 요약한다. 부모 셔틀 GET은 소유 자녀만, 교사 공지 작업 조회는 작성자·담당 반만 허용한다. 기존 Notice ID·NotificationDelivery를 재사용한다.
+- 기사 `driverStatusRead/driverStatusClient`는 기존 정규·특강 저장 경로를 유지한 POST→GET 대조를 제공한다. `driverGpsController`는 위치 수집과 전송·중단 응답을 분리한다.
+- `admin-delivery-status.ts`는 기존 내부 결석·셔틀 장부의 안정 사건·수신자 키로 채널을 묶는다. 일반 문의는 별도 관리자 재조회 액션이며 실제 출결·배차 변경을 수행하지 않는다.
 
 ## 스태프/기사 모바일 역할 구조 (2026-07-21)
 - `Role.DRIVER`는 셔틀 기사 전용 스태프 역할이다. 로그인 후 기본 이동 경로는 `/staff/shuttle`이며, 코치/강사는 기존 `/staff` 수업 홈을 유지한다.
@@ -248,3 +298,44 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - `/request/reconfirm/[token]`은 관리자 보완 내용을 읽기 전용으로 표시하고 `src/app/actions/kakao-parent-reconfirmation.ts`가 학생·보호자·접수·운영 요청·명령 관계와 payload 해시를 다시 검증한다.
 - `ParentOperationsRequestLink.purpose`는 `GENERAL`과 `KAKAO_RECONFIRMATION`을 DB 제약으로 구분해 링크 경로 혼용을 차단한다.
 - 학부모 확정은 `parentConfirmed`와 감사로그만 갱신하며 시트·Rallyz·사이트 실행, 청구, 알림은 수행하지 않는다.
+# 2026-10-19: 학원 역할별 공통 시각 경계
+- `src/components/academy/AcademyTheme.tsx`: 서버·클라이언트에서 사용할 수 있는 순수 wrapper. `academy-app`과 `data-academy-role`로 관리자/학부모/교사/기사 범위를 구분한다.
+- `src/app/academy-theme.css`: 라벤더 팔레트·고딕 글꼴·카드·버튼·상태와 420px 이하 기사 학생 행. RootLayout에서 가져오지만 선택자는 업무 영역에 한정한다.
+- `src/lib/academyTheme.ts`: 학원 경로 판별과 PWA 테마 색상. ThemeProvider·ThemeColorUpdater가 같은 경계를 사용한다. 기존 `/shuttle/run`·`/shuttle/regular`도 포함한다.
+
+## 2026-10-19 기사 화면 시안 실제 적용
+- 실제 세 기사 링크는 UnifiedDriverRunPage→UnifiedDriverClient 하나를 공유한다. DriverWorkspace.module.css로 역할별 범위를 좁혔고 DriverGpsIndicator는 기존 GpsShareBar를 상세창에 재사용한다.
+- driverUpcoming 순수 계산과 useDriverUpcoming은 기기의 로컬 날짜·시각으로 당일 다음 예정만15초/focus/visibility마다 표시한다. API/탑승/GPS 동작과 시계 표시는 분리한다.
+- docs/driver-lavender-implementation.md에 기존 기능 대조와 검증 증거·한계를 기록했다. 사용자 후속 승인으로 저장·재조회 불일치도 해결했다.
+
+## 2026-10-19 정규 순서·시각 저장 재조회
+- regular-order API는 driverOrderPlan의 기존 기사 조립 재사용·원본 대조 후 명단과 확정 배차를 Serializable 거래로 함께 변경·재조회한다. getRegularShuttleRiders는 선택적 거래 DB를 받아 기존 SQL을 동일 거래에서 사용한다.
+- UnifiedDriverClient는 편집 원본을 고정하고 이동 시 시각 칸도 이동한다. 확인된 저장 후 router.refresh하며 새 서버 자료에 이전 임시값을 씌우지 않는다. 적용 범위는 기존 월·요일 공통이며 docs/driver-order-persistence.md에 검증과 한계를 기록했다.
+
+## 2026-10-19 전체 페이지 검증과 사진 경계
+- 전체117페이지(관리자56·학부모/선생19·공개공통42)를 docs/all-pages-verification.md 원장으로 관리한다. 정적·실제 빌드·익명 HTTP·역할 fixture·브라우저·실기기 증거를 구분한다.
+- 학부모 사진 리포트는 기존 sessionPhotoEntries 변환기를 사용하고 ReportPhoto Client에 이미지 실패 처리를 한정한다. 서버의 부모·자녀·발행 상태 조회와 비공개 사진 프록시는 보존한다.
+- 기사3개 단일토큰 경로만 geolocation=(self), 일반 차단 규칙과 중복되지 않게 구성한다. 설정/정책/학부모 요청의 저장·오류 표시는 기존 서버 계약을 보존하면서 보완했다.
+- Apply 신청 메뉴는 모바일 탭 영역만 가로 스크롤하고 기존5메뉴를 보존한다. 전체117 경로·공개120조합·격리DB 보호228조합과 재검사, 실제 Next 읽기 Action을 통한 출석금액/청구창을 구분해 기록했다. 실제 운영 인증/기기/발송 검증과 합산하지 않는다.
+
+## 2026-10-19: 공통 화면 전환 자격
+- account-views는 서버가 검증한 자격으로 고정된 관리자/선생님/학부모 주소 목록을 만드는 순수 모듈이다. account-view-access는 직접 Auth 연결과 본인 자녀 존재를 조회하며 인증 실패 시 빈 메뉴로 축소한다.
+- AccountViewSwitcher는 관리자 프로필·선생님 메뉴·학부모 헤더·공개 계정 버튼이 공유한다. API account-role의 기존 role을 보존하고 views만 추가하며 ID·자녀 정보는 공개하지 않는다. 각 화면의 실제 권한 가드는 그대로 적용된다.
+- 최신 초기 화면 경고 수정은 Next16.2.12의 정식 내장 React 복원 코드로 처리한다. 별도 React19.2.3과 기존 UI 데이터 흐름은 유지한다.
+
+## 2026-10-20: 목록 필터 공통 UI
+- `src/components/academy/CompactListFilters.tsx`가 검색·주요 동작·필터 펼침·선택 요약을 배치한다. 조건 값과 조회·초기화 함수는 기존 체험/수강신청·원생·특강 화면이 소유한다.
+- 업무/보기/시즌 같은 대상 선택과 목록 조건을 구분하고 API·조건 계산은 옮기지 않는다. 상세 docs/admin-compact-filters.md.
+
+## 2026-10-20: 수강신청의 명시적 보호자 선택
+- approval-parent.ts가 후보·직접 Auth 연결·명시 선택·재검토 트랜잭션을 담당하고 admin.ts는 관리자 가드·조회 시간 제한·재검증을 연결한다. ApplyAdminModals는 기존 parentUserId를 잠그고 신규 선택값을 명시 전달한다. 스키마·대표 role 변경은 없다. 상세 docs/enrollment-parent-link.md.
+
+## 2026-10-20: 화면 안내와 배차 저장 상태
+- application-display-format.ts는 체험/수강신청 화면의 전화번호·수업명 표시를 공유한다. user-facing-error.ts는 내부 장애와 공개할 업무 안내를 분리한다.
+- 공용 RouteSection은 정규/특강의 범위와 저장 메타데이터를 유지하고, 실제 표시 노선을 정규 상단 시간표에 전달한다. saved API는 관리자 인증 후 저장 확인용 조회와 이전 저장 시각 비교를 연결한다.
+- 신규 DB 테이블·migration 없이 기존 저장 노선의 updatedAt와 특강 시즌 기간을 사용한다. 운영 반영과 앱 출시는 별도다.
+
+## 2026-10-20: 관리자 청구 검토표와 단일 보상
+- finance/prepare와 billing/workbench 계층은 기간별 반 청구의 조회·수정·확정·발행을 연결한다. API는 관리자·동일출처를 확인하고 저장 설정 기본 차단, 새 SQL은 운영 미적용이다.
+- 기존 결석·보강 예약/취소·회수 경로도 같은 보상 잠금을 사용한다. 이월 잔액은 분수와 사용 근거를 보존하며 Payment/Invoice와 함께 반영한다. 원기간·일정·사용 청구가 바뀌면 확인보류한다.
+- 공식 일정은 공용 로더에서 거래 밖에 한 번 읽어 불변 자료로 전달하고 원본 지문에 포함한다. 실제 자료 미리보기의 일정 조회 실패는 부분 일정을 비워 금액 계산을 막는다. 상세 docs/billing-workbench-upgrade.md.

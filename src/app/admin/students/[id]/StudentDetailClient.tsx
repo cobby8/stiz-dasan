@@ -92,7 +92,7 @@ function toInputDate(d: Date | string | null | undefined): string {
     return date.toISOString().split("T")[0];
 }
 // 편집 인풋 공통 클래스 — 앱 톤(rounded, border, dark 대응, 하드코딩 hex 없음)
-const EDIT_INPUT_CLASS = "w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
+const EDIT_INPUT_CLASS = "w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-[var(--color-academy-primary)] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
 
 function calcAge(birthDate: Date | string): number {
     const birth = typeof birthDate === "string" ? new Date(birthDate) : birthDate;
@@ -293,14 +293,15 @@ function getCurrentMonthHistory(monthlyHistory: StudentActivityData["monthlyHist
 }
 
 // 공통 카드 컨테이너 클래스 — 기존 앱 카드 관례를 그대로 사용(하드코딩 색 없음)
-const CARD_CLASS = "rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800";
+// 학생의 정보와 편집 동선은 유지하고 역할 공통 카드 표면을 공유한다.
+const CARD_CLASS = "academy-panel p-5";
 
 // 섹션 제목 (아이콘 + 텍스트 + 우측 부가정보)
 function SectionTitle({ icon, title, right }: { icon: string; title: string; right?: React.ReactNode }) {
     return (
         <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 dark:text-white">
-                <SymbolIcon name={icon} size={17} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                <SymbolIcon name={icon} size={17} className="text-[var(--color-academy-primary)] dark:text-brand-neon-lime" />
                 {title}
             </h3>
             {right}
@@ -343,7 +344,7 @@ function ShuttleLocationBlock({
         <div className="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
             <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-gray-900 dark:text-gray-100">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-brand-orange-50 text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                         <SymbolIcon name={icon} size={14} />
                     </span>
                     {label}
@@ -632,7 +633,7 @@ export default function StudentDetailClient({
                 <button
                     type="button"
                     onClick={() => void loadData()}
-                    className="mt-4 rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="mt-4 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] dark:bg-brand-neon-lime dark:text-brand-navy-900"
                 >
                     다시 불러오기
                 </button>
@@ -727,7 +728,7 @@ export default function StudentDetailClient({
                         type="button"
                         onClick={() => saveSection(section)}
                         disabled={saving}
-                        className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
+                        className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
                     >
                         <SymbolIcon name="check" size={14} /> {saving ? "저장 중…" : "저장"}
                     </button>
@@ -925,14 +926,14 @@ export default function StudentDetailClient({
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
-            {/* ===== 정체성 헤더 ===== */}
-            <div className="flex flex-wrap items-start gap-4">
+            {/* 학생의 맥락을 라벤더 헤더로 묶고 기존 편집 기능은 유지한다. */}
+            <div className="academy-hero flex flex-wrap items-start gap-4 p-5 md:p-6">
                 <Link href="/admin/students" prefetch={false} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gray-100 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700">
                     <SymbolIcon name="arrow_back" size={20} />
                 </Link>
-                <div className="min-w-[240px] flex-1">
+                <div className="min-w-0 basis-60 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                        <h1 className="academy-heading">
                             {student.name}
                             <span className="ml-1.5 text-lg font-normal text-gray-400">학생</span>
                         </h1>
@@ -940,7 +941,7 @@ export default function StudentDetailClient({
                             {representativeStatusInfo.label}
                         </span>
                         {activeEnrollments.length > 0 && (
-                            <span className="rounded-full bg-brand-orange-50 px-2.5 py-0.5 text-xs font-bold text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                            <span className="rounded-full bg-[var(--color-academy-primary-soft)] px-2.5 py-0.5 text-xs font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                                 {activeEnrollments.length}개 반
                             </span>
                         )}
@@ -1009,7 +1010,7 @@ export default function StudentDetailClient({
             {/* ===== KPI 4칸 ===== */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {/* 출석률 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <MiniDonut rate={attendanceStats.rate} />
                     <div className="min-w-0">
                         <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">출석률</p>
@@ -1021,8 +1022,8 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 수강 중 반 수 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-orange-50 text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                <div className="academy-panel flex items-center gap-3 p-4">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                         <SymbolIcon name="sports_basketball" size={22} />
                     </div>
                     <div className="min-w-0">
@@ -1035,7 +1036,7 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 이번 달 수납 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
                         <SymbolIcon name="account_balance_wallet" size={22} />
                     </div>
@@ -1059,7 +1060,7 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 미납 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${unpaid.length > 0 ? "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300" : "bg-gray-100 text-gray-400 dark:bg-gray-900 dark:text-gray-500"}`}>
                         <SymbolIcon name={unpaid.length > 0 ? "error" : "check_circle"} size={22} />
                     </div>
@@ -1127,7 +1128,7 @@ export default function StudentDetailClient({
                                         {student.parent.phone && (
                                             <>
                                                 {" · "}
-                                                <a href={`tel:${student.parent.phone}`} className="text-brand-orange-600 hover:underline dark:text-brand-neon-lime">
+                                                <a href={`tel:${student.parent.phone}`} className="text-[var(--color-academy-primary)] hover:underline dark:text-brand-neon-lime">
                                                     {student.parent.phone}
                                                 </a>
                                             </>
@@ -1206,7 +1207,7 @@ export default function StudentDetailClient({
                                 <button
                                     onClick={saveMemo}
                                     disabled={isPending}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
                                 >
                                     <SymbolIcon name="save" size={14} /> {isPending ? "저장 중..." : "저장"}
                                 </button>
@@ -1217,7 +1218,7 @@ export default function StudentDetailClient({
                             onChange={e => { setMemo(e.target.value); setMemoSaved(false); }}
                             rows={4}
                             placeholder="특이사항·건강 이슈"
-                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:ring-brand-neon-lime"
+                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-[var(--color-academy-primary)] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:ring-brand-neon-lime"
                         />
                         {memoSaved && <p className="mt-2 text-xs font-medium text-green-600 dark:text-lime-200">저장됨</p>}
                     </div>
@@ -1226,7 +1227,7 @@ export default function StudentDetailClient({
                 {/* ---- 우측 본문 (탭) ---- */}
                 <section className="min-w-0">
                     {/* 탭 바 */}
-                    <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-gray-100 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-900">
+                    <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-1">
                         {tabs.map((tab) => {
                             const selected = activeTab === tab.key;
                             return (
@@ -1260,7 +1261,7 @@ export default function StudentDetailClient({
                                         <button
                                             type="button"
                                             onClick={() => { setShowClassPicker((v) => !v); setEnrollError(null); }}
-                                            className="inline-flex items-center gap-1 rounded-lg border border-brand-orange-200 bg-brand-orange-50 px-2.5 py-1 text-xs font-bold text-brand-orange-600 transition hover:bg-brand-orange-100 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/20"
+                                            className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-primary)] transition hover:bg-[var(--color-academy-primary-soft)] dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/20"
                                         >
                                             <SymbolIcon name={showClassPicker ? "close" : "add"} size={15} />
                                             {showClassPicker ? "닫기" : "반 추가"}
@@ -1303,7 +1304,7 @@ export default function StudentDetailClient({
                                                                         type="button"
                                                                         onClick={() => void addEnrollment(c.id)}
                                                                         disabled={Boolean(enrollingClassId)}
-                                                                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-brand-orange-400 hover:bg-brand-orange-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/5"
+                                                                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/5"
                                                                     >
                                                                         <span className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">{c.name}</span>
                                                                         <span className="shrink-0 text-xs text-gray-400">
@@ -1481,7 +1482,7 @@ export default function StudentDetailClient({
                                                                 href={p.invoiceCheckoutUrl}
                                                                 target="_blank"
                                                                 rel="noreferrer"
-                                                                className="mt-1 inline-flex text-xs font-bold text-brand-orange-600 hover:underline dark:text-brand-neon-lime"
+                                                                className="mt-1 inline-flex text-xs font-bold text-[var(--color-academy-primary)] hover:underline dark:text-brand-neon-lime"
                                                             >
                                                                 납부 링크 열기 ↗
                                                             </a>
@@ -1602,7 +1603,7 @@ export default function StudentDetailClient({
                                                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
                                                         {/* 반 뱃지 전체 노출 (기존 +N 숨김 개선) */}
                                                         {history.classes.map((c) => (
-                                                            <span key={c.slotKey} className="rounded-full bg-brand-orange-50 px-2 py-0.5 text-[11px] font-bold text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                                                            <span key={c.slotKey} className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                                                                 {c.className}
                                                             </span>
                                                         ))}
@@ -1725,7 +1726,7 @@ export default function StudentDetailClient({
                         {statusFormError && <p role="alert" className="text-sm font-bold text-red-600">{statusFormError}</p>}
                         <div className="flex justify-end gap-2">
                             <button type="button" onClick={() => setStatusChange(null)} disabled={Boolean(statusUpdatingId)} className="min-h-11 rounded-xl border border-gray-200 px-4 font-bold disabled:opacity-60 dark:border-gray-700">취소</button>
-                            <button type="submit" disabled={Boolean(statusUpdatingId)} className="min-h-11 rounded-xl bg-brand-orange-500 px-5 font-black text-white disabled:opacity-60">
+                            <button type="submit" disabled={Boolean(statusUpdatingId)} className="min-h-11 rounded-xl bg-[var(--color-academy-primary)] px-5 font-black text-white disabled:opacity-60">
                                 {statusUpdatingId ? "저장 중…" : "변경 저장"}
                             </button>
                         </div>

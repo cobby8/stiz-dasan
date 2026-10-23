@@ -115,7 +115,7 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     "lib/staff-class-access.ts": { count: 1, reason: "교사 접근 권한 검사(막는 방향이라 위험)" },
     "lib/studentMediaConsent.ts": { count: 1, reason: "미디어 동의 게이트(막는 방향이라 위험)" },
     "lib/auth-guard.ts": { count: 1, reason: "직원 겸 학부모 판정 게이트(막는 방향이라 위험)" },
-    "app/auth/continue/page.tsx": { count: 1, reason: "로그인 후 학부모 화면 분기 판정(막는 방향이라 위험)" },
+    "lib/account-view-access.ts": { count: 1, reason: "계속 화면에서 옮긴 공통 직원 겸 학부모 분기 게이트. 자녀 목록이 아닌 본인 연결 존재 확인이며 기존 인증 가드와 같은 기준 유지" },
 
 };
 

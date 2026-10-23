@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./academy-theme.css";
 import { getAcademySettings } from "@/lib/queries";
 import { BODY_FONT_OPTIONS, HEADING_FONT_OPTIONS, getFontCss } from "@/lib/fonts";
 import { ThemeProvider } from "@/components/ThemeProvider";

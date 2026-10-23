@@ -37,7 +37,7 @@ export default function DriverDateNav({
       <div className="flex flex-col items-center leading-tight">
         <span className="text-[17px] font-black text-gray-900">{fmtDate(date)}</span>
         {date !== today && (
-          <Link href={`?date=${today}`} className="mt-0.5 text-[13px] font-black text-blue-600 active:text-blue-700">오늘로</Link>
+          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-[13px] font-black text-blue-600 active:text-blue-700">오늘로</Link>
         )}
       </div>
 

@@ -94,7 +94,7 @@ export default async function ProgramsPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
                     <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -109,7 +109,7 @@ export default async function ProgramsPage() {
             </section>
 
             {/* 프로그램 목록 — 세로 카드(이미지 상단 + 정보 하단) 구조 */}
-            <SectionLayout label="CLASSES" title="수업 안내" description="연령과 수준에 맞춘 체계적인 프로그램" bgColor="white">
+            <SectionLayout className="public-content-section" bgColor="white">
                 {programs.length === 0 ? (
                     <div className="text-center py-20 text-gray-400">
                         <div className="text-5xl mb-4">🏀</div>
@@ -129,7 +129,7 @@ export default async function ProgramsPage() {
                             <a href="/terms" className="font-bold text-brand-orange-500 underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
                         </p>
                     </div>
-                    <div data-tour-target="program-cards" className="grid md:grid-cols-2 gap-6">
+                    <div data-tour-target="program-cards" className="grid min-w-0 md:grid-cols-2 gap-4 md:gap-5">
                         {programs.map((program, i) => {
                             const days = program.days
                                 ? DAY_ORDER.filter((d) => program.days!.split(",").includes(d))
@@ -141,7 +141,7 @@ export default async function ProgramsPage() {
 
                             return (
                                 <AnimateOnScroll key={program.id} delay={(i % 2) * 150}>
-                                    <Card variant="default" className={`overflow-hidden !p-0 border-t-4 ${ageColor.border}`}>
+                                    <Card variant="default" className={`public-card public-program-card min-w-0 overflow-hidden !p-0 border-t-4 ${ageColor.border}`}>
                                         {/* 프로그램 이미지 */}
                                         {program.imageUrl && (
                                             <div className="relative aspect-[3/1] bg-gray-100 dark:bg-gray-800 overflow-hidden">
@@ -194,12 +194,12 @@ export default async function ProgramsPage() {
                                         <div className="px-5 pb-5">
                                             {tiers.length > 0 ? (
                                                 <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-                                                    <table className="w-full text-sm">
+                                                    <table className="public-table public-fee-table w-full table-fixed text-sm">
                                                         <thead className="bg-brand-navy-900 text-white">
                                                             <tr>
-                                                                <th className="px-4 py-2.5 text-left font-bold">수업 빈도</th>
-                                                                <th className="px-4 py-2.5 text-right font-bold">월 수강료</th>
-                                                                <th className="px-4 py-2.5 text-right font-bold">셔틀비</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-left font-bold">수업 빈도</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">월 수강료</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">셔틀비</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -207,11 +207,11 @@ export default async function ProgramsPage() {
                                                                 const fee = getShuttleFeeDisplay(program.shuttleFeeOverride, t.key, weekend);
                                                                 return (
                                                                     <tr key={t.key} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                                        <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t.label}</td>
-                                                                        <td className="px-4 py-3 text-right font-bold text-brand-navy-900 dark:text-white">
+                                                                        <td className="px-2 sm:px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t.label}</td>
+                                                                        <td className="px-2 sm:px-4 py-3 text-right font-bold text-brand-navy-900 dark:text-white">
                                                                             {Number(program[t.key]).toLocaleString()}원
                                                                         </td>
-                                                                        <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
+                                                                        <td className="px-2 sm:px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
                                                                             {fee ? fee : <span className="text-gray-400 font-normal">운행 없음</span>}
                                                                         </td>
                                                                     </tr>

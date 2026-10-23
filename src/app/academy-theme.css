@@ -1,0 +1,209 @@
+/* 승인된 라벤더·퍼플. 공개 홈페이지와 공식 로고의 원본 색상은 바꾸지 않는다. */
+.academy-app {
+  --color-academy-canvas: #f7f4fb;
+  --color-academy-surface: #ffffff;
+  --color-academy-ink: #382b48;
+  --color-academy-muted: #73647f;
+  --color-academy-line: #e5ddef;
+  --color-academy-soft: #f4eff9;
+  --color-academy-primary: #7444a3;
+  --color-academy-primary-hover: #61368b;
+  --color-academy-primary-soft: #efe5fa;
+  --color-academy-on-primary: #ffffff;
+  --color-academy-success: #3f6754;
+  --color-academy-success-soft: #edf5ef;
+  --color-academy-warning: #80581d;
+  --color-academy-warning-soft: #fff3df;
+  --color-academy-danger: #a44052;
+  --color-academy-danger-soft: #fff0f2;
+  --color-academy-art: #cebae7;
+  --color-academy-band: #f0e8fa;
+  --color-academy-band-end: #fcf9ff;
+  --color-academy-shadow: #49345e0a;
+  --brand-accent: var(--color-academy-primary);
+  --brand-accent-hover: var(--color-academy-primary-hover);
+  --brand-accent-soft: var(--color-academy-primary-soft);
+  --brand-accent-contrast: var(--color-academy-on-primary);
+  --font-body: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-heading: var(--font-body);
+  /* 기존 버튼도 같은 브랜드 색으로 이어지게 하되 오류·결석·납부 상태색은 유지한다. */
+  --color-brand-orange-50: var(--color-academy-primary-soft);
+  --color-brand-orange-400: var(--color-academy-primary);
+  --color-brand-orange-500: var(--color-academy-primary);
+  --color-brand-orange-600: var(--color-academy-primary-hover);
+  --color-brand-orange-700: var(--color-academy-primary-hover);
+  --color-brand-navy-700: var(--color-academy-ink);
+  --color-brand-navy-800: var(--color-academy-ink);
+  --color-brand-navy-900: var(--color-academy-ink);
+  --color-surface-warm: var(--color-academy-canvas);
+  --color-surface-section: var(--color-academy-soft);
+  --color-gray-50: #fbf9fd;
+  --color-gray-100: var(--color-academy-soft);
+  --color-gray-200: var(--color-academy-line);
+  --color-gray-300: #d0c5db;
+  --color-gray-400: #897b95;
+  --color-gray-500: var(--color-academy-muted);
+  --color-gray-600: #655570;
+  --color-gray-700: #55445f;
+  --color-gray-800: #453550;
+  --color-gray-900: var(--color-academy-ink);
+  color-scheme: light;
+  color: var(--color-academy-ink);
+  background: var(--color-academy-canvas);
+  font-family: var(--font-body, "Noto Sans KR", "Malgun Gothic", sans-serif);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.academy-app .academy-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid var(--color-academy-line);
+  border-radius: 1.25rem;
+  background: linear-gradient(125deg, var(--color-academy-band), var(--color-academy-band-end));
+  color: var(--color-academy-ink);
+  padding: 1.25rem;
+}
+
+.academy-app .academy-hero::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+  width: 15rem;
+  height: 5rem;
+  right: -4rem;
+  bottom: -3rem;
+  border: 1px solid var(--color-academy-art);
+  border-radius: 50%;
+  box-shadow: 0 -0.75rem 0 -1px var(--color-academy-band-end), 0 -0.75rem 0 0 var(--color-academy-art);
+  transform: rotate(-18deg);
+}
+
+.academy-app .academy-panel {
+  background: var(--color-academy-surface);
+  color: var(--color-academy-ink);
+  border: 1px solid var(--color-academy-line);
+  border-radius: 1.125rem;
+  box-shadow: 0 4px 18px var(--color-academy-shadow);
+}
+
+.academy-app .academy-heading {
+  color: var(--color-academy-ink);
+  font-size: clamp(1.35rem, 2vw, 1.65rem);
+  line-height: 1.35;
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
+}
+
+.academy-app .academy-section-title {
+  color: var(--color-academy-ink);
+  font-size: 1rem;
+  line-height: 1.5;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.academy-app :is(.academy-button-primary, .academy-button-secondary) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.8125rem;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.academy-app .academy-button-primary {
+  border: 1px solid var(--color-academy-primary);
+  background: var(--color-academy-primary);
+  color: var(--color-academy-on-primary);
+}
+
+.academy-app .academy-button-primary:hover:not(:disabled) {
+  background: var(--color-academy-primary-hover);
+  border-color: var(--color-academy-primary-hover);
+}
+
+.academy-app .academy-button-secondary {
+  border: 1px solid var(--color-academy-line);
+  background: var(--color-academy-surface);
+  color: var(--color-academy-ink);
+}
+
+.academy-app .academy-button-secondary:hover:not(:disabled) {
+  border-color: var(--color-academy-primary);
+  background: var(--color-academy-soft);
+}
+
+.academy-app .academy-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  background: var(--color-academy-soft);
+  color: var(--color-academy-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.academy-app :is(button, a, input, textarea, select):focus-visible {
+  outline: 3px solid var(--color-academy-primary);
+  outline-offset: 3px;
+}
+
+.academy-app :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--color-academy-primary);
+}
+
+.academy-app :is(button, a) {
+  touch-action: manipulation;
+}
+
+.academy-app :is(.academy-staff-header, .academy-staff-nav) {
+  background: var(--color-academy-surface);
+  border-color: var(--color-academy-line);
+  color: var(--color-academy-ink);
+}
+
+.academy-app .academy-focus-class {
+  background: linear-gradient(130deg, var(--color-academy-surface), var(--color-academy-primary-soft));
+  color: var(--color-academy-ink);
+  border: 1px solid var(--color-academy-line);
+  border-radius: 1.125rem;
+}
+
+.academy-app .academy-driver-stop {
+  border-radius: 0.9375rem;
+  color: var(--color-academy-ink);
+}
+
+.academy-app .academy-driver-stop:not(.bg-amber-50):not(.bg-green-50):not(.bg-blue-50) {
+  background: var(--color-academy-surface);
+  border-color: var(--color-academy-line);
+}
+
+.academy-app .academy-driver-rider:not(.bg-red-50) {
+  background: var(--color-academy-soft);
+  color: var(--color-academy-ink);
+}
+
+@media (max-width: 420px) {
+  .academy-app .academy-driver-rider-main { flex-wrap: wrap; }
+  .academy-app .academy-driver-rider-main > .academy-driver-rider-info { flex-basis: 100%; }
+}
+
+@media (max-width: 600px) {
+  .academy-app .academy-hero { padding: 1rem; border-radius: 1rem; }
+  .academy-app .academy-panel { border-radius: 0.9375rem; }
+  .academy-app :is(.academy-button-primary, .academy-button-secondary) { min-height: 44px; }
+  .academy-app :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { font-size: 1rem; }
+}

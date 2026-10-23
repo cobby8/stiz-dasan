@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import ShopProductFrame from "./ShopProductFrame";
 
 export const metadata: Metadata = {
@@ -13,5 +14,5 @@ export default async function ShopProductPage({
 }) {
   const { productNo } = await params;
 
-  return <ShopProductFrame productNo={productNo} />;
+  return <PublicSiteTheme><ShopProductFrame productNo={productNo} /></PublicSiteTheme>;
 }

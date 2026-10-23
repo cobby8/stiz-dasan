@@ -86,8 +86,8 @@ export default function KakaoPolicyClient(props: {
 
       {!props.schemaReady && (
         <section role="alert" className="rounded-2xl bg-amber-50 p-5 text-amber-950">
-          <b>DB 준비가 필요합니다.</b>
-          <p className="mt-2 text-sm">migration 20261009120000_add_kakao_policy_qa 적용 전에는 이 화면을 쓸 수 없고, 챗봇은 기존 동작 그대로입니다.</p>
+          <b>상담 안내 설정을 준비 중입니다.</b>
+          <p className="mt-2 text-sm">설정 준비가 끝나면 이용할 수 있습니다. 챗봇은 기존 안내를 계속 사용합니다.</p>
         </section>
       )}
 

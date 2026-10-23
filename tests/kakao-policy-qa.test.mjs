@@ -431,7 +431,7 @@ test("Gemini 호출은 공용 모델(gemini-2.5-flash)·thinking 끔, 기록은 
   assert.match(retention, /console\.error\(/);
 });
 
-test("관리자 화면: 원장 전용 + 관리자 메뉴에서 도달할 수 있다", () => {
+test("관리자 화면: 원장 전용 + 관리자 메뉴에서 도달할 수 있다", async () => {
   const page = readFileSync("src/app/admin/kakao-policy/page.tsx", "utf8");
   const actions = readFileSync("src/app/actions/kakao-policy-qa-admin.ts", "utf8");
   assert.match(page, /await requireAdmin\(\)/);
@@ -439,9 +439,10 @@ test("관리자 화면: 원장 전용 + 관리자 메뉴에서 도달할 수 있
   // 저장은 덮어쓰지 않고 새 버전을 추가한다
   assert.match(actions, /INSERT INTO "KakaoPolicyDocumentVersion"/);
   assert.doesNotMatch(actions, /UPDATE "KakaoPolicyDocumentVersion"|DELETE FROM "KakaoPolicyDocumentVersion"/);
-  const shell = readFileSync("src/app/admin/AdminShellClient.tsx", "utf8");
+  const { renderAdminNavigation } = await import('./helpers/admin-navigation-render.mjs');
+  const shell = renderAdminNavigation('/admin/kakao-policy');
   assert.match(shell, /href="\/admin\/kakao-policy"/);
-  assert.ok((shell.match(/"\/admin\/kakao-policy"/g) || []).length >= 3, "NavItem + OPS_PATHS + MORE_OPS_PATHS");
+  assert.match(shell, /href="\/admin\/kakao-policy"[^>]*aria-current="page"/);
 });
 
 // ── 연결된 학부모 흐름을 가짜 DB 로 실제 실행 ────────────────────────────

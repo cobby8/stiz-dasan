@@ -23,8 +23,9 @@ test("래퍼는 throw 대신 { ok } / { ok:false, message } 를 돌려준다", (
   assert.ok(runner.indexOf("await requireAdmin()") < runner.indexOf("try {"));
   assert.match(runner, /return \{ ok: true \}/);
   assert.match(runner, /return \{ ok: false, message \}/);
-  // 한국어 안내만 그대로, 내부 영문 오류는 일반 한국어 안내로
-  assert.match(runner, /\/\[가-힣\]\/\.test\(raw\)/);
+  // 알려진 업무 안내만 보존하고, 한국어가 섞인 내부 오류도 공통 안전 안내로 바꾼다.
+  assert.match(runner, /userFacingError\(error,/);
+  assert.doesNotMatch(runner, /\/\[가-힣\]\/\.test\(raw\)/);
   assert.match(wrapper, /recordOperationsSheetManualCheck\(commandId\)/);
 });
 

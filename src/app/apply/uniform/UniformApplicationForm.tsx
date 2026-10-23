@@ -194,8 +194,8 @@ export default function UniformApplicationForm() {
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-      <div className="border-b border-gray-100 bg-gray-50 px-6 py-5 dark:border-gray-700 dark:bg-gray-900">
+    <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
+      <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
         <h2 className="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
           <FontFreeIcon name="checkroom" size={22} className="text-brand-orange-500 dark:text-brand-neon-lime" />
           유니폼 추가주문 정보
@@ -205,7 +205,7 @@ export default function UniformApplicationForm() {
         </p>
       </div>
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-5 p-4 sm:p-6">
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
             <FontFreeIcon name="error" size={18} />

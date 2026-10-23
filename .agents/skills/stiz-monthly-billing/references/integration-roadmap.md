@@ -2,14 +2,14 @@
 
 ## Current transition state
 
-Google Sheets remains the temporary operational and policy ledger, Rallyz remains the external enrollment and invoice channel, and `stiz-dasan.kr` is the integration and audit layer. Do not declare the website the sole source of truth until the user explicitly approves that transition.
+The user designated `stiz-dasan.kr` as the operating source of truth and stopped creating the October 2026 Sheet ledger. Google Sheets is a historical source only for maintained periods. Rallyz remains the external enrollment and invoice-delivery channel until migration is verified. Do not require a new Sheet month or treat a site record as proof of external issuance or delivery.
 
 ## Target workflow
 
 - Parent or staff requests enter one structured website audit ledger.
 - The system resolves stable student identity and produces a three-system dry-run.
 - An operator reviews ambiguous facts and approves the exact change set.
-- Supported adapters apply Sheet, Rallyz, and website changes idempotently.
+- Supported adapters apply website and Rallyz changes idempotently, and Sheet changes only for maintained historical periods.
 - Billing and notifications remain separate approval-gated actions.
 - Post-write reconciliation proves the final state or records an explicit partial failure.
 

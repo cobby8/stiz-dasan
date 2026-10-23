@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { calcExpiry, makeSourceKey } from "./credit-rules";
+import { assertRegularMakeupAllowed, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 
 // 보강권 발급·회수 — 출결이 바뀔 때 호출된다.
 //
@@ -56,7 +57,12 @@ export async function issueMakeupCredit(input: {
   const absenceAt = ymdToUtc(input.absenceYmd);
   const expiresAt = calcExpiry(absenceAt);
 
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+  const rows = await prisma.$transaction(async tx => {
+    await lockCompensation(tx);
+    if (input.sourceType === "REGULAR" && input.originClassId) {
+      await assertRegularMakeupAllowed(tx, { studentId: input.studentId, classId: input.originClassId, dateYmd: input.absenceYmd });
+    }
+    return tx.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "MakeupCredit"
        ("studentId","sourceType","sourceKey","absenceDate","expiresAt",
         "originClassId","originItemId","originSessionId","status","note")
@@ -67,7 +73,8 @@ export async function issueMakeupCredit(input: {
     absenceAt.toISOString(), expiresAt.toISOString(),
     input.originClassId ?? null, input.originItemId ?? null, input.originSessionId ?? null,
     input.note ?? null,
-  );
+    );
+  });
 
   if (rows[0]) return { issued: true, creditId: rows[0].id };
   return { issued: false, reason: "이미 발급된 결석입니다." };
@@ -158,14 +165,14 @@ export async function syncCreditForMakeupSession(input: {
     const n = await prisma.$executeRawUnsafe(
       `UPDATE "MakeupCredit"
           SET status='AVAILABLE', "makeupSessionId"=NULL, "updatedAt"=now()
-        WHERE "makeupSessionId" = $1`,
+        WHERE "makeupSessionId" = $1 AND status <> 'REVOKED'`,
       input.makeupSessionId,
     );
     return { action: Number(n) > 0 ? "restored" : "none" };
   }
 
   const n = await prisma.$executeRawUnsafe(
-    `UPDATE "MakeupCredit" SET status=$2, "updatedAt"=now() WHERE "makeupSessionId" = $1`,
+    `UPDATE "MakeupCredit" SET status=$2, "updatedAt"=now() WHERE "makeupSessionId" = $1 AND status <> 'REVOKED'`,
     input.makeupSessionId, nextStatus,
   );
   return { action: Number(n) > 0 ? nextStatus : "none" };

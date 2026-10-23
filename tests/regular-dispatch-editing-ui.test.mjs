@@ -48,7 +48,7 @@ test("배차 월을 바꾸면 두 방향 모두 새 달 노선을 다시 불러�
   assert.equal((regularClient.match(/refreshKey=\{monthRefreshKey\}/g) ?? []).length, 2);
   assert.doesNotMatch(regularClient, /refreshKey=\{0\}/);
   assert.match(routeSection, /setRouteReady\(false\);\s*\n\s*void switchTo\(date\)/);
-  assert.match(routeSection, /const saveBlocked = regularEditing && !routeReady/);
+  assert.match(routeSection, /const saveBlocked = !routeReady \|\| loading \|\| rerouting \|\| recalcing \|\| pendingReroute/);
   assert.match(routeSection, /if \(saving \|\| !sug\.date \|\| saveBlocked\) return;\n\s*\/\/ 정규 모드: 정원 초과/);
   assert.match(routeSection, /disabled=\{saving \|\| saveBlocked \|\| sug\.vehicles\.length === 0\}/);
 });
@@ -57,7 +57,7 @@ test("저장 요청 중에 생긴 편집은 「저장 안 됨」을 지우지 �
   assert.match(routeSection, /function markDirty\(\) \{ editSeq\.current \+= 1; setDirty\(true\); \}/);
   assert.match(routeSection, /const seqAtStart = editSeq\.current;/);
   assert.match(routeSection, /if \(editSeq\.current === seqAtStart\) setDirty\(false\);/);
-  assert.equal((routeSection.match(/setDirty\(true\)/g) ?? []).length, 1); // markDirty 본문 1곳뿐 — 편집 표시는 반드시 markDirty 로
+  assert.match(routeSection, /verified\?\.saved\?\.savedAt !== j.savedAt/); // 응답뿐 아니라 재조회 결과까지 일치해야 저장 완료
 });
 
 test("손편집 계산은 setSug updater 안에서, 다른 수업시간 회차 이동은 확인을 받는다", () => {

@@ -1,9 +1,8 @@
 import { getDispatchForView } from "@/lib/seasonal/shuttle-optimize";
-import { getBoardingMap } from "@/lib/seasonal/shuttleRun";
 import { prisma } from "@/lib/prisma";
 // 정규 쪽 "그날 무엇을 띄울지"(확정 저장 노선 우선 · 없으면 셔틀 명단 폴백)는 이 게이트웨이 한곳에서만 만든다.
 import { getRegularDriverClasses } from "./regularDriverRoute";
-import { getRegularBoardingMap } from "./regularRun";
+import { readDriverBoarding } from "./driverStatusRead";
 import {
   buildUnifiedRun,
   type SeasonalSectionInput,
@@ -125,6 +124,7 @@ export function mergeBoardingMaps(input: {
 export type UnifiedDriverRun = {
   rows: UnifiedRow[];
   boarding: Record<string, BoardingStatus>;
+  boardingReliable: boolean;
   /** 관리자 지도에 표시되는 기사님 이름표(GPS 공유). 종전 화면과 같은 값을 유지한다. */
   driverLabel: string;
 };
@@ -132,15 +132,12 @@ export type UnifiedDriverRun = {
 /** 그날 운행 전체(특강+정규)를 시각순 한 줄 목록으로. */
 export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDriverRun> {
   // 정규는 셔틀 명단(DB)을 따로 읽는다. 정규 쪽이 실패해도 **매일 쓰이는 방학특강 화면이 같이 죽으면 안 되므로** 따로 감싼다.
-  const regularSafe = async (): Promise<{ classes: DriverClass[]; boarding: Record<string, BoardingStatus> }> => {
+  const regularSafe = async (): Promise<{ classes: DriverClass[] }> => {
     try {
-      const [classes, boarding] = await Promise.all([
-        getRegularDriverClasses(viewDate),
-        getRegularBoardingMap(viewDate),
-      ]);
-      return { classes, boarding };
+      const classes = await getRegularDriverClasses(viewDate);
+      return { classes };
     } catch {
-      return { classes: [], boarding: {} };
+      return { classes: [] };
     }
   };
 
@@ -149,12 +146,13 @@ export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDri
     regularSafe(),
   ]);
 
-  const [pickup, dropoff] = sections.length > 0
-    ? await Promise.all([
-      getBoardingMap(viewDate, "PICKUP"),
-      getBoardingMap(viewDate, "DROPOFF"),
-    ])
-    : [{}, {}];
+  const reads = await Promise.allSettled([
+    readDriverBoarding(viewDate, "PICKUP"),
+    readDriverBoarding(viewDate, "DROPOFF"),
+    readDriverBoarding(viewDate, "REGULAR"),
+  ]);
+  const boardingReliable = reads.every((read) => read.status === "fulfilled");
+  const [pickup, dropoff, regularBoarding] = reads.map((read) => read.status === "fulfilled" ? read.value.boarding : {});
 
   // 이름표는 종전 화면 규칙 그대로: 특강 차량명 → 없으면 정규 명단 유무에 따라 기본 문구.
   const driverLabel = sections[0]?.vehicles?.[0]?.vehicleName
@@ -162,7 +160,8 @@ export async function loadUnifiedDriverRun(viewDate: string): Promise<UnifiedDri
 
   return {
     rows: buildUnifiedRun({ seasonal: sections, regular: regular.classes }),
-    boarding: mergeBoardingMaps({ pickup, dropoff, regular: regular.boarding }),
+    boarding: mergeBoardingMaps({ pickup, dropoff, regular: regularBoarding }),
+    boardingReliable,
     driverLabel,
   };
 }

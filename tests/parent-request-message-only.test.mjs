@@ -27,9 +27,9 @@ test("결석은 메시지가 아니라 결석 기능으로 보낸다", () => {
   assert.match(client, /\/mypage\/seasonal/);
 });
 
-test("셔틀 변경은 아직 전용 기능이 없어 메시지로 받는다", () => {
-  // 전용 기능이 생기면 이 줄을 지우고 그 화면으로 보내면 된다.
-  assert.match(client, /setReqContent\(\(prev\) => prev \|\| "셔틀 변경 요청: "\)/);
+test("셔틀 변경은 전용 처리 화면으로 보내고 자유 메시지와 구분한다", () => {
+  assert.match(client, /\/mypage\/shuttle/);
+  assert.doesNotMatch(client, /setReqContent\(\(prev\) => prev \|\| "셔틀 변경 요청: "\)/);
 });
 
 test("서버는 기존 유형을 계속 받아들인다", () => {

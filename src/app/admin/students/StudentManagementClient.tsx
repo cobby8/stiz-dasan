@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import CompactListFilters from "@/components/academy/CompactListFilters";
 
 const ExcelUploadModal = dynamic(() => import("./ExcelUploadModal"), {
     ssr: false,
@@ -584,7 +585,7 @@ function CurrentRosterReportBox({ report }: { report: CurrentRosterReport }) {
 
                 {report.duplicateStudentGroups.length > 0 && (
                     <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-300/10 dark:text-amber-100">
-                        <p className="font-bold">같은 보호자 연락처의 중복 Student 의심</p>
+                        <p className="font-bold">같은 보호자 연락처의 중복 원생 의심</p>
                         <div className="mt-2 space-y-1">
                             {report.duplicateStudentGroups.map((group) => (
                                 <p key={`${group.studentName}-${group.parentPhone}`}>
@@ -1501,7 +1502,7 @@ export default function StudentManagementClient({
         }
     }
 
-    // 상태별 학생 수 집계 (요약 카드용)
+    // 상태별 학생 수 집계 (상단 요약용)
     // 최신 enrollment 기준으로 학생의 대표 상태를 판단
     const loadedStatusCounts = useMemo(() => {
         let active = 0;
@@ -1582,7 +1583,14 @@ export default function StudentManagementClient({
     );
     const hasMoreStudents = visibleStudents.length < filtered.length;
     const hasAnyFilter = Boolean(search.trim() || filterClass || filterGrade || filterSchool || filterStatus);
-    const hasCustomFilter = Boolean(search.trim() || filterClass || filterGrade || filterSchool || filterStatus !== "ACTIVE");
+    const activeFilterCount = [Boolean(filterClass), Boolean(filterGrade), Boolean(filterSchool), filterStatus !== "ACTIVE"].filter(Boolean).length;
+    const filterSummary = [
+        filterStatus ? getStatusLabel(filterStatus === "NONE" ? null : filterStatus) : "전체 상태",
+        filterClass && (classes.find((item) => item.id === filterClass)?.name ?? "선택한 반"),
+        filterGrade,
+        filterSchool,
+        search.trim() && `검색: ${search.trim()}`,
+    ].filter(Boolean).join(" · ");
     const emptyStudentsMessage = !allStudentsLoaded && hasAnyFilter
         ? "전체 원생 목록을 동기화하는 중입니다. 잠시 후 자동으로 결과가 갱신됩니다."
         : hasAnyFilter
@@ -1592,14 +1600,6 @@ export default function StudentManagementClient({
     if (dataLoading && students.length === 0) {
         return (
             <div className="max-w-5xl mx-auto space-y-6">
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
-                    {Array.from({ length: 5 }).map((_, index) => (
-                        <div
-                            key={index}
-                            className="h-20 rounded-xl border border-gray-200 bg-gray-100 animate-pulse dark:border-gray-700 dark:bg-gray-800"
-                        />
-                    ))}
-                </div>
                 <div className="flex items-center justify-between">
                     <div className="space-y-2">
                         <div className="h-7 w-36 rounded bg-gray-200 animate-pulse dark:bg-gray-700" />
@@ -1637,6 +1637,136 @@ export default function StudentManagementClient({
 
     return (
         <div className="max-w-5xl mx-auto">
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
+                <p className="text-xs text-[var(--color-academy-muted)]">
+                    {sheetImportSummary?.studentStatusCounts ? "시트 기준" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
+                    {" · "}활성 {statusCounts.active} · 휴원 {statusCounts.paused} · 퇴원 {statusCounts.withdrawn} · 미배정 {statusCounts.noEnrollment}
+                </p>
+            </div>
+
+            <CompactListFilters
+                activeCount={activeFilterCount}
+                summary={filterSummary}
+                resultCount={`${filtered.length}명${!allStudentsLoaded ? " · 전체 동기화 중" : ""}`}
+                onReset={() => {
+                    setFilterClass("");
+                    setFilterGrade("");
+                    setFilterSchool("");
+                    setFilterStatus("ACTIVE");
+                    requestFullStudentLoad();
+                }}
+                search={
+                    <input
+                        type="search"
+                        aria-label="원생 검색"
+                        placeholder="이름·학부모·연락처·학교 검색"
+                        value={search}
+                        onChange={(e) => {
+                            setSearch(e.target.value);
+                            if (e.target.value.trim()) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    />
+                }
+                actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!allStudentsLoaded && (
+                            <button
+                                type="button"
+                                onClick={() => void loadData({ background: true })}
+                                disabled={backgroundLoading}
+                                className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                            >
+                                {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
+                            </button>
+                        )}
+                        {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
+                        <button
+                            onClick={() => setShowExcelUpload(true)}
+                            className="min-h-11 bg-emerald-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
+                        >
+                            엑셀 업로드
+                        </button>
+                        {/* 기존 1명씩 수동 등록 버튼 */}
+                        <button
+                            onClick={() => { resetForm(); setShowForm(true); }}
+                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
+                        >
+                            + 원생 등록
+                        </button>
+                    </div>
+                }
+            >
+                <div className="col-span-full grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* 반(Class) 필터 */}
+                    <select
+                        aria-label="반"
+                        value={filterClass}
+                        onChange={(e) => {
+                            setFilterClass(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 반</option>
+                        {classes.map((c) => (
+                            <option key={c.id} value={c.id}>
+                                {c.name} ({DAY_LABELS[c.dayOfWeek] || c.dayOfWeek} {c.startTime})
+                            </option>
+                        ))}
+                    </select>
+                    {/* 학년 필터 */}
+                    <select
+                        aria-label="학년"
+                        value={filterGrade}
+                        onChange={(e) => {
+                            setFilterGrade(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 학년</option>
+                        {gradeOptions.map((g) => (
+                            <option key={g} value={g}>{g}</option>
+                        ))}
+                    </select>
+                    {/* 학교 필터 */}
+                    <select
+                        aria-label="학교"
+                        value={filterSchool}
+                        onChange={(e) => {
+                            setFilterSchool(e.target.value);
+                            if (e.target.value) requestFullStudentLoad();
+                        }}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 학교</option>
+                        {schoolOptions.map((sc) => (
+                            <option key={sc} value={sc}>{sc}</option>
+                        ))}
+                    </select>
+                    {/* 수강 상태 필터 */}
+                    <select
+                        aria-label="수강 상태"
+                        value={filterStatus}
+                        onChange={(e) => applyStatusFilter(e.target.value)}
+                        className="min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                    >
+                        <option value="">전체 상태</option>
+                        <option value="ACTIVE">활성</option>
+                        <option value="PAUSED">휴원</option>
+                        <option value="WITHDRAWN">퇴원</option>
+                        <option value="NONE">미배정</option>
+                    </select>
+
+                </div>
+            </CompactListFilters>
+
+            {/* Form */}
+            <details className="mt-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-muted)]">원생 자료 점검</summary>
+                <div className="pt-2">
             {!sheetImportSummary && (
                 <div className="mb-5 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -1843,158 +1973,9 @@ export default function StudentManagementClient({
                 </div>
             )}
 
-            {/* 상태별 요약 카드 - 클릭하면 해당 필터 적용 */}
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
-                {[
-                    { label: "활성", value: "ACTIVE", count: statusCounts.active, color: "bg-emerald-50 border-emerald-200 text-emerald-700", icon: "person" },
-                    { label: "휴원", value: "PAUSED", count: statusCounts.paused, color: "bg-amber-50 border-amber-200 text-amber-700", icon: "pause_circle" },
-                    { label: "퇴원", value: "WITHDRAWN", count: statusCounts.withdrawn, color: "bg-red-50 border-red-200 text-red-700", icon: "person_off" },
-                    { label: "미배정", value: "NONE", count: statusCounts.noEnrollment, color: "bg-purple-50 border-purple-200 text-purple-700", icon: "help_outline" },
-                    { label: "전체", value: "", count: statusCounts.total, color: "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200", icon: "groups" },
-                ].map((card) => (
-                    <button
-                        key={card.label}
-                        onClick={() => applyStatusFilter(card.value)}
-                        className={`rounded-xl border p-3 text-left transition hover:shadow-sm ${card.color} ${
-                            filterStatus === card.value ? "ring-2 ring-brand-orange-500 dark:focus:ring-brand-neon-lime shadow-sm" : ""
-                        }`}
-                    >
-                        <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-lg">{card.icon}</span>
-                            <span className="text-xs font-medium opacity-70">{card.label}</span>
-                        </div>
-                        <p className="text-2xl font-extrabold mt-1">{card.count}명</p>
-                    </button>
-                ))}
-            </div>
-
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                        {filterStatus === "ACTIVE" ? "수강 중인" : filterStatus === "PAUSED" ? "휴원 중인" : filterStatus === "WITHDRAWN" ? "퇴원한" : filterStatus === "NONE" ? "미배정" : "전체"} 표시 목록: {filtered.length}명
-                        {!allStudentsLoaded && " (전체 동기화 중)"}
-                    </p>
                 </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                    {!allStudentsLoaded && (
-                        <button
-                            type="button"
-                            onClick={() => void loadData({ background: true })}
-                            disabled={backgroundLoading}
-                            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                            {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
-                        </button>
-                    )}
-                    {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
-                    <button
-                        onClick={() => setShowExcelUpload(true)}
-                        className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
-                    >
-                        엑셀 업로드
-                    </button>
-                    {/* 기존 1명씩 수동 등록 버튼 */}
-                    <button
-                        onClick={() => { resetForm(); setShowForm(true); }}
-                        className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
-                    >
-                        + 원생 등록
-                    </button>
-                </div>
-            </div>
+            </details>
 
-            {/* Search */}
-            <div className="mb-4">
-                <input
-                    type="text"
-                    placeholder="이름, 학부모명, 전화번호, 학교명으로 검색..."
-                    value={search}
-                    onChange={(e) => {
-                        setSearch(e.target.value);
-                        if (e.target.value.trim()) requestFullStudentLoad();
-                    }}
-                    className="w-full max-w-md border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                />
-            </div>
-
-            {/* 필터 드롭다운: 반/학년/학교/상태를 가로 1줄로 배치 */}
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-                {/* 반(Class) 필터 */}
-                <select
-                    value={filterClass}
-                    onChange={(e) => {
-                        setFilterClass(e.target.value);
-                        if (e.target.value) requestFullStudentLoad();
-                    }}
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                >
-                    <option value="">전체 반</option>
-                    {classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                            {c.name} ({DAY_LABELS[c.dayOfWeek] || c.dayOfWeek} {c.startTime})
-                        </option>
-                    ))}
-                </select>
-                {/* 학년 필터 */}
-                <select
-                    value={filterGrade}
-                    onChange={(e) => {
-                        setFilterGrade(e.target.value);
-                        if (e.target.value) requestFullStudentLoad();
-                    }}
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                >
-                    <option value="">전체 학년</option>
-                    {gradeOptions.map((g) => (
-                        <option key={g} value={g}>{g}</option>
-                    ))}
-                </select>
-                {/* 학교 필터 */}
-                <select
-                    value={filterSchool}
-                    onChange={(e) => {
-                        setFilterSchool(e.target.value);
-                        if (e.target.value) requestFullStudentLoad();
-                    }}
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                >
-                    <option value="">전체 학교</option>
-                    {schoolOptions.map((sc) => (
-                        <option key={sc} value={sc}>{sc}</option>
-                    ))}
-                </select>
-                {/* 수강 상태 필터 */}
-                <select
-                    value={filterStatus}
-                    onChange={(e) => applyStatusFilter(e.target.value)}
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                >
-                    <option value="">전체 상태</option>
-                    <option value="ACTIVE">활성</option>
-                    <option value="PAUSED">휴원</option>
-                    <option value="WITHDRAWN">퇴원</option>
-                    <option value="NONE">미배정</option>
-                </select>
-                {/* 초기화 버튼: 필터가 하나라도 설정돼 있으면 표시 */}
-                {hasCustomFilter && (
-                    <button
-                        onClick={() => {
-                            setSearch("");
-                            setFilterClass("");
-                            setFilterGrade("");
-                            setFilterSchool("");
-                            setFilterStatus("ACTIVE");
-                            requestFullStudentLoad();
-                        }}
-                        className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-200 underline"
-                    >
-                        초기화
-                    </button>
-                )}
-            </div>
-
-            {/* Form */}
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">{editingId ? "원생 수정" : "새 원생 등록"}</h3>
@@ -2122,7 +2103,7 @@ export default function StudentManagementClient({
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
+                        <table className="min-w-full divide-y divide-gray-200 max-sm:!table-auto max-sm:[&_th]:whitespace-nowrap">
                             <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>
                                     <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">이름</th>
@@ -2139,7 +2120,7 @@ export default function StudentManagementClient({
                                 {visibleStudents.map((s) => (
                                     <tr key={s.id} className="hover:bg-gray-50 dark:bg-gray-900 transition-colors">
                                         {/* 이름: 항상 표시, 클릭하면 상세 페이지로 이동 */}
-                                        <td className="px-4 py-2">
+                                        <td className="whitespace-nowrap px-4 py-2">
                                             <Link
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
@@ -2149,7 +2130,7 @@ export default function StudentManagementClient({
                                             </Link>
                                         </td>
                                         {/* 학년: 항상 표시, shortenGrade로 "초4" 형태 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
+                                        <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
                                             {shortenGrade(s.grade)}
                                         </td>
                                         {/* 학교: 모바일 숨김 */}

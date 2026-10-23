@@ -36,7 +36,7 @@ function instant(value: Date | undefined | null) {
 export function registrationReadiness(input: RegistrationEvidence) {
   const siteReady = Boolean(input.studentId) && input.assignedClassIds.length > 0
     && input.assignedClassIds.every((id) => input.activeClassIds.includes(id));
-  const checks: RegistrationCheck[] = [{ key: "site", label: "사이트 반 배정", status: siteReady ? "VERIFIED" : "CHECK_REQUIRED", detail: siteReady ? "학생 ID와 배정된 모든 반의 ACTIVE 수강 확인" : "학생 연결과 배정 반의 현재 수강 상태 확인 필요" }];
+  const checks: RegistrationCheck[] = [{ key: "site", label: "사이트 반 배정", status: siteReady ? "VERIFIED" : "CHECK_REQUIRED", detail: siteReady ? "원생과 배정된 모든 반의 현재 수강 확인" : "학생 연결과 배정 반의 현재 수강 상태 확인 필요" }];
   const now = input.now ?? Date.now();
   const evidence = input.commands.map(command => {
     const after = object(command.afterJson);

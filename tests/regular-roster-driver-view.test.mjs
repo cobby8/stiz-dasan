@@ -68,8 +68,12 @@ test("순서 저장 결과를 기사님 화면 함수로 다시 그리면 바뀐
 
 test("정규 배차: 기사님 화면이 바뀐다는 배너와 첫 저장 확인창(정규 모드 안에서만)", () => {
   const dispatchClient = read("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx");
-  assert.match(dispatchClient, /지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다/);
+  assert.match(dispatchClient, /저장한 노선은 선택한 월·요일·방향의 기사님 화면에 반영됩니다/);
+  assert.match(dispatchClient, /저장 전 변경은 기사님에게 보이지 않습니다/);
   const routeSection = read("src/components/seasonal/RouteSection.tsx");
-  // 확인창은 if (regularEditing) { ... } 블록 안, 저장본이 없을 때만.
-  assert.match(routeSection, /if \(regularEditing\) \{[\s\S]{0,600}if \(!loadedFromSaved && !window\.confirm\("지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다/);
+  // 현재 노선과 저장 기준 시각이 모두 없을 때만 첫 저장 영향을 확인한다.
+  // 기존 저장본에서 자동 제안을 새로 만든 경우는 첫 저장으로 오인하지 않는다.
+  const saveBody = routeSection.slice(routeSection.indexOf("async function saveRoute()"), routeSection.indexOf("function setDriver("));
+  assert.match(saveBody, /if \(regularEditing\) \{[\s\S]*if \(!loadedFromSaved && !savedAt && !window\.confirm\("지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다/);
+  assert.match(saveBody, /여기서 저장하면 이 요일·방향의 기사님 화면이 이 노선으로 바뀝니다/);
 });

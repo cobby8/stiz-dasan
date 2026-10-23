@@ -152,6 +152,14 @@ function makeDb({ credits = null, students = null } = {}) {
         booked: db.sessions.filter((s) => s.makeupClassId === c.id && s.status === "BOOKED").length,
       }));
     }
+    // 결석 보상(이월) 가드 — main 의 absence-compensation-guard 를 진짜로 올린다. db.carry 면 이월 정산된 결석
+    if (/to_regclass\('public\."BillingAbsenceResolution"'\)/.test(sql)) return [{ found: db.carry ? "BillingAbsenceResolution" : null }];
+    if (/JOIN "BillingAbsenceResolution" r/.test(sql)) return db.carry ? [{ id: "absence-1" }] : [];
+    // 취소: 같은 세션에 묶인 RESERVED 보강권을 보호자 조건으로 잠근다
+    if (/SELECT id FROM "MakeupCredit" WHERE id=\$1 AND status='RESERVED'/.test(sql)) {
+      const row = credit(args[0]);
+      return row && row.status === "RESERVED" && row.makeupSessionId === args[1] && owns(row, args[2]) ? [{ id: row.id }] : [];
+    }
     if (/INSERT INTO "MakeupSession"/.test(sql)) {
       const row = { id: `ms-${++db.seq}`, studentId: args[0], originalClassId: args[1], makeupClassId: args[3], makeupDate: new Date(args[4]), status: "BOOKED" };
       db.sessions.push(row);
@@ -186,9 +194,11 @@ function makeDb({ credits = null, students = null } = {}) {
       if (args[1]) row.structuredJson = JSON.parse(args[1]);
       return 1;
     }
+    if (/pg_advisory_xact_lock/.test(sql)) return 1;
     if (/UPDATE "MakeupCredit" SET status='RESERVED'/.test(sql)) {
       const row = credit(args[0]);
-      if (!row || row.status !== "AVAILABLE") return 0;
+      // main: 선점 UPDATE 에도 보호자 조건(EXISTS … "parentId"=$2)이 붙었다
+      if (!row || row.status !== "AVAILABLE" || (args.length > 1 && !owns(row, args[1]))) return 0;
       row.status = "RESERVED"; return 1;
     }
     if (/UPDATE "MakeupCredit" SET "makeupSessionId"=\$2/.test(sql)) { credit(args[0]).makeupSessionId = args[1]; return 1; }
@@ -353,6 +363,19 @@ test("보강권 경합: 확인 사이에 같은 보강권이 다른 곳(웹)에�
   const res = await say("보강 신청 확정");
   assert.match(textOf(res), /이 보강권은 지금 사용할 수 없어요/);
   assert.equal(db.sessions.length, 0);
+});
+
+test("이월로 정산된 결석의 보강권은 카카오에서도 웹과 같이 예약이 거절된다", async () => {
+  const db = makeDb();
+  await say("보강 신청");
+  await say("보강권 1번");
+  await say("보강 수업 1번");
+  db.carry = true;
+  const res = await say("보강 신청 확정");
+  assert.match(textOf(res), /^보강 신청을 못 했어요: 이월로 정산한 결석입니다/);
+  assert.equal(db.sessions.length, 0);
+  assert.equal(db.credits.find((row) => row.id === "mc1").status, "AVAILABLE");
+  assert.equal(db.alerts.length, 0);
 });
 
 test("IDOR: 대화 상태에 다른 가정의 보강권 id 를 넣어도 예약되지 않는다", async () => {

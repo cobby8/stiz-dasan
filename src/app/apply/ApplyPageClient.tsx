@@ -6,7 +6,6 @@ import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import SectionLayout from "@/components/ui/SectionLayout";
-import FontFreeIcon from "@/components/ui/FontFreeIcon";
 
 // FAQ 데이터 타입 (DB에서 가져온 FAQ 항목)
 type FaqItem = { id: string; question: string; answer: string };
@@ -120,11 +119,11 @@ export default function ApplyPageClient({
     return (
         <>
             {/* 체험수업 / 수강신청 카드 섹션 */}
-            <SectionLayout label="APPLY NOW" title="신청하기" description="체험수업 또는 수강신청을 선택하세요" bgColor="section">
+            <SectionLayout className="public-content-section" bgColor="section">
                 <div className="grid md:grid-cols-2 gap-6 max-w-4xl mx-auto">
                     {/* 체험수업 카드 — 앵커 id="trial"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll>
-                        <Card id="trial" variant="default" className="overflow-hidden !p-0 h-full">
+                        <Card id="trial" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 네이비 배경 */}
                             <div className="bg-brand-navy-900 px-6 py-5">
                                 <div className="flex items-center gap-2 mb-2">
@@ -173,7 +172,7 @@ export default function ApplyPageClient({
 
                     {/* 수강신청 카드 — 앵커 id="enroll"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll delay={150}>
-                        <Card id="enroll" variant="default" className="overflow-hidden !p-0 h-full">
+                        <Card id="enroll" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 오렌지 배경으로 차별화 */}
                             <div className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 px-6 py-5">
                                 <div className="flex items-center gap-2 mb-2">
@@ -204,37 +203,8 @@ export default function ApplyPageClient({
                 </div>
             </SectionLayout>
 
-            <SectionLayout label="UNIFORM" title="유니폼 신청" description="우리 학원 유니폼을 신청하세요" bgColor="white">
-                <div className="max-w-md mx-auto">
-                    <AnimateOnScroll>
-                        <Card id="uniform" variant="default" className="overflow-hidden !p-0 h-full">
-                            <div className="bg-emerald-600 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="inline-flex items-center rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">Uniform</span>
-                                </div>
-                                <h3 className="text-xl font-black text-white flex items-center gap-2">
-                                    <FontFreeIcon name="checkroom" size={24} />
-                                    유니폼 신청
-                                </h3>
-                            </div>
-                            <div className="px-6 py-6">
-                                <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
-                                    형제·자매 유니폼도 한 번에 접수할 수 있습니다. 금액은 접수 후 STIZ 본사 기준으로 안내됩니다.
-                                </p>
-                                <Link
-                                    href="/apply/uniform"
-                                    className="inline-flex items-center justify-center rounded-xl bg-brand-navy-900 px-6 py-3 text-base font-medium text-white transition-all duration-200 hover:scale-[1.02] hover:bg-brand-navy-800 active:scale-[0.98] focus:ring-2 focus:ring-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
-                                >
-                                    유니폼 신청하기
-                                </Link>
-                            </div>
-                        </Card>
-                    </AnimateOnScroll>
-                </div>
-            </SectionLayout>
-
             {/* FAQ 섹션 — 아코디언 형태의 자주 묻는 질문 */}
-            <SectionLayout id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
+            <SectionLayout className="public-content-section" id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
                 <AnimateOnScroll>
                     <Card variant="default" className="!p-0 max-w-3xl mx-auto">
                         <div className="px-6 py-2">

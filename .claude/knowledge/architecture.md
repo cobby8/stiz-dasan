@@ -78,4 +78,9 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: `src/lib/kakao-makeup-flow.ts` 가 `handleLinkedMessage` 에서 재확인 링크 바로 뒤·작성 중 접수 앞에 불린다(무관한 말이면 null). 상태는 스키마 변경 없이 `KakaoParentIntake`(kind MAKEUP, status `MAKEUP_FLOW`, structuredJson 에 단계·서버가 만든 목록)에 두고 `updatedAt` 30분이 지나면 무시한다. 끝나면 APPLIED, 그만두면 CANCELED. 학부모는 번호만 보내고(id 는 상태에서만 꺼냄), 단계 이동은 `"structuredJson"->>'step'` 조건 UPDATE 로 한 번만 진행된다. 예약·취소는 웹과 같은 `bookMakeup`/`cancelMakeupBooking` 을 직접 부르고, 그 직전에 보호자 소유·후보 유효를 다시 조회한다. 바로가기 문장은 모두 '보강'을 품어 상태가 만료돼도 처음부터 다시 시작된다. 단 메뉴 버튼 「결석·보강」은 MAKEUP 으로 분류되므로 반드시 제외해야 한다(제외하지 않으면 하위 메뉴가 사라진다). 챗봇에 import 를 늘렸으므로 테스트 2곳(connect-flow·policy-qa)의 손 치환 목록에 대역을 넣었다.
+
+### 2026-10-23 체험(TrialLead) ↔ 수강 신청서 연결은 판정 모듈 + 연결부 한 곳에서
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 연결 판정은 순수 모듈 `src/lib/enrollment/trialLeadMatch.ts`(`decideTrialLeadMatch` → AUTO/SUGGEST/NONE, 한글 음절 편집거리), DB 읽기·저장은 `src/lib/enrollment/trialLeadLinkService.ts` 한 곳(`linkTrialLeadToApplication` = 조건부 UPDATE 한 트랜잭션, 승인된 신청서면 체험 CONVERTED, ApplicationContactLog UPDATED 2줄, 문자 없음). 비교 시점 3곳: 신청 제출(`submitEnrollApplication`, accessCode 없을 때 AUTO 만), 체험 이름·번호 수정(`updateTrialLead` → `autoLinkApplicationsForTrialLead`), 관리자 신청 목록 후보+[연결](`getEnrollTrialLinkSuggestions`/`linkEnrollApplicationToTrialLead`). 새 연결 경로를 만들면 SQL 을 또 쓰지 말고 이 두 파일을 쓴다. 테스트 `tests/enrollment-trial-lead-match.test.mjs`.
 - **참조횟수**: 0

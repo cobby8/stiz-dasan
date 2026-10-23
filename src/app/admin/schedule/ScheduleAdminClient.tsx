@@ -304,7 +304,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 throw new Error(result.error || "동기화 실패");
             }
 
-            setSheetSyncMessage(`${result.synced ?? 0}개 수업을 DB에 동기화했습니다.`);
+            setSheetSyncMessage(`${result.synced ?? 0}개 수업을 시간표에 반영했습니다.`);
             await loadScheduleData();
         } catch (error: any) {
             setSheetError(error.message || "동기화 실패");
@@ -594,7 +594,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                         className={`bg-white border text-sm font-bold px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 dark:bg-gray-800 ${hasSheetUrl ? "border-green-300 text-green-800 hover:bg-green-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10"}`}
                     >
                         <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>link</span>
-                        {isDbScheduleSource ? "DB 시간표 원본" : `구글시트 연동${hasSheetUrl ? " " : " 설정"}`}
+                        {isDbScheduleSource ? "사이트 시간표" : `구글시트 연동${hasSheetUrl ? " " : " 설정"}`}
                         {hasSheetUrl && <span className="material-symbols-outlined text-green-600 dark:text-emerald-300" style={{ fontSize: "16px" }}>check_circle</span>}
                     </button>
                     )}
@@ -602,7 +602,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     {sheetRetired && isDbScheduleSource && (
                         <span className="bg-white border border-green-300 text-green-800 text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 dark:bg-gray-800 dark:border-emerald-500/40 dark:text-emerald-300">
                             <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>database</span>
-                            DB 시간표 원본
+                            사이트 시간표
                         </span>
                     )}
                 </div>

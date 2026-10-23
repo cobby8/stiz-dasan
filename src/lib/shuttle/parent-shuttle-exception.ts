@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { summarizeDeliveryStatus, type DeliveryStatusRow, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import {
   SHUTTLE_EXCEPTION_MESSAGE,
   validateShuttleException,
@@ -36,6 +37,7 @@ export type ShuttleExceptionRow = {
   kind: string;
   location: string | null;
   note: string | null;
+  notificationStatus?: DeliveryStatusSummary | null;
 };
 
 export type ShuttleExceptionOptions = {
@@ -49,7 +51,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
   const today = kstTodayYmd();
   const { addDays, MAX_DAYS_AHEAD } = await import("@/lib/shuttle/dayExceptionRules");
 
-  const children = await prisma.$queryRawUnsafe<any[]>(
+  const children = await prisma.$queryRawUnsafe<{ studentId: string; studentName: string }[]>(
     // 셔틀은 정규 수강생만 탄다. 지금 다니는 자녀만 보여준다.
     `SELECT DISTINCT s.id AS "studentId", s.name AS "studentName"
        FROM "Student" s
@@ -59,7 +61,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
     parentUserId,
   );
 
-  const upcoming = await prisma.$queryRawUnsafe<any[]>(
+  const upcoming = await prisma.$queryRawUnsafe<ShuttleExceptionRow[]>(
     `SELECT x.id, x."studentId", s.name AS "studentName",
             to_char(x."serviceDate",'YYYY-MM-DD') AS "serviceDate",
             x.direction, x.kind, x.location, x.note
@@ -75,7 +77,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
     today,
     maxDate: addDays(today, MAX_DAYS_AHEAD),
     children: children.map((row) => ({ studentId: row.studentId, studentName: row.studentName })),
-    upcoming: upcoming.map((row) => ({
+    upcoming: await Promise.all(upcoming.map(async (row) => ({
       id: row.id,
       studentId: row.studentId,
       studentName: row.studentName,
@@ -84,7 +86,8 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
       kind: row.kind,
       location: row.location ?? null,
       note: row.note ?? null,
-    })),
+      notificationStatus: await readShuttleNotificationStatus(row.id, "SUBMITTED", shuttleEventVersion(row)),
+    }))),
   };
 }
 
@@ -102,7 +105,7 @@ export async function submitShuttleException(parentUserId: string, input: Submit
   if (!studentId) return { ok: false as const, message: "자녀를 선택해 주세요." };
 
   // 가드1: 그 부모의 자녀이고 지금 다니는 학생인지 재검증.
-  const owned = await prisma.$queryRawUnsafe<any[]>(
+  const owned = await prisma.$queryRawUnsafe<{ id: string; name: string }[]>(
     `SELECT s.id, s.name
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
@@ -149,7 +152,8 @@ export async function submitShuttleException(parentUserId: string, input: Submit
     studentId, serviceDate, direction, kind, location, note, parentUserId,
   );
   if (!saved[0]) return { ok: false as const, message: "셔틀 변경을 저장하지 못했습니다." };
-  if (!saved[0].changed) return { ok: true as const, notification: null, noOp: true as const };
+  if (!saved[0].changed) return { ok: true as const, id: saved[0].id, notification: null, noOp: true as const,
+    notificationStatus: await readShuttleNotificationStatus(saved[0].id, "SUBMITTED", shuttleEventVersion({ direction, kind, location, note })) };
 
   const notification = await notifyAdminsOfShuttleException({
     studentName: owned[0].name,
@@ -159,12 +163,11 @@ export async function submitShuttleException(parentUserId: string, input: Submit
     kind,
     location,
     recordId: saved[0].id,
-    eventVersion: createHash("sha256")
-      .update(JSON.stringify({ direction, kind, location, note }))
-      .digest("hex"),
+    eventVersion: shuttleEventVersion({ direction, kind, location, note }),
   });
 
-  return { ok: true as const, notification };
+  return { ok: true as const, id: saved[0].id, notification,
+    notificationStatus: await readShuttleNotificationStatus(saved[0].id, "SUBMITTED", shuttleEventVersion({ direction, kind, location, note })) };
 }
 
 export async function cancelShuttleException(parentUserId: string, exceptionId: string) {
@@ -188,7 +191,12 @@ export async function cancelShuttleException(parentUserId: string, exceptionId: 
                   x.direction, x.kind, x.location`,
       parentUserId, id,
   );
-  if (canceled.length === 0) return { ok: false as const, message: "이미 취소된 신청입니다." };
+  if (canceled.length === 0) {
+    // 동일 취소 재요청은 실패가 아니다. 다른 부모의 기록 여부는 공개하지 않는다.
+    const existing = await getParentShuttleExceptionStatus(parentUserId, id);
+    if (existing?.canceled) return { ok: true as const, id, noOp: true as const, notification: null, notificationStatus: existing.notificationStatus };
+    return { ok: false as const, message: "취소할 신청을 찾을 수 없습니다." };
+  }
   const row = canceled[0];
   const notification = await notifyAdminsOfShuttleException({
     action: "CANCELED",
@@ -201,7 +209,39 @@ export async function cancelShuttleException(parentUserId: string, exceptionId: 
     recordId: row.id,
     eventVersion: "canceled",
   });
-  return { ok: true as const, notification };
+  return { ok: true as const, id, notification, notificationStatus: await readShuttleNotificationStatus(id, "CANCELED", "canceled") };
+}
+
+function shuttleEventVersion(input: { direction: string; kind: string; location: string | null; note: string | null }) {
+  return createHash("sha256").update(JSON.stringify({ direction: input.direction, kind: input.kind, location: input.location, note: input.note })).digest("hex");
+}
+
+async function readShuttleNotificationStatus(id: string, action: "SUBMITTED" | "CANCELED", version: string) {
+  try {
+    const rows = await prisma.$queryRawUnsafe<DeliveryStatusRow[]>(
+      `SELECT d."recipientUserId", d."studentId", d.channel, d.status, d."errorCode", u.role::text AS role
+       FROM "NotificationDelivery" d LEFT JOIN "User" u ON u.id=d."recipientUserId"
+       WHERE d."stableEventKey"=$1 AND d."audienceScope"='INTERNAL'`,
+      `shuttle-day-exception:${id}:${action}:${version}`,
+    );
+    return summarizeDeliveryStatus(rows);
+  } catch {
+    // 장부 조회 실패를 '기록 없음'으로 바꾸지 않는다. 저장된 신청은 그대로 유지한다.
+    return null;
+  }
+}
+
+/** GET 재확인도 반드시 부모 소유권을 SQL에서 검증한다. 수신자 ID는 응답에 포함하지 않는다. */
+export async function getParentShuttleExceptionStatus(parentUserId: string, id: string) {
+  const rows = await prisma.$queryRawUnsafe<(ShuttleExceptionRow & { canceled: boolean })[]>(
+    `SELECT x.id, x."studentId", s.name AS "studentName", to_char(x."serviceDate",'YYYY-MM-DD') AS "serviceDate",
+       x.direction, x.kind, x.location, x.note, (x."canceledAt" IS NOT NULL) AS canceled
+     FROM "ShuttleDayException" x JOIN "Student" s ON s.id=x."studentId"
+     WHERE x.id=$1 AND s."parentId"=$2 AND ${notMergedStudent("s")} LIMIT 1`, id, parentUserId,
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return { ...row, notificationStatus: await readShuttleNotificationStatus(id, row.canceled ? "CANCELED" : "SUBMITTED", row.canceled ? "canceled" : shuttleEventVersion(row)) };
 }
 
 /**
@@ -214,7 +254,7 @@ export async function getShuttleExceptionsForDate(date: string): Promise<
   { name: string; phone: string | null; direction: string; kind: string; location: string | null }[]
 > {
   try {
-    const rows = await prisma.$queryRawUnsafe<any[]>(
+    const rows = await prisma.$queryRawUnsafe<{ name: string; phone: string | null; direction: string; kind: string; location: string | null }[]>(
       `SELECT s.name AS name, u.phone AS phone, x.direction, x.kind, x.location
          FROM "ShuttleDayException" x
          JOIN "Student" s ON s.id = x."studentId"

@@ -1,5 +1,6 @@
 "use server";
 
+import { userFacingError } from "@/lib/user-facing-error";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
 import { decideEnrollmentChangeRequest, issueProrationInvoice } from "@/lib/enrollment/admin-change-request";
@@ -60,9 +61,7 @@ async function runEnrollmentSyncAction(label: string, action: () => Promise<unkn
     return { ok: true };
   } catch (error) {
     console.error(`[enrollment-changes] ${label} 실패`, error);
-    const raw = error instanceof Error ? error.message : "";
-    // 한국어 안내 문구만 그대로 보여 준다. DB 오류 같은 내부 영문 메시지는 일반 안내로 바꾼다.
-    const message = /[가-힣]/.test(raw) ? raw : `${label}을(를) 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.`;
+    const message = userFacingError(error, `${label}을(를) 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.`);
     return { ok: false, message };
   }
 }

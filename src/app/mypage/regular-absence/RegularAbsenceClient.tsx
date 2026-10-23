@@ -130,8 +130,7 @@ export default function RegularAbsenceClient({
         </h1>
       </div>
       <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
-        다가오는 정규수업 날짜를 골라 미리 결석을 알려주세요. 학원에서 확인 후 처리합니다.
-        정규 결석 신고 시 그날 정규 셔틀에서 자동으로 제외되도록 준비 중입니다(다음 단계에서 연동 예정).
+        신고한 결석은 선생님과 기사님에게 표시됩니다.
       </p>
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}

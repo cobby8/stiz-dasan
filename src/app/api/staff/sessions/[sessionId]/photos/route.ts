@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
@@ -64,7 +65,7 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
     );
     return NextResponse.json({ photos: listManagedSessionPhotos(drafts) });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "사진 목록을 불러오지 못했습니다.";
+    const message = userFacingError(error, "사진 목록을 불러오지 못했습니다.");
     return NextResponse.json({ error: message }, { status: 403 });
   }
 }
@@ -185,7 +186,7 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
 
     return NextResponse.json({ url, type: "image", reviewStatus: "READY" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "사진 등록에 실패했습니다.";
-    return NextResponse.json({ error: message }, { status: message.includes("권한") ? 403 : 500 });
+    const message = userFacingError(error, "사진 등록에 실패했습니다.");
+    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("권한") ? 403 : 500 });
   }
 }

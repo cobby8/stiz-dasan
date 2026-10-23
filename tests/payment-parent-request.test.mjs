@@ -124,11 +124,12 @@ test("처리 결과가 학부모에게 전달된다", () => {
 test("관리자 메뉴에서 도달할 수 있다", async () => {
   // 실제 사고(2026-08-09): 다른 세션의 디자인 커밋에 이 메뉴 추가가 딸려 들어갔고,
   // 그 커밋을 revert 하자 메뉴만 조용히 사라졌다. 화면은 남았는데 갈 길이 없어진다.
-  const shell = await readFile("src/app/admin/AdminShellClient.tsx", "utf8");
+  const { renderAdminNavigation } = await import('./helpers/admin-navigation-render.mjs');
+  const shell = renderAdminNavigation('/admin/payment-requests');
   assert.match(shell, /href="\/admin\/payment-requests"/);
-  // 탭 활성 경로에도 있어야 메뉴를 눌렀을 때 학원운영 탭이 켜진다.
+  // 직접 진입해도 해당 업무 메뉴가 활성화된다.
   assert.ok(
-    (shell.match(/"\/admin\/payment-requests"/g) || []).length >= 3,
-    "NavItem 과 탭 경로 배열 두 곳에 모두 등록돼야 합니다.",
+    /href="\/admin\/payment-requests"[^>]*aria-current="page"/.test(shell),
+    "입금 확인 업무가 실제 메뉴에서 활성화되어야 합니다.",
   );
 });

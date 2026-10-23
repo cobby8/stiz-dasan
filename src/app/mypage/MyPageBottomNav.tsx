@@ -12,13 +12,14 @@ const items = [
 ] as const;
 
 export default function MyPageBottomNav() {
+    // 선택한 메뉴는 공통 라벤더 포인트색으로 구분한다.
     // 현재 경로를 읽어 활성 탭을 강조한다(클라이언트 훅이므로 별도 컴포넌트로 분리).
     const pathname = usePathname();
 
     return (
         <nav
             aria-label="마이페이지 주요 메뉴"
-            className="md:hidden fixed bottom-0 w-full bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around items-center h-16 pb-safe z-50"
+            className="md:hidden fixed bottom-0 inset-x-0 bg-[var(--color-academy-surface)] border-t border-[var(--color-academy-line)] flex justify-around items-center h-16 pb-safe z-50"
         >
             {items.map((item) => {
                 // 홈은 정확히 일치, 하위 페이지는 startsWith 로 활성 판정
@@ -29,7 +30,7 @@ export default function MyPageBottomNav() {
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-colors ${
-                            active ? "text-brand-orange-500 dark:text-brand-neon-lime" : "text-gray-400"
+                            active ? "text-[var(--color-academy-primary)]" : "text-[var(--color-academy-muted)]"
                         }`}
                     >
                         <span
@@ -39,7 +40,7 @@ export default function MyPageBottomNav() {
                         >
                             {item.icon}
                         </span>
-                        <span className="text-[10px] font-bold">{item.label}</span>
+                        <span className="text-xs font-bold">{item.label}</span>
                     </Link>
                 );
             })}

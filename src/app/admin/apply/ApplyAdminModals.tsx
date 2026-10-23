@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { formatPhoneInput, formatClassLabel } from "@/lib/application-display-format";
+
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
     approveEnrollApplication,
     cancelEnrollApplication,
     rejectEnrollApplication,
     updateEnrollApplication,
+    getEnrollmentParentCandidates,
+    reopenEnrollApplicationForReview,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 
@@ -67,12 +71,14 @@ interface ApplyAdminModalsProps {
     detailApp: EnrollApplication | null;
     editApp: EnrollApplication | null;
     cancelApp: EnrollApplication | null;
+    reopenApp?: EnrollApplication | null;
     classes: ClassInfo[];
     onCloseApprove: () => void;
     onCloseReject: () => void;
     onCloseDetail: () => void;
     onCloseEdit: () => void;
     onCloseCancel: () => void;
+    onCloseReopen?: () => void;
     onSaved: () => Promise<void> | void;
     onFeedback: (type: "success" | "error", message: string) => void;
 }
@@ -169,13 +175,6 @@ function dateInputValue(dateStr: string | null) {
     return date.toISOString().slice(0, 10);
 }
 
-function formatPhoneInput(value: string) {
-    const nums = value.replace(/\D/g, "").slice(0, 11);
-    if (nums.length > 7) return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
-    if (nums.length > 3) return `${nums.slice(0, 3)}-${nums.slice(3)}`;
-    return nums;
-}
-
 function FormField({ label, children }: { label: string; children: ReactNode }) {
     return (
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -194,12 +193,6 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
             <span className="text-gray-900 dark:text-white font-medium">{displayValue}</span>
         </div>
     );
-}
-
-function formatClassLabel(classInfo: ClassInfo) {
-    const dayLabel = DAY_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const programName = classInfo.program?.name ? ` · ${classInfo.program.name}` : "";
-    return `${dayLabel} ${classInfo.startTime}~${classInfo.endTime} · ${classInfo.name}${programName}`;
 }
 
 function formatPreferredSlots(slotKeys: string | null, classes: ClassInfo[]) {
@@ -255,34 +248,41 @@ export default function ApplyAdminModals({
     detailApp,
     editApp,
     cancelApp,
+    reopenApp,
     classes,
     onCloseApprove,
     onCloseReject,
     onCloseDetail,
     onCloseEdit,
     onCloseCancel,
+    onCloseReopen,
     onSaved,
     onFeedback,
 }: ApplyAdminModalsProps) {
     const [busy, setBusy] = useState(false);
+    const [approvalError, setApprovalError] = useState("");
+    const [reopenError, setReopenError] = useState("");
 
-    async function handleApprove(classIds: string[], note: string, force = false) {
+    async function handleApprove(classIds: string[], note: string, parentUserId?: string, force = false) {
         if (!approveApp) return;
         setBusy(true);
+        setApprovalError("");
         try {
             // 반환값은 3가지 형태(성공 / 정원경고 / 학생모호) 중 하나 — 형태를 명시해 안전하게 분기한다.
             const result = (await approveEnrollApplication(approveApp.id, {
                 classIds,
                 processedNote: note,
                 force,
+                parentUserId,
             })) as
                 | { approved: true; sms: { parentFailed: boolean; adminFailed: number; coachFailed: number; errors: string[] } }
                 | { ok: false; code: "INVALID_CLASSES"; message: string }
+                | { ok: false; code: "PARENT_SELECTION_REQUIRED"; message: string }
                 | { ok: false; code: "CAPACITY_WARNING"; classes: { classId: string; name: string; current: number; capacity: number }[] }
                 | { ok: false; code: "STUDENT_AMBIGUOUS"; candidates: { id: string; name: string; birthDate: string | null }[] };
 
-            if ("ok" in result && result.code === "INVALID_CLASSES") {
-                window.alert(result.message);
+            if ("ok" in result && (result.code === "INVALID_CLASSES" || result.code === "PARENT_SELECTION_REQUIRED")) {
+                setApprovalError(result.message);
                 return;
             }
             // A. 정원 초과 경고 — 하드 차단이 아니라 관리자에게 재확인 후 강행(force) 여부를 묻는다.
@@ -296,7 +296,7 @@ export default function ApplyAdminModals({
                 setBusy(false);
                 if (proceed) {
                     // 관리자가 확인했으므로 force:true로 재호출.
-                    await handleApprove(classIds, note, true);
+                    await handleApprove(classIds, note, parentUserId, true);
                 }
                 return;
             }
@@ -325,8 +325,29 @@ export default function ApplyAdminModals({
             onCloseApprove();
             await onSaved();
             onFeedback("success", `${approveApp.childName} 수강신청을 승인했습니다. 안내 알림은 발송하지 않았습니다.`);
-        } catch {
+        } catch (error) {
+            setApprovalError(error instanceof Error ? error.message : "승인 처리 중 문제가 생겼습니다. 선택 내용을 확인하고 다시 시도해 주세요.");
             onFeedback("error", "승인 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleReopen(reason: string) {
+        if (!reopenApp || reopenApp.status !== "REJECTED" || reopenApp.convertedStudentId) return;
+        setBusy(true);
+        setReopenError("");
+        try {
+            await reopenEnrollApplicationForReview(reopenApp.id, { reason });
+            onCloseReopen?.();
+            onFeedback("success", "상담 대기로 되돌렸습니다. 원생 등록·청구·알림 발송은 하지 않았습니다.");
+            try {
+                await onSaved();
+            } catch {
+                onFeedback("error", "재검토 상태는 상담 대기로 저장되었습니다. 목록을 새로고침하지 못했으니 페이지를 다시 열어 확인해 주세요. 재검토 처리를 반복할 필요는 없습니다.");
+            }
+        } catch (error) {
+            setReopenError(error instanceof Error ? error.message : "재검토로 되돌리지 못했습니다. 내용을 유지했으니 다시 확인해 주세요.");
         } finally {
             setBusy(false);
         }
@@ -381,12 +402,18 @@ export default function ApplyAdminModals({
         <>
             {approveApp && (
                 <ApproveModal
+                    key={approveApp.id}
                     app={approveApp}
                     classes={classes}
-                    onClose={onCloseApprove}
+                    onClose={() => { if (!busy) { setApprovalError(""); onCloseApprove(); } }}
                     onSubmit={handleApprove}
                     busy={busy}
+                    error={approvalError}
                 />
+            )}
+
+            {reopenApp && onCloseReopen && reopenApp.status === "REJECTED" && !reopenApp.convertedStudentId && (
+                <ReopenApplicationModal key={reopenApp.id} app={reopenApp} busy={busy} error={reopenError} onClose={() => { if (!busy) { setReopenError(""); onCloseReopen(); } }} onSubmit={handleReopen} />
             )}
 
             {rejectApp && (
@@ -435,12 +462,14 @@ function ApproveModal({
     onClose,
     onSubmit,
     busy,
+    error,
 }: {
     app: EnrollApplication;
     classes: ClassInfo[];
     onClose: () => void;
-    onSubmit: (classIds: string[], note: string) => void;
+    onSubmit: (classIds: string[], note: string, parentUserId?: string) => void;
     busy: boolean;
+    error: string;
 }) {
     const preferredKeys = app.preferredSlotKeys?.split(",").map((key) => key.trim()) ?? [];
     const preferredSlotLabel = formatPreferredSlots(app.preferredSlotKeys, classes);
@@ -451,6 +480,32 @@ function ApproveModal({
     });
     const [note, setNote] = useState("");
     const [formError, setFormError] = useState("");
+    const [parentCandidates, setParentCandidates] = useState<Array<{ id: string; name: string; role: string; phoneLast4: string; authLinked: boolean; isCurrentAccount: boolean }>>([]);
+    const [selectedParent, setSelectedParent] = useState("");
+    const [linkedParentUserId, setLinkedParentUserId] = useState<string | null>(null);
+    const [hasUnselectableMatches, setHasUnselectableMatches] = useState(false);
+    const [parentLoading, setParentLoading] = useState(true);
+    const [parentError, setParentError] = useState("");
+    const [parentRetry, setParentRetry] = useState(0);
+    useEffect(() => {
+        let cancelled = false;
+        getEnrollmentParentCandidates(app.id).then(result => {
+            if (cancelled) return;
+            setParentCandidates(result.candidates);
+            setHasUnselectableMatches(result.hasUnselectableMatches);
+            setLinkedParentUserId(result.linkedParentUserId);
+            // 이미 명시적으로 연결된 계정만 복원하고, 전화번호가 같은 후보는 자동 선택하지 않습니다.
+            setSelectedParent(result.linkedParentUserId ?? "");
+            setParentLoading(false);
+        }).catch(() => {
+            if (cancelled) return;
+            setParentError("보호자 계정을 확인하지 못했습니다. 조회가 완료되기 전에는 승인할 수 없습니다.");
+            setParentLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [app.id, parentRetry]);
+    const selectedCandidate = parentCandidates.find(candidate => candidate.id === selectedParent);
+    const parentReady = !parentLoading && !parentError && (selectedCandidate !== undefined || (parentCandidates.length === 0 && !hasUnselectableMatches && selectedParent === "__NEW__"));
 
     function toggleClass(classId: string) {
         setFormError("");
@@ -467,8 +522,12 @@ function ApproveModal({
             setFormError("배정할 반을 1개 이상 선택해주세요.");
             return;
         }
+        if (!parentReady) {
+            setFormError("연결할 보호자 계정을 직접 선택해 주세요.");
+            return;
+        }
         setFormError("");
-        onSubmit(selectedClassIds, note);
+        onSubmit(selectedClassIds, note, selectedParent);
     }
 
     const classesByDay = classes.reduce<Record<string, ClassInfo[]>>((acc, classInfo) => {
@@ -496,6 +555,20 @@ function ApproveModal({
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <section aria-label="보호자 계정 연결" className="space-y-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
+                        <label className="grid gap-1 text-sm font-bold" htmlFor="enrollment-parent-account">연결할 보호자 계정 *</label>
+                        {parentLoading ? <p role="status" className="text-sm text-[var(--color-academy-muted)]">계정 확인 중…</p> : parentError ? <div role="alert" className="text-sm"><p>{parentError}</p><button type="button" className="min-h-11 font-bold text-[var(--color-academy-primary)] underline" onClick={() => { setParentLoading(true); setParentError(""); setSelectedParent(""); setParentRetry(value => value + 1); }}>다시 조회</button></div> : <>
+                            <select id="enrollment-parent-account" value={selectedParent} onChange={event => setSelectedParent(event.target.value)} disabled={busy || linkedParentUserId !== null} className="h-11 min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]">
+                                <option value="">직접 선택해 주세요</option>
+                                {parentCandidates.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.isCurrentAccount ? "내 계정 · " : ""}{candidate.name} · {({ ADMIN: "관리자", VICE_ADMIN: "부관리자", INSTRUCTOR: "선생님", PARENT: "학부모" } as Record<string, string>)[candidate.role] ?? candidate.role} · 연락처 끝 {candidate.phoneLast4}{!candidate.authLinked ? " · 로그인 연결 전" : ""}</option>)}
+                                {parentCandidates.length === 0 && !hasUnselectableMatches && <option value="__NEW__">신규 보호자 계정으로 등록</option>}
+                            </select>
+                            <p className="text-xs text-[var(--color-academy-muted)]">같은 전화번호만으로 연결하지 않습니다. 신청자와 계정 주인을 확인해 선택해 주세요.</p>
+                            {linkedParentUserId && <p className="text-xs text-[var(--color-academy-muted)]">이미 확인된 보호자 연결을 유지합니다. 이 승인창에서는 연결 계정을 바꾸지 않습니다.</p>}
+                            {parentCandidates.length === 0 && hasUnselectableMatches && <p role="alert" className="text-sm font-bold">같은 연락처의 계정이 있지만 바로 연결할 수 없습니다. 로그인 연결과 보호자 자격을 확인해 주세요. 신규 계정은 만들지 않습니다.</p>}
+                            {selectedCandidate && ["ADMIN", "VICE_ADMIN", "INSTRUCTOR"].includes(selectedCandidate.role) && <p role="status" className="flex items-start gap-1 text-sm font-bold text-[var(--color-academy-primary)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">verified_user</span>기존 관리자·선생님 역할을 유지하고 자녀 연결만 추가합니다.</p>}
+                        </>}
+                    </section>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                             배정할 반 선택 (복수 선택 가능) *
@@ -513,10 +586,11 @@ function ApproveModal({
                                                 <button
                                                     key={classInfo.id}
                                                     type="button"
+                                                    disabled={busy}
                                                     onClick={() => toggleClass(classInfo.id)}
-                                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition border ${
+                                                    className={`min-h-11 w-full text-left px-3 py-2 rounded-lg text-sm transition border ${
                                                         selected
-                                                            ? "border-green-500 bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-200"
+                                                            ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
                                                             : "border-gray-200 dark:border-gray-700 hover:border-gray-300 text-gray-700 dark:text-gray-200"
                                                     }`}
                                                 >
@@ -548,6 +622,7 @@ function ApproveModal({
                             {formError}
                         </p>
                     )}
+                    {error && <p role="alert" className="rounded-lg border border-[var(--color-academy-line)] p-3 text-sm">{error}</p>}
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">관리자 메모</label>
@@ -555,22 +630,23 @@ function ApproveModal({
                             value={note}
                             onChange={(event) => setNote(event.target.value)}
                             rows={2}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                            className="w-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] rounded-lg px-3 py-2 text-[17px] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
                         />
                     </div>
 
+                    <p className="rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm" aria-label="승인 내용 확인"><strong>{app.childName}</strong> · {classes.filter(item => selectedClassIds.includes(item.id)).map(formatClassLabel).join(" / ") || "반 미선택"}<br />보호자: {selectedCandidate ? `${selectedCandidate.name} · 연락처 끝 ${selectedCandidate.phoneLast4}` : selectedParent === "__NEW__" ? "신규 보호자 계정" : "미선택"}<br /><span className="text-xs text-[var(--color-academy-muted)]">승인하면 원생·수강 등록이 진행됩니다. 알림은 자동 발송하지 않습니다.</span></p>
                     <div className="flex justify-end gap-3 pt-2">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-100 transition"
+                            className="min-h-11 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-100 transition"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
-                            disabled={busy || selectedClassIds.length === 0}
-                            className="flex items-center gap-1.5 px-5 py-2.5 bg-green-500 text-white rounded-xl hover:bg-green-600 transition font-medium text-sm disabled:opacity-40"
+                            disabled={busy || selectedClassIds.length === 0 || !parentReady}
+                            className="flex min-h-11 items-center gap-1.5 px-5 py-2.5 bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] rounded-xl transition font-medium text-sm disabled:opacity-40"
                         >
                             {busy ? (
                                 <span className="material-symbols-outlined text-lg animate-spin">progress_activity</span>
@@ -941,6 +1017,26 @@ function CancelApplicationModal({
     );
 }
 
+function ReopenApplicationModal({ app, onClose, onSubmit, busy, error }: {
+    app: EnrollApplication;
+    onClose: () => void;
+    onSubmit: (reason: string) => void;
+    busy: boolean;
+    error: string;
+}) {
+    const [reason, setReason] = useState("");
+    return <AdminModal titleId="reopen-application-title" onClose={onClose} panelClassName="max-w-lg p-5">
+        <h2 id="reopen-application-title" className="flex items-center gap-2 text-lg font-bold"><span aria-hidden="true" className="material-symbols-outlined text-[var(--color-academy-primary)]">restart_alt</span>수강신청 재검토</h2>
+        <p className="mt-2 text-sm"><strong>{app.childName}</strong> 신청을 반려에서 상담 대기로 되돌립니다. 기존 반려 사유는 이력으로 남깁니다.</p>
+        <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">원생 등록·수업 배정·청구·알림 발송은 하지 않습니다. 내용을 다시 확인한 뒤 별도로 승인해야 합니다.</p>
+        <form className="mt-3 space-y-3" onSubmit={event => { event.preventDefault(); if (!busy && reason.trim()) onSubmit(reason.trim()); }}>
+            <label className="grid gap-1 text-sm font-bold">재검토 사유 *<textarea required maxLength={500} rows={3} value={reason} onChange={event => setReason(event.target.value)} disabled={busy} placeholder="재검토가 필요한 이유를 적어주세요" className="min-h-11 w-full resize-none rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] font-normal" /></label>
+            {error && <p role="alert" className="rounded-lg border border-[var(--color-academy-line)] p-3 text-sm">{error}</p>}
+            <footer className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={onClose} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold disabled:opacity-50">닫기</button><button type="submit" disabled={busy || !reason.trim()} className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] disabled:opacity-50">{busy ? "처리 중…" : "상담 대기로 되돌리기"}</button></footer>
+        </form>
+    </AdminModal>;
+}
+
 function RejectModal({
     app,
     onClose,
@@ -1096,11 +1192,11 @@ function DetailModal({
                             원생 상세 열기
                         </a>
                         <a
-                            href="/admin/finance/billing"
+                            href={`/admin/finance?studentId=${encodeURIComponent(app.convertedStudentId)}`}
                             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-white px-3 py-2 text-sm font-bold text-green-800 transition hover:bg-green-100 dark:border-green-800 dark:bg-gray-900 dark:text-green-200 dark:hover:bg-green-950/40"
                         >
                             <span className="material-symbols-outlined text-lg">receipt_long</span>
-                            청구서 관리
+                            이 학생 청구·수납
                         </a>
                     </div>
                 )}

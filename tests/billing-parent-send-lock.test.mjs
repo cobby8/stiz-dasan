@@ -97,9 +97,9 @@ test("미납 앱 알림은 학원 전체 합계가 아니라 학부모별 건수
 test("화면: 잠금이면 두 버튼 비활성 + 랠리즈 안내, 기본값은 잠금", () => {
   assert.match(financeClient, /billingParentSendEnabled = false/);
   assert.match(financeClient, /const parentSendLocked = !billingParentSendEnabled/);
-  assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| billingRunLoading \|\| invoiceGeneratedCount === 0/);
-  assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| billingRunLoading \|\| invoiceOpenCount === 0/);
+  assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| invoiceGeneratedCount === 0/);
+  assert.match(financeClient, /disabled: parentSendLocked \|\| busy \|\| invoiceOpenCount === 0/);
   assert.match(financeClient, /랠리즈에서 발송/);
-  assert.match(financeClient, /청구서는 랠리즈에서 생성·발송합니다\. 사이트 청구는 장부용/);
+  assert.match(financeClient, /학부모 청구 안내는 랠리즈에서 발송/);
   assert.match(financePage, /billingParentSendEnabled=\{isBillingParentSendEnabled\(\)\}/);
 });

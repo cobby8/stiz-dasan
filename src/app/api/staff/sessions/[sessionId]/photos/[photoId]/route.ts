@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -186,7 +187,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ sessi
     if (result !== "UPDATED") return NextResponse.json({ error: "사진 상태가 변경되어 다시 불러와야 합니다." }, { status: 409 });
     return NextResponse.json({ ok: true, subjectStudentIds });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "사진의 학생 정보를 수정하지 못했습니다.";
+    const message = userFacingError(error, "사진의 학생 정보를 수정하지 못했습니다.");
     return NextResponse.json({ error: message }, { status: 403 });
   }
 }
@@ -258,7 +259,7 @@ export async function DELETE(_request: Request, context: { params: Promise<{ ses
     await processSessionPhotoDeletionQueue(3).catch(() => undefined);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "사진을 삭제하지 못했습니다.";
-    return NextResponse.json({ error: message }, { status: message.includes("대기열") ? 409 : 403 });
+    const message = userFacingError(error, "사진을 삭제하지 못했습니다.");
+    return NextResponse.json({ error: message }, { status: error instanceof Error && error.message.includes("대기열") ? 409 : 403 });
   }
 }

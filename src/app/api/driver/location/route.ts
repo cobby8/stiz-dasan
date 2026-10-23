@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { assertLegacyTrackingAllowed, mobileTrackingEnabled, MobileTrackingError, type TrackingDb } from "@/lib/shuttle/mobileTracking";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "유효하지 않은 토큰" }, { status: 403 });
     }
 
-    await prisma.$executeRawUnsafe(
+    const save = async (db: TrackingDb) => db.$executeRawUnsafe(
       `INSERT INTO "DriverLocation" (token, label, latitude, longitude, accuracy, speed, heading, sharing, "updatedAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
        ON CONFLICT (token) DO UPDATE SET
@@ -51,10 +52,20 @@ export async function POST(request: Request) {
       heading  != null && Number.isFinite(heading)  ? heading  : null,
       sharing === false ? false : true,
     );
+    if (mobileTrackingEnabled()) {
+      await prisma.$transaction(async (db) => {
+        await assertLegacyTrackingAllowed(db, token);
+        const valid = await db.$queryRawUnsafe<{ id: string }[]>(`SELECT id FROM "ShuttleRunLink" WHERE token=$1 FOR KEY SHARE`, token);
+        if (!valid.length) throw new MobileTrackingError(403, "RUN_REVOKED");
+        await save(db);
+      });
+    } else {
+      await save(prisma);
+    }
 
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error("[driver/location POST]", e);
+  } catch (error) {
+    if (error instanceof MobileTrackingError) return NextResponse.json({ error: error.code }, { status: error.status, headers: { "Cache-Control": "no-store" } });
     return NextResponse.json({ error: "저장 실패" }, { status: 500 });
   }
 }

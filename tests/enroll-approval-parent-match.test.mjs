@@ -11,6 +11,7 @@ import { loadTsModule } from "./_ts-module.mjs";
 
 const { parentPhoneDigits, isUsablePhoneKey } = await loadTsModule("src/lib/enrollment/parentIdentity.ts");
 const admin = await readFile("src/app/actions/admin.ts", "utf8");
+const approvalParent = await readFile("src/lib/enrollment/approval-parent.ts", "utf8");
 
 test("전화번호는 숫자만 남겨서 비교한다", () => {
   assert.equal(parentPhoneDigits("010-1234-5678"), "01012345678");
@@ -48,26 +49,17 @@ test("학부모를 찾는 모든 경로가 글자 그대로 비교하지 않는�
     );
   }
   const digitsCompare = /regexp_replace\(COALESCE\(phone, ''\), '\[\^0-9\]', '', 'g'\) = \$1/g;
-  assert.equal((admin.match(digitsCompare) || []).length, 2, "승인·엑셀 두 곳 모두 숫자 비교여야 합니다");
-  assert.match(admin, /isUsablePhoneKey\(parentPhoneDigitsValue\)/, "승인 경로에 빈 번호 가드가 있어야 합니다");
+  assert.ok(digitsCompare.test(admin), "엑셀 숫자 비교 유지");
+  assert.match(approvalParent, /regexp_replace\(COALESCE\(phone/);
+  assert.match(approvalParent, /isUsablePhoneKey\(digits\)/);
 });
 
-test("신청서에 연결된 가입 계정을 전화번호보다 먼저 본다", () => {
-  // 가입 절차에서 번호를 확인하고 연결해 둔 값이라 가장 믿을 수 있다.
-  assert.match(admin, /app\.parentUserId \?\? app\.parentuserid/, "연결된 계정을 읽어야 합니다");
-  // 승인 함수 안에서만 순서를 본다(엑셀 일괄등록에도 숫자 비교가 있어 파일 전체로 재면 어긋난다).
-  const linkedAt = admin.indexOf("const linkedParentUserId");
-  assert.ok(linkedAt > 0, "연결 계정 변수를 찾지 못했습니다");
-  const phoneAt = admin.indexOf("regexp_replace(COALESCE(phone, '')", linkedAt);
-  assert.ok(phoneAt > linkedAt, "연결 계정 확인이 전화번호 조회보다 앞서야 합니다");
-  // 그리고 전화번호 조회는 연결 계정이 없을 때만 돈다.
-  assert.match(admin, /linkedUsers\.length === 0 && isUsablePhoneKey\(parentPhoneDigitsValue\)/);
-});
-
-test("실제로 로그인에 쓰이는 계정을 우선 고른다", () => {
-  // 같은 번호로 계정이 둘이면(이미 4쌍 존재) 로그인 계정 쪽에 자녀를 붙여야
-  // 학부모 앱에서 자녀가 보인다.
-  assert.match(admin, /ORDER BY \("authUserId" IS NOT NULL\) DESC, "createdAt" ASC/);
+test("명시 연결을 먼저 지키고 직원·복수 후보는 직접 선택한다", () => {
+  assert.match(approvalParent, /app\.parentUserId \?\? app\.parentuserid/);
+  assert.match(approvalParent, /linked && selectedId && linked !== selectedId/);
+  assert.match(approvalParent, /const wanted = selectedId \|\| linked/);
+  assert.match(approvalParent, /throw new ParentSelectionRequired/);
+  assert.doesNotMatch(approvalParent, /LIMIT 1/);
 });
 
 test("새로 만드는 계정은 숫자만 형식으로 저장한다", () => {

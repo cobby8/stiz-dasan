@@ -20,7 +20,7 @@ test("수강 승인 서버 액션에는 외부·관리자 알림 우회 경로�
 test("관리자 승인 화면은 외부 알림을 선택할 수 없고 정원 재확인에서도 미발송을 유지한다", () => {
   assert.equal(modalSource.includes("sendNotifications"), false);
   assert.equal(modalSource.includes("승인 알림 함께 발송"), false);
-  assert.match(modalSource, /await handleApprove\(classIds, note, true\)/);
+  assert.match(modalSource, /await handleApprove\(classIds, note, parentUserId, true\)/);
   assert.match(modalSource, /안내 알림은 발송하지 않았습니다/);
 });
 

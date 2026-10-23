@@ -5,6 +5,8 @@ import FontFreeIcon from "@/components/ui/FontFreeIcon";
 // 어디로 갈지 정하는 규칙은 순수 모듈 한 곳에서만 판단한다(분기가 네 갈래라 눈으로 못 잡는다).
 import { resolveBackAction } from "@/lib/navigation/backAction";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
+import { isPublicSitePath } from "@/lib/public-site-path";
+import { hasSameOriginPreviousEntry, publicParentPath, type PublicNavigation } from "@/lib/navigation/publicHistory";
 
 type AppBackButtonProps = {
   fallbackHref?: string;
@@ -21,8 +23,13 @@ type AppBackButtonProps = {
 };
 
 
-function canGoBackWithinApp() {
+function canGoBackWithinApp(pathname: string) {
   if (typeof window === "undefined") return false;
+
+  if (isPublicSitePath(pathname) && hasSameOriginPreviousEntry(
+    (window as Window & { navigation?: PublicNavigation }).navigation,
+    window.location.origin,
+  )) return true;
 
   const historyIndex = Number(window.history.state?.idx ?? 0);
   if (historyIndex > 0) return true;
@@ -45,14 +52,15 @@ export default function AppBackButton({
   const router = useRouter();
   const pathname = usePathname() || "/";
   const isInstalledApp = useInstalledApp();
+  const backFallback = isPublicSitePath(pathname) ? publicParentPath(pathname, fallbackHref) : fallbackHref;
 
   // 앱의 첫 화면이라 돌아갈 곳이 없다. 죽은 버튼을 두느니 자리만 남긴다
   // (헤더가 격자 배치라 그냥 지우면 로고·제목이 밀린다).
   const nothingToGoBackTo =
     resolveBackAction({
-      hasHistory: canGoBackWithinApp(),
+      hasHistory: canGoBackWithinApp(pathname),
       pathname,
-      fallbackHref,
+      fallbackHref: backFallback,
       scopeHref,
       isInstalledApp,
     }).type === "none";
@@ -64,9 +72,9 @@ export default function AppBackButton({
 
   const handleClick = () => {
     const action = resolveBackAction({
-      hasHistory: canGoBackWithinApp(),
+      hasHistory: canGoBackWithinApp(pathname),
       pathname,
-      fallbackHref,
+      fallbackHref: backFallback,
       scopeHref,
       isInstalledApp,
     });

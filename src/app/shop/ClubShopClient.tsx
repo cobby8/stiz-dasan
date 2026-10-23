@@ -127,7 +127,6 @@ export default function ClubShopClient() {
           <ShopNotice
             icon="sports_basketball"
             title="판매 가능한 상품을 준비 중입니다"
-            body="구매 가능한 상품이 등록되면 이 화면에 바로 표시됩니다."
             onRetry={() => window.location.reload()}
           />
         )}
@@ -150,7 +149,7 @@ function ProductCard({ product }: { product: ClubShopProduct }) {
   const detailHref = `/shop/product/${product.productNo}`;
 
   return (
-    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+    <article className="public-card min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
       {disabled ? (
         <ProductImage src={product.image} name={product.name} />
       ) : (
@@ -205,7 +204,7 @@ function ProductImage({ src, name }: { src: string; name: string }) {
         />
       )}
       {failed && (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[linear-gradient(135deg,#111827,#f97316)] p-5 text-center text-white dark:bg-[linear-gradient(135deg,#020617,#1e3a8a)]">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[linear-gradient(135deg,var(--color-public-ink),var(--color-public-accent))] p-5 text-center text-white ">
           <img src="/stiz-logo.png" alt="" className="h-12 w-auto rounded bg-white p-2" />
           <p className="break-keep text-sm font-black">상품 이미지 준비 중</p>
         </div>
@@ -239,7 +238,7 @@ function ShopNotice({
 }: {
   icon: FontFreeIconName;
   title: string;
-  body: string;
+  body?: string;
   onRetry: () => void;
 }) {
   return (
@@ -248,7 +247,7 @@ function ShopNotice({
         <FontFreeIcon name={icon} size={28} />
       </div>
       <h3 className="mt-4 break-keep text-xl font-black text-gray-950 dark:text-white">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{body}</p>
+      {body && <p className="mx-auto mt-2 max-w-md break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{body}</p>}
       <button
         type="button"
         onClick={onRetry}

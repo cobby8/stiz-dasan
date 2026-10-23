@@ -48,10 +48,11 @@ function fixture(unauthorized = false) {
 test('실제 페이지가 조회한 원장 출처를 표시하고 실패 타깃과 시작일 보류를 유지한다', async () => {
   const f = fixture();
   const html = await f.render();
-  for (const value of ['cmd-1', 'enroll-1', 'app-1', 'class-1', 'SUCCEEDED', 'FAILED', '확정 수강 시작일 근거 없음', '현재 수강 확인']) {
+  for (const value of ['cmd-1', 'enroll-1', 'app-1', 'class-1', '성공', '실패', '확정 수강 시작일 근거 없음', '현재 수강 확인']) {
     assert.ok(html.includes(value), value);
   }
   assert.ok(!html.includes('DO_NOT_RENDER_RAW_PAYLOAD'));
+  assert.ok(!html.includes('SUCCEEDED') && !html.includes('FAILED'));
   const query = f.calls.find(call => call.key === 'operationsCommand');
   assert.equal(query.options.select.afterJson, true);
   assert.equal(query.options.select.createdAt, true);

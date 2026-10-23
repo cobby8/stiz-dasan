@@ -173,8 +173,39 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // 브라우저는 중복 권한 헤더를 교집합으로 적용하므로 교사용 경로와 겹치지 않게 한다.
-        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)|shuttle/location(?:/|$)).*)",
+        // 실제 기사 화면의 단일 토큰 주소만 위치를 허용한다. 하위 페이지에는 권한을 넓히지 않는다.
+        source: "/driver/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        source: "/shuttle/run/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        source: "/shuttle/regular/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        // 권한 허용 경로가 차단 헤더와 겹치지 않도록 한다. 기사 화면은 단일 토큰 주소만 제외한다.
+        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)|shuttle/location(?:/|$))(?!driver/[^/]+/?$|shuttle/(?:run|regular)/[^/]+/?$).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" }, // 클릭재킹 방지: iframe 삽입 차단
           { key: "X-Content-Type-Options", value: "nosniff" }, // MIME 스니핑 방지

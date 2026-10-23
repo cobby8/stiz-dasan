@@ -60,7 +60,9 @@ async function load(db) {
   `);
   const authRoutes = toDataUrl(await transpile("src/lib/auth-routes.ts"));
   const syntheticEmail = toDataUrl(await transpile("src/lib/parent-synthetic-email.ts"));
+  const publicErrors = toDataUrl(await transpile("src/lib/user-facing-error.ts"));
   const swap = (code) => code
+    .split('"@/lib/user-facing-error"').join(`"${publicErrors}"`)
     .split('"@/lib/parent-synthetic-email"').join(`"${syntheticEmail}"`)
     .split('"@/lib/prisma"').join(`"${prismaStub}"`)
     .split('"@/lib/message-dispatch"').join(`"${noop}"`)

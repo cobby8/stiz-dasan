@@ -4,11 +4,14 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
+const publicErrors = {};
+new Function('exports', ts.transpileModule(readFileSync('src/lib/user-facing-error.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(publicErrors);
 const source = readFileSync('src/app/api/admin/finance/sheet-reconcile/route.ts', 'utf8');
 function loadRoute(authorized = true) {
   const calls = [];
   const exports = {};
   const require = (name) => {
+    if (name === '@/lib/user-facing-error') return publicErrors;
     if (name === 'next/server') return { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } };
     if (name === '@/lib/auth-guard') return { requireAdmin: async () => { if (!authorized) throw Error('DENIED'); } };
     if (name === '@/lib/prisma') return { prisma: new Proxy({}, { get: (_, key) => async (...args) => { calls.push([key, ...args]); throw Error('Unexpected database access'); } }) };
