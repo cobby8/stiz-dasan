@@ -37,6 +37,7 @@ const EXTRA_GROUPS = [
     { label: "업무별 상세 메뉴", icon: "assignment", items: [
         ["/admin/requests", "학부모 요청", "📩"],
         ["/admin/enrollment-changes", "수강 변경 신청", "🔁"],
+        ["/admin/withdrawals", "회원 탈퇴 신청", "🚪"],
         ["/admin/kakao-requests", "카카오 접수함", "💬"],
         ["/admin/absence", "정규 결석 신고", "🙅"],
         ["/admin/makeup", "보강", "🔄"],
