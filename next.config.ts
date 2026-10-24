@@ -29,6 +29,13 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        // 안드로이드 TWA 의 Digital Asset Links. 이 주소는 규격으로 정해져 있어 바꿀 수 없다.
+        // 점으로 시작하는 폴더는 라우트로 쓰기 까다로워 API 라우트에 연결한다.
+        // 서명키 지문이 설정되기 전에는 그 라우트가 404 를 돌려준다(일부러 그렇게 뒀다).
+        source: "/.well-known/assetlinks.json",
+        destination: "/api/assetlinks",
+      },
+      {
         // 선생님에게 공유하는 주소는 기억하기 쉬운 /staff/install로 유지한다.
         source: "/staff/install",
         destination: "/teacher-app",
