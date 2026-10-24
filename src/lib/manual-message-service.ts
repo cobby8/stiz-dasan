@@ -1,6 +1,7 @@
 import { normalizeMessagePhone } from "@/lib/message-ledger";
 
 export const MANUAL_MESSAGE_RECIPIENT_LIMIT = 100;
+export const BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT = 500;
 const MANUAL_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 
 export function validateManualMessageRequestId(requestId: string | undefined) {
@@ -35,6 +36,18 @@ export type ManualMessageSendResult = {
   invalidCount: number;
   results: ManualMessageRecipientResult[];
   retryRecipients: string[];
+};
+
+export type ManualMessageBatchStatus = {
+  batchId: string;
+  status: string;
+  total: number;
+  pending: number;
+  processing: number;
+  success: number;
+  failed: number;
+  uncertain: number;
+  recipients: Array<{ id: string; recipient: string; status: string; reason?: string | null }>;
 };
 
 /**

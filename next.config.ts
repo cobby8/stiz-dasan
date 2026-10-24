@@ -41,6 +41,12 @@ const nextConfig: NextConfig = {
         destination: "/parent-app",
       },
       {
+        // 카카오채널 인증 링크 주소는 그대로 두고, 화면은 마이페이지 레이아웃 밖(/kakao-connect)에서 그린다.
+        // 마이페이지 레이아웃은 로그인 안 된 사람을 먼저 튕겨 내서 상황별 안내를 보여줄 수 없기 때문이다.
+        source: "/mypage/kakao-connect",
+        destination: "/kakao-connect",
+      },
+      {
         // 설치 앱 주소는 /staff 범위에 유지하면서 공용 로그인 화면을 재사용한다.
         source: "/staff/login",
         destination: "/login?mode=staff",
@@ -156,8 +162,50 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // 브라우저는 중복 권한 헤더를 교집합으로 적용하므로 교사용 경로와 겹치지 않게 한다.
-        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)).*)",
+        // 위치 입력 페이지에서만 현재 위치 버튼을 허용한다. 아래 일반 규칙과 겹치면 교집합으로 다시 차단된다.
+        source: "/shuttle/location/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        // 실제 기사 화면의 단일 토큰 주소만 위치를 허용한다. 하위 페이지에는 권한을 넓히지 않는다.
+        source: "/driver/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        source: "/shuttle/run/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        source: "/shuttle/regular/:token",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
+        ],
+      },
+      {
+        // 권한 허용 경로가 차단 헤더와 겹치지 않도록 한다. 기사 화면은 단일 토큰 주소만 제외한다.
+        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)|shuttle/location(?:/|$))(?!driver/[^/]+/?$|shuttle/(?:run|regular)/[^/]+/?$).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" }, // 클릭재킹 방지: iframe 삽입 차단
           { key: "X-Content-Type-Options", value: "nosniff" }, // MIME 스니핑 방지

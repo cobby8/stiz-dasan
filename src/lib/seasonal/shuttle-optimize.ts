@@ -90,6 +90,10 @@ type StopStudent = { name: string; grade: string | null; parentPhone: string | n
 type Stop = { lat: number; lng: number; label: string; students: StopStudent[]; approx: boolean; isHub?: boolean; etaLabel?: string; etaMinutes?: number; etaManual?: number | null };
 type Run = {
   index: number; vehicleName: string; plate: string | null; capacity: number; tripLabel: string | null;
+  /** 정규 배차에서만 쓰는 담당 기사 계정. 방학특강 노선에는 별도 관계형 필드가 있어 선택값이다. */
+  driverUserId?: string | null;
+  /** 정규 셔틀은 한 요일 안에서도 수업시간별 실행이 다르다. 저장·재계산 때 이 실행의 앵커를 보존한다. */
+  classStart?: string | null; classEnd?: string | null; timeGroupLabel?: string | null;
   passengers: number; stops: Stop[]; over: boolean;
   provider: "TMAP" | "LOCAL"; tmapMinutes: number | null; tmapKm: number | null; depotTime: string | null;
   // 첫 노드 출발 시각 / 마지막 노드 도착 시각. 등원=차고지 출발·학원 도착, 하원=학원 출발·차고지 복귀.
@@ -100,6 +104,8 @@ type Run = {
 };
 
 export type DispatchSuggestion = {
+  savedAt?: string | null;
+  loadedFromSaved?: boolean;
   direction: DispatchDirection;
   date: string | null; dow: string | null;
   classStart: string | null; classEnd: string | null;
@@ -110,6 +116,8 @@ export type DispatchSuggestion = {
   totalRiders: number;
   vehicleFleet: { name: string; plate: string | null; capacity: number }[];
   routingProvider: "TMAP" | "LOCAL"; // 전체적으로 T맵이 쓰였는지
+  /** 정규 셔틀 시간대별 실행 요약. 방학특강에는 없으므로 선택값이다. */
+  timeGroups?: { anchor: string | null; label: string; riders: number }[];
   // 저장 노선 이후의 변동(Phase 2a). 저장본이 있을 때만 채워지고, 관리자 배너 표시에만 쓴다.
   // 기사님 화면(DriverRunClient)은 이 필드를 읽지 않으므로 노출되지 않는다.
   added?: DispatchChange[];
@@ -168,7 +176,7 @@ async function planRun(run: Run, direction: DispatchDirection, academy: Geo, dep
   // 순서는 최근접(NN)으로 정한다. routeOptimization(최적경로) API는 제공량이 작아 429가 잦으므로 쓰지 않고,
   // 제공량이 넉넉한 /routes(다중경로)로 그 순서의 실도로 경로·시간을 받는다(순서 변경 재계산과 동일 방식).
   // ★ keepOrder면 재정렬 없이 이미 잡힌 순서를 그대로 유지한다(증분 삽입 결과 보존).
-  let order = keepOrder ? [...run.stops] : nnOrder(run.stops, startPt);
+  const order = keepOrder ? [...run.stops] : nnOrder(run.stops, startPt);
 
   // ★ 선파괴 금지: 진입 시 기존 실도로 경로/제공자/시간을 보관해 둔다.
   //   T맵이 "성공했을 때만" 새 값으로 갈아끼우고, T맵을 호출했는데 실패하면 이 이전값을 복원한다.
@@ -254,9 +262,9 @@ export async function getDispatchForView(date: string | null, direction: Dispatc
   const canonicalDate = resolvedDate ? firstDateOfSameWeekday(base.availableDates, resolvedDate) : null;
   // 노선은 대표일(canonicalDate)에서 꺼내되, **결석 판정은 실제로 보고 있는 날짜(resolvedDate)** 기준이어야 한다.
   const saved = canonicalDate
-    ? await getSavedDispatchRoute(canonicalDate, direction, { attendanceDate: resolvedDate })
+    ? await getSavedDispatchRoute(canonicalDate, direction, { attendanceDate: resolvedDate, strict: allowTmap })
     : null;
-  if (saved && Array.isArray(saved.vehicles) && saved.vehicles.length) {
+  if (saved && Array.isArray(saved.vehicles)) {
     // hub stop label을 현재 DB 거점 이름으로 실시간 교체 — 거점 이름 변경 시 재계산 없이도 반영된다.
     const currentHubName = base.hub?.name;
     const vehicles = (currentHubName
@@ -273,6 +281,7 @@ export async function getDispatchForView(date: string | null, direction: Dispatc
     );
     return {
       ...base,
+      savedAt: saved.savedAt, loadedFromSaved: true,
       vehicles,
       totalRiders: savedRiderCount,
       classStart: saved.classStart ?? base.classStart,

@@ -7,7 +7,8 @@ const migration = await readFile("prisma/migrations/20260722143000_add_student_s
 const passengerMigration = await readFile("prisma/migrations/20260722172000_extend_shuttle_passengers_for_students/migration.sql", "utf8");
 const service = await readFile("src/lib/shuttle/service.ts", "utf8");
 const route = await readFile("src/app/api/admin/shuttle/route.ts", "utf8");
-const adminClient = await readFile("src/app/admin/shuttle/ShuttleRouteAdminClient.tsx", "utf8");
+// 옛 노선 편성 화면 삭제(2026-10-02) — 학생별 위치 저장은 학생 상세 화면이 맡는다.
+const studentDetail = await readFile("src/app/admin/students/[id]/StudentDetailClient.tsx", "utf8");
 
 test("student shuttle locations are stored separately for pickup and dropoff", () => {
   assert.match(schema, /model StudentShuttleLocation/);
@@ -33,12 +34,9 @@ test("class based shuttle candidates are derived from sessions and enrollments",
   assert.match(service, /classBasedCandidates/);
 });
 
-test("admin UI shows class based candidates and per-student location buttons", () => {
-  assert.match(adminClient, /ClassCandidatePanel/);
-  assert.match(adminClient, /수업 기반 자동 후보/);
-  assert.match(adminClient, /resource: "studentLocation"/);
-  assert.match(adminClient, /onPickLocation\(student, "pickup"\)/);
-  assert.match(adminClient, /onPickLocation\(student, "dropoff"\)/);
+test("student detail saves per-student pickup and dropoff locations", () => {
+  assert.match(studentDetail, /resource: "studentLocation"/);
+  assert.match(studentDetail, /"PICKUP" \| "DROPOFF"/);
 });
 
 test("class based candidates can be preview optimized before route creation", () => {
@@ -48,9 +46,6 @@ test("class based candidates can be preview optimized before route creation", ()
   assert.match(service, /optimizeWaypointOrderWithTmap\(\{/);
   assert.match(route, /resource === "classCandidates"/);
   assert.match(route, /previewClassBasedShuttlePlacement\(actor, data\)/);
-  assert.match(adminClient, /등원 배치 테스트/);
-  assert.match(adminClient, /하원 배치 테스트/);
-  assert.match(adminClient, /setClassPlacementPreview/);
 });
 
 test("class based placement can create draft route passengers for regular students", () => {
@@ -64,5 +59,4 @@ test("class based placement can create draft route passengers for regular studen
   assert.match(service, /export async function createClassBasedShuttleRouteDraft/);
   assert.match(service, /'REGULAR_CLASS'/);
   assert.match(route, /action === "createRouteDraft"/);
-  assert.match(adminClient, /이 결과로 노선 초안 만들기/);
 });

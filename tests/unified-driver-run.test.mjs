@@ -278,9 +278,42 @@ test("통합 화면은 종류별 기존 저장 API·기존 파라미터를 그�
   assert.match(src, /SELF/);
 });
 
+test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 유지한다", async () => {
+  const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
+  const css = await readFile("src/components/shuttle/DriverWorkspace.module.css", "utf8");
+  // 실제 크기·겹침은 별도 브라우저 검사에서 확인한다. 이 가드는 연결 누락만 확인한다.
+  assert.match(src, /className=\{styles\.timeNavigation\}/);
+  assert.match(src, /className=\{styles\.navigation\}/);
+  assert.match(css, /\.timeNavigation\s*\{[^}]*display:\s*flex/);
+  assert.match(src, /near_me<\/span> 길안내/);
+  assert.doesNotMatch(src, /flex h-12 items-center justify-center gap-1\.5 rounded-xl bg-blue-600/);
+  assert.match(src, /className=\{styles\.contacts\}/);
+  assert.match(src, /className=\{styles\.riderMain\}/);
+  assert.match(src, /className=\{styles\.boardingActions\}/);
+  assert.match(css, /\.boardingActions button\s*\{[^}]*min-width:\s*52px/);
+});
+
+test("운행 시작은 헤더 오른쪽에만 두고 순서·시간 수정은 목록 제목 옆에 둔다", async () => {
+  const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
+  assert.match(src, /const orderControls = stopRows\.length > 0/);
+  assert.match(src, /min-h-11[^\n]*[\s\S]*↕ 순서·시간 수정/);
+  assert.match(src, /<header[\s\S]*runState === "idle"[\s\S]*운행 시작/);
+  assert.doesNotMatch(src, /운행을 시작하면 위치가 관리자에게 공유됩니다/);
+  assert.match(src, /운행 순서 ·[\s\S]*\{orderControls\}/);
+});
+
 test("탑승 상태 저장·조회 키는 특강/정규 접두사로만 합치고, 저장할 땐 원래 키로 되돌린다", async () => {
   const src = await readFile("src/lib/shuttle/unifiedDriverRun.ts", "utf8");
   assert.match(src, /S:PICKUP:/);
   assert.match(src, /S:DROPOFF:/);
   assert.match(src, /R:\$\{id\}/);
+});
+
+test("기사 통합 링크는 종료된 방학특강 시즌을 정규 운행에 섞지 않는다", async () => {
+  const src = await readFile("src/lib/shuttle/unifiedDriverRun.ts", "utf8");
+  assert.match(src, /hasSeasonalRunOnDate/);
+  assert.match(src, /SpecialProgramSeason/);
+  assert.match(src, /startsAt/);
+  assert.match(src, /endsAt/);
+  assert.match(src, /if \(!\(await hasSeasonalRunOnDate\(viewDate\)\)\) return \[\];/);
 });

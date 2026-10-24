@@ -8,7 +8,6 @@ import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 export const dynamic = "force-dynamic";
 
 // 셔틀 '차량 관리' — 차량 등록·관리 + 셔틀 기준 위치(학원·차고지·거점) 설정을 담당한다.
-// (옛 노선 편성 화면 ShuttleRouteAdminClient는 파일로 남겨 두되 렌더하지 않는다.)
 export default async function ShuttleAdminPage() {
   const [dashboard, geo] = await Promise.all([getShuttleDashboard(), getSettings()]);
   const data = JSON.parse(JSON.stringify(dashboard)) as { vehicles?: { id: string; name: string; plateNumber?: string | null; capacity: number; notes?: string | null; isActive?: boolean }[] };

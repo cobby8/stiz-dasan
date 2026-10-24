@@ -3,11 +3,11 @@
 ## 파일별 요약
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
-| architecture.md | 9 | 2026-08-08 |
+| architecture.md | 14 | 2026-10-23 |
 | errors.md | 9 | 2026-10-24 |
-| conventions.md | 24 | 2026-08-12 |
-| decisions.md | 19 | 2026-08-09 |
-| lessons.md | 4 | 2026-07-26 |
+| conventions.md | 29 | 2026-10-02 |
+| decisions.md | 20 | 2026-10-06 |
+| lessons.md | 6 | 2026-10-02 |
 
 ## ⚠️ 재발 다발 함정 (작업 전 반드시 확인)
 - **날짜·시간** → 달력 값은 `@/lib/datetime/kst` 에서만. `toISOString().slice(0,10)`(새벽에 어제) ·
@@ -22,8 +22,8 @@
 - **apiSuccess snake_case 자동변환** · **IDOR** · **`prisma db push` 금지** → errors / decisions
 
 ## 최근 추가된 지식 (최근 5건)
-1. [error] 같은 규칙의 두 입력 경로 중 한쪽만 고쳐 DB 제약이 UPDATE 를 거부 — 관리자가 셔틀 취소 불가였던 막힌 길
-2. [convention] 날짜·시간은 `@/lib/datetime/kst` 한 곳에서만 — 금지 패턴 4종을 가드 테스트로 강제
-3. [convention] 관리자 화면 신설 시 사이드바 등록을 테스트로 못박는다(화면만 남고 길이 사라진 사고 2회)
-4. [error] start_url 끝 슬래시 하나로 PWA 가 시작하자마자 영역을 벗어난다 — start_url 은 리다이렉트까지 열어보고 확인
-5. [error] scope 없는 manifest 하나가 같은 도메인의 다른 PWA 설치를 전부 막는다 — 빠진 필드는 "없음"이 아니라 기본값
+1. [error] 같은 규칙의 두 입력 경로 중 한쪽만 고쳐 DB 제약이 UPDATE 를 거부 — 관리자가 셔틀 취소 불가였던 막힌 길 (2026-10-24)
+2. [architecture] 체험↔수강신청 연결 = 순수 판정(trialLeadMatch)+연결부(trialLeadLinkService) 한 곳, 비교 시점 3곳 (2026-10-23)
+3. [architecture] 카카오 보강 신청·취소 대화 = KakaoParentIntake(MAKEUP_FLOW) 상태 + parent-makeup 함수 그대로, 「결석·보강」 메뉴 제외 (2026-10-17)
+4. [architecture] 카카오 정책 답변 = 순수 엔진(kakao-policy-qa)+연결부(service)+챗봇 hook, null 이면 기존 흐름 (2026-10-09)
+5. [decision] 청구 안내=랠리즈 전담(사이트 발송 기본 잠금)·시트 원장 은퇴(SHEET SKIPPED)·장부 원천=랠리즈 (2026-10-06)

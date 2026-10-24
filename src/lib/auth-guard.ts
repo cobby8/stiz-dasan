@@ -135,7 +135,30 @@ export type VerifiedParentAuthUser = Awaited<ReturnType<typeof requireAuth>> & {
  * 학생을 본다. 학부모 화면은 아래 appUserId 로 범위가 좁혀져 자기 자녀만 보인다.
  */
 export async function requireVerifiedParent(): Promise<VerifiedParentAuthUser> {
-  const user = await requireAuth();
+  const state = await getVerifiedParentState();
+  if (state.status === "OK") return state.parent;
+  if (state.status === "SIGNED_OUT") throw new Error("인증이 필요합니다. 로그인해주세요.");
+  throw new Error("휴대폰 인증을 완료한 학부모 계정이 필요합니다.");
+}
+
+export type VerifiedParentState =
+  | { status: "OK"; parent: VerifiedParentAuthUser }
+  | { status: "SIGNED_OUT" } // 로그인 안 됨
+  | { status: "NO_APP_ACCOUNT" } // 로그인은 됐지만 연결된 앱 계정이 없음(간편로그인만 한 상태 등)
+  | { status: "PHONE_UNVERIFIED" } // 학부모 계정이지만 휴대폰 인증이 안 끝남
+  | { status: "STAFF_ACCOUNT" }; // 관리자·직원 계정(자기 자녀 없음)
+
+/**
+ * requireVerifiedParent 와 같은 판정을 하되, 거절 사유를 오류 대신 상태로 돌려준다.
+ * 카카오 연결 화면처럼 "왜 안 되는지"를 쉬운 말로 안내해야 하는 곳에서 쓴다.
+ */
+export async function getVerifiedParentState(): Promise<VerifiedParentState> {
+  let user: Awaited<ReturnType<typeof requireAuth>>;
+  try {
+    user = await requireAuth();
+  } catch {
+    return { status: "SIGNED_OUT" };
+  }
   const rows = await prisma.$queryRawUnsafe<
     Array<{ id: string; name: string; role: string; username: string | null; phoneVerifiedAt: Date | null }>
   >(
@@ -147,14 +170,14 @@ export async function requireVerifiedParent(): Promise<VerifiedParentAuthUser> {
   );
   const appUser = rows[0];
   if (!appUser) {
-    throw new Error("휴대폰 인증을 완료한 학부모 계정이 필요합니다.");
+    return { status: "NO_APP_ACCOUNT" };
   }
 
   if (appUser.role === "PARENT") {
     const isVerifiedSignup = Boolean(appUser.phoneVerifiedAt);
     const isDirectlyBoundLegacyParent = appUser.username === null;
     if (!isVerifiedSignup && !isDirectlyBoundLegacyParent) {
-      throw new Error("휴대폰 인증을 완료한 학부모 계정이 필요합니다.");
+      return { status: "PHONE_UNVERIFIED" };
     }
   } else {
     // 직원 계정은 자기 앞으로 등록된 자녀가 있을 때만 학부모 화면을 연다.
@@ -164,14 +187,17 @@ export async function requireVerifiedParent(): Promise<VerifiedParentAuthUser> {
       appUser.id,
     );
     if (ownChildren.length === 0) {
-      throw new Error("휴대폰 인증을 완료한 학부모 계정이 필요합니다.");
+      return { status: "STAFF_ACCOUNT" };
     }
   }
-  return Object.assign(user, {
-    appUserId: appUser.id,
-    appUserName: appUser.name,
-    appUserRole: "PARENT" as const,
-  });
+  return {
+    status: "OK",
+    parent: Object.assign(user, {
+      appUserId: appUser.id,
+      appUserName: appUser.name,
+      appUserRole: "PARENT" as const,
+    }),
+  };
 }
 
 /**

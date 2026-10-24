@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server";
-import { importRegularShuttleFromSheet } from "@/lib/shuttle/regularImport";
 
 export const dynamic = "force-dynamic";
 
-// 정규 셔틀 운행리스트를 구글 시트에서 앱 DB로 가져온다(replace). requireAdmin은 라이브러리에서 강제.
-export async function POST(request: Request) {
-  try {
-    const body = await request.json().catch(() => null) as { sheetUrl?: string } | null;
-    if (!body?.sheetUrl) return NextResponse.json({ error: "시트 URL이 필요합니다." }, { status: 400 });
-    const result = await importRegularShuttleFromSheet(body.sheetUrl);
-    return NextResponse.json({ ok: true, ...result });
-  } catch (e) {
-    console.error("[regular-import POST]", e);
-    const msg = String((e as { message?: string })?.message ?? "");
-    const status = /원장|권한|로그인|인증|Unauthorized|Forbidden/i.test(msg) ? 403 : 400;
-    return NextResponse.json({ error: msg || "가져오지 못했습니다." }, { status });
-  }
+// 2026-10-02 구글 시트 가져오기 종료.
+// 셔틀 명단은 「셔틀 명단」 화면(/admin/shuttle/regular)에서 앱이 직접 편집한다.
+// 이 API 가 다시 불리면 앱에서 고친 명단이 시트 기준으로 덮어써지므로, 아무것도 하지 않고 410(종료됨)으로 막는다.
+// 옛 화면·북마크·스크립트가 호출해도 DB 는 건드리지 않는다.
+export async function POST() {
+  return NextResponse.json(
+    { error: "구글 시트 가져오기는 종료됐습니다. 셔틀 명단 화면에서 직접 편집하세요." },
+    { status: 410 },
+  );
 }

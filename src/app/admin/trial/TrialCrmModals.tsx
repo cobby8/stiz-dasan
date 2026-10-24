@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { formatPhoneInput } from "@/lib/application-display-format";
+
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { createTrialLead, convertTrialToStudent, updateTrialLead } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import {
-    resolveTrialScheduleStartTime,
     seoulDateInputValue,
     seoulTimeInputValue,
     toSeoulScheduledDateTime,
 } from "@/lib/trial-schedule-time";
 import type { ClassInfo, TrialLead } from "./TrialCrmClient";
+import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 
 interface TrialCrmModalsProps {
     addOpen: boolean;
@@ -27,7 +29,9 @@ interface TrialCrmModalsProps {
     onCloseLost: () => void;
     onCloseMemo: () => void;
     classes: ClassInfo[];
-    onSaved: () => Promise<void> | void;
+    // 목록을 새로 읽은 결과까지 받아야 저장 성공을 사용자에게 보여줄 수 있다.
+    // false면 DB 저장은 끝났어도 화면 반영을 확인하지 못한 상태다.
+    onSaved: () => Promise<boolean> | boolean;
     onFeedback: (type: "success" | "error", message: string) => void;
 }
 
@@ -57,16 +61,23 @@ export default function TrialCrmModals({
         onDone: () => void,
         successMessage: string,
         resultMessage?: (result: unknown) => { type: "success" | "error"; message: string } | null,
+        showValidationError = false,
     ) {
         setBusy(true);
         try {
             const result = await action();
+            const refreshed = await onSaved();
+            if (!refreshed) {
+                onFeedback("error", "수정은 저장됐지만 목록을 새로 불러오지 못했습니다. 새로고침 후 변경 내용을 확인해주세요.");
+                return;
+            }
             onDone();
-            await onSaved();
             const feedback = resultMessage?.(result);
             onFeedback(feedback?.type ?? "success", feedback?.message ?? successMessage);
-        } catch {
-            onFeedback("error", "처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
+        } catch (error) {
+            onFeedback("error", showValidationError && error instanceof Error
+                ? error.message
+                : "처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
         } finally {
             setBusy(false);
         }
@@ -113,16 +124,8 @@ export default function TrialCrmModals({
                             }),
                             onCloseSchedule,
                             "체험 일정을 저장했습니다.",
-                            (result) => {
-                                const scheduledSms = (
-                                    result as Awaited<ReturnType<typeof updateTrialLead>>
-                                )?.scheduledSms;
-                                if (!scheduledSms?.attempted || scheduledSms.errors.length === 0) return null;
-                                return {
-                                    type: "error",
-                                    message: `일정은 저장됐지만 일부 문자가 발송되지 않았습니다. ${scheduledSms.errors[0]}`,
-                                };
-                            },
+                            undefined,
+                            true,
                         )
                     }
                     busy={busy}
@@ -193,13 +196,6 @@ export default function TrialCrmModals({
     );
 }
 
-function formatPhoneInput(value: string) {
-    const nums = value.replace(/\D/g, "").slice(0, 11);
-    if (nums.length > 7) return `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
-    if (nums.length > 3) return `${nums.slice(0, 3)}-${nums.slice(3)}`;
-    return nums;
-}
-
 function dateInputValue(dateStr: string | null) {
     return seoulDateInputValue(dateStr);
 }
@@ -208,11 +204,8 @@ function timeInputValue(dateStr: string | null) {
     return seoulTimeInputValue(dateStr);
 }
 
-function isLikelyDefaultScheduleTime(dateStr: string | null) {
-    if (!dateStr) return false;
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime())) return false;
-    return date.getHours() === 9 && date.getMinutes() === 0;
+function isDateOnlySchedulePlaceholder(dateStr: string | null) {
+    return Boolean(dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim()));
 }
 
 const MODAL_INPUT_CLASS = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
@@ -370,7 +363,7 @@ function TrialEditModal({
 }) {
     const [form, setForm] = useState({
         childName: lead.childName ?? "",
-        childAge: lead.childAge ?? "",
+        childAge: lead.childAge && lead.childAge !== lead.childGrade ? lead.childAge : "",
         childGrade: lead.childGrade ?? "",
         childSchool: lead.childSchool ?? "",
         childGender: lead.childGender ?? "",
@@ -381,7 +374,6 @@ function TrialEditModal({
         trialDate: dateInputValue(lead.trialDate),
         preferredDay: lead.preferredDay ?? "",
         preferredPeriod: lead.preferredPeriod ?? "",
-        trialFeeConfirmed: Boolean(lead.trialFeeConfirmed),
         hopeNote: lead.hopeNote ?? "",
         memo: lead.memo ?? "",
     });
@@ -407,7 +399,7 @@ function TrialEditModal({
             trialDate: form.trialDate || null,
             preferredDay: form.preferredDay.trim() || null,
             preferredPeriod: form.preferredPeriod.trim() || null,
-            trialFeeConfirmed: form.trialFeeConfirmed,
+            // trialFeeConfirmed 는 보내지 않는다 — 입금 확인은 전용 버튼(이력 기록)에서만 바뀐다
             hopeNote: form.hopeNote.trim() || null,
             memo: form.memo.trim() || null,
         });
@@ -419,7 +411,6 @@ function TrialEditModal({
                     <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">edit</span>
                     체험 신청 수정
                 </h2>
-                <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">상담 중 확인한 신청 내용을 바로 정리합니다.</p>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {formError && (
                         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">
@@ -430,8 +421,8 @@ function TrialEditModal({
                         <FormField label="아이 이름 *">
                             <input value={form.childName} onChange={(e) => setForm({ ...form, childName: e.target.value })} className={MODAL_INPUT_CLASS} />
                         </FormField>
-                        <FormField label="나이/학년">
-                            <input value={form.childAge} onChange={(e) => setForm({ ...form, childAge: e.target.value })} className={MODAL_INPUT_CLASS} placeholder="초등 3학년" />
+                        <FormField label="나이 (필요한 경우만)">
+                            <input value={form.childAge} onChange={(e) => setForm({ ...form, childAge: e.target.value })} className={MODAL_INPUT_CLASS} placeholder="예: 11세" />
                         </FormField>
                         <FormField label="학년">
                             <input value={form.childGrade} onChange={(e) => setForm({ ...form, childGrade: e.target.value })} className={MODAL_INPUT_CLASS} />
@@ -459,9 +450,17 @@ function TrialEditModal({
                             <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className={MODAL_INPUT_CLASS}>
                                 <option value="WEBSITE">홈페이지</option>
                                 <option value="NAVER">네이버</option>
+                                <option value="NAVER_SEARCH">네이버 키워드 검색</option>
+                                <option value="NAVER_AD">네이버 검색광고</option>
+                                <option value="PORTAL_OTHER">네이버 외 포털검색</option>
+                                <option value="NAVER_BLOG">스티즈 네이버블로그</option>
+                                <option value="INSTAGRAM">인스타그램</option>
+                                <option value="YOUTUBE">유튜브</option>
                                 <option value="REFERRAL">지인소개</option>
                                 <option value="FLYER">전단지</option>
-                                <option value="PASSBY">지나가다</option>
+                                <option value="PASSBY">지나가다 발견</option>
+                                <option value="SOOMGO">숨고</option>
+                                <option value="DANGGEUN">당근마켓</option>
                                 <option value="OTHER">기타</option>
                             </select>
                         </FormField>
@@ -475,14 +474,10 @@ function TrialEditModal({
                             <input value={form.preferredPeriod} onChange={(e) => setForm({ ...form, preferredPeriod: e.target.value })} className={MODAL_INPUT_CLASS} placeholder="4" />
                         </FormField>
                     </div>
-                    <label className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
-                        <input
-                            type="checkbox"
-                            checked={form.trialFeeConfirmed}
-                            onChange={(e) => setForm({ ...form, trialFeeConfirmed: e.target.checked })}
-                        />
-                        체험비 확인
-                    </label>
+                    <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
+                        체험비 상태: {trialFeeStatusLabel(lead)}
+                        <p className="mt-1 text-xs font-medium text-gray-400">입금 확인은 상세 화면의 전용 버튼에서 처리합니다.</p>
+                    </div>
                     <FormField label="바라는 점">
                         <textarea value={form.hopeNote} onChange={(e) => setForm({ ...form, hopeNote: e.target.value })} rows={2} className={`${MODAL_INPUT_CLASS} resize-none`} />
                     </FormField>
@@ -508,44 +503,70 @@ function TrialScheduleModal({
     onSubmit: (data: Record<string, unknown>) => void;
     busy: boolean;
 }) {
-    const initialClass =
-        (lead.scheduledClassId ? classes.find((classInfo) => classInfo.id === lead.scheduledClassId) : null) ||
-        getPreferredClass(lead, classes) ||
-        null;
-    const [scheduledClassId, setScheduledClassId] = useState(initialClass?.id ?? "");
     const initialScheduledDate = dateInputValue(lead.scheduledDate || lead.trialDate);
     const [scheduledDate, setScheduledDate] = useState(initialScheduledDate);
+    const [scheduledClassId, setScheduledClassId] = useState("");
     const [scheduledTime, setScheduledTime] = useState(
-        lead.scheduledDate && (
-            Boolean(lead.scheduledClassId) ||
-            !isLikelyDefaultScheduleTime(lead.scheduledDate)
-        )
+        lead.scheduledDate && !isDateOnlySchedulePlaceholder(lead.scheduledDate)
             ? timeInputValue(lead.scheduledDate)
-            : resolveTrialScheduleStartTime(initialClass, initialScheduledDate) ||
-                (isLikelyDefaultScheduleTime(lead.scheduledDate) && getPreferredSlotKeyCandidates(lead).length > 0
-                    ? ""
-                    : timeInputValue(lead.scheduledDate)),
+            : "",
     );
+    const [options, setOptions] = useState<Array<{ classId: string; className: string; startTime: string }>>([]);
+    const [optionsLoading, setOptionsLoading] = useState(Boolean(initialScheduledDate));
+    const [optionsError, setOptionsError] = useState("");
     const [memo, setMemo] = useState(lead.memo ?? "");
     const [formError, setFormError] = useState("");
     const preferredSchedule = formatPreferredSchedule(lead, classes);
 
+    useEffect(() => {
+        if (!scheduledDate) return;
+        const controller = new AbortController();
+        fetch(`/api/admin/trial/schedule-options?date=${encodeURIComponent(scheduledDate)}`, {
+            cache: "no-store",
+            signal: controller.signal,
+        })
+            .then(async (response) => {
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.error || "수업 목록을 불러오지 못했습니다.");
+                return payload.options as Array<{ classId: string; className: string; startTime: string }>;
+            })
+            .then((available) => {
+                setOptions(available);
+                // 이미 확정된 일정만 재선택한다. 희망일의 반을 확정 반으로 추측하지 않는다.
+                if (dateInputValue(lead.scheduledDate) === scheduledDate
+                    && available.some((option) => option.classId === lead.scheduledClassId)) {
+                    setScheduledClassId(lead.scheduledClassId || "");
+                    setScheduledTime(lead.scheduledDate ? timeInputValue(lead.scheduledDate) : "");
+                }
+            })
+            .catch((error) => {
+                if (controller.signal.aborted) return;
+                setOptions([]);
+                setOptionsError(error instanceof Error ? error.message : "수업 목록을 불러오지 못했습니다.");
+            })
+            .finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
+        return () => controller.abort();
+    }, [scheduledDate, lead.scheduledDate, lead.scheduledClassId]);
+
     function handleClassChange(classId: string) {
         setScheduledClassId(classId);
-        const selectedClass = classes.find((classInfo) => classInfo.id === classId);
-        setScheduledTime(resolveTrialScheduleStartTime(selectedClass, scheduledDate));
+        setScheduledTime(options.find((option) => option.classId === classId)?.startTime || "");
     }
 
     function handleDateChange(date: string) {
         setScheduledDate(date);
-        const selectedClass = classes.find((classInfo) => classInfo.id === scheduledClassId);
-        if (selectedClass) setScheduledTime(resolveTrialScheduleStartTime(selectedClass, date));
+        setScheduledClassId("");
+        setScheduledTime("");
+        setOptions([]);
+        setOptionsError("");
+        setOptionsLoading(Boolean(date));
     }
 
     function handleSubmit(event: FormEvent) {
         event.preventDefault();
-        if (!scheduledDate || !scheduledTime) {
-            setFormError("확정할 날짜와 시간을 모두 입력해주세요.");
+        if (!scheduledDate || !scheduledClassId || !scheduledTime
+            || !options.some((option) => option.classId === scheduledClassId)) {
+            setFormError("날짜를 선택한 뒤 해당 날짜의 수업과 시간을 확인해 주세요.");
             return;
         }
         const scheduledAt = toSeoulScheduledDateTime(scheduledDate, scheduledTime);
@@ -557,7 +578,7 @@ function TrialScheduleModal({
         onSubmit({
             status: "SCHEDULED",
             scheduledDate: scheduledAt,
-            scheduledClassId: scheduledClassId || null,
+            scheduledClassId,
             memo: memo.trim() || null,
         });
     }
@@ -591,35 +612,39 @@ function TrialScheduleModal({
                             <p className="mt-1 font-black">{preferredSchedule}</p>
                         </div>
                     </div>
-                    <FormField label="확정 수업">
+                    <FormField label="확정 날짜 *">
+                        <input type="date" value={scheduledDate} onChange={(e) => handleDateChange(e.target.value)} className={MODAL_INPUT_CLASS} />
+                    </FormField>
+                    <FormField label="선택한 날짜의 수업 *">
                         <select
                             value={scheduledClassId}
                             onChange={(event) => handleClassChange(event.target.value)}
                             className={MODAL_INPUT_CLASS}
+                            disabled={!scheduledDate || optionsLoading || Boolean(optionsError) || options.length === 0}
                         >
-                            <option value="">반 선택 안 함</option>
-                            {classes.map((classInfo) => (
-                                <option key={classInfo.id} value={classInfo.id}>
-                                    {formatClassLabel(classInfo)}
+                            <option value="">수업 선택</option>
+                            {options.map((option) => (
+                                <option key={option.classId} value={option.classId}>
+                                    {option.startTime} · {option.className}
                                 </option>
                             ))}
                         </select>
                     </FormField>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <FormField label="확정 날짜 *">
-                            <input type="date" value={scheduledDate} onChange={(e) => handleDateChange(e.target.value)} className={MODAL_INPUT_CLASS} />
-                        </FormField>
-                        <FormField label="확정 시간 *">
-                            <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={MODAL_INPUT_CLASS} />
-                        </FormField>
-                    </div>
+                    {optionsLoading && <p className="text-sm text-gray-500">해당 날짜의 수업을 확인 중입니다...</p>}
+                    {optionsError && <p className="text-sm font-semibold text-red-600">{optionsError}</p>}
+                    {!optionsLoading && !optionsError && scheduledDate && options.length === 0 && (
+                        <p className="text-sm text-gray-500">해당 날짜에 확정할 수 있는 수업이 없습니다.</p>
+                    )}
+                    <FormField label="확정 시간 *">
+                        <input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} className={MODAL_INPUT_CLASS} disabled={!scheduledClassId} />
+                    </FormField>
                     <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                        확정 수업을 선택하면 해당 반의 시작 시간이 자동으로 들어갑니다. 실제 체험 시간이 다르면 시간만 직접 바꿔주세요.
+                        선택한 날짜에 운영되는 수업만 표시됩니다. 반을 고르면 시작 시간이 자동으로 들어가며, 실제 체험 시간이 다르면 시간만 직접 바꿔주세요. 저장만으로 문자는 발송되지 않습니다.
                     </p>
                     <FormField label="관리 메모">
                         <textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={3} className={`${MODAL_INPUT_CLASS} resize-none`} />
                     </FormField>
-                    <ModalActions onClose={onClose} busy={busy} submitLabel="일정 저장" busyLabel="저장 중..." accent="sky" />
+                    <ModalActions onClose={onClose} busy={busy || optionsLoading || Boolean(optionsError) || !scheduledClassId} submitLabel="일정 저장" busyLabel="저장 중..." accent="sky" />
                 </form>
         </AdminModal>
     );
@@ -784,7 +809,16 @@ function AddLeadModal({
                         >
                             <option value="WEBSITE">홈페이지</option>
                             <option value="NAVER">네이버</option>
+                            <option value="NAVER_SEARCH">네이버 키워드 검색</option>
+                            <option value="NAVER_AD">네이버 검색광고</option>
+                            <option value="PORTAL_OTHER">네이버 외 포털검색</option>
+                            <option value="NAVER_BLOG">스티즈 네이버블로그</option>
+                            <option value="INSTAGRAM">인스타그램</option>
+                            <option value="YOUTUBE">유튜브</option>
+                            <option value="PASSBY">지나가다 발견</option>
                             <option value="REFERRAL">지인소개</option>
+                            <option value="SOOMGO">숨고</option>
+                            <option value="DANGGEUN">당근마켓</option>
                             <option value="OTHER">기타</option>
                         </select>
                     </div>

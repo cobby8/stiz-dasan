@@ -1,7 +1,6 @@
 import { getAcademySettings, getPublicFaqs } from "@/lib/queries";
 import PublicPageLayout from "@/components/PublicPageLayout";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
-import SectionLayout from "@/components/ui/SectionLayout";
 import ProcessSteps from "@/components/landing/ProcessSteps";
 import CTABanner from "@/components/landing/CTABanner";
 import ApplyPageClient from "./ApplyPageClient";
@@ -10,10 +9,18 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const revalidate = 60;
 export const metadata = buildPublicMetadata({
-    title: "체험/수강신청 | STIZ 농구교실 다산점",
-    description: "스티즈 농구교실 다산점 체험 수업 신청 및 수강 신청 안내. 지금 바로 신청하세요.",
+    title: "체험/수강신청 | STIZ 농구교실 다산2호점",
+    description: "스티즈 농구교실 다산2호점 체험 수업 신청 및 수강 신청 안내. 지금 바로 신청하세요.",
     path: "/apply",
 });
+
+type ApplyPageSettings = {
+    contactPhone?: string | null;
+    trialTitle?: string | null;
+    trialContent?: string | null;
+    enrollTitle?: string | null;
+    enrollContent?: string | null;
+};
 
 function toSafeApplyContent(content: string | null | undefined) {
     if (!content) return null;
@@ -24,7 +31,7 @@ function toSafeApplyContent(content: string | null | undefined) {
 export default async function ApplyPage() {
     // 설정과 FAQ를 동시에 조회 (성능 최적화)
     const [settings, faqData] = await Promise.all([
-        getAcademySettings() as Promise<any>,
+        getAcademySettings() as Promise<ApplyPageSettings>,
         getPublicFaqs(),
     ]);
     const phone = settings?.contactPhone || "010-0000-0000";
@@ -32,7 +39,7 @@ export default async function ApplyPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 도형 (about/page.tsx 패턴 동일) */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
                 {/* 배경 장식 도형들 */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
@@ -57,7 +64,6 @@ export default async function ApplyPage() {
                 trialContentHtml={toSafeApplyContent(settings?.trialContent)}
                 enrollTitle={settings?.enrollTitle || "수강신청 안내"}
                 enrollContentHtml={toSafeApplyContent(settings?.enrollContent)}
-                uniformFormUrl={settings?.uniformFormUrl || null}
                 faqData={faqData}
             />
 
@@ -66,8 +72,9 @@ export default async function ApplyPage() {
                 title="궁금한 점이 있으신가요?"
                 subtitle="전화 한 통이면 친절하게 안내해 드립니다"
                 phone={phone}
-                primaryLabel="체험 수업 신청"
-                primaryHref="/apply"
+                primaryLabel="전화 상담"
+                primaryHref={`tel:${phone.replace(/-/g, "")}`}
+                showSecondary={false}
             />
         </PublicPageLayout>
     );

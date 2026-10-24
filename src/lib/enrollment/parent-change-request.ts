@@ -170,7 +170,7 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
-      WHERE e.id = $1 AND s."parentId" = $2 AND e.status = 'ACTIVE'
+      WHERE e.id = $1 AND s."parentId" = $2 AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}
       LIMIT 1`,
     enrollmentId, parentUserId,
   );
@@ -237,6 +237,7 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
   await notifyAdminsOfChangeRequest({
     studentName: owned[0].studentName,
     fromClassName: owned[0].className,
+    fromClassId: owned[0].classId,
     toClassName,
     kind,
     effectiveFrom,
@@ -274,13 +275,14 @@ export async function cancelEnrollmentChangeRequest(parentUserId: string, reques
 async function notifyAdminsOfChangeRequest(input: {
   studentName: string;
   fromClassName: string;
+  fromClassId: string;
   toClassName: string | null;
   kind: ChangeKind;
   effectiveFrom: string;
   waitlisted: boolean;
 }) {
   try {
-    const { notifyAdmins } = await import("@/lib/notification");
+    const { notifyOperationalStaff } = await import("@/lib/operational-staff-notification");
     const { CHANGE_KIND_LABEL } = await import("@/lib/enrollment/changeRequestRules");
     const what =
       input.kind === "CLASS_CHANGE"
@@ -289,9 +291,14 @@ async function notifyAdminsOfChangeRequest(input: {
     const message =
       `${input.studentName} 학생 ${CHANGE_KIND_LABEL[input.kind]} 신청 (${what}, ${input.effectiveFrom}부터)` +
       (input.waitlisted ? " · 희망 반 정원이 찼습니다" : "");
-    // 코치 SMS 는 보내지 않는다 — 반 편성은 원장이 판단할 일이다.
-    await notifyAdmins("ENROLLMENT_CHANGE", "수강 변경 신청", message, "/admin/enrollment-changes", {
-      notifyCoaches: false,
+    await notifyOperationalStaff({
+      type: "ENROLLMENT_CHANGE",
+      title: "수강 변경 신청",
+      message: `${message} · 관리자 승인 전에는 수업·차량표를 변경하지 마세요.`,
+      linkUrl: "/admin/enrollment-changes",
+      staffLinkUrl: "/staff",
+      classId: input.fromClassId,
+      includeCoach: true,
     });
   } catch (error) {
     console.error("[parent-change-request] 원장 알림 실패:", error);

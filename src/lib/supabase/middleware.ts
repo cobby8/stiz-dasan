@@ -48,11 +48,14 @@ export async function updateSession(request: NextRequest) {
   // 설치 안내는 로그인 전에 봐야 한다. 학부모 앱의 manifest scope 가 /mypage 라
   // 안내 화면도 그 안에 있어야 브라우저가 설치를 제안한다(선생님 앱과 같은 구조).
   const isMyPageInstall = pathname === "/mypage/install";
+  // 카카오채널 인증 링크 화면. 로그인 안 된 학부모에게 "로그인 / 기존 계정 활성화" 안내를 직접 보여줘야 해서
+  // 로그인 강제에서 뺀다. 화면이 스스로 로그인 상태를 확인하고, 연결은 검증된 학부모만 할 수 있다.
+  const isMyPageKakaoConnect = pathname === "/mypage/kakao-connect";
   const isAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
   const isStaffPath = pathname === "/staff" || pathname.startsWith("/staff/");
   const isMyPagePath = pathname === "/mypage" || pathname.startsWith("/mypage/");
   const protectedPath =
-    isAdminPath || (isStaffPath && !isStaffLogin && !isStaffInstall) || (isMyPagePath && !isMyPageInstall);
+    isAdminPath || (isStaffPath && !isStaffLogin && !isStaffInstall) || (isMyPagePath && !isMyPageInstall && !isMyPageKakaoConnect);
 
   if (protectedPath && !isAuthenticated) {
     const url = request.nextUrl.clone();

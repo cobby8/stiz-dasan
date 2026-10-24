@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import ConfirmSubmitButton from "./ConfirmSubmitButton";
@@ -124,6 +124,8 @@ export default function AdminSettingsClient({
     const [fetchErrorState, setFetchErrorState] = useState(fetchError === true);
     const [actionError, setActionError] = useState<string | null>(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const savingRef = useRef(false);
     const [bodyFont, setBodyFont] = useState<string>(settings?.siteBodyFont || "system");
     const [headingFont, setHeadingFont] = useState<string>(
         HEADING_FONT_OPTIONS.some(f => f.key === settings?.siteHeadingFont)
@@ -204,8 +206,11 @@ export default function AdminSettingsClient({
     }
 
     async function saveBasicSettings(formData: FormData) {
+        if (savingRef.current || fetchErrorState || loading) return;
+        savingRef.current = true;
+        setSaving(true);
         setActionError(null);
-        setSaveSuccess(true); // optimistic: 즉시 성공 표시 → INP ~10ms
+        setSaveSuccess(false);
         try {
             const data: any = {};
             formData.forEach((value, key) => {
@@ -219,10 +224,13 @@ export default function AdminSettingsClient({
             data.siteBodyFont = bodyFont;
             data.siteHeadingFont = headingFont;
             await updateAcademySettings(data);
-            setTimeout(() => setSaveSuccess(false), 4000);
+            setSaveSuccess(true);
         } catch (e: any) {
             setSaveSuccess(false);
             setActionError(e.message || "저장 중 오류가 발생했습니다.");
+        } finally {
+            savingRef.current = false;
+            setSaving(false);
         }
     }
 
@@ -247,7 +255,12 @@ export default function AdminSettingsClient({
             )}
 
             <div className="max-w-3xl mx-auto space-y-8 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                <form action={saveBasicSettings} className="space-y-8">
+                <form onSubmit={(event) => {
+                    // 실패해도 React 폼 자동 초기화가 입력값을 지우지 않도록 직접 제출한다.
+                    event.preventDefault();
+                    void saveBasicSettings(new FormData(event.currentTarget));
+                }} onChange={() => setSaveSuccess(false)} inert={saving || fetchErrorState || loading} aria-busy={saving} className="space-y-8">
+                    <fieldset disabled={saving || fetchErrorState || loading} className="min-w-0 space-y-8 border-0 p-0">
 
                     {/* ── 폰트 설정 ───────────────────────────────────────── */}
                     <section>
@@ -257,7 +270,7 @@ export default function AdminSettingsClient({
                         {/* 폰트 미리보기 */}
                         <div className="bg-gray-900 rounded-xl p-5 mb-6 text-white space-y-1">
                             <p className="text-xs text-gray-400 mb-2 font-mono">PREVIEW</p>
-                            <p style={{ fontFamily: headingFontCss }} className="text-2xl font-black">STIZ 농구교실 다산점</p>
+                            <p style={{ fontFamily: headingFontCss }} className="text-2xl font-black">STIZ 농구교실 다산2호점</p>
                             <p style={{ fontFamily: bodyFontCss }} className="text-sm text-gray-300 leading-relaxed">
                                 아이들의 가능성을 이끌어드립니다. 전문 코치진의 체계적인 지도로 농구의 즐거움을 경험하세요.
                             </p>
@@ -314,8 +327,8 @@ export default function AdminSettingsClient({
                                 <AppliesTo pages={["홈페이지 메인 히어로 소개 문구", "학원소개 페이지 원장 인사말"]} />
                                 <LazyRichTextEditor
                                     value={introText}
-                                    onChange={setIntroText}
-                                    placeholder={"안녕하세요, 스티즈 농구교실 다산점입니다.\n\n아이들이 농구를 통해 협동심과 건강한 체력을 기를 수 있도록 최선을 다해 지도합니다."}
+                                    onChange={(value) => { setIntroText(value); setSaveSuccess(false); }}
+                                    placeholder={"안녕하세요, 스티즈 농구교실 다산2호점입니다.\n\n아이들이 농구를 통해 협동심과 건강한 체력을 기를 수 있도록 최선을 다해 지도합니다."}
                                 />
                             </div>
                         </div>
@@ -330,7 +343,7 @@ export default function AdminSettingsClient({
                         </p>
                         <LazyRichTextEditor
                             value={philosophyText}
-                            onChange={setPhilosophyText}
+                            onChange={(value) => { setPhilosophyText(value); setSaveSuccess(false); }}
                             placeholder={"우리 학원은 농구를 통해 아이들의 체력, 협동심, 리더십을 길러줍니다.\n\n모든 수업은 연령과 실력에 맞춘 단계별 커리큘럼으로 진행됩니다."}
                         />
                     </section>
@@ -346,7 +359,7 @@ export default function AdminSettingsClient({
                                 <p className="text-xs text-gray-400 mb-2">비워두면 섹션이 숨겨집니다.</p>
                                 <LazyRichTextEditor
                                     value={facilitiesText}
-                                    onChange={setFacilitiesText}
+                                    onChange={(value) => { setFacilitiesText(value); setSaveSuccess(false); }}
                                     placeholder="최신 시설과 안전한 환경에서 수업이 진행됩니다."
                                 />
                             </div>
@@ -621,9 +634,10 @@ export default function AdminSettingsClient({
                             confirmMessage="변경 사항을 저장하시겠습니까?"
                             className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-orange-600 transition shadow"
                         >
-                            저장하기
+                            {saving ? "저장 중..." : "저장하기"}
                         </ConfirmSubmitButton>
                     </div>
+                    </fieldset>
                 </form>
 
             </div>

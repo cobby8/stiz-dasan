@@ -2,6 +2,7 @@
 
 import { FormEvent, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminModal from "@/components/admin/AdminModal";
+import CompactListFilters from "@/components/academy/CompactListFilters";
 import SeasonalHeader from "./SeasonalHeader";
 import { createCsv, createSafeCsvFilename, maskPhoneNumber } from "@/lib/seasonal/roster-export";
 import { seoulDateTimeToIso } from "./seasonalDateTime";
@@ -1389,11 +1390,13 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         action={<button type="button" onClick={() => { setEditingSeason(null); setModal("season"); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 font-black text-[var(--brand-accent-contrast)]"><Icon name="add" />새 시즌 만들기</button>}
       />
 
-      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-1.5 dark:border-gray-700 dark:bg-gray-900" aria-label="방학특강 관리 메뉴">
-        {TABS.map((item) => <button key={item.key} type="button" onClick={() => setTab(item.key)} className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${tab === item.key ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"}`}><Icon name={item.icon} className="text-xl" />{item.label}</button>)}
-        <a href="/admin/seasonal/attendance" className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"><Icon name="fact_check" className="text-xl" />출석 관리</a>
-        <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"><Icon name="cached" className="text-xl" />보강 관리</a>
-        <a href="/admin/shuttle" className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"><Icon name="directions_bus" className="text-xl" />셔틀 관리</a>
+      <nav className="relative flex min-w-0 items-center justify-between gap-2" aria-label="방학특강 관리 메뉴">
+        <select aria-label="방학특강 업무" value={tab} onChange={(event) => setTab(event.target.value as Tab)} className="h-11 min-h-11 max-w-full shrink-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 text-[17px] font-bold text-[var(--color-academy-primary)]">{TABS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
+        <details className="relative shrink-0"><summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-primary)]">관련 업무<Icon name="expand_more" className="text-lg" /></summary><div className="absolute right-0 top-full z-20 mt-1 w-44 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1 shadow-lg">
+        <a href="/admin/seasonal/attendance" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="fact_check" className="text-xl" />출석 관리</a>
+        <a href="/admin/seasonal/attendance?view=makeup" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="cached" className="text-xl" />보강 관리</a>
+        <a href="/admin/shuttle" className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"><Icon name="directions_bus" className="text-xl" />셔틀 관리</a>
+        </div></details>
       </nav>
 
       {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800"><Icon name="check_circle" />{notice}</div>}
@@ -1724,29 +1727,17 @@ function ApplicationsView({
   const sortFor = (key: "name" | "parent" | "createdAt") => (dir: "asc" | "desc") => { setSort({ key, dir }); setOpenCol(null); };
 
   return <div className="space-y-4">
-    <div className="print:hidden inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900" aria-label="신청 관리 보기">
-      <button type="button" onClick={() => onMode("applications")} className={`min-h-10 rounded-lg px-4 text-sm font-black ${mode === "applications" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500"}`}>신청별</button>
-      <button type="button" onClick={() => onMode("roster")} className={`min-h-10 rounded-lg px-4 text-sm font-black ${mode === "roster" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500"}`}>반별 명단</button>
-    </div>
+    <label className="print:hidden inline-flex items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">보기<select aria-label="신청 관리 보기" value={mode} onChange={(event) => onMode(event.target.value as ApplicationsMode)} className="h-11 min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] text-[var(--color-academy-ink)]"><option value="applications">신청별</option><option value="roster">반별 명단</option></select></label>
     {mode === "roster" ? <RosterView seasons={seasons} applications={allApplications} roster={roster} filters={rosterFilters} loading={rosterLoading} error={rosterError} onFilters={onRosterFilters} onSelect={onSelect} /> : <Panel title="신청 목록" icon="assignment_ind">
-    {/* 진행 중 / 취소자 탭 — 취소자를 본 목록에서 분리해 관리 편의를 높인다. */}
-    <div className="mb-3 inline-flex rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-900" aria-label="신청 진행 상태 탭">
-      <button type="button" onClick={() => onAppTab("active")} className={`min-h-10 rounded-lg px-4 text-sm font-black ${appTab === "active" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500"}`}>진행 중</button>
-      <button type="button" onClick={() => onAppTab("cancelled")} className={`min-h-10 rounded-lg px-4 text-sm font-black ${appTab === "cancelled" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "text-gray-500"}`}>취소자</button>
-    </div>
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-      <label className="relative flex-1">
-        <Icon name="search" className="absolute left-3 top-3 text-xl text-gray-400" />
-        <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="학생·학부모·전화번호 검색" className="min-h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-3 dark:border-gray-700 dark:bg-gray-800" />
-      </label>
-      {/* 상태 세부 필터는 '진행 중' 탭에서만. 취소자 탭은 취소만 보이므로 필터 불필요. */}
-      {appTab === "active" && (
-        <select aria-label="신청 상태" value={status} onChange={(event) => onStatus(event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
-          <option value="ALL">전체 상태(취소 제외)</option>
-          {["PENDING","APPROVED","WAITLISTED","REJECTED"].map((value) => <option value={value} key={value}>{STATUS_LABEL[value]}</option>)}
-        </select>
-      )}
-    </div>
+    <CompactListFilters className="mb-4" activeCount={(appTab === "cancelled" ? 1 : Number(status !== "ALL")) + [exType, exBase, exFreq, exPay, exShuttle].filter(values => values.size > 0).length}
+      resultCount={`표시 ${displayApplications.length}건 · 조회 ${pagination.total}건`}
+      summary={[appTab === "cancelled" ? "취소자" : status === "ALL" ? "진행 중 · 취소 제외" : STATUS_LABEL[status] ?? status, [exType, exBase, exFreq, exPay, exShuttle].some(values => values.size > 0) ? "열 제외 조건 적용" : ""].filter(Boolean).join(" · ")}
+      onReset={() => { onAppTab("active"); onStatus("ALL"); setExType(new Set()); setExBase(new Set()); setExFreq(new Set()); setExPay(new Set()); setExShuttle(new Set()); }}
+      search={<label className="relative block"><span className="sr-only">신청 검색</span><Icon name="search" className="absolute left-3 top-3 text-xl text-[var(--color-academy-muted)]" /><input type="search" enterKeyHint="search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="학생·학부모·전화번호 검색" className="min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] pl-10 pr-3 text-[17px]" /></label>}
+    >
+      <label className="grid min-w-0 gap-1 text-sm font-bold">조회 범위<select aria-label="신청 진행 상태" value={appTab} onChange={(event) => onAppTab(event.target.value as "active" | "cancelled")} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="active">진행 중 · 취소 제외</option><option value="cancelled">취소자만</option></select></label>
+      {appTab === "active" && <label className="grid min-w-0 gap-1 text-sm font-bold">신청 상태<select aria-label="신청 상태" value={status} onChange={(event) => onStatus(event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="ALL">전체 상태(취소 제외)</option>{["PENDING","APPROVED","WAITLISTED","REJECTED"].map((value) => <option value={value} key={value}>{STATUS_LABEL[value]}</option>)}</select></label>}
+    </CompactListFilters>
 
     {selectedItemCount > 0 && (
       <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[var(--brand-accent)] bg-[var(--brand-accent-soft)] p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2001,16 +1992,20 @@ function RosterView({ seasons, applications, roster, filters, loading, error, on
     <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(caught instanceof Error ? caught.message : "CSV 다운로드에 실패했습니다."))} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"><Icon name="download" />CSV</button>
   </div>}>
     <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } body * { visibility: hidden !important; } .seasonal-roster-print, .seasonal-roster-print * { visibility: visible !important; } .seasonal-roster-print { position: absolute; inset: 0; width: 100%; color: #000 !important; } .roster-desktop { display: block !important; } .roster-mobile, .print\\:hidden { display: none !important; } .seasonal-roster-print table { width: 100%; border-collapse: collapse; font-size: 10pt; } .seasonal-roster-print th, .seasonal-roster-print td { border: 1px solid #777; padding: 6px; } .seasonal-roster-print thead { display: table-header-group; } }`}</style>
-    <div className="print:hidden grid gap-2 sm:grid-cols-2 xl:grid-cols-7">
-      <select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select>
-      <select aria-label="명단 반" value={filters.offeringId} onChange={(event) => changeFilter("offeringId", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="">전체 운영 반</option>{offerings.map((offering) => <option key={offering.id} value={offering.id}>{offering.name}</option>)}</select>
-      <input aria-label="명단 출석일" type="date" value={filters.date} onChange={(event) => changeFilter("date", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 font-bold dark:border-gray-700 dark:bg-gray-800" />
-      <select aria-label="명단 요일" value={filters.weekday} onChange={(event) => changeFilter("weekday", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="">전체 요일</option>{["월","화","수","목","금","토","일"].map((day) => <option key={day} value={day}>{day}요일</option>)}</select>
-      <select aria-label="명단 결제" value={filters.paymentStatus} onChange={(event) => changeFilter("paymentStatus", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="">전체 결제</option><option value="PAID">결제 완료</option><option value="UNPAID">미결제</option><option value="PAYMENT_PENDING">결제 대기</option></select>
-      <select aria-label="명단 셔틀" value={filters.shuttleStatus} onChange={(event) => changeFilter("shuttleStatus", event.target.value)} className="min-h-11 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="">전체 셔틀</option><option value="NOT_USED">미이용</option><option value="REQUESTED">요청</option><option value="UNASSIGNED">미배정</option><option value="ASSIGNED">배정 완료</option></select>
-      <label className="relative"><span className="sr-only">명단 검색</span><Icon name="search" className="absolute left-3 top-3 text-xl text-gray-400" /><input value={filters.q} onChange={(event) => changeFilter("q", event.target.value)} placeholder="학생·학교 검색" className="min-h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-3 dark:border-gray-700 dark:bg-gray-800" /></label>
-    </div>
-    <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-emerald-50 p-3 text-emerald-800"><strong className="block text-xl">{roster.stats.confirmed}</strong><span className="text-xs font-bold">확정</span></div><div className="rounded-xl bg-amber-50 p-3 text-amber-800"><strong className="block text-xl">{roster.stats.unpaid}</strong><span className="text-xs font-bold">미결제</span></div><div className="rounded-xl bg-blue-50 p-3 text-blue-800"><strong className="block text-xl">{roster.stats.shuttle}</strong><span className="text-xs font-bold">셔틀</span></div></div>
+    <div className="print:hidden mb-2 flex min-w-0 items-center gap-2 text-sm font-bold"><span>시즌</span><select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="h-11 min-h-11 flex-1 min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select></div>
+    <CompactListFilters className="print:hidden" activeCount={[filters.offeringId, filters.weekday, filters.date, filters.paymentStatus, filters.shuttleStatus].filter(Boolean).length}
+      resultCount={`명단 ${roster.pagination.total}명`}
+      summary={[offerings.find(offering => offering.id === filters.offeringId)?.name, filters.date ? formatDate(filters.date) : "", filters.weekday ? `${filters.weekday}요일` : "", filters.paymentStatus ? STATUS_LABEL[filters.paymentStatus] ?? filters.paymentStatus : "", filters.shuttleStatus ? STATUS_LABEL[filters.shuttleStatus] ?? (filters.shuttleStatus === "NOT_USED" ? "미이용" : filters.shuttleStatus) : ""].filter(Boolean).join(" · ") || "전체 반 · 전체 일정"}
+      onReset={() => onFilters(current => ({ ...current, offeringId: "", weekday: "", date: "", paymentStatus: "", shuttleStatus: "", page: 1 }))}
+      search={<label className="relative block"><span className="sr-only">명단 검색</span><Icon name="search" className="absolute left-3 top-3 text-xl text-[var(--color-academy-muted)]" /><input type="search" enterKeyHint="search" value={filters.q} onChange={(event) => changeFilter("q", event.target.value)} placeholder="학생·학교 검색" className="min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] pl-10 pr-3 text-[17px]" /></label>}
+    >
+      <label className="grid min-w-0 gap-1 text-sm font-bold">운영 반<select aria-label="명단 반" value={filters.offeringId} onChange={(event) => changeFilter("offeringId", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 운영 반</option>{offerings.map((offering) => <option key={offering.id} value={offering.id}>{offering.name}</option>)}</select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-bold">출석일<input aria-label="명단 출석일" type="date" value={filters.date} onChange={(event) => changeFilter("date", event.target.value)} className="h-11 max-w-full appearance-none box-border min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]" /></label>
+      <label className="grid min-w-0 gap-1 text-sm font-bold">요일<select aria-label="명단 요일" value={filters.weekday} onChange={(event) => changeFilter("weekday", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 요일</option>{["월","화","수","목","금","토","일"].map((day) => <option key={day} value={day}>{day}요일</option>)}</select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-bold">결제<select aria-label="명단 결제" value={filters.paymentStatus} onChange={(event) => changeFilter("paymentStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 결제</option><option value="PAID">결제 완료</option><option value="UNPAID">미결제</option><option value="PAYMENT_PENDING">결제 대기</option></select></label>
+      <label className="grid min-w-0 gap-1 text-sm font-bold">셔틀<select aria-label="명단 셔틀" value={filters.shuttleStatus} onChange={(event) => changeFilter("shuttleStatus", event.target.value)} className="h-11 min-h-11 w-full min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 셔틀</option><option value="NOT_USED">미이용</option><option value="REQUESTED">요청</option><option value="UNASSIGNED">미배정</option><option value="ASSIGNED">배정 완료</option></select></label>
+    </CompactListFilters>
+    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]" aria-label="명단 현황"><span><span>확정</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.confirmed}</strong></span><span><span>미결제</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.unpaid}</strong></span><span><span>셔틀</span> <strong className="text-[var(--color-academy-ink)]">{roster.stats.shuttle}</strong></span></p>
     {error && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
     {loading ? <Loading /> : <section className="seasonal-roster-print mt-4" aria-label="반별 확정 명단 결과">
       <div className="mb-3 hidden print:block"><h2 className="text-xl font-black">{printTitle}</h2><p className="text-sm">확정 {roster.stats.confirmed}명 · 출력 {formatDateTime(new Date().toISOString())}</p></div>
@@ -2391,7 +2386,7 @@ function ApplicationItemCard({
     {updateError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700 dark:border-red-500/30 dark:bg-red-950/30 dark:text-red-200">{updateError}</p>}
     <label className="mt-4 block text-xs font-bold text-gray-500 dark:text-gray-400">
       상태 직접 변경
-      <select value={item.status} disabled={updating} aria-busy={updating} onChange={(event) => void onUpdateItem(item.id, event.target.value as ItemStatus)} className="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 disabled:cursor-wait disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+      <select value={item.status} disabled={updating} aria-busy={updating} onChange={(event) => void onUpdateItem(item.id, event.target.value as ItemStatus)} className="h-11 mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 disabled:cursor-wait disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-white">
         {["PENDING","APPROVED","WAITLISTED","REJECTED","CANCELLED"].map((value) => <option key={value} value={value}>{STATUS_LABEL[value]}</option>)}
       </select>
     </label>
@@ -2804,7 +2799,7 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
       <ClassInput name="code" label="반 코드" required defaultValue={initial?.code} placeholder="예: MON-1" />
       <ClassInput name="title" label="반 이름" required defaultValue={initial?.name} placeholder="예: 초등 고학년 1교시" />
       <ClassInput name="targetGrades" label="대상" required defaultValue={initial?.targetGrades ?? initial?.targetGrade} placeholder="예: 초등 4~6학년" />
-      <ClassInput name="location" label="기본 수업 장소" defaultValue={initial?.location} placeholder="예: 다산점" />
+      <ClassInput name="location" label="기본 수업 장소" defaultValue={initial?.location} placeholder="예: 다산2호점" />
       <ClassInput name="capacity" label="정원 (미확정 가능)" type="number" defaultValue={initial?.capacity} />
       <ClassInput name="price" label="기본 수강료" type="number" required defaultValue={initial?.price} />
       <ClassInput name="newApplicantPrice" label="신규 회원 수강료" type="number" defaultValue={initial?.newApplicantPrice} />

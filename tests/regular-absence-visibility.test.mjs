@@ -13,7 +13,8 @@ test("신고와 취소 모두 원장에게 알린다", () => {
   // 취소를 안 알리면 원장이 결석으로 알고 준비한 채로 남는다.
   assert.match(parentAbsence, /kind: "REPORTED"/);
   assert.match(parentAbsence, /kind: "CANCELED"/);
-  assert.match(parentAbsence, /notifyAdmins\("ABSENCE"/);
+  assert.match(parentAbsence, /notifyOperationalStaff\(\{/);
+  assert.match(parentAbsence, /driverContext: \{ studentId: input\.studentId, serviceDate: input\.date \}/);
   assert.match(parentAbsence, /"\/admin\/absence"/);
 });
 
@@ -22,15 +23,17 @@ test("알림이 실패해도 신고 자체는 되돌리지 않는다", () => {
   assert.match(parentAbsence, /async function notifyAdminsOfAbsenceChange[\s\S]{0,1400}catch \(error\)[\s\S]{0,120}console\.error/);
 });
 
-test("취소 알림에 쓸 이름을 지우기 전에 확보한다", () => {
-  // 지운 뒤 조회하면 이미 없다. DELETE ... RETURNING 으로 같이 받아야 한다.
+test("취소 알림 근거를 보존하면서 이름과 원본 ID를 확보한다", () => {
+  assert.match(parentAbsence, /SET status = 'CANCELLED'/);
   assert.match(parentAbsence, /RETURNING s\.name AS "studentName", c\.name AS "className"/);
+  assert.match(parentAbsence, /ra\.id/);
   assert.match(parentAbsence, /canceled\.length === 0/);
 });
 
-test("코치에게는 SMS 를 보내지 않는다", () => {
-  // 건당 비용이 들고, 선생님은 출석 화면에서 바로 본다.
-  assert.match(parentAbsence, /notifyCoaches: false/);
+test("담당 코치와 확정 배차 기사에게 내부 알림을 연결한다", () => {
+  // 외부 SMS가 아니라 계정 기반 인앱·웹푸시 전달망이다.
+  assert.match(parentAbsence, /includeCoach: true/);
+  assert.match(parentAbsence, /includeDriver: true/);
 });
 
 test("선생님 출석 명단이 사전 신고를 함께 읽는다", () => {

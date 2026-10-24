@@ -20,7 +20,7 @@ import type { RegularShuttleRider } from "./shuttleRosterLogic";
  *
  * ⚠️ 저장/화면 연결(관리자 화면·저장 roster)은 Phase 2. 이 함수는 "호출 시 배차 제안 반환"까지만.
  * ⚠️ T맵은 방학특강과 동일하게 "편집/계산 시에만" 호출(localOnly=true 면 미호출·직선 추정).
- * ⚠️ 스키마 변경 없음(계산만). 기존 seasonal/구글시트 정규 셔틀 무변경.
+ * ⚠️ 스키마 변경 없음(계산만). 기존 seasonal/셔틀 명단(정규) 무변경.
  */
 
 const DOW_KO: Record<string, string> = {
@@ -53,6 +53,8 @@ function toDispatchRider(r: RegularShuttleRider): DispatchRiderInput {
 
 export type ComputeRegularDispatchOptions = {
   direction: DispatchDirection;
+  /** 차량표 적용 월('YYYY-MM'). 없으면 최신 월. */
+  serviceMonth?: string;
   /** Class.dayOfWeek 문자열("Mon" 등). date 보다 우선한다. */
   dayOfWeek?: string;
   /** 'YYYY-MM-DD'. dayOfWeek 미지정 시 이 날짜의 요일로 명단을 뽑는다. */
@@ -75,34 +77,74 @@ export async function computeRegularDispatch(
   // 명단 = 그 요일(또는 날짜의 요일) × 방향의 정규 정합 라이더. 좌표 없는 이용자는 roster.unassigned 로 분리돼 온다.
   const roster = await getRegularShuttleRiders({
     direction,
+    serviceMonth: opts.serviceMonth,
     dayOfWeek: opts.dayOfWeek,
     date: opts.date,
   });
-
-  // 좌표 있는 라이더 + 좌표 없는 이용자(roster.unassigned)를 함께 코어에 넘긴다.
-  // 코어가 좌표 유무로 다시 나눠 coordless 를 suggestion.unassigned 로 분리한다(방학특강과 동일 처리).
-  const riders = [...roster.riders, ...roster.unassigned].map(toDispatchRider);
 
   // 정규는 요일 기반 상시 운행이라 "운행일 후보(availableDates)" 개념이 없다.
   // 코어의 date 게이트는 "운행 성립 식별자"이므로, 실제 날짜가 있으면 그걸, 없으면 요일명을 넣어 파이프라인을 태운다.
   const date = opts.date ?? roster.dayOfWeek;
   const dow = DOW_KO[roster.dayOfWeek] ?? null;
 
-  // 수업 시각 앵커: 같은 요일이라도 반마다 시작/종료가 다를 수 있다(정규 특성).
-  // Phase 1 단일 앵커로는 가장 이른 시작·가장 늦은 종료를 써서 아무도 늦지 않게 잡는다(Phase 2에서 반별 분리 여지).
-  const starts = roster.riders.map((r) => r.classStart).filter((v): v is string => !!v);
-  const ends = roster.riders.map((r) => r.classEnd).filter((v): v is string => !!v);
+  const allRiders = [...roster.riders, ...roster.unassigned];
+  const starts = allRiders.map((r) => r.classStart).filter((v): v is string => !!v);
+  const ends = allRiders.map((r) => r.classEnd).filter((v): v is string => !!v);
   const classStart = starts.length ? starts.reduce((a, b) => (a < b ? a : b)) : null;
   const classEnd = ends.length ? ends.reduce((a, b) => (a > b ? a : b)) : null;
 
-  return buildDispatchFromRiders({
-    direction,
-    date,
-    dow,
-    availableDates: [], // 정규는 요일 상시 운행 — 날짜 선택 목록 없음(Phase 2에서 요일 네비로 대체 가능).
+  // 등원은 시작시각, 하원은 종료시각이 같은 학생끼리 한 번의 차량 실행으로 묶는다.
+  // 예전에는 월요일 전체를 16:00~20:40 한 묶음으로 계산해 17명을 한 번에 태우는 잘못된 제안이 나왔다.
+  const groups = new Map<string, typeof allRiders>();
+  for (const rider of allRiders) {
+    const anchor = direction === "PICKUP" ? rider.classStart : rider.classEnd;
+    const key = anchor ?? "__MISSING__";
+    const list = groups.get(key) ?? [];
+    list.push(rider);
+    groups.set(key, list);
+  }
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => {
+    if (a === "__MISSING__") return 1;
+    if (b === "__MISSING__") return -1;
+    return a.localeCompare(b);
+  });
+
+  if (orderedGroups.length === 0) {
+    return buildDispatchFromRiders({ direction, date, dow, availableDates: [], classStart, classEnd, riders: [], localOnly });
+  }
+
+  const suggestions = [];
+  for (const [key, groupRiders] of orderedGroups) {
+    const groupStarts = groupRiders.map((r) => r.classStart).filter((v): v is string => !!v);
+    const groupEnds = groupRiders.map((r) => r.classEnd).filter((v): v is string => !!v);
+    const groupStart = groupStarts.length ? groupStarts.reduce((a, b) => (a < b ? a : b)) : null;
+    const groupEnd = groupEnds.length ? groupEnds.reduce((a, b) => (a > b ? a : b)) : null;
+    const anchor = key === "__MISSING__" ? null : key;
+    const label = anchor ? `${anchor} ${direction === "PICKUP" ? "수업" : "종료"}` : "수업시간 확인 필요";
+    const suggestion = await buildDispatchFromRiders({
+      direction, date, dow, availableDates: [], classStart: groupStart, classEnd: groupEnd,
+      riders: groupRiders.map(toDispatchRider), localOnly,
+    });
+    suggestions.push({ suggestion, anchor, label, groupStart, groupEnd });
+  }
+
+  const base = suggestions[0].suggestion;
+  const vehicles = suggestions.flatMap(({ suggestion, label, groupStart, groupEnd }) => suggestion.vehicles.map((run) => ({
+    ...run,
+    classStart: groupStart,
+    classEnd: groupEnd,
+    timeGroupLabel: label,
+    tripLabel: run.tripLabel ? `${label} · ${run.tripLabel}` : label,
+  }))).map((run, index) => ({ ...run, index: index + 1 }));
+
+  return {
+    ...base,
     classStart,
     classEnd,
-    riders,
-    localOnly,
-  });
+    vehicles,
+    unassigned: suggestions.flatMap(({ suggestion, label }) => suggestion.unassigned.map((item) => ({ ...item, label: `${label} · ${item.label ?? "위치없음"}` }))),
+    totalRiders: suggestions.reduce((sum, item) => sum + item.suggestion.totalRiders, 0),
+    routingProvider: suggestions.some((item) => item.suggestion.routingProvider === "TMAP") ? "TMAP" : "LOCAL",
+    timeGroups: suggestions.map(({ suggestion, anchor, label }) => ({ anchor, label, riders: suggestion.totalRiders })),
+  };
 }

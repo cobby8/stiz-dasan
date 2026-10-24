@@ -187,7 +187,7 @@ export default function ScheduleAdminModals({
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-600 dark:text-gray-300 mb-1">
-                                        표시 레이블<span className="font-normal text-gray-400 ml-1">(비워두면 "n교시" 자동)</span>
+                                        표시 레이블<span className="font-normal text-gray-400 ml-1">(비워두면 &quot;n교시&quot; 자동)</span>
                                     </label>
                                     <input
                                         type="text"
@@ -402,11 +402,11 @@ export default function ScheduleAdminModals({
                                 <p className="font-bold mb-1">URL 확인 방법</p>
                                 <p>구글시트 열기 → 주소창 URL 복사</p>
                                 <p className="mt-1 font-mono bg-green-100 px-2 py-1 rounded dark:bg-emerald-500/10 dark:text-emerald-200">spreadsheets/d/.../edit?gid=... 형태 그대로</p>
-                                <p className="mt-1 font-bold">시트가 "링크가 있는 모든 사용자 - 뷰어" 공개 설정이어야 합니다.</p>
+                                <p className="mt-1 font-bold">시트가 &quot;링크가 있는 모든 사용자 - 뷰어&quot; 공개 설정이어야 합니다.</p>
                             </div>
                             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
                                 <p className="font-bold mb-1">운영 방식</p>
-                                <p>화면은 저장된 DB 시간표를 읽고, 구글시트는 아래 “지금 동기화”를 눌렀을 때만 가져옵니다.</p>
+                                <p>저장된 시간표를 표시합니다. 구글시트 변경 내용은 “지금 동기화”를 눌러 가져오세요.</p>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1.5">구글시트 URL</label>

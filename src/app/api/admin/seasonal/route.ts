@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { classifyAdminAuthError } from "./auth-error";
 import { sessionDateForKorea, syncOfferingSessionDates } from "@/lib/seasonal/session-bridge";
 import { issueParentAccountClaim } from "@/lib/parent-account-claim";
+import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { randomUUID } from "node:crypto";
 import { expireStaleSmsDeliveries } from "@/lib/notification";
 import { getSeasonalAdminOverview } from "@/lib/seasonal/admin-overview";
@@ -940,12 +941,13 @@ export async function GET(request: NextRequest) {
       : [];
     const invoicesByPaymentId = new Map(invoiceRows.map((invoice) => [invoice.paymentId, invoice]));
     const activationRows = invoiceRows.length
-      ? await prisma.$queryRawUnsafe<Array<{ paymentId: string; activationRequired: boolean }>>(
-          `SELECT i."paymentId", (u.email ~* '^(parent_[0-9]+@stiz\\.local|[0-9]+@import\\.local)$') AS "activationRequired"
+      ? (await prisma.$queryRawUnsafe<Array<{ paymentId: string; email: string | null }>>(
+          `SELECT i."paymentId", u.email
              FROM "PaymentInvoice" i JOIN "User" u ON u.id = i."parentId"
             WHERE i.id = ANY($1::text[])`,
           invoiceRows.map((invoice) => invoice.id),
-        )
+        // 빈 보호자 계정 판정은 SQL 정규식 사본 대신 공용 규칙(parent-synthetic-email.ts) 한 곳으로 한다
+        )).map((row) => ({ paymentId: row.paymentId, activationRequired: isSyntheticParentEmail(row.email) }))
       : [];
     const activationByPaymentId = new Map(activationRows.map((row) => [row.paymentId, row.activationRequired]));
     const visibleEventIds = (applicationRows as AdminApplicationRow[]).flatMap((application) => {
@@ -1176,7 +1178,8 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
   const invoiceParent = validationInvoice.parentId
     ? await prisma.user.findUnique({ where: { id: validationInvoice.parentId }, select: { email: true } })
     : null;
-  const activationRequired = Boolean(invoiceParent && /^(parent_[0-9]+@stiz\.local|[0-9]+@import\.local)$/i.test(invoiceParent.email));
+  // 빈 보호자 계정 판정은 공용 규칙 한 곳(parent-synthetic-email.ts)을 쓴다
+  const activationRequired = Boolean(invoiceParent && isSyntheticParentEmail(invoiceParent.email));
   const expectedInvoiceTrigger = activationRequired ? SEASONAL_SMS_TRIGGERS.accountActivation : SEASONAL_SMS_TRIGGERS.paymentRequest;
   if (params.trigger !== expectedInvoiceTrigger) throw new SeasonalError("현재 보호자 계정 상태와 알림 종류가 일치하지 않습니다.", 409, "NOTIFICATION_STATE_MISMATCH");
   if (params.trigger === SEASONAL_SMS_TRIGGERS.accountActivation) {
@@ -1798,7 +1801,7 @@ async function convertApprovedItemToEnrollmentAndInvoice(itemId: string, actorId
   }
 
   const recoveryParent = await prisma.user.findUnique({ where: { id: converted.parentId }, select: { email: true } });
-  const activationRequiredOnRecovery = Boolean(recoveryParent && /^(parent_[0-9]+@stiz\.local|[0-9]+@import\.local)$/i.test(recoveryParent.email));
+  const activationRequiredOnRecovery = Boolean(recoveryParent && isSyntheticParentEmail(recoveryParent.email));
   const prepared = await prisma.$transaction(async (tx) => {
     const activation = await issueParentAccountClaim({
       parentId: converted.parentId, applicationId: converted.applicationId, invoiceId: invoice.id,

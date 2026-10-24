@@ -2,6 +2,15 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
+import {
+    CAFE24_PAYMENT_PROVIDER,
+    Cafe24PaymentBridgeError,
+    buildCafe24PaymentBridgePayload,
+    getCafe24PaymentBridgeConfig,
+    getCafe24PaymentCheckoutUrl,
+    postCafe24PaymentCheckout,
+    verifyCafe24PaymentSignature,
+} from "@/lib/cafe24-payment";
 
 export type LedgerPaymentStatus = "PENDING" | "OVERDUE" | "PAID" | "REFUNDED" | "CANCELED";
 export type LedgerInvoiceStatus = "ISSUED" | "SENT" | "OVERDUE" | "PAID" | "CANCELED";
@@ -51,6 +60,7 @@ type CheckoutTransactionRow = {
     orderId: string;
     orderName: string;
     amount: number;
+    rawResponse?: unknown;
 };
 
 type PaymentTransactionRow = {
@@ -81,6 +91,7 @@ type TerminalPaymentTargetRow = {
 
 type TossKeyMode = "test" | "live" | "unknown";
 type TossProviderKeyMode = TossKeyMode | "mixed";
+type OnlinePaymentProvider = "TOSS" | typeof CAFE24_PAYMENT_PROVIDER;
 
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" ? value as Record<string, unknown> : {};
@@ -116,6 +127,33 @@ function makeTossIdempotencyKey(transactionId: string, orderId: string) {
     return isUuidLike(transactionId)
         ? transactionId
         : makeUuidFromSeed(`stiz-toss-confirm:${transactionId}:${orderId}`);
+}
+
+function makeTossWebhookEventId(input: {
+    payload: unknown;
+    explicitEventId: string | null;
+    eventType: string | null;
+    paymentKey: string | null;
+    orderId: string | null;
+    status: string | null;
+    totalAmount: number | null;
+}) {
+    if (input.explicitEventId) return input.explicitEventId;
+
+    const fingerprintSource = input.paymentKey || input.orderId || input.eventType || input.status || input.totalAmount
+        ? {
+            eventType: input.eventType,
+            paymentKey: input.paymentKey,
+            orderId: input.orderId,
+            status: input.status,
+            totalAmount: input.totalAmount,
+        }
+        : input.payload;
+    const digest = createHash("sha256")
+        .update(JSON.stringify(fingerprintSource ?? null))
+        .digest("hex")
+        .slice(0, 48);
+    return `generated:${digest}`;
 }
 
 function inferTossKeyMode(key: string): TossKeyMode {
@@ -310,15 +348,24 @@ export async function recordPaymentAudit(input: {
     );
 }
 
-export async function ensureInvoicesForMonth(year: number, month: number) {
-    await ensurePaymentInfrastructure();
+export async function ensureInvoicesForMonth(
+    year: number,
+    month: number,
+    paymentIds?: string[],
+    transaction?: Pick<typeof prisma, "$executeRawUnsafe" | "$queryRawUnsafe">,
+) {
+    // 선택 발행은 새로 생성된 정확한 Payment ID만 대상으로 한다. 빈 선택을 월 전체로 확대하지 않는다.
+    if (paymentIds && paymentIds.length === 0) return { invoiceCount: 0 };
+    // 거래 호출자는 시작 전에 인프라를 준비한다. 거래 안에서 전역 연결/DDL을 호출하지 않는다.
+    if (!transaction) await ensurePaymentInfrastructure();
+    const db = transaction ?? prisma;
 
     const dueStart = `${year}-${String(month).padStart(2, "0")}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
     const dueEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-    await prisma.$executeRawUnsafe(
+    await db.$executeRawUnsafe(
         `
         INSERT INTO "PaymentInvoice" (
             id, "paymentId", "studentId", "classId", "parentId", "invoiceNo", status,
@@ -358,6 +405,7 @@ export async function ensureInvoicesForMonth(year: number, month: number) {
             (p.year = $1 AND p.month = $2)
             OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
         )
+        AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         ON CONFLICT ("paymentId") DO UPDATE SET
             "studentId" = EXCLUDED."studentId",
             "classId" = EXCLUDED."classId",
@@ -377,9 +425,10 @@ export async function ensureInvoicesForMonth(year: number, month: number) {
         month,
         dueStart,
         dueEnd,
+        paymentIds ?? null,
     );
 
-    await prisma.$executeRawUnsafe(
+    await db.$executeRawUnsafe(
         `
         UPDATE "Payment" p
         SET
@@ -393,14 +442,16 @@ export async function ensureInvoicesForMonth(year: number, month: number) {
             (p.year = $1 AND p.month = $2)
             OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
           )
+          AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         `,
         year,
         month,
         dueStart,
         dueEnd,
+        paymentIds ?? null,
     );
 
-    const rows = await prisma.$queryRawUnsafe<{ count: number }[]>(
+    const rows = await db.$queryRawUnsafe<{ count: number }[]>(
         `
         SELECT COUNT(*)::int AS count
         FROM "PaymentInvoice" i
@@ -409,11 +460,13 @@ export async function ensureInvoicesForMonth(year: number, month: number) {
             (p.year = $1 AND p.month = $2)
             OR (p."dueDate" >= $3::timestamp AND p."dueDate" < $4::timestamp)
         )
+        AND ($5::text[] IS NULL OR p.id = ANY($5::text[]))
         `,
         year,
         month,
         dueStart,
         dueEnd,
+        paymentIds ?? null,
     );
 
     return { invoiceCount: Number(rows[0]?.count ?? 0) };
@@ -785,6 +838,20 @@ export async function recordTerminalPayment(input: {
     });
 }
 
+function getSelectedPaymentProvider(): OnlinePaymentProvider {
+    const raw = (process.env.PAYMENT_PROVIDER || process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || "")
+        .trim()
+        .toUpperCase();
+    if (["CAFE24", "CAFE24_BRIDGE", "CAFE24_PAYMENT", "STIZ_CAFE24"].includes(raw)) {
+        return CAFE24_PAYMENT_PROVIDER;
+    }
+    return "TOSS";
+}
+
+function getPaymentProviderLabel(provider: OnlinePaymentProvider) {
+    return provider === CAFE24_PAYMENT_PROVIDER ? "본사 카페24" : "토스페이먼츠";
+}
+
 export function getPaymentProviderConfig() {
     const clientKey = process.env.NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY
         || process.env.TOSS_PAYMENTS_CLIENT_KEY
@@ -792,6 +859,8 @@ export function getPaymentProviderConfig() {
     const secretKey = process.env.TOSS_PAYMENTS_SECRET_KEY || "";
     const clientKeyMode = inferTossKeyMode(clientKey);
     const secretKeyMode = inferTossKeyMode(secretKey);
+    const provider = getSelectedPaymentProvider();
+    const cafe24Bridge = getCafe24PaymentBridgeConfig();
     const keyPairReady = Boolean(
         clientKey
         && secretKey
@@ -801,12 +870,15 @@ export function getPaymentProviderConfig() {
     );
 
     return {
+        provider,
+        providerLabel: getPaymentProviderLabel(provider),
         clientKey,
         secretKey,
         clientKeyMode,
         secretKeyMode,
         keyPairReady,
-        providerReady: keyPairReady,
+        cafe24Bridge,
+        providerReady: provider === CAFE24_PAYMENT_PROVIDER ? cafe24Bridge.ready : keyPairReady,
     };
 }
 
@@ -827,9 +899,12 @@ export function getPaymentProviderPublicStatus() {
         : config.clientKey || config.secretKey
             ? "mixed"
             : "unknown";
+    const successPath = config.provider === CAFE24_PAYMENT_PROVIDER ? "/payments/cafe24/success" : "/payments/success";
+    const webhookPath = config.provider === CAFE24_PAYMENT_PROVIDER ? "/api/payments/cafe24/webhook" : "/api/payments/toss/webhook";
 
     return {
-        provider: "TOSS" as const,
+        provider: config.provider,
+        providerLabel: config.providerLabel,
         providerReady: config.providerReady,
         clientKeyConfigured: Boolean(config.clientKey),
         secretKeyConfigured: Boolean(config.secretKey),
@@ -837,11 +912,16 @@ export function getPaymentProviderPublicStatus() {
         secretKeyMode: config.secretKeyMode,
         keyMode,
         keyPairReady: config.keyPairReady,
+        cafe24BridgeUrlConfigured: config.cafe24Bridge.apiUrlConfigured,
+        cafe24BridgeUrlValid: config.cafe24Bridge.apiUrlValid,
+        cafe24BridgeSecretConfigured: config.cafe24Bridge.secretConfigured,
+        cafe24BridgeSecretValid: config.cafe24Bridge.secretFormatValid,
+        cafe24BridgeReady: config.cafe24Bridge.ready,
         siteUrlConfigured: Boolean(siteOrigin),
         siteUrlValid: Boolean(siteOrigin),
-        successUrlPreview: siteOrigin ? makePaymentReturnUrl(siteOrigin, "/payments/success", "invoice-id") : null,
+        successUrlPreview: siteOrigin ? makePaymentReturnUrl(siteOrigin, successPath, "invoice-id") : null,
         failUrlPreview: siteOrigin ? makePaymentReturnUrl(siteOrigin, "/payments/fail", "invoice-id") : null,
-        webhookUrl: siteOrigin ? new URL("/api/payments/toss/webhook", siteOrigin).toString() : null,
+        webhookUrl: siteOrigin ? new URL(webhookPath, siteOrigin).toString() : null,
     };
 }
 
@@ -897,7 +977,6 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
         `,
         invoiceId,
         owner.authUserId,
-        owner.email || "",
     );
 
     return rows[0] ?? null;
@@ -937,41 +1016,57 @@ export async function createCheckoutSession(input: {
         };
     }
 
+    const cleanOrigin = input.origin.replace(/\/$/, "");
+    const successUrl = makePaymentReturnUrl(
+        cleanOrigin,
+        config.provider === CAFE24_PAYMENT_PROVIDER ? "/payments/cafe24/success" : "/payments/success",
+        invoice.invoiceId,
+    );
+    const failUrl = makePaymentReturnUrl(cleanOrigin, "/payments/fail", invoice.invoiceId);
+    const cafe24WebhookUrl = new URL("/api/payments/cafe24/webhook", cleanOrigin).toString();
+    const provider = config.provider;
+
     const recentRows = await prisma.$queryRawUnsafe<CheckoutTransactionRow[]>(
-        `SELECT id, "orderId", "orderName", amount
+        `SELECT id, "orderId", "orderName", amount, "rawResponse"
          FROM "PaymentTransaction"
          WHERE "invoiceId" = $1
            AND amount = $2
+           AND provider = $3
            AND status IN ('READY', 'IN_PROGRESS')
            AND "requestedAt" > NOW() - INTERVAL '30 minutes'
          ORDER BY "createdAt" DESC
          LIMIT 1`,
         input.invoiceId,
         Number(invoice.amount),
+        provider,
     );
 
     const orderName = String(invoice.title || "STIZ 수강료").slice(0, 80);
     const existing = recentRows[0];
-    const orderId = existing?.orderId ?? `STIZ-${Date.now()}-${String(input.invoiceId).slice(0, 8)}`;
+    const orderId = existing?.orderId ?? `${provider === CAFE24_PAYMENT_PROVIDER ? "STIZ-C24" : "STIZ"}-${Date.now()}-${String(input.invoiceId).slice(0, 8)}`;
+    let transactionId = existing?.id ?? null;
 
     if (!existing) {
-        await prisma.$executeRawUnsafe(
+        const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
             `INSERT INTO "PaymentTransaction" (
                 id, "paymentId", "invoiceId", "studentId", "parentId", provider,
                 "orderId", "orderName", amount, status, "requestedAt", "createdAt", "updatedAt"
             )
             VALUES (
-                gen_random_uuid()::text, $1, $2, $3, $4, 'TOSS',
-                $5, $6, $7, 'READY', NOW(), NOW(), NOW()
-            )`,
+                gen_random_uuid()::text, $1, $2, $3, $4, $5,
+                $6, $7, $8, 'READY', NOW(), NOW(), NOW()
+            )
+            RETURNING id`,
             invoice.paymentId,
             invoice.invoiceId,
             invoice.studentId,
             invoice.parentId,
+            provider,
             orderId,
             orderName,
             Number(invoice.amount),
         );
+        transactionId = inserted[0]?.id ?? null;
     }
 
     await prisma.$executeRawUnsafe(
@@ -981,12 +1076,103 @@ export async function createCheckoutSession(input: {
         invoice.paymentId,
     );
 
-    const cleanOrigin = input.origin.replace(/\/$/, "");
-    const successUrl = makePaymentReturnUrl(cleanOrigin, "/payments/success", invoice.invoiceId);
-    const failUrl = makePaymentReturnUrl(cleanOrigin, "/payments/fail", invoice.invoiceId);
+    if (provider === CAFE24_PAYMENT_PROVIDER) {
+        const existingCheckoutUrl = getCafe24PaymentCheckoutUrl(asRecord(existing?.rawResponse));
+        if (existingCheckoutUrl) {
+            return {
+                ok: true as const,
+                provider,
+                providerLabel: config.providerLabel,
+                providerReady: config.providerReady,
+                checkoutUrl: existingCheckoutUrl,
+                orderId,
+                amount: Number(invoice.amount),
+                orderName,
+                customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
+                customerEmail: invoice.parentEmail,
+                successUrl,
+                failUrl,
+            };
+        }
+
+        const payload = buildCafe24PaymentBridgePayload({
+            partnerRequestId: orderId,
+            invoiceId: invoice.invoiceId,
+            invoiceNo: invoice.invoiceNo,
+            paymentId: invoice.paymentId,
+            amount: Number(invoice.amount),
+            orderName,
+            customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
+            customerPhone: invoice.parentPhone,
+            customerEmail: invoice.parentEmail,
+            studentName: invoice.studentName,
+            successUrl,
+            failUrl,
+            webhookUrl: cafe24WebhookUrl,
+        });
+
+        try {
+            const bridgeResult = await postCafe24PaymentCheckout(payload);
+            const checkoutUrl = getCafe24PaymentCheckoutUrl(bridgeResult);
+            await prisma.$executeRawUnsafe(
+                `UPDATE "PaymentTransaction"
+                 SET status = 'IN_PROGRESS',
+                     "paymentKey" = COALESCE($2, "paymentKey"),
+                     "rawResponse" = $3::jsonb,
+                     "updatedAt" = NOW()
+                 WHERE id = $1`,
+                transactionId,
+                bridgeResult.paymentKey ?? bridgeResult.providerOrderId ?? bridgeResult.cafe24OrderId ?? null,
+                JSON.stringify({ ...bridgeResult, checkoutUrl }),
+            );
+            await prisma.$executeRawUnsafe(
+                `UPDATE "PaymentInvoice" SET "checkoutUrl" = $2, "updatedAt" = NOW() WHERE id = $1`,
+                invoice.invoiceId,
+                checkoutUrl,
+            );
+
+            return {
+                ok: true as const,
+                provider,
+                providerLabel: config.providerLabel,
+                providerReady: config.providerReady,
+                checkoutUrl,
+                orderId,
+                amount: Number(invoice.amount),
+                orderName,
+                customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
+                customerEmail: invoice.parentEmail,
+                successUrl,
+                failUrl,
+            };
+        } catch (error) {
+            const bridgeError = error instanceof Cafe24PaymentBridgeError ? error : null;
+            await prisma.$executeRawUnsafe(
+                `UPDATE "PaymentTransaction"
+                 SET status = CASE WHEN $4::boolean THEN status ELSE 'FAILED' END,
+                     "failureCode" = $2,
+                     "failureMessage" = $3,
+                     "updatedAt" = NOW()
+                 WHERE id = $1`,
+                transactionId,
+                bridgeError ? `CAFE24_BRIDGE_${bridgeError.statusCode ?? "CONFIG"}` : "CAFE24_BRIDGE_FAILED",
+                error instanceof Error ? error.message : "본사 카페24 결제 요청에 실패했습니다.",
+                Boolean(bridgeError?.retryable),
+            );
+            return {
+                ok: false as const,
+                error: error instanceof Error ? error.message : "본사 카페24 결제 요청에 실패했습니다.",
+                providerReady: config.providerReady,
+                providerError: true as const,
+                retryable: Boolean(bridgeError?.retryable),
+            };
+        }
+    }
 
     return {
         ok: true as const,
+        provider,
+        providerLabel: config.providerLabel,
         providerReady: config.providerReady,
         clientKey: config.clientKey,
         customerKey: makeTossCustomerKey(invoice),
@@ -1124,6 +1310,7 @@ export async function confirmTossPayment(input: {
     paymentKey: string;
     orderId: string;
     amount: number;
+    invoiceId?: string | null;
     owner: PaymentOwnerIdentity;
 }) {
     await ensurePaymentInfrastructure();
@@ -1135,6 +1322,7 @@ export async function confirmTossPayment(input: {
          JOIN "Payment" p ON p.id = tx."paymentId"
          JOIN "User" u ON u.id = tx."parentId"
          WHERE tx."orderId" = $1
+           AND ($3::text IS NULL OR tx."invoiceId" = $3)
            AND (
              u."authUserId" = $2
              OR (u."authUserId" IS NULL AND u.id = $2)
@@ -1142,7 +1330,7 @@ export async function confirmTossPayment(input: {
          LIMIT 1`,
         input.orderId,
         input.owner.authUserId,
-        input.owner.email || "",
+        input.invoiceId ?? null,
     );
     const tx = txRows[0];
     if (!tx) return { ok: false as const, error: "결제 주문을 찾을 수 없습니다." };
@@ -1178,7 +1366,7 @@ export async function confirmTossPayment(input: {
         body: JSON.stringify({
             paymentKey: input.paymentKey,
             orderId: input.orderId,
-            amount: Number(input.amount),
+            amount: Number(tx.amount),
         }),
     });
 
@@ -1227,6 +1415,19 @@ export async function confirmTossPayment(input: {
 
     if (result.status !== "DONE" || result.paymentKey !== input.paymentKey
         || result.orderId !== input.orderId || Number(result.totalAmount) !== Number(tx.amount)) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentTransaction"
+             SET "paymentKey" = $2,
+                 status = CASE WHEN status = 'DONE' THEN status ELSE 'FAILED' END,
+                 "failureCode" = 'TOSS_CONFIRM_VERIFICATION_FAILED',
+                 "failureMessage" = 'Toss confirm response did not match the stored invoice transaction',
+                 "rawResponse" = $3::jsonb,
+                 "updatedAt" = NOW()
+             WHERE id = $1`,
+            tx.id,
+            input.paymentKey,
+            JSON.stringify(result),
+        );
         return { ok: false as const, error: "Toss 결제 검증에 실패했습니다." };
     }
 
@@ -1241,10 +1442,18 @@ export async function recordTossWebhook(payload: unknown) {
 
     const payloadRecord = asRecord(payload);
     const data = asRecord(payloadRecord.data ?? payload);
-    const eventId = readString(payloadRecord.eventId) ?? readString(payloadRecord.id);
     const eventType = readString(payloadRecord.eventType) ?? readString(payloadRecord.type) ?? readString(data.status);
     const paymentKey = readString(data.paymentKey);
     const orderId = readString(data.orderId);
+    const eventId = makeTossWebhookEventId({
+        payload,
+        explicitEventId: readString(payloadRecord.eventId) ?? readString(payloadRecord.id),
+        eventType,
+        paymentKey,
+        orderId,
+        status: readString(data.status),
+        totalAmount: readNumber(data.totalAmount),
+    });
 
     const eventRows = await prisma.$queryRawUnsafe<Array<{ id: string; processed: boolean }>>(
         `INSERT INTO "PaymentWebhookEvent" (
@@ -1332,6 +1541,192 @@ export async function recordTossWebhook(payload: unknown) {
 
     await prisma.$executeRawUnsafe(
         `UPDATE "PaymentWebhookEvent" SET error = 'TOSS_PAYMENT_NOT_VERIFIED', "processedAt" = NOW() WHERE id = $1`,
+        eventRecordId,
+    );
+    return { ok: true as const, processed: false, eventId: eventRecordId };
+}
+
+function makeCafe24WebhookEventId(input: {
+    payload: unknown;
+    explicitEventId: string | null;
+    eventType: string | null;
+    orderId: string | null;
+    providerOrderId: string | null;
+    status: string | null;
+    amount: number | null;
+}) {
+    if (input.explicitEventId) return input.explicitEventId;
+
+    const digest = createHash("sha256")
+        .update(JSON.stringify({
+            eventType: input.eventType,
+            orderId: input.orderId,
+            providerOrderId: input.providerOrderId,
+            status: input.status,
+            amount: input.amount,
+            payload: input.orderId || input.providerOrderId ? undefined : input.payload,
+        }))
+        .digest("hex")
+        .slice(0, 48);
+    return `generated:${digest}`;
+}
+
+function isCafe24PaidStatus(status: string | null) {
+    return ["PAID", "DONE", "COMPLETED", "PAYMENT_COMPLETED", "PAYMENT_DONE"].includes(String(status || "").toUpperCase());
+}
+
+function isCafe24FailedStatus(status: string | null) {
+    return ["FAILED", "CANCELED", "CANCELLED", "REFUNDED", "PAYMENT_FAILED"].includes(String(status || "").toUpperCase());
+}
+
+export function verifyCafe24PaymentWebhook(payload: unknown, headers: Headers) {
+    return verifyCafe24PaymentSignature({
+        payload,
+        timestamp: headers.get("x-stiz-timestamp"),
+        signature: headers.get("x-stiz-signature"),
+    });
+}
+
+export async function recordCafe24PaymentWebhook(payload: unknown) {
+    await ensurePaymentInfrastructure();
+
+    const payloadRecord = asRecord(payload);
+    const data = asRecord(payloadRecord.data ?? payload);
+    const status = readString(data.status) ?? readString(data.paymentStatus);
+    const eventType = readString(payloadRecord.eventType) ?? readString(payloadRecord.type) ?? status;
+    const orderId = readString(data.partnerRequestId) ?? readString(data.orderId) ?? readString(payloadRecord.orderId);
+    const providerOrderId = readString(data.cafe24OrderId)
+        ?? readString(data.providerOrderId)
+        ?? readString(data.orderNo)
+        ?? readString(data.orderNumber);
+    const paymentKey = readString(data.paymentKey) ?? providerOrderId;
+    const amount = readNumber(data.amount) ?? readNumber(data.totalAmount) ?? readNumber(data.paidAmount);
+    const receiptUrl = readString(data.receiptUrl) ?? readString(data.orderUrl);
+    const eventId = makeCafe24WebhookEventId({
+        payload,
+        explicitEventId: readString(payloadRecord.eventId) ?? readString(payloadRecord.id),
+        eventType,
+        orderId,
+        providerOrderId,
+        status,
+        amount,
+    });
+
+    const eventRows = await prisma.$queryRawUnsafe<Array<{ id: string; processed: boolean }>>(
+        `INSERT INTO "PaymentWebhookEvent" (
+            id, provider, "eventId", "eventType", "paymentKey", "orderId",
+            payload, "receivedAt"
+        )
+        VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::jsonb, NOW())
+        ON CONFLICT (provider, "eventId")
+        DO UPDATE SET
+          "eventType" = CASE WHEN "PaymentWebhookEvent".processed THEN "PaymentWebhookEvent"."eventType" ELSE EXCLUDED."eventType" END,
+          "paymentKey" = CASE WHEN "PaymentWebhookEvent".processed THEN "PaymentWebhookEvent"."paymentKey" ELSE EXCLUDED."paymentKey" END,
+          "orderId" = CASE WHEN "PaymentWebhookEvent".processed THEN "PaymentWebhookEvent"."orderId" ELSE EXCLUDED."orderId" END,
+          payload = CASE WHEN "PaymentWebhookEvent".processed THEN "PaymentWebhookEvent".payload ELSE EXCLUDED.payload END,
+          "receivedAt" = NOW()
+        RETURNING id, processed`,
+        CAFE24_PAYMENT_PROVIDER,
+        eventId,
+        eventType,
+        paymentKey,
+        orderId,
+        JSON.stringify(payload),
+    );
+
+    const eventRecordId = eventRows[0]?.id ?? null;
+    if (eventRows[0]?.processed) {
+        return { ok: true as const, processed: true, duplicate: true, eventId: eventRecordId };
+    }
+    if (!orderId) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent"
+             SET error = 'CAFE24_ORDER_ID_MISSING', "processedAt" = NOW()
+             WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: true as const, processed: false, eventId: eventRecordId };
+    }
+
+    const txRows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT * FROM "PaymentTransaction"
+         WHERE provider = $1 AND "orderId" = $2
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        CAFE24_PAYMENT_PROVIDER,
+        orderId,
+    );
+    const tx = txRows[0];
+    if (!tx) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent"
+             SET error = 'TRANSACTION_NOT_FOUND', "processedAt" = NOW()
+             WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: true as const, processed: false, eventId: eventRecordId };
+    }
+
+    if (amount !== null && Number(amount) !== Number(tx.amount)) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent"
+             SET error = 'CAFE24_AMOUNT_MISMATCH', "processedAt" = NOW()
+             WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: false as const, processed: false, eventId: eventRecordId };
+    }
+
+    if (isCafe24PaidStatus(status)) {
+        await markPaymentPaid({
+            paymentId: tx.paymentId,
+            invoiceId: tx.invoiceId,
+            transactionId: tx.id,
+            actorType: "WEBHOOK",
+            provider: CAFE24_PAYMENT_PROVIDER,
+            method: "CAFE24",
+            orderId: tx.orderId,
+            providerOrderId,
+            paymentKey,
+            receiptUrl,
+            rawResponse: payload,
+        });
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent"
+             SET processed = true, "processedAt" = NOW()
+             WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: true as const, processed: true, eventId: eventRecordId };
+    }
+
+    if (isCafe24FailedStatus(status)) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentTransaction"
+             SET status = 'FAILED',
+                 "failureCode" = COALESCE($2, 'CAFE24_PAYMENT_FAILED'),
+                 "failureMessage" = COALESCE($3, '본사 카페24 결제가 완료되지 않았습니다.'),
+                 "rawResponse" = $4::jsonb,
+                 "updatedAt" = NOW()
+             WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS')`,
+            tx.id,
+            status,
+            readString(data.message) ?? readString(data.error),
+            JSON.stringify(payload),
+        );
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent"
+             SET processed = true, "processedAt" = NOW()
+             WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: true as const, processed: true, eventId: eventRecordId };
+    }
+
+    await prisma.$executeRawUnsafe(
+        `UPDATE "PaymentWebhookEvent"
+         SET error = 'CAFE24_STATUS_NOT_PAID'
+         WHERE id = $1`,
         eventRecordId,
     );
     return { ok: true as const, processed: false, eventId: eventRecordId };

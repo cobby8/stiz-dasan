@@ -10,6 +10,8 @@ type Row = {
   tuitionAmount: number | null;
   shuttleFee: number | null;
   carryOverAmount: number | null;
+  slotKeys?: readonly string[];
+  isFreeShuttle?: boolean;
 };
 
 function row(partial: Partial<Row> & { rowNumber: number }): Row {
@@ -92,6 +94,47 @@ test("셔틀비는 첫 행에만 적혀도 청구에 포함된다", () => {
 
   assert.equal(result.shuttleFeeTotal, 10000);
   assert.equal(result.billableAmount, 150000);
+});
+
+test("무료셔틀로 확정된 학생은 시트에 셔틀비가 있어도 0원으로 계산한다", () => {
+  const result = summarizeStudentBilling([
+    row({ rowNumber: 1, tuitionAmount: 90000, shuttleFee: 15000, isFreeShuttle: true }),
+    row({ rowNumber: 2, tuitionAmount: 90000 }),
+  ]);
+
+  assert.equal(result.tuitionTotal, 180000);
+  assert.equal(result.shuttleFeeTotal, 0);
+  assert.equal(result.billableAmount, 180000);
+});
+
+test("일8 대표팀 수강생은 다른 정규반을 함께 타도 월 셔틀비가 전액 면제된다", () => {
+  const result = summarizeStudentBilling([
+    row({ rowNumber: 1, tuitionAmount: 100000, shuttleFee: 15000, slotKeys: ["Wed-7"] }),
+    row({ rowNumber: 2, tuitionAmount: 100000, slotKeys: ["Sun-8"] }),
+  ]);
+
+  assert.equal(result.tuitionTotal, 200000);
+  assert.equal(result.shuttleFeeTotal, 0);
+  assert.equal(result.billableAmount, 200000);
+});
+
+test("휴원인 일8 행은 셔틀비 면제 근거로 쓰지 않는다", () => {
+  const result = summarizeStudentBilling([
+    row({ rowNumber: 1, tuitionAmount: 100000, shuttleFee: 10000, slotKeys: ["Wed-7"] }),
+    row({ rowNumber: 2, paymentMethodRaw: "휴원", tuitionAmount: 100000, slotKeys: ["Sun-8"] }),
+  ]);
+
+  assert.equal(result.shuttleFeeTotal, 10000);
+  assert.equal(result.billableAmount, 110000);
+});
+
+test("다른 일요일 반은 일8 대표팀 면제 규칙을 적용하지 않는다", () => {
+  const result = summarizeStudentBilling([
+    row({ rowNumber: 1, tuitionAmount: 100000, shuttleFee: 10000, slotKeys: ["Sun-7"] }),
+  ]);
+
+  assert.equal(result.shuttleFeeTotal, 10000);
+  assert.equal(result.billableAmount, 110000);
 });
 
 test("휴원 행은 이번 달 청구에서 빠진다", () => {

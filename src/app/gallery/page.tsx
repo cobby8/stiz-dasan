@@ -7,8 +7,8 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const revalidate = 60;
 export const metadata = buildPublicMetadata({
-    title: "포토갤러리 | STIZ 농구교실 다산점",
-    description: "스티즈 농구교실 다산점의 수업 사진과 활동 영상을 확인하세요.",
+    title: "포토갤러리 | STIZ 농구교실 다산2호점",
+    description: "스티즈 농구교실 다산2호점의 수업 사진과 활동 영상을 확인하세요.",
     path: "/gallery",
 });
 
@@ -24,7 +24,7 @@ export default async function GalleryPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — about/programs/apply와 동일한 그라데이션 + 장식 도형 패턴 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 {/* 배경 장식 도형들 */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
@@ -41,7 +41,7 @@ export default async function GalleryPage() {
 
             {/* 갤러리 그리드 — Client Component에서 호버 오버레이 + 라이트박스 처리 */}
             <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
-                <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
+                <div className="public-content-section max-w-6xl mx-auto px-4 py-16 md:py-24">
                     <GalleryPublicClient posts={posts} />
                 </div>
             </div>

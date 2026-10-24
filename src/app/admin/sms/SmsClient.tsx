@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { getCoachPhones, sendManualSms } from "@/app/actions/admin";
+import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
 import SmsTemplateClient from "./templates/SmsTemplateClient";
 
 interface CoachPhone {
@@ -45,23 +45,24 @@ interface DeliveryHistory {
     recipient: string;
 }
 
-interface ManualSendResult {
+interface ManualBatchStatus {
     batchId: string;
     total: number;
+    pending: number;
+    processing: number;
+    /** 공급자가 묶음 요청을 받았지만 최종 발송 결과는 아직 확인되지 않은 건수 */
+    accepted?: number;
     success: number;
     failed: number;
     uncertain: number;
-    duplicateCount: number;
-    invalidCount: number;
-    results: Array<{
+    status: "PENDING" | "PROCESSING" | "COMPLETED" | "NEEDS_REVIEW";
+    recipients?: Array<{
+        id: string;
         recipient: string;
-        last4: string;
-        ok: boolean;
-        status: "SENT" | "FAILED" | "UNCERTAIN" | "ALREADY_PROCESSED";
-        uncertain?: boolean;
-        reason?: string;
+        status: "PENDING" | "SENDING" | "SENT" | "FAILED" | "UNCERTAIN";
+        providerStatus?: string | null;
+        reason?: string | null;
     }>;
-    retryRecipients: string[];
 }
 
 const TABS: Array<{ id: CenterTab; label: string; icon: string }> = [
@@ -431,7 +432,7 @@ function HistoryPanel() {
 }
 
 function DeliveryBadge({ status }: { status: DeliveryHistory["status"] }) {
-    const labels = { SENT: "접수 완료", FAILED: "실패", PENDING: "대기", SENDING: "확인 중", UNCERTAIN: "확인 필요", SKIPPED: "미발송" };
+    const labels = { SENT: "발송 완료", FAILED: "실패", PENDING: "대기", SENDING: "발송 중", UNCERTAIN: "확인 필요", SKIPPED: "미발송" };
     const colors = {
         SENT: "bg-green-50 text-green-700",
         FAILED: "bg-red-50 text-red-700",
@@ -451,7 +452,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [manualNumbers, setManualNumbers] = useState("");
     const [message, setMessage] = useState("");
-    const [result, setResult] = useState<ManualSendResult | null>(null);
+    const [batch, setBatch] = useState<ManualBatchStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
     // 응답을 잃어버린 재시도에는 같은 번호표를 써서 중복 발송을 막습니다.
     const requestIdRef = useRef<string | null>(null);
@@ -468,42 +469,70 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
         return manualNumbers.split(/[,;\n]+/).map(value => value.trim().replace(/\D/g, "")).filter(value => value.length >= 10);
     }, [coaches, manualNumbers, mode, selectedIds]);
     const bytes = new TextEncoder().encode(`[STIZ] ${message}`).length;
+    const acceptedCount = batch?.accepted ?? batch?.recipients?.filter(item => item.providerStatus === "ACCEPTED").length ?? 0;
+    const batchIsActive = batch?.status === "PENDING" || batch?.status === "PROCESSING" || Boolean(batch?.pending) || Boolean(batch?.processing) || acceptedCount > 0;
+
+    const loadBatch = useCallback(async (batchId: string) => {
+        const response = await fetch(`/api/admin/sms/batches/${batchId}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("대량 발송 진행 상태를 불러오지 못했습니다.");
+        const data = await response.json() as { batch?: ManualBatchStatus } & ManualBatchStatus;
+        setBatch(data.batch ?? data);
+    }, []);
+
+    useEffect(() => {
+        if (!batch?.batchId || !batchIsActive) return;
+        const timer = window.setInterval(() => {
+            void loadBatch(batch.batchId).catch(() => setError("진행 상태를 확인하지 못했습니다. 잠시 후 자동으로 다시 확인합니다."));
+        }, 2500);
+        return () => window.clearInterval(timer);
+    }, [batch?.batchId, batchIsActive, loadBatch]);
+
+    useEffect(() => {
+        if (!batchIsActive) return;
+        const warnBeforeLeave = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+        window.addEventListener("beforeunload", warnBeforeLeave);
+        return () => window.removeEventListener("beforeunload", warnBeforeLeave);
+    }, [batchIsActive]);
 
     const resetRequest = useCallback(() => {
         requestIdRef.current = null;
         requestPayloadRef.current = null;
-        setResult(null);
+        setBatch(null);
         setError(null);
     }, []);
 
-    function send(targetRecipients: string[] = recipients, retry = false) {
+    function send() {
+        const targetRecipients = recipients;
         if (!targetRecipients.length || !message.trim()) {
             setError("수신자와 메시지를 모두 입력해주세요.");
             return;
         }
-        if (!confirm(`${targetRecipients.length}명에게 문자를 발송할까요?`)) return;
+        if (!confirm(`${targetRecipients.length}명을 대량 발송 대기열에 접수할까요?`)) return;
+        void enqueue();
+    }
 
+    async function enqueue() {
+        const targetRecipients = recipients;
         const payloadKey = JSON.stringify([targetRecipients, message.trim()]);
-        // 실제 실패 건 재발송은 새로운 발송이고, 응답 유실 재시도만 기존 ID를 이어 씁니다.
-        if (retry || requestPayloadRef.current !== payloadKey || !requestIdRef.current) {
+        if (requestPayloadRef.current !== payloadKey || !requestIdRef.current) {
             requestIdRef.current = crypto.randomUUID();
             requestPayloadRef.current = payloadKey;
         }
         const requestId = requestIdRef.current;
 
         setError(null);
-        setResult(null);
         startTransition(async () => {
             try {
-                const response = await sendManualSms(targetRecipients, message.trim(), { requestId });
-                setResult(response);
-                // 서버가 결과를 확정했으므로 다음 발송부터는 새 요청 ID를 사용합니다.
+                const response = await enqueueManualSmsBatch(targetRecipients, message.trim(), { requestId });
+                setBatch({ batchId: response.batchId, status: "PENDING", total: response.total, pending: response.total, processing: 0, accepted: 0, success: 0, failed: 0, uncertain: 0 });
+                void loadBatch(response.batchId).catch(() => undefined);
                 requestIdRef.current = null;
                 requestPayloadRef.current = null;
-                if (response.success > 0 && response.failed === 0 && response.uncertain === 0) setMessage("");
             } catch (caught) {
-                // 응답 유실 가능성이 있어 ID를 유지합니다. 같은 내용 재시도 시 서버가 중복을 차단합니다.
-                setError(caught instanceof Error ? caught.message : "문자를 발송하지 못했습니다.");
+                setError(caught instanceof Error ? caught.message : "문자 대량 발송을 접수하지 못했습니다.");
             }
         });
     }
@@ -518,7 +547,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                         { id: "select" as const, label: "직원 선택" },
                         { id: "manual" as const, label: "직접 입력" },
                     ].map(option => (
-                        <button key={option.id} type="button" onClick={() => { setMode(option.id); resetRequest(); }} className={`min-h-11 rounded-xl px-2 text-sm font-bold ${mode === option.id ? "bg-brand-navy-900 text-white" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200"}`}>{option.label}</button>
+                        <button key={option.id} type="button" disabled={batchIsActive} onClick={() => { setMode(option.id); resetRequest(); }} className={`min-h-11 rounded-xl px-2 text-sm font-bold disabled:opacity-40 ${mode === option.id ? "bg-brand-navy-900 text-white" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200"}`}>{option.label}</button>
                     ))}
                 </div>
                 {mode === "all" && <p className="mt-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">연락처가 등록된 직원 <strong>{coaches.length}명</strong>에게 발송합니다.</p>}
@@ -528,6 +557,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                             <label key={coach.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 hover:bg-gray-50 dark:hover:bg-gray-700">
                                 <input
                                     type="checkbox"
+                                    disabled={batchIsActive}
                                     checked={selectedIds.has(coach.id)}
                                     onChange={() => setSelectedIds(current => {
                                         resetRequest();
@@ -543,52 +573,53 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                         ))}
                     </div>
                 )}
-                {mode === "manual" && <textarea value={manualNumbers} onChange={event => { setManualNumbers(event.target.value); resetRequest(); }} rows={7} placeholder={"010-1234-5678\n010-9876-5432"} className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />}
+                {mode === "manual" && <textarea disabled={batchIsActive} value={manualNumbers} onChange={event => { setManualNumbers(event.target.value); resetRequest(); }} rows={7} placeholder={"010-1234-5678\n010-9876-5432"} className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />}
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
                 <h2 className="font-extrabold text-gray-900 dark:text-white">메시지 작성</h2>
-                <textarea value={message} onChange={event => { setMessage(event.target.value); resetRequest(); }} rows={9} maxLength={1000} placeholder="보낼 메시지를 입력하세요." className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                <textarea disabled={batchIsActive} value={message} onChange={event => { setMessage(event.target.value); resetRequest(); }} rows={9} maxLength={1000} placeholder="보낼 메시지를 입력하세요." className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
                 <div className="mt-2 flex justify-between text-xs text-gray-500">
                     <span>발송할 때 [STIZ]가 자동으로 붙습니다.</span>
                     <strong>{bytes}바이트 · {bytes > 90 ? "LMS" : "SMS"}</strong>
                 </div>
-                {result && (
+                {batch && (
                     <div className="mt-4 space-y-3">
-                        <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-700 dark:bg-green-950/30 dark:text-green-200">
-                            전체 {result.total}건 · 성공 {result.success}건 · 실패 {result.failed}건 · 확인 필요 {result.uncertain}건
-                            {(result.duplicateCount > 0 || result.invalidCount > 0) && <span className="mt-1 block text-xs font-medium">중복 제외 {result.duplicateCount}건 · 잘못된 번호 제외 {result.invalidCount}건</span>}
-                        </p>
-                        {result.uncertain > 0 && (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30">
+                            <p className="text-sm font-bold text-blue-800 dark:text-blue-200">배치 번호 {batch.batchId}</p>
+                            <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs sm:grid-cols-7">
+                                {[["전체", batch.total], ["대기", batch.pending], ["전송 요청 중", batch.processing], ["Solapi 접수", acceptedCount], ["최종 성공", batch.success], ["실패", batch.failed], ["확인 필요", batch.uncertain]].map(([label, value]) => (
+                                    <span key={label} className="rounded-lg bg-white p-2 dark:bg-gray-900"><strong className="block text-base text-gray-900 dark:text-white">{value}</strong>{label}</span>
+                                ))}
+                            </div>
+                            {acceptedCount > 0 && <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">Solapi 접수는 솔라피가 요청을 받은 단계이며, 학부모 휴대폰의 최종 발송 성공과는 다릅니다. 최종 결과를 확인하고 있습니다.</p>}
+                            {batchIsActive && <p className="mt-2 text-xs font-bold text-blue-700 dark:text-blue-300">화면을 닫지 마세요. 2.5초마다 진행 상황을 확인하고 있습니다.</p>}
+                        </div>
+                        {batch.uncertain > 0 && (
                             <p role="alert" className="flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                                 <span className="material-symbols-outlined text-[19px]">warning</span>
-                                발송 여부를 확인할 수 없는 {result.uncertain}건은 재발송하면 안 됩니다. 발송 이력에서 먼저 확인해 주세요.
+                                발송 여부를 확인할 수 없는 {batch.uncertain}건과 처리 중인 문자는 재발송할 수 없습니다. 발송 이력에서 먼저 확인해 주세요.
                             </p>
                         )}
-                        {result.results.length > 0 && (
+                        {batch.recipients && batch.recipients.length > 0 && (
                             <ul className="max-h-40 space-y-1 overflow-auto rounded-xl border border-gray-200 p-2 text-xs dark:border-gray-700">
-                                {result.results.map((item, index) => (
-                                    <li key={`${item.last4}-${index}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5">
-                                        <span className="text-gray-600 dark:text-gray-300">휴대폰 끝자리 {item.last4}</span>
-                                        <strong className={item.status === "FAILED" ? "text-red-600" : item.status === "UNCERTAIN" ? "text-amber-700 dark:text-amber-300" : "text-green-700 dark:text-green-300"}>
-                                            {item.status === "SENT" ? "성공" : item.status === "FAILED" ? "실패" : item.status === "UNCERTAIN" ? "확인 필요" : "이미 처리됨"}
+                                {batch.recipients.map(item => (
+                                    <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5">
+                                        <span className="text-gray-600 dark:text-gray-300">수신자 {item.recipient}</span>
+                                        <strong className={item.status === "FAILED" ? "text-red-600" : item.status === "UNCERTAIN" || item.status === "SENDING" ? "text-amber-700 dark:text-amber-300" : item.status === "SENT" ? "text-green-700 dark:text-green-300" : "text-blue-700 dark:text-blue-300"}>
+                                            {item.status === "SENT" ? "최종 성공" : item.status === "FAILED" ? "실패" : item.status === "UNCERTAIN" ? "확인 필요" : item.providerStatus === "ACCEPTED" ? "Solapi 접수" : item.status === "SENDING" ? "전송 요청 중" : "대기"}
                                         </strong>
                                     </li>
                                 ))}
                             </ul>
                         )}
-                        {result.retryRecipients.length > 0 && (
-                            <button type="button" onClick={() => send(result.retryRecipients, true)} disabled={pending} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-50 font-bold text-red-700 disabled:opacity-40 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200">
-                                <span className="material-symbols-outlined text-[19px]">refresh</span>
-                                실패 {result.retryRecipients.length}건만 다시 발송
-                            </button>
-                        )}
+                        {batch.failed > 0 && !batchIsActive && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">실패 {batch.failed}건은 발송 이력에서 대상을 확인한 뒤 새 배치로만 재접수할 수 있습니다.</p>}
                     </div>
                 )}
                 {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-                <button type="button" onClick={() => send()} disabled={pending || !recipients.length || !message.trim() || Boolean(result?.uncertain)} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-navy-900 font-bold text-white disabled:opacity-40">
+                <button type="button" onClick={() => send()} disabled={pending || batchIsActive || !recipients.length || !message.trim()} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-navy-900 font-bold text-white disabled:opacity-40">
                     <span className="material-symbols-outlined text-[19px]">send</span>
-                    {pending ? "발송 중..." : result?.uncertain ? "발송 이력 확인 후 새로 작성" : `${recipients.length}명에게 발송`}
+                    {pending ? "대량 발송 접수 중..." : batchIsActive ? "대량 발송 처리 중" : `${recipients.length}명 대량 발송 접수`}
                 </button>
             </div>
         </section>

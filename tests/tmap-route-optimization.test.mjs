@@ -6,7 +6,6 @@ import ts from "typescript";
 const tmapSource = await readFile("src/lib/shuttle/tmap.ts", "utf8");
 const serviceSource = await readFile("src/lib/shuttle/service.ts", "utf8");
 const adminApiSource = await readFile("src/app/api/admin/shuttle/route.ts", "utf8");
-const adminClientSource = await readFile("src/app/admin/shuttle/ShuttleRouteAdminClient.tsx", "utf8");
 const transpiledTmap = ts.transpileModule(tmapSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
@@ -124,12 +123,4 @@ test("admin shuttle API exposes tmap preview without directly mutating route ord
   assert.match(adminApiSource, /NextResponse\.json\(\{ preview:/);
 });
 
-test("admin shuttle screen can preview and then apply recommended stop order", () => {
-  assert.match(adminClientSource, /OptimizationPreview/);
-  assert.match(adminClientSource, /previewOptimizedStops/);
-  assert.match(adminClientSource, /applyOptimizedStops/);
-  assert.match(adminClientSource, /T맵 순서 추천/);
-  assert.match(adminClientSource, /추천 순서 적용/);
-  assert.match(adminClientSource, /action: "optimizePreview"/);
-  assert.match(adminClientSource, /action: "reorder"/);
-});
+// 2026-10-02 옛 노선 편성 화면(ShuttleRouteAdminClient) 삭제로 그 화면을 읽던 검사는 뺐다(서버·API 검사는 유지).

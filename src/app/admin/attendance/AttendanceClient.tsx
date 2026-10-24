@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { saveAttendance } from "@/app/actions/admin";
+import { todayKst } from "@/lib/datetime/kst";
 
 type ClassItem = {
     id: string;
@@ -42,9 +43,6 @@ const STATUS_OPTIONS = [
     { value: "LATE", label: "지각", color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
 ] as const;
 
-function todayStr() {
-    return new Date().toISOString().split("T")[0];
-}
 
 function lessonKeyOf(item: ClassItem) {
     return item.lessonKey || `${item.kind === "SEASONAL" ? "seasonal" : "regular"}:${item.sessionDateId || item.id}`;
@@ -91,7 +89,8 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     const [classesLoading, setClassesLoading] = useState(!hasInitialClasses);
     const [classesError, setClassesError] = useState(false);
     const [selectedClass, setSelectedClass] = useState("");
-    const [date, setDate] = useState(todayStr());
+    // 한국 날짜 기준 "오늘" — UTC 로 구하면 KST 00~09시에 어제가 기본값이 된다(결석일·보강권 날짜가 하루 어긋남)
+    const [date, setDate] = useState(todayKst());
     const [students, setStudents] = useState<StudentRecord[]>([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);

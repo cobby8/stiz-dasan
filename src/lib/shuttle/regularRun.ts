@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { notMergedStudent } from "@/lib/studentVisibility";
 import { requireAdmin } from "@/lib/auth-guard";
 
 // 정규 셔틀 기사님 링크(토큰) + 탑승/미탑승 기록. 방학특강(shuttleRun.ts)과 테이블은 공유하되,
@@ -74,7 +75,7 @@ export async function getRegularAbsentPeople(date: string): Promise<{ name: stri
          FROM "RegularAbsence" ra
          JOIN "Student" s ON s."id" = ra."studentId"
          LEFT JOIN "User" u ON u."id" = s."parentId"
-        WHERE ra."date" = $1::date AND ra."status" IN ('REPORTED','CONFIRMED')`,
+        WHERE ra."date" = $1::date AND ra."status" IN ('REPORTED','CONFIRMED') AND ${notMergedStudent("s")}`,
       d,
     );
     return rows

@@ -1,0 +1,3 @@
+ALTER TABLE "UniformOrderItem"
+  ADD COLUMN IF NOT EXISTS "design" TEXT,
+  ADD COLUMN IF NOT EXISTS "initials" TEXT;

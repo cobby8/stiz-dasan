@@ -1,52 +1,37 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
-import { parseRegularShuttleSheet, type RegularShuttleStop } from "./regularSheet";
+import type { RegularShuttleStop } from "./regularSheet";
 
-// 정규 셔틀 운행리스트: 구글 시트 → 앱 DB 이관(replace) + 조회. PgBouncer 때문에 $queryRawUnsafe/$executeRawUnsafe 고정.
+// 셔틀 명단(RegularShuttleStop) 조회·좌표·정차 순서 저장. PgBouncer 때문에 $queryRawUnsafe/$executeRawUnsafe 고정.
+// 2026-10-02 구글 시트에서 명단을 가져오던 함수는 종료·삭제했다(API 는 410). 명단 편집은 regularRosterEdit.ts 가 맡는다.
 
-// 구글 시트 URL(편집/보기)을 CSV export URL로 바꾼다.
-export function toCsvExportUrl(sheetUrl: string): string | null {
-  const id = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)?.[1];
-  if (!id) return null;
-  const gid = sheetUrl.match(/[#&?]gid=(\d+)/)?.[1] ?? "0";
-  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+export function normalizeServiceMonth(value: string | null | undefined): string {
+  const month = String(value ?? "").trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("적용 월은 YYYY-MM 형식이어야 합니다.");
+  return month;
 }
 
-/** 시트를 가져와 파싱한 뒤 RegularShuttleStop 테이블을 통째로 교체한다(원장 전용). */
-export async function importRegularShuttleFromSheet(sheetUrl: string): Promise<{ imported: number; title: string | null }> {
-  await requireAdmin();
-  const csvUrl = toCsvExportUrl(sheetUrl);
-  if (!csvUrl) throw new Error("올바른 구글 시트 URL이 아닙니다.");
-  const res = await fetch(csvUrl, { cache: "no-store", redirect: "follow" });
-  if (!res.ok) throw new Error("시트를 불러오지 못했습니다. '링크 있는 모든 사용자' 공개인지 확인해주세요.");
-  const csv = await res.text();
-  if (/<html/i.test(csv.slice(0, 200))) throw new Error("시트가 공개되어 있지 않습니다(로그인 페이지 응답).");
-  const { title, stops } = parseRegularShuttleSheet(csv);
-  if (stops.length === 0) throw new Error("시트에서 유효한 운행 정차를 찾지 못했습니다. 형식을 확인해주세요.");
-
-  // 통째로 교체: 기존 삭제 후 새로 삽입. (좌표는 후속 지오코딩 단계에서 채운다.)
-  await prisma.$executeRawUnsafe(`DELETE FROM "RegularShuttleStop"`);
-  for (const s of stops) {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "RegularShuttleStop"
-        ("weekday","classTime","arriveTime","stopName","direction","studentName","studentPhone","parentPhone","note","sortOrder")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      s.weekday, s.classTime, s.arriveTime, s.stopName, s.direction,
-      s.studentName, s.studentPhone, s.parentPhone, s.note, s.sortOrder,
+/** 저장된 월 목록. 최신 월부터 표시한다. */
+export async function getRegularShuttleMonths(): Promise<string[]> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<{ serviceMonth: string }[]>(
+      `SELECT DISTINCT "serviceMonth" FROM "RegularShuttleStop" ORDER BY "serviceMonth" DESC`,
     );
-  }
-  return { imported: stops.length, title };
+    return rows.map((row) => String(row.serviceMonth)).filter((month) => /^\d{4}-\d{2}$/.test(month));
+  } catch { return []; }
 }
 
 /** 좌표(latitude)가 아직 없는 '고유 정류장 이름' 목록을 돌려준다(빈 이름 제외). 1회용 좌표 채우기 화면용. */
-export async function getRegularStopsWithoutCoords(): Promise<string[]> {
+export async function getRegularStopsWithoutCoords(serviceMonth?: string): Promise<string[]> {
   try {
     // latitude 가 null 인 행들의 정류장 이름을 중복 없이(대소문자·공백 유지) 조회.
     const rows = await prisma.$queryRawUnsafe<{ stopName: string }[]>(
       `SELECT DISTINCT "stopName"
          FROM "RegularShuttleStop"
         WHERE "latitude" IS NULL AND COALESCE(TRIM("stopName"), '') <> ''
+          AND ($1::text IS NULL OR "serviceMonth"=$1)
         ORDER BY "stopName" ASC`,
+      serviceMonth ?? null,
     );
     return rows.map((r) => String(r.stopName ?? "").trim()).filter(Boolean);
   } catch {
@@ -76,32 +61,45 @@ export async function saveRegularStopCoords(
 /** 정규 셔틀 정차의 순서(sortOrder)·도착시각(arriveTime)을 저장한다(원장 전용). id 기준 개별 갱신. */
 export async function saveRegularStopOrder(
   updates: { id: string; sortOrder: number; arriveTime: string | null }[],
+  serviceMonth: string,
 ): Promise<{ updated: number }> {
   await requireAdmin();
-  let updated = 0;
-  for (const u of updates) {
-    const id = (u.id ?? "").trim();
-    if (!id || !Number.isFinite(u.sortOrder)) continue;
-    const arrive = typeof u.arriveTime === "string" && /^\d{1,2}:\d{2}$/.test(u.arriveTime.trim()) ? u.arriveTime.trim() : null;
-    const n = await prisma.$executeRawUnsafe(
-      `UPDATE "RegularShuttleStop" SET "sortOrder"=$1,"arriveTime"=$2 WHERE "id"=$3`,
-      Math.round(u.sortOrder), arrive, id,
-    );
-    updated += Number(n) || 0;
-  }
+  const month = normalizeServiceMonth(serviceMonth);
+  const updated = await prisma.$transaction(async (tx) => {
+    let count = 0;
+    for (const u of updates) {
+      const id = (u.id ?? "").trim();
+      if (!id || !Number.isFinite(u.sortOrder)) continue;
+      const arrive = typeof u.arriveTime === "string" && /^\d{1,2}:\d{2}$/.test(u.arriveTime.trim()) ? u.arriveTime.trim() : null;
+      const n = await tx.$executeRawUnsafe(
+        `UPDATE "RegularShuttleStop" SET "sortOrder"=$1,"arriveTime"=$2 WHERE "id"=$3 AND "serviceMonth"=$4`,
+        Math.round(u.sortOrder), arrive, id, month,
+      );
+      count += Number(n) || 0;
+    }
+    if (count !== updates.length) throw new Error("일부 정차가 선택한 월에 없어 저장을 취소했습니다. 차량표를 새로고침해 주세요.");
+    return count;
+  });
   return { updated };
 }
 
 /** 저장된 정규 셔틀 정차를 요일 순·시간 순으로 돌려준다. */
-export async function getRegularShuttleStops(): Promise<{ stops: RegularShuttleStop[]; importedAt: string | null }> {
+export async function getRegularShuttleStops(serviceMonth?: string): Promise<{ stops: RegularShuttleStop[]; importedAt: string | null; serviceMonth: string | null; months: string[] }> {
   try {
+    const months = await getRegularShuttleMonths();
+    const month = serviceMonth ? normalizeServiceMonth(serviceMonth) : (months[0] ?? null);
+    if (!month) return { stops: [], importedAt: null, serviceMonth: null, months };
+    // sortOrder 가 겹친 행은 id(바이트 순)로 순서를 고정한다 — 관리자 화면·기사님 화면·학생 추가 삽입 계산
+    // (regularRosterEditLogic rowOrder)이 같은 순서를 보게 하려는 것. 예전엔 겹친 행 순서가 DB 마음대로였다.
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT "id","weekday","classTime","arriveTime","stopName","direction","studentName","studentPhone","parentPhone","note","sortOrder","latitude","longitude","importedAt"
-         FROM "RegularShuttleStop" ORDER BY "weekday" ASC, "sortOrder" ASC`,
+      `SELECT "id","serviceMonth","weekday","classTime","arriveTime","stopName","direction","studentName","studentId","studentPhone","parentPhone","note","sortOrder","latitude","longitude","importedAt"
+         FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 ORDER BY "weekday" ASC, "sortOrder" ASC, "id" COLLATE "C" ASC`,
+      month,
     );
     const WD = ["일", "월", "화", "수", "목", "금", "토"];
     const stops: RegularShuttleStop[] = rows.map((r) => ({
       id: r.id != null ? String(r.id) : undefined,
+      serviceMonth: String(r.serviceMonth ?? month),
       weekday: Number(r.weekday),
       weekdayLabel: WD[Number(r.weekday)] ?? "",
       classTime: (r.classTime as string | null) ?? null,
@@ -109,6 +107,7 @@ export async function getRegularShuttleStops(): Promise<{ stops: RegularShuttleS
       stopName: String(r.stopName ?? ""),
       direction: (["BOARD", "ALIGHT", "PIVOT", "RETURN"].includes(String(r.direction)) ? r.direction : "BOARD") as RegularShuttleStop["direction"],
       studentName: (r.studentName as string | null) ?? null,
+      studentId: (r.studentId as string | null) ?? null,
       studentPhone: (r.studentPhone as string | null) ?? null,
       parentPhone: (r.parentPhone as string | null) ?? null,
       note: (r.note as string | null) ?? null,
@@ -117,8 +116,8 @@ export async function getRegularShuttleStops(): Promise<{ stops: RegularShuttleS
       longitude: r.longitude != null ? Number(r.longitude) : null,
     }));
     const importedAt = rows[0]?.importedAt ? new Date(String(rows[0].importedAt)).toISOString() : null;
-    return { stops, importedAt };
+    return { stops, importedAt, serviceMonth: month, months };
   } catch {
-    return { stops: [], importedAt: null };
+    return { stops: [], importedAt: null, serviceMonth: null, months: [] };
   }
 }

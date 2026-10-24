@@ -25,7 +25,8 @@ export default function StaffBottomNav({ staffRole }: { staffRole: StaffRole }) 
       : [...teachingItems, seasonalItem];
   const gridClass = items.length >= 5 ? "grid-cols-5" : items.length === 4 ? "grid-cols-4" : items.length === 1 ? "grid-cols-1" : "grid-cols-3";
 
-  return <nav aria-label="교사용 주요 메뉴" className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200/80 bg-white/95 px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 shadow-lg backdrop-blur-xl dark:border-gray-800 dark:bg-gray-950/95">
+  // 공통 표면을 사용하되 현재 메뉴의 접근성·이동 규칙은 유지합니다.
+  return <nav aria-label="교사용 주요 메뉴" className="academy-staff-nav fixed inset-x-0 bottom-0 z-30 border-t px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
     <div className={`mx-auto grid max-w-lg ${gridClass} gap-2`}>{items.map((item) => {
       const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
       return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-xs font-bold transition-colors ${active ? "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)] text-[var(--brand-accent)]" : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-900"}`}><span className={`material-symbols-outlined text-[1.45rem] ${active ? "[font-variation-settings:'FILL'_1]" : ""}`} aria-hidden="true">{item.icon}</span>{item.label}<span className="sr-only">{active ? "현재 메뉴" : "메뉴로 이동"}</span></Link>;

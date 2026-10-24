@@ -72,7 +72,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
             {programs.length > 0 && (
                 <div className="bg-white dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 sticky top-0 z-10">
                     {/* 수평 스크롤 칩 + 뷰 토글 — 모바일에서 자연스러운 좌우 스와이프 */}
-                    <div className="max-w-6xl mx-auto px-4 py-3 flex gap-2 items-center overflow-x-auto scrollbar-hide">
+                    <div className="public-filter-row max-w-6xl mx-auto px-4 py-3 flex gap-2 items-center overflow-x-auto scrollbar-hide">
                         <a
                             href="/schedule"
                             className={`shrink-0 text-sm font-bold px-5 py-2 rounded-full transition-all duration-200 whitespace-nowrap ${
@@ -102,7 +102,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
             )}
 
             {/* 시간표 그리드 — 배경색을 따뜻한 톤으로 변경 */}
-            <section className="py-16 md:py-20 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
+            <section className="public-content-section py-6 md:py-8 bg-surface-section dark:bg-gray-900 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-4">
                     {/* 뷰 토글 — 수업 카드 영역 오른쪽 위 */}
                     <div className="flex justify-end mb-4">
@@ -158,7 +158,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                         /* 표 보기 모드 — ScheduleTableView 렌더링 */
                         <ScheduleTableView slots={slots} />
                     ) : (
-                        <div data-tour-target="schedule-grid" className="space-y-8">
+                        <div data-tour-target="schedule-grid" className="space-y-5">
                             {activeDays.map((dayKey) => (
                                 <div key={dayKey} className={`rounded-2xl border ${DAY_CARD_BG[dayKey]} dark:bg-gray-900 dark:border-gray-800 overflow-hidden shadow-sm transition-colors`}>
                                     {/* 요일 헤더 — 색상 바 + 클래스 수 표시 */}
@@ -173,7 +173,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                             {byDay[dayKey].map((slot) => (
                                                 <div
                                                     key={slot.slotKey}
-                                                    className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                                                    className="public-card bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                                                 >
                                                     <div className="flex gap-3">
                                                         {/* 좌측: 수업 정보 */}
@@ -212,10 +212,6 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                     />
                                                                 </div>
                                                             </div>
-                                                            {/* 메모 — 있을 때만 표시 */}
-                                                            {slot.note && (
-                                                                <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">📌 {slot.note}</p>
-                                                            )}
                                                         </div>
 
                                                         {/* 우측: 코치 프로필 — 있을 때만 표시 */}
@@ -232,8 +228,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                                                 ) : (
                                                                     <div className="w-11 h-11 rounded-full bg-gray-200 flex items-center justify-center text-lg">🏀</div>
                                                                 )}
-                                                                <p className="text-xs font-bold text-gray-800 dark:text-gray-100 text-center leading-tight truncate w-full">{slot.coach.name}</p>
-                                                                <p className="text-xs text-gray-400 text-center leading-tight truncate w-full">{slot.coach.role}</p>
+                                                                <p className="text-xs font-bold text-gray-800 dark:text-gray-100 text-center leading-tight break-keep w-full">{slot.coach.name}</p>
+                                                                <p className="text-xs text-gray-400 text-center leading-tight break-words w-full">{slot.coach.role}</p>
                                                             </div>
                                                         )}
                                                     </div>

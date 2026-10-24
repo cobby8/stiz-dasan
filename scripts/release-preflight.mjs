@@ -17,6 +17,62 @@ function hasStrongMessagePrivacySecret() {
   return Buffer.byteLength(value, "utf8") >= 32;
 }
 
+function hasValidStizPartnerSecret() {
+  const value = process.env.STIZ_PARTNER_SECRET?.trim() || "";
+  return /^[a-f0-9]{64}$/i.test(value);
+}
+
+function hasValidCafe24BridgeSecret() {
+  const value = process.env.CAFE24_PAYMENT_BRIDGE_SECRET?.trim()
+    || process.env.STIZ_PARTNER_SECRET?.trim()
+    || "";
+  return /^[a-f0-9]{64}$/i.test(value);
+}
+
+function selectedPaymentProvider() {
+  const raw = (process.env.PAYMENT_PROVIDER || process.env.NEXT_PUBLIC_PAYMENT_PROVIDER || "TOSS")
+    .trim()
+    .toUpperCase();
+  if (["CAFE24", "CAFE24_BRIDGE", "CAFE24_PAYMENT", "STIZ_CAFE24"].includes(raw)) {
+    return "CAFE24_BRIDGE";
+  }
+  return "TOSS";
+}
+
+function hasHttpUrl(name) {
+  const value = process.env[name]?.trim() || "";
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function requirePaymentEnvironment(missing) {
+  const provider = selectedPaymentProvider();
+  if (provider === "CAFE24_BRIDGE") {
+    const hasBridgeUrl = isPresent("CAFE24_PAYMENT_BRIDGE_URL") || isPresent("STIZ_CAFE24_PAYMENT_API_URL");
+    if (!hasBridgeUrl) {
+      missing.push("CAFE24_PAYMENT_BRIDGE_URL (또는 STIZ_CAFE24_PAYMENT_API_URL)");
+    } else if (!hasHttpUrl("CAFE24_PAYMENT_BRIDGE_URL") && !hasHttpUrl("STIZ_CAFE24_PAYMENT_API_URL")) {
+      missing.push("CAFE24_PAYMENT_BRIDGE_URL (http/https URL 형식)");
+    }
+    if (!hasValidCafe24BridgeSecret()) {
+      missing.push("CAFE24_PAYMENT_BRIDGE_SECRET 또는 STIZ_PARTNER_SECRET (64자 hex 형식의 본사 결제 서명키)");
+    }
+    return;
+  }
+
+  if (!isPresent("TOSS_PAYMENTS_SECRET_KEY")) {
+    missing.push("TOSS_PAYMENTS_SECRET_KEY");
+  }
+  if (!isPresent("NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY") && !isPresent("TOSS_PAYMENTS_CLIENT_KEY")) {
+    missing.push("NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY (또는 TOSS_PAYMENTS_CLIENT_KEY)");
+  }
+}
+
 function currentSmsProvider() {
   const provider = (process.env.SMS_PROVIDER || "").trim().toUpperCase();
   if (provider === "BIZPPURIO" || provider === "BIZ_PPURIO" || provider === "PPURIO") return "BIZPPURIO";
@@ -65,18 +121,18 @@ function checkEnvironment() {
     "VAPID_PRIVATE_KEY",
     "GEMINI_API_KEY",
     "INVITE_OTP_SECRET",
-    "TOSS_PAYMENTS_SECRET_KEY",
+    "STIZ_PARTNER_SECRET",
   ]);
 
   if (!hasStrongMessagePrivacySecret()) {
     missing.push("MESSAGE_PRIVACY_HMAC_SECRET (32바이트 이상의 무작위 서버 비밀값)");
   }
+  if (isPresent("STIZ_PARTNER_SECRET") && !hasValidStizPartnerSecret()) {
+    missing.push("STIZ_PARTNER_SECRET (64자 hex 형식의 본사 연동 비밀키)");
+  }
 
   requireSmsEnvironment(missing);
-
-  if (!isPresent("NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY") && !isPresent("TOSS_PAYMENTS_CLIENT_KEY")) {
-    missing.push("NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY (또는 TOSS_PAYMENTS_CLIENT_KEY)");
-  }
+  requirePaymentEnvironment(missing);
 
   if (process.env.RELEASE_REQUIRE_INSTAGRAM === "true") {
     if (!isPresent("INSTAGRAM_ACCESS_TOKEN") && !isPresent("META_ACCESS_TOKEN")) {
@@ -123,6 +179,10 @@ if (skipEnv) console.log("[환경] --skip-env로 환경변수 검사를 생략�
 const prisma = resolve(root, "node_modules", "prisma", "build", "index.js");
 const tsc = resolve(root, "node_modules", "typescript", "bin", "tsc");
 const seasonalDbPreflight = resolve(root, "scripts", "seasonal-db-preflight.mjs");
+const regularShuttleDbPreflight = resolve(root, "scripts", "regular-shuttle-db-preflight.mjs");
+const operationsSyncDbPreflight = resolve(root, "scripts", "operations-sync-db-preflight.mjs");
+const uniformOrderDbPreflight = resolve(root, "scripts", "uniform-order-db-preflight.mjs");
+const kakaoParentDbPreflight = resolve(root, "scripts", "kakao-parent-db-preflight.mjs");
 
 if (!existsSync(prisma) || !existsSync(tsc)) {
   console.error("[실패] node_modules가 없습니다. npm ci 후 다시 실행하세요.");
@@ -138,12 +198,21 @@ const checks = [
   ["Prisma 스키마", process.execPath, [prisma, "validate"]],
   ["TypeScript", process.execPath, [tsc, "--noEmit"]],
   ["정책 및 계약 테스트", process.execPath, ["--test", ...testFiles]],
+  // tests/ 밖(src/)에 있어 위 목록에 안 잡히던 가드. 빠지면 병합된 유령 학생 쿼리가 조용히 늘어난다.
+  ["학생 병합 필터 가드", process.execPath, ["--experimental-strip-types", "--test", resolve(root, "src", "lib", "studentVisibility.test.ts")]],
 ];
 
 if (!skipEnv) {
-  checks.unshift(["방학특강 DB 준비 상태", process.execPath, [seasonalDbPreflight, ...(skipDb ? ["--skip-db"] : [])]]);
+  // 화면 코드보다 DB 구조가 뒤처진 배포를 먼저 차단한다.
+  checks.unshift(
+    ["운영 동기화 DB 준비 상태", process.execPath, [operationsSyncDbPreflight, ...(skipDb ? ["--skip-db"] : [])]],
+    ["정규 셔틀 DB 준비 상태", process.execPath, [regularShuttleDbPreflight, ...(skipDb ? ["--skip-db"] : [])]],
+    ["방학특강 DB 준비 상태", process.execPath, [seasonalDbPreflight, ...(skipDb ? ["--skip-db"] : [])]],
+    ["유니폼 주문 DB 준비 상태", process.execPath, [uniformOrderDbPreflight, ...(skipDb ? ["--skip-db"] : [])]],
+    ["카카오 학부모 접수 DB 준비 상태", process.execPath, [kakaoParentDbPreflight, ...(skipDb ? ["--skip-db"] : [])]],
+  );
 } else {
-  console.log("[건너뜀] --skip-env 코드 검사에서는 방학특강 DB 연결 검사를 실행하지 않습니다.");
+  console.log("[건너뜀] --skip-env 코드 검사에서는 방학특강·정규 셔틀·운영 동기화·유니폼·카카오 DB 연결 검사를 실행하지 않습니다.");
 }
 
 for (const [label, command, args] of checks) {

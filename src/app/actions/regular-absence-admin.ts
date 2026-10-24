@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
+import { assertAbsenceCompensationEditable, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { getRegularAbsences, type RegularAbsenceRow } from "@/lib/regular/admin-regular-absence";
 import {
   bookMakeupSession,
@@ -58,14 +59,18 @@ export async function revertRegularAbsence(input: { id: string }) {
   const id = input?.id?.trim();
   if (!id) throw new Error("결석 신고를 찾을 수 없습니다.");
 
-  const affected = await prisma.$executeRawUnsafe(
+  const affected = await prisma.$transaction(async tx => {
+    await lockCompensation(tx);
+    await assertAbsenceCompensationEditable(tx, id);
+    return tx.$executeRawUnsafe(
     `UPDATE "RegularAbsence"
         SET status = 'REPORTED',
             "resolvedByUserId" = $2,
             "updatedAt" = now()
       WHERE id = $1 AND status = 'CONFIRMED'`,
     id, admin.appUserId,
-  );
+    );
+  });
   if (Number(affected) === 0) throw new Error("확정 상태인 신고만 되돌릴 수 있습니다.");
 
   revalidateViews();
@@ -79,14 +84,18 @@ export async function cancelRegularAbsenceByAdmin(input: { id: string }) {
   const id = input?.id?.trim();
   if (!id) throw new Error("결석 신고를 찾을 수 없습니다.");
 
-  const affected = await prisma.$executeRawUnsafe(
+  const affected = await prisma.$transaction(async tx => {
+    await lockCompensation(tx);
+    await assertAbsenceCompensationEditable(tx, id);
+    return tx.$executeRawUnsafe(
     `UPDATE "RegularAbsence"
         SET status = 'CANCELLED',
             "resolvedByUserId" = $2,
             "updatedAt" = now()
       WHERE id = $1 AND status <> 'CANCELLED'`,
     id, admin.appUserId,
-  );
+    );
+  });
   if (Number(affected) === 0) throw new Error("취소할 수 없는 상태입니다.");
 
   revalidateViews();
@@ -111,7 +120,7 @@ export async function scheduleMakeupForAbsence(input: {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(makeupDate || "")) throw new Error("보강 날짜를 선택해 주세요.");
 
   // 결석 원본 조회(취소된 건은 보강 지정 불가). 학생·원래반·결석일을 서버에서 확정.
-  const rows = await prisma.$queryRawUnsafe<any[]>(
+  const rows = await prisma.$queryRawUnsafe<Array<{ studentId: string; classId: string; date: string }>>(
     `SELECT ra."studentId" AS "studentId",
             ra."classId" AS "classId",
             to_char(ra.date, 'YYYY-MM-DD') AS "date"
@@ -126,7 +135,7 @@ export async function scheduleMakeupForAbsence(input: {
   // 중복 방지: 같은 자연키(학생·원래반·결석일)에 활성 보강이 이미 있으면 거부.
   //   (MakeupSession 테이블이 없으면 아직 아무 보강도 없다는 뜻 → 통과)
   try {
-    const dup = await prisma.$queryRawUnsafe<any[]>(
+    const dup = await prisma.$queryRawUnsafe<Array<{ found: number }>>(
       `SELECT 1 FROM "MakeupSession"
         WHERE "studentId" = $1 AND "originalClassId" = $2
           AND "originalDate"::date = $3::date AND status <> 'CANCELLED'

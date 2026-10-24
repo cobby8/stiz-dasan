@@ -1,9 +1,7 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
-import { revalidatePath, revalidateTag } from "next/cache";
 
 import { requireAdmin } from "@/lib/auth-guard";
-import { ensureInvoicesForMonth, markOverduePayments, syncInvoiceStatusesForMonth } from "@/lib/payment-ledger";
-import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -151,7 +149,7 @@ function buildReconcileCte() {
           WHEN "paidAmount" = 0 AND "pendingAmount" = 0 AND "hasCarryOverOnlyMethod" THEN '이월 행만 있어 청구/미납으로 반영하지 않았습니다.'
           WHEN "paidAmount" = 0 AND "pendingAmount" = 0 THEN '청구 또는 납부 금액이 없습니다.'
           ELSE NULL
-        END AS "reviewReason"
+        END AS "baseReviewReason"
       FROM grouped
       CROSS JOIN LATERAL (
         SELECT array_remove(array_agg(DISTINCT method), NULL) AS "paidMethods"
@@ -160,34 +158,34 @@ function buildReconcileCte() {
       ) AS array_agg_method
     ),
     existing AS (
-      SELECT DISTINCT ON (p."studentId")
-        p.id,
+      SELECT
+        COUNT(*)::int AS "paymentCount",
         p."studentId",
-        p.amount,
-        p.status,
-        p.method
+        SUM(p.amount)::int AS amount,
+        CASE WHEN COUNT(DISTINCT p.status) = 1 THEN MAX(p.status) ELSE 'MIXED' END AS status,
+        CASE WHEN COUNT(DISTINCT COALESCE(p.method, '')) = 1 THEN MAX(p.method) ELSE 'MIXED' END AS method
       FROM "Payment" p
       WHERE p.year = $1
         AND p.month = $2
         AND p.type = 'MONTHLY'
-      ORDER BY p."studentId", p."createdAt" DESC
+      GROUP BY p."studentId"
     ),
     actions AS (
       SELECT
         t.*,
-        e.id AS "paymentId",
         e.amount AS "existingAmount",
         e.status AS "existingStatus",
         e.method AS "existingMethod",
         CASE
+          WHEN e."paymentCount" > 1 OR t."rowCount" > 1 THEN '여러 반 또는 여러 납부기록이 있어 반별 대조가 필요합니다.'
+          WHEN e."studentId" IS NULL THEN '사이트 납부기록이 없어 원본 증빙과 학생 연결을 확인해야 합니다.'
+          WHEN e.amount IS DISTINCT FROM t."targetAmount" OR e.status IS DISTINCT FROM t."targetStatus" THEN '금액 또는 상태가 달라 원본 증빙 확인이 필요합니다.'
+          ELSE t."baseReviewReason"
+        END AS "reviewReason",
+        CASE
+          WHEN e."paymentCount" > 1 OR t."rowCount" > 1 THEN 'REVIEW'
           WHEN t."targetStatus" IS NULL THEN 'REVIEW'
-          WHEN t."targetStatus" = 'CANCELED' AND e.id IS NULL THEN 'REVIEW'
-          WHEN e.id IS NULL AND COALESCE(t."targetAmount", 0) > 0 THEN 'CREATE'
-          WHEN e.id IS NULL THEN 'REVIEW'
-          WHEN t."targetStatus" = 'CANCELED'
-            AND (e.status <> 'CANCELED' OR COALESCE(e.method, '') <> COALESCE(t."targetMethod", ''))
-          THEN 'UPDATE'
-          WHEN t."targetStatus" = 'CANCELED' THEN 'UNCHANGED'
+          WHEN e."studentId" IS NULL THEN 'REVIEW'
           WHEN t."targetStatus" = 'PENDING'
             AND e.status = 'OVERDUE'
             AND e.amount = t."targetAmount"
@@ -196,7 +194,7 @@ function buildReconcileCte() {
           WHEN e.amount <> t."targetAmount"
             OR e.status <> t."targetStatus"
             OR COALESCE(e.method, '') <> COALESCE(t."targetMethod", '')
-          THEN 'UPDATE'
+          THEN 'REVIEW'
           ELSE 'UNCHANGED'
         END AS action
       FROM targets t
@@ -260,6 +258,10 @@ async function getPreview(year: number, month: number) {
     ),
   ]);
 
+  if (!batch || summaryRows.length === 0) {
+    throw new Error("선택한 월의 저장된 시트 대조 자료가 없습니다. 최신 원본을 확인해 주세요.");
+  }
+
   const summary = {
     create: 0,
     update: 0,
@@ -296,14 +298,6 @@ async function getPreview(year: number, month: number) {
   };
 }
 
-function revalidateFinance() {
-  revalidatePath("/admin/finance");
-  revalidatePath("/admin/stats");
-  revalidatePath("/admin/students");
-  revalidateTag("admin-finance", { expire: 0 });
-  revalidateTag("admin-stats", { expire: 0 });
-  revalidateTag("admin-students", { expire: 0 });
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -313,7 +307,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[api/admin/finance/sheet-reconcile] preview failed:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "시트 기준 수납 점검에 실패했습니다." },
+      { error: userFacingError(error, "시트 기준 수납 점검에 실패했습니다.") },
       { status: 500 },
     );
   }
@@ -322,110 +316,16 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await requireAdmin();
-    const { year, month } = parseTarget(request.nextUrl.searchParams);
-    const before = await getPreview(year, month);
-    const cte = buildReconcileCte();
-    // 납부기한: 약관 기준 "수강일 전까지" → 수강 개시일(그 달 1일) 전날 = 전월 말일
-    const dueDate = monthlyBillingDueDate(year, month);
-    const description = `${year}년 ${month}월 수강료(시트 원장 기준)`;
-
-    const [updated, created] = await prisma.$transaction([
-      prisma.$executeRawUnsafe(
-        `
-        ${cte},
-        ready AS (
-          SELECT *
-          FROM actions
-          WHERE action = 'UPDATE'
-        )
-        UPDATE "Payment" p
-        SET amount = CASE
-              WHEN ready."targetStatus" = 'CANCELED' THEN p.amount
-              ELSE ready."targetAmount"
-            END,
-            status = ready."targetStatus",
-            method = ready."targetMethod",
-            -- ⚠️ "dueDate"는 일부러 건드리지 않는다.
-            -- 이미 발행되어 학부모에게 안내된 청구서의 기한을 사후에 앞당기면
-            -- 그 순간 대량 연체(OVERDUE) 처리가 발생한다. 새 기한 규칙은 아래 INSERT(신규 생성)에만 적용한다.
-            "paidDate" = CASE
-              WHEN ready."targetStatus" = 'PAID' THEN COALESCE(ready."paymentDate", p."paidDate", NOW())
-              ELSE NULL
-            END,
-            description = CASE
-              WHEN ready."targetStatus" = 'CANCELED' AND ready."targetMethod" = 'CARRY_OVER' THEN CONCAT($3, ' - 이월 처리')
-              WHEN ready."targetStatus" = 'CANCELED' THEN CONCAT($3, ' - 청구 제외')
-              ELSE $3
-            END,
-            "autoGenerated" = false,
-            "updatedAt" = NOW()
-        FROM ready
-        WHERE p.id = ready."paymentId"
-        `,
-        year,
-        month,
-        description,
-      ),
-      prisma.$executeRawUnsafe(
-        `
-        ${cte},
-        ready AS (
-          SELECT *
-          FROM actions
-          WHERE action = 'CREATE'
-        )
-        INSERT INTO "Payment" (
-          id, "studentId", amount, status, "dueDate", "paidDate",
-          type, method, description, month, year, "autoGenerated", "createdAt", "updatedAt"
-        )
-        SELECT
-          gen_random_uuid()::text,
-          "studentId",
-          "targetAmount",
-          "targetStatus",
-          $3::timestamp,
-          CASE WHEN "targetStatus" = 'PAID' THEN COALESCE("paymentDate", NOW()) ELSE NULL END,
-          'MONTHLY',
-          "targetMethod",
-          $4,
-          $2,
-          $1,
-          false,
-          NOW(),
-          NOW()
-        FROM ready
-        `,
-        year,
-        month,
-        dueDate,
-        description,
-      ),
-    ]);
-
-    const invoiceResult = await ensureInvoicesForMonth(year, month);
-    const overdueResult = await markOverduePayments();
-    const invoiceSyncResult = await syncInvoiceStatusesForMonth(year, month);
-
-    revalidateFinance();
-    const after = await getPreview(year, month);
-
-    return NextResponse.json({
-      success: true,
-      applied: {
-        updated,
-        created,
-        invoices: invoiceResult.invoiceCount,
-        overdue: overdueResult.updated,
-        invoiceStatusSynced: invoiceSyncResult.updated,
-      },
-      before,
-      after,
-    });
-  } catch (error) {
-    console.error("[api/admin/finance/sheet-reconcile] apply failed:", error);
+    parseTarget(request.nextUrl.searchParams);
+    // Monthly aggregates cannot safely identify individual class payments.
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "시트 기준 수납 적용에 실패했습니다." },
-      { status: 500 },
+      { error: "반별 납부기록 보호를 위해 시트 자동 적용을 중단했습니다. 확인 필요 항목을 개별 검토해 주세요.", code: "RECONCILE_REVIEW_REQUIRED" },
+      { status: 409 },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: userFacingError(error, "시트 대조 권한을 확인할 수 없습니다.") },
+      { status: 400 },
     );
   }
 }

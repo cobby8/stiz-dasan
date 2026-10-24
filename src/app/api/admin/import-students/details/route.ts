@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAdmin } from "@/lib/auth-guard";
@@ -130,9 +131,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : "이관 상세 내역을 불러오지 못했습니다.",
+          userFacingError(error, "이관 상세 내역을 불러오지 못했습니다."),
       },
       { status: 500 }
     );

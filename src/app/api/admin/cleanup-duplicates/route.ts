@@ -2,7 +2,7 @@
  * 중복 학생 데이터 정리용 API
  *
  * GET  /api/admin/cleanup-duplicates — 중복 학생 목록 미리보기 (삭제 전 확인용)
- * POST /api/admin/cleanup-duplicates — 불완전한 중복 학생 실제 삭제
+ * POST /api/admin/cleanup-duplicates — ⛔ 막음(2026-10-02). 아래 POST 주석 참고
  *
  * 중복 판정 기준:
  * - 같은 이름(name)의 Student가 2명 이상
@@ -138,9 +138,15 @@ export async function GET() {
 }
 
 /**
- * POST: 불완전한 중복 학생 실제 삭제
- * deleteStudent와 동일한 순서로 연결 테이블 정리 후 Student 삭제
- * 고아 User(다른 Student가 없는 학부모)도 함께 삭제
+ * POST: ⛔ 막음 (2026-10-02, Phase 0 정합성 점검)
+ *
+ * 예전에는 "같은 이름의 학생이 2명 이상이면, 학교·학년이 비어 있는 쪽"을 골라
+ * 그 학생의 청구(Payment)·출석·수강 기록까지 **영구 삭제**했다. 위험한 이유:
+ *  · 이름만으로 같은 사람이라고 판단한다 — **동명이인**이 지워진다.
+ *  · 돈 기록(Payment)을 지운다 — 되돌릴 방법이 없다.
+ *  · 2026-07-26 부터는 지우지 않고 합치는 병합 도구(src/lib/studentMerge/engine.ts)가 있다.
+ * 화면에서 부르는 곳은 없었지만 관리자라면 누구나 호출할 수 있어 여기서 막는다.
+ * 미리보기(GET)는 읽기만 하므로 남겨 둔다.
  */
 export async function POST() {
   try {
@@ -148,102 +154,12 @@ export async function POST() {
   } catch {
     return NextResponse.json({ error: "인증 필요" }, { status: 401 });
   }
-
-  try {
-    // 1단계: 삭제 대상 학생 ID 목록 산출 (GET과 동일한 로직)
-    const duplicateNames = await prisma.$queryRawUnsafe<{ name: string }[]>(
-      `SELECT name
-       FROM "Student" s
-       WHERE ${notMergedStudent("s")}
-       GROUP BY name
-       HAVING COUNT(*) >= 2`
-    );
-
-    if (duplicateNames.length === 0) {
-      return NextResponse.json({ message: "중복 학생 없음", deleted: 0 });
-    }
-
-    const nameList = duplicateNames.map((d) => d.name);
-    const placeholders = nameList.map((_, i) => `$${i + 1}`).join(", ");
-
-    const allDuplicates = await prisma.$queryRawUnsafe<{
-      id: string;
-      name: string;
-      school: string | null;
-      grade: string | null;
-      parentId: string;
-    }[]>(
-      `SELECT id, name, school, grade, "parentId"
-       FROM "Student" s
-       WHERE ${notMergedStudent("s")} AND name IN (${placeholders})`,
-      ...nameList
-    );
-
-    // 이름별 그룹핑
-    const byName = new Map<string, typeof allDuplicates>();
-    for (const s of allDuplicates) {
-      if (!byName.has(s.name)) byName.set(s.name, []);
-      byName.get(s.name)!.push(s);
-    }
-
-    // 삭제 대상 ID와 parentId 수집
-    const toDeleteIds: string[] = [];
-    const parentIdsToCheck = new Set<string>();
-
-    for (const [, students] of byName) {
-      const complete = students.filter((s) => !isIncomplete(s));
-      const incomplete = students.filter((s) => isIncomplete(s));
-
-      if (complete.length > 0) {
-        for (const s of incomplete) {
-          toDeleteIds.push(s.id);
-          parentIdsToCheck.add(s.parentId);
-        }
-      }
-    }
-
-    if (toDeleteIds.length === 0) {
-      return NextResponse.json({ message: "삭제 대상 없음", deleted: 0 });
-    }
-
-    // 2단계: 연결 테이블 삭제 (deleteStudent와 동일한 FK 순서)
-    // 각 학생 ID에 대해 순서대로 삭제
-    for (const studentId of toDeleteIds) {
-      await prisma.$executeRawUnsafe(`DELETE FROM "Guardian" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "StudentSessionNote" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Feedback" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "SkillRecord" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Waitlist" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "MakeupSession" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Attendance" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Payment" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Enrollment" WHERE "studentId" = $1`, studentId);
-      await prisma.$executeRawUnsafe(`DELETE FROM "Student" WHERE id = $1`, studentId);
-    }
-
-    // 3단계: 고아 User 삭제 (다른 Student가 없는 학부모)
-    let orphanUsersDeleted = 0;
-    for (const parentId of parentIdsToCheck) {
-      // ⚠️ 여기에는 병합 필터를 넣지 않는다.
-      //    흡수된 학생도 여전히 이 학부모를 참조하므로, 세지 않고 User를 지우면 FK가 깨진다.
-      const remaining = await prisma.$queryRawUnsafe<{ cnt: number }[]>(
-        `SELECT COUNT(*)::int as cnt FROM "Student" WHERE "parentId" = $1`,
-        parentId
-      );
-      if (remaining[0]?.cnt === 0) {
-        await prisma.$executeRawUnsafe(`DELETE FROM "User" WHERE id = $1`, parentId);
-        orphanUsersDeleted++;
-      }
-    }
-
-    return NextResponse.json({
-      message: `학생 ${toDeleteIds.length}명 삭제 완료, 고아 학부모 ${orphanUsersDeleted}명 삭제`,
-      deletedStudents: toDeleteIds.length,
-      deletedOrphanUsers: orphanUsersDeleted,
-      deletedStudentIds: toDeleteIds,
-    });
-  } catch (e) {
-    console.error("cleanup-duplicates POST error:", e);
-    return NextResponse.json({ error: "정리 실패" }, { status: 500 });
-  }
+  return NextResponse.json(
+    {
+      error:
+        "중복 학생 영구 삭제 기능은 막혔습니다. 동명이인이 지워지고 청구·출석 기록이 사라질 수 있어서입니다. " +
+        "중복 학생은 병합 도구로 합쳐 주세요(기록을 지우지 않고 한쪽으로 모읍니다).",
+    },
+    { status: 410 },
+  );
 }

@@ -54,13 +54,19 @@ test("직원 계정의 학부모 화면 통과는 자녀 조회로만 결정한�
   const guard = await readFile("src/lib/auth-guard.ts", "utf8");
   // 역할만 보고 통과시키면 자녀 없는 직원도 학부모 화면에 들어간다.
   assert.match(guard, /SELECT 1 AS one FROM "Student" WHERE "parentId" = \$1 LIMIT 1/);
-  assert.match(guard, /ownChildren\.length === 0[\s\S]{0,120}throw new Error/);
+  // 판정은 getVerifiedParentState 가 상태로 돌려주고(카카오 연결 화면 안내용),
+  // requireVerifiedParent 는 OK 가 아니면 전부 거절(throw)한다.
+  assert.match(guard, /ownChildren\.length === 0[\s\S]{0,120}return \{ status: "STAFF_ACCOUNT" \}/);
   // 학부모 계정의 휴대폰 인증 요구는 그대로 남아 있어야 한다.
-  assert.match(guard, /isVerifiedSignup && !isDirectlyBoundLegacyParent[\s\S]{0,120}throw new Error/);
+  assert.match(guard, /isVerifiedSignup && !isDirectlyBoundLegacyParent[\s\S]{0,120}return \{ status: "PHONE_UNVERIFIED" \}/);
+  assert.match(guard, /if \(state\.status === "OK"\) return state\.parent;[\s\S]{0,200}throw new Error\("휴대폰 인증을 완료한 학부모 계정이 필요합니다\."\)/);
 });
 
 test("로그인 직후 판별도 DB 의 자녀 유무를 그대로 쓴다", async () => {
   const continuePage = await readFile("src/app/auth/continue/page.tsx", "utf8");
-  assert.match(continuePage, /EXISTS \(SELECT 1 FROM "Student" s WHERE s\."parentId" = "User"\.id\)/);
-  assert.match(continuePage, /hasOwnChildren: Boolean\(rows\[0\]\?\.hasOwnChildren\)/);
+  assert.match(continuePage, /getParentViewAccessForAuthUser\(user\)/);
+  assert.match(continuePage, /hasOwnChildren: parentView\.hasOwnChildren/);
+  const access = await readFile("src/lib/account-view-access.ts", "utf8");
+  assert.match(access, /EXISTS \(SELECT 1 FROM "Student" s WHERE s\."parentId" = u\.id\)/);
+  assert.match(access, /u\."authUserId" = \$1 OR \(u\."authUserId" IS NULL AND u\.id = \$1\)/);
 });

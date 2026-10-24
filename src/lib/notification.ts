@@ -564,7 +564,7 @@ export async function dispatchReservedSmsDelivery(input: {
     if (!claimed[0]) return { ok: false, status: "FAILED", deliveryId: input.deliveryId, errorCode: "DELIVERY_NOT_DISPATCHABLE" };
 
     const deliveryRows = await prisma.$queryRawUnsafe<Array<{
-        source: "AUTO" | "SECURITY";
+        source: "AUTO" | "SECURITY" | "MANUAL";
         trigger: string | null;
         eventType: string;
         stableEventKey: string | null;
@@ -576,7 +576,8 @@ export async function dispatchReservedSmsDelivery(input: {
         input.deliveryId,
     ).catch(() => []);
     const delivery = deliveryRows[0];
-    if (!delivery?.trigger || !delivery.stableEventKey) {
+    const manualReconfirmation = delivery?.source === "MANUAL" && delivery.eventType === "KAKAO_RECONFIRMATION";
+    if ((!delivery?.trigger && !manualReconfirmation) || !delivery?.stableEventKey) {
         await finalizeReservedSmsWithoutDispatch({
             deliveryId: input.deliveryId,
             status: "FAILED",
@@ -584,13 +585,36 @@ export async function dispatchReservedSmsDelivery(input: {
         });
         return { ok: false, status: "FAILED", deliveryId: input.deliveryId, errorCode: "AUTOMATION_RULE_REQUIRED" };
     }
-    const policy = await getAutomationPolicy({
+    // 수동 재확인 안내만 승인 감사기록과 현재 링크·수신자·문구를 다시 대조한다.
+    if (manualReconfirmation) {
+        const approved = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+            `SELECT a.id FROM "OperationsAuditLog" a
+             JOIN "ParentOperationsRequestLink" l ON l.id=a."linkId"
+             JOIN "Student" s ON s.id=l."studentId"
+             JOIN "User" u ON u.id=s."parentId"
+             WHERE a.action='KAKAO_RECONFIRMATION_SMS_APPROVED' AND a."actorUserId" IS NOT NULL
+               AND l.id=$1 AND l."revokedAt" IS NULL AND l."lastUsedAt" IS NULL AND l."expiresAt">now()+interval '30 seconds'
+               AND a."detailsJson"->>'phoneHash'=$2 AND a."detailsJson"->>'bodyHash'=$3
+               AND a."detailsJson"->>'parentId'=s."parentId" AND a."detailsJson"->>'studentId'=s.id
+               AND a."detailsJson"->>'tokenHash'=l."tokenHash" AND a."detailsJson"->>'channel'='SMS'
+               AND regexp_replace(COALESCE(u.phone,''),'[^0-9]','','g')=$4 LIMIT 1`,
+            delivery.stableEventKey, privateRecipientHash(recipientNo), hashMessageBody(input.body), recipientNo,
+        ).catch(() => []);
+        if (!approved.length) {
+            await finalizeReservedSmsWithoutDispatch({ deliveryId: input.deliveryId, status: "SKIPPED", errorCode: "MANUAL_APPROVAL_CHANGED" });
+            return { ok: false, status: "SKIPPED", deliveryId: input.deliveryId, errorCode: "MANUAL_APPROVAL_CHANGED" };
+        }
+    }
+    const policy = manualReconfirmation ? {
+        enabled: true, requestedChannel: "SMS" as const, deliveryChannel: "SMS" as const,
+        fallbackEnabled: false, fallbackChannel: null, preselectedFallback: false,
+    } : await getAutomationPolicy({
         source: delivery.source,
         eventType: delivery.eventType,
         eventId: delivery.stableEventKey,
         recipientPhone: recipientNo,
         recipientRole: delivery.audienceScope === "INTERNAL" ? "ADMIN" : "PARENT",
-        trigger: delivery.trigger,
+        trigger: delivery.trigger ?? undefined,
         body: input.body,
     });
     if (!policy.enabled) {

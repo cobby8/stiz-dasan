@@ -39,14 +39,40 @@ test("체험 신청은 수정, 일정 변경, 취소 모달로 관리할 수 있
   assert.match(trialModals, /function TrialEditModal/);
   assert.match(trialModals, /function TrialScheduleModal/);
   assert.match(trialModals, /function TrialCancelModal/);
-  assert.match(trialModals, /label="확정 수업"/);
+  assert.match(trialModals, /label="선택한 날짜의 수업 \*"/);
   assert.match(trialModals, /label="확정 날짜 \*"/);
   assert.match(trialModals, /label="확정 시간 \*"/);
   assert.match(trialModals, /scheduledClassId/);
   assert.match(trialModals, /status:\s*"CANCELLED"/);
   assert.match(adminAction, /"childSchool",\s*"basketballExp"/);
   assert.match(adminAction, /"preferredDay",\s*"preferredPeriod"/);
-  assert.match(adminAction, /"trialDate",\s*"trialFeeConfirmed"/);
+  // 입금 확인은 공용 수정에서 빠지고 전용 action(confirmTrialFeePayment)만 바꾼다(2026-10-09)
+  assert.match(adminAction, /"trialDate",\s*"hopeNote"/);
+});
+
+test("체험 일정 변경은 선택 날짜의 운영 수업만 조회하고 실제 확정값을 저장한다", () => {
+  const scheduleOptionsRoute = readFileSync(new URL("../src/app/api/admin/trial/schedule-options/route.ts", import.meta.url), "utf8");
+  const scheduleServer = readFileSync(new URL("../src/lib/trial-schedule-server.ts", import.meta.url), "utf8");
+  assert.match(scheduleOptionsRoute, /await requireAdmin\(\)/);
+  assert.match(scheduleOptionsRoute, /listTrialScheduleOptionsForDate\(date\)/);
+  assert.match(scheduleServer, /resolveTrialScheduleFromRow\(row/);
+  assert.match(trialModals, /fetch\(`\/api\/admin\/trial\/schedule-options\?date=/);
+  assert.match(trialModals, /options\.map\(\(option\) =>/);
+  assert.match(trialModals, /setScheduledClassId\(""\);[\s\S]*setScheduledTime\(""\);/);
+  assert.match(trialModals, /options\.some\(\(option\) => option\.classId === scheduledClassId\)/);
+  assert.match(adminAction, /if \(typeof data\.scheduledClassId !== "string" \|\| !data\.scheduledClassId\.trim\(\)\)/);
+  assert.match(trialClient, /getLocalDateTime\(getTrialListDateValue\(lead\)\)/);
+  assert.match(adminAction, /history\?\.sendScheduleNotification === true/);
+  assert.doesNotMatch(trialModals, /sendScheduleNotification:\s*true/);
+});
+
+test("체험 신청 수정은 최신 목록 반영을 확인한 뒤에만 성공으로 처리한다", () => {
+  assert.match(trialClient, /onSaved=\{\(\) => loadTrialData\(\)\}/);
+  assert.doesNotMatch(trialClient, /onSaved=\{\(\) => void loadTrialData\(\)\}/);
+  assert.match(trialModals, /const refreshed = await onSaved\(\);/);
+  assert.match(trialModals, /if \(!refreshed\) \{/);
+  assert.match(trialModals, /목록을 새로 불러오지 못했습니다/);
+  assert.match(trialModals, /if \(!refreshed\)[\s\S]*onDone\(\);/);
 });
 
 test("체험 신청 일정은 DB 수업 정보와 연결해 실제 수업 시간을 표시한다", () => {
@@ -76,7 +102,8 @@ test("체험 신청 일정은 DB 수업 정보와 연결해 실제 수업 시간
   assert.match(trialClient, /function normalizeSlotKey/);
   assert.match(trialClient, /function getPreferredSlotKeyCandidates/);
   assert.match(trialClient, /function getPreferredClass/);
-  assert.match(trialModals, /function isLikelyDefaultScheduleTime/);
+  assert.match(trialModals, /function isDateOnlySchedulePlaceholder/);
+  assert.match(trialModals, /option\.startTime/);
   assert.match(trialModals, /function normalizeSlotKey/);
   assert.match(trialModals, /function getPreferredSlotKeyCandidates/);
   assert.match(trialModals, /getPreferredClass\(lead, classes\)/);
@@ -85,7 +112,8 @@ test("체험 신청 일정은 DB 수업 정보와 연결해 실제 수업 시간
 test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 보여준다", () => {
   assert.match(trialClient, /function renderTrialList\(\)/);
   assert.match(trialClient, /<table className="w-full min-w-\[760px\] table-fixed[\s\S]*text-center[\s\S]*lg:min-w-0/);
-  assert.match(trialClient, /상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*상태변경[\s\S]*액션/);
+  assert.match(trialClient, /상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*액션/);
+  assert.doesNotMatch(trialClient, />상태변경</);
   assert.match(trialClient, /function formatMonthDayDate/);
   assert.match(trialClient, /function getTrialListDateValue/);
   assert.match(trialClient, /const createdDateMobileLabel = formatMonthDayDate\(lead\.createdAt\)/);
@@ -104,28 +132,40 @@ test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 �
   assert.match(trialClient, /quickActionMenuPosition/);
   assert.match(trialClient, /flash_on/);
   assert.match(trialClient, /async function handleConfirmTrialFee/);
-  assert.match(trialClient, /updateTrialLead\(lead\.id, \{ trialFeeConfirmed: true \}/);
+  assert.match(trialClient, /confirmTrialFeePayment\(lead\.id\)/);
   assert.doesNotMatch(trialClient, /lead\.trialFeeConfirmed \? "입금" : "미입금"/);
-  assert.match(trialClient, /<span>입금 확인<\/span>/);
+  assert.match(trialClient, /trialFeeBusyId === lead\.id \? "확인 중…" : "입금 확인"/);
   assert.match(trialClient, /<span>입금 완료<\/span>/);
   assert.match(trialClient, /onConfirmTrialFee/);
-  assert.match(trialClient, /function renderStatusChangeCell/);
+  assert.doesNotMatch(trialClient, /function renderStatusChangeCell/);
   assert.doesNotMatch(trialClient, /renderEnrollGuideButton\(lead, "inline"\)/);
-  assert.match(trialClient, /\{renderEnrollGuideButton\(lead\)\}/);
-  assert.match(trialClient, /lead\.coachNoticeSentAt \? "쌤알림 재발송" : "쌤알림 발송"/);
-  assert.match(trialClient, /void handleSendCoachNotice\(lead\)/);
+  assert.match(trialClient, /lead\.status === "ATTENDED" && renderEnrollGuideButton\(lead\)/);
+  assert.match(trialClient, /onCoachNotice=\{\(\) => void handleSendCoachNotice\(showDetailModal\)\}/);
   assert.match(trialClient, /type TrialDateFilter/);
   assert.match(trialClient, /const TRIAL_DATE_FILTERS/);
   assert.match(trialClient, /matchesTrialDateFilter\(lead, dateFilter\)/);
-  assert.match(trialClient, /aTrialDate - bTrialDate/);
+  assert.match(trialClient, /getLocalDateTime\(b\.createdAt\).*getLocalDateTime\(a\.createdAt\)/);
   assert.match(trialClient, /value=\{dateFilter\}/);
   assert.doesNotMatch(trialClient, /<th className="px-3 py-2(?:\.5)?">보호자<\/th>/);
   assert.doesNotMatch(trialClient, /<th className="px-3 py-2(?:\.5)?">쌤알림<\/th>/);
   assert.match(trialClient, /setShowScheduleModal\(lead\)/);
-  assert.match(trialClient, /handleRecordContact\(lead, "CONTACTED"\)/);
+  assert.match(trialClient, /setContactModal\(\{ lead, defaultAction: "CONTACTED" \}\)/);
+  assert.match(trialClient, /lead\.childGrade \|\| lead\.childAge/);
+  assert.match(trialClient, /NAVER_SEARCH: "네이버 키워드 검색"/);
+  assert.match(trialClient, /lead\.status === "SCHEDULED" \? "일정 변경" : "일정 확정"/);
+  assert.match(trialClient, /\[lead\.childName, lead\.childGrade \|\| lead\.childAge, lead\.childSchool\]/);
+  assert.match(trialModals, /체험비 상태: \{trialFeeStatusLabel\(lead\)\}/);
+  assert.doesNotMatch(trialModals, /onChange=\{\(e\) => setForm\(\{ \.\.\.form, trialFeeConfirmed: e\.target\.checked \}\)\}/);
   assert.doesNotMatch(trialClient, /viewMode/);
   assert.doesNotMatch(trialClient, /setViewMode/);
   assert.doesNotMatch(trialClient, /grid_view/);
+});
+
+test("체험수업과 수강신청은 접수일 최신순으로 표시한다", () => {
+  assert.match(trialClient, /const createdAtCompare = \(getLocalDateTime\(b\.createdAt\) \?\? 0\) - \(getLocalDateTime\(a\.createdAt\) \?\? 0\)/);
+  assert.match(applyClient, /const createdAtCompare = \(Date\.parse\(b\.createdAt\) \|\| 0\) - \(Date\.parse\(a\.createdAt\) \|\| 0\)/);
+  assert.match(trialClient, /return createdAtCompare \|\| b\.id\.localeCompare\(a\.id\)/);
+  assert.match(applyClient, /return createdAtCompare \|\| b\.id\.localeCompare\(a\.id\)/);
 });
 
 test("수강신청은 승인 전 내용 수정과 취소 이력 처리를 지원한다", () => {
@@ -167,13 +207,15 @@ test("신청 수정, 일정 변경, 취소는 운영 이력으로 남고 관리�
   assert.match(applyModals, /원생 상세 열기/);
 });
 
-test("관리자 신청 화면은 제목과 한 줄 설명만 남기고 중복 요약을 제거한다", () => {
-  assert.match(adminShell, /label="신청 관리"/);
-  assert.match(adminShell, /label="수납\/청구"/);
-  assert.match(adminShell, /기타 운영/);
+test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약을 제거한다", () => {
+  assert.match(adminShell, /label="신청·상담"/);
+  assert.match(adminShell, /label="청구·수납"/);
+  assert.match(adminShell, /업무별 상세 메뉴/);
+  assert.match(adminShell, /설정·도구/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);
-  assert.match(applyClient, /체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다\./);
+  assert.match(applyClient, /체험\/수강신청 관리/);
+  assert.doesNotMatch(applyClient, /체험 문의와 수강신청을 한 화면에서 확인하고 처리합니다/);
   assert.doesNotMatch(applyClient, /신청 페이지 미리보기/);
   assert.doesNotMatch(applyClient, /오늘 먼저/);
   assert.doesNotMatch(applyClient, /새 체험/);
@@ -181,7 +223,11 @@ test("관리자 신청 화면은 제목과 한 줄 설명만 남기고 중복 �
   assert.doesNotMatch(trialClient, /체험 문의 관리/);
   assert.match(trialClient, /체험 신청 등록/);
   assert.match(applyClient, /학생, 보호자, 전화번호로 검색/);
-  assert.match(applyClient, /<select\s+value=\{filter\}/);
+  assert.match(applyClient, /<select\b[^>]*value=\{filter\}/);
+  assert.match(applyClient, /aria-label="신청 관리 업무"/);
+  assert.match(applyClient, /<CompactListFilters/);
+  assert.match(trialClient, /<CompactListFilters/);
+  assert.doesNotMatch(applyClient, /aria-label="신청 관리 메뉴"/);
   assert.match(applyClient, /LIST_ACTION_TRIGGER_CLASS/);
   assert.match(applyClient, /LIST_ACTION_MENU_CLASS/);
   assert.match(applyClient, /setShowDetailModal\(app\)/);
@@ -213,12 +259,12 @@ test("체험수업과 수강신청은 카드형을 폐기하고 목록형만 제
   assert.doesNotMatch(trialClient, /type ViewMode/);
   assert.doesNotMatch(trialClient, /setViewMode/);
   assert.doesNotMatch(trialClient, /grid_view/);
-  assert.match(trialClient, /handleStatusChange\(lead, event\.target\.value\)/);
+  assert.doesNotMatch(trialClient, /handleStatusChange\(lead, event\.target\.value\)/);
 });
 
 test("목록형은 스프레드시트처럼 실제 테이블 구조로 보여준다", () => {
   assert.match(trialClient, /function renderTrialList\(\)[\s\S]*<table className="w-full min-w-\[760px\][\s\S]*lg:min-w-0/);
-  assert.match(trialClient, /<thead[\s\S]*상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*상태변경[\s\S]*액션/);
+  assert.match(trialClient, /<thead[\s\S]*상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*액션/);
   assert.match(trialClient, /<tbody[\s\S]*visibleLeads\.map/);
   assert.doesNotMatch(trialClient, /hidden grid-cols-\[1fr_0\.9fr_2\.2fr_0\.8fr_1\.2fr\]/);
   assert.match(applyClient, /function renderApplicationList\(\)[\s\S]*<table className="w-full min-w-\[960px\]/);
@@ -235,7 +281,7 @@ test("신청 관리에는 유입경로 통계를 탭에서 지연 로딩한다",
   assert.match(applyClient, /activeTab !== "sources"/);
   assert.match(applyClient, /function renderSourceStats\(\)/);
   assert.match(applyClient, /등록 전환/);
-  assert.match(applyClient, /체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다/);
+  assert.doesNotMatch(applyClient, /체험 문의와 수강신청이 어떤 경로에서 들어오는지 확인합니다/);
   assert.match(applyClient, /activeTab === "sources" \?[\s\S]*renderSourceStats\(\)/);
   assert.match(adminReadPayloads, /getCachedAdminApplySourceStatsPayload/);
   assert.match(adminReadPayloads, /FROM "TrialLead"/);

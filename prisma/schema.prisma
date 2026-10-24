@@ -9,21 +9,95 @@ datasource db {
 }
 
 model User {
-  id                      String                  @id @default(uuid())
-  email                   String                  @unique
-  username                String?
-  name                    String
-  phone                   String?
-  phoneVerifiedAt         DateTime?               @db.Timestamptz(6)
-  authUserId              String?                 @unique
-  role                    Role                    @default(PARENT)
-  createdAt               DateTime                @default(now())
-  updatedAt               DateTime                @updatedAt
-  classes                 Class[]
-  students                Student[]
-  coach                   Coach?
-  drivenShuttleRoutePlans ShuttleRoutePlan[]      @relation("ShuttleRouteDriver")
-  enrollmentApplications  EnrollmentApplication[] @relation("EnrollmentApplicationParent")
+  id                          String                        @id @default(uuid())
+  email                       String                        @unique
+  username                    String?
+  name                        String
+  phone                       String?
+  phoneVerifiedAt             DateTime?                     @db.Timestamptz(6)
+  authUserId                  String?                       @unique
+  role                        Role                          @default(PARENT)
+  createdAt                   DateTime                      @default(now())
+  updatedAt                   DateTime                      @updatedAt
+  classes                     Class[]
+  students                    Student[]
+  coach                       Coach?
+  drivenShuttleRoutePlans     ShuttleRoutePlan[]            @relation("ShuttleRouteDriver")
+  enrollmentApplications      EnrollmentApplication[]       @relation("EnrollmentApplicationParent")
+  parentOperationsLinks       ParentOperationsRequestLink[] @relation("ParentOperationsLinkCreator")
+  regularLocationLinksCreated RegularShuttleLocationLink[]  @relation("RegularLocationLinkCreator")
+  regularLocationLinksParent  RegularShuttleLocationLink[]  @relation("RegularLocationLinkParent")
+  operationsAuditLogs         OperationsAuditLog[]          @relation("OperationsAuditActor")
+  operationsRequested         OperationsRequest[]           @relation("OperationsRequestRequester")
+  operationsApproved          OperationsRequest[]           @relation("OperationsRequestApprover")
+  kakaoParentIdentities       KakaoParentIdentity[]
+}
+
+/// 카카오 챗봇 사용자를 최초 1회 인증된 학부모 계정에 연결한다.
+/// 카카오 user key 원문은 저장하지 않고 서버 비밀키로 만든 HMAC 해시만 보관한다.
+model KakaoParentIdentity {
+  id            String              @id @default(dbgenerated("(gen_random_uuid())::text"))
+  botId         String
+  userKeyHash   String
+  parentUserId  String?
+  status        String              @default("PENDING") // PENDING | ACTIVE | REVOKED
+  linkTokenHash String?             @unique
+  linkExpiresAt DateTime?           @db.Timestamptz(6)
+  linkedAt      DateTime?           @db.Timestamptz(6)
+  revokedAt     DateTime?           @db.Timestamptz(6)
+  lastSeenAt    DateTime            @default(now()) @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  parent        User?               @relation(fields: [parentUserId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  intakes       KakaoParentIntake[]
+
+  @@unique([botId, userKeyHash])
+  @@index([parentUserId, status])
+}
+
+/// 카카오 대화 원문과 구조화된 해석을 분리해 보존하는 접수 원장.
+/// APPLIED는 기존 결석/셔틀 검증 함수를 통과한 경우에만 사용한다.
+model KakaoParentIntake {
+  id                  String                   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  identityId          String
+  studentId           String?
+  kind                String
+  sourceText          String
+  structuredJson      Json?
+  status              String                   @default("DRAFT") // DRAFT | NEEDS_DETAILS | SUBMITTED | APPLIED | HELD | FAILED | CANCELED
+  idempotencyKey      String                   @unique
+  providerRequestId   String?
+  confirmedAt         DateTime?                @db.Timestamptz(6)
+  appliedAt           DateTime?                @db.Timestamptz(6)
+  errorCode           String?
+  decidedByUserId     String?
+  decidedAt           DateTime?                @db.Timestamptz(6)
+  decisionNote        String?
+  operationsRequestId String?                  @unique
+  createdAt           DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  identity            KakaoParentIdentity      @relation(fields: [identityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  audits              KakaoParentIntakeAudit[]
+
+  @@unique([identityId, providerRequestId])
+  @@index([identityId, status, createdAt(sort: Desc)])
+  @@index([studentId, createdAt(sort: Desc)])
+}
+
+/// 관리자가 카카오 접수를 검토한 이력. 외부 발송 없이 내부 판단만 감사 가능하게 남긴다.
+model KakaoParentIntakeAudit {
+  id          String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  intakeId    String
+  action      String
+  actorUserId String
+  fromStatus  String
+  toStatus    String
+  note        String?
+  detailsJson Json?
+  createdAt   DateTime          @default(now()) @db.Timestamptz(6)
+  intake      KakaoParentIntake @relation(fields: [intakeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([intakeId, createdAt(sort: Desc)])
 }
 
 model ParentAccountClaim {
@@ -70,7 +144,7 @@ model ParentAccountClaimOtpSend {
 }
 
 model Student {
-  id                       String                      @id @default(uuid())
+  id                       String                        @id @default(uuid())
   name                     String
   birthDate                DateTime
   gender                   String?
@@ -86,7 +160,7 @@ model Student {
   uniformStatus            String? // 유니폼 상태 (예: "수령완료", "미수령", "추가주문" 등)
   basketballExp            String? // 농구 경험
   hopeNote                 String? // 바라는 점
-  agreementsJSON           String                      @default("{}") // 개인정보/이용약관/주의사항 동의 원본
+  agreementsJSON           String                        @default("{}") // 개인정보/이용약관/주의사항 동의 원본
   sourceImportRowId        String? // 마지막 시트 이관 원본 행
   // 학생 병합: 흡수된 쪽 행은 지우지 않고 여기에 대표 학생 id를 찍는다.
   // DB에는 있는데 이 파일에 빠져 있어, ORM으로 조회하는 화면이 통째로 죽었다
@@ -95,8 +169,8 @@ model Student {
   // 없어 @@index를 두지 않는다. 여기에 일반 인덱스를 적으면 반대 방향으로 어긋난다.
   mergedIntoStudentId      String?
   mergedAt                 DateTime?
-  createdAt                DateTime                    @default(now())
-  updatedAt                DateTime                    @updatedAt
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
   attendances              Attendance[]
   enrollments              Enrollment[]
   guardians                Guardian[]
@@ -112,12 +186,120 @@ model Student {
   enrollmentChangeRequests EnrollmentChangeRequest[]
   paymentParentRequests    PaymentParentRequest[]
   shuttleDayExceptions     ShuttleDayException[]
-  parent                   User                        @relation(fields: [parentId], references: [id])
+  parentOperationsLinks    ParentOperationsRequestLink[]
+  operationsCommands       OperationsCommand[]
+  regularShuttleStops      RegularShuttleStop[]
+  regularLocationLinks     RegularShuttleLocationLink[]
+  parent                   User                          @relation(fields: [parentId], references: [id])
 
   @@index([parentId])
   @@index([name, parentId])
   @@index([branch])
   @@index([sourceImportRowId])
+}
+
+model ParentOperationsRequestLink {
+  id              String               @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId       String
+  tokenHash       String               @unique
+  purpose         String               @default("GENERAL") // GENERAL | KAKAO_RECONFIRMATION
+  expiresAt       DateTime             @db.Timestamptz(6)
+  revokedAt       DateTime?            @db.Timestamptz(6)
+  lastUsedAt      DateTime?            @db.Timestamptz(6)
+  createdByUserId String
+  createdAt       DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @db.Timestamptz(6)
+  student         Student              @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdBy       User                 @relation("ParentOperationsLinkCreator", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  requests        OperationsRequest[]
+  auditLogs       OperationsAuditLog[]
+
+  @@index([studentId, expiresAt])
+}
+
+model OperationsRequest {
+  id                  String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  sourceText          String
+  targetMonth         String
+  status              String                       @default("DRAFT")
+  requestedByUserId   String
+  approvedByUserId    String?
+  approvedAt          DateTime?                    @db.Timestamptz(6)
+  parentRequestLinkId String?
+  submittedAt         DateTime?                    @db.Timestamptz(6)
+  createdAt           DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  parentRequestLink   ParentOperationsRequestLink? @relation(fields: [parentRequestLinkId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  requestedBy         User                         @relation("OperationsRequestRequester", fields: [requestedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  approvedBy          User?                        @relation("OperationsRequestApprover", fields: [approvedByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  commands            OperationsCommand[]
+  auditLogs           OperationsAuditLog[]
+
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model OperationsAuditLog {
+  id          String                       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  requestId   String?
+  linkId      String?
+  action      String
+  actorType   String
+  actorUserId String?
+  detailsJson Json?
+  createdAt   DateTime                     @default(now()) @db.Timestamptz(6)
+  request     OperationsRequest?           @relation(fields: [requestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  link        ParentOperationsRequestLink? @relation(fields: [linkId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  actor       User?                        @relation("OperationsAuditActor", fields: [actorUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([requestId, createdAt(sort: Desc)])
+}
+
+/// 시트·랠리즈·홈페이지에 반영할 한 개의 구조화된 변경 명령.
+/// 운영 경로는 PgBouncer 호환 raw SQL을 사용하지만 FK 관계도 실제 DB와 같게 선언한다.
+model OperationsCommand {
+  id                 String                  @id @default(dbgenerated("(gen_random_uuid())::text"))
+  requestId          String
+  idempotencyKey     String                  @unique
+  sourceText         String
+  studentId          String?
+  studentName        String?
+  kind               String
+  effectiveMonth     String
+  confidence         String
+  status             String                  @default("PENDING")
+  holdReason         String?
+  beforeJson         Json?
+  afterJson          Json?
+  billingStatus      String                  @default("HELD")
+  notificationStatus String                  @default("HELD")
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime                @default(now()) @db.Timestamptz(6)
+  request            OperationsRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student            Student?                @relation(fields: [studentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  syncAttempts       OperationsSyncAttempt[]
+
+  @@index([requestId])
+  @@index([studentId])
+}
+
+/// 외부 대상별 실행 결과. processingToken은 외부 호출 동안 동시 실행을 막는 만료형 임대다.
+model OperationsSyncAttempt {
+  id                  String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  commandId           String
+  target              String
+  status              String            @default("PENDING")
+  attempts            Int               @default(0)
+  externalReference   String?
+  error               String?
+  verifiedAt          DateTime?         @db.Timestamptz(6)
+  processingToken     String?
+  processingStartedAt DateTime?         @db.Timestamptz(6)
+  createdAt           DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime          @default(now()) @db.Timestamptz(6)
+  command             OperationsCommand @relation(fields: [commandId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([commandId, target])
+  @@index([commandId])
 }
 
 model Program {
@@ -169,6 +351,43 @@ model Class {
 
   @@index([programId])
   @@index([instructorId])
+}
+
+/// 학생의 한 달 장부. 기존 Enrollment/Payment나 시트를 자동 변경하지 않는다.
+model MonthlyEnrollmentRegister {
+  id          String                              @id @default(uuid())
+  studentId   String
+  month       String
+  version     Int                                 @default(1)
+  status      String                              @default("DRAFT")
+  /// 반별 기간·금액·감면 근거와 학생 월 단위 셔틀비의 명시적 스냅샷.
+  payload     Json
+  updatedBy   String
+  updatedAt   DateTime                            @default(now()) @db.Timestamptz(6)
+  confirmedAt DateTime?                           @db.Timestamptz(6)
+  revisions   MonthlyEnrollmentRegisterRevision[]
+
+  @@unique([studentId, month])
+  @@index([month, status])
+}
+
+/// 수정 전후 버전을 남기는 감사 기록. 확정 해제도 기존 버전을 지우지 않는다.
+model MonthlyEnrollmentRegisterRevision {
+  id          String                    @id @default(uuid())
+  registerId  String
+  studentId   String
+  month       String
+  version     Int
+  status      String
+  payload     Json
+  action      String
+  reason      String
+  actorUserId String
+  createdAt   DateTime                  @default(now()) @db.Timestamptz(6)
+  register    MonthlyEnrollmentRegister @relation(fields: [registerId], references: [id], onDelete: Restrict)
+
+  @@unique([registerId, version])
+  @@index([studentId, month, version])
 }
 
 model Enrollment {
@@ -298,33 +517,33 @@ model StudentSessionNote {
 }
 
 model Payment {
-  id                 String               @id @default(uuid())
+  id                 String                 @id @default(uuid())
   studentId          String
   classId            String?
   amount             Int
   status             String
   dueDate            DateTime
   paidDate           DateTime?
-  type               String               @default("MONTHLY") // MONTHLY(월 수강료), SHUTTLE(셔틀), UNIFORM(유니폼), OTHER(기타)
+  type               String                 @default("MONTHLY") // MONTHLY(월 수강료), SHUTTLE(셔틀), UNIFORM(유니폼), OTHER(기타)
   method             String? // 결제수단: RALLYZ(랠리즈), CARD(카드), CASH(현금영수증), UNPAID(미결제)
   description        String? // 청구 항목 설명 (예: "4월 수강료")
   month              Int? // 청구 대상 월 (1~12)
   year               Int? // 청구 대상 연도
-  autoGenerated      Boolean              @default(false) // 자동 생성 여부 (Cron/일괄 생성 구분)
+  autoGenerated      Boolean                @default(false) // 자동 생성 여부 (Cron/일괄 생성 구분)
   notifiedAt         DateTime? // 미납 알림 발송 시각
   invoiceNo          String?
-  issuedAt           DateTime?            @db.Timestamptz(6)
-  payableUntil       DateTime?            @db.Timestamptz(6)
+  issuedAt           DateTime?              @db.Timestamptz(6)
+  payableUntil       DateTime?              @db.Timestamptz(6)
   paidProvider       String?
   providerOrderId    String?
   providerPaymentKey String?
   receiptUrl         String?
-  paymentRequestedAt DateTime?            @db.Timestamptz(6)
-  lastReminderAt     DateTime?            @db.Timestamptz(6)
-  reminderCount      Int                  @default(0)
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
-  student            Student              @relation(fields: [studentId], references: [id])
+  paymentRequestedAt DateTime?              @db.Timestamptz(6)
+  lastReminderAt     DateTime?              @db.Timestamptz(6)
+  reminderCount      Int                    @default(0)
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  student            Student                @relation(fields: [studentId], references: [id])
   invoice            PaymentInvoice?
   transactions       PaymentTransaction[]
   auditLogs          PaymentAuditLog[]
@@ -340,6 +559,49 @@ model Payment {
   @@index([status, dueDate])
   @@index([providerOrderId])
   @@index([providerPaymentKey])
+}
+
+model UniformOrder {
+  id                String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  partnerRequestId  String             @unique
+  parentName        String
+  parentPhone       String
+  parentPhoneDigits String
+  customerMemo      String?
+  itemSignature     String
+  orderStatus       String             @default("RECEIVED") // RECEIVED | CANCELED
+  stizSyncStatus    String             @default("PENDING") // PENDING | SENDING | SENT | DUPLICATE | RETRY_WAIT | NEEDS_REVIEW | SETUP_REQUIRED
+  stizOrderNumber   String?
+  stizDuplicate     Boolean            @default(false)
+  stizMessage       String?
+  sendAttempts      Int                @default(0)
+  nextRetryAt       DateTime?          @db.Timestamptz(6)
+  lastError         String?
+  lastSentAt        DateTime?          @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  items             UniformOrderItem[]
+
+  @@index([createdAt])
+  @@index([stizSyncStatus, nextRetryAt])
+  @@index([parentPhoneDigits, createdAt])
+}
+
+model UniformOrderItem {
+  id             String       @id @default(dbgenerated("(gen_random_uuid())::text"))
+  uniformOrderId String
+  studentName    String
+  design         String?
+  initials       String?
+  backNumber     String?
+  topSize        String?
+  bottomSize     String?
+  quantity       Int          @default(1)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(6)
+  order          UniformOrder @relation(fields: [uniformOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([uniformOrderId])
+  @@index([studentName])
 }
 
 /// 학부모의 청구서 관련 요청: "입금했어요"(확인 요청)와 "영수증 주세요".
@@ -1356,7 +1618,8 @@ model TrialLead {
   preferredDay                String? // Google Form: 요일
   preferredPeriod             String? // Google Form: 교시
   trialDate                   DateTime?             @db.Timestamptz(6) // Google Form: 체험수업 희망일
-  trialFeeConfirmed           Boolean               @default(false) // Google Form: 체험수업 비용 확인
+  trialFeeConfirmed           Boolean               @default(false) // 학원(관리자)이 실제 입금을 확인함 — 관리자 전용 버튼에서만 true
+  trialFeeNoticeAgreedAt      DateTime?             @db.Timestamptz(6) // 학부모가 신청서에서 「체험비·입금 계좌 확인」에 체크한 시각(입금 아님)
   hopeNote                    String? // 바라는 점 (자유 입력)
   agreedTerms                 Boolean               @default(false) // 이용약관 동의 여부
   agreedPrivacy               Boolean               @default(false) // 개인정보 수집/이용 동의 여부
@@ -1869,6 +2132,41 @@ model StudentShuttleLocation {
   @@index([studentId, updatedAt])
 }
 
+/// 기존 정규반 학부모에게 전달하는 좌표 입력 전용 링크. 원문 토큰은 저장하지 않는다.
+model RegularShuttleLocationLink {
+  id              String                            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId       String
+  parentId        String
+  purpose         String                            @default("REGULAR_SHUTTLE_LOCATION")
+  tokenHash       String                            @unique
+  expiresAt       DateTime                          @db.Timestamptz(6)
+  revokedAt       DateTime?                         @db.Timestamptz(6)
+  lastSubmittedAt DateTime?                         @db.Timestamptz(6)
+  submissionCount Int                               @default(0)
+  lastPayloadHash String?
+  createdByUserId String
+  createdAt       DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+  student         Student                           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  parent          User                              @relation("RegularLocationLinkParent", fields: [parentId], references: [id], onDelete: Cascade)
+  createdBy       User                              @relation("RegularLocationLinkCreator", fields: [createdByUserId], references: [id], onDelete: NoAction)
+  auditLogs       RegularShuttleLocationLinkAudit[]
+
+  @@index([studentId, expiresAt])
+  @@index([parentId, expiresAt])
+}
+
+model RegularShuttleLocationLinkAudit {
+  id          String                     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  linkId      String
+  action      String
+  detailsJson Json?
+  createdAt   DateTime                   @default(now()) @db.Timestamptz(6)
+  link        RegularShuttleLocationLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([linkId, createdAt(sort: Desc)])
+}
+
 // 방학특강 실제 운행 계획용 차량. 홈페이지 안내용 Route/Stop과 분리한다.
 model ShuttleVehicle {
   id          String             @id @default(dbgenerated("(gen_random_uuid())::text"))
@@ -2374,6 +2672,7 @@ model SeasonalDispatchRoute {
 // 상세 근거는 prisma/migrations/20260727120000_add_regular_dispatch_route/migration.sql 참고.
 model RegularDispatchRoute {
   id            String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  serviceMonth  String   @default("2026-09") // 'YYYY-MM' — 월별 차량표 스냅샷
   dayOfWeek     String // 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
   direction     String // 'PICKUP' | 'DROPOFF'
   payload       Json // 조정된 vehicles 스냅샷(정차 순서·시각·경로 포함)
@@ -2383,7 +2682,7 @@ model RegularDispatchRoute {
   createdAt     DateTime @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  @@unique([dayOfWeek, direction]) // 요일·방향당 저장 1건
+  @@unique([serviceMonth, dayOfWeek, direction]) // 월·요일·방향당 저장 1건
 }
 
 // 기사님 전용 링크 — 토큰 → (날짜×방향). 상세: prisma/migrations/20260727000000_add_shuttle_run_link_and_boarding
@@ -2450,12 +2749,14 @@ model DriverLocation {
 // 정규 수업 셔틀 운행리스트(구글 시트 이관본). 요일별 하루 타임라인의 정차 하나 = 1행.
 model RegularShuttleStop {
   id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  serviceMonth String   @default("2026-09") // 'YYYY-MM' — 가져온 차량 시트의 적용 월
   weekday      Int
   classTime    String?
   arriveTime   String?
   stopName     String
   direction    String // 'BOARD'|'ALIGHT'|'PIVOT'|'RETURN'
   studentName  String?
+  studentId    String? // 월별 시트 이관 시 확정한 안정적인 학생 식별값
   studentPhone String?
   parentPhone  String?
   note         String?
@@ -2463,8 +2764,37 @@ model RegularShuttleStop {
   latitude     Float?
   longitude    Float?
   importedAt   DateTime @default(now())
+  student      Student? @relation(fields: [studentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
-  @@index([weekday, sortOrder])
+  @@index([serviceMonth, weekday, sortOrder])
+  @@index([studentId, serviceMonth])
+}
+
+// 정규 차량 변동 문자의 승인·발송 상태. 일반 NotificationDelivery의 전송 상태와 분리한다.
+model RegularShuttleNoticeBatch {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  serviceMonth     String
+  compareMonth     String
+  stableEventKey   String
+  payloadHash      String    @unique
+  studentId        String
+  studentName      String
+  recipientPhone   String
+  messageBody      String
+  beforeText       String?
+  afterText        String
+  status           String    @default("HELD") // HELD | APPROVED | SENDING | SENT | CANCELLED | UNCERTAIN
+  approvedByUserId String?
+  approvedAt       DateTime? @db.Timestamptz(6)
+  sentAt           DateTime? @db.Timestamptz(6)
+  errorCode        String?
+  lockedAt         DateTime? @db.Timestamptz(6)
+  createdByUserId  String
+  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([stableEventKey, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
 }
 
 // 예약 발송 대기열 — "보낼 문자를 미리 얼려 두는" 큐.
@@ -2549,4 +2879,126 @@ model MakeupCredit {
   @@index([studentId, status])
   @@index([status, expiresAt]) // 만료 처리 크론이 쓰는 인덱스
   @@index([makeupSessionId])
+}
+
+/// 토스POS ↔ 사이트 결제 대사 실행 기록.
+/// Vercel 은 실행마다 파일이 사라져 결과를 파일로 못 남긴다. 관리자 화면이 읽는 원본이다.
+/// 이 표는 기록만 담는다 — 청구서·결제를 바꾸는 값은 들어가지 않는다.
+model PosReconcileRun {
+  id             String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  targetMonth    String // 'YYYY-MM' (DB CHECK 제약으로 형식 고정)
+  status         String    @default("OK") // OK | FAILED
+  error          String?
+  source         String    @default("CRON") // CRON | MANUAL
+  siteCount      Int       @default(0)
+  siteAmount     BigInt    @default(0)
+  posCount       Int       @default(0)
+  posAmount      BigInt    @default(0)
+  matchedCount   Int       @default(0)
+  heldCount      Int       @default(0)
+  siteOnlyCount  Int       @default(0)
+  posOnlyCount   Int       @default(0)
+  diffAmount     BigInt    @default(0)
+  /// 대조표 전문. 화면에서 다시 계산하지 않는다.
+  reportMarkdown String?
+  startedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  finishedAt     DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([targetMonth, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
+}
+
+/// 토스플레이스 웹훅 수신 기록. 받은 사실만 남긴다(청구서·결제는 건드리지 않는다).
+/// webhookId 가 유일값인 것이 중복 처리 방지의 핵심 — 토스는 2xx 를 못 받으면 같은 알림을 다시 보낸다.
+model PosWebhookEvent {
+  id          String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  /// x-toss-webhook-id — 재시도해도 같은 값이라 중복 판별의 기준이 된다
+  webhookId   String    @unique
+  /// x-toss-delivery-id — 재시도마다 바뀐다
+  deliveryId  String?
+  eventId     String?
+  eventType   String?
+  merchantId  String?
+  payload     Json
+  status      String    @default("RECEIVED") // RECEIVED | IGNORED | MATCHED | HELD
+  note        String?
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt DateTime? @db.Timestamptz(6)
+
+  @@index([receivedAt(sort: Desc)])
+  @@index([eventType, receivedAt(sort: Desc)])
+}
+
+/// 토스POS 결제 1건 = 슬랙 DM 1통 (migration 20260930090000_add_pos_payment_notice 의 사본)
+/// 랠리즈가 청구서 원본이다. POS 결제마다 "랠리즈에서 현장결제 처리하셨나요?" 를 묻고 답을 남긴다.
+/// ⚠️ DB 에는 부분 유일 인덱스("sitePaymentId" WHERE "siteMarkedPaid" = true)가 더 있다.
+///    Prisma 로 표현할 수 없어 여기에 적지 않는다(적으면 반대 방향으로 어긋난다).
+model PosPaymentNotice {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  /// 토스 결제 ID — 주문·결제 알림이 둘 다 와도 DM 은 한 통(중복 판별 기준)
+  tossPaymentId      String    @unique
+  tossOrderId        String
+  amount             BigInt
+  approvedAt         DateTime? @db.Timestamptz(6)
+  lineItems          String?
+  memo               String?
+  resolvedStudentId  String?
+  targetYear         Int?
+  targetMonth        Int?
+  sitePaymentId      String?
+  kind               String // AUTO_CANDIDATE | NO_MEMO | AMBIGUOUS | NOT_IN_ROSTER | NO_SITE_INVOICE | ALREADY_PAID | AMOUNT_MISMATCH
+  pickedKind         String? // 원장이 원생을 고른 뒤의 분류(AUTO_CANDIDATE | NO_SITE_INVOICE | ALREADY_PAID | AMOUNT_MISMATCH)
+  status             String    @default("PENDING") // PENDING | NOTIFIED | STUDENT_CHOSEN | CONFIRMED | IGNORED | FAILED
+  slackChannel       String?
+  slackTs            String?
+  error              String?
+  decidedBySlackUser String?
+  decidedAt          DateTime? @db.Timestamptz(6)
+  siteMarkedPaid     Boolean   @default(false)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([tossOrderId])
+}
+
+/// 카카오 정책 답변 — 정책 문서 버전 이력 (migration 20261009120000_add_kakao_policy_qa 의 사본)
+/// 저장할 때마다 한 줄 추가한다. 가장 최근 행이 현재 문서다.
+/// ⚠️ DB 에는 content 길이 CHECK(30000자)가 더 있다.
+model KakaoPolicyDocumentVersion {
+  id           String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  content      String
+  editorUserId String?
+  editorName   String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+}
+
+/// 카카오 정책 답변 켜기/끄기(킬 스위치). 행은 id='default' 하나뿐이고 기본값은 꺼짐.
+model KakaoPolicyQaSetting {
+  id              String   @id @default("default")
+  enabled         Boolean  @default(false)
+  updatedByUserId String?
+  updatedByName   String?
+  updatedAt       DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// 카카오 정책 답변 기록. 사용자키는 해시만, 전화번호는 저장하지 않는다. 180일 뒤 data-retention 크론이 지운다.
+model KakaoPolicyQaLog {
+  id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  question    String   @db.VarChar(500)
+  answer      String?
+  outcome     String // ANSWERED | ESCALATE | TIMEOUT | ERROR
+  mode        String // SYNC | CALLBACK
+  linked      Boolean
+  latencyMs   Int
+  userKeyHash String
+  callbackOk  Boolean?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userKeyHash, createdAt(sort: Desc)])
+  @@index([createdAt], map: "KakaoPolicyQaLog_createdAt_asc_idx")
 }

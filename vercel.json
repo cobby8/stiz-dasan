@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build:vercel",
   "fluid": true,
   "regions": ["icn1"],
   "functions": {
@@ -27,6 +27,14 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/manual-message-dispatch",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/manual-message-reconcile",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/media-revocations",
       "schedule": "*/5 * * * *"
     },
@@ -39,12 +47,40 @@
       "schedule": "10 15 * * *"
     },
     {
+      "path": "/api/cron/kakao-parent-intake-routing",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/operational-notification-reconciliation",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/regular-shuttle-months",
+      "schedule": "5 15 * * *"
+    },
+    {
+      "path": "/api/cron/seasonal-enrollments",
+      "schedule": "20 15 * * *"
+    },
+    {
       "path": "/api/cron/makeup-credits",
       "schedule": "30 15 * * *"
     },
     {
       "path": "/api/cron/site-ops-bot",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/pos-reconcile",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/admin-daily-digest",
+      "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/cron/pos-notice-sweep",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

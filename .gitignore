@@ -47,3 +47,6 @@ next-env.d.ts
 .tmp/
 .__unlinktest
 /public/uploads/
+
+# 대사 리포트 — 원생 이름 포함, 커밋 금지
+outputs/reconcile/

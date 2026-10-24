@@ -8,8 +8,8 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 // 개인정보 처리방침은 자주 바뀌지 않으므로 5분 ISR (terms 페이지와 동일)
 export const revalidate = 300;
 export const metadata = buildPublicMetadata({
-  title: "개인정보 처리방침 | STIZ 농구교실 다산점",
-  description: "STIZ 농구교실 다산점 개인정보 처리방침을 확인하세요.",
+  title: "개인정보 처리방침 | STIZ 농구교실 다산2호점",
+  description: "STIZ 농구교실 다산2호점 개인정보 처리방침을 확인하세요.",
   path: "/privacy",
 });
 
@@ -36,7 +36,7 @@ export default async function PrivacyPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 — terms 페이지와 동일한 스타일 */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+      <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
           <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -57,7 +57,7 @@ export default async function PrivacyPage() {
       </section>
 
       {/* 본문 — 관리자 설정값을 조항별 카드 형태로 표시 */}
-      <SectionLayout bgColor="section">
+      <SectionLayout className="public-content-section" bgColor="section">
         <div className="max-w-4xl mx-auto space-y-6">
           {privacySections.map((section, idx) => (
             <AnimateOnScroll key={`${section.title}-${idx}`}>

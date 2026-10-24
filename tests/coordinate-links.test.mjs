@@ -4,7 +4,6 @@ import test from "node:test";
 import { coordinateLinkSet, coordinatePoint } from "../src/lib/maps/coordinate-links.ts";
 
 const coordinateLinksSource = await readFile("src/lib/maps/coordinate-links.ts", "utf8");
-const adminShuttleSource = await readFile("src/app/admin/shuttle/ShuttleRouteAdminClient.tsx", "utf8");
 
 test("map links are generated from coordinates instead of address text", () => {
   assert.match(coordinateLinksSource, /coordinatePoint/);
@@ -16,12 +15,7 @@ test("map links are generated from coordinates instead of address text", () => {
   assert.match(coordinateLinksSource, /map\.kakao\.com\/link\/to/);
 });
 
-test("admin shuttle screen opens confirmed pins with coordinate links", () => {
-  assert.match(adminShuttleSource, /coordinateLinkSet/);
-  assert.match(adminShuttleSource, /links\.kakaoMap/);
-  assert.match(adminShuttleSource, /links\.tmapNavigation/);
-  assert.match(adminShuttleSource, /T맵 길안내/);
-});
+// 2026-10-02 옛 노선 편성 화면(ShuttleRouteAdminClient) 삭제로 화면 쪽 검사는 뺐다(링크 생성 모듈 검사는 유지).
 
 test("coordinate links reject non-finite and out-of-range positions", () => {
   for (const input of [

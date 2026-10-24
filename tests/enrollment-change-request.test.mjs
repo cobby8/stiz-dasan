@@ -96,11 +96,14 @@ test("취소는 아직 결정 안 된 건만 가능하다", () => {
   assert.match(parentLib, /이미 처리된 신청은 취소할 수 없습니다/);
 });
 
-test("승인은 예약이고 적용은 적용일에 일어난다", () => {
-  assert.match(adminLib, /r\."effectiveFrom" <= \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
-  // 이미 반영한 건은 건너뛰어야 두 번 실행돼도 안전하다.
-  assert.match(adminLib, /r\."appliedAt" IS NULL/);
-  assert.match(adminLib, /SET "appliedAt" = now\(\)/);
+test("승인은 예약이고 적용일에 삼중 동기화 대기로 이관한다", () => {
+  assert.match(adminLib, /"effectiveFrom" <= \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
+  assert.match(adminLib, /"appliedAt" IS NULL/);
+  // 원장 결정(2026-10-05): 휴원·퇴원 자동 적용 시에만 appliedAt 을 찍는다 — 반드시 APPLIED 전환과 함께, 조건부로.
+  // (예전엔 "appliedAt 을 절대 먼저 찍지 않는다"였다. 사이트 적용 = 관리자 즉시 변경과 같은 의미로 바뀜)
+  assert.doesNotMatch(adminLib, /SET "appliedAt" = now\(\)/);
+  assert.match(adminLib, /SET status = 'APPLIED', "appliedAt" = now\(\)/);
+  assert.match(adminLib, /\["SHEET", "RALLYZ", "WEBSITE"\]/);
 });
 
 test("같은 결정을 두 번 눌러도 두 번 반영되지 않는다", () => {
@@ -110,28 +113,33 @@ test("같은 결정을 두 번 눌러도 두 번 반영되지 않는다", () => 
 
 test("한 건이 실패해도 나머지는 반영한다", () => {
   // 한 건 때문에 전체가 멈추면 그날 모든 변경이 밀린다.
-  assert.match(adminLib, /for \(const row of due\)[\s\S]{0,2400}catch \(error\)/);
+  assert.match(adminLib, /for \(const candidate of due\)[\s\S]*catch\s*\{/);
 });
 
 test("반 변경이 학생·반 유일 제약과 부딪히지 않는다", () => {
   // 그 반에 예전 등록 이력이 있으면 classId 를 바꾸는 UPDATE 가 충돌한다.
-  assert.match(adminLib, /SELECT id FROM "Enrollment" WHERE "studentId" = \$1 AND "classId" = \$2/);
+  // 원장 결정(2026-10-05): 휴원·퇴원은 status 만 조건부로 바꾼다. 반(classId)을 옮기는 UPDATE 는 여전히 없다.
+  assert.doesNotMatch(adminLib, /UPDATE "Enrollment" SET[^`]*"classId"/);
+  assert.match(adminLib, /UPDATE "Enrollment" SET status = \$2, "updatedAt" = now\(\) WHERE id = \$1 AND status = \$3/);
+  assert.match(adminLib, /operationsCommand\.findUnique\(\{ where: \{ idempotencyKey: key \}/);
 });
 
 test("크론이 매일 돌고 아무나 부를 수 없다", () => {
   assert.match(cron, /CRON_SECRET/);
   assert.match(cron, /applyDueEnrollmentChanges/);
+  // 응답에 실제 적용 건수와 보류 건수를 함께 낸다(운영 확인용)
+  assert.match(cron, /ok: true, applied, held/);
   const job = vercel.crons.find((item) => item.path === "/api/cron/enrollment-changes");
   assert.ok(job, "vercel.json 에 크론이 등록돼야 합니다.");
   assert.equal(job.schedule, "10 15 * * *"); // KST 00:10
 });
 
-test("신청·결정이 사람에게 전달된다", () => {
-  assert.match(parentLib, /notifyAdmins\("ENROLLMENT_CHANGE"/);
-  assert.match(adminLib, /notifyParentsOfStudents\(\[input\.studentId\]/);
+test("신청은 담당자에게 전달하고 결정 알림은 발송 승인 대기다", () => {
+  assert.match(parentLib, /notifyOperationalStaff\(/);
+  assert.doesNotMatch(adminLib, /notifyParentsOfStudents\(/);
   // 알림 실패가 신청·승인을 되돌리면 안 된다.
   assert.match(parentLib, /console\.error\("\[parent-change-request\] 원장 알림 실패/);
-  assert.match(adminLib, /console\.error\("\[admin-change-request\] 학부모 알림 실패/);
+  assert.match(adminLib, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
 });
 
 // ── 학부모가 반 변경 시작일을 고를 수 있게 한 뒤 추가된 계약 ──────────────
@@ -230,10 +238,11 @@ test("차액 청구서는 반에 묶지 않는다", () => {
 
 test("관리자 메뉴에서 도달할 수 있다", async () => {
   // 만들어도 메뉴에 없으면 아무도 못 쓴다(이 프로젝트에서 실제로 있었던 문제).
-  const shell = await readFile("src/app/admin/AdminShellClient.tsx", "utf8");
+  const { renderAdminNavigation } = await import('./helpers/admin-navigation-render.mjs');
+  const shell = renderAdminNavigation('/admin/enrollment-changes');
   assert.match(shell, /href="\/admin\/enrollment-changes"/);
   assert.ok(
-    (shell.match(/"\/admin\/enrollment-changes"/g) || []).length >= 3,
-    "NavItem 과 탭 경로 배열 두 곳에 모두 등록돼야 합니다.",
+    /href="\/admin\/enrollment-changes"[^>]*aria-current="page"/.test(shell),
+    "현재 수강 변경 업무가 실제 메뉴에서 활성화되어야 합니다.",
   );
 });

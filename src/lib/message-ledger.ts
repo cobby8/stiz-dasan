@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
 export type MessageLedgerSource = "AUTO" | "MANUAL" | "SECURITY";
@@ -38,6 +38,197 @@ export function hashMessageBody(body: string) {
 
 export function messagePhoneLast4(phone: string) {
   return normalizeMessagePhone(phone).slice(-4) || null;
+}
+
+type ManualQueuePayload = { recipient: string; body: string };
+
+function queueEncryptionKey() {
+  return createHash("sha256").update(privacySecret(), "utf8").digest();
+}
+
+function sealManualQueuePayload(payload: ManualQueuePayload) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", queueEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+  return { v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: encrypted.toString("base64") };
+}
+
+function openManualQueuePayload(value: unknown): ManualQueuePayload {
+  const payload = value as { v?: number; iv?: string; tag?: string; data?: string };
+  if (payload?.v !== 1 || !payload.iv || !payload.tag || !payload.data) throw new Error("MANUAL_QUEUE_PAYLOAD_INVALID");
+  const decipher = createDecipheriv("aes-256-gcm", queueEncryptionKey(), Buffer.from(payload.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+  return JSON.parse(Buffer.concat([decipher.update(Buffer.from(payload.data, "base64")), decipher.final()]).toString("utf8"));
+}
+
+/** 관리자 대량 문자를 하나의 트랜잭션으로 예약합니다. 같은 requestId의 재요청은 기존 배치를 반환합니다. */
+export async function reserveManualMessageQueue(input: {
+  requestId: string; actorUserId: string; actorName?: string | null; purpose: string; reason: string;
+  audienceScope: "INTERNAL" | "EXTERNAL"; body: string; recipients: string[];
+}) {
+  const stableEventKey = `manual:bulk:${input.actorUserId}:${input.requestId}`;
+  const recipientSetHash = createHash("sha256").update(input.recipients.join(","), "utf8").digest("hex");
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, stableEventKey);
+    const existing = await tx.$queryRawUnsafe<Array<{ id: string; bodyHash: string | null; totalCount: number; recipientSetHash: string | null }>>(
+      `SELECT id, "bodyHash", "totalCount", "metadataJSON"->>'recipientSetHash' AS "recipientSetHash" FROM "MessageDeliveryBatch" WHERE source='MANUAL' AND "stableEventKey"=$1 ORDER BY "createdAt" DESC LIMIT 1`, stableEventKey,
+    );
+    if (existing[0]) {
+      if (existing[0].bodyHash !== hashMessageBody(input.body) || existing[0].totalCount !== input.recipients.length || existing[0].recipientSetHash !== recipientSetHash) {
+        throw new Error("같은 요청 ID에 다른 발송 내용이 사용되었습니다.");
+      }
+      return { batchId: existing[0].id, created: false };
+    }
+    const batchId = randomUUID();
+    await tx.$executeRawUnsafe(
+      `INSERT INTO "MessageDeliveryBatch" (id,source,"audienceScope",trigger,"actorUserId","actorName",purpose,reason,"bodyHash","stableEventKey","requestedChannel",status,"totalCount","successCount","failureCount","metadataJSON","createdAt","updatedAt") VALUES ($1,'MANUAL',$2,'MANUAL_MESSAGE',$3,$4,$5,$6,$7,$8,'SMS','PROCESSING',$9,0,0,$10::jsonb,NOW(),NOW())`,
+      batchId, input.audienceScope, input.actorUserId, input.actorName ?? null, input.purpose, input.reason,
+      hashMessageBody(input.body), stableEventKey, input.recipients.length, JSON.stringify({ recipientSetHash }),
+    );
+    for (const recipient of input.recipients) {
+      const phoneHash = hashMessageRecipientPhone(recipient);
+      await tx.$executeRawUnsafe(
+        `INSERT INTO "NotificationDelivery" (id,"batchId",source,"stableEventKey","eventType",trigger,"audienceScope","recipientPhoneHash","recipientPhoneLast4","bodyHash",channel,"requestedChannel","dedupeKey",status,"attemptCount","payloadJSON","createdAt","updatedAt") VALUES ($1,$2,'MANUAL',$3,'MANUAL_MESSAGE','MANUAL_MESSAGE',$4,$5,$6,$7,'SMS','SMS',$8,'PENDING',0,$9::jsonb,NOW(),NOW())`,
+        randomUUID(), batchId, stableEventKey, input.audienceScope, phoneHash, messagePhoneLast4(recipient),
+        hashMessageBody(input.body), buildMessageDedupeKey({ source: "MANUAL", eventKey: stableEventKey, recipientPhoneHash: phoneHash }),
+        JSON.stringify(sealManualQueuePayload({ recipient, body: input.body })),
+      );
+    }
+    return { batchId, created: true };
+  });
+}
+
+export async function claimManualMessageQueue(limit = 10) {
+  return prisma.$transaction(async (tx) => {
+    // 공급자 호출 뒤 서버가 끊겼을 수 있으므로 stale SENDING은 절대 재전송하지 않습니다.
+    const stale = await tx.$queryRawUnsafe<Array<{ batchId: string | null }>>(
+      `UPDATE "NotificationDelivery" SET status='UNCERTAIN', "errorCode"='STALE_SENDING_UNCERTAIN', "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING' AND COALESCE("providerStatus",'') <> 'ACCEPTED' AND "lockedAt" < NOW() - INTERVAL '10 minutes' RETURNING "batchId"`,
+    );
+    const finalizeBatchIds = new Set(stale.flatMap((row) => row.batchId ? [row.batchId] : []));
+    const token = randomUUID();
+    const rows = await tx.$queryRawUnsafe<Array<{ id: string; batchId: string; payloadJSON: unknown }>>(
+      `WITH next_batch AS (
+         SELECT "batchId" FROM "NotificationDelivery"
+          WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='PENDING' AND "payloadJSON" IS NOT NULL
+          ORDER BY "createdAt" ASC LIMIT 1
+       ), picked AS (
+         SELECT id FROM "NotificationDelivery"
+          WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='PENDING' AND "payloadJSON" IS NOT NULL
+            AND "batchId"=(SELECT "batchId" FROM next_batch)
+          ORDER BY "createdAt" ASC FOR UPDATE SKIP LOCKED LIMIT $1
+       ) UPDATE "NotificationDelivery" d SET status='SENDING', "lockedAt"=NOW(), "lockToken"=$2,
+           "attemptCount"="attemptCount"+1, "updatedAt"=NOW()
+         FROM picked WHERE d.id=picked.id RETURNING d.id, d."batchId", d."payloadJSON"`,
+      Math.max(1, Math.min(limit, 500)), token,
+    );
+    const claimed: Array<{ id: string; batchId: string; recipient: string; body: string }> = [];
+    for (const row of rows) {
+      try {
+        claimed.push({ id: row.id, batchId: row.batchId, ...openManualQueuePayload(row.payloadJSON) });
+      } catch {
+        // 손상된 한 행 때문에 정상 큐 전체가 롤백되지 않도록 해당 행만 안전 격리합니다.
+        await tx.$executeRawUnsafe(
+          `UPDATE "NotificationDelivery" SET status='UNCERTAIN', "errorCode"='QUEUE_PAYLOAD_DECRYPT_FAILED', "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE id=$1`,
+          row.id,
+        );
+        finalizeBatchIds.add(row.batchId);
+      }
+    }
+    for (const row of claimed) finalizeBatchIds.add(row.batchId);
+    return { items: claimed, finalizeBatchIds: [...finalizeBatchIds] };
+  });
+}
+
+/** Solapi가 묶음 요청을 접수한 상태입니다. 최종 성공은 결과 조회 뒤에만 확정합니다. */
+export async function markManualMessageAccepted(input: {
+  deliveryId: string;
+  providerGroupId: string;
+  providerMessageId?: string | null;
+  messageType?: string | null;
+}) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "NotificationDelivery"
+        SET status='SENDING', provider='SOLAPI', "providerGroupId"=$2, "providerMessageId"=$3,
+            "providerStatus"='ACCEPTED', "messageType"=COALESCE($4,"messageType"),
+            "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW()
+      WHERE id=$1 AND source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'`,
+    input.deliveryId, input.providerGroupId, input.providerMessageId ?? null, input.messageType ?? null,
+  );
+}
+
+export async function markManualMessageUncertain(deliveryIds: string[], errorCode: string) {
+  if (deliveryIds.length === 0) return;
+  await prisma.$executeRawUnsafe(
+    `UPDATE "NotificationDelivery" SET status='UNCERTAIN', "errorCode"=$2, "payloadJSON"=NULL,
+        "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW()
+      WHERE id = ANY($1::text[]) AND status='SENDING'`,
+    deliveryIds, errorCode.slice(0, 500),
+  );
+}
+
+/** 최종 결과를 기다리는 Solapi 그룹을 개인정보 없이 조회합니다. */
+export async function getPendingManualSolapiGroups(limit = 20) {
+  return prisma.$queryRawUnsafe<Array<{ providerGroupId: string; batchId: string }>>(
+    `SELECT "providerGroupId", MIN("batchId") AS "batchId"
+       FROM "NotificationDelivery"
+      WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'
+        AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId" IS NOT NULL
+      GROUP BY "providerGroupId" ORDER BY MIN("updatedAt") ASC LIMIT $1`,
+    Math.max(1, Math.min(limit, 100)),
+  );
+}
+
+export async function getPendingManualSolapiDeliveries(groupId: string) {
+  return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date }>>(
+    `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt" FROM "NotificationDelivery"
+      WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'
+        AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId"=$1`,
+    groupId,
+  );
+}
+
+export async function finalizeManualSolapiResult(input: {
+  deliveryId: string; ok: boolean; providerStatus: string; errorCode?: string | null;
+}) {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "NotificationDelivery" SET status=$2, "providerStatus"=$3, "errorCode"=$4,
+        "sentAt"=CASE WHEN $2='SENT' THEN NOW() ELSE NULL END,
+        "failedAt"=CASE WHEN $2='FAILED' THEN NOW() ELSE NULL END,
+        "updatedAt"=NOW()
+      WHERE id=$1 AND status='SENDING' AND provider='SOLAPI'`,
+    input.deliveryId, input.ok ? "SENT" : "FAILED", input.providerStatus,
+    input.ok ? null : (input.errorCode ?? input.providerStatus).slice(0, 500),
+  );
+}
+
+export async function getManualMessageBatchStatus(batchId: string) {
+  const batches = await prisma.$queryRawUnsafe<Array<{ id: string; status: string; totalCount: number }>>(
+    `SELECT id,status,"totalCount" FROM "MessageDeliveryBatch" WHERE id=$1 AND source='MANUAL' LIMIT 1`, batchId,
+  );
+  if (!batches[0]) return null;
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; status: string; providerStatus: string | null; recipientPhoneLast4: string | null; errorCode: string | null }>>(
+    `SELECT id,status,"providerStatus","recipientPhoneLast4","errorCode" FROM "NotificationDelivery" WHERE "batchId"=$1 ORDER BY "createdAt" ASC`, batchId,
+  );
+  const count = (status: string) => rows.filter((r) => r.status === status).length;
+  const pending = count("PENDING");
+  const processing = count("SENDING");
+  const accepted = rows.filter((r) => r.status === "SENDING" && r.providerStatus === "ACCEPTED").length;
+  const success = count("SENT");
+  const failed = count("FAILED");
+  const uncertain = count("UNCERTAIN");
+  const status = pending + processing > 0
+    ? "PROCESSING"
+    : uncertain > 0
+      ? "PARTIAL"
+      : success === rows.length
+        ? "SENT"
+        : success > 0
+          ? "PARTIAL"
+          : "FAILED";
+  return {
+    batchId, status, total: rows.length, pending, processing, accepted, success, failed, uncertain,
+    recipients: rows.map((r) => ({ id: r.id, recipient: r.recipientPhoneLast4 ? `***-****-${r.recipientPhoneLast4}` : "보호됨", status: r.status, providerStatus: r.providerStatus, reason: r.errorCode })),
+  };
 }
 
 const AUDIT_SAFE_KEYS = new Set([
@@ -269,7 +460,9 @@ export async function finalizeMessageDelivery(input: {
             "providerGroupId" = $6, "providerMessageId" = $7,
             "providerStatus" = $8, "fallbackUsed" = $9, "fallbackChannel" = $10,
             "unitCost" = $11, "errorCode" = $12, "lockedAt" = NULL, "lockToken" = NULL,
-            "nextAttemptAt" = NULL, "updatedAt" = NOW()
+            "nextAttemptAt" = NULL,
+            "payloadJSON" = CASE WHEN source = 'MANUAL' AND trigger = 'MANUAL_MESSAGE' THEN NULL ELSE "payloadJSON" END,
+            "updatedAt" = NOW()
       WHERE id = $1`,
     input.deliveryId,
     input.ok ? "SENT" : "FAILED",
@@ -295,6 +488,7 @@ export async function finalizeMessageDeliveryBatch(batchId: string) {
             "totalCount" = counts.total_count,
             status = CASE
               WHEN counts.pending_count > 0 THEN 'PROCESSING'
+              WHEN counts.uncertain_count > 0 THEN 'PARTIAL'
               WHEN counts.success_count = counts.total_count THEN 'SENT'
               WHEN counts.success_count > 0 THEN 'PARTIAL'
               ELSE 'FAILED'
@@ -304,7 +498,8 @@ export async function finalizeMessageDeliveryBatch(batchId: string) {
        FROM (
          SELECT "batchId", COUNT(*)::int AS total_count,
                 COUNT(*) FILTER (WHERE status = 'SENT')::int AS success_count,
-                COUNT(*) FILTER (WHERE status IN ('FAILED', 'SKIPPED'))::int AS failure_count,
+                COUNT(*) FILTER (WHERE status IN ('FAILED', 'SKIPPED', 'UNCERTAIN'))::int AS failure_count,
+                COUNT(*) FILTER (WHERE status = 'UNCERTAIN')::int AS uncertain_count,
                 COUNT(*) FILTER (WHERE status IN ('PENDING', 'SENDING'))::int AS pending_count
            FROM "NotificationDelivery" WHERE "batchId" = $1 GROUP BY "batchId"
        ) counts

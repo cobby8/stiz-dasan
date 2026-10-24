@@ -4,6 +4,8 @@ const SOLAPI_API_KEY = process.env.SOLAPI_API_KEY || "";
 const SOLAPI_API_SECRET = process.env.SOLAPI_API_SECRET || "";
 const SOLAPI_SENDER = normalizeSmsNumber(process.env.SOLAPI_SENDER || "");
 const SOLAPI_URL = "https://api.solapi.com/messages/v4/send";
+const SOLAPI_SEND_MANY_URL = "https://api.solapi.com/messages/v4/send-many/detail";
+const SOLAPI_MESSAGE_LIST_URL = "https://api.solapi.com/messages/v4/list";
 
 const BIZPPURIO_ACCOUNT = process.env.BIZPPURIO_ACCOUNT || "";
 const BIZPPURIO_PASSWORD = process.env.BIZPPURIO_PASSWORD || process.env.BIZPPURIO_API_KEY || "";
@@ -38,6 +40,39 @@ export type SmsSendResult = {
 
 export type SmsSendOptions = {
     messageType?: "SMS" | "LMS";
+};
+
+export type SmsBulkDelivery = {
+    deliveryId: string;
+    to: string;
+};
+
+export type SmsBulkDeliveryStatus = "ACCEPTED" | "FAILED" | "UNCERTAIN";
+
+export type SmsBulkDeliveryResult = {
+    deliveryId: string;
+    to: string;
+    status: SmsBulkDeliveryStatus;
+    provider: SmsProvider;
+    groupId?: string;
+    messageId?: string;
+    reason?: string;
+};
+
+export type SmsBulkSendResult = {
+    provider: SmsProvider;
+    groupId?: string;
+    deliveries: SmsBulkDeliveryResult[];
+};
+
+export type SolapiBatchMessageStatus = "SUCCESS" | "PENDING" | "FAILED";
+
+export type SolapiBatchMessageResult = {
+    deliveryId?: string;
+    messageId?: string;
+    status: SolapiBatchMessageStatus;
+    statusCode?: string;
+    reason?: string;
 };
 
 function normalizeSmsNumber(value: string): string {
@@ -249,6 +284,275 @@ async function sendBizppurioSms(
     const reason = json?.description || json?.message || json?.code || JSON.stringify(json);
     console.warn("[SMS] Bizppurio API failed:", reason);
     return { ok: false, to: recipientNo, provider: "BIZPPURIO", reason: `Bizppurio failed: ${reason}` };
+}
+
+function solapiDeliveryId(value: unknown): string | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const rawFields = (value as JsonObject).customFields;
+    let fields = rawFields;
+    if (typeof rawFields === "string") {
+        try {
+            fields = JSON.parse(rawFields) as unknown;
+        } catch {
+            return undefined;
+        }
+    }
+    if (!fields || typeof fields !== "object") return undefined;
+    const deliveryId = (fields as JsonObject).deliveryId;
+    return typeof deliveryId === "string" && deliveryId.length > 0 ? deliveryId : undefined;
+}
+
+function solapiMessageEntries(value: unknown): unknown[] {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== "object") return [];
+    return Object.entries(value as JsonObject).map(([messageId, raw]) => {
+        if (!raw || typeof raw !== "object") return raw;
+        const item = raw as JsonObject;
+        return typeof item.messageId === "string" ? item : { ...item, messageId };
+    });
+}
+
+function solapiGroupId(json: JsonObject | null): string | undefined {
+    const groupInfo = json?.groupInfo;
+    const nested = groupInfo && typeof groupInfo === "object"
+        ? (groupInfo as JsonObject).groupId
+        : undefined;
+    if (typeof nested === "string" && nested.length > 0) return nested;
+    return typeof json?.groupId === "string" && json.groupId.length > 0 ? json.groupId : undefined;
+}
+
+function solapiMessageId(value: unknown): string | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const messageId = (value as JsonObject).messageId;
+    return typeof messageId === "string" && messageId.length > 0 ? messageId : undefined;
+}
+
+function solapiFailureReason(value: unknown): string | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const item = value as JsonObject;
+    const reason = item.errorMessage ?? item.reason ?? item.statusMessage ?? item.statusCode;
+    return reason === undefined ? undefined : String(reason);
+}
+
+async function sendSolapiSmsBulk(
+    deliveries: SmsBulkDelivery[],
+    body: string,
+    options?: SmsSendOptions,
+): Promise<SmsBulkSendResult> {
+    const messageType = options?.messageType ?? getSmsMessageType(body);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SMS_REQUEST_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(SOLAPI_SEND_MANY_URL, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: makeSolapiAuthHeader(),
+            },
+            body: JSON.stringify({
+                messages: deliveries.map((delivery) => ({
+                    to: normalizeSmsNumber(delivery.to),
+                    from: SOLAPI_SENDER,
+                    text: body,
+                    type: messageType,
+                    ...(messageType === "LMS" ? { subject: "STIZ 알림" } : {}),
+                    customFields: { deliveryId: delivery.deliveryId },
+                })),
+                showMessageList: true,
+                allowDuplicates: false,
+            }),
+        });
+        const json = await readJsonSafely(response);
+        const groupId = solapiGroupId(json);
+
+        if (!response.ok) {
+            const reason = json?.errorMessage ?? json?.message ?? json?.statusCode ?? response.status;
+            const status: SmsBulkDeliveryStatus = response.status >= 400 && response.status < 500
+                ? "FAILED"
+                : "UNCERTAIN";
+            return {
+                provider: "SOLAPI",
+                groupId,
+                deliveries: deliveries.map((delivery) => ({
+                    ...delivery,
+                    to: normalizeSmsNumber(delivery.to),
+                    status,
+                    provider: "SOLAPI",
+                    groupId,
+                    reason: `Solapi failed: ${String(reason)}`,
+                })),
+            };
+        }
+
+        const accepted = solapiMessageEntries(json?.messageList);
+        const failed = solapiMessageEntries(json?.failedMessageList);
+        const acceptedById = new Map(accepted.map((item) => [solapiDeliveryId(item), item]));
+        const failedById = new Map(failed.map((item) => [solapiDeliveryId(item), item]));
+
+        return {
+            provider: "SOLAPI",
+            groupId,
+            deliveries: deliveries.map((delivery) => {
+                const normalizedTo = normalizeSmsNumber(delivery.to);
+                const failedItem = failedById.get(delivery.deliveryId);
+                if (failedItem) {
+                    return {
+                        deliveryId: delivery.deliveryId,
+                        to: normalizedTo,
+                        status: "FAILED",
+                        provider: "SOLAPI",
+                        groupId,
+                        messageId: solapiMessageId(failedItem),
+                        reason: solapiFailureReason(failedItem) ?? "Solapi explicitly rejected the message.",
+                    };
+                }
+                const acceptedItem = acceptedById.get(delivery.deliveryId);
+                if (acceptedItem) {
+                    return {
+                        deliveryId: delivery.deliveryId,
+                        to: normalizedTo,
+                        status: "ACCEPTED",
+                        provider: "SOLAPI",
+                        groupId,
+                        messageId: solapiMessageId(acceptedItem),
+                    };
+                }
+                return {
+                    deliveryId: delivery.deliveryId,
+                    to: normalizedTo,
+                    status: "UNCERTAIN",
+                    provider: "SOLAPI",
+                    groupId,
+                    reason: "Solapi response omitted this delivery.",
+                };
+            }),
+        };
+    } catch (error) {
+        const reason = error instanceof Error && error.name === "AbortError"
+            ? `Solapi bulk request timed out after ${SMS_REQUEST_TIMEOUT_MS}ms`
+            : `Solapi bulk request failed: ${error instanceof Error ? error.message : String(error)}`;
+        return {
+            provider: "SOLAPI",
+            deliveries: deliveries.map((delivery) => ({
+                ...delivery,
+                to: normalizeSmsNumber(delivery.to),
+                status: "UNCERTAIN",
+                provider: "SOLAPI",
+                reason,
+            })),
+        };
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+export async function sendSmsBulkDetailed(
+    deliveries: SmsBulkDelivery[],
+    body: string,
+    options?: SmsSendOptions,
+): Promise<SmsBulkSendResult> {
+    if (deliveries.length === 0 || deliveries.length > 500) {
+        throw new Error("SMS bulk delivery count must be between 1 and 500.");
+    }
+    if (new Set(deliveries.map((delivery) => delivery.deliveryId)).size !== deliveries.length) {
+        throw new Error("SMS bulk deliveryId values must be unique.");
+    }
+
+    const provider = currentSmsProvider();
+    if (provider === "SOLAPI") {
+        const missingReason = smsProviderMissingReason(provider);
+        if (missingReason) {
+            return {
+                provider,
+                deliveries: deliveries.map((delivery) => ({
+                    ...delivery,
+                    to: normalizeSmsNumber(delivery.to),
+                    status: "FAILED",
+                    provider,
+                    reason: missingReason,
+                })),
+            };
+        }
+        return sendSolapiSmsBulk(deliveries, body, options);
+    }
+
+    const results: SmsBulkDeliveryResult[] = [];
+    for (const delivery of deliveries) {
+        const result = await sendSmsDetailed(delivery.to, body, options);
+        const uncertain = !result.ok && /timed out/i.test(result.reason ?? "");
+        results.push({
+            deliveryId: delivery.deliveryId,
+            to: result.to,
+            status: result.ok ? "ACCEPTED" : uncertain ? "UNCERTAIN" : "FAILED",
+            provider,
+            groupId: result.groupId,
+            messageId: result.messageId,
+            reason: result.reason,
+        });
+    }
+    return { provider, deliveries: results };
+}
+
+export async function getSolapiBatchResults(groupId: string): Promise<SolapiBatchMessageResult[]> {
+    if (!groupId.trim()) throw new Error("Solapi groupId is required.");
+    if (!isSmsProviderConfigured("SOLAPI")) {
+        throw new Error(smsProviderMissingReason("SOLAPI") ?? "Solapi is not configured.");
+    }
+
+    const results: SolapiBatchMessageResult[] = [];
+    let startKey: string | undefined;
+    const seenKeys = new Set<string>();
+
+    do {
+        const url = new URL(SOLAPI_MESSAGE_LIST_URL);
+        url.searchParams.set("groupId", groupId);
+        url.searchParams.set("limit", "500");
+        if (startKey) url.searchParams.set("startKey", startKey);
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), SMS_REQUEST_TIMEOUT_MS);
+        try {
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: { Authorization: makeSolapiAuthHeader() },
+            });
+            const json = await readJsonSafely(response);
+            if (!response.ok) {
+                const reason = json?.errorMessage ?? json?.message ?? json?.statusCode ?? response.status;
+                throw new Error(`Solapi batch result lookup failed: ${String(reason)}`);
+            }
+
+            const messageList = solapiMessageEntries(json?.messageList);
+            for (const raw of messageList) {
+                if (!raw || typeof raw !== "object") continue;
+                const item = raw as JsonObject;
+                const statusCode = item.statusCode === undefined ? undefined : String(item.statusCode);
+                const status: SolapiBatchMessageStatus = statusCode === "4000"
+                    ? "SUCCESS"
+                    : statusCode && !/^[23]/.test(statusCode)
+                        ? "FAILED"
+                        : "PENDING";
+                results.push({
+                    deliveryId: solapiDeliveryId(item),
+                    messageId: solapiMessageId(item),
+                    status,
+                    statusCode,
+                    reason: status === "FAILED" ? solapiFailureReason(item) : undefined,
+                });
+            }
+
+            const candidate = json?.nextKey ?? json?.nextStartKey;
+            startKey = typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
+            if (startKey && seenKeys.has(startKey)) break;
+            if (startKey) seenKeys.add(startKey);
+        } finally {
+            clearTimeout(timeout);
+        }
+    } while (startKey);
+
+    return results;
 }
 
 export async function sendSmsDetailed(

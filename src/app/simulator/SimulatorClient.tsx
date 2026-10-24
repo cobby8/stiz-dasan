@@ -171,11 +171,11 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
     };
 
     return (
-        <section className="py-8 md:py-12 bg-surface-section dark:bg-gray-900">
-            <div className="max-w-2xl mx-auto px-6">
+        <section className="public-content-section py-6 md:py-8 bg-surface-section dark:bg-gray-900">
+            <div className="max-w-2xl mx-auto px-4">
 
                 {/* 단계 표시 바 — 현재 진행 상황을 시각적으로 보여준다 */}
-                <div className="flex items-center justify-center gap-2 mb-10">
+                <div className="public-stepper flex items-center justify-center gap-2 mb-5">
                     {[1, 2, 3].map((s) => (
                         <div key={s} className="flex items-center gap-2">
                             <div
@@ -469,12 +469,6 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                             </div>
                                                         </div>
 
-                                                        {/* 메모 */}
-                                                        {slot.note && (
-                                                            <p className="text-sm text-brand-orange-600 dark:text-brand-neon-lime mt-2 font-medium">
-                                                                &#x1F4CC; {slot.note}
-                                                            </p>
-                                                        )}
                                                     </div>
 
                                                     {/* 우측: 코치 프로필 (있을 때만 표시) */}
@@ -493,10 +487,10 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                                                     &#x1F3C0;
                                                                 </div>
                                                             )}
-                                                            <p className="text-xs font-bold text-gray-800 dark:text-gray-100 text-center leading-tight truncate w-full">
+                                                            <p className="text-xs font-bold text-gray-800 dark:text-gray-100 text-center leading-tight break-keep w-full">
                                                                 {slot.coach.name}
                                                             </p>
-                                                            <p className="text-xs text-gray-400 dark:text-gray-400 text-center leading-tight truncate w-full">
+                                                            <p className="text-xs text-gray-400 dark:text-gray-400 text-center leading-tight break-words w-full">
                                                                 {slot.coach.role}
                                                             </p>
                                                         </div>

@@ -43,9 +43,13 @@ test("알림톡·문자·RCS 채널과 문자 대체 발송을 표시한다", as
     assert.match(source, /예상 단가/);
 });
 
-test("기존 수동 문자 액션을 계속 사용한다", async () => {
+test("수동 문자는 대량 발송 큐에 접수하고 진행 상태를 조회한다", async () => {
     const source = await readFile(clientPath, "utf8");
 
     assert.match(source, /getCoachPhones/);
-    assert.match(source, /sendManualSms/);
+    assert.match(source, /enqueueManualSmsBatch/);
+    assert.match(source, /\/api\/admin\/sms\/batches\/\$\{batchId\}/);
+    assert.match(source, /2500/);
+    assert.match(source, /Solapi 접수는 솔라피가 요청을 받은 단계/);
+    assert.match(source, /최종 성공/);
 });

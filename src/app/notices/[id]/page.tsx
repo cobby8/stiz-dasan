@@ -8,6 +8,7 @@ import { notFound } from "next/navigation";
 import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeContent";
 import { sanitizeHtml } from "@/lib/sanitize";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 export const revalidate = 60;
 
@@ -41,7 +42,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 + 공지 제목/날짜 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
                     <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -71,11 +72,17 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
                         {/* 날짜 */}
                         <p className="text-blue-200/60 text-sm">
-                            {new Date(notice.createdAt).toLocaleDateString("ko-KR", {
+                            게시일 · {" "}
+                            {formatKstDate(notice.createdAt, {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
                             })}
+                        </p>
+                        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-blue-200/70">
+                            <span>공지 내용은 게시 당시 기준입니다.</span>
+                            <Link href="/schedule" className="underline underline-offset-2">현재 시간표</Link>
+                            <Link href="/seasonal" className="underline underline-offset-2">방학특강 모집 확인</Link>
                         </p>
                     </AnimateOnScroll>
                 </div>

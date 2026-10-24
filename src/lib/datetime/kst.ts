@@ -109,3 +109,34 @@ export function kstLabel(value: Date | string | number): string {
   const m = YMD_RE.exec(ymd)!;
   return `${Number(m[2])}/${Number(m[3])}(${DOW_KO[kstDow(ymd)]})`;
 }
+
+/** 공개 화면의 게시일. 서버·휴대폰 시간대가 달라도 같은 한국 날짜를 표시한다. */
+export function formatKstDate(
+  value: Date | string | number | null | undefined,
+  options: Intl.DateTimeFormatOptions = { year: "numeric", month: "numeric", day: "numeric" },
+  fallback = "날짜 확인 중",
+): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  let input: Date | string | number = value;
+  if (typeof value === "string") {
+    const civil = /^(\d{4}-\d{2}-\d{2})(?:$|T)/.exec(value);
+    if (!civil || !isKstYmd(civil[1])) return fallback;
+    // 날짜만 있거나 시간대가 없는 공개 값도 한국 달력 기준으로 읽는다.
+    input = value === civil[1] ? `${value}T00:00:00+09:00`
+      : /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}+09:00`;
+  }
+  const date = input instanceof Date ? input : new Date(input);
+  if (!Number.isFinite(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("ko-KR", { ...options, timeZone: KST }).format(date);
+}
+
+/** 한국 현재 월부터 이어지는 월 선택 표시. 해외 기기의 전월·전년도 노출을 막는다. */
+export function kstMonthLabels(nowMs: number = Date.now(), count = 2): string[] {
+  const ymd = todayKst(nowMs);
+  if (!ymd) return [];
+  const [year, month] = ymd.split("-").map(Number);
+  return Array.from({ length: Math.max(0, Math.floor(count)) }, (_, offset) => {
+    const index = month - 1 + offset;
+    return `${year + Math.floor(index / 12)}년 ${index % 12 + 1}월`;
+  });
+}

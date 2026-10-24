@@ -1,16 +1,19 @@
 import "server-only";
+import { userFacingError } from "@/lib/user-facing-error";
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendAuthenticationSms } from "@/lib/message-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveRedirectForRole } from "@/lib/auth-routes";
+import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 
 const CLAIM_TTL_HOURS = 72;
 const OTP_TTL_MINUTES = 5;
 const MAX_OTP_ATTEMPTS = 5;
 const PROCESSING_LEASE_MINUTES = 5;
-const SYNTHETIC_PARENT_EMAIL = /^(?:parent_[0-9]+@stiz\.local|[0-9]+@import\.local)$/i;
+// 빈 보호자 계정 판정 규칙은 parent-synthetic-email.ts 한 곳에만 둔다(여기서는 다시 내보내기만).
+export { isSyntheticParentEmail };
 
 type ClaimRow = {
   id: string;
@@ -155,12 +158,13 @@ export async function issueParentAccountClaim(input: {
   enforceCooldown?: boolean;
 }, externalTx?: Prisma.TransactionClient) {
   const db = externalTx ?? prisma;
-  const parents = await db.$queryRawUnsafe<Array<{ id: string; email: string; phone: string | null }>>(
-    `SELECT id, email, phone FROM "User" WHERE id = $1 AND role = 'PARENT' LIMIT 1`,
+  const parents = await db.$queryRawUnsafe<Array<{ id: string; email: string; phone: string | null; authUserId: string | null }>>(
+    `SELECT id, email, phone, "authUserId" FROM "User" WHERE id = $1 AND role = 'PARENT' LIMIT 1`,
     input.parentId,
   );
   const parent = parents[0];
-  if (!parent || !SYNTHETIC_PARENT_EMAIL.test(parent.email)) return { activationUrl: null, activationRequired: false };
+  // 간편로그인으로 이미 연결된 계정은 이메일이 합성 주소로 남아 있어도 활성화가 필요 없다.
+  if (!parent || !isSyntheticParentEmail(parent.email) || parent.authUserId) return { activationUrl: null, activationRequired: false };
 
   const phone = normalizePhone(parent.phone || "");
   if (phone.length < 10 || phone.length > 11) throw new Error("보호자 연락처를 확인해 주세요.");
@@ -212,14 +216,75 @@ export async function readParentAccountClaim(rawToken: string) {
     return { error: "유효하지 않거나 만료된 활성화 링크입니다." };
   }
   const phone = normalizePhone(claim.phone || "");
+  // 특강 신청·청구서 없이 만들어진 활성화 = 학부모가 회원가입 화면에서 직접 시작한 것
+  const purposeRows = await prisma.$queryRawUnsafe<Array<{ selfService: boolean }>>(
+    `SELECT ("applicationId" IS NULL AND "invoiceId" IS NULL) AS "selfService" FROM "ParentAccountClaim" WHERE id = $1`,
+    claim.id,
+  );
   return {
     data: {
       maskedPhone: phone.length >= 7 ? `${phone.slice(0, 3)}-****-${phone.slice(-4)}` : "***",
       expiresAt: new Date(claim.expiresAt).toISOString(),
       redirectPath: claim.redirectPath,
       status: claim.status,
+      selfService: Boolean(purposeRows[0]?.selfService),
     },
   };
+}
+
+const SELF_CLAIM_TTL_MINUTES = 30;
+
+/** issueVerifiedSelfParentClaim 이 학부모에게 그대로 보여 줘도 되는 안내 문구만 담는 오류 */
+export class SelfClaimUserError extends Error {}
+
+/**
+ * 학부모가 회원가입 화면에서 직접 시작한 기존 계정 활성화.
+ *
+ * ⚠️ 호출 전제: 호출자가 **이 번호로 보낸 문자 인증번호를 방금 통과시켰다**(ParentSignupVerification 의
+ * VERIFIED + proof 확인). 그래서 활성화 단계의 문자 인증을 다시 하지 않고 VERIFIED 상태로 바로 만든다.
+ * 문자 인증 없이 이 함수를 부르는 길을 만들면 계정 탈취가 된다.
+ *
+ * - 링크 유효 30분, 증표(proof) 10분 — 관리자가 보내는 72시간 링크보다 훨씬 짧다.
+ * - 관리자가 보낸 특강 활성화 링크는 취소하지 않는다(먼저 쓰는 쪽이 이기고, 나머지는
+ *   "이미 로그인 계정과 연결된 보호자" 검사에서 막힌다).
+ */
+export async function issueVerifiedSelfParentClaim(
+  input: { parentId: string; verifiedPhone: string; redirectPath?: string | null },
+  tx: Prisma.TransactionClient,
+) {
+  const verifiedPhone = normalizePhone(input.verifiedPhone);
+  const parents = await tx.$queryRawUnsafe<Array<{ id: string; email: string; phone: string | null; authUserId: string | null }>>(
+    `SELECT id, email, phone, "authUserId" FROM "User" WHERE id = $1 AND role = 'PARENT' LIMIT 1 FOR UPDATE`,
+    input.parentId,
+  );
+  const parent = parents[0];
+  if (!parent || !isSyntheticParentEmail(parent.email) || parent.authUserId) throw new SelfClaimUserError("활성화할 수 있는 보호자 계정이 아닙니다.");
+  // 인증한 번호와 계정 번호가 정확히 같아야 한다
+  if (normalizePhone(parent.phone || "") !== verifiedPhone) throw new SelfClaimUserError("인증한 휴대폰 번호와 보호자 정보가 일치하지 않습니다.");
+  const duplicates = await tx.$queryRawUnsafe<Array<{ count: number }>>(
+    `SELECT COUNT(*)::int AS count FROM "User"
+      WHERE role = 'PARENT' AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1`,
+    verifiedPhone,
+  );
+  if (Number(duplicates[0]?.count) !== 1) throw new SelfClaimUserError("같은 연락처의 보호자 계정이 여러 개여서 관리자 확인이 필요합니다.");
+
+  await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, parent.id);
+  const rawToken = randomBytes(32).toString("base64url");
+  const hash = tokenHash(rawToken);
+  const proof = randomBytes(32).toString("base64url");
+  await tx.$executeRawUnsafe(
+    `INSERT INTO "ParentAccountClaim" (
+       id, "parentId", "applicationId", "invoiceId", "tokenHash", "phoneHash", status,
+       "expiresAt", "verifiedAt", "proofHash", "proofExpiresAt", "redirectPath", "createdAt", "updatedAt"
+     ) VALUES (gen_random_uuid()::text, $1, NULL, NULL, $2, $3, 'VERIFIED',
+               NOW() + INTERVAL '${SELF_CLAIM_TTL_MINUTES} minutes', NOW(), $4, NOW() + INTERVAL '10 minutes', $5, NOW(), NOW())`,
+    parent.id,
+    hash,
+    keyedHash(`phone:${verifiedPhone}`),
+    keyedHash(`proof:${hash}:${proof}`),
+    safeRedirect(input.redirectPath),
+  );
+  return { token: rawToken, proof, activationUrl: activationUrl(rawToken) };
 }
 
 export async function sendParentClaimOtp(rawToken: string) {
@@ -303,7 +368,7 @@ export async function sendParentClaimOtp(rawToken: string) {
         reservedOtpHash,
       ).catch(() => undefined);
     }
-    return { error: error instanceof Error ? error.message : "인증번호를 발송하지 못했습니다." };
+    return { error: userFacingError(error, "인증번호를 발송하지 못했습니다.") };
   }
 }
 
@@ -475,6 +540,6 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
         processingAttemptId,
       ).catch(() => undefined);
     }
-    return { error: error instanceof Error ? error.message : "계정을 활성화하지 못했습니다." };
+    return { error: userFacingError(error, "계정을 활성화하지 못했습니다.") };
   }
 }

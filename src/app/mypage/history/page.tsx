@@ -49,5 +49,5 @@ export default async function MyPageHistoryPage({
 
     const { child } = await searchParams;
 
-    return <HistoryClient children={data.children} initialChildId={child} />;
+    return <HistoryClient initialChildId={child}>{data.children}</HistoryClient>;
 }

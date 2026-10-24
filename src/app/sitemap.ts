@@ -25,5 +25,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
         { url: `${baseUrl}/notices`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
         // 수강 신청 - 전환 페이지라 높은 우선순위
         { url: `${baseUrl}/apply`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.9 },
+        { url: `${baseUrl}/apply/trial`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.9 },
+        { url: `${baseUrl}/faq`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
     ];
 }

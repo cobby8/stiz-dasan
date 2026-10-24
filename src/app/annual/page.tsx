@@ -19,8 +19,8 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 export const revalidate = 300;
 
 export const metadata = buildPublicMetadata({
-    title: "연간일정표 | STIZ 농구교실 다산점",
-    description: "스티즈 농구교실 다산점 연간 행사 일정. 대회, 방학, 특별행사 및 정기 일정을 확인하세요.",
+    title: "연간일정표 | STIZ 농구교실 다산2호점",
+    description: "스티즈 농구교실 다산2호점 연간 행사 일정. 대회, 방학, 특별행사 및 정기 일정을 확인하세요.",
     path: "/annual",
 });
 
@@ -174,7 +174,7 @@ export default async function AnnualPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — about/programs/schedule과 동일한 그라데이션 + 장식 도형 패턴 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 {/* 배경 장식 도형들 */}
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />

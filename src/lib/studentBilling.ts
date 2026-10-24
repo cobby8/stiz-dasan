@@ -66,6 +66,24 @@ export interface BillingRow {
   shuttleFee: number | null;
   /** `이월` 금액 칸 */
   carryOverAmount: number | null;
+  /** 이 행에서 선택한 정규반 슬롯 키 (예: `Sun-8`) */
+  slotKeys?: readonly string[];
+  /** 시트의 `셔틀비 구분`에서 무료셔틀로 확정된 행인지 여부 */
+  isFreeShuttle?: boolean;
+}
+
+/** 일8 대표팀은 다른 정규반을 함께 타더라도 학생의 월 셔틀비 전체를 면제한다. */
+const FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS = new Set(["Sun-8"]);
+
+export function hasFullShuttleFeeExemption(rows: BillingRow[]): boolean {
+  return rows.some(
+    (row) =>
+      !isExcludedFromBilling(row.paymentMethodRaw) &&
+      (row.isFreeShuttle === true ||
+        (row.slotKeys ?? []).some((slotKey) =>
+          FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS.has(slotKey)
+        ))
+  );
 }
 
 /** 학생 1명의 월 청구 계산 결과 */
@@ -155,6 +173,8 @@ export function summarizeStudentBilling(rows: BillingRow[]): StudentBillingTotal
   const countedRowNumbers: number[] = [];
   const excludedRowNumbers: number[] = [];
   const methods = new Set<BillingPaymentMethod>();
+  // 일8 대표팀 수강생은 다른 요일 셔틀을 이용해도 월 셔틀비 전체가 무료다.
+  const shuttleFeeExempt = hasFullShuttleFeeExemption(rows);
 
   for (const row of rows) {
     // (a) 이월 금액 칸은 결제방법과 무관하게 차감 대상이다.
@@ -173,7 +193,7 @@ export function summarizeStudentBilling(rows: BillingRow[]): StudentBillingTotal
     tuitionTotal += Math.max(row.tuitionAmount ?? 0, 0);
 
     // 셔틀비는 월 단위 값이라 첫 행에만 적힌다 → 절대 합산하지 않고 첫 값만 쓴다.
-    const shuttleFee = Math.max(row.shuttleFee ?? 0, 0);
+    const shuttleFee = shuttleFeeExempt ? 0 : Math.max(row.shuttleFee ?? 0, 0);
     if (shuttleFeeTotal === 0 && shuttleFee > 0) shuttleFeeTotal = shuttleFee;
 
     countedRowNumbers.push(row.rowNumber);

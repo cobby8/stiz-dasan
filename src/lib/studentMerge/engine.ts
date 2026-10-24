@@ -14,6 +14,11 @@ import {
   chooseRepresentative,
   countActive,
   finalEnrollmentStatuses,
+  conflictPairsSql,
+  moveGuardSql,
+  moveSkipNote,
+  promoteRowSql,
+  shouldPromoteOnConflict,
   planEnrollmentMerge,
   SOFT_SKIP_STATUS,
   type EnrollmentPlan,
@@ -21,7 +26,12 @@ import {
   type MergeCandidate,
   type RepresentativeChoice,
 } from "./plan";
-import { autoMovableTables, STUDENT_REF_TABLES, type StudentRefTable } from "./tables";
+import {
+  autoMovableTables,
+  followsParentRows,
+  STUDENT_REF_TABLES,
+  type StudentRefTable,
+} from "./tables";
 
 export type SqlRunner = {
   /** SELECT 등 결과가 필요한 쿼리 */
@@ -34,6 +44,24 @@ export type SqlRunner = {
 export function sqlText(value: string | null | undefined): string {
   if (value === null || value === undefined) return "NULL";
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * 운영 DB에 실제로 있는 테이블만 남긴다.
+ * mayBeMissing 표시가 없는 테이블은 그대로 둔다 — 오타·누락이면 쿼리가 실패해 바로 드러나야 한다.
+ */
+export async function presentTables(
+  runner: SqlRunner,
+  tables: StudentRefTable[],
+): Promise<StudentRefTable[]> {
+  const optional = [...new Set(tables.filter((t) => t.mayBeMissing).map((t) => t.table))];
+  if (optional.length === 0) return tables;
+  const rows = await runner.query<{ name: string }>(
+    `SELECT name FROM unnest(ARRAY[${optional.map((n) => sqlText(n)).join(",")}]::text[]) AS name
+     WHERE to_regclass('public.' || quote_ident(name)) IS NOT NULL`,
+  );
+  const present = new Set(rows.map((r) => r.name));
+  return tables.filter((t) => !t.mayBeMissing || present.has(t.table));
 }
 
 /** 청구 계열 테이블에 붙일 "동결월 이후 제외" 하드 가드 */
@@ -63,6 +91,8 @@ export type TableMoveResult = {
   column: string;
   moved: number;
   softSkipped: number;
+  /** 충돌한 대표 행이 흡수 행의 상태를 승계한 수 (promoteOnConflict) */
+  promoted: number;
 };
 
 export type PairResult = {
@@ -102,7 +132,7 @@ export async function loadCandidate(runner: SqlRunner, studentId: string): Promi
   );
 
   // 살아있는 자식 기록 수 — 대표 선정 2순위 근거
-  const countSql = autoMovableTables()
+  const countSql = (await presentTables(runner, autoMovableTables()))
     .map(
       (t) =>
         `SELECT COUNT(*)::int AS n FROM "${t.table}" WHERE "${t.column}" = ${sqlText(studentId)}`,
@@ -145,7 +175,7 @@ function logInsert(args: {
 /**
  * 무충돌 테이블 이동.
  * UNIQUE 제약이 걸린 테이블은 "대표 쪽에 같은 조합이 없을 때만" 옮기고,
- * 남은 건 옮기지 않은 채(SOFT_SKIP) 흡수 학생에 그대로 둔다.
+ * 청구월 동결·부모 행 조건에 걸린 행도 옮기지 않은 채(SOFT_SKIP) 흡수 학생에 그대로 둔다.
  */
 async function moveTable(
   runner: SqlRunner,
@@ -157,15 +187,44 @@ async function moveTable(
   const w = sqlText(winnerId);
   const l = sqlText(loserId);
 
-  let guard = "";
-  if (t.conflictKeys?.length) {
-    const on = t.conflictKeys
-      .map((k) => `(rival."${k}" IS NOT DISTINCT FROM src."${k}")`)
-      .join(" AND ");
-    guard = ` AND NOT EXISTS (
-      SELECT 1 FROM "${t.table}" rival
-      WHERE rival."${t.column}" = ${w} AND ${on}
-    )`;
+  // UNIQUE 충돌·청구월 동결·부모 따라가기 조건 (plan.ts 의 순수 함수 — 테스트로 고정)
+  const guard = moveGuardSql(t, w);
+
+  // 충돌로 못 옮기는 행 중 흡수 쪽이 더 살아있으면 대표 행이 먼저 승계한다(그 뒤 흡수 행은 SOFT_SKIP).
+  let promoted = 0;
+  if (t.promoteOnConflict) {
+    const promo = t.promoteOnConflict;
+    const pairs = await runner.query<Record<string, string | null>>(conflictPairsSql(t, w, l));
+    for (const pair of pairs) {
+      const winnerRowId = String(pair.winnerRowId);
+      const loserRowId = String(pair.loserRowId);
+      const ws = pair[`w:${promo.statusColumn}`] ?? null;
+      const ls = pair[`l:${promo.statusColumn}`] ?? null;
+      if (!shouldPromoteOnConflict(promo.priority, ws, ls)) continue;
+
+      for (const c of promo.copyColumns) {
+        const oldValue = pair[`w:${c}`] ?? null;
+        const newValue = pair[`l:${c}`] ?? null;
+        if (oldValue === newValue) continue;
+        await runner.execute(
+          logInsert({
+            mergeId,
+            winnerId,
+            loserId,
+            table: t.table,
+            rowId: winnerRowId,
+            column: c,
+            oldValue,
+            newValue,
+            action: "UPDATE",
+            note: `흡수 쪽(${loserRowId})이 더 살아있는 상태(${ls})라 대표 행이 승계`,
+          }),
+        );
+      }
+      const n = await runner.execute(promoteRowSql(t, sqlText(winnerRowId), sqlText(loserRowId)));
+      if (n !== 1) throw new Error(`${t.table} 상태 승계 영향 행이 ${n}건 (기대 1건) — 전체 중단`);
+      promoted += 1;
+    }
   }
 
   // 옮기기 전에 대상 행 ID를 먼저 확보해야 로그에 남길 수 있다.
@@ -204,12 +263,12 @@ async function moveTable(
         oldValue: loserId,
         newValue: loserId,
         action: "SOFT_SKIP",
-        note: `UNIQUE(${t.conflictKeys?.join(",")}) 충돌로 이동하지 않음`,
+        note: moveSkipNote(t),
       }),
     );
   }
 
-  return { table: t.table, column: t.column, moved, softSkipped: skipped.length };
+  return { table: t.table, column: t.column, moved, softSkipped: skipped.length, promoted };
 }
 
 /** 한 쌍 병합 */
@@ -228,9 +287,10 @@ export async function mergePair(
   const w = sqlText(winner.id);
   const l = sqlText(loser.id);
 
-  // --- 1) 무충돌 테이블 이동 ---
+  // --- 1) 무충돌 테이블 이동 (부모 행을 따라가는 테이블은 3-1에서) ---
+  const movable = await presentTables(runner, autoMovableTables());
   const tableMoves: TableMoveResult[] = [];
-  for (const t of autoMovableTables()) {
+  for (const t of movable.filter((x) => !followsParentRows(x))) {
     tableMoves.push(await moveTable(runner, t, mergeId, winner.id, loser.id));
   }
 
@@ -354,6 +414,12 @@ export async function mergePair(
     movedTx = await runner.execute(
       `UPDATE "PaymentTransaction" SET "studentId" = ${w} WHERE id IN (${ids})`,
     );
+  }
+
+  // --- 3-1) 부모 행 따라가기: 수강·청구가 어디로 갔는지 확정된 뒤에 옮긴다 ---
+  //     (동결돼 흡수 쪽에 남은 Payment의 납부요청 등은 함께 남는다)
+  for (const t of movable.filter(followsParentRows)) {
+    tableMoves.push(await moveTable(runner, t, mergeId, winner.id, loser.id));
   }
 
   const [frozenLeft] = await runner.query<{ n: string }>(
@@ -518,7 +584,7 @@ export async function mergePair(
     loser,
     enrollmentPlan,
     finalActiveClasses,
-    tableMoves: tableMoves.filter((t) => t.moved > 0 || t.softSkipped > 0),
+    tableMoves: tableMoves.filter((t) => t.moved > 0 || t.softSkipped > 0 || t.promoted > 0),
     billingMoved: { payments: movedPayments, invoices: movedInvoices, transactions: movedTx },
     billingFrozenLeftBehind: Number(frozenLeft?.n ?? 0),
     parentAction,
@@ -585,7 +651,11 @@ export async function findRemainingReferences(
 ): Promise<{ table: string; column: string; n: number }[]> {
   if (loserIds.length === 0) return [];
   const list = loserIds.map((id) => sqlText(id)).join(",");
-  const sql = STUDENT_REF_TABLES.filter((t) => !t.cascadesFromPayment)
+  const tables = await presentTables(
+    runner,
+    STUDENT_REF_TABLES.filter((t) => !t.cascadesFromPayment),
+  );
+  const sql = tables
     .map(
       (t) =>
         `SELECT ${sqlText(t.table)} AS table_name, ${sqlText(t.column)} AS column_name, COUNT(*)::int AS n

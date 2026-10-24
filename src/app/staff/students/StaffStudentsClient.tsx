@@ -38,7 +38,7 @@ function ContactActions({ label, name, phone, accent = false }: { label: string;
   if (!phone) return <div className="mt-3 flex min-h-12 items-center justify-between rounded-xl bg-gray-100 px-3 text-sm text-gray-400 dark:bg-gray-800"><span>{label} {name}</span><span>번호 없음</span></div>;
   return (
     <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
-      <div className="flex items-center justify-between gap-2"><p className="text-sm font-bold">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="text-sm font-bold text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><p className="min-w-0 break-keep text-sm font-bold">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="shrink-0 whitespace-nowrap text-sm font-bold text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border border-gray-200 dark:border-gray-700"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
         <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-gray-200 font-bold dark:border-gray-700"><span aria-hidden="true" className="material-symbols-outlined text-xl">sms</span>문자</a>

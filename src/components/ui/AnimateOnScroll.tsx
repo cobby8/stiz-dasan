@@ -40,7 +40,7 @@ export default function AnimateOnScroll({
     const element = ref.current;
     if (!element) return;
 
-    // Intersection Observer: 요소가 뷰포트의 10% 이상 보이면 트리거
+    // 긴 약관도 일부가 화면에 들어오면 보인다. 전체 높이의 일정 비율을 요구하지 않는다.
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -50,7 +50,7 @@ export default function AnimateOnScroll({
         }
       },
       {
-        threshold: 0.1,   // 10% 이상 보이면 트리거
+        threshold: 0,
         rootMargin: '0px', // 뷰포트 기준
       }
     );

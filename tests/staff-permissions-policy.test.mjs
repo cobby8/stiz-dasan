@@ -14,7 +14,7 @@ test("교사용 화면과 API에만 카메라와 마이크를 허용한다", () 
 });
 
 test("나머지 경로는 교사용 경로와 겹치지 않는 규칙으로 권한을 차단한다", () => {
-  assert.match(config, /\(\?!staff\(\?:\/\|\$\)\|api\/staff\(\?:\/\|\$\)\|admin\(\?:\/\|\$\)\)/);
+  assert.match(config, /\(\?!staff\(\?:\/\|\$\)\|api\/staff\(\?:\/\|\$\)\|admin\(\?:\/\|\$\)\|shuttle\/location\(\?:\/\|\$\)\)/);
   assert.match(config, /camera=\(\), microphone=\(\), geolocation=\(\)/);
   assert.doesNotMatch(config, /source: "\/\(\.\*\)"/);
 });

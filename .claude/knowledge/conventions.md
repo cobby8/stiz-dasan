@@ -156,3 +156,45 @@
 - **발견자**: pm
 - **내용**: **Vercel 은 UTC, 개발 PC 는 KST** 라 시간대 버그는 **로컬에서 멀쩡하고 배포하면 틀린다.** tsc·build·테스트가 다 통과해서 사람이 못 잡는다. 실측 함정 셋 — ①`new Date().toISOString().slice(0,10)` 을 "오늘"로 쓰면 **KST 00:00~09:00 에 어제**가 나온다(새벽에 전날 출석부가 열림) ②`new Date(ymd+"T00:00:00+09:00").getUTCDay()` 는 전날 15시가 되어 **요일이 하루 밀린다** — 2026-08-12 실측으로 방학특강 보강에서 **금요일 반의 추천 날짜가 토요일로 나가고 있었다**. ⚠️ 무서운 점은 **`T12:00` 은 우연히 맞는다**는 것: 똑같이 생긴 코드가 시각 리터럴 하나로 갈려서 옆 파일을 보고 따라 쓰면 그대로 터진다 ③서버 코드의 `getDay()/getHours()` 는 서버 시간대를 따라 9시간 어긋난다(`src/lib/adminReadPayloads.ts` 의 대시보드 "오늘 수업"이 새벽에 전날 요일로 조회되고 있었다). → 달력 값은 **`src/lib/datetime/kst.ts`** (`todayKst`·`toKstYmd`·`kstDow`·`kstAt`·`addDaysKst`·`diffDaysKst`·`isKstYmd`) 한 곳에서만 만들고, 파일마다 새로 만들지 않는다(같은 헬퍼가 5곳에 복사돼 있었다). DB 판정은 SQL 의 `AT TIME ZONE 'Asia/Seoul'`. 날짜 문자열은 `"YYYY-MM-DD"` 로 들고 다니고 Date 객체는 계산에만 쓴다. **강제 수단은 `tests/kst-datetime-guard.test.mjs`** — 금지 패턴 4종을 주석·문자열을 걷어낸 뒤 검사하고 위반 위치를 file:line 으로 찍는다(일부러 위반 파일을 넣어 실제로 잡히는 것까지 확인). ALLOW 목록은 "괜찮다"가 아니라 **아직 못 갚은 빚**이며 늘리면 테스트가 깨진다. 순수 모듈끼리 조립할 수 있도록 `tests/_ts-module.mjs` 가 `@/` import 를 따라간다 — 의존성 0 제약 때문에 헬퍼가 복사되던 것이 원인이었다.
 - **참조횟수**: 0
+
+### [2026-09-18] 외부 정산 대사 스크립트는 "읽기 전용 3중 방어 + 애매하면 보류"로 만든다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 돈을 맞추는 스크립트(`scripts/tossplace-reconcile.mjs` + 순수 로직 `scripts/lib/tossplace-match.mjs`)의 기준. ①**쓰기 불가 3중 방어** — `BEGIN READ ONLY` + 항상 ROLLBACK / 실행 전후 `SELECT count(*), max("updatedAt")` 를 리포트에 "쓰기 없음 증빙"으로 기록 / 외부 API 클라이언트는 GET·허용 경로 외 요청을 **보내기 전에** 예외(`assertReadOnlyTossRequest`). ②**추측 금지** — 주문번호 일치 → 같은 날·같은 금액 1:1 까지만 자동 매칭하고, ±3일 근접·같은 날 금액 상이·건수 불일치는 전부 `HELD(확인 필요)` 로 빼서 후보만 보여준다. 잘못 묶인 1건은 아무도 못 찾지만 보류된 1건은 눈에 띈다. ③**자체 검산** — `전체 차이 == Σ(짝 못 찾은 상대쪽) − Σ(짝 못 찾은 이쪽)` 을 항상 계산해 리포트에 찍는다(집계 구멍 감지). ④**계산 로직은 I/O 없는 순수 모듈로 분리**해 `node --test` 가 실제로 실행하게 한다. ⑤개인정보가 든 리포트는 `outputs/reconcile/` 로 빼고 .gitignore 에 넣는다. 실측 사실: **PgBouncer(DATABASE_URL) 경유여도 `pg` 의 파라미터 바인딩 쿼리가 트랜잭션 안에서는 정상 동작**한다(그래도 실패 시 정규식 검증 리터럴로 폴백 유지). 토스플레이스 Open API 응답 시각은 **UTC(Z) 표기**로 실측 확인(2026-09-18), 사이트 `Payment.paidDate` 는 tz 없는 UTC 라 KST 변환을 **두 번** 걸어야 한다. ⑥**사람이 손으로 적은 메모가 날짜·금액보다 강한 단서다** — 토스POS 주문의 `lineItems[].memo`/`order.memo` 에 `토4 이시윤 9월` 형태로 원생 이름이 적혀 있어, 매칭 순서를 `주문번호 → 메모 이름 → 날짜·금액` 으로 둔다. 단 성 생략 표기(`대건`→김대건)는 **후보가 정확히 1명일 때만** 인정하고, 동명이인(`시우`→3명)·한 결제 다(多)원생(형제 합산)·금액 불일치는 전부 보류한다. 명단에 없는 이름은 조용히 버리지 말고 전용 섹션으로 드러낸다(퇴원·오타·타지점 신호).
+- **참조횟수**: 0
+
+### [2026-09-29] CLI 와 웹앱이 같은 계산을 쓰면 모듈은 `src/lib/**` 에 `.mjs` 한 벌로 둔다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 돈을 맞추는 계산(`src/lib/pos/tossplace-match.mjs`)을 CLI(`scripts/`)와 Next 앱이 **둘 다** 써야 할 때, 파일을 복사하면 한쪽만 고쳐져 "어제까지 맞던 금액"이 조용히 갈린다. 해결: 순수 ESM `.mjs` 를 `src/lib/` 아래 두고 **CLI 는 상대경로로, 앱은 `.mjs` 확장자를 붙여** 그대로 import 한다(Next·Turbopack 모두 그대로 번들하고, `tsconfig.include` 는 `.mjs` 를 타입검사 대상에 넣지 않아 tsc 도 조용하다. 단 `allowJs` 는 켜져 있어야 앱 쪽 import 가 풀린다). 네트워크 클라이언트처럼 **타입이 필요한 공유 코드는 `.ts` 로 두고 CLI 가 `import ... from "../src/lib/pos/tossplaceClient.ts"`** 로 부른다 — node 22.18+/25.x 가 타입만 걷어내고 실행한다. ⚠️ 이때 그 `.ts` 는 **타입만 지우면 되는 문법(erasable syntax)** 만 써야 한다(enum·namespace·파라미터 프로퍼티를 쓰면 CLI 가 죽는다). 사본이 다시 생기는 것은 `tests/*.test.mjs` 에서 **저장소를 걸어 같은 파일명이 1개인지** 단언해 막는다. ⚠️ 순수 JS 모듈을 TS 에서 호출하면 `students = []` 같은 기본값이 `never[]` 로 추론돼 tsc 가 막는다 — 호출부마다 캐스팅하지 말고 **모듈 상단에서 느슨한 시그니처 상수 하나**(`const reconcile = buildReconciliation as (...) => any`)로 받는다.
+- **참조횟수**: 0
+
+### [2026-09-29] prisma 를 import 하는 서비스도 "가짜 prisma"를 끼워 실제로 실행해 검증한다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: `tests/_ts-module.mjs` 는 순수 모듈 전용이라 `@/lib/prisma` 를 쓰는 파일에는 못 쓴다. 그렇다고 소스 문자열 검사만 하면 "키가 없을 때 예외를 던지는가 / 기록이 정확히 한 줄인가" 같은 **동작**은 절대 못 잡는다. 방법: 테스트에서 `ts.transpileModule` 로 서비스 파일을 올린 뒤 import 스펙(`"@/lib/prisma"`·`"./tossplaceClient"`)만 **가짜 모듈 data URL 로 치환**해 실행한다. 가짜 prisma 는 `$queryRawUnsafe`/`$executeRawUnsafe` 호출을 `globalThis` 배열에 기록해, 테스트가 **"쓰기는 1회, INSERT 대상은 이 표 하나"** 를 직접 세도록 한다. 환경변수는 `withEnv()` 로 잠깐 바꿨다가 `finally` 에서 반드시 되돌린다(다른 테스트가 같은 프로세스에서 돈다). 돈을 다루는 코드는 여기에 더해 **소스 계약**(`UPDATE "Payment"`·`DELETE FROM "Student"` 부재를 `doesNotMatch` 로)을 함께 단정한다 — 실행 검증은 "지금 경로"만, 소스 검증은 "앞으로 생길 경로"까지 막는다.
+- **참조횟수**: 0
+
+### [2026-09-30] 외부 버튼(슬랙 등)으로 돈을 쓸 때는 "선점 UPDATE 한 문장 = 재확인"으로 막는다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: `markPaymentPaid` 는 트랜잭션 없이 여러 문장을 쓴다. 그래서 "읽고 확인 → 납부" 로 짜면 두 번 클릭·두 알림 동시 클릭에 뚫린다. 방법(`src/lib/pos/paymentNoticeActions.ts`): ①알림 행을 `UPDATE … SET status='CONFIRMED', "siteMarkedPaid"=true WHERE <상태 조건> AND EXISTS(<미납·같은 금액>) AND (SELECT count(*) …)=1 AND NOT EXISTS(<PAID 같은 금액>) RETURNING` **한 문장**으로 선점(행 잠금 덕에 두 번째 클릭은 0행) ②다른 알림과의 경합은 **부분 유일 인덱스**(`sitePaymentId WHERE siteMarkedPaid`)가 예외로 막음 ③선점 성공 뒤에만 `markPaymentPaid` ④실패 시 청구서가 실제로 PAID 인지 보고 아니면 선점을 되돌림. 슬랙은 3초 안에 답해야 하므로 라우트는 `after()` 로 먼저 200 을 준다. 서명 검증은 `req.text()` 원문 → `v0:ts:body` HMAC, secret 없으면 거부.
+- **참조횟수**: 0
+
+### [2026-10-02] 모달 안에서 지도(LocationPickerModal)를 띄울 때는 입력 모달을 내리고 상태는 상위에 둔다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: `AdminModal` 과 `LocationPickerModal` 은 둘 다 document 에 Esc·Tab 처리를 건다. 겹쳐 띄우면 Esc 한 번에 둘 다 닫히고 Tab 이 서로 포커스를 뺏는다. 방법(`admin/shuttle/regular/RegularShuttleClient.tsx`): 폼 입력값을 상위 `dialog` 상태에 두고 `{dialog && !picker && <AdminModal/>}` / `{picker && <LocationPickerModal/>}` 로 번갈아 띄운다. 또 렌더 함수 안에서 `function StopFields(){}` 를 정의해 `<StopFields/>` 로 쓰면 렌더마다 새 컴포넌트라 **글자 칠 때마다 입력 포커스가 풀린다** — `stopFields()` 처럼 함수 호출로 쓴다.
+- **참조횟수**: 0
+
+### [2026-10-02] 운영 화면의 «관리자 미리보기»는 운영 화면과 같은 순수 함수로 그린다 + 가드 테스트
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 원장이 고치는 화면(셔틀 명단 「기사님 화면」 보기)과 실제 운영 화면(기사님 `/driver/[token]`)이 각자 묶음 로직을 가지면 한쪽만 고쳐져 «관리자가 본 순서 ≠ 기사님이 보는 순서»가 된다(옛 `RegularRouteSection.groupStops` 가 그 사본). 방법: 고르기·정렬·묶음을 순수 모듈(`regularDriverRouteLogic.ts` 의 `selectDriverDayRows`·`buildFallbackClasses`)에 두고 양쪽이 import, 날짜별 요소(결석)는 `() => false` 로 주입. `tests/regular-roster-driver-view.test.mjs` 가 import·자체 group 함수 금지·저장→재조립 왕복을 단정한다. 순서 저장은 «그 칸이 쓰던 sortOrder 번호만 돌려 쓰기»(슬롯 재배정)라 다른 칸 순서가 안 바뀐다.
+- **참조횟수**: 0
+
+### [2026-10-03] 보호자(Guardian)는 학생 상세 「보호자」 카드로 편집 — 전화는 숫자만, 계정(User) 전화와 분리
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다.
+- **참조횟수**: 0

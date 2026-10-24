@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { notMergedStudent } from "@/lib/studentVisibility";
 import { REASON_LABEL, DAY_KO, ymdToDayIndex } from "@/lib/regular/regularAbsenceRules";
 
 // 정규 수업 사전 결석 — 관리자 조회(#3 Step B).
@@ -106,7 +107,7 @@ export async function getRegularAbsences(filter?: {
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id = ra."studentId"
        JOIN "Class" c ON c.id = ra."classId"
-      WHERE ${clauses.join(" AND ")}
+      WHERE ${notMergedStudent("s")} AND ${clauses.join(" AND ")}
       ORDER BY ra.date ASC, s.name ASC`,
     ...params,
   );

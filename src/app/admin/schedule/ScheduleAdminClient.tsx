@@ -123,6 +123,8 @@ interface ScheduleAdminClientProps {
     sheetUrl?: string | null;
     programs?: Program[];
     scheduleSource?: SchedulePayloadSource;
+    // 구글 시트 원장 은퇴 여부(서버가 isSheetSyncRetired 로 판정해 넘김). true 면 시트 연동·동기화 버튼을 숨긴다.
+    sheetRetired?: boolean;
 }
 
 function defaultCustomSlotForm(): CustomSlotForm {
@@ -230,6 +232,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
         sheetUrl: initialSheetUrl = null,
         programs: initialPrograms = [],
         scheduleSource: initialScheduleSource = "SHEET_CACHE",
+        sheetRetired = false,
     } = props;
     const hasInitialData = Boolean(
         props.slots ||
@@ -301,7 +304,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 throw new Error(result.error || "동기화 실패");
             }
 
-            setSheetSyncMessage(`${result.synced ?? 0}개 수업을 DB에 동기화했습니다.`);
+            setSheetSyncMessage(`${result.synced ?? 0}개 수업을 시간표에 반영했습니다.`);
             await loadScheduleData();
         } catch (error: any) {
             setSheetError(error.message || "동기화 실패");
@@ -584,14 +587,24 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                             표 보기
                         </button>
                     </div>
+                    {/* 시트 원장 은퇴면 「구글시트 연동」 버튼(→ 지금 동기화 모달)을 숨긴다. 원본은 사이트 DB 시간표. */}
+                    {!sheetRetired && (
                     <button
                         onClick={() => { setSheetUrlInput(sheetUrl || ""); setShowSheetModal(true); }}
                         className={`bg-white border text-sm font-bold px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 dark:bg-gray-800 ${hasSheetUrl ? "border-green-300 text-green-800 hover:bg-green-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10"}`}
                     >
                         <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>link</span>
-                        {isDbScheduleSource ? "DB 시간표 원본" : `구글시트 연동${hasSheetUrl ? " " : " 설정"}`}
+                        {isDbScheduleSource ? "사이트 시간표" : `구글시트 연동${hasSheetUrl ? " " : " 설정"}`}
                         {hasSheetUrl && <span className="material-symbols-outlined text-green-600 dark:text-emerald-300" style={{ fontSize: "16px" }}>check_circle</span>}
                     </button>
+                    )}
+                    {/* 은퇴 상태에서도 지금 원본이 무엇인지는 보이게 — 누를 수 없는 표시 배지 */}
+                    {sheetRetired && isDbScheduleSource && (
+                        <span className="bg-white border border-green-300 text-green-800 text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 dark:bg-gray-800 dark:border-emerald-500/40 dark:text-emerald-300">
+                            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>database</span>
+                            사이트 시간표
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -602,7 +615,8 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 </div>
             )}
 
-            {adminViewMode === "edit" && !hasSheetUrl && !isDbScheduleSource && (
+            {/* 시트 URL 미설정 안내 — 시트 원장 은퇴면 띄우지 않는다 */}
+            {adminViewMode === "edit" && !sheetRetired && !hasSheetUrl && !isDbScheduleSource && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
                     <p className="font-bold mb-1">구글시트 URL이 설정되지 않았습니다.</p>
                     <p>
@@ -617,7 +631,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 </div>
             )}
 
-            {adminViewMode === "edit" && hasSheetUrl && slots.length === 0 && (
+            {adminViewMode === "edit" && !sheetRetired && hasSheetUrl && slots.length === 0 && (
                 <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-10 text-center text-gray-500 dark:text-gray-400">
                     <p className="text-lg font-medium mb-1">시트에서 수업 데이터를 찾을 수 없습니다.</p>
                     <p className="text-sm">시트가 공개 설정인지, URL과 탭(gid)이 올바른지 확인해 주세요.</p>

@@ -298,6 +298,10 @@ DIRECT_URL=                        # 직접 연결 URL (포트 5432, migrate용)
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=      # VAPID 공개키 (클라이언트)
 VAPID_PRIVATE_KEY=                 # VAPID 비밀키 (서버)
 
+# STIZ 본사 유니폼 주문 연동
+STIZ_PARTNER_SECRET=               # 본사 API HMAC 서명 비밀키 (서버 전용)
+STIZ_UNIFORM_ORDER_API_URL=        # 선택: 본사 주문 API URL override
+
 # 선택사항
 GOOGLE_CALENDAR_API_KEY=           # Google Calendar API v3
 CRON_SECRET=                       # Vercel Cron 인증 토큰

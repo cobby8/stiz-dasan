@@ -15,8 +15,11 @@ export async function POST(req: NextRequest) {
         const paymentKey = String(body?.paymentKey || "");
         const orderId = String(body?.orderId || "");
         const amount = Number(body?.amount || 0);
+        const invoiceId = typeof body?.invoiceId === "string" && body.invoiceId.trim()
+            ? body.invoiceId.trim()
+            : null;
 
-        if (!paymentKey || !orderId || !amount) {
+        if (!paymentKey || !orderId || !Number.isFinite(amount) || amount <= 0) {
             return NextResponse.json({ error: "결제 승인 정보가 부족합니다." }, { status: 400 });
         }
 
@@ -24,10 +27,12 @@ export async function POST(req: NextRequest) {
             paymentKey,
             orderId,
             amount,
+            invoiceId,
             owner: { authUserId: user.id, email: user.email ?? null },
         });
         if (!result.ok) {
-            return NextResponse.json(result, { status: 400 });
+            const retryable = "retryable" in result && result.retryable;
+            return NextResponse.json(result, { status: retryable ? 202 : 400 });
         }
 
         return NextResponse.json(result);

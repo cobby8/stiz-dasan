@@ -8,8 +8,8 @@ import { buildPublicMetadata } from "@/lib/publicMetadata";
 // 이용약관은 자주 바뀌지 않으므로 5분 ISR
 export const revalidate = 300;
 export const metadata = buildPublicMetadata({
-  title: "이용약관 | STIZ 농구교실 다산점",
-  description: "STIZ 농구교실 다산점 이용약관과 수강 규정, 환불 정책, 보강 안내를 확인하세요.",
+  title: "이용약관 | STIZ 농구교실 다산2호점",
+  description: "STIZ 농구교실 다산2호점 이용약관과 수강 규정, 환불 정책, 보강 안내를 확인하세요.",
   path: "/terms",
 });
 
@@ -21,7 +21,7 @@ export default async function TermsPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+      <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
           <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -36,7 +36,7 @@ export default async function TermsPage() {
       </section>
 
       {/* 이용약관 본문 — 기존 ProgramAccordionTerms 컴포넌트 재사용 */}
-      <SectionLayout bgColor="section">
+      <SectionLayout className="public-content-section" bgColor="section">
         {termsOfService ? (
           <AnimateOnScroll>
             <ProgramAccordionTerms termsText={termsOfService} hideHeader />

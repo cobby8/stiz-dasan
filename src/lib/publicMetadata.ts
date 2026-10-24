@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const PUBLIC_SITE_URL = "https://www.stiz-dasan.kr";
-export const PUBLIC_SITE_NAME = "STIZ 농구교실 다산점";
+export const PUBLIC_SITE_NAME = "STIZ 농구교실 다산2호점";
 export const DEFAULT_OG_IMAGE = "/opengraph-image";
-export const DEFAULT_OG_IMAGE_ALT = "STIZ 농구교실 다산점 대표 미리보기";
+export const DEFAULT_OG_IMAGE_ALT = "STIZ 농구교실 다산2호점 대표 미리보기";
 
 type PublicMetadataInput = {
   title: string;

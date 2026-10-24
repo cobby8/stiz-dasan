@@ -1,9 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
-import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updatePaymentStatus, enrollStudent, deleteEnrollment } from "@/app/actions/admin";
+import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
+import { todayKst } from "@/lib/datetime/kst";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
+import AdminModal from "@/components/admin/AdminModal";
+import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
+import GuardianPanel from "./GuardianPanel";
 
 type MediaItem = { url: string; type: "image" | "video" };
 
@@ -88,7 +92,7 @@ function toInputDate(d: Date | string | null | undefined): string {
     return date.toISOString().split("T")[0];
 }
 // 편집 인풋 공통 클래스 — 앱 톤(rounded, border, dark 대응, 하드코딩 hex 없음)
-const EDIT_INPUT_CLASS = "w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
+const EDIT_INPUT_CLASS = "w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-[var(--color-academy-primary)] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
 
 function calcAge(birthDate: Date | string): number {
     const birth = typeof birthDate === "string" ? new Date(birthDate) : birthDate;
@@ -289,14 +293,15 @@ function getCurrentMonthHistory(monthlyHistory: StudentActivityData["monthlyHist
 }
 
 // 공통 카드 컨테이너 클래스 — 기존 앱 카드 관례를 그대로 사용(하드코딩 색 없음)
-const CARD_CLASS = "rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800";
+// 학생의 정보와 편집 동선은 유지하고 역할 공통 카드 표면을 공유한다.
+const CARD_CLASS = "academy-panel p-5";
 
 // 섹션 제목 (아이콘 + 텍스트 + 우측 부가정보)
 function SectionTitle({ icon, title, right }: { icon: string; title: string; right?: React.ReactNode }) {
     return (
         <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 dark:text-white">
-                <SymbolIcon name={icon} size={17} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                <SymbolIcon name={icon} size={17} className="text-[var(--color-academy-primary)] dark:text-brand-neon-lime" />
                 {title}
             </h3>
             {right}
@@ -339,7 +344,7 @@ function ShuttleLocationBlock({
         <div className="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
             <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-gray-900 dark:text-gray-100">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-brand-orange-50 text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                         <SymbolIcon name={icon} size={14} />
                     </span>
                     {label}
@@ -428,12 +433,20 @@ export default function StudentDetailClient({
     const [memoSaved, setMemoSaved] = useState(false);
     const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
     const [statusFeedback, setStatusFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-    // ── 반 추가·삭제 상태 (E3) ──────────────────────────────
+    const [statusChange, setStatusChange] = useState<{
+        enrollmentId: string;
+        className: string;
+        currentStatus: string;
+        nextStatus: string;
+        effectiveFrom: string;
+        reason: string;
+    } | null>(null);
+    const [statusFormError, setStatusFormError] = useState<string | null>(null);
+    // ── 반 추가 상태 (E3) ───────────────────────────────────
     // showClassPicker: 반 선택 UI 펼침 / enrollingClassId: 등록 처리 중(disabled)
-    // deletingEnrollmentId: 삭제 처리 중 / enrollError: 추가/삭제 실패 사유
+    // enrollError: 수강 반 추가/상태 변경 실패 사유
     const [showClassPicker, setShowClassPicker] = useState(false);
     const [enrollingClassId, setEnrollingClassId] = useState<string | null>(null);
-    const [deletingEnrollmentId, setDeletingEnrollmentId] = useState<string | null>(null);
     const [enrollError, setEnrollError] = useState<string | null>(null);
     // ── 결제 상태 변경 상태 (E2) ──────────────────────────────
     // payEditingId: 상태선택 세그먼트를 펼친 결제 건 / payUpdatingId: 처리 중(disabled)
@@ -459,7 +472,6 @@ export default function StudentDetailClient({
 
     // 지도 모달 확정 → /api/admin/shuttle(studentLocation·confirmLocation)로 저장
     // 서버 updateStudentShuttleLocation은 좌표·주소 필수(없으면 400). 성공 시 응답 location으로 로컬만 갱신.
-    // 참고 패턴: src/app/admin/shuttle/ShuttleRouteAdminClient.tsx:196 saveRequestLocation
     async function saveShuttleLocation(kind: "PICKUP" | "DROPOFF", value: MapLocationData) {
         if (!studentId) return;
         setShuttleSaving(true);
@@ -621,7 +633,7 @@ export default function StudentDetailClient({
                 <button
                     type="button"
                     onClick={() => void loadData()}
-                    className="mt-4 rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="mt-4 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] dark:bg-brand-neon-lime dark:text-brand-navy-900"
                 >
                     다시 불러오기
                 </button>
@@ -716,7 +728,7 @@ export default function StudentDetailClient({
                         type="button"
                         onClick={() => saveSection(section)}
                         disabled={saving}
-                        className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
+                        className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-2.5 py-1.5 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
                     >
                         <SymbolIcon name="check" size={14} /> {saving ? "저장 중…" : "저장"}
                     </button>
@@ -744,25 +756,42 @@ export default function StudentDetailClient({
         );
     }
 
-    async function changeEnrollmentStatus(enrollmentId: string, currentStatus: string, nextStatus: string) {
-        if (currentStatus === nextStatus || statusUpdatingId) return;
-
-        const nextInfo = getEnrollmentStatusInfo(nextStatus);
-        if (!window.confirm(`이 수강 반 상태를 '${nextInfo.label}'으로 변경할까요?`)) return;
-
-        setStatusUpdatingId(enrollmentId);
+    function changeEnrollmentStatus(enrollment: StudentActivityData["enrollments"][number], nextStatus: string) {
+        if (enrollment.status === nextStatus || statusUpdatingId) return;
+        setStatusChange({
+            enrollmentId: enrollment.id,
+            className: enrollment.className,
+            currentStatus: enrollment.status,
+            nextStatus,
+            effectiveFrom: todayKst(),
+            reason: "",
+        });
+        setStatusFormError(null);
         setStatusFeedback(null);
+    }
+
+    async function submitEnrollmentStatusChange(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        if (!statusChange || statusUpdatingId) return;
+        const { enrollmentId, nextStatus } = statusChange;
+        const formData = new FormData(event.currentTarget);
+        const effectiveFrom = String(formData.get("effectiveFrom") || "");
+        const reason = String(formData.get("reason") || "");
+        if (effectiveFrom > todayKst()) {
+            setStatusFormError("미래 효력일은 예약 변경으로 신청해 주세요.");
+            return;
+        }
+        setStatusUpdatingId(enrollmentId);
+        setStatusFormError(null);
 
         try {
-            await updateEnrollmentStatus(enrollmentId, nextStatus);
+            await updateEnrollmentStatus(enrollmentId, nextStatus, { effectiveFrom, reason });
             await loadData();
+            setStatusChange(null);
             setStatusFeedback({ type: "success", message: "수강 상태를 변경했습니다." });
             window.setTimeout(() => setStatusFeedback(null), 2500);
         } catch (statusError) {
-            setStatusFeedback({
-                type: "error",
-                message: getErrorMessage(statusError, "수강 상태 변경에 실패했습니다."),
-            });
+            setStatusFormError(getErrorMessage(statusError, "수강 상태 변경에 실패했습니다."));
         } finally {
             setStatusUpdatingId(null);
         }
@@ -785,27 +814,6 @@ export default function StudentDetailClient({
             setEnrollError(getErrorMessage(addError, "반 추가에 실패했습니다."));
         } finally {
             setEnrollingClassId(null);
-        }
-    }
-
-    // 반 삭제(하드) — deleteEnrollment는 Enrollment 행을 완전히 지운다(이력 영구 제거).
-    // 강한 확인창으로 퇴원(소프트)과 구분하고, 승인 시에만 서버 호출 후 재조회.
-    async function removeEnrollment(enrollmentId: string) {
-        if (deletingEnrollmentId) return;
-        if (!window.confirm("이 반 수강을 완전히 삭제할까요? 수강 이력이 영구 제거됩니다. (퇴원 처리를 원하면 상태를 '퇴원'으로 바꾸세요)")) return;
-
-        setDeletingEnrollmentId(enrollmentId);
-        setEnrollError(null);
-
-        try {
-            await deleteEnrollment(enrollmentId);
-            await loadData();
-            setStatusFeedback({ type: "success", message: "수강 반을 삭제했습니다." });
-            window.setTimeout(() => setStatusFeedback(null), 2500);
-        } catch (delError) {
-            setEnrollError(getErrorMessage(delError, "반 삭제에 실패했습니다."));
-        } finally {
-            setDeletingEnrollmentId(null);
         }
     }
 
@@ -855,9 +863,9 @@ export default function StudentDetailClient({
                         {DAY_LABELS[enrollment.dayOfWeek] || enrollment.dayOfWeek} {enrollment.startTime}~{enrollment.endTime} · {enrollment.programName}
                     </p>
                 </div>
-                {/* 우측: 상태 세그먼트 + 하드 삭제 버튼(위험 액션 톤) */}
+                {/* 우측: 상태 세그먼트. 퇴원도 이력을 보존하는 상태 변경으로 처리한다. */}
                 <div className="flex items-center gap-2">
-                {/* 세그먼트 버튼: 상태 변경 — 기존 changeEnrollmentStatus 로직 그대로 */}
+                {/* 세그먼트 버튼: 입력 양식에서 반·효력일·사유를 확인한 뒤 저장한다. */}
                 <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
                     {ENROLLMENT_STATUS_OPTIONS.map((option) => {
                         const selected = enrollment.status === option.value;
@@ -865,7 +873,7 @@ export default function StudentDetailClient({
                             <button
                                 key={option.value}
                                 type="button"
-                                onClick={() => void changeEnrollmentStatus(enrollment.id, enrollment.status, option.value)}
+                                onClick={() => changeEnrollmentStatus(enrollment, option.value)}
                                 disabled={Boolean(statusUpdatingId)}
                                 className={`px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                                     selected
@@ -878,17 +886,6 @@ export default function StudentDetailClient({
                         );
                     })}
                 </div>
-                {/* 하드 삭제 — 이력 영구 제거. 위험 액션이라 빨간 톤 + 확인창 */}
-                <button
-                    type="button"
-                    onClick={() => void removeEnrollment(enrollment.id)}
-                    disabled={deletingEnrollmentId === enrollment.id}
-                    aria-label="수강 반 완전 삭제"
-                    title="수강 반 완전 삭제(이력 영구 제거)"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-red-200 bg-white text-red-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-40 dark:border-red-900/50 dark:bg-gray-950 dark:text-red-400 dark:hover:bg-red-950/40"
-                >
-                    <SymbolIcon name="delete" size={16} />
-                </button>
                 </div>
             </div>
         );
@@ -929,14 +926,14 @@ export default function StudentDetailClient({
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
-            {/* ===== 정체성 헤더 ===== */}
-            <div className="flex flex-wrap items-start gap-4">
+            {/* 학생의 맥락을 라벤더 헤더로 묶고 기존 편집 기능은 유지한다. */}
+            <div className="academy-hero flex flex-wrap items-start gap-4 p-5 md:p-6">
                 <Link href="/admin/students" prefetch={false} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gray-100 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700">
                     <SymbolIcon name="arrow_back" size={20} />
                 </Link>
-                <div className="min-w-[240px] flex-1">
+                <div className="min-w-0 basis-60 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h1 className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                        <h1 className="academy-heading">
                             {student.name}
                             <span className="ml-1.5 text-lg font-normal text-gray-400">학생</span>
                         </h1>
@@ -944,7 +941,7 @@ export default function StudentDetailClient({
                             {representativeStatusInfo.label}
                         </span>
                         {activeEnrollments.length > 0 && (
-                            <span className="rounded-full bg-brand-orange-50 px-2.5 py-0.5 text-xs font-bold text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                            <span className="rounded-full bg-[var(--color-academy-primary-soft)] px-2.5 py-0.5 text-xs font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                                 {activeEnrollments.length}개 반
                             </span>
                         )}
@@ -1013,7 +1010,7 @@ export default function StudentDetailClient({
             {/* ===== KPI 4칸 ===== */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {/* 출석률 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <MiniDonut rate={attendanceStats.rate} />
                     <div className="min-w-0">
                         <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">출석률</p>
@@ -1025,8 +1022,8 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 수강 중 반 수 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-brand-orange-50 text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                <div className="academy-panel flex items-center gap-3 p-4">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                         <SymbolIcon name="sports_basketball" size={22} />
                     </div>
                     <div className="min-w-0">
@@ -1039,7 +1036,7 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 이번 달 수납 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
                         <SymbolIcon name="account_balance_wallet" size={22} />
                     </div>
@@ -1063,7 +1060,7 @@ export default function StudentDetailClient({
                 </div>
 
                 {/* 미납 */}
-                <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
+                <div className="academy-panel flex items-center gap-3 p-4">
                     <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${unpaid.length > 0 ? "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300" : "bg-gray-100 text-gray-400 dark:bg-gray-900 dark:text-gray-500"}`}>
                         <SymbolIcon name={unpaid.length > 0 ? "error" : "check_circle"} size={22} />
                     </div>
@@ -1131,7 +1128,7 @@ export default function StudentDetailClient({
                                         {student.parent.phone && (
                                             <>
                                                 {" · "}
-                                                <a href={`tel:${student.parent.phone}`} className="text-brand-orange-600 hover:underline dark:text-brand-neon-lime">
+                                                <a href={`tel:${student.parent.phone}`} className="text-[var(--color-academy-primary)] hover:underline dark:text-brand-neon-lime">
                                                     {student.parent.phone}
                                                 </a>
                                             </>
@@ -1149,6 +1146,9 @@ export default function StudentDetailClient({
                             </div>
                         )}
                     </div>
+
+                    {/* 보호자 여러 명(엄마·할머니 등) 관리 — 계정 전화는 읽기 전용으로만 표시 */}
+                    <GuardianPanel studentId={student.id} accountPhone={student.parent.phone ?? null} />
 
                     {/* 셔틀 (배차용 실제 위치 — StudentShuttleLocation) */}
                     <div className={CARD_CLASS}>
@@ -1195,6 +1195,9 @@ export default function StudentDetailClient({
                         )}
                     </div>
 
+                    {/* 학생을 다시 검색하지 않고 현재 학생의 학부모 요청 링크만 관리한다. */}
+                    <ParentRequestLinkPanel studentId={student.id} studentName={student.name} />
+
                     {/* 메모 */}
                     <div className={CARD_CLASS}>
                         <SectionTitle
@@ -1204,7 +1207,7 @@ export default function StudentDetailClient({
                                 <button
                                     onClick={saveMemo}
                                     disabled={isPending}
-                                    className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
+                                    className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200"
                                 >
                                     <SymbolIcon name="save" size={14} /> {isPending ? "저장 중..." : "저장"}
                                 </button>
@@ -1215,7 +1218,7 @@ export default function StudentDetailClient({
                             onChange={e => { setMemo(e.target.value); setMemoSaved(false); }}
                             rows={4}
                             placeholder="특이사항·건강 이슈"
-                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:ring-brand-neon-lime"
+                            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-[var(--color-academy-primary)] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500 dark:focus:ring-brand-neon-lime"
                         />
                         {memoSaved && <p className="mt-2 text-xs font-medium text-green-600 dark:text-lime-200">저장됨</p>}
                     </div>
@@ -1224,7 +1227,7 @@ export default function StudentDetailClient({
                 {/* ---- 우측 본문 (탭) ---- */}
                 <section className="min-w-0">
                     {/* 탭 바 */}
-                    <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-gray-100 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-900">
+                    <div role="tablist" className="mb-4 flex gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-1">
                         {tabs.map((tab) => {
                             const selected = activeTab === tab.key;
                             return (
@@ -1258,7 +1261,7 @@ export default function StudentDetailClient({
                                         <button
                                             type="button"
                                             onClick={() => { setShowClassPicker((v) => !v); setEnrollError(null); }}
-                                            className="inline-flex items-center gap-1 rounded-lg border border-brand-orange-200 bg-brand-orange-50 px-2.5 py-1 text-xs font-bold text-brand-orange-600 transition hover:bg-brand-orange-100 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/20"
+                                            className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-primary)] transition hover:bg-[var(--color-academy-primary-soft)] dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/20"
                                         >
                                             <SymbolIcon name={showClassPicker ? "close" : "add"} size={15} />
                                             {showClassPicker ? "닫기" : "반 추가"}
@@ -1301,7 +1304,7 @@ export default function StudentDetailClient({
                                                                         type="button"
                                                                         onClick={() => void addEnrollment(c.id)}
                                                                         disabled={Boolean(enrollingClassId)}
-                                                                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-brand-orange-400 hover:bg-brand-orange-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/5"
+                                                                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left transition hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/5"
                                                                     >
                                                                         <span className="min-w-0 truncate text-sm font-bold text-gray-900 dark:text-white">{c.name}</span>
                                                                         <span className="shrink-0 text-xs text-gray-400">
@@ -1479,7 +1482,7 @@ export default function StudentDetailClient({
                                                                 href={p.invoiceCheckoutUrl}
                                                                 target="_blank"
                                                                 rel="noreferrer"
-                                                                className="mt-1 inline-flex text-xs font-bold text-brand-orange-600 hover:underline dark:text-brand-neon-lime"
+                                                                className="mt-1 inline-flex text-xs font-bold text-[var(--color-academy-primary)] hover:underline dark:text-brand-neon-lime"
                                                             >
                                                                 납부 링크 열기 ↗
                                                             </a>
@@ -1600,7 +1603,7 @@ export default function StudentDetailClient({
                                                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
                                                         {/* 반 뱃지 전체 노출 (기존 +N 숨김 개선) */}
                                                         {history.classes.map((c) => (
-                                                            <span key={c.slotKey} className="rounded-full bg-brand-orange-50 px-2 py-0.5 text-[11px] font-bold text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                                                            <span key={c.slotKey} className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                                                                 {c.className}
                                                             </span>
                                                         ))}
@@ -1682,6 +1685,54 @@ export default function StudentDetailClient({
                     )}
                 </section>
             </div>
+
+            {statusChange && (
+                <AdminModal
+                    titleId="enrollment-status-change-title"
+                    panelClassName="max-w-md p-6"
+                    onClose={() => { if (!statusUpdatingId) setStatusChange(null); }}
+                    closeOnBackdrop={!statusUpdatingId}
+                >
+                    <form onSubmit={(event) => void submitEnrollmentStatusChange(event)} className="space-y-4">
+                        <h2 id="enrollment-status-change-title" className="text-xl font-extrabold text-gray-900 dark:text-white">
+                            수강 상태 변경
+                        </h2>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
+                            {statusChange.className} · {getEnrollmentStatusInfo(statusChange.currentStatus).label} → {getEnrollmentStatusInfo(statusChange.nextStatus).label}
+                        </p>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                            효력일
+                            <input
+                                type="date"
+                                name="effectiveFrom"
+                                required
+                                max={todayKst()}
+                                value={statusChange.effectiveFrom}
+                                onChange={(event) => setStatusChange((current) => current && ({ ...current, effectiveFrom: event.target.value }))}
+                                data-admin-modal-initial-focus="true"
+                                className="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                            />
+                        </label>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                            변경 사유 (선택)
+                            <textarea
+                                name="reason"
+                                value={statusChange.reason}
+                                onChange={(event) => setStatusChange((current) => current && ({ ...current, reason: event.target.value }))}
+                                rows={3}
+                                className="mt-1 w-full rounded-xl border border-gray-200 bg-white p-3 text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                            />
+                        </label>
+                        {statusFormError && <p role="alert" className="text-sm font-bold text-red-600">{statusFormError}</p>}
+                        <div className="flex justify-end gap-2">
+                            <button type="button" onClick={() => setStatusChange(null)} disabled={Boolean(statusUpdatingId)} className="min-h-11 rounded-xl border border-gray-200 px-4 font-bold disabled:opacity-60 dark:border-gray-700">취소</button>
+                            <button type="submit" disabled={Boolean(statusUpdatingId)} className="min-h-11 rounded-xl bg-[var(--color-academy-primary)] px-5 font-black text-white disabled:opacity-60">
+                                {statusUpdatingId ? "저장 중…" : "변경 저장"}
+                            </button>
+                        </div>
+                    </form>
+                </AdminModal>
+            )}
 
             {/* 배차용 셔틀 위치 지도 선택 모달 — 핀(좌표) 확정 시에만 저장(서버가 좌표 필수 검증) */}
             {pickerKind && (

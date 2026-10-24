@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./academy-theme.css";
 import { getAcademySettings } from "@/lib/queries";
 import { BODY_FONT_OPTIONS, HEADING_FONT_OPTIONS, getFontCss } from "@/lib/fonts";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -12,7 +13,7 @@ import StandaloneBackButton from "@/components/StandaloneBackButton";
 
 export const metadata: Metadata = {
     ...buildPublicMetadata({
-        title: "STIZ 농구교실 다산점 | 다산신도시 No.1 농구 전문 학원",
+        title: "남양주 다산 농구교실 | STIZ 다산2호점",
         description: "유아·초등·중등 수준별 맞춤 농구 수업, 전문 코치진, 셔틀 안내와 체험수업 신청까지 한 번에 확인하세요.",
         path: "/",
     }),

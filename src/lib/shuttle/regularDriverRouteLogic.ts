@@ -3,12 +3,12 @@
 // 왜 순수 모듈로 떼는가?
 //   기사님 화면은 두 가지 소스를 갖는다.
 //     1) 원장이 /admin/shuttle/regular-dispatch 에서 저장한 배차 노선(RegularDispatchRoute.payload)
-//     2) 구글시트 명단(RegularShuttleStop) — 저장 노선이 없는 요일의 폴백
-//   "어느 쪽을 쓸지"와 "저장 노선의 학생을 시트 정차행(=탑승체크 키)에 어떻게 이어 붙일지"는
+//     2) 셔틀 명단(RegularShuttleStop) — 저장 노선이 없는 요일의 폴백
+//   "어느 쪽을 쓸지"와 "저장 노선의 학생을 명단 정차행(=탑승체크 키)에 어떻게 이어 붙일지"는
 //   조용히 어긋나면 기사님이 이미 체크한 학생을 미체크로 보게 되는 위험한 판정이라,
 //   DB 없이 테스트로 못박아 두려고 순수 모듈로 분리한다.
 //
-// ⚠️ 탑승 체크 저장 키는 예전과 똑같이 **시트 정차행 id(RegularShuttleStop.id)** 다.
+// ⚠️ 탑승 체크 저장 키는 예전과 똑같이 **명단 정차행 id(RegularShuttleStop.id)** 다.
 //    저장 노선 payload 안의 학생 식별자는 studentId(= Student.id 또는 'stop:'+행id)로 **다르다**.
 //    그래서 여기서 studentId → 정차행 id 로 되돌려 매핑한다(기록 연속성 보존).
 
@@ -27,7 +27,7 @@ export type AbsentPredicate = (p: { name: string | null; phone: string | null })
 
 export type RouteDirection = "PICKUP" | "DROPOFF";
 
-/** 그날 셔틀 예외 한 건. 정규 명단은 시트에서 온 글자라 학생 id 가 없어 이름·전화로 잇는다. */
+/** 그날 셔틀 예외 한 건. 정규 명단 행엔 학생 id 가 없을 수 있어 이름·전화로 잇는다. */
 export type ShuttleDayExceptionEntry = {
   name: string;
   phone: string | null;
@@ -101,7 +101,7 @@ export function normalizeStopName(v: string | null | undefined): string {
 }
 
 /**
- * 저장 노선을 쓸지, 시트 명단으로 폴백할지 결정한다.
+ * 저장 노선을 쓸지, 셔틀 명단으로 폴백할지 결정한다.
  *   SAVED    = 저장본에 "학생이 실제로 들어 있는 정차"가 하나라도 있을 때만.
  *   FALLBACK = 저장본이 없거나 비어 있을 때(빈 저장본을 쓰면 기사님 화면이 통째로 비어 버린다).
  */
@@ -126,8 +126,8 @@ export function savedStopTimeLabel(stop: { etaLabel?: unknown; etaMinutes?: unkn
 }
 
 /**
- * 시트 명단 행을 정류장별로 묶어 기사님 화면 정차로 만든다(= 종전 폴백 동작 그대로).
- * 같은 정류장 이름끼리 묶고, 시트 순서(sortOrder)를 유지한다.
+ * 셔틀 명단 행을 정류장별로 묶어 기사님 화면 정차로 만든다(= 종전 폴백 동작 그대로).
+ * 같은 정류장 이름끼리 묶고, 명단 순서(sortOrder)를 유지한다.
  */
 export function groupSheetStops(
   rows: RegularShuttleStop[],
@@ -160,19 +160,19 @@ export function groupSheetStops(
 /**
  * 저장 노선(payload.vehicles)을 기사님 화면 섹션으로 바꾼다.
  *
- * 핵심: 저장본의 학생 식별자(requestId = studentId)를 **시트 정차행 id 로 되돌려** 탑승 체크 키를 보존한다.
- *   - 한 학생이 같은 요일·방향에 여러 행을 가질 수 있어(시트 중복·오분류 실측 8건) 큐로 관리하고,
+ * 핵심: 저장본의 학생 식별자(requestId = studentId)를 **명단 정차행 id 로 되돌려** 탑승 체크 키를 보존한다.
+ *   - 한 학생이 같은 요일·방향에 여러 행을 가질 수 있어(명단 중복·오분류 실측 8건) 큐로 관리하고,
  *     정류장 이름이 같은 행을 먼저 소비한다. 그래야 같은 사람의 두 정차가 서로 뒤바뀌지 않는다.
- *   - 시트 행을 못 찾은 학생도 **절대 숨기지 않는다**(조용히 사라지는 것이 가장 위험).
+ *   - 명단 행을 못 찾은 학생도 **절대 숨기지 않는다**(조용히 사라지는 것이 가장 위험).
  *     이때만 `route:<studentId>` 라는 고정 키를 쓴다(재접속해도 같은 키라 체크가 유지된다).
- *   - 노선에 안 실린 시트 행은 leftoverRows 로 돌려줘 호출부가 '확정 전' 섹션으로 따로 보여 준다.
+ *   - 노선에 안 실린 명단 행은 leftoverRows 로 돌려줘 호출부가 '확정 전' 섹션으로 따로 보여 준다.
  */
 export function buildSavedDriverSections(input: {
   vehicles: unknown;
   direction: RouteDirection;
-  /** 라이더 studentId → 그 요일·방향 시트 정차행 id 목록(sortOrder 순). */
+  /** 라이더 studentId → 그 요일·방향 명단 정차행 id 목록(sortOrder 순). */
   rowIdsByStudentId: Map<string, string[]>;
-  /** 그 요일·방향의 시트 행(이름·전화·좌표 보강 + leftover 계산용). */
+  /** 그 요일·방향의 명단 행(이름·전화·좌표 보강 + leftover 계산용). */
   sheetRows: RegularShuttleStop[];
   isAbsent: AbsentPredicate;
 }): { sections: DriverClass[]; leftoverRows: RegularShuttleStop[] } {
@@ -205,7 +205,7 @@ export function buildSavedDriverSections(input: {
         const name = sheet?.studentName ?? str(st?.name) ?? "";
         const parentPhone = sheet?.parentPhone ?? str(st?.parentPhone) ?? null;
         rows.push({
-          // 탑승 체크 키 = 시트 정차행 id(종전과 동일). 못 찾은 예외만 고정 대체키.
+          // 탑승 체크 키 = 명단 정차행 id(종전과 동일). 못 찾은 예외만 고정 대체키.
           rowId: rowId ?? `route:${studentId}`,
           name,
           parentPhone,
@@ -239,7 +239,7 @@ export function buildSavedDriverSections(input: {
   return { sections, leftoverRows };
 }
 
-/** 폴백(시트 명단) 섹션 — 한 방향만 채운다. '확정 전'을 알리려고 pending=true. */
+/** 폴백(셔틀 명단) 섹션 — 한 방향만 채운다. '확정 전'을 알리려고 pending=true. */
 export function buildFallbackDirectionSections(
   dayRows: RegularShuttleStop[],
   direction: RouteDirection,
@@ -264,6 +264,17 @@ export function buildFallbackDirectionSections(
   return out;
 }
 
+/**
+ * 그 요일의 기사님 화면 재료 행 — 학생 정차행(승차/하차)만, 명단 순서(sortOrder) 그대로.
+ * 기사님 화면(서버)과 관리자 「기사님 화면」 보기가 **같은 함수**로 고르게 한곳에 둔다
+ * (한쪽만 고쳐져 관리자가 보는 순서와 기사님이 보는 순서가 어긋나는 사고 방지).
+ */
+export function selectDriverDayRows<T extends Pick<RegularShuttleStop, "weekday" | "direction" | "studentName" | "sortOrder">>(stops: readonly T[], weekday: number): T[] {
+  return stops
+    .filter((s) => s.weekday === weekday && (s.direction === "BOARD" || s.direction === "ALIGHT") && s.studentName)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 /** 두 방향 모두 저장본이 없을 때 — 종전 화면 그대로(수업시간별 등원+하원 한 섹션). */
 export function buildFallbackClasses(dayRows: RegularShuttleStop[], isAbsent: AbsentPredicate): DriverClass[] {
   const classTimes = [...new Set(dayRows.map((s) => s.classTime).filter((c): c is string => !!c))]
@@ -283,7 +294,7 @@ export function buildFallbackClasses(dayRows: RegularShuttleStop[], isAbsent: Ab
  * 기사님 화면 섹션 최종 조립.
  *   - 방향별로 독립 판단한다(등원만 저장돼 있으면 등원만 확정 노선, 하원은 폴백).
  *   - 두 방향 다 폴백이면 종전 화면과 100% 같은 구조를 돌려준다(회귀 0).
- *   - 저장 노선에 안 실린 시트 행은 '노선 미반영' 섹션으로 뒤에 붙여 **아무도 사라지지 않게** 한다.
+ *   - 저장 노선에 안 실린 명단 행은 '노선 미반영' 섹션으로 뒤에 붙여 **아무도 사라지지 않게** 한다.
  */
 export function assembleRegularDriverClasses(input: {
   dayRows: RegularShuttleStop[];

@@ -3,8 +3,29 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 
-type Step = "method" | "phone" | "account" | "done";
+// existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
+type Step = "method" | "phone" | "account" | "existing" | "done";
+
+type ApiData = {
+  error?: string;
+  challengeToken?: string;
+  proof?: string;
+  existingParent?: "ACTIVATE" | "LINKED" | "REGISTERED" | "CONTACT_ACADEMY";
+  activationUrl?: string;
+  redirectPath?: string;
+  socialSessionMissing?: boolean;
+};
+
+/** 실패 응답의 추가 정보(간편가입 세션 끊김 등)를 화면이 알 수 있게 담아 던진다. */
+class ApiError extends Error {
+  data: ApiData;
+  constructor(message: string, data: ApiData) {
+    super(message);
+    this.data = data;
+  }
+}
 
 const inputClass =
   "min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500/20 dark:border-gray-600 dark:bg-gray-950 dark:text-white";
@@ -20,29 +41,30 @@ async function postJson(path: string, body: object) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    challengeToken?: string;
-    proof?: string;
-  };
-  if (!response.ok) throw new Error(data.error || "요청을 처리하지 못했습니다.");
+  const data = (await response.json().catch(() => ({}))) as ApiData;
+  if (!response.ok) throw new ApiError(data.error || "요청을 처리하지 못했습니다.", data);
   return data;
 }
 
 export default function ParentSignupClient() {
   const searchParams = useSearchParams();
   const socialSignup = searchParams.get("social") === "1";
+  // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
+  const existingMode = !socialSignup && searchParams.get("existing") === "1";
   const enrollmentHandoff = searchParams.get("enrollmentHandoff") || "";
   const next = searchParams.get("next") || "/mypage";
   const initialName = searchParams.get("name") || "";
   const initialPhone = (searchParams.get("phone") || "").replace(/[^0-9]/g, "");
-  const [step, setStep] = useState<Step>(socialSignup ? "phone" : "method");
+  const [step, setStep] = useState<Step>(socialSignup || existingMode ? "phone" : "method");
   const [phone, setPhone] = useState(initialPhone);
   const [otp, setOtp] = useState("");
   const [challengeToken, setChallengeToken] = useState("");
   const [proof, setProof] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(searchParams.get("error"));
+  const [socialSessionMissing, setSocialSessionMissing] = useState(false);
+  const [activationUrl, setActivationUrl] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function startPhoneVerification(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -55,6 +77,7 @@ export default function ParentSignupClient() {
       setStep("phone");
     } catch (reason) {
       setError(friendlyError(reason));
+      setSocialSessionMissing(reason instanceof ApiError && Boolean(reason.data.socialSessionMissing));
     } finally {
       setLoading(false);
     }
@@ -68,9 +91,23 @@ export default function ParentSignupClient() {
       const data = await postJson("/api/auth/parent-signup/verify-otp", {
         challengeToken,
         otp,
+        next,
       });
+      // 학원에 이미 등록된 보호자: 간편로그인 계정이 바로 연결됐으면 원래 가려던 화면으로 간다.
+      if (data.existingParent === "LINKED") {
+        // 서버가 검증한 경로만 쓴다(주소창의 next 를 그대로 믿지 않는다)
+        window.location.assign(data.redirectPath || "/mypage");
+        return;
+      }
+      // 학원에 이미 등록된 보호자: 문자 인증은 끝났으니 이메일·비밀번호만 정하는 활성화 화면으로 안내한다.
+      if (data.existingParent === "ACTIVATE" && data.activationUrl) {
+        setActivationUrl(data.activationUrl);
+        setStep("existing");
+        return;
+      }
       if (!data.proof) throw new Error("인증번호 확인을 다시 시도해 주세요.");
       setProof(data.proof);
+      if (existingMode) setNotice("학원에 등록된 보호자 정보를 찾지 못해 새 계정 만들기로 이어 갑니다. 이미 다니고 있다면 학원에 알려 둔 번호인지 확인해 주세요.");
       setStep("account");
     } catch (reason) {
       setError(friendlyError(reason));
@@ -112,7 +149,7 @@ export default function ParentSignupClient() {
     }
   }
 
-  const progress = step === "method" ? 1 : step === "phone" ? 2 : step === "account" ? 3 : 4;
+  const progress = step === "method" ? 1 : step === "phone" ? 2 : step === "account" || step === "existing" ? 3 : 4;
   const continueParams = new URLSearchParams({ next });
   if (enrollmentHandoff) continueParams.set("enrollmentHandoff", enrollmentHandoff);
   if (initialName) continueParams.set("name", initialName);
@@ -129,6 +166,13 @@ export default function ParentSignupClient() {
       )}
 
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {/* 간편가입 세션이 끊긴 경우(카카오톡 안 브라우저에서 잦다) — 휴대폰 인증 방식으로 바로 이어 간다 */}
+      {socialSignup && socialSessionMissing && (
+        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-brand-orange-500 px-4 text-sm font-bold text-brand-orange-500">
+          아이디·휴대폰 인증으로 계속
+        </a>
+      )}
+      {notice && <p role="status" className="rounded-xl bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">{notice}</p>}
 
       {step === "method" && (
         <>
@@ -151,7 +195,13 @@ export default function ParentSignupClient() {
 
       {step === "phone" && !challengeToken && (
         <form onSubmit={startPhoneVerification} className="space-y-4">
-          <div><h2 className="text-xl font-bold">휴대폰 인증</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">본인 명의로 사용하는 번호를 입력해 주세요.</p></div>
+          {existingMode ? (
+            <div><h2 className="text-xl font-bold">기존 학부모 계정 활성화</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">학원에 알려 주신 보호자 휴대폰 번호를 입력해 주세요. 문자 인증이 끝나면 등록된 계정을 바로 쓸 수 있게 이어 드려요.</p></div>
+          ) : (
+            <div><h2 className="text-xl font-bold">휴대폰 인증</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">본인 명의로 사용하는 번호를 입력해 주세요.</p></div>
+          )}
+          {/* 어떤 번호든 같은 문구 — 등록 여부는 문자 인증을 통과한 뒤에만 알려 준다 */}
+          <p className="text-xs leading-5 text-gray-500">이미 학원에 다니는 학부모님도 학원에 알려 준 번호로 인증하면 기존 정보가 그대로 연결돼요.</p>
           <label className="block text-sm font-semibold">휴대폰 번호<input className={`${inputClass} mt-2`} type="tel" value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" autoComplete="tel" placeholder="01012345678" minLength={10} maxLength={11} required /></label>
           {initialPhone && (
             <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
@@ -185,6 +235,18 @@ export default function ParentSignupClient() {
           </div>
           <button disabled={loading} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white disabled:opacity-50">{loading ? "가입하는 중..." : "가입 완료"}</button>
         </form>
+      )}
+
+      {step === "existing" && (
+        <div className="space-y-4 py-2 text-center">
+          <span className="material-symbols-outlined text-5xl text-brand-orange-500" aria-hidden="true">how_to_reg</span>
+          <h2 className="text-xl font-bold">이미 학원에 등록된 보호자입니다</h2>
+          <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">문자 인증이 끝났어요. 로그인에 쓸 이메일과 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
+          <button type="button" onClick={() => window.location.assign(activationUrl)} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white">
+            비밀번호 정하러 가기
+          </button>
+          <p className="text-xs leading-5 text-gray-500">10분 안에 마쳐 주세요. 시간이 지나면 휴대폰 인증부터 다시 하면 됩니다.</p>
+        </div>
       )}
 
       {step === "done" && (

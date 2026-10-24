@@ -31,18 +31,20 @@ test("체험 완료 문자는 성공한 경우에만 발송 완료 시각을 기
     assert.match(trialClient, /완료 문자 재시도/);
 });
 
-test("수강 승인은 유지하면서 학부모와 코치 문자 실패를 관리자에게 돌려준다", () => {
-    assert.match(adminAction, /eventId: `enrollment-application:\$\{applicationId\}:approved`/);
-    assert.match(adminAction, /smsResult\.coachFailed = staffDelivery\.coachFailed/);
-    assert.match(adminAction, /smsResult\.adminFailed = staffDelivery\.adminFailed/);
-    assert.match(applyModals, /result\.sms\.adminFailed > 0/);
-    assert.match(adminAction, /requireMatchedCoach: true/);
+test("수강 승인은 운영 반영과 외부 문자 발송을 분리한다", () => {
+    const approval = adminAction.slice(
+        adminAction.indexOf("export async function approveEnrollApplication"),
+        adminAction.indexOf("export async function rejectEnrollApplication"),
+    );
+    assert.doesNotMatch(approval, /eventId: `enrollment-application:\$\{applicationId\}:approved`/);
+    assert.doesNotMatch(approval, /sendParentSmsWithResult/);
+    assert.doesNotMatch(approval, /notifyAdmins\(/);
+    assert.match(applyModals, /안내 알림은 발송하지 않았습니다/);
     assert.match(notification, /FROM "ScheduleSlot" ss/);
     assert.match(notification, /승인된 반에 담당 코치 슬롯이 지정되지 않았습니다/);
     assert.match(notification, /throw new Error\("담당 코치 조회에 실패했습니다/);
     assert.doesNotMatch(notification, /\[getCoachPhonesBySlotKeys\] failed:"[\s\S]{0,100}return \[\]/);
     assert.match(adminAction, /return \{ approved: true, sms: smsResult \}/);
-    assert.match(applyModals, /수강신청은 승인됐지만 일부 문자가 발송되지 않았습니다/);
 });
 
 test("미납 알림은 강제 재발송 인자를 받지 않아 실제 미발송 건만 횟수를 올린다", () => {

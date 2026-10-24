@@ -183,18 +183,26 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
   // 정규 확정 승/하차 시각(저장된 정규 배차 노선 기준). 본인 자녀 studentId × 반 요일 쌍만 넘긴다(IDOR 안전).
   // 요일이 없는(예외) 승객은 조회에서 자연 제외되고, 미배차/미저장이면 null 로 남아 종전과 동일하게 보인다.
   const regularEtaPairs = regularRoutePassengers
-    .filter((passenger) => passenger.studentId && passenger.session?.class.dayOfWeek)
-    .map((passenger) => ({ studentId: passenger.studentId!, dayOfWeek: passenger.session!.class.dayOfWeek! }));
-  const regularEtaByKey = regularEtaPairs.length
-    ? await getConfirmedRegularDispatchEtas(regularEtaPairs)
-    : new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>();
+    .filter((passenger) => passenger.studentId && passenger.session?.class.dayOfWeek && passenger.routePlan.serviceDate)
+    .map((passenger) => ({
+      studentId: passenger.studentId!, dayOfWeek: passenger.session!.class.dayOfWeek!,
+      serviceMonth: dateOnly(passenger.routePlan.serviceDate)!.slice(0, 7),
+    }));
+  const pairsByMonth = new Map<string, { studentId: string; dayOfWeek: string }[]>();
+  for (const pair of regularEtaPairs) pairsByMonth.set(pair.serviceMonth, [...(pairsByMonth.get(pair.serviceMonth) ?? []), pair]);
+  const regularEtaByKey = new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>();
+  await Promise.all([...pairsByMonth].map(async ([serviceMonth, pairs]) => {
+    const rows = await getConfirmedRegularDispatchEtas(pairs, serviceMonth);
+    for (const [key, value] of rows) regularEtaByKey.set(key, value);
+  }));
 
   const regularItems = regularRoutePassengers.map<ParentShuttleOverviewItem>((passenger) => {
     const isDraft = passenger.routePlan.status === "DRAFT";
     // 이 승객(자녀×반 요일)의 확정시각을 붙인다. 없으면 둘 다 null.
     const dayOfWeek = passenger.session?.class.dayOfWeek ?? null;
-    const eta = passenger.studentId && dayOfWeek
-      ? regularEtaByKey.get(regularEtaKey(passenger.studentId, dayOfWeek))
+    const serviceMonth = passenger.routePlan.serviceDate ? dateOnly(passenger.routePlan.serviceDate)!.slice(0, 7) : null;
+    const eta = passenger.studentId && dayOfWeek && serviceMonth
+      ? regularEtaByKey.get(regularEtaKey(passenger.studentId, dayOfWeek, serviceMonth))
       : undefined;
     return {
       id: passenger.id,

@@ -1,3 +1,4 @@
+import { userFacingError } from "@/lib/user-facing-error";
 /**
  * 수강생 이관 API — 스프레드시트 CSV를 파싱하여 DB에 삽입
  *
@@ -206,9 +207,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          err instanceof Error
-            ? err.message
-            : "이관 처리 중 오류가 발생했습니다.",
+          userFacingError(err, "이관 처리 중 오류가 발생했습니다."),
       },
       { status: 500 }
     );
@@ -459,7 +458,7 @@ async function executeImport(
       result.failed.push({
         rowNumber: s.rowNumber,
         name: s.name,
-        reason: err instanceof Error ? err.message : "알 수 없는 오류",
+        reason: userFacingError(err, "학생 자료를 처리하지 못했습니다. 다시 시도해 주세요."),
       });
     }
   }
@@ -478,9 +477,17 @@ async function findOrCreateParent(
   result: ImportResult
 ): Promise<string> {
   // 전화번호로 기존 User 검색 (같은 학부모가 여러 자녀를 가질 수 있음)
+  // 숫자만 남겨 비교한다 — 신청 승인이 만든 계정은 '010-1234-5678' 형식이라
+  // 글자 그대로 비교하면 같은 학부모를 못 찾고 계정·학생이 갈라진다.
+  // ⚠️ 번호 없는 학부모를 한데 묶는 '00000000000' 자리채움 동작은 그대로 유지된다
+  //    (숫자만 남겨도 값이 같으므로). 이 경로는 빈 번호가 오지 않는다.
   const existing = await prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM "User" WHERE phone = $1 AND role = 'PARENT' LIMIT 1`,
-    phone
+    `SELECT id FROM "User"
+      WHERE role = 'PARENT'
+        AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+      ORDER BY ("authUserId" IS NOT NULL) DESC, "createdAt" ASC
+      LIMIT 1`,
+    phone.replace(/[^0-9]/g, "")
   );
 
   if (existing.length > 0) {

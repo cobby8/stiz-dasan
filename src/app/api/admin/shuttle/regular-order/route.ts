@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
 import { saveRegularStopOrder } from "@/lib/shuttle/regularImport";
+import { validateRegularStopOrderPayload } from "@/lib/regular/regularOrderPayload";
 
 export const dynamic = "force-dynamic";
 
 // 정규 셔틀 정차 순서·도착시각 저장. requireAdmin은 라이브러리에서 강제.
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => null)) as
-      | { updates?: { id?: string; sortOrder?: number; arriveTime?: string | null }[] }
-      | null;
-    const updates = (body?.updates ?? [])
-      .filter((u) => u && typeof u.id === "string" && typeof u.sortOrder === "number")
-      .map((u) => ({ id: u.id as string, sortOrder: u.sortOrder as number, arriveTime: (u.arriveTime ?? null) as string | null }));
-    if (updates.length === 0) return NextResponse.json({ error: "저장할 항목이 없습니다." }, { status: 400 });
-    const result = await saveRegularStopOrder(updates);
+    // 월과 행 구조를 한 검증기에서 확인해 다른 월의 정류장을 잘못 수정하지 않게 한다.
+    const body = validateRegularStopOrderPayload(await request.json().catch(() => null));
+    const result = await saveRegularStopOrder(body.updates, body.serviceMonth);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     console.error("[regular-order POST]", e);

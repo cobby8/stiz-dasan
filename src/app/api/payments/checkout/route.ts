@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
         if (!result.ok) {
             const status = result.alreadyPaid
                 ? 409
+                : "providerError" in result && result.providerError
+                    ? result.retryable ? 503 : 502
                 : "configurationMissing" in result && result.configurationMissing
                     ? 503
                     : 400;

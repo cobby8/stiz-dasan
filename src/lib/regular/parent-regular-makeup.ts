@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { notMergedStudent } from "@/lib/studentVisibility";
 
 // ── 정규 수업 보강 — 학부모 조회(읽기 전용) ────────────────────────────────
 // 관리자가 결석(RegularAbsence)에 대해 지정한 보강(MakeupSession)을
@@ -61,7 +62,7 @@ export async function getRegularMakeupsForParent(
          JOIN "Student" s ON s.id = ms."studentId"
          LEFT JOIN "Class" oc ON oc.id = ms."originalClassId"
          LEFT JOIN "Class" mc ON mc.id = ms."makeupClassId"
-        WHERE s."parentId" = $1
+        WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
           AND ms.status <> 'CANCELLED'
           AND ms."makeupDate"::date >= $2::date
         ORDER BY ms."makeupDate" ASC`,

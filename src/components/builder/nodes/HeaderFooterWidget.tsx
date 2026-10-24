@@ -30,7 +30,7 @@ export const HeaderFooterWidget = () => {
                     <div className="flex items-center justify-between pointer-events-none opacity-50">
                         <div className="flex gap-2 items-center">
                             <div className="w-8 h-8 bg-gray-200 rounded shrink-0"></div>
-                            <span className="font-bold">다산점 로고영역</span>
+                            <span className="font-bold">다산2호점 로고영역</span>
                         </div>
                         <div className="flex gap-4 text-sm font-bold text-gray-400">
                             <span>소개</span>

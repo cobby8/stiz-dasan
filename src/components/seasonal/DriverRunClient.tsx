@@ -238,7 +238,7 @@ export default function DriverRunClient({
                   <span className="text-[18px]">{isPickup ? "🚏" : "🏫"}</span>{sec.startName} 출발{v.departTime ? ` · ${v.departTime}` : ""}
                 </div>
                 {isEditing && (
-                  <p className="mb-2 rounded-xl bg-blue-50 px-3 py-2 text-[13px] font-bold text-blue-700">↕ 버튼으로 순서를 바꾼 뒤 "순서 고정 요청"을 눌러주세요</p>
+                  <p className="mb-2 rounded-xl bg-blue-50 px-3 py-2 text-[13px] font-bold text-blue-700">↕ 버튼으로 순서를 바꾼 뒤 &quot;순서 고정 요청&quot;을 눌러주세요</p>
                 )}
                 <ol className="space-y-2.5">
                   {stops.map((s, si) => {

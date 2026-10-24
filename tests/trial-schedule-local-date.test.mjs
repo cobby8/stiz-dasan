@@ -82,21 +82,19 @@ test("시간 우선순위는 보정값, 활성 정규 시간표, 커스텀 시�
 });
 
 test("날짜·반 변경은 적용 시간을 다시 계산하고 저장값에는 한국 오프셋을 명시한다", () => {
-  assert.match(trialModals, /handleDateChange[\s\S]*resolveTrialScheduleStartTime\(selectedClass,\s*date\)/);
-  assert.match(trialModals, /handleClassChange[\s\S]*resolveTrialScheduleStartTime\(selectedClass,\s*scheduledDate\)/);
+  assert.match(trialModals, /handleDateChange[\s\S]*setScheduledClassId\(""\);[\s\S]*setScheduledTime\(""\)/);
+  assert.match(trialModals, /handleClassChange[\s\S]*options\.find\(\(option\) => option\.classId === classId\)\?\.startTime/);
   assert.match(scheduleTimeHelper, /`\$\{selectedDate\}T\$\{normalizedTime\}\+09:00`/);
 });
 
 test("이미 확정한 수동 시간은 모달을 다시 열어도 반 기본 시간으로 덮지 않는다", () => {
   assert.match(
     trialModals,
-    /lead\.scheduledDate && \([\s\S]*Boolean\(lead\.scheduledClassId\)[\s\S]*!isLikelyDefaultScheduleTime\(lead\.scheduledDate\)[\s\S]*timeInputValue\(lead\.scheduledDate\)[\s\S]*resolveTrialScheduleStartTime/,
+    /lead\.scheduledDate && !isDateOnlySchedulePlaceholder\(lead\.scheduledDate\)[\s\S]*timeInputValue\(lead\.scheduledDate\)/,
   );
 });
 
-test("실제 반이 확정된 오전 9시 일정은 레거시 임시시간으로 오인하지 않는다", () => {
-  assert.match(
-    trialModals,
-    /Boolean\(lead\.scheduledClassId\)\s*\|\|\s*!isLikelyDefaultScheduleTime/,
-  );
+test("날짜 전용 placeholder는 브라우저 시간대로 변환하지 않고 확정시간에서 제외한다", () => {
+  assert.match(trialModals, /\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$/);
+  assert.doesNotMatch(trialModals, /getHours\(\) === 9/);
 });

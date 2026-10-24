@@ -17,7 +17,8 @@ export async function POST(request: Request) {
         : "PASSWORD";
   if (body.social === true && (method === "PASSWORD" || !oauthUser)) {
     return NextResponse.json(
-      { error: "간편가입 연결이 만료되었습니다. 가입 방법을 다시 선택해 주세요." },
+      // 카카오톡 안의 브라우저는 간편로그인 세션이 이어지지 않는 경우가 많다. 막히지 않게 다른 길을 함께 알려준다.
+      { error: "간편가입 연결이 만료되었습니다. 카카오톡 안에서 열었다면 외부 브라우저에서 다시 시도하거나, 아래 '아이디·휴대폰 인증으로 계속'을 눌러 주세요. 이미 다니는 학부모님도 같은 휴대폰 인증으로 기존 계정을 활성화할 수 있어요.", socialSessionMissing: true },
       { status: 401 },
     );
   }

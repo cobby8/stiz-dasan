@@ -15,12 +15,13 @@ import LandingPageClient from "./LandingPageClient";
 import ChatBotButton from "@/components/chat/ChatBotButton";
 // 가이드 투어: 메인 페이지에서도 플로팅 버튼 표시
 import GuideTourLazyTrigger from "@/components/guide-tour/GuideTourLazyTrigger";
+import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 
 export const revalidate = 60;
 
 export const metadata = buildPublicMetadata({
-  title: "STIZ 농구교실 다산점 | 다산신도시 No.1 농구 전문 학원",
+  title: "남양주 다산 농구교실 | 유아·초등·중등 체험수업 | STIZ 다산2호점",
   description:
     "다산신도시 스티즈 농구교실입니다. 유아·초등·중등 수준별 맞춤 클래스, 전문 코치진, 셔틀 운행. 체험 수업 신청 및 수강 문의.",
   path: "/",
@@ -53,9 +54,29 @@ export default async function Home() {
   const youtubeUrl = settings?.youtubeUrl || "";
   const naverPlaceUrl = settings?.naverPlaceUrl || "";
   const kakaoChannelUrl = settings?.kakaoChannelUrl || "";
+  const localBusiness = {
+    "@context": "https://schema.org",
+    "@type": ["LocalBusiness", "SportsActivityLocation"],
+    "@id": "https://www.stiz-dasan.kr/#academy",
+    name: "스티즈농구교실 다산2호점",
+    url: "https://www.stiz-dasan.kr/",
+    telephone: phone === "010-0000-0000" ? undefined : phone,
+    address: {
+      "@type": "PostalAddress",
+      streetAddress: address || "다산중앙로20번길 10-32, 1층",
+      addressLocality: "남양주시",
+      addressRegion: "경기도",
+      addressCountry: "KR",
+    },
+    sameAs: [instagramUrl, youtubeUrl, naverPlaceUrl].filter((url) => /^https?:\/\//.test(url)),
+  };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-white flex flex-col">
+    <PublicSiteTheme className="min-h-screen flex flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusiness).replace(/</g, "\\u003c") }}
+      />
       {/* 통합 헤더 */}
       <PublicHeader
         phone={phone}
@@ -92,6 +113,6 @@ export default async function Home() {
 
       {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
       <GuideTourLazyTrigger />
-    </div>
+    </PublicSiteTheme>
   );
 }

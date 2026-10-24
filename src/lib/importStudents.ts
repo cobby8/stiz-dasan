@@ -52,6 +52,7 @@ export interface RawCsvRow {
   amount: number | null;     // `결제액` 칸 (실제 납부액. 대부분 비어 있음)
   tuitionAmount: number | null;   // `수강료` 칸 — 청구의 기준 금액
   shuttleFee: number | null;      // `셔틀비` 칸 — 월 단위 값이라 첫 행에만 적힌다
+  shuttleFeeCategory: string | null; // `셔틀비 구분` — 무료셔틀 등 명시적 운영 구분
   carryOverAmount: number | null; // `이월` 금액 칸 — 채워져 있으면 차감
   referralSource: string | null; // 가입경로
   uniformStatus: string | null;  // 유니폼 상태
@@ -634,6 +635,9 @@ export function parseAndTransformCsv(csvText: string): ImportPreviewResult {
         amount: readAmountColumn(row, colIndex.paymentAmount),
         tuitionAmount: readAmountColumn(row, tuitionColumn),
         shuttleFee: readAmountColumn(row, colIndex.shuttleFee),
+        shuttleFeeCategory: colIndex.shuttleFeeCategory !== -1
+          ? row[colIndex.shuttleFeeCategory] || null
+          : null,
         carryOverAmount: readAmountColumn(row, colIndex.carryOverAmount),
         referralSource: row[colIndex.referralSource] || null,
         uniformStatus: row[colIndex.uniformStatus] || null,
@@ -705,6 +709,12 @@ export function parseAndTransformCsv(csvText: string): ImportPreviewResult {
       );
     }
 
+    // 수업선택 → slotKey. 청구 계산에도 일8 대표팀 셔틀비 면제 판정이 필요하다.
+    const slotKeysByRow = new Map<number, string[]>();
+    for (const r of monthRows) {
+      slotKeysByRow.set(r.rowNumber, extractSlotKeys(dayHeaders, r.classSelections));
+    }
+
     // 청구 금액 계산 (수강료 합계 + 셔틀비 - 이월, 0 미만 없음)
     const billing = summarizeStudentBilling(
       monthRows.map<BillingRow>((r) => ({
@@ -712,7 +722,9 @@ export function parseAndTransformCsv(csvText: string): ImportPreviewResult {
         paymentMethodRaw: r.paymentMethod,
         tuitionAmount: r.tuitionAmount,
         shuttleFee: r.shuttleFee,
+        isFreeShuttle: (r.shuttleFeeCategory || "").includes("무료셔틀"),
         carryOverAmount: r.carryOverAmount,
+        slotKeys: slotKeysByRow.get(r.rowNumber) ?? [],
       }))
     );
 
@@ -722,11 +734,7 @@ export function parseAndTransformCsv(csvText: string): ImportPreviewResult {
       );
     }
 
-    // 수업선택 → slotKey. 주3회 학생은 행마다 요일이 다르므로 전 행을 합집합한다.
-    const slotKeysByRow = new Map<number, string[]>();
-    for (const r of monthRows) {
-      slotKeysByRow.set(r.rowNumber, extractSlotKeys(dayHeaders, r.classSelections));
-    }
+    // 주3회 학생은 행마다 요일이 다르므로 전 행의 슬롯을 합집합한다.
     const slotKeys = [...new Set(monthRows.flatMap((r) => slotKeysByRow.get(r.rowNumber) ?? []))];
 
     // 대표 반: 수강료가 가장 큰 행(= 주력 수업), 동률이면 원본 행 번호가 빠른 쪽.
@@ -816,6 +824,8 @@ interface ColumnIndices {
   paymentAmount: number;
   /** `셔틀비` 칸 */
   shuttleFee: number;
+  /** `셔틀비 구분` 칸 */
+  shuttleFeeCategory: number;
   /** `이월` 금액 칸 */
   carryOverAmount: number;
   referralSource: number;
@@ -849,6 +859,7 @@ function detectColumnIndices(headers: string[]): ColumnIndices {
     tuitionAmount: -1,
     paymentAmount: -1,
     shuttleFee: -1,
+    shuttleFeeCategory: -1,
     carryOverAmount: -1,
     referralSource: -1,
     uniformStatus: -1,
@@ -937,6 +948,9 @@ function detectColumnIndices(headers: string[]): ColumnIndices {
     // 각각 처음 매칭된 컬럼만 채택한다(뒤 컬럼이 덮어쓰지 못하게).
     else if (h.includes("수강료")) {
       if (result.tuitionAmount === -1) result.tuitionAmount = i;
+    }
+    else if (h.includes("셔틀비") && h.includes("구분")) {
+      if (result.shuttleFeeCategory === -1) result.shuttleFeeCategory = i;
     }
     else if (h.includes("셔틀비")) {
       if (result.shuttleFee === -1) result.shuttleFee = i;

@@ -12,7 +12,7 @@ const adminApiSource = await readFile("src/app/api/admin/shuttle/route.ts", "utf
 const staffPageSource = await readFile("src/app/staff/shuttle/page.tsx", "utf8");
 const staffDashboardClientSource = await readFile("src/app/staff/shuttle/StaffShuttleDashboardClient.tsx", "utf8");
 const staffButtonsSource = await readFile("src/app/staff/shuttle/ShuttleRideStatusButtons.tsx", "utf8");
-const adminClientSource = await readFile("src/app/admin/shuttle/ShuttleRouteAdminClient.tsx", "utf8");
+// 2026-10-02 옛 노선 편성 화면(ShuttleRouteAdminClient) 삭제로 그 화면을 읽던 검사는 뺐다(서버·API 검사는 유지).
 
 test("shuttle passengers keep live ride status", () => {
   assert.match(schemaSource, /rideStatus\s+String\s+@default\("PENDING"\)/);
@@ -75,15 +75,6 @@ test("driver shuttle page separates today and upcoming routes and refreshes safe
   assert.match(staffDashboardClientSource, /cache: "no-store"/);
 });
 
-test("admin route screen shows ride status for each passenger", () => {
-  assert.match(adminClientSource, /rideStatus\?: string \| null/);
-  assert.match(adminClientSource, /rideStatusLabel\(passenger\.rideStatus\)/);
-  assert.match(adminClientSource, /function rideStatusClass/);
-  assert.match(adminClientSource, /summarizeRideStatuses\(stops\)/);
-  assert.match(adminClientSource, /체크 대기/);
-  assert.match(adminClientSource, /미탑승/);
-});
-
 test("confirmed routes can be completed only after every passenger is checked", () => {
   assert.match(schemaSource, /completedAt\s+DateTime\?\s+@db\.Timestamptz\(6\)/);
   assert.match(schemaSource, /COMPLETED/);
@@ -94,17 +85,6 @@ test("confirmed routes can be completed only after every passenger is checked", 
   assert.match(serviceSource, /RIDE_STATUS_PENDING/);
   assert.match(serviceSource, /ROUTE_COMPLETED/);
   assert.match(adminApiSource, /case "complete"/);
-  assert.match(adminClientSource, /action: "complete"/);
-  assert.match(adminClientSource, /운행 완료/);
-  assert.match(adminClientSource, /체크 대기 학생을 모두/);
-});
-
-test("admin shuttle screen refreshes live driver check status", () => {
-  assert.match(adminClientSource, /autoRefresh/);
-  assert.match(adminClientSource, /window\.setInterval/);
-  assert.match(adminClientSource, /SHUTTLE_AUTO_REFRESH_MS = 60_000/);
-  assert.match(adminClientSource, /새 상태 불러오기/);
-  assert.match(adminClientSource, /1분 자동 새로고침/);
 });
 
 test("admin can confirm shuttle request pickup or dropoff pins before assignment", () => {
@@ -112,14 +92,10 @@ test("admin can confirm shuttle request pickup or dropoff pins before assignment
   assert.match(serviceSource, /SHUTTLE_LOCATION_CONFIRMED/);
   assert.match(adminApiSource, /body\.resource === "shuttleRequest"/);
   assert.match(adminApiSource, /confirmLocation/);
-  assert.match(adminClientSource, /LocationPickerModal/);
-  assert.match(adminClientSource, /위치 찍기/);
-  assert.match(adminClientSource, /action: "confirmLocation"/);
-  assert.match(adminClientSource, /관리자 위치 확인 완료/);
 });
 
 test("shuttle user-facing files keep Korean text readable", () => {
-  for (const source of [adminClientSource, adminApiSource, staffDashboardClientSource, staffButtonsSource]) {
+  for (const source of [adminApiSource, staffDashboardClientSource, staffButtonsSource]) {
     assert.doesNotMatch(source, /�|泥|湲곗|誘명|뷀|댄뻾|곹깭/);
   }
 });

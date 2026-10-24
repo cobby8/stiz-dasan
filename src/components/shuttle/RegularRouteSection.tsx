@@ -41,10 +41,11 @@ function groupStops(rows: RegularShuttleStop[]): GroupedStop[] {
 
 type Pt = { lat: number; lng: number };
 
-export default function RegularRouteSection({ dayStops, classTime, direction, geo, onSaved }: {
+export default function RegularRouteSection({ dayStops, classTime, direction, serviceMonth, geo, onSaved }: {
   dayStops: RegularShuttleStop[];
   classTime: string;
   direction: "BOARD" | "ALIGHT";
+  serviceMonth: string;
   geo: ShuttleGeo;
   onSaved?: () => void;
 }) {
@@ -123,7 +124,7 @@ export default function RegularRouteSection({ dayStops, classTime, direction, ge
       const slots = slotsRef.current;
       const updates = orderedRowIds.map((id, i) => ({ id, sortOrder: slots[i] ?? i, arriveTime: arriveByRow.get(id) ?? null }));
       const r = await fetch("/api/admin/shuttle/regular-order", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ updates }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceMonth, updates }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "저장 실패");
@@ -180,6 +181,11 @@ export default function RegularRouteSection({ dayStops, classTime, direction, ge
                     <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11.5px] text-gray-500">
                       {g.students.map((st, k) => { const t = tel(st.parentPhone); return <span key={k} className="font-bold text-gray-700 dark:text-gray-200">{st.name}{t && <a href={t} draggable={false} className="ml-0.5 text-green-600">📞</a>}</span>; })}
                     </div>
+                  </div>
+                  {/* 휴대폰에서는 드래그가 불안정하므로 한 칸씩 확실하게 이동하는 버튼을 함께 제공합니다. */}
+                  <div className="flex shrink-0 flex-col gap-1 sm:hidden" aria-label={`${g.label} 정차 순서 변경`}>
+                    <button type="button" disabled={i === 0} onClick={() => reorder(i, i - 1)} aria-label={`${g.label} 위로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-gray-200 text-xs font-black disabled:opacity-30 dark:border-gray-600">↑</button>
+                    <button type="button" disabled={i === order.length - 1} onClick={() => reorder(i, i + 1)} aria-label={`${g.label} 아래로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-gray-200 text-xs font-black disabled:opacity-30 dark:border-gray-600">↓</button>
                   </div>
                   <input type="time" value={g.arriveTime ?? ""} onChange={(e) => setArrive(i, e.target.value)} draggable={false}
                     title={`${isPickup ? "승차" : "하차"} 시각`}

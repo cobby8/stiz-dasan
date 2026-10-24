@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { createHash } from "node:crypto";
+import { notMergedStudent } from "@/lib/studentVisibility";
 import {
   REASON_LABEL,
   DAY_KO,
@@ -20,7 +22,7 @@ import {
 //   1) IDOR 방어 — studentId 가 그 부모(appUserId)의 자녀인지, classId 가 그 학생의
 //      ACTIVE Enrollment 인지 SQL 로 재검증. 클라이언트가 보낸 값 자체를 신뢰하지 않는다.
 //   2) 확정건 보호 — 관리자가 확정(CONFIRMED)한 건은 학부모가 덮어쓰거나 취소하지 못한다
-//      (INSERT ... ON CONFLICT DO UPDATE WHERE status<>'CONFIRMED', DELETE WHERE status='REPORTED').
+//      (INSERT ... ON CONFLICT DO UPDATE WHERE status<>'CONFIRMED', UPDATE WHERE status='REPORTED').
 //   3) 미래 + 요일 일치 — 지난 날짜, 그 반 요일과 맞지 않는 날짜는 신고 불가.
 
 // 향후 몇 주치 수업일을 보여줄지(기본 4주).
@@ -85,7 +87,7 @@ export async function getUpcomingRegularClassDates(
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
        JOIN "Class" c ON c.id = e."classId"
-      WHERE s."parentId" = $1
+      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
       ORDER BY s.name ASC, c."startTime" ASC`,
     parentUserId,
   );
@@ -97,7 +99,7 @@ export async function getUpcomingRegularClassDates(
             to_char(ra.date, 'YYYY-MM-DD') AS "date", ra.reason AS reason, ra.status AS status
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id = ra."studentId"
-      WHERE s."parentId" = $1 AND ra.status <> 'CANCELLED'`,
+      WHERE s."parentId" = $1 AND ${notMergedStudent("s")} AND ra.status <> 'CANCELLED'`,
     parentUserId,
   );
   const absByKey = new Map<string, { reason: string; status: string }>();
@@ -158,7 +160,7 @@ async function verifyOwnershipAndClass(
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
-      WHERE s."parentId" = $1
+      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
         AND e."studentId" = $2
         AND e."classId" = $3
         AND e.status = 'ACTIVE'
@@ -183,23 +185,39 @@ async function verifyOwnershipAndClass(
  * 알림 실패가 신고 자체를 되돌리면 안 된다 — 학부모는 이미 신고를 마쳤다.
  * 그래서 호출부에서 await 하되 오류는 여기서 삼킨다.
  */
-async function notifyAdminsOfAbsenceChange(input: {
+export async function notifyAdminsOfAbsenceChange(input: {
   kind: "REPORTED" | "CANCELED";
   studentName: string;
   className: string;
+  classId: string;
+  studentId: string;
   date: string;
   reason?: string;
+  recordId: string;
+  eventVersion: string;
 }) {
   try {
-    const { notifyAdmins } = await import("@/lib/notification");
+    const { notifyOperationalStaff } = await import("@/lib/operational-staff-notification");
     const reasonLabel = input.reason ? REASON_LABEL[input.reason as keyof typeof REASON_LABEL] : null;
     const title = input.kind === "REPORTED" ? "결석 사전 신고" : "결석 신고 취소";
     const message =
       input.kind === "REPORTED"
         ? `${input.studentName} 학생이 ${input.date} ${input.className} 수업에 결석 예정입니다.${reasonLabel ? ` (${reasonLabel})` : ""}`
         : `${input.studentName} 학생의 ${input.date} ${input.className} 결석 신고가 취소되었습니다.`;
-    // 코치 SMS 는 보내지 않는다 — 건당 비용이 들고, 선생님은 출석 화면에서 바로 보인다.
-    await notifyAdmins("ABSENCE", title, message, "/admin/absence", { notifyCoaches: false });
+    return await notifyOperationalStaff({
+      stableEventKey: `regular-absence:${input.recordId}:${input.kind}:${input.eventVersion}`,
+      eventType: `REGULAR_ABSENCE_${input.kind}`,
+      studentId: input.studentId,
+      type: "ABSENCE",
+      title,
+      message,
+      linkUrl: "/admin/absence",
+      staffLinkUrl: "/staff",
+      classId: input.classId,
+      includeCoach: true,
+      includeDriver: true,
+      driverContext: { studentId: input.studentId, serviceDate: input.date },
+    });
   } catch (error) {
     console.error("[parent-regular-absence] 원장 알림 실패:", error);
   }
@@ -229,7 +247,7 @@ export async function reportRegularAbsence(
 
   // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
   // (가드2: WHERE status<>'CONFIRMED')
-  await prisma.$executeRawUnsafe(
+  const saved = await prisma.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
     `INSERT INTO "RegularAbsence"
         ("studentId","classId","date","reason","status","reportedByUserId")
      VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
@@ -238,24 +256,41 @@ export async function reportRegularAbsence(
             status = 'REPORTED',
             "reportedByUserId" = EXCLUDED."reportedByUserId",
             "updatedAt" = now()
-      WHERE "RegularAbsence".status <> 'CONFIRMED'`,
+      WHERE "RegularAbsence".status = 'CANCELLED'
+         OR "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason
+     RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
     studentId, classId, date, reason, parentUserId,
   );
+  if (!saved[0]) {
+    const current = await prisma.$queryRawUnsafe<{ status: string; reason: string }[]>(
+      `SELECT status, reason FROM "RegularAbsence"
+        WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
+      studentId, classId, date,
+    );
+    if (current[0]?.status === "REPORTED" && current[0].reason === reason) {
+      return { ok: true, reason, notification: null, noOp: true };
+    }
+    throw new Error("ABSENCE_NOT_CANCELABLE");
+  }
 
-  await notifyAdminsOfAbsenceChange({
+  const notification = await notifyAdminsOfAbsenceChange({
     kind: "REPORTED",
     studentName: owned.studentName,
     className: owned.className,
+    classId,
+    studentId,
     date,
     reason,
+    recordId: saved[0].id,
+    eventVersion: `${saved[0].eventVersion}-${createHash("sha256").update(reason).digest("hex")}`,
   });
 
-  return { ok: true, reason };
+  return { ok: true, reason, notification };
 }
 
 // ── 3) 사전 결석 신고 취소 ────────────────────────────────────────────────
 // id 또는 (studentId,classId,date) 로 지목. 본인(부모 자녀)의 REPORTED 건만 취소 가능.
-// 관리자 확정(CONFIRMED)이면 0행 → 차단.
+// 관리자 확정(CONFIRMED)이면 0행 → 차단. 취소 행은 감사·알림 재조정을 위해 보존한다.
 export async function cancelRegularAbsence(
   parentUserId: string,
   input: { id?: string; studentId?: string; classId?: string; date?: string },
@@ -265,17 +300,18 @@ export async function cancelRegularAbsence(
   const classId = input?.classId?.trim();
   const date = input?.date?.trim();
 
-  // RETURNING 으로 지운 건의 학생·반 이름을 함께 받는다. 원장 알림 문구에 필요한데,
-  // 지운 뒤에 다시 조회하면 이미 사라져서 찾을 수 없다.
-  const returning = `RETURNING s.name AS "studentName", c.name AS "className",
-                              to_char(ra.date,'YYYY-MM-DD') AS "date"`;
-  type CanceledRow = { studentName: string; className: string; date: string };
+  // 취소 상태와 알림 근거를 같은 행에 남겨 나중에도 전달 실패를 재조정할 수 있게 한다.
+  const returning = `RETURNING s.name AS "studentName", c.name AS "className", ra.id, c.id AS "classId", ra."studentId" AS "studentId",
+                              to_char(ra.date,'YYYY-MM-DD') AS "date",
+                              to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`;
+  type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; eventVersion: string };
   let canceled: CanceledRow[];
   if (id) {
     // id 로 지목: 그 결석이 이 부모 자녀의 것이고 REPORTED 인 경우만 삭제(IDOR 방어).
     canceled = await prisma.$queryRawUnsafe<CanceledRow[]>(
-      `DELETE FROM "RegularAbsence" ra
-        USING "Student" s, "Class" c
+      `UPDATE "RegularAbsence" ra
+          SET status = 'CANCELLED', "updatedAt" = NOW()
+         FROM "Student" s, "Class" c
         WHERE ra."studentId" = s.id
           AND c.id = ra."classId"
           AND s."parentId" = $1
@@ -287,8 +323,9 @@ export async function cancelRegularAbsence(
   } else {
     if (!studentId || !classId || !isYmd(date || "")) throw new Error("ABSENCE_NOT_FOUND");
     canceled = await prisma.$queryRawUnsafe<CanceledRow[]>(
-      `DELETE FROM "RegularAbsence" ra
-        USING "Student" s, "Class" c
+      `UPDATE "RegularAbsence" ra
+          SET status = 'CANCELLED', "updatedAt" = NOW()
+         FROM "Student" s, "Class" c
         WHERE ra."studentId" = s.id
           AND c.id = ra."classId"
           AND s."parentId" = $1
@@ -303,12 +340,16 @@ export async function cancelRegularAbsence(
 
   if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
 
-  await notifyAdminsOfAbsenceChange({
+  const notification = await notifyAdminsOfAbsenceChange({
     kind: "CANCELED",
     studentName: canceled[0].studentName,
     className: canceled[0].className,
+    classId: canceled[0].classId,
+    studentId: canceled[0].studentId,
     date: canceled[0].date,
+    recordId: canceled[0].id,
+    eventVersion: canceled[0].eventVersion,
   });
 
-  return { ok: true };
+  return { ok: true, notification };
 }

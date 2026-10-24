@@ -19,7 +19,27 @@ export const CHANGE_STATUS_LABEL: Record<string, string> = {
   APPROVED: "승인됨",
   REJECTED: "거절됨",
   CANCELED: "취소함",
+  // 사이트 수강 상태까지 반영된 건(관리자 즉시 변경 · 적용일 자동 적용). 시트·랠리즈 확인은 운영 동기화에서 이어진다.
+  APPLIED: "반영 완료",
 };
+
+/**
+ * 사이트에 자동 적용된 휴원·퇴원의 시트·랠리즈 확인 상태 배지.
+ * 랠리즈가 청구·수강의 원본이라, 사이트만 바뀐 채 "반영 완료"로 보이면 퇴원생에게 청구가 계속 나간다(2026-10-04 사고와 같은 종류).
+ * 연결된 운영 원장이 없으면 null(배지 없음).
+ */
+export function syncCheckBadge(sheetStatus: string | null | undefined, rallyzStatus: string | null | undefined):
+  { label: string; needsCheck: boolean } | null {
+  if (!sheetStatus && !rallyzStatus) return null;
+  // 시트 은퇴(2026-10~)로 건너뛴 SKIPPED 도 시트 확인 완료로 본다 → "랠리즈 확인 필요" / "반영 완료" 만 남는다.
+  // (이 파일은 테스트가 단독으로 불러오므로 import 없이 적는다. 공용 isSheetTargetDone 과 같은 규칙인지 tests/sheet-retirement.test.mjs 가 대조한다.)
+  const sheetDone = sheetStatus === "SUCCEEDED" || sheetStatus === "SKIPPED";
+  const rallyzDone = rallyzStatus === "SUCCEEDED";
+  if (sheetDone && rallyzDone) return { label: "반영 완료", needsCheck: false };
+  if (!sheetDone && !rallyzDone) return { label: "사이트 반영됨 · 시트·랠리즈 확인 필요", needsCheck: true };
+  if (!rallyzDone) return { label: "사이트 반영됨 · 랠리즈 확인 필요", needsCheck: true };
+  return { label: "사이트 반영됨 · 시트 확인 필요", needsCheck: true };
+}
 
 export function isChangeKind(value: unknown): value is ChangeKind {
   return typeof value === "string" && (CHANGE_KINDS as readonly string[]).includes(value);

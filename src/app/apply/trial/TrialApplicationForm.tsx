@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
     findExistingTrialApplicationForEdit,
@@ -9,10 +9,13 @@ import {
 } from "@/app/actions/public";
 import { trackMetaEvent } from "@/components/MetaPixel";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import { isKstYmd, todayKst } from "@/lib/datetime/kst";
+import { trialDayForDate, trialScheduleError, trialScheduleForDate, trialSlotPeriod as getSlotPeriod, type TrialScheduleSelection } from "./trialScheduleSelection";
 
 interface Props {
     availableSlots: AvailableSlot[];
     contactPhone: string;
+    initialSource: string;
 }
 
 interface FormData {
@@ -25,12 +28,14 @@ interface FormData {
     childSchool: string;
     parentPhone: string;
     source: string;
-    trialFeeConfirmed: boolean;
+    // 「체험수업 비용과 입금 계좌를 확인했습니다」 체크 — 학부모 동의일 뿐 입금 완료가 아니다
+    trialFeeNoticeAgreed: boolean;
     honeypot: string;
 }
 
 const GRADE_OPTIONS = ["6세", "7세", "초1", "초2", "초3", "초4", "초5", "초6", "중1", "중2", "중3", "고1", "고2", "고3", "성인"];
 const SOURCE_OPTIONS = [
+    { value: "NAVER_AD", label: "네이버 검색광고" },
     { value: "NAVER_SEARCH", label: "네이버 키워드 검색" },
     { value: "PORTAL_OTHER", label: "네이버 외 포털검색" },
     { value: "NAVER_BLOG", label: "스티즈 네이버블로그" },
@@ -42,9 +47,6 @@ const SOURCE_OPTIONS = [
     { value: "DANGGEUN", label: "당근마켓" },
     { value: "OTHER", label: "기타" },
 ];
-const TRIAL_DAY_OPTIONS = ["월", "화", "수", "목", "금", "토"];
-const TRIAL_PERIOD_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"];
-const TRIAL_DAY_ORDER = ["월", "화", "수", "목", "금", "토", "일"];
 const TRIAL_FEE_PAYMENT_INFO = {
     amountLabel: "10,000원",
     bankName: "카카오뱅크",
@@ -53,7 +55,7 @@ const TRIAL_FEE_PAYMENT_INFO = {
     memo: "STIZ 체험수업비",
 };
 const TRIAL_FEE_COPY_TEXT = [
-    "STIZ 농구교실 다산점 체험수업비 입금 안내",
+    "STIZ 농구교실 다산2호점 체험수업비 입금 안내",
     `금액: ${TRIAL_FEE_PAYMENT_INFO.amountLabel}`,
     `은행: ${TRIAL_FEE_PAYMENT_INFO.bankName}`,
     `계좌: ${TRIAL_FEE_PAYMENT_INFO.accountNumber}`,
@@ -70,38 +72,41 @@ const INITIAL_FORM: FormData = {
     childSchool: "",
     parentPhone: "",
     source: "",
-    trialFeeConfirmed: false,
+    trialFeeNoticeAgreed: false,
     honeypot: "",
 };
 
-function getSlotPeriod(slotKey: string) {
-    return slotKey.split("-").at(-1) || "";
-}
-
-function orderedUniqueDays(slots: AvailableSlot[]) {
-    const days = new Set(slots.map((slot) => slot.dayLabel).filter(Boolean));
-    return TRIAL_DAY_ORDER.filter((day) => days.has(day));
-}
-
-export default function TrialApplicationForm({ availableSlots, contactPhone }: Props) {
+export default function TrialApplicationForm({ availableSlots, contactPhone, initialSource }: Props) {
     const [step, setStep] = useState(1);
-    const [form, setForm] = useState<FormData>(INITIAL_FORM);
-    const [error, setError] = useState("");
+    const [form, setForm] = useState<FormData>({ ...INITIAL_FORM, source: initialSource });
+    const [error, setErrorMessage] = useState("");
     const [completed, setCompleted] = useState(false);
     const [existingLeadId, setExistingLeadId] = useState<string | null>(null);
     const [existingNotice, setExistingNotice] = useState("");
     const [completionMode, setCompletionMode] = useState<"created" | "updated">("created");
     const [paymentNotice, setPaymentNotice] = useState("");
     const [isPending, startTransition] = useTransition();
+    const [errorVersion, setErrorVersion] = useState(0);
+    const errorRef = useRef<HTMLDivElement>(null);
 
-    const availableDayOptions = orderedUniqueDays(availableSlots);
-    const dayOptions = availableDayOptions.length > 0 ? availableDayOptions : TRIAL_DAY_OPTIONS;
-    const periodOptions = form.trialDay && availableSlots.length > 0
+    const setError = (message: string) => {
+        setErrorMessage(message);
+        if (message) setErrorVersion((version) => version + 1);
+    };
+
+    useEffect(() => {
+        // 단계 복귀로 화면 높이가 바뀐 뒤 오류를 보여준다. 같은 오류 재시도도 포함한다.
+        if (error) errorRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
+    }, [error, step, errorVersion]);
+
+    const dateDay = trialDayForDate(form.trialDate);
+    const dayOptions = dateDay ? [dateDay] : [];
+    const periodOptions = dateDay
         ? availableSlots
-            .filter((slot) => slot.dayLabel === form.trialDay)
+            .filter((slot) => slot.dayLabel === dateDay)
             .map((slot) => ({ period: getSlotPeriod(slot.slotKey), slot }))
             .filter((option) => option.period)
-        : TRIAL_PERIOD_OPTIONS.map((period) => ({ period, slot: null as AvailableSlot | null }));
+        : [];
     const selectedSlot = availableSlots.find((slot) => slot.dayLabel === form.trialDay && getSlotPeriod(slot.slotKey) === form.trialPeriod);
 
     const update = (field: keyof FormData, value: string | boolean) => {
@@ -110,12 +115,18 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
     };
 
     const selectTrialDay = (day: string) => {
+        if (day !== dateDay) return;
         setForm((prev) => ({
             ...prev,
             trialDay: day,
             trialPeriod: prev.trialDay === day ? prev.trialPeriod : "",
         }));
         setError("");
+    };
+
+    const selectTrialDate = (date: string) => {
+        setForm((prev) => ({ ...prev, ...trialScheduleForDate(prev, date, availableSlots) }));
+        setError(isKstYmd(date) && date < todayKst() ? "오늘 이후의 체험수업 날짜를 다시 선택해주세요." : "");
     };
 
     const copyTextToClipboard = async (text: string) => {
@@ -160,10 +171,9 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
         setPaymentNotice(copied ? "입금 정보가 복사되었습니다. 송금 앱에 붙여넣어 주세요." : "송금 앱에서 계좌 정보를 직접 입력해주세요.");
     };
 
-    const validateStep1 = (): boolean => {
-        if (!form.trialDate) { setError("체험수업 희망일을 선택해주세요."); return false; }
-        if (!form.trialDay) { setError("요일을 선택해주세요."); return false; }
-        if (!form.trialPeriod) { setError("교시를 선택해주세요."); return false; }
+    const validateStep1 = (selection: TrialScheduleSelection = form): boolean => {
+        const scheduleError = trialScheduleError(selection, availableSlots);
+        if (scheduleError) { setError(scheduleError); return false; }
         return true;
     };
 
@@ -187,7 +197,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
             childName: form.childName,
             parentPhone: form.parentPhone,
         });
-        if (!existing || existing.id === existingLeadId) return;
+        if (!existing || existing.id === existingLeadId) return null;
 
         setExistingLeadId(existing.id);
         setForm((prev) => ({
@@ -201,15 +211,29 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
             childSchool: existing.childSchool || prev.childSchool,
             parentPhone: existing.parentPhone || prev.parentPhone,
             source: existing.source || prev.source,
-            trialFeeConfirmed: existing.trialFeeConfirmed || prev.trialFeeConfirmed,
+            trialFeeNoticeAgreed: existing.trialFeeNoticeAgreed || prev.trialFeeNoticeAgreed,
         }));
         setExistingNotice("기존 체험수업 신청서를 불러왔습니다. 필요한 부분만 수정해서 다시 제출해주세요.");
+        return {
+            trialDate: existing.trialDate || form.trialDate,
+            trialDay: existing.trialDay || form.trialDay,
+            trialPeriod: existing.trialPeriod || form.trialPeriod,
+        };
     };
 
     const goNext = async () => {
         if (step === 1 && !validateStep1()) return;
-        if (step === 2 && !validateStep2()) return;
-        if (step === 2) await loadExistingApplication();
+        if (step === 2) {
+            if (!validateStep1()) { setStep(1); return; }
+            if (!validateStep2()) return;
+            try {
+                const loadedSchedule = await loadExistingApplication();
+                if (loadedSchedule && !validateStep1(loadedSchedule)) { setStep(1); return; }
+            } catch {
+                setError("기존 신청 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+                return;
+            }
+        }
         setError("");
         setStep((current) => Math.min(current + 1, 3));
         window.scrollTo({ top: 0, behavior: "smooth" });
@@ -222,7 +246,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
     };
 
     const handleSubmit = () => {
-        if (!form.trialFeeConfirmed) {
+        if (!validateStep1()) { setStep(1); return; }
+        if (!form.trialFeeNoticeAgreed) {
             setError("체험수업 비용 확인을 체크해주세요.");
             return;
         }
@@ -242,7 +267,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
                     childSchool: form.childSchool,
                     parentPhone: form.parentPhone,
                     source: form.source,
-                    trialFeeConfirmed: form.trialFeeConfirmed,
+                    trialFeeNoticeAgreed: form.trialFeeNoticeAgreed,
                     honeypot: form.honeypot,
                 });
                 setCompletionMode(result.mode === "updated" ? "updated" : "created");
@@ -301,8 +326,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
     }
 
     return (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-            <div className="border-b border-gray-100 bg-gray-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
+            <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-3 dark:border-gray-800 dark:bg-gray-900">
                 <div className="mx-auto flex max-w-sm items-center justify-between">
                     {[1, 2, 3].map((number) => (
                         <div key={number} className="flex items-center">
@@ -318,9 +343,9 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
                 </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
                 {error && (
-                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    <div ref={errorRef} role="alert" className="mb-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                         <FontFreeIcon name="error" size={18} />
                         {error}
                     </div>
@@ -338,8 +363,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
                             <FontFreeIcon name="calendar_today" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
                             체험 일정
                         </h2>
-                        <Field label="체험수업 희망일" required type="date" value={form.trialDate} onChange={(value) => update("trialDate", value)} placeholder="연도-월-일" />
-                        <ButtonGroup label="희망 요일" required options={dayOptions} value={form.trialDay} onChange={selectTrialDay} />
+                        <Field label="체험수업 희망일" required type="date" min={todayKst()} value={form.trialDate} onChange={selectTrialDate} placeholder="연도-월-일" />
+                        {dateDay ? <ButtonGroup label="희망 요일" required options={dayOptions} value={form.trialDay} onChange={selectTrialDay} /> : <p className="text-sm text-gray-500">날짜를 선택하면 요일이 자동으로 정해집니다.</p>}
                         <div>
                             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
                                 희망 교시 <span className="text-red-500">*</span>
@@ -355,6 +380,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
                                     );
                                 })}
                             </div>
+                            {dateDay && periodOptions.length === 0 && <p className="mt-2 text-sm text-gray-500">{availableSlots.length === 0 ? "시간표 정보를 확인할 수 없습니다. 학원으로 문의해주세요." : "선택한 날짜의 요일에는 등록된 수업이 없습니다. 다른 날짜를 선택해주세요."}</p>}
                         </div>
                     </div>
                 )}
@@ -400,7 +426,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
                             {paymentNotice && <p className="mt-3 text-xs font-semibold text-brand-orange-600 dark:text-brand-neon-lime">{paymentNotice}</p>}
                         </div>
                         <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                            <input type="checkbox" checked={form.trialFeeConfirmed} onChange={(event) => update("trialFeeConfirmed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime" />
+                            <input type="checkbox" checked={form.trialFeeNoticeAgreed} onChange={(event) => update("trialFeeNoticeAgreed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime" />
                             <span>체험수업 비용과 입금 계좌를 확인했습니다.</span>
                         </label>
                         <input type="text" value={form.honeypot} onChange={(event) => update("honeypot", event.target.value)} className="hidden" tabIndex={-1} autoComplete="off" />
@@ -441,13 +467,13 @@ export default function TrialApplicationForm({ availableSlots, contactPhone }: P
     );
 }
 
-function Field({ label, required, type = "text", value, onChange, placeholder }: { label: string; required?: boolean; type?: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+function Field({ label, required, type = "text", min, value, onChange, placeholder }: { label: string; required?: boolean; type?: string; min?: string; value: string; onChange: (value: string) => void; placeholder: string }) {
     return (
         <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 {label} {required && <span className="text-red-500">*</span>}
             </label>
-            <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+            <input type={type} min={min} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
         </div>
     );
 }

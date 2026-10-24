@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
+import { kstMonthLabels } from "@/lib/datetime/kst";
 
 interface AvailableSlot {
     slotKey: string;
@@ -79,17 +80,9 @@ const DAY_LABELS: Record<string, string> = {
     Sun: "일",
 };
 
-function getEnrollmentMonthOptions() {
-    const now = new Date();
-    return [0, 1].map((offset) => {
-        const date = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-        return `${date.getFullYear()}년 ${date.getMonth() + 1}월`;
-    });
-}
-
 export default function EnrollApplicationLaterSteps({ step, form, availableSlots, update, toggleSlot }: Props) {
     const [locationPicker, setLocationPicker] = useState<"pickup" | "dropoff" | null>(null);
-    const enrollmentMonthOptions = getEnrollmentMonthOptions();
+    const enrollmentMonthOptions = kstMonthLabels();
     const slotsByDay = DAY_ORDER.reduce<Record<string, AvailableSlot[]>>((acc, day) => {
         const daySlots = availableSlots.filter((slot) => slot.dayOfWeek === day);
         if (daySlots.length > 0) acc[day] = daySlots;

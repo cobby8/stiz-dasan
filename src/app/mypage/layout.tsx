@@ -7,6 +7,9 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import AppBackButton from "@/components/AppBackButton";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import MyPageBottomNav from "./MyPageBottomNav";
+import AcademyTheme from "@/components/academy/AcademyTheme";
+import AccountViewSwitcher from "@/components/AccountViewSwitcher";
+import { getAccountViewAccess } from "@/lib/account-view-access";
 
 // 학부모 앱의 시작 주소가 /mypage 다. 여기서 공용 manifest(id "/")를 내려주면
 // 브라우저가 "이 앱은 공식 앱이었나?" 하고 신원을 헷갈린다. 교사용(/staff)과 같은 구조로
@@ -34,12 +37,13 @@ export default async function MyPageLayout({
     // /mypage/continue 로 가는 이유: /auth/continue 는 학부모 앱의 영역(/mypage) 밖이라
     // 설치된 앱이 주소표시줄을 띄우며 브라우저로 새어 나간다.
     await requireVerifiedParent().catch(() => redirect("/mypage/continue?bounced=1"));
+    const { views } = await getAccountViewAccess();
 
     return (
-        // surface-warm 배경 적용 — 공개 페이지와 동일한 따뜻한 톤
-        <div className="min-h-screen bg-surface-warm flex flex-col pb-20 md:pb-0">
+        // 학부모 앱에만 라이트 라벤더를 적용해 공개 홈페이지 테마와 분리한다.
+        <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
             {/* 모바일 상단 헤더 — 기존 구조 유지, 그림자/보더 디자인 토큰 통일 */}
-            <header className="bg-white dark:bg-gray-800 sticky top-0 z-50 shadow-sm border-b border-gray-100 dark:border-gray-800 grid grid-cols-[auto_auto_1fr_auto] items-center gap-3 px-4 py-3 md:hidden">
+            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-3 md:hidden">
                 {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
                     브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
                 <AppBackButton fallbackHref="/" scopeHref="/mypage" size="sm" />
@@ -47,9 +51,9 @@ export default async function MyPageLayout({
                     제 범위를 벗어나 주소표시줄이 뜨고 돌아올 길이 없어진다.
                     (선생님 앱의 로고가 /staff 로 가는 것과 같은 구조) */}
                 <Link href="/mypage" className="flex items-center gap-2">
-                    <Image src="/stiz-logo.png" alt="STIZ" width={100} height={25} className="h-7 w-auto object-contain" />
+                    <Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-20 shrink-0 object-contain" />
                 </Link>
-                <span className="text-center font-bold text-brand-navy-900 text-sm">마이페이지</span>
+                {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="text-center font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
                 <form action={logout}>
                     <button
                         type="submit"
@@ -61,22 +65,23 @@ export default async function MyPageLayout({
             </header>
 
             {/* 데스크탑 헤더 — 기존 구조 유지, 호버 트랜지션 통일 */}
-            <header className="bg-white dark:bg-gray-800 sticky top-0 z-50 shadow-sm border-b border-gray-100 dark:border-gray-800 hidden md:flex items-center justify-between px-8 py-4">
+            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] hidden md:flex items-center justify-between px-8 py-4">
                 <div className="flex min-w-0 items-center gap-3">
                     <AppBackButton fallbackHref="/" scopeHref="/mypage" />
                     <Link href="/mypage" className="flex min-w-0 items-center gap-2">
-                        <Image src="/stiz-logo.png" alt="STIZ" width={140} height={35} className="h-9 w-auto object-contain" />
-                        <span className="font-extrabold text-xl text-brand-navy-900">
-                            스티즈농구교실 <span className="text-brand-orange-500 dark:text-brand-neon-lime">다산점</span>
+                        <Image src="/stiz-logo.png" alt="STIZ" width={140} height={61} className="h-12 w-auto object-contain" />
+                        <span className="hidden lg:inline font-extrabold text-lg text-[var(--color-academy-ink)]">
+                            스티즈농구교실 <span className="text-[var(--color-academy-primary)]">다산2호점</span>
                         </span>
                     </Link>
                 </div>
-                <nav className="flex items-center gap-8 font-bold text-gray-600 dark:text-gray-300">
-                    <Link href="/mypage" className="text-brand-orange-500 dark:text-brand-neon-lime transition-colors">마이페이지</Link>
+                <nav className="flex shrink-0 items-center gap-4 text-sm font-bold text-[var(--color-academy-muted)]">
+                    <AccountViewSwitcher views={views} />
+                    <Link href="/mypage" className="text-[var(--color-academy-primary)] transition-colors">마이페이지</Link>
                     {/* 브라우저로 들어온 학부모에게는 홈페이지로 가는 길이 필요하지만,
                         설치된 앱에서는 나가면 돌아올 길이 없어 감춘다. */}
                     <HideInInstalledApp>
-                        <Link href="/" className="hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors">홈으로</Link>
+                        <Link href="/" className="hover:text-[var(--color-academy-primary)] transition-colors">홈으로</Link>
                     </HideInInstalledApp>
                     <form action={logout}>
                         <button
@@ -90,13 +95,13 @@ export default async function MyPageLayout({
             </header>
 
             {/* 메인 콘텐츠 영역 */}
-            <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-8">
+            <main className="flex-1 max-w-5xl w-full mx-auto p-4 md:p-8">
                 {children}
             </main>
 
             {/* 모바일 하단 네비게이션 — 자녀 핵심 기능(리포트·스킬·방학특강) 중심으로 재구성.
                 활성 경로 하이라이트를 위해 클라이언트 컴포넌트(MyPageBottomNav)로 분리. */}
             <MyPageBottomNav />
-        </div>
+        </AcademyTheme>
     );
 }

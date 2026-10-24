@@ -51,7 +51,7 @@ test("교사용 PWA 범위는 staff 내부로 유지한다", () => {
 });
 
 test("수업 중 교사용 로고도 메모 저장 확인 뒤 홈으로 이동한다", () => {
-  assert.match(layoutSource, /<StaffHomeLink \/>/);
+  assert.match(layoutSource, /<StaffHomeLink\b[^>]*\/>/);
   assert.match(homeLinkSource, /pathname\.startsWith\("\/staff\/sessions\/"\)/);
   assert.match(homeLinkSource, /await prepareStaffNavigation\(\)/);
   assert.match(homeLinkSource, /저장 후 홈 이동/);

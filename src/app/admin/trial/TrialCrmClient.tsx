@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import AdminModal from "@/components/admin/AdminModal";
+import CompactListFilters from "@/components/academy/CompactListFilters";
+import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
+import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 import {
     updateTrialLead,
     sendPostTrialEnrollGuide,
@@ -10,6 +13,8 @@ import {
     resendTrialApplicationSms,
     resendTrialAttendedSms,
     recordApplicationContact,
+    confirmTrialFeePayment,
+    sendManualSms,
 } from "@/app/actions/admin";
 
 const TrialCrmModals = dynamic(() => import("./TrialCrmModals"), {
@@ -51,7 +56,8 @@ export interface TrialLead {
     preferredDay: string | null;
     preferredPeriod: string | null;
     trialDate: string | null;
-    trialFeeConfirmed: boolean;
+    trialFeeConfirmed: boolean; // 학원이 실제 입금을 확인함(관리자 전용 버튼)
+    trialFeeNoticeAgreedAt?: string | null; // 학부모가 신청서에서 비용·계좌 안내에 동의한 시각(입금 아님)
     hopeNote: string | null;
     agreedTerms: boolean;
     agreedPrivacy: boolean;
@@ -120,20 +126,21 @@ type ListPagination = {
     partial: boolean;
 };
 
-type FeedbackState = { type: "success" | "error"; message: string } | null;
+type FeedbackState = { type: "success" | "error" | "info"; message: string } | null;
 type TrialWorkFilter = "ALL" | "NEEDS_CONTACT" | "SCHEDULED" | "AFTER_TRIAL" | "COACH_NOTICE" | "ENROLL_RECEIVED";
 type TrialDateFilter = "ALL" | "UPCOMING" | "TODAY" | "THIS_WEEK" | "PAST" | "MISSING";
 type ContactActionType = "CONTACTED" | "NO_ANSWER" | "FOLLOW_UP" | "MEMO";
 type ContactModalState = { lead: TrialLead; defaultAction: ContactActionType } | null;
 type EnrollGuideConfirmState = { lead: TrialLead; convertAfterConfirm: boolean } | null;
+type ManualSmsModalState = { lead: TrialLead } | null;
 const LIST_ACTION_TRIGGER_CLASS = "inline-flex size-9 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/20 transition hover:scale-105 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:shadow-brand-neon-lime/20 dark:hover:bg-lime-300";
-const LIST_ACTION_MENU_CLASS = "fixed z-[80] flex w-40 -translate-y-1/2 flex-col gap-2 rounded-2xl border border-gray-200 bg-white/95 p-2 text-left shadow-2xl backdrop-blur dark:border-gray-700 dark:bg-gray-950/95";
+const LIST_ACTION_MENU_CLASS = "fixed z-[80] flex max-h-[70vh] w-44 -translate-y-1/2 flex-col gap-2 overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-2 text-left shadow-2xl backdrop-blur dark:border-gray-700 dark:bg-gray-950/95";
 const LIST_ACTION_ITEM_CLASS = "flex min-h-9 w-full items-center justify-between gap-2 rounded-full border border-gray-200 bg-white px-2 pl-3 text-left text-xs font-black text-gray-700 shadow-sm transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime";
 const LIST_ACTION_PRIMARY_CLASS = "flex min-h-9 w-full items-center justify-between gap-2 rounded-full bg-brand-neon-lime px-2 pl-3 text-left text-xs font-black text-brand-navy-900 shadow-sm transition hover:bg-lime-300 disabled:opacity-50";
 const LIST_ACTION_ICON_CLASS = "inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900";
 const DETAIL_ACTION_CLASS = "inline-flex min-h-8 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-bold text-gray-700 transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 dark:border-gray-700 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10";
-const QUICK_ACTION_MENU_WIDTH = 160;
-const QUICK_ACTION_MENU_HALF_HEIGHT = 132;
+const QUICK_ACTION_MENU_WIDTH = 176;
+const QUICK_ACTION_MENU_HALF_HEIGHT = 176;
 
 type QuickActionMenuPosition = {
     top: number;
@@ -178,9 +185,17 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string
 const SOURCE_LABELS: Record<string, string> = {
     WEBSITE: "홈페이지",
     NAVER: "네이버",
+    NAVER_SEARCH: "네이버 키워드 검색",
+    NAVER_AD: "네이버 검색광고",
+    PORTAL_OTHER: "네이버 외 포털검색",
+    NAVER_BLOG: "스티즈 네이버블로그",
+    INSTAGRAM: "인스타그램",
+    YOUTUBE: "유튜브",
     REFERRAL: "지인소개",
     FLYER: "전단지",
-    PASSBY: "지나가다",
+    PASSBY: "지나가다 발견",
+    SOOMGO: "숨고",
+    DANGGEUN: "당근마켓",
     OTHER: "기타",
 };
 
@@ -220,6 +235,15 @@ const CONTACT_ACTION_LABELS: Record<string, string> = {
 function phoneHref(phone: string) {
     const digits = phone.replace(/\D/g, "");
     return digits ? `tel:${digits}` : undefined;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+    return error instanceof Error ? error.message : fallback;
+}
+
+function buildTrialManualSmsMessage(lead: TrialLead) {
+    const parentName = lead.parentName || "보호자";
+    return `${parentName}님, STIZ 농구교실입니다. ${lead.childName} 학생 체험수업 관련해서 안내드립니다.`;
 }
 
 function normalizeSearchValue(value: string | null | undefined) {
@@ -280,7 +304,8 @@ function getTodayLocalDateTime() {
 function matchesTrialDateFilter(lead: TrialLead, dateFilter: TrialDateFilter) {
     if (dateFilter === "ALL") return true;
 
-    const trialDate = getLocalDateTime(lead.trialDate);
+    // 확정 후에는 실제 수업일로 필터링한다. 희망일은 신청 기록으로만 남긴다.
+    const trialDate = getLocalDateTime(getTrialListDateValue(lead));
     if (dateFilter === "MISSING") return trialDate === null;
     if (trialDate === null) return false;
 
@@ -576,37 +601,11 @@ function trialLeadMatchesSearch(lead: TrialLead, query: string) {
 
 function TrialCrmLoadingFallback() {
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                    <div className="h-8 w-48 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-80 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                </div>
-                <div className="h-11 w-36 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                {Array.from({ length: 7 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-28 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
-            </div>
-            <div className="flex gap-2 flex-wrap">
-                {Array.from({ length: 6 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-8 w-20 rounded-full bg-gray-100 dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
-            </div>
-            <div className="grid gap-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="h-40 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
-                    />
-                ))}
+        <div role="status" aria-live="polite" className="min-w-0 space-y-3">
+            <p className="text-sm text-[var(--color-academy-muted)]">체험 목록을 불러오는 중…</p>
+            <div aria-hidden="true" className="h-11 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
+            <div aria-hidden="true" className="space-y-2">
+                {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" />)}
             </div>
         </div>
     );
@@ -655,6 +654,7 @@ export default function TrialCrmClient({
     const [searchQuery, setSearchQuery] = useState("");
     const [visibleLimit, setVisibleLimit] = useState(TRIAL_PAGE_SIZE);
     const [busy, setBusy] = useState(false);
+    const [trialFeeBusyId, setTrialFeeBusyId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<FeedbackState>(null);
     // 모달 상태
     const [showAddModal, setShowAddModal] = useState(false);
@@ -667,9 +667,12 @@ export default function TrialCrmClient({
     const [showDetailModal, setShowDetailModal] = useState<TrialLead | null>(null);
     const [contactModal, setContactModal] = useState<ContactModalState>(null);
     const [enrollGuideConfirm, setEnrollGuideConfirm] = useState<EnrollGuideConfirmState>(null);
+    const [manualSmsModal, setManualSmsModal] = useState<ManualSmsModalState>(null);
     const [contactBusyId, setContactBusyId] = useState<string | null>(null);
+    const [manualSmsBusy, setManualSmsBusy] = useState(false);
     const [openQuickActionId, setOpenQuickActionId] = useState<string | null>(null);
     const [quickActionMenuPosition, setQuickActionMenuPosition] = useState<QuickActionMenuPosition | null>(null);
+	const feedbackTimerRef = useRef<number | null>(null);
     const hasTrialModal = Boolean(showAddModal || showEditModal || showScheduleModal || showCancelModal || showConvertModal || showLostModal || showMemoModal);
 
     const closeQuickActionMenu = useCallback(() => {
@@ -707,8 +710,10 @@ export default function TrialCrmClient({
             setStats(data.stats);
             setClasses(data.classes ?? []);
             setPagination(data.pagination ?? null);
+            return true;
         } catch {
             setLoadError("failed");
+            return false;
         } finally {
             if (append) setLoadingMore(false);
             else setLoading(false);
@@ -722,11 +727,16 @@ export default function TrialCrmClient({
 
     useEffect(() => {
         if (!openQuickActionId) return;
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") closeQuickActionMenu();
+        };
         window.addEventListener("resize", closeQuickActionMenu);
         window.addEventListener("scroll", closeQuickActionMenu, true);
+        window.addEventListener("keydown", handleEscape);
         return () => {
             window.removeEventListener("resize", closeQuickActionMenu);
             window.removeEventListener("scroll", closeQuickActionMenu, true);
+            window.removeEventListener("keydown", handleEscape);
         };
     }, [closeQuickActionMenu, openQuickActionId]);
 
@@ -744,9 +754,16 @@ export default function TrialCrmClient({
         });
         return map;
     }, [classes]);
-    const showFeedback = useCallback((type: "success" | "error", message: string) => {
+    useEffect(() => {
+        return () => {
+            if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
+        };
+    }, []);
+
+    const showFeedback = useCallback((type: "success" | "error" | "info", message: string) => {
+        if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
         setFeedback({ type, message });
-        window.setTimeout(() => setFeedback(null), 3500);
+        feedbackTimerRef.current = window.setTimeout(() => setFeedback(null), type === "info" ? 8000 : 4200);
     }, []);
     const handleRecordContact = useCallback(async (
         lead: TrialLead,
@@ -782,23 +799,9 @@ export default function TrialCrmClient({
                 return trialLeadMatchesSearch(lead, searchQuery);
             })
             .sort((a, b) => {
-                // 확정일정(scheduledDate) 우선, 없으면 희망일정(trialDate)으로 정렬
-                const aTrialDate = getLocalDateTime(a.scheduledDate ?? a.trialDate);
-                const bTrialDate = getLocalDateTime(b.scheduledDate ?? b.trialDate);
-
-                if (aTrialDate !== null && bTrialDate === null) return -1;
-                if (aTrialDate === null && bTrialDate !== null) return 1;
-                if (aTrialDate !== null && bTrialDate !== null && aTrialDate !== bTrialDate) {
-                    return aTrialDate - bTrialDate;
-                }
-
-                const scheduleCompare = (formatPreferredScheduleShort(a, classesBySlotKey) ?? "").localeCompare(
-                    formatPreferredScheduleShort(b, classesBySlotKey) ?? "",
-                    "ko",
-                );
-                if (scheduleCompare !== 0) return scheduleCompare;
-
-                return (getLocalDateTime(a.createdAt) ?? Number.MAX_SAFE_INTEGER) - (getLocalDateTime(b.createdAt) ?? Number.MAX_SAFE_INTEGER);
+                // 운영자가 새 신청을 놓치지 않도록 접수일 최신순으로 고정합니다.
+                const createdAtCompare = (getLocalDateTime(b.createdAt) ?? 0) - (getLocalDateTime(a.createdAt) ?? 0);
+                return createdAtCompare || b.id.localeCompare(a.id);
             });
     }, [classesBySlotKey, dateFilter, filter, leads, searchQuery, workFilter]);
     const visibleLeads = useMemo(
@@ -850,6 +853,7 @@ export default function TrialCrmClient({
     // 상태 변경 핸들러
     async function handleStatusChange(lead: TrialLead, newStatus: string) {
         if (busy) return;
+        if (newStatus === "ATTENDED" && !confirm(`"${lead.childName}" 학생의 체험수업을 완료 처리할까요? 완료 안내 문자가 발송될 수 있습니다.`)) return;
         if (newStatus === "CONVERTED" && lead.status !== "CONVERTED") {
             closeQuickActionMenu();
             setEnrollGuideConfirm({ lead, convertAfterConfirm: true });
@@ -889,22 +893,59 @@ export default function TrialCrmClient({
     }
 
     async function handleConfirmTrialFee(lead: TrialLead) {
-        if (busy || lead.trialFeeConfirmed) return;
+        if (trialFeeBusyId || lead.trialFeeConfirmed) return;
         if (!confirm(`"${lead.childName}" 체험수업 비용 입금을 확인 처리할까요?`)) return;
 
-        setBusy(true);
+        showFeedback("info", `${lead.childName} 체험비 입금 확인을 처리 중입니다...`);
+        setTrialFeeBusyId(lead.id);
         try {
-            await updateTrialLead(lead.id, { trialFeeConfirmed: true }, {
-                action: "UPDATED",
-                note: "체험비 입금 확인",
-            });
-            await loadTrialData();
+            const result = await confirmTrialFeePayment(lead.id);
+            if (!result.found) {
+                showFeedback("error", "체험 신청을 찾지 못했습니다. 목록을 새로고침해 주세요.");
+                return;
+            }
             setShowDetailModal((current) => current?.id === lead.id ? { ...current, trialFeeConfirmed: true } : current);
-            showFeedback("success", `${lead.childName} 체험비 입금을 확인 처리했습니다.`);
+            setLeads((current) => current.map((item) => item.id === lead.id ? { ...item, trialFeeConfirmed: true } : item));
+            showFeedback(
+                "success",
+                result.alreadyConfirmed
+                    ? `${lead.childName} 체험비는 이미 입금 확인된 상태입니다.`
+                    : `${lead.childName} 체험비 입금을 확인 처리했습니다.`,
+            );
+            const refreshed = await loadTrialData();
+            if (!refreshed) {
+                showFeedback("error", "입금 확인은 완료됐지만 최신 목록을 불러오지 못했습니다. 화면을 새로고침해 주세요.");
+            }
         } catch {
             showFeedback("error", "체험비 입금 확인 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
         } finally {
-            setBusy(false);
+            setTrialFeeBusyId(null);
+        }
+    }
+
+    async function handleSendManualSms(lead: TrialLead, message: string) {
+        if (manualSmsBusy) return;
+        setManualSmsBusy(true);
+        showFeedback("info", `${lead.childName} 보호자에게 문자 발송 중입니다...`);
+        try {
+            const result = await sendManualSms([lead.parentPhone], message, {
+                requestId: `trial-manual-${lead.id}-${Date.now()}`,
+                purpose: "체험문의 학부모 문자",
+                reason: "체험문의 관리 화면에서 직접 발송",
+                audienceScope: "EXTERNAL",
+            });
+            setManualSmsModal(null);
+            if (result.success > 0 && result.failed === 0 && result.uncertain === 0) {
+                showFeedback("success", `${lead.childName} 보호자에게 문자를 발송했습니다.`);
+            } else if (result.success > 0) {
+                showFeedback("error", `${lead.childName} 문자 일부만 발송됐습니다. 문자 발송 장부를 확인해 주세요.`);
+            } else {
+                showFeedback("error", result.results[0]?.reason || "문자 발송에 실패했습니다. 연락처와 문자 설정을 확인해 주세요.");
+            }
+        } catch (error) {
+            showFeedback("error", getErrorMessage(error, "문자 발송 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요."));
+        } finally {
+            setManualSmsBusy(false);
         }
     }
 
@@ -1035,30 +1076,6 @@ export default function TrialCrmClient({
         }
     }
 
-    function renderStatusChangeCell(lead: TrialLead) {
-        return (
-            <div className="flex min-w-0 items-center justify-center gap-1.5 overflow-hidden" onClick={(event) => event.stopPropagation()}>
-                <select
-                    value={lead.status}
-                    onChange={(event) => handleStatusChange(lead, event.target.value)}
-                    disabled={busy}
-                    className="h-8 w-[98px] shrink-0 rounded-lg border border-gray-200 bg-white px-1.5 text-center text-xs font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-orange-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime"
-                >
-                    {STATUS_ORDER.map((s) => (
-                        <option key={s} value={s}>
-                            {STATUS_CONFIG[s].label}
-                        </option>
-                    ))}
-                </select>
-                {lead.enrollApplicationReceivedAt && (
-                    <span className="inline-flex h-8 shrink-0 items-center rounded-lg bg-emerald-50 px-2 text-xs font-black text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                        신청 접수
-                    </span>
-                )}
-            </div>
-        );
-    }
-
     function renderTrialList() {
         return (
             <div className="overflow-x-auto overflow-y-visible rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -1072,8 +1089,7 @@ export default function TrialCrmClient({
                         <col className="w-[10%]" />
                         <col className="w-[18%]" />
                         <col className="w-[5%]" />
-                        <col className="w-[16%]" />
-                        <col className="w-[8%]" />
+                        <col className="w-[12%]" />
                     </colgroup>
                     <thead className="sticky top-0 z-10 bg-gray-50 text-xs font-black uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                         <tr className="divide-x divide-gray-200 dark:divide-gray-700">
@@ -1085,14 +1101,12 @@ export default function TrialCrmClient({
                             <th className="px-2 py-2">수강생이름</th>
                             <th className="px-2 py-2">학교</th>
                             <th className="px-2 py-2">학년</th>
-                            <th className="px-2 py-2">상태변경</th>
                             <th className="px-2 py-2">액션</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {visibleLeads.map((lead) => {
                             const cfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.NEW;
-                            const isClosed = isClosedTrialStatus(lead.status);
                             const scheduleItems = getTrialScheduleItems(lead, classesBySlotKey, classesById);
                             const getScheduleValue = (label: string) => scheduleItems.find((item) => item.label === label)?.value || "-";
                             const parentPhoneHref = phoneHref(lead.parentPhone);
@@ -1171,9 +1185,6 @@ export default function TrialCrmClient({
                                             {gradeLabel}
                                         </span>
                                     </td>
-                                    <td className="px-2 py-1.5 text-center align-middle">
-                                        {renderStatusChangeCell(lead)}
-                                    </td>
                                     <td className="px-2 py-1.5 text-center align-middle" onClick={(event) => event.stopPropagation()}>
                                         <button
                                             type="button"
@@ -1187,6 +1198,7 @@ export default function TrialCrmClient({
                                         {isActionOpen && quickActionMenuPosition && (
                                             <div
                                                 className={LIST_ACTION_MENU_CLASS}
+                                                aria-label={`${lead.childName} 빠른 처리`}
                                                 style={{
                                                     top: `${quickActionMenuPosition.top}px`,
                                                     left: `${quickActionMenuPosition.left}px`,
@@ -1196,7 +1208,19 @@ export default function TrialCrmClient({
                                                     <span>전화</span>
                                                     {renderActionIcon("call")}
                                                 </a>
-                                                {!isClosed && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        closeQuickActionMenu();
+                                                        setManualSmsModal({ lead });
+                                                    }}
+                                                    disabled={manualSmsBusy}
+                                                    className={LIST_ACTION_ITEM_CLASS}
+                                                >
+                                                    <span>문자 보내기</span>
+                                                    {renderActionIcon("sms")}
+                                                </button>
+                                                {!isClosedTrialStatus(lead.status) && (lead.status === "NEW" || lead.status === "CONTACTED" || lead.status === "SCHEDULED") && (
                                                     <button
                                                         type="button"
                                                         onClick={() => {
@@ -1205,37 +1229,37 @@ export default function TrialCrmClient({
                                                         }}
                                                         className={LIST_ACTION_ITEM_CLASS}
                                                     >
-                                                        <span>일정</span>
+                                                        <span>{lead.status === "SCHEDULED" ? "일정 변경" : "일정 확정"}</span>
                                                         {renderActionIcon("event_available")}
                                                     </button>
                                                 )}
-                                                {(!isClosed || lead.coachNoticeSentAt) && (
+                                                {lead.status === "NEW" && (
                                                     <button
                                                         type="button"
                                                         onClick={() => {
                                                             closeQuickActionMenu();
-                                                            void handleSendCoachNotice(lead);
+                                                            setContactModal({ lead, defaultAction: "CONTACTED" });
                                                         }}
-                                                        disabled={busy}
+                                                        disabled={contactBusyId === lead.id}
                                                         className={LIST_ACTION_ITEM_CLASS}
                                                     >
-                                                        <span>{lead.coachNoticeSentAt ? "쌤알림 재발송" : "쌤알림 발송"}</span>
-                                                        {renderActionIcon(lead.coachNoticeSentAt ? "refresh" : "school")}
+                                                        <span>연락 기록</span>
+                                                        {renderActionIcon("phone_callback")}
                                                     </button>
                                                 )}
                                                 <button
                                                     type="button"
                                                     onClick={() => {
                                                         closeQuickActionMenu();
-                                                        void handleRecordContact(lead, "CONTACTED");
+                                                        setContactModal({ lead, defaultAction: "MEMO" });
                                                     }}
                                                     disabled={contactBusyId === lead.id}
-                                                    className={`${LIST_ACTION_ITEM_CLASS} disabled:opacity-50`}
+                                                    className={LIST_ACTION_ITEM_CLASS}
                                                 >
-                                                    <span>연락 완료</span>
-                                                    {renderActionIcon("done_all")}
+                                                    <span>메모</span>
+                                                    {renderActionIcon("edit_note")}
                                                 </button>
-                                                {lead.trialFeeConfirmed ? (
+                                                {lead.status === "SCHEDULED" && (lead.trialFeeConfirmed ? (
                                                     <div className={`${LIST_ACTION_ITEM_CLASS} pointer-events-none bg-emerald-50 text-emerald-700 opacity-90 dark:bg-emerald-950/30 dark:text-emerald-200`}>
                                                         <span>입금 완료</span>
                                                         {renderActionIcon("paid")}
@@ -1247,25 +1271,56 @@ export default function TrialCrmClient({
                                                             closeQuickActionMenu();
                                                             void handleConfirmTrialFee(lead);
                                                         }}
+                                                        disabled={Boolean(trialFeeBusyId)}
+                                                        className={LIST_ACTION_ITEM_CLASS}
+                                                    >
+                                                        <span>{trialFeeBusyId === lead.id ? "확인 중…" : "입금 확인"}</span>
+                                                        {renderActionIcon(trialFeeBusyId === lead.id ? "progress_activity" : "paid")}
+                                                    </button>
+                                                ))}
+                                                {lead.status === "SCHEDULED" && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            closeQuickActionMenu();
+                                                            void handleStatusChange(lead, "ATTENDED");
+                                                        }}
+                                                        disabled={busy}
+                                                        className={LIST_ACTION_PRIMARY_CLASS}
+                                                    >
+                                                        <span>체험 완료</span>
+                                                        {renderActionIcon("check_circle", true)}
+                                                    </button>
+                                                )}
+                                                {!isClosedTrialStatus(lead.status) && !lead.coachNoticeSentAt && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            closeQuickActionMenu();
+                                                            void handleSendCoachNotice(lead);
+                                                        }}
                                                         disabled={busy}
                                                         className={LIST_ACTION_ITEM_CLASS}
                                                     >
-                                                        <span>입금 확인</span>
-                                                        {renderActionIcon("paid")}
+                                                        <span>쌤 알림</span>
+                                                        {renderActionIcon("school")}
                                                     </button>
                                                 )}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        closeQuickActionMenu();
-                                                        setContactModal({ lead, defaultAction: "MEMO" });
-                                                    }}
-                                                    className={LIST_ACTION_ITEM_CLASS}
-                                                >
-                                                    <span>메모</span>
-                                                    {renderActionIcon("edit_note")}
-                                                </button>
-                                                {renderEnrollGuideButton(lead)}
+                                                {lead.smsDeliveryFailed > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            closeQuickActionMenu();
+                                                            void handleResendApplicationSms(lead);
+                                                        }}
+                                                        disabled={busy}
+                                                        className={LIST_ACTION_ITEM_CLASS}
+                                                    >
+                                                        <span>문자 재발송</span>
+                                                        {renderActionIcon("sms_failed")}
+                                                    </button>
+                                                )}
+                                                {lead.status === "ATTENDED" && renderEnrollGuideButton(lead)}
                                             </div>
                                         )}
                                     </td>
@@ -1283,128 +1338,58 @@ export default function TrialCrmClient({
     }
 
     if (loadError && leads.length === 0) {
-        return <TrialCrmErrorState onRetry={loadTrialData} />;
+        return <TrialCrmErrorState onRetry={() => void loadTrialData()} />;
     }
 
     return (
         <div className="space-y-6">
             {feedback && (
                 <div
-                    className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    className={`fixed bottom-4 left-4 right-4 z-[120] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-2xl sm:bottom-auto sm:left-auto sm:right-6 sm:top-6 sm:w-[380px] ${
                         feedback.type === "success"
                             ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200"
+                            : feedback.type === "info"
+                            ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100"
                             : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
                     }`}
                     role="status"
                 >
-                    <span className="material-symbols-outlined text-lg">
-                        {feedback.type === "success" ? "check_circle" : "error"}
+                    <span className={`material-symbols-outlined text-lg ${feedback.type === "info" ? "animate-spin" : ""}`}>
+                        {feedback.type === "success" ? "check_circle" : feedback.type === "info" ? "progress_activity" : "error"}
                     </span>
                     {feedback.message}
                 </div>
             )}
 
-            {/* ── 한 줄 파이프라인 필터 ── */}
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <button
-                    onClick={() => setFilter("ALL")}
-                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-sm font-bold transition-colors ${
-                        filter === "ALL"
-                            ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200"
-                    }`}
-                >
-                    전체 ({stats.total})
-                </button>
-                {STATUS_ORDER.map((s) => {
-                    const cfg = STATUS_CONFIG[s];
-                    const count = stats[s as keyof TrialStats] as number;
-                    return (
-                        <button
-                            key={s}
-                            onClick={() => setFilter(filter === s ? "ALL" : s)}
-                            className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3 text-sm font-bold transition-colors ${
-                                filter === s
-                                    ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                    : `${cfg.color} hover:opacity-80`
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
-                            {cfg.label} ({count})
-                        </button>
-                    );
-                })}
-                <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-emerald-50 px-3 text-sm font-black text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    <span className="material-symbols-outlined text-sm">trending_up</span>
-                    전환율 {stats.conversionRate}%
-                </span>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                    <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 focus-within:border-brand-orange-400 focus-within:bg-white dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:focus-within:border-brand-neon-lime">
-                        <span className="material-symbols-outlined text-lg text-gray-400">search</span>
-                        <input
-                            type="search"
-                            value={searchQuery}
-                            onChange={(event) => setSearchQuery(event.target.value)}
-                            placeholder="학생, 보호자, 전화번호, 학교, 메모로 검색"
-                            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-gray-400"
-                        />
-                        {searchQuery && (
-                            <button
-                                type="button"
-                                onClick={() => setSearchQuery("")}
-                                className="rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                                title="검색어 지우기"
-                            >
-                                <span className="material-symbols-outlined text-base">close</span>
-                            </button>
-                        )}
-                    </label>
-                    <label className="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                        <span className="material-symbols-outlined text-lg text-gray-400">event</span>
-                        <span className="sr-only">체험일 필터</span>
-                        <select
-                            value={dateFilter}
-                            onChange={(event) => setDateFilter(event.target.value as TrialDateFilter)}
-                            className="bg-transparent text-sm font-black outline-none"
-                        >
-                            {TRIAL_DATE_FILTERS.map((item) => (
-                                <option key={item.value} value={item.value}>
-                                    {item.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <button
-                        type="button"
-                        onClick={() => setShowAddModal(true)}
-                        className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-orange-500 px-3 text-sm font-black text-white transition-colors hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
-                    >
-                        <span className="material-symbols-outlined text-lg">person_add</span>
-                        체험 신청 등록
-                    </button>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                    {TRIAL_WORK_FILTERS.map((item) => (
-                        <button
-                            key={item.value}
-                            type="button"
-                            onClick={() => setWorkFilter(item.value)}
-                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition ${
-                                workFilter === item.value
-                                    ? "bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700"
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-sm">{item.icon}</span>
-                            {item.label}
-                            <span className="font-black">{workFilterCounts[item.value]}</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
+            <CompactListFilters
+                activeCount={Number(filter !== "ALL") + Number(dateFilter !== "ALL") + Number(workFilter !== "ALL")}
+                summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, dateFilter !== "ALL" ? TRIAL_DATE_FILTERS.find(item => item.value === dateFilter)?.label : null, workFilter !== "ALL" ? TRIAL_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || `전체 조건 · 전환율 ${stats.conversionRate}%`}
+                resultCount={`${filteredLeads.length}건`}
+                onReset={() => { setFilter("ALL"); setDateFilter("ALL"); setWorkFilter("ALL"); }}
+                search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
+                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
+                    <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호, 학교, 메모로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
+                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                </label>}
+                actions={<button type="button" onClick={() => setShowAddModal(true)} aria-label="체험 신청 등록" title="체험 신청 등록" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-2 text-sm font-bold text-[var(--color-academy-on-primary)] sm:px-3"><span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span><span className="hidden sm:inline">체험 신청 등록</span></button>}
+            >
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">신청 상태
+                    <select aria-label="체험 신청 상태" value={filter} onChange={event => setFilter(event.target.value)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        <option value="ALL">전체 {stats.total}</option>
+                        {STATUS_ORDER.map(status => <option key={status} value={status}>{STATUS_CONFIG[status].label} {stats[status]}</option>)}
+                    </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">체험일
+                    <select aria-label="체험일 필터" value={dateFilter} onChange={event => setDateFilter(event.target.value as TrialDateFilter)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        {TRIAL_DATE_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                </label>
+                <label className="min-w-0 space-y-1 text-xs font-bold text-[var(--color-academy-muted)]">업무 조건
+                    <select aria-label="체험 업무 조건" value={workFilter} onChange={event => setWorkFilter(event.target.value as TrialWorkFilter)} className="block min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[17px] text-[var(--color-academy-ink)]">
+                        {TRIAL_WORK_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label} {workFilterCounts[item.value]}</option>)}
+                    </select>
+                </label>
+            </CompactListFilters>
 
             {/* ── 리드 목록 ── */}
             {filteredLeads.length === 0 ? (
@@ -1431,7 +1416,7 @@ export default function TrialCrmClient({
             ) : (
                 <div className="grid gap-4">
                     {renderTrialList()}
-                    <div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                    {hasMoreLeads && (<div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {filteredLeads.length}건 중 {visibleLeads.length}건 표시
                         </span>
@@ -1445,7 +1430,7 @@ export default function TrialCrmClient({
                                 {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                             </button>
                         )}
-                    </div>
+                    </div>)}
                 </div>
             )}
 
@@ -1466,7 +1451,8 @@ export default function TrialCrmClient({
                     onCloseLost={() => setShowLostModal(null)}
                     onCloseMemo={() => setShowMemoModal(null)}
                     classes={classes}
-                    onSaved={loadTrialData}
+                    // 저장 성공을 알리기 전에 최신 목록이 실제로 반영됐는지 확인한다.
+                    onSaved={() => loadTrialData()}
                     onFeedback={showFeedback}
                 />
             )}
@@ -1484,8 +1470,22 @@ export default function TrialCrmClient({
                         setShowScheduleModal(showDetailModal);
                         setShowDetailModal(null);
                     }}
-                    onMemo={() => {
-                        setShowMemoModal(showDetailModal);
+                    onSendManualSms={() => {
+                        setManualSmsModal({ lead: showDetailModal });
+                        setShowDetailModal(null);
+                    }}
+                    onContact={() => {
+                        setContactModal({ lead: showDetailModal, defaultAction: "CONTACTED" });
+                        setShowDetailModal(null);
+                    }}
+                    onMarkAttended={() => void handleStatusChange(showDetailModal, "ATTENDED")}
+                    onSendEnrollGuide={() => handleSendEnrollGuide(showDetailModal)}
+                    onCancel={() => {
+                        setShowCancelModal(showDetailModal);
+                        setShowDetailModal(null);
+                    }}
+                    onLost={() => {
+                        setShowLostModal(showDetailModal);
                         setShowDetailModal(null);
                     }}
                     onCoachNotice={() => void handleSendCoachNotice(showDetailModal)}
@@ -1493,6 +1493,7 @@ export default function TrialCrmClient({
                     onResendAttendedSms={() => void handleResendAttendedSms(showDetailModal)}
                     onConfirmTrialFee={() => void handleConfirmTrialFee(showDetailModal)}
                     busy={busy}
+                    trialFeeBusy={Boolean(trialFeeBusyId)}
                 />
             )}
 
@@ -1506,6 +1507,20 @@ export default function TrialCrmClient({
                         await handleRecordContact(contactModal.lead, action, note, nextFollowUpAt);
                         setContactModal(null);
                     }}
+                />
+            )}
+
+            {manualSmsModal && (
+                <ManualSmsModal
+                    title="학부모 문자 보내기"
+                    recipientLabel={`${manualSmsModal.lead.childName} · ${manualSmsModal.lead.parentName || "보호자"}`}
+                    recipientPhone={manualSmsModal.lead.parentPhone}
+                    defaultMessage={buildTrialManualSmsMessage(manualSmsModal.lead)}
+                    busy={manualSmsBusy}
+                    onClose={() => {
+                        if (!manualSmsBusy) setManualSmsModal(null);
+                    }}
+                    onSubmit={(message) => handleSendManualSms(manualSmsModal.lead, message)}
                 />
             )}
 
@@ -1613,32 +1628,45 @@ function TrialLeadDetailModal({
     onClose,
     onEdit,
     onSchedule,
-    onMemo,
+    onSendManualSms,
+    onContact,
+    onMarkAttended,
+    onSendEnrollGuide,
+    onCancel,
+    onLost,
     onCoachNotice,
     onResendSms,
     onResendAttendedSms,
     onConfirmTrialFee,
     busy,
+    trialFeeBusy,
 }: {
     lead: TrialLead;
     scheduleItems: Array<{ label: string; icon: string; value: string; className: string }>;
     onClose: () => void;
     onEdit: () => void;
     onSchedule: () => void;
-    onMemo: () => void;
+    onSendManualSms: () => void;
+    onContact: () => void;
+    onMarkAttended: () => void;
+    onSendEnrollGuide: () => void;
+    onCancel: () => void;
+    onLost: () => void;
     onCoachNotice: () => void;
     onResendSms: () => void;
     onResendAttendedSms: () => void;
     onConfirmTrialFee: () => void;
     busy: boolean;
+    trialFeeBusy: boolean;
 }) {
     const cfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.NEW;
     const details = [
-        ["학생", [lead.childName, lead.childAge, lead.childGrade, lead.childSchool].filter(Boolean).join(" · ")],
+        ["학생", [lead.childName, lead.childGrade || lead.childAge, lead.childSchool].filter(Boolean).join(" · ")],
         ["보호자", [lead.parentName || "미입력", lead.parentPhone].filter(Boolean).join(" · ")],
         ["유입경로", SOURCE_LABELS[lead.source] || lead.source],
         ["농구 경험", lead.basketballExp || "미입력"],
-        ["체험비", lead.trialFeeConfirmed ? "입금 확인" : "미확인"],
+        // 학부모 동의(trialFeeNoticeAgreedAt)만으로는 「입금 완료」가 되지 않는다
+        ["체험비", trialFeeStatusLabel(lead)],
         ["최근 연락", lead.latestContactAction ? `${CONTACT_ACTION_LABELS[lead.latestContactAction] ?? lead.latestContactAction}${lead.latestContactAt ? ` · ${formatContactDateTime(lead.latestContactAt)}` : ""}` : "기록 없음"],
     ];
 
@@ -1657,9 +1685,6 @@ function TrialLeadDetailModal({
                         <h2 id="trial-detail-modal-title" className="mt-2 text-xl font-black text-gray-900 dark:text-white">
                             {lead.childName} 체험 신청 상세
                         </h2>
-                        <p className="mt-1 text-sm font-bold text-gray-500 dark:text-gray-400">
-                            행 목록에서는 핵심만 보고, 상세 정보는 여기서 확인합니다.
-                        </p>
                     </div>
                     <a
                         href={phoneHref(lead.parentPhone)}
@@ -1715,14 +1740,18 @@ function TrialLeadDetailModal({
                     <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900">
                         닫기
                     </button>
-                    <button type="button" onClick={onMemo} className={DETAIL_ACTION_CLASS}>
-                        <span className="material-symbols-outlined text-base">edit_note</span>
-                        메모
+                    <button type="button" onClick={onContact} className={DETAIL_ACTION_CLASS}>
+                        <span className="material-symbols-outlined text-base">phone_callback</span>
+                        연락 기록
+                    </button>
+                    <button type="button" onClick={onSendManualSms} disabled={busy} className={`${DETAIL_ACTION_CLASS} disabled:opacity-50`}>
+                        <span className="material-symbols-outlined text-base">sms</span>
+                        문자 보내기
                     </button>
                     {!lead.trialFeeConfirmed && (
-                        <button type="button" onClick={onConfirmTrialFee} disabled={busy} className={`${DETAIL_ACTION_CLASS} disabled:opacity-50`}>
-                            <span className="material-symbols-outlined text-base">paid</span>
-                            입금 확인
+                        <button type="button" onClick={onConfirmTrialFee} disabled={trialFeeBusy} aria-busy={trialFeeBusy} className={`${DETAIL_ACTION_CLASS} disabled:opacity-50`}>
+                            <span className={`material-symbols-outlined text-base ${trialFeeBusy ? "animate-spin" : ""}`}>{trialFeeBusy ? "progress_activity" : "paid"}</span>
+                            {trialFeeBusy ? "확인 중…" : "입금 확인"}
                         </button>
                     )}
                     {!lead.coachNoticeSentAt && (
@@ -1743,15 +1772,36 @@ function TrialLeadDetailModal({
                             완료 문자 재시도
                         </button>
                     )}
-                    <button type="button" onClick={onSchedule} className={DETAIL_ACTION_CLASS}>
-                        <span className="material-symbols-outlined text-base">event_available</span>
-                        일정
-                    </button>
+                    {!isClosedTrialStatus(lead.status) && (lead.status === "NEW" || lead.status === "CONTACTED" || lead.status === "SCHEDULED") && (
+                        <button type="button" onClick={onSchedule} className={DETAIL_ACTION_CLASS}>
+                            <span className="material-symbols-outlined text-base">event_available</span>
+                            {lead.status === "SCHEDULED" ? "일정 변경" : "일정 확정"}
+                        </button>
+                    )}
+                    {lead.status === "SCHEDULED" && (
+                        <button type="button" onClick={onMarkAttended} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                            <span className="material-symbols-outlined text-base">check_circle</span>
+                            체험 완료
+                        </button>
+                    )}
+                    {lead.status === "ATTENDED" && !lead.enrollApplicationReceivedAt && (
+                        <button type="button" onClick={onSendEnrollGuide} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                            <span className="material-symbols-outlined text-base">send</span>
+                            {lead.enrollGuideSentAt ? "수강신청 안내 재발송" : "수강신청 안내"}
+                        </button>
+                    )}
                     <button type="button" onClick={onEdit} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white transition hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400">
                         <span className="material-symbols-outlined text-base">edit</span>
                         수정
                     </button>
                 </div>
+                {!isClosedTrialStatus(lead.status) && (
+                    <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
+                        <span className="mr-auto text-xs font-bold text-gray-400">종료 작업</span>
+                        <button type="button" onClick={onLost} className="rounded-md px-3 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-900">이탈 처리</button>
+                        <button type="button" onClick={onCancel} className="rounded-md px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">신청 취소</button>
+                    </div>
+                )}
             </div>
         </AdminModal>
     );
@@ -1804,7 +1854,7 @@ function TrialContactModal({
                 </p>
 
                 <div className="mt-5 grid grid-cols-2 gap-2">
-                    {(["FOLLOW_UP", "MEMO"] as ContactActionType[]).map((option) => (
+                    {(["CONTACTED", "NO_ANSWER", "FOLLOW_UP", "MEMO"] as ContactActionType[]).map((option) => (
                         <button
                             key={option}
                             type="button"

@@ -150,6 +150,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                                 <PaymentCheckoutClient
                                     invoiceId={invoice.invoiceId}
                                     providerReady={providerConfig.providerReady}
+                                    provider={providerConfig.provider}
+                                    providerLabel={providerConfig.providerLabel}
                                     amount={Number(invoice.amount)}
                                 />
                             </div>

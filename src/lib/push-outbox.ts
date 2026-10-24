@@ -20,6 +20,7 @@ async function claimPushDeliveries(limit: number, deliveryId?: string) {
     `WITH exhausted AS (
        UPDATE "NotificationDelivery"
        SET status = 'FAILED', "failedAt" = NOW(), "errorCode" = 'PUSH_MAX_ATTEMPTS_EXHAUSTED',
+           "payloadJSON" = NULL,
            "lockedAt" = NULL, "lockToken" = NULL, "updatedAt" = NOW()
        WHERE channel = 'PUSH' AND status = 'PENDING' AND "attemptCount" >= $1
          AND "lockedAt" IS NOT NULL AND "lockedAt" < NOW() - ($2 * INTERVAL '1 second')
@@ -50,6 +51,7 @@ async function completeClaim(claim: ClaimedDelivery, push: PushDeliveryResult) {
     `UPDATE "NotificationDelivery"
      SET status = $3, "sentAt" = CASE WHEN $3 IN ('SENT', 'PARTIAL') THEN NOW() ELSE NULL END,
          "failedAt" = CASE WHEN $3 IN ('FAILED', 'PARTIAL') THEN NOW() ELSE NULL END,
+         "payloadJSON" = NULL,
          "errorCode" = $4, "lockedAt" = NULL, "lockToken" = NULL, "updatedAt" = NOW()
      WHERE id = $1 AND "lockToken" = $2`,
     claim.id, claim.lockToken, status, errorCode,
@@ -81,7 +83,8 @@ async function failClaim(claim: ClaimedDelivery, error: unknown) {
      SET status = CASE WHEN $3 THEN 'PENDING' ELSE 'FAILED' END,
          "nextAttemptAt" = CASE WHEN $3 THEN NOW() + ($4 * INTERVAL '1 second') ELSE NULL END,
          "failedAt" = CASE WHEN $3 THEN NULL ELSE NOW() END,
-         "errorCode" = $5, "lockedAt" = NULL, "lockToken" = NULL, "updatedAt" = NOW()
+         "errorCode" = $5, "payloadJSON" = CASE WHEN $3 THEN "payloadJSON" ELSE NULL END,
+         "lockedAt" = NULL, "lockToken" = NULL, "updatedAt" = NOW()
      WHERE id = $1 AND "lockToken" = $2`,
     claim.id, claim.lockToken, retry, pushRetryDelaySeconds(claim.attemptCount), errorCode,
   );

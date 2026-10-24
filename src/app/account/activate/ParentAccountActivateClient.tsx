@@ -29,13 +29,19 @@ export default function ParentAccountActivateClient({
   maskedPhone,
   expiresAt,
   redirectPath,
+  initialStep = "PHONE",
+  selfService = false,
 }: {
   token: string;
   maskedPhone: string;
   expiresAt: string | Date;
   redirectPath: string;
+  // ACCOUNT: 회원가입 화면에서 문자 인증을 이미 끝내고 넘어온 경우
+  initialStep?: Step;
+  // 학부모가 직접 시작한 활성화(특강 결제 링크가 아님) — 안내 문구만 다르다
+  selfService?: boolean;
 }) {
-  const [step, setStep] = useState<Step>("PHONE");
+  const [step, setStep] = useState<Step>(initialStep);
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -129,9 +135,9 @@ export default function ParentAccountActivateClient({
     <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 dark:bg-gray-950">
       <section className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-lg dark:bg-gray-900" aria-labelledby="activate-title">
         <header className="bg-brand-navy-900 px-6 py-7 text-white">
-          <p className="text-sm font-bold text-[var(--brand-accent)]">STIZ 특강</p>
-          <h1 id="activate-title" className="mt-1 text-2xl font-black">보호자 계정 활성화</h1>
-          <p className="mt-2 text-sm leading-6 text-gray-300">본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요.</p>
+          <p className="text-sm font-bold text-[var(--brand-accent)]">{selfService ? "STIZ 농구교실" : "STIZ 특강"}</p>
+          <h1 id="activate-title" className="mt-1 text-2xl font-black">{selfService ? "기존 학부모 계정 활성화" : "보호자 계정 활성화"}</h1>
+          <p className="mt-2 text-sm leading-6 text-gray-300">{selfService ? "휴대폰 인증이 끝났어요. 앞으로 로그인에 쓸 이메일과 비밀번호만 정해 주세요." : "본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요."}</p>
         </header>
 
         <div className="space-y-5 p-6">
@@ -168,7 +174,7 @@ export default function ParentAccountActivateClient({
               <Field id="parent-email" label="로그인 이메일" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="name@example.com" />
               <Field id="parent-password" label="비밀번호" type="password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="10자 이상" />
               <Field id="parent-password-confirm" label="비밀번호 확인" type="password" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" placeholder="비밀번호 다시 입력" />
-              <PrimaryButton pending={pending} onClick={activateAccount} label="계정 만들고 결제 페이지로 이동" pendingLabel="계정 만드는 중…" submit />
+              <PrimaryButton pending={pending} onClick={activateAccount} label={selfService ? "계정 활성화하고 계속하기" : "계정 만들고 결제 페이지로 이동"} pendingLabel="계정 만드는 중…" submit />
             </form>
           )}
 

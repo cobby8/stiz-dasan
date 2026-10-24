@@ -1,0 +1,4 @@
+interface:
+  display_name: "STIZ 월 청구 동기화"
+  short_description: "시트·랠리즈·홈페이지 수강 및 청구 상태를 함께 동기화"
+  default_prompt: "Use $stiz-monthly-billing to reconcile this month's parent requests and invoices across Google Sheets, Rallyz, and stiz-dasan.kr."

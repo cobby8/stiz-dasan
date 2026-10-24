@@ -9,9 +9,10 @@ const adminAction = readFileSync(new URL("../src/app/actions/admin.ts", import.m
 const enrollForm = readFileSync(new URL("../src/app/apply/enroll/EnrollApplicationForm.tsx", import.meta.url), "utf8");
 const trialClient = readFileSync(new URL("../src/app/admin/trial/TrialCrmClient.tsx", import.meta.url), "utf8");
 
-test("관리자 헤더는 알림 옆에 해와 달 아이콘 테마 전환을 둔다", () => {
-  assert.match(adminShell, /import \{ ThemeToggle \} from "@\/components\/ThemeToggle"/);
-  assert.match(adminShell, /<LazyNotificationBell \/>\s*<ThemeToggle \/>/);
+test("관리자 헤더는 알림을 유지하고 승인된 라이트 테마를 사용한다", () => {
+  assert.match(adminShell, /<LazyNotificationBell \/>/);
+  assert.doesNotMatch(adminShell, /<ThemeToggle/);
+  assert.match(themeToggle, /if \(forcedTheme\) return null/);
   assert.match(themeToggle, /resolvedTheme/);
   assert.match(themeToggle, /라이트 모드로 변경/);
   assert.match(themeToggle, /다크 모드로 변경/);

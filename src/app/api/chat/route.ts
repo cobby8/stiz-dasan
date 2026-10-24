@@ -10,14 +10,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { GEMINI_CHAT_MODEL, getGeminiClient } from "@/lib/gemini-client";
 
 // --- Gemini 클라이언트 초기화 (모듈 레벨에서 1회만) ---
-const genAI = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
+// 카카오 정책 답변과 같은 공용 설정(@/lib/gemini-client)을 쓴다. 키가 없으면 null.
+const genAI = getGeminiClient();
 
 // --- DB 데이터를 5분 캐시로 가져오는 함수들 ---
 
@@ -997,7 +996,7 @@ export async function POST(request: NextRequest) {
 
     // Gemini 모델 초기화 (시스템 프롬프트 포함)
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: GEMINI_CHAT_MODEL,
       systemInstruction: systemPrompt,
     });
 

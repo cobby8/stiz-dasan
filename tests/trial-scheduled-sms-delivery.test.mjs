@@ -28,9 +28,13 @@ test("체험 일정 확정 문자는 부모와 담당자 발송 결과를 모두
     );
 });
 
-test("수강 승인 문자는 신청 접수가 아니라 승인 전용 강사 템플릿을 사용한다", () => {
-    assert.match(adminAction, /coachTrigger: "ENROLL_APPROVED_COACH"/);
-    assert.match(adminAction, /variables: \{ childName: childName \|\| "", childGrade, className \}/);
+test("수강 승인 액션은 승인용 강사 템플릿을 직접 발송하지 않는다", () => {
+    const approval = adminAction.slice(
+        adminAction.indexOf("export async function approveEnrollApplication"),
+        adminAction.indexOf("export async function rejectEnrollApplication"),
+    );
+    assert.doesNotMatch(approval, /coachTrigger: "ENROLL_APPROVED_COACH"/);
+    assert.match(adminAction, /ENROLL_APPROVED_COACH/);
 });
 
 test("동일 일정 중복 발송은 막고 반이나 시간이 바뀌면 새 안내를 보낸다", () => {

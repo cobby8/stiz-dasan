@@ -224,13 +224,15 @@ export function CopyAddressButton({ tone = "light" }: CopyAddressButtonProps) {
 type InAppBrowserEscapeCardProps = {
   inAppBrowser: InAppBrowserKind;
   platform: InstallPlatform;
+  // 설치 안내가 아닌 화면(카카오 연결 등)에서 쓸 때 바꿔 넣는 설명. 없으면 설치 안내 문구 그대로.
+  description?: string;
 };
 
 /**
  * 인앱 브라우저(카카오톡 등)에서 열렸을 때 보여주는 탈출 안내.
  * 현장에서 가장 많이 막히는 지점이라 다른 안내보다 위에 둔다.
  */
-export function InAppBrowserEscapeCard({ inAppBrowser, platform }: InAppBrowserEscapeCardProps) {
+export function InAppBrowserEscapeCard({ inAppBrowser, platform, description }: InAppBrowserEscapeCardProps) {
   const label = getInAppBrowserLabel(inAppBrowser);
   const steps = getInAppEscapeSteps(inAppBrowser, platform);
   // 안드로이드는 크롬을 콕 집어 열 수 있으므로 이름을 그대로 말해 준다("브라우저"는 무엇을 말하는지 모른다).
@@ -258,7 +260,7 @@ export function InAppBrowserEscapeCard({ inAppBrowser, platform }: InAppBrowserE
             {label}에서 열렸어요
           </h2>
           <p className="mt-1 text-sm leading-6 text-brand-navy-700 dark:text-gray-200">
-            여기서는 홈 화면에 추가할 수 없어요. {browserName}로 열어주세요.
+            {description ?? `여기서는 홈 화면에 추가할 수 없어요. ${browserName}로 열어주세요.`}
           </p>
         </div>
       </div>

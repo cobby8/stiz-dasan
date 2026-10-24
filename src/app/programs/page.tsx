@@ -7,10 +7,12 @@ import Badge from "@/components/ui/Badge";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import CTABanner from "@/components/landing/CTABanner";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
+import { hasSellablePrice, listReviewTierOptions, readTossReviewConfig } from "@/lib/payments/tossReview";
+import ProgramPayButton from "./ProgramPayButton";
 
 export const revalidate = 60;
 export const metadata = buildPublicMetadata({
-    title: "프로그램 안내 | STIZ 농구교실 다산점",
+    title: "프로그램 안내 | STIZ 농구교실 다산2호점",
     description: "유아, 초등, 중등 수준별 맞춤 농구 클래스와 수강료, 셔틀버스 정보를 확인하세요.",
     path: "/programs",
 });
@@ -79,15 +81,20 @@ function getAgeColor(targetAge: string | null): { bg: string; text: string; bord
 }
 
 export default async function ProgramsPage() {
-    const [programs, settings] = await Promise.all([
+    const [allPrograms, settings] = await Promise.all([
         getPrograms() as Promise<Program[]>,
         getAcademySettings() as Promise<any>,
     ]);
+    // 0원 프로그램 숨김 — 가격 칸이 모두 0/빈 값이면 공개 화면에서 뺀다(토스 심사 기준: 0원 상품 노출 불가).
+    // getPrograms 자체는 관리자 화면 등도 쓰므로 여기서만 거른다.
+    const programs = allPrograms.filter((program) => hasSellablePrice(program));
     const phone = settings.contactPhone || "010-0000-0000";
+    // 토스페이먼츠 가맹 심사용 결제 버튼 — 테스트 키가 있을 때만 보인다(라이브 키·미설정이면 숨김).
+    const reviewPayEnabled = readTossReviewConfig(process.env) !== null;
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
                     <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
@@ -102,7 +109,7 @@ export default async function ProgramsPage() {
             </section>
 
             {/* 프로그램 목록 — 세로 카드(이미지 상단 + 정보 하단) 구조 */}
-            <SectionLayout label="CLASSES" title="수업 안내" description="연령과 수준에 맞춘 체계적인 프로그램" bgColor="white">
+            <SectionLayout className="public-content-section" bgColor="white">
                 {programs.length === 0 ? (
                     <div className="text-center py-20 text-gray-400">
                         <div className="text-5xl mb-4">🏀</div>
@@ -110,7 +117,19 @@ export default async function ProgramsPage() {
                         <p className="text-sm mt-2">문의: {phone}</p>
                     </div>
                 ) : (
-                    <div data-tour-target="program-cards" className="grid md:grid-cols-2 gap-6">
+                    <>
+                    {/* 판매정책 표시 — 결제사 심사 필수(서비스 제공기간이 상품 화면에 명확히 보여야 함) */}
+                    <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-700 break-keep dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                        <p>
+                            <strong className="text-gray-900 dark:text-white">수강 기간</strong> 월 수강료는 <strong>4주(1개월) 단위</strong>로 결제하며,
+                            서비스 제공기간은 결제한 달의 수업 4주입니다. 셔틀비는 별도입니다.
+                        </p>
+                        <p className="mt-1">
+                            <strong className="text-gray-900 dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
+                            <a href="/terms" className="font-bold text-brand-orange-500 underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
+                        </p>
+                    </div>
+                    <div data-tour-target="program-cards" className="grid min-w-0 md:grid-cols-2 gap-4 md:gap-5">
                         {programs.map((program, i) => {
                             const days = program.days
                                 ? DAY_ORDER.filter((d) => program.days!.split(",").includes(d))
@@ -122,7 +141,7 @@ export default async function ProgramsPage() {
 
                             return (
                                 <AnimateOnScroll key={program.id} delay={(i % 2) * 150}>
-                                    <Card variant="default" className={`overflow-hidden !p-0 border-t-4 ${ageColor.border}`}>
+                                    <Card variant="default" className={`public-card public-program-card min-w-0 overflow-hidden !p-0 border-t-4 ${ageColor.border}`}>
                                         {/* 프로그램 이미지 */}
                                         {program.imageUrl && (
                                             <div className="relative aspect-[3/1] bg-gray-100 dark:bg-gray-800 overflow-hidden">
@@ -175,12 +194,12 @@ export default async function ProgramsPage() {
                                         <div className="px-5 pb-5">
                                             {tiers.length > 0 ? (
                                                 <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-                                                    <table className="w-full text-sm">
+                                                    <table className="public-table public-fee-table w-full table-fixed text-sm">
                                                         <thead className="bg-brand-navy-900 text-white">
                                                             <tr>
-                                                                <th className="px-4 py-2.5 text-left font-bold">수업 빈도</th>
-                                                                <th className="px-4 py-2.5 text-right font-bold">월 수강료</th>
-                                                                <th className="px-4 py-2.5 text-right font-bold">셔틀비</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-left font-bold">수업 빈도</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">월 수강료</th>
+                                                                <th className="px-2 sm:px-4 py-2.5 text-right font-bold">셔틀비</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -188,11 +207,11 @@ export default async function ProgramsPage() {
                                                                 const fee = getShuttleFeeDisplay(program.shuttleFeeOverride, t.key, weekend);
                                                                 return (
                                                                     <tr key={t.key} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                                        <td className="px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t.label}</td>
-                                                                        <td className="px-4 py-3 text-right font-bold text-brand-navy-900 dark:text-white">
+                                                                        <td className="px-2 sm:px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t.label}</td>
+                                                                        <td className="px-2 sm:px-4 py-3 text-right font-bold text-brand-navy-900 dark:text-white">
                                                                             {Number(program[t.key]).toLocaleString()}원
                                                                         </td>
-                                                                        <td className="px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
+                                                                        <td className="px-2 sm:px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
                                                                             {fee ? fee : <span className="text-gray-400 font-normal">운행 없음</span>}
                                                                         </td>
                                                                     </tr>
@@ -229,12 +248,21 @@ export default async function ProgramsPage() {
                                                     시간표 보기 →
                                                 </a>
                                             </div>
+
+                                            {reviewPayEnabled && (
+                                                <ProgramPayButton
+                                                    programId={program.id}
+                                                    // 주문서와 같은 규칙으로 빈도 목록을 만든다(공용 함수 — 사본 금지)
+                                                    tiers={listReviewTierOptions(program)}
+                                                />
+                                            )}
                                         </div>
                                     </Card>
                                 </AnimateOnScroll>
                             );
                         })}
                     </div>
+                    </>
                 )}
             </SectionLayout>
 

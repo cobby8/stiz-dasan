@@ -5,7 +5,7 @@ import { getCachedAdminSettingsPayload } from "@/lib/adminReadPayloads";
 export const revalidate = 30;
 
 export default async function AdminTermsPage() {
-    const { settings } = await getCachedAdminSettingsPayload();
+    const { settings, fetchError } = await getCachedAdminSettingsPayload();
 
-    return <TermsAdminClient termsOfService={settings?.termsOfService ?? ""} />;
+    return <TermsAdminClient termsOfService={settings?.termsOfService ?? ""} fetchError={fetchError} />;
 }

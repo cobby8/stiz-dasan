@@ -62,6 +62,7 @@ export default function TestimonialCarousel({
       title="학부모님들의 생생한 후기"
       description="스티즈 농구교실을 경험한 학부모님들의 이야기입니다"
       bgColor="section"
+      className="public-content-section"
     >
       {/* 후기가 없으면 안내 메시지 */}
       {testimonials.length === 0 ? (

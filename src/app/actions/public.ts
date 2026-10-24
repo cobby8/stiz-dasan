@@ -8,7 +8,10 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { ensureTrialLeadTable } from "@/app/actions/admin";
+import { decideTrialLeadForNewApplication } from "@/lib/enrollment/trialLeadLinkService";
+import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { notifyAdmins } from "@/lib/notification";
+import { buildContactSaveName } from "@/lib/contactSaveName";
 import {
     issueEnrollmentAccountHandoff,
 } from "@/lib/enrollment-account-handoff";
@@ -127,6 +130,9 @@ interface TrialApplicationInput {
     preferredSlotKey?: string;    // 희망 수업 "Mon-4"
     hopeNote?: string;
     source: string;               // 유입 경로
+    // 학부모가 「체험수업 비용과 입금 계좌를 확인했습니다」에 체크했는지(입금 완료가 아님!)
+    trialFeeNoticeAgreed?: boolean;
+    /** @deprecated 배포 직전 열린 옛 화면 호환용. 의미는 trialFeeNoticeAgreed 와 같다(입금 아님). */
     trialFeeConfirmed?: boolean;
     agreedTerms?: boolean;
     agreedPrivacy?: boolean;
@@ -196,7 +202,8 @@ export interface ExistingTrialApplicationForEdit {
     parentName: string | null;
     parentPhone: string;
     source: string | null;
-    trialFeeConfirmed: boolean;
+    // 기존 신청서를 다시 불러올 때 「비용·계좌 확인」 체크를 채워 주는 용도(입금 여부 아님)
+    trialFeeNoticeAgreed: boolean;
 }
 
 export async function findExistingTrialApplicationForEdit(input: {
@@ -211,7 +218,7 @@ export async function findExistingTrialApplicationForEdit(input: {
     const rows = await prisma.$queryRawUnsafe<any[]>(
         `SELECT id, "trialDate", "scheduledDate", "preferredDay", "preferredPeriod",
                 "childName", "childGrade", "childGender", "childSchool",
-                "parentName", "parentPhone", source, "trialFeeConfirmed"
+                "parentName", "parentPhone", source, "trialFeeNoticeAgreedAt"
            FROM "TrialLead"
           WHERE LOWER(TRIM("childName")) = LOWER($1)
             AND regexp_replace(COALESCE("parentPhone", ''), '[^0-9]', '', 'g') = $2
@@ -237,7 +244,7 @@ export async function findExistingTrialApplicationForEdit(input: {
         parentName: rowValue(row, "parentName", "parentname"),
         parentPhone: rowValue(row, "parentPhone", "parentphone") || normalizePhone(input.parentPhone || ""),
         source: row.source ?? null,
-        trialFeeConfirmed: Boolean(rowValue(row, "trialFeeConfirmed", "trialfeeconfirmed")),
+        trialFeeNoticeAgreed: Boolean(rowValue(row, "trialFeeNoticeAgreedAt", "trialfeenoticeagreedat")),
     };
 }
 
@@ -268,7 +275,9 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
     if (!data.childGrade) throw new Error("학년을 선택해주세요.");
     if (!parentPhone) throw new Error("학부모 연락처를 입력해주세요.");
     if (!data.source) throw new Error("신청경로를 선택해주세요.");
-    if (!data.trialFeeConfirmed) throw new Error("체험수업 비용 확인을 체크해주세요.");
+    // 학부모 동의 체크 — 입금 확인과는 별개다. 저장은 trialFeeNoticeAgreedAt(시각)으로만 한다.
+    const feeNoticeAgreed = Boolean(data.trialFeeNoticeAgreed ?? data.trialFeeConfirmed);
+    if (!feeNoticeAgreed) throw new Error("체험수업 비용 확인을 체크해주세요.");
 
     // 전화번호 형식 검증: 숫자만 추출해 10~11자리인지 확인합니다.
     const phoneDigits = parentPhone.replace(/\D/g, "");
@@ -321,7 +330,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                     "basketballExp" = $6,
                     "parentName" = $7,
                     "parentPhone" = $8,
-                    "scheduledDate" = $9::timestamptz,
+                    "scheduledDate" = CASE WHEN status='SCHEDULED' THEN "scheduledDate" ELSE $9::timestamptz END,
                     "preferredDays" = $10,
                     "preferredSlotKey" = $11,
                     "preferredDay" = $12,
@@ -329,11 +338,12 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                     "trialDate" = $14::timestamptz,
                     "hopeNote" = $15,
                     source = $16,
-                    "trialFeeConfirmed" = $17,
-                    "agreedTerms" = $18,
-                    "agreedPrivacy" = $19,
+                    -- 학부모 재제출은 입금 확인(trialFeeConfirmed)을 건드리지 않는다. 동의 시각은 처음 값을 유지.
+                    "trialFeeNoticeAgreedAt" = COALESCE("trialFeeNoticeAgreedAt", NOW()),
+                    "agreedTerms" = $17,
+                    "agreedPrivacy" = $18,
                     "updatedAt" = NOW()
-                  WHERE id = $20`,
+                  WHERE id = $19`,
                 data.childGrade || null,
                 data.childBirthDate || null,
                 data.childGrade || null,
@@ -342,7 +352,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 data.basketballExp || null,
                 parentName,
                 normalizedParentPhone,
-                data.trialDate || null,
+                null, // 희망일은 날짜뿐이므로 실제 확정시각 칼럼에 자정으로 저장하지 않는다.
                 data.trialDay || null,
                 preferredSlotKey,
                 data.trialDay || null,
@@ -350,7 +360,6 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 data.trialDate || null,
                 data.hopeNote?.trim() || null,
                 data.source || "WEBSITE",
-                data.trialFeeConfirmed ?? false,
                 data.agreedTerms ?? false,
                 data.agreedPrivacy ?? false,
                 existingId,
@@ -379,15 +388,15 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
                 id, "childName", "childAge", "childBirthDate", "childGrade", "childGender", "childSchool",
                 "basketballExp", "parentName", "parentPhone",
                 "scheduledDate", "preferredDays", "preferredSlotKey", "preferredDay", "preferredPeriod", "trialDate",
-                "hopeNote", source, "trialFeeConfirmed",
+                "hopeNote", source, "trialFeeConfirmed", "trialFeeNoticeAgreedAt",
                 "agreedTerms", "agreedPrivacy",
                 status, "createdAt", "updatedAt"
             ) VALUES (
                 gen_random_uuid()::text, $1, $2, $3::timestamptz, $4, $5, $6,
                 $7, $8, $9,
                 $10::timestamptz, $11, $12, $13, $14, $15::timestamptz,
-                $16, $17, $18,
-                $19, $20,
+                $16, $17, false, NOW(),
+                $18, $19,
                 'NEW', NOW(), NOW()
             ) RETURNING id`,
             childName,
@@ -399,7 +408,7 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             data.basketballExp || null,                           // basketballExp
             parentName,
             normalizedParentPhone,
-            data.trialDate || null,                               // scheduledDate
+            null,                                                 // scheduledDate: 관리자 확정 전에는 비워 둔다.
             data.trialDay || null,                                // preferredDays
             preferredSlotKey,                                      // preferredSlotKey
             data.trialDay || null,                                // preferredDay
@@ -407,7 +416,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             data.trialDate || null,                               // trialDate
             data.hopeNote?.trim() || null,                        // hopeNote
             data.source || "WEBSITE",                             // source
-            data.trialFeeConfirmed ?? false,                      // trialFeeConfirmed
+            // trialFeeConfirmed 는 SQL 에서 false 고정(관리자가 입금 확인해야 true),
+            // trialFeeNoticeAgreedAt 은 NOW() — 학부모가 안내에 동의한 시각
             data.agreedTerms ?? false,                            // agreedTerms
             data.agreedPrivacy ?? false,                          // agreedPrivacy
         );
@@ -424,6 +434,8 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             childGrade: data.childGrade || "학년 미입력",
             parentName,
             parentPhone: normalizedParentPhone,
+            // 연락처 저장용 이름 `2610 이성빈 목7 초6` — 관리자 알림 문자에서 복사해 쓴다.
+            contactSaveName: buildContactSaveName({ childName, childGrade: data.childGrade, slotKeys: preferredSlotKey }),
         };
         const trialLeadId = rows[0]?.id || "ok";
 
@@ -831,29 +843,65 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
 
     let matchedTrialLeadId = await resolveTrialLeadIdFromEnrollmentAccess(data.accessCode);
 
+    // 같은 아이의 기존 신청서(재제출)를 먼저 찾는다. 이미 체험과 연결돼 있으면 그 연결을 그대로 쓰고,
+    // 아니면 판정에 이 신청서 id 를 넘겨 "자기 신청서에 연결된 체험"이 타 신청서 연결로 제외되지 않게 한다.
+    let priorApplicationId: string | null = null;
+    if (!matchedTrialLeadId) {
+        try {
+            const priorDigits = normalizePhone(parentPhone).replace(/\D/g, "");
+            const priorRows = data.existingId
+                ? await prisma.$queryRawUnsafe<Array<{ id: string; trialLeadId: string | null }>>(
+                    `SELECT id, "trialLeadId"
+                       FROM "EnrollmentApplication"
+                      WHERE id = $1
+                        AND LOWER(TRIM("childName")) = LOWER($2)
+                        AND regexp_replace(COALESCE("parentPhone", ''), '[^0-9]', '', 'g') = $3
+                        AND status IN ('PENDING', 'APPROVED')
+                      LIMIT 1`,
+                    data.existingId,
+                    childName,
+                    priorDigits,
+                )
+                : await prisma.$queryRawUnsafe<Array<{ id: string; trialLeadId: string | null }>>(
+                    `SELECT id, "trialLeadId"
+                       FROM "EnrollmentApplication"
+                      WHERE LOWER(TRIM("childName")) = LOWER($1)
+                        AND regexp_replace(COALESCE("parentPhone", ''), '[^0-9]', '', 'g') = $2
+                        AND "childBirthDate"::date = $3::date
+                        AND status IN ('PENDING', 'APPROVED')
+                      ORDER BY
+                        CASE status WHEN 'PENDING' THEN 1 ELSE 2 END,
+                        "updatedAt" DESC,
+                        "createdAt" DESC
+                      LIMIT 1`,
+                    childName,
+                    priorDigits,
+                    data.childBirthDate,
+                );
+            priorApplicationId = priorRows[0]?.id ?? null;
+            matchedTrialLeadId = priorRows[0]?.trialLeadId ?? null;
+        } catch (priorError) {
+            console.warn("[submitEnrollApplication] prior application lookup failed:", priorError);
+        }
+    }
+
     if (!matchedTrialLeadId) {
         try {
             await ensureTrialLeadTable();
-            const phoneDigits = normalizePhone(parentPhone).replace(/\D/g, "");
-            const matches = await prisma.$queryRawUnsafe<{ id: string }[]>(
-                `SELECT id
-                 FROM "TrialLead"
-                 WHERE TRIM("childName") = $1
-                   AND regexp_replace(COALESCE("parentPhone", ''), '[^0-9]', '', 'g') = $2
-                   AND status IN ('ATTENDED', 'SCHEDULED', 'CONTACTED', 'NEW')
-                 ORDER BY
-                   CASE status
-                     WHEN 'ATTENDED' THEN 1
-                     WHEN 'SCHEDULED' THEN 2
-                     WHEN 'CONTACTED' THEN 3
-                     ELSE 4
-                   END,
-                   COALESCE("attendedDate", "trialDate", "scheduledDate", "createdAt") DESC
-                 LIMIT 1`,
+            // 안내 링크 없이 직접 신청한 경우: 같은 보호자 번호의 체험 기록과 비교한다.
+            // 이름 완전 일치뿐 아니라 "성 같고 1글자 오타"도 후보가 정확히 1명이면 자동 연결(AUTO).
+            // 애매한 경우(SUGGEST)는 여기서 연결하지 않고 관리자 신청 목록에 후보로만 보인다.
+            const decision = await decideTrialLeadForNewApplication({
+                applicationId: priorApplicationId,
                 childName,
-                phoneDigits,
-            );
-            matchedTrialLeadId = matches[0]?.id ?? null;
+                parentPhone,
+                childSchool: data.childSchool ?? null,
+                childGrade: data.childGrade ?? null,
+                childBirthYmd: isKstYmd(data.childBirthDate) ? data.childBirthDate : null,
+                preferredSlotKeys: data.preferredSlotKeys ?? null,
+                appliedYmd: todayKst(),
+            });
+            matchedTrialLeadId = decision.decision === "AUTO" ? decision.trialLeadId : null;
         } catch (matchError) {
             console.warn("[submitEnrollApplication] trial lead auto match failed:", matchError);
         }
@@ -925,7 +973,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
         if (existingApplication?.id) {
             await prisma.$executeRawUnsafe(
                 `UPDATE "EnrollmentApplication" SET
-                    "trialLeadId" = $1,
+                    "trialLeadId" = COALESCE($1, "trialLeadId"), -- 재제출로 기존 체험 연결을 지우지 않는다
                     "childName" = $2,
                     "childBirthDate" = $3::timestamptz,
                     "childGender" = $4,
@@ -1155,6 +1203,8 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             childGrade: data.childGrade || "학년 미입력",
             parentName,
             parentPhone: normalizePhone(parentPhone),
+            // 연락처 저장용 이름 `2610 이성빈 화6목6 초6` — 관리자 알림 문자에서 복사해 쓴다.
+            contactSaveName: buildContactSaveName({ childName, childGrade: data.childGrade, slotKeys: data.preferredSlotKeys }),
         };
 
         // 관리자에게 알림을 보냅니다. 발송 실패가 신청 저장을 막지는 않습니다.

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { notMergedStudent } from "@/lib/studentVisibility";
 
 // 관리자용 보강권 현황 — 읽기 전용.
 //
@@ -67,7 +68,7 @@ export async function getMakeupCreditOverview(): Promise<AdminCreditOverview> {
        LEFT JOIN "Class" oc ON oc.id = mc."originClassId"
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
        LEFT JOIN "Class" bc ON bc.id = ms."makeupClassId"
-      WHERE mc.status IN ('AVAILABLE','RESERVED')
+      WHERE mc.status IN ('AVAILABLE','RESERVED') AND ${notMergedStudent("s")}
       ORDER BY mc."expiresAt" ASC`,
   );
 

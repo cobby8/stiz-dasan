@@ -4,7 +4,7 @@
 import Link from 'next/link';
 
 export const metadata = {
-  title: '페이지를 찾을 수 없습니다 | STIZ 농구교실 다산점',
+  title: '페이지를 찾을 수 없습니다 | STIZ 농구교실 다산2호점',
 };
 
 export default function NotFound() {

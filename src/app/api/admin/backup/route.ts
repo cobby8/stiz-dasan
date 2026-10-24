@@ -8,16 +8,12 @@ function replacer(_: string, v: unknown) {
     return typeof v === "bigint" ? Number(v) : v;
 }
 
-async function safeQuery<T = any>(sql: string): Promise<T[]> {
-    try {
-        return await prisma.$queryRawUnsafe<T[]>(sql);
-    } catch (e) {
-        console.warn(`[backup] table query failed (may not exist): ${sql.slice(0, 60)}`, (e as Error).message);
-        return [];
-    }
+async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
+    // 조회 실패를 빈 정상 자료로 바꾸지 않는다. 실패 응답에는 첨부파일을 만들지 않는다.
+    return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
 
-// GET /api/admin/backup - 전체 DB 스냅샷을 JSON으로 다운로드
+// GET /api/admin/backup - 설정 7개 테이블만 다운로드 (전체 DB 백업 아님)
 export async function GET() {
     // 원장 권한이 있는 사용자만 백업을 다운로드할 수 있다.
     try {
@@ -36,24 +32,25 @@ export async function GET() {
             routes,
             stops,
         ] = await Promise.all([
-            safeQuery(`SELECT * FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`),
-            safeQuery(`SELECT * FROM "Program" ORDER BY "order" ASC, "createdAt" DESC`),
-            safeQuery(`SELECT * FROM "Coach" ORDER BY "order" ASC`),
-            safeQuery(`SELECT * FROM "ClassSlotOverride" ORDER BY "slotKey" ASC`),
-            safeQuery(`SELECT * FROM "CustomClassSlot" ORDER BY "dayKey" ASC, "startTime" ASC`),
-            safeQuery(`SELECT * FROM "Route"`),
-            safeQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
+            requiredQuery(`SELECT * FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`),
+            requiredQuery(`SELECT * FROM "Program" ORDER BY "order" ASC, "createdAt" DESC`),
+            requiredQuery(`SELECT * FROM "Coach" ORDER BY "order" ASC`),
+            requiredQuery(`SELECT * FROM "ClassSlotOverride" ORDER BY "slotKey" ASC`),
+            requiredQuery(`SELECT * FROM "CustomClassSlot" ORDER BY "dayKey" ASC, "startTime" ASC`),
+            requiredQuery(`SELECT * FROM "Route"`),
+            requiredQuery(`SELECT * FROM "Stop" ORDER BY "createdAt" ASC`),
         ]);
 
         // Attach stops to routes
-        const routesWithStops = routes.map((r: any) => ({
+        const routesWithStops = routes.map((r) => ({
             ...r,
-            stops: stops.filter((s: any) => s.routeId === r.id),
+            stops: stops.filter((s) => s.routeId === r.id),
         }));
 
         const backup = {
             _meta: {
                 version: 1,
+                scope: "SETTINGS_ONLY",
                 exportedAt: new Date().toISOString(),
                 tables: ["AcademySettings", "Program", "Coach", "ClassSlotOverride", "CustomClassSlot", "Route/Stop"],
             },
@@ -73,9 +70,9 @@ export async function GET() {
                 "Content-Disposition": `attachment; filename="${filename}"`,
             },
         });
-    } catch (e) {
-        console.error("[backup GET] failed:", e);
-        return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+    } catch {
+        console.error("[backup GET] failed: COLLECT_OR_SERIALIZE");
+        return NextResponse.json({ success: false, scope: "SETTINGS_ONLY", error: "설정 백업 자료를 수집하지 못했습니다." }, { status: 500 });
     }
 }
 
