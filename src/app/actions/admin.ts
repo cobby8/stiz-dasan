@@ -5283,6 +5283,19 @@ const ENROLL_APPLICATION_COLUMNS = [
 
 type EnrollApplicationColumn = (typeof ENROLL_APPLICATION_COLUMNS)[number];
 
+// 관리자 수정 화면이 직접 손대지 않는 셔틀 위치·동의 컬럼.
+// 셔틀을 끌 때 **한 묶음으로 전부** 비워야 한다 — DB 제약이 "일부만 남은 상태"도 거부한다.
+// 순서·구성은 마이그레이션의 shuttle_location_complete_check ROW(...) 와 같게 유지한다.
+const SHUTTLE_LOCATION_COLUMNS = [
+    "shuttlePickupAddress", "shuttlePickupRoadAddress",
+    "shuttlePickupLatitude", "shuttlePickupLongitude", "shuttlePickupPlaceId",
+    "shuttlePickupSource", "shuttlePickupAccuracyMeters", "shuttlePickupConfirmedAt",
+    "shuttleDropoffAddress", "shuttleDropoffRoadAddress",
+    "shuttleDropoffLatitude", "shuttleDropoffLongitude", "shuttleDropoffPlaceId",
+    "shuttleDropoffSource", "shuttleDropoffAccuracyMeters", "shuttleDropoffConfirmedAt",
+    "shuttleLocationConsentVersion", "shuttleLocationConsentAt",
+] as const;
+
 const ENROLL_APPLICATION_FIELD_LABELS: Partial<Record<EnrollApplicationColumn, string>> = {
     childName: "아이 이름",
     childBirthDate: "생년월일",
@@ -5357,12 +5370,28 @@ export async function updateEnrollApplication(
             .map((col) => [col, data[col]] as const);
         if (entries.length === 0) return;
 
-        const historyNote = buildEnrollApplicationUpdateNote(apps[0], entries);
+        // 셔틀을 끄면 지도 좌표와 위치정보 동의까지 함께 비운다.
+        // DB 제약(EnrollmentApplication_shuttle_location_complete_check)이 "셔틀 미이용인데 좌표가 남은 상태"를
+        // 아예 거부하므로, 라벨만 지우고 좌표를 두면 UPDATE 가 통째로 실패해 **관리자가 셔틀을 취소할 방법이 없다**
+        // (승인 화면까지 가지도 못하고 "수강 신청 수정 실패" 로 끝난다).
+        // 학부모 신청 경로(public.ts)는 이미 같은 방식으로 함께 비운다 — 관리자 경로만 빠져 있었다.
+        const clearsShuttleLocation = data.shuttleNeeded === false;
+        const hadShuttleLocation = clearsShuttleLocation
+            && SHUTTLE_LOCATION_COLUMNS.some((col) => (apps[0][col] ?? apps[0][col.toLowerCase()]) != null);
 
-        const setClauses = entries.map(([col], index) => {
-            const isDate = ["childBirthDate"].includes(col);
-            return `"${col}" = $${index + 1}${isDate ? "::timestamptz" : ""}`;
-        }).join(", ");
+        const historyNote = [
+            buildEnrollApplicationUpdateNote(apps[0], entries),
+            // 개인정보(좌표)를 지운 사실은 이력에 남긴다.
+            hadShuttleLocation ? "셔틀 위치정보·동의 기록 삭제" : null,
+        ].filter(Boolean).join(" / ");
+
+        const setClauses = [
+            ...entries.map(([col], index) => {
+                const isDate = ["childBirthDate"].includes(col);
+                return `"${col}" = $${index + 1}${isDate ? "::timestamptz" : ""}`;
+            }),
+            ...(clearsShuttleLocation ? SHUTTLE_LOCATION_COLUMNS.map((col) => `"${col}" = NULL`) : []),
+        ].join(", ");
         const values = entries.map(([, value]) => value ?? null);
 
         await prisma.$executeRawUnsafe(
