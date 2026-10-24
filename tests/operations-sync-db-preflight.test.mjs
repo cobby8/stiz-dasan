@@ -100,13 +100,35 @@ test("통합 release preflight가 운영 동기화 DB 검사를 포함한다", (
   assert.match(source, /운영 동기화 DB 준비 상태/);
 });
 
+// 2026-10-24: 전체 명령 문자열을 그대로 단정하고 있어 **검사를 새로 추가해도 깨졌다**(회원 탈퇴 preflight 추가 시).
+// 지켜야 할 것은 "모든 필수 검사를 거친 뒤에 빌드가 시작한다"는 성질이지 명령의 글자가 아니다.
+// 개수·문자열을 세면 안전한 추가에도 깨지고, 그러면 정작 봐야 할 가드를 아무도 안 보게 된다
+// (같은 이유로 좌석 UPDATE 개수 단정도 성질로 바꾼 적이 있다).
+const REQUIRED_BUILD_PREFLIGHTS = [
+  "regular-shuttle-db-preflight.mjs",
+  "operations-sync-db-preflight.mjs",
+  "uniform-order-db-preflight.mjs",
+  "kakao-parent-db-preflight.mjs",
+  "account-withdrawal-db-preflight.mjs",
+];
+
 test("Vercel build는 필수 DB 검사를 모두 통과한 뒤에만 시작한다", () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(
-    packageJson.scripts["build:vercel"],
-    "node scripts/regular-shuttle-db-preflight.mjs && node scripts/operations-sync-db-preflight.mjs && node scripts/uniform-order-db-preflight.mjs && node scripts/kakao-parent-db-preflight.mjs && npm run build",
-  );
+  const command = packageJson.scripts["build:vercel"];
+
+  for (const preflight of REQUIRED_BUILD_PREFLIGHTS) {
+    assert.ok(command.includes(preflight), `build:vercel 이 ${preflight} 를 거치지 않는다`);
+  }
+  // 검사는 모두 빌드보다 **앞**에 있어야 한다 — 뒤에 붙으면 이미 빌드된 뒤라 막지 못한다.
+  const buildAt = command.indexOf("npm run build");
+  assert.ok(buildAt > 0, "build:vercel 이 npm run build 를 호출하지 않는다");
+  for (const preflight of REQUIRED_BUILD_PREFLIGHTS) {
+    assert.ok(command.indexOf(preflight) < buildAt, `${preflight} 가 빌드 뒤에 있어 아무것도 막지 못한다`);
+  }
+  // 검사는 && 로 이어져야 한다(; 로 이으면 실패해도 빌드가 계속된다).
+  assert.doesNotMatch(command.slice(0, buildAt), /;/);
+
   assert.equal(vercel.buildCommand, "npm run build:vercel");
 });
 

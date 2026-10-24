@@ -58,7 +58,16 @@ test("통합 release preflight가 정규 셔틀 DB 검사를 포함한다", () =
 test("Vercel 실제 build는 필수 DB 검사 성공 후 기존 build를 실행한다", () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
-  assert.equal(packageJson.scripts["build:vercel"], "node scripts/regular-shuttle-db-preflight.mjs && node scripts/operations-sync-db-preflight.mjs && node scripts/uniform-order-db-preflight.mjs && node scripts/kakao-parent-db-preflight.mjs && npm run build");
+  // 2026-10-24: 명령 전문을 단정하고 있어 DB 검사를 새로 추가하기만 해도 깨졌다.
+  // 이 파일의 관심사는 «내 preflight 가 빌드 앞에 있고, 그 뒤 기존 build 가 돌아간다»다.
+  // 검사 전체 목록·순서·&& 연결은 operations-sync-db-preflight.test.mjs 가 본다(중복 단정 금지).
+  const command = packageJson.scripts["build:vercel"];
+  assert.ok(command.includes("regular-shuttle-db-preflight.mjs"));
+  assert.ok(
+    command.indexOf("regular-shuttle-db-preflight.mjs") < command.indexOf("npm run build"),
+    "정규 셔틀 검사가 빌드 뒤에 있으면 아무것도 막지 못한다",
+  );
+  assert.ok(command.trimEnd().endsWith("npm run build"), "필수 검사를 거친 뒤 기존 build 로 끝나야 한다");
   assert.equal(vercel.buildCommand, "npm run build:vercel");
   assert.equal(packageJson.scripts.build, "prisma generate && next build --webpack");
 });

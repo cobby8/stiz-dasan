@@ -17,6 +17,11 @@ model User {
   phoneVerifiedAt             DateTime?                     @db.Timestamptz(6)
   authUserId                  String?                       @unique
   role                        Role                          @default(PARENT)
+  // 회원 탈퇴(계정 삭제) — 구글플레이 필수 요건이자 개인정보처리방침 이행 수단.
+  // 재학 중이면 바로 지우지 않고 신청만 받아 원장이 확인한다(수업 다니는 아이의 보호자 연락이 끊기면 운영 사고).
+  // 둘 다 null=정상 / 신청만=대기 / withdrawnAt 있음=탈퇴 완료(로그인 수단 제거·익명화됨)
+  withdrawRequestedAt         DateTime?                     @db.Timestamptz(6)
+  withdrawnAt                 DateTime?                     @db.Timestamptz(6)
   createdAt                   DateTime                      @default(now())
   updatedAt                   DateTime                      @updatedAt
   classes                     Class[]

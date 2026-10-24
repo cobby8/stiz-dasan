@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 4000",
     "build": "prisma generate && next build --webpack",
-    "build:vercel": "node scripts/regular-shuttle-db-preflight.mjs && node scripts/operations-sync-db-preflight.mjs && node scripts/uniform-order-db-preflight.mjs && node scripts/kakao-parent-db-preflight.mjs && npm run build",
+    "build:vercel": "node scripts/regular-shuttle-db-preflight.mjs && node scripts/operations-sync-db-preflight.mjs && node scripts/uniform-order-db-preflight.mjs && node scripts/kakao-parent-db-preflight.mjs && node scripts/account-withdrawal-db-preflight.mjs && npm run build",
     "release:preflight": "node scripts/release-preflight.mjs",
     "release:code-check": "node scripts/release-preflight.mjs --skip-env",
     "payments:preflight": "dotenv -e .env.local -e .env -- node scripts/payment-preflight.mjs",
