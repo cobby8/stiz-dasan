@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   isParentOAuthProviderReady,
+  parentOAuthNotReadyMessage,
   parseParentOAuthProvider,
   publicSiteOrigin,
   safeInternalRedirect,
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     request.nextUrl.searchParams.get("intent") === "login" ? "login" : "parent-signup";
 
   if (!isParentOAuthProviderReady(provider)) {
-    return loginError(request, "네이버 간편가입을 준비 중입니다. 일반 회원가입을 이용해 주세요.");
+    // 문구는 provider 별로 모듈이 만든다 — 여기 하드코딩하면 provider 를 늘릴 때 엉뚱한 이름이 나간다.
+    return loginError(request, parentOAuthNotReadyMessage(provider));
   }
 
   const next = safeInternalRedirect(request.nextUrl.searchParams.get("next"));
