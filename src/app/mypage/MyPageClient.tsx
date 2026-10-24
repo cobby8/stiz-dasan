@@ -1221,6 +1221,18 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                     </div>
                 </div>
             )}
+
+            {/* 계정 — 맨 아래 작게. 자주 쓰는 기능이 아니라 눈에 먼저 띌 필요가 없다.
+                다만 «길이 없으면 없는 기능»이므로 반드시 둔다(구글플레이도 앱 안 삭제 경로를 요구한다). */}
+            <div className="border-t border-gray-100 pt-4 dark:border-gray-800">
+                <Link
+                    href="/mypage/withdraw"
+                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
+                >
+                    <SymbolIcon name="person_remove" size={14} />
+                    회원 탈퇴
+                </Link>
+            </div>
         </div>
     );
 }
