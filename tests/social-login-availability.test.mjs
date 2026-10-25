@@ -137,3 +137,13 @@ test("Apple 버튼은 애플 가이드라인대로 로고를 붙인다", () => {
   // 로그인 화면은 검정 스타일(다크 모드에선 흰색) — 애플이 허용하는 두 가지 중 하나.
   assert.match(loginPage, /provider: "apple", label: "Apple로 로그인", tone: "border-black bg-black text-white/);
 });
+
+test("간편로그인·가입 버튼은 <Link> 가 아닌 일반 링크다(미리 불러오기가 PKCE 열쇠를 덮어쓰지 않게)", async () => {
+  // 2026-10-26 운영: 화면이 열리자 /auth/oauth/* 가 1~2초에 8번 열려 열쇠가 덮어써지고, 실제 애플 로그인이 「만료」로 실패했다.
+  const { readFile } = await import("node:fs/promises");
+  for (const file of ["src/app/login/page.tsx", "src/components/auth/ParentSignupClient.tsx"]) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /<Link[^>]*?\s+href=\{`\/auth\/oauth\//, `${file}: 간편로그인 시작 주소에 <Link> 를 쓰면 prefetch 가 열쇠를 덮어쓴다`);
+    assert.match(source, /<a\s+key=\{option\.provider\}\s+href=\{`\/auth\/oauth\//, `${file}: 간편로그인 버튼이 사라졌다`);
+  }
+});

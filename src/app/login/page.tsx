@@ -351,15 +351,17 @@ function LoginContent() {
                 <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
               </div>
               <div className="grid gap-2">
+                {/* <Link> 금지 — 미리 불러오기(prefetch)가 시작 주소를 열 때마다 로그인 열쇠(PKCE)를 새로 덮어써
+                    실제로 누른 로그인이 「만료」로 실패했다(2026-10-26). 일반 링크는 누를 때 한 번만 연다. */}
                 {visibleSocialLoginOptions.map((option) => (
-                  <Link
+                  <a
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?${socialLoginQuery}`}
                     className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
                   >
                     {option.provider === "apple" && <AppleLogo />}
                     {option.label}
-                  </Link>
+                  </a>
                 ))}
               </div>
               <p className="text-center text-xs leading-5 text-gray-500 dark:text-gray-400">

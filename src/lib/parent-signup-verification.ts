@@ -16,7 +16,9 @@ const MAX_ATTEMPTS = 5;
 const TERMS_VERSION = "2026-07-23";
 const PRIVACY_VERSION = "2026-07-23";
 const USERNAME_PATTERN = /^[a-z][a-z0-9_]{3,19}$/;
-export type ParentSignupMethod = "PASSWORD" | "GOOGLE" | "KAKAO" | "NAVER";
+// DB CHECK(ParentSignupVerification_signupMethod_check)와 같은 목록이어야 한다 — 테스트가 마이그레이션과 대조한다.
+export const PARENT_SIGNUP_METHODS = ["PASSWORD", "GOOGLE", "KAKAO", "NAVER", "APPLE"] as const;
+export type ParentSignupMethod = (typeof PARENT_SIGNUP_METHODS)[number];
 
 type Row = {
   id: string; username: string | null; name: string | null; phone: string; phoneHash: string;
@@ -75,10 +77,16 @@ async function classifyPhoneOwnership(tx: Prisma.TransactionClient, phone: strin
   return { kind: "CLAIMABLE", parentId: claimable[0].id, email: claimable[0].email! };
 }
 
-function oauthProviderMethod(provider?: string | null): ParentSignupMethod | null {
-  if (provider === "google") return "GOOGLE";
-  if (provider === "kakao") return "KAKAO";
-  if (provider === "custom:naver" || provider === "naver") return "NAVER";
+/**
+ * Supabase 로그인 제공자 이름 → 가입 방식. 간편로그인 판정은 **여기 한 곳**에서만 한다.
+ * 2026-10-26: 세 곳에 따로 적혀 있어 Apple 을 켰을 때 하나도 고쳐지지 않았고, 애플 학부모가 휴대폰 인증에서 막혔다.
+ */
+export function oauthProviderMethod(provider?: string | null): Exclude<ParentSignupMethod, "PASSWORD"> | null {
+  const name = String(provider || "").toLowerCase();
+  if (name === "google") return "GOOGLE";
+  if (name === "kakao") return "KAKAO";
+  if (name === "custom:naver" || name === "naver") return "NAVER";
+  if (name === "apple") return "APPLE";
   return null;
 }
 
@@ -338,13 +346,7 @@ export async function completeParentSignup(input: {
       if (current.signupMethod === "PASSWORD" && (!input.password || input.password.length < 8)) throw new Error("비밀번호는 8자 이상 입력해 주세요.");
       if (current.signupMethod !== "PASSWORD" && input.authenticatedOAuthUser?.id !== current.pendingAuthUserId) throw new Error("간편가입 계정을 다시 확인해 주세요.");
       if (current.signupMethod !== "PASSWORD") {
-        const actualMethod = input.authenticatedOAuthUser?.provider === "google"
-          ? "GOOGLE"
-          : input.authenticatedOAuthUser?.provider === "kakao"
-            ? "KAKAO"
-            : input.authenticatedOAuthUser?.provider === "custom:naver" || input.authenticatedOAuthUser?.provider === "naver"
-              ? "NAVER"
-              : null;
+        const actualMethod = oauthProviderMethod(input.authenticatedOAuthUser?.provider);
         if (actualMethod !== current.signupMethod) throw new Error("간편가입 제공자 정보가 일치하지 않습니다.");
         const linked = await tx.$queryRawUnsafe<Array<{ found: boolean }>>(
           `SELECT EXISTS(
