@@ -72,7 +72,7 @@ export default async function Home() {
   };
 
   return (
-    <PublicSiteTheme className="min-h-screen flex flex-col">
+    <PublicSiteTheme publicScope={true} className="min-h-screen flex flex-col">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusiness).replace(/</g, "\\u003c") }}
