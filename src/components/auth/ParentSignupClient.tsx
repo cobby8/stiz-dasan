@@ -238,8 +238,9 @@ export default function ParentSignupClient() {
             <>
               <div className="flex items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />간편가입<span className="h-px flex-1 bg-gray-200" /></div>
               <div className="grid gap-3">
+                {/* <Link> 금지 — 미리 불러오기가 로그인 열쇠(PKCE)를 덮어써 간편가입이 「만료」로 실패한다(login/page.tsx 와 같음). */}
                 {visibleSignupOptions.map((option) => (
-                  <Link
+                  <a
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?intent=parent-signup&${continueParams.toString()}`}
                     className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white font-semibold text-gray-800"
@@ -247,7 +248,7 @@ export default function ParentSignupClient() {
                     {/* 흰색 테두리 버튼은 애플 가이드라인의 「White Outline」 스타일과 맞는다 */}
                     {option.provider === "apple" && <AppleLogo />}
                     {option.label}
-                  </Link>
+                  </a>
                 ))}
               </div>
               <p className="text-center text-xs leading-5 text-gray-500">간편가입도 처음 한 번은 안전한 계정 연결을 위해 휴대폰 인증이 필요합니다.</p>
