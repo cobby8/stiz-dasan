@@ -1224,7 +1224,15 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
 
             {/* 계정 — 맨 아래 작게. 자주 쓰는 기능이 아니라 눈에 먼저 띌 필요가 없다.
                 다만 «길이 없으면 없는 기능»이므로 반드시 둔다(구글플레이도 앱 안 삭제 경로를 요구한다). */}
-            <div className="border-t border-gray-100 pt-4 dark:border-gray-800">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-4 dark:border-gray-800">
+                {/* 학원에서 선생님·기사님으로도 일하는 보호자가 한 계정으로 화면을 오가게 하는 신청(다중 역할, 2026-10-25) */}
+                <Link
+                    href="/mypage/roles"
+                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
+                >
+                    <SymbolIcon name="badge" size={14} />
+                    역할 추가 신청
+                </Link>
                 <Link
                     href="/mypage/withdraw"
                     className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"

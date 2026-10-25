@@ -65,7 +65,7 @@ export default function ParentSignupClient() {
   // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
   const existingMode = !socialSignup && searchParams.get("existing") === "1";
   const enrollmentHandoff = searchParams.get("enrollmentHandoff") || "";
-  const next = searchParams.get("next") || "/mypage";
+  const requestedNext = searchParams.get("next") || "/mypage";
   const initialName = searchParams.get("name") || "";
   const initialPhone = (searchParams.get("phone") || "").replace(/[^0-9]/g, "");
   const [step, setStep] = useState<Step>(socialSignup || existingMode ? "phone" : "method");
@@ -78,6 +78,20 @@ export default function ParentSignupClient() {
   const [socialSessionMissing, setSocialSessionMissing] = useState(false);
   const [activationUrl, setActivationUrl] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  // 가입할 때 고르는 역할(원장 결정 2026-10-25). 학부모는 바로 열리고, 선생님·기사님은
+  // 가입을 마친 뒤 «역할 추가 신청» 화면에서 신청 → 원장 확인 후 열린다.
+  // 고르기만 해서 직원 화면이 열리면 아무나 학생 개인정보를 보게 되므로 여기서는 신청 화면으로 안내만 한다.
+  const [wantsParent, setWantsParent] = useState(true);
+  const [staffRoles, setStaffRoles] = useState<Array<"INSTRUCTOR" | "DRIVER">>([]);
+  // 직원 역할을 골랐고 따로 가려던 곳이 없으면, 가입 후 신청 화면으로 이어 간다.
+  // 이 값은 간편가입(구글·Apple)으로 다른 사이트에 다녀와도 next 로 그대로 돌아온다.
+  const next = staffRoles.length > 0 && requestedNext === "/mypage"
+    ? `/mypage/roles?request=${staffRoles.join(",")}`
+    : requestedNext;
+  const noRoleChosen = !wantsParent && staffRoles.length === 0;
+  function toggleStaffRole(role: "INSTRUCTOR" | "DRIVER") {
+    setStaffRoles((current) => (current.includes(role) ? current.filter((value) => value !== role) : [...current, role]));
+  }
 
   async function startPhoneVerification(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -190,14 +204,37 @@ export default function ParentSignupClient() {
       {step === "method" && (
         <>
           <div>
-            <h2 className="text-xl font-bold text-brand-navy-900 dark:text-white">학부모 회원가입</h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">편한 가입 방법을 골라주세요.</p>
+            <h2 className="text-xl font-bold text-brand-navy-900 dark:text-white">회원가입</h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">어떤 일로 이용하시나요? 여러 개 고를 수 있어요.</p>
           </div>
-          <button type="button" onClick={() => setStep("phone")} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="이용 역할">
+            {[
+              { key: "PARENT", label: "학부모", icon: "family_restroom", on: wantsParent, toggle: () => setWantsParent((value) => !value) },
+              { key: "INSTRUCTOR", label: "선생님", icon: "sports", on: staffRoles.includes("INSTRUCTOR"), toggle: () => toggleStaffRole("INSTRUCTOR") },
+              { key: "DRIVER", label: "기사님", icon: "airport_shuttle", on: staffRoles.includes("DRIVER"), toggle: () => toggleStaffRole("DRIVER") },
+            ].map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                aria-pressed={option.on}
+                onClick={option.toggle}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-sm font-bold transition ${option.on ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}
+              >
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">{option.icon}</span>
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {staffRoles.length > 0 && (
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              선생님·기사님 화면은 학생 정보를 보게 되어 <b>원장님 확인 후</b> 열립니다. 가입을 마치면 신청 화면으로 이어집니다.
+            </p>
+          )}
+          <button type="button" onClick={() => setStep("phone")} disabled={noRoleChosen} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white hover:bg-brand-orange-600 disabled:opacity-40 dark:bg-brand-neon-lime dark:text-brand-navy-900">
             아이디로 가입하기
           </button>
           {/* Supabase 에서 켜진 간편가입만 보인다 — 꺼진 버튼은 누르면 Supabase 오류 화면이 떴다(2026-10-25). */}
-          {visibleSignupOptions.length > 0 && (
+          {visibleSignupOptions.length > 0 && !noRoleChosen && (
             <>
               <div className="flex items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />간편가입<span className="h-px flex-1 bg-gray-200" /></div>
               <div className="grid gap-3">

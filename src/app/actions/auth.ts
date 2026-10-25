@@ -68,11 +68,13 @@ export async function login(formData: FormData) {
   // 실제 권한은 DB 역할만 신뢰합니다. DB에 없는 계정은 안전한 학부모로 제한합니다.
   const role = (await getRoleForAuthUser(data.user)) || "PARENT";
   // 로그인 직후도 계속 화면과 같이, 본인에게 직접 연결된 자녀만 인정합니다.
-  const parentView = data.user ? await getParentViewAccessForAuthUser(data.user) : { hasOwnChildren: false };
+  const parentView = data.user ? await getParentViewAccessForAuthUser(data.user) : { hasOwnChildren: false, roles: undefined };
   let destination = resolveRedirectForRole(role, redirectTo, {
     preferRoleHome: loginContext === "staff" && redirectTo === "/staff",
     stayInStaffApp: loginContext === "staff-app",
     hasOwnChildren: parentView.hasOwnChildren,
+    // 승인된 추가 역할(선생님·기사님)까지 보고 목적지를 정한다(다중 역할, 2026-10-25).
+    roles: parentView.roles,
   });
 
   if (enrollmentHandoff) {

@@ -22,6 +22,8 @@ function fixture({ role = 'ADMIN', account = null, signedOut = false, dbFailure 
   const access = load(accessSource, {
     '@/lib/auth-guard': { requireAuth: async () => { if (signedOut) throw new Error('Signed out'); return { id: 'auth-owner' }; } },
     '@/lib/account-views': views,
+    // 로그인 직후 목적지용 열린 화면 묶음을 계산한다(다중 역할, 2026-10-25). DB 없는 순수 모듈이라 원본 그대로.
+    '@/lib/account/roles': roles,
     '@/lib/public-account': { getPublicAccountRole: async () => role },
     '@/lib/prisma': { prisma: { $queryRawUnsafe: async (query, ...args) => {
       queries.push({ query, args }); if (dbFailure) throw new Error('Offline'); return account ? [account] : [];

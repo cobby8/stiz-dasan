@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/auth-guard";
 import { resolveAccountViews } from "@/lib/account-views";
-import type { RoleGrantRow } from "@/lib/account/roles";
+import { effectiveRoles, type RoleGrantRow } from "@/lib/account/roles";
 import { prisma } from "@/lib/prisma";
 import { getPublicAccountRole } from "@/lib/public-account";
 
@@ -21,7 +21,13 @@ export async function getParentViewAccessForAuthUser(user: { id: string }) {
   const canUseParentView = Boolean(account && (account.role === "PARENT"
     ? account.phoneVerifiedAt || account.username === null
     : hasOwnChildren));
-  return { hasOwnChildren, canUseParentView, appUserId: account?.id ?? null };
+  const appUserId = account?.id ?? null;
+  // 로그인 직후 목적지를 정할 때 쓰는 열린 화면 묶음(주 역할 + 승인된 추가 역할).
+  // 계정이 없으면 null — 그때 호출부는 예전처럼 주 역할 하나로 판정한다.
+  const grants = await getActiveGrantsForViews(appUserId);
+  const effective = account ? effectiveRoles({ primaryRole: account.role, grants, hasStudents: hasOwnChildren }) : null;
+  const roles = effective ? { admin: effective.admin, teacher: effective.teacher, driver: effective.driver } : undefined;
+  return { hasOwnChildren, canUseParentView, appUserId, grants, roles };
 }
 
 /**
@@ -45,8 +51,7 @@ export async function getAccountViewAccess() {
   try {
     const user = await requireAuth();
     const [role, parent] = await Promise.all([getPublicAccountRole(), getParentViewAccessForAuthUser(user)]);
-    const grants = await getActiveGrantsForViews(parent.appUserId);
-    return { role, views: resolveAccountViews(role, parent.canUseParentView, grants) };
+    return { role, views: resolveAccountViews(role, parent.canUseParentView, parent.grants) };
   } catch {
     // 인증이나 DB 확인에 실패하면 전환 메뉴를 숨기고 기존 접근 제한을 유지합니다.
     return { role: null, views: [] };

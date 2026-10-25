@@ -17,6 +17,12 @@ export type PrimaryRole = "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" | "PA
 export const GRANTABLE_ROLES = ["INSTRUCTOR", "DRIVER"] as const;
 export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
 
+/** 화면에 쓰는 이름. 서버 액션 파일("use server")은 상수를 내보낼 수 없어 여기 둔다. */
+export const ROLE_LABELS: Record<GrantableRole, string> = {
+  INSTRUCTOR: "선생님",
+  DRIVER: "기사님",
+};
+
 export type RoleGrantRow = { role: string; status: string };
 
 /** 열리는 화면. 화면 전환 버튼과 권한 가드가 같은 값을 본다. */

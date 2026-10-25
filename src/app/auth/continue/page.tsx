@@ -62,6 +62,8 @@ export default async function AuthContinuePage({ searchParams }: ContinuePagePro
         stayInStaffApp: context === "staff-app",
         // 자녀가 등록된 직원 계정은 학부모 화면(/mypage)도 열 수 있다.
         hasOwnChildren: parentView.hasOwnChildren,
+        // 승인된 추가 역할(선생님·기사님)까지 보고 목적지를 정한다(다중 역할, 2026-10-25).
+        roles: parentView.roles,
       }),
     );
   } catch (error) {
