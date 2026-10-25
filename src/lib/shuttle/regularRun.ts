@@ -31,6 +31,32 @@ export async function createOrGetRegularRunLink(): Promise<{ token: string }> {
   return { token: String(rows[0]?.token ?? token) };
 }
 
+/**
+ * 이미 만들어 둔 고정 운행 링크(매일 오늘) 토큰을 찾는다. **만들지 않는다**(만드는 건 원장 전용).
+ * 정규 셔틀(REGULAR)을 먼저, 없으면 방학특강 통합(ALL) 고정 링크를 쓴다.
+ *
+ * ⚠️ 이 함수는 열쇠(토큰)를 돌려주는데 안에서 권한을 확인하지 않는다.
+ *    로그인한 기사님에게 문자 링크 없이 운행을 열어 주는 /staff/run 만 부른다 —
+ *    그 화면이 requireStaff + 셔틀 권한(관리자·기사님)을 먼저 확인한다(테스트로 호출부를 고정).
+ *    기사님은 원래 같은 링크를 문자로 받으므로, 로그인한 기사님에게 이 열쇠를 쓰게 하는 것은 권한을 넓히는 게 아니다.
+ */
+export async function findRollingDriverRunToken(): Promise<string | null> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+      `SELECT "token" FROM "ShuttleRunLink"
+        WHERE "serviceDate" = $1 AND "direction" IN ($2, 'ALL')
+        ORDER BY CASE "direction" WHEN $2 THEN 0 ELSE 1 END
+        LIMIT 1`,
+      ROLLING_DATE,
+      REGULAR_DIR,
+    );
+    const token = typeof rows[0]?.token === "string" ? rows[0].token : "";
+    return /^[a-f0-9]{16,64}$/.test(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 토큰이 정규 셔틀 고정 링크인지 확인한다. 맞으면 true. 인증하지 않는다(토큰이 열쇠). */
 export async function isRegularRunToken(token: string): Promise<boolean> {
   const t = typeof token === "string" ? token.trim() : "";

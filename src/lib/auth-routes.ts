@@ -55,7 +55,11 @@ export function canRoleAccessPath(
     return roles ? roles.admin : role === "ADMIN" || role === "VICE_ADMIN";
   }
   if (target === "/staff" || target.startsWith("/staff/")) {
-    if (target === "/staff/shuttle" || target.startsWith("/staff/shuttle/")) {
+    // 셔틀 화면과 오늘 운행표(/staff/run, 2026-10-25)는 관리자·기사님 것이다.
+    if (
+      target === "/staff/shuttle" || target.startsWith("/staff/shuttle/")
+      || target === "/staff/run" || target.startsWith("/staff/run/")
+    ) {
       return roles ? roles.admin || roles.driver : role === "ADMIN" || role === "VICE_ADMIN" || role === "DRIVER";
     }
     return roles ? roles.admin || roles.teacher : role === "ADMIN" || role === "VICE_ADMIN" || role === "INSTRUCTOR";

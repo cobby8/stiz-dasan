@@ -54,6 +54,13 @@ export default function DriverHomeClient() {
               원장님께 받은 링크를 한 번만 열면, 다음부터는 이 아이콘만 눌러도
               그날 운행이 바로 열립니다.
             </p>
+            {/* 링크를 받지 못했거나 잃어버린 기사님 — 원장님이 기사님 역할을 준 계정이 있으면 로그인만으로 연다. */}
+            <a
+              href={`/login?${new URLSearchParams({ redirect: "/staff/run" }).toString()}`}
+              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 px-5 text-base font-bold text-gray-700"
+            >
+              학원 계정으로 로그인해서 열기
+            </a>
           </div>
         )}
       </div>
