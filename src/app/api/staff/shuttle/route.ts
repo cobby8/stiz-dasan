@@ -7,9 +7,28 @@ function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-export async function GET() {
+// 로그인 안 했거나 직원이 아니면 401 — 서버 오류(500)로 섞이지 않게 문지기를 따로 둔다.
+async function staffOrNull() {
   try {
-    const staff = await requireStaff();
+    return await requireStaff();
+  } catch (error) {
+    // 로그인·직원 아님은 평범한 401. 그 밖(DB 조회 실패 등)은 장애라 기록을 남긴다.
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("인증이 필요") && !message.includes("Staff permission")) {
+      console.error("[staff shuttle auth]", error);
+    }
+    return null;
+  }
+}
+
+function unauthorized() {
+  return NextResponse.json({ error: "로그인이 필요합니다.", code: "UNAUTHORIZED" }, { status: 401 });
+}
+
+export async function GET() {
+  const staff = await staffOrNull();
+  if (!staff) return unauthorized();
+  try {
     // 관리자 또는 기사님(주 역할이든 승인된 추가 역할이든). 「선생님 + 기사님」도 여기 들어온다.
     if (shuttleScope(staff.roles) === "NONE") {
       throw new ShuttleServiceError("셔틀 운행 정보를 조회할 권한이 없습니다.", 403, "SHUTTLE_DASHBOARD_FORBIDDEN");
@@ -26,8 +45,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  const staff = await staffOrNull();
+  if (!staff) return unauthorized();
   try {
-    const staff = await requireStaff();
     const body = object(await request.json());
     const routeId = typeof body.routeId === "string" ? body.routeId : "";
     const passengerId = typeof body.passengerId === "string" ? body.passengerId : "";

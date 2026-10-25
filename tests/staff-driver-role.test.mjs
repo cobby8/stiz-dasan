@@ -49,3 +49,13 @@ test("driver shuttle page does not open instructor-only staff screens", () => {
     assert.doesNotMatch(source, /appUserRole (===|!==) "(DRIVER|INSTRUCTOR)"/);
   }
 });
+
+test("셔틀 API는 로그인·직원 확인 실패를 401로 돌려준다(서버 오류 500과 섞지 않는다)", () => {
+  // 2026-10-25: 비로그인 요청이 500(「불러오지 못했습니다」)으로 떨어져 진짜 장애와 구분이 안 됐다.
+  for (const method of ["GET", "PATCH"]) {
+    const start = shuttleApiSource.indexOf(`export async function ${method}`);
+    const body = shuttleApiSource.slice(start, shuttleApiSource.indexOf("try {", start));
+    assert.match(body, /const staff = await staffOrNull\(\);\s*if \(!staff\) return unauthorized\(\);/, `${method} 가 try 밖에서 문지기를 먼저 거쳐야 한다`);
+  }
+  assert.match(shuttleApiSource, /function unauthorized\(\) \{\s*return NextResponse\.json\([^)]*\{ status: 401 \}\)/);
+});

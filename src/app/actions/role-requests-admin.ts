@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { requireAdmin, requireOwner } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
+import { createNotificationRecord } from "@/lib/notification";
+import { ROLE_LABELS, type GrantableRole } from "@/lib/account/roles";
 
 // 직원 역할(선생님·기사님) 신청 — 원장 확인·처리 (다중 역할 4단계, 2026-10-25).
 //
@@ -64,20 +66,34 @@ async function transition(
   const id = String(grantId ?? "").trim();
   if (!id) return { error: "대상이 지정되지 않았습니다." };
 
-  const affected = await prisma.$executeRawUnsafe(
+  // RETURNING — 바꾼 그 한 줄에서 알림 받을 사람을 꺼낸다(따로 다시 읽으면 그 사이 바뀔 수 있다).
+  const changed = await prisma.$queryRawUnsafe<Array<{ userId: string; role: GrantableRole }>>(
     `UPDATE "UserRoleGrant"
         SET status = $2, "decidedAt" = NOW(), "decidedBy" = $3,
             note = COALESCE($4, note), "updatedAt" = NOW()
-      WHERE id = $1 AND status = $5`,
+      WHERE id = $1 AND status = $5
+      RETURNING "userId", role::text AS role`,
     id,
     to,
     owner.appUserId,
     note,
     from,
   );
+  const affected = changed.length;
   if (affected !== 1) {
     return { error: from === "PENDING" ? "이미 처리된 신청입니다. 목록을 새로고침해 주세요." : "이미 회수된 역할입니다." };
   }
+
+  // 신청자에게 결과를 알린다(앱 알림 + 푸시, 문자 없음). 실패해도 처리는 이미 끝났다 — createNotificationRecord 가 오류를 삼킨다.
+  const { userId, role } = changed[0];
+  const label = ROLE_LABELS[role];
+  const notice =
+    to === "ACTIVE"
+      ? { title: `${label} 역할 승인`, message: `${label} 화면을 쓸 수 있습니다. 앱에서 화면 전환으로 열어 보세요.`, linkUrl: role === "DRIVER" ? "/staff/shuttle" : "/staff" }
+      : to === "REJECTED"
+        ? { title: `${label} 역할 신청 결과`, message: `${label} 역할 신청이 반려되었습니다. 궁금한 점은 학원으로 문의해 주세요.`, linkUrl: "/mypage/roles" }
+        : { title: `${label} 역할 해제`, message: `${label} 역할이 해제되었습니다. 학부모 화면은 그대로 쓸 수 있습니다.`, linkUrl: "/mypage/roles" };
+  await createNotificationRecord({ userId, type: "ROLE_REQUEST", ...notice });
 
   revalidatePath("/admin/role-requests");
   revalidatePath("/admin");

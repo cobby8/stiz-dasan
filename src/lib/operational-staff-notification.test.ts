@@ -38,7 +38,8 @@ test("결석은 담당 코치와 기사, 당일 셔틀 변경은 기사에게 �
   assert.match(absenceSource, /driverContext: \{ studentId: input\.studentId, serviceDate: input\.date \}/);
   assert.match(shuttleSource, /includeDriver: true/);
   assert.match(shuttleSource, /direction: input\.direction as ShuttleDirection/);
-  assert.match(shuttleSource, /UPDATE "ShuttleDayException" x[\s\S]*RETURNING x\."studentId"/);
+  // 취소와 알림 원본(학생)을 한 문장으로 — RETURNING 칸 순서는 상관없다.
+  assert.match(shuttleSource, /UPDATE "ShuttleDayException" x[\s\S]*?RETURNING[^`]*x\."studentId"/);
   assert.match(shuttleSource, /action: "CANCELED"/);
   assert.match(shuttleSource, /셔틀 당일 변경 취소/);
   assert.match(enrollmentSource, /includeCoach: true/);

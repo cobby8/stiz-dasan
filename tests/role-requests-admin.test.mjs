@@ -93,3 +93,13 @@ test("초대 화면은 «링크 발송»과 «기존 계정에 부여»를 구�
   assert.match(inviteModal, /if \(!result \|\| result\.grantedExisting \|\| !navigator\.share\) return;/);
   assert.match(inviteModal, /기존 계정에 \{form\.role === "DRIVER" \? "기사님" : "선생님"\} 역할을 추가했습니다/);
 });
+
+test("승인·반려·회수 결과를 신청자에게 알린다(앱 알림·푸시, 문자 없음)", () => {
+  // 바꾼 그 한 줄에서 받는 사람을 꺼낸다 — 다시 읽으면 다른 사람에게 갈 틈이 생긴다.
+  assert.match(action, /WHERE id = \$1 AND status = \$5\s*RETURNING "userId"/);
+  const notifyAt = action.indexOf("createNotificationRecord({ userId");
+  assert.ok(notifyAt > action.indexOf("if (affected !== 1)"), "처리에 성공한 뒤에만 알려야 한다");
+  for (const status of ['to === "ACTIVE"', 'to === "REJECTED"']) assert.ok(action.includes(status));
+  // 고객 문자 발송은 별도 승인 대상이라 여기서 보내지 않는다.
+  assert.doesNotMatch(action, /sendTrackedSms|sendParentSms|notifyAdmins/);
+});
