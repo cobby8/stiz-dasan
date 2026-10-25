@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
+  PARENT_OAUTH_LABELS,
   parseParentOAuthProvider,
   safeInternalRedirect,
+  type ParentOAuthProvider,
 } from "@/lib/parent-oauth";
 import { createClient } from "@/lib/supabase/server";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
@@ -36,9 +38,36 @@ function authFailureRedirect(request: NextRequest, error: string) {
   return NextResponse.redirect(url);
 }
 
+/** 마이페이지 「간편로그인 연결」로 돌아간다. 성공이면 linked, 실패면 error 를 붙인다. */
+function loginMethodsRedirect(request: NextRequest, result: { linked?: string; error?: string }) {
+  const url = new URL("/mypage/login-methods", request.url);
+  if (result.linked) url.searchParams.set("linked", result.linked);
+  if (result.error) url.searchParams.set("error", result.error);
+  return NextResponse.redirect(url);
+}
+
+/** 간편로그인 연결(intent=link)을 마무리한다. 연결은 로그인한 그 계정에 붙으므로 계정을 새로 찾지 않는다. */
+async function finishLink(request: NextRequest, code: string | null, provider: ParentOAuthProvider | null) {
+  if (!provider) return loginMethodsRedirect(request, { error: "연결 정보가 올바르지 않습니다. 다시 시도해 주세요." });
+  const label = PARENT_OAUTH_LABELS[provider];
+  // Supabase 는 연결을 거절하면 code 대신 오류를 붙여 돌려보낸다.
+  const errorCode = request.nextUrl.searchParams.get("error_code") || "";
+  if (!code) {
+    if (errorCode === "identity_already_exists") {
+      return loginMethodsRedirect(request, { error: `이 ${label} 계정은 이미 다른 계정에 연결되어 있습니다. 학원에 문의해 주세요.` });
+    }
+    return loginMethodsRedirect(request, { error: `${label} 연결이 취소되었거나 완료되지 않았습니다.` });
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) return loginMethodsRedirect(request, { error: `${label} 연결 시간이 만료되었습니다. 다시 시도해 주세요.` });
+  return loginMethodsRedirect(request, { linked: provider });
+}
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const provider = parseParentOAuthProvider(request.nextUrl.searchParams.get("provider") || "");
+  if (request.nextUrl.searchParams.get("intent") === "link") return finishLink(request, code, provider);
   const next = safeInternalRedirect(request.nextUrl.searchParams.get("next"));
   const enrollmentHandoff = request.nextUrl.searchParams.get("handoff")
     || request.nextUrl.searchParams.get("enrollmentHandoff");

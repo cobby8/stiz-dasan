@@ -1233,6 +1233,14 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                     <SymbolIcon name="badge" size={14} />
                     역할 추가 신청
                 </Link>
+                {/* 기존 계정에 Apple·Google 을 붙이는 곳 — 이미 가입한 학부모는 간편가입이 「이미 가입된 번호」로 막힌다(2026-10-26) */}
+                <Link
+                    href="/mypage/login-methods"
+                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
+                >
+                    <SymbolIcon name="link" size={14} />
+                    간편로그인 연결
+                </Link>
                 <Link
                     href="/mypage/withdraw"
                     className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"

@@ -40,7 +40,9 @@ test("parent login screen exposes social login without showing it in staff mode"
 });
 
 test("OAuth errors return to the flow that started the provider handoff", () => {
-  assert.match(startRoute, /intent"\) === "login" \? "login" : "parent-signup"/);
+  // 모르는 값은 가입 흐름으로(로그인·연결은 이름이 정확할 때만). 2026-10-26 연결(link) 추가로 함수로 뺐다.
+  assert.match(startRoute, /function parseIntent\(value: string \| null\): OAuthIntent \{\s*if \(value === "login" \|\| value === "link"\) return value;\s*return "parent-signup";\s*\}/);
+  assert.match(startRoute, /const intent = parseIntent\(request\.nextUrl\.searchParams\.get\("intent"\)\)/);
   assert.match(startRoute, /new URL\(intent === "login" \? "\/login" : "\/signup\/parent"/);
   assert.match(startRoute, /callbackUrl\.searchParams\.set\("intent", intent\)/);
   assert.match(callbackRoute, /authFailureRedirect/);
