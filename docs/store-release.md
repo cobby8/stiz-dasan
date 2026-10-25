@@ -1,7 +1,8 @@
 # 앱 스토어 출시 준비 (구글플레이 · 애플 앱스토어)
 
 출시 주체: **업턴랩스** · 개발자 계정 결제 완료(2026-10-25 확인)
-대상: 학부모 앱(`/mypage`) · 선생님 앱(`/staff`) · 기사님 앱(`/driver`) — 모두 PWA
+대상: **통합 앱 하나** — 로그인하면 역할(학부모·선생님·기사님, 여러 개 가능)에 따라 화면이 열린다
+(원장 결정 2026-10-25). 웹으로 설치하는 기존 3개 PWA(`/mypage`·`/staff`·`/driver`)는 그대로 둔다.
 
 > 이 문서는 **코드에서 확인한 사실**만 적는다. 확인하지 못한 항목은 「확인 필요」로 표시했다.
 > 추측으로 채우면 데이터 보안 양식에서 허위 신고가 되고, 그건 앱 삭제 사유다.
@@ -86,20 +87,34 @@ ANDROID_APP_SHA256_FINGERPRINTS=AA:BB:...:FF,11:22:...:99   # 앱 서명 키, �
 (`src/app/api/assetlinks/route.ts`). **설정 전에는 404** — 잘못된 지문이 배포되면 TWA 가
 「검증 실패」로 주소표시줄을 띄우는데 원인을 찾기 매우 어렵기 때문에 일부러 그렇게 뒀다.
 
-### Bubblewrap 설정값
+### 통합 앱 manifest — `https://stiz-dasan.kr/manifest-app.json`
+
+```
+bubblewrap init --manifest https://stiz-dasan.kr/manifest-app.json
+```
 
 | 항목 | 값 |
 |---|---|
 | Host | `stiz-dasan.kr` |
-| Start URL | 앱별로 `/mypage` · `/staff` · `/driver` |
-| Manifest | `/manifest-parent.json` · `/manifest-staff.json` · `/driver-manifest.json` |
-| App name | 스티즈 학부모 / 스티즈 선생님 / 스티즈 기사님 |
-| Theme·Background | 각 manifest 값 사용 |
-| 아이콘 | `icon-parent-512.png` 등 (maskable 별도 있음) |
+| Start URL | `/store-app` → 표식을 찍고 `/auth/continue`(역할 판별)로 넘긴다 |
+| Scope | `/` (사이트 전체) |
+| App name | 스티즈 농구교실 / 스티즈 |
+| id | `/?app=stiz-store` — 기존 3개 PWA 와 겹치지 않는 고유 값 |
+| 아이콘 | `icon-v2-512.png` + maskable |
 
-> 앱을 **3개 따로** 올릴지, 하나로 올려 역할을 고르게 할지는 결정이 필요하다.
-> 따로 올리면 학부모가 헷갈리지 않지만 심사를 3번 받아야 하고, 애플에서는 「거의 같은 앱 3개」로
-> 거부될 위험이 있다(지침 4.3 스팸). **학부모 앱 하나만 먼저 올리는 것을 권한다.**
+**⚠️ 이 manifest 는 어느 화면에도 연결하지 않는다(의도적).**
+2026-08 에 사이트 전체를 영역으로 잡은 공식 앱 하나가 **같은 기기의 다른 PWA 설치를 전부 막은** 사고가 있었다.
+통합 앱도 영역이 사이트 전체라, 화면에 연결하면 브라우저가 이걸 설치 대상으로 제안하면서 같은 사고가 난다.
+그래서 스토어 앱 도구(Bubblewrap·PWABuilder)가 **주소로 직접 읽게만** 하고, 웹 설치는 기존 3개 PWA 가 맡는다.
+이 규칙은 `tests/store-app-manifest.test.mjs` 가 지킨다.
+
+**스토어 앱 표식** — 스토어 앱은 사이트 전체가 앱 영역이라 기존 PWA 의 「영역 밖 링크 막기」가 필요 없다.
+`/store-app` 이 `sessionStorage` 에 표식을 찍으면 `useInstalledApp` 이 영역 제한을 끈다.
+localStorage 가 아닌 이유: 안드로이드 스토어 앱(TWA)은 휴대폰 크롬과 저장소를 공유해서, localStorage 에 두면
+크롬·기존 설치 앱에서도 제한이 풀린다.
+
+**iOS** — TWA 는 안드로이드 전용이다. 앱스토어용은 같은 manifest 로 PWABuilder 의 iOS 패키지(WKWebView)를
+만들거나 Capacitor 로 감싼다. 시작 주소는 똑같이 `/store-app`.
 
 ---
 
@@ -111,7 +126,7 @@ ANDROID_APP_SHA256_FINGERPRINTS=AA:BB:...:FF,11:22:...:99   # 앱 서명 키, �
 |---|---|
 | **Apple 로그인** | 코드 완료, **스위치 OFF**. 아래 설정 후 켠다 |
 | **지침 4.2 최소 기능** | ⚠️ **웹 래핑 앱은 거부되는 경우가 많다** — 가장 큰 위험 |
-| 지침 4.3 스팸 | 비슷한 앱 여러 개 금지 → 하나만 올릴 것 |
+| 지침 4.3 스팸 | 비슷한 앱 여러 개 금지 → ✅ **통합 앱 하나**로 해결(2026-10-25) |
 | 계정 삭제 | ✅ 완료(`/mypage/withdraw`) |
 
 ### Apple 로그인 켜는 절차
@@ -133,7 +148,7 @@ ANDROID_APP_SHA256_FINGERPRINTS=AA:BB:...:FF,11:22:...:99   # 앱 서명 키, �
 - [ ] 애플 Service ID·Key 발급 → Supabase Apple provider 설정
 - [ ] 토스 가맹 심사 통과 → 라이브 키 수령
 - [ ] 스토어 스크린샷 촬영(로그인이 필요해 AI가 찍을 수 없음)
-- [ ] 앱을 몇 개 올릴지 결정(학부모 하나 권장)
+- [x] ~~앱을 몇 개 올릴지 결정~~ → **통합 앱 하나**(2026-10-25 원장 결정)
 
 ### AI가 이어받을 일
 - [ ] 지문·패키지명 → Vercel 환경변수 설정 후 `assetlinks.json` 동작 확인
@@ -147,6 +162,8 @@ ANDROID_APP_SHA256_FINGERPRINTS=AA:BB:...:FF,11:22:...:99   # 앱 서명 키, �
 - [x] `assetlinks.json` 서빙 라우트(지문만 넣으면 작동)
 - [x] PWA 품질 요건 — manifest 4종, Service Worker, maskable 아이콘, HTTPS
 - [x] 개인정보처리방침 공개 페이지
+- [x] **통합 앱** — 가입 시 역할 선택(여러 개), 직원 역할은 초대 링크 또는 원장 승인, 화면 전환, 기사님 로그인 운행표,
+      통합 manifest(`/manifest-app.json`, 화면 미연결) + 스토어 앱 시작 주소(`/store-app`)
 
 ---
 

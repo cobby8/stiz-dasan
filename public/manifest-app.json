@@ -1,0 +1,19 @@
+{
+  "id": "/?app=stiz-store",
+  "name": "스티즈 농구교실",
+  "short_name": "스티즈",
+  "description": "스티즈 농구교실 다산점 — 학부모·선생님·기사님이 함께 쓰는 학원 앱",
+  "start_url": "/store-app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#ccff00",
+  "orientation": "portrait",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icon-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-v2-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-maskable-v2-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
