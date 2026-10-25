@@ -36,6 +36,28 @@ model User {
   operationsRequested         OperationsRequest[]           @relation("OperationsRequestRequester")
   operationsApproved          OperationsRequest[]           @relation("OperationsRequestApprover")
   kakaoParentIdentities       KakaoParentIdentity[]
+  // 다중 역할 — User.role(주 역할) 외에 추가로 맡은 역할과 승인 신청. 관리자는 여기로 줄 수 없다.
+  roleGrants                  UserRoleGrant[]               @relation("UserRoleGrantUser")
+  roleGrantsDecided           UserRoleGrant[]               @relation("UserRoleGrantDecider")
+}
+
+/// 추가 역할 + 직원 역할 승인 신청. migration 20261025120000_add_user_role_grants 의 사본이다.
+/// PENDING=신청 대기 / ACTIVE=부여됨 / REJECTED=반려 / REVOKED=회수
+/// role 은 INSTRUCTOR·DRIVER 만(DB CHECK). 관리자 권한은 이 표로 주지 않는다.
+model UserRoleGrant {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId      String
+  role        String
+  status      String    @default("PENDING")
+  source      String    @default("REQUEST") // REQUEST(가입 시 신청) | INVITE(초대 링크) | ADMIN(원장이 직접)
+  requestedAt DateTime  @default(now()) @db.Timestamptz(6)
+  decidedAt   DateTime? @db.Timestamptz(6)
+  decidedBy   String?
+  note        String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  user        User      @relation("UserRoleGrantUser", fields: [userId], references: [id], onDelete: Cascade)
+  decider     User?     @relation("UserRoleGrantDecider", fields: [decidedBy], references: [id], onDelete: SetNull)
 }
 
 /// 카카오 챗봇 사용자를 최초 1회 인증된 학부모 계정에 연결한다.

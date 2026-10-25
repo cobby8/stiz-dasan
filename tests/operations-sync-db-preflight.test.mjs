@@ -110,6 +110,7 @@ const REQUIRED_BUILD_PREFLIGHTS = [
   "uniform-order-db-preflight.mjs",
   "kakao-parent-db-preflight.mjs",
   "account-withdrawal-db-preflight.mjs",
+  "user-role-grant-db-preflight.mjs",
 ];
 
 test("Vercel build는 필수 DB 검사를 모두 통과한 뒤에만 시작한다", () => {
