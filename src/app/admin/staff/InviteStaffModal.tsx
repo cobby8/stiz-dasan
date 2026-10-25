@@ -11,11 +11,12 @@ function formatPhone(raw: string): string {
     return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
-type InvitationResult = {
-    inviteUrl: string;
-    smsSent: boolean;
-    smsError?: string;
-};
+// 초대 결과는 두 가지다(다중 역할, 2026-10-25).
+//   링크 발송 — 새 직원 계정을 만들 사람에게 개인 가입 링크를 보냈다.
+//   기존 계정에 부여 — 이 번호의 학부모 계정이 이미 있어 그 계정에 역할을 붙였다(링크 없음).
+type InvitationResult =
+    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string }
+    | { grantedExisting: true; accountName: string; inviteUrl: null; smsSent: false; smsError?: string };
 
 function absoluteInviteUrl(inviteUrl: string): string {
     if (typeof window === "undefined") return inviteUrl;
@@ -61,7 +62,7 @@ export default function InviteStaffModal({
     }
 
     async function copyInviteUrl() {
-        if (!result) return;
+        if (!result || result.grantedExisting) return;
         try {
             await navigator.clipboard.writeText(absoluteInviteUrl(result.inviteUrl));
             setCopyMessage("개인 가입 링크를 복사했습니다.");
@@ -72,7 +73,7 @@ export default function InviteStaffModal({
     }
 
     async function shareInviteUrl() {
-        if (!result || !navigator.share) return;
+        if (!result || result.grantedExisting || !navigator.share) return;
         try {
             await navigator.share({
                 title: "STIZ 스태프 가입 초대",
@@ -97,7 +98,21 @@ export default function InviteStaffModal({
                     </button>
                 </div>
 
-                {result ? (
+                {result?.grantedExisting ? (
+                    // 기존 학부모 계정에 역할을 붙인 경우 — 보낼 링크가 없다. 링크 복사 버튼을 두면 빈 값을 복사한다.
+                    <div className="space-y-4 p-6">
+                        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-green-800">
+                            <p className="font-bold">기존 계정에 {form.role === "DRIVER" ? "기사님" : "선생님"} 역할을 추가했습니다.</p>
+                            <p className="mt-1 text-sm">
+                                이 번호로 이미 가입된 학부모 계정({result.accountName})이 있어 새 계정을 만들지 않았습니다.
+                                그 계정으로 로그인하면 화면 전환에서 바로 쓸 수 있습니다. 「직원 역할 신청」 화면에서 회수할 수 있습니다.
+                            </p>
+                        </div>
+                        <div className="flex justify-end">
+                            <button type="button" onClick={onClose} className="rounded-lg bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-100">완료</button>
+                        </div>
+                    </div>
+                ) : result ? (
                     <div className="space-y-4 p-6">
                         <div className={`rounded-xl border p-4 ${result.smsSent ? "border-green-200 bg-green-50 text-green-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
                             <p className="font-bold">초대 링크가 만들어졌습니다.</p>

@@ -318,5 +318,11 @@ export async function requireOwner() {
     throw new Error("원장 권한이 필요합니다. (ADMIN만 가능)");
   }
 
-  return user;
+  // 앱 사용자 ID 를 덧붙인다(기존 호출부는 user 만 쓰므로 영향 없음).
+  // 역할 승인처럼 «누가 처리했는지»를 남겨야 하는 곳에서 쓴다.
+  return Object.assign(user, {
+    appUserId: appUser.id,
+    appUserName: appUser.name || user.email || "STIZ Owner",
+    appUserRole: "ADMIN" as const,
+  });
 }

@@ -6987,6 +6987,51 @@ export async function inviteStaff(data: {
         throw new Error("이미 등록된 스태프입니다.");
     }
 
+    // 다중 역할(2026-10-25): 이 번호의 학부모 계정이 이미 있으면 새 계정을 만들지 않고
+    // 그 계정에 역할을 붙인다. 초대 수락은 항상 새 로그인 계정(전화번호@staff)을 만들어서,
+    // 그대로 두면 같은 사람의 계정이 둘로 갈린다(학부모 계정 + 직원 계정).
+    //
+    // ⚠️ 붙이는 조건은 엄격하다 — 휴대폰 인증까지 끝났고(번호 주인이 확인됨) 탈퇴하지 않은 학부모
+    //    계정이 «정확히 하나»일 때만. 번호만 같은 미인증 계정에 붙이면 엉뚱한 사람에게 학생 정보가 열린다.
+    //    둘 이상이면 누군지 모르므로 예전처럼 초대 링크를 보낸다.
+    //    원장이 직접 초대하는 것이므로 승인과 같다(requireOwner) — 신청 중이던 건이 있으면 그대로 승인된다.
+    // 번호는 숫자만 남겨 비교한다 — 글자 그대로 비교하면 「010-1234-5678」과 「01012345678」이
+    // 다른 사람이 된다(2026-09-28 4가족 사고). 빈 번호·자리채움 번호는 열쇠로 쓰지 않는다.
+    const inviteDigits = parentPhoneDigits(cleanPhone);
+    const parentAccounts = isUsablePhoneKey(inviteDigits)
+        ? await prisma.$queryRawUnsafe<Array<{ id: string; name: string }>>(
+            `SELECT id, name FROM "User"
+              WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1 AND role = 'PARENT'
+                AND "phoneVerifiedAt" IS NOT NULL AND "withdrawnAt" IS NULL
+              LIMIT 2`,
+            inviteDigits,
+        )
+        : [];
+    if (parentAccounts.length === 1) {
+        const account = parentAccounts[0];
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "UserRoleGrant" ("userId", role, status, source, "decidedAt", "decidedBy", note)
+             VALUES ($1, $2, 'ACTIVE', 'INVITE', NOW(), $3, '원장 초대')
+             ON CONFLICT ("userId", role) WHERE status IN ('PENDING', 'ACTIVE')
+             DO UPDATE SET status = 'ACTIVE', source = 'INVITE', "decidedAt" = NOW(),
+                           "decidedBy" = EXCLUDED."decidedBy", note = '원장 초대', "updatedAt" = NOW()`,
+            account.id,
+            staffRole,
+            user.appUserId,
+        );
+        revalidateStaffAdminCaches();
+        revalidatePath("/admin/staff");
+        revalidatePath("/admin/role-requests");
+        return {
+            grantedExisting: true as const,
+            accountName: account.name,
+            token: null,
+            inviteUrl: null,
+            smsSent: false as const,
+            smsError: undefined,
+        };
+    }
+
     try {
         // 초대 레코드 생성 — 만료: 7일 후
         const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -7034,6 +7079,8 @@ export async function inviteStaff(data: {
         revalidateStaffAdminCaches();
         revalidatePath("/admin/staff");
         return {
+            grantedExisting: false as const,
+            accountName: null,
             token,
             inviteUrl,
             smsSent: smsResult.ok,
