@@ -8,6 +8,8 @@ import PublicSiteTheme from "@/components/PublicSiteTheme";
 import { usePathname, useSearchParams } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
+import AppleLogo from "@/components/auth/AppleLogo";
+import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -25,14 +27,15 @@ function LoginContent() {
     { provider: "google", label: "Google로 로그인", tone: "border-gray-300 bg-white text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-950 dark:text-white dark:hover:bg-gray-900" },
     { provider: "kakao", label: "카카오로 로그인", tone: "border-[#FEE500] bg-[#FEE500] text-[#191919] hover:bg-[#f7dc00]" },
     { provider: "naver", label: "네이버로 로그인", tone: "border-[#03C75A] bg-[#03C75A] text-white hover:bg-[#02b350]" },
-    // Apple 은 앱스토어 등록의 필수 요건(심사지침 4.8)이지만, Service ID·Key 설정이
-    // 끝나기 전에 버튼을 보이면 눌러도 안 된다 — 학부모는 혼란스럽고 심사는 거부된다.
-    // 그래서 NEXT_PUBLIC_APPLE_LOGIN_ENABLED 가 켜질 때만 보인다(서버 라우트도 같은 값을 본다).
-    // ⚠️ 활성화할 때 버튼 디자인을 애플 가이드라인(공식 로고·검정/흰색 스타일)에 맞춰야 한다.
-    ...(process.env.NEXT_PUBLIC_APPLE_LOGIN_ENABLED === "true"
-      ? [{ provider: "apple", label: "Apple로 로그인", tone: "border-black bg-black text-white hover:bg-gray-900" }]
-      : []),
+    // Apple 은 앱스토어 등록의 필수 요건(심사지침 4.8). 애플 가이드라인대로 로고가 붙은 검정 버튼.
+    { provider: "apple", label: "Apple로 로그인", tone: "border-black bg-black text-white hover:bg-gray-900 dark:border-white dark:bg-white dark:text-black dark:hover:bg-gray-100" },
   ];
+  // 표에 있어도 Supabase 에서 켜진 것만 보인다. 꺼진 버튼을 누르면 Supabase 의 JSON 오류 화면이
+  // 그대로 떴다(2026-10-25 운영: 구글·카카오). 모르는 동안(null)은 아무것도 그리지 않는다.
+  const enabledProviders = useEnabledOAuthProviders();
+  const visibleSocialLoginOptions = parentSocialLoginOptions.filter((option) =>
+    enabledProviders?.includes(option.provider as (typeof enabledProviders)[number]),
+  );
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [error, setError] = useState<string | null>(searchParams.get("error"));
   const [loading, setLoading] = useState(false);
@@ -340,7 +343,7 @@ function LoginContent() {
             </button>
           </form>
 
-          {!isStaffMode && mode === "login" && (
+          {!isStaffMode && mode === "login" && visibleSocialLoginOptions.length > 0 && (
             <div className="mt-6 space-y-4">
               <div className="flex items-center gap-3 text-xs font-semibold text-gray-400 dark:text-gray-500">
                 <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
@@ -348,12 +351,13 @@ function LoginContent() {
                 <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
               </div>
               <div className="grid gap-2">
-                {parentSocialLoginOptions.map((option) => (
+                {visibleSocialLoginOptions.map((option) => (
                   <Link
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?${socialLoginQuery}`}
-                    className={`flex min-h-11 items-center justify-center rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
+                    className={`flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition ${option.tone}`}
                   >
+                    {option.provider === "apple" && <AppleLogo />}
                     {option.label}
                   </Link>
                 ))}

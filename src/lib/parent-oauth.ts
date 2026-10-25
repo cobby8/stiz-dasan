@@ -1,8 +1,8 @@
 import type { Provider } from "@supabase/supabase-js";
 
 // apple 은 애플 앱스토어 등록의 필수 요건이다 — 제3자 소셜 로그인을 제공하는 앱은
-// Apple 로그인도 함께 제공해야 한다(App Store 심사지침 4.8). 다만 애플 개발자 계정과
-// Service ID·Key 가 있어야 실제로 동작하므로, 준비되기 전에는 아래 ready 판정으로 꺼 둔다.
+// Apple 로그인도 함께 제공해야 한다(App Store 심사지침 4.8). Supabase 에서 Apple 제공자를
+// 켜기 전에는 아래 enabledParentOAuthProviders 가 걸러내 버튼이 보이지 않는다.
 export const PARENT_OAUTH_PROVIDERS = ["google", "kakao", "naver", "apple"] as const;
 
 export type ParentOAuthProvider = (typeof PARENT_OAUTH_PROVIDERS)[number];
@@ -27,13 +27,29 @@ export function toSupabaseProvider(provider: ParentOAuthProvider): Provider {
   return (provider === "naver" ? "custom:naver" : provider) as Provider;
 }
 
-export function isParentOAuthProviderReady(provider: ParentOAuthProvider) {
-  if (provider === "naver") return process.env.SUPABASE_NAVER_PROVIDER_ENABLED === "true";
-  // NEXT_PUBLIC_ 인 이유: 로그인 화면이 클라이언트 컴포넌트라 버튼을 그릴 때도 같은 판정이
-  // 필요하다. 변수 둘로 나누면 「버튼은 보이는데 누르면 거절」처럼 한쪽만 켜진 상태가 생긴다.
-  // 켜졌다는 사실 자체는 비밀이 아니므로 공개 변수로 둬도 된다.
-  if (provider === "apple") return process.env.NEXT_PUBLIC_APPLE_LOGIN_ENABLED === "true";
-  return true;
+/** Supabase `/auth/v1/settings` 응답 중 여기서 쓰는 부분. */
+export type SupabaseAuthSettings = { external?: Record<string, unknown> } | null | undefined;
+
+/**
+ * 실제로 켜진 간편로그인만 고른다(화면 표시 순서는 PARENT_OAUTH_PROVIDERS 그대로).
+ *
+ * 왜 Supabase 설정을 직접 읽는가 — 2026-10-25 운영에서 구글·카카오가 Supabase 에서 꺼져
+ * 있었는데 버튼은 늘 보였다. 학부모가 누르면 Supabase 의 JSON 오류 화면
+ * (`Unsupported provider: provider is not enabled`)이 그대로 떴다. 환경변수 스위치를 따로 두면
+ * 「Supabase 는 꺼졌는데 스위치는 켜짐」이 또 생긴다. 그래서 **켜졌는지의 원본을 하나로** 둔다.
+ * 버튼 표시(/api/auth/providers)와 로그인 시작(/auth/oauth/[provider])이 모두 이 판정을 쓴다.
+ */
+export function enabledParentOAuthProviders(
+  settings: SupabaseAuthSettings,
+  env: Record<string, string | undefined> = process.env,
+): ParentOAuthProvider[] {
+  const external = settings?.external ?? {};
+  return PARENT_OAUTH_PROVIDERS.filter((provider) => {
+    // 네이버는 Supabase 커스텀 제공자라 settings 의 external 목록에 나오지 않는다 — 기존 플래그를 쓴다.
+    if (provider === "naver") return env.SUPABASE_NAVER_PROVIDER_ENABLED === "true";
+    // true 만 켜진 것으로 본다. 값이 없거나 이상하면 꺼진 것 — 눌러도 안 되는 버튼은 안 보이는 편이 낫다.
+    return external[provider] === true;
+  });
 }
 
 /**

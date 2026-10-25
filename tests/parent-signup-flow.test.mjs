@@ -21,9 +21,13 @@ const signupMigration = readFileSync(
 );
 
 test("the first parent signup screen offers password and all requested social methods", () => {
-  assert.match(signupUi, /\/auth\/oauth\/google\?intent=parent-signup/);
-  assert.match(signupUi, /\/auth\/oauth\/kakao\?intent=parent-signup/);
-  assert.match(signupUi, /\/auth\/oauth\/naver\?intent=parent-signup/);
+  // 2026-10-25: 링크를 세 줄로 하드코딩하던 것을 표 + 「Supabase 에서 켜진 것만 표시」로 바꿨다
+  // (꺼진 버튼을 누르면 Supabase JSON 오류 화면이 떴다). 지켜야 할 것은 그대로 —
+  // 요청한 간편가입 방식이 모두 표에 있고, 모두 parent-signup 의도로 시작한다.
+  for (const provider of ["google", "kakao", "naver"]) {
+    assert.match(signupUi, new RegExp(`provider: "${provider}"`), `${provider} 간편가입이 표에서 사라졌다`);
+  }
+  assert.match(signupUi, /\/auth\/oauth\/\$\{option\.provider\}\?intent=parent-signup/);
   assert.match(signupUi, /setStep\("phone"\)/);
 });
 

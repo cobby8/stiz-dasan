@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
+import AppleLogo from "@/components/auth/AppleLogo";
+import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
 
 // existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
 type Step = "method" | "phone" | "account" | "existing" | "done";
@@ -46,8 +48,19 @@ async function postJson(path: string, body: object) {
   return data;
 }
 
+// 간편가입 표. 실제로 보이는 것은 Supabase 에서 켜진 것뿐이다(아래 visibleSignupOptions).
+const SIGNUP_SOCIAL_OPTIONS = [
+  { provider: "google", label: "Google로 계속" },
+  { provider: "kakao", label: "카카오로 계속" },
+  { provider: "naver", label: "네이버로 계속" },
+  { provider: "apple", label: "Apple로 계속" },
+] as const;
+
 export default function ParentSignupClient() {
   const searchParams = useSearchParams();
+  // 훅이라 조건·조기 반환보다 앞에 둔다. 모르는 동안(null)은 간편가입 구역을 그리지 않는다.
+  const enabledProviders = useEnabledOAuthProviders();
+  const visibleSignupOptions = SIGNUP_SOCIAL_OPTIONS.filter((option) => enabledProviders?.includes(option.provider));
   const socialSignup = searchParams.get("social") === "1";
   // 카카오 연결 화면 등에서 "기존 학부모 계정 활성화"로 들어온 경우. 가입 방법 고르기를 건너뛰고 휴대폰 인증부터 한다.
   const existingMode = !socialSignup && searchParams.get("existing") === "1";
@@ -183,13 +196,26 @@ export default function ParentSignupClient() {
           <button type="button" onClick={() => setStep("phone")} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
             아이디로 가입하기
           </button>
-          <div className="flex items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />간편가입<span className="h-px flex-1 bg-gray-200" /></div>
-          <div className="grid gap-3">
-            <Link href={`/auth/oauth/google?intent=parent-signup&${continueParams.toString()}`} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white font-semibold text-gray-800">Google로 계속</Link>
-            <Link href={`/auth/oauth/kakao?intent=parent-signup&${continueParams.toString()}`} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white font-semibold text-gray-800">카카오로 계속</Link>
-            <Link href={`/auth/oauth/naver?intent=parent-signup&${continueParams.toString()}`} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white font-semibold text-gray-800">네이버로 계속</Link>
-          </div>
-          <p className="text-center text-xs leading-5 text-gray-500">간편가입도 처음 한 번은 안전한 계정 연결을 위해 휴대폰 인증이 필요합니다.</p>
+          {/* Supabase 에서 켜진 간편가입만 보인다 — 꺼진 버튼은 누르면 Supabase 오류 화면이 떴다(2026-10-25). */}
+          {visibleSignupOptions.length > 0 && (
+            <>
+              <div className="flex items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />간편가입<span className="h-px flex-1 bg-gray-200" /></div>
+              <div className="grid gap-3">
+                {visibleSignupOptions.map((option) => (
+                  <Link
+                    key={option.provider}
+                    href={`/auth/oauth/${option.provider}?intent=parent-signup&${continueParams.toString()}`}
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white font-semibold text-gray-800"
+                  >
+                    {/* 흰색 테두리 버튼은 애플 가이드라인의 「White Outline」 스타일과 맞는다 */}
+                    {option.provider === "apple" && <AppleLogo />}
+                    {option.label}
+                  </Link>
+                ))}
+              </div>
+              <p className="text-center text-xs leading-5 text-gray-500">간편가입도 처음 한 번은 안전한 계정 연결을 위해 휴대폰 인증이 필요합니다.</p>
+            </>
+          )}
         </>
       )}
 

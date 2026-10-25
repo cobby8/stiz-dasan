@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getEnabledParentOAuthProviders } from "@/lib/auth-providers";
 import {
-  isParentOAuthProviderReady,
   parentOAuthNotReadyMessage,
   parseParentOAuthProvider,
   publicSiteOrigin,
@@ -36,7 +36,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
   const intent: OAuthIntent =
     request.nextUrl.searchParams.get("intent") === "login" ? "login" : "parent-signup";
 
-  if (!isParentOAuthProviderReady(provider)) {
+  // 버튼 표시와 같은 판정(Supabase 실제 설정)으로 한 번 더 막는다. 화면이 낡았거나 누가 주소를
+  // 직접 쳐도, Supabase 의 JSON 오류 화면 대신 우리 로그인 화면에서 안내를 보게 된다.
+  if (!(await getEnabledParentOAuthProviders()).includes(provider)) {
     // 문구는 provider 별로 모듈이 만든다 — 여기 하드코딩하면 provider 를 늘릴 때 엉뚱한 이름이 나간다.
     return loginError(request, parentOAuthNotReadyMessage(provider));
   }
