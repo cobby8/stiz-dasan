@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-25: 운영홈HTML scope0/CSS4개200 파손재현. 원격0238c357로로컬FF일치후Home명시publicScope·Theme선택값2파일최소수정, 타공개/업무/별칭기존판별유지. 관련6/전체2471/학생5·tsc/lint·생산src907/bcbdd4·독립24/JS·수화0·개별해시일치. docs/public-home-ssr-style-fix.md 및 .tmp/public-home-ssr/qa/final-independent-report.json 정본. 지식본문5유지·구조/결정/오류/교훈갱신. 로컬격리검증·운영반영승인대기,운영쓰기/푸시/새배포없음.
+
 > 2026-10-22: 승인헤더 actual-fit 완료. 고정1280/1600폐기→기존DOM폭합계/가용공간·안전4/재확장4·관찰자/글씨/폰트/계정재계산·Guide실제속성연결. 전체2320/학생5·fit5/관련29·tsc·신규lint0·생산src881/1cbb·독립87(40/32/11/3/1)/JS0·개별해시일치. docs/public-header-fit.md 및 .tmp/public-header-fit/qa/final-independent-report.json 정본, 지식본문5유지·구조/결정/오류갱신. 4106합성GET전용·브라우저폭검증·운영/푸시/배포없음.
 
 > 2026-10-22: 승인공개원문·서식/헤더/신청안내 완료. 임의QA인사말·시설복제/정책평탄화 원인제거·공개캡처해시복원·로컬4필드만변경. UI6파일 한줄헤더/유니폼섹션제거·긴약관표시/중복여백·가이드폭/글씨전환보완. 전체2312/학생5·원문4/관련26·tsc·생산src879/4f1488·독립50→배송8/JS0통과. docs/public-header-content-repair.md 및 .tmp/public-header-content-repair/qa/final-independent-report.json 정본. 지식본문5개유지·구조/결정/오류/교훈갱신, 합성4106/브라우저폭·실물폰과구분·운영/푸시/배포없음.
