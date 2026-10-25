@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { oauthProviderMethod, sendParentSignupOtp, startParentSignup, type ParentSignupMethod } from "@/lib/parent-signup-verification";
+import { REGISTERED_PHONE_MESSAGE, oauthProviderMethod, sendParentSignupOtp, startParentSignup, type ParentSignupMethod } from "@/lib/parent-signup-verification";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -20,7 +20,11 @@ export async function POST(request: Request) {
     phone: String(body.phone || ""), signupMethod: method,
     email: oauthUser?.email, pendingAuthUserId: method === "PASSWORD" ? null : oauthUser?.id,
   });
-  if ("error" in result) return NextResponse.json(result, { status: 400 });
+  if ("error" in result) {
+    // 간편로그인으로 왔는데 이미 가입된 번호 → 화면이 「본인인증으로 기존 계정에 연결」을 띄운다.
+    const phoneRegistered = method !== "PASSWORD" && result.error === REGISTERED_PHONE_MESSAGE;
+    return NextResponse.json({ ...result, ...(phoneRegistered ? { phoneRegistered: true } : {}) }, { status: 400 });
+  }
   const forwarded = request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
   const requestKey = forwarded.split(",")[0]?.trim() || "unknown";
   const sent = await sendParentSignupOtp(result.token, requestKey);

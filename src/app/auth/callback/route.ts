@@ -8,6 +8,8 @@ import {
 } from "@/lib/parent-oauth";
 import { createClient } from "@/lib/supabase/server";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
+import { socialLinkNoticeBody } from "@/lib/account/social-link";
+import { notifyAccountSecurityEvent } from "@/lib/account/social-link-notify";
 
 type OAuthIntent = "login" | "parent-signup";
 
@@ -59,8 +61,9 @@ async function finishLink(request: NextRequest, code: string | null, provider: P
     return loginMethodsRedirect(request, { error: `${label} 연결이 취소되었거나 완료되지 않았습니다.` });
   }
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) return loginMethodsRedirect(request, { error: `${label} 연결 시간이 만료되었습니다. 다시 시도해 주세요.` });
+  await notifyAccountSecurityEvent({ authUserId: data.user?.id, eventType: "SOCIAL_LOGIN_LINKED", body: socialLinkNoticeBody(label) });
   return loginMethodsRedirect(request, { linked: provider });
 }
 

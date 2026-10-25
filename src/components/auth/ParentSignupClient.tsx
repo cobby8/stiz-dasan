@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import IdentityLinkButton from "@/components/auth/IdentityLinkButton";
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
@@ -18,6 +19,7 @@ type ApiData = {
   activationUrl?: string;
   redirectPath?: string;
   socialSessionMissing?: boolean;
+  phoneRegistered?: boolean;
 };
 
 /** 실패 응답의 추가 정보(간편가입 세션 끊김 등)를 화면이 알 수 있게 담아 던진다. */
@@ -76,6 +78,8 @@ export default function ParentSignupClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(searchParams.get("error"));
   const [socialSessionMissing, setSocialSessionMissing] = useState(false);
+  // 간편로그인 + 이미 가입된 번호 → 본인인증으로 기존 계정에 연결(2026-10-26). 모바일은 인증창에서 돌아올 때 주소에 결과가 붙는다.
+  const [phoneRegistered, setPhoneRegistered] = useState(socialSignup && searchParams.has("identityVerificationId"));
   const [activationUrl, setActivationUrl] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   // 가입할 때 고르는 역할(원장 결정 2026-10-25). 학부모는 바로 열리고, 선생님·기사님은
@@ -105,6 +109,7 @@ export default function ParentSignupClient() {
     } catch (reason) {
       setError(friendlyError(reason));
       setSocialSessionMissing(reason instanceof ApiError && Boolean(reason.data.socialSessionMissing));
+      setPhoneRegistered(socialSignup && reason instanceof ApiError && Boolean(reason.data.phoneRegistered));
     } finally {
       setLoading(false);
     }
@@ -199,6 +204,7 @@ export default function ParentSignupClient() {
           아이디·휴대폰 인증으로 계속
         </a>
       )}
+      {socialSignup && phoneRegistered && <IdentityLinkButton />}
       {notice && <p role="status" className="rounded-xl bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">{notice}</p>}
 
       {step === "method" && (
