@@ -238,6 +238,16 @@ export async function executeAccountWithdrawal(userId: string) {
       // 푸시 알림을 계속 받으면 탈퇴한 사람에게 학원 소식이 간다.
       await tx.$executeRawUnsafe(`DELETE FROM "PushSubscription" WHERE "userId" = $1`, userId);
 
+      // 추가 역할(선생님·기사님)과 대기 중인 신청도 회수한다. 탈퇴는 행을 지우지 않고 익명화하므로
+      // ON DELETE CASCADE 가 걸리지 않는다 — 여기서 직접 닫지 않으면 «탈퇴한 회원»에게 권한 기록이 남는다.
+      // 행은 지우지 않고 REVOKED 로 남긴다: 누가 언제 어떤 권한을 가졌었는지는 기록으로 필요하다.
+      await tx.$executeRawUnsafe(
+        `UPDATE "UserRoleGrant"
+            SET status = 'REVOKED', "decidedAt" = NOW(), note = COALESCE(note, '회원 탈퇴'), "updatedAt" = NOW()
+          WHERE "userId" = $1 AND status IN ('PENDING', 'ACTIVE')`,
+        userId,
+      );
+
       // 카카오 연결은 행을 지우지 않고 끊는다 — KakaoParentIntake 가 Cascade 라서
       // 지우면 결석 신고 같은 운영 기록이 함께 사라진다. userKeyHash 는 복원 불가한 해시이고
       // 소유자 연결이 끊기면 누구인지 알 수 없다.

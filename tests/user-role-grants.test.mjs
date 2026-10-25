@@ -157,3 +157,80 @@ test("preflight 가 표·인덱스·보안 누락을 실제로 잡는다", () =>
     "direct-privilege",
   );
 });
+
+// ── 2단계: 권한 가드·셔틀·게시·탈퇴에 반영 ────────────────────────────────────
+const { shuttleScope, primaryStaffRole, hasStaffAccess } = await loadTsModule("src/lib/account/roles.ts");
+const authGuard = fs.readFileSync("src/lib/auth-guard.ts", "utf8");
+const shuttleService = fs.readFileSync("src/lib/shuttle/service.ts", "utf8");
+const socialPosts = fs.readFileSync("src/app/actions/social-posts.ts", "utf8");
+const withdrawal = fs.readFileSync("src/app/actions/parent-account.ts", "utf8");
+
+const R = (primaryRole, grants = [], hasStudents = false) => effectiveRoles({ primaryRole, grants, hasStudents });
+const G = (...roles) => roles.map((role) => ({ role, status: "ACTIVE" }));
+
+test("셔틀 범위: 관리자 전체 · 기사님 본인 노선 · 선생님만이면 불가", () => {
+  assert.equal(shuttleScope(R("ADMIN")), "ALL");
+  assert.equal(shuttleScope(R("VICE_ADMIN")), "ALL");
+  assert.equal(shuttleScope(R("DRIVER")), "OWN");
+  assert.equal(shuttleScope(R("INSTRUCTOR")), "NONE");
+  assert.equal(shuttleScope(R("PARENT")), "NONE");
+  // 「선생님 + 기사님」— 선생님이라 막히면 안 되고, 기사님이라 남의 노선이 열려도 안 된다.
+  assert.equal(shuttleScope(R("INSTRUCTOR", G("DRIVER"))), "OWN");
+  assert.equal(shuttleScope(R("PARENT", G("DRIVER"))), "OWN");
+  // 신청만 한 기사님 역할로는 셔틀이 열리지 않는다.
+  assert.equal(shuttleScope(R("PARENT", [{ role: "DRIVER", status: "PENDING" }])), "NONE");
+});
+
+test("하위 호환 appUserRole: 주 역할이 직원이면 그대로, 아니면 받은 역할 중 넓은 쪽", () => {
+  assert.equal(primaryStaffRole("ADMIN", R("ADMIN")), "ADMIN");
+  assert.equal(primaryStaffRole("DRIVER", R("DRIVER", G("INSTRUCTOR"))), "DRIVER");
+  assert.equal(primaryStaffRole("PARENT", R("PARENT", G("INSTRUCTOR"))), "INSTRUCTOR");
+  assert.equal(primaryStaffRole("PARENT", R("PARENT", G("DRIVER"))), "DRIVER");
+  assert.equal(primaryStaffRole("PARENT", R("PARENT", G("INSTRUCTOR", "DRIVER"))), "INSTRUCTOR");
+  // 직원 화면이 하나도 없으면 null — requireStaff 가 막는다.
+  assert.equal(primaryStaffRole("PARENT", R("PARENT")), null);
+  assert.equal(hasStaffAccess(R("PARENT")), false);
+  assert.equal(hasStaffAccess(R("PARENT", G("DRIVER"))), true);
+});
+
+test("requireStaff 가 추가 역할을 캐시 없이 읽고, 실패해도 권한을 넓히지 않는다", () => {
+  // 역할 캐시(5분)에 넣으면 원장이 회수해도 5분 동안 화면이 열려 있다.
+  assert.match(authGuard, /async function getActiveRoleGrants[\s\S]*?WHERE "userId" = \$1 AND status = 'ACTIVE'/);
+  assert.doesNotMatch(authGuard.slice(authGuard.indexOf("async function getActiveRoleGrants"), authGuard.indexOf("export async function requireStaff")), /roleCache/);
+  // 조회 실패 → 추가 역할 없음(주 역할 권한만).
+  assert.match(authGuard, /getActiveRoleGrants[\s\S]*?catch \(error\)[\s\S]*?return \[\];/);
+  // 통과 조건은 판정 모듈 하나로.
+  assert.match(authGuard, /if \(!hasStaffAccess\(roles\) \|\| !staffRole\)/);
+  // 관리자 가드는 주 역할만 본다 — 추가 역할로 관리자가 되는 길은 없다.
+  const requireAdmin = authGuard.slice(authGuard.indexOf("export async function requireAdmin"), authGuard.indexOf("export type StaffRole"));
+  assert.doesNotMatch(requireAdmin, /UserRoleGrant|getActiveRoleGrants/);
+});
+
+test("셔틀 체크: 권한 없는 사람을 먼저 막고, 기사님은 본인 노선만", () => {
+  const block = shuttleService.slice(shuttleService.indexOf("const scope = actorShuttleScope(actor);"));
+  const noneAt = block.indexOf('if (scope === "NONE")');
+  const ownAt = block.indexOf('if (scope === "OWN" && route.driverUserId !== actor.appUserId)');
+  assert.ok(noneAt > 0 && ownAt > noneAt, "권한 없음 판정이 본인 노선 판정보다 먼저여야 한다");
+  // roles 없이 들어온 호출도 예전 appUserRole 로 같은 값을 만든다(다른 호출부 보호).
+  assert.match(shuttleService, /actor\.roles \?\? effectiveRoles\(\{ primaryRole: actor\.appUserRole, hasStudents: false \}\)/);
+  assert.doesNotMatch(shuttleService, /appUserRole === "(DRIVER|INSTRUCTOR)"/);
+});
+
+test("게시 제한은 «관리자가 아닌 직원 전부» — 기사님 주 역할 + 선생님 승인자도 포함", () => {
+  // 예전 `=== "INSTRUCTOR"` 는 주 역할이 기사님인 선생님을 통째로 빠뜨렸다.
+  assert.match(socialPosts, /function isReviewRequiredAuthor\(actor: \{ appUserRole: string \}\) \{\s*return actor\.appUserRole !== "ADMIN" && actor\.appUserRole !== "VICE_ADMIN";/);
+  assert.doesNotMatch(socialPosts, /appUserRole === "INSTRUCTOR"/);
+  for (const use of [
+    /isPublic: isReviewRequiredAuthor\(staff\) \? false/,
+    /const authorUserId = isReviewRequiredAuthor\(staff\) \? staff\.appUserId : null/,
+    /if \(isReviewRequiredAuthor\(staff\) && draft\.authorUserId !== staff\.appUserId\)/,
+  ]) assert.match(socialPosts, use);
+});
+
+test("회원 탈퇴 시 추가 역할과 대기 중인 신청도 회수한다", () => {
+  // 탈퇴는 익명화라 ON DELETE CASCADE 가 걸리지 않는다. 직접 닫지 않으면 권한 기록이 살아 있다.
+  assert.match(withdrawal, /UPDATE "UserRoleGrant"\s*\n\s*SET status = 'REVOKED', "decidedAt" = NOW\(\)[\s\S]*?WHERE "userId" = \$1 AND status IN \('PENDING', 'ACTIVE'\)/);
+  // 같은 트랜잭션 안에서(익명화와 따로 놀면 한쪽만 반영된다).
+  const tx = withdrawal.slice(withdrawal.indexOf("await prisma.$transaction(async (tx) => {"), withdrawal.indexOf("개인정보 익명화 실패"));
+  assert.match(tx, /tx\.\$executeRawUnsafe\(\s*`UPDATE "UserRoleGrant"/);
+});

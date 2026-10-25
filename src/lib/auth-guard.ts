@@ -1,5 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import {
+  effectiveRoles,
+  hasStaffAccess,
+  primaryStaffRole,
+  type EffectiveRoles,
+  type RoleGrantRow,
+} from "@/lib/account/roles";
 
 type AuthUser = {
   id: string;
@@ -235,12 +242,34 @@ export type StaffRole = "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER";
 export type StaffAuthUser = Awaited<ReturnType<typeof requireAuth>> & {
   appUserId: string;
   appUserName: string;
+  /** 하위 호환용 한 값. 「선생님 + 기사님」처럼 겹치면 표현이 안 되므로 화면 문지기는 roles 를 본다. */
   appUserRole: StaffRole;
+  /** 열린 화면 묶음 — 주 역할 + 승인된 추가 역할. */
+  roles: EffectiveRoles;
 };
 
 /**
- * requireStaff: ADMIN, VICE_ADMIN, INSTRUCTOR, DRIVER allowed.
- * This protects staff-only workflows without opening the full admin area.
+ * 승인된(ACTIVE) 추가 역할.
+ * 역할 캐시(5분)와 달리 **캐시하지 않는다** — 원장이 회수하면 바로 막혀야 한다.
+ * 조회가 실패하면 「추가 역할 없음」으로 본다: 주 역할 권한은 그대로 두고, 실패가 권한을
+ * 넓히는 쪽으로는 절대 흐르지 않게 한다.
+ */
+async function getActiveRoleGrants(userId: string): Promise<RoleGrantRow[]> {
+  try {
+    return await prisma.$queryRawUnsafe<RoleGrantRow[]>(
+      `SELECT role, status FROM "UserRoleGrant" WHERE "userId" = $1 AND status = 'ACTIVE'`,
+      userId,
+    );
+  } catch (error) {
+    console.error("[auth-guard] 추가 역할 조회 실패:", error instanceof Error ? error.message : String(error));
+    return [];
+  }
+}
+
+/**
+ * requireStaff: 관리자·선생님·기사님 중 하나라도 열린 사람.
+ * 주 역할이 학부모여도 원장이 승인한 선생님·기사님 역할이 있으면 통과한다(다중 역할, 2026-10-25).
+ * 승인 대기(PENDING)는 통과하지 못한다 — 고르기만 해서 학생 개인정보가 열리면 안 된다.
  */
 export async function requireStaff(): Promise<StaffAuthUser> {
   const user = await requireAuth();
@@ -251,17 +280,22 @@ export async function requireStaff(): Promise<StaffAuthUser> {
   }
 
   const appUser = await getAppUserRole(email);
-  if (
-    !appUser ||
-    (appUser.role !== "ADMIN" && appUser.role !== "VICE_ADMIN" && appUser.role !== "INSTRUCTOR" && appUser.role !== "DRIVER")
-  ) {
+  if (!appUser) {
+    throw new Error("Staff permission is required.");
+  }
+
+  const grants = await getActiveRoleGrants(appUser.id);
+  const roles = effectiveRoles({ primaryRole: appUser.role, grants, hasStudents: false });
+  const staffRole = primaryStaffRole(appUser.role, roles);
+  if (!hasStaffAccess(roles) || !staffRole) {
     throw new Error("Staff permission is required.");
   }
 
   return Object.assign(user, {
     appUserId: appUser.id,
     appUserName: appUser.name || user.email || "STIZ Staff",
-    appUserRole: appUser.role as StaffRole,
+    appUserRole: staffRole,
+    roles,
   });
 }
 

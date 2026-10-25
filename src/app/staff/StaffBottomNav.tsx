@@ -2,8 +2,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type StaffRole = "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER";
-
 const teachingItems = [
   { href: "/staff", label: "수업", icon: "today", exact: true },
   { href: "/staff/students", label: "학생", icon: "groups", exact: false },
@@ -13,16 +11,18 @@ const teachingItems = [
 const shuttleItem = { href: "/staff/shuttle", label: "셔틀", icon: "airport_shuttle", exact: false } as const;
 const seasonalItem = { href: "/staff/seasonal", label: "특강", icon: "sports_basketball", exact: false } as const;
 
-export default function StaffBottomNav({ staffRole }: { staffRole: StaffRole }) {
+// 역할 하나가 아니라 «수업 메뉴·셔틀 메뉴를 각각 쓸 수 있는가»로 받는다.
+// 역할 하나로 가르면 「선생님 + 기사님」이 셔틀 탭을 못 보거나 수업 탭을 못 본다(다중 역할, 2026-10-25).
+//   기사님만 → 셔틀 / 선생님만 → 수업·학생·청구·특강 / 관리자·선생님+기사님 → 둘 다
+export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boolean; canShuttle: boolean }) {
   const pathname = usePathname();
   // 수업 진행 화면은 종료 버튼 등 수업 조작에 집중할 수 있도록 메뉴를 숨깁니다.
   if (pathname.startsWith("/staff/sessions/")) return null;
 
-  const items = staffRole === "DRIVER"
-    ? [shuttleItem]
-    : staffRole === "ADMIN" || staffRole === "VICE_ADMIN"
-      ? [...teachingItems, seasonalItem, shuttleItem]
-      : [...teachingItems, seasonalItem];
+  const items = [
+    ...(canTeach ? [...teachingItems, seasonalItem] : []),
+    ...(canShuttle ? [shuttleItem] : []),
+  ];
   const gridClass = items.length >= 5 ? "grid-cols-5" : items.length === 4 ? "grid-cols-4" : items.length === 1 ? "grid-cols-1" : "grid-cols-3";
 
   // 공통 표면을 사용하되 현재 메뉴의 접근성·이동 규칙은 유지합니다.

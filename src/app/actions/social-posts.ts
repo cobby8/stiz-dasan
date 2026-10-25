@@ -80,7 +80,7 @@ export async function createSocialPostDraft(data: {
     hashtags: aiDraft.hashtags,
     mediaJSON,
     // 선생님 초안은 관리자 검토 전 공개 상태가 될 수 없습니다.
-    isPublic: staff.appUserRole === "INSTRUCTOR" ? false : data.isPublic !== false,
+    isPublic: isReviewRequiredAuthor(staff) ? false : data.isPublic !== false,
     sessionId: data.sessionId,
     classId: data.classId,
     source: data.source,
@@ -91,14 +91,26 @@ export async function createSocialPostDraft(data: {
   return { ok: true, draft };
 }
 
+/**
+ * 관리자 검토 없이 공개·게시할 수 없는 작성자인가 — 관리자가 아닌 직원 전부.
+ *
+ * 예전에는 역할 값이 선생님(INSTRUCTOR)일 때만 막았다. 다중 역할(2026-10-25) 이후에는
+ * 「주 역할 기사님 + 승인된 선생님」인 사람의 appUserRole 이 "DRIVER" 라서 이 제한을
+ * **통째로 빠져나갔다** — 기사님이 사진 화면에 못 들어와서 드러나지 않던 구멍이다.
+ * 관리자 권한은 추가 역할로 줄 수 없으므로(DB CHECK) appUserRole 이 ADMIN·VICE_ADMIN 인 경우만 자유롭다.
+ */
+function isReviewRequiredAuthor(actor: { appUserRole: string }) {
+  return actor.appUserRole !== "ADMIN" && actor.appUserRole !== "VICE_ADMIN";
+}
+
 export async function saveSocialPostDraft(id: string, data: SaveDraftInput) {
   const staff = await requireStaff();
-  const authorUserId = staff.appUserRole === "INSTRUCTOR" ? staff.appUserId : null;
+  const authorUserId = isReviewRequiredAuthor(staff) ? staff.appUserId : null;
 
   const normalizedData = data.subjectStudentIds === undefined
     ? data
     : { ...data, subjectStudentIds: normalizeSubjectStudentIds(data.subjectStudentIds) };
-  const safeData = staff.appUserRole === "INSTRUCTOR"
+  const safeData = isReviewRequiredAuthor(staff)
     ? { ...normalizedData, isPublic: false }
     : normalizedData;
   const draft = await updateSocialPostDraftRecord(id, safeData, { authorUserId });
@@ -117,12 +129,12 @@ function canPublishDraftStatus(status: SocialPostDraft["status"]) {
   return status === "READY" || status === "FAILED" || status === "PUBLISHING";
 }
 
-function assertCanPublishDraft(draft: SocialPostDraft | null, staff: Awaited<ReturnType<typeof requireStaff>>) {
+function assertCanPublishDraft(draft: SocialPostDraft | null, staff: { appUserId: string; appUserRole: string }) {
   if (!draft || !canPublishDraftStatus(draft.status)) {
     throw new Error("게시할 수 있는 초안을 찾지 못했습니다.");
   }
 
-  if (staff.appUserRole === "INSTRUCTOR" && draft.authorUserId !== staff.appUserId) {
+  if (isReviewRequiredAuthor(staff) && draft.authorUserId !== staff.appUserId) {
     throw new Error("본인이 작성한 초안만 바로 게시할 수 있습니다.");
   }
 }

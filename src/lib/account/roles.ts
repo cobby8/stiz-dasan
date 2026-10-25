@@ -73,3 +73,37 @@ export function effectiveRoles(input: {
 export function hasAnyRole(roles: EffectiveRoles): boolean {
   return roles.admin || roles.teacher || roles.driver || roles.parent;
 }
+
+/** 직원 화면(/staff)에 들어올 수 있는가 — 관리자·선생님·기사님 중 하나라도. */
+export function hasStaffAccess(roles: EffectiveRoles): boolean {
+  return roles.admin || roles.teacher || roles.driver;
+}
+
+export type StaffRole = "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER";
+
+/**
+ * 기존 코드가 보는 `appUserRole` 한 값을 정한다(하위 호환).
+ * 역할 값을 직접 비교하는 곳이 많아 한 번에 다 바꾸지 않는다 — 화면 문지기만 roles 로 옮기고,
+ * 나머지는 이 값을 계속 본다. 주 역할이 직원이면 그대로, 아니면 부여받은 것 중 넓은 쪽(선생님).
+ */
+export function primaryStaffRole(primaryRole: unknown, roles: EffectiveRoles): StaffRole | null {
+  const primary = parsePrimaryRole(primaryRole);
+  if (primary && primary !== "PARENT") return primary;
+  if (roles.teacher) return "INSTRUCTOR";
+  if (roles.driver) return "DRIVER";
+  return null;
+}
+
+/**
+ * 셔틀 노선을 어디까지 다룰 수 있는가.
+ *   ALL  — 관리자: 전체 노선
+ *   OWN  — 기사님: 본인에게 배정된 노선만
+ *   NONE — 그 외(선생님만인 사람 포함): 셔틀 체크 불가
+ * 「선생님 + 기사님」은 OWN 이다 — 선생님이라서 셔틀이 막히면 안 되고, 기사님이라서 남의 노선이
+ * 열려도 안 된다. 예전 코드는 역할 하나로 갈라 이 조합을 표현할 수 없었다.
+ */
+export function shuttleScope(roles: EffectiveRoles): "ALL" | "OWN" | "NONE" {
+  if (roles.admin) return "ALL";
+  if (roles.driver) return "OWN";
+  return "NONE";
+}

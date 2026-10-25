@@ -21,7 +21,11 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
   const [popupRight, setPopupRight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const current = views.find(view => pathname === view.href || pathname.startsWith(`${view.href}/`));
+  // 가장 길게 맞는 화면을 현재 화면으로 본다. /staff 와 /staff/shuttle 이 함께 있으면
+  // 셔틀 화면에서 「선생님」이 현재 화면으로 잘못 표시된다(다중 역할, 2026-10-25).
+  const current = views
+    .filter(view => pathname === view.href || pathname.startsWith(`${view.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const scope = pathname.startsWith("/staff") ? "/staff" : pathname.startsWith("/mypage") ? "/mypage" : null;
 
   useEffect(() => {

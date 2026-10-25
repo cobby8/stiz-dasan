@@ -14,7 +14,8 @@ function load(source, dependencies) {
 }
 const publicErrors = load(await readFile('src/lib/user-facing-error.ts', 'utf8'), {});
 const routes = load(await readFile('src/lib/auth-routes.ts', 'utf8'), {});
-const views = load(await readFile('src/lib/account-views.ts', 'utf8'), {});
+const roles = load(await readFile('src/lib/account/roles.ts', 'utf8'), {});
+const views = load(await readFile('src/lib/account-views.ts', 'utf8'), { '@/lib/account/roles': roles });
 const accessSource = await readFile('src/lib/account-view-access.ts', 'utf8');
 function fixture({ role = 'ADMIN', account = null, signedOut = false, dbFailure = false } = {}) {
   const queries = [];
@@ -59,7 +60,24 @@ for (const [description, username, phoneVerifiedAt, allowed] of [
     assert.deepEqual((await access.getAccountViewAccess()).views.map(x => x.key), allowed ? ['parent'] : []);
   });
 }
-test('기사 계정에는 이번 화면 전환 메뉴를 추가하지 않음', () => assert.deepEqual(views.resolveAccountViews('DRIVER', true), []));
+// 2026-10-25 원장 결정으로 바뀐 규칙 — 예전에는 「기사 계정에는 화면 전환 메뉴를 추가하지 않음」이었다.
+// 다중 역할(기사님 + 학부모, 선생님 + 기사님)을 허용하면서 기사님 화면도 전환 대상에 넣는다.
+// 기사님 화면만 있는 사람은 화면이 하나라 전환 버튼 자체가 숨는다(AccountViewSwitcher: 2개 미만이면 숨김).
+test('기사님도 화면 전환에 들어가고, 기사님 + 학부모를 오갈 수 있다', () => {
+  assert.deepEqual(views.resolveAccountViews('DRIVER', true).map(x => x.key), ['driver', 'parent']);
+  assert.deepEqual(views.resolveAccountViews('DRIVER', false).map(x => x.key), ['driver']);
+  assert.equal(views.resolveAccountViews('DRIVER', true).find(x => x.key === 'driver').href, '/staff/shuttle');
+});
+test('승인된 추가 역할만 화면을 열고, 신청 중인 역할은 열지 않는다', () => {
+  const active = [{ role: 'INSTRUCTOR', status: 'ACTIVE' }, { role: 'DRIVER', status: 'ACTIVE' }];
+  assert.deepEqual(views.resolveAccountViews('PARENT', true, active).map(x => x.key), ['teacher', 'driver', 'parent']);
+  // 고르기만 해서(PENDING) 선생님 화면이 열리면 아무나 학생 개인정보를 본다.
+  assert.deepEqual(views.resolveAccountViews('PARENT', true, [{ role: 'INSTRUCTOR', status: 'PENDING' }]).map(x => x.key), ['parent']);
+  // 추가 역할로는 관리자 화면이 열리지 않는다.
+  assert.equal(views.resolveAccountViews('PARENT', true, [{ role: 'ADMIN', status: 'ACTIVE' }]).some(x => x.key === 'admin'), false);
+  // 관리자는 셔틀을 관리자 화면에서 다루므로 기사님 화면을 따로 띄우지 않는다.
+  assert.deepEqual(views.resolveAccountViews('ADMIN', false, [{ role: 'DRIVER', status: 'ACTIVE' }]).map(x => x.key), ['admin', 'teacher']);
+});
 test('로그아웃·조회 실패는 권한을 추정하지 않고 메뉴 닫음', async () => {
   for (const option of [{ signedOut: true }, { dbFailure: true }]) {
     assert.deepEqual(await fixture(option).access.getAccountViewAccess(), { role: null, views: [] });

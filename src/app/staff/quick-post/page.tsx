@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function StaffQuickPostPage() {
   try {
     const staff = await requireStaff();
-    if (staff.appUserRole === "DRIVER") {
+    if (!staff.roles.teacher) {
       return (
         <main className="min-h-screen bg-surface-warm px-4 py-10 dark:bg-gray-950">
           <div className="mx-auto max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">

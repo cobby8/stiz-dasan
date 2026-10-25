@@ -1,5 +1,6 @@
 import { Prisma, ShuttleRouteDirection, ShuttleRoutePlanStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { effectiveRoles, shuttleScope, type EffectiveRoles } from "@/lib/account/roles";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 // 셔틀 대상자 판정 기준은 명단·노선·자동배차가 반드시 같아야 한다. 공용 모듈 한 곳에서만 정의한다.
 // 셔틀 대상자는 게이트웨이 한 곳으로만 읽는다(원본 4테이블을 여기서 다시 조인하지 않는다).
@@ -31,7 +32,20 @@ function contract<T>(operation: () => T): T {
 
 type Db = Prisma.TransactionClient;
 type Actor = { appUserId: string };
-type StaffActor = Actor & { appUserRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" };
+type StaffActor = Actor & {
+  appUserRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER";
+  /** requireStaff 가 주는 열린 화면 묶음. 없으면 appUserRole 하나로 예전과 똑같이 계산한다. */
+  roles?: EffectiveRoles;
+};
+
+/**
+ * 이 사람이 셔틀 노선을 어디까지 다룰 수 있는가(ALL·OWN·NONE).
+ * 역할 하나로 가르면 「선생님 + 기사님」을 표현할 수 없다 — 선생님이라 막히거나, 기사님이라
+ * 남의 노선까지 열리거나. roles 가 있으면 그것을, 없으면 예전 appUserRole 로 같은 값을 만든다.
+ */
+function actorShuttleScope(actor: StaffActor) {
+  return shuttleScope(actor.roles ?? effectiveRoles({ primaryRole: actor.appUserRole, hasStudents: false }));
+}
 type ShuttleRideStatus = "PENDING" | "BOARDED" | "DROPPED_OFF" | "NO_SHOW";
 type ShuttleLocationKind = "pickup" | "dropoff";
 type StudentShuttleLocationKind = "PICKUP" | "DROPOFF";
@@ -1365,10 +1379,11 @@ function koreaDateOnly(date = new Date()) {
   }).format(date);
 }
 
-export async function getStaffShuttleDashboard(actor: Actor & { appUserRole: "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" }) {
+export async function getStaffShuttleDashboard(actor: StaffActor) {
   const todayKey = koreaDateOnly();
   const today = new Date(`${todayKey}T00:00:00.000Z`);
-  const isDriver = actor.appUserRole === "DRIVER";
+  // 관리자가 아니면 본인에게 배정된 노선만 본다(예전: DRIVER 일 때만 좁혔다 — 같은 결과).
+  const isDriver = actorShuttleScope(actor) !== "ALL";
   const routes = await prisma.shuttleRoutePlan.findMany({
     where: {
       status: ShuttleRoutePlanStatus.CONFIRMED,
@@ -1416,11 +1431,13 @@ export async function updatePassengerRideStatus(actor: StaffActor, routeId: stri
     if (!route || route.status !== ShuttleRoutePlanStatus.CONFIRMED) {
       throw new ShuttleServiceError("확정된 운행 노선만 체크할 수 있습니다.", 404, "CONFIRMED_ROUTE_NOT_FOUND");
     }
-    if (actor.appUserRole === "DRIVER" && route.driverUserId !== actor.appUserId) {
-      throw new ShuttleServiceError("담당 기사에게 배정된 노선만 체크할 수 있습니다.", 403, "DRIVER_ROUTE_FORBIDDEN");
-    }
-    if (actor.appUserRole === "INSTRUCTOR") {
+    const scope = actorShuttleScope(actor);
+    // 순서가 중요하다: 셔틀 권한이 아예 없는 사람(선생님만)을 먼저 막고, 기사님은 본인 노선만.
+    if (scope === "NONE") {
       throw new ShuttleServiceError("셔틀 체크 권한이 없습니다.", 403, "SHUTTLE_CHECK_FORBIDDEN");
+    }
+    if (scope === "OWN" && route.driverUserId !== actor.appUserId) {
+      throw new ShuttleServiceError("담당 기사에게 배정된 노선만 체크할 수 있습니다.", 403, "DRIVER_ROUTE_FORBIDDEN");
     }
     if (!route.serviceDate || Number.isNaN(route.serviceDate.getTime()) || koreaDateOnly(route.serviceDate) !== koreaDateOnly()) {
       throw new ShuttleServiceError("탑승 상태는 운행 당일에만 처리할 수 있습니다.", 409, "SHUTTLE_RIDE_STATUS_NOT_SERVICE_DATE");

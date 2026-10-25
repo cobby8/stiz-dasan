@@ -89,9 +89,12 @@ export function createMonthlyRegisterApiDbHarness({ database }) {
     "node:crypto": { randomUUID },
     "./monthly-register": model,
   }, isolatedProcess);
+  // 다중 역할 판정(2026-10-25)은 DB·외부 호출이 없는 순수 모듈이라 원본 그대로 허용한다.
+  const roles = loadSource("src/lib/account/roles.ts", {}, isolatedProcess);
   const auth = loadSource("src/lib/auth-guard.ts", {
     "@/lib/supabase/server": authProvider,
     "@/lib/prisma": { prisma: database },
+    "@/lib/account/roles": roles,
   }, isolatedProcess);
   const route = loadSource("src/app/api/admin/finance/monthly-register/route.ts", {
     "next/server": { NextRequest, NextResponse },

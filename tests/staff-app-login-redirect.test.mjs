@@ -65,9 +65,9 @@ test("앱 로그인과 브라우저 로그인을 다른 값으로 구분해 넘�
 
 test("선생님 앱의 관리자 바로가기는 원장·부원장에게만 보인다", async () => {
   const menu = await readFile("src/app/staff/StaffProfileMenu.tsx", "utf8");
-  const viewSource = await readFile("src/lib/account-views.ts", "utf8");
-  const compiledViews = ts.transpileModule(viewSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const { resolveAccountViews } = await import(`data:text/javascript;base64,${Buffer.from(compiledViews).toString("base64")}`);
+  // account-views 가 다중 역할 판정 모듈을 import 하게 되어(2026-10-25) import 를 따라가는 로더로 읽는다.
+  const { loadTsModule } = await import("./_ts-module.mjs");
+  const { resolveAccountViews } = await loadTsModule("src/lib/account-views.ts");
   for (const role of ["ADMIN", "VICE_ADMIN"]) assert.equal(resolveAccountViews(role, false).some(view => view.href === "/admin"), true);
   for (const role of ["INSTRUCTOR", "PARENT", "DRIVER"]) assert.equal(resolveAccountViews(role, true).some(view => view.href === "/admin"), false);
   assert.match(menu, /AccountViewSwitcher views=\{accountViews\}/);

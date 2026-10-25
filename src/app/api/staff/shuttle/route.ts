@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireStaff } from "@/lib/auth-guard";
+import { shuttleScope } from "@/lib/account/roles";
 import { getStaffShuttleDashboard, ShuttleServiceError, updatePassengerRideStatus } from "@/lib/shuttle/service";
 
 function object(value: unknown): Record<string, unknown> {
@@ -9,7 +10,8 @@ function object(value: unknown): Record<string, unknown> {
 export async function GET() {
   try {
     const staff = await requireStaff();
-    if (staff.appUserRole !== "DRIVER" && staff.appUserRole !== "ADMIN" && staff.appUserRole !== "VICE_ADMIN") {
+    // 관리자 또는 기사님(주 역할이든 승인된 추가 역할이든). 「선생님 + 기사님」도 여기 들어온다.
+    if (shuttleScope(staff.roles) === "NONE") {
       throw new ShuttleServiceError("셔틀 운행 정보를 조회할 권한이 없습니다.", 403, "SHUTTLE_DASHBOARD_FORBIDDEN");
     }
     const dashboard = await getStaffShuttleDashboard(staff);

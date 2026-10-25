@@ -38,6 +38,11 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     // 병합 엔진 본체 — 흡수된 쪽을 읽어야 병합/되돌리기가 가능하다.
     "lib/studentMerge/engine.ts": { count: 4, reason: "병합 엔진 자체(대상 학생을 직접 읽어야 함)" },
 
+    // 회원 탈퇴(2026-10-25) — 흡수된 학생을 빼면 오히려 위험한 경우다.
+    //   재학 판정 2건: 흡수된 학생의 수강까지 세야 «재학 중»을 놓치지 않는다. 덜 세면 즉시 삭제로 간다.
+    //   좌표 파기 1건: 탈퇴 시 위치정보는 흡수된 학생 것까지 지워야 한다.
+    "app/actions/parent-account.ts": { count: 3, reason: "회원 탈퇴 — 재학 판정은 많이 세는 쪽이 안전, 위치정보 파기는 흡수분까지" },
+
     // 청구·수납 — 흡수된 쪽에 청구가 남았을 때 화면에서 숨기면 미납이 사라진다.
     "lib/payment-ledger.ts": { count: 2, reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험" },
     "lib/staff-class-billing.ts": { count: 1, reason: "교사앱 청구 목록" },
