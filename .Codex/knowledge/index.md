@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-27: 사용자 승인 검증브랜치8546만푸시·Vercel배포차단/독립11·원격main7f 보존. Codemagic #1 요청1회·QUEUED로 Swift/Xcode 결과없음, 서명/TestFlight/운영반영0. docs/stiz-ios-codemagic.md 및 .tmp/stiz-app-codemagic-run/ 정본.
+
 > 2026-10-27: 통합앱·공통계정 첫 그룹 구현/독립 검증. docs/native-app-foundation.md 정본, 전체2528/학생5·934소스격리build일치·PG24/iOS정적40/Java154/관찰자19. Codemagic STIZ 별도앱만 등록, 원격실행/푸시/배포0. 구조/결정/오류 갱신·지식본문5개 유지.
 
 > 2026-10-27: 사용자 명시 푸시·배포 승인으로61528427 main반영. 운영 자녀연결 활성값 없음(기본off), 전용MID미발급·새표미적용은유지. 코드배포 도메인/브라우저검증 실행정본 .tmp/child-connections-release/. 운영DB·발송·환경설정·기존BDR채널 변경 없음.

@@ -50,3 +50,5 @@
 - Android 독립 실제 Java 정책 **154/154**, 실제 탐색 관찰자 JavaScript **19/19**. 두 모드 APK 빌드와 unsigned AAB, TLS 분리 검증은 Android `VALIDATION.md`와 별도 보관 산출물 기준이다. Lint 오류 0, 경고 7은 숨기지 않고 해당 문서에 남겼다.
 - 변경 TS/TSX 14파일 ESLint 결과는 기존 `auth-guard.ts`의 `any` 오류 4개와 동일하다. HEAD 원문을 같은 설정으로 검사해 같은 줄의 동일 4개를 확인했으며 이번 추가 오류는 없다. 전체 lint 성공으로 보고하지 않는다.
 - Codemagic STIZ 앱 등록은 완료했지만 설정 푸시·원격 실행·Apple 서명·TestFlight 업로드·배포는 하지 않았다. 현재 main의 Vercel Git 자동 배포 차단 설정이 없으므로 원격 검증은 별도 브랜치 차단을 준비한 뒤 승인받아야 한다.
+
+위 내용은 첫 로컬 그룹 완료 시점의 기록이다. 후속 사용자 승인으로 검증 브랜치에 8546d139를 푸시하고 Codemagic #1을 요청했다. 현재 원격 Mac 배정 대기로 Swift/Xcode 결과가 없으며, 최신 실행 상태는 docs/stiz-ios-codemagic.md를 기준으로 한다. main·운영·서명·TestFlight는 유지한다.

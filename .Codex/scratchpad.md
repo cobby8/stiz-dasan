@@ -1,12 +1,13 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 출시 준비 첫 그룹 — Android 통합 진입·iOS/Codemagic 기반·전 역할 내 계정/탈퇴 경계 보강.
-- 현재 단계: 구현·독립검증 완료. 전체2528/학생5·tsc·934소스최종격리build일치, PG24/iOS정적40/Java154/관찰자19. Codemagic STIZ 앱등록만 완료, 검증 결과 로컬 저장·원격 실행 승인 대기.
-- 승인 범위: 사용자 '순서대로 진행' 및 BDR 기록앱 방식 요청에 따른 로컬 구현·합성 검증. 원격빌드·서명·설치·실삭제·운영쓰기·발송·푸시·배포는 실행하지 않는다.
+- 현재 단계: 승인 검증브랜치8546 푸시·배포차단11/11·tsc 완료. Codemagic #1/6adf8b944a72334e32e56cd9 시작요청1회, 원격Mac 배정 QUEUED로 Swift/Xcode/산출물 미검증.
+- 승인 범위: 사용자 별도브랜치 푸시·무서명빌드1회 승인. codex/stiz-app-codemagic만 사용, main/운영·서명·TestFlight·설치·DB·발송 유지. 재실행 승인 없음.
 - 외부 보류: STIZ 전용 MID/apikey 미발급·가족연결flag off 유지. Mac 없음→Codemagic 수동 무서명 simulator 구성, Swift/Xcode/아이폰 설치 미검증. Native OAuth·로그인 기반 기사 운행·파일선택/푸시는 후속.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
+| Codemagic 검증 브랜치 | PM 실행·독립QA | 푸시완료·원격Mac 대기 | docs/stiz-ios-codemagic.md;8546·#1 1회·운영유지 |
 | 통합앱·공통계정 기반 | Android/계정 병렬개발·PM iOS/Codemagic·독립QA | 로컬·독립·생산빌드 완료 | docs/native-app-foundation.md; 로컬만·미푸시/미배포 |
 | 가족 연결·스포츠 업무 화면 | 서버·UI 병렬 / PM통합 / 독립QA | 푸시·운영배포검증 진행 | docs/child-connections-and-sport-workspace.md;2514/학생5·독립107·928소스·새기능off |
 | 운영 홈 최초 HTML 스타일 | explorer경계 / PM수정·서버 / 독립tester | 운영배포·도메인검증 완료 | docs/public-home-ssr-style-fix.md;facac46f·2475/학생5·운영20/20·미푸시0 |

@@ -2,7 +2,18 @@
 
 2026-10-27 사용자 요청에 따라 BDR 기록앱에서 사용한 **Codemagic 원격 Mac → TestFlight** 방식을 채택한다. GitHub Actions로 별도 경로를 만들지 않는다. BDR는 Flutter이며 STIZ는 기존 웹 업무 화면을 UIKit/WKWebView로 여는 구조이므로 빌드 명령은 다르다.
 
-기존 BDR를 빌드한 Codemagic 계정의 GitHub 연동에서 `cobby8/stiz-dasan`을 **별도 iOS 앱으로 등록**했다. [STIZ Codemagic 앱](https://codemagic.io/builds?team_id=6ab35084460c69aad6ee4723&app_id=6adf8936614a5060c363fedd). BDR 앱 설정·키·테스터 그룹은 변경하지 않았다. 원격에 설정 파일을 아직 푸시하지 않았으므로 콘솔은 `No configuration file found` 상태이며 빌드 시작 버튼을 실행하지 않았다. 연결 증빙은 `.tmp/stiz-app-foundation-qa/codemagic-stiz-connected.jpg`다.
+기존 BDR를 빌드한 Codemagic 계정의 GitHub 연동에서 `cobby8/stiz-dasan`을 **별도 iOS 앱으로 등록**했다. [STIZ Codemagic 앱](https://codemagic.io/builds?team_id=6ab35084460c69aad6ee4723&app_id=6adf8936614a5060c363fedd). BDR 앱 설정·키·테스터 그룹은 변경하지 않았다. 최초 앱 등록 당시에는 설정 미푸시로 `No configuration file found` 상태였다. 이후 승인된 원격 검증은 아래 후속 기록을 기준으로 한다. 연결 증빙은 `.tmp/stiz-app-foundation-qa/codemagic-stiz-connected.jpg`다.
+
+## 2026-10-27 승인된 원격 검증
+
+- 사용자 승인: 두 커밋과 검증 브랜치 배포 차단을 검사한 뒤 별도 브랜치 푸시·무서명 빌드 1회. 서명·TestFlight 업로드·운영 반영 제외.
+- `codex/stiz-app-codemagic`에 `8546d13983202b66848e73068dbca1aa8e8e9065`까지 푸시했다. 이 브랜치만 Vercel 자동 배포를 차단했고 다른 설정은 유지했다. 독립 설정11/11·Python 구성·TypeScript 통과.
+- 원격 main은 `7f7673d6ddcc81626d38c5a0cca5ce5fd24057a5`, 로컬 main은 `d870b839`로 유지했다. 운영은 기존 `dpl_6ku1QzfDeWaidLt3ZcLyRZ4o8ajU`를 유지한다.
+- [빌드 #1](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6adf8b944a72334e32e56cd9): `stiz-ios-simulator`, Mac mini M2, SSH/VNC 해제, 시작 요청1회.
+- 현재 **QUEUED / 원격 Mac 배정 대기**. Swift 검사·Xcode 컴파일·산출물 생성 결과가 없어 코드 성공/실패로 판정하지 않는다.
+- 새로고침·전체 빌드 목록에서 같은 상태를 확인했다. 동시 다른 실행·한도 소진 표시·브라우저 오류는 없다. 저장소 pack 약49.54MiB, 공식 플랫폼 상태 operational. 대기 원인은 미확정이다.
+- 재실행·요금제 변경·지원 메시지 발송은 하지 않았다. 두 번째 원격 실행은 자동 재시도하지 않고 현재 #1 결과만 확인한다.
+- `.tmp/stiz-app-codemagic-run/`에 branch-config/post-push/remote-build 독립 결과·run-scope·before-start/queued 이미지를 보관한다. 비밀키·서명·전체 환경변수는 수집하지 않았다.
 
 ## 이번 그룹
 
