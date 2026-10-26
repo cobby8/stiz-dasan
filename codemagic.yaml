@@ -1,0 +1,37 @@
+# BDR 기록앱과 같은 원격 Mac 방식. 이 단계는 서명·업로드 없이 빌드만 한다.
+workflows:
+  stiz-ios-simulator:
+    name: STIZ 아이폰 앱 빌드 검증 (업로드 없음)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+    triggering:
+      events: []
+    scripts:
+      - name: 프로젝트 구성 확인
+        script: |
+          set -euo pipefail
+          python3 apps/stiz-ios/tools/validate-project.py
+          xcodebuild -list -project apps/stiz-ios/STIZ.xcodeproj
+      - name: 실제 Swift 주소 정책 검사
+        script: |
+          set -euo pipefail
+          swiftc apps/stiz-ios/STIZ/NavigationPolicy.swift \
+            apps/stiz-ios/tools/NavigationPolicyTests.swift -o /tmp/stiz-navigation-tests
+          /tmp/stiz-navigation-tests
+      - name: 아이폰 시뮬레이터용 무서명 빌드
+        script: |
+          set -euo pipefail
+          xcodebuild -project apps/stiz-ios/STIZ.xcodeproj -scheme STIZ \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath apps/stiz-ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: 시뮬레이터 앱 보관
+        script: |
+          set -euo pipefail
+          cd apps/stiz-ios/DerivedData/Build/Products/Debug-iphonesimulator
+          ditto -c -k --sequesterRsrc --keepParent STIZ.app STIZ-simulator.zip
+    artifacts:
+      - apps/stiz-ios/DerivedData/Build/Products/Debug-iphonesimulator/STIZ-simulator.zip

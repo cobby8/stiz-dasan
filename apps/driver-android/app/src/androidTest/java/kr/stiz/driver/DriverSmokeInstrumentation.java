@@ -35,6 +35,10 @@ public final class DriverSmokeInstrumentation extends Instrumentation {
             verify(!MainActivity.trusted(Uri.parse("https://" + Uri.parse(origin).getHost() + ":444/driver/test")));
             verify(!MainActivity.trusted(Uri.parse("file:///driver/test")));
             verify(!MainActivity.trusted(Uri.parse(origin.replace("https://", "https://user@") + "/driver/test")));
+            verify(MainActivity.trustedAppPage(Uri.parse(origin + "/store-app")) == BuildConfig.STIZ_UNIFIED_APP);
+            verify(MainActivity.trustedAppPage(Uri.parse(origin + "/mypage")) == BuildConfig.STIZ_UNIFIED_APP);
+            verify(!AppNavigationPolicy.isTrustedBridge(origin, origin, origin + "/mypage", true));
+            verify(!AppNavigationPolicy.isTrustedBridge(origin, origin, origin + "/driver/test", false));
             SessionStore store = new SessionStore(isolated);
             String secret = "synthetic-test-secret-not-an-operational-credential";
             store.write(new JSONObject().put("secret", secret).put("sequence", 8).put("stopPending", true));

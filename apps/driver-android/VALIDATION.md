@@ -1,5 +1,27 @@
 # 안드로이드 검증 기록 — 2026-10-19
 
+## 2026-10-27 G1 통합 앱 기반 검증
+
+현재 구현 범위는 `UNIFIED_FOUNDATION.md`를 기준으로 한다. 아래 10월19일 실기기 기록과 이 새 기반의 검증을 구분한다.
+
+- 기본 통합 debug 패키지 `kr.stiz.driver.unified`, 앱 이름 `스티즈 농구교실`, 운영 origin을 APK의 실제 manifest/BuildConfig로 확인했다. release는 기존 `kr.stiz.driver`의 **unsigned** 결과이며 최종 출시 패키지·서명이 확정된 것은 아니다.
+- 정확한 일반 앱 origin/페이지와 driver-only GPS 메시지 권한을 분리했다. `/staff/run`은 미지원 안내로 차단하고 조회 화면으로 돌아간다. 로그인으로 여는 운행을 공개 토큰 URL로 우회하지 않는다.
+- 통합 모드의 별도 탐색 관찰자는 최상위 프레임의 경로만 전달한다. Next.js의 pushState·replaceState·popstate에도 운행 이동 확인과 미지원 운행 경로 차단을 적용한다. 이 메시지에는 GPS 조회·시작·종료 권한이 없다.
+- 실제 순수 Java 코드 실행: 통합 탐색·위치 메시지 경계 **75**, 기존 시작 동의 **33**, 기존 위치 샘플 정책 **13**, 총 **121개 조건 통과**. HTTP·좌표 수집 없이 실행했다.
+- 웹 bridge/기존 GPS 상태 관련 Node 회귀 **31/31 통과**. 이는 Android 실기기 지속성 증거가 아니다.
+- 통합 모드 `assembleDebug`·`assembleRelease`·`assembleDebugAndroidTest`·`lintDebug` 성공. 기존 기사 기기 시험 모드(`stizDeviceTest=true`, localhost:8443, 공개 시험 CA)도 같은 네 작업이 성공했다. **계측 APK는 컴파일만 했으며 새 기기 런타임 검사는 실행하지 않았다.**
+- 최종 Android Lint: **오류0·경고7**. 기존4개에서 추가3개는 feature guard가 있는 새 WebMessage/DocumentStart 호출2곳을 도구가 인식하지 못한 RequiresFeature 경고와 새 한국어 안내문 리소스 분리1건이다. 억제 설정이나 lint baseline을 추가하지 않았다.
+- 잘못된 포트 구성2건도 실제 Gradle 구성 단계에서 거부했다. deviceTest 없는 localhost:8443, deviceTest를 붙인 외부 호스트:8443이 모두 정확한 origin 검증 오류로 실패했다(일반 빌드 실패와 구분).
+- 기존 debug/release TLS 격리 **14/14 통과**. 공개 시험 CA만 별도 로컬 임시 경로에 만들었고 개인키 파일은 저장하지 않았다. 출시 APK에 custom CA·debug networkSecurityConfig·시험 패키지 접미사가 섞이지 않는다.
+- 첫 offline 시도는 현재 Gradle cache에 AGP가 없어 구성 단계에서 실패했다. 표준 의존성 다운로드 후 일반 빌드가 성공했고, 최종 통합/기사 기기 시험 빌드는 다시 offline으로 성공했다. SDK 라이선스를 자동 승인하지 않았다.
+- 통합 산출물은 Git 제외 `.tmp/android-unified-foundation/unified/`에 별도로 보존했다. `stiz-unified-debug.apk` SHA256 `67CAA0C84070CF37B656FA480AD429E815042EB88F813EAA2CBE3F031BC64BD6`, `stiz-unified-release-unsigned.apk` SHA256 `EC7B9D5E74F2D99AE93583548BAF8891AE059F8BFBC4CC7C84A33FCBCA27C0E1`.
+- 통합 `bundleRelease -PstizUnified=true`도 성공했다. unsigned AAB `stiz-unified-release-unsigned.aab` SHA256 `BE86D8E90E2F4D1707C26D58FCCDE8ADBAED5759A86862E1D1D12D6B67C64F2C`를 보존했으며 `jarsigner -verify`에서 unsigned를 확인했다. 서명·Play 업로드는 하지 않았다.
+- 정본 빌드 로그: `app/build/unified-foundation-g1-final-build.log`, `app/build/unified-g1-final-driver-tls-build.log`, `app/build/unified-web-regression.log`. 독립 검증은 PM의 `.tmp/stiz-app-foundation-qa/` 결과에 별도로 남긴다.
+
+운영 데이터·실제 로그인·기기 설치·위치 공유·스토어 서명·원격 실행·배포 없음. OAuth/본인인증 handoff·계정에 결합된 기사 운행·로그아웃/역할 회수 연계·장시간 실기기·푸시/딥링크는 출시 전 G3 이후 검증 과제이며 완료로 표시하지 않는다.
+
+---
+
 최신 실기기 결과는 `../../docs/driver-device-validation.md`를 기준으로 한다. 삼성 태블릿 USB 충전 조건에서 수정본 수동 재시작·잠금189초 위치+10·T맵193초+18·복귀 상태 유지·종료 후55초 추가수신0을 확인했다. 시험 서버/위치 DB/임시 비밀/USB 전달은 정리했다. 아래 초기 에뮬레이터·시험 준비 기록을 운영 출시나 장시간 배터리 검증 완료로 해석하지 않는다.
 
 대상: `apps/driver-android` 초안, 업턴랩스 출시 준비. 운영 배포·운영 DB 변경·스토어 업로드 없음.

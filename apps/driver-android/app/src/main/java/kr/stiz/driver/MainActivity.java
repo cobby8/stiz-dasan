@@ -20,6 +20,12 @@ public final class MainActivity extends Activity {
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
+    private boolean navigationDialogOpen, browserAuthDialogOpen, accountRunDialogOpen;
+    private String pendingNavigation;
+    private volatile boolean unfinishedRun;
+    private volatile String activeRunToken = "";
+    private boolean backRegistered;
+    private Object backCallback;
     private String lastErrorDetail, lastErrorToken;
     private final java.util.concurrent.ExecutorService worker = Executors.newSingleThreadExecutor();
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -28,6 +34,16 @@ public final class MainActivity extends Activity {
             try {
                 JSONObject value = new JSONObject(detail);
                 String transmission = value.optString("transmission");
+                if (value.optBoolean("running") || "stopping".equals(transmission) || "stop-unknown".equals(transmission)) {
+                    unfinishedRun = true; activeRunToken = value.optString("token");
+                }
+                if ("stopped".equals(transmission) && !value.optBoolean("running") && value.optString("token").equals(activeRunToken)) {
+                    unfinishedRun = false;
+                    if (pendingNavigation != null) {
+                        String target = pendingNavigation; pendingNavigation = null;
+                        loadPageUnchecked(Uri.parse(target));
+                    }
+                }
                 if (value.optString("token").equals(pendingStart.token()) && ("stopping".equals(transmission) || "stopped".equals(transmission) || "stop-unknown".equals(transmission))) pendingStart.cancel();
                 if (value.optString("token").equals(pageToken())) {
                     String state = value.optString("state");
@@ -38,16 +54,20 @@ public final class MainActivity extends Activity {
             publish(detail);
         }
     };
+    // GPS capability remains restricted to the exact driver page, even in the unified shell.
     static boolean trusted(Uri uri) {
-        Uri expected = Uri.parse(BuildConfig.STIZ_ORIGIN);
-        return uri != null && "https".equals(uri.getScheme()) && Uri.parse(BuildConfig.STIZ_ORIGIN).getHost().equals(uri.getHost())
-            && (uri.getPort() == -1 ? 443 : uri.getPort()) == (expected.getPort() == -1 ? 443 : expected.getPort()) && uri.getUserInfo() == null
-            && uri.getPath() != null && uri.getPath().matches("/driver/[A-Za-z0-9_-]+/?");
+        return uri != null && AppNavigationPolicy.isDriverPage(BuildConfig.STIZ_ORIGIN, uri.toString());
+    }
+    static boolean trustedAppPage(Uri uri) {
+        return uri != null && AppNavigationPolicy.isAppPage(BuildConfig.STIZ_ORIGIN, uri.toString(), BuildConfig.STIZ_UNIFIED_APP);
     }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             TextView message = new TextView(this); message.setText("Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
+        }
+        if (BuildConfig.STIZ_UNIFIED_APP && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
         }
         web = new WebView(this); web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
@@ -58,28 +78,70 @@ public final class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebViewCompat.addWebMessageListener(web, "StizDriverGpsTransport", Collections.singleton(BuildConfig.STIZ_ORIGIN),
             (view, message, origin, mainFrame, reply) -> {
-                if (!mainFrame || !"https".equals(origin.getScheme()) || !Uri.parse(BuildConfig.STIZ_ORIGIN).getHost().equals(origin.getHost()) || !trusted(Uri.parse(view.getUrl() == null ? "" : view.getUrl()))) return;
+                if (!AppNavigationPolicy.isTrustedBridge(BuildConfig.STIZ_ORIGIN, origin.toString(), view.getUrl() == null ? "" : view.getUrl(), mainFrame)) return;
                 try { handle(new JSONObject(message.getData())); } catch (Exception failure) { error("기사님 앱 요청 형식을 확인해 주세요."); }
             });
+        if (BuildConfig.STIZ_UNIFIED_APP && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+            && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            // This separate observer can only report navigation. It cannot read location state or start/stop GPS.
+            WebViewCompat.addWebMessageListener(web, "StizAppNavigationTransport", Collections.singleton(BuildConfig.STIZ_ORIGIN),
+                (view, message, origin, mainFrame, reply) -> {
+                    if (!mainFrame || !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, origin.toString())) return;
+                    if (message.getType() != androidx.webkit.WebMessageCompat.TYPE_STRING) return;
+                    String path = message.getData();
+                    if (path == null || path.length() > 2048 || !path.startsWith("/") || path.indexOf('?') >= 0 || path.indexOf('#') >= 0) return;
+                    String target = BuildConfig.STIZ_ORIGIN + path;
+                    if (trustedAppPage(Uri.parse(target))) runOnUiThread(() -> checkObservedNavigation(target));
+                });
+            WebViewCompat.addDocumentStartJavaScript(web,
+                "(()=>{if(window.top!==window)return;const notify=()=>{try{window.StizAppNavigationTransport.postMessage(location.pathname)}catch(e){}};"
+                + "for(const key of ['pushState','replaceState']){const original=history[key];history[key]=function(...args){const value=original.apply(this,args);notify();return value}}"
+                + "addEventListener('popstate',notify);notify()})();", Collections.singleton(BuildConfig.STIZ_ORIGIN));
+        }
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (!request.isForMainFrame()) return !trusted(request.getUrl());
                 Uri uri = request.getUrl();
-                if (trusted(uri)) return false;
-                // Intent URIs are not interpreted: only known navigation/phone schemes leave this WebView.
-                if ("tel".equals(uri.getScheme()) || "tmap".equals(uri.getScheme()) || ("https".equals(uri.getScheme()) && ("apis.openapi.sk.com".equals(uri.getHost()) || "map.naver.com".equals(uri.getHost())))) {
-                    try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (ActivityNotFoundException failure) { error("연결할 전화·지도 앱을 설치해 주세요."); }
-                }
+                if (!request.isForMainFrame()) return !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, uri.toString());
+                if (trustedAppPage(uri)) { navigateSafely(uri); return true; }
+                // External navigation only follows an explicit phone/map action. Arbitrary intents are never parsed.
+                if (AppNavigationPolicy.externalActionAllowed(uri.toString(), request.hasGesture())) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                    catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·지도 앱을 설치해 주세요."); }
+                } else showAppMessage("이 주소는 앱에서 열 수 없습니다. 본인인증·외부 로그인은 앱 연결 준비 후 사용할 수 있습니다.");
                 return true;
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (request.isForMainFrame() && !trusted(request.getUrl())) return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
+                if (request.isForMainFrame() && (!trustedAppPage(request.getUrl())
+                    || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
+                    || AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
+                    || !AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, request.getUrl().toString(), unfinishedRun, activeRunToken))) {
+                    return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
+                }
                 return super.shouldInterceptRequest(view, request);
             }
-            @Override public void onPageFinished(WebView view, String url) { snapshot(); }
+            @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                runOnUiThread(() -> checkObservedNavigation(url));
+                super.doUpdateVisitedHistory(view, url, isReload);
+            }
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                if (!trusted(Uri.parse(url)) || !pageToken().equals(pendingStart.token())) pendingStart.cancel();
+            }
+            @Override public void onPageFinished(WebView view, String url) { checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
             @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); }
         });
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                showBrowserAuthPending(); return false;
+            }
+            @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
+        });
         setContentView(web);
+        if (Build.VERSION.SDK_INT >= 33) {
+            android.window.OnBackInvokedCallback callback = this::handleBack;
+            backCallback = callback;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+            backRegistered = true;
+        }
         web.setOnApplyWindowInsetsListener((view, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
@@ -89,26 +151,126 @@ public final class MainActivity extends Activity {
         });
         androidx.core.content.ContextCompat.registerReceiver(this, receiver, new IntentFilter(DriverLocationService.EVENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         Uri incoming = getIntent().getData();
-        if (trusted(incoming)) web.loadUrl(incoming.toString());
-        else worker.execute(() -> {
+        worker.execute(() -> {
             try {
-                String token = new SessionStore(this).read().optString("token");
-                runOnUiThread(() -> { if (!token.isEmpty()) web.loadUrl(BuildConfig.STIZ_ORIGIN + "/driver/" + token); else showEntry(); });
-            } catch (Exception failure) { runOnUiThread(this::showEntry); }
+                JSONObject savedRun = new SessionStore(this).read();
+                activeRunToken = savedRun.optString("token");
+                unfinishedRun = AppNavigationPolicy.unfinishedRun(savedRun.has("sessionId"), savedRun.optBoolean("stopped", true), savedRun.optBoolean("stopPending"));
+                runOnUiThread(() -> {
+                    if (trustedAppPage(incoming)) navigateSafely(incoming);
+                    else if (!activeRunToken.isEmpty() && (unfinishedRun || !BuildConfig.STIZ_UNIFIED_APP)) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken));
+                    else if (BuildConfig.STIZ_UNIFIED_APP) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app"));
+                    else showEntry();
+                });
+            } catch (Exception failure) {
+                runOnUiThread(() -> showAppMessage("운행 저장소를 확인하지 못했습니다. 앱을 다시 열어 주세요."));
+            }
         });
     }
+    private void loadPageUnchecked(Uri uri) {
+        if (web == null || isFinishing() || isDestroyed()) return;
+        if (!trustedAppPage(uri) || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) return;
+        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showAccountRunPending(); return; }
+        pendingStart.cancel();
+        setContentView(web);
+        web.loadUrl(uri.toString());
+    }
+    private void navigateSafely(Uri uri) { navigateSafely(uri, false); }
+    private void navigateSafely(Uri uri, boolean back) {
+        if (web == null || isFinishing() || isDestroyed() || worker.isShutdown()) return;
+        if (!trustedAppPage(uri)) return;
+        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showAccountRunPending(); return; }
+        if (AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showBrowserAuthPending(); return; }
+        worker.execute(() -> {
+            try {
+                JSONObject savedRun = new SessionStore(this).read();
+                boolean savedUnfinished = AppNavigationPolicy.unfinishedRun(savedRun.has("sessionId"), savedRun.optBoolean("stopped", true), savedRun.optBoolean("stopPending"));
+                if (savedUnfinished) activeRunToken = savedRun.optString("token");
+                unfinishedRun = savedUnfinished || DriverLocationService.instance != null;
+                runOnUiThread(() -> {
+                    if (AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, uri.toString(), unfinishedRun, activeRunToken)) {
+                        if (back && web.canGoBack()) web.goBack(); else loadPageUnchecked(uri);
+                    }
+                    else confirmNavigation(uri);
+                });
+            } catch (Exception failure) { showAppMessage("운행 상태를 확인하지 못했습니다. 기존 화면에서 다시 확인해 주세요."); }
+        });
+    }
+    private void checkObservedNavigation(String url) {
+        if (web == null || isFinishing() || isDestroyed() || !trustedAppPage(Uri.parse(url))) return;
+        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, url)) {
+            web.stopLoading();
+            if (unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken));
+            else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/staff/shuttle"));
+            showAccountRunPending();
+            return;
+        }
+        if (!AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, url, unfinishedRun, activeRunToken)) {
+            web.stopLoading();
+            if (!activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken));
+            confirmNavigation(Uri.parse(url));
+        }
+    }
+    private void showAccountRunPending() {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || accountRunDialogOpen) return;
+            accountRunDialogOpen = true;
+            AlertDialog.Builder dialog = new AlertDialog.Builder(this).setTitle("통합 앱 운행 연결 준비 중")
+                .setMessage("로그인으로 여는 운행표에서는 아직 앱 위치 공유를 시작할 수 없습니다. 셔틀 조회는 이용할 수 있습니다. 기사님 전용 운행 링크 시험과는 별도 기능입니다.")
+                .setPositiveButton("확인", null).setOnDismissListener(value -> accountRunDialogOpen = false);
+            if (!unfinishedRun) dialog.setNeutralButton("기존 운행 링크 입력", (value, which) -> showEntry());
+            dialog.show();
+        });
+    }
+    private void confirmNavigation(Uri uri) {
+        if (isFinishing() || isDestroyed() || !trustedAppPage(uri) || navigationDialogOpen) return;
+        navigationDialogOpen = true;
+        new AlertDialog.Builder(this).setTitle("운행 종료 후 화면 이동")
+            .setMessage("운행이 진행 중이거나 서버 종료 확인이 남아 있습니다. 종료가 확인되면 선택한 화면으로 이동합니다.")
+            .setPositiveButton("운행 종료 후 이동", (dialog, which) -> {
+                pendingNavigation = uri.toString(); pendingStart.cancel();
+                try { startService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.STOP)); }
+                catch (RuntimeException failure) { pendingNavigation = null; showAppMessage("운행을 종료하지 못했습니다. 운행 화면에서 다시 확인해 주세요."); }
+            }).setNegativeButton("운행 화면 유지", (dialog, which) -> { })
+            .setOnDismissListener(dialog -> navigationDialogOpen = false).show();
+    }
+    private void showAppMessage(String message) {
+        runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) new AlertDialog.Builder(this).setTitle("스티즈 농구교실").setMessage(message).setPositiveButton("확인", null).show(); });
+    }
+    private void showBrowserAuthPending() {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || browserAuthDialogOpen) return;
+            browserAuthDialogOpen = true;
+            new AlertDialog.Builder(this).setTitle("앱 로그인 연결 준비 중")
+                .setMessage("현재 앱에서는 이메일·비밀번호로 로그인할 수 있습니다. 간편로그인·외부 본인인증은 브라우저에서 사이트를 이용해 주세요. 브라우저의 로그인 상태가 이 앱으로 전달되지는 않습니다.")
+                .setPositiveButton("확인", null)
+                .setNeutralButton("브라우저에서 사이트 이용", (dialog, which) -> {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.STIZ_ORIGIN + "/login"))); }
+                    catch (ActivityNotFoundException failure) { showAppMessage("사이트를 열 브라우저를 설치해 주세요."); }
+                }).setOnDismissListener(dialog -> browserAuthDialogOpen = false).show();
+        });
+    }
+    private void handleBack() {
+        if (web == null || !web.canGoBack()) { moveTaskToBack(true); return; }
+        WebBackForwardList history = web.copyBackForwardList();
+        int previous = history.getCurrentIndex() - 1;
+        if (previous >= 0) navigateSafely(Uri.parse(history.getItemAtIndex(previous).getUrl()), true);
+    }
+    @SuppressWarnings("deprecation")
+    @Override public void onBackPressed() { handleBack(); }
     private void showEntry() {
+        if (isFinishing() || isDestroyed()) return;
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); layout.setPadding(32, 64, 32, 32);
         ImageView logo = new ImageView(this); logo.setImageResource(kr.stiz.driver.R.drawable.stiz_logo); logo.setAdjustViewBounds(true); layout.addView(logo, new LinearLayout.LayoutParams(240, 100));
         TextView title = new TextView(this); title.setText("STIZ 기사님\n관리자에게 받은 운행 링크를 입력해 주세요."); title.setTextSize(20); layout.addView(title);
         EditText input = new EditText(this); input.setHint("https://www.stiz-dasan.kr/driver/…"); input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); layout.addView(input);
         Button button = new Button(this); button.setText("운행 화면 열기"); layout.addView(button);
-        button.setOnClickListener(view -> { Uri uri = Uri.parse(input.getText().toString().trim()); if (trusted(uri)) { setContentView(web); web.loadUrl(uri.toString()); } else input.setError("공식 STIZ 운행 링크를 입력해 주세요."); });
+        button.setOnClickListener(view -> { Uri uri = Uri.parse(input.getText().toString().trim()); if (trusted(uri)) { navigateSafely(uri); } else input.setError("공식 STIZ 운행 링크를 입력해 주세요."); });
         setContentView(layout);
     }
     private String pageToken() {
         Uri uri = Uri.parse(web == null || web.getUrl() == null ? "" : web.getUrl());
-        return trusted(uri) ? uri.getPathSegments().get(1) : "";
+        return trusted(uri) ? AppNavigationPolicy.driverToken(BuildConfig.STIZ_ORIGIN, uri.toString()) : "";
     }
     private void handle(JSONObject request) throws Exception {
         String action = request.getString("action");
@@ -160,6 +322,7 @@ public final class MainActivity extends Activity {
     }
     private void launchRun(String token) {
         if (!visible || token == null || !token.equals(pageToken())) { error("운행 화면에서 시작해 주세요."); return; }
+        unfinishedRun = true; activeRunToken = token;
         try { startForegroundService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.START).putExtra("token", token)); }
         catch (RuntimeException failure) { error("휴대폰 위치 권한과 위치 설정을 확인해 주세요."); }
     }
@@ -219,6 +382,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
     @Override protected void onPause() { visible = false; if (web != null) web.onPause(); super.onPause(); }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trusted(intent.getData())) web.loadUrl(intent.getData().toString()); }
-    @Override protected void onDestroy() { pendingStart.cancel(); if (web != null) { unregisterReceiver(receiver); web.destroy(); } worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
+        else if (web != null && unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken)); }
+    @Override protected void onDestroy() { pendingStart.cancel(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
 }

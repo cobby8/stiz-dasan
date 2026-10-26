@@ -1,6 +1,8 @@
-# STIZ 안드로이드 기사님 앱 — 출시 전 검증본
+# STIZ 통합 안드로이드 기반 — 출시 전 검증본
 
-출시 주체는 **업턴랩스**이며 앱 이름은 `STIZ 기사님`으로 준비한다. Play Console 법인/개발자 정보는 업턴랩스 기준으로 확인한다.
+2026-10-27 통합 앱 기반 G1: 기본 시작은 `/store-app`, 개발 debug 패키지는 `kr.stiz.driver.unified`다. 기존 기기 시험(`stizDeviceTest=true`)은 기사 전용 흐름을 유지한다. **[현재 통합 범위와 미완료 인증](UNIFIED_FOUNDATION.md)을 먼저 읽는다.**
+
+출시 주체는 **업턴랩스**이며 통합 앱 이름은 `스티즈 농구교실`로 준비한다. 아래 기사 전용 운행·기기 시험 기록은 별도 모드의 기존 검증 범위다. Play Console 법인/개발자 정보는 업턴랩스 기준으로 확인한다.
 
 기존 공식 운행 화면을 재사용하고, 위치 수집·전송만 Android 위치 foreground service가 담당한다. 화면 잠금이나 T맵 전환 시 WebView가 일시 정지되어도 서비스는 별도로 실행된다. OS 강제 종료, 사용자의 앱 중지, 위치 권한 철회, 제조사 배터리 제한, 통신 장애까지 무조건 유지된다고 보장하지 않는다.
 
@@ -9,7 +11,7 @@
 - Android Studio JDK 17 이상 / Android SDK 36 / Gradle 8.14 / AGP 8.10.1.
 - 최소 Android 8(API 26), target/compile 36. Java 17. 별도의 Google Play Services 의존성 없음.
 - `JAVA_HOME`과 `ANDROID_HOME`을 해당 PC에 맞게 설정하고 이 폴더에서 `./gradlew.bat :app:assembleDebug :app:lintDebug` 실행.
-- 오프라인 Android 실행환경 검사: `./gradlew.bat :app:assembleDebugAndroidTest` 후 테스트 APK까지 설치하고 `adb shell am instrument -w kr.stiz.driver.test/kr.stiz.driver.DriverSmokeInstrumentation`. 허용 URL 10건과 별도 테스트 저장소의 실제 KeyStore 암복호화 3건을 검사하며 서버 호출·위치 수집을 하지 않는다.
+- 오프라인 Android 실행환경 검사: `./gradlew.bat :app:assembleDebugAndroidTest` 후 테스트 APK까지 설치하고 `adb shell am instrument -w kr.stiz.driver.unified.test/kr.stiz.driver.DriverSmokeInstrumentation`. 기존 URL·KeyStore 검사와 통합 페이지/위치 메시지 경계를 검사하며 서버 호출·위치 수집을 하지 않는다. 기기 실행은 별도 승인 후 진행한다. 이번 G1에서는 계측 APK를 컴파일했으며 기기에서 실행하지 않았다.
 - 디버그 APK: `app/build/outputs/apk/debug/app-debug.apk`. 개발 서명이며 고객 배포·Play 출시용이 아니다.
 - 승인된 HTTPS 미리보기 서버 검증 시 `./gradlew.bat :app:assembleDebug -PstizOrigin=https://승인된-호스트`로 해당 **정확한 origin 하나**를 빌드에 고정한다. WebView와 API 모두 동일한 상수를 사용한다. release는 이 옵션과 관계없이 공식 운영 origin으로 고정된다. HTTP·임의 포트·SSL 우회는 제공하지 않는다.
 - 삼성 탭 실기기의 격리 서버 검증 빌드: `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug -PstizOrigin=https://localhost:8443 -PstizDeviceTest=true -PstizLocalTlsDir=C:/0.programing/stiz-academy-A/.tmp/driver-device-test/tls`. 공개 `ca.crt` 한 파일만 debug 리소스로 변환하고 localhost에만 추가 신뢰한다. 다른 도메인은 시스템 CA만 신뢰하며 HTTP는 전부 차단한다. 공개 CA의 유효기간·CA 여부도 빌드 때 확인한다. 8443 예외는 `stizDeviceTest=true`인 localhost에만 허용하며 일반 빌드는 기존 HTTPS 443 제한을 유지한다.

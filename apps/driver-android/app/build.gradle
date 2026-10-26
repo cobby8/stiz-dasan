@@ -1,6 +1,8 @@
 plugins { id 'com.android.application' }
 def configuredOrigin = providers.gradleProperty('stizOrigin').getOrElse('https://www.stiz-dasan.kr')
 def deviceTest = providers.gradleProperty('stizDeviceTest').getOrElse('false') == 'true'
+// Local device-test commands keep the original isolated driver-only flow.
+def unifiedApp = providers.gradleProperty('stizUnified').getOrElse(deviceTest ? 'false' : 'true') == 'true'
 def originUri = new URI(configuredOrigin)
 def localDevicePort = deviceTest && originUri.host == 'localhost' && originUri.port == 8443
 if (originUri.scheme != 'https' || originUri.host == null || originUri.userInfo != null || originUri.query != null || originUri.fragment != null || !(originUri.path in ['', '/']) || (!(originUri.port in [-1, 443]) && !localDevicePort)) throw new GradleException('stizOrigin must be one exact HTTPS origin on port 443; device tests may use localhost:8443')
@@ -43,9 +45,14 @@ android {
     defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 1; versionName '0.1.0'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
+    defaultConfig {
+        buildConfigField 'boolean', 'STIZ_UNIFIED_APP', unifiedApp.toString()
+        resValue 'string', 'app_name', unifiedApp ? '스티즈 농구교실' : 'STIZ 기사님'
+    }
     buildTypes {
         debug {
             if (deviceTest) applicationIdSuffix '.devicetest'
+            else if (unifiedApp) applicationIdSuffix '.unified'
             buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"'
         }
         release { minifyEnabled false; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
