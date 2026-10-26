@@ -19,6 +19,24 @@ const Link = ({ children, ...props }) => React.createElement("a", props, childre
 const Empty = compile("src/components/account/EmptyParentState.tsx", { "next/link": { default: Link }, "@/components/account/child-link-api": {}, "./child-link-api": {}, "@/components/pwa/useInstalledApp": { useInstalledApp: () => false } });
 const AccountLinks = compile("src/components/account/AccountLinks.tsx", { "next/link": { default: Link } });
 
+test("비로그인 가족 연결 진입은 로그인 화면이 읽는 복귀 주소를 보존한다", async () => {
+  let location = "";
+  const Page = compile("src/app/account/children/page.tsx", {
+    "next/image": { default: () => null }, "next/link": { default: Link },
+    "next/navigation": { redirect: (href) => { location = href; throw new Error("TEST_REDIRECT"); } },
+    "@/lib/auth-guard": { requireAuth: async () => { throw new Error("NOT_SIGNED_IN"); } },
+    "@/lib/account-view-access": { getAccountViewAccess: async () => { throw new Error("로그인 전 조회 금지"); } },
+    "@/components/academy/AcademyTheme": { default: () => null },
+    "@/components/AccountViewSwitcher": { default: () => null },
+    "@/app/mypage/children/ChildConnectionsClient": { default: () => null },
+  });
+  await assert.rejects(Page(), /TEST_REDIRECT/);
+  const target = new URL(location, "https://fixture.invalid");
+  assert.equal(target.pathname, "/login");
+  assert.equal(target.searchParams.get("redirect"), "/account/children");
+  assert.match(readFileSync("src/app/login/page.tsx", "utf8"), /searchParams\.get\("redirect"\)/);
+});
+
 test("자녀가 없어도 신규 신청과 기존 등록 연결을 구분해 제공한다", () => {
   const html = renderToStaticMarkup(React.createElement(Empty, { pendingSeasonalChildren: [] }));
   for (const href of ["/apply/enroll", "/apply/trial", "/mypage/children"]) assert.ok(html.includes(`href="${href}"`));

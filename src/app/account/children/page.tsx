@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "자녀·가족 연결 | 스티즈 �
 
 /** 가족 연결 전 직원 계정도 접근할 수 있다. 자녀 정보는 API가 계정 연결을 별도로 확인한다. */
 export default async function AccountChildrenPage() {
-  await requireAuth().catch(() => redirect("/login?next=/account/children"));
+  await requireAuth().catch(() => redirect("/login?redirect=/account/children"));
   const { views } = await getAccountViewAccess();
   const backHref = views[0]?.href ?? "/";
   return <AcademyTheme role="parent" className="min-h-screen">
