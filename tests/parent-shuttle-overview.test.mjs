@@ -9,7 +9,7 @@ test("학부모 셔틀 조회는 인증된 앱 계정의 자녀 ID로만 범위�
   assert.match(page, /requireVerifiedParent\(\)/);
   assert.match(page, /getParentShuttleOverview\(parentAuth\.appUserId\)/);
   // 병합 학생 필터(NOT_MERGED_STUDENT)가 뒤에 붙어도 통과해야 한다. 핵심은 parentId로 범위를 좁히는 것.
-  assert.match(source, /where:\s*\{\s*parentId:\s*appUserId\b/);
+  assert.match(source, /where:\s*\{\s*\.\.\.await childAccessWhere\(appUserId\)/);
   assert.match(source, /studentId:\s*\{\s*in:\s*studentIds\s*\}/);
   // 특강 셔틀은 게이트웨이가 준 studentId(전환 완료된 경우에만 채워진다)로 자녀를 좁힌다.
   assert.match(source, /studentIds\.includes\(entry\.studentId\)/);

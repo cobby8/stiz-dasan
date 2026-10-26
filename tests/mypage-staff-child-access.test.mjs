@@ -53,7 +53,7 @@ test("로그인 후 목적지도 같은 규칙을 따른다", () => {
 test("직원 계정의 학부모 화면 통과는 자녀 조회로만 결정한다", async () => {
   const guard = await readFile("src/lib/auth-guard.ts", "utf8");
   // 역할만 보고 통과시키면 자녀 없는 직원도 학부모 화면에 들어간다.
-  assert.match(guard, /SELECT 1 AS one FROM "Student" WHERE "parentId" = \$1 LIMIT 1/);
+  assert.match(guard, /SELECT 1 AS one FROM "Student" s WHERE \$\{await childAccessSql\("s", "\$1"\)\} LIMIT 1/);
   // 판정은 getVerifiedParentState 가 상태로 돌려주고(카카오 연결 화면 안내용),
   // requireVerifiedParent 는 OK 가 아니면 전부 거절(throw)한다.
   assert.match(guard, /ownChildren\.length === 0[\s\S]{0,120}return \{ status: "STAFF_ACCOUNT" \}/);
@@ -67,6 +67,6 @@ test("로그인 직후 판별도 DB 의 자녀 유무를 그대로 쓴다", asyn
   assert.match(continuePage, /getParentViewAccessForAuthUser\(user\)/);
   assert.match(continuePage, /hasOwnChildren: parentView\.hasOwnChildren/);
   const access = await readFile("src/lib/account-view-access.ts", "utf8");
-  assert.match(access, /EXISTS \(SELECT 1 FROM "Student" s WHERE s\."parentId" = u\.id\)/);
+  assert.match(access, /EXISTS \(SELECT 1 FROM "Student" s WHERE \$\{await childAccessSql\("s", 'u\."id"'\)\}\)/);
   assert.match(access, /u\."authUserId" = \$1 OR \(u\."authUserId" IS NULL AND u\.id = \$1\)/);
 });

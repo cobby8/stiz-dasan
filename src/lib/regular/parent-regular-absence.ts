@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -87,7 +88,7 @@ export async function getUpcomingRegularClassDates(
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
        JOIN "Class" c ON c.id = e."classId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY s.name ASC, c."startTime" ASC`,
     parentUserId,
   );
@@ -99,7 +100,7 @@ export async function getUpcomingRegularClassDates(
             to_char(ra.date, 'YYYY-MM-DD') AS "date", ra.reason AS reason, ra.status AS status
        FROM "RegularAbsence" ra
        JOIN "Student" s ON s.id = ra."studentId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")} AND ra.status <> 'CANCELLED'`,
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")} AND ra.status <> 'CANCELLED'`,
     parentUserId,
   );
   const absByKey = new Map<string, { reason: string; status: string }>();
@@ -160,7 +161,7 @@ async function verifyOwnershipAndClass(
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
         AND e."studentId" = $2
         AND e."classId" = $3
         AND e.status = 'ACTIVE'
@@ -314,7 +315,7 @@ export async function cancelRegularAbsence(
          FROM "Student" s, "Class" c
         WHERE ra."studentId" = s.id
           AND c.id = ra."classId"
-          AND s."parentId" = $1
+          AND ${await childAccessSql("s", "$1")}
           AND ra.id = $2
           AND ra.status = 'REPORTED'
         ${returning}`,
@@ -328,7 +329,7 @@ export async function cancelRegularAbsence(
          FROM "Student" s, "Class" c
         WHERE ra."studentId" = s.id
           AND c.id = ra."classId"
-          AND s."parentId" = $1
+          AND ${await childAccessSql("s", "$1")}
           AND ra."studentId" = $2
           AND ra."classId" = $3
           AND ra.date = $4::date

@@ -1,3 +1,4 @@
+import { childAccessSql, hasGrantedChildren } from "@/lib/account/child-access";
 import { requireAuth } from "@/lib/auth-guard";
 import { resolveAccountViews } from "@/lib/account-views";
 import { effectiveRoles, type RoleGrantRow } from "@/lib/account/roles";
@@ -10,16 +11,17 @@ export async function getParentViewAccessForAuthUser(user: { id: string }) {
     id: string; role: string; username: string | null; phoneVerifiedAt: Date | null; hasOwnChildren: boolean;
   }>>(
     `SELECT u.id, u.role::text AS role, u.username, u."phoneVerifiedAt",
-            EXISTS (SELECT 1 FROM "Student" s WHERE s."parentId" = u.id) AS "hasOwnChildren"
+            EXISTS (SELECT 1 FROM "Student" s WHERE ${await childAccessSql("s", 'u."id"')}) AS "hasOwnChildren"
        FROM "User" u
       WHERE (u."authUserId" = $1 OR (u."authUserId" IS NULL AND u.id = $1))
+        AND u."withdrawnAt" IS NULL
       ORDER BY CASE WHEN u."authUserId" = $1 THEN 0 ELSE 1 END
       LIMIT 1`, user.id,
   );
   const account = rows[0];
   const hasOwnChildren = Boolean(account?.hasOwnChildren);
   const canUseParentView = Boolean(account && (account.role === "PARENT"
-    ? account.phoneVerifiedAt || account.username === null
+    ? account.phoneVerifiedAt || account.username === null || await hasGrantedChildren(account.id)
     : hasOwnChildren));
   const appUserId = account?.id ?? null;
   // 로그인 직후 목적지를 정할 때 쓰는 열린 화면 묶음(주 역할 + 승인된 추가 역할).

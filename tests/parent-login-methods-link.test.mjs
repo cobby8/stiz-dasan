@@ -8,7 +8,8 @@ import test from "node:test";
 const start = fs.readFileSync("src/app/auth/oauth/[provider]/route.ts", "utf8");
 const callback = fs.readFileSync("src/app/auth/callback/route.ts", "utf8");
 const page = fs.readFileSync("src/app/mypage/login-methods/page.tsx", "utf8");
-const mypage = fs.readFileSync("src/app/mypage/MyPageClient.tsx", "utf8");
+const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
+const mypage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
 
 test("연결은 휴대폰 인증까지 마친 학부모 본인만 시작할 수 있다", () => {
   const getAt = start.indexOf("export async function GET(");
@@ -45,6 +46,7 @@ test("연결 화면: 학부모만 열고, 연결 버튼은 일반 링크(<Link> 
   assert.doesNotMatch(page, /<Link[^>]*?href=\{`\/auth\/oauth\//);
   // 마이페이지에서 들어가는 길
   assert.match(mypage, /href="\/mypage\/login-methods"/);
+  assert.match(accountLayout, /\{children\}\s*<AccountLinks\s*\/>/);
 });
 
 test("이미 가입된 번호 안내가 실제로 있는 연결 방법을 알려 준다(없는 「계정 찾기」 안내 금지)", () => {

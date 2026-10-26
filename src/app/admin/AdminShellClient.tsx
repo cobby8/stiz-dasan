@@ -164,7 +164,7 @@ export default function AdminShellClient({
 
                 {/* 사용자 정보 + 로그아웃 */}
                 <div className="p-4 border-t border-[var(--color-academy-line)] flex-shrink-0 [@media(max-height:500px)]:flex [@media(max-height:500px)]:items-center [@media(max-height:500px)]:gap-2 [@media(max-height:500px)]:p-2">
-                    {accountViews.length > 1 && <div className="mb-1 flex justify-end [@media(max-height:500px)]:mb-0 [@media(max-height:500px)]:min-w-0 [@media(max-height:500px)]:flex-1">
+                    {accountViews.length > 0 && <div className="mb-1 flex justify-end [@media(max-height:500px)]:mb-0 [@media(max-height:500px)]:min-w-0 [@media(max-height:500px)]:flex-1">
                         <AccountViewSwitcher views={accountViews} placement="above" />
                     </div>}
                     <div className="flex items-center gap-3">

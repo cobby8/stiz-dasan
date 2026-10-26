@@ -1,3 +1,4 @@
+import { loadChildAccess } from "./_child-access-fixture.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -44,6 +45,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         const queries = [];
         const responses = [published ? [{ id: "session-fixture", date: "2026-10-19", class_name: "합성 반", topic: "합성 리포트", photosJSON: media }] : [], children, attendances, []];
         const Page = compile("src/app/mypage/reports/[sessionId]/page.tsx", {
+            "@/lib/account/child-access": loadChildAccess(),
             "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: user ? { id: "auth-fixture" } : null } }) } }) },
             "@/lib/prisma": { prisma: { $queryRawUnsafe: async (...args) => { queries.push(args); return responses.shift(); } } },
             "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: parentId }) },

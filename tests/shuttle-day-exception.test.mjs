@@ -120,7 +120,7 @@ test("예외가 없으면 명단을 건드리지 않는다", () => {
 });
 
 test("본인 자녀·재원생만 신청할 수 있다", () => {
-  assert.match(parentLib, /s\.id = \$1 AND s\."parentId" = \$2/);
+  assert.match(parentLib, /s\.id = \$1 AND \$\{await childAccessSql\("s", "\$2"\)\}/);
   assert.match(parentLib, /e\.status = 'ACTIVE'/);
   assert.match(parentLib, /본인 자녀만 신청할 수 있습니다/);
 });

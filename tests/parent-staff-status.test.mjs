@@ -1,3 +1,4 @@
+import { loadChildAccess } from "./_child-access-fixture.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,7 +11,7 @@ function load(file, modules = {}) {
   const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
   const module = { exports: {} };
   vm.runInNewContext(code, { module, exports: module.exports, console: { error() {} }, Intl, Date,
-    require(name) { if (name === 'node:crypto') return crypto; if (modules[name]) return modules[name]; throw new Error(`Unexpected import: ${name}`); } });
+    require(name) { if(name === '@/lib/account/child-access') return loadChildAccess(); if (name === 'node:crypto') return crypto; if (modules[name]) return modules[name]; throw new Error(`Unexpected import: ${name}`); } });
   return module.exports;
 }
 const summary = load('src/lib/parent-staff-status.ts');
@@ -131,7 +132,7 @@ function shuttleFixture(options = {}) {
       assert.match(sql, /s\."parentId" = \$1/); if (row.canceled || options.unowned) return []; row.canceled = true; return [row];
     }
     if (sql.includes('(x."canceledAt" IS NOT NULL)')) {
-      assert.match(sql, /s\."parentId"=\$2/); return options.unowned ? [] : [row];
+      assert.match(sql, /s\."parentId"\s*=\s*\$2/); return options.unowned ? [] : [row];
     }
     throw new Error('Unexpected SQL');
   } };

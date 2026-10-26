@@ -1,5 +1,7 @@
 "use client";
 
+import ChildConnectionNotice from "@/components/account/ChildConnectionNotice";
+
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 // 설치된 학부모 앱은 /mypage 밖으로 나가면 돌아올 길이 없다.
@@ -93,6 +95,7 @@ type ChildData = {
         method?: string | null;
         receiptUrl?: string | null;
         invoiceId?: string | null;
+        canCheckout?: boolean;
         invoiceNo?: string | null;
         invoiceStatus?: string | null;
         invoiceCheckoutUrl?: string | null;
@@ -325,6 +328,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
 
     return (
         <div className="space-y-4">
+            <ChildConnectionNotice />
             {/* 자녀 선택을 먼저 두고, 상세 통계는 아래 기록에서 확인한다. */}
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -468,7 +472,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                     {PAYMENT_STATUS[p.status]?.label || p.status}
                                 </span>
                             </div>
-                            {p.invoiceId && (
+                            {p.invoiceId && p.canCheckout !== false && (
                                 <Link
                                     href={`/payments/${p.invoiceId}`}
                                     className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
@@ -476,6 +480,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                     청구서 확인하고 납부하기
                                 </Link>
                             )}
+                            {p.invoiceId && p.canCheckout === false && <p className="mt-3 text-xs text-[var(--color-academy-muted)]">온라인 결제는 대표 보호자 계정에서 진행해 주세요.</p>}
                         </div>
                     ))}
                 </div>
@@ -959,7 +964,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                         <div className="divide-y divide-gray-50">
                             {child.payments.map((p) => {
                                 const statusInfo = PAYMENT_STATUS[p.status] || PAYMENT_STATUS.PENDING;
-                                const canPay = Boolean(p.invoiceId) && (p.status === "PENDING" || p.status === "OVERDUE");
+                                const canPay = p.canCheckout !== false && Boolean(p.invoiceId) && (p.status === "PENDING" || p.status === "OVERDUE");
                                 return (
                                     <div key={p.id} className="px-4 py-3">
                                         <div className="flex items-start justify-between gap-3">
@@ -991,7 +996,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                                     납부하기
                                                 </Link>
                                             )}
-                                            {p.invoiceId && !canPay && (
+                                            {p.invoiceId && p.canCheckout !== false && !canPay && (
                                                 <Link
                                                     href={`/payments/${p.invoiceId}`}
                                                     className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
@@ -999,7 +1004,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                                     청구서 보기
                                                 </Link>
                                             )}
-                                            {p.receiptUrl && (
+                                            {p.invoiceId && p.canCheckout === false && <p className="w-full text-xs text-[var(--color-academy-muted)]">온라인 결제는 대표 보호자 계정에서 진행해 주세요.</p>}
+                                            {p.receiptUrl && p.canCheckout !== false && (
                                                 <a
                                                     href={p.receiptUrl}
                                                     target="_blank"
@@ -1222,33 +1228,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                 </div>
             )}
 
-            {/* 계정 — 맨 아래 작게. 자주 쓰는 기능이 아니라 눈에 먼저 띌 필요가 없다.
-                다만 «길이 없으면 없는 기능»이므로 반드시 둔다(구글플레이도 앱 안 삭제 경로를 요구한다). */}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-4 dark:border-gray-800">
-                {/* 학원에서 선생님·기사님으로도 일하는 보호자가 한 계정으로 화면을 오가게 하는 신청(다중 역할, 2026-10-25) */}
-                <Link
-                    href="/mypage/roles"
-                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
-                >
-                    <SymbolIcon name="badge" size={14} />
-                    역할 추가 신청
-                </Link>
-                {/* 기존 계정에 Apple·Google 을 붙이는 곳 — 이미 가입한 학부모는 간편가입이 「이미 가입된 번호」로 막힌다(2026-10-26) */}
-                <Link
-                    href="/mypage/login-methods"
-                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
-                >
-                    <SymbolIcon name="link" size={14} />
-                    간편로그인 연결
-                </Link>
-                <Link
-                    href="/mypage/withdraw"
-                    className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 hover:underline dark:text-gray-500 dark:hover:text-gray-300"
-                >
-                    <SymbolIcon name="person_remove" size={14} />
-                    회원 탈퇴
-                </Link>
-            </div>
+
         </div>
     );
 }

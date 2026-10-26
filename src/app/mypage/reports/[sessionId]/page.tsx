@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { requireVerifiedParent } from "@/lib/auth-guard";
@@ -73,7 +74,7 @@ export default async function ParentReportDetailPage({
     // ── 4. 보안: 내 자녀가 이 세션에 출석했는지 확인 ──
     // 내 자녀 ID 목록 조회
     const myStudents = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id, name FROM "Student" s WHERE s."parentId" = $1 AND ${notMergedStudent("s")}`,
+        `SELECT id, name FROM "Student" s WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}`,
         parentId
     );
     if (myStudents.length === 0) notFound();

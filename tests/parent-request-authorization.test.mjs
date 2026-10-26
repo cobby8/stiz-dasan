@@ -17,7 +17,7 @@ test("학부모 요청은 관리자 권한이 아니라 인증된 학부모 신�
 
 test("요청 학생이 인증된 부모 소유인지 서버에서 확인한다", () => {
   assert.match(functionSource, /prisma\.student\.findFirst/);
-  assert.match(functionSource, /where:\s*\{\s*id:\s*studentId,\s*parentId:\s*parent\.appUserId\s*\}/);
+  assert.match(functionSource, /where:\s*\{\s*id:\s*studentId, \.\.\.await childAccessWhere\(parent\.appUserId\) \}/);
   assert.match(functionSource, /if \(!ownedStudent\)/);
 });
 

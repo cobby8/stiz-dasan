@@ -14,7 +14,8 @@ const action = fs.readFileSync("src/app/actions/role-requests.ts", "utf8");
 const page = fs.readFileSync("src/app/mypage/roles/page.tsx", "utf8");
 const client = fs.readFileSync("src/app/mypage/roles/RolesClient.tsx", "utf8");
 const signup = fs.readFileSync("src/components/auth/ParentSignupClient.tsx", "utf8");
-const myPage = fs.readFileSync("src/app/mypage/MyPageClient.tsx", "utf8");
+const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
+const myPage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
 const continuePage = fs.readFileSync("src/app/auth/continue/page.tsx", "utf8");
 const loginAction = fs.readFileSync("src/app/actions/auth.ts", "utf8");
 const viewAccess = fs.readFileSync("src/lib/account-view-access.ts", "utf8");
@@ -139,4 +140,5 @@ test("마이페이지에서 신청 화면으로 가는 길이 있다", () => {
   // 화면만 있고 길이 없으면 아무도 못 쓴다(이 프로젝트에서 2회 실측).
   assert.match(myPage, /href="\/mypage\/roles"/);
   assert.match(myPage, /역할 추가 신청/);
+  assert.match(accountLayout, /\{children\}\s*<AccountLinks\s*\/>/);
 });

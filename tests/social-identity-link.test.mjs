@@ -104,7 +104,7 @@ test("화면: 건 번호는 서버에서 받고, 이니시스 필수값을 넣�
   const startAt = button.indexOf('postJson("/api/auth/parent-link/start")');
   const requestAt = button.indexOf("sdk.requestIdentityVerification(");
   assert.ok(startAt > 0 && requestAt > startAt);
-  assert.match(button, /bypass: \{ inicisUnified: \{ flgFixedUser: "N" \} \}/);
+  assert.match(button, /bypass: getStizIdentityBypass\(\)/);
   assert.match(button, /if \(pending !== returnedId \|\| params\.get\("code"\)\)/);
   assert.doesNotMatch(button, /setError\(params\.get\("message"\)/);
   assert.match(button, /const SDK_URL = "https:\/\/cdn\.portone\.io\/v2\/browser-sdk\.js"/);

@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 /**
  * 순수 DB 조회 함수들 (mutations 제외)
  * react.cache() 로 감싸 동일 요청 내 중복 DB 호출을 자동 제거 (request-level memoization)
@@ -1072,8 +1073,8 @@ export async function getMyPageData(parentUserId: string) {
 
         // 자녀 목록
         const students = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name, "birthDate", gender FROM "Student" s
-             WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+            `SELECT id, name, "birthDate", gender, "parentId" FROM "Student" s
+             WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
              ORDER BY s."createdAt" ASC`,
             parent.id
         );
@@ -1145,6 +1146,7 @@ export async function getMyPageData(parentUserId: string) {
                         })),
                     },
                     payments: payments.map((p: any) => ({
+                        canCheckout: s.parentId === parent.id,
                         id: p.id,
                         amount: Number(p.amount),
                         status: p.status,
@@ -1153,11 +1155,11 @@ export async function getMyPageData(parentUserId: string) {
                         type: p.type ?? "MONTHLY",
                         description: p.description ?? null,
                         method: p.method ?? null,
-                        receiptUrl: p.receiptUrl ?? p.receipturl ?? null,
+                        receiptUrl: s.parentId === parent.id ? (p.receiptUrl ?? p.receipturl ?? null) : null,
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
-                        invoiceCheckoutUrl: p.invoice_checkout_url ?? null,
+                        invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
                     })),
                 };
             })
@@ -1197,8 +1199,8 @@ export async function getMyPageHistory(parentUserId: string) {
 
         // 자녀 목록 (부모 소유 자녀만)
         const students = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name, "birthDate", gender FROM "Student" s
-             WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+            `SELECT id, name, "birthDate", gender, "parentId" FROM "Student" s
+             WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
              ORDER BY s."createdAt" ASC`,
             parent.id
         );
@@ -1254,6 +1256,7 @@ export async function getMyPageHistory(parentUserId: string) {
                         })),
                     },
                     payments: payments.map((p: any) => ({
+                        canCheckout: s.parentId === parent.id,
                         id: p.id,
                         amount: Number(p.amount),
                         status: p.status,
@@ -1262,11 +1265,11 @@ export async function getMyPageHistory(parentUserId: string) {
                         type: p.type ?? "MONTHLY",
                         description: p.description ?? null,
                         method: p.method ?? null,
-                        receiptUrl: p.receiptUrl ?? p.receipturl ?? null,
+                        receiptUrl: s.parentId === parent.id ? (p.receiptUrl ?? p.receipturl ?? null) : null,
                         invoiceId: p.invoice_id ?? null,
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
-                        invoiceCheckoutUrl: p.invoice_checkout_url ?? null,
+                        invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
                     })),
                 };
             })
@@ -2693,7 +2696,7 @@ export async function getStudentReports(parentId: string, studentId?: string) {
     try {
         // parentId에 속한 자녀 ID 목록 (보안: 다른 사람의 자녀는 조회 불가)
         const myStudents = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, name FROM "Student" s WHERE s."parentId" = $1 AND ${notMergedStudent("s")}`,
+            `SELECT id, name FROM "Student" s WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}`,
             parentId
         );
         if (myStudents.length === 0) return [];

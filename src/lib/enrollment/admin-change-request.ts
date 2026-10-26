@@ -1,3 +1,4 @@
+import { childAccessSql, childConnectionsAvailable } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { CHANGE_KIND_LABEL, type ChangeKind } from "@/lib/enrollment/changeRequestRules";
@@ -247,7 +248,11 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
       const enrollment = enrollmentRows[0] ?? null;
       const student = await tx.student.findUnique({ where: { id: row.studentId }, select: { parentId: true, name: true } });
       // 본인 자녀로 제출한 동일 요청만 학부모 확인 근거로 인정한다.
-      const parentConfirmed = Boolean(student?.parentId && student.parentId === row.requestedByUserId);
+      let parentConfirmed = Boolean(student?.parentId && student.parentId === row.requestedByUserId);
+      if (!parentConfirmed && await childConnectionsAvailable()) {
+        const linked = await tx.$queryRawUnsafe<{ id: string }[]>(`SELECT s.id FROM "Student" s WHERE s.id=$1 AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL`, row.studentId, row.requestedByUserId);
+        parentConfirmed = linked.length === 1;
+      }
       let classChangeProblem: string | null = null;
       if (row.kind === "CLASS_CHANGE" && enrollment) {
         const target = row.toClassId ? await tx.class.findUnique({

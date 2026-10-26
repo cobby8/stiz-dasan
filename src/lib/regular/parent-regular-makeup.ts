@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 
@@ -62,7 +63,7 @@ export async function getRegularMakeupsForParent(
          JOIN "Student" s ON s.id = ms."studentId"
          LEFT JOIN "Class" oc ON oc.id = ms."originalClassId"
          LEFT JOIN "Class" mc ON mc.id = ms."makeupClassId"
-        WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+        WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
           AND ms.status <> 'CANCELLED'
           AND ms."makeupDate"::date >= $2::date
         ORDER BY ms."makeupDate" ASC`,

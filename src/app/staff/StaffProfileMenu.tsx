@@ -138,7 +138,7 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               </p>
             )}
 
-            {staffRole !== "DRIVER" && accountViews.length > 1 && <div className="mb-3">
+            {staffRole !== "DRIVER" && accountViews.length > 0 && <div className="mb-3">
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 

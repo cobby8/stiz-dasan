@@ -1,3 +1,4 @@
+import { childAccessSql, hasGrantedChildren } from "@/lib/account/child-access";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -172,6 +173,7 @@ export async function getVerifiedParentState(): Promise<VerifiedParentState> {
     `SELECT id, name, role::text AS role, username, "phoneVerifiedAt"
        FROM "User"
       WHERE ("authUserId" = $1 OR ("authUserId" IS NULL AND id = $1))
+        AND "withdrawnAt" IS NULL
       LIMIT 1`,
     user.id,
   );
@@ -183,14 +185,14 @@ export async function getVerifiedParentState(): Promise<VerifiedParentState> {
   if (appUser.role === "PARENT") {
     const isVerifiedSignup = Boolean(appUser.phoneVerifiedAt);
     const isDirectlyBoundLegacyParent = appUser.username === null;
-    if (!isVerifiedSignup && !isDirectlyBoundLegacyParent) {
+    if (!isVerifiedSignup && !isDirectlyBoundLegacyParent && !await hasGrantedChildren(appUser.id)) {
       return { status: "PHONE_UNVERIFIED" };
     }
   } else {
     // 직원 계정은 자기 앞으로 등록된 자녀가 있을 때만 학부모 화면을 연다.
     // 휴대폰 인증은 다시 묻지 않는다 — 직원 계정은 초대 단계에서 이미 확인했다.
     const ownChildren = await prisma.$queryRawUnsafe<Array<{ one: number }>>(
-      `SELECT 1 AS one FROM "Student" WHERE "parentId" = $1 LIMIT 1`,
+      `SELECT 1 AS one FROM "Student" s WHERE ${await childAccessSql("s", "$1")} LIMIT 1`,
       appUser.id,
     );
     if (ownChildren.length === 0) {

@@ -8,6 +8,7 @@ import AppBackButton from "@/components/AppBackButton";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import MyPageBottomNav from "./MyPageBottomNav";
 import AcademyTheme from "@/components/academy/AcademyTheme";
+import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 
@@ -40,7 +41,7 @@ export default async function MyPageLayout({
     const { views } = await getAccountViewAccess();
 
     return (
-        // 학부모 앱에만 라이트 라벤더를 적용해 공개 홈페이지 테마와 분리한다.
+        // 학부모 앱은 밝은 스포츠 스타일을 적용하고 역할 경계를 유지한다.
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
             {/* 모바일 상단 헤더 — 기존 구조 유지, 그림자/보더 디자인 토큰 통일 */}
             <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-3 md:hidden">
@@ -97,6 +98,7 @@ export default async function MyPageLayout({
             {/* 메인 콘텐츠 영역 */}
             <main className="flex-1 max-w-5xl w-full mx-auto p-4 md:p-8">
                 {children}
+                <AccountLinks />
             </main>
 
             {/* 모바일 하단 네비게이션 — 자녀 핵심 기능(리포트·스킬·방학특강) 중심으로 재구성.

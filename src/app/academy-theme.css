@@ -1,14 +1,14 @@
-/* 승인된 라벤더·퍼플. 공개 홈페이지와 공식 로고의 원본 색상은 바꾸지 않는다. */
+/* 공개 홈페이지와 같은 스포츠 색상. 상태색과 현장 조작 크기는 유지한다. */
 .academy-app {
-  --color-academy-canvas: #f7f4fb;
+  --color-academy-canvas: #f7f3ef;
   --color-academy-surface: #ffffff;
-  --color-academy-ink: #382b48;
-  --color-academy-muted: #73647f;
-  --color-academy-line: #e5ddef;
-  --color-academy-soft: #f4eff9;
-  --color-academy-primary: #7444a3;
-  --color-academy-primary-hover: #61368b;
-  --color-academy-primary-soft: #efe5fa;
+  --color-academy-ink: #15181c;
+  --color-academy-muted: #62676f;
+  --color-academy-line: #e3e4e6;
+  --color-academy-soft: #f7f3ef;
+  --color-academy-primary: #b94118;
+  --color-academy-primary-hover: #933111;
+  --color-academy-primary-soft: #faeee8;
   --color-academy-on-primary: #ffffff;
   --color-academy-success: #3f6754;
   --color-academy-success-soft: #edf5ef;
@@ -16,10 +16,10 @@
   --color-academy-warning-soft: #fff3df;
   --color-academy-danger: #a44052;
   --color-academy-danger-soft: #fff0f2;
-  --color-academy-art: #cebae7;
-  --color-academy-band: #f0e8fa;
-  --color-academy-band-end: #fcf9ff;
-  --color-academy-shadow: #49345e0a;
+  --color-academy-art: #ded4ca;
+  --color-academy-band: #f7f3ef;
+  --color-academy-band-end: #ffffff;
+  --color-academy-shadow: #15181c08;
   --brand-accent: var(--color-academy-primary);
   --brand-accent-hover: var(--color-academy-primary-hover);
   --brand-accent-soft: var(--color-academy-primary-soft);
@@ -37,15 +37,15 @@
   --color-brand-navy-900: var(--color-academy-ink);
   --color-surface-warm: var(--color-academy-canvas);
   --color-surface-section: var(--color-academy-soft);
-  --color-gray-50: #fbf9fd;
+  --color-gray-50: #fcfaf8;
   --color-gray-100: var(--color-academy-soft);
   --color-gray-200: var(--color-academy-line);
-  --color-gray-300: #d0c5db;
-  --color-gray-400: #897b95;
+  --color-gray-300: #d0d2d5;
+  --color-gray-400: #858a92;
   --color-gray-500: var(--color-academy-muted);
-  --color-gray-600: #655570;
-  --color-gray-700: #55445f;
-  --color-gray-800: #453550;
+  --color-gray-600: #555b64;
+  --color-gray-700: #414750;
+  --color-gray-800: #292e35;
   --color-gray-900: var(--color-academy-ink);
   color-scheme: light;
   color: var(--color-academy-ink);
@@ -60,7 +60,7 @@
   isolation: isolate;
   overflow: hidden;
   border: 1px solid var(--color-academy-line);
-  border-radius: 1.25rem;
+  border-radius: 0.5rem;
   background: linear-gradient(125deg, var(--color-academy-band), var(--color-academy-band-end));
   color: var(--color-academy-ink);
   padding: 1.25rem;
@@ -85,7 +85,7 @@
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
   border: 1px solid var(--color-academy-line);
-  border-radius: 1.125rem;
+  border-radius: 0.5rem;
   box-shadow: 0 4px 18px var(--color-academy-shadow);
 }
 
@@ -113,7 +113,7 @@
   gap: 0.375rem;
   min-height: 2.5rem;
   padding: 0.5rem 0.875rem;
-  border-radius: 0.8125rem;
+  border-radius: 0.375rem;
   font-size: 0.875rem;
   line-height: 1.4;
   font-weight: 650;
@@ -178,7 +178,7 @@
   background: linear-gradient(130deg, var(--color-academy-surface), var(--color-academy-primary-soft));
   color: var(--color-academy-ink);
   border: 1px solid var(--color-academy-line);
-  border-radius: 1.125rem;
+  border-radius: 0.5rem;
 }
 
 .academy-app .academy-driver-stop {
@@ -202,8 +202,8 @@
 }
 
 @media (max-width: 600px) {
-  .academy-app .academy-hero { padding: 1rem; border-radius: 1rem; }
-  .academy-app .academy-panel { border-radius: 0.9375rem; }
+  .academy-app .academy-hero { padding: 1rem; border-radius: 0.5rem; }
+  .academy-app .academy-panel { border-radius: 0.5rem; }
   .academy-app :is(.academy-button-primary, .academy-button-secondary) { min-height: 44px; }
   .academy-app :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { font-size: 1rem; }
 }

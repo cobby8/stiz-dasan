@@ -3029,3 +3029,51 @@ model KakaoPolicyQaLog {
   @@index([userKeyHash, createdAt(sort: Desc)])
   @@index([createdAt], map: "KakaoPolicyQaLog_createdAt_asc_idx")
 }
+
+// 접근 권한의 대표 보호자(parentId)와 추가 가족 연결은 별개다. 원문 명의 정보는 인증 원장에 최소 보관한다.
+model ParentStudentAccess {
+  id String @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId String
+  userId String
+  status String
+  source String
+  approvedBy String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([studentId, userId])
+  @@index([userId, status], map: "ParentStudentAccess_user_status_idx")
+}
+model ChildIdentityChallenge {
+  id String @id
+  userId String
+  sessionHash String
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  usedAt DateTime? @db.Timestamptz(6)
+  verifiedName String?
+  phoneHash String?
+  phoneLast4 String?
+  birthHash String?
+  proofExpiresAt DateTime? @db.Timestamptz(6)
+  proofUsedAt DateTime? @db.Timestamptz(6)
+  verifyAttempts Int @default(0)
+  requestAttempts Int @default(0)
+  @@index([userId, createdAt], map: "ChildIdentityChallenge_user_created_idx")
+}
+model ChildLinkRequest {
+  id String @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId String
+  requesterId String
+  approverId String
+  challengeId String @unique
+  requesterName String
+  requesterPhoneLast4 String
+  relation String
+  status String @default("PENDING")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  decidedAt DateTime? @db.Timestamptz(6)
+  decidedBy String?
+  @@index([approverId, status], map: "ChildLinkRequest_approver_status_idx")
+  @@index([requesterId, createdAt], map: "ChildLinkRequest_requester_created_idx")
+}

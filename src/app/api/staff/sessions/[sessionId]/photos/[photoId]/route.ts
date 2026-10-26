@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaffClassAccess } from "@/lib/staff-class-access";
 import { isValidPrivateSessionPhotoRef, parseSessionPhotoEntries, parseStoredSessionPhotos } from "@/lib/sessionPhotoStorage";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireVerifiedParent } from "@/lib/auth-guard";
+import { childAccessSql } from "@/lib/account/child-access";
 import {
   findManagedSessionPhoto,
   isEmptyMediaJSON,
@@ -27,15 +28,15 @@ async function requirePhotoViewer(classId: string, sessionStatus: string): Promi
     await requireStaffClassAccess(classId);
     return { kind: "STAFF" };
   } catch {
-    const user = await requireAuth();
-    if (sessionStatus !== "COMPLETED" || !user.email) throw new Error("사진 접근 권한이 없습니다.");
+    const parent = await requireVerifiedParent();
+    if (sessionStatus !== "COMPLETED") throw new Error("사진 접근 권한이 없습니다.");
     const rows = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
       `SELECT DISTINCT s.id AS "studentId"
        FROM "User" u
-       JOIN "Student" s ON s."parentId" = u.id AND ${notMergedStudent("s")}
+       JOIN "Student" s ON ${await childAccessSql("s", 'u."id"')} AND ${notMergedStudent("s")}
        JOIN "Enrollment" e ON e."studentId" = s.id
-       WHERE LOWER(u.email) = LOWER($1) AND e."classId" = $2 AND e.status = 'ACTIVE'`,
-      user.email,
+       WHERE u.id = $1 AND e."classId" = $2 AND e.status = 'ACTIVE'`,
+      parent.appUserId,
       classId,
     );
     if (!rows[0]) throw new Error("사진 접근 권한이 없습니다.");

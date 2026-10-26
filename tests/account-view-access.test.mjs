@@ -1,3 +1,4 @@
+import { loadChildAccess } from "./_child-access-fixture.mjs";
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -20,6 +21,7 @@ const accessSource = await readFile('src/lib/account-view-access.ts', 'utf8');
 function fixture({ role = 'ADMIN', account = null, signedOut = false, dbFailure = false } = {}) {
   const queries = [];
   const access = load(accessSource, {
+    '@/lib/account/child-access': loadChildAccess(),
     '@/lib/auth-guard': { requireAuth: async () => { if (signedOut) throw new Error('Signed out'); return { id: 'auth-owner' }; } },
     '@/lib/account-views': views,
     // 로그인 직후 목적지용 열린 화면 묶음을 계산한다(다중 역할, 2026-10-25). DB 없는 순수 모듈이라 원본 그대로.

@@ -1,3 +1,4 @@
+import { childAccessWhere } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { NOT_MERGED_STUDENT } from "@/lib/studentVisibility";
 // 셔틀 대상자는 게이트웨이 한 곳으로만 읽는다(원본 신청 테이블을 여기서 직접 조회하지 않는다).
@@ -74,7 +75,7 @@ function preferRouteVersion<T extends { routePlan: { status: string; version: nu
 export async function getParentShuttleOverview(appUserId: string): Promise<ParentShuttleOverviewItem[]> {
   const students = await prisma.student.findMany({
     // 병합으로 흡수된 학생은 학부모 마이페이지에서도 보이지 않아야 한다
-    where: { parentId: appUserId, ...NOT_MERGED_STUDENT },
+    where: { ...await childAccessWhere(appUserId), ...NOT_MERGED_STUDENT },
     select: { id: true, name: true, birthDate: true },
   });
   if (students.length === 0) return [];

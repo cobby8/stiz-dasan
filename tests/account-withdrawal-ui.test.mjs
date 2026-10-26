@@ -9,13 +9,15 @@ import test from "node:test";
 // 회원 탈퇴는 거기에 하나 더 있다 — 구글플레이가 **앱 안에서** 계정을 삭제할 수 있어야
 // 등록을 허용한다. 링크가 사라지면 기능이 아니라 스토어 등록이 막힌다.
 
-const myPage = fs.readFileSync("src/app/mypage/MyPageClient.tsx", "utf8");
+const myPage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
+const layout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 const page = fs.readFileSync("src/app/mypage/withdraw/page.tsx", "utf8");
 const client = fs.readFileSync("src/app/mypage/withdraw/WithdrawClient.tsx", "utf8");
 
 test("마이페이지에서 탈퇴 화면으로 가는 길이 있다", () => {
   assert.match(myPage, /href="\/mypage\/withdraw"/);
   assert.match(myPage, /회원 탈퇴/);
+  assert.match(layout, /<AccountLinks\s*\/>/);
 });
 
 test("탈퇴 페이지는 학부모 인증을 거치고 캐시되지 않는다", () => {

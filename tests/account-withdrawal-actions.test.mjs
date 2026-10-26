@@ -88,7 +88,7 @@ test("익명 이름은 비어 있지 않다", () => {
 test("Auth 계정을 DB 익명화보다 먼저 지운다", () => {
   // 반대 순서면 «이름·이메일은 익명인데 로그인은 되는» 상태가 생겨 자녀 정보가 노출된다.
   const authAt = action.indexOf("auth.admin.deleteUser");
-  const anonymizeAt = action.indexOf('UPDATE "User"\n            SET email = $2');
+  const anonymizeAt = action.search(/UPDATE "User"\s+SET email = \$2/);
   assert.ok(authAt > 0, "Auth 삭제 호출이 없다");
   assert.ok(anonymizeAt > 0, "익명화 UPDATE 를 찾지 못했다");
   assert.ok(authAt < anonymizeAt, "Auth 삭제가 익명화보다 뒤에 있으면 로그인 가능한 익명 계정이 생긴다");

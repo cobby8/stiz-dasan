@@ -53,6 +53,7 @@ type HistoryChild = {
         description?: string | null;
         receiptUrl?: string | null;
         invoiceId?: string | null;
+        canCheckout?: boolean;
         invoiceNo?: string | null;
     }[];
 };
@@ -214,7 +215,7 @@ export default function HistoryClient({
                                     <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
                                         {child.payments.map((p) => {
                                             const statusInfo = PAYMENT_STATUS[p.status] || PAYMENT_STATUS.PENDING;
-                                            const canPay = Boolean(p.invoiceId) && (p.status === "PENDING" || p.status === "OVERDUE");
+                                            const canPay = p.canCheckout !== false && Boolean(p.invoiceId) && (p.status === "PENDING" || p.status === "OVERDUE");
                                             return (
                                                 <div key={p.id} className="px-4 py-3">
                                                     <div className="flex items-start justify-between gap-3">
@@ -248,7 +249,7 @@ export default function HistoryClient({
                                                                 납부하기
                                                             </Link>
                                                         )}
-                                                        {p.invoiceId && !canPay && (
+                                                        {p.invoiceId && p.canCheckout !== false && !canPay && (
                                                             <Link
                                                                 href={`/payments/${p.invoiceId}`}
                                                                 className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
@@ -256,7 +257,8 @@ export default function HistoryClient({
                                                                 청구서 보기
                                                             </Link>
                                                         )}
-                                                        {p.receiptUrl && (
+                                                        {p.invoiceId && p.canCheckout === false && <p className="w-full text-xs text-[var(--color-academy-muted)]">온라인 결제는 대표 보호자 계정에서 진행해 주세요.</p>}
+                                                        {p.receiptUrl && p.canCheckout !== false && (
                                                             <a
                                                                 href={p.receiptUrl}
                                                                 target="_blank"

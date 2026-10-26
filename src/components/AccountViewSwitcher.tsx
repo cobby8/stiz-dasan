@@ -6,11 +6,14 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AccountViewOption } from "@/lib/account-views";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 
+type FamilyNavigationOption = { key: "family"; label: string; href: "/account/children" };
+const familyOption: FamilyNavigationOption = { key: "family", label: "자녀·가족 연결", href: "/account/children" };
+
 type AccountViewSwitcherProps = {
   views: AccountViewOption[];
   variant?: "menu" | "list";
   placement?: "above" | "below";
-  onNavigate?: (event: MouseEvent<HTMLAnchorElement>, view: AccountViewOption) => void;
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>, view: AccountViewOption | FamilyNavigationOption) => void;
 };
 
 /** 서버가 확인한 이용 화면만 보여준다. 화면 이동은 계정의 권한을 바꾸지 않는다. */
@@ -50,7 +53,8 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
     };
   }, [open]);
 
-  if (views.length < 2) return null;
+  const canManageFamily = views.some(view => view.key === "admin" || view.key === "teacher" || view.key === "driver");
+  if (views.length < 2 && !canManageFamily) return null;
 
   const options = (
     <nav aria-label="이용 화면 전환" className="space-y-1">
@@ -74,6 +78,12 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
           </Link>
         );
       })}
+      {canManageFamily && <Link href={familyOption.href} prefetch={false}
+        className="flex min-h-11 flex-col justify-center border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+        onClick={event => { onNavigate?.(event, familyOption); setOpen(false); }}>
+        <span>{familyOption.label}</span>
+        {installed && scope !== null && <span className="text-xs font-medium text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
+      </Link>}
     </nav>
   );
 

@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -50,7 +51,7 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
        LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
         AND p.status <> 'CANCELED'
       ORDER BY p."dueDate" DESC NULLS LAST
       LIMIT 60`,
@@ -64,7 +65,7 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
             to_char(r."decidedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "decidedAt"
        FROM "PaymentParentRequest" r
        JOIN "Student" s ON s.id = r."studentId"
-      WHERE s."parentId" = $1
+      WHERE ${await childAccessSql("s", "$1")}
       ORDER BY r."createdAt" DESC`,
     parentUserId,
   );
@@ -116,7 +117,7 @@ export async function submitPaymentParentRequest(parentUserId: string, input: Su
     `SELECT p.id, p.status, p.amount, s.id AS "studentId", s.name AS "studentName", p.description
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
-      WHERE p.id = $1 AND s."parentId" = $2
+      WHERE p.id = $1 AND ${await childAccessSql("s", "$2")}
       LIMIT 1`,
     paymentId, parentUserId,
   );
@@ -176,7 +177,7 @@ export async function cancelPaymentParentRequest(parentUserId: string, requestId
       `UPDATE "PaymentParentRequest" r
           SET status = 'CANCELED', "updatedAt" = now()
          FROM "Student" s
-        WHERE r."studentId" = s.id AND s."parentId" = $1
+        WHERE r."studentId" = s.id AND ${await childAccessSql("s", "$1")}
           AND r.id = $2 AND r.status = 'PENDING'`,
       parentUserId, id,
     ),

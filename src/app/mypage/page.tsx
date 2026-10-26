@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getMyPageData, getGalleryByClassIds, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests, getChildrenFeedbacks } from "@/lib/queries";
 import MyPageClient from "./MyPageClient";
+import EmptyParentState from "@/components/account/EmptyParentState";
 import Link from "next/link";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
@@ -33,27 +34,17 @@ export default async function MyPageDashboard() {
     const parentAuth = await requireVerifiedParent();
     const data = await getMyPageData(parentAuth.appUserId);
 
+    // 정식 자녀가 없어도 특강 신청 내역과 연결 요청 경로는 확인할 수 있어야 한다.
+    const studentIds = data?.children.map(c => c.id) ?? [];
+    const pendingSeasonalChildren = await getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
     if (!data || data.children.length === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="text-5xl mb-4">👋</div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">등록된 자녀가 없습니다</h2>
-                <p className="text-gray-500 dark:text-gray-400 mb-2">
-                    <span className="font-medium">{user.email}</span> 계정으로 로그인하셨습니다.
-                </p>
-                <p className="text-gray-400 text-sm">
-                    학원에 자녀를 등록하시면 이 페이지에서 출결, 수납 현황을 확인할 수 있습니다.
-                </p>
-            </div>
-        );
+        return <EmptyParentState pendingSeasonalChildren={pendingSeasonalChildren} />;
     }
 
     // 자녀의 수강 중인 반 ID 목록 추출
     const classIds = data.children.flatMap(c =>
-        c.enrollments.map((e: any) => e.classId).filter(Boolean)
+        c.enrollments.map((e: { classId: string | null }) => e.classId).filter((id): id is string => typeof id === "string" && id.length > 0)
     );
-    // 자녀 ID 목록 추출 (피드백 조회용)
-    const studentIds = data.children.map(c => c.id);
     // 갤러리/공지/알림/피드백 데이터 가져오기
     const [gallery, notices, notifications, unreadCount, myRequests, feedbacks, shuttleOverview, driverContact] = await Promise.all([
         getGalleryByClassIds(classIds, 10),
@@ -66,9 +57,6 @@ export default async function MyPageDashboard() {
         getShuttleDriverContact(),
     ]);
 
-    // 방학특강만 신청하고 아직 정식 학생으로 전환되지 않은 자녀(대시보드에 안 뜨는 자녀).
-    // studentIds 를 넘겨 이미 전환된 신청은 제외 → 정식 카드와 중복 노출되지 않게 한다.
-    const pendingSeasonalChildren = await getPendingSeasonalChildren(parentAuth.appUserId, studentIds);
 
     return <MyPageClient data={data} gallery={gallery} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} feedbacks={feedbacks} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} />;
 }

@@ -77,7 +77,7 @@ test("적용일을 클라이언트가 마음대로 정하지 못한다", () => {
 });
 
 test("본인 자녀의 지금 다니는 반만 신청할 수 있다", () => {
-  assert.match(parentLib, /s\."parentId" = \$2 AND e\.status = 'ACTIVE'/);
+  assert.match(parentLib, /childAccessSql\("s", "\$2"\)\}\s+AND e\.status = 'ACTIVE'/);
   assert.match(parentLib, /본인 자녀의 수강만/);
 });
 

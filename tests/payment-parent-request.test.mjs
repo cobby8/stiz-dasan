@@ -88,7 +88,7 @@ test("납부 여부는 DB 에서 읽는다", () => {
   // 클라이언트가 보낸 상태를 믿으면 미납 건에 영수증을 발급하거나
   // 이미 낸 건에 확인 요청을 넣을 수 있다.
   assert.match(parentLib, /paymentStatus: owned\[0\]\.status/);
-  assert.match(parentLib, /p\.id = \$1 AND s\."parentId" = \$2/);
+  assert.match(parentLib, /p\.id = \$1 AND \$\{await childAccessSql\("s", "\$2"\)\}/);
 });
 
 test("같은 종류의 대기 요청은 한 건만 둔다", () => {

@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-27: 가족연결·스포츠업무UI 승인 로컬 구현. docs/child-connections-and-sport-workspace.md 및 .tmp/child-connections-qa/ 정본. 학생/대표청구/역할보존, 미성년부모없는학원승인0·성인본인연결·결제소유권분리. 구조/결정/오류/교훈/관례 갱신, 지식본문5개 유지. 전용MID미발급·운영DB/발송/푸시/배포 미실행. 전체2514/학생5·독립107/JS0·tsc/Prisma/lint 통과, 최종928소스 생산빌드 확인.
+
 > 2026-10-25: 운영홈HTML scope0/CSS4개200 파손재현. 원격0238c357로로컬FF일치후Home명시publicScope·Theme선택값2파일최소수정, 타공개/업무/별칭기존판별유지. 관련6/전체2471/학생5·tsc/lint·생산src907/bcbdd4·독립24/JS·수화0·개별해시일치. docs/public-home-ssr-style-fix.md 및 .tmp/public-home-ssr/qa/final-independent-report.json 정본. 지식본문5유지·구조/결정/오류/교훈갱신. 로컬격리검증·운영반영승인대기,운영쓰기/푸시/새배포없음.
 
 > 2026-10-22: 승인헤더 actual-fit 완료. 고정1280/1600폐기→기존DOM폭합계/가용공간·안전4/재확장4·관찰자/글씨/폰트/계정재계산·Guide실제속성연결. 전체2320/학생5·fit5/관련29·tsc·신규lint0·생산src881/1cbb·독립87(40/32/11/3/1)/JS0·개별해시일치. docs/public-header-fit.md 및 .tmp/public-header-fit/qa/final-independent-report.json 정본, 지식본문5유지·구조/결정/오류갱신. 4106합성GET전용·브라우저폭검증·운영/푸시/배포없음.

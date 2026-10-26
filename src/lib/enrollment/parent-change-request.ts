@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -97,7 +98,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
        LEFT JOIN "EnrollmentChangeRequest" r
               ON r."enrollmentId" = e.id AND r.status = 'PENDING'
        LEFT JOIN "Class" tc ON tc.id = r."toClassId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY s.name, c."dayOfWeek", c."startTime"`,
     parentUserId,
   );
@@ -170,7 +171,7 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
-      WHERE e.id = $1 AND s."parentId" = $2 AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}
+      WHERE e.id = $1 AND ${await childAccessSql("s", "$2")} AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}
       LIMIT 1`,
     enrollmentId, parentUserId,
   );
@@ -258,7 +259,7 @@ export async function cancelEnrollmentChangeRequest(parentUserId: string, reques
           SET status = 'CANCELED', "updatedAt" = now()
          FROM "Student" s
         WHERE r."studentId" = s.id
-          AND s."parentId" = $1
+          AND ${await childAccessSql("s", "$1")}
           AND r.id = $2
           AND r.status = 'PENDING'`,
       parentUserId, id,

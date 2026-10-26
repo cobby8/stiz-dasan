@@ -340,3 +340,9 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - finance/prepare와 billing/workbench 계층은 기간별 반 청구의 조회·수정·확정·발행을 연결한다. API는 관리자·동일출처를 확인하고 저장 설정 기본 차단, 새 SQL은 운영 미적용이다.
 - 기존 결석·보강 예약/취소·회수 경로도 같은 보상 잠금을 사용한다. 이월 잔액은 분수와 사용 근거를 보존하며 Payment/Invoice와 함께 반영한다. 원기간·일정·사용 청구가 바뀌면 확인보류한다.
 - 공식 일정은 공용 로더에서 거래 밖에 한 번 읽어 불변 자료로 전달하고 원본 지문에 포함한다. 실제 자료 미리보기의 일정 조회 실패는 부분 일정을 비워 금액 계산을 막는다. 상세 docs/billing-workbench-upgrade.md.
+
+
+## 2026-10-27 자녀·가족 연결
+- account/child-links·child-access·child-link-policy와 api/account/child-links를 공통 경계로 둔다. ParentStudentAccess/ChildLinkRequest/ChildIdentityChallenge는 별도 접근·기존부모승인·단회인증 원장이다. 기본 비활성·운영 미적용.
+- mypage/children 및 account/children은 같은 클라이언트를 재사용한다. 전자는 학부모 앱 영역, 후자는 자녀없는 직원 온보딩이다. AccountLinks는 mypage/layout에서 공통 제공한다.
+- 활성 배포 사전검사는 scripts/child-connections-db-preflight.mjs. 인증 브랜드 설정은 lib/identity/brand.ts, 운영 채널 설정값과 분리한다.

@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -56,7 +57,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
     `SELECT DISTINCT s.id AS "studentId", s.name AS "studentName"
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY s.name`,
     parentUserId,
   );
@@ -67,7 +68,7 @@ export async function getShuttleExceptionOptions(parentUserId: string): Promise<
             x.direction, x.kind, x.location, x.note
        FROM "ShuttleDayException" x
        JOIN "Student" s ON s.id = x."studentId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")} AND x."canceledAt" IS NULL
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")} AND x."canceledAt" IS NULL
         AND x."serviceDate" >= $2::date
       ORDER BY x."serviceDate", s.name`,
     parentUserId, today,
@@ -109,7 +110,7 @@ export async function submitShuttleException(parentUserId: string, input: Submit
     `SELECT s.id, s.name
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
-      WHERE s.id = $1 AND s."parentId" = $2 AND ${notMergedStudent("s")}
+      WHERE s.id = $1 AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}
       LIMIT 1`,
     studentId, parentUserId,
   );
@@ -184,7 +185,7 @@ export async function cancelShuttleException(parentUserId: string, exceptionId: 
       `UPDATE "ShuttleDayException" x
           SET "canceledAt" = now(), "updatedAt" = now()
          FROM "Student" s
-        WHERE x."studentId" = s.id AND s."parentId" = $1
+        WHERE x."studentId" = s.id AND ${await childAccessSql("s", "$1")}
           AND x.id = $2 AND x."canceledAt" IS NULL
         RETURNING x.id, x."studentId" AS "studentId", s.name AS "studentName",
                   to_char(x."serviceDate",'YYYY-MM-DD') AS "serviceDate",
@@ -237,7 +238,7 @@ export async function getParentShuttleExceptionStatus(parentUserId: string, id: 
     `SELECT x.id, x."studentId", s.name AS "studentName", to_char(x."serviceDate",'YYYY-MM-DD') AS "serviceDate",
        x.direction, x.kind, x.location, x.note, (x."canceledAt" IS NOT NULL) AS canceled
      FROM "ShuttleDayException" x JOIN "Student" s ON s.id=x."studentId"
-     WHERE x.id=$1 AND s."parentId"=$2 AND ${notMergedStudent("s")} LIMIT 1`, id, parentUserId,
+     WHERE x.id=$1 AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")} LIMIT 1`, id, parentUserId,
   );
   const row = rows[0];
   if (!row) return null;

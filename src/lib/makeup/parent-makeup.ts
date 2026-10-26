@@ -1,3 +1,4 @@
+import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { recommendClasses, summarize, type ClassCandidate, type MakeupCreditStatus } from "./credit-rules";
@@ -68,7 +69,7 @@ export async function getMakeupOverviewForParent(parentUserId: string): Promise<
        JOIN "Student" s ON s.id = mc."studentId"
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
        LEFT JOIN "Class" bc ON bc.id = ms."makeupClassId"
-      WHERE s."parentId" = $1 AND ${notMergedStudent("s")}
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
       ORDER BY mc."expiresAt" ASC`,
     parentUserId,
   );
@@ -127,7 +128,7 @@ export async function getMakeupOptionsForCredit(
             mc.status, mc."expiresAt"
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
-      WHERE mc.id = $1 AND s."parentId" = $2
+      WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")}
       LIMIT 1`,
     creditId, parentUserId,
   );
@@ -214,7 +215,7 @@ export async function bookMakeup(
   }>>(
     `SELECT mc.id, mc."studentId", mc."originClassId", mc."absenceDate", mc."expiresAt", s.grade AS "studentGrade"
        FROM "MakeupCredit" mc JOIN "Student" s ON s.id = mc."studentId"
-      WHERE mc.id = $1 AND s."parentId" = $2 AND mc.status = 'AVAILABLE' LIMIT 1`,
+      WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")} AND mc.status = 'AVAILABLE' LIMIT 1`,
     input.creditId, parentUserId,
   );
   const credit = own[0];
@@ -244,7 +245,7 @@ export async function bookMakeup(
       const locked = await tx.$executeRawUnsafe(
         `UPDATE "MakeupCredit" SET status='RESERVED', "updatedAt"=now()
           WHERE id=$1 AND status='AVAILABLE'
-            AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND s."parentId"=$2 AND s."mergedIntoStudentId" IS NULL)`, input.creditId, parentUserId,
+            AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND ${await childAccessSql("s", "$2")} AND s."mergedIntoStudentId" IS NULL)`, input.creditId, parentUserId,
       );
       if (Number(locked) === 0) throw new Error("MAKEUP_ALREADY_RESERVED");
       const created = await tx.$queryRawUnsafe<{ id: string }[]>(
@@ -285,7 +286,7 @@ export async function cancelMakeupBooking(
        FROM "MakeupCredit" mc
        JOIN "Student" s ON s.id = mc."studentId"
        LEFT JOIN "MakeupSession" ms ON ms.id = mc."makeupSessionId"
-      WHERE mc.id = $1 AND s."parentId" = $2 AND mc.status = 'RESERVED' LIMIT 1`,
+      WHERE mc.id = $1 AND ${await childAccessSql("s", "$2")} AND mc.status = 'RESERVED' LIMIT 1`,
     creditId, parentUserId,
   );
   const row = own[0];
@@ -302,7 +303,7 @@ export async function cancelMakeupBooking(
       const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT id FROM "MakeupCredit" WHERE id=$1 AND status='RESERVED'
           AND "makeupSessionId" IS NOT DISTINCT FROM $2
-          AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND s."parentId"=$3 AND s."mergedIntoStudentId" IS NULL)
+          AND EXISTS (SELECT 1 FROM "Student" s WHERE s.id="MakeupCredit"."studentId" AND ${await childAccessSql("s", "$3")} AND s."mergedIntoStudentId" IS NULL)
           FOR UPDATE`, creditId, row.makeupSessionId, parentUserId,
       );
       if (!locked.length) throw new Error("MAKEUP_NOT_RESERVED");

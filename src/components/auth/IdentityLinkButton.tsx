@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getStizIdentityBypass } from "@/lib/identity/brand";
 
 /**
  * 「본인인증으로 기존 계정에 연결」 — 간편로그인 후 「이미 가입된 번호」로 막힌 학부모용(2026-10-26).
@@ -117,7 +118,7 @@ export default function IdentityLinkButton() {
         identityVerificationId,
         redirectUrl: urlWithoutRedirectParams(),
         // KG이니시스 통합인증 필수값 — 빠지면 인증창이 열리기 전에 실패한다(mybdr 2026-09-17 사고).
-        bypass: { inicisUnified: { flgFixedUser: "N" } },
+        bypass: getStizIdentityBypass(),
       });
       // PC 팝업 — 여기서 결과가 온다(모바일 리디렉션이면 여기까지 오지 않는다).
       try {

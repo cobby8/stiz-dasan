@@ -1,5 +1,7 @@
 "use server";
 
+import { anonymizeChildConnections } from "@/lib/account/child-withdrawal";
+
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireVerifiedParent } from "@/lib/auth-guard";
@@ -234,6 +236,8 @@ export async function executeAccountWithdrawal(userId: string) {
         anonymizedEmail(userId),
         ANONYMIZED_NAME,
       );
+
+      await anonymizeChildConnections(tx, userId);
 
       // 푸시 알림을 계속 받으면 탈퇴한 사람에게 학원 소식이 간다.
       await tx.$executeRawUnsafe(`DELETE FROM "PushSubscription" WHERE "userId" = $1`, userId);

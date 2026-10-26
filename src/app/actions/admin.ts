@@ -1,4 +1,5 @@
 "use server";
+import { childAccessWhere } from "@/lib/account/child-access";
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { revalidatePath, revalidateTag } from "next/cache";
@@ -2086,7 +2087,7 @@ export async function createParentRequest(data: {
     if (requestedDate && Number.isNaN(requestedDate.getTime())) throw new Error("올바른 날짜를 입력해 주세요.");
 
     const ownedStudent = await prisma.student.findFirst({
-        where: { id: studentId, parentId: parent.appUserId },
+        where: { id: studentId, ...await childAccessWhere(parent.appUserId) },
         select: { id: true, name: true },
     });
     if (!ownedStudent) throw new Error("본인 자녀에 대해서만 요청할 수 있습니다.");
