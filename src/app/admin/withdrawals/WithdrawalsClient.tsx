@@ -39,7 +39,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
           회원 탈퇴 신청
         </h1>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          수강 중인 반이 있는 학부모의 탈퇴는 바로 처리되지 않고 여기로 모입니다. 수업 정리가 끝난 뒤
+          수강 중인 자녀나 직원 역할이 있는 회원의 탈퇴 요청입니다. 담당 업무와 연락 관계를 정리한 뒤
           처리해 주세요. <b>처리하면 로그인 계정과 연락처가 삭제되고 되돌릴 수 없습니다.</b> 출결·납부
           기록은 그대로 남습니다.
         </p>
@@ -61,7 +61,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
             <thead className="bg-gray-50 text-xs font-bold text-gray-500 dark:bg-gray-900 dark:text-gray-400">
               <tr>
                 <th className="px-3 py-2">신청일</th>
-                <th className="px-3 py-2">학부모</th>
+                <th className="px-3 py-2">회원</th>
                 <th className="px-3 py-2">자녀</th>
                 <th className="px-3 py-2">수강 중</th>
                 <th className="px-3 py-2">연락처</th>
@@ -74,7 +74,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
                   <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                     {kstLabel(row.requestedAt)}
                   </td>
-                  <td className="px-3 py-2 font-bold text-gray-900 dark:text-white">{row.name}</td>
+                  <td className="px-3 py-2 font-bold text-gray-900 dark:text-white">{row.name}{row.reviewMessage && <p className="mt-1 max-w-64 text-xs font-normal text-gray-500">{row.reviewMessage}</p>}</td>
                   <td className="px-3 py-2 text-gray-700 dark:text-gray-200">{row.childNames || "—"}</td>
                   <td className="px-3 py-2">
                     {row.activeEnrollments > 0 ? (
@@ -88,7 +88,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-600 dark:text-gray-300">{row.phone || "—"}</td>
                   <td className="px-3 py-2">
-                    {confirming === row.userId ? (
+                    {row.administrativeHold ? <span className="text-xs font-semibold text-amber-700">업무·권한 이관 후 처리</span> : confirming === row.userId ? (
                       <div className="flex items-center gap-1.5">
                         <button
                           type="button"

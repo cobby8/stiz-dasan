@@ -231,6 +231,6 @@ test("회원 탈퇴 시 추가 역할과 대기 중인 신청도 회수한다", 
   // 탈퇴는 익명화라 ON DELETE CASCADE 가 걸리지 않는다. 직접 닫지 않으면 권한 기록이 살아 있다.
   assert.match(withdrawal, /UPDATE "UserRoleGrant"\s*\n\s*SET status = 'REVOKED', "decidedAt" = NOW\(\)[\s\S]*?WHERE "userId" = \$1 AND status IN \('PENDING', 'ACTIVE'\)/);
   // 같은 트랜잭션 안에서(익명화와 따로 놀면 한쪽만 반영된다).
-  const tx = withdrawal.slice(withdrawal.indexOf("await prisma.$transaction(async (tx) => {"), withdrawal.indexOf("개인정보 익명화 실패"));
+  const tx = withdrawal.slice(withdrawal.indexOf("prisma.$transaction("), withdrawal.indexOf("if (self && result.ok)"));
   assert.match(tx, /tx\.\$executeRawUnsafe\(\s*`UPDATE "UserRoleGrant"/);
 });

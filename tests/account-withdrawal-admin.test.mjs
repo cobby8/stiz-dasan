@@ -45,7 +45,7 @@ test("목록이 낡았을 때의 오조작을 서버가 막는다", () => {
   assert.match(action, /if \(!row\.withdrawRequestedAt\) return \{ error: "탈퇴를 신청하지 않은 계정입니다\." \}/);
   // 반려도 «신청이 살아 있는» 행에만 걸려야 한다.
   assert.match(action, /WHERE id = \$1 AND "withdrawRequestedAt" IS NOT NULL AND "withdrawnAt" IS NULL/);
-  assert.match(action, /if \(affected !== 1\) return \{ error: "처리할 탈퇴 신청이 없습니다\." \}/);
+  assert.match(action, /if \(affected !== 1\) throw new OwnAccountError\("처리할 탈퇴 신청이 없습니다\."/);
 });
 
 test("원장 처리와 학부모 즉시 탈퇴가 같은 함수를 쓴다", () => {

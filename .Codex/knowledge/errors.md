@@ -579,3 +579,9 @@
 - 실제 소스가 바뀌는 중의 빌드 성공은 최종 검증이 아니다. sourceStillMatches를 대조하고 마지막 권한 보완까지 반영한 소스로 다시 빌드한다.
 
 - 2026-10-27 운영검증: 가족연결의 비로그인 진입이 login?next로 복귀주소를 넘겼지만 로그인 화면은 redirect만 읽었다. redirect 파라미터로 맞추고 실제 서버 페이지의 인증실패→redirect 호출과 로그인 화면 계약을 실행 검증했다. 전체2515/학생5·tsc통과.
+
+## 2026-10-27 네이티브 진입·탈퇴 부분 실패
+- iOS /auth/* 전체 차단은 store-app의 실제 첫 이동 /auth/continue도 막는다. 정확한 역할 분기 경로를 허용하고 OAuth 인계만 별도로 차단했다. 기사 경로는 staff/run·staff/shuttle까지 대조한다.
+- Auth 삭제 후 DB 익명화 실패에서 JWT 서명만 검사하면 옛 인증이 남는다. 완전 익명화로 authUserId가 비고 User.id≠AuthUID인 경우도 직접 조회0→freshAuth 확인으로 막는다.
+- 처리 중 기다리던 취소/관리자 반려가 pending을 지우면 위 보호가 무력화될 수 있다. 동일 User 행 잠금 후 실제 Auth 존재/바인딩을 재확인하며 provider 오류·삭제됨·모호함은 마커를 유지한다. 실제 합성 PG24로 검증.
+- 최종 격리 생산빌드934소스/해시일치 통과. auth-guard 기존 any ESLint4개는 HEAD원문과 동일하며 이번 추가오류0, Android lint0오류/7경고는 숨기지 않는다.

@@ -4,17 +4,17 @@ import { anonymizeChildConnections } from "@/lib/account/child-withdrawal";
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { requireVerifiedParent } from "@/lib/auth-guard";
+import { OwnAccountError, requireOwnAccount } from "@/lib/account/own-account";
+import { readWithdrawalRecord } from "@/lib/account/account-withdrawal-data";
+import { accountWithdrawalPolicy } from "@/lib/account/account-withdrawal-policy";
 import {
   ANONYMIZED_NAME,
   CLEARED_USER_COLUMNS,
   anonymizedEmail,
   canCancelWithdrawalRequest,
   canRequestWithdrawal,
-  decideWithdrawal,
   withdrawalState,
 } from "@/lib/account/withdrawal";
-import { notifyAdmins } from "@/lib/notification";
 import {
   consumeParentAccountClaim,
   parentClaimProofCookieName,
@@ -49,17 +49,29 @@ export async function verifyParentAccountOtp(token: string, code: string) {
   return { ok: true, verified: true };
 }
 
-export async function acceptParentAccountClaim(token: string, email: string, password: string) {
+export async function acceptParentAccountClaim(
+  token: string,
+  email: string,
+  password: string,
+) {
   const normalizedToken = token.trim();
   const cookieStore = await cookies();
   const cookieName = parentClaimProofCookieName(normalizedToken);
   const proof = cookieStore.get(cookieName)?.value || "";
-  const result = await consumeParentAccountClaim(normalizedToken, proof, email, password);
+  const result = await consumeParentAccountClaim(
+    normalizedToken,
+    proof,
+    email,
+    password,
+  );
   if (!("ok" in result) || !result.ok) return result;
 
   cookieStore.delete(cookieName);
   const supabase = await createClient();
-  const signedIn = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+  const signedIn = await supabase.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
   if (signedIn.error) {
     const loginRedirect = `/login?redirect=${encodeURIComponent(result.redirectPath)}`;
     return { ...result, sessionEstablished: false, loginRedirect };
@@ -78,205 +90,211 @@ export async function acceptParentAccountClaim(token: string, email: string, pas
 //             방침도 "법령에 따른 보존 기간은 예외"를 이미 두고 있다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 탈퇴 화면이 쓰는 현재 상태 — 재학 중이면 즉시 처리되지 않는다는 것을 미리 알려야 한다. */
+/** 계정 관리 작업은 이름·이메일이 아니라 현재 로그인에 직접 연결된 본인 계정을 기준으로 한다. */
+function withdrawalFailure(error: unknown) {
+  return {
+    error:
+      error instanceof OwnAccountError
+        ? error.message
+        : "계정 처리를 완료하지 못했습니다. 다시 확인해 주세요.",
+  };
+}
+function policyFor(
+  row: NonNullable<Awaited<ReturnType<typeof readWithdrawalRecord>>>,
+) {
+  return accountWithdrawalPolicy({
+    role: row.role,
+    activeEnrollmentCount: row.activeEnrollments,
+    activeStaffGrantCount: row.activeStaffGrantCount,
+    activeWorkCount: row.activeWorkCount,
+  });
+}
 export async function getAccountWithdrawalStatus() {
-  const parent = await requireVerifiedParent();
-  const rows = await prisma.$queryRawUnsafe<
-    { withdrawRequestedAt: Date | null; withdrawnAt: Date | null; activeEnrollments: number }[]
-  >(
-    `SELECT u."withdrawRequestedAt", u."withdrawnAt",
-            (SELECT COUNT(*)::int
-               FROM "Enrollment" e
-               JOIN "Student" s ON s.id = e."studentId"
-              WHERE s."parentId" = u.id AND e.status = 'ACTIVE') AS "activeEnrollments"
-       FROM "User" u
-      WHERE u.id = $1
-      LIMIT 1`,
-    parent.appUserId,
-  );
-  const row = rows[0];
-  if (!row) throw new Error("계정을 찾을 수 없습니다.");
-
-  const activeEnrollmentCount = Number(row.activeEnrollments ?? 0);
+  const account = await requireOwnAccount();
+  const row = await readWithdrawalRecord(account.appUserId);
+  if (!row || row.withdrawnAt)
+    throw new OwnAccountError("현재 계정을 확인하지 못했습니다.");
   return {
     state: withdrawalState(row),
-    activeEnrollmentCount,
-    // 재학 중이면 신청만 접수되고 원장 확인을 기다린다.
-    immediate: decideWithdrawal({ activeEnrollmentCount }).action === "EXECUTE_NOW",
+    activeEnrollmentCount: Number(row.activeEnrollments),
+    activeWorkCount: Number(row.activeWorkCount),
+    ...policyFor(row),
   };
 }
 
-/**
- * 학부모가 탈퇴를 신청한다.
- * 재학 중이 아니면 그 자리에서 처리하고, 재학 중이면 신청만 받아 원장에게 알린다.
- */
+/** 모든 역할은 본인의 탈퇴를 요청할 수 있다. 관리 권한·담당 업무가 있으면 자동 삭제하지 않는다. */
 export async function requestAccountWithdrawal() {
-  const parent = await requireVerifiedParent();
-
-  const rows = await prisma.$queryRawUnsafe<
-    { name: string; withdrawRequestedAt: Date | null; withdrawnAt: Date | null; activeEnrollments: number }[]
-  >(
-    `SELECT u.name, u."withdrawRequestedAt", u."withdrawnAt",
-            (SELECT COUNT(*)::int
-               FROM "Enrollment" e
-               JOIN "Student" s ON s.id = e."studentId"
-              WHERE s."parentId" = u.id AND e.status = 'ACTIVE') AS "activeEnrollments"
-       FROM "User" u
-      WHERE u.id = $1
-      LIMIT 1`,
-    parent.appUserId,
-  );
-  const row = rows[0];
-  if (!row) return { error: "계정을 찾을 수 없습니다." };
-  if (!canRequestWithdrawal(row)) {
-    return {
-      error: withdrawalState(row) === "PENDING"
-        ? "이미 탈퇴를 신청하셨습니다. 원장님 확인을 기다리고 있습니다."
-        : "이미 탈퇴 처리된 계정입니다.",
-    };
-  }
-
-  const decision = decideWithdrawal({ activeEnrollmentCount: Number(row.activeEnrollments ?? 0) });
-
-  // 신청 시각은 어느 쪽이든 먼저 남긴다. 즉시 처리가 중간에 실패해도 신청이 사라지지 않는다.
-  await prisma.$executeRawUnsafe(
-    `UPDATE "User" SET "withdrawRequestedAt" = NOW(), "updatedAt" = NOW()
-      WHERE id = $1 AND "withdrawRequestedAt" IS NULL AND "withdrawnAt" IS NULL`,
-    parent.appUserId,
-  );
-
-  if (decision.action === "EXECUTE_NOW") {
-    const result = await executeAccountWithdrawal(parent.appUserId);
-    if ("error" in result) return result;
-    revalidatePath("/mypage");
-    return { ok: true, withdrawn: true };
-  }
-
-  // 재학 중 — 원장이 확인해야 한다. 알림이 실패해도 신청은 이미 접수됐다.
   try {
-    await notifyAdmins(
-      "ACCOUNT_WITHDRAWAL_REQUEST",
-      "회원 탈퇴 신청",
-      `${row.name} 학부모님이 탈퇴를 신청했습니다. 수강 중인 반 ${decision.activeEnrollmentCount}건이 있어 확인이 필요합니다.`,
-      "/admin/withdrawals",
-      { notifyCoaches: false, eventId: `withdrawal:${parent.appUserId}` },
+    const account = await requireOwnAccount();
+    const row = await readWithdrawalRecord(account.appUserId);
+    if (!row || !canRequestWithdrawal(row))
+      return {
+        error: row?.withdrawRequestedAt
+          ? "이미 탈퇴를 신청하셨습니다. 처리 상태를 확인해 주세요."
+          : "현재 계정을 확인하지 못했습니다.",
+      };
+    const policy = policyFor(row);
+    const changed = await prisma.$executeRawUnsafe(
+      `UPDATE "User" SET "withdrawRequestedAt"=NOW(),"updatedAt"=NOW()
+      WHERE id=$1 AND "withdrawRequestedAt" IS NULL AND "withdrawnAt" IS NULL`,
+      account.appUserId,
     );
-  } catch (error) {
-    console.error("[requestAccountWithdrawal] 원장 알림 실패:", error);
-  }
-
-  revalidatePath("/mypage");
-  return { ok: true, withdrawn: false, activeEnrollmentCount: decision.activeEnrollmentCount };
-}
-
-/** 학부모가 신청을 취소한다. 이미 처리된 탈퇴는 되돌릴 수 없다. */
-export async function cancelAccountWithdrawalRequest() {
-  const parent = await requireVerifiedParent();
-  const rows = await prisma.$queryRawUnsafe<{ withdrawRequestedAt: Date | null; withdrawnAt: Date | null }[]>(
-    `SELECT "withdrawRequestedAt", "withdrawnAt" FROM "User" WHERE id = $1 LIMIT 1`,
-    parent.appUserId,
-  );
-  const row = rows[0];
-  if (!row) return { error: "계정을 찾을 수 없습니다." };
-  if (!canCancelWithdrawalRequest(row)) {
-    return {
-      error: withdrawalState(row) === "WITHDRAWN"
-        ? "이미 탈퇴 처리된 계정은 되돌릴 수 없습니다."
-        : "취소할 탈퇴 신청이 없습니다.",
-    };
-  }
-
-  await prisma.$executeRawUnsafe(
-    `UPDATE "User" SET "withdrawRequestedAt" = NULL, "updatedAt" = NOW()
-      WHERE id = $1 AND "withdrawnAt" IS NULL`,
-    parent.appUserId,
-  );
-  revalidatePath("/mypage");
-  return { ok: true };
-}
-
-/**
- * 실제 탈퇴 처리. 학부모의 즉시 탈퇴와 원장의 승인이 **같은 함수**를 쓴다
- * (두 경로가 갈리면 한쪽만 고쳐지는 사고가 난다 — 이 프로젝트에서 이미 겪었다).
- *
- * ⚠️ 순서가 중요하다. Auth 계정을 **먼저** 지운다.
- *    DB 를 먼저 익명화하고 Auth 삭제가 실패하면 «이름·이메일은 익명인데 로그인은 되는» 상태가 되어
- *    자녀 정보를 계속 볼 수 있다. Auth 를 먼저 지우면 실패해도 로그인이 막힌 것뿐이라 다시 시도하면 된다.
- */
-export async function executeAccountWithdrawal(userId: string) {
-  const rows = await prisma.$queryRawUnsafe<{ authUserId: string | null; withdrawnAt: Date | null }[]>(
-    `SELECT "authUserId", "withdrawnAt" FROM "User" WHERE id = $1 LIMIT 1`,
-    userId,
-  );
-  const row = rows[0];
-  if (!row) return { error: "계정을 찾을 수 없습니다." };
-  if (row.withdrawnAt) return { ok: true, alreadyWithdrawn: true };
-
-  // 1) 로그인 수단부터 없앤다. authUserId 가 없는 계정(아직 Auth 연결 전)은 건너뛴다.
-  if (row.authUserId) {
-    const { error } = await createAdminClient().auth.admin.deleteUser(row.authUserId);
-    // 이미 지워져 있으면(not found) 계속 진행한다 — 재시도 중일 수 있다.
-    if (error && !/not found|User not found/i.test(error.message)) {
-      console.error("[executeAccountWithdrawal] Auth 계정 삭제 실패:", error.message);
-      return { error: "로그인 계정을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요." };
+    if (changed !== 1)
+      return { error: "계정 상태가 변경되었습니다. 다시 확인해 주세요." };
+    if (policy.immediate) {
+      const result = await executeAccountWithdrawal(account.appUserId);
+      if ("error" in result) return result;
+      return { ok: true, withdrawn: true };
     }
-  }
-
-  // 2) 개인정보 익명화 — 여기까지 오면 로그인은 이미 불가능하다.
-  try {
-    await prisma.$transaction(async (tx) => {
-      const clearList = CLEARED_USER_COLUMNS.map((column) => `"${column}" = NULL`).join(", ");
-      await tx.$executeRawUnsafe(
-        `UPDATE "User"
-            SET email = $2, name = $3, ${clearList},
-                "withdrawRequestedAt" = COALESCE("withdrawRequestedAt", NOW()),
-                "withdrawnAt" = NOW(), "updatedAt" = NOW()
-          WHERE id = $1`,
-        userId,
-        anonymizedEmail(userId),
-        ANONYMIZED_NAME,
-      );
-
-      await anonymizeChildConnections(tx, userId);
-
-      // 푸시 알림을 계속 받으면 탈퇴한 사람에게 학원 소식이 간다.
-      await tx.$executeRawUnsafe(`DELETE FROM "PushSubscription" WHERE "userId" = $1`, userId);
-
-      // 추가 역할(선생님·기사님)과 대기 중인 신청도 회수한다. 탈퇴는 행을 지우지 않고 익명화하므로
-      // ON DELETE CASCADE 가 걸리지 않는다 — 여기서 직접 닫지 않으면 «탈퇴한 회원»에게 권한 기록이 남는다.
-      // 행은 지우지 않고 REVOKED 로 남긴다: 누가 언제 어떤 권한을 가졌었는지는 기록으로 필요하다.
-      await tx.$executeRawUnsafe(
-        `UPDATE "UserRoleGrant"
-            SET status = 'REVOKED', "decidedAt" = NOW(), note = COALESCE(note, '회원 탈퇴'), "updatedAt" = NOW()
-          WHERE "userId" = $1 AND status IN ('PENDING', 'ACTIVE')`,
-        userId,
-      );
-
-      // 카카오 연결은 행을 지우지 않고 끊는다 — KakaoParentIntake 가 Cascade 라서
-      // 지우면 결석 신고 같은 운영 기록이 함께 사라진다. userKeyHash 는 복원 불가한 해시이고
-      // 소유자 연결이 끊기면 누구인지 알 수 없다.
-      await tx.$executeRawUnsafe(
-        `UPDATE "KakaoParentIdentity"
-            SET "parentUserId" = NULL, status = 'REVOKED',
-                "revokedAt" = COALESCE("revokedAt", NOW()), "updatedAt" = NOW()
-          WHERE "parentUserId" = $1`,
-        userId,
-      );
-
-      // 셔틀 승·하차 좌표는 위치정보다. 수업을 안 다니면 보관할 근거가 없다.
-      await tx.$executeRawUnsafe(
-        `DELETE FROM "StudentShuttleLocation"
-          WHERE "studentId" IN (SELECT id FROM "Student" WHERE "parentId" = $1)`,
-        userId,
-      );
-    });
+    // 외부 문자·푸시는 보내지 않는다. 관리자 신청 목록에서 같은 접수 원장을 확인한다.
+    revalidatePath("/account");
+    revalidatePath("/account/withdraw");
+    revalidatePath("/mypage");
+    revalidatePath("/admin/withdrawals");
+    return {
+      ok: true,
+      withdrawn: false,
+      activeEnrollmentCount: Number(row.activeEnrollments),
+      reviewReason: policy.reviewReason,
+    };
   } catch (error) {
-    console.error("[executeAccountWithdrawal] 개인정보 익명화 실패:", error);
-    // 로그인은 이미 막혔으므로 피해는 없다. 다시 실행하면 이어서 처리된다.
-    return { error: "탈퇴 처리 중 오류가 발생했습니다. 다시 시도해주세요." };
+    return withdrawalFailure(error);
   }
+}
 
-  revalidatePath("/mypage");
-  revalidatePath("/admin");
-  return { ok: true };
+export async function cancelAccountWithdrawalRequest() {
+  try {
+    const account = await requireOwnAccount();
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT id FROM "User" WHERE id = $1 FOR UPDATE`, account.appUserId);
+      // 삭제 처리의 행 잠금을 기다리는 사이 Auth가 사라졌다면 접수 표시를 지우지 않는다.
+      const current = await requireOwnAccount();
+      if (current.appUserId !== account.appUserId || current.authUserId !== account.authUserId) {
+        throw new OwnAccountError("현재 계정을 다시 확인해 주세요.", 403);
+      }
+      const row = await readWithdrawalRecord(account.appUserId, tx);
+      if (!row || !canCancelWithdrawalRequest(row)) throw new OwnAccountError("취소할 탈퇴 신청이 없습니다.", 409);
+      const count = await tx.$executeRawUnsafe(
+        `UPDATE "User" SET "withdrawRequestedAt" = NULL, "updatedAt" = NOW()
+          WHERE id = $1 AND "withdrawRequestedAt" IS NOT NULL AND "withdrawnAt" IS NULL`,
+        account.appUserId,
+      );
+      if (count !== 1) throw new OwnAccountError("처리 상태가 변경되었습니다. 다시 확인해 주세요.", 409);
+    }, { isolationLevel: "Serializable", timeout: 30000 });
+    revalidatePath("/account/withdraw");
+    revalidatePath("/mypage");
+    revalidatePath("/admin/withdrawals");
+    return { ok: true };
+  } catch (error) {
+    return withdrawalFailure(error);
+  }
+}
+
+/** 공개 Server Action 자체에서 대상·권한을 재검사하므로 다른 계정 ID를 직접 보내도 삭제할 수 없다. */
+export async function executeAccountWithdrawal(userId: string) {
+  try {
+    const account = await requireOwnAccount();
+    const target = typeof userId === "string" ? userId.trim() : "";
+    if (!target || target.length > 100)
+      return { error: "대상 계정을 확인해 주세요." };
+    const self = target === account.appUserId;
+    if (!self && !["ADMIN", "VICE_ADMIN"].includes(account.appUserRole))
+      return { error: "본인 계정만 처리할 수 있습니다." };
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // 관리자·대상 계정의 역할 변경과 탈퇴 처리가 동시에 진행되지 않도록 같은 행을 잠근다.
+        await tx.$queryRawUnsafe(
+          `SELECT id FROM "User" WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE`,
+          [target, account.appUserId],
+        );
+        const actorRows = await tx.$queryRawUnsafe<{ role: string }[]>(
+          `SELECT role::text AS role FROM "User" WHERE id=$1
+        AND ("authUserId"=$2 OR ("authUserId" IS NULL AND id=$2)) AND "withdrawnAt" IS NULL`,
+          account.appUserId,
+          account.authUserId,
+        );
+        if (
+          !actorRows[0] ||
+          (!self && !["ADMIN", "VICE_ADMIN"].includes(actorRows[0].role))
+        )
+          throw new OwnAccountError(
+            "현재 계정의 처리 권한을 확인하지 못했습니다.",
+            403,
+          );
+        const row = await readWithdrawalRecord(target, tx);
+        if (!row) throw new OwnAccountError("계정을 찾을 수 없습니다.", 404);
+        if (row.withdrawnAt) return { ok: true, alreadyWithdrawn: true };
+        if (!row.withdrawRequestedAt)
+          throw new OwnAccountError("탈퇴 신청을 먼저 접수해 주세요.", 409);
+        const policy = policyFor(row);
+        if (policy.reviewReason === "ADMIN_HANDOFF")
+          throw new OwnAccountError(policy.reviewMessage!, 409);
+        if (self && !policy.immediate)
+          throw new OwnAccountError(
+            "관리자 확인이 필요한 계정은 직접 삭제할 수 없습니다.",
+            409,
+          );
+        if (Number(row.activeWorkCount) !== 0)
+          throw new OwnAccountError(
+            "담당 수업·운행·지도자 정보를 먼저 이관한 뒤 처리해 주세요.",
+            409,
+          );
+        // Auth 삭제 → 개인정보 익명화 순서를 유지한다. 로그인 계정만 지워지고 DB 정리가 실패하면 오류로 남겨 재확인한다.
+        const authId = row.authUserId || (self ? account.authUserId : row.id);
+        const removed = await createAdminClient().auth.admin.deleteUser(authId);
+        if (
+          removed.error &&
+          !/not found|user_not_found/i.test(removed.error.message)
+        )
+          throw new OwnAccountError(
+            "로그인 계정을 삭제하지 못했습니다. 다시 시도해 주세요.",
+            503,
+          );
+        const clearList = CLEARED_USER_COLUMNS.map(
+          (column) => `"${column}" = NULL`,
+        ).join(", ");
+        await tx.$executeRawUnsafe(
+          `UPDATE "User"
+        SET email = $2, name = $3, ${clearList},
+        "withdrawRequestedAt" = COALESCE("withdrawRequestedAt", NOW()),"withdrawnAt"=NOW(),"updatedAt"=NOW() WHERE id=$1`,
+          target,
+          anonymizedEmail(target),
+          ANONYMIZED_NAME,
+        );
+        await anonymizeChildConnections(tx, target);
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "PushSubscription" WHERE "userId" = $1`,
+          target,
+        );
+        await tx.$executeRawUnsafe(
+          `UPDATE "UserRoleGrant"
+        SET status = 'REVOKED', "decidedAt" = NOW(), note = COALESCE(note, '회원 탈퇴'), "updatedAt" = NOW()
+        WHERE "userId" = $1 AND status IN ('PENDING', 'ACTIVE')`,
+          target,
+        );
+        await tx.$executeRawUnsafe(
+          `UPDATE "KakaoParentIdentity" SET "parentUserId" = NULL, status = 'REVOKED',
+        "revokedAt"=COALESCE("revokedAt",NOW()),"updatedAt"=NOW() WHERE "parentUserId"=$1`,
+          target,
+        );
+        // 기존 대표 보호자의 좌표 정리 범위만 유지한다. 다른 가족의 학생·출결·수납 기록은 삭제하지 않는다.
+        await tx.$executeRawUnsafe(
+          `DELETE FROM "StudentShuttleLocation" WHERE "studentId" IN (SELECT id FROM "Student" WHERE "parentId" = $1)`,
+          target,
+        );
+        return { ok: true };
+      },
+      { isolationLevel: "Serializable", timeout: 30000 },
+    );
+    if (self && result.ok) {
+      const supabase = await createClient();
+      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    }
+    revalidatePath("/account");
+    revalidatePath("/mypage");
+    revalidatePath("/admin/withdrawals");
+    return result;
+  } catch (error) {
+    return withdrawalFailure(error);
+  }
 }

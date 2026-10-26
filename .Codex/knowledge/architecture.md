@@ -346,3 +346,9 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - account/child-links·child-access·child-link-policy와 api/account/child-links를 공통 경계로 둔다. ParentStudentAccess/ChildLinkRequest/ChildIdentityChallenge는 별도 접근·기존부모승인·단회인증 원장이다. 기본 비활성·운영 미적용.
 - mypage/children 및 account/children은 같은 클라이언트를 재사용한다. 전자는 학부모 앱 영역, 후자는 자녀없는 직원 온보딩이다. AccountLinks는 mypage/layout에서 공통 제공한다.
 - 활성 배포 사전검사는 scripts/child-connections-db-preflight.mjs. 인증 브랜드 설정은 lib/identity/brand.ts, 운영 채널 설정값과 분리한다.
+
+## 2026-10-27 통합 앱·공통 계정 기반
+- Android 기존 네이티브 위치 서비스 위에 일반 공식 웹 화면 진입을 분리한다. GPS는 최상위 공식 driver 토큰 경로만 가능하며 계정 기반 staff/run은 연계 미완으로 차단한다.
+- iOS UIKit/WKWebView 프로젝트는 apps/stiz-ios, 수동 무서명 Codemagic 구성은 루트 codemagic.yaml. 실제 빌드·서명·스토어 제출은 분리한다.
+- /account·/account/withdraw는 자녀 유무와 무관한 직접 Auth 바인딩 본인 관리다. 서버 액션 자체가 최신 대상/역할/요청을 재확인하며 업무 이력은 보존한다.
+- 정본 docs/native-app-foundation.md, docs/stiz-ios-codemagic.md 및 apps/driver-android/UNIFIED_FOUNDATION.md.

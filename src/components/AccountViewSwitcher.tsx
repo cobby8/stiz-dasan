@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { AccountViewOption } from "@/lib/account-views";
 import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 
-type FamilyNavigationOption = { key: "family"; label: string; href: "/account/children" };
+type FamilyNavigationOption = { key: "family"; label: string; href: "/account/children" } | {key:"account";label:string;href:"/account"};
 const familyOption: FamilyNavigationOption = { key: "family", label: "자녀·가족 연결", href: "/account/children" };
 
 type AccountViewSwitcherProps = {
@@ -54,7 +54,7 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
   }, [open]);
 
   const canManageFamily = views.some(view => view.key === "admin" || view.key === "teacher" || view.key === "driver");
-  if (views.length < 2 && !canManageFamily) return null;
+  if (views.length === 0) return null;
 
   const options = (
     <nav aria-label="이용 화면 전환" className="space-y-1">
@@ -84,6 +84,11 @@ export default function AccountViewSwitcher({ views, variant = "menu", placement
         <span>{familyOption.label}</span>
         {installed && scope !== null && <span className="text-xs font-medium text-[var(--color-academy-muted)]">앱 밖의 브라우저 화면으로 이동</span>}
       </Link>}
+      <Link href="/account" prefetch={false}
+        className="flex min-h-11 items-center justify-between border-t border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+        onClick={event=>{onNavigate?.(event,{key:"account",label:"내 계정",href:"/account"});setOpen(false);}}>
+        <span>내 계정</span><span className="material-symbols-outlined text-lg" aria-hidden="true">manage_accounts</span>
+      </Link>
     </nav>
   );
 

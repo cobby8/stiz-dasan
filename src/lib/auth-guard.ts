@@ -72,11 +72,20 @@ async function getAppUserRole(email: string): Promise<AppUserRoleRow | null> {
 
   const cached = roleCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    // 다른 서버에서 탈퇴를 마쳐도 이 서버의 옛 역할 캐시가 계정을 다시 열면 안 된다.
+    const active = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+      cached.id,
+    );
+    if (!active[0]) {
+      roleCache.delete(cacheKey);
+      return null;
+    }
     return cached;
   }
 
   const rows = await prisma.$queryRawUnsafe<AppUserRoleRow[]>(
-    `SELECT id, name, role FROM "User" WHERE email = $1 LIMIT 1`,
+    `SELECT id, name, role FROM "User" WHERE email = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
     email,
   );
 
@@ -112,6 +121,29 @@ export async function requireAuth() {
     : null;
 
   if (!claimsResult.error && claimsUser) {
+    // 탈퇴 신청 중이거나 직접 연결이 없는 계정은 실제 로그인 상태를 다시 확인한다.
+    // Auth 삭제 후 DB 정리가 실패해도 아직 유효한 옛 JWT로 직접 액션을 호출할 수 없다.
+    // 조회 실패는 그대로 거절하며 이름·이메일로 다른 계정을 연결하지 않는다.
+    const withdrawalRows = await prisma.$queryRawUnsafe<Array<{
+      withdrawRequestedAt: Date | null;
+      withdrawnAt: Date | null;
+    }>>(
+      `SELECT "withdrawRequestedAt", "withdrawnAt" FROM "User"
+        WHERE ("authUserId" = $1 OR ("authUserId" IS NULL AND id = $1))
+        LIMIT 2`,
+      claimsUser.id,
+    );
+    if (withdrawalRows.length > 1) throw new Error("연결된 계정을 다시 확인해 주세요.");
+    const withdrawal = withdrawalRows[0];
+    if (withdrawal?.withdrawnAt) throw new Error("인증이 필요합니다. 로그인해주세요.");
+    // 익명화로 연결이 지워진 계정과 최초 간편로그인 계정은 실제 Auth를 확인한다.
+    if (!withdrawal || withdrawal.withdrawRequestedAt) {
+      const fresh = await supabase.auth.getUser();
+      if (fresh.error || !fresh.data?.user || fresh.data.user.id !== claimsUser.id) {
+        throw new Error("인증이 필요합니다. 로그인해주세요.");
+      }
+      return userFromSupabaseUser(fresh.data.user);
+    }
     return claimsUser;
   }
 

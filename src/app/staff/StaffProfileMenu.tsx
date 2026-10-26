@@ -142,6 +142,9 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
               <AccountViewSwitcher views={accountViews} variant="list" onNavigate={(event, view) => requestPublicNavigation(event, view.href)} />
             </div>}
 
+            <Link href="/account" onClick={event=>requestPublicNavigation(event,"/account")} className="mb-3 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gray-100 text-sm font-bold text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200">
+              <span className="material-symbols-outlined" aria-hidden="true">manage_accounts</span>내 계정
+            </Link>
             <div className="grid grid-cols-2 gap-2">
               <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gray-100 text-sm font-bold text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
                 <span className="material-symbols-outlined" aria-hidden="true">install_mobile</span>설치 안내

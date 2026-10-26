@@ -12,7 +12,7 @@ import test from "node:test";
 const myPage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
 const layout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 const page = fs.readFileSync("src/app/mypage/withdraw/page.tsx", "utf8");
-const client = fs.readFileSync("src/app/mypage/withdraw/WithdrawClient.tsx", "utf8");
+const client = fs.readFileSync("src/app/mypage/withdraw/WithdrawClient.tsx", "utf8").replace(/\r\n/g, "\n");
 
 test("마이페이지에서 탈퇴 화면으로 가는 길이 있다", () => {
   assert.match(myPage, /href="\/mypage\/withdraw"/);
@@ -56,7 +56,7 @@ test("재학 중이면 즉시 삭제가 아니라 신청임을 누르기 전에 
   assert.match(client, /수강 중인 반/);
   assert.match(client, /탈퇴 신청으로 접수/);
   // 버튼 글자도 상황에 따라 달라야 한다 — "삭제하기"를 눌렀는데 신청만 되면 속은 느낌이 든다.
-  assert.match(client, /initial\.immediate \? "계정 삭제하기" : "탈퇴 신청하기"/);
+  assert.match(client, /initial\.immediate\s*\? "계정 삭제하기"\s*: "탈퇴 신청하기"/);
 });
 
 test("신청 상태에서는 취소할 수 있고, 처리된 뒤에는 되돌릴 수 없다", () => {

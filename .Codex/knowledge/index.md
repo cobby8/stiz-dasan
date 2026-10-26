@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-27: 통합앱·공통계정 첫 그룹 구현/독립 검증. docs/native-app-foundation.md 정본, 전체2528/학생5·934소스격리build일치·PG24/iOS정적40/Java154/관찰자19. Codemagic STIZ 별도앱만 등록, 원격실행/푸시/배포0. 구조/결정/오류 갱신·지식본문5개 유지.
+
 > 2026-10-27: 사용자 명시 푸시·배포 승인으로61528427 main반영. 운영 자녀연결 활성값 없음(기본off), 전용MID미발급·새표미적용은유지. 코드배포 도메인/브라우저검증 실행정본 .tmp/child-connections-release/. 운영DB·발송·환경설정·기존BDR채널 변경 없음.
 
 > 2026-10-27: 가족연결·스포츠업무UI 승인 로컬 구현. docs/child-connections-and-sport-workspace.md 및 .tmp/child-connections-qa/ 정본. 학생/대표청구/역할보존, 미성년부모없는학원승인0·성인본인연결·결제소유권분리. 구조/결정/오류/교훈/관례 갱신, 지식본문5개 유지. 전용MID미발급·운영DB/발송/푸시/배포 미실행. 전체2514/학생5·독립107/JS0·tsc/Prisma/lint 통과, 최종928소스 생산빌드 확인.

@@ -38,7 +38,7 @@ test("탈퇴 계정의 옛 JWT와 id fallback은 학부모 가드를 다시 열�
   const fixture=guardFixture(true);
   assert.equal((await fixture.auth.getVerifiedParentState()).status,"NO_APP_ACCOUNT");
   await assert.rejects(fixture.auth.requireVerifiedParent());
-  assert.match(fixture.queries[0],/"withdrawnAt" IS NULL/);
+  assert.ok(fixture.queries.some(sql=>/"withdrawnAt" IS NULL/.test(sql)));
 });
 test("탈퇴 계정은 옛 JWT가 있어도 역할 전환에 학부모 화면이 나타나지 않는다",async()=>{
   const fixture=guardFixture(true);

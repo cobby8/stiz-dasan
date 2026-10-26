@@ -18,7 +18,7 @@ const {
   RETAINED_TABLES,
 } = await loadTsModule("src/lib/account/withdrawal.ts");
 
-const action = fs.readFileSync("src/app/actions/parent-account.ts", "utf8");
+const action = fs.readFileSync("src/app/actions/parent-account.ts", "utf8").replace(/\r\n/g, "\n");
 
 // ── 상태 판정 ────────────────────────────────────────────────────────────────
 test("두 시각으로 계정 상태를 정한다", () => {
@@ -115,7 +115,7 @@ test("지우는 것은 로그인 수단·연락 수단·위치정보뿐이다", 
   assert.doesNotMatch(action, /DELETE\s+FROM\s+"KakaoParentIdentity"/);
   // 비울 칸은 액션에 적지 않고 상수에서 만든다 — 두 곳에 적으면 한쪽만 늘어난다.
   // 그래서 리터럴을 찾는 게 아니라 «상수를 써서 NULL 로 만든다»를 확인한다.
-  assert.match(action, /CLEARED_USER_COLUMNS\.map\(\(column\) => `"\$\{column\}" = NULL`\)/);
+  assert.match(action, /CLEARED_USER_COLUMNS\.map\(\s*\(column\) => `"\$\{column\}" = NULL`/);
   // 그 상수가 로그인·연락 수단을 빠뜨리지 않았는지는 목록 자체로 본다.
   for (const column of ["phone", "phoneVerifiedAt", "authUserId"]) {
     assert.ok(CLEARED_USER_COLUMNS.includes(column), `${column} 가 비우는 목록에 없다`);
@@ -129,19 +129,19 @@ test("탈퇴 경로가 모두 인증을 거치고, 즉시 탈퇴와 승인이 �
   for (const fn of ["getAccountWithdrawalStatus", "requestAccountWithdrawal", "cancelAccountWithdrawalRequest"]) {
     const start = action.indexOf(`export async function ${fn}`);
     assert.ok(start > 0, `${fn} 가 없다`);
-    const body = action.slice(start, start + 400);
-    assert.match(body, /requireVerifiedParent\(\)/, `${fn} 가 학부모 인증을 거치지 않는다`);
+    const body = action.slice(start, start + 500);
+    assert.match(body, /requireOwnAccount\(\)/, `${fn} 가 본인 계정 인증을 거치지 않는다`);
   }
   // 두 경로가 갈리면 한쪽만 고쳐지는 사고가 난다(이 프로젝트에서 이미 겪었다).
-  assert.match(action, /executeAccountWithdrawal\(parent\.appUserId\)/);
+  assert.match(action, /executeAccountWithdrawal\(account\.appUserId\)/);
   assert.match(action, /export async function executeAccountWithdrawal/);
 });
 
-test("중복 실행과 알림 실패가 탈퇴를 막지 않는다", () => {
+test("중복 실행을 구분하고 외부 알림 없이 접수한다", () => {
   // 이미 탈퇴한 계정을 다시 처리하면 withdrawnAt 이 덮여 보관 기산일이 밀린다.
   assert.match(action, /if \(row\.withdrawnAt\) return \{ ok: true, alreadyWithdrawn: true \}/);
   // 신청 시각은 한 번만 남긴다.
   assert.match(action, /COALESCE\("withdrawRequestedAt", NOW\(\)\)/);
   // 원장 알림이 실패해도 신청은 이미 접수된 상태여야 한다.
-  assert.match(action, /catch[\s\S]*?원장 알림 실패/);
+  assert.doesNotMatch(action, /notifyAdmins|sendPush|sendSms/);
 });
