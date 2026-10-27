@@ -2,7 +2,7 @@
 
 ## 현재 진행: 등록 아이폰용 격리 서명 시험
 - 사용자 후속 승인으로 STIZ 전용 Ad Hoc 프로파일을 연결하고 `stiz-ios-sandbox-adhoc` 수동 빌드를 1회 시작했다.
-- [서명 시험 #1](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6ae0ed15206ce93970c693ed), 실제 소스 `8d19749e`, 검증 브랜치·M2·SSH/VNC 끔. 아직 Mac 배정 대기이며 설치 완료를 뜻하지 않는다.
+- [서명 시험 #1](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6ae0ed15206ce93970c693ed), 실제 소스 `8d19749e`, 검증 브랜치·M2·SSH/VNC 끔.03:34 KST 시작, `finished` 1분40초. 서명 IPA 111.22KB·검증 ZIP 1.16KB 생성과 정상 다운로드를 확인했다. 실제 아이폰 설치·실행은 별도다.
 - [현재 정본](stiz-ios-signed-device-validation.md)에 서명·IPA·실기기 결과를 이어서 기록한다. 운영 홈페이지·main·TestFlight 업로드는 계속 제외한다.
 
 2026-10-27 사용자 요청에 따라 BDR 기록앱에서 사용한 **Codemagic 원격 Mac → TestFlight** 방식을 채택한다. GitHub Actions로 별도 경로를 만들지 않는다. BDR는 Flutter이며 STIZ는 기존 웹 업무 화면을 UIKit/WKWebView로 여는 구조이므로 빌드 명령은 다르다.
