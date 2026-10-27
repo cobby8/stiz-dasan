@@ -30,6 +30,7 @@ final class NativeAuthCoordinator: NSObject, ASWebAuthenticationPresentationCont
     static var enabled: Bool {
         // 개발용 복귀 주소는 출시 빌드에서 켜지 않는다. 정식 서명·HTTPS 복귀는 별도 출시 준비다.
         #if DEBUG
+        guard !NavigationPolicy.sandbox.isRequested else { return false }
         return Bundle.main.object(forInfoDictionaryKey: "STIZNativeAuthDevelopmentEnabled") as? Bool == true
         #else
         return false

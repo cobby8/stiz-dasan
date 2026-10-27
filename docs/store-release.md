@@ -11,7 +11,7 @@
 | 구분 | 확인한 사실 | 출시 전 남은 조건 |
 |---|---|---|
 | Android | `apps/driver-android` WebView+위치 서비스 통합 기반. `/store-app` 진입, target/compile SDK 36, 최소 API 26 | 정식 패키지·업턴랩스 서명·스토어 소유 확인, 실제 설치·업데이트 |
-| Android 산출물 | debug `kr.stiz.driver.unified`, 0.1.0(1). release는 `kr.stiz.driver` unsigned | debug 자동 서명은 정식 배포 서명이 아님. 최종 식별자·서명 확정 필요 |
+| Android 산출물 | 기본 debug `kr.stiz.driver.unified`, 이번 격리 APK `kr.stiz.driver.sandbox`, 0.1.0(1). release는 `kr.stiz.driver` unsigned | debug 자동 서명은 정식 배포 서명이 아님. 최종 식별자·서명 확정 필요 |
 | iOS | `apps/stiz-ios` UIKit/WKWebView, 개발용 `kr.stiz.academy.dev`, 최소 iOS 16, 0.1.0(1) | 정식 Bundle ID·Apple 팀·기기용 프로파일·서명 IPA |
 | iOS 컴파일 | Codemagic #2의 `1954bfd8`에서 실제 Swift 38+13·Xcode arm64/x86_64 성공, simulator zip 233.80KB 표시 | 시뮬레이터 UI·파일 내부·아이폰 설치 미검증. 이 zip은 아이폰용 IPA가 아님 |
 | 실행 차단 | 검증 브랜치 Vercel 자동 배포 차단, Codemagic 수동 실행, Apple 서명·업로드 단계 없음 | 추가 원격 빌드·설치·서명·운영 배포·TestFlight·제출은 각각 승인 필요 |
@@ -73,7 +73,7 @@ Apple 4.8 로그인 요건은 실제 로그인·서비스 유형과 예외로 �
 
 ## 5. 네이티브·스토어 남은 작업
 
-- **안전한 시험:** 합성 계정·자료의 격리 HTTPS 환경과 실제 앱 인증 계약을 먼저 준비한다. iOS 현재 주소는 운영 호스트 고정이므로 설치만으로 안전한 시험 환경이 되지 않는다.
+- **안전한 시험:** 후속 승인으로 [합성 HTTPS 환경](native-device-sandbox.md)과 Android 시험 APK를 준비했다. iOS는 Debug의 명시 사설 HTTPS 설정만 허용하고 신규 Swift 컴파일·기기 설치는 미검증이다. 실제 앱 인증 계약·설치·OS 신뢰는 별도 확인한다. 기본/Release 운영 주소는 유지한다.
 - **기능 빈틈:** 마이크·다운로드·일부 새 창 지도 링크·원격 푸시·로그인 기반 `/staff/run` 네이티브 위치 연결은 추가 구현/검증 대상이다. 공개 `/driver/<token>` 위치 서비스만으로 통합 기사 기능 완료를 선언하지 않는다.
 - **실기기:** 사진·카메라·복수 선택·HEIC·취소·파일·전화·지도·SHOP·결제 복귀·회전·키보드·확대·오프라인을 역할별 시험한다. 웹 통과를 네이티브 통과로 바꾸지 않는다.
 - **앱 링크:** assetlinks 라우트는 설정 전 404다. 최종 패키지와 실제 설치에 사용된 서명 인증서 지문을 확인하며 업로드 키와 Play 서명 키를 무조건 모두 등록하지 않는다. iOS Associated Domains/AASA도 별도 준비한다. 개발 URL scheme은 검증 링크가 아니다.

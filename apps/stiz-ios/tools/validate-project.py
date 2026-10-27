@@ -21,6 +21,9 @@ with (root / "STIZ/Info.plist").open("rb") as handle:
 assert not any("Location" in key for key in info), "iOS 위치 권한은 이 그룹 범위 아님"
 assert "NSAppTransportSecurity" not in info, "HTTP/TLS 예외 금지"
 assert info["STIZNativeAuthDevelopmentEnabled"] is False, "새 인증 기본 비활성"
+assert info["STIZSandboxOrigin"] == "$(STIZ_SANDBOX_ORIGIN)", "시험 주소는 명시 빌드 설정만 사용"
+assert info["NSLocalNetworkUsageDescription"], "개발용 로컬 서버 접근 안내"
+assert project.count('STIZ_SANDBOX_ORIGIN = "";') == 2, "Debug/Release 기본 시험 주소는 비어 있어야 함"
 assert info["NSCameraUsageDescription"] and info["NSPhotoLibraryUsageDescription"]
 assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
 assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrientations"]
@@ -31,4 +34,10 @@ workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
 assert "events: []" in workflow and "CODE_SIGNING_ALLOWED=NO" in workflow
 assert "publishing:" not in workflow and "app_store_connect:" not in workflow
 assert "bdr-asc-key" not in workflow and "mac_mini_m2" in workflow
+view = (root / "STIZ/WebViewController.swift").read_text(encoding="utf-8")
+assert "WKContentRuleListStore.default().compileContentRuleList" in view
+assert "guard sandboxProtectionReady else { return }" in view, "통신 차단 준비 전 페이지 로드 금지"
+assert "? .nonPersistent() : .default()" in view, "시험 저장소를 운영 쿠키와 분리"
+assert "serverTrust" not in view and "NSAppTransportSecurity" not in view, "TLS 신뢰 우회 금지"
+assert not re.search(r"\.map\(\s*NavigationPolicy\.allowsSubframe\s*\)", view), "기본 인자가 있는 함수는 Optional.map에 명시 closure로 전달"
 print(f"STIZ iOS 구성 검사 통과: 프로젝트 참조 {len(defined)}개, plist·scheme·색상·수동 무서명 구성 (실제 빌드 미실행)")

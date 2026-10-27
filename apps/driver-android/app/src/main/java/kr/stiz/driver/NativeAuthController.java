@@ -43,7 +43,7 @@ final class NativeAuthController {
         Attempt(String page) { this.page = page; }
     }
     NativeAuthController(Activity activity, WebView web) { this.activity = activity; this.web = web; }
-    static boolean enabled() { return BuildConfig.DEBUG && BuildConfig.STIZ_UNIFIED_APP && BuildConfig.STIZ_NATIVE_AUTH; }
+    static boolean enabled() { return BuildConfig.DEBUG && !BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && BuildConfig.STIZ_NATIVE_AUTH; }
 
     boolean begin(Uri uri, boolean userGesture) {
         if (!enabled() || destroyed || pending != null || consumePage != null || uri == null) return false;

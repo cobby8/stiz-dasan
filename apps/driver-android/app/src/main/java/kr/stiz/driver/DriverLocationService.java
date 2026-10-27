@@ -43,6 +43,7 @@ public final class DriverLocationService extends Service implements LocationList
         getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel("driver-location", "운행 위치 공유", NotificationManager.IMPORTANCE_LOW));
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (BuildConfig.STIZ_SANDBOX) { stopSelf(); return START_NOT_STICKY; }
         if (intent == null) { stopSelf(); return START_NOT_STICKY; }
         String action = intent.getAction();
         // A notification stop never requests coordinates or restarts tracking.

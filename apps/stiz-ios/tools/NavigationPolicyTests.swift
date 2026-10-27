@@ -70,7 +70,53 @@ struct NavigationPolicyTests {
         precondition(NativeAuthPolicy.callbackCode(URL(string: callback.replacingOccurrences(of: "stiz-academy-dev", with: "stiz-academy-android-dev"))!, flow: flow, state: state) == nil)
         precondition(NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)")!, flow: flow))
         precondition(!NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)&next=https://fake.example")!, flow: flow))
+        // 같은 코드가 Release에서는 시험 주소를 무시하고 기존 운영 정책을 사용해야 한다.
+        precondition(SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: false) == .disabled)
+        precondition(SandboxConfiguration.resolve("", debugBuild: true) == .disabled)
+        precondition(SandboxConfiguration.resolve(nil, debugBuild: true) == .disabled)
+        for host in ["localhost", "127.0.0.1", "10.0.0.2", "172.16.0.2", "172.31.255.2", "192.168.0.2"] {
+            let sandbox = SandboxConfiguration.resolve("https://\(host):8453", debugBuild: true)
+            precondition(sandbox.origin?.host == host)
+            precondition(NavigationPolicy.decide(URL(string: "https://\(host):8453/store-app")!, userInitiated: false, configuration: sandbox) == .website)
+            precondition(NavigationPolicy.decide(URL(string: "https://\(host):8453/__entry/teacher")!, userInitiated: true, configuration: sandbox) == .website)
+            precondition(NavigationPolicy.allowsSubframe(URL(string: "https://\(host):8453/mypage")!, configuration: sandbox))
+        }
+        for origin in [
+            "http://localhost:8453", "https://localhost:8444", "https://localhost", "https://localhost:8453/path",
+            "https://localhost:8453?next=x", "https://localhost:8453#fragment", "https://user:pass@localhost:8453",
+            "https://www.stiz-dasan.kr:8453", "https://fake.example:8453", "https://8.8.8.8:8453",
+            "https://172.15.0.2:8453", "https://172.32.0.2:8453", "https://192.169.0.2:8453",
+            "https://192.168.00.2:8453", "https://192.168.256.2:8453", "https://[::1]:8453",
+            "https://localhost.fake.example:8453", "https://local%68ost:8453", " https://localhost:8453"
+        ] {
+            let invalid = SandboxConfiguration.resolve(origin, debugBuild: true)
+            precondition(invalid == .invalid)
+            precondition(NavigationPolicy.decide(URL(string: "https://www.stiz-dasan.kr/store-app")!, userInitiated: true, configuration: invalid) == .blocked)
+        }
+        let sandbox = SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)
+        for address in [
+            "https://www.stiz-dasan.kr/admin", "https://accounts.google.com/", "https://map.kakao.com/", "tel:000", "mailto:test@example.invalid",
+            "http://192.168.0.2:8453/admin", "https://192.168.0.2:8454/admin", "https://192.168.0.3:8453/admin",
+            "https://192.168.0.2.fake.example:8453/admin", "https://user:pass@192.168.0.2:8453/admin",
+            "https://192.168.0.2:8453/driver/example", "https://192.168.0.2:8453/staff/run",
+            "https://192.168.0.2:8453/staff/shuttle", "https://192.168.0.2:8453/payments/checkout",
+            "https://192.168.0.2:8453/api/payments/confirm", "https://192.168.0.2:8453/checkout"
+        ] {
+            precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: true, configuration: sandbox) == .blocked)
+            precondition(!NavigationPolicy.allowsSubframe(URL(string: address)!, configuration: sandbox))
+        }
+        precondition(NavigationPolicy.decide(URL(string: "https://192.168.0.2:8453/auth/native/start")!, userInitiated: true, configuration: sandbox) == .blockedAuthentication)
+        let rules = try! JSONSerialization.jsonObject(with: Data(sandbox.contentRules!.utf8)) as! [[String: Any]]
+        precondition((rules[0]["action"] as! [String: String])["type"] == "block")
+        let allowed = (rules[1]["trigger"] as! [String: String])["url-filter"]!
+        let expression = try! NSRegularExpression(pattern: allowed)
+        for address in ["https://www.stiz-dasan.kr/", "https://192.168.0.2.fake.example:8453/", "http://192.168.0.2:8453/", "https://192.168.0.2:8454/"] {
+            precondition(expression.firstMatch(in: address, range: NSRange(address.startIndex..., in: address)) == nil)
+        }
+        let address = "https://192.168.0.2:8453/_next/static/app.js"
+        precondition(expression.firstMatch(in: address, range: NSRange(address.startIndex..., in: address)) != nil)
         print("STIZ iOS navigation policy: \(cases.count) cases passed")
         print("STIZ iOS native handoff policy: 13 assertions passed")
+        print("STIZ iOS sandbox policy: valid/invalid origins, release isolation, navigation and resource rules passed")
     }
 }

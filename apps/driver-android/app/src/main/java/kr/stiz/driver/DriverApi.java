@@ -6,6 +6,7 @@ import javax.net.ssl.HttpsURLConnection;
 
 final class DriverApi {
     static JSONObject call(JSONObject session, String action, JSONObject fields) throws Exception {
+        if (BuildConfig.STIZ_SANDBOX) throw new java.io.IOException("Synthetic sandbox does not send device location or run credentials");
         fields.put("action", action).put("sessionId", session.getString("sessionId"));
         if (action.equals("start")) fields.put("token", session.getString("token")).put("secret", session.getString("secret")).put("deviceId", session.getString("deviceId"));
         HttpsURLConnection connection = (HttpsURLConnection) new URL(BuildConfig.STIZ_ORIGIN + "/api/driver/mobile/session").openConnection();

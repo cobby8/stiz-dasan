@@ -12,13 +12,15 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var nativeAwaitingResponse = false
     private var nativeConsumeTimeout: Timer?
     private var pageObservation: NSKeyValueObservation?
+    private var sandboxProtectionReady = !NavigationPolicy.sandbox.isRequested
 
     override func viewDidLoad() {
         super.viewDidLoad()
         nativeAuth = NativeAuthCoordinator(owner: self)
         view.backgroundColor = UIColor(named: "Canvas")
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
+        // 시험 앱은 운영 로그인 쿠키·저장소를 공유하지 않는다.
+        configuration.websiteDataStore = NavigationPolicy.sandbox.isRequested ? .nonPersistent() : .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
@@ -30,12 +32,29 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         webView.allowsBackForwardNavigationGestures = true
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
+        let topInset: CGFloat = NavigationPolicy.sandbox.isRequested ? 28 : 0
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: topInset),
             webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         ])
+        if NavigationPolicy.sandbox.isRequested {
+            let badge = UILabel()
+            badge.text = "시험 환경 · 합성 자료"
+            badge.textAlignment = .center
+            badge.textColor = UIColor(named: "AccentColor")
+            badge.backgroundColor = UIColor(named: "Canvas")
+            badge.font = .preferredFont(forTextStyle: .caption1)
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(badge)
+            NSLayoutConstraint.activate([
+                badge.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+                badge.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+                badge.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                badge.heightAnchor.constraint(equalToConstant: topInset)
+            ])
+        }
         progress.translatesAutoresizingMaskIntoConstraints = false
         progress.hidesWhenStopped = true
         view.addSubview(progress)
@@ -65,10 +84,40 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             recovery.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
             retry.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
         ])
-        reloadPage()
+        prepareSandboxProtection()
+    }
+
+    private func prepareSandboxProtection() {
+        guard NavigationPolicy.sandbox.isRequested else { reloadPage(); return }
+        guard let rules = NavigationPolicy.sandbox.contentRules else {
+            showSandboxFailure("시험 서버 주소가 올바르지 않습니다. 개발용 HTTPS 시험 주소 설정을 확인해 주세요.")
+            return
+        }
+        // 차단 규칙이 준비되기 전에는 첫 페이지도 읽지 않는다. 실패 시 운영 주소로 우회하지 않는다.
+        WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "STIZ-Isolated-Sandbox", encodedContentRuleList: rules) { [weak self] list, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                guard error == nil, let list = list else {
+                    self.showSandboxFailure("시험 통신 차단 설정을 준비하지 못했습니다. 앱을 다시 열어 주세요.")
+                    return
+                }
+                self.webView.configuration.userContentController.add(list)
+                self.sandboxProtectionReady = true
+                self.reloadPage()
+            }
+        }
+    }
+
+    private func showSandboxFailure(_ text: String) {
+        sandboxProtectionReady = false
+        message.text = text
+        webView.isHidden = true
+        retry.isEnabled = false
+        view.viewWithTag(101)?.isHidden = false
     }
 
     @objc private func reloadPage() {
+        guard sandboxProtectionReady else { return }
         view.viewWithTag(101)?.isHidden = true
         webView.isHidden = false
         webView.load(URLRequest(url: lastPage))
@@ -90,6 +139,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         case .external:
             if action.sourceFrame.isMainFrame { UIApplication.shared.open(url) }
         case .blockedAuthentication:
+            if NavigationPolicy.sandbox.isRequested {
+                alert("시험 환경에서는 실제 로그인·발송·결제를 사용할 수 없습니다.")
+                return false
+            }
             if NativeAuthCoordinator.enabled, action.sourceFrame.isMainFrame,
                action.navigationType == .linkActivated, let page = webView.url,
                let provider = NativeAuthPolicy.provider(from: url) {
@@ -117,7 +170,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             }
             alert("앱의 간편로그인은 준비 중입니다. 이메일·비밀번호로 로그인해 주세요. 웹사이트에서는 기존 간편로그인을 사용할 수 있습니다.")
         case .blocked:
-            alert("이 주소는 앱에서 열 수 없습니다. 기사님 운행은 Android 기사님 앱을 이용해 주세요.")
+            alert(NavigationPolicy.sandbox.isRequested ? "시험 앱에서는 시험 서버 안의 화면만 열 수 있습니다." : "이 주소는 앱에서 열 수 없습니다. 기사님 운행은 Android 기사님 앱을 이용해 주세요.")
         }
         return false
     }
@@ -125,7 +178,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         // 앱이 만든 POST에만 단 한 번 허용한다. 웹 링크가 같은 주소를 열어도 통과하지 않는다.
-        if nativeConsumePending {
+        if nativeConsumePending && !NavigationPolicy.sandbox.isRequested {
             nativeConsumePending = false
             if navigationAction.request.httpMethod == "POST",
                navigationAction.request.url?.absoluteString == "https://www.stiz-dasan.kr/auth/native/consume" {
@@ -135,7 +188,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         }
         // iframe은 새 창이나 외부 앱을 열 권한을 얻지 않는다.
         if navigationAction.targetFrame?.isMainFrame == false {
-            decisionHandler(navigationAction.request.url.map(NavigationPolicy.allowsSubframe) == true ? .allow : .cancel)
+            decisionHandler(navigationAction.request.url.map { NavigationPolicy.allowsSubframe($0) } == true ? .allow : .cancel)
             return
         }
         decisionHandler(approve(navigationAction) ? .allow : .cancel)
@@ -174,8 +227,12 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     // 웹의 확인창을 생략하면 탈퇴·변경 확인이 작동하지 않는다. 공식 본문에서만 표시한다.
     private func trustedFrame(_ frame: WKFrameInfo) -> Bool {
         let origin = frame.securityOrigin
-        return frame.isMainFrame && origin.protocol == "https" &&
-            origin.host.lowercased() == "www.stiz-dasan.kr" && (origin.port == 0 || origin.port == 443)
+        var address = URLComponents()
+        address.scheme = origin.protocol
+        address.host = origin.host
+        if origin.port != 0 { address.port = origin.port }
+        guard let url = address.url else { return false }
+        return frame.isMainFrame && NavigationPolicy.matchesWebsiteOrigin(url)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,

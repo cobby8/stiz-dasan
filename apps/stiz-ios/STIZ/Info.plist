@@ -12,6 +12,8 @@
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>STIZNativeAuthDevelopmentEnabled</key><false/>
+  <key>STIZSandboxOrigin</key><string>$(STIZ_SANDBOX_ORIGIN)</string>
+  <key>NSLocalNetworkUsageDescription</key><string>개발용 시험 주소를 직접 설정한 경우, 같은 네트워크의 시험 서버에서 합성 자료를 확인합니다.</string>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>kr.stiz.academy.dev.authentication</string>
     <key>CFBundleURLSchemes</key><array><string>stiz-academy-dev</string></array>

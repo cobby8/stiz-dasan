@@ -1,12 +1,13 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: 통합앱 출시 문서 정정·네 역할 실기기 시험 준비·로컬 사전점검 도구 작성.
-- 현재 단계: 기존 검증기록 f8df73cd 푸시 완료·미푸시0에서 시작. 문서/도구·독립 검증 완료, 통합 로컬 커밋. 정본 docs/native-device-release-readiness.md.
-- 승인 범위: 문서·시험표·키/환경을 읽지 않는 로컬 도구. 서비스 기능·계정·서명·운영 환경·배포·TestFlight·새 원격 빌드·기기설치 변경 없음.
-- 외부 보류: 전용MID/apikey미발급·가족연결off·검증HTTPS앱링크/시험환경/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 신규Swift컴파일은#2로완료, 기기/UI실행·정식서명/TestFlight미실행.
+- 목표: Android·iPhone용 격리 HTTPS 시험 환경 구성, 합성 자료·운영/발송/결제 차단.
+- 현재 단계: 로컬 통합·독립 검증 완료. 합성 HTTPS run-25e9c4bd1ddb0821 실행중, Android sandbox APK완료·iOS 신규컴파일/실기기미검증. 기존 미푸시1개에서 시작.
+- 승인 범위: 합성 시험 서버·개발용 앱 연결·차단 검증. 운영 자료·기존 키/env·발송·결제·운영배포·TestFlight·서명·설치·원격빌드 변경 없음.
+- 외부 보류: 전용MID/apikey미발급·가족연결off·검증앱링크/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 이전1954 Swift는#2완료, 이번sandbox Swift컴파일·기기실행·정식서명/TestFlight미실행.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
+| 격리 HTTPS 시험 환경 | 서버 worker / Android worker / iOS worker / PM·독립QA | 로컬·독립 완료 | docs/native-device-sandbox.md; 전체2581/학생5·서버12·실행55/독립47+18·Java321/산출물24·iOS구성28, 기기/원격0 |
 | 출시 문서·실기기 준비 | 문서 worker / 점검 worker / PM·독립 tester | 완료·로컬 커밋 | docs/native-device-release-readiness.md; 전체2569/학생5·전용13·독립읽기8/링크12·점검7/2/8, 운영/설치0 |
 | 앱 사진·개발 인증 인계 | Android/서버 병렬·PM iOS/갱신·독립QA | 로컬·독립·최종빌드 완료 | docs/native-app-media-auth-followup.md; Android소스27/APK3일치·운영/설치0·#2Swift컴파일통과·사진runtime미검증 |
 | Codemagic 검증 브랜치 | PM 실행·독립QA | 새#2 실제Swift/Xcode완료 | docs/stiz-ios-codemagic.md;1954bfd8·#2·Swift38+13·zip233.80KB·운영유지 |
@@ -69,7 +70,7 @@
 - 오전 10시 전체 대조는 실시간 경로의 누락 안전망으로 유지한다.
 - 청구·결제·환불·문자·알림은 정확한 미리보기와 실행 시점 승인 전 자동 실행하지 않는다.
 ## 테스트 결과
-- 출시 준비: 전체2569/학생5·전용13·독립읽기8/링크12·diff-check 통과, 로컬PASS7/BLOCKED2/UNVERIFIED8. 기존 앱 검증은 docs/native-app-media-auth-followup.md 및 stiz-ios-codemagic.md 정본.
+- 격리 환경: 전체2581/학생5·서버12·TLS/화면55·독립47+18·Java321/산출물24·iOS구성28 통과. 신규Swift/기기미검증, 이전도구7/2/8 및 앱증거는 각 정본에 구분.
 - 이전 검증 상세는 각 그룹 문서와 Git 이력에 보존한다. 운영·실기기·모의 자료 검증은 구분한다.
 ## 수정 요청
 - 현재 미결 코드 검토 요청 없음. 이전 완료 결과는 Git 이력과 knowledge에 보존.
@@ -82,6 +83,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-28: 승인 합성HTTPS·Android/iOS개발origin격리 구현. 전체2581/학생5·서버12·TLS/브라우저55·독립47+18·Java321/구성거부7/APK24·iOS정적28. 별도sandbox APK·CAonly/Release보존, run-25e9c4bd1ddb0821 실행중·Swift신규컴파일/실기기미검증. 운영/env/발송/결제/설치/원격/배포/TestFlight0.
 - 2026-10-28: 승인 출시 문서3·로컬 점검/시험2 작성·독립검증완료. 전체2569/학생5·전용13·읽기8/링크12·설정오판3종 수정재검증. 통합앱/실기기/출시차단 구분, f8df73cd 기존기록푸시완료·이번묶음로컬커밋. 운영/기기/서명/원격빌드/배포/TestFlight 변경 없음.
 - 2026-10-28: 승인2커밋490637ed/1954bfd8 검증브랜치만푸시·배포차단/main7f/운영dpl6ku유지. 새#2/6ae0cff1206ce93970c68a28 시작1회 actual1954/M2/SSHoff finished1분17초·Swift38+13/Xcode성공/zip233.80KB. docs/stiz-ios-codemagic.md/.tmp/stiz-ios-build2 정본, Apple서명/TestFlight/추가실행없음.
 - 2026-10-28: 승인 사진·단회인증 개발연결/갱신보호 구현. 전체2556/학생5·인증쿠키28·독립PG39/Java172·iOS구성28·생산src946/212615d4일치. 가상기기자동실행정책차단·사진runtime/수정Swift미검증, 운영/원격빌드/설치/푸시0. docs/native-app-media-auth-followup.md 정본.
@@ -91,7 +93,6 @@
 - 2026-10-26: bc51ff0b 푸시·운영배포 승인. 원격 로그인2건 보존 통합·전체2475/tsc 통과. 정상 푸시와 도메인 독립검증 진행, 실행 정본 .tmp/public-home-ssr/production/.
 - 2026-10-25: 원격0238c357로로컬FF동기화·기존Production매핑확인. 운영홈scope0/CSS200파손재현→Home명시publicScope·Theme옵션2파일최소수정. 관련6/전체2471/학생5·tsc/lint·생산src907/bcbdd4·독립24/JS·수화0·해시일치. 운영쓰기/푸시/새배포없음·운영반영승인대기.
 - 2026-10-22: 승인고정1280/1600접힘폐기·실제헤더합계/가용공간·계정/폰트지연재측정·Guide속성연결. 전체2320/학생5·fit5/Guide관련29·tsc/신규lint0·생산src881/1cbb·독립87/JS0·개별해시일치. 합성4106유지·운영/푸시/배포없음.
-- 2026-10-22: 공개원문HTML/약관107줄/개인정보10조·로컬4필드복원, 최상단한줄헤더·유니폼섹션제거·긴약관가시성/중복여백·가이드폭/글씨전환보완. 2312/학생5·원문4/관련26·tsc·생산src879/4f1488·독립50→8/JS0통과. 운영/푸시/배포없음.
 ## PM 체크
 - scratchpad 100줄 이내 및 작업 로그 최근 10건 유지.
 - 오류·기술결정·구조·관례는 knowledge 파일에 반영.
