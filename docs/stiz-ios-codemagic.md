@@ -4,6 +4,17 @@
 
 기존 BDR를 빌드한 Codemagic 계정의 GitHub 연동에서 `cobby8/stiz-dasan`을 **별도 iOS 앱으로 등록**했다. [STIZ Codemagic 앱](https://codemagic.io/builds?team_id=6ab35084460c69aad6ee4723&app_id=6adf8936614a5060c363fedd). BDR 앱 설정·키·테스터 그룹은 변경하지 않았다. 최초 앱 등록 당시에는 설정 미푸시로 `No configuration file found` 상태였다. 이후 승인된 원격 검증은 아래 후속 기록을 기준으로 한다. 연결 증빙은 `.tmp/stiz-app-foundation-qa/codemagic-stiz-connected.jpg`다.
 
+## 2026-10-28 격리 연결 코드 무서명 검증 #3
+
+- 사용자 명시 승인: 이미 검증 브랜치에 푸시한 `88f74d37`·`9dea3b21`의 새 iOS 코드를 무서명으로 1회 실행한다. 운영 배포·TestFlight 업로드·실기기 설치 제외.
+- [빌드 #3](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6ae0e346206ce93970c690dd): 실제 커밋 `9dea3b211a17a7eaed443e4a3ee3ecd7c6eed355`, `codex/stiz-app-codemagic`, `stiz-ios-simulator`, Mac mini M2, SSH/VNC 해제. 시작 요청은 정확히 1회다. 이전 턴의 브라우저 중단 때는 새 빌드를 시작하지 않았다.
+- 약14분 Mac 배정 대기 뒤 03:00 KST에 실행해 **finished / 1분24초**로 완료했다. 추가 실행·재시도는 하지 않았다.
+- 실제 Swift 탐색38건·인증 인계13건과 신규 sandbox의 유효/잘못된 origin·Release 분리·탐색/리소스 규칙 검사가 통과했다. Xcode 전체 로그의 `CODE_SIGNING_ALLOWED=NO`, `BUILD SUCCEEDED`와 `WebViewController.swift`·`NavigationPolicy.swift`·`NativeAuthCoordinator.swift`의 arm64/x86_64 컴파일을 직접 확인했다.
+- 새 `STIZ-simulator.zip` **266.49 KB** 표시와 artifact 보관 로그를 확인했다. 화면의 Publishing은 이 zip 보관 단계이며 스토어 업로드가 아니다. 다운로드·내부 파일 해시·시뮬레이터 UI 실행·아이폰 설치는 하지 않았다. 경고는 AppIntents 의존성이 없어 메타데이터 추출을 생략한다는1건, 컴파일 오류0이다.
+- Python 프로젝트 참조28·로컬 준비 도구 시험13 통과, 원격 검증 브랜치/HEAD `9dea3b21`, main `7f7673d6` 유지. 운영 별칭은 기존 `dpl_6ku1QzfDeWaidLt3ZcLyRZ4o8ajU`이며 검증 브랜치 신규 배포는 없다.
+- 로컬 증빙 `.tmp/stiz-ios-build3/`: 실행 전 설정·queued/finished 화면·run-scope·remote-build·Swift 정책/Xcode 전체 표시 로그. 사용자 직접 로그인 후 Apple 조직·기존 STIZ App ID·프로파일·기기 등록 상태를 읽기 전용으로 조사했다. [아이폰 설치 준비](stiz-ios-device-install-preparation.md).
+- 운영 별칭은 완료 후에도 같은 배포를 유지했다. 무서명 컴파일은 실제 WKWebView 차단 규칙 설치·로그인 왕복·사진 선택·실기기 TLS 신뢰의 통과 근거가 아니다. 기기용 서명·등록·설치·TestFlight·운영 반영은 미실행이다.
+
 ## 2026-10-28 새 코드 무서명 검증 #2
 
 - 사용자 명시 승인: 미푸시2개 `490637ed`·`1954bfd8`를 검증 브랜치에 푸시하고 새 iOS 무서명 빌드 1회. 운영 홈페이지 배포·TestFlight 업로드 제외.

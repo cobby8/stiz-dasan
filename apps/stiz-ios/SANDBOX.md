@@ -23,5 +23,5 @@
 
 - `python -X utf8 apps/stiz-ios/tools/validate-project.py`: 프로젝트 28개 참조, Info.plist·기본 빈 설정·원격 수동 무서명 유지·차단 준비 전 로드 금지·임시 저장소·TLS 예외 없음 검사 통과.
 - `tools/NavigationPolicyTests.swift`에는 유효/잘못된 시험 origin, Release 격리, 운영·공급자·전화·다른 호스트/포트·기사/결제 경로 차단과 리소스 정규식 반례를 추가했다.
-- 현재 Windows에 Swift/Xcode가 없어 **신규 Swift 실행·컴파일·WebKit 규칙 실제 설치·iPhone 실기기 연결은 미검증**이다. 과거 Codemagic #2의 `1954bfd8` 컴파일은 이 변경을 포함하지 않는다.
+- 최초 Windows 단계에서는 Swift/Xcode 실행을 못 했으나, 후속 승인 Codemagic #3의 `9dea3b21`에서 새 Swift 정책·Xcode 컴파일이 통과했다. **WebKit 규칙 실제 설치·iPhone 실기기 연결은 미검증**이다. 과거 #2의 `1954bfd8`을 신규 코드의 근거로 사용하지 않는다. 정본은 `docs/stiz-ios-codemagic.md`다.
 - 이 환경은 화면·합성 자료 처리용이다. 실제 공급자 인증, 결제, 가족 알림 발송, 네이티브 푸시의 성공 근거가 아니다. 신뢰할 인증서와 승인된 서명 기기용 빌드가 마련된 뒤 실제 기기에서 통신 차단·회전·키보드·첨부·페이지 이동을 확인한다.

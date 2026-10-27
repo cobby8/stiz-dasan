@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 승인2커밋88f74d37/9dea3b21 검증브랜치푸시완료. 새#3 actual9dea·시작1회·Mac대기후finished84초·실제Swift38+13/새sandbox·Xcode양쪽아키텍처/서명NO·zip266.49KB. docs/stiz-ios-codemagic.md 및 stiz-ios-device-install-preparation.md 정본. Apple업턴랩스조직/기존STIZ등록ID·Codemagic팀서명항목확인, 기기등록/STIZ프로파일/설치/정식서명/운영/TestFlight0. 새UIruntime미검증·운영/main불변, 지식본문5유지.
+
 > 2026-10-28: 승인 격리 HTTPS 환경·양쪽 개발앱 origin 차단 구현. 정본 docs/native-device-sandbox.md, 실제UI 합성49원본/219761c0·서버12·전체2581/학생5·TLS/화면55·독립47+18·AndroidJava321/APK24·iOS구성28. 새 공개CA만 Android앱에 포함, 원격/기기/운영/배포/TestFlight0. 신규Swift컴파일·서명/설치·실제인증 미검증. 구조/결정/오류 갱신·지식본문5 유지.
 
 > 2026-10-28: 출시 문서·실기기 시험 준비·로컬 점검 승인. 통합앱1개 기준 정정, 정본 docs/native-device-release-readiness.md 및 scripts/native-release-readiness.mjs. 환경·키·DB·기기·네트워크 접근 없이 준비 상태만 구분, 독립 반례 검증 후 통합. decisions/errors 갱신, 지식 본문5개 유지. 서비스·서명·설치·원격빌드·운영배포·TestFlight 변경 없음.
