@@ -23,6 +23,13 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         configuration.websiteDataStore = NavigationPolicy.sandbox.isRequested ? .nonPersistent() : .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         webView = WKWebView(frame: .zero, configuration: configuration)
+        if #available(iOS 16.4, *) {
+            // 운영 화면은 검사 연결을 열지 않고, 유효한 격리 시험 주소에서만 허용한다.
+            webView.isInspectable = false
+            #if DEBUG
+            webView.isInspectable = NavigationPolicy.sandbox.origin != nil
+            #endif
+        }
         webView.navigationDelegate = self
         webView.uiDelegate = self
         pageObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in

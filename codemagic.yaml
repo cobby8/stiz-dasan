@@ -1,4 +1,4 @@
-# BDR 기록앱과 같은 원격 Mac 방식. 이 단계는 서명·업로드 없이 빌드만 한다.
+# 무서명 검증과 등록 기기용 격리 서명을 분리한다. 두 작업 모두 수동 실행이며 스토어 업로드는 없다.
 workflows:
   stiz-ios-simulator:
     name: STIZ 아이폰 앱 빌드 검증 (업로드 없음)
@@ -36,3 +36,40 @@ workflows:
           ditto -c -k --sequesterRsrc --keepParent STIZ.app STIZ-simulator.zip
     artifacts:
       - apps/stiz-ios/DerivedData/Build/Products/Debug-iphonesimulator/STIZ-simulator.zip
+  stiz-ios-sandbox-adhoc:
+    name: STIZ 등록 아이폰 격리 시험 앱 (스토어 업로드 없음)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+      groups:
+        - stiz_ios_sandbox_device
+      ios_signing:
+        provisioning_profiles:
+          - profile: stiz-dasan-adhoc-sandbox-2026
+            environment_variable: STIZ_SANDBOX_PROFILE
+        certificates:
+          - "BDR iOS App Store Distribution"
+      vars:
+        STIZ_SANDBOX_ORIGIN: "https://172.30.1.12:8453"
+    triggering:
+      events: []
+    scripts:
+      - name: 프로젝트와 수동 격리 구성 확인
+        script: |
+          set -euo pipefail
+          python3 apps/stiz-ios/tools/validate-project.py
+      - name: 실제 Swift 주소 정책 검사
+        script: |
+          set -euo pipefail
+          swiftc apps/stiz-ios/STIZ/NavigationPolicy.swift \
+            apps/stiz-ios/STIZ/NativeAuthPolicy.swift \
+            apps/stiz-ios/tools/NavigationPolicyTests.swift -o /tmp/stiz-sandbox-navigation-tests
+          /tmp/stiz-sandbox-navigation-tests
+      - name: 등록 기기 일치 확인·격리 서명·IPA 검증
+        script: |
+          set -euo pipefail
+          python3 apps/stiz-ios/tools/native_signed_sandbox.py build
+    artifacts:
+      - apps/stiz-ios/build/sandbox-device/STIZ-sandbox.ipa
+      - apps/stiz-ios/build/sandbox-device/verification.json

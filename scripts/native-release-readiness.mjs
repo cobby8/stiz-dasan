@@ -2,6 +2,7 @@
 import { lstatSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 export const SOURCE_FILES = Object.freeze({
   vercel: 'vercel.json',
@@ -92,13 +93,45 @@ export function inspectReadiness(root) {
   const manualOnly = eventLines.length > 0 && eventLines.length === occurrences(yaml, /^\s*triggering\s*:/gm) &&
     eventLines.every(match => /^\s*\[\s*\]\s*(?:#.*)?$/.test(match[1]));
   const signingLines = [...yaml.matchAll(/CODE_SIGNING_ALLOWED\s*=\s*([^\s]+)/g)];
+  const workflows = [...yaml.matchAll(/^  ([a-z0-9-]+):\s*$/gm)];
+  const expectedWorkflows = workflows.map(match => match[1]).join(',') === 'stiz-ios-simulator,stiz-ios-sandbox-adhoc';
+  const simulator = expectedWorkflows ? yaml.slice(workflows[0].index, workflows[1].index) : '';
+  const signed = expectedWorkflows ? yaml.slice(workflows[1].index) : '';
+  // 승인된 명령 묶음만 허용한다. 추가 업로드·우회 명령은 한 줄이어도 차단한다.
+  const approvedScripts = [
+    '9f176863b4cc2e12c7b1f2cf1fae2bcf55bc69e640a44f8470b4c9efd4eb8c3f',
+    'b1e51ffd5f835ce293ec416a9f421ad56c52fae95845c416d0ee1c6eaccaf58d',
+  ];
+  const scriptsUnchanged = [simulator, signed].every((block, index) => {
+    const pieces = block.replace(/\r\n/g, '\n').split(/^    scripts:\s*$/m);
+    return pieces.length === 2 && createHash('sha256').update(pieces[1].split(/^    artifacts:\s*$/m)[0].trim()).digest('hex') === approvedScripts[index];
+  });
+  const noPublishing = !/^\s*(publishing|integrations|app_store_connect):/m.test(yaml);
+  const signedArtifacts = signed.split(/^    artifacts:\s*$/m)[1]?.trim().split(/\r?\n/).map(line => line.trim());
+  const signedSandbox = expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged &&
+    occurrences(signed, /^        - /gm) === 1 && signed.includes('- stiz_ios_sandbox_device') &&
+    occurrences(signed, /^      ios_signing:\s*$/gm) === 1 &&
+    occurrences(signed, /^          - profile:/gm) === 1 &&
+    signed.includes('- profile: stiz-dasan-adhoc-sandbox-2026') &&
+    occurrences(signed, /environment_variable: STIZ_SANDBOX_PROFILE/g) === 1 &&
+    occurrences(signed, /^          - (?!profile:)/gm) === 1 &&
+    signed.includes('- "BDR iOS App Store Distribution"') &&
+    occurrences(signed, /STIZ_SANDBOX_ORIGIN:/g) === 1 &&
+    signed.includes('STIZ_SANDBOX_ORIGIN: "https://172.30.1.12:8453"') &&
+    occurrences(signed, /python3 apps\/stiz-ios\/tools\/native_signed_sandbox\.py build/g) === 1 &&
+    !/STIZ_EXPECTED_DEVICE_SHA256:|distribution_type:|bundle_identifier:|CODE_SIGNING_ALLOWED|xcodebuild/.test(signed) &&
+    JSON.stringify(signedArtifacts) === JSON.stringify([
+      '- apps/stiz-ios/build/sandbox-device/STIZ-sandbox.ipa',
+      '- apps/stiz-ios/build/sandbox-device/verification.json',
+    ]);
   const android = withoutCodeComments(files.android);
   const auth = withoutCodeComments(files.authPolicy);
   const info = withoutXmlComments(files.iosInfo);
   const mainManifest = withoutXmlComments(files.manifest);
   const debugManifest = withoutXmlComments(files.debugManifest);
   guard('verification-branch-deploy', deploymentBlocked, '검증 브랜치 자동 배포 차단값의 정적 확인. 현재 운영 배포 상태는 조회하지 않음.');
-  guard('codemagic-manual-unsigned', manualOnly && signingLines.length > 0 && signingLines.every(match => match[1] === 'NO') && /-sdk iphonesimulator/.test(yaml) && !/^\s*(publishing|integrations):/m.test(yaml), '모든 events 선언이 빈 배열인지와 무서명 선언 확인. 복수·모호한 설정은 차단하며 YAML 전체 실행 의미 검증은 하지 않음.');
+  guard('codemagic-manual-unsigned', expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged && signingLines.length === 1 && signingLines[0][1] === 'NO' && /-sdk iphonesimulator/.test(simulator) && !/ios_signing:/.test(simulator), '두 수동 작업 중 시뮬레이터는 무서명 유지. 추가·자동·모호한 작업과 스토어 업로드 설정은 차단. 전체 YAML 실행 검증은 아님.');
+  guard('codemagic-signed-sandbox', signedSandbox, '기기 서명은 전용 프로파일·명시 격리 주소·검증 도구 경로·IPA/결과 JSON만 보관하는 별도 수동 작업. 실제 서명·설치 완료 의미 아님.');
   guard('android-auth-default-off', occurrences(android, /'STIZ_NATIVE_AUTH'/g) === 2 && occurrences(android, /'stizNativeAuth'/g) === 1 && /stizNativeAuth'\)\.getOrElse\('false'\)/.test(android) && /release\s*\{[^}]*'STIZ_NATIVE_AUTH',\s*'false'/.test(android), '주석 제외 후 Android 개발 인증 기본 비활성·release 비활성 소스 확인. 실제 APK 설정은 미검증.');
   guard('ios-auth-default-off', occurrences(info, /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>/g) === 1 && /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>\s*<false\s*\/>/.test(info) && !/<!--|-->/.test(info), 'XML 주석 제외·해당 키 유일성·false 값 확인. 설치 앱 상태는 미검증.');
   guard('server-production-auth-block', occurrences(auth, /env\.NODE_ENV/g) === 1 && /if\s*\(\s*env\.NATIVE_AUTH_ENABLED\s*!==\s*["']true["']\s*\|\|\s*env\.NATIVE_AUTH_DEVELOPMENT_CALLBACKS_ENABLED\s*!==\s*["']true["']\s*\|\|\s*env\.NODE_ENV\s*===\s*["']production["']\s*\)\s*(?:\{\s*)?throw\s+new\s+\w+/.test(auth), '주석 제외 후 세 차단 조건이 같은 if에서 거부하는지 정적 확인. 서버 코드를 실행하거나 환경 값을 읽지 않음.');

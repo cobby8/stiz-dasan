@@ -1,6 +1,6 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: 검증 브랜치 새 iOS 코드 무서명 빌드1회 확인·실기기 설치 준비.
+- 목표: 등록 아이폰용 STIZ 격리 서명 앱 빌드·설치·실기기 검증. 운영·TestFlight 제외.
 - 현재 단계: 88f74d37/9dea3b21 푸시완료. #3/6ae0e346206ce93970c690dd actual9dea3b21/M2/SSHoff 시작1회 finished1분24초·Swift38+13/새sandbox/Xcode 양쪽아키텍처성공·zip266.49KB. 결과문서로컬커밋, 재실행금지.
 - 승인 범위: 검증 브랜치 푸시·무서명simulator1회·설치준비읽기. 운영/main·TestFlight·정식서명·기기등록/설치·DB/공급자/OS신뢰 변경 없음.
 - 외부 보류: 전용MID/apikey미발급·가족연결off·앱링크/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 새sandbox Swift/Xcode #3완료, WebKit/기기 실행·등록·서명/TestFlight미실행. Apple조직/STIZ등록ID확인·아이폰USB정상.

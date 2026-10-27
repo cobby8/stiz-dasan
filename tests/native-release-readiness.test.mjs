@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { inspectReadiness, SOURCE_FILES, ALLOWED_PATHS } from '../scripts/native-release-readiness.mjs';
+const approvedWorkflow = readFileSync(new URL('../codemagic.yaml', import.meta.url), 'utf8');
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'stiz-readiness-'));
@@ -11,7 +12,7 @@ function fixture(t) {
   const put = (name, value) => { const path = join(root, name); mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, value); };
   const sources = {
     vercel: JSON.stringify({ git: { deploymentEnabled: { 'codex/stiz-app-codemagic': false } } }),
-    codemagic: 'triggering:\n  events: []\nscript: xcodebuild -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO',
+    codemagic: approvedWorkflow,
     android: "targetSdk 36\ndebug { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', providers.gradleProperty('stizNativeAuth').getOrElse('false') }\nrelease { buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false' }",
     manifest: '<manifest><application/></manifest>', debugManifest: '<manifest><application>stiz-academy-android-dev</application></manifest>',
     iosInfo: '<key>STIZNativeAuthDevelopmentEnabled</key><false/>',
@@ -128,4 +129,32 @@ test('main 매니페스트 누락·빈 파일은 개발 기능 분리 검증 통
   report = inspectReadiness(root);
   assert.equal(item(report, 'debug-callback-isolation').status, 'BLOCKED');
   assert.equal(report.localSafetyPassed, false);
+});
+
+test('기기 서명 작업의 운영 주소·프로파일 바꿔치기·비공개 파일 보관은 차단한다', t => {
+  const { root, put } = fixture(t);
+  for (const invalid of [
+    approvedWorkflow.replace('https://172.30.1.12:8453', 'https://www.stiz-dasan.kr'),
+    approvedWorkflow.replace('profile: stiz-dasan-adhoc-sandbox-2026', 'profile: another-app'),
+    approvedWorkflow + '      - private.p12\n',
+    approvedWorkflow.replace('native_signed_sandbox.py build', 'native_signed_sandbox.py skip-verification'),
+    approvedWorkflow.replace('native_signed_sandbox.py build', 'native_signed_sandbox.py build\n          xcrun altool --upload-app --file unapproved.ipa'),
+    approvedWorkflow.replace('CODE_SIGNING_ALLOWED=NO build', 'CODE_SIGNING_ALLOWED=NO build\n          arbitrary-command'),
+    approvedWorkflow.replace('STIZ_SANDBOX_ORIGIN:', 'STIZ_EXPECTED_DEVICE_SHA256: secret\n        STIZ_SANDBOX_ORIGIN:'),
+  ]) {
+    put(SOURCE_FILES.codemagic, invalid);
+    assert.equal(item(inspectReadiness(root), 'codemagic-signed-sandbox').status, 'BLOCKED');
+  }
+});
+
+test('추가 인증서와 자동 스토어 선택 방식의 혼용을 거부한다', t => {
+  const { root, put } = fixture(t);
+  for (const invalid of [
+    approvedWorkflow.replace('- "BDR iOS App Store Distribution"', '- "BDR iOS App Store Distribution"\n          - another-certificate'),
+    approvedWorkflow.replace('ios_signing:', 'ios_signing:\n        distribution_type: app_store'),
+    approvedWorkflow.replace('CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_ALLOWED=YES'),
+  ]) {
+    put(SOURCE_FILES.codemagic, invalid);
+    assert.equal(inspectReadiness(root).localSafetyPassed, false);
+  }
 });

@@ -4,6 +4,7 @@ import json
 import plistlib
 import re
 import xml.etree.ElementTree as ET
+from native_signed_sandbox import validate_workflows
 
 root = Path(__file__).resolve().parents[1]
 project = (root / "STIZ.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
@@ -31,8 +32,7 @@ scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
 assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.iter("BuildableReference"))
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
-assert "events: []" in workflow and "CODE_SIGNING_ALLOWED=NO" in workflow
-assert "publishing:" not in workflow and "app_store_connect:" not in workflow
+validate_workflows(workflow)
 assert "bdr-asc-key" not in workflow and "mac_mini_m2" in workflow
 view = (root / "STIZ/WebViewController.swift").read_text(encoding="utf-8")
 assert "WKContentRuleListStore.default().compileContentRuleList" in view
