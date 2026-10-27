@@ -18,6 +18,7 @@ workflows:
         script: |
           set -euo pipefail
           swiftc apps/stiz-ios/STIZ/NavigationPolicy.swift \
+            apps/stiz-ios/STIZ/NativeAuthPolicy.swift \
             apps/stiz-ios/tools/NavigationPolicyTests.swift -o /tmp/stiz-navigation-tests
           /tmp/stiz-navigation-tests
       - name: 아이폰 시뮬레이터용 무서명 빌드

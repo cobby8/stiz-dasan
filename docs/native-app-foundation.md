@@ -51,4 +51,4 @@
 - 변경 TS/TSX 14파일 ESLint 결과는 기존 `auth-guard.ts`의 `any` 오류 4개와 동일하다. HEAD 원문을 같은 설정으로 검사해 같은 줄의 동일 4개를 확인했으며 이번 추가 오류는 없다. 전체 lint 성공으로 보고하지 않는다.
 - Codemagic STIZ 앱 등록은 완료했지만 설정 푸시·원격 실행·Apple 서명·TestFlight 업로드·배포는 하지 않았다. 현재 main의 Vercel Git 자동 배포 차단 설정이 없으므로 원격 검증은 별도 브랜치 차단을 준비한 뒤 승인받아야 한다.
 
-위 내용은 첫 로컬 그룹 완료 시점의 기록이다. 후속 사용자 승인으로 검증 브랜치에 8546d139를 푸시하고 Codemagic #1을 요청했다. 현재 원격 Mac 배정 대기로 Swift/Xcode 결과가 없으며, 최신 실행 상태는 docs/stiz-ios-codemagic.md를 기준으로 한다. main·운영·서명·TestFlight는 유지한다.
+위 내용은 첫 로컬 그룹 완료 시점의 기록이다. 후속 승인된 Codemagic #1/8546d139는 Swift38·Xcode 빌드 성공을 확인했다. 이후 사진·인증 인계 수정본은 별도이며 최신 로컬 구현·검증과 미검증 범위는 docs/native-app-media-auth-followup.md를 기준으로 한다. 수정본 원격 빌드·서명·TestFlight·main·운영 변경은 하지 않는다.

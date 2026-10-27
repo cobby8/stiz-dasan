@@ -11,6 +11,13 @@
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key><true/>
+  <key>STIZNativeAuthDevelopmentEnabled</key><false/>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>kr.stiz.academy.dev.authentication</string>
+    <key>CFBundleURLSchemes</key><array><string>stiz-academy-dev</string></array>
+  </dict></array>
+  <key>NSCameraUsageDescription</key><string>직접 사진 촬영을 선택하면 수업 사진을 첨부하기 위해 카메라를 사용합니다.</string>
+  <key>NSPhotoLibraryUsageDescription</key><string>직접 선택한 사진을 수업 사진이나 게시물에 첨부합니다.</string>
   <key>UILaunchScreen</key><dict/>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
   <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>

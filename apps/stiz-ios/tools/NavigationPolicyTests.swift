@@ -51,6 +51,26 @@ struct NavigationPolicyTests {
             precondition(!NavigationPolicy.allowsSubframe(URL(string: address)!))
         }
         precondition(NavigationPolicy.allowsSubframe(URL(string: "https://map.naver.com/")!))
+        precondition(NativeAuthPolicy.provider(from: URL(string: "https://www.stiz-dasan.kr/auth/oauth/apple?intent=login")!) == "apple")
+        for address in [
+            "https://www.stiz-dasan.kr/auth/oauth/apple?intent=link",
+            "https://www.stiz-dasan.kr/auth/oauth/apple?intent=parent-signup",
+            "https://www.stiz-dasan.kr/auth/oauth/apple?intent=login&intent=link",
+            "https://www.stiz-dasan.kr/auth/oauth/apple?intent=login&handoff=example",
+            "https://www.stiz-dasan.kr/auth//oauth/apple?intent=login",
+            "https://fake.example/auth/oauth/apple?intent=login"
+        ] { precondition(NativeAuthPolicy.provider(from: URL(string: address)!) == nil) }
+        let state = String(repeating: "s", count: 43)
+        let code = String(repeating: "c", count: 43)
+        let flow = String(repeating: "f", count: 43)
+        let callback = "stiz-academy-dev://auth/return?flow=\(flow)&state=\(state)&code=\(code)"
+        precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: state) == code)
+        precondition(NativeAuthPolicy.callbackCode(URL(string: callback + "&code=bad")!, flow: flow, state: state) == nil)
+        precondition(NativeAuthPolicy.callbackCode(URL(string: callback)!, flow: flow, state: "wrong") == nil)
+        precondition(NativeAuthPolicy.callbackCode(URL(string: callback.replacingOccurrences(of: "stiz-academy-dev", with: "stiz-academy-android-dev"))!, flow: flow, state: state) == nil)
+        precondition(NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)")!, flow: flow))
+        precondition(!NativeAuthPolicy.isBrowserURL(URL(string: "https://www.stiz-dasan.kr/auth/native/browser?flow=\(flow)&next=https://fake.example")!, flow: flow))
         print("STIZ iOS navigation policy: \(cases.count) cases passed")
+        print("STIZ iOS native handoff policy: 13 assertions passed")
     }
 }

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIZ 합성 첨부 검사</title></head>
+<body><h1>사진 선택 검사</h1><p>시험용 사진만 선택하세요. 파일은 서버로 전송되지 않습니다.</p>
+<p><label>촬영 <input type="file" accept="image/jpeg,image/png,image/webp" capture="environment"></label></p>
+<p><label>사진 여러 장 <input type="file" accept="image/jpeg,image/png,image/webp" multiple></label></p>
+<p><label>문서 <input type="file" accept=".csv,.json,.xlsx"></label></p>
+<output aria-live="polite">선택 전</output>
+<script>
+// 파일 내용·이름은 수집하지 않고 건수와 형식만 현재 화면에 표시한다.
+for (const input of document.querySelectorAll('input')) {
+ input.addEventListener('change', () => {
+  document.querySelector('output').textContent = `${input.files.length}개: ${Array.from(input.files, f => f.type || '형식 미제공').join(', ')}`;
+ });
+ input.addEventListener('cancel', () => { document.querySelector('output').textContent = '선택 취소'; });
+}
+</script></body></html>

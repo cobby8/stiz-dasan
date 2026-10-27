@@ -11,7 +11,7 @@ defined = re.findall(r"^\s*(A[0-9A-F]{23}) =", project, re.M)
 references = set(re.findall(r"\bA[0-9A-F]{23}\b", project))
 assert len(defined) == len(set(defined)), "프로젝트 ID 중복"
 assert references == set(defined), "프로젝트 파일 참조 누락"
-for file in ["AppDelegate.swift", "NavigationPolicy.swift", "WebViewController.swift", "Info.plist", "Assets.xcassets"]:
+for file in ["AppDelegate.swift", "NavigationPolicy.swift", "NativeAuthPolicy.swift", "NativeAuthCoordinator.swift", "WebViewController.swift", "Info.plist", "Assets.xcassets"]:
     assert (root / "STIZ" / file).exists(), file
     assert f"path = {file};" in project, file
 for path in (root / "STIZ").rglob("*.json"):
@@ -20,6 +20,9 @@ with (root / "STIZ/Info.plist").open("rb") as handle:
     info = plistlib.load(handle)
 assert not any("Location" in key for key in info), "iOS 위치 권한은 이 그룹 범위 아님"
 assert "NSAppTransportSecurity" not in info, "HTTP/TLS 예외 금지"
+assert info["STIZNativeAuthDevelopmentEnabled"] is False, "새 인증 기본 비활성"
+assert info["NSCameraUsageDescription"] and info["NSPhotoLibraryUsageDescription"]
+assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
 assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrientations"]
 scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
 assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.iter("BuildableReference"))

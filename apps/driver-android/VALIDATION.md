@@ -1,5 +1,11 @@
 # 안드로이드 검증 기록 — 2026-10-19
 
+## 2026-10-28 사진·개발용 인증 후속
+
+- `MEDIA_AUTH_FOLLOWUP.md` 정본. JVM 파일 정책55·인증 정책42·탐색75·시작33·표본13 통과.
+- debug/unsigned release/androidTest/Lint 로컬 빌드 성공, 오류0·경고8(새 debug fixture JS 경고1 포함). 개발 옵션 true에서 debug true/release false를 생성 BuildConfig로 확인했다. 기본 옵션을 복원한 최종 산출물을 보관한다.
+- 설치·사진/카메라/로그인 실제 조작·운영 업로드·서명·원격 실행은 하지 않았다. 기기 UI와 WebView FileList 통합은 미검증으로 남긴다.
+
 ## 2026-10-27 G1 통합 앱 기반 검증
 
 현재 구현 범위는 `UNIFIED_FOUNDATION.md`를 기준으로 한다. 아래 10월19일 실기기 기록과 이 새 기반의 검증을 구분한다.

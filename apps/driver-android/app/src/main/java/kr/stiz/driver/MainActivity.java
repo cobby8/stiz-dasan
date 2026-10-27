@@ -17,6 +17,8 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private WebView web;
+    private WebFileChooser fileChooser;
+    private NativeAuthController nativeAuth;
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
@@ -70,6 +72,8 @@ public final class MainActivity extends Activity {
             TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
         }
         web = new WebView(this); web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        fileChooser = new WebFileChooser(this, web);
+        nativeAuth = new NativeAuthController(this, web);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -102,6 +106,7 @@ public final class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 if (!request.isForMainFrame()) return !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, uri.toString());
+                if (!unfinishedRun && nativeAuth.begin(uri, request.hasGesture())) return true;
                 if (trustedAppPage(uri)) { navigateSafely(uri); return true; }
                 // External navigation only follows an explicit phone/map action. Arbitrary intents are never parsed.
                 if (AppNavigationPolicy.externalActionAllowed(uri.toString(), request.hasGesture())) {
@@ -111,8 +116,9 @@ public final class MainActivity extends Activity {
                 return true;
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                boolean nativeConsume = request.isForMainFrame() && nativeAuth.takeConsumePermission(request.getUrl(), request.getMethod());
                 if (request.isForMainFrame() && (!trustedAppPage(request.getUrl())
-                    || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
+                    || (!nativeConsume && AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString()))
                     || AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
                     || !AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, request.getUrl().toString(), unfinishedRun, activeRunToken))) {
                     return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
@@ -124,12 +130,23 @@ public final class MainActivity extends Activity {
                 super.doUpdateVisitedHistory(view, url, isReload);
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                fileChooser.documentStarted();
+                nativeAuth.documentStarted(url);
                 if (!trusted(Uri.parse(url)) || !pageToken().equals(pendingStart.token())) pendingStart.cancel();
             }
-            @Override public void onPageFinished(WebView view, String url) { checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
-            @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); }
+            @Override public void onPageFinished(WebView view, String url) { nativeAuth.documentFinished(url); checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) nativeAuth.consumeFailed(request.getUrl());
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) nativeAuth.consumeFailed(request.getUrl());
+            }
+            @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); nativeAuth.consumeFailed(error.getUrl() == null ? null : Uri.parse(error.getUrl())); }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                return fileChooser.open(callback, params);
+            }
             @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
                 showBrowserAuthPending(); return false;
             }
@@ -197,6 +214,8 @@ public final class MainActivity extends Activity {
         });
     }
     private void checkObservedNavigation(String url) {
+        if (fileChooser != null) fileChooser.navigation(url);
+        if (nativeAuth != null) nativeAuth.navigation(url);
         if (web == null || isFinishing() || isDestroyed() || !trustedAppPage(Uri.parse(url))) return;
         if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, url)) {
             web.stopLoading();
@@ -382,7 +401,11 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
     @Override protected void onPause() { visible = false; if (web != null) web.onPause(); super.onPause(); }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (fileChooser != null && fileChooser.result(requestCode, resultCode, data)) return;
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); if (fileChooser != null) fileChooser.cancel(); if (nativeAuth != null && nativeAuth.callback(intent.getData())) return; setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
         else if (web != null && unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken)); }
-    @Override protected void onDestroy() { pendingStart.cancel(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { pendingStart.cancel(); if (fileChooser != null) fileChooser.destroy(); if (nativeAuth != null) nativeAuth.destroy(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
 }

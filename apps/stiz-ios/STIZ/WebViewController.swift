@@ -7,9 +7,15 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private let message = UILabel()
     private let retry = UIButton(type: .system)
     private var lastPage = NavigationPolicy.entry
+    private var nativeAuth: NativeAuthCoordinator!
+    private var nativeConsumePending = false
+    private var nativeAwaitingResponse = false
+    private var nativeConsumeTimeout: Timer?
+    private var pageObservation: NSKeyValueObservation?
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        nativeAuth = NativeAuthCoordinator(owner: self)
         view.backgroundColor = UIColor(named: "Canvas")
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
@@ -17,6 +23,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        pageObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+            guard let self = self else { return }
+            self.nativeAuth.cancelIfPageChanged(self.webView.url)
+        }
         webView.allowsBackForwardNavigationGestures = true
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
@@ -74,10 +84,37 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private func approve(_ action: WKNavigationAction) -> Bool {
         guard let url = action.request.url else { return false }
         switch NavigationPolicy.decide(url, userInitiated: action.navigationType == .linkActivated) {
-        case .website: return true
+        case .website:
+            nativeAuth.cancelIfPageChanged(nil)
+            return true
         case .external:
             if action.sourceFrame.isMainFrame { UIApplication.shared.open(url) }
         case .blockedAuthentication:
+            if NativeAuthCoordinator.enabled, action.sourceFrame.isMainFrame,
+               action.navigationType == .linkActivated, let page = webView.url,
+               let provider = NativeAuthPolicy.provider(from: url) {
+                if !nativeAuth.isActive && !nativeAwaitingResponse {
+                    nativeAuth.start(provider: provider, page: page, currentPage: { [weak self] in self?.webView.url }) { [weak self] request in
+                        guard let self = self else { return }
+                        guard let request = request else {
+                            self.alert("로그인이 취소되었거나 완료되지 않았습니다. 다시 시도해 주세요.")
+                            return
+                        }
+                        self.nativeConsumePending = true
+                        self.nativeAwaitingResponse = true
+                        self.webView.load(request)
+                        self.nativeConsumeTimeout = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+                            guard let self = self, self.nativeAwaitingResponse else { return }
+                            self.nativeConsumePending = false
+                            self.nativeAwaitingResponse = false
+                            self.webView.stopLoading()
+                            self.alert("로그인 응답이 지연되고 있습니다. 기존 화면에서 다시 시도해 주세요.")
+                            self.reloadPage()
+                        }
+                    }
+                }
+                return false
+            }
             alert("앱의 간편로그인은 준비 중입니다. 이메일·비밀번호로 로그인해 주세요. 웹사이트에서는 기존 간편로그인을 사용할 수 있습니다.")
         case .blocked:
             alert("이 주소는 앱에서 열 수 없습니다. 기사님 운행은 Android 기사님 앱을 이용해 주세요.")
@@ -87,6 +124,15 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // 앱이 만든 POST에만 단 한 번 허용한다. 웹 링크가 같은 주소를 열어도 통과하지 않는다.
+        if nativeConsumePending {
+            nativeConsumePending = false
+            if navigationAction.request.httpMethod == "POST",
+               navigationAction.request.url?.absoluteString == "https://www.stiz-dasan.kr/auth/native/consume" {
+                decisionHandler(.allow)
+                return
+            }
+        }
         // iframe은 새 창이나 외부 앱을 열 권한을 얻지 않는다.
         if navigationAction.targetFrame?.isMainFrame == false {
             decisionHandler(navigationAction.request.url.map(NavigationPolicy.allowsSubframe) == true ? .allow : .cancel)
@@ -98,6 +144,18 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         guard navigationResponse.isForMainFrame else { decisionHandler(.allow); return }
+        if nativeAwaitingResponse {
+            nativeAwaitingResponse = false
+            nativeConsumeTimeout?.invalidate()
+            nativeConsumeTimeout = nil
+            if navigationResponse.response.url?.absoluteString == "https://www.stiz-dasan.kr/auth/native/consume" {
+                // 만료·서버 장애 JSON을 빈 화면으로 남기지 않고 기존 로그인 화면으로 돌아간다.
+                decisionHandler(.cancel)
+                alert("로그인을 완료하지 못했습니다. 기존 화면에서 다시 시도해 주세요.")
+                DispatchQueue.main.async { [weak self] in self?.reloadPage() }
+                return
+            }
+        }
         guard let url = navigationResponse.response.url,
               NavigationPolicy.decide(url, userInitiated: false) == .website,
               navigationResponse.canShowMIMEType else { decisionHandler(.cancel); return }
@@ -150,7 +208,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         present(dialog, animated: true)
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { progress.startAnimating() }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        nativeAuth.cancelIfPageChanged(webView.url)
+        progress.startAnimating()
+    }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         progress.stopAnimating()
         if let url = webView.url, NavigationPolicy.decide(url, userInitiated: false) == .website { lastPage = url }
@@ -158,8 +219,14 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { recover(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { recover(error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recover(nil) }
+    deinit { nativeConsumeTimeout?.invalidate(); pageObservation?.invalidate(); nativeAuth?.shutdown() }
     private func recover(_ error: Error?) {
+        // 주소 전환에 따른 취소는 완료 응답 대기를 해제하지 않는다.
         if (error as NSError?)?.code == NSURLErrorCancelled { progress.stopAnimating(); return }
+        nativeConsumePending = false
+        nativeAwaitingResponse = false
+        nativeConsumeTimeout?.invalidate()
+        nativeConsumeTimeout = nil
         progress.stopAnimating()
         webView.isHidden = true
         view.viewWithTag(101)?.isHidden = false

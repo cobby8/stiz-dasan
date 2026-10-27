@@ -1,5 +1,10 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-28 앱 첨부·개발 인증 인계
+- 서버 auth/native·lib/native-auth는 개발 전용 일회용 원장과 공급자 브라우저 세션을 분리한다. 로컬 SQL만 준비하고 기본 비활성·production 거부, 기존 웹 OAuth는 유지한다.
+- native-session-cookies는 권한이 아닌 보호 표식이다. Supabase server/middleware 갱신·이동 응답에서 앱 쿠키 보호만 유지한다. Android WebFileChooser/NativeAuthController, iOS NativeAuthCoordinator가 플랫폼 연결을 소유한다.
+- 정본 docs/native-app-media-auth-followup.md. 실제 첨부/runtime·새 Swift 컴파일은 빌드/정적 구성과 구분한다.
+
 ## 2026-10-22 공개 게시일·신청·이동 표시
 - 2026-10-25 Home는 PublicSiteTheme의 선택적 publicScope=true로 첫 HTML의 공개 스타일을 확정한다. 나머지 호출부는 기존 usePathname/공개 경로 판별을 유지하며 전역 RootLayout에는 범위를 추가하지 않는다.
 - `useHeaderMenuFit`는 기존 헤더 DOM의 실제 크기를 관찰하고 `navigation/headerFit.ts`가 가용 폭·합계·작은 경계 여유로 모드를 정한다. Header는 표시·inert/aria-hidden·data-menu-layout를 함께 반영한다. 계정 조회·권한·메뉴 항목·Guide 기존 단계 구조는 유지한다.
