@@ -1,14 +1,14 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: 승인된 사진 첨부·개발용 단회 로그인 인계 로컬 구현·검증.
-- 현재 단계: 로컬·독립검증 완료. 전체2556/학생5·인증쿠키28·PG39/Java172·iOS구성28·웹생산946/212615d4일치·Android27소스/APK3일치/lint0·경고8. 가상기기 정책차단·실제FileList/수정Swift미검증。
-- 승인 범위: 로컬 사진·인증·회귀 검증. 새경로기본off/production차단, 기존웹로그인유지. 운영DB/공급자/서명/원격빌드/푸시/배포없음. Codemagic이전#1만완료, 수정본Swift미컴파일.
-- 외부 보류: 전용MID/apikey미발급·가족연결off·검증HTTPS앱링크/시험환경/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 이전#1결과를수정본검증으로재사용금지.
+- 목표: 승인2커밋 검증브랜치 푸시·새 iOS 무서명 빌드1회 확인.
+- 현재 단계: 2커밋 검증브랜치푸시·새#2 actual1954bfd8 1회실행 finished/1분17초. 실제Swift38+13·Xcode arm64/x86_64통과·zip233.80KB. 운영dpl6ku/main7f동일, 검증기록정리.
+- 승인 범위: codex/stiz-app-codemagic만푸시·무서명simulator1회. 운영/main·TestFlight·Apple서명·DB/공급자/실기기설치 변경없음. 실패/대기중 자동재실행금지.
+- 외부 보류: 전용MID/apikey미발급·가족연결off·검증HTTPS앱링크/시험환경/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 신규Swift컴파일은#2로완료, 기기/UI실행·정식서명/TestFlight미실행.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
-| 앱 사진·개발 인증 인계 | Android/서버 병렬·PM iOS/갱신·독립QA | 로컬·독립·최종빌드 완료 | docs/native-app-media-auth-followup.md; Android소스27/APK3일치·운영/원격/설치0·신규Swift/사진runtime미검증 |
-| Codemagic 검증 브랜치 | PM 실행·독립QA | 원격 빌드완료·다운로드차단 | docs/stiz-ios-codemagic.md;8546·#1 Swift38/Xcode통과·운영유지 |
+| 앱 사진·개발 인증 인계 | Android/서버 병렬·PM iOS/갱신·독립QA | 로컬·독립·최종빌드 완료 | docs/native-app-media-auth-followup.md; Android소스27/APK3일치·운영/설치0·#2Swift컴파일통과·사진runtime미검증 |
+| Codemagic 검증 브랜치 | PM 실행·독립QA | 새#2 실제Swift/Xcode완료 | docs/stiz-ios-codemagic.md;1954bfd8·#2·Swift38+13·zip233.80KB·운영유지 |
 | 통합앱·공통계정 기반 | Android/계정 병렬개발·PM iOS/Codemagic·독립QA | 로컬·독립·생산빌드 완료 | docs/native-app-foundation.md; 로컬만·미푸시/미배포 |
 | 가족 연결·스포츠 업무 화면 | 서버·UI 병렬 / PM통합 / 독립QA | 푸시·운영배포검증 진행 | docs/child-connections-and-sport-workspace.md;2514/학생5·독립107·928소스·새기능off |
 | 운영 홈 최초 HTML 스타일 | explorer경계 / PM수정·서버 / 독립tester | 운영배포·도메인검증 완료 | docs/public-home-ssr-style-fix.md;facac46f·2475/학생5·운영20/20·미푸시0 |
@@ -81,6 +81,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-28: 승인2커밋490637ed/1954bfd8 검증브랜치만푸시·배포차단/main7f/운영dpl6ku유지. 새#2/6ae0cff1206ce93970c68a28 시작1회 actual1954/M2/SSHoff finished1분17초·Swift38+13/Xcode성공/zip233.80KB. docs/stiz-ios-codemagic.md/.tmp/stiz-ios-build2 정본, Apple서명/TestFlight/추가실행없음.
 - 2026-10-28: 승인 사진·단회인증 개발연결/갱신보호 구현. 전체2556/학생5·인증쿠키28·독립PG39/Java172·iOS구성28·생산src946/212615d4일치. 가상기기자동실행정책차단·사진runtime/수정Swift미검증, 운영/원격빌드/설치/푸시0. docs/native-app-media-auth-followup.md 정본.
 - 2026-10-28: 동일 Codemagic #1/8546 finished·Swift38·Xcode BUILD SUCCEEDED·zip122.91KB 확인. 다운로드 Chrome차단·내부/실행/기기 미검증, 재실행/서명/TestFlight/운영변경0. docs/stiz-ios-codemagic.md 정본.
 - 2026-10-27: 사용자명시승인61528427 main푸시·Vercel stiz-dasan 운영배포. Production환경53개/숨김0 중 CHILD_CONNECTIONS_ENABLED없음 확인·기본off·환경/DB/채널/발송불변. 운영29통과후로그인복귀redirect1곳보완·전체2515/학생5·tsc통과, 최종도메인정본 .tmp/child-connections-release/.
@@ -90,7 +91,6 @@
 - 2026-10-22: 승인고정1280/1600접힘폐기·실제헤더합계/가용공간·계정/폰트지연재측정·Guide속성연결. 전체2320/학생5·fit5/Guide관련29·tsc/신규lint0·생산src881/1cbb·독립87/JS0·개별해시일치. 합성4106유지·운영/푸시/배포없음.
 - 2026-10-22: 공개원문HTML/약관107줄/개인정보10조·로컬4필드복원, 최상단한줄헤더·유니폼섹션제거·긴약관가시성/중복여백·가이드폭/글씨전환보완. 2312/학생5·원문4/관련26·tsc·생산src879/4f1488·독립50→8/JS0통과. 운영/푸시/배포없음.
 - 2026-10-22: 공개36경로·72폭 전수, KST게시일/수강월·공지현재안내·체험일정/오류가시성·가입연결·상세뒤로/상품오류 수정. 2305/학생5·24/17·tsc·생산src879/00bb·독립92/JS0 통과. 4106합성GET전용·실접수/운영/푸시/배포없음.
-- 2026-10-22: 공개특강KST/종료·만석·수업없음/코드노출·현재월가로선택·PC메뉴복원. 가이드첫폭/빠른확인경합보완, 전체2281/학생5·tsc·생산src875/9153·독립85통과. 4106합성GET전용 유지·실접수/운영/푸시/배포없음.
 ## PM 체크
 - scratchpad 100줄 이내 및 작업 로그 최근 10건 유지.
 - 오류·기술결정·구조·관례는 knowledge 파일에 반영.

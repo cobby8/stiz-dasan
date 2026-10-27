@@ -28,14 +28,14 @@
 - 독립 Java 파일·탐색·인증 정책 **172건**과 debug 합성 fixture 안전 검사 **16건** 통과. release APK의 manifest·DEX에 시험용 Activity/Provider/복귀 scheme이 없는 것도 확인했다. Android 최종 컴파일·Lint 결과는 `apps/driver-android/MEDIA_AUTH_FOLLOWUP.md`와 `.tmp/android-media-check/`의 최종 성공 로그를 기준으로 한다. Lint 오류0·경고8이며 새 시험용 WebView의 JavaScript 경고1개가 포함된다.
 - Android debug APK는 기존 Gradle 개발용 키로 자동 서명된다. 새 키 등록·Apple 서명·정식 출시 서명은 하지 않았고 release APK는 unsigned다.
 - 최종 Android `fixture-final-build.log` 성공, 소스27개 전후 일치·APK3개 해시 독립 일치. debug SHA-256 `685043806AD463C816E25760C39CB809CC26EFCD004E60605FE000A168A29872`, unsigned release `933CBE0D9FDF878FE02110CB650F85CC122089AF3C9AB741853064A1B53D6635`, androidTest `A54D936E727B9C69055D83437748C839FA888CC7FC31D602C4A13636CCB688A7`. 추가 산출물 계약6·local TLS 생성 템플릿 읽기6 확인, 후자는 실제 기기/TLS 실행 검사가 아니다.
-- Python iOS 구성 **28개 참조** 통과. 추가 Swift 정책 13개는 실행 준비만 했으며 이번 수정본의 Swift/Xcode 컴파일은 수행하지 않았다.
+- Python iOS 구성 **28개 참조** 통과. 최초 로컬 단계에서는 미실행이던 Swift/Xcode는 후속 승인 Codemagic #2에서 커밋1954bfd8 기준으로 실제 통과했다. Swift38+13·앱 arm64/x86_64 컴파일·시뮬레이터 zip233.80KB 생성 확인. UI 실행·실기기 시험은 별개로 미검증이다.
 - TypeScript와 변경 TS 파일 ESLint 통과. 최종 웹 생산 빌드946개 소스, SHA-256 `212615d48113558facee5c0d5803a9d0297a042c59d9a1feaec183de3314ccb9`, 종료0·`sourceStillMatches=true`. 정본 `.tmp/native-followup-build/build-result.json`. 운영 환경 파일·자료를 복사하지 않고 외부 통신을 막은 합성 설정만 사용했다.
 
 독립 tester가 발견한 정상 OAuth 복귀 차단, 일반 MIME 사진 거부, 회전 후 요청 번호 재사용, 로그인 완료 대기 중 중복 시작, 이동 응답의 갱신 쿠키 누락을 수정·재검증했다. 빌드 복사 중 수정이 감지됐을 때는 중단했고, 빌드 도중 후속 보완된 경우에는 최신 소스로 다시 빌드해 일치를 확인한다.
 
 ## 남은 출시 조건
 
-1. 새 iOS 코드의 원격 Xcode 컴파일과 실제 iPhone 시험. 이전 Codemagic #1 성공을 이번 수정본의 증거로 재사용하지 않는다.
+1. 실제 iPhone 설치·기능 시험. 새 iOS 코드 원격 컴파일은 후속 #2/1954bfd8로 완료했고, 이전 #1을 그 근거로 재사용하지 않았다.
 2. Android 실제 선택창·촬영·회전·WebView FileList·압축→합성 서버 수신 시험. `setAllowContentAccess(false)` 상태의 선택 URI 실제 읽기는 미검증이다. iPhone HEIC 변환도 확인한다.
 3. 실제 공급자 로그인·취소/만료/재시도·장기 세션·역할 변경·로그아웃 시험. 현재는 실제 공급자 대신 모의 인증을 사용했다.
 4. 확정 앱 ID·서명·검증된 HTTPS App Link/Universal Link 및 시험용 HTTPS 환경 연결. 개발 커스텀 주소는 로그인 소유권 검증을 대신하지 않으므로 Release와 production 서버에서 항상 차단한다. 기본 역할 홈 로그인 외 상세 복귀·간편가입·로그인 수단 추가는 지원하지 않는다.
