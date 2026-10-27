@@ -1,6 +1,6 @@
 # STIZ Knowledge Index
 
-> 2026-10-27: 사용자 승인 검증브랜치8546만푸시·Vercel배포차단/독립11·원격main7f 보존. Codemagic #1 요청1회·QUEUED로 Swift/Xcode 결과없음, 서명/TestFlight/운영반영0. docs/stiz-ios-codemagic.md 및 .tmp/stiz-app-codemagic-run/ 정본.
+> 2026-10-28: 승인 검증브랜치8546의 동일 Codemagic #1 finished 확인·Swift38/Xcode통과·simulator zip122.91KB. Chrome다운로드차단으로 파일내부/실행/기기 미검증. 새실행/서명/TestFlight/운영반영0, docs/stiz-ios-codemagic.md 및 .tmp/stiz-app-codemagic-run/ 정본.
 
 > 2026-10-27: 통합앱·공통계정 첫 그룹 구현/독립 검증. docs/native-app-foundation.md 정본, 전체2528/학생5·934소스격리build일치·PG24/iOS정적40/Java154/관찰자19. Codemagic STIZ 별도앱만 등록, 원격실행/푸시/배포0. 구조/결정/오류 갱신·지식본문5개 유지.
 

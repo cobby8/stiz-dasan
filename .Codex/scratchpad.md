@@ -1,13 +1,13 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 출시 준비 첫 그룹 — Android 통합 진입·iOS/Codemagic 기반·전 역할 내 계정/탈퇴 경계 보강.
-- 현재 단계: 승인 검증브랜치8546 푸시·배포차단11/11·tsc 완료. Codemagic #1/6adf8b944a72334e32e56cd9 시작요청1회, 원격Mac 배정 QUEUED로 Swift/Xcode/산출물 미검증.
+- 현재 단계: 2026-10-28 동일 Codemagic #1/8546 완료 확인. Swift38·Xcode BUILD SUCCEEDED·zip122.91KB 표시. Chrome 다운로드 차단으로 파일내부/실행/실기기 미검증; 새 실행0.
 - 승인 범위: 사용자 별도브랜치 푸시·무서명빌드1회 승인. codex/stiz-app-codemagic만 사용, main/운영·서명·TestFlight·설치·DB·발송 유지. 재실행 승인 없음.
-- 외부 보류: STIZ 전용 MID/apikey 미발급·가족연결flag off 유지. Mac 없음→Codemagic 수동 무서명 simulator 구성, Swift/Xcode/아이폰 설치 미검증. Native OAuth·로그인 기반 기사 운행·파일선택/푸시는 후속.
+- 외부 보류: STIZ 전용 MID/apikey 미발급·가족연결flag off 유지. 원격 Swift/Xcode 통과, 다운로드/시뮬레이터 실행/아이폰 설치 미검증. Native OAuth·로그인 기반 기사 운행·파일선택/푸시는 후속.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
-| Codemagic 검증 브랜치 | PM 실행·독립QA | 푸시완료·원격Mac 대기 | docs/stiz-ios-codemagic.md;8546·#1 1회·운영유지 |
+| Codemagic 검증 브랜치 | PM 실행·독립QA | 원격 빌드완료·다운로드차단 | docs/stiz-ios-codemagic.md;8546·#1 Swift38/Xcode통과·운영유지 |
 | 통합앱·공통계정 기반 | Android/계정 병렬개발·PM iOS/Codemagic·독립QA | 로컬·독립·생산빌드 완료 | docs/native-app-foundation.md; 로컬만·미푸시/미배포 |
 | 가족 연결·스포츠 업무 화면 | 서버·UI 병렬 / PM통합 / 독립QA | 푸시·운영배포검증 진행 | docs/child-connections-and-sport-workspace.md;2514/학생5·독립107·928소스·새기능off |
 | 운영 홈 최초 HTML 스타일 | explorer경계 / PM수정·서버 / 독립tester | 운영배포·도메인검증 완료 | docs/public-home-ssr-style-fix.md;facac46f·2475/학생5·운영20/20·미푸시0 |
@@ -80,6 +80,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-28: 동일 Codemagic #1/8546 finished·Swift38·Xcode BUILD SUCCEEDED·zip122.91KB 확인. 다운로드 Chrome차단·내부/실행/기기 미검증, 재실행/서명/TestFlight/운영변경0. docs/stiz-ios-codemagic.md 정본.
 - 2026-10-27: 사용자명시승인61528427 main푸시·Vercel stiz-dasan 운영배포. Production환경53개/숨김0 중 CHILD_CONNECTIONS_ENABLED없음 확인·기본off·환경/DB/채널/발송불변. 운영29통과후로그인복귀redirect1곳보완·전체2515/학생5·tsc통과, 최종도메인정본 .tmp/child-connections-release/.
 - 2026-10-27: ea6동기화·본인인증/가족승인·스포츠업무UI 구현. 미성년부모없는요청0·대표결제수단공유금지·탈퇴필터검토. 전체2514/학생5·독립107/PG35·tsc/Prisma/lint·최종928소스생산build확인, 전용MID미발급·운영/발송/푸시/배포없음.
 - 2026-10-26: bc51ff0b 푸시·운영배포 승인. 원격 로그인2건 보존 통합·전체2475/tsc 통과. 정상 푸시와 도메인 독립검증 진행, 실행 정본 .tmp/public-home-ssr/production/.
@@ -89,7 +90,6 @@
 - 2026-10-22: 공개36경로·72폭 전수, KST게시일/수강월·공지현재안내·체험일정/오류가시성·가입연결·상세뒤로/상품오류 수정. 2305/학생5·24/17·tsc·생산src879/00bb·독립92/JS0 통과. 4106합성GET전용·실접수/운영/푸시/배포없음.
 - 2026-10-22: 공개특강KST/종료·만석·수업없음/코드노출·현재월가로선택·PC메뉴복원. 가이드첫폭/빠른확인경합보완, 전체2281/학생5·tsc·생산src875/9153·독립85통과. 4106합성GET전용 유지·실접수/운영/푸시/배포없음.
 - 2026-10-22: 공개홈페이지 스포츠스타일 실제UI적용·메뉴/API/업무라벤더보존. 메뉴focus/특강bar/가이드태블릿분기보완. 최종2261/학생5·tsc·생산/src873·130화면/기능30·HTTP29/fixture18통과, 4106공개자료합성QA유지·실접수/운영/푸시/배포없음.
-- 2026-10-20: 홈페이지3시안 전체공개메뉴/자료/상세이동으로보완. 별도4095 GET전용·구조/계산/조건부기능유지, lookup2만합성null·실접수/인증/결제차단. 독립192→36·체험3/수강4·제품/사진노출대조·영상153수정통과. 원제품코드/운영/푸시/배포불변.
 ## PM 체크
 - scratchpad 100줄 이내 및 작업 로그 최근 10건 유지.
 - 오류·기술결정·구조·관례는 knowledge 파일에 반영.

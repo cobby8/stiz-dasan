@@ -6,6 +6,14 @@
 
 ## 2026-10-27 승인된 원격 검증
 
+### 2026-10-28 결과 확인
+
+- 동일한 빌드 #1/8546d139가 `finished`, 실행 시간 1분 11초로 완료됐다. 새 실행·재시도는 하지 않았다.
+- 실제 Swift 주소 정책 검사 로그 `38 cases passed`, Xcode 로그 `BUILD SUCCEEDED`를 확인했다. arm64·x86_64 시뮬레이터 앱이 생성됐고 `STIZ-simulator.zip` 122.91 KB가 표시된다.
+- 다운로드 과정에서 Chrome의 `ERR_BLOCKED_BY_CLIENT`가 표시됐다. 차단을 우회하지 않았으며, 파일 내부·해시·실행·아이폰 설치는 미검증이다. 아래의 대기·컴파일 미검증 표기는 최초 관찰 기록이며 이 결과로 갱신한다.
+- 서명·TestFlight·운영 홈페이지·main 변경 없음. 남은 출시 작업은 앱 내 인증 인계·파일 첨부·푸시·실기기 기능 검증 및 STIZ 전용 서명 준비다.
+- 로컬 증빙: `.tmp/stiz-app-codemagic-run/xcode-build-visible.txt`, `finished.jpg`. 서명 키나 산출물의 비공개 다운로드 주소는 기록하지 않는다.
+
 - 사용자 승인: 두 커밋과 검증 브랜치 배포 차단을 검사한 뒤 별도 브랜치 푸시·무서명 빌드 1회. 서명·TestFlight 업로드·운영 반영 제외.
 - `codex/stiz-app-codemagic`에 `8546d13983202b66848e73068dbca1aa8e8e9065`까지 푸시했다. 이 브랜치만 Vercel 자동 배포를 차단했고 다른 설정은 유지했다. 독립 설정11/11·Python 구성·TypeScript 통과.
 - 원격 main은 `7f7673d6ddcc81626d38c5a0cca5ce5fd24057a5`, 로컬 main은 `d870b839`로 유지했다. 운영은 기존 `dpl_6ku1QzfDeWaidLt3ZcLyRZ4o8ajU`를 유지한다.
