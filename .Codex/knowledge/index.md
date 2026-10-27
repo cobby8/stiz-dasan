@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 사용자 승인으로 연결 iPhone16Pro 1대 등록·STIZ 전용 AdHoc 프로파일 생성 및 Codemagic 연결 완료. 4a24fa09/8d19749e 검증브랜치 푸시, 수동 서명#1 6ae0ed15206ce93970c693ed actual8d19749 시작. 독립28/8/18 및 전체2586/학생5 통과. docs/stiz-ios-signed-device-validation.md 정본. 실제 IPA·설치 검증 진행 중, 운영/main·TestFlight 불변. Python 별칭 설치 함정·MSVC 종속성 기록, 지식본문5 유지.
+
 > 2026-10-28: 승인2커밋88f74d37/9dea3b21 검증브랜치푸시완료. 새#3 actual9dea·시작1회·Mac대기후finished84초·실제Swift38+13/새sandbox·Xcode양쪽아키텍처/서명NO·zip266.49KB. docs/stiz-ios-codemagic.md 및 stiz-ios-device-install-preparation.md 정본. Apple업턴랩스조직/기존STIZ등록ID·Codemagic팀서명항목확인, 기기등록/STIZ프로파일/설치/정식서명/운영/TestFlight0. 새UIruntime미검증·운영/main불변, 지식본문5유지.
 
 > 2026-10-28: 승인 격리 HTTPS 환경·양쪽 개발앱 origin 차단 구현. 정본 docs/native-device-sandbox.md, 실제UI 합성49원본/219761c0·서버12·전체2581/학생5·TLS/화면55·독립47+18·AndroidJava321/APK24·iOS구성28. 새 공개CA만 Android앱에 포함, 원격/기기/운영/배포/TestFlight0. 신규Swift컴파일·서명/설치·실제인증 미검증. 구조/결정/오류 갱신·지식본문5 유지.

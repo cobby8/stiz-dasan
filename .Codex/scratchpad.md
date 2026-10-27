@@ -1,9 +1,9 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 등록 아이폰용 STIZ 격리 서명 앱 빌드·설치·실기기 검증. 운영·TestFlight 제외.
-- 현재 단계: 88f74d37/9dea3b21 푸시완료. #3/6ae0e346206ce93970c690dd actual9dea3b21/M2/SSHoff 시작1회 finished1분24초·Swift38+13/새sandbox/Xcode 양쪽아키텍처성공·zip266.49KB. 결과문서로컬커밋, 재실행금지.
-- 승인 범위: 검증 브랜치 푸시·무서명simulator1회·설치준비읽기. 운영/main·TestFlight·정식서명·기기등록/설치·DB/공급자/OS신뢰 변경 없음.
-- 외부 보류: 전용MID/apikey미발급·가족연결off·앱링크/실제로그인·실기기사진·장기갱신·본인인증·계정결합기사운행·푸시. 새sandbox Swift/Xcode #3완료, WebKit/기기 실행·등록·서명/TestFlight미실행. Apple조직/STIZ등록ID확인·아이폰USB정상.
+- 현재 단계: 4a24fa09/8d19749e 검증 브랜치 푸시, 아이폰1대 등록·STIZ AdHoc 프로파일 연결 완료. 서명#1/6ae0ed15206ce93970c693ed actual8d19749 Mac 대기. 독립28/8/18·전체2586/학생5 통과.
+- 승인 범위: 검증 기록 푸시·연결 아이폰 등록·STIZ 프로파일·서명 격리 앱 설치·검증. 운영/main·TestFlight·운영 데이터·발송·결제 제외.
+- 외부 보류: 실제 IPA·아이폰 설치/runtime·사용자 시험 CA 신뢰. 전용 MID/apikey 미발급·정식 인증/사진/장기 갱신/푸시 등 출시는 별도. USB 설치 도구는 MSVC 부재로 공식 QR 대안 준비.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
@@ -83,6 +83,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-28: 승인 아이폰1대 등록·STIZ AdHoc 프로파일 생성/Codemagic valid·4a24fa09/8d19749e 검증브랜치푸시. 서명#1 6ae0ed15206ce93970c693ed actual8d19749/M2/SSHoff 시작1회 대기, 독립28/8/18·전체2586/학생5·공개CA/TLS12 통과. 실제IPA/설치 pending·운영/main/TestFlight 불변; docs/stiz-ios-signed-device-validation.md.
 - 2026-10-28: 승인88f74d37/9dea3b21 검증브랜치푸시완료·#3/6ae0e346206ce93970c690dd actual9dea/M2/SSHoff 시작1회 finished84초. 실제Swift38+13/새sandbox·Xcode arm64+x86_64/무서명·zip266.49KB·독립로그확인. Apple조직/기존STIZ ID확인·USB정상, 등록/프로파일/서명/설치/운영/TestFlight0·운영dpl6ku/main7f불변.
 - 2026-10-28: 승인 합성HTTPS·Android/iOS개발origin격리 구현. 전체2581/학생5·서버12·TLS/브라우저55·독립47+18·Java321/구성거부7/APK24·iOS정적28. 별도sandbox APK·CAonly/Release보존, run-25e9c4bd1ddb0821 실행중·Swift신규컴파일/실기기미검증. 운영/env/발송/결제/설치/원격/배포/TestFlight0.
 - 2026-10-28: 승인 출시 문서3·로컬 점검/시험2 작성·독립검증완료. 전체2569/학생5·전용13·읽기8/링크12·설정오판3종 수정재검증. 통합앱/실기기/출시차단 구분, f8df73cd 기존기록푸시완료·이번묶음로컬커밋. 운영/기기/서명/원격빌드/배포/TestFlight 변경 없음.
@@ -92,7 +93,6 @@
 - 2026-10-27: 사용자명시승인61528427 main푸시·Vercel stiz-dasan 운영배포. Production환경53개/숨김0 중 CHILD_CONNECTIONS_ENABLED없음 확인·기본off·환경/DB/채널/발송불변. 운영29통과후로그인복귀redirect1곳보완·전체2515/학생5·tsc통과, 최종도메인정본 .tmp/child-connections-release/.
 - 2026-10-27: ea6동기화·본인인증/가족승인·스포츠업무UI 구현. 미성년부모없는요청0·대표결제수단공유금지·탈퇴필터검토. 전체2514/학생5·독립107/PG35·tsc/Prisma/lint·최종928소스생산build확인, 전용MID미발급·운영/발송/푸시/배포없음.
 - 2026-10-26: bc51ff0b 푸시·운영배포 승인. 원격 로그인2건 보존 통합·전체2475/tsc 통과. 정상 푸시와 도메인 독립검증 진행, 실행 정본 .tmp/public-home-ssr/production/.
-- 2026-10-25: 원격0238c357로로컬FF동기화·기존Production매핑확인. 운영홈scope0/CSS200파손재현→Home명시publicScope·Theme옵션2파일최소수정. 관련6/전체2471/학생5·tsc/lint·생산src907/bcbdd4·독립24/JS·수화0·해시일치. 운영쓰기/푸시/새배포없음·운영반영승인대기.
 ## PM 체크
 - scratchpad 100줄 이내 및 작업 로그 최근 10건 유지.
 - 오류·기술결정·구조·관례는 knowledge 파일에 반영.

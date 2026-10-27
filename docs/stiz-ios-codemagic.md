@@ -1,5 +1,10 @@
 # STIZ 아이폰 앱과 Codemagic 준비
 
+## 현재 진행: 등록 아이폰용 격리 서명 시험
+- 사용자 후속 승인으로 STIZ 전용 Ad Hoc 프로파일을 연결하고 `stiz-ios-sandbox-adhoc` 수동 빌드를 1회 시작했다.
+- [서명 시험 #1](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6ae0ed15206ce93970c693ed), 실제 소스 `8d19749e`, 검증 브랜치·M2·SSH/VNC 끔. 아직 Mac 배정 대기이며 설치 완료를 뜻하지 않는다.
+- [현재 정본](stiz-ios-signed-device-validation.md)에 서명·IPA·실기기 결과를 이어서 기록한다. 운영 홈페이지·main·TestFlight 업로드는 계속 제외한다.
+
 2026-10-27 사용자 요청에 따라 BDR 기록앱에서 사용한 **Codemagic 원격 Mac → TestFlight** 방식을 채택한다. GitHub Actions로 별도 경로를 만들지 않는다. BDR는 Flutter이며 STIZ는 기존 웹 업무 화면을 UIKit/WKWebView로 여는 구조이므로 빌드 명령은 다르다.
 
 기존 BDR를 빌드한 Codemagic 계정의 GitHub 연동에서 `cobby8/stiz-dasan`을 **별도 iOS 앱으로 등록**했다. [STIZ Codemagic 앱](https://codemagic.io/builds?team_id=6ab35084460c69aad6ee4723&app_id=6adf8936614a5060c363fedd). BDR 앱 설정·키·테스터 그룹은 변경하지 않았다. 최초 앱 등록 당시에는 설정 미푸시로 `No configuration file found` 상태였다. 이후 승인된 원격 검증은 아래 후속 기록을 기준으로 한다. 연결 증빙은 `.tmp/stiz-app-foundation-qa/codemagic-stiz-connected.jpg`다.
