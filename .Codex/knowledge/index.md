@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 출시 문서·실기기 시험 준비·로컬 점검 승인. 통합앱1개 기준 정정, 정본 docs/native-device-release-readiness.md 및 scripts/native-release-readiness.mjs. 환경·키·DB·기기·네트워크 접근 없이 준비 상태만 구분, 독립 반례 검증 후 통합. decisions/errors 갱신, 지식 본문5개 유지. 서비스·서명·설치·원격빌드·운영배포·TestFlight 변경 없음.
+
 > 2026-10-28: 승인2커밋490637ed/1954bfd8 검증브랜치푸시·운영/main불변·배포차단. 새#2 actual1954/M2/SSHoff 시작1회 finished1분17초·실제Swift38+13/Xcode arm64/x86_64성공·zip233.80KB. 정본docs/stiz-ios-codemagic.md/.tmp/stiz-ios-build2. Apple서명/TestFlight/운영배포/추가실행없음.
 
 > 2026-10-28: 사진·개발용단회인증 로컬후속. 전체2556/학생5·인증쿠키28·독립PG39/Java172·iOS구성28·격리생산src946/212615d4일치. 정본 docs/native-app-media-auth-followup.md, 구조/결정/오류 갱신·지식본문5유지. 운영/푸시/원격/설치0, 가상기기실행정책차단·사진runtime/수정Swift미검증.
