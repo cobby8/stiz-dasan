@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 승인빌드4 USB설치·별도조회4 완료. 새CA신뢰전 -1202·안내글자 직접/독립확인, 사용자새CA신뢰대기·웹연결/다운로드/첨부/날짜 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
+
 > 2026-10-29: 같은 서명#4 finished111초/actual956·IPA0.1.0/4·독립ZIP/Info/프로파일/CMS/코드해시통과. strictTLS합성health200·외부작업차단, 설치/새CA신뢰/기기 실행 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
 
 > 2026-10-29: 사용자승인 5커밋95646eba까지검증브랜치푸시완료/원격main7f·운영dpl6ku불변. 수동서명#4(6ae213de206ce93970c6e66c)정확1회접수·actual956/M2/SSHoff·queued장비대기, Swift/IPA/설치/새CA신뢰미완료. 배포차단map값검사오판정정(설정불변), docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
