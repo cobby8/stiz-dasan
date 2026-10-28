@@ -1,5 +1,9 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 부모실제키보드+사유/신청버튼표시확인·날짜2곳로컬폭보완/현재적용일임시대조391→364→복원391, tsc·신청31·독립diff. 새번들/복귀일/선택기/교사키보드미검증. 현재화면과새탐색성공구분·역할복귀미확인/연결정리, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 승인iOS다운로드4파일로컬구현·정적28/구성28·전체2599/학생5·독립QA, 실제Swift컴파일/설치/다운로드실기기0. HTTPSknownlen10MiB초기지원·BlobCSV미지원, 샘플104B Content-Length정정/독립HTTP·현재run보존/새prepare필요. 관리자세로복원완료·부모날짜6px돌출·Safari연결유실/개인picker0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
 > 2026-10-28: 관리자iPhone실제가로/키보드 검색입력·주요버튼표시/가로넘침0·독립PNG와계측, 목록키보드뒤/세로복원대기. 샘플PNG링크저장창없이이미지문서이동·WKDownload미구현읽기조사/개인picker0, 실제첨부미검증·코드/운영/TestFlight0. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
 
 > 2026-10-28: 동일이름CA2개 위OFF/아래ON USB확인·사용자둘다ON→새entry정상. iPhone빌드3 새격리환경 청구시트열닫/120000미납·검색1→0→1·취소차단/기존신청보존, 402x750가로0·entry복귀/연결종료. 원본제품수정0/아이콘이번정상·원인미확정, 사진/가로/키보드미검증. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.

@@ -165,3 +165,36 @@
 - `ui-followup-media-download.png`에서 합성 PNG 링크 클릭은 저장/공유창 없이 현재 문서를 고정 이미지로 바꿨다. 돌아갈 웹 메뉴가 없어 정확한 STIZ 앱 재실행으로 복귀했다. 개인 사진·카메라·파일 선택기는 열지 않았다.
 - 동일 출처의 샘플 경로는 서버·브라우저·네이티브 탐색 정책이 허용한다. 현재 Swift에 WKDownload 전용 처리가 없는 사실과 실물 관측이 일치하지만 다운로드 저장 성공으로 기록하지 않는다. 앱 다운로드 기능 보완은 별도 코드 변경 승인 대상이다.
 - 기본 WKWebView 파일 입력 경로는 별도 검사해야 한다. 사진 보관함 대신 Files의 합성 PNG만 선택하는 시험과 앱 자체 다운로드 시험을 구분한다. 실제 사진 선택·취소·다중·HEIC·영속 저장은 아직 미검증이다. 운영·발송·결제·GPS·푸시·배포·TestFlight 변경은 없다.
+
+### 관리자 세로 복원 완료
+- 사용자가 키보드 위 ✓를 눌러 닫고 세로로 돌린 뒤 화면·입력값을 바꾸지 않고 재확인했다. `ui-followup-admin-portrait-restored.png`와 JSON에서 portrait 0도, inner 402×750 = visualViewport 402×750, offsetTop 0, 가로 넘침 0을 확인했다.
+- 검색칸 초점은 해제됐고 키보드가 사라졌으며, 검색어 ‘합성’과 결과 1명이 유지됐다. 검색·필터·등록 버튼과 원생 목록이 정상 복원된 것을 독립 검토도 확인했다. 이 성과를 다른 역할·모든 상세 창의 키보드/회전 통과로 확대하지 않는다.
+- 2026-10-28 사용자 후속 승인으로 iOS 다운로드 처리·정책·검증 코드의 로컬 수정·검증을 진행한다. 새 푸시·원격 서명 빌드·기기 설치·운영·TestFlight는 이번 로컬 구현 승인에 포함하지 않는다.
+
+## iOS 다운로드 로컬 구현·검증 결과
+
+2026-10-28 사용자 승인: 다운로드 처리·정책·검증 코드를 로컬에서 수정·검증한다. 푸시·새 서명 빌드·기기 설치·운영 배포·TestFlight는 별도다.
+
+- 구현 4파일: `apps/stiz-ios/STIZ/WebViewController.swift`, `NavigationPolicy.swift`, `apps/stiz-ios/tools/NavigationPolicyTests.swift`, `tests/ios-download-policy.test.mjs`. 새 Swift 파일·프레임워크·프로젝트 참조는 추가하지 않았다.
+- 메인 프레임의 사용자 링크에서 시작한 기존 WK 요청을 WKDownload로 이어받는다. 현재 페이지와 같은 HTTPS 호스트/포트 및 기존 탐색 정책의 허용 경로만 사용한다. URLSession 우회 요청·쿠키 복사·새 인증 정보 전달·TLS 예외는 추가하지 않았다.
+- PNG/JPEG/WebP/PDF/UTF-8 TXT/CSV 중 MIME·안전한 단일 확장자 파일명·양수의 알려진 길이(10 MiB 이하)·HTTP 200·압축되지 않은 전송을 검사한다. 외부 원점·HTTP·모든 리디렉션·blob/data·HTML/JS/실행파일·ZIP/XLSX·크기 미상·이중 확장자·경로/제어 문자는 거부한다.
+- 실제 수신 Progress와 임시 파일 크기를 감시하고 완료 시 실제 크기·정규 파일/비심볼릭 링크·형식 머리글을 다시 확인한다. OS 쓰기 청크 이후 초과를 감지해 취소하는 방식이므로 디스크/메모리 10 MiB의 절대 하드캡은 아니다. 파일 머리글 일치도 전체 파일의 무해성을 보장하지 않는다.
+- 한 번에 하나만 진행하고 취소·실패·60초 제한·페이지 이탈에 대응한다. 기존 페이지를 파일 문서로 바꾸지 않고 저장·공유 창을 연다. 공유 중 배경 전환에는 파일을 유지하고 완료/취소 뒤 정리한다. 앱 강제 종료에서 즉시 정리를 보장하지 않으며 다음 시작 때 전용 UUID 임시 폴더의 잔여만 정리한다.
+- 독립 검토에서 종료 시 MainActor 인계, 일반 페이지 이동 즉시 취소, UTF-8 BOM 반례를 보완했다. 기존 Info·ATS·인증·Release 구성·Codemagic·서명 도구는 변경하지 않았다.
+- 최종 `npm test`: 전체 2,599/2,599 및 학생 표시 보호 5/5. 다운로드/검사 연결/준비표 선별 Node 28/28, `python -B apps/stiz-ios/tools/validate-project.py`의 프로젝트 참조 28개 검사를 통과했다. 이들은 Swift/UIKit 네이티브 컴파일·새 앱 실행 증거가 아니다. 순수 Swift 반례는 추가했으나 Windows에서 실행하지 않았다.
+- 샘플 연계 정정: 앞서 승인된 격리 서버·합성 PNG 검증 범위에서 `scripts/native-device-sandbox.mjs`의 PNG 응답에만 Content-Length를 명시하고 기존 전용 테스트를 보완했다. 샘플/다운로드 Node 20/20, 독립 임시 loopback HTTP 서버에서 본문 104바이트와 Content-Length 104 일치·Transfer-Encoding 없음 확인. 기존 8453 서버는 바꾸지 않았다.
+- 현재 `run-a63c6a10719f6b85`는 정정 이전 chunked 응답으로 계속 실행 중이다. 새 앱의 다운로드 실기기 검증 전 정상 prepare로 새 원장/CA를 만들고 사용자 직접 신뢰를 받아야 한다. 원장 수동 갱신이나 CA 검증 우회는 하지 않는다.
+- 실제 특강·셔틀 CSV 내보내기는 화면에서 만든 Blob URL이며 이번 HTTPS 파일 처리로 해결되지 않는다. 실제 사이트 전체 내보내기 완료로 표시하지 않는다. 앱의 blob/data 차단은 유지하고 후속 설계·승인 대상으로 남긴다.
+- Safari의 샘플과 일반 health 주소 모두 연결 유실이라는 사용자 보고가 있었고, Safari 완전 종료 후 재열기도 같았다. PC의 엄격 TLS 상태/샘플 응답은 각각 200이었다. Safari 원인은 확정하지 않았으며 파일 준비·실제 선택/취소/다중/HEIC는 보류다. 개인 파일 선택기·사진 보관함·카메라는 열지 않았다.
+- 정본 검사 로그: `.tmp/native-device-sandbox/full-test-ios-download-final.log`, `download-length-tests.log`. 실제 Swift 컴파일·서명 IPA·다운로드 저장/공유·취소·정리 동작은 미검증이며, 기기에는 이전 build 3이 그대로 설치돼 있다.
+
+## 학부모 실제 키보드와 날짜 폭 로컬 보완
+
+- 최초 사유 캡처 시점에는 키보드가 닫혀 있어 `ui-followup-parent-input-keyboard-closed.png/.json`으로 별도 보존했고 키보드 검사 통과로 기록하지 않았다. 사용자 재조작 직후 PM이 직접 캡처한 `ui-followup-parent-keyboard.png/.json`에서는 실제 한국어 키보드·‘합성’ 사유·신청 버튼이 함께 보였다. 독립 검토도 확인했다. 신청 버튼은 대상 반 미선택으로 비활성 상태이며 실제 신청·POST는 실행하지 않았다.
+- 실제 키보드 측정은 inner 402×400, visualViewport 402×388, offsetTop 350, 가로 넘침 0이다. 사유칸 y143~244, 신청 버튼 y268~319이며 실제 캡처로 동시 표시를 대조했다. JavaScript 오류는 수집하지 않아 0으로 기록하지 않는다.
+- 날짜 입력은 사전 실측 right391/cardRight385로 카드 바깥 6px 돌출이 확인됐다. 사용자 승인을 받아 `EnrollmentChangeClient.tsx` 날짜 입력 두 곳의 className만 보완했다. value·min/max·onChange·API·신청 처리는 그대로다.
+- 기기상의 임시 스타일 대조에서 box-border/min-w-0/max-w-full만으로는 content-box/right391이 유지됐다. appearance-none을 함께 적용하면 border-box/right364/width326이 되어 카드 안으로 들어왔고, try/finally로 원래 class를 복원하면 right391/content-box/appearance auto로 돌아왔다. 값·이벤트·POST 변경은 없었다. 증거 `ui-followup-parent-date-width-final.json`과 `parent-date-final-width-probe.cjs`를 보존했다.
+- 최종 두 날짜 입력에 box-border/min-w-0/max-w-full/appearance-none을 반영했다. TypeScript `tsc --noEmit --incremental false`와 기존 신청 회귀 31/31이 통과했고 독립 diff 검토도 마쳤다. 새 미러 테스트는 추가하지 않았다.
+- 임시 대조는 현재 표시된 적용일 한 곳의 스타일 효과만 확인했다. 복귀일 두 번째 입력·새로 컴파일한 번들·날짜 선택기 조작은 후속 실기기 검증이 필요하다. 현재 설치 앱/서버는 수정 전 상태를 유지한다.
+- 정리 중 역할 선택 링크를 눌렀으나 실제 캡처는 학부모 기존 화면에 남아 있어 역할 선택 복귀 성공으로 기록하지 않았다. 진행 중 시험 탐색만 window.stop()으로 중단하고 해당 화면을 보존했다. helper 연결·터널은 모두 종료했으며 신청은 하지 않았다. `ui-followup-download-local-final-entry.png`라는 파일명은 검사 목적일 뿐, 내용이 역할 선택 화면이라는 증거로 사용하지 않는다.
+- 다운로드 로컬 4파일·합성 PNG 길이 정정·날짜 입력 2곳의 로컬 보완은 완료했다. 운영 배포·푸시·원격 빌드·새 앱 설치·TestFlight는 실행하지 않았다. 새 시험 앱에서 파일 저장/공유와 Blob CSV 내보내기 지원, 합성 파일 선택/취소/다중/HEIC, 교사 실제 키보드·새 번들 날짜 선택기 검증이 남아 있다.

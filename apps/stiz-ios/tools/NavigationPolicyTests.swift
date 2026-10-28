@@ -115,6 +115,36 @@ struct NavigationPolicyTests {
         }
         let address = "https://192.168.0.2:8453/_next/static/app.js"
         precondition(expression.firstMatch(in: address, range: NSRange(address.startIndex..., in: address)) != nil)
+        let sample = URL(string: "https://192.168.0.2:8453/__sandbox/sample.png")!
+        let page = URL(string: "https://192.168.0.2:8453/__sandbox/media")!
+        precondition(DownloadPolicy.allowsURL(sample, from: page, configuration: sandbox))
+        for address in ["http://192.168.0.2:8453/a.png", "https://192.168.0.3:8453/a.png", "https://192.168.0.2:8454/a.png",
+                        "https://user:pass@192.168.0.2:8453/a.png", "https://192.168.0.2:8453/driver/a.png", "https://192.168.0.2:8453/a.png#x",
+                        "https://www.stiz-dasan.kr/a.png", "blob:https://192.168.0.2:8453/synthetic", "data:image/png;base64,AAAA"] {
+            precondition(!DownloadPolicy.allowsURL(URL(string: address)!, from: page, configuration: sandbox))
+        }
+        precondition(DownloadPolicy.accepts(filename: "시험.png", mime: "image/png", length: 100))
+        precondition(DownloadPolicy.accepts(filename: "sample.pdf", mime: "application/pdf", length: DownloadPolicy.maximumBytes))
+        for length in [Int64(-1), 0, DownloadPolicy.maximumBytes + 1] {
+            precondition(!DownloadPolicy.accepts(filename: "sample.png", mime: "image/png", length: length))
+        }
+        for filename in ["", ".png", "../sample.png", "nested/sample.png", "nested\\sample.png", "sample.png.exe", "sample.html.png",
+                         "sample%2epng", "sample:png", "sample.png ", "sample\n.png", "sample\u{202E}.png", String(repeating: "a", count: 121) + ".png"] {
+            precondition(!DownloadPolicy.accepts(filename: filename, mime: "image/png", length: 100))
+        }
+        for pair in [("sample.html", "text/html"), ("sample.js", "application/javascript"), ("sample.exe", "application/octet-stream"),
+                     ("sample.zip", "application/zip"), ("sample.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                     ("sample.jpg", "image/png")] {
+            precondition(!DownloadPolicy.accepts(filename: pair.0, mime: pair.1, length: 100))
+        }
+        precondition(DownloadPolicy.contentMatches(Data([137,80,78,71,13,10,26,10]), mime: "image/png"))
+        precondition(DownloadPolicy.contentMatches(Data("%PDF-1.7".utf8), mime: "application/pdf"))
+        precondition(DownloadPolicy.contentMatches(Data("name,value\nsynthetic,1".utf8), mime: "text/csv"))
+        precondition(!DownloadPolicy.contentMatches(Data("<html>unsafe</html>".utf8), mime: "text/plain"))
+        precondition(!DownloadPolicy.contentMatches(Data("\u{FEFF}<html>unsafe</html>".utf8), mime: "text/plain"))
+        precondition(!DownloadPolicy.contentMatches(Data([0,1,2]), mime: "image/png"))
+        precondition(!DownloadPolicy.contentMatches(Data("#!/bin/sh".utf8), mime: "text/plain"))
+        print("STIZ iOS download policy: synthetic same-origin, filenames, types, size and content assertions passed")
         print("STIZ iOS navigation policy: \(cases.count) cases passed")
         print("STIZ iOS native handoff policy: 13 assertions passed")
         print("STIZ iOS sandbox policy: valid/invalid origins, release isolation, navigation and resource rules passed")

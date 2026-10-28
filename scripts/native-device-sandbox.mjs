@@ -66,7 +66,7 @@ export function createSandboxHandler({ origins, assets = {}, fixtures = sandboxF
     if (route === 'asset') {
       const asset = target.pathname === '/guard.js' ? Buffer.from(browserGuard) : target.pathname === '/__sandbox/sample.png' ? SAMPLE_PNG : assets[target.pathname];
       if (!asset) { json(response,404,{error:'SANDBOX_ASSET_MISSING'}); return; }
-      response.writeHead(200,{'Content-Type':MIME[target.pathname],...(target.pathname === '/__sandbox/sample.png' ? {'Content-Disposition':'attachment; filename="stiz-synthetic-sample.png"'} : {})}); response.end(asset); return;
+      response.writeHead(200,{'Content-Type':MIME[target.pathname],...(target.pathname === '/__sandbox/sample.png' ? {'Content-Disposition':'attachment; filename="stiz-synthetic-sample.png"','Content-Length':String(asset.length)} : {})}); response.end(asset); return;
     }
     if (route === 'synthetic-read') {
       if (target.pathname === '/__sandbox/health') return json(response,200,{sandbox:true,data:'synthetic-only',database:false,externalDispatch:false,payments:false,geolocation:false,roles:ROLE_PATHS.filter(item=>item.startsWith('/__entry/'))});

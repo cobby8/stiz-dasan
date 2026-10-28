@@ -13,10 +13,14 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var nativeConsumeTimeout: Timer?
     private var pageObservation: NSKeyValueObservation?
     private var sandboxProtectionReady = !NavigationPolicy.sandbox.isRequested
+    private var fileDownloads: NativeFileDownloads!
+    private var downloadLink: (page: URL, target: URL)?
+    private var downloadConverted = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         nativeAuth = NativeAuthCoordinator(owner: self)
+        fileDownloads = NativeFileDownloads(owner: self)
         view.backgroundColor = UIColor(named: "Canvas")
         let configuration = WKWebViewConfiguration()
         // 시험 앱은 운영 로그인 쿠키·저장소를 공유하지 않는다.
@@ -97,6 +101,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             retry.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
         ])
         prepareSandboxProtection()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || isMovingFromParent { fileDownloads?.cancelForPageExit() }
     }
 
     private func prepareSandboxProtection() {
@@ -198,12 +207,30 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 return
             }
         }
+        if navigationAction.sourceFrame.isMainFrame,
+           navigationAction.targetFrame?.isMainFrame != false,
+           navigationAction.navigationType == .linkActivated,
+           let page = webView.url, let target = navigationAction.request.url,
+           DownloadPolicy.allowsURL(target, from: page) {
+            downloadLink = (page, target)
+            if navigationAction.shouldPerformDownload {
+                let accepted = fileDownloads.begin(page: page, target: target)
+                if accepted { downloadConverted = true }
+                decisionHandler(accepted ? .download : .cancel)
+                return
+            }
+        } else {
+            downloadLink = nil
+        }
+        downloadConverted = false
         // iframe은 새 창이나 외부 앱을 열 권한을 얻지 않는다.
         if navigationAction.targetFrame?.isMainFrame == false {
             decisionHandler(navigationAction.request.url.map { NavigationPolicy.allowsSubframe($0) } == true ? .allow : .cancel)
             return
         }
-        decisionHandler(approve(navigationAction) ? .allow : .cancel)
+        let allowed = approve(navigationAction)
+        if allowed { fileDownloads.cancelForPageExit() }
+        decisionHandler(allowed ? .allow : .cancel)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -222,9 +249,32 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             }
         }
         guard let url = navigationResponse.response.url,
-              NavigationPolicy.decide(url, userInitiated: false) == .website,
-              navigationResponse.canShowMIMEType else { decisionHandler(.cancel); return }
+              NavigationPolicy.decide(url, userInitiated: false) == .website else { decisionHandler(.cancel); return }
+        let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        if disposition.lowercased().hasPrefix("attachment") || !navigationResponse.canShowMIMEType {
+            guard let link = downloadLink, link.target == url,
+                  fileDownloads.begin(page: link.page, target: url) else { decisionHandler(.cancel); return }
+            downloadConverted = true
+            decisionHandler(.download)
+            return
+        }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        fileDownloads.attach(download)
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        fileDownloads.attach(download)
+    }
+
+    func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
+        downloadLink = nil
+        if fileDownloads.isBusy {
+            webView.stopLoading()
+            fileDownloads.cancelForPageExit()
+        }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
@@ -282,13 +332,19 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         progress.startAnimating()
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        downloadLink = nil
+        fileDownloads.pageDidChange(to: webView.url)
         progress.stopAnimating()
         if let url = webView.url, NavigationPolicy.decide(url, userInitiated: false) == .website { lastPage = url }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { recover(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { recover(error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recover(nil) }
-    deinit { nativeConsumeTimeout?.invalidate(); pageObservation?.invalidate(); nativeAuth?.shutdown() }
+    deinit {
+        nativeConsumeTimeout?.invalidate(); pageObservation?.invalidate(); nativeAuth?.shutdown()
+        let downloads = fileDownloads
+        Task { @MainActor in downloads?.shutdown() }
+    }
     #if DEBUG
     private func sandboxRecoveryMessage(_ error: Error?) -> String? {
         guard NavigationPolicy.sandbox.origin != nil else { return nil }
@@ -320,6 +376,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     }
     #endif
     private func recover(_ error: Error?) {
+        // 파일로 전환되며 중단된 웹 탐색은 기존 페이지를 오류 화면으로 바꾸지 않는다.
+        if error != nil, downloadConverted || fileDownloads?.isBusy == true { progress.stopAnimating(); return }
         // 주소 전환에 따른 취소는 완료 응답 대기를 해제하지 않는다.
         if (error as NSError?)?.code == NSURLErrorCancelled { progress.stopAnimating(); return }
         nativeConsumePending = false
@@ -332,5 +390,274 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         #endif
         webView.isHidden = true
         view.viewWithTag(101)?.isHidden = false
+    }
+}
+
+// WKDownload를 그대로 사용하므로 웹 쿠키·인증 정보를 다른 요청에 복사하지 않는다.
+@MainActor
+private final class NativeFileDownloads: NSObject, WKDownloadDelegate {
+    private weak var owner: UIViewController?
+    private var active: WKDownload?
+    private var sourcePage: URL?
+    private var target: URL?
+    private var folder: URL?
+    private var file: URL?
+    private var mime = ""
+    private var generation = UUID()
+    private var stopping = false
+    private var stopMessage: String?
+    private var sharing = false
+    private var declaredLength: Int64 = 0
+    private var received: NSKeyValueObservation?
+    private var monitor: Timer?
+    private var timeout: Timer?
+    private var backgroundObserver: NSObjectProtocol?
+    private var terminationObserver: NSObjectProtocol?
+    private var progressDialog: UIAlertController?
+    private weak var shareDialog: UIActivityViewController?
+    var isBusy: Bool { target != nil || active != nil || sharing }
+
+    init(owner: UIViewController) {
+        self.owner = owner
+        super.init()
+        // 강제 종료에는 콜백이 보장되지 않으므로 다음 실행 때도 전용 잔여 파일을 정리한다.
+        purgeOldFiles()
+        backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in if self?.sharing == false { self?.cancel(nil) } }
+        }
+        terminationObserver = NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.cancel(nil) }
+        }
+    }
+
+    func begin(page: URL, target: URL) -> Bool {
+        guard !isBusy, owner?.presentedViewController == nil,
+              DownloadPolicy.allowsURL(target, from: page) else { return false }
+        self.sourcePage = page
+        self.target = target
+        generation = UUID()
+        stopping = false
+        let token = generation
+        timeout = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+            Task { @MainActor in if self?.generation == token { self?.cancel("파일을 받는 시간이 지연되었습니다. 다시 시도해 주세요.") } }
+        }
+        return true
+    }
+
+    func attach(_ download: WKDownload) {
+        guard active == nil, let page = sourcePage, let target = target,
+              download.originalRequest?.url == target, DownloadPolicy.allowsURL(target, from: page) else {
+            let token = generation
+            download.cancel { [weak self] _ in
+                Task { @MainActor in
+                    guard let self = self, self.generation == token, self.active == nil else { return }
+                    self.finishCleanup(message: "파일의 요청 주소를 확인하지 못했습니다.")
+                }
+            }
+            return
+        }
+        active = download
+        download.delegate = self
+        let token = generation
+        received = download.progress.observe(\.completedUnitCount, options: [.new]) { [weak self, weak download] _, _ in
+            Task { @MainActor in
+                guard let self = self, let download = download, self.generation == token, self.active === download else { return }
+                self.checkSize()
+            }
+        }
+        monitor = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in if self?.generation == token { self?.checkSize() } }
+        }
+        let dialog = UIAlertController(title: "파일 받는 중", message: "완료되면 저장·공유 방법을 선택할 수 있습니다.", preferredStyle: .alert)
+        dialog.addAction(UIAlertAction(title: "취소", style: .cancel) { [weak self] _ in self?.cancel(nil) })
+        progressDialog = dialog
+        owner?.present(dialog, animated: true)
+    }
+
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+        guard active === download, !stopping, let target = target, let page = sourcePage,
+              response.url == target, DownloadPolicy.allowsURL(target, from: page),
+              (response as? HTTPURLResponse)?.statusCode == 200, let type = response.mimeType,
+              ((response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Encoding") ?? "identity").lowercased() == "identity",
+              DownloadPolicy.accepts(filename: suggestedFilename, mime: type, length: response.expectedContentLength) else {
+            completionHandler(nil)
+            cancel("지원하지 않는 파일이거나 크기를 확인할 수 없습니다. 10MB 이하의 지원 파일을 선택해 주세요.")
+            return
+        }
+        do {
+            let base = try temporaryRoot()
+            let directory = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            folder = directory
+            let destination = directory.appendingPathComponent(suggestedFilename, isDirectory: false)
+            guard destination.deletingLastPathComponent() == directory,
+                  !FileManager.default.fileExists(atPath: destination.path) else { throw CocoaError(.fileWriteInvalidFileName) }
+            file = destination
+            mime = type.lowercased()
+            declaredLength = response.expectedContentLength
+            completionHandler(destination)
+        } catch {
+            completionHandler(nil)
+            cancel("파일을 준비하지 못했습니다. 다시 시도해 주세요.")
+        }
+    }
+
+    func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping (WKDownload.RedirectPolicy) -> Void) {
+        decisionHandler(.cancel)
+        if active === download { cancel("주소가 변경되는 파일은 앱에서 받을 수 없습니다.") }
+    }
+
+    func download(_ download: WKDownload, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        // OS 기본 신뢰 검증을 유지하고 새 인증 정보나 우회 자격 증명을 만들지 않는다.
+        completionHandler(.performDefaultHandling, nil)
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        guard active === download else { return }
+        finishCleanup(message: stopping ? stopMessage : "파일을 받지 못했습니다. 기존 화면에서 다시 시도해 주세요.")
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        guard active === download, !stopping, let file = file else { return }
+        do {
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink == false,
+                  let size = values.fileSize, size > 0, Int64(size) <= DownloadPolicy.maximumBytes, Int64(size) == declaredLength,
+                  file.resolvingSymlinksInPath() == file.standardizedFileURL else { throw CocoaError(.fileReadUnknown) }
+            let handle = try FileHandle(forReadingFrom: file)
+            defer { try? handle.close() }
+            let bytes = try handle.readToEnd() ?? Data()
+            guard Int64(bytes.count) == Int64(size), DownloadPolicy.contentMatches(bytes, mime: mime) else { throw CocoaError(.fileReadCorruptFile) }
+            stopMonitoring()
+            active = nil
+            sharing = true
+            let token = generation
+            dismissProgress { [weak self] in
+                guard let self = self, self.generation == token else { return }
+                guard self.sharing, let owner = self.owner, owner.view.window != nil,
+                      owner.presentedViewController == nil else { self.finishCleanup(message: nil); return }
+                let dialog = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+                dialog.popoverPresentationController?.sourceView = owner.view
+                dialog.popoverPresentationController?.sourceRect = CGRect(x: owner.view.bounds.midX, y: owner.view.bounds.midY, width: 1, height: 1)
+                dialog.completionWithItemsHandler = { [weak self] _, _, _, _ in
+                    guard self?.generation == token else { return }
+                    self?.finishCleanup(message: nil)
+                }
+                self.shareDialog = dialog
+                owner.present(dialog, animated: true)
+            }
+        } catch {
+            finishCleanup(message: "파일의 형식이나 크기를 확인하지 못했습니다. 저장하지 않았습니다.")
+        }
+    }
+
+    private func checkSize() {
+        guard let download = active, !stopping else { return }
+        let actual = file.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize } ?? 0
+        if download.progress.completedUnitCount > DownloadPolicy.maximumBytes || Int64(actual) > DownloadPolicy.maximumBytes {
+            cancel("파일이 10MB를 초과해 받기를 중단했습니다.")
+        }
+    }
+
+    func pageDidChange(to page: URL?) {
+        if let original = sourcePage, page != original { cancelForPageExit() }
+    }
+
+    func cancelForPageExit() {
+        if sharing {
+            let token = generation
+            if let dialog = shareDialog {
+                dialog.dismiss(animated: false) { [weak self] in
+                    guard self?.generation == token else { return }
+                    self?.finishCleanup(message: nil)
+                }
+            }
+            else { finishCleanup(message: nil) }
+        } else { cancel(nil) }
+    }
+
+    private func cancel(_ message: String?) {
+        guard isBusy, !stopping else { return }
+        stopping = true
+        stopMessage = message
+        stopMonitoring()
+        let token = generation
+        guard let download = active else { finishCleanup(message: message); return }
+        download.cancel { [self] _ in
+            Task { @MainActor in
+                guard self.generation == token else { return }
+                self.finishCleanup(message: message)
+            }
+        }
+    }
+
+    private func stopMonitoring() {
+        received?.invalidate(); received = nil
+        monitor?.invalidate(); monitor = nil
+        timeout?.invalidate(); timeout = nil
+    }
+
+    private func dismissProgress(_ completion: @escaping () -> Void) {
+        if let dialog = progressDialog, dialog.presentingViewController != nil {
+            progressDialog = nil
+            dialog.dismiss(animated: true, completion: completion)
+        } else { progressDialog = nil; completion() }
+    }
+
+    private func finishCleanup(message: String?) {
+        stopMonitoring()
+        active = nil
+        sharing = false
+        target = nil
+        sourcePage = nil
+        stopping = false
+        stopMessage = nil
+        declaredLength = 0
+        generation = UUID()
+        let finishedToken = generation
+        if let folder = folder { removeOwnedFolder(folder) }
+        folder = nil; file = nil; mime = ""
+        dismissProgress { [weak self] in
+            guard self?.generation == finishedToken, let message = message, let owner = self?.owner,
+                  owner.view.window != nil, owner.presentedViewController == nil else { return }
+            let dialog = UIAlertController(title: "파일 안내", message: message, preferredStyle: .alert)
+            dialog.addAction(UIAlertAction(title: "확인", style: .default))
+            owner.present(dialog, animated: true)
+        }
+    }
+
+    private func temporaryRoot() throws -> URL {
+        let base = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("stiz-native-downloads", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: base.path) { try FileManager.default.createDirectory(at: base, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]) }
+        let values = try base.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isDirectory == true, values.isSymbolicLink == false, base.resolvingSymlinksInPath() == base.standardizedFileURL else { throw CocoaError(.fileWriteNoPermission) }
+        return base
+    }
+
+    private func removeOwnedFolder(_ directory: URL) {
+        guard let base = try? temporaryRoot(), directory.deletingLastPathComponent() == base,
+              UUID(uuidString: directory.lastPathComponent) != nil,
+              let values = try? directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+              values.isDirectory == true, values.isSymbolicLink == false,
+              let children = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return }
+        for child in children {
+            guard child.deletingLastPathComponent() == directory,
+                  let value = try? child.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                  value.isRegularFile == true, value.isSymbolicLink == false else { return }
+        }
+        for child in children { try? FileManager.default.removeItem(at: child) }
+        // 소유한 UUID 폴더만 정리하고 링크나 하위 디렉터리를 재귀 탐색하지 않는다.
+        if (try? FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty) == true { try? FileManager.default.removeItem(at: directory) }
+    }
+
+    private func purgeOldFiles() {
+        guard let base = try? temporaryRoot(), let directories = try? FileManager.default.contentsOfDirectory(at: base, includingPropertiesForKeys: nil) else { return }
+        for directory in directories { removeOwnedFolder(directory) }
+    }
+
+    func shutdown() {
+        if let observer = backgroundObserver { NotificationCenter.default.removeObserver(observer) }
+        if let observer = terminationObserver { NotificationCenter.default.removeObserver(observer) }
+        cancelForPageExit()
     }
 }

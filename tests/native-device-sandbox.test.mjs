@@ -68,6 +68,8 @@ test('합성 PNG만 내려받을 수 있고 파일 선택 수신도 비저장으
   const app=instance();const sample=await send(app,{url:'/__sandbox/sample.png'});
   assert.equal(sample.status,200);assert.equal(sample.headers['content-type'],'image/png');
   assert.equal(sample.headers['content-disposition'],'attachment; filename="stiz-synthetic-sample.png"');
+  assert.equal(sample.headers['content-length'],String(sample.bytes.length));
+  assert.equal(sample.headers['transfer-encoding'],undefined);
   assert.deepEqual([...sample.bytes.subarray(0,8)],[137,80,78,71,13,10,26,10]);
   assert.equal(sample.bytes.readUInt32BE(16),32);assert.equal(sample.bytes.readUInt32BE(20),32);
   const crc32=bytes=>{let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;};

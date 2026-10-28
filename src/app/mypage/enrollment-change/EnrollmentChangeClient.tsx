@@ -231,7 +231,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 min={initial.minEffectiveFrom}
                 max={initial.maxEffectiveFrom}
                 onChange={(event) => setEffectiveFrom(event.target.value)}
-                className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
               />
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                 달 중간부터 옮기면 그달 수강료를 수업 회차대로 다시 계산해 안내드립니다.
@@ -249,7 +249,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 type="date"
                 value={resumeOn}
                 onChange={(event) => setResumeOn(event.target.value)}
-                className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
           )}
