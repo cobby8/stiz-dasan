@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 승인격리상세5파일·출시문서정정. 실제청구/학생정보·원생검색·부모pending·합성PNG, 운영src변경0/쓰기차단. 전용15·전체2594/학생5·tsc·독립경계·새run strictTLS22, 아이폰새CA신뢰대기. 정본 docs/stiz-ios-signed-device-validation.md, 지식본문5유지.
+
 > 2026-10-28: USB설정화면STIZ CA전체신뢰OFF확인→사용자ON→앱재실행후-1202해소. 실제iPhone빌드3 네역할홈/역할선택복귀 PNG·독립눈검사/계측402x750 가로0 확인. docs/stiz-ios-signed-device-validation.md 정본, 로그인·저장·결제·GPS/배경/사진/가로회전검증과구분·운영/TestFlight0. 지식본문5유지.
 
 > 2026-10-28: 사용자USB직접확인승인으로iOS27.0.1 실제캡처/AX영역검사, 안내색13025d44 푸시·서명#3/6ae19790206ce93970c6bd61 finished72초. 전체2591/학생5·독립9/28/23/IPA서명. Coordinator48재시동복구후USB설치build3/직접실행PNG에서안내문구정상·-1202확인. docs/stiz-ios-signed-device-validation.md 정본, 인증서trust읽기대기·운영/TestFlight0, 지식본문5유지.

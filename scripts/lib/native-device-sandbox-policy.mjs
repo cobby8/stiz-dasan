@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 
 export const SANDBOX_PORT = 8453;
-export const ROLE_PATHS = Object.freeze(['/store-app', '/__entry/admin', '/__entry/teacher', '/__entry/parent', '/__entry/driver', '/admin', '/staff', '/staff/sessions/sandbox-session', '/mypage', '/mypage/enrollment-change', '/driver/sandbox-only', '/__sandbox/media']);
+export const ROLE_PATHS = Object.freeze(['/store-app', '/__entry/admin', '/__entry/teacher', '/__entry/parent', '/__entry/driver', '/admin', '/admin/students', '/staff', '/staff/sessions/sandbox-session', '/mypage', '/mypage/enrollment-change', '/__sandbox/parent-pending', '/driver/sandbox-only', '/__sandbox/media']);
 export const BODY_LIMIT = 8 * 1024 * 1024;
 export function privateIpv4(value) {
   if (typeof value !== 'string' || isIP(value) !== 4) return false;
@@ -40,8 +40,8 @@ export const SANDBOX_HEADERS = Object.freeze({
 // 서버가 운영 요청을 중계하는 경로는 없다. 알려진 합성 조회와 첨부 시험만 허용한다.
 export function routeDecision(method, pathname) {
   if (method === 'GET' && ROLE_PATHS.includes(pathname)) return 'page';
-  if (method === 'GET' && ['/bundle.js', '/screen.css', '/guard.js', '/stiz-logo.png', '/material.woff2', '/material.ttf'].includes(pathname)) return 'asset';
-  if (method === 'GET' && ['/__sandbox/health', '/__sandbox/counters', '/api/admin/dashboard', '/api/admin/dashboard/system', '/api/account/child-links', '/api/staff/sessions/sandbox-session/photos'].includes(pathname)) return 'synthetic-read';
+  if (method === 'GET' && ['/bundle.js', '/screen.css', '/guard.js', '/stiz-logo.png', '/material.woff2', '/material.ttf', '/__sandbox/sample.png'].includes(pathname)) return 'asset';
+  if (method === 'GET' && ['/__sandbox/health', '/__sandbox/counters', '/api/admin/dashboard', '/api/admin/dashboard/system', '/api/admin/students', '/api/account/child-links', '/api/staff/sessions/sandbox-session/photos'].includes(pathname)) return 'synthetic-read';
   if (method === 'POST' && ['/__sandbox/upload', '/api/staff/sessions/sandbox-session/photos'].includes(pathname)) return 'synthetic-upload';
   return 'deny';
 }
@@ -58,6 +58,6 @@ export const browserGuard = `(() => {
   window.open = () => { deny(); return null; };
   if (navigator.sendBeacon) navigator.sendBeacon = () => false;
   if (navigator.serviceWorker) navigator.serviceWorker.register = async () => { throw new Error('SANDBOX_SERVICE_WORKER_BLOCKED'); };
-  document.addEventListener('click', event => { const anchor = event.target.closest?.('a'); if (!anchor) return; const u = new URL(anchor.href, location.href); if (!same(u) || !allowedPages.has(u.pathname) || u.search) { event.preventDefault(); event.stopImmediatePropagation(); deny(); } }, true);
+  document.addEventListener('click', event => { const anchor = event.target.closest?.('a'); if (!anchor) return; const u = new URL(anchor.href, location.href); if (!same(u) || !(allowedPages.has(u.pathname) || u.pathname === '/__sandbox/sample.png') || u.search) { event.preventDefault(); event.stopImmediatePropagation(); deny(); } }, true);
   document.addEventListener('submit', event => { event.preventDefault(); event.stopImmediatePropagation(); deny(); }, true);
 })();`;

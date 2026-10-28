@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
+import { inflateSync } from 'node:zlib';
 import { createSandboxHandler } from '../scripts/native-device-sandbox.mjs';
 import { sandboxFixtures } from '../scripts/lib/native-device-sandbox-fixtures.mjs';
 import { BODY_LIMIT, ROLE_PATHS, SANDBOX_HEADERS, browserGuard, privateIpv4, requestTarget, routeDecision, sandboxOrigin } from '../scripts/lib/native-device-sandbox-policy.mjs';
@@ -10,7 +11,7 @@ const origin='https://localhost:8453';
 const originHeaders={host:'localhost:8453',origin,'sec-fetch-site':'same-origin'};
 async function send(instance,{method='GET',url='/__sandbox/health',headers={},body=Buffer.alloc(0)}={}){
   const request=Readable.from([body]);request.method=method;request.url=url;request.headers={host:'localhost:8453',...headers};
-  const response={status:200,headers:{},headersSent:false,setHeader(key,value){this.headers[key.toLowerCase()]=value},writeHead(status,headers={}){this.status=status;this.headersSent=true;for(const[key,value]of Object.entries(headers))this.setHeader(key,value)},end(body=''){this.body=Buffer.isBuffer(body)?body.toString('utf8'):String(body)}};
+  const response={status:200,headers:{},headersSent:false,setHeader(key,value){this.headers[key.toLowerCase()]=value},writeHead(status,headers={}){this.status=status;this.headersSent=true;for(const[key,value]of Object.entries(headers))this.setHeader(key,value)},end(body=''){this.bytes=Buffer.isBuffer(body)?body:Buffer.from(String(body));this.body=this.bytes.toString('utf8')}};
   await instance.handler(request,response);return{...response,json:()=>JSON.parse(response.body)};
 }
 const instance=()=>createSandboxHandler({origins:[origin],assets:{'/bundle.js':Buffer.from('/* synthetic */'),'/screen.css':Buffer.from('body{}')},fixtures:sandboxFixtures(new Date('2026-10-28T00:00:00Z'))});
@@ -39,6 +40,45 @@ test('합성 조회는 최소 자료만 반환하고 숨은 운영 조회는 없
   const app=instance();const dashboard=(await send(app,{url:'/api/admin/dashboard'})).json();assert.equal(dashboard.stats.studentCount,1);assert.match(dashboard.todayClasses[0].name,/합성/);
   assert.deepEqual((await send(app,{url:'/api/account/child-links'})).json(),{enabled:false,verified:false,outgoing:[],incoming:[],synthetic:true});
   assert.deepEqual((await send(app,{url:'/api/staff/sessions/sandbox-session/photos'})).json(),{photos:[],synthetic:true});
+});
+
+test('원생 검색과 학생 연락·청구 창은 합성 자료를 쓰고 전화번호는 없다',async()=>{
+  const data=sandboxFixtures();
+  assert.equal(data.adminStudents.students.length,1);
+  assert.equal(data.adminStudents.students[0].currentStatus,'ACTIVE');
+  assert.equal(data.adminStudents.students[0].parent.phone,null);
+  assert.equal(data.people[0].billing.unpaidAmount,120000);
+  assert.equal(data.people[0].guardians[0].phone,null);
+  const app=instance();const response=await send(app,{url:'/api/admin/students'});
+  assert.equal(response.status,200);assert.equal(response.json().synthetic,true);
+  for(const url of ['/api/admin/students','/api/admin/students/sandbox-student','/api/mypage/enrollment-change']){
+    for(const method of ['POST','PATCH','DELETE'])assert.equal((await send(app,{url,method,headers:originHeaders})).status,403);
+  }
+});
+
+test('기존 신청 취소 시나리오는 고정 합성 요청이며 저장 경로를 열지 않는다',()=>{
+  const normal=sandboxFixtures();const pending=sandboxFixtures(new Date('2026-10-28T00:00:00Z'),{pendingChange:true});
+  assert.equal(normal.change.initial.children[0].pending,null);
+  assert.equal(pending.change.initial.children[0].pending.id,'sandbox-change');
+  assert.equal(pending.change.initial.children[0].pending.kind,'CLASS_CHANGE');
+  assert.equal(routeDecision('POST','/api/mypage/enrollment-change'),'deny');
+});
+
+test('합성 PNG만 내려받을 수 있고 파일 선택 수신도 비저장으로 유지한다',async()=>{
+  const app=instance();const sample=await send(app,{url:'/__sandbox/sample.png'});
+  assert.equal(sample.status,200);assert.equal(sample.headers['content-type'],'image/png');
+  assert.equal(sample.headers['content-disposition'],'attachment; filename="stiz-synthetic-sample.png"');
+  assert.deepEqual([...sample.bytes.subarray(0,8)],[137,80,78,71,13,10,26,10]);
+  assert.equal(sample.bytes.readUInt32BE(16),32);assert.equal(sample.bytes.readUInt32BE(20),32);
+  const crc32=bytes=>{let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;};
+  const compressed=[];for(let at=8;at<sample.bytes.length;){const length=sample.bytes.readUInt32BE(at);const body=sample.bytes.subarray(at+4,at+8+length);assert.equal(crc32(body),sample.bytes.readUInt32BE(at+8+length));if(body.toString('ascii',0,4)==='IDAT')compressed.push(body.subarray(4));at+=length+12;}
+  assert.equal(inflateSync(Buffer.concat(compressed)).length,(32*4+1)*32);
+  const upload=await multipart('image/png',sample.bytes);
+  const result=await send(app,{method:'POST',url:'/__sandbox/upload',headers:{...originHeaders,'content-type':upload.type},body:upload.body});
+  assert.equal(result.status,200);assert.equal(result.json().stored,false);
+  assert.equal(result.json().bytes,sample.bytes.length);
+  assert.equal((await send(app,{url:'/__sandbox/counters'})).json().storedFileBytes,0);
+  assert.equal((await send(app,{url:'/__sandbox/sample-private.png'})).status,403);
 });
 async function multipart(fileType='image/png',content=Buffer.from([137,80,78,71,13,10,26,10,0])){
   const form=new FormData();form.append('file',new Blob([content],{type:fileType}),'synthetic-file');

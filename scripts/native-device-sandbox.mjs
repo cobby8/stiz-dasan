@@ -1,6 +1,7 @@
 // 합성 UI 전용 HTTPS 서버. 운영 Next 서버·DB·인증·공급자를 실행하거나 중계하지 않는다.
 import { createServer } from 'node:https';
 import { createHash, randomBytes, X509Certificate } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 import { mkdir, readFile, writeFile, lstat, realpath, open, unlink } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -11,7 +12,15 @@ import { BODY_LIMIT, ROLE_PATHS, SANDBOX_HEADERS, SANDBOX_PORT, browserGuard, pr
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const WORKSPACE = path.join(ROOT, '.tmp', 'native-device-sandbox');
-const MIME = { '/bundle.js': 'application/javascript; charset=utf-8', '/guard.js': 'application/javascript; charset=utf-8', '/screen.css': 'text/css; charset=utf-8', '/stiz-logo.png': 'image/png', '/material.woff2': 'font/woff2', '/material.ttf': 'font/ttf' };
+const MIME = { '/bundle.js': 'application/javascript; charset=utf-8', '/guard.js': 'application/javascript; charset=utf-8', '/screen.css': 'text/css; charset=utf-8', '/stiz-logo.png': 'image/png', '/__sandbox/sample.png': 'image/png', '/material.woff2': 'font/woff2', '/material.ttf': 'font/ttf' };
+// 고정된 32×32 합성 PNG. 개인 사진·외부 이미지·파일 시스템을 사용하지 않는다.
+function syntheticPng() {
+  const chunk=(kind,data)=>{const body=Buffer.concat([Buffer.from(kind),data]);let crc=0xffffffff;for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}const length=Buffer.alloc(4),checksum=Buffer.alloc(4);length.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);return Buffer.concat([length,body,checksum]);};
+  const header=Buffer.alloc(13);header.writeUInt32BE(32,0);header.writeUInt32BE(32,4);header[8]=8;header[9]=6;
+  const row=Buffer.concat([Buffer.from([0]),Buffer.from(Array.from({length:32},()=>[120,80,180,255]).flat())]);
+  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(Buffer.concat(Array(32).fill(row)))),chunk('IEND',Buffer.alloc(0))]);
+}
+const SAMPLE_PNG = syntheticPng();
 const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIZ 합성 시험</title><link rel="stylesheet" href="/screen.css"></head><body><aside id="sandbox-banner"><b>격리 시험 · 합성 자료</b> <span id="sandbox-status">운영 연결·발송·결제·위치 수집 없음</span><nav><a href="/store-app">역할 선택</a><a href="/__entry/admin">관리자</a><a href="/__entry/teacher">선생님</a><a href="/__entry/parent">학부모</a><a href="/__entry/driver">기사님</a><a href="/__sandbox/media">첨부 시험</a></nav></aside><div id="root"></div><script src="/guard.js"></script><script src="/bundle.js"></script></body></html>`;
 const json = (response, status, body) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify(body)); };
 
@@ -55,14 +64,15 @@ export function createSandboxHandler({ origins, assets = {}, fixtures = sandboxF
     if (route === 'deny') { counters.denied++; request.resume(); json(response,403,{error:'SANDBOX_OPERATION_BLOCKED',synthetic:true}); return; }
     if (route === 'page') { counters.page++; response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}); response.end(html); return; }
     if (route === 'asset') {
-      const asset = target.pathname === '/guard.js' ? Buffer.from(browserGuard) : assets[target.pathname];
+      const asset = target.pathname === '/guard.js' ? Buffer.from(browserGuard) : target.pathname === '/__sandbox/sample.png' ? SAMPLE_PNG : assets[target.pathname];
       if (!asset) { json(response,404,{error:'SANDBOX_ASSET_MISSING'}); return; }
-      response.writeHead(200,{'Content-Type':MIME[target.pathname]}); response.end(asset); return;
+      response.writeHead(200,{'Content-Type':MIME[target.pathname],...(target.pathname === '/__sandbox/sample.png' ? {'Content-Disposition':'attachment; filename="stiz-synthetic-sample.png"'} : {})}); response.end(asset); return;
     }
     if (route === 'synthetic-read') {
       if (target.pathname === '/__sandbox/health') return json(response,200,{sandbox:true,data:'synthetic-only',database:false,externalDispatch:false,payments:false,geolocation:false,roles:ROLE_PATHS.filter(item=>item.startsWith('/__entry/'))});
       if (target.pathname === '/__sandbox/counters') return json(response,200,{...counters,storedFileBytes:0,storedLocationPoints:0});
       if (target.pathname === '/api/admin/dashboard') return json(response,200,fixtures.dashboard);
+      if (target.pathname === '/api/admin/students') return json(response,200,{...fixtures.adminStudents,synthetic:true});
       if (target.pathname === '/api/admin/dashboard/system') return json(response,200,{dbOk:false,backup:{lastBackupAt:null,backupCount:0},synthetic:true});
       if (target.pathname === '/api/account/child-links') return json(response,200,{enabled:false,verified:false,outgoing:[],incoming:[],synthetic:true});
       return json(response,200,{photos:[],synthetic:true});
