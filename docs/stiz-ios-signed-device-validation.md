@@ -3,9 +3,16 @@
 ## 빌드 4 원격 실행 현황 (2026-10-29)
 
 - 사용자 실행 직전 승인으로 미푸시 5개 커밋을 검증 브랜치에만 푸시했다. 원격 `codex/stiz-app-codemagic` HEAD는 `95646eba2f02a9e9426773afc475222a3a1b6ff0`, 원격 main은 기존 `7f7673d6ddcc81626d38c5a0cca5ce5fd24057a5`다. 브랜치별 자동 배포 차단을 확인했으며 설정은 변경하지 않았다.
-- Codemagic `stiz-ios-sandbox-adhoc` 수동 작업의 최종 시작 버튼을 정확히 한 번 눌렀다. 빌드 ID `6ae213de206ce93970c6e66c`, index 4, Mac mini M2·SSH/VNC 꺼짐, 브랜치/실제 소스95646eb 일치를 UI에서 확인했다. 현재 queued로 장비 배정 대기이며 Swift·IPA 성공으로 기록하지 않는다. 재실행하지 않았다.
+- Codemagic `stiz-ios-sandbox-adhoc` 수동 작업의 최종 시작 버튼을 정확히 한 번 눌렀다. 빌드 ID `6ae213de206ce93970c6e66c`, index 4, Mac mini M2·SSH/VNC 꺼짐, 브랜치/실제 소스95646eb 일치를 UI에서 확인했다. 최초 queued 이후 2026-10-29 00:49 KST에 시작해 1분 51초 만에 finished를 확인했다. Swift 정책 검사 7초·등록 기기 일치/서명/IPA 검사 58초를 통과했다. 재실행하지 않았다.
 - 운영 도메인 별칭도 읽기 대조해 기존 배포 `dpl_6ku1QzfDeWaidLt3ZcLyRZ4o8ajU` 유지 확인. 운영/main·TestFlight·기기 설치·새 CA 신뢰는 변경하지 않았다.
 - 접수/소스 상태 캡처는 `.tmp/stiz-ios-build4-preparation/build4-source-status.png`, 실행 구성은 `build4-config.png`다. 파일명만으로 결과를 판정하지 않고 UI의 실제 status와 actual source를 대조한다.
+
+### 빌드 4 산출물 독립 검증 완료
+- 일반 브라우저 다운로드로 IPA와 보고서 ZIP을 확보했다. 실제 소스 `95646eba2f02a9e9426773afc475222a3a1b6ff0`, 버전 0.1.0/4, Debug·DEBUG가 보고서와 일치한다. IPA 169,135바이트, SHA-256 `f1ed81bc0753aef73811f5d9f729ae56b8ab8d57106a4e16c415308abf3d5cd3` 일치.
+- 독립 QA가 ZIP 경계·심볼릭 링크 없음, 실제 Info의 정확한 시험 origin·인증 차단·엄격한 ATS, arm64/iPhoneOS, 프로파일 팀/앱 ID/유효기간/기기 1대 및 배포 제한, CMS 내용 서명·바이너리 서명·인증서 일치, 코드 페이지 28/특수 슬롯 5/봉인 자원 2의 해시를 확인했다. 기기 식별값·키는 출력하지 않았다.
+- Apple 신뢰 체인·현재 USB 기기와의 독립 대조·기기 설치·실행은 이번 검사에 포함되지 않는다. Mac의 등록 기기 일치 보고서와 Windows 독립 파일 검증을 구분한다.
+- 새 시험 서버의 엄격한 TLS health 200 및 synthetic-only, DB/발송/결제/GPS false를 재확인했다. 기존 기기에는 빌드 3이며 새 CA 신뢰·설치·실기기 다운로드/첨부/날짜 재검증은 아직 하지 않았다.
+- 증거: `.tmp/stiz-ios-device-install/build4/{STIZ-sandbox.ipa,reports.zip}`, `.tmp/stiz-ios-build4-preparation/build4-finished.png`. 운영 배포·TestFlight·추가 원격 빌드 없음.
 
 ## 2026-10-29 빌드 4와 새 시험 환경 준비
 

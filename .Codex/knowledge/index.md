@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 같은 서명#4 finished111초/actual956·IPA0.1.0/4·독립ZIP/Info/프로파일/CMS/코드해시통과. strictTLS합성health200·외부작업차단, 설치/새CA신뢰/기기 실행 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
+
 > 2026-10-29: 사용자승인 5커밋95646eba까지검증브랜치푸시완료/원격main7f·운영dpl6ku불변. 수동서명#4(6ae213de206ce93970c6e66c)정확1회접수·actual956/M2/SSHoff·queued장비대기, Swift/IPA/설치/새CA신뢰미완료. 배포차단map값검사오판정정(설정불변), docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
 
 > 2026-10-29: 승인build4/이전1·2·3거부 + fullrunID CA명4파일·Python9/참조28/Node44·전체2600/학생5. 새run-7ef56c476e747a20 strictHTTPS13/독립14·최종date/PNG104 반영·현STIZ Codemagic프로파일읽기확인. BlobCSV2경로읽기만·push/remote/기기신뢰/설치/운영/TestFlight0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
