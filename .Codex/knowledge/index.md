@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 사용자USB직접확인승인으로iOS27.0.1 실제캡처/AX영역검사, 안내색13025d44 푸시·서명#3/6ae19790206ce93970c6bd61 finished72초. 전체2591/학생5·독립9/28/23/IPA서명. Coordinator48재시동복구후USB설치build3/직접실행PNG에서안내문구정상·-1202확인. docs/stiz-ios-signed-device-validation.md 정본, 인증서trust읽기대기·운영/TestFlight0, 지식본문5유지.
+
 > 2026-10-28: 서명빌드1 실제USB설치·독립대상조회0.1.0/1 완료, 앱blank·Safari연결유실로실행미검증. 사용자승인exactIP/안전오류안내0192ea28 푸시·서명#2 6ae1920b206ce93970c6bc2e 실행, 독립9/28/22·전체2590/학생5. docs/stiz-ios-signed-device-validation.md 정본. 기존서버종료오판철회/PID지속·health200, 원본Info/Release·운영/main/TestFlight 불변. 지식본문5 유지.
 
 > 2026-10-28: 사용자 승인으로 연결 iPhone16Pro 1대 등록·STIZ 전용 AdHoc 프로파일 생성 및 Codemagic 연결 완료. 4a24fa09/8d19749e 검증브랜치 푸시, 수동 서명#1 6ae0ed15206ce93970c693ed actual8d19749 finished100초·IPA111.22KB 정상다운로드. 독립28/8/18 및 전체2586/학생5 통과. docs/stiz-ios-signed-device-validation.md 정본. 실제 IPA 확보·설치 검증 진행 중, 운영/main·TestFlight 불변. Python 별칭 설치 함정·MSVC 종속성 기록, 지식본문5 유지.
