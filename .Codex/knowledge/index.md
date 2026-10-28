@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 관리자iPhone실제가로/키보드 검색입력·주요버튼표시/가로넘침0·독립PNG와계측, 목록키보드뒤/세로복원대기. 샘플PNG링크저장창없이이미지문서이동·WKDownload미구현읽기조사/개인picker0, 실제첨부미검증·코드/운영/TestFlight0. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
 > 2026-10-28: 동일이름CA2개 위OFF/아래ON USB확인·사용자둘다ON→새entry정상. iPhone빌드3 새격리환경 청구시트열닫/120000미납·검색1→0→1·취소차단/기존신청보존, 402x750가로0·entry복귀/연결종료. 원본제품수정0/아이콘이번정상·원인미확정, 사진/가로/키보드미검증. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
 
 > 2026-10-28: 승인격리상세5파일·출시문서정정. 실제청구/학생정보·원생검색·부모pending·합성PNG, 운영src변경0/쓰기차단. 전용15·전체2594/학생5·tsc·독립경계·새run strictTLS22, 아이폰새CA신뢰대기. 정본 docs/stiz-ios-signed-device-validation.md, 지식본문5유지.
