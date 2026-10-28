@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 새CA신뢰후빌드4 역할선택연결회복·실제iOS PNG104B공유창확인/뒤media유지. 로컬저장·선택/첨부·날짜미완료·사용자저장대기, upload/stored0·운영변경0. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
 > 2026-10-29: 승인빌드4 USB설치·별도조회4 완료. 새CA신뢰전 -1202·안내글자 직접/독립확인, 사용자새CA신뢰대기·웹연결/다운로드/첨부/날짜 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
 
 > 2026-10-29: 같은 서명#4 finished111초/actual956·IPA0.1.0/4·독립ZIP/Info/프로파일/CMS/코드해시통과. strictTLS합성health200·외부작업차단, 설치/새CA신뢰/기기 실행 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
