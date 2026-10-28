@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-28: 동일이름CA2개 위OFF/아래ON USB확인·사용자둘다ON→새entry정상. iPhone빌드3 새격리환경 청구시트열닫/120000미납·검색1→0→1·취소차단/기존신청보존, 402x750가로0·entry복귀/연결종료. 원본제품수정0/아이콘이번정상·원인미확정, 사진/가로/키보드미검증. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
 > 2026-10-28: 승인격리상세5파일·출시문서정정. 실제청구/학생정보·원생검색·부모pending·합성PNG, 운영src변경0/쓰기차단. 전용15·전체2594/학생5·tsc·독립경계·새run strictTLS22, 아이폰새CA신뢰대기. 정본 docs/stiz-ios-signed-device-validation.md, 지식본문5유지.
 
 > 2026-10-28: USB설정화면STIZ CA전체신뢰OFF확인→사용자ON→앱재실행후-1202해소. 실제iPhone빌드3 네역할홈/역할선택복귀 PNG·독립눈검사/계측402x750 가로0 확인. docs/stiz-ios-signed-device-validation.md 정본, 로그인·저장·결제·GPS/배경/사진/가로회전검증과구분·운영/TestFlight0. 지식본문5유지.
