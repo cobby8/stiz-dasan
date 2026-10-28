@@ -1,5 +1,11 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 복구후사진보관함합성PNG104수신1/저장0·실물/DOM/서버대조완료. 새effective날짜폭326/right364/card385·가로0·달력/키보드·resume검증대기. Drive Files비활성별도보류·운영0, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 재다운로드정지중시험서버PID부재/양쪽refused확정·같은run/CA숨김프로세스복구·health/PNG104정상. 실물timeout안내확인·재시도사용자대기, Drive비활성과별개/카운터재시작구분. errors갱신·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 합성PNG Drive존재직접확인·정확사진accept메뉴루트실행후Files비활성재현. 문서오선택단정철회/원인미확정·합성사진보관함경로대기·개인사진열람0. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
 > 2026-10-29: 저장후media복귀·파일선택취소upload0/stored0독립확인. 후속성공응답과PNG선택비활성/실수신0불일치로첨부성공보류·사진input재선택대기. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
 
 > 2026-10-29: 새CA신뢰후빌드4 역할선택연결회복·실제iOS PNG104B공유창확인/뒤media유지. 로컬저장·선택/첨부·날짜미완료·사용자저장대기, upload/stored0·운영변경0. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
