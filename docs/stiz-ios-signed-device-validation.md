@@ -1,5 +1,14 @@
 # STIZ 등록 아이폰 격리 서명 시험
 
+## 가로·세로 복원 최종 대조와 남은 항목 (2026-10-29)
+- 사용자 가로 회전 후 실제 한글 키보드가 열린 상태였다. `parent-landscape-flow.txt`는750×271/visual750×82·resume폭468/오른쪽609/카드630·가로 넘침0이다. 첫 캡처 `landscape-keyboard-before-scroll.png`에서는 신청 버튼 상당 부분이 키보드 뒤에 있었다.
+- 정확한 신청 버튼을 누르지 않고 scrollIntoView로만 이동한 `landscape-keyboard-submit-scrolled.png`에서 키보드를 유지한 채 버튼 전체 접근을 확인했다. 따라서 가로 키보드에서 입력칸·버튼이 항상 동시에 보인다는 판정은 하지 않는다. 추가 스크롤이 필요하다.
+- 사유 입력 blur·상단 스크롤 후750×354 가로 화면으로 복원됐고 `landscape-keyboard-closed-top.png`에서 키보드 닫힘을 확인했다. 이 수치는 blur 도구 성공 출력 근거이며 후속 `parent-landscape-controls.txt`/`parent-landscape-no-keyboard.txt`의 inspector 실패를 성공 측정으로 쓰지 않는다.
+- 사용자가 다시 세로로 회전한 뒤 `parent-portrait-restored-flow.txt`는402×750/visual402×750·가로0·resume폭326/오른쪽364/카드385를 확인했다. `parent-portrait-restored.png`에 사유 ‘합성’ 유지와 복귀 예정일2026.10.29 표시를 확인했다. 사용자 빈값 유지 응답과 달리 실제empty=false이므로 ‘빈 날짜 유지’는 통과로 기록하지 않는다. 날짜가 입력된 조작의 구체 원인은 미확정이며 신청은 실행하지 않았다.
+- 선택사항인 복귀일을 앱에서 다시 비우는 별도 버튼은 없다. 복귀일 ‘선택 안 함/날짜 지우기’ UI를 추가하는 후속 개선 대상으로 분류하며 아직 서비스 코드를 변경하지 않았다. Drive Files PNG비활성 원인·로컬 제공자 대조, 복수 사진 선택, 진행 중 다운로드 수동 취소도 별도 보류다.
+- 설치 빌드4의 관리자·선생님·기사님·학부모 합성 홈을 실제 링크로 다시 열어 각 PNG를 확인했다. 선생님 첫 inspector 실패는 관리자 중복 캡처였으므로 성공으로 세지 않고 재연결 후 실제 오늘 수업 화면을 재캡처했다. 현재 `stiz-role-{admin,teacher,driver,parent}.png`가 각 화면 증거다. 이는 실제 로그인·권한 승인 시험이 아니며 첫 로딩 중 ready=false 수치를 최종 홈 측정으로 확대하지 않는다.
+- 마지막 `stiz-entry-return.png`에서 역할 선택 복귀를 확인했다. 기기 입력·다운로드 임시 연결은 요청별로 닫았고 운영 DB·발송·결제·위치 수집·운영 배포·TestFlight는 실행하지 않았다. 같은 격리 서버와 단기 인증서만 유지한다.
+
 ## 빌드 4 날짜 선택·한글 키보드와 복귀 입력 폭 (2026-10-29)
 - 사용자가 #effective-from 달력 열기·닫기 후 날짜 유지와 ‘합성’ 사유 입력·키보드 열림을 확인했다. 해당 사용자 관찰과 별도로 USB 캡처 `build4/parent-keyboard-visible.png`에서 실제 한글 키보드 위에 합성 사유·신청 버튼 전체가 표시되는 것을 PM과 독립 QA가 확인했다. 반 변경 대상 미선택으로 버튼은 비활성 상태이며 제출 성공을 뜻하지 않는다.
 - 계측 `parent-keyboard-metrics.txt`는 layout402×400/visual402×388/offsetTop362·사유active/syntheticMatch true·사유143~243/신청268~319·가로 넘침0이다. visual offset과 실물 캡처를 함께 판단하고 단순 좌표 차이만으로 가림 여부를 단정하지 않았다.
