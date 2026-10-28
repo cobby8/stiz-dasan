@@ -1,5 +1,12 @@
 # STIZ 등록 아이폰 격리 서명 시험
 
+## 빌드 4 원격 실행 현황 (2026-10-29)
+
+- 사용자 실행 직전 승인으로 미푸시 5개 커밋을 검증 브랜치에만 푸시했다. 원격 `codex/stiz-app-codemagic` HEAD는 `95646eba2f02a9e9426773afc475222a3a1b6ff0`, 원격 main은 기존 `7f7673d6ddcc81626d38c5a0cca5ce5fd24057a5`다. 브랜치별 자동 배포 차단을 확인했으며 설정은 변경하지 않았다.
+- Codemagic `stiz-ios-sandbox-adhoc` 수동 작업의 최종 시작 버튼을 정확히 한 번 눌렀다. 빌드 ID `6ae213de206ce93970c6e66c`, index 4, Mac mini M2·SSH/VNC 꺼짐, 브랜치/실제 소스95646eb 일치를 UI에서 확인했다. 현재 queued로 장비 배정 대기이며 Swift·IPA 성공으로 기록하지 않는다. 재실행하지 않았다.
+- 운영 도메인 별칭도 읽기 대조해 기존 배포 `dpl_6ku1QzfDeWaidLt3ZcLyRZ4o8ajU` 유지 확인. 운영/main·TestFlight·기기 설치·새 CA 신뢰는 변경하지 않았다.
+- 접수/소스 상태 캡처는 `.tmp/stiz-ios-build4-preparation/build4-source-status.png`, 실행 구성은 `build4-config.png`다. 파일명만으로 결과를 판정하지 않고 UI의 실제 status와 actual source를 대조한다.
+
 ## 2026-10-29 빌드 4와 새 시험 환경 준비
 
 - 사용자 승인 범위는 시험 빌드 4·검사·실행 번호가 있는 시험 CA와 새 격리 환경의 로컬 준비다. 푸시·원격 빌드·기기 설치는 준비 결과를 보고 별도 실행 승인 전까지 하지 않는다.
