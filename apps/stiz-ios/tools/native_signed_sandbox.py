@@ -17,7 +17,7 @@ PROFILE_NAME = "STIZ-Dasan-AdHoc-Sandbox-2026"
 PROFILE_REFERENCE = "stiz-dasan-adhoc-sandbox-2026"
 CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
 VERSION = "0.1.0"
-BUILD = "3"
+BUILD = "4"
 SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.12": {
     "NSExceptionAllowsInsecureHTTPLoads": False,
     "NSExceptionMinimumTLSVersion": "TLSv1.2",

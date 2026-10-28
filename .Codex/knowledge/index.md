@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 승인build4/이전1·2·3거부 + fullrunID CA명4파일·Python9/참조28/Node44·전체2600/학생5. 새run-7ef56c476e747a20 strictHTTPS13/독립14·최종date/PNG104 반영·현STIZ Codemagic프로파일읽기확인. BlobCSV2경로읽기만·push/remote/기기신뢰/설치/운영/TestFlight0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
 > 2026-10-28: 부모실제키보드+사유/신청버튼표시확인·날짜2곳로컬폭보완/현재적용일임시대조391→364→복원391, tsc·신청31·독립diff. 새번들/복귀일/선택기/교사키보드미검증. 현재화면과새탐색성공구분·역할복귀미확인/연결정리, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
 
 > 2026-10-28: 승인iOS다운로드4파일로컬구현·정적28/구성28·전체2599/학생5·독립QA, 실제Swift컴파일/설치/다운로드실기기0. HTTPSknownlen10MiB초기지원·BlobCSV미지원, 샘플104B Content-Length정정/독립HTTP·현재run보존/새prepare필요. 관리자세로복원완료·부모날짜6px돌출·Safari연결유실/개인picker0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.

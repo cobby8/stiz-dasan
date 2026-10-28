@@ -107,10 +107,17 @@ async function ownedDirectory(directory,{create=false}={}) {
 function runDirectory(id){if(!/^run-[0-9a-f]{16}$/.test(id))throw new Error('시험 실행 ID 형식 오류');return path.join(WORKSPACE,id);}
 const minimalEnv=()=>Object.fromEntries(['PATH','PATHEXT','SystemRoot','WINDIR','TEMP','TMP'].filter(key=>typeof process.env[key]==='string').map(key=>[key,process.env[key]]));
 
+export function sandboxCaName(id) {
+  if(typeof id!=='string'||!/^run-[0-9a-f]{16}$/.test(id))throw new Error('시험 실행 ID 형식 오류');
+  // 실행별 이름으로 새 인증서를 이전 인증서와 구분한다.
+  return `STIZ Sandbox CA ${id.slice(4)}`;
+}
+
 export async function prepareSandbox({lanHost=null}={}) {
   if(lanHost!==null&&!privateIpv4(lanHost))throw new Error('LAN은 명시한 사설 IPv4만 허용합니다.');
   await ownedDirectory(WORKSPACE,{create:true});
   const id=`run-${randomBytes(8).toString('hex')}`,directory=runDirectory(id);
+  const publicCaName=sandboxCaName(id);
   await mkdir(directory,{mode:0o700});await ownedDirectory(directory);
   const output=path.join(directory,'web');
   const {buildSandbox}=await import('./lib/native-device-sandbox-build.mjs');
@@ -120,14 +127,14 @@ export async function prepareSandbox({lanHost=null}={}) {
   const openssl=process.platform==='win32'?'C:/Program Files/Git/usr/bin/openssl.exe':'openssl';
   const command=async args=>promisify(execFile)(openssl,args,{env:minimalEnv(),cwd:directory,windowsHide:true,shell:false,timeout:30000,maxBuffer:16384});
   try{
-    await command(['req','-x509','-newkey','rsa:2048','-nodes','-sha256','-days','2','-subj','/CN=STIZ Synthetic Sandbox CA','-addext','basicConstraints=critical,CA:TRUE,pathlen:0','-addext','keyUsage=critical,keyCertSign,cRLSign','-keyout',path.join(directory,'ca.key'),'-out',path.join(directory,'ca.crt')]);
+    await command(['req','-x509','-newkey','rsa:2048','-nodes','-sha256','-days','2','-subj',`/CN=${publicCaName}`,'-addext','basicConstraints=critical,CA:TRUE,pathlen:0','-addext','keyUsage=critical,keyCertSign,cRLSign','-keyout',path.join(directory,'ca.key'),'-out',path.join(directory,'ca.crt')]);
     await command(['req','-new','-newkey','rsa:2048','-nodes','-sha256','-subj','/CN=STIZ Synthetic Sandbox','-keyout',path.join(directory,'server.key'),'-out',path.join(directory,'server.csr')]);
     await command(['x509','-req','-in',path.join(directory,'server.csr'),'-CA',path.join(directory,'ca.crt'),'-CAkey',path.join(directory,'ca.key'),'-CAcreateserial','-days','2','-sha256','-extfile',path.join(directory,'tls.cnf'),'-out',path.join(directory,'server.crt')]);
   }catch{throw new Error('새 로컬 시험 TLS 생성 실패. 하위 출력은 표시하지 않습니다.');}
   finally{for(const name of ['ca.key','server.csr','ca.srl'])await unlink(path.join(directory,name)).catch(()=>{});}
   const origins=[sandboxOrigin('localhost'),sandboxOrigin('127.0.0.1'),...(lanHost?[sandboxOrigin(lanHost)]:[])];
   const ca=new X509Certificate(await readFile(path.join(directory,'ca.crt')));
-  const metadata={kind:'STIZ_SYNTHETIC_SANDBOX_V1',id,origins,lanHost,port:SANDBOX_PORT,createdAt:new Date().toISOString(),publicCaSha256:ca.fingerprint256,...build};
+  const metadata={kind:'STIZ_SYNTHETIC_SANDBOX_V1',id,origins,lanHost,port:SANDBOX_PORT,createdAt:new Date().toISOString(),publicCaName,publicCaSha256:ca.fingerprint256,...build};
   await writeFile(path.join(directory,'ready.json'),JSON.stringify(metadata,null,2),{flag:'wx',mode:0o600});
   return metadata;
 }

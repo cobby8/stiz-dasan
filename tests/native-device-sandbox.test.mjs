@@ -3,12 +3,17 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
-import { createSandboxHandler } from '../scripts/native-device-sandbox.mjs';
+import { createSandboxHandler, sandboxCaName } from '../scripts/native-device-sandbox.mjs';
 import { sandboxFixtures } from '../scripts/lib/native-device-sandbox-fixtures.mjs';
 import { BODY_LIMIT, ROLE_PATHS, SANDBOX_HEADERS, browserGuard, privateIpv4, requestTarget, routeDecision, sandboxOrigin } from '../scripts/lib/native-device-sandbox-policy.mjs';
 
 const origin='https://localhost:8453';
 const originHeaders={host:'localhost:8453',origin,'sec-fetch-site':'same-origin'};
+test('시험 CA 이름은 전체 실행 번호로 구분하고 잘못된 이름 입력은 거부한다',()=>{
+  assert.equal(sandboxCaName('run-0123456789abcdef'),'STIZ Sandbox CA 0123456789abcdef');
+  assert.notEqual(sandboxCaName('run-0123456789abcdef'),sandboxCaName('run-fedcba9876543210'));
+  for(const bad of [null,undefined,123,'run-abc','run-0123456789ABCDEf','run-0123456789abcdef/CN=other'])assert.throws(()=>sandboxCaName(bad));
+});
 async function send(instance,{method='GET',url='/__sandbox/health',headers={},body=Buffer.alloc(0)}={}){
   const request=Readable.from([body]);request.method=method;request.url=url;request.headers={host:'localhost:8453',...headers};
   const response={status:200,headers:{},headersSent:false,setHeader(key,value){this.headers[key.toLowerCase()]=value},writeHead(status,headers={}){this.status=status;this.headersSent=true;for(const[key,value]of Object.entries(headers))this.setHeader(key,value)},end(body=''){this.bytes=Buffer.isBuffer(body)?body:Buffer.from(String(body));this.body=this.bytes.toString('utf8')}};

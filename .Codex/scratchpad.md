@@ -1,12 +1,13 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 등록 아이폰용 STIZ 격리 서명 앱 빌드·설치·실기기 검증. 운영·TestFlight 제외.
-- 현재 단계: iOS다운로드4파일 로컬구현·독립정적28/구성28·전체2599/학생5통과. PNG Content-Length정정·독립실HTTP104B 확인(현재run미반영). 관리자세로복원402x750/검색유지완료, 부모실제키보드/입력/신청버튼동시표시확인·날짜2곳로컬보완/임시대조391→364→복원391·tsc/신청31통과.
-- 승인 범위: 기존격리시험5파일/기록 + 사용자후속iOS다운로드처리·정책·검증 로컬수정승인. 푸시·원격서명/설치·운영src/DB·발송·결제·배포/TestFlight 제외(앱Swift기능로컬만).
-- 검증 한계/다음: Swift/UIKit컴파일·새앱다운로드/공유·사진선택/취소/다중/HEIC 미검증. BlobCSV미지원·새prepare/CA필요(現run구버전유지). Safarihealth/PNG연결유실원인미확정. 부모날짜폭로컬수정/새번들·복귀일/선택기미검증·교사키보드미검증.
+- 현재 단계: 승인빌드4/이전1·2·3거부·실행ID CA명 로컬준비 완료. Python9/참조28/Node44·전체2600/학생5·새run HTTPS13/독립14 통과. run-7ef56c476e747a20 가동/최종날짜스타일+PNG길이104 반영, Codemagic STIZ프로파일 현재읽기확인.
+- 승인 범위: build4·거부검사2파일 + 시험CA명/검사2파일 로컬수정·새격리준비 승인. 푸시·원격빌드·설치 실행직전 별도확인. 운영/main·DB·발송·결제·배포/TestFlight 제외.
+- 검증 한계/다음: 준비커밋까지 검증브랜치푸시/수동서명1회 승인대기. 실제Swift컴파일/새IPA/설치·새CA신뢰·다운로드공유/사진첨부 미검증. BlobCSV2경로 읽기조사완료/미지원·별도설계. 기존기기에는build3.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
+| 빌드4·식별 CA 준비 | PM 구현/환경·독립QA | 로컬·실HTTPS 완료 | Python9/참조28/Node44·전체2600/학생5·새run13/독립14, 푸시/remote/설치0 |
 | 격리 HTTPS 시험 환경 | 서버 worker / Android worker / iOS worker / PM·독립QA | 로컬·독립 완료 | docs/native-device-sandbox.md; 전체2581/학생5·서버12·실행55/독립47+18·Java321/산출물24·iOS구성28, 기기/원격0 |
 | 출시 문서·실기기 준비 | 문서 worker / 점검 worker / PM·독립 tester | 완료·로컬 커밋 | docs/native-device-release-readiness.md; 전체2569/학생5·전용13·독립읽기8/링크12·점검7/2/8, 운영/설치0 |
 | 앱 사진·개발 인증 인계 | Android/서버 병렬·PM iOS/갱신·독립QA | 로컬·독립·최종빌드 완료 | docs/native-app-media-auth-followup.md; Android소스27/APK3일치·운영/설치0·#2Swift컴파일통과·사진runtime미검증 |
@@ -83,6 +84,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-29: 승인BUILD4·이전1/2/3거부/실행ID CA명4파일정정, Python9/참조28/Node44·전체2600/학생5·독립PASS. 새run-7ef56c476e747a20 source54/최종date+PNG104B·strictHTTPS13/독립14, 현Codemagic STIZ프로파일읽기확인. BlobCSV2경로조사만·기기신뢰/푸시/remote/설치/운영/TestFlight0.
 - 2026-10-28: 부모실제키보드/합성사유·신청버튼동시표시 독립확인·POST0. 승인날짜2입력폭로컬보완·현재적용일임시대조391→364/복원391, tsc·기존신청31·독립diff통과. 새번들/복귀일/선택기미검증·종료시역할복귀미확인/시험탐색중단·연결종료. 운영/푸시/빌드/설치/TestFlight0.
 - 2026-10-28: 승인iOS다운로드4파일로컬구현/독립정적28·구성28·최종2599/학생5통과. 동일원점·knownlen10MiB·취소/공유/temp정리, Swift컴파일/설치0·BlobCSV미지원. PNG길이104B정정/독립HTTP검사·현재run보존/새prepare필요. 관리자세로복원완료·부모날짜6px확정/입력검사중, Safari유실로개인picker0·운영/푸시/TestFlight0.
 - 2026-10-28: 후속관리자실제iPhone가로+키보드 검색/주요버튼보임·750x354가로넘침0·독립PNG/JSON확인(목록키보드뒤). PNG다운로드는이미지문서이동/저장미확인·WKDownload미구현읽기조사, 개인picker0. 사용자세로복원대기·코드/운영/배포/TestFlight변경0.
@@ -92,5 +94,4 @@
 - 2026-10-28: USB실제캡처와AX영역존재확인·Debug안내색13025d44 푸시/서명#3 finished72초·전체2591/학생5·독립9/28/23/IPA서명통과. 설치Coordinator48은재시동후동일IPA1회/build3조회/직접실행캡처로복구, 문구실제정상표시(-1202인증서신뢰별도). 기기시각·유효기간/IP/서명정상·신뢰설정읽기대기·운영/TestFlight0; docs/stiz-ios-signed-device-validation.md.
 - 2026-10-28: 승인시험앱exactIP/Debug오류안내0192ea28 푸시·#2 finished70초/Swift·서명IPA116243B·독립CMS/strictATS·USB업데이트/독립조회0.1.0/2 완료. 전체2590/학생5·독립9/28/22, 사용자라이트/재실행에도문구안보임·실제UI미해결. 서버종료오판철회/PID지속·TLS200·운영/main/TestFlight0; docs/stiz-ios-signed-device-validation.md.
 - 2026-10-28: 승인 아이폰1대 등록·STIZ AdHoc 프로파일 생성/Codemagic valid·4a24fa09/8d19749e 검증브랜치푸시. 서명#1 6ae0ed15206ce93970c693ed actual8d19749/M2/SSHoff 시작1회 finished100초·IPA111.22KB, 독립28/8/18·전체2586/학생5·공개CA/TLS12 통과. 실제IPA확보/설치 pending·운영/main/TestFlight 불변; docs/stiz-ios-signed-device-validation.md.
-- 2026-10-28: 승인88f74d37/9dea3b21 검증브랜치푸시완료·#3/6ae0e346206ce93970c690dd actual9dea/M2/SSHoff 시작1회 finished84초. 실제Swift38+13/새sandbox·Xcode arm64+x86_64/무서명·zip266.49KB·독립로그확인. Apple조직/기존STIZ ID확인·USB정상, 등록/프로파일/서명/설치/운영/TestFlight0·운영dpl6ku/main7f불변.
 ## PM 체크
