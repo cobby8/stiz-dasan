@@ -1,5 +1,14 @@
 # STIZ 등록 아이폰 격리 서명 시험
 
+## 선택 복귀 날짜 지우기 로컬 수정·검증 (2026-10-29)
+- 사용자 승인으로 EnrollmentChangeClient.tsx의 PAUSE 복귀 날짜 영역만 수정했다. 선택 날짜가 있을 때 ‘날짜 지우기’ type=button이 표시되고 setResumeOn("")만 실행한다. pending 또는 uncertain 동안은 비활성화한다. 기존 신청 본문·API·서버 처리·다른 입력 상태는 변경하지 않았다. 색은 기존 brand-accent 변수, 터치 높이는 min-h-11을 유지했다.
+- 실제 컴포넌트를 기존 buildSandbox로 합성 번들54소스(SHA e238924de9d1cac288b2d6180ea1054128cb4babd8114da288752a1c3833189d)로 만들어 loopback127.0.0.1:8460에서 브라우저 검증했다. 전용 시험 서버는 합성 enrollment/Origin/Host만 허용하고 POST에403/500만 응답한다. 실제 접수·DB·발송·결제·운영 연결은 없고 요청 본문 대신 합성 여부·필드 존재 여부만 메모리에 기록한다.
+- 날짜 있음→지우기→재입력의 합성 요청3건에서 resumeOn 존재=true/false/true, 사유=합성 유지가 확인됐다. 두 번째 요청은 빈 문자열/null이 아닌 키 자체 생략이다. 중간 날짜 지우기는 추가 요청을 발생시키지 않았고 PAUSE 종류·사유를 보존했다. 초기 반 변경·빈 휴원·퇴원에는 버튼이 표시되지 않는다.
+- CUA의 date fill만으로는 React 변경 상태가 확정되지 않아 실제 날짜 키 조작 ArrowUp/Down 후 검증했다. 이를 앱 날짜 처리 실패로 오인하지 않았다. 360/320px에서 날짜 선택·지우기·재입력·재삭제를 확인했고 가로 넘침0, 320px에서 입력/버튼 오른쪽266.75·버튼높이46.75px였다.
+- 요청 처리 중 버튼 disabled 확인. 합성500 응답 후 uncertain 안내/날짜2026-11-05/합성 사유 보존/지우기 disabled/가로0도 확인했다(`uncertain-result.json`, `uncertain-320.png`). 서버 실패를 성공 접수처럼 흉내 내지 않았다.
+- tsc --noEmit 통과, 기존 enrollment-change-request.test.mjs28/28 통과. 독립 QA가 소스 diff·선택/삭제320 PNG·요청 원장을 대조했다. 증거는 `.tmp/resume-date-clear/`의 serve.mjs, requests-after-clear.json, requests-final.json, selected-320.png, cleared-320.png, date-clear-clean-360.png 등이다.
+- 운영/검증 브랜치 푸시·배포·새 원격 빌드·TestFlight·기기 재설치·새 CA 신뢰는 하지 않았다. 기존 아이폰 run의 번들은 보존했으므로 새 버튼의 iOS 실물 재검증은 아직 남아 있다. Drive Files PNG비활성 원인도 별도 보류다.
+
 ## 가로·세로 복원 최종 대조와 남은 항목 (2026-10-29)
 - 사용자 가로 회전 후 실제 한글 키보드가 열린 상태였다. `parent-landscape-flow.txt`는750×271/visual750×82·resume폭468/오른쪽609/카드630·가로 넘침0이다. 첫 캡처 `landscape-keyboard-before-scroll.png`에서는 신청 버튼 상당 부분이 키보드 뒤에 있었다.
 - 정확한 신청 버튼을 누르지 않고 scrollIntoView로만 이동한 `landscape-keyboard-submit-scrolled.png`에서 키보드를 유지한 채 버튼 전체 접근을 확인했다. 따라서 가로 키보드에서 입력칸·버튼이 항상 동시에 보인다는 판정은 하지 않는다. 추가 스크롤이 필요하다.

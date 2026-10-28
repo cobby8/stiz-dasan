@@ -241,9 +241,21 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
 
           {kind === "PAUSE" && (
             <div>
-              <label htmlFor="resume-on" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
-                복귀 예정일 (선택)
-              </label>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label htmlFor="resume-on" className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                  복귀 예정일 (선택)
+                </label>
+                {resumeOn && (
+                  <button
+                    type="button"
+                    disabled={pending || uncertain}
+                    onClick={() => setResumeOn("")}
+                    className="min-h-11 shrink-0 px-2 text-sm font-bold text-[var(--brand-accent)] disabled:opacity-50"
+                  >
+                    날짜 지우기
+                  </button>
+                )}
+              </div>
               <input
                 id="resume-on"
                 type="date"

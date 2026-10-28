@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 승인선택복귀일지우기 UI1파일로컬보완·실제React360/320·요청키true/false/true·사유보존·추가전송0·pending/uncertain차단·tsc/기존28통과. iPhone새번들/운영미반영·Drive별도, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
 > 2026-10-29: 가로키보드신청버튼추가스크롤접근·닫힘750x354/세로402x750복원·가로0·사유유지. resumeemptyfalse/오늘날짜실물로빈값유지PASS보류·지우기UI후속계획. 네역할홈/역할선택복귀·운영0, errors/정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
 
 > 2026-10-29: 빌드4한글키보드·합성사유/신청표시 독립PNG·계측통과. effective달력유지 사용자확인/resume326/right364/card385·사유유지/가로0·달력/회전대기. 신청0·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
