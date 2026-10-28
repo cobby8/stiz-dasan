@@ -76,6 +76,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         message.adjustsFontForContentSizeCategory = true
         retry.setTitle("다시 불러오기", for: .normal)
         retry.tintColor = UIColor(named: "AccentColor")
+        #if DEBUG
+        // 유효한 시험 앱에서는 실제 표시되는 재시도 버튼과 같은 색으로 안내를 읽을 수 있게 한다.
+        if NavigationPolicy.sandbox.origin != nil { message.textColor = retry.tintColor }
+        #endif
         retry.titleLabel?.font = .preferredFont(forTextStyle: .headline)
         retry.titleLabel?.adjustsFontForContentSizeCategory = true
         retry.addTarget(self, action: #selector(reloadPage), for: .touchUpInside)

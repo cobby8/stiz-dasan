@@ -45,6 +45,14 @@ test('Debug도 disabled·invalid 주소에서는 검사 연결을 허용하지 �
 
 const recoveryHelper = source.match(/#if DEBUG\s+(private func sandboxRecoveryMessage[\s\S]*?)#endif/)?.[1];
 
+test('시험 안내 색은 유효한 Debug 시험 앱에서만 실제 재시도 버튼 색과 맞춘다', () => {
+  const assignments = [...source.matchAll(/message\.textColor\s*=/g)];
+  assert.equal(assignments.length, 1);
+  assert.match(source, /retry\.tintColor = UIColor\(named: "AccentColor"\)\s*#if DEBUG\s*\/\/[^\n]*\n\s*if NavigationPolicy\.sandbox\.origin != nil \{ message\.textColor = retry\.tintColor \}\s*#endif/);
+  const release = source.replace(/#if DEBUG\b[\s\S]*?#endif/g, '');
+  assert.doesNotMatch(release, /message\.textColor\s*=/);
+});
+
 test('상세 오류 안내는 Debug의 유효한 시험 주소에만 한정된다', () => {
   assert.ok(recoveryHelper, '안내 선택 메서드는 Debug 전용이어야 한다');
   assert.match(recoveryHelper, /guard NavigationPolicy\.sandbox\.origin != nil else \{ return nil \}/);

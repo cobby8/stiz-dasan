@@ -34,7 +34,8 @@
 - `stiz_ios_sandbox_device` 비공개 그룹의 `STIZ_EXPECTED_DEVICE_SHA256`은 대상 기기 ID의 `-`/`_`를 제거하고 소문자로 정규화한 문자열의 SHA-256이다. 원문·해시는 YAML·Git·빌드 로그·검증 JSON에 넣지 않는다. 값이 없거나 프로파일의 단일 기기와 다르면 서명 전에 중단한다.
 - `Debug`·`DEBUG` 조건·실기기 SDK·명시 주소 `https://172.30.1.12:8453`를 빌드 설정에서 확인한다. 잘못된 주소·Release·시뮬레이터 SDK·다른 앱 ID면 중단한다. 소스 프로젝트의 기본 ID·Release 정책은 변경하지 않고 이 수동 작업에만 빌드 인자를 전달한다.
 - iOS 17 이상은 IP 접속도 ATS의 명시 대상이므로, 후속 사용자 승인에 따라 시험용 생성 `SandboxInfo.plist`에만 `NSExceptionDomains`의 정확한 `172.30.1.12`를 넣는다. HTTP 허용은 false, 최소 TLS는 1.2, 순방향 비밀성 요구는 true, 하위 도메인 포함은 false다. 임의 네트워크·WebContent·다른 IP·CIDR·추가 키는 허용하지 않으며 인증서 신뢰는 OS가 계속 확인한다. ATS는 포트를 제한하지 못하므로 기존 주소 정책이 HTTPS 8453만 허용한다. [Apple IP 접속 안내](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking).
-- 이번 재검증 버전은 `0.1.0`/빌드 `2`다. 원본 프로젝트의 빌드 번호는 유지하고 시험 작업의 인자로만 2를 지정한다. 빌드 설정·archive·최종 IPA에서 버전과 ATS의 키·값·불리언 형식을 검사한다. 기존 ‘ATS 설정 없음’ 검증은 원본·Release에 유지하며, 생성된 시험 앱은 정확한 IP 보안 기본값 검증으로 보완한다.
+- 이번 재검증 버전은 `0.1.0`/빌드 `3`다. 원본 프로젝트의 빌드 번호는 유지하고 시험 작업의 인자로만 3을 지정한다. 빌드 설정·archive·최종 IPA에서 버전과 ATS의 키·값·불리언 형식을 검사한다. 기존 ‘ATS 설정 없음’ 검증은 원본·Release에 유지하며, 생성된 시험 앱은 정확한 IP 보안 기본값 검증으로 보완한다.
+- 실기기 접근성 검사에서 오류 안내 문자열과 양수 크기는 확인됐지만 화면에서 보이지 않았다. 유효한 Debug 시험 앱의 안내 글자색만 실제 보이는 재시도 버튼의 기존 Accent 색으로 명시한다. 원본 Release와 일반 Debug의 색·레이아웃은 유지하며, 원인에 대한 색상 추정과 별도로 새 설치 후 실제 캡처에서 표시 효과를 검증한다.
 - 선택된 프로파일만 원격 Mac 메모리에서 해석한다. 조직·정확한 앱 ID·프로파일 이름·단일 기기·유효기간·Ad Hoc 권한·keychain 인증서 일치를 확인한다. App Store/전체 기기 허용 프로파일은 거부한다.
 - `native_signed_sandbox.py`는 `release-testing`/`destination=export`로 IPA를 로컬 생성한다. 보관 대상은 `STIZ-sandbox.ipa`와 식별자 원문 없는 `verification.json`뿐이다. IPA 안의 서명·embedded 프로파일·시험 주소·앱 ID를 다시 검사하고, 앱 표시 이름을 ‘STIZ 격리시험’으로 구분한다.
 - 이 문서와 도구 작성은 원격 서명·실기기 설치 성공 결과가 아니다. 실제 실행·설치 결과는 PM이 별도로 기록한다. 설치 전 소스 커밋·프로파일·IPA 해시와 시험 주소를 대조한다.
