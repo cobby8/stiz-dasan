@@ -1,9 +1,9 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 등록 아이폰용 STIZ 격리 서명 앱 빌드·설치·실기기 검증. 운영·TestFlight 제외.
-- 현재 단계: 4a24fa09/8d19749e 검증 브랜치 푸시, 아이폰1대 등록·STIZ AdHoc 프로파일 연결 완료. 서명#1/6ae0ed15206ce93970c693ed actual8d19749 finished100초·IPA111.22KB 정상 다운로드. 독립28/8/18·전체2586/학생5 통과.
+- 현재 단계: 승인0192ea28 푸시·서명#2 6ae1920b206ce93970c6bc2e finished70초·IPA독립서명/strictIP검사 통과. USB업데이트·독립조회0.1.0/2 완료. 사용자라이트/완전종료재실행에도버튼만표시·실행실패, 스크린샷필요.
 - 승인 범위: 검증 기록 푸시·연결 아이폰 등록·STIZ 프로파일·서명 격리 앱 설치·검증. 운영/main·TestFlight·운영 데이터·발송·결제 제외.
-- 외부 보류: 아이폰 설치/runtime·사용자 시험 CA 신뢰. 서명 IPA 완료·단기 private HTTPS 설치/QR 준비. 전용 MID/apikey 미발급·정식 인증/사진/장기 갱신/푸시 등 출시는 별도. USB 설치 도구는 MSVC 부재로 공식 QR 대안 준비.
+- 외부 보류: 실제화면 표시·연결오류 해결 및 역할검증. 기존서버PID지속/strictTLS health200; 종료오판철회·재시작0. 운영/main/TestFlight·실제자료/발송/결제0.
 ## 진행 현황표
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
@@ -83,6 +83,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-10-28: 승인시험앱exactIP/Debug오류안내0192ea28 푸시·#2 finished70초/Swift·서명IPA116243B·독립CMS/strictATS·USB업데이트/독립조회0.1.0/2 완료. 전체2590/학생5·독립9/28/22, 사용자라이트/재실행에도문구안보임·실제UI미해결. 서버종료오판철회/PID지속·TLS200·운영/main/TestFlight0; docs/stiz-ios-signed-device-validation.md.
 - 2026-10-28: 승인 아이폰1대 등록·STIZ AdHoc 프로파일 생성/Codemagic valid·4a24fa09/8d19749e 검증브랜치푸시. 서명#1 6ae0ed15206ce93970c693ed actual8d19749/M2/SSHoff 시작1회 finished100초·IPA111.22KB, 독립28/8/18·전체2586/학생5·공개CA/TLS12 통과. 실제IPA확보/설치 pending·운영/main/TestFlight 불변; docs/stiz-ios-signed-device-validation.md.
 - 2026-10-28: 승인88f74d37/9dea3b21 검증브랜치푸시완료·#3/6ae0e346206ce93970c690dd actual9dea/M2/SSHoff 시작1회 finished84초. 실제Swift38+13/새sandbox·Xcode arm64+x86_64/무서명·zip266.49KB·독립로그확인. Apple조직/기존STIZ ID확인·USB정상, 등록/프로파일/서명/설치/운영/TestFlight0·운영dpl6ku/main7f불변.
 - 2026-10-28: 승인 합성HTTPS·Android/iOS개발origin격리 구현. 전체2581/학생5·서버12·TLS/브라우저55·독립47+18·Java321/구성거부7/APK24·iOS정적28. 별도sandbox APK·CAonly/Release보존, run-25e9c4bd1ddb0821 실행중·Swift신규컴파일/실기기미검증. 운영/env/발송/결제/설치/원격/배포/TestFlight0.
@@ -92,7 +93,6 @@
 - 2026-10-28: 동일 Codemagic #1/8546 finished·Swift38·Xcode BUILD SUCCEEDED·zip122.91KB 확인. 다운로드 Chrome차단·내부/실행/기기 미검증, 재실행/서명/TestFlight/운영변경0. docs/stiz-ios-codemagic.md 정본.
 - 2026-10-27: 사용자명시승인61528427 main푸시·Vercel stiz-dasan 운영배포. Production환경53개/숨김0 중 CHILD_CONNECTIONS_ENABLED없음 확인·기본off·환경/DB/채널/발송불변. 운영29통과후로그인복귀redirect1곳보완·전체2515/학생5·tsc통과, 최종도메인정본 .tmp/child-connections-release/.
 - 2026-10-27: ea6동기화·본인인증/가족승인·스포츠업무UI 구현. 미성년부모없는요청0·대표결제수단공유금지·탈퇴필터검토. 전체2514/학생5·독립107/PG35·tsc/Prisma/lint·최종928소스생산build확인, 전용MID미발급·운영/발송/푸시/배포없음.
-- 2026-10-26: bc51ff0b 푸시·운영배포 승인. 원격 로그인2건 보존 통합·전체2475/tsc 통과. 정상 푸시와 도메인 독립검증 진행, 실행 정본 .tmp/public-home-ssr/production/.
 ## PM 체크
 - scratchpad 100줄 이내 및 작업 로그 최근 10건 유지.
 - 오류·기술결정·구조·관례는 knowledge 파일에 반영.
