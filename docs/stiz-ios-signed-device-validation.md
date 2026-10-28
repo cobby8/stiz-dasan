@@ -1,5 +1,11 @@
 # STIZ 등록 아이폰 격리 서명 시험
 
+## 빌드 4 날짜 선택·한글 키보드와 복귀 입력 폭 (2026-10-29)
+- 사용자가 #effective-from 달력 열기·닫기 후 날짜 유지와 ‘합성’ 사유 입력·키보드 열림을 확인했다. 해당 사용자 관찰과 별도로 USB 캡처 `build4/parent-keyboard-visible.png`에서 실제 한글 키보드 위에 합성 사유·신청 버튼 전체가 표시되는 것을 PM과 독립 QA가 확인했다. 반 변경 대상 미선택으로 버튼은 비활성 상태이며 제출 성공을 뜻하지 않는다.
+- 계측 `parent-keyboard-metrics.txt`는 layout402×400/visual402×388/offsetTop362·사유active/syntheticMatch true·사유143~243/신청268~319·가로 넘침0이다. visual offset과 실물 캡처를 함께 판단하고 단순 좌표 차이만으로 가림 여부를 단정하지 않았다.
+- 사유 입력을 blur하고 정확한 휴원 버튼을 선택해 키보드를 닫았다. inspector 연결 실패 시에는 동작 성공으로 계산하지 않고 재연결해 실제 휴원 화면을 확인했다. 합성 사유가 유지되며 #resume-on의 폭326/오른쪽364/카드오른쪽385·border-box/appearance none·가로 넘침0이 확인됐다(`date-resume-new-bundle.png`, `date-resume-metrics.txt`).
+- 복귀 날짜 선택기 열기·빈 값 유지 후 닫기와 아이폰 가로 회전을 사용자에게 요청해 대기 중이다. 실제 신청 버튼은 누르지 않았다. 두 날짜 입력칸 폭은 설치된 새 번들로 검증했으며 임시 스타일 주입은 없다. pageJsErrors not_observed는 자바스크립트 오류0 검증을 뜻하지 않는다.
+
 ## 사진 보관함 합성 첨부·새 날짜 입력 폭 확인 (2026-10-29)
 - 서버 복구 후 사용자가 다운로드 재시도·이미지 저장·합성 사진 한 개 선택을 완료했다. 후속 USB 화면 `build4/media-photos-upload-success.png`에서 ‘합성 수신 확인: 104 bytes / image/png / 저장 안 함’을 확인했고, DOM도 received104/receivedAny true·PNG104·선택 파일 리셋0/0/0이었다.
 - 새 서버 인스턴스의 합성 카운터는 uploadCount1/uploadBytes104/storedFileBytes0/storedLocationPoints0(`media-photos-upload-counters.json`). 앞선 인스턴스 카운터와 누적 비교하지 않는다. 이는 사진 보관함 경로의 시험 수신 성공이며 실제 저장·발송·프로필 사진 영속성·복수 선택·Drive Files 경로 성공으로 확대하지 않는다. 개인 보관함 내부는 캡처하지 않았고 선택 완료 후 앱 화면만 확인했다.

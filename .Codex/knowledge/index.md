@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 빌드4한글키보드·합성사유/신청표시 독립PNG·계측통과. effective달력유지 사용자확인/resume326/right364/card385·사유유지/가로0·달력/회전대기. 신청0·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
 > 2026-10-29: 복구후사진보관함합성PNG104수신1/저장0·실물/DOM/서버대조완료. 새effective날짜폭326/right364/card385·가로0·달력/키보드·resume검증대기. Drive Files비활성별도보류·운영0, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
 
 > 2026-10-29: 재다운로드정지중시험서버PID부재/양쪽refused확정·같은run/CA숨김프로세스복구·health/PNG104정상. 실물timeout안내확인·재시도사용자대기, Drive비활성과별개/카운터재시작구분. errors갱신·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
