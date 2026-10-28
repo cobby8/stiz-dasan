@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import unittest
 from native_signed_sandbox import (
-    BUNDLE, TEAM, ORIGIN, PROFILE_NAME, GateError, device_digest,
+    BUNDLE, TEAM, ORIGIN, PROFILE_NAME, VERSION, BUILD, SANDBOX_ATS, GateError, device_digest,
     validate_profile, validate_settings, validate_app, validate_workflows, export_options, command_failure,
 )
 
@@ -68,10 +68,12 @@ class SignedSandboxTests(unittest.TestCase):
         good = {"CONFIGURATION": "Debug", "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE,
                 "DEVELOPMENT_TEAM": TEAM, "STIZ_SANDBOX_ORIGIN": ORIGIN,
                 "CODE_SIGNING_ALLOWED": "YES", "CODE_SIGN_STYLE": "Manual",
+                "CURRENT_PROJECT_VERSION": BUILD, "MARKETING_VERSION": VERSION,
                 "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "DEBUG", "SDK_NAME": "iphoneos26.5"}
         validate_settings(good)
         for key, bad in [("CONFIGURATION", "Release"), ("STIZ_SANDBOX_ORIGIN", "https://www.stiz-dasan.kr"),
                          ("SWIFT_ACTIVE_COMPILATION_CONDITIONS", ""), ("SDK_NAME", "iphonesimulator26.5"),
+                         ("CURRENT_PROJECT_VERSION", "1"), ("MARKETING_VERSION", "1.0"),
                          ("PRODUCT_BUNDLE_IDENTIFIER", "kr.stiz.bdr.bdrStatV3")]:
             changed = dict(good, **{key: bad})
             with self.assertRaises(GateError):
@@ -88,16 +90,44 @@ class SignedSandboxTests(unittest.TestCase):
     def test_final_app_origin_and_entitlements_checked(self):
         info = {"CFBundleIdentifier": BUNDLE, "STIZSandboxOrigin": ORIGIN,
                 "STIZNativeAuthDevelopmentEnabled": False, "CFBundleDisplayName": "STIZ 격리시험",
+                "CFBundleShortVersionString": VERSION, "CFBundleVersion": BUILD,
+                "NSAppTransportSecurity": copy.deepcopy(SANDBOX_ATS),
                 "CFBundleSupportedPlatforms": ["iPhoneOS"]}
         entitlements = copy.deepcopy(profile_fixture()["Entitlements"])
         validate_app(info, entitlements)
         for key, bad in [("STIZSandboxOrigin", ""), ("CFBundleIdentifier", "other"),
                          ("STIZNativeAuthDevelopmentEnabled", True), ("NSAppTransportSecurity", {}),
+                         ("CFBundleVersion", "1"), ("CFBundleShortVersionString", "9.0"),
                          ("CFBundleSupportedPlatforms", ["iPhoneSimulator"])]:
             with self.assertRaises(GateError):
                 validate_app(dict(info, **{key: bad}), entitlements)
         with self.assertRaises(GateError):
             validate_app(info, dict(entitlements, **{"get-task-allow": True}))
+
+    def test_ats_is_exact_ip_and_typed_secure_defaults_only(self):
+        info = {"CFBundleIdentifier": BUNDLE, "STIZSandboxOrigin": ORIGIN,
+                "STIZNativeAuthDevelopmentEnabled": False, "CFBundleDisplayName": "STIZ 격리시험",
+                "CFBundleShortVersionString": VERSION, "CFBundleVersion": BUILD,
+                "CFBundleSupportedPlatforms": ["iPhoneOS"], "NSAppTransportSecurity": copy.deepcopy(SANDBOX_ATS)}
+        entitlements = copy.deepcopy(profile_fixture()["Entitlements"])
+        validate_app(info, entitlements)
+        mutations = [
+            lambda a: a.update(NSAllowsArbitraryLoads=True),
+            lambda a: a.update(NSAllowsArbitraryLoadsInWebContent=True),
+            lambda a: a.update(NSAllowsLocalNetworking=True),
+            lambda a: a["NSExceptionDomains"].update({"other.invalid": {}}),
+            lambda a: a["NSExceptionDomains"].update({"172.30.1.0/24": {}}),
+            lambda a: a["NSExceptionDomains"].pop("172.30.1.12"),
+        ]
+        for key, value in [("NSExceptionAllowsInsecureHTTPLoads", True), ("NSExceptionAllowsInsecureHTTPLoads", 0),
+                           ("NSExceptionMinimumTLSVersion", "TLSv1.0"), ("NSExceptionRequiresForwardSecrecy", False),
+                           ("NSExceptionRequiresForwardSecrecy", 1), ("NSIncludesSubdomains", True), ("NSIncludesSubdomains", 0)]:
+            mutations.append(lambda a, k=key, v=value: a["NSExceptionDomains"]["172.30.1.12"].update({k: v}))
+        for mutation in mutations:
+            changed = copy.deepcopy(info)
+            mutation(changed["NSAppTransportSecurity"])
+            with self.assertRaises(GateError):
+                validate_app(changed, entitlements)
 
     def test_actual_workflow_and_unsafe_mutations(self):
         workflow = (Path(__file__).resolve().parents[3] / "codemagic.yaml").read_text(encoding="utf-8")

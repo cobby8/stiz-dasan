@@ -77,6 +77,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         retry.setTitle("다시 불러오기", for: .normal)
         retry.tintColor = UIColor(named: "AccentColor")
         retry.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        retry.titleLabel?.adjustsFontForContentSizeCategory = true
         retry.addTarget(self, action: #selector(reloadPage), for: .touchUpInside)
         let recovery = UIStackView(arrangedSubviews: [message, retry])
         recovery.axis = .vertical
@@ -284,6 +285,36 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { recover(error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { recover(nil) }
     deinit { nativeConsumeTimeout?.invalidate(); pageObservation?.invalidate(); nativeAuth?.shutdown() }
+    #if DEBUG
+    private func sandboxRecoveryMessage(_ error: Error?) -> String? {
+        guard NavigationPolicy.sandbox.origin != nil else { return nil }
+        guard let failure = error as NSError? else {
+            return "시험 화면이 중단되었습니다. 다시 불러와 주세요."
+        }
+        // 주소나 원문 오류에는 개인정보가 담길 수 있어 허용된 분류와 숫자만 표시한다.
+        guard failure.domain == NSURLErrorDomain || failure.domain == WKErrorDomain,
+              (-9999...9999).contains(failure.code) else {
+            return "시험 화면을 불러오지 못했습니다. 다시 시도해 주세요."
+        }
+        let guidance: String
+        if failure.domain == NSURLErrorDomain {
+            switch failure.code {
+            case -1022:
+                guidance = "시험 서버 연결이 보안 설정으로 차단되었습니다. 시험 앱의 주소 허용 설정을 확인해 주세요."
+            case -1200, -1202:
+                guidance = "시험 서버의 보안 연결을 확인하지 못했습니다. 시험 인증서의 유효기간과 신뢰 설정을 확인해 주세요."
+            case -1009, -1004, -1001:
+                guidance = "시험 서버에 연결하지 못했습니다. 같은 Wi-Fi 연결과 시험 서버 실행 상태를 확인해 주세요."
+            default:
+                guidance = "시험 화면을 불러오지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요."
+            }
+        } else {
+            guidance = "시험 웹 화면을 표시하지 못했습니다. 다시 불러와 주세요."
+        }
+        let category = failure.domain == NSURLErrorDomain ? "NSURLErrorDomain" : "WKErrorDomain"
+        return "\(guidance)\n\n\(category) · \(failure.code)"
+    }
+    #endif
     private func recover(_ error: Error?) {
         // 주소 전환에 따른 취소는 완료 응답 대기를 해제하지 않는다.
         if (error as NSError?)?.code == NSURLErrorCancelled { progress.stopAnimating(); return }
@@ -292,6 +323,9 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         nativeConsumeTimeout?.invalidate()
         nativeConsumeTimeout = nil
         progress.stopAnimating()
+        #if DEBUG
+        if let guidance = sandboxRecoveryMessage(error) { message.text = guidance }
+        #endif
         webView.isHidden = true
         view.viewWithTag(101)?.isHidden = false
     }

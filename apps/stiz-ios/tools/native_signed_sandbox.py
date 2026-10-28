@@ -16,6 +16,14 @@ ORIGIN = "https://172.30.1.12:8453"
 PROFILE_NAME = "STIZ-Dasan-AdHoc-Sandbox-2026"
 PROFILE_REFERENCE = "stiz-dasan-adhoc-sandbox-2026"
 CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
+VERSION = "0.1.0"
+BUILD = "2"
+SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.12": {
+    "NSExceptionAllowsInsecureHTTPLoads": False,
+    "NSExceptionMinimumTLSVersion": "TLSv1.2",
+    "NSExceptionRequiresForwardSecrecy": True,
+    "NSIncludesSubdomains": False,
+}}}
 
 
 class GateError(Exception):
@@ -106,7 +114,8 @@ def validate_profile(profile, expected_device_hash, now=None):
 def validate_settings(settings):
     expected = {"CONFIGURATION": "Debug", "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE,
                 "DEVELOPMENT_TEAM": TEAM, "STIZ_SANDBOX_ORIGIN": ORIGIN,
-                "CODE_SIGNING_ALLOWED": "YES", "CODE_SIGN_STYLE": "Manual"}
+                "CODE_SIGNING_ALLOWED": "YES", "CODE_SIGN_STYLE": "Manual",
+                "CURRENT_PROJECT_VERSION": BUILD, "MARKETING_VERSION": VERSION}
     require(all(settings.get(key) == value for key, value in expected.items()), "기기 빌드의 격리·서명 설정 불일치")
     require("DEBUG" in settings.get("SWIFT_ACTIVE_COMPILATION_CONDITIONS", "").split(), "DEBUG 컴파일 조건 필요")
     require(settings.get("SDK_NAME", "").startswith("iphoneos"), "실기기 SDK 필요")
@@ -116,7 +125,11 @@ def validate_app(info, entitlements):
     require(info.get("CFBundleIdentifier") == BUNDLE, "완성 앱 식별자 불일치")
     require(info.get("STIZSandboxOrigin") == ORIGIN, "완성 앱 시험 주소 불일치")
     require(info.get("STIZNativeAuthDevelopmentEnabled") is False, "시험 앱의 실제 인증은 꺼져 있어야 합니다")
-    require("NSAppTransportSecurity" not in info, "TLS 검증 예외 금지")
+    # Python의 False == 0 비교를 피하고 키·값·불리언 형식까지 정확히 비교한다.
+    require(json.dumps(info.get("NSAppTransportSecurity"), sort_keys=True) == json.dumps(SANDBOX_ATS, sort_keys=True),
+            "시험 IP의 보안 기본값만 명시해야 합니다")
+    require(info.get("CFBundleShortVersionString") == VERSION and info.get("CFBundleVersion") == BUILD,
+            "시험 앱 버전·빌드 번호 불일치")
     require(info.get("CFBundleDisplayName") == "STIZ 격리시험", "시험 앱 표시 이름 누락")
     require(info.get("CFBundleSupportedPlatforms") == ["iPhoneOS"], "실기기용 앱이 아닙니다")
     require(entitlements.get("application-identifier") == f"{TEAM}.{BUNDLE}", "서명 앱 권한 식별자 불일치")
@@ -185,13 +198,17 @@ def build():
     output = root / "apps/stiz-ios/build/sandbox-device"
     output.mkdir(parents=True, exist_ok=False)
     temporary_info = plistlib.loads((root / "apps/stiz-ios/STIZ/Info.plist").read_bytes())
+    require("NSAppTransportSecurity" not in temporary_info, "원본 앱의 ATS 설정 변경 금지")
     temporary_info["CFBundleDisplayName"] = "STIZ 격리시험"
+    # iOS 17 이상은 IP 주소도 명시해야 한다. HTTP·TLS·인증서 검증은 완화하지 않는다.
+    temporary_info["NSAppTransportSecurity"] = SANDBOX_ATS
     info_path = output / "SandboxInfo.plist"
     info_path.write_bytes(plistlib.dumps(temporary_info))
     project = root / "apps/stiz-ios/STIZ.xcodeproj"
     archive = output / "STIZ.xcarchive"
     overrides = [f"PRODUCT_BUNDLE_IDENTIFIER={BUNDLE}", f"DEVELOPMENT_TEAM={TEAM}",
                  f"STIZ_SANDBOX_ORIGIN={ORIGIN}", "SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG",
+                 f"CURRENT_PROJECT_VERSION={BUILD}",
                  "CODE_SIGN_STYLE=Manual", "CODE_SIGNING_ALLOWED=YES", "CODE_SIGNING_REQUIRED=YES",
                  f"CODE_SIGN_IDENTITY={selected['certificate_sha1']}",
                  f"PROVISIONING_PROFILE_SPECIFIER={selected['uuid']}", f"INFOPLIST_FILE={info_path}"]
@@ -201,6 +218,7 @@ def build():
     targets = [row["buildSettings"] for row in settings_data if row.get("target") == "STIZ"]
     require(len(targets) == 1, "빌드 대상이 모호합니다")
     validate_settings(targets[0])
+    require(Path(targets[0].get("INFOPLIST_FILE", "")).resolve() == info_path.resolve(), "생성된 시험 앱 정보 파일만 허용합니다")
     print("서명 전 STIZ 조직·앱·단일 기기·Debug 격리 설정 확인 완료", flush=True)
     command(base + ["-archivePath", str(archive), "SKIP_INSTALL=NO"] + overrides + ["archive"], stage="archive")
     verify_bundle(archive / "Products/Applications/STIZ.app", expected_hash)
