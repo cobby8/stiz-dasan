@@ -1,19 +1,17 @@
 import StudentManagementClient from "./StudentManagementClient";
 import { getCachedAdminStudentsPayload } from "@/lib/adminReadPayloads";
-import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 
 export const revalidate = 30;
 
 export default async function AdminStudentsPage() {
     const { students, classes, partial } = await getCachedAdminStudentsPayload(50);
 
+    // 구글 시트 원장 은퇴(2026-10~)로 「원생 자료 점검」 도구를 화면에서 뺐다 — 시트 은퇴 여부를 넘길 필요가 없다.
     return (
         <StudentManagementClient
             students={students}
             classes={classes}
             partial={partial}
-            // 시트 원장 은퇴(2026-10~) 면 시트 정합성 점검·재연결 「점검 도구」를 숨긴다("0" 이면 옛 화면)
-            sheetRetired={isSheetSyncRetired(process.env)}
         />
     );
 }

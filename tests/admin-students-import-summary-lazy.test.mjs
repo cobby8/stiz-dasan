@@ -16,10 +16,10 @@ test("관리자 원생 첫 payload는 시트 이관 요약을 함께 조회하�
   assert.doesNotMatch(studentsPage, /sheetImportSummary=\{sheetImportSummary\}/);
 });
 
-test("시트 이관 요약은 별도 API와 버튼으로 지연 로딩한다", () => {
+// 2026-10-29 원장 지시: 시트 연동이 끝나 원생 화면의 «원생 자료 점검» 블록을 없앴다. 요약 API 는 남겨 둔다.
+test("시트 이관 요약 API는 남기고, 원생 화면에서는 점검 블록을 부르지 않는다", () => {
   assert.match(adminReadPayloads, /getCachedAdminStudentImportSummaryPayload/);
   assert.match(importSummaryRoute, /getCachedAdminStudentImportSummaryPayload/);
-  assert.match(studentsClient, /\/api\/admin\/students\/import-summary/);
-  assert.match(studentsClient, /점검 불러오기/);
-  assert.match(studentsClient, /setShowImportTools\(true\)/);
+  assert.doesNotMatch(studentsClient, /\/api\/admin\/students\/import-summary/);
+  assert.doesNotMatch(studentsClient, /원생 자료 점검|점검 불러오기|setShowImportTools/);
 });

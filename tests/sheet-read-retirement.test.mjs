@@ -72,14 +72,10 @@ test('재무: 은퇴면 「시트 점검」 버튼과 점검 패널을 숨기고
 });
 
 // ── 3. 학생 관리 시트 정합성 점검·재연결 ───────────────────────────────
-test('학생 관리: 은퇴면 「점검 도구」(최신 원생목록·차이 점검·미연결 점검)를 숨기고 이관 요약 숫자는 남긴다', () => {
-  assert.ok(passesSwitch(read('src/app/admin/students/page.tsx')));
+test('학생 관리: 시트 점검 도구는 화면에서 없애고(2026-10-29 원장 지시), 점검 API 는 남겨 둔다', () => {
   const src = read('src/app/admin/students/StudentManagementClient.tsx');
-  assert.match(src, /sheetRetired = false,/);
-  assert.match(src, /\{!sheetRetired && \(\s*<button\s+type="button"\s+onClick=\{\(\) => setShowImportTools/);
-  assert.match(src, /\{!sheetRetired && showImportTools && \(/);
-  // 과거 시트 이관 요약 숫자(조회)는 조건 없이 그대로
-  assert.match(src, /<ImportSummaryMetric label="최신 원생" value=\{sheetImportSummary\.uniqueStudents\} \/>/);
+  assert.doesNotMatch(src, /sheetRetired|showImportTools|ImportSummaryMetric|원생 자료 점검/);
+  assert.doesNotMatch(read('src/app/admin/students/page.tsx'), /sheetRetired=/);
   for (const api of ['reconcile', 'relink', 'current-roster']) {
     assert.ok(existsSync(`src/app/api/admin/import-students/${api}/route.ts`), `${api} API 유지`);
   }

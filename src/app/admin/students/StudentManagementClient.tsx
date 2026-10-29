@@ -91,179 +91,6 @@ type SheetImportSummary = {
     topScheduleMismatches: ScheduleMismatch[];
 } | null;
 
-type CurrentRosterReport = {
-    batch: {
-        id: string;
-        status: string;
-        spreadsheetTitle: string | null;
-        sourceUrl: string | null;
-        totalRows: number;
-        registrationRows: number;
-        errorRows: number;
-        createdAt: string;
-        completedAt: string | null;
-    } | null;
-    targetMonth: {
-        requestedMonth: number | null;
-        monthNumber: number | null;
-        label: string;
-    };
-    summary: {
-        targetMonthNumber: number | null;
-        targetRows: number;
-        uniqueStudentKeys: number;
-        linkedRows: number;
-        linkedStudents: number;
-        unresolvedRows: number;
-        activeRows: number;
-        pausedRows: number;
-        withdrawnRows: number;
-        rowsWithSlots: number;
-        selectedSlotPairs: number;
-        missingClassSlots: number;
-        studentsWithHistory: number;
-        previousLedgerRows: number;
-        duplicateStudentGroups: number;
-        nameConflictGroups: number;
-    } | null;
-    monthDistribution: {
-        monthNumber: number | null;
-        label: string;
-        rowCount: number;
-        linkedRows: number;
-        activeRows: number;
-    }[];
-    unresolvedRows: {
-        id: string;
-        rowNumber: number;
-        studentName: string;
-        parentName: string | null;
-        parentPhone: string | null;
-        studentPhone: string | null;
-        birthDate: string | null;
-        school: string | null;
-        grade: string | null;
-        registrationMonth: string | null;
-        status: string;
-    }[];
-    duplicateStudentGroups: {
-        studentName: string;
-        parentPhone: string | null;
-        studentCount: number;
-        studentIds: string[];
-        parentNames: string[];
-    }[];
-    nameConflictGroups: {
-        studentName: string;
-        studentCount: number;
-        studentIds: string[];
-    }[];
-    historySamples: {
-        studentId: string;
-        studentName: string;
-        parentPhone: string | null;
-        previousRows: number;
-        previousMonths: string[];
-    }[];
-    missingClassSlots: {
-        slotKey: string;
-        rowCount: number;
-    }[];
-    statusBreakdown?: {
-        status: string;
-        rowCount: number;
-        studentCount: number;
-    }[];
-    statusSamples?: {
-        status: string;
-        studentId: string | null;
-        studentName: string;
-        parentName: string | null;
-        parentPhone: string | null;
-        studentPhone: string | null;
-        school: string | null;
-        grade: string | null;
-        registrationMonth: string | null;
-        firstRowNumber: number;
-        rowCount: number;
-        slotKeys: string[] | null;
-    }[];
-};
-
-type ReconcileSample = {
-    studentId: string;
-    studentName: string;
-    slotKey: string;
-    currentStatus?: string | null;
-    targetStatus?: string | null;
-    /** 퇴원 후보 전용 — 마지막으로 시트에 등장한 달 */
-    lastSeenMonth?: string | null;
-    /** 퇴원 후보 전용 — 이미 지나간 미등장 개월 수 */
-    monthsMissing?: number | null;
-};
-
-type ReconcilePreview = {
-    batchId: string | null;
-    expectedActivePairs: number;
-    missingEnrollments: number;
-    reactivations: number;
-    pauseExtras: number;
-    unresolvedLedgerRows: number;
-    missingClassSlots: number;
-    outsideScopeActiveStudents: number;
-    withdrawCandidates: number;
-    withdrawCandidateStudents: number;
-    maxPauseMonths: number;
-    samples: {
-        missing: ReconcileSample[];
-        reactivations: ReconcileSample[];
-        pauseExtras: ReconcileSample[];
-        withdrawCandidates: ReconcileSample[];
-    };
-};
-
-type RelinkKind = "registration" | "shuttle" | "team";
-
-type RelinkCounts = Record<RelinkKind, number>;
-
-type RelinkMatch = {
-    studentId: string;
-    confidence: "strong" | "medium" | "weak";
-    matchedBy: string;
-};
-
-type RelinkReviewRow = {
-    kind: RelinkKind;
-    id: string;
-    rawRowId: string | null;
-    sheetName: string;
-    rowNumber: number;
-    studentName: string | null;
-    studentPhone: string | null;
-    parentPhone: string | null;
-    match: RelinkMatch | null;
-    canCreateStudent?: boolean;
-    createBlockedReason?: string | null;
-};
-
-type RelinkPreview = {
-    batchId: string | null;
-    scanned: RelinkCounts;
-    matched: RelinkCounts;
-    applyReady: RelinkCounts;
-    weakOnly: RelinkCounts;
-    unmatched: RelinkCounts;
-    ignored: RelinkCounts;
-    byConfidence: Record<RelinkMatch["confidence"], number>;
-    reviewRows: RelinkReviewRow[];
-};
-
-type StudentOption = {
-    id: string;
-    name: string;
-    parent?: { name: string | null };
-};
-
 const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
@@ -274,12 +101,6 @@ const DAY_ORDER: Record<string, number> = {
 };
 
 const STUDENT_PAGE_SIZE = 50;
-
-const RELINK_KIND_LABELS: Record<RelinkKind, string> = {
-    registration: "등록",
-    shuttle: "차량",
-    team: "대표팀",
-};
 
 /**
  * slotKey에서 교시 번호를 추출하는 유틸 함수
@@ -318,572 +139,6 @@ function groupClassesByProgram(classes: ClassItem[]) {
     }
 
     return Array.from(groups.values());
-}
-
-function ImportSummaryMetric({
-    label,
-    value,
-    warning = false,
-}: {
-    label: string;
-    value: number;
-    warning?: boolean;
-}) {
-    return (
-        <div className="rounded-lg bg-gray-50 px-2 py-2 dark:bg-gray-800">
-            <p className="text-gray-500 dark:text-gray-400">{label}</p>
-            <p
-                className={`font-extrabold ${
-                    warning
-                        ? "text-amber-700 dark:text-amber-200"
-                        : "text-gray-900 dark:text-white"
-                }`}
-            >
-                {value.toLocaleString()}
-            </p>
-        </div>
-    );
-}
-
-function formatSlotLabel(slotKey: string) {
-    const [day, period] = slotKey.split("-");
-    const dayLabel = DAY_LABELS[day] ?? day;
-    return period ? `${dayLabel} ${period}교시` : slotKey;
-}
-
-function formatReportPhone(value: string | null | undefined) {
-    const digits = (value ?? "").replace(/[^0-9]/g, "");
-    if (digits.length === 11) {
-        return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-    }
-    return value || "연락처 없음";
-}
-
-function formatReportList(values: string[] | null | undefined) {
-    if (!values || values.length === 0) return "없음";
-    return values.slice(0, 4).join(", ");
-}
-
-const ROSTER_STATUS_META: Record<string, { label: string; tone: string; note: string }> = {
-    ACTIVE: {
-        label: "재원",
-        tone: "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-300/20 dark:bg-emerald-300/10 dark:text-emerald-100",
-        note: "장부 기준 실제 수업 인원",
-    },
-    PAUSED: {
-        label: "휴원",
-        tone: "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100",
-        note: "등록 행이 모두 휴원인 학생",
-    },
-    WITHDRAWN: {
-        label: "퇴원",
-        tone: "border-red-200 bg-red-50 text-red-900 dark:border-red-300/20 dark:bg-red-300/10 dark:text-red-100",
-        note: "최신 상태가 퇴원인 학생",
-    },
-    UNKNOWN: {
-        label: "확인 필요",
-        tone: "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200",
-        note: "상태를 계산하지 못한 행",
-    },
-};
-
-function getRosterStatusMeta(status: string) {
-    return ROSTER_STATUS_META[status] ?? ROSTER_STATUS_META.UNKNOWN;
-}
-
-function formatSlotList(slotKeys: string[] | string | null | undefined) {
-    if (!slotKeys) return "반 정보 없음";
-
-    const parsed = typeof slotKeys === "string"
-        ? (() => {
-            try {
-                const value = JSON.parse(slotKeys);
-                return Array.isArray(value) ? value : [];
-            } catch {
-                return [];
-            }
-        })()
-        : slotKeys;
-
-    if (parsed.length === 0) return "반 정보 없음";
-    return parsed.slice(0, 4).map((slotKey) => formatSlotLabel(String(slotKey))).join(", ");
-}
-
-function CurrentRosterReportBox({ report }: { report: CurrentRosterReport }) {
-    if (!report.batch || !report.summary) {
-        return (
-            <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300">
-                완료된 수강생 시트 이관 배치가 아직 없습니다.
-            </div>
-        );
-    }
-
-    const { summary } = report;
-    const riskCount =
-        summary.unresolvedRows +
-        summary.missingClassSlots +
-        summary.duplicateStudentGroups +
-        summary.nameConflictGroups;
-    const statusBreakdown = report.statusBreakdown ?? [];
-    const statusByCode = new Map(statusBreakdown.map((item) => [item.status, item]));
-    const operationalStudentCount = statusBreakdown.reduce((total, item) => total + item.studentCount, 0);
-    const activeCount = statusByCode.get("ACTIVE")?.studentCount ?? 0;
-    const pausedCount = statusByCode.get("PAUSED")?.studentCount ?? 0;
-    const withdrawnCount = statusByCode.get("WITHDRAWN")?.studentCount ?? 0;
-    const statusSamples = report.statusSamples ?? [];
-    const pausedSamples = statusSamples.filter((sample) => sample.status === "PAUSED");
-    const withdrawnSamples = statusSamples.filter((sample) => sample.status === "WITHDRAWN");
-
-    return (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3 text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-bold text-lime-800 dark:bg-lime-300/15 dark:text-lime-200">
-                            읽기 전용
-                        </span>
-                        <p className="text-sm font-extrabold text-gray-900 dark:text-white">
-                            {report.targetMonth.label} 최신 원생목록 점검
-                        </p>
-                    </div>
-                </div>
-                <span
-                    className={`rounded-full px-2 py-1 text-xs font-bold ${
-                        riskCount > 0
-                            ? "bg-amber-100 text-amber-800 dark:bg-amber-300/15 dark:text-amber-100"
-                            : "bg-emerald-100 text-emerald-800 dark:bg-emerald-300/15 dark:text-emerald-100"
-                    }`}
-                >
-                    {riskCount > 0 ? `확인 필요 ${riskCount.toLocaleString()}건` : "자동 정리 가능"}
-                </span>
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-900">
-                    <p className="text-gray-500 dark:text-gray-400">현재 운영 학생</p>
-                    <p className="mt-1 text-2xl font-black text-gray-950 dark:text-white">
-                        {operationalStudentCount.toLocaleString()}명
-                    </p>
-                </div>
-                {["ACTIVE", "PAUSED", "WITHDRAWN"].map((status) => {
-                    const item = statusByCode.get(status);
-                    const meta = getRosterStatusMeta(status);
-                    return (
-                        <div key={status} className={`rounded-lg border p-3 text-xs ${meta.tone}`}>
-                            <p className="font-bold">{meta.label}</p>
-                            <p className="mt-1 text-2xl font-black">
-                                {(item?.studentCount ?? 0).toLocaleString()}명
-                            </p>
-                            <p className="mt-1 opacity-80">
-                                행 {(item?.rowCount ?? 0).toLocaleString()}줄 · {meta.note}
-                            </p>
-                        </div>
-                    );
-                })}
-            </div>
-
-            <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">
-                현재 {report.targetMonth.label} 기준은 재원 {activeCount.toLocaleString()}명, 휴원 {pausedCount.toLocaleString()}명,
-                퇴원 {withdrawnCount.toLocaleString()}명으로 계산됩니다. 한 학생이 여러 반을 들어도 학생 수는 1명으로 봅니다.
-            </p>
-
-            <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4 lg:grid-cols-8">
-                <ImportSummaryMetric label="대상 행" value={summary.targetRows} />
-                <ImportSummaryMetric label="고유키" value={summary.uniqueStudentKeys} />
-                <ImportSummaryMetric label="연결 행" value={summary.linkedRows} />
-                <ImportSummaryMetric label="연결 학생" value={summary.linkedStudents} />
-                <ImportSummaryMetric label="미연결" value={summary.unresolvedRows} warning={summary.unresolvedRows > 0} />
-                <ImportSummaryMetric label="이전 이력" value={summary.studentsWithHistory} />
-                <ImportSummaryMetric label="중복 의심" value={summary.duplicateStudentGroups} warning={summary.duplicateStudentGroups > 0} />
-                <ImportSummaryMetric label="동명이인" value={summary.nameConflictGroups} warning={summary.nameConflictGroups > 0} />
-            </div>
-
-            {report.monthDistribution.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    {report.monthDistribution.map((item) => (
-                        <span
-                            key={`${item.monthNumber ?? "none"}-${item.label}`}
-                            className={`rounded-full px-2 py-1 font-semibold ring-1 ${
-                                item.monthNumber === report.targetMonth.monthNumber
-                                    ? "bg-lime-100 text-lime-900 ring-lime-300 dark:bg-lime-300/15 dark:text-lime-100 dark:ring-lime-300/30"
-                                    : "bg-gray-50 text-gray-600 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700"
-                            }`}
-                        >
-                            {item.label} {item.rowCount.toLocaleString()}행 · 연결 {item.linkedRows.toLocaleString()}행
-                        </span>
-                    ))}
-                </div>
-            )}
-
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                {(pausedSamples.length > 0 || withdrawnSamples.length > 0) && (
-                    <div className="rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900">
-                        <p className="font-bold text-gray-900 dark:text-white">휴원/퇴원 확인 샘플</p>
-                        <div className="mt-2 grid gap-2 md:grid-cols-2">
-                            {[
-                                { title: "휴원", rows: pausedSamples },
-                                { title: "퇴원", rows: withdrawnSamples },
-                            ].map((group) => (
-                                <div key={group.title} className="space-y-1">
-                                    <p className="font-semibold text-gray-700 dark:text-gray-200">{group.title}</p>
-                                    {group.rows.length === 0 ? (
-                                        <p className="text-gray-500 dark:text-gray-400">대상 없음</p>
-                                    ) : (
-                                        group.rows.map((row) => (
-                                            <p
-                                                key={`${group.title}-${row.studentId ?? row.studentName}-${row.firstRowNumber}`}
-                                                className="text-gray-600 dark:text-gray-300"
-                                            >
-                                                #{row.firstRowNumber} {row.studentName} · {formatReportPhone(row.parentPhone)} · {formatSlotList(row.slotKeys)}
-                                            </p>
-                                        ))
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {report.historySamples.length > 0 && (
-                    <div className="rounded-lg bg-gray-50 p-3 text-xs dark:bg-gray-900">
-                        <p className="font-bold text-gray-900 dark:text-white">이전 월 이력 연결 샘플</p>
-                        <div className="mt-2 space-y-1 text-gray-600 dark:text-gray-300">
-                            {report.historySamples.map((row) => (
-                                <p key={row.studentId}>
-                                    {row.studentName} · 이전 {row.previousRows.toLocaleString()}행 · {formatReportList(row.previousMonths)}
-                                </p>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {report.missingClassSlots.length > 0 && (
-                    <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-300/10 dark:text-amber-100">
-                        <p className="font-bold">반/시간표 미매칭</p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            {report.missingClassSlots.map((slot) => (
-                                <span key={slot.slotKey} className="rounded-full bg-white px-2 py-1 font-semibold ring-1 ring-amber-200 dark:bg-gray-950 dark:ring-amber-300/25">
-                                    {formatSlotLabel(slot.slotKey)} {slot.rowCount.toLocaleString()}행
-                                </span>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {report.unresolvedRows.length > 0 && (
-                    <div className="rounded-lg bg-red-50 p-3 text-xs text-red-900 dark:bg-red-500/10 dark:text-red-100">
-                        <p className="font-bold">미연결 등록 행</p>
-                        <div className="mt-2 space-y-1">
-                            {report.unresolvedRows.map((row) => (
-                                <p key={row.id}>
-                                    #{row.rowNumber} {row.studentName} · {formatReportPhone(row.parentPhone)} · {row.school ?? "학교 미입력"} · {row.grade ?? "학년 미입력"}
-                                </p>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {report.duplicateStudentGroups.length > 0 && (
-                    <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-300/10 dark:text-amber-100">
-                        <p className="font-bold">같은 보호자 연락처의 중복 원생 의심</p>
-                        <div className="mt-2 space-y-1">
-                            {report.duplicateStudentGroups.map((group) => (
-                                <p key={`${group.studentName}-${group.parentPhone}`}>
-                                    {group.studentName} · {formatReportPhone(group.parentPhone)} · {group.studentCount.toLocaleString()}개 ID · 보호자 {formatReportList(group.parentNames)}
-                                </p>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {report.nameConflictGroups.length > 0 && (
-                    <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                        <p className="font-bold text-gray-900 dark:text-white">이름만으로는 위험한 후보</p>
-                        <div className="mt-2 space-y-1">
-                            {report.nameConflictGroups.map((group) => (
-                                <p key={group.studentName}>
-                                    {group.studentName} · 기존 Student {group.studentCount.toLocaleString()}개
-                                </p>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function ReconcilePreviewBox({
-    preview,
-    applying,
-    onApply,
-    onApplyWithdrawals,
-}: {
-    preview: ReconcilePreview;
-    applying: boolean;
-    onApply: () => void;
-    onApplyWithdrawals: () => void;
-}) {
-    const actionCount =
-        preview.missingEnrollments + preview.reactivations + preview.pauseExtras;
-
-    return (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3 text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-            <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-6">
-                <ImportSummaryMetric label="기준" value={preview.expectedActivePairs} />
-                <ImportSummaryMetric label="추가" value={preview.missingEnrollments} warning={preview.missingEnrollments > 0} />
-                <ImportSummaryMetric label="활성화" value={preview.reactivations} warning={preview.reactivations > 0} />
-                <ImportSummaryMetric label="정지" value={preview.pauseExtras} warning={preview.pauseExtras > 0} />
-                <ImportSummaryMetric label="미연결" value={preview.unresolvedLedgerRows} warning={preview.unresolvedLedgerRows > 0} />
-                <ImportSummaryMetric label="반 없음" value={preview.missingClassSlots} warning={preview.missingClassSlots > 0} />
-            </div>
-
-            <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">
-                시트 원장에 DB 학생으로 연결된 대상만 적용합니다. 시트에 없는 기존 활성 학생 {preview.outsideScopeActiveStudents}명은 자동 변경하지 않습니다.
-            </p>
-
-            <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
-                <ReconcileSampleList title="추가 예정" rows={preview.samples.missing} />
-                <ReconcileSampleList title="활성화 예정" rows={preview.samples.reactivations} />
-                <ReconcileSampleList title="정지 예정" rows={preview.samples.pauseExtras} />
-            </div>
-
-            <div className="mt-3 flex justify-end">
-                <button
-                    type="button"
-                    onClick={onApply}
-                    disabled={applying || actionCount === 0 || preview.missingClassSlots > 0}
-                    className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                >
-                    {applying ? "적용 중" : actionCount === 0 ? "적용할 변경 없음" : "시트 기준 적용"}
-                </button>
-            </div>
-
-            {/*
-              퇴원 후보는 위의 "시트 기준 적용"에 절대 포함되지 않는다.
-              반 명단에서 사라지고 청구가 끊기는 되돌리기 어려운 처리라, 명단을 눈으로 확인한 뒤
-              아래 전용 버튼으로만 확정하도록 분리했다.
-            */}
-            {preview.withdrawCandidates > 0 && (
-                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-900 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
-                    <p className="font-bold">
-                        퇴원 후보 {preview.withdrawCandidateStudents}명 ({preview.withdrawCandidates}건)
-                    </p>
-                    <p className="mt-1">
-                        약관상 휴원 한도({preview.maxPauseMonths}개월)를 넘겨 시트에서 사라진 학생입니다.
-                        아래 버튼을 누르기 전까지는 <strong>아무것도 바뀌지 않습니다.</strong> 퇴원 후에도 다시 시트에 나타나면
-                        &ldquo;시트 기준 적용&rdquo;으로 자동 복원됩니다.
-                    </p>
-                    <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">
-                        {preview.samples.withdrawCandidates.map((row) => (
-                            <p key={`withdraw-${row.studentId}-${row.slotKey}`}>
-                                {row.studentName} · {formatSlotLabel(row.slotKey)} · 마지막 등장 {row.lastSeenMonth ?? "-"}
-                                {typeof row.monthsMissing === "number" ? ` (${row.monthsMissing}개월 미등장)` : ""}
-                                {row.currentStatus ? ` · 현재 ${row.currentStatus}` : ""}
-                            </p>
-                        ))}
-                    </div>
-                    <div className="mt-3 flex justify-end">
-                        <button
-                            type="button"
-                            onClick={onApplyWithdrawals}
-                            disabled={applying}
-                            className="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {applying ? "적용 중" : `퇴원 후보 ${preview.withdrawCandidateStudents}명 퇴원 처리`}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function ReconcileSampleList({ title, rows }: { title: string; rows: ReconcileSample[] }) {
-    return (
-        <div className="rounded-md bg-gray-50 p-2 dark:bg-gray-900">
-            <p className="font-bold text-gray-900 dark:text-white">{title}</p>
-            {rows.length === 0 ? (
-                <p className="mt-1 text-gray-500 dark:text-gray-400">대상 없음</p>
-            ) : (
-                <div className="mt-1 space-y-1">
-                    {rows.map((row) => (
-                        <p key={`${title}-${row.studentId}-${row.slotKey}`} className="text-gray-600 dark:text-gray-300">
-                            {row.studentName} · {formatSlotLabel(row.slotKey)}
-                            {row.targetStatus ? ` → ${row.targetStatus}` : ""}
-                        </p>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function totalRelinkCount(counts: RelinkCounts) {
-    return counts.registration + counts.shuttle + counts.team;
-}
-
-function relinkRowKey(row: Pick<RelinkReviewRow, "kind" | "id">) {
-    return `${row.kind}:${row.id}`;
-}
-
-function RelinkPreviewBox({
-    preview,
-    applying,
-    manualApplyingId,
-    studentOptions,
-    studentOptionsLoading,
-    selections,
-    onSelectionChange,
-    onApplyAuto,
-    onApplyManual,
-    onCreateTeamStudent,
-}: {
-    preview: RelinkPreview;
-    applying: boolean;
-    manualApplyingId: string | null;
-    studentOptions: StudentOption[];
-    studentOptionsLoading: boolean;
-    selections: Record<string, string>;
-    onSelectionChange: (rowKey: string, studentId: string) => void;
-    onApplyAuto: () => void;
-    onApplyManual: (row: RelinkReviewRow, studentId: string) => void;
-    onCreateTeamStudent: (row: RelinkReviewRow) => void;
-}) {
-    const applyReadyTotal = totalRelinkCount(preview.applyReady);
-    const weakTotal = totalRelinkCount(preview.weakOnly);
-    const unmatchedTotal = totalRelinkCount(preview.unmatched);
-    const ignoredTotal = totalRelinkCount(preview.ignored);
-    const scannedTotal = totalRelinkCount(preview.scanned);
-    const reviewableTotal = scannedTotal - ignoredTotal;
-    const studentOptionById = new Map(studentOptions.map((student) => [student.id, student]));
-
-    return (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3 text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-            <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-3 lg:grid-cols-6">
-                <ImportSummaryMetric label="검토" value={scannedTotal} warning={scannedTotal > 0} />
-                <ImportSummaryMetric label="실제 후보" value={reviewableTotal} warning={reviewableTotal > 0} />
-                <ImportSummaryMetric label="확정 후보" value={applyReadyTotal} warning={applyReadyTotal > 0} />
-                <ImportSummaryMetric label="이름 후보" value={weakTotal} warning={weakTotal > 0} />
-                <ImportSummaryMetric label="후보 없음" value={unmatchedTotal} warning={unmatchedTotal > 0} />
-                <ImportSummaryMetric label="검토 제외" value={ignoredTotal} />
-            </div>
-
-            <div className="mt-3 flex flex-col gap-2 text-xs text-gray-600 dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                    빈 서식 행은 검토 제외로 분리하고, 이름·연락처·생년월일 등 단서가 있는 행만 연결 후보로 보여줍니다. 후보 없음 {unmatchedTotal}건은 수동 확인이 필요합니다.
-                </span>
-                <button
-                    type="button"
-                    onClick={onApplyAuto}
-                    disabled={applying || applyReadyTotal === 0}
-                    className="rounded-lg bg-gray-900 px-3 py-2 font-bold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                >
-                    {applying ? "적용 중" : applyReadyTotal === 0 ? "확정 후보 없음" : "확정 후보 적용"}
-                </button>
-            </div>
-
-            <div className="mt-3 overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800">
-                {preview.reviewRows.length === 0 ? (
-                    <div className="bg-gray-50 px-3 py-4 text-center text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                        재연결이 필요한 원본 행이 없습니다.
-                    </div>
-                ) : (
-                    <div className="divide-y divide-gray-100 text-xs dark:divide-gray-800">
-                        {preview.reviewRows.map((row) => {
-                            const key = relinkRowKey(row);
-                            const selectedStudentId = selections[key] ?? row.match?.studentId ?? "";
-                            const matchedStudent = row.match ? studentOptionById.get(row.match.studentId) : null;
-                            const matchLabel = row.match
-                                ? row.match.confidence === "weak"
-                                    ? "이름 후보"
-                                    : "확정 후보"
-                                : "후보 없음";
-
-                            return (
-                                <div key={key} className="grid gap-2 bg-white px-3 py-3 dark:bg-gray-950 md:grid-cols-[1.1fr_1.1fr_1.5fr_auto] md:items-center">
-                                    <div>
-                                        <p className="font-bold text-gray-900 dark:text-white">
-                                            {RELINK_KIND_LABELS[row.kind]} · {row.sheetName} {row.rowNumber}행
-                                        </p>
-                                        <p className="mt-0.5 text-gray-500 dark:text-gray-400">
-                                            {row.studentName || "이름 없음"}
-                                        </p>
-                                    </div>
-                                    <div className="text-gray-600 dark:text-gray-300">
-                                        <p>학생 {formatPhone(row.studentPhone)}</p>
-                                        <p>보호자 {formatPhone(row.parentPhone)}</p>
-                                    </div>
-                                    <div>
-                                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                                            <span
-                                                className={`rounded-full px-2 py-0.5 font-bold ${
-                                                    row.match
-                                                        ? row.match.confidence === "weak"
-                                                            ? "bg-amber-100 text-amber-800 dark:bg-amber-300/15 dark:text-amber-100"
-                                                            : "bg-lime-100 text-lime-800 dark:bg-lime-300/15 dark:text-lime-100"
-                                                        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                                                }`}
-                                            >
-                                                {matchLabel}
-                                            </span>
-                                            {matchedStudent && (
-                                                <span className="text-gray-500 dark:text-gray-400">
-                                                    {matchedStudent.name}
-                                                    {matchedStudent.parent?.name ? ` (${matchedStudent.parent.name})` : ""}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <select
-                                            value={selectedStudentId}
-                                            onChange={(event) => onSelectionChange(key, event.target.value)}
-                                            disabled={studentOptionsLoading}
-                                            className="w-full rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                                        >
-                                            <option value="">
-                                                {studentOptionsLoading ? "학생 목록 불러오는 중" : "연결할 학생 선택"}
-                                            </option>
-                                            {studentOptions.map((student) => (
-                                                <option key={student.id} value={student.id}>
-                                                    {student.name}
-                                                    {student.parent?.name ? ` (${student.parent.name})` : ""}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => onApplyManual(row, selectedStudentId)}
-                                            disabled={!selectedStudentId || manualApplyingId === row.id}
-                                            className="rounded-lg border border-gray-200 px-3 py-2 font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
-                                        >
-                                            {manualApplyingId === row.id ? "처리 중" : "연결"}
-                                        </button>
-                                        {row.kind === "team" && !row.match && row.canCreateStudent && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onCreateTeamStudent(row)}
-                                                disabled={manualApplyingId === row.id}
-                                                className="rounded-lg bg-lime-100 px-3 py-2 font-bold text-lime-900 transition hover:bg-lime-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                                            >
-                                                {manualApplyingId === row.id ? "생성 중" : "새 학생 생성"}
-                                            </button>
-                                        )}
-                                        {row.kind === "team" && !row.match && !row.canCreateStudent && row.createBlockedReason && (
-                                            <span className="rounded-lg bg-amber-50 px-3 py-2 text-center text-[11px] font-bold text-amber-800 dark:bg-amber-300/15 dark:text-amber-100">
-                                                {row.createBlockedReason}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
 }
 
 function toDateStr(d: Date | string | null): string {
@@ -1003,50 +258,100 @@ function getActiveEnrollments(enrollments: Student["enrollments"]) {
     return (enrollments ?? []).filter((enrollment) => enrollment.status === "ACTIVE");
 }
 
+// 「반별 보기」에서 쓰는 묶음 한 개(반 하나 또는 맨 끝 «반 없음»)
+type ClassGroup = {
+    key: string;          // 반 id, 반 없음 묶음은 "__none__"
+    label: string;        // 예: "월4" / "반 없음"
+    fullName: string;     // 마우스를 올리면 보일 원래 반 이름
+    startTime: string;
+    dayOfWeek: string;
+    slotKey: string | null;
+    students: Student[];
+};
+
+const NO_CLASS_KEY = "__none__";
+const STUDENT_VIEW_STORAGE_KEY = "admin-students-view-mode";
+
+/**
+ * 필터가 적용된 학생 목록을 «활성 수강반» 기준으로 묶는다.
+ * - 한 학생이 여러 반이면 각 반에 모두 들어간다(반마다 명단을 보려는 용도라서).
+ * - 반 순서: 요일(월~일) → 시작시간 → 교시. 활성 반이 없는 학생은 맨 끝 «반 없음».
+ * - 각 반 안의 학생 순서는 들어온 순서(이름 가나다순)를 그대로 유지한다.
+ */
+function groupStudentsByActiveClass(list: Student[]): ClassGroup[] {
+    const groups = new Map<string, ClassGroup>();
+    const noClass: Student[] = [];
+
+    for (const student of list) {
+        const active = getActiveEnrollments(student.enrollments);
+        if (active.length === 0) {
+            noClass.push(student);
+            continue;
+        }
+        // 같은 반에 중복 수강 기록이 있어도 한 번만 넣는다
+        const seen = new Set<string>();
+        for (const e of active) {
+            if (seen.has(e.classId)) continue;
+            seen.add(e.classId);
+            let group = groups.get(e.classId);
+            if (!group) {
+                group = {
+                    key: e.classId,
+                    label: shortenClassName(e),
+                    fullName: e.className,
+                    startTime: e.startTime,
+                    dayOfWeek: e.dayOfWeek,
+                    slotKey: e.slotKey,
+                    students: [],
+                };
+                groups.set(e.classId, group);
+            }
+            group.students.push(student);
+        }
+    }
+
+    const sorted = Array.from(groups.values()).sort((a, b) =>
+        (DAY_ORDER[a.dayOfWeek] ?? 99) - (DAY_ORDER[b.dayOfWeek] ?? 99)
+        || a.startTime.localeCompare(b.startTime)
+        || getPeriodFromSlotKey(a.slotKey) - getPeriodFromSlotKey(b.slotKey)
+        || a.label.localeCompare(b.label, "ko"),
+    );
+
+    if (noClass.length > 0) {
+        sorted.push({
+            key: NO_CLASS_KEY,
+            label: "반 없음",
+            fullName: "활성 수강반이 없는 학생",
+            startTime: "",
+            dayOfWeek: "",
+            slotKey: null,
+            students: noClass,
+        });
+    }
+    return sorted;
+}
+
 export default function StudentManagementClient({
     students: initialStudents,
     classes: initialClasses,
     sheetImportSummary: initialSheetImportSummary,
     partial: initialPartial = false,
-    sheetRetired = false,
 }: {
     students?: Student[];
     classes?: ClassItem[];
     sheetImportSummary?: SheetImportSummary;
     partial?: boolean;
-    // 구글 시트 원장 은퇴 여부 — true 면 시트 정합성 점검·재연결 버튼(점검 도구)을 숨긴다.
-    // 과거 시트 이력(월 상태·월별 이력·이관 요약 숫자) 표시는 그대로 둔다.
-    sheetRetired?: boolean;
 }) {
     const hasInitialData = Boolean(initialStudents || initialClasses);
     const [students, setStudents] = useState<Student[]>(initialStudents ?? []);
     const [classes, setClasses] = useState<ClassItem[]>(initialClasses ?? []);
-    const [sheetImportSummary, setSheetImportSummary] = useState<SheetImportSummary>(
-        initialSheetImportSummary ?? null
-    );
+    // 상단 집계용 요약(옛 시트 이관 숫자). 시트 연동은 은퇴했고, 주어지지 않으면 불러온 목록으로 센다.
+    const sheetImportSummary: SheetImportSummary = initialSheetImportSummary ?? null;
     const [dataLoading, setDataLoading] = useState(!hasInitialData);
     const [dataError, setDataError] = useState<string | null>(null);
     const [allStudentsLoaded, setAllStudentsLoaded] = useState(!initialPartial);
     const [backgroundLoading, setBackgroundLoading] = useState(false);
-    const [currentRosterReport, setCurrentRosterReport] = useState<CurrentRosterReport | null>(null);
-    const [currentRosterLoading, setCurrentRosterLoading] = useState(false);
-    const [currentRosterError, setCurrentRosterError] = useState<string | null>(null);
-    const [sheetImportSummaryLoading, setSheetImportSummaryLoading] = useState(false);
-    const [sheetImportSummaryError, setSheetImportSummaryError] = useState<string | null>(null);
-    const [reconcilePreview, setReconcilePreview] = useState<ReconcilePreview | null>(null);
-    const [reconcileLoading, setReconcileLoading] = useState(false);
-    const [reconcileApplying, setReconcileApplying] = useState(false);
-    const [reconcileError, setReconcileError] = useState<string | null>(null);
-    const [relinkPreview, setRelinkPreview] = useState<RelinkPreview | null>(null);
-    const [relinkLoading, setRelinkLoading] = useState(false);
-    const [relinkApplying, setRelinkApplying] = useState(false);
-    const [relinkError, setRelinkError] = useState<string | null>(null);
-    const [manualRelinkApplyingId, setManualRelinkApplyingId] = useState<string | null>(null);
-    const [studentOptions, setStudentOptions] = useState<StudentOption[]>([]);
-    const [studentOptionsLoading, setStudentOptionsLoading] = useState(false);
-    const [manualRelinkSelections, setManualRelinkSelections] = useState<Record<string, string>>({});
     const [autoLoadRequested, setAutoLoadRequested] = useState(false);
-    const [showImportTools, setShowImportTools] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -1059,6 +364,38 @@ export default function StudentManagementClient({
     const [filterClass, setFilterClass] = useState("");
     const [filterGrade, setFilterGrade] = useState("");
     const [filterSchool, setFilterSchool] = useState("");
+
+    // 보기 방식: "list"(기존 표) / "class"(반별 묶음). 마지막 선택을 브라우저에 기억한다.
+    const [viewMode, setViewMode] = useState<"list" | "class">("list");
+    // 반별 보기에서 접어 둔 반 id 목록
+    const [collapsedClassKeys, setCollapsedClassKeys] = useState<Set<string>>(() => new Set());
+
+    // 서버 화면과 첫 화면을 맞추려고(hydration) 처음엔 "list"로 그린 뒤, 저장된 값을 읽어 바꾼다.
+    useEffect(() => {
+        try {
+            if (window.localStorage.getItem(STUDENT_VIEW_STORAGE_KEY) === "class") setViewMode("class");
+        } catch {
+            // 사생활 보호 모드 등에서 저장소 접근이 막혀도 기본 보기로 동작
+        }
+    }, []);
+
+    const changeViewMode = (mode: "list" | "class") => {
+        setViewMode(mode);
+        try {
+            window.localStorage.setItem(STUDENT_VIEW_STORAGE_KEY, mode);
+        } catch {
+            // 저장 실패는 무시(다음 방문 때 기본 보기)
+        }
+    };
+
+    const toggleClassCollapsed = (key: string) => {
+        setCollapsedClassKeys((current) => {
+            const next = new Set(current);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+    };
 
     const loadData = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
         if (background) setBackgroundLoading(true);
@@ -1091,281 +428,12 @@ export default function StudentManagementClient({
         }
     }, []);
 
-    const loadSheetImportSummary = useCallback(async () => {
-        if (sheetImportSummaryLoading) return;
-
-        setSheetImportSummaryLoading(true);
-        setSheetImportSummaryError(null);
-
-        try {
-            const response = await fetch("/api/admin/students/import-summary", {
-                cache: "no-store",
-            });
-            const data = (await response.json()) as {
-                sheetImportSummary?: SheetImportSummary;
-                error?: string;
-            };
-
-            if (!response.ok) {
-                throw new Error(data.error || "시트 이관 요약을 불러오지 못했습니다.");
-            }
-
-            setSheetImportSummary(data.sheetImportSummary ?? null);
-            setShowImportTools(true);
-        } catch (error) {
-            setSheetImportSummaryError(error instanceof Error ? error.message : "시트 이관 요약을 불러오지 못했습니다.");
-        } finally {
-            setSheetImportSummaryLoading(false);
-        }
-    }, [sheetImportSummaryLoading]);
-
     const requestFullStudentLoad = useCallback(() => {
         if (allStudentsLoaded || backgroundLoading) return;
 
         setAutoLoadRequested(true);
         void loadData({ background: true });
     }, [allStudentsLoaded, backgroundLoading, loadData]);
-
-    const ensureStudentOptions = useCallback(async () => {
-        if (studentOptions.length > 0 || studentOptionsLoading) return;
-
-        setStudentOptionsLoading(true);
-        try {
-            const response = await fetch("/api/admin/student-options", {
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "학생 선택 목록을 불러오지 못했습니다.");
-            }
-
-            setStudentOptions(data.students ?? []);
-        } catch (error) {
-            setRelinkError(error instanceof Error ? error.message : "학생 선택 목록을 불러오지 못했습니다.");
-        } finally {
-            setStudentOptionsLoading(false);
-        }
-    }, [studentOptions.length, studentOptionsLoading]);
-
-    const loadCurrentRosterReport = useCallback(async () => {
-        setCurrentRosterLoading(true);
-        setCurrentRosterError(null);
-
-        try {
-            // month 를 넘기지 않으면 API 가 장부에 있는 가장 최근 달을 자동으로 고른다.
-            // 예전에는 month=7 이 박혀 있어 달이 바뀌어도 계속 7월 수치를 "현재"로 보여줬다.
-            const response = await fetch("/api/admin/import-students/current-roster", {
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "최신 원생목록 점검에 실패했습니다.");
-            }
-
-            setCurrentRosterReport(data as CurrentRosterReport);
-        } catch (error) {
-            setCurrentRosterError(error instanceof Error ? error.message : "최신 원생목록 점검에 실패했습니다.");
-        } finally {
-            setCurrentRosterLoading(false);
-        }
-    }, []);
-
-    const loadReconcilePreview = useCallback(async () => {
-        setReconcileLoading(true);
-        setReconcileError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/reconcile", {
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "시간표 차이 점검에 실패했습니다.");
-            }
-
-            setReconcilePreview(data as ReconcilePreview);
-        } catch (error) {
-            setReconcileError(error instanceof Error ? error.message : "시간표 차이 점검에 실패했습니다.");
-        } finally {
-            setReconcileLoading(false);
-        }
-    }, []);
-
-    const loadRelinkPreview = useCallback(async () => {
-        setRelinkLoading(true);
-        setRelinkError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/relink?reviewLimit=30", {
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "미연결 원본 점검에 실패했습니다.");
-            }
-
-            setRelinkPreview(data as RelinkPreview);
-            if ((data.reviewRows ?? []).length > 0) {
-                void ensureStudentOptions();
-            }
-        } catch (error) {
-            setRelinkError(error instanceof Error ? error.message : "미연결 원본 점검에 실패했습니다.");
-        } finally {
-            setRelinkLoading(false);
-        }
-    }, [ensureStudentOptions]);
-
-    // applyWithdrawals = true 일 때만 퇴원 후보까지 확정한다. 기본값은 예전과 완전히 동일한 동작.
-    const applyReconcile = useCallback(async (options?: { applyWithdrawals?: boolean }) => {
-        const applyWithdrawals = options?.applyWithdrawals === true;
-        const message = applyWithdrawals
-            ? "휴원 한도를 넘겨 사라진 학생을 퇴원 처리할까요? 반 명단에서 빠지고 청구가 중단됩니다. (시트에 다시 나타나면 복원됩니다)"
-            : "최신 시트 원장을 기준으로 수강 등록 상태를 맞출까요? 삭제는 하지 않고 상태만 정리합니다.";
-
-        if (!confirm(message)) {
-            return;
-        }
-
-        setReconcileApplying(true);
-        setReconcileError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/reconcile", {
-                method: "POST",
-                cache: "no-store",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ applyWithdrawals }),
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "시트 기준 적용에 실패했습니다.");
-            }
-
-            setReconcilePreview((data.after ?? null) as ReconcilePreview | null);
-            await loadData({ background: true });
-        } catch (error) {
-            setReconcileError(error instanceof Error ? error.message : "시트 기준 적용에 실패했습니다.");
-        } finally {
-            setReconcileApplying(false);
-        }
-    }, [loadData]);
-
-    const applyRelink = useCallback(async () => {
-        if (!confirm("연락처나 생년월일로 확인된 미연결 원본 행을 기존 학생과 연결할까요? 이름만 맞는 후보는 자동 적용하지 않습니다.")) {
-            return;
-        }
-
-        setRelinkApplying(true);
-        setRelinkError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/relink", {
-                method: "POST",
-                cache: "no-store",
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "미연결 원본 적용에 실패했습니다.");
-            }
-
-            setRelinkPreview((data.after ?? null) as RelinkPreview | null);
-            await loadData({ background: true });
-        } catch (error) {
-            setRelinkError(error instanceof Error ? error.message : "미연결 원본 적용에 실패했습니다.");
-        } finally {
-            setRelinkApplying(false);
-        }
-    }, [loadData]);
-
-    const applyManualRelink = useCallback(async (row: RelinkReviewRow, studentId: string) => {
-        if (!studentId) return;
-
-        const student = studentOptions.find((option) => option.id === studentId);
-        const label = student
-            ? `${student.name}${student.parent?.name ? ` (${student.parent.name})` : ""}`
-            : "선택한 학생";
-
-        if (!confirm(`${row.studentName || "이름 없는 원본 행"}을 ${label}에게 연결할까요?`)) {
-            return;
-        }
-
-        setManualRelinkApplyingId(row.id);
-        setRelinkError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/relink", {
-                method: "POST",
-                cache: "no-store",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "manual",
-                    kind: row.kind,
-                    id: row.id,
-                    studentId,
-                }),
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "수동 연결에 실패했습니다.");
-            }
-
-            setRelinkPreview((data.after ?? null) as RelinkPreview | null);
-            setManualRelinkSelections((current) => {
-                const next = { ...current };
-                delete next[relinkRowKey(row)];
-                return next;
-            });
-            await loadData({ background: true });
-        } catch (error) {
-            setRelinkError(error instanceof Error ? error.message : "수동 연결에 실패했습니다.");
-        } finally {
-            setManualRelinkApplyingId(null);
-        }
-    }, [loadData, studentOptions]);
-
-    const createTeamStudentFromRow = useCallback(async (row: RelinkReviewRow) => {
-        if (row.kind !== "team") return;
-
-        if (!confirm(`${row.studentName || "대표팀 원본 학생"}을 새 학생으로 만들고 이 대표팀 행과 연결할까요? 보호자 정보는 확인 필요 상태로 저장됩니다.`)) {
-            return;
-        }
-
-        setManualRelinkApplyingId(row.id);
-        setRelinkError(null);
-
-        try {
-            const response = await fetch("/api/admin/import-students/relink", {
-                method: "POST",
-                cache: "no-store",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "createStudentFromTeam",
-                    kind: row.kind,
-                    id: row.id,
-                }),
-            });
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "대표팀 원본으로 학생 생성에 실패했습니다.");
-            }
-
-            setRelinkPreview((data.after ?? null) as RelinkPreview | null);
-            setStudentOptions([]);
-            await loadData({ background: true });
-        } catch (error) {
-            setRelinkError(error instanceof Error ? error.message : "대표팀 원본으로 학생 생성에 실패했습니다.");
-        } finally {
-            setManualRelinkApplyingId(null);
-        }
-    }, [loadData]);
 
     useEffect(() => {
         if (!hasInitialData) {
@@ -1581,6 +649,11 @@ export default function StudentManagementClient({
         () => filtered.slice(0, visibleLimit),
         [filtered, visibleLimit],
     );
+    // 반별 보기: 페이지 나눔 없이 필터 결과 전체를 반 기준으로 묶는다(반별 모드일 때만 계산)
+    const classGroups = useMemo(
+        () => (viewMode === "class" ? groupStudentsByActiveClass(filtered) : []),
+        [filtered, viewMode],
+    );
     const hasMoreStudents = visibleStudents.length < filtered.length;
     const hasAnyFilter = Boolean(search.trim() || filterClass || filterGrade || filterSchool || filterStatus);
     const activeFilterCount = [Boolean(filterClass), Boolean(filterGrade), Boolean(filterSchool), filterStatus !== "ACTIVE"].filter(Boolean).length;
@@ -1640,7 +713,7 @@ export default function StudentManagementClient({
             <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
                 <p className="text-xs text-[var(--color-academy-muted)]">
-                    {sheetImportSummary?.studentStatusCounts ? "시트 기준" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
+                    {sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
                     {" · "}활성 {statusCounts.active} · 휴원 {statusCounts.paused} · 퇴원 {statusCounts.withdrawn} · 미배정 {statusCounts.noEnrollment}
                 </p>
             </div>
@@ -1762,220 +835,6 @@ export default function StudentManagementClient({
 
                 </div>
             </CompactListFilters>
-
-            {/* Form */}
-            <details className="mt-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-2">
-                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-muted)]">원생 자료 점검</summary>
-                <div className="pt-2">
-            {!sheetImportSummary && (
-                <div className="mb-5 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <p className="text-sm font-bold text-gray-900 dark:text-white">운영 데이터 점검</p>
-                        {sheetImportSummaryError && (
-                            <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-300">
-                                {sheetImportSummaryError}
-                            </p>
-                        )}
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => void loadSheetImportSummary()}
-                        disabled={sheetImportSummaryLoading}
-                        className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                    >
-                        {sheetImportSummaryLoading ? "불러오는 중" : "점검 불러오기"}
-                    </button>
-                </div>
-            )}
-            {sheetImportSummary && (
-                <div className="mb-5 rounded-xl border border-lime-300/40 bg-white p-4 shadow-sm dark:border-lime-300/30 dark:bg-gray-900">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                    className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                                        sheetImportSummary.status === "COMPLETED" && sheetImportSummary.errorRows === 0
-                                            ? "bg-lime-100 text-lime-800 dark:bg-lime-300/15 dark:text-lime-200"
-                                            : "bg-amber-100 text-amber-800 dark:bg-amber-300/15 dark:text-amber-100"
-                                    }`}
-                                >
-                                    {sheetImportSummary.status === "COMPLETED" && sheetImportSummary.errorRows === 0
-                                        ? "DB 이관 정상"
-                                        : `DB 이관 ${sheetImportSummary.status}`}
-                                </span>
-                                <span className="text-sm font-bold text-gray-900 dark:text-white">
-                                    최신 운영 데이터
-                                </span>
-                            </div>
-                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                최신 반영:{" "}
-                                {sheetImportSummary.completedAt
-                                    ? new Date(sheetImportSummary.completedAt).toLocaleString("ko-KR")
-                                    : new Date(sheetImportSummary.createdAt).toLocaleString("ko-KR")}
-                            </p>
-                        </div>
-                        {/* 시트 원장 은퇴면 「점검 도구」 열기 버튼 자체를 숨긴다(점검·재연결 API 는 그대로 둠) */}
-                        {!sheetRetired && (
-                        <button
-                            type="button"
-                            onClick={() => setShowImportTools((current) => !current)}
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                        >
-                            {showImportTools ? "점검 도구 닫기" : "점검 도구"}
-                        </button>
-                        )}
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4 lg:grid-cols-8">
-                            <ImportSummaryMetric label="현재 기준" value={sheetImportSummary.studentStatusCounts?.total ?? statusCounts.total} />
-                            <ImportSummaryMetric label="최신 원생" value={sheetImportSummary.uniqueStudents} />
-                            <ImportSummaryMetric label="등록" value={sheetImportSummary.registrationRows} />
-                            <ImportSummaryMetric label="차량" value={sheetImportSummary.vehicleRows} />
-                            <ImportSummaryMetric label="변동" value={sheetImportSummary.changeRows} />
-                            <ImportSummaryMetric label="대표팀" value={sheetImportSummary.teamRows} />
-                            <ImportSummaryMetric
-                                label="시간표"
-                                value={sheetImportSummary.scheduleMismatchCount}
-                                warning={sheetImportSummary.scheduleMismatchCount > 0}
-                            />
-                            <ImportSummaryMetric
-                                label="확인"
-                                value={sheetImportSummary.errorRows}
-                                warning={sheetImportSummary.errorRows > 0}
-                            />
-                    </div>
-
-                    {!allStudentsLoaded && (
-                        <p className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-950 dark:text-gray-400">
-                            빠른 진입을 위해 먼저 50명을 표시했습니다. 전체 원생 목록과 필터는 백그라운드에서 동기화 중입니다.
-                        </p>
-                    )}
-
-                    {!sheetRetired && showImportTools && (
-                        <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800">
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <p className="font-bold">최신 원생목록 점검</p>
-                                        <p className="mt-1 text-gray-500 dark:text-gray-400">
-                                            실제 변경 없이 최신 등록 행의 학생 연결, 이전 이력, 중복 의심 항목을 확인합니다.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void loadCurrentRosterReport()}
-                                        disabled={currentRosterLoading}
-                                        className="rounded-lg bg-gray-900 px-3 py-2 font-bold text-white transition hover:bg-gray-800 disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                                    >
-                                        {currentRosterLoading ? "점검 중" : "상세 점검"}
-                                    </button>
-                                </div>
-                                {currentRosterError && (
-                                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
-                                        {currentRosterError}
-                                    </div>
-                                )}
-                                {currentRosterReport && <CurrentRosterReportBox report={currentRosterReport} />}
-                            </div>
-
-                            {sheetImportSummary.scheduleMismatchCount > 0 && (
-                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-lime-300/25 dark:bg-lime-300/10 dark:text-lime-100">
-                                    <p className="font-bold">
-                                        시트 등록 인원과 DB 활성 수강 인원이 다른 반이 {sheetImportSummary.scheduleMismatchCount}개 있습니다.
-                                    </p>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                        {sheetImportSummary.topScheduleMismatches.map((item) => (
-                                            <span
-                                                key={item.slotKey}
-                                                className="rounded-full bg-white px-2 py-1 font-semibold text-amber-900 ring-1 ring-amber-200 dark:bg-gray-950 dark:text-lime-100 dark:ring-lime-300/25"
-                                            >
-                                                {formatSlotLabel(item.slotKey)} 시트 {item.sheetCount} / DB {item.dbCount}
-                                                {" "}
-                                                ({item.diff > 0 ? `+${item.diff}` : item.diff})
-                                            </span>
-                                        ))}
-                                        {sheetImportSummary.scheduleMismatchCount > sheetImportSummary.topScheduleMismatches.length && (
-                                            <span className="rounded-full px-2 py-1 font-semibold text-amber-800 dark:text-lime-200">
-                                                외 {sheetImportSummary.scheduleMismatchCount - sheetImportSummary.topScheduleMismatches.length}개
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => void loadReconcilePreview()}
-                                            disabled={reconcileLoading}
-                                            className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-800 disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                                        >
-                                            {reconcileLoading ? "점검 중" : "차이 점검"}
-                                        </button>
-                                    </div>
-                                    {reconcileError && (
-                                        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
-                                            {reconcileError}
-                                        </div>
-                                    )}
-                                    {reconcilePreview && (
-                                        <ReconcilePreviewBox
-                                            preview={reconcilePreview}
-                                            applying={reconcileApplying}
-                                            onApply={() => void applyReconcile()}
-                                            onApplyWithdrawals={() => void applyReconcile({ applyWithdrawals: true })}
-                                        />
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-800 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100">
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <p className="font-bold">차량·대표팀 원본 학생 연결 점검</p>
-                                        <p className="mt-1 text-gray-500 dark:text-gray-400">
-                                            시트 원본 중 기존 학생과 아직 연결되지 않은 행을 확인하고, 확정 후보 또는 수동 선택으로 연결합니다.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void loadRelinkPreview()}
-                                        disabled={relinkLoading}
-                                        className="rounded-lg bg-gray-900 px-3 py-2 font-bold text-white transition hover:bg-gray-800 disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-gray-950 dark:hover:bg-lime-200"
-                                    >
-                                        {relinkLoading ? "점검 중" : "미연결 점검"}
-                                    </button>
-                                </div>
-                                {relinkError && (
-                                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
-                                        {relinkError}
-                                    </div>
-                                )}
-                                {relinkPreview && (
-                                    <RelinkPreviewBox
-                                        preview={relinkPreview}
-                                        applying={relinkApplying}
-                                        manualApplyingId={manualRelinkApplyingId}
-                                        studentOptions={studentOptions}
-                                        studentOptionsLoading={studentOptionsLoading}
-                                        selections={manualRelinkSelections}
-                                        onSelectionChange={(rowKey, studentId) =>
-                                            setManualRelinkSelections((current) => ({
-                                                ...current,
-                                                [rowKey]: studentId,
-                                            }))
-                                        }
-                                        onApplyAuto={() => void applyRelink()}
-                                        onApplyManual={(row, studentId) => void applyManualRelink(row, studentId)}
-                                        onCreateTeamStudent={(row) => void createTeamStudentFromRow(row)}
-                                    />
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-                </div>
-            </details>
-
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
                     <h3 className="font-bold text-lg text-gray-900 dark:text-white">{editingId ? "원생 수정" : "새 원생 등록"}</h3>
@@ -2095,10 +954,109 @@ export default function StudentManagementClient({
                 </form>
             )}
 
+            {/* 보기 전환: 목록(표) | 반별(반마다 명단). 버튼 하나짜리 토글이라 필터 모달 밖에 둔다 */}
+            <div className="mb-2 flex items-center justify-between gap-2">
+                <div
+                    role="group"
+                    aria-label="보기 방식"
+                    className="inline-flex rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-0.5"
+                >
+                    {([
+                        { mode: "list", label: "목록", icon: "view_list" },
+                        { mode: "class", label: "반별", icon: "groups" },
+                    ] as const).map((item) => {
+                        const selected = viewMode === item.mode;
+                        return (
+                            <button
+                                key={item.mode}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => {
+                                    changeViewMode(item.mode);
+                                    // 반별은 페이지 나눔 없이 전체를 묶으므로, 일부만 불러온 상태면 전체를 불러온다
+                                    if (item.mode === "class") requestFullStudentLoad();
+                                }}
+                                className={`inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-sm font-bold transition ${
+                                    selected
+                                        ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
+                                        : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">{item.icon}</span>
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                {viewMode === "class" && classGroups.length > 0 && (
+                    <span className="text-xs text-[var(--color-academy-muted)]">
+                        {classGroups.filter((group) => group.key !== NO_CLASS_KEY).length}개 반 · {filtered.length}명
+                        {!allStudentsLoaded && " · 전체 동기화 중"}
+                    </span>
+                )}
+            </div>
+
             {/* Student list */}
             {filtered.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
                     {emptyStudentsMessage}
+                </div>
+            ) : viewMode === "class" ? (
+                // 반별 보기: 반 블록을 데스크톱에서 2~3열로 배치해 스크롤을 줄인다
+                <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2 lg:grid-cols-3">
+                    {classGroups.map((group) => {
+                        const collapsed = collapsedClassKeys.has(group.key);
+                        return (
+                            <section
+                                key={group.key}
+                                className="overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]"
+                            >
+                                {/* 반 머리줄: 누르면 접기/펼치기 */}
+                                <button
+                                    type="button"
+                                    onClick={() => toggleClassCollapsed(group.key)}
+                                    aria-expanded={!collapsed}
+                                    title={group.fullName}
+                                    className="flex min-h-11 w-full items-center gap-2 bg-[var(--color-academy-soft)] px-3 text-left text-sm"
+                                >
+                                    <span className="font-extrabold text-[var(--color-academy-ink)]">{group.label}</span>
+                                    {group.startTime && (
+                                        <span className="text-xs text-[var(--color-academy-muted)]">{group.startTime}</span>
+                                    )}
+                                    <span className="ml-auto text-xs font-bold text-[var(--color-academy-ink)]">{group.students.length}명</span>
+                                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">
+                                        {collapsed ? "expand_more" : "expand_less"}
+                                    </span>
+                                </button>
+                                {/* 학생 한 줄 행: 이름 · 학년 · 학교 · 학부모 연락처 */}
+                                {!collapsed && (
+                                    <ul className="divide-y divide-[var(--color-academy-line)]">
+                                        {group.students.map((s) => (
+                                            <li
+                                                key={`${group.key}-${s.id}`}
+                                                className="grid min-h-11 grid-cols-[minmax(0,5.5rem)_2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-sm"
+                                            >
+                                                <Link
+                                                    href={`/admin/students/${s.id}`}
+                                                    prefetch={false}
+                                                    className="block truncate leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
+                                                >
+                                                    {s.name}
+                                                </Link>
+                                                <span className="text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
+                                                <span className="truncate text-[var(--color-academy-muted)]" title={s.school ?? undefined}>
+                                                    {s.school || "-"}
+                                                </span>
+                                                <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)]">
+                                                    {formatPhone(s.parent.phone)}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </section>
+                        );
+                    })}
                 </div>
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
