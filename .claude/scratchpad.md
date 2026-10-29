@@ -67,6 +67,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 10-30 | reviewer: 원생 관리 목록 개편 2단계(360694c7) 검수 — 승인(필수 수정 없음·tsc/목록 테스트 통과) | 통과 |
 | 2026-10-30 | **목록 개편 2단계(developer, claude/list-redesign-p2)** — 원생 관리: 표 `admin-list-table`(글자 왼쪽·관리 가운데), 상단 상태 숫자→StatusCountChips(filterStatus 공유·켜진 칩 재클릭=기본값 ACTIVE=초기화와 같은 상수 DEFAULT_STATUS_FILTER), 보기 전환→ListViewToggle+useRememberedListView(기존 키 유지), 행·반별 카드 행 클릭→ListDetailPanel(요약+상세 페이지 열기·수강등록·수정), 이름 링크·⚡ 전파 차단, 활성인데 반 없으면 «반 없음»(warning-soft), 반별 카드 truncate 제거. 신청 목록 «체험 연결» sm 미만 아이콘만. 가드 테스트 2건 추가. tsc 0·eslint 0·테스트 2543-0 | 검수 대기 |
 | 2026-10-30 | **목록 개편 1단계(developer, claude/list-redesign-p1)** — 공용 부품 `src/components/admin/list/`(ListDetailPanel=AdminModal layout="side" 래퍼·StatusCountChips·ListViewToggle+useRememberedListView) + globals.css opt-in `admin-list-table`(글자 왼쪽·`admin-cell-num` 오른쪽+tabular-nums·table-layout auto·nowrap). 수강신청 목록 칸 분리(상태|학생|학년(만나이)|학교md|보호자lg|연락처md|접수일|희망 수업 «화4»|수강 시작월lg|셔틀md «이용/미이용»|빠른 처리)·체험후보 [체험 연결] 같은 줄로. 체험 목록 정렬·truncate 제거·담당교사/학교 md 이상. 두 화면 상태 칩(filter 공유)·«목록|상태별» 묶음(rowgroup 머리줄). 상세 모달 2개 껍데기만 패널로(+상단 닫기). 옛 UI 문자열 테스트 5단언 교정 + tests/admin-list-standard.test.mjs(6) 신설. tsc 0·eslint 신규 0·테스트 2541-0 | 검수 대기 |
 | 2026-10-25 | **남은 과제 정리** — 셔틀 API 로그인·직원 확인 실패를 500→401(앞단 문지기가 비로그인은 307로 먼저 막음, 401은 로그인한 비직원). 직원 역할 승인·반려·회수 시 신청자에게 앱 알림+푸시(받는 사람은 UPDATE RETURNING). src/lib 기존 실패 4건은 **코드 아닌 낡은 테스트**(7-27 좌석 기준 명단 전환 미반영) → 교정. 이성빈: 10-23 수강신청서로 셔틀 신청, 승인 때 위치 저장, **노선 미배정**. 검수 통과, 테스트 2467-0 | 완료·배포 974f46f |
