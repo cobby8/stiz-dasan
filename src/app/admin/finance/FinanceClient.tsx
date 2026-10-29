@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+// 목록 개편 공용 부품(1·2단계와 같은 것) — 상세 패널·상태 칩·보기 전환
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import {
     createPayment,
     cancelUnpaidPayment,
@@ -180,6 +184,16 @@ const SHEET_RECONCILE_ACTION_LABELS: Record<string, string> = {
     REVIEW: "확인 필요",
     UNCHANGED: "동일",
 };
+
+// 수납 목록 보기 방식(목록 | 상태별) — 이 화면은 위에 이미 월 선택이 있어서 «상태별» 묶음을 둔다
+const FINANCE_VIEW_STORAGE_KEY = "admin-finance-view-mode";
+const FINANCE_VIEW_VALUES = ["list", "status"] as const;
+const FINANCE_VIEW_OPTIONS = [
+    { value: "list", label: "목록", icon: "view_list" },
+    { value: "status", label: "상태별", icon: "view_agenda" },
+] as const;
+// 상태 칩·상태별 묶음 순서. 값은 필터 모달 «납부 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
+const PAYMENT_STATUS_ORDER = ["PENDING", "OVERDUE", "PAID", "REFUNDED", "CANCELED"] as const;
 
 function toDateStr(d: Date | string | null): string {
     if (!d) return "-";
@@ -359,6 +373,10 @@ export default function FinanceClient({
     const [terminalReceivedAt, setTerminalReceivedAt] = useState(toDateInputValue());
     const [terminalMemo, setTerminalMemo] = useState("");
     const [terminalSubmitting, setTerminalSubmitting] = useState(false);
+    // 보기 방식(목록 | 상태별) — 브라우저에 기억
+    const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "list");
+    // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
+    const [detailPaymentId, setDetailPaymentId] = useState<string | null>(null);
 
     const loadStudents = useCallback(async () => {
         if (studentsLoaded || studentsLoading) return;
@@ -758,12 +776,206 @@ export default function FinanceClient({
         }
     }
 
-    const visiblePayments = payments.filter((payment) => {
+    // 1단계: 상태를 뺀 조건(원생 지정·검색·반) — 상태 칩 건수는 이 목록에서 센다
+    const baseFilteredPayments = payments.filter((payment) => {
         const needle = paymentSearch.trim().toLocaleLowerCase();
         return (!focusedStudentId || payment.studentId === focusedStudentId) && (!needle || `${payment.studentName} ${payment.className ?? ""} ${payment.description ?? ""}`.toLocaleLowerCase().includes(needle))
-            && (!paymentStatusFilter || (paymentStatusFilter === "UNPAID" ? ["PENDING", "OVERDUE"].includes(payment.status) : payment.status === paymentStatusFilter))
             && (!paymentClassFilter || payment.classId === paymentClassFilter);
     });
+    // 2단계: 상태 조건(기존 규칙 그대로 — UNPAID 는 미납+연체 묶음)
+    const visiblePayments = baseFilteredPayments.filter((payment) =>
+        !paymentStatusFilter || (paymentStatusFilter === "UNPAID" ? ["PENDING", "OVERDUE"].includes(payment.status) : payment.status === paymentStatusFilter),
+    );
+    // 상태 칩: 칩 값 = 필터 select 값. 다시 누르면 ""(전체) — «필터 초기화»와 같은 값
+    const statusChipItems = PAYMENT_STATUS_ORDER.map((value) => ({
+        value,
+        label: STATUS_LABELS[value]?.label ?? value,
+        count: baseFilteredPayments.filter((payment) => payment.status === value).length,
+    }));
+    function applyPaymentStatusFilter(value: string) {
+        setPaymentStatusFilter(value);
+        setSelectedIds(new Set()); // select 로 바꿀 때와 같이 선택 초기화
+    }
+    // 상태별 보기 묶음: 정해진 순서 + 그 밖의 상태는 뒤에. 합계는 보이는 청구 금액을 더하기만 한다
+    const statusGroupKeys = [
+        ...PAYMENT_STATUS_ORDER,
+        ...Array.from(new Set(visiblePayments.map((payment) => payment.status))).filter(
+            (value) => !(PAYMENT_STATUS_ORDER as readonly string[]).includes(value),
+        ),
+    ];
+    const statusGroups = statusGroupKeys
+        .map((value) => {
+            const items = visiblePayments.filter((payment) => payment.status === value);
+            return {
+                status: value,
+                label: STATUS_LABELS[value]?.label ?? value,
+                items,
+                totalAmount: items.reduce((sum, payment) => sum + payment.amount, 0),
+            };
+        })
+        .filter((group) => group.items.length > 0);
+    // 상세 패널에 보일 청구(삭제·재조회로 사라지면 null → 패널이 닫힌다)
+    const detailPayment = detailPaymentId ? payments.find((payment) => payment.id === detailPaymentId) ?? null : null;
+
+    // 행 키보드: Enter/Space 로 패널 열기. 행 안 체크박스·⚡ 의 키 입력은 그 요소가 처리하게 건드리지 않는다
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailPaymentId(id);
+        }
+    }
+
+    // ⚡ 빠른 작업 목록(기존 행 작업 그대로) — 행 메뉴와 상세 패널이 같은 목록을 쓴다
+    function buildRowActions(p: Payment): AdminQuickAction[] {
+        const invoiceHref = getInvoiceHref(p);
+        return [
+            ...(invoiceHref ? [
+                {
+                    key: "invoice",
+                    label: "청구서",
+                    icon: "receipt_long",
+                    onSelect: () => {
+                        window.open(invoiceHref, "_blank", "noopener,noreferrer");
+                    },
+                },
+                {
+                    key: "copy",
+                    label: "링크복사",
+                    icon: "content_copy",
+                    onSelect: () => {
+                        void handleCopyInvoiceLink(p);
+                    },
+                },
+            ] : []),
+            ...(canManageCriticalFinance && p.status !== "PAID" ? [
+                {
+                    key: "terminal",
+                    label: "단말기",
+                    icon: "point_of_sale",
+                    disabled: busy || terminalSubmitting,
+                    onSelect: () => openTerminalModal(p),
+                },
+                {
+                    key: "paid",
+                    label: "납부처리",
+                    icon: "check_circle",
+                    tone: "primary" as const,
+                    disabled: busy,
+                    onSelect: () => {
+                        void handleStatusChange(p.id, "PAID");
+                    },
+                },
+            ] : []),
+            ...(canManageCriticalFinance && p.status === "PENDING" ? [
+                {
+                    key: "overdue",
+                    label: "연체처리",
+                    icon: "warning",
+                    disabled: busy,
+                    onSelect: () => {
+                        void handleStatusChange(p.id, "OVERDUE");
+                    },
+                },
+            ] : []),
+            ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) ? [
+                {
+                    key: "cancel",
+                    label: "청구 취소",
+                    icon: "cancel",
+                    tone: "danger" as const,
+                    disabled: busy,
+                    onSelect: () => {
+                        handleCancelUnpaid(p);
+                    },
+                },
+            ] : []),
+            ...(canManageCriticalFinance && p.status === "PAID" ? [
+                {
+                    key: "refund",
+                    label: "환불",
+                    icon: "undo",
+                    disabled: busy,
+                    onSelect: () => {
+                        void handleStatusChange(p.id, "REFUNDED");
+                    },
+                },
+            ] : []),
+            ...(canManageCriticalFinance ? [
+                {
+                    key: "delete",
+                    label: "삭제",
+                    icon: "delete",
+                    tone: "danger" as const,
+                    disabled: busy,
+                    onSelect: () => {
+                        if (window.confirm(`"${p.studentName}" 수납 기록을 삭제할까요?`)) {
+                            void handleDelete(p.id);
+                        }
+                    },
+                },
+            ] : []),
+        ];
+    }
+
+    // 수납 목록 한 줄 행. 칸: [선택] 원생 · 반(md) · 유형 · 금액 · 납부기한 · 납부일(md) · 수단(lg) · 상태 · 관리
+    function renderPaymentRow(p: Payment) {
+        const statusInfo = STATUS_LABELS[p.status] || STATUS_LABELS.PENDING;
+        const rowActions = buildRowActions(p);
+        return (
+            <tr
+                key={p.id}
+                tabIndex={0}
+                aria-label={`${p.studentName} 청구 상세 보기`}
+                onClick={() => setDetailPaymentId(p.id)}
+                onKeyDown={(event) => handleRowKeyDown(event, p.id)}
+                className={`cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${selectedIds.has(p.id) ? "bg-[var(--color-academy-primary-soft)]" : ""}`}
+            >
+                {canManageCriticalFinance && (
+                    // 체크박스 칸: 누르면 선택만(행 클릭=패널 열기와 겹치지 않게 전파 차단)
+                    <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                        <input
+                            type="checkbox"
+                            aria-label={`${p.studentName} 선택`}
+                            checked={selectedIds.has(p.id)}
+                            onChange={() => toggleSelect(p.id)}
+                            className="rounded border-gray-300"
+                        />
+                    </td>
+                )}
+                <td className="px-2 py-1.5">
+                    <span className="font-medium text-gray-900 dark:text-white">{p.studentName}</span>
+                </td>
+                {/* 반: 원생 이름 아래 두 줄로 쌓던 것을 칸으로 분리(모바일은 패널에서) */}
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{p.className || "-"}</td>
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{TYPE_LABELS[p.type] || p.type}</td>
+                {/* 금액·날짜: 오른쪽 정렬 + 자릿수 폭 고정(admin-cell-num) */}
+                <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{formatAmount(p.amount)}</td>
+                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{toDateStr(p.dueDate)}</td>
+                <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{toDateStr(p.paidDate)}</td>
+                {/* 수단: 넓은 화면에서만. 결제 경로·승인번호·영수증은 상세 패널 */}
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{p.method ? (METHOD_LABELS[p.method] ?? p.method) : "-"}</td>
+                <td className="px-2 py-1.5">
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
+                        {statusInfo.label}
+                    </span>
+                </td>
+                {/* ⚡ 작업: 메뉴 클릭이 행 클릭(패널)으로 번지지 않게 전파 차단 */}
+                <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                    {rowActions.length > 0 ? (
+                        <AdminQuickActionMenu
+                            label={`${p.studentName} 수납 빠른 작업`}
+                            actions={rowActions}
+                        />
+                    ) : (
+                        <span className="text-xs font-bold text-gray-400">-</span>
+                    )}
+                </td>
+            </tr>
+        );
+    }
+    // 표 칸 수(상태별 묶음 머리줄이 표 전체 폭을 차지하도록)
+    const paymentColumnCount = canManageCriticalFinance ? 10 : 9;
     const paymentClasses = Array.from(new Map(payments.filter((payment) => payment.classId).map((payment) => [payment.classId!, payment.className ?? "반 이름 없음"])).entries());
 
     // 체크박스: 전체 선택/해제
@@ -1347,12 +1559,29 @@ export default function FinanceClient({
             <section aria-label="수납 검색과 필터" className="mb-3 flex flex-wrap items-center gap-2">
                 <label className="min-w-0 flex-1"><span className="sr-only">학생·반·내용 검색</span><input value={paymentSearch} onChange={(event) => { setPaymentSearch(event.target.value); setSelectedIds(new Set()); }} placeholder="학생·반·내용 검색" className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-base" /></label>
                 <details className="relative"><summary className="flex min-h-11 cursor-pointer items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span>필터{paymentStatusFilter || paymentClassFilter ? " · 적용 중" : ""}</summary><div className="absolute right-0 z-20 grid w-60 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border bg-white p-3 shadow-lg">
-                    <label className="grid gap-1 text-sm">납부 상태<select aria-label="납부 상태 필터" value={paymentStatusFilter} onChange={(event) => { setPaymentStatusFilter(event.target.value); setSelectedIds(new Set()); }} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체</option><option value="UNPAID">미납·연체</option><option value="PAID">납부 완료</option><option value="CANCELLED">취소</option></select></label>
+                    <label className="grid gap-1 text-sm">납부 상태<select aria-label="납부 상태 필터" value={paymentStatusFilter} onChange={(event) => applyPaymentStatusFilter(event.target.value)} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체</option><option value="UNPAID">미납·연체</option><option value="PENDING">미납</option><option value="OVERDUE">연체</option><option value="PAID">납부 완료</option><option value="REFUNDED">환불</option><option value="CANCELED">취소/이월</option></select></label>
                     <label className="grid gap-1 text-sm">반<select aria-label="반 필터" value={paymentClassFilter} onChange={(event) => { setPaymentClassFilter(event.target.value); setSelectedIds(new Set()); }} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체 반</option>{paymentClasses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
                     <button type="button" className="min-h-11 text-sm font-bold" onClick={() => { setPaymentClassFilter(""); setPaymentStatusFilter(""); setSelectedIds(new Set()); }}>필터 초기화</button>
                 </div></details>
                 <span className="text-sm text-gray-500">{visiblePayments.length} / {payments.length}건</span>
             </section>
+            {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 전체) + 보기 전환(목록 | 상태별).
+                칩은 필터 모달의 «납부 상태»(paymentStatusFilter)와 같은 값을 공유한다. */}
+            <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <StatusCountChips
+                    ariaLabel="납부 상태별 건수"
+                    items={statusChipItems}
+                    selected={paymentStatusFilter}
+                    onSelect={applyPaymentStatusFilter}
+                    allValue=""
+                />
+                <ListViewToggle
+                    value={viewMode}
+                    options={FINANCE_VIEW_OPTIONS}
+                    ariaLabel="수납 보기 방식"
+                    onChange={changeViewMode}
+                />
+            </div>
             {/* 수납 목록 테이블 */}
             {visiblePayments.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
@@ -1361,197 +1590,143 @@ export default function FinanceClient({
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50 dark:bg-gray-900">
+                        {/* admin-list-table: 글자 칸 왼쪽·금액/날짜 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
+                        <table className="admin-list-table w-full border-collapse text-sm">
+                            <thead className="bg-gray-50 text-xs font-black text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                                 <tr>
                                     {canManageCriticalFinance && (
-                                        <th className="px-3 py-3 text-center">
+                                        <th className="admin-cell-center px-2 py-2">
                                             <input
                                                 type="checkbox"
+                                                aria-label="보이는 청구 모두 선택"
                                                 checked={visiblePayments.length > 0 && visiblePayments.every((payment) => selectedIds.has(payment.id))}
                                                 onChange={toggleSelectAll}
                                                 className="rounded border-gray-300"
                                             />
                                         </th>
                                     )}
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">원생</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">유형</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">금액</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">납부기한</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">납부일</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">상태</th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">관리</th>
+                                    <th className="px-2 py-2">원생</th>
+                                    <th className="hidden px-2 py-2 md:table-cell">반</th>
+                                    <th className="px-2 py-2">유형</th>
+                                    <th className="admin-cell-num px-2 py-2">금액</th>
+                                    <th className="admin-cell-num px-2 py-2">납부기한</th>
+                                    <th className="admin-cell-num hidden px-2 py-2 md:table-cell">납부일</th>
+                                    <th className="hidden px-2 py-2 lg:table-cell">수단</th>
+                                    <th className="px-2 py-2">상태</th>
+                                    <th className="admin-cell-center px-2 py-2">관리</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {visiblePayments.map((p) => {
-                                    const statusInfo = STATUS_LABELS[p.status] || STATUS_LABELS.PENDING;
-                                    const invoiceHref = getInvoiceHref(p);
-                                    const rowActions: AdminQuickAction[] = [
-                                        ...(invoiceHref ? [
-                                            {
-                                                key: "invoice",
-                                                label: "청구서",
-                                                icon: "receipt_long",
-                                                onSelect: () => {
-                                                    window.open(invoiceHref, "_blank", "noopener,noreferrer");
-                                                },
-                                            },
-                                            {
-                                                key: "copy",
-                                                label: "링크복사",
-                                                icon: "content_copy",
-                                                onSelect: () => {
-                                                    void handleCopyInvoiceLink(p);
-                                                },
-                                            },
-                                        ] : []),
-                                        ...(canManageCriticalFinance && p.status !== "PAID" ? [
-                                            {
-                                                key: "terminal",
-                                                label: "단말기",
-                                                icon: "point_of_sale",
-                                                disabled: busy || terminalSubmitting,
-                                                onSelect: () => openTerminalModal(p),
-                                            },
-                                            {
-                                                key: "paid",
-                                                label: "납부처리",
-                                                icon: "check_circle",
-                                                tone: "primary" as const,
-                                                disabled: busy,
-                                                onSelect: () => {
-                                                    void handleStatusChange(p.id, "PAID");
-                                                },
-                                            },
-                                        ] : []),
-                                        ...(canManageCriticalFinance && p.status === "PENDING" ? [
-                                            {
-                                                key: "overdue",
-                                                label: "연체처리",
-                                                icon: "warning",
-                                                disabled: busy,
-                                                onSelect: () => {
-                                                    void handleStatusChange(p.id, "OVERDUE");
-                                                },
-                                            },
-                                        ] : []),
-                                        ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) ? [
-                                            {
-                                                key: "cancel",
-                                                label: "청구 취소",
-                                                icon: "cancel",
-                                                tone: "danger" as const,
-                                                disabled: busy,
-                                                onSelect: () => {
-                                                    handleCancelUnpaid(p);
-                                                },
-                                            },
-                                        ] : []),
-                                        ...(canManageCriticalFinance && p.status === "PAID" ? [
-                                            {
-                                                key: "refund",
-                                                label: "환불",
-                                                icon: "undo",
-                                                disabled: busy,
-                                                onSelect: () => {
-                                                    void handleStatusChange(p.id, "REFUNDED");
-                                                },
-                                            },
-                                        ] : []),
-                                        ...(canManageCriticalFinance ? [
-                                            {
-                                                key: "delete",
-                                                label: "삭제",
-                                                icon: "delete",
-                                                tone: "danger" as const,
-                                                disabled: busy,
-                                                onSelect: () => {
-                                                    if (window.confirm(`"${p.studentName}" 수납 기록을 삭제할까요?`)) {
-                                                        void handleDelete(p.id);
-                                                    }
-                                                },
-                                            },
-                                        ] : []),
-                                    ];
-
-                                    return (
-                                        <tr key={p.id} className={`hover:bg-gray-50 dark:bg-gray-900 transition-colors ${selectedIds.has(p.id) ? "bg-blue-50" : ""}`}>
-                                            {canManageCriticalFinance && (
-                                                <td className="px-3 py-3.5 text-center">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedIds.has(p.id)}
-                                                        onChange={() => toggleSelect(p.id)}
-                                                        className="rounded border-gray-300"
-                                                    />
-                                                </td>
-                                            )}
-                                            <td className="px-4 py-3.5">
-                                                <span className="font-medium text-gray-900 dark:text-white">{p.studentName}</span>
-                                                {p.className && (
-                                                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{p.className}</p>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-300">
-                                                {TYPE_LABELS[p.type] || p.type}
-                                                {(p.method || p.paidProvider) && (
-                                                    <p className="mt-1 text-[11px] text-gray-400">
-                                                        {[p.method ? (METHOD_LABELS[p.method] ?? p.method) : null, p.paidProvider ? (PROVIDER_LABELS[p.paidProvider] ?? null) : null].filter(Boolean).join(" · ")}
-                                                    </p>
-                                                )}
-                                                {p.providerOrderId && (
-                                                    <p className="mt-1 text-[11px] font-bold text-gray-500 dark:text-gray-300">
-                                                        승인번호 {p.providerOrderId}
-                                                    </p>
-                                                )}
-                                                {p.receiptUrl && (
-                                                    <a
-                                                        href={p.receiptUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="mt-1 inline-flex text-[11px] font-bold text-blue-600 hover:text-blue-800 dark:text-brand-neon-lime"
-                                                    >
-                                                        영수증
-                                                    </a>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3.5 text-sm text-gray-700 dark:text-gray-200 font-mono">{formatAmount(p.amount)}</td>
-                                            <td className="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-300">{toDateStr(p.dueDate)}</td>
-                                            <td className="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-300">{toDateStr(p.paidDate)}</td>
-                                            <td className="px-4 py-3.5">
-                                                <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
-                                                    {statusInfo.label}
-                                                </span>
-                                                {p.notifiedAt && (
-                                                    <span className="text-[10px] text-gray-400 block mt-0.5">
-                                                        알림 {toDateStr(p.notifiedAt)}
-                                                    </span>
-                                                )}
-                                                {Boolean(p.reminderCount) && (
-                                                    <span className="text-[10px] text-gray-400 block mt-0.5">
-                                                        알림 {p.reminderCount}회
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3.5 text-right">
-                                                {rowActions.length > 0 ? (
-                                                    <AdminQuickActionMenu
-                                                        label={`${p.studentName} 수납 빠른 작업`}
-                                                        actions={rowActions}
-                                                    />
-                                                ) : (
-                                                    <span className="text-xs font-bold text-gray-400">-</span>
-                                                )}
-                                            </td>
+                            {viewMode === "status" ? (
+                                // 상태별 보기: 머리줄 «미납 · 12건 · 합계 1,320,000원» 아래 그 상태 청구들
+                                statusGroups.map((group) => (
+                                    <tbody key={group.status} className="divide-y divide-[var(--color-academy-line)]">
+                                        <tr>
+                                            <th colSpan={paymentColumnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                                {group.label} · <span className="tabular-nums">{group.items.length}</span>건 · 합계 <span className="tabular-nums">{formatAmount(group.totalAmount)}</span>
+                                            </th>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
+                                        {group.items.map(renderPaymentRow)}
+                                    </tbody>
+                                ))
+                            ) : (
+                                <tbody className="divide-y divide-[var(--color-academy-line)]">{visiblePayments.map(renderPaymentRow)}</tbody>
+                            )}
                         </table>
                     </div>
                 </div>
             )}
+
+            {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 패널 / 모바일 하단 시트. 이미 불러온 청구 값만 보여 준다(새 조회 없음) */}
+            {detailPayment && (() => {
+                const d = detailPayment;
+                const detailStatus = STATUS_LABELS[d.status] || STATUS_LABELS.PENDING;
+                const detailActions = buildRowActions(d);
+                const alertParts = [
+                    d.notifiedAt ? `${toDateStr(d.notifiedAt)} 발송` : null,
+                    d.reminderCount ? `${d.reminderCount}회` : null,
+                ].filter(Boolean);
+                // 값이 있는 줄만 보인다(빈 «-» 줄을 늘어놓지 않게). 설명·반 이름 같은 긴 값도 말줄임 없이 전부
+                const rows: { label: string; value: React.ReactNode }[] = [
+                    { label: "반", value: d.className },
+                    { label: "유형", value: TYPE_LABELS[d.type] || d.type },
+                    { label: "청구 월", value: d.year && d.month ? `${d.year}년 ${d.month}월` : null },
+                    { label: "설명", value: d.description },
+                    { label: "금액", value: <span className="font-bold tabular-nums">{formatAmount(d.amount)}</span> },
+                    { label: "납부기한", value: <span className="tabular-nums">{toDateStr(d.dueDate)}</span> },
+                    { label: "납부일", value: d.paidDate ? <span className="tabular-nums">{toDateStr(d.paidDate)}</span> : null },
+                    { label: "결제 수단", value: d.method ? (METHOD_LABELS[d.method] ?? d.method) : null },
+                    { label: "결제 경로", value: d.paidProvider ? (PROVIDER_LABELS[d.paidProvider] ?? d.paidProvider) : null },
+                    { label: "승인번호", value: d.providerOrderId },
+                    { label: "청구번호", value: d.invoiceNo },
+                    { label: "청구서 발송", value: d.invoiceSentAt ? toDateStr(d.invoiceSentAt) : null },
+                    { label: "학부모 알림", value: alertParts.length > 0 ? alertParts.join(", ") : null },
+                    {
+                        label: "영수증",
+                        value: d.receiptUrl ? (
+                            <a
+                                href={d.receiptUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex min-h-11 items-center font-bold text-[var(--color-academy-primary)] underline"
+                            >
+                                영수증 열기
+                            </a>
+                        ) : null,
+                    },
+                ].filter((row) => row.value !== null && row.value !== undefined && row.value !== "");
+                return (
+                    <ListDetailPanel onClose={() => setDetailPaymentId(null)} titleId="payment-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                        <div className="mb-4 flex items-center gap-2">
+                            <h3 id="payment-detail-panel-title" className="text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${detailStatus.color}`}>{detailStatus.label}</span>
+                            <button
+                                type="button"
+                                onClick={() => setDetailPaymentId(null)}
+                                aria-label="닫기"
+                                className="ml-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            </button>
+                        </div>
+                        {/* 요약: 왼쪽 이름표 / 오른쪽 값 */}
+                        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                            {rows.map((row) => (
+                                <div key={row.label} className="contents">
+                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        {/* 작업: 행 ⚡ 메뉴와 같은 목록·같은 권한. 패널을 닫고 기존 동작(모달·확인창)을 그대로 실행한다 */}
+                        {detailActions.length > 0 && (
+                            <div className="mt-5 flex flex-wrap gap-2">
+                                {detailActions.map((action) => (
+                                    <button
+                                        key={action.key}
+                                        type="button"
+                                        disabled={action.disabled}
+                                        onClick={() => {
+                                            setDetailPaymentId(null);
+                                            void action.onSelect();
+                                        }}
+                                        className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-4 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                            action.tone === "primary"
+                                                ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                                                : action.tone === "danger"
+                                                    ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                                                    : "border border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </ListDetailPanel>
+                );
+            })()}
+
             {createPreviewOpen && (
                 <AdminModal
                     titleId="manual-payment-preview-title"

@@ -104,3 +104,32 @@ test("원생 관리: 행 클릭은 상세 패널, 이름 링크·⚡ 는 전파 
   // 목록·반별 행 어디에도 말줄임을 쓰지 않는다
   assert.doesNotMatch(studentsClient, /\btruncate\b|text-ellipsis/);
 });
+
+// 목록 개편 3단계(청구·수납) — 같은 부품·규칙. 조회·저장·금액 계산은 그대로, 보이는 모양만
+const financeClient = read("../src/app/admin/finance/FinanceClient.tsx");
+
+test("청구·수납: 공통 표 규칙(금액·날짜 오른쪽)·상태 칩(paymentStatusFilter 공유, 다시 누르면 전체)·상태별 묶음·행 클릭 패널", () => {
+  assert.match(financeClient, /<table className="admin-list-table/);
+  // 금액·납부기한은 오른쪽 + 자릿수 폭 고정
+  assert.match(financeClient, /admin-cell-num[^"]*">\{formatAmount\(p\.amount\)\}/);
+  assert.match(financeClient, /admin-cell-num[^"]*">\{toDateStr\(p\.dueDate\)\}/);
+  // 칩은 필터 select 와 같은 값, 다시 누르면 ""(필터 초기화와 같은 값)
+  assert.match(financeClient, /<StatusCountChips[\s\S]*?selected=\{paymentStatusFilter\}[\s\S]*?onSelect=\{applyPaymentStatusFilter\}[\s\S]*?allValue=""/);
+  assert.match(financeClient, /setPaymentStatusFilter\(""\)/);
+  // 실제 저장되는 취소 값은 CANCELED(옛 select 의 CANCELLED 는 아무것도 못 찾았다)
+  assert.match(financeClient, /<option value="CANCELED">/);
+  assert.doesNotMatch(financeClient, /"CANCELLED"/);
+  // 보기 전환 «목록 | 상태별», 상태별 머리줄은 건수 + 금액 합계
+  assert.match(financeClient, /<ListViewToggle/);
+  assert.match(financeClient, /useRememberedListView\(FINANCE_VIEW_STORAGE_KEY/);
+  assert.match(financeClient, /scope="rowgroup"[\s\S]*?건 · 합계/);
+  // 행 클릭 패널, 행 키보드는 안쪽 체크박스·⚡ 를 가로채지 않는다, 패널 작업은 행 ⚡ 와 같은 목록
+  assert.match(financeClient, /<ListDetailPanel onClose=\{\(\) => setDetailPaymentId\(null\)\} titleId="payment-detail-panel-title"/);
+  assert.match(financeClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(financeClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(financeClient, /const detailActions = buildRowActions\(d\)/);
+  // 목록 행에 말줄임 없음
+  const row = financeClient.slice(financeClient.indexOf("function renderPaymentRow("), financeClient.indexOf("const paymentColumnCount"));
+  assert.ok(row.length > 100, "renderPaymentRow 가 있어야 합니다");
+  assert.doesNotMatch(row, /\btruncate\b|text-ellipsis|line-clamp/);
+});
