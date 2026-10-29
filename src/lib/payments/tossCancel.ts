@@ -19,9 +19,10 @@ export function classifyTossCancel(
     if (webhookPaymentKey && verified.paymentKey !== webhookPaymentKey) return { kind: "NOT_CANCEL" };
     if (Number(verified.totalAmount) !== Number(tx.amount)) return { kind: "NOT_CANCEL" };
 
-    const balance = Number(verified.balanceAmount);
-    if (verified.status === "CANCELED" && (!Number.isFinite(balance) || balance === 0)) return { kind: "FULL_CANCEL" };
-    if (verified.status === "PARTIAL_CANCELED" || (verified.status === "CANCELED" && balance > 0)) {
+    // 잔액(balanceAmount)이 없으면 전액 취소로 단정하지 않고 사람 확인으로 돌린다.
+    const balance = verified.balanceAmount == null ? NaN : Number(verified.balanceAmount);
+    if (verified.status === "CANCELED" && balance === 0) return { kind: "FULL_CANCEL" };
+    if (verified.status === "PARTIAL_CANCELED" || verified.status === "CANCELED") {
         const total = Number(tx.amount);
         return { kind: "PARTIAL_CANCEL", canceledAmount: Number.isFinite(balance) ? total - balance : 0 };
     }

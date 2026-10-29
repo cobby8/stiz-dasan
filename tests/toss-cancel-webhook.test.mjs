@@ -12,7 +12,10 @@ const base = { orderId: "ord-1", paymentKey: "pk-1", totalAmount: 1000 };
 
 test("전액 취소(CANCELED, 잔액 0)는 FULL_CANCEL", () => {
     assert.deepEqual(classifyTossCancel({ ...base, status: "CANCELED", balanceAmount: 0 }, tx, "pk-1"), { kind: "FULL_CANCEL" });
-    assert.deepEqual(classifyTossCancel({ ...base, status: "CANCELED" }, tx, null), { kind: "FULL_CANCEL" });
+});
+
+test("잔액이 빠진 취소 응답은 전액 취소로 단정하지 않고 확인 필요로 돌린다", () => {
+    assert.equal(classifyTossCancel({ ...base, status: "CANCELED" }, tx, null).kind, "PARTIAL_CANCEL");
 });
 
 test("부분 취소는 자동 반영하지 않고 취소 금액만 알린다", () => {
@@ -31,5 +34,5 @@ test("웹훅 처리는 토스 재조회 결과(verified)로 취소를 판정하�
     const source = await readFile("src/lib/payment-ledger.ts", "utf8");
     assert.match(source, /classifyTossCancel\(verified, tx, paymentKey\)/);
     assert.match(source, /current\.status !== "DONE" \|\| current\.paymentStatus !== "PAID"/);
-    assert.match(source, /SET status = 'REFUNDED'[^`]*WHERE id = \$1 AND status = 'PAID'/);
+    assert.match(source, /SET status = 'REFUNDED', "paidDate" = NULL[^`]*WHERE id = \$1 AND status = 'PAID'/);
 });

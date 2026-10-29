@@ -1333,7 +1333,8 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
         }
 
         await db.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = 'REFUNDED', "updatedAt" = NOW() WHERE id = $1 AND status = 'PAID'`,
+            // 관리자 화면의 환불 처리와 같이 납부일을 비운다(POS 대조가 paidDate 로 납부 건을 고른다).
+            `UPDATE "Payment" SET status = 'REFUNDED', "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $1 AND status = 'PAID'`,
             current.paymentId,
         );
         await db.$executeRawUnsafe(
