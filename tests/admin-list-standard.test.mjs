@@ -77,3 +77,30 @@ test("목록 행은 한 줄이고 말줄임(truncate)을 쓰지 않는다 — �
   assert.match(applyRow, /admin-cell-num[^"]*">\{formatDate\(app\.createdAt\)\}/);
   assert.match(trialRow, /admin-cell-num/);
 });
+
+// 목록 개편 2단계(원생 관리) — 1단계 부품·규칙을 그대로 쓴다
+const studentsClient = read("../src/app/admin/students/StudentManagementClient.tsx");
+
+test("원생 관리: 공통 표 규칙·상태 칩(filterStatus 공유, 다시 누르면 기본값 ACTIVE)·보기 전환(기존 기억 키)", () => {
+  assert.match(studentsClient, /<table className="admin-list-table/);
+  assert.match(studentsClient, /<StatusCountChips[\s\S]*?selected=\{filterStatus\}[\s\S]*?onSelect=\{applyStatusFilter\}[\s\S]*?allValue=\{DEFAULT_STATUS_FILTER\}/);
+  assert.match(studentsClient, /const DEFAULT_STATUS_FILTER = "ACTIVE"/);
+  // 필터 초기화도 같은 기본값으로 돌아간다
+  assert.match(studentsClient, /setFilterStatus\(DEFAULT_STATUS_FILTER\)/);
+  assert.match(studentsClient, /<ListViewToggle/);
+  assert.match(studentsClient, /useRememberedListView\(STUDENT_VIEW_STORAGE_KEY/);
+  assert.match(studentsClient, /STUDENT_VIEW_STORAGE_KEY = "admin-students-view-mode"/);
+});
+
+test("원생 관리: 행 클릭은 상세 패널, 이름 링크·⚡ 는 전파 차단, 행 키보드는 안쪽 버튼을 가로채지 않는다", () => {
+  assert.match(studentsClient, /<ListDetailPanel onClose=\{\(\) => setDetailStudentId\(null\)\} titleId="student-detail-panel-title"/);
+  assert.match(studentsClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(studentsClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(studentsClient, /href=\{`\/admin\/students\/\$\{s\.id\}`\}[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // 패널 안에서도 상세 페이지로 갈 수 있다
+  assert.match(studentsClient, /상세 페이지 열기/);
+  // 활성인데 반이 없으면 «반 없음» 으로 분명히
+  assert.match(studentsClient, /status === "ACTIVE"\) \{[\s\S]*?반 없음/);
+  // 목록·반별 행 어디에도 말줄임을 쓰지 않는다
+  assert.doesNotMatch(studentsClient, /\btruncate\b|text-ellipsis/);
+});

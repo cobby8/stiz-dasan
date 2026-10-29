@@ -920,11 +920,12 @@ export default function ApplyAdminClient({
                             }}
                             disabled={trialLinkBusyId !== null}
                             title={`${trialSuggestionLabel} · ${trialSuggestion.reason}`}
-                            className="ml-1.5 inline-flex min-h-8 items-center gap-0.5 rounded-md border border-[var(--color-academy-line)] px-2 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-surface)] disabled:opacity-50"
+                            className="ml-1.5 inline-flex min-h-11 min-w-11 justify-center items-center gap-0.5 rounded-md sm:min-h-8 sm:min-w-0 border border-[var(--color-academy-line)] px-2 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-surface)] disabled:opacity-50"
                             aria-label={`${app.childName} 신청서를 체험 기록 ${trialSuggestion.childName}과 연결 (${trialSuggestionLabel})`}
                         >
                             <span className="material-symbols-outlined text-sm" aria-hidden="true">link</span>
-                            {trialLinkBusyId === app.id ? "연결 중" : "체험 연결"}
+                            {/* 휴대폰 폭(sm 미만)에선 아이콘만 보여 행이 두 줄로 밀리지 않게 한다(뜻은 aria-label 이 읽어 준다) */}
+                            <span className="sr-only sm:not-sr-only">{trialLinkBusyId === app.id ? "연결 중" : "체험 연결"}</span>
                         </button>
                     )}
                 </td>

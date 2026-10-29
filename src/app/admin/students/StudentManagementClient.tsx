@@ -12,6 +12,10 @@ import {
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import CompactListFilters from "@/components/academy/CompactListFilters";
+// 목록 개편 공용 부품(1단계 신청·상담과 같은 모양): 상세 패널·상태 칩·보기 전환
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 
 const ExcelUploadModal = dynamic(() => import("./ExcelUploadModal"), {
     ssr: false,
@@ -270,7 +274,29 @@ type ClassGroup = {
 };
 
 const NO_CLASS_KEY = "__none__";
+// 기억 키는 예전 그대로 둔다(원장이 골라 둔 «반별» 보기가 개편 뒤에도 유지되게)
 const STUDENT_VIEW_STORAGE_KEY = "admin-students-view-mode";
+const STUDENT_VIEW_VALUES = ["list", "class"] as const;
+const STUDENT_VIEW_OPTIONS = [
+    { value: "list", label: "목록", icon: "view_list" },
+    { value: "class", label: "반별", icon: "groups" },
+] as const;
+// 상태 칩 순서와 이름. 값은 필터 모달 «수강 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
+const STUDENT_STATUS_CHIPS = [
+    { value: "ACTIVE", label: "활성" },
+    { value: "PAUSED", label: "휴원" },
+    { value: "WITHDRAWN", label: "퇴원" },
+    { value: "NONE", label: "미배정" },
+] as const;
+// 상태 기본값 — 처음 열 때·필터 초기화·켜진 칩을 다시 누를 때 모두 이 값으로 돌아간다
+const DEFAULT_STATUS_FILTER = "ACTIVE";
+
+// 요일 → 시작시간 순으로 정렬한 활성 수강 목록(목록 칸·상세 패널이 같은 순서를 쓰게)
+function sortEnrollmentsByDay(enrollments: Student["enrollments"]) {
+    return [...enrollments].sort(
+        (a, b) => (DAY_ORDER[a.dayOfWeek] ?? 99) - (DAY_ORDER[b.dayOfWeek] ?? 99) || a.startTime.localeCompare(b.startTime),
+    );
+}
 
 /**
  * 필터가 적용된 학생 목록을 «활성 수강반» 기준으로 묶는다.
@@ -366,27 +392,12 @@ export default function StudentManagementClient({
     const [filterSchool, setFilterSchool] = useState("");
 
     // 보기 방식: "list"(기존 표) / "class"(반별 묶음). 마지막 선택을 브라우저에 기억한다.
-    const [viewMode, setViewMode] = useState<"list" | "class">("list");
+    // 공용 훅이 처음엔 "list"로 그린 뒤(hydration) 저장된 값을 읽어 바꾸고, 바꿀 때마다 저장한다.
+    const [viewMode, changeViewMode] = useRememberedListView(STUDENT_VIEW_STORAGE_KEY, STUDENT_VIEW_VALUES, "list");
     // 반별 보기에서 접어 둔 반 id 목록
     const [collapsedClassKeys, setCollapsedClassKeys] = useState<Set<string>>(() => new Set());
-
-    // 서버 화면과 첫 화면을 맞추려고(hydration) 처음엔 "list"로 그린 뒤, 저장된 값을 읽어 바꾼다.
-    useEffect(() => {
-        try {
-            if (window.localStorage.getItem(STUDENT_VIEW_STORAGE_KEY) === "class") setViewMode("class");
-        } catch {
-            // 사생활 보호 모드 등에서 저장소 접근이 막혀도 기본 보기로 동작
-        }
-    }, []);
-
-    const changeViewMode = (mode: "list" | "class") => {
-        setViewMode(mode);
-        try {
-            window.localStorage.setItem(STUDENT_VIEW_STORAGE_KEY, mode);
-        } catch {
-            // 저장 실패는 무시(다음 방문 때 기본 보기)
-        }
-    };
+    // 행을 눌러 연 상세 패널의 학생 id. 목록을 다시 불러와도 최신 값이 보이도록 id 로 들고 있다.
+    const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
 
     const toggleClassCollapsed = (key: string) => {
         setCollapsedClassKeys((current) => {
@@ -451,7 +462,7 @@ export default function StudentManagementClient({
         return () => window.clearTimeout(timer);
     }, [allStudentsLoaded, autoLoadRequested, backgroundLoading, initialPartial, requestFullStudentLoad]);
     // 기본 필터를 "활성"으로 설정 — 대부분 수강 중인 학생을 먼저 봄
-    const [filterStatus, setFilterStatus] = useState("ACTIVE");
+    const [filterStatus, setFilterStatus] = useState<string>(DEFAULT_STATUS_FILTER);
     const [visibleLimit, setVisibleLimit] = useState(STUDENT_PAGE_SIZE);
 
     // 필터 선택지: 학생 데이터에서 고유값 추출 (useMemo로 캐싱)
@@ -661,7 +672,7 @@ export default function StudentManagementClient({
     );
     const hasMoreStudents = visibleStudents.length < filtered.length;
     const hasAnyFilter = Boolean(search.trim() || filterClass || filterGrade || filterSchool || filterStatus);
-    const activeFilterCount = [Boolean(filterClass), Boolean(filterGrade), Boolean(filterSchool), filterStatus !== "ACTIVE"].filter(Boolean).length;
+    const activeFilterCount = [Boolean(filterClass), Boolean(filterGrade), Boolean(filterSchool), filterStatus !== DEFAULT_STATUS_FILTER].filter(Boolean).length;
     const filterSummary = [
         filterStatus ? getStatusLabel(filterStatus === "NONE" ? null : filterStatus) : "전체 상태",
         filterClass && (classes.find((item) => item.id === filterClass)?.name ?? "선택한 반"),
@@ -674,6 +685,76 @@ export default function StudentManagementClient({
         : hasAnyFilter
             ? "조건에 맞는 원생이 없습니다."
             : "등록된 원생이 없습니다. \"원생 등록\" 버튼으로 새 원생을 등록하세요.";
+
+    // 상세 패널에 보일 학생(삭제·재조회로 사라지면 자동으로 닫힌 것처럼 null)
+    const detailStudent = detailStudentId ? students.find((item) => item.id === detailStudentId) ?? null : null;
+
+    // 행(⚡ 제외)을 누르면 그 학생 요약 패널을 연다
+    function openStudentDetail(id: string) {
+        setDetailStudentId(id);
+    }
+
+    // 행 키보드: Enter/Space 로 패널 열기. 행 안 버튼(⚡·이름 링크)의 키 입력은 그 버튼이 처리하도록 건드리지 않는다.
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openStudentDetail(id);
+        }
+    }
+
+    // ⚡ 빠른 작업 목록(기존 그대로: 수강등록·수정·삭제)
+    function buildQuickActions(s: Student) {
+        return [
+            {
+                key: "enroll",
+                label: "수강등록",
+                icon: "how_to_reg",
+                tone: "primary" as const,
+                onSelect: () => setEnrollModal(s.id),
+            },
+            {
+                key: "edit",
+                label: "수정",
+                icon: "edit",
+                onSelect: () => startEdit(s),
+            },
+            {
+                key: "delete",
+                label: "삭제",
+                icon: "delete",
+                tone: "danger" as const,
+                disabled: busy,
+                onSelect: () => {
+                    if (window.confirm(`"${s.name}" 원생을 삭제할까요?`)) {
+                        void handleDelete(s.id);
+                    }
+                },
+            },
+        ];
+    }
+
+    // 수강 반 칸: 활성 반은 «월4, 수4» 짧은 표기(말줄임 없음).
+    // 활성 반이 없는데 상태가 «활성»이면 «반 없음»(약한 경고색), 그 밖엔 상태 배지(휴원·퇴원·미배정).
+    function renderClassCell(s: Student) {
+        const activeEnrollments = getActiveEnrollments(s.enrollments);
+        if (activeEnrollments.length > 0) {
+            return sortEnrollmentsByDay(activeEnrollments).map((e) => shortenClassName(e)).join(", ");
+        }
+        const status = studentStatusById.get(s.id) ?? null;
+        if (status === "ACTIVE") {
+            return (
+                <span className="inline-flex rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">
+                    반 없음
+                </span>
+            );
+        }
+        return (
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${getStatusPillClass(status)}`}>
+                {getStatusLabel(status)}
+            </span>
+        );
+    }
 
     if (dataLoading && students.length === 0) {
         return (
@@ -718,8 +799,8 @@ export default function StudentManagementClient({
             <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
                 <p className="text-xs text-[var(--color-academy-muted)]">
-                    {sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} {statusCounts.total}명
-                    {" · "}활성 {statusCounts.active} · 휴원 {statusCounts.paused} · 퇴원 {statusCounts.withdrawn} · 미배정 {statusCounts.noEnrollment}
+                    {/* 상태별 숫자는 아래 상태 칩으로 옮겼다(누르면 그 상태만 보기) */}
+                    {sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} <span className="tabular-nums">{statusCounts.total}</span>명
                 </p>
             </div>
 
@@ -731,7 +812,7 @@ export default function StudentManagementClient({
                     setFilterClass("");
                     setFilterGrade("");
                     setFilterSchool("");
-                    setFilterStatus("ACTIVE");
+                    setFilterStatus(DEFAULT_STATUS_FILTER);
                     requestFullStudentLoad();
                 }}
                 search={
@@ -959,46 +1040,41 @@ export default function StudentManagementClient({
                 </form>
             )}
 
-            {/* 보기 전환: 목록(표) | 반별(반마다 명단). 버튼 하나짜리 토글이라 필터 모달 밖에 둔다 */}
-            <div className="mb-2 flex items-center justify-between gap-2">
-                <div
-                    role="group"
-                    aria-label="보기 방식"
-                    className="inline-flex rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-0.5"
-                >
-                    {([
-                        { mode: "list", label: "목록", icon: "view_list" },
-                        { mode: "class", label: "반별", icon: "groups" },
-                    ] as const).map((item) => {
-                        const selected = viewMode === item.mode;
-                        return (
-                            <button
-                                key={item.mode}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => {
-                                    changeViewMode(item.mode);
-                                    // 반별은 페이지 나눔 없이 전체를 묶으므로, 일부만 불러온 상태면 전체를 불러온다
-                                    if (item.mode === "class") requestFullStudentLoad();
-                                }}
-                                className={`inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-sm font-bold transition ${
-                                    selected
-                                        ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                                        : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">{item.icon}</span>
-                                {item.label}
-                            </button>
-                        );
-                    })}
+            {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 기본값 «활성») + 보기 전환(목록 | 반별).
+                칩은 필터 모달의 «수강 상태»(filterStatus)와 같은 값을 공유한다. */}
+            <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <StatusCountChips
+                    ariaLabel="원생 상태별 인원"
+                    items={STUDENT_STATUS_CHIPS.map((chip) => ({
+                        value: chip.value,
+                        label: chip.label,
+                        count: chip.value === "ACTIVE" ? statusCounts.active
+                            : chip.value === "PAUSED" ? statusCounts.paused
+                                : chip.value === "WITHDRAWN" ? statusCounts.withdrawn
+                                    : statusCounts.noEnrollment,
+                    }))}
+                    selected={filterStatus}
+                    onSelect={applyStatusFilter}
+                    allValue={DEFAULT_STATUS_FILTER}
+                />
+                <div className="flex items-center gap-2">
+                    {viewMode === "class" && classGroups.length > 0 && (
+                        <span className="text-xs text-[var(--color-academy-muted)]">
+                            {classGroups.filter((group) => group.key !== NO_CLASS_KEY).length}개 반 · {filtered.length}명
+                            {!allStudentsLoaded && " · 전체 동기화 중"}
+                        </span>
+                    )}
+                    <ListViewToggle
+                        value={viewMode}
+                        options={STUDENT_VIEW_OPTIONS}
+                        ariaLabel="원생 보기 방식"
+                        onChange={(mode) => {
+                            changeViewMode(mode);
+                            // 반별은 페이지 나눔 없이 전체를 묶으므로, 일부만 불러온 상태면 전체를 불러온다
+                            if (mode === "class") requestFullStudentLoad();
+                        }}
+                    />
                 </div>
-                {viewMode === "class" && classGroups.length > 0 && (
-                    <span className="text-xs text-[var(--color-academy-muted)]">
-                        {classGroups.filter((group) => group.key !== NO_CLASS_KEY).length}개 반 · {filtered.length}명
-                        {!allStudentsLoaded && " · 전체 동기화 중"}
-                    </span>
-                )}
             </div>
 
             {/* Student list */}
@@ -1033,23 +1109,30 @@ export default function StudentManagementClient({
                                         {collapsed ? "expand_more" : "expand_less"}
                                     </span>
                                 </button>
-                                {/* 학생 한 줄 행: 이름 · 학년 · 학교 · 학부모 연락처 */}
+                                {/* 학생 한 줄 행: 이름 · 학년 · 학교 · 학부모 연락처. 행을 누르면 목록과 같은 상세 패널 */}
                                 {!collapsed && (
                                     <ul className="divide-y divide-[var(--color-academy-line)]">
                                         {group.students.map((s) => (
                                             <li
                                                 key={`${group.key}-${s.id}`}
-                                                className="grid min-h-11 grid-cols-[minmax(0,5.5rem)_2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-sm"
+                                                tabIndex={0}
+                                                aria-label={`${s.name} 요약 보기`}
+                                                onClick={() => openStudentDetail(s.id)}
+                                                onKeyDown={(event) => handleRowKeyDown(event, s.id)}
+                                                className="grid min-h-11 cursor-pointer grid-cols-[auto_2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-sm transition hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                             >
+                                                {/* 이름 링크는 상세 페이지로(행 클릭과 겹치지 않게 전파 차단) */}
                                                 <Link
                                                     href={`/admin/students/${s.id}`}
                                                     prefetch={false}
-                                                    className="block truncate leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
                                                     {s.name}
                                                 </Link>
-                                                <span className="text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
-                                                <span className="truncate text-[var(--color-academy-muted)]" title={s.school ?? undefined}>
+                                                <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
+                                                {/* 학교: 말줄임 없이 전부 보인다(아주 길면 칸 안에서 줄바꿈) */}
+                                                <span className="min-w-0 break-keep text-[var(--color-academy-muted)]">
                                                     {s.school || "-"}
                                                 </span>
                                                 <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)]">
@@ -1066,97 +1149,65 @@ export default function StudentManagementClient({
             ) : (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 max-sm:!table-auto max-sm:[&_th]:whitespace-nowrap">
-                            <thead className="bg-gray-50 dark:bg-gray-900">
+                        {/* admin-list-table: 글자 칸 왼쪽 정렬·한 줄(말줄임 없음)·칸 폭은 내용에 맞춤(좁으면 가로 스크롤) */}
+                        <table className="admin-list-table w-full border-collapse text-sm">
+                            <thead className="bg-gray-50 text-xs font-black text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                                 <tr>
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">이름</th>
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">학년</th>
-                                    {/* 학교/학부모/연락처: 모바일에서 숨김 */}
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase hidden md:table-cell">학교</th>
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">수강 반</th>
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase hidden md:table-cell">학부모</th>
-                                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase hidden md:table-cell">연락처</th>
-                                    <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">관리</th>
+                                    <th className="px-2 py-2">이름</th>
+                                    <th className="px-2 py-2">학년</th>
+                                    {/* 학교/학부모/연락처: 모바일에서 숨김(전체는 상세 패널) */}
+                                    <th className="hidden px-2 py-2 md:table-cell">학교</th>
+                                    <th className="px-2 py-2">수강 반</th>
+                                    <th className="hidden px-2 py-2 md:table-cell">학부모</th>
+                                    <th className="hidden px-2 py-2 md:table-cell">연락처</th>
+                                    <th className="admin-cell-center px-2 py-2">관리</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
+                            <tbody>
                                 {visibleStudents.map((s) => (
-                                    <tr key={s.id} className="hover:bg-gray-50 dark:bg-gray-900 transition-colors">
-                                        {/* 이름: 항상 표시, 클릭하면 상세 페이지로 이동 */}
-                                        <td className="whitespace-nowrap px-4 py-2">
+                                    <tr
+                                        key={s.id}
+                                        tabIndex={0}
+                                        onClick={() => openStudentDetail(s.id)}
+                                        onKeyDown={(event) => handleRowKeyDown(event, s.id)}
+                                        className="cursor-pointer transition-colors focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                                    >
+                                        {/* 이름: 누르면 상세 페이지로 이동(행 클릭=요약 패널과 겹치지 않게 전파 차단) */}
+                                        <td className="px-2 py-1.5">
                                             <Link
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
-                                                className="font-bold text-gray-900 hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors text-sm"
+                                                onClick={(event) => event.stopPropagation()}
+                                                className="font-bold text-gray-900 hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors"
                                             >
                                                 {s.name}
                                             </Link>
                                         </td>
-                                        {/* 학년: 항상 표시, shortenGrade로 "초4" 형태 */}
-                                        <td className="whitespace-nowrap px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
+                                        {/* 학년: shortenGrade로 "초4" 형태 */}
+                                        <td className="px-2 py-1.5 text-gray-700 dark:text-gray-200">
                                             {shortenGrade(s.grade)}
                                         </td>
                                         {/* 학교: 모바일 숨김 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hidden md:table-cell">
+                                        <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">
                                             {s.school || "-"}
                                         </td>
-                                        {/* 수강 반: 활성 수강반만 우선 표시 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">
-                                            {(() => {
-                                                const activeEnrollments = getActiveEnrollments(s.enrollments);
-                                                if (activeEnrollments.length > 0) {
-                                                    return [...activeEnrollments]
-                                                        .sort((a, b) => (DAY_ORDER[a.dayOfWeek] ?? 99) - (DAY_ORDER[b.dayOfWeek] ?? 99) || a.startTime.localeCompare(b.startTime))
-                                                        .map((e) => shortenClassName(e)).join(", ");
-                                                }
-
-                                                const status = studentStatusById.get(s.id) ?? null;
-                                                return (
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${getStatusPillClass(status)}`}>
-                                                        {getStatusLabel(status)}
-                                                    </span>
-                                                );
-                                            })()}
+                                        {/* 수강 반: «월4, 수4» / 반 없음 / 상태 배지 */}
+                                        <td className="px-2 py-1.5 font-bold text-gray-800 dark:text-gray-100">
+                                            {renderClassCell(s)}
                                         </td>
                                         {/* 학부모: 모바일 숨김, shortenParentName으로 간결화 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hidden md:table-cell">
+                                        <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">
                                             {shortenParentName(s.parent.name)}
                                         </td>
-                                        {/* 연락처: 모바일 숨김, formatPhone으로 하이픈 포맷 */}
-                                        <td className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hidden md:table-cell">
+                                        {/* 연락처: 숫자지만 글자 취급(왼쪽 정렬), 자릿수 폭만 맞춘다 */}
+                                        <td className="hidden px-2 py-1.5 tabular-nums text-gray-700 dark:text-gray-200 md:table-cell">
                                             {formatPhone(s.parent.phone)}
                                         </td>
-                                        {/* 관리: 반복 액션은 번개 메뉴 안에 묶어 표를 한 줄로 유지 */}
-                                        <td className="px-4 py-2 text-right">
+                                        {/* 관리: ⚡ 메뉴. 눌러도 행 클릭(패널 열기)이 같이 일어나지 않게 전파 차단 */}
+                                        <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                                             <AdminQuickActionMenu
                                                 label={`${s.name} 빠른 작업`}
-                                                actions={[
-                                                    {
-                                                        key: "enroll",
-                                                        label: "수강등록",
-                                                        icon: "how_to_reg",
-                                                        tone: "primary",
-                                                        onSelect: () => setEnrollModal(s.id),
-                                                    },
-                                                    {
-                                                        key: "edit",
-                                                        label: "수정",
-                                                        icon: "edit",
-                                                        onSelect: () => startEdit(s),
-                                                    },
-                                                    {
-                                                        key: "delete",
-                                                        label: "삭제",
-                                                        icon: "delete",
-                                                        tone: "danger",
-                                                        disabled: busy,
-                                                        onSelect: () => {
-                                                            if (window.confirm(`"${s.name}" 원생을 삭제할까요?`)) {
-                                                                void handleDelete(s.id);
-                                                            }
-                                                        },
-                                                    },
-                                                ]}
+                                                actions={buildQuickActions(s)}
                                             />
                                         </td>
                                     </tr>
@@ -1193,6 +1244,100 @@ export default function StudentManagementClient({
                     }}
                 />
             )}
+
+            {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 패널 / 모바일 하단 시트. 조회는 이미 불러온 목록 값만 쓴다 */}
+            {detailStudent && (() => {
+                const s = detailStudent;
+                const status = studentStatusById.get(s.id) ?? null;
+                const activeEnrollments = sortEnrollmentsByDay(getActiveEnrollments(s.enrollments));
+                const birth = toDateStr(s.birthDate);
+                // 값이 있는 줄만 보인다(빈 칸 «-» 줄을 늘어놓지 않게)
+                const rows: { label: string; value: React.ReactNode }[] = [
+                    { label: "상태", value: status === "ACTIVE" && activeEnrollments.length === 0 ? "활성 · 반 없음" : getStatusLabel(status) },
+                    { label: "학년", value: s.grade },
+                    { label: "학교", value: s.school },
+                    { label: "생년월일", value: birth || null },
+                    {
+                        label: "수강 반",
+                        value: activeEnrollments.length > 0 ? (
+                            <ul className="space-y-0.5">
+                                {activeEnrollments.map((e) => (
+                                    <li key={`${e.classId}-${e.slotKey ?? ""}`}>
+                                        {e.className}
+                                        <span className="ml-1 text-[var(--color-academy-muted)]">
+                                            ({DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime})
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : "반 없음",
+                    },
+                    { label: "학부모", value: s.parent.name },
+                    { label: "연락처", value: s.parent.phone ? formatPhone(s.parent.phone) : null },
+                    { label: "학생 연락처", value: s.phone ? formatPhone(s.phone) : null },
+                    { label: "주소", value: s.address },
+                ].filter((row) => row.value !== null && row.value !== undefined && row.value !== "");
+                return (
+                    <ListDetailPanel onClose={() => setDetailStudentId(null)} titleId="student-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                        <div className="mb-4 flex items-center gap-2">
+                            <h3 id="student-detail-panel-title" className="text-lg font-black text-[var(--color-academy-ink)]">{s.name}</h3>
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${getStatusPillClass(status)}`}>
+                                {getStatusLabel(status)}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setDetailStudentId(null)}
+                                aria-label="닫기"
+                                className="ml-auto inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            </button>
+                        </div>
+                        {/* 요약: 왼쪽 이름표 / 오른쪽 값(긴 반 이름·주소도 말줄임 없이 전부) */}
+                        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                            {rows.map((row) => (
+                                <div key={row.label} className="contents">
+                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">{row.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        {/* 작업: 상세 페이지 열기 + 기존 ⚡ 작업(수강등록·수정). 패널을 닫고 기존 모달·폼을 연다 */}
+                        <div className="mt-5 flex flex-wrap gap-2">
+                            <Link
+                                href={`/admin/students/${s.id}`}
+                                prefetch={false}
+                                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">open_in_new</span>
+                                상세 페이지 열기
+                            </Link>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDetailStudentId(null);
+                                    setEnrollModal(s.id);
+                                }}
+                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">how_to_reg</span>
+                                수강등록
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDetailStudentId(null);
+                                    startEdit(s);
+                                }}
+                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
+                                수정
+                            </button>
+                        </div>
+                    </ListDetailPanel>
+                );
+            })()}
 
             {/* 수강 등록 모달 — 프로그램별 그룹화 + 요일/시간 표시 */}
             {enrollModal && (
