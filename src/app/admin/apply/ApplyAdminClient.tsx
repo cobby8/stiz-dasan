@@ -1013,21 +1013,46 @@ export default function ApplyAdminClient({
                     체험/수강신청 관리
                 </h1>
                 <div className="flex max-w-full flex-wrap items-center gap-2">
-                    <label className="inline-flex min-h-11 max-w-full items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">
-                        <span className="sr-only">업무</span>
-                        <select aria-label="신청 관리 업무" value={activeTab} onChange={event => setActiveTab(event.target.value as TabType)} className="h-11 min-h-11 min-w-0 max-w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] font-bold text-[var(--color-academy-ink)]">
-                            <option value="trial">체험 문의{(initialTrialStats?.NEW ?? 0) > 0 ? ` · 신규 ${initialTrialStats?.NEW}` : ""}</option>
-                            <option value="applications">수강신청{stats.PENDING > 0 ? ` · 대기 ${stats.PENDING}` : ""}</option>
-                            <option value="waitlist">대기자</option>
-                            <option value="sources">유입 통계</option>
-                            <option value="settings">안내 설정</option>
-                        </select>
-                    </label>
                     <Link href="/admin/registration-readiness" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]" prefetch={false}>
                         <span className="material-symbols-outlined text-lg" aria-hidden="true">checklist</span>
                         입학 점검
                     </Link>
                 </div>
+            </div>
+
+            {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다. */}
+            <div role="tablist" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+                {([
+                    { key: "trial", label: "체험 문의", icon: "sports_basketball", count: initialTrialStats?.NEW ?? 0, countLabel: "신규" },
+                    { key: "applications", label: "수강신청", icon: "assignment", count: stats.PENDING, countLabel: "대기" },
+                    { key: "waitlist", label: "대기자", icon: "hourglass_top", count: 0, countLabel: "" },
+                    { key: "sources", label: "유입 통계", icon: "insights", count: 0, countLabel: "" },
+                    { key: "settings", label: "안내 설정", icon: "tune", count: 0, countLabel: "" },
+                ] as const).map(tab => {
+                    const active = activeTab === tab.key;
+                    return (
+                        <button
+                            key={tab.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            onClick={() => setActiveTab(tab.key as TabType)}
+                            className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-sm font-bold transition ${
+                                active
+                                    ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-white"
+                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-primary)]"
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-lg" aria-hidden="true">{tab.icon}</span>
+                            {tab.label}
+                            {tab.count > 0 && (
+                                <span className={`rounded-full px-1.5 py-0.5 text-xs font-extrabold leading-none ${active ? "bg-white text-[var(--color-academy-ink)]" : "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"}`}>
+                                    <span className="sr-only">{tab.countLabel} </span>{tab.count}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
 
             {feedback && (
