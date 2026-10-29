@@ -27,6 +27,7 @@ type TossPaymentsFactory = (clientKey: string) => {
         requestPayment: (options: {
             method: "CARD";
             amount: { currency: "KRW"; value: number };
+            taxFreeAmount?: number;
             orderId: string;
             orderName: string;
             successUrl: string;
@@ -86,6 +87,8 @@ export async function openReviewCardPayment(input: {
     await TossPayments(data.clientKey).payment({ customerKey: data.customerKey }).requestPayment({
         method: "CARD",
         amount: { currency: "KRW", value: data.amount },
+        // 면세사업자 — 청구서 결제와 같이 전액 면세(PaymentCheckoutClient 참고)
+        taxFreeAmount: data.amount,
         orderId: data.orderId,
         orderName: data.orderName,
         successUrl: data.successUrl,

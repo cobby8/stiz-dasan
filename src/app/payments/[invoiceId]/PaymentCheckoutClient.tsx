@@ -12,6 +12,7 @@ declare global {
                 requestPayment: (options: {
                     method: TossPaymentMethod;
                     amount: { currency: "KRW"; value: number };
+                    taxFreeAmount?: number;
                     orderId: string;
                     orderName: string;
                     successUrl: string;
@@ -140,6 +141,8 @@ export default function PaymentCheckoutClient({
             await payment.requestPayment({
                 method,
                 amount: { currency: "KRW", value: data.amount },
+                // 면세사업자(교육서비스)라 결제 금액 전부를 면세로 보낸다. 빠지면 토스 기본값(복합과세)으로 부가세가 잡힌다.
+                taxFreeAmount: data.amount,
                 orderId: data.orderId,
                 orderName: data.orderName,
                 successUrl: data.successUrl,
