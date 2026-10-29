@@ -119,7 +119,7 @@ export type DispatchSuggestion = {
   /** 정규 셔틀 시간대별 실행 요약. 방학특강에는 없으므로 선택값이다. */
   timeGroups?: { anchor: string | null; label: string; riders: number }[];
   // 저장 노선 이후의 변동(Phase 2a). 저장본이 있을 때만 채워지고, 관리자 배너 표시에만 쓴다.
-  // 기사님 화면(DriverRunClient)은 이 필드를 읽지 않으므로 노출되지 않는다.
+  // 기사님 화면은 이 필드를 읽지 않으므로 노출되지 않는다.
   added?: DispatchChange[];
   locationChanged?: DispatchChange[];
 };

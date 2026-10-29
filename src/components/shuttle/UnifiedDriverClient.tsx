@@ -334,7 +334,7 @@ export default function UnifiedDriverClient({
               data-upcoming={isUpcoming || undefined}
               aria-current={isUpcoming ? "step" : undefined}
               className={`${styles.stop} ${isUpcoming ? styles.upcoming : ""} academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
-              editing ? "border-blue-200 bg-blue-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
+              editing ? "border-orange-300 bg-orange-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
             }`}>
               <div className={styles.stopHeading}>
                 {editable ? (

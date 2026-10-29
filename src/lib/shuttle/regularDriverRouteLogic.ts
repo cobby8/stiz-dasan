@@ -14,7 +14,7 @@
 
 import type { RegularShuttleStop } from "./regularSheet";
 
-// ── 기사님 화면이 소비하는 표시 계약(RegularDriverClient 가 그대로 import 해서 쓴다) ──────────
+// ── 기사님 화면이 소비하는 표시 계약(기사님 화면이 그대로 import 해서 쓴다) ──────────
 export type DriverRow = { rowId: string; name: string; parentPhone: string | null; studentPhone: string | null; absent?: boolean;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null };
