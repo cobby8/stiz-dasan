@@ -2,6 +2,7 @@
 // Next.js의 not-found.tsx는 서버 컴포넌트로 작동 가능
 
 import Link from 'next/link';
+import PublicSiteTheme from '@/components/PublicSiteTheme';
 
 export const metadata = {
   title: '페이지를 찾을 수 없습니다 | STIZ 농구교실 다산2호점',
@@ -9,13 +10,15 @@ export const metadata = {
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center px-6">
+    // 공개 홈페이지와 같은 스포츠 색으로 맞춘다(옛 주황·형광 연두가 그대로 보이던 화면).
+    <PublicSiteTheme publicScope>
+    <div className="min-h-screen bg-[var(--color-public-paper)] flex items-center justify-center px-6">
       <div className="max-w-md w-full text-center">
         {/* 404 숫자 — 큰 글씨로 시각적 임팩트 */}
         <p className="text-8xl font-black text-brand-orange-500 dark:text-brand-neon-lime mb-2">404</p>
 
         {/* 농구 아이콘 */}
-        <div className="mx-auto w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mb-6">
+        <div className="mx-auto w-16 h-16 rounded-full bg-brand-orange-50 flex items-center justify-center mb-6">
           <span className="text-3xl" role="img" aria-label="농구공">
             🏀
           </span>
@@ -32,11 +35,12 @@ export default function NotFound() {
         {/* 홈으로 돌아가기 버튼 */}
         <Link
           href="/"
-          className="inline-block px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white font-bold rounded-xl transition-colors"
+          className="inline-block px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:opacity-90 text-white font-bold rounded-xl transition-colors"
         >
           홈으로 돌아가기
         </Link>
       </div>
     </div>
+    </PublicSiteTheme>
   );
 }

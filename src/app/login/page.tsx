@@ -275,7 +275,7 @@ function LoginContent() {
                       href="/privacy"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400"
+                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:opacity-90"
                     >
                       개인정보 수집 및 이용
                     </a>
@@ -294,7 +294,7 @@ function LoginContent() {
                       href="/terms"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400"
+                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:opacity-90"
                     >
                       이용약관
                     </a>
@@ -326,7 +326,7 @@ function LoginContent() {
                 loading ||
                 (mode === "signup" && (!agreePrivacy || !agreeTerms))
               }
-              className="flex min-h-11 w-full items-center justify-center gap-2 py-2.5 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex min-h-11 w-full items-center justify-center gap-2 py-2.5 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:opacity-90 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading && (
                 <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden="true" />

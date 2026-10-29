@@ -5,6 +5,7 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
+import PublicSiteTheme from '@/components/PublicSiteTheme';
 
 export default function GlobalError({
   error,
@@ -19,10 +20,12 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center px-6">
+    // 공개 홈페이지와 같은 스포츠 색으로 맞춘다(옛 주황·형광 연두가 그대로 보이던 화면).
+    <PublicSiteTheme publicScope>
+    <div className="min-h-screen bg-[var(--color-public-paper)] flex items-center justify-center px-6">
       <div className="max-w-md w-full text-center">
         {/* 농구 아이콘 — 큰 원형 배경 */}
-        <div className="mx-auto w-24 h-24 rounded-full bg-orange-100 flex items-center justify-center mb-6">
+        <div className="mx-auto w-24 h-24 rounded-full bg-brand-orange-50 flex items-center justify-center mb-6">
           <span className="text-5xl" role="img" aria-label="농구공">
             🏀
           </span>
@@ -44,7 +47,7 @@ export default function GlobalError({
           {/* 다시 시도 — reset() 호출로 에러 바운더리 초기화 */}
           <button
             onClick={() => reset()}
-            className="px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white font-bold rounded-xl transition-colors"
+            className="px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:opacity-90 text-white font-bold rounded-xl transition-colors"
           >
             다시 시도
           </button>
@@ -59,5 +62,6 @@ export default function GlobalError({
         </div>
       </div>
     </div>
+    </PublicSiteTheme>
   );
 }
