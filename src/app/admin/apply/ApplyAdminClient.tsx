@@ -1021,7 +1021,7 @@ export default function ApplyAdminClient({
             </div>
 
             {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다. */}
-            <div role="tablist" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+            <div role="group" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                 {([
                     { key: "trial", label: "체험 문의", icon: "sports_basketball", count: initialTrialStats?.NEW ?? 0, countLabel: "신규" },
                     { key: "applications", label: "수강신청", icon: "assignment", count: stats.PENDING, countLabel: "대기" },
@@ -1034,8 +1034,7 @@ export default function ApplyAdminClient({
                         <button
                             key={tab.key}
                             type="button"
-                            role="tab"
-                            aria-selected={active}
+                            aria-pressed={active}
                             onClick={() => setActiveTab(tab.key as TabType)}
                             className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-sm font-bold transition ${
                                 active

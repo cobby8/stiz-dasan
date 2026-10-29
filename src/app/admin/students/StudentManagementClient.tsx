@@ -651,8 +651,13 @@ export default function StudentManagementClient({
     );
     // 반별 보기: 페이지 나눔 없이 필터 결과 전체를 반 기준으로 묶는다(반별 모드일 때만 계산)
     const classGroups = useMemo(
-        () => (viewMode === "class" ? groupStudentsByActiveClass(filtered) : []),
-        [filtered, viewMode],
+        () => {
+            if (viewMode !== "class") return [];
+            const groups = groupStudentsByActiveClass(filtered);
+            // 반 필터를 걸었으면 그 반 묶음만 보인다(함께 다니는 다른 반이 «일부 인원»으로 섞여 헷갈리지 않게).
+            return filterClass ? groups.filter((group) => group.key === filterClass) : groups;
+        },
+        [filtered, viewMode, filterClass],
     );
     const hasMoreStudents = visibleStudents.length < filtered.length;
     const hasAnyFilter = Boolean(search.trim() || filterClass || filterGrade || filterSchool || filterStatus);
