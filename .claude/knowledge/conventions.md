@@ -198,3 +198,10 @@
 - **발견자**: developer
 - **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다.
 - **참조횟수**: 0
+
+### [2026-10-30] 관리자 목록은 공용 부품 + admin-list-table 로 — 전역 표는 가운데 정렬 !important 라 opt-in 필요
+- **분류**: convention
+- **발견자**: developer
+- **내용**: `globals.css` 의 `.admin-table-scope th,td { text-align:center !important }` 때문에 표 안에서 `text-left` 를 써도 안 먹는다. 목록 개편 화면은 `<table className="admin-list-table">` 로 opt-in(글자 왼쪽·`admin-cell-num` 오른쪽+tabular-nums·`admin-cell-center`·table-layout auto·nowrap — 말줄임 금지, 좁으면 가로 스크롤·`hidden md:table-cell` 로 칸 숨김). 행 클릭 상세 = `ListDetailPanel`(AdminModal `layout="side"` — 포커스·Esc 처리 공유, 기존 상세 모달은 껍데기만 교체), 상태 칩 = `StatusCountChips`(기존 상태 필터 state 를 그대로 넘김), 보기 전환 = `ListViewToggle`+`useRememberedListView`. 전부 `src/components/admin/list/`. 가드: `tests/admin-list-standard.test.mjs`.
+- **참조횟수**: 0
+

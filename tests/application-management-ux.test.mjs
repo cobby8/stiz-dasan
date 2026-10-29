@@ -111,7 +111,8 @@ test("체험 신청 일정은 DB 수업 정보와 연결해 실제 수업 시간
 
 test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 보여준다", () => {
   assert.match(trialClient, /function renderTrialList\(\)/);
-  assert.match(trialClient, /<table className="w-full min-w-\[760px\] table-fixed[\s\S]*text-center[\s\S]*lg:min-w-0/);
+  // 목록 개편(2026-10-30): 고정폭·가운데 정렬 표 → 공통 목록 표(admin-list-table: 글자 왼쪽·날짜 오른쪽, 내용 폭)
+  assert.match(trialClient, /<table className="admin-list-table/);
   assert.match(trialClient, /상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*액션/);
   assert.doesNotMatch(trialClient, />상태변경</);
   assert.match(trialClient, /function formatMonthDayDate/);
@@ -122,7 +123,8 @@ test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 �
   assert.match(trialClient, /const trialDateMobileLabel = trialListDate \? formatMonthDayDate\(trialListDate\) : trialDateLabel/);
   assert.match(trialClient, /sm:hidden[\s\S]*\{createdDateMobileLabel\}/);
   assert.match(trialClient, /sm:hidden[\s\S]*\{trialDateMobileLabel\}/);
-  assert.match(trialClient, /hidden truncate sm:inline/);
+  // 휴대폰에선 상태 아이콘만, sm 이상에서 글자 — 말줄임(truncate) 없이
+  assert.match(trialClient, /"hidden sm:inline"/);
   assert.match(trialClient, /setShowDetailModal\(lead\)/);
   assert.match(trialClient, /setOpenQuickActionId/);
   assert.match(trialClient, /LIST_ACTION_TRIGGER_CLASS/);
@@ -231,8 +233,10 @@ test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약�
   assert.match(applyClient, /LIST_ACTION_TRIGGER_CLASS/);
   assert.match(applyClient, /LIST_ACTION_MENU_CLASS/);
   assert.match(applyClient, /setShowDetailModal\(app\)/);
-  assert.match(applyClient, /학생\/연락처/);
-  assert.match(applyClient, /액션/);
+  // 목록 개편(2026-10-30): «학생/연락처»처럼 한 칸에 이어 붙이던 것을 칸별로 나눴다
+  assert.match(applyClient, />학생<\/th>/);
+  assert.match(applyClient, />연락처<\/th>/);
+  assert.match(applyClient, /빠른 처리/);
   // 탭 목록을 그대로 단정해 두는 이유: 탭이 슬금슬금 늘어나는 것을 막는다.
   // waitlist 는 "대기자를 신청 관리 탭으로" 옮기며 의도적으로 추가됐다(9e2bea6).
   assert.match(applyClient, /type TabType = "trial" \| "applications" \| "waitlist" \| "sources" \| "settings"/);
@@ -263,12 +267,13 @@ test("체험수업과 수강신청은 카드형을 폐기하고 목록형만 제
 });
 
 test("목록형은 스프레드시트처럼 실제 테이블 구조로 보여준다", () => {
-  assert.match(trialClient, /function renderTrialList\(\)[\s\S]*<table className="w-full min-w-\[760px\][\s\S]*lg:min-w-0/);
+  assert.match(trialClient, /function renderTrialList\(\)[\s\S]*<table className="admin-list-table/);
   assert.match(trialClient, /<thead[\s\S]*상태[\s\S]*신청일[\s\S]*체험일[\s\S]*수업[\s\S]*담당교사[\s\S]*수강생이름[\s\S]*학교[\s\S]*학년[\s\S]*액션/);
   assert.match(trialClient, /<tbody[\s\S]*visibleLeads\.map/);
   assert.doesNotMatch(trialClient, /hidden grid-cols-\[1fr_0\.9fr_2\.2fr_0\.8fr_1\.2fr\]/);
-  assert.match(applyClient, /function renderApplicationList\(\)[\s\S]*<table className="w-full min-w-\[960px\]/);
-  assert.match(applyClient, /<thead[\s\S]*학생\/연락처[\s\S]*신청\/희망수업[\s\S]*수강\/셔틀[\s\S]*액션/);
+  assert.match(applyClient, /function renderApplicationList\(\)[\s\S]*<table className="admin-list-table/);
+  // 칸 구성: 상태 | 학생 | 학년 | 학교 | 보호자 | 연락처 | 접수일 | 희망 수업 | 수강 시작월 | 셔틀 | 빠른 처리
+  assert.match(applyClient, /<thead[\s\S]*상태[\s\S]*학생[\s\S]*학년[\s\S]*학교[\s\S]*보호자[\s\S]*연락처[\s\S]*접수일[\s\S]*희망 수업[\s\S]*수강 시작월[\s\S]*셔틀[\s\S]*빠른 처리/);
   assert.match(applyClient, /<tbody[\s\S]*visibleApps\.map/);
   assert.doesNotMatch(applyClient, /hidden grid-cols-\[1\.1fr_1fr_1\.3fr_0\.9fr_1\.2fr\]/);
 });

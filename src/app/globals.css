@@ -187,6 +187,28 @@ h1, h2, h3, h4, h5, h6 {
   justify-content: center !important;
 }
 
+/* 목록 개편 공통 규칙(opt-in): table 에 admin-list-table 을 붙인 목록만
+   글자는 왼쪽, 숫자·날짜 칸(admin-cell-num)은 오른쪽 + 자릿수 폭 고정.
+   칸 폭은 내용에 맞추고(auto) 줄바꿈·말줄임 없이 한 줄로 둔다(좁으면 가로 스크롤). */
+.admin-table-scope table.admin-list-table {
+  table-layout: auto;
+}
+
+.admin-table-scope table.admin-list-table th,
+.admin-table-scope table.admin-list-table td {
+  text-align: left !important;
+  white-space: nowrap;
+}
+
+.admin-table-scope table.admin-list-table :is(th, td).admin-cell-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table-scope table.admin-list-table :is(th, td).admin-cell-center {
+  text-align: center !important;
+}
+
 .admin-table-scope th {
   font-size: 0.75rem;
   font-weight: 900;

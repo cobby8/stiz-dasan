@@ -12,6 +12,7 @@ import {
     reopenEnrollApplicationForReview,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
 interface EnrollApplication {
     id: string;
@@ -1139,16 +1140,23 @@ function DetailModal({
     }
 
     return (
-        <AdminModal onClose={onClose} titleId="application-detail-title" panelClassName="max-w-lg p-6">
+        // 목록 개편: 상세는 가운데 모달 대신 오른쪽 패널(모바일은 아래 시트)로 연다. 내용·기능은 그대로.
+        <ListDetailPanel onClose={onClose} titleId="application-detail-title" panelClassName="p-4">
                 <div className="flex items-center justify-between mb-4">
                     <h2 id="application-detail-title" className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">assignment</span>
                         수강 신청 상세
                     </h2>
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.color}`}>
-                        <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
-                        {cfg.label}
-                    </span>
+                    <div className="flex items-center gap-1">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.color}`}>
+                            <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
+                            {cfg.label}
+                        </span>
+                        {/* 패널이 길어도 위에서 바로 닫을 수 있게 */}
+                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="inline-flex size-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900">
+                            <span className="material-symbols-outlined text-xl" aria-hidden="true">close</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="mb-5 grid gap-2 sm:grid-cols-3">
@@ -1302,6 +1310,6 @@ function DetailModal({
                         닫기
                     </button>
                 </div>
-        </AdminModal>
+        </ListDetailPanel>
     );
 }
