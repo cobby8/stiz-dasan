@@ -2,6 +2,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
+import { classifyTossCancel } from "@/lib/payments/tossCancel";
 import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
@@ -1306,6 +1307,55 @@ async function finalizeVerifiedTossPayment(input: {
     });
 }
 
+/**
+ * 토스에서 전액 취소된 결제를 장부에 반영한다(청구 → 환불, 청구서 → 취소, 거래 → 취소).
+ * 토스 재조회로 전액 취소가 확인된 뒤에만 부른다. 이미 반영됐으면 아무것도 하지 않는다(멱등).
+ */
+async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; payment: TossPaymentResult }) {
+    return prisma.$transaction(async (db) => {
+        const locked = await db.$queryRawUnsafe<PaymentTransactionRow[]>(
+            `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
+             FROM "PaymentTransaction" tx
+             JOIN "PaymentInvoice" i ON i.id = tx."invoiceId"
+             JOIN "Payment" p ON p.id = tx."paymentId"
+             WHERE tx.id = $1
+             FOR UPDATE OF tx, i, p`,
+            input.tx.id,
+        );
+        const current = locked[0];
+        if (!current) return { ok: false as const, error: "TRANSACTION_NOT_FOUND" };
+        if (current.status === "CANCELED" && current.paymentStatus === "REFUNDED") {
+            return { ok: true as const, alreadyApplied: true };
+        }
+        // 납부 완료된 거래만 환불로 바꾼다. 결제 전 거래의 취소는 장부에 반영할 게 없다.
+        if (current.status !== "DONE" || current.paymentStatus !== "PAID") {
+            return { ok: false as const, error: "PAYMENT_NOT_PAID" };
+        }
+
+        await db.$executeRawUnsafe(
+            `UPDATE "Payment" SET status = 'REFUNDED', "updatedAt" = NOW() WHERE id = $1 AND status = 'PAID'`,
+            current.paymentId,
+        );
+        await db.$executeRawUnsafe(
+            `UPDATE "PaymentInvoice" SET status = 'CANCELED', "canceledAt" = COALESCE("canceledAt", NOW()), "updatedAt" = NOW()
+             WHERE id = $1 AND status <> 'CANCELED'`,
+            current.invoiceId,
+        );
+        await db.$executeRawUnsafe(
+            `UPDATE "PaymentTransaction" SET status = 'CANCELED', "rawResponse" = $2::jsonb, "updatedAt" = NOW()
+             WHERE id = $1 AND status = 'DONE'`,
+            current.id, JSON.stringify(input.payment),
+        );
+        await db.$executeRawUnsafe(
+            `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, 'WEBHOOK', NULL, 'PAYMENT_REFUNDED', 'Verified Toss full cancel marked as refunded', $4::jsonb, NOW())`,
+            current.paymentId, current.invoiceId, current.id,
+            JSON.stringify({ provider: "TOSS", orderId: current.orderId, paymentKey: "[verified]" }),
+        );
+        return { ok: true as const, alreadyApplied: false };
+    });
+}
+
 export async function confirmTossPayment(input: {
     paymentKey: string;
     orderId: string;
@@ -1537,6 +1587,31 @@ export async function recordTossWebhook(payload: unknown) {
             eventRecordId,
         );
         return { ok: true as const, processed: true, eventId: eventRecordId };
+    }
+
+    // 상점관리자에서 결제를 취소한 경우 — 토스 재조회 결과로만 판단한다.
+    const cancel = classifyTossCancel(verified, tx, paymentKey);
+    if (cancel.kind === "FULL_CANCEL" && verified) {
+        const applied = await applyVerifiedTossFullCancel({ tx, payment: verified });
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent" SET processed = $2, error = $3, "processedAt" = NOW() WHERE id = $1`,
+            eventRecordId, applied.ok, applied.ok ? null : applied.error,
+        );
+        return { ok: true as const, processed: applied.ok, eventId: eventRecordId };
+    }
+    if (cancel.kind === "PARTIAL_CANCEL") {
+        // 부분 환불은 어느 항목을 돌려줬는지 장부가 알 수 없어 자동 반영하지 않는다. 기록만 남겨 원장이 처리한다.
+        await prisma.$executeRawUnsafe(
+            `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, 'WEBHOOK', NULL, 'PAYMENT_PARTIAL_CANCEL_REVIEW', 'Toss partial cancel needs manual review', $4::jsonb, NOW())`,
+            tx.paymentId, tx.invoiceId, tx.id,
+            JSON.stringify({ provider: "TOSS", orderId: tx.orderId, canceledAmount: cancel.canceledAmount }),
+        );
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent" SET error = 'TOSS_PARTIAL_CANCEL_REVIEW', "processedAt" = NOW() WHERE id = $1`,
+            eventRecordId,
+        );
+        return { ok: true as const, processed: false, eventId: eventRecordId };
     }
 
     await prisma.$executeRawUnsafe(
