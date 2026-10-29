@@ -12,7 +12,7 @@ const items = [
 ] as const;
 
 export default function MyPageBottomNav() {
-    // 선택한 메뉴는 공통 라벤더 포인트색으로 구분한다.
+    // 선택한 메뉴는 공통 브랜드 포인트색으로 구분한다.
     // 현재 경로를 읽어 활성 탭을 강조한다(클라이언트 훅이므로 별도 컴포넌트로 분리).
     const pathname = usePathname();
 

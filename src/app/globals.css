@@ -16,6 +16,10 @@
   /* Primary 계열 확장 — 호버 전 밝은 강조 / 더 진한 강조용 */
   --color-brand-orange-400: #fb923c;
   --color-brand-orange-700: #c2410c;
+  /* 화면에서 쓰는데 정의가 없어 색이 안 나오던 단계(2026-10-29 디자인 통일 때 추가) */
+  --color-brand-orange-100: #ffedd5;
+  --color-brand-orange-200: #fed7aa;
+  --color-brand-orange-300: #fdba74;
 
   /* Secondary 계열 확장 — 부제목, 보조 텍스트용 */
   --color-brand-navy-700: #1e3a5f;
@@ -1045,4 +1049,44 @@ h1, h2, h3, h4, h5, h6 {
   height: 100%;
   border: 0;
   border-radius: 0.5rem;
+}
+
+/* ── 공통 스포츠 스타일: 남은 장식 색을 한 팔레트로 모은다 (2026-10-29) ──────────────
+ * 학원 앱(.academy-app)과 공개 홈페이지(.stiz-public-sport) 감싸개 안에서만 적용된다.
+ * Tailwind v4 는 bg-violet-50 같은 클래스가 --color-violet-50 변수를 읽으므로, 변수만 바꿔
+ * 화면 파일을 하나하나 고치지 않고 옛 라벤더·파랑·연두 장식을 새 색으로 맞춘다.
+ *  - 보라·라벤더·분홍 → 번트오렌지 계열 / 파랑·하늘·청록·슬레이트 → 차콜 계열
+ *  - 연두 → 차분한 초록(상태 표시) / Tailwind 주황 → 공개 홈페이지 밝은 주황
+ *  - 빨강·초록·노랑 등 상태색은 그대로 둔다(오류·결석·납부 의미 보존).
+ */
+.academy-app,
+.stiz-public-sport {
+  --sport-rust-50: #faeee8; --sport-rust-100: #f6dfd3; --sport-rust-200: #edc0a9; --sport-rust-300: #e29a77;
+  --sport-rust-400: #d4714a; --sport-rust-500: #c4562b; --sport-rust-600: #b94118; --sport-rust-700: #933111;
+  --sport-rust-800: #742710; --sport-rust-900: #5a1f0d; --sport-rust-950: #3a1408;
+  --sport-ink-50: #f3f4f5; --sport-ink-100: #e7e9eb; --sport-ink-200: #d0d3d7; --sport-ink-300: #aeb3b9;
+  --sport-ink-400: #858a92; --sport-ink-500: #62676f; --sport-ink-600: #4a4f57; --sport-ink-700: #383c42;
+  --sport-ink-800: #26292e; --sport-ink-900: #15181c; --sport-ink-950: #0c0e10;
+  --sport-moss-50: #edf5ef; --sport-moss-100: #dcebe0; --sport-moss-200: #bcd7c4; --sport-moss-300: #94bba0;
+  --sport-moss-400: #6e9b7c; --sport-moss-500: #527f62; --sport-moss-600: #3f6754; --sport-moss-700: #345545;
+  --sport-moss-800: #2b4638; --sport-moss-900: #213629; --sport-moss-950: #14221a;
+  --sport-flame-50: #fef3ec; --sport-flame-100: #fde4d4; --sport-flame-200: #fbc8a9; --sport-flame-300: #f8a678;
+  --sport-flame-400: #f68a52; --sport-flame-500: #f4753a; --sport-flame-600: #e25f22; --sport-flame-700: #b94118;
+  --sport-flame-800: #933111; --sport-flame-900: #742710; --sport-flame-950: #4a190a;
+}
+.academy-app,
+.stiz-public-sport {
+  --color-violet-50: var(--sport-rust-50); --color-violet-100: var(--sport-rust-100); --color-violet-200: var(--sport-rust-200); --color-violet-300: var(--sport-rust-300); --color-violet-400: var(--sport-rust-400); --color-violet-500: var(--sport-rust-500); --color-violet-600: var(--sport-rust-600); --color-violet-700: var(--sport-rust-700); --color-violet-800: var(--sport-rust-800); --color-violet-900: var(--sport-rust-900); --color-violet-950: var(--sport-rust-950);
+  --color-purple-50: var(--sport-rust-50); --color-purple-100: var(--sport-rust-100); --color-purple-200: var(--sport-rust-200); --color-purple-300: var(--sport-rust-300); --color-purple-400: var(--sport-rust-400); --color-purple-500: var(--sport-rust-500); --color-purple-600: var(--sport-rust-600); --color-purple-700: var(--sport-rust-700); --color-purple-800: var(--sport-rust-800); --color-purple-900: var(--sport-rust-900); --color-purple-950: var(--sport-rust-950);
+  --color-indigo-50: var(--sport-rust-50); --color-indigo-100: var(--sport-rust-100); --color-indigo-200: var(--sport-rust-200); --color-indigo-300: var(--sport-rust-300); --color-indigo-400: var(--sport-rust-400); --color-indigo-500: var(--sport-rust-500); --color-indigo-600: var(--sport-rust-600); --color-indigo-700: var(--sport-rust-700); --color-indigo-800: var(--sport-rust-800); --color-indigo-900: var(--sport-rust-900); --color-indigo-950: var(--sport-rust-950);
+  --color-fuchsia-50: var(--sport-rust-50); --color-fuchsia-100: var(--sport-rust-100); --color-fuchsia-200: var(--sport-rust-200); --color-fuchsia-300: var(--sport-rust-300); --color-fuchsia-400: var(--sport-rust-400); --color-fuchsia-500: var(--sport-rust-500); --color-fuchsia-600: var(--sport-rust-600); --color-fuchsia-700: var(--sport-rust-700); --color-fuchsia-800: var(--sport-rust-800); --color-fuchsia-900: var(--sport-rust-900); --color-fuchsia-950: var(--sport-rust-950);
+  --color-pink-50: var(--sport-rust-50); --color-pink-100: var(--sport-rust-100); --color-pink-200: var(--sport-rust-200); --color-pink-300: var(--sport-rust-300); --color-pink-400: var(--sport-rust-400); --color-pink-500: var(--sport-rust-500); --color-pink-600: var(--sport-rust-600); --color-pink-700: var(--sport-rust-700); --color-pink-800: var(--sport-rust-800); --color-pink-900: var(--sport-rust-900); --color-pink-950: var(--sport-rust-950);
+  --color-blue-50: var(--sport-ink-50); --color-blue-100: var(--sport-ink-100); --color-blue-200: var(--sport-ink-200); --color-blue-300: var(--sport-ink-300); --color-blue-400: var(--sport-ink-400); --color-blue-500: var(--sport-ink-500); --color-blue-600: var(--sport-ink-600); --color-blue-700: var(--sport-ink-700); --color-blue-800: var(--sport-ink-800); --color-blue-900: var(--sport-ink-900); --color-blue-950: var(--sport-ink-950);
+  --color-sky-50: var(--sport-ink-50); --color-sky-100: var(--sport-ink-100); --color-sky-200: var(--sport-ink-200); --color-sky-300: var(--sport-ink-300); --color-sky-400: var(--sport-ink-400); --color-sky-500: var(--sport-ink-500); --color-sky-600: var(--sport-ink-600); --color-sky-700: var(--sport-ink-700); --color-sky-800: var(--sport-ink-800); --color-sky-900: var(--sport-ink-900); --color-sky-950: var(--sport-ink-950);
+  --color-cyan-50: var(--sport-ink-50); --color-cyan-100: var(--sport-ink-100); --color-cyan-200: var(--sport-ink-200); --color-cyan-300: var(--sport-ink-300); --color-cyan-400: var(--sport-ink-400); --color-cyan-500: var(--sport-ink-500); --color-cyan-600: var(--sport-ink-600); --color-cyan-700: var(--sport-ink-700); --color-cyan-800: var(--sport-ink-800); --color-cyan-900: var(--sport-ink-900); --color-cyan-950: var(--sport-ink-950);
+  --color-teal-50: var(--sport-ink-50); --color-teal-100: var(--sport-ink-100); --color-teal-200: var(--sport-ink-200); --color-teal-300: var(--sport-ink-300); --color-teal-400: var(--sport-ink-400); --color-teal-500: var(--sport-ink-500); --color-teal-600: var(--sport-ink-600); --color-teal-700: var(--sport-ink-700); --color-teal-800: var(--sport-ink-800); --color-teal-900: var(--sport-ink-900); --color-teal-950: var(--sport-ink-950);
+  --color-slate-50: var(--sport-ink-50); --color-slate-100: var(--sport-ink-100); --color-slate-200: var(--sport-ink-200); --color-slate-300: var(--sport-ink-300); --color-slate-400: var(--sport-ink-400); --color-slate-500: var(--sport-ink-500); --color-slate-600: var(--sport-ink-600); --color-slate-700: var(--sport-ink-700); --color-slate-800: var(--sport-ink-800); --color-slate-900: var(--sport-ink-900); --color-slate-950: var(--sport-ink-950);
+  --color-lime-50: var(--sport-moss-50); --color-lime-100: var(--sport-moss-100); --color-lime-200: var(--sport-moss-200); --color-lime-300: var(--sport-moss-300); --color-lime-400: var(--sport-moss-400); --color-lime-500: var(--sport-moss-500); --color-lime-600: var(--sport-moss-600); --color-lime-700: var(--sport-moss-700); --color-lime-800: var(--sport-moss-800); --color-lime-900: var(--sport-moss-900); --color-lime-950: var(--sport-moss-950);
+  --color-orange-50: var(--sport-flame-50); --color-orange-100: var(--sport-flame-100); --color-orange-200: var(--sport-flame-200); --color-orange-300: var(--sport-flame-300); --color-orange-400: var(--sport-flame-400); --color-orange-500: var(--sport-flame-500); --color-orange-600: var(--sport-flame-600); --color-orange-700: var(--sport-flame-700); --color-orange-800: var(--sport-flame-800); --color-orange-900: var(--sport-flame-900); --color-orange-950: var(--sport-flame-950);
+  --color-brand-sky-50: var(--sport-ink-50); --color-brand-sky-100: var(--sport-ink-100); --color-brand-sky-500: var(--sport-ink-600);
 }

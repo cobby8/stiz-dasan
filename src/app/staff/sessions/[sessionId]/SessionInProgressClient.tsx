@@ -517,7 +517,7 @@ export default function SessionInProgressClient({
 
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 pb-28">
-      {/* 진행 상태는 밝은 라벤더 안에서 읽고 출결 경고는 의미색으로 따로 구분합니다. */}
+      {/* 진행 상태는 밝은 브랜드 바탕 안에서 읽고 출결 경고는 의미색으로 따로 구분합니다. */}
       <section className="sticky top-0 z-30 -mx-4 rounded-b-3xl border-b border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-[var(--color-academy-ink)]">
         <div className="flex items-start justify-between gap-3">
           <div>

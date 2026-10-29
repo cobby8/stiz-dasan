@@ -207,3 +207,13 @@
   .academy-app :is(.academy-button-primary, .academy-button-secondary) { min-height: 44px; }
   .academy-app :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { font-size: 1rem; }
 }
+
+/* 공개 화면과 같이 옛 형광·중간 단계 브랜드 색도 학원 앱 색으로 잇는다(2026-10-29 디자인 통일). */
+.academy-app {
+  --color-brand-orange-100: var(--color-academy-primary-soft);
+  --color-brand-orange-200: #edc0a9;
+  --color-brand-orange-300: #e29a77;
+  --color-brand-neon-lime: var(--color-academy-primary);
+  --color-brand-neon-cobalt: var(--color-academy-ink);
+  --color-brand-neon-pink: var(--color-academy-primary);
+}

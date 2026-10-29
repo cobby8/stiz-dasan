@@ -32,7 +32,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
   const canShuttle = shuttleScope(staff.roles) !== "NONE";
 
   return (
-    // 역할별 데이터는 그대로 두고 공통 라이트 표면과 라벤더 강조색을 적용합니다.
+    // 역할별 데이터는 그대로 두고 공통 라이트 표면과 브랜드 강조색을 적용합니다.
     <AcademyTheme role={isDriverOnly ? "driver" : "teacher"} className="min-h-screen pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
       <header className="academy-staff-header sticky top-0 z-40 border-b px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="mx-auto flex min-h-11 max-w-lg items-center justify-between gap-2">

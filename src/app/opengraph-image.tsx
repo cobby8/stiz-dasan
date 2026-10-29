@@ -21,7 +21,7 @@ export default function Image() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          background: "#07101f",
+          background: "#15181c",
           color: "white",
           padding: "58px 68px",
           position: "relative",
@@ -58,7 +58,7 @@ export default function Image() {
                 width: "74px",
                 height: "74px",
                 borderRadius: "22px",
-                background: "#ff6a00",
+                background: "#b94118",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -69,14 +69,14 @@ export default function Image() {
             </div>
             <div style={{ display: "flex", flexDirection: "column" }}>
               <div style={{ fontSize: "34px", fontWeight: 900, letterSpacing: "0" }}>STIZ</div>
-              <div style={{ fontSize: "20px", fontWeight: 700, color: "#ccff00" }}>BASKETBALL CLUB DASAN</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, color: "#f4753a" }}>BASKETBALL CLUB DASAN</div>
             </div>
           </div>
           <div
             style={{
               borderRadius: "999px",
-              background: "#ccff00",
-              color: "#07101f",
+              background: "#f4753a",
+              color: "#15181c",
               padding: "14px 24px",
               fontSize: "22px",
               fontWeight: 900,
@@ -111,7 +111,7 @@ export default function Image() {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: "24px", fontWeight: 900, color: "#ccff00" }}>{PUBLIC_SITE_NAME}</div>
+          <div style={{ fontSize: "24px", fontWeight: 900, color: "#f4753a" }}>{PUBLIC_SITE_NAME}</div>
         </div>
       </div>
     ),

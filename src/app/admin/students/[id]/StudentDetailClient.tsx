@@ -926,7 +926,7 @@ export default function StudentDetailClient({
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
-            {/* 학생의 맥락을 라벤더 헤더로 묶고 기존 편집 기능은 유지한다. */}
+            {/* 학생의 맥락을 브랜드 헤더로 묶고 기존 편집 기능은 유지한다. */}
             <div className="academy-hero flex flex-wrap items-start gap-4 p-5 md:p-6">
                 <Link href="/admin/students" prefetch={false} className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-gray-100 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700">
                     <SymbolIcon name="arrow_back" size={20} />
