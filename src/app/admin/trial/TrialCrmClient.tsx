@@ -1118,6 +1118,7 @@ export default function TrialCrmClient({
                     setShowDetailModal(lead);
                 }}
                 onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return; // 행 안 버튼(⚡·체험 연결)의 Enter/Space 는 버튼이 처리
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         closeQuickActionMenu();
