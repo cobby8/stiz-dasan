@@ -1602,10 +1602,17 @@ export async function recordTossWebhook(payload: unknown) {
     if (cancel.kind === "PARTIAL_CANCEL") {
         // 부분 환불은 어느 항목을 돌려줬는지 장부가 알 수 없어 자동 반영하지 않는다. 기록만 남겨 원장이 처리한다.
         await prisma.$executeRawUnsafe(
+            // 같은 거래·같은 취소 금액 기록이 이미 있으면 다시 쌓지 않는다(알림 재전송·반복 호출 대비).
             `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
-             VALUES (gen_random_uuid()::text, $1, $2, $3, 'WEBHOOK', NULL, 'PAYMENT_PARTIAL_CANCEL_REVIEW', 'Toss partial cancel needs manual review', $4::jsonb, NOW())`,
+             SELECT gen_random_uuid()::text, $1, $2, $3, 'WEBHOOK', NULL, 'PAYMENT_PARTIAL_CANCEL_REVIEW', 'Toss partial cancel needs manual review', $4::jsonb, NOW()
+             WHERE NOT EXISTS (
+               SELECT 1 FROM "PaymentAuditLog"
+               WHERE "transactionId" = $3 AND action = 'PAYMENT_PARTIAL_CANCEL_REVIEW'
+                 AND metadata->>'canceledAmount' = $5
+             )`,
             tx.paymentId, tx.invoiceId, tx.id,
             JSON.stringify({ provider: "TOSS", orderId: tx.orderId, canceledAmount: cancel.canceledAmount }),
+            String(cancel.canceledAmount),
         );
         await prisma.$executeRawUnsafe(
             `UPDATE "PaymentWebhookEvent" SET error = 'TOSS_PARTIAL_CANCEL_REVIEW', "processedAt" = NOW() WHERE id = $1`,
