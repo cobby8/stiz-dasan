@@ -1132,7 +1132,7 @@ export default function StudentManagementClient({
                                                 </Link>
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
                                                 {/* 학교: 말줄임 없이 전부 보인다(아주 길면 칸 안에서 줄바꿈) */}
-                                                <span className="min-w-0 break-keep text-[var(--color-academy-muted)]">
+                                                <span className="min-w-0 [overflow-wrap:anywhere] text-[var(--color-academy-muted)]">
                                                     {s.school || "-"}
                                                 </span>
                                                 <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)]">
