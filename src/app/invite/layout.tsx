@@ -1,6 +1,6 @@
-import PublicSiteTheme from "@/components/PublicSiteTheme";
+import AcademyTheme from "@/components/academy/AcademyTheme";
 
-// 로그인·가입·연결 같은 입구 화면도 공개 홈페이지와 같은 스포츠 색을 쓴다.
-export default function EntryThemeLayout({ children }: { children: React.ReactNode }) {
-  return <PublicSiteTheme publicScope className="min-h-screen">{children}</PublicSiteTheme>;
+// 직원 초대 수락 화면은 업무 화면(선생님 앱)과 같은 공통 스포츠 색을 쓴다. academyTheme.ts 경로 목록과 짝이다.
+export default function InviteThemeLayout({ children }: { children: React.ReactNode }) {
+  return <AcademyTheme role="teacher" className="min-h-screen">{children}</AcademyTheme>;
 }

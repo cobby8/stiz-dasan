@@ -1,6 +1,6 @@
-import PublicSiteTheme from "@/components/PublicSiteTheme";
+import AcademyTheme from "@/components/academy/AcademyTheme";
 
-// 로그인·가입·연결 같은 입구 화면도 공개 홈페이지와 같은 스포츠 색을 쓴다.
-export default function EntryThemeLayout({ children }: { children: React.ReactNode }) {
-  return <PublicSiteTheme publicScope className="min-h-screen">{children}</PublicSiteTheme>;
+// 카카오 학부모 인증(/mypage/kakao-connect 에서 다시 쓰는 화면)도 마이페이지와 같은 공통 스포츠 색(학원 앱 토큰)을 쓴다. academyTheme.ts 경로 목록과 짝이다.
+export default function KakaoConnectThemeLayout({ children }: { children: React.ReactNode }) {
+  return <AcademyTheme role="parent" className="min-h-screen">{children}</AcademyTheme>;
 }

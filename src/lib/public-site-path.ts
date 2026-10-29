@@ -3,7 +3,11 @@ const PUBLIC_SECTIONS = [
   "/about", "/programs", "/schedule", "/annual", "/gallery", "/notices",
   "/faq", "/terms", "/privacy", "/apply", "/seasonal", "/shop", "/simulator",
 ];
-const PUBLIC_ENTRIES = ["/", "/login", "/signup", "/signup/parent", "/parent", "/parent-app", "/teacher-app"];
+const PUBLIC_ENTRIES = [
+  "/", "/login", "/signup", "/signup/parent", "/parent", "/parent-app", "/teacher-app",
+  // 로그인 직후·계정 연결 입구도 로그인 화면과 같은 밝은 기본 테마로 연다.
+  "/auth/continue", "/setup",
+];
 
 export function isPublicSitePath(pathname: string | null): boolean {
   if (!pathname) return false;
