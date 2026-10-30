@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { SESSION_IMAGE_ALLOWED_TYPES } from "@/lib/clientImageCompression";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type PhotoSubject = { id: string; name: string };
 type ManagedPhoto = {
@@ -41,7 +42,7 @@ export function SessionPhotoUploader({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadPhotos().catch((error) => setMessage(error instanceof Error ? error.message : "사진 목록을 불러오지 못했습니다."));
+      void loadPhotos().catch((error) => setMessage(userErrorMessage(error, "사진 목록을 불러오지 못했습니다.")));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadPhotos]);
@@ -110,7 +111,7 @@ export function SessionPhotoUploader({
       setEditingPhotoId(null);
       setMessage("사진에 나온 학생 정보를 수정했습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "네트워크 연결을 확인한 뒤 다시 시도해 주세요.");
+      setMessage(userErrorMessage(error, "네트워크 연결을 확인한 뒤 다시 시도해 주세요."));
       setRetryAction(() => () => updatePhotoSubjects(photo));
     } finally {
       setBusy(false);
@@ -131,7 +132,7 @@ export function SessionPhotoUploader({
       setPhotos((current) => current.filter((item) => item.id !== photo.id));
       setMessage("사진을 삭제했습니다.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "네트워크 연결을 확인한 뒤 다시 시도해 주세요.");
+      setMessage(userErrorMessage(error, "네트워크 연결을 확인한 뒤 다시 시도해 주세요."));
       setRetryAction(() => () => deletePhoto(photo, true));
     } finally {
       setBusy(false);

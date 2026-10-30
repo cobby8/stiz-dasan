@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type Direction = "PICKUP" | "DROPOFF";
 type RideStatus = "PENDING" | "BOARDED" | "DROPPED_OFF" | "NO_SHOW";
@@ -49,7 +50,7 @@ export default function ShuttleRideStatusButtons({
         setMessage(`${STATUS_LABEL[nextStatus]} 저장 완료`);
       } catch (error) {
         onStatusChange(previous);
-        setMessage(error instanceof Error ? error.message : "상태를 저장하지 못했습니다.");
+        setMessage(userErrorMessage(error, "상태를 저장하지 못했습니다."));
       } finally {
         onMutationStateChange?.(false);
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 export function VoiceToTextButton({
   onText,
@@ -72,7 +73,7 @@ export function VoiceToTextButton({
     try {
       const response = await fetch("/api/staff/transcribe", { method: "POST", body: form });
       const data = await response.json();
-      if (!response.ok) { setMessage(data.error || "음성 인식에 실패했습니다."); return; }
+      if (!response.ok) { setMessage(userErrorMessage(data.error, "음성 인식에 실패했습니다. 다시 말씀해 주세요.")); return; }
       onText(data.text);
       setMessage("음성을 메모로 변환했습니다.");
     } catch {

@@ -8,7 +8,9 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
 import type { StaffBillingListItem } from "@/lib/staff-portal-queries";
 
-const labels: Record<string, string> = { PENDING: "납부 전", OVERDUE: "기한 지남", PAID: "납부 완료", REFUNDED: "환불" };
+const labels: Record<string, string> = { PENDING: "납부 전", OVERDUE: "기한 지남", PAID: "납부 완료", REFUNDED: "환불", CANCELLED: "취소", CANCELED: "취소" };
+// 목록에 없는 상태값은 영어 원문(예: PARTIAL) 대신 «확인 필요»로 보여 준다
+const statusLabel = (status: string) => labels[status] ?? "확인 필요";
 // 미납(OPEN) = 납부 전 + 기한 지남. 기본 보기이자 칩을 다시 눌렀을 때 돌아가는 값
 type BillFilter = "OPEN" | "ALL" | "OVERDUE" | "PAID" | "REFUNDED";
 const OPEN_STATUSES = ["PENDING", "OVERDUE"];
@@ -112,7 +114,7 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
                   <span className="block break-keep text-xs text-[var(--color-academy-muted)]">{bill.title}</span>
                 </span>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${waiting ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : bill.status === "OVERDUE" ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
-                  {waiting ? "확인 대기" : labels[bill.status] ?? bill.status}
+                  {waiting ? "확인 대기" : statusLabel(bill.status)}
                 </span>
                 <span className="shrink-0 text-right font-black tabular-nums text-[var(--color-academy-ink)]">
                   {bill.amount.toLocaleString("ko-KR")}원
@@ -142,7 +144,7 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
           </div>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 px-4 py-3 text-sm">
             <dt className="text-[var(--color-academy-muted)]">청구</dt><dd className="font-bold">{detail.title}</dd>
-            <dt className="text-[var(--color-academy-muted)]">상태</dt><dd className="font-bold">{detail.confirmationStatus === "PENDING" ? "관리자 확인 대기" : labels[detail.status] ?? detail.status}</dd>
+            <dt className="text-[var(--color-academy-muted)]">상태</dt><dd className="font-bold">{detail.confirmationStatus === "PENDING" ? "관리자 확인 대기" : statusLabel(detail.status)}</dd>
             <dt className="text-[var(--color-academy-muted)]">금액</dt><dd className="font-black tabular-nums">{detail.amount.toLocaleString("ko-KR")}원</dd>
             <dt className="text-[var(--color-academy-muted)]">납부 기한</dt><dd className="tabular-nums">{formatKstDate(detail.dueDate, undefined, "-")}</dd>
           </dl>

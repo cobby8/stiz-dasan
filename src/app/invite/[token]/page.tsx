@@ -18,6 +18,7 @@ const ROLE_LABELS: Record<string, string> = {
     VICE_ADMIN: "부원장",
     INSTRUCTOR: "코치/강사",
     DRIVER: "셔틀 기사",
+    PARENT: "학부모",
 };
 
 export default async function InvitePage({
@@ -112,7 +113,7 @@ export default async function InvitePage({
                     name={invitation.name}
                     maskedPhone={maskedPhone}
                     role={invitation.role}
-                    roleLabel={ROLE_LABELS[invitation.role] || invitation.role}
+                    roleLabel={ROLE_LABELS[invitation.role] || /* 모르는 역할값은 영어 원문 대신 일반 표현 */ "학원 구성원"}
                     daysLeft={Math.max(0, Math.ceil((expiresAt.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))}
                 />
             </div>

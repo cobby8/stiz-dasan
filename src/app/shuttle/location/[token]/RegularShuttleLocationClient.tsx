@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type LocationKind = "PICKUP" | "DROPOFF";
 type LinkData = {
@@ -64,7 +65,7 @@ export default function RegularShuttleLocationClient({ token }: { token: string 
         setDropoff(nextDropoff);
         setSameAsPickup(Boolean(nextPickup && nextDropoff && nextPickup.latitude === nextDropoff.latitude && nextPickup.longitude === nextDropoff.longitude));
       })
-      .catch((cause) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "링크를 확인하지 못했습니다."); })
+      .catch((cause) => { if (!cancelled) setError(userErrorMessage(cause, "링크를 확인하지 못했습니다.")); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [token]);
@@ -101,7 +102,7 @@ export default function RegularShuttleLocationClient({ token }: { token: string 
         savedAt: result.submittedAt ?? new Date().toISOString(),
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "위치를 저장하지 못했습니다.");
+      setError(userErrorMessage(cause, "위치를 저장하지 못했습니다."));
     } finally {
       setSaving(false);
     }

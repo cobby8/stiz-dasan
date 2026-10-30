@@ -14,6 +14,7 @@ import InstagramFeedPreview, {
 } from "@/components/instagram/InstagramFeedPreview";
 import { uploadImagesWithProgress } from "@/lib/clientImageUpload";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 const LESSON_TYPES = ["정규 수업", "기초반", "심화반", "게임 수업", "특강", "대회 준비"];
 // DB enum(INSTRUCTOR/ADMIN 등)이 화면에 영문 그대로 노출되지 않도록 한글 라벨로 바꿔 준다.
@@ -121,7 +122,7 @@ export default function QuickPostClient({
           }`,
         );
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "초안을 만들지 못했습니다.");
+        setError(userErrorMessage(caught, "초안을 만들지 못했습니다."));
         setMessage(null);
       } finally {
         setIsWorking(false);
@@ -151,7 +152,7 @@ export default function QuickPostClient({
         setDraft(result.draft);
         setMessage("수정 내용이 저장됐습니다.");
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "저장하지 못했습니다.");
+        setError(userErrorMessage(caught, "저장하지 못했습니다."));
       } finally {
         setIsWorking(false);
         setProgressText(null);
@@ -188,7 +189,7 @@ export default function QuickPostClient({
         setIsWorking(false);
       } catch (caught) {
         setMessage(null);
-        setError(caught instanceof Error ? caught.message : "게시하지 못했습니다.");
+        setError(userErrorMessage(caught, "게시하지 못했습니다."));
         setIsWorking(false);
         setProgressText(null);
       }

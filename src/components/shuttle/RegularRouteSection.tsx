@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RouteMapCanvas } from "@/components/seasonal/DispatchRouteMap";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 // 정규 셔틀 배차 — 한 방향(등원=BOARD / 하원=ALIGHT)의 노선 목록 + 지도.
 // 방학특강 배차와 같은 모양: 드래그(⠿)로 순서 변경 → 지도·경로 재계산 → 저장(sortOrder·arriveTime).
@@ -130,7 +131,7 @@ export default function RegularRouteSection({ dayStops, classTime, direction, se
       if (!r.ok) throw new Error(j?.error || "저장 실패");
       setSaveMsg("저장했습니다");
       onSaved?.();
-    } catch (e: any) { setErr(e?.message || "저장하지 못했습니다."); }
+    } catch (e: any) { setErr(userErrorMessage(e, "저장하지 못했습니다.")); }
     finally { setSaving(false); }
   }
 

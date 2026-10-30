@@ -14,6 +14,7 @@ import {
     verifyInviteCode,
     acceptInvitation,
 } from "@/app/actions/invite";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 interface Props {
     token: string;
@@ -64,7 +65,7 @@ export default function InviteAcceptForm({
             setVerifyMsg(null);
             const result = await sendInviteVerification(token);
             if (result.error) {
-                setVerifyMsg({ text: result.error, ok: false });
+                setVerifyMsg({ text: userErrorMessage(result.error, "인증을 진행하지 못했습니다. 잠시 후 다시 시도해 주세요."), ok: false });
             } else {
                 setStep(2);
                 setVerifyMsg({ text: "인증번호가 발송되었습니다. (5분 내 입력)", ok: true });
@@ -79,7 +80,7 @@ export default function InviteAcceptForm({
             setVerifyMsg(null);
             const result = await verifyInviteCode(token, verifyCode.trim());
             if (result.error) {
-                setVerifyMsg({ text: result.error, ok: false });
+                setVerifyMsg({ text: userErrorMessage(result.error, "인증을 진행하지 못했습니다. 잠시 후 다시 시도해 주세요."), ok: false });
             } else {
                 setStep(3);
                 setVerifyMsg(null);
@@ -94,7 +95,7 @@ export default function InviteAcceptForm({
             setVerifyCode("");
             const result = await sendInviteVerification(token);
             if (result.error) {
-                setVerifyMsg({ text: result.error, ok: false });
+                setVerifyMsg({ text: userErrorMessage(result.error, "인증을 진행하지 못했습니다. 잠시 후 다시 시도해 주세요."), ok: false });
             } else {
                 setVerifyMsg({ text: "인증번호가 재발송되었습니다.", ok: true });
             }
@@ -117,7 +118,7 @@ export default function InviteAcceptForm({
         startTransition(async () => {
             const result = await acceptInvitation(token, password);
             if (result.error) {
-                setPasswordError(result.error);
+                setPasswordError(userErrorMessage(result.error, "가입을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."));
             } else {
                 setResultEmail(result.email || "");
                 setStep(4);
@@ -329,7 +330,7 @@ export default function InviteAcceptForm({
                     <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-5 space-y-2 text-left">
                         <p className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase">로그인 정보</p>
                         <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-500 dark:text-gray-400">이메일 (ID)</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">이메일 (아이디)</span>
                             <span className="text-sm font-mono font-medium text-gray-900 dark:text-white">{resultEmail}</span>
                         </div>
                         <div className="flex justify-between items-center">

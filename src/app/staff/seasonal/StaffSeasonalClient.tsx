@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { startClassSession } from "@/app/actions/staff-sessions";
 import { addDaysKst } from "@/lib/datetime/kst";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 // 특강 카드 1장 = 홈과 동일한 반 단위 항목(StaffTodayClass).
 // 버그#2 수정: offering별로 쪼개지 않고 반+시간으로 묶인 목록을 그대로 사용한다.
@@ -34,7 +35,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       setDates(data.classes || []);
       setYmd(data.ymd);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(userErrorMessage(e, "특강 목록을 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요."));
     }
   }, []);
 

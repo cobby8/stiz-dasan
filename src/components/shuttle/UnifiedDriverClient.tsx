@@ -16,6 +16,7 @@ import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusC
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
 // 기사님은 위에서부터 순서대로 다니면 된다.
@@ -189,7 +190,7 @@ export default function UnifiedDriverClient({
       setEditing(false);
       router.refresh();
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "저장하지 못했습니다.");
+      setSaveMessage(userErrorMessage(error, "저장하지 못했습니다."));
     } finally {
       setSavingOrder(false);
     }
@@ -218,7 +219,7 @@ export default function UnifiedDriverClient({
       if (!mounted.current) return;
       setBoarding((b) => { const n = { ...b }; if (result.status) n[key] = result.status; else delete n[key]; return n; });
       const time = result.checkedAt ? new Date(result.checkedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : null;
-      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "서버 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : "변경 미반영 · 서버의 현재 상태를 표시합니다" } }));
+      setSaveStates((states) => ({ ...states, [key]: { state: result.matched ? "saved" : "failed", message: result.matched ? `${verifyOnly ? "저장 상태 확인 완료" : "저장 완료"}${time ? ` · ${time}` : ""}` : "바뀌지 않았습니다 · 지금 저장된 상태를 보여 드려요" } }));
     } catch {
       if (mounted.current) setSaveStates((states) => ({ ...states, [key]: { state: "unknown", message: "결과 확인 필요 · 저장 상태를 다시 확인해주세요" } }));
     } finally {
@@ -261,7 +262,7 @@ export default function UnifiedDriverClient({
       <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1>{runState === "running" && <LiveStatusPill>운행 중</LiveStatusPill>}</div>
-          {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">{transmission === "stop-unknown" ? "위치 수집 중단 · 서버 종료 확인 필요" : "운행이 종료되었습니다"}</p>}
+          {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">{transmission === "stop-unknown" ? "위치 공유를 멈췄습니다 · 운행 종료가 저장됐는지 확인해 주세요" : "운행이 종료되었습니다"}</p>}
         </div>
         <div className={styles.headerActions}>
         {(runState === "running" || runState === "ended" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (

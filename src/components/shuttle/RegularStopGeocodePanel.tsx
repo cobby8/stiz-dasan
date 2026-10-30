@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type KakaoPlace = { x: string; y: string; place_name: string; road_address_name?: string; address_name?: string };
 type KakaoLatLng = { getLat: () => number; getLng: () => number };
@@ -73,7 +74,7 @@ export default function RegularStopGeocodePanel({ stopNames, totalStopCount, ini
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY?.trim();
     if (!key) { setError("카카오 지도 설정이 없습니다."); return; }
-    void loadKakaoSdk(key).then(setSdk).catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "카카오 지도를 불러오지 못했습니다."));
+    void loadKakaoSdk(key).then(setSdk).catch((caught: unknown) => setError(userErrorMessage(caught, "카카오 지도를 불러오지 못했습니다.")));
   }, []);
 
   useEffect(() => {
@@ -125,7 +126,7 @@ export default function RegularStopGeocodePanel({ stopNames, totalStopCount, ini
       const loaded = sdk ?? await loadKakaoSdk(key); setSdk(loaded);
       const result = await searchPlaces(loaded, query.trim()); setCandidates(result);
       if (result.length === 0) setError("검색 결과가 없습니다. 아파트명·도로명처럼 더 구체적으로 입력해 주세요.");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "정류장을 검색하지 못했습니다."); }
+    } catch (caught) { setError(userErrorMessage(caught, "정류장을 검색하지 못했습니다.")); }
     finally { setBusy(false); }
   }
   async function saveSelected() {
@@ -140,7 +141,7 @@ export default function RegularStopGeocodePanel({ stopNames, totalStopCount, ini
       markerInstance.current?.setMap(null); markerInstance.current = null;
       setRemaining(next); setMessage(`${savedName} 좌표를 저장했습니다. 같은 정류장의 모든 탑승자에게 적용됩니다.`); setCandidates([]); setChosen(null);
       if (next.length) { const nextName = next[Math.min(currentIndex, next.length - 1)]; setSelectedName(nextName); setQuery(`${nextName} 남양주 다산`); }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "좌표를 저장하지 못했습니다."); }
+    } catch (caught) { setError(userErrorMessage(caught, "좌표를 저장하지 못했습니다.")); }
     finally { setSaving(false); }
   }
 

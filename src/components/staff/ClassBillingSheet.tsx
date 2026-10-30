@@ -5,6 +5,7 @@ import { loadStaffAttendanceBilling, loadStaffClassBilling, requestStaffPaymentC
 import { useStaffDialog } from "./useStaffDialog";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
 import { StaffMonthlyFeeSummaryCard } from "./StaffMonthlyFeeSummary";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type BillingResult = { items: SerializedStaffClassBillingItem[]; month?: string; summary?: StaffMonthlyFeeSummary };
 const billingRequests = new Map<string, Promise<BillingResult>>();
@@ -43,7 +44,7 @@ export function ClassBillingSheet({ open, classId, className, student, attendanc
       ? loadStaffAttendanceBilling({ sessionId: attendanceSessionId, rosterId: attendanceRosterId })
       : loadStaffClassBilling({ classId, studentId: student?.id }));
     billingRequests.set(cacheKey, request);
-    void request.then((result: BillingResult) => { if (active) { setItems(result.items); setSummary(result.summary ?? null); setMonth(result.month ?? ""); if (result.month && result.summary) onSummaryLoaded?.(result.month, result.summary); } }).catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "청구 내역을 불러오지 못했습니다."); }).finally(() => { if (billingRequests.get(cacheKey) === request) billingRequests.delete(cacheKey); if (active) setLoading(false); });
+    void request.then((result: BillingResult) => { if (active) { setItems(result.items); setSummary(result.summary ?? null); setMonth(result.month ?? ""); if (result.month && result.summary) onSummaryLoaded?.(result.month, result.summary); } }).catch((reason: unknown) => { if (active) setError(userErrorMessage(reason, "청구 내역을 불러오지 못했습니다.")); }).finally(() => { if (billingRequests.get(cacheKey) === request) billingRequests.delete(cacheKey); if (active) setLoading(false); });
     return () => { active = false; };
   }, [attendanceRosterId, attendanceSessionId, cacheKey, classId, onSummaryLoaded, open, reload, student?.id]);
 

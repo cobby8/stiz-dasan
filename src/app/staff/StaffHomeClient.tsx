@@ -86,7 +86,7 @@ export default function StaffHomeClient({
     } catch {
       if (noticeOperation.current?.id !== operation.id) return;
       setNoticeUncertain(true);
-      setError("결과 확인 필요: 저장 여부를 조회하지 못했습니다. 새 공지를 만들지 말고 저장 결과를 다시 확인해 주세요.");
+      setError("공지가 저장됐는지 확인하지 못했습니다. 새 공지를 만들지 말고 «저장·전달 결과 다시 확인»을 눌러 주세요.");
     }
   }
 
@@ -177,8 +177,8 @@ export default function StaffHomeClient({
       }
       describeNotice(result);
       if (result.deliveryLookupFailed) setError("공지는 저장되었습니다. 수신자·알림 결과 확인이 필요합니다. 같은 공지의 결과를 확인해 주세요.");
-      if ("deliveryResumeHeld" in result && result.deliveryResumeHeld) { setNoticeResumeNeeded(false); setError("기존 수신자 근거가 없어 알림 재처리를 보류했습니다. 공지는 저장되어 있으며 학원 관리자에게 확인해 주세요."); }
-      if ("deliveryAttemptFailedCount" in result && result.deliveryAttemptFailedCount) setError("공지는 저장되었습니다. 일부 알림 장부 생성에 실패했습니다. 같은 공지에서 누락된 알림만 재처리할 수 있습니다.");
+      if ("deliveryResumeHeld" in result && result.deliveryResumeHeld) { setNoticeResumeNeeded(false); setError("알림 받을 학부모 목록을 찾지 못해 알림을 다시 보내지 않았습니다. 공지는 저장되어 있으니 학원 관리자에게 확인해 주세요."); }
+      if ("deliveryAttemptFailedCount" in result && result.deliveryAttemptFailedCount) setError("공지는 저장되었습니다. 일부 학부모에게 알림을 보내지 못했습니다. «빠진 알림 다시 보내기»로 빠진 분께만 다시 보낼 수 있습니다.");
       } catch {
         setNoticeUncertain(true);
         await checkNotice();
@@ -326,9 +326,9 @@ export default function StaffHomeClient({
           <textarea disabled={noticeSaved || noticeUncertain || pending} value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="mt-3 w-full rounded-xl border border-gray-200 bg-white p-3 leading-6 dark:border-gray-700 dark:bg-gray-800" />
           {!noticeSaved && !noticeUncertain && !pending && <VoiceToTextButton onText={(text) => setNoticeContent((current) => current ? `${current}\n${text}` : text)} />}
           <ErrorMessage error={error} />
-          {noticeResult && <p role="status" className="mt-3 rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-800">{noticeResult}<br />푸시 접수는 학부모 열람을 의미하지 않습니다. 일부 기기 실패·재시도 대기 건수는 접수 건수와 합산하지 않습니다.</p>}
+          {noticeResult && <p role="status" className="mt-3 rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-800">{noticeResult}<br />알림이 전달돼도 학부모가 읽었다는 뜻은 아닙니다. 보내지 못했거나 다시 보낼 예정인 알림은 전달 건수에 넣지 않습니다.</p>}
           {(noticeSaved || noticeUncertain) && <button type="button" disabled={pending} onClick={() => startTransition(checkNotice)} className="mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">저장·전달 결과 다시 확인</button>}
-          {noticeSaved && noticeResumeNeeded && <button type="button" disabled={pending} onClick={() => sendNotice(true)} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">같은 공지의 누락 알림 재처리</button>}
+          {noticeSaved && noticeResumeNeeded && <button type="button" disabled={pending} onClick={() => sendNotice(true)} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">빠진 알림 다시 보내기</button>}
           {noticeSaved && <button type="button" disabled={pending} onClick={() => { noticeOperation.current = null; try { sessionStorage.removeItem(`staff-notice-operation:${noticeTarget.id}`); } catch {} setNoticeSaved(false); setNoticeUncertain(false); setNoticeResult(""); setNoticeTitle(""); setNoticeContent(""); setError(null); }} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">새 공지 작성</button>}
           <ModalActions pending={pending} onCancel={() => setNoticeTarget(null)} onConfirm={() => sendNotice()} confirmLabel="공지 저장·알림 요청" disabled={noticeSaved || noticeUncertain || !noticeTitle.trim() || !noticeContent.trim()} />
         </Modal>

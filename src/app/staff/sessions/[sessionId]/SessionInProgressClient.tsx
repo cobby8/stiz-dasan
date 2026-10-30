@@ -23,6 +23,7 @@ import type {
   StaffSessionDetail,
   StaffSessionStudent,
 } from "@/lib/staff-session-queries";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 const ClassPeopleSheet = dynamic(
   () => import("@/components/staff/ClassPeopleSheet").then((module) => module.ClassPeopleSheet),
@@ -113,7 +114,7 @@ export default function SessionInProgressClient({
     void loadStaffSessionMonthlyFees({ sessionId: session.id })
       .then((result) => { if (active) setFeeData(result); })
       .catch((reason: unknown) => {
-        if (active) setFeeError(reason instanceof Error ? reason.message : "수강료 정보를 불러오지 못했습니다.");
+        if (active) setFeeError(userErrorMessage(reason, "수강료 정보를 불러오지 못했습니다."));
       })
       .finally(() => { if (active) setFeeLoading(false); });
     return () => { active = false; };

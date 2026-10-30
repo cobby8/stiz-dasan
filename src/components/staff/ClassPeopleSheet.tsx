@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { loadStaffClassPeople } from "@/app/actions/staff-class-people";
 import type { StaffClassPerson } from "@/lib/staff-class-people";
 import { useStaffDialog } from "./useStaffDialog";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 const peopleRequests = new Map<string, Promise<Awaited<ReturnType<typeof loadStaffClassPeople>>>>();
 const phoneHref = (phone: string) => phone.replace(/[^\d+]/g, "");
@@ -24,7 +25,7 @@ export function ClassPeopleSheet({ open, classId, sessionId, sessionDateId, clas
     const request = peopleRequests.get(cacheKey) ?? loadStaffClassPeople({ classId, sessionId, sessionDateId });
     peopleRequests.set(cacheKey, request);
     void request.then((result) => { if (!result.ok) throw new Error(result.message); if (active) setPeople(result.people); })
-      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "학생 정보를 불러오지 못했습니다."); })
+      .catch((reason: unknown) => { if (active) setError(userErrorMessage(reason, "학생 정보를 불러오지 못했습니다.")); })
       .finally(() => { peopleRequests.delete(cacheKey); if (active) setLoading(false); });
     return () => { active = false; };
   }, [cacheKey, classId, open, sessionDateId, sessionId]);

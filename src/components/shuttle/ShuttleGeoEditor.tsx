@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 // 셔틀 기준 위치 편집 — 학원 / 차고지 / 무료탑승 거점(1호점) 좌표를 지도로 지정한다.
 // 배차·정규셔틀 지도의 출발/도착·거점 기준이 되는 공용 설정이라, '차량 관리'에 둔다.
@@ -38,7 +39,7 @@ export default function ShuttleGeoEditor({ initial }: { initial: GeoState }) {
       if (!r.ok) throw new Error(j?.error || "저장 실패");
       setGeo((g) => ({ ...g, [kind]: { lat: loc.latitude, lng: loc.longitude, name: loc.placeName || loc.roadAddress || loc.address } }));
       setEditKind(null);
-    } catch (e: any) { setErr(e?.message || "저장 실패"); }
+    } catch (e: any) { setErr(userErrorMessage(e, "저장하지 못했습니다. 다시 시도해 주세요.")); }
     finally { setSavingGeo(false); }
   }
 
