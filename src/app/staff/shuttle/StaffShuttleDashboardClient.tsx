@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import ShuttleRideStatusButtons from "./ShuttleRideStatusButtons";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { confirmedTimeLabel } from "@/lib/shuttle/time";
 
 type Direction = "PICKUP" | "DROPOFF";
@@ -57,6 +58,8 @@ export default function StaffShuttleDashboardClient({
   const [rideStatuses, setRideStatuses] = useState<Record<string, RideStatus>>(() => initialRideStatuses(dashboard.routes));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<RefreshMessage>(null);
+  // 예정·확인 필요 노선 행을 누르면 그 노선 전체(정류장·탑승자)를 시트로 연다. 자동 새로고침 값을 따라가도록 id 로 든다.
+  const [detailRouteId, setDetailRouteId] = useState<string | null>(null);
   const refreshInFlightRef = useRef(false);
   const refreshAfterInFlightRef = useRef(false);
   const mutationVersionRef = useRef(0);
@@ -67,6 +70,8 @@ export default function StaffShuttleDashboardClient({
   );
   const passengerCount = todayRoutes.reduce((sum, route) => sum + route.passengerCount, 0);
   const statusSummary = useMemo(() => summarizeRideStatuses(todayRoutes, rideStatuses), [todayRoutes, rideStatuses]);
+  const upcomingGroups = useMemo(() => groupRoutesByDate(upcomingRoutes), [upcomingRoutes]);
+  const detailRoute = detailRouteId ? currentDashboard.routes.find((route) => route.id === detailRouteId) ?? null : null;
 
   const refreshDashboard = useCallback(async (announce = false) => {
     if (refreshInFlightRef.current) {
@@ -138,43 +143,31 @@ export default function StaffShuttleDashboardClient({
 
   return (
     <main className="mx-auto min-h-[calc(100dvh-9rem)] max-w-lg px-4 py-5">
-      {/* 운행 대시보드도 교사 홈과 같은 밝은 역할 헤더를 사용합니다. */}
-      <section className="academy-hero rounded-3xl p-5 text-[var(--color-academy-ink)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-bold text-[var(--color-academy-muted)]">셔틀 기사 앱</p>
-            <h1 className="mt-1 text-2xl font-black">오늘 운행</h1>
-          </div>
-          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]">
-            <span className="material-symbols-outlined" aria-hidden="true">airport_shuttle</span>
-          </span>
+      {/* 큰 배너·상태 카드 5장 대신 제목 1줄 + 요약 1줄(첫 화면에 바로 노선이 보이게) */}
+      <header className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold text-[var(--color-academy-muted)]">셔틀 기사 앱</p>
+          <h1 className="text-xl font-black">오늘 운행</h1>
         </div>
-      </section>
-
-      <section className="mt-4 grid grid-cols-2 gap-3">
-        <StatusCard label="운행 상태" value={todayRoutes.length ? "확정" : "대기"} />
-        <StatusCard label="오늘 노선" value={`${todayRoutes.length}개 · ${passengerCount}명`} />
-      </section>
-
-      <section className="mt-3 grid grid-cols-3 gap-2">
-        <StatusCard label="체크 대기" value={`${statusSummary.pending}명`} tone={statusSummary.pending ? "warning" : "neutral"} compact />
-        <StatusCard label="체크 완료" value={`${statusSummary.done}명`} tone="success" compact />
-        <StatusCard label="미탑승" value={`${statusSummary.noShow}명`} tone={statusSummary.noShow ? "danger" : "neutral"} compact />
-      </section>
-
-      <section className="mt-4 flex items-center justify-between gap-3">
-        <h2 className="font-black text-gray-900 dark:text-white">오늘 운행</h2>
         <button
           type="button"
           onClick={() => void refreshDashboard(true)}
           disabled={isRefreshing}
-          className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-gray-700 shadow-sm disabled:opacity-60 dark:bg-gray-900 dark:text-gray-200"
+          className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-black disabled:opacity-60"
         >
           <span className={`material-symbols-outlined text-lg ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true">refresh</span>
           {isRefreshing ? "불러오는 중" : "새로고침"}
         </button>
-      </section>
-      {refreshMessage && (
+      </header>
+
+      <section aria-label="오늘 운행 요약" className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-sm">
+        <SummaryItem label="운행 상태" value={todayRoutes.length ? "확정" : "대기"} />
+        <SummaryItem label="노선" value={`${todayRoutes.length}개`} />
+        <SummaryItem label="탑승 예정" value={`${passengerCount}명`} />
+        <SummaryItem label="체크 대기" value={`${statusSummary.pending}명`} tone={statusSummary.pending ? "warning" : "neutral"} />
+        <SummaryItem label="체크 완료" value={`${statusSummary.done}명`} tone="success" />
+        <SummaryItem label="미탑승" value={`${statusSummary.noShow}명`} tone={statusSummary.noShow ? "danger" : "neutral"} />
+      </section>      {refreshMessage && (
         <p className={`mt-2 text-xs font-bold ${refreshMessage.tone === "error" ? "text-red-600 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`} role={refreshMessage.tone === "error" ? "alert" : "status"}>
           {refreshMessage.text}
         </p>
@@ -194,31 +187,51 @@ export default function StaffShuttleDashboardClient({
         )}
       </section>
 
+      {/* 예정된 운행: 날짜별 묶음 + 한 줄 행. 탑승 체크는 운행 당일에만이라, 전체 내용은 행을 눌러 시트에서 */}
       {upcomingRoutes.length > 0 && (
-        <section className="mt-6">
-          <h2 className="font-black text-gray-900 dark:text-white">예정된 운행</h2>
-          <div className="mt-3 space-y-3">
-            {upcomingRoutes.map((route) => (
-              <RouteCard key={route.id} route={route} rideStatuses={rideStatuses} onStatusChange={handleStatusChange} />
-            ))}
-          </div>
+        <section className="mt-5">
+          <h2 className="font-black text-[var(--color-academy-ink)]">예정된 운행</h2>
+          {upcomingGroups.map((group) => (
+            <div key={group.key} className="mt-2">
+              <h3 className="mb-1 text-xs font-black tabular-nums text-[var(--color-academy-muted)]">{group.label}</h3>
+              <ul className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                {group.routes.map((route) => (
+                  <RouteSummaryRow key={route.id} route={route} onOpen={setDetailRouteId} />
+                ))}
+              </ul>
+            </div>
+          ))}
         </section>
       )}
 
       {needsReviewRoutes.length > 0 && (
-        <section className="mt-6">
+        <section className="mt-5">
           <div>
-            <h2 className="font-black text-gray-900 dark:text-white">일정 확인 필요</h2>
-            <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">운행 날짜가 지정되지 않아 탑승 상태를 처리할 수 없는 노선입니다.</p>
+            <h2 className="font-black text-[var(--color-academy-ink)]">일정 확인 필요</h2>
+            <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">운행 날짜가 지정되지 않아 탑승 상태를 처리할 수 없는 노선입니다.</p>
           </div>
-          <div className="mt-3 space-y-3">
+          <ul className="mt-2 overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
             {needsReviewRoutes.map((route) => (
-              <RouteCard key={route.id} route={route} rideStatuses={rideStatuses} onStatusChange={handleStatusChange} />
+              <RouteSummaryRow key={route.id} route={route} onOpen={setDetailRouteId} showDate />
             ))}
-          </div>
+          </ul>
         </section>
       )}
 
+      {detailRoute && (
+        <ListDetailPanel onClose={() => setDetailRouteId(null)} titleId="staff-route-detail-title">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-2">
+            <h2 id="staff-route-detail-title" className="font-black">노선 상세</h2>
+            <button type="button" aria-label="닫기" onClick={() => setDetailRouteId(null)} className="grid size-11 shrink-0 place-items-center rounded-full">
+              <span aria-hidden="true" className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          {/* 오늘이 아닌 노선이라 탑승 체크 없이(기존과 같게) 보기만 */}
+          <div className="p-3">
+            <RouteCard route={detailRoute} rideStatuses={rideStatuses} onStatusChange={handleStatusChange} />
+          </div>
+        </ListDetailPanel>
+      )}
       {canManageShuttle && (
         <Link
           href="/admin/shuttle"
@@ -246,29 +259,28 @@ function RouteCard({
   canCheckRideStatus?: boolean;
 }) {
   return (
-    <article className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <article className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-black text-[var(--brand-accent)]">
-                  {route.direction === "PICKUP" ? "등원" : "하원"} · {formatRouteDate(route.serviceDate)}
+                <p className="flex flex-wrap items-center gap-1.5 text-xs font-black">
+                  <DirectionBadge direction={route.direction} />
+                  <span className="text-[var(--color-academy-muted)]">{formatRouteDate(route.serviceDate)}</span>
                 </p>
-                <h2 className="mt-1 text-lg font-black text-gray-900 dark:text-white">{route.name}</h2>
-                <p className="mt-1 text-xs font-bold text-gray-500 dark:text-gray-400">
-                  {route.vehicle?.name || "차량 미지정"} · {route.passengerCount}명
-                </p>
+                <h2 className="mt-1 text-base font-black text-[var(--color-academy-ink)]">{route.name}</h2>
               </div>
-              <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
-                <span className="material-symbols-outlined" aria-hidden="true">route</span>
-              </span>
+              <p className="shrink-0 text-right text-xs font-bold text-[var(--color-academy-muted)]">
+                <span className="block">{route.vehicle?.name || "차량 미지정"}</span>
+                <span className="block tabular-nums">{route.passengerCount}명</span>
+              </p>
             </div>
-            <ol className="mt-4 space-y-3">
+            <ol className="mt-2 space-y-2">
               {route.stops.map((stop, index) => {
                 const url = mapUrl(stop.latitude, stop.longitude, stop.name);
                 // 관리자가 확정한 시각(UTC 저장)을 한국시간으로 바꿔 기사에게 보여준다.
                 const plannedTime = confirmedTimeLabel(stop.plannedAt);
                 const hasPlannedTime = plannedTime !== "시간 미정";
                 return (
-                  <li key={stop.id} className="rounded-2xl bg-gray-50 p-3 dark:bg-gray-950">
+                  <li key={stop.id} className="rounded-lg bg-[var(--color-academy-soft)] p-2">
                     <div className="flex items-start gap-3">
                       <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gray-950 text-sm font-black text-white dark:bg-white dark:text-gray-950">{index + 1}</span>
                       <div className="min-w-0 flex-1">
@@ -293,7 +305,7 @@ function RouteCard({
                             return (
                               <div key={passenger.id} className="rounded-2xl bg-white p-2 dark:bg-gray-900">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="min-w-0 truncate text-sm font-black text-gray-800 dark:text-gray-100">
+                                  <span className="min-w-0 break-keep text-sm font-black text-gray-800 dark:text-gray-100">
                                     {passenger.studentNameSnapshot || "학생"}
                                   </span>
                                   <RideStatusPill status={rideStatus} />
@@ -396,30 +408,75 @@ function RideStatusPill({ status }: { status: RideStatus }) {
   return <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-black ${color}`}>{label}</span>;
 }
 
-function StatusCard({
+// 예정·확인 필요 노선 한 줄 행: (날짜) | 등원/하원 | 노선 이름 | 인원(오른쪽)
+function RouteSummaryRow({ route, onOpen, showDate = false }: { route: Route; onOpen: (routeId: string) => void; showDate?: boolean }) {
+  function handleKeyDown(event: KeyboardEvent<HTMLLIElement>) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpen(route.id);
+    }
+  }
+  return (
+    <li
+      role="button"
+      tabIndex={0}
+      aria-label={`${route.name} 노선 상세`}
+      onClick={() => onOpen(route.id)}
+      onKeyDown={handleKeyDown}
+      className="flex min-h-12 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
+    >
+      {showDate && <span className="shrink-0 text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{formatRouteDate(route.serviceDate)}</span>}
+      <DirectionBadge direction={route.direction} />
+      {/* 노선 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
+      <span className="min-w-0 flex-1 break-keep text-sm font-black">{route.name}</span>
+      <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{route.passengerCount}명</span>
+      <span aria-hidden="true" className="material-symbols-outlined shrink-0 text-lg text-[var(--color-academy-muted)]">chevron_right</span>
+    </li>
+  );
+}
+
+function DirectionBadge({ direction }: { direction: Direction }) {
+  return (
+    <span className="shrink-0 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--brand-accent)]">
+      {direction === "PICKUP" ? "등원" : "하원"}
+    </span>
+  );
+}
+
+// 예정 노선을 운행 날짜별로 묶는다(가까운 날짜 먼저). 날짜 키는 오늘/예정 분류와 같은 routeDateKey 를 써서 기준이 어긋나지 않게 한다.
+function groupRoutesByDate(routes: Route[]) {
+  const groups = new Map<string, Route[]>();
+  for (const route of routes) {
+    const key = routeDateKey(route.serviceDate) ?? "";
+    groups.set(key, [...(groups.get(key) ?? []), route]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, items]) => ({ key, label: formatRouteDate(items[0].serviceDate), routes: items }));
+}
+
+function SummaryItem({
   label,
   value,
   tone = "neutral",
-  compact = false,
 }: {
   label: string;
   value: string;
   tone?: "neutral" | "success" | "warning" | "danger";
-  compact?: boolean;
 }) {
   const toneClass =
     tone === "success"
-      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+      ? "text-[var(--color-academy-success)]"
       : tone === "warning"
-        ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+        ? "text-[var(--color-academy-warning)]"
         : tone === "danger"
-          ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200"
-          : "bg-white text-gray-900 dark:bg-gray-900 dark:text-white";
+          ? "text-[var(--color-academy-danger)]"
+          : "text-[var(--color-academy-ink)]";
 
   return (
-    <div className={`rounded-2xl p-4 shadow-sm ${toneClass}`}>
-      <p className={`font-bold opacity-70 ${compact ? "text-[11px]" : "text-xs"}`}>{label}</p>
-      <p className={`mt-2 font-black ${compact ? "text-base" : "text-lg"}`}>{value}</p>
-    </div>
+    <p className="text-[var(--color-academy-muted)]">
+      {label} <strong className={`ml-0.5 font-black tabular-nums ${toneClass}`}>{value}</strong>
+    </p>
   );
 }

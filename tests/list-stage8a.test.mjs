@@ -82,3 +82,21 @@ test("선생님 홈: 남은·완료 수업은 한 줄 행 + 시트, 시작 잠�
   assert.match(homeClient, /이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까\?/);
   assert.match(homeClient, /createStaffClassNotice\(\{ classId: noticeTarget\.id/);
 });
+
+const shuttleClient = read("../src/app/staff/shuttle/StaffShuttleDashboardClient.tsx");
+
+test("선생님 셔틀: 상단은 제목 1줄 + 요약 1줄, 예정 노선은 날짜별 한 줄 행 + 시트, 오늘 운행 탑승 체크는 그대로", () => {
+  assert.doesNotMatch(shuttleClient, /academy-hero/);
+  assert.match(shuttleClient, /<section aria-label="오늘 운행 요약"/);
+  // 오늘 노선만 탑승 체크(운행 동작은 그대로)
+  assert.match(shuttleClient, /todayRoutes\.map\(\(route\) => \(\s*<RouteCard key=\{route\.id\} route=\{route\} rideStatuses=\{rideStatuses\} onStatusChange=\{handleStatusChange\} onMutationStateChange=\{handleMutationStateChange\} canCheckRideStatus \/>/);
+  // 예정 노선: 날짜별 묶음(오늘/예정 분류와 같은 날짜 키), 행 탭 → 시트 안에 기존 노선 카드(체크 없이)
+  assert.match(shuttleClient, /function groupRoutesByDate[\s\S]*?routeDateKey\(route\.serviceDate\)/);
+  assert.match(shuttleClient, /<RouteSummaryRow key=\{route\.id\} route=\{route\} onOpen=\{setDetailRouteId\} \/>/);
+  assert.match(shuttleClient, /<ListDetailPanel onClose=\{\(\) => setDetailRouteId\(null\)\} titleId="staff-route-detail-title"/);
+  assert.match(shuttleClient, /<RouteCard route=\{detailRoute\} rideStatuses=\{rideStatuses\} onStatusChange=\{handleStatusChange\} \/>/);
+  assert.match(shuttleClient, /function RouteSummaryRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  // 인원은 오른쪽·tabular-nums, 승객 이름 말줄임 제거
+  assert.match(shuttleClient, /text-right text-xs font-bold tabular-nums[^"]*">\{route\.passengerCount\}명/);
+  assert.doesNotMatch(shuttleClient, /\btruncate\b|text-ellipsis|line-clamp/);
+});
