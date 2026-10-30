@@ -125,3 +125,30 @@ test("P-06 홈 섹션 제목은 왼쪽 정렬 22px 하나, 영문 라벨 없음 
   assert.match(homeCss, /\.public-process h2\{font-size:1\.375rem/);
   assert.match(homeCss, /\.public-cta h2\{font-size:1\.375rem/);
 });
+
+test("P-07 /schedule 필터는 버튼 하나 + 모달(모바일 하단 시트), 칩 줄·중복 필터 카드 없음", () => {
+  const src = read("src/app/schedule/ScheduleClient.tsx");
+  assert.doesNotMatch(src, /public-filter-row/);
+  assert.doesNotMatch(src, /프로그램 필터<\/p>/); // 옛 중복 «프로그램 필터» 카드
+  assert.match(src, /aria-haspopup="dialog"/);
+  assert.match(src, /selectedProgram \? "필터 1" : "필터"/);
+  assert.match(src, /role="dialog" aria-modal="true" aria-label="프로그램 필터"/);
+  assert.match(src, /items-end justify-center sm:items-center/); // 모바일 하단 시트
+  assert.ok(src.includes(">초기화</button>") && src.includes(">적용</a>"));
+  // 기능 보존: 같은 주소로 필터, 카드/표 전환, 투어 표적
+  assert.ok(src.includes("`/schedule?program=${pendingProgramId}`"));
+  assert.ok(src.includes('searchParams.get("program")'));
+  assert.match(src, /setViewMode\("card"\)/);
+  assert.match(src, /setViewMode\("table"\)/);
+  assert.equal(src.match(/flex min-h-11 items-center gap-1 px-4 text-xs/g)?.length, 2);
+  assert.ok(src.includes('data-tour-target="schedule-grid"'));
+});
+
+test("P-12·P-13 /schedule 빈 상태는 한 줄 + 전화 링크, 마감 배지는 12px", () => {
+  const src = read("src/app/schedule/ScheduleClient.tsx");
+  assert.match(src, /className="py-6 text-center text-sm/);
+  assert.match(src, /href=\{`tel:\$\{phone\.replace\(\/-\/g, ""\)\}`\}/);
+  assert.doesNotMatch(src, /py-20 text-gray-400 bg-white/);
+  assert.doesNotMatch(src, /text-\[10px\][^"]*">마감/);
+  assert.match(src, /text-xs leading-none bg-red-50 text-red-500 font-black px-1\.5 py-0\.5 rounded uppercase">마감/);
+});
