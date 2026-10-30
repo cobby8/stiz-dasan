@@ -135,3 +135,17 @@ test("스태프 관리: 표 3개 모두 한 줄(말줄임 제거), 초대는 ⚡
   // 패널은 표에 없는 이메일·가입일까지
   assert.match(source, /detailUser\.email/);
 });
+
+test("코치 관리: 사진 큰 행 → 한 줄 표(끌어 옮기기 유지), 소개 전문은 패널, 수정 폼은 그대로", () => {
+  const source = read("../src/app/admin/coaches/CoachesAdminClient.tsx");
+  assertListStandard(source, "코치");
+  // 끌어서 순서 바꾸기는 표의 행에 그대로
+  assert.match(source, /<tr\s+draggable\s+onDragStart=\{\(e\) => onDragStart\(e, i\)\}/);
+  assert.match(source, /reorderCoaches\(next\.map\(\(c\) => c\.id\)\)/);
+  // 예전 ⚡ 의 수정·삭제(확인창) 그대로
+  assert.match(source, /onSelect: \(\) => editId === coach\.id \? cancelEdit\(\) : startEdit\(coach\)/);
+  assert.match(source, /window\.confirm\(`"\$\{coach\.name\}" 강사를 삭제할까요\?`\)/);
+  // 인라인 수정 폼은 행 아래 펼침 칸에 그대로
+  assert.match(source, /<td colSpan=\{7\} className="p-0">[\s\S]*?코치 정보 수정[\s\S]*?onClick=\{\(\) => handleUpdate\(coach\.id\)\}/);
+  assert.match(source, /<CoachPhoto url=\{coach\.imageUrl\} name=\{coach\.name\} size="sm" \/>/);
+});
