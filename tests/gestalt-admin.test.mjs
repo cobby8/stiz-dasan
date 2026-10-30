@@ -18,7 +18,7 @@ test("C-A1 ⚡ 메뉴: 위험 항목은 구분선 아래로 모이고 학원 위
   // 일반 항목이 위험 항목보다 먼저 그려진다
   assert.ok(quickMenu.indexOf("{safe.map(renderAction)}") < quickMenu.indexOf("{danger.map(renderAction)}"));
   assert.match(quickMenu, /text-\[var\(--color-academy-danger\)\]/);
-  assert.doesNotMatch(quickMenu, /text-red-700|bg-red-50b/);
+  assert.doesNotMatch(quickMenu, /text-red-700|bg-red-50(?!0)/);
 });
 
 test("C-A1 ⚡ 메뉴: primary 는 흰 글씨, 항목 44px, 대상 이름 줄, 누르는 영역 44px", () => {
