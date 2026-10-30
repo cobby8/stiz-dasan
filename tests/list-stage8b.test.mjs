@@ -97,3 +97,42 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
   assert.match(source, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]*?이 날짜로 예약/);
   assert.match(source, /onClick=\{\(\) => cancel\(c\.id\)\}/);
 });
+
+test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(오늘/이번 주/다음 주/이후)의 한 줄 행이고 신고 흐름은 그대로다", () => {
+  const groups = compileModule("src/components/admin/list/upcomingDateGroups.ts", { "@/lib/datetime/kst": kst });
+  const Absence = compileModule("src/app/mypage/regular-absence/RegularAbsenceClient.tsx", {
+    "next/link": { default: Link },
+    "@/components/admin/list/upcomingDateGroups": groups,
+    "@/lib/datetime/kst": kst,
+  }).default;
+  const today = kst.todayKst();
+  const date = (offset, extra = {}) => {
+    const ymd = kst.addDaysKst(today, offset);
+    return { studentId: "s1", studentName: "합성", classId: "c1", className: "초등 저학년반", date: ymd, dateLabel: kst.kstLabel(ymd), startTime: "16:00", reason: null, reasonLabel: null, status: null, reported: false, locked: false, ...extra };
+  };
+  const html = renderToStaticMarkup(React.createElement(Absence, {
+    initial: [{ studentId: "s1", studentName: "합성", classes: [{ classId: "c1", className: "초등 저학년반", dayOfWeek: "Mon", startTime: "16:00", dates: [
+      date(0, { reported: true, reasonLabel: "개인 사정", reason: "PERSONAL", status: "REPORTED" }),
+      date(30, { locked: true, reported: true, reasonLabel: "질병/부상", reason: "ILLNESS_INJURY", status: "CONFIRMED" }),
+    ] }] }],
+    makeups: [{ id: "m1", studentName: "합성", originalClassName: "초등 저학년반", originalDateLabel: "10/1(목)", makeupClassName: "초등 고학년반", makeupDateLabel: "11/5(목)", status: "SCHEDULED", statusLabel: "예정" }],
+  }));
+  assert.match(html, /aria-label="합성 오늘"/);
+  assert.match(html, /aria-label="합성 이후"/);
+  assert.match(html, />결석 신고됨<\/span><span class="text-xs[^"]*">개인 사정</);
+  assert.match(html, /확정됨<\/span><span class="text-xs[^"]*">질병\/부상</);
+  assert.doesNotMatch(html, /확정됨 · |결석 신고됨 · |초등 고학년반 · 11\/5/);
+  assert.match(html, />신고 취소</);
+  assert.match(html, /학원 확정 \(변경은 문의\)/);
+  assert.match(html, /\(결석: 초등 저학년반 10\/1\(목\)\)/);
+
+  const source = read("src/app/mypage/regular-absence/RegularAbsenceClient.tsx");
+  assert.match(source, /groupByUpcomingDate\(child\.classes\.flatMap\(\(cl\) => cl\.dates\), \(d\) => d\.date, today, DATE_GROUP_LABELS\)/);
+  assert.match(source, /const today = todayKst\(\);/);
+  assert.doesNotMatch(source, /min-h-9/, "버튼·선택칸은 터치 44px");
+  // 신고 = «결석 신고»로 폼 열기 → 사유 선택 → «신고하기» (기존 단계 보존)
+  assert.match(source, /onClick=\{\(\) => setOpenKey\(key\)\}/);
+  assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
+  assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
+  assert.match(source, /onClick=\{\(\) => cancel\(d\)\}/);
+});
