@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 
 /**
@@ -85,6 +85,7 @@ export default function AdminConfirmDialog({
  */
 export function useAdminConfirm() {
     const [options, setOptions] = useState<AdminConfirmOptions | null>(null);
+    const titleId = useId(); // 한 화면에 훅을 둘 써도 제목 id 가 겹치지 않게
     const resolverRef = useRef<((value: boolean) => void) | null>(null);
 
     const confirm = useCallback((next: AdminConfirmOptions) => {
@@ -105,7 +106,7 @@ export function useAdminConfirm() {
     const confirmDialog = options ? (
         <AdminConfirmDialog
             {...options}
-            titleId="admin-confirm-dialog-title"
+            titleId={titleId}
             onConfirm={() => settle(true)}
             onCancel={() => settle(false)}
         />

@@ -336,7 +336,13 @@ function DashboardContent({
 
             <div className="grid items-start gap-2 sm:grid-cols-2">
             <details className="academy-panel px-4 py-2 [&[open]]:col-span-full">
-                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">운영 현황</summary>
+                <summary className="min-h-11 cursor-pointer content-center text-sm font-bold text-[var(--color-academy-ink)]">
+                    운영 현황
+                    {/* 게슈탈트 A-13: 접힌 채로도 미납 건수가 보이게(상세를 불러온 뒤에만 — 첫 응답엔 값이 없다) */}
+                    {detailsLoaded && extendedStats.unpaidCount > 0 && (
+                        <span className="ml-2 rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-academy-danger)]">미납 {extendedStats.unpaidCount}건</span>
+                    )}
+                </summary>
                 <div className="mt-5 space-y-5">
                     {/* 미조회 값의 0과 빈 배열은 실제 현황으로 보여주지 않는다. */}
                     {detailsError && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">상세 운영 현황을 불러오지 못했습니다. 현재 표시 중인 정보는 유지됩니다. 다시 불러와 주세요.</p>}

@@ -82,9 +82,13 @@ export default function AdminQuickActionMenu({
         const rect = button.getBoundingClientRect();
         // 실제로 그려지는 줄(대상 이름 + 일반 + 구분선 + 위험)과 같은 높이로 계산해야 화면 밖으로 안 나간다
         const hasDivider = dangerCount > 0 && dangerCount < actionCount;
-        const menuHeight = Math.max(
-            64,
-            HEADER_HEIGHT + actionCount * ACTION_HEIGHT + (hasDivider ? DIVIDER_HEIGHT : 0) + MENU_PADDING,
+        // 화면보다 높으면 화면 높이로 자르고 메뉴 안에서 스크롤한다(낮은 화면에서 위쪽이 잘리지 않게)
+        const menuHeight = Math.min(
+            Math.max(
+                64,
+                HEADER_HEIGHT + actionCount * ACTION_HEIGHT + (hasDivider ? DIVIDER_HEIGHT : 0) + MENU_PADDING,
+            ),
+            window.innerHeight - 2 * MENU_MARGIN,
         );
         const preferredLeft = rect.left - MENU_WIDTH - 10;
         const fallbackRight = rect.right + 10;
@@ -185,7 +189,7 @@ export default function AdminQuickActionMenu({
                         top: position?.top ?? 0,
                         left: position?.left ?? 0,
                     }}
-                    className="fixed z-[90] flex w-[200px] -translate-y-1/2 flex-col gap-1 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-2 shadow-2xl"
+                    className="fixed z-[90] flex max-h-[calc(100dvh-24px)] w-[200px] -translate-y-1/2 flex-col gap-1 overflow-y-auto rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-2 shadow-2xl"
                 >
                     {/* 맨 위 대상 이름 — 어느 행의 메뉴인지 확인하고 누르게 */}
                     <p className="truncate px-1 pb-1 text-xs font-bold text-[var(--color-academy-muted)]" title={label}>{label}</p>
