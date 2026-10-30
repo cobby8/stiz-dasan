@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { SerializedEvent } from "./AnnualEventsClient";
 import { usePublicOverlayOpen } from "@/components/public-floating";
+import { kstDow, kstHm, toKstYmd } from "@/lib/datetime/kst";
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; dot: string; border: string }> = {
     대회: { bg: "bg-orange-50", text: "text-orange-700", dot: "bg-orange-500", border: "border-orange-200" },
@@ -12,16 +13,15 @@ const CATEGORY_STYLES: Record<string, { bg: string; text: string; dot: string; b
     일반: { bg: "bg-green-50", text: "text-green-700", dot: "bg-green-500", border: "border-green-200" },
 };
 
-function formatDate(isoString: string, isAllDay: boolean): string {
-    const d = new Date(isoString);
-    const month = d.getMonth() + 1;
-    const day = d.getDate();
+// 일정 날짜·시각은 기기 시간대가 아니라 KST 달력으로 읽는다(해외 기기·서버 렌더에서도 같은 글자).
+export function formatDate(isoString: string, isAllDay: boolean): string {
+    const ymd = toKstYmd(isoString); // "YYYY-MM-DD" (KST)
+    if (!ymd) return "";
+    const [, month, day] = ymd.split("-").map(Number);
     const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
-    const dow = weekdays[d.getDay()];
+    const dow = weekdays[kstDow(ymd)];
     if (isAllDay) return `${month}월 ${day}일 (${dow})`;
-    const hh = d.getHours().toString().padStart(2, "0");
-    const mm = d.getMinutes().toString().padStart(2, "0");
-    return `${month}월 ${day}일 (${dow}) ${hh}:${mm}`;
+    return `${month}월 ${day}일 (${dow}) ${kstHm(isoString)}`;
 }
 
 interface Props {

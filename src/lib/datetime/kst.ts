@@ -110,6 +110,18 @@ export function kstLabel(value: Date | string | number): string {
   return `${Number(m[2])}/${Number(m[3])}(${DOW_KO[kstDow(ymd)]})`;
 }
 
+// 24시간제 "HH:MM". hourCycle 을 못 박아야 자정이 "24:05" 로 나오는 엔진 차이를 피한다.
+const HM_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+});
+
+/** 어떤 시각이든 KST 시각 "HH:MM"(24시간제)으로. 잘못된 입력은 "". */
+export function kstHm(value: Date | string | number): string {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return HM_FORMAT.format(d);
+}
+
 /** 공개 화면의 게시일. 서버·휴대폰 시간대가 달라도 같은 한국 날짜를 표시한다. */
 export function formatKstDate(
   value: Date | string | number | null | undefined,
