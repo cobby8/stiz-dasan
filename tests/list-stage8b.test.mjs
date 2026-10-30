@@ -223,3 +223,15 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.match(source, /onClick=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
   assert.match(source, /신고하면 그날 셔틀 배차에서도 자동 제외됩니다\./);
 });
+
+test("가족 연결의 받은 요청·보낸 요청 행은 요소로 나뉘고 상태 칩·요청일(오른쪽)을 보이며 승인 확인 단계는 그대로다", () => {
+  const source = read("src/app/mypage/children/ChildConnectionsClient.tsx");
+  assert.doesNotMatch(source, /<\/b> · \{row\.requesterName/, "«자녀 · 요청자 · 연락처» 이어 붙인 글은 요소로 나눴다");
+  assert.match(source, /<span className="ml-auto text-right tabular-nums[^"]*">\{kstLabel\(row\.createdAt\)\}<\/span>/);
+  assert.match(source, /className="flex min-h-11 items-center gap-2 py-2 text-sm"/);
+  // 승인·거절은 «검토» → 확인 문구 → 최종 버튼 2단계 그대로, 요청 취소도 그대로
+  assert.match(source, /setDecision\(\{ id: row\.id, decision: "APPROVE" \}\)\}>승인 검토</);
+  assert.match(source, /onClick=\{resolveRequest\}[\s\S]*?가족 연결 승인/);
+  assert.match(source, /childLinkRequest\(\{ action: "cancel", requestId: row\.id \}\)/);
+  assert.equal(kst.kstLabel("2026-10-29T16:30:00.000Z"), "10/30(금)", "KST 자정 넘긴 요청은 다음 날로");
+});
