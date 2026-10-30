@@ -39,6 +39,8 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         return testModule.exports;
     }
     const photos = compile("src/lib/sessionPhotoEntries.ts");
+    // 수업 날짜 표시는 순수 모듈 kst(외부 의존 0)를 실제로 돌린다.
+    const kst = compile("src/lib/datetime/kst.ts");
     const privatePhoto = { id: "photo-private", type: "image", url: "https://invalid.example/private-leak.jpg", storageBucket: "staff-session-private", storagePath: "class/session/photo.jpg", visibility: "PRIVATE" };
 
     async function render({ user = true, parentId = "parent-own", published = true, children = [{ id: "child-own", name: "합성 학생" }], attendances = [{ studentId: "child-own", student_name: "합성 학생", status: "PRESENT" }], media = "[]" } = {}) {
@@ -54,6 +56,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
             "next/link": { default: ({ children, ...props }) => React.createElement("a", props, children), __esModule: true },
             "@/components/parent/ReportPhoto": { default: Photo, __esModule: true },
             "@/lib/sessionPhotoEntries": photos,
+            "@/lib/datetime/kst": kst,
         }).default;
         let tree;
         try { tree = await Page({ params: Promise.resolve({ sessionId: "session-fixture" }) }); }

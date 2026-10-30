@@ -7,6 +7,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import Link from "next/link";
 import ReportPhoto from "@/components/parent/ReportPhoto";
 import { toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 // 학부모 리포트 상세는 실시간 데이터 필요 (보안 체크)
 export const dynamic = "force-dynamic";
@@ -107,8 +108,8 @@ export default async function ParentReportDetailPage({
     // 사진 파싱
     const photos = toSessionReportPhotoViews(session.photosJSON ?? session.photosjson, sessionId);
 
-    // 날짜 포맷
-    const dateStr = new Date(session.date).toLocaleDateString("ko-KR", {
+    // 날짜 포맷 — 서버(UTC)가 그리므로 KST 로 못 박는다(새벽 수업이 전날로 보이지 않게).
+    const dateStr = formatKstDate(session.date, {
         year: "numeric", month: "long", day: "numeric", weekday: "short",
     });
 
