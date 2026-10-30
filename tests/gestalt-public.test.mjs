@@ -152,3 +152,17 @@ test("P-12·P-13 /schedule 빈 상태는 한 줄 + 전화 링크, 마감 배지�
   assert.doesNotMatch(src, /text-\[10px\][^"]*">마감/);
   assert.match(src, /text-xs leading-none bg-red-50 text-red-500 font-black px-1\.5 py-0\.5 rounded uppercase">마감/);
 });
+
+test("P-09·P-12 /notices 목록은 한 줄 행(약 52px), 미리보기·썸네일 없음, 빈 상태 한 줄 + 전화", () => {
+  const src = read("src/app/notices/page.tsx");
+  assert.match(src, /flex min-h-\[52px\] items-center gap-2 px-4/);
+  assert.doesNotMatch(src, /stripHtmlForPreview|line-clamp-2|firstImage|w-16 h-16/);
+  assert.match(src, /from "@\/lib\/datetime\/kst"/);
+  assert.match(src, /dateTime=\{toKstYmd\(n\.createdAt\) \|\| undefined\}/);
+  assert.match(src, /className="py-6 text-center text-sm/);
+  assert.match(src, /href=\{`tel:\$\{phone\.replace\(\/-\/g, ""\)\}`\}/);
+  // 기능 보존: 상세 링크, 전체 대상 공지만, 중요(고정) 표시
+  assert.ok(src.includes("href={`/notices/${n.id}`}"));
+  assert.ok(src.includes('n.targetType === "ALL"'));
+  assert.ok(src.includes("n.isPinned &&"));
+});

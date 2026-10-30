@@ -73,10 +73,10 @@ test("공지 목록의 월/일과 모바일 날짜·상세 게시일이 같은 �
   const Detail = loadPage("app/notices/[id]/page.tsx");
   const list = renderToStaticMarkup(await List());
   const detail = renderToStaticMarkup(await Detail({ params: Promise.resolve({ id: notice.id }) }));
-  assert.match(list, />10월</);
-  assert.match(list, />22</);
-  assert.match(list, /class="text-\[10px\] leading-3 text-gray-400">2026년</);
-  assert.match(list, /2026\. 10\. 22\./);
+  // 게슈탈트 P-09: 목록은 홈 공지와 같은 한 줄 행 — 날짜 상자 대신 «2026년 10월 22일» 한 칸, 미리보기 없음
+  assert.match(list, /2026년 10월 22일/);
+  assert.match(list, /dateTime="2026-10-22"/);
+  assert.doesNotMatch(list, /공개 내용/);
   assert.match(detail, /2026년 10월 22일/);
   assert.match(detail, /공지 내용은 게시 당시 기준입니다\./);
   assert.match(detail, /href="\/schedule"/);
