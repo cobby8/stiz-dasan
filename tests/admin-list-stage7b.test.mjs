@@ -163,3 +163,28 @@ test("갤러리: 사진 카드 제목은 말줄임 없이, 작성일은 KST 달�
   assert.match(gallery, /onClick=\{\(\) => handleDelete\(post\.id\)\}\s*className="flex min-h-11/);
   assert.match(gallery, /xl:grid-cols-4/);
 });
+
+// ── 방학특강 신청 목록(ApplicationsView) — 열 머리 정렬·제외, 일괄 선택, 서버 상태 필터, 상세 서랍은 그대로 ──
+const seasonal = read("../src/app/admin/seasonal/SeasonalAdminClient.tsx");
+
+test("특강 신청: 한 줄 표(칸 안 여러 줄 없음), 금액·접수일 오른쪽, 접수일은 KST 모듈", () => {
+  const table = listTable(seasonal);
+  assert.doesNotMatch(table, /<p[ >]|truncate|line-clamp/);
+  assert.match(table, /admin-cell-num[^"]*">\{\(application\.totalAmount \?\? 0\)\.toLocaleString\(\)\}원/);
+  assert.match(table, /admin-cell-num[^"]*">\{application\.createdAt \? kstLabel\(application\.createdAt\) : "미정"\}/);
+  assert.match(seasonal, /import \{ kstLabel \} from "@\/lib\/datetime\/kst"/);
+  // 안내 상태는 같은 우선순위 함수로 한 칸에
+  assert.match(table, /notificationStatus\(latestApplicationNotification\(application\)\)/);
+});
+
+test("특강 신청: 행 클릭 = 기존 상세 서랍(onSelect), 키보드 가드, 체크박스·전화·상세 버튼 전파 차단, 일괄 선택 그대로", () => {
+  const table = listTable(seasonal);
+  assert.match(table, /onClick=\{\(\) => onSelect\(application\)\}\s*onKeyDown=\{\(event\) => handleRowKeyDown\(event, application\)\}/);
+  assert.match(seasonal, /function handleRowKeyDown\(event: React\.KeyboardEvent<HTMLElement>, application: Application\) \{\s*if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(table, /<td className="px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*<input/);
+  assert.match(table, /href=\{`tel:\$\{application\.parentPhone\}`\} onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(table, /onChange=\{\(event\) => onToggleApplication\(application, event\.target\.checked\)\}/);
+  assert.match(table, /onChange=\{\(event\) => onToggleAll\(event\.target\.checked\)\}/);
+  // 열 머리 정렬·제외 팝오버 8개(학생·구분·수업·횟수·학부모·결제·셔틀·접수일) 그대로
+  assert.equal((table.match(/<ColHeader /g) || []).length, 8);
+});

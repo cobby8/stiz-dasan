@@ -6,6 +6,7 @@ import CompactListFilters from "@/components/academy/CompactListFilters";
 import SeasonalHeader from "./SeasonalHeader";
 import { createCsv, createSafeCsvFilename, maskPhoneNumber } from "@/lib/seasonal/roster-export";
 import { seoulDateTimeToIso } from "./seasonalDateTime";
+import { kstLabel } from "@/lib/datetime/kst";
 
 type SeasonStatus = "DRAFT" | "PUBLISHED" | "CLOSED" | "ARCHIVED";
 type ItemStatus = "PENDING" | "APPROVED" | "WAITLISTED" | "REJECTED" | "CANCELLED";
@@ -1725,6 +1726,14 @@ function ApplicationsView({
   }, [applications, exType, exBase, exFreq, exPay, exShuttle, sort]);
   const toggleOpen = (col: string) => setOpenCol((c) => (c === col ? null : col));
   const sortFor = (key: "name" | "parent" | "createdAt") => (dir: "asc" | "desc") => { setSort({ key, dir }); setOpenCol(null); };
+  // 행 키보드: 안쪽 체크박스·링크·버튼에서 누른 Enter/Space 는 가로채지 않는다
+  function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, application: Application) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(application);
+    }
+  }
 
   return <div className="space-y-4">
     <label className="print:hidden inline-flex items-center gap-2 text-sm font-bold text-[var(--color-academy-muted)]">보기<select aria-label="신청 관리 보기" value={mode} onChange={(event) => onMode(event.target.value as ApplicationsMode)} className="h-11 min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px] text-[var(--color-academy-ink)]"><option value="applications">신청별</option><option value="roster">반별 명단</option></select></label>
@@ -1771,10 +1780,12 @@ function ApplicationsView({
     )}
 
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1080px] text-left text-sm">
-        <thead className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800">
-          <tr className="align-top">
-            <th className="w-12 px-4 py-3">
+      {/* 한 줄 행(목록 개편 7단계): 칸 안의 두세 줄(학생+학년·학교, 학부모+전화+안내, 결제+금액)을 칸별로 나눴다.
+          글자 왼쪽·금액/날짜 오른쪽(admin-cell-num), 말줄임 없음(좁으면 가로 스크롤). 행 클릭 = 기존 상세 서랍 */}
+      <table className="admin-list-table w-full border-collapse text-sm">
+        <thead className="bg-[var(--color-academy-soft)] text-xs text-[var(--color-academy-muted)]">
+          <tr>
+            <th className="px-2 py-2">
               <input
                 type="checkbox"
                 aria-label="현재 목록 전체 선택"
@@ -1784,50 +1795,64 @@ function ApplicationsView({
                 className="h-5 w-5 rounded border-gray-300 accent-[var(--brand-accent)]"
               />
             </th>
-            <th className="px-4 py-3">
+            <th className="px-2 py-2">
               <ColHeader title="학생" open={openCol === "name"} onToggleOpen={() => toggleOpen("name")} active={sort.key === "name"}
                 sortDir={sort.key === "name" ? sort.dir : null} onSort={sortFor("name")} />
             </th>
-            <th className="px-4 py-3">
+            <th className="hidden px-2 py-2 lg:table-cell">학년·학교</th>
+            <th className="px-2 py-2">
               <ColHeader title="구분" open={openCol === "type"} onToggleOpen={() => toggleOpen("type")} active={exType.size > 0}
                 options={typeOptions} excluded={exType} onToggleValue={toggleEx(setExType)} onAll={() => setExType(new Set())} onNone={() => setExType(new Set(typeOptions))} />
             </th>
-            <th className="px-4 py-3">
+            <th className="px-2 py-2">
               <ColHeader title="수업" open={openCol === "base"} onToggleOpen={() => toggleOpen("base")} active={exBase.size > 0}
                 options={baseOptions} excluded={exBase} onToggleValue={toggleEx(setExBase)} onAll={() => setExBase(new Set())} onNone={() => setExBase(new Set(baseOptions))} />
             </th>
-            <th className="px-4 py-3">
+            <th className="px-2 py-2">상태</th>
+            <th className="px-2 py-2">
               <ColHeader title="횟수" open={openCol === "freq"} onToggleOpen={() => toggleOpen("freq")} active={exFreq.size > 0}
                 options={freqOptions} excluded={exFreq} onToggleValue={toggleEx(setExFreq)} onAll={() => setExFreq(new Set())} onNone={() => setExFreq(new Set(freqOptions))} />
             </th>
-            <th className="px-4 py-3">
+            <th className="px-2 py-2">
               <ColHeader title="학부모" open={openCol === "parent"} onToggleOpen={() => toggleOpen("parent")} active={sort.key === "parent"}
                 sortDir={sort.key === "parent" ? sort.dir : null} onSort={sortFor("parent")} />
             </th>
-            <th className="px-4 py-3">
+            <th className="admin-cell-num hidden px-2 py-2 md:table-cell">연락처</th>
+            <th className="hidden px-2 py-2 xl:table-cell">안내</th>
+            <th className="px-2 py-2">
               <ColHeader title="결제" open={openCol === "pay"} onToggleOpen={() => toggleOpen("pay")} active={exPay.size > 0}
                 options={payOptions} excluded={exPay} onToggleValue={toggleEx(setExPay)} onAll={() => setExPay(new Set())} onNone={() => setExPay(new Set(payOptions))} />
             </th>
-            <th className="px-4 py-3">
+            <th className="admin-cell-num hidden px-2 py-2 md:table-cell">금액</th>
+            <th className="px-2 py-2">
               <ColHeader title="셔틀" open={openCol === "shuttle"} onToggleOpen={() => toggleOpen("shuttle")} active={exShuttle.size > 0} alignRight
                 options={shuttleOptions} excluded={exShuttle} onToggleValue={toggleEx(setExShuttle)} onAll={() => setExShuttle(new Set())} onNone={() => setExShuttle(new Set(shuttleOptions))} />
             </th>
-            <th className="px-4 py-3">
+            <th className="admin-cell-num px-2 py-2">
               <ColHeader title="접수일" open={openCol === "createdAt"} onToggleOpen={() => toggleOpen("createdAt")} active={sort.key === "createdAt"} alignRight
                 sortDir={sort.key === "createdAt" ? sort.dir : null} onSort={sortFor("createdAt")} />
             </th>
-            <th className="px-4 py-3"><span className="sr-only">상세</span></th>
+            <th className="admin-cell-center px-2 py-2"><span className="sr-only">상세</span></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        <tbody className="divide-y divide-[var(--color-academy-line)]">
           {displayApplications.map((application) => {
             const itemIds = application.items.map((item) => item.id);
             const selectedCount = itemIds.filter((itemId) => selectedItemIdSet.has(itemId)).length;
             const checked = itemIds.length > 0 && selectedCount === itemIds.length;
             const classInfo = applicationClassInfo(application.items);
+            const notice = notificationStatus(latestApplicationNotification(application));
             return (
-              <tr key={application.id} className={checked ? "bg-[var(--brand-accent-soft)]/60 dark:bg-gray-800" : "hover:bg-gray-50 dark:hover:bg-gray-800/50"}>
-                <td className="px-4 py-4 align-top">
+              <tr
+                key={application.id}
+                tabIndex={0}
+                aria-label={`${application.childName} 신청 상세 보기`}
+                onClick={() => onSelect(application)}
+                onKeyDown={(event) => handleRowKeyDown(event, application)}
+                className={`cursor-pointer transition-colors focus:bg-[var(--color-academy-primary-soft)] focus:outline-none ${checked ? "bg-[var(--brand-accent-soft)]/60 dark:bg-gray-800" : "hover:bg-[var(--color-academy-soft)]"}`}
+              >
+                {/* 선택 체크박스 — 행 클릭(상세 서랍)과 겹치지 않게 전파 차단 */}
+                <td className="px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                   <input
                     type="checkbox"
                     aria-label={`${application.childName} 신청 선택`}
@@ -1837,48 +1862,55 @@ function ApplicationsView({
                     className="h-5 w-5 rounded border-gray-300 accent-[var(--brand-accent)]"
                   />
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <button type="button" onClick={() => onSelect(application)} className="font-black hover:underline">{application.childName}</button>
-                  <p className="text-xs text-gray-500">{application.childGrade} {application.childSchool}</p>
-                  {selectedCount > 0 && <p className="mt-1 text-xs font-black text-[var(--brand-accent)]">{selectedCount}/{itemIds.length}개 선택</p>}
+                <td className="px-2 py-1.5">
+                  <span className="font-black text-[var(--color-academy-ink)]">{application.childName}</span>
+                  {selectedCount > 0 && <span className="ml-1.5 text-xs font-black tabular-nums text-[var(--brand-accent)]">{selectedCount}/{itemIds.length}개 선택</span>}
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <span className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-black ${application.applicantType === "NEW" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"}`}>{application.applicantType === "NEW" ? "신규" : application.applicantType === "EXISTING" ? "기존" : "-"}</span>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{[application.childGrade, application.childSchool].filter(Boolean).join(" ") || "-"}</td>
+                <td className="px-2 py-1.5">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black ${application.applicantType === "NEW" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"}`}>{application.applicantType === "NEW" ? "신규" : application.applicantType === "EXISTING" ? "기존" : "-"}</span>
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <div className="space-y-0.5 font-bold">
-                    {classInfo.bases.length ? classInfo.bases.map((b) => <p key={b}>{b}</p>) : <p className="text-gray-400">-</p>}
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-1">
+                {/* 수업: 1개면 이름, 여러 개면 «첫 수업 외 N» — 전체는 상세 서랍 */}
+                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                  {classInfo.bases.length === 0 ? <span className="text-[var(--color-academy-muted)]">-</span>
+                    : classInfo.bases.length === 1 ? classInfo.bases[0]
+                    : <>{classInfo.bases[0]} 외 <span className="tabular-nums">{classInfo.bases.length - 1}</span></>}
+                </td>
+                <td className="px-2 py-1.5">
+                  <span className="inline-flex gap-1">
                     {application.items.slice(0,2).map((item) => <span key={item.id} className={badge(item.status)}>{STATUS_LABEL[item.status]}</span>)}
                     {application.items.length > 2 && <span className="inline-flex min-h-7 items-center rounded-full bg-gray-100 px-2.5 text-xs font-bold text-gray-700 dark:bg-gray-700 dark:text-gray-200">+{application.items.length - 2}</span>}
-                  </div>
+                  </span>
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <div className="flex flex-wrap gap-1">
-                    {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-7 items-center rounded-full bg-[var(--brand-accent-soft)] px-2.5 text-xs font-black text-[var(--brand-accent)]">{f}</span>) : <span className="text-gray-400">-</span>}
-                  </div>
+                <td className="px-2 py-1.5">
+                  <span className="inline-flex gap-1">
+                    {classInfo.freqs.length ? classInfo.freqs.map((f) => <span key={f} className="inline-flex min-h-7 items-center rounded-full bg-[var(--brand-accent-soft)] px-2.5 text-xs font-black text-[var(--brand-accent)]">{f}</span>) : <span className="text-[var(--color-academy-muted)]">-</span>}
+                  </span>
                 </td>
-                <td className="px-4 py-4 align-top">
-                  <p className="font-bold">{application.parentName}</p>
-                  <a href={`tel:${application.parentPhone}`} className="text-xs text-[var(--brand-accent)] hover:underline">{application.parentPhone}</a>
-                  <NotificationSummaryText summary={latestApplicationNotification(application)} />
+                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{application.parentName}</td>
+                {/* 전화 걸기 링크 — 행 클릭과 겹치지 않게 전파 차단 */}
+                <td className="admin-cell-num hidden px-2 py-1.5 md:table-cell">
+                  <a href={`tel:${application.parentPhone}`} onClick={(event) => event.stopPropagation()} className="text-[var(--brand-accent)] hover:underline">{application.parentPhone}</a>
                 </td>
-                <td className="px-4 py-4 align-top">
+                {/* 안내 문자 상태(가장 확인이 급한 것 하나) — 시각·재발송은 상세 서랍 */}
+                <td className={`hidden px-2 py-1.5 text-xs font-bold xl:table-cell ${notice.className}`}>{notice.text}</td>
+                <td className="px-2 py-1.5">
                   <span className={badge(application.paymentStatus)}>{STATUS_LABEL[application.paymentStatus || ""] ?? application.paymentStatus ?? "청구 전"}</span>
-                  <p className="mt-1 text-xs">{(application.totalAmount ?? 0).toLocaleString()}원</p>
                 </td>
-                <td className="px-4 py-4 align-top">
+                <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] md:table-cell">{(application.totalAmount ?? 0).toLocaleString()}원</td>
+                <td className="px-2 py-1.5">
                   {application.shuttleNeeded
                     ? <span className="inline-flex min-h-7 items-center rounded-full bg-green-100 px-2.5 text-xs font-black text-green-700 dark:bg-green-900/40 dark:text-green-200">🚌 이용</span>
                     : <span className="inline-flex min-h-7 items-center rounded-full bg-gray-100 px-2.5 text-xs font-black text-gray-500 dark:bg-gray-700 dark:text-gray-300">미이용</span>}
                 </td>
-                <td className="px-4 py-4 align-top text-gray-500">{formatDate(application.createdAt)}</td>
-                <td className="px-4 py-4 align-top"><button type="button" onClick={() => onSelect(application)} className="inline-flex min-h-10 items-center rounded-lg border border-gray-200 px-3 font-bold dark:border-gray-700">상세</button></td>
+                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{application.createdAt ? kstLabel(application.createdAt) : "미정"}</td>
+                <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                  <button type="button" onClick={() => onSelect(application)} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-3 font-bold">상세</button>
+                </td>
               </tr>
             );
           })}
-          {!displayApplications.length && <tr><td colSpan={10}><Empty text="조건에 맞는 신청이 없습니다." /></td></tr>}
+          {!displayApplications.length && <tr><td colSpan={15}><Empty text="조건에 맞는 신청이 없습니다." /></td></tr>}
         </tbody>
       </table>
     </div>
@@ -2560,11 +2592,6 @@ function notificationMutationFailed(result: NotificationMutationResponse) {
     || result.notification?.status === "FAILED"
     || result.notification?.errorCode === "TEMPLATE_DISABLED_OR_MISSING",
   );
-}
-
-function NotificationSummaryText({ summary }: { summary?: NotificationSummary | null }) {
-  const state = notificationStatus(summary);
-  return <p className={`mt-1 text-xs font-bold ${state.className}`}>안내 {state.text}{summary?.updatedAt ? ` · ${formatDateTime(summary.updatedAt)}` : ""}</p>;
 }
 
 function NotificationActionRow({ label, summary, sending, onSend }: { label: string; summary?: NotificationSummary | null; sending: boolean; onSend: () => void }) {
