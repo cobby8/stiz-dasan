@@ -280,7 +280,7 @@ export default function PublicHeader({
             <Link
               href="/about"
               data-tour-target="nav-about"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               학원 소개
             </Link>
@@ -290,7 +290,7 @@ export default function PublicHeader({
               <div key={group.label} className="public-nav-group relative group">
                 {/* 카테고리 라벨 버튼 — hover 시 드롭다운이 열린다 */}
                 <button
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
                 >
                   {group.label}
                   {/* 화살표 — hover 시 회전 */}
@@ -319,7 +319,7 @@ export default function PublicHeader({
             <Link
               href="/shop"
               data-tour-target="nav-shop"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               SHOP
             </Link>
@@ -328,7 +328,7 @@ export default function PublicHeader({
             <Link
               href="/simulator"
               data-tour-target="nav-simulator"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               수업찾기
             </Link>
@@ -372,7 +372,7 @@ export default function PublicHeader({
               ref={mobileMenuTriggerRef}
               data-tour-target="hamburger"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="public-menu-trigger md:hidden p-2 rounded-lg hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
+              className="public-menu-trigger md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
               aria-label="메뉴 열기"
               aria-expanded={isMobileMenuOpen}
             >
@@ -412,7 +412,7 @@ export default function PublicHeader({
           <button
             ref={mobileMenuCloseRef}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
             aria-label="메뉴 닫기"
           >
             <FontFreeIcon name="close" size={22} />
@@ -426,7 +426,7 @@ export default function PublicHeader({
             href="/about"
             data-tour-target="mobile-nav-about"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
           >
             학원 소개
           </Link>
@@ -449,7 +449,7 @@ export default function PublicHeader({
                   href={item.href}
                   data-tour-target={`mobile-nav-${item.href.slice(1).replace("#", "-")}`}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-6 py-2.5 text-gray-700 dark:text-gray-300 font-medium hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
+                  className="block px-6 py-2.5 text-gray-700 dark:text-gray-300 font-medium hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
                 >
                   {item.label}
                 </Link>
@@ -466,7 +466,7 @@ export default function PublicHeader({
             href="/shop"
             data-tour-target="mobile-nav-shop"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
           >
             SHOP
           </Link>
@@ -477,7 +477,7 @@ export default function PublicHeader({
             href="/simulator"
             data-tour-target="mobile-nav-simulator"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-gray-800 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime dark:hover:text-brand-neon-lime transition-colors"
           >
             수업찾기
           </Link>

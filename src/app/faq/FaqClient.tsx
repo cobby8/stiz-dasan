@@ -78,7 +78,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
   return (
     <details className="group border-b border-gray-100 dark:border-gray-800 last:border-b-0">
       <summary
-        className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
       >
         <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
         {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}

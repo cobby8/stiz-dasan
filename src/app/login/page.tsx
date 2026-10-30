@@ -275,7 +275,7 @@ function LoginContent() {
                       href="/privacy"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:opacity-90"
+                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:hover:opacity-90"
                     >
                       개인정보 수집 및 이용
                     </a>
@@ -294,7 +294,7 @@ function LoginContent() {
                       href="/terms"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:opacity-90"
+                      className="text-brand-orange-500 dark:text-brand-neon-lime underline underline-offset-2 hover:text-brand-orange-600 dark:hover:opacity-90"
                     >
                       이용약관
                     </a>

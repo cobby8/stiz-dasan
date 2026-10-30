@@ -82,7 +82,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
             {/* 질문 버튼 — 클릭 시 답변 토글 */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
             >
                 <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
                 {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}

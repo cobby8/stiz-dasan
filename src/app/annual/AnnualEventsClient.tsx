@@ -186,7 +186,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                     onClick={() => selectPeriod({ year, month: year === currentYear ? thisMonth : selectedMonth })}
                                     className={`px-5 py-2 rounded-full text-sm font-bold transition-all duration-200 shrink-0 whitespace-nowrap ${
                                         selectedYear === year
-                                            ? "bg-brand-navy-900 text-white shadow-md"
+                                            ? "bg-brand-navy-900 text-white shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
                                             : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm"
                                     }`}
                                 >
@@ -259,7 +259,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                                     onClick={e => { e.stopPropagation(); toggleSchedule(mon); }}
                                                     className={`flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full border transition-all duration-200 ${
                                                         isScheduleOpen
-                                                            ? "bg-brand-navy-900 dark:bg-gray-700 text-white border-brand-navy-900 dark:border-gray-700 shadow-md"
+                                                            ? "bg-brand-navy-900 text-white border-brand-navy-900 shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)] dark:border-[var(--color-public-orange)]"
                                                             : "bg-white dark:bg-gray-800 text-brand-navy-900 dark:text-gray-300 border-brand-navy-900/30 dark:border-gray-700 hover:border-brand-navy-900 hover:shadow-sm"
                                                     }`}
                                                 >
@@ -335,7 +335,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                                                         key={ev.id}
                                                                         type="button"
                                                                         onClick={() => setSelectedEvent(ev)}
-                                                                        className="annual-event-row w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 dark:bg-gray-900/50 dark:hover:bg-gray-700/50 active:bg-gray-100 dark:bg-gray-800 dark:active:bg-gray-600 transition-colors duration-150 group"
+                                                                        className="annual-event-row w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 dark:active:bg-gray-600 transition-colors duration-150 group"
                                                                     >
                                                                         {/* 카테고리 뱃지 */}
                                                                         <span className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-0.5 rounded-full border shrink-0 ${cat.bg} ${cat.text} ${cat.border}`}>
@@ -366,7 +366,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                                                             </span>
                                                                         )}
                                                                         {/* 더보기 화살표 */}
-                                                                        <span className="text-gray-300 group-hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors text-lg shrink-0 leading-none">
+                                                                        <span className="text-gray-300 group-hover:text-brand-orange-500 dark:group-hover:text-brand-neon-lime transition-colors text-lg shrink-0 leading-none">
                                                                             ›
                                                                         </span>
                                                                     </button>

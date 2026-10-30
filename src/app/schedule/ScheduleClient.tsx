@@ -77,8 +77,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                             href="/schedule"
                             className={`shrink-0 text-sm font-bold px-5 py-2 rounded-full transition-all duration-200 whitespace-nowrap ${
                                 !filterProgramId
-                                    ? "bg-brand-navy-900 text-white shadow-md"
-                                    : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
+                                    ? "bg-brand-navy-900 text-white shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                    : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
                             }`}
                         >
                             전체
@@ -89,8 +89,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                 href={`/schedule?program=${p.id}`}
                                 className={`shrink-0 text-sm font-bold px-5 py-2 rounded-full transition-all duration-200 whitespace-nowrap ${
                                     filterProgramId === p.id
-                                        ? "bg-brand-navy-900 text-white shadow-md"
-                                        : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
+                                        ? "bg-brand-navy-900 text-white shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                        : "bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 hover:shadow-sm border border-gray-200 dark:border-gray-700"
                                 }`}
                             >
                                 {p.name}
@@ -111,8 +111,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                 onClick={() => setViewMode("card")}
                                 className={`flex items-center gap-1 px-4 py-2 text-xs font-bold transition-colors ${
                                     viewMode === "card"
-                                        ? "bg-brand-navy-900 text-white"
-                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900"
+                                        ? "bg-brand-navy-900 text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900"
                                 }`}
                             >
                                 <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>grid_view</span>
@@ -122,8 +122,8 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                 onClick={() => setViewMode("table")}
                                 className={`flex items-center gap-1 px-4 py-2 text-xs font-bold transition-colors ${
                                     viewMode === "table"
-                                        ? "bg-brand-navy-900 text-white"
-                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:bg-gray-900"
+                                        ? "bg-brand-navy-900 text-white dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]"
+                                        : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900"
                                 }`}
                             >
                                 <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>table_chart</span>
@@ -139,7 +139,7 @@ function ScheduleFilter({ programs, allSlots, phone }: {
                                 <p className="text-sm text-gray-400 mb-0.5 font-medium">프로그램 필터</p>
                                 <p className="font-bold text-gray-900 dark:text-white">{selectedProgram.name}</p>
                             </div>
-                            <a href="/schedule" className="text-sm text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400 font-bold transition">
+                            <a href="/schedule" className="text-sm text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:hover:text-lime-400 font-bold transition">
                                 전체 보기
                             </a>
                         </div>

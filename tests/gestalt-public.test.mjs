@@ -55,3 +55,28 @@ test("C-P1 오류·404·시뮬레이터 버튼이 등급 클래스를 쓴다", (
   assert.match(sim, /href=\{`tel:\$\{phone\.replace\(\/-\/g, ""\)\}`\}\s*className="public-btn-primary/);
   assert.match(sim, /href="\/apply\/enroll"\s*className="public-btn-secondary/);
 });
+
+// 공개 화면 범위(관리자·마이페이지·직원·/programs 제외)
+const PUBLIC_ROOTS = ["src/app/about", "src/app/schedule", "src/app/annual", "src/app/gallery", "src/app/notices",
+  "src/app/faq", "src/app/apply", "src/app/seasonal", "src/app/shop", "src/app/simulator", "src/app/login",
+  "src/components/landing", "src/components/chat", "src/components/guide-tour", "src/components/seasonal"];
+const PUBLIC_FILES = [...PUBLIC_ROOTS.flatMap(walk), "src/components/PublicHeader.tsx", "src/components/PublicAccountControls.tsx",
+  "src/app/LandingPageClient.tsx", "src/app/error.tsx", "src/app/not-found.tsx"];
+
+test("C-P2·P-04 hover 색 바로 뒤의 dark: 강조색은 dark:hover: 여야 한다(다크 모드에서 늘 강조되던 오타)", () => {
+  // 버튼의 «정적» 다크 바탕(dark:bg-brand-neon-lime)은 의도된 것이라 제외하고, 글자색·옅은 hover 바탕만 본다.
+  const typos = [/\bhover:text-[^\s"'`]+ dark:text-brand-neon-lime/, /\bhover:bg-[^\s"'`]+ dark:bg-brand-neon-lime\/10/,
+    /hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-800/];
+  const bad = PUBLIC_FILES.filter((file) => typos.some((re) => re.test(read(file))));
+  assert.deepEqual(bad, []);
+  const header = read("src/components/PublicHeader.tsx");
+  assert.ok((header.match(/dark:hover:text-brand-neon-lime/g)?.length ?? 0) >= 8);
+  assert.ok((header.match(/dark:hover:bg-brand-neon-lime\/10/g)?.length ?? 0) >= 8);
+});
+
+test("P-08 다크 모드의 «선택됨»은 공개 주황 바탕 + 어두운 글자(토큰)", () => {
+  const sel = "dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)]";
+  assert.equal(read("src/app/simulator/SimulatorClient.tsx").split(sel).length - 1, 2);
+  assert.equal(read("src/app/annual/AnnualEventsClient.tsx").split(sel).length - 1, 2);
+  assert.ok(read("src/app/schedule/ScheduleClient.tsx").includes(sel));
+});

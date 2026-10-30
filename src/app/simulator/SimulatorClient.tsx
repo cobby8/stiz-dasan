@@ -259,7 +259,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                             </span>
                             <button
                                 onClick={goBack}
-                                className="text-xs text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400 font-bold"
+                                className="text-xs text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:hover:text-lime-400 font-bold"
                             >
                                 변경
                             </button>
@@ -276,8 +276,8 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                         className={[
                                             "px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 border",
                                             selectedDays.includes(key)
-                                                ? "bg-brand-navy-900 text-white border-brand-navy-900 shadow-md"
-                                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:bg-gray-800",
+                                                ? "bg-brand-navy-900 text-white border-brand-navy-900 shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)] dark:border-[var(--color-public-orange)]"
+                                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700",
                                         ].join(" ")}
                                     >
                                         {label}
@@ -297,8 +297,8 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                         className={[
                                             "px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 border",
                                             selectedTime === key
-                                                ? "bg-brand-navy-900 text-white border-brand-navy-900 shadow-md"
-                                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:bg-gray-800",
+                                                ? "bg-brand-navy-900 text-white border-brand-navy-900 shadow-md dark:bg-[var(--color-public-orange)] dark:text-[var(--color-public-dark)] dark:border-[var(--color-public-orange)]"
+                                                : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700",
                                         ].join(" ")}
                                     >
                                         {label}
@@ -311,7 +311,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                         <div className="flex gap-3">
                             <button
                                 onClick={goBack}
-                                className="flex-1 py-3.5 rounded-xl font-bold text-sm border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-800 transition-all"
+                                className="flex-1 py-3.5 rounded-xl font-bold text-sm border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-all"
                             >
                                 이전
                             </button>
@@ -335,7 +335,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                 <h2 className="text-lg font-black text-gray-900 dark:text-white">검색 결과</h2>
                                 <button
                                     onClick={reset}
-                                    className="text-sm text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:text-brand-neon-lime dark:hover:text-lime-400 font-bold"
+                                    className="text-sm text-brand-orange-500 dark:text-brand-neon-lime hover:text-brand-orange-600 dark:hover:text-lime-400 font-bold"
                                 >
                                     처음부터
                                 </button>
