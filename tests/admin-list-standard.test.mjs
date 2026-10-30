@@ -204,3 +204,38 @@ test("반 관리: 요일·시간·정원 칸 분리(시간·정원 오른쪽)·�
   assert.match(classesClient, /반을 삭제할까요\?/);
   assert.doesNotMatch(classesClient, /\btruncate\b|text-ellipsis|line-clamp|brand-neon-lime/);
 });
+
+// 목록 개편 5단계(셔틀) — 같은 부품·규칙. 명단 저장(regular-roster API)·반이동·정류장 수정·빼기·위치 링크·기사님 화면 보기는 그대로, 보이는 모양만
+const rosterClient = read("../src/app/admin/shuttle/regular/RegularShuttleClient.tsx");
+
+test("셔틀 명단: 수업시간 묶음 아래 학생 한 줄 행(등원·하원 정류장/시각 칸 분리, 시각 오른쪽)·행 클릭 패널·⚡ 작업 유지", () => {
+  assert.match(rosterClient, /<table className="admin-list-table/);
+  // 수업시간 머리줄(묶음 유지)
+  assert.match(rosterClient, /scope="rowgroup"[\s\S]*?수업시간 미지정[\s\S]*?명/);
+  // 등원·하원 시각은 오른쪽 + 자릿수 폭 고정
+  assert.match(rosterClient, /admin-cell-num[^"]*">\{entry\.board \? entry\.board\.arriveTime/);
+  assert.match(rosterClient, /admin-cell-num[^"]*">\{entry\.alight \? entry\.alight\.arriveTime/);
+  // 보기 전환 «학생 목록 | 기사님 화면(운행 순서)» 를 브라우저에 기억, 저장 안 한 순서 변경은 전환 전에 묻는다
+  assert.match(rosterClient, /useRememberedListView<RosterView>\(ROSTER_VIEW_STORAGE_KEY, ROSTER_VIEW_VALUES, "students"\)/);
+  assert.match(rosterClient, /<ListViewToggle[\s\S]*?v === "students" && !confirmLeaveOrder\(\)/);
+  // 행 클릭 패널, 행 키보드는 안쪽 ⚡ 를 가로채지 않는다, ⚡ 칸은 전파 차단
+  assert.match(rosterClient, /<ListDetailPanel onClose=\{\(\) => setDetail\(null\)\} titleId="roster-detail-panel-title"/);
+  assert.match(rosterClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(rosterClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // ⚡ 와 패널은 같은 작업 목록 — 반이동·정류장 수정·빼기·학부모 전화·위치 링크(재발급·취소) 누락 금지
+  const actions = rosterClient.slice(rosterClient.indexOf("function buildRosterActions("), rosterClient.indexOf("function stopCell("));
+  for (const label of ["반이동", "정류장 수정", "빼기", "학부모 전화", "링크 재발급", "위치 링크", "링크 취소"]) {
+    assert.ok(actions.includes(`"${label}"`), `⚡ 작업에 «${label}» 이 있어야 합니다`);
+  }
+  assert.match(rosterClient, /<AdminQuickActionMenu label=\{`\$\{entry\.studentName\} 빠른 작업`\} actions=\{buildRosterActions\(entry, g\.classTime\)\}/);
+  assert.match(rosterClient, /buildRosterActions\(d, detail\.classTime\)\.map/);
+  // 모달은 예전과 같은 값으로 연다(저장 동작 그대로)
+  assert.match(rosterClient, /setDialog\(\{ kind: "move", entry, weekday: active, classTime, scope: defaultScope \}\)/);
+  assert.match(rosterClient, /setDialog\(\{ kind: "remove", entry, weekday: active, scope: defaultScope \}\)/);
+  // 좌표 없음 경고는 목록에서도 보인다
+  assert.match(rosterClient, /⚠ 좌표 없음/);
+  // 학생 목록 표에 말줄임 없음
+  const table = rosterClient.slice(rosterClient.indexOf('view === "students" && groups.length > 0'), rosterClient.indexOf("<datalist"));
+  assert.ok(table.length > 100, "학생 목록 표가 있어야 합니다");
+  assert.doesNotMatch(table, /\btruncate\b|text-ellipsis|line-clamp/);
+});

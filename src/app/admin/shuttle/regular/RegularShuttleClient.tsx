@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import ListViewToggle, { useRememberedListView, type ListViewOption } from "@/components/admin/list/ListViewToggle";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import {
   formatRosterMonths,
@@ -60,6 +63,14 @@ type Dialog =
 type PickerTarget = "board" | "alight" | "stop";
 
 const WD_ORDER = [1, 2, 3, 4, 5, 6, 0]; // 월→일
+// 보기 전환(학생 목록 | 기사님 화면) — 고른 보기를 브라우저에 기억한다(목록 개편 공통 규칙)
+type RosterView = "students" | "driver";
+const ROSTER_VIEW_STORAGE_KEY = "admin-shuttle-roster-view";
+const ROSTER_VIEW_VALUES: readonly RosterView[] = ["students", "driver"];
+const ROSTER_VIEW_OPTIONS: ReadonlyArray<ListViewOption<RosterView>> = [
+  { value: "students", label: "학생 목록", icon: "list" },
+  { value: "driver", label: "기사님 화면(운행 순서)", icon: "directions_bus" },
+];
 const EMPTY_DRAFT: StopDraft = { stopName: "", arriveTime: "", latitude: null, longitude: null };
 const INPUT = "w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold dark:border-gray-600 dark:bg-gray-900 dark:text-white";
 const LABEL = "flex flex-col gap-1 text-[11px] font-bold text-gray-500 dark:text-gray-400";
@@ -127,7 +138,9 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   const [dialogErr, setDialogErr] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // 보기 전환: 학생별 목록 / 기사님 화면(운행 순서). 기사님 화면 보기에서 고친 뒤 저장 안 했으면 전환 전에 묻는다.
-  const [view, setView] = useState<"students" | "driver">("students");
+  const [view, setView] = useRememberedListView<RosterView>(ROSTER_VIEW_STORAGE_KEY, ROSTER_VIEW_VALUES, "students");
+  // 행 클릭 상세 패널: 수업시간 + 학생 키로 찾는다(같은 날 두 수업을 타는 학생도 구분). 명단을 다시 읽어도 최신 값으로 보인다.
+  const [detail, setDetail] = useState<{ classTime: string; key: string } | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
   const onOrderDirty = useCallback((d: boolean) => setOrderDirty(d), []);
   const confirmLeaveOrder = () => !orderDirty || window.confirm("기사님 화면 보기에서 저장하지 않은 순서·시각 변경이 있습니다. 이동하면 사라집니다. 계속할까요?");
@@ -166,6 +179,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     .filter((w) => w.weekday !== 0 || w.count > 0), [stops]);
   const [active, setActive] = useState<number>(() => weekdays.find((w) => w.count > 0)?.weekday ?? 1);
   const groups = useMemo(() => groupRosterDay(stops, active), [stops, active]);
+  // 상세 패널 대상 — 지금 요일 묶음에서 다시 찾는다(요일을 바꾸거나 학생이 빠지면 패널이 저절로 닫힌다)
+  const detailEntry = detail ? groups.find((g) => g.classTime === detail.classTime)?.students.find((e) => e.key === detail.key) ?? null : null;
   // 이 달에 쓰인 수업시간(추가·반이동 입력 자동완성용).
   const classTimes = useMemo(() => [...new Set(stops.map((s) => s.classTime).filter((c): c is string => Boolean(c)))].sort(), [stops]);
   // 명단 점검(기사님 화면에서 빠지거나 어긋나 보일 행). 자동으로 고치지 않고 알리기만 한다.
@@ -439,19 +454,58 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : "링크를 만들지 못했습니다."); }
   }
 
-  // ── 작은 표시 조각 ──
-  // ⚠️ 컴포넌트(<StopLine />)로 쓰지 않고 함수로 호출한다 — 렌더마다 새 컴포넌트가 되어 입력 포커스가 풀리기 때문.
-  function stopLine(label: string, row: RegularShuttleStop | null) {
-    if (!row) return <p className="text-[12.5px] text-gray-400"><b className="mr-1.5">{label}</b>이용 안 함</p>;
+  // ── 학생 행 작업(⚡ 메뉴·상세 패널이 같은 목록을 쓴다) ──
+  // 반이동·정류장 수정·빼기는 예전 카드의 버튼과 같은 모달을 같은 값으로 연다(저장 동작은 그대로).
+  function openMove(entry: Entry, classTime: string) {
+    setDialogErr(null); setDialog({ kind: "move", entry, weekday: active, classTime, scope: defaultScope });
+  }
+  function openStop(entry: Entry) {
+    setDialogErr(null); const dir = entry.board ? "BOARD" : "ALIGHT"; setDialog({ kind: "stop", entry, direction: dir, draft: draftFromRow(entry.board ?? entry.alight), applyToAll: false, scope: defaultScope });
+  }
+  function openRemove(entry: Entry) {
+    setDialogErr(null); setDialog({ kind: "remove", entry, weekday: active, scope: defaultScope });
+  }
+  function buildRosterActions(entry: Entry, classTime: string): AdminQuickAction[] {
+    const tp = tel(entry.parentPhone);
+    const link = entry.studentId ? locationLinks[entry.studentId] : undefined;
+    const canReissue = link?.status === "ACTIVE" || link?.status === "SUBMITTED";
+    const linkBusy = locationLinkBusy === entry.studentId;
+    const actions: AdminQuickAction[] = [
+      { key: "move", label: "반이동", icon: "swap_horiz", onSelect: () => openMove(entry, classTime) },
+      { key: "stop", label: "정류장 수정", icon: "edit_location_alt", onSelect: () => openStop(entry) },
+    ];
+    // 학부모 전화 — 예전 「📞 학부모」 링크와 같은 tel: 주소로 건다
+    if (tp) actions.push({ key: "call", label: "학부모 전화", icon: "call", onSelect: () => { window.location.href = tp; } });
+    // 학부모 위치 입력 링크 — 학생 id 가 있을 때만(예전과 같은 조건). 이미 있으면 재발급·취소
+    if (entry.studentId) {
+      const studentId = entry.studentId;
+      actions.push({ key: "location-link", label: canReissue ? "링크 재발급" : "위치 링크", icon: "share_location", disabled: linkBusy, onSelect: () => void createParentLocationLink(studentId, entry.studentName, canReissue) });
+      if (canReissue && link) actions.push({ key: "location-revoke", label: "링크 취소", icon: "link_off", tone: "danger", disabled: linkBusy, onSelect: () => void revokeParentLocationLink(link) });
+    }
+    actions.push({ key: "remove", label: "빼기", icon: "person_remove", tone: "danger", onSelect: () => openRemove(entry) });
+    return actions;
+  }
+
+  // 정류장 칸: 이름 + 좌표 없음 경고(배차 지도에 안 나오는 학생을 목록에서 바로 알아보게). 이용 안 하면 흐리게.
+  // ⚠️ 컴포넌트(<StopCell />)로 쓰지 않고 함수로 호출한다 — 렌더마다 새 컴포넌트가 되지 않게.
+  function stopCell(row: RegularShuttleStop | null) {
+    if (!row) return <span className="text-[var(--color-academy-muted)]">이용 안 함</span>;
     const hasCoord = row.latitude != null && row.longitude != null;
     return (
-      <p className="flex flex-wrap items-center gap-x-1.5 text-[12.5px] text-gray-700 dark:text-gray-200">
-        <b className={label === "등원" ? "text-blue-700 dark:text-blue-300" : "text-orange-600 dark:text-orange-300"}>{label}</b>
-        <span className="font-bold">{row.stopName}</span>
-        {row.arriveTime && <span className="text-gray-500 dark:text-gray-400">{row.arriveTime}</span>}
-        {!hasCoord && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-black text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">⚠ 좌표 없음</span>}
-      </p>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="font-bold text-[var(--color-academy-ink)]">{row.stopName}</span>
+        {!hasCoord && <span className="rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">⚠ 좌표 없음</span>}
+      </span>
     );
+  }
+
+  // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼 등에서 누른 키는 가로채지 않는다.
+  function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, classTime: string, key: string) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setDetail({ classTime, key });
+    }
   }
 
   // withTime=false: 학생 추가 — 시각은 운행표 패널에서 칸(요일·수업)마다 정한다.
@@ -835,24 +889,26 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-900">
               {weekdays.map((w) => (
                 <button key={w.weekday} type="button" onClick={() => { if (w.weekday !== active && confirmLeaveOrder()) setActive(w.weekday); }}
-                  className={`min-h-9 rounded-lg px-3 text-sm font-black ${active === w.weekday ? "bg-white text-brand-navy-900 shadow dark:bg-gray-700 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"}`}>
-                  {WEEKDAY_LABELS[w.weekday]}<span className="ml-1 text-[11px] font-bold text-gray-400">{w.count}</span>
+                  aria-pressed={active === w.weekday}
+                  className={`min-h-11 rounded-lg px-3 text-sm font-black ${active === w.weekday ? "bg-white text-brand-navy-900 shadow dark:bg-gray-700 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"}`}>
+                  {WEEKDAY_LABELS[w.weekday]}<span className="ml-1 text-xs font-bold tabular-nums text-gray-400">{w.count}</span>
                 </button>
               ))}
             </div>
 
-            {/* 보기 전환 — 학생별 / 기사님 화면(운행 순서) */}
-            <div className="mt-2 flex flex-wrap items-center gap-1" role="tablist" aria-label="명단 보기">
-              {([["students", "학생별"], ["driver", "기사님 화면(운행 순서)"]] as const).map(([v, label]) => (
-                <button key={v} type="button" role="tab" aria-selected={view === v}
-                  onClick={() => {
-                    if (v === view || (v === "students" && !confirmLeaveOrder())) return;
-                    setView(v);
-                    // 기사님 화면 보기가 닫히면(언마운트) 고친 내용도 사라지므로 「저장 안 됨」 표시를 내린다.
-                    if (v === "students") setOrderDirty(false);
-                  }}
-                  className={`min-h-8 rounded-lg px-3 text-[12.5px] font-black ${view === v ? "bg-brand-navy-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "border border-gray-200 text-gray-600 dark:border-gray-600 dark:text-gray-300"}`}>{label}</button>
-              ))}
+            {/* 보기 전환 — 학생 목록 / 기사님 화면(운행 순서). 고른 보기는 브라우저에 기억한다. */}
+            <div className="mt-2">
+              <ListViewToggle
+                value={view}
+                options={ROSTER_VIEW_OPTIONS}
+                ariaLabel="명단 보기"
+                onChange={(v) => {
+                  if (v === view || (v === "students" && !confirmLeaveOrder())) return;
+                  setView(v);
+                  // 기사님 화면 보기가 닫히면(언마운트) 고친 내용도 사라지므로 「저장 안 됨」 표시를 내린다.
+                  if (v === "students") setOrderDirty(false);
+                }}
+              />
             </div>
 
             {/* 정규 배차 저장 노선이 있는 방향은 기사님 화면이 그 노선을 쓴다 → 여기 순서는 쓰이지 않는다(조회만). */}
@@ -870,7 +926,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 <ul className="mt-2 space-y-1">
                   {issues.map((issue, i) => <li key={`${issue.kind}-${i}`} className={issue.weekday === active ? "font-bold" : ""}>· {issue.message}</li>)}
                 </ul>
-                <p className="mt-2 font-bold">자동으로 고치지 않았습니다. 학생별 보기에서 반이동·정류장 수정·빼기로 고쳐 주세요.</p>
+                <p className="mt-2 font-bold">자동으로 고치지 않았습니다. 학생 목록 보기에서 학생 행의 ⚡(반이동·정류장 수정·빼기)로 고쳐 주세요.</p>
               </details>
             )}
 
@@ -889,50 +945,122 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
 
             {view === "students" && groups.length === 0 && <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400 dark:border-gray-600">{WEEKDAY_LABELS[active]}요일 셔틀 이용 학생이 없습니다.</div>}
 
-            {view === "students" && <div className="mt-3 space-y-4">
-              {groups.map((g) => (
-                <section key={g.classTime || "none"}>
-                  <h4 className="text-[13px] font-black text-gray-800 dark:text-gray-100">{g.classTime || "수업시간 미지정"} <span className="text-[11px] font-bold text-gray-400">{g.students.length}명</span></h4>
-                  <ul className="mt-1.5 space-y-1.5">
-                    {g.students.map((entry) => {
-                      const tp = tel(entry.parentPhone);
-                      const link = entry.studentId ? locationLinks[entry.studentId] : undefined;
-                      const canReissue = link?.status === "ACTIVE" || link?.status === "SUBMITTED";
-                      return (
-                        <li key={entry.key} className="rounded-xl border border-gray-200 p-2.5 dark:border-gray-700">
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span className="text-[14px] font-black text-gray-900 dark:text-white">{entry.studentName}</span>
-                            {tp && <a href={tp} className="text-[12px] font-bold text-blue-600 dark:text-blue-300">📞 학부모</a>}
-                            {entry.studentId && (
-                              <span className="flex items-center gap-1.5 text-[12px]">
-                                {link && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] font-black text-violet-700 dark:bg-violet-950/30 dark:text-violet-200">{LOCATION_LINK_STATUS[link.status]}{link.lastSubmittedAt ? ` ${fmtImported(link.lastSubmittedAt)}` : ""}</span>}
-                                <button type="button" disabled={locationLinkBusy === entry.studentId} onClick={() => void createParentLocationLink(entry.studentId!, entry.studentName, canReissue)} className="font-black text-violet-700 disabled:opacity-40 dark:text-violet-300">📍 {canReissue ? "링크 재발급" : "위치 링크"}</button>
-                                {canReissue && link && <button type="button" disabled={locationLinkBusy === entry.studentId} onClick={() => void revokeParentLocationLink(link)} className="font-black text-red-600 disabled:opacity-40 dark:text-red-300">취소</button>}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 space-y-0.5">
-                            {stopLine("등원", entry.board)}
-                            {stopLine("하원", entry.alight)}
-                            {(entry.board?.note || entry.alight?.note) && <p className="text-[11.5px] text-gray-400">{entry.board?.note ?? entry.alight?.note}</p>}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <button type="button" onClick={() => { setDialogErr(null); setDialog({ kind: "move", entry, weekday: active, classTime: g.classTime, scope: defaultScope }); }} className="min-h-8 rounded-lg border border-gray-200 px-3 text-[12px] font-black text-gray-700 dark:border-gray-600 dark:text-gray-200">반이동</button>
-                            <button type="button" onClick={() => { setDialogErr(null); const dir = entry.board ? "BOARD" : "ALIGHT"; setDialog({ kind: "stop", entry, direction: dir, draft: draftFromRow(entry.board ?? entry.alight), applyToAll: false, scope: defaultScope }); }} className="min-h-8 rounded-lg border border-gray-200 px-3 text-[12px] font-black text-gray-700 dark:border-gray-600 dark:text-gray-200">정류장 수정</button>
-                            <button type="button" onClick={() => { setDialogErr(null); setDialog({ kind: "remove", entry, weekday: active, scope: defaultScope }); }} className="min-h-8 rounded-lg border border-red-200 px-3 text-[12px] font-black text-red-600 dark:border-red-800 dark:text-red-300">빼기</button>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              ))}
-            </div>}
+            {/* 학생 목록 — 수업시간 묶음(머리줄) 아래 학생 한 줄 행. 긴 값(메모·위치 링크 시각)은 행 클릭 상세 패널에서. */}
+            {view === "students" && groups.length > 0 && (
+              <div className="mt-3 overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                <div className="overflow-x-auto">
+                  {/* admin-list-table: 글자 왼쪽·시각 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
+                  <table className="admin-list-table w-full border-collapse text-sm">
+                    <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                      <tr>
+                        <th className="px-2 py-2">이름</th>
+                        <th className="px-2 py-2">등원 정류장</th>
+                        <th className="admin-cell-num px-2 py-2">등원 시각</th>
+                        <th className="px-2 py-2">하원 정류장</th>
+                        <th className="admin-cell-num px-2 py-2">하원 시각</th>
+                        <th className="hidden px-2 py-2 md:table-cell">위치 링크</th>
+                        <th className="admin-cell-center px-2 py-2">관리</th>
+                      </tr>
+                    </thead>
+                    {groups.map((g) => (
+                      <tbody key={g.classTime || "none"} className="divide-y divide-[var(--color-academy-line)]">
+                        <tr>
+                          <th colSpan={7} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                            {g.classTime || "수업시간 미지정"} · <span className="tabular-nums">{g.students.length}</span>명
+                          </th>
+                        </tr>
+                        {g.students.map((entry) => {
+                          const link = entry.studentId ? locationLinks[entry.studentId] : undefined;
+                          const note = entry.board?.note || entry.alight?.note;
+                          return (
+                            <tr
+                              key={entry.key}
+                              tabIndex={0}
+                              aria-label={`${entry.studentName} 상세 보기`}
+                              onClick={() => setDetail({ classTime: g.classTime, key: entry.key })}
+                              onKeyDown={(event) => handleRowKeyDown(event, g.classTime, entry.key)}
+                              className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                            >
+                              <td className="px-2 py-1.5">
+                                <span className="font-black text-[var(--color-academy-ink)]">{entry.studentName}</span>
+                                {/* 메모가 있으면 표시만 — 내용은 상세 패널에서 전부 */}
+                                {note && <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-muted)]" aria-label="메모 있음" title="메모 있음">sticky_note_2</span>}
+                              </td>
+                              <td className="px-2 py-1.5">{stopCell(entry.board)}</td>
+                              <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{entry.board ? entry.board.arriveTime || "-" : ""}</td>
+                              <td className="px-2 py-1.5">{stopCell(entry.alight)}</td>
+                              <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{entry.alight ? entry.alight.arriveTime || "-" : ""}</td>
+                              <td className="hidden px-2 py-1.5 text-xs font-bold text-[var(--color-academy-muted)] md:table-cell">{link ? LOCATION_LINK_STATUS[link.status] : "-"}</td>
+                              {/* 관리: ⚡ 메뉴(반이동·정류장 수정·학부모 전화·위치 링크·빼기). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                              <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                                <AdminQuickActionMenu label={`${entry.studentName} 빠른 작업`} actions={buildRosterActions(entry, g.classTime)} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    ))}
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
 
       <datalist id="roster-class-times">{classTimes.map((c) => <option key={c} value={c} />)}</datalist>
+
+      {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 패널 / 모바일 하단 시트. 이미 불러온 명단 값만 보여 준다(새 조회 없음).
+          작업 버튼은 행 ⚡ 와 같은 목록이고, 누르면 패널을 닫고 예전과 같은 모달을 연다(모달 두 겹 방지). */}
+      {view === "students" && detailEntry && detail && (() => {
+        const d = detailEntry;
+        const link = d.studentId ? locationLinks[d.studentId] : undefined;
+        const tp = tel(d.parentPhone);
+        const stopDetail = (row: RegularShuttleStop | null) => row
+          ? <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{stopCell(row)}<span className="tabular-nums">{row.arriveTime || "시각 미정"}</span></span>
+          : <span className="text-[var(--color-academy-muted)]">이용 안 함</span>;
+        const notes = [...new Set([d.board?.note, d.alight?.note].filter((n): n is string => Boolean(n)))];
+        const rows: { label: string; value: React.ReactNode }[] = [
+          { label: "수업", value: <span className="tabular-nums">{WEEKDAY_LABELS[active]}요일 {detail.classTime || "수업시간 미지정"}</span> },
+          { label: "등원", value: stopDetail(d.board) },
+          { label: "하원", value: stopDetail(d.alight) },
+          { label: "학부모", value: tp ? <a href={tp} className="font-bold tabular-nums text-[var(--color-academy-primary)] underline">{d.parentPhone}</a> : "-" },
+          ...(d.studentPhone ? [{ label: "학생", value: <span className="tabular-nums">{d.studentPhone}</span> }] : []),
+          { label: "위치 링크", value: link ? `${LOCATION_LINK_STATUS[link.status]}${link.lastSubmittedAt ? ` · 제출 ${fmtImported(link.lastSubmittedAt)}` : ""}${link.status === "ACTIVE" ? ` · 만료 ${fmtImported(link.expiresAt)}` : ""}` : d.studentId ? "발급 안 함" : "학생 연결 없음(링크 불가)" },
+          ...(notes.length > 0 ? [{ label: "메모", value: notes.join(" / ") }] : []),
+        ];
+        return (
+          <ListDetailPanel onClose={() => setDetail(null)} titleId="roster-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 id="roster-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+              <button type="button" onClick={() => setDetail(null)} aria-label="닫기"
+                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+            <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+              {rows.map((row) => (
+                <div key={row.label} className="contents">
+                  <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                  <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {buildRosterActions(d, detail.classTime).map((action) => (
+                <button key={action.key} type="button" disabled={action.disabled}
+                  onClick={() => { setDetail(null); void action.onSelect(); }}
+                  className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${action.tone === "danger"
+                    ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                    : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"}`}>
+                  <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </ListDetailPanel>
+        );
+      })()}
 
       {/* 지도 선택 중에는 입력 모달을 잠시 내린다(두 모달의 Esc·Tab 처리가 겹치지 않게). 입력값은 dialog 상태에 남아 있다. */}
       {dialog && !picker && (
