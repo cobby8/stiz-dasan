@@ -7,6 +7,7 @@ import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/mak
 import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction } from "@/app/actions/parent-makeup";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -111,15 +112,17 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     <div className="mx-auto max-w-2xl px-4 py-6">
       {/* 헤더 */}
       <div className="mb-2 flex items-center gap-2">
-        <Link href="/mypage" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-          <span className="material-symbols-outlined">arrow_back</span>
+        {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
+        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
+          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
         <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
           <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">event_repeat</span>
           보강 예약
         </h1>
       </div>
-      <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+      {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
+      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
         결석 1회당 보강권 1장이 발급됩니다. <strong>결석일로부터 2개월</strong> 안에 사용해 주세요.
         기간이 지나면 자동으로 소멸합니다.
       </p>
@@ -171,18 +174,18 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
 
                 {/* 예약 완료 상태 */}
                 {c.booking && c.status === "RESERVED" && (
-                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-blue-50 py-1 pl-3 pr-1 dark:bg-blue-950/40">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-blue-50 py-1 pl-3 pr-1 dark:bg-blue-950/40">
                     {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 취소 버튼 */}
                     <span className="min-w-0 flex-1 break-keep text-sm font-bold text-blue-800 dark:text-blue-200">{c.booking.className}</span>
                     <span className="shrink-0 text-sm font-bold tabular-nums text-blue-800 dark:text-blue-200">{c.booking.dateLabel}</span>
-                    <button
-                      type="button"
-                      onClick={() => cancel(c.id)}
-                      disabled={busy === c.id}
-                      className="min-h-11 shrink-0 rounded-lg border border-blue-200 px-3 text-xs font-black text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
-                    >
-                      예약 취소
-                    </button>
+                    {/* 예약 취소 = 그 자리 확인(C-M1) 후 기존 cancel(c.id) 그대로 */}
+                    <InlineConfirm
+                      label="예약 취소"
+                      question="이 보강 예약을 취소할까요?"
+                      confirmLabel="예약 취소하기"
+                      onConfirm={() => cancel(c.id)}
+                      pending={busy === c.id}
+                    />
                   </div>
                 )}
 
@@ -193,7 +196,8 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                       type="button"
                       onClick={() => open(c)}
                       disabled={busy === c.id}
-                      className="min-h-11 w-full rounded-xl bg-brand-navy-900 px-4 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-900"
+                      // 행의 «여는» 버튼 = 보조(secondary), 열린 뒤 «닫기» = 글자 버튼. 꽉 찬 색은 폼 안 최종 «이 날짜로 예약»만(M-08)
+                      className={`${openId === c.id ? "academy-button-text" : "academy-button-secondary"} w-full`}
                     >
                       {openId === c.id ? "닫기" : "보강 예약하기"}
                     </button>
@@ -232,12 +236,10 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                                   <button
                                     key={d.ymd}
                                     type="button"
+                                    // 고른 날짜 칩 = academy-choice(체크·연한 바탕), 제출 버튼과 구분(C-M2)
+                                    aria-pressed={on}
                                     onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
-                                    className={`min-h-11 rounded-lg border px-3 text-xs font-black tabular-nums ${
-                                      on
-                                        ? "border-brand-navy-900 bg-brand-navy-900 text-white dark:border-brand-neon-lime dark:bg-brand-neon-lime dark:text-gray-900"
-                                        : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"
-                                    }`}
+                                    className="academy-choice tabular-nums"
                                   >
                                     {d.label}
                                   </button>
@@ -251,7 +253,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                             type="button"
                             onClick={() => book(c.id)}
                             disabled={busy === c.id || !pick}
-                            className="min-h-11 w-full rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white disabled:opacity-40"
+                            className="academy-button-primary w-full"
                           >
                             이 날짜로 예약
                           </button>
@@ -266,7 +268,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
         </ul>
       )}
 
-      <p className="mt-5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+      <p className="mt-5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
         · 보강은 학년이 맞는 다른 수업으로만 예약할 수 있습니다.<br />
         · 예약을 미리 취소하면 보강권은 그대로 유지됩니다.<br />
         · 예약 후 알리지 않고 오지 않으면 보강권을 사용한 것으로 처리됩니다.

@@ -25,6 +25,8 @@ const Link = ({ children, ...props }) => React.createElement("a", props, childre
 const kst = compileModule("src/lib/datetime/kst.ts");
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
 const monthGroups = compileModule("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst });
+// 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
+const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 
 test("출결 히스토리는 KST 날짜로 달별 묶음·오른쪽 날짜·상태 칩을 보이고 수납 탭은 손대지 않는다", () => {
   const History = compileModule("src/app/mypage/history/HistoryClient.tsx", {
@@ -69,6 +71,7 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
     "@/app/actions/parent-makeup": { fetchMakeupOptions: async () => ({ ok: true, options: [] }), bookMakeupAction: async () => ({ ok: true }), cancelMakeupAction: async () => ({ ok: true }) },
     "@/components/admin/list/StatusCountChips": chips,
     "@/lib/datetime/kst": kst,
+    "@/components/parent/InlineConfirm": inlineConfirm,
   }).default;
   const credit = (id, status, expiresYmd, booking = null) => ({ id, studentId: "s1", studentName: "합성", studentGrade: null, sourceLabel: "정규", absenceLabel: "10/1(목)", expiresLabel: "12/1(화)", expiresYmd, status, booking });
   const html = renderToStaticMarkup(React.createElement(Makeup, { initial: {
@@ -94,10 +97,10 @@ test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 
   const source = read("src/app/mypage/makeup/MakeupClient.tsx");
   assert.match(source, /const today = todayKst\(\);/);
   assert.doesNotMatch(source, /\.toISOString\(\)/);
-  // 예약 = 반 열기 → 날짜 고르기 → «이 날짜로 예약», 취소 = 버튼 한 번 (기존 흐름 보존)
+  // 예약 = 반 열기 → 날짜 고르기 → «이 날짜로 예약», 취소 = 그 자리 확인 후 같은 cancel(c.id) (게슈탈트 M-02)
   assert.match(source, /bookMakeupAction\(\{ creditId, classId: pick\.classId, dateYmd: pick\.ymd \}\)/);
   assert.match(source, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]*?이 날짜로 예약/);
-  assert.match(source, /onClick=\{\(\) => cancel\(c\.id\)\}/);
+  assert.match(source, /onConfirm=\{\(\) => cancel\(c\.id\)\}/);
 });
 
 test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(오늘/이번 주/다음 주/이후)의 한 줄 행이고 신고 흐름은 그대로다", () => {
@@ -106,6 +109,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
     "next/link": { default: Link },
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
+    "@/components/parent/InlineConfirm": inlineConfirm,
   }).default;
   const today = kst.todayKst();
   const date = (offset, extra = {}) => {
@@ -136,7 +140,7 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.match(source, /onClick=\{\(\) => setOpenKey\(key\)\}/);
   assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
   assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
-  assert.match(source, /onClick=\{\(\) => cancel\(d\)\}/);
+  assert.match(source, /onConfirm=\{\(\) => cancel\(d\)\}/);
 });
 
 test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 상세 링크는 그대로다", async () => {
@@ -173,6 +177,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
     "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },
     "@/components/admin/list/upcomingDateGroups": groups,
     "@/lib/datetime/kst": kst,
+    "@/components/parent/InlineConfirm": inlineConfirm,
   }).default;
   const today = "2026-10-29"; // 목요일
   const row = (id, serviceDate, extra = {}) => ({ id, studentId: "s1", studentName: "합성", serviceDate, direction: "PICKUP", kind: "LOCATION", location: "다산초 정문 앞", note: null, notificationStatus: { driverLinked: false }, ...extra });
@@ -192,7 +197,8 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 
   const source = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
   assert.match(source, /function handleRowKeyDown\(event: KeyboardEvent<HTMLElement>, id: string\) \{\s*if \(event\.target !== event\.currentTarget\) return;/);
-  assert.match(source, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); cancel\(item\.id\); \}\}/);
+  // 행 안 «취소» = 그 자리 확인 후 같은 cancel(item.id), 행 탭으로 번지지 않게 stopPropagation (게슈탈트 M-02)
+  assert.match(source, /<InlineConfirm[\s\S]*?onConfirm=\{\(\) => cancel\(item\.id\)\}[\s\S]*?stopPropagation[\s\S]*?\/>/);
   assert.match(source, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\}[\s\S]*?deliveryStatusText\(item\.notificationStatus\)/);
   // 저장·취소 흐름 보존(결과 확인 필요 시 재조회, 중복 제출 막기)
   assert.match(source, /if \(response\.status >= 500\) return reconcile\(body\);/);
@@ -201,7 +207,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx").default;
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/components/parent/InlineConfirm": inlineConfirm }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
     phoneKnown: true,
     absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],
@@ -220,7 +226,7 @@ test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배�
   assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "SEASONAL", s\)\}/);
   assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "REGULAR", c\)\}/);
   assert.match(source, /onClick=\{\(\) => reportAbsence\(s\.enrollmentDateId\)\} disabled=\{busy \|\| !seatReason\[s\.enrollmentDateId\]\}/);
-  assert.match(source, /onClick=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
+  assert.match(source, /onConfirm=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
   assert.match(source, /신고하면 그날 셔틀 배차에서도 자동 제외됩니다\./);
 });
 
@@ -228,7 +234,7 @@ test("가족 연결의 받은 요청·보낸 요청 행은 요소로 나뉘고 �
   const source = read("src/app/mypage/children/ChildConnectionsClient.tsx");
   assert.doesNotMatch(source, /<\/b> · \{row\.requesterName/, "«자녀 · 요청자 · 연락처» 이어 붙인 글은 요소로 나눴다");
   assert.match(source, /<span className="ml-auto text-right tabular-nums[^"]*">\{kstLabel\(row\.createdAt\)\}<\/span>/);
-  assert.match(source, /className="flex min-h-11 items-center gap-2 py-2 text-sm"/);
+  assert.match(source, /className="flex min-h-11 flex-wrap items-center gap-2 py-2 text-sm"/);
   // 승인·거절은 «검토» → 확인 문구 → 최종 버튼 2단계 그대로, 요청 취소도 그대로
   assert.match(source, /setDecision\(\{ id: row\.id, decision: "APPROVE" \}\)\}>승인 검토</);
   assert.match(source, /onClick=\{resolveRequest\}[\s\S]*?가족 연결 승인/);

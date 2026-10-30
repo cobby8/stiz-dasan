@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: "신청 접수 (승인 대기)", SCHEDULED: "보강 확정", ATTENDED: "보강 완료", NO_SHOW: "미출석" };
 
@@ -91,7 +92,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
   return (
     <div className="mx-auto max-w-lg p-4">
       <h1 className="mb-1 text-lg font-black">🏀 방학특강 결석 신고 · 보강</h1>
-      <p className="mb-4 text-xs font-bold text-gray-500">앞으로 못 오는 회차는 <b>미리 결석 신고</b>(셔틀 자동 제외), 이미 결석한 회차는 <b>보강 신청</b>을 할 수 있어요. (보강은 결석일로부터 2개월 이내)</p>
+      <p className="mb-4 text-sm font-bold text-gray-500">앞으로 못 오는 회차는 <b>미리 결석 신고</b>(셔틀 자동 제외), 이미 결석한 회차는 <b>보강 신청</b>을 할 수 있어요. (보강은 결석일로부터 2개월 이내)</p>
 
       {msg && <div className="mb-3 rounded-lg bg-green-50 px-3 py-2 text-sm font-bold text-green-700 dark:bg-green-950 dark:text-green-300">{msg}</div>}
       {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:bg-red-950 dark:text-red-300">{err}</div>}
@@ -109,8 +110,9 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                   <p className="break-keep text-xs font-bold text-gray-500">{ab.offeringTitle}</p>
                 </div>
                 <span className="shrink-0 text-right text-xs font-bold tabular-nums text-red-600">{ab.absentLabel} 결석</span>
+                {/* 행의 «여는» 버튼 = 옅은 바탕(tonal), 열린 뒤 «닫기» = 글자 버튼(M-08) */}
                 <button onClick={() => setOpen(open === ab.enrollmentDateId ? "" : ab.enrollmentDateId)}
-                  className="min-h-11 shrink-0 rounded-lg bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)]">{open === ab.enrollmentDateId ? "닫기" : "보강 신청"}</button>
+                  className={`${open === ab.enrollmentDateId ? "academy-button-text" : "academy-button-tonal"} shrink-0`}>{open === ab.enrollmentDateId ? "닫기" : "보강 신청"}</button>
               </div>
               {/* 보강 후보 고르기 — 기존 그대로(후보를 누르면 바로 신청, 학원 승인 후 확정) */}
               {open === ab.enrollmentDateId && (
@@ -155,7 +157,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
             return (
               <li key={s.enrollmentDateId} className="px-3 py-2">
                 {/* 한 줄 행: 자녀 · 특강 이름 · (상태 배지·사유) | 회차 날짜(오른쪽) · 동작 */}
-                <div className="flex min-h-11 items-center gap-2">
+                <div className="flex min-h-11 flex-wrap items-center gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-black">{s.childName}</p>
                     <p className="break-keep text-xs font-bold text-gray-500">{s.offeringTitle}</p>
@@ -172,14 +174,15 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                   {/* 동작 — 기존과 같은 조건·같은 함수 */}
                   {s.reported ? (
                     !s.locked && (
-                      <button onClick={() => cancelAbsence(s.enrollmentDateId)} disabled={busy}
-                        className="min-h-11 shrink-0 rounded-lg border border-gray-200 px-3 text-xs font-black text-gray-600 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300">신고 취소</button>
+                      // 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancelAbsence(s.enrollmentDateId) 그대로
+                      <InlineConfirm label="신고 취소" question="이 결석 신고를 취소할까요?" confirmLabel="신고 취소하기"
+                        onConfirm={() => cancelAbsence(s.enrollmentDateId)} pending={busy} openClassName="basis-full" />
                     )
                   ) : s.locked ? (
                     <span className="shrink-0 rounded-full bg-gray-100 px-2 py-1 text-xs font-black text-gray-500 dark:bg-gray-700 dark:text-gray-300">출결 확정됨</span>
                   ) : (
                     <button onClick={() => setSeatOpen(seatOpen === s.enrollmentDateId ? "" : s.enrollmentDateId)}
-                      className="min-h-11 shrink-0 rounded-lg bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)]">{seatOpen === s.enrollmentDateId ? "닫기" : "결석 신고"}</button>
+                      className={`${seatOpen === s.enrollmentDateId ? "academy-button-text" : "academy-button-tonal"} shrink-0`}>{seatOpen === s.enrollmentDateId ? "닫기" : "결석 신고"}</button>
                   )}
                 </div>
                 {/* 신고 폼: 사유 드롭다운 + 안내문 + 제출 (기존 그대로) */}
@@ -195,7 +198,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                     </select>
                     {reasonInfo && <p className="mb-2 text-xs font-bold text-gray-400">{reasonInfo.hint} 최종 처리는 학원과 협의됩니다.</p>}
                     <button onClick={() => reportAbsence(s.enrollmentDateId)} disabled={busy || !seatReason[s.enrollmentDateId]}
-                      className="min-h-11 w-full rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">결석 신고하기</button>
+                      className="academy-button-primary w-full">결석 신고하기</button>
                   </div>
                 )}
               </li>

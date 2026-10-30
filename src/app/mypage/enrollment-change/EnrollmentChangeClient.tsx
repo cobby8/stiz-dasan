@@ -8,6 +8,7 @@ import {
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
 import type { EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -160,14 +161,17 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             {child.pending.toClassName ? ` · ${child.pending.toClassName}` : ""} · {child.pending.effectiveFrom}부터
             {child.pending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
           </p>
-          <button
-            type="button"
-            disabled={pending || uncertain}
-            onClick={() => cancel(child.pending!.id)}
-            className="mt-3 min-h-11 w-full rounded-xl border border-amber-300 bg-white px-4 text-sm font-bold text-amber-900 disabled:opacity-50 dark:border-amber-800 dark:bg-gray-900 dark:text-amber-200"
-          >
-            신청 취소하기
-          </button>
+          {/* 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(child.pending.id) 그대로 */}
+          <InlineConfirm
+            label="신청 취소하기"
+            question="이 수강 변경 신청을 취소할까요?"
+            confirmLabel="신청 취소하기"
+            onConfirm={() => cancel(child.pending!.id)}
+            disabled={uncertain}
+            pending={pending}
+            className="mt-3 flex"
+            triggerClassName="w-full"
+          />
         </section>
       ) : (
         <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm dark:bg-gray-800">
@@ -183,12 +187,10 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
               <button
                 key={value}
                 type="button"
+                // 고른 칩 = academy-choice(체크·연한 바탕). 꽉 찬 색은 맨 아래 제출 버튼만(C-M2)
+                aria-pressed={kind === value}
                 onClick={() => setKind(value)}
-                className={`min-h-11 break-keep rounded-xl border text-sm font-bold ${
-                  kind === value
-                    ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                    : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
-                }`}
+                className="academy-choice break-keep px-1!"
               >
                 {CHANGE_KIND_LABEL[value]}
               </button>
@@ -269,14 +271,30 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             />
           </div>
 
-          <button
-            type="button"
-            disabled={pending || uncertain || (kind === "CLASS_CHANGE" && !toClassId)}
-            onClick={submit}
-            className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
-          >
-            {pending ? "접수 중..." : "신청하기"}
-          </button>
+          {kind === "WITHDRAW" ? (
+            // 퇴원은 되돌리기 어렵다 → 위험색 버튼 + 한 번 더 확인(M-03). 확인 후 제출 함수·내용은 같다(submit)
+            <InlineConfirm
+              label="퇴원 신청하기"
+              question="정말 퇴원을 신청할까요? 자리가 다른 학생에게 넘어갑니다."
+              confirmLabel="퇴원 신청하기"
+              keepLabel="돌아가기"
+              onConfirm={submit}
+              disabled={uncertain}
+              pending={pending}
+              pendingLabel="접수 중..."
+              className="flex"
+              triggerClassName="w-full"
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={pending || uncertain || (kind === "CLASS_CHANGE" && !toClassId)}
+              onClick={submit}
+              className="academy-button-primary w-full"
+            >
+              {pending ? "접수 중..." : "신청하기"}
+            </button>
+          )}
         </section>
       )}
 

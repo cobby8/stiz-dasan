@@ -15,6 +15,7 @@ import { deliveryStatusText, matchesShuttleChange, type DeliveryStatusSummary } 
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { kstLabel } from "@/lib/datetime/kst";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
@@ -159,7 +160,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                       aria-label={`${kstLabel(item.serviceDate)} ${item.studentName} 셔틀 변경 자세히 보기`}
                       onClick={() => setDetailId(item.id)}
                       onKeyDown={(event) => handleRowKeyDown(event, item.id)}
-                      className="flex min-h-14 cursor-pointer items-center gap-2 px-3 py-2 hover:bg-blue-50/60 dark:hover:bg-blue-950/20"
+                      className="flex min-h-14 cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-blue-50/60 dark:hover:bg-blue-950/20"
                     >
                       <div className="min-w-0 flex-1">
                         {/* 1줄: 학생 · 방향 칩 · 변경 종류 칩 — «·»로 잇던 글을 요소로 나눔 */}
@@ -181,15 +182,17 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                         {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사 연결·알림 확인 필요</p>}
                       </div>
                       <span className="shrink-0 text-right text-sm font-bold tabular-nums text-blue-900 dark:text-blue-200">{kstLabel(item.serviceDate)}</span>
-                      <button
-                        type="button"
-                        disabled={pending || Boolean(uncertain)}
-                        // 행 탭(시트 열기)으로 번지지 않게 막고, 취소 동작은 기존과 같이 바로 실행
-                        onClick={(event) => { event.stopPropagation(); cancel(item.id); }}
-                        className="min-h-11 shrink-0 rounded-xl border border-blue-300 px-3 text-xs font-bold text-blue-900 disabled:opacity-50 dark:border-blue-800 dark:text-blue-200"
-                      >
-                        취소
-                      </button>
+                      {/* 취소 = 그 자리 확인(C-M1) 후 기존 cancel(item.id) 그대로. 행 탭(시트 열기)으로 번지지 않게 stopPropagation 유지 */}
+                      <InlineConfirm
+                        label="취소"
+                        question="이 셔틀 변경을 취소할까요?"
+                        confirmLabel="취소하기"
+                        onConfirm={() => cancel(item.id)}
+                        disabled={Boolean(uncertain)}
+                        pending={pending}
+                        stopPropagation
+                        openClassName="basis-full"
+                      />
                     </div>
                   </li>
                 ))}
@@ -234,12 +237,10 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
               <button
                 key={value}
                 type="button"
+                // 고른 칩 = academy-choice(연한 바탕+테두리+체크). 꽉 찬 색은 아래 제출 버튼만(C-M2)
+                aria-pressed={direction === value}
                 onClick={() => setDirection(value)}
-                className={`min-h-11 break-keep rounded-lg border px-1 text-xs font-bold ${
-                  direction === value
-                    ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                    : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-200"
-                }`}
+                className="academy-choice break-keep px-1!"
               >
                 {SHUTTLE_DIRECTION_LABEL[value]}
               </button>
@@ -254,12 +255,9 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
               <button
                 key={value}
                 type="button"
+                aria-pressed={kind === value}
                 onClick={() => setKind(value)}
-                className={`min-h-11 break-keep rounded-lg border text-sm font-bold ${
-                  kind === value
-                    ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                    : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-200"
-                }`}
+                className="academy-choice break-keep"
               >
                 {SHUTTLE_EXCEPTION_KIND_LABEL[value]}
               </button>

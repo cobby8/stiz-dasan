@@ -6,6 +6,7 @@ import type { UpcomingChild, UpcomingClassDate } from "@/lib/regular/parent-regu
 import type { RegularMakeupRow } from "@/lib/regular/parent-regular-makeup";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { todayKst } from "@/lib/datetime/kst";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -139,15 +140,17 @@ export default function RegularAbsenceClient({
     <div className="mx-auto max-w-2xl px-4 py-6">
       {/* 헤더 */}
       <div className="mb-2 flex items-center gap-2">
-        <Link href="/mypage" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-          <span className="material-symbols-outlined">arrow_back</span>
+        {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
+        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
+          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
         <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
           <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">event_busy</span>
           정규수업 결석 신고
         </h1>
       </div>
-      <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+      {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
+      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
         신고한 결석은 선생님과 기사님에게 표시됩니다.
       </p>
 
@@ -181,7 +184,7 @@ export default function RegularAbsenceClient({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             보강 일정은 학원에서 지정합니다. 변경이 필요하면 학원으로 문의해 주세요.
           </p>
         </div>
@@ -226,7 +229,7 @@ export default function RegularAbsenceClient({
                         return (
                           <li key={key} className="px-3 py-1.5">
                             {/* 한 줄 행: 반·시각(왼쪽, 줄바꿈 허용) · 날짜(오른쪽, 숫자 폭 고정) · 동작 버튼 */}
-                            <div className="flex min-h-11 items-center gap-2">
+                            <div className="flex min-h-11 flex-wrap items-center gap-2">
                               <div className="min-w-0 flex-1">
                                 <p className="break-keep text-sm font-bold text-brand-navy-900 dark:text-white">
                                   {d.className}
@@ -255,20 +258,22 @@ export default function RegularAbsenceClient({
 
                               {/* 액션 — 기존과 같은 조건·같은 함수(신고 취소 / 결석 신고 폼 열기) */}
                               {d.locked ? null : d.reported ? (
-                                <button
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => cancel(d)}
-                                  className="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-gray-300 px-3 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                                >
-                                  신고 취소
-                                </button>
+                                // 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로
+                                <InlineConfirm
+                                  label="신고 취소"
+                                  question="이 결석 신고를 취소할까요?"
+                                  confirmLabel="신고 취소하기"
+                                  onConfirm={() => cancel(d)}
+                                  pending={busy}
+                                  openClassName="basis-full"
+                                />
                               ) : openKey === key ? null : (
                                 <button
                                   type="button"
                                   disabled={busy}
                                   onClick={() => setOpenKey(key)}
-                                  className="inline-flex min-h-11 shrink-0 items-center rounded-lg bg-brand-orange-500 px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                                  // 행의 «여는» 버튼 = 옅은 바탕(tonal). 꽉 찬 색은 폼 안 «신고하기»만(M-08)
+                                  className="academy-button-tonal shrink-0"
                                 >
                                   결석 신고
                                 </button>
@@ -295,7 +300,7 @@ export default function RegularAbsenceClient({
                                   type="button"
                                   disabled={busy}
                                   onClick={() => report(d)}
-                                  className="inline-flex min-h-11 items-center rounded-lg bg-brand-orange-500 px-3 text-xs font-black text-white hover:opacity-90 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                                  className="academy-button-primary"
                                 >
                                   신고하기
                                 </button>
@@ -303,7 +308,7 @@ export default function RegularAbsenceClient({
                                   type="button"
                                   disabled={busy}
                                   onClick={() => setOpenKey("")}
-                                  className="inline-flex min-h-11 items-center rounded-lg px-2 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                                  className="academy-button-text"
                                 >
                                   닫기
                                 </button>
