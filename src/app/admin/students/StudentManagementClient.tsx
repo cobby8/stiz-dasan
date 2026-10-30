@@ -1133,7 +1133,7 @@ export default function StudentManagementClient({
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
                                                 {/* 학교+연락처: 넉넉하면 한 줄, 카드가 좁으면 연락처가 학교 아래로 내려간다(학교 이름이 한 글자씩 꺾이지 않게) */}
                                                 <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 py-1 text-[var(--color-academy-muted)]">
-                                                    <span className="break-keep [overflow-wrap:break-word]">{s.school || "-"}</span>
+                                                    <span className="min-w-0 break-keep [overflow-wrap:break-word]">{s.school || "-"}</span>
                                                     <span className="whitespace-nowrap text-xs tabular-nums">
                                                         {formatPhone(s.parent.phone)}
                                                     </span>
