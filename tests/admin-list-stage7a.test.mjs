@@ -100,3 +100,22 @@ test("대기자 관리: 반별 묶음 한 줄 표 + ⚡·패널, 상태 칩은 �
   assert.doesNotMatch(source, /toLocaleDateString/);
   assert.match(source, /kstLabel\(w\.respondBy\)/);
 });
+
+test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산·승인 입력은 패널에 그대로", () => {
+  const source = read("../src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx");
+  assertListStandard(source, "수강 변경");
+  // 예전 «기존 반 → 바꿀 반 · 적용일부터» 는 칸으로 나눴고 적용일은 오른쪽
+  assert.match(source, /admin-cell-num[^"]*">\{row\.effectiveFrom\}<\/td>/);
+  // ⚡ 는 검토 중 건의 승인·거절만, 같은 decide
+  assert.match(source, /if \(row\.status !== "PENDING"\) return \[\];/);
+  assert.match(source, /onSelect: \(\) => decide\(id, true\)/);
+  assert.match(source, /onSelect: \(\) => decide\(id, false\)/);
+  // 패널 안: 예전 버튼·함수 호출이 빠지지 않았다
+  const panel = source.slice(source.indexOf("<ListDetailPanel"));
+  for (const call of ["applySheet(row)", "confirmRallyz(row)", "confirmSheetManually(row)", "releaseRetiredResumeHold(row)", "issueInvoice(row.id)", "decide(row.id, true)", "decide(row.id, false)"]) {
+    assert.ok(panel.includes(call), `패널에 ${call} 가 남아야 합니다`);
+  }
+  assert.match(panel, /학부모에게 전할 말 \(거절 시 함께 전달됩니다\)/);
+  // 패널로 옮긴 부분에 옛 하드코딩 색이 남지 않는다
+  assert.doesNotMatch(panel, /brand-navy|brand-neon|bg-amber-|text-gray-|dark:/);
+});

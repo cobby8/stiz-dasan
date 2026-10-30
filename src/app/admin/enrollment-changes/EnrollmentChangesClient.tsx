@@ -17,6 +17,8 @@ import { CHANGE_STATUS_LABEL, syncCheckBadge } from "@/lib/enrollment/changeRequ
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
 import type { AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
 const FILTERS = [
   { value: "PENDING", label: "검토 중" },
@@ -45,6 +47,8 @@ export default function EnrollmentChangesClient({
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  // 행 클릭 상세 패널 대상(신청 id) — 확인 단계·일할 계산·승인 입력은 패널에 있다
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   function issueInvoice(requestId: string) {
     const row = rows.find(item => item.id === requestId);
@@ -125,13 +129,48 @@ export default function EnrollmentChangesClient({
     });
   }
 
+  // 상태 배지 — 자동 적용 건은 원장(시트·랠리즈) 확인 상태가 곧 진짜 상태다. "반영 완료"는 셋 다 끝났을 때만.
+  function statusBadge(row: AdminChangeRequestRow) {
+    const badge = row.status === "APPLIED" ? syncCheckBadge(row.sheetStatus, row.rallyzStatus) : null;
+    if (badge?.needsCheck) {
+      return (
+        <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">
+          {badge.label}
+        </span>
+      );
+    }
+    return <span className="text-xs font-bold text-[var(--color-academy-muted)]">{badge?.label ?? CHANGE_STATUS_LABEL[row.status] ?? row.status}</span>;
+  }
+
+  // ⚡ 작업 — 검토 중(PENDING) 건의 승인·거절만(예전 카드 버튼과 같은 decide 호출, 확인창 없던 그대로).
+  // 시트·랠리즈 확인·청구서 생성은 잠금 조건이 많아 상세 패널에서 예전 버튼 그대로 쓴다.
+  function buildActions(row: AdminChangeRequestRow): AdminQuickAction[] {
+    if (row.status !== "PENDING") return [];
+    const id = row.id; // 대상 값을 미리 붙잡아 둔다
+    return [
+      { key: "approve", label: "승인", icon: "check", tone: "primary", disabled: pending, onSelect: () => decide(id, true) },
+      { key: "reject", label: "거절", icon: "block", disabled: pending, onSelect: () => decide(id, false) },
+    ];
+  }
+
+  // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+  function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setDetailId(id);
+    }
+  }
+
+  const detail = detailId ? rows.find((item) => item.id === detailId) ?? null : null;
+
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-4">
+    <main className="mx-auto max-w-5xl space-y-3 p-4">
       <div>
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">수강 변경 신청</h1>
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
         {/* 원장 결정(2026-10-05): 휴원·퇴원은 사이트만 자동. 랠리즈·시트는 사람이 반영하고 확인을 눌러야 끝난다. */}
         {/* 시트 은퇴(2026-10~) 후엔 시트를 언급하지 않는다 — 남은 사람 일은 랠리즈뿐이다. */}
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
           {sheetRetired
             ? "적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다. 랠리즈에 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요. 적용일이 이미 지난 건은 승인 즉시 반영됩니다. 반 변경은 적용일에 자동으로 바뀌지 않습니다. 학부모 알림은 별도 승인 후 발송합니다."
             : "적용일이 된 휴원·퇴원은 사이트에 자동 반영됩니다(적용일이 이미 지난 건은 승인 즉시). 랠리즈·시트는 직접 반영한 뒤 '랠리즈 반영 확인'을 눌러 주세요. 반 변경은 적용일에 자동으로 바뀌지 않습니다. 학부모 알림은 별도 승인 후 발송합니다."}
@@ -142,23 +181,25 @@ export default function EnrollmentChangesClient({
       {needsCheckCount > 0 && status !== "NEEDS_CHECK" && (
         <button
           type="button"
-          onClick={() => router.push("/admin/enrollment-changes?status=NEEDS_CHECK")}
-          className="block w-full rounded-xl bg-amber-50 p-3 text-left text-sm font-bold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+          onClick={() => { setDetailId(null); router.push("/admin/enrollment-changes?status=NEEDS_CHECK"); }}
+          className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-bold text-[var(--color-academy-warning)]"
         >
           사이트에만 반영되고 {externalLabel} 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.
         </button>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      {/* 상태 필터 — 서버가 상태별로 읽어 주므로(다른 상태 건수는 모름) 건수 칩 대신 예전 버튼을 유지 */}
+      <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((item) => (
           <button
             key={item.value}
             type="button"
-            onClick={() => router.push(`/admin/enrollment-changes?status=${item.value}`)}
-            className={`min-h-11 rounded-xl px-4 text-sm font-bold ${
+            aria-pressed={status === item.value}
+            onClick={() => { setDetailId(null); router.push(`/admin/enrollment-changes?status=${item.value}`); }}
+            className={`min-h-11 rounded-full border px-4 text-sm font-bold ${
               status === item.value
-                ? "bg-brand-navy-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                : "border border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
+                : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
             }`}
           >
             {item.label}
@@ -167,35 +208,95 @@ export default function EnrollmentChangesClient({
         ))}
       </div>
 
-      {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {error && !detail && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
 
       {rows.length === 0 ? (
-        <p className="rounded-2xl bg-white p-8 text-center text-sm text-gray-400 shadow-sm dark:bg-gray-900">
+        <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
           해당하는 신청이 없습니다
         </p>
       ) : (
-        <ul className="space-y-3">
-          {rows.map((row) => (
-            <li key={row.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <div className="flex flex-wrap items-center gap-2">
-                <strong className="text-base dark:text-white">{row.studentName}</strong>
-                <span className="rounded-lg bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-                  {row.kindLabel}
-                </span>
-                {(() => {
-                  // 자동 적용 건은 원장(시트·랠리즈) 확인 상태가 곧 진짜 상태다. "반영 완료"는 셋 다 끝났을 때만.
-                  const badge = row.status === "APPLIED" ? syncCheckBadge(row.sheetStatus, row.rallyzStatus) : null;
-                  if (badge?.needsCheck) {
-                    return (
-                      <span className="rounded-lg bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                        {badge.label}
-                      </span>
-                    );
-                  }
-                  return <span className="text-xs font-bold text-gray-500">{badge?.label ?? CHANGE_STATUS_LABEL[row.status] ?? row.status}</span>;
-                })()}
-                {row.appliedAt && <span className="text-xs font-bold text-green-700">사이트 반영 {row.appliedAt}</span>}
-              </div>
+        <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+          {/* 한 줄 행: 예전 «기존 반 → 바꿀 반 · 적용일부터 · 복귀 예정» 을 칸별로 나눴다 */}
+          <table className="admin-list-table w-full border-collapse text-sm">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+              <tr>
+                <th className="admin-cell-num hidden px-2 py-2 md:table-cell">신청</th>
+                <th className="px-2 py-2">원생</th>
+                <th className="px-2 py-2">종류</th>
+                <th className="px-2 py-2">상태</th>
+                <th className="hidden px-2 py-2 sm:table-cell">기존 반</th>
+                <th className="hidden px-2 py-2 sm:table-cell">바꿀 반</th>
+                <th className="admin-cell-num px-2 py-2">적용일</th>
+                <th className="admin-cell-num hidden px-2 py-2 lg:table-cell">복귀 예정</th>
+                <th className="admin-cell-num hidden px-2 py-2 lg:table-cell">차액</th>
+                <th className="admin-cell-center px-2 py-2">관리</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-academy-line)]">
+              {rows.map((row) => {
+                const actions = buildActions(row);
+                const diff = row.proration && row.proration.needsProration && !row.proration.scheduleUnavailable ? row.proration.diff : null;
+                return (
+                  <tr
+                    key={row.id}
+                    tabIndex={0}
+                    aria-label={`${row.studentName} ${row.kindLabel} 신청 상세 보기`}
+                    onClick={() => setDetailId(row.id)}
+                    onKeyDown={(event) => handleRowKeyDown(event, row.id)}
+                    className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                  >
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{row.createdAt}</td>
+                    <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{row.studentName}</td>
+                    <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.kindLabel}</td>
+                    <td className="px-2 py-1.5">{statusBadge(row)}</td>
+                    <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.fromClassName ?? "-"}</td>
+                    <td className="hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">
+                      {row.toClassName ?? "-"}
+                      {/* 희망 반 정원이 지금도 차 있으면 표시만, 설명은 상세 패널 */}
+                      {row.toClassName && row.toClassFull && (
+                        <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-warning)]" aria-label="희망 반 정원 마감">group_off</span>
+                      )}
+                    </td>
+                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.effectiveFrom}</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{row.resumeOn ?? "-"}</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] lg:table-cell">{diff === null || diff === 0 ? "-" : `${diff > 0 ? "+" : ""}${diff.toLocaleString()}원`}</td>
+                    {/* 관리: ⚡(승인·거절). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                    <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                      {actions.length > 0 ? (
+                        <AdminQuickActionMenu label={`${row.studentName} ${row.kindLabel} 빠른 작업`} actions={actions} />
+                      ) : (
+                        <span className="text-xs text-[var(--color-academy-muted)]">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* 행 클릭 상세 패널 — 예전 카드 본문(시트·랠리즈 확인 단계, 일할 계산·청구서, 승인·거절 입력)을 그대로 옮겼다 */}
+      {detail && (() => {
+        const row = detail;
+        return (
+          <ListDetailPanel onClose={() => setDetailId(null)} titleId="enrollment-change-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <h3 id="enrollment-change-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{row.studentName}</h3>
+              <span className="rounded-lg bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-ink)]">{row.kindLabel}</span>
+              {statusBadge(row)}
+              {row.appliedAt && <span className="text-xs font-bold text-[var(--color-academy-success)]">사이트 반영 <span className="tabular-nums">{row.appliedAt}</span></span>}
+              <button
+                type="button"
+                onClick={() => setDetailId(null)}
+                aria-label="닫기"
+                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+
+            {error && <p role="alert" className="mb-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
 
               {/* 자동 적용 후 남은 확인 단계: 시트 반영(자동 또는 직접 수정 확인) → 랠리즈 반영 확인(서버도 이 순서를 요구한다). */}
               {row.status === "APPLIED" && row.syncCommandId && syncCheckBadge(row.sheetStatus, row.rallyzStatus)?.needsCheck && (() => {
@@ -211,7 +312,7 @@ export default function EnrollmentChangesClient({
                 <div className="mt-3 space-y-2">
                   {/* 보류 사유는 계속 보여 준다. 시트를 직접 고친 뒤 '시트 직접 수정 완료'로 이어갈 수 있다. */}
                   {row.syncCommandStatus === "HELD" && (
-                    <p className="rounded-xl bg-amber-50 p-2 text-xs font-bold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-warning)]">
                       {/* 영문 종류 코드가 섞인 저장 문구는 화면에서만 한국어로 다듬는다. */}
                       {sheetSkipped
                         ? <>자동 반영 보류: {sheetHoldDisplayReason(row.kind, row.syncHoldReason)}{retiredResumeHold ? " — 랠리즈에 직접 반영한 뒤 '보류 해제 후 랠리즈 확인 진행'을 눌러 주세요." : ""}</>
@@ -225,7 +326,7 @@ export default function EnrollmentChangesClient({
                         type="button"
                         disabled={pending || row.sheetStatus === "SUCCEEDED" || row.syncCommandStatus === "HELD"}
                         onClick={() => applySheet(row)}
-                        className="min-h-11 rounded-xl border border-gray-300 text-sm font-bold text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200"
+                        className="min-h-11 rounded-xl border border-[var(--color-academy-line)] text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
                       >
                         {row.sheetStatus === "SUCCEEDED" ? "시트 반영됨" : "시트에 반영"}
                       </button>
@@ -235,7 +336,7 @@ export default function EnrollmentChangesClient({
                       disabled={pending || !sheetDone || row.rallyzStatus === "SUCCEEDED" || row.syncCommandStatus === "HELD"}
                       onClick={() => confirmRallyz(row)}
                       title={!sheetDone ? "시트 반영을 먼저 해 주세요" : undefined}
-                      className={`${row.kind === "RESUME" || sheetSkipped ? "col-span-2 " : ""}min-h-11 rounded-xl bg-brand-navy-900 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900`}
+                      className={`${row.kind === "RESUME" || sheetSkipped ? "col-span-2 " : ""}min-h-11 rounded-xl bg-[var(--color-academy-primary)] text-sm font-black text-[var(--color-academy-on-primary)] disabled:opacity-50`}
                     >
                       랠리즈 반영 확인
                     </button>
@@ -245,7 +346,7 @@ export default function EnrollmentChangesClient({
                         type="button"
                         disabled={pending}
                         onClick={() => confirmSheetManually(row)}
-                        className="col-span-2 min-h-11 rounded-xl border border-dashed border-gray-300 text-sm font-bold text-gray-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+                        className="col-span-2 min-h-11 rounded-xl border border-dashed border-[var(--color-academy-line)] text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
                       >
                         시트 직접 수정 완료
                       </button>
@@ -256,13 +357,13 @@ export default function EnrollmentChangesClient({
                         type="button"
                         disabled={pending}
                         onClick={() => releaseRetiredResumeHold(row)}
-                        className="col-span-2 min-h-11 rounded-xl border border-dashed border-gray-300 text-sm font-bold text-gray-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+                        className="col-span-2 min-h-11 rounded-xl border border-dashed border-[var(--color-academy-line)] text-sm font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
                       >
                         보류 해제 후 랠리즈 확인 진행
                       </button>
                     )}
                     {!sheetDone && (
-                      <p className="col-span-2 text-xs text-gray-500">{row.kind === "RESUME"
+                      <p className="col-span-2 text-xs text-[var(--color-academy-muted)]">{row.kind === "RESUME"
                         ? "복귀는 시트 자동 반영을 지원하지 않습니다 — 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."
                         : "시트 반영을 먼저 하면 '랠리즈 반영 확인'을 누를 수 있습니다. 자동 반영이 안 되면 시트를 직접 고친 뒤 '시트 직접 수정 완료'를 눌러 주세요."}</p>
                     )}
@@ -273,12 +374,12 @@ export default function EnrollmentChangesClient({
 
               {/* 적용일 처리에서 사람 확인으로 보류된 건(반 변경·이미 바뀐 상태 등). 사이트는 바뀌지 않았다. */}
               {row.status === "APPROVED" && row.syncCommandStatus === "HELD" && (
-                <p className="mt-2 rounded-xl bg-gray-50 p-2 text-xs font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                <p className="mt-2 rounded-xl bg-[var(--color-academy-soft)] p-2 text-xs font-bold text-[var(--color-academy-ink)]">
                   적용일 도래 · 자동 반영 안 함: {row.syncHoldReason ?? "관리자 확인 필요"}
                 </p>
               )}
 
-              <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">
+              <p className="mt-2 text-sm text-[var(--color-academy-ink)]">
                 {row.fromClassName ?? "-"}
                 {row.toClassName ? ` → ${row.toClassName}` : ""} · {row.effectiveFrom}부터
                 {row.resumeOn ? ` · ${row.resumeOn} 복귀 예정` : ""}
@@ -286,12 +387,12 @@ export default function EnrollmentChangesClient({
 
               {/* 정원은 신청 당시가 아니라 지금 기준으로 다시 센다. 그 사이 자리가 났을 수 있다. */}
               {row.toClassName && row.toClassFull && (
-                <p className="mt-2 rounded-xl bg-amber-50 p-2 text-xs font-bold text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="mt-2 rounded-xl bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-warning)]">
                   희망 반 정원이 지금도 차 있습니다{row.waitlisted ? " (신청 당시에도 마감)" : " (신청 당시에는 자리가 있었습니다)"}
                 </p>
               )}
               {row.toClassName && !row.toClassFull && row.waitlisted && (
-                <p className="mt-2 rounded-xl bg-green-50 p-2 text-xs font-bold text-green-800 dark:bg-green-950/30 dark:text-green-200">
+                <p className="mt-2 rounded-xl bg-[var(--color-academy-success-soft)] p-2 text-xs font-bold text-[var(--color-academy-success)]">
                   신청 당시에는 마감이었지만 지금은 자리가 있습니다
                 </p>
               )}
@@ -299,13 +400,13 @@ export default function EnrollmentChangesClient({
               {/* 일할 계산. 근거를 보여줘야 원장이 숫자를 믿고 발행할 수 있다.
                   금액은 발행 시 서버가 다시 계산한다(여기 숫자는 표시용). */}
               {row.proration && row.proration.needsProration && (
-                <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-                  <p className="text-xs font-black text-gray-700 dark:text-gray-200">수강료 일할 계산</p>
+                <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
+                  <p className="text-xs font-black text-[var(--color-academy-ink)]">수강료 일할 계산</p>
                   {row.proration.lines.map((line) => (
-                    <p key={line} className="mt-1 text-xs text-gray-600 dark:text-gray-300">{line}</p>
+                    <p key={line} className="mt-1 text-xs text-[var(--color-academy-ink)]">{line}</p>
                   ))}
                   {!row.proration.scheduleUnavailable && (
-                    <p className="mt-2 text-sm font-black text-brand-navy-900 dark:text-white">
+                    <p className="mt-2 text-sm font-black text-[var(--color-academy-ink)]">
                       {row.proration.diff > 0
                         ? `추가 청구 ${row.proration.diff.toLocaleString()}원`
                         : row.proration.diff < 0
@@ -315,13 +416,13 @@ export default function EnrollmentChangesClient({
                   )}
                   {row.status === "APPROVED" && row.proration.diff > 0 && !row.proration.scheduleUnavailable && (
                     row.invoicedPaymentId ? (
-                      <p className="mt-2 text-xs font-bold text-amber-700">차액 기록 있음 · 청구서 연결 및 {externalLabel} 반영·알림은 별도 확인 필요</p>
+                      <p className="mt-2 text-xs font-bold text-[var(--color-academy-warning)]">차액 기록 있음 · 청구서 연결 및 {externalLabel} 반영·알림은 별도 확인 필요</p>
                     ) : (
                       <button
                         type="button"
                         disabled={pending}
                         onClick={() => issueInvoice(row.id)}
-                        className="mt-2 min-h-11 w-full rounded-xl bg-brand-navy-900 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                        className="mt-2 min-h-11 w-full rounded-xl bg-[var(--color-academy-primary)] text-sm font-black text-[var(--color-academy-on-primary)] disabled:opacity-50"
                       >
                         차액 {row.proration.diff.toLocaleString()}원 사이트 청구서 생성
                       </button>
@@ -330,8 +431,8 @@ export default function EnrollmentChangesClient({
                 </div>
               )}
 
-              {row.reason && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">{row.reason}</p>}
-              <p className="mt-2 text-xs text-gray-400">신청 {row.createdAt}</p>
+              {row.reason && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-ink)]">{row.reason}</p>}
+              <p className="mt-2 text-xs text-[var(--color-academy-muted)]">신청 {row.createdAt}</p>
 
               {row.status === "PENDING" ? (
                 <div className="mt-3 space-y-2">
@@ -340,17 +441,17 @@ export default function EnrollmentChangesClient({
                     onChange={(event) => setNotes((prev) => ({ ...prev, [row.id]: event.target.value }))}
                     maxLength={500}
                     placeholder="학부모에게 전할 말 (거절 시 함께 전달됩니다)"
-                    className="min-h-11 w-full rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-800"
+                    className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3 text-sm"
                   />
                   {(row.kind === "PAUSE" || row.kind === "WITHDRAW") && (
-                    <p className="text-xs text-gray-500">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다. {sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.</p>
+                    <p className="text-xs text-[var(--color-academy-muted)]">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다. {sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.</p>
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       disabled={pending}
                       onClick={() => decide(row.id, false)}
-                      className="min-h-12 rounded-xl border border-gray-300 font-bold text-gray-700 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200"
+                      className="min-h-12 rounded-xl border border-[var(--color-academy-line)] font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
                     >
                       거절
                     </button>
@@ -358,7 +459,7 @@ export default function EnrollmentChangesClient({
                       type="button"
                       disabled={pending}
                       onClick={() => decide(row.id, true)}
-                      className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
+                      className="min-h-12 rounded-xl bg-[var(--color-academy-primary)] font-black text-[var(--color-academy-on-primary)] disabled:opacity-50"
                     >
                       승인
                     </button>
@@ -366,15 +467,14 @@ export default function EnrollmentChangesClient({
                 </div>
               ) : (
                 row.decisionNote && (
-                  <p className="mt-2 rounded-xl bg-gray-50 p-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <p className="mt-2 rounded-xl bg-[var(--color-academy-soft)] p-2 text-xs text-[var(--color-academy-ink)]">
                     메모: {row.decisionNote}
                   </p>
                 )
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+          </ListDetailPanel>
+        );
+      })()}
     </main>
   );
 }
