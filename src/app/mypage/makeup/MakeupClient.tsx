@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ParentMakeupOverview, ParentCredit, MakeupOption } from "@/lib/makeup/parent-makeup";
 import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction } from "@/app/actions/parent-makeup";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import { todayKst } from "@/lib/datetime/kst";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -23,6 +25,22 @@ function statusBadge(c: ParentCredit, expired: boolean) {
   }
 }
 
+/** 상태 칩 분류 — 서버 집계(credit-rules.summarize)와 같은 순서로 판정한다. 칩 숫자 = 보이는 행 수. */
+type CreditGroup = "available" | "reserved" | "used" | "expired";
+function creditGroupOf(c: ParentCredit, today: string): CreditGroup {
+  if (c.status === "USED" || c.status === "NO_SHOW") return "used";
+  if (c.status === "EXPIRED" || c.status === "REVOKED") return "expired";
+  if (c.expiresYmd < today) return "expired";
+  if (c.status === "RESERVED") return "reserved";
+  return "available";
+}
+const CREDIT_GROUPS: { value: CreditGroup; label: string }[] = [
+  { value: "available", label: "사용 가능" },
+  { value: "reserved", label: "예약 중" },
+  { value: "used", label: "사용 완료" },
+  { value: "expired", label: "만료" },
+];
+
 export default function MakeupClient({ initial }: { initial: ParentMakeupOverview }) {
   const router = useRouter();
   const [openId, setOpenId] = useState("");            // 반 선택이 열린 보강권
@@ -31,8 +49,11 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  // 상태 칩으로 고른 묶음("ALL" = 전체)
+  const [groupFilter, setGroupFilter] = useState("ALL");
 
-  const today = new Date().toISOString().slice(0, 10);
+  // 오늘은 KST 로 구한다(toISOString 은 새벽 0~9시에 어제가 나와 만료 판정이 하루 늦어진다)
+  const today = todayKst();
 
   // 보강권을 펼치면서 그 학생이 갈 수 있는 반을 불러온다.
   const open = useCallback(async (credit: ParentCredit) => {
@@ -78,7 +99,13 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     }
   }, [router]);
 
-  const { counts, credits } = initial;
+  const { credits } = initial;
+  const creditChips = CREDIT_GROUPS.map((g) => ({
+    value: g.value,
+    label: g.label,
+    count: credits.filter((c) => creditGroupOf(c, today) === g.value).length,
+  }));
+  const visibleCredits = groupFilter === "ALL" ? credits : credits.filter((c) => creditGroupOf(c, today) === groupFilter);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
@@ -97,19 +124,9 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
         기간이 지나면 자동으로 소멸합니다.
       </p>
 
-      {/* 잔여 집계 */}
-      <div className="mb-4 grid grid-cols-4 gap-2">
-        {[
-          { label: "사용 가능", v: counts.available, cls: "text-green-600 dark:text-green-400" },
-          { label: "예약 중", v: counts.reserved, cls: "text-blue-600 dark:text-blue-400" },
-          { label: "사용 완료", v: counts.used, cls: "text-gray-600 dark:text-gray-300" },
-          { label: "만료", v: counts.expired, cls: "text-gray-400 dark:text-gray-500" },
-        ].map((s) => (
-          <div key={s.label} className="rounded-2xl border border-gray-100 bg-white px-2 py-3 text-center shadow-sm dark:border-gray-800 dark:bg-gray-800">
-            <div className={`text-xl font-black ${s.cls}`}>{s.v}</div>
-            <div className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{s.label}</div>
-          </div>
-        ))}
+      {/* 잔여 집계 — 예전 4칸 판(약 70px)을 상태 칩 한 줄로. 칩을 누르면 그 상태만 본다. */}
+      <div className="mb-3">
+        <StatusCountChips items={creditChips} selected={groupFilter} onSelect={setGroupFilter} ariaLabel="보강권 상태별 건수" />
       </div>
 
       {msg && (
@@ -128,39 +145,41 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
           발급된 보강권이 없습니다.
         </div>
       ) : (
-        <div className="space-y-3">
-          {credits.map((c) => {
+        // 카드 묶음 대신 한 목록 안의 행(divide-y)으로 — 휴대폰 첫 화면에 더 많은 보강권이 보이게
+        <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white dark:divide-gray-700 dark:border-gray-800 dark:bg-gray-800">
+          {visibleCredits.map((c) => {
             const expired = c.expiresYmd < today && (c.status === "AVAILABLE" || c.status === "RESERVED");
             const badge = statusBadge(c, expired);
             const canBook = c.status === "AVAILABLE" && !expired;
             return (
-              <div key={c.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-800">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm">
-                    <span className="font-black text-gray-900 dark:text-gray-100">{c.studentName}</span>
-                    <span className="ml-2 text-gray-500 dark:text-gray-400">
-                      {c.sourceLabel} · {c.absenceLabel} 결석
-                    </span>
-                  </div>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-black ${badge.cls}`}>
+              <li key={c.id} className="px-3 py-2.5">
+                {/* 1줄: 학생 · 구분(정규/방학특강) · 상태(오른쪽) — «·»로 잇던 글을 요소로 나눔 */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-sm font-black text-gray-900 dark:text-gray-100">{c.studentName}</span>
+                  <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)] dark:border-gray-700 dark:text-gray-300">
+                    {c.sourceLabel}
+                  </span>
+                  <span className={`ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black ${badge.cls}`}>
                     {badge.label}
                   </span>
                 </div>
-                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-                  사용 기한 {c.expiresLabel}까지
+                {/* 2줄: 결석일(왼쪽) · 사용 기한(오른쪽, 숫자 폭 고정) */}
+                <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-3 text-xs text-[var(--color-academy-muted)] dark:text-gray-400">
+                  <span className="tabular-nums">{c.absenceLabel} 결석</span>
+                  <span className="text-right tabular-nums">사용 기한 {c.expiresLabel}까지</span>
                 </div>
 
                 {/* 예약 완료 상태 */}
                 {c.booking && c.status === "RESERVED" && (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blue-50 px-3 py-2 dark:bg-blue-950/40">
-                    <div className="text-sm font-bold text-blue-800 dark:text-blue-200">
-                      {c.booking.className} · {c.booking.dateLabel}
-                    </div>
+                  <div className="mt-2 flex items-center gap-2 rounded-xl bg-blue-50 py-1 pl-3 pr-1 dark:bg-blue-950/40">
+                    {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 취소 버튼 */}
+                    <span className="min-w-0 flex-1 break-keep text-sm font-bold text-blue-800 dark:text-blue-200">{c.booking.className}</span>
+                    <span className="shrink-0 text-sm font-bold tabular-nums text-blue-800 dark:text-blue-200">{c.booking.dateLabel}</span>
                     <button
                       type="button"
                       onClick={() => cancel(c.id)}
                       disabled={busy === c.id}
-                      className="rounded-lg border border-blue-200 px-3 py-1 text-xs font-black text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+                      className="min-h-11 shrink-0 rounded-lg border border-blue-200 px-3 text-xs font-black text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
                     >
                       예약 취소
                     </button>
@@ -169,12 +188,12 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
 
                 {/* 예약하기 */}
                 {canBook && (
-                  <div className="mt-3">
+                  <div className="mt-2">
                     <button
                       type="button"
                       onClick={() => open(c)}
                       disabled={busy === c.id}
-                      className="w-full rounded-xl bg-brand-navy-900 px-4 py-2.5 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-900"
+                      className="min-h-11 w-full rounded-xl bg-brand-navy-900 px-4 text-sm font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-gray-900"
                     >
                       {openId === c.id ? "닫기" : "보강 예약하기"}
                     </button>
@@ -199,11 +218,11 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                                   {o.endTime ? `~${o.endTime}` : ""}
                                 </span>
                               </div>
-                              <span className="text-[11px] font-black text-gray-500 dark:text-gray-400">
+                              <span className="text-xs font-black tabular-nums text-gray-500 dark:text-gray-400">
                                 {o.remaining}자리 남음
                               </span>
                             </div>
-                            <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                            <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                               대상 학년 {o.grades.join("·")}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -214,7 +233,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                                     key={d.ymd}
                                     type="button"
                                     onClick={() => setPick({ classId: o.classId, ymd: d.ymd })}
-                                    className={`rounded-lg border px-2.5 py-1 text-xs font-black ${
+                                    className={`min-h-11 rounded-lg border px-3 text-xs font-black tabular-nums ${
                                       on
                                         ? "border-brand-navy-900 bg-brand-navy-900 text-white dark:border-brand-neon-lime dark:bg-brand-neon-lime dark:text-gray-900"
                                         : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"
@@ -232,7 +251,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                             type="button"
                             onClick={() => book(c.id)}
                             disabled={busy === c.id || !pick}
-                            className="w-full rounded-xl bg-brand-orange-500 px-4 py-2.5 text-sm font-black text-white disabled:opacity-40"
+                            className="min-h-11 w-full rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white disabled:opacity-40"
                           >
                             이 날짜로 예약
                           </button>
@@ -241,10 +260,10 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                     )}
                   </div>
                 )}
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
 
       <p className="mt-5 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">

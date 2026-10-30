@@ -81,7 +81,6 @@ const R1_ALLOW = [
   "src/app/api/admin/session-detail/route.ts",
   "src/app/mypage/MyPageClient.tsx",
   "src/app/mypage/history/HistoryClient.tsx",
-  "src/app/mypage/makeup/MakeupClient.tsx",
   "src/app/staff/shuttle/StaffShuttleDashboardClient.tsx",
   "src/lib/billing-due-date.ts",
   "src/lib/googleCalendarWrite.ts",

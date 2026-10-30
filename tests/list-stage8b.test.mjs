@@ -59,3 +59,41 @@ test("출결 히스토리는 KST 날짜로 달별 묶음·오른쪽 날짜·상�
   assert.match(source, /href=\{`\/payments\/\$\{p\.invoiceId\}`\}/);
   assert.match(source, /<p className="text-xs text-gray-400">기한: \{toDateStr\(p\.dueDate\)\}<\/p>/);
 });
+
+test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
+  const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
+    "next/link": { default: Link },
+    "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "@/app/actions/parent-makeup": { fetchMakeupOptions: async () => ({ ok: true, options: [] }), bookMakeupAction: async () => ({ ok: true }), cancelMakeupAction: async () => ({ ok: true }) },
+    "@/components/admin/list/StatusCountChips": chips,
+    "@/lib/datetime/kst": kst,
+  }).default;
+  const credit = (id, status, expiresYmd, booking = null) => ({ id, studentId: "s1", studentName: "합성", studentGrade: null, sourceLabel: "정규", absenceLabel: "10/1(목)", expiresLabel: "12/1(화)", expiresYmd, status, booking });
+  const html = renderToStaticMarkup(React.createElement(Makeup, { initial: {
+    counts: { available: 1, reserved: 1, used: 1, expired: 1 },
+    credits: [
+      credit("a", "AVAILABLE", "2999-12-01"),
+      credit("b", "RESERVED", "2999-12-01", { sessionId: "x", className: "초등 고학년반", dateLabel: "11/5(목)" }),
+      credit("c", "USED", "2999-12-01"),
+      credit("d", "AVAILABLE", "2000-01-01"),
+    ],
+  } }));
+  assert.match(html, /aria-label="보강권 상태별 건수"/);
+  for (const label of ["사용 가능", "예약 중", "사용 완료", "만료"]) {
+    assert.match(html, new RegExp(`>${label}<span class="tabular-nums[^"]*">1</span>`), `${label} 칩 1건`);
+  }
+  // «·»로 잇던 글을 요소로 나눴다
+  assert.doesNotMatch(html, /정규 · 10\/1/);
+  assert.doesNotMatch(html, /초등 고학년반 · 11\/5/);
+  assert.match(html, /사용 기한 12\/1\(화\)까지/);
+  assert.match(html, />보강 예약하기</);
+  assert.match(html, />예약 취소</);
+
+  const source = read("src/app/mypage/makeup/MakeupClient.tsx");
+  assert.match(source, /const today = todayKst\(\);/);
+  assert.doesNotMatch(source, /\.toISOString\(\)/);
+  // 예약 = 반 열기 → 날짜 고르기 → «이 날짜로 예약», 취소 = 버튼 한 번 (기존 흐름 보존)
+  assert.match(source, /bookMakeupAction\(\{ creditId, classId: pick\.classId, dateYmd: pick\.ymd \}\)/);
+  assert.match(source, /onClick=\{\(\) => book\(c\.id\)\}[\s\S]*?이 날짜로 예약/);
+  assert.match(source, /onClick=\{\(\) => cancel\(c\.id\)\}/);
+});
