@@ -199,3 +199,27 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
   assert.match(source, /if \(!\(await send\(\{ action: "cancel", id \}\)\)\) return;/);
   assert.match(source, /disabled=\{pending \|\| Boolean\(uncertain\)\}/);
 });
+
+test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx").default;
+  const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
+    phoneKnown: true,
+    absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],
+    makeups: [{ id: "m1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", targetLabel: "1/12(월)", targetType: "SEASONAL", status: "REQUESTED" }],
+  } }));
+  assert.match(html, /<ul class="divide-y/);
+  assert.doesNotMatch(html, /· 겨울 방학특강/, "«자녀 · 특강» 이어 붙인 글은 요소로 나눴다");
+  assert.match(html, /1\/5\(월\) 결석/);
+  assert.match(html, />보강 신청</);
+  assert.match(html, /신청 접수 \(승인 대기\)/);
+
+  const source = read("src/app/mypage/seasonal/SeasonalMakeupClient.tsx");
+  assert.doesNotMatch(source, /결석 신고됨 · /);
+  assert.doesNotMatch(source, /min-h-(?:8|9)\b|text-\[11px\]/, "터치 44px·글자 12px 이상");
+  // 신청·신고·취소 흐름 보존
+  assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "SEASONAL", s\)\}/);
+  assert.match(source, /onClick=\{\(\) => request\(ab\.enrollmentDateId, "REGULAR", c\)\}/);
+  assert.match(source, /onClick=\{\(\) => reportAbsence\(s\.enrollmentDateId\)\} disabled=\{busy \|\| !seatReason\[s\.enrollmentDateId\]\}/);
+  assert.match(source, /onClick=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/);
+  assert.match(source, /신고하면 그날 셔틀 배차에서도 자동 제외됩니다\./);
+});
