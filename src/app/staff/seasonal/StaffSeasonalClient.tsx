@@ -3,6 +3,7 @@
 import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { startClassSession } from "@/app/actions/staff-sessions";
+import { addDaysKst } from "@/lib/datetime/kst";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 
 // 특강 카드 1장 = 홈과 동일한 반 단위 항목(StaffTodayClass).
@@ -38,10 +39,8 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
   }, []);
 
   function shiftDay(delta: number) {
-    const d = new Date(ymd + "T00:00:00+09:00");
-    d.setDate(d.getDate() + delta);
-    const next = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-    void loadDay(next);
+    // 달력 더하기는 KST 공용 모듈로(휴대폰 시간대가 달라도 하루 밀리지 않게)
+    void loadDay(addDaysKst(ymd, delta));
   }
 
   // 정규 수업 시작과 완전히 동일한 흐름:
@@ -76,77 +75,83 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
 
   return (
     <div className="mx-auto max-w-lg p-4">
-      <h1 className="mb-3 text-lg font-black dark:text-white">🏀 특강 수업</h1>
+      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-black dark:text-white">
+        <span className="material-symbols-outlined text-xl text-[var(--brand-accent)]" aria-hidden="true">sports_basketball</span>
+        특강 수업
+      </h1>
 
-      {/* 날짜 네비(정규와 동일하게 유지, 오늘 기본) */}
-      <div className="mb-3 flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
-        <button onClick={() => shiftDay(-1)} className="min-h-9 px-3 font-black text-gray-500">‹</button>
-        <span className="text-sm font-black dark:text-white">{ymd}</span>
-        <button onClick={() => shiftDay(1)} className="min-h-9 px-3 font-black text-gray-500">›</button>
+      {/* 날짜 네비(정규와 동일하게 유지, 오늘 기본) — 이동 버튼은 44px 터치 */}
+      <div className="mb-3 flex items-center justify-between rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-1">
+        <button type="button" aria-label="이전 날짜" onClick={() => shiftDay(-1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
+          <span className="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+        </button>
+        <span className="text-sm font-black tabular-nums">{ymd}</span>
+        <button type="button" aria-label="다음 날짜" onClick={() => shiftDay(1)} className="grid size-11 place-items-center text-[var(--color-academy-muted)]">
+          <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+        </button>
       </div>
 
       {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:bg-red-950 dark:text-red-300">{err}</div>}
 
-      <div className="space-y-3">
-        {dates.map((d) => {
-          const status = d.sessionStatus;
-          const busy = pending && startingId === d.sessionDateId;
-          return (
-            <article key={d.scheduleKey} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate font-black dark:text-white">{d.name}</div>
-                  <div className="mt-0.5 text-xs font-bold text-gray-500">{d.startTime}~{d.endTime} · 학생 {d.studentCount}명</div>
-                </div>
-                <StatusBadge status={status} />
-              </div>
-
-              <div className="mt-3">
+      {dates.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-[var(--color-academy-line)] p-5 text-center text-sm text-[var(--color-academy-muted)]">
+          이 날짜에 특강 수업이 없습니다.
+        </p>
+      ) : (
+        // 한 특강 = 한 줄 행: 시간 | 반 이름 | 인원(오른쪽) | 상태·행동 버튼. 숨길 정보가 없어 상세 시트는 두지 않는다.
+        <ul aria-label="특강 수업 목록" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+          {dates.map((d) => {
+            const status = d.sessionStatus;
+            const busy = pending && startingId === d.sessionDateId;
+            return (
+              <li key={d.scheduleKey} className="flex min-h-14 items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0">
+                <span className="shrink-0 text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{d.startTime}~{d.endTime}</span>
+                {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
+                <span className="min-w-0 flex-1 break-keep font-black">{d.name}</span>
+                <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{d.studentCount}명</span>
                 {status === "IN_PROGRESS" && d.sessionId ? (
                   // 진행 중: 통합 진행화면으로 바로 이어하기
                   <button
                     type="button"
                     onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 font-black text-[var(--brand-accent-contrast)]"
+                    className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"
                   >
-                    <span className="material-symbols-outlined">arrow_forward</span>
+                    <span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
                     수업 이어하기
                   </button>
                 ) : status === "COMPLETED" ? (
                   // 완료: 배지 + (세션 있으면) 기록 보기
-                  d.sessionId ? (
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
-                      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 font-bold text-gray-600 dark:border-gray-600 dark:text-gray-300"
-                    >
-                      <span className="material-symbols-outlined text-lg">history</span>
-                      기록 보기
-                    </button>
-                  ) : null
+                  <span className="flex shrink-0 items-center gap-1">
+                    <StatusBadge status={status} />
+                    {d.sessionId && (
+                      <button
+                        type="button"
+                        aria-label={`${d.name} 기록 보기`}
+                        onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
+                        className="flex min-h-11 items-center gap-1 rounded-xl border border-[var(--color-academy-line)] px-2 text-sm font-bold text-[var(--color-academy-muted)]"
+                      >
+                        <span className="material-symbols-outlined text-lg" aria-hidden="true">history</span>
+                        기록 보기
+                      </button>
+                    )}
+                  </span>
                 ) : (
                   // 시작 전(PLANNED 또는 세션 미생성): 수업 시작
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => startLesson(d)}
-                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
+                    className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
                   >
-                    <span className="material-symbols-outlined">play_arrow</span>
+                    <span className="material-symbols-outlined text-lg" aria-hidden="true">play_arrow</span>
                     {busy ? "시작 중…" : "수업 시작"}
                   </button>
                 )}
-              </div>
-            </article>
-          );
-        })}
-
-        {dates.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400 dark:border-gray-700">
-            이 날짜에 특강 수업이 없습니다.
-          </div>
-        )}
-      </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

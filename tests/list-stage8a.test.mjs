@@ -42,3 +42,22 @@ test("선생님 청구: 상태 칩이 기존 filter 를 공유(기본 미납)·�
   assert.match(billingClient, /청구서에는 \{detail\.invoiceAmount\.toLocaleString\("ko-KR"\)\}원으로 되어 있습니다/);
   assert.doesNotMatch(billingClient, /\btruncate\b|text-ellipsis|line-clamp/);
 });
+
+const seasonalClient = read("../src/app/staff/seasonal/StaffSeasonalClient.tsx");
+
+test("선생님 특강: 한 줄 행(시간·반·인원 오른쪽·행동 버튼), 시작·이어하기·기록 보기 동작은 그대로, 날짜 이동은 KST 모듈", () => {
+  assert.match(seasonalClient, /<ul aria-label="특강 수업 목록"/);
+  assert.match(seasonalClient, /text-right text-xs font-bold tabular-nums[^"]*">\{d\.studentCount\}명/);
+  // 시작은 정규 수업과 같은 서버 액션 → 출결 화면, 진행 중이면 그 세션으로
+  assert.match(seasonalClient, /startClassSession\(\{\s*classId: row\.id,\s*date: ymd,\s*sessionDateId: row\.sessionDateId as string,/);
+  assert.match(seasonalClient, /router\.push\(`\/staff\/sessions\/\$\{result\.sessionId\}\?view=attendance`\)/);
+  assert.match(seasonalClient, /result\.code === "ACTIVE_SESSION" && result\.activeSessionId/);
+  assert.match(seasonalClient, /수업 이어하기/);
+  assert.match(seasonalClient, /기록 보기/);
+  assert.match(seasonalClient, /\{busy \? "시작 중…" : "수업 시작"\}/);
+  // 날짜 더하기는 공용 모듈(시간대 의존 setDate 제거), 이동 버튼은 44px
+  assert.match(seasonalClient, /loadDay\(addDaysKst\(ymd, delta\)\)/);
+  assert.doesNotMatch(seasonalClient, /setDate\(|getDate\(\)/);
+  assert.match(seasonalClient, /aria-label="이전 날짜" onClick=\{\(\) => shiftDay\(-1\)\} className="grid size-11/);
+  assert.doesNotMatch(seasonalClient, /\btruncate\b|text-ellipsis|line-clamp/);
+});
