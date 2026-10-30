@@ -49,16 +49,19 @@ export default async function AccountPage() {
               </span>
             </Link>
           )}
+        </nav>
+        {/* 근접성(M-01): 되돌릴 수 없는 «회원 탈퇴»는 묶음 밖 구분선 아래 별도 칸·위험색 글자 */}
+        <div className="mt-6 border-t border-[var(--color-academy-line)] pt-4">
           <Link
             href="/account/withdraw"
-            className="flex min-h-14 items-center justify-between gap-3 px-4 text-sm font-bold"
+            className="flex min-h-14 items-center justify-between gap-3 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 text-sm font-bold text-[var(--color-academy-danger)]"
           >
             <span>회원 탈퇴</span>
             <span className="material-symbols-outlined" aria-hidden="true">
               chevron_right
             </span>
           </Link>
-        </nav>
+        </div>
         <p className="mt-4 text-xs leading-5 text-[var(--color-academy-muted)]">
           계정 관리는 로그인한 본인에게만 적용됩니다. 수업·운행 중에는 기록을
           저장한 뒤 이동해 주세요.

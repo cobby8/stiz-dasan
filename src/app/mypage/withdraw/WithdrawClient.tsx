@@ -139,11 +139,9 @@ export default function WithdrawClient({
     <div className="mx-auto max-w-2xl px-4 py-6">
       {/* 헤더 — 컴팩트하게 제목 1줄 + 설명 1줄 */}
       <div className="mb-2 flex items-center gap-2">
-        <Link
-          href={backHref}
-          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-        >
-          <span className="material-symbols-outlined">arrow_back</span>
+        {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
+        <Link href={backHref} aria-label="이전 화면으로" className="academy-back-link">
+          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
         <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
           <span className="material-symbols-outlined text-gray-500">
@@ -152,7 +150,8 @@ export default function WithdrawClient({
           회원 탈퇴
         </h1>
       </div>
-      <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+      {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
+      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
         {parentName} 회원님의 계정 탈퇴를 요청합니다. 삭제한 계정은 되돌릴 수
         없습니다.
       </p>
@@ -181,7 +180,8 @@ export default function WithdrawClient({
             type="button"
             onClick={cancel}
             disabled={pending}
-            className="mt-3 rounded-xl bg-white px-3 py-2 text-xs font-bold text-amber-900 shadow-sm disabled:opacity-50 dark:bg-gray-900 dark:text-amber-200"
+            // 탈퇴 신청을 거두는 «안전한» 쪽이라 보조 버튼(44px)
+            className="academy-button-secondary mt-3"
           >
             {pending ? "처리 중..." : "신청 취소하기"}
           </button>
@@ -245,7 +245,7 @@ export default function WithdrawClient({
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+              <p className="mt-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
                 전자상거래법에 따라 거래 기록은 5년간 보관해야 합니다. 보관
                 기간이 지나면 파기합니다.
               </p>
@@ -267,12 +267,16 @@ export default function WithdrawClient({
 
 
 
-          <div className="flex gap-2">
+          {/* 근접성(M-05): 안전한 «돌아가기»를 먼저, 되돌릴 수 없는 삭제는 24px 떨어진 아래 전체 폭 위험색 */}
+          <div className="flex flex-col">
+            <Link href={backHref} className="academy-button-secondary self-start">
+              돌아가기
+            </Link>
             <button
               type="button"
               onClick={submit}
               disabled={!agreed || pending}
-              className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"
+              className="academy-button-danger-solid mt-6 w-full"
             >
               {pending
                 ? "처리 중..."
@@ -280,15 +284,9 @@ export default function WithdrawClient({
                   ? "계정 삭제하기"
                   : "탈퇴 신청하기"}
             </button>
-            <Link
-              href={backHref}
-              className="rounded-xl bg-gray-100 px-4 py-2.5 text-sm font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
-            >
-              취소
-            </Link>
           </div>
 
-          <p className="mt-4 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+          <p className="mt-4 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
             문의는 학원으로 연락해 주세요. 탈퇴하지 않고 알림만 끄고 싶으시면
             이용 화면에서 알림 설정을 변경하실 수 있습니다.
           </p>
