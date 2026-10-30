@@ -3,7 +3,7 @@ import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
-import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal,
+import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, shortMonthProration, STANDARD_MONTHLY_SESSIONS,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
 
 export type WorkbenchTx = {
@@ -111,14 +111,22 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const scheduledDates=periodStart&&periodEnd?filterWorkbenchDates(allScheduledDates,periodStart,periodEnd):[];
     const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE");
     let amounts: WorkbenchAmounts = { baseAmount: excluded ? 0 : e.price, discountAmount: 0, prorationAmount: 0, carryAmount: 0, shuttleAmount: 0 };
+    // 정가는 월 4회 기준. 연간 일정상 그달 전체 수업이 4회 미만이면 모자란 회차만큼 뺀다(설 주간·연휴가 낀 달).
+    const monthSessions = allScheduledDates.length;
+    const isShortMonth = monthSessions > 0 && monthSessions < STANDARD_MONTHLY_SESSIONS;
     if (classReg) {
       amounts = { ...amounts, baseAmount: classReg.baseAmount, discountAmount: classReg.discountAmount, prorationAmount: classReg.prorationAmount };
       basis.push("확정 월 장부");
       if (classReg.carryAmount > 0) reviewReasons.push("기존 장부 이월액은 원결석·사용 잔액 대조가 필요합니다.");
+      if (isShortMonth && !excluded && classReg.prorationAmount === 0) reviewReasons.push(`연간 일정 ${monthSessions}회인 달인데 확정 장부에 일할 차감이 없습니다.`);
       if (!assignedShuttle.has(e.studentId) && !excluded) { amounts.shuttleAmount = reg!.shuttleAmount; assignedShuttle.add(e.studentId); }
     } else if (!excluded) {
       basis.push("등록 반의 프로그램 수강료");
       reviewReasons.push("할인·셔틀 및 수강 기간을 검토해 주세요.");
+      if (isShortMonth) {
+        amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions);
+        basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
+      }
     }
     if (!scheduledDates.length && !excluded) blockingReasons.push("연간 일정의 실제 수업일이 없어 확정·발행할 수 없습니다.");
     if (register && !reg) reviewReasons.push("확정 월 장부의 근거가 올바르지 않습니다.");

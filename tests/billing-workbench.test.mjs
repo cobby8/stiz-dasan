@@ -5,12 +5,12 @@ import ts from "typescript";
 const url = source => `data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString("base64")}`;
 const kstUrl=url(await readFile("src/lib/datetime/kst.ts","utf8"));
 const modelSource = await readFile("src/lib/billing/workbench.ts","utf8"), modelUrl=url(modelSource.replace('from "@/lib/datetime/kst"',`from "${kstUrl}"`));
-const {roundCarryTotal,workbenchTotal,validateWorkbenchCommand,carryPool,allocateCarry}=await import(modelUrl);
+const {roundCarryTotal,workbenchTotal,validateWorkbenchCommand,carryPool,allocateCarry,shortMonthProration}=await import(modelUrl);
 const registerUrl=url(await readFile("src/lib/billing/monthly-register.ts","utf8"));
 const dueUrl=url(await readFile("src/lib/billing-due-date.ts","utf8"));
 const visibilityUrl=url(await readFile("src/lib/studentVisibility.ts","utf8"));
 const serviceSource=await readFile("src/lib/billing/workbench-service.ts","utf8");
-const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`));
+const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`));
 const {readWorkbench,mutateWorkbench}=await import(serviceUrl);
 const absenceSource=await readFile("src/lib/billing/workbench-absence.ts","utf8");
 const absenceUrl=url(absenceSource.replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-service"',`from "${serviceUrl}"`).replace('await import("@/lib/enrollment/monthlyClassDates")','({getMonthlyClassDates:()=>["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]})'));
@@ -274,4 +274,35 @@ test("공식 일정 snapshot이 바뀌면 미리보기 금액의 확정·발행�
  const changed={...calendar,events:[...calendar.events,{title:"학원 휴무",date:"2026-11-21T00:00:00Z"}],fingerprint:"b".repeat(64)};
  await assert.rejects(()=>mutateWorkbench(db,command("CONFIRM",view),"admin",true,changed),e=>e.refreshRequired===true);
  assert.equal(db.state.payments.length,0);
+});
+
+// ── 3회 달 자동 차감(원장 결정 2026-10-30): 정가는 월 4회 기준, 모자란 회차만큼 1/4씩 뺀다 ──
+test("3회 달 차감액은 정가÷4×모자란 회차, 0회·4회 이상은 0원",()=>{
+ assert.equal(shortMonthProration(100000,3),25000);
+ assert.equal(shortMonthProration(110000,3),27500);
+ assert.equal(shortMonthProration(120000,3),30000);
+ assert.equal(shortMonthProration(300000,2),150000);
+ assert.equal(shortMonthProration(99999,3),25000); // 원 단위 반올림
+ for(const [fee,n] of [[100000,4],[100000,5],[100000,0],[0,3],[100000,-1],[100000,2.5]]) assert.equal(shortMonthProration(fee,n),0);
+});
+test("연간 일정 3회인 달은 1회분을 자동 차감해 제안하고 그대로 발행된다",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ let view=await readWorkbench(db.tx,"2026-11",true);const row=view.rows[0];
+ assert.equal(row.scheduledDates.length,3);assert.equal(row.prorationAmount,25000);assert.equal(row.totalAmount,75000);
+ assert.ok(row.basis.some(b=>/1회 적은 달 → 25,000원 차감/.test(b)),row.basis.join(" / "));
+ const save=command("SAVE",view);save.rows[0]={...save.rows[0],prorationAmount:row.prorationAmount,periodStart:row.periodStart,periodEnd:row.periodEnd};
+ ({view}=await mutateWorkbench(db,save,"admin",true));({view}=await mutateWorkbench(db,command("CONFIRM",view),"admin",true));
+ await mutateWorkbench(db,command("ISSUE",view),"admin",true);
+ assert.equal(db.state.payments.length,1);assert.equal(db.state.payments[0].amount,75000);
+});
+test("4회인 달은 차감하지 않는다",async()=>{
+ const db=database();const view=await readWorkbench(db.tx,"2026-11",true);
+ assert.equal(view.rows[0].scheduledDates.length,4);assert.equal(view.rows[0].prorationAmount,0);assert.equal(view.rows[0].totalAmount,100000);
+});
+test("확정 장부에 3회 달 일할이 빠져 있으면 금액은 장부대로 두고 검토로 알린다",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ db.state.registers.push({studentId:"student-a",month:"2026-11",status:"CONFIRMED",version:1,payload:{studentId:"student-a",month:"2026-11",classes:[{classId:"class-a",status:"ACTIVE",periodStart:"2026-11-01",periodEnd:"2026-11-30",baseAmount:100000,discountAmount:0,carryAmount:0,prorationAmount:0,basis:"확정"}],shuttleAmount:0,shuttleBasis:"없음",reason:"확인"}});
+ const view=await readWorkbench(db.tx,"2026-11",true);
+ assert.equal(view.rows[0].prorationAmount,0);
+ assert.ok(view.rows[0].reviewReasons.some(r=>/연간 일정 3회인 달인데 확정 장부에 일할 차감이 없습니다/.test(r)));
 });

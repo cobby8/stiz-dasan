@@ -9,8 +9,20 @@
  *   달력만 세면 9월 화요일은 5회로 잡혀 회당 단가가 실제보다 싸게 계산된다.
  *   계획표에 그달 수업일이 없으면 **추측하지 않고** 계산 불가로 알린다(돈이라서).
  *
+ * ★ 회당 단가 = 정가 ÷ 4 (원장 결정 2026-10-30).
+ *   정가는 월 4회 기준이고, 3회인 달(설 주간·연휴)은 청구 작업대가 1회분을 빼고 청구한다.
+ *   그달 횟수(3)로 나누면 회당이 33% 비싸진다. 5회 이상 잡힌 달만 그 횟수로 나눈다.
+ *
  * 화면·서버가 각자 계산하면 안 된다. 여기 한 곳에서만 계산한다.
  */
+
+/** 정가가 기준으로 삼는 한 달 수업 횟수 — billing/workbench.ts 의 STANDARD_MONTHLY_SESSIONS 와 같아야 한다. */
+export const STANDARD_MONTHLY_SESSIONS = 4;
+
+/** 회당 단가를 나눌 횟수. 4회 미만인 달도 정가는 4회 기준이라 4로 나눈다. */
+export function sessionDivisor(totalSessions: number): number {
+  return Math.max(totalSessions, STANDARD_MONTHLY_SESSIONS);
+}
 
 export type ClassFee = {
   /** 그 반의 한 달 수강료(Program.price) */
@@ -69,8 +81,8 @@ export function computeClassChangeProration(input: {
   const scheduleUnavailable = needsProration && (fromTotal === 0 || toTotal === 0);
   const computable = needsProration && !scheduleUnavailable;
 
-  const fromCredit = computable ? toWon((input.from.monthlyFee / fromTotal) * fromRemaining) : 0;
-  const toCharge = computable ? toWon((input.to.monthlyFee / toTotal) * toRemaining) : 0;
+  const fromCredit = computable ? toWon((input.from.monthlyFee / sessionDivisor(fromTotal)) * fromRemaining) : 0;
+  const toCharge = computable ? toWon((input.to.monthlyFee / sessionDivisor(toTotal)) * toRemaining) : 0;
 
   return {
     needsProration,

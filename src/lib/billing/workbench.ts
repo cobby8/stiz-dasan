@@ -53,6 +53,17 @@ export function workbenchTotal(value: WorkbenchAmounts) {
   validateWorkbenchAmounts(value);
   return value.baseAmount - value.discountAmount - value.prorationAmount - value.carryAmount + value.shuttleAmount;
 }
+/** 프로그램 수강료(정가)가 기준으로 삼는 한 달 수업 횟수. */
+export const STANDARD_MONTHLY_SESSIONS = 4;
+/**
+ * 연간 일정상 그달 수업이 4회보다 적을 때 빼는 금액(원장 결정 2026-10-30).
+ * 예: 정가 100,000원·3회 달 → 25,000원(1회분). 수업일을 못 읽었거나(0회) 4회 이상이면 0원.
+ */
+export function shortMonthProration(baseAmount: number, sessions: number): number {
+  if (!Number.isSafeInteger(baseAmount) || baseAmount <= 0) return 0;
+  if (!Number.isInteger(sessions) || sessions <= 0 || sessions >= STANDARD_MONTHLY_SESSIONS) return 0;
+  return Math.round(baseAmount * (STANDARD_MONTHLY_SESSIONS - sessions) / STANDARD_MONTHLY_SESSIONS);
+}
 /** 결석별 반올림을 피하기 위해 분수로 합산하고 마지막 합계에서 한 번 반올림한다. */
 export function roundCarryTotal(values: readonly { numerator: string; denominator: string }[]): number {
   let n = BigInt(0), d = BigInt(1);

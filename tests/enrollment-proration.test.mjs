@@ -109,3 +109,45 @@ test("원장이 근거를 보고 발행할 수 있게 설명을 만든다", () =
   assert.match(lines[0], /계획표상 그달 4회 중 남은 2회 → 50,000원 빼기/);
   assert.match(lines[1], /계획표상 그달 4회 중 듣는 2회 → 60,000원 더하기/);
 });
+
+// ── 3회 달(설 주간·연휴) — 원장 결정 2026-10-30: 회당 = 정가 ÷ 4 ──
+// 3회 달은 청구 작업대가 1회분을 빼고 청구하므로(정가×3/4), 회당도 정가÷4 여야 맞는다.
+const FEB_MON_3 = ["2027-02-01", "2027-02-15", "2027-02-22"]; // 2027-02 월요일(설 주간 휴무)
+
+test("3회 달도 회당 단가는 정가÷4 — 그달 횟수로 나누면 33% 비싸진다", () => {
+  const result = computeClassChangeProration({
+    effectiveFrom: "2027-02-14",
+    from: { monthlyFee: 100000, classDates: FEB_MON_3 },
+    to: { monthlyFee: 120000, classDates: FEB_MON_3 },
+  });
+  assert.equal(result.fromTotalSessions, 3);
+  assert.equal(result.fromRemainingSessions, 2);
+  assert.equal(result.fromCredit, 50000); // 25,000 × 2 (예전 계산은 66,667)
+  assert.equal(result.toCharge, 60000);   // 30,000 × 2
+  assert.equal(result.diff, 10000);
+});
+
+test("3회 달 전체를 옮기면 그달 청구액(정가×3/4)과 같은 금액이 빠진다", () => {
+  const result = computeClassChangeProration({
+    effectiveFrom: "2027-02-02", // 1일이 아닌 날, 3회 모두 남음
+    from: { monthlyFee: 100000, classDates: ["2027-02-03", "2027-02-17", "2027-02-24"] },
+    to: { monthlyFee: 100000, classDates: ["2027-02-03", "2027-02-17", "2027-02-24"] },
+  });
+  assert.equal(result.fromRemainingSessions, 3);
+  assert.equal(result.fromCredit, 75000);
+});
+
+test("4회 달은 예전과 같고, 5회 이상 잡힌 달만 그 횟수로 나눈다", async () => {
+  const { sessionDivisor } = await import(`data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`);
+  assert.equal(sessionDivisor(3), 4);
+  assert.equal(sessionDivisor(4), 4);
+  assert.equal(sessionDivisor(5), 5);
+});
+
+test("정가 기준 횟수는 청구 작업대와 같은 값이다", async () => {
+  const workbench = await readFile("src/lib/billing/workbench.ts", "utf8");
+  const proration = await readFile("src/lib/enrollment/proration.ts", "utf8");
+  const pick = (s) => Number(/STANDARD_MONTHLY_SESSIONS = (\d+)/.exec(s)?.[1]);
+  assert.equal(pick(workbench), 4);
+  assert.equal(pick(proration), pick(workbench));
+});
