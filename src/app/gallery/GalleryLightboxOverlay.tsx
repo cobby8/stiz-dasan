@@ -70,7 +70,7 @@ export default function GalleryLightboxOverlay({
                 {activeIndex + 1} / {items.length}
             </div>
 
-            {/* 이전 버튼 */}
+            {/* 이전 버튼 — 닫기 버튼과 같은 반투명 검은 원 44px + 80% 흰색(게슈탈트 P-14) */}
             {activeIndex > 0 && (
                 <button
                     type="button"
@@ -78,14 +78,14 @@ export default function GalleryLightboxOverlay({
                         event.stopPropagation();
                         goPrev();
                     }}
-                    className="absolute left-2 md:left-6 text-white/40 hover:bg-white/10 hover:text-white z-10 p-2 rounded-full transition-colors"
+                    className="absolute left-2 md:left-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
                     aria-label="이전 사진"
                 >
-                    <FontFreeIcon name="chevron_left" size={36} />
+                    <FontFreeIcon name="chevron_left" size={28} />
                 </button>
             )}
 
-            {/* 다음 버튼 */}
+            {/* 다음 버튼 — 이전 버튼과 같은 모양 */}
             {activeIndex < items.length - 1 && (
                 <button
                     type="button"
@@ -93,10 +93,10 @@ export default function GalleryLightboxOverlay({
                         event.stopPropagation();
                         goNext();
                     }}
-                    className="absolute right-2 md:right-6 text-white/40 hover:bg-white/10 hover:text-white z-10 p-2 rounded-full transition-colors"
+                    className="absolute right-2 md:right-6 flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white/80 hover:bg-white/10 hover:text-white z-10 transition-colors"
                     aria-label="다음 사진"
                 >
-                    <FontFreeIcon name="chevron_right" size={36} />
+                    <FontFreeIcon name="chevron_right" size={28} />
                 </button>
             )}
 

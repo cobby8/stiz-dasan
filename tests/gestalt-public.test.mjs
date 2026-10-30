@@ -218,3 +218,19 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
   } catch { changed = ""; }
   assert.equal(changed.trim(), "");
 });
+
+test("P-13 작은 글자 12px·닫기/글씨 버튼 44px", () => {
+  assert.match(read("src/app/annual/AnnualEventsClient.tsx"), /<span className="text-xs">\{isScheduleOpen \? "▲" : "▼"\}<\/span>/);
+  assert.match(read("src/components/PublicHeader.tsx"), /"public-mobile-font md:hidden flex h-11 w-11 /);
+  assert.match(read("src/app/annual/EventDetailPanel.tsx"), /className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full[^"]*"\s*aria-label="닫기"/);
+  assert.match(read("src/components/chat/ChatPanel.tsx"), /className="flex h-11 w-11 items-center justify-center hover:bg-orange-600 rounded-full transition-colors"\s*aria-label="채팅 닫기"/);
+});
+
+test("P-14 갤러리 좌우 화살표는 닫기와 같은 반투명 검은 원 44px + 80% 흰색", () => {
+  const src = read("src/app/gallery/GalleryLightboxOverlay.tsx");
+  assert.equal(src.match(/flex h-11 w-11 items-center justify-center rounded-full bg-black\/70 text-white\/80/g)?.length, 2);
+  assert.doesNotMatch(src, /text-white\/40/);
+  assert.match(src, /aria-label="이전 사진"/);
+  assert.match(src, /aria-label="다음 사진"/);
+  assert.match(src, /rounded-full bg-black\/70 text-white hover:bg-white\/10 transition-colors"\s*aria-label="닫기"/); // 닫기 버튼 기준 모양
+});

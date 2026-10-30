@@ -264,7 +264,8 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                                     }`}
                                                 >
                                                     수업일자 확인
-                                                    <span className="text-[10px]">{isScheduleOpen ? "▲" : "▼"}</span>
+                                                    {/* 게슈탈트 P-13: 작은 글자 최소 12px */}
+                                                    <span className="text-xs">{isScheduleOpen ? "▲" : "▼"}</span>
                                                 </button>
                                             </div>
                                         )}

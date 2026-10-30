@@ -156,11 +156,12 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
         "
       >
         {/* 상단 헤더: 제목 + 닫기 버튼 */}
-        <div className="flex items-center justify-between px-4 py-3 bg-orange-500 text-white flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-1 bg-orange-500 text-white flex-shrink-0">
           <h3 className="font-bold text-base">STIZ 상담</h3>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-orange-600 rounded-full transition-colors"
+            // 터치 영역 44px(게슈탈트 P-13)
+            className="flex h-11 w-11 items-center justify-center hover:bg-orange-600 rounded-full transition-colors"
             aria-label="채팅 닫기"
           >
             <SymbolIcon name="close" size={20} />

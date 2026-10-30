@@ -91,9 +91,10 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                             {event.title}
                         </h2>
                     </div>
+                    {/* 닫기 — 터치 영역 44px(게슈탈트 P-13) */}
                     <button
                         onClick={onClose}
-                        className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition text-lg"
+                        className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition text-lg"
                         aria-label="닫기"
                     >
                         ✕

@@ -343,7 +343,8 @@ export default function PublicHeader({
             <button
               onClick={toggleFontSize}
               className={[
-                "public-mobile-font md:hidden flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-colors",
+                // 게슈탈트 P-13: 터치 영역 44px(h-11 w-11)
+                "public-mobile-font md:hidden flex h-11 w-11 items-center justify-center rounded-lg text-xs font-bold transition-colors",
                 isLargeFont
                   ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
                   : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700",
