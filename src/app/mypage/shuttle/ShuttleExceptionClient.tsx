@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   SHUTTLE_DIRECTIONS,
@@ -12,6 +12,12 @@ import {
 } from "@/lib/shuttle/dayExceptionRules";
 import type { ShuttleExceptionOptions } from "@/lib/shuttle/parent-shuttle-exception";
 import { deliveryStatusText, matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
+import { kstLabel } from "@/lib/datetime/kst";
+
+// 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
+const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
 
 export default function ShuttleExceptionClient({ initial }: { initial: ShuttleExceptionOptions }) {
   const router = useRouter();
@@ -25,6 +31,17 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [uncertain, setUncertain] = useState<Record<string, unknown> | null>(null);
+  // 하단 시트로 자세히 보고 있는 예정 변경 id (없으면 닫힘)
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  // 행 키보드(Enter·Space) = 상세 시트. 행 안의 «취소» 버튼에서 누른 키는 가로채지 않는다.
+  function handleRowKeyDown(event: KeyboardEvent<HTMLElement>, id: string) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setDetailId(id);
+    }
+  }
 
   async function reconcile(body: Record<string, unknown>) {
     try {
@@ -125,28 +142,58 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
       {initial.upcoming.length > 0 && (
         <section className="space-y-2">
           <h2 className="px-1 text-sm font-black text-gray-700 dark:text-gray-200">예정된 변경</h2>
-          {initial.upcoming.map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-2 rounded-2xl bg-blue-50 p-3 dark:bg-blue-950/30">
-              <div className="min-w-0">
-                <p className="text-sm font-black text-blue-900 dark:text-blue-200">
-                  {item.serviceDate} · {item.studentName}
-                </p>
-                <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">변경 저장 완료 · {deliveryStatusText(item.notificationStatus)}</p>
-                {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사 연결·알림 확인 필요</p>}
-                <p className="text-xs font-bold text-blue-800 dark:text-blue-300">
-                  {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction} ·{" "}
-                  {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}
-                  {item.location ? ` · ${item.location}` : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={pending || Boolean(uncertain)}
-                onClick={() => cancel(item.id)}
-                className="min-h-11 shrink-0 rounded-xl border border-blue-300 px-3 text-xs font-bold text-blue-900 disabled:opacity-50 dark:border-blue-800 dark:text-blue-200"
-              >
-                취소
-              </button>
+          {/* 날짜 묶음(오늘/이번 주/다음 주/이후). 오늘은 서버가 KST 로 준 initial.today 를 쓴다 */}
+          {groupByUpcomingDate(initial.upcoming, (item) => item.serviceDate, initial.today, DATE_GROUP_LABELS).map((group) => (
+            <div key={group.key} className="overflow-hidden rounded-2xl border border-blue-100 bg-white dark:border-blue-950 dark:bg-gray-800">
+              <h3 className="flex items-center justify-between bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                <span>{group.label}</span>
+                <span className="tabular-nums">{group.items.length}</span>
+              </h3>
+              <ul className="divide-y divide-blue-100 dark:divide-blue-950">
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    {/* 행 탭 = 하단 시트(알림 결과·장소·한마디 전체). 긴 글은 행에서 자르지 않고 시트로 보낸다 */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${kstLabel(item.serviceDate)} ${item.studentName} 셔틀 변경 자세히 보기`}
+                      onClick={() => setDetailId(item.id)}
+                      onKeyDown={(event) => handleRowKeyDown(event, item.id)}
+                      className="flex min-h-14 cursor-pointer items-center gap-2 px-3 py-2 hover:bg-blue-50/60 dark:hover:bg-blue-950/20"
+                    >
+                      <div className="min-w-0 flex-1">
+                        {/* 1줄: 학생 · 방향 칩 · 변경 종류 칩 — «·»로 잇던 글을 요소로 나눔 */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-black text-blue-900 dark:text-blue-200">{item.studentName}</span>
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                            {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction}
+                          </span>
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                            {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}
+                          </span>
+                        </div>
+                        {/* 2줄: 저장 상태 · 바뀐 장소(줄바꿈 허용) */}
+                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-600 dark:text-gray-300">
+                          <span>변경 저장 완료</span>
+                          {item.location && <span className="break-keep font-bold text-blue-800 dark:text-blue-300">{item.location}</span>}
+                        </p>
+                        {/* 기사 연결 경고는 놓치면 안 돼서 행에 그대로 둔다 */}
+                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사 연결·알림 확인 필요</p>}
+                      </div>
+                      <span className="shrink-0 text-right text-sm font-bold tabular-nums text-blue-900 dark:text-blue-200">{kstLabel(item.serviceDate)}</span>
+                      <button
+                        type="button"
+                        disabled={pending || Boolean(uncertain)}
+                        // 행 탭(시트 열기)으로 번지지 않게 막고, 취소 동작은 기존과 같이 바로 실행
+                        onClick={(event) => { event.stopPropagation(); cancel(item.id); }}
+                        className="min-h-11 shrink-0 rounded-xl border border-blue-300 px-3 text-xs font-bold text-blue-900 disabled:opacity-50 dark:border-blue-800 dark:text-blue-200"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </section>
@@ -260,6 +307,55 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
           {pending ? "저장·알림 결과 확인 중..." : "변경 저장하고 알림 요청"}
         </button>
       </fieldset>
+
+      {/* 예정 변경 상세 하단 시트(보기 전용) — 취소는 목록 행의 버튼 그대로 */}
+      {(() => {
+        const item = detailId ? initial.upcoming.find((row) => row.id === detailId) : null;
+        if (!item) return null;
+        return (
+          <ListDetailPanel onClose={() => setDetailId(null)} titleId="shuttle-change-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 id="shuttle-change-detail-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)] dark:text-white">
+                {item.studentName}
+              </h3>
+              <span className="text-sm font-bold tabular-nums text-[var(--color-academy-muted)]">{kstLabel(item.serviceDate)}</span>
+              <button
+                type="button"
+                onClick={() => setDetailId(null)}
+                aria-label="닫기"
+                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+              <dt className="text-[var(--color-academy-muted)]">등원·하원</dt>
+              <dd className="font-bold">{SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction}</dd>
+              <dt className="text-[var(--color-academy-muted)]">변경</dt>
+              <dd className="font-bold">{SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}</dd>
+              {item.location && (
+                <>
+                  <dt className="text-[var(--color-academy-muted)]">장소</dt>
+                  <dd className="break-keep">{item.location}</dd>
+                </>
+              )}
+              {item.note && (
+                <>
+                  <dt className="text-[var(--color-academy-muted)]">기사님께 한마디</dt>
+                  <dd className="whitespace-pre-wrap break-keep">{item.note}</dd>
+                </>
+              )}
+              <dt className="text-[var(--color-academy-muted)]">저장</dt>
+              <dd>변경 저장 완료</dd>
+              <dt className="text-[var(--color-academy-muted)]">알림</dt>
+              <dd className="break-keep">
+                {deliveryStatusText(item.notificationStatus)}
+                {item.notificationStatus && !item.notificationStatus.driverLinked && <span className="block">담당 기사 연결·알림 확인 필요</span>}
+              </dd>
+            </dl>
+          </ListDetailPanel>
+        );
+      })()}
     </main>
   );
 }

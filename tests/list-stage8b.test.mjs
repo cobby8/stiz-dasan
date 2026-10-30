@@ -163,3 +163,39 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");
   assert.doesNotMatch(read("src/app/mypage/reports/page.tsx"), /\.toLocaleDateString\(/);
 });
+
+test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 시트, 행 안 «취소»는 번지지 않고 바로 취소한다", () => {
+  const groups = compileModule("src/components/admin/list/upcomingDateGroups.ts", { "@/lib/datetime/kst": kst });
+  const Shuttle = compileModule("src/app/mypage/shuttle/ShuttleExceptionClient.tsx", {
+    "next/navigation": { useRouter: () => ({ refresh() {} }) },
+    "@/lib/shuttle/dayExceptionRules": compileModule("src/lib/shuttle/dayExceptionRules.ts"),
+    "@/lib/parent-staff-status": { deliveryStatusText: () => "사이트 알림 등록 1건 · 푸시 전송 접수 1건", matchesShuttleChange: () => false },
+    "@/components/admin/list/ListDetailPanel": { default: ({ children }) => React.createElement("div", { "data-sheet": "" }, children) },
+    "@/components/admin/list/upcomingDateGroups": groups,
+    "@/lib/datetime/kst": kst,
+  }).default;
+  const today = "2026-10-29"; // 목요일
+  const row = (id, serviceDate, extra = {}) => ({ id, studentId: "s1", studentName: "합성", serviceDate, direction: "PICKUP", kind: "LOCATION", location: "다산초 정문 앞", note: null, notificationStatus: { driverLinked: false }, ...extra });
+  const html = renderToStaticMarkup(React.createElement(Shuttle, { initial: {
+    today, maxDate: "2026-11-12", children: [{ studentId: "s1", studentName: "합성" }],
+    upcoming: [row("a", "2026-10-29"), row("b", "2026-11-03", { kind: "SKIP", location: null })],
+  } }));
+  assert.match(html, /<span>오늘<\/span>/);
+  assert.match(html, /<span>다음 주<\/span>/);
+  assert.match(html, /10\/29\(목\)/);
+  assert.match(html, /11\/3\(화\)/);
+  assert.doesNotMatch(html, /2026-10-29 · 합성/, "«날짜 · 학생» 이어 붙인 글은 요소로 나눴다");
+  assert.match(html, /다산초 정문 앞/);
+  assert.match(html, /담당 기사 연결·알림 확인 필요/);
+  assert.doesNotMatch(html, /사이트 알림 등록/, "긴 알림 결과는 행이 아니라 시트에서");
+  assert.doesNotMatch(html, /data-sheet/, "처음엔 시트가 닫혀 있다");
+
+  const source = read("src/app/mypage/shuttle/ShuttleExceptionClient.tsx");
+  assert.match(source, /function handleRowKeyDown\(event: KeyboardEvent<HTMLElement>, id: string\) \{\s*if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(source, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); cancel\(item\.id\); \}\}/);
+  assert.match(source, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\}[\s\S]*?deliveryStatusText\(item\.notificationStatus\)/);
+  // 저장·취소 흐름 보존(결과 확인 필요 시 재조회, 중복 제출 막기)
+  assert.match(source, /if \(response\.status >= 500\) return reconcile\(body\);/);
+  assert.match(source, /if \(!\(await send\(\{ action: "cancel", id \}\)\)\) return;/);
+  assert.match(source, /disabled=\{pending \|\| Boolean\(uncertain\)\}/);
+});
