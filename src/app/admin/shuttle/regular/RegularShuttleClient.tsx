@@ -888,7 +888,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             {/* 요일 탭 */}
             <div className="mt-3 flex flex-wrap items-center gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-900">
               {weekdays.map((w) => (
-                <button key={w.weekday} type="button" onClick={() => { if (w.weekday !== active && confirmLeaveOrder()) setActive(w.weekday); }}
+                <button key={w.weekday} type="button" onClick={() => { if (w.weekday !== active && confirmLeaveOrder()) { setActive(w.weekday); setDetail(null); } }}
                   aria-pressed={active === w.weekday}
                   className={`min-h-11 rounded-lg px-3 text-sm font-black ${active === w.weekday ? "bg-white text-brand-navy-900 shadow dark:bg-gray-700 dark:text-white" : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"}`}>
                   {WEEKDAY_LABELS[w.weekday]}<span className="ml-1 text-xs font-bold tabular-nums text-gray-400">{w.count}</span>
@@ -905,6 +905,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                 onChange={(v) => {
                   if (v === view || (v === "students" && !confirmLeaveOrder())) return;
                   setView(v);
+                  setDetail(null); // 돌아왔을 때 닫았던 상세 패널이 다시 뜨지 않게
                   // 기사님 화면 보기가 닫히면(언마운트) 고친 내용도 사라지므로 「저장 안 됨」 표시를 내린다.
                   if (v === "students") setOrderDirty(false);
                 }}
