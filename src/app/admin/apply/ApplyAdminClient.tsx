@@ -8,6 +8,7 @@ import Link from "next/link";
 import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import AdminModal from "@/components/admin/AdminModal";
+import { statusToneClass } from "@/components/admin/StatusBadge";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ManualSmsModal from "./ManualSmsModal";
 import CompactListFilters from "@/components/academy/CompactListFilters";
@@ -232,10 +233,11 @@ type ManualSmsModalState = { app: EnrollApplication } | null;
 // ── 상태별 설정 ──────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-    PENDING: { label: "대기중", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-200", icon: "hourglass_top" },
-    APPROVED: { label: "승인완료", color: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-200", icon: "check_circle" },
-    REJECTED: { label: "반려", color: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200", icon: "cancel" },
-    CANCELLED: { label: "취소", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400", icon: "block" },
+    // 색은 공용 상태 배지 색(학원 변수)으로 통일(게슈탈트 C-A3)
+    PENDING: { label: "대기중", color: statusToneClass("warning"), icon: "hourglass_top" },
+    APPROVED: { label: "승인완료", color: statusToneClass("success"), icon: "check_circle" },
+    REJECTED: { label: "반려", color: statusToneClass("danger"), icon: "cancel" },
+    CANCELLED: { label: "취소", color: statusToneClass("neutral"), icon: "block" },
 };
 
 // 유입경로 라벨 (9개 + 레거시 호환)

@@ -6,6 +6,7 @@ import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updatePayment
 import { todayKst } from "@/lib/datetime/kst";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
+import { statusToneClass } from "@/components/admin/StatusBadge";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
 
@@ -25,17 +26,18 @@ type ShuttleLocationRow = {
 const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
+// 출결·납부 상태 색 = 공용 상태 배지 색(학원 변수, 게슈탈트 C-A3)
 const ATT_STATUS: Record<string, { label: string; color: string }> = {
-    PRESENT: { label: "출석", color: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20" },
-    ABSENT: { label: "결석", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
-    LATE: { label: "지각", color: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20" },
-    EXCUSED: { label: "사유결석", color: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-300/10 dark:text-sky-100 dark:ring-sky-300/20" },
+    PRESENT: { label: "출석", color: statusToneClass("success") },
+    ABSENT: { label: "결석", color: statusToneClass("danger") },
+    LATE: { label: "지각", color: statusToneClass("warning") },
+    EXCUSED: { label: "사유결석", color: statusToneClass("neutral") },
 };
 const PAY_STATUS: Record<string, { label: string; color: string }> = {
-    PENDING: { label: "미납", color: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20" },
-    PAID: { label: "납부완료", color: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20" },
-    OVERDUE: { label: "연체", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
-    CANCELED: { label: "취소/이월", color: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700" },
+    PENDING: { label: "미납", color: statusToneClass("warning") },
+    PAID: { label: "납부완료", color: statusToneClass("success") },
+    OVERDUE: { label: "연체", color: statusToneClass("danger") },
+    CANCELED: { label: "취소/이월", color: statusToneClass("neutral") },
 };
 const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
     ISSUED: { label: "발행", color: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-300/10 dark:text-sky-100 dark:ring-sky-300/20" },
@@ -73,10 +75,10 @@ const PAY_STATUS_OPTIONS = [
 
 // 결제 상태 세그먼트: 선택된 상태를 의미색(완납=성공/대기=경고/연체·취소=위험·중립)으로 채운다
 const PAY_SEG_SELECTED: Record<string, string> = {
-    PAID: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white",
-    PENDING: "bg-amber-500 text-white dark:bg-amber-500 dark:text-white",
-    OVERDUE: "bg-red-600 text-white dark:bg-red-500 dark:text-white",
-    CANCELED: "bg-gray-600 text-white dark:bg-gray-500 dark:text-white",
+    PAID: "bg-[var(--color-academy-success)] text-white",
+    PENDING: "bg-[var(--color-academy-warning)] text-white",
+    OVERDUE: "bg-[var(--color-academy-danger)] text-white",
+    CANCELED: "bg-[var(--color-academy-muted)] text-white",
 };
 
 function toDateStr(d: Date | string | null): string {

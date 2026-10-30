@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
+import { statusToneClass } from "@/components/admin/StatusBadge";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
@@ -149,13 +150,13 @@ const EMPTY_SUMMARY: Summary = {
     unpaidCount: 0,
 };
 
-// 상태 라벨 + 색상 매핑
+// 상태 라벨 + 색상 매핑 — 색은 공용 상태 배지 색(학원 변수)으로 통일(게슈탈트 C-A3)
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-    PENDING: { label: "미납", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-200" },
-    PAID: { label: "납부완료", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-200" },
-    OVERDUE: { label: "연체", color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200" },
-    REFUNDED: { label: "환불", color: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300" },
-    CANCELED: { label: "취소/이월", color: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300" },
+    PENDING: { label: "미납", color: statusToneClass("warning") },
+    PAID: { label: "납부완료", color: statusToneClass("success") },
+    OVERDUE: { label: "연체", color: statusToneClass("danger") },
+    REFUNDED: { label: "환불", color: statusToneClass("neutral") },
+    CANCELED: { label: "취소/이월", color: statusToneClass("neutral") },
 };
 
 // 청구 유형 라벨

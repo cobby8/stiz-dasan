@@ -131,3 +131,20 @@ test("A-06 신청·체험: 따로 만든 메뉴 대신 공용 ⚡ 메뉴, 형광
     assert.doesNotMatch(source, /LIST_ACTION_PRIMARY_CLASS|bg-lime-500|more_horiz/, path);
   }
 });
+
+test("C-A3 상태 배지: 공용 색(학원 변수)으로 통일, 안전한 «다시 불러오기»는 빨강 아님", () => {
+  const badge = read("../src/components/admin/StatusBadge.tsx");
+  for (const tone of ["warning", "success", "danger"]) {
+    assert.ok(badge.includes(`bg-[var(--color-academy-${tone}-soft)] text-[var(--color-academy-${tone})]`), tone);
+  }
+  const finance = read("../src/app/admin/finance/FinanceClient.tsx");
+  assert.match(finance, /PENDING: \{ label: "미납", color: statusToneClass\("warning"\) \}/);
+  assert.match(finance, /OVERDUE: \{ label: "연체", color: statusToneClass\("danger"\) \}/);
+  const apply = read("../src/app/admin/apply/ApplyAdminClient.tsx");
+  assert.match(apply, /REJECTED: \{ label: "반려", color: statusToneClass\("danger"\)/);
+  const detail = read("../src/app/admin/students/[id]/StudentDetailClient.tsx");
+  assert.match(detail, /PAID: \{ label: "납부완료", color: statusToneClass\("success"\) \}/);
+  assert.match(detail, /ABSENT: \{ label: "결석", color: statusToneClass\("danger"\) \}/);
+  const requests = read("../src/app/admin/requests/RequestsAdminClient.tsx");
+  assert.match(requests, /className="academy-button-secondary mt-4"\s*>\s*다시 불러오기/);
+});

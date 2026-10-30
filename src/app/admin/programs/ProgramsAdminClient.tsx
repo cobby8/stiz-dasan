@@ -141,7 +141,7 @@ function ProgramsErrorState({ onRetry }: { onRetry: () => void }) {
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+                className="academy-button-secondary mt-4"
             >
                 다시 불러오기
             </button>
