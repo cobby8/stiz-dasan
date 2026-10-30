@@ -1570,7 +1570,7 @@ function TrialLeadDetailModal({
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
                     {scheduleItems.map((item) => (
                         <div key={`trial-detail-${item.label}`} className={`rounded-lg border px-3 py-2 ${item.className}`}>
-                            <p className="flex items-center gap-1 text-[11px] font-black uppercase opacity-80">
+                            <p className="flex items-center gap-1 text-xs font-black uppercase opacity-80">
                                 <span className="material-symbols-outlined text-sm">{item.icon}</span>
                                 {item.label}
                             </p>
@@ -1582,7 +1582,7 @@ function TrialLeadDetailModal({
                 <dl className="mt-5 grid gap-2 sm:grid-cols-2">
                     {details.map(([label, value]) => (
                         <div key={`trial-detail-row-${label}`} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-                            <dt className="text-[11px] font-black text-gray-500 dark:text-gray-400">{label}</dt>
+                            <dt className="text-xs font-black text-gray-500 dark:text-gray-400">{label}</dt>
                             <dd className="mt-0.5 break-keep text-sm font-bold text-gray-900 dark:text-white">{value || "미입력"}</dd>
                         </div>
                     ))}

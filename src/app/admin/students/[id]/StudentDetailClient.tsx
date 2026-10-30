@@ -354,7 +354,7 @@ function ShuttleLocationBlock({
                 <button
                     onClick={onEdit}
                     disabled={disabled}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                 >
                     <SymbolIcon name={hasCoord ? "edit_location" : "add_location_alt"} size={13} />
                     {hasCoord ? "위치 수정" : "위치 설정"}
@@ -363,7 +363,7 @@ function ShuttleLocationBlock({
             {hasCoord ? (
                 <div className="space-y-0.5 pl-8">
                     <p className="text-[13px] text-gray-800 dark:text-gray-100">{addr || "주소 미상"}</p>
-                    <p className="text-[11px] text-gray-400">
+                    <p className="text-xs text-gray-400">
                         📍 {loc!.latitude!.toFixed(6)}, {loc!.longitude!.toFixed(6)}
                         {loc!.confirmedAt ? ` · ${formatShuttleConfirmedAt(loc!.confirmedAt)} 확정` : ""}
                     </p>
@@ -859,7 +859,7 @@ export default function StudentDetailClient({
                 <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-extrabold text-gray-900 dark:text-white">
                         {enrollment.className}
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${info.color}`}>{info.label}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                     </p>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {DAY_LABELS[enrollment.dayOfWeek] || enrollment.dayOfWeek} {enrollment.startTime}~{enrollment.endTime} · {enrollment.programName}
@@ -953,23 +953,23 @@ export default function StudentDetailClient({
                         // (A) 편집 폼: 이름·학년·학교·생년월일·성별·등록일
                         <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">이름</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">이름</span>
                                 <input type="text" value={editForm.name} onChange={(e) => setField("name", e.target.value)} className={EDIT_INPUT_CLASS} />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">학년</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">학년</span>
                                 <input type="text" value={editForm.grade} onChange={(e) => setField("grade", e.target.value)} className={EDIT_INPUT_CLASS} />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">학교</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">학교</span>
                                 <input type="text" value={editForm.school} onChange={(e) => setField("school", e.target.value)} className={EDIT_INPUT_CLASS} />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">생년월일</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">생년월일</span>
                                 <input type="date" value={editForm.birthDate} onChange={(e) => setField("birthDate", e.target.value)} className={EDIT_INPUT_CLASS} />
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">성별</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">성별</span>
                                 <select value={editForm.gender} onChange={(e) => setField("gender", e.target.value)} className={EDIT_INPUT_CLASS}>
                                     <option value="">미지정</option>
                                     <option value="남">남</option>
@@ -977,7 +977,7 @@ export default function StudentDetailClient({
                                 </select>
                             </label>
                             <label className="block">
-                                <span className="mb-1 block text-[11px] font-bold text-gray-400">등록일</span>
+                                <span className="mb-1 block text-xs font-bold text-gray-400">등록일</span>
                                 <input type="date" value={editForm.enrollDate} onChange={(e) => setField("enrollDate", e.target.value)} className={EDIT_INPUT_CLASS} />
                             </label>
                             {sectionError && <p className="text-xs font-medium text-red-600 dark:text-red-300 sm:col-span-2 lg:col-span-3">{sectionError}</p>}
@@ -1015,7 +1015,7 @@ export default function StudentDetailClient({
                 <div className="academy-panel flex items-center gap-3 p-4">
                     <MiniDonut rate={attendanceStats.rate} />
                     <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">출석률</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">출석률</p>
                         <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
                             {attendanceStats.rate}<span className="text-base">%</span>
                         </p>
@@ -1029,7 +1029,7 @@ export default function StudentDetailClient({
                         <SymbolIcon name="sports_basketball" size={22} />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">수강 중</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">수강 중</p>
                         <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
                             {activeEnrollments.length}<span className="text-base"> 개 반</span>
                         </p>
@@ -1043,7 +1043,7 @@ export default function StudentDetailClient({
                         <SymbolIcon name="account_balance_wallet" size={22} />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">이번 달 수납</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">이번 달 수납</p>
                         {currentMonthHistory ? (
                             <>
                                 <p className="flex items-center gap-1.5 text-lg font-extrabold text-gray-900 dark:text-white">
@@ -1067,7 +1067,7 @@ export default function StudentDetailClient({
                         <SymbolIcon name={unpaid.length > 0 ? "error" : "check_circle"} size={22} />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">미납</p>
+                        <p className="text-xs font-bold uppercase tracking-wide text-gray-400">미납</p>
                         <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
                             {unpaid.length}<span className="text-base"> 건</span>
                         </p>
@@ -1096,23 +1096,23 @@ export default function StudentDetailClient({
                             // (B) 편집 폼: 학생 전화·학부모 이름·학부모 전화·학부모 이메일·주소
                             <div className="space-y-2.5">
                                 <label className="block">
-                                    <span className="mb-1 block text-[11px] font-bold text-gray-400">학생 전화</span>
+                                    <span className="mb-1 block text-xs font-bold text-gray-400">학생 전화</span>
                                     <input type="tel" value={editForm.phone} onChange={(e) => setField("phone", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-[11px] font-bold text-gray-400">학부모 이름</span>
+                                    <span className="mb-1 block text-xs font-bold text-gray-400">학부모 이름</span>
                                     <input type="text" value={editForm.parentName} onChange={(e) => setField("parentName", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-[11px] font-bold text-gray-400">학부모 전화</span>
+                                    <span className="mb-1 block text-xs font-bold text-gray-400">학부모 전화</span>
                                     <input type="tel" value={editForm.parentPhone} onChange={(e) => setField("parentPhone", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-[11px] font-bold text-gray-400">학부모 이메일</span>
+                                    <span className="mb-1 block text-xs font-bold text-gray-400">학부모 이메일</span>
                                     <input type="email" value={editForm.parentEmail} onChange={(e) => setField("parentEmail", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
                                 <label className="block">
-                                    <span className="mb-1 block text-[11px] font-bold text-gray-400">주소</span>
+                                    <span className="mb-1 block text-xs font-bold text-gray-400">주소</span>
                                     <input type="text" value={editForm.address} onChange={(e) => setField("address", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
                                 {sectionError && <p className="text-xs font-medium text-red-600 dark:text-red-300">{sectionError}</p>}
@@ -1159,9 +1159,9 @@ export default function StudentDetailClient({
                             title="셔틀 위치 (배차용)"
                             right={
                                 (pickupLoc || dropoffLoc) ? (
-                                    <span className="rounded-full px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200 dark:text-emerald-100 dark:ring-emerald-300/20">설정됨</span>
+                                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200 dark:text-emerald-100 dark:ring-emerald-300/20">설정됨</span>
                                 ) : (
-                                    <span className="rounded-full px-2 py-0.5 text-[11px] font-bold text-gray-500 ring-1 ring-gray-200 dark:text-gray-400 dark:ring-gray-700">미설정</span>
+                                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-gray-500 ring-1 ring-gray-200 dark:text-gray-400 dark:ring-gray-700">미설정</span>
                                 )
                             }
                         />
@@ -1184,11 +1184,11 @@ export default function StudentDetailClient({
                             />
                         </div>
                         {shuttleError && (
-                            <p className="mt-2 text-[11px] font-semibold text-red-600 dark:text-red-400">{shuttleError}</p>
+                            <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">{shuttleError}</p>
                         )}
                         {/* 신청서 희망 셔틀(시트 장부)은 참고용 작은 줄로만 남긴다(혼동 방지) */}
                         {currentMonthHistory?.shuttle.needed && (
-                            <p className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-gray-400 dark:border-gray-700">
+                            <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-400 dark:border-gray-700">
                                 신청서 희망: 승차 {currentMonthHistory.shuttle.pickup || "미입력"}
                                 {currentMonthHistory.shuttle.preferredTime ? ` (${currentMonthHistory.shuttle.preferredTime})` : ""}
                                 {" · 하차 "}{currentMonthHistory.shuttle.dropoff || "승차와 동일"}
@@ -1246,7 +1246,7 @@ export default function StudentDetailClient({
                                     }`}
                                 >
                                     {tab.label}
-                                    {tab.count != null && <span className="text-[11px] font-extrabold text-gray-400">{tab.count}</span>}
+                                    {tab.count != null && <span className="text-xs font-extrabold text-gray-400">{tab.count}</span>}
                                 </button>
                             );
                         })}
@@ -1350,10 +1350,10 @@ export default function StudentDetailClient({
                                 {currentMonthHistory ? (
                                     <div className="grid gap-3 sm:grid-cols-2">
                                         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5 dark:border-gray-700 dark:bg-gray-900/60">
-                                            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">수납</p>
+                                            <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">수납</p>
                                             <p className="flex items-center gap-1.5 text-lg font-extrabold text-gray-900 dark:text-white">
                                                 {formatKRW(currentMonthHistory.paymentAmount)}
-                                                <span className={`rounded-full px-2 py-0.5 text-[11px] ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
+                                                <span className={`rounded-full px-2 py-0.5 text-xs ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
                                                     {currentMonthPaymentInfo?.label ?? "정보 없음"}
                                                 </span>
                                             </p>
@@ -1365,7 +1365,7 @@ export default function StudentDetailClient({
                                             </p>
                                         </div>
                                         <div className="rounded-xl border border-gray-100 bg-gray-50 p-3.5 dark:border-gray-700 dark:bg-gray-900/60">
-                                            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">변동 기록</p>
+                                            <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">변동 기록</p>
                                             {currentMonthHistory.changes.length > 0 ? (
                                                 <ul className="space-y-1.5">
                                                     {currentMonthHistory.changes.slice(0, 3).map((change, index) => (
@@ -1432,7 +1432,7 @@ export default function StudentDetailClient({
                                                 <div key={a.id} className="flex items-center gap-3 py-2.5">
                                                     <span className="w-16 shrink-0 text-xs font-bold text-gray-500 dark:text-gray-400">{toDateStr(a.date)}</span>
                                                     <span className="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-100">{a.className}</span>
-                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${info.color}`}>{info.label}</span>
+                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                                                 </div>
                                             );
                                         })}
@@ -1450,7 +1450,7 @@ export default function StudentDetailClient({
                                 <SectionTitle
                                     icon="receipt_long"
                                     title="청구·납부"
-                                    right={<span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">시스템</span>}
+                                    right={<span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">시스템</span>}
                                 />
                                 {payments.length === 0 ? (
                                     <EmptyState text="청구·납부 내역이 없습니다." />
@@ -1472,7 +1472,7 @@ export default function StudentDetailClient({
                                                             {p.description || "수강료"}
                                                             {p.invoiceNo && <span className="text-xs font-bold text-gray-500 dark:text-gray-400">· {p.invoiceNo}</span>}
                                                             {invoiceInfo && (
-                                                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${invoiceInfo.color}`}>{invoiceInfo.label}</span>
+                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${invoiceInfo.color}`}>{invoiceInfo.label}</span>
                                                             )}
                                                         </p>
                                                         <p className="mt-0.5 text-xs text-gray-400">
@@ -1494,8 +1494,8 @@ export default function StudentDetailClient({
                                                         <p className="text-sm font-extrabold text-gray-900 dark:text-white">{formatKRW(p.amount)}</p>
                                                         {/* 상태 칩 + 상태변경 연필 버튼(+ 변경됨 표시) */}
                                                         <div className="mt-1 flex items-center justify-end gap-1.5">
-                                                            {changed && <span className="text-[11px] font-bold text-emerald-600 dark:text-lime-200">변경됨</span>}
-                                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${info.color}`}>{info.label}</span>
+                                                            {changed && <span className="text-xs font-bold text-emerald-600 dark:text-lime-200">변경됨</span>}
+                                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => { setPayError(null); setPayEditingId(editing ? null : p.id); }}
@@ -1520,7 +1520,7 @@ export default function StudentDetailClient({
                                                                         type="button"
                                                                         onClick={() => void changePaymentStatus(p.id, p.status, option.value)}
                                                                         disabled={updating || selected}
-                                                                        className={`px-2.5 py-1 text-[11px] font-bold transition disabled:cursor-default ${
+                                                                        className={`px-2.5 py-1 text-xs font-bold transition disabled:cursor-default ${
                                                                             selected
                                                                                 ? PAY_SEG_SELECTED[option.value]
                                                                                 : "text-gray-600 hover:bg-gray-50 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -1531,12 +1531,12 @@ export default function StudentDetailClient({
                                                                 );
                                                             })}
                                                         </div>
-                                                        {updating && <span className="ml-2 text-[11px] font-medium text-gray-400">변경 중…</span>}
+                                                        {updating && <span className="ml-2 text-xs font-medium text-gray-400">변경 중…</span>}
                                                     </div>
                                                   )}
                                                   {/* 실패 사유(권한 없음 등) 표면화 — 조용한 실패 금지 */}
                                                   {rowError && (
-                                                    <p className="mt-2 pl-[76px] text-[11px] font-medium text-red-600 dark:text-red-300">{rowError}</p>
+                                                    <p className="mt-2 pl-[76px] text-xs font-medium text-red-600 dark:text-red-300">{rowError}</p>
                                                   )}
                                                 </div>
                                             );
@@ -1550,7 +1550,7 @@ export default function StudentDetailClient({
                                 <SectionTitle
                                     icon="menu_book"
                                     title="장부 수납"
-                                    right={<span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-600 dark:bg-gray-900 dark:text-gray-300">시트 원장</span>}
+                                    right={<span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-600 dark:bg-gray-900 dark:text-gray-300">시트 원장</span>}
                                 />
                                 {ledgerHistory.length === 0 ? (
                                     <EmptyState text="시트 원장에서 이관된 수납 기록이 없습니다." />
@@ -1602,10 +1602,10 @@ export default function StudentDetailClient({
                                                 <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
                                                     <span className="w-20 shrink-0 text-sm font-extrabold text-gray-900 dark:text-white">{formatMonthLabel(history)}</span>
                                                     <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
+                                                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
                                                         {/* 반 뱃지 전체 노출 (기존 +N 숨김 개선) */}
                                                         {history.classes.map((c) => (
-                                                            <span key={c.slotKey} className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                                                            <span key={c.slotKey} className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
                                                                 {c.className}
                                                             </span>
                                                         ))}
@@ -1616,19 +1616,19 @@ export default function StudentDetailClient({
                                                 <div className="space-y-2.5 border-t border-dashed border-gray-200 p-3.5 dark:border-gray-700">
                                                     <div className="grid gap-3 sm:grid-cols-2">
                                                         <div>
-                                                            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">반</p>
+                                                            <p className="text-xs font-bold uppercase tracking-wide text-gray-400">반</p>
                                                             <p className="mt-1 text-xs text-gray-700 dark:text-gray-200">
                                                                 {history.classes.length > 0 ? history.classes.map(formatClassLabel).join(" · ") : "반 정보 없음"}
                                                             </p>
-                                                            <p className="mt-0.5 text-[11px] text-gray-400">원장 {history.rowCount}줄{history.grade ? ` · ${history.grade}` : ""}</p>
+                                                            <p className="mt-0.5 text-xs text-gray-400">원장 {history.rowCount}줄{history.grade ? ` · ${history.grade}` : ""}</p>
                                                         </div>
                                                         <div>
-                                                            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">수납</p>
+                                                            <p className="text-xs font-bold uppercase tracking-wide text-gray-400">수납</p>
                                                             <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
                                                                 납부 {formatKRW(history.paymentAmount)} / 청구 {formatKRW(history.tuitionAmount)}
-                                                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${paymentInfo.className}`}>{paymentInfo.label}</span>
+                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${paymentInfo.className}`}>{paymentInfo.label}</span>
                                                             </p>
-                                                            <p className="mt-0.5 text-[11px] text-gray-400">
+                                                            <p className="mt-0.5 text-xs text-gray-400">
                                                                 {history.paymentMethods.length > 0 ? history.paymentMethods.join(" · ") : "결제수단 없음"}
                                                                 {history.shuttleFee > 0 ? ` · 셔틀 ${formatKRW(history.shuttleFee)}` : ""}
                                                                 {history.carryOverAmount > 0 ? ` · 이월 ${formatKRW(history.carryOverAmount)}` : ""}

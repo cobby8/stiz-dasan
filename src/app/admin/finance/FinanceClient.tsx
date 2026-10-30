@@ -1272,7 +1272,7 @@ export default function FinanceClient({
                         <p>콜백/웹훅 주소: {paymentProvider.webhookUrl ? "등록 가능" : "사이트 주소 필요"}</p>
                     </div>
                     {paymentProvider.webhookUrl && (
-                        <p className="mt-2 break-all font-mono text-[11px]">
+                        <p className="mt-2 break-all font-mono text-xs">
                             {paymentProvider.providerLabel} 콜백/웹훅 등록 주소: {paymentProvider.webhookUrl}
                         </p>
                     )}

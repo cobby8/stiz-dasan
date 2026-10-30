@@ -25,7 +25,7 @@ import {
 
 const CARD_CLASS = "rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-800";
 const INPUT_CLASS = "w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
-const SMALL_BTN = "inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700";
+const SMALL_BTN = "inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700";
 
 // 관계 빠른 입력 버튼(직접 입력도 가능)
 const RELATION_PRESETS = ["모", "부", "조모", "조부", "외조모", "외조부"];
@@ -139,22 +139,22 @@ export default function GuardianPanel({
         <form onSubmit={submitForm} className="space-y-2 rounded-xl border border-brand-orange-200 bg-orange-50/40 p-3 dark:border-brand-neon-lime/30 dark:bg-gray-900/40">
             <p className="text-[12px] font-bold text-gray-800 dark:text-gray-100">{editingId === "new" ? "보호자 추가" : "보호자 수정"}</p>
             <label className="block">
-                <span className="mb-1 block text-[11px] font-bold text-gray-400">관계 *</span>
+                <span className="mb-1 block text-xs font-bold text-gray-400">관계 *</span>
                 <input type="text" value={form.relation} maxLength={20} placeholder="예: 모, 조모" onChange={(e) => setForm({ ...form, relation: e.target.value })} className={INPUT_CLASS} />
                 <span className="mt-1 flex flex-wrap gap-1">
                     {RELATION_PRESETS.map((r) => (
-                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="rounded-md border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-600 hover:bg-white dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700">
+                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="rounded-md border border-gray-200 px-1.5 py-0.5 text-xs text-gray-600 hover:bg-white dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700">
                             {r}
                         </button>
                     ))}
                 </span>
             </label>
             <label className="block">
-                <span className="mb-1 block text-[11px] font-bold text-gray-400">이름 (선택)</span>
+                <span className="mb-1 block text-xs font-bold text-gray-400">이름 (선택)</span>
                 <input type="text" value={form.name} maxLength={40} placeholder="비우면 관계로 표시" onChange={(e) => setForm({ ...form, name: e.target.value })} className={INPUT_CLASS} />
             </label>
             <label className="block">
-                <span className="mb-1 block text-[11px] font-bold text-gray-400">전화번호 *</span>
+                <span className="mb-1 block text-xs font-bold text-gray-400">전화번호 *</span>
                 <input type="tel" inputMode="tel" value={form.phone} placeholder="010-1234-5678" onChange={(e) => setForm({ ...form, phone: e.target.value })} className={INPUT_CLASS} />
             </label>
             {editingId === "new" && guardians.length > 0 && (
@@ -165,7 +165,7 @@ export default function GuardianPanel({
             )}
             <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={closeForm} disabled={isPending} className={SMALL_BTN}>취소</button>
-                <button type="submit" disabled={isPending} className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-3 py-1 text-[11px] font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200">
+                <button type="submit" disabled={isPending} className="inline-flex items-center gap-1 rounded-lg bg-brand-orange-500 px-3 py-1 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-200">
                     <Icon name="save" size={13} /> {isPending ? "저장 중…" : "저장"}
                 </button>
             </div>
@@ -178,7 +178,7 @@ export default function GuardianPanel({
                 <h3 className="flex items-center gap-2 text-sm font-extrabold text-gray-900 dark:text-white">
                     <span className="text-brand-orange-500 dark:text-brand-neon-lime"><Icon name="family_restroom" size={17} /></span>
                     보호자
-                    {loaded && <span className="text-[11px] font-bold text-gray-400">{guardians.length}명</span>}
+                    {loaded && <span className="text-xs font-bold text-gray-400">{guardians.length}명</span>}
                 </h3>
                 {editingId === null && (
                     <button type="button" onClick={openAdd} disabled={isPending || !canAdd} title={canAdd ? undefined : `최대 ${MAX_GUARDIANS_PER_STUDENT}명`} className={SMALL_BTN}>
@@ -188,9 +188,9 @@ export default function GuardianPanel({
             </div>
 
             {/* 로그인 계정 전화 — 주 보호자와 다를 수 있어 혼동 방지용으로 읽기 전용 표시 */}
-            <p className="mb-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+            <p className="mb-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                 로그인 계정 전화: <span className="font-bold text-gray-700 dark:text-gray-200">{accountPhone ? formatGuardianPhone(accountPhone) : "없음"}</span>
-                <span className="block text-[10px] text-gray-400">계정 전화는 여기서 바뀌지 않습니다(「연락처 · 프로필」에서 수정).</span>
+                <span className="block text-xs text-gray-400">계정 전화는 여기서 바뀌지 않습니다(「연락처 · 프로필」에서 수정).</span>
             </p>
 
             {!loaded ? (
@@ -208,10 +208,10 @@ export default function GuardianPanel({
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
                                             <p className="flex flex-wrap items-center gap-1.5 text-[13px] font-bold text-gray-900 dark:text-gray-100">
-                                                <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-gray-700 dark:text-gray-200">{g.relation}</span>
+                                                <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-200">{g.relation}</span>
                                                 {g.name && g.name !== g.relation && <span>{g.name}</span>}
                                                 {g.isPrimary && (
-                                                    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200 dark:text-emerald-100 dark:ring-emerald-300/20">주 보호자</span>
+                                                    <span className="rounded-full px-1.5 py-0.5 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200 dark:text-emerald-100 dark:ring-emerald-300/20">주 보호자</span>
                                                 )}
                                             </p>
                                             {g.phone ? (
@@ -233,7 +233,7 @@ export default function GuardianPanel({
                                                     <Icon name="star" size={13} /> 주 보호자로 지정
                                                 </button>
                                             )}
-                                            <button type="button" onClick={() => remove(g)} disabled={isPending} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-[11px] font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950">
+                                            <button type="button" onClick={() => remove(g)} disabled={isPending} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950">
                                                 <Icon name="delete" size={13} /> 삭제
                                             </button>
                                         </div>
@@ -247,8 +247,8 @@ export default function GuardianPanel({
 
             {editingId === "new" && <div className="mt-2">{formView}</div>}
 
-            {error && <p className="mt-2 text-[11px] font-semibold text-red-600 dark:text-red-400">{error}</p>}
-            {message && !error && <p role="status" className="mt-2 text-[11px] font-medium text-green-600 dark:text-lime-200">{message}</p>}
+            {error && <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">{error}</p>}
+            {message && !error && <p role="status" className="mt-2 text-xs font-medium text-green-600 dark:text-lime-200">{message}</p>}
         </div>
     );
 }

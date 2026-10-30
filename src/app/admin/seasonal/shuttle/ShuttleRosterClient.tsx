@@ -133,8 +133,8 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
   const [open, setOpen] = useState<"parent" | "child" | null>(null);
   const parent = digits(row.parentPhone);
   const child = digits(row.childPhone);
-  const btn = "rounded-lg border px-2.5 py-1.5 text-[11px] font-black whitespace-nowrap";
-  const act = "rounded-lg px-2.5 py-1.5 text-[11px] font-black text-white";
+  const btn = "rounded-lg border px-2.5 py-1.5 text-xs font-black whitespace-nowrap";
+  const act = "rounded-lg px-2.5 py-1.5 text-xs font-black text-white";
   const cur = open === "parent" ? parent : open === "child" ? child : null;
   return (
     <div className="relative">
@@ -148,7 +148,7 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
         <div className="absolute right-0 z-20 mt-1 flex gap-1.5 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-600 dark:bg-gray-900">
           <a href={`tel:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-green-600`}>전화</a>
           <a href={`sms:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-blue-600`}>문자</a>
-          <button onClick={() => setOpen(null)} className="rounded-lg px-2 text-[11px] font-bold text-gray-400">닫기</button>
+          <button onClick={() => setOpen(null)} className="rounded-lg px-2 text-xs font-bold text-gray-400">닫기</button>
         </div>
       )}
     </div>
@@ -358,11 +358,11 @@ export default function ShuttleRosterClient({
       <td className="p-2">
         <button type="button" onClick={() => setDetailAppId(r.applicationId)} className="group text-left">
           <div className="font-bold text-gray-900 underline-offset-2 group-hover:text-brand-orange-600 group-hover:underline dark:text-white">
-            {r.childName}{!r.ride && <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] font-black text-gray-500 dark:bg-gray-700">미탑승</span>}
+            {r.childName}{!r.ride && <span className="ml-1 rounded bg-gray-100 px-1 text-xs font-black text-gray-500 dark:bg-gray-700">미탑승</span>}
             {/* 좌표 없음 = 자동 배차에서 빠지는 학생. 원장이 바로 알아채도록 위험(빨강) 뱃지로 표시한다. */}
-            {missingCoord(r) && <span className="ml-1 rounded bg-red-100 px-1 text-[10px] font-black text-red-700 dark:bg-red-900/40 dark:text-red-300">좌표 없음 · 배차 불가</span>}
+            {missingCoord(r) && <span className="ml-1 rounded bg-red-100 px-1 text-xs font-black text-red-700 dark:bg-red-900/40 dark:text-red-300">좌표 없음 · 배차 불가</span>}
           </div>
-          <div className="text-[11px] text-gray-400">{[r.childGrade, r.childGender].filter(Boolean).join(" · ")}</div>
+          <div className="text-xs text-gray-400">{[r.childGrade, r.childGender].filter(Boolean).join(" · ")}</div>
         </button>
       </td>
       <td className="p-2 text-[12.5px] font-semibold text-gray-700 dark:text-gray-200">
@@ -404,7 +404,7 @@ export default function ShuttleRosterClient({
       {confirmed && (
         <td className="p-2">
           <button type="button" disabled={!r.rosterId} onClick={() => removeRow(r)}
-            className="rounded-lg border border-red-200 px-2.5 py-1.5 text-[11px] font-black text-red-600 disabled:opacity-40 dark:border-red-500/40 dark:text-red-300">
+            className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-black text-red-600 disabled:opacity-40 dark:border-red-500/40 dark:text-red-300">
             명단에서 빼기
           </button>
         </td>
@@ -491,7 +491,7 @@ export default function ShuttleRosterClient({
         <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full min-w-[820px] border-collapse text-[13px]">
             <thead>
-              <tr className="bg-gray-50 text-left text-[11px] uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                 <th className="p-2.5">학생</th><th className="p-2.5">수업</th>
                 <th className="p-2.5">승차 위치</th><th className="p-2.5">하차 위치</th><th className="p-2.5">연락</th>
                 {confirmed && <th className="p-2.5">관리</th>}
@@ -508,10 +508,10 @@ export default function ShuttleRosterClient({
                       <button type="button" onClick={() => setHubOpen((v) => !v)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left">
                         <span className="text-[12px] text-green-700 dark:text-green-300">{hubOpen ? "▼" : "▶"}</span>
-                        <span className="grid h-5 w-5 place-items-center rounded bg-green-600 text-[11px] text-white">🆓</span>
+                        <span className="grid h-5 w-5 place-items-center rounded bg-green-600 text-xs text-white">🆓</span>
                         <span className="text-[13px] font-black text-green-800 dark:text-green-200">1호점(무료탑승)</span>
-                        <span className="rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-black text-white">{hubRows.length}명</span>
-                        <span className="text-[11px] font-semibold text-green-700/80 dark:text-green-300/80">1호점 거점에서 무료로 탑승하는 학생</span>
+                        <span className="rounded-full bg-green-600 px-2 py-0.5 text-xs font-black text-white">{hubRows.length}명</span>
+                        <span className="text-xs font-semibold text-green-700/80 dark:text-green-300/80">1호점 거점에서 무료로 탑승하는 학생</span>
                       </button>
                     </td>
                   </tr>
@@ -526,9 +526,9 @@ export default function ShuttleRosterClient({
           </table>
         </div>
         {/* 색 범례는 색만 보고는 뜻을 알 수 없으므로 반드시 남긴다. 뒤의 조작 설명(중복)만 제거. */}
-        <p className="mt-2 text-[11px] text-gray-400">● 초록=정밀 핀 · ● 노랑=자동추정(재확인 권장)</p>
+        <p className="mt-2 text-xs text-gray-400">● 초록=정밀 핀 · ● 노랑=자동추정(재확인 권장)</p>
         {confirmed && (
-          <p className="mt-1 text-[11px] text-gray-400">확정 후 이 표에서 고친 값(위치 이름·지도 핀·하차 설정)은 확정 명단에만 저장되고, 학부모가 낸 원본 신청서는 그대로 유지됩니다.</p>
+          <p className="mt-1 text-xs text-gray-400">확정 후 이 표에서 고친 값(위치 이름·지도 핀·하차 설정)은 확정 명단에만 저장되고, 학부모가 낸 원본 신청서는 그대로 유지됩니다.</p>
         )}
       </div>
 

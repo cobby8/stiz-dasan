@@ -686,7 +686,7 @@ function ColHeader({
   return (
     <div className="relative inline-flex items-center gap-1">
       <span className="font-bold">{title}</span>
-      {sortDir && <span className="text-[10px] text-[var(--brand-accent)]">{sortDir === "asc" ? "▲" : "▼"}</span>}
+      {sortDir && <span className="text-xs text-[var(--brand-accent)]">{sortDir === "asc" ? "▲" : "▼"}</span>}
       <button type="button" aria-label={`${title} 필터`} onClick={onToggleOpen}
         className={`grid h-5 w-5 place-items-center rounded ${active ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>
         <span className="material-symbols-outlined text-[16px]">filter_list</span>
@@ -703,7 +703,7 @@ function ColHeader({
             )}
             {options && excluded && (
               <div>
-                <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-gray-400">
+                <div className="mb-1 flex items-center justify-between text-xs font-bold text-gray-400">
                   <button type="button" onClick={onAll} className="hover:text-[var(--brand-accent)]">모두 선택</button>
                   <button type="button" onClick={onNone} className="hover:text-[var(--brand-accent)]">모두 해제</button>
                 </div>
@@ -2476,7 +2476,7 @@ function ConversionReadinessBox({ item, onConvertItem, converting }: { item: App
             type="button"
             disabled={converting}
             onClick={() => void onConvertItem(item.id)}
-            className="ml-0 min-h-8 rounded-full bg-[var(--brand-accent)] px-3 text-[11px] font-black text-[var(--brand-accent-contrast)] disabled:opacity-60 sm:ml-2"
+            className="ml-0 min-h-8 rounded-full bg-[var(--brand-accent)] px-3 text-xs font-black text-[var(--brand-accent-contrast)] disabled:opacity-60 sm:ml-2"
           >
             {converting ? "생성 중" : "수강·청구 생성"}
           </button>
@@ -2487,7 +2487,7 @@ function ConversionReadinessBox({ item, onConvertItem, converting }: { item: App
 }
 
 function MiniState({ active, label }: { active: boolean; label: string }) {
-  return <span className={`rounded-full px-2 py-1 text-[11px] font-black ${active ? "bg-white text-emerald-700 dark:bg-emerald-100 dark:text-emerald-900" : "bg-white/60 text-gray-500 dark:bg-gray-900/50 dark:text-gray-300"}`}>{label}</span>;
+  return <span className={`rounded-full px-2 py-1 text-xs font-black ${active ? "bg-white text-emerald-700 dark:bg-emerald-100 dark:text-emerald-900" : "bg-white/60 text-gray-500 dark:bg-gray-900/50 dark:text-gray-300"}`}>{label}</span>;
 }
 
 function InvoiceActionBox({ item, onCopyInvoiceLink, onRetryNotification, sendingNotificationKey, onRefresh }: { item: ApplicationItem; onCopyInvoiceLink: (item: ApplicationItem) => Promise<void>; onRetryNotification: (scope: "application" | "item" | "invoice", id: string, trigger: string) => Promise<void>; sendingNotificationKey: string; onRefresh?: () => void }) {
@@ -2522,7 +2522,7 @@ function InvoiceActionBox({ item, onCopyInvoiceLink, onRetryNotification, sendin
       <div>
         <div className="flex items-center gap-2">
           <p className="font-black text-gray-950 dark:text-white">청구서</p>
-          {isPaid && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-black text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">납부 완료</span>}
+          {isPaid && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">납부 완료</span>}
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {item.invoice?.invoiceNo || "청구번호 준비됨"} · {STATUS_LABEL[item.invoice?.status || ""] ?? item.invoice?.status ?? "발행"}
@@ -2721,11 +2721,12 @@ function ShuttleRequestBox({ request, onChanged }: { request: ShuttleRequest; on
       <div className="flex items-center gap-2">
         <span className={badge(request.status || "REQUESTED")}>{STATUS_LABEL[request.status || "REQUESTED"]}</span>
         {cancelled
-          ? <button type="button" disabled={busy} onClick={() => toggleRide(true)} className="rounded-lg border border-green-300 px-2.5 py-1 text-[11px] font-black text-green-700 disabled:opacity-50">{busy ? "처리 중…" : "🚌 셔틀 이용으로 변경"}</button>
-          : <button type="button" disabled={busy} onClick={() => toggleRide(false)} className="rounded-lg border border-red-300 px-2.5 py-1 text-[11px] font-black text-red-600 disabled:opacity-50">{busy ? "처리 중…" : "🚫 셔틀 신청 취소"}</button>}
+          // 게슈탈트 A-15: 44px·12px 이상, 되돌리기는 옅은 바탕(tonal), 취소는 위험 테두리(danger) — 같은 toggleRide·같은 확인
+          ? <button type="button" disabled={busy} onClick={() => toggleRide(true)} className="academy-button-tonal">{busy ? "처리 중…" : "🚌 셔틀 이용으로 변경"}</button>
+          : <button type="button" disabled={busy} onClick={() => toggleRide(false)} className="academy-button-danger">{busy ? "처리 중…" : "🚫 셔틀 신청 취소"}</button>}
       </div>
     </div>
-    {err && <p className="mt-1 text-[11px] font-bold text-red-600">⚠ {err}</p>}
+    {err && <p className="mt-1 text-xs font-bold text-red-600">⚠ {err}</p>}
     {cancelled ? (
       <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-gray-500 dark:bg-gray-900 dark:text-gray-400">🚫 셔틀 미이용 처리됨 — 배차 명단에서 제외되었습니다. 다시 태우려면 위 버튼을 누르세요.</p>
     ) : <>

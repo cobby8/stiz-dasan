@@ -198,7 +198,7 @@ export default function AdminNotificationBell() {
                                         <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
                                             {item.message}
                                         </p>
-                                        <p className="mt-1 text-[11px] text-gray-400">{timeAgo(item.createdAt)}</p>
+                                        <p className="mt-1 text-xs text-gray-400">{timeAgo(item.createdAt)}</p>
                                     </div>
                                     {!item.isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />}
                                 </button>

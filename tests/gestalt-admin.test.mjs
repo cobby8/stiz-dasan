@@ -165,3 +165,33 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   assert.match(shell, /"🗨️": "forum", "🚫": "hide_image", "🌐": "public"/);
   assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
 });
+
+test("A-14 대시보드: 카드 두 줄에 소제목, 아이콘 색 muted 통일", () => {
+  const dash = read("../src/app/admin/AdminDashboardClient.tsx");
+  assert.match(dash, />운영 규모<\/h3>/);
+  assert.match(dash, />이번 달 매출·출석·미납<\/h3>/);
+  for (const name of ["groups", "menu_book", "person_check", "layers"]) {
+    assert.ok(dash.includes(`<SymbolIcon name="${name}" size={20} className="text-[var(--color-academy-muted)]" />`), name);
+  }
+  // 운영 현황 카드 구역만(백업 상태 아이콘의 의미색은 그대로 둔다)
+  const cards = dash.slice(dash.indexOf(">운영 규모</h3>"), dash.indexOf(">이번 달 매출·출석·미납</h3>"));
+  assert.doesNotMatch(cards, /text-blue-500|text-emerald-500|text-purple-500/);
+});
+
+test("A-15 12px 미만 글자 제거(우선 화면) + 특강 셔틀 취소 44px·위험색", () => {
+  for (const path of [
+    "../src/app/admin/students/[id]/StudentDetailClient.tsx",
+    "../src/app/admin/students/[id]/GuardianPanel.tsx",
+    "../src/app/admin/seasonal/shuttle/ShuttleRosterClient.tsx",
+    "../src/app/admin/seasonal/SeasonalAdminClient.tsx",
+    "../src/app/admin/AdminShellClient.tsx",
+    "../src/app/admin/AdminDashboardClient.tsx",
+    "../src/app/admin/finance/FinanceClient.tsx",
+    "../src/app/admin/trial/TrialCrmClient.tsx",
+  ]) {
+    assert.doesNotMatch(read(path), /text-\[(9|10|11)px\]/, path);
+  }
+  const seasonal = read("../src/app/admin/seasonal/SeasonalAdminClient.tsx");
+  assert.match(seasonal, /onClick=\{\(\) => toggleRide\(false\)\} className="academy-button-danger">/);
+  assert.match(seasonal, /window\.confirm\("이 학생의 셔틀 신청을 취소\(미이용\)할까요\?/);
+});

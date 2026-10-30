@@ -342,17 +342,20 @@ function DashboardContent({
                     {detailsError && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">상세 운영 현황을 불러오지 못했습니다. 현재 표시 중인 정보는 유지됩니다. 다시 불러와 주세요.</p>}
                     {(!detailsLoaded || detailsError) && <DeferredDetailsCard loading={detailsLoading} onLoad={onLoadDetails} retry={detailsError} />}
                     {detailsLoaded && <>
+            {/* 게슈탈트 A-14: 두 카드 줄이 한 덩어리로 읽히지 않게 줄마다 소제목을 단다. 아이콘 색은 한 가지(muted) */}
+            <h3 className="mb-2 text-xs font-bold text-[var(--color-academy-muted)]">운영 규모</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard title="등록 원생" value={`${stats.studentCount}명`}
-                    icon={<SymbolIcon name="groups" size={20} className="text-blue-500" />} href="/admin/students" />
+                    icon={<SymbolIcon name="groups" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/students" />
                 <StatCard title="운영 프로그램" value={`${stats.programCount}개`}
-                    icon={<SymbolIcon name="menu_book" size={20} className="text-[var(--color-academy-primary)] dark:text-brand-neon-lime" />} href="/admin/programs" />
+                    icon={<SymbolIcon name="menu_book" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/programs" />
                 <StatCard title="코치/강사진" value={`${stats.coachCount}명`}
-                    icon={<SymbolIcon name="person_check" size={20} className="text-emerald-500" />} href="/admin/coaches" />
+                    icon={<SymbolIcon name="person_check" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/coaches" />
                 <StatCard title="개설 반" value={`${stats.classCount}개`}
-                    icon={<SymbolIcon name="layers" size={20} className="text-purple-500" />} href="/admin/classes" />
+                    icon={<SymbolIcon name="layers" size={20} className="text-[var(--color-academy-muted)]" />} href="/admin/classes" />
             </div>
 
+            <h3 className="mb-2 mt-6 text-xs font-bold text-[var(--color-academy-muted)]">이번 달 매출·출석·미납</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="academy-panel p-4">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">이번 달 매출</p>
@@ -645,7 +648,7 @@ function SiteOpsBotCard({
                                             <p className="text-xs font-bold text-gray-900 dark:text-white">{item.label}</p>
                                             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{item.message}</p>
                                         </div>
-                                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                                        <span className={`rounded-full px-1.5 py-0.5 text-xs font-bold ${
                                             item.status === "critical"
                                                 ? "bg-red-100 text-red-700"
                                                 : item.status === "fixed"

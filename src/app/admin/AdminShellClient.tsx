@@ -241,7 +241,7 @@ function NavItem({ href, active, icon, label, badge, compact = false }: { href: 
             <span className="flex-1">{label}</span>
             {/* 배지 — 새 신청 건수 등 알림 표시 */}
             {badge != null && badge > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold bg-red-500 text-white">
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold bg-red-500 text-white">
                     {badge}
                 </span>
             )}
