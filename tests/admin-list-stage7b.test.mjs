@@ -43,3 +43,28 @@ test("공지: 행 클릭 = 상세 패널, 행 키보드 가드, 관리 칸 전�
   // 관리 버튼 터치 44px
   assert.match(listTable(notices), /min-h-11 min-w-11/);
 });
+
+// ── FAQ ──
+const faq = read("../src/app/admin/faq/FaqAdminClient.tsx");
+
+test("FAQ: 한 줄 표(순서·작성일 오른쪽), 답변 미리보기는 표에서 빼고 패널에서 전부", () => {
+  const table = listTable(faq);
+  assert.doesNotMatch(table, /truncate|line-clamp|text-ellipsis/);
+  assert.doesNotMatch(table, /faq\.answer/);
+  assert.match(table, /admin-cell-num[^"]*">\{faq\.order\}/);
+  assert.match(table, /admin-cell-num[^"]*">\{toKstYmd\(faq\.createdAt\)\}/);
+  assert.doesNotMatch(faq, /toLocaleDateString/);
+  assert.match(faq, /whitespace-pre-wrap[^"]*">\s*\{detailFaq\.answer\}/);
+});
+
+test("FAQ: 공개 칩은 같은 필터 값을 쓰고 바꾸면 패널을 닫는다, 행 클릭 패널·키보드 가드·전파 차단, 수정·삭제 그대로", () => {
+  assert.match(faq, /<StatusCountChips[\s\S]*?selected=\{visibilityFilter\}[\s\S]*?setVisibilityFilter\(value\); setDetailFaqId\(null\);[\s\S]*?allValue=\{FAQ_VISIBILITY_ALL\}/);
+  assert.match(faq, /<ListDetailPanel onClose=\{\(\) => setDetailFaqId\(null\)\} titleId="faq-detail-panel-title"/);
+  assert.match(faq, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(faq, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(faq, /onClick=\{\(\) => startEdit\(faq\)\}/);
+  assert.match(faq, /onClick=\{\(\) => handleDelete\(faq\.id\)\}/);
+  assert.match(faq, /confirm\("이 FAQ를 삭제하시겠습니까\?"\)/);
+  assert.match(faq, /await deleteFaq\(id\)/);
+  assert.match(faq, /const payload = \{ question, answer, order, isPublic \};/);
+});
