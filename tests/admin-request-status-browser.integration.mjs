@@ -33,7 +33,8 @@ try {
     });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(harness.url);
-    await page.getByRole('button', { name: /검사용 문의/ }).click();
+    // 목록 개편 6단계: 펼침 버튼 → 한 줄 행 클릭 = 상세 패널(답변·상태 변경·재조회·삭제는 패널 안 그대로)
+    await page.getByRole('row', { name: /검사용 문의/ }).click();
     await page.locator('textarea').fill('수정한 답변');
     await page.getByRole('button', { name: '상담 종결', exact: true }).click();
     if (lost) {

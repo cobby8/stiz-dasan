@@ -378,3 +378,26 @@ test("정규 결석: 카드 → 한 줄 행(결석일·시간·보강일 오른�
   assert.match(absenceClient, /onClick=\{\(\) => submitMakeup\(makeupOpenId\)\}/);
   assert.doesNotMatch(absenceClient, /\btruncate\b|text-ellipsis|line-clamp|bg-amber-100|bg-green-100|bg-blue-50/);
 });
+
+const requestsClient = read("../src/app/admin/requests/RequestsAdminClient.tsx");
+
+test("학부모 요청: 펼침 카드 → 한 줄 행(접수일·시각 오른쪽, KST)·상태 칩(filter 공유·서버 재조회)·행 클릭 패널에 답변·상태 변경·재조회·삭제 그대로", () => {
+  assert.match(requestsClient, /<table className="admin-list-table/);
+  assert.match(requestsClient, /admin-cell-num[^"]*">\{kstLabel\(req\.createdAt\) \|\| "-"\}/);
+  assert.match(requestsClient, /admin-cell-num[^"]*">\{formatKstTime\(req\.createdAt\)\}/);
+  assert.match(requestsClient, /from "@\/lib\/datetime\/kst"/);
+  assert.doesNotMatch(requestsClient, /toLocaleDateString|toISOString\(\)\.slice/);
+  assert.match(requestsClient, /<StatusCountChips[\s\S]*?selected=\{filter\}[\s\S]*?onSelect=\{applyStatusFilter\}[\s\S]*?allValue=\{STATUS_FILTER_ALL\}/);
+  // 행 클릭 패널, 행 키보드는 안쪽 요소를 가로채지 않는다
+  assert.match(requestsClient, /<ListDetailPanel onClose=\{\(\) => setExpandedId\(null\)\} titleId="request-detail-panel-title"/);
+  assert.match(requestsClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  // 학부모에게 알림이 나가는 상태 변경은 같은 함수·같은 인자, 결과 안내·잠금·재조회·삭제 확인창 그대로
+  assert.match(requestsClient, /updateRequestStatus\(req\.id, s\.value, note\)/);
+  assert.match(requestsClient, /getParentRequestStatusForAdmin\(req\.id\)/);
+  assert.match(requestsClient, /disabled=\{isPending \|\| !!uncertain\[req\.id\]\}/);
+  assert.match(requestsClient, /자동 재발송하지 않습니다/);
+  assert.match(requestsClient, /confirm\("이 요청을 삭제하시겠습니까\?"\)[\s\S]*?deleteParentRequest\(req\.id\)/);
+  // 안내 글은 패널이 열려 있으면 패널 안에만(같은 글 두 번 금지)
+  assert.match(requestsClient, /\{feedback && !detail && <p role="status"/);
+  assert.doesNotMatch(requestsClient, /\btruncate\b|text-ellipsis|line-clamp|bg-yellow-100|bg-red-100|brand-neon-lime/);
+});

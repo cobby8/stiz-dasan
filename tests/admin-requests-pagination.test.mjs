@@ -28,8 +28,9 @@ test("admin requests api accepts status and next-page params", () => {
 });
 
 test("admin requests client loads filtered pages and appends more results", () => {
-  assert.match(requestsClient, /setFilter\(f\.value\)/);
-  assert.match(requestsClient, /loadRequests\(\{ status: f\.value, offset: 0 \}\)/);
+  // 목록 개편 6단계: 필터 탭 → 상태 칩(같은 filter 값을 바꾸고 그 상태 첫 페이지를 서버에서 다시 읽는다)
+  assert.match(requestsClient, /function applyStatusFilter\(value: string\)[\s\S]*?setFilter\(value\);[\s\S]*?loadRequests\(\{ status: value, offset: 0 \}\)/);
+  assert.match(requestsClient, /<StatusCountChips[\s\S]*?selected=\{filter\}[\s\S]*?onSelect=\{applyStatusFilter\}/);
   assert.match(requestsClient, /append: true/);
   assert.match(requestsClient, /offset: pagination\.nextOffset/);
   assert.match(requestsClient, /더 보기/);
