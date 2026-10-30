@@ -167,7 +167,8 @@ export default function StaffShuttleDashboardClient({
         <SummaryItem label="체크 대기" value={`${statusSummary.pending}명`} tone={statusSummary.pending ? "warning" : "neutral"} />
         <SummaryItem label="체크 완료" value={`${statusSummary.done}명`} tone="success" />
         <SummaryItem label="미탑승" value={`${statusSummary.noShow}명`} tone={statusSummary.noShow ? "danger" : "neutral"} />
-      </section>      {refreshMessage && (
+      </section>
+      {refreshMessage && (
         <p className={`mt-2 text-xs font-bold ${refreshMessage.tone === "error" ? "text-red-600 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`} role={refreshMessage.tone === "error" ? "alert" : "status"}>
           {refreshMessage.text}
         </p>

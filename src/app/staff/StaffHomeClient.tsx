@@ -397,7 +397,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
         className="academy-button-secondary flex min-h-11 shrink-0 items-center gap-0.5 rounded-xl px-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span aria-hidden="true" className="material-symbols-outlined text-lg">{startLocked ? "lock" : lesson.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
-        {startLocked ? "대기" : "시작"}
+        {startLocked ? "대기" : lesson.sessionStatus === "IN_PROGRESS" ? "이어하기" : "시작"}
       </button>
     )}
   </li>;
