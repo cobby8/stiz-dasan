@@ -14,6 +14,8 @@ import { SessionPhotoUploader } from "@/components/staff/SessionPhotoUploader";
 import { REASON_LABEL as ABSENCE_REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
+import { StatusChoiceButton, StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
+import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { loadStaffSessionMonthlyFees } from "@/app/actions/staff-billing";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
 import { monthlyFeeLabel } from "@/components/staff/StaffMonthlyFeeSummary";
@@ -38,6 +40,18 @@ const STATUS_LABEL: Record<AttendanceStatus, string> = {
   PRESENT: "출석",
   LATE: "지각",
   ABSENT: "결석",
+};
+
+// 게슈탈트 T-03: 출석=초록(success)·지각=노랑(warning)·결석=빨강(danger) + 아이콘. 탑승 체크와 같은 약속.
+const STATUS_TONE: Record<AttendanceStatus, StatusTone> = {
+  PRESENT: "success",
+  LATE: "warning",
+  ABSENT: "danger",
+};
+const STATUS_ICON: Record<AttendanceStatus, string> = {
+  PRESENT: "check",
+  LATE: "schedule",
+  ABSENT: "close",
 };
 
 function formatElapsed(seconds: number) {
@@ -474,7 +488,9 @@ export default function SessionInProgressClient({
             return <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
               <div className="flex items-center justify-between">
                 <strong className="text-base dark:text-white">{student.name}</strong>
-                <span className="text-xs font-bold text-gray-500">{student.status ? STATUS_LABEL[student.status] : "미확인"}</span>
+                {student.status
+                  ? <StatusPill tone={STATUS_TONE[student.status]} icon={STATUS_ICON[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
+                  : <StatusPill tone="neutral" icon="help">미확인</StatusPill>}
               </div>
               <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
                 <span className="text-xs font-bold text-[var(--color-academy-ink)]">
@@ -500,11 +516,11 @@ export default function SessionInProgressClient({
                   {student.absenceReport.status === "CONFIRMED" ? " · 확정" : ""}
                 </p>
               )}
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-3 gap-3">
                 {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
-                  <button key={status} type="button" aria-label={`${student.name} ${STATUS_LABEL[status]}`} aria-pressed={student.status === status} disabled={pending} onClick={() => updateAttendance(student.id, status)} className={`min-h-11 rounded-xl border text-sm font-black ${student.status === status ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"}`}>
+                  <StatusChoiceButton key={status} tone={STATUS_TONE[status]} icon={STATUS_ICON[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={pending} onClick={() => updateAttendance(student.id, status)}>
                     {STATUS_LABEL[status]}
-                  </button>
+                  </StatusChoiceButton>
                 ))}
               </div>
             </article>;
@@ -525,7 +541,7 @@ export default function SessionInProgressClient({
             <h1 className="mt-0.5 text-xl font-black">{session.className}</h1>
             <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
           </div>
-          <span className="academy-status rounded-full px-3 py-1 text-xs font-bold">수업 중</span>
+          <LiveStatusPill>수업 중</LiveStatusPill>
         </div>
         <div className="mt-3 flex items-end justify-between border-t border-[var(--color-academy-line)] pt-3">
           <p className="text-xs font-bold text-[var(--color-academy-muted)]">수업 경과 시간</p>
@@ -546,7 +562,8 @@ export default function SessionInProgressClient({
             <h2 className="font-black">{counts.UNCHECKED > 0 ? `출석 미확인 ${counts.UNCHECKED}명` : "출석 확인 완료"}</h2>
             <p className="mt-1 text-xs font-bold text-[var(--color-academy-muted)]">출석 {counts.PRESENT} · 지각 {counts.LATE} · 결석 {counts.ABSENT}</p>
           </div>
-          <button type="button" onClick={() => setView("attendance")} className="min-h-11 shrink-0 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-black text-[var(--brand-accent-contrast)]">
+          {/* 게슈탈트 T-06: 확인할 학생이 남았을 때만 꽉 찬 버튼(주인공). 다 끝났으면 보조 버튼으로 낮춘다. */}
+          <button type="button" onClick={() => setView("attendance")} className={`${counts.UNCHECKED > 0 ? "academy-button-primary" : "academy-button-secondary"} min-h-11 shrink-0 rounded-xl px-4 text-sm font-black`}>
             출석부 확인
           </button>
         </div>
@@ -611,7 +628,7 @@ export default function SessionInProgressClient({
             {memoStatus === "saving" ? "저장 중…" : memoStatus === "dirty" ? "변경사항 자동 저장 대기 중" : memoStatus === "error" ? "저장 실패 · 다시 시도해 주세요" : "저장됨"}
           </span>
         </div>
-        <button type="button" disabled={pending || memoStatus === "saving" || !online} onClick={saveMemo} className="mt-3 min-h-12 w-full rounded-xl bg-brand-navy-900 px-4 text-sm font-black text-white disabled:opacity-50">메모 지금 저장</button>
+        <button type="button" disabled={pending || memoStatus === "saving" || !online} onClick={saveMemo} className="academy-button-secondary mt-3 min-h-12 w-full rounded-xl px-4 text-sm font-black disabled:opacity-50">메모 지금 저장</button>
       </section>
 
       {message && <p aria-live="polite" className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-700">{message}</p>}
@@ -623,8 +640,8 @@ export default function SessionInProgressClient({
           홈 인디케이터(safe-area)만큼만 아래 여백을 줘 겹침 없이 항상 접근 가능하게 한다. */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="rounded-2xl border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
-          <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} className="min-h-14 w-full rounded-xl border-2 border-red-200 bg-white px-4 font-black text-red-700 disabled:opacity-50 dark:border-red-900 dark:bg-gray-900 dark:text-red-300"><span className="material-symbols-outlined mr-2 align-middle">stop_circle</span>수업 종료 확인</button>
-          {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-[11px] font-bold text-amber-700">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
+          <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} className="academy-button-danger min-h-14 w-full rounded-xl border-2 px-4 font-black disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined">stop_circle</span>수업 종료 확인</button>
+          {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-xs font-bold text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
         </div>
       </div>
 
@@ -634,10 +651,10 @@ export default function SessionInProgressClient({
             <h2 id="end-session-title" className="text-xl font-black dark:text-white">수업을 종료하시겠습니까?</h2>
             <p className="mt-1 text-sm text-gray-500">종료하면 학부모에게 수업 종료 알림이 전송됩니다.</p>
             <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs font-bold">
-              <div className="rounded-lg bg-green-50 p-2 text-green-700">출석 {counts.PRESENT}</div>
-              <div className="rounded-lg bg-amber-50 p-2 text-amber-700">지각 {counts.LATE}</div>
-              <div className="rounded-lg bg-red-50 p-2 text-red-700">결석 {counts.ABSENT}</div>
-              <div className="rounded-lg bg-gray-100 p-2 text-gray-600">미확인 {counts.UNCHECKED}</div>
+              <div className="rounded-lg bg-[var(--color-academy-success-soft)] p-2 text-[var(--color-academy-success)]">출석 {counts.PRESENT}</div>
+              <div className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-[var(--color-academy-warning)]">지각 {counts.LATE}</div>
+              <div className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-[var(--color-academy-danger)]">결석 {counts.ABSENT}</div>
+              <div className="rounded-lg bg-[var(--color-academy-soft)] p-2 text-[var(--color-academy-muted)]">미확인 {counts.UNCHECKED}</div>
             </div>
             {counts.UNCHECKED > 0 && (
               <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
@@ -679,7 +696,7 @@ export default function SessionInProgressClient({
               {counts.UNCHECKED > 0 ? (
                 <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); setView("attendance"); }} className="min-h-12 rounded-xl bg-[var(--brand-accent)] px-3 font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">출석부 확인하기</button>
               ) : (
-                <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || memoStatus === "saving"} onClick={finishSession} className="min-h-12 rounded-xl bg-red-600 font-black text-white disabled:opacity-50">{pending ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
+                <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} aria-busy={pending || memoStatus === "saving"} onClick={finishSession} className="academy-button-danger-solid min-h-12 rounded-xl font-black disabled:opacity-50">{pending ? "종료 처리 중…" : memoStatus === "saving" ? "메모 저장 중…" : "종료 확인"}</button>
               )}
             </div>
           </div>
