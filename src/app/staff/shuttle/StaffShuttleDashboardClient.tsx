@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { StatusPill } from "@/components/staff/StatusChoiceButton";
 import ShuttleRideStatusButtons from "./ShuttleRideStatusButtons";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { confirmedTimeLabel } from "@/lib/shuttle/time";
@@ -321,7 +322,7 @@ function RouteCard({
                                     onMutationStateChange={onMutationStateChange}
                                   />
                                 ) : (
-                                  <p className="mt-2 text-[11px] font-bold text-gray-400">운행 당일에 탑승 상태를 체크할 수 있습니다.</p>
+                                  <p className="mt-2 text-xs font-bold text-[var(--color-academy-muted)]">운행 당일에 탑승 상태를 체크할 수 있습니다.</p>
                                 )}
                               </div>
                             );
@@ -400,13 +401,10 @@ function mapUrl(lat: number | string | null | undefined, lng: number | string | 
 
 function RideStatusPill({ status }: { status: RideStatus }) {
   const label = status === "BOARDED" ? "탑승" : status === "DROPPED_OFF" ? "하차" : status === "NO_SHOW" ? "미탑승" : "대기";
-  const color = status === "BOARDED" || status === "DROPPED_OFF"
-    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
-    : status === "NO_SHOW"
-      ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200"
-      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300";
-
-  return <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-black ${color}`}>{label}</span>;
+  // 게슈탈트 T-02/T-11: 탑승 버튼과 같은 의미색·아이콘(탑승·하차=success, 미탑승=danger, 대기=warning), 글자 12px
+  const tone = status === "BOARDED" || status === "DROPPED_OFF" ? "success" : status === "NO_SHOW" ? "danger" : "warning";
+  const icon = tone === "success" ? "check" : tone === "danger" ? "close" : "schedule";
+  return <StatusPill tone={tone} icon={icon} className="py-1">{label}</StatusPill>;
 }
 
 // 예정·확인 필요 노선 한 줄 행: (날짜) | 등원/하원 | 노선 이름 | 인원(오른쪽)

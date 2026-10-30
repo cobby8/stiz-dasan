@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
+import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
 
 type Direction = "PICKUP" | "DROPOFF";
 type RideStatus = "PENDING" | "BOARDED" | "DROPPED_OFF" | "NO_SHOW";
@@ -55,54 +56,27 @@ export default function ShuttleRideStatusButtons({
     });
   }
 
+  const isFailure = message.includes("못했습니다");
+
   return (
-    <div className="mt-2 space-y-1">
-      <div className="grid grid-cols-3 gap-1.5">
-        <StatusButton active={status === primaryStatus} disabled={isPending} onClick={() => update(primaryStatus)}>
+    <div className="mt-2">
+      {/* 게슈탈트 T-02: 주인공(탑승/하차)은 넓게, 위험 쪽(미탑승)은 12px 떼어 오른쪽 좁게.
+          «대기»는 상태 버튼 줄에서 빼고 아래 작은 글자 버튼으로 둬서 실수로 누르지 않게 한다. */}
+      <div className="grid grid-cols-[2fr_1fr] gap-3">
+        <StatusChoiceButton tone="success" icon="check" active={status === primaryStatus} disabled={isPending} onClick={() => update(primaryStatus)}>
           {STATUS_LABEL[primaryStatus]}
-        </StatusButton>
-        <StatusButton active={status === "NO_SHOW"} disabled={isPending} tone="danger" onClick={() => update("NO_SHOW")}>
+        </StatusChoiceButton>
+        <StatusChoiceButton tone="danger" icon="close" active={status === "NO_SHOW"} disabled={isPending} onClick={() => update("NO_SHOW")}>
           미탑승
-        </StatusButton>
-        <StatusButton active={status === "PENDING"} disabled={isPending} tone="dark" onClick={() => update("PENDING")}>
-          대기
-        </StatusButton>
+        </StatusChoiceButton>
       </div>
-      <p className={`text-[11px] font-bold ${message.includes("못했습니다") ? "text-red-600 dark:text-red-300" : "text-gray-400"}`} role={message.includes("못했습니다") ? "alert" : "status"}>
-        {message || `현재 ${STATUS_LABEL[status]}`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <p className={`text-xs font-bold ${isFailure ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} role={isFailure ? "alert" : "status"}>
+          {message || `현재 ${STATUS_LABEL[status]}`}
+        </p>
+        {/* 이미 대기면 되돌릴 것이 없으므로 숨긴다. 저장 경로는 다른 버튼과 같은 update() */}
+        {status !== "PENDING" && <StatusUndoButton disabled={isPending} onClick={() => update("PENDING")} />}
+      </div>
     </div>
-  );
-}
-
-function StatusButton({
-  active,
-  disabled,
-  tone = "success",
-  onClick,
-  children,
-}: {
-  active: boolean;
-  disabled: boolean;
-  tone?: "success" | "danger" | "dark";
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  const activeClass =
-    tone === "danger"
-      ? "bg-red-500 text-white"
-      : tone === "dark"
-        ? "bg-gray-900 text-white dark:bg-white dark:text-gray-950"
-        : "bg-emerald-500 text-white";
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`min-h-9 rounded-xl text-xs font-black disabled:opacity-60 ${active ? activeClass : "bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200"}`}
-    >
-      {children}
-    </button>
   );
 }
