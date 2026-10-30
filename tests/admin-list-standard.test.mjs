@@ -159,3 +159,26 @@ test("출결 관리: 반 드롭다운 대신 그날 수업 한 줄 행 목록, �
   assert.doesNotMatch(attendanceClient, /\btruncate\b|text-ellipsis|line-clamp/);
   assert.match(attendanceClient, /from "@\/lib\/datetime\/kst"/);
 });
+
+const reportListClient = read("../src/app/admin/attendance/report/ReportListClient.tsx");
+
+test("수업 리포트 목록: 날짜별 묶음(오늘/이번 주/지난 주/이전)·발행 칩·행 클릭 패널, 날짜는 KST 모듈로", () => {
+  assert.match(reportListClient, /<table className="admin-list-table/);
+  // 날짜 묶음은 KST 달력(월요일 시작 주)으로만 계산
+  assert.match(reportListClient, /function dateGroupOf\(ymd: string, today: string\)/);
+  assert.match(reportListClient, /addDaysKst\(today, -\(\(kstDow\(today\) \+ 6\) % 7\)\)/);
+  assert.match(reportListClient, /dateGroupOf\(toKstYmd\(session\.date\), today\)/);
+  assert.match(reportListClient, /today: "오늘"[\s\S]*?thisWeek: "이번 주"[\s\S]*?lastWeek: "지난 주"/);
+  assert.match(reportListClient, /scope="rowgroup"/);
+  // 보기 전환(기본 날짜별)·발행 칩
+  assert.match(reportListClient, /useRememberedListView<ReportViewMode>\(REPORT_VIEW_STORAGE_KEY, REPORT_VIEW_VALUES, "date"\)/);
+  assert.match(reportListClient, /<StatusCountChips[\s\S]*?selected=\{publishFilter\}[\s\S]*?onSelect=\{setPublishFilter\}/);
+  // 날짜·출석 오른쪽 정렬
+  assert.match(reportListClient, /admin-cell-num[^"]*">\{kstLabel\(session\.date\)\}/);
+  // 행 클릭 패널, 편집 링크는 전파 차단, 패널에서도 편집 가능
+  assert.match(reportListClient, /<ListDetailPanel onClose=\{\(\) => setDetailSessionId\(null\)\} titleId="report-detail-panel-title"/);
+  assert.match(reportListClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(reportListClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(reportListClient, /href=\{`\/admin\/attendance\/report\/\$\{d\.id\}`\}/);
+  assert.doesNotMatch(reportListClient, /\btruncate\b|text-ellipsis|line-clamp|toLocaleDateString|brand-neon-lime/);
+});
