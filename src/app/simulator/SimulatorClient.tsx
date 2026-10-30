@@ -375,16 +375,17 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                 <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-400 mb-6 break-keep">
                                     다른 요일이나 시간대를 선택해 보시거나, 전화로 문의해 주세요.
                                 </p>
+                                {/* 게슈탈트 C-P1: 다음 행동(전화 문의)만 꽉 찬 버튼, 조건 변경은 보조 테두리 */}
                                 <div className="flex flex-col sm:flex-row gap-3 justify-center">
                                     <button
                                         onClick={() => setStep(2)}
-                                        className="px-6 py-3 rounded-xl font-bold text-sm border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-800 transition-all"
+                                        className="public-btn-secondary px-6 text-sm"
                                     >
                                         조건 변경하기
                                     </button>
                                     <a
                                         href={`tel:${phone.replace(/-/g, "")}`}
-                                        className="px-6 py-3 rounded-xl font-bold text-sm bg-brand-navy-900 text-white hover:bg-brand-navy-800 transition-all text-center"
+                                        className="public-btn-primary px-6 text-sm"
                                     >
                                         전화 문의: {phone}
                                     </a>
@@ -501,7 +502,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                     })}
                                 </div>
 
-                                {/* CTA 버튼 영역 — 체험수업 / 수강신청 */}
+                                {/* CTA 버튼 영역 — 체험수업(주인공) / 수강신청(보조 테두리) */}
                                 <div className="mt-8 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 text-center">
                                     <p className="text-gray-700 dark:text-gray-200 font-bold mb-4 break-keep">
                                         원하는 수업을 찾으셨나요?
@@ -510,14 +511,14 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                         {/* 체험수업 CTA: 항상 자체 신청 페이지(/apply/trial)로 이동 */}
                                         <Link
                                             href="/apply/trial"
-                                            className="px-6 py-3.5 rounded-xl font-bold text-sm bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 text-center"
+                                            className="public-btn-primary px-6 text-sm"
                                         >
                                             체험수업 신청
                                         </Link>
                                         {/* 수강신청 CTA: 항상 자체 신청 페이지(/apply/enroll)로 이동 */}
                                         <Link
                                             href="/apply/enroll"
-                                            className="px-6 py-3.5 rounded-xl font-bold text-sm border-2 border-brand-navy-900 dark:border-brand-neon-lime text-brand-navy-900 dark:text-brand-neon-lime hover:bg-brand-navy-900 dark:hover:bg-brand-neon-lime hover:text-white dark:hover:text-brand-navy-900 active:scale-[0.98] transition-all duration-200 text-center"
+                                            className="public-btn-secondary px-6 text-sm"
                                         >
                                             수강신청
                                         </Link>
@@ -528,7 +529,7 @@ export default function SimulatorClient({ allSlots, programs, phone }: Simulator
                                 <div className="mt-4 text-center">
                                     <button
                                         onClick={() => setStep(2)}
-                                        className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium transition-colors"
+                                        className="public-btn-text text-sm"
                                     >
                                         &#8592; 조건 변경하기
                                     </button>

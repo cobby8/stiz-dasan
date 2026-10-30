@@ -124,12 +124,11 @@ export default function ApplyPageClient({
                     {/* 체험수업 카드 — 앵커 id="trial"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll>
                         <Card id="trial" variant="default" className="public-card overflow-hidden !p-0 h-full">
-                            {/* 카드 헤더 — 네이비 배경 */}
-                            <div className="bg-brand-navy-900 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Badge variant="default" size="sm">Trial Class</Badge>
-                                </div>
-                                <h3 className="text-xl font-black text-white">{trialTitle}</h3>
+                            {/* 카드 헤더 — 게슈탈트 P-05: 두 카드 머리를 같은 중립색으로 맞춘다(유사성).
+                                옛 네이비 머리는 다크 모드 배경과 거의 같은 색이라 묻혔다. */}
+                            <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
+                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">Trial Class</p>
+                                <h3 className="text-xl font-black text-[var(--color-public-ink)]">{trialTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
                             <div className="px-6 py-6">
@@ -150,8 +149,9 @@ export default function ApplyPageClient({
                                     <Link
                                         href="/apply/trial"
                                         data-tour-target="trial-apply-btn"
-                                        className="inline-flex items-center justify-center px-6 py-3 text-base font-medium bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white hover:bg-brand-orange-600 dark:hover:bg-lime-400 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime/50 focus:ring-offset-2 rounded-xl transition-all duration-200"
+                                        className="public-btn-primary px-6 text-base"
                                     >
+                                        {/* 두 카드의 신청 버튼은 같은 주인공 모양(public-btn-primary) */}
                                         체험수업 신청하기
                                     </Link>
                                     {/* 약관 안내 — 독립 이용약관 페이지로 링크 */}
@@ -159,7 +159,7 @@ export default function ApplyPageClient({
                                         신청 시{" "}
                                         <a
                                             href="/terms"
-                                            className="underline underline-offset-2 hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors"
+                                            className="underline underline-offset-2 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
                                         >
                                             이용약관
                                         </a>
@@ -173,12 +173,10 @@ export default function ApplyPageClient({
                     {/* 수강신청 카드 — 앵커 id="enroll"로 챗봇에서 바로 스크롤 가능 */}
                     <AnimateOnScroll delay={150}>
                         <Card id="enroll" variant="default" className="public-card overflow-hidden !p-0 h-full">
-                            {/* 카드 헤더 — 오렌지 배경으로 차별화 */}
-                            <div className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 px-6 py-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="inline-flex items-center rounded-full font-medium px-2 py-0.5 text-xs bg-white/20 text-white dark:bg-brand-navy-900/30 dark:text-brand-neon-lime">Enrollment</span>
-                                </div>
-                                <h3 className="text-xl font-black text-white dark:text-brand-navy-900">{enrollTitle}</h3>
+                            {/* 카드 헤더 — 체험 카드와 같은 중립색(게슈탈트 P-05) */}
+                            <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
+                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">Enrollment</p>
+                                <h3 className="text-xl font-black text-[var(--color-public-ink)]">{enrollTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
                             <div className="px-6 py-6">
@@ -192,7 +190,7 @@ export default function ApplyPageClient({
                                     {/* 수강신청 — 항상 자체 신청 페이지(/apply/enroll)로 이동 */}
                                     <Link
                                         href="/apply/enroll"
-                                        className="inline-flex items-center justify-center px-6 py-3 text-base font-medium bg-brand-navy-900 text-white hover:bg-brand-navy-800 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] focus:ring-2 focus:ring-brand-navy-500/50 focus:ring-offset-2 rounded-xl transition-all duration-200"
+                                        className="public-btn-primary px-6 text-base"
                                     >
                                         수강신청하기
                                     </Link>

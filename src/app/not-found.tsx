@@ -32,10 +32,10 @@ export default function NotFound() {
           요청하신 페이지가 존재하지 않거나 이동되었습니다.
         </p>
 
-        {/* 홈으로 돌아가기 버튼 */}
+        {/* 홈으로 돌아가기 — 이 화면의 유일한 행동이라 주인공 버튼(게슈탈트 C-P1) */}
         <Link
           href="/"
-          className="inline-block px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:opacity-90 text-white font-bold rounded-xl transition-colors"
+          className="public-btn-primary px-6"
         >
           홈으로 돌아가기
         </Link>

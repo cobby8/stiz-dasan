@@ -126,6 +126,53 @@
   color: var(--color-public-ink);
   box-shadow: none;
 }
+/* 게슈탈트 C-P1 버튼 3등급 — 한 화면의 주인공은 꽉 찬 버튼 하나, 나머지는 테두리·글자 버튼.
+ * 이 파일은 @layer 밖이라 Tailwind 유틸리티보다 우선한다. 그래서 버튼 모양은 여기서만 정한다. */
+.stiz-public-sport { --color-public-on-dark-hover: rgba(255, 255, 255, .12); }
+.stiz-public-sport :is(.public-btn-primary, .public-btn-secondary, .public-btn-text) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: var(--color-public-radius);
+  font-weight: 800;
+  line-height: 1.3;
+  text-decoration: none;
+  text-align: center;
+  word-break: keep-all;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+/* 주인공(꽉 찬 주황) */
+.stiz-public-sport .public-btn-primary {
+  padding: 10px 20px;
+  background: var(--color-public-accent);
+  color: var(--color-public-white);
+  border: 1px solid var(--color-public-accent);
+}
+.stiz-public-sport .public-btn-primary:hover { background: var(--color-public-strong); border-color: var(--color-public-strong); }
+/* 다크 모드의 주황 바탕에는 어두운 글자가 더 잘 읽힌다(헤더 신청 버튼과 같은 약속). */
+.dark .stiz-public-sport .public-btn-primary { color: var(--color-public-dark); }
+/* 보조(투명 + 테두리) */
+.stiz-public-sport .public-btn-secondary {
+  padding: 10px 20px;
+  background: transparent;
+  color: var(--color-public-ink);
+  border: 1px solid var(--color-public-muted);
+}
+.stiz-public-sport .public-btn-secondary:hover { background: var(--color-public-tint); }
+/* 어두운 배경(히어로 사진·하단 CTA) 위 보조 — 흰 테두리·흰 글씨 */
+.stiz-public-sport .public-btn-secondary--on-dark { color: var(--color-public-white); border-color: var(--color-public-white); }
+.stiz-public-sport .public-btn-secondary--on-dark:hover { background: var(--color-public-on-dark-hover); }
+/* 글자 버튼(가장 약한 등급) — 터치 영역은 44px 그대로 */
+.stiz-public-sport .public-btn-text {
+  padding: 8px 6px;
+  background: transparent;
+  border: 0;
+  color: var(--color-public-muted);
+  font-weight: 700;
+}
+.stiz-public-sport .public-btn-text:hover { color: var(--color-public-ink); text-decoration: underline; text-underline-offset: 3px; }
 .stiz-public-sport .public-table { border-color: var(--color-public-line); }
 .stiz-public-sport .public-table :is(th, td) { padding: 12px 14px; }
 .stiz-public-sport .public-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

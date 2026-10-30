@@ -47,15 +47,15 @@ export default function GlobalError({
           {/* 다시 시도 — reset() 호출로 에러 바운더리 초기화 */}
           <button
             onClick={() => reset()}
-            className="px-6 py-3 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-brand-orange-600 dark:hover:opacity-90 text-white font-bold rounded-xl transition-colors"
+            className="public-btn-primary px-6"
           >
             다시 시도
           </button>
 
-          {/* 홈으로 돌아가기 */}
+          {/* 홈으로 돌아가기 — 보조 등급(테두리). 주인공은 «다시 시도» 하나(게슈탈트 C-P1) */}
           <Link
             href="/"
-            className="px-6 py-3 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 text-gray-700 dark:text-gray-200 font-bold rounded-xl transition-colors"
+            className="public-btn-secondary px-6"
           >
             홈으로 돌아가기
           </Link>
