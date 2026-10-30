@@ -345,3 +345,36 @@ test("보강권 현황: 학생 한 줄 행(장 수·소멸 오른쪽)·행 클�
   }
   assert.doesNotMatch(creditPanel, /\btruncate\b|text-ellipsis|line-clamp|bg-amber-100|text-gray-/);
 });
+
+const absenceClient = read("../src/app/admin/absence/RegularAbsenceAdminClient.tsx");
+
+test("정규 결석: 카드 → 한 줄 행(결석일·시간·보강일 오른쪽)·상태 칩·결석일 날짜별 묶음·행 클릭 패널·⚡ 에 옛 버튼 그대로", () => {
+  assert.match(absenceClient, /<table className="admin-list-table/);
+  assert.match(absenceClient, /admin-cell-num[^"]*">\{r\.dateLabel\}/);
+  assert.match(absenceClient, /admin-cell-num[^"]*">\{r\.makeupDateLabel \|\| "-"\}/);
+  // 날짜 묶음은 공용 계산(KST), 보기 전환 기억, 전환·반 변경 시 패널 닫기
+  assert.match(absenceClient, /groupByUpcomingDate\(visibleRows, \(r\) => r\.date, today, ABSENCE_DATE_GROUP_LABELS\)/);
+  assert.match(absenceClient, /scope="rowgroup"/);
+  assert.match(absenceClient, /useRememberedListView<AbsenceViewMode>\(ABSENCE_VIEW_STORAGE_KEY, ABSENCE_VIEW_VALUES, "date"\)/);
+  assert.match(absenceClient, /function changeViewMode[\s\S]*?setDetailId\(""\)/);
+  assert.match(absenceClient, /setDetailId\(""\);[^\n]*\n\s*onClassChange\(e\.target\.value\)/);
+  assert.match(absenceClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{setStatusFilter\}[\s\S]*?allValue=\{STATUS_ALL\}/);
+  // 행 클릭 패널, 키보드는 안쪽 ⚡ 를 가로채지 않는다, ⚡ 칸 전파 차단
+  assert.match(absenceClient, /<ListDetailPanel onClose=\{\(\) => setDetailId\(""\)\} titleId="absence-detail-panel-title"/);
+  assert.match(absenceClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(absenceClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // ⚡ 와 패널은 같은 작업 목록 — 확정/확정 취소·신고 취소·보강 상태·보강 취소·보강 지정(같은 함수·인자)
+  const actions = absenceClient.slice(absenceClient.indexOf("function buildAbsenceActions("), absenceClient.indexOf("function handleRowKeyDown("));
+  assert.match(actions, /runAction\(id, revertRegularAbsence\)/);
+  assert.match(actions, /runAction\(id, confirmRegularAbsence\)/);
+  assert.match(actions, /runAction\(id, cancelRegularAbsenceByAdmin\)/);
+  assert.match(actions, /changeMakeupStatus\(id, makeupId, option\.value\)/);
+  assert.match(actions, /cancelMakeup\(id, makeupId\)/);
+  assert.match(actions, /openMakeupForm\(id\)/);
+  for (const value of ['"BOOKED"', '"ATTENDED"', '"NO_SHOW"']) assert.ok(absenceClient.includes(`value: ${value}`), `보강 상태 ${value} 선택지`);
+  assert.match(absenceClient, /buildAbsenceActions\(d\)\.map/);
+  // 보강 지정은 같은 입력(반·날짜)·같은 저장
+  assert.match(absenceClient, /scheduleMakeupForAbsence\(\{ absenceId, makeupClassId, makeupDate \}\)/);
+  assert.match(absenceClient, /onClick=\{\(\) => submitMakeup\(makeupOpenId\)\}/);
+  assert.doesNotMatch(absenceClient, /\btruncate\b|text-ellipsis|line-clamp|bg-amber-100|bg-green-100|bg-blue-50/);
+});
