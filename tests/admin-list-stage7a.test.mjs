@@ -45,3 +45,21 @@ test("직원 역할 신청: 두 목록 모두 한 줄 표 + ⚡·패널, 승인�
   // 원장이 아니면 작업 없음(서버도 다시 막는다)
   assert.match(source, /if \(!canDecide\) return \[\];/);
 });
+
+test("입금 확인·영수증 요청: 카드 → 한 줄 표, 입력칸·처리 버튼은 패널로(같은 decide 인자)", () => {
+  const source = read("../src/app/admin/payment-requests/PaymentRequestsClient.tsx");
+  assertListStandard(source, "입금 확인");
+  // 예전 «항목 · 금액 · 기한» 을 칸으로 나눠 금액은 오른쪽
+  assert.doesNotMatch(source, /\{row\.description \|\| "수강료"\} · /);
+  assert.match(source, /admin-cell-num[^"]*">\{row\.amount\.toLocaleString\(\)\}원/);
+  // 처리 함수와 인자(전할 말·영수증 링크)는 그대로
+  assert.match(source, /decidePaymentRequest\(\{\s*requestId,\s*approve,\s*note: notes\[requestId\],\s*receiptUrl: receipts\[requestId\],\s*\}\)/);
+  assert.match(source, /onSelect: \(\) => decide\(id, true\)/);
+  assert.match(source, /onSelect: \(\) => decide\(id, false\)/);
+  assert.match(source, /onClick=\{\(\) => decide\(row\.id, true\)\}/);
+  assert.match(source, /onClick=\{\(\) => decide\(row\.id, false\)\}/);
+  assert.match(source, /학부모에게 전할 말 \(확인 안 됨으로 처리할 때 함께 전달됩니다\)/);
+  assert.match(source, /영수증 링크 \(있으면 붙여넣기/);
+  // 처리 대상은 확인 중(PENDING) 건만
+  assert.match(source, /if \(row\.status !== "PENDING"\) return \[\];/);
+});
