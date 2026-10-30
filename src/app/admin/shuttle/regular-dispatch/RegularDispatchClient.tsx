@@ -127,23 +127,38 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
             <p className="px-4 py-6 text-center text-sm font-bold text-gray-400">이 요일에 표시할 셔틀 정차가 없습니다.</p>
           )}
           {!timelineLoading && timelineRows.length > 0 && (
-            <ol className="divide-y divide-gray-100 dark:divide-gray-700">
-              {timelineRows.map((row, index) => (
-                <li key={`${row.direction}-${row.vehicle}-${row.time}-${row.label}-${index}`} className="flex items-start gap-2.5 px-3 py-2.5">
-                  <span className={`mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-black ${row.direction === "PICKUP" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"}`}>
-                    {row.direction === "PICKUP" ? "승차" : "하차"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="text-sm font-black text-gray-900 dark:text-white">{row.time}</span>
-                      <span className="truncate text-sm font-bold text-gray-700 dark:text-gray-200">{row.label}</span>
-                      {row.isHub && <span className="rounded bg-green-600 px-1.5 text-[10px] font-black text-white">무료탑승</span>}
-                    </div>
-                    <p className="mt-0.5 text-[11.5px] font-bold text-gray-500">{row.vehicle}{row.trip ? ` · ${row.trip}` : ""} · {row.students.join(", ")}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            // 한 줄 행 표: 시각(오른쪽·자릿수 고정) | 정류장 | 승차/하차 | 학생 | 차량. 말줄임 없이 좁으면 가로 스크롤.
+            <div className="overflow-x-auto">
+              <table className="admin-list-table w-full border-collapse text-sm">
+                <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                  <tr>
+                    <th className="admin-cell-num px-3 py-2">시각</th>
+                    <th className="px-2 py-2">정류장</th>
+                    <th className="px-2 py-2">구분</th>
+                    <th className="px-2 py-2">학생</th>
+                    <th className="px-2 py-2">차량</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-academy-line)]">
+                  {timelineRows.map((row, index) => (
+                    <tr key={`${row.direction}-${row.vehicle}-${row.time}-${row.label}-${index}`}>
+                      <td className="admin-cell-num px-3 py-1.5 font-black text-[var(--color-academy-ink)]">{row.time}</td>
+                      <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                        {row.label}
+                        {row.isHub && <span className="ml-1.5 rounded bg-[var(--color-academy-success)] px-1.5 text-xs font-black text-white">무료탑승</span>}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-black ${row.direction === "PICKUP" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"}`}>
+                          {row.direction === "PICKUP" ? "승차" : "하차"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.students.join(", ")}</td>
+                      <td className="px-2 py-1.5 text-xs font-bold text-[var(--color-academy-muted)]">{row.vehicle}{row.trip ? ` · ${row.trip}` : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
