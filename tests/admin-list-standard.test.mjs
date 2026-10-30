@@ -311,7 +311,8 @@ test("보강 관리: 보강일 날짜별 묶음(KST)·상태 칩(statusFilter �
   assert.match(makeupClient, /scope="rowgroup"/);
   assert.doesNotMatch(makeupClient, /toLocaleDateString|toISOString\(\)\.slice/);
   // 칩은 예전 상태 탭과 같은 statusFilter, 다시 누르면 전체
-  assert.match(makeupClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{setStatusFilter\}[\s\S]*?allValue=\{STATUS_ALL\}/);
+  // 칩은 statusFilter 를 공유하고, 고르면 열린 패널도 닫는다
+  assert.match(makeupClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{\(value\) => \{ setStatusFilter\(value\); setDetailId\(null\); \}\}[\s\S]*?allValue=\{STATUS_ALL\}/);
   assert.match(makeupClient, /useRememberedListView<MakeupViewMode>\(MAKEUP_VIEW_STORAGE_KEY, MAKEUP_VIEW_VALUES, "date"\)/);
   // 보기 전환 시 열린 패널 닫기
   assert.match(makeupClient, /function changeViewMode[\s\S]*?setDetailId\(null\)/);
@@ -358,7 +359,7 @@ test("정규 결석: 카드 → 한 줄 행(결석일·시간·보강일 오른�
   assert.match(absenceClient, /useRememberedListView<AbsenceViewMode>\(ABSENCE_VIEW_STORAGE_KEY, ABSENCE_VIEW_VALUES, "date"\)/);
   assert.match(absenceClient, /function changeViewMode[\s\S]*?setDetailId\(""\)/);
   assert.match(absenceClient, /setDetailId\(""\);[^\n]*\n\s*onClassChange\(e\.target\.value\)/);
-  assert.match(absenceClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{setStatusFilter\}[\s\S]*?allValue=\{STATUS_ALL\}/);
+  assert.match(absenceClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{\(value\) => \{ setStatusFilter\(value\); setDetailId\(""\); \}\}[\s\S]*?allValue=\{STATUS_ALL\}/);
   // 행 클릭 패널, 키보드는 안쪽 ⚡ 를 가로채지 않는다, ⚡ 칸 전파 차단
   assert.match(absenceClient, /<ListDetailPanel onClose=\{\(\) => setDetailId\(""\)\} titleId="absence-detail-panel-title"/);
   assert.match(absenceClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);

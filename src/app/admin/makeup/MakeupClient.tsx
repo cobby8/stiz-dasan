@@ -409,7 +409,7 @@ export default function MakeupClient({
                     ariaLabel="보강 상태별 건수"
                     items={statusChipItems}
                     selected={statusFilter}
-                    onSelect={setStatusFilter}
+                    onSelect={(value) => { setStatusFilter(value); setDetailId(null); }}
                     allValue={STATUS_ALL}
                 />
                 <ListViewToggle

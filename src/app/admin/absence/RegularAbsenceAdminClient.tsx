@@ -131,7 +131,8 @@ export default function RegularAbsenceAdminClient({
       setBusyId(absenceId);
       try {
         await scheduleMakeupForAbsence({ absenceId, makeupClassId, makeupDate });
-        setMakeupOpenId("");
+        // 그사이 다른 결석의 창을 열었다면 그 창은 닫지 않는다
+        setMakeupOpenId((cur) => (cur === absenceId ? "" : cur));
         await reload(classId);
       } catch (e) {
         setErr((e as Error).message);
@@ -346,7 +347,7 @@ export default function RegularAbsenceAdminClient({
               ariaLabel="결석 신고 상태별 건수"
               items={statusChipItems}
               selected={statusFilter}
-              onSelect={setStatusFilter}
+              onSelect={(value) => { setStatusFilter(value); setDetailId(""); }}
               allValue={STATUS_ALL}
             />
             <ListViewToggle value={viewMode} options={ABSENCE_VIEW_OPTIONS} ariaLabel="결석 보기 방식" onChange={changeViewMode} />
@@ -461,7 +462,7 @@ export default function RegularAbsenceAdminClient({
 
       {/* 보강 지정 창 — 예전 카드 안에 펼쳐지던 입력칸(반 + 날짜)과 같은 값·같은 저장(submitMakeup) */}
       {makeupOpenId && (
-        <AdminModal titleId="absence-makeup-form-title" onClose={() => setMakeupOpenId("")} closeOnBackdrop={false} panelClassName="max-w-md p-5">
+        <AdminModal titleId="absence-makeup-form-title" onClose={() => { if (busyId !== makeupOpenId) setMakeupOpenId(""); }} closeOnBackdrop={false} panelClassName="max-w-md p-5">
           <div className="mb-3 flex items-center gap-2">
             <h3 id="absence-makeup-form-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">
               보강 지정{makeupTarget ? ` — ${makeupTarget.studentName} ${makeupTarget.dateLabel} 결석` : ""}
