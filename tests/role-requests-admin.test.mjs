@@ -20,7 +20,8 @@ const requestAction = fs.readFileSync("src/app/actions/role-requests.ts", "utf8"
 
 test("관리자 메뉴에서 직원 역할 신청 화면에 도달할 수 있다", () => {
   // 화면만 있고 메뉴가 없으면 아무도 못 쓴다(이 프로젝트 2회 실측). 학부모 요청 계열 묶음 안에.
-  const group = shell.slice(shell.indexOf("업무별 상세 메뉴"), shell.indexOf("홈페이지·소식"));
+  // 사이드바 묶음 개편(게슈탈트 A-11): «업무별 상세 메뉴» → «요청·신청함» 묶음
+  const group = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
   assert.match(group, /\["\/admin\/role-requests", "직원 역할 신청"/);
   // 3단계 신청 알림이 이 화면을 가리킨다 — 둘이 어긋나면 알림을 눌러도 길을 잃는다.
   assert.match(requestAction, /"\/admin\/role-requests"/);

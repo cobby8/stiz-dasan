@@ -33,19 +33,24 @@ function isShuttlePath(pathname: string): boolean {
     return pathname.startsWith("/admin/shuttle") || pathname.startsWith("/admin/seasonal/shuttle") || pathname.startsWith("/admin/seasonal/dispatch");
 }
 
+// 게슈탈트 A-11: 15개를 한 묶음에 쌓지 않고 «요청·신청함 / 수업 운영 / 돈·수납» 3묶음으로(주소·이름은 그대로)
 const EXTRA_GROUPS = [
-    { label: "업무별 상세 메뉴", icon: "assignment", items: [
+    { label: "요청·신청함", icon: "move_to_inbox", items: [
         ["/admin/requests", "학부모 요청", "📩"],
         ["/admin/enrollment-changes", "수강 변경 신청", "🔁"],
         ["/admin/withdrawals", "회원 탈퇴 신청", "🚪"],
         ["/admin/role-requests", "직원 역할 신청", "🪪"],
-        ["/admin/kakao-requests", "카카오 접수함", "💬"],
+        ["/admin/kakao-requests", "카카오 접수함", "🗨️"],
+    ] },
+    { label: "수업 운영", icon: "event_note", items: [
         ["/admin/absence", "정규 결석 신고", "🙅"],
         ["/admin/makeup", "보강", "🔄"],
         ["/admin/schedule", "수업시간표 관리", "📅"],
         ["/admin/attendance/report", "수업 리포트", "📝"],
         ["/staff/quick-post", "사진 빠른 업로드", "⚡"],
         ["/admin/seasonal", "방학특강", "🏀"],
+    ] },
+    { label: "돈·수납", icon: "savings", items: [
         ["/admin/payment-requests", "입금 확인·영수증", "🧾"],
         ["/admin/payment-confirmations", "현장 수납 승인", "💵"],
         ["/admin/pos-reconcile", "POS 결제 대사", "🧮"],
@@ -66,7 +71,7 @@ const EXTRA_GROUPS = [
         ["/admin/sms", "문자/템플릿", "💬"],
         ["/admin/staff", "스태프", "👥"],
         ["/admin/kakao-policy", "카카오 정책 답변", "📘"],
-        ["/admin/media-revocations", "사진 공개 회수", "🔐"],
+        ["/admin/media-revocations", "사진 공개 회수", "🚫"],
         ["/admin/import", "수강생 이관", "📥"],
         ["/admin/terms", "이용약관 관리", "📜"],
         ["/admin/privacy", "개인정보처리방침", "🔐"],
@@ -150,7 +155,7 @@ export default function AdminShellClient({
                                 {group.items.map(([href, label, icon]) => (
                                     <NavItem key={href} href={href} label={label} icon={icon} compact active={matchesNavPath(pathname, href) && !(href === "/admin/seasonal" && isShuttlePath(pathname))} />
                                 ))}
-                                {group.label === "홈페이지·소식" && <NavItem href="/" label="홈페이지 보기" icon="🏫" compact />}
+                                {group.label === "홈페이지·소식" && <NavItem href="/" label="홈페이지 보기" icon="🌐" compact />}
                                 {group.label === "설정·도구" && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                                         <FontFreeIcon name="sync" size={18} /><span className="flex-1">시스템 도구</span><FontFreeIcon name="expand_more" size={18} />
@@ -176,10 +181,12 @@ export default function AdminShellClient({
                             <p className="text-xs text-gray-400 truncate">{userEmail}</p>
                         </div>
                         <form action={logout} className="flex-shrink-0">
+                            {/* 누르는 영역 44px(A-12) */}
                             <button
                                 type="submit"
                                 title="로그아웃"
-                                className="p-1.5 text-gray-400 hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)] rounded-lg transition-colors [@media(max-height:500px)]:inline-flex [@media(max-height:500px)]:h-11 [@media(max-height:500px)]:w-11 [@media(max-height:500px)]:items-center [@media(max-height:500px)]:justify-center"
+                                aria-label="로그아웃"
+                                className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                             >
                                 <FontFreeIcon name="logout" size={18} />
                             </button>
@@ -217,7 +224,7 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate"};
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (

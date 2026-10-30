@@ -209,7 +209,8 @@ test("신청 수정, 일정 변경, 취소는 운영 이력으로 남고 관리�
 test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약을 제거한다", () => {
   assert.match(adminShell, /label="신청·상담"/);
   assert.match(adminShell, /label="청구·수납"/);
-  assert.match(adminShell, /업무별 상세 메뉴/);
+  // 사이드바 묶음 개편(게슈탈트 A-11): «업무별 상세 메뉴» 하나 → 3묶음
+  for (const label of ["요청·신청함", "수업 운영", "돈·수납"]) assert.ok(adminShell.includes(`label: "${label}"`), label);
   assert.match(adminShell, /설정·도구/);
   assert.doesNotMatch(adminShell, /label="체험\/수강신청 관리"/);
   assert.match(applyClient, /체험\/수강신청 관리/);

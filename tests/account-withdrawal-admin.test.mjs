@@ -17,7 +17,8 @@ test("관리자 메뉴에서 탈퇴 신청 화면에 도달할 수 있다", () =
   // 🚫 이 단언을 "화면 파일이 존재한다"로 바꾸지 말 것. 사라지는 것은 언제나 링크 쪽이다.
   assert.match(shell, /\["\/admin\/withdrawals", "회원 탈퇴 신청"/);
   // 학부모 요청 계열과 같은 묶음에 있어야 원장이 찾는다.
-  const group = shell.slice(shell.indexOf("업무별 상세 메뉴"), shell.indexOf("홈페이지·소식"));
+  // 사이드바 묶음 개편(게슈탈트 A-11): «업무별 상세 메뉴» → «요청·신청함» 묶음
+  const group = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
   assert.match(group, /\/admin\/withdrawals/, "학부모 요청 묶음 안에 있어야 한다");
 });
 

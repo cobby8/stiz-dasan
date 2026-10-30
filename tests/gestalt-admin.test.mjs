@@ -148,3 +148,20 @@ test("C-A3 상태 배지: 공용 색(학원 변수)으로 통일, 안전한 «�
   const requests = read("../src/app/admin/requests/RequestsAdminClient.tsx");
   assert.match(requests, /className="academy-button-secondary mt-4"\s*>\s*다시 불러오기/);
 });
+
+test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, 로그아웃 44px", () => {
+  const shell = read("../src/app/admin/AdminShellClient.tsx");
+  assert.doesNotMatch(shell, /업무별 상세 메뉴/);
+  const requests = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
+  const classes = shell.slice(shell.indexOf('label: "수업 운영"'), shell.indexOf('label: "돈·수납"'));
+  const money = shell.slice(shell.indexOf('label: "돈·수납"'), shell.indexOf('label: "홈페이지·소식"'));
+  for (const href of ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests"]) assert.ok(requests.includes(`"${href}"`), href);
+  for (const href of ["/admin/absence", "/admin/makeup", "/admin/schedule", "/admin/attendance/report", "/staff/quick-post", "/admin/seasonal"]) assert.ok(classes.includes(`"${href}"`), href);
+  for (const href of ["/admin/payment-requests", "/admin/payment-confirmations", "/admin/pos-reconcile", "/admin/uniform"]) assert.ok(money.includes(`"${href}"`), href);
+  // 같은 기호가 두 메뉴에 붙지 않는다(카카오/문자, 사진 회수/개인정보, 홈페이지 보기/학원 소개)
+  assert.match(shell, /\["\/admin\/kakao-requests", "카카오 접수함", "🗨️"\]/);
+  assert.match(shell, /\["\/admin\/media-revocations", "사진 공개 회수", "🚫"\]/);
+  assert.match(shell, /label="홈페이지 보기" icon="🌐"/);
+  assert.match(shell, /"🗨️": "forum", "🚫": "hide_image", "🌐": "public"/);
+  assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
+});
