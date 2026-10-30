@@ -68,3 +68,47 @@ test('관리자 화면은 catch 오류 원문을 그대로 화면에 띄우지 �
   }
   assert.deepEqual(offenders, []);
 });
+
+// 화면에 보이는 한국어 문장(JSX 글자·문자열)에서 개발 용어·영어 상태값을 찾는다. console·throw 안의 글은 제외.
+const DEV_WORDS = /데이터베이스|웹훅|마이그레이션|스키마|쿼리|캐시|파싱|서버 액션|프리페치|\bAPI\b|JSON|Supabase|Prisma|Vercel|webhook|payload|\bDB\b|\b(PENDING|PAID|REFUNDED|CANCELED|CANCELLED|BOOKED|IN_PROGRESS|HELD|SUCCEEDED|ACTIVE|FAILED|COMPLETED|RUNNING|INSTRUCTOR|DRIVER|VICE_ADMIN|ADMIN|PARENT)\b|Solapi|Rallyz|\bnull\b|undefined|\bID\b|[Cc]ron|크론|토큰|에러 코드|디버그|TODO|테스트용/;
+// 판단 보류(기능 변경이 필요한 입력칸) — 갚아야 할 빚. 늘리지 말 것.
+const ALLOW = [/^연결 (프로그램|정규 반) ID$/, /^기존 프로그램 ID \(선택\)$/, /^수강·출석에 연결할 반 ID/];
+test('관리자 화면 문구에 개발 용어·영어 상태값이 다시 나오지 않는다', () => {
+  const found = [];
+  for (const path of adminFiles) {
+    if (path.endsWith('adminDisplayText.ts')) continue;
+    const sf = ts.createSourceFile(path, read(path), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const visit = (node, hidden) => {
+      if (ts.isCallExpression(node) && /^console\./.test(node.expression.getText(sf))) hidden = true;
+      if ((ts.isNewExpression(node) || ts.isCallExpression(node)) && node.expression.getText(sf) === 'Error') hidden = true;
+      const isText = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isJsxText(node);
+      if (isText && !hidden) {
+        const value = (ts.isJsxText(node) ? node.getText(sf) : node.text).trim();
+        if (/[가-힣]/.test(value) && DEV_WORDS.test(value) && !ALLOW.some(rule => rule.test(value))) found.push(`${path}: ${value.slice(0, 80)}`);
+      }
+      ts.forEachChild(node, child => visit(child, hidden));
+    };
+    visit(sf, false);
+  }
+  assert.deepEqual(found, []);
+});
+
+test('대표 화면의 영어 코드·내부 번호 표시는 한국어 이름으로 바뀌었다', () => {
+  const import_ = read('src/app/admin/import/ImportClient.tsx');
+  assert.doesNotMatch(import_, /\{batch\.status\}/);
+  assert.match(import_, /COMPLETED: "완료"/);
+  const media = read('src/app/admin/media-revocations/page.tsx');
+  assert.doesNotMatch(media, /\{job\.channel\}|리소스: \{job\.resourceId\}/);
+  assert.match(media, /GALLERY: "갤러리", INSTAGRAM: "인스타그램"/);
+  const kakao = read('src/app/admin/kakao-requests/KakaoRequestsClient.tsx');
+  assert.doesNotMatch(kakao, /JSON\.stringify\(row\.structuredJson/);
+  assert.match(kakao, /readableDetails\(row\.structuredJson, classes\)/);
+  const finance = read('src/app/admin/finance/FinanceClient.tsx');
+  assert.match(finance, /SPECIAL: "특강"/);
+  assert.match(finance, /MANUAL: "직접 처리"/);
+  assert.doesNotMatch(read('src/app/admin/students/[id]/StudentDetailClient.tsx'), /\$\{p\.method\} · /);
+  assert.doesNotMatch(read('src/app/admin/settings/AdminSettingsClient.tsx'), />PREVIEW<|Instagram Business Account ID/);
+  assert.doesNotMatch(read('src/app/admin/staff/StaffClient.tsx'), /\((INSTRUCTOR|DRIVER)\)/);
+  assert.doesNotMatch(read('src/app/admin/sms/SmsClient.tsx'), /배치 번호 \{batch\.batchId\}/);
+  assert.doesNotMatch(read('src/app/admin/finance/monthly-ledger/MonthlyLedgerClient.tsx'), /기록 ID: \{payment\.id\}/);
+});

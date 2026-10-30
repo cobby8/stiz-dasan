@@ -1,5 +1,5 @@
 "use client";
-import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { adminErrorText, adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
@@ -399,7 +399,7 @@ export default function GalleryAdminClient({
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Instagram 연동</h2>
+                <h2 className="text-sm font-bold text-gray-900 dark:text-white">인스타그램 연결</h2>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
                     instagramReady ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
@@ -409,13 +409,13 @@ export default function GalleryAdminClient({
                 </span>
                 {instagramStatus.autoPublishEnabled && (
                   <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
-                    즉시 업로드 ON
+                    즉시 업로드 켜짐
                   </span>
                 )}
               </div>
               {syncResult && (
                 <p className={`mt-1 text-xs font-medium ${syncResult.ok ? "text-green-600" : "text-red-600"}`}>
-                  {syncResult.message}
+                  {syncResult.ok ? syncResult.message : adminMessageText(syncResult.message, "인스타그램 게시물을 가져오지 못했습니다. 연결 설정을 확인해 주세요.")}
                 </p>
               )}
             </div>

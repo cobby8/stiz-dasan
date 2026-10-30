@@ -50,6 +50,6 @@ test("수동 문자는 대량 발송 큐에 접수하고 진행 상태를 조회
     assert.match(source, /enqueueManualSmsBatch/);
     assert.match(source, /\/api\/admin\/sms\/batches\/\$\{batchId\}/);
     assert.match(source, /2500/);
-    assert.match(source, /Solapi 접수는 솔라피가 요청을 받은 단계/);
+    assert.match(source, /솔라피 접수는 솔라피가 요청을 받은 단계/);
     assert.match(source, /최종 성공/);
 });

@@ -347,7 +347,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
                         isActive ? "bg-green-500" : "bg-gray-300"
                     }`}
-                    title={isActive ? "발송 중 (클릭하면 OFF)" : "발송 중지 (클릭하면 ON)"}
+                    title={isActive ? "발송 중 (누르면 끄기)" : "발송 중지 (누르면 켜기)"}
                 >
                     <span
                         className={`inline-block h-4 w-4 rounded-full bg-white dark:bg-gray-800 transition-transform shadow-sm ${

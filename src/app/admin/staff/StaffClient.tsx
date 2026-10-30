@@ -685,18 +685,18 @@ export default function StaffClient({
                     <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="inline-block w-3 h-3 rounded-full bg-blue-500" />
-                            <span className="font-semibold text-blue-800">코치/강사 (INSTRUCTOR)</span>
+                            <span className="font-semibold text-blue-800">코치/강사</span>
                         </div>
                         <ul className="text-xs text-blue-700 space-y-1">
                             <li>- 출결/리포트 작성 가능</li>
-                            <li>- Coach 프로필과 연결 시 시간표 배정</li>
+                            <li>- 코치 프로필과 연결 시 시간표 배정</li>
                             <li>- 담당 반 SMS 수신</li>
                         </ul>
                     </div>
                     <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
                         <div className="flex items-center gap-2 mb-2">
                             <span className="inline-block w-3 h-3 rounded-full bg-emerald-500" />
-                            <span className="font-semibold text-emerald-800">셔틀 기사 (DRIVER)</span>
+                            <span className="font-semibold text-emerald-800">셔틀 기사</span>
                         </div>
                         <ul className="text-xs text-emerald-700 space-y-1">
                             <li>- 셔틀 운행 화면 접근</li>

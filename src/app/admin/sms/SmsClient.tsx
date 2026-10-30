@@ -587,13 +587,13 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                 {batch && (
                     <div className="mt-4 space-y-3">
                         <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30">
-                            <p className="text-sm font-bold text-blue-800 dark:text-blue-200">배치 번호 {batch.batchId}</p>
+                            <p className="text-sm font-bold text-blue-800 dark:text-blue-200">대량 발송 진행 상황</p>
                             <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs sm:grid-cols-7">
-                                {[["전체", batch.total], ["대기", batch.pending], ["전송 요청 중", batch.processing], ["Solapi 접수", acceptedCount], ["최종 성공", batch.success], ["실패", batch.failed], ["확인 필요", batch.uncertain]].map(([label, value]) => (
+                                {[["전체", batch.total], ["대기", batch.pending], ["전송 요청 중", batch.processing], ["솔라피 접수", acceptedCount], ["최종 성공", batch.success], ["실패", batch.failed], ["확인 필요", batch.uncertain]].map(([label, value]) => (
                                     <span key={label} className="rounded-lg bg-white p-2 dark:bg-gray-900"><strong className="block text-base text-gray-900 dark:text-white">{value}</strong>{label}</span>
                                 ))}
                             </div>
-                            {acceptedCount > 0 && <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">Solapi 접수는 솔라피가 요청을 받은 단계이며, 학부모 휴대폰의 최종 발송 성공과는 다릅니다. 최종 결과를 확인하고 있습니다.</p>}
+                            {acceptedCount > 0 && <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">솔라피 접수는 솔라피가 요청을 받은 단계이며, 학부모 휴대폰의 최종 발송 성공과는 다릅니다. 최종 결과를 확인하고 있습니다.</p>}
                             {batchIsActive && <p className="mt-2 text-xs font-bold text-blue-700 dark:text-blue-300">화면을 닫지 마세요. 2.5초마다 진행 상황을 확인하고 있습니다.</p>}
                         </div>
                         {batch.uncertain > 0 && (
@@ -608,7 +608,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                                     <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5">
                                         <span className="text-gray-600 dark:text-gray-300">수신자 {item.recipient}</span>
                                         <strong className={item.status === "FAILED" ? "text-red-600" : item.status === "UNCERTAIN" || item.status === "SENDING" ? "text-amber-700 dark:text-amber-300" : item.status === "SENT" ? "text-green-700 dark:text-green-300" : "text-blue-700 dark:text-blue-300"}>
-                                            {item.status === "SENT" ? "최종 성공" : item.status === "FAILED" ? "실패" : item.status === "UNCERTAIN" ? "확인 필요" : item.providerStatus === "ACCEPTED" ? "Solapi 접수" : item.status === "SENDING" ? "전송 요청 중" : "대기"}
+                                            {item.status === "SENT" ? "최종 성공" : item.status === "FAILED" ? "실패" : item.status === "UNCERTAIN" ? "확인 필요" : item.providerStatus === "ACCEPTED" ? "솔라피 접수" : item.status === "SENDING" ? "전송 요청 중" : "대기"}
                                         </strong>
                                     </li>
                                 ))}

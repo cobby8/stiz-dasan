@@ -61,6 +61,22 @@ function initialDetails(row: KakaoRequestAdminRow): ReviewDetails {
   };
 }
 
+// 접수 세부 정보를 원시 JSON 대신 «항목: 값» 으로 보여준다.
+// 화면에는 사람이 읽는 항목만 내보내고, 내부 번호(…Id)·처리 단계 값은 숨긴다.
+const SHUTTLE_INTENT_LABEL: Record<string, string> = { START: "지속 이용 시작", STOP: "지속 이용 중단", CHANGE: "탑승 정보 변경", EXEMPT: "셔틀비 면제 검토" };
+function readableDetails(value: Record<string, unknown> | null, classes: KakaoClassOption[]): Array<[string, string]> {
+  if (!value) return [];
+  const text = (key: string) => typeof value[key] === "string" ? (value[key] as string).trim() : "";
+  const className = (id: string) => classes.find(option => option.id === id)?.label ?? "선택한 수업(목록에 없음)";
+  const items: Array<[string, string]> = [];
+  if (text("effectiveDate")) items.push(["적용일", text("effectiveDate")]);
+  if (text("fromClassId")) items.push(["기존 수업", className(text("fromClassId"))]);
+  if (text("toClassId")) items.push(["바꿀 수업", className(text("toClassId"))]);
+  if (text("shuttleIntent")) items.push(["셔틀 요청", SHUTTLE_INTENT_LABEL[text("shuttleIntent")] ?? "셔틀 요청 확인 필요"]);
+  if (text("details")) items.push(["요청 내용", text("details")]);
+  return items;
+}
+
 export default function KakaoRequestsClient({ rows, classes, status, schemaReady }: { rows: KakaoRequestAdminRow[]; classes: KakaoClassOption[]; status: string; schemaReady: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -220,7 +236,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         {followup && <p className="mt-3 rounded-xl border p-3 text-sm font-bold">{followup}</p>}
         {row.hasProcessingError && <p className="mt-2 text-xs font-bold">처리 보류·오류 기록 있음 · 학생/날짜/필수 정보와 실제 반영 이력을 확인해 주세요.</p>}
         {isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt) && <p className="mt-2 text-xs font-bold">접수 후 24시간 경과 · 후속 진행 여부 확인</p>}
-        <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap">{row.structuredJson ? JSON.stringify(row.structuredJson, null, 2) : "세부 정보 없음"}</pre></details></section>
+        <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary>{(() => { const items = readableDetails(row.structuredJson, classes); return items.length ? <dl className="mt-2 space-y-1">{items.map(([label, value]) => <div key={label} className="flex gap-2"><dt className="shrink-0 font-bold">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{value}</dd></div>)}</dl> : <p className="mt-2">세부 정보 없음</p>; })()}</details></section>
         <p className="mt-3 rounded-xl bg-[var(--color-academy-primary-soft)] p-3 text-xs text-[var(--color-academy-ink)]"><b>이관 후:</b> 변경 요청은 승인 대기 상태입니다. 외부 서비스 반영과 알림 발송은 별도 승인 전까지 보류됩니다.</p>
         {row.operationsRequestId && <Link href="/admin/operations-sync" className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">생성된 운영 원장 확인</Link>}
         {row.decidedAt && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{row.decidedByName ?? "관리자"} · {formatDate(row.decidedAt)} · {row.decisionNote ?? "메모 없음"}</p>}

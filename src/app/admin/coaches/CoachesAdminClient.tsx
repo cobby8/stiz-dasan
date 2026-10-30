@@ -163,7 +163,7 @@ function ImageUploadField({
             </label>
             <div className="flex items-center gap-3">
                 {displayUrl ? (
-                    <img src={displayUrl} alt="preview" className="w-14 h-14 rounded-full object-cover border border-gray-200 dark:border-gray-700 shrink-0" />
+                    <img src={displayUrl} alt="코치 사진 미리보기" className="w-14 h-14 rounded-full object-cover border border-gray-200 dark:border-gray-700 shrink-0" />
                 ) : (
                     <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xs shrink-0">
                         사진

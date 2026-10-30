@@ -723,7 +723,7 @@ function SystemStatusCard({
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                         <SymbolIcon name="database" size={14} className="text-gray-400" />
-                        <span>데이터베이스</span>
+                        <span>자료 저장소</span>
                     </div>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                         !systemStatus ? "bg-gray-100 text-gray-500" : systemStatus.dbOk ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"

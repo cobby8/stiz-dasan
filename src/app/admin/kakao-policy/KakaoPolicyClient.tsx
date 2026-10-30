@@ -20,8 +20,8 @@ const OUTCOME_STYLE: Record<string, string> = {
   ERROR: "bg-red-50 text-red-700",
 };
 const ENV_BLOCK_LABEL: Record<string, string> = {
-  ENV_DISABLED: "환경변수 KAKAO_POLICY_QA_DISABLED=1 로 긴급 정지되어 있어 켜도 동작하지 않습니다.",
-  NO_GEMINI_KEY: "GEMINI_API_KEY 가 없어 켜도 동작하지 않습니다.",
+  ENV_DISABLED: "긴급 정지 상태라 켜도 동작하지 않습니다.",
+  NO_GEMINI_KEY: "답변 도우미(AI) 연결 키가 등록되지 않아 켜도 동작하지 않습니다.",
 };
 // 날짜·시간 표시는 한국 시간으로(서버는 UTC)
 const formatDate = (value: string) => new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "short", timeStyle: "short" }).format(new Date(value));

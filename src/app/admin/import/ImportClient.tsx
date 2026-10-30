@@ -135,6 +135,14 @@ const METHOD_LABEL: Record<string, string> = {
   UNPAID: "미결제",
 };
 
+// 이관 기록 상태값(영문 코드) → 화면 이름
+const BATCH_STATUS_LABEL: Record<string, string> = {
+  PENDING: "대기",
+  RUNNING: "진행 중",
+  COMPLETED: "완료",
+  FAILED: "실패",
+};
+
 // ──────────────────────────────────────────────
 // 메인 컴포넌트
 // ──────────────────────────────────────────────
@@ -834,7 +842,7 @@ function ImportHistoryPanel({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-800 dark:bg-lime-300/15 dark:text-lime-200">
-                      {batch.status}
+                      {BATCH_STATUS_LABEL[batch.status] ?? "상태 확인 필요"}
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                       {batch.spreadsheetTitle || batch.source}

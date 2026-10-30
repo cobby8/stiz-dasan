@@ -1,5 +1,5 @@
 "use client";
-import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { adminErrorText, adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState, useTransition } from "react";
 import { prepareNoticeSocialCampaign, publishNoticeSocialCampaign } from "@/app/actions/social-campaigns";
@@ -224,7 +224,7 @@ export default function NoticeSocialModal({
                                         <p className="text-gray-500">인스타 발행 없이 광고 소재만 준비했습니다.</p>
                                     ) : socialResult.results.map((result) => (
                                         <p key={result.channel} className={result.ok ? "text-green-700" : "text-red-600"}>
-                                            {result.channel}: {result.message}
+                                            {result.channel}: {result.ok ? result.message : adminMessageText(result.message, "게시하지 못했습니다. 인스타그램 연결 설정을 확인해 주세요.")}
                                         </p>
                                     ))}
                                 </div>

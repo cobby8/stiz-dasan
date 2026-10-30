@@ -56,7 +56,7 @@ export default async function RegistrationReadinessPage() {
             <p>처리 요청 시각: {item.createdAt ?? "미확인"}</p>
             <p>확인 필요: {item.reasons.join(" · ")}</p>
             {item.targets.map(target => <div key={target.target}>
-              <b>{target.target === "SHEET" ? "시트" : "Rallyz"} 재조회 기록</b>
+              <b>{target.target === "SHEET" ? "시트" : "랠리즈"} 재조회 기록</b>
               {target.duplicate && <p>중복된 외부 등록 기록 · 대조 필요</p>}
               {target.attempts.length === 0 && <p>재조회 기록 없음</p>}
               {target.attempts.map((attempt, attemptIndex) => <p key={attemptIndex}>{PROCESS_LABELS[attempt.status] ?? "상태 확인 필요"} · {attempt.verifiedAt ?? "시각 없음"} · {attempt.issue ?? "재조회 성공 기록 있음 · 등록 완료 판정은 보류"}</p>)}

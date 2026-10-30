@@ -558,7 +558,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     {/* 구글시트에서 불러오는 경우에만 데이터 출처를 안내한다 */}
                     {!isDbScheduleSource && (
                         <p className="text-gray-500 dark:text-gray-400 text-sm">
-                            학년·인원은 구글시트 캐시에서 불러옵니다. 카드를 클릭하면 편집할 수 있습니다.
+                            학년·인원은 구글시트에서 마지막으로 가져온 내용을 보여줍니다. 카드를 클릭하면 편집할 수 있습니다.
                         </p>
                     )}
                 </div>
@@ -635,7 +635,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             {adminViewMode === "edit" && !sheetRetired && hasSheetUrl && slots.length === 0 && (
                 <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-10 text-center text-gray-500 dark:text-gray-400">
                     <p className="text-lg font-medium mb-1">시트에서 수업 데이터를 찾을 수 없습니다.</p>
-                    <p className="text-sm">시트가 공개 설정인지, URL과 탭(gid)이 올바른지 확인해 주세요.</p>
+                    <p className="text-sm">시트가 공개 설정인지, 주소와 탭이 올바른지 확인해 주세요.</p>
                 </div>
             )}
 

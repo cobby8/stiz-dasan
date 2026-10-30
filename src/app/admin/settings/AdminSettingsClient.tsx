@@ -239,7 +239,7 @@ export default function AdminSettingsClient({
         <div className="flex-1 overflow-y-auto p-8 bg-gray-50 dark:bg-gray-900">
             {fetchErrorState && (
                 <div className="bg-red-50 text-red-600 p-4 rounded-lg font-medium border border-red-200 mb-6 text-sm dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-                    데이터베이스 연결에 문제가 발생했습니다. 잠시 후 다시 시도하고, 계속되면 관리자에게 문의해 주세요.
+                    설정 정보를 불러오지 못했습니다. 잠시 후 다시 시도하고, 계속되면 관리자에게 문의해 주세요.
                 </div>
             )}
             {saveSuccess && (
@@ -270,7 +270,7 @@ export default function AdminSettingsClient({
 
                         {/* 폰트 미리보기 */}
                         <div className="bg-gray-900 rounded-xl p-5 mb-6 text-white space-y-1">
-                            <p className="text-xs text-gray-400 mb-2 font-mono">PREVIEW</p>
+                            <p className="text-xs text-gray-400 mb-2 font-mono">미리보기</p>
                             <p style={{ fontFamily: headingFontCss }} className="text-2xl font-black">STIZ 농구교실 다산2호점</p>
                             <p style={{ fontFamily: bodyFontCss }} className="text-sm text-gray-300 leading-relaxed">
                                 아이들의 가능성을 이끌어드립니다. 전문 코치진의 체계적인 지도로 농구의 즐거움을 경험하세요.
@@ -582,7 +582,7 @@ export default function AdminSettingsClient({
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">Instagram Business Account ID</label>
+                                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">인스타그램 비즈니스 계정 번호</label>
                                     <input
                                         name="instagramBusinessAccountId"
                                         type="text"

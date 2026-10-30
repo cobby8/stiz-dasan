@@ -129,7 +129,7 @@ export default function AdminShellClient({
                     <div className="bg-white rounded-md flex items-center justify-center">
                         <Image
                             src="/stiz-logo.png"
-                            alt="STIZ Admin"
+                            alt="STIZ 관리자"
                             width={124}
                             height={44}
                             className="h-[44px] w-[124px] shrink-0 object-contain [@media(max-height:500px)]:h-8 [@media(max-height:500px)]:w-20"

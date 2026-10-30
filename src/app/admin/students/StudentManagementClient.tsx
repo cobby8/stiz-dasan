@@ -685,7 +685,7 @@ export default function StudentManagementClient({
         search.trim() && `검색: ${search.trim()}`,
     ].filter(Boolean).join(" · ");
     const emptyStudentsMessage = !allStudentsLoaded && hasAnyFilter
-        ? "전체 원생 목록을 동기화하는 중입니다. 잠시 후 자동으로 결과가 갱신됩니다."
+        ? "전체 원생 목록을 불러오는 중입니다. 잠시 후 자동으로 결과가 갱신됩니다."
         : hasAnyFilter
             ? "조건에 맞는 원생이 없습니다."
             : "등록된 원생이 없습니다. \"원생 등록\" 버튼으로 새 원생을 등록하세요.";
@@ -811,7 +811,7 @@ export default function StudentManagementClient({
             <CompactListFilters
                 activeCount={activeFilterCount}
                 summary={filterSummary}
-                resultCount={`${filtered.length}명${!allStudentsLoaded ? " · 전체 동기화 중" : ""}`}
+                resultCount={`${filtered.length}명${!allStudentsLoaded ? " · 전체 불러오는 중" : ""}`}
                 onReset={() => {
                     setFilterClass("");
                     setFilterGrade("");
@@ -945,9 +945,9 @@ export default function StudentManagementClient({
                             <input
                                 type="text"
                                 inputMode="numeric"
-                                placeholder="YYYY-MM-DD"
+                                placeholder="예: 2016-03-15"
                                 pattern="\d{4}-\d{2}-\d{2}"
-                                title="YYYY-MM-DD 형식으로 입력해주세요."
+                                title="2016-03-15 처럼 연-월-일로 입력해주세요."
                                 maxLength={10}
                                 value={birthDate}
                                 onChange={(e) => {
@@ -1065,7 +1065,7 @@ export default function StudentManagementClient({
                     {viewMode === "class" && classGroups.length > 0 && (
                         <span className="text-xs text-[var(--color-academy-muted)]">
                             {classGroups.filter((group) => group.key !== NO_CLASS_KEY).length}개 반 · {filtered.length}명
-                            {!allStudentsLoaded && " · 전체 동기화 중"}
+                            {!allStudentsLoaded && " · 전체 불러오는 중"}
                         </span>
                     )}
                     <ListViewToggle
@@ -1222,7 +1222,7 @@ export default function StudentManagementClient({
                     <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {filtered.length}명 중 {visibleStudents.length}명 표시
-                            {!allStudentsLoaded && " · 전체 동기화 중"}
+                            {!allStudentsLoaded && " · 전체 불러오는 중"}
                         </span>
                         {hasMoreStudents && (
                             <button
