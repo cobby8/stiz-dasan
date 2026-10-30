@@ -164,20 +164,24 @@ export function SessionPhotoUploader({
                 {photo.requiresDeletionQueue ? (
                   <p className="rounded-lg bg-amber-50 p-2 text-xs font-bold text-amber-800">공개된 사진 · 관리자 회수 필요</p>
                 ) : (
-                  <div className="grid grid-cols-2 gap-1">
-                    <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="min-h-9 rounded-lg border border-gray-200 text-xs font-bold dark:border-gray-600">학생 수정</button>
-                    <button type="button" disabled={busy} onClick={() => void deletePhoto(photo)} className="min-h-9 rounded-lg border border-red-200 text-xs font-bold text-red-600">삭제</button>
+                  // 게슈탈트 T-10: «학생 수정»과 «삭제»가 나란히 붙어 있으면 잘못 누르기 쉽다.
+                  // 삭제는 오른쪽 끝 휴지통 아이콘으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
+                  <div className="flex items-center justify-between gap-3">
+                    <button type="button" disabled={busy} onClick={() => setEditingPhotoId(editingPhotoId === photo.id ? null : photo.id)} className="min-h-11 flex-1 rounded-lg border border-[var(--color-academy-line)] text-xs font-bold disabled:opacity-50">학생 수정</button>
+                    <button type="button" disabled={busy} aria-label="사진 삭제" title="사진 삭제" onClick={() => void deletePhoto(photo)} className="grid size-11 shrink-0 place-items-center rounded-lg border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] disabled:opacity-50">
+                      <span aria-hidden="true" className="material-symbols-outlined text-xl">delete</span>
+                    </button>
                   </div>
                 )}
                 {editingPhotoId === photo.id && photo.canManage && (
                   <div className="space-y-2 border-t border-gray-100 pt-2 dark:border-gray-700">
-                    <div className="flex max-h-32 flex-wrap gap-1 overflow-y-auto">
+                    <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
                       {students.map((student) => {
                         const selected = photo.subjectStudentIds.includes(student.id);
-                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className={`min-h-8 rounded-full border px-2 text-xs font-bold ${selected ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-gray-200 dark:border-gray-600"}`}>{student.name}</button>;
+                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className={`min-h-11 rounded-full border px-3 text-xs font-bold ${selected ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-gray-200 dark:border-gray-600"}`}>{student.name}</button>;
                       })}
                     </div>
-                    <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="min-h-9 w-full rounded-lg bg-brand-navy-900 text-xs font-black text-white disabled:opacity-50">변경 저장</button>
+                    <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="academy-button-secondary min-h-11 w-full rounded-lg text-xs font-black disabled:opacity-50">변경 저장</button>
                   </div>
                 )}
               </div>
@@ -201,7 +205,7 @@ export function SessionPhotoUploader({
                 type="button"
                 aria-pressed={selected}
                 onClick={() => toggleSubject(student.id)}
-                className={`min-h-10 rounded-full border px-3 text-sm font-bold ${
+                className={`min-h-11 rounded-full border px-3 text-sm font-bold ${
                   selected
                     ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
                     : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
