@@ -62,7 +62,8 @@ export default function PaymentRequestsClient({
     const id = row.id; // 대상 값을 미리 붙잡아 둔다
     return [
       { key: "approve", label: row.kind === "PAYMENT_CLAIM" ? "확인 · 납부 처리" : "발급 완료", icon: "check", tone: "primary", disabled: pending, onSelect: () => decide(id, true) },
-      { key: "reject", label: "확인 안 됨", icon: "block", disabled: pending, onSelect: () => decide(id, false) },
+      // 거절은 «학부모에게 전할 말»을 보고 하도록 패널을 연다(⚡에서 바로 거절하면 메시지 칸을 못 본다)
+      { key: "reject", label: "확인 안 됨…", icon: "block", disabled: pending, onSelect: () => setDetailId(id) },
     ];
   }
 

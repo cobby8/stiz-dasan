@@ -149,7 +149,8 @@ export default function EnrollmentChangesClient({
     const id = row.id; // 대상 값을 미리 붙잡아 둔다
     return [
       { key: "approve", label: "승인", icon: "check", tone: "primary", disabled: pending, onSelect: () => decide(id, true) },
-      { key: "reject", label: "거절", icon: "block", disabled: pending, onSelect: () => decide(id, false) },
+      // 거절은 사유·전할 말을 보고 하도록 패널을 연다
+      { key: "reject", label: "거절…", icon: "block", disabled: pending, onSelect: () => setDetailId(id) },
     ];
   }
 

@@ -55,7 +55,9 @@ test("입금 확인·영수증 요청: 카드 → 한 줄 표, 입력칸·처리
   // 처리 함수와 인자(전할 말·영수증 링크)는 그대로
   assert.match(source, /decidePaymentRequest\(\{\s*requestId,\s*approve,\s*note: notes\[requestId\],\s*receiptUrl: receipts\[requestId\],\s*\}\)/);
   assert.match(source, /onSelect: \(\) => decide\(id, true\)/);
-  assert.match(source, /onSelect: \(\) => decide\(id, false\)/);
+  // ⚡ 거절은 패널을 열고(전할 말을 보게), 실제 거절은 패널 버튼이 같은 decide 로 한다
+  assert.match(source, /key: "reject"[^\n]*onSelect: \(\) => setDetailId\(id\)/);
+  assert.match(source, /onClick=\{\(\) => decide\(row\.id, false\)\}/);
   assert.match(source, /onClick=\{\(\) => decide\(row\.id, true\)\}/);
   assert.match(source, /onClick=\{\(\) => decide\(row\.id, false\)\}/);
   assert.match(source, /학부모에게 전할 말 \(확인 안 됨으로 처리할 때 함께 전달됩니다\)/);
@@ -109,7 +111,9 @@ test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산
   // ⚡ 는 검토 중 건의 승인·거절만, 같은 decide
   assert.match(source, /if \(row\.status !== "PENDING"\) return \[\];/);
   assert.match(source, /onSelect: \(\) => decide\(id, true\)/);
-  assert.match(source, /onSelect: \(\) => decide\(id, false\)/);
+  // ⚡ 거절은 패널을 열고(전할 말을 보게), 실제 거절은 패널 버튼이 같은 decide 로 한다
+  assert.match(source, /key: "reject"[^\n]*onSelect: \(\) => setDetailId\(id\)/);
+  assert.match(source, /onClick=\{\(\) => decide\(row\.id, false\)\}/);
   // 패널 안: 예전 버튼·함수 호출이 빠지지 않았다
   const panel = source.slice(source.indexOf("<ListDetailPanel"));
   for (const call of ["applySheet(row)", "confirmRallyz(row)", "confirmSheetManually(row)", "releaseRetiredResumeHold(row)", "issueInvoice(row.id)", "decide(row.id, true)", "decide(row.id, false)"]) {
