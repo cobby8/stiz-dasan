@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { retryUniformOrderDispatch } from "@/app/actions/uniform";
 import type { UniformOrderAdminView } from "./page";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 type SyncTone = {
   label: string;
@@ -50,42 +53,16 @@ const SYNC_STATUS: Record<string, SyncTone> = {
   },
 };
 
-const FILTERS = [
-  { value: "ALL", label: "전체" },
-  { value: "ACTION", label: "처리 필요" },
-  { value: "SENT", label: "본사 접수" },
-  { value: "WAITING", label: "전송 대기" },
-];
-
+// 접수·다음 시도 시각 — 기기 시간대와 무관하게 한국 시각으로(KST 공용 모듈)
 function formatDateTime(value: string | null) {
   if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("ko-KR", {
+  return formatKstDate(value, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(date);
-}
-
-function summarizeItems(order: UniformOrderAdminView) {
-  return order.items
-    .map((item) => {
-      const sizes = [item.topSize ? `상의 ${item.topSize}` : "", item.bottomSize ? `하의 ${item.bottomSize}` : ""]
-        .filter(Boolean)
-        .join(" · ");
-      const number = item.backNumber ? `#${item.backNumber}` : "등번호 없음";
-      const details = [
-        item.design,
-        item.initials ? `이니셜 ${item.initials}` : "",
-        number,
-        sizes,
-      ].filter(Boolean).join(" · ");
-      return `${item.studentName} (${details})`;
-    })
-    .join(" / ");
+  }, "-");
 }
 
 function getSyncStatus(status: string) {
@@ -112,6 +89,8 @@ export default function UniformOrdersClient({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [isPending, startTransition] = useTransition();
+  // 행 클릭 상세 패널 대상
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   const visibleOrders = useMemo(() => {
     if (filter === "SENT") {
@@ -159,126 +138,140 @@ export default function UniformOrdersClient({
     });
   }
 
+  // 상태 칩 — 기존 필터 버튼과 같은 filter 값(ACTION·WAITING·SENT)을 공유, 다시 누르면 전체(ALL)
+  const chipItems = [
+    { value: "ACTION", label: "처리 필요", count: counts.action },
+    { value: "WAITING", label: "전송 대기", count: counts.waiting },
+    { value: "SENT", label: "본사 접수", count: counts.sent },
+  ];
+  // id 로 찾아서, 새로고침 뒤에도 최신 값으로 보이고 사라지면 패널도 닫힌다
+  const detailOrder = detailOrderId ? initialOrders.find((order) => order.id === detailOrderId) ?? null : null;
+
+  // 행 키보드: 안쪽 버튼에서 누른 Enter/Space 는 가로채지 않는다
+  function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setDetailOrderId(id);
+    }
+  }
+
+  // 재전송 버튼(행·패널 공용) — 함수·확인창·막힘 조건은 기존 그대로
+  function renderRetryButton(order: UniformOrderAdminView) {
+    if (!canRetry(order)) {
+      return <span className="text-xs font-bold text-[var(--color-academy-muted)]">완료</span>;
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => handleRetry(order)}
+        disabled={isPending || busyId === order.id}
+        className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+      >
+        <span className={`material-symbols-outlined text-sm ${busyId === order.id ? "animate-spin" : ""}`} aria-hidden="true">
+          {busyId === order.id ? "progress_activity" : "send"}
+        </span>
+        재전송
+      </button>
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-7xl space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase text-[var(--brand-accent)]">UNIFORM</p>
-          <h1 className="mt-1 text-2xl font-black text-gray-900 dark:text-white">유니폼 주문 관리</h1>
+    <main className="mx-auto max-w-7xl space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">유니폼 주문 관리</h1>
+          <p className="text-xs text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{counts.total}</span>건</p>
         </div>
         <Link
           href="/apply/uniform"
           target="_blank"
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-black text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
         >
-          <span className="material-symbols-outlined text-base">open_in_new</span>
+          <span className="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
           신청 페이지 열기
         </Link>
       </div>
 
       {loadError && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
           {loadError}
           <p className="mt-1 text-xs font-medium">계속 불러오지 못하면 담당자에게 문의해 주세요.</p>
         </div>
       )}
 
       {feedback && (
-        <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+        <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${
           feedback.type === "success"
-            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-            : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+            ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+            : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
         }`}>
           {feedback.message}
         </div>
       )}
 
-      <section className="flex flex-wrap gap-2 rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-        {FILTERS.map((item) => {
-          const count = item.value === "ALL" ? counts.total : item.value === "ACTION" ? counts.action : item.value === "SENT" ? counts.sent : counts.waiting;
-          const active = filter === item.value;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => setFilter(item.value)}
-              className={`inline-flex min-h-9 items-center rounded-full px-4 text-sm font-black ${
-                active
-                  ? "bg-brand-navy-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-              }`}
-            >
-              {item.label} {count}
-            </button>
-          );
-        })}
-      </section>
+      {/* 상태 칩 — 바꾸면 열린 상세 패널은 닫는다 */}
+      <StatusCountChips
+        ariaLabel="유니폼 주문 상태별 건수"
+        items={chipItems}
+        selected={filter}
+        onSelect={(value) => { setFilter(value); setDetailOrderId(null); }}
+        allValue="ALL"
+      />
 
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+      <section className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[940px] text-left text-sm">
-            <thead className="bg-gray-50 text-xs font-black text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+          {/* 한 줄 행: 상태 | 접수일 | 학부모 | 연락처 | 학생 | 수량 | 접수번호 | 시도 | 관리. 사이즈·메모·오류·다음 시도는 상세 패널 */}
+          <table className="admin-list-table w-full border-collapse text-sm">
+            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
               <tr>
-                <th className="w-[128px] px-4 py-3">상태</th>
-                <th className="w-[112px] px-4 py-3">접수일</th>
-                <th className="w-[180px] px-4 py-3">학부모</th>
-                <th className="px-4 py-3">학생/사이즈</th>
-                <th className="w-[170px] px-4 py-3">본사 접수번호</th>
-                <th className="w-[120px] px-4 py-3 text-center">시도</th>
-                <th className="w-[140px] px-4 py-3 text-right">관리</th>
+                <th className="px-2 py-2">상태</th>
+                <th className="admin-cell-num px-2 py-2">접수일</th>
+                <th className="px-2 py-2">학부모</th>
+                <th className="admin-cell-num hidden px-2 py-2 md:table-cell">연락처</th>
+                <th className="px-2 py-2">학생</th>
+                <th className="admin-cell-num hidden px-2 py-2 md:table-cell">수량</th>
+                <th className="hidden px-2 py-2 lg:table-cell">본사 접수번호</th>
+                <th className="admin-cell-num hidden px-2 py-2 md:table-cell">시도</th>
+                <th className="admin-cell-center px-2 py-2">관리</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+            <tbody className="divide-y divide-[var(--color-academy-line)]">
               {visibleOrders.map((order) => {
                 const sync = getSyncStatus(order.stizSyncStatus);
+                const totalQuantity = order.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
                 return (
-                  <tr key={order.id} className="align-middle">
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ring-1 ${sync.className}`}>
-                        <span className={`material-symbols-outlined text-sm ${order.stizSyncStatus === "SENDING" ? "animate-spin" : ""}`}>{sync.icon}</span>
-                        {sync.label}
-                      </span>
+                  <tr
+                    key={order.id}
+                    tabIndex={0}
+                    aria-label={`${order.parentName} 유니폼 신청 상세 보기`}
+                    onClick={() => setDetailOrderId(order.id)}
+                    onKeyDown={(event) => handleRowKeyDown(event, order.id)}
+                    className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                  >
+                    <td className="px-2 py-1.5"><SyncBadge order={order} sync={sync} /></td>
+                    <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatDateTime(order.createdAt)}</td>
+                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{order.parentName}</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{order.parentPhone}</td>
+                    {/* 학생: 1명이면 이름, 여러 명이면 «첫 이름 외 N명» — 전체 이름·사이즈는 상세 패널 */}
+                    <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
+                      {order.items.length === 0 ? "-" : order.items.length === 1
+                        ? order.items[0].studentName
+                        : <>{order.items[0].studentName} 외 <span className="tabular-nums">{order.items.length - 1}</span>명</>}
                     </td>
-                    <td className="px-4 py-3 font-bold text-gray-700 dark:text-gray-200">{formatDateTime(order.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <p className="font-black text-gray-900 dark:text-white">{order.parentName}</p>
-                      <p className="text-xs font-bold text-gray-500 dark:text-gray-400">{order.parentPhone}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-bold text-gray-900 dark:text-white">{summarizeItems(order)}</p>
-                      {order.customerMemo && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{order.customerMemo}</p>}
-                      {order.lastError && <p className="mt-1 text-xs font-bold text-red-600 dark:text-red-300">{order.lastError}</p>}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-gray-700 dark:text-gray-200">
-                      {order.stizOrderNumber || "-"}
-                    </td>
-                    <td className="px-4 py-3 text-center text-xs font-bold text-gray-500 dark:text-gray-400">
-                      {order.sendAttempts}회
-                      {order.nextRetryAt && <span className="block">다음 {formatDateTime(order.nextRetryAt)}</span>}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {canRetry(order) ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRetry(order)}
-                          disabled={isPending || busyId === order.id}
-                          className="inline-flex min-h-9 items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white px-3 text-xs font-black text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
-                        >
-                          <span className={`material-symbols-outlined text-sm ${busyId === order.id ? "animate-spin" : ""}`}>
-                            {busyId === order.id ? "progress_activity" : "send"}
-                          </span>
-                          재전송
-                        </button>
-                      ) : (
-                        <span className="text-xs font-bold text-gray-400">완료</span>
-                      )}
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{totalQuantity}벌</td>
+                    <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{order.stizOrderNumber || "-"}</td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{order.sendAttempts}회</td>
+                    {/* 관리: 재전송(행 클릭=상세 패널과 겹치지 않게 전파 차단) */}
+                    <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                      {renderRetryButton(order)}
                     </td>
                   </tr>
                 );
               })}
               {visibleOrders.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm font-bold text-gray-500 dark:text-gray-400">
+                  <td colSpan={9} className="px-4 py-4 text-center text-sm font-bold text-[var(--color-academy-muted)]">
                     표시할 유니폼 신청이 없습니다.
                   </td>
                 </tr>
@@ -287,6 +280,77 @@ export default function UniformOrdersClient({
           </table>
         </div>
       </section>
+
+      {/* 행 클릭 상세 패널 — 이미 받아온 값만(새 조회 없음). 학생별 디자인·이니셜·등번호·사이즈, 메모, 오류, 다음 시도 */}
+      {detailOrder && (() => {
+        const d = detailOrder;
+        const sync = getSyncStatus(d.stizSyncStatus);
+        const rows: { label: string; value: React.ReactNode }[] = [
+          { label: "접수일", value: <span className="tabular-nums">{formatDateTime(d.createdAt)}</span> },
+          { label: "연락처", value: <span className="tabular-nums">{d.parentPhone}</span> },
+          { label: "접수번호", value: d.stizOrderNumber },
+          { label: "시도", value: <span className="tabular-nums">{d.sendAttempts}회</span> },
+          { label: "다음 시도", value: d.nextRetryAt ? <span className="tabular-nums">{formatDateTime(d.nextRetryAt)}</span> : null },
+          { label: "메모", value: d.customerMemo },
+          { label: "오류", value: d.lastError ? <span className="font-bold text-[var(--color-academy-danger)]">{d.lastError}</span> : null },
+        ].filter((row) => row.value !== null && row.value !== undefined && row.value !== "");
+        return (
+          <ListDetailPanel onClose={() => setDetailOrderId(null)} titleId="uniform-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="mb-4 flex items-center gap-2">
+              <h3 id="uniform-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.parentName}</h3>
+              <SyncBadge order={d} sync={sync} />
+              <button
+                type="button"
+                onClick={() => setDetailOrderId(null)}
+                aria-label="닫기"
+                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+              </button>
+            </div>
+            <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+              {rows.map((row) => (
+                <div key={row.label} className="contents">
+                  <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                  <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {/* 학생별 주문 — 기존 목록의 «·» 묶음을 칸별 줄로 */}
+            <ul className="mt-4 divide-y divide-[var(--color-academy-line)] rounded-lg border border-[var(--color-academy-line)] text-sm">
+              {d.items.map((item) => (
+                <li key={item.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 p-3">
+                  <span className="font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
+                  <span className="text-[var(--color-academy-ink)]">
+                    {item.design || "디자인 미지정"} · <span className="tabular-nums">{item.quantity}</span>벌
+                  </span>
+                  <span className="text-xs text-[var(--color-academy-muted)]">등번호</span>
+                  <span className="tabular-nums">{item.backNumber ? `#${item.backNumber}` : "등번호 없음"}</span>
+                  {item.initials && (
+                    <>
+                      <span className="text-xs text-[var(--color-academy-muted)]">이니셜</span>
+                      <span>{item.initials}</span>
+                    </>
+                  )}
+                  <span className="text-xs text-[var(--color-academy-muted)]">사이즈</span>
+                  <span>{[item.topSize ? `상의 ${item.topSize}` : "", item.bottomSize ? `하의 ${item.bottomSize}` : ""].filter(Boolean).join(", ") || "-"}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-5 flex flex-wrap gap-2">{renderRetryButton(d)}</div>
+          </ListDetailPanel>
+        );
+      })()}
     </main>
+  );
+}
+
+// 전송 상태 배지(목록 행·상세 패널 공용) — 색은 기존 SYNC_STATUS 표 그대로
+function SyncBadge({ order, sync }: { order: UniformOrderAdminView; sync: SyncTone }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-black ring-1 ${sync.className}`}>
+      <span className={`material-symbols-outlined text-sm ${order.stizSyncStatus === "SENDING" ? "animate-spin" : ""}`} aria-hidden="true">{sync.icon}</span>
+      {sync.label}
+    </span>
   );
 }

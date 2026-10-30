@@ -128,3 +128,26 @@ test("프로그램: 한 줄 행(머리줄과 같은 칸 폭), 수강료 오른�
   // 상세 패널은 기존 카드의 횟수별 가격·셔틀 요금 계산(displayShuttleFee)을 그대로 쓴다
   assert.match(programs, /const fee = displayShuttleFee\(program\.shuttleFeeOverride, t\.key, weekend\)/);
 });
+
+// ── 유니폼 주문 ──
+const uniform = read("../src/app/admin/uniform/UniformOrdersClient.tsx");
+
+test("유니폼: 상태 칩은 기존 filter 값을 공유(다시 누르면 ALL)하고 바꾸면 패널을 닫는다, 거르는 규칙 그대로", () => {
+  assert.match(uniform, /<StatusCountChips[\s\S]*?selected=\{filter\}[\s\S]*?setFilter\(value\); setDetailOrderId\(null\);[\s\S]*?allValue="ALL"/);
+  assert.match(uniform, /if \(filter === "SENT"\)[\s\S]*?"SENT" \|\| order\.stizSyncStatus === "DUPLICATE"/);
+  assert.match(uniform, /if \(filter === "ACTION"\)[\s\S]*?"NEEDS_REVIEW" \|\| order\.stizSyncStatus === "SETUP_REQUIRED"/);
+});
+
+test("유니폼: 한 줄 표(«·» 묶음·두 줄 칸 없음), 접수일 오른쪽·KST, 행 클릭 패널·키보드 가드·전파 차단, 재전송 그대로", () => {
+  const table = listTable(uniform);
+  assert.doesNotMatch(table, /summarizeItems|truncate|line-clamp/);
+  assert.doesNotMatch(table, /<p /);
+  assert.match(table, /admin-cell-num[^"]*">\{formatDateTime\(order\.createdAt\)\}/);
+  assert.match(uniform, /return formatKstDate\(value,/);
+  assert.match(uniform, /<ListDetailPanel onClose=\{\(\) => setDetailOrderId\(null\)\} titleId="uniform-detail-panel-title"/);
+  assert.match(uniform, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(uniform, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(uniform, /onClick=\{\(\) => handleRetry\(order\)\}\s*disabled=\{isPending \|\| busyId === order\.id\}/);
+  assert.match(uniform, /await retryUniformOrderDispatch\(order\.id\)/);
+  assert.match(uniform, /STIZ 본사로 다시 전송할까요\?/);
+});
