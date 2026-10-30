@@ -7,6 +7,7 @@ import ShuttleRideStatusButtons from "./ShuttleRideStatusButtons";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { confirmedTimeLabel } from "@/lib/shuttle/time";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
+import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 type Direction = "PICKUP" | "DROPOFF";
 type RideStatus = "PENDING" | "BOARDED" | "DROPPED_OFF" | "NO_SHOW";
@@ -103,7 +104,7 @@ export default function StaffShuttleDashboardClient({
       if (announce) {
         setRefreshMessage({
           tone: "error",
-          text: error instanceof Error ? error.message : "운행 정보를 불러오지 못했습니다.",
+          text: userErrorMessage(error, "운행 정보를 불러오지 못했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요."),
         });
       }
     } finally {
