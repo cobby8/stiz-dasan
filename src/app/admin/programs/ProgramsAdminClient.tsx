@@ -4,6 +4,7 @@ import { useCallback, useState, useTransition, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { deleteProgram, reorderPrograms } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
 const ProgramFormPanel = dynamic(() => import("./ProgramFormPanel"), {
     loading: () => null,
@@ -175,6 +176,10 @@ export default function ProgramsAdminClient({
     const [dragOverId, setDragOverId] = useState<string | null>(null);
     const [reorderPending, startReorderTransition] = useTransition();
 
+    // 행 클릭 상세 패널 대상(id 로 찾아서, 삭제·새로고침으로 사라지면 패널도 닫힌다)
+    const [detailProgramId, setDetailProgramId] = useState<string | null>(null);
+    const detailProgram = detailProgramId ? programs.find((p) => p.id === detailProgramId) ?? null : null;
+
     const loadPrograms = useCallback(async () => {
         setLoading(true);
         setLoadError(false);
@@ -309,77 +314,117 @@ export default function ProgramsAdminClient({
 
             {/* 셔틀 요금 기준 박스 제거: 같은 안내가 프로그램 등록/수정 폼 안에 이미 있어 목록 화면 상시 노출은 불필요 */}
 
-            {/* Program List */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between gap-4">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">등록된 프로그램 목록</h2>
-                </div>
-                <ul className="divide-y divide-gray-100">
-                    {programs.length === 0 && (
-                        <li className="p-8 text-center text-gray-500 dark:text-gray-400">등록된 프로그램이 없습니다.</li>
-                    )}
-                    {programs.map((program, i) => (
-                        <li
-                            key={program.id}
-                            draggable={editId !== program.id}
-                            onDragStart={(e) => handleDragStart(e, program.id)}
-                            onDragOver={(e) => handleDragOver(e, program.id)}
-                            onDrop={(e) => handleDrop(e, program.id)}
-                            onDragEnd={handleDragEnd}
-                            className={`transition ${dragOverId === program.id ? "bg-blue-50 border-blue-300" : "hover:bg-gray-50 dark:bg-gray-900/50"}`}
-                        >
-                            {editId === program.id ? (
-                                <div className="p-6">
-                                    <p className="text-sm font-bold text-blue-700 mb-3">수정 중...</p>
-                                    <ProgramFormPanel
-                                        mode="edit"
-                                        program={program}
-                                        onCancel={() => setEditId(null)}
-                                        onSaved={() => {
-                                            setEditId(null);
-                                            void loadPrograms();
-                                        }}
-                                        onPendingChange={setFormPending}
-                                    />
-                                </div>
-                            ) : (
-                                <div className="flex items-start gap-0">
-                                    {/* Drag handle */}
-                                    <div
-                                        className="flex-shrink-0 w-10 flex items-center justify-center self-stretch cursor-grab text-gray-300 hover:text-gray-500 dark:text-gray-400 select-none border-r border-gray-100 dark:border-gray-800"
-                                        title="드래그하여 순서 변경"
-                                    >
-                                        <span className="text-xl leading-none">⠿</span>
-                                    </div>
-                                    <div className="flex-1 p-5">
-                                        <ProgramCardInline
-                                            program={program} index={i}
-                                            onEdit={() => setEditId(program.id)}
-                                            onDelete={() => handleDelete(program.id)}
-                                            isDeleting={deletingId === program.id}
-                                            deletePending={deletePending}
-                                            onSetDeleting={() => setDeletingId(program.id)}
-                                            onCancelDelete={() => setDeletingId(null)}
+            {/* 프로그램 목록 — 한 줄 행(⠿ | # | 이름 | 대상 | 요일 | 수강료 | 셔틀 | 관리). 횟수별 가격·셔틀 요금·설명은 행을 누르면 상세 패널.
+                드래그 순서 변경·제자리 수정 폼을 그대로 쓰려고 <li draggable> 구조는 유지하고, 칸만 grid 로 맞춘다
+                (표로 바꾸면 전역 표 규칙이 펼쳐진 수정 폼의 정렬까지 바꾼다) */}
+            <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
+                <div className="overflow-x-auto">
+                    {/* 머리줄 — 아래 행과 같은 칸 폭(PROGRAM_ROW_GRID) */}
+                    <div className={`${PROGRAM_ROW_GRID} items-center bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]`}>
+                        <span className="sr-only">순서 손잡이</span>
+                        <span className="px-1 py-2 text-right">#</span>
+                        <span className="px-2 py-2">이름</span>
+                        <span className="hidden px-2 py-2 md:block">대상</span>
+                        <span className="hidden px-2 py-2 md:block">요일</span>
+                        <span className="px-2 py-2 text-right">수강료</span>
+                        <span className="hidden px-2 py-2 md:block">셔틀</span>
+                        <span className="px-2 py-2 text-center">관리</span>
+                    </div>
+                    <ul className="divide-y divide-[var(--color-academy-line)]">
+                        {programs.length === 0 && (
+                            <li className="p-4 text-center text-sm text-[var(--color-academy-muted)]">등록된 프로그램이 없습니다.</li>
+                        )}
+                        {programs.map((program, i) => (
+                            <li
+                                key={program.id}
+                                draggable={editId !== program.id}
+                                onDragStart={(e) => handleDragStart(e, program.id)}
+                                onDragOver={(e) => handleDragOver(e, program.id)}
+                                onDrop={(e) => handleDrop(e, program.id)}
+                                onDragEnd={handleDragEnd}
+                                className={`transition ${dragOverId === program.id ? "bg-[var(--color-academy-primary-soft)]" : "hover:bg-[var(--color-academy-soft)]"}`}
+                            >
+                                {editId === program.id ? (
+                                    <div className="p-6">
+                                        <p className="text-sm font-bold text-blue-700 mb-3">수정 중...</p>
+                                        <ProgramFormPanel
+                                            mode="edit"
+                                            program={program}
+                                            onCancel={() => setEditId(null)}
+                                            onSaved={() => {
+                                                setEditId(null);
+                                                void loadPrograms();
+                                            }}
+                                            onPendingChange={setFormPending}
                                         />
                                     </div>
-                                </div>
-                            )}
-                        </li>
-                    ))}
-                </ul>
+                                ) : (
+                                    <ProgramRowInline
+                                        program={program} index={i}
+                                        onOpenDetail={() => setDetailProgramId(program.id)}
+                                        onEdit={() => setEditId(program.id)}
+                                        onDelete={() => handleDelete(program.id)}
+                                        isDeleting={deletingId === program.id}
+                                        deletePending={deletePending}
+                                        onSetDeleting={() => setDeletingId(program.id)}
+                                        onCancelDelete={() => setDeletingId(null)}
+                                    />
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             </div>
+
+            {/* 행 클릭 상세 패널 — 이미 받아온 값만 보여 준다(새 조회·저장 없음). 수정은 기존처럼 목록 안 제자리 폼으로 */}
+            {detailProgram && (
+                <ListDetailPanel onClose={() => setDetailProgramId(null)} titleId="program-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                    <ProgramDetailContent
+                        program={detailProgram}
+                        onClose={() => setDetailProgramId(null)}
+                        onEdit={() => { setDetailProgramId(null); setEditId(detailProgram.id); }}
+                    />
+                </ListDetailPanel>
+            )}
 
         </div>
     );
 }
 
-// ── Inline card (no onClick hell) ─────────────────────────────────────────────
+// 목록 머리줄·행이 함께 쓰는 칸 폭. 모바일은 손잡이|#|이름|수강료|관리, md 부터 대상·요일·셔틀을 더 보인다
+const PROGRAM_ROW_GRID =
+    "grid min-w-0 grid-cols-[2.5rem_2rem_minmax(6rem,1fr)_7rem_8rem] md:grid-cols-[2.5rem_2rem_minmax(9rem,1fr)_7rem_7rem_8rem_5.5rem_9rem]";
 
-function ProgramCardInline({
-    program, index, onEdit, onDelete, isDeleting, deletePending, onSetDeleting, onCancelDelete,
+// 요일 키(Mon…) → «월» 같은 한 글자
+function dayLabels(program: Program): string[] {
+    const days = program.days ? program.days.split(",").filter(Boolean) : [];
+    return days.map((d) => DAY_OPTIONS.find((o) => o.key === d)?.label || d);
+}
+
+// 셔틀 칸 짧은 표기 — 기존 카드의 «운행 없음/미운행» 판정과 같은 조건
+function shuttleShortLabel(program: Program): string {
+    const days = program.days ? program.days.split(",").filter(Boolean) : [];
+    if (isWeekendOnly(days)) return "없음(주말)";
+    if (program.runsShuttle === false || program.shuttleFeeOverride === 0) return "미운행";
+    return "운행";
+}
+
+// 수강료 칸 — 횟수별 가격이 있으면 가장 낮은 값(여러 개면 «부터»), 없으면 월 수강료. 전체 표는 상세 패널
+function priceShortLabel(program: Program): string {
+    const tierPrices = FREQ_TIERS.map((t) => program[t.key]).filter((v): v is number => v != null);
+    if (tierPrices.length === 0) return `${program.price.toLocaleString()}원/월`;
+    const min = Math.min(...tierPrices.map(Number));
+    return tierPrices.length > 1 ? `${min.toLocaleString()}원부터` : `${min.toLocaleString()}원`;
+}
+
+// ── 한 줄 행 (행 클릭 = 상세 패널, 안쪽 버튼은 전파 차단) ──────────────────────
+
+function ProgramRowInline({
+    program, index, onOpenDetail, onEdit, onDelete, isDeleting, deletePending, onSetDeleting, onCancelDelete,
 }: {
     program: Program;
     index: number;
+    onOpenDetail: () => void;
     onEdit: () => void;
     onDelete: () => void;
     isDeleting: boolean;
@@ -387,96 +432,144 @@ function ProgramCardInline({
     onSetDeleting: () => void;
     onCancelDelete: () => void;
 }) {
+    const days = dayLabels(program);
+
+    // 행 키보드: 안쪽 버튼에서 누른 Enter/Space 는 가로채지 않는다
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onOpenDetail();
+        }
+    }
+
+    return (
+        <div
+            tabIndex={0}
+            aria-label={`${program.name} 상세 보기`}
+            onClick={onOpenDetail}
+            onKeyDown={handleRowKeyDown}
+            className={`${PROGRAM_ROW_GRID} cursor-pointer items-center text-sm focus:bg-[var(--color-academy-primary-soft)] focus:outline-none`}
+        >
+            {/* 드래그 손잡이(드래그는 li 전체에 걸려 있어 동작은 기존과 같다) */}
+            <span
+                className="flex min-h-11 cursor-grab select-none items-center justify-center self-stretch border-r border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
+                title="드래그하여 순서 변경"
+            >
+                <span className="text-xl leading-none" aria-hidden="true">⠿</span>
+            </span>
+            <span className="px-1 py-1.5 text-right tabular-nums text-[var(--color-academy-muted)]">{index + 1}</span>
+            <span className="min-w-0 break-keep px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{program.name}</span>
+            <span className="hidden whitespace-nowrap px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{program.targetAge || "-"}</span>
+            {/* 요일: 칸마다 한 글자 칩(주말은 경고색) */}
+            <span className="hidden whitespace-nowrap px-2 py-1.5 md:block">
+                {days.length === 0 ? <span className="text-[var(--color-academy-muted)]">-</span> : (
+                    <span className="inline-flex gap-0.5">
+                        {days.map((d) => (
+                            <span key={d} className={`rounded px-1 text-xs font-bold ${d === "토" || d === "일" ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"}`}>{d}</span>
+                        ))}
+                    </span>
+                )}
+            </span>
+            <span className="whitespace-nowrap px-2 py-1.5 text-right font-bold tabular-nums text-[var(--color-academy-ink)]">{priceShortLabel(program)}</span>
+            <span className="hidden whitespace-nowrap px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{shuttleShortLabel(program)}</span>
+            {/* 관리: 수정 · 삭제(확인/취소 두 단계) — 기존 함수·순서 그대로 */}
+            <span className="flex items-center justify-center gap-0.5 px-1" onClick={(event) => event.stopPropagation()}>
+                <button type="button" onClick={onEdit}
+                    className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-primary)] transition hover:bg-[var(--color-academy-soft)]">
+                    수정
+                </button>
+                {isDeleting ? (
+                    <>
+                        <button type="button" onClick={onDelete} disabled={deletePending}
+                            className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">확인</button>
+                        <button type="button" onClick={onCancelDelete}
+                            className="min-h-11 rounded-lg px-2 text-sm text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]">취소</button>
+                    </>
+                ) : (
+                    <button type="button" onClick={onSetDeleting}
+                        className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)]">
+                        삭제
+                    </button>
+                )}
+            </span>
+        </div>
+    );
+}
+
+// ── 상세 패널 내용 — 기존 카드에 있던 정보(횟수별 가격·셔틀 요금·설명)를 말줄임 없이 전부 ──
+
+function ProgramDetailContent({
+    program, onClose, onEdit,
+}: {
+    program: Program;
+    onClose: () => void;
+    onEdit: () => void;
+}) {
     const days = program.days ? program.days.split(",").filter(Boolean) : [];
     const weekend = isWeekendOnly(days);
     const tiers = FREQ_TIERS.filter((t) => program[t.key] != null);
     const freq = program.weeklyFrequency || program.frequency;
 
     return (
-        <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-4">
-            <div className="flex-1 min-w-0">
-                {/* Title row */}
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <span className="bg-brand-navy-900 text-white text-xs font-black w-6 h-6 rounded-full flex items-center justify-center shrink-0">
-                        {index + 1}
-                    </span>
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg">{program.name}</h3>
-                    {/* Frequency badges */}
-                    {tiers.length === 0 && freq && (
-                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">{freq}</span>
-                    )}
-                    {tiers.map((t) => (
-                        <span key={t.key} className="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-0.5 rounded-full">{t.label}</span>
-                    ))}
-                    {program.targetAge && (
-                        <span className="bg-orange-50 text-orange-600 text-xs font-bold px-2.5 py-0.5 rounded-full border border-orange-200">
-                            {program.targetAge}
-                        </span>
-                    )}
-                    {/* Day badges */}
-                    {days.length > 0 && days.map((d) => (
-                        <span key={d} className={`text-xs font-bold px-2 py-0.5 rounded-full ${WEEKEND.has(d) ? "bg-orange-100 text-orange-700" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}>
-                            {DAY_OPTIONS.find((o) => o.key === d)?.label || d}
-                        </span>
-                    ))}
-                </div>
-
-                {/* Pricing */}
-                {tiers.length > 0 ? (
-                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm mt-1">
-                        {tiers.map((t) => {
-                            const fee = displayShuttleFee(program.shuttleFeeOverride, t.key, weekend);
-                            return (
-                                <span key={t.key} className="text-gray-600 dark:text-gray-300">
-                                    <span className="text-gray-400 text-xs">{t.label}</span>{" "}
-                                    <strong className="text-brand-navy-900">{Number(program[t.key]).toLocaleString()}원</strong>
-                                    {fee && (
-                                        <span className="text-blue-500 ml-1 text-xs">+ 셔틀 {fee}</span>
-                                    )}
-                                </span>
-                            );
-                        })}
-                        {weekend && (
-                            <span className="text-xs text-orange-600 font-medium">🚌 셔틀 운행 없음</span>
-                        )}
-                        {!weekend && (program.runsShuttle === false || program.shuttleFeeOverride === 0) && (
-                            <span className="text-xs text-gray-500 font-medium">🚫 셔틀 미운행</span>
-                        )}
-                    </div>
-                ) : (
-                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600 dark:text-gray-300 mt-1">
-                        <span>
-                            <span className="text-gray-400">수강료</span>{" "}
-                            <strong className="text-brand-navy-900">{program.price.toLocaleString()}원 / 월</strong>
-                        </span>
-                    </div>
-                )}
-
-                {program.description && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 whitespace-pre-line">{program.description}</p>
-                )}
+        <>
+            <div className="mb-4 flex items-start gap-2">
+                <h3 id="program-detail-panel-title" className="min-w-0 break-keep break-words text-lg font-black text-[var(--color-academy-ink)]">{program.name}</h3>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="닫기"
+                    className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                >
+                    <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                </button>
             </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-                <button onClick={onEdit}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded hover:bg-blue-50 transition">
+            <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                <dt className="font-bold text-[var(--color-academy-muted)]">대상</dt>
+                <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">{program.targetAge || "-"}</dd>
+                <dt className="font-bold text-[var(--color-academy-muted)]">요일</dt>
+                <dd className="text-[var(--color-academy-ink)]">{dayLabels(program).join(", ") || "-"}</dd>
+                {tiers.length === 0 && freq && (
+                    <>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">횟수</dt>
+                        <dd className="text-[var(--color-academy-ink)]">{freq}</dd>
+                    </>
+                )}
+                <dt className="font-bold text-[var(--color-academy-muted)]">수강료</dt>
+                <dd className="min-w-0 text-[var(--color-academy-ink)]">
+                    {tiers.length > 0 ? (
+                        <ul className="space-y-1">
+                            {tiers.map((t) => {
+                                const fee = displayShuttleFee(program.shuttleFeeOverride, t.key, weekend);
+                                return (
+                                    <li key={t.key} className="flex flex-wrap items-baseline gap-x-2">
+                                        <span className="w-14 text-xs text-[var(--color-academy-muted)]">{t.label}</span>
+                                        <strong className="tabular-nums">{Number(program[t.key]).toLocaleString()}원</strong>
+                                        {fee && <span className="text-xs tabular-nums text-[var(--color-academy-primary)]">+ 셔틀 {fee}</span>}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    ) : (
+                        <strong className="tabular-nums">{program.price.toLocaleString()}원 / 월</strong>
+                    )}
+                </dd>
+                <dt className="font-bold text-[var(--color-academy-muted)]">셔틀</dt>
+                <dd className="text-[var(--color-academy-ink)]">
+                    {weekend ? "주말반 — 셔틀 운행 없음"
+                        : (program.runsShuttle === false || program.shuttleFeeOverride === 0) ? "셔틀 미운행" : "운행"}
+                </dd>
+            </dl>
+            {program.description && (
+                <p className="mt-4 whitespace-pre-line break-keep break-words rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">{program.description}</p>
+            )}
+            <div className="mt-5 flex flex-wrap gap-2">
+                <button type="button" onClick={onEdit}
+                    className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]">
+                    <span className="material-symbols-outlined text-lg" aria-hidden="true">edit</span>
                     수정
                 </button>
-                {isDeleting ? (
-                    <span className="flex items-center gap-1.5">
-                        <button onClick={onDelete} disabled={deletePending}
-                            className="text-sm text-red-600 hover:text-red-800 font-bold px-2 py-1">확인</button>
-                        <span className="text-gray-300">/</span>
-                        <button onClick={onCancelDelete}
-                            className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-200 px-2 py-1">취소</button>
-                    </span>
-                ) : (
-                    <button onClick={onSetDeleting}
-                        className="text-sm text-red-500 hover:text-red-700 font-medium px-3 py-1.5 rounded hover:bg-red-50 transition">
-                        삭제
-                    </button>
-                )}
             </div>
-        </div>
+        </>
     );
 }

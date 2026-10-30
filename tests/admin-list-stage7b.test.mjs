@@ -99,3 +99,32 @@ test("후기: 행 클릭 패널·키보드 가드·관리 칸 전파 차단, 수
   assert.match(testimonials, /confirm\("이 후기를 삭제하시겠습니까\?"\)/);
   assert.match(testimonials, /await updateNaverPlaceUrl\(naverUrl\)/);
 });
+
+// ── 프로그램(관리자 목록만 — 공개 상품 화면·저장 값은 손대지 않는다: 카드사 심사 중) ──
+const programs = read("../src/app/admin/programs/ProgramsAdminClient.tsx");
+
+test("프로그램: 드래그 순서 변경은 같은 li·같은 처리기로 그대로, 순서 저장 서버 액션 동일", () => {
+  assert.match(programs, /draggable=\{editId !== program\.id\}/);
+  assert.match(programs, /onDragStart=\{\(e\) => handleDragStart\(e, program\.id\)\}/);
+  assert.match(programs, /onDragOver=\{\(e\) => handleDragOver\(e, program\.id\)\}/);
+  assert.match(programs, /onDrop=\{\(e\) => handleDrop\(e, program\.id\)\}/);
+  assert.match(programs, /onDragEnd=\{handleDragEnd\}/);
+  assert.match(programs, /await reorderPrograms\(next\.map\(\(p\) => p\.id\)\)/);
+  // 제자리 수정 폼·삭제 두 단계(확인/취소) 그대로
+  assert.match(programs, /<ProgramFormPanel\s+mode="edit"/);
+  assert.match(programs, /onSetDeleting=\{\(\) => setDeletingId\(program\.id\)\}/);
+  assert.match(programs, /onDelete=\{\(\) => handleDelete\(program\.id\)\}/);
+  assert.match(programs, /await deleteProgram\(id\)/);
+});
+
+test("프로그램: 한 줄 행(머리줄과 같은 칸 폭), 수강료 오른쪽·tabular, 행 클릭 패널·키보드 가드·관리 칸 전파 차단", () => {
+  assert.match(programs, /const PROGRAM_ROW_GRID =/);
+  assert.match(programs, /\$\{PROGRAM_ROW_GRID\} items-center bg-\[var\(--color-academy-soft\)\]/);
+  assert.match(programs, /text-right font-bold tabular-nums[^"]*">\{priceShortLabel\(program\)\}/);
+  assert.match(programs, /<ListDetailPanel onClose=\{\(\) => setDetailProgramId\(null\)\} titleId="program-detail-panel-title"/);
+  assert.match(programs, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(programs, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.doesNotMatch(programs, /\btruncate\b|line-clamp|text-ellipsis/);
+  // 상세 패널은 기존 카드의 횟수별 가격·셔틀 요금 계산(displayShuttleFee)을 그대로 쓴다
+  assert.match(programs, /const fee = displayShuttleFee\(program\.shuttleFeeOverride, t\.key, weekend\)/);
+});
