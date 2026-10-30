@@ -133,3 +133,29 @@ test("청구·수납: 공통 표 규칙(금액·날짜 오른쪽)·상태 칩(pa
   assert.ok(row.length > 100, "renderPaymentRow 가 있어야 합니다");
   assert.doesNotMatch(row, /\btruncate\b|text-ellipsis|line-clamp/);
 });
+
+// 목록 개편 4단계(수업·출결) — 같은 부품·규칙. 조회·저장(saveAttendance)·방학특강 분리는 그대로, 보이는 모양만
+const attendanceClient = read("../src/app/admin/attendance/AttendanceClient.tsx");
+
+test("출결 관리: 반 드롭다운 대신 그날 수업 한 줄 행 목록, 행 클릭 = 출결 입력 패널(입력·전체 출석·저장 흐름 그대로)", () => {
+  assert.match(attendanceClient, /<table className="admin-list-table/);
+  assert.doesNotMatch(attendanceClient, /반을 선택하세요/);
+  // 시간·인원은 오른쪽 정렬
+  assert.match(attendanceClient, /admin-cell-num[^"]*">\{c\.startTime\}~\{c\.endTime\}/);
+  // 구분 칩(정규/특강)은 kindFilter 와 같은 값, 다시 누르면 전체
+  assert.match(attendanceClient, /<StatusCountChips[\s\S]*?selected=\{kindFilter\}[\s\S]*?onSelect=\{setKindFilter\}[\s\S]*?allValue=\{KIND_ALL\}/);
+  // 행 클릭·키보드 → 패널, 키보드는 안쪽 요소를 가로채지 않는다
+  assert.match(attendanceClient, /onClick=\{\(\) => openLesson\(key\)\}/);
+  assert.match(attendanceClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(attendanceClient, /<ListDetailPanel[\s\S]*?titleId="attendance-lesson-panel-title"[\s\S]*?closeOnBackdrop=\{!dirty\}/);
+  // 저장 안 한 출결이 있으면 닫기 전에 묻는다
+  assert.match(attendanceClient, /dirty && !window\.confirm\(/);
+  // 기존 흐름 보존: 전체 출석·저장·출석/결석/지각 집계
+  assert.match(attendanceClient, /markAll\("PRESENT"\)/);
+  assert.match(attendanceClient, /saveAttendance\(selectedLesson\.id, date, records/);
+  assert.match(attendanceClient, /출석 <span className="tabular-nums">\{presentCount\}/);
+  // 옛 하드코딩 색 정리, 말줄임 없음, 날짜는 KST 모듈
+  assert.doesNotMatch(attendanceClient, /bg-green-100|bg-red-100|bg-yellow-100|brand-neon-lime/);
+  assert.doesNotMatch(attendanceClient, /\btruncate\b|text-ellipsis|line-clamp/);
+  assert.match(attendanceClient, /from "@\/lib\/datetime\/kst"/);
+});
