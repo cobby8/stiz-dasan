@@ -11,8 +11,8 @@ export const metadata = buildPublicMetadata({
 export default function SeasonalPage() {
   return (
     <PublicPageLayout>
-      <section className="public-page-hero bg-brand-navy-900 px-5 py-12 text-white">
-        <div className="mx-auto max-w-5xl"><p className="text-sm font-bold text-brand-orange-500">SEASONAL PROGRAM</p><h1 className="mt-2 text-3xl font-black md:text-4xl">방학특강</h1><p className="mt-3 max-w-xl text-blue-100 break-keep">방학 동안 집중해서 배우고, 즐겁게 성장하는 프로그램을 만나보세요.</p></div>
+      <section className="public-page-hero public-page-hero--compact bg-brand-navy-900 px-5 py-12 text-white">
+        <div className="mx-auto max-w-5xl"><h1 className="mt-2 text-3xl font-black md:text-4xl">방학특강</h1><p className="mt-3 max-w-xl text-blue-100 break-keep">방학 동안 집중해서 배우고, 즐겁게 성장하는 프로그램을 만나보세요.</p></div>
       </section>
       <section className="public-content-section bg-gray-50 px-4 py-8 dark:bg-gray-900 md:py-12"><div className="mx-auto max-w-5xl"><SeasonalListClient /></div></section>
     </PublicPageLayout>

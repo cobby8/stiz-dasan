@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const sportCss = read("src/components/public-sport.css");
@@ -178,4 +179,42 @@ test("P-10 모바일 메뉴 로그아웃은 맨 아래 회색 글자 링크, 위
   // 기능 보존: 데스크톱 로그아웃·사진 올리기·계정 전환
   assert.match(controls, /className=\{DESKTOP_LOGOUT_CLASS\}/);
   assert.ok(mobile.includes('href="/staff/quick-post"') && mobile.includes("<AccountViewSwitcher"));
+});
+
+const COMPACT_HERO_FILES = ["src/app/about/page.tsx", "src/app/annual/page.tsx", "src/app/apply/page.tsx", "src/app/apply/enroll/page.tsx",
+  "src/app/apply/trial/page.tsx", "src/app/apply/uniform/page.tsx", "src/app/faq/page.tsx", "src/app/gallery/page.tsx",
+  "src/app/notices/page.tsx", "src/app/notices/[id]/page.tsx", "src/app/privacy/page.tsx", "src/app/schedule/page.tsx",
+  "src/app/seasonal/page.tsx", "src/app/shop/page.tsx", "src/app/simulator/page.tsx", "src/app/terms/page.tsx",
+  "src/components/seasonal/SeasonalDetailClient.tsx"];
+
+test("P-11 하위 페이지 배너: 영문 라벨·장식 원 없음, 제목 clamp(22px,3vw,32px)", () => {
+  assert.match(sportCss, /\.public-page-hero--compact :is\(h1, h2\) \{\s*font-size: clamp\(22px, 3vw, 32px\)/);
+  for (const file of COMPACT_HERO_FILES) {
+    const src = read(file);
+    const hero = src.slice(src.indexOf("public-page-hero"), src.indexOf("</section>", src.indexOf("public-page-hero")));
+    assert.ok(hero.startsWith("public-page-hero public-page-hero--compact "), file);
+    assert.doesNotMatch(hero, /uppercase tracking-widest/, file);
+    assert.doesNotMatch(hero, /rounded-full translate-x-1\/3/, file);
+    assert.doesNotMatch(hero, /SEASONAL PROGRAM/, file);
+  }
+});
+
+test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌지 않았다", () => {
+  // /programs 배너는 컴팩트 클래스를 달지 않아 기존 모양(영문 라벨·장식 원·큰 제목) 그대로다.
+  const programs = read("src/app/programs/page.tsx");
+  assert.doesNotMatch(programs, /public-page-hero--compact|compactHeading|public-btn-|public-floating/);
+  assert.match(programs, /className="public-page-hero relative overflow-hidden/);
+  assert.match(programs, /uppercase tracking-widest/);
+  // 공용 규칙 중 /programs 에도 닿는 .public-page-hero 기본 규칙은 그대로 둔다.
+  assert.match(sportCss, /\.stiz-public-sport \.public-page-hero :is\(h1, h2\) \{[^}]*font-size: clamp\(26px, 4vw, 42px\)/);
+  assert.match(sportCss, /\.stiz-public-sport \.public-page-hero \{[^}]*padding-block: clamp\(24px, 4vw, 44px\)/);
+  // SectionLayout 기본(라벨·가운데 큰 제목)도 유지 — /programs 가 쓴다.
+  assert.match(read("src/components/ui/SectionLayout.tsx"), /text-3xl md:text-4xl font-extrabold/);
+  // 이 작업 커밋들이 금지 구역 파일을 건드리지 않았는지(작업 기준점 68be6db3 이후, 있으면 확인).
+  // 카드사 심사가 끝나 /programs 를 다시 고칠 때는 이 git 비교 단언을 지운다.
+  let changed = "";
+  try {
+    changed = execFileSync("git", ["diff", "--name-only", "68be6db3", "HEAD", "--", "src/app/programs", "src/app/payments", "src/components/PublicFooter.tsx", "src/app/programs/order"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch { changed = ""; }
+  assert.equal(changed.trim(), "");
 });

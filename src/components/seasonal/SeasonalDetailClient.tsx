@@ -31,7 +31,7 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
 
   return (
     <>
-      <section className="public-page-hero bg-brand-navy-900 px-5 py-10 text-white">
+      <section className="public-page-hero public-page-hero--compact bg-brand-navy-900 px-5 py-10 text-white">
         <div className="mx-auto max-w-4xl">
           <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{display.label}</span>
           <h1 className="mt-4 text-3xl font-black break-keep">{program.title}</h1>

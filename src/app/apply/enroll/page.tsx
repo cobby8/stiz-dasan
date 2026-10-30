@@ -33,14 +33,9 @@ export default async function EnrollApplyPage({
 
     return (
         <PublicPageLayout>
-            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
-                <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute right-0 top-0 h-72 w-72 translate-x-1/3 -translate-y-1/3 rounded-full border-[20px] border-white/5 transition-colors duration-300 dark:border-brand-neon-cobalt/10" />
-                    <div className="absolute bottom-0 left-0 h-48 w-48 -translate-x-1/4 translate-y-1/4 rounded-full border-[15px] border-brand-orange-500/10 transition-colors duration-300 dark:border-brand-neon-lime/10" />
-                </div>
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
                 <div className="relative mx-auto max-w-3xl px-6">
                     <AnimateOnScroll>
-                        <p className="mb-3 text-sm font-bold uppercase tracking-widest text-brand-orange-500 dark:text-brand-neon-lime">ENROLLMENT</p>
                         <h1 className="mb-3 break-keep text-3xl font-black md:text-4xl">수강 신청</h1>
                         <p className="max-w-xl text-base text-blue-200">
                             {trialData

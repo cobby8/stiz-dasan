@@ -21,14 +21,9 @@ export default async function TermsPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 */}
-      <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
-          <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
-        </div>
+      <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
           <AnimateOnScroll>
-            <p className="text-brand-orange-500 dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">TERMS OF SERVICE</p>
             <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">이용약관</h1>
             <p className="text-blue-200 text-lg max-w-xl">수강 규정 및 환불 정책을 확인하세요.</p>
           </AnimateOnScroll>

@@ -115,6 +115,17 @@
   overflow-wrap: anywhere;
 }
 .stiz-public-sport .public-page-hero p { color: var(--color-public-dark-muted); max-width: 720px; }
+/* 게슈탈트 P-11 하위 페이지 배너 컴팩트 — 제목 + 설명 1줄(PC 약 110px).
+ * 클래스(public-page-hero--compact)를 단 페이지에만 적용한다. /programs 배너는 이 클래스를 달지 않아
+ * 위의 기존 모양 그대로다(토스페이먼츠 카드사 심사 중 상품 화면 수정 금지). */
+.stiz-public-sport .public-page-hero--compact { padding-block: 20px; }
+.stiz-public-sport .public-page-hero--compact :is(h1, h2) {
+  font-size: clamp(22px, 3vw, 32px);
+  letter-spacing: -.03em;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.stiz-public-sport .public-page-hero--compact :is(h1, h2) + p { margin-top: 4px; font-size: 14px; line-height: 1.5; }
 .stiz-public-sport .public-content-section { padding-block: clamp(24px, 4vw, 44px); }
 .stiz-public-sport section.public-content-section > .max-w-6xl { padding-block: 0; }
 .stiz-public-sport section.public-content-section > .max-w-6xl > .text-center { margin-bottom: 28px; }
