@@ -152,14 +152,19 @@ export function MobileAccountControls({
   const { accountHref, accountLabel, canAccessAdmin, isLoggedIn, isStaffPrimary, accountViews } =
     useAccountState(initialRole);
 
+  // 게슈탈트 P-10: 로그아웃은 위 버튼 묶음과 떼어 «맨 아래 회색 글자 링크»로 둔다(실수로 누르지 않게).
+  // 로그인한 일반 계정은 둘째 칸(로그아웃)이 빠지므로 계정 버튼이 두 칸을 채운다.
+  const accountSpan = isLoggedIn && !canAccessAdmin ? " col-span-2" : "";
+
   return (
+    <>
     <div className="grid grid-cols-2 gap-2 mb-3" data-account-controls="mobile">
       {accountViews.length > 1 ? (
-        <div className="academy-app flex min-h-11 items-center justify-center rounded-xl"><AccountViewSwitcher views={accountViews} onNavigate={() => onNavigate?.()} /></div>
+        <div className={`academy-app flex min-h-11 items-center justify-center rounded-xl${accountSpan}`}><AccountViewSwitcher views={accountViews} onNavigate={() => onNavigate?.()} /></div>
       ) : <Link
         href={accountHref}
         onClick={onNavigate}
-        className="flex min-h-11 items-center justify-center rounded-xl border border-brand-orange-200 bg-white text-sm font-bold text-brand-orange-600 transition-colors hover:bg-brand-orange-50 dark:border-brand-neon-lime/30 dark:bg-gray-900 dark:text-brand-neon-lime"
+        className={`flex min-h-11 items-center justify-center rounded-xl border border-brand-orange-200 bg-white text-sm font-bold text-brand-orange-600 transition-colors hover:bg-brand-orange-50 dark:border-brand-neon-lime/30 dark:bg-gray-900 dark:text-brand-neon-lime${accountSpan}`}
         aria-label={isStaffPrimary ? "선생님 앱" : undefined}
         title={isStaffPrimary ? "선생님 앱" : undefined}
       >
@@ -184,16 +189,7 @@ export function MobileAccountControls({
           <FontFreeIcon name="camera_alt" size={20} />
           <span className="sr-only">사진 올리기</span>
         </Link>
-      ) : isLoggedIn ? (
-        <form action={logout}>
-          <button
-            type="submit"
-            className={`${MOBILE_SECONDARY_ACTION_CLASS} w-full`}
-          >
-            로그아웃
-          </button>
-        </form>
-      ) : (
+      ) : isLoggedIn ? null : (
         <Link
           href="/staff/quick-post"
           onClick={onNavigate}
@@ -206,13 +202,16 @@ export function MobileAccountControls({
         </Link>
       )}
 
-      {canAccessAdmin && (
-        <form action={logout} className="col-span-2">
-          <button type="submit" className={`${MOBILE_SECONDARY_ACTION_CLASS} w-full`}>
+    </div>
+
+      {/* 로그아웃 — 부모(모바일 메뉴 하단, flex 세로)에서 order-last 로 맨 아래에 놓이고, 위와 16px 이상 띄운다 */}
+      {isLoggedIn && (
+        <form action={logout} className="order-last mt-4 border-t border-gray-200 pt-2 text-center dark:border-gray-800" data-account-logout="mobile">
+          <button type="submit" className="inline-flex min-h-11 items-center px-3 text-sm text-gray-500 underline-offset-2 transition-colors hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-200">
             로그아웃
           </button>
         </form>
       )}
-    </div>
+    </>
   );
 }

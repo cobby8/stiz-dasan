@@ -166,3 +166,16 @@ test("P-09·P-12 /notices 목록은 한 줄 행(약 52px), 미리보기·썸네�
   assert.ok(src.includes('n.targetType === "ALL"'));
   assert.ok(src.includes("n.isPinned &&"));
 });
+
+test("P-10 모바일 메뉴 로그아웃은 맨 아래 회색 글자 링크, 위 버튼과 16px 이상 떨어짐", () => {
+  const controls = read("src/components/PublicAccountControls.tsx");
+  const mobile = controls.slice(controls.indexOf("export function MobileAccountControls"));
+  assert.match(mobile, /<form action=\{logout\} className="order-last mt-4 [^"]*" data-account-logout="mobile">/);
+  assert.match(mobile, /className="inline-flex min-h-11 items-center px-3 text-sm text-gray-500/);
+  assert.doesNotMatch(mobile, /MOBILE_SECONDARY_ACTION_CLASS\} w-full`\}>\s*로그아웃/);
+  // 부모(모바일 메뉴 하단)는 flex 세로여야 order-last 가 먹는다
+  assert.match(read("src/components/PublicHeader.tsx"), /<div className="shrink-0 flex flex-col p-4 border-t/);
+  // 기능 보존: 데스크톱 로그아웃·사진 올리기·계정 전환
+  assert.match(controls, /className=\{DESKTOP_LOGOUT_CLASS\}/);
+  assert.ok(mobile.includes('href="/staff/quick-post"') && mobile.includes("<AccountViewSwitcher"));
+});
