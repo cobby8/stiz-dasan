@@ -118,13 +118,12 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       amounts = { ...amounts, baseAmount: classReg.baseAmount, discountAmount: classReg.discountAmount, prorationAmount: classReg.prorationAmount };
       basis.push("확정 월 장부");
       if (classReg.carryAmount > 0) reviewReasons.push("기존 장부 이월액은 원결석·사용 잔액 대조가 필요합니다.");
-      if (isShortMonth && !excluded && classReg.prorationAmount === 0) reviewReasons.push(`연간 일정 ${monthSessions}회인 달인데 확정 장부에 일할 차감이 없습니다.`);
       if (!assignedShuttle.has(e.studentId) && !excluded) { amounts.shuttleAmount = reg!.shuttleAmount; assignedShuttle.add(e.studentId); }
     } else if (!excluded) {
       basis.push("등록 반의 프로그램 수강료");
       reviewReasons.push("할인·셔틀 및 수강 기간을 검토해 주세요.");
       if (isShortMonth) {
-        amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions);
+        amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
         basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
       }
     }
@@ -139,6 +138,16 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     amounts.carryAmount = !participates ? 0 : Math.min(remaining, Math.max(0, amounts.baseAmount - amounts.discountAmount - amounts.prorationAmount));
     if (saved && !["ISSUED", "ZERO"].includes(saved.status)) amounts = saved.payload;
     if (saved && ["ISSUED", "ZERO"].includes(saved.status)) amounts = saved.payload;
+    // 3회 달을 그달 전체로 청구하는데 기간 조정이 할인 후 금액 기준과 다르면 알린다(장부·저장 초안 포함).
+    // 기간을 좁힌 경우(일부 수강)는 관리자가 직접 계산한 값이라 비교하지 않는다.
+    if (isShortMonth && participates && scheduledDates.length === monthSessions) {
+      const expected = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
+      if (amounts.prorationAmount !== expected) {
+        const note = `연간 일정 ${monthSessions}회인 달은 기간 조정이 할인 후 금액 기준 ${expected.toLocaleString("ko-KR")}원이어야 합니다(현재 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`;
+        reviewReasons.push(note);
+        basis.push(`확인: ${note}`); // 관리자 저장 뒤 검토 사유가 걸러져도 근거에는 남긴다
+      }
+    }
     if(participates) assignedCarry.set(e.studentId, (assignedCarry.get(e.studentId) ?? 0) + amounts.carryAmount);
     if(credits.some(c=>c.studentId===e.studentId && c.valid===false)) blockingReasons.push("원결석 취소·출석 정정된 이월이 있습니다. 정산을 확인해 주세요.");
     if(usages.some(u=>u.studentId===e.studentId && (["CANCELED","CANCELLED","REFUNDED"].includes(u.paymentStatus??"") || ["CANCELED","CANCELLED","REFUNDED"].includes(u.invoiceStatus??"") || (u.paymentId && (!u.paymentStatus || !u.invoiceStatus))))) blockingReasons.push("이월 사용 청구의 취소·환불 내역을 재정산해야 합니다.");
@@ -156,7 +165,7 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       status: completed || existing.length ? "ISSUED" : excluded ? "EXCLUDED" : reviewReasons.length ? "REVIEW" : "READY",
       totalAmount: workbenchTotal(amounts), reviewReasons, basis, version: saved?.version ?? 0, draftStatus: saved?.status ?? null,
       paymentId: saved?.paymentId ?? existing[0]?.id ?? null, periodStart,
-      periodEnd, scheduledDates, carryAvailable: balance, remainingCarry: Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0)), dueDate: monthlyBillingDueDate(year,monthNumber), blockingReasons };
+      periodEnd, scheduledDates, monthDates: allScheduledDates, carryAvailable: balance, remainingCarry: Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0)), dueDate: monthlyBillingDueDate(year,monthNumber), blockingReasons };
   });
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
     notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[]],

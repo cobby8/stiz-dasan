@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import styles from "./workbench.module.css";
-import { type WorkbenchRow, type WorkbenchView, type WorkbenchAbsence, WORKBENCH_MAX_AMOUNT } from "@/lib/billing/workbench";
+import { type WorkbenchRow, type WorkbenchView, type WorkbenchAbsence, WORKBENCH_MAX_AMOUNT, STANDARD_MONTHLY_SESSIONS, shortMonthProration } from "@/lib/billing/workbench";
 
 type Row = WorkbenchRow;
 type View = WorkbenchView;
@@ -21,6 +21,9 @@ const errorText = (failure: unknown, fallback: string) => failure instanceof Typ
 const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const label = (row: Row) => (row.blockingReasons?.length ?? 0) > 0 ? "발행 보류" : row.draftStatus === "ZERO" ? "0원 정산" : row.draftStatus === "ISSUED" ? "사이트 발행" : row.status === "ISSUED" ? "기존 청구 유지" : row.draftStatus === "CONFIRMED" ? "확정" : row.status === "REVIEW" ? "확인 필요" : row.status === "EXCLUDED" ? "제외" : "검토 가능";
 const asEdit = (row: Row): Edit => ({ baseAmount: String(row.baseAmount), discountAmount: String(row.discountAmount), prorationAmount: String(row.prorationAmount), carryAmount: String(row.carryAmount), shuttleAmount: String(row.shuttleAmount), reason: "", periodStart: row.periodStart?.slice(0, 10) ?? "", periodEnd: row.periodEnd?.slice(0, 10) ?? "" });
+// 3회 달: 연간 일정상 그달 수업이 4회 미만. 입력한 기간이 그달 수업일을 모두 덮으면 자동 차감 대상이다(서버 판정과 같은 기준).
+const isShortMonth = (row: Row) => (row.monthDates?.length ?? 0) > 0 && row.monthDates.length < STANDARD_MONTHLY_SESSIONS;
+const coversMonth = (row: Row, edit: Edit) => Boolean(edit.periodStart && edit.periodEnd) && row.monthDates.filter((date) => date >= edit.periodStart && date <= edit.periodEnd).length === row.monthDates.length;
 const total = (row: Row, edit?: Edit) => edit ? Math.max(0, Number(edit.baseAmount) - Number(edit.discountAmount) - Number(edit.prorationAmount) - Number(edit.carryAmount) + Number(edit.shuttleAmount)) : row.totalAmount;
 
 export default function BillingWorkbench() {
@@ -93,7 +96,21 @@ export default function BillingWorkbench() {
     const classes = Array.from(new Map(rows.map((row) => [row.classId, row.className])).entries());
     const toggle = (id: string) => setSelected((old) => { const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next; });
     const toggleDetails = (id: string) => setExpanded((old) => { const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-    const setField = (row: Row, key: keyof Edit, value: string) => { setEdits((old) => ({ ...old, [row.id]: { ...(old[row.id] ?? asEdit(row)), [key]: value } })); setSelected((old) => new Set([...old, row.id])); };
+    const setField = (row: Row, key: keyof Edit, value: string) => {
+        setEdits((old) => {
+            const prev = old[row.id] ?? asEdit(row);
+            const next = { ...prev, [key]: value };
+            // 3회 달을 그달 전체로 청구할 때 수강료·할인을 바꾸거나, 좁혔던 기간을 다시 그달 전체로 넓히면
+            // 기간 조정을 할인 후 금액 기준으로 다시 계산한다
+            const widenedToMonth = (key === "periodStart" || key === "periodEnd") && !coversMonth(row, prev);
+            if ((key === "baseAmount" || key === "discountAmount" || widenedToMonth) && isShortMonth(row) && coversMonth(row, next)) {
+                const base = Number(next.baseAmount), discount = Number(next.discountAmount);
+                if (next.baseAmount.trim() && next.discountAmount.trim() && Number.isSafeInteger(base) && Number.isSafeInteger(discount)) next.prorationAmount = String(shortMonthProration(base, row.monthDates.length, discount));
+            }
+            return { ...old, [row.id]: next };
+        });
+        setSelected((old) => new Set([...old, row.id]));
+    };
     const hasHardBlock = (row: Row) => (row.blockingReasons?.length ?? 0) > 0 || (view?.carrySettlementReady === false && row.carryAmount > 0);
     const canSelect = (row: Row) => !["EXCLUDED", "ISSUED"].includes(row.status) && !["ISSUED", "ZERO"].includes(row.draftStatus ?? "");
 
@@ -158,7 +175,10 @@ export default function BillingWorkbench() {
             <div><h3>계산 근거</h3>{(row.blockingReasons?.length ?? 0) > 0 && <div className={styles.error}><strong>확정·발행 보류</strong><ul>{row.blockingReasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></div>}<ul>{row.basis.map((basis, index) => <li key={index}>{basis}</li>)}</ul>{row.reviewReasons.length > 0 && <><h3 className="mt-3">확인할 내용</h3><ul>{row.reviewReasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul></>}<p className={`${styles.muted} mt-2`}>이월 사용 가능 {won(row.carryAvailable)} · 제안 반영 후 잔액 {won(row.remainingCarry)}</p>
                 {(view?.absences ?? []).filter((item) => item.studentId === row.studentId && item.classId === row.classId).map((item) => <div key={item.id} className="mt-2 flex flex-wrap items-center gap-2 text-sm"><span>{item.date.slice(0, 10)} · {absenceReasonLabels[item.reason] ?? "사유 확인"} · {item.resolution === "CARRY" ? "이월" : item.resolution === "MAKEUP" ? "보강" : suggestedResolution(item) === "CARRY" ? "이월 검토 추천" : "보강 추천"}</span><button type="button" className={styles.button} disabled={!editable || dirty || Boolean(item.resolution)} onClick={() => { setAbsence(item); setResolution(suggestedResolution(item)); setEligibility(item.reason === "ILLNESS_INJURY" ? "ILLNESS_INJURY" : "NONE"); setEvidenceConfirmed(false); setCancelReservation(false); setAbsenceReason(""); setOriginMonth(item.date.slice(0, 7)); }}>이월·보강 검토</button></div>)}
                 <button type="button" className={`${styles.button} mt-2`} onClick={() => setPreviewStudent(row.id)}>학부모 청구 내역 미리보기</button></div>
-            <div><h3>금액 검토·수정</h3><div className={styles.fields}><label>수강 시작일<input aria-label={`${row.studentName} 수강 시작일`} type="date" className={styles.input} value={edit.periodStart} disabled={locked} onChange={(event) => setField(row, "periodStart", event.target.value)} /></label><label>수강 종료일<input aria-label={`${row.studentName} 수강 종료일`} type="date" className={styles.input} value={edit.periodEnd} disabled={locked} onChange={(event) => setField(row, "periodEnd", event.target.value)} /></label>{amounts.map(([key, title]) => <label key={key}>{title}<input aria-label={`${row.studentName} ${title}`} className={styles.input} inputMode="numeric" min="0" max={WORKBENCH_MAX_AMOUNT} type="number" step="1" disabled={locked} value={edit[key]} onChange={(event) => setField(row, key, event.target.value)} /></label>)}<label className={styles.reason}>검토·수정 사유 (필수)<textarea aria-label={`${row.studentName} 검토·수정 사유`} disabled={locked} rows={2} className={styles.input} maxLength={500} value={edit.reason} onChange={(event) => setField(row, "reason", event.target.value)} /></label></div><p className={`${styles.muted} mt-2`}>입력한 행은 자동 선택됩니다. 기간을 바꾸면 실제 수업일과 기간 차감액을 함께 확인해주세요. 수정 후에는 다시 확정해야 합니다.</p></div>
+            <div><h3>금액 검토·수정</h3><div className={styles.fields}><label>수강 시작일<input aria-label={`${row.studentName} 수강 시작일`} type="date" className={styles.input} value={edit.periodStart} disabled={locked} onChange={(event) => setField(row, "periodStart", event.target.value)} /></label><label>수강 종료일<input aria-label={`${row.studentName} 수강 종료일`} type="date" className={styles.input} value={edit.periodEnd} disabled={locked} onChange={(event) => setField(row, "periodEnd", event.target.value)} /></label>{amounts.map(([key, title]) => <label key={key}>{title}<input aria-label={`${row.studentName} ${title}`} className={styles.input} inputMode="numeric" min="0" max={WORKBENCH_MAX_AMOUNT} type="number" step="1" disabled={locked} value={edit[key]} onChange={(event) => setField(row, key, event.target.value)} /></label>)}<label className={styles.reason}>검토·수정 사유 (필수)<textarea aria-label={`${row.studentName} 검토·수정 사유`} disabled={locked} rows={2} className={styles.input} maxLength={500} value={edit.reason} onChange={(event) => setField(row, "reason", event.target.value)} /></label></div>{isShortMonth(row) && (coversMonth(row, edit)
+                ? <p className={`${styles.notice} mt-2`}>이 달은 연간 일정 {row.monthDates.length}회입니다. 기간 조정은 할인 후 금액의 {STANDARD_MONTHLY_SESSIONS - row.monthDates.length}/{STANDARD_MONTHLY_SESSIONS}로 자동 계산되고, 수강료·할인을 바꾸면 다시 계산됩니다.</p>
+                : <p role="alert" className={`${styles.error} mt-2`}>수강 기간을 그달 일부로 좁혔습니다. 기간 조정 {won(Number(edit.prorationAmount) || 0)}에는 3회 달 자동 차감이 들어 있을 수 있으니, 실제 듣는 수업일 기준으로 다시 입력해주세요.</p>)}
+                <p className={`${styles.muted} mt-2`}>입력한 행은 자동 선택됩니다. 기간을 바꾸면 실제 수업일과 기간 차감액을 함께 확인해주세요. 수정 후에는 다시 확정해야 합니다.</p></div>
         </div>;
     };
 

@@ -304,5 +304,55 @@ test("확정 장부에 3회 달 일할이 빠져 있으면 금액은 장부대�
  db.state.registers.push({studentId:"student-a",month:"2026-11",status:"CONFIRMED",version:1,payload:{studentId:"student-a",month:"2026-11",classes:[{classId:"class-a",status:"ACTIVE",periodStart:"2026-11-01",periodEnd:"2026-11-30",baseAmount:100000,discountAmount:0,carryAmount:0,prorationAmount:0,basis:"확정"}],shuttleAmount:0,shuttleBasis:"없음",reason:"확인"}});
  const view=await readWorkbench(db.tx,"2026-11",true);
  assert.equal(view.rows[0].prorationAmount,0);
- assert.ok(view.rows[0].reviewReasons.some(r=>/연간 일정 3회인 달인데 확정 장부에 일할 차감이 없습니다/.test(r)));
+ assert.ok(view.rows[0].reviewReasons.some(r=>r.includes("할인 후 금액 기준 25,000원이어야 합니다(현재 0원)")),view.rows[0].reviewReasons.join(" / "));
+});
+
+// ── 할인 후 금액 기준(원장 결정 2026-10-30): (정가 − 할인) × 모자란 회차 ÷ 4 ──
+test("3회 달 차감은 할인 후 금액 기준 — 할인 10,000원이면 22,500원",()=>{
+ assert.equal(shortMonthProration(100000,3,10000),22500);
+ assert.equal(shortMonthProration(100000,3,0),25000);
+ assert.equal(shortMonthProration(100000,3),25000);
+ assert.equal(shortMonthProration(110000,3,11000),24750);
+ for(const d of [100000,120000,-1,0.5]) assert.equal(shortMonthProration(100000,3,d),0);
+ // 결석 이월 1회분 = (정가 − 할인 − 기간 조정) ÷ 그달 횟수 → 4회 달의 1회분과 같아야 한다
+ const base=100000,discount=10000;
+ assert.equal((base-discount-shortMonthProration(base,3,discount))/3,(base-discount)/4);
+ assert.equal((base-discount-shortMonthProration(base,3,discount))/3,22500);
+});
+test("할인 있는 3회 달: 할인 후 기준 차감으로 저장하면 67,500원 발행, 근거에 경고 없음",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ let view=await readWorkbench(db.tx,"2026-11",true);const row=view.rows[0];
+ const save=command("SAVE",view);save.rows[0]={...save.rows[0],discountAmount:10000,prorationAmount:22500,periodStart:row.periodStart,periodEnd:row.periodEnd};
+ ({view}=await mutateWorkbench(db,save,"admin",true));
+ assert.equal(view.rows[0].totalAmount,67500);
+ assert.ok(!view.rows[0].basis.some(b=>b.startsWith("확인:")),view.rows[0].basis.join(" / "));
+ ({view}=await mutateWorkbench(db,command("CONFIRM",view),"admin",true));
+ await mutateWorkbench(db,command("ISSUE",view),"admin",true);
+ assert.equal(db.state.payments[0].amount,67500);
+});
+test("할인을 넣고 정가 기준 차감(25,000원)을 그대로 두면 근거에 할인 후 기준 22,500원을 알린다",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ let view=await readWorkbench(db.tx,"2026-11",true);const row=view.rows[0];
+ const save=command("SAVE",view);save.rows[0]={...save.rows[0],discountAmount:10000,prorationAmount:25000,periodStart:row.periodStart,periodEnd:row.periodEnd};
+ ({view}=await mutateWorkbench(db,save,"admin",true));
+ assert.ok(view.rows[0].basis.some(b=>b.includes("할인 후 금액 기준 22,500원이어야 합니다(현재 25,000원)")),view.rows[0].basis.join(" / "));
+});
+test("기간을 그달 일부로 좁힌 3회 달은 관리자 값이라 할인 후 기준과 비교하지 않는다",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ let view=await readWorkbench(db.tx,"2026-11",true);
+ const save=command("SAVE",view);save.rows[0]={...save.rows[0],prorationAmount:50000,periodStart:"2026-11-14",periodEnd:"2026-11-21"};
+ ({view}=await mutateWorkbench(db,save,"admin",true));
+ assert.equal(view.rows[0].scheduledDates.length,2);
+ assert.ok(!view.rows[0].basis.some(b=>b.startsWith("확인:")));
+});
+test("청구 행에 그달 전체 수업일(monthDates)을 함께 내려준다",async()=>{
+ const db=database();db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ const view=await readWorkbench(db.tx,"2026-11",true);
+ assert.deepEqual(view.rows[0].monthDates,["2026-11-07","2026-11-14","2026-11-21"]);
+});
+test("청구 화면은 수강료·할인을 바꾸면 할인 후 기준으로 기간 조정을 다시 계산하고, 기간을 좁히면 경고한다",async()=>{
+ const ui=await readFile("src/app/admin/finance/prepare/BillingWorkbench.tsx","utf8");
+ assert.ok(ui.includes('key === "baseAmount" || key === "discountAmount"'));
+ assert.ok(ui.includes("shortMonthProration(base, row.monthDates.length, discount)"));
+ assert.match(ui,/수강 기간을 그달 일부로 좁혔습니다/);
 });

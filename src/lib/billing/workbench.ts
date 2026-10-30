@@ -8,6 +8,8 @@ export type WorkbenchRow = WorkbenchAmounts & {
   totalAmount: number; reviewReasons: string[]; basis: string[]; version: number;
   draftStatus: "DRAFT" | "CONFIRMED" | "ISSUED" | "ZERO" | null; paymentId: string | null;
   periodStart: string | null; periodEnd: string | null; scheduledDates: string[];
+  /** 연간 일정상 그달 전체 수업일(기간을 좁히기 전). 3회 달 판정·화면 자동 재계산에 쓴다. */
+  monthDates: string[];
   carryAvailable: number; remainingCarry: number;
   dueDate: string;
   blockingReasons: string[];
@@ -57,12 +59,17 @@ export function workbenchTotal(value: WorkbenchAmounts) {
 export const STANDARD_MONTHLY_SESSIONS = 4;
 /**
  * 연간 일정상 그달 수업이 4회보다 적을 때 빼는 금액(원장 결정 2026-10-30).
- * 예: 정가 100,000원·3회 달 → 25,000원(1회분). 수업일을 못 읽었거나(0회) 4회 이상이면 0원.
+ * 기준은 **할인 후 금액**이다: (정가 − 할인) × 모자란 회차 ÷ 4.
+ * 예: 정가 100,000·할인 0·3회 → 25,000원 / 정가 100,000·할인 10,000·3회 → 22,500원.
+ * 그래야 결석 이월 1회분(할인 후 금액 ÷ 그달 횟수)이 4회 달과 같은 값이 된다.
+ * 수업일을 못 읽었거나(0회) 4회 이상, 할인 후 금액이 0 이하이면 0원.
  */
-export function shortMonthProration(baseAmount: number, sessions: number): number {
-  if (!Number.isSafeInteger(baseAmount) || baseAmount <= 0) return 0;
+export function shortMonthProration(baseAmount: number, sessions: number, discountAmount = 0): number {
+  if (!Number.isSafeInteger(baseAmount) || !Number.isSafeInteger(discountAmount) || discountAmount < 0) return 0;
+  const net = baseAmount - discountAmount;
+  if (net <= 0) return 0;
   if (!Number.isInteger(sessions) || sessions <= 0 || sessions >= STANDARD_MONTHLY_SESSIONS) return 0;
-  return Math.round(baseAmount * (STANDARD_MONTHLY_SESSIONS - sessions) / STANDARD_MONTHLY_SESSIONS);
+  return Math.round(net * (STANDARD_MONTHLY_SESSIONS - sessions) / STANDARD_MONTHLY_SESSIONS);
 }
 /** 결석별 반올림을 피하기 위해 분수로 합산하고 마지막 합계에서 한 번 반올림한다. */
 export function roundCarryTotal(values: readonly { numerator: string; denominator: string }[]): number {
