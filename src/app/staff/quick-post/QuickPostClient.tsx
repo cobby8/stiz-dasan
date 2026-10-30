@@ -212,7 +212,11 @@ export default function QuickPostClient({
     const question = needsInstagramRetry
       ? "인스타그램에 다시 게시할까요?"
       : "홈페이지 갤러리와 인스타그램에 바로 게시할까요? 게시하면 바로 공개됩니다.";
-    if (!window.confirm(question)) return;
+    if (!window.confirm(question)) {
+      // 앱 웹뷰는 다른 창이 떠 있으면 확인 창이 조용히 «취소»로 끝난다 — 반응 없음으로 보이지 않게 알린다
+      setMessage("게시를 취소했습니다. 게시하려면 «바로 게시»를 다시 눌러 주세요.");
+      return;
+    }
     handlePublish();
   }
 

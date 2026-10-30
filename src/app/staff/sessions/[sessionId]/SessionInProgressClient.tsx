@@ -640,7 +640,7 @@ export default function SessionInProgressClient({
           홈 인디케이터(safe-area)만큼만 아래 여백을 줘 겹침 없이 항상 접근 가능하게 한다. */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="rounded-2xl border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
-          <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} className="academy-button-danger min-h-14 w-full rounded-xl border-2 px-4 font-black disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined">stop_circle</span>수업 종료 확인</button>
+          <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} style={{ minHeight: 56, borderWidth: 2 }} className="academy-button-danger min-h-14 w-full rounded-xl border-2 px-4 font-black disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined">stop_circle</span>수업 종료 확인</button>
           {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-xs font-bold text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
         </div>
       </div>
