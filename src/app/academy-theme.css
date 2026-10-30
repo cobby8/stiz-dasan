@@ -106,12 +106,14 @@
   letter-spacing: -0.025em;
 }
 
-.academy-app :is(.academy-button-primary, .academy-button-secondary) {
+/* 버튼 등급(게슈탈트 «유사성»): 한 화면의 주인공은 primary 하나, 보조는 secondary,
+   행 안의 작은 작업은 tonal(옅은 바탕), 되돌리기 어려운 작업은 danger(테두리) → 최종 확정만 danger-solid. */
+.academy-app :is(.academy-button-primary, .academy-button-secondary, .academy-button-tonal, .academy-button-danger, .academy-button-danger-solid, .academy-button-text) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  min-height: 2.5rem;
+  min-height: 2.75rem;
   padding: 0.5rem 0.875rem;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -139,6 +141,101 @@
 
 .academy-app .academy-button-secondary:hover:not(:disabled) {
   border-color: var(--color-academy-primary);
+  background: var(--color-academy-soft);
+}
+
+/* 행 안의 작은 작업 — 꽉 찬 주인공 버튼이 행마다 반복되지 않게 */
+.academy-app .academy-button-tonal {
+  border: 1px solid transparent;
+  background: var(--color-academy-primary-soft);
+  color: var(--color-academy-primary);
+}
+
+.academy-app .academy-button-tonal:hover:not(:disabled) {
+  border-color: var(--color-academy-primary);
+}
+
+/* 위험 작업(취소·삭제·탈퇴·운행 종료) — 평소엔 테두리, 확인 단계의 최종 버튼만 꽉 찬 위험색 */
+.academy-app .academy-button-danger {
+  border: 1px solid var(--color-academy-danger);
+  background: var(--color-academy-surface);
+  color: var(--color-academy-danger);
+}
+
+.academy-app .academy-button-danger:hover:not(:disabled) {
+  background: var(--color-academy-danger-soft);
+}
+
+.academy-app .academy-button-danger-solid {
+  border: 1px solid var(--color-academy-danger);
+  background: var(--color-academy-danger);
+  color: #ffffff;
+}
+
+.academy-app .academy-button-danger-solid:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+/* 글자만 있는 버튼(돌아가기·닫기·되돌리기) */
+.academy-app .academy-button-text {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-academy-muted);
+}
+
+.academy-app .academy-button-text:hover:not(:disabled) {
+  color: var(--color-academy-ink);
+  background: var(--color-academy-soft);
+}
+
+.academy-app :is(.academy-button-primary, .academy-button-secondary, .academy-button-tonal, .academy-button-danger, .academy-button-danger-solid, .academy-button-text):disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 주황 테두리 + 체크 */
+.academy-app .academy-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-academy-line);
+  background: var(--color-academy-surface);
+  color: var(--color-academy-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.academy-app .academy-choice[aria-pressed="true"],
+.academy-app .academy-choice[aria-checked="true"],
+.academy-app .academy-choice.is-selected {
+  border: 2px solid var(--color-academy-primary);
+  background: var(--color-academy-primary-soft);
+  color: var(--color-academy-primary);
+}
+
+.academy-app .academy-choice[aria-pressed="true"]::before,
+.academy-app .academy-choice[aria-checked="true"]::before,
+.academy-app .academy-choice.is-selected::before {
+  content: "✓";
+  font-weight: 800;
+}
+
+/* 뒤로가기 — 누르는 영역 44×44 */
+.academy-app .academy-back-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  color: var(--color-academy-ink);
+}
+
+.academy-app .academy-back-link:hover {
   background: var(--color-academy-soft);
 }
 
