@@ -56,11 +56,11 @@ export default function TestimonialCarousel({
     ));
   };
 
+  // 홈 섹션 제목 규칙(게슈탈트 P-06): 왼쪽 정렬 22px 제목 하나 — 영문 라벨·부제 생략
   return (
     <SectionLayout
-      label="REVIEWS"
+      compactHeading
       title="학부모님들의 생생한 후기"
-      description="스티즈 농구교실을 경험한 학부모님들의 이야기입니다"
       bgColor="section"
       className="public-content-section"
     >

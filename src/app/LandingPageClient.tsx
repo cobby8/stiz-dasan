@@ -43,10 +43,13 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
     <>
       <section className="public-home-hero" aria-labelledby="public-home-title">
         {heroPhoto && <img src={heroPhoto.url} alt={heroPhoto.alt} fetchPriority="high" decoding="async" className="public-home-hero__image" />}
+        {/* 게슈탈트 P-01: 컴팩트 히어로(PC 160px·모바일 200px 이하) — 제목 + 소개 1줄 + 버튼.
+            영문 kicker 는 뺐다. PC 는 글과 버튼을 한 줄에, 모바일은 위아래로 쌓는다. */}
         <div className="public-home-hero__content">
-          <p className="public-home-kicker">STIZ BASKETBALL CLUB · DASAN</p>
-          <h1 id="public-home-title">{settings.introductionTitle || "스티즈 농구교실"}</h1>
-          <p className="public-home-lead">농구를 즐기며 건강하게 성장하는 시간.<br />우리 아이에게 맞는 수업을 만나보세요.</p>
+          <div className="public-home-hero__text">
+            <h1 id="public-home-title">{settings.introductionTitle || "스티즈 농구교실"}</h1>
+            <p className="public-home-lead">우리 아이에게 맞는 수업을 만나보세요.</p>
+          </div>
           <div className="public-home-hero__actions">
             <Link href="/apply">체험·수강 신청 <span aria-hidden="true">↗</span></Link>
             <Link href="/programs">전체 프로그램 보기 <span aria-hidden="true">→</span></Link>
@@ -76,11 +79,11 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
         const url = srcMatch ? srcMatch[1] : raw;
         const videoId = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/)?.[1];
         if (!videoId) return null;
-        return <SectionLayout label="VIDEO" title="스티즈 농구교실 영상" bgColor="white" className="public-content-section"><div className="public-home-video">
+        return <SectionLayout compactHeading title="스티즈 농구교실 영상" bgColor="white" className="public-content-section"><div className="public-home-video">
           <iframe src={`https://www.youtube.com/embed/${videoId}?rel=0`} title="STIZ 농구교실 소개" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen loading="lazy" />
         </div></SectionLayout>;
       })()}
-      {displayImages.length > 0 && <SectionLayout label="GALLERY" title="학원 활동 사진" description="아이들의 즐거운 농구 수업 모습을 확인하세요" bgColor="section" className="public-content-section">
+      {displayImages.length > 0 && <SectionLayout compactHeading title="학원 활동 사진" bgColor="section" className="public-content-section">
         <div className="public-home-gallery">{displayImages.map((url, i) => <Link key={url} href="/gallery" aria-label={`학원 활동 사진 ${i + 1} · 갤러리 보기`}>
           <img src={url} alt={`학원 활동 사진 ${i + 1}`} loading="lazy" decoding="async" />
         </Link>)}</div>

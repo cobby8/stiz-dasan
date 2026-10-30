@@ -2,11 +2,12 @@
 .stiz-public-sport .public-home-hero{position:relative;isolation:isolate;overflow:hidden;background:var(--color-public-dark);color:var(--color-public-hero-ink)}
 .stiz-public-sport .public-home-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,var(--color-public-hero-scrim),var(--color-public-hero-clear))}
 .stiz-public-sport .public-home-hero__image{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;object-position:center 58%}
-.stiz-public-sport .public-home-hero__content{width:min(100% - 3rem,72rem);margin-inline:auto;min-height:27rem;padding-block:3rem;display:flex;flex-direction:column;justify-content:center;align-items:flex-start}
-.stiz-public-sport .public-home-kicker{font-size:.68rem;letter-spacing:.16em;font-weight:800;margin-bottom:1.2rem}
-.stiz-public-sport .public-home-hero h1{font-size:clamp(2rem,4vw,3.4rem);font-weight:900;letter-spacing:-.055em;line-height:1.24;max-width:38rem;text-wrap:balance;word-break:keep-all;color:var(--color-public-hero-ink)}
-.stiz-public-sport .public-home-lead{font-size:.94rem;line-height:1.85;margin-top:1.3rem;word-break:keep-all}
-.stiz-public-sport .public-home-hero__actions{display:flex;flex-wrap:wrap;gap:.65rem;margin-top:1.6rem}
+/* 게슈탈트 P-01 컴팩트 히어로: PC 는 글·버튼 한 줄(약 130px, 160px 이하), 모바일은 쌓아서 200px 이하 */
+.stiz-public-sport .public-home-hero__content{width:min(100% - 3rem,72rem);margin-inline:auto;min-height:8.5rem;padding-block:1.25rem;display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:1.5rem}
+.stiz-public-sport .public-home-hero__text{min-width:0}
+.stiz-public-sport .public-home-hero h1{font-size:clamp(1.6rem,3vw,2.2rem);font-weight:900;letter-spacing:-.045em;line-height:1.24;max-width:38rem;margin:0;text-wrap:balance;word-break:keep-all;color:var(--color-public-hero-ink)}
+.stiz-public-sport .public-home-lead{font-size:.94rem;line-height:1.6;margin-top:.35rem;word-break:keep-all}
+.stiz-public-sport .public-home-hero__actions{display:flex;flex-wrap:wrap;gap:.65rem;flex-shrink:0}
 .stiz-public-sport .public-home-hero__actions a{display:inline-flex;align-items:center;justify-content:center;gap:1.4rem;min-height:2.8rem;padding:.72rem 1.15rem;font-size:.82rem;font-weight:800;background:var(--color-public-orange);color:var(--color-public-dark);border-radius:var(--color-public-radius);border:1px solid transparent;text-decoration:none}
 /* 게슈탈트 P-02: 주인공은 첫 버튼 하나. 두 번째는 사진 위 보조(투명+흰 테두리) */
 .stiz-public-sport .public-home-hero__actions a+a{background:transparent;color:var(--color-public-white);border:1px solid var(--color-public-white)}
@@ -32,7 +33,7 @@
 .stiz-public-sport .public-home-facts strong{font-size:.92rem;font-weight:800}
 .stiz-public-sport .public-home-facts span{font-size:.7rem;line-height:1.7;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-process{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:2rem}
-.stiz-public-sport .public-process h2{font-size:1.4rem;font-weight:800;letter-spacing:-.035em;margin-bottom:1.3rem}
+.stiz-public-sport .public-process h2{font-size:1.375rem;font-weight:800;letter-spacing:-.035em;margin-bottom:1rem}
 .stiz-public-sport .public-process ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1.3rem;margin:0;padding:0;list-style:none}
 .stiz-public-sport .public-process li{display:flex;align-items:flex-start;gap:.65rem;min-width:0}
 .stiz-public-sport .public-process__number{width:1.8rem;height:1.8rem;flex-shrink:0;display:grid;place-items:center;font-size:.78rem;font-weight:800;background:var(--color-public-tint);color:var(--color-public-accent);border-radius:var(--color-public-radius)}
@@ -48,7 +49,7 @@
 .stiz-public-sport .public-cta{background:var(--color-public-dark);color:var(--color-public-white);padding:1.7rem 0}
 .stiz-public-sport .public-cta__inner{width:min(100% - 3rem,72rem);margin-inline:auto;display:flex;align-items:center;justify-content:space-between;gap:1.5rem}
 .stiz-public-sport .public-cta__content{min-width:0}
-.stiz-public-sport .public-cta h2{font-size:1.4rem;font-weight:800;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
+.stiz-public-sport .public-cta h2{font-size:1.375rem;font-weight:800;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
 .stiz-public-sport .public-cta p{font-size:.8rem;line-height:1.8;margin-top:.5rem}
 .stiz-public-sport .public-cta__actions{display:flex;flex-wrap:wrap;gap:.6rem;flex-shrink:0;align-items:center}
 .stiz-public-sport .public-cta__actions>*{display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.7rem 1rem;border-radius:var(--color-public-radius);font-size:.78rem;font-weight:700;text-decoration:none;gap:.9rem;background:var(--color-public-orange);color:var(--color-public-dark);border:1px solid transparent}
@@ -56,8 +57,8 @@
 .stiz-public-sport .public-cta__actions>*+*:hover{background:var(--color-public-on-dark-hover)}
 @media(max-width:1023px){.stiz-public-sport .public-cta__inner{align-items:flex-start;flex-direction:column;gap:1rem}}
 @media(max-width:767px){
- .stiz-public-sport .public-home-hero__content{min-height:25rem;padding-block:2.25rem;width:calc(100% - 2rem)}
- .stiz-public-sport .public-home-hero h1{font-size:2.2rem;max-width:25rem}
+ .stiz-public-sport .public-home-hero__content{min-height:0;padding-block:1rem;width:calc(100% - 2rem);flex-direction:column;align-items:flex-start;gap:.75rem}
+ .stiz-public-sport .public-home-hero h1{font-size:1.6rem;max-width:25rem}
  .stiz-public-sport .public-home-hero__image{object-position:63% center}
  .stiz-public-sport .public-home-lead{font-size:.83rem}
  .stiz-public-sport .public-home-hero__actions{gap:.5rem}
@@ -71,9 +72,7 @@
  .stiz-public-sport .public-process{padding-block:1.5rem}
  .stiz-public-sport .public-process ol{grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
  .stiz-public-sport .public-process li{gap:.5rem}
- .stiz-public-sport .public-process h2{font-size:1.25rem}
  .stiz-public-sport .public-home-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
- .stiz-public-sport .public-cta h2{font-size:1.25rem}
  .stiz-public-sport .public-cta__actions{width:100%;flex-shrink:1}
  .stiz-public-sport .public-cta__actions>*{padding-inline:.8rem;font-size:.76rem}
 }

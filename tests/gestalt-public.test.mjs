@@ -99,3 +99,29 @@ test("C-P3·P-03 플로팅 버튼은 하단 고정 바 높이만큼 올라가고
   const helper = read("src/components/public-floating.tsx");
   assert.ok(helper.includes('root.style.setProperty("--public-bottom-bar"') && helper.includes("body.dataset.publicOverlay"));
 });
+
+test("P-01 홈 히어로는 컴팩트(영문 kicker 없음·제목 clamp·소개 1줄·PC 한 줄 배치)", () => {
+  const landing = read("src/app/LandingPageClient.tsx");
+  assert.doesNotMatch(landing, /public-home-kicker|STIZ BASKETBALL CLUB/);
+  assert.match(landing, /<p className="public-home-lead">[^<]+<\/p>/); // <br> 없는 한 줄
+  assert.doesNotMatch(homeCss, /min-height:2[57]rem/);
+  assert.match(homeCss, /\.public-home-hero__content\{[^}]*min-height:8\.5rem;padding-block:1\.25rem;display:flex;flex-direction:row/);
+  assert.match(homeCss, /\.public-home-hero h1\{font-size:clamp\(1\.6rem,3vw,2\.2rem\)/);
+  // 기능 보존: 두 버튼 경로와 사진 위 글자(스크림 오버레이)
+  assert.ok(landing.includes('<Link href="/apply">') && landing.includes('<Link href="/programs">'));
+  assert.match(homeCss, /\.public-home-hero::after\{[^}]*linear-gradient/);
+});
+
+test("P-06 홈 섹션 제목은 왼쪽 정렬 22px 하나, 영문 라벨 없음 — 다른 페이지는 기존 모양", () => {
+  const landing = read("src/app/LandingPageClient.tsx");
+  assert.doesNotMatch(landing, /label="(VIDEO|GALLERY)"/);
+  assert.equal(landing.match(/<SectionLayout compactHeading /g)?.length, 2);
+  assert.match(read("src/components/landing/TestimonialCarousel.tsx"), /compactHeading/);
+  assert.doesNotMatch(read("src/components/landing/TestimonialCarousel.tsx"), /label="REVIEWS"/);
+  const layout = read("src/components/ui/SectionLayout.tsx");
+  assert.match(layout, /compactHeading && title && \(\s*<h2 className="mb-4 text-left text-\[22px\]/);
+  assert.match(layout, /!compactHeading && \(label \|\| title \|\| description\)/);
+  assert.match(layout, /text-center mb-12 md:mb-16/); // 기존(예: /programs) 제목 모양 유지
+  assert.match(homeCss, /\.public-process h2\{font-size:1\.375rem/);
+  assert.match(homeCss, /\.public-cta h2\{font-size:1\.375rem/);
+});

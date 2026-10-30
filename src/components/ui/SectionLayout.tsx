@@ -28,6 +28,8 @@ interface SectionLayoutProps {
   bgColor?: BgColor;    // 배경색 (기본: white)
   children: React.ReactNode;
   className?: string;
+  /** 홈 화면용 — 왼쪽 정렬 22px 제목 하나만(라벨·설명은 그려지지 않음). 게슈탈트 P-06 */
+  compactHeading?: boolean;
 }
 
 // 배경색별 Tailwind 클래스 매핑
@@ -45,6 +47,7 @@ export default function SectionLayout({
   bgColor = 'white',
   children,
   className = '',
+  compactHeading = false,
 }: SectionLayoutProps) {
   return (
     <section id={id} className={`${bgColorStyles[bgColor]} ${className} transition-colors duration-300`}>
@@ -54,8 +57,13 @@ export default function SectionLayout({
         mx-auto px-4: 중앙 정렬 + 좌우 패딩
       */}
       <div className="max-w-6xl mx-auto px-4 py-16 md:py-24">
+        {/* 홈 컴팩트 제목: 왼쪽 정렬 22px 하나. 다른 페이지(/programs 등)는 아래 기존 모양 그대로 */}
+        {compactHeading && title && (
+          <h2 className="mb-4 text-left text-[22px] font-extrabold leading-snug text-gray-900 dark:text-white">{title}</h2>
+        )}
+
         {/* 제목 영역: 라벨 + 제목 + 설명이 있을 때만 렌더링 */}
-        {(label || title || description) && (
+        {!compactHeading && (label || title || description) && (
           <div className="text-center mb-12 md:mb-16">
             {/* 라벨: 작은 대문자 텍스트 — "ABOUT US" 같은 섹션 구분자 */}
             {label && (
