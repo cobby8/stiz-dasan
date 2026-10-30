@@ -116,3 +116,18 @@ test("A-03 탈퇴: 신청 반려가 먼저, 탈퇴 처리는 위험 칸(뒤)", (
   assert.ok(source.indexOf('key: "reject"') < source.indexOf('key: "approve"'));
   assert.match(source, /<AdminConfirmDialog/);
 });
+
+test("A-05 카카오 접수함: 접수 반려는 2x2 칸 밖 아래 줄 위험색", () => {
+  const source = read("../src/app/admin/kakao-requests/KakaoRequestsClient.tsx");
+  assert.doesNotMatch(source, /\["REJECT","접수 반려"\]/);
+  assert.match(source, /onClick=\{\(\) => decide\(row\.id, "REJECT"\)\} className="academy-button-danger">접수 반려<\/button>/);
+  assert.match(source, /decide\(row\.id,"TRANSFER"\)/);
+});
+
+test("A-06 신청·체험: 따로 만든 메뉴 대신 공용 ⚡ 메뉴, 형광 연두 승인 제거", () => {
+  for (const path of ["../src/app/admin/apply/ApplyAdminClient.tsx", "../src/app/admin/trial/TrialCrmClient.tsx"]) {
+    const source = read(path);
+    assert.match(source, /<AdminQuickActionMenu label=/, path);
+    assert.doesNotMatch(source, /LIST_ACTION_PRIMARY_CLASS|bg-lime-500|more_horiz/, path);
+  }
+});

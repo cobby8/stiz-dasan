@@ -8,6 +8,7 @@ import Link from "next/link";
 import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ManualSmsModal from "./ManualSmsModal";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -269,10 +270,6 @@ const APPLY_VIEW_OPTIONS = [
     { value: "status", label: "상태별", icon: "view_agenda" },
 ] as const;
 const DAY_SHORT_LABELS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
-const LIST_ACTION_TRIGGER_CLASS = "inline-flex size-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime";
-const LIST_ACTION_MENU_CLASS = "absolute right-2 top-9 z-50 w-44 rounded-xl border border-gray-200 bg-white p-1.5 text-left shadow-xl dark:border-gray-700 dark:bg-gray-950";
-const LIST_ACTION_ITEM_CLASS = "flex min-h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-gray-800";
-const LIST_ACTION_PRIMARY_CLASS = "flex min-h-9 w-full items-center gap-2 rounded-lg bg-lime-500 px-3 text-left text-xs font-black text-brand-navy-900 transition hover:bg-lime-400 disabled:opacity-50";
 
 const APPLICATION_WORK_FILTERS: Array<{ value: ApplicationWorkFilter; label: string; icon: string }> = [
     { value: "ALL", label: "운영 전체", icon: "view_list" },
@@ -488,7 +485,6 @@ export default function ApplyAdminClient({
     const [manualSmsModal, setManualSmsModal] = useState<ManualSmsModalState>(null);
     const [contactBusyId, setContactBusyId] = useState<string | null>(null);
     const [manualSmsBusy, setManualSmsBusy] = useState(false);
-    const [openQuickActionId, setOpenQuickActionId] = useState<string | null>(null);
     // 체험과 연결되지 않은 신청서별 "체험 기록 후보"(신청서 id → 후보). 수강신청 탭을 열 때 한 번 읽는다.
     const [trialSuggestions, setTrialSuggestions] = useState<Record<string, TrialLinkSuggestion[]> | null>(null);
     const [trialLinkBusyId, setTrialLinkBusyId] = useState<string | null>(null);
@@ -869,6 +865,29 @@ export default function ApplyAdminClient({
         );
     }
 
+    // ⚡ 작업 목록 — 예전 «⋯» 메뉴와 같은 조건·같은 함수·같은 인자(보이는 모양만 공용 메뉴로)
+    function buildApplicationQuickActions(app: EnrollApplication, parentPhoneHref: string | undefined): AdminQuickAction[] {
+        const actions: AdminQuickAction[] = [
+            { key: "call", label: "전화", icon: "call", disabled: !parentPhoneHref, onSelect: () => { if (parentPhoneHref) window.location.href = parentPhoneHref; } },
+            { key: "sms", label: "문자 보내기", icon: "sms", disabled: manualSmsBusy, onSelect: () => setManualSmsModal({ app }) },
+            { key: "contacted", label: "연락 완료", icon: "done_all", disabled: contactBusyId === app.id, onSelect: () => handleRecordContact(app, "CONTACTED") },
+            { key: "memo", label: "메모", icon: "edit_note", onSelect: () => setContactModal({ app, defaultAction: "MEMO" }) },
+        ];
+        if (app.status === "REJECTED" && !app.convertedStudentId) {
+            actions.push({ key: "reopen", label: "재검토로 되돌리기", icon: "restart_alt", onSelect: () => setShowReopenModal(app) });
+        }
+        if (app.status === "PENDING") {
+            // 승인 전에 상담 결과를 반영해 신청 내용을 고칠 수 있다(승인 후에는 원생/수강 등록 메뉴에서).
+            actions.push(
+                { key: "edit", label: "수정", icon: "edit", onSelect: () => setShowEditModal(app) },
+                { key: "approve", label: "승인", icon: "check_circle", tone: "primary", onSelect: () => setShowApproveModal(app) },
+                { key: "reject", label: "반려", icon: "cancel", tone: "danger", onSelect: () => setShowRejectModal(app) },
+                { key: "cancel", label: "취소", icon: "block", tone: "danger", onSelect: () => setShowCancelModal(app) },
+            );
+        }
+        return actions;
+    }
+
     // 목록 한 줄(행). 목록 보기와 상태별 보기가 같은 행을 쓴다.
     // 긴 값(셔틀 주소·긴 반 이름)은 짧게 보여주고 전체 내용은 행을 눌러 여는 상세 패널에서 본다(말줄임 금지).
     function renderApplicationRow(app: EnrollApplication) {
@@ -876,7 +895,6 @@ export default function ApplyAdminClient({
         const age = calcAge(app.childBirthDate);
         const preferredSlotShort = formatPreferredSlotsShort(app.preferredSlotKeys, classesBySlotKey);
         const parentPhoneHref = phoneHref(app.parentPhone);
-        const isActionOpen = openQuickActionId === app.id;
         // 체험과 아직 연결 안 된 신청서에만 후보 1건(가장 유력한 것)을 같은 줄의 작은 버튼으로 보여준다.
         const trialSuggestion = !app.trialLeadId ? trialSuggestions?.[app.id]?.[0] ?? null : null;
         const trialSuggestionLabel = trialSuggestion
@@ -887,14 +905,12 @@ export default function ApplyAdminClient({
                 key={`${app.id}-list`}
                 tabIndex={0}
                 onClick={() => {
-                    setOpenQuickActionId(null);
                     setShowDetailModal(app);
                 }}
                 onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return; // 행 안 버튼(⚡·체험 연결)의 Enter/Space 는 버튼이 처리
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        setOpenQuickActionId(null);
                         setShowDetailModal(app);
                     }
                 }}
@@ -942,76 +958,9 @@ export default function ApplyAdminClient({
                 </td>
                 <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 lg:table-cell">{formatEnrollmentMonthsShort(app.enrollmentMonths)}</td>
                 <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">{app.shuttleNeeded ? "이용" : "미이용"}</td>
-                <td className="admin-cell-center relative px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-                    <button
-                        type="button"
-                        onClick={() => setOpenQuickActionId((current) => (current === app.id ? null : app.id))}
-                        className={LIST_ACTION_TRIGGER_CLASS}
-                        aria-expanded={isActionOpen}
-                        aria-label={`${app.childName} 빠른 처리 열기`}
-                    >
-                        <span className="material-symbols-outlined text-lg">more_horiz</span>
-                    </button>
-                    {isActionOpen && (
-                        <div className={LIST_ACTION_MENU_CLASS}>
-                            <a href={parentPhoneHref} className={LIST_ACTION_ITEM_CLASS}>
-                                <span className="material-symbols-outlined text-base">call</span>
-                                전화
-                            </a>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setOpenQuickActionId(null);
-                                    setManualSmsModal({ app });
-                                }}
-                                disabled={manualSmsBusy}
-                                className={`${LIST_ACTION_ITEM_CLASS} disabled:opacity-50`}
-                            >
-                                <span className="material-symbols-outlined text-base">sms</span>
-                                문자 보내기
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handleRecordContact(app, "CONTACTED")}
-                                disabled={contactBusyId === app.id}
-                                className={`${LIST_ACTION_ITEM_CLASS} disabled:opacity-50`}
-                            >
-                                <span className="material-symbols-outlined text-base">done_all</span>
-                                연락 완료
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setContactModal({ app, defaultAction: "MEMO" })}
-                                className={LIST_ACTION_ITEM_CLASS}
-                            >
-                                <span className="material-symbols-outlined text-base">edit_note</span>
-                                메모
-                            </button>
-                            {app.status === "REJECTED" && !app.convertedStudentId && <button type="button" onClick={() => { setOpenQuickActionId(null); setShowReopenModal(app); }} className={LIST_ACTION_ITEM_CLASS}><span className="material-symbols-outlined text-base">restart_alt</span>재검토로 되돌리기</button>}
-                            {app.status === "PENDING" && (
-                                <>
-                                    {/* 승인 전에 상담 결과를 반영해 신청 내용을 고칠 수 있다.
-                                        승인 후에는 원생/수강 등록 메뉴에서 고쳐야 하므로 PENDING 에만 노출한다. */}
-                                    <button type="button" onClick={() => setShowEditModal(app)} className={LIST_ACTION_ITEM_CLASS}>
-                                        <span className="material-symbols-outlined text-base">edit</span>
-                                        수정
-                                    </button>
-                                    <button type="button" onClick={() => setShowApproveModal(app)} className={LIST_ACTION_PRIMARY_CLASS}>
-                                        <span className="material-symbols-outlined text-base">check_circle</span>
-                                        승인
-                                    </button>
-                                    <button type="button" onClick={() => setShowRejectModal(app)} className={LIST_ACTION_ITEM_CLASS}>
-                                        <span className="material-symbols-outlined text-base">cancel</span>
-                                        반려
-                                    </button>
-                                    <button type="button" onClick={() => setShowCancelModal(app)} className={LIST_ACTION_ITEM_CLASS}>
-                                        <span className="material-symbols-outlined text-base">block</span>
-                                        취소
-                                    </button>
-                                </>
-                            )}
-                        </div>
-                    )}
+                <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                    {/* 공용 ⚡ 메뉴(게슈탈트 A-06) — 따로 만든 «⋯» 복사본 대신. 승인=주인공, 반려·취소=위험(구분선 아래) */}
+                    <AdminQuickActionMenu label={`${app.childName} 빠른 처리`} actions={buildApplicationQuickActions(app, parentPhoneHref)} />
                 </td>
             </tr>
         );

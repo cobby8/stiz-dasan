@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -136,30 +137,7 @@ type ContactActionType = "CONTACTED" | "NO_ANSWER" | "FOLLOW_UP" | "MEMO";
 type ContactModalState = { lead: TrialLead; defaultAction: ContactActionType } | null;
 type EnrollGuideConfirmState = { lead: TrialLead; convertAfterConfirm: boolean } | null;
 type ManualSmsModalState = { lead: TrialLead } | null;
-const LIST_ACTION_TRIGGER_CLASS = "inline-flex size-9 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-500/20 transition hover:scale-105 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:shadow-brand-neon-lime/20 dark:hover:bg-lime-300";
-const LIST_ACTION_MENU_CLASS = "fixed z-[80] flex max-h-[70vh] w-44 -translate-y-1/2 flex-col gap-2 overflow-y-auto rounded-2xl border border-gray-200 bg-white/95 p-2 text-left shadow-2xl backdrop-blur dark:border-gray-700 dark:bg-gray-950/95";
-const LIST_ACTION_ITEM_CLASS = "flex min-h-9 w-full items-center justify-between gap-2 rounded-full border border-gray-200 bg-white px-2 pl-3 text-left text-xs font-black text-gray-700 shadow-sm transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime";
-const LIST_ACTION_PRIMARY_CLASS = "flex min-h-9 w-full items-center justify-between gap-2 rounded-full bg-brand-neon-lime px-2 pl-3 text-left text-xs font-black text-brand-navy-900 shadow-sm transition hover:bg-lime-300 disabled:opacity-50";
-const LIST_ACTION_ICON_CLASS = "inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900";
 const DETAIL_ACTION_CLASS = "inline-flex min-h-8 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-bold text-gray-700 transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 dark:border-gray-700 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10";
-const QUICK_ACTION_MENU_WIDTH = 176;
-const QUICK_ACTION_MENU_HALF_HEIGHT = 176;
-
-type QuickActionMenuPosition = {
-    top: number;
-    left: number;
-};
-
-function getQuickActionMenuPosition(button: HTMLButtonElement): QuickActionMenuPosition {
-    const rect = button.getBoundingClientRect();
-    const maxLeft = Math.max(8, window.innerWidth - QUICK_ACTION_MENU_WIDTH - 8);
-    const left = Math.min(Math.max(8, rect.left - QUICK_ACTION_MENU_WIDTH - 8), maxLeft);
-    const minTop = Math.min(window.innerHeight / 2, QUICK_ACTION_MENU_HALF_HEIGHT + 8);
-    const maxTop = Math.max(minTop, window.innerHeight - QUICK_ACTION_MENU_HALF_HEIGHT - 8);
-    const top = Math.min(Math.max(rect.top + rect.height / 2, minTop), maxTop);
-    return { top, left };
-}
-
 const EMPTY_STATS: TrialStats = {
     NEW: 0,
     CONTACTED: 0,
@@ -686,25 +664,8 @@ export default function TrialCrmClient({
     const [manualSmsModal, setManualSmsModal] = useState<ManualSmsModalState>(null);
     const [contactBusyId, setContactBusyId] = useState<string | null>(null);
     const [manualSmsBusy, setManualSmsBusy] = useState(false);
-    const [openQuickActionId, setOpenQuickActionId] = useState<string | null>(null);
-    const [quickActionMenuPosition, setQuickActionMenuPosition] = useState<QuickActionMenuPosition | null>(null);
 	const feedbackTimerRef = useRef<number | null>(null);
     const hasTrialModal = Boolean(showAddModal || showEditModal || showScheduleModal || showCancelModal || showConvertModal || showLostModal || showMemoModal);
-
-    const closeQuickActionMenu = useCallback(() => {
-        setOpenQuickActionId(null);
-        setQuickActionMenuPosition(null);
-    }, []);
-
-    const toggleQuickActionMenu = useCallback((event: MouseEvent<HTMLButtonElement>, leadId: string) => {
-        event.stopPropagation();
-        if (openQuickActionId === leadId) {
-            closeQuickActionMenu();
-            return;
-        }
-        setQuickActionMenuPosition(getQuickActionMenuPosition(event.currentTarget));
-        setOpenQuickActionId(leadId);
-    }, [closeQuickActionMenu, openQuickActionId]);
 
     const loadTrialData = useCallback(async (options?: { append?: boolean; offset?: number }) => {
         const append = Boolean(options?.append);
@@ -740,21 +701,6 @@ export default function TrialCrmClient({
         if (hasInitialData) return;
         void loadTrialData();
     }, [hasInitialData, loadTrialData]);
-
-    useEffect(() => {
-        if (!openQuickActionId) return;
-        const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") closeQuickActionMenu();
-        };
-        window.addEventListener("resize", closeQuickActionMenu);
-        window.addEventListener("scroll", closeQuickActionMenu, true);
-        window.addEventListener("keydown", handleEscape);
-        return () => {
-            window.removeEventListener("resize", closeQuickActionMenu);
-            window.removeEventListener("scroll", closeQuickActionMenu, true);
-            window.removeEventListener("keydown", handleEscape);
-        };
-    }, [closeQuickActionMenu, openQuickActionId]);
 
     const classesBySlotKey = useMemo(() => {
         const map = new Map<string, ClassInfo>();
@@ -871,7 +817,6 @@ export default function TrialCrmClient({
         if (busy) return;
         if (newStatus === "ATTENDED" && !confirm(`"${lead.childName}" 학생의 체험수업을 완료 처리할까요? 완료 안내 문자가 발송될 수 있습니다.`)) return;
         if (newStatus === "CONVERTED" && lead.status !== "CONVERTED") {
-            closeQuickActionMenu();
             setEnrollGuideConfirm({ lead, convertAfterConfirm: true });
             return;
         }
@@ -1019,31 +964,42 @@ export default function TrialCrmClient({
         setEnrollGuideConfirm({ lead, convertAfterConfirm: false });
     }
 
-    function renderActionIcon(icon: string, primary = false) {
-        return (
-            <span className={primary ? "inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-navy-900 text-white" : LIST_ACTION_ICON_CLASS}>
-                <span className="material-symbols-outlined text-base">{icon}</span>
-            </span>
-        );
-    }
-
-    function renderEnrollGuideButton(lead: TrialLead) {
+    // 체험 완료 뒤 «수강신청 안내/안내 재발송» — ⚡ 의 주인공(primary) 작업. 같은 handleSendEnrollGuide(lead)
+    function buildEnrollGuideAction(lead: TrialLead): AdminQuickAction | null {
         if (lead.status !== "ATTENDED" || lead.enrollApplicationReceivedAt) return null;
         const label = lead.enrollGuideSentAt ? "안내 재발송" : "수강신청 안내";
-        return (
-            <button
-                type="button"
-                onClick={() => {
-                    closeQuickActionMenu();
-                    void handleSendEnrollGuide(lead);
-                }}
-                disabled={busy}
-                className={LIST_ACTION_PRIMARY_CLASS}
-            >
-                <span>{label}</span>
-                {renderActionIcon("send", true)}
-            </button>
-        );
+        return { key: "enroll-guide", label, icon: "send", tone: "primary", disabled: busy, onSelect: () => handleSendEnrollGuide(lead) };
+    }
+
+    // ⚡ 작업 목록 — 예전 메뉴의 버튼과 같은 조건·같은 함수·같은 인자(보이는 모양만 공용 메뉴로)
+    function buildTrialQuickActions(lead: TrialLead, parentPhoneHref: string | undefined): AdminQuickAction[] {
+        const actions: AdminQuickAction[] = [
+            { key: "call", label: "전화", icon: "call", disabled: !parentPhoneHref, onSelect: () => { if (parentPhoneHref) window.location.href = parentPhoneHref; } },
+            { key: "sms", label: "문자 보내기", icon: "sms", disabled: manualSmsBusy, onSelect: () => setManualSmsModal({ lead }) },
+        ];
+        if (!isClosedTrialStatus(lead.status) && (lead.status === "NEW" || lead.status === "CONTACTED" || lead.status === "SCHEDULED")) {
+            actions.push({ key: "schedule", label: lead.status === "SCHEDULED" ? "일정 변경" : "일정 확정", icon: "event_available", onSelect: () => setShowScheduleModal(lead) });
+        }
+        if (lead.status === "NEW") {
+            actions.push({ key: "contact", label: "연락 기록", icon: "phone_callback", disabled: contactBusyId === lead.id, onSelect: () => setContactModal({ lead, defaultAction: "CONTACTED" }) });
+        }
+        actions.push({ key: "memo", label: "메모", icon: "edit_note", disabled: contactBusyId === lead.id, onSelect: () => setContactModal({ lead, defaultAction: "MEMO" }) });
+        if (lead.status === "SCHEDULED") {
+            // 입금 완료면 누를 수 없는 표시 줄(예전과 같음)
+            actions.push(lead.trialFeeConfirmed
+                ? { key: "fee-done", label: "입금 완료", icon: "paid", disabled: true, onSelect: () => undefined }
+                : { key: "fee", label: trialFeeBusyId === lead.id ? "확인 중…" : "입금 확인", icon: trialFeeBusyId === lead.id ? "progress_activity" : "paid", disabled: Boolean(trialFeeBusyId), onSelect: () => handleConfirmTrialFee(lead) });
+            actions.push({ key: "attended", label: "체험 완료", icon: "check_circle", tone: "primary", disabled: busy, onSelect: () => handleStatusChange(lead, "ATTENDED") });
+        }
+        if (!isClosedTrialStatus(lead.status) && !lead.coachNoticeSentAt) {
+            actions.push({ key: "coach-notice", label: "쌤 알림", icon: "school", disabled: busy, onSelect: () => handleSendCoachNotice(lead) });
+        }
+        if (lead.smsDeliveryFailed > 0) {
+            actions.push({ key: "sms-resend", label: "문자 재발송", icon: "sms_failed", disabled: busy, onSelect: () => handleResendApplicationSms(lead) });
+        }
+        const enrollGuide = lead.status === "ATTENDED" ? buildEnrollGuideAction(lead) : null;
+        if (enrollGuide) actions.push(enrollGuide);
+        return actions;
     }
 
     async function handleSendCoachNotice(lead: TrialLead) {
@@ -1108,20 +1064,17 @@ export default function TrialCrmClient({
         const teacherLabel = formatTrialListTeacherName(lead, classesById, classesBySlotKey);
         const schoolLabel = lead.childSchool || "-";
         const gradeLabel = lead.childGrade || lead.childAge || "-";
-        const isActionOpen = openQuickActionId === lead.id;
         return (
             <tr
                 key={`${lead.id}-list`}
                 tabIndex={0}
                 onClick={() => {
-                    closeQuickActionMenu();
                     setShowDetailModal(lead);
                 }}
                 onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return; // 행 안 버튼(⚡·체험 연결)의 Enter/Space 는 버튼이 처리
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        closeQuickActionMenu();
                         setShowDetailModal(lead);
                     }
                 }}
@@ -1175,143 +1128,8 @@ export default function TrialCrmClient({
                     </span>
                 </td>
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
-                    <button
-                        type="button"
-                        onClick={(event) => toggleQuickActionMenu(event, lead.id)}
-                        className={LIST_ACTION_TRIGGER_CLASS}
-                        aria-expanded={isActionOpen}
-                        aria-label={`${lead.childName} 빠른 처리 열기`}
-                    >
-                        <span className="material-symbols-outlined text-lg">flash_on</span>
-                    </button>
-                    {isActionOpen && quickActionMenuPosition && (
-                        <div
-                            className={LIST_ACTION_MENU_CLASS}
-                            aria-label={`${lead.childName} 빠른 처리`}
-                            style={{
-                                top: `${quickActionMenuPosition.top}px`,
-                                left: `${quickActionMenuPosition.left}px`,
-                            }}
-                        >
-                            <a href={parentPhoneHref} onClick={closeQuickActionMenu} className={LIST_ACTION_ITEM_CLASS}>
-                                <span>전화</span>
-                                {renderActionIcon("call")}
-                            </a>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    closeQuickActionMenu();
-                                    setManualSmsModal({ lead });
-                                }}
-                                disabled={manualSmsBusy}
-                                className={LIST_ACTION_ITEM_CLASS}
-                            >
-                                <span>문자 보내기</span>
-                                {renderActionIcon("sms")}
-                            </button>
-                            {!isClosedTrialStatus(lead.status) && (lead.status === "NEW" || lead.status === "CONTACTED" || lead.status === "SCHEDULED") && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        setShowScheduleModal(lead);
-                                    }}
-                                    className={LIST_ACTION_ITEM_CLASS}
-                                >
-                                    <span>{lead.status === "SCHEDULED" ? "일정 변경" : "일정 확정"}</span>
-                                    {renderActionIcon("event_available")}
-                                </button>
-                            )}
-                            {lead.status === "NEW" && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        setContactModal({ lead, defaultAction: "CONTACTED" });
-                                    }}
-                                    disabled={contactBusyId === lead.id}
-                                    className={LIST_ACTION_ITEM_CLASS}
-                                >
-                                    <span>연락 기록</span>
-                                    {renderActionIcon("phone_callback")}
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    closeQuickActionMenu();
-                                    setContactModal({ lead, defaultAction: "MEMO" });
-                                }}
-                                disabled={contactBusyId === lead.id}
-                                className={LIST_ACTION_ITEM_CLASS}
-                            >
-                                <span>메모</span>
-                                {renderActionIcon("edit_note")}
-                            </button>
-                            {lead.status === "SCHEDULED" && (lead.trialFeeConfirmed ? (
-                                <div className={`${LIST_ACTION_ITEM_CLASS} pointer-events-none bg-emerald-50 text-emerald-700 opacity-90 dark:bg-emerald-950/30 dark:text-emerald-200`}>
-                                    <span>입금 완료</span>
-                                    {renderActionIcon("paid")}
-                                </div>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        void handleConfirmTrialFee(lead);
-                                    }}
-                                    disabled={Boolean(trialFeeBusyId)}
-                                    className={LIST_ACTION_ITEM_CLASS}
-                                >
-                                    <span>{trialFeeBusyId === lead.id ? "확인 중…" : "입금 확인"}</span>
-                                    {renderActionIcon(trialFeeBusyId === lead.id ? "progress_activity" : "paid")}
-                                </button>
-                            ))}
-                            {lead.status === "SCHEDULED" && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        void handleStatusChange(lead, "ATTENDED");
-                                    }}
-                                    disabled={busy}
-                                    className={LIST_ACTION_PRIMARY_CLASS}
-                                >
-                                    <span>체험 완료</span>
-                                    {renderActionIcon("check_circle", true)}
-                                </button>
-                            )}
-                            {!isClosedTrialStatus(lead.status) && !lead.coachNoticeSentAt && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        void handleSendCoachNotice(lead);
-                                    }}
-                                    disabled={busy}
-                                    className={LIST_ACTION_ITEM_CLASS}
-                                >
-                                    <span>쌤 알림</span>
-                                    {renderActionIcon("school")}
-                                </button>
-                            )}
-                            {lead.smsDeliveryFailed > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeQuickActionMenu();
-                                        void handleResendApplicationSms(lead);
-                                    }}
-                                    disabled={busy}
-                                    className={LIST_ACTION_ITEM_CLASS}
-                                >
-                                    <span>문자 재발송</span>
-                                    {renderActionIcon("sms_failed")}
-                                </button>
-                            )}
-                            {lead.status === "ATTENDED" && renderEnrollGuideButton(lead)}
-                        </div>
-                    )}
+                    {/* 공용 ⚡ 메뉴(게슈탈트 C-A1) — 따로 만든 복사본을 없애고 같은 위험·주인공 규칙을 쓴다 */}
+                    <AdminQuickActionMenu label={`${lead.childName} 빠른 처리`} actions={buildTrialQuickActions(lead, parentPhoneHref)} />
                 </td>
             </tr>
         );

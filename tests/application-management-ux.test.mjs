@@ -126,22 +126,19 @@ test("체험 신청은 한 줄 목록에서 핵심 정보와 빠른 처리만 �
   // 휴대폰에선 상태 아이콘만, sm 이상에서 글자 — 말줄임(truncate) 없이
   assert.match(trialClient, /"hidden sm:inline"/);
   assert.match(trialClient, /setShowDetailModal\(lead\)/);
-  assert.match(trialClient, /setOpenQuickActionId/);
-  assert.match(trialClient, /LIST_ACTION_TRIGGER_CLASS/);
-  assert.match(trialClient, /LIST_ACTION_MENU_CLASS/);
-  assert.match(trialClient, /LIST_ACTION_MENU_CLASS = "fixed z-\[80\]/);
-  assert.match(trialClient, /getQuickActionMenuPosition/);
-  assert.match(trialClient, /quickActionMenuPosition/);
-  assert.match(trialClient, /flash_on/);
+  // 게슈탈트 A-06: 따로 만든 ⚡ 복사본 대신 공용 AdminQuickActionMenu(표에 안 잘리는 fixed 메뉴·위험 분리)
+  assert.match(trialClient, /<AdminQuickActionMenu label=\{`\$\{lead\.childName\} 빠른 처리`\} actions=\{buildTrialQuickActions\(lead, parentPhoneHref\)\} \/>/);
+  assert.doesNotMatch(trialClient, /LIST_ACTION_TRIGGER_CLASS|LIST_ACTION_MENU_CLASS|getQuickActionMenuPosition/);
   assert.match(trialClient, /async function handleConfirmTrialFee/);
   assert.match(trialClient, /confirmTrialFeePayment\(lead\.id\)/);
   assert.doesNotMatch(trialClient, /lead\.trialFeeConfirmed \? "입금" : "미입금"/);
   assert.match(trialClient, /trialFeeBusyId === lead\.id \? "확인 중…" : "입금 확인"/);
-  assert.match(trialClient, /<span>입금 완료<\/span>/);
+  // 입금 완료면 누를 수 없는 표시 줄(공용 ⚡ 메뉴의 disabled 항목)
+  assert.match(trialClient, /key: "fee-done", label: "입금 완료", icon: "paid", disabled: true/);
   assert.match(trialClient, /onConfirmTrialFee/);
   assert.doesNotMatch(trialClient, /function renderStatusChangeCell/);
   assert.doesNotMatch(trialClient, /renderEnrollGuideButton\(lead, "inline"\)/);
-  assert.match(trialClient, /lead\.status === "ATTENDED" && renderEnrollGuideButton\(lead\)/);
+  assert.match(trialClient, /lead\.status === "ATTENDED" \? buildEnrollGuideAction\(lead\) : null/);
   assert.match(trialClient, /onCoachNotice=\{\(\) => void handleSendCoachNotice\(showDetailModal\)\}/);
   assert.match(trialClient, /type TrialDateFilter/);
   assert.match(trialClient, /const TRIAL_DATE_FILTERS/);
@@ -230,8 +227,12 @@ test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약�
   assert.match(applyClient, /<CompactListFilters/);
   assert.match(trialClient, /<CompactListFilters/);
   assert.doesNotMatch(applyClient, /aria-label="신청 관리 메뉴"/);
-  assert.match(applyClient, /LIST_ACTION_TRIGGER_CLASS/);
-  assert.match(applyClient, /LIST_ACTION_MENU_CLASS/);
+  // 게슈탈트 A-06: «⋯» 복사본 대신 공용 ⚡ 메뉴. 승인=주인공, 반려·취소=위험, 같은 모달 함수
+  assert.match(applyClient, /<AdminQuickActionMenu label=\{`\$\{app\.childName\} 빠른 처리`\} actions=\{buildApplicationQuickActions\(app, parentPhoneHref\)\} \/>/);
+  assert.match(applyClient, /key: "approve", label: "승인", icon: "check_circle", tone: "primary", onSelect: \(\) => setShowApproveModal\(app\)/);
+  assert.match(applyClient, /key: "reject", label: "반려", icon: "cancel", tone: "danger", onSelect: \(\) => setShowRejectModal\(app\)/);
+  assert.match(applyClient, /key: "cancel", label: "취소", icon: "block", tone: "danger", onSelect: \(\) => setShowCancelModal\(app\)/);
+  assert.doesNotMatch(applyClient, /LIST_ACTION_TRIGGER_CLASS|LIST_ACTION_MENU_CLASS|bg-lime-500/);
   assert.match(applyClient, /setShowDetailModal\(app\)/);
   // 목록 개편(2026-10-30): «학생/연락처»처럼 한 칸에 이어 붙이던 것을 칸별로 나눴다
   assert.match(applyClient, />학생<\/th>/);
@@ -252,13 +253,13 @@ test("관리자 신청 화면은 제목을 반복하는 설명과 중복 요약�
 
 test("체험수업과 수강신청은 카드형을 폐기하고 목록형만 제공한다", () => {
   assert.match(applyClient, /renderApplicationList/);
-  assert.match(applyClient, /LIST_ACTION_TRIGGER_CLASS/);
+  assert.match(applyClient, /<AdminQuickActionMenu/);
   assert.match(applyClient, /\{renderApplicationList\(\)\}/);
   assert.doesNotMatch(applyClient, /type ViewMode/);
   assert.doesNotMatch(applyClient, /setViewMode/);
   assert.doesNotMatch(applyClient, /grid_view/);
   assert.match(trialClient, /renderTrialList/);
-  assert.match(trialClient, /LIST_ACTION_TRIGGER_CLASS/);
+  assert.match(trialClient, /<AdminQuickActionMenu/);
   assert.match(trialClient, /\{renderTrialList\(\)\}/);
   assert.doesNotMatch(trialClient, /type ViewMode/);
   assert.doesNotMatch(trialClient, /setViewMode/);

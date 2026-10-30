@@ -20,14 +20,17 @@ test("관리자 헤더는 알림을 유지하고 승인된 라이트 테마를 �
 });
 
 test("체험 완료 후 수강신청서 링크는 관리자 주요 액션으로 노출된다", () => {
-  assert.match(trialClient, /function renderEnrollGuideButton/);
+  // 공용 ⚡ 메뉴로 옮기며 «버튼 그리기»가 «작업 만들기»로 바뀌었다(같은 조건·같은 함수, tone: primary)
+  assert.match(trialClient, /function buildEnrollGuideAction/);
+  assert.match(trialClient, /key: "enroll-guide", label, icon: "send", tone: "primary", disabled: busy, onSelect: \(\) => handleSendEnrollGuide\(lead\)/);
   assert.match(trialClient, /lead\.status !== "ATTENDED"/);
   assert.match(trialClient, /lead\.enrollApplicationReceivedAt/);
   assert.match(trialClient, /handleSendEnrollGuide\(lead\)/);
   assert.match(trialClient, /수강신청 안내/);
   assert.match(trialClient, /안내 재발송/);
   // 목록 단순화 이후에도 체험 완료 후속 안내는 번개 퀵액션의 주요 버튼으로 유지되어야 한다.
-  assert.match(trialClient, /openQuickActionId === lead\.id[\s\S]*renderEnrollGuideButton\(lead\)/);
+  assert.match(trialClient, /function buildTrialQuickActions[\s\S]*?buildEnrollGuideAction\(lead\)[\s\S]*?return actions;/);
+  assert.match(trialClient, /actions=\{buildTrialQuickActions\(lead, parentPhoneHref\)\}/);
 });
 
 test("체험 신청 정보는 수강신청서 자동 채움으로 이어진다", () => {
