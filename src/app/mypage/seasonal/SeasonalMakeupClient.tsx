@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: "신청 접수 (승인 대기)", SCHEDULED: "보강 확정", ATTENDED: "보강 완료", NO_SHOW: "미출석" };
 
@@ -38,7 +39,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
       const r = await fetch("/api/mypage/seasonal-makeup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "신청 실패");
       setMsg("보강 신청이 접수되었습니다. 학원 승인 후 확정됩니다."); setOpen(""); await reload();
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr(customerMessage(e, "보강 신청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
   // ── 예정 회차 · 사전 결석 신고 ──────────────────────────────────────────
@@ -69,7 +70,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
       });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "신고 실패");
       setMsg("결석 신고가 접수되었습니다. 최종 처리는 학원과 협의됩니다."); setSeatOpen(""); await reloadSeats();
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr(customerMessage(e, "결석 신고를 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
   // 결석 신고 취소
@@ -82,7 +83,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
       });
       const j = await r.json(); if (!r.ok) throw new Error(j?.error || "취소 실패");
       setMsg("결석 신고가 취소되었습니다."); await reloadSeats();
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setErr(customerMessage(e, "결석 신고를 취소하지 못했습니다. 잠시 후 다시 시도해 주세요.")); } finally { setBusy(false); }
   }
 
   if (!ctx.phoneKnown) {
@@ -221,7 +222,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                 </p>
                 <p className="break-keep text-xs font-bold tabular-nums text-gray-500">{m.absentLabel} 결석 → {m.targetLabel || (m.targetType === "REGULAR" ? "정규수업" : "-")}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${m.status === "REQUESTED" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : m.status === "ATTENDED" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}>{STATUS_LABEL[m.status] || m.status}</span>
+              <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${m.status === "REQUESTED" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : m.status === "ATTENDED" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}>{STATUS_LABEL[m.status] || "상태 확인 중"}</span>
             </li>
           ))}
         </ul>

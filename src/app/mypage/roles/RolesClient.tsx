@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cancelStaffRoleRequest, requestStaffRoles } from "@/app/actions/role-requests";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 type RoleRow = { role: "INSTRUCTOR" | "DRIVER"; label: string; state: "ACTIVE" | "PENDING" | "NONE" };
 
@@ -41,7 +42,7 @@ export default function RolesClient({
     startTransition(async () => {
       const result = await requestStaffRoles(selected);
       if ("error" in result && result.error) {
-        setError(result.error);
+        setError(customerMessage(result.error, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;
       }
       setRows((current) =>
@@ -59,7 +60,7 @@ export default function RolesClient({
     startTransition(async () => {
       const result = await cancelStaffRoleRequest(role);
       if ("error" in result && result.error) {
-        setError(result.error);
+        setError(customerMessage(result.error, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;
       }
       setRows((current) => current.map((row) => (row.role === role ? { ...row, state: "NONE" } : row)));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 export type KakaoReconfirmationPreview =
   | { status:"ACTIVE"; studentName:string; kind:string; effectiveDate:string; fromClassLabel:string | null; toClassLabel:string | null; shuttleIntent:string | null; details:string; expiresAt:string }
@@ -33,7 +34,7 @@ export default function KakaoParentReconfirmationClient({ preview, confirm }: Pr
     startTransition(async () => {
       const result = await confirm();
       if (result.ok) setConfirmed(true);
-      else setMessage(result.message);
+      else setMessage(customerMessage(result.message, "확정하지 못했습니다. 잠시 후 다시 시도해 주세요."));
     });
   }
 
@@ -42,14 +43,14 @@ export default function KakaoParentReconfirmationClient({ preview, confirm }: Pr
     <section className="mt-5 rounded-3xl bg-white p-5 shadow-xl shadow-slate-200/60 sm:p-7">
       <div className="rounded-2xl bg-slate-950 p-4 text-white"><p className="text-xs font-bold text-slate-300">확인할 학생</p><p className="mt-1 text-2xl font-black">{preview.studentName}</p></div>
       <dl className="mt-5 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
-        <Summary label="요청 종류" value={KIND_LABEL[preview.kind] ?? preview.kind} />
+        <Summary label="요청 종류" value={KIND_LABEL[preview.kind] ?? "기타 요청"} />
         <Summary label="적용일" value={preview.effectiveDate} />
         {preview.fromClassLabel && <Summary label="현재 수업" value={preview.fromClassLabel} />}
         {preview.toClassLabel && <Summary label="희망 수업" value={preview.toClassLabel} />}
-        {preview.shuttleIntent && <Summary label="셔틀 요청" value={SHUTTLE_LABEL[preview.shuttleIntent] ?? preview.shuttleIntent} />}
+        {preview.shuttleIntent && <Summary label="셔틀 요청" value={SHUTTLE_LABEL[preview.shuttleIntent] ?? "셔틀 요청 확인 필요"} />}
         <Summary label="상세 내용" value={preview.details || "추가 내용 없음"} multiline />
       </dl>
-      <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-950">확정해도 바로 변경되거나 알림이 발송되지 않습니다. 원장님의 최종 승인 전까지 수업·셔틀·청구 및 시트·랠리즈·사이트 반영은 보류됩니다.</div>
+      <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-950">확정해도 바로 변경되거나 알림이 발송되지 않습니다. 원장님의 최종 승인 전까지 수업·셔틀·청구 정보와 학원 기록은 바뀌지 않습니다.</div>
       <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-300 p-4 text-sm font-bold leading-6 text-slate-800"><input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} className="mt-1 size-5 shrink-0 accent-slate-950" /><span>{preview.studentName} 학생의 위 요청 내용이 맞음을 확인했습니다.</span></label>
       {message && <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{message}</p>}
       <button type="button" disabled={!agreed || pending} onClick={submit} className="mt-4 min-h-14 w-full rounded-2xl bg-slate-950 px-5 text-base font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{pending ? "확정 처리 중…" : "확인한 내용으로 확정"}</button>
@@ -64,7 +65,7 @@ function StateCard({ status }: { status:Exclude<KakaoReconfirmationPreview["stat
   const content = {
     INVALID:["올바르지 않은 링크입니다","학원에 새 확인 링크를 요청해 주세요."],
     EXPIRED:["링크 사용 기간이 끝났습니다","학원에 새 확인 링크를 요청해 주세요."],
-    USED:["이미 확인을 완료했습니다","같은 링크로 다시 확정할 수 없습니다. 원장님 최종 승인 전에는 외부 반영이나 알림이 없습니다."],
+    USED:["이미 확인을 완료했습니다","같은 링크로 다시 확정할 수 없습니다. 원장님 최종 승인 전에는 실제 변경이나 알림이 없습니다."],
     NOT_REQUIRED:["재확인이 필요하지 않습니다","요청 상태가 변경되었거나 원장님이 다시 검토 중입니다."],
     CONFIRMED:["요청 내용을 확인했습니다","원장님이 최종 승인한 뒤 반영합니다. 그전에는 수업·셔틀·청구 정보 변경이나 알림 발송이 없습니다."],
   }[status];

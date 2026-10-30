@@ -8,6 +8,7 @@ import { fetchMakeupOptions, bookMakeupAction, cancelMakeupAction } from "@/app/
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -64,7 +65,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     setBusy(credit.id);
     try {
       const r = await fetchMakeupOptions(credit.id);
-      if (!r.ok) { setErr(r.message || "불러오지 못했습니다."); setOpenId(""); return; }
+      if (!r.ok) { setErr(customerMessage(r.message, "불러오지 못했습니다.")); setOpenId(""); return; }
       setOptions(r.options || []);
     } catch {
       setErr("불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
@@ -79,7 +80,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     setErr(""); setMsg(""); setBusy(creditId);
     try {
       const r = await bookMakeupAction({ creditId, classId: pick.classId, dateYmd: pick.ymd });
-      if (!r.ok) { setErr(r.message); return; }
+      if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
       setMsg(r.message);
       setOpenId(""); setPick(null);
       router.refresh();
@@ -92,7 +93,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     setErr(""); setMsg(""); setBusy(creditId);
     try {
       const r = await cancelMakeupAction(creditId);
-      if (!r.ok) { setErr(r.message); return; }
+      if (!r.ok) { setErr(customerMessage(r.message, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); return; }
       setMsg(r.message);
       router.refresh();
     } finally {

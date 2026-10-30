@@ -23,6 +23,8 @@ test("관리자 보완 내용을 읽기 전용으로 요약한다", () => {
 test("링크 상태와 외부 반영 안전 경계를 분명히 안내한다", () => {
   for (const status of ["INVALID","EXPIRED","USED","NOT_REQUIRED","CONFIRMED"]) assert.match(client, new RegExp(status));
   assert.match(client, /원장님의 최종 승인 전까지/);
-  assert.match(client, /시트·랠리즈·사이트 반영은 보류/);
+  // 고객 화면에서 내부 시스템 이름(시트·랠리즈) 대신 쉬운 말로 같은 약속을 안내한다
+  assert.match(client, /수업·셔틀·청구 정보와 학원 기록은 바뀌지 않습니다/);
+  assert.doesNotMatch(client, /시트·랠리즈|외부 반영/);
   assert.match(client, /일회용 링크/);
 });

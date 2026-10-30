@@ -71,5 +71,6 @@ test("신청 상태에서는 취소할 수 있고, 처리된 뒤에는 되돌릴
 test("오류를 조용히 삼키지 않는다", () => {
   // 실패했는데 성공처럼 보이면 학부모는 탈퇴됐다고 믿는다.
   assert.match(client, /if \(result && "error" in result && result\.error\)/);
-  assert.match(client, /setError\(result\.error\)/);
+  // 서버 안내는 그대로 띄우되, 영어 원문·개발 용어면 고객용 한국어로 바꾼다(customerMessage)
+  assert.match(client, /setError\(customerMessage\(result\.error, "[^"]+"\)\)/);
 });

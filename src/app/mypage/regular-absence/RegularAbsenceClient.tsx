@@ -7,6 +7,7 @@ import type { RegularMakeupRow } from "@/lib/regular/parent-regular-makeup";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -79,7 +80,7 @@ export default function RegularAbsenceClient({
         setOpenKey("");
         await reload();
       } catch (e) {
-        setErr((e as Error).message);
+        setErr(customerMessage(e, "결석 신고를 접수하지 못했습니다. 잠시 후 다시 시도해 주세요."));
       } finally {
         setBusyKey("");
       }
@@ -110,7 +111,7 @@ export default function RegularAbsenceClient({
         setMsg("결석 신고를 취소했어요.");
         await reload();
       } catch (e) {
-        setErr((e as Error).message);
+        setErr(customerMessage(e, "결석 신고를 취소하지 못했습니다. 잠시 후 다시 시도해 주세요."));
       } finally {
         setBusyKey("");
       }

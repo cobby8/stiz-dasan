@@ -29,7 +29,7 @@ function compileModuleWith(path, imports) {
   return module.exports;
 }
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
-const Empty = compile("src/components/account/EmptyParentState.tsx", { "next/link": { default: Link }, "@/components/account/child-link-api": {}, "./child-link-api": {}, "@/components/pwa/useInstalledApp": { useInstalledApp: () => false } });
+const Empty = compile("src/components/account/EmptyParentState.tsx", { "next/link": { default: Link }, "@/components/account/child-link-api": {}, "./child-link-api": {}, "@/components/parent/customerMessage": { customerMessage: (_raw, fallback) => fallback }, "@/components/pwa/useInstalledApp": { useInstalledApp: () => false } });
 const AccountLinks = compile("src/components/account/AccountLinks.tsx", { "next/link": { default: Link } });
 
 test("비로그인 가족 연결 진입은 로그인 화면이 읽는 복귀 주소를 보존한다", async () => {
@@ -138,6 +138,7 @@ test("직원 연결 페이지는 로그인만 요구하고 자녀 목록의 기�
 test("기존 설치 학부모 앱의 신규 신청은 앱 화면을 남기고 브라우저에서 연다", () => {
   const InstalledEmpty = compile("src/components/account/EmptyParentState.tsx", {
     "next/link": { default: Link }, "./child-link-api": {},
+    "@/components/parent/customerMessage": { customerMessage: (_raw, fallback) => fallback },
     "@/components/pwa/useInstalledApp": { useInstalledApp: () => true },
   });
   const html = renderToStaticMarkup(React.createElement(InstalledEmpty, { pendingSeasonalChildren: [] }));

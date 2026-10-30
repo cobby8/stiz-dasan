@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getParentAccountClaim } from "@/app/actions/parent-account";
 import { parentClaimProofCookieName } from "@/lib/parent-account-claim";
 import ParentAccountActivateClient from "./ParentAccountActivateClient";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { referrer: "no-referrer" };
@@ -20,7 +21,7 @@ export default async function ParentAccountActivatePage({
 
   const result = await getParentAccountClaim(token);
   if (result.error || !result.data) {
-    return <ClaimUnavailable title="계정을 활성화할 수 없습니다" message={result.error || "활성화 링크를 확인해 주세요."} />;
+    return <ClaimUnavailable title="계정을 활성화할 수 없습니다" message={customerMessage(result.error, "활성화 링크를 확인해 주세요.")} />;
   }
 
   const claim = result.data;

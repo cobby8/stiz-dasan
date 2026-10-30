@@ -5,6 +5,7 @@ import { useInstalledApp } from "@/components/pwa/useInstalledApp";
 import { useEffect, useState } from "react";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 import { childLinkRequest, isChildLinkState, type ChildLinkState } from "./child-link-api";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 export default function EmptyParentState({ pendingSeasonalChildren }: { pendingSeasonalChildren: PendingSeasonalChild[] }) {
   const installed = useInstalledApp();
@@ -17,7 +18,7 @@ export default function EmptyParentState({ pendingSeasonalChildren }: { pendingS
       if (!isChildLinkState(data)) throw new Error("연결 정보를 확인하지 못했습니다. 다시 시도해 주세요.");
       setState(data);
     }).catch((reason) => {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "연결 정보를 확인하지 못했습니다.");
+      if (!controller.signal.aborted) setError(customerMessage(reason, "연결 정보를 확인하지 못했습니다."));
     });
     return () => controller.abort();
   }, [attempt]);

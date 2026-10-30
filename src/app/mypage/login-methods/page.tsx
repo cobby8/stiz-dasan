@@ -10,6 +10,7 @@ import {
   type ParentOAuthProvider,
 } from "@/lib/parent-oauth";
 import { createClient } from "@/lib/supabase/server";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,10 @@ export default async function LoginMethodsPage({
   // 켜진 것 + 이미 연결된 것(나중에 제공자를 꺼도 연결 사실은 보여 준다)
   const rows = PARENT_OAUTH_PROVIDERS.filter((provider) => enabled.includes(provider) || linked.has(provider));
   const justLinked = parseParentOAuthProvider(params.linked ?? "");
-  const error = typeof params.error === "string" ? params.error.slice(0, 200) : "";
+  // 주소로 넘어온 안내문은 고객용 한국어 문장일 때만 그대로 보인다(영어 원문·개발 용어면 쉬운 문장으로 바꿈)
+  const error = typeof params.error === "string" && params.error
+    ? customerMessage(params.error.slice(0, 200), "간편로그인 연결을 마치지 못했습니다. 다시 시도해 주세요.")
+    : "";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">

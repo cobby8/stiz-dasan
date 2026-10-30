@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { customerMessage } from "@/components/parent/customerMessage";
 import {
   acceptParentAccountClaim,
   sendParentAccountOtp,
@@ -76,7 +77,7 @@ export default function ParentAccountActivateClient({
     runServerAction(async () => {
       const result = await sendParentAccountOtp(token);
       if ("error" in result) {
-        setMessage({ kind: "error", text: result.error || "인증번호를 발송하지 못했습니다." });
+        setMessage({ kind: "error", text: customerMessage(result.error, "인증번호를 발송하지 못했습니다.") });
         return;
       }
       setStep("OTP");
@@ -89,7 +90,7 @@ export default function ParentAccountActivateClient({
     runServerAction(async () => {
       const result = await verifyParentAccountOtp(token, otp);
       if ("error" in result && result.error) {
-        setMessage({ kind: "error", text: result.error });
+        setMessage({ kind: "error", text: customerMessage(result.error, "인증번호를 확인하지 못했습니다. 다시 시도해 주세요.") });
         return;
       }
       if (!("verified" in result) || !result.verified) {
@@ -119,7 +120,7 @@ export default function ParentAccountActivateClient({
     runServerAction(async () => {
       const result = await acceptParentAccountClaim(token, cleanEmail, password) as ActivationResult;
       if ("error" in result) {
-        setMessage({ kind: "error", text: result.error });
+        setMessage({ kind: "error", text: customerMessage(result.error, "계정을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.") });
         return;
       }
       const destination = safeInternalPath(result.redirectPath || redirectPath);

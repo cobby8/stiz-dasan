@@ -11,14 +11,33 @@ import {
   type ShuttleExceptionKind,
 } from "@/lib/shuttle/dayExceptionRules";
 import type { ShuttleExceptionOptions } from "@/lib/shuttle/parent-shuttle-exception";
-import { deliveryStatusText, matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
+import { matchesShuttleChange, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups";
 import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 // 예정된 변경의 날짜 묶음 이름(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 변경" };
+
+// 선생님·기사님께 간 알림 결과를 학부모가 읽는 말로 바꾼다.
+// 관리자 화면용 deliveryStatusText 는 «푸시 구독 미등록» 같은 개발 용어를 써서 고객 화면에는 쓰지 않는다(건수는 그대로).
+function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): string {
+  if (!summary) return "선생님·기사님께 알림이 갔는지 확인하고 있어요. 변경 저장과는 별개입니다.";
+  if (summary.recipientCount === 0) return "아직 알림을 받을 담당자가 없어요. 학원에서 확인합니다.";
+  // 알림을 꺼 둔 휴대폰(구독 없음)은 «건너뜀»에 포함된다 — 둘 중 큰 값만 센다
+  const notSet = Math.max(summary.skippedCount, summary.noSubscriptionCount);
+  return [
+    `알림함 등록 ${summary.inAppCount}건`,
+    `휴대폰 알림 ${summary.pushAcceptedCount}건 보냄`,
+    summary.pushPartialCount ? `일부 휴대폰 못 받음 ${summary.pushPartialCount}건` : "",
+    summary.pushFailedCount ? `휴대폰 알림 전달 안 됨 ${summary.pushFailedCount}건` : "",
+    summary.pendingCount ? `휴대폰 알림 보내는 중 ${summary.pendingCount}건` : "",
+    notSet ? `휴대폰 알림 꺼짐 ${notSet}건` : "",
+    summary.unknownCount ? `확인 중 ${summary.unknownCount}건` : "",
+  ].filter(Boolean).join(" · ");
+}
 
 export default function ShuttleExceptionClient({ initial }: { initial: ShuttleExceptionOptions }) {
   const router = useRouter();
@@ -52,7 +71,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
       const found = body.action === "cancel" ? (data.record?.canceled ? data.record : null) :
         (data.upcoming as ShuttleExceptionOptions["upcoming"]).find((row) => matchesShuttleChange(row, body));
       if (!found) throw new Error("NOT_CONFIRMED");
-      setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 운행 명단 변경 기록 저장됨. ${deliveryStatusText(found.notificationStatus)}`);
+      setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 셔틀 명단에 반영됨. ${parentDeliveryText(found.notificationStatus)}`);
       setUncertain(null);
       setError("");
       router.refresh();
@@ -76,12 +95,12 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
     const data = await response.json();
     if (!response.ok) {
       if (response.status >= 500) return reconcile(body);
-      setError(data?.error || "처리에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+      setError(customerMessage(data?.error, "처리에 실패했습니다. 잠시 후 다시 시도해 주세요."));
       return false;
     }
     if (!data.ok) return reconcile(body);
     const status: DeliveryStatusSummary | null = data.notificationStatus ?? null;
-    setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 운행 명단 변경 기록 저장됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${deliveryStatusText(status)}${status && !status.driverLinked ? " · 담당 기사 연결·알림 확인 필요" : ""}`);
+    setDone(`${body.action === "cancel" ? "취소" : "변경"} 저장 완료 · 셔틀 명단에 반영됨.${data.noOp ? " 동일한 내용이 이미 저장되어 있습니다." : ""} ${parentDeliveryText(status)}${status && !status.driverLinked ? " · 담당 기사님 배정은 학원에서 확인 중" : ""}`);
     setUncertain(null);
     return true;
     } catch {
@@ -167,10 +186,10 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-sm font-black text-blue-900 dark:text-blue-200">{item.studentName}</span>
                           <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-                            {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction}
+                            {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}
                           </span>
                           <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-                            {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}
+                            {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}
                           </span>
                         </div>
                         {/* 2줄: 저장 상태 · 바뀐 장소(줄바꿈 허용) */}
@@ -179,7 +198,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                           {item.location && <span className="break-keep font-bold text-blue-800 dark:text-blue-300">{item.location}</span>}
                         </p>
                         {/* 기사 연결 경고는 놓치면 안 돼서 행에 그대로 둔다 */}
-                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사 연결·알림 확인 필요</p>}
+                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사님 배정은 학원에서 확인 중</p>}
                       </div>
                       <span className="shrink-0 text-right text-sm font-bold tabular-nums text-blue-900 dark:text-blue-200">{kstLabel(item.serviceDate)}</span>
                       {/* 취소 = 그 자리 확인(C-M1) 후 기존 cancel(item.id) 그대로. 행 탭(시트 열기)으로 번지지 않게 stopPropagation 유지 */}
@@ -328,9 +347,9 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
             </div>
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
               <dt className="text-[var(--color-academy-muted)]">등원·하원</dt>
-              <dd className="font-bold">{SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? item.direction}</dd>
+              <dd className="font-bold">{SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}</dd>
               <dt className="text-[var(--color-academy-muted)]">변경</dt>
-              <dd className="font-bold">{SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? item.kind}</dd>
+              <dd className="font-bold">{SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}</dd>
               {item.location && (
                 <>
                   <dt className="text-[var(--color-academy-muted)]">장소</dt>
@@ -347,8 +366,8 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
               <dd>변경 저장 완료</dd>
               <dt className="text-[var(--color-academy-muted)]">알림</dt>
               <dd className="break-keep">
-                {deliveryStatusText(item.notificationStatus)}
-                {item.notificationStatus && !item.notificationStatus.driverLinked && <span className="block">담당 기사 연결·알림 확인 필요</span>}
+                {parentDeliveryText(item.notificationStatus)}
+                {item.notificationStatus && !item.notificationStatus.driverLinked && <span className="block">담당 기사님 배정은 학원에서 확인 중</span>}
               </dd>
             </dl>
           </ListDetailPanel>

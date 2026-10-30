@@ -9,6 +9,7 @@ import {
 } from "@/lib/enrollment/changeRequestRules";
 import type { EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -58,14 +59,14 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
       if (response.status >= 500) throw new Error("결과 확인 필요");
       const data = await response.json();
       if (!response.ok) {
-        setError(typeof data?.error === "string" ? data.error : "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요.");
+        setError(customerMessage(data?.error, "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요."));
         return false;
       }
       if (data?.ok !== true) throw new Error("결과 확인 필요");
       return true;
     } catch {
       setUncertainSource(initial);
-      setError("응답을 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 현재 신청 내역을 확인해 주세요.");
+      setError("결과를 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 현재 신청 내역을 확인해 주세요.");
       return false;
     } finally {
       sending.current = false;
@@ -157,7 +158,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             {CHANGE_STATUS_LABEL.PENDING}인 신청이 있습니다
           </p>
           <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-            {CHANGE_KIND_LABEL[child.pending.kind as ChangeKind] ?? child.pending.kind}
+            {CHANGE_KIND_LABEL[child.pending.kind as ChangeKind] ?? "수강 변경"}
             {child.pending.toClassName ? ` · ${child.pending.toClassName}` : ""} · {child.pending.effectiveFrom}부터
             {child.pending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
           </p>

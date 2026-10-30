@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 export type PublicParentRequestContext = { valid: boolean; linkStatus: "ACTIVE" | "USED" | "EXPIRED" | "INVALID"; studentHint: string | null; expiresAt: string | null };
 type ClassOption = { id: string; label: string };
@@ -44,7 +45,7 @@ export default function ParentRequestForm({ context, interpretRequest, submitReq
   function interpret() {
     if (sourceText.trim().length < 5) return setMessage("원하시는 변경 내용을 조금 더 자세히 적어 주세요.");
     setMessage("");
-    startTransition(async () => { try { setResult(await interpretRequest(sourceText.trim(), targetMonth)); setStep("REVIEW"); } catch (e) { setMessage(e instanceof Error ? e.message : "요청 내용을 해석하지 못했습니다."); } });
+    startTransition(async () => { try { setResult(await interpretRequest(sourceText.trim(), targetMonth)); setStep("REVIEW"); } catch (e) { setMessage(customerMessage(e, "요청 내용을 정리하지 못했습니다. 잠시 후 다시 시도해 주세요.")); } });
   }
   function update(index: number, patch: Partial<RequestCommand>) {
     setResult((current) => current ? { ...current, draft: { ...current.draft, commands: current.draft.commands.map((c, i) => {
@@ -62,17 +63,17 @@ export default function ParentRequestForm({ context, interpretRequest, submitReq
   }
   function submit() {
     if (!canSubmit) return setMessage("확인이 필요한 항목을 모두 수정해 주세요.");
-    startTransition(async () => { try { await submitRequest(sourceText.trim(), targetMonth, commands); setSubmitted(true); } catch (e) { setMessage(e instanceof Error ? e.message : "요청을 접수하지 못했습니다."); } });
+    startTransition(async () => { try { await submitRequest(sourceText.trim(), targetMonth, commands); setSubmitted(true); } catch (e) { setMessage(customerMessage(e, "요청을 접수하지 못했습니다.")); } });
   }
 
   return <main className="min-h-dvh bg-slate-50 px-4 py-7 sm:py-12"><div className="mx-auto max-w-xl">
     <header className="px-1"><p className="text-xs font-black tracking-[0.2em] text-lime-600">STIZ BASKETBALL</p><h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">학부모 요청 접수</h1><p className="mt-2 text-sm leading-6 text-slate-600">{context.studentHint ? `${context.studentHint} 학생의 ` : ""}변경 요청을 정확히 확인하고 보내세요.</p></header>
-    <div className="mt-5 grid grid-cols-2 gap-2" aria-label="진행 단계"><Step active={step === "WRITE"} number="1" label="자연어로 입력" /><Step active={step === "REVIEW"} number="2" label="해석 결과 확인" /></div>
+    <div className="mt-5 grid grid-cols-2 gap-2" aria-label="진행 단계"><Step active={step === "WRITE"} number="1" label="편하게 적기" /><Step active={step === "REVIEW"} number="2" label="내용 확인" /></div>
     {step === "WRITE" ? <section className="mt-4 rounded-3xl bg-white p-5 shadow-xl shadow-slate-200/60 sm:p-7">
-      <Info>평소 학원에 문자 보내듯 적어 주세요. 다음 화면에서 해석된 내용을 직접 고칠 수 있습니다.</Info>
+      <Info>평소 학원에 문자 보내듯 적어 주세요. 다음 화면에서 정리된 내용을 직접 고칠 수 있습니다.</Info>
       <label className="mt-6 block text-sm font-black text-slate-900">희망 적용 월<input type="month" value={targetMonth} onChange={(e) => setTargetMonth(e.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base" /></label>
       <label className="mt-6 block text-sm font-black text-slate-900">요청 내용<textarea autoFocus value={sourceText} onChange={(e) => setSourceText(e.target.value)} rows={7} maxLength={2000} placeholder="예: 9월부터 화요일 수업을 토요일 3교시로 옮기고 셔틀은 이용하지 않을게요." className="mt-2 w-full resize-y rounded-xl border border-slate-300 px-4 py-3 text-base leading-7 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" /><span className="mt-1 block text-right text-xs font-medium text-slate-400">{sourceText.length}/2000</span></label>
-      <Alert message={message} /><button type="button" disabled={isPending || !targetMonth} onClick={interpret} className="mt-2 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-black text-white disabled:opacity-50"><Icon name="auto_awesome" />{isPending ? "요청 내용 확인 중…" : "요청 내용 해석"}</button>
+      <Alert message={message} /><button type="button" disabled={isPending || !targetMonth} onClick={interpret} className="mt-2 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-base font-black text-white disabled:opacity-50"><Icon name="auto_awesome" />{isPending ? "요청 내용 확인 중…" : "요청 내용 정리하기"}</button>
     </section> : result && <section className="mt-4 space-y-4">
       <Info><strong>{result.studentName} 학생</strong>의 요청을 아래처럼 이해했습니다. 변경 전과 변경 후를 비교하고, 잘못된 항목은 직접 수정해 주세요.</Info>
       {(result.draft.warnings.length > 0 || questions.length > 0) && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4"><p className="flex items-center gap-2 font-black text-amber-950"><Icon name="help" />확인이 필요해요</p><ul className="mt-2 text-sm leading-6 text-amber-900">{[...questions, ...result.draft.warnings].map((q, i) => <li key={`${q}-${i}`}>• {q}</li>)}</ul></div>}
@@ -92,7 +93,7 @@ function CommandCard({ command, index, current, available, update, remove }: { c
   const nextLabel = command.kind === "CLASS_CHANGE" || command.kind === "CLASS_ADD"
     ? optionLabel(available, command.toClassId) || "선택 필요"
     : requestTypeLabel(command.kind) || "선택 필요";
-  return <article className={`rounded-3xl border bg-white p-4 shadow-sm sm:p-5 ${command.confidence === "LOW" || command.blockingQuestions.length ? "border-amber-300" : "border-slate-200"}`}><div className="flex justify-between"><div><p className="text-xs font-black text-slate-400">요청 {index + 1}</p><p className="mt-1 font-black text-slate-950">해석된 변경 내용</p></div><button type="button" onClick={remove} className="flex size-10 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`요청 ${index + 1} 삭제`}><Icon name="delete" /></button></div>
+  return <article className={`rounded-3xl border bg-white p-4 shadow-sm sm:p-5 ${command.confidence === "LOW" || command.blockingQuestions.length ? "border-amber-300" : "border-slate-200"}`}><div className="flex justify-between"><div><p className="text-xs font-black text-slate-400">요청 {index + 1}</p><p className="mt-1 font-black text-slate-950">정리된 변경 내용</p></div><button type="button" onClick={remove} className="flex size-10 items-center justify-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label={`요청 ${index + 1} 삭제`}><Icon name="delete" /></button></div>
   <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 rounded-2xl bg-slate-50 p-3" aria-label={`요청 ${index + 1} 변경 전후 요약`}>
     <SummaryValue label="변경 전" value={currentLabel} />
     <span className="flex items-center text-slate-400" aria-hidden="true"><Icon name="arrow_forward" /></span>

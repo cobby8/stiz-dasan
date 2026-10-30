@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { customerMessage } from "@/components/parent/customerMessage";
 import {
   cancelAccountWithdrawalRequest,
   getAccountWithdrawalStatus,
@@ -53,7 +54,7 @@ export default function WithdrawClient({
       try {
         const result = await requestAccountWithdrawal();
         if (result && "error" in result && result.error) {
-          setError(result.error);
+          setError(customerMessage(result.error, "처리 결과를 확인하지 못했습니다. 다시 조회해 주세요."));
           return;
         }
         if (!result || !("ok" in result) || result.ok !== true) {
@@ -84,7 +85,7 @@ export default function WithdrawClient({
       try {
         const result = await cancelAccountWithdrawalRequest();
         if (result && "error" in result && result.error) {
-          setError(result.error);
+          setError(customerMessage(result.error, "처리 결과를 확인하지 못했습니다. 다시 조회해 주세요."));
           return;
         }
         if (!result || !("ok" in result) || result.ok !== true) {
@@ -198,7 +199,7 @@ export default function WithdrawClient({
                   info
                 </span>
                 {initial.reviewReason === "ADMIN_HANDOFF"
-                  ? "관리 권한 이관이 필요합니다"
+                  ? "관리 역할을 다른 분께 넘겨야 합니다"
                   : initial.reviewReason === "STAFF_REVIEW"
                     ? "담당 업무 확인이 필요합니다"
                     : `수강 중인 반이 ${initial.activeEnrollmentCount}개 있습니다`}

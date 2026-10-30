@@ -8,6 +8,7 @@ import { childLinkRequest, isChildLinkState, type ChildLinkRow, type ChildLinkSt
 // 요청일 표시는 KST 달력 모듈로만(서버·휴대폰 시간대 차이로 하루 밀리지 않게)
 import { kstLabel } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+import { customerMessage } from "@/components/parent/customerMessage";
 
 const PENDING_KEY = "stiz:child-link-verification:v1";
 const REDIRECT_PARAMS = ["identityVerificationId", "identityVerificationTxId", "code", "message", "pgCode", "pgMessage", "transactionType"];
@@ -63,7 +64,7 @@ export default function ChildConnectionsClient({ backHref = "/mypage" }: { backH
   useEffect(() => {
     const controller = new AbortController();
     reload(controller.signal).catch((reason) => {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "연결 정보를 확인하지 못했습니다.");
+      if (!controller.signal.aborted) setError(customerMessage(reason, "연결 정보를 확인하지 못했습니다."));
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [reload]);
@@ -90,14 +91,14 @@ export default function ChildConnectionsClient({ backHref = "/mypage" }: { backH
     }
     locked.current = true;
     setBusy(true);
-    confirmVerification(returnedId).catch((reason) => setError(reason instanceof Error ? reason.message : "본인인증을 확인하지 못했습니다.")).finally(() => { locked.current = false; setBusy(false); });
+    confirmVerification(returnedId).catch((reason) => setError(customerMessage(reason, "본인인증을 확인하지 못했습니다."))).finally(() => { locked.current = false; setBusy(false); });
   }, [confirmVerification]);
 
   async function run(work: () => Promise<void>) {
     if (locked.current) return;
     locked.current = true;
     setBusy(true); setError(""); setNotice("");
-    try { await work(); } catch (reason) { setError(reason instanceof Error ? reason.message : "처리하지 못했습니다. 다시 시도해 주세요."); }
+    try { await work(); } catch (reason) { setError(customerMessage(reason, "처리하지 못했습니다. 다시 시도해 주세요.")); }
     finally { locked.current = false; setBusy(false); }
   }
 

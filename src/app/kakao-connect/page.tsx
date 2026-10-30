@@ -85,7 +85,7 @@ export default async function KakaoConnectPage({
       <Shell tone="warn">
         <p className="text-sm font-bold text-yellow-700">최초 1회 인증</p>
         <h1 className="mt-2 text-2xl font-black text-gray-950">카카오와 학부모 계정 연결</h1>
-        <p className="mt-4 text-sm leading-6 text-gray-600">{state.parent.appUserName} 학부모님의 검증된 계정을 현재 카카오 대화와 연결합니다. 카카오 사용자 키와 전화번호 원문은 화면이나 운영 기록에 노출하지 않습니다.</p>
+        <p className="mt-4 text-sm leading-6 text-gray-600">{state.parent.appUserName} 학부모님의 검증된 계정을 현재 카카오 대화와 연결합니다. 카카오 계정 정보와 전화번호는 화면이나 학원 기록에 그대로 보이지 않습니다.</p>
         <form action={connect} className="mt-7">
           <button className="w-full rounded-xl bg-yellow-400 px-5 py-3.5 font-black text-gray-950">이 카카오 계정 연결하기</button>
         </form>
