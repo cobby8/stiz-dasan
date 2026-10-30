@@ -206,6 +206,22 @@ export default function QuickPostClient({
     setUploadProgress(null);
   }
 
+  // 게슈탈트 T-05: 되돌리기 어려운 «바로 게시»(외부 공개)와 «새로 작성»(작성 내용 버림)은 한 번 더 묻는다.
+  // 선생님 앱의 다른 확인(학부모 공지 발송 등)과 같은 window.confirm — iOS·안드로이드 앱 웹뷰에서 확인 창이 뜬다.
+  function confirmPublish() {
+    const question = needsInstagramRetry
+      ? "인스타그램에 다시 게시할까요?"
+      : "홈페이지 갤러리와 인스타그램에 바로 게시할까요? 게시하면 바로 공개됩니다.";
+    if (!window.confirm(question)) return;
+    handlePublish();
+  }
+
+  function confirmReset() {
+    // 이미 게시가 끝났으면 버릴 내용이 없으니 묻지 않는다.
+    if (!isPublished && !window.confirm("작성 중인 내용을 지우고 새로 작성할까요?")) return;
+    resetFlow();
+  }
+
   function goBack() {
     if (window.history.length > 1) {
       window.history.back();
@@ -367,12 +383,14 @@ export default function QuickPostClient({
               onHashtagsChange={setHashtags}
             />
 
+            {/* 게슈탈트 T-05: 꽉 찬 버튼은 «바로 게시» 하나(주인공), «수정 저장»은 보조.
+                «새로 작성»은 작성 내용을 버리는 동작이라 아래로 떼어 작은 글자 버튼으로 둔다. */}
             <div className="grid grid-cols-1 gap-2">
               <button
                 type="button"
                 onClick={handleSave}
                 disabled={busy || isPublished}
-                className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-brand-navy-900 px-3 text-sm font-black text-white disabled:opacity-60"
+                className="academy-button-secondary flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-black disabled:opacity-60"
               >
                 <SymbolIcon name="save" size={18} />
                 수정 저장
@@ -380,9 +398,9 @@ export default function QuickPostClient({
               {!isPublished && (
                 <button
                   type="button"
-                  onClick={handlePublish}
+                  onClick={confirmPublish}
                   disabled={busy || hasPublishingStatus}
-                  className="flex min-h-12 items-center justify-center gap-2 rounded-lg bg-brand-orange-500 px-3 text-sm font-black text-white disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+                  className="academy-button-primary flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-black disabled:opacity-60"
                 >
                   <SymbolIcon
                     name={hasPublishingStatus ? "progress_activity" : "send"}
@@ -392,11 +410,13 @@ export default function QuickPostClient({
                   {hasPublishingStatus ? "인스타그램 게시 중" : needsInstagramRetry ? "인스타그램 다시 게시" : "바로 게시"}
                 </button>
               )}
+            </div>
+            <div className="mt-4 flex justify-center border-t border-[var(--color-academy-line)] pt-2">
               <button
                 type="button"
-                onClick={resetFlow}
+                onClick={confirmReset}
                 disabled={busy}
-                className="flex min-h-12 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm font-black text-gray-700 disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                className="academy-button-text flex min-h-11 items-center justify-center gap-1 px-3 text-sm font-bold disabled:opacity-60"
               >
                 <SymbolIcon name="refresh" size={18} />
                 새로 작성
@@ -419,7 +439,7 @@ export default function QuickPostClient({
               <p>{progressText || "처리 중입니다."}</p>
               {uploadProgress && uploadProgress.total > 0 && (
                 <div className="mt-2">
-                  <div className="flex justify-between text-[11px] text-gray-400">
+                  <div className="flex justify-between text-xs text-[var(--color-academy-muted)]">
                     <span>사진 업로드</span>
                     <span>
                       {uploadProgress.done}/{uploadProgress.total}
