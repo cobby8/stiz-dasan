@@ -214,7 +214,10 @@ export default function RegularAbsenceAdminClient({
         if (option.value === (r.makeupStatus ?? "BOOKED")) continue;
         actions.push({ key: `makeup-${option.value}`, label: option.label, icon: option.icon, disabled: busy, onSelect: () => changeMakeupStatus(id, makeupId, option.value) });
       }
-      actions.push({ key: "makeup-cancel", label: "보강 취소", icon: "event_busy", tone: "danger", disabled: busy, onSelect: () => cancelMakeup(id, makeupId) });
+      // 예약 상태만 취소(다녀온·노쇼 보강은 «보강 예약으로» 되돌린 뒤 취소 — 서버도 같은 규칙)
+      if ((r.makeupStatus ?? "BOOKED") === "BOOKED") {
+        actions.push({ key: "makeup-cancel", label: "보강 취소", icon: "event_busy", tone: "danger", disabled: busy, onSelect: () => cancelMakeup(id, makeupId) });
+      }
     } else {
       actions.push({ key: "makeup-open", label: "보강 지정", icon: "event_repeat", disabled: busy, onSelect: () => openMakeupForm(id) });
     }

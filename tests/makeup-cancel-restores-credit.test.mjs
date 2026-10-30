@@ -12,4 +12,11 @@ test("보강 «취소» 버튼도 상태 변경과 같은 길(잠금 + 보강권
   // 예전엔 MakeupSession 만 직접 UPDATE 해서 보강권이 RESERVED 로 묶였다
   assert.match(body, /updateMakeupStatus\(id, "CANCELLED"\)/);
   assert.doesNotMatch(body, /UPDATE "MakeupSession"/);
+  // 다녀온·노쇼 보강을 취소하면 보강권이 되살아난다 → 예약(BOOKED)만 허용
+  assert.match(body, /row\.status !== "BOOKED"\) throw/);
+});
+
+test("결석 화면 «보강 취소»는 예약 상태 보강에만 보인다", () => {
+  const absence = readFileSync(new URL("../src/app/admin/absence/RegularAbsenceAdminClient.tsx", import.meta.url), "utf8");
+  assert.match(absence, /\(r\.makeupStatus \?\? "BOOKED"\) === "BOOKED"\) \{\s*actions\.push\(\{ key: "makeup-cancel"/);
 });

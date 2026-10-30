@@ -4806,6 +4806,15 @@ export async function bookMakeupSession(data: {
  * updateMakeupStatus 가 잠금 + 보강권 복구(RESERVED → AVAILABLE)까지 한다.
  */
 export async function cancelMakeupSession(id: string) {
+    await requireAdmin();
+    const [row] = await prisma.$queryRawUnsafe<{ status: string }[]>(
+        `SELECT status FROM "MakeupSession" WHERE id = $1`,
+        id,
+    );
+    if (!row) throw new Error("보강을 찾을 수 없습니다.");
+    if (row.status === "CANCELLED") return; // 이미 취소됨
+    // 다녀온(ATTENDED)·노쇼(NO_SHOW) 보강을 취소하면 사용완료·차감된 보강권이 되살아난다 → 예약 상태만 허용
+    if (row.status !== "BOOKED") throw new Error("예약 상태인 보강만 취소할 수 있습니다.");
     await updateMakeupStatus(id, "CANCELLED");
 }
 
