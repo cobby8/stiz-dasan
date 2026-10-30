@@ -68,3 +68,34 @@ test("FAQ: 공개 칩은 같은 필터 값을 쓰고 바꾸면 패널을 닫는�
   assert.match(faq, /await deleteFaq\(id\)/);
   assert.match(faq, /const payload = \{ question, answer, order, isPublic \};/);
 });
+
+// ── 학부모 후기 ──
+const testimonials = read("../src/app/admin/testimonials/TestimonialsAdminClient.tsx");
+
+test("후기: 한 줄 표(순서·별점·작성일 오른쪽), 후기 내용은 표에서 빼고 패널에서 전부", () => {
+  const table = listTable(testimonials);
+  assert.doesNotMatch(table, /truncate|line-clamp|text-ellipsis/);
+  assert.doesNotMatch(table, /t\.text/);
+  assert.match(table, /admin-cell-num[^"]*">\{t\.order\}/);
+  assert.match(table, /admin-cell-num[^"]*">\{toKstYmd\(t\.createdAt\)\}/);
+  assert.doesNotMatch(testimonials, /toLocaleDateString/);
+});
+
+test("후기: 순서 변경(위/아래)은 전체 목록 번호로 그대로 — 거르지 않고, 막힘 조건·함수 동일", () => {
+  // 목록을 거르면 숨은 후기와 순서가 바뀌므로 표는 전체 testimonials 를 그린다
+  assert.match(listTable(testimonials), /\{testimonials\.map\(\(t, idx\) =>/);
+  assert.match(testimonials, /onClick=\{\(\) => handleReorder\(idx, "up"\)\}\s*disabled=\{idx === 0 \|\| isPending\}/);
+  assert.match(testimonials, /onClick=\{\(\) => handleReorder\(idx, "down"\)\}\s*disabled=\{idx === testimonials\.length - 1 \|\| isPending\}/);
+  assert.match(testimonials, /rating: current\.rating, order: target\.order, isPublic: current\.isPublic,/);
+  assert.match(testimonials, /rating: target\.rating, order: current\.order, isPublic: target\.isPublic,/);
+});
+
+test("후기: 행 클릭 패널·키보드 가드·관리 칸 전파 차단, 수정·삭제·네이버 링크 저장 그대로", () => {
+  assert.match(testimonials, /<ListDetailPanel onClose=\{\(\) => setDetailTestimonialId\(null\)\} titleId="testimonial-detail-panel-title"/);
+  assert.match(testimonials, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(testimonials, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(testimonials, /onClick=\{\(\) => startEdit\(t\)\}/);
+  assert.match(testimonials, /onClick=\{\(\) => handleDelete\(t\.id\)\}/);
+  assert.match(testimonials, /confirm\("이 후기를 삭제하시겠습니까\?"\)/);
+  assert.match(testimonials, /await updateNaverPlaceUrl\(naverUrl\)/);
+});
