@@ -30,3 +30,18 @@ test("탈퇴 신청: 한 줄 표 + ⚡·패널, «정말 삭제» 확인 단계�
   assert.match(source, /if \(row\.administrativeHold\) return \[\];/);
   assert.match(source, /업무·권한 이관 후 처리/);
 });
+
+test("직원 역할 신청: 두 목록 모두 한 줄 표 + ⚡·패널, 승인·회수는 확인 창에서만 확정", () => {
+  const source = read("../src/app/admin/role-requests/RoleRequestsClient.tsx");
+  assertListStandard(source, "역할 신청");
+  // «이름 (학부모)» 를 붙이지 않고 기본 역할을 칸으로 나눴다
+  assert.doesNotMatch(source, /\(\{PRIMARY_LABEL\[row\.primaryRole\]/);
+  // 승인·회수는 확인 단계를 연다 → 확인 창에서 approveRoleRequest / revokeRoleGrant
+  assert.match(source, /label: "승인"[^\n]*onSelect: \(\) => setConfirming\(id\)/);
+  assert.match(source, /label: "회수"[^\n]*onSelect: \(\) => setConfirming\(id\)/);
+  assert.match(source, /label: "반려"[^\n]*rejectRoleRequest\(id\)/);
+  assert.match(source, /run\(\(\) => approveRoleRequest\(confirmPending\.id\)\)/);
+  assert.match(source, /run\(\(\) => revokeRoleGrant\(confirmTarget\.id\)\)/);
+  // 원장이 아니면 작업 없음(서버도 다시 막는다)
+  assert.match(source, /if \(!canDecide\) return \[\];/);
+});
