@@ -8,6 +8,7 @@
  */
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useState, useRef, useEffect, useCallback } from "react";
 import ChatMessage from "./ChatMessage";
 import FontFreeIcon from "../ui/FontFreeIcon";
@@ -112,8 +113,11 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
           {
             role: "model",
             content:
-              data.error ||
-              "죄송합니다, 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+              // 서버 안내 중 개발 문장(예: 환경변수 미설정)은 쉬운 안내로 바꾼다
+              publicErrorText(
+                data.error,
+                "죄송합니다, 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+              ),
           },
         ]);
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useCallback, useEffect, useState } from "react";
 import type { StudentDetail } from "@/lib/seasonal/student-detail";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -52,7 +53,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
     fetch(`/api/admin/seasonal/student-detail?applicationId=${encodeURIComponent(applicationId)}`, { cache: "no-store" })
       .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
       .then(({ ok, j }) => { if (!alive) return; if (!ok) throw new Error(j?.error || "실패"); setDetail(j.detail); })
-      .catch((e) => { if (alive) setErr(e?.message || "실패"); })
+      .catch((e) => { if (alive) setErr(publicErrorText(e, "학생 정보를 불러오지 못했습니다.")); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [applicationId]);
@@ -73,7 +74,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
       setPinEdit(null);
       load(); // 상세 다시 읽어 반영
       onChanged?.();
-    } catch (e: any) { setErr(e?.message || "위치를 저장하지 못했습니다."); }
+    } catch (e: any) { setErr(publicErrorText(e, "위치를 저장하지 못했습니다.")); }
     finally { setSavingPin(false); }
   }
 
@@ -90,7 +91,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "저장 실패");
       load(); onChanged?.();
-    } catch (e: any) { setErr(e?.message || "셔틀 이용 여부를 저장하지 못했습니다."); }
+    } catch (e: any) { setErr(publicErrorText(e, "셔틀 이용 여부를 저장하지 못했습니다.")); }
     finally { setSavingPin(false); }
   }
 
@@ -107,7 +108,7 @@ export default function StudentDetailModal({ applicationId, onClose, save, onCha
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "배치 실패");
       load(); onChanged?.();
-    } catch (e: any) { setErr(e?.message || "거점으로 배치하지 못했습니다."); }
+    } catch (e: any) { setErr(publicErrorText(e, "거점으로 배치하지 못했습니다.")); }
     finally { setSavingPin(false); }
   }
 

@@ -5,6 +5,7 @@ import test from "node:test";
 import React from "react";
 import ts from "typescript";
 import * as kst from "../src/lib/datetime/kst.ts";
+import * as publicErrorText from "../src/components/ui/public-error-text.ts";
 
 const require = createRequire(import.meta.url);
 function compile(file, dependencies) {
@@ -46,6 +47,7 @@ function harness(t, { initialStep = 1, form = {}, availableSlots = slots, existi
       useEffect(callback, deps) { if (!effectDeps || deps.some((value, index) => !Object.is(value, effectDeps[index]))) effects.push(callback); effectDeps = deps; },
     },
     "@/lib/datetime/kst": kst,
+    "@/components/ui/public-error-text": publicErrorText,
     "./trialScheduleSelection": schedule,
     "@/components/ui/FontFreeIcon": { default: () => null },
     "@/components/MetaPixel": { trackMetaEvent() {} },

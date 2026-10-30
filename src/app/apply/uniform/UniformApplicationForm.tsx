@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { submitUniformOrder } from "@/app/actions/uniform";
@@ -155,7 +156,9 @@ export default function UniformApplicationForm() {
         });
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (submitError) {
-        setError(submitError instanceof Error ? submitError.message : "신청 중 문제가 발생했습니다.");
+        console.error("[uniform] 신청 실패", submitError);
+        // 서버 원문(영어·개발 용어)은 화면에 내지 않고 쉬운 안내로 바꾼다
+        setError(publicErrorText(submitError, "신청 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요."));
       }
     });
   }

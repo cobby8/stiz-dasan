@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { Suspense, useState } from "react";
 import { login, signup } from "@/app/actions/auth";
 import Image from "next/image";
@@ -37,7 +38,8 @@ function LoginContent() {
     enabledProviders?.includes(option.provider as (typeof enabledProviders)[number]),
   );
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [error, setError] = useState<string | null>(searchParams.get("error"));
+  // 주소창 ?error= 값은 누구나 바꿀 수 있어 한국어 안내만 보여 준다(영어·개발 원문은 쉬운 안내로)
+  const [error, setError] = useState<string | null>(searchParams.get("error") ? publicErrorText(searchParams.get("error"), "로그인하지 못했습니다. 다시 시도해 주세요.") : null);
   const [loading, setLoading] = useState(false);
   // 비밀번호 보기/숨기기 토글 상태
   const [showPassword, setShowPassword] = useState(false);
@@ -70,7 +72,8 @@ function LoginContent() {
       if (isRedirectError(err)) {
         throw err;
       }
-      setError(err instanceof Error ? err.message : "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      console.error("[login] 처리 실패", err);
+      setError(publicErrorText(err, "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."));
       setLoading(false);
     }
   }

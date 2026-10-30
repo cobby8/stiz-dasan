@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -278,7 +279,9 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                 setCompleted(true);
                 window.scrollTo({ top: 0, behavior: "smooth" });
             } catch (e: unknown) {
-                setError(e instanceof Error ? e.message : "신청 중 오류가 발생했습니다.");
+                console.error("[trial] 신청 실패", e);
+                // 서버 원문(영어·개발 용어)은 화면에 내지 않고 쉬운 안내로 바꾼다
+                setError(publicErrorText(e, "신청 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."));
             }
         });
     };

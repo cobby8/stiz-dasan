@@ -7,6 +7,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as seasonalTypes from "../src/components/seasonal/types.ts";
+import * as publicErrorText from "../src/components/ui/public-error-text.ts";
 import { extractPrograms, formatSeasonalDate, formatSeasonalPeriod, normalizeProgram, seasonalApplicationStatusLabel, seasonalDisplayState, statusLabel } from "../src/components/seasonal/types.ts";
 
 const at = (value) => new Date(value).getTime();
@@ -36,6 +37,7 @@ function renderPublicPage(name, program) {
     if (id === "next/link") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (id === "./types") return { ...seasonalTypes, seasonalDisplayState: (value) => seasonalDisplayState(value, openTime) };
     if (id === "@/components/maps/LocationPickerModal") return { default: () => null };
+    if (id === "@/components/ui/public-error-text") return publicErrorText;
     if (id === "@/lib/seasonal/contracts") return { SHUTTLE_LOCATION_CONSENT_VERSION: "fixture" };
     // 하단 고정 바 감싸개(플로팅 버튼 위치용)는 모양만 같은 div 로 바꿔 렌더한다.
     if (id === "@/components/public-floating") return {

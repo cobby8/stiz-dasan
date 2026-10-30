@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -189,7 +190,8 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setMessage(error instanceof Error ? error.message : "특강 정보를 불러오지 못했습니다.");
+        console.error("[seasonal] 특강 정보 조회 실패", error);
+        setMessage(publicErrorText(error, "특강 정보를 불러오지 못했습니다."));
         setState("error");
       });
     return () => controller.abort();
@@ -389,7 +391,8 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
       setMessage("신청이 접수되었습니다. 학원에서 확인 후 안내드릴게요.");
     } catch (error) {
       setSubmitState("error");
-      setMessage(error instanceof Error ? error.message : "신청을 저장하지 못했습니다.");
+      console.error("[seasonal] 신청 저장 실패", error);
+      setMessage(publicErrorText(error, "신청을 저장하지 못했습니다."));
     }
   }
 

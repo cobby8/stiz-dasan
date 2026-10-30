@@ -127,7 +127,7 @@ export default function ApplyPageClient({
                             {/* 카드 헤더 — 게슈탈트 P-05: 두 카드 머리를 같은 중립색으로 맞춘다(유사성).
                                 옛 네이비 머리는 다크 모드 배경과 거의 같은 색이라 묻혔다. */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
-                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">Trial Class</p>
+                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">체험수업</p>
                                 <h3 className="text-xl font-black text-[var(--color-public-ink)]">{trialTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
@@ -175,7 +175,7 @@ export default function ApplyPageClient({
                         <Card id="enroll" variant="default" className="public-card overflow-hidden !p-0 h-full">
                             {/* 카드 헤더 — 체험 카드와 같은 중립색(게슈탈트 P-05) */}
                             <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-6 py-4">
-                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">Enrollment</p>
+                                <p className="mb-1 text-xs font-bold text-[var(--color-public-accent)]">정규 수강</p>
                                 <h3 className="text-xl font-black text-[var(--color-public-ink)]">{enrollTitle}</h3>
                             </div>
                             {/* 카드 본문 */}
@@ -202,7 +202,7 @@ export default function ApplyPageClient({
             </SectionLayout>
 
             {/* FAQ 섹션 — 아코디언 형태의 자주 묻는 질문 */}
-            <SectionLayout className="public-content-section" id="faq" label="FAQ" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
+            <SectionLayout className="public-content-section" id="faq" title="자주 묻는 질문" description="궁금한 점을 빠르게 확인하세요" bgColor="white">
                 <AnimateOnScroll>
                     <Card variant="default" className="!p-0 max-w-3xl mx-auto">
                         <div className="px-6 py-2">

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import {publicErrorText} from '../src/components/ui/public-error-text.ts'; // 공개 오류 안내 도우미(진짜 모듈)
 const source=readFileSync('src/components/seasonal/RouteSection.tsx','utf8');
 const cut=source.indexOf('  const activeMapIdx =');
 const instrument=source.slice(0,cut)+'  globalThis.__api = { switchTo, generate, saveRoute, setDriver, scheduleReroute, runReroute, rerouteVehicle, markDirty, sug, dirty, savedAt, loadedFromSaved, routeReady, saveBlocked, err, saveMsg }; return null; }';
@@ -11,7 +12,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {
 function mount(fetch,initial=suggestion()){
  let slots=[],i=0;const timers=[];let props={initial,date:initial.date,refreshKey:0,regularEditing:true,apiBase:'/api/admin/regular/dispatch',serviceMonth:'2026-10'};
  const react={useState(v){const n=i++;if(!(n in slots))slots[n]=v;return [slots[n],v=>slots[n]=typeof v==='function'?v(slots[n]):v];},useRef(v){const n=i++;return slots[n]??=( {current:v});},useEffect(){i++;}};
- const exports={};const context={exports,require(name){if(name==='react')return react;if(name.includes('regularRouteEdit'))return {overCapacityVehicles:()=>[]};if(name.includes('shuttleStopEta'))return {reapplyManualEtaVehicles:x=>x};return {};},fetch,window:{confirm:()=>true,setTimeout(fn){timers.push(fn);return timers.length;},clearTimeout(){},addEventListener(){},removeEventListener(){}},console,setTimeout,Intl};
+ const exports={};const context={exports,require(name){if(name==='react')return react;if(name.includes('regularRouteEdit'))return {overCapacityVehicles:()=>[]};if(name.includes('shuttleStopEta'))return {reapplyManualEtaVehicles:x=>x};if(name.includes('public-error-text'))return {publicErrorText};return {};},fetch,window:{confirm:()=>true,setTimeout(fn){timers.push(fn);return timers.length;},clearTimeout(){},addEventListener(){},removeEventListener(){}},console,setTimeout,Intl};
  vm.runInNewContext(ts.transpileModule(instrument,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
  const render=(patch={})=>{props={...props,...patch};i=0;exports.default(props);return context.__api;};
  return {render,get api(){return context.__api;},timers};

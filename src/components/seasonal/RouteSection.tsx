@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useEffect, useRef, useState } from "react";
 import { RouteMapCanvas } from "@/components/seasonal/DispatchRouteMap";
 import type { DispatchSuggestion, DispatchChange } from "@/lib/seasonal/shuttle-optimize";
@@ -307,7 +308,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       setSavedAt(j.savedAt); setLoadedFromSaved(true); setSaveMsg(editSeq.current === seqAtStart ? "저장했습니다" : "저장 후 추가한 변경이 있습니다"); setRelocatedCount(0);
       // 저장 요청 중에 또 고쳤다면 그 편집은 아직 저장 전이다 → 「저장 안 됨」 유지.
       if (editSeq.current === seqAtStart) setDirty(false);
-    } catch (e: unknown) { if (scopeRef.current === scopeAtStart) { setErr((e instanceof Error ? e.message : "") || "노선을 저장하지 못했습니다."); setDirty(true); setRouteReady(false); } }
+    } catch (e: unknown) { if (scopeRef.current === scopeAtStart) { setErr(publicErrorText(e, "노선을 저장하지 못했습니다.")); setDirty(true); setRouteReady(false); } }
     finally { setSaving(false); }
   }
 
@@ -341,7 +342,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       if (!check.ok || verified?.saved !== null) throw new Error("삭제 결과를 확인하지 못했습니다. 다시 불러와 주세요.");
       setSavedAt(null); setLoadedFromSaved(false); setSaveMsg("저장 노선을 삭제했습니다");
       await generate(sug.date ?? date, undefined, scopeRef.current, false); // 삭제가 확인된 뒤에는 새 저장본으로 시작한다
-    } catch (e: unknown) { if (scopeRef.current === scopeAtStart) { setErr((e instanceof Error ? e.message : "") || "노선을 삭제하지 못했습니다."); setRouteReady(false); } }
+    } catch (e: unknown) { if (scopeRef.current === scopeAtStart) { setErr(publicErrorText(e, "노선을 삭제하지 못했습니다.")); setRouteReady(false); } }
     finally { setSaving(false); }
   }
 
@@ -367,7 +368,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       // ★ 자동 저장하지 않는다. 재계산 결과를 원장이 눈으로 확인한 뒤 [저장]을 누르게 한다.
       //   저장은 되돌릴 수 없고, 잘못된 재계산이 조용히 덮어쓰면 학생이 노선에서 사라진다(위 사고).
       setSaveMsg("경로를 다시 계산했습니다. 내용을 확인한 뒤 [저장]을 눌러주세요.");
-    } catch (e: unknown) { setErr((e instanceof Error ? e.message : "") || "경로 재계산에 실패했습니다."); }
+    } catch (e: unknown) { setErr(publicErrorText(e, "경로 재계산에 실패했습니다.")); }
     finally { setRecalcing(false); }
   }
 
@@ -484,7 +485,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || "저장 실패");
       await generate(sug.date ?? date);
-    } catch (e: unknown) { setErr((e instanceof Error ? e.message : "") || "무료탑승으로 옮기지 못했습니다."); }
+    } catch (e: unknown) { setErr(publicErrorText(e, "무료탑승으로 옮기지 못했습니다.")); }
     finally { setHubBusy(false); }
   }
 

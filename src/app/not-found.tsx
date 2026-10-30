@@ -14,9 +14,7 @@ export default function NotFound() {
     <PublicSiteTheme publicScope>
     <div className="min-h-screen bg-[var(--color-public-paper)] flex items-center justify-center px-6">
       <div className="max-w-md w-full text-center">
-        {/* 404 숫자 — 큰 글씨로 시각적 임팩트 */}
-        <p className="text-8xl font-black text-brand-orange-500 dark:text-brand-neon-lime mb-2">404</p>
-
+        {/* 옛 큰 «404» 숫자는 HTTP 오류 번호라 학부모에게 개발 용어로 보여 지웠다(원장 지시 2026-10-30) */}
         {/* 농구 아이콘 */}
         <div className="mx-auto w-16 h-16 rounded-full bg-brand-orange-50 flex items-center justify-center mb-6">
           <span className="text-3xl" role="img" aria-label="농구공">

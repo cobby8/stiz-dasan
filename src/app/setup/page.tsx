@@ -1,5 +1,6 @@
 "use client";
 
+import { publicErrorText } from "@/components/ui/public-error-text";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -61,7 +62,8 @@ export default function SetupPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "관리자 생성 중 오류가 발생했습니다.");
+        // 인증 서비스 영어 원문이 섞여 올 수 있어 한국어 안내만 보여 준다
+        setError(publicErrorText(data.error, "관리자 생성 중 오류가 발생했습니다."));
         setLoading(false);
         return;
       }
