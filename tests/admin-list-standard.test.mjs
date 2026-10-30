@@ -251,3 +251,19 @@ test("정규 배차 하루 타임라인: 정차 한 줄 행(시각 오른쪽·�
   assert.equal((regularDispatchList.match(/<RouteSection /g) ?? []).length, 2);
   assert.match(regularDispatchList, /confirmLeave\(\)/);
 });
+
+const vehicleClient = read("../src/app/admin/shuttle/VehicleManagerClient.tsx");
+
+test("차량 관리: 차량 한 줄 행(정원 오른쪽)·행 클릭 패널·⚡ 수정·비활성화/활성화 유지", () => {
+  assert.match(vehicleClient, /<table className="admin-list-table/);
+  assert.match(vehicleClient, /admin-cell-num[^"]*">\{v\.capacity\}인승/);
+  assert.match(vehicleClient, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\} titleId="vehicle-detail-panel-title"/);
+  assert.match(vehicleClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(vehicleClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // 기존 작업(수정·활성 전환)은 ⚡ 와 패널이 같은 목록으로, 저장 API 그대로
+  assert.match(vehicleClient, /onSelect: \(\) => setModal\(v\)/);
+  assert.match(vehicleClient, /onSelect: \(\) => toggleActive\(v\)/);
+  assert.match(vehicleClient, /buildVehicleActions\(d\)\.map/);
+  assert.match(vehicleClient, /resource: "vehicle"/);
+  assert.doesNotMatch(vehicleClient, /\btruncate\b|text-ellipsis|line-clamp/);
+});
