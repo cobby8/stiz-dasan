@@ -401,3 +401,24 @@ test("학부모 요청: 펼침 카드 → 한 줄 행(접수일·시각 오른�
   assert.match(requestsClient, /\{feedback && !detail && <p role="status"/);
   assert.doesNotMatch(requestsClient, /\btruncate\b|text-ellipsis|line-clamp|bg-yellow-100|bg-red-100|brand-neon-lime/);
 });
+
+const kakaoClient = read("../src/app/admin/kakao-requests/KakaoRequestsClient.tsx");
+
+test("카카오 접수함: 큰 카드 → 한 줄 행(접수일·시각 오른쪽, KST)·행 클릭 패널에 원문·검토·결정 그대로, 필터·발송 미리보기 그대로", () => {
+  assert.match(kakaoClient, /<table className="admin-list-table/);
+  assert.match(kakaoClient, /admin-cell-num[^"]*">\{kstLabel\(row\.createdAt\) \|\| "-"\}/);
+  assert.match(kakaoClient, /admin-cell-num[^"]*">\{formatTime\(row\.createdAt\)\}/);
+  assert.match(kakaoClient, /<ListDetailPanel onClose=\{\(\) => setOpenId\(""\)\} titleId="kakao-request-detail-panel-title"/);
+  assert.match(kakaoClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  // 결정은 같은 함수·인자(버전 확인 포함), 서버 필터 주소 이동 그대로
+  assert.match(kakaoClient, /decideKakaoParentIntake\(\{ intakeId:id, expectedRevision:editRevisions\[id\] \?\? row\.revision, decision, note:notes\[id\]/);
+  for (const decision of ['"NEEDS_DETAILS"', '"CONSULTATION"', '"REJECT"', '"TRANSFER"', '"CLOSE_CONSULTATION"']) assert.ok(kakaoClient.includes(decision), `결정 ${decision}`);
+  assert.match(kakaoClient, /router\.push\(`\/admin\/kakao-requests\?status=\$\{value\}`\)/);
+  // 재확인 안내는 «준비»만 패널에서(패널을 닫고 기존 미리보기), SMS 발송은 미리보기의 확인창 뒤에만
+  assert.match(kakaoClient, /onClick=\{\(\) => \{ setOpenId\(""\); prepareNotice\(rowId\); \}\}/);
+  assert.match(kakaoClient, /window\.confirm\(`SMS 문자 1건/);
+  assert.equal((kakaoClient.match(/sendKakaoReconfirmationNotice\(/g) ?? []).length, 1);
+  // 오류 안내는 패널이 열려 있으면 패널 안에만
+  assert.match(kakaoClient, /\{error && !openRow && <p role="alert"/);
+  assert.doesNotMatch(kakaoClient, /\btruncate\b|text-ellipsis|line-clamp|bg-yellow-100|bg-violet-50|bg-blue-50/);
+});
