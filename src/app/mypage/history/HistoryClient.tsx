@@ -4,6 +4,38 @@
 // getMyPageHistory가 반환한 자녀별 전체 기록을 자녀 선택 + 출결/수납 두 목록으로 보여준다.
 import { useState } from "react";
 import Link from "next/link";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import { kstLabel, toKstYmd } from "@/lib/datetime/kst";
+
+// 출결 상태 — 기존 화면과 같은 판정(PRESENT/ABSENT 외에는 "지각"으로 표시)을 한 곳에 모은다.
+// 칩 건수와 목록 행이 같은 기준으로 세어지도록 행 표시도 이 함수만 쓴다.
+type AttendanceKey = "PRESENT" | "LATE" | "ABSENT";
+const ATTENDANCE_STATUS: { value: AttendanceKey; label: string; color: string }[] = [
+    { value: "PRESENT", label: "출석", color: "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-200" },
+    { value: "LATE", label: "지각", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-200" },
+    { value: "ABSENT", label: "결석", color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200" },
+];
+function attendanceKeyOf(status: string): AttendanceKey {
+    return status === "PRESENT" ? "PRESENT" : status === "ABSENT" ? "ABSENT" : "LATE";
+}
+
+// 출결 기록을 달(YYYY-MM)별로 묶는다. 날짜는 KST 달력 날짜로 바꾼 뒤 문자열로만 다룬다
+// (서버 UTC·휴대폰 KST 차이로 하루 밀리지 않게 — toISOString 금지).
+function groupAttendanceByMonth<T extends { date: Date | string }>(records: T[]) {
+    const groups: { month: string; label: string; items: { record: T; ymd: string }[] }[] = [];
+    for (const record of records) {
+        const ymd = toKstYmd(record.date);
+        const month = ymd.slice(0, 7);
+        let group = groups.find((item) => item.month === month);
+        if (!group) {
+            const [year, mon] = month.split("-");
+            group = { month, label: year && mon ? `${year}년 ${Number(mon)}월` : "날짜 미정", items: [] };
+            groups.push(group);
+        }
+        group.items.push({ record, ymd });
+    }
+    return groups;
+}
 
 // 결제 상태 배지 — 마이페이지 본 화면과 동일한 톤/토큰 사용(하드코딩 hex 없음)
 const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
@@ -74,8 +106,21 @@ export default function HistoryClient({
     );
     const [selectedIdx, setSelectedIdx] = useState(initialIdx);
     const [tab, setTab] = useState<Tab>("attendance");
+    // 출결 상태 칩으로 고른 상태("ALL" = 전체)
+    const [attendanceFilter, setAttendanceFilter] = useState("ALL");
 
     const child = children[selectedIdx];
+    // 칩 건수와 목록은 같은 판정 함수로 센다(칩 숫자 = 보이는 행 수)
+    const attendanceRecords = child?.attendance.records ?? [];
+    const attendanceChips = ATTENDANCE_STATUS.map((item) => ({
+        value: item.value,
+        label: item.label,
+        count: attendanceRecords.filter((r) => attendanceKeyOf(r.status) === item.value).length,
+    }));
+    const visibleAttendance = attendanceFilter === "ALL"
+        ? attendanceRecords
+        : attendanceRecords.filter((r) => attendanceKeyOf(r.status) === attendanceFilter);
+    const attendanceGroups = groupAttendanceByMonth(visibleAttendance);
 
     return (
         <div>
@@ -97,7 +142,11 @@ export default function HistoryClient({
                 <div className="mb-4">
                     <select
                         value={selectedIdx}
-                        onChange={(e) => setSelectedIdx(Number(e.target.value))}
+                        onChange={(e) => {
+                            setSelectedIdx(Number(e.target.value));
+                            // 자녀를 바꾸면 이전 자녀 기준 상태 칩 선택은 풀어 준다
+                            setAttendanceFilter("ALL");
+                        }}
                         className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
                     >
                         {children.map((c, i) => (
@@ -145,27 +194,19 @@ export default function HistoryClient({
                     {/* 출결 탭 */}
                     {tab === "attendance" && (
                         <div>
-                            {/* 누적 출석률 요약 (기록 있을 때만) */}
+                            {/* 누적 출석률 + 상태 칩 한 줄 (기록 있을 때만).
+                                예전 4칸 요약판(약 80px)을 한 줄로 줄이고, 칩을 누르면 그 상태만 본다. */}
                             {child.attendance.total > 0 && (
-                                <div className="mb-4 grid grid-cols-4 gap-2 rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 p-4 shadow-sm text-center">
-                                    <div>
-                                        <p className="text-xs text-gray-400">출석률</p>
-                                        <p className="text-lg font-extrabold text-brand-navy-900 dark:text-white">
-                                            {child.attendance.rate}%
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-400">출석</p>
-                                        <p className="text-lg font-extrabold text-green-600 dark:text-green-300">{child.attendance.present}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-400">지각</p>
-                                        <p className="text-lg font-extrabold text-yellow-600 dark:text-yellow-300">{child.attendance.late}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs text-gray-400">결석</p>
-                                        <p className="text-lg font-extrabold text-red-600 dark:text-red-300">{child.attendance.absent}</p>
-                                    </div>
+                                <div className="mb-3 flex flex-wrap items-center gap-2">
+                                    <p className="text-sm font-bold text-[var(--color-academy-ink)] dark:text-white">
+                                        출석률 <span className="tabular-nums">{child.attendance.rate}%</span>
+                                    </p>
+                                    <StatusCountChips
+                                        items={attendanceChips}
+                                        selected={attendanceFilter}
+                                        onSelect={setAttendanceFilter}
+                                        ariaLabel="출결 상태별 건수"
+                                    />
                                 </div>
                             )}
 
@@ -174,30 +215,35 @@ export default function HistoryClient({
                                     출결 기록이 없습니다.
                                 </div>
                             ) : (
-                                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                                    <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                                        {child.attendance.records.map((r, i) => (
-                                            <div key={i} className="flex items-center justify-between px-4 py-3">
-                                                <div>
-                                                    <span className="text-sm text-gray-700 dark:text-gray-200">{toDateStr(r.date)}</span>
-                                                    {r.className && (
-                                                        <span className="ml-2 text-xs text-gray-400">{r.className}</span>
-                                                    )}
-                                                </div>
-                                                <span
-                                                    className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                                                        r.status === "PRESENT"
-                                                            ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-200"
-                                                            : r.status === "ABSENT"
-                                                            ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200"
-                                                            : "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-200"
-                                                    }`}
-                                                >
-                                                    {r.status === "PRESENT" ? "출석" : r.status === "ABSENT" ? "결석" : "지각"}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
+                                // 달별 묶음 — 각 묶음 제목에 그 달 건수를 오른쪽 숫자로
+                                <div className="space-y-3">
+                                    {attendanceGroups.map((group) => (
+                                        <section key={group.month} aria-label={group.label} className="bg-white dark:bg-gray-800 border border-[var(--color-academy-line)] dark:border-gray-800 rounded-2xl overflow-hidden">
+                                            <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)] dark:bg-gray-900 dark:text-gray-100">
+                                                <span>{group.label}</span>
+                                                <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
+                                            </h3>
+                                            <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700/50">
+                                                {group.items.map(({ record: r, ymd }, i) => {
+                                                    const status = ATTENDANCE_STATUS.find((item) => item.value === attendanceKeyOf(r.status))!;
+                                                    return (
+                                                        // 한 줄 행: 상태 칩 · 반 이름(줄바꿈 허용, 말줄임 없음) · 날짜(오른쪽, 숫자 폭 고정)
+                                                        <li key={`${ymd}-${i}`} className="flex min-h-11 items-center gap-2 px-3 py-2">
+                                                            <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${status.color}`}>
+                                                                {status.label}
+                                                            </span>
+                                                            <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-muted)] dark:text-gray-300">
+                                                                {r.className ?? ""}
+                                                            </span>
+                                                            <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-ink)] dark:text-gray-200">
+                                                                {kstLabel(ymd) || "-"}
+                                                            </span>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </section>
+                                    ))}
                                 </div>
                             )}
                         </div>
