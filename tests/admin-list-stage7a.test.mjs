@@ -63,3 +63,20 @@ test("입금 확인·영수증 요청: 카드 → 한 줄 표, 입력칸·처리
   // 처리 대상은 확인 중(PENDING) 건만
   assert.match(source, /if \(row\.status !== "PENDING"\) return \[\];/);
 });
+
+test("담당자 전달 장부: 카드 → 한 줄 표 + 패널(조회 전용), 필터는 한 줄, 묶음은 tbody", () => {
+  const source = read("../src/app/admin/notification-deliveries/OperationalDeliveryClient.tsx");
+  assert.match(source, /<table className="admin-list-table/);
+  assert.match(source, /admin-cell-num[^"]*"><time>\{formatTime\(row\.updatedAt\)\}<\/time>/);
+  assert.match(source, /<ListDetailPanel/);
+  assert.match(source, /if \(event\.target !== event\.currentTarget\) return;/);
+  assert.doesNotMatch(source, /\btruncate\b|text-ellipsis|line-clamp/);
+  // 같은 요청·담당자의 채널 기록 묶음은 그대로(tbody 하나씩)
+  assert.match(source, /groupOperationalDeliveries\(rows\)\.map\(\(group\) => <tbody/);
+  // 예전 카드의 시각 3종·오류 문구는 패널에서
+  for (const field of ["row.sentAt", "row.failedAt", "row.nextAttemptAt", "row.errorMessage"]) {
+    assert.ok(source.includes(field), `${field} 는 패널에 남아야 합니다`);
+  }
+  // 필터를 바꾸면 열린 패널을 닫는다
+  assert.match(source, /function changeStatus\(value: string\) \{ setDetailId\(null\); setStatus\(value\); \}/);
+});
