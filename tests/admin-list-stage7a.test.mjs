@@ -119,3 +119,19 @@ test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산
   // 패널로 옮긴 부분에 옛 하드코딩 색이 남지 않는다
   assert.doesNotMatch(panel, /brand-navy|brand-neon|bg-amber-|text-gray-|dark:/);
 });
+
+test("스태프 관리: 표 3개 모두 한 줄(말줄임 제거), 초대는 ⚡, 역할·코치 선택칸은 행 안에 그대로", () => {
+  const source = read("../src/app/admin/staff/StaffClient.tsx");
+  assertListStandard(source, "스태프");
+  // 대기 중 초대·코치 프로필·스태프 = 표 3개
+  assert.equal(source.match(/<table className="admin-list-table/g)?.length, 3);
+  // 초대 ⚡ 는 예전 버튼과 같은 함수·인자
+  assert.match(source, /label: "가입 링크 복사"[^\n]*handleCopyInvitationLink\(inv\.token, inv\.name\)/);
+  assert.match(source, /label: "재발송"[^\n]*handleResendInvitation\(inv\.id, inv\.name\)/);
+  assert.match(source, /label: "취소"[^\n]*handleCancelInvitation\(inv\.id, inv\.name\)/);
+  // 행 안의 선택칸은 그대로(누르면 패널이 같이 열리지 않게 칸에서 전파 차단)
+  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*<select\s+value=\{user\.role\}/);
+  assert.match(source, /onChange=\{\(e\) => handleRoleChange\(user\.id, e\.target\.value\)\}/);
+  // 패널은 표에 없는 이메일·가입일까지
+  assert.match(source, /detailUser\.email/);
+});

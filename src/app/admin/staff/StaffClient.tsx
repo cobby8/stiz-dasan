@@ -15,6 +15,9 @@ import {
     cancelInvitation,
     resendInvitation,
 } from "@/app/actions/admin";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { kstLabel } from "@/lib/datetime/kst";
 
 const AddStaffModal = dynamic(() => import("./AddStaffModal"), {
     loading: () => null,
@@ -68,21 +71,21 @@ function errorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
 }
 
-// 역할별 한국어 라벨 + 색상
+// 역할별 한국어 라벨 + 색상(화면 토큰)
 const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
-    ADMIN: { label: "원장", color: "bg-red-100 text-red-800" },
-    VICE_ADMIN: { label: "부원장", color: "bg-orange-100 text-orange-800" },
-    INSTRUCTOR: { label: "코치/강사", color: "bg-blue-100 text-blue-800" },
-    DRIVER: { label: "셔틀 기사", color: "bg-emerald-100 text-emerald-800" },
-    PARENT: { label: "학부모", color: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300" },
+    ADMIN: { label: "원장", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
+    VICE_ADMIN: { label: "부원장", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
+    INSTRUCTOR: { label: "코치/강사", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    DRIVER: { label: "셔틀 기사", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
+    PARENT: { label: "학부모", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
 };
 
-// 초대 상태별 라벨 + 색상
+// 초대 상태별 라벨 + 색상(화면 토큰)
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-    PENDING: { label: "대기 중", color: "bg-yellow-100 text-yellow-800" },
-    ACCEPTED: { label: "수락 완료", color: "bg-green-100 text-green-800" },
-    CANCELLED: { label: "취소됨", color: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300" },
-    EXPIRED: { label: "만료됨", color: "bg-red-100 text-red-700" },
+    PENDING: { label: "대기 중", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
+    ACCEPTED: { label: "수락 완료", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
+    CANCELLED: { label: "취소됨", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
+    EXPIRED: { label: "만료됨", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
 };
 
 /**
@@ -185,6 +188,8 @@ export default function StaffClient({
     const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
     // 서버 액션 pending 상태
     const [isPending, startTransition] = useTransition();
+    // 행 클릭 상세 패널 대상 — 스태프 행 / 대기 중 초대 행
+    const [detail, setDetail] = useState<{ kind: "user" | "invite"; id: string } | null>(null);
 
     const hasAnyData = staffUsers.length > 0 || coaches.length > 0 || invitations.length > 0;
 
@@ -315,6 +320,24 @@ export default function StaffClient({
         }
     }
 
+    // 대기 중 초대의 ⚡·패널 작업 — 예전 행의 «가입 링크 복사 / 재발송 / 취소» 버튼과 같은 함수·인자(확인창 그대로)
+    function buildInvitationActions(inv: Invitation): AdminQuickAction[] {
+        return [
+            { key: "copy", label: "가입 링크 복사", icon: "content_copy", onSelect: () => void handleCopyInvitationLink(inv.token, inv.name) },
+            { key: "resend", label: "재발송", icon: "refresh", disabled: isPending, onSelect: () => handleResendInvitation(inv.id, inv.name) },
+            { key: "cancel", label: "취소", icon: "close", tone: "danger", disabled: isPending, onSelect: () => handleCancelInvitation(inv.id, inv.name) },
+        ];
+    }
+
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 선택칸·⚡ 에서 누른 키는 가로채지 않는다.
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, next: { kind: "user" | "invite"; id: string }) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetail(next);
+        }
+    }
+
     if (loading && !hasAnyData) {
         return <StaffLoadingFallback />;
     }
@@ -323,14 +346,20 @@ export default function StaffClient({
         return <StaffErrorState onRetry={loadStaffData} />;
     }
 
+    const rowClass =
+        "cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none";
+    const headClass = "bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]";
+    const detailUser = detail?.kind === "user" ? staffUsers.find((user) => user.id === detail.id) ?? null : null;
+    const detailInvite = detail?.kind === "invite" ? pendingInvitations.find((inv) => inv.id === detail.id) ?? null : null;
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             {/* 페이지 헤더 */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">스태프 관리</h1>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                    <h1 className="text-lg font-black text-[var(--color-academy-ink)]">스태프 관리</h1>
                     {/* 역할 나열 설명은 제거하고 권한 고지만 유지 */}
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <p className="text-xs text-[var(--color-academy-muted)]">
                         (원장만 변경 가능)
                     </p>
                 </div>
@@ -338,25 +367,25 @@ export default function StaffClient({
                     <button
                         type="button"
                         onClick={() => void handleCopyStaffInstallLink()}
-                        className="flex items-center gap-2 px-4 py-2.5 border border-brand-navy-200 text-brand-navy-900 dark:border-brand-navy-600 dark:text-white rounded-lg hover:bg-brand-navy-50 dark:hover:bg-brand-navy-800 transition-colors font-medium text-sm"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-ink)] transition-colors hover:bg-[var(--color-academy-soft)]"
                     >
-                        <span className="material-symbols-outlined text-[20px]">content_copy</span>
+                        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">content_copy</span>
                         스태프용 앱 설치 링크
                     </button>
                     {/* 초대 링크 버튼 (메인) */}
                     <button
                         onClick={() => setShowModal("invite")}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-brand-navy-900 text-white rounded-lg hover:bg-brand-navy-800 transition-colors font-medium text-sm"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--color-academy-primary)] px-3 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
                     >
-                        <span className="material-symbols-outlined text-[20px]">send</span>
+                        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">send</span>
                         새 스태프 초대·가입
                     </button>
                     {/* 직접 추가 버튼 (보조) */}
                     <button
                         onClick={() => setShowModal("add")}
-                        className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition-colors font-medium text-sm"
+                        className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-ink)] transition-colors hover:bg-[var(--color-academy-soft)]"
                     >
-                        <span className="material-symbols-outlined text-[20px]">person_add</span>
+                        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">person_add</span>
                         직접 추가
                     </button>
                 </div>
@@ -367,131 +396,110 @@ export default function StaffClient({
                 <div
                     role="status"
                     aria-live="polite"
-                    className={`px-4 py-3 rounded-lg text-sm font-medium ${message.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}
+                    className={`rounded-lg border px-4 py-2 text-sm font-bold ${message.ok ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"}`}
                 >
                     {message.text}
                 </div>
             )}
 
-            {/* 대기 중인 초대 목록 */}
+            {/* 대기 중인 초대 목록 — 예전 두 줄(이름·역할 / 전화 | 남은 일) 행을 한 줄 표로 */}
             {pendingInvitations.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-yellow-200 overflow-hidden">
-                    <div className="px-6 py-4 bg-yellow-50 border-b border-yellow-200">
-                        <h3 className="font-semibold text-yellow-800 flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[20px]">mail</span>
-                            대기 중인 초대 ({pendingInvitations.length}건)
-                        </h3>
-                    </div>
-                    <div className="divide-y divide-gray-100">
-                        {pendingInvitations.map((inv) => {
-                            const rc = ROLE_CONFIG[inv.role] || ROLE_CONFIG.INSTRUCTOR;
-                            const expiresDate = new Date(inv.expiresAt);
-                            // 남은 일수 계산
-                            const daysLeft = Math.max(0, Math.ceil((expiresDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-                            return (
-                                <div key={inv.id} className="px-6 py-4 flex items-center justify-between">
-                                    <div className="flex items-center gap-4">
-                                        {/* 이니셜 아바타 */}
-                                        <div className="w-9 h-9 rounded-full flex items-center justify-center bg-yellow-100 text-yellow-700 font-bold text-sm">
-                                            {inv.name.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-gray-900 dark:text-white">{inv.name}</span>
-                                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${rc.color}`}>
-                                                    {rc.label}
-                                                </span>
-                                            </div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                                {formatPhone(inv.phone)} | {daysLeft}일 남음
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleCopyInvitationLink(inv.token, inv.name)}
-                                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-navy-900 bg-brand-navy-50 rounded-lg hover:bg-brand-navy-100 transition-colors"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                                            가입 링크 복사
-                                        </button>
-                                        {/* 재발송 버튼 */}
-                                        <button
-                                            onClick={() => handleResendInvitation(inv.id, inv.name)}
-                                            disabled={isPending}
-                                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">refresh</span>
-                                            재발송
-                                        </button>
-                                        {/* 취소 버튼 */}
-                                        <button
-                                            onClick={() => handleCancelInvitation(inv.id, inv.name)}
-                                            disabled={isPending}
-                                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">close</span>
-                                            취소
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* 스태프 목록 테이블 */}
-            {coaches.length > 0 && (
-                <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white">코치 프로필</h2>
-                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                문자 발송과 시간표 배정에 쓰는 코치 목록입니다. 앱 사용은 스태프 계정 연결이 필요합니다.
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2 text-xs font-bold">
-                            <span className="rounded-full bg-green-50 px-3 py-1 text-green-700">연결 {linkedCoachCount}</span>
-                            <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">미연결 {unlinkedCoachCount}</span>
-                        </div>
-                    </div>
-                    <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                        {coaches.map((coach) => (
-                            <div key={coach.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="truncate font-bold text-gray-900 dark:text-white">{coach.name}</span>
-                                        <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">{coach.role}</span>
-                                    </div>
-                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                        {coach.phone ? formatPhone(coach.phone) : "전화번호 없음"}
-                                    </p>
-                                </div>
-                                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${coach.userId ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-800"}`}>
-                                    {coach.userId ? "앱 연결됨" : "앱 미연결"}
-                                </span>
-                            </div>
-                        ))}
+                <section>
+                    <h2 className="mb-1.5 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-warning)]">
+                        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">mail</span>
+                        대기 중인 초대 (<span className="tabular-nums">{pendingInvitations.length}</span>건)
+                    </h2>
+                    <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                        <table className="admin-list-table w-full border-collapse text-sm">
+                            <thead className={headClass}>
+                                <tr>
+                                    <th className="px-2 py-2">이름</th>
+                                    <th className="px-2 py-2">역할</th>
+                                    <th className="admin-cell-num px-2 py-2">전화번호</th>
+                                    <th className="admin-cell-num px-2 py-2">남은 기간</th>
+                                    <th className="admin-cell-center px-2 py-2">관리</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--color-academy-line)]">
+                                {pendingInvitations.map((inv) => {
+                                    const rc = ROLE_CONFIG[inv.role] || ROLE_CONFIG.INSTRUCTOR;
+                                    const expiresDate = new Date(inv.expiresAt);
+                                    // 남은 일수 계산
+                                    const daysLeft = Math.max(0, Math.ceil((expiresDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                                    return (
+                                        <tr key={inv.id} tabIndex={0} aria-label={`${inv.name} 초대 상세 보기`} onClick={() => setDetail({ kind: "invite", id: inv.id })} onKeyDown={(event) => handleRowKeyDown(event, { kind: "invite", id: inv.id })} className={rowClass}>
+                                            <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{inv.name}</td>
+                                            <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${rc.color}`}>{rc.label}</span></td>
+                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</td>
+                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{daysLeft}일 남음</td>
+                                            {/* 관리: ⚡(복사·재발송·취소). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                            <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                                                <AdminQuickActionMenu label={`${inv.name} 초대 빠른 작업`} actions={buildInvitationActions(inv)} />
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             )}
 
-            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-                <table className="w-full min-w-[720px]">
-                    <thead>
-                        <tr className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">이름</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">전화번호</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">역할</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">코치 연결</th>
+            {/* 코치 프로필 — 예전 카드 격자를 한 줄 표로(작업 없는 요약이라 패널 없음) */}
+            {coaches.length > 0 && (
+                <section>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                        <h2 className="text-sm font-black text-[var(--color-academy-ink)]">코치 프로필</h2>
+                        <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-academy-success)]">연결 {linkedCoachCount}</span>
+                        <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-academy-warning)]">미연결 {unlinkedCoachCount}</span>
+                        <p className="w-full text-xs text-[var(--color-academy-muted)]">
+                            문자 발송과 시간표 배정에 쓰는 코치 목록입니다. 앱 사용은 스태프 계정 연결이 필요합니다.
+                        </p>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                        <table className="admin-list-table w-full border-collapse text-sm">
+                            <thead className={headClass}>
+                                <tr>
+                                    <th className="px-2 py-2">이름</th>
+                                    <th className="px-2 py-2">역할</th>
+                                    <th className="admin-cell-num px-2 py-2">전화번호</th>
+                                    <th className="px-2 py-2">앱</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--color-academy-line)]">
+                                {coaches.map((coach) => (
+                                    <tr key={coach.id}>
+                                        <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{coach.name}</td>
+                                        <td className="px-2 py-1.5 text-xs font-bold text-[var(--color-academy-primary)]">{coach.role}</td>
+                                        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{coach.phone ? formatPhone(coach.phone) : "전화번호 없음"}</td>
+                                        <td className="px-2 py-1.5">
+                                            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${coach.userId ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
+                                                {coach.userId ? "앱 연결됨" : "앱 미연결"}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
+
+            {/* 스태프 목록 테이블 — 한 줄 행, 역할·코치 연결 선택칸은 예전처럼 행 안에서 바로 바꾼다 */}
+            <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                <table className="admin-list-table w-full border-collapse text-sm">
+                    <thead className={headClass}>
+                        <tr>
+                            <th className="px-2 py-2">이름</th>
+                            <th className="admin-cell-num px-2 py-2">전화번호</th>
+                            <th className="px-2 py-2">역할</th>
+                            <th className="px-2 py-2">코치 연결</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-[var(--color-academy-line)]">
                         {staffUsers.length === 0 ? (
                             <tr>
-                                <td colSpan={4} className="px-6 py-12 text-center text-gray-400 text-sm">
+                                <td colSpan={4} className="px-2 py-4 text-center text-sm text-[var(--color-academy-muted)]">
                                     등록된 스태프가 없습니다.
                                 </td>
                             </tr>
@@ -503,24 +511,20 @@ export default function StaffClient({
                                     user.role === "VICE_ADMIN" ||
                                     user.role === "INSTRUCTOR";
                                 return (
-                                    <tr key={user.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${user.role === "ADMIN" ? "bg-red-500" : user.role === "VICE_ADMIN" ? "bg-orange-500" : user.role === "DRIVER" ? "bg-emerald-500" : "bg-blue-500"}`}>
-                                                    {user.name.charAt(0)}
-                                                </div>
-                                                <span className="max-w-40 truncate font-medium text-gray-900 dark:text-white" title={user.name}>{user.name}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                    <tr key={user.id} tabIndex={0} aria-label={`${user.name} 스태프 상세 보기`} onClick={() => setDetail({ kind: "user", id: user.id })} onKeyDown={(event) => handleRowKeyDown(event, { kind: "user", id: user.id })} className={rowClass}>
+                                        {/* 이름은 말줄임 없이 전체(예전 폭 제한·말줄임 제거) */}
+                                        <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{user.name}</td>
+                                        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">
                                             {user.phone ? formatPhone(user.phone) : "-"}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        {/* 선택칸을 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                        <td className="px-2 py-1" onClick={(event) => event.stopPropagation()}>
                                             <select
                                                 value={user.role}
                                                 onChange={(e) => handleRoleChange(user.id, e.target.value)}
                                                 disabled={isPending}
-                                                className={`text-xs font-semibold px-3 py-1.5 rounded-full border-0 cursor-pointer ${rc.color} focus:ring-2 focus:ring-brand-navy-500`}
+                                                aria-label={`${user.name} 역할`}
+                                                className={`min-h-11 cursor-pointer rounded-full border-0 px-3 text-xs font-bold ${rc.color} focus:ring-2 focus:ring-[var(--color-academy-primary)]`}
                                             >
                                                 <option value="ADMIN">원장</option>
                                                 <option value="VICE_ADMIN">부원장</option>
@@ -529,13 +533,14 @@ export default function StaffClient({
                                                 <option value="PARENT">학부모</option>
                                             </select>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-2 py-1" onClick={(event) => event.stopPropagation()}>
                                             {canLinkCoach ? (
                                                 <select
                                                     value={user.coachId || ""}
                                                     onChange={(e) => handleCoachLink(user.id, e.target.value)}
                                                     disabled={isPending}
-                                                    className="text-sm border border-gray-300 dark:border-gray-600 dark:text-white dark:bg-gray-800 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-brand-navy-500 focus:border-brand-navy-500"
+                                                    aria-label={`${user.name} 코치 연결`}
+                                                    className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                                                 >
                                                     <option value="">-- 미연결 --</option>
                                                     {coaches.map((c) => {
@@ -548,7 +553,7 @@ export default function StaffClient({
                                                     })}
                                                 </select>
                                             ) : (
-                                                <span className="text-xs text-gray-400">-</span>
+                                                <span className="text-xs text-[var(--color-academy-muted)]">-</span>
                                             )}
                                         </td>
                                     </tr>
@@ -561,24 +566,24 @@ export default function StaffClient({
 
             {/* 완료/취소/만료 초대 이력 (접이식) */}
             {pastInvitations.length > 0 && (
-                <details className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <summary className="px-6 py-4 cursor-pointer text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:bg-gray-900">
-                        초대 이력 ({pastInvitations.length}건)
+                <details className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                    <summary className="flex min-h-11 cursor-pointer items-center px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
+                        초대 이력 (<span className="tabular-nums">{pastInvitations.length}</span>건)
                     </summary>
-                    <div className="divide-y divide-gray-100 border-t border-gray-200 dark:border-gray-700">
+                    <div className="divide-y divide-[var(--color-academy-line)] border-t border-[var(--color-academy-line)]">
                         {pastInvitations.slice(0, 20).map((inv) => {
                             const rc = ROLE_CONFIG[inv.role] || ROLE_CONFIG.INSTRUCTOR;
                             const isExpired = inv.status === "PENDING" && new Date(inv.expiresAt) < new Date();
                             const sc = isExpired ? STATUS_CONFIG.EXPIRED : (STATUS_CONFIG[inv.status] || STATUS_CONFIG.PENDING);
                             return (
-                                <div key={inv.id} className="px-6 py-3 flex items-center justify-between text-sm">
+                                <div key={inv.id} className="flex items-center justify-between gap-2 px-4 py-1.5 text-sm">
                                     <div className="flex items-center gap-3">
-                                        <span className="font-medium text-gray-700 dark:text-gray-200">{inv.name}</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${rc.color}`}>{rc.label}</span>
-                                        <span className="text-gray-400">{formatPhone(inv.phone)}</span>
+                                        <span className="font-bold text-[var(--color-academy-ink)]">{inv.name}</span>
+                                        <span className={`rounded-full px-2 py-0.5 text-xs ${rc.color}`}>{rc.label}</span>
+                                        <span className="tabular-nums text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${sc.color}`}>
+                                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${sc.color}`}>
                                             {sc.label}
                                         </span>
                                         {inv.status === "PENDING" && (
@@ -586,7 +591,7 @@ export default function StaffClient({
                                                 type="button"
                                                 onClick={() => handleResendInvitation(inv.id, inv.name)}
                                                 disabled={isPending}
-                                                className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
+                                                className="min-h-11 rounded-lg px-3 text-xs font-bold text-[var(--color-academy-primary)] transition-colors hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50"
                                             >
                                                 재발송
                                             </button>
@@ -597,6 +602,69 @@ export default function StaffClient({
                         })}
                     </div>
                 </details>
+            )}
+
+            {/* 행 클릭 상세 패널(스태프) — 표에 없는 이메일·가입일까지. 역할·코치 연결은 표의 선택칸에서 */}
+            {detailUser && (
+                <ListDetailPanel onClose={() => setDetail(null)} titleId="staff-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                    <div className="mb-4 flex items-center gap-2">
+                        <h3 id="staff-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detailUser.name}</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${(ROLE_CONFIG[detailUser.role] || ROLE_CONFIG.PARENT).color}`}>{(ROLE_CONFIG[detailUser.role] || ROLE_CONFIG.PARENT).label}</span>
+                        <button type="button" onClick={() => setDetail(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                        </button>
+                    </div>
+                    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                        <dt className="font-bold text-[var(--color-academy-muted)]">이메일</dt>
+                        <dd className="break-all text-[var(--color-academy-ink)]">{detailUser.email || "-"}</dd>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">전화번호</dt>
+                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{detailUser.phone ? formatPhone(detailUser.phone) : "-"}</dd>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">코치 연결</dt>
+                        <dd className="text-[var(--color-academy-ink)]">{detailUser.coachName || "미연결"}</dd>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">가입일</dt>
+                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailUser.createdAt) || "-"}</dd>
+                    </dl>
+                    <p className="mt-4 text-xs text-[var(--color-academy-muted)]">역할·코치 연결은 목록의 선택칸에서 바꿉니다(원장만 변경 가능).</p>
+                </ListDetailPanel>
+            )}
+
+            {/* 행 클릭 상세 패널(대기 중 초대) — 작업 버튼은 ⚡ 와 같은 목록 */}
+            {detailInvite && (
+                <ListDetailPanel onClose={() => setDetail(null)} titleId="staff-invite-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                    <div className="mb-4 flex items-center gap-2">
+                        <h3 id="staff-invite-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detailInvite.name}</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${(ROLE_CONFIG[detailInvite.role] || ROLE_CONFIG.INSTRUCTOR).color}`}>{(ROLE_CONFIG[detailInvite.role] || ROLE_CONFIG.INSTRUCTOR).label}</span>
+                        <button type="button" onClick={() => setDetail(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                        </button>
+                    </div>
+                    <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                        <dt className="font-bold text-[var(--color-academy-muted)]">전화번호</dt>
+                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatPhone(detailInvite.phone)}</dd>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">초대일</dt>
+                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.createdAt) || "-"}</dd>
+                        <dt className="font-bold text-[var(--color-academy-muted)]">만료일</dt>
+                        <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.expiresAt) || "-"}</dd>
+                    </dl>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                        {buildInvitationActions(detailInvite).map((action) => (
+                            <button
+                                key={action.key}
+                                type="button"
+                                disabled={action.disabled}
+                                onClick={() => { setDetail(null); void action.onSelect(); }}
+                                className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
+                                    action.tone === "danger"
+                                        ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                                {action.label}
+                            </button>
+                        ))}
+                    </div>
+                </ListDetailPanel>
             )}
 
             {/* 역할별 권한 안내 카드 */}
