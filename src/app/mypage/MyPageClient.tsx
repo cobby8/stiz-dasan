@@ -589,7 +589,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                         {/* 설정 줄 — 알림 목록과 구분선으로 떼어 «읽음»과 헷갈리지 않게(M-11). 동작(togglePush)은 그대로 */}
                         {pushSupported && (
                             <div className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] px-4 py-1.5">
-                                <span className="text-sm font-bold text-[var(--color-academy-muted)]">푸시 알림</span>
+                                <span className="text-sm font-bold text-[var(--color-academy-muted)]">휴대폰 알림</span>
                                 <button
                                     onClick={togglePush}
                                     disabled={pushLoading}
@@ -600,9 +600,9 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                     }`}
                                 >
                                     {pushLoading ? "..." : pushEnabled ? (
-                                        <><SymbolIcon name="notifications_active" size={13} /> 푸시 ON</>
+                                        <><SymbolIcon name="notifications_active" size={13} /> 알림 켜짐</>
                                     ) : (
-                                        <><SymbolIcon name="notifications_off" size={13} /> 푸시 OFF</>
+                                        <><SymbolIcon name="notifications_off" size={13} /> 알림 꺼짐</>
                                     )}
                                 </button>
                             </div>

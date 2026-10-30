@@ -152,7 +152,7 @@ export default async function ParentReportDetailPage({
                 <div className="divide-y divide-gray-100">
                     {myAttendances.map((a: any) => {
                         const studentId = a.studentId ?? a.studentid;
-                        const statusInfo = STATUS_MAP[a.status] || { label: a.status, color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" };
+                        const statusInfo = STATUS_MAP[a.status] || { label: "확인 중", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" };
                         const noteData = noteMap.get(studentId);
                         const rating = noteData?.rating != null ? Number(noteData.rating) : null;
 
