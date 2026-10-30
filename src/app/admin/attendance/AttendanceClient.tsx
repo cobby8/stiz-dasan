@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { saveAttendance } from "@/app/actions/admin";
 import { kstLabel, todayKst } from "@/lib/datetime/kst";
@@ -149,8 +149,12 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
 
     const selectedLesson = classes.find((item) => lessonKeyOf(item) === selectedClass) ?? null;
 
+    // 요청 번호: 반을 빨리 바꾸면 늦게 온 이전 반 응답이 새 반 패널에 섞여(그대로 저장되면 다른 반 이름으로 기록) 들어오지 않게 최신 요청만 반영한다
+    const attendanceRequestRef = useRef(0);
+
     const loadAttendance = useCallback(async (options?: { resetSaved?: boolean }) => {
         if (!selectedLesson || !date) return;
+        const requestId = ++attendanceRequestRef.current;
         setLoading(true);
         if (options?.resetSaved !== false) {
             setSaved(false);
@@ -159,16 +163,18 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
             const params = new URLSearchParams({ classId: selectedLesson.id, date });
             if (selectedLesson.sessionDateId) params.set("sessionDateId", selectedLesson.sessionDateId);
             const res = await fetch(`/api/admin/attendance?${params.toString()}`);
+            if (requestId !== attendanceRequestRef.current) return; // 이미 다른 반/날짜로 바뀜
             if (res.ok) {
                 const data = await res.json();
+                if (requestId !== attendanceRequestRef.current) return;
                 setStudents(data.students || []);
                 // 서버 값으로 새로 채웠으니 «저장 안 한 변경» 없음
                 setDirty(false);
             }
         } catch {
-            setStudents([]);
+            if (requestId === attendanceRequestRef.current) setStudents([]);
         } finally {
-            setLoading(false);
+            if (requestId === attendanceRequestRef.current) setLoading(false);
         }
     }, [date, selectedLesson]);
 
@@ -218,6 +224,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         if (key === selectedClass) return;
         setStudents([]);
         setDirty(false);
+        setLoading(true); // 불러오기 전 «원생이 없습니다»가 잠깐 깜빡이지 않게
         setSelectedClass(key);
     }
 
@@ -232,10 +239,12 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     // 패널 닫기: 저장 안 한 변경이 있으면 한 번 묻는다(바깥 클릭은 아예 막아 둠)
     function closeLesson() {
         if (dirty && !window.confirm("저장하지 않은 출결이 있습니다. 닫을까요?")) return;
+        attendanceRequestRef.current += 1; // 닫은 뒤 도착하는 응답은 버린다
         setSelectedClass("");
         setStudents([]);
         setDirty(false);
         setSaved(false);
+        setLoading(false);
     }
 
     // 수업 목록: 시작 시간 → 반 이름 순(정규·특강을 한 목록에 시간표처럼)
@@ -262,7 +271,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
     }
 
     if (classesError && classes.length === 0) {
-        return <AttendanceErrorState onRetry={loadClasses} />;
+        return <AttendanceErrorState onRetry={() => loadClasses(date)} />;
     }
 
     return (
