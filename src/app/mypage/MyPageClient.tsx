@@ -329,7 +329,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
     return (
         <div className="space-y-4">
             <ChildConnectionNotice />
-            {/* 자녀 선택을 먼저 두고, 상세 통계는 아래 기록에서 확인한다. */}
+            {/* 전경과 배경(M-06): 이름 + 다음 수업 + 오늘 셔틀을 히어로 한 덩어리로. 예전엔 «오늘과 다음 일정» 칸이 따로 있어
+                같은 자녀 정보가 두 판으로 갈라져 보였다. 줄 내용·누르면 가는 곳은 그대로다. */}
             <section aria-labelledby="parent-child-heading" className="academy-hero p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -341,45 +342,30 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                     </div>
                 </div>
                 {data.children.length > 1 && (
-                    <div role="group" aria-label="자녀 선택" className="mt-4 flex flex-wrap gap-2">
+                    <div role="group" aria-label="자녀 선택" className="mt-3 flex flex-wrap gap-2">
                         {data.children.map((c, i) => (
                             <button
                                 key={c.id}
                                 type="button"
                                 aria-pressed={selectedIdx === i}
                                 onClick={() => setSelectedIdx(i)}
-                                className={`min-h-11 rounded-full border px-4 text-sm font-bold transition-colors ${selectedIdx === i
-                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:border-[var(--color-academy-primary)]"}`}
+                                // 고른 자녀 = academy-choice(연한 바탕+체크). 꽉 찬 색은 제출·납부 버튼 몫(M-07)
+                                className="academy-choice"
                             >
                                 {c.name}
                             </button>
                         ))}
                     </div>
                 )}
-            </section>
-
-            {/* ── "오늘/이번주 우리 아이" 한눈 요약 카드 (표시 전용·상단 배치) ──
-                선택한 자녀의 다음 수업과 오늘 셔틀만 짧게 보여준다. 미납 안내는 별도로 바로 표시한다.
-                각 줄은 값이 있을 때만 렌더하고, 전부 없으면 카드 자체를 숨긴다. */}
-            {hasSummary && (
-                <section aria-labelledby="mypage-summary-heading" className="academy-panel p-5">
-                    <div className="mb-3 flex items-center gap-2">
-                        <div className="rounded-full bg-brand-orange-50 p-1.5 dark:bg-brand-neon-lime/10">
-                            <SymbolIcon name="today" size={18} className="text-brand-orange-500 dark:text-brand-neon-lime" />
-                        </div>
-                        <h2 id="mypage-summary-heading" className="font-bold text-gray-900 dark:text-white">
-                            오늘과 다음 일정
-                        </h2>
-                    </div>
-
-                    <div className="space-y-2">
+                {/* 오늘/다음 일정 — 값이 있을 때만, 전부 없으면 줄 자체를 숨긴다(표시 전용) */}
+                {hasSummary && (
+                    <div role="group" aria-label="오늘과 다음 일정" className="mt-3 space-y-1.5">
                         {/* 1) 다음 수업 */}
                         {nextClass && (
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-enrollments")}
-                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-2 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="event" size={18} className="text-brand-navy-900 dark:text-gray-200" />
@@ -397,7 +383,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             <button
                                 type="button"
                                 onClick={() => scrollToSection("mypage-shuttle")}
-                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-left transition hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-900"
+                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-2 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 <span className="flex items-center gap-2.5">
                                     <SymbolIcon name="airport_shuttle" size={18} className="text-blue-600 dark:text-blue-300" />
@@ -418,7 +404,21 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                         )}
 
                     </div>
-                </section>
+                )}
+            </section>
+
+            {/* «할 일» 한 줄 — 안 읽은 알림이 있을 때만. 누르면 알림을 펼쳐 그 자리로 간다 */}
+            {unreadCount > 0 && (
+                <button
+                    type="button"
+                    onClick={() => { setShowNotifications(true); requestAnimationFrame(() => scrollToSection("mypage-notifications")); }}
+                    className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-left text-sm font-bold text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
+                >
+                    <SymbolIcon name="checklist" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                    <span className="shrink-0">할 일</span>
+                    <span className="min-w-0 flex-1 text-[var(--color-academy-muted)]">안 읽은 알림 <span className="tabular-nums">{unreadCount}</span>건</span>
+                    <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
+                </button>
             )}
 
             <nav aria-label="자주 하는 요청" className="academy-panel p-4">
@@ -486,8 +486,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                 </div>
             )}
 
-            {/* 알림 토글 버튼 — 호버 시 그림자 강화 (디자인 토큰 통일) */}
-            <div>
+            {/* 알림 토글 버튼 — 호버 시 그림자 강화 (디자인 토큰 통일). id = «할 일» 줄이 데려오는 자리 */}
+            <div id="mypage-notifications" className="scroll-mt-4">
                 <button
                     aria-expanded={showNotifications}
                     onClick={() => setShowNotifications(!showNotifications)}
@@ -509,37 +509,18 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
 
                 {showNotifications && (
                     <div className="mt-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
-                        {/* 상단 바: 푸시 설정 + 전체 읽음 */}
-                        <div className="px-4 py-2 border-b border-gray-50 flex items-center justify-between">
-                            {/* 푸시 알림 토글 */}
-                            {pushSupported && (
-                                <button
-                                    onClick={togglePush}
-                                    disabled={pushLoading}
-                                    className={`text-xs flex items-center gap-1 px-2.5 py-1 rounded-full transition ${
-                                        pushEnabled
-                                            ? "bg-green-100 text-green-700"
-                                            : "bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-orange-50 hover:text-brand-orange-500 dark:text-brand-neon-lime"
-                                    }`}
-                                >
-                                    {pushLoading ? "..." : pushEnabled ? (
-                                        <><SymbolIcon name="notifications_active" size={13} /> 푸시 ON</>
-                                    ) : (
-                                        <><SymbolIcon name="notifications_off" size={13} /> 푸시 OFF</>
-                                    )}
-                                </button>
-                            )}
-                            {!pushSupported && <span />}
-                            {unreadCount > 0 && (
+                        {/* 상단 바: 전체 읽음만(44px). 푸시 설정은 목록과 떨어진 맨 아래 설정 줄로 옮겼다(M-11) */}
+                        {unreadCount > 0 && (
+                            <div className="px-4 py-1 border-b border-[var(--color-academy-line)] flex items-center justify-end">
                                 <button
                                     onClick={() => startTransition(() => markAllNotificationsRead(data.parent.id))}
                                     disabled={isPending}
-                                    className="text-xs text-brand-orange-500 dark:text-brand-neon-lime hover:underline flex items-center gap-1"
+                                    className="academy-button-text text-[var(--color-academy-primary)]"
                                 >
-                                    <SymbolIcon name="done_all" size={14} /> 모두 읽음
+                                    <SymbolIcon name="done_all" size={16} /> 모두 읽음
                                 </button>
-                            )}
-                        </div>
+                            </div>
+                        )}
 
                         {notifications.length === 0 ? (
                             <div className="p-8 text-center text-gray-400 text-sm">
@@ -581,14 +562,37 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                             <button
                                                 onClick={() => startTransition(() => markNotificationRead(n.id))}
                                                 disabled={isPending}
-                                                className="text-gray-400 hover:text-brand-orange-500 dark:text-brand-neon-lime p-1 flex-shrink-0"
+                                                // 누르는 영역 44×44 — 알림 글 옆 작은 체크라 잘못 누르기 쉬웠다(M-11)
+                                                className="-my-2 -mr-2 inline-flex size-11 flex-shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
                                                 title="읽음 처리"
+                                                aria-label="읽음 처리"
                                             >
-                                                <SymbolIcon name="check" size={14} />
+                                                <SymbolIcon name="check" size={18} />
                                             </button>
                                         )}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                        {/* 설정 줄 — 알림 목록과 구분선으로 떼어 «읽음»과 헷갈리지 않게(M-11). 동작(togglePush)은 그대로 */}
+                        {pushSupported && (
+                            <div className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] px-4 py-1.5">
+                                <span className="text-sm font-bold text-[var(--color-academy-muted)]">푸시 알림</span>
+                                <button
+                                    onClick={togglePush}
+                                    disabled={pushLoading}
+                                    className={`inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold transition ${
+                                        pushEnabled
+                                            ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+                                            : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-primary)]"
+                                    }`}
+                                >
+                                    {pushLoading ? "..." : pushEnabled ? (
+                                        <><SymbolIcon name="notifications_active" size={13} /> 푸시 ON</>
+                                    ) : (
+                                        <><SymbolIcon name="notifications_off" size={13} /> 푸시 OFF</>
+                                    )}
+                                </button>
                             </div>
                         )}
                     </div>
@@ -632,7 +636,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                 )}
                                 <Link
                                     href="/mypage/seasonal"
-                                    className="mt-3 inline-flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500"
+                                    // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부·제출 몫(M-07)
+                                    className="academy-button-secondary mt-3"
                                 >
                                     방학특강 결석 신고 / 보강
                                     <SymbolIcon name="arrow_forward" size={16} />
@@ -659,10 +664,11 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                             {shuttleDriverContact?.phone && (
                                 <a
                                     href={`tel:${shuttleDriverContact.phone.replace(/[^0-9]/g, "")}`}
-                                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-green-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
+                                    // 보조 버튼(테두리, M-07). 키보드 초점 링은 유지
+                                    className="academy-button-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)] focus-visible:ring-offset-2"
                                     aria-label={`셔틀 기사님 ${shuttleDriverContact.name}에게 전화하기`}
                                 >
-                                    <SymbolIcon name="call" size={16} className="text-white" />
+                                    <SymbolIcon name="call" size={16} className="text-[var(--color-academy-success)]" />
                                     기사님께 연락 ({shuttleDriverContact.name})
                                 </a>
                             )}
@@ -747,13 +753,14 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                 <div className="flex flex-wrap gap-2">
                     <button
                         onClick={() => { setShowRequestForm(!showRequestForm); setShowRequests(false); }}
-                        className="flex-1 basis-44 flex items-center justify-center gap-2 whitespace-nowrap bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold px-3 py-3 rounded-2xl hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition shadow-sm"
+                        // 여는 버튼 = 보조(테두리). 꽉 찬 색은 폼 안 «메시지 보내기»만(M-07)
+                        className="academy-button-secondary flex-1 basis-44 whitespace-nowrap"
                     >
                         <SymbolIcon name="send" size={16} /> 학원에 메시지 보내기
                     </button>
                     <button
                         onClick={() => { setShowRequests(!showRequests); setShowRequestForm(false); }}
-                        className="flex shrink-0 items-center justify-center gap-2 whitespace-nowrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 font-bold px-4 py-3 rounded-2xl hover:bg-gray-50 dark:bg-gray-900 transition shadow-sm"
+                        className="academy-button-secondary shrink-0 whitespace-nowrap"
                     >
                         <SymbolIcon name="forum" size={16} />
                         보낸 메시지
