@@ -1119,7 +1119,7 @@ export default function StudentManagementClient({
                                                 aria-label={`${s.name} 요약 보기`}
                                                 onClick={() => openStudentDetail(s.id)}
                                                 onKeyDown={(event) => handleRowKeyDown(event, s.id)}
-                                                className="grid min-h-11 cursor-pointer grid-cols-[auto_2.5rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-sm transition hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                                                className="grid min-h-11 cursor-pointer grid-cols-[auto_2.5rem_minmax(0,1fr)] items-center gap-2 px-3 text-sm transition hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
                                             >
                                                 {/* 이름 링크는 상세 페이지로(행 클릭과 겹치지 않게 전파 차단) */}
                                                 <Link
@@ -1131,12 +1131,12 @@ export default function StudentManagementClient({
                                                     {s.name}
                                                 </Link>
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
-                                                {/* 학교: 말줄임 없이 전부 보인다(아주 길면 칸 안에서 줄바꿈) */}
-                                                <span className="min-w-0 [overflow-wrap:anywhere] text-[var(--color-academy-muted)]">
-                                                    {s.school || "-"}
-                                                </span>
-                                                <span className="whitespace-nowrap text-xs tabular-nums text-[var(--color-academy-muted)]">
-                                                    {formatPhone(s.parent.phone)}
+                                                {/* 학교+연락처: 넉넉하면 한 줄, 카드가 좁으면 연락처가 학교 아래로 내려간다(학교 이름이 한 글자씩 꺾이지 않게) */}
+                                                <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 py-1 text-[var(--color-academy-muted)]">
+                                                    <span className="break-keep [overflow-wrap:break-word]">{s.school || "-"}</span>
+                                                    <span className="whitespace-nowrap text-xs tabular-nums">
+                                                        {formatPhone(s.parent.phone)}
+                                                    </span>
                                                 </span>
                                             </li>
                                         ))}
