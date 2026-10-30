@@ -81,7 +81,7 @@ export default async function NoticesPage() {
             </div>
 
             {/* CTA 배너 */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="궁금한 점이 있으신가요?"
                 subtitle="언제든지 편하게 문의해 주세요"
                 phone={phone}

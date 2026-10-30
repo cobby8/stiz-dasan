@@ -41,7 +41,7 @@ export default async function GalleryPage() {
             </div>
 
             {/* CTA 배너 — 공통 컴포넌트 재사용 */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="우리 아이의 성장을 사진으로 확인하세요"
                 subtitle="체험 수업에 참여하시면 활동 사진을 보내드립니다"
                 phone={phone}

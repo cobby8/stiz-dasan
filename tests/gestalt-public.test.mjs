@@ -34,7 +34,12 @@ test("C-P1 버튼 3등급(주인공·보조·글자)이 44px 이상으로 정의
 
 test("P-02 홈 히어로·하단 CTA 의 두 번째 버튼은 보조(투명+흰 테두리)다", () => {
   assert.match(homeCss, /\.public-home-hero__actions a\+a\{background:transparent;color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
-  assert.match(homeCss, /\.public-cta__actions>\*\+\*\{background:transparent;color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
+  assert.match(homeCss, /\.public-cta--outline \.public-cta__actions>\*\+\*\{background:transparent;color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
+  // /programs 를 뺀 CTA 호출부만 새 모양(variant="outline")을 켠다
+  for (const file of ["src/app/LandingPageClient.tsx", "src/app/about/page.tsx", "src/app/annual/page.tsx", "src/app/apply/page.tsx",
+    "src/app/gallery/page.tsx", "src/app/notices/page.tsx", "src/app/notices/[id]/page.tsx", "src/app/schedule/page.tsx"]) {
+    assert.match(read(file), /<CTABanner variant="outline"/, file);
+  }
 });
 
 test("P-05 /apply 두 신청 버튼은 같은 주인공 모양, 카드 머리는 같은 중립색", () => {
@@ -124,7 +129,7 @@ test("P-06 홈 섹션 제목은 왼쪽 정렬 22px 하나, 영문 라벨 없음 
   assert.match(layout, /!compactHeading && \(label \|\| title \|\| description\)/);
   assert.match(layout, /text-center mb-12 md:mb-16/); // 기존(예: /programs) 제목 모양 유지
   assert.match(homeCss, /\.public-process h2\{font-size:1\.375rem/);
-  assert.match(homeCss, /\.public-cta h2\{font-size:1\.375rem/);
+  assert.match(homeCss, /\.public-cta--outline h2\{font-size:1\.375rem\}/);
 });
 
 test("P-07 /schedule 필터는 버튼 하나 + 모달(모바일 하단 시트), 칩 줄·중복 필터 카드 없음", () => {
@@ -208,6 +213,12 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
   // 공용 규칙 중 /programs 에도 닿는 .public-page-hero 기본 규칙은 그대로 둔다.
   assert.match(sportCss, /\.stiz-public-sport \.public-page-hero :is\(h1, h2\) \{[^}]*font-size: clamp\(26px, 4vw, 42px\)/);
   assert.match(sportCss, /\.stiz-public-sport \.public-page-hero \{[^}]*padding-block: clamp\(24px, 4vw, 44px\)/);
+  // 하단 CTA 기본 모양(흰 두 번째 버튼·1.4rem 제목)도 유지 — /programs 는 variant 를 넘기지 않는다.
+  assert.doesNotMatch(programs, /variant="outline"/);
+  assert.match(read("src/components/landing/CTABanner.tsx"), /variant = "classic"/);
+  assert.match(homeCss, /\.stiz-public-sport \.public-cta__actions>\*\+\*\{background:var\(--color-public-white\);color:var\(--color-public-dark\)\}/);
+  assert.match(homeCss, /\.stiz-public-sport \.public-cta h2\{font-size:1\.4rem;/);
+  assert.doesNotMatch(homeCss, /\.stiz-public-sport \.public-cta__actions>\*\{[^}]*border:/); // 기본 버튼 높이도 그대로(테두리 없음)
   // SectionLayout 기본(라벨·가운데 큰 제목)도 유지 — /programs 가 쓴다.
   assert.match(read("src/components/ui/SectionLayout.tsx"), /text-3xl md:text-4xl font-extrabold/);
   // 이 작업 커밋들이 금지 구역 파일을 건드리지 않았는지(작업 기준점 68be6db3 이후, 있으면 확인).

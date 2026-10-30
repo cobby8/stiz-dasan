@@ -49,12 +49,17 @@
 .stiz-public-sport .public-cta{background:var(--color-public-dark);color:var(--color-public-white);padding:1.7rem 0}
 .stiz-public-sport .public-cta__inner{width:min(100% - 3rem,72rem);margin-inline:auto;display:flex;align-items:center;justify-content:space-between;gap:1.5rem}
 .stiz-public-sport .public-cta__content{min-width:0}
-.stiz-public-sport .public-cta h2{font-size:1.375rem;font-weight:800;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
+.stiz-public-sport .public-cta h2{font-size:1.4rem;font-weight:800;letter-spacing:-.035em;line-height:1.5;word-break:keep-all}
 .stiz-public-sport .public-cta p{font-size:.8rem;line-height:1.8;margin-top:.5rem}
 .stiz-public-sport .public-cta__actions{display:flex;flex-wrap:wrap;gap:.6rem;flex-shrink:0;align-items:center}
-.stiz-public-sport .public-cta__actions>*{display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.7rem 1rem;border-radius:var(--color-public-radius);font-size:.78rem;font-weight:700;text-decoration:none;gap:.9rem;background:var(--color-public-orange);color:var(--color-public-dark);border:1px solid transparent}
-.stiz-public-sport .public-cta__actions>*+*{background:transparent;color:var(--color-public-white);border:1px solid var(--color-public-white)}
-.stiz-public-sport .public-cta__actions>*+*:hover{background:var(--color-public-on-dark-hover)}
+.stiz-public-sport .public-cta__actions>*{display:inline-flex;align-items:center;justify-content:center;min-height:2.8rem;padding:.7rem 1rem;border-radius:var(--color-public-radius);font-size:.78rem;font-weight:700;text-decoration:none;gap:.9rem;background:var(--color-public-orange);color:var(--color-public-dark)}
+.stiz-public-sport .public-cta__actions>*+*{background:var(--color-public-white);color:var(--color-public-dark)}
+/* 게슈탈트 P-02·P-06: variant="outline" 일 때만 두 번째 버튼을 보조(투명+흰 테두리)로, 제목 22px.
+   기본 모양은 그대로 둔다 — /programs(토스 카드사 심사 중 수정 금지)가 같은 CTABanner 를 쓴다. */
+.stiz-public-sport .public-cta--outline h2{font-size:1.375rem}
+.stiz-public-sport .public-cta--outline .public-cta__actions>*{border:1px solid transparent}
+.stiz-public-sport .public-cta--outline .public-cta__actions>*+*{background:transparent;color:var(--color-public-white);border:1px solid var(--color-public-white)}
+.stiz-public-sport .public-cta--outline .public-cta__actions>*+*:hover{background:var(--color-public-on-dark-hover)}
 @media(max-width:1023px){.stiz-public-sport .public-cta__inner{align-items:flex-start;flex-direction:column;gap:1rem}}
 @media(max-width:767px){
  .stiz-public-sport .public-home-hero__content{min-height:0;padding-block:1rem;width:calc(100% - 2rem);flex-direction:column;align-items:flex-start;gap:.75rem}
@@ -73,6 +78,7 @@
  .stiz-public-sport .public-process ol{grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}
  .stiz-public-sport .public-process li{gap:.5rem}
  .stiz-public-sport .public-home-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+ .stiz-public-sport .public-cta:not(.public-cta--outline) h2{font-size:1.25rem}
  .stiz-public-sport .public-cta__actions{width:100%;flex-shrink:1}
  .stiz-public-sport .public-cta__actions>*{padding-inline:.8rem;font-size:.76rem}
 }

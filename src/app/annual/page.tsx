@@ -206,7 +206,7 @@ export default async function AnnualPage() {
             />
 
             {/* CTA 배너 — 공통 CTABanner 재사용 */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="더 궁금한 점이 있으신가요?"
                 subtitle="일정에 대해 문의해 주시면 자세히 안내해 드립니다"
                 phone={phone}

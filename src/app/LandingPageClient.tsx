@@ -90,7 +90,7 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
         <div className="public-home-gallery__more"><Link href="/gallery">더 많은 사진 보기 <span aria-hidden="true">→</span></Link></div>
       </SectionLayout>}
       <TestimonialCarousel testimonials={testimonials} naverPlaceUrl={naverPlaceUrl} />
-      <CTABanner phone={phone} />
+      <CTABanner variant="outline" phone={phone} />
     </>
   );
 }

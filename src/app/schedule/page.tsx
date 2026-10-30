@@ -61,7 +61,7 @@ export default async function SchedulePage() {
             />
 
             {/* CTA 배너 — 공통 CTABanner 재사용 */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="원하시는 시간대가 없으신가요?"
                 subtitle="문의해 주시면 최대한 맞춰드리겠습니다"
                 phone={phone}

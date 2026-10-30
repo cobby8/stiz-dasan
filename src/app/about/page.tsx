@@ -286,7 +286,7 @@ export default async function AboutPage() {
             )}
 
             {/* CTA 배너 — Phase 2에서 만든 공통 CTABanner 재사용 */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="우리 아이, 농구로 성장시켜 보세요"
                 subtitle="전문 코치진과 체계적인 커리큘럼이 기다리고 있습니다"
                 phone={phone}

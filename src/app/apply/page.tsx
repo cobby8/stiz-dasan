@@ -62,7 +62,7 @@ export default async function ApplyPage() {
             />
 
             {/* CTA 배너 — 하단 행동 유도 (about 페이지와 동일 패턴) */}
-            <CTABanner
+            <CTABanner variant="outline"
                 title="궁금한 점이 있으신가요?"
                 subtitle="전화 한 통이면 친절하게 안내해 드립니다"
                 phone={phone}
