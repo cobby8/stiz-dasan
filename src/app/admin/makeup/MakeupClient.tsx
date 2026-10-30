@@ -8,6 +8,14 @@ import {
     updateMakeupStatus,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+// 보강일 묶음(오늘/이번 주/다음 주/이후/지난 건)은 결석 신고 화면과 같은 공용 계산을 쓴다
+import { groupByUpcomingDate, type UpcomingDateGroupKey } from "@/components/admin/list/upcomingDateGroups";
+// 날짜 표시는 KST 달력 모듈로만 계산한다(서버 UTC / PC KST 차이로 하루 밀리는 사고 방지)
+import { kstLabel, toKstYmd, todayKst } from "@/lib/datetime/kst";
 // 잔여석 표시/판정은 서버(queries.ts)와 같은 계산식을 쓴다 — 화면만 낙관 표시하는 사고 방지
 import { formatSeatLabel, isMakeupSlotFull } from "@/lib/makeup/capacity";
 
@@ -72,22 +80,40 @@ const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
 
-// 상태 라벨 + 색상
+// 상태 라벨 + 색상(CSS 변수 토큰 — 다크 모드도 토큰이 알아서 바뀐다)
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-    BOOKED:    { label: "예약", color: "text-blue-700", bg: "bg-blue-100" },
-    ATTENDED:  { label: "출석", color: "text-green-700", bg: "bg-green-100" },
-    CANCELLED: { label: "취소", color: "text-gray-500 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-800" },
-    NO_SHOW:   { label: "노쇼", color: "text-red-700", bg: "bg-red-100" },
+    BOOKED:    { label: "예약", color: "text-[var(--color-academy-primary)]", bg: "bg-[var(--color-academy-primary-soft)]" },
+    ATTENDED:  { label: "출석", color: "text-[var(--color-academy-success)]", bg: "bg-[var(--color-academy-success-soft)]" },
+    CANCELLED: { label: "취소", color: "text-[var(--color-academy-muted)]", bg: "bg-[var(--color-academy-soft)]" },
+    NO_SHOW:   { label: "노쇼", color: "text-[var(--color-academy-danger)]", bg: "bg-[var(--color-academy-danger-soft)]" },
 };
 
-// 상태 필터 탭 목록
+// 상태 칩 목록 — 칩은 예전 상태 탭과 같은 statusFilter 값을 쓴다(다시 누르면 "ALL" = 전체)
+const STATUS_ALL = "ALL";
 const STATUS_TABS = [
-    { key: "ALL", label: "전체" },
     { key: "BOOKED", label: "예약" },
     { key: "ATTENDED", label: "출석" },
     { key: "CANCELLED", label: "취소" },
     { key: "NO_SHOW", label: "노쇼" },
 ];
+
+// 보기 전환 «날짜별 | 목록» — 기본은 보강일 기준 날짜별 묶음, 선택은 브라우저에 기억
+const MAKEUP_VIEW_STORAGE_KEY = "admin-makeup-view-mode";
+const MAKEUP_VIEW_VALUES = ["date", "list"] as const;
+type MakeupViewMode = (typeof MAKEUP_VIEW_VALUES)[number];
+const MAKEUP_VIEW_OPTIONS = [
+    { value: "date", label: "날짜별", icon: "calendar_view_week" },
+    { value: "list", label: "목록", icon: "view_list" },
+] as const;
+
+// 보강일 묶음 이름: 오늘 / 이번 주 / 다음 주 / 이후 / 지난 보강 (앞으로 할 보강이 먼저 보이게)
+const MAKEUP_DATE_GROUP_LABELS: Record<UpcomingDateGroupKey, string> = {
+    today: "오늘",
+    thisWeek: "이번 주",
+    nextWeek: "다음 주",
+    later: "이후",
+    past: "지난 보강",
+};
 
 function MakeupLoadingFallback() {
     return (
@@ -155,6 +181,9 @@ export default function MakeupClient({
     const [studentsLoaded, setStudentsLoaded] = useState(false);
     const [studentsLoading, setStudentsLoading] = useState(false);
     const [studentsError, setStudentsError] = useState<string | null>(null);
+    // 행 클릭 상세 패널 대상, 보기 방식(날짜별 | 목록)
+    const [detailId, setDetailId] = useState<string | null>(null);
+    const [viewMode, setViewMode] = useRememberedListView<MakeupViewMode>(MAKEUP_VIEW_STORAGE_KEY, MAKEUP_VIEW_VALUES, "date");
 
     const hasAnyData = sessions.length > 0 || classes.length > 0;
 
@@ -222,14 +251,30 @@ export default function MakeupClient({
         return counts;
     }, [sessions]);
 
-    // 날짜 포맷 (YYYY-MM-DD)
+    // 보강일 날짜별 묶음 — 앞으로 할 보강은 가까운 날부터, 지난 보강은 최근부터
+    const today = todayKst();
+    const dateGroups = useMemo(
+        () => groupByUpcomingDate(filteredSessions, (item) => toKstYmd(item.makeupDate), today, MAKEUP_DATE_GROUP_LABELS),
+        [filteredSessions, today],
+    );
+
+    // 상태 칩(건수는 위 statusCounts 그대로)
+    const statusChipItems = STATUS_TABS.map((tab) => ({
+        value: tab.key,
+        label: tab.label,
+        count: statusCounts[tab.key] ?? 0,
+    }));
+
+    // 날짜 표시 «8/14(금)» — KST 달력 기준(예전 표시는 기기 시간대를 따라갔다)
     function fmtDate(d: string | null) {
         if (!d) return "-";
-        try {
-            return new Date(d).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
-        } catch {
-            return "-";
-        }
+        return kstLabel(d) || "-";
+    }
+
+    // 보강 시간 «16:00~17:00»
+    function fmtTime(item: MakeupItem) {
+        if (!item.makeupStart && !item.makeupEnd) return "-";
+        return `${item.makeupStart || "-"}~${item.makeupEnd || "-"}`;
     }
 
     // 상태 변경 핸들러
@@ -261,6 +306,73 @@ export default function MakeupClient({
         }
     }
 
+    // ⚡·상세 패널이 같이 쓰는 작업 목록 — 예전 행의 상태 드롭다운(출석·노쇼·취소)과 «취소» 버튼을 같은 인자로 옮긴 것.
+    // 예약(BOOKED) 상태에서만 바꿀 수 있던 예전 규칙 그대로(다른 상태는 작업 없음).
+    // ⚠️ «취소 처리»(상태 변경 = 보강권 동기화)와 «예약 취소»(확인창 후 취소)는 서버 동작이 달라 둘 다 남긴다.
+    function buildMakeupActions(item: MakeupItem): AdminQuickAction[] {
+        if (item.status !== "BOOKED") return [];
+        const id = item.id; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
+        return [
+            { key: "attended", label: "출석 처리", icon: "check_circle", tone: "primary", disabled: busy, onSelect: () => handleStatusChange(id, "ATTENDED") },
+            { key: "no-show", label: "노쇼 처리", icon: "person_off", disabled: busy, onSelect: () => handleStatusChange(id, "NO_SHOW") },
+            { key: "status-cancelled", label: "취소 처리", icon: "event_busy", disabled: busy, onSelect: () => handleStatusChange(id, "CANCELLED") },
+            { key: "cancel", label: "예약 취소", icon: "cancel", tone: "danger", disabled: busy, onSelect: () => handleCancel(id) },
+        ];
+    }
+
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailId(id);
+        }
+    }
+
+    // 보기 전환 시 열린 패널은 닫는다(다른 묶음의 행을 가리키지 않게)
+    function changeViewMode(next: MakeupViewMode) {
+        setDetailId(null);
+        setViewMode(next);
+    }
+
+    // 표 칸 수(날짜별 머리줄 colSpan 용)
+    const columnCount = 8;
+
+    // 한 줄 행: 보강일 | 시간 | 원생 | 보강 반 | 원래 반 | 결석일 | 상태 | 관리(⚡). 요일·프로그램은 상세 패널에서
+    function renderMakeupRow(item: MakeupItem) {
+        const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.BOOKED;
+        const actions = buildMakeupActions(item);
+        return (
+            <tr
+                key={item.id}
+                tabIndex={0}
+                aria-label={`${item.studentName} 보강 상세 보기`}
+                onClick={() => setDetailId(item.id)}
+                onKeyDown={(event) => handleRowKeyDown(event, item.id)}
+                className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+            >
+                {/* 날짜·시간은 오른쪽 + 자릿수 폭 고정 */}
+                <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{fmtDate(item.makeupDate)}</td>
+                <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fmtTime(item)}</td>
+                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{item.studentName}</td>
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{item.makeupClassName}</td>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{item.originalClassName}</td>
+                <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fmtDate(item.originalDate)}</td>
+                <td className="px-2 py-1.5">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                </td>
+                {/* 관리: ⚡(출석·노쇼·취소). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                    {actions.length > 0 ? (
+                        <AdminQuickActionMenu label={`${item.studentName} 보강 빠른 작업`} actions={actions} />
+                    ) : (
+                        <span className="text-xs text-[var(--color-academy-muted)]">-</span>
+                    )}
+                </td>
+            </tr>
+        );
+    }
+
     if (loading && !hasAnyData) {
         return <MakeupLoadingFallback />;
     }
@@ -269,140 +381,150 @@ export default function MakeupClient({
         return <MakeupErrorState onRetry={loadMakeupData} />;
     }
 
+    const detailItem = detailId ? sessions.find((s) => s.id === detailId) ?? null : null;
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-3">
             {/* 페이지 제목 + 예약 버튼 */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">보강 관리</h1>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">보강 관리</h1>
+                    <p className="text-xs text-[var(--color-academy-muted)]">보강 예약 <span className="tabular-nums">{sessions.length}</span>건</p>
                 </div>
                 <button
                     onClick={() => {
                         setShowBookModal(true);
                         void loadStudents();
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
                 >
-                    <span className="material-symbols-outlined text-[20px]">event_repeat</span>
+                    <span className="material-symbols-outlined text-[20px]" aria-hidden="true">event_repeat</span>
                     보강 예약
                 </button>
             </div>
 
-            {/* 요약 카드 — 건수만 보여주는 표시용. 필터링은 아래 상태 탭에서만 한다 (같은 기능이 두 곳에 있어 혼란스러웠음) */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-                    <div
-                        key={key}
-                        className="p-4 rounded-xl border border-gray-200 dark:border-gray-700"
-                    >
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{cfg.label}</p>
-                        <p className="text-2xl font-bold mt-1">{statusCounts[key] ?? 0}</p>
-                    </div>
-                ))}
+            {/* 상태 칩(예전 요약 카드 4개 + 상태 탭을 한 줄로) + 보기 전환(날짜별 | 목록) */}
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                <StatusCountChips
+                    ariaLabel="보강 상태별 건수"
+                    items={statusChipItems}
+                    selected={statusFilter}
+                    onSelect={setStatusFilter}
+                    allValue={STATUS_ALL}
+                />
+                <ListViewToggle
+                    value={viewMode}
+                    options={MAKEUP_VIEW_OPTIONS}
+                    ariaLabel="보강 보기 방식"
+                    onChange={changeViewMode}
+                />
             </div>
 
-            {/* 상태 필터 탭 */}
-            <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit">
-                {STATUS_TABS.map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setStatusFilter(tab.key)}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                            statusFilter === tab.key
-                                ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
-                                : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
-                        }`}
-                    >
-                        {tab.label}
-                        {tab.key !== "ALL" && (
-                            <span className="ml-1 text-xs text-gray-400">
-                                {statusCounts[tab.key] ?? 0}
-                            </span>
-                        )}
-                    </button>
-                ))}
-            </div>
-
-            {/* 보강 목록 테이블 */}
+            {/* 보강 목록 표 */}
             {filteredSessions.length === 0 ? (
-                <div className="text-center py-16 text-gray-400">
-                    <span className="material-symbols-outlined text-5xl mb-3 block">event_busy</span>
-                    <p>보강 예약이 없습니다</p>
+                <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
+                    보강 예약이 없습니다
                 </div>
             ) : (
-                <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                            <tr>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">원생</th>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">원래 반</th>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">결석일</th>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">보강 반</th>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">보강일</th>
-                                <th className="text-left px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">상태</th>
-                                <th className="text-right px-4 py-3 font-semibold text-gray-600 dark:text-gray-300">관리</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {filteredSessions.map((item) => {
-                                const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.BOOKED;
-                                return (
-                                    <tr key={item.id} className="hover:bg-gray-50 dark:bg-gray-900">
-                                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                            {item.studentName}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                            {item.originalClassName}
-                                            <span className="text-gray-400 ml-1">
-                                                ({DAY_LABELS[item.originalDay] ?? item.originalDay})
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{fmtDate(item.originalDate)}</td>
-                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                            {item.makeupClassName}
-                                            <span className="text-gray-400 ml-1">
-                                                ({DAY_LABELS[item.makeupDay] ?? item.makeupDay})
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{fmtDate(item.makeupDate)}</td>
-                                        <td className="px-4 py-3">
-                                            {/* 상태 드롭다운: BOOKED일 때만 변경 가능 */}
-                                            {item.status === "BOOKED" ? (
-                                                <select
-                                                    className={`text-xs font-semibold px-2 py-1 rounded-full border-0 ${cfg.bg} ${cfg.color}`}
-                                                    value={item.status}
-                                                    onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                                                    disabled={busy}
-                                                >
-                                                    <option value="BOOKED">예약</option>
-                                                    <option value="ATTENDED">출석</option>
-                                                    <option value="NO_SHOW">노쇼</option>
-                                                    <option value="CANCELLED">취소</option>
-                                                </select>
-                                            ) : (
-                                                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
-                                                    {cfg.label}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-3 text-right">
-                                            {item.status === "BOOKED" && (
-                                                <button
-                                                    onClick={() => handleCancel(item.id)}
-                                                    disabled={busy}
-                                                    className="text-xs text-red-600 hover:text-red-800 font-medium"
-                                                >
-                                                    취소
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
+                    <div className="overflow-x-auto">
+                        {/* admin-list-table: 글자 왼쪽·날짜/시간 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
+                        <table className="admin-list-table w-full border-collapse text-sm">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                                <tr>
+                                    <th className="admin-cell-num px-2 py-2">보강일</th>
+                                    <th className="admin-cell-num hidden px-2 py-2 md:table-cell">시간</th>
+                                    <th className="px-2 py-2">원생</th>
+                                    <th className="px-2 py-2">보강 반</th>
+                                    <th className="hidden px-2 py-2 md:table-cell">원래 반</th>
+                                    <th className="admin-cell-num hidden px-2 py-2 md:table-cell">결석일</th>
+                                    <th className="px-2 py-2">상태</th>
+                                    <th className="admin-cell-center px-2 py-2">관리</th>
+                                </tr>
+                            </thead>
+                            {viewMode === "date" ? (
+                                // 날짜별 보기: 머리줄 «오늘 · 3건 · 예약 2» 아래 그 기간 보강들
+                                dateGroups.map((group) => {
+                                    const bookedCount = group.items.filter((s) => s.status === "BOOKED").length;
+                                    return (
+                                        <tbody key={group.key} className="divide-y divide-[var(--color-academy-line)]">
+                                            <tr>
+                                                <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                                    {group.label} · <span className="tabular-nums">{group.items.length}</span>건
+                                                    {bookedCount > 0 && <> · 예약 <span className="tabular-nums">{bookedCount}</span></>}
+                                                </th>
+                                            </tr>
+                                            {group.items.map(renderMakeupRow)}
+                                        </tbody>
+                                    );
+                                })
+                            ) : (
+                                <tbody className="divide-y divide-[var(--color-academy-line)]">{filteredSessions.map(renderMakeupRow)}</tbody>
+                            )}
+                        </table>
+                    </div>
                 </div>
             )}
+
+            {/* 행 클릭 상세 패널 — 데스크톱 오른쪽 / 모바일 하단 시트. 작업 버튼은 ⚡ 와 같은 목록 */}
+            {detailItem && (() => {
+                const d = detailItem;
+                const cfg = STATUS_CONFIG[d.status] ?? STATUS_CONFIG.BOOKED;
+                const dayOf = (day: string) => (day ? `${DAY_LABELS[day] ?? day}요일` : "");
+                const rows: { label: string; value: React.ReactNode }[] = [
+                    { label: "보강일", value: <span className="tabular-nums">{toKstYmd(d.makeupDate) || "-"} {fmtTime(d)}</span> },
+                    { label: "보강 반", value: [d.makeupClassName, dayOf(d.makeupDay)].filter(Boolean).join(" ") },
+                    { label: "프로그램", value: d.programName || null },
+                    { label: "원래 반", value: [d.originalClassName, dayOf(d.originalDay)].filter(Boolean).join(" ") },
+                    { label: "결석일", value: <span className="tabular-nums">{toKstYmd(d.originalDate) || "-"}</span> },
+                    { label: "등록일", value: d.createdAt ? <span className="tabular-nums">{toKstYmd(d.createdAt)}</span> : null },
+                ].filter((row) => row.value !== null && row.value !== undefined && row.value !== "");
+                const detailActions = buildMakeupActions(d);
+                return (
+                    <ListDetailPanel onClose={() => setDetailId(null)} titleId="makeup-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                        <div className="mb-4 flex items-center gap-2">
+                            <h3 id="makeup-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                            <button
+                                type="button"
+                                onClick={() => setDetailId(null)}
+                                aria-label="닫기"
+                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            </button>
+                        </div>
+                        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                            {rows.map((row) => (
+                                <div key={row.label} className="contents">
+                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        {detailActions.length > 0 && (
+                            <div className="mt-5 flex flex-wrap gap-2">
+                                {detailActions.map((action) => (
+                                    <button
+                                        key={action.key}
+                                        type="button"
+                                        disabled={action.disabled}
+                                        onClick={() => { setDetailId(null); void action.onSelect(); }}
+                                        className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
+                                            action.tone === "danger"
+                                                ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                                : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </ListDetailPanel>
+                );
+            })()}
 
             {/* 보강 예약 모달 */}
             {showBookModal && (

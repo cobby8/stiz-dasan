@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { loadTsModule } from "./_ts-module.mjs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -266,4 +267,81 @@ test("차량 관리: 차량 한 줄 행(정원 오른쪽)·행 클릭 패널·�
   assert.match(vehicleClient, /buildVehicleActions\(d\)\.map/);
   assert.match(vehicleClient, /resource: "vehicle"/);
   assert.doesNotMatch(vehicleClient, /\btruncate\b|text-ellipsis|line-clamp/);
+});
+
+// 목록 개편 6단계(보강·결석·요청함) — 같은 부품·규칙. 서버 액션·조회·학부모 발송은 그대로, 보이는 모양만
+const { upcomingDateGroupOf, groupByUpcomingDate } = await loadTsModule("src/components/admin/list/upcomingDateGroups.ts");
+
+test("앞날 중심 날짜 묶음: 월요일 시작 주·주/월/연말 경계·지난 건은 최근부터 (실행 검증)", () => {
+  // 2026-10-30 = 금요일 → 이번 주 10/26(월)~11/1(일), 다음 주 11/2~11/8
+  const today = "2026-10-30";
+  assert.equal(upcomingDateGroupOf("2026-10-30", today), "today");
+  assert.equal(upcomingDateGroupOf("2026-10-29", today), "past");
+  assert.equal(upcomingDateGroupOf("2026-11-01", today), "thisWeek"); // 일요일까지 이번 주(월말 넘김)
+  assert.equal(upcomingDateGroupOf("2026-11-02", today), "nextWeek"); // 월요일부터 다음 주
+  assert.equal(upcomingDateGroupOf("2026-11-08", today), "nextWeek");
+  assert.equal(upcomingDateGroupOf("2026-11-09", today), "later");
+  assert.equal(upcomingDateGroupOf("", today), "past"); // 날짜 없는 값은 맨 아래
+  // 일요일이 오늘이면 다음 날(월)이 바로 다음 주 — 일요일을 주 첫날로 보면 틀린다
+  assert.equal(upcomingDateGroupOf("2026-11-02", "2026-11-01"), "nextWeek");
+  // 연말 경계: 2026-12-31(목) → 2027-01-03(일)까지 이번 주, 01-04(월) 다음 주
+  assert.equal(upcomingDateGroupOf("2027-01-03", "2026-12-31"), "thisWeek");
+  assert.equal(upcomingDateGroupOf("2027-01-04", "2026-12-31"), "nextWeek");
+  const labels = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난" };
+  const groups = groupByUpcomingDate(["2026-10-20", "2026-11-05", "2026-10-31", "2026-10-28", "2026-10-30"], (d) => d, today, labels);
+  assert.deepEqual(groups.map((g) => [g.key, g.items]), [
+    ["today", ["2026-10-30"]],
+    ["thisWeek", ["2026-10-31"]],
+    ["nextWeek", ["2026-11-05"]],
+    ["past", ["2026-10-28", "2026-10-20"]],
+  ]);
+});
+
+const makeupClient = read("../src/app/admin/makeup/MakeupClient.tsx");
+const creditPanel = read("../src/app/admin/makeup/CreditPanel.tsx");
+
+test("보강 관리: 보강일 날짜별 묶음(KST)·상태 칩(statusFilter 공유)·행 클릭 패널·⚡ 에 옛 상태 변경·취소 그대로", () => {
+  assert.match(makeupClient, /<table className="admin-list-table/);
+  // 보강일·결석일은 오른쪽, 날짜 표시·묶음은 KST 모듈
+  assert.match(makeupClient, /admin-cell-num[^"]*">\{fmtDate\(item\.makeupDate\)\}/);
+  assert.match(makeupClient, /admin-cell-num[^"]*">\{fmtDate\(item\.originalDate\)\}/);
+  assert.match(makeupClient, /from "@\/lib\/datetime\/kst"/);
+  assert.match(makeupClient, /groupByUpcomingDate\(filteredSessions, \(item\) => toKstYmd\(item\.makeupDate\), today, MAKEUP_DATE_GROUP_LABELS\)/);
+  assert.match(makeupClient, /today: "오늘"[\s\S]*?thisWeek: "이번 주"[\s\S]*?nextWeek: "다음 주"[\s\S]*?past: "지난 보강"/);
+  assert.match(makeupClient, /scope="rowgroup"/);
+  assert.doesNotMatch(makeupClient, /toLocaleDateString|toISOString\(\)\.slice/);
+  // 칩은 예전 상태 탭과 같은 statusFilter, 다시 누르면 전체
+  assert.match(makeupClient, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?onSelect=\{setStatusFilter\}[\s\S]*?allValue=\{STATUS_ALL\}/);
+  assert.match(makeupClient, /useRememberedListView<MakeupViewMode>\(MAKEUP_VIEW_STORAGE_KEY, MAKEUP_VIEW_VALUES, "date"\)/);
+  // 보기 전환 시 열린 패널 닫기
+  assert.match(makeupClient, /function changeViewMode[\s\S]*?setDetailId\(null\)/);
+  // 행 클릭 패널, 키보드는 안쪽 ⚡ 를 가로채지 않는다, ⚡ 칸 전파 차단
+  assert.match(makeupClient, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\} titleId="makeup-detail-panel-title"/);
+  assert.match(makeupClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(makeupClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // ⚡ 와 패널은 같은 작업 목록 — 옛 드롭다운(출석·노쇼·취소)과 «취소» 버튼(확인창)을 같은 인자로
+  const actions = makeupClient.slice(makeupClient.indexOf("function buildMakeupActions("), makeupClient.indexOf("function handleRowKeyDown("));
+  assert.match(actions, /if \(item\.status !== "BOOKED"\) return \[\];/);
+  assert.match(actions, /handleStatusChange\(id, "ATTENDED"\)/);
+  assert.match(actions, /handleStatusChange\(id, "NO_SHOW"\)/);
+  assert.match(actions, /handleStatusChange\(id, "CANCELLED"\)/);
+  assert.match(actions, /handleCancel\(id\)/);
+  assert.match(makeupClient, /confirm\("이 보강 예약을 취소하시겠습니까\?"\)/);
+  assert.match(makeupClient, /const detailActions = buildMakeupActions\(d\)/);
+  assert.match(makeupClient, /<AdminQuickActionMenu label=\{`\$\{item\.studentName\} 보강 빠른 작업`\} actions=\{actions\}/);
+  // 보강 예약 모달은 그대로
+  assert.match(makeupClient, /<BookMakeupModal/);
+  assert.doesNotMatch(makeupClient, /\btruncate\b|text-ellipsis|line-clamp|bg-blue-100|bg-green-100/);
+});
+
+test("보강권 현황: 학생 한 줄 행(장 수·소멸 오른쪽)·행 클릭 패널에 장별 내역 전부(새 조회 없음)", () => {
+  assert.match(creditPanel, /<table className="admin-list-table/);
+  assert.match(creditPanel, /admin-cell-num[^"]*\$\{urgency\(s\.soonestDaysLeft\)\}`\}>\{daysText\(s\.soonestDaysLeft\)\}/);
+  assert.match(creditPanel, /<ListDetailPanel onClose=\{\(\) => setOpenId\(""\)\} titleId="credit-detail-panel-title"/);
+  assert.match(creditPanel, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  // 장별 결석일·출처·원래 반·예약·만료는 패널에 그대로
+  for (const field of ["c.absenceLabel", "c.sourceLabel", "c.originClassName", "c.booking", "c.expiresLabel"]) {
+    assert.ok(creditPanel.includes(field), `패널에 ${field} 가 있어야 합니다`);
+  }
+  assert.doesNotMatch(creditPanel, /\btruncate\b|text-ellipsis|line-clamp|bg-amber-100|text-gray-/);
 });
