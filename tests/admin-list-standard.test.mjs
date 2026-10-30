@@ -182,3 +182,25 @@ test("수업 리포트 목록: 날짜별 묶음(오늘/이번 주/지난 주/이
   assert.match(reportListClient, /href=\{`\/admin\/attendance\/report\/\$\{d\.id\}`\}/);
   assert.doesNotMatch(reportListClient, /\btruncate\b|text-ellipsis|line-clamp|toLocaleDateString|brand-neon-lime/);
 });
+
+const classesClient = read("../src/app/admin/classes/ClassManagementClient.tsx");
+
+test("반 관리: 요일·시간·정원 칸 분리(시간·정원 오른쪽)·요일 칩·요일별 묶음·행 클릭 패널, ⚡ 수정·삭제 유지", () => {
+  assert.match(classesClient, /<table className="admin-list-table/);
+  assert.match(classesClient, /admin-cell-num[^"]*">\{cls\.startTime \|\| "-"\}~\{cls\.endTime \|\| "-"\}/);
+  assert.match(classesClient, /admin-cell-num[^"]*">\{cls\.capacity\}명/);
+  // 요일 칩은 dayFilter 와 같은 값, 다시 누르면 전체
+  assert.match(classesClient, /<StatusCountChips[\s\S]*?selected=\{dayFilter\}[\s\S]*?onSelect=\{setDayFilter\}[\s\S]*?allValue=\{DAY_ALL\}/);
+  // 보기 전환 «요일별 | 목록», 요일별 머리줄
+  assert.match(classesClient, /useRememberedListView<ClassViewMode>\(CLASS_VIEW_STORAGE_KEY/);
+  assert.match(classesClient, /scope="rowgroup"[\s\S]*?개 반/);
+  // 행 클릭 패널, 반 이름 링크·⚡ 는 전파 차단, 행 키보드는 안쪽 버튼을 가로채지 않는다
+  assert.match(classesClient, /<ListDetailPanel onClose=\{\(\) => setDetailClassId\(null\)\} titleId="class-detail-panel-title"/);
+  assert.match(classesClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(classesClient, /admin-cell-center px-2 py-1\.5" onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(classesClient, /href=\{`\/admin\/classes\/\$\{cls\.id\}`\}[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // ⚡ 는 기존 그대로(수정·삭제 확인)
+  assert.match(classesClient, /<AdminQuickActionMenu/);
+  assert.match(classesClient, /반을 삭제할까요\?/);
+  assert.doesNotMatch(classesClient, /\btruncate\b|text-ellipsis|line-clamp|brand-neon-lime/);
+});
