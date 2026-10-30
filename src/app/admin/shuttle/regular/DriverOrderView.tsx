@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useMemo, useState } from "react";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
@@ -112,7 +113,7 @@ export default function DriverOrderView({ stops, weekday, serviceMonth, laterMon
       reset(classTime, dir);
       await onSaved(`${classTime} ${DIR_LABEL[dir]} 순서·시각을 저장했습니다${applied.length > 0 ? ` · ${formatRosterMonths(applied)}에 반영` : ""}${skipped.length > 0 ? ` (${formatRosterMonths(skipped)}은 해당 학생 행이 없어 건너뜀)` : ""}`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "저장하지 못했습니다.");
+      setErr(adminErrorText(e, "저장하지 못했습니다."));
     } finally {
       setSavingKey(null);
     }

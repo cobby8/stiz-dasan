@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -227,7 +228,7 @@ export default function AdminSettingsClient({
             setSaveSuccess(true);
         } catch (e: any) {
             setSaveSuccess(false);
-            setActionError(e.message || "저장 중 오류가 발생했습니다.");
+            setActionError(adminErrorText(e, "저장 중 오류가 발생했습니다."));
         } finally {
             savingRef.current = false;
             setSaving(false);

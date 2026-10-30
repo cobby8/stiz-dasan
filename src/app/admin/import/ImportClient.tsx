@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText, adminMessageText } from "@/components/admin/adminDisplayText";
 
 /**
  * 수강생 데이터 이관 클라이언트 UI
@@ -213,7 +214,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "미리보기 실패");
+        setError(adminMessageText(data.error, "미리보기 실패"));
         return;
       }
 
@@ -240,7 +241,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
       const data = await res.json();
 
       if (!res.ok) {
-        setHistoryError(data.error || "최근 이관 기록을 불러오지 못했습니다.");
+        setHistoryError(adminMessageText(data.error, "최근 이관 기록을 불러오지 못했습니다."));
         return;
       }
 
@@ -271,7 +272,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "이관 실행 실패");
+        setError(adminMessageText(data.error, "이관 실행 실패"));
         return;
       }
 
@@ -437,7 +438,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="animate-spin material-symbols-outlined text-base">progress_activity</span>
-                  파싱 중...
+                  읽는 중...
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
@@ -494,7 +495,7 @@ export default function ImportClient({ defaultSheetUrl = "" }: { defaultSheetUrl
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <p className="text-sm font-medium text-yellow-800 mb-2">
                 <span className="material-symbols-outlined text-base align-middle mr-1">warning</span>
-                파싱 경고 ({preview.errors.length}건)
+                확인할 행 ({preview.errors.length}건)
               </p>
               <ul className="text-sm text-yellow-700 space-y-1">
                 {preview.errors.slice(0, 10).map((e, i) => (
@@ -763,7 +764,7 @@ function ImportHistoryPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "상세 내역을 불러오지 못했습니다.");
+        throw new Error(adminMessageText(data.error, "상세 내역을 불러오지 못했습니다."));
       }
 
       setDetail({
@@ -779,7 +780,7 @@ function ImportHistoryPanel({
         batchId,
         type,
         loading: false,
-        error: err instanceof Error ? err.message : "상세 내역을 불러오지 못했습니다.",
+        error: adminErrorText(err, "상세 내역을 불러오지 못했습니다."),
         total: 0,
         rows: [],
       });

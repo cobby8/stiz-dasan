@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { groupOperationalDeliveries, operationalDeliveryView } from "@/lib/admin-delivery-status";
@@ -74,7 +75,7 @@ export default function OperationalDeliveryClient() {
       setRows(data.deliveries ?? []);
     } catch (caught) {
       if (current !== version.current) return;
-      setError(caught instanceof Error ? caught.message : "전달 장부를 불러오지 못했습니다.");
+      setError(adminErrorText(caught, "전달 장부를 불러오지 못했습니다."));
     } finally {
       if (current === version.current) setLoading(false);
     }

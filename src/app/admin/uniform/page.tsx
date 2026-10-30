@@ -1,3 +1,4 @@
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { requireAdmin } from "@/lib/auth-guard";
 import { getUniformOrdersForAdmin, type UniformOrderWithItems } from "@/lib/uniform-order-service";
 import UniformOrdersClient from "./UniformOrdersClient";
@@ -72,7 +73,7 @@ export default async function UniformOrdersPage() {
   try {
     rows = (await getUniformOrdersForAdmin()).map(serializeOrder);
   } catch (error) {
-    loadError = error instanceof Error ? error.message : "유니폼 주문 목록을 불러오지 못했습니다.";
+    loadError = adminErrorText(error, "유니폼 주문 목록을 불러오지 못했습니다.");
   }
 
   return <UniformOrdersClient initialOrders={rows} loadError={loadError} />;

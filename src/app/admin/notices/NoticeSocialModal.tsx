@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState, useTransition } from "react";
 import { prepareNoticeSocialCampaign, publishNoticeSocialCampaign } from "@/app/actions/social-campaigns";
@@ -55,7 +56,7 @@ export default function NoticeSocialModal({
                 const preview = await prepareNoticeSocialCampaign(notice.id);
                 if (active) setSocialPreview(preview);
             } catch (error) {
-                alert(error instanceof Error ? error.message : "소셜 발행 준비에 실패했습니다.");
+                alert(adminErrorText(error, "소셜 발행 준비에 실패했습니다."));
                 if (active) onClose();
             } finally {
                 if (active) setSocialLoading(false);
@@ -102,7 +103,7 @@ export default function NoticeSocialModal({
                 });
                 setSocialResult(result);
             } catch (error) {
-                alert(error instanceof Error ? error.message : "소셜 발행에 실패했습니다.");
+                alert(adminErrorText(error, "소셜 발행에 실패했습니다."));
             } finally {
                 setSocialLoading(false);
             }

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { FormEvent, type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminModal from "@/components/admin/AdminModal";
@@ -958,7 +959,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       }
       setSelectedSeasonId((current) => current || seasons[0]?.id || "");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "방학특강 정보를 불러오지 못했습니다.");
+      setError(adminErrorText(caught, "방학특강 정보를 불러오지 못했습니다."));
     } finally { setLoading(false); }
   }, [applicationsPagination.page, applicationsPagination.pageSize, search, effectiveStatus]);
 
@@ -1014,7 +1015,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         if (!response.ok) throw new Error(body.error || "반별 확정 명단을 불러오지 못했습니다.");
         setRoster(normalizeRosterPayload(body as Record<string, unknown>));
       } catch (caught) {
-        if ((caught as Error).name !== "AbortError") setRosterError(caught instanceof Error ? caught.message : "반별 확정 명단을 불러오지 못했습니다.");
+        if ((caught as Error).name !== "AbortError") setRosterError(adminErrorText(caught, "반별 확정 명단을 불러오지 못했습니다."));
       } finally {
         if (!controller.signal.aborted) setRosterLoading(false);
       }
@@ -1097,7 +1098,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         notificationSummary: nextSummary ?? (item.notificationSummary?.trigger === expected?.trigger ? item.notificationSummary : null),
       } : item) } : current);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "상태를 변경하지 못했습니다.";
+      const message = adminErrorText(caught, "상태를 변경하지 못했습니다.");
       setError(message);
       setItemUpdateErrors((current) => ({ ...current, [itemId]: message }));
     } finally {
@@ -1122,7 +1123,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         processedNote: current.processedNote,
       } : current);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "신청 상태를 변경하지 못했습니다.");
+      setError(adminErrorText(caught, "신청 상태를 변경하지 못했습니다."));
     } finally {
       setUpdatingApplicationStatus("");
     }
@@ -1153,7 +1154,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         "수업 정보를 저장했습니다.",
       );
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "수업 정보를 저장하지 못했습니다.";
+      const message = adminErrorText(caught, "수업 정보를 저장하지 못했습니다.");
       setError(message);
       setItemUpdateErrors((current) => ({ ...current, [key]: message }));
     } finally {
@@ -1171,7 +1172,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         setSelectedApplication(null);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "수강·청구 생성에 실패했습니다.");
+      setError(adminErrorText(caught, "수강·청구 생성에 실패했습니다."));
     } finally {
       setConvertingItemId("");
     }
@@ -1230,7 +1231,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       setNotice(`${targetLabel} 상태 처리 성공 ${succeeded}개 / 처리 실패 ${failed.length}개 / 안내 실패 ${notificationsFailed}개.${failureMessage}`);
       await load({ includeApplications: true });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "일괄 처리를 완료하지 못했습니다.");
+      setError(adminErrorText(caught, "일괄 처리를 완료하지 못했습니다."));
     } finally {
       setBulkProcessingStatus("");
     }
@@ -1264,7 +1265,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       setNotice(`수강·청구 처리 성공 ${succeeded}개 / 처리 실패 ${failed.length}개 / 안내 실패 ${notificationsFailed}개.${failureMessage}`);
       await load({ includeApplications: true });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "수강·청구 생성을 완료하지 못했습니다.");
+      setError(adminErrorText(caught, "수강·청구 생성을 완료하지 못했습니다."));
     } finally {
       setBulkConverting(false);
     }
@@ -1295,7 +1296,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
         }
         await load();
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "보호자 가입 안내 링크를 만들지 못했습니다.");
+        setError(adminErrorText(caught, "보호자 가입 안내 링크를 만들지 못했습니다."));
       }
       return;
     }
@@ -1340,7 +1341,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       setNotice(summary.status === "SENT" ? "보호자 안내 문자를 발송했습니다." : "문자 발송 결과를 확인해 주세요.");
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "안내 문자를 발송하지 못했습니다.");
+      setError(adminErrorText(caught, "안내 문자를 발송하지 못했습니다."));
     } finally {
       setSendingNotificationKey("");
     }
@@ -1352,7 +1353,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       await mutate("PATCH", { resource: "applicationReview", id: applicationId, data: { action: "CLEAR", reviewNote } }, "확인 필요 항목을 검토 완료로 처리했습니다.");
       setSelectedApplication((current) => current?.id === applicationId ? { ...current, reviewReasons: [] } : current);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "검토 완료 처리에 실패했습니다.");
+      setError(adminErrorText(caught, "검토 완료 처리에 실패했습니다."));
     } finally {
       setResolvingReview(false);
     }
@@ -1378,7 +1379,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
           : `${compactOperationalClassName(klass.name)} ${slot.label}요일 담당 선생님 배정을 해제했습니다.`,
       );
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "담당 선생님을 변경하지 못했습니다.");
+      setError(adminErrorText(caught, "담당 선생님을 변경하지 못했습니다."));
     } finally {
       setAssigningInstructorClassId("");
     }
@@ -1403,7 +1404,7 @@ export default function SeasonalAdminClient({ initialData }: SeasonalAdminClient
       {notice && <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800"><Icon name="check_circle" />{notice}</div>}
       {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">다시 시도</button></div>}
       {loading ? <Loading /> : tab === "overview" ? <Overview stats={calculatedStats} seasons={data.seasons} applications={data.applications} onNavigate={setTab} /> : tab === "seasons" ? (
-        <SeasonsView seasons={data.seasons} selected={selectedSeason} coaches={coachOptions} assigningInstructorClassId={assigningInstructorClassId} onSelect={setSelectedSeasonId} onAddClass={() => { setEditingClass(null); setModal("class"); }} onEditSeason={(season) => { setEditingSeason(season); setModal("season"); }} onEditClass={(klass) => { setEditingClass(klass); setModal("class"); }} onOpenRoster={(klass, weekday) => openRosterForClass(klass, { weekday })} onOpenTodayRoster={(klass) => openRosterForClass(klass, { date: todayDateInputValue() })} onAssignInstructor={assignClassInstructor} onStatus={async (id, status) => { try { await mutate("PATCH", { resource: "season", id, data: { status } }, "시즌 상태를 변경했습니다."); } catch (caught) { setError(caught instanceof Error ? caught.message : "시즌 상태를 변경하지 못했습니다."); } }} />
+        <SeasonsView seasons={data.seasons} selected={selectedSeason} coaches={coachOptions} assigningInstructorClassId={assigningInstructorClassId} onSelect={setSelectedSeasonId} onAddClass={() => { setEditingClass(null); setModal("class"); }} onEditSeason={(season) => { setEditingSeason(season); setModal("season"); }} onEditClass={(klass) => { setEditingClass(klass); setModal("class"); }} onOpenRoster={(klass, weekday) => openRosterForClass(klass, { weekday })} onOpenTodayRoster={(klass) => openRosterForClass(klass, { date: todayDateInputValue() })} onAssignInstructor={assignClassInstructor} onStatus={async (id, status) => { try { await mutate("PATCH", { resource: "season", id, data: { status } }, "시즌 상태를 변경했습니다."); } catch (caught) { setError(adminErrorText(caught, "시즌 상태를 변경하지 못했습니다.")); } }} />
       ) : <ApplicationsView applications={filteredApplications} allApplications={data.applications} seasons={data.seasons} search={search} status={statusFilter} pagination={applicationsPagination} selectedItemIdSet={selectedItemIdSet} selectedItemCount={selectedItemIds.length} selectedApplicationCount={selectedApplicationCount} allVisibleSelected={allVisibleSelected} bulkProcessingStatus={bulkProcessingStatus} bulkConverting={bulkConverting} mode={applicationsMode} appTab={appTab} onAppTab={setAppTab} roster={roster} rosterFilters={rosterFilters} rosterLoading={rosterLoading} rosterError={rosterError} onMode={setApplicationsMode} onRosterFilters={setRosterFilters} onSearch={setSearch} onStatus={setStatusFilter} onPage={(page) => { setSelectedItemIds([]); void load({ includeApplications: true, page }); }} onSelect={setSelectedApplication} onToggleApplication={toggleApplicationSelection} onToggleAll={toggleAllVisibleApplications} onBulkStatus={handleBulkItemStatus} onBulkConversion={handleBulkConversion} />}
 
       {selectedApplication && <ApplicationDrawer application={selectedApplication} seasons={data.seasons} onClose={() => { setSelectedApplication(null); setItemUpdateErrors({}); }} onUpdateItem={updateItem} updatingItemIds={updatingItemIds} itemUpdateErrors={itemUpdateErrors} onSaveAssignment={saveAssignment} assigningKey={assigningKey} onConvertItem={convertItem} onCopyInvoiceLink={copyInvoiceLink} onRetryNotification={retryNotification} sendingNotificationKey={sendingNotificationKey} onResolveReview={resolveApplicationReview} resolvingReview={resolvingReview} onUpdateApplicationStatus={updateApplicationStatus} updatingApplicationStatus={updatingApplicationStatus} convertingItemId={convertingItemId} onShuttleChanged={() => { void load({ includeApplications: true }); }} />}
@@ -2021,7 +2022,7 @@ function RosterView({ seasons, applications, roster, filters, loading, error, on
 
   return <Panel title="일자별 출석부" icon="fact_check" action={<div className="print:hidden flex gap-2">
     <button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-gray-200 px-3 text-sm font-black dark:border-gray-700"><Icon name="print" />인쇄</button>
-    <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(caught instanceof Error ? caught.message : "CSV 다운로드에 실패했습니다."))} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"><Icon name="download" />CSV</button>
+    <button type="button" onClick={() => void downloadCsv().catch((caught) => window.alert(adminErrorText(caught, "CSV 다운로드에 실패했습니다.")))} className="inline-flex min-h-10 items-center gap-1 rounded-lg bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"><Icon name="download" />CSV</button>
   </div>}>
     <style>{`@media print { @page { size: A4 landscape; margin: 12mm; } body * { visibility: hidden !important; } .seasonal-roster-print, .seasonal-roster-print * { visibility: visible !important; } .seasonal-roster-print { position: absolute; inset: 0; width: 100%; color: #000 !important; } .roster-desktop { display: block !important; } .roster-mobile, .print\\:hidden { display: none !important; } .seasonal-roster-print table { width: 100%; border-collapse: collapse; font-size: 10pt; } .seasonal-roster-print th, .seasonal-roster-print td { border: 1px solid #777; padding: 6px; } .seasonal-roster-print thead { display: table-header-group; } }`}</style>
     <div className="print:hidden mb-2 flex min-w-0 items-center gap-2 text-sm font-bold"><span>시즌</span><select aria-label="명단 시즌" value={filters.seasonId} onChange={(event) => changeFilter("seasonId", event.target.value)} className="h-11 min-h-11 flex-1 min-w-0 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-[17px]"><option value="">전체 시즌</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</select></div>
@@ -2810,7 +2811,7 @@ function ClassForm({ seasonId, initial, coaches, onClose, onSubmit }: { seasonId
         })),
       });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "저장하지 못했습니다.");
+      setError(adminErrorText(caught, "저장하지 못했습니다."));
       setPending(false);
     }
   }
@@ -2864,7 +2865,7 @@ function ClassInput({ name, label, type = "text", placeholder, required, default
 type Field = { name: string; label: string; type?: string; placeholder?: string; required?: boolean; defaultValue?: string | number | null; onChange?: (value: string) => void };
 function FormModal({ title, helper, fields, onClose, onSubmit }: { title: string; helper?: string; fields: Field[]; onClose: () => void; onSubmit: (payload: Record<string, unknown>) => Promise<void> }) {
   const [pending, setPending] = useState(false); const [error, setError] = useState("");
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const form = new FormData(event.currentTarget); const payload = Object.fromEntries(form.entries()); try { await onSubmit(payload); } catch (caught) { setError(caught instanceof Error ? caught.message : "저장하지 못했습니다."); setPending(false); } }
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setPending(true); setError(""); const form = new FormData(event.currentTarget); const payload = Object.fromEntries(form.entries()); try { await onSubmit(payload); } catch (caught) { setError(adminErrorText(caught, "저장하지 못했습니다.")); setPending(false); } }
   const titleId = "seasonal-form-modal-title";
   return <AdminModal onClose={() => { if (!pending) onClose(); }} titleId={titleId}><form onSubmit={submit} className="w-full p-6"><header className="flex items-center justify-between"><h2 id={titleId} className="text-xl font-black">{title}</h2><button type="button" onClick={onClose} disabled={pending} aria-label="닫기"><Icon name="close" /></button></header>{helper && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-900 dark:bg-amber-950/30 dark:text-amber-100">{helper}</p>}{error && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}<div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map((field, index) => <label key={field.name} className="text-sm font-bold text-gray-700 dark:text-gray-200">{field.label}{field.required && <span className="text-red-500"> *</span>}<input name={field.name} type={field.type || "text"} required={field.required} placeholder={field.placeholder} defaultValue={field.defaultValue ?? ""} min={field.type === "number" ? 0 : undefined} data-admin-modal-initial-focus={index === 0 ? "true" : undefined} className="mt-1 min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 font-normal text-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-white" /></label>)}</div><footer className="mt-6 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-xl border border-gray-200 px-4 font-bold disabled:opacity-60 dark:border-gray-700">취소</button><button disabled={pending} className="min-h-11 rounded-xl bg-[var(--brand-accent)] px-5 font-black text-[var(--brand-accent-contrast)] disabled:opacity-60">{pending ? "저장 중…" : "저장"}</button></footer></form></AdminModal>;
 }

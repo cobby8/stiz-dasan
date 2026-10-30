@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -127,7 +128,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
         setNeedsRefresh(false);
         setView(next); setEditor(next.record ? toEditor(next.record.payload) : blankEditor());
       } catch (cause) {
-        if (id === requestId.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : "조회 실패");
+        if (id === requestId.current && !controller.signal.aborted) setError(adminErrorText(cause, "조회 실패"));
       } finally {
         if (id === requestId.current && !controller.signal.aborted) setLoading(false);
       }
@@ -160,7 +161,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
         if (missing.length) throw new Error(`현재 등록 반이 빠져 있습니다: ${missing.map((row) => row.className).join(", ")}. 제외 반도 휴원·퇴원·이월과 0원 근거로 기록해 주세요.`);
       }
       setPreview({ action, target: { ...target }, version: view.record?.version ?? 0, payload, totals: calculateMonthlyRegister(payload), reason: reason.trim() });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "입력값을 확인해 주세요."); }
+    } catch (cause) { setError(adminErrorText(cause, "입력값을 확인해 주세요.")); }
   }
 
   async function executePreview() {
@@ -184,7 +185,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
       setNotice(`${actions[preview.action]} 완료. 저장 결과를 다시 조회합니다. 청구서·문자는 생성하지 않았습니다.`);
       setPreview(null); setView(null); setReload((value) => value + 1);
     } catch (cause) {
-      if (id === requestId.current) { setError(`${cause instanceof Error ? cause.message : "저장 결과를 확인하지 못했습니다."} 자동 재시도하지 않습니다. 현재 상태를 다시 조회한 뒤 진행해 주세요.`); setNeedsRefresh(true); setPreview(null); }
+      if (id === requestId.current) { setError(`${adminErrorText(cause, "저장 결과를 확인하지 못했습니다.")} 자동 재시도하지 않습니다. 현재 상태를 다시 조회한 뒤 진행해 주세요.`); setNeedsRefresh(true); setPreview(null); }
     } finally { posting.current = false; setSaving(false); }
   }
 

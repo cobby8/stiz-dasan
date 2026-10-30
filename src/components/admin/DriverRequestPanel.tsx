@@ -1,4 +1,5 @@
 "use client";
+import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DriverRequestRow } from "@/app/api/admin/driver-requests/route";
@@ -52,7 +53,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
         body: JSON.stringify({ id, action }),
       });
       const data = await res.json() as { error?: string };
-      if (!res.ok) { setErr(data.error ?? "처리 실패"); return; }
+      if (!res.ok) { setErr(adminMessageText(data.error, "처리 실패")); return; }
       await load();
     } catch {
       setErr("네트워크 오류");

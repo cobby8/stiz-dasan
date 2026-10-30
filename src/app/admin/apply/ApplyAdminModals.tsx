@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatPhoneInput, formatClassLabel } from "@/lib/application-display-format";
 
@@ -327,7 +328,7 @@ export default function ApplyAdminModals({
             await onSaved();
             onFeedback("success", `${approveApp.childName} 수강신청을 승인했습니다. 안내 알림은 발송하지 않았습니다.`);
         } catch (error) {
-            setApprovalError(error instanceof Error ? error.message : "승인 처리 중 문제가 생겼습니다. 선택 내용을 확인하고 다시 시도해 주세요.");
+            setApprovalError(adminErrorText(error, "승인 처리 중 문제가 생겼습니다. 선택 내용을 확인하고 다시 시도해 주세요."));
             onFeedback("error", "승인 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
         } finally {
             setBusy(false);
@@ -348,7 +349,7 @@ export default function ApplyAdminModals({
                 onFeedback("error", "재검토 상태는 상담 대기로 저장되었습니다. 목록을 새로고침하지 못했으니 페이지를 다시 열어 확인해 주세요. 재검토 처리를 반복할 필요는 없습니다.");
             }
         } catch (error) {
-            setReopenError(error instanceof Error ? error.message : "재검토로 되돌리지 못했습니다. 내용을 유지했으니 다시 확인해 주세요.");
+            setReopenError(adminErrorText(error, "재검토로 되돌리지 못했습니다. 내용을 유지했으니 다시 확인해 주세요."));
         } finally {
             setBusy(false);
         }

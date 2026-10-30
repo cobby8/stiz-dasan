@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState, useTransition } from "react";
 import { createProgram, updateProgram } from "@/app/actions/admin";
@@ -464,7 +465,7 @@ export default function ProgramFormPanel({
                 }
                 onSaved();
             } catch (error) {
-                alert(error instanceof Error ? error.message : mode === "edit" ? "수정 실패" : "저장 실패");
+                alert(adminErrorText(error, mode === "edit" ? "수정 실패" : "저장 실패"));
             }
         });
     }

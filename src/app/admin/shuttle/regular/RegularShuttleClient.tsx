@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -161,7 +162,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
         }
         setLocationLinks(latest);
       })
-      .catch((error) => { if (!cancelled) setErr(error instanceof Error ? error.message : "위치 링크 상태를 불러오지 못했습니다."); });
+      .catch((error) => { if (!cancelled) setErr(adminErrorText(error, "위치 링크 상태를 불러오지 못했습니다.")); });
     return () => { cancelled = true; };
   }, []);
 
@@ -205,7 +206,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.error || "명단을 불러오지 못했습니다.");
       setServiceMonth(month); setStops(j.stops ?? []); setAvailableMonths(j.months ?? []);
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "명단을 불러오지 못했습니다."); }
+    } catch (e: unknown) { setErr(adminErrorText(e, "명단을 불러오지 못했습니다.")); }
     finally { setBusy(false); }
   }
 
@@ -232,7 +233,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
         ? ` · ${formatRosterMonths(applied)}에 반영${skipped.length > 0 ? ` (${formatRosterMonths(skipped)}은 해당 학생 행이 없거나 이미 달라 건너뜀)` : ""}${endPlaced.length > 0 ? ` (${formatRosterMonths(endPlaced)}은 기준 정차가 없어 맨 뒤에 넣음 — 그 달 기사님 화면에서 확인)` : ""}`
         : "";
       setDialog(null); setMsg(`${done}${monthNote}`); setErr(null); setShowDispatchHint(true);
-    } catch (e: unknown) { setDialogErr(e instanceof Error ? e.message : "처리하지 못했습니다."); setBusy(false); return; }
+    } catch (e: unknown) { setDialogErr(adminErrorText(e, "처리하지 못했습니다.")); setBusy(false); return; }
     setBusy(false);
     await loadMonth(serviceMonth);
   }
@@ -243,7 +244,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     try {
       const j = await rosterCall("POST", { action: "copyMonth", sourceMonth, targetMonth });
       setMsg(`${targetMonth} 명단을 만들었습니다 · ${j.copied}개 정류장`); setShowDispatchHint(true);
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "명단을 만들지 못했습니다."); setBusy(false); return; }
+    } catch (e: unknown) { setErr(adminErrorText(e, "명단을 만들지 못했습니다.")); setBusy(false); return; }
     setBusy(false);
     await loadMonth(targetMonth);
   }
@@ -298,7 +299,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       });
     } catch (e: unknown) {
       setDialog((d) => (d?.kind === "add" ? { ...d, contextLoading: false, contextError: true } : d));
-      setDialogErr(e instanceof Error ? e.message : "학생 정보를 불러오지 못했습니다.");
+      setDialogErr(adminErrorText(e, "학생 정보를 불러오지 못했습니다."));
     }
   }
 
@@ -310,7 +311,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.error || "학생을 찾지 못했습니다.");
       setDialog((d) => (d?.kind === "add" ? { ...d, results: j.students ?? [] } : d));
-    } catch (e: unknown) { setDialogErr(e instanceof Error ? e.message : "학생을 찾지 못했습니다."); }
+    } catch (e: unknown) { setDialogErr(adminErrorText(e, "학생을 찾지 못했습니다.")); }
   }
 
   // 학생 선택 — 학생 상세에 저장된 등·하원 위치가 있으면 정류장 칸을 미리 채운다.
@@ -419,7 +420,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       try { await navigator.clipboard.writeText(url); setMsg(`${result.studentName ?? studentName} 위치 입력 링크를 복사했습니다.`); }
       catch { setMsg(`${result.studentName ?? studentName} 위치 입력 링크를 만들었습니다. 아래 링크를 직접 복사해 주세요.`); }
     } catch (error) {
-      setErr(error instanceof Error ? error.message : "위치 입력 링크를 만들지 못했습니다.");
+      setErr(adminErrorText(error, "위치 입력 링크를 만들지 못했습니다."));
     } finally {
       setLocationLinkBusy(null);
     }
@@ -436,7 +437,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       if (locationLink?.id === link.id) setLocationLink(null);
       setMsg(`${link.studentName} 위치 입력 링크를 취소했습니다.`);
     } catch (error) {
-      setErr(error instanceof Error ? error.message : "링크를 취소하지 못했습니다.");
+      setErr(adminErrorText(error, "링크를 취소하지 못했습니다."));
     } finally {
       setLocationLinkBusy(null);
     }
@@ -452,7 +453,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       const url = `${window.location.origin}${j.path}`;
       try { await navigator.clipboard.writeText(url); setMsg("기사님 운행 링크를 복사했습니다(매일 열면 오늘 요일 운행)"); }
       catch { setMsg(`기사님 링크: ${url}`); }
-    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "링크를 만들지 못했습니다."); }
+    } catch (e: unknown) { setErr(adminErrorText(e, "링크를 만들지 못했습니다.")); }
   }
 
   // ── 학생 행 작업(⚡ 메뉴·상세 패널이 같은 목록을 쓴다) ──

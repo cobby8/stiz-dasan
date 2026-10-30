@@ -1,4 +1,5 @@
 "use client";
+import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -61,7 +62,7 @@ export default function KakaoPolicyClient(props: {
   const save = () => startTransition(async () => {
     setMessage(null);
     const result = await saveKakaoPolicyDocument(draft);
-    setMessage(result.ok ? "저장했어요. 다음 질문부터 새 문서로 답합니다." : result.error);
+    setMessage(result.ok ? "저장했어요. 다음 질문부터 새 문서로 답합니다." : adminMessageText(result.error, "저장하지 못했습니다. 잠시 후 다시 시도해 주세요."));
     router.refresh();
   });
   const toggle = () => {

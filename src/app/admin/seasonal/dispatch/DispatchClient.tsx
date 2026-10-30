@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useState } from "react";
 import RouteSection from "@/components/seasonal/RouteSection";
@@ -35,7 +36,7 @@ export default function DispatchClient({ initialPickup, initialDropoff }: { init
       const url = `${window.location.origin}${j.path}`;
       try { await navigator.clipboard.writeText(url); setMsg("기사 고정 링크를 복사했습니다(매일 열면 오늘 운행)"); }
       catch { setMsg(`기사 고정 링크: ${url}`); }
-    } catch (e: unknown) { setErr((e instanceof Error ? e.message : "") || "링크를 만들지 못했습니다."); }
+    } catch (e: unknown) { setErr((adminErrorText(e, "")) || "링크를 만들지 못했습니다."); }
   }
 
   const activeWeekdayLabel = weekdays.find((w) => w.canonicalDate === date)?.label ?? "";

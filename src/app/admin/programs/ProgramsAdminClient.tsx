@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useState, useTransition, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
@@ -245,7 +246,7 @@ export default function ProgramsAdminClient({
                 setDeletingId(null);
                 await loadPrograms();
             } catch (e: any) {
-                alert(e.message || "삭제 실패");
+                alert(adminErrorText(e, "삭제 실패"));
             }
         });
     }

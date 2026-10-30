@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 /**
  * SessionLogModal — 수업 기록 + 사진 업로드 + 출석 체크 통합 모달
@@ -181,7 +182,7 @@ export default function SessionLogModal({
             // 기존 사진 목록에 새 사진 추가
             setPhotoUrls((prev) => [...prev, ...newUrls]);
         } catch (err: any) {
-            setErrorMsg(err.message || "사진 업로드 중 오류가 발생했습니다.");
+            setErrorMsg(adminErrorText(err, "사진 업로드 중 오류가 발생했습니다."));
         } finally {
             setUploading(false);
         }
@@ -250,7 +251,7 @@ export default function SessionLogModal({
             onSaved();
             handleClose();
         } catch (err: any) {
-            setErrorMsg(err.message || "저장에 실패했습니다. 다시 시도해주세요.");
+            setErrorMsg(adminErrorText(err, "저장에 실패했습니다. 다시 시도해주세요."));
         } finally {
             setSaving(false);
         }

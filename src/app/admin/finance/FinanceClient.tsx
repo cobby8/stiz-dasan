@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -215,7 +216,7 @@ function toDateInputValue(date = new Date()) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 function getPaymentModeLabel(status: PaymentProviderStatus) {

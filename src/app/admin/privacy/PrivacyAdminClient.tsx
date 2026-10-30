@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { updateAcademySettings } from "@/app/actions/admin";
@@ -78,7 +79,7 @@ export default function PrivacyAdminClient({
       await updateAcademySettings({ privacyPolicy });
       setSaved(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "저장에 실패했습니다. 입력 내용은 유지됩니다.");
+      setSaveError(adminErrorText(error, "저장에 실패했습니다. 입력 내용은 유지됩니다."));
     } finally {
       savingRef.current = false;
       setPending(false);

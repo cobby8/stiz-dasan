@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
@@ -53,7 +54,7 @@ const CLASS_VIEW_OPTIONS = [
 ] as const;
 
 function getErrorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 function dayLabelOf(dayOfWeek: string) {

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatPhoneInput } from "@/lib/application-display-format";
 
@@ -75,8 +76,8 @@ export default function TrialCrmModals({
             const feedback = resultMessage?.(result);
             onFeedback(feedback?.type ?? "success", feedback?.message ?? successMessage);
         } catch (error) {
-            onFeedback("error", showValidationError && error instanceof Error
-                ? error.message
+            onFeedback("error", showValidationError
+                ? adminErrorText(error, "처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.")
                 : "처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
         } finally {
             setBusy(false);
@@ -542,7 +543,7 @@ function TrialScheduleModal({
             .catch((error) => {
                 if (controller.signal.aborted) return;
                 setOptions([]);
-                setOptionsError(error instanceof Error ? error.message : "수업 목록을 불러오지 못했습니다.");
+                setOptionsError(adminErrorText(error, "수업 목록을 불러오지 못했습니다."));
             })
             .finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
         return () => controller.abort();

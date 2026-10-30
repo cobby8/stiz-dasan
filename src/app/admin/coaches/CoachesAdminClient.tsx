@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { Fragment, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createCoach, updateCoach, deleteCoach, reorderCoaches } from "@/app/actions/admin";
@@ -46,7 +47,7 @@ function defaultForm(coach?: Coach): FormState {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 async function uploadImage(file: File): Promise<string> {

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -15,7 +16,8 @@ type Action = "SAVE" | "CONFIRM" | "ISSUE";
 const amounts: [AmountKey, string][] = [["baseAmount", "기준 수강료"], ["discountAmount", "할인"], ["prorationAmount", "기간 조정"], ["carryAmount", "이월 차감"], ["shuttleAmount", "셔틀"]];
 const absenceReasonLabels: Record<string, string> = { ILLNESS_INJURY: "질병·부상", PERSONAL: "개인 사정", FAMILY_TRIP: "가족 여행", SCHOOL_EVENT: "학교 행사", ETC: "기타" };
 const suggestedResolution = (item: WorkbenchAbsence): "CARRY" | "MAKEUP" => item.reason === "ILLNESS_INJURY" && !item.makeupStatus?.split(",").some(status => ["USED", "ATTENDED", "NO_SHOW"].includes(status)) ? "CARRY" : "MAKEUP";
-const errorText = (failure: unknown, fallback: string) => failure instanceof Error && !(failure instanceof TypeError) && !(failure instanceof SyntaxError) ? failure.message : fallback;
+// 네트워크·응답 해석 오류는 작업별 안내로, 그 밖의 오류도 개발 언어가 섞이면 안내 문구로 바꾼다
+const errorText = (failure: unknown, fallback: string) => failure instanceof TypeError || failure instanceof SyntaxError ? fallback : adminErrorText(failure, fallback);
 const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 const label = (row: Row) => (row.blockingReasons?.length ?? 0) > 0 ? "발행 보류" : row.draftStatus === "ZERO" ? "0원 정산" : row.draftStatus === "ISSUED" ? "사이트 발행" : row.status === "ISSUED" ? "기존 청구 유지" : row.draftStatus === "CONFIRMED" ? "확정" : row.status === "REVIEW" ? "확인 필요" : row.status === "EXCLUDED" ? "제외" : "검토 가능";
 const asEdit = (row: Row): Edit => ({ baseAmount: String(row.baseAmount), discountAmount: String(row.discountAmount), prorationAmount: String(row.prorationAmount), carryAmount: String(row.carryAmount), shuttleAmount: String(row.shuttleAmount), reason: "", periodStart: row.periodStart?.slice(0, 10) ?? "", periodEnd: row.periodEnd?.slice(0, 10) ?? "" });

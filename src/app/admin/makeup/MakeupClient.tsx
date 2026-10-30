@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -286,7 +287,7 @@ export default function MakeupClient({
             await updateMakeupStatus(id, newStatus);
             await loadMakeupData();
         } catch (e: any) {
-            alert(e.message || "상태 변경 실패");
+            alert(adminErrorText(e, "상태 변경 실패"));
         } finally {
             setBusy(false);
         }
@@ -301,7 +302,7 @@ export default function MakeupClient({
             await cancelMakeupSession(id);
             await loadMakeupData();
         } catch (e: any) {
-            alert(e.message || "취소 실패");
+            alert(adminErrorText(e, "취소 실패"));
         } finally {
             setBusy(false);
         }
@@ -671,7 +672,7 @@ function BookMakeupModal({
             });
             await onSuccess();
         } catch (e: any) {
-            alert(e.message || "보강 예약 실패");
+            alert(adminErrorText(e, "보강 예약 실패"));
         } finally {
             setBusy(false);
         }

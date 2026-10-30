@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState } from "react";
 import { createAnnualEvent, updateAnnualEvent, deleteAnnualEvent, updateAcademySettings } from "@/app/actions/admin";
@@ -98,7 +99,7 @@ function toDateString(d: Date | string | null | undefined): string {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 export default function AnnualAdminClient({

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
@@ -130,7 +131,7 @@ export default function UniformOrdersClient({
       } catch (error) {
         setFeedback({
           type: "error",
-          message: error instanceof Error ? error.message : "재전송 중 문제가 발생했습니다.",
+          message: adminErrorText(error, "재전송 중 문제가 발생했습니다."),
         });
       } finally {
         setBusyId(null);

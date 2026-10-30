@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
@@ -230,7 +231,7 @@ function phoneHref(phone: string) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 function buildTrialManualSmsMessage(lead: TrialLead) {

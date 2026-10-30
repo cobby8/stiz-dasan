@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
@@ -243,7 +244,7 @@ export default function GalleryAdminClient({
         await loadGallery();
         setPageMessage({ ok: true, message: "갤러리 게시물이 삭제됐습니다." });
       } catch (error) {
-        alert(error instanceof Error ? error.message : "갤러리 게시물 삭제 중 오류가 발생했습니다.");
+        alert(adminErrorText(error, "갤러리 게시물 삭제 중 오류가 발생했습니다."));
       }
     });
   }
@@ -292,7 +293,7 @@ export default function GalleryAdminClient({
         patchDraft(draft.id, result.draft);
         setDraftMessage("초안 수정 내용을 저장했습니다.");
       } catch (error) {
-        setDraftMessage(error instanceof Error ? error.message : "초안 저장에 실패했습니다.");
+        setDraftMessage(adminErrorText(error, "초안 저장에 실패했습니다."));
       }
     });
   }
@@ -311,7 +312,7 @@ export default function GalleryAdminClient({
         );
         await loadGallery();
       } catch (error) {
-        setDraftMessage(error instanceof Error ? error.message : "게시 중 오류가 발생했습니다.");
+        setDraftMessage(adminErrorText(error, "게시 중 오류가 발생했습니다."));
       }
     });
   }
@@ -330,7 +331,7 @@ export default function GalleryAdminClient({
             : "초안을 반려했습니다.",
         );
       } catch (error) {
-        setDraftMessage(error instanceof Error ? error.message : "반려 처리에 실패했습니다.");
+        setDraftMessage(adminErrorText(error, "반려 처리에 실패했습니다."));
       }
     });
   }

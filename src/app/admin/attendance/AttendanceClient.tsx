@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
@@ -213,7 +214,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
             await loadAttendance({ resetSaved: false });
             setSaved(true);
         } catch (err: any) {
-            alert(err.message || "저장 실패");
+            alert(adminErrorText(err, "저장 실패"));
         } finally {
             setSaving(false);
         }

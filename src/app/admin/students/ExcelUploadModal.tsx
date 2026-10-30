@@ -1,4 +1,5 @@
 "use client";
+import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 /**
  * ExcelUploadModal — 엑셀 파일 업로드 -> 미리보기 -> 일괄 등록 모달
@@ -130,7 +131,7 @@ export default function ExcelUploadModal({
 
             if (!res.ok) {
                 // API가 에러를 반환한 경우
-                setErrorMsg(data.error || "엑셀 파싱에 실패했습니다.");
+                setErrorMsg(adminMessageText(data.error, "엑셀 파일을 읽지 못했습니다."));
                 return;
             }
 
@@ -438,7 +439,7 @@ export default function ExcelUploadModal({
                             {parseErrors.length > 0 && (
                                 <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                                     <p className="text-sm font-medium text-red-700 mb-1">
-                                        파싱 오류 ({parseErrors.length}건)
+                                        읽지 못한 행 ({parseErrors.length}건)
                                     </p>
                                     <ul className="text-xs text-red-600 space-y-0.5">
                                         {parseErrors.map((err, i) => (

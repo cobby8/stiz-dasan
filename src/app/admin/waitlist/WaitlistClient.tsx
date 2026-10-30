@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -251,7 +252,7 @@ export default function WaitlistClient({
             await offerWaitlistSpot(id);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(e.message || "자리 제안 실패");
+            alert(adminErrorText(e, "자리 제안 실패"));
         } finally {
             setBusy(false);
         }
@@ -264,7 +265,7 @@ export default function WaitlistClient({
             await processWaitlistResponse(id, true);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(e.message || "수락 처리 실패");
+            alert(adminErrorText(e, "수락 처리 실패"));
         } finally {
             setBusy(false);
         }
@@ -277,7 +278,7 @@ export default function WaitlistClient({
             await processWaitlistResponse(id, false);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(e.message || "거절 처리 실패");
+            alert(adminErrorText(e, "거절 처리 실패"));
         } finally {
             setBusy(false);
         }
@@ -290,7 +291,7 @@ export default function WaitlistClient({
             await removeFromWaitlist(id);
             await loadWaitlistData();
         } catch (e: any) {
-            alert(e.message || "대기 취소 실패");
+            alert(adminErrorText(e, "대기 취소 실패"));
         } finally {
             setBusy(false);
         }
@@ -633,7 +634,7 @@ function AddWaitlistModal({
             await addToWaitlist(studentId, classId, memo || undefined);
             await onDone();
         } catch (err: any) {
-            alert(err.message || "대기 등록 실패");
+            alert(adminErrorText(err, "대기 등록 실패"));
         } finally {
             setBusy(false);
         }

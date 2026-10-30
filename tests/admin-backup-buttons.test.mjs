@@ -7,6 +7,13 @@ import ts from 'typescript';
 const code = ts.transpileModule(readFileSync('src/app/admin/AdminBackupButtons.tsx', 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+// 화면 문구 정리 모듈(순수 함수)은 실제 코드를 그대로 쓴다
+const displayText = (() => {
+  const source = ts.transpileModule(readFileSync('src/components/admin/adminDisplayText.ts', 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports = {};
+  vm.compileFunction(source, ['exports', 'console'])(exports, { error() {} });
+  return exports;
+})();
 function text(node) {
   if (Array.isArray(node)) return node.map(text).join('');
   if (typeof node === 'string') return node;
@@ -30,6 +37,7 @@ function fixture(options = {}) {
       useRef(initial) { const index = cursor++; if (!(index in state)) state[index] = { current: initial }; return state[index]; },
     },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
+    '@/components/admin/adminDisplayText': displayText,
   };
   const exports = {};
   vm.compileFunction(code, ['require', 'exports', 'fetch', 'confirm'])(id => {

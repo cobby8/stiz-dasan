@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
@@ -532,7 +533,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                 requestIdRef.current = null;
                 requestPayloadRef.current = null;
             } catch (caught) {
-                setError(caught instanceof Error ? caught.message : "문자 대량 발송을 접수하지 못했습니다.");
+                setError(adminErrorText(caught, "문자 대량 발송을 접수하지 못했습니다."));
             }
         });
     }

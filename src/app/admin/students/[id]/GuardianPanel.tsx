@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 /**
  * 학생 상세 좌측 레일의 「보호자」 카드.
@@ -103,7 +104,7 @@ export default function GuardianPanel({
                 setMessage(successMessage);
                 afterSuccess?.();
             } catch (e) {
-                setError(e instanceof Error ? e.message : "처리하지 못했습니다.");
+                setError(adminErrorText(e, "처리하지 못했습니다."));
             }
         });
     }

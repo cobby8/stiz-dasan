@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
@@ -109,7 +110,7 @@ function formatKRW(n: number): string {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 function SymbolIcon({
@@ -515,7 +516,7 @@ export default function StudentDetailClient({
             setShuttleLocs(prev => [...prev.filter(l => l.kind !== kind), nextRow]);
             setPickerKind(null);
         } catch (e) {
-            setShuttleError(e instanceof Error ? e.message : "위치를 저장하지 못했습니다.");
+            setShuttleError(adminErrorText(e, "위치를 저장하지 못했습니다."));
         } finally {
             setShuttleSaving(false);
         }

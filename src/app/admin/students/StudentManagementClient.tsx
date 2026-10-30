@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
@@ -553,7 +554,7 @@ export default function StudentManagementClient({
             resetForm();
             await loadData();
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : "저장 실패");
+            alert(adminErrorText(err, "저장 실패"));
         } finally {
             setBusy(false);
         }
@@ -565,7 +566,7 @@ export default function StudentManagementClient({
             await deleteStudent(id);
             await loadData();
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : "삭제 실패");
+            alert(adminErrorText(err, "삭제 실패"));
         } finally {
             setBusy(false);
         }
@@ -578,7 +579,7 @@ export default function StudentManagementClient({
             setEnrollModal(null);
             await loadData();
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : "수강 등록 실패");
+            alert(adminErrorText(err, "수강 등록 실패"));
         } finally {
             setBusy(false);
         }

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText, adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition, type FormEvent } from "react";
 import { createStaffUser } from "@/app/actions/admin";
@@ -63,7 +64,7 @@ export default function AddStaffModal({
                 setVerifyStep("sent");
                 setVerifyMsg({ text: "인증번호가 발송되었습니다. (5분 내 입력)", ok: true });
             } else {
-                setVerifyMsg({ text: data.error || "발송 실패", ok: false });
+                setVerifyMsg({ text: adminMessageText(data.error, "발송 실패"), ok: false });
             }
         } catch {
             setVerifyMsg({ text: "인증번호 발송 중 오류가 발생했습니다.", ok: false });
@@ -89,7 +90,7 @@ export default function AddStaffModal({
                 setVerifyStep("verified");
                 setVerifyMsg({ text: "전화번호가 인증되었습니다.", ok: true });
             } else {
-                setVerifyMsg({ text: data.error || "인증 실패", ok: false });
+                setVerifyMsg({ text: adminMessageText(data.error, "인증 실패"), ok: false });
             }
         } catch {
             setVerifyMsg({ text: "인증번호 확인 중 오류가 발생했습니다.", ok: false });
@@ -112,7 +113,7 @@ export default function AddStaffModal({
                 });
                 onSuccess();
             } catch (error) {
-                onError(error instanceof Error ? error.message : "스태프 추가 실패");
+                onError(adminErrorText(error, "스태프 추가 실패"));
             }
         });
     }

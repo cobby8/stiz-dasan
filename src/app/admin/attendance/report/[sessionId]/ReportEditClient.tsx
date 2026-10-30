@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -265,7 +266,7 @@ function ReportEditForm({
             setPhotosJSON((prev) => appendSessionPhotoUrls(prev, uploadedUrls));
             setSaved(false);
         } catch (err) {
-            setPhotoError(err instanceof Error ? err.message : "사진 업로드 중 오류가 발생했습니다.");
+            setPhotoError(adminErrorText(err, "사진 업로드 중 오류가 발생했습니다."));
         } finally {
             setUploading(false);
         }
@@ -331,7 +332,7 @@ function ReportEditForm({
 
             setSaved(true);
         } catch (err: any) {
-            alert(err.message || "저장 실패");
+            alert(adminErrorText(err, "저장 실패"));
         } finally {
             setSaving(false);
         }
@@ -350,7 +351,7 @@ function ReportEditForm({
             await publishSessionReport(report.id, newState);
             setPublished(newState);
         } catch (err: any) {
-            alert(err.message || "발행 상태 변경 실패");
+            alert(adminErrorText(err, "발행 상태 변경 실패"));
         } finally {
             setPublishing(false);
         }

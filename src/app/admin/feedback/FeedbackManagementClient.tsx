@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition, useCallback, useEffect } from "react";
 import { createFeedback, updateFeedback, deleteFeedback } from "@/app/actions/admin";
@@ -263,7 +264,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                 setShowForm(false);
                 await loadFeedbacks();
             } catch (err: any) {
-                alert(err.message || "저장 실패");
+                alert(adminErrorText(err, "저장 실패"));
             }
         });
     }
@@ -296,7 +297,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                 await deleteFeedback(id);
                 await loadFeedbacks();
             } catch (err: any) {
-                alert(err.message || "삭제 실패");
+                alert(adminErrorText(err, "삭제 실패"));
             }
         });
     }

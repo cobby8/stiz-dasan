@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition } from "react";
 import { createGalleryPost, updateGalleryPost } from "@/app/actions/admin";
@@ -111,7 +112,7 @@ export default function GalleryPostFormModal({
       } catch (error) {
         setFormMessage({
           ok: false,
-          message: error instanceof Error ? error.message : "갤러리 게시물 저장 중 오류가 발생했습니다.",
+          message: adminErrorText(error, "갤러리 게시물 저장 중 오류가 발생했습니다."),
         });
       }
     });

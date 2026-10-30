@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
@@ -280,7 +281,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 void loadScheduleData();
             }, 800);
         } catch (e: any) {
-            setSheetError(e.message || "저장 실패");
+            setSheetError(adminErrorText(e, "저장 실패"));
         } finally {
             setSheetSaving(false);
         }
@@ -307,7 +308,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             setSheetSyncMessage(`${result.synced ?? 0}개 수업을 시간표에 반영했습니다.`);
             await loadScheduleData();
         } catch (error: any) {
-            setSheetError(error.message || "동기화 실패");
+            setSheetError(adminErrorText(error, "동기화 실패"));
         } finally {
             setSheetSyncing(false);
         }
@@ -426,7 +427,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setIsAddingCustom(false);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(e.message || "생성 실패");
+                alert(adminErrorText(e, "생성 실패"));
             }
         });
     }
@@ -456,7 +457,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setEditingCustomId(null);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(e.message || "수정 실패");
+                alert(adminErrorText(e, "수정 실패"));
             }
         });
     }
@@ -468,7 +469,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                 setDeletingCustomId(null);
                 await loadScheduleData();
             } catch (e: any) {
-                alert(e.message || "삭제 실패");
+                alert(adminErrorText(e, "삭제 실패"));
             }
         });
     }

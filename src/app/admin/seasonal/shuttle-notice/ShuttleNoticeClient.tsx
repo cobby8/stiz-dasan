@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState } from "react";
 
@@ -36,7 +37,7 @@ export default function ShuttleNoticeClient() {
       const init: Record<string, boolean> = {};
       for (const p of (j.previews ?? []) as Preview[]) init[p.requestId] = p.sendable;
       setChecked(init);
-    } catch (e) { setErr(e instanceof Error ? e.message : "불러오지 못했습니다."); }
+    } catch (e) { setErr(adminErrorText(e, "불러오지 못했습니다.")); }
     finally { setLoading(false); }
   }
 
@@ -53,7 +54,7 @@ export default function ShuttleNoticeClient() {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "발송에 실패했습니다.");
       setResults(j.results ?? []);
-    } catch (e) { setErr(e instanceof Error ? e.message : "발송에 실패했습니다."); }
+    } catch (e) { setErr(adminErrorText(e, "발송에 실패했습니다.")); }
     finally { setSending(false); setConfirming(false); }
   }
 

@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, type FormEvent } from "react";
 import { createClass, updateClass } from "@/app/actions/admin";
@@ -52,7 +53,7 @@ export default function ClassFormPanel({
             else await createClass(payload);
             onSaved();
         } catch (error) {
-            alert(error instanceof Error ? error.message : "저장 실패");
+            alert(adminErrorText(error, "저장 실패"));
         } finally {
             setBusy(false);
         }

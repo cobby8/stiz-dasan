@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatClassLabel } from "@/lib/application-display-format";
 
@@ -361,7 +362,7 @@ function phoneHref(phone: string) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 function buildEnrollManualSmsMessage(app: EnrollApplication) {

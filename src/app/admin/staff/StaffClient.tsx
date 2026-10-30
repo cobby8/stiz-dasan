@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 /**
  * 스태프 관리 클라이언트 컴포넌트
@@ -69,7 +70,7 @@ type StaffPayload = {
 };
 
 function errorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
+    return adminErrorText(error, fallback);
 }
 
 // 역할별 한국어 라벨 + 색상(화면 토큰)

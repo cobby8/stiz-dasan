@@ -1,4 +1,5 @@
 "use client";
+import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -41,7 +42,7 @@ export default function RoleRequestsClient({
     startTransition(async () => {
       const result = await action();
       if (result?.error) {
-        setError(result.error);
+        setError(adminMessageText(result.error, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;
       }
       setConfirming(null);

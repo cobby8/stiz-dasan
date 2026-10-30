@@ -1,4 +1,5 @@
 "use client";
+import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useRef, useState } from "react";
 
@@ -34,9 +35,9 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 body: JSON.stringify(json),
             });
             const data = await res.json();
-            data.success ? show("복원 완료", true) : show(`오류: ${data.error}`, false);
+            data.success ? show("복원 완료", true) : show(adminMessageText(data.error, "복원하지 못했습니다. 백업 파일을 확인해 주세요."), false);
         } catch {
-            show("파일 해석 오류", false);
+            show("백업 파일을 읽지 못했습니다.", false);
         } finally {
             setBusy(false);
             e.target.value = "";
@@ -66,7 +67,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             const data = await res.json();
             data.success
                 ? show(`복원 완료 (${files[0].filename.slice(12, 27)})`, true)
-                : show(`오류: ${data.error}`, false);
+                : show(adminMessageText(data.error, "복원하지 못했습니다. 잠시 후 다시 시도해 주세요."), false);
         } catch {
             show("복원 실패", false);
         } finally {
@@ -109,10 +110,10 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             const res = await fetch("/api/admin/sync-schedule", { method: "POST" });
             const data = await res.json();
             data.success
-                ? show(`시트 동기화 완료 (${data.synced}개 슬롯)`, true)
-                : show(`오류: ${data.error}`, false);
+                ? show(`시트 동기화 완료 (수업 ${data.synced}개)`, true)
+                : show(adminMessageText(data.error, "시트에서 시간표를 가져오지 못했습니다."), false);
         } catch {
-            show("동기화 실패", false);
+            show("시트에서 시간표를 가져오지 못했습니다.", false);
         } finally {
             setBusy(false);
         }

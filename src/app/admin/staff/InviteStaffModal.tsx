@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition, type FormEvent } from "react";
 import { inviteStaff } from "@/app/actions/admin";
@@ -56,7 +57,7 @@ export default function InviteStaffModal({
                 setResult(invitation);
                 onSuccess();
             } catch (error) {
-                onError(error instanceof Error ? error.message : "스태프 초대를 만들지 못했습니다.");
+                onError(adminErrorText(error, "스태프 초대를 만들지 못했습니다."));
             }
         });
     }

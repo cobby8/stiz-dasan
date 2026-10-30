@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -91,7 +92,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
     setNotice(null);
     startTransition(async () => {
       try { setNotice(await prepareKakaoReconfirmationNotice(id)); }
-      catch (caught) { setError(caught instanceof Error ? caught.message : "안내 준비에 실패했습니다."); }
+      catch (caught) { setError(adminErrorText(caught, "안내 준비에 실패했습니다.")); }
     });
   }
   const [checkedAt] = useState(() => Date.now());
@@ -108,7 +109,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         setReviewDetails(current => { const next = { ...current }; delete next[id]; return next; });
         setEditRevisions(current => { const next = { ...current }; delete next[id]; return next; });
         router.refresh();
-      } catch (caught) { setError(caught instanceof Error ? caught.message : "처리 중 오류가 발생했습니다."); }
+      } catch (caught) { setError(adminErrorText(caught, "처리 중 오류가 발생했습니다.")); }
     });
   }
   // 행 클릭 상세 패널 대상 — 예전 카드 본문(원문·검토 입력·결정 버튼)을 그대로 패널에서 연다.

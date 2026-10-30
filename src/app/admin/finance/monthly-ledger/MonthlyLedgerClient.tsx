@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -35,7 +36,7 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
         if (!response.ok) throw new Error(result.error || "조회하지 못했습니다.");
         if (!controller.signal.aborted) setData(result);
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "조회하지 못했습니다.");
+        if (!controller.signal.aborted) setError(adminErrorText(cause, "조회하지 못했습니다."));
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }

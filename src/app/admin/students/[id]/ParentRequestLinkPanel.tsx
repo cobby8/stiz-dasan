@@ -1,4 +1,5 @@
 "use client";
+import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import {
@@ -32,7 +33,7 @@ export default function ParentRequestLinkPanel({ studentId, studentName }: { stu
         setMessage("7일 동안 사용할 수 있는 요청 링크를 만들었습니다.");
         await refreshLinks();
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "요청 링크를 만들지 못했습니다.");
+        setMessage(adminErrorText(error, "요청 링크를 만들지 못했습니다."));
       }
     });
   }
@@ -54,7 +55,7 @@ export default function ParentRequestLinkPanel({ studentId, studentName }: { stu
         setActiveLinks((links) => links.filter((link) => link.id !== linkId));
         setMessage("요청 링크를 취소했습니다.");
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "링크를 취소하지 못했습니다.");
+        setMessage(adminErrorText(error, "링크를 취소하지 못했습니다."));
       }
     });
   }
