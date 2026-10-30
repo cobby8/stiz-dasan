@@ -67,6 +67,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 10-30 | reviewer: 목록 개편 출결·리포트·반 관리(694c42ad·3785e20e·4b462753) 검수 — 통과(필수 수정 없음). API/액션 인자 동일, dirty 저장 후 해제, 날짜 묶음 KST 경계 실행 확인(UTC 환경), 테스트 28-0·tsc 0. 권장: 출결 학생 조회 늦은 응답 무시·필터 중 빈 문구 | 통과 |
 | 2026-10-30 | **목록 개편 3단계(developer, claude/list-redesign-p3)** — 청구·수납 목록(FinanceClient.tsx 만): 표 `admin-list-table`(글자 왼쪽·금액/납부기한/납부일 `admin-cell-num`), 원생 아래 반·유형 아래 수단/승인번호/영수증·상태 아래 알림을 칸 분리/패널로(칸: 선택·원생·반md·유형·금액·납부기한·납부일md·수단lg·상태·관리). 상태 칩 5종(paymentStatusFilter 공유·재클릭 ""=초기화와 같음), select 옛 `CANCELLED`(실제 값 CANCELED 와 불일치해 0건) 교정+미납/연체/환불 항목 추가. «목록·상태별» 전환(머리줄 건수+합계, 금액 더하기만). 행 클릭 ListDetailPanel(설명·청구번호·승인번호·영수증 등 전체, 작업 버튼=buildRowActions 같은 목록·같은 권한). 행 작업 배열은 함수로 옮김(내용 동일). 가드 테스트 1건. tsc 0·eslint 0·테스트 2544-0 | 검수 대기 |
 | 10-30 | reviewer: 원생 관리 목록 개편 2단계(360694c7) 검수 — 승인(필수 수정 없음·tsc/목록 테스트 통과) | 통과 |
 | 2026-10-30 | **목록 개편 2단계(developer, claude/list-redesign-p2)** — 원생 관리: 표 `admin-list-table`(글자 왼쪽·관리 가운데), 상단 상태 숫자→StatusCountChips(filterStatus 공유·켜진 칩 재클릭=기본값 ACTIVE=초기화와 같은 상수 DEFAULT_STATUS_FILTER), 보기 전환→ListViewToggle+useRememberedListView(기존 키 유지), 행·반별 카드 행 클릭→ListDetailPanel(요약+상세 페이지 열기·수강등록·수정), 이름 링크·⚡ 전파 차단, 활성인데 반 없으면 «반 없음»(warning-soft), 반별 카드 truncate 제거. 신청 목록 «체험 연결» sm 미만 아이콘만. 가드 테스트 2건 추가. tsc 0·eslint 0·테스트 2543-0 | 검수 대기 |
