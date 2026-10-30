@@ -107,7 +107,7 @@ export default function InlineConfirm({
       className={`flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-2 ${className} ${openClassName}`}
     >
       <span className="min-w-0 basis-full text-sm font-bold text-[var(--color-academy-ink)]">{question}</span>
-      <button type="button" disabled={locked} onClick={() => void handleConfirm()} className="academy-button-danger-solid">
+      <button type="button" disabled={disabled || locked} onClick={() => void handleConfirm()} className="academy-button-danger-solid">
         {locked ? pendingLabel : confirmLabel}
       </button>
       <button type="button" disabled={locked} onClick={() => setOpen(false)} className="academy-button-text">
