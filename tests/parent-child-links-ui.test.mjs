@@ -22,6 +22,12 @@ function compileModule(path) {
   vm.runInNewContext(compiled, { module, exports: module.exports, require, Intl, Date, Number, Math });
   return module.exports;
 }
+function compileModuleWith(path, imports) {
+  const compiled = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+  const module = { exports: {} };
+  vm.runInNewContext(compiled, { module, exports: module.exports, require: (name) => name in imports ? imports[name] : require(name) });
+  return module.exports;
+}
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const Empty = compile("src/components/account/EmptyParentState.tsx", { "next/link": { default: Link }, "@/components/account/child-link-api": {}, "./child-link-api": {}, "@/components/pwa/useInstalledApp": { useInstalledApp: () => false } });
 const AccountLinks = compile("src/components/account/AccountLinks.tsx", { "next/link": { default: Link } });
@@ -146,6 +152,7 @@ test("추가 가족의 수납 히스토리는 금액·상태를 유지하고 대
     // 8단계 목록 개편으로 출결 탭이 공용 상태 칩·KST 날짜 모듈을 쓴다(수납 탭 검증과 무관한 의존성)
     "@/components/admin/list/StatusCountChips": { default: compile("src/components/admin/list/StatusCountChips.tsx") },
     "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts"),
+    "@/components/admin/list/monthDateGroups": compileModuleWith("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts") }),
     react: { ...React, useState: (initial) => React.useState(initial === "attendance" ? "payments" : initial) },
   });
   const render = (canCheckout) => renderToStaticMarkup(React.createElement(History, { children: [{

@@ -5,7 +5,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
-import { kstLabel, toKstYmd } from "@/lib/datetime/kst";
+import { kstLabel } from "@/lib/datetime/kst";
+// 출결 기록 달별 묶음 — KST 날짜로 바꿔 묶는 공용 함수(toISOString 은 하루 밀린다)
+import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 
 // 출결 상태 — 기존 화면과 같은 판정(PRESENT/ABSENT 외에는 "지각"으로 표시)을 한 곳에 모은다.
 // 칩 건수와 목록 행이 같은 기준으로 세어지도록 행 표시도 이 함수만 쓴다.
@@ -17,24 +19,6 @@ const ATTENDANCE_STATUS: { value: AttendanceKey; label: string; color: string }[
 ];
 function attendanceKeyOf(status: string): AttendanceKey {
     return status === "PRESENT" ? "PRESENT" : status === "ABSENT" ? "ABSENT" : "LATE";
-}
-
-// 출결 기록을 달(YYYY-MM)별로 묶는다. 날짜는 KST 달력 날짜로 바꾼 뒤 문자열로만 다룬다
-// (서버 UTC·휴대폰 KST 차이로 하루 밀리지 않게 — toISOString 금지).
-function groupAttendanceByMonth<T extends { date: Date | string }>(records: T[]) {
-    const groups: { month: string; label: string; items: { record: T; ymd: string }[] }[] = [];
-    for (const record of records) {
-        const ymd = toKstYmd(record.date);
-        const month = ymd.slice(0, 7);
-        let group = groups.find((item) => item.month === month);
-        if (!group) {
-            const [year, mon] = month.split("-");
-            group = { month, label: year && mon ? `${year}년 ${Number(mon)}월` : "날짜 미정", items: [] };
-            groups.push(group);
-        }
-        group.items.push({ record, ymd });
-    }
-    return groups;
 }
 
 // 결제 상태 배지 — 마이페이지 본 화면과 동일한 톤/토큰 사용(하드코딩 hex 없음)
@@ -120,7 +104,7 @@ export default function HistoryClient({
     const visibleAttendance = attendanceFilter === "ALL"
         ? attendanceRecords
         : attendanceRecords.filter((r) => attendanceKeyOf(r.status) === attendanceFilter);
-    const attendanceGroups = groupAttendanceByMonth(visibleAttendance);
+    const attendanceGroups = groupByKstMonth(visibleAttendance, (r) => r.date);
 
     return (
         <div>
@@ -224,7 +208,7 @@ export default function HistoryClient({
                                                 <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
                                             </h3>
                                             <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700/50">
-                                                {group.items.map(({ record: r, ymd }, i) => {
+                                                {group.items.map(({ item: r, ymd }, i) => {
                                                     const status = ATTENDANCE_STATUS.find((item) => item.value === attendanceKeyOf(r.status))!;
                                                     return (
                                                         // 한 줄 행: 상태 칩 · 반 이름(줄바꿈 허용, 말줄임 없음) · 날짜(오른쪽, 숫자 폭 고정)

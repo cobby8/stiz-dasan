@@ -24,12 +24,14 @@ function compileModule(path, imports = {}) {
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
+const monthGroups = compileModule("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst });
 
 test("출결 히스토리는 KST 날짜로 달별 묶음·오른쪽 날짜·상태 칩을 보이고 수납 탭은 손대지 않는다", () => {
   const History = compileModule("src/app/mypage/history/HistoryClient.tsx", {
     "next/link": { default: Link },
     "@/components/admin/list/StatusCountChips": chips,
     "@/lib/datetime/kst": kst,
+    "@/components/admin/list/monthDateGroups": monthGroups,
   }).default;
   const html = renderToStaticMarkup(React.createElement(History, { children: [{
     id: "c1", name: "합성 학생",
@@ -135,4 +137,29 @@ test("정규 결석 신고는 반 카드 속 작은 카드 대신 날짜 묶음(
   assert.match(source, /if \(!r\) \{\s*setErr\("결석 사유를 선택해 주세요\."\);/);
   assert.match(source, /onClick=\{\(\) => report\(d\)\}/);
   assert.match(source, /onClick=\{\(\) => cancel\(d\)\}/);
+});
+
+test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 오른쪽 / 반·시간·담당)이고 상세 링크는 그대로다", async () => {
+  const Page = compileModule("src/app/mypage/reports/page.tsx", {
+    "next/link": { default: Link },
+    "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: "u1" } } }) } }) },
+    "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "p1" }) },
+    "@/lib/queries": { getStudentReports: async () => [
+      // KST 10/1 00:00 = UTC 9/30 15:00 — 서버(UTC)의 toLocaleDateString 이면 9/30 으로 찍힌다
+      { sessionId: "s1", date: "2026-09-30T15:00:00.000Z", topic: "드리블 기초", className: "초등 저학년반", dayOfWeek: "Thu", startTime: "16:00", endTime: "17:00", coachName: "합성 코치" },
+      { sessionId: "s2", date: "2026-09-10T15:00:00.000Z", topic: null, className: "초등 저학년반", dayOfWeek: "Fri", startTime: "16:00", endTime: "17:00", coachName: null },
+    ] },
+    "@/lib/datetime/kst": kst,
+    "@/components/admin/list/monthDateGroups": monthGroups,
+  }).default;
+  const html = renderToStaticMarkup(await Page());
+  assert.match(html, /aria-label="2026년 10월"/);
+  assert.match(html, /aria-label="2026년 9월"/);
+  assert.match(html, /10\/1\(목\)/);
+  assert.match(html, /9\/11\(금\)/);
+  assert.match(html, /href="\/mypage\/reports\/s1"/);
+  assert.match(html, />수업 리포트</);
+  assert.match(html, /담당: 합성 코치/);
+  assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");
+  assert.doesNotMatch(read("src/app/mypage/reports/page.tsx"), /\.toLocaleDateString\(/);
 });

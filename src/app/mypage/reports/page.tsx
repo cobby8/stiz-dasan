@@ -2,6 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getStudentReports } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
+import { kstLabel } from "@/lib/datetime/kst";
+// 달별 묶음 — 서버(UTC)에서 toLocaleDateString 을 쓰면 한국 자정 수업이 전날로 찍혀서 KST 모듈 기반 공용 함수를 쓴다
+import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 
 // 학부모 리포트 목록은 실시간 데이터 필요 (자녀 보안 체크)
 export const dynamic = "force-dynamic";
@@ -69,31 +72,41 @@ export default async function ParentReportsPage() {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {reports.map((r) => {
-                        const dateStr = new Date(r.date).toLocaleDateString("ko-KR", {
-                            year: "numeric", month: "short", day: "numeric", weekday: "short",
-                        });
-                        return (
-                            <Link
-                                key={r.sessionId}
-                                href={`/mypage/reports/${r.sessionId}`}
-                                className="block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow"
-                            >
-                                <div className="flex items-start justify-between">
-                                    <div>
-                                        <p className="font-bold text-gray-900 dark:text-white">{r.topic || "수업 리포트"}</p>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                            {dateStr} | {r.className} ({DAY_LABELS[r.dayOfWeek] || r.dayOfWeek} {r.startTime}~{r.endTime})
-                                        </p>
-                                        {r.coachName && (
-                                            <p className="text-xs text-gray-400 mt-1">담당: {r.coachName}</p>
-                                        )}
-                                    </div>
-                                    <span className="material-symbols-outlined text-gray-300">chevron_right</span>
-                                </div>
-                            </Link>
-                        );
-                    })}
+                    {groupByKstMonth(reports, (r) => r.date).map((group) => (
+                        // 달별 묶음 — 제목 오른쪽에 그 달 리포트 수
+                        <section key={group.month} aria-label={group.label} className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white dark:border-gray-700 dark:bg-gray-800">
+                            <h2 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)] dark:bg-gray-900 dark:text-gray-100">
+                                <span>{group.label}</span>
+                                <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
+                            </h2>
+                            <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700">
+                                {group.items.map(({ item: r, ymd }) => (
+                                    <li key={r.sessionId}>
+                                        {/* 행 전체가 상세 리포트로 가는 링크(기존과 같은 주소). 터치 44px 이상 */}
+                                        <Link
+                                            href={`/mypage/reports/${r.sessionId}`}
+                                            className="flex min-h-14 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)] dark:hover:bg-gray-700/40"
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                {/* 1줄: 주제(줄바꿈 허용, 말줄임 없음) · 날짜(오른쪽, 숫자 폭 고정) */}
+                                                <div className="flex items-start gap-2">
+                                                    <p className="min-w-0 flex-1 break-keep text-sm font-bold text-gray-900 dark:text-white">{r.topic || "수업 리포트"}</p>
+                                                    <span className="shrink-0 text-right text-sm tabular-nums text-gray-700 dark:text-gray-200">{kstLabel(ymd)}</span>
+                                                </div>
+                                                {/* 2줄: 반 · 요일 시간 · 담당 — «|»·괄호로 잇던 글을 요소로 나눔 */}
+                                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
+                                                    <span className="break-keep">{r.className}</span>
+                                                    <span className="tabular-nums">{DAY_LABELS[r.dayOfWeek] || r.dayOfWeek} {r.startTime}~{r.endTime}</span>
+                                                    {r.coachName && <span>담당: {r.coachName}</span>}
+                                                </div>
+                                            </div>
+                                            <span className="material-symbols-outlined shrink-0 text-gray-300" aria-hidden="true">chevron_right</span>
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    ))}
                 </div>
             )}
         </div>
