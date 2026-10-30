@@ -246,7 +246,7 @@ async function checkBackup(checks: SiteOpsCheck[]) {
       id: "backup-status",
       label: "백업",
       status: "critical",
-      message: "백업 저장소 상태를 확인하지 못했습니다. Supabase Storage 설정 확인이 필요합니다.",
+      message: "백업 저장 공간 상태를 확인하지 못했습니다. 백업 설정을 확인해 주세요.",
       actionHref: "/admin",
       actionLabel: "시스템 도구 확인",
     });
@@ -357,17 +357,17 @@ export async function runSiteOpsBot(_requestedBy?: AdminAuthUser | "cron"): Prom
     await prisma.$queryRaw`SELECT 1`;
     checks.push({
       id: "database",
-      label: "데이터베이스",
+      label: "자료 저장소",
       status: "ok",
-      message: "DB 연결이 정상입니다.",
+      message: "자료 저장소가 정상입니다.",
     });
   } catch {
     dbAvailable = false;
     checks.push({
       id: "database",
-      label: "데이터베이스",
+      label: "자료 저장소",
       status: "critical",
-      message: "DB 연결 확인에 실패했습니다.",
+      message: "자료 저장소에 연결하지 못했습니다.",
     });
   }
 
