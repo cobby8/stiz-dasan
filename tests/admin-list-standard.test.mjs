@@ -202,7 +202,8 @@ test("반 관리: 요일·시간·정원 칸 분리(시간·정원 오른쪽)·�
   assert.match(classesClient, /href=\{`\/admin\/classes\/\$\{cls\.id\}`\}[\s\S]*?onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
   // ⚡ 는 기존 그대로(수정·삭제 확인)
   assert.match(classesClient, /<AdminQuickActionMenu/);
-  assert.match(classesClient, /반을 삭제할까요\?/);
+  // 삭제 확인은 공용 확인 창으로(«"반이름" 반 삭제», 확인 뒤 같은 handleDelete)
+  assert.match(classesClient, /askConfirm\(\{ title: `"\$\{cls\.name\}" 반 삭제`[^\n]*\n\s*void handleDelete\(cls\.id\);/);
   assert.doesNotMatch(classesClient, /\btruncate\b|text-ellipsis|line-clamp|brand-neon-lime/);
 });
 
@@ -229,7 +230,8 @@ test("셔틀 명단: 수업시간 묶음 아래 학생 한 줄 행(등원·하�
     assert.ok(actions.includes(`"${label}"`), `⚡ 작업에 «${label}» 이 있어야 합니다`);
   }
   assert.match(rosterClient, /<AdminQuickActionMenu label=\{`\$\{entry\.studentName\} 빠른 작업`\} actions=\{buildRosterActions\(entry, g\.classTime\)\}/);
-  assert.match(rosterClient, /buildRosterActions\(d, detail\.classTime\)\.map/);
+  // 패널 버튼 줄은 공용 AdminPanelActions 로(같은 작업 목록을 그대로 넘긴다)
+  assert.match(rosterClient, /<AdminPanelActions actions=\{buildRosterActions\(d, detail\.classTime\)\}/);
   // 모달은 예전과 같은 값으로 연다(저장 동작 그대로)
   assert.match(rosterClient, /setDialog\(\{ kind: "move", entry, weekday: active, classTime, scope: defaultScope \}\)/);
   assert.match(rosterClient, /setDialog\(\{ kind: "remove", entry, weekday: active, scope: defaultScope \}\)/);
@@ -264,7 +266,8 @@ test("차량 관리: 차량 한 줄 행(정원 오른쪽)·행 클릭 패널·�
   // 기존 작업(수정·활성 전환)은 ⚡ 와 패널이 같은 목록으로, 저장 API 그대로
   assert.match(vehicleClient, /onSelect: \(\) => setModal\(v\)/);
   assert.match(vehicleClient, /onSelect: \(\) => toggleActive\(v\)/);
-  assert.match(vehicleClient, /buildVehicleActions\(d\)\.map/);
+  // 패널 버튼 줄은 공용 AdminPanelActions 로(같은 작업 목록을 그대로 넘긴다)
+  assert.match(vehicleClient, /<AdminPanelActions actions=\{buildVehicleActions\(d\)\}/);
   assert.match(vehicleClient, /resource: "vehicle"/);
   assert.doesNotMatch(vehicleClient, /\btruncate\b|text-ellipsis|line-clamp/);
 });
@@ -373,7 +376,8 @@ test("정규 결석: 카드 → 한 줄 행(결석일·시간·보강일 오른�
   assert.match(actions, /cancelMakeup\(id, makeupId\)/);
   assert.match(actions, /openMakeupForm\(id\)/);
   for (const value of ['"BOOKED"', '"ATTENDED"', '"NO_SHOW"']) assert.ok(absenceClient.includes(`value: ${value}`), `보강 상태 ${value} 선택지`);
-  assert.match(absenceClient, /buildAbsenceActions\(d\)\.map/);
+  // 패널 버튼 줄은 공용 AdminPanelActions 로(같은 작업 목록을 그대로 넘긴다)
+  assert.match(absenceClient, /<AdminPanelActions actions=\{buildAbsenceActions\(d\)\}/);
   // 보강 지정은 같은 입력(반·날짜)·같은 저장
   assert.match(absenceClient, /scheduleMakeupForAbsence\(\{ absenceId, makeupClassId, makeupDate \}\)/);
   assert.match(absenceClient, /onClick=\{\(\) => submitMakeup\(makeupOpenId\)\}/);

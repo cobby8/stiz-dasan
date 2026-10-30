@@ -35,3 +35,84 @@ test("C-A1 ⚡ 메뉴: primary 는 흰 글씨, 항목 44px, 대상 이름 줄, �
   assert.match(quickMenu, /row\.style\.backgroundColor = "var\(--color-academy-primary-soft\)"/);
   assert.match(quickMenu, /row\.style\.backgroundColor = previousRowBackground/);
 });
+
+const confirmDialog = read("../src/components/admin/AdminConfirmDialog.tsx");
+const panelActions = read("../src/components/admin/AdminPanelActions.tsx");
+
+test("C-A2 공용 확인 창: 왼쪽 그만 · 오른쪽 끝 위험색 확정 · 처리 중 닫힘 방지", () => {
+  assert.match(confirmDialog, /cancelLabel = "그만"/);
+  assert.match(confirmDialog, /className="academy-button-text"/);
+  assert.match(confirmDialog, /ml-auto \$\{tone === "danger" \? "academy-button-danger-solid" : "academy-button-primary"\}/);
+  assert.match(confirmDialog, /onClose=\{\(\) => \{ if \(!pending\) onCancel\(\); \}\}/);
+  assert.match(confirmDialog, /closeOnBackdrop=\{false\}/);
+  assert.match(confirmDialog, /export function useAdminConfirm/);
+});
+
+test("C-A2 공용 패널 버튼 줄: ⚡ 와 같은 분리 규칙, 위험은 오른쪽 끝", () => {
+  assert.match(panelActions, /splitQuickActions\(actions\)/);
+  assert.match(panelActions, /tone === "danger"\) return "academy-button-danger"/);
+  assert.match(panelActions, /tone === "primary"\) return "academy-button-primary"/);
+  assert.match(panelActions, /ml-auto flex flex-wrap gap-2/);
+  assert.match(panelActions, /onBeforeSelect\?\.\(\);\s*void action\.onSelect\(\);/);
+});
+
+// A-07: window.confirm 삭제 확인 → 공용 확인 창. 확인을 거친 뒤에만 같은 handleDelete(같은 인자)
+const deleteConfirmClients = [
+  ["../src/app/admin/students/StudentManagementClient.tsx", "s.name", "s.id"],
+  ["../src/app/admin/classes/ClassManagementClient.tsx", "cls.name", "cls.id"],
+  ["../src/app/admin/finance/FinanceClient.tsx", "p.studentName", "p.id"],
+  ["../src/app/admin/coaches/CoachesAdminClient.tsx", "coach.name", "coach.id"],
+  ["../src/app/admin/annual/AnnualAdminClient.tsx", "ev.title", "ev.id"],
+  ["../src/app/admin/finance/billing/BillingTemplateClient.tsx", "tpl.name", "tpl.id"],
+];
+
+test("A-07 삭제 확인은 공용 확인 창으로, 확인 뒤에만 같은 handleDelete", () => {
+  for (const [path, nameExpr, idExpr] of deleteConfirmClients) {
+    const source = read(path);
+    assert.match(source, /const \{ confirm: askConfirm, confirmDialog \} = useAdminConfirm\(\);/, path);
+    assert.match(source, /\{confirmDialog\}/, path);
+    assert.doesNotMatch(source, /window\.confirm\(`"\$\{[a-z.A-Z]+\}" [^`]*삭제할까요\?`\)/, path);
+    const callAt = source.indexOf("askConfirm({ title: `\"${" + nameExpr + "}\"");
+    assert.ok(callAt > 0, `${path}: 대상 이름이 들어간 확인 창`);
+    const deleteAt = source.indexOf(`void handleDelete(${idExpr});`, callAt);
+    assert.ok(deleteAt > callAt && deleteAt - callAt < 300, `${path}: 확인 뒤 같은 handleDelete(${idExpr})`);
+  }
+});
+
+// A-10: 패널 버튼 줄 복사본 → 공용 AdminPanelActions(같은 작업 목록·같은 패널 닫기)
+const panelClients = [
+  ["../src/app/admin/withdrawals/WithdrawalsClient.tsx", "buildActions(detail)", "setDetailId(null)"],
+  ["../src/app/admin/finance/FinanceClient.tsx", "detailActions", "setDetailPaymentId(null)"],
+  ["../src/app/admin/absence/RegularAbsenceAdminClient.tsx", "buildAbsenceActions(d)", "setDetailId(\"\")"],
+  ["../src/app/admin/coaches/CoachesAdminClient.tsx", "buildCoachActions(detail)", "setDetailId(null)"],
+  ["../src/app/admin/feedback/FeedbackManagementClient.tsx", "buildFeedbackActions(fb)", "setDetailId(null)"],
+  ["../src/app/admin/staff/StaffClient.tsx", "buildInvitationActions(detailInvite)", "setDetail(null)"],
+  ["../src/app/admin/shuttle/regular/RegularShuttleClient.tsx", "buildRosterActions(d, detail.classTime)", "setDetail(null)"],
+  ["../src/app/admin/shuttle/VehicleManagerClient.tsx", "buildVehicleActions(d)", "setDetailId(null)"],
+  ["../src/app/admin/makeup/MakeupClient.tsx", "detailActions", "setDetailId(null)"],
+];
+
+test("A-10 패널 버튼 줄은 공용 부품 하나로", () => {
+  for (const [path, expr, close] of panelClients) {
+    const source = read(path);
+    assert.ok(source.includes(`<AdminPanelActions actions={${expr}} onBeforeSelect={() => ${close}} />`), path);
+    assert.doesNotMatch(source, /\.map\(\(action\) => \(\s*<button/, `${path}: 버튼 줄 복사본이 남았다`);
+  }
+});
+
+test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 같은 handleStatusChange", () => {
+  const finance = read("../src/app/admin/finance/FinanceClient.tsx");
+  const block = finance.slice(finance.indexOf('key: "refund"'), finance.indexOf('key: "delete"'));
+  assert.match(block, /tone: "danger" as const/);
+  assert.match(block, /원생 \$\{formatAmount\(p\.amount\)\}원을 환불 처리할까요\?/);
+  assert.ok(block.indexOf("await askConfirm(") < block.indexOf('void handleStatusChange(p.id, "REFUNDED")'));
+  // 확인 모달 버튼 44px·학원 변수색
+  assert.match(finance, /className="academy-button-danger-solid ml-auto">\{busy \? "처리 중…" : "청구 취소"\}/);
+  assert.match(finance, /className="academy-button-primary ml-auto">\{busy \? "처리 중…" : "청구 생성"\}/);
+});
+
+test("A-03 탈퇴: 신청 반려가 먼저, 탈퇴 처리는 위험 칸(뒤)", () => {
+  const source = read("../src/app/admin/withdrawals/WithdrawalsClient.tsx");
+  assert.ok(source.indexOf('key: "reject"') < source.indexOf('key: "approve"'));
+  assert.match(source, /<AdminConfirmDialog/);
+});

@@ -17,6 +17,7 @@ import {
 } from "@/app/actions/regular-absence-admin";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -439,26 +440,8 @@ export default function RegularAbsenceAdminClient({
                 </div>
               ))}
             </dl>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {buildAbsenceActions(d).map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  disabled={action.disabled}
-                  onClick={() => { setDetailId(""); void action.onSelect(); }}
-                  className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                    action.tone === "danger"
-                      ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                      : action.tone === "primary"
-                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
-                        : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                  {action.label}
-                </button>
-              ))}
-            </div>
+            {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+            <AdminPanelActions actions={buildAbsenceActions(d)} onBeforeSelect={() => setDetailId("")} />
           </ListDetailPanel>
         );
       })()}

@@ -5,6 +5,8 @@ import { createCoach, updateCoach, deleteCoach, reorderCoaches } from "@/app/act
 import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
 interface Coach {
@@ -190,6 +192,8 @@ function ImageUploadField({
 }
 
 export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?: Coach[] }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     const [pending, startTransition] = useTransition();
     const hasInitialData = Boolean(initialCoaches);
     const [coaches, setCoaches] = useState<Coach[]>(initialCoaches ?? []);
@@ -379,8 +383,8 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                 icon: "delete",
                 tone: "danger",
                 disabled: pending,
-                onSelect: () => {
-                    if (window.confirm(`"${coach.name}" 강사를 삭제할까요?`)) {
+                onSelect: async () => {
+                    if (await askConfirm({ title: `"${coach.name}" 강사 삭제`, description: "강사 정보가 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                         void handleDelete(coach.id);
                     }
                 },
@@ -688,26 +692,12 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                         <dt className="font-bold text-[var(--color-academy-muted)]">소개</dt>
                         <dd className="whitespace-pre-line break-keep text-[var(--color-academy-ink)]">{detail.description || "-"}</dd>
                     </dl>
-                    <div className="mt-5 flex flex-wrap gap-2">
-                        {buildCoachActions(detail).map((action) => (
-                            <button
-                                key={action.key}
-                                type="button"
-                                disabled={action.disabled}
-                                onClick={() => { setDetailId(null); void action.onSelect(); }}
-                                className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                                    action.tone === "danger"
-                                        ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                                {action.label}
-                            </button>
-                        ))}
-                    </div>
+                    {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+                    <AdminPanelActions actions={buildCoachActions(detail)} onBeforeSelect={() => setDetailId(null)} />
                 </ListDetailPanel>
             )}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }

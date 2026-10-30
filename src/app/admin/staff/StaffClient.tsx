@@ -16,6 +16,7 @@ import {
     resendInvitation,
 } from "@/app/actions/admin";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { kstLabel } from "@/lib/datetime/kst";
 
@@ -646,24 +647,8 @@ export default function StaffClient({
                         <dt className="font-bold text-[var(--color-academy-muted)]">만료일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.expiresAt) || "-"}</dd>
                     </dl>
-                    <div className="mt-5 flex flex-wrap gap-2">
-                        {buildInvitationActions(detailInvite).map((action) => (
-                            <button
-                                key={action.key}
-                                type="button"
-                                disabled={action.disabled}
-                                onClick={() => { setDetail(null); void action.onSelect(); }}
-                                className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                                    action.tone === "danger"
-                                        ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                                {action.label}
-                            </button>
-                        ))}
-                    </div>
+                    {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+                    <AdminPanelActions actions={buildInvitationActions(detailInvite)} onBeforeSelect={() => setDetail(null)} />
                 </ListDetailPanel>
             )}
 

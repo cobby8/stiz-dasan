@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 // 목록 개편 공용 부품(1·2단계와 같은 것) — 상세 패널·상태 칩·보기 전환
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -317,6 +319,8 @@ export default function FinanceClient({
     // 구글 시트 원장 은퇴 여부 — true 면 「시트 원장 기준 수납 점검」 버튼·패널을 숨긴다(API 는 그대로 둠)
     sheetRetired?: boolean;
 }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     // 잠금이면 「링크 발송」「미납 알림」 버튼을 막고 "랠리즈에서 발송" 으로 안내한다
     const parentSendLocked = !billingParentSendEnabled;
     const searchParams = useSearchParams();
@@ -895,9 +899,17 @@ export default function FinanceClient({
                     key: "refund",
                     label: "환불",
                     icon: "undo",
+                    // 돈이 나가는 작업 — 위험색 + 실행 전 확인 창(대상·금액을 보고 누르게)
+                    tone: "danger" as const,
                     disabled: busy,
-                    onSelect: () => {
-                        void handleStatusChange(p.id, "REFUNDED");
+                    onSelect: async () => {
+                        if (await askConfirm({
+                            title: `${p.studentName} 원생 ${formatAmount(p.amount)}원 환불`,
+                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}원을 환불 처리할까요?`,
+                            confirmLabel: "환불 처리",
+                        })) {
+                            void handleStatusChange(p.id, "REFUNDED");
+                        }
                     },
                 },
             ] : []),
@@ -908,8 +920,8 @@ export default function FinanceClient({
                     icon: "delete",
                     tone: "danger" as const,
                     disabled: busy,
-                    onSelect: () => {
-                        if (window.confirm(`"${p.studentName}" 수납 기록을 삭제할까요?`)) {
+                    onSelect: async () => {
+                        if (await askConfirm({ title: `"${p.studentName}" 수납 기록 삭제`, description: "이 수납 기록이 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                             void handleDelete(p.id);
                         }
                     },
@@ -1699,29 +1711,7 @@ export default function FinanceClient({
                         </dl>
                         {/* 작업: 행 ⚡ 메뉴와 같은 목록·같은 권한. 패널을 닫고 기존 동작(모달·확인창)을 그대로 실행한다 */}
                         {detailActions.length > 0 && (
-                            <div className="mt-5 flex flex-wrap gap-2">
-                                {detailActions.map((action) => (
-                                    <button
-                                        key={action.key}
-                                        type="button"
-                                        disabled={action.disabled}
-                                        onClick={() => {
-                                            setDetailPaymentId(null);
-                                            void action.onSelect();
-                                        }}
-                                        className={`inline-flex min-h-11 items-center gap-1 rounded-lg px-4 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                            action.tone === "primary"
-                                                ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
-                                                : action.tone === "danger"
-                                                    ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
-                                                    : "border border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                                        }`}
-                                    >
-                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                                        {action.label}
-                                    </button>
-                                ))}
-                            </div>
+                            <AdminPanelActions actions={detailActions} onBeforeSelect={() => setDetailPaymentId(null)} />
                         )}
                     </ListDetailPanel>
                 );
@@ -1743,9 +1733,10 @@ export default function FinanceClient({
                             학부모 알림: {notifyParent ? `${selectedStudent?.parent.name || "연결된 학부모"}에게 사이트 알림 1건` : "보내지 않음"}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-300">청구 1건을 생성합니다. 알림을 선택한 경우에만 학부모 사이트 알림을 요청합니다.</p>
-                        <div className="flex justify-end gap-2">
-                            <button type="button" disabled={busy} onClick={() => setCreatePreviewOpen(false)} className="rounded-lg border px-4 py-2 font-bold disabled:opacity-50">돌아가기</button>
-                            <button type="button" disabled={busy} onClick={() => void submitCreate()} className="rounded-lg bg-brand-orange-500 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? "처리 중…" : "청구 생성"}</button>
+                        {/* 확인 창 버튼: 왼쪽 «돌아가기»(글자) · 오른쪽 끝 확정(주인공 하나), 둘 다 44px */}
+                        <div className="flex items-center gap-3">
+                            <button type="button" disabled={busy} onClick={() => setCreatePreviewOpen(false)} className="academy-button-text">돌아가기</button>
+                            <button type="button" disabled={busy} onClick={() => void submitCreate()} className="academy-button-primary ml-auto">{busy ? "처리 중…" : "청구 생성"}</button>
                         </div>
                     </div>
                 </AdminModal>
@@ -1776,13 +1767,16 @@ export default function FinanceClient({
                             />
                         </label>
                         {cancelError && <p role="alert" className="text-sm font-bold text-red-600">{cancelError}</p>}
-                        <div className="flex justify-end gap-2">
-                            <button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="rounded-lg border px-4 py-2 font-bold disabled:opacity-50">닫기</button>
-                            <button type="button" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelUnpaid()} className="rounded-lg bg-red-600 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? "처리 중…" : "청구 취소"}</button>
+                        {/* 위험 확정(청구 취소)은 오른쪽 끝 꽉 찬 위험색, 닫기는 왼쪽 글자 버튼 — 둘 다 44px */}
+                        <div className="flex items-center gap-3">
+                            <button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="academy-button-text">닫기</button>
+                            <button type="button" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelUnpaid()} className="academy-button-danger-solid ml-auto">{busy ? "처리 중…" : "청구 취소"}</button>
                         </div>
                     </div>
                 </AdminModal>
             )}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }

@@ -24,7 +24,8 @@ test("탈퇴 신청: 한 줄 표 + ⚡·패널, «정말 삭제» 확인 단계�
   assert.match(source, /<AdminQuickActionMenu label=\{`\$\{row\.name\} 탈퇴 신청 빠른 작업`\}/);
   // 탈퇴 처리는 바로 지우지 않고 확인 창을 연다 → 확인 창에서만 approveWithdrawalRequest
   assert.match(source, /label: "탈퇴 처리"[^\n]*onSelect: \(\) => setConfirming\(userId\)/);
-  assert.match(source, /onClick=\{\(\) => run\(\(\) => approveWithdrawalRequest\(confirmTarget\.userId\)\)\}/);
+  // 확인 창은 공용 AdminConfirmDialog 로 옮겼다(같은 함수·같은 인자)
+  assert.match(source, /onConfirm=\{\(\) => run\(\(\) => approveWithdrawalRequest\(confirmTarget\.userId\)\)\}/);
   assert.match(source, /label: "신청 반려"[^\n]*rejectWithdrawalRequest\(userId\)/);
   // 이관 대기 회원은 예전처럼 처리 버튼 없음
   assert.match(source, /if \(row\.administrativeHold\) return \[\];/);
@@ -148,7 +149,8 @@ test("코치 관리: 사진 큰 행 → 한 줄 표(끌어 옮기기 유지), �
   assert.match(source, /reorderCoaches\(next\.map\(\(c\) => c\.id\)\)/);
   // 예전 ⚡ 의 수정·삭제(확인창) 그대로
   assert.match(source, /onSelect: \(\) => editId === coach\.id \? cancelEdit\(\) : startEdit\(coach\)/);
-  assert.match(source, /window\.confirm\(`"\$\{coach\.name\}" 강사를 삭제할까요\?`\)/);
+  // 삭제 확인은 공용 확인 창(useAdminConfirm)으로 옮겼다 — 확인을 거친 뒤에만 같은 handleDelete(coach.id)
+  assert.match(source, /if \(await askConfirm\(\{ title: `"\$\{coach\.name\}" 강사 삭제`[^\n]*\n\s*void handleDelete\(coach\.id\);/);
   // 인라인 수정 폼은 행 아래 펼침 칸에 그대로
   assert.match(source, /<td colSpan=\{7\} className="p-0">[\s\S]*?코치 정보 수정[\s\S]*?onClick=\{\(\) => handleUpdate\(coach\.id\)\}/);
   assert.match(source, /<CoachPhoto url=\{coach\.imageUrl\} name=\{coach\.name\} size="sm" \/>/);

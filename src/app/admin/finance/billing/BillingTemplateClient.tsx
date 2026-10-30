@@ -7,6 +7,7 @@ import {
     deleteBillingTemplate,
 } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 
 // 청구 유형 라벨 매핑
 const TYPE_LABELS: Record<string, string> = {
@@ -113,6 +114,8 @@ export default function BillingTemplateClient({
     initialTemplates?: Template[];
     programs?: Program[];
 }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     const hasInitialData = Boolean(initialTemplates || initialPrograms);
     const [templates, setTemplates] = useState(initialTemplates ?? []);
     const [programs, setPrograms] = useState(initialPrograms ?? []);
@@ -427,8 +430,8 @@ export default function BillingTemplateClient({
                                                         icon: "delete",
                                                         tone: "danger",
                                                         disabled: busy,
-                                                        onSelect: () => {
-                                                            if (window.confirm(`"${tpl.name}" 템플릿을 삭제할까요?`)) {
+                                                        onSelect: async () => {
+                                                            if (await askConfirm({ title: `"${tpl.name}" 템플릿 삭제`, description: "이 청구 템플릿이 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                                                                 void handleDelete(tpl.id);
                                                             }
                                                         },
@@ -443,6 +446,8 @@ export default function BillingTemplateClient({
                     </div>
                 </div>
             )}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }

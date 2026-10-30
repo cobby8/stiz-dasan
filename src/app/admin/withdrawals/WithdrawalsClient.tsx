@@ -8,7 +8,8 @@ import {
   type WithdrawalRequestRow,
 } from "@/app/actions/account-withdrawal-admin";
 import { kstLabel } from "@/lib/datetime/kst";
-import AdminModal from "@/components/admin/AdminModal";
+import AdminConfirmDialog from "@/components/admin/AdminConfirmDialog";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
@@ -39,9 +40,10 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
   function buildActions(row: WithdrawalRequestRow): AdminQuickAction[] {
     if (row.administrativeHold) return [];
     const userId = row.userId; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
+    // 순서: 되돌릴 수 있는 «신청 반려» 먼저, 되돌릴 수 없는 «탈퇴 처리»는 뒤(⚡·패널 모두 위험 칸으로 떨어짐)
     return [
-      { key: "approve", label: "탈퇴 처리", icon: "person_remove", tone: "danger", disabled: pending, onSelect: () => setConfirming(userId) },
       { key: "reject", label: "신청 반려", icon: "undo", disabled: pending, onSelect: () => run(() => rejectWithdrawalRequest(userId)) },
+      { key: "approve", label: "탈퇴 처리", icon: "person_remove", tone: "danger", disabled: pending, onSelect: () => setConfirming(userId) },
     ];
   }
 
@@ -174,60 +176,27 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
           {detail.administrativeHold ? (
             <p className="mt-5 text-sm font-semibold text-[var(--color-academy-warning)]">업무·권한 이관 후 처리</p>
           ) : (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {buildActions(detail).map((action) => (
-                <button
-                  key={action.key}
-                  type="button"
-                  disabled={action.disabled}
-                  onClick={() => { setDetailId(null); void action.onSelect(); }}
-                  className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                    action.tone === "danger"
-                      ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                      : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                  {action.label}
-                </button>
-              ))}
-            </div>
+            // 공용 패널 버튼 줄 — «탈퇴 처리»(위험)는 오른쪽 끝으로 떨어진다
+            <AdminPanelActions actions={buildActions(detail)} onBeforeSelect={() => setDetailId(null)} />
           )}
         </ListDetailPanel>
       )}
 
       {/* 되돌릴 수 없는 탈퇴 확인 창 — 예전 행 안의 «정말 삭제 / 그만» 과 같은 동작 */}
       {confirmTarget && (
-        <AdminModal titleId="withdrawal-confirm-title" onClose={() => { if (!pending) setConfirming(null); }} closeOnBackdrop={false} panelClassName="max-w-md p-5">
-          <h3 id="withdrawal-confirm-title" className="break-keep text-lg font-black text-[var(--color-academy-ink)]">
-            {confirmTarget.name} 탈퇴 처리
-          </h3>
-          <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
+        <AdminConfirmDialog
+          titleId="withdrawal-confirm-title"
+          title={`${confirmTarget.name} 탈퇴 처리`}
+          description={<>
             로그인 계정과 연락처가 삭제되고 되돌릴 수 없습니다.
             {confirmTarget.activeEnrollments > 0 && <b className="text-[var(--color-academy-warning)]"> 수강 중인 반이 {confirmTarget.activeEnrollments}개 있습니다.</b>}
-          </p>
-          {error && (
-            <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>
-          )}
-          <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setConfirming(null)}
-              disabled={pending}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
-            >
-              그만
-            </button>
-            <button
-              type="button"
-              onClick={() => run(() => approveWithdrawalRequest(confirmTarget.userId))}
-              disabled={pending}
-              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-danger)] px-3 text-sm font-black text-white disabled:opacity-50"
-            >
-              {pending ? "처리 중..." : "정말 삭제"}
-            </button>
-          </div>
-        </AdminModal>
+          </>}
+          confirmLabel="정말 삭제"
+          pending={pending}
+          error={error}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => run(() => approveWithdrawalRequest(confirmTarget.userId))}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 
 // 셔틀 차량 관리 — 자동 배차가 쓰는 차량(ShuttleVehicle)을 등록·수정·활성/비활성한다.
@@ -180,16 +181,8 @@ export default function VehicleManagerClient({ initialVehicles }: { initialVehic
                 </div>
               ))}
             </dl>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {buildVehicleActions(d).map((action) => (
-                <button key={action.key} type="button" disabled={action.disabled}
-                  onClick={() => { setDetailId(null); void action.onSelect(); }}
-                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50">
-                  <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                  {action.label}
-                </button>
-              ))}
-            </div>
+            {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+            <AdminPanelActions actions={buildVehicleActions(d)} onBeforeSelect={() => setDetailId(null)} />
           </ListDetailPanel>
         );
       })()}

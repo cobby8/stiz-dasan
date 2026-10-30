@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 // 목록 개편 공용 부품(1단계 신청·상담과 같은 모양): 상세 패널·상태 칩·보기 전환
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
@@ -368,6 +369,8 @@ export default function StudentManagementClient({
     sheetImportSummary?: SheetImportSummary;
     partial?: boolean;
 }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     const hasInitialData = Boolean(initialStudents || initialClasses);
     const [students, setStudents] = useState<Student[]>(initialStudents ?? []);
     const [classes, setClasses] = useState<ClassItem[]>(initialClasses ?? []);
@@ -725,8 +728,8 @@ export default function StudentManagementClient({
                 icon: "delete",
                 tone: "danger" as const,
                 disabled: busy,
-                onSelect: () => {
-                    if (window.confirm(`"${s.name}" 원생을 삭제할까요?`)) {
+                onSelect: async () => {
+                    if (await askConfirm({ title: `"${s.name}" 원생 삭제`, description: "원생 정보가 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                         void handleDelete(s.id);
                     }
                 },
@@ -1396,6 +1399,8 @@ export default function StudentManagementClient({
                         </div>
                 </AdminModal>
             )}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }

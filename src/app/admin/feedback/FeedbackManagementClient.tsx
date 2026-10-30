@@ -3,6 +3,7 @@
 import { useState, useTransition, useCallback, useEffect } from "react";
 import { createFeedback, updateFeedback, deleteFeedback } from "@/app/actions/admin";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import AdminPanelActions from "@/components/admin/AdminPanelActions";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { toKstYmd } from "@/lib/datetime/kst";
 
@@ -658,24 +659,8 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                         </dl>
                         {/* 피드백 내용 (줄바꿈 유지) */}
                         <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-academy-ink)]">{fb.content}</p>
-                        <div className="mt-5 flex flex-wrap gap-2">
-                            {buildFeedbackActions(fb).map((action) => (
-                                <button
-                                    key={action.key}
-                                    type="button"
-                                    disabled={action.disabled}
-                                    onClick={() => { setDetailId(null); void action.onSelect(); }}
-                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
-                                        action.tone === "danger"
-                                            ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
-                                            : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
-                                    {action.label}
-                                </button>
-                            ))}
-                        </div>
+                        {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
+                        <AdminPanelActions actions={buildFeedbackActions(fb)} onBeforeSelect={() => setDetailId(null)} />
                     </ListDetailPanel>
                 );
             })()}

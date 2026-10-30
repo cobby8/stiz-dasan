@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link"; // 클래스 상세 페이지 링크용
 import { deleteClass } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
@@ -97,6 +98,8 @@ export default function ClassManagementClient({
     programs?: Program[];
     classes?: ClassItem[];
 }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     const hasInitialData = Boolean(initialPrograms || initialClasses);
     const [programs, setPrograms] = useState<Program[]>(initialPrograms ?? []);
     const [classes, setClasses] = useState<ClassItem[]>(initialClasses ?? []);
@@ -181,8 +184,8 @@ export default function ClassManagementClient({
                 icon: "delete",
                 tone: "danger" as const,
                 disabled: busy,
-                onSelect: () => {
-                    if (window.confirm(`"${cls.name}" 반을 삭제할까요?`)) {
+                onSelect: async () => {
+                    if (await askConfirm({ title: `"${cls.name}" 반 삭제`, description: "반 정보가 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                         void handleDelete(cls.id);
                     }
                 },
@@ -411,6 +414,8 @@ export default function ClassManagementClient({
                     </ListDetailPanel>
                 );
             })()}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createAnnualEvent, updateAnnualEvent, deleteAnnualEvent, updateAcademySettings } from "@/app/actions/admin";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 
 type AnnualEvent = {
     id: string;
@@ -107,6 +108,8 @@ export default function AnnualAdminClient({
     events?: AnnualEvent[];
     initialIcsUrl?: string;
 }) {
+    // 삭제 확인 = 공용 확인 창(브라우저 기본 confirm 대신) — 대상 이름·위험색 확정
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     const hasInitialData = initialEvents !== undefined;
     const [events, setEvents] = useState<AnnualEvent[]>(initialEvents ?? []);
     const [loading, setLoading] = useState(!hasInitialData);
@@ -406,8 +409,8 @@ export default function AnnualAdminClient({
                                                         icon: "delete",
                                                         tone: "danger",
                                                         disabled: busy,
-                                                        onSelect: () => {
-                                                            if (window.confirm(`"${ev.title}" 일정을 삭제할까요?`)) {
+                                                        onSelect: async () => {
+                                                            if (await askConfirm({ title: `"${ev.title}" 일정 삭제`, description: "이 일정이 바로 삭제됩니다.", confirmLabel: "삭제" })) {
                                                                 void handleDelete(ev.id);
                                                             }
                                                         },
@@ -422,6 +425,8 @@ export default function AnnualAdminClient({
                     ))}
                 </div>
             )}
+            {/* 삭제 확인 창(공용) */}
+            {confirmDialog}
         </div>
     );
 }
