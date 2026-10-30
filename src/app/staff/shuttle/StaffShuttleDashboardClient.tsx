@@ -6,6 +6,7 @@ import { StatusPill } from "@/components/staff/StatusChoiceButton";
 import ShuttleRideStatusButtons from "./ShuttleRideStatusButtons";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { confirmedTimeLabel } from "@/lib/shuttle/time";
+import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 
 type Direction = "PICKUP" | "DROPOFF";
 type RideStatus = "PENDING" | "BOARDED" | "DROPPED_OFF" | "NO_SHOW";
@@ -338,7 +339,7 @@ function RouteCard({
   );
 }
 
-function splitRoutesByDate(routes: Route[], todayKey: string) {
+export function splitRoutesByDate(routes: Route[], todayKey: string) {
   const todayRoutes: Route[] = [];
   const upcomingRoutes: Route[] = [];
   const needsReviewRoutes: Route[] = [];
@@ -352,10 +353,12 @@ function splitRoutesByDate(routes: Route[], todayKey: string) {
   return { todayRoutes, upcomingRoutes, needsReviewRoutes };
 }
 
-function routeDateKey(value?: string | Date | null) {
+// 운행일 키 "YYYY-MM-DD"(KST). 서버 todayKey(koreaDateOnly = KST 오늘)와 같은 달력으로 맞춘다.
+// serviceDate 는 @db.Date 라 UTC 자정(…T00:00:00.000Z)으로 오는데, KST 로 읽어도 같은 날(09:00)이다.
+// 예전 toISOString().slice(0,10) 은 KST 자정 timestamp(전날 15:00Z)가 오면 하루 전으로 분류했다.
+export function routeDateKey(value?: string | Date | null) {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  return toKstYmd(value) || null;
 }
 
 function initialRideStatuses(routes: Route[]) {
@@ -389,9 +392,10 @@ function normalizeRideStatus(status?: string | null): RideStatus {
   return status === "BOARDED" || status === "DROPPED_OFF" || status === "NO_SHOW" ? status : "PENDING";
 }
 
-function formatRouteDate(value?: string | Date | null) {
+// "10월 30일 (금)" — 서버 첫 렌더와 휴대폰 렌더가 같은 글자가 되도록 KST 로 고정.
+export function formatRouteDate(value?: string | Date | null) {
   if (!value) return "정기";
-  return new Intl.DateTimeFormat("ko-KR", { month: "short", day: "numeric", weekday: "short" }).format(new Date(value));
+  return formatKstDate(value, { month: "short", day: "numeric", weekday: "short" });
 }
 
 function mapUrl(lat: number | string | null | undefined, lng: number | string | null | undefined, name: string) {

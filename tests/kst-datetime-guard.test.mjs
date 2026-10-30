@@ -81,7 +81,6 @@ const R1_ALLOW = [
   "src/app/api/admin/session-detail/route.ts",
   "src/app/mypage/MyPageClient.tsx",
   "src/app/mypage/history/HistoryClient.tsx",
-  "src/app/staff/shuttle/StaffShuttleDashboardClient.tsx",
   "src/lib/billing-due-date.ts",
   "src/lib/googleCalendarWrite.ts",
   "src/lib/payment-ledger.ts",
@@ -147,7 +146,8 @@ test("공용 모듈이 규칙에서 가리키는 것들을 제공한다", async 
 
 test("빚 목록은 줄어들기만 한다", () => {
   // 이 숫자를 올리려면 위반을 새로 들이는 것이다. 정리해서 내리는 것만 허용한다.
-  assert.ok(R1_ALLOW.length <= 25, `R1 미정리 ${R1_ALLOW.length}개 — 새로 추가하지 말 것`);
+  // 2026-10-30: StaffShuttleDashboardClient(셔틀 운행일 키) 정리로 25 → 22 로 내림.
+  assert.ok(R1_ALLOW.length <= 22, `R1 미정리 ${R1_ALLOW.length}개 — 새로 추가하지 말 것`);
   // 2026-10-06: queries.ts 정리로 2 → 1 로 내림.
   assert.ok(R3_ALLOW.length <= 1, `R3 미정리 ${R3_ALLOW.length}개 — 새로 추가하지 말 것`);
   assert.ok(R4_ALLOW.length <= 5, `R4 미정리 ${R4_ALLOW.length}개 — 새로 추가하지 말 것`);
