@@ -10,7 +10,7 @@
 .stiz-public-sport .public-home-hero__actions{display:flex;flex-wrap:wrap;gap:.65rem;flex-shrink:0}
 .stiz-public-sport .public-home-hero__actions a{display:inline-flex;align-items:center;justify-content:center;gap:1.4rem;min-height:2.8rem;padding:.72rem 1.15rem;font-size:.82rem;font-weight:800;background:var(--color-public-orange);color:var(--color-public-dark);border-radius:var(--color-public-radius);border:1px solid transparent;text-decoration:none}
 /* 게슈탈트 P-02: 주인공은 첫 버튼 하나. 두 번째는 사진 위 보조(투명+흰 테두리) */
-.stiz-public-sport .public-home-hero__actions a+a{background:transparent;color:var(--color-public-white);border:1px solid var(--color-public-white)}
+.stiz-public-sport .public-home-hero__actions a+a{background:rgba(12,14,17,.45);color:var(--color-public-white);border:1px solid var(--color-public-white)}
 .stiz-public-sport .public-home-hero__actions a+a:hover{background:var(--color-public-on-dark-hover)}
 .stiz-public-sport .public-home-updates{width:min(100% - 3rem,72rem);margin-inline:auto}
 .stiz-public-sport .public-home-introduction{border-bottom:1px solid var(--color-public-line);padding-block:.8rem;font-size:.84rem;line-height:1.85;color:var(--color-public-muted)}

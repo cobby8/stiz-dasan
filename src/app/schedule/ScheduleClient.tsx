@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import ScheduleTableView from "@/components/ScheduleTableView";
 import { usePublicOverlayOpen } from "@/components/public-floating";
 
@@ -75,6 +75,13 @@ function ScheduleFilter({ programs, allSlots, phone }: {
     };
     // 모달이 열린 동안 챗봇·입학 가이드 플로팅 버튼 숨김(게슈탈트 C-P3)
     usePublicOverlayOpen(filterOpen);
+    // Esc 로 필터 창 닫기
+    useEffect(() => {
+        if (!filterOpen) return;
+        const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setFilterOpen(false); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [filterOpen]);
 
     return (
         <>

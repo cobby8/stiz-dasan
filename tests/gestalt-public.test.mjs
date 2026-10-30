@@ -33,7 +33,8 @@ test("C-P1 버튼 3등급(주인공·보조·글자)이 44px 이상으로 정의
 });
 
 test("P-02 홈 히어로·하단 CTA 의 두 번째 버튼은 보조(투명+흰 테두리)다", () => {
-  assert.match(homeCss, /\.public-home-hero__actions a\+a\{background:transparent;color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
+  // 히어로 보조 버튼은 사진 오른쪽(스크림이 옅은 곳)에 놓여 반투명 어두운 바탕을 깐다
+  assert.match(homeCss, /\.public-home-hero__actions a\+a\{background:rgba\(12,14,17,\.45\);color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
   assert.match(homeCss, /\.public-cta--outline \.public-cta__actions>\*\+\*\{background:transparent;color:var\(--color-public-white\);border:1px solid var\(--color-public-white\)\}/);
   // /programs 를 뺀 CTA 호출부만 새 모양(variant="outline")을 켠다
   for (const file of ["src/app/LandingPageClient.tsx", "src/app/about/page.tsx", "src/app/annual/page.tsx", "src/app/apply/page.tsx",
