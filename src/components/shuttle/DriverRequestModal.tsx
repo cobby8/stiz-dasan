@@ -80,7 +80,7 @@ export default function DriverRequestModal({
                       : "border-gray-200 text-gray-600"
                   }`}>
                   {TYPE_META[t].label}
-                  <span className="block text-[11px] font-semibold opacity-70 mt-0.5">{TYPE_META[t].desc}</span>
+                  <span className="block text-xs font-semibold text-[var(--color-academy-muted)] mt-0.5">{TYPE_META[t].desc}</span>
                 </button>
               ))}
             </div>

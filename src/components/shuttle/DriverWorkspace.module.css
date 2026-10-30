@@ -2,11 +2,16 @@
   width: 100%;
   max-width: 1120px;
   color: var(--color-academy-ink);
+  /* 기사님 화면 전용 의미색(테마 파일은 건드리지 않고 이 화면 안에서만 정의).
+     자차 = 결석(빨강)과 구분되는 보라, 오늘만 변경 = 결석과 구분되는 파랑. */
+  --color-driver-self: #6b46c1;
+  --color-driver-note: #2557a7;
 }
 
 .runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 800; }
 .runSummary span { color: var(--color-academy-muted); font-size: 13px; font-weight: 600; }
-.headerActions { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 6px; }
+/* 게슈탈트 T-01: GPS 표시와 «운행 종료»가 붙어 있지 않게 12px 띄운다. */
+.headerActions { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 12px; }
 
 .workspace .stop {
   padding: 10px;
@@ -47,8 +52,11 @@
 .contacts a { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 44px; min-height: 44px; color: var(--color-academy-primary); font-size: 14px; font-weight: 700; white-space: nowrap; }
 .contacts a span { font-size: 18px; }
 .riderMain > :last-child { flex-shrink: 0; }
-.boardingActions { display: flex; align-items: center; gap: 4px; margin-inline-start: auto; }
+/* 게슈탈트 T-04: 탑승 | 미탑승 사이 12px — 운전 중 옆 버튼을 잘못 누르지 않게. */
+.boardingActions { display: flex; align-items: center; gap: 12px; margin-inline-start: auto; }
 .boardingActions button { min-width: 52px; }
+/* 저장 결과(왼쪽)와 «대기로 되돌리기»(오른쪽) 한 줄 */
+.riderStatusLine { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 8px; min-width: 0; }
 .riderNotes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
 .rider button:disabled { opacity: .55; }
 

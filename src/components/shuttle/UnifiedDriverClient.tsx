@@ -12,6 +12,8 @@ import { useGpsShare } from "@/hooks/useGpsShare";
 import { useDriverUpcoming } from "@/hooks/useDriverUpcoming";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
 import styles from "./DriverWorkspace.module.css";
+import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
+import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 
@@ -52,6 +54,9 @@ export default function UnifiedDriverClient({
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [menuKey, setMenuKey] = useState<string | null>(null);
   const [runState, setRunState] = useState<"idle" | "running" | "ended">("idle");
+  // 게슈탈트 T-01: «운행 종료»는 운전 중 잘못 누르면 위치 공유가 바로 끊긴다 → 화면 안 확인 단계를 둔다.
+  // (앱 웹뷰의 window.confirm 은 다른 창이 떠 있으면 iOS 에서 조용히 «취소»가 되므로 페이지 안 확인 UI 를 쓴다)
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   // 순서 편집 — 기사님이 실제 운행 현장에서 카드 순서와 시간을 조정해 바로 저장한다.
   // 탑승 체크 키(rowId)는 유지하고 명단·확정 배차의 순서와 시각을 함께 저장한다.
@@ -73,6 +78,8 @@ export default function UnifiedDriverClient({
   }, [gpsMode, nativeRunning, gpsState, transmission]);
   function handleRunStart() { if (gpsMode === "web") setRunState("running"); gpsStart(); }
   async function handleRunEnd() { await gpsStop(); if (gpsMode === "web") setRunState("ended"); }
+  // 운행 중이 아니게 되면(앱이 먼저 종료 등) 열려 있던 종료 확인은 닫는다.
+  useEffect(() => { if (runState !== "running") setConfirmEnd(false); }, [runState]);
 
   // PWA 설치 배너
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
@@ -188,12 +195,16 @@ export default function UnifiedDriverClient({
     }
   }
 
-  async function setStatus(rider: UnifiedRider, next: Status, verifyOnly = false) {
+  // next = null 이면 «대기로 되돌리기»(저장 API 에 status: null — 예전 «같은 버튼 다시 누르기»와 같은 값).
+  async function setStatus(rider: UnifiedRider, next: Status | null, verifyOnly = false) {
     const key = rider.key;
     if (!initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
-    locks.current.add(key);
     const cur = boarding[key] ?? null;
-    const target: Status | null = cur === next ? null : next; // 같은 버튼 다시 누르면 대기로
+    // 게슈탈트 T-04: 이미 그 상태인 버튼을 다시 눌러도 아무 일 없게(운전 중 두 번 눌림으로 체크가 풀리던 문제).
+    // 되돌리기는 아래 별도 «대기로 되돌리기» 글자 버튼만 한다.
+    if (!verifyOnly && cur === next) return;
+    locks.current.add(key);
+    const target: Status | null = next;
     setBusy((x) => ({ ...x, [key]: true }));
     setSaveStates((states) => ({ ...states, [key]: { state: "saving", message: verifyOnly ? "저장 상태 확인 중…" : "저장 중…" } }));
     try {
@@ -249,7 +260,7 @@ export default function UnifiedDriverClient({
       {/* 운행 동작은 헤더 한 곳에 두고, 날짜는 아래 날짜 탐색에만 표시합니다. */}
       <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1></div>
+          <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1>{runState === "running" && <LiveStatusPill>운행 중</LiveStatusPill>}</div>
           {runState === "ended" && <p className="text-[13px] font-bold text-gray-600">{transmission === "stop-unknown" ? "위치 수집 중단 · 서버 종료 확인 필요" : "운행이 종료되었습니다"}</p>}
         </div>
         <div className={styles.headerActions}>
@@ -268,9 +279,21 @@ export default function UnifiedDriverClient({
             종료 재확인
           </button>
         )}
-        {runState === "running" && <button type="button" disabled={transmission === "stopping"} onClick={handleRunEnd} className="h-11 shrink-0 rounded-xl border border-red-300 bg-white px-3 text-[14px] font-bold text-red-600 active:bg-red-50">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
+        {runState === "running" && <button type="button" disabled={transmission === "stopping" || confirmEnd} onClick={() => setConfirmEnd(true)} aria-expanded={confirmEnd} className="academy-button-danger h-11 shrink-0 rounded-xl px-3 text-[14px] font-bold">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
         </div>
       </header>
+
+      {/* 운행 종료 확인 — 기본 초점은 안전한 «계속 운행». 종료 버튼은 12px 떼어 오른쪽에. */}
+      {confirmEnd && runState === "running" && (
+        <div role="alertdialog" aria-labelledby="driver-run-end-title" className="mb-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3">
+          <p id="driver-run-end-title" className="text-[16px] font-black text-[var(--color-academy-ink)]">운행을 종료할까요?</p>
+          <p className="mt-0.5 text-[14px] font-semibold text-[var(--color-academy-muted)]">위치 공유가 멈춥니다.</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button type="button" autoFocus onClick={() => setConfirmEnd(false)} className="academy-button-secondary min-h-12 rounded-xl text-[15px] font-black">계속 운행</button>
+            <button type="button" disabled={transmission === "stopping"} onClick={() => { setConfirmEnd(false); void handleRunEnd(); }} className="academy-button-danger-solid min-h-12 rounded-xl text-[15px] font-black">운행 종료</button>
+          </div>
+        </div>
+      )}
 
       {/* PWA 설치 배너 */}
       {showInstallBanner && (
@@ -407,40 +430,44 @@ export default function UnifiedDriverClient({
                             </div>}
                           </div>
                           {lockedAbsent ? (
-                            <span className="rounded-xl border-2 border-red-300 px-3 py-2 text-[15px] font-black text-red-500">미{isPickup ? "탑승" : "하차"}(결석)</span>
+                            <span className="rounded-xl border-2 border-[var(--color-academy-danger)] px-3 py-2 text-[15px] font-black text-[var(--color-academy-danger)]">미{isPickup ? "탑승" : "하차"}(결석)</span>
                           ) : (
                             <div className={styles.boardingActions}>
-                              <button type="button" disabled={isBusy} onClick={() => { setMenuKey(null); setStatus(rider, "BOARDED"); }}
-                                aria-pressed={status === "BOARDED"}
-                                className={`h-11 rounded-xl text-[15px] font-black ${status === "BOARDED" ? "bg-green-600 text-white" : "border-2 border-green-400 text-green-700"}`}>
+                              {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
+                              <StatusChoiceButton tone="success" icon="check" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
+                                className="text-[15px]">
                                 {isPickup ? "탑승" : "하차"}
-                              </button>
-                              <button type="button" disabled={isBusy} onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)}
-                                aria-pressed={status === "NOSHOW" || status === "SELF"} aria-expanded={menuKey === rowKey}
-                                className={`h-11 rounded-xl text-[15px] font-black ${status === "NOSHOW" || status === "SELF" ? "bg-gray-700 text-white" : "border-2 border-gray-300 text-gray-600"}`}>
+                              </StatusChoiceButton>
+                              <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
+                                onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
                                 미{isPickup ? "탑승" : "하차"}
-                              </button>
+                              </StatusChoiceButton>
                             </div>
                           )}
                         </div>
                         {(lockedAbsent || rider.shuttleNote || (rider.absent && status !== "BOARDED" && status !== "SELF") || status === "NOSHOW" || status === "SELF") && <div className={styles.riderNotes}>
-                              {lockedAbsent && <span className="rounded-md bg-red-500 px-2 py-0.5 text-[13px] font-black text-white">오늘 결석</span>}
+                              {lockedAbsent && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">오늘 결석</span>}
                               {rider.absent && !lockedAbsent && status !== "BOARDED" && status !== "SELF" && (
-                                <span className="rounded-md bg-amber-400 px-2 py-0.5 text-[13px] font-black text-white">결석예정</span>
+                                <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석예정</span>
                               )}
-                              {!lockedAbsent && status === "NOSHOW" && <span className="rounded-md bg-red-500 px-2 py-0.5 text-[13px] font-black text-white">결석</span>}
-                              {!lockedAbsent && status === "SELF" && <span className="rounded-md bg-violet-600 px-2 py-0.5 text-[13px] font-black text-white">{selfLabel}</span>}
+                              {!lockedAbsent && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
+                              {!lockedAbsent && status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
                               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
-                              {rider.shuttleNote && <span className="rounded-md bg-blue-600 px-2 py-0.5 text-[13px] font-black text-white">{rider.shuttleNote}</span>}
+                              {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
                         </div>}
-                        {saveState && <p role="status" className={`mt-1 text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-red-700" : "text-gray-600"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>}
+                        {(saveState || (!lockedAbsent && status)) && <div className={styles.riderStatusLine}>
+                          {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p> : <span />}
+                          {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼 */}
+                          {!lockedAbsent && status && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} 대기로 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
+                        </div>}
                         {!lockedAbsent && menuKey === rowKey && (
-                          <div className="mt-2 flex gap-2">
-                            <button type="button" disabled={isBusy} onClick={() => { setStatus(rider, "NOSHOW"); setMenuKey(null); }}
-                              className={`h-13 flex-1 rounded-xl py-3 text-[16px] font-black ${status === "NOSHOW" ? "bg-red-500 text-white" : "border-2 border-red-300 text-red-600"}`}>❌ 결석(안 옴)</button>
-                            <button type="button" disabled={isBusy} onClick={() => { setStatus(rider, "SELF"); setMenuKey(null); }}
-                              className={`h-13 flex-1 rounded-xl py-3 text-[16px] font-black ${status === "SELF" ? "bg-violet-600 text-white" : "border-2 border-violet-300 text-violet-700"}`}>🚗 {selfLabel}</button>
+                          <div className="mt-2 flex gap-3">
+                            <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
+                              className="min-h-12 flex-1 text-[16px]">결석(안 옴)</StatusChoiceButton>
+                            {/* 자차는 결석과 다른 «자차 색»(이 화면 CSS 변수 --color-driver-self) */}
+                            <button type="button" disabled={isBusy} aria-pressed={status === "SELF"} onClick={() => { void setStatus(rider, "SELF"); setMenuKey(null); }}
+                              className={`inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-xl border-2 border-[var(--color-driver-self)] text-[16px] font-black ${status === "SELF" ? "bg-[var(--color-driver-self)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-surface)] text-[var(--color-driver-self)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-[18px] leading-none">directions_car</span>{selfLabel}</button>
                           </div>
                         )}
                       </div>
@@ -453,7 +480,7 @@ export default function UnifiedDriverClient({
         })}
       </ol>
 
-      <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 같은 버튼을 다시 누르면 대기로 돌아갑니다. 미탑승에서는 결석·자차를 구분할 수 있습니다.</p></details>
+      <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다.</p></details>
     </AcademyTheme>
   );
 }

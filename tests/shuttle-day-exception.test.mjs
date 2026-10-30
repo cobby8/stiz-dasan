@@ -150,6 +150,8 @@ test("명단을 다 만든 뒤 덧붙인다", () => {
 
 test("기사님 화면에서 결석과 다른 배지로 보인다", () => {
   // 결석 배지(빨강)와 같으면 "아이가 안 온다"로 잘못 읽힌다.
-  assert.match(client, /rider\.shuttleNote && <span className="rounded-md bg-blue-600/);
+  // 2026-10-30 게슈탈트 T-12: 하드코딩 bg-blue-600 → 화면 전용 변수 --color-driver-note(파랑). 결석(danger)과는 계속 다른 색.
+  assert.match(client, /rider\.shuttleNote && <span className="rounded-md bg-\[var\(--color-driver-note\)\]/);
+  assert.doesNotMatch(client, /rider\.shuttleNote && <span className="[^"]*danger/);
   assert.match(client, /오늘 결석/);
 });
