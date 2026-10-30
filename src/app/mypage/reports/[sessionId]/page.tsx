@@ -114,12 +114,12 @@ export default async function ParentReportDetailPage({
 
     return (
         <div>
-            {/* 뒤로가기 */}
+            {/* 뒤로가기 — 누르는 영역 44px(academy-back-link) */}
             <Link
                 href="/mypage/reports"
-                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-200 flex items-center gap-1 mb-4"
+                className="academy-back-link mb-2 gap-1 px-2 text-sm text-[var(--color-academy-muted)]"
             >
-                <span className="material-symbols-outlined text-sm">arrow_back</span>
+                <span className="material-symbols-outlined text-base" aria-hidden="true">arrow_back</span>
                 리포트 목록
             </Link>
 
@@ -139,38 +139,8 @@ export default async function ParentReportDetailPage({
                 )}
             </div>
 
-            {/* 수업 내용 */}
-            {(session.content) && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-4">
-                    <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-2 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base">description</span>
-                        수업 내용
-                    </h2>
-                    <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-line">{session.content}</p>
-                </div>
-            )}
-
-            {/* 수업 사진 */}
-            {photos.length > 0 && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-4">
-                    <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base">photo_library</span>
-                        수업 사진
-                    </h2>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {photos.map((photo, i) => (
-                            <ReportPhoto
-                                key={`${photo.index}:${photo.src}`}
-                                src={photo.src}
-                                alt={`수업 사진 ${i + 1}`}
-                            />
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* 내 자녀 출석 + 개별 코멘트 */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {/* 내 자녀 출석 + 개별 코멘트 — 학부모가 가장 먼저 찾는 칸이라 헤더 바로 아래(M-12, 내용은 그대로) */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4">
                 <div className="p-5 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
                     <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1">
                         <span className="material-symbols-outlined text-base">school</span>
@@ -230,6 +200,35 @@ export default async function ParentReportDetailPage({
                     })}
                 </div>
             </div>
+            {/* 수업 내용 */}
+            {(session.content) && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-4">
+                    <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-2 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-base">description</span>
+                        수업 내용
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-line">{session.content}</p>
+                </div>
+            )}
+
+            {/* 수업 사진 */}
+            {photos.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-4">
+                    <h2 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-3 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-base">photo_library</span>
+                        수업 사진
+                    </h2>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {photos.map((photo, i) => (
+                            <ReportPhoto
+                                key={`${photo.index}:${photo.src}`}
+                                src={photo.src}
+                                alt={`수업 사진 ${i + 1}`}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

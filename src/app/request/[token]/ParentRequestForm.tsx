@@ -116,7 +116,7 @@ function detailsField(kind: string) {
   if (kind === "BILLING_CORRECTION") return { label: "확인할 청구 정보", placeholder: "예: 9월 셔틀비 50,000원이 중복 청구된 것 같습니다.", help: "대상 월, 항목, 확인이 필요한 금액을 함께 적어 주세요." };
   return { label: "추가 설명", placeholder: "원장님이 확인할 내용을 적어 주세요.", help: "필요한 내용만 적고 주민등록번호 등 민감한 개인정보는 입력하지 마세요." };
 }
-function SummaryValue({ label, value }: { label: string; value: string }) { return <div className="min-w-0"><p className="text-[11px] font-black text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-black leading-5 text-slate-900">{value}</p></div>; }
+function SummaryValue({ label, value }: { label: string; value: string }) { return <div className="min-w-0"><p className="text-xs font-black text-slate-500">{label}</p><p className="mt-1 break-words text-sm font-black leading-5 text-slate-900">{value}</p></div>; }
 function shuttleFor(kind: string) { return kind === "SHUTTLE_START" ? "START" : kind === "SHUTTLE_STOP" ? "STOP" : kind === "SHUTTLE_EXEMPT" ? "EXEMPT" : kind === "SHUTTLE_CHANGE" ? "CHANGE" : null; }
 function Step({ active, number, label }: { active: boolean; number: string; label: string }) { return <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${active ? "bg-slate-950 text-white" : "bg-white text-slate-400"}`}><span className={`flex size-6 items-center justify-center rounded-full ${active ? "bg-lime-400 text-slate-950" : "bg-slate-100"}`}>{number}</span>{label}</div>; }
 function Icon({ name }: { name: string }) { return <span className="material-symbols-outlined align-middle" aria-hidden="true">{name}</span>; }

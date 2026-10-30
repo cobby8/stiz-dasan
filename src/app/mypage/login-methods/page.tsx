@@ -51,15 +51,17 @@ export default async function LoginMethodsPage({
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-2 flex items-center gap-2">
-        <Link href="/mypage" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-          <span className="material-symbols-outlined">arrow_back</span>
+        {/* 뒤로가기 = 누르는 영역 44×44(academy-back-link) */}
+        <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
+          <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
         <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
           <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">link</span>
           간편로그인 연결
         </h1>
       </div>
-      <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+      {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
+      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
         연결해 두면 다음부터 아이디·비밀번호 없이 그 방법으로 같은 계정에 로그인됩니다. 자녀 정보는 그대로입니다.
       </p>
 

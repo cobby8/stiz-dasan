@@ -121,11 +121,13 @@ export default async function KakaoConnectPage({
   // 로그인 안 됨 / 간편로그인만 되고 학부모 계정과 연결 안 됨
   const env = detectInstallEnvironment({ userAgent: (await headers()).get("user-agent") || "" });
   const inApp = env.inAppBrowser;
+  // 유사성(M-14): 먼저 보이는 쪽만 꽉 찬 주인공 버튼, 나머지는 보조(테두리). 순서 바꾸기(inApp)는 아래 그대로.
+  // 두 버튼 모두 카카오 로그인 버튼이 아니라 카카오 노랑(브랜드 가이드 대상)은 쓰지 않는다.
   const activateButton = (
-    <Link href={activateHref} className="inline-flex w-full justify-center rounded-xl bg-yellow-400 px-5 py-3.5 font-black text-gray-950">기존 학부모 계정 활성화</Link>
+    <Link href={activateHref} className={`${inApp ? "academy-button-primary" : "academy-button-secondary"} w-full`}>기존 학부모 계정 활성화</Link>
   );
   const loginButton = (
-    <Link href={loginHref} className="inline-flex w-full justify-center rounded-xl bg-gray-950 px-5 py-3.5 font-bold text-white">로그인하고 연결하기</Link>
+    <Link href={loginHref} className={`${inApp ? "academy-button-secondary" : "academy-button-primary"} w-full`}>로그인하고 연결하기</Link>
   );
 
   return (

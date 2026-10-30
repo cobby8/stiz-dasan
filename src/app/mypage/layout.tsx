@@ -58,7 +58,8 @@ export default async function MyPageLayout({
                 <form action={logout}>
                     <button
                         type="submit"
-                        className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-700"
+                        // 휴대폰 헤더 로그아웃 — 누르는 높이 44px(min-h-11), 색은 토큰
+                        className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
                     >
                         로그아웃
                     </button>
