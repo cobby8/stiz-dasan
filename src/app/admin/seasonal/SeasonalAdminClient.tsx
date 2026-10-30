@@ -694,7 +694,7 @@ function ColHeader({
       {open && (
         <>
           <button type="button" aria-hidden className="fixed inset-0 z-40 cursor-default" onClick={onToggleOpen} />
-          <div className={`absolute top-full z-50 mt-1 w-52 rounded-xl border border-gray-200 bg-white p-2 text-gray-700 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${alignRight ? "right-0" : "left-0"}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`absolute top-full z-50 mt-1 w-52 whitespace-normal rounded-xl border border-gray-200 bg-white p-2 text-gray-700 shadow-xl dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${alignRight ? "right-0" : "left-0"}`} onClick={(e) => e.stopPropagation()}>
             {onSort && (
               <div className="mb-1 flex gap-1">
                 <button type="button" onClick={() => onSort("asc")} className={`flex-1 rounded-lg px-2 py-1.5 text-[12px] font-bold ${sortDir === "asc" ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "hover:bg-gray-100 dark:hover:bg-gray-800"}`}>▲ 오름차순</button>
