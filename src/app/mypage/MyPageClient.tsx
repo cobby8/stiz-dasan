@@ -13,6 +13,7 @@ import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 카드용 순수 로직(표시 전용, 기존 데이터 재조합).
 import { getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle } from "@/lib/mypage/summary";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -205,11 +206,24 @@ const SHUTTLE_RIDE_STATUS: Record<string, string> = {
     NO_SHOW: "미탑승",
 };
 
-function formatShuttleDate(value: string | null): string {
+// 서버(UTC) 첫 렌더와 휴대폰(KST) 렌더가 같은 글자를 내도록 날짜는 모두 KST 로 고정한다.
+// (timeZone 없는 toLocaleDateString 은 서버에서 하루 전 날짜가 나와 하이드레이션 불일치 #418 이 난다)
+export function formatShuttleDate(value: string | null): string {
     if (!value) return "운행일 확인 중";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return date.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+    // 읽을 수 없는 모양이면 예전처럼 원문을 그대로 보인다(fallback = value).
+    return formatKstDate(value, { year: "numeric", month: "long", day: "numeric", weekday: "short" }, value);
+}
+
+/** 알림·요청 시각 "10월 31일 AM 12:05" — 예전 모양 그대로, KST 기준. */
+export function formatAlertTime(value: Date | string): string {
+    return formatKstDate(value, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/** 공지·피드백 날짜 "2026. 10. 31." — 예전 모양 그대로, KST 기준. */
+export function formatShortDate(value: Date | string): string {
+    return formatKstDate(value);
 }
 
 function formatShuttleTime(value: string | null): string {
@@ -551,9 +565,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                             </p>
                                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{n.message}</p>
                                             <p className="text-xs text-gray-400 mt-1">
-                                                {new Date(n.createdAt).toLocaleDateString("ko-KR", {
-                                                    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-                                                })}
+                                                {formatAlertTime(n.createdAt)}
                                             </p>
                                         </div>
 
@@ -882,7 +894,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                                 </div>
                                             )}
                                             <p className="text-xs text-gray-400 mt-1">
-                                                {new Date(r.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                                {formatAlertTime(r.createdAt)}
                                             </p>
                                         </div>
                                     );
@@ -1065,7 +1077,7 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                         <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{n.content}</p>
                                     </div>
                                     <span className="text-xs text-gray-400 flex-shrink-0 ml-3">
-                                        {new Date(n.createdAt).toLocaleDateString("ko-KR")}
+                                        {formatShortDate(n.createdAt)}
                                     </span>
                                 </div>
                             </Link>
@@ -1171,8 +1183,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                         </div>
                                         <span className="text-xs text-gray-400">
                                             {fb.sessionDate
-                                                ? new Date(fb.sessionDate).toLocaleDateString("ko-KR")
-                                                : new Date(fb.createdAt).toLocaleDateString("ko-KR")}
+                                                ? formatShortDate(fb.sessionDate)
+                                                : formatShortDate(fb.createdAt)}
                                         </span>
                                     </div>
                                     {/* 카테고리 뱃지 + 제목 + 별점 */}
