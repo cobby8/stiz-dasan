@@ -21,6 +21,8 @@ function daysText(d: number) {
 export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
   // 행 클릭 상세 패널 대상(예전엔 행 아래로 펼쳤다 — 이제 오른쪽 패널/모바일 시트로)
   const [openId, setOpenId] = useState("");
+  // 학생별 목록은 접어 둔다 — 펼쳐 두면 50명 넘는 행이 아래 «보강 관리» 목록을 한참 밀어낸다
+  const [listOpen, setListOpen] = useState(false);
   const { totals, students } = data;
   const detail = openId ? students.find((s) => s.studentId === openId) ?? null : null;
 
@@ -52,6 +54,17 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
               2주 내 소멸 <span className="tabular-nums">{totals.expiringSoon}</span>장
             </span>
           )}
+          {students.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setListOpen((open) => !open)}
+              aria-expanded={listOpen}
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+            >
+              학생별 보기 <span className="tabular-nums">{students.length}</span>명
+              <span className="material-symbols-outlined text-base" aria-hidden="true">{listOpen ? "expand_less" : "expand_more"}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -65,7 +78,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
         <p className="py-3 text-center text-sm text-[var(--color-academy-muted)]">
           남아 있는 보강권이 없습니다.
         </p>
-      ) : (
+      ) : !listOpen ? null : (
         <div className="overflow-hidden rounded-lg border border-[var(--color-academy-line)]">
           <div className="overflow-x-auto">
             {/* 한 줄 행: 원생 | 학년 | 학부모 연락처 | 미사용 | 예약 | 가장 빠른 소멸. 장별 내역은 상세 패널에서 */}
