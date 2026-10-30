@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/social-posts";
 import InstagramFeedPreview from "@/components/instagram/InstagramFeedPreview";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import { toKstYmd } from "@/lib/datetime/kst";
 import type { SocialPostDraft } from "@/lib/socialDrafts";
 
 const GalleryPostFormModal = dynamic(() => import("./GalleryPostFormModal"), {
@@ -586,7 +587,8 @@ export default function GalleryAdminClient({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* 사진 카드 그리드는 유지(사진은 카드형이 맞다) — 넓은 화면은 4열로 한 화면에 더 많이 */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {posts.map((post) => {
               const media = parseMedia(post.mediaJSON);
               const firstImage = media.find((item) => item.type === "image");
@@ -624,13 +626,15 @@ export default function GalleryAdminClient({
                       )}
                     </div>
                   </div>
-                  <div className="p-4">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <h3 className="truncate text-sm font-bold text-gray-900 dark:text-white">
+                  <div className="p-3">
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      {/* 제목은 말줄임 없이 전부(길면 줄바꿈) */}
+                      <h3 className="min-w-0 break-keep break-words text-sm font-bold text-gray-900 dark:text-white">
                         {post.title || "제목 없음"}
                       </h3>
-                      <span className="shrink-0 text-xs text-gray-400">
-                        {new Date(post.createdAt).toLocaleDateString("ko-KR")}
+                      {/* 작성일 — KST 달력 날짜, 자릿수 폭 고정 */}
+                      <span className="shrink-0 text-xs tabular-nums text-gray-400">
+                        {toKstYmd(post.createdAt)}
                       </span>
                     </div>
                     {post.className && (
@@ -639,16 +643,19 @@ export default function GalleryAdminClient({
                       </span>
                     )}
                     {post.caption && <p className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{post.caption}</p>}
-                    <div className="mt-3 flex gap-2 border-t border-gray-50 pt-3">
+                    <div className="mt-2 flex gap-1 border-t border-gray-50 pt-1">
+                      {/* 수정·삭제 — 함수·확인창 그대로, 터치 44px */}
                       <button
+                        type="button"
                         onClick={() => startEdit(post)}
-                        className="flex items-center gap-1 text-xs text-gray-500 transition hover:text-brand-orange-500"
+                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-gray-500 transition hover:text-brand-orange-500"
                       >
                         <FontFreeIcon name="edit" size={14} /> 수정
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDelete(post.id)}
-                        className="flex items-center gap-1 text-xs text-gray-500 transition hover:text-red-500"
+                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-gray-500 transition hover:text-red-500"
                       >
                         <FontFreeIcon name="delete" size={14} /> 삭제
                       </button>

@@ -151,3 +151,15 @@ test("유니폼: 한 줄 표(«·» 묶음·두 줄 칸 없음), 접수일 오�
   assert.match(uniform, /await retryUniformOrderDispatch\(order\.id\)/);
   assert.match(uniform, /STIZ 본사로 다시 전송할까요\?/);
 });
+
+// ── 갤러리(사진 카드 그리드는 유지 — 최소 변경) ──
+const gallery = read("../src/app/admin/gallery/GalleryAdminClient.tsx");
+
+test("갤러리: 사진 카드 제목은 말줄임 없이, 작성일은 KST 달력, 수정·삭제 44px·함수 그대로", () => {
+  assert.doesNotMatch(gallery, /truncate text-sm font-bold/);
+  assert.match(gallery, /\{toKstYmd\(post\.createdAt\)\}/);
+  assert.doesNotMatch(gallery, /toLocaleDateString/);
+  assert.match(gallery, /onClick=\{\(\) => startEdit\(post\)\}\s*className="flex min-h-11/);
+  assert.match(gallery, /onClick=\{\(\) => handleDelete\(post\.id\)\}\s*className="flex min-h-11/);
+  assert.match(gallery, /xl:grid-cols-4/);
+});
