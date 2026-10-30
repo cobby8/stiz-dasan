@@ -21,3 +21,24 @@ test("선생님 학생 연락: 한 줄 행 + 시트, 학부모 전화는 행에�
   assert.match(studentsClient, /\[student\.name, student\.parentName, student\.school, student\.grade, student\.studentPhone, student\.parentPhone, \.\.\.student\.classNames\]/);
   assert.doesNotMatch(studentsClient, /\btruncate\b|text-ellipsis|line-clamp/);
 });
+
+const billingClient = read("../src/app/staff/billing/StaffBillingClient.tsx");
+
+test("선생님 청구: 상태 칩이 기존 filter 를 공유(기본 미납)·한 줄 행·시트, 납부 확인 요청 흐름은 그대로", () => {
+  assert.match(billingClient, /<StatusCountChips items=\{chipItems\} selected=\{filter\} onSelect=\{\(value\) => setFilter\(value as BillFilter\)\} allValue="OPEN"/);
+  assert.match(billingClient, /useState<BillFilter>\("OPEN"\)/);
+  assert.match(billingClient, /const OPEN_STATUSES = \["PENDING", "OVERDUE"\]/);
+  assert.match(billingClient, /<ListDetailPanel onClose=\{\(\) => setDetailId\(null\)\} titleId="staff-bill-detail-title"/);
+  assert.match(billingClient, /function handleRowKeyDown[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(billingClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); openRequest\(bill\); \}\}/);
+  // 금액은 오른쪽·tabular-nums, 납부 기한은 KST 모듈로
+  assert.match(billingClient, /text-right font-black tabular-nums/);
+  assert.match(billingClient, /formatKstDate\(detail\.dueDate/);
+  // 요청 버튼 조건·대기·막힌 사유·서버 호출은 기존 그대로
+  assert.match(billingClient, /bill\.confirmationStatus !== "PENDING" && OPEN_STATUSES\.includes\(bill\.status\) && bill\.confirmable/);
+  assert.match(billingClient, /관리자 확인 대기 중/);
+  assert.match(billingClient, /\{detail\.blockReason\}/);
+  assert.match(billingClient, /requestStaffPaymentConfirmation\(\{\s*paymentId: target\.id,\s*method,/);
+  assert.match(billingClient, /청구서에는 \{detail\.invoiceAmount\.toLocaleString\("ko-KR"\)\}원으로 되어 있습니다/);
+  assert.doesNotMatch(billingClient, /\btruncate\b|text-ellipsis|line-clamp/);
+});
