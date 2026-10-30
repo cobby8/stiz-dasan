@@ -8,6 +8,10 @@ import {
     processWaitlistResponse,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import StatusCountChips from "@/components/admin/list/StatusCountChips";
+import { kstLabel } from "@/lib/datetime/kst";
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────
 type WaitlistItem = {
@@ -54,13 +58,19 @@ const DAY_LABELS: Record<string, string> = {
     Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
 };
 
-// 상태 라벨 + 색상
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-    WAITING: { label: "대기중", color: "text-yellow-700", bg: "bg-yellow-100" },
-    OFFERED: { label: "제안됨", color: "text-blue-700", bg: "bg-blue-100" },
-    ENROLLED: { label: "등록완료", color: "text-green-700", bg: "bg-green-100" },
-    CANCELLED: { label: "취소", color: "text-gray-500 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-800" },
+// 상태 라벨 + 색상(화면 토큰)
+const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
+    WAITING: { label: "대기중", tone: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
+    OFFERED: { label: "제안됨", tone: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    ENROLLED: { label: "등록완료", tone: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
+    CANCELLED: { label: "취소", tone: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
 };
+
+// 상태 필터 하나로 체크박스(«완료/취소 항목 포함»)와 상태 칩이 같은 값을 공유한다.
+// ACTIVE = 예전 기본(대기중+제안됨), ALL = 예전 체크박스 켬, 그 밖 = 그 상태만
+const STATUS_ACTIVE = "ACTIVE";
+const STATUS_ALL = "ALL";
+const STATUS_CHIP_VALUES = ["WAITING", "OFFERED", "ENROLLED", "CANCELLED"] as const;
 
 function WaitlistLoadingFallback() {
     return (
@@ -135,8 +145,11 @@ export default function WaitlistClient({
     const [studentsError, setStudentsError] = useState<string | null>(null);
     // 필터: 특정 반만 보기
     const [filterClassId, setFilterClassId] = useState<string>("ALL");
-    // 상태 필터: 활성(WAITING+OFFERED) or 전체
-    const [showAll, setShowAll] = useState(false);
+    // 상태 필터: 활성(WAITING+OFFERED) / 전체 / 특정 상태 — 체크박스와 상태 칩이 같이 쓴다
+    const [statusFilter, setStatusFilter] = useState<string>(STATUS_ACTIVE);
+    const showAll = statusFilter === STATUS_ALL;
+    // 행 클릭 상세 패널 대상(대기 id)
+    const [detailId, setDetailId] = useState<string | null>(null);
 
     const hasAnyData = waitlist.length > 0 || capacityInfo.length > 0 || classes.length > 0;
 
@@ -192,14 +205,26 @@ export default function WaitlistClient({
 
     // 활성 대기자만 필터링 (WAITING + OFFERED), showAll이면 전체
     const filteredList = useMemo(() => {
-        let list = showAll
+        let list = statusFilter === STATUS_ALL
             ? waitlist
-            : waitlist.filter((w) => w.status === "WAITING" || w.status === "OFFERED");
+            : statusFilter === STATUS_ACTIVE
+                ? waitlist.filter((w) => w.status === "WAITING" || w.status === "OFFERED")
+                : waitlist.filter((w) => w.status === statusFilter);
         if (filterClassId !== "ALL") {
             list = list.filter((w) => w.classId === filterClassId);
         }
         return list;
-    }, [waitlist, filterClassId, showAll]);
+    }, [waitlist, filterClassId, statusFilter]);
+
+    // 상태 칩 건수 — 반 필터는 반영하고 상태 필터와는 무관하게 센다
+    const statusChipItems = useMemo(() => {
+        const inClass = filterClassId === "ALL" ? waitlist : waitlist.filter((w) => w.classId === filterClassId);
+        return STATUS_CHIP_VALUES.map((value) => ({
+            value,
+            label: STATUS_CONFIG[value].label,
+            count: inClass.filter((w) => w.status === value).length,
+        }));
+    }, [waitlist, filterClassId]);
 
     // 반별로 그룹핑
     const groupedByClass = useMemo(() => {
@@ -271,6 +296,48 @@ export default function WaitlistClient({
         }
     }
 
+    // ⚡·상세 패널이 같이 쓰는 작업 — 예전 행의 자리 제안 / 수락·거절 / 대기 취소(X) 버튼을
+    // 같은 함수·같은 인자로 옮긴 것(각 함수 안의 확인창도 그대로). 등록완료·취소 건은 예전처럼 작업 없음.
+    function buildWaitlistActions(w: WaitlistItem): AdminQuickAction[] {
+        const id = w.id; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
+        const actions: AdminQuickAction[] = [];
+        if (w.status === "WAITING") {
+            actions.push({ key: "offer", label: "자리 제안", icon: "campaign", tone: "primary", disabled: busy, onSelect: () => handleOffer(id) });
+        }
+        if (w.status === "OFFERED") {
+            actions.push({ key: "accept", label: "수락", icon: "check", tone: "primary", disabled: busy, onSelect: () => handleAccept(id) });
+            actions.push({ key: "reject", label: "거절", icon: "block", disabled: busy, onSelect: () => handleReject(id) });
+        }
+        if (w.status === "WAITING" || w.status === "OFFERED") {
+            actions.push({ key: "cancel", label: "대기 취소", icon: "close", tone: "danger", disabled: busy, onSelect: () => handleCancel(id) });
+        }
+        return actions;
+    }
+
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailId(id);
+        }
+    }
+
+    // 반 필터·상태 칩을 바꾸면 열린 패널은 닫는다
+    function changeClassFilter(next: string) {
+        setDetailId(null);
+        setFilterClassId(next);
+    }
+    function changeStatusFilter(next: string) {
+        setDetailId(null);
+        setStatusFilter(next);
+    }
+
+    function statusBadge(w: WaitlistItem) {
+        const cfg = STATUS_CONFIG[w.status] ?? STATUS_CONFIG.WAITING;
+        return <span className={`rounded-full px-2 py-0.5 text-xs font-black ${cfg.tone}`}>{cfg.label}</span>;
+    }
+
     if (loading && !hasAnyData) {
         return <WaitlistLoadingFallback />;
     }
@@ -279,80 +346,70 @@ export default function WaitlistClient({
         return <WaitlistErrorState onRetry={loadWaitlistData} />;
     }
 
+    // 표 칸 수(반 머리줄 colSpan 용)
+    const columnCount = 7;
+    const detail = detailId ? waitlist.find((w) => w.id === detailId) ?? null : null;
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-3">
             {/* 페이지 헤더 */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-3xl text-brand-orange-500 dark:text-brand-neon-lime">hourglass_top</span>
-                        대기자 관리
-                    </h1>
-                </div>
+            <div className="flex items-center justify-between gap-2">
+                <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-primary)]" aria-hidden="true">hourglass_top</span>
+                    대기자 관리
+                </h1>
                 <button
                     onClick={() => {
                         setShowAddModal(true);
                         void loadStudents();
                     }}
-                    className="flex items-center gap-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2.5 rounded-lg font-semibold hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition-colors"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition-colors hover:bg-[var(--color-academy-primary-hover)]"
                 >
-                    <span className="material-symbols-outlined text-xl">person_add</span>
+                    <span className="material-symbols-outlined text-xl" aria-hidden="true">person_add</span>
                     대기 등록
                 </button>
             </div>
 
-            {/* 반별 정원 현황 카드 */}
+            {/* 반별 정원 현황 — 예전 큰 카드(정원 막대)를 한 줄 버튼으로. 누르면 그 반만 보기(다시 누르면 전체) */}
             {classesWithActivity.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {classesWithActivity.map((c) => (
-                        <button
-                            key={c.id}
-                            onClick={() => setFilterClassId(filterClassId === c.id ? "ALL" : c.id)}
-                            className={`p-4 rounded-xl border text-left transition-all ${
-                                filterClassId === c.id
-                                    ? "border-brand-orange-500 dark:border-brand-neon-lime bg-brand-orange-50 dark:bg-brand-neon-lime/10  ring-1 ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300"
-                            }`}
-                        >
-                            <p className="text-sm font-semibold text-gray-700 dark:text-gray-200 truncate">{c.name}</p>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                                {DAY_LABELS[c.dayOfWeek] ?? c.dayOfWeek} {c.startTime}~{c.endTime}
-                            </p>
-                            <div className="mt-3 flex items-end gap-3">
-                                {/* 정원 바 */}
-                                <div className="flex-1">
-                                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                                        <span>등록 {c.enrolled}/{c.capacity}</span>
-                                        <span>잔여 {c.remaining}</span>
-                                    </div>
-                                    <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                                        <div
-                                            className={`h-full rounded-full transition-all ${
-                                                c.remaining <= 0 ? "bg-red-500" : c.remaining <= 2 ? "bg-yellow-500" : "bg-green-500"
-                                            }`}
-                                            style={{ width: `${Math.min(100, (c.enrolled / Math.max(c.capacity, 1)) * 100)}%` }}
-                                        />
-                                    </div>
-                                </div>
-                                {/* 대기자 수 */}
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="반별 정원 현황">
+                    {classesWithActivity.map((c) => {
+                        const selected = filterClassId === c.id;
+                        return (
+                            <button
+                                key={c.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => changeClassFilter(selected ? "ALL" : c.id)}
+                                className={`inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-left text-sm transition ${
+                                    selected
+                                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)]"
+                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-primary)]"
+                                }`}
+                            >
+                                <span className="font-bold text-[var(--color-academy-ink)]">{c.name}</span>
+                                <span className="tabular-nums text-xs text-[var(--color-academy-muted)]">{DAY_LABELS[c.dayOfWeek] ?? c.dayOfWeek} {c.startTime}~{c.endTime}</span>
+                                {/* 정원이 찼으면 위험색, 2자리 이하 남으면 주의색 */}
+                                <span className={`tabular-nums text-xs font-bold ${c.remaining <= 0 ? "text-[var(--color-academy-danger)]" : c.remaining <= 2 ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-success)]"}`}>
+                                    등록 {c.enrolled}/{c.capacity}
+                                </span>
+                                <span className="tabular-nums text-xs text-[var(--color-academy-muted)]">잔여 {c.remaining}</span>
                                 {c.waiting > 0 && (
-                                    <div className="text-center">
-                                        <span className="text-lg font-bold text-yellow-600">{c.waiting}</span>
-                                        <p className="text-[10px] text-gray-400">대기</p>
-                                    </div>
+                                    <span className="tabular-nums rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">대기 {c.waiting}</span>
                                 )}
-                            </div>
-                        </button>
-                    ))}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
-            {/* 필터 바 */}
-            <div className="flex items-center gap-3 flex-wrap">
+            {/* 필터 바: 반 선택 · 상태 칩(체크박스와 같은 상태값 공유) · 건수 */}
+            <div className="flex flex-wrap items-center gap-2">
                 <select
                     value={filterClassId}
-                    onChange={(e) => setFilterClassId(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    onChange={(e) => changeClassFilter(e.target.value)}
+                    aria-label="반 선택"
+                    className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]"
                 >
                     <option value="ALL">전체 반</option>
                     {classes.map((c) => (
@@ -362,114 +419,157 @@ export default function WaitlistClient({
                     ))}
                 </select>
 
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                <StatusCountChips
+                    ariaLabel="대기 상태별 건수"
+                    items={statusChipItems}
+                    selected={statusFilter}
+                    onSelect={changeStatusFilter}
+                    allValue={STATUS_ACTIVE}
+                />
+
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--color-academy-muted)]">
                     <input
                         type="checkbox"
                         checked={showAll}
-                        onChange={(e) => setShowAll(e.target.checked)}
-                        className="rounded border-gray-300"
+                        onChange={(e) => changeStatusFilter(e.target.checked ? STATUS_ALL : STATUS_ACTIVE)}
+                        className="h-5 w-5 rounded border-[var(--color-academy-line)]"
                     />
                     완료/취소 항목 포함
                 </label>
 
-                <span className="text-sm text-gray-400 ml-auto">
-                    총 {filteredList.length}건
+                <span className="ml-auto text-sm text-[var(--color-academy-muted)]">
+                    총 <span className="tabular-nums">{filteredList.length}</span>건
                 </span>
             </div>
 
-            {/* 대기자 목록 — 반별 그룹핑 */}
+            {/* 대기자 목록 — 한 줄 표, 반별 묶음 머리줄 */}
             {filteredList.length === 0 ? (
-                <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <span className="material-symbols-outlined text-5xl text-gray-300">hourglass_empty</span>
-                    <p className="text-gray-400 mt-2">대기자가 없습니다</p>
+                <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
+                    대기자가 없습니다
                 </div>
             ) : (
-                <div className="space-y-4">
-                    {Array.from(groupedByClass.entries()).map(([classId, items]) => (
-                        <div key={classId} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-                            {/* 반 헤더 */}
-                            <div className="px-5 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-lg text-gray-500 dark:text-gray-400">school</span>
-                                <span className="font-semibold text-gray-700 dark:text-gray-200">{items[0].className}</span>
-                                <span className="text-xs text-gray-400">
-                                    {DAY_LABELS[items[0].classDay] ?? items[0].classDay} {items[0].classStart}~{items[0].classEnd}
-                                </span>
-                                <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">{items.length}명 대기</span>
-                            </div>
-                            {/* 대기자 행 */}
-                            <div className="divide-y divide-gray-100">
+                <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                    <table className="admin-list-table w-full border-collapse text-sm">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <tr>
+                                <th className="admin-cell-num px-2 py-2">순번</th>
+                                <th className="px-2 py-2">원생</th>
+                                <th className="px-2 py-2">상태</th>
+                                <th className="admin-cell-num hidden px-2 py-2 sm:table-cell">등록일</th>
+                                <th className="admin-cell-num px-2 py-2">응답 기한</th>
+                                <th className="admin-cell-center hidden px-2 py-2 sm:table-cell">메모</th>
+                                <th className="admin-cell-center px-2 py-2">관리</th>
+                            </tr>
+                        </thead>
+                        {Array.from(groupedByClass.entries()).map(([classId, items]) => (
+                            <tbody key={classId} className="divide-y divide-[var(--color-academy-line)]">
+                                {/* 반 머리줄: 반 이름 · 요일 시간 · n명 */}
+                                <tr>
+                                    <th colSpan={columnCount} scope="rowgroup" className="bg-[var(--color-academy-soft)] px-2 py-1.5 text-xs font-black text-[var(--color-academy-ink)]">
+                                        {items[0].className}
+                                        <span className="ml-2 font-bold tabular-nums text-[var(--color-academy-muted)]">
+                                            {DAY_LABELS[items[0].classDay] ?? items[0].classDay} {items[0].classStart}~{items[0].classEnd}
+                                        </span>
+                                        <span className="ml-2 tabular-nums text-[var(--color-academy-muted)]">{items.length}명 대기</span>
+                                    </th>
+                                </tr>
                                 {items.map((w, idx) => {
-                                    const cfg = STATUS_CONFIG[w.status] ?? STATUS_CONFIG.WAITING;
+                                    const actions = buildWaitlistActions(w);
                                     return (
-                                        <div key={w.id} className="px-5 py-3 flex items-center gap-4">
-                                            {/* 순번 */}
-                                            <span className="text-sm font-mono text-gray-400 w-6 text-center">{idx + 1}</span>
-                                            {/* 학생명 */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{w.studentName}</p>
-                                                {w.memo && (
-                                                    <p className="text-xs text-gray-400 truncate">{w.memo}</p>
+                                        <tr
+                                            key={w.id}
+                                            tabIndex={0}
+                                            aria-label={`${w.studentName} ${w.className} 대기 상세 보기`}
+                                            onClick={() => setDetailId(w.id)}
+                                            onKeyDown={(event) => handleRowKeyDown(event, w.id)}
+                                            className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                                        >
+                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{idx + 1}</td>
+                                            <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{w.studentName}</td>
+                                            <td className="px-2 py-1.5">{statusBadge(w)}</td>
+                                            <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{kstLabel(w.createdAt) || "-"}</td>
+                                            {/* 응답 기한은 제안됨(OFFERED)일 때만 */}
+                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-primary)]">{w.status === "OFFERED" && w.respondBy ? kstLabel(w.respondBy) : "-"}</td>
+                                            {/* 메모는 줄이 늘어나지 않게 아이콘만, 내용은 상세 패널 */}
+                                            <td className="admin-cell-center hidden px-2 py-1.5 sm:table-cell">
+                                                {w.memo ? <span className="material-symbols-outlined text-base text-[var(--color-academy-muted)]" aria-label="메모 있음">sticky_note_2</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
+                                            </td>
+                                            {/* 관리: ⚡. 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                            <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                                                {actions.length > 0 ? (
+                                                    <AdminQuickActionMenu label={`${w.studentName} 대기 빠른 작업`} actions={actions} />
+                                                ) : (
+                                                    <span className="text-xs text-[var(--color-academy-muted)]">-</span>
                                                 )}
-                                            </div>
-                                            {/* 상태 뱃지 */}
-                                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
-                                                {cfg.label}
-                                            </span>
-                                            {/* 응답 기한 (OFFERED일 때) */}
-                                            {w.status === "OFFERED" && w.respondBy && (
-                                                <span className="text-xs text-blue-500">
-                                                    기한: {new Date(w.respondBy).toLocaleDateString("ko-KR")}
-                                                </span>
-                                            )}
-                                            {/* 액션 버튼 */}
-                                            <div className="flex items-center gap-1">
-                                                {w.status === "WAITING" && (
-                                                    <button
-                                                        onClick={() => handleOffer(w.id)}
-                                                        disabled={busy}
-                                                        className="text-xs bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
-                                                        title="자리 제안"
-                                                    >
-                                                        자리 제안
-                                                    </button>
-                                                )}
-                                                {w.status === "OFFERED" && (
-                                                    <>
-                                                        <button
-                                                            onClick={() => handleAccept(w.id)}
-                                                            disabled={busy}
-                                                            className="text-xs bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors"
-                                                        >
-                                                            수락
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleReject(w.id)}
-                                                            disabled={busy}
-                                                            className="text-xs bg-red-500 text-white px-3 py-1.5 rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
-                                                        >
-                                                            거절
-                                                        </button>
-                                                    </>
-                                                )}
-                                                {(w.status === "WAITING" || w.status === "OFFERED") && (
-                                                    <button
-                                                        onClick={() => handleCancel(w.id)}
-                                                        disabled={busy}
-                                                        className="text-xs text-gray-400 hover:text-red-500 px-2 py-1.5 transition-colors"
-                                                        title="대기 취소"
-                                                    >
-                                                        <span className="material-symbols-outlined text-base">close</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
+                                            </td>
+                                        </tr>
                                     );
                                 })}
-                            </div>
-                        </div>
-                    ))}
+                            </tbody>
+                        ))}
+                    </table>
                 </div>
             )}
+
+            {/* 행 클릭 상세 패널 — 이미 받아온 값만(새 조회 없음). 작업 버튼은 ⚡ 와 같은 목록 */}
+            {detail && (() => {
+                const d = detail;
+                const actions = buildWaitlistActions(d);
+                const panelRows: { label: string; value: React.ReactNode }[] = [
+                    { label: "반", value: d.className },
+                    { label: "수업", value: <span className="tabular-nums">{DAY_LABELS[d.classDay] ?? d.classDay} {d.classStart}~{d.classEnd}</span> },
+                    { label: "등록일", value: kstLabel(d.createdAt) ? <span className="tabular-nums">{kstLabel(d.createdAt)}</span> : null },
+                    { label: "제안일", value: d.offeredAt ? <span className="tabular-nums">{kstLabel(d.offeredAt)}</span> : null },
+                    { label: "응답 기한", value: d.respondBy ? <span className="tabular-nums">{kstLabel(d.respondBy)}</span> : null },
+                    { label: "메모", value: d.memo ? <span className="whitespace-pre-wrap">{d.memo}</span> : null },
+                ].filter((row) => row.value !== null);
+                return (
+                    <ListDetailPanel onClose={() => setDetailId(null)} titleId="waitlist-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                        <div className="mb-4 flex items-center gap-2">
+                            <h3 id="waitlist-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{d.studentName}</h3>
+                            {statusBadge(d)}
+                            <button
+                                type="button"
+                                onClick={() => setDetailId(null)}
+                                aria-label="닫기"
+                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            </button>
+                        </div>
+                        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                            {panelRows.map((row) => (
+                                <div key={row.label} className="contents">
+                                    <dt className="font-bold text-[var(--color-academy-muted)]">{row.label}</dt>
+                                    <dd className="min-w-0 break-keep break-words text-[var(--color-academy-ink)]">{row.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                        {actions.length > 0 && (
+                            <div className="mt-5 flex flex-wrap gap-2">
+                                {actions.map((action) => (
+                                    <button
+                                        key={action.key}
+                                        type="button"
+                                        disabled={action.disabled}
+                                        onClick={() => { setDetailId(null); void action.onSelect(); }}
+                                        className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
+                                            action.tone === "danger"
+                                                ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                                : action.tone === "primary"
+                                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
+                                                    : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </ListDetailPanel>
+                );
+            })()}
 
             {/* 대기 등록 모달 */}
             {showAddModal && (

@@ -80,3 +80,23 @@ test("담당자 전달 장부: 카드 → 한 줄 표 + 패널(조회 전용), �
   // 필터를 바꾸면 열린 패널을 닫는다
   assert.match(source, /function changeStatus\(value: string\) \{ setDetailId\(null\); setStatus\(value\); \}/);
 });
+
+test("대기자 관리: 반별 묶음 한 줄 표 + ⚡·패널, 상태 칩은 «완료/취소 포함» 체크와 같은 상태값", () => {
+  const source = read("../src/app/admin/waitlist/WaitlistClient.tsx");
+  assertListStandard(source, "대기자");
+  assert.match(source, /scope="rowgroup"/);
+  // 체크박스와 칩이 같은 statusFilter 를 쓴다(기본 = 대기중+제안됨)
+  assert.match(source, /const showAll = statusFilter === STATUS_ALL;/);
+  assert.match(source, /<StatusCountChips[\s\S]*?selected=\{statusFilter\}[\s\S]*?allValue=\{STATUS_ACTIVE\}/);
+  assert.match(source, /onChange=\{\(e\) => changeStatusFilter\(e\.target\.checked \? STATUS_ALL : STATUS_ACTIVE\)\}/);
+  // 예전 행 버튼(자리 제안·수락·거절·대기 취소)은 같은 함수로 ⚡·패널에
+  for (const [label, fn] of [["자리 제안", "handleOffer"], ["수락", "handleAccept"], ["거절", "handleReject"], ["대기 취소", "handleCancel"]]) {
+    assert.ok(new RegExp(`label: "${label}"[^\\n]*onSelect: \\(\\) => ${fn}\\(id\\)`).test(source), `${label} → ${fn}`);
+  }
+  // 각 처리 함수의 확인창은 그대로
+  assert.match(source, /confirm\("이 대기자에게 자리를 제안하시겠습니까\?"\)/);
+  assert.match(source, /confirm\("수락 처리하시겠습니까\? 수강 등록이 생성됩니다\."\)/);
+  // 응답 기한은 KST 모듈로(브라우저 시간대 toLocaleDateString 금지)
+  assert.doesNotMatch(source, /toLocaleDateString/);
+  assert.match(source, /kstLabel\(w\.respondBy\)/);
+});
