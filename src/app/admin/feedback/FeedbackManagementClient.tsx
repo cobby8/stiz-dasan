@@ -2,14 +2,22 @@
 
 import { useState, useTransition, useCallback, useEffect } from "react";
 import { createFeedback, updateFeedback, deleteFeedback } from "@/app/actions/admin";
+import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { toKstYmd } from "@/lib/datetime/kst";
 
-// 카테고리 정의: 피드백을 4가지 유형으로 분류
+// 카테고리 정의: 피드백을 4가지 유형으로 분류(색은 화면 토큰)
 const CATEGORIES: Record<string, { label: string; color: string }> = {
-    SKILL: { label: "기술", color: "bg-blue-100 text-blue-700" },
-    ATTITUDE: { label: "태도", color: "bg-green-100 text-green-700" },
-    PHYSICAL: { label: "체력", color: "bg-orange-100 text-orange-700" },
-    GENERAL: { label: "종합", color: "bg-purple-100 text-purple-700" },
+    SKILL: { label: "기술", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    ATTITUDE: { label: "태도", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
+    PHYSICAL: { label: "체력", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
+    GENERAL: { label: "종합", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]" },
 };
+
+// 목록 날짜 — 수업일이 있으면 수업일, 없으면 작성일(예전 카드와 같은 규칙). KST 달력 날짜로
+function feedbackDate(fb: { sessionDate: string | null; createdAt: string }): string {
+    return toKstYmd(fb.sessionDate || fb.createdAt);
+}
 
 // 피드백 데이터 타입 (getAllFeedbacks 반환값 기준)
 type Feedback = {
@@ -188,8 +196,8 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
     const [showForm, setShowForm] = useState(false);
     // 수정 모드일 때 해당 피드백 ID
     const [editingId, setEditingId] = useState<string | null>(null);
-    // 카드 펼침 상태 (어떤 카드가 열려있는지)
-    const [expandedId, setExpandedId] = useState<string | null>(null);
+    // 행 클릭 상세 패널 대상(피드백 id) — 예전 카드 펼침을 대신한다
+    const [detailId, setDetailId] = useState<string | null>(null);
 
     // 폼 입력값 상태
     const [form, setForm] = useState({
@@ -292,11 +300,30 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
         });
     }
 
+    // ⚡·상세 패널이 같이 쓰는 작업 — 예전 펼친 카드의 수정·삭제 버튼과 같은 함수(삭제 확인창 그대로)
+    function buildFeedbackActions(fb: Feedback): AdminQuickAction[] {
+        return [
+            { key: "edit", label: "수정", icon: "edit", disabled: isPending, onSelect: () => handleEdit(fb) },
+            { key: "delete", label: "삭제", icon: "delete", tone: "danger", disabled: isPending, onSelect: () => handleDelete(fb.id) },
+        ];
+    }
+
+    // 행 키보드(Enter·Space) = 상세 패널. 행 안의 ⚡ 버튼에서 누른 키는 가로채지 않는다.
+    function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailId(id);
+        }
+    }
+
+    const detail = detailId ? feedbacks.find((fb) => fb.id === detailId) ?? null : null;
+
     // 별점 렌더링 (1~5)
     function renderStars(rating: number | null) {
-        if (!rating) return <span className="text-gray-400 text-sm">평점 없음</span>;
+        if (!rating) return <span className="text-sm text-[var(--color-academy-muted)]">평점 없음</span>;
         return (
-            <span className="text-yellow-400">
+            <span className="tabular-nums text-[var(--color-academy-warning)]">
                 {Array.from({ length: 5 }, (_, i) => (
                     <span key={i}>{i < rating ? "\u2605" : "\u2606"}</span>
                 ))}
@@ -336,14 +363,14 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-3">
             {/* 헤더: 제목 + 피드백 작성 버튼 */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">학습 피드백 관리</h1>
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                    <h1 className="text-lg font-black text-[var(--color-academy-ink)]">학습 피드백 관리</h1>
                     {/* 설명문구는 제거하고 실무에 쓰이는 건수 표시만 유지 */}
-                    <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                        총 {feedbacks.length}건
+                    <p className="text-xs text-[var(--color-academy-muted)]">
+                        총 <span className="tabular-nums">{feedbacks.length}</span>건
                     </p>
                 </div>
                 <button
@@ -545,102 +572,113 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                 </form>
             )}
 
-            {/* 피드백 목록 (카드형) */}
+            {/* 피드백 목록 — 펼침 카드 → 한 줄 표. 내용 전문·수정/삭제는 상세 패널과 ⚡ */}
             {feedbacks.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-12 text-center">
-                    <p className="text-gray-400 text-lg">아직 작성된 피드백이 없습니다.</p>
+                <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">
+                    아직 작성된 피드백이 없습니다.
                 </div>
             ) : (
-                <div className="space-y-3">
-                    {feedbacks.map((fb) => {
-                        const isExpanded = expandedId === fb.id;
-                        const cat = CATEGORIES[fb.category] || CATEGORIES.GENERAL;
-                        // 날짜 포맷: "2026-03-20T..." → "2026.03.20"
-                        const dateStr = fb.sessionDate
-                            ? new Date(fb.sessionDate).toLocaleDateString("ko-KR")
-                            : "";
-                        const createdStr = new Date(fb.createdAt).toLocaleDateString("ko-KR");
-
-                        return (
-                            <div
-                                key={fb.id}
-                                className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden"
-                            >
-                                {/* 카드 헤더 (클릭하면 펼치기/접기) */}
-                                <button
-                                    type="button"
-                                    onClick={() => setExpandedId(isExpanded ? null : fb.id)}
-                                    className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 py-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-900 sm:flex sm:gap-4 sm:px-6"
-                                >
-                                    {/* 카테고리 뱃지 */}
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${cat.color}`}>
-                                        {cat.label}
-                                    </span>
-
-                                    {/* 학생 이름 */}
-                                    <span className="min-w-0 truncate font-bold text-gray-800 dark:text-gray-100" title={fb.studentName}>
-                                        {fb.studentName}
-                                    </span>
-
-                                    {/* 제목 */}
-                                    <span className="col-span-2 min-w-0 truncate text-gray-700 dark:text-gray-200 sm:col-span-1 sm:flex-1" title={fb.title}>{fb.title}</span>
-
-                                    {/* 코치 이름 */}
-                                    <span className="hidden max-w-32 truncate text-sm text-gray-500 dark:text-gray-400 md:inline" title={`${fb.coachName} 코치`}>{fb.coachName} 코치</span>
-
-                                    {/* 날짜 */}
-                                    <span className="hidden min-w-[80px] text-right text-sm text-gray-400 sm:inline">
-                                        {dateStr || createdStr}
-                                    </span>
-
-                                    {/* 별점 */}
-                                    <span className="hidden min-w-[80px] text-right lg:inline">{renderStars(fb.rating)}</span>
-
-                                    {/* 공개/비공개 */}
-                                    {!fb.isPublic && (
-                                        <span className="text-xs text-red-400 border border-red-200 rounded-full px-2 py-0.5">
-                                            비공개
-                                        </span>
-                                    )}
-
-                                    {/* 펼침 아이콘 */}
-                                    <span className={`text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}>
-                                        &#9660;
-                                    </span>
-                                </button>
-
-                                {/* 펼쳐진 내용 */}
-                                {isExpanded && (
-                                    <div className="px-6 pb-5 border-t border-gray-100 dark:border-gray-800">
-                                        {/* 피드백 내용 (줄바꿈 유지) */}
-                                        <p className="text-gray-700 dark:text-gray-200 text-sm leading-relaxed whitespace-pre-wrap mt-4">
-                                            {fb.content}
-                                        </p>
-
-                                        {/* 수정/삭제 버튼 */}
-                                        <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
-                                            <button
-                                                onClick={() => handleEdit(fb)}
-                                                disabled={isPending}
-                                                className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-                                            >
-                                                수정
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(fb.id)}
-                                                disabled={isPending}
-                                                className="px-4 py-2 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
-                                            >
-                                                삭제
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+                    <table className="admin-list-table w-full border-collapse text-sm">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
+                            <tr>
+                                <th className="admin-cell-num px-2 py-2">날짜</th>
+                                <th className="px-2 py-2">분류</th>
+                                <th className="px-2 py-2">학생</th>
+                                <th className="px-2 py-2">제목</th>
+                                <th className="hidden px-2 py-2 md:table-cell">코치</th>
+                                <th className="hidden px-2 py-2 lg:table-cell">평점</th>
+                                <th className="hidden px-2 py-2 sm:table-cell">공개</th>
+                                <th className="admin-cell-center px-2 py-2">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--color-academy-line)]">
+                            {feedbacks.map((fb) => {
+                                const cat = CATEGORIES[fb.category] || CATEGORIES.GENERAL;
+                                return (
+                                    <tr
+                                        key={fb.id}
+                                        tabIndex={0}
+                                        aria-label={`${fb.studentName} ${fb.title} 피드백 상세 보기`}
+                                        onClick={() => setDetailId(fb.id)}
+                                        onKeyDown={(event) => handleRowKeyDown(event, fb.id)}
+                                        className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
+                                    >
+                                        {/* 수업일이 없으면 작성일(예전 카드와 같은 규칙) */}
+                                        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{feedbackDate(fb)}</td>
+                                        <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cat.color}`}>{cat.label}</span></td>
+                                        <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{fb.studentName}</td>
+                                        <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{fb.title}</td>
+                                        <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{fb.coachName} 코치</td>
+                                        <td className="hidden px-2 py-1.5 lg:table-cell">{renderStars(fb.rating)}</td>
+                                        <td className="hidden px-2 py-1.5 sm:table-cell">
+                                            {fb.isPublic ? (
+                                                <span className="text-xs text-[var(--color-academy-muted)]">공개</span>
+                                            ) : (
+                                                <span className="rounded-full border border-[var(--color-academy-danger)] px-2 py-0.5 text-xs text-[var(--color-academy-danger)]">비공개</span>
+                                            )}
+                                        </td>
+                                        {/* 관리: ⚡(수정·삭제). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                        <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
+                                            <AdminQuickActionMenu label={`${fb.studentName} 피드백 빠른 작업`} actions={buildFeedbackActions(fb)} />
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             )}
+
+            {/* 행 클릭 상세 패널 — 예전 카드를 펼치면 보이던 내용 전문 + 수정/삭제 */}
+            {detail && (() => {
+                const fb = detail;
+                const cat = CATEGORIES[fb.category] || CATEGORIES.GENERAL;
+                return (
+                    <ListDetailPanel onClose={() => setDetailId(null)} titleId="feedback-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                        <div className="mb-4 flex items-center gap-2">
+                            <h3 id="feedback-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{fb.studentName}</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cat.color}`}>{cat.label}</span>
+                            {!fb.isPublic && <span className="rounded-full border border-[var(--color-academy-danger)] px-2 py-0.5 text-xs text-[var(--color-academy-danger)]">비공개</span>}
+                            <button type="button" onClick={() => setDetailId(null)} aria-label="닫기" className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                                <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                            </button>
+                        </div>
+                        <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                            <dt className="font-bold text-[var(--color-academy-muted)]">제목</dt>
+                            <dd className="break-keep font-bold text-[var(--color-academy-ink)]">{fb.title}</dd>
+                            <dt className="font-bold text-[var(--color-academy-muted)]">코치</dt>
+                            <dd className="text-[var(--color-academy-ink)]">{fb.coachName} 코치</dd>
+                            <dt className="font-bold text-[var(--color-academy-muted)]">수업일</dt>
+                            <dd className="tabular-nums text-[var(--color-academy-ink)]">{fb.sessionDate ? toKstYmd(fb.sessionDate) : "-"}</dd>
+                            <dt className="font-bold text-[var(--color-academy-muted)]">작성일</dt>
+                            <dd className="tabular-nums text-[var(--color-academy-ink)]">{toKstYmd(fb.createdAt)}</dd>
+                            <dt className="font-bold text-[var(--color-academy-muted)]">평점</dt>
+                            <dd>{renderStars(fb.rating)}</dd>
+                        </dl>
+                        {/* 피드백 내용 (줄바꿈 유지) */}
+                        <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-academy-ink)]">{fb.content}</p>
+                        <div className="mt-5 flex flex-wrap gap-2">
+                            {buildFeedbackActions(fb).map((action) => (
+                                <button
+                                    key={action.key}
+                                    type="button"
+                                    disabled={action.disabled}
+                                    onClick={() => { setDetailId(null); void action.onSelect(); }}
+                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-4 text-sm font-bold disabled:opacity-50 ${
+                                        action.tone === "danger"
+                                            ? "border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
+                                            : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-lg" aria-hidden="true">{action.icon}</span>
+                                    {action.label}
+                                </button>
+                            ))}
+                        </div>
+                    </ListDetailPanel>
+                );
+            })()}
         </div>
     );
 }

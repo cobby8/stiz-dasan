@@ -149,3 +149,17 @@ test("코치 관리: 사진 큰 행 → 한 줄 표(끌어 옮기기 유지), �
   assert.match(source, /<td colSpan=\{7\} className="p-0">[\s\S]*?코치 정보 수정[\s\S]*?onClick=\{\(\) => handleUpdate\(coach\.id\)\}/);
   assert.match(source, /<CoachPhoto url=\{coach\.imageUrl\} name=\{coach\.name\} size="sm" \/>/);
 });
+
+test("학습 피드백: 펼침 카드 → 한 줄 표, 내용 전문·수정/삭제는 패널과 ⚡, 날짜는 KST 모듈", () => {
+  const source = read("../src/app/admin/feedback/FeedbackManagementClient.tsx");
+  assertListStandard(source, "피드백");
+  assert.doesNotMatch(source, /expandedId/);
+  assert.match(source, /label: "수정"[^\n]*onSelect: \(\) => handleEdit\(fb\)/);
+  assert.match(source, /label: "삭제"[^\n]*onSelect: \(\) => handleDelete\(fb\.id\)/);
+  assert.match(source, /confirm\("이 피드백을 삭제하시겠습니까\?"\)/);
+  // 수업일 없으면 작성일 — 브라우저 시간대(toLocaleDateString) 대신 KST
+  assert.doesNotMatch(source, /toLocaleDateString/);
+  assert.match(source, /return toKstYmd\(fb\.sessionDate \|\| fb\.createdAt\);/);
+  // 패널에 내용 전문(줄바꿈 유지)
+  assert.match(source, /whitespace-pre-wrap[^"]*">\{fb\.content\}/);
+});
