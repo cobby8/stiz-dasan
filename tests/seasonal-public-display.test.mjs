@@ -37,6 +37,11 @@ function renderPublicPage(name, program) {
     if (id === "./types") return { ...seasonalTypes, seasonalDisplayState: (value) => seasonalDisplayState(value, openTime) };
     if (id === "@/components/maps/LocationPickerModal") return { default: () => null };
     if (id === "@/lib/seasonal/contracts") return { SHUTTLE_LOCATION_CONSENT_VERSION: "fixture" };
+    // 하단 고정 바 감싸개(플로팅 버튼 위치용)는 모양만 같은 div 로 바꿔 렌더한다.
+    if (id === "@/components/public-floating") return {
+      PublicBottomBar: ({ className, children }) => React.createElement("div", { className }, children),
+      usePublicOverlayOpen() {},
+    };
     return require(id);
   }, exports);
   return renderToStaticMarkup(React.createElement(exports.default, { slug: program.slug }));

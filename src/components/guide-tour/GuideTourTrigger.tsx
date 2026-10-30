@@ -1188,11 +1188,10 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
 
   return (
     <>
-      {/* 플로팅 입학 가이드 버튼 — 챗봇 버튼(bottom-6 right-6) 바로 위, 같은 열 */}
+      {/* 플로팅 입학 가이드 버튼 — 챗봇 버튼 바로 위, 같은 열. 위치는 public-floating-btn--guide(CSS) */}
       <button
         onClick={startTour}
-        className="fixed right-6 z-50 w-14 h-14 rounded-full bg-white dark:bg-black text-brand-orange-500 dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-brand-orange-500 dark:border-brand-neon-lime"
-        style={{ bottom: 88 }}
+        className="public-floating-btn public-floating-btn--guide fixed right-6 z-50 w-14 h-14 rounded-full bg-white dark:bg-black text-brand-orange-500 dark:text-brand-neon-lime shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center border-2 border-brand-orange-500 dark:border-brand-neon-lime"
         aria-label="입학 가이드 시작"
         title="입학 가이드"
       >
@@ -1201,7 +1200,7 @@ function TourTriggerInner({ autoStart = false }: { autoStart?: boolean }) {
 
       {/* 첫 방문 자동 제안 토스트 -- 메인 페이지에서만, 3초 후 표시 */}
       {showPrompt && (
-        <div className="fixed bottom-36 right-4 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-5 max-w-xs border border-gray-100 dark:border-gray-800 animate-in slide-in-from-bottom-4">
+        <div className="public-floating-btn public-floating-btn--prompt fixed right-4 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-5 max-w-xs border border-gray-100 dark:border-gray-800 animate-in slide-in-from-bottom-4">
           {hasSavedPhase ? (
             <>
               {/* 이전에 중단된 투어가 있는 경우 */}

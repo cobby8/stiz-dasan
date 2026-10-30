@@ -80,3 +80,22 @@ test("P-08 다크 모드의 «선택됨»은 공개 주황 바탕 + 어두운 �
   assert.equal(read("src/app/annual/AnnualEventsClient.tsx").split(sel).length - 1, 2);
   assert.ok(read("src/app/schedule/ScheduleClient.tsx").includes(sel));
 });
+
+test("C-P3·P-03 플로팅 버튼은 하단 고정 바 높이만큼 올라가고 모달이 열리면 숨는다", () => {
+  assert.match(sportCss, /\.public-floating-btn \{ bottom: calc\(var\(--public-floating-offset, 24px\) \+ var\(--public-bottom-bar, 0px\)\); \}/);
+  assert.match(sportCss, /body\[data-public-overlay\] \.stiz-public-sport \.public-floating-btn \{ display: none; \}/);
+  assert.ok(read("src/components/chat/ChatBotButton.tsx").includes("public-floating-btn public-floating-btn--chat"));
+  for (const file of ["src/components/guide-tour/GuideTourLazyTrigger.tsx", "src/components/guide-tour/GuideTourTrigger.tsx"]) {
+    const src = read(file);
+    assert.ok(src.includes("public-floating-btn public-floating-btn--guide"), file);
+    assert.doesNotMatch(src, /style=\{\{ bottom: 88 \}\}/, file);
+  }
+  for (const file of ["src/components/seasonal/SeasonalDetailClient.tsx", "src/components/seasonal/SeasonalApplyClient.tsx"]) {
+    assert.match(read(file), /<PublicBottomBar className="fixed inset-x-0 bottom-0/, file);
+  }
+  for (const file of ["src/app/annual/EventDetailPanel.tsx", "src/components/PublicHeader.tsx", "src/components/chat/ChatBotButton.tsx", "src/components/seasonal/SeasonalApplyClient.tsx"]) {
+    assert.match(read(file), /usePublicOverlayOpen\(/, file);
+  }
+  const helper = read("src/components/public-floating.tsx");
+  assert.ok(helper.includes('root.style.setProperty("--public-bottom-bar"') && helper.includes("body.dataset.publicOverlay"));
+});

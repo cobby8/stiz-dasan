@@ -46,8 +46,8 @@ export default function GuideTourLazyTrigger() {
   return (
     <button
       onClick={() => setLoadMode("autoStart")}
-      className="fixed right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border-2 border-brand-orange-500 bg-white text-brand-orange-500 shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime"
-      style={{ bottom: 88 }}
+      // 위치(bottom)는 public-floating-btn--guide(챗봇 버튼 바로 위 88px + 하단 고정 바 높이)
+      className="public-floating-btn public-floating-btn--guide fixed right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border-2 border-brand-orange-500 bg-white text-brand-orange-500 shadow-lg transition-all duration-200 hover:scale-105 hover:shadow-xl dark:border-brand-neon-lime dark:bg-black dark:text-brand-neon-lime"
       aria-label="입학 가이드 시작"
       title="입학 가이드"
     >

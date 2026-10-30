@@ -21,6 +21,7 @@ import FontFreeIcon from "./ui/FontFreeIcon";
 import type { AppRole } from "@/lib/auth-routes";
 import AppBackButton from "@/components/AppBackButton";
 import { useHeaderMenuFit } from "./useHeaderMenuFit";
+import { usePublicOverlayOpen } from "./public-floating";
 
 const MOBILE_ACCOUNT_FALLBACK_ACTION_CLASS = [
   "flex min-h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-sm font-bold",
@@ -129,6 +130,8 @@ export default function PublicHeader({
 }: PublicHeaderProps) {
   // 모바일 사이드바 열림/닫힘 상태
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // 모바일 메뉴(서랍)가 열린 동안 챗봇·입학 가이드 플로팅 버튼을 숨긴다(게슈탈트 C-P3)
+  usePublicOverlayOpen(isMobileMenuOpen);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);

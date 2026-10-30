@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PublicBottomBar } from "@/components/public-floating";
 import { formatSeasonalDate, formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
 export default function SeasonalDetailClient({ slug }: { slug: string }) {
@@ -50,9 +51,10 @@ export default function SeasonalDetailClient({ slug }: { slug: string }) {
           {program.refundPolicy && <Notice title="취소·환불 안내" icon="policy" text={program.refundPolicy} />}
         </div>
       </section>
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+      {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
+      <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
         <div className="mx-auto flex max-w-4xl gap-2"><Link href="/seasonal" className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 px-4 font-bold">목록</Link>{display.canApply ? <Link href={`/seasonal/${slug}/apply`} className="flex min-h-12 flex-1 items-center justify-center rounded-xl bg-brand-orange-500 px-5 font-black text-white">신청하기</Link> : <span role="status" className="flex min-h-12 flex-1 items-center justify-center rounded-xl bg-gray-200 px-5 font-bold text-gray-500">{display.label}</span>}</div>
-      </div>
+      </PublicBottomBar>
     </>
   );
 }

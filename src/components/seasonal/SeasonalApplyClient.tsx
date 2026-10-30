@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { PublicBottomBar, usePublicOverlayOpen } from "@/components/public-floating";
 import { formatSeasonalPeriod, formatWon, normalizeProgram, programClasses, seasonalApplicationStatusLabel, seasonalDisplayState, type SeasonalClass, type SeasonalProgram } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -171,6 +172,8 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<SubmitResult | null>(null);
   const idempotencyKeyRef = useRef(makeIdempotencyKey());
+  // 지도 위치 선택 모달이 열린 동안 플로팅 버튼(챗봇·입학 가이드)을 숨긴다(게슈탈트 C-P3)
+  usePublicOverlayOpen(Boolean(locationPicker));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -651,7 +654,8 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
         </section>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+      {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
+      <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 sm:flex-nowrap">
           <div className="hidden min-w-0 flex-1 sm:block">
             <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{selectedOfferings.length}개 수업 선택 · {formatWon(totalPrice)}</p>
@@ -668,7 +672,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
             {submitState === "submitting" ? "접수 중..." : "신청 접수"}
           </button>
         </div>
-      </div>
+      </PublicBottomBar>
 
       {locationPicker && (
         <LocationPickerModal

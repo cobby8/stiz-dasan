@@ -10,6 +10,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import FontFreeIcon from "../ui/FontFreeIcon";
+import { usePublicOverlayOpen } from "../public-floating";
 
 const ChatPanel = dynamic(() => import("./ChatPanel"), {
   ssr: false,
@@ -19,18 +20,22 @@ const ChatPanel = dynamic(() => import("./ChatPanel"), {
 export default function ChatBotButton() {
   // 채팅 패널의 열림/닫힘 상태
   const [isOpen, setIsOpen] = useState(false);
+  // 채팅 패널이 열린 동안 옆의 입학 가이드 버튼도 숨긴다(패널 위에 겹쳐 보이지 않게)
+  usePublicOverlayOpen(isOpen);
 
   return (
     <>
       {/* 채팅 패널이 열려 있으면 표시 */}
       {isOpen && <ChatPanel onClose={() => setIsOpen(false)} />}
 
-      {/* 플로팅 말풍선 버튼 — 패널이 닫혀 있을 때만 표시 */}
+      {/* 플로팅 말풍선 버튼 — 패널이 닫혀 있을 때만 표시.
+          위치(bottom)는 public-sport.css 의 public-floating-btn 이 정한다(하단 고정 바 높이만큼 위로). */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
           className="
-            fixed bottom-6 right-6 z-50
+            public-floating-btn public-floating-btn--chat
+            fixed right-6 z-50
             w-14 h-14 rounded-full
             bg-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white dark:text-black
             shadow-lg hover:bg-orange-600 dark:hover:bg-lime-400

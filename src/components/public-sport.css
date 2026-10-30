@@ -173,6 +173,13 @@
   font-weight: 700;
 }
 .stiz-public-sport .public-btn-text:hover { color: var(--color-public-ink); text-decoration: underline; text-underline-offset: 3px; }
+/* 게슈탈트 C-P3·P-03 플로팅 버튼 — 하단 고정 바 높이(--public-bottom-bar)만큼 위로, 모달이 열리면 숨김.
+ * 변수는 src/components/public-floating.ts 가 <html> 에 적는다(고정 바가 없으면 0). */
+.stiz-public-sport .public-floating-btn { bottom: calc(var(--public-floating-offset, 24px) + var(--public-bottom-bar, 0px)); }
+.stiz-public-sport .public-floating-btn--chat { --public-floating-offset: 24px; }
+.stiz-public-sport .public-floating-btn--guide { --public-floating-offset: 88px; }
+.stiz-public-sport .public-floating-btn--prompt { --public-floating-offset: 144px; }
+body[data-public-overlay] .stiz-public-sport .public-floating-btn { display: none; }
 .stiz-public-sport .public-table { border-color: var(--color-public-line); }
 .stiz-public-sport .public-table :is(th, td) { padding: 12px 14px; }
 .stiz-public-sport .public-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }

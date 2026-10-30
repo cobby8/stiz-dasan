@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { SerializedEvent } from "./AnnualEventsClient";
+import { usePublicOverlayOpen } from "@/components/public-floating";
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string; dot: string; border: string }> = {
     대회: { bg: "bg-orange-50", text: "text-orange-700", dot: "bg-orange-500", border: "border-orange-200" },
@@ -38,6 +39,9 @@ export default function EventDetailPanel({ event, onClose }: Props) {
         document.addEventListener("keydown", handler);
         return () => document.removeEventListener("keydown", handler);
     }, [event, onClose]);
+
+    // 패널(모바일 하단 시트)이 열린 동안 챗봇·입학 가이드 플로팅 버튼을 숨긴다(게슈탈트 C-P3)
+    usePublicOverlayOpen(Boolean(event));
 
     // 패널 열릴 때 body 스크롤 잠금
     useEffect(() => {

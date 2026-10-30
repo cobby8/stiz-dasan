@@ -63,7 +63,9 @@ export default async function PublicPageLayout({
         kakaoChannelUrl={kakaoChannelUrl}
       />
 
-      {/* 학부모 상담 챗봇 — 모든 공개 페이지 우하단에 플로팅 버튼 */}
+      {/* 학부모 상담 챗봇 — 모든 공개 페이지 우하단에 플로팅 버튼.
+          하단 고정 바가 있는 화면(시즌 특강 상세·신청)은 바가 --public-bottom-bar 변수로 높이를 알려
+          두 플로팅 버튼이 그만큼 위로 올라간다. 모달이 열리면 숨는다(public-floating.tsx · 게슈탈트 C-P3). */}
       <ChatBotButton />
 
       {/* 가이드 투어: 플로팅 트리거 버튼 (driver.js가 오버레이/말풍선 직접 처리) */}
