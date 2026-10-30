@@ -321,7 +321,8 @@ export default function ProgramsAdminClient({
                 <div className="overflow-x-auto">
                     {/* 머리줄 — 아래 행과 같은 칸 폭(PROGRAM_ROW_GRID) */}
                     <div className={`${PROGRAM_ROW_GRID} items-center bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]`}>
-                        <span className="sr-only">순서 손잡이</span>
+                        {/* 빈 칸도 자리를 차지해야 아래 행과 칸이 맞는다(sr-only 단독이면 grid 에서 빠져 한 칸씩 밀린다) */}
+                        <span><span className="sr-only">순서 손잡이</span></span>
                         <span className="px-1 py-2 text-right">#</span>
                         <span className="px-2 py-2">이름</span>
                         <span className="hidden px-2 py-2 md:block">대상</span>
@@ -393,7 +394,7 @@ export default function ProgramsAdminClient({
 
 // 목록 머리줄·행이 함께 쓰는 칸 폭. 모바일은 손잡이|#|이름|수강료|관리, md 부터 대상·요일·셔틀을 더 보인다
 const PROGRAM_ROW_GRID =
-    "grid min-w-0 grid-cols-[2.5rem_2rem_minmax(6rem,1fr)_7rem_8rem] md:grid-cols-[2.5rem_2rem_minmax(9rem,1fr)_7rem_7rem_8rem_5.5rem_9rem]";
+    "grid min-w-0 grid-cols-[2.5rem_2rem_minmax(6rem,1fr)_7rem_8rem] md:grid-cols-[2.5rem_2rem_minmax(9rem,1fr)_10rem_7rem_8rem_5.5rem_9rem]";
 
 // 요일 키(Mon…) → «월» 같은 한 글자
 function dayLabels(program: Program): string[] {
@@ -460,7 +461,7 @@ function ProgramRowInline({
             </span>
             <span className="px-1 py-1.5 text-right tabular-nums text-[var(--color-academy-muted)]">{index + 1}</span>
             <span className="min-w-0 break-keep px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{program.name}</span>
-            <span className="hidden whitespace-nowrap px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{program.targetAge || "-"}</span>
+            <span className="hidden break-keep px-2 py-1.5 text-[var(--color-academy-muted)] md:block">{program.targetAge || "-"}</span>
             {/* 요일: 칸마다 한 글자 칩(주말은 경고색) */}
             <span className="hidden whitespace-nowrap px-2 py-1.5 md:block">
                 {days.length === 0 ? <span className="text-[var(--color-academy-muted)]">-</span> : (
