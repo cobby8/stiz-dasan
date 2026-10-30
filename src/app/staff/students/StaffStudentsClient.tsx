@@ -52,11 +52,13 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
               <span className="min-w-0 flex-1 break-keep text-xs text-[var(--color-academy-muted)]">{student.classNames.join(", ")}</span>
               {student.parentPhone ? (
                 // 가장 많이 쓰는 «학부모에게 전화»는 목록에서 바로 — 행 열기와 섞이지 않게 전파 차단
+                // 게슈탈트 T-09: 행마다 반복되므로 tonal. 테마 버튼 여백이 아이콘 칸을 넘지 않게 padding 0
                 <a
                   href={`tel:${student.parentPhone}`}
                   aria-label={`학부모 ${student.parentName}에게 전화 ${student.parentPhone}`}
                   onClick={(event) => event.stopPropagation()}
-                  className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
+                  className="academy-button-tonal grid size-11 shrink-0 place-items-center rounded-xl"
+                  style={{ padding: 0 }}
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>
                 </a>

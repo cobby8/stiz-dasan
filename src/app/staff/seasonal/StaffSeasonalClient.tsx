@@ -114,7 +114,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
                   <button
                     type="button"
                     onClick={() => router.push(`/staff/sessions/${d.sessionId}`)}
-                    className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]"
+                    className="academy-button-primary flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-3 text-sm font-black"
                   >
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
                     수업 이어하기
@@ -137,11 +137,12 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
                   </span>
                 ) : (
                   // 시작 전(PLANNED 또는 세션 미생성): 수업 시작
+                  // 게슈탈트 T-09: 여러 행에 반복되므로 tonal. 꽉 찬 색은 하나뿐인 «수업 이어하기»에만.
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => startLesson(d)}
-                    className="flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)] disabled:opacity-50"
+                    className="academy-button-tonal flex min-h-11 shrink-0 items-center gap-1 rounded-xl px-3 text-sm font-black disabled:opacity-50"
                   >
                     <span className="material-symbols-outlined text-lg" aria-hidden="true">play_arrow</span>
                     {busy ? "시작 중…" : "수업 시작"}

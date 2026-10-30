@@ -118,8 +118,9 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
                   {bill.amount.toLocaleString("ko-KR")}원
                   {(bill.amountMismatch || blocked) && <span role="img" className="material-symbols-outlined ml-0.5 align-middle text-base text-[var(--color-academy-warning)]" aria-label={blocked ? "수납 확인 불가 — 상세에서 사유 확인" : "청구서 금액 다름"}>warning</span>}
                 </span>
+                {/* 게슈탈트 T-09: 행마다 반복되는 작은 작업은 옅은 tonal(꽉 찬 색은 화면의 주인공 하나만) */}
                 {canRequest(bill) && (
-                  <button type="button" onClick={(event) => { event.stopPropagation(); openRequest(bill); }} aria-label={`${bill.studentName} 납부 확인 요청`} className="min-h-11 shrink-0 rounded-xl bg-[var(--brand-accent)] px-3 text-sm font-black text-[var(--brand-accent-contrast)]">
+                  <button type="button" onClick={(event) => { event.stopPropagation(); openRequest(bill); }} aria-label={`${bill.studentName} 납부 확인 요청`} className="academy-button-tonal min-h-11 shrink-0 rounded-xl px-3 text-sm font-black">
                     요청
                   </button>
                 )}
