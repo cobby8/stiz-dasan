@@ -12,6 +12,7 @@ import { deliveryStatusText, type DeliveryStatusSummary } from "@/lib/parent-sta
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
@@ -218,15 +219,15 @@ export default function StaffHomeClient({
         </div>
       ) : focusClass ? (
         <>
-          {runningClass && (
-            <p role="status" className="rounded-2xl bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              현재 수업을 종료한 뒤 다음 수업을 시작할 수 있습니다.
-            </p>
-          )}
           <section>
             <p className="mb-2 text-sm font-black text-gray-500">{focusClass.sessionStatus === "IN_PROGRESS" ? "현재 수업" : "다음 수업"}</p>
             {/* 다음 수업을 짧게 읽고 바로 시작할 수 있도록 밝은 카드에 핵심을 모읍니다. */}
-            <article className="academy-focus-class overflow-hidden rounded-3xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
+            {/* 게슈탈트 T-08: 진행 중 카드는 주황 테두리 2px 로 «지금 이것» 을 구분한다(별도 경고 상자 대신).
+                테마의 .academy-focus-class 가 테두리를 1px 로 덮어쓰므로 진행 중일 때만 style 로 지정한다. */}
+            <article
+              className="academy-focus-class overflow-hidden rounded-3xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+              style={focusClass.sessionStatus === "IN_PROGRESS" ? { border: "2px solid var(--brand-accent)" } : undefined}
+            >
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -250,6 +251,12 @@ export default function StaffHomeClient({
                     <span className="material-symbols-outlined">{focusClass.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
                     {focusClass.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : "수업 시작"}
                   </button>
+                  {/* 다른 수업 시작 잠금 안내 — 버튼 바로 아래 한 줄(근접성). 잠금 동작 자체는 openPrimaryAction 그대로. */}
+                  {runningClass && (
+                    <p role="status" className="text-xs font-bold text-[var(--color-academy-muted)]">
+                      현재 수업을 종료한 뒤 다음 수업을 시작할 수 있습니다.
+                    </p>
+                  )}
                   <details className="rounded-xl bg-[var(--color-academy-surface)]">
                     <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold text-[var(--color-academy-muted)]">수업 준비·관리</summary>
                     <div className="grid grid-cols-2 gap-2 p-2" aria-label="수업 빠른 메뉴">
@@ -356,6 +363,8 @@ function SummaryItem({ label, value, accent = false }: { label: string; value: n
 
 function StatusBadge({ status, inverted = false }: { status: StaffTodayClass["sessionStatus"]; inverted?: boolean }) {
   const text = status === "COMPLETED" ? "완료" : status === "IN_PROGRESS" ? "수업 중" : "시작 전";
+  // 게슈탈트 T-07: «수업 중»은 수업 진행 화면·기사님 «운행 중»과 같은 진행 알약(주황 채움 + 진행 점)
+  if (status === "IN_PROGRESS") return <LiveStatusPill>{text}</LiveStatusPill>;
   return <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${status === "IN_PROGRESS" ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : inverted ? "bg-white/10 text-gray-200" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}>{text}</span>;
 }
 
