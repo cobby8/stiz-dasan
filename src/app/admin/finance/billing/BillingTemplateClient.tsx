@@ -15,6 +15,7 @@ const TYPE_LABELS: Record<string, string> = {
     MONTHLY: "월 수강료",
     SHUTTLE: "셔틀",
     UNIFORM: "유니폼",
+    SPECIAL: "특강",
     OTHER: "기타",
 };
 

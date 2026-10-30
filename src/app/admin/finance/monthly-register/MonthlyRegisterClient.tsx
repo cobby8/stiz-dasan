@@ -138,7 +138,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
 
   function chooseTarget() {
     if (posting.current) return;
-    if (!studentId.trim() || !/^\d{4}-\d{2}$/.test(month)) { setError("학생 ID와 적용 월을 입력해 주세요."); return; }
+    if (!studentId.trim() || !/^\d{4}-\d{2}$/.test(month)) { setError("원생 번호와 적용 월을 입력해 주세요."); return; }
     if (dirty && !window.confirm("저장하지 않은 편집을 버리고 다시 조회할까요?")) return;
     // 새 학생·월을 선택한 즉시 이전 응답과 저장 대상을 무효화한다.
     requestId.current += 1;
@@ -196,7 +196,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
 
   return <section className="space-y-5">
     <Link href="/admin/finance/monthly-ledger" className="underline">월별·반별 장부 점검으로 돌아가기</Link>
-    <header><h1 className="text-2xl font-bold">학생별 월 운영 장부</h1><p className="mt-2">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·Rallyz에는 반영하지 않습니다.</p></header>
+    <header><h1 className="text-2xl font-bold">학생별 월 운영 장부</h1><p className="mt-2">학생·월·반별 금액과 근거를 초안으로 작성하고 확인합니다. 청구·수납·문자·시트·랠리즈에는 반영하지 않습니다.</p></header>
     <div className="rounded border border-[var(--color-brand-orange-500)] p-4">이 화면의 확정은 장부 내용 확인입니다. 청구서 발행이나 운영 시스템 전환을 뜻하지 않습니다. 빈 금액과 날짜를 자동으로 채우지 않습니다.</div>
     <form onSubmit={(event) => { event.preventDefault(); chooseTarget(); }} className="flex flex-wrap items-end gap-3">
       <label className="grid gap-1">원생 번호<input value={studentId} disabled={saving || Boolean(preview)} onChange={(event) => setStudentId(event.target.value)} className="rounded border p-2" /></label>
@@ -225,7 +225,6 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
         }}><option value="">반을 선택해 주세요</option>{view.candidates.filter((candidate) => !editor.classes.some((row) => row.classId === candidate.classId)).map((candidate) => <option key={candidate.classId} value={candidate.classId}>{candidate.className} (현재 {statuses[candidate.status as Row["status"]] ?? candidate.status})</option>)}</select></label>
         {editor.classes.map((row, index) => <div key={row.classId} className="space-y-3 rounded border p-4">
           <div className="flex items-center justify-between gap-3"><h3 className="font-bold">{index + 1}. {className(row.classId)}</h3><button type="button" className="rounded border px-3 py-1" onClick={() => setEditor((current) => ({ ...current, classes: current.classes.filter((_, i) => i !== index) }))}>초안에서 제외</button></div>
-          <p className="break-all text-xs">반 ID: {row.classId}</p>
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">이번 달 상태<select className="rounded border p-2" value={row.status} onChange={(event) => patchRow(index, { status: event.target.value as EditorRow["status"] })}><option value="">상태를 선택해 주세요</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <label className="grid gap-1">실제 시작일<input type="date" className="rounded border p-2" value={row.periodStart} onChange={(event) => patchRow(index, { periodStart: event.target.value })} /></label>
@@ -248,7 +247,7 @@ export default function MonthlyRegisterClient({ initialStudentId, initialMonth }
       {preview && <section aria-label="작업 미리보기" className="space-y-3 rounded border-2 border-[var(--color-brand-orange-500)] p-4">
         <h2 className="text-lg font-bold">{actions[preview.action]} 전 최종 확인</h2>
         <p>{view.studentName} · {preview.target.month} · 기준 버전 {preview.version}</p><p className="break-all text-xs">원생 번호: {preview.target.studentId}</p>
-        {preview.payload.classes.map((row) => <div key={row.classId} className="border-b pb-2"><p>{className(row.classId)} · {statuses[row.status]} · {row.periodStart} ~ {row.periodEnd}</p><p className="break-all text-xs">반 ID: {row.classId}</p><p>기본 {money(row.baseAmount)} − 할인 {money(row.discountAmount)} − 이월 {money(row.carryAmount)} − 일할 {money(row.prorationAmount)} = {money(preview.totals.rows.find((item) => item.classId === row.classId)?.amount ?? 0)}</p><p>근거: {row.basis}</p></div>)}
+        {preview.payload.classes.map((row) => <div key={row.classId} className="border-b pb-2"><p>{className(row.classId)} · {statuses[row.status]} · {row.periodStart} ~ {row.periodEnd}</p><p>기본 {money(row.baseAmount)} − 할인 {money(row.discountAmount)} − 이월 {money(row.carryAmount)} − 일할 {money(row.prorationAmount)} = {money(preview.totals.rows.find((item) => item.classId === row.classId)?.amount ?? 0)}</p><p>근거: {row.basis}</p></div>)}
         <p>월 셔틀비 {money(preview.payload.shuttleAmount)} · {preview.payload.shuttleBasis}</p><p>작업 사유: {preview.reason}</p>
         <p className="font-bold">수강료 합계 {money(preview.totals.tuitionAmount)} + 월 셔틀비 {money(preview.totals.shuttleAmount)} = 월 총액 {money(preview.totals.totalAmount)}</p>
         <p>장부에만 기록하며 청구서 발행·수납·문자 발송은 하지 않습니다.</p>

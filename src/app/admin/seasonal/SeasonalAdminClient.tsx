@@ -298,6 +298,8 @@ const STATUS_LABEL: Record<string, string> = {
   DRAFT: "작성 중", PUBLISHED: "모집 중", OPEN: "모집 중", CLOSED: "모집 마감", ARCHIVED: "보관",
   PENDING: "승인 대기", APPROVED: "승인", PAYMENT_PENDING: "결제 대기", CONFIRMED: "최종 확정", WAITLISTED: "대기", REJECTED: "반려", CANCELLED: "취소",
   PAID: "결제 완료", UNPAID: "미결제", REQUESTED: "요청", ASSIGNED: "배정 완료", UNASSIGNED: "미배정",
+  // 청구서 상태(같은 표시 칸에서 쓰임)
+  OVERDUE: "연체", CANCELED: "취소", REFUNDED: "환불",
 };
 
 const NOTIFICATION_ERROR_LABEL: Record<string, string> = {

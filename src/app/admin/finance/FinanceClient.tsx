@@ -165,6 +165,7 @@ const TYPE_LABELS: Record<string, string> = {
     MONTHLY: "수강료",
     SHUTTLE: "셔틀",
     UNIFORM: "유니폼",
+    SPECIAL: "특강",
     OTHER: "기타",
 };
 
@@ -174,6 +175,10 @@ const METHOD_LABELS: Record<string, string> = {
     CASH: "현금",
     BANK_TRANSFER: "계좌이체",
     UNPAID: "미납",
+    // 아래는 다른 경로(온라인 결제·직접 입력)로 저장되는 값 — 화면 이름만 붙인다
+    TRANSFER: "계좌이체",
+    TOSS: "토스",
+    MANUAL: "직접 처리",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -220,7 +225,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function getPaymentModeLabel(status: PaymentProviderStatus) {
-    if (status.provider === "CAFE24_BRIDGE") return status.cafe24BridgeReady ? "본사 결제 링크" : "브리지 준비 필요";
+    if (status.provider === "CAFE24_BRIDGE") return status.cafe24BridgeReady ? "본사 결제 링크" : "본사 결제 연결 준비 필요";
     if (status.keyMode === "test") return "테스트 결제";
     if (status.keyMode === "live") return "실거래 결제";
     if (status.keyMode === "mixed") return "키 종류 불일치";
@@ -1026,10 +1031,10 @@ export default function FinanceClient({
     ).length;
     const paymentProviderMissing = [
         paymentProvider.provider === "CAFE24_BRIDGE" && !paymentProvider.cafe24BridgeUrlConfigured
-            ? "본사 카페24 브리지 URL"
+            ? "본사 카페24 결제 연결 주소"
             : null,
         paymentProvider.provider === "CAFE24_BRIDGE" && paymentProvider.cafe24BridgeUrlConfigured && !paymentProvider.cafe24BridgeUrlValid
-            ? "본사 카페24 브리지 URL 형식"
+            ? "본사 카페24 결제 연결 주소 형식"
             : null,
         paymentProvider.provider === "CAFE24_BRIDGE" && !paymentProvider.cafe24BridgeSecretConfigured
             ? "본사 연동 서명키"
@@ -1270,11 +1275,11 @@ export default function FinanceClient({
                     <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <p>온라인 결제 상태: {paymentProvider.providerReady ? `${paymentProvider.providerLabel} 온라인 결제를 사용할 수 있습니다.` : `준비 필요${paymentProviderMissing.length > 0 ? `: ${paymentProviderMissing.join(", ")}` : ""}`}</p>
                         <p>복귀 주소: {paymentProvider.siteUrlValid ? "준비됨" : "확인 필요"}</p>
-                        <p>콜백/웹훅 주소: {paymentProvider.webhookUrl ? "등록 가능" : "사이트 주소 필요"}</p>
+                        <p>결제 결과 알림 주소: {paymentProvider.webhookUrl ? "등록 가능" : "사이트 주소 필요"}</p>
                     </div>
                     {paymentProvider.webhookUrl && (
                         <p className="mt-2 break-all font-mono text-xs">
-                            {paymentProvider.providerLabel} 콜백/웹훅 등록 주소: {paymentProvider.webhookUrl}
+                            {paymentProvider.providerLabel} 결제 결과 알림 등록 주소: {paymentProvider.webhookUrl}
                         </p>
                     )}
                 </details>

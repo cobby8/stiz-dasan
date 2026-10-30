@@ -1,5 +1,5 @@
 "use client";
-import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
@@ -1477,7 +1477,7 @@ export default function StudentDetailClient({
                                                             )}
                                                         </p>
                                                         <p className="mt-0.5 text-xs text-gray-400">
-                                                            {p.method ? `${p.method} · ` : ""}
+                                                            {p.method ? `${paymentMethodLabel(p.method)} · ` : ""}
                                                             {p.paidDate ? `${toDateStr(p.paidDate)} 납부` : "미납부"}
                                                         </p>
                                                         {p.invoiceCheckoutUrl && (

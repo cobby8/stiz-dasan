@@ -7,7 +7,7 @@ import type { MonthlyClassLedgerResult } from "@/lib/billing/monthly-class-ledge
 
 const PAGE_SIZE = 50;
 const money = (value: number | null) => value === null ? "기록 없음" : `${value.toLocaleString("ko-KR")}원`;
-const types: Record<string, string> = { MONTHLY: "수강료", SHUTTLE: "셔틀", UNIFORM: "유니폼", OTHER: "기타" };
+const types: Record<string, string> = { MONTHLY: "수강료", SHUTTLE: "셔틀", UNIFORM: "유니폼", SPECIAL: "특강", OTHER: "기타" };
 const statuses: Record<string, string> = {
   PAID: "납부", PENDING: "납부 대기", OVERDUE: "미납", CANCELED: "취소", CANCELLED: "취소", REFUNDED: "환불",
 };
@@ -69,7 +69,7 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
         </label>
         <label className="grid gap-1">학생·반 검색
           <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }}
-            placeholder="학생명, 반 또는 학생 ID" className="rounded border p-2" />
+            placeholder="학생명, 반 또는 원생 번호" className="rounded border p-2" />
         </label>
         <button type="button" disabled={loading} onClick={() => setAttempt((value) => value + 1)}
           className="rounded border px-4 py-2 disabled:opacity-50">다시 조회</button>
@@ -86,7 +86,7 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
           </div>
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full min-w-[850px] text-left text-sm">
-              <caption className="p-3 text-left">검색 결과 {filtered.length}행 · 각 행은 학생 ID·조회 월·반 ID로 구분합니다.</caption>
+              <caption className="p-3 text-left">검색 결과 {filtered.length}행 · 각 행은 학생·조회 월·반으로 구분합니다.</caption>
               <thead><tr>
                 {["학생 / 반", "수강료 기록", "셔틀 기록", "기타 기록", "납부 / 대기", "확인할 내용"].map((label) => <th key={label} className="border-b p-3">{label}</th>)}
               </tr></thead>
@@ -108,7 +108,6 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
                       <ul>{row.payments.map((payment) => <li key={payment.id} className="mt-2">
                         {types[payment.type] ?? payment.type} · {statuses[payment.status] ?? payment.status} · {money(payment.amount)}
                         {!payment.includedInTotals && " (합산 제외)"}
-                        <p className="break-all text-xs">기록 ID: {payment.id}</p>
                       </li>)}</ul>
                     </details>}
                   </td>
