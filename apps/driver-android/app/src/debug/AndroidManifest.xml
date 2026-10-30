@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".AttachmentFixtureActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="true">
+            <!-- Development callback only. Release requires separately verified HTTPS App Links. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="stiz-academy-android-dev" android:host="auth" android:path="/return" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

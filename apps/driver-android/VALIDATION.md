@@ -1,5 +1,17 @@
 # 안드로이드 검증 기록 — 2026-10-19
 
+## 2026-10-28 격리 시험 환경 연결
+
+- `SANDBOX.md` 정본. 별도 `.sandbox` debug, 정확한 private HTTPS8453·새 공개CA만 신뢰, 외부 요청·실제 인증·GPS 수집/전송 차단을 추가했다. release 기본값은 보존했다.
+- 실제 Java321조건, Gradle 위험 설정 거부7건, 일반 debug/release 회귀 및 최종 sandbox debug/release/androidTest/lint offline 빌드 성공. 산출물 격리24조건 통과, lint 오류0/경고9.
+- 이 결과는 준비 코드·산출물 검증이며 실제 기기 설치·TLS·사진·운행 성공 증거가 아니다. 기기·운영·원격 빌드·정식 서명 변경 없음.
+
+## 2026-10-28 사진·개발용 인증 후속
+
+- `MEDIA_AUTH_FOLLOWUP.md` 정본. JVM 파일 정책55·인증 정책42·탐색75·시작33·표본13 통과.
+- debug/unsigned release/androidTest/Lint 로컬 빌드 성공, 오류0·경고8(새 debug fixture JS 경고1 포함). 개발 옵션 true에서 debug true/release false를 생성 BuildConfig로 확인했다. 기본 옵션을 복원한 최종 산출물을 보관한다.
+- 설치·사진/카메라/로그인 실제 조작·운영 업로드·서명·원격 실행은 하지 않았다. 기기 UI와 WebView FileList 통합은 미검증으로 남긴다.
+
 ## 2026-10-27 G1 통합 앱 기반 검증
 
 현재 구현 범위는 `UNIFIED_FOUNDATION.md`를 기준으로 한다. 아래 10월19일 실기기 기록과 이 새 기반의 검증을 구분한다.

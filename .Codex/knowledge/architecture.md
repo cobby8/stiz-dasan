@@ -1,5 +1,10 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-10-28 앱 첨부·개발 인증 인계
+- 서버 auth/native·lib/native-auth는 개발 전용 일회용 원장과 공급자 브라우저 세션을 분리한다. 로컬 SQL만 준비하고 기본 비활성·production 거부, 기존 웹 OAuth는 유지한다.
+- native-session-cookies는 권한이 아닌 보호 표식이다. Supabase server/middleware 갱신·이동 응답에서 앱 쿠키 보호만 유지한다. Android WebFileChooser/NativeAuthController, iOS NativeAuthCoordinator가 플랫폼 연결을 소유한다.
+- 정본 docs/native-app-media-auth-followup.md. 실제 첨부/runtime·새 Swift 컴파일은 빌드/정적 구성과 구분한다.
+
 ## 2026-10-22 공개 게시일·신청·이동 표시
 - 2026-10-25 Home는 PublicSiteTheme의 선택적 publicScope=true로 첫 HTML의 공개 스타일을 확정한다. 나머지 호출부는 기존 usePathname/공개 경로 판별을 유지하며 전역 RootLayout에는 범위를 추가하지 않는다.
 - `useHeaderMenuFit`는 기존 헤더 DOM의 실제 크기를 관찰하고 `navigation/headerFit.ts`가 가용 폭·합계·작은 경계 여유로 모드를 정한다. Header는 표시·inert/aria-hidden·data-menu-layout를 함께 반영한다. 계정 조회·권한·메뉴 항목·Guide 기존 단계 구조는 유지한다.
@@ -352,3 +357,7 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - iOS UIKit/WKWebView 프로젝트는 apps/stiz-ios, 수동 무서명 Codemagic 구성은 루트 codemagic.yaml. 실제 빌드·서명·스토어 제출은 분리한다.
 - /account·/account/withdraw는 자녀 유무와 무관한 직접 Auth 바인딩 본인 관리다. 서버 액션 자체가 최신 대상/역할/요청을 재확인하며 업무 이력은 보존한다.
 - 정본 docs/native-app-foundation.md, docs/stiz-ios-codemagic.md 및 apps/driver-android/UNIFIED_FOUNDATION.md.
+## 2026-10-28 네이티브 기기용 합성 HTTPS 환경
+- `scripts/native-device-sandbox.mjs` 및 `scripts/lib/native-device-sandbox-{policy,fixtures,build}.mjs`: 실제 클라이언트만 별도 번들, 서버 액션·Prisma/Supabase/알림은 제외하고 새 합성 props/메모리 첨부만 처리한다. 기존 Next 서비스·운영 DB를 실행하거나 프록시하지 않는다.
+- 실행별 `.tmp/native-device-sandbox/run-...`에 원본/산출물 해시·새 로컬 CA/leaf TLS를 두며, 시작 전 해시·정확한 origin·체인을 검사한다. localhost:8453 및 명시 RFC1918 IPv4만 바인딩한다. CA 비밀키는 발급 후 폐기, 앱에는 공개 CA만 전달한다.
+- Android debug 별도 `.sandbox` 패키지·CAonly 신뢰·운영 인증/GPS 차단, iOS DEBUG 명시 origin·임시 WebKit 저장소·차단규칙 설치 전 로드 금지. Release의 기존 운영 정책은 보존한다. 정본 docs/native-device-sandbox.md 및 각 앱 SANDBOX.md.

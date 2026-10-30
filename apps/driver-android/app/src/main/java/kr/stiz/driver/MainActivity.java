@@ -17,6 +17,8 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private WebView web;
+    private WebFileChooser fileChooser;
+    private NativeAuthController nativeAuth;
     private boolean visible;
     private final PendingRunStart pendingStart = new PendingRunStart();
     private boolean consentDialogOpen;
@@ -61,8 +63,19 @@ public final class MainActivity extends Activity {
     static boolean trustedAppPage(Uri uri) {
         return uri != null && AppNavigationPolicy.isAppPage(BuildConfig.STIZ_ORIGIN, uri.toString(), BuildConfig.STIZ_UNIFIED_APP);
     }
+    private static boolean needsAccountRunHandoff(String url) {
+        return !BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, url);
+    }
+    private static WebResourceResponse sandboxDenied() {
+        return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
+    }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        if (BuildConfig.STIZ_SANDBOX && (!BuildConfig.DEBUG || !AppNavigationPolicy.sandboxOrigin(BuildConfig.STIZ_ORIGIN)
+            || !WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
+            || !WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST))) {
+            TextView message = new TextView(this); message.setText("격리시험 주소 또는 Android System WebView의 안전한 연결 기능을 확인해 주세요."); setContentView(message); return;
+        }
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             TextView message = new TextView(this); message.setText("Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
         }
@@ -70,6 +83,19 @@ public final class MainActivity extends Activity {
             TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
         }
         web = new WebView(this); web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        if (BuildConfig.STIZ_SANDBOX) {
+            web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
+                && WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST)) {
+                androidx.webkit.ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(new androidx.webkit.ServiceWorkerClientCompat() {
+                    @Override public WebResourceResponse shouldInterceptRequest(WebResourceRequest request) {
+                        return AppNavigationPolicy.sandboxRequestAllowed(BuildConfig.STIZ_ORIGIN, request.getUrl().toString()) ? null : sandboxDenied();
+                    }
+                });
+            }
+        }
+        fileChooser = new WebFileChooser(this, web);
+        nativeAuth = new NativeAuthController(this, web);
         web.getSettings().setJavaScriptEnabled(true); web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false); web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -102,18 +128,21 @@ public final class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 if (!request.isForMainFrame()) return !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, uri.toString());
+                if (!unfinishedRun && nativeAuth.begin(uri, request.hasGesture())) return true;
                 if (trustedAppPage(uri)) { navigateSafely(uri); return true; }
                 // External navigation only follows an explicit phone/map action. Arbitrary intents are never parsed.
-                if (AppNavigationPolicy.externalActionAllowed(uri.toString(), request.hasGesture())) {
+                if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(uri.toString(), request.hasGesture())) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
                     catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·지도 앱을 설치해 주세요."); }
                 } else showAppMessage("이 주소는 앱에서 열 수 없습니다. 본인인증·외부 로그인은 앱 연결 준비 후 사용할 수 있습니다.");
                 return true;
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                if (BuildConfig.STIZ_SANDBOX && !AppNavigationPolicy.sandboxRequestAllowed(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())) return sandboxDenied();
+                boolean nativeConsume = request.isForMainFrame() && nativeAuth.takeConsumePermission(request.getUrl(), request.getMethod());
                 if (request.isForMainFrame() && (!trustedAppPage(request.getUrl())
-                    || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
-                    || AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())
+                    || (!nativeConsume && AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString()))
+                    || needsAccountRunHandoff(request.getUrl().toString())
                     || !AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, request.getUrl().toString(), unfinishedRun, activeRunToken))) {
                     return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Collections.emptyMap(), new java.io.ByteArrayInputStream(new byte[0]));
                 }
@@ -124,12 +153,23 @@ public final class MainActivity extends Activity {
                 super.doUpdateVisitedHistory(view, url, isReload);
             }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                fileChooser.documentStarted();
+                nativeAuth.documentStarted(url);
                 if (!trusted(Uri.parse(url)) || !pageToken().equals(pendingStart.token())) pendingStart.cancel();
             }
-            @Override public void onPageFinished(WebView view, String url) { checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
-            @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); }
+            @Override public void onPageFinished(WebView view, String url) { nativeAuth.documentFinished(url); checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) nativeAuth.consumeFailed(request.getUrl());
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) nativeAuth.consumeFailed(request.getUrl());
+            }
+            @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); nativeAuth.consumeFailed(error.getUrl() == null ? null : Uri.parse(error.getUrl())); }
         });
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                return fileChooser.open(callback, params);
+            }
             @Override public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
                 showBrowserAuthPending(); return false;
             }
@@ -170,7 +210,7 @@ public final class MainActivity extends Activity {
     private void loadPageUnchecked(Uri uri) {
         if (web == null || isFinishing() || isDestroyed()) return;
         if (!trustedAppPage(uri) || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) return;
-        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showAccountRunPending(); return; }
+        if (needsAccountRunHandoff(uri.toString())) { showAccountRunPending(); return; }
         pendingStart.cancel();
         setContentView(web);
         web.loadUrl(uri.toString());
@@ -179,7 +219,7 @@ public final class MainActivity extends Activity {
     private void navigateSafely(Uri uri, boolean back) {
         if (web == null || isFinishing() || isDestroyed() || worker.isShutdown()) return;
         if (!trustedAppPage(uri)) return;
-        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showAccountRunPending(); return; }
+        if (needsAccountRunHandoff(uri.toString())) { showAccountRunPending(); return; }
         if (AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) { showBrowserAuthPending(); return; }
         worker.execute(() -> {
             try {
@@ -197,8 +237,10 @@ public final class MainActivity extends Activity {
         });
     }
     private void checkObservedNavigation(String url) {
+        if (fileChooser != null) fileChooser.navigation(url);
+        if (nativeAuth != null) nativeAuth.navigation(url);
         if (web == null || isFinishing() || isDestroyed() || !trustedAppPage(Uri.parse(url))) return;
-        if (AppNavigationPolicy.needsAccountRunHandoff(BuildConfig.STIZ_ORIGIN, url)) {
+        if (needsAccountRunHandoff(url)) {
             web.stopLoading();
             if (unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken));
             else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/staff/shuttle"));
@@ -238,6 +280,7 @@ public final class MainActivity extends Activity {
         runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) new AlertDialog.Builder(this).setTitle("스티즈 농구교실").setMessage(message).setPositiveButton("확인", null).show(); });
     }
     private void showBrowserAuthPending() {
+        if (BuildConfig.STIZ_SANDBOX) { showAppMessage("격리시험에서는 실제 로그인·본인인증을 연결하지 않습니다. 시험 역할 선택 화면을 이용해 주세요."); return; }
         runOnUiThread(() -> {
             if (isFinishing() || isDestroyed() || browserAuthDialogOpen) return;
             browserAuthDialogOpen = true;
@@ -273,6 +316,7 @@ public final class MainActivity extends Activity {
         return trusted(uri) ? AppNavigationPolicy.driverToken(BuildConfig.STIZ_ORIGIN, uri.toString()) : "";
     }
     private void handle(JSONObject request) throws Exception {
+        if (BuildConfig.STIZ_SANDBOX) { error("격리시험에서는 실제 위치를 수집하거나 운행을 전송하지 않습니다."); return; }
         String action = request.getString("action");
         if ("snapshot".equals(action)) { snapshot(); return; }
         if (!visible || !pageToken().equals(request.optString("token"))) { error("운행 화면에서 직접 다시 시도해 주세요."); return; }
@@ -321,6 +365,7 @@ public final class MainActivity extends Activity {
         }
     }
     private void launchRun(String token) {
+        if (BuildConfig.STIZ_SANDBOX) { error("격리시험에서는 실제 위치 공유를 시작하지 않습니다."); return; }
         if (!visible || token == null || !token.equals(pageToken())) { error("운행 화면에서 시작해 주세요."); return; }
         unfinishedRun = true; activeRunToken = token;
         try { startForegroundService(new Intent(this, DriverLocationService.class).setAction(DriverLocationService.START).putExtra("token", token)); }
@@ -341,6 +386,7 @@ public final class MainActivity extends Activity {
         }
     }
     private void snapshot() {
+        if (BuildConfig.STIZ_SANDBOX) return;
         if (DriverLocationService.instance != null) { DriverLocationService.instance.snapshot(); return; }
         final String token = pageToken();
         if (lastErrorDetail != null && token.equals(lastErrorToken)) { publish(lastErrorDetail); return; }
@@ -382,7 +428,11 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); visible = true; if (web != null) { web.onResume(); snapshot(); requestPermissionsAndStart(); } }
     @Override protected void onPause() { visible = false; if (web != null) web.onPause(); super.onPause(); }
-    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (fileChooser != null && fileChooser.result(requestCode, resultCode, data)) return;
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); if (fileChooser != null) fileChooser.cancel(); if (nativeAuth != null && nativeAuth.callback(intent.getData())) return; setIntent(intent); pendingStart.cancel(); clearError(); if (web != null && trustedAppPage(intent.getData())) navigateSafely(intent.getData());
         else if (web != null && unfinishedRun && !activeRunToken.isEmpty()) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken)); }
-    @Override protected void onDestroy() { pendingStart.cancel(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
+    @Override protected void onDestroy() { pendingStart.cancel(); if (fileChooser != null) fileChooser.destroy(); if (nativeAuth != null) nativeAuth.destroy(); if (Build.VERSION.SDK_INT >= 33 && backRegistered) getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback) backCallback); if (web != null) { unregisterReceiver(receiver); web.destroy(); web = null; } worker.shutdownNow(); super.onDestroy(); }
 }

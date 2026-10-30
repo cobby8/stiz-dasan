@@ -1,8 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isNativeSession, nativeSessionCookieOptions } from "@/lib/native-session-cookies";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const native = isNativeSession(request.cookies.getAll());
+  const redirectWithSession = (url: URL) => {
+    const response = NextResponse.redirect(url);
+    // 앱의 만료 갱신·로그아웃 쿠키가 로그인 이동 응답에서도 사라지지 않게 한다.
+    if (native) for (const cookie of supabaseResponse.cookies.getAll()) response.cookies.set(cookie);
+    return response;
+  };
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,7 +24,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            supabaseResponse.cookies.set(name, value, nativeSessionCookieOptions(options, native)),
           );
         },
       },
@@ -66,7 +74,7 @@ export async function updateSession(request: NextRequest) {
       url.searchParams.set("mode", "staff");
     }
     url.searchParams.set("redirect", requestedPath);
-    return NextResponse.redirect(url);
+    return redirectWithSession(url);
   }
 
   if ((pathname === "/login" || isStaffLogin) && isAuthenticated) {
@@ -91,7 +99,7 @@ export async function updateSession(request: NextRequest) {
     if (requestedPath && !isContinuePath(requestedPath)) {
       url.searchParams.set("redirect", requestedPath);
     }
-    return NextResponse.redirect(url);
+    return redirectWithSession(url);
   }
 
   return supabaseResponse;

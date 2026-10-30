@@ -1,8 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { isNativeSession, nativeSessionCookieOptions } from "@/lib/native-session-cookies";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const native = isNativeSession(cookieStore.getAll());
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,7 +17,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, nativeSessionCookieOptions(options, native))
             );
           } catch {
             // setAll은 Server Component에서 호출될 수 있음

@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "codex/stiz-app-codemagic": false
+    }
+  },
   "framework": "nextjs",
   "buildCommand": "npm run build:vercel",
   "fluid": true,

@@ -5,6 +5,23 @@ import java.net.URI;
 /** Pure URL/run-state policy, shared by navigation and the offline test suite. */
 final class AppNavigationPolicy {
     private AppNavigationPolicy() { }
+    static boolean sandboxOrigin(String origin) {
+        try {
+            URI uri = new URI(origin);
+            if (!"https".equals(uri.getScheme()) || uri.getPort() != 8453 || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+                || !(uri.getRawPath() == null || uri.getRawPath().isEmpty() || "/".equals(uri.getRawPath()))) return false;
+            String host = uri.getHost();
+            if ("localhost".equals(host)) return true;
+            if (host == null || !host.matches("(?:0|[1-9][0-9]{0,2})(?:\\.(?:0|[1-9][0-9]{0,2})){3}")) return false;
+            String[] parts = host.split("\\."); int[] n = new int[4];
+            for (int i = 0; i < 4; i++) { n[i] = Integer.parseInt(parts[i]); if (n[i] > 255) return false; }
+            return n[0] == 127 || n[0] == 10 || (n[0] == 172 && n[1] >= 16 && n[1] <= 31) || (n[0] == 192 && n[1] == 168);
+        } catch (Exception failure) { return false; }
+    }
+    // No external navigation or provider login is part of the synthetic-data sandbox.
+    static boolean sandboxRequestAllowed(String origin, String url) {
+        return sandboxOrigin(origin) && sameOrigin(origin, url) && !needsNativeAuthHandoff(origin, url);
+    }
     static boolean sameOrigin(String origin, String url) {
         try {
             URI expected = new URI(origin), target = new URI(url);

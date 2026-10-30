@@ -11,7 +11,8 @@ import org.json.JSONObject;
 /** Offline Android-runtime checks. Never calls the tracking API or obtains coordinates. */
 public final class DriverSmokeInstrumentation extends Instrumentation {
     private int checks;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private boolean mediaFixture;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); mediaFixture = arguments != null && "true".equals(arguments.getString("mediaFixture")); start(); }
     private void verify(boolean condition) { if (!condition) throw new AssertionError("check " + (checks + 1)); checks++; }
     @Override public void onStart() {
         Bundle result = new Bundle();
@@ -24,6 +25,12 @@ public final class DriverSmokeInstrumentation extends Instrumentation {
             }
         };
         try {
+            if (mediaFixture) {
+                int mediaChecks = AttachmentWebViewChecks.run(this);
+                result.putString("stream", "PASS " + mediaChecks + " synthetic real-WebView attachment checks; no network/location/camera UI");
+                finish(-1, result);
+                return;
+            }
             String origin = BuildConfig.STIZ_ORIGIN;
             verify(MainActivity.trusted(Uri.parse(origin + "/driver/test_token-123")));
             verify(MainActivity.trusted(Uri.parse(origin + "/driver/test/")));

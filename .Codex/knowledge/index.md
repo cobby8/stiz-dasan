@@ -1,5 +1,59 @@
 # STIZ Knowledge Index
 
+> 2026-10-29: 승인선택복귀일지우기 UI1파일로컬보완·실제React360/320·요청키true/false/true·사유보존·추가전송0·pending/uncertain차단·tsc/기존28통과. iPhone새번들/운영미반영·Drive별도, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 가로키보드신청버튼추가스크롤접근·닫힘750x354/세로402x750복원·가로0·사유유지. resumeemptyfalse/오늘날짜실물로빈값유지PASS보류·지우기UI후속계획. 네역할홈/역할선택복귀·운영0, errors/정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 빌드4한글키보드·합성사유/신청표시 독립PNG·계측통과. effective달력유지 사용자확인/resume326/right364/card385·사유유지/가로0·달력/회전대기. 신청0·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 복구후사진보관함합성PNG104수신1/저장0·실물/DOM/서버대조완료. 새effective날짜폭326/right364/card385·가로0·달력/키보드·resume검증대기. Drive Files비활성별도보류·운영0, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 재다운로드정지중시험서버PID부재/양쪽refused확정·같은run/CA숨김프로세스복구·health/PNG104정상. 실물timeout안내확인·재시도사용자대기, Drive비활성과별개/카운터재시작구분. errors갱신·정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 합성PNG Drive존재직접확인·정확사진accept메뉴루트실행후Files비활성재현. 문서오선택단정철회/원인미확정·합성사진보관함경로대기·개인사진열람0. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 저장후media복귀·파일선택취소upload0/stored0독립확인. 후속성공응답과PNG선택비활성/실수신0불일치로첨부성공보류·사진input재선택대기. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 새CA신뢰후빌드4 역할선택연결회복·실제iOS PNG104B공유창확인/뒤media유지. 로컬저장·선택/첨부·날짜미완료·사용자저장대기, upload/stored0·운영변경0. 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
+
+> 2026-10-29: 승인빌드4 USB설치·별도조회4 완료. 새CA신뢰전 -1202·안내글자 직접/독립확인, 사용자새CA신뢰대기·웹연결/다운로드/첨부/날짜 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
+
+> 2026-10-29: 같은 서명#4 finished111초/actual956·IPA0.1.0/4·독립ZIP/Info/프로파일/CMS/코드해시통과. strictTLS합성health200·외부작업차단, 설치/새CA신뢰/기기 실행 미검증. docs/stiz-ios-signed-device-validation.md 정본·본문5유지.
+
+> 2026-10-29: 사용자승인 5커밋95646eba까지검증브랜치푸시완료/원격main7f·운영dpl6ku불변. 수동서명#4(6ae213de206ce93970c6e66c)정확1회접수·actual956/M2/SSHoff·queued장비대기, Swift/IPA/설치/새CA신뢰미완료. 배포차단map값검사오판정정(설정불변), docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-29: 승인build4/이전1·2·3거부 + fullrunID CA명4파일·Python9/참조28/Node44·전체2600/학생5. 새run-7ef56c476e747a20 strictHTTPS13/독립14·최종date/PNG104 반영·현STIZ Codemagic프로파일읽기확인. BlobCSV2경로읽기만·push/remote/기기신뢰/설치/운영/TestFlight0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 부모실제키보드+사유/신청버튼표시확인·날짜2곳로컬폭보완/현재적용일임시대조391→364→복원391, tsc·신청31·독립diff. 새번들/복귀일/선택기/교사키보드미검증. 현재화면과새탐색성공구분·역할복귀미확인/연결정리, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 승인iOS다운로드4파일로컬구현·정적28/구성28·전체2599/학생5·독립QA, 실제Swift컴파일/설치/다운로드실기기0. HTTPSknownlen10MiB초기지원·BlobCSV미지원, 샘플104B Content-Length정정/독립HTTP·현재run보존/새prepare필요. 관리자세로복원완료·부모날짜6px돌출·Safari연결유실/개인picker0, docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 관리자iPhone실제가로/키보드 검색입력·주요버튼표시/가로넘침0·독립PNG와계측, 목록키보드뒤/세로복원대기. 샘플PNG링크저장창없이이미지문서이동·WKDownload미구현읽기조사/개인picker0, 실제첨부미검증·코드/운영/TestFlight0. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 동일이름CA2개 위OFF/아래ON USB확인·사용자둘다ON→새entry정상. iPhone빌드3 새격리환경 청구시트열닫/120000미납·검색1→0→1·취소차단/기존신청보존, 402x750가로0·entry복귀/연결종료. 원본제품수정0/아이콘이번정상·원인미확정, 사진/가로/키보드미검증. docs/stiz-ios-signed-device-validation.md 정본·지식본문5유지.
+
+> 2026-10-28: 승인격리상세5파일·출시문서정정. 실제청구/학생정보·원생검색·부모pending·합성PNG, 운영src변경0/쓰기차단. 전용15·전체2594/학생5·tsc·독립경계·새run strictTLS22, 아이폰새CA신뢰대기. 정본 docs/stiz-ios-signed-device-validation.md, 지식본문5유지.
+
+> 2026-10-28: USB설정화면STIZ CA전체신뢰OFF확인→사용자ON→앱재실행후-1202해소. 실제iPhone빌드3 네역할홈/역할선택복귀 PNG·독립눈검사/계측402x750 가로0 확인. docs/stiz-ios-signed-device-validation.md 정본, 로그인·저장·결제·GPS/배경/사진/가로회전검증과구분·운영/TestFlight0. 지식본문5유지.
+
+> 2026-10-28: 사용자USB직접확인승인으로iOS27.0.1 실제캡처/AX영역검사, 안내색13025d44 푸시·서명#3/6ae19790206ce93970c6bd61 finished72초. 전체2591/학생5·독립9/28/23/IPA서명. Coordinator48재시동복구후USB설치build3/직접실행PNG에서안내문구정상·-1202확인. docs/stiz-ios-signed-device-validation.md 정본, 인증서trust읽기대기·운영/TestFlight0, 지식본문5유지.
+
+> 2026-10-28: 서명빌드1 실제USB설치·독립대상조회0.1.0/1 완료, 앱blank·Safari연결유실로실행미검증. 사용자승인exactIP/안전오류안내0192ea28 푸시·서명#2 6ae1920b206ce93970c6bc2e 실행, 독립9/28/22·전체2590/학생5. docs/stiz-ios-signed-device-validation.md 정본. 기존서버종료오판철회/PID지속·health200, 원본Info/Release·운영/main/TestFlight 불변. 지식본문5 유지.
+
+> 2026-10-28: 사용자 승인으로 연결 iPhone16Pro 1대 등록·STIZ 전용 AdHoc 프로파일 생성 및 Codemagic 연결 완료. 4a24fa09/8d19749e 검증브랜치 푸시, 수동 서명#1 6ae0ed15206ce93970c693ed actual8d19749 finished100초·IPA111.22KB 정상다운로드. 독립28/8/18 및 전체2586/학생5 통과. docs/stiz-ios-signed-device-validation.md 정본. 실제 IPA 확보·설치 검증 진행 중, 운영/main·TestFlight 불변. Python 별칭 설치 함정·MSVC 종속성 기록, 지식본문5 유지.
+
+> 2026-10-28: 승인2커밋88f74d37/9dea3b21 검증브랜치푸시완료. 새#3 actual9dea·시작1회·Mac대기후finished84초·실제Swift38+13/새sandbox·Xcode양쪽아키텍처/서명NO·zip266.49KB. docs/stiz-ios-codemagic.md 및 stiz-ios-device-install-preparation.md 정본. Apple업턴랩스조직/기존STIZ등록ID·Codemagic팀서명항목확인, 기기등록/STIZ프로파일/설치/정식서명/운영/TestFlight0. 새UIruntime미검증·운영/main불변, 지식본문5유지.
+
+> 2026-10-28: 승인 격리 HTTPS 환경·양쪽 개발앱 origin 차단 구현. 정본 docs/native-device-sandbox.md, 실제UI 합성49원본/219761c0·서버12·전체2581/학생5·TLS/화면55·독립47+18·AndroidJava321/APK24·iOS구성28. 새 공개CA만 Android앱에 포함, 원격/기기/운영/배포/TestFlight0. 신규Swift컴파일·서명/설치·실제인증 미검증. 구조/결정/오류 갱신·지식본문5 유지.
+
+> 2026-10-28: 출시 문서·실기기 시험 준비·로컬 점검 승인. 통합앱1개 기준 정정, 정본 docs/native-device-release-readiness.md 및 scripts/native-release-readiness.mjs. 환경·키·DB·기기·네트워크 접근 없이 준비 상태만 구분, 독립 반례 검증 후 통합. decisions/errors 갱신, 지식 본문5개 유지. 서비스·서명·설치·원격빌드·운영배포·TestFlight 변경 없음.
+
+> 2026-10-28: 승인2커밋490637ed/1954bfd8 검증브랜치푸시·운영/main불변·배포차단. 새#2 actual1954/M2/SSHoff 시작1회 finished1분17초·실제Swift38+13/Xcode arm64/x86_64성공·zip233.80KB. 정본docs/stiz-ios-codemagic.md/.tmp/stiz-ios-build2. Apple서명/TestFlight/운영배포/추가실행없음.
+
+> 2026-10-28: 사진·개발용단회인증 로컬후속. 전체2556/학생5·인증쿠키28·독립PG39/Java172·iOS구성28·격리생산src946/212615d4일치. 정본 docs/native-app-media-auth-followup.md, 구조/결정/오류 갱신·지식본문5유지. 운영/푸시/원격/설치0, 가상기기실행정책차단·사진runtime/수정Swift미검증.
+
+> 2026-10-28: 승인 검증브랜치8546의 동일 Codemagic #1 finished 확인·Swift38/Xcode통과·simulator zip122.91KB. Chrome다운로드차단으로 파일내부/실행/기기 미검증. 새실행/서명/TestFlight/운영반영0, docs/stiz-ios-codemagic.md 및 .tmp/stiz-app-codemagic-run/ 정본.
+
 > 2026-10-27: 통합앱·공통계정 첫 그룹 구현/독립 검증. docs/native-app-foundation.md 정본, 전체2528/학생5·934소스격리build일치·PG24/iOS정적40/Java154/관찰자19. Codemagic STIZ 별도앱만 등록, 원격실행/푸시/배포0. 구조/결정/오류 갱신·지식본문5개 유지.
 
 > 2026-10-27: 사용자 명시 푸시·배포 승인으로61528427 main반영. 운영 자녀연결 활성값 없음(기본off), 전용MID미발급·새표미적용은유지. 코드배포 도메인/브라우저검증 실행정본 .tmp/child-connections-release/. 운영DB·발송·환경설정·기존BDR채널 변경 없음.

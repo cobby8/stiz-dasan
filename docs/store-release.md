@@ -1,173 +1,90 @@
-# 앱 스토어 출시 준비 (구글플레이 · 애플 앱스토어)
+# STIZ 통합 앱 스토어 출시 준비
 
-출시 주체: **업턴랩스** · 개발자 계정 결제 완료(2026-10-25 확인)
-대상: **통합 앱 하나** — 로그인하면 역할(학부모·선생님·기사님, 여러 개 가능)에 따라 화면이 열린다
-(원장 결정 2026-10-25). 웹으로 설치하는 기존 3개 PWA(`/mypage`·`/staff`·`/driver`)는 그대로 둔다.
+기준일: 2026-10-28 · 출시 주체: 업턴랩스 · **출시 준비 중, 제출·공개 미승인**
 
-> 이 문서는 **코드에서 확인한 사실**만 적는다. 확인하지 못한 항목은 「확인 필요」로 표시했다.
-> 추측으로 채우면 데이터 보안 양식에서 허위 신고가 되고, 그건 앱 삭제 사유다.
+2026-10-25 사용자 결정은 **STIZ 앱 하나에서 역할별 화면으로 이동**하는 방식이다. Android는 학부모·선생님·관리자·기사님, iOS는 학부모·선생님·관리자를 대상으로 한다. 기사님 운행폰은 Android만 사용한다. 기존 웹·PWA 설치 경로는 유지한다.
 
----
+이 문서는 현재 소스·검증 기록과 남은 조건을 구분한다. 10월 25일 개발자 계정 결제 완료 기록은 현재 조직·계약·게시 권한을 새로 확인한 결과가 아니다. 이번 문서 정정에서 운영 설정·실제 계정·비밀키는 조회하거나 변경하지 않았다.
 
-## 1. 수수료 — 수강료는 0%
+## 1. 현재 구현과 산출물
 
-| 파는 것 | 수수료 | 근거 |
+| 구분 | 확인한 사실 | 출시 전 남은 조건 |
 |---|---|---|
-| 수강료·셔틀비(오프라인 수업) | **0%** | 애플 3.1.3(e) 「앱 밖에서 소비되는 실물 서비스는 인앱결제를 쓰지 말 것」 / 구글 「실물 서비스(헬스장 멤버십 등)」 제외 |
-| 유니폼 등 실물 상품 | **0%** | 같은 조항 |
-| 앱 전용 디지털 구독 | 15~30% | **현재 그런 상품 없음.** 만들면 수강료와 분리할 것 |
+| Android | `apps/driver-android` WebView+위치 서비스 통합 기반. `/store-app` 진입, target/compile SDK 36, 최소 API 26 | 정식 패키지·업턴랩스 서명·스토어 소유 확인, 실제 설치·업데이트 |
+| Android 산출물 | 기본 debug `kr.stiz.driver.unified`, 이번 격리 APK `kr.stiz.driver.sandbox`, 0.1.0(1). release는 `kr.stiz.driver` unsigned | debug 자동 서명은 정식 배포 서명이 아님. 최종 식별자·서명 확정 필요 |
+| iOS | `apps/stiz-ios` UIKit/WKWebView, 개발용 `kr.stiz.academy.dev`, 최소 iOS 16, 0.1.0(1) | 정식 Bundle ID·Apple 팀·기기용 프로파일·서명 IPA |
+| iOS 컴파일 | Codemagic #2의 `1954bfd8`에서 실제 Swift 38+13·Xcode arm64/x86_64 성공, simulator zip 233.80KB 표시 | 시뮬레이터 UI·파일 내부·아이폰 설치 미검증. 이 zip은 아이폰용 IPA가 아님 |
+| 실행 차단 | 검증 브랜치 Vercel 자동 배포 차단, Codemagic 수동 실행, Apple 서명·업로드 단계 없음 | 추가 원격 빌드·설치·서명·운영 배포·TestFlight·제출은 각각 승인 필요 |
 
-⚠️ 앱 안에서 「다른 결제수단을 쓰세요」로 **유도하지 말 것**(애플 3.1.3 anti-steering, 미국 외
-스토어에 적용). 외부 브라우저로 내보내지 말고 앱 안에서 카드 결제창을 띄우는 방식이어야 한다.
-제출 시 Notes for Review 에 「오프라인 농구 수업료, 3.1.3(e) 해당」을 적는다.
+증거 정본: [앱 기반](native-app-foundation.md), [사진·인증 후속](native-app-media-auth-followup.md), [Codemagic](stiz-ios-codemagic.md). 실행할 시험과 차단 목록은 [실기기·출시 준비 원장](native-device-release-readiness.md)으로 관리한다. 과거 태블릿 잠금·T맵 각 약 3분 시험은 최신 통합 앱의 장시간 운행 성공 근거가 아니다.
 
----
+현재는 TWA/Bubblewrap 또는 PWABuilder로 새 앱을 만드는 방식이 아니다. `public/manifest-app.json`은 기존 PWA 메타데이터로 네이티브 빌드 설정을 대신하지 않는다. 모든 웹 페이지에 연결하면 기존 PWA 설치 영역과 충돌할 수 있으므로 현재 미연결 규칙을 유지한다.
 
-## 2. 구글플레이 데이터 보안 양식 — 코드 근거
+## 2. 수강료·셔틀비·실물 상품 결제
 
-### 수집하는 개인정보
+실제 학원에서 이용하는 수업·셔틀과 실물 유니폼은 앱 밖에서 소비되는 서비스·상품이다. Apple 3.1.3(e)와 Google의 실물 서비스 기준으로 외부 결제 방식 적용을 검토한다. **스토어 인앱결제를 사용하지 않는다는 것과 결제 수수료가 0원이라는 것은 다르다.** PG·카드·가맹 계약 비용은 별도다. [Apple 심사지침](https://developer.apple.com/app-store/review/guidelines/), [Google 결제 정책](https://support.google.com/googleplay/android-developer/answer/9858738?hl=en)
 
-| 항목 | 수집 | 어디서 | 용도 |
-|---|---|---|---|
-| 이름 | 예 | `User.name`, `Student.name` | 앱 기능(수강·출결 관리) |
-| 이메일 | 예 | `User.email` | 계정 관리 |
-| 전화번호 | 예 | `User.phone`, `Student.childPhone` | 앱 기능·연락 |
-| 주소 | 예 | `Student.address`, 셔틀 승하차 주소 | 셔틀 배차 |
-| **정확한 위치(GPS)** | **예** | `src/hooks/useGpsShare.ts` · `src/lib/shuttle/driverGpsController.ts` (`watchPosition`) | **기사님 앱의 실시간 운행 위치 공유** |
-| 대략적 위치 | 예 | `LocationPickerModal` 의 「현재 위치」(`getCurrentPosition`) | 셔틀 승하차 지점 선택 |
-| 사진·동영상 | 예 | 수업 사진 업로드(`/staff/quick-post`), 갤러리 | 수업 기록·공유 |
-| 기기 식별자 | 예 | `PushSubscription.endpoint` | 푸시 알림 |
+이전 문서의 ‘외부 브라우저 결제는 항상 금지’ 안내는 적용하지 않는다. 실제 상품과 결제 제공자가 지원하는 이동 방식으로 결제 앱·브라우저 왕복을 검증한다. 디지털 강의·유료 앱 기능을 새로 판매하면 해당 상품 정책을 별도로 검토한다.
 
-> 🚨 **정확한 위치를 빠뜨리지 말 것.** 기사님 앱이 `watchPosition` 으로 실시간 위치를
-> 서버에 올린다(`/api/driver/location`). 양식에 신고하지 않으면 정책 위반이다.
-> 「앱 기능」 용도, 「공유 안 함」, 「선택적」(기사님이 공유 버튼을 눌러야 시작)으로 신고한다.
+- Toss 온라인 운영 키는 마지막 사용자 확인에서 미발급이었다. 이번 작업에서 메일·운영 환경으로 발급 여부를 새로 확인하지 않았다.
+- 단말기·심사용 키 또는 Cafe24 설정으로 임의 대체하지 않는다.
+- 납부 완료는 서버 승인 재조회로만 표시한다. 취소·망 단절·중복 탭·앱 종료/복귀를 시험한다.
+- 청구서 생성과 보호자 전달은 별도 결과다. 실제 발행·발송·결제·환불은 대상·기간·금액·수신자 승인 후 실행한다.
 
-### 제3자 전송 (코드에서 확인된 외부 호출)
+## 3. 인증·가족 연결·계정 삭제
 
-| 대상 | 무엇이 나가나 | 비고 |
+| 항목 | 현재 상태 | 남은 조건 |
 |---|---|---|
-| SOLAPI (`api.solapi.com`) | 전화번호·문자 내용 | 문자 발송 위탁 |
-| 토스페이먼츠 (`api.tosspayments.com`) | 결제 정보 | **현재 키 없어 미사용** |
-| Google (`googleapis.com`, `calendar.google.com`, `docs.google.com`) | 일정·시트 데이터 | 연간일정·시간표 |
-| Meta (`graph.instagram.com`, `graph.facebook.com`) | 갤러리 게시물 | 인스타 연동 |
-| Gemini | 문의 문장 등 | 카카오 정책 답변(기본 꺼짐) |
-| Supabase | 전체 데이터 | DB·스토리지·인증 |
+| 소셜 로그인 | 웹은 실제 Supabase 제공자 설정으로 버튼·시작 경로 판정. 네이버만 기존 별도 설정 | 오래된 `NEXT_PUBLIC_APPLE_LOGIN_ENABLED` 절차는 사용하지 않음. 실제 공급자·앱 복귀 시험 |
+| 앱 인증 인계 | 일회용 개발용 코드·취소·만료 처리 구현, 기본 비활성·운영 강제 차단 | 격리 HTTPS 환경·운영용 설계·복귀·세션 갱신·로그아웃 |
+| STIZ 본인인증 | 마지막 사용자 확인에서 전용 이니시스 MID/apikey 미발급 | 전용 채널·고지·실기기 인증. BDR 공용 채널 임의 변경 금지 |
+| 가족 연결 | 기존 부모 정확한 이름·연락처 일치 후 요청·승인 모델, 새 기능 마지막 운영 확인 비활성 | 실제 알림 전달·실패/재시도·미확인 표시 미연결. 요청 DB 생성만 전달 완료로 보지 않음 |
+| 자녀 보호 | 미성년자는 부모 없는 학원 승인 우회 통로를 만들지 않음. 성인 본인 연결 별도 | 잘못된 가족·자녀 없음·다중 역할·권한 회수 실기기 검증 |
+| 계정 삭제 | 공통 `/account/withdraw`, 기존 학부모 경로와 관리자 검토 화면 존재 | 자녀 없는 계정·전 역할 접근, 실제 인증 해제·잔여 세션 차단·보관 예외·처리 실패·관리자 권한 이관 |
 
-> 「확인 필요」: 위 대상들이 구글 기준으로 **처리 위탁**인지 **공유**인지. 위탁이면 "공유 안 함"으로
-> 신고할 수 있으나, 판단이 애매하면 보수적으로 신고하는 편이 안전하다.
+계정 삭제 후보 URL은 `https://www.stiz-dasan.kr/account/withdraw`, 개인정보처리방침은 `https://www.stiz-dasan.kr/privacy`다. 제출 전 앱 밖에서 찾을 수 있는 삭제 요청 안내와 인증 후 처리 경로를 확인한다. 로그인 화면만 존재한다고 웹 삭제 요건 통과로 표시하지 않는다. [Google 계정 삭제](https://support.google.com/googleplay/android-developer/answer/13327111?hl=en-EN), [Apple 계정 삭제](https://developer.apple.com/support/offering-account-deletion-in-your-app/)
 
-### 보안·권리
+Apple 4.8 로그인 요건은 실제 로그인·서비스 유형과 예외로 판단한다. 모든 교육 앱에 Apple 로그인이 무조건 필수라고 단정하지 않는다. 실제 제공자 설정·Apple 준비는 별도 승인 작업에서 수행한다. [Apple 심사지침](https://developer.apple.com/app-store/review/guidelines/)
 
-- 전송 중 암호화: **예** (전 구간 HTTPS)
-- 데이터 삭제 요청: **예** — `/mypage/withdraw`
-- 계정 삭제 URL(양식 입력란): **`https://stiz-dasan.kr/mypage/withdraw`**
-- 개인정보처리방침 URL: **`https://stiz-dasan.kr/privacy`**
+## 4. 개인정보 신고 준비 원장
 
----
+아래는 신고 완료표가 아니다. 출시 버전의 실제 활성 기능·위탁 계약·보관 기간을 대조해 Play 데이터 보안과 App Privacy 답안을 확정한다.
 
-## 3. TWA 앱 껍데기 (안드로이드)
+| 데이터 | 확인된 코드 용도 | 추가 확인 |
+|---|---|---|
+| 이름·이메일·연락처·주소 | 계정·학생·가족 연결·셔틀 | 필수/선택·계정 연결·보관/삭제·아동 자료 접근 |
+| 정확한 위치 | 기사 운행 공유·승하차 위치 선택 | 네이티브 서비스와 웹 위치 모두 포함. 수집 역할·시점·전달·보관 |
+| 사진·동영상 | 수업 게시물·리포트·갤러리 | 학생 촬영 동의·공유 대상·삭제 |
+| 음성 | 선생님 음성 입력→서버→Gemini | 실제 외부 음성 전송·고지·동의·보관. 네이티브 마이크 연결 미완성 |
+| 구매·납부·청구 이력 | 수강료·셔틀비·납부 상태 | PG 카드 처리와 자체 이력 구분. 카드 원문 저장을 추정하지 않음 |
+| 결석 사유·첨부 | 질병·부상 등 이월/보강 심사 | 건강 정보 포함 여부·최소 수집·열람·보관 |
+| 알림 구독 | 기존 Web Push endpoint | 네이티브 FCM/APNs 토큰과 구분. 네이티브 푸시 미구현 |
 
-### 먼저 할 일 — 서명키 지문
+| 외부 처리 대상 | 확인된 용도 | 확인할 범위 |
+|---|---|---|
+| Supabase | DB·Auth·Storage | 실제 저장·국외 처리·계약·접근 |
+| SOLAPI | 문자·연락처·내용 | 위탁/공유 정의·실제 활성 발송 |
+| Toss Payments | 온라인 결제 승인·조회 | 운영 준비·전송 항목·가맹 계약 |
+| Google 일정/시트 | 일정·업무 자료 연동 | 앱 자료와 서버 동기화 구분 |
+| Gemini | 직원 음성 변환·별도 선택 기능의 문장 처리 | 음성 전송도 포함, 기능별 활성·보관 |
+| Meta | Instagram 게시물 연동 | 읽기/쓰기·학생 자료 외부 공개 |
 
-1. Play Console 에서 앱 생성 → **「Play 앱 서명」 사용**(권장). 그러면 업로드 키만 만들면 된다.
-2. Play Console → 설정 → **앱 서명** 에서 지문 두 개를 확인한다.
-   - 「앱 서명 키 인증서」 SHA-256
-   - 「업로드 키 인증서」 SHA-256
-3. **두 개를 모두** 아래 환경변수에 콤마로 넣는다. 하나만 넣으면 어느 한쪽 경로로 설치된 앱에서
-   검증이 실패한다(가장 흔한 실수).
+제3자 전송을 전부 ‘공유 안 함’으로 신고하지 않는다. 처리 위탁 여부와 플랫폼 정의를 실제 계약으로 판단한다. 전송 중 암호화도 앱→서버→공급자·다운로드까지 확인하기 전 ‘전 구간 검증 완료’로 표시하지 않는다. [Apple 개인정보 상세](https://developer.apple.com/app-store/app-privacy-details/)
 
-### 환경변수 (Vercel)
+## 5. 네이티브·스토어 남은 작업
 
-```
-ANDROID_APP_PACKAGE_NAME=kr.co.upturnlabs.stizdasan        # 예시 — 실제 패키지명으로
-ANDROID_APP_SHA256_FINGERPRINTS=AA:BB:...:FF,11:22:...:99   # 앱 서명 키, 업로드 키 둘 다
-```
+- **안전한 시험:** 후속 승인으로 [합성 HTTPS 환경](native-device-sandbox.md)과 Android 시험 APK를 준비했다. iOS는 Debug의 명시 사설 HTTPS 설정만 허용하고 신규 Swift 컴파일·기기 설치는 미검증이다. 실제 앱 인증 계약·설치·OS 신뢰는 별도 확인한다. 기본/Release 운영 주소는 유지한다.
+- **기능 빈틈:** 마이크·다운로드·일부 새 창 지도 링크·원격 푸시·로그인 기반 `/staff/run` 네이티브 위치 연결은 추가 구현/검증 대상이다. 공개 `/driver/<token>` 위치 서비스만으로 통합 기사 기능 완료를 선언하지 않는다.
+- **실기기:** 사진·카메라·복수 선택·HEIC·취소·파일·전화·지도·SHOP·결제 복귀·회전·키보드·확대·오프라인을 역할별 시험한다. 웹 통과를 네이티브 통과로 바꾸지 않는다.
+- **앱 링크:** assetlinks 라우트는 설정 전 404다. 최종 패키지와 실제 설치에 사용된 서명 인증서 지문을 확인하며 업로드 키와 Play 서명 키를 무조건 모두 등록하지 않는다. iOS Associated Domains/AASA도 별도 준비한다. 개발 URL scheme은 검증 링크가 아니다.
+- **서명·아이콘:** STIZ 전용 ID·팀·프로파일·아이콘 준비. 웹 로고/512 아이콘 존재는 상점 아이콘 완료가 아니다. iOS AppIcon·개인정보 명세 점검이 남았다. 필요한 API/SDK를 조사한 뒤 정확한 사유를 기록하며 임의 Privacy Manifest 사유를 만들지 않는다. [Apple 필수 사유 API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api?changes=_2_8&language=objc)
+- **기사 위치:** 잠금·T맵 각 20분 이상, 전화·실외·절전·망 복구·종료 후 중단을 서버 시각과 대조한다. 현 manifest에 `ACCESS_BACKGROUND_LOCATION`이 없다는 이유만으로 고지·심사를 면제하지 않는다. [Google 위치 정책](https://support.google.com/googleplay/android-developer/answer/9799150?hl=en-en)
+- **심사 접근:** 합성 계정·학생·청구로 주요 기능을 재현한다. 실제 고객 자료·암호·운행 링크는 Git·문서·캡처에 넣지 않는다. WebView라는 이유만으로 거절/승인을 단정하거나 한 앱으로 4.3 통과가 보장된다고 표시하지 않는다.
 
-설정하면 `https://stiz-dasan.kr/.well-known/assetlinks.json` 이 자동으로 올바른 내용을 서빙한다
-(`src/app/api/assetlinks/route.ts`). **설정 전에는 404** — 잘못된 지문이 배포되면 TWA 가
-「검증 실패」로 주소표시줄을 띄우는데 원인을 찾기 매우 어렵기 때문에 일부러 그렇게 뒀다.
+## 6. 제출 조건과 승인 경계
 
-### 통합 앱 manifest — `https://stiz-dasan.kr/manifest-app.json`
+현재 Android target 36은 Google 2026년 API 수준 요구에 대응하는 코드 값이다. Apple은 2026-04-28부터 iOS 26 SDK 이상을 요구한다. #2 Xcode 26 계열 시뮬레이터 컴파일은 서명 기기 빌드·심사 완료가 아니다. 제출 때 다시 확인한다. [Google 대상 API](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en-mt), [Apple SDK 요구](https://developer.apple.com/news/?id=ueeok6yw)
 
-```
-bubblewrap init --manifest https://stiz-dasan.kr/manifest-app.json
-```
+Google 12명·14일 시험은 2023-11-13 이후 생성된 개인 계정 기준이다. 업턴랩스 실제 계정 유형을 확인하지 않고 면제로 확정하지 않는다. [Google 개인 계정 시험](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en)
 
-| 항목 | 값 |
-|---|---|
-| Host | `stiz-dasan.kr` |
-| Start URL | `/store-app` → 표식을 찍고 `/auth/continue`(역할 판별)로 넘긴다 |
-| Scope | `/` (사이트 전체) |
-| App name | 스티즈 농구교실 / 스티즈 |
-| id | `/?app=stiz-store` — 기존 3개 PWA 와 겹치지 않는 고유 값 |
-| 아이콘 | `icon-v2-512.png` + maskable |
-
-**⚠️ 이 manifest 는 어느 화면에도 연결하지 않는다(의도적).**
-2026-08 에 사이트 전체를 영역으로 잡은 공식 앱 하나가 **같은 기기의 다른 PWA 설치를 전부 막은** 사고가 있었다.
-통합 앱도 영역이 사이트 전체라, 화면에 연결하면 브라우저가 이걸 설치 대상으로 제안하면서 같은 사고가 난다.
-그래서 스토어 앱 도구(Bubblewrap·PWABuilder)가 **주소로 직접 읽게만** 하고, 웹 설치는 기존 3개 PWA 가 맡는다.
-이 규칙은 `tests/store-app-manifest.test.mjs` 가 지킨다.
-
-**스토어 앱 표식** — 스토어 앱은 사이트 전체가 앱 영역이라 기존 PWA 의 「영역 밖 링크 막기」가 필요 없다.
-`/store-app` 이 `sessionStorage` 에 표식을 찍으면 `useInstalledApp` 이 영역 제한을 끈다.
-localStorage 가 아닌 이유: 안드로이드 스토어 앱(TWA)은 휴대폰 크롬과 저장소를 공유해서, localStorage 에 두면
-크롬·기존 설치 앱에서도 제한이 풀린다.
-
-**iOS** — TWA 는 안드로이드 전용이다. 앱스토어용은 같은 manifest 로 PWABuilder 의 iOS 패키지(WKWebView)를
-만들거나 Capacitor 로 감싼다. 시작 주소는 똑같이 `/store-app`.
-
----
-
-## 4. 애플 앱스토어 — 실질적 장벽
-
-수수료는 깨끗하지만 심사가 어렵다.
-
-| 항목 | 상태 |
-|---|---|
-| **Apple 로그인** | 코드 완료, **스위치 OFF**. 아래 설정 후 켠다 |
-| **지침 4.2 최소 기능** | ⚠️ **웹 래핑 앱은 거부되는 경우가 많다** — 가장 큰 위험 |
-| 지침 4.3 스팸 | 비슷한 앱 여러 개 금지 → ✅ **통합 앱 하나**로 해결(2026-10-25) |
-| 계정 삭제 | ✅ 완료(`/mypage/withdraw`) |
-
-### Apple 로그인 켜는 절차
-
-1. 애플 개발자 콘솔 → **Service ID** 생성(Sign in with Apple), 도메인 `stiz-dasan.kr` 및
-   Return URL 등록(Supabase 콜백 주소)
-2. **Sign in with Apple 용 Key(.p8)** 발급 → Team ID · Key ID 확보
-3. Supabase → Authentication → Providers → **Apple** 에 Service ID·Team ID·Key ID·Key 입력
-4. Vercel 환경변수 **`NEXT_PUBLIC_APPLE_LOGIN_ENABLED=true`** → 재배포
-5. 버튼 디자인을 애플 가이드라인(공식 로고, 검정/흰색 스타일)에 맞춰 다듬기 — 현재는 임시
-
----
-
-## 5. 남은 일 체크리스트
-
-### 원장님(업턴랩스)이 하실 일
-- [ ] Play Console 앱 생성 + Play 앱 서명 → **지문 2개 확보**
-- [ ] 패키지명 확정
-- [ ] 애플 Service ID·Key 발급 → Supabase Apple provider 설정
-- [ ] 토스 가맹 심사 통과 → 라이브 키 수령
-- [ ] 스토어 스크린샷 촬영(로그인이 필요해 AI가 찍을 수 없음)
-- [x] ~~앱을 몇 개 올릴지 결정~~ → **통합 앱 하나**(2026-10-25 원장 결정)
-
-### AI가 이어받을 일
-- [ ] 지문·패키지명 → Vercel 환경변수 설정 후 `assetlinks.json` 동작 확인
-- [ ] `NEXT_PUBLIC_APPLE_LOGIN_ENABLED=true` 설정 + Apple 버튼 디자인 정리
-- [ ] 토스 라이브 키 환경변수 설정 + `release:preflight` 통과 확인
-- [ ] 데이터 보안 양식 답변 최종 검토
-
-### 이미 완료
-- [x] 회원 탈퇴 기능(구글플레이 필수) — `/mypage/withdraw`, 원장 확인 화면 `/admin/withdrawals`
-- [x] Apple 로그인 코드(스위치 OFF)
-- [x] `assetlinks.json` 서빙 라우트(지문만 넣으면 작동)
-- [x] PWA 품질 요건 — manifest 4종, Service Worker, maskable 아이콘, HTTPS
-- [x] 개인정보처리방침 공개 페이지
-- [x] **통합 앱** — 가입 시 역할 선택(여러 개), 직원 역할은 초대 링크 또는 원장 승인, 화면 전환, 기사님 로그인 운행표,
-      통합 manifest(`/manifest-app.json`, 화면 미연결) + 스토어 앱 시작 주소(`/store-app`)
-
----
-
-## 참고 — 사업자 계정 이점
-
-업턴랩스가 **사업자 계정**이면 구글플레이의 「신규 개인 개발자는 테스터 12명·14일 비공개 테스트
-필수」 규정이 **면제**된다. 출시가 훨씬 빠르다.
+순서: **격리 시험 환경 → 승인된 설치 빌드 → 인증·가족·기사 → 청구·결제·알림 → 네 역할 실기기 → 심사 자료**. 설치·Apple 서명·새 원격 빌드·외부 시험 배포·운영 활성화·TestFlight·공개 제출은 각각 버전과 영향을 제시하고 승인받는다. 이 문서 정정은 그 실행 승인이 아니다.
