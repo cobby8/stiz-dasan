@@ -61,3 +61,24 @@ test("선생님 특강: 한 줄 행(시간·반·인원 오른쪽·행동 버튼
   assert.match(seasonalClient, /aria-label="이전 날짜" onClick=\{\(\) => shiftDay\(-1\)\} className="grid size-11/);
   assert.doesNotMatch(seasonalClient, /\btruncate\b|text-ellipsis|line-clamp/);
 });
+
+const homeClient = read("../src/app/staff/StaffHomeClient.tsx");
+
+test("선생님 홈: 남은·완료 수업은 한 줄 행 + 시트, 시작 잠금·빠른 메뉴 4개는 같은 함수 그대로", () => {
+  assert.match(homeClient, /<ul aria-label="남은 수업 목록"/);
+  assert.match(homeClient, /<ul aria-label="완료한 수업 목록"/);
+  assert.doesNotMatch(homeClient, /CompactClassCard/);
+  assert.match(homeClient, /<ListDetailPanel onClose=\{onClose\} titleId="staff-class-detail-title"/);
+  // 행 키보드는 안쪽 버튼을 가로채지 않고, 행 안 시작 버튼은 전파 차단
+  assert.match(homeClient, /function ClassRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
+  assert.match(homeClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); onStart\(lesson\); \}\}/);
+  // 시트의 동작은 기존 함수로(시트를 먼저 닫고)
+  assert.match(homeClient, /setDetailTarget\(null\);\s*if \(action === "start"\) openPrimaryAction\(lesson\);\s*else if \(action === "content"\) openContent\(lesson\);\s*else if \(action === "contacts"\) openContacts\(lesson\);\s*else if \(action === "billing"\) setBillingTarget\(\{ lesson \}\);\s*else \{ setError\(null\); setNoticeTarget\(lesson\); \}/);
+  // 시트 시작 버튼도 진행 중 수업이 있으면 잠근다
+  assert.match(homeClient, /startLocked=\{Boolean\(runningClass && detailTarget\.sessionStatus !== "IN_PROGRESS"\)\}/);
+  // 시간·인원은 tabular-nums, 인원은 오른쪽
+  assert.match(homeClient, /text-right text-xs font-bold tabular-nums[^"]*">\{lesson\.studentCount\}명/);
+  // 학부모 공지 확인 문구·발송 함수는 그대로
+  assert.match(homeClient, /이 수업의 학부모에게 공지와 푸시 알림을 보내시겠습니까\?/);
+  assert.match(homeClient, /createStaffClassNotice\(\{ classId: noticeTarget\.id/);
+});

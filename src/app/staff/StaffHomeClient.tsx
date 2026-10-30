@@ -11,6 +11,7 @@ import { createStaffClassNotice, getStaffClassNoticeStatus } from "@/app/actions
 import { deliveryStatusText, type DeliveryStatusSummary } from "@/lib/parent-staff-status";
 import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
+import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
@@ -48,6 +49,8 @@ export default function StaffHomeClient({
   const [noticeResumeNeeded, setNoticeResumeNeeded] = useState(false);
   const [peopleTarget, setPeopleTarget] = useState<StaffTodayClass | null>(null);
   const [billingTarget, setBillingTarget] = useState<{ lesson: StaffTodayClass; student?: { id: string; name: string } } | null>(null);
+  // 남은·완료 수업 행을 누르면 여는 하단 시트(장소·수업 내용·빠른 메뉴는 여기서)
+  const [detailTarget, setDetailTarget] = useState<StaffTodayClass | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -263,15 +266,16 @@ export default function StaffHomeClient({
 
           {otherClasses.length > 0 && (
             <section>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-base font-black dark:text-white">남은 수업</h2>
-                <span className="text-sm font-bold text-gray-500">{otherClasses.length}개</span>
+                <span className="text-sm font-bold tabular-nums text-gray-500">{otherClasses.length}개</span>
               </div>
-              <div className="space-y-3">
+              {/* 한 수업 = 한 줄 행(시간 | 반 | 인원 | 시작). 빠른 메뉴는 행을 눌러 시트에서 */}
+              <ul aria-label="남은 수업 목록" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                 {otherClasses.map((lesson) => (
-                  <CompactClassCard key={lesson.scheduleKey} lesson={lesson} startLocked={Boolean(runningClass && lesson.sessionStatus !== "IN_PROGRESS")} onStart={openPrimaryAction} onContent={openContent} onContacts={openContacts} onBilling={(target) => setBillingTarget({ lesson: target })} onNotice={(target) => { setError(null); setNoticeTarget(target); }} />
+                  <ClassRow key={lesson.scheduleKey} lesson={lesson} startLocked={Boolean(runningClass && lesson.sessionStatus !== "IN_PROGRESS")} onOpen={setDetailTarget} onStart={openPrimaryAction} />
                 ))}
-              </div>
+              </ul>
             </section>
           )}
         </>
@@ -282,10 +286,28 @@ export default function StaffHomeClient({
       {completedClasses.length > 0 && (
         <details className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
           <summary className="min-h-11 cursor-pointer px-4 py-3 text-sm font-bold text-[var(--color-academy-muted)]">완료한 수업 {completedCount}개</summary>
-          <div className="space-y-2 px-3 pb-3">
-            {completedClasses.map((lesson) => <CompactClassCard key={lesson.scheduleKey} lesson={lesson} startLocked={false} onStart={openPrimaryAction} onContent={openContent} onContacts={openContacts} onBilling={(target) => setBillingTarget({ lesson: target })} onNotice={(target) => { setError(null); setNoticeTarget(target); }} />)}
-          </div>
+          <ul aria-label="완료한 수업 목록" className="border-t border-[var(--color-academy-line)]">
+            {completedClasses.map((lesson) => <ClassRow key={lesson.scheduleKey} lesson={lesson} startLocked={false} onOpen={setDetailTarget} onStart={openPrimaryAction} />)}
+          </ul>
         </details>
+      )}
+
+      {detailTarget && (
+        <ClassDetailSheet
+          lesson={detailTarget}
+          startLocked={Boolean(runningClass && detailTarget.sessionStatus !== "IN_PROGRESS")}
+          onClose={() => setDetailTarget(null)}
+          // 시트를 먼저 닫고 기존 동작을 그대로 부른다(두 창이 겹치지 않게)
+          onAction={(action) => {
+            const lesson = detailTarget;
+            setDetailTarget(null);
+            if (action === "start") openPrimaryAction(lesson);
+            else if (action === "content") openContent(lesson);
+            else if (action === "contacts") openContacts(lesson);
+            else if (action === "billing") setBillingTarget({ lesson });
+            else { setError(null); setNoticeTarget(lesson); }
+          }}
+        />
       )}
 
       {peopleTarget && <ClassPeopleSheet key={`${peopleTarget.id}:${peopleTarget.sessionId || peopleTarget.sessionDateId || "today"}`} open classId={peopleTarget.id} sessionId={peopleTarget.sessionId} sessionDateId={peopleTarget.sessionDateId} className={peopleTarget.name} onClose={() => setPeopleTarget(null)} onOpenBilling={(student) => { const lesson = peopleTarget; setPeopleTarget(null); setBillingTarget({ lesson, student }); }} />}
@@ -345,23 +367,75 @@ function SecondaryButton({ icon, label, onClick, disabled = false }: { icon: str
   return <button type="button" disabled={disabled} onClick={onClick} className="academy-button-secondary flex min-h-11 items-center justify-center gap-1 rounded-xl px-2 text-sm font-bold disabled:opacity-40"><span aria-hidden="true" className="material-symbols-outlined text-lg">{icon}</span>{label}</button>;
 }
 
-function CompactClassCard({ lesson, startLocked, onStart, onContent, onContacts, onBilling, onNotice }: { lesson: StaffTodayClass; startLocked: boolean; onStart: (lesson: StaffTodayClass) => void; onContent: (lesson: StaffTodayClass) => void; onContacts: (lesson: StaffTodayClass) => void; onBilling: (lesson: StaffTodayClass) => void; onNotice: (lesson: StaffTodayClass) => void }) {
+// 남은·완료 수업 한 줄 행. 행 탭 = 상세 시트, 시작 버튼은 행 열기와 섞이지 않게 전파 차단
+function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffTodayClass; startLocked: boolean; onOpen: (lesson: StaffTodayClass) => void; onStart: (lesson: StaffTodayClass) => void }) {
   const completed = lesson.sessionStatus === "COMPLETED";
-  return <article className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-black text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</p><div className="mt-0.5 flex flex-wrap items-center gap-2"><h3 className="text-base font-black text-[var(--color-academy-ink)]">{lesson.name}</h3>{isSeasonalLesson(lesson) && <SeasonalBadge />}</div><p className="mt-1 text-sm text-[var(--color-academy-muted)]">학생 {lesson.studentCount}명 · {lesson.location || "장소 미정"}</p></div><StatusBadge status={lesson.sessionStatus} /></div>
-    {!completed && <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
-      <details className="min-w-0 flex-1 rounded-xl bg-[var(--color-academy-primary-soft)]">
-        <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold text-[var(--color-academy-muted)]">수업 준비·관리</summary>
-        <div className="grid grid-cols-2 gap-2 p-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
-          <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => onContent(lesson)} />
-          <SecondaryButton icon="groups" label="학생 정보" onClick={() => onContacts(lesson)} />
-          <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onBilling(lesson)} />
-          <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onNotice(lesson)} />
+  const startLabel = lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작";
+  return <li
+    role="button"
+    tabIndex={0}
+    aria-label={`${lesson.name} 수업 상세`}
+    onClick={() => onOpen(lesson)}
+    onKeyDown={(event) => {
+      // 행 안의 시작 버튼에서 누른 Enter 를 행이 가로채지 않게
+      if (event.target !== event.currentTarget) return;
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(lesson); }
+    }}
+    className="flex min-h-14 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
+  >
+    <span className="shrink-0 text-xs font-black tabular-nums text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</span>
+    {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
+    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-black text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}</span>
+    <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
+    {completed ? <StatusBadge status={lesson.sessionStatus} /> : (
+      <button
+        type="button"
+        disabled={startLocked}
+        aria-label={`${lesson.name} ${startLabel}`}
+        title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined}
+        onClick={(event) => { event.stopPropagation(); onStart(lesson); }}
+        className="academy-button-secondary flex min-h-11 shrink-0 items-center gap-0.5 rounded-xl px-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span aria-hidden="true" className="material-symbols-outlined text-lg">{startLocked ? "lock" : lesson.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
+        {startLocked ? "대기" : "시작"}
+      </button>
+    )}
+  </li>;
+}
+
+type ClassDetailAction = "start" | "content" | "contacts" | "billing" | "notice";
+
+// 행을 누르면 여는 하단 시트: 기존 카드에 있던 정보·빠른 메뉴를 그대로 옮긴 것
+function ClassDetailSheet({ lesson, startLocked, onClose, onAction }: { lesson: StaffTodayClass; startLocked: boolean; onClose: () => void; onAction: (action: ClassDetailAction) => void }) {
+  const completed = lesson.sessionStatus === "COMPLETED";
+  return <ListDetailPanel onClose={onClose} titleId="staff-class-detail-title">
+    <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-black tabular-nums text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</p>
+        <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-black text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
+      </div>
+      <button type="button" aria-label="닫기" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-full"><span aria-hidden="true" className="material-symbols-outlined">close</span></button>
+    </div>
+    <div className="space-y-3 px-4 pb-4 pt-3">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--color-academy-muted)]">
+        <span className="flex items-center gap-1"><span aria-hidden="true" className="material-symbols-outlined text-lg">groups</span>학생 <span className="tabular-nums">{lesson.studentCount}</span>명</span>
+        <span className="flex items-center gap-1"><span aria-hidden="true" className="material-symbols-outlined text-lg">location_on</span>{lesson.location || "장소 미정"}</span>
+      </div>
+      {lesson.plannedContent && <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-academy-ink)]">{lesson.plannedContent}</p>}
+      {!completed && <>
+        <div className="grid grid-cols-2 gap-2" aria-label={`${lesson.name} 수업 빠른 메뉴`}>
+          <SecondaryButton icon="edit_note" label="수업 내용" onClick={() => onAction("content")} />
+          <SecondaryButton icon="groups" label="학생 정보" onClick={() => onAction("contacts")} />
+          <SecondaryButton icon="receipt_long" label="청구 확인" onClick={() => onAction("billing")} />
+          <SecondaryButton icon="campaign" label="수업 공지" onClick={() => onAction("notice")} />
         </div>
-      </details>
-      <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onStart(lesson)} className="academy-button-secondary min-h-11 rounded-xl px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50">{lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작"}</button>
-    </div>}
-  </article>;
+        <button type="button" disabled={startLocked} title={startLocked ? "진행 중인 수업을 먼저 종료해 주세요." : undefined} onClick={() => onAction("start")} className="academy-button-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-base font-black disabled:cursor-not-allowed disabled:opacity-50">
+          <span aria-hidden="true" className="material-symbols-outlined">{lesson.sessionStatus === "IN_PROGRESS" ? "arrow_forward" : "play_arrow"}</span>
+          {lesson.sessionStatus === "IN_PROGRESS" ? "수업으로 돌아가기" : startLocked ? "현재 수업 종료 후 시작" : "수업 시작"}
+        </button>
+      </>}
+    </div>
+  </ListDetailPanel>;
 }
 
 function Modal({ title, subtitle, onClose, labelledBy, children }: { title: string; subtitle: string; onClose: () => void; labelledBy: string; children: React.ReactNode }) {
