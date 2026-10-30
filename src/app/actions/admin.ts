@@ -4801,21 +4801,12 @@ export async function bookMakeupSession(data: {
 }
 
 /**
- * 보강 취소 — BOOKED 상태의 보강을 CANCELLED로 변경
+ * 보강 취소 — 상태 변경(CANCELLED)과 같은 길을 탄다.
+ * 예전엔 MakeupSession 만 바꿔서 보강권이 «예약됨»에 묶인 채 남았다(다시 못 씀).
+ * updateMakeupStatus 가 잠금 + 보강권 복구(RESERVED → AVAILABLE)까지 한다.
  */
 export async function cancelMakeupSession(id: string) {
-    await requireAdmin();
-    try {
-        await prisma.$executeRawUnsafe(
-            `UPDATE "MakeupSession" SET status = 'CANCELLED', "updatedAt" = NOW() WHERE id = $1`,
-            id,
-        );
-    } catch (e) {
-        console.error("Failed to cancel makeup session:", e);
-        throw new Error("보강 취소 실패");
-    }
-    revalidatePath("/admin/makeup");
-    revalidateMakeupAdminCaches();
+    await updateMakeupStatus(id, "CANCELLED");
 }
 
 /**
