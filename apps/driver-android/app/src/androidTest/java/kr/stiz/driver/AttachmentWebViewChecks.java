@@ -14,24 +14,24 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Prepared real-WebView checks; only an explicitly approved device and the isolated sandbox package may run them. */
 final class AttachmentWebViewChecks {
     private static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
-    private static void await(CountDownLatch latch) throws Exception { require(latch.await(8, TimeUnit.SECONDS), "Fixture callback timeout"); }
+    private static void await(CountDownLatch latch, String stage) throws Exception { require(latch.await(8, TimeUnit.SECONDS), "Fixture callback timeout [" + stage + "]"); }
     private static Uri uri(String name) { return Uri.parse("content://kr.stiz.driver.test.synthetic/" + name); }
     private static String read(Instrumentation runner, AttachmentFixtureActivity activity) throws Exception {
         AtomicReference<String> value = new AtomicReference<>();
         for (int retry = 0; retry < 60; retry++) {
             CountDownLatch done = new CountDownLatch(1);
             runner.runOnMainSync(() -> activity.web.evaluateJavascript("window.fixtureResult", result -> { value.set(result); done.countDown(); }));
-            await(done);
+            await(done, "read-js");
             if (value.get() != null && !value.get().equals("\"\"")) return new JSONArray("[" + value.get() + "]").getString(0);
             Thread.sleep(100);
         }
         throw new AssertionError("FileReader did not read selected bytes");
     }
     private static void choose(Instrumentation runner, AttachmentFixtureActivity activity, String input) throws Exception {
-        runner.runOnMainSync(() -> activity.choose(input)); await(activity.selected);
+        runner.runOnMainSync(() -> activity.choose(input)); await(activity.selected, "choose-" + input);
     }
     private static void deliver(Instrumentation runner, AttachmentFixtureActivity activity, Intent result) throws Exception {
-        runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_OK, result)); await(activity.delivered);
+        runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_OK, result)); await(activity.delivered, "deliver-result");
     }
     static int run(Instrumentation runner) throws Exception {
         require(BuildConfig.DEBUG && BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && !BuildConfig.STIZ_NATIVE_AUTH
@@ -40,7 +40,7 @@ final class AttachmentWebViewChecks {
         AttachmentFixtureActivity activity = (AttachmentFixtureActivity) runner.startActivitySync(new Intent(runner.getTargetContext(), AttachmentFixtureActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         int checks = 0;
         try {
-            await(activity.ready);
+            await(activity.ready, "page-ready");
             java.util.concurrent.atomic.AtomicBoolean restricted = new java.util.concurrent.atomic.AtomicBoolean();
             runner.runOnMainSync(() -> restricted.set(!activity.web.getSettings().getAllowFileAccess() && !activity.web.getSettings().getAllowContentAccess()
                 && activity.web.getSettings().getBlockNetworkLoads()));
@@ -58,7 +58,7 @@ final class AttachmentWebViewChecks {
             require(json.getString("type").equals("application/json") && json.getJSONArray("bytes").getInt(0) == '{', "JSON FileReader failed"); checks++;
             choose(runner, activity, "single");
             int callbacks = activity.callbacks;
-            runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_CANCELED, null)); await(activity.delivered);
+            runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_CANCELED, null)); await(activity.delivered, "cancel-result");
             require(activity.resultCount == -1 && activity.callbacks == callbacks + 1, "Cancel callback failed"); checks++;
             runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_OK, new Intent().setData(uri("one"))));
             require(activity.callbacks == callbacks + 1, "Late duplicate result accepted"); checks++;
@@ -67,7 +67,7 @@ final class AttachmentWebViewChecks {
             choose(runner, activity, "single"); deliver(runner, activity, new Intent().setData(uri("oversize")));
             require(activity.resultCount == -1, "Oversize metadata accepted"); checks++;
             choose(runner, activity, "single");
-            runner.runOnMainSync(() -> activity.chooser.navigation(BuildConfig.STIZ_ORIGIN + "/login")); await(activity.delivered);
+            runner.runOnMainSync(() -> activity.chooser.navigation(BuildConfig.STIZ_ORIGIN + "/login")); await(activity.delivered, "navigation-cancel");
             require(activity.resultCount == -1, "Navigation did not cancel"); checks++;
             return checks;
         } finally { runner.runOnMainSync(activity::finish); }

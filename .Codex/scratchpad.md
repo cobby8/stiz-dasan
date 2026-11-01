@@ -1,9 +1,9 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: Android 합성 첨부 시험 준비·출시 문서 현재화. 설치/실행/운영/푸시/원격 제외.
-- 현재 단계: sandbox debug/계측/unsignedRelease 로컬빌드·독립15/24/10 PASS·main권한불변. 실제9계측/설치0, ADB1 unauthorized·모델확인대기.
-- 승인 범위: 문서·debug/androidTest 안전보완과 로컬APK준비만. 실제기기설치/실행·운영·원격·푸시 제외.
-- 검증 한계/다음: docs/android-attachment-device-preparation.md 정본. ZFold8모델/기존시험패키지확인→정확두APK설치승인 별도. iOS완료는build6정본.
+- 목표: Android 두 시험 APK 설치·오프라인 합성 첨부 검증. 운영/푸시/원격 제외.
+- 현재 단계: SM-F971N/Android17에 두APK신규설치·버전재조회. 첫9계측1회 timeout실패/단계미확정, await단계명만진단APK로컬준비/독립PASS·새검사APK업데이트승인대기.
+- 승인 범위: 두시험APK신규설치+오프라인1회승인수행, 기존시험코드로컬보완. 새진단APK업데이트·재실행은별도확인.
+- 검증 한계/다음: docs/android-attachment-device-validation.md 정본. 기존실패보존·권한불변, 진단산출물검사후정확검사APK업데이트승인.
 ## 진행 현황표
 - 아래 기존 그룹은 해당 작업 당시의 이력이다. 현재 Android 준비는 상단과 docs/android-attachment-device-preparation.md, iOS build6·가족은 각 정본을 따른다.
 | 그룹 | 담당 | 상태 | 완료 기준 |
@@ -85,6 +85,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-11-02: 사용자승인SM-F971N 두APK신규설치/별도조회0.1.0 완료. 오프라인9계측1회callback timeout/CODE0실패·원인미확정. 원실패보존·단계명진단만로컬보완, 운영/서버/원격/푸시0.
 - 2026-11-02: 승인Android시험준비·debugfixture sandbox가드/네트워크차단검사·오프라인빌드완료. 독립15/24/10·APK3/SHA·소스32확인, 준비표build6현재화. 설치/기기실행/서버/운영/원격/푸시0.
 - 2026-11-02: 주소실패=900초정상만료 확인/같은runCA재개. 사용자신뢰·USB복구→build6실제CSS 가로17/scale1·버튼스크롤전체·날짜삭제/사유2·세로402x750/관찰기정리 PASS. 증거10/독립·운영TF0.
 - 2026-11-02: 요청2커밋8a+c99build6준비 검증branch푸시·main불변. #6 actualc99/72초·IPA169135B/독립28·정확guard/USB설치·별도6조회완료. 실행-1202·새CA43d신뢰대기, 운영/TF0.
@@ -94,5 +95,4 @@
 - 2026-11-02: 승인2commit1799까지검증branch푸시·Codemagic#5 actual1799·시작1회 finished100초. IPA169130B/독립28·원격main동일, 설치/운영/TestFlight0·서버auto-review차단유지.
 - 2026-11-02: 승인최신iPhone준비·합성가족2세션·build5주소25. 전체2766/가드5·tsc·독립19/21/9/28·67source통과, 새CA준비·USB1/build4확인. LAN서버 auto-review거절/우회0·원격/실물미실행.
 - 2026-11-02: 승인main3f032d06 별도worktree·문서현재화. 전체2761/가드5·tsc·관련105·가족실PG35/청구20·웹9폭조합 가로0/할인재계산·합성저장확정발행 확인. 기존작업보존·운영/푸시/배포0.
-- 2026-10-29: 승인복귀일지우기UI1파일·로컬합성browser360/320·요청키true/false/true/사유유지·추가전송0·pending/uncertain보호 통과. tsc/기존28·독립QA, iPhone새UI/푸시/원격빌드/운영0.
 ## PM 체크
