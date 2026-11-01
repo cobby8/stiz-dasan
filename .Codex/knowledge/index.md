@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: USB복구후 임시CSS실물가로17px/scale1/넘침0·스크롤버튼전체표시·재삭제/사유2·세로402x750복원 통과, 임시태그/관찰기정리. 수동확대원복선행/새번들미반영·운영/TF0. docs/academy-touch-input-validation.md 정본·본문5유지.
+
 > 2026-11-02: 기록a125까지검증branch푸시·날짜삭제/사유/회전보존 실기기확인. 가로확대/네이티브가림 발견→승인CSS터치최소16·계산18/비교2·tsc/기존41 PASS, 수정후가로USB0/서비스재시작후0으로실물보류·새번들별도. docs/academy-touch-input-validation.md 정본·본문5유지.
 
 > 2026-11-02: build5 설치·정확CA ON·합성 인증→가족 요청/승인→접근 허용 iPhone 실기기 완료. 증거13/13·독립DOM19/402×750가로0, 유한 서버/CA 종료. 실인증·실계정/SQL 별도, 운영/TF0. docs/stiz-ios-family-device-validation.md 정본·본문5유지.
