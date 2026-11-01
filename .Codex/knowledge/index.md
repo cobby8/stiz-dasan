@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: build6준비c99+기록8a검증branch푸시/main불변·서명#6/72초/IPA독립28·USB설치후6조회. 새CA43d신뢰대기/-1202, docs/stiz-ios-build6-validation.md정본·본문5유지.
+
 > 2026-11-02: USB복구후 임시CSS실물가로17px/scale1/넘침0·스크롤버튼전체표시·재삭제/사유2·세로402x750복원 통과, 임시태그/관찰기정리. 수동확대원복선행/새번들미반영·운영/TF0. docs/academy-touch-input-validation.md 정본·본문5유지.
 
 > 2026-11-02: 기록a125까지검증branch푸시·날짜삭제/사유/회전보존 실기기확인. 가로확대/네이티브가림 발견→승인CSS터치최소16·계산18/비교2·tsc/기존41 PASS, 수정후가로USB0/서비스재시작후0으로실물보류·새번들별도. docs/academy-touch-input-validation.md 정본·본문5유지.
