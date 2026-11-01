@@ -65,7 +65,7 @@ class SignedSandboxTests(unittest.TestCase):
                 validate_profile(profile_fixture(), value)
 
     def test_debug_device_settings_required(self):
-        self.assertEqual(BUILD, "5")
+        self.assertEqual(BUILD, "6")
         good = {"CONFIGURATION": "Debug", "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE,
                 "DEVELOPMENT_TEAM": TEAM, "STIZ_SANDBOX_ORIGIN": ORIGIN,
                 "CODE_SIGNING_ALLOWED": "YES", "CODE_SIGN_STYLE": "Manual",
@@ -75,7 +75,7 @@ class SignedSandboxTests(unittest.TestCase):
         for key, bad in [("CONFIGURATION", "Release"), ("STIZ_SANDBOX_ORIGIN", "https://www.stiz-dasan.kr"),
                          ("STIZ_SANDBOX_ORIGIN", "https://172.30.1.12:8453"),
                          ("SWIFT_ACTIVE_COMPILATION_CONDITIONS", ""), ("SDK_NAME", "iphonesimulator26.5"),
-                         ("CURRENT_PROJECT_VERSION", "1"), ("CURRENT_PROJECT_VERSION", "2"), ("CURRENT_PROJECT_VERSION", "3"), ("CURRENT_PROJECT_VERSION", "4"), ("MARKETING_VERSION", "1.0"),
+                         ("CURRENT_PROJECT_VERSION", "1"), ("CURRENT_PROJECT_VERSION", "2"), ("CURRENT_PROJECT_VERSION", "3"), ("CURRENT_PROJECT_VERSION", "4"), ("CURRENT_PROJECT_VERSION", "5"), ("MARKETING_VERSION", "1.0"),
                          ("PRODUCT_BUNDLE_IDENTIFIER", "kr.stiz.bdr.bdrStatV3")]:
             changed = dict(good, **{key: bad})
             with self.assertRaises(GateError):
@@ -99,7 +99,7 @@ class SignedSandboxTests(unittest.TestCase):
         validate_app(info, entitlements)
         for key, bad in [("STIZSandboxOrigin", ""), ("STIZSandboxOrigin", "https://172.30.1.12:8453"), ("CFBundleIdentifier", "other"),
                          ("STIZNativeAuthDevelopmentEnabled", True), ("NSAppTransportSecurity", {}),
-                         ("CFBundleVersion", "1"), ("CFBundleVersion", "2"), ("CFBundleVersion", "3"), ("CFBundleVersion", "4"), ("CFBundleShortVersionString", "9.0"),
+                         ("CFBundleVersion", "1"), ("CFBundleVersion", "2"), ("CFBundleVersion", "3"), ("CFBundleVersion", "4"), ("CFBundleVersion", "5"), ("CFBundleShortVersionString", "9.0"),
                          ("CFBundleSupportedPlatforms", ["iPhoneSimulator"])]:
             with self.assertRaises(GateError):
                 validate_app(dict(info, **{key: bad}), entitlements)

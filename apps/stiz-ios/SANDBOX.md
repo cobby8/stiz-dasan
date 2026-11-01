@@ -1,6 +1,12 @@
 # iOS 격리 시험 서버 연결
 
-## 현재 시험 앱 준비 (2026-11-02)
+## 현재 build 6 재검증 준비 (2026-11-02)
+
+- 터치 기기 가로 입력 글씨 보완을 포함한 **0.1.0/build 6**을 로컬 준비했다. 시험 주소 `https://172.30.1.25:8453`·단일 IP ATS·Bundle ID·팀·등록 한 기기 프로파일은 유지한다.
+- 설정과 완성 앱 검사에서 build 1~5를 거부한다. 실제 인증 비활성·외부 연결 차단·원본 Release 정책·수동 workflow 명령은 바꾸지 않았다.
+- 새 원격 빌드·서명 IPA·아이폰 설치와 수정 화면 재검증은 이 준비만으로 완료 처리하지 않는다. 운영 배포·TestFlight는 제외한다. 아래 build 5 준비 설명은 당시 기록이다.
+
+## build 5 준비 당시 기록 (2026-11-02)
 
 - 최신 main 화면·합성 본인인증/가족 연결 시험용 **0.1.0/build 5**를 로컬 준비했다. 새 사설 주소는 `https://172.30.1.25:8453` 하나이며 생성 시험 앱의 ATS도 같은 IP 하나만 허용한다.
 - 등록 Bundle ID·조직·STIZ Ad Hoc 프로파일·엄격한 HTTPS/외부 차단·실제 인증 비활성은 유지한다. 기존 build 4와 옛 주소는 새 산출물 검사에서 거부한다.
@@ -41,7 +47,7 @@
 - `stiz_ios_sandbox_device` 비공개 그룹의 `STIZ_EXPECTED_DEVICE_SHA256`은 대상 기기 ID의 `-`/`_`를 제거하고 소문자로 정규화한 문자열의 SHA-256이다. 원문·해시는 YAML·Git·빌드 로그·검증 JSON에 넣지 않는다. 값이 없거나 프로파일의 단일 기기와 다르면 서명 전에 중단한다.
 - `Debug`·`DEBUG` 조건·실기기 SDK·명시 주소 `https://172.30.1.25:8453`를 빌드 설정에서 확인한다. 잘못된 주소·Release·시뮬레이터 SDK·다른 앱 ID면 중단한다. 소스 프로젝트의 기본 ID·Release 정책은 변경하지 않고 이 수동 작업에만 빌드 인자를 전달한다.
 - iOS 17 이상은 IP 접속도 ATS의 명시 대상이므로, 후속 사용자 승인에 따라 시험용 생성 `SandboxInfo.plist`에만 `NSExceptionDomains`의 정확한 `172.30.1.25`를 넣는다. HTTP 허용은 false, 최소 TLS는 1.2, 순방향 비밀성 요구는 true, 하위 도메인 포함은 false다. 임의 네트워크·WebContent·다른 IP·CIDR·추가 키는 허용하지 않으며 인증서 신뢰는 OS가 계속 확인한다. ATS는 포트를 제한하지 못하므로 기존 주소 정책이 HTTPS 8453만 허용한다. [Apple IP 접속 안내](https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowslocalnetworking).
-- 과거 안내 글자 재검증(2026-10-28)의 버전은 `0.1.0`/빌드 `3`였다. 현재 준비 버전은 위의 build 5를 따른다. 원본 프로젝트의 빌드 번호는 유지하고 당시 시험 작업의 인자로만 3을 지정했다. 빌드 설정·archive·최종 IPA에서 버전과 ATS의 키·값·불리언 형식을 검사한다. 기존 ‘ATS 설정 없음’ 검증은 원본·Release에 유지하며, 생성된 시험 앱은 정확한 IP 보안 기본값 검증으로 보완한다.
+- 과거 안내 글자 재검증(2026-10-28)의 버전은 `0.1.0`/빌드 `3`였다. 현재 준비 버전은 위의 build 6을 따른다. 원본 프로젝트의 빌드 번호는 유지하고 당시 시험 작업의 인자로만 3을 지정했다. 빌드 설정·archive·최종 IPA에서 버전과 ATS의 키·값·불리언 형식을 검사한다. 기존 ‘ATS 설정 없음’ 검증은 원본·Release에 유지하며, 생성된 시험 앱은 정확한 IP 보안 기본값 검증으로 보완한다.
 - 실기기 접근성 검사에서 오류 안내 문자열과 양수 크기는 확인됐지만 화면에서 보이지 않았다. 유효한 Debug 시험 앱의 안내 글자색만 실제 보이는 재시도 버튼의 기존 Accent 색으로 명시한다. 원본 Release와 일반 Debug의 색·레이아웃은 유지하며, 원인에 대한 색상 추정과 별도로 새 설치 후 실제 캡처에서 표시 효과를 검증한다.
 - 선택된 프로파일만 원격 Mac 메모리에서 해석한다. 조직·정확한 앱 ID·프로파일 이름·단일 기기·유효기간·Ad Hoc 권한·keychain 인증서 일치를 확인한다. App Store/전체 기기 허용 프로파일은 거부한다.
 - `native_signed_sandbox.py`는 `release-testing`/`destination=export`로 IPA를 로컬 생성한다. 보관 대상은 `STIZ-sandbox.ipa`와 식별자 원문 없는 `verification.json`뿐이다. IPA 안의 서명·embedded 프로파일·시험 주소·앱 ID를 다시 검사하고, 앱 표시 이름을 ‘STIZ 격리시험’으로 구분한다.
