@@ -1,9 +1,9 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: 최신 main 환경·문서 정렬 및 화면·가족 연결·청구 격리 검증. 운영·배포·TestFlight 제외.
-- 현재 단계: main3f032d06 별도worktree 준비·전체2761/가드5·tsc·가족PG35/청구PG20·9화면폭조합 가로0 통과. 문서현재화/독립통합검토 완료.
-- 승인 범위: 환경구성·문서현재화·합성검증. 기존Claude미커밋/운영스크립트보존, 운영DB/발송/결제/배포/TestFlight/새원격빌드 제외.
-- 검증 한계/다음: 실제본인인증·가족수신/승인·최신iPhone번들/DrivePNG·복수사진·수동취소 미완료. 과거PG시험도구 import/문자열 정비 필요. 정본 docs/main-state-verification-20261102.md.
+- 목표: 최신 화면·합성 인증/가족 요청/승인 iPhone 시험. 운영·TestFlight 제외.
+- 현재 단계: build5 exact주소25·가족67source 준비/전체2766·가드5·tsc·독립QA완료. USB1/build4확인, 신규원격/설치/실기기0.
+- 승인 범위: 최신iPhone반영·실기기검사, MID미발급이라 합성인증만. 검증branch푸시/수동원격1회는실행직전대기. 운영/발송/결제/배포/TestFlight 제외.
+- 검증 한계/다음: HTTPS백그라운드시작 auto-review거절·우회0. 원격5/새CA신뢰/설치/실물검증남음, docs/stiz-ios-family-device-validation.md 정본.
 ## 진행 현황표
 - 아래 기존 그룹은 해당 작업 당시의 이력이다. 현재 main·가족 활성화·빌드4 상태는 상단과 docs/main-state-verification-20261102.md를 따른다.
 | 그룹 | 담당 | 상태 | 완료 기준 |
@@ -85,6 +85,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-11-02: 승인최신iPhone준비·합성가족2세션·build5주소25. 전체2766/가드5·tsc·독립19/21/9/28·67source통과, 새CA준비·USB1/build4확인. LAN서버 auto-review거절/우회0·원격/실물미실행.
 - 2026-11-02: 승인main3f032d06 별도worktree·문서현재화. 전체2761/가드5·tsc·관련105·가족실PG35/청구20·웹9폭조합 가로0/할인재계산·합성저장확정발행 확인. 기존작업보존·운영/푸시/배포0.
 - 2026-10-29: 승인복귀일지우기UI1파일·로컬합성browser360/320·요청키true/false/true/사유유지·추가전송0·pending/uncertain보호 통과. tsc/기존28·독립QA, iPhone새UI/푸시/원격빌드/운영0.
 - 2026-10-29: 가로키보드신청버튼 추가스크롤접근/닫힘750x354·세로402x750복원·가로0,사유유지. resume오늘날짜실물/emptyfalse→빈값유지PASS보류·지우기UI계획. 네역할홈/역할선택복귀·운영/TestFlight0.
@@ -94,5 +95,4 @@
 - 2026-10-29: 저장후media복귀실물/독립확인·사진선택취소전후upload/stored0·선택0. 후속PNG104B Files회색/실수신0으로사용자성공응답보류·사진input재시도대기·운영/TestFlight0.
 - 2026-10-29: 새CA사용자신뢰후빌드4 역할선택실물/402x750가로0·strictTLS200. 합성PNG104B iOS공유창열림/뒤media유지, 사용자로컬저장대기·upload/stored0·운영/TestFlight0.
 - 2026-10-29: 승인빌드4 동일기기정확guard/USB설치1회·별도조회4, 직접실행·독립PNG 안내/-1202정상. 새CA명식별공개전달200/키경로404·사용자신뢰대기, strictHTTPS합성health200·운영/TestFlight0.
-- 2026-10-29: 승인5커밋956까지푸시·서명#4 1회 finished111초. IPA0.1.0/4 SHA일치·독립서명/코드/프로파일통과, strictTLS health200·합성전용. 운영/TestFlight/설치/새CA신뢰0·설치승인대기.
 ## PM 체크

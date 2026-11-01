@@ -38,3 +38,59 @@ export function sandboxFixtures(now = new Date(), { pendingChange = false } = {}
     driver: { token: 'sandbox-only', date: today, today, rows: driverRows, initialBoarding: {}, prevDate: null, nextDate: null, driverLabel: '합성 기사(위치 수집 없음)' },
   };
 }
+
+// 가족 연결 실기기용 합성 원장. 실제 계정·인증 공급자·DB를 사용하지 않는다.
+export const SYNTHETIC_FAMILY = Object.freeze({ familyName: '합성 기존보호자', familyPhone: '00000000000', childName: '합성 자녀', childBirthDate: '2016-01-01' });
+export function createSyntheticFamily({ issueId, now = () => Date.now() }) {
+  const verified = new Set(), challenges = new Map();
+  let request = null, linked = false;
+  const actors = new Set(['requester', 'approver']);
+  const fail = (status, error) => ({ status, body: { error, synthetic: true } });
+  const row = () => ({ id: request.id, status: request.status, relation: request.relation, createdAt: request.createdAt });
+  function state(actor) {
+    if (!actors.has(actor)) return { enabled: false, verified: false, outgoing: [], incoming: [], synthetic: true };
+    return { enabled: actors.has(actor), verified: verified.has(actor), synthetic: true,
+      outgoing: actor === 'requester' && request ? [row()] : [],
+      incoming: actor === 'approver' && verified.has(actor) && request ? [{ ...row(), childName: SYNTHETIC_FAMILY.childName, requesterName: '합성 추가보호자', requesterPhoneLast4: '0001' }] : [],
+      syntheticAccess: verified.has(actor) && (actor === 'approver' || (actor === 'requester' && linked)) };
+  }
+  function command(actor, body) {
+    if (!actors.has(actor) || !body || typeof body !== 'object' || Array.isArray(body)) return fail(403, '합성 시험 세션이 필요합니다.');
+    if (body.action === 'start-verification') {
+      for (const [key, value] of challenges) if (value.used || now() - value.issuedAt > 300000) challenges.delete(key);
+      if (challenges.size >= 32) return fail(429, '합성 인증 요청이 많습니다. 잠시 후 다시 시도해 주세요.');
+      const id = issueId(); challenges.set(id, { actor, issuedAt: now(), completed: false, used: false });
+      return { status: 200, body: { identityVerificationId: id, synthetic: true } };
+    }
+    if (body.action === 'complete-synthetic-verification' || body.action === 'cancel-synthetic-verification') {
+      const challenge = challenges.get(body.identityVerificationId);
+      if (!challenge || challenge.actor !== actor || challenge.used || challenge.completed || now() - challenge.issuedAt > 300000) return fail(409, '합성 인증 요청이 만료되었거나 이미 처리되었습니다.');
+      if (body.action === 'cancel-synthetic-verification') { challenge.used = true; return { status: 200, body: { canceled: true, synthetic: true } }; }
+      challenge.completed = true; return { status: 200, body: { completed: true, synthetic: true } };
+    }
+    if (body.action === 'verify') {
+      const challenge = challenges.get(body.identityVerificationId);
+      if (!challenge || challenge.actor !== actor || challenge.used || !challenge.completed || now() - challenge.issuedAt > 300000) return fail(409, '합성 인증 결과를 확인하지 못했습니다.');
+      challenge.used = true; verified.add(actor);
+      return { status: 200, body: { verified: true, linkedCount: actor === 'approver' ? 1 : linked ? 1 : 0, synthetic: true } };
+    }
+    if (!verified.has(actor)) return fail(403, '먼저 합성 본인인증을 완료해 주세요.');
+    if (body.action === 'request') {
+      if (actor !== 'requester' || linked || request?.status === 'PENDING') return fail(409, '진행 중이거나 완료된 합성 요청을 확인해 주세요.');
+      if (body.familyName !== SYNTHETIC_FAMILY.familyName || body.familyPhone !== SYNTHETIC_FAMILY.familyPhone || body.childName !== SYNTHETIC_FAMILY.childName || (body.childBirthDate && body.childBirthDate !== SYNTHETIC_FAMILY.childBirthDate) || !['PARENT', 'OTHER'].includes(body.relation)) return fail(400, '입력한 정보로 연결 요청을 접수할 수 없습니다. 시험 안내의 합성 정보만 입력해 주세요.');
+      request = { id: issueId(), status: 'PENDING', relation: body.relation, createdAt: new Date(now()).toISOString() };
+      return { status: 200, body: { ok: true, synthetic: true } };
+    }
+    if (body.action === 'decide') {
+      if (actor !== 'approver' || !request || request.status !== 'PENDING' || body.requestId !== request.id || !['APPROVE', 'REJECT'].includes(body.decision)) return fail(403, '기존 합성 보호자만 대기 요청을 처리할 수 있습니다.');
+      request.status = body.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED'; linked = request.status === 'APPROVED';
+      return { status: 200, body: { ok: true, synthetic: true } };
+    }
+    if (body.action === 'cancel') {
+      if (actor !== 'requester' || !request || request.status !== 'PENDING' || body.requestId !== request.id) return fail(409, '취소할 합성 요청을 확인해 주세요.');
+      request.status = 'CANCELED'; return { status: 200, body: { ok: true, synthetic: true } };
+    }
+    return fail(403, '격리 시험에서 지원하지 않는 요청입니다.');
+  }
+  return { state, command };
+}

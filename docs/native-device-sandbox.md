@@ -48,7 +48,7 @@ node scripts/native-device-sandbox.mjs serve <run-ID>
 | `/admin`, `/staff`, `/staff/sessions/sandbox-session`, `/mypage`, `/mypage/enrollment-change`, `/driver/sandbox-only` | 준비한 실제 클라이언트 화면 |
 | `/__sandbox/media` | 사진·촬영·복수 선택·문서 파일 선택 시험 |
 | `/__sandbox/health`, `/__sandbox/counters` | 합성 여부·개인정보 없는 수신 건수/바이트 |
-| `/api/admin/dashboard`, `/api/admin/dashboard/system`, `/api/account/child-links`, `/api/staff/sessions/sandbox-session/photos` GET | 고정 합성 조회. 가족 연결 비활성·사진 목록 비어 있음 |
+| `/api/admin/dashboard`, `/api/admin/dashboard/system`, `/api/account/child-links`, `/api/staff/sessions/sandbox-session/photos` GET | 기본 합성 조회. 가족 시험 경로에서는 두 고정 actor의 합성 연결 상태, 사진 목록은 비어 있음 |
 | `/__sandbox/upload`, `/api/staff/sessions/sandbox-session/photos` POST | 같은 Origin에서 허용 형식의 한 파일만 메모리 수신·내용 폐기 |
 
 본문 최대 8 MiB, 파일 최대 5 MiB다. 이름·파일 내용·위치·세션·쿠키는 저장하지 않으며, 반환값은 합성 표시·크기·형식·해시·`stored:false`다. 수업 사진 POST의 이미지 URL은 시험용 공식 로고를 가리키고 실제 사진 저장을 뜻하지 않는다. 조회 목록도 계속 비어 있다.
@@ -86,3 +86,7 @@ HEIC/HEIF는 `/__sandbox/upload`에서 `ftyp`·브랜드·크기를 확인해 ra
 시험 인증서는 약 2일 후 만료된다. 새로 준비하면 새 CA가 발급되므로 Android 시험 APK도 그 공개 CA로 다시 빌드해야 한다. 이전 APK와 새 서버의 신뢰가 맞는다고 추정하지 않는다. iPhone은 명시한 LAN 주소의 SAN·승인된 인증서 신뢰·서명 기기용 앱을 준비한 뒤 검사한다. 브라우저 인증서 경고를 무시해 시험하지 않는다.
 
 후속 사용자 승인으로 신규 iOS 코드 `9dea3b21`의 무서명 원격 빌드 #3을 정확히1회 실행해 Swift·Xcode 컴파일을 확인했다. [빌드 정본](stiz-ios-codemagic.md)과 [아이폰 설치 준비](stiz-ios-device-install-preparation.md)를 따른다. 이전 본문의 iOS 컴파일 미검증은 환경 구성 당시 기록이며, 실제 WebKit·기기·OS 신뢰는 여전히 미검증이다. 설치·기기 등록·서명·추가 원격 빌드·발송·운영 활성화·TestFlight를 자동 실행하지 않는다.
+
+## 2026-11-02 합성 가족 연결 시험 확장
+
+최신 실제 ChildConnectionsClient와 /__sandbox/family/requester·approver를 추가했다. 두 고정 합성 세션의 인증 완료/취소·정확 요청·기존 부모 승인·요청자 접근 결과를 메모리로 시험한다. 같은 원점 /api/account/child-links POST만 추가 허용하며 허용 actor/body/action·Host/Origin·크기를 검사한다. 운영 인증·DB·발송·결제·GPS 차단은 유지한다. 실제 부모 계정·인증 공급자·SQL 검증과 구분한다. [현재 준비·실행 제한](stiz-ios-family-device-validation.md)을 따른다.
