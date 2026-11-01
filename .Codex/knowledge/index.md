@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: build5 설치·정확CA ON·합성 인증→가족 요청/승인→접근 허용 iPhone 실기기 완료. 증거13/13·독립DOM19/402×750가로0, 유한 서버/CA 종료. 실인증·실계정/SQL 별도, 운영/TF0. docs/stiz-ios-family-device-validation.md 정본·본문5유지.
+
 > 2026-11-02: 승인2commit1799까지검증branch푸시·서명#5 actual1799/M2/SSHoff 시작1회 finished100초. IPA0.1.0/5·169130B/독립28·원격main유지. docs/stiz-ios-family-device-validation.md 정본, 설치/실물/운영/TestFlight0·서버auto-review차단유지·본문5유지.
 
 > 2026-11-02: 최신iPhone용build5주소25·합성가족67source·새CA준비. 전체2766/가드5·tsc·독립PASS, USB1/build4확인. 서버 auto-review차단·원격/설치/실물0·정본 docs/stiz-ios-family-device-validation.md, 본문5유지.

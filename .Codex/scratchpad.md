@@ -1,11 +1,11 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
 - 목표: 최신 화면·합성 인증/가족 요청/승인 iPhone 시험. 운영·TestFlight 제외.
-- 현재 단계: 승인2commit1799까지 검증branch푸시·서명#5 1회 finished100초·IPA독립28통과. 설치/실물0·서버실행차단유지.
-- 승인 범위: 최신iPhone반영·합성인증; 검증branch2commit푸시/수동원격1회 완료. 운영/발송/결제/배포/TestFlight 제외.
-- 검증 한계/다음: HTTPS백그라운드시작 auto-review거절·우회0. 새CA신뢰/설치/실물검증남음, docs/stiz-ios-family-device-validation.md 정본.
+- 현재 단계: build5 USB 설치·정확 CA ON 직접 확인·합성 인증→가족 요청/승인→접근 실기기 완료. 증거13/13·독립 QA PASS.
+- 승인 범위: 차단읽기조사·안전한제한서버·build5설치·합성가족실기기. 운영/발송/결제/배포/TestFlight 제외.
+- 검증 한계/다음: 실제 인증사/MID·실계정/SQL은 별도. 시험 서버·CA 전달은 900초 후 종료. docs/stiz-ios-family-device-validation.md 정본.
 ## 진행 현황표
-- 아래 기존 그룹은 해당 작업 당시의 이력이다. 현재 main·가족 활성화·빌드4 상태는 상단과 docs/main-state-verification-20261102.md를 따른다.
+- 아래 기존 그룹은 해당 작업 당시의 이력이다. 현재 빌드5·가족 실기기 상태는 상단과 docs/stiz-ios-family-device-validation.md를 따른다.
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
 | 빌드4·식별 CA 준비 | PM 구현/환경·독립QA | 로컬·실HTTPS 완료 | Python9/참조28/Node44·전체2600/학생5·새run13/독립14, 푸시/remote/설치0 |
@@ -85,6 +85,7 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
+- 2026-11-02: 유한 전경 실행으로 안전 복구·build5 설치/별도5조회·정확CA ON·합성 인증 취소/완료→불일치거부→요청/기존부모승인→접근 허용 실기기 완료. 증거13/13·독립DOM19/가로0·900초 정상종료, 운영/TF0.
 - 2026-11-02: 승인2commit1799까지검증branch푸시·Codemagic#5 actual1799·시작1회 finished100초. IPA169130B/독립28·원격main동일, 설치/운영/TestFlight0·서버auto-review차단유지.
 - 2026-11-02: 승인최신iPhone준비·합성가족2세션·build5주소25. 전체2766/가드5·tsc·독립19/21/9/28·67source통과, 새CA준비·USB1/build4확인. LAN서버 auto-review거절/우회0·원격/실물미실행.
 - 2026-11-02: 승인main3f032d06 별도worktree·문서현재화. 전체2761/가드5·tsc·관련105·가족실PG35/청구20·웹9폭조합 가로0/할인재계산·합성저장확정발행 확인. 기존작업보존·운영/푸시/배포0.
@@ -94,5 +95,4 @@
 - 2026-10-29: 정확사진input Files비활성/Drive확인→시험서버종료PID/양쪽refused확정·같은runCA숨김복구. 사진보관함PNG104수신1/저장0·실물확인, 새effective날짜폭326/가로0·키보드대기. 운영/TestFlight0.
 - 2026-10-29: 합성PNG Drive표시직접확인·정확사진accept입력메뉴root실행후Files비활성사용자재현. 원인미확정/성공보류·합성사진저장/보관함경로요청, 개인사진캡처/운영작업0.
 - 2026-10-29: 저장후media복귀실물/독립확인·사진선택취소전후upload/stored0·선택0. 후속PNG104B Files회색/실수신0으로사용자성공응답보류·사진input재시도대기·운영/TestFlight0.
-- 2026-10-29: 새CA사용자신뢰후빌드4 역할선택실물/402x750가로0·strictTLS200. 합성PNG104B iOS공유창열림/뒤media유지, 사용자로컬저장대기·upload/stored0·운영/TestFlight0.
 ## PM 체크
