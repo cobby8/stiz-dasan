@@ -1,5 +1,16 @@
 # STIZ 등록 아이폰 격리 서명 시험
 
+## 2026-11-02 검증 브랜치 푸시·서명 빌드 5 완료
+
+- 사용자 실행 직전 승인으로 39ef28a5·1799f577 두 커밋을 codex/main-validation-20261101에만 푸시했다. 원격 main은 3f032d06ae2d407a2a04936f8f3d8ea75c6f50dc로 전후 동일하다. 시험 브랜치 자동 배포 차단을 확인했다.
+- Codemagic stiz-ios-sandbox-adhoc 최종 시작 버튼은 정확히 1회 눌렀다. [빌드5](https://codemagic.io/app/6adf8936614a5060c363fedd/build/6ae75b62efa74786046fcb07), actual 1799f5775386368e5544c29e0b2cd6844542d4dc, Mac mini M2, SSH/VNC 꺼짐. 2026-11-02 00:31 KST 시작, finished 1분40초. Swift 주소정책·프로젝트 구성·서명/IPA 단계 성공을 확인했다.
+- 시작 뒤 UI 오류 토스트가 있었으나 새 빌드 ID·실제 상태가 생성된 것을 확인했다. 중복 시작하지 않았다. 브랜치 새로 읽기 버튼과 실제 드롭다운을 구분해 승인된 검증 브랜치를 선택했고, main으로 실행하지 않았다.
+- 일반 CUA 브라우저 다운로드로 IPA 및 보고서 ZIP을 확보했다. IPA 169130바이트, SHA-256 8acca5221bb4b5787bff285a4df670a40cbe28085e13e9a01323d707d9e90673. 보고서 공개16필드·해시 일치 및 독립28/28 통과.
+- 독립 검사: 0.1.0/5·exact172.30.1.25:8453·strict ATS·인증 비활성·STIZ Bundle/팀/프로파일·기존 승인과 동일한 등록기기1대·CMS 서명·CodeDirectory28페이지/7특수슬롯·자원6개 해시. 기기 식별값/키는 기록하지 않았다. Windows에서 Apple 신뢰체인을 독립 검증한 것은 아니다.
+- 설치·기기 실행·서버 실행·새 CA 신뢰는 하지 않았다. HTTPS 시험 서버 백그라운드 시작의 자동 승인 검토 거절은 여전히 남아 있으며 우회하지 않는다. 운영 홈페이지 배포·TestFlight 업로드 없음.
+- 증거: .tmp/ios-build5-remote/{execution.json,config.png,started.png,finished.png,STIZ-sandbox.ipa,reports.zip,verification.json}, .tmp/ios-build5-independent/remote-ipa/independent-ipa-report.json.
+
+
 ## 선택 복귀 날짜 지우기 로컬 수정·검증 (2026-10-29)
 - 사용자 승인으로 EnrollmentChangeClient.tsx의 PAUSE 복귀 날짜 영역만 수정했다. 선택 날짜가 있을 때 ‘날짜 지우기’ type=button이 표시되고 setResumeOn("")만 실행한다. pending 또는 uncertain 동안은 비활성화한다. 기존 신청 본문·API·서버 처리·다른 입력 상태는 변경하지 않았다. 색은 기존 brand-accent 변수, 터치 높이는 min-h-11을 유지했다.
 - 실제 컴포넌트를 기존 buildSandbox로 합성 번들54소스(SHA e238924de9d1cac288b2d6180ea1054128cb4babd8114da288752a1c3833189d)로 만들어 loopback127.0.0.1:8460에서 브라우저 검증했다. 전용 시험 서버는 합성 enrollment/Origin/Host만 허용하고 POST에403/500만 응답한다. 실제 접수·DB·발송·결제·운영 연결은 없고 요청 본문 대신 합성 여부·필드 존재 여부만 메모리에 기록한다.

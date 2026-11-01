@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: 승인2commit1799까지검증branch푸시·서명#5 actual1799/M2/SSHoff 시작1회 finished100초. IPA0.1.0/5·169130B/독립28·원격main유지. docs/stiz-ios-family-device-validation.md 정본, 설치/실물/운영/TestFlight0·서버auto-review차단유지·본문5유지.
+
 > 2026-11-02: 최신iPhone용build5주소25·합성가족67source·새CA준비. 전체2766/가드5·tsc·독립PASS, USB1/build4확인. 서버 auto-review차단·원격/설치/실물0·정본 docs/stiz-ios-family-device-validation.md, 본문5유지.
 
 > 2026-11-02: 최신main3f032d06 별도환경·문서현재화, 전체2761/가드5·tsc·관련105·가족실PG35/청구20·웹9폭조합 가로0/합성흐름 통과. 실제공급자/운영/실기기와 구분, docs/main-state-verification-20261102.md 정본. 기존변경보존·지식본문5유지.
