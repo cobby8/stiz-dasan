@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: Android첨부 시험fixture sandbox전용가드·네트워크차단검사/오프라인APK준비·독립15/24/10 통과, main/권한불변·실제설치/9계측0. 출시표build6현재화, docs/android-attachment-device-preparation.md정본·본문5유지.
+
 > 2026-11-02: build6실제번들/임시CSS0·가로17px/scale1/넘침0·스크롤버튼전체·날짜삭제/사유2·세로402x750/관찰기정리 통과. 증거10·독립PASS·실인증/운영별도, docs/stiz-ios-build6-validation.md정본·본문5유지.
 
 > 2026-11-02: build6준비c99+기록8a검증branch푸시/main불변·서명#6/72초/IPA독립28·USB설치후6조회. 새CA43d신뢰대기/-1202, docs/stiz-ios-build6-validation.md정본·본문5유지.

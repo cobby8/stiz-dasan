@@ -26,7 +26,8 @@ public final class AttachmentFixtureActivity extends Activity {
     public volatile int resultCount;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        if (!BuildConfig.DEBUG) { finish(); return; }
+        if (!BuildConfig.DEBUG || !BuildConfig.STIZ_SANDBOX || !BuildConfig.STIZ_UNIFIED_APP
+            || BuildConfig.STIZ_NATIVE_AUTH || !"kr.stiz.driver.sandbox".equals(getPackageName())) { finish(); return; }
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setAllowFileAccess(false);

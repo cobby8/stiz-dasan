@@ -11,7 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Prepared real-WebView checks; run only in an explicitly owned isolated emulator. */
+/** Prepared real-WebView checks; only an explicitly approved device and the isolated sandbox package may run them. */
 final class AttachmentWebViewChecks {
     private static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
     private static void await(CountDownLatch latch) throws Exception { require(latch.await(8, TimeUnit.SECONDS), "Fixture callback timeout"); }
@@ -34,14 +34,17 @@ final class AttachmentWebViewChecks {
         runner.runOnMainSync(() -> activity.result(activity.requestCode, Activity.RESULT_OK, result)); await(activity.delivered);
     }
     static int run(Instrumentation runner) throws Exception {
-        require(BuildConfig.DEBUG && BuildConfig.STIZ_UNIFIED_APP && !BuildConfig.STIZ_NATIVE_AUTH, "Use the default unified, native-auth-disabled debug fixture APK");
+        require(BuildConfig.DEBUG && BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && !BuildConfig.STIZ_NATIVE_AUTH
+            && "kr.stiz.driver.sandbox".equals(runner.getTargetContext().getPackageName()),
+            "Use the explicitly approved, isolated sandbox debug fixture APK");
         AttachmentFixtureActivity activity = (AttachmentFixtureActivity) runner.startActivitySync(new Intent(runner.getTargetContext(), AttachmentFixtureActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         int checks = 0;
         try {
             await(activity.ready);
             java.util.concurrent.atomic.AtomicBoolean restricted = new java.util.concurrent.atomic.AtomicBoolean();
-            runner.runOnMainSync(() -> restricted.set(!activity.web.getSettings().getAllowFileAccess() && !activity.web.getSettings().getAllowContentAccess()));
-            require(restricted.get(), "WebView local access changed"); checks++;
+            runner.runOnMainSync(() -> restricted.set(!activity.web.getSettings().getAllowFileAccess() && !activity.web.getSettings().getAllowContentAccess()
+                && activity.web.getSettings().getBlockNetworkLoads()));
+            require(restricted.get(), "WebView local access or network isolation changed"); checks++;
             choose(runner, activity, "single"); deliver(runner, activity, new Intent().setData(uri("one")));
             JSONArray first = new JSONArray(read(runner, activity));
             require(first.length() == 1 && first.getJSONObject(0).getString("type").equals("image/png") && first.getJSONObject(0).getJSONArray("bytes").getInt(0) == 137, "PNG FileList/FileReader failed"); checks++;

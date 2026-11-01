@@ -1,5 +1,14 @@
 # Android 격리 시험 연결
 
+## Android 파일 읽기 실기기 시험 준비 (2026-11-02)
+
+- 사용자가 연결할 Z Fold8을 후보로 확인했으며, 대상 기기·설치는 PM이 단일 소유자로 별도 확인한다. 이번 로컬 준비만으로 연결·설치·실행 완료를 표시하지 않는다.
+- `mediaFixture=true` 계측은 **`kr.stiz.driver.sandbox` Debug 패키지**에서만 실행한다. 일반 unified/driver 앱과 Release는 거부한다. fixture Activity도 같은 조건을 독립 확인하며 외부에 공개하지 않는다.
+- 실제 WebView의 `file/content` 접근 비활성 및 `blockNetworkLoads=true`를 첫 검사에서 확인한다. 앱의 일반 URI 읽기 차단을 풀지 않으며, 합성 provider의 고정 바이트만 콜백으로 넣는다. 운영 계정·자료·카메라·개인 사진·GPS·외부 선택창은 사용하지 않는다.
+- 준비된 9개 검사는 설정 보호, PNG 단일, PNG 복수, JSON, 선택 취소, 늦은 중복 응답, 잘못된 이미지, 크기 초과, 탐색 취소다. 실제 폰의 FileList/FileReader 결과는 실행 후 따로 기록한다. 실제 시스템 사진/Files 선택·회전·HTTPS 수신·다운로드는 이 계측 통과와 별개다.
+- 최신 공개 CA만 넣은 sandbox debug와 androidTest를 로컬 빌드하고 unsigned Release에서 시험 Activity·provider·CA가 제외되는지 검사한다. 새 CA의 개인키·운영 키는 읽거나 복사하지 않는다.
+
+
 2026-10-28 사용자 승인: 운영 자료·발송·결제를 차단한 합성 시험 환경 준비. 실제 기기 설치·GPS 수집·운영 배포·서명 출시·원격 빌드는 하지 않는다.
 
 ## 구성
