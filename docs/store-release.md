@@ -1,10 +1,12 @@
 # STIZ 통합 앱 스토어 출시 준비
 
-기준일: 2026-10-28 · 출시 주체: 업턴랩스 · **출시 준비 중, 제출·공개 미승인**
+기준일: 2026-11-02 · 코드 기준 main `3f032d06` · 출시 주체: 업턴랩스 · **출시 준비 중, 제출·공개 미승인**
 
 2026-10-25 사용자 결정은 **STIZ 앱 하나에서 역할별 화면으로 이동**하는 방식이다. Android는 학부모·선생님·관리자·기사님, iOS는 학부모·선생님·관리자를 대상으로 한다. 기사님 운행폰은 Android만 사용한다. 기존 웹·PWA 설치 경로는 유지한다.
 
 이 문서는 현재 소스·검증 기록과 남은 조건을 구분한다. 10월 25일 개발자 계정 결제 완료 기록은 현재 조직·계약·게시 권한을 새로 확인한 결과가 아니다. 이번 문서 정정에서 운영 설정·실제 계정·비밀키는 조회하거나 변경하지 않았다.
+
+10월 30일 `9bbd622f`에는 가족 연결 운영 표 3개 적용·사전검사 통과·Production/Preview 활성화가 기록돼 있다. 이는 과거 실행 기록 대조이며 현재 운영 재조회 결과는 아니다. 최신 main의 화면 개편과 날짜 지우기는 기존 아이폰 시험 번들에 반영됐다는 증거가 없어 별도 검증한다.
 
 ## 1. 현재 구현과 산출물
 
@@ -12,9 +14,9 @@
 |---|---|---|
 | Android | `apps/driver-android` WebView+위치 서비스 통합 기반. `/store-app` 진입, target/compile SDK 36, 최소 API 26 | 정식 패키지·업턴랩스 서명·스토어 소유 확인, 실제 설치·업데이트 |
 | Android 산출물 | 기본 debug `kr.stiz.driver.unified`, 이번 격리 APK `kr.stiz.driver.sandbox`, 0.1.0(1). release는 `kr.stiz.driver` unsigned | debug 자동 서명은 정식 배포 서명이 아님. 최종 식별자·서명 확정 필요 |
-| iOS | `apps/stiz-ios` UIKit/WKWebView, 개발용 `kr.stiz.academy.dev`, 최소 iOS 16, 0.1.0(1) | 정식 Bundle ID·Apple 팀·기기용 프로파일·서명 IPA |
-| iOS 컴파일 | Codemagic #2의 `1954bfd8`에서 실제 Swift 38+13·Xcode arm64/x86_64 성공, simulator zip 233.80KB 표시 | 시뮬레이터 UI·파일 내부·아이폰 설치 미검증. 이 zip은 아이폰용 IPA가 아님 |
-| 실행 차단 | 검증 브랜치 Vercel 자동 배포 차단, Codemagic 수동 실행, Apple 서명·업로드 단계 없음 | 추가 원격 빌드·설치·서명·운영 배포·TestFlight·제출은 각각 승인 필요 |
+| iOS | UIKit/WKWebView, 기본 개발 ID `kr.stiz.academy.dev`·최소 iOS 16. 별도 STIZ Ad Hoc 시험은 `kr.co.upturnlabs.stizdasan`·0.1.0/build 4 | 시험 ID·팀·프로파일 및 IPA 검증/등록 아이폰 설치 완료. 운영 Release·스토어 서명은 별도 |
+| iOS 빌드·실행 | `95646eba`의 Codemagic 서명 build 4가 완료됐고 IPA 서명·단일 기기 대조 후 USB 설치. 합성 홈·PNG 공유/첨부·날짜·키보드·회전 부분 통과 | 최신 웹 화면 반영·실제 인증·가족·결제 전체 흐름 미검증. 무서명 시뮬레이터 zip과 아이폰 IPA는 구분 |
+| 실행 차단 | 검증 브랜치 Vercel 자동 배포 차단, Codemagic 수동 실행. 승인된 Ad Hoc 서명 작업은 존재하며 TestFlight 업로드 미실행 | main 자동 배포까지 차단한 설정은 아님. 추가 원격 빌드·설치·서명·운영 배포·TestFlight·제출은 각각 승인 필요 |
 
 증거 정본: [앱 기반](native-app-foundation.md), [사진·인증 후속](native-app-media-auth-followup.md), [Codemagic](stiz-ios-codemagic.md). 실행할 시험과 차단 목록은 [실기기·출시 준비 원장](native-device-release-readiness.md)으로 관리한다. 과거 태블릿 잠금·T맵 각 약 3분 시험은 최신 통합 앱의 장시간 운행 성공 근거가 아니다.
 
@@ -38,7 +40,7 @@
 | 소셜 로그인 | 웹은 실제 Supabase 제공자 설정으로 버튼·시작 경로 판정. 네이버만 기존 별도 설정 | 오래된 `NEXT_PUBLIC_APPLE_LOGIN_ENABLED` 절차는 사용하지 않음. 실제 공급자·앱 복귀 시험 |
 | 앱 인증 인계 | 일회용 개발용 코드·취소·만료 처리 구현, 기본 비활성·운영 강제 차단 | 격리 HTTPS 환경·운영용 설계·복귀·세션 갱신·로그아웃 |
 | STIZ 본인인증 | 마지막 사용자 확인에서 전용 이니시스 MID/apikey 미발급 | 전용 채널·고지·실기기 인증. BDR 공용 채널 임의 변경 금지 |
-| 가족 연결 | 기존 부모 정확한 이름·연락처 일치 후 요청·승인 모델, 새 기능 마지막 운영 확인 비활성 | 실제 알림 전달·실패/재시도·미확인 표시 미연결. 요청 DB 생성만 전달 완료로 보지 않음 |
+| 가족 연결 | 기존 부모 정확한 이름·연락처 일치 후 요청·승인 모델. 10/30 운영 표 적용·활성화 커밋 기록 확인(현재 운영 재조회 아님) | 실제 인증→요청→기존 보호자 확인·승인·거절·권한 회수 전체 흐름 필요. 별도 푸시 전달은 미연결이며 요청 생성만 전달 완료로 보지 않음 |
 | 자녀 보호 | 미성년자는 부모 없는 학원 승인 우회 통로를 만들지 않음. 성인 본인 연결 별도 | 잘못된 가족·자녀 없음·다중 역할·권한 회수 실기기 검증 |
 | 계정 삭제 | 공통 `/account/withdraw`, 기존 학부모 경로와 관리자 검토 화면 존재 | 자녀 없는 계정·전 역할 접근, 실제 인증 해제·잔여 세션 차단·보관 예외·처리 실패·관리자 권한 이관 |
 
@@ -73,9 +75,9 @@ Apple 4.8 로그인 요건은 실제 로그인·서비스 유형과 예외로 �
 
 ## 5. 네이티브·스토어 남은 작업
 
-- **안전한 시험:** 후속 승인으로 [합성 HTTPS 환경](native-device-sandbox.md)과 Android 시험 APK를 준비했다. iOS는 Debug의 명시 사설 HTTPS 설정만 허용하고 신규 Swift 컴파일·기기 설치는 미검증이다. 실제 앱 인증 계약·설치·OS 신뢰는 별도 확인한다. 기본/Release 운영 주소는 유지한다.
-- **기능 빈틈:** 마이크·다운로드·일부 새 창 지도 링크·원격 푸시·로그인 기반 `/staff/run` 네이티브 위치 연결은 추가 구현/검증 대상이다. 공개 `/driver/<token>` 위치 서비스만으로 통합 기사 기능 완료를 선언하지 않는다.
-- **실기기:** 사진·카메라·복수 선택·HEIC·취소·파일·전화·지도·SHOP·결제 복귀·회전·키보드·확대·오프라인을 역할별 시험한다. 웹 통과를 네이티브 통과로 바꾸지 않는다.
+- **안전한 시험:** [합성 HTTPS 환경](native-device-sandbox.md)과 Android 시험 APK를 준비했다. iOS build 4는 실제 Swift 컴파일·서명·등록 아이폰 USB 설치·사용자 CA 신뢰 후 연결까지 완료했다. 이전 시험 CA는 2026-10-31 만료됐으므로 현재 접속에 재사용하지 않는다. 기본/Release 운영 주소와 보안 검증은 유지한다.
+- **기능 빈틈:** 마이크·일부 새 창 지도 링크·원격 푸시·로그인 기반 `/staff/run` 네이티브 위치 연결은 추가 구현/검증 대상이다. iOS 제한 HTTPS 파일의 공유·저장 경로는 부분 검증했지만 Blob CSV와 진행 중 수동 취소, Android 다운로드는 남아 있다. 공개 `/driver/<token>` 위치 서비스만으로 통합 기사 기능 완료를 선언하지 않는다.
+- **실기기:** iPhone build 4의 단일 합성 PNG 사진 보관함 수신·선택 취소, 학부모 날짜 폭·세로 키보드·가로 스크롤 접근·세로 복원은 부분 통과했다. Drive Files PNG는 비활성 원인 미확정이고 복수 선택·촬영·HEIC·큰 글씨·최신 화면·전화·지도·SHOP·결제 복귀·오프라인은 남아 있다. 날짜 지우기는 로컬 브라우저만 통과했다. 웹 통과를 네이티브 통과로 바꾸지 않는다.
 - **앱 링크:** assetlinks 라우트는 설정 전 404다. 최종 패키지와 실제 설치에 사용된 서명 인증서 지문을 확인하며 업로드 키와 Play 서명 키를 무조건 모두 등록하지 않는다. iOS Associated Domains/AASA도 별도 준비한다. 개발 URL scheme은 검증 링크가 아니다.
 - **서명·아이콘:** STIZ 전용 ID·팀·프로파일·아이콘 준비. 웹 로고/512 아이콘 존재는 상점 아이콘 완료가 아니다. iOS AppIcon·개인정보 명세 점검이 남았다. 필요한 API/SDK를 조사한 뒤 정확한 사유를 기록하며 임의 Privacy Manifest 사유를 만들지 않는다. [Apple 필수 사유 API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api?changes=_2_8&language=objc)
 - **기사 위치:** 잠금·T맵 각 20분 이상, 전화·실외·절전·망 복구·종료 후 중단을 서버 시각과 대조한다. 현 manifest에 `ACCESS_BACKGROUND_LOCATION`이 없다는 이유만으로 고지·심사를 면제하지 않는다. [Google 위치 정책](https://support.google.com/googleplay/android-developer/answer/9799150?hl=en-en)
