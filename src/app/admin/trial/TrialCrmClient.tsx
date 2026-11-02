@@ -11,7 +11,7 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
-import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel } from "@/lib/trial-schedule-display";
+import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
 import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
 import {
     updateTrialLead,
@@ -379,20 +379,12 @@ function normalizeSlotKey(slotKey: string | null) {
 }
 
 function getPreferredSlotKeyCandidates(lead: TrialLead) {
-    const candidates: string[] = [];
     const directSlotKey = normalizeSlotKey(lead.preferredSlotKey);
     const dayCode = normalizePreferredDayCode(lead.preferredDay);
     const period = normalizePreferredPeriod(lead.preferredPeriod);
     const derivedSlotKey = dayCode && period ? `${dayCode}-${period}` : null;
 
-    // 정규 키가 옛 요일·교시를 가리키면 현재 희망값을 우선한다. UUID 추가반 연결은 보존한다.
-    const regularKey = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-\d+$/.test(directSlotKey ?? "");
-    const orderedKeys = regularKey ? [derivedSlotKey, directSlotKey] : [directSlotKey, derivedSlotKey];
-    orderedKeys.forEach((slotKey) => {
-        if (slotKey && !candidates.includes(slotKey)) candidates.push(slotKey);
-    });
-
-    return candidates;
+    return trialPreferredSlotKeyCandidates(directSlotKey, derivedSlotKey);
 }
 
 function getPreferredClass(lead: TrialLead, classesBySlotKey?: Map<string, ClassInfo>) {

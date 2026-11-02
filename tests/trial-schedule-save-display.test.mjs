@@ -84,6 +84,42 @@ test("추가반 UUID의 69를 교시로 읽지 않고 명시된 화3을 표시�
     assert.equal(display.trialClassShortLabel({ ...fixtureClass, name: "성장반" }), "화15:00");
 });
 
+test("현재 화3 정규키가 없고 추가반만 있어도 목록·상세에서 옛 금4로 돌아가지 않는다", () => {
+    const ctx = functionsFrom(client, ["DAY_LABELS", "DAY_SHORT_LABELS", "DAY_CODE_BY_LABEL",
+        "normalizePreferredDayCode", "normalizePreferredPeriod", "normalizeSlotKey", "getPreferredSlotKeyCandidates",
+        "getPreferredClass", "formatClassLabel", "formatClassShortLabel", "formatSlotShortLabel",
+        "formatPreferredScheduleShort", "formatPreferredSchedule", "formatTrialListScheduleShort"], {
+        trialClassShortLabel: display.trialClassShortLabel,
+        trialClassTimeRange: display.trialClassTimeRange,
+        trialConfirmedClassShortLabel: display.trialConfirmedClassShortLabel,
+        trialPreferredSlotKeyCandidates: display.trialPreferredSlotKeyCandidates,
+        seoulDateInputValue: time.seoulDateInputValue,
+    });
+    const oldClass = { ...fixtureClass, id: "old-fri", slotKey: "Fri-4", name: "금요일 4교시", dayOfWeek: "Fri" };
+    const bySlot = new Map([[oldClass.slotKey, oldClass], [fixtureClass.slotKey, fixtureClass]]);
+    const lead = { preferredSlotKey: "Fri-4", preferredDay: "화", preferredPeriod: "3", scheduledClassId: fixtureClass.id,
+        scheduledDate: "2026-11-10T06:00:00Z" };
+    assert.equal(ctx.formatTrialListScheduleShort(lead, new Map([[fixtureClass.id, fixtureClass]]), bySlot), "화3");
+    assert.equal(ctx.formatPreferredScheduleShort(lead, bySlot), "화3");
+    assert.equal(ctx.formatPreferredSchedule(lead, bySlot), "화요일 3교시");
+    assert.equal(ctx.getPreferredClass(lead, bySlot), null);
+    // UUID로 연결된 현재 추가반은 추측한 정규 키보다 계속 우선한다.
+    assert.equal(ctx.getPreferredClass({ ...lead, preferredSlotKey: fixtureClass.slotKey }, bySlot)?.id, fixtureClass.id);
+    // 구조화된 희망값이 없는 옛 신청의 정규 키는 보존한다.
+    assert.equal(ctx.getPreferredClass({ ...lead, preferredDay: null, preferredPeriod: null }, bySlot)?.id, oldClass.id);
+
+    const modal = functionsFrom(modals, ["DAY_LABELS", "DAY_CODE_BY_LABEL", "dateInputValue",
+        "normalizePreferredDayCode", "normalizePreferredPeriod", "normalizeSlotKey", "getPreferredSlotKeyCandidates",
+        "getPreferredClass", "formatClassLabel", "formatPreferredSchedule"], {
+        trialClassTimeRange: display.trialClassTimeRange,
+        trialPreferredSlotKeyCandidates: display.trialPreferredSlotKeyCandidates,
+        seoulDateInputValue: time.seoulDateInputValue,
+    });
+    assert.equal(modal.formatPreferredSchedule(lead, [...bySlot.values()]), "화요일 3교시");
+    assert.equal(modal.getPreferredClass(lead, [...bySlot.values()]), null);
+    assert.equal(modal.getPreferredClass({ ...lead, preferredSlotKey: fixtureClass.slotKey }, [...bySlot.values()])?.id, fixtureClass.id);
+});
+
 test("희망 요일·교시 저장 후 재조회하면 옛 금4 키도 화3으로 갱신된다", async () => {
     const harness = saveHarness();
     await harness.save("fixture-lead", { preferredDay: "화", preferredPeriod: "3" });
