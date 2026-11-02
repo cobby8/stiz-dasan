@@ -4,6 +4,13 @@ import { resolveTrialScheduleStartTime, seoulDateInputValue, seoulTimeInputValue
 const DAYS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
 const DAY_CODES = Object.fromEntries(Object.entries(DAYS).flatMap(([code, label]) => [[label, code], [`${label}요일`, code], [code, code]]));
 
+export function trialPreferredSlotKeyCandidates(directSlotKey: string | null, derivedSlotKey: string | null) {
+    // 현재 희망값과 다른 옛 정규 키는 후보에서 제외한다. UUID 추가반 연결은 보존한다.
+    const regularKey = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-\d+$/.test(directSlotKey ?? "");
+    const orderedKeys = regularKey && derivedSlotKey ? [derivedSlotKey] : [directSlotKey, derivedSlotKey];
+    return [...new Set(orderedKeys.filter((key): key is string => Boolean(key)))];
+}
+
 export type TrialDisplayClass = {
     name: string; slotKey: string | null; dayOfWeek: string; startTime: string; endTime: string;
     program?: { name: string } | null;
