@@ -71,6 +71,7 @@ import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { formatTrialScheduleLabel, formatTrialSmsDateTime, hasExplicitTrialTime, isLegacyTrialDatePlaceholder } from "@/lib/trial-sms-time";
 import { seoulDateInputValue } from "@/lib/trial-schedule-time";
 import { resolveCanonicalTrialSchedule } from "@/lib/trial-schedule-server";
+import { normalizedTrialPreferencePatch } from "@/lib/trial-schedule-display";
 import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib/trial-fee-confirmation";
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
@@ -4066,7 +4067,7 @@ export async function updateTrialLead(
     await ensureTrialLeadTable();
 
     // 화이트리스트에 있는 필드만 추출
-    const entries = TRIAL_LEAD_COLUMNS
+    let entries = TRIAL_LEAD_COLUMNS
         .filter((col) => data[col] !== undefined)
         .map((col) => [col, data[col]] as const);
 
@@ -4080,6 +4081,13 @@ export async function updateTrialLead(
     );
     const previousLead = previousRows[0];
     if (!previousLead) throw new Error("체험 신청을 찾지 못했습니다. 목록을 새로고침해 주세요.");
+
+    // 희망 요일·교시를 고치면 옛 수업 키도 함께 갱신한다. 확정 반·일시는 별도로 보존한다.
+    const preferencePatch = normalizedTrialPreferencePatch(data, previousLead);
+    Object.assign(data, preferencePatch);
+    entries = TRIAL_LEAD_COLUMNS
+        .filter((col) => data[col] !== undefined)
+        .map((col) => [col, data[col]] as const);
 
     if (data.status === "SCHEDULED") {
         if (typeof data.scheduledClassId !== "string" || !data.scheduledClassId.trim()) {

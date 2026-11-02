@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: 체험 일정 저장·목록·상세 실제시간 일치, UUID 교시 추출 제거·Date 객체 크래시/취소응답 수정. docs/trial-schedule-save-display.md 정본, 신규12/전체2778/학생5·tsc·독립·합성브라우저PASS. errors 갱신·지식본문5개 유지. 운영 신청·배포 없음.
+
 > 2026-11-02: 사용자승인 홈히어로 PC432/모바일400복원. 기타공개구성/API불변·관련21/tsc·독립검토/브라우저7폭통과. docs/public-home-hero-restoration.md정본·본문5유지, 운영/푸시없음.
 
 > 2026-11-02: 승인SM-F971N 두시험APK설치/별도조회완료, 최초합성계측1회timeout/CODE0실패·원인미확정. 고정단계명진단만로컬보완/재실행별도승인, docs/android-attachment-device-validation.md정본·본문5유지.
