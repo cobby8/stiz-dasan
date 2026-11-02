@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: 사용자승인 홈히어로 PC432/모바일400복원. 기타공개구성/API불변·관련21/tsc·독립검토/브라우저7폭통과. docs/public-home-hero-restoration.md정본·본문5유지, 운영/푸시없음.
+
 > 2026-11-02: 승인SM-F971N 두시험APK설치/별도조회완료, 최초합성계측1회timeout/CODE0실패·원인미확정. 고정단계명진단만로컬보완/재실행별도승인, docs/android-attachment-device-validation.md정본·본문5유지.
 
 > 2026-11-02: Android첨부 시험fixture sandbox전용가드·네트워크차단검사/오프라인APK준비·독립15/24/10 통과, main/권한불변·실제설치/9계측0. 출시표build6현재화, docs/android-attachment-device-preparation.md정본·본문5유지.
