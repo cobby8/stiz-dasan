@@ -43,8 +43,8 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
     <>
       <section className="public-home-hero" aria-labelledby="public-home-title">
         {heroPhoto && <img src={heroPhoto.url} alt={heroPhoto.alt} fetchPriority="high" decoding="async" className="public-home-hero__image" />}
-        {/* 게슈탈트 P-01: 컴팩트 히어로(PC 160px·모바일 200px 이하) — 제목 + 소개 1줄 + 버튼.
-            영문 kicker 는 뺐다. PC 는 글과 버튼을 한 줄에, 모바일은 위아래로 쌓는다. */}
+        {/* 메인 사진의 높이를 복원하고 제목·소개·버튼을 세로로 배치한다.
+            현재 문구와 신청·프로그램 이동 경로는 그대로 유지한다. */}
         <div className="public-home-hero__content">
           <div className="public-home-hero__text">
             <h1 id="public-home-title">{settings.introductionTitle || "스티즈 농구교실"}</h1>

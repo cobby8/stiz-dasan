@@ -117,7 +117,7 @@ export function inspectReadiness(root) {
     occurrences(signed, /^          - (?!profile:)/gm) === 1 &&
     signed.includes('- "BDR iOS App Store Distribution"') &&
     occurrences(signed, /STIZ_SANDBOX_ORIGIN:/g) === 1 &&
-    signed.includes('STIZ_SANDBOX_ORIGIN: "https://172.30.1.12:8453"') &&
+    signed.includes('STIZ_SANDBOX_ORIGIN: "https://172.30.1.25:8453"') &&
     occurrences(signed, /python3 apps\/stiz-ios\/tools\/native_signed_sandbox\.py build/g) === 1 &&
     !/STIZ_EXPECTED_DEVICE_SHA256:|distribution_type:|bundle_identifier:|CODE_SIGNING_ALLOWED|xcodebuild/.test(signed) &&
     JSON.stringify(signedArtifacts) === JSON.stringify([

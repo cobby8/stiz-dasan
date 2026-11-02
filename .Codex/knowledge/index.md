@@ -1,5 +1,27 @@
 # STIZ Knowledge Index
 
+> 2026-11-02: 사용자승인 홈히어로 PC432/모바일400복원. 기타공개구성/API불변·관련21/tsc·독립검토/브라우저7폭통과. docs/public-home-hero-restoration.md정본·본문5유지, 운영/푸시없음.
+
+> 2026-11-02: 승인SM-F971N 두시험APK설치/별도조회완료, 최초합성계측1회timeout/CODE0실패·원인미확정. 고정단계명진단만로컬보완/재실행별도승인, docs/android-attachment-device-validation.md정본·본문5유지.
+
+> 2026-11-02: Android첨부 시험fixture sandbox전용가드·네트워크차단검사/오프라인APK준비·독립15/24/10 통과, main/권한불변·실제설치/9계측0. 출시표build6현재화, docs/android-attachment-device-preparation.md정본·본문5유지.
+
+> 2026-11-02: build6실제번들/임시CSS0·가로17px/scale1/넘침0·스크롤버튼전체·날짜삭제/사유2·세로402x750/관찰기정리 통과. 증거10·독립PASS·실인증/운영별도, docs/stiz-ios-build6-validation.md정본·본문5유지.
+
+> 2026-11-02: build6준비c99+기록8a검증branch푸시/main불변·서명#6/72초/IPA독립28·USB설치후6조회. 새CA43d신뢰대기/-1202, docs/stiz-ios-build6-validation.md정본·본문5유지.
+
+> 2026-11-02: USB복구후 임시CSS실물가로17px/scale1/넘침0·스크롤버튼전체표시·재삭제/사유2·세로402x750복원 통과, 임시태그/관찰기정리. 수동확대원복선행/새번들미반영·운영/TF0. docs/academy-touch-input-validation.md 정본·본문5유지.
+
+> 2026-11-02: 기록a125까지검증branch푸시·날짜삭제/사유/회전보존 실기기확인. 가로확대/네이티브가림 발견→승인CSS터치최소16·계산18/비교2·tsc/기존41 PASS, 수정후가로USB0/서비스재시작후0으로실물보류·새번들별도. docs/academy-touch-input-validation.md 정본·본문5유지.
+
+> 2026-11-02: build5 설치·정확CA ON·합성 인증→가족 요청/승인→접근 허용 iPhone 실기기 완료. 증거13/13·독립DOM19/402×750가로0, 유한 서버/CA 종료. 실인증·실계정/SQL 별도, 운영/TF0. docs/stiz-ios-family-device-validation.md 정본·본문5유지.
+
+> 2026-11-02: 승인2commit1799까지검증branch푸시·서명#5 actual1799/M2/SSHoff 시작1회 finished100초. IPA0.1.0/5·169130B/독립28·원격main유지. docs/stiz-ios-family-device-validation.md 정본, 설치/실물/운영/TestFlight0·서버auto-review차단유지·본문5유지.
+
+> 2026-11-02: 최신iPhone용build5주소25·합성가족67source·새CA준비. 전체2766/가드5·tsc·독립PASS, USB1/build4확인. 서버 auto-review차단·원격/설치/실물0·정본 docs/stiz-ios-family-device-validation.md, 본문5유지.
+
+> 2026-11-02: 최신main3f032d06 별도환경·문서현재화, 전체2761/가드5·tsc·관련105·가족실PG35/청구20·웹9폭조합 가로0/합성흐름 통과. 실제공급자/운영/실기기와 구분, docs/main-state-verification-20261102.md 정본. 기존변경보존·지식본문5유지.
+
 > 2026-10-29: 승인선택복귀일지우기 UI1파일로컬보완·실제React360/320·요청키true/false/true·사유보존·추가전송0·pending/uncertain차단·tsc/기존28통과. iPhone새번들/운영미반영·Drive별도, 정본 docs/stiz-ios-signed-device-validation.md·본문5유지.
 
 > 2026-10-29: 가로키보드신청버튼추가스크롤접근·닫힘750x354/세로402x750복원·가로0·사유유지. resumeemptyfalse/오늘날짜실물로빈값유지PASS보류·지우기UI후속계획. 네역할홈/역할선택복귀·운영0, errors/정본 docs/stiz-ios-signed-device-validation.md·본문5유지.

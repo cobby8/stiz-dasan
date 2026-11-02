@@ -1,10 +1,11 @@
 # STIZ 작업 스크래치패드
 ## 현재 작업
-- 목표: 등록 아이폰용 STIZ 격리 서명 앱 빌드·설치·실기기 검증. 운영·TestFlight 제외.
-- 현재 단계: 승인선택복귀일날짜지우기 UI1파일 로컬구현·실제React합성browser360/320검증. 날짜키존재true→false→true/사유유지·지우기추가전송0·pending/uncertain차단·tsc/기존28통과.
-- 승인 범위: 사용자승인 복귀예정일지우기 화면·회귀검증·기록 로컬수정. API·운영DB/발송/결제/배포/TestFlight·추가원격빌드 제외. 이전빌드4설치승인은완료·새UI기기반영은미실행.
-- 검증 한계/다음: 새지우기버튼은현재아이폰번들미반영·실물재검증남음. Drive Files PNG비활성/로컬제공자대조·복수사진·수동다운로드취소미완료. 운영/TestFlight0.
+- 목표: 승인된 홈 히어로 복원·7폭 검증 완료. 이전 Android 진단 APK 업데이트는 USB 단절로 성공여부 미확정·재실행0, 원실패 보존.
+- 현재 단계: 홈히어로 CSS·주석·기존회귀수정, 관련21·tsc·독립검토·브라우저320~1920 7폭통과. docs/public-home-hero-restoration.md 정본.
+- 승인 범위: 홈히어로만 복원·로컬검증. 아래콘텐츠·운영데이터/API불변. 푸시·운영배포·TestFlight 제외.
+- 검증 한계/다음: 전체Next운영반영은미실행. Android진단설치/기기검증잔여는 docs/android-attachment-device-validation.md에 보존하고 별도재개.
 ## 진행 현황표
+- 아래 기존 그룹은 해당 작업 당시의 이력이다. 현재 Android 준비는 상단과 docs/android-attachment-device-preparation.md, iOS build6·가족은 각 정본을 따른다.
 | 그룹 | 담당 | 상태 | 완료 기준 |
 |---|---|---|---|
 | 빌드4·식별 CA 준비 | PM 구현/환경·독립QA | 로컬·실HTTPS 완료 | Python9/참조28/Node44·전체2600/학생5·새run13/독립14, 푸시/remote/설치0 |
@@ -84,14 +85,14 @@
 - 카카오 운영 적용은 전용 migration·비밀 환경변수·챗봇 관리자센터 스킬/블록 배포·단일 ACTIVE 처리기 승인이 필요하다.
 
 ## 작업 로그 (최근 10건)
-- 2026-10-29: 승인복귀일지우기UI1파일·로컬합성browser360/320·요청키true/false/true/사유유지·추가전송0·pending/uncertain보호 통과. tsc/기존28·독립QA, iPhone새UI/푸시/원격빌드/운영0.
-- 2026-10-29: 가로키보드신청버튼 추가스크롤접근/닫힘750x354·세로402x750복원·가로0,사유유지. resume오늘날짜실물/emptyfalse→빈값유지PASS보류·지우기UI계획. 네역할홈/역할선택복귀·운영/TestFlight0.
-- 2026-10-29: effective달력유지 사용자확인/실물한글키보드·사유/신청표시 독립통과(402x400 visual388/가로0). 휴원사유유지·resume326/right364/card385/가로0, 달력취소·가로회전대기. 운영/신청/TestFlight0.
-- 2026-10-29: 정확사진input Files비활성/Drive확인→시험서버종료PID/양쪽refused확정·같은runCA숨김복구. 사진보관함PNG104수신1/저장0·실물확인, 새effective날짜폭326/가로0·키보드대기. 운영/TestFlight0.
-- 2026-10-29: 합성PNG Drive표시직접확인·정확사진accept입력메뉴root실행후Files비활성사용자재현. 원인미확정/성공보류·합성사진저장/보관함경로요청, 개인사진캡처/운영작업0.
-- 2026-10-29: 저장후media복귀실물/독립확인·사진선택취소전후upload/stored0·선택0. 후속PNG104B Files회색/실수신0으로사용자성공응답보류·사진input재시도대기·운영/TestFlight0.
-- 2026-10-29: 새CA사용자신뢰후빌드4 역할선택실물/402x750가로0·strictTLS200. 합성PNG104B iOS공유창열림/뒤media유지, 사용자로컬저장대기·upload/stored0·운영/TestFlight0.
-- 2026-10-29: 승인빌드4 동일기기정확guard/USB설치1회·별도조회4, 직접실행·독립PNG 안내/-1202정상. 새CA명식별공개전달200/키경로404·사용자신뢰대기, strictHTTPS합성health200·운영/TestFlight0.
-- 2026-10-29: 승인5커밋956까지푸시·서명#4 1회 finished111초. IPA0.1.0/4 SHA일치·독립서명/코드/프로파일통과, strictTLS health200·합성전용. 운영/TestFlight/설치/새CA신뢰0·설치승인대기.
-- 2026-10-29: 승인BUILD4·이전1/2/3거부/실행ID CA명4파일정정, Python9/참조28/Node44·전체2600/학생5·독립PASS. 새run-7ef56c476e747a20 source54/최종date+PNG104B·strictHTTPS13/독립14, 현Codemagic STIZ프로파일읽기확인. BlobCSV2경로조사만·기기신뢰/푸시/remote/설치/운영/TestFlight0.
+- 2026-11-02: 사용자승인홈히어로 PC432/모바일400복원·제목아래버튼. 관련21/tsc·독립JS/CSS불변·실브라우저7폭사진/넘침/버튼PASS. docs/public-home-hero-restoration.md, 운영/푸시0.
+- 2026-11-02: 사용자승인SM-F971N 두APK신규설치/별도조회0.1.0 완료. 오프라인9계측1회callback timeout/CODE0실패·원인미확정. 원실패보존·단계명진단만로컬보완, 운영/서버/원격/푸시0.
+- 2026-11-02: 승인Android시험준비·debugfixture sandbox가드/네트워크차단검사·오프라인빌드완료. 독립15/24/10·APK3/SHA·소스32확인, 준비표build6현재화. 설치/기기실행/서버/운영/원격/푸시0.
+- 2026-11-02: 주소실패=900초정상만료 확인/같은runCA재개. 사용자신뢰·USB복구→build6실제CSS 가로17/scale1·버튼스크롤전체·날짜삭제/사유2·세로402x750/관찰기정리 PASS. 증거10/독립·운영TF0.
+- 2026-11-02: 요청2커밋8a+c99build6준비 검증branch푸시·main불변. #6 actualc99/72초·IPA169135B/독립28·정확guard/USB설치·별도6조회완료. 실행-1202·새CA43d신뢰대기, 운영/TF0.
+- 2026-11-02: USB재확인복구·임시CSS 가로750/17px/scale1/넘침0·스크롤후버튼전체PNG/독립PASS. 날짜재삭제/사유2·키보드닫힘/세로402x750복원·임시태그/관찰기제거완료. 새번들/설치/운영/TF0.
+- 2026-11-02: 기록2커밋 a125까지검증branch푸시·날짜삭제/사유/회전보존 실기기PASS. 가로확대·보조막대가림 보류→승인CSS 최소16 보완·독립계산18/비교2·tsc/기존41 PASS, 수정후가로USB0/서비스재시작후0→실물보류·운영/TF0.
+- 2026-11-02: 유한 전경 실행으로 안전 복구·build5 설치/별도5조회·정확CA ON·합성 인증 취소/완료→불일치거부→요청/기존부모승인→접근 허용 실기기 완료. 증거13/13·독립DOM19/가로0·900초 정상종료, 운영/TF0.
+- 2026-11-02: 승인2commit1799까지검증branch푸시·Codemagic#5 actual1799·시작1회 finished100초. IPA169130B/독립28·원격main동일, 설치/운영/TestFlight0·서버auto-review차단유지.
+- 2026-11-02: 승인최신iPhone준비·합성가족2세션·build5주소25. 전체2766/가드5·tsc·독립19/21/9/28·67source통과, 새CA준비·USB1/build4확인. LAN서버 auto-review거절/우회0·원격/실물미실행.
 ## PM 체크

@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 
 export const SANDBOX_PORT = 8453;
-export const ROLE_PATHS = Object.freeze(['/store-app', '/__entry/admin', '/__entry/teacher', '/__entry/parent', '/__entry/driver', '/admin', '/admin/students', '/staff', '/staff/sessions/sandbox-session', '/mypage', '/mypage/enrollment-change', '/__sandbox/parent-pending', '/driver/sandbox-only', '/__sandbox/media']);
+export const ROLE_PATHS = Object.freeze(['/store-app', '/__entry/admin', '/__entry/teacher', '/__entry/parent', '/__entry/driver', '/admin', '/admin/students', '/staff', '/staff/sessions/sandbox-session', '/mypage', '/mypage/enrollment-change', '/__sandbox/parent-pending', '/driver/sandbox-only', '/__sandbox/media', '/__sandbox/family/requester', '/__sandbox/family/approver']);
 export const BODY_LIMIT = 8 * 1024 * 1024;
 export function privateIpv4(value) {
   if (typeof value !== 'string' || isIP(value) !== 4) return false;
@@ -42,6 +42,7 @@ export function routeDecision(method, pathname) {
   if (method === 'GET' && ROLE_PATHS.includes(pathname)) return 'page';
   if (method === 'GET' && ['/bundle.js', '/screen.css', '/guard.js', '/stiz-logo.png', '/material.woff2', '/material.ttf', '/__sandbox/sample.png'].includes(pathname)) return 'asset';
   if (method === 'GET' && ['/__sandbox/health', '/__sandbox/counters', '/api/admin/dashboard', '/api/admin/dashboard/system', '/api/admin/students', '/api/account/child-links', '/api/staff/sessions/sandbox-session/photos'].includes(pathname)) return 'synthetic-read';
+  if (method === 'POST' && pathname === '/api/account/child-links') return 'synthetic-family-write';
   if (method === 'POST' && ['/__sandbox/upload', '/api/staff/sessions/sandbox-session/photos'].includes(pathname)) return 'synthetic-upload';
   return 'deny';
 }
@@ -59,5 +60,5 @@ export const browserGuard = `(() => {
   if (navigator.sendBeacon) navigator.sendBeacon = () => false;
   if (navigator.serviceWorker) navigator.serviceWorker.register = async () => { throw new Error('SANDBOX_SERVICE_WORKER_BLOCKED'); };
   document.addEventListener('click', event => { const anchor = event.target.closest?.('a'); if (!anchor) return; const u = new URL(anchor.href, location.href); if (!same(u) || !(allowedPages.has(u.pathname) || u.pathname === '/__sandbox/sample.png') || u.search) { event.preventDefault(); event.stopImmediatePropagation(); deny(); } }, true);
-  document.addEventListener('submit', event => { event.preventDefault(); event.stopImmediatePropagation(); deny(); }, true);
+  document.addEventListener('submit', event => { if (['/__sandbox/family/requester','/__sandbox/family/approver'].includes(location.pathname) && event.target.closest?.('[data-synthetic-family]')) return; event.preventDefault(); event.stopImmediatePropagation(); deny(); }, true);
 })();`;

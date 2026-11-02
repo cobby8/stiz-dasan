@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": {
-      "codex/stiz-app-codemagic": false
+      "codex/stiz-app-codemagic": false,
+      "codex/main-validation-20261101": false
     }
   },
   "framework": "nextjs",

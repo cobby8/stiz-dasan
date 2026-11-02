@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { sandboxFixtures } from './lib/native-device-sandbox-fixtures.mjs';
+import { sandboxFixtures, createSyntheticFamily } from './lib/native-device-sandbox-fixtures.mjs';
 import { BODY_LIMIT, ROLE_PATHS, SANDBOX_HEADERS, SANDBOX_PORT, browserGuard, privateIpv4, requestTarget, routeDecision, sameOriginWrite, sandboxOrigin } from './lib/native-device-sandbox-policy.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,7 +21,7 @@ function syntheticPng() {
   return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(Buffer.concat(Array(32).fill(row)))),chunk('IEND',Buffer.alloc(0))]);
 }
 const SAMPLE_PNG = syntheticPng();
-const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIZ 합성 시험</title><link rel="stylesheet" href="/screen.css"></head><body><aside id="sandbox-banner"><b>격리 시험 · 합성 자료</b> <span id="sandbox-status">운영 연결·발송·결제·위치 수집 없음</span><nav><a href="/store-app">역할 선택</a><a href="/__entry/admin">관리자</a><a href="/__entry/teacher">선생님</a><a href="/__entry/parent">학부모</a><a href="/__entry/driver">기사님</a><a href="/__sandbox/media">첨부 시험</a></nav></aside><div id="root"></div><script src="/guard.js"></script><script src="/bundle.js"></script></body></html>`;
+const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STIZ 합성 시험</title><link rel="stylesheet" href="/screen.css"></head><body><aside id="sandbox-banner"><b>격리 시험 · 합성 자료</b> <span id="sandbox-status">운영 연결·발송·결제·위치 수집 없음</span><nav><a href="/store-app">역할 선택</a><a href="/__entry/admin">관리자</a><a href="/__entry/teacher">선생님</a><a href="/__entry/parent">학부모</a><a href="/__entry/driver">기사님</a><a href="/__sandbox/media">첨부 시험</a><a href="/__sandbox/family/requester">추가 보호자 시험</a><a href="/__sandbox/family/approver">기존 보호자 시험</a></nav></aside><div id="root"></div><script src="/guard.js"></script><script src="/bundle.js"></script></body></html>`;
 const json = (response, status, body) => { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); response.end(JSON.stringify(body)); };
 
 async function bodyBytes(request) {
@@ -56,6 +56,7 @@ function validFile(type, bytes) {
 export function createSandboxHandler({ origins, assets = {}, fixtures = sandboxFixtures() }) {
   if (!Array.isArray(origins) || !origins.length || origins.some(origin => new URL(origin).origin !== sandboxOrigin(new URL(origin).hostname, Number(new URL(origin).port)))) throw new Error('시험 origin 설정 오류');
   const counters = { page: 0, denied: 0, uploadCount: 0, uploadBytes: 0 };
+  const family = createSyntheticFamily({ issueId: () => 'synthetic-' + randomBytes(16).toString('hex') });
   const handler = async (request, response) => {
     for (const [key,value] of Object.entries(SANDBOX_HEADERS)) response.setHeader(key,value);
     const target = requestTarget(request.url, request.headers.host, origins);
@@ -74,10 +75,22 @@ export function createSandboxHandler({ origins, assets = {}, fixtures = sandboxF
       if (target.pathname === '/api/admin/dashboard') return json(response,200,fixtures.dashboard);
       if (target.pathname === '/api/admin/students') return json(response,200,{...fixtures.adminStudents,synthetic:true});
       if (target.pathname === '/api/admin/dashboard/system') return json(response,200,{dbOk:false,backup:{lastBackupAt:null,backupCount:0},synthetic:true});
-      if (target.pathname === '/api/account/child-links') return json(response,200,{enabled:false,verified:false,outgoing:[],incoming:[],synthetic:true});
+      if (target.pathname === '/api/account/child-links') return json(response,200,family.state(request.headers['x-stiz-synthetic-actor']));
       return json(response,200,{photos:[],synthetic:true});
     }
     if (!sameOriginWrite(request.headers,target.origin)) { counters.denied++; request.resume(); json(response,403,{error:'SANDBOX_ORIGIN_BLOCKED'}); return; }
+    if (route === 'synthetic-family-write') {
+      if (!['requester','approver'].includes(request.headers['x-stiz-synthetic-actor'])) { request.resume(); return json(response,403,{error:'합성 시험 세션이 필요합니다.'}); }
+      if (request.headers['content-type'] !== 'application/json') { request.resume(); return json(response,415,{error:'합성 JSON 요청만 허용합니다.'}); }
+      try {
+        const bytes = await bodyBytes(request); if (bytes.length > 2048) return json(response,413,{error:'합성 입력 크기를 초과했습니다.'});
+        const body = JSON.parse(bytes.toString('utf8'));
+        const allowed = new Set(['action','identityVerificationId','familyName','familyPhone','childName','childBirthDate','relation','requestId','decision']);
+        if (!body || Array.isArray(body) || Object.keys(body).some(key=>!allowed.has(key))) return json(response,400,{error:'합성 요청 형식을 확인해 주세요.'});
+        const result = family.command(request.headers['x-stiz-synthetic-actor'], body);
+        return json(response,result.status,result.body);
+      } catch { return json(response,400,{error:'합성 요청을 확인하지 못했습니다.'}); }
+    }
     try {
       const contentType = request.headers['content-type'] || '';
       if (!/^multipart\/form-data;\s*boundary=[\w'()+_,.\/:=? -]{1,100}$/i.test(contentType)) { request.resume(); return json(response,415,{error:'SANDBOX_MULTIPART_REQUIRED'}); }

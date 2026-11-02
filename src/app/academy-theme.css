@@ -302,7 +302,11 @@
   .academy-app .academy-hero { padding: 1rem; border-radius: 0.5rem; }
   .academy-app .academy-panel { border-radius: 0.5rem; }
   .academy-app :is(.academy-button-primary, .academy-button-secondary) { min-height: 44px; }
-  .academy-app :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { font-size: 1rem; }
+}
+
+/* 가로로 든 휴대폰과 터치 태블릿도 작은 입력 글씨로 확대되지 않게 한다. */
+@media (max-width: 600px), (any-pointer: coarse) {
+  .academy-app :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { font-size: max(1rem, 16px); }
 }
 
 /* 공개 화면과 같이 옛 형광·중간 단계 브랜드 색도 학원 앱 색으로 잇는다(2026-10-29 디자인 통일). */

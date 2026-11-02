@@ -107,13 +107,14 @@ test("C-P3·P-03 플로팅 버튼은 하단 고정 바 높이만큼 올라가고
   assert.ok(helper.includes('root.style.setProperty("--public-bottom-bar"') && helper.includes("body.dataset.publicOverlay"));
 });
 
-test("P-01 홈 히어로는 컴팩트(영문 kicker 없음·제목 clamp·소개 1줄·PC 한 줄 배치)", () => {
+test("P-01 홈 히어로는 사진을 넉넉히 보여주고 제목 아래에 신청 버튼을 배치한다", () => {
   const landing = read("src/app/LandingPageClient.tsx");
   assert.doesNotMatch(landing, /public-home-kicker|STIZ BASKETBALL CLUB/);
   assert.match(landing, /<p className="public-home-lead">[^<]+<\/p>/); // <br> 없는 한 줄
-  assert.doesNotMatch(homeCss, /min-height:2[57]rem/);
-  assert.match(homeCss, /\.public-home-hero__content\{[^}]*min-height:8\.5rem;padding-block:1\.25rem;display:flex;flex-direction:row/);
-  assert.match(homeCss, /\.public-home-hero h1\{font-size:clamp\(1\.6rem,3vw,2\.2rem\)/);
+  assert.match(homeCss, /\.public-home-hero__content\{[^}]*min-height:27rem;[^}]*flex-direction:column/);
+  assert.match(homeCss, /@media\(max-width:767px\)\{\s*\.stiz-public-sport \.public-home-hero__content\{min-height:25rem/);
+  assert.doesNotMatch(homeCss, /min-height:8\.5rem/);
+  assert.match(homeCss, /\.public-home-hero h1\{font-size:clamp\(2rem,4vw,3\.4rem\)/);
   // 기능 보존: 두 버튼 경로와 사진 위 글자(스크림 오버레이)
   assert.ok(landing.includes('<Link href="/apply">') && landing.includes('<Link href="/programs">'));
   assert.match(homeCss, /\.public-home-hero::after\{[^}]*linear-gradient/);

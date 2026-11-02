@@ -134,7 +134,8 @@ test('main 매니페스트 누락·빈 파일은 개발 기능 분리 검증 통
 test('기기 서명 작업의 운영 주소·프로파일 바꿔치기·비공개 파일 보관은 차단한다', t => {
   const { root, put } = fixture(t);
   for (const invalid of [
-    approvedWorkflow.replace('https://172.30.1.12:8453', 'https://www.stiz-dasan.kr'),
+    approvedWorkflow.replace('https://172.30.1.25:8453', 'https://www.stiz-dasan.kr'),
+    approvedWorkflow.replace('https://172.30.1.25:8453', 'https://172.30.1.12:8453'),
     approvedWorkflow.replace('profile: stiz-dasan-adhoc-sandbox-2026', 'profile: another-app'),
     approvedWorkflow + '      - private.p12\n',
     approvedWorkflow.replace('native_signed_sandbox.py build', 'native_signed_sandbox.py skip-verification'),

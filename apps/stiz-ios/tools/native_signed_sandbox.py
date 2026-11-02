@@ -12,13 +12,13 @@ import zipfile
 
 BUNDLE = "kr.co.upturnlabs.stizdasan"
 TEAM = "UC62AC4W4T"
-ORIGIN = "https://172.30.1.12:8453"
+ORIGIN = "https://172.30.1.25:8453"
 PROFILE_NAME = "STIZ-Dasan-AdHoc-Sandbox-2026"
 PROFILE_REFERENCE = "stiz-dasan-adhoc-sandbox-2026"
 CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
 VERSION = "0.1.0"
-BUILD = "4"
-SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.12": {
+BUILD = "6"
+SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.25": {
     "NSExceptionAllowsInsecureHTTPLoads": False,
     "NSExceptionMinimumTLSVersion": "TLSv1.2",
     "NSExceptionRequiresForwardSecrecy": True,

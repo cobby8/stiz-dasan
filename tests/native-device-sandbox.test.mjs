@@ -135,3 +135,69 @@ test('서버는 환경·운영 DB·기존 인증 파일을 로드하거나 운�
   const builder=await readFile(new URL('../scripts/lib/native-device-sandbox-build.mjs',import.meta.url),'utf8');
   assert.match(builder,/SandboxBoundary/);assert.match(builder,/서버·운영 모듈/);assert.match(builder,/useGpsShare/);assert.match(builder,/마이크·음성 전송 차단/);
 });
+
+const familyHeaders=actor=>({...originHeaders,'content-type':'application/json','x-stiz-synthetic-actor':actor});
+const familyPost=(app,actor,body,headers={})=>send(app,{method:'POST',url:'/api/account/child-links',headers:{...familyHeaders(actor),...headers},body:Buffer.from(JSON.stringify(body))});
+const familyGet=(app,actor)=>send(app,{url:'/api/account/child-links',headers:{'x-stiz-synthetic-actor':actor}});
+async function verifyFamily(app,actor){
+  const id=(await familyPost(app,actor,{action:'start-verification'})).json().identityVerificationId;
+  assert.match(id,/^synthetic-[a-f0-9]{32}$/);
+  assert.equal((await familyPost(app,actor,{action:'complete-synthetic-verification',identityVerificationId:id})).status,200);
+  const result=await familyPost(app,actor,{action:'verify',identityVerificationId:id});assert.equal(result.status,200);return{id,result:result.json()};
+}
+const exactFamily={action:'request',familyName:'합성 기존보호자',familyPhone:'00000000000',childName:'합성 자녀',relation:'PARENT'};
+
+test('합성 인증은 완료·취소·재사용·타세션을 구분한다',async()=>{
+  const app=instance();const id=(await familyPost(app,'requester',{action:'start-verification'})).json().identityVerificationId;
+  assert.equal((await familyPost(app,'requester',{action:'verify',identityVerificationId:id})).status,409,'완료 전 인증 금지');
+  assert.equal((await familyPost(app,'approver',{action:'complete-synthetic-verification',identityVerificationId:id})).status,409,'다른 세션 인증 금지');
+  assert.equal((await familyPost(app,'requester',{action:'cancel-synthetic-verification',identityVerificationId:id})).status,200);
+  assert.equal((await familyPost(app,'requester',{action:'verify',identityVerificationId:id})).status,409,'취소 결과 재사용 금지');
+  assert.equal((await familyGet(app,'requester')).json().verified,false);
+  const done=await verifyFamily(app,'requester');assert.equal(done.result.linkedCount,0);
+  assert.equal((await familyPost(app,'requester',{action:'verify',identityVerificationId:done.id})).status,409,'완료 결과 재사용 금지');
+});
+
+test('인증된 추가 보호자만 정확한 고정 합성 가족에게 요청할 수 있다',async()=>{
+  const app=instance();assert.equal((await familyPost(app,'requester',exactFamily)).status,403);
+  await verifyFamily(app,'requester');
+  for(const override of [{familyName:'다른 가족'},{familyPhone:'01012345678'},{childName:'부모 없는 합성 자녀'},{childBirthDate:'2016-01-02'},{relation:'ADMIN'}])assert.equal((await familyPost(app,'requester',{...exactFamily,...override})).status,400);
+  assert.equal((await familyGet(app,'requester')).json().outgoing.length,0);
+  assert.equal((await familyPost(app,'requester',exactFamily)).status,200);
+  assert.equal((await familyPost(app,'requester',exactFamily)).status,409,'대기 요청 중복 금지');
+  const state=(await familyGet(app,'requester')).json();assert.equal(state.outgoing.length,1);assert.equal(state.syntheticAccess,false);
+  assert.equal(state.outgoing[0].childName,undefined,'승인 전 상대 자녀 정보 미반환');
+});
+
+test('기존 보호자의 확인·승인 뒤 추가 보호자 접근이 열리며 자기 승인은 차단된다',async()=>{
+  const app=instance();await verifyFamily(app,'requester');await familyPost(app,'requester',exactFamily);
+  const requestId=(await familyGet(app,'requester')).json().outgoing[0].id;
+  assert.equal((await familyPost(app,'requester',{action:'decide',requestId,decision:'APPROVE'})).status,403);
+  assert.equal((await familyGet(app,'approver')).json().incoming.length,0,'기존 보호자도 합성 인증 전 요청 숨김');
+  await verifyFamily(app,'approver');const before=(await familyGet(app,'approver')).json();assert.equal(before.incoming.length,1);assert.equal(before.incoming[0].requesterPhoneLast4,'0001');
+  assert.equal((await familyPost(app,'approver',{action:'decide',requestId:'other-request',decision:'APPROVE'})).status,403);
+  assert.equal((await familyPost(app,'approver',{action:'decide',requestId,decision:'APPROVE'})).status,200);
+  const after=(await familyGet(app,'requester')).json();assert.equal(after.syntheticAccess,true);assert.equal(after.outgoing[0].status,'APPROVED');
+  assert.equal((await familyPost(app,'approver',{action:'decide',requestId,decision:'APPROVE'})).status,403,'완료 요청 중복 처리 금지');
+});
+
+test('가족 요청 거절·취소는 자녀 접근을 열지 않는다',async()=>{
+  const app=instance();await verifyFamily(app,'requester');await verifyFamily(app,'approver');
+  await familyPost(app,'requester',exactFamily);let requestId=(await familyGet(app,'requester')).json().outgoing[0].id;
+  assert.equal((await familyPost(app,'approver',{action:'decide',requestId,decision:'REJECT'})).status,200);
+  assert.equal((await familyGet(app,'requester')).json().syntheticAccess,false);
+  await familyPost(app,'requester',exactFamily);requestId=(await familyGet(app,'requester')).json().outgoing[0].id;
+  assert.equal((await familyPost(app,'requester',{action:'cancel',requestId})).status,200);
+  assert.equal((await familyGet(app,'requester')).json().outgoing[0].status,'CANCELED');
+  assert.equal((await familyGet(app,'requester')).json().syntheticAccess,false);
+});
+
+test('가족 합성 POST도 Origin·세션·본문·알 수 없는 동작을 제한한다',async()=>{
+  const app=instance();for(const actor of ['','admin','family'])assert.equal((await familyPost(app,actor,{action:'start-verification'})).status,403);
+  for(const origin of [undefined,'https://www.stiz-dasan.kr','https://localhost:8454'])assert.equal((await familyPost(app,'requester',{action:'start-verification'},{origin})).status,403);
+  assert.equal((await familyPost(app,'requester',{action:'start-verification',extra:'not-allowed'})).status,400);
+  assert.equal((await familyPost(app,'requester',{action:'send-sms'})).status,403);
+  assert.equal((await familyPost(app,'requester',{action:'start-verification'},{'content-type':'text/plain'})).status,415);
+  assert.equal((await familyPost(app,'requester',{action:'request',familyName:'x'.repeat(2100)})).status,413);
+  assert.equal((await send(app,{method:'DELETE',url:'/api/account/child-links',headers:familyHeaders('requester')})).status,403);
+});
