@@ -13,6 +13,7 @@ import {
 } from "@/lib/trial-schedule-time";
 import type { ClassInfo, TrialLead } from "./TrialCrmClient";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
+import { trialClassTimeRange } from "@/lib/trial-schedule-display";
 
 interface TrialCrmModalsProps {
     addOpen: boolean;
@@ -205,8 +206,9 @@ function timeInputValue(dateStr: string | null) {
     return seoulTimeInputValue(dateStr);
 }
 
-function isDateOnlySchedulePlaceholder(dateStr: string | null) {
-    return Boolean(dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim()));
+function isDateOnlySchedulePlaceholder(dateStr: string | Date | null) {
+    // 첫 서버 화면은 Date, 재조회 결과는 문자열일 수 있다. 문자열에만 trim을 적용한다.
+    return typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim());
 }
 
 const MODAL_INPUT_CLASS = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime";
@@ -265,7 +267,10 @@ function getPreferredSlotKeyCandidates(lead: TrialLead) {
     const period = normalizePreferredPeriod(lead.preferredPeriod);
     const derivedSlotKey = dayCode && period ? `${dayCode}-${period}` : null;
 
-    [directSlotKey, derivedSlotKey].forEach((slotKey) => {
+    // 정규 키가 옛 요일·교시를 가리키면 현재 희망값을 우선한다. UUID 추가반 연결은 보존한다.
+    const regularKey = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-\d+$/.test(directSlotKey ?? "");
+    const orderedKeys = regularKey ? [derivedSlotKey, directSlotKey] : [directSlotKey, derivedSlotKey];
+    orderedKeys.forEach((slotKey) => {
         if (slotKey && !candidates.includes(slotKey)) candidates.push(slotKey);
     });
 
@@ -280,16 +285,16 @@ function getPreferredClass(lead: TrialLead, classes: ClassInfo[]) {
     return null;
 }
 
-function formatClassLabel(classInfo: ClassInfo) {
+function formatClassLabel(classInfo: ClassInfo, selectedDate = "") {
     const dayLabel = DAY_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const timeLabel = [classInfo.startTime, classInfo.endTime].filter(Boolean).join("~");
+    const timeLabel = trialClassTimeRange(classInfo, selectedDate);
     const programName = classInfo.program?.name ? ` · ${classInfo.program.name}` : "";
     return [dayLabel, timeLabel].filter(Boolean).join(" ") + ` · ${classInfo.name}${programName}`;
 }
 
 function formatPreferredSchedule(lead: TrialLead, classes: ClassInfo[]) {
     const preferredClass = getPreferredClass(lead, classes);
-    if (preferredClass) return formatClassLabel(preferredClass);
+    if (preferredClass) return formatClassLabel(preferredClass, dateInputValue(lead.trialDate));
 
     const rawDay = lead.preferredDay?.replace(/요일$/, "");
     const day = rawDay ? `${DAY_LABELS[rawDay] || rawDay}요일` : "";
@@ -475,6 +480,7 @@ function TrialEditModal({
                             <input value={form.preferredPeriod} onChange={(e) => setForm({ ...form, preferredPeriod: e.target.value })} className={MODAL_INPUT_CLASS} placeholder="4" />
                         </FormField>
                     </div>
+                    {lead.scheduledClassId && <p className="text-xs text-gray-500">희망 일정 변경은 확정 수업을 바꾸지 않습니다. 확정 수업·시간은 ‘일정 변경’에서 변경해 주세요.</p>}
                     <div className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
                         체험비 상태: {trialFeeStatusLabel(lead)}
                         <p className="mt-1 text-xs font-medium text-gray-400">입금 확인은 상세 화면의 전용 버튼에서 처리합니다.</p>
@@ -532,6 +538,7 @@ function TrialScheduleModal({
                 return payload.options as Array<{ classId: string; className: string; startTime: string }>;
             })
             .then((available) => {
+                if (controller.signal.aborted) return;
                 setOptions(available);
                 // 이미 확정된 일정만 재선택한다. 희망일의 반을 확정 반으로 추측하지 않는다.
                 if (dateInputValue(lead.scheduledDate) === scheduledDate

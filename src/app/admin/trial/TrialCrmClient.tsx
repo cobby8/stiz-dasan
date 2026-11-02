@@ -11,6 +11,8 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
+import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel } from "@/lib/trial-schedule-display";
+import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
 import {
     updateTrialLead,
     sendPostTrialEnrollGuide,
@@ -383,7 +385,10 @@ function getPreferredSlotKeyCandidates(lead: TrialLead) {
     const period = normalizePreferredPeriod(lead.preferredPeriod);
     const derivedSlotKey = dayCode && period ? `${dayCode}-${period}` : null;
 
-    [directSlotKey, derivedSlotKey].forEach((slotKey) => {
+    // 정규 키가 옛 요일·교시를 가리키면 현재 희망값을 우선한다. UUID 추가반 연결은 보존한다.
+    const regularKey = /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)-\d+$/.test(directSlotKey ?? "");
+    const orderedKeys = regularKey ? [derivedSlotKey, directSlotKey] : [directSlotKey, derivedSlotKey];
+    orderedKeys.forEach((slotKey) => {
         if (slotKey && !candidates.includes(slotKey)) candidates.push(slotKey);
     });
 
@@ -398,23 +403,15 @@ function getPreferredClass(lead: TrialLead, classesBySlotKey?: Map<string, Class
     return null;
 }
 
-function formatClassLabel(classInfo: ClassInfo) {
+function formatClassLabel(classInfo: ClassInfo, selectedDate = "") {
     const dayLabel = DAY_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const timeLabel = [classInfo.startTime, classInfo.endTime].filter(Boolean).join("~");
+    const timeLabel = trialClassTimeRange(classInfo, selectedDate);
     const programName = classInfo.program?.name ? ` · ${classInfo.program.name}` : "";
     return [dayLabel, timeLabel].filter(Boolean).join(" ") + ` · ${classInfo.name}${programName}`;
 }
 
-function getPeriodFromClass(classInfo: ClassInfo) {
-    const slotPeriod = classInfo.slotKey?.split("-")[1]?.match(/\d+/)?.[0];
-    if (slotPeriod) return slotPeriod;
-    return classInfo.name.match(/\d+/)?.[0] ?? "";
-}
-
 function formatClassShortLabel(classInfo: ClassInfo) {
-    const dayLabel = DAY_SHORT_LABELS[classInfo.dayOfWeek] || classInfo.dayOfWeek;
-    const period = getPeriodFromClass(classInfo);
-    return [dayLabel, period].filter(Boolean).join("");
+    return trialClassShortLabel(classInfo);
 }
 
 function formatSlotShortLabel(slotKey: string | null) {
@@ -430,7 +427,7 @@ function formatPreferredScheduleShort(lead: TrialLead, classesBySlotKey?: Map<st
     const matchedClass = getPreferredClass(lead, classesBySlotKey);
     if (matchedClass) return formatClassShortLabel(matchedClass);
 
-    const slotLabel = formatSlotShortLabel(lead.preferredSlotKey);
+    const slotLabel = formatSlotShortLabel(getPreferredSlotKeyCandidates(lead)[0] ?? null);
     if (slotLabel) return slotLabel;
 
     const dayCode = normalizePreferredDayCode(lead.preferredDay);
@@ -447,7 +444,9 @@ function formatConfirmedScheduleShort(
     const matchedClass =
         (lead.scheduledClassId ? classesById?.get(lead.scheduledClassId) : null) ||
         getPreferredClass(lead, classesBySlotKey);
-    const classLabel = matchedClass ? formatClassShortLabel(matchedClass) : formatPreferredScheduleShort(lead, classesBySlotKey);
+    const classLabel = matchedClass
+        ? trialConfirmedClassShortLabel(matchedClass, lead.scheduledDate, true)
+        : formatPreferredScheduleShort(lead, classesBySlotKey);
     if (lead.scheduledDate && classLabel) return `${formatShortDate(lead.scheduledDate)} ${classLabel}`;
     if (lead.scheduledDate) return formatShortDate(lead.scheduledDate);
     return classLabel;
@@ -463,7 +462,7 @@ function formatTrialListScheduleShort(
     classesBySlotKey?: Map<string, ClassInfo>,
 ) {
     const confirmedClass = lead.scheduledClassId ? classesById?.get(lead.scheduledClassId) : null;
-    if (confirmedClass) return formatClassShortLabel(confirmedClass);
+    if (confirmedClass) return trialConfirmedClassShortLabel(confirmedClass, lead.scheduledDate);
     return formatPreferredScheduleShort(lead, classesBySlotKey) || "미입력";
 }
 
@@ -480,7 +479,7 @@ function formatTrialListTeacherName(
 
 function formatPreferredSchedule(lead: TrialLead, classesBySlotKey?: Map<string, ClassInfo>) {
     const matchedClass = getPreferredClass(lead, classesBySlotKey);
-    if (matchedClass) return formatClassLabel(matchedClass);
+    if (matchedClass) return formatClassLabel(matchedClass, seoulDateInputValue(lead.trialDate));
 
     const rawDay = lead.preferredDay?.replace(/요일$/, "");
     const day = rawDay ? `${DAY_LABELS[rawDay] || rawDay}요일` : "";
@@ -503,7 +502,7 @@ function formatConfirmedSchedule(
         (lead.scheduledClassId ? classesById?.get(lead.scheduledClassId) : null) ||
         getPreferredClass(lead, classesBySlotKey);
     if (lead.scheduledDate && matchedClass) {
-        return `${formatCompactDate(lead.scheduledDate)} · ${formatClassLabel(matchedClass)}`;
+        return `${formatCompactDate(lead.scheduledDate)} ${seoulTimeInputValue(lead.scheduledDate)} · ${matchedClass.name}`;
     }
     if (lead.scheduledDate) {
         const preferredSchedule = formatPreferredSchedule(lead, classesBySlotKey);
