@@ -274,8 +274,8 @@ test("목록형은 스프레드시트처럼 실제 테이블 구조로 보여준
   assert.match(trialClient, /<tbody[\s\S]*visibleLeads\.map/);
   assert.doesNotMatch(trialClient, /hidden grid-cols-\[1fr_0\.9fr_2\.2fr_0\.8fr_1\.2fr\]/);
   assert.match(applyClient, /function renderApplicationList\(\)[\s\S]*<table className="admin-list-table/);
-  // 칸 구성: 상태 | 학생 | 학년 | 학교 | 보호자 | 연락처 | 접수일 | 희망 수업 | 수강 시작월 | 셔틀 | 빠른 처리
-  assert.match(applyClient, /<thead[\s\S]*상태[\s\S]*학생[\s\S]*학년[\s\S]*학교[\s\S]*보호자[\s\S]*연락처[\s\S]*접수일[\s\S]*희망 수업[\s\S]*수강 시작월[\s\S]*셔틀[\s\S]*빠른 처리/);
+  // 칸 구성: 상태 | 학생 | 학년 | 학교 | 보호자 | 연락처 | 접수일 | 희망 수업 | 신청 월 | 셔틀 | 빠른 처리
+  assert.match(applyClient, /<thead[\s\S]*상태[\s\S]*학생[\s\S]*학년[\s\S]*학교[\s\S]*보호자[\s\S]*연락처[\s\S]*접수일[\s\S]*희망 수업[\s\S]*신청 월[\s\S]*셔틀[\s\S]*빠른 처리/);
   assert.match(applyClient, /<tbody[\s\S]*visibleApps\.map/);
   assert.doesNotMatch(applyClient, /hidden grid-cols-\[1\.1fr_1fr_1\.3fr_0\.9fr_1\.2fr\]/);
 });

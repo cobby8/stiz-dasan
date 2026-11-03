@@ -687,3 +687,5 @@
 ## 2026-11-02 Android 신규 설치·계측 결과 구분
 - 미설치 패키지의 pm path는 exit1·빈stdout/stderr를 반환했다. 이 정확한 부재 응답만 분리하고 다른 ADB 실패를 부재나 성공으로 넘기지 않는다. 처음 wrapper는 안전하게 설치 전에 중단했다.
 - am instrument 명령 exit0과 계측 성공은 다르다. 최초 시험은 FAIL callback timeout/CODE0이어서 PASS9와CODE-1 추가검사로 실패 판정했다. 공통 await 문구만으로 ready/선택/전달 단계나 content 접근 차단 원인을 단정하지 않고, 고정 단계명을 추가한 진단 APK로 분리한다.
+
+- 2026-11-03: 수강신청 짧은 수업표시가 custom UUID 첫 숫자를 교시로 오인. 실제 반 이름의 교시 우선·완전 일치 정규키만 허용하는 기존 trialClassPeriod 재사용으로 해결. 선택월 축약은 전체월 표시로 변경, 회귀44·독립React5 통과.
