@@ -1054,6 +1054,36 @@ export async function updateStudentMemo(id: string, memo: string) {
     revalidateStudentAdminCaches();
 }
 
+export async function updateStudentUniform(id: string, data: {
+    status: string | null;
+    appliedAt?: string | null;
+    orderedAt?: string | null;
+    receivedAt?: string | null;
+    source?: string | null;
+    note?: string | null;
+}) {
+    await requireAdmin();
+    const allowed = new Set(["보유", "미보유", "신청", "주문", "수령완료", "미수령", "확인보류", "해당없음", "미신청"]);
+    if (data.status && !allowed.has(data.status)) throw new Error("유니폼 상태값이 올바르지 않습니다.");
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "Student" SET "uniformStatus" = $1,
+                    "uniformAppliedAt" = $2::timestamptz,
+                    "uniformOrderedAt" = $3::timestamptz,
+                    "uniformReceivedAt" = $4::timestamptz,
+                    "uniformSource" = $5, "uniformNote" = $6, "updatedAt" = NOW()
+             WHERE id = $7`,
+            data.status || null, data.appliedAt || null, data.orderedAt || null,
+            data.receivedAt || null, data.source || null, data.note || null, id,
+        );
+    } catch (e) {
+        console.error("Failed to update student uniform:", e);
+        throw new Error("유니폼 정보 저장 실패");
+    }
+    revalidatePath(`/admin/students/${id}`);
+    revalidatePath("/admin/students");
+}
+
 export async function updateStudent(id: string, data: {
     name: string;
     birthDate: string;

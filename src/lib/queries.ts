@@ -483,6 +483,8 @@ export const getStudents = cache(async (limit?: number) => {
              )
              SELECT s.id, s.name, s."birthDate", s.gender, s."parentId",
                     s.phone, s.school, s.grade, s.address, s."enrollDate",
+                    s."uniformStatus", s."uniformAppliedAt", s."uniformOrderedAt",
+                    s."uniformReceivedAt", s."uniformSource", s."uniformNote",
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
@@ -1986,6 +1988,12 @@ export async function getStudentActivity(studentId: string) {
                 grade: r.grade ?? null,
                 address: r.address ?? null,
                 enrollDate: r.enrollDate ?? r.enrolldate ?? null,
+                uniformStatus: r.uniformStatus ?? r.uniformstatus ?? null,
+                uniformAppliedAt: r.uniformAppliedAt ?? r.uniformappliedat ?? null,
+                uniformOrderedAt: r.uniformOrderedAt ?? r.uniformorderedat ?? null,
+                uniformReceivedAt: r.uniformReceivedAt ?? r.uniformreceivedat ?? null,
+                uniformSource: r.uniformSource ?? r.uniformsource ?? null,
+                uniformNote: r.uniformNote ?? r.uniformnote ?? null,
                 createdAt: r.createdAt ?? r.createdat,
                 parent: {
                     name: r.parent_name ?? null,
