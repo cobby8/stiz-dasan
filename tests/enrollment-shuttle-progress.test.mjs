@@ -42,14 +42,14 @@ test("같은 학생 중복 배정·시각·기사 누락은 확인 필요",()=>{
 test("실제 월·요일·방향·학생과 지문은 유지하고 객체 키 순서만 무시",()=>{const f=fixture();assert.equal(p.shuttleFingerprint({a:1,b:2}),p.shuttleFingerprint({b:2,a:1}));const before=JSON.stringify(f);p.enrollmentShuttleProgress(f);assert.equal(JSON.stringify(f),before);});
 
 function loadFile(file,imports,globals={}) { const result={};vm.runInNewContext(ts.transpileModule(readFileSync(file,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:result,require:name=>{assert.ok(name in imports,`검사에서 허용하지 않은 접근: ${name}`);return imports[name];},Date,Intl,Map,Set,Object,Array,Number,String,Error,console,...globals});return result; }
-function querySetup(f,fail=false) {
+function querySetup(f,fail=false,hasNoticeLedger=true) {
  const calls=[];
- const db={$queryRawUnsafe:async(sql,...values)=>{calls.push({sql,values});if(fail)throw new Error("합성 읽기 장애");if(sql.includes('FROM "Enrollment"'))return f.classes.map(c=>({...c,studentId:"student-1"}));if(sql.includes('FROM "StudentShuttleLocation"'))return f.locations;if(sql.includes('FROM "RegularShuttleStop"'))return f.roster;if(sql.includes('FROM "RegularDispatchRoute"'))return f.routes;if(sql.includes('FROM "RegularShuttleNoticeBatch"'))return f.notices;if(sql.includes('FROM "NotificationDelivery"'))return f.deliveries;if(sql.includes('FROM "Student"'))return [{studentId:"student-1",phone:f.recipientPhone}];throw new Error("예상 밖 읽기");}};
+ const db={$queryRawUnsafe:async(sql,...values)=>{calls.push({sql,values});if(fail)throw new Error("합성 읽기 장애");if(sql.includes("to_regclass"))return [{noticeLedger:hasNoticeLedger?"RegularShuttleNoticeBatch":null}];if(sql.includes('FROM "Enrollment"'))return f.classes.map(c=>({...c,studentId:"student-1"}));if(sql.includes('FROM "StudentShuttleLocation"'))return f.locations;if(sql.includes('FROM "RegularShuttleStop"'))return f.roster;if(sql.includes('FROM "RegularDispatchRoute"'))return f.routes;if(sql.includes('FROM "RegularShuttleNoticeBatch"'))return f.notices;if(sql.includes('FROM "NotificationDelivery"'))return f.deliveries;if(sql.includes('FROM "Student"'))return [{studentId:"student-1",phone:f.recipientPhone}];throw new Error("예상 밖 읽기");}};
  const prisma={...db,$transaction:async(fn,options)=>{assert.equal(options.isolationLevel,"RepeatableRead");return fn(db);}};
  const q=loadFile("src/lib/enrollment/shuttle-progress-query.ts",{"server-only":{},"@/lib/prisma":{prisma},"@/lib/studentVisibility":{notMergedStudent:alias=>`${alias}."mergedIntoStudentId" IS NULL`},"@/lib/message-ledger":{hashMessageRecipientPhone:f.recipientHash},"@/lib/regular/serviceMonth":{koreaServiceMonth:()=>"2026-11",isServiceMonth:v=>/^\d{4}-(0[1-9]|1[012])$/.test(v)},"./shuttle-progress":p});
  return {q,db,calls};
 }
-test("실제 배치 조회는 학생 ID별 반을 분리하고 전달 이벤트 키를 사용한다",async()=>{const f=fixture();notice(f,"DELIVERED");const {q,db,calls}=querySetup(f);const result=await q.getEnrollmentShuttleProgress([f.application,{...f.application,id:"other",convertedStudentId:"other-student"}],"2026-11",db);assert.equal(result[f.application.id].status,"COMPLETE");assert.notEqual(result.other.status,"COMPLETE");assert.equal(calls.length,7);const delivery=calls.find(c=>c.sql.includes('FROM "NotificationDelivery"'));assert.equal(delivery.values[0][0],p.shuttleDeliveryEventKey("notice-hash"));assert.ok(calls.every(c=>c.sql.trim().startsWith("SELECT")));});
+test("실제 배치 조회는 학생 ID별 반을 분리하고 전달 이벤트 키를 사용한다",async()=>{const f=fixture();notice(f,"DELIVERED");const {q,db,calls}=querySetup(f);const result=await q.getEnrollmentShuttleProgress([f.application,{...f.application,id:"other",convertedStudentId:"other-student"}],"2026-11",db);assert.equal(result[f.application.id].status,"COMPLETE");assert.notEqual(result.other.status,"COMPLETE");assert.equal(calls.length,8);const delivery=calls.find(c=>c.sql.includes('FROM "NotificationDelivery"'));assert.equal(delivery.values[0][0],p.shuttleDeliveryEventKey("notice-hash"));assert.ok(calls.every(c=>c.sql.trim().startsWith("SELECT")));});
 test("배치 조회 실패는 기존 승인 신청을 배차 없음이나 완료로 위장하지 않는다",async()=>{const f=fixture();const {q,db}=querySetup(f,true);const result=await q.getEnrollmentShuttleProgress([f.application],"2026-11",db);assert.equal(result[f.application.id].status,"UNKNOWN");});
 test("기본 서버 조회는 일관된 읽기 스냅샷으로 최종 전달 근거까지 대조한다",async()=>{const f=fixture();notice(f,"DELIVERED");const {q}=querySetup(f);assert.equal((await q.getEnrollmentShuttleProgress([f.application],"2026-11"))[f.application.id].status,"COMPLETE");});
 test("신청 전·미신청만 있으면 운영 자료 조회 없이 상태를 반환한다",async()=>{const f=fixture();const {q,db,calls}=querySetup(f);const app={...f.application,status:"PENDING",convertedStudentId:null};assert.equal((await q.getEnrollmentShuttleProgress([app],"2026-11",db))[app.id].status,"REQUESTED");assert.equal(calls.length,0);});
@@ -84,3 +84,18 @@ function noticeRouteFixture() {
 test("명단 월 차이가 없어도 현재 확정 노선 시간·차량 안내를 준비할 수 있다",async()=>{const x=noticeRouteFixture();const response=await x.post();assert.equal(response.status,200);assert.equal((await response.json()).status,"HELD");const inserted=x.writes.find(w=>w.sql.includes('INSERT INTO "RegularShuttleNoticeBatch"'));assert.match(inserted.values[7],/16:40/);assert.match(inserted.values[7],/합성 차량/);assert.match(inserted.values[2],/^regular-shuttle-v2:/);});
 test("명단이 같아도 노선 변경 후 이전 승인 지문은 저장·발송 없이 거절한다",async()=>{const x=noticeRouteFixture();const old=await (await x.post()).json();x.writes.length=0;x.f.routes[0].payload.vehicles[0].stops[0].etaMinutes++;x.f.routes[0].payload.confirmation=p.routeConfirmation(x.f.routes[0],x.f.roster.filter(r=>r.direction==="BOARD"));const response=await x.post({action:"APPROVE",payloadHash:old.payloadHash});assert.equal(response.status,409);assert.equal(x.writes.length,0);});
 test("현재 보호자와 명단 수신 번호가 다르면 안내 준비도 차단한다",async()=>{const x=noticeRouteFixture();x.setContact("01000000002");assert.equal((await x.post()).status,400);assert.equal(x.writes.length,0);});
+
+
+test("발송 기록표가 없어도 배차 대기를 조회하고 표 생성·발송은 하지 않는다",async()=>{
+ const f=fixture();f.roster=[];f.routes=[];const {q,db,calls}=querySetup(f,false,false);
+ const result=await q.getEnrollmentShuttleProgress([f.application],"2026-11",db);
+ assert.equal(result[f.application.id].status,"ROSTER_PENDING");
+ assert.ok(calls.every(c=>c.sql.trim().startsWith("SELECT")));
+ assert.ok(!calls.some(c=>c.sql.includes('FROM "RegularShuttleNoticeBatch"')));
+});
+test("발송 기록표가 없으면 확정 노선도 안내 완료로 오인하지 않는다",async()=>{
+ const f=fixture();notice(f,"DELIVERED");const {q,db,calls}=querySetup(f,false,false);
+ const result=await q.getEnrollmentShuttleProgress([f.application],"2026-11",db);
+ assert.equal(result[f.application.id].status,"NOTICE_PENDING");
+ assert.ok(!calls.some(c=>c.sql.includes('FROM "NotificationDelivery"')));
+});

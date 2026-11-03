@@ -30,13 +30,16 @@ export async function getEnrollmentShuttleProgress(applications: ShuttleApplicat
   try {
     // 명단·노선·전달 장부를 같은 시점의 읽기 스냅샷으로 대조한다.
     if (db === prisma) return await prisma.$transaction(tx => getEnrollmentShuttleProgress(applications, serviceMonth, tx), { isolationLevel: "RepeatableRead", timeout: 10_000 });
+    // 안내 기능을 아직 사용하지 않은 학원에는 발송 기록표가 없을 수 있다.
+    // 표를 만들지 않고 존재 여부만 읽어, 발송 이력 없음과 조회 장애를 구분한다.
+    const ledger = await db.$queryRawUnsafe<Array<{ noticeLedger: string | null }>>(`SELECT to_regclass('public."RegularShuttleNoticeBatch"')::text AS "noticeLedger"`);
     const [classes, locations, roster, routes, notices, parents] = await Promise.all([
       db.$queryRawUnsafe<Array<ShuttleClass & { studentId: string }>>(`SELECT c.id,c."dayOfWeek",c."startTime",c."endTime",e."studentId",(e.status='ACTIVE') AS active FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId" WHERE e."studentId"=ANY($1::text[]) AND c.id=ANY($2::text[])`, ids, classIds),
       db.$queryRawUnsafe<ShuttleLocation[]>(`SELECT "studentId",kind,latitude,longitude,"consentVersion","confirmedAt" FROM "StudentShuttleLocation" WHERE "studentId"=ANY($1::text[])`, ids),
       // 전체 명단을 비교해야 다른 정차 변경도 이전 노선 확정의 근거로 사용하지 않는다.
       db.$queryRawUnsafe<ShuttleRosterRow[]>(`SELECT id,"serviceMonth",weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 ORDER BY id`, serviceMonth),
       db.$queryRawUnsafe<ShuttleRoute[]>(`SELECT "serviceMonth","dayOfWeek",direction,payload,"classStart","classEnd" FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1`, serviceMonth),
-      db.$queryRawUnsafe<ShuttleNotice[]>(`SELECT "studentId","serviceMonth","stableEventKey","payloadHash",status,"messageBody","recipientPhone","sentAt","createdAt" FROM "RegularShuttleNoticeBatch" WHERE "serviceMonth"=$1 AND "studentId"=ANY($2::text[]) ORDER BY "createdAt" DESC`, serviceMonth, ids),
+      ledger[0]?.noticeLedger ? db.$queryRawUnsafe<ShuttleNotice[]>(`SELECT "studentId","serviceMonth","stableEventKey","payloadHash",status,"messageBody","recipientPhone","sentAt","createdAt" FROM "RegularShuttleNoticeBatch" WHERE "serviceMonth"=$1 AND "studentId"=ANY($2::text[]) ORDER BY "createdAt" DESC`, serviceMonth, ids) : Promise.resolve([] as ShuttleNotice[]),
       db.$queryRawUnsafe<Array<{ studentId: string; phone: string | null }>>(`SELECT s.id AS "studentId",u.phone FROM "Student" s LEFT JOIN "User" u ON u.id=s."parentId" WHERE s.id=ANY($1::text[]) AND ${notMergedStudent("s")}`, ids),
     ]);
     const hashes = notices.map(n => shuttleDeliveryEventKey(n.payloadHash));
