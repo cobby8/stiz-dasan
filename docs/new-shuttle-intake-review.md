@@ -38,6 +38,15 @@
 
 ## 검증
 
+### 운영 잠금 응답 호환 보완 (2026-11-04)
+
+- 최초 실제 검토 요청은 등록 실패했으며 운영 기록 0건을 재조회했다. `SELECT pg_advisory_xact_lock(...)`가 반환하는 PostgreSQL `void`를 Prisma raw query가 역직렬화하지 못하는 P2010을 격리 환경에서 재현했다.
+- 잠금 응답만 `::text AS "lockResult"`로 변환한다. 잠금 키·범위·트랜잭션·권한·실제 기록 쓰기는 바꾸지 않는다.
+- 종전 SQL 검사는 `pg` 연결 래퍼였으므로 Prisma 호환성 증거가 아니었다. 격리 스크립트의 전체 서비스 호출을 실제 PrismaClient와 같은 raw query·거래 경로로 바꿨으며, 원래 void 오류 재현과 변환 후 성공을 정식 회귀에 추가했다.
+- 초기 Prisma 검증에서는 12개 시나리오가 통과했지만 Windows 시험 폴더 정리에서 EBUSY로 비정상 종료했다. 원실패를 성공으로 바꾸지 않고, 소유 경로 확인과 서버 종료 확인을 유지한 채 일시 잠금 재시도만 보강했다. 별도 기존 잔여 폴더 삭제는 자동 승인 검토에서 차단되어 실행하지 않았다.
+
+- 후속 독립 검증은 실제 Prisma 12/12·관련 단위/UI33/33·타입 검사를 통과했다. `.tmp/shuttle-review-pg-ICyjS6/evidence.json`에서 실제 Prisma 경로와 연결·DB·임시 암호 정리 완료를 확인했다.
+
 실제 서비스 호출·API 권한·화면 행동 검사, 전용 loopback PostgreSQL 통합과 320/360px 합성 React 화면을 사용한다. 운영 학생을 지정하거나 실제 배차·발송하는 시험은 하지 않는다. 구체적인 결과는 `.Codex/scratchpad.md`와 Git 제외 `.tmp/shuttle-intake-ui-proof/`, `.tmp/shuttle-review-pg-*/evidence.json`에 기록한다.
 
 - 서비스 19/19, UI 행동 14/14, 셔틀 상태 36/36을 독립 재실행해 69/69 통과했다. 별도 API 본문·권한 안내 14/14, TypeScript·Prisma·새 파일 ESLint·diff 검사도 통과했다.
