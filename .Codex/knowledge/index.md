@@ -1,5 +1,9 @@
 # STIZ Knowledge Index
 
+> 2026-11-04: 신규셔틀 운영요청0/P2010 원인=Prisma의void잠금응답. 서버1줄text변환·실제Prisma격리12/33/타입·독립PASS, 승인후속배포/동일요청재시도진행. errors/lessons 및 docs/new-shuttle-intake-review.md에 검증경로차이 기록. 지식본문5 유지.
+
+> 2026-11-03: 신규 셔틀 처리함·지정 기사 검토 사용자 실행승인으로 PR9/b3fec3ae 운영 READY. 구조/RLS 독립RO·관리자4명/기사선택1·직원검토빈상태·비로그인401 확인. 검토/대상명단0 유지·실제지정/배차/발송0. docs/new-shuttle-intake-review.md 운영 절차가 최신 정본이다. 지식 본문5개 유지.
+
 > 2026-11-03: 수강개시일 DATE·미래 출결·과거 출결 보존/휴원복귀일 재조회/셔틀 현재노선과 최종전달증거 연결. docs/enrollment-commencement-shuttle-progress.md 정본, PG8·타입·신규/독립 통과. 전체기존실패3 별도·운영/푸시/배포0, 지식 본문5개 유지.
 
 > 2026-11-03: 신청 맞춤반 UUID 교시 오인·복수월 숨김 표시 수정은 PR6/1bc61b75 운영배포와 실제 목록 확인 완료. errors.md 참조, 관련44·tsc·독립React5 통과.

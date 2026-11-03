@@ -71,7 +71,7 @@ export async function assignShuttleReview(actor: Actor, input: Record<string, un
   const applicationId = reviewId(input.applicationId), month = reviewMonth(input.serviceMonth), driverUserId = reviewId(input.driverUserId);
   return store.$transaction(async db => {
     await authorize(db, actor, true);
-    await db.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `shuttle-review:${applicationId}:${month}`);
+    await db.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text AS "lockResult"`, `shuttle-review:${applicationId}:${month}`);
     const driver = await db.$queryRawUnsafe<Array<{ id: string }>>(`SELECT u.id FROM "User" u WHERE u.id=$1 AND u."withdrawnAt" IS NULL AND ${driverCondition} FOR SHARE OF u`, driverUserId);
     if (!driver.length) throw new ShuttleReviewError("현재 기사 역할이 있는 담당자를 선택해 주세요.", 409, "DRIVER_UNAVAILABLE");
     const apps = await db.$queryRawUnsafe<App[]>(`${appSelect} AND a.id=$1 FOR SHARE OF a,s`, applicationId);

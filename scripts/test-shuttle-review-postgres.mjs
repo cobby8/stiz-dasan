@@ -8,13 +8,14 @@ import { promisify } from 'node:util';
 import vm from 'node:vm';
 import pg from 'pg';
 import ts from 'typescript';
+import { PrismaClient } from '@prisma/client';
 
 // 사용자 환경·운영 DB URL을 받지 않고 새 소유 loopback DB에서만 실행한다.
 const root=process.cwd(),bin='C:/Program Files/PostgreSQL/16/bin',host='127.0.0.1',port=55483,user='shuttle_review_fixture',password=randomBytes(32).toString('hex');
 const safeEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^(PG|DATABASE_URL$|DIRECT_URL$|TEST_DATABASE_URL$|NODE_OPTIONS$)/i.test(key)));
 const exec=promisify(execFile),cases=[];
-let owned,pool,started=false;
-const cleanup={poolClosed:false,databaseStopped:false,databaseDeleted:false,passwordFileDeleted:false};
+let owned,pool,prismaRuntime,started=false;
+const cleanup={poolClosed:false,prismaClosed:false,databaseStopped:false,databaseDeleted:false,passwordFileDeleted:false};
 async function command(name,args){try{return await exec(path.join(bin,`${name}.exe`),args,{env:safeEnv,windowsHide:true,shell:false,timeout:45000,maxBuffer:1024*1024});}catch{throw new Error(`격리 PostgreSQL ${name} 명령 실패`);}}
 async function load(file,dependencies={}){const exports={};vm.runInNewContext(ts.transpileModule(await readFile(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Date,Intl,Request,Response,console,require(id){if(!Object.hasOwn(dependencies,id))throw new Error(`격리 로더 허용 범위 밖: ${id}`);return dependencies[id];}},{filename:file});return exports;}
 async function run(name,work){try{await work();cases.push({name,pass:true});console.log(`PASS ${name}`);}catch(error){cases.push({name,pass:false,errorType:error.name,code:error.code??null});console.log(`FAIL ${name} (${error.name}:${error.code??''})`);}}
@@ -47,9 +48,12 @@ try{
  INSERT INTO "StudentShuttleLocation"("studentId",kind,name,address,latitude,longitude,"confirmedAt","consentVersion") VALUES('student','PICKUP','합성 정류장','합성 시험 주소',37.6,127.1,now(),'2026-07-21'),('student','DROPOFF','합성 정류장','합성 시험 주소',37.6,127.1,now(),'2026-07-21');`);
  const pure=await load('src/lib/enrollment/shuttle-review.ts',{'node:crypto':{createHash}}),visibility=await load('src/lib/studentVisibility.ts');
  const service=await load('src/lib/enrollment/shuttle-review-query.ts',{'server-only':{},'@/lib/prisma':{prisma:{}},'@/lib/studentVisibility':visibility,'./shuttle-review':pure,'./shuttle-progress-query':{getEnrollmentShuttleProgress:async apps=>Object.fromEntries(apps.map(a=>[a.id,{status:'ROSTER_PENDING',label:'배차 대기',detail:'합성 진행표',rosterHref:'/admin/shuttle/regular',dispatchHref:'/admin/shuttle/regular-dispatch'}]))}});
+ // SQL만 같은 별도 드라이버 대신 운영과 같은 Prisma 결과 변환·트랜잭션을 검사한다.
+ prismaRuntime=new PrismaClient({datasources:{db:{url:`postgresql://${user}:${password}@${host}:${port}/postgres`}}});
  const writes=[];
- const wrap=client=>({async $queryRawUnsafe(sql,...values){if(/^INSERT|^UPDATE|^DELETE/i.test(sql))writes.push(sql);return(await client.query(sql,values)).rows;},async $executeRawUnsafe(sql,...values){writes.push(sql);return(await client.query(sql,values)).rowCount;}});
- const store={...wrap(pool),async $transaction(work,options){const client=await pool.connect();try{await client.query(`BEGIN ISOLATION LEVEL ${options.isolationLevel==='Serializable'?'SERIALIZABLE':'REPEATABLE READ'}`);const result=await work(wrap(client));await client.query('COMMIT');return result;}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}}};
+ const wrap=client=>({async $queryRawUnsafe(sql,...values){if(/^INSERT|^UPDATE|^DELETE/i.test(sql))writes.push(sql);return client.$queryRawUnsafe(sql,...values);},async $executeRawUnsafe(sql,...values){writes.push(sql);return client.$executeRawUnsafe(sql,...values);}});
+ const store={...wrap(prismaRuntime),async $transaction(work,options){return prismaRuntime.$transaction(client=>work(wrap(client)),options);}};
+ await run('실제 Prisma 잠금 반환형 text 변환으로 P2010 방지',async()=>{let failure;try{await prismaRuntime.$transaction(client=>client.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))','synthetic-regression'));}catch(error){failure=error;}assert.equal(failure?.code,'P2010');assert.match(String(failure.meta?.message),/void/);const rows=await prismaRuntime.$transaction(client=>client.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))::text AS "lockResult"','synthetic-regression'));assert.equal(rows.length,1);});
  const actor=id=>({appUserId:id}),month='2026-11';let fingerprint,reviewId;
  await run('실제 관리자 목록 SQL·지문과 GET 쓰기 0',async()=>{const r=await service.getShuttleIntakeDashboard(actor('admin'),month,true,store);assert.equal(r.items.length,1);assert.equal(r.drivers.length,3);fingerprint=r.items[0].fingerprint;assert.equal(writes.length,0);});
  await run('실제 담당 지정 SQL·추가 역할 기사 및 중복 재사용',async()=>{const input={applicationId:'application',serviceMonth:month,driverUserId:'granted',expectedFingerprint:fingerprint};const first=await service.assignShuttleReview(actor('admin'),input,store);reviewId=first.id;const second=await service.assignShuttleReview(actor('admin'),input,store);assert.equal(second.id,first.id);assert.equal(second.reused,true);assert.equal((await pool.query('SELECT count(*)::int AS n FROM "EnrollmentShuttleReview"')).rows[0].n,1);});
@@ -64,9 +68,10 @@ try{
  await run('실제 51건 신청을 안정 정렬 두 페이지로 빠짐 없이 조회',async()=>{await pool.query(`INSERT INTO "EnrollmentApplication"(id,status,"convertedStudentId","assignedClassId","shuttleNeeded","requestedStartOn") SELECT 'extra-'||n,'APPROVED','student','class',true,'2026-11-02'::date FROM generate_series(1,50) n`);const first=await service.getShuttleIntakeDashboard(actor('admin'),month,true,store),second=await service.getShuttleIntakeDashboard(actor('admin'),month,true,store,2);assert.equal(first.items.length,50);assert.equal(first.hasMore,true);assert.equal(second.items.length,1);assert.equal(second.hasMore,false);assert.equal(new Set([...first.items,...second.items].map(x=>x.applicationId)).size,51);});
 }catch(error){cases.push({name:'격리 준비 또는 실행',pass:false,errorType:error.name,code:error.code??null});console.error(`격리 검증 중단 (${error.name}:${error.code??''})`);}
 finally{
+ if(prismaRuntime){await prismaRuntime.$disconnect();cleanup.prismaClosed=true;}
  if(pool){await pool.end();cleanup.poolClosed=true;}
  if(started&&owned){try{await command('pg_ctl',['stop','-D',path.join(owned,'data'),'-m','fast','-w']);cleanup.databaseStopped=true;}catch{console.error('HELD: 소유 임시 DB 종료 재확인 필요');}}
- if(owned&&cleanup.databaseStopped){const target=path.join(owned,'data'),expectedRoot=path.join(await realpath(path.join(root,'.tmp')),path.basename(owned));assert.equal((await realpath(owned)).toLowerCase(),expectedRoot.toLowerCase());assert.equal((await realpath(target)).toLowerCase(),path.join(expectedRoot,'data').toLowerCase());await rm(target,{recursive:true,force:true});cleanup.databaseDeleted=true;}
- if(owned){await writeFile(path.join(owned,'evidence.json'),JSON.stringify({isolated:true,actualPostgres:true,syntheticProgressPresenter:true,cases,cleanup,limits:['실제 서비스와 SQL·마이그레이션·트랜잭션 검증','운영DB·발송·배차·외부인증 미실행']},null,2));console.log(`증거: ${path.relative(root,path.join(owned,'evidence.json'))}`);}
+ if(owned&&cleanup.databaseStopped){const target=path.join(owned,'data'),expectedRoot=path.join(await realpath(path.join(root,'.tmp')),path.basename(owned));assert.equal((await realpath(owned)).toLowerCase(),expectedRoot.toLowerCase());assert.equal((await realpath(target)).toLowerCase(),path.join(expectedRoot,'data').toLowerCase());await rm(target,{recursive:true,force:true,maxRetries:10,retryDelay:250});cleanup.databaseDeleted=true;}
+ if(owned){await writeFile(path.join(owned,'evidence.json'),JSON.stringify({isolated:true,actualPostgres:true,actualPrisma:true,syntheticProgressPresenter:true,cases,cleanup,limits:['실제 Prisma 서비스·SQL·마이그레이션·트랜잭션 검증','운영DB·발송·배차·외부인증 미실행']},null,2));console.log(`증거: ${path.relative(root,path.join(owned,'evidence.json'))}`);}
  console.log(`통과 ${cases.filter(x=>x.pass).length}/${cases.length}; 정리 ${JSON.stringify(cleanup)}`);if(cases.some(x=>!x.pass)||!cleanup.databaseStopped||!cleanup.databaseDeleted||!cleanup.passwordFileDeleted)process.exitCode=1;
 }
