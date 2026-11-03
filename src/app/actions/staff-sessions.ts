@@ -11,8 +11,8 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
 async function requireSessionAccess(sessionId: string) {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; classId: string; status: string; className: string; sessionDateId: string | null }>>(
-    `SELECT s.id, s."classId", s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; classId: string; status: string; className: string; sessionDateId: string | null; date: Date | string }>>(
+    `SELECT s.id, s."classId", s.date::date::text AS date, s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
      FROM "Session" s JOIN "Class" c ON c.id = s."classId" WHERE s.id = $1 LIMIT 1`,
     sessionId,
   );
@@ -23,10 +23,14 @@ async function requireSessionAccess(sessionId: string) {
   return { session: rows[0], access };
 }
 
-async function isSessionRosterStudent(classId: string, sessionDateId: string | null, studentId: string) {
+async function isSessionRosterStudent(classId: string, sessionDateId: string | null, studentId: string, sessionDate: Date | string) {
   if (!sessionDateId) {
     const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "Enrollment" WHERE "classId" = $1 AND "studentId" = $2 AND status = 'ACTIVE' LIMIT 1`, classId, studentId,
+      `SELECT e.id FROM "Enrollment" e WHERE e."classId" = $1 AND e."studentId" = $2 AND e.status = 'ACTIVE'
+       AND (e."startsOn" IS NULL OR e."startsOn" <= $3::date OR EXISTS (
+         SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+         WHERE historical."studentId"=$2 AND prior."classId"=$1 AND prior.date::date=$3::date
+       )) LIMIT 1`, classId, studentId, sessionDate,
     );
     return Boolean(rows[0]);
   }
@@ -194,8 +198,8 @@ async function saveSeasonalSeatAttendance(input: {
   return { ok: true as const, attendanceId, changed };
 }
 
-async function getSessionParentRecipients(session: { classId: string; sessionDateId: string | null }, studentIds?: string[]) {
-  if (!session.sessionDateId) return getClassParentRecipients(session.classId, studentIds);
+async function getSessionParentRecipients(session: { classId: string; sessionDateId: string | null; date?: Date | string }, studentIds?: string[]) {
+  if (!session.sessionDateId) return getClassParentRecipients(session.classId, studentIds, session.date);
   return prisma.$queryRawUnsafe<ParentRecipient[]>(
     `SELECT DISTINCT st.id AS "studentId", st.name AS "studentName", st."parentId" AS "userId"
      FROM "SpecialProgramSessionDate" anchor_sd
@@ -308,7 +312,7 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
 
   // 정규(비seasonal): attendanceKey = studentId. 기존 동작 그대로.
   const studentId = input.attendanceKey;
-  const enrolled = await isSessionRosterStudent(session.classId, session.sessionDateId, studentId);
+  const enrolled = await isSessionRosterStudent(session.classId, session.sessionDateId, studentId, session.date);
   if (!enrolled) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
 
   const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
@@ -405,8 +409,9 @@ export async function completeClassSession(input: {
     : await prisma.$queryRawUnsafe<{ count: bigint }[]>(
         `SELECT COUNT(*)::bigint AS count FROM "Enrollment" e
          WHERE e."classId" = $1 AND e.status = 'ACTIVE'
+           AND (e."startsOn" IS NULL OR e."startsOn" <= $3::date)
            AND NOT EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = e."studentId")`,
-        session.classId, input.sessionId,
+        session.classId, input.sessionId, session.date,
       );
   if (Number(missing[0]?.count ?? 0) > 0) return { ok: false as const, message: "출결을 확인하지 않은 학생이 있습니다." };
 

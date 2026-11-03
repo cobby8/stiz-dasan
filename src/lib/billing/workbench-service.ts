@@ -11,7 +11,7 @@ export type WorkbenchTx = {
   $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number>;
 };
 export type WorkbenchDb = { $transaction<T>(work: (tx: WorkbenchTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T> };
-type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string };
+type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; startsOn?: Date | string | null; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string };
 type Register = { studentId: string; month: string; status: string; payload: unknown; version: number };
 type Stored = { id: string; month: string; studentId: string; classId: string; version: number; status: "DRAFT" | "CONFIRMED" | "ISSUED" | "ZERO"; payload: WorkbenchAmounts; reason: string; sourceVersion: string; paymentId: string | null; periodStart?:string|null;periodEnd?:string|null;scheduledDates?:string[];calculationBasis?:Record<string,unknown> };
 type Absence = { id: string; studentId: string; studentName: string; classId: string; date: string; reason: string; status: string; makeupStatus: string | null; resolution: string | null };
@@ -38,7 +38,7 @@ export async function readWorkbenchSchedule(tx:WorkbenchTx,month:string,classId:
 export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnabled = false,calendar?:WorkbenchCalendarSnapshot): Promise<WorkbenchView> {
   validateWorkbenchMonth(month);
   const [year, monthNumber] = month.split("-").map(Number);
-  const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className", e.status,
+  const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className", e.status, e."startsOn"::text AS "startsOn",
     p.price, c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
     JOIN "Class" c ON c.id=e."classId" JOIN "Program" p ON p.id=c."programId"
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
@@ -106,10 +106,13 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const basis: string[] = [], reviewReasons: string[] = [], blockingReasons: string[] = [];
     const allScheduledDates = getMonthlyClassDates(eventValues, month, e.dayOfWeek);
     const classReg = reg?.classes.find(c => c.classId === e.classId);
-    const periodStart=saved?.periodStart??classReg?.periodStart??allScheduledDates[0]??null;
-    const periodEnd=saved?.periodEnd??classReg?.periodEnd??allScheduledDates.at(-1)??null;
-    const scheduledDates=periodStart&&periodEnd?filterWorkbenchDates(allScheduledDates,periodStart,periodEnd):[];
-    const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE");
+    const startsOn = typeof e.startsOn === "string" ? e.startsOn : null;
+    const proposedStart=saved?.periodStart??classReg?.periodStart??allScheduledDates[0]??null;
+    const futurePeriod=Boolean(startsOn && allScheduledDates.length && startsOn > allScheduledDates.at(-1)!);
+    const periodStart=futurePeriod ? null : startsOn && proposedStart && startsOn > proposedStart ? startsOn : proposedStart;
+    const periodEnd=futurePeriod ? null : saved?.periodEnd??classReg?.periodEnd??allScheduledDates.at(-1)??null;
+    const scheduledDates=periodStart&&periodEnd&&periodStart<=periodEnd?filterWorkbenchDates(allScheduledDates,periodStart,periodEnd):[];
+    const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE") || futurePeriod;
     let amounts: WorkbenchAmounts = { baseAmount: excluded ? 0 : e.price, discountAmount: 0, prorationAmount: 0, carryAmount: 0, shuttleAmount: 0 };
     // 정가는 월 4회 기준. 연간 일정상 그달 전체 수업이 4회 미만이면 모자란 회차만큼 뺀다(설 주간·연휴가 낀 달).
     const monthSessions = allScheduledDates.length;
@@ -127,6 +130,9 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
         basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
       }
     }
+    if (startsOn) basis.push(`수강 개시일 ${startsOn}`);
+    if (startsOn && !excluded && scheduledDates.length < allScheduledDates.length) reviewReasons.push("개시일 이후 실제 수업 횟수에 맞는 기간 조정 금액을 확인해 주세요.");
+    if (startsOn && saved?.scheduledDates?.some(day => day < startsOn)) blockingReasons.push("저장된 청구 기간에 수강 개시일 전 수업이 포함되어 있습니다. 기간과 금액을 다시 검토해 주세요.");
     if (!scheduledDates.length && !excluded) blockingReasons.push("연간 일정의 실제 수업일이 없어 확정·발행할 수 없습니다.");
     if (register && !reg) reviewReasons.push("확정 월 장부의 근거가 올바르지 않습니다.");
     if (scheduledDates.length) basis.push(`연간 일정 ${scheduledDates.length}회`);

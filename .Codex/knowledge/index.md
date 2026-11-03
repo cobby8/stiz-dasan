@@ -1,6 +1,8 @@
 # STIZ Knowledge Index
 
-> 2026-11-03: 신청 맞춤반 UUID 교시 오인·복수월 숨김 표시 수정. errors.md 참조, 관련44·tsc·독립React5 통과, 운영 미배포.
+> 2026-11-03: 수강개시일 DATE·미래 출결·과거 출결 보존/휴원복귀일 재조회/셔틀 현재노선과 최종전달증거 연결. docs/enrollment-commencement-shuttle-progress.md 정본, PG8·타입·신규/독립 통과. 전체기존실패3 별도·운영/푸시/배포0, 지식 본문5개 유지.
+
+> 2026-11-03: 신청 맞춤반 UUID 교시 오인·복수월 숨김 표시 수정은 PR6/1bc61b75 운영배포와 실제 목록 확인 완료. errors.md 참조, 관련44·tsc·독립React5 통과.
 
 > 2026-11-02: 체험 원수정 PR4/b353 운영READY·실제목록/확정/변경창 확인. 기존희망regular키→custom반 불일치의 옛반fallback을 공용화해 두화면 보완. docs/trial-schedule-save-display.md, 전체2779/학생5·독립28·tsc·React PASS. 운영 최종증거 로컬 .tmp/trial-production-20261102, 지식본문5 유지.
 

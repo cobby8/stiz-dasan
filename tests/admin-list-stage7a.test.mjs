@@ -108,7 +108,7 @@ test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산
   const source = read("../src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx");
   assertListStandard(source, "수강 변경");
   // 예전 «기존 반 → 바꿀 반 · 적용일부터» 는 칸으로 나눴고 적용일은 오른쪽
-  assert.match(source, /admin-cell-num[^"]*">\{row\.effectiveFrom\}<\/td>/);
+  assert.match(source, /admin-cell-num[^"]*">\s*\{row\.effectiveFrom\}[\s\S]*?pauseResumeLabel\(row\.resumeOn\)[\s\S]*?<\/td>/);
   // ⚡ 는 검토 중 건의 승인·거절만, 같은 decide
   assert.match(source, /if \(row\.status !== "PENDING"\) return \[\];/);
   assert.match(source, /onSelect: \(\) => decide\(id, true\)/);

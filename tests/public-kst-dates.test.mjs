@@ -96,17 +96,17 @@ test("과거 공지는 원문을 보존하고 현재 모집 링크와 구분하�
   assert.doesNotMatch(html, /모집 마감|운영 종료/);
 });
 
-test("실제 수강신청 월 선택도 한국 현재·다음 월을 표시한다", (t) => {
+test("실제 수강신청은 월 경계에서도 복수 월 선택 없이 개시일 하나를 표시한다", (t) => {
   t.mock.method(Date, "now", () => Date.parse("2026-12-31T15:00:00Z"));
   const Enroll = loadPage("app/apply/enroll/EnrollApplicationLaterSteps.tsx");
   const html = renderToStaticMarkup(React.createElement(Enroll, {
     step: 3,
-    form: { preferredSlotKeys: [], enrollmentMonths: [], shuttleNeeded: false, shuttleChoice: "미탑승" },
+    form: { preferredSlotKeys: [], requestedStartOn: "2027-01-04", shuttleNeeded: false, shuttleChoice: "미탑승" },
     availableSlots: [], update() {}, toggleSlot() {},
   }));
-  assert.match(html, /2027년 1월/);
-  assert.match(html, /2027년 2월/);
-  assert.doesNotMatch(html, /2026년 12월/);
+  assert.match(html, /수강 개시일/);
+  assert.match(html, /type="date"[^>]*value="2027-01-04"/);
+  assert.doesNotMatch(html, /수강신청 월|2027년 2월/);
 });
 
 test("갤러리 목록·확대창도 같은 한국 날짜를 쓰고 잘못된 게시일로 사진 전체가 멈추지 않는다", () => {

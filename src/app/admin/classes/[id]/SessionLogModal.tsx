@@ -12,10 +12,12 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
  * 5. sessionId가 있으면 수정 모드 (initialData로 기존 데이터 채우기)
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { saveSessionLog } from "@/app/actions/admin";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
+import { enrollmentHasStarted } from "@/lib/enrollment/commencement";
+import { todayKst } from "@/lib/datetime/kst";
 
 // ── 출석 상태 옵션 (AttendanceClient와 동일 패턴) ──
 const STATUS_OPTIONS = [
@@ -26,7 +28,7 @@ const STATUS_OPTIONS = [
 
 // 오늘 날짜를 YYYY-MM-DD 형식으로 반환
 function todayStr() {
-    return new Date().toISOString().split("T")[0];
+    return todayKst();
 }
 
 // ── 수정 모드에서 전달받는 기존 세션 데이터 ──
@@ -53,7 +55,7 @@ type Props = {
     date?: string;                              // 기본값 오늘
     initialData?: SessionInitialData;           // 수정 모드일 때 기존 데이터
     coaches: Array<{ id: string; name: string }>;
-    students: Array<{ id: string; name: string; gender?: string | null }>;
+    students: Array<{ id: string; name: string; gender?: string | null; startsOn?: string | null }>;
     onSaved: () => void;                        // 저장 후 콜백 (목록 새로고침)
 };
 
@@ -88,6 +90,11 @@ export default function SessionLogModal({
     // ── 출석 상태 ──
     // 기본값: 모든 학생을 "PRESENT"(출석)으로 초기화
     const [attendances, setAttendances] = useState<AttendanceRecord[]>([]);
+    const eligibleIds = useMemo(() => {
+        const historicalIds = new Set(initialData?.date === date ? initialData.attendances.map(record => record.studentId) : []);
+        return new Set(students.filter(student => enrollmentHasStarted(student.startsOn, date) || historicalIds.has(student.id)).map(student => student.id));
+    }, [students, date, initialData]);
+    const visibleAttendances = useMemo(() => attendances.filter(record => eligibleIds.has(record.studentId)), [attendances, eligibleIds]);
 
     // ── 저장 상태 ──
     const [saving, setSaving] = useState(false);
@@ -181,7 +188,7 @@ export default function SessionLogModal({
 
             // 기존 사진 목록에 새 사진 추가
             setPhotoUrls((prev) => [...prev, ...newUrls]);
-        } catch (err: any) {
+        } catch (err: unknown) {
             setErrorMsg(adminErrorText(err, "사진 업로드 중 오류가 발생했습니다."));
         } finally {
             setUploading(false);
@@ -217,8 +224,8 @@ export default function SessionLogModal({
 
     // 전체 일괄 변경 (전체 출석 / 전체 결석)
     const markAll = useCallback((status: string) => {
-        setAttendances((prev) => prev.map((a) => ({ ...a, status })));
-    }, []);
+        setAttendances((prev) => prev.map((a) => eligibleIds.has(a.studentId) ? { ...a, status } : a));
+    }, [eligibleIds]);
 
     // ── 저장 처리 ──
     const handleSave = useCallback(async () => {
@@ -242,20 +249,20 @@ export default function SessionLogModal({
                 photosJSON: photoUrls.length > 0 ? JSON.stringify(photoUrls) : undefined,
                 coachId: coachId || undefined,
                 // 학생이 있을 때만 출석 데이터 전달
-                attendances: attendances.length > 0
-                    ? attendances.map((a) => ({ studentId: a.studentId, status: a.status }))
+                attendances: visibleAttendances.length > 0
+                    ? visibleAttendances.map((a) => ({ studentId: a.studentId, status: a.status }))
                     : undefined,
             });
 
             // 저장 성공 → 부모에 알리고 모달 닫기
             onSaved();
             handleClose();
-        } catch (err: any) {
+        } catch (err: unknown) {
             setErrorMsg(adminErrorText(err, "저장에 실패했습니다. 다시 시도해주세요."));
         } finally {
             setSaving(false);
         }
-    }, [classId, date, topic, content, photoUrls, coachId, attendances, onSaved, handleClose]);
+    }, [classId, date, topic, content, photoUrls, coachId, visibleAttendances, onSaved, handleClose]);
 
     // 모달이 닫혀있으면 렌더링하지 않음
     if (!isOpen) return null;
@@ -440,7 +447,7 @@ export default function SessionLogModal({
                                 출석 체크
                             </label>
                             {/* 전체 일괄 변경 버튼 */}
-                            {students.length > 0 && (
+                            {visibleAttendances.length > 0 && (
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
@@ -460,7 +467,7 @@ export default function SessionLogModal({
                             )}
                         </div>
 
-                        {students.length === 0 ? (
+                        {visibleAttendances.length === 0 ? (
                             // 수강생이 없는 경우 안내 메시지
                             <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 text-center text-sm text-gray-400">
                                 수강생이 없습니다
@@ -468,11 +475,11 @@ export default function SessionLogModal({
                         ) : (
                             // 학생 목록 + 출석/결석/지각 토글 버튼
                             <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden">
-                                {attendances.map((att, idx) => (
+                                {visibleAttendances.map((att, idx) => (
                                     <div
                                         key={att.studentId}
                                         className={`flex items-center justify-between px-4 py-3 ${
-                                            idx < attendances.length - 1 ? "border-b border-gray-50" : ""
+                                            idx < visibleAttendances.length - 1 ? "border-b border-gray-50" : ""
                                         }`}
                                     >
                                         {/* 학생 이름 */}

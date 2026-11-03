@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { registrationReadiness } from "@/lib/enrollment/registration-readiness";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,12 @@ export default async function RegistrationReadinessPage() {
   await requireAdmin();
   const applications = await prisma.enrollmentApplication.findMany({
     where: { status: "APPROVED" }, orderBy: { processedAt: "desc" }, take: 100,
-    select: { id: true, childName: true, convertedStudentId: true, assignedClassId: true, shuttleNeeded: true },
+    select: { id: true, status: true, childName: true, convertedStudentId: true, assignedClassId: true, shuttleNeeded: true, requestedStartOn: true },
   });
+  const shuttleProgress = await getEnrollmentShuttleProgress(applications);
   const studentIds = [...new Set(applications.flatMap((app) => app.convertedStudentId ? [app.convertedStudentId] : []))];
   const [enrollments, commands, invoices] = await Promise.all([
-    prisma.enrollment.findMany({ where: { studentId: { in: studentIds }, status: "ACTIVE" }, select: { studentId: true, classId: true } }),
+    prisma.enrollment.findMany({ where: { studentId: { in: studentIds }, status: "ACTIVE" }, select: { studentId: true, classId: true, startsOn: true } }),
     prisma.operationsCommand.findMany({ where: { studentId: { in: studentIds }, kind: { in: ["CLASS_ADD", "RESUME"] } },
       select: { id: true, studentId: true, kind: true, status: true, effectiveMonth: true, createdAt: true, afterJson: true,
         syncAttempts: { select: { target: true, status: true, verifiedAt: true } } } }),
@@ -34,7 +36,9 @@ export default async function RegistrationReadinessPage() {
       const result = registrationReadiness({ applicationId: app.id, studentId: app.convertedStudentId,
         assignedClassIds: [...new Set((app.assignedClassId ?? "").split(",").map((id) => id.trim()).filter(Boolean))],
         activeClassIds: enrollments.filter((row) => row.studentId === app.convertedStudentId).map((row) => row.classId),
-        shuttleNeeded: app.shuttleNeeded, commands: commands.filter((row) => row.studentId === app.convertedStudentId),
+        requestedStartOn: app.requestedStartOn,
+        enrollmentStarts: enrollments.filter(row => row.studentId === app.convertedStudentId).map(row => ({ classId: row.classId, startsOn: row.startsOn })),
+        shuttleNeeded: app.shuttleNeeded, shuttleProgress: shuttleProgress[app.id], commands: commands.filter((row) => row.studentId === app.convertedStudentId),
         invoiceCandidates: invoices.filter((row) => row.studentId === app.convertedStudentId).length,
         // 시트 원장 은퇴(기본) 상태면 시트 항목을 만들지 않는다.
         sheetRetired: isSheetSyncRetired(process.env) });
@@ -42,7 +46,7 @@ export default async function RegistrationReadinessPage() {
         <h2 className="font-bold">{app.childName} · 등록 절차 확인 필요</h2>
         <p className="text-sm break-all">신청 번호: {app.id} / 원생 번호: {app.convertedStudentId ?? "미연결"}</p>
         <ul className="space-y-2">{result.checks.map((check) => <li key={check.key}>
-          <strong>{check.label}: {check.status === "VERIFIED" ? check.key === "site" ? "현재 수강 확인" : "등록 재조회 확인" : "확인 필요"}</strong><p className="text-sm">{check.detail}</p>
+          <strong>{check.label}: {check.status === "VERIFIED" ? check.key === "site" ? "현재 수강 확인" : check.key === "shuttle" ? "배차·안내 전달 확인" : "등록 재조회 확인" : "확인 필요"}</strong><p className="text-sm">{check.detail}</p>
         </li>)}</ul>
         <details className="space-y-3">
           <summary className="cursor-pointer font-bold">등록 원장 증거 {result.evidence.length}건 보기</summary>
@@ -54,7 +58,7 @@ export default async function RegistrationReadinessPage() {
             <p>반 번호: {item.classId ?? "없음"} · 수강 번호: {item.enrollmentId ?? "없음"}</p>
             <p>출처: {SOURCE_LABELS[item.source ?? ""] ?? "출처 확인 필요"} · 종류: {KIND_LABELS[item.kind ?? ""] ?? "종류 확인 필요"} · 기록 월: {item.effectiveMonth ?? "없음"} · 기록 날짜: {item.eventDate ?? "없음"}</p>
             <p>처리 요청 시각: {item.createdAt ?? "미확인"}</p>
-            <p>확인 필요: {item.reasons.join(" · ")}</p>
+            <p>{item.reasons.length ? `확인 필요: ${item.reasons.join(" · ")}` : "신청·현재 수강·원장의 개시일 일치"}</p>
             {item.targets.map(target => <div key={target.target}>
               <b>{target.target === "SHEET" ? "시트" : "랠리즈"} 재조회 기록</b>
               {target.duplicate && <p>중복된 외부 등록 기록 · 대조 필요</p>}

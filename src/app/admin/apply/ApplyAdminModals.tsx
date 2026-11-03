@@ -2,6 +2,9 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatPhoneInput, formatClassLabel } from "@/lib/application-display-format";
+import { formatEnrollmentMonthsShort, formatEnrollmentStartOn } from "@/lib/enrollment-application-display";
+import type { EnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress";
+import EnrollmentShuttleProgressView from "./EnrollmentShuttleProgressView";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -29,6 +32,8 @@ interface EnrollApplication {
     parentRelation: string | null;
     address: string | null;
     enrollmentMonths: string | null;
+    requestedStartOn?: string | null;
+    shuttleProgress?: EnrollmentShuttleProgress | null;
     preferredSlotKeys: string | null;
     assignedClassId: string | null;
     basketballExp: string | null;
@@ -236,7 +241,8 @@ function formatApplicationCopySummary(app: EnrollApplication, preferredSlotLabel
         childInfo ? `학생: ${childInfo}` : null,
         `보호자: ${parentInfo}`,
         `연락처: ${app.parentPhone}`,
-        app.enrollmentMonths ? `수강 월: ${app.enrollmentMonths}` : null,
+        `수강 개시일: ${formatEnrollmentStartOn(app.requestedStartOn)}`,
+        !app.requestedStartOn && app.enrollmentMonths ? `기존 신청 월: ${formatEnrollmentMonthsShort(app.enrollmentMonths)}` : null,
         preferredSlotLabel ? `희망 시간: ${preferredSlotLabel}` : null,
         app.basketballExp ? `농구 경험: ${app.basketballExp}` : null,
         shuttleInfo ? `셔틀: ${shuttleInfo}` : null,
@@ -265,7 +271,7 @@ export default function ApplyAdminModals({
     const [approvalError, setApprovalError] = useState("");
     const [reopenError, setReopenError] = useState("");
 
-    async function handleApprove(classIds: string[], note: string, parentUserId?: string, force = false) {
+    async function handleApprove(classIds: string[], note: string, parentUserId?: string, startOn?: string, force = false) {
         if (!approveApp) return;
         setBusy(true);
         setApprovalError("");
@@ -276,14 +282,15 @@ export default function ApplyAdminModals({
                 processedNote: note,
                 force,
                 parentUserId,
+                startOn,
             })) as
                 | { approved: true; sms: { parentFailed: boolean; adminFailed: number; coachFailed: number; errors: string[] } }
-                | { ok: false; code: "INVALID_CLASSES"; message: string }
+                | { ok: false; code: "INVALID_CLASSES" | "INVALID_START_DATE"; message: string }
                 | { ok: false; code: "PARENT_SELECTION_REQUIRED"; message: string }
                 | { ok: false; code: "CAPACITY_WARNING"; classes: { classId: string; name: string; current: number; capacity: number }[] }
                 | { ok: false; code: "STUDENT_AMBIGUOUS"; candidates: { id: string; name: string; birthDate: string | null }[] };
 
-            if ("ok" in result && (result.code === "INVALID_CLASSES" || result.code === "PARENT_SELECTION_REQUIRED")) {
+            if ("ok" in result && (result.code === "INVALID_CLASSES" || result.code === "INVALID_START_DATE" || result.code === "PARENT_SELECTION_REQUIRED")) {
                 setApprovalError(result.message);
                 return;
             }
@@ -298,7 +305,7 @@ export default function ApplyAdminModals({
                 setBusy(false);
                 if (proceed) {
                     // 관리자가 확인했으므로 force:true로 재호출.
-                    await handleApprove(classIds, note, parentUserId, true);
+                    await handleApprove(classIds, note, parentUserId, startOn, true);
                 }
                 return;
             }
@@ -469,7 +476,7 @@ function ApproveModal({
     app: EnrollApplication;
     classes: ClassInfo[];
     onClose: () => void;
-    onSubmit: (classIds: string[], note: string, parentUserId?: string) => void;
+    onSubmit: (classIds: string[], note: string, parentUserId?: string, startOn?: string) => void;
     busy: boolean;
     error: string;
 }) {
@@ -481,6 +488,7 @@ function ApproveModal({
             .map((classInfo) => classInfo.id);
     });
     const [note, setNote] = useState("");
+    const [startOn, setStartOn] = useState(app.requestedStartOn || "");
     const [formError, setFormError] = useState("");
     const [parentCandidates, setParentCandidates] = useState<Array<{ id: string; name: string; role: string; phoneLast4: string; authLinked: boolean; isCurrentAccount: boolean }>>([]);
     const [selectedParent, setSelectedParent] = useState("");
@@ -529,7 +537,8 @@ function ApproveModal({
             return;
         }
         setFormError("");
-        onSubmit(selectedClassIds, note, selectedParent);
+        if (!startOn) { setFormError("수강 개시일을 확인해 주세요."); return; }
+        onSubmit(selectedClassIds, note, selectedParent, startOn);
     }
 
     const classesByDay = classes.reduce<Record<string, ClassInfo[]>>((acc, classInfo) => {
@@ -557,6 +566,10 @@ function ApproveModal({
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    <label className="block space-y-1 text-sm font-bold">수강 개시일 *
+                        <input aria-label="확정 수강 개시일" required type="date" value={startOn} disabled={busy} onChange={event => setStartOn(event.target.value)} className={`${MODAL_INPUT_CLASS} box-border min-h-11 min-w-0 max-w-full text-[17px]`} />
+                        <span className="block text-xs font-normal text-[var(--color-academy-muted)]">미래 날짜는 수강 예정으로 표시하며 해당 날짜부터 출결에 포함합니다.</span>
+                    </label>
                     <section aria-label="보호자 계정 연결" className="space-y-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
                         <label className="grid gap-1 text-sm font-bold" htmlFor="enrollment-parent-account">연결할 보호자 계정 *</label>
                         {parentLoading ? <p role="status" className="text-sm text-[var(--color-academy-muted)]">계정 확인 중…</p> : parentError ? <div role="alert" className="text-sm"><p>{parentError}</p><button type="button" className="min-h-11 font-bold text-[var(--color-academy-primary)] underline" onClick={() => { setParentLoading(true); setParentError(""); setSelectedParent(""); setParentRetry(value => value + 1); }}>다시 조회</button></div> : <>
@@ -688,7 +701,7 @@ function EditApplicationModal({
         parentPhone: app.parentPhone ?? "",
         parentRelation: app.parentRelation ?? "",
         address: app.address ?? "",
-        enrollmentMonths: app.enrollmentMonths ?? "",
+        requestedStartOn: app.requestedStartOn ?? "",
         basketballExp: app.basketballExp ?? "",
         uniformSize: app.uniformSize ?? "",
         shuttleNeeded: Boolean(app.shuttleNeeded),
@@ -731,7 +744,7 @@ function EditApplicationModal({
             parentPhone: form.parentPhone.trim(),
             parentRelation: form.parentRelation.trim() || null,
             address: form.address.trim() || null,
-            enrollmentMonths: form.enrollmentMonths.trim() || null,
+            ...(form.requestedStartOn ? { requestedStartOn: form.requestedStartOn } : app.requestedStartOn ? { requestedStartOn: null } : {}),
             preferredSlotKeys: selectedSlotKeys.join(",") || null,
             basketballExp: form.basketballExp.trim() || null,
             uniformSize: form.uniformSize.trim() || null,
@@ -819,8 +832,10 @@ function EditApplicationModal({
                     <section>
                         <h3 className="mb-2 text-xs font-black uppercase text-gray-500 dark:text-gray-400">수강 정보</h3>
                         <div className="grid gap-3 sm:grid-cols-2">
-                            <FormField label="수강 월">
-                                <input value={form.enrollmentMonths} onChange={(e) => setForm({ ...form, enrollmentMonths: e.target.value })} className={MODAL_INPUT_CLASS} placeholder="8월, 9월" />
+                            <FormField label="수강 개시일">
+                                <input type="date" disabled={app.status === "APPROVED"} value={form.requestedStartOn} onChange={(e) => setForm({ ...form, requestedStartOn: e.target.value })} className={`${MODAL_INPUT_CLASS} box-border min-w-0 max-w-full text-[17px]`} />
+                                {app.status === "APPROVED" && <p className="mt-1 text-xs text-[var(--color-academy-muted)]">승인된 수강의 개시일은 이 신청서에서 변경하지 않습니다.</p>}
+                                {!app.requestedStartOn && app.enrollmentMonths && <p className="mt-1 text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)} · 정확한 개시일을 확인해 주세요.</p>}
                             </FormField>
                             <FormField label="농구 경험">
                                 <input value={form.basketballExp} onChange={(e) => setForm({ ...form, basketballExp: e.target.value })} className={MODAL_INPUT_CLASS} />
@@ -1245,20 +1260,23 @@ function DetailModal({
                             수강 정보
                         </h3>
                         <div className="space-y-1.5 bg-gray-50 dark:bg-gray-900 rounded-lg p-3">
-                            <InfoRow label="수강 월" value={app.enrollmentMonths} />
-                            <InfoRow label="희망 시간" value={preferredSlotLabel} />
+                            <InfoRow label="수강 개시일" value={formatEnrollmentStartOn(app.requestedStartOn)} />
+                            {!app.requestedStartOn && app.enrollmentMonths && <InfoRow label="기존 신청 월" value={formatEnrollmentMonthsShort(app.enrollmentMonths)} />}
+                            <InfoRow label="희망 수업" value={preferredSlotLabel} />
                             <InfoRow label="농구 경험" value={app.basketballExp} />
                             <InfoRow label="유니폼" value={app.uniformSize} />
                             <InfoRow label="납부 방식" value={app.paymentMethod} />
                             <InfoRow label="셔틀" value={app.shuttleNeeded} />
                             <InfoRow label="탑승지" value={app.shuttlePickup} />
                             <InfoRow label="하차지" value={app.shuttleDropoff} />
-                            <InfoRow label="셔틀 시간" value={app.shuttleTime} />
+                            <InfoRow label="셔틀 희망 시간" value={app.shuttleTime} />
                             <InfoRow label="유입경로" value={app.referralSource ? (SOURCE_LABELS[app.referralSource] || app.referralSource) : null} />
                             <InfoRow label="확정 안내 확인" value={app.applicationNoticeConfirmed} />
                             <InfoRow label="셔틀 주의 확인" value={app.shuttleNoticeConfirmed} />
                         </div>
                     </div>
+
+                    {app.shuttleNeeded && <EnrollmentShuttleProgressView progress={app.shuttleProgress} detailed />}
 
                     {app.memo && (
                         <div>

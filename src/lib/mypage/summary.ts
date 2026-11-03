@@ -16,6 +16,8 @@ export type EnrollmentLite = {
     dayOfWeek: string;
     startTime: string; // "HH:MM"
     endTime: string;   // "HH:MM"
+    startsOn?: string | null;
+    displayStatus?: string;
 };
 
 export type NextClass = {
@@ -25,6 +27,7 @@ export type NextClass = {
     startTime: string;
     endTime: string;
     minutesUntil: number; // 지금으로부터 몇 분 뒤인지(정렬·"오늘" 판정용)
+    serviceDate?: string;
 };
 
 export type KstNow = { dayIndex: number; minutes: number };
@@ -64,7 +67,7 @@ export function getKstDateStr(now: Date): string {
 
 // 오늘(지금) 기준 가장 가까운 향후 수업 1건. 없으면 null.
 // 오늘 이미 시작 시각이 지난 수업은 다음 주 같은 요일로 밀어 계산한다.
-export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow): NextClass | null {
+export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow, todayYmd?: string): NextClass | null {
     let best: NextClass | null = null;
     for (const e of enrollments) {
         const di = DAY_INDEX[e.dayOfWeek];
@@ -76,6 +79,19 @@ export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow):
         let minutesUntil = dayDelta * 1440 + (start - nowKst.minutes);
         // 오늘이지만 시작 시각이 이미 지났으면 다음 주로.
         if (minutesUntil < 0) minutesUntil += 7 * 1440;
+        // 개시일 전의 같은 요일은 아직 이 학생의 수업이 아니다. 첫 실제 주차로 옮긴다.
+        let serviceDate: string | undefined;
+        if (e.startsOn) {
+            if (!todayYmd || !/^\d{4}-\d{2}-\d{2}$/.test(e.startsOn)) continue;
+            const today = Date.parse(`${todayYmd}T00:00:00Z`);
+            const starts = Date.parse(`${e.startsOn}T00:00:00Z`);
+            if (!Number.isFinite(today) || !Number.isFinite(starts)) continue;
+            const daysToStart = (starts - today) / 86_400_000;
+            const firstDay = Math.floor((nowKst.minutes + minutesUntil) / 1440);
+            if (firstDay < daysToStart) minutesUntil += Math.ceil((daysToStart - firstDay) / 7) * 7 * 1440;
+            // 달력 날짜를 한국 날짜로 표시한다. 서버·기기의 현지 시간대에 기대지 않는다.
+            serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(today + Math.floor((nowKst.minutes + minutesUntil) / 1440) * 86_400_000));
+        } else if (e.displayStatus === "SCHEDULED") continue;
         if (best == null || minutesUntil < best.minutesUntil) {
             best = {
                 className: e.className,
@@ -84,6 +100,7 @@ export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow):
                 startTime: e.startTime,
                 endTime: e.endTime,
                 minutesUntil,
+                ...(serviceDate ? { serviceDate } : {}),
             };
         }
     }
@@ -92,6 +109,10 @@ export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow):
 
 // minutesUntil을 "오늘/내일/N일 뒤" 사람이 읽는 라벨로. (오늘=1440분 미만이면서 dayDelta 0)
 export function nextClassWhenLabel(next: NextClass, nowKst: KstNow): string {
+    if (next.serviceDate && next.minutesUntil >= 7 * 1440) {
+        const [, month, day] = next.serviceDate.split("-").map(Number);
+        return `${month}월 ${day}일`;
+    }
     const dayDelta = (next.dayIndex - nowKst.dayIndex + 7) % 7;
     // 오늘 요일이지만 이미 지나 다음 주로 밀린 경우(minutesUntil이 하루 이상)엔 "다음 주"로 표기.
     if (next.minutesUntil >= 6 * 1440 && dayDelta === 0) return "다음 주";

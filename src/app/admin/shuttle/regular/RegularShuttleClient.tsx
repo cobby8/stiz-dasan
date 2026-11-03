@@ -1,7 +1,7 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import AdminModal from "@/components/admin/AdminModal";
@@ -27,6 +27,7 @@ import { checkRosterRows } from "@/lib/shuttle/regularRosterCheckLogic";
 import { defaultStopFromRiding, enrolledClassSlots, resolveCellPlacement, resolveStudentPoint, studentRosterRows, type PlacementOverride, type ResolvedStudentPoint, type StudentPointSource } from "@/lib/shuttle/regularRosterPlacementLogic";
 import DriverOrderView from "./DriverOrderView";
 import AddRiderRoutePanel, { type PanelDirection } from "./AddRiderRoutePanel";
+import RegularShuttleNoticePanel from "./RegularShuttleNoticePanel";
 
 // 셔틀 명단 — 사이트가 정규 셔틀 명단의 원장이다. 월 → 요일 → 수업시간별 학생(등원·하원 정류장).
 // 학생 추가·빼기·반이동·정류장 수정은 /api/admin/shuttle/regular-roster 로 바로 저장한다.
@@ -120,11 +121,12 @@ const LOCATION_LINK_STATUS: Record<RegularLocationLinkState["status"], string> =
   REVOKED: "취소",
 };
 
-export default function RegularShuttleClient({ initialStops, initialMonth, months, currentMonth }: {
+export default function RegularShuttleClient({ initialStops, initialMonth, months, currentMonth, initialStudentId }: {
   initialStops: RegularShuttleStop[];
   initialMonth: string;
   months: string[];
   currentMonth: string;
+  initialStudentId?: string;
 }) {
   const [stops, setStops] = useState<RegularShuttleStop[]>(initialStops);
   const [serviceMonth, setServiceMonth] = useState(initialMonth);
@@ -179,10 +181,22 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   const weekdays = useMemo(() => WD_ORDER
     .map((w) => ({ weekday: w, count: groupRosterDay(stops, w).reduce((n, g) => n + g.students.length, 0) }))
     .filter((w) => w.weekday !== 0 || w.count > 0), [stops]);
-  const [active, setActive] = useState<number>(() => weekdays.find((w) => w.count > 0)?.weekday ?? 1);
+  const [active, setActive] = useState<number>(() => initialStops.find(row => row.studentId === initialStudentId)?.weekday ?? weekdays.find((w) => w.count > 0)?.weekday ?? 1);
   const groups = useMemo(() => groupRosterDay(stops, active), [stops, active]);
   // 상세 패널 대상 — 지금 요일 묶음에서 다시 찾는다(요일을 바꾸거나 학생이 빠지면 패널이 저절로 닫힌다)
   const detailEntry = detail ? groups.find((g) => g.classTime === detail.classTime)?.students.find((e) => e.key === detail.key) ?? null : null;
+  const openedTarget = useRef("");
+  useEffect(() => {
+    const key = `${initialMonth}:${initialStudentId}`;
+    if (!initialStudentId || openedTarget.current === key) return;
+    openedTarget.current = key;
+    const row = initialStops.find(item => item.studentId === initialStudentId);
+    setView("students");
+    if (row) {
+      const entry = groupRosterDay(initialStops, row.weekday).flatMap(group => group.students.map(student => ({ student, classTime: group.classTime }))).find(item => item.student.studentId === initialStudentId);
+      if (entry) setDetail({ classTime: entry.classTime, key: entry.student.key });
+    }
+  }, [initialStudentId, initialMonth, initialStops, setView]);
   // 이 달에 쓰인 수업시간(추가·반이동 입력 자동완성용).
   const classTimes = useMemo(() => [...new Set(stops.map((s) => s.classTime).filter((c): c is string => Boolean(c)))].sort(), [stops]);
   // 명단 점검(기사님 화면에서 빠지거나 어긋나 보일 행). 자동으로 고치지 않고 알리기만 한다.
@@ -260,6 +274,17 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     });
     // 학생을 고르기 전에도 추천 거리 계산에 쓸 학원·차고지 좌표는 받아 둔다(이름만 입력하는 경우).
     void loadAddContext(null);
+  }
+  async function openRequestedStudent() {
+    if (!initialStudentId) return;
+    setErr(null);
+    try {
+      const response = await fetch(`/api/admin/shuttle/regular-roster?context=1&studentId=${encodeURIComponent(initialStudentId)}`, { cache: "no-store" });
+      const value = await response.json().catch(() => null);
+      if (!response.ok || !value?.context?.student) throw new Error(value?.error || "신청 학생을 확인하지 못했습니다.");
+      openAdd();
+      pickStudent(value.context.student);
+    } catch (error) { setErr(adminErrorText(error, "신청 학생을 확인하지 못했습니다.")); }
   }
 
   // 학생 추가 정보 불러오기(조회 전용) — 등록 수업·상세 위치·학원/차고지 좌표.
@@ -847,6 +872,11 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
           </label>
         </div>
 
+        {initialStudentId && !stops.some(row => row.studentId === initialStudentId) && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
+          <span>신청 학생이 {serviceMonth} 명단에 없습니다.</span>
+          <button type="button" disabled={busy} onClick={() => void openRequestedStudent()} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 font-bold">신청 학생 선택해 명단 추가</button>
+        </div>}
+
         {/* 주요 동작 */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button type="button" onClick={openAdd} className="inline-flex min-h-10 items-center gap-1 rounded-xl bg-brand-navy-900 px-4 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900">
@@ -1051,6 +1081,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
             </dl>
             {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
             <AdminPanelActions actions={buildRosterActions(d, detail.classTime)} onBeforeSelect={() => setDetail(null)} />
+            {d.studentId && <RegularShuttleNoticePanel key={`${serviceMonth}:${d.studentId}`} studentId={d.studentId} serviceMonth={serviceMonth} compareMonth={previousMonth || (() => { const [year, month] = serviceMonth.split("-").map(Number); return `${month === 1 ? year - 1 : year}-${String(month === 1 ? 12 : month - 1).padStart(2,"0")}`; })()} />}
           </ListDetailPanel>
         );
       })()}

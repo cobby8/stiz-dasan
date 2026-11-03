@@ -2,7 +2,9 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatClassLabel } from "@/lib/application-display-format";
-import { formatEnrollmentMonthsShort, formatPreferredSlotsShort } from "@/lib/enrollment-application-display";
+import { formatEnrollmentMonthsShort, formatEnrollmentStartOn, formatPreferredSlotsShort } from "@/lib/enrollment-application-display";
+import type { EnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress";
+import EnrollmentShuttleProgressView from "./EnrollmentShuttleProgressView";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
@@ -55,6 +57,8 @@ interface EnrollApplication {
     parentRelation: string | null;
     address: string | null;
     enrollmentMonths: string | null;
+    requestedStartOn?: string | null;
+    shuttleProgress?: EnrollmentShuttleProgress | null;
     preferredSlotKeys: string | null;
     assignedClassId: string | null;
     basketballExp: string | null;
@@ -278,7 +282,7 @@ const APPLICATION_WORK_FILTERS: Array<{ value: ApplicationWorkFilter; label: str
     { value: "ALL", label: "운영 전체", icon: "view_list" },
     { value: "NEEDS_ACTION", label: "처리 필요", icon: "priority_high" },
     { value: "CLASS_ASSIGNMENT", label: "반 배정", icon: "edit_calendar" },
-    { value: "SHUTTLE", label: "셔틀 확인", icon: "directions_bus" },
+    { value: "SHUTTLE", label: "셔틀 미완료", icon: "directions_bus" },
     { value: "TRIAL_LINKED", label: "체험 후 신청", icon: "link" },
     { value: "TIME_CHECK", label: "희망시간 확인", icon: "schedule" },
 ];
@@ -355,7 +359,7 @@ function matchesApplicationWorkFilter(
     if (workFilter === "ALL") return true;
     if (workFilter === "NEEDS_ACTION") return app.status === "PENDING";
     if (workFilter === "CLASS_ASSIGNMENT") return app.status === "PENDING" && !app.assignedClassId;
-    if (workFilter === "SHUTTLE") return app.shuttleNeeded;
+    if (workFilter === "SHUTTLE") return app.shuttleNeeded && app.shuttleProgress?.status !== "COMPLETE";
     if (workFilter === "TRIAL_LINKED") return Boolean(app.trialLeadId);
     if (workFilter === "TIME_CHECK") return !preferredSlotLabel;
     return true;
@@ -930,10 +934,12 @@ export default function ApplyAdminClient({
                 <td className="hidden px-2 py-1.5 tabular-nums text-gray-700 dark:text-gray-200 md:table-cell">{app.parentPhone || "-"}</td>
                 <td className="admin-cell-num px-2 py-1.5 text-gray-700 dark:text-gray-200">{formatDate(app.createdAt)}</td>
                 <td className="px-2 py-1.5 font-bold text-gray-800 dark:text-gray-100">
-                    {preferredSlotShort ?? <span className="text-xs font-bold text-amber-700 dark:text-amber-300">확인 필요</span>}
+                    <span className="inline-block whitespace-nowrap">{preferredSlotShort ?? <span className="text-xs font-bold text-amber-700 dark:text-amber-300">확인 필요</span>}</span>
+                    <span className={`mt-1 block ${app.requestedStartOn ? "whitespace-nowrap" : ""} text-xs font-medium text-[var(--color-academy-muted)] lg:hidden`}><span className="sr-only">수강 개시일 </span>{formatEnrollmentStartOn(app.requestedStartOn)}</span>
+                    {app.shuttleNeeded && <span className="mt-1 block md:hidden"><EnrollmentShuttleProgressView progress={app.shuttleProgress} /></span>}
                 </td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 lg:table-cell">{formatEnrollmentMonthsShort(app.enrollmentMonths)}</td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">{app.shuttleNeeded ? "이용" : "미이용"}</td>
+                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 lg:table-cell">{formatEnrollmentStartOn(app.requestedStartOn)}{!app.requestedStartOn && app.enrollmentMonths && <span className="mt-1 block text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)}</span>}</td>
+                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">{app.shuttleNeeded ? <EnrollmentShuttleProgressView progress={app.shuttleProgress} /> : "미신청"}</td>
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                     {/* 공용 ⚡ 메뉴(게슈탈트 A-06) — 따로 만든 «⋯» 복사본 대신. 승인=주인공, 반려·취소=위험(구분선 아래) */}
                     <AdminQuickActionMenu label={`${app.childName} 빠른 처리`} actions={buildApplicationQuickActions(app, parentPhoneHref)} />
@@ -971,7 +977,7 @@ export default function ApplyAdminClient({
                             <th className="hidden px-2 py-2 md:table-cell">연락처</th>
                             <th className="admin-cell-num px-2 py-2">접수일</th>
                             <th className="px-2 py-2">희망 수업</th>
-                            <th className="hidden px-2 py-2 lg:table-cell">신청 월</th>
+                            <th className="hidden px-2 py-2 lg:table-cell">수강 개시일</th>
                             <th className="hidden px-2 py-2 md:table-cell">셔틀</th>
                             <th className="admin-cell-center px-2 py-2"><span className="sr-only">빠른 처리</span></th>
                         </tr>

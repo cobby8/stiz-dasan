@@ -16,16 +16,22 @@ export type ParentNotificationResult = {
   push: PushDeliveryResult | null;
 };
 
-export async function getClassParentRecipients(classId: string, studentIds?: string[]) {
+export async function getClassParentRecipients(classId: string, studentIds?: string[], sessionDate?: Date | string) {
   return prisma.$queryRawUnsafe<ParentRecipient[]>(
     `SELECT DISTINCT s.id AS "studentId", s.name AS "studentName", s."parentId" AS "userId"
      FROM "Enrollment" e
      JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
      WHERE e."classId" = $1 AND e.status = 'ACTIVE'
+       AND (e."startsOn" IS NULL OR e."startsOn" <= COALESCE($3::date, (NOW() AT TIME ZONE 'Asia/Seoul')::date) OR EXISTS (
+         SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+         WHERE historical."studentId"=e."studentId" AND prior."classId"=$1
+           AND prior.date::date=COALESCE($3::date, (NOW() AT TIME ZONE 'Asia/Seoul')::date)
+       ))
        AND ($2::text[] IS NULL OR s.id = ANY($2::text[]))
        AND s."parentId" IS NOT NULL`,
     classId,
     studentIds?.length ? studentIds : null,
+    sessionDate ?? null,
   );
 }
 

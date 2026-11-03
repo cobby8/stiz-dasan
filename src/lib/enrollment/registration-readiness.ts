@@ -1,3 +1,5 @@
+import type { EnrollmentShuttleProgress } from "./shuttle-progress";
+
 export type RegistrationCheck = {
   key: string;
   label: string;
@@ -10,7 +12,10 @@ export type RegistrationEvidence = {
   studentId: string | null;
   assignedClassIds: string[];
   activeClassIds: string[];
+  requestedStartOn?: Date | string | null;
+  enrollmentStarts?: Array<{ classId: string; startsOn: Date | string | null }>;
   shuttleNeeded: boolean;
+  shuttleProgress?: EnrollmentShuttleProgress;
   commands: Array<{ id?: string; studentId?: string | null; kind?: string; status: string;
     effectiveMonth?: string; createdAt?: Date; afterJson?: unknown;
     syncAttempts: Array<{ target: string; status: string; verifiedAt: Date | null }> }>;
@@ -31,6 +36,14 @@ function text(value: unknown): string | null {
 function instant(value: Date | undefined | null) {
   return value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString() : null;
 }
+function startDate(value: unknown): string | null {
+  if (value == null) return null;
+  const format = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? format(value) : null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00+09:00`);
+  return Number.isFinite(date.getTime()) && format(date) === value ? value : null;
+}
 
 // 승인 상태와 등록 절차 완료는 다릅니다. 서로 연결되지 않은 기록을 완료 증거로 승격하지 않습니다.
 export function registrationReadiness(input: RegistrationEvidence) {
@@ -38,6 +51,11 @@ export function registrationReadiness(input: RegistrationEvidence) {
     && input.assignedClassIds.every((id) => input.activeClassIds.includes(id));
   const checks: RegistrationCheck[] = [{ key: "site", label: "사이트 반 배정", status: siteReady ? "VERIFIED" : "CHECK_REQUIRED", detail: siteReady ? "원생과 배정된 모든 반의 현재 수강 확인" : "학생 연결과 배정 반의 현재 수강 상태 확인 필요" }];
   const now = input.now ?? Date.now();
+  const requestedStart = startDate(input.requestedStartOn);
+  const startsMatch = Boolean(requestedStart) && input.assignedClassIds.length > 0 && input.assignedClassIds.every(id => {
+    const starts = input.enrollmentStarts?.filter(row => row.classId === id) ?? [];
+    return starts.length === 1 && startDate(starts[0].startsOn) === requestedStart;
+  });
   const evidence = input.commands.map(command => {
     const after = object(command.afterJson);
     const event = object(after.operationsEvent);
@@ -52,6 +70,8 @@ export function registrationReadiness(input: RegistrationEvidence) {
     if (!classId || !input.assignedClassIds.includes(classId)) reasons.push("배정 반 미연결 또는 불일치");
     if (!command.id || !enrollmentId) reasons.push("명령 또는 수강 ID 누락");
     if (source !== "WEBSITE" || command.kind !== "CLASS_ADD") reasons.push("사이트 신규 등록 증거가 아님");
+    if (["CANCELED", "CANCELLED", "REJECTED", "FAILED", "HELD"].includes(command.status)) reasons.push("유효한 등록 처리 상태 확인 필요");
+    if (siteReady && startsMatch && startDate(after.effectiveDate) === requestedStart && reasons.length === 1) reasons.shift();
     const targets = ["SHEET", "RALLYZ"].map(target => {
       const attempts = command.syncAttempts.filter(attempt => attempt.target === target);
       return { target, attempts: attempts.map(attempt => {
@@ -74,8 +94,15 @@ export function registrationReadiness(input: RegistrationEvidence) {
   });
   // 시트 은퇴 상태면 시트 항목은 빼고 랠리즈만 확인한다.
   for (const target of (input.sheetRetired ? ["RALLYZ"] : ["SHEET", "RALLYZ"]) as Array<"SHEET" | "RALLYZ">) {
-    const linked = evidence.filter(row => row.reasons.length === 1).length;
-    checks.push({ key: target, label: target === "SHEET" ? "시트 등록·재조회" : "Rallyz 등록·재조회", status: "CHECK_REQUIRED", detail: `신청·학생·배정 반 출처가 연결된 원장 ${linked}건 / 후보 ${evidence.length}건. 확정 수강 시작일 미확정으로 등록 완료 판단 보류. 승인 처리일과 신청 개월은 시작일 근거로 사용하지 않습니다.` });
+    const linked = evidence.filter(row => row.reasons.every(reason => reason === "확정 수강 시작일 근거 없음")).length;
+    const verifiedClasses = input.assignedClassIds.filter(classId => {
+      const matches = evidence.filter(row => row.classId === classId && row.reasons.length === 0);
+      if (matches.length !== 1) return false;
+      const check = matches[0].targets.find(row => row.target === target);
+      return Boolean(check && !check.duplicate && check.attempts.length === 1 && check.attempts[0].issue === null);
+    });
+    const verified = siteReady && startsMatch && verifiedClasses.length === input.assignedClassIds.length;
+    checks.push({ key: target, label: target === "SHEET" ? "시트 등록·재조회" : "Rallyz 등록·재조회", status: verified ? "VERIFIED" : "CHECK_REQUIRED", detail: verified ? `신청·모든 배정 반·원장의 개시일 일치 및 ${verifiedClasses.length}개 반의 외부 재조회 성공을 확인했습니다.` : `신청·학생·배정 반 출처가 연결된 원장 ${linked}건 / 후보 ${evidence.length}건. 개시일과 모든 배정 반의 외부 재조회 근거 확인 필요. 승인 처리일과 신청 개월은 시작일 근거로 사용하지 않습니다.` });
   }
   for (const [key, label, detail] of [
     ["invoice", "최초 청구서", `유효 청구 후보 ${input.invoiceCandidates}건. 최초 적용기간·반·일할계산·금액 대조 필요`],
@@ -84,6 +111,6 @@ export function registrationReadiness(input: RegistrationEvidence) {
     ["uniform", "유니폼·제품 안내", "홈페이지 /shop 안내 전달 및 유니폼 신청 여부 확인 필요"],
     ["teacher", "담당 선생님·연간일정 안내", "최종 배정 반의 담당자 및 연간일정 안내 전달 확인 필요"],
   ]) checks.push({ key, label, detail, status: "CHECK_REQUIRED" });
-  if (input.shuttleNeeded) checks.push({ key: "shuttle", label: "셔틀 배차·기사님 안내", detail: "승하차 장소·확정 시간·배정 기사 안내 전달 확인 필요", status: "CHECK_REQUIRED" });
+  if (input.shuttleNeeded) checks.push({ key: "shuttle", label: "셔틀 배차·기사님 안내", detail: input.shuttleProgress ? `${input.shuttleProgress.label} · ${input.shuttleProgress.detail}` : "승하차 장소·확정 시간·배정 기사 안내 전달 확인 필요", status: input.shuttleProgress?.status === "COMPLETE" ? "VERIFIED" : "CHECK_REQUIRED" });
   return { complete: checks.every((check) => check.status === "VERIFIED"), checks, evidence };
 }

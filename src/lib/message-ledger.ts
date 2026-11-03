@@ -161,7 +161,8 @@ export async function markManualMessageUncertain(deliveryIds: string[], errorCod
   await prisma.$executeRawUnsafe(
     `UPDATE "NotificationDelivery" SET status='UNCERTAIN', "errorCode"=$2, "payloadJSON"=NULL,
         "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW()
-      WHERE id = ANY($1::text[]) AND status='SENDING'`,
+      WHERE id = ANY($1::text[]) AND (status='SENDING' OR
+        (source='MANUAL' AND trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT' AND "providerStatus"='ACCEPTED'))`,
     deliveryIds, errorCode.slice(0, 500),
   );
 }
@@ -171,7 +172,8 @@ export async function getPendingManualSolapiGroups(limit = 20) {
   return prisma.$queryRawUnsafe<Array<{ providerGroupId: string; batchId: string }>>(
     `SELECT "providerGroupId", MIN("batchId") AS "batchId"
        FROM "NotificationDelivery"
-      WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'
+      WHERE source='MANUAL' AND ((trigger='MANUAL_MESSAGE' AND status='SENDING')
+        OR (trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT'))
         AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId" IS NOT NULL
       GROUP BY "providerGroupId" ORDER BY MIN("updatedAt") ASC LIMIT $1`,
     Math.max(1, Math.min(limit, 100)),
@@ -181,7 +183,8 @@ export async function getPendingManualSolapiGroups(limit = 20) {
 export async function getPendingManualSolapiDeliveries(groupId: string) {
   return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date }>>(
     `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt" FROM "NotificationDelivery"
-      WHERE source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'
+      WHERE source='MANUAL' AND ((trigger='MANUAL_MESSAGE' AND status='SENDING')
+        OR (trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT'))
         AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId"=$1`,
     groupId,
   );
@@ -195,7 +198,8 @@ export async function finalizeManualSolapiResult(input: {
         "sentAt"=CASE WHEN $2='SENT' THEN NOW() ELSE NULL END,
         "failedAt"=CASE WHEN $2='FAILED' THEN NOW() ELSE NULL END,
         "updatedAt"=NOW()
-      WHERE id=$1 AND status='SENDING' AND provider='SOLAPI'`,
+      WHERE id=$1 AND source='MANUAL' AND provider='SOLAPI' AND "providerStatus"='ACCEPTED'
+        AND ((trigger='MANUAL_MESSAGE' AND status='SENDING') OR (trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT'))`,
     input.deliveryId, input.ok ? "SENT" : "FAILED", input.providerStatus,
     input.ok ? null : (input.errorCode ?? input.providerStatus).slice(0, 500),
   );

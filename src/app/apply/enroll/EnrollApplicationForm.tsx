@@ -14,6 +14,7 @@ import { trackMetaEvent } from "@/components/MetaPixel";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { requireCommencement } from "@/lib/enrollment/commencement";
 
 const EnrollApplicationLaterSteps = dynamic(() => import("./EnrollApplicationLaterSteps"), {
     loading: () => (
@@ -49,7 +50,7 @@ interface FormData {
     parentPhone: string;
     parentRelation: string;
     address: string;
-    enrollmentMonths: string[];
+    requestedStartOn: string;
     preferredSlotKeys: string[];
     basketballExp: string;
     shuttleChoice: string;
@@ -90,7 +91,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
         parentPhone: trialData?.parentPhone || "",
         parentRelation: "",
         address: "",
-        enrollmentMonths: [],
+        requestedStartOn: "",
         preferredSlotKeys: preferredTrialSlot ? [preferredTrialSlot] : [],
         basketballExp: trialData?.basketballExp || "",
         shuttleChoice: "",
@@ -144,7 +145,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
     };
 
     const validateStep3 = (): boolean => {
-        if (form.enrollmentMonths.length === 0) { setError("수강신청 월을 선택해주세요."); return false; }
+        try { requireCommencement(form.requestedStartOn); } catch { setError("수강 개시일을 정확히 선택해주세요."); return false; }
         if (!form.referralSource) { setError("가입경로를 선택해주세요."); return false; }
         if (!form.shuttleChoice) { setError("셔틀 탑승 여부를 선택해주세요."); return false; }
         if (form.shuttleChoice === "탑승") {
@@ -182,7 +183,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 parentPhone: existing.parentPhone || prev.parentPhone,
                 parentRelation: existing.parentRelation || prev.parentRelation,
                 address: existing.address || prev.address,
-                enrollmentMonths: existing.enrollmentMonths.length > 0 ? existing.enrollmentMonths : prev.enrollmentMonths,
+                requestedStartOn: existing.requestedStartOn || prev.requestedStartOn,
                 preferredSlotKeys: existing.preferredSlotKeys.length > 0 ? existing.preferredSlotKeys : prev.preferredSlotKeys,
                 basketballExp: existing.basketballExp || prev.basketballExp,
                 shuttleChoice: existing.shuttleNeeded ? "탑승" : "미탑승",
@@ -252,7 +253,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                     parentPhone: form.parentPhone,
                     parentRelation: form.parentRelation || undefined,
                     address: form.address || undefined,
-                    enrollmentMonths: form.enrollmentMonths.join(",") || undefined,
+                    requestedStartOn: form.requestedStartOn,
                     preferredSlotKeys: form.preferredSlotKeys.join(",") || undefined,
                     basketballExp: form.basketballExp || undefined,
                     shuttleNeeded: form.shuttleChoice === "탑승",

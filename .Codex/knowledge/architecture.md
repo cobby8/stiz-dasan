@@ -361,3 +361,8 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - `scripts/native-device-sandbox.mjs` 및 `scripts/lib/native-device-sandbox-{policy,fixtures,build}.mjs`: 실제 클라이언트만 별도 번들, 서버 액션·Prisma/Supabase/알림은 제외하고 새 합성 props/메모리 첨부만 처리한다. 기존 Next 서비스·운영 DB를 실행하거나 프록시하지 않는다.
 - 실행별 `.tmp/native-device-sandbox/run-...`에 원본/산출물 해시·새 로컬 CA/leaf TLS를 두며, 시작 전 해시·정확한 origin·체인을 검사한다. localhost:8453 및 명시 RFC1918 IPv4만 바인딩한다. CA 비밀키는 발급 후 폐기, 앱에는 공개 CA만 전달한다.
 - Android debug 별도 `.sandbox` 패키지·CAonly 신뢰·운영 인증/GPS 차단, iOS DEBUG 명시 origin·임시 WebKit 저장소·차단규칙 설치 전 로드 금지. Release의 기존 운영 정책은 보존한다. 정본 docs/native-device-sandbox.md 및 각 앱 SANDBOX.md.
+
+## 2026-11-03 수강일·셔틀 진행 공통 경계
+- 신청 DATE: EnrollmentApplication.requestedStartOn. 승인된 반별 DATE: Enrollment.startsOn. 기존 null은 이력을 유지하며 신규 날짜의 사전 검사는 scripts/enrollment-commencement-db-preflight.mjs가 담당한다.
+- 셔틀 공통 판정은 enrollment/shuttle-progress.ts, 일관된 배치 조회는 shuttle-progress-query.ts가 담당한다. 신청 목록·상세·입학 점검이 같은 결과를 사용한다. 발송 최종 결과는 기존 재대조 실행 경로를 재사용한다.
+- 운영 적용과 로컬 검증의 절차는 docs/enrollment-commencement-shuttle-progress.md를 따른다.

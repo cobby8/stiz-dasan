@@ -37,6 +37,8 @@ type ClassData = {
     students: {
         enrollmentId: string;
         status: string;
+        startsOn?: string | null;
+        displayStatus?: string;
         enrolledAt: Date | string;
         studentId: string;
         studentName: string;
@@ -373,6 +375,7 @@ export default function ClassDetailClient({
                         id: s.studentId,
                         name: s.studentName,
                         gender: s.gender,
+                        startsOn: s.startsOn,
                     }))}
                     onSaved={handleSaved}
                 />

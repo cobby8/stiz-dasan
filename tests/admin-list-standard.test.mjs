@@ -71,8 +71,8 @@ test("목록 행은 한 줄이고 말줄임(truncate)을 쓰지 않는다 — �
   for (const row of [applyRow, trialRow]) {
     assert.doesNotMatch(row, /truncate|text-ellipsis/);
   }
-  // 셔틀은 주소 대신 «이용/미이용», 희망 수업은 «화4» 같은 짧은 표기
-  assert.match(applyRow, /app\.shuttleNeeded \? "이용" : "미이용"/);
+  // 셔틀은 긴 주소 대신 실제 진행 상태를 표시한다. 모바일도 같은 상태 부품을 쓴다.
+  assert.match(applyRow, /app\.shuttleNeeded \? <EnrollmentShuttleProgressView progress=\{app\.shuttleProgress\} \/> : "미신청"/);
   assert.match(applyRow, /formatPreferredSlotsShort\(/);
   // 날짜 칸은 오른쪽 정렬
   assert.match(applyRow, /admin-cell-num[^"]*">\{formatDate\(app\.createdAt\)\}/);

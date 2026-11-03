@@ -33,7 +33,8 @@ export async function GET(request: NextRequest) {
         });
         if (result.status === "SUCCESS") sent++; else failed++;
       }
-      await finalizeMessageDeliveryBatch(group.batchId);
+      // 같은 공급자 묶음에 들어간 모든 내부 발송 묶음의 최종 상태를 갱신한다.
+      for (const batchId of new Set(deliveries.map(item => item.batchId).filter(Boolean))) await finalizeMessageDeliveryBatch(batchId);
     } catch (error) {
       // 조회 실패는 발송 실패가 아닙니다. 다음 cron에서 조회만 다시 시도합니다.
       console.error(`[manual-message-reconcile] lookup failed group=${group.providerGroupId}`, error);

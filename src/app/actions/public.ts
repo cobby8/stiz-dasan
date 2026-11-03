@@ -5,6 +5,7 @@
  * 체험수업 신청, 수강 신청 등 비회원이 사용하는 흐름을 담당합니다.
  */
 
+import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { ensureTrialLeadTable } from "@/app/actions/admin";
@@ -576,6 +577,7 @@ interface EnrollApplicationInput {
     parentPhone: string;
     parentRelation?: string;
     address?: string;
+    requestedStartOn?: string; // KST 달력 날짜 YYYY-MM-DD
     enrollmentMonths?: string;   // 쉼표 구분 "2026년 7월,2026년 8월"
     preferredSlotKeys?: string;  // 쉼표 구분 "Mon-4,Wed-6"
     basketballExp?: string;      // 농구 경험
@@ -611,6 +613,7 @@ export interface ExistingEnrollApplicationForEdit {
     parentPhone: string;
     parentRelation: string | null;
     address: string | null;
+    requestedStartOn: string | null;
     enrollmentMonths: string[];
     preferredSlotKeys: string[];
     basketballExp: string | null;
@@ -759,6 +762,7 @@ export async function findExistingEnrollApplicationForEdit(input: {
         parentPhone: rowValue(row, "parentPhone", "parentphone") || normalizePhone(input.parentPhone || ""),
         parentRelation: rowValue(row, "parentRelation", "parentrelation"),
         address: row.address ?? null,
+        requestedStartOn: commencementYmd(rowValue(row, "requestedStartOn", "requestedstarton")),
         enrollmentMonths: csvToList(rowValue(row, "enrollmentMonths", "enrollmentmonths")),
         preferredSlotKeys: csvToList(rowValue(row, "preferredSlotKeys", "preferredslotkeys")),
         basketballExp: rowValue(row, "basketballExp", "basketballexp"),
@@ -818,7 +822,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
     if (!parentName) throw new Error("보호자 이름을 입력해주세요.");
     if (!parentPhone) throw new Error("보호자 연락처를 입력해주세요.");
     if (!data.childSchool?.trim()) throw new Error("학교명을 입력해주세요.");
-    if (!data.enrollmentMonths?.trim()) throw new Error("수강신청 월을 선택해주세요.");
+    const requestedStartOn = requireCommencement(data.requestedStartOn);
     if (!data.referralSource) throw new Error("가입경로를 선택해주세요.");
     if (data.shuttleNeeded && (!data.shuttlePickup?.trim() || !data.shuttleTime || !data.shuttleDropoff?.trim())) {
         throw new Error("셔틀 탑승을 선택한 경우 탑승 장소, 희망 시간, 하차 장소를 모두 입력해주세요.");
@@ -984,7 +988,8 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                     "parentPhone" = $9,
                     "parentRelation" = $10,
                     address = $11,
-                    "enrollmentMonths" = $12,
+                    "enrollmentMonths" = COALESCE("enrollmentMonths", $12), -- 이전 월 자료는 보존
+                    "requestedStartOn" = $46::date,
                     "preferredSlotKeys" = $13,
                     "basketballExp" = $14,
                     "uniformSize" = $15,
@@ -1030,7 +1035,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 normalizedParentPhone,
                 data.parentRelation || null,
                 data.address?.trim() || null,
-                data.enrollmentMonths || null,
+                null, // 신규 신청은 월 대신 개시일을 받는다
                 data.preferredSlotKeys || null,
                 data.basketballExp || null,
                 data.uniformSize || null,
@@ -1065,6 +1070,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 shuttleLocationConsentVersion,
                 shuttleLocationConsentAt,
                 existingApplication.id,
+                requestedStartOn,
             );
 
             if (matchedTrialLeadId) {
@@ -1124,7 +1130,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 "shuttleDropoffLatitude", "shuttleDropoffLongitude", "shuttleDropoffPlaceId",
                 "shuttleDropoffSource", "shuttleDropoffAccuracyMeters", "shuttleDropoffConfirmedAt",
                 "shuttleLocationConsentVersion", "shuttleLocationConsentAt",
-                status, "createdAt", "updatedAt"
+                status, "createdAt", "updatedAt", "requestedStartOn"
             ) VALUES (
                 gen_random_uuid()::text, $1,
                 $2, $3::timestamptz, $4, $5, $6, $7,
@@ -1136,7 +1142,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 $27, $28, $29, $30, $31, $32, $33, $34::timestamptz,
                 $35, $36, $37, $38, $39, $40, $41, $42::timestamptz,
                 $43, $44::timestamptz,
-                'PENDING', NOW(), NOW()
+                'PENDING', NOW(), NOW(), $45::date
             ) RETURNING id`,
             matchedTrialLeadId || null,         // $1
             childName,                          // $2
@@ -1149,7 +1155,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             normalizePhone(parentPhone),        // $9
             data.parentRelation || null,        // $10
             data.address?.trim() || null,       // $11
-            data.enrollmentMonths || null,      // $12
+            null, // 신규 신청은 월 대신 개시일을 받는다      // $12
             data.preferredSlotKeys || null,     // $13
             data.basketballExp || null,         // $14
             data.uniformSize || null,           // $15
@@ -1182,6 +1188,7 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             shuttleDropoffLocation?.confirmedAt ?? null, // $42
             shuttleLocationConsentVersion, // $43
             shuttleLocationConsentAt, // $44
+            requestedStartOn, // $45
         );
 
         if (matchedTrialLeadId && rows[0]?.id) {

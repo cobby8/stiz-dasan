@@ -93,3 +93,31 @@ test('원장 없는 기존수강이나 출처 없는 옛 원장은 완료로 만
     assert.ok(result.evidence[0].reasons.length > 1);
   }
 });
+
+const dated = { ...base, requestedStartOn: '2026-09-09', enrollmentStarts: [{ classId: 'class-1', startsOn: '2026-09-09' }] };
+test('신청·현재 수강·연결 원장의 개시일 일치 뒤에도 외부 타깃 결과를 따로 판단한다', () => {
+  const result = registrationReadiness({ ...dated, commands: [command] });
+  assert.deepEqual(result.evidence[0].reasons, []);
+  assert.equal(result.checks.find(row => row.key === 'SHEET').status, 'VERIFIED');
+  assert.equal(result.checks.find(row => row.key === 'RALLYZ').status, 'CHECK_REQUIRED');
+  assert.equal(result.complete, false);
+});
+test('신청일만 존재하거나 세 개시일 중 하나가 없거나 다르면 완료 증거가 아니다', () => {
+  for (const patch of [{ requestedStartOn: null }, { enrollmentStarts: [] }, { enrollmentStarts: [{ classId: 'class-1', startsOn: null }] }, { enrollmentStarts: [{ classId: 'class-1', startsOn: '2026-09-10' }] }, { requestedStartOn: '2026-02-31' }]) {
+    const result = registrationReadiness({ ...dated, ...patch, commands: [command] });
+    assert.ok(result.evidence[0].reasons.includes('확정 수강 시작일 근거 없음'));
+    assert.equal(result.checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
+  }
+  assert.ok(registrationReadiness({ ...dated, commands: [{ ...command, afterJson: { ...command.afterJson, effectiveDate: '2026-09-10' } }] }).evidence[0].reasons.length > 0);
+});
+test('여러 배정 반은 각 반의 개시일과 연결된 외부 성공이 모두 필요하다', () => {
+  const input = { ...dated, assignedClassIds: ['class-1','class-2'], activeClassIds: ['class-1','class-2'], enrollmentStarts: [...dated.enrollmentStarts, { classId: 'class-2', startsOn: '2026-09-09' }], commands: [command] };
+  assert.equal(registrationReadiness(input).checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
+  input.commands.push({ ...command, id: 'command-2', afterJson: { ...command.afterJson, classId: 'class-2', enrollmentId: 'enroll-2' } });
+  assert.equal(registrationReadiness(input).checks.find(row => row.key === 'SHEET').status, 'VERIFIED');
+});
+test('개시일이 일치해도 외부 재조회 시각 오류·중복·취소 원장을 성공으로 승격하지 않는다', () => {
+  for (const patch of [{ status: 'CANCELLED' }, { syncAttempts: [{ target: 'SHEET', status: 'SUCCEEDED', verifiedAt: new Date('2026-09-10T00:00:00Z') }] }, { syncAttempts: [command.syncAttempts[0], command.syncAttempts[0]] }]) {
+    assert.equal(registrationReadiness({ ...dated, commands: [{ ...command, ...patch }] }).checks.find(row => row.key === 'SHEET').status, 'CHECK_REQUIRED');
+  }
+});

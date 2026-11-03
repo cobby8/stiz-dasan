@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   CHANGE_KIND_LABEL,
   CHANGE_STATUS_LABEL,
+  earliestResumeOn,
+  pauseResumeLabel,
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
 import type { EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
@@ -162,6 +164,11 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             {child.pending.toClassName ? ` · ${child.pending.toClassName}` : ""} · {child.pending.effectiveFrom}부터
             {child.pending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
           </p>
+          {child.pending.kind === "PAUSE" && (
+            <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-200">
+              {pauseResumeLabel(child.pending.resumeOn)}
+            </p>
+          )}
           {/* 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(child.pending.id) 그대로 */}
           <InlineConfirm
             label="신청 취소하기"
@@ -246,7 +253,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
                 <label htmlFor="resume-on" className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                  복귀 예정일 (선택)
+                  복귀 예정일
                 </label>
                 {resumeOn && (
                   <button
@@ -263,9 +270,15 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 id="resume-on"
                 type="date"
                 value={resumeOn}
+                min={earliestResumeOn(initial.effectiveFrom)}
+                aria-describedby="resume-on-help"
                 onChange={(event) => setResumeOn(event.target.value)}
                 className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
               />
+              <p id="resume-on-help" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {resumeOn ? `${resumeOn} 복귀 예정` : "아직 정해지지 않았다면 비워두세요. ‘복귀일 미정’으로 접수됩니다."}
+                {" "}예정일에 자동으로 복귀 처리되지는 않습니다.
+              </p>
             </div>
           )}
 
