@@ -39,6 +39,8 @@ model User {
   // 다중 역할 — User.role(주 역할) 외에 추가로 맡은 역할과 승인 신청. 관리자는 여기로 줄 수 없다.
   roleGrants                  UserRoleGrant[]               @relation("UserRoleGrantUser")
   roleGrantsDecided           UserRoleGrant[]               @relation("UserRoleGrantDecider")
+  shuttleReviewsAssigned      EnrollmentShuttleReview[]      @relation("ShuttleReviewDriver")
+  shuttleReviewsRequested     EnrollmentShuttleReview[]      @relation("ShuttleReviewRequester")
 }
 
 /// 추가 역할 + 직원 역할 승인 신청. migration 20261025120000_add_user_role_grants 의 사본이다.
@@ -222,6 +224,7 @@ model Student {
   operationsCommands       OperationsCommand[]
   regularShuttleStops      RegularShuttleStop[]
   regularLocationLinks     RegularShuttleLocationLink[]
+  shuttleIntakeReviews     EnrollmentShuttleReview[]
   parent                   User                          @relation(fields: [parentId], references: [id])
 
   @@index([parentId])
@@ -1763,6 +1766,7 @@ model EnrollmentApplication {
   parentUserId                  String?
   parentUser                    User?                      @relation("EnrollmentApplicationParent", fields: [parentUserId], references: [id], onDelete: SetNull)
   accountHandoffs               EnrollmentAccountHandoff[]
+  shuttleIntakeReviews          EnrollmentShuttleReview[]
   parentRelation                String? // 부/모/기타
   address                       String?
   // 수강 정보
@@ -1830,6 +1834,30 @@ model EnrollmentAccountHandoff {
   enrollmentApplication   EnrollmentApplication @relation(fields: [enrollmentApplicationId], references: [id], onDelete: Cascade)
 
   @@index([enrollmentApplicationId, expiresAt])
+}
+
+/// 계정으로 지정한 기사만 검토한다. 배차 확정·발송 기록과 분리한다.
+model EnrollmentShuttleReview {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  applicationId     String
+  studentId         String
+  serviceMonth      String
+  driverUserId      String
+  sourceFingerprint String
+  status            String    @default("PENDING")
+  note              String?
+  proposals         Json      @default("[]")
+  requestedByUserId String
+  requestedAt       DateTime  @default(now()) @db.Timestamptz(6)
+  reviewedAt        DateTime? @db.Timestamptz(6)
+  supersededAt      DateTime? @db.Timestamptz(6)
+  application       EnrollmentApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  student           Student @relation(fields: [studentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  driver            User @relation("ShuttleReviewDriver", fields: [driverUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  requester         User @relation("ShuttleReviewRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([applicationId, serviceMonth, requestedAt], map: "EnrollmentShuttleReview_application_month_idx")
+  @@index([driverUserId, serviceMonth, status], map: "EnrollmentShuttleReview_driver_month_status_idx")
 }
 
 // 체험/수강신청 상담·연락 기록 — 한 신청 건에 여러 연락 이력을 남긴다

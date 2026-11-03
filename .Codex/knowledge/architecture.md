@@ -366,3 +366,6 @@ STIZ 농구교실 다산점의 홈페이지와 학원관리 플랫폼이다. 일
 - 신청 DATE: EnrollmentApplication.requestedStartOn. 승인된 반별 DATE: Enrollment.startsOn. 기존 null은 이력을 유지하며 신규 날짜의 사전 검사는 scripts/enrollment-commencement-db-preflight.mjs가 담당한다.
 - 셔틀 공통 판정은 enrollment/shuttle-progress.ts, 일관된 배치 조회는 shuttle-progress-query.ts가 담당한다. 신청 목록·상세·입학 점검이 같은 결과를 사용한다. 발송 최종 결과는 기존 재대조 실행 경로를 재사용한다.
 - 운영 적용과 로컬 검증의 절차는 docs/enrollment-commencement-shuttle-progress.md를 따른다.
+
+## 2026-11-03 신규 셔틀 검토
+- 관리자 `/admin/shuttle/intake`와 지정 기사 `/staff/shuttle/intake`는 인증된 별도 API와 EnrollmentShuttleReview 기록을 사용한다. 공용 운행 토큰과 분리하고 기존 progress 조회를 재사용한다. 새 표는 운영 미적용.

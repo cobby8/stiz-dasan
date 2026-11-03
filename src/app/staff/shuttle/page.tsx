@@ -28,6 +28,10 @@ export default async function StaffShuttlePage() {
           <span className="material-symbols-outlined text-lg" aria-hidden="true">directions_bus</span>
           오늘 운행표 열기
         </Link>
+        <Link href="/staff/shuttle/intake" className="mt-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold">
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span>
+          새 학생 셔틀 검토
+        </Link>
       </div>
       <StaffShuttleDashboardClient dashboard={dashboard} canManageShuttle={canManageShuttle} />
     </>
