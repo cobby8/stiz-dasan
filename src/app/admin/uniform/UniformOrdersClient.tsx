@@ -185,7 +185,7 @@ export default function UniformOrdersClient({
           <p className="text-xs text-[var(--color-academy-muted)]">전체 <span className="tabular-nums">{counts.total}</span>건</p>
         </div>
         <Link
-          href="/apply/uniform"
+          href="https://stiz.kr/product/detail.html?product_no=4095&from=dasan"
           target="_blank"
           className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-black text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)]"
         >
