@@ -487,8 +487,6 @@ export const getStudents = cache(async (limit?: number) => {
              )
              SELECT s.id, s.name, s."birthDate", s.gender, s."parentId",
                     s.phone, s.school, s.grade, s.address, s."enrollDate",
-                    s."uniformStatus", s."uniformAppliedAt", s."uniformOrderedAt",
-                    s."uniformReceivedAt", s."uniformSource", s."uniformNote",
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
