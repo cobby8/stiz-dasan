@@ -1854,6 +1854,8 @@ export async function getStudentActivity(studentId: string) {
         const sRows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT s.id, s.name, s."birthDate", s.gender, s.memo, s."parentId",
                     s.phone, s.school, s.grade, s.address, s."enrollDate",
+                    s."uniformStatus", s."uniformAppliedAt", s."uniformOrderedAt",
+                    s."uniformReceivedAt", s."uniformSource", s."uniformNote",
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email
              FROM "Student" s
