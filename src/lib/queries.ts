@@ -490,10 +490,13 @@ export const getStudents = cache(async (limit?: number) => {
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
-                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date) THEN 'ACTIVE'
+                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND (due."startsOn" IS NULL OR due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date)) THEN 'ACTIVE'
                       WHEN EXISTS (SELECT 1 FROM "Enrollment" planned WHERE planned."studentId"=s.id AND planned.status='ACTIVE' AND planned."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date)
                       AND NOT EXISTS (SELECT 1 FROM "Enrollment" started WHERE started."studentId"=s.id AND started.status='ACTIVE' AND (started."startsOn" IS NULL OR started."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date))
-                      THEN 'SCHEDULED' ELSE css.status END AS current_status
+                      THEN 'SCHEDULED'
+                      WHEN EXISTS (SELECT 1 FROM "Enrollment" paused WHERE paused."studentId"=s.id AND paused.status='PAUSED') THEN 'PAUSED'
+                      WHEN EXISTS (SELECT 1 FROM "Enrollment" withdrawn WHERE withdrawn."studentId"=s.id AND withdrawn.status='WITHDRAWN') THEN 'WITHDRAWN'
+                      ELSE NULL END AS current_status
              FROM selected_students s
              LEFT JOIN "User" u ON s."parentId" = u.id
              LEFT JOIN enrollment_json ej ON ej."studentId" = s.id

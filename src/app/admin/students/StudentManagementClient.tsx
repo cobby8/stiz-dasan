@@ -620,7 +620,8 @@ export default function StudentManagementClient({
 
         return { active, scheduled, paused, withdrawn, noEnrollment, total: students.length };
     }, [students, studentStatusById]);
-    const statusCounts = sheetImportSummary?.studentStatusCounts ?? loadedStatusCounts;
+    // 현재 인원은 실제 수강 등록으로 집계한다. 과거 시트 요약으로 덮어쓰지 않는다.
+    const statusCounts = loadedStatusCounts;
 
     const applyStatusFilter = useCallback((value: string) => {
         setFilterStatus(value);
