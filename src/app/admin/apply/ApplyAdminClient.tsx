@@ -2,6 +2,7 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { formatClassLabel } from "@/lib/application-display-format";
+import { formatEnrollmentMonthsShort, formatPreferredSlotsShort } from "@/lib/enrollment-application-display";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
@@ -272,7 +273,6 @@ const APPLY_VIEW_OPTIONS = [
     { value: "list", label: "목록", icon: "view_list" },
     { value: "status", label: "상태별", icon: "view_agenda" },
 ] as const;
-const DAY_SHORT_LABELS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
 
 const APPLICATION_WORK_FILTERS: Array<{ value: ApplicationWorkFilter; label: string; icon: string }> = [
     { value: "ALL", label: "운영 전체", icon: "view_list" },
@@ -327,33 +327,6 @@ function formatPreferredSlots(slotKeys: string | null, classesBySlotKey: Map<str
     if (labels.length === 0) return "희망 시간 확인 필요";
     if (unknownCount > 0) return `${labels.join(" / ")} 외 ${unknownCount}개 시간 확인 필요`;
     return labels.join(" / ");
-}
-
-// 목록 칸용 짧은 희망 수업 표기(예: «화4 목4»). 긴 반 이름·시간은 상세 패널에서 본다.
-// slotKey 는 «요일코드-교시»(예: Tue-4) 형식이라, 반을 못 찾아도 키에서 요일·교시를 읽는다.
-function formatPreferredSlotsShort(slotKeys: string | null, classesBySlotKey: Map<string, ClassInfo>) {
-    if (!slotKeys) return null;
-    const labels = slotKeys
-        .split(",")
-        .map((key) => key.trim())
-        .filter(Boolean)
-        .map((key) => {
-            const classInfo = classesBySlotKey.get(key);
-            const [dayPart, periodPart] = key.split("-");
-            const day = DAY_SHORT_LABELS[classInfo?.dayOfWeek ?? dayPart] ?? null;
-            const period = (periodPart ?? "").match(/\d+/)?.[0] ?? classInfo?.name.match(/\d+/)?.[0] ?? "";
-            return day ? `${day}${period}` : null;
-        })
-        .filter((label): label is string => Boolean(label));
-    return labels.length > 0 ? labels.join(" ") : null;
-}
-
-// 목록 칸용 짧은 수강 시작월(예: «2026년 11월,2026년 12월» → «11월 외 1»). 전체는 상세 패널에서.
-function formatEnrollmentMonthsShort(value: string | null) {
-    const months = (value ?? "").split(",").map((month) => month.trim()).filter(Boolean);
-    if (months.length === 0) return "-";
-    const first = months[0].replace(/^\d{4}년\s*/, "");
-    return months.length > 1 ? `${first} 외 ${months.length - 1}` : first;
 }
 
 function phoneHref(phone: string) {
@@ -998,7 +971,7 @@ export default function ApplyAdminClient({
                             <th className="hidden px-2 py-2 md:table-cell">연락처</th>
                             <th className="admin-cell-num px-2 py-2">접수일</th>
                             <th className="px-2 py-2">희망 수업</th>
-                            <th className="hidden px-2 py-2 lg:table-cell">수강 시작월</th>
+                            <th className="hidden px-2 py-2 lg:table-cell">신청 월</th>
                             <th className="hidden px-2 py-2 md:table-cell">셔틀</th>
                             <th className="admin-cell-center px-2 py-2"><span className="sr-only">빠른 처리</span></th>
                         </tr>

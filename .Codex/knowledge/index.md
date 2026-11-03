@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-03: 신청 맞춤반 UUID 교시 오인·복수월 숨김 표시 수정. errors.md 참조, 관련44·tsc·독립React5 통과, 운영 미배포.
+
 > 2026-11-02: 체험 원수정 PR4/b353 운영READY·실제목록/확정/변경창 확인. 기존희망regular키→custom반 불일치의 옛반fallback을 공용화해 두화면 보완. docs/trial-schedule-save-display.md, 전체2779/학생5·독립28·tsc·React PASS. 운영 최종증거 로컬 .tmp/trial-production-20261102, 지식본문5 유지.
 
 > 2026-11-02: 체험 일정 저장·목록·상세 실제시간 일치, UUID 교시 추출 제거·Date 객체 크래시/취소응답 수정. docs/trial-schedule-save-display.md 정본, 신규12/전체2778/학생5·tsc·독립·합성브라우저PASS. errors 갱신·지식본문5개 유지. 운영 신청·배포 없음.
