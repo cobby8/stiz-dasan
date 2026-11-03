@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
-import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
+import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst } from "@/lib/datetime/kst";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
@@ -156,6 +156,9 @@ type StudentActivityData = {
         // 새 필드: 학생 추가 정보
         phone: string | null; school: string | null; grade: string | null;
         address: string | null; enrollDate: Date | string | null;
+        uniformStatus: string | null; uniformAppliedAt: Date | string | null;
+        uniformOrderedAt: Date | string | null; uniformReceivedAt: Date | string | null;
+        uniformSource: string | null; uniformNote: string | null;
         parent: { name: string | null; phone: string | null; email: string | null };
     };
     enrollments: {
@@ -457,6 +460,16 @@ export default function StudentDetailClient({
     const [payError, setPayError] = useState<{ id: string; message: string } | null>(null);
     // 우측 본문 탭 상태 (UI 전용 — 데이터/로직 무관)
     const [activeTab, setActiveTab] = useState<TabKey>("overview");
+    const [uniformForm, setUniformForm] = useState(() => ({
+        status: initialData?.student.uniformStatus || "",
+        appliedAt: toInputDate(initialData?.student.uniformAppliedAt),
+        orderedAt: toInputDate(initialData?.student.uniformOrderedAt),
+        receivedAt: toInputDate(initialData?.student.uniformReceivedAt),
+        source: initialData?.student.uniformSource || "",
+        note: initialData?.student.uniformNote || "",
+    }));
+    const [uniformSaving, setUniformSaving] = useState(false);
+    const [uniformFeedback, setUniformFeedback] = useState<string | null>(null);
 
     // ── 배차용 셔틀 위치 편집 상태 (E4) ──────────────────────────────
     // shuttleLocs: PICKUP/DROPOFF 로컬 상태(저장 성공 시 응답으로 그 카드만 즉시 갱신)
@@ -1253,6 +1266,26 @@ export default function StudentDetailClient({
                     {/* ===== 개요 탭 ===== */}
                     {activeTab === "overview" && (
                         <div className="space-y-4">
+                            <div className={CARD_CLASS}>
+                                <SectionTitle icon="checkroom" title="유니폼 보유 정보" right={<span className="text-xs text-gray-400">세 시트·사이트 주문 대조</span>} />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="text-xs font-bold text-gray-500">상태
+                                        <select value={uniformForm.status} onChange={(e) => setUniformForm((v) => ({ ...v, status: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`}>
+                                            <option value="">미확인</option><option value="보유">보유</option><option value="미보유">미보유</option><option value="신청">신청</option><option value="주문">주문</option><option value="수령완료">수령완료</option><option value="미수령">미수령</option><option value="확인보류">확인보류</option><option value="미신청">미신청</option><option value="해당없음">해당없음</option>
+                                        </select>
+                                    </label>
+                                    <label className="text-xs font-bold text-gray-500">출처<input value={uniformForm.source} onChange={(e) => setUniformForm((v) => ({ ...v, source: e.target.value }))} placeholder="가입신청서 · 유니폼 신청서 · 사이트 주문" className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-gray-500">신청일<input type="date" value={uniformForm.appliedAt} onChange={(e) => setUniformForm((v) => ({ ...v, appliedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-gray-500">주문일<input type="date" value={uniformForm.orderedAt} onChange={(e) => setUniformForm((v) => ({ ...v, orderedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-gray-500">수령일<input type="date" value={uniformForm.receivedAt} onChange={(e) => setUniformForm((v) => ({ ...v, receivedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-gray-500">대조 메모<input value={uniformForm.note} onChange={(e) => setUniformForm((v) => ({ ...v, note: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between gap-3">
+                                    <p className="text-[11px] text-gray-400">미확인 학생은 추측하지 않고 확인보류로 남깁니다.</p>
+                                    <button type="button" disabled={uniformSaving} onClick={() => { setUniformSaving(true); setUniformFeedback(null); void updateStudentUniform(student.id, uniformForm).then(() => setUniformFeedback("저장되었습니다.")).catch((e) => setUniformFeedback(e instanceof Error ? e.message : "저장 실패")).finally(() => setUniformSaving(false)); }} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
+                                </div>
+                                {uniformFeedback && <p className="mt-2 text-xs font-bold text-[var(--color-academy-primary)]">{uniformFeedback}</p>}
+                            </div>
                             <div className={CARD_CLASS}>
                                 <SectionTitle
                                     icon="menu_book"
