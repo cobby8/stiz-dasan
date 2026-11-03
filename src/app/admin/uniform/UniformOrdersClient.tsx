@@ -167,7 +167,7 @@ export default function UniformOrdersClient({
           <h1 className="mt-1 text-2xl font-black text-gray-900 dark:text-white">유니폼 주문 관리</h1>
         </div>
         <Link
-          href="/apply/uniform"
+          href="https://stiz.kr/product/detail.html?product_no=4095&from=dasan"
           target="_blank"
           className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
         >
