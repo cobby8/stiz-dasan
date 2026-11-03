@@ -50,3 +50,9 @@ export function formatEnrollmentMonthsShort(value: string | null) {
         .map(([year, months]) => `${year ? `${year}년 ` : ""}${[...months].sort((a, b) => a - b).join("·")}월`);
     return [...labels, ...other].join(" / ");
 }
+
+/** 날짜가 없는 옛 신청을 월의 첫날로 바꾸지 않는다. */
+export function formatEnrollmentStartOn(value: string | null | undefined) {
+    const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? `${match[1]}.${match[2]}.${match[3]}` : "개시일 확인 필요";
+}

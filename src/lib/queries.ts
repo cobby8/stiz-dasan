@@ -1,3 +1,5 @@
+import { commencementYmd, enrollmentDisplayStatus } from "@/lib/enrollment/commencement";
+import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 import { childAccessSql } from "@/lib/account/child-access";
 /**
  * 순수 DB 조회 함수들 (mutations 제외)
@@ -9,7 +11,7 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
-import { kstDow } from "@/lib/datetime/kst";
+import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
@@ -409,6 +411,8 @@ export const getStudents = cache(async (limit?: number) => {
                             'classId', e."classId",
                             'className', c.name,
                             'status', e.status,
+                            'startsOn', e."startsOn",
+                            'displayStatus', CASE WHEN e.status='ACTIVE' AND e."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date THEN 'SCHEDULED' ELSE e.status END,
                             'dayOfWeek', c."dayOfWeek",
                             'startTime', c."startTime",
                             'slotKey', c."slotKey",
@@ -488,7 +492,10 @@ export const getStudents = cache(async (limit?: number) => {
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
-                    css.status AS current_status
+                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date) THEN 'ACTIVE'
+                      WHEN EXISTS (SELECT 1 FROM "Enrollment" planned WHERE planned."studentId"=s.id AND planned.status='ACTIVE' AND planned."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date)
+                      AND NOT EXISTS (SELECT 1 FROM "Enrollment" started WHERE started."studentId"=s.id AND started.status='ACTIVE' AND (started."startsOn" IS NULL OR started."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date))
+                      THEN 'SCHEDULED' ELSE css.status END AS current_status
              FROM selected_students s
              LEFT JOIN "User" u ON s."parentId" = u.id
              LEFT JOIN enrollment_json ej ON ej."studentId" = s.id
@@ -541,7 +548,7 @@ export const getStudentWithEnrollments = cache(async (id: string) => {
         const r = sRows[0];
         // 수강 내역
         const eRows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT e.id, e."classId", e.status, e."createdAt",
+            `SELECT e.id, e."classId", e.status, e."startsOn", e."createdAt",
                     c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                     p.name AS program_name
              FROM "Enrollment" e
@@ -573,6 +580,8 @@ export const getStudentWithEnrollments = cache(async (id: string) => {
                 id: e.id,
                 classId: e.classId ?? e.classid,
                 status: e.status,
+                startsOn: commencementYmd(e.startsOn ?? e.startson),
+                displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -824,8 +833,12 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
              FROM "Enrollment" e
              JOIN "Student" s ON e."studentId" = s.id AND ${notMergedStudent("s")}
              WHERE e."classId" = $1 AND e.status = 'ACTIVE'
+               AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
+                   SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+                   WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
+               ))
              ORDER BY s.name ASC`,
-            classId
+            classId, date
         );
 
         // 세션이 있으면 출석 기록 조회
@@ -1088,7 +1101,7 @@ export async function getMyPageData(parentUserId: string) {
 
                 // 수강 중인 반
                 const enrollments = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT e.id, e."classId", e.status, c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
+                    `SELECT e.id, e."classId", e.status, e."startsOn", c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                             p.name AS program_name
                      FROM "Enrollment" e
                      JOIN "Class" c ON e."classId" = c.id
@@ -1131,6 +1144,8 @@ export async function getMyPageData(parentUserId: string) {
                         id: e.id,
                         classId: e.classId ?? e.classid,
                         status: e.status,
+                startsOn: commencementYmd(e.startsOn ?? e.startson),
+                displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
                         className: e.class_name,
                         dayOfWeek: e.dayOfWeek ?? e.dayofweek,
                         startTime: e.startTime ?? e.starttime,
@@ -1871,7 +1886,7 @@ export async function getStudentActivity(studentId: string) {
         const [enrollments, attendances, payments, attStats, galleryPosts, monthlyHistoryRows] = await Promise.all([
             // 수강 내역
             prisma.$queryRawUnsafe<any[]>(
-                `SELECT e.id, e."classId", e.status, e."createdAt",
+                `SELECT e.id, e."classId", e.status, e."startsOn", e."createdAt",
                         c.name AS class_name, c."dayOfWeek", c."startTime", c."endTime",
                         p.name AS program_name
                  FROM "Enrollment" e
@@ -2007,6 +2022,8 @@ export async function getStudentActivity(studentId: string) {
                 id: e.id,
                 classId: e.classId ?? e.classid,
                 status: e.status,
+                startsOn: commencementYmd(e.startsOn ?? e.startson),
+                displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -2500,7 +2517,7 @@ export const getClassWithStudents = cache(async (classId: string) => {
             ),
             // ACTIVE 상태의 수강생 목록 (이름순 정렬)
             prisma.$queryRawUnsafe<any[]>(
-                `SELECT e.id AS enrollment_id, e.status, e."createdAt" AS enrolled_at,
+                `SELECT e.id AS enrollment_id, e.status, e."startsOn", e."createdAt" AS enrolled_at,
                         s.id AS student_id, s.name AS student_name, s.phone, s.school, s.grade,
                         s."birthDate", s.gender
                  FROM "Enrollment" e
@@ -2528,6 +2545,8 @@ export const getClassWithStudents = cache(async (classId: string) => {
             // 수강생 배열
             students: studentRows.map((s: any) => ({
                 enrollmentId: s.enrollment_id,
+                startsOn: commencementYmd(s.startsOn ?? s.startson),
+                displayStatus: enrollmentDisplayStatus(s.status, s.startsOn ?? s.startson, todayKst()),
                 status: s.status,
                 enrolledAt: s.enrolled_at,
                 studentId: s.student_id,
@@ -3633,7 +3652,7 @@ export const getEnrollApplications = cache(async (statusOrOptions?: string | Adm
         }
 
         // camelCase 우선, 소문자 fallback (PgBouncer 반환 형식 대응)
-        return rows.map((r: any) => ({
+        const applications = rows.map((r: any) => ({
             id: r.id,
             trialLeadId: r.trialLeadId ?? r.trialleadid ?? null,
             childName: r.childName ?? r.childname,
@@ -3646,6 +3665,7 @@ export const getEnrollApplications = cache(async (statusOrOptions?: string | Adm
             parentPhone: r.parentPhone ?? r.parentphone,
             parentRelation: r.parentRelation ?? r.parentrelation ?? null,
             address: r.address ?? null,
+            requestedStartOn: commencementYmd(r.requestedStartOn ?? r.requestedstarton),
             enrollmentMonths: r.enrollmentMonths ?? r.enrollmentmonths ?? null,
             preferredSlotKeys: r.preferredSlotKeys ?? r.preferredslotkeys ?? null,
             assignedClassId: r.assignedClassId ?? r.assignedclassid ?? null,
@@ -3675,6 +3695,8 @@ export const getEnrollApplications = cache(async (statusOrOptions?: string | Adm
             openFollowUpAt: r.open_followup_at ?? null,
             openFollowUpNote: r.open_followup_note ?? null,
         }));
+        const progress = await getEnrollmentShuttleProgress(applications);
+        return applications.map(app => ({ ...app, shuttleProgress: progress[app.id] }));
     } catch (e) {
         console.error("[getEnrollApplications] failed:", e);
         return [];

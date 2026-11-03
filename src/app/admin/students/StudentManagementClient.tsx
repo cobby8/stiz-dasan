@@ -48,6 +48,8 @@ type Student = {
         classId: string;
         className: string;
         status: string;
+        displayStatus?: string;
+        startsOn?: string | null;
         dayOfWeek: string;
         startTime: string;
         slotKey: string | null;
@@ -89,6 +91,7 @@ type SheetImportSummary = {
     studentStatusCounts?: {
         total: number;
         active: number;
+        scheduled?: number;
         paused: number;
         withdrawn: number;
         noEnrollment: number;
@@ -234,7 +237,7 @@ function getLatestStatus(enrollments: Student["enrollments"]): string | null {
     let latestTime = latest.createdAt ? new Date(latest.createdAt).getTime() : 0;
 
     for (const enrollment of enrollments) {
-        if (enrollment.status === "ACTIVE") return "ACTIVE";
+        if ((enrollment.displayStatus ?? enrollment.status) === "ACTIVE") return "ACTIVE";
 
         const createdAt = enrollment.createdAt ? new Date(enrollment.createdAt).getTime() : 0;
         if (createdAt > latestTime) {
@@ -243,25 +246,28 @@ function getLatestStatus(enrollments: Student["enrollments"]): string | null {
         }
     }
 
-    return latest.status;
+    if (enrollments.some((enrollment) => enrollment.displayStatus === "SCHEDULED")) return "SCHEDULED";
+    return latest.displayStatus ?? latest.status;
 }
 
 function getStatusLabel(status: string | null) {
     if (status === "ACTIVE") return "활성";
+    if (status === "SCHEDULED") return "수강 예정";
     if (status === "PAUSED") return "휴원";
     if (status === "WITHDRAWN") return "퇴원";
     return "미배정";
 }
 
 function getStatusPillClass(status: string | null) {
+    if (status === "SCHEDULED") return "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] ring-[var(--color-academy-line)]";
     if (status === "ACTIVE") return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20";
     if (status === "PAUSED") return "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20";
     if (status === "WITHDRAWN") return "bg-red-50 text-red-700 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20";
     return "bg-gray-50 text-gray-500 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700";
 }
 
-function getActiveEnrollments(enrollments: Student["enrollments"]) {
-    return (enrollments ?? []).filter((enrollment) => enrollment.status === "ACTIVE");
+function getAssignedEnrollments(enrollments: Student["enrollments"]) {
+    return (enrollments ?? []).filter((enrollment) => ["ACTIVE", "SCHEDULED"].includes(enrollment.displayStatus ?? enrollment.status));
 }
 
 // 「반별 보기」에서 쓰는 묶음 한 개(반 하나 또는 맨 끝 «반 없음»)
@@ -286,6 +292,7 @@ const STUDENT_VIEW_OPTIONS = [
 // 상태 칩 순서와 이름. 값은 필터 모달 «수강 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const STUDENT_STATUS_CHIPS = [
     { value: "ACTIVE", label: "활성" },
+    { value: "SCHEDULED", label: "수강 예정" },
     { value: "PAUSED", label: "휴원" },
     { value: "WITHDRAWN", label: "퇴원" },
     { value: "NONE", label: "미배정" },
@@ -311,7 +318,7 @@ function groupStudentsByActiveClass(list: Student[]): ClassGroup[] {
     const noClass: Student[] = [];
 
     for (const student of list) {
-        const active = getActiveEnrollments(student.enrollments);
+        const active = getAssignedEnrollments(student.enrollments);
         if (active.length === 0) {
             noClass.push(student);
             continue;
@@ -589,6 +596,7 @@ export default function StudentManagementClient({
     // 최신 enrollment 기준으로 학생의 대표 상태를 판단
     const loadedStatusCounts = useMemo(() => {
         let active = 0;
+        let scheduled = 0;
         let paused = 0;
         let withdrawn = 0;
         let noEnrollment = 0;
@@ -599,6 +607,8 @@ export default function StudentManagementClient({
                 noEnrollment++;
             } else if (status === "ACTIVE") {
                 active++;
+            } else if (status === "SCHEDULED") {
+                scheduled++;
             } else if (status === "PAUSED") {
                 paused++;
             } else if (status === "WITHDRAWN") {
@@ -608,7 +618,7 @@ export default function StudentManagementClient({
             }
         }
 
-        return { active, paused, withdrawn, noEnrollment, total: students.length };
+        return { active, scheduled, paused, withdrawn, noEnrollment, total: students.length };
     }, [students, studentStatusById]);
     const statusCounts = sheetImportSummary?.studentStatusCounts ?? loadedStatusCounts;
 
@@ -633,7 +643,7 @@ export default function StudentManagementClient({
             }
             // 반(Class) 필터: 해당 반에 수강 중인 학생만
             if (filterClass) {
-                const hasClass = s.enrollments?.some((e) => e.classId === filterClass && e.status === "ACTIVE");
+                const hasClass = s.enrollments?.some((e) => e.classId === filterClass && ["ACTIVE", "SCHEDULED"].includes(e.displayStatus ?? e.status));
                 if (!hasClass) return false;
             }
             // 학년 필터
@@ -741,9 +751,13 @@ export default function StudentManagementClient({
     // 수강 반 칸: 활성 반은 «월4, 수4» 짧은 표기(말줄임 없음).
     // 활성 반이 없는데 상태가 «활성»이면 «반 없음»(약한 경고색), 그 밖엔 상태 배지(휴원·퇴원·미배정).
     function renderClassCell(s: Student) {
-        const activeEnrollments = getActiveEnrollments(s.enrollments);
+        const activeEnrollments = getAssignedEnrollments(s.enrollments);
         if (activeEnrollments.length > 0) {
-            return sortEnrollmentsByDay(activeEnrollments).map((e) => shortenClassName(e)).join(", ");
+            return sortEnrollmentsByDay(activeEnrollments).map((e) => (
+                <span key={e.classId} className="mr-2 inline-block">
+                    {shortenClassName(e)}{e.displayStatus === "SCHEDULED" && <span className="ml-1 text-xs text-[var(--color-academy-primary)]">{e.startsOn} 수강 예정</span>}
+                </span>
+            ));
         }
         const status = studentStatusById.get(s.id) ?? null;
         if (status === "ACTIVE") {
@@ -918,6 +932,7 @@ export default function StudentManagementClient({
                     >
                         <option value="">전체 상태</option>
                         <option value="ACTIVE">활성</option>
+                        <option value="SCHEDULED">수강 예정</option>
                         <option value="PAUSED">휴원</option>
                         <option value="WITHDRAWN">퇴원</option>
                         <option value="NONE">미배정</option>
@@ -1053,6 +1068,7 @@ export default function StudentManagementClient({
                         value: chip.value,
                         label: chip.label,
                         count: chip.value === "ACTIVE" ? statusCounts.active
+                            : chip.value === "SCHEDULED" ? (statusCounts.scheduled ?? loadedStatusCounts.scheduled)
                             : chip.value === "PAUSED" ? statusCounts.paused
                                 : chip.value === "WITHDRAWN" ? statusCounts.withdrawn
                                     : statusCounts.noEnrollment,
@@ -1091,6 +1107,7 @@ export default function StudentManagementClient({
                 <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2 lg:grid-cols-3">
                     {classGroups.map((group) => {
                         const collapsed = collapsedClassKeys.has(group.key);
+                        const scheduledCount = group.students.filter((student) => student.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.displayStatus === "SCHEDULED")).length;
                         return (
                             <section
                                 key={group.key}
@@ -1108,7 +1125,9 @@ export default function StudentManagementClient({
                                     {group.startTime && (
                                         <span className="text-xs text-[var(--color-academy-muted)]">{group.startTime}</span>
                                     )}
-                                    <span className="ml-auto text-xs font-bold text-[var(--color-academy-ink)]">{group.students.length}명</span>
+                                    <span className="ml-auto text-xs font-bold text-[var(--color-academy-ink)]">
+                                        {scheduledCount > 0 ? `수강 중 ${group.students.length - scheduledCount}명 · 예정 ${scheduledCount}명` : `${group.students.length}명`}
+                                    </span>
                                     <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">
                                         {collapsed ? "expand_more" : "expand_less"}
                                     </span>
@@ -1133,6 +1152,7 @@ export default function StudentManagementClient({
                                                     className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
                                                     {s.name}
+                                                    {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.displayStatus === "SCHEDULED") && <span className="ml-1 text-xs font-normal text-[var(--color-academy-primary)]">예정</span>}
                                                 </Link>
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
                                                 {/* 학교+연락처: 넉넉하면 한 줄, 카드가 좁으면 연락처가 학교 아래로 내려간다(학교 이름이 한 글자씩 꺾이지 않게) */}
@@ -1253,7 +1273,7 @@ export default function StudentManagementClient({
             {detailStudent && (() => {
                 const s = detailStudent;
                 const status = studentStatusById.get(s.id) ?? null;
-                const activeEnrollments = sortEnrollmentsByDay(getActiveEnrollments(s.enrollments));
+                const activeEnrollments = sortEnrollmentsByDay(getAssignedEnrollments(s.enrollments));
                 const birth = toDateStr(s.birthDate);
                 // 값이 있는 줄만 보인다(빈 칸 «-» 줄을 늘어놓지 않게)
                 const rows: { label: string; value: React.ReactNode }[] = [
@@ -1270,6 +1290,7 @@ export default function StudentManagementClient({
                                         {e.className}
                                         <span className="ml-1 text-[var(--color-academy-muted)]">
                                             ({DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime})
+                                            {e.displayStatus === "SCHEDULED" && ` · ${e.startsOn} 수강 예정`}
                                         </span>
                                     </li>
                                 ))}

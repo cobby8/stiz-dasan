@@ -13,7 +13,7 @@ import {
   releaseEnrollmentChangeHoldSheetRetired,
   type EnrollmentSyncActionResult,
 } from "@/app/actions/enrollment-changes";
-import { CHANGE_STATUS_LABEL, syncCheckBadge } from "@/lib/enrollment/changeRequestRules";
+import { CHANGE_STATUS_LABEL, pauseResumeLabel, syncCheckBadge } from "@/lib/enrollment/changeRequestRules";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
 import type { AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
@@ -258,8 +258,11 @@ export default function EnrollmentChangesClient({
                         <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-warning)]" aria-label="희망 반 정원 마감">group_off</span>
                       )}
                     </td>
-                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.effectiveFrom}</td>
-                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{row.resumeOn ?? "-"}</td>
+                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                      {row.effectiveFrom}
+                      {row.kind === "PAUSE" && <span className="mt-0.5 block text-xs font-normal text-[var(--color-academy-muted)] lg:hidden">{pauseResumeLabel(row.resumeOn)}</span>}
+                    </td>
+                    <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{row.kind === "PAUSE" ? pauseResumeLabel(row.resumeOn) : "-"}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] lg:table-cell">{diff === null || diff === 0 ? "-" : `${diff > 0 ? "+" : ""}${diff.toLocaleString()}원`}</td>
                     {/* 관리: ⚡(승인·거절). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                     <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
@@ -383,7 +386,7 @@ export default function EnrollmentChangesClient({
               <p className="mt-2 text-sm text-[var(--color-academy-ink)]">
                 {row.fromClassName ?? "-"}
                 {row.toClassName ? ` → ${row.toClassName}` : ""} · {row.effectiveFrom}부터
-                {row.resumeOn ? ` · ${row.resumeOn} 복귀 예정` : ""}
+                {row.kind === "PAUSE" ? ` · ${pauseResumeLabel(row.resumeOn)}` : ""}
               </p>
 
               {/* 정원은 신청 당시가 아니라 지금 기준으로 다시 센다. 그 사이 자리가 났을 수 있다. */}

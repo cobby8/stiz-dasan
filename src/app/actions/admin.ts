@@ -1,4 +1,6 @@
 "use server";
+
+import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
 import { childAccessWhere } from "@/lib/account/child-access";
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
@@ -1476,6 +1478,15 @@ export async function saveAttendance(classId: string, date: string, records: { s
         return;
     }
     try {
+        const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
+            `SELECT e."studentId" FROM "Enrollment" e WHERE e."classId"=$1 AND e.status='ACTIVE'
+             AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
+               SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+               WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
+             ))`, classId, date,
+        );
+        const eligibleIds = new Set(eligible.map(row => row.studentId));
+        if (records.some(row => !eligibleIds.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
         // 세션 생성 또는 조회
         const existing = await prisma.$queryRawUnsafe<any[]>(
             `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL LIMIT 1`,
@@ -2875,6 +2886,17 @@ export async function saveSessionLog(data: {
 }) {
     await requireAdmin();
     try {
+        if (data.attendances?.length) {
+            const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
+                `SELECT e."studentId" FROM "Enrollment" e WHERE e."classId"=$1 AND e.status='ACTIVE'
+             AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
+               SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+               WHERE historical."studentId"=e."studentId" AND prior."classId"=$1 AND prior.date::date=$2::date
+             ))`, data.classId, data.date,
+            );
+            const ids = new Set(eligible.map(row => row.studentId));
+            if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
+        }
         // ── 1. 해당 classId + date로 기존 Session 검색 ──
         const existing = await prisma.$queryRawUnsafe<any[]>(
             `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date LIMIT 1`,
@@ -4948,6 +4970,7 @@ export async function approveEnrollApplication(
     applicationId: string,
     data: {
         classIds: string[];       // 배정할 반 ID 배열
+        startOn?: string;         // 관리자가 확인한 개시일(없으면 신청 날짜)
         processedNote?: string;   // 관리자 메모
         force?: boolean;          // A. 정원 초과 경고를 무시하고 강행할지(관리자 재확인 후 true)
         parentUserId?: string;    // 관리자가 직접 선택한 기존 보호자 계정 ID(대표 역할 유지)
@@ -5028,6 +5051,7 @@ export async function approveEnrollApplication(
         );
         if (apps.length === 0) throw new Error("신청서를 찾을 수 없습니다.");
         const app = apps[0];
+        const startOn = requireCommencement(data.startOn ?? commencementYmd(app.requestedStartOn ?? app.requestedstarton));
 
         // PENDING 상태만 승인 가능
         if (app.status !== "PENDING" || app.convertedStudentId || app.convertedstudentid) {
@@ -5166,6 +5190,15 @@ export async function approveEnrollApplication(
         }
 
         if (studentId) {
+            // 이미 수강 중인 반은 새 신청의 개시일로 덮을 수 없다. 첫 쓰기 전에 충돌을 차단한다.
+            const activeConflicts = await tx.$queryRawUnsafe<Array<{ classId: string }>>(
+                `SELECT "classId" FROM "Enrollment" WHERE "studentId"=$1
+                   AND "classId"=ANY($2::text[]) AND status='ACTIVE' FOR UPDATE`, studentId, data.classIds,
+            );
+            if (activeConflicts.length) throw new Error("이미 수강 중인 반이 포함되어 있습니다. 기존 수강은 유지하고 새로 등록할 반만 선택해 주세요.");
+        }
+
+        if (studentId) {
             // 기존 원생 업데이트 (최신 정보로 갱신). 생년이 비어있고 신청서 생년이 있으면 COALESCE로 채움(덮어쓰기 금지).
             await tx.$executeRawUnsafe(
                 `UPDATE "Student" SET
@@ -5191,7 +5224,7 @@ export async function approveEnrollApplication(
             // 새 원생 생성
             const newStudents = await tx.$queryRawUnsafe<any[]>(
                 `INSERT INTO "Student" (id, name, "birthDate", gender, grade, school, phone, address, "referralSource", "parentId", "enrollDate", "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), NOW())
+                 VALUES (gen_random_uuid()::text, $1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9, $10::date, NOW(), NOW())
                  RETURNING id`,
                 childName,
                 childBirthDate,
@@ -5202,6 +5235,7 @@ export async function approveEnrollApplication(
                 app.address ?? null,
                 app.referralSource ?? app.referralsource ?? null,
                 parentId,
+                startOn,
             );
             studentId = newStudents[0].id;
         }
@@ -5246,12 +5280,12 @@ export async function approveEnrollApplication(
             if (existingEnrollment?.status === "ACTIVE") continue;
 
             const [enrollment] = await tx.$queryRawUnsafe<Array<{ id: string; updatedAt: Date }>>(
-                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', NOW(), NOW())
+                `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "startsOn", "createdAt", "updatedAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, 'ACTIVE', $3::date, NOW(), NOW())
                  ON CONFLICT ("studentId", "classId") DO UPDATE
-                   SET status = 'ACTIVE', "updatedAt" = NOW()
+                   SET status = 'ACTIVE', "startsOn" = EXCLUDED."startsOn", "updatedAt" = NOW()
                  RETURNING id, "updatedAt"`,
-                studentId, classId,
+                studentId, classId, startOn,
             );
             const event = buildEnrollmentOperationsEvent({
                 enrollmentId: enrollment.id,
@@ -5264,6 +5298,7 @@ export async function approveEnrollApplication(
                 previousStatus: existingEnrollment?.status ?? null,
                 nextStatus: "ACTIVE",
                 enrollmentApplicationId: app.id,
+                effectiveDate: startOn,
             });
             if (event) await enqueueWebsiteOperationsEventInTransaction(tx, event);
         }
@@ -5325,6 +5360,7 @@ export async function approveEnrollApplication(
                  "processedNote" = $2,
                  "assignedClassId" = $3,
                  "parentUserId" = $5,
+                     "requestedStartOn" = $6::date,
                  "updatedAt" = NOW()
              WHERE id = $4`,
             studentId,
@@ -5332,6 +5368,7 @@ export async function approveEnrollApplication(
             data.classIds.join(","),
             applicationId,
             parentId,
+            startOn,
         );
 
         // 7. 연결된 TrialLead가 있으면 CONVERTED로 업데이트
@@ -5455,7 +5492,7 @@ const ENROLL_APPLICATION_COLUMNS = [
     "trialLeadId",
     "childName", "childBirthDate", "childGender", "childGrade", "childSchool", "childPhone",
     "parentName", "parentPhone", "parentRelation", "address",
-    "enrollmentMonths", "preferredSlotKeys", "assignedClassId",
+    "requestedStartOn", "enrollmentMonths", "preferredSlotKeys", "assignedClassId",
     "basketballExp", "uniformSize",
     "shuttleNeeded", "shuttlePickup", "shuttleTime", "shuttleDropoff",
     "paymentMethod", "referralSource", "memo",
@@ -5488,7 +5525,8 @@ const ENROLL_APPLICATION_FIELD_LABELS: Partial<Record<EnrollApplicationColumn, s
     parentPhone: "보호자 연락처",
     parentRelation: "보호자 관계",
     address: "주소",
-    enrollmentMonths: "수강 월",
+    requestedStartOn: "수강 개시일",
+    enrollmentMonths: "기존 신청 월",
     preferredSlotKeys: "희망 시간",
     assignedClassId: "배정 반",
     basketballExp: "농구 경험",
@@ -5546,6 +5584,8 @@ export async function updateEnrollApplication(
             throw new Error("이미 승인된 신청서는 원생/수강 등록 메뉴에서 수정해주세요.");
         }
 
+        if (data.requestedStartOn !== undefined) data = { ...data, requestedStartOn: requireCommencement(data.requestedStartOn) };
+
         const entries = ENROLL_APPLICATION_COLUMNS
             .filter((col) => data[col] !== undefined)
             .map((col) => [col, data[col]] as const);
@@ -5569,7 +5609,7 @@ export async function updateEnrollApplication(
         const setClauses = [
             ...entries.map(([col], index) => {
                 const isDate = ["childBirthDate"].includes(col);
-                return `"${col}" = $${index + 1}${isDate ? "::timestamptz" : ""}`;
+                return `"${col}" = $${index + 1}${col === "requestedStartOn" ? "::date" : isDate ? "::timestamptz" : ""}`;
             }),
             ...(clearsShuttleLocation ? SHUTTLE_LOCATION_COLUMNS.map((col) => `"${col}" = NULL`) : []),
         ].join(", ");

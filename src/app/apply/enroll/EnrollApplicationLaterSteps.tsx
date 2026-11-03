@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
-import { kstMonthLabels } from "@/lib/datetime/kst";
 
 interface AvailableSlot {
     slotKey: string;
@@ -28,7 +27,7 @@ interface FormData {
     parentPhone: string;
     parentRelation: string;
     address: string;
-    enrollmentMonths: string[];
+    requestedStartOn: string;
     preferredSlotKeys: string[];
     basketballExp: string;
     shuttleChoice: string;
@@ -82,7 +81,6 @@ const DAY_LABELS: Record<string, string> = {
 
 export default function EnrollApplicationLaterSteps({ step, form, availableSlots, update, toggleSlot }: Props) {
     const [locationPicker, setLocationPicker] = useState<"pickup" | "dropoff" | null>(null);
-    const enrollmentMonthOptions = kstMonthLabels();
     const slotsByDay = DAY_ORDER.reduce<Record<string, AvailableSlot[]>>((acc, day) => {
         const daySlots = availableSlots.filter((slot) => slot.dayOfWeek === day);
         if (daySlots.length > 0) acc[day] = daySlots;
@@ -120,23 +118,10 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
 
                     <div>
                         <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                            수강신청 월 <span className="text-red-500">*</span>
+                            수강 개시일 <span className="text-red-500">*</span>
                         </label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {enrollmentMonthOptions.map((month) => {
-                                const selected = form.enrollmentMonths.includes(month);
-                                return (
-                                    <button
-                                        key={month}
-                                        type="button"
-                                        onClick={() => update("enrollmentMonths", selected ? form.enrollmentMonths.filter((item) => item !== month) : [...form.enrollmentMonths, month])}
-                                        className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${selected ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}
-                                    >
-                                        {month}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <input aria-label="수강 개시일" type="date" required value={form.requestedStartOn} onChange={(event) => update("requestedStartOn", event.target.value)} className="box-border min-h-11 w-full min-w-0 max-w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)]" />
+                        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">처음 수업에 참여할 날짜를 선택해 주세요. 배정할 수업과 함께 학원에서 확인합니다.</p>
                     </div>
 
                     <div>
@@ -282,7 +267,7 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                             {form.address && <SummaryRow label="주소" value={form.address} />}
                         </SummarySection>
                         <SummarySection title="수강 정보" icon="sports_basketball">
-                            <SummaryRow label="신청 월" value={form.enrollmentMonths.join(", ")} strong />
+                            <SummaryRow label="수강 개시일" value={form.requestedStartOn || "선택 필요"} strong />
                             <SummaryRow label="희망 수업" value={selectedSlotsLabel || "담당자 상담 후 결정"} />
                             <SummaryRow label="셔틀" value={form.shuttleChoice} />
                             {form.shuttleChoice === "탑승" && <SummaryRow label="탑승/하차" value={`${form.shuttlePickup} / ${form.shuttleDropoff}`} />}

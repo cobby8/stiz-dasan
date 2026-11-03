@@ -13,6 +13,7 @@ import { getRegularShuttleRiders } from "./shuttleRoster";
 import { computeRegularDispatch } from "./shuttle-dispatch";
 import { validateRegularDispatchVehicles } from "./regularDispatchPayload";
 import { isServiceMonth, koreaServiceMonth } from "./serviceMonth";
+import { routeConfirmation, type ShuttleRosterRow } from "@/lib/enrollment/shuttle-progress";
 
 /**
  * 정규 셔틀 동적배차 — 저장 노선(RegularDispatchRoute) 읽기/쓰기 + 조회용 병합 (Phase 2b).
@@ -239,10 +240,16 @@ export async function saveRegularDispatchRoute(input: {
     );
     if (drivers.length !== driverIds.length) throw new Error("담당 기사 계정을 다시 선택해 주세요.");
   }
-  const payloadJson = JSON.stringify({ vehicles });
   const serviceMonth = input.serviceMonth ?? koreaServiceMonth();
   if (!isServiceMonth(serviceMonth)) throw new Error("적용 월은 YYYY-MM 형식이어야 합니다.");
-  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+  const rows = await prisma.$transaction(async tx => {
+    // 명단 편집과 같은 월 잠금을 사용해 확인한 명단과 저장 노선이 엇갈리지 않게 한다.
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `regular-roster:${serviceMonth}`);
+    const roster = await tx.$queryRawUnsafe<ShuttleRosterRow[]>(`SELECT id,"serviceMonth",weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND weekday=$2 AND direction=$3 ORDER BY id`, serviceMonth, ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(dow), dir === "PICKUP" ? "BOARD" : "ALIGHT");
+    const route = { serviceMonth, dayOfWeek: dow, direction: dir, classStart: input.classStart ?? null, classEnd: input.classEnd ?? null, payload: { vehicles } };
+    // 같은 내용으로 돌아온 재확정도 이전 안내와 구분해 새 안내를 검토할 수 있게 한다.
+    const payloadJson = JSON.stringify({ vehicles, confirmation: { ...routeConfirmation(route, roster), confirmedAt: new Date().toISOString(), confirmedByUserId: admin.appUserId } });
+    return tx.$queryRawUnsafe<Record<string, unknown>[]>(
     `INSERT INTO "RegularDispatchRoute" ("serviceMonth","dayOfWeek","direction","payload","classStart","classEnd","savedByUserId","updatedAt")
      SELECT $1, $2, $3, $4::jsonb, $5, $6, $7, now()
      WHERE NOT $8::boolean OR $9::timestamptz IS NULL OR EXISTS (
@@ -259,7 +266,8 @@ export async function saveRegularDispatchRoute(input: {
     serviceMonth, dow, dir, payloadJson,
     input.classStart ?? null, input.classEnd ?? null, admin.appUserId ?? null,
     input.expectedSavedAt !== undefined, input.expectedSavedAt ?? null,
-  );
+    );
+  });
   if (!rows.length) throw new Error("다른 창에서 노선이 변경되었습니다. 다시 불러온 뒤 수정해 주세요.");
   return { savedAt: isoOrNull(rows[0]?.updatedAt) };
 }

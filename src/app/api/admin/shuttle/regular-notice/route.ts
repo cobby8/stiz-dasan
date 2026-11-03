@@ -6,6 +6,8 @@ import { hashMessageBody, normalizeMessagePhone } from "@/lib/message-ledger";
 import { diffRegularShuttleMonths, regularShuttleChangeMessage } from "@/lib/regular/regularShuttleDiff";
 import { isServiceMonth } from "@/lib/regular/serviceMonth";
 import { getRegularShuttleStops } from "@/lib/shuttle/regularImport";
+import { buildStudentRouteNotice, type ShuttleRosterRow, type ShuttleRoute } from "@/lib/enrollment/shuttle-progress";
+import { notMergedStudent } from "@/lib/studentVisibility";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +26,24 @@ async function canonicalPayload(body: NoticeBody) {
 
   const [before, after] = await Promise.all([getRegularShuttleStops(compareMonth), getRegularShuttleStops(serviceMonth)]);
   if (before.serviceMonth !== compareMonth || after.serviceMonth !== serviceMonth) throw new Error("비교할 월별 차량표를 찾지 못했습니다.");
-  const change = diffRegularShuttleMonths(before.stops, after.stops).find((item) => item.key === changeKey);
-  if (!change || change.kind === "REMOVED" || !change.after) throw new Error("현재 차량표에서 발송 가능한 변동을 찾지 못했습니다.");
+  const monthlyChange = diffRegularShuttleMonths(before.stops, after.stops).find((item) => item.key === changeKey);
+  const currentRows = after.stops.filter(row => row.studentId === changeKey.slice("student:".length) && ["BOARD", "ALIGHT"].includes(row.direction));
+  // 명단이 같아도 노선의 확정 시각·차량·기사 변경 안내를 준비할 수 있어야 한다.
+  const change = monthlyChange ?? (currentRows[0] ? { key: changeKey, studentName: currentRows[0].studentName ?? "학생", kind: "CHANGED" as const, before: null, after: "현재 확정 노선", parentPhone: currentRows[0].parentPhone } : null);
+  if (!change || change.kind === "REMOVED" || !change.after || !currentRows.length) throw new Error("현재 차량표에서 발송 가능한 변동을 찾지 못했습니다.");
   const recipientPhone = normalizeMessagePhone(change.parentPhone ?? "");
   if (recipientPhone.length < 10 || recipientPhone.length > 11) throw new Error("현재 차량표의 학부모 연락처를 확인해 주세요.");
-  const messageBody = regularShuttleChangeMessage(change, serviceMonth);
-  if (!messageBody) throw new Error("현재 차량표에서 문자 본문을 만들 수 없습니다.");
   const studentId = changeKey.slice("student:".length);
-  const stableEventKey = `regular-shuttle:${compareMonth}:${serviceMonth}:${changeKey}`;
+  const [currentParent] = await prisma.$queryRawUnsafe<Array<{ phone: string | null }>>(`SELECT u.phone FROM "Student" s JOIN "User" u ON u.id=s."parentId" WHERE s.id=$1 AND ${notMergedStudent("s")}`, studentId);
+  if (!currentParent?.phone || normalizeMessagePhone(currentParent.phone) !== recipientPhone) throw new Error("현재 보호자 연락처와 차량표 연락처가 다릅니다. 다시 확인해 주세요.");
+  const routes = await prisma.$queryRawUnsafe<ShuttleRoute[]>(`SELECT "serviceMonth","dayOfWeek",direction,payload,"classStart","classEnd" FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1`, serviceMonth);
+  const roster = await prisma.$queryRawUnsafe<ShuttleRosterRow[]>(`SELECT id,"serviceMonth",weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 ORDER BY id`, serviceMonth);
+  const confirmed = buildStudentRouteNotice(studentId, serviceMonth, routes, roster);
+  // 명단의 희망 시간이 아닌 현재 저장 노선의 실제 시각을 안내한다.
+  change.after = confirmed.text;
+  const messageBody = monthlyChange ? regularShuttleChangeMessage(change, serviceMonth) : `[STIZ 농구교실] ${change.studentName} 학생 ${serviceMonth} 확정 차량 일정입니다.\n${confirmed.text}\n이전 안내 대신 위 일정을 확인해 주세요.`;
+  if (!messageBody) throw new Error("현재 차량표에서 문자 본문을 만들 수 없습니다.");
+  const stableEventKey = confirmed.eventKey;
   const payloadHash = hashMessageBody(JSON.stringify({ stableEventKey, recipientPhone, messageBody }));
   return { serviceMonth, compareMonth, change, studentId, recipientPhone, messageBody, stableEventKey, payloadHash };
 }
@@ -101,7 +113,8 @@ export async function POST(request: Request) {
     const rows = await prisma.$queryRawUnsafe<Array<{ status: string; sentAt: Date | null }>>(
       `SELECT status,"sentAt" FROM "RegularShuttleNoticeBatch" WHERE "payloadHash"=$1 LIMIT 1`, payload.payloadHash,
     );
-    return NextResponse.json({ ok: true, status: rows[0]?.status ?? "HELD", payloadHash: payload.payloadHash, sentAt: rows[0]?.sentAt?.toISOString() ?? null });
+    return NextResponse.json({ ok: true, status: rows[0]?.status ?? "HELD", payloadHash: payload.payloadHash, sentAt: rows[0]?.sentAt?.toISOString() ?? null,
+      studentName: payload.change.studentName, recipientLast4: payload.recipientPhone.slice(-4), messageBody: payload.messageBody });
   } catch (error) {
     if (sendingBatchId) {
       await prisma.$executeRawUnsafe(

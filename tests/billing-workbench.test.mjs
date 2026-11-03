@@ -356,3 +356,21 @@ test("청구 화면은 수강료·할인을 바꾸면 할인 후 기준으로 �
  assert.ok(ui.includes("shortMonthProration(base, row.monthDates.length, discount)"));
  assert.match(ui,/수강 기간을 그달 일부로 좁혔습니다/);
 });
+
+
+test("수강 개시 전 월은 청구 제외·예정 수업 0회이며 뒤집힌 기간을 만들지 않음",async()=>{
+ const db=database();db.state.enrollments[0].startsOn="2026-12-01";
+ const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows[0];
+ assert.equal(row.status,"EXCLUDED");assert.equal(row.totalAmount,0);assert.deepEqual(row.scheduledDates,[]);assert.equal(row.periodStart,null);assert.equal(row.periodEnd,null);
+ await assert.rejects(()=>mutateWorkbench(db,command("ISSUE",view),"admin",true));assert.equal(db.state.payments.length,0);
+});
+test("월중 개시일은 그 이전 수업을 청구 계산에서 제외하고 금액 검토를 요구",async()=>{
+ const db=database();db.state.enrollments[0].startsOn="2026-11-15";
+ const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows[0];
+ assert.equal(row.periodStart,"2026-11-15");assert.deepEqual(row.scheduledDates,["2026-11-21","2026-11-28"]);assert.equal(row.status,"REVIEW");assert.ok(row.reviewReasons.some(t=>t.includes("개시일 이후")));
+});
+test("같은 날 개시는 포함하고 기존 개시일 미상 수강의 기간은 보존",async()=>{
+ const db=database();db.state.enrollments[0].startsOn="2026-11-07";
+ assert.equal((await readWorkbench(db.tx,"2026-11",true)).rows[0].scheduledDates.length,4);
+ db.state.enrollments[0].startsOn=null;assert.equal((await readWorkbench(db.tx,"2026-11",true)).rows[0].scheduledDates.length,4);
+});

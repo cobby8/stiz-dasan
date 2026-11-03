@@ -39,6 +39,7 @@ function fixture(unauthorized = false) {
     'next/link': { default: ({ children, ...props }) => jsx.jsx('a', { ...props, children }) },
     '@/lib/auth-guard': { requireAdmin: async () => { if (unauthorized) throw new Error('unauthorized'); } },
     '@/lib/prisma': { prisma }, '@/lib/enrollment/registration-readiness': model,
+    '@/lib/enrollment/shuttle-progress-query': { getEnrollmentShuttleProgress: async () => ({}) },
     // 시트 은퇴 스위치(순수 판정 모듈, DB·외부 접근 없음) — 2026-10 시트 종료로 페이지가 읽는다.
     '@/lib/operations-sync/sheetRetirement': load('src/lib/operations-sync/sheetRetirement.ts', {}),
   });

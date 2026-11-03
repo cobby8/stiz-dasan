@@ -77,6 +77,9 @@ type ChildData = {
         startTime: string;
         endTime: string;
         programName: string;
+        status?: string;
+        displayStatus?: string;
+        startsOn?: string | null;
     }[];
     attendance: {
         total: number;
@@ -323,7 +326,9 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
     const kstNow = getKstNow(now);
     const todayStr = getKstDateStr(now);
     // 1) 다음 수업: 수강 반의 요일/시작시각으로 가장 가까운 향후 1건.
-    const nextClass = computeNextClass(child.enrollments, kstNow);
+    const currentEnrollments = child.enrollments.filter((enrollment) => enrollment.displayStatus !== "SCHEDULED");
+    const scheduledEnrollments = child.enrollments.filter((enrollment) => enrollment.displayStatus === "SCHEDULED");
+    const nextClass = computeNextClass(child.enrollments, kstNow, todayStr);
     // 2) 오늘 셔틀: 오늘 날짜 운행 항목만.
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
     // 요약에 표시할 항목이 하나라도 있는지(전부 없으면 카드 자체를 숨긴다).
@@ -351,7 +356,8 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                         <p className="mb-1 text-xs font-bold text-[var(--color-academy-primary)]">우리 아이의 농구 생활</p>
                         <h1 id="parent-child-heading" className="academy-heading text-2xl font-extrabold">{child.name} 학생</h1>
                         <p className="mt-2 text-sm leading-relaxed text-[var(--color-academy-muted)]">
-                            {child.enrollments.length > 0 ? `수강 중인 반 ${child.enrollments.length}개` : "수강 중인 반이 없습니다"}
+                            {currentEnrollments.length > 0 ? `수강 중인 반 ${currentEnrollments.length}개` : scheduledEnrollments.length > 0 ? "수강 시작을 기다리고 있어요" : "수강 중인 반이 없습니다"}
+                            {scheduledEnrollments.length > 0 && <span className="ml-2">수강 예정 {scheduledEnrollments.length}개</span>}
                         </p>
                     </div>
                 </div>
@@ -911,13 +917,14 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
             {/* 수강 중인 반 — 카드 호버 효과 추가 (디자인 토큰 통일) */}
             {child.enrollments.length > 0 && (
                 <div id="mypage-enrollments" className="scroll-mt-24">
-                    <h2 className="font-bold text-brand-navy-900 mb-3 px-1">수강 중인 반</h2>
+                    <h2 className="font-bold text-brand-navy-900 mb-3 px-1">{scheduledEnrollments.length > 0 ? "수강 중·예정인 반" : "수강 중인 반"}</h2>
                     <div className="space-y-2">
                         {child.enrollments.map((e) => (
                             <div key={e.id} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-brand-orange-200 transition">
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <p className="font-bold text-gray-900 dark:text-white">{e.className}</p>
+                                        {e.displayStatus === "SCHEDULED" && <p className="mt-1 text-xs font-bold text-[var(--color-academy-primary)]">수강 예정 · {e.startsOn} 개시</p>}
                                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{e.programName}</p>
                                     </div>
                                     <div className="text-right">

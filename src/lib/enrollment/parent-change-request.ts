@@ -62,6 +62,7 @@ export type ChildChangeOption = {
     kind: string;
     toClassName: string | null;
     effectiveFrom: string;
+    resumeOn: string | null;
     waitlisted: boolean;
   } | null;
 };
@@ -90,6 +91,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             r.id AS "pendingId", r.kind AS "pendingKind",
             tc.name AS "pendingToClassName",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "pendingEffectiveFrom",
+            to_char(r."resumeOn",'YYYY-MM-DD') AS "pendingResumeOn",
             r.waitlisted AS "pendingWaitlisted"
        FROM "Student" s
        JOIN "Enrollment" e ON e."studentId" = s.id AND e.status = 'ACTIVE'
@@ -133,6 +135,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             kind: row.pendingKind,
             toClassName: row.pendingToClassName ?? null,
             effectiveFrom: row.pendingEffectiveFrom,
+            resumeOn: row.pendingResumeOn ?? null,
             waitlisted: Boolean(row.pendingWaitlisted),
           }
         : null,

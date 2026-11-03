@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import RouteSection from "@/components/seasonal/RouteSection";
 import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
 import DriverRequestPanel from "@/components/admin/DriverRequestPanel";
@@ -17,7 +18,7 @@ const DOW_LABEL: Record<string, string> = {
   Mon: "월요일", Tue: "화요일", Wed: "수요일", Thu: "목요일", Fri: "금요일", Sat: "토요일", Sun: "일요일",
 };
 
-export default function RegularDispatchClient({ weekdays, initialDay, initialPickup, initialDropoff, serviceMonth, months, classTimeMismatches, drivers }: {
+export default function RegularDispatchClient({ weekdays, initialDay, initialPickup, initialDropoff, serviceMonth, months, classTimeMismatches, drivers, initialStudentId }: {
   weekdays: string[];            // 셔틀 학생이 있는 요일 목록("Mon" 등, 월→일 정렬)
   initialDay: string;            // 최초 표시 요일
   initialPickup: DispatchSuggestion;
@@ -26,6 +27,7 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   months: string[];
   classTimeMismatches: { dayOfWeek: string; studentName: string; pickupClassTime: string | null; dropoffClassTime: string | null }[];
   drivers: { id: string; name: string }[];
+  initialStudentId?: string;
 }) {
   const router = useRouter();
   const [selectedDay, setDay] = useState<string>(initialDay);
@@ -84,12 +86,16 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
               )}
             </button>
           <label className="flex flex-col gap-1 text-[11px] font-bold text-gray-500">배차 월
-            <select value={serviceMonth} onChange={(event) => confirmLeave() && router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(event.target.value)}`)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold dark:border-gray-600 dark:bg-gray-900">
+            <select value={serviceMonth} onChange={(event) => confirmLeave() && router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(event.target.value)}${initialStudentId ? `&studentId=${encodeURIComponent(initialStudentId)}` : ""}`)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold dark:border-gray-600 dark:bg-gray-900">
               {months.map((month) => <option key={month} value={month}>{month}</option>)}
             </select>
           </label>
           </div>
         </div>
+        {initialStudentId && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
+          <span>신청 학생의 배차를 확인 중입니다. 노선 저장 후 안내 문구를 확인해 주세요.</span>
+          <Link href={`/admin/shuttle/regular?month=${encodeURIComponent(serviceMonth)}&studentId=${encodeURIComponent(initialStudentId)}`} onClick={event => { if (!confirmLeave()) event.preventDefault(); }} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-3 font-bold">선택 학생 명단·안내 보기</Link>
+        </div>}
         {showDriverLocations && <DriverLocationPanel onClose={() => setShowDriverLocations(false)} />}
         {showDriverRequests && <DriverRequestPanel onClose={() => { setShowDriverRequests(false); loadPendingRequestCount(); }} />}
         {/* 원장 결정(2026-10-02): 지금 기사님 화면은 「셔틀 명단」 순서(폴백)로 운행 중이 기준이다.

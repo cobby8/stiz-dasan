@@ -56,6 +56,19 @@ export function isYmd(value: unknown): value is string {
   return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;
 }
 
+/** 복귀일을 아직 정하지 않은 휴원도 날짜가 누락된 신청과 혼동하지 않게 표시한다. */
+export function pauseResumeLabel(resumeOn: string | null | undefined): string {
+  return isYmd(resumeOn) ? `${resumeOn} 복귀 예정` : "복귀일 미정";
+}
+
+/** 휴원 당일을 복귀일로 고를 수 없도록 날짜 입력의 최소값도 서버 규칙과 맞춘다. */
+export function earliestResumeOn(effectiveFrom: string): string {
+  if (!isYmd(effectiveFrom)) return "";
+  const [year, month, day] = effectiveFrom.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
 /**
  * 적용 시작일 = 다음 달 1일.
  *

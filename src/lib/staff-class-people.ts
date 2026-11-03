@@ -225,6 +225,11 @@ export async function getStaffClassPeople(
          JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
         WHERE e."classId" = $1
           AND e.status = 'ACTIVE'
+          AND (e."startsOn" IS NULL OR e."startsOn" <= COALESCE((SELECT se.date::date FROM "Session" se WHERE se.id=$2), (NOW() AT TIME ZONE 'Asia/Seoul')::date) OR EXISTS (
+            SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+            WHERE historical."studentId"=e."studentId" AND prior."classId"=$1
+              AND (($2::text IS NOT NULL AND prior.id=$2) OR ($2::text IS NULL AND prior.date::date=(NOW() AT TIME ZONE 'Asia/Seoul')::date))
+          ))
      ), recent_attendance AS (
        SELECT ranked."studentId",
               COUNT(*) FILTER (WHERE ranked.status = 'PRESENT')::int AS present,

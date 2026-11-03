@@ -104,7 +104,10 @@ export async function getTodayStaffClasses(dateKey: string = getKoreaDateKey()):
             s.id AS "sessionId", s.status AS "sessionStatus",
             s."plannedContent", s."startedAt"
      FROM "Class" c
-     LEFT JOIN "Enrollment" e ON e."classId" = c.id AND e.status = 'ACTIVE'
+     LEFT JOIN "Enrollment" e ON e."classId" = c.id AND e.status = 'ACTIVE' AND (e."startsOn" IS NULL OR e."startsOn" <= $2::date OR EXISTS (
+       SELECT 1 FROM "Attendance" historical JOIN "Session" prior ON prior.id=historical."sessionId"
+       WHERE historical."studentId"=e."studentId" AND prior."classId"=c.id AND prior.date::date=$2::date
+     ))
      LEFT JOIN "Session" s ON s."classId" = c.id AND s.date = $2::date
        AND s."specialProgramSessionDateId" IS NULL
      WHERE c.id = ANY($1::text[]) AND c."dayOfWeek" = $3
@@ -229,7 +232,9 @@ export async function getStaffSessionDetail(sessionId: string): Promise<StaffSes
      -- 학생 수 = 그날 실제 좌석(SCHEDULED) 수(전환·요일 아님, 좌석이 정본 → 출석부와 일치).
      LEFT JOIN "SpecialProgramEnrollmentDate" ed
        ON ed."applicationItemId" = i.id AND ed."sessionDateId" = matched_sd.id AND ed.status = 'SCHEDULED'
-     LEFT JOIN "Enrollment" e ON e."classId" = c.id AND e.status = 'ACTIVE'
+     LEFT JOIN "Enrollment" e ON e."classId" = c.id AND e.status = 'ACTIVE' AND (e."startsOn" IS NULL OR e."startsOn" <= s.date::date OR EXISTS (
+       SELECT 1 FROM "Attendance" historical WHERE historical."sessionId"=s.id AND historical."studentId"=e."studentId"
+     ))
      WHERE s.id = $1
      GROUP BY s.id, c.id, sd.id, anchor_o.id
      LIMIT 1`,
@@ -372,6 +377,9 @@ export async function getStaffSessionStudents(
             ON ra."studentId" = st.id AND ra."classId" = $2 AND ra.date = $3::date
            AND ra.status IN ('REPORTED','CONFIRMED')
      WHERE e."classId" = $2 AND e.status = 'ACTIVE'
+       AND (e."startsOn" IS NULL OR e."startsOn" <= $3::timestamp::date OR (
+         a.id IS NOT NULL AND EXISTS (SELECT 1 FROM "Session" prior WHERE prior.id=$1 AND prior."classId"=$2 AND prior.date::date=$3::timestamp::date)
+       ))
      ORDER BY st.name`,
     sessionId,
     classId,

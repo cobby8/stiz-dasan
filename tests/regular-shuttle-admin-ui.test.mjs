@@ -34,12 +34,13 @@ test("정차 순서 저장은 현재 선택한 운영 월을 함께 보내 다�
 
 // 2026-10-02 셔틀 명단 화면 교체: 시트 가져오기·배차 지도·월 비교/문자 미리보기 UI 를 명단 화면에서 뺐다.
 // (문자 원장 API 는 남아 있어 아래 테스트가 계속 지킨다.)
-test("셔틀 명단 화면은 시트 가져오기·배차 지도·문자 발송 UI 없이 앱 편집 API 만 쓴다", () => {
+test("셔틀 명단 화면은 자동 발송 없이 앱 편집과 별도 안내 확인 패널을 쓴다", () => {
   assert.doesNotMatch(client, /regular-import|RegularRouteSection|regular-notice|docs\.google\.com/);
   assert.match(client, /\/api\/admin\/shuttle\/regular-roster/);
   assert.match(client, /정규 배차 화면에서 새 학생을 차량에 배정하고 저장해야 기사님 화면에 반영됩니다/);
   assert.match(client, /href="\/admin\/shuttle\/regular-dispatch"/);
   assert.match(client, /\/api\/admin\/shuttle\/regular-run-link/);
+  assert.match(client, /<RegularShuttleNoticePanel/);
 });
 
 test("셔틀 명단 편집은 관리자 가드·raw SQL·변경 기록을 지킨다", () => {

@@ -81,6 +81,7 @@ test("수강신청 목록은 검증한 표시 함수와 신청 월 제목을 실
     assert.match(client, /import \{[^}]*formatEnrollmentMonthsShort[^}]*formatPreferredSlotsShort[^}]*\} from "@\/lib\/enrollment-application-display"/);
     assert.match(client, /formatPreferredSlotsShort\(app\.preferredSlotKeys, classesBySlotKey\)/);
     assert.match(client, /formatEnrollmentMonthsShort\(app\.enrollmentMonths\)/);
-    assert.match(client, />신청 월<\/th>/);
+    assert.match(client, />수강 개시일<\/th>/);
+    assert.match(client, /formatEnrollmentStartOn\(app\.requestedStartOn\)/);
     assert.doesNotMatch(client, /periodPart|function formatEnrollmentMonthsShort|수강 시작월/);
 });

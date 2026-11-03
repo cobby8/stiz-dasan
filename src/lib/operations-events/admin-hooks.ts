@@ -30,6 +30,7 @@ export function buildEnrollmentOperationsEvent(input: {
   previousStatus: EnrollmentStatus | null;
   nextStatus: EnrollmentStatus;
   enrollmentApplicationId?: string;
+  effectiveDate?: string; // 수강 승인에서 관리자가 확인한 달력 날짜
   /** 관리자 직접 변경이 남긴 수강 변경 이력(EnrollmentChangeRequest) id. 「수강 변경 신청」 화면이 이 값으로 원장을 찾는다. */
   enrollmentChangeRequestId?: string;
 }): WebsiteOperationsEvent | null {
@@ -48,7 +49,7 @@ export function buildEnrollmentOperationsEvent(input: {
     studentId: input.studentId,
     studentName: input.studentName,
     kind: transition.kind,
-    effectiveDate: seoulDate(input.changedAt),
+    effectiveDate: input.effectiveDate ?? seoulDate(input.changedAt),
     before: input.previousStatus === null
       ? null
       : { enrollmentId: input.enrollmentId, classId: input.classId, className: input.className, status: input.previousStatus },
@@ -57,7 +58,7 @@ export function buildEnrollmentOperationsEvent(input: {
       classId: input.classId,
       className: input.className,
       status: input.nextStatus,
-      effectiveDate: seoulDate(input.changedAt),
+      effectiveDate: input.effectiveDate ?? seoulDate(input.changedAt),
       fromClassId,
       toClassId,
       parentConfirmed: true,

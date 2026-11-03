@@ -423,6 +423,7 @@ model MonthlyEnrollmentRegisterRevision {
 }
 
 model Enrollment {
+  startsOn       DateTime?                 @db.Date // 확정 개시일. null은 기존 수강 이력(추정하지 않음)
   id             String                    @id @default(uuid())
   studentId      String
   classId        String
@@ -435,6 +436,7 @@ model Enrollment {
 
   @@unique([studentId, classId])
   @@index([classId, status])
+  @@index([classId, status, startsOn])
   @@index([createdAt])
   @@index([status, updatedAt])
 }
@@ -1764,6 +1766,7 @@ model EnrollmentApplication {
   parentRelation                String? // 부/모/기타
   address                       String?
   // 수강 정보
+  requestedStartOn              DateTime?                  @db.Date // 신청한 수강 개시일
   enrollmentMonths              String? // Google Form: 수강신청 월, 콤마 구분
   preferredSlotKeys             String? // 콤마 구분 "Mon-4,Wed-6"
   assignedClassId               String? // 관리자 배정 반
