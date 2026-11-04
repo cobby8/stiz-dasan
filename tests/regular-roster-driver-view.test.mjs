@@ -18,7 +18,9 @@ test("관리자 기사님 화면 보기는 기사님 화면과 같은 순수 함
   // 자체 정류장 묶음 함수를 새로 만들지 않는다(RegularRouteSection 의 groupStops 같은 사본 금지).
   assert.doesNotMatch(view, /function group\w*\(/);
   // 기사님 화면 서버도 같은 요일 행 선택 함수를 쓴다.
-  assert.match(driverRoute, /selectDriverDayRows\(stops, weekday\)/);
+  assert.match(driverRoute, /selectDriverDayRows\(sourceStops, weekday\)/);
+  assert.match(driverRoute, /getDatedRouteSnapshot\(serviceMonth, viewDate\)/);
+  assert.match(driverRoute, /dated \? dated.rows/);
   // 셔틀 명단 화면에 보기 전환이 붙어 있다.
   assert.match(client, /<DriverOrderView/);
   assert.match(client, /기사님 화면\(운행 순서\)/);

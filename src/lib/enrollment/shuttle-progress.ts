@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+// @ts-expect-error Node 순수 로직 검사에서도 같은 모듈을 직접 사용한다.
+import { confirmedEtaLabel } from "../shuttle/confirmedEta.ts";
 
 export type ShuttleProgressStatus = "NOT_REQUESTED" | "REQUESTED" | "LOCATION_REQUIRED" | "ROSTER_PENDING" | "DISPATCH_PENDING" | "RECONFIRM_REQUIRED" | "NOTICE_PENDING" | "NOTICE_ACCEPTED" | "COMPLETE" | "UNKNOWN";
 export type ShuttleDirection = "PICKUP" | "DROPOFF";
@@ -29,7 +31,7 @@ export function shuttleDeliveryEventKey(payloadHash: string): string { return `R
 // 안내는 이름/전화가 같은 기록이 아니라, 현재 확정된 노선 묶음에만 연결한다.
 export function studentRouteFingerprint(studentId: string, routes: ShuttleRoute[], rows: ShuttleRosterRow[]): string { return shuttleFingerprint({ studentId, routes: routes.map(route => ({ key: `${route.serviceMonth}:${route.dayOfWeek}:${route.direction}`, confirmationAt: obj(obj(route.payload).confirmation).confirmedAt ?? null, routeHash: routeFingerprint(route), rosterHash: rosterFingerprint(rows.filter(r => r.serviceMonth === route.serviceMonth && DOW[r.weekday] === route.dayOfWeek && r.direction === (route.direction === "PICKUP" ? "BOARD" : "ALIGHT"))) })).sort((a,b) => a.key.localeCompare(b.key)) }); }
 function routeStudent(route: ShuttleRoute, studentId: string) { const matches: Array<{ vehicle: Record<string, unknown>; stop: Record<string, unknown> }> = []; for (const vehicle of list(obj(route.payload).vehicles)) for (const stop of list(vehicle.stops)) for (const student of list(stop.students)) if (student.requestId === studentId) matches.push({ vehicle, stop }); return matches; }
-function timeLabel(stop: Record<string, unknown>): string | null { const minutes = typeof stop.etaManual === "number" ? stop.etaManual : stop.etaMinutes; if (typeof minutes === "number" && Number.isInteger(minutes) && minutes >= 0 && minutes < 1440) return `${String(Math.floor(minutes / 60)).padStart(2,"0")}:${String(minutes % 60).padStart(2,"0")}`; const label = typeof stop.etaLabel === "string" ? stop.etaLabel.match(/\b(?:[01]\d|2[0-3]):[0-5]\d\b/)?.[0] : null; return label ?? null; }
+function timeLabel(stop: Record<string, unknown>): string | null { return confirmedEtaLabel(stop); }
 function delivered(delivery: ShuttleDelivery) { return delivery.status === "SENT" && delivery.sentAt != null && Boolean(delivery.providerMessageId) && ["DELIVERED", "DELIVERY_SUCCESS", "4000"].includes(delivery.providerStatus ?? ""); }
 export function buildStudentRouteNotice(studentId: string, serviceMonth: string, routes: ShuttleRoute[], roster: ShuttleRosterRow[]) {
   const mine = roster.filter(r => r.studentId === studentId && r.serviceMonth === serviceMonth && ["BOARD", "ALIGHT"].includes(r.direction));

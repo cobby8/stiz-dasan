@@ -3118,3 +3118,63 @@ model ChildLinkRequest {
   @@index([approverId, status], map: "ChildLinkRequest_approver_status_idx")
   @@index([requesterId, createdAt], map: "ChildLinkRequest_requester_created_idx")
 }
+model RegularRoutePlanDraft {
+  id String @id
+  reviewId String @unique
+  driverUserId String
+  serviceMonth String
+  effectiveFrom String
+  status String @default("DRAFT")
+  revision Int @default(1)
+  data Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([driverUserId,serviceMonth,status])
+}
+model RegularRoutePlanVersion {
+  id String @id
+  draftId String @unique
+  serviceMonth String
+  effectiveFrom String
+  beforeSnapshot Json
+  afterSnapshot Json
+  confirmedByUserId String
+  confirmedAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([serviceMonth,effectiveFrom,confirmedAt])
+}
+model RegularRouteNoticeOutbox {
+  id String @id
+  versionId String
+  studentId String
+  recipientPhone String
+  recipientKey String
+  message String
+  entries Json
+  status String @default("PENDING")
+  providerId String? @unique
+  errorCode String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([versionId,studentId])
+  @@index([status,createdAt])
+}
+model RegularRouteNoticeSnapshot {
+  id String @id
+  studentId String
+  serviceMonth String
+  source String
+  recipientKey String
+  entries Json
+  outboxId String? @unique
+  confirmedByUserId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([studentId,serviceMonth,createdAt])
+}
+model RegularRouteLegacyChange {
+  id String @id
+  serviceMonth String
+  effectiveFrom String
+  snapshot Json
+  observedAt DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  @@index([serviceMonth,effectiveFrom,observedAt])
+}

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getDatedRouteSnapshot } from "@/lib/enrollment/route-plan-query";
 import { requireAdmin } from "@/lib/auth-guard";
 // reconcile/diff 는 의존성 없는 순수 공용 모듈이다(방학특강과 100% 공유).
 // 유효 라이더 집합만 정규 명단(getRegularShuttleRiders)으로 바꿔 넘기면 그대로 동작한다.
@@ -7,7 +8,7 @@ import type { SavedRouteChange, ConfirmedDispatchEta } from "@/lib/seasonal/disp
 // 저장 payload에서 정차별 확정 라벨(승차/하차)을 뽑는 순수 로직 — 방학특강과 100% 공유(중복 0).
 // 정규는 매칭키가 studentId 지만, 정규 payload도 학생 식별키로 studentId 를 requestId 자리에 넣어 저장하므로
 // extractEtaByRequestId 를 그대로 재사용할 수 있다(Phase 1 에서 requestId←studentId 로 어댑트됨).
-import { extractEtaByRequestId } from "@/lib/seasonal/dispatchEtaLookup";
+import { confirmedEtaLabel } from "@/lib/shuttle/confirmedEta";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
 import { getRegularShuttleRiders } from "./shuttleRoster";
 import { computeRegularDispatch } from "./shuttle-dispatch";
@@ -185,7 +186,9 @@ export async function getConfirmedRegularDispatchEtas(
   const wantStudents = new Set(clean.map((p) => p.studentId));
 
   try {
-    const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    const viewDate = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    const dated = await getDatedRouteSnapshot(serviceMonth, viewDate.slice(0,7) === serviceMonth ? viewDate : `${serviceMonth}-01`);
+    const rows = dated ? dated.routes.filter(r => dows.includes(r.dayOfWeek)) : await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
       `SELECT "dayOfWeek", "direction", "payload"
          FROM "RegularDispatchRoute"
         WHERE "dayOfWeek" = ANY($1::text[])
@@ -198,7 +201,14 @@ export async function getConfirmedRegularDispatchEtas(
       if (!dow || !dir) continue;
       const payload = r.payload as { vehicles?: unknown } | null;
       // 매칭키 = studentId(정규 payload 저장 규칙). 정차 라벨 맵을 만든다.
-      const byStudent = extractEtaByRequestId(payload?.vehicles, dir);
+      const byStudent = new Map<string, string>();
+      for (const vehicle of (Array.isArray(payload?.vehicles) ? payload.vehicles : []) as Array<{ stops?: Array<{ etaManual?: unknown; etaMinutes?: unknown; etaLabel?: unknown; students?: Array<{requestId?: string}> }> }>) {
+        for (const stop of vehicle.stops ?? []) {
+          const time = confirmedEtaLabel(stop);
+          if (!time) continue;
+          for (const student of stop.students ?? []) if (student.requestId && !byStudent.has(student.requestId)) byStudent.set(student.requestId, `${time} ${dir === 'PICKUP' ? '승차' : '하차'}`);
+        }
+      }
       if (byStudent.size === 0) continue;
       for (const studentId of wantStudents) {
         // 이 노선의 요일을 실제로 다니는 자녀만 반영한다(요일 불일치 오염 방지).

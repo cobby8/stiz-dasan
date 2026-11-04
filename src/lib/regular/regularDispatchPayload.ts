@@ -1,3 +1,5 @@
+// @ts-expect-error Node 순수 로직 검사에서도 같은 모듈을 직접 사용한다.
+import { isClockMinute, parseClockMinute } from "../shuttle/confirmedEta.ts";
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -5,7 +7,8 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
 };
 
 const inRangeOrMissing = (value: unknown, min: number, max: number) => value == null || (typeof value === "number" && Number.isFinite(value) && value >= min && value <= max);
-const timeOrMissing = (value: unknown) => value == null || (typeof value === "string" && /^\d{2}:\d{2}$/.test(value));
+const timeOrMissing = (value: unknown) => value == null || parseClockMinute(value) !== null;
+const minuteOrMissing = (value: unknown) => value == null || isClockMinute(value);
 
 /** 확정 노선 저장에 필요한 최소 구조를 검증하고, 비정상·과대 payload는 저장 전에 차단한다. */
 export function validateRegularDispatchVehicles(value: unknown): unknown[] {
@@ -26,7 +29,7 @@ export function validateRegularDispatchVehicles(value: unknown): unknown[] {
         throw new Error("정차 위치 형식이 올바르지 않습니다.");
       }
       if (!inRangeOrMissing(stop.lat, -90, 90) || !inRangeOrMissing(stop.lng, -180, 180)
-        || !inRangeOrMissing(stop.etaMinutes, 0, 1439) || !inRangeOrMissing(stop.etaManual, 0, 1439)) {
+        || !minuteOrMissing(stop.etaMinutes) || !minuteOrMissing(stop.etaManual)) {
         throw new Error("정차 좌표 또는 시각 형식이 올바르지 않습니다.");
       }
       if (!Array.isArray(stop.students) || stop.students.length > 100) throw new Error("정차 학생 목록 형식이 올바르지 않습니다.");

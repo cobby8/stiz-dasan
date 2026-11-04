@@ -1,3 +1,4 @@
+import { getDatedRouteSnapshot } from '@/lib/enrollment/route-plan-query';
 import { getRegularShuttleMonths, getRegularShuttleStops } from "./regularImport";
 import { getRegularAbsentPeople } from "./regularRun";
 import { getShuttleExceptionsForDate } from "./parent-shuttle-exception";
@@ -83,14 +84,19 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
 
   // 그 요일의 학생 정차행만(승차/하차). 명단 순서 유지 — 폴백 화면은 이 순서가 곧 운행 순서다.
   // 관리자 「셔틀 명단 → 기사님 화면」 보기와 같은 함수(selectDriverDayRows)로 고른다.
-  const dayRows: RegularShuttleStop[] = selectDriverDayRows(stops, weekday);
+    // 확정 적용일 이전 날짜에는 당시 명단과 행 ID를 그대로 사용한다.
+  const dated = serviceMonth ? await getDatedRouteSnapshot(serviceMonth, viewDate) : null;
+  const sourceStops = dated ? dated.rows as unknown as RegularShuttleStop[] : stops;
+  const dayRows: RegularShuttleStop[] = selectDriverDayRows(sourceStops, weekday);
 
   // 결석 매칭: 이름(+가능하면 학부모 전화)으로 그날 결석자와 이어 붙인다(best-effort) — 종전과 동일.
   const isAbsent = (p: { name: string | null; phone: string | null }) => matchAbsentee(p, absentees) !== null;
 
   // 요일·방향별 저장 노선. 테이블이 없거나 실패하면 null → 자동으로 폴백.
   const [savedPickup, savedDropoff] = await Promise.all(
-    DIRECTIONS.map((d) => getSavedRegularDispatchRoute(dayOfWeek, d, serviceMonth)),
+    DIRECTIONS.map((d) => dated
+      ? Promise.resolve(dated.routes.find(r => r.dayOfWeek === dayOfWeek && r.direction === d)?.payload ?? null)
+      : getSavedRegularDispatchRoute(dayOfWeek, d, serviceMonth)),
   );
   const saved: Record<RouteDirection, { vehicles?: unknown } | null> = { PICKUP: savedPickup, DROPOFF: savedDropoff };
 
@@ -100,7 +106,7 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
   const empty = new Map<string, string[]>();
   const [mapPickup, mapDropoff] = await Promise.all(
     DIRECTIONS.map((d) =>
-      pickRegularRouteSource(saved[d]) === "SAVED" ? loadRowIdsByStudentId(dayOfWeek, d, orderIndex, serviceMonth) : Promise.resolve(empty),
+      pickRegularRouteSource(saved[d]) === "SAVED" ? (dated ? Promise.resolve(new Map(dayRows.filter(r => r.direction === (d === 'PICKUP' ? 'BOARD' : 'ALIGHT') && r.studentId && r.id).map(r => [r.studentId!, dayRows.filter(x => x.studentId === r.studentId && x.direction === r.direction).map(x => x.id!)]))) : loadRowIdsByStudentId(dayOfWeek, d, orderIndex, serviceMonth)) : Promise.resolve(empty),
     ),
   );
 

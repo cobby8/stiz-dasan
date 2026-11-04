@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import { prisma } from "@/lib/prisma";
-import { kstDow } from "@/lib/datetime/kst";
+import { getDatedRouteSnapshot, saveDatedDriverOrderOverride } from "@/lib/enrollment/route-plan-query";
+import { kstDow, todayKst } from "@/lib/datetime/kst";
 import { DOW_NAMES } from "@/lib/regular/shuttleRosterLogic";
 import { getRegularShuttleRiders } from "@/lib/regular/shuttleRoster";
 import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder, type DriverOrderRoute } from "@/lib/shuttle/driverOrderPlan";
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     const date = validDate(body?.date);
     if (!token || !date) throw new DriverOrderError("요청 형식이 올바르지 않습니다.", 400);
     if (!(await isAnyDriverRunToken(token))) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 403 });
+    if(date<todayKst())throw new DriverOrderError("지난 운행은 변경할 수 없습니다.",409);
     const updates = parseDriverOrderUpdates(body?.updates);
     if (!Array.isArray(body?.baseline)) throw new DriverOrderError("화면을 새로고침한 뒤 다시 저장해 주세요.");
     const baseline = parseDriverOrderUpdates(body.baseline);
@@ -31,8 +33,9 @@ export async function POST(request: Request) {
     const weekday = kstDow(date);
     const dayOfWeek = DOW_NAMES[weekday];
     const updated = await prisma.$transaction(async tx => {
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text AS "lockResult"`, `route-plan:${serviceMonth}`);
       // 항상 같은 순서로 잠가 두 저장 요청이 중간 상태를 서로 덮어쓰지 않게 한다.
-      const rows = await tx.$queryRawUnsafe<RegularShuttleStop[]>(
+      let rows = await tx.$queryRawUnsafe<RegularShuttleStop[]>(
         `SELECT * FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "weekday"=$2
           AND "direction" IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName") <> ''
           ORDER BY "sortOrder", "stopName", "id" FOR UPDATE`, serviceMonth, weekday,
@@ -40,14 +43,17 @@ export async function POST(request: Request) {
       // 확정 노선 테이블이 없는 이전 환경은 명단 경로를 유지한다. SQL 오류를 삼켜 트랜잭션을 망가뜨리지 않는다.
       const table = await tx.$queryRawUnsafe<{ present: boolean }[]>(`SELECT to_regclass('"RegularDispatchRoute"') IS NOT NULL AS "present"`);
       const hasDispatchTable = table[0]?.present === true;
-      const routes = hasDispatchTable ? await tx.$queryRawUnsafe<DriverOrderRoute[]>(
+      let routes = hasDispatchTable ? await tx.$queryRawUnsafe<DriverOrderRoute[]>(
         `SELECT "id","direction","payload" FROM "RegularDispatchRoute"
           WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 ORDER BY "direction" FOR UPDATE`, serviceMonth, dayOfWeek,
       ) : [];
+      const dated = await getDatedRouteSnapshot(serviceMonth,date,tx);
+      if(dated){rows=dated.rows.filter(r=>r.weekday===weekday&&['BOARD','ALIGHT'].includes(r.direction)) as RegularShuttleStop[];routes=dated.routes.filter(r=>r.dayOfWeek===dayOfWeek) as DriverOrderRoute[];}
       const maps = { PICKUP: new Map<string, string[]>(), DROPOFF: new Map<string, string[]>() };
       const order = new Map(rows.map((row, index) => [row.id, index]));
       for (const direction of ["PICKUP", "DROPOFF"] as const) {
         if (!routes.some(route => route.direction === direction)) continue;
+        if(dated){for(const row of rows.filter(r=>r.direction===(direction==='PICKUP'?'BOARD':'ALIGHT')&&r.studentId&&r.id)){const ids=maps[direction].get(row.studentId!)??[];ids.push(row.id!);maps[direction].set(row.studentId!,ids);}continue;}
         const roster = await getRegularShuttleRiders({ direction, serviceMonth, dayOfWeek }, tx);
         for (const rider of [...roster.riders, ...roster.unassigned]) {
           if (!rider.stopRowId || !order.has(rider.stopRowId)) throw new DriverOrderError("학생 연결이 변경되었습니다. 새로고침 후 다시 저장해 주세요.");
@@ -57,6 +63,7 @@ export async function POST(request: Request) {
         for (const ids of maps[direction].values()) ids.sort((a, b) => order.get(a)! - order.get(b)!);
       }
       const plan = planDriverOrder({ rows, routes, updates, baseline, rowIdsByStudentId: maps });
+      if(await saveDatedDriverOrderOverride(tx,serviceMonth,date,updates,plan.routes))return updates.reduce((n,u)=>n+u.rowIds.length,0);
       let count = 0;
       for (const update of updates) {
         const result = await tx.regularShuttleStop.updateMany({

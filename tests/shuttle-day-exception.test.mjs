@@ -15,7 +15,7 @@ const { validateShuttleException, describeException, appliesToDirection, addDays
   ).toString("base64")}`
 );
 
-const logicSource = await readFile("src/lib/shuttle/regularDriverRouteLogic.ts", "utf8");
+const logicSource = (await readFile("src/lib/shuttle/regularDriverRouteLogic.ts", "utf8")).replace('"./confirmedEta.ts"', JSON.stringify(new URL("../src/lib/shuttle/confirmedEta.ts", import.meta.url).href));
 const { attachShuttleDayNotes } = await import(
   `data:text/javascript;base64,${Buffer.from(
     ts.transpileModule(logicSource, {

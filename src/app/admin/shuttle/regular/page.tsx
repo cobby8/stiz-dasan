@@ -1,5 +1,6 @@
 import RegularShuttleClient from "./RegularShuttleClient";
 import ShuttleSectionTabs from "../ShuttleSectionTabs";
+import RoutePlanEditingNotice from "@/components/shuttle/planning/RoutePlanEditingNotice";
 import SeasonalHeader from "../../seasonal/SeasonalHeader";
 import { getRegularShuttleMonths, getRegularShuttleStops } from "@/lib/shuttle/regularImport";
 import { koreaServiceMonth, pickServiceMonthFor, isServiceMonth } from "@/lib/regular/serviceMonth";
@@ -24,6 +25,7 @@ export default async function RegularShuttlePage({ searchParams }: { searchParam
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" subtitle="정규 수업 셔틀 이용 학생 명단을 요일·수업별로 관리합니다." />
       <ShuttleSectionTabs />
+      <RoutePlanEditingNotice serviceMonth={initialMonth} />
       <RegularShuttleClient initialStops={initial.stops} initialMonth={initialMonth} months={initial.months} currentMonth={currentMonth} initialStudentId={requested.studentId?.slice(0,64)} />
     </>
   );

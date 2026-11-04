@@ -13,6 +13,8 @@
 //    그래서 여기서 studentId → 정차행 id 로 되돌려 매핑한다(기록 연속성 보존).
 
 import type { RegularShuttleStop } from "./regularSheet";
+// @ts-expect-error Node 순수 로직 검사에서도 같은 모듈을 직접 사용한다.
+import { confirmedEtaLabel } from "./confirmedEta.ts";
 
 // ── 기사님 화면이 소비하는 표시 계약(기사님 화면이 그대로 import 해서 쓴다) ──────────
 export type DriverRow = { rowId: string; name: string; parentPhone: string | null; studentPhone: string | null; absent?: boolean;
@@ -114,15 +116,9 @@ export function pickRegularRouteSource(saved: { vehicles?: unknown } | null | un
   return "FALLBACK";
 }
 
-/** 저장 정차의 표시 시각('HH:MM'). etaLabel('08:53 승차') 우선 → etaManual(수동확정) → etaMinutes(자동). */
+/** 수동 확정 → 계산 시각 → 구형 표시 문구 순서로 동일한 확정 시각을 사용한다. */
 export function savedStopTimeLabel(stop: { etaLabel?: unknown; etaMinutes?: unknown; etaManual?: unknown }): string | null {
-  const label = typeof stop?.etaLabel === "string" ? stop.etaLabel.match(/(\d{1,2}):(\d{2})/) : null;
-  if (label) return `${label[1].padStart(2, "0")}:${label[2]}`;
-  const min = typeof stop?.etaManual === "number" ? stop.etaManual
-    : typeof stop?.etaMinutes === "number" ? stop.etaMinutes : null;
-  if (min == null) return null;
-  const v = ((Math.round(min) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
+  return confirmedEtaLabel(stop);
 }
 
 /**

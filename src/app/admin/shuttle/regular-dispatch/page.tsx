@@ -1,5 +1,6 @@
 import RegularDispatchClient from "./RegularDispatchClient";
 import ShuttleSectionTabs from "../ShuttleSectionTabs";
+import RoutePlanEditingNotice from "@/components/shuttle/planning/RoutePlanEditingNotice";
 import SeasonalHeader from "../../seasonal/SeasonalHeader";
 import { getRegularShuttleWeekdays } from "@/lib/regular/shuttleRoster";
 import { getRegularDispatchForView } from "@/lib/regular/regularDispatchRoute";
@@ -62,6 +63,7 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" />
       <ShuttleSectionTabs />
+      <RoutePlanEditingNotice serviceMonth={serviceMonth} />
       <RegularDispatchClient
         weekdays={weekdays}
         initialDay={initialDay}

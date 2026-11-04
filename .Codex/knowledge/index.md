@@ -1,5 +1,7 @@
 # STIZ Knowledge Index
 
+> 2026-11-04: 승인 추천배차·기사드래그·원장최종확정 로컬 구현. 실제Prisma독립32·계산/UI/문자/월안내44·신청진행41·API12 통과, 타입/대상lint PASS. 전체2949중기존3실패유지·운영/발송/배포0. 정본 docs/shuttle-recommended-route-plan.md, architecture/decisions/errors/lessons 갱신·지식본문5개 유지.
+
 > 2026-11-04: 신규셔틀 운영요청0/P2010 원인=Prisma의void잠금응답. 서버1줄text변환·실제Prisma격리12/33/타입·독립PASS, PR10/ff524301 운영READY·별도승인검토1건등록/독립RO확인, 기사응답대기·배차/발송0. errors/lessons 및 docs/new-shuttle-intake-review.md에 검증경로차이 기록. 지식본문5 유지.
 
 > 2026-11-03: 신규 셔틀 처리함·지정 기사 검토 사용자 실행승인으로 PR9/b3fec3ae 운영 READY. 구조/RLS 독립RO·관리자4명/기사선택1·직원검토빈상태·비로그인401 확인. 검토/대상명단0 유지·실제지정/배차/발송0. docs/new-shuttle-intake-review.md 운영 절차가 최신 정본이다. 지식 본문5개 유지.

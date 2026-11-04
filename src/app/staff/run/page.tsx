@@ -46,5 +46,5 @@ export default async function StaffRunPage({
   const searchDate = sp?.date && isValidRunDate(sp.date) ? sp.date : null;
   // 로그인 경로라 링크를 기기에 기억시키지 않는다(기억 옵션을 켜지 않음) — 계정이 곧 열쇠다.
   // 기억시키면 로그아웃하거나 역할을 회수해도 그 기기에서는 운행표가 계속 열린다.
-  return <UnifiedDriverRunPage token={token} searchDate={searchDate} />;
+  return <UnifiedDriverRunPage token={token} searchDate={searchDate} planningEnabled />;
 }

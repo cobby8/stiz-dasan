@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import * as confirmedEta from '../src/lib/shuttle/confirmedEta.ts';
 function load(file, deps={}) {
  const exports={}; vm.runInNewContext(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Date,Intl,Request,Response,console,require(name){if(!(name in deps))throw Error(name);return deps[name]}});return exports;
 }
-const logic=load('src/lib/shuttle/regularDriverRouteLogic.ts');
+const logic=load('src/lib/shuttle/regularDriverRouteLogic.ts', {'./confirmedEta.ts':confirmedEta});
 const unified=load('src/lib/shuttle/unifiedDriverRunLogic.ts');
 const plan=load('src/lib/shuttle/driverOrderPlan.ts',{'./regularDriverRouteLogic':logic,'./unifiedDriverRunLogic':unified});
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -16,7 +17,8 @@ function setup({fallback=false,failWrite=false,failVerify=false,missingTable=fal
  const deps={
  'next/server':{NextResponse:{json(body,options={}){return new Response(JSON.stringify(body),options)}}},
  '@/lib/shuttle/driverToken':{isAnyDriverRunToken:async token=>token==='valid'},
- '@/lib/datetime/kst':{kstDow:()=>1}, '@/lib/regular/shuttleRosterLogic':{DOW_NAMES:['Sun','Mon','Tue','Wed','Thu','Fri','Sat']},
+ '@/lib/enrollment/route-plan-query':{getDatedRouteSnapshot:async()=>null,saveDatedDriverOrderOverride:async()=>false},
+ '@/lib/datetime/kst':{kstDow:()=>1,todayKst:()=>"2026-10-19"}, '@/lib/regular/shuttleRosterLogic':{DOW_NAMES:['Sun','Mon','Tue','Wed','Thu','Fri','Sat']},
  '@/lib/shuttle/driverOrderPlan':plan,
  '@/lib/regular/shuttleRoster':{getRegularShuttleRiders:async({direction})=>({riders:state.rows.filter(row=>row.direction===(direction==='PICKUP'?'BOARD':'ALIGHT')).map(row=>({studentId:row.studentId,stopRowId:row.id})),unassigned:[]})},
  '@/lib/prisma':{prisma:{$transaction:async(fn,options)=>{assert.equal(options.isolationLevel,'Serializable');const before=structuredClone(state);try{

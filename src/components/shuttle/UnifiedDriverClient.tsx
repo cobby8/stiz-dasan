@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { DriverRoutePlanningEntry } from "./planning/RoutePlanningClient";
 import { useRouter } from "next/navigation";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import type { PointerEvent } from "react";
@@ -34,7 +35,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel,
+  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, planningEnabled = false,
 }: {
   token: string;
   date: string;
@@ -45,6 +46,7 @@ export default function UnifiedDriverClient({
   nextDate: string | null;
   today: string;
   driverLabel: string;
+  planningEnabled?: boolean;
 }) {
   const router = useRouter();
   const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
@@ -306,6 +308,7 @@ export default function UnifiedDriverClient({
         </div>
       )}
 
+      {planningEnabled && <div className="mb-2 flex justify-end"><DriverRoutePlanningEntry date={date} /></div>}
       <DriverDateNav date={date} prevDate={prevDate} nextDate={nextDate} today={today} />
       {!initialBoardingReliable && <p role="alert" className="mb-2 text-sm font-bold text-red-700">체크 기록을 불러오지 못했습니다. 미체크로 판단하지 말고 <button type="button" className="inline-flex min-h-11 min-w-11 items-center underline" onClick={() => window.location.reload()}>기록 다시 불러오기</button>를 눌러주세요. 확인 전에는 체크를 잠시 막습니다.</p>}
 

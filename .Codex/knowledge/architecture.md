@@ -1,5 +1,11 @@
 ## 2026-09-04 사이트 월 운영 장부
 
+## 2026-11-04 추천 배차·원장님 최종 확정
+- 인증 기사 `/staff/run` → planning 공통 편집기 → 관리자 `/admin/shuttle/plan-drafts`로 이어진다. 공용 토큰 운행 권한은 확장하지 않는다.
+- `route-plan-query`는 짧은 거래·지문/CAS 검증으로 초안과 최종 확정을 분리한다. 도로 견적은 거래 밖에서 준비한다. 새 5개 표 및 기존 편집 statement trigger는 날짜별 노선과 과거 명단을 보존한다.
+- `route-plan-outbox`/`route-plan-worker`는 현재 보호자·배차 검증과 기존 문자 정책을 사용한다. 접수와 실제 전달을 분리하며 신청 처리함 조회에도 같은 전달 근거를 연결한다. 기본 OFF, 운영 구조·발송·배포는 이번 작업에서 미적용이다.
+- 상세 경로·검증·운영 전 단계는 `docs/shuttle-recommended-route-plan.md`가 정본이다.
+
 ## 2026-10-28 앱 첨부·개발 인증 인계
 - 서버 auth/native·lib/native-auth는 개발 전용 일회용 원장과 공급자 브라우저 세션을 분리한다. 로컬 SQL만 준비하고 기본 비활성·production 거부, 기존 웹 OAuth는 유지한다.
 - native-session-cookies는 권한이 아닌 보호 표식이다. Supabase server/middleware 갱신·이동 응답에서 앱 쿠키 보호만 유지한다. Android WebFileChooser/NativeAuthController, iOS NativeAuthCoordinator가 플랫폼 연결을 소유한다.
