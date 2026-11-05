@@ -277,7 +277,7 @@ public final class MainActivity extends Activity {
             .setOnDismissListener(dialog -> navigationDialogOpen = false).show();
     }
     private void showAppMessage(String message) {
-        runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) new AlertDialog.Builder(this).setTitle("스티즈 농구교실").setMessage(message).setPositiveButton("확인", null).show(); });
+        runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) new AlertDialog.Builder(this).setTitle("STIZ 농구교실").setMessage(message).setPositiveButton("확인", null).show(); });
     }
     private void showBrowserAuthPending() {
         if (BuildConfig.STIZ_SANDBOX) { showAppMessage("격리시험에서는 실제 로그인·본인인증을 연결하지 않습니다. 시험 역할 선택 화면을 이용해 주세요."); return; }

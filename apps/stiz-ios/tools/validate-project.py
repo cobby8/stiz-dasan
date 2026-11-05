@@ -31,6 +31,11 @@ assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrient
 scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
 assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.iter("BuildableReference"))
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
+# 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
+release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.0;" in release_settings
+assert info["CFBundleDisplayName"] == "STIZ 농구교실"
+assert info["ITSAppUsesNonExemptEncryption"] is False, "HTTPS 표준 암호화만 사용(수출 규정 면제)"
 workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
 validate_workflows(workflow)
 assert "bdr-asc-key" not in workflow and "mac_mini_m2" in workflow
