@@ -144,7 +144,7 @@ function relocateInPlace(
 // timeOrdered: 정규 배차 화면 전용. 이 섹션의 겉 상자를 풀고(display: contents) 회차 카드마다 CSS order 를 매겨,
 //   부모의 한 목록(flex) 안에서 등원·하원 카드가 하루 시간순으로 섞여 보이게 한다. 상태·저장은 지금처럼 방향별로 이 섹션이 가진다.
 //   기본 false — 방학특강 화면은 이 prop 을 주지 않으므로 DOM·모양이 그대로다.
-export default function RouteSection({ initial, date, refreshKey, apiBase = "/api/admin/seasonal/dispatch", rosterEditable = true, serviceMonth, drivers, regularEditing = false, timeOrdered = false, onDirtyChange, onRouteChange }: { initial: DispatchSuggestion; date: string; refreshKey: number; apiBase?: string; rosterEditable?: boolean; serviceMonth?: string; drivers?: { id: string; name: string }[]; regularEditing?: boolean; timeOrdered?: boolean; onDirtyChange?: (dirty: boolean) => void; onRouteChange?: (route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => void }) {
+export default function RouteSection({ initial, date, refreshKey, apiBase = "/api/admin/seasonal/dispatch", rosterEditable = true, serviceMonth, drivers, regularEditing = false, timeOrdered = false, onDirtyChange, onUserEditChange, onRouteChange }: { initial: DispatchSuggestion; date: string; refreshKey: number; apiBase?: string; rosterEditable?: boolean; serviceMonth?: string; drivers?: { id: string; name: string }[]; regularEditing?: boolean; timeOrdered?: boolean; onDirtyChange?: (dirty: boolean) => void; onUserEditChange?: (edited: boolean) => void; onRouteChange?: (route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => void }) {
   const direction = initial.direction;
   const isPickup = direction === "PICKUP";
   const [sug, setSug] = useState<DispatchSuggestion>(initial);
@@ -169,7 +169,10 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
   const [dirty, setDirty] = useState(false);
   // 편집 일련번호 — 편집마다 1 증가. 저장 요청 도중 생긴 편집을 「저장됨」으로 지우지 않으려고 쓴다.
   const editSeq = useRef(0);
-  function markDirty() { editSeq.current += 1; setDirty(true); }
+  // 사람이 직접 고친 편집이 있는가(자동 초안 계산·좌표 자동 반영·경로 재계산은 제외). dirty 와 달리 편집 함수(markDirty)만 켠다.
+  // 정규 화면이 「신규 학생 넣은 뒤 회차 카드 다시 불러오기」를 막을지 판단할 때 쓴다(자동 초안만 있으면 막지 않음).
+  const [userEdited, setUserEdited] = useState(false);
+  function markDirty() { editSeq.current += 1; setDirty(true); setUserEdited(true); }
   // 정규 모드: 지금 화면의 노선이 현재 요일·월 기준으로 불러와진 상태인가.
   // 요일·월 전환 중이거나 전환이 실패하면 false → 옛 노선을 새 달로 저장하지 못하게 저장을 막는다.
   const [routeReady, setRouteReady] = useState(true);
@@ -184,6 +187,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
 
   // 부모(정규 화면)에 변경 여부 전달 — 요일·월 전환 시 확인창용.
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onUserEditChange?.(userEdited); }, [userEdited, onUserEditChange]);
   // 정규 모드: 저장 안 한 변경이 있으면 새로고침·탭 닫기 때 브라우저 기본 경고를 띄운다.
   useEffect(() => {
     if (!dirty) return;
@@ -224,7 +228,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         return previous?.driverUserId ? { ...vehicle, driverUserId: previous.driverUserId } : vehicle;
       });
       routeScope.current = scope;
-      setSug({ ...j, vehicles }); setSavedAt(baselineVersion); setLoadedFromSaved(false); setDepartPinned({}); setRelocatedCount(0); setDirty(true); setRouteReady(true);
+      setSug({ ...j, vehicles }); setSavedAt(baselineVersion); setLoadedFromSaved(false); setDepartPinned({}); setRelocatedCount(0); setDirty(true); setUserEdited(false); setRouteReady(true);
     } catch { if (current()) { setErr("노선을 불러오지 못했습니다. 다시 시도해 주세요."); setRouteReady(false); } }
     finally { if (current()) setLoading(false); }
   }
@@ -253,6 +257,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       const relocated = changes.filter((c) => !c.isHub && c.lat != null && c.lng != null).length;
       setRelocatedCount(relocated);
       setDirty(relocated > 0); // 좌표 자동 반영분은 아직 저장 전이다
+      setUserEdited(false); // 저장본을 새로 읽었으니 사람 편집은 없다
       setRouteReady(true);
       // 좌표가 바뀐 차량 + reconcile로 경로(path)가 무효화된 차량(취소 학생 등)을 T맵 재계산 예약.
       // (path가 비면 지도는 직선으로 그려지므로, 재계산으로 실도로 경로를 복구한다.)
@@ -312,7 +317,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       if (!check.ok || verified?.saved?.savedAt !== j.savedAt || !sameSavedRoute(snapshot, verified.saved)) throw new Error("저장한 내용과 조회 결과가 다릅니다. 다시 불러와 확인해 주세요.");
       setSavedAt(j.savedAt); setLoadedFromSaved(true); setSaveMsg(editSeq.current === seqAtStart ? "저장했습니다" : "저장 후 추가한 변경이 있습니다"); setRelocatedCount(0);
       // 저장 요청 중에 또 고쳤다면 그 편집은 아직 저장 전이다 → 「저장 안 됨」 유지.
-      if (editSeq.current === seqAtStart) setDirty(false);
+      if (editSeq.current === seqAtStart) { setDirty(false); setUserEdited(false); }
     } catch (e: unknown) { if (scopeRef.current === scopeAtStart) { setErr(publicErrorText(e, "노선을 저장하지 못했습니다.")); setDirty(true); setRouteReady(false); } }
     finally { setSaving(false); }
   }

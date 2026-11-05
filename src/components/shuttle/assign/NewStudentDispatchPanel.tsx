@@ -43,9 +43,10 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const seq = useRef(0);
   const intakeSeq = useRef(0);
-  // 저장 중에 모달을 닫았으면 저장이 끝나도 모달을 다시 열지 않는다.
-  const modalOpen = useRef(false);
-  useEffect(() => { modalOpen.current = target !== null; }, [target]);
+  // 지금 열린 모달(학생·칸) — 저장이 끝났을 때 「그 학생 모달이 아직 열려 있나」를 본다.
+  // 저장 중에 닫았거나 다른 학생 칩을 열었으면 그 모달을 앞 학생의 다음 칸으로 바꾸지 않는다.
+  const targetRef = useRef<Target | null>(null);
+  useEffect(() => { targetRef.current = target; }, [target]);
 
   // 남은 칸 목록(다시) 읽기 — 기사님 화면과 같은 API. 결과를 돌려줘 저장 직후 「다음 남은 칸」을 고른다.
   const load = useCallback(async (): Promise<DriverAssignBoard | null> => {
@@ -101,17 +102,21 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
   const dayLegCount = selectedWeekday == null ? 0 : students.reduce((n, s) => n + s.legs.filter((l) => l.weekday === selectedWeekday).length, 0);
 
   // 저장 성공 → 부모에 알림(회차 카드) → 목록 다시 읽기 → 같은 학생의 다음 남은 칸, 없으면 모달 닫기.
-  async function afterSaved(studentId: string, doneLabel: string) {
+  // 단 「지금 열린 모달 = 저장한 학생」일 때만 모달을 움직인다(닫혔으면 그대로, 다른 학생 모달이면 건드리지 않음).
+  async function afterSaved(studentId: string, studentName: string, doneLabel: string) {
     setWarn("");
     onAssigned();
     const next = await load();
     const s = next?.students.find((x) => x.studentId === studentId);
+    const stillHere = targetRef.current?.studentId === studentId;
+    // 다른 학생 모달이 열려 있으면 안내에 이름을 붙여 헷갈리지 않게 한다.
+    const who = stillHere ? "" : `${studentName} `;
     if (s && s.legs.length > 0) {
-      setNotice(`${doneLabel}에 넣었어요`);
-      if (modalOpen.current) setTarget({ studentId, legKey: s.legs[0].key });
+      setNotice(`${who}${doneLabel}에 넣었어요`);
+      if (stillHere) setTarget({ studentId, legKey: s.legs[0].key });
     } else {
-      setNotice(`${doneLabel}에 넣었어요 · 이 학생은 모두 넣었어요`);
-      setTarget(null);
+      setNotice(`${who}${doneLabel}에 넣었어요 · 이 학생은 모두 넣었어요`);
+      if (stillHere) setTarget(null);
     }
   }
 
@@ -187,7 +192,7 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
               notice={notice} warn={warn} onNotice={(v) => { setNotice(v); setWarn(""); }}
               onBack={() => { setNotice(""); setWarn(""); setTarget(null); }}
               onPickLeg={(legKey) => openLeg(student.studentId, legKey)}
-              onSaved={(label) => afterSaved(student.studentId, label)}
+              onSaved={(label) => afterSaved(student.studentId, student.name, label)}
               onStale={(message) => { setWarn(message); void load(); }} />
           </div>
         </div>

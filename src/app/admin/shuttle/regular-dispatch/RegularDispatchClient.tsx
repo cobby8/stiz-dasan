@@ -43,6 +43,12 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   const [dirtyDropoff, setDirtyDropoff] = useState(false);
   const onPickupDirty = useCallback((d: boolean) => setDirtyPickup(d), []);
   const onDropoffDirty = useCallback((d: boolean) => setDirtyDropoff(d), []);
+  // 사람이 직접 고친 편집 여부(자동 초안 계산은 제외). 운영은 저장 노선이 없는 요일이 많아 자동 초안만으로도 dirty 가 켜진다 —
+  // 신규 학생을 넣은 뒤 회차 카드 새로고침은 이 값으로만 막는다(요일·월 이동 확인 confirmLeave 는 dirty 그대로).
+  const [editedPickup, setEditedPickup] = useState(false);
+  const [editedDropoff, setEditedDropoff] = useState(false);
+  const onPickupEdited = useCallback((e: boolean) => setEditedPickup(e), []);
+  const onDropoffEdited = useCallback((e: boolean) => setEditedDropoff(e), []);
   // 배차 월이 바뀌면(router.push ?month=) 이 컴포넌트는 그대로 남아 RouteSection 이 다시 불러오지 않는다.
   // 월마다 다른 refreshKey 를 넘겨 새 달 노선을 다시 불러오게 한다(편집·「저장 안 됨」도 초기화) — 옛 달 노선이 새 달로 저장되는 사고 방지.
   // 신규 학생을 순서에 넣으면 rosterReloadTick 을 올려 같은 달이어도 회차 카드를 다시 불러온다(월 값과 겹치지 않게 ×1000).
@@ -50,9 +56,10 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   const [rosterNotice, setRosterNotice] = useState("");
   const monthRefreshKey = Number(serviceMonth.replace(/\D/g, "")) * 1000 + rosterReloadTick || 0;
   const confirmLeave = () => !(dirtyPickup || dirtyDropoff) || window.confirm("저장하지 않은 노선 수정이 있습니다. 이동하면 사라집니다. 계속할까요?");
-  // 신규 학생을 한 칸 넣은 직후 — 저장 안 한 노선 편집이 있으면 덮어쓰지 않고 알리기만 한다(편집 보호).
+  // 신규 학생을 한 칸 넣은 직후 — 사람이 고친 저장 안 한 편집이 있으면 덮어쓰지 않고 알리기만 한다(편집 보호).
+  // 자동 초안(저장 노선 없음)만 있으면 잃을 손편집이 없으니 바로 다시 불러온다.
   const onStudentAssigned = () => {
-    if (dirtyPickup || dirtyDropoff) {
+    if (editedPickup || editedDropoff) {
       setRosterNotice("저장하지 않은 노선 수정이 있어 새로고침하지 않았습니다. 노선을 저장한 뒤 「회차 다시 불러오기」를 눌러 주세요.");
       return;
     }
@@ -139,8 +146,8 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
             순서: 등원 저장 바 · 하원 저장 바(맨 위) → 회차 카드 시간순(같은 시각이면 하원 먼저) → 등원·하원 지도(맨 아래). */}
         <p className="mt-3 text-[12px] text-gray-500 dark:text-gray-400">{DOW_LABEL[day] ?? day} 회차를 시간순으로 보여 줍니다. 저장은 등원·하원 바의 버튼으로 방향별로 합니다.</p>
         <div className="mt-2 flex flex-wrap gap-3">
-          <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} />
-          <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onDropoffDirty} />
+          <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} onUserEditChange={onPickupEdited} />
+          <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onDropoffDirty} onUserEditChange={onDropoffEdited} />
         </div>
       </div>
     </div>
