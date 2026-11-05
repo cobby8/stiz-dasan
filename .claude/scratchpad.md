@@ -67,6 +67,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-05 | developer(claude/enroll-shuttle-place-name): 수강신청 셔틀 「타는 곳/내리는 곳 이름」 — 지도 핀 뒤 주소 자동 채움 제거(장소명만 미리 채움), 이름 비었거나 주소와 같으면 화면·서버 모두 거절(순수 규칙 lib/enrollment/shuttle-place-name.ts), 이전 신청의 주소=이름은 빈칸, 저장 라벨은 학부모 입력 우선. tsc 0, 신청·셔틀 테스트 534 통과(새 6건 포함) | 검수 대기 |
 | 11-05 | developer(claude/tenure-uniform-free, 미커밋): ① 총 재원기간 — Student.tenure* 3칸 + 순수 계산 student-tenure.ts(기준월 뒤 사이트 수강 달만 더함) + 조회 student-tenure-query.ts(실패 시 null) → 학생 상세 기본정보 한 줄. ② 3년 재원 유니폼 무료 링크 — UniformFreeGrant 표(마이그레이션 20261105120000), /apply/uniform/free/[token](noindex), 신청은 FOR UPDATE 잠금·NEEDS_REVIEW 저장(본사 자동발송 없음, 원장 «재전송»), 관리자 «무료 증정» 배지. tsc 0, 새 테스트 22건 통과, 전체 2936 중 실패 3 = 기존 건(A-15·P-11·관리자 오류원문 StudentDetailClient:1292) | 검수 대기 |
 | 11-05 | tester: 기사님 새 학생 배정 + 셔틀 진행 상태 전환(미커밋분) 검증 — tsc 0, 셔틀 .ts 113-0, 관련 .mjs 636 중 633(실패 3 = 유니폼 기존 건), npm test 2914 중 2911(같은 3건, 새 실패 0). 실례 7건(최윤호·박윤우×2·김태은·김현호·박보겸 4칸·이성빈 2칸) 기대값 일치, POST 거절 403/404/404/409 테스트로 확인. 참고: 학생 id 없는 이름+전화 행은 진행 상태=배차 대기·기사님 목록=빠짐으로 갈림 | 통과 |
 | 11-05 | developer: 기사님 「새 학생 배정」(/staff/shuttle/assign) — 승인 셔틀 신청+ACTIVE 수강의 남은 칸(요일×등·하원)을 한 칸씩 명단에 넣기. driverAssign(Logic).ts·API(GET/POST, DB 역할 재확인·자격 재검사·잠금 안 guard)·화면, addRosterStudent 본문을 addRosterStudentAs 로 분리(감사 via=DRIVER_ASSIGN). tsc 통과·테스트 15건+관련 110건 통과 | 검수 대기 |

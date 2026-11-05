@@ -17,6 +17,7 @@ import {
     issueEnrollmentAccountHandoff,
 } from "@/lib/enrollment-account-handoff";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
 
 async function issueEnrollmentAccountHandoffSafely(enrollmentApplicationId: string) {
     try {
@@ -827,6 +828,14 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
     if (data.shuttleNeeded && (!data.shuttlePickup?.trim() || !data.shuttleTime || !data.shuttleDropoff?.trim())) {
         throw new Error("셔틀 탑승을 선택한 경우 탑승 장소, 희망 시간, 하차 장소를 모두 입력해주세요.");
     }
+    if (data.shuttleNeeded) {
+        // 화면과 같은 규칙: 타는 곳/내리는 곳 이름이 비었거나 주소를 그대로 적었으면 거절한다.
+        // (화면 검사를 건너뛴 요청도 기사님이 알아볼 수 없는 주소만 남기지 못하게)
+        const placeNameError =
+            shuttlePlaceNameError(data.shuttlePickup, shuttlePickupLocation, "pickup")
+            ?? shuttlePlaceNameError(data.shuttleDropoff, shuttleDropoffLocation, "dropoff");
+        if (placeNameError) throw new Error(placeNameError);
+    }
     if (data.shuttleNeeded && !data.shuttleNoticeConfirmed) {
         throw new Error("셔틀 주의사항을 확인해주세요.");
     }
@@ -1040,10 +1049,10 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
                 data.basketballExp || null,
                 data.uniformSize || null,
                 data.shuttleNeeded ?? false,
-                // 라벨 컬럼에 장소명 우선 저장(없으면 기존 텍스트 라벨로 폴백). 좌표/주소 컬럼은 별도로 그대로 저장됨.
-                shuttlePickupLocation?.placeName ?? (data.shuttlePickup?.trim() || null),
+                // 라벨 컬럼 = 학부모가 적은 타는 곳 이름 우선(지도 장소명은 폴백). 좌표/주소 컬럼은 별도로 그대로 저장됨.
+                data.shuttlePickup?.trim() || shuttlePickupLocation?.placeName || null,
                 data.shuttleTime || null,
-                shuttleDropoffLocation?.placeName ?? (data.shuttleDropoff?.trim() || null),
+                data.shuttleDropoff?.trim() || shuttleDropoffLocation?.placeName || null,
                 data.paymentMethod || null,
                 data.referralSource || null,
                 data.memo?.trim() || null,
@@ -1160,9 +1169,9 @@ export async function submitEnrollApplication(data: EnrollApplicationInput) {
             data.basketballExp || null,         // $14
             data.uniformSize || null,           // $15
             data.shuttleNeeded ?? false,        // $16
-            shuttlePickupLocation?.placeName ?? (data.shuttlePickup?.trim() || null), // $17 라벨: 장소명 우선(폴백=텍스트 라벨)
+            data.shuttlePickup?.trim() || shuttlePickupLocation?.placeName || null, // $17 라벨: 학부모가 적은 타는 곳 이름 우선(폴백=지도 장소명)
             data.shuttleTime || null,           // $18
-            shuttleDropoffLocation?.placeName ?? (data.shuttleDropoff?.trim() || null),// $19 라벨: 장소명 우선(폴백=텍스트 라벨)
+            data.shuttleDropoff?.trim() || shuttleDropoffLocation?.placeName || null, // $19 라벨: 학부모가 적은 내리는 곳 이름 우선(폴백=지도 장소명)
             data.paymentMethod || null,         // $20
             data.referralSource || null,        // $21
             data.memo?.trim() || null,          // $22

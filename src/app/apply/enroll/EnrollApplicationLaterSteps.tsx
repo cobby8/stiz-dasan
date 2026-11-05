@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
+import { initialPlaceNameFromMap } from "@/lib/enrollment/shuttle-place-name";
 
 interface AvailableSlot {
     slotKey: string;
@@ -197,26 +198,21 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
 
                     {form.shuttleChoice === "탑승" && (
                         <div className="ml-2 space-y-4 border-l-2 border-brand-orange-200 pl-2">
+                            {/* 이름 칸만 고쳐도 좌표는 그대로 둔다 — 위치는 지도에서만 바뀐다 */}
                             <ShuttleLocationField
                                 label="셔틀 탑승 장소"
+                                nameLabel="타는 곳 이름"
                                 value={form.shuttlePickup}
-                                selected={Boolean(form.shuttlePickupLocationData)}
-                                onChange={(value) => {
-                                    update("shuttlePickup", value);
-                                    update("shuttlePickupLocationData", undefined);
-                                    update("shuttleLocationConsent", false);
-                                }}
+                                location={form.shuttlePickupLocationData}
+                                onChange={(value) => update("shuttlePickup", value)}
                                 onOpenMap={() => setLocationPicker("pickup")}
                             />
                             <ShuttleLocationField
                                 label="셔틀 하차 장소"
+                                nameLabel="내리는 곳 이름"
                                 value={form.shuttleDropoff}
-                                selected={Boolean(form.shuttleDropoffLocationData)}
-                                onChange={(value) => {
-                                    update("shuttleDropoff", value);
-                                    update("shuttleDropoffLocationData", undefined);
-                                    update("shuttleLocationConsent", false);
-                                }}
+                                location={form.shuttleDropoffLocationData}
+                                onChange={(value) => update("shuttleDropoff", value)}
                                 onOpenMap={() => setLocationPicker("dropoff")}
                             />
                             <TextInput label="셔틀 희망 시간" required value={form.shuttleTime} onChange={(value) => update("shuttleTime", value)} placeholder="예: 수업 시작 20분 전, 16:30 전후" helper="참고용입니다. 실제 탑승시간은 배차 확정 후 안내됩니다." />
@@ -294,12 +290,13 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                     initialValue={locationPicker === "pickup" ? form.shuttlePickupLocationData : form.shuttleDropoffLocationData}
                     onClose={() => setLocationPicker(null)}
                     onConfirm={(location: MapLocationData) => {
+                        // 이름 칸에는 지도가 준 가게·건물 이름만 미리 넣는다. 주소뿐이면 빈칸 → 학부모가 직접 적는다.
+                        // (예전엔 주소를 자동으로 넣어 「다산동 4002-1」만 남고 기사님이 어디서 태울지 몰랐다)
                         if (locationPicker === "pickup") {
-                            // 라벨(shuttlePickup)에는 장소명 우선. 없으면 주소로 폴백(하위호환).
-                            update("shuttlePickup", location.placeName ?? location.address);
+                            update("shuttlePickup", initialPlaceNameFromMap(location));
                             update("shuttlePickupLocationData", location);
                         } else {
-                            update("shuttleDropoff", location.placeName ?? location.address);
+                            update("shuttleDropoff", initialPlaceNameFromMap(location));
                             update("shuttleDropoffLocationData", location);
                         }
                         update("shuttleLocationConsent", false);
@@ -311,21 +308,52 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
     );
 }
 
-function ShuttleLocationField({ label, value, selected, onChange, onOpenMap }: { label: string; value: string; selected: boolean; onChange: (value: string) => void; onOpenMap: () => void }) {
+/**
+ * 셔틀 장소 칸: ① 지도에서 위치 고르기 → ② 고른 주소 확인 + 「타는 곳 이름」 직접 적기.
+ * 주소만으로는 기사님이 아파트 어느 문 앞인지 모르므로, 이름 칸은 위치를 고른 뒤 항상 보인다.
+ */
+function ShuttleLocationField({ label, nameLabel, value, location, onChange, onOpenMap }: { label: string; nameLabel: string; value: string; location?: MapLocationData; onChange: (value: string) => void; onOpenMap: () => void }) {
+    // 화면에 보일 주소: 도로명 우선, 없으면 지번
+    const shownAddress = location ? (location.roadAddress || location.address) : "";
     return (
         <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
                 {label} <span className="text-red-500">*</span>
             </label>
-            <div className="flex gap-2">
-                <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="주소 또는 건물명을 입력하거나 지도로 선택" className="min-w-0 flex-1 rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-                <button type="button" onClick={onOpenMap} className="min-h-11 shrink-0 rounded-xl border border-brand-orange-200 px-3 py-2 text-sm font-bold text-brand-orange-600 hover:bg-brand-orange-50 dark:border-brand-neon-lime/40 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/10">
-                    지도
+            {!location ? (
+                // 아직 위치를 안 골랐으면 지도 버튼 하나만 크게 보인다
+                <button type="button" onClick={onOpenMap} className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-primary)] px-3 py-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]">
+                    <FontFreeIcon name="location_on" size={18} />
+                    지도에서 위치 고르기
                 </button>
-            </div>
-            <p className={`mt-1 text-xs ${selected ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
-                {selected ? "지도 위치가 확인되었습니다." : "주소를 직접 수정하면 지도 위치를 다시 선택해야 합니다."}
-            </p>
+            ) : (
+                <div className="space-y-2">
+                    {/* 고른 주소(읽기 전용) + 다시 고르기 */}
+                    <div className="flex items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
+                        <FontFreeIcon name="location_on" size={16} className="shrink-0 text-[var(--color-academy-success)]" />
+                        <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-ink)]">{shownAddress}</span>
+                        <button type="button" onClick={onOpenMap} className="min-h-11 shrink-0 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]">
+                            다시 고르기
+                        </button>
+                    </div>
+                    {/* 타는 곳(내리는 곳) 이름 — 지도 장소명이 있으면 미리 채워지고, 주소뿐이면 빈칸 */}
+                    <label className="block">
+                        <span className="mb-1 block text-sm font-medium text-[var(--color-academy-ink)]">
+                            {nameLabel} <span className="text-[var(--color-academy-danger)]">*</span>
+                        </span>
+                        <input
+                            aria-label={nameLabel}
+                            value={value}
+                            onChange={(event) => onChange(event.target.value)}
+                            placeholder="예: OO아파트 후문 맘스테이션 앞"
+                            className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-4 py-3 text-[var(--color-academy-ink)] outline-none focus:border-[var(--color-academy-primary)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        />
+                        <span className="mt-1 block text-xs text-[var(--color-academy-muted)]">
+                            기사님이 이 이름을 보고 찾아갑니다. 주소 말고 건물·출입구 이름을 적어 주세요.
+                        </span>
+                    </label>
+                </div>
+            )}
         </div>
     );
 }
