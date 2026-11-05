@@ -15,6 +15,7 @@ import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import type { MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { requireCommencement } from "@/lib/enrollment/commencement";
+import { sanitizeLoadedPlaceName, shuttlePlaceNameError } from "@/lib/enrollment/shuttle-place-name";
 
 const EnrollApplicationLaterSteps = dynamic(() => import("./EnrollApplicationLaterSteps"), {
     loading: () => (
@@ -149,11 +150,15 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
         if (!form.referralSource) { setError("가입경로를 선택해주세요."); return false; }
         if (!form.shuttleChoice) { setError("셔틀 탑승 여부를 선택해주세요."); return false; }
         if (form.shuttleChoice === "탑승") {
-            if (!form.shuttlePickup.trim()) { setError("셔틀 탑승 장소를 입력해주세요."); return false; }
+            // 위치(지도) 먼저, 그다음 이름 — 이름 칸은 위치를 고른 뒤에만 보이기 때문
             if (!form.shuttlePickupLocationData) { setError("셔틀 탑승 위치를 지도에서 선택해주세요."); return false; }
-            if (!form.shuttleTime) { setError("셔틀 희망 시간을 입력해주세요."); return false; }
-            if (!form.shuttleDropoff.trim()) { setError("셔틀 하차 장소를 입력해주세요."); return false; }
+            // 타는 곳 이름: 비었거나 주소를 그대로 적었으면 막는다(기사님이 어디서 태울지 알 수 있게)
+            const pickupNameError = shuttlePlaceNameError(form.shuttlePickup, form.shuttlePickupLocationData, "pickup");
+            if (pickupNameError) { setError(pickupNameError); return false; }
             if (!form.shuttleDropoffLocationData) { setError("셔틀 하차 위치를 지도에서 선택해주세요."); return false; }
+            const dropoffNameError = shuttlePlaceNameError(form.shuttleDropoff, form.shuttleDropoffLocationData, "dropoff");
+            if (dropoffNameError) { setError(dropoffNameError); return false; }
+            if (!form.shuttleTime) { setError("셔틀 희망 시간을 입력해주세요."); return false; }
             if (!form.shuttleLocationConsent) { setError("셔틀 위치정보 수집·이용에 동의해주세요."); return false; }
             if (!form.shuttleNoticeConfirmed) { setError("셔틀 주의사항을 확인해주세요."); return false; }
         }
@@ -188,10 +193,11 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                 basketballExp: existing.basketballExp || prev.basketballExp,
                 shuttleChoice: existing.shuttleNeeded ? "탑승" : "미탑승",
                 shuttleNeeded: existing.shuttleNeeded,
-                shuttlePickup: existing.shuttlePickup || prev.shuttlePickup,
+                // 예전 신청에서 주소가 이름 칸에 들어가 있었다면 빈칸으로 바꿔 다시 적게 한다
+                shuttlePickup: sanitizeLoadedPlaceName(existing.shuttlePickup || prev.shuttlePickup, existing.shuttlePickupLocationData),
                 shuttlePickupLocationData: existing.shuttlePickupLocationData || undefined,
                 shuttleTime: existing.shuttleTime || prev.shuttleTime,
-                shuttleDropoff: existing.shuttleDropoff || prev.shuttleDropoff,
+                shuttleDropoff: sanitizeLoadedPlaceName(existing.shuttleDropoff || prev.shuttleDropoff, existing.shuttleDropoffLocationData),
                 shuttleDropoffLocationData: existing.shuttleDropoffLocationData || undefined,
                 shuttleLocationConsent: Boolean(
                     existing.shuttlePickupLocationData
