@@ -8,17 +8,19 @@ const routeSection = readFileSync("src/components/seasonal/RouteSection.tsx", "u
 const regularClient = readFileSync("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx", "utf8");
 const seasonalClient = readFileSync("src/app/admin/seasonal/dispatch/DispatchClient.tsx", "utf8");
 
-test("방학특강 화면은 정규 손편집을 켜지 않는다(기본값 false)", () => {
+test("방학특강 화면은 정규 손편집·시간순 모드를 켜지 않는다(기본값 false)", () => {
   assert.match(routeSection, /regularEditing = false/);
   assert.doesNotMatch(seasonalClient, /regularEditing/);
+  assert.doesNotMatch(seasonalClient, /timeOrdered/);
   // 방학특강의 기존 삭제 버튼·문구는 그대로
   assert.match(routeSection, /🗑 노선 삭제/);
   assert.match(routeSection, /이 요일의 저장된 노선을 삭제할까요\?/);
 });
 
-test("정규 배차는 두 방향 모두 손편집을 켜고 세부 조정을 기본으로 펼친다", () => {
+// 2026-11-05: 편집 영역을 접는 <details> 를 없애고 회차 카드를 시간순 목록으로 늘 펼쳐 둔다(접을 요약 표가 사라짐).
+test("정규 배차는 두 방향 모두 손편집을 켜고 편집 영역을 접지 않는다", () => {
   assert.equal((regularClient.match(/regularEditing onDirtyChange=/g) ?? []).length, 2);
-  assert.match(regularClient, /<details open/);
+  assert.doesNotMatch(regularClient, /<details/);
   assert.match(regularClient, /confirmLeave\(\)/);
 });
 

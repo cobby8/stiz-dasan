@@ -96,3 +96,9 @@
 - **발견자**: developer
 - **내용**: 재원기간 = 옛 시트 기준값(`Student.tenureBaselineMonths/Through/FirstMonth`) + 기준월 «뒤» 사이트 수강 달(수강료 year-month ∪ 출석 PRESENT 세션 KST 달). 계산은 순수 `lib/student-tenure.ts`, 조회는 `lib/student-tenure-query.ts`(getStudentActivity 무변경, 실패 시 null=표시 안 함). 무료 유니폼은 `UniformFreeGrant`(토큰 32자 base64url, ISSUED→USED|REVOKED, 만료는 expiresAt) — 규칙 `lib/uniform-free-grant-rules.ts`, 발급·조회·신청 `lib/uniform-free-grant.ts`(prisma 를 import 하지 않고 db 인자로 받아 가짜 DB 로 동작 테스트). 신청은 `FOR UPDATE OF g` 잠금 후 주문을 **NEEDS_REVIEW** 로 저장 → 크론(PENDING·RETRY_WAIT 만)·즉시 발송 모두 안 탐, 원장이 /admin/uniform «재전송»(dispatchUniformOrderById 는 SENT·DUPLICATE 외 모두 보냄)으로 본사 발송. 무료 표시는 주문 메모 앞머리 `[3년 재원 무료 증정]`(관리자 배지 판정). 디자인·사이즈·검증은 `lib/uniform-options.ts` 공용.
 - **참조횟수**: 0
+
+### [2026-11-05] 정규배차 시간순 화면 = 두 RouteSection(방향별 상태·저장) + display:contents + CSS order
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `/admin/shuttle/regular-dispatch` 는 등원·하원 RouteSection 을 `timeOrdered` 로 한 flex 목록에 넣는다. 섹션 겉 상자·카드 그리드는 `contents` 로 풀리고 회차 카드마다 `order = runTimelineOrder()`(`lib/regular/regularDispatchOrder.ts`: 등원 classStart·하원 classEnd → tripLabel → departTime, 같은 시각이면 하원 먼저). 저장 바(-2/-1)·지도(1e7)도 order 로 배치. 상태를 끌어올리지 않고 섞지만 **탭 이동 순서는 DOM(등원 전부 → 하원 전부)**. 방학특강(DispatchClient)은 prop 을 안 줘 DOM 그대로 — `timeOrdered` 분기 밖을 고치면 방학특강도 바뀐다.
+- **참조횟수**: 0
