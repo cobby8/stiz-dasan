@@ -43,6 +43,11 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     //   좌표 파기 1건: 탈퇴 시 위치정보는 흡수된 학생 것까지 지워야 한다.
     "app/actions/parent-account.ts": { count: 3, reason: "회원 탈퇴 — 재학 판정은 많이 세는 쪽이 안전, 위치정보 파기는 흡수분까지" },
 
+    // 재원기간·유니폼 무료 링크(2026-11-05) — 목록이 아니라 학생 id·링크로 «그 학생 한 명»을 찾는 조회다.
+    //   학생 상세는 흡수된 학생을 열어도 그 학생 자신의 기록을 보여야 하고, 링크는 발급 때 고른 학생에 묶여 있다.
+    "lib/student-tenure-query.ts": { count: 1, reason: "학생 상세의 재원기간 — id 로 그 학생 한 명 조회" },
+    "lib/uniform-free-grant.ts": { count: 3, reason: "무료 유니폼 링크 — 링크에 묶인 학생 한 명 조회(화면·잠금·저장 번호)" },
+
     // 청구·수납 — 흡수된 쪽에 청구가 남았을 때 화면에서 숨기면 미납이 사라진다.
     "lib/payment-ledger.ts": { count: 2, reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험" },
     "lib/staff-class-billing.ts": { count: 1, reason: "교사앱 청구 목록" },

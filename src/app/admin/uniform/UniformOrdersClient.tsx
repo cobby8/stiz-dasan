@@ -9,6 +9,7 @@ import type { UniformOrderAdminView } from "./page";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { isFreeUniformOrderMemo } from "@/lib/uniform-free-grant-rules";
 
 type SyncTone = {
   label: string;
@@ -348,10 +349,21 @@ export default function UniformOrdersClient({
 
 // 전송 상태 배지(목록 행·상세 패널 공용) — 색은 기존 SYNC_STATUS 표 그대로
 function SyncBadge({ order, sync }: { order: UniformOrderAdminView; sync: SyncTone }) {
+  // 3년 재원 무료 증정 주문은 «무료 증정» 배지를 같이 단다 — 본사 자동 발송 없이 «확인 필요» 로 들어오므로
+  // 원장이 내용을 보고 «재전송» 을 눌러 본사로 보낸다(표시는 주문 메모 앞머리로 판정)
+  const isFree = isFreeUniformOrderMemo(order.customerMemo);
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-black ring-1 ${sync.className}`}>
-      <span className={`material-symbols-outlined text-sm ${order.stizSyncStatus === "SENDING" ? "animate-spin" : ""}`} aria-hidden="true">{sync.icon}</span>
-      {sync.label}
+    <span className="inline-flex shrink-0 items-center gap-1">
+      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-black ring-1 ${sync.className}`}>
+        <span className={`material-symbols-outlined text-sm ${order.stizSyncStatus === "SENDING" ? "animate-spin" : ""}`} aria-hidden="true">{sync.icon}</span>
+        {sync.label}
+      </span>
+      {isFree && (
+        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">redeem</span>
+          무료 증정
+        </span>
+      )}
     </span>
   );
 }

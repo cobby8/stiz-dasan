@@ -10,6 +10,7 @@ import AdminModal from "@/components/admin/AdminModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
+import type { StudentTenure } from "@/lib/student-tenure";
 
 type MediaItem = { url: string; type: "image" | "video" };
 
@@ -425,6 +426,7 @@ export default function StudentDetailClient({
     studentId,
     classes = [],
     shuttleLocations = [],
+    tenure = null,
 }: {
     data?: StudentActivityData;
     studentId?: string;
@@ -432,6 +434,8 @@ export default function StudentDetailClient({
     classes?: ClassOption[];
     // 배차용 실제 셔틀 위치 — page.tsx가 getStudentShuttleLocations로 전달(신규 prop)
     shuttleLocations?: ShuttleLocationRow[];
+    // 총 재원기간 — page.tsx 가 getStudentTenure 로 전달(자료 없으면 null → 표시 안 함)
+    tenure?: StudentTenure | null;
 }) {
     const [activityData, setActivityData] = useState<StudentActivityData | null>(initialData ?? null);
     const [loading, setLoading] = useState(!initialData);
@@ -1011,6 +1015,20 @@ export default function StudentDetailClient({
                             </span>
                             <span className="text-gray-300 dark:text-gray-600">·</span>
                             <span>등록 {toDateStr(student.enrollDate ?? student.createdAt)}</span>
+                            {/* 총 재원기간 한 줄: «재원 3년 2개월 · 실제 수강 38개월 · 첫 등록 2023-10» (자료 없으면 생략) */}
+                            {tenure && (
+                                <>
+                                    <span className="text-gray-300 dark:text-gray-600">·</span>
+                                    <span className="inline-flex items-center gap-1 font-semibold text-gray-700 dark:text-gray-200">
+                                        <SymbolIcon name="workspace_premium" size={15} className="text-gray-400" />
+                                        {[
+                                            tenure.spanLabel ? `재원 ${tenure.spanLabel}` : null,
+                                            `실제 수강 ${tenure.actualMonths}개월`,
+                                            tenure.firstMonth ? `첫 등록 ${tenure.firstMonth}` : null,
+                                        ].filter(Boolean).join(" · ")}
+                                    </span>
+                                </>
+                            )}
                         </p>
                     )}
                 </div>

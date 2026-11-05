@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { submitUniformOrder } from "@/app/actions/uniform";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
+import { DESIGN_OPTIONS, SIZE_OPTIONS, formatUniformPhone } from "@/lib/uniform-options";
 
 type StudentForm = {
   studentName: string;
@@ -24,8 +25,6 @@ type FormData = {
   students: StudentForm[];
 };
 
-const DESIGN_OPTIONS = ["", "DYG 블랙&화이트", "카툰 블랙&화이트"];
-const SIZE_OPTIONS = ["", "5XS(110)", "4XS(120)", "3XS(130)", "2XS(140)", "XS(150)", "S(160)", "M", "L", "XL", "2XL", "3XL", "4XL"];
 const EMPTY_STUDENT: StudentForm = {
   studentName: "",
   design: "",
@@ -43,12 +42,8 @@ const INITIAL_FORM: FormData = {
   students: [{ ...EMPTY_STUDENT }],
 };
 
-function formatPhone(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-}
+// 디자인·사이즈 목록과 휴대폰 형식은 3년 재원 무료 신청 폼과 공용(한 곳에서만 고친다)
+const formatPhone = formatUniformPhone;
 
 function hasOrderSize(student: StudentForm) {
   return Boolean(student.topSize || student.bottomSize);

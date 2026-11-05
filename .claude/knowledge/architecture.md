@@ -90,3 +90,9 @@
 - **발견자**: developer
 - **내용**: `/staff/shuttle/assign` 은 승인 셔틀 신청(APPROVED+shuttleNeeded)+ACTIVE 수강(개시일 ≤ 그 달)의 「남은 칸(요일×등·하원)」을 관리자 학생 추가와 같은 함수(enrolledClassSlots·findRouteCell·suggestPlacement·resolveCellPlacement)로 계산한다. 쓰기는 `regularRosterEdit.addRosterStudentAs(actorId, raw, { via, guard })` 하나 — ⚠️ 이 함수는 권한 확인을 하지 않으므로 호출부가 현재 DB 역할을 먼저 확인한다(원장 = addRosterStudent 의 requireAdmin, 기사 = driverAssign.authorizeAssign). guard 는 달 잠금 안에서 「그 칸이 아직 비었는지」 마지막 확인. 감사 기록은 ShuttleAuditLog REGULAR_ROSTER_ADD(actorId=기사 userId, afterJSON.via="DRIVER_ASSIGN").
 - **참조횟수**: 0
+
+### [2026-11-05] 총 재원기간·3년 재원 유니폼 무료 링크 구조
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 재원기간 = 옛 시트 기준값(`Student.tenureBaselineMonths/Through/FirstMonth`) + 기준월 «뒤» 사이트 수강 달(수강료 year-month ∪ 출석 PRESENT 세션 KST 달). 계산은 순수 `lib/student-tenure.ts`, 조회는 `lib/student-tenure-query.ts`(getStudentActivity 무변경, 실패 시 null=표시 안 함). 무료 유니폼은 `UniformFreeGrant`(토큰 32자 base64url, ISSUED→USED|REVOKED, 만료는 expiresAt) — 규칙 `lib/uniform-free-grant-rules.ts`, 발급·조회·신청 `lib/uniform-free-grant.ts`(prisma 를 import 하지 않고 db 인자로 받아 가짜 DB 로 동작 테스트). 신청은 `FOR UPDATE OF g` 잠금 후 주문을 **NEEDS_REVIEW** 로 저장 → 크론(PENDING·RETRY_WAIT 만)·즉시 발송 모두 안 탐, 원장이 /admin/uniform «재전송»(dispatchUniformOrderById 는 SENT·DUPLICATE 외 모두 보냄)으로 본사 발송. 무료 표시는 주문 메모 앞머리 `[3년 재원 무료 증정]`(관리자 배지 판정). 디자인·사이즈·검증은 `lib/uniform-options.ts` 공용.
+- **참조횟수**: 0

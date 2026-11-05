@@ -378,6 +378,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                                     return (
                                         <button key={period} type="button" disabled={isFull} onClick={() => update("trialPeriod", period)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${isFull ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 dark:border-gray-700 dark:bg-gray-900" : form.trialPeriod === period ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}>
                                             <span className="block">{period}교시</span>
+                                            {/* 학부모가 교시 번호만으로는 몇 시 수업인지 몰라 시간도 함께 보여 준다 */}
+                                            {slot?.startTime && <span className="mt-0.5 block text-xs font-semibold">{slot.startTime}~{slot.endTime}</span>}
                                             {slot && <span className="mt-1 block text-xs">{isFull ? "마감" : `잔여 ${slot.available}명`}</span>}
                                         </button>
                                     );

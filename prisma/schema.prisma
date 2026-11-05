@@ -203,6 +203,11 @@ model Student {
   // 없어 @@index를 두지 않는다. 여기에 일반 인덱스를 적으면 반대 방향으로 어긋난다.
   mergedIntoStudentId      String?
   mergedAt                 DateTime?
+  // 총 재원기간 기준값(옛 구글시트 기록) — 기준월(YYYY-MM)까지 실제 수강 달 수, 첫 등록월(YYYY-MM)
+  // 기준월 뒤의 달은 사이트 기록(수강료·출석)으로 이어 센다(src/lib/student-tenure.ts)
+  tenureBaselineMonths     Int?
+  tenureBaselineThrough    String?
+  tenureFirstMonth         String?
   createdAt                DateTime                      @default(now())
   updatedAt                DateTime                      @updatedAt
   attendances              Attendance[]
@@ -225,6 +230,7 @@ model Student {
   regularShuttleStops      RegularShuttleStop[]
   regularLocationLinks     RegularShuttleLocationLink[]
   shuttleIntakeReviews     EnrollmentShuttleReview[]
+  uniformFreeGrants        UniformFreeGrant[]
   parent                   User                          @relation(fields: [parentId], references: [id])
 
   @@index([parentId])
@@ -618,6 +624,7 @@ model UniformOrder {
   createdAt         DateTime           @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   items             UniformOrderItem[]
+  freeGrants        UniformFreeGrant[]
 
   @@index([createdAt])
   @@index([stizSyncStatus, nextRetryAt])
@@ -639,6 +646,28 @@ model UniformOrderItem {
 
   @@index([uniformOrderId])
   @@index([studentName])
+}
+
+// 3년 이상 재원생 유니폼 무료 증정 링크 — 학생별 전용 토큰 1개 = 무료 유니폼 1벌
+// 상태: ISSUED(발급) → USED(신청 완료) | REVOKED(취소). 만료는 expiresAt 으로 판정.
+// 참고: DB 에는 «학생·사유별로 취소되지 않은 링크는 1개» 부분 유니크 인덱스
+// ("UniformFreeGrant_one_active_per_reason", WHERE status <> 'REVOKED')와 CHECK 제약이 있다.
+// Prisma 로 표현할 수 없어 여기엔 적지 않는다(적으면 반대 방향으로 어긋난다).
+model UniformFreeGrant {
+  id             String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId      String
+  token          String        @unique
+  reason         String        @default("TENURE_3Y")
+  tenureMonths   Int
+  status         String        @default("ISSUED") // ISSUED | USED | REVOKED
+  uniformOrderId String?
+  expiresAt      DateTime      @db.Timestamptz(6)
+  usedAt         DateTime?     @db.Timestamptz(6)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(6)
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  uniformOrder   UniformOrder? @relation(fields: [uniformOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([studentId])
 }
 
 /// 학부모의 청구서 관련 요청: "입금했어요"(확인 요청)와 "영수증 주세요".
