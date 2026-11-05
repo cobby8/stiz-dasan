@@ -98,3 +98,4 @@ Google 12명·14일 시험은 2023-11-13 이후 생성된 개인 계정 기준�
 - `/.well-known/apple-app-site-association`: `APPLE_TEAM_ID` 없으면 404. 운영 앱 간편로그인은 여전히 차단.
 - 앱 간편로그인 서버의 Origin "null" 무조건 통과를 막음(앱이 직접 연 consume POST·Sec-Fetch-Site none 만 허용).
 - 제출 서류 초안: [store-listing-draft.md](store-listing-draft.md).
+- ⚠️ 운영에서 앱 간편로그인을 켜기 전: iOS 16.0~16.3 WebKit 은 Sec-Fetch-Site 를 보내지 않아, WKWebView POST 가 Origin "null" 이면 consume 이 403 이 될 수 있다. 실기기로 확인하거나 최소 iOS 를 16.4 로 올린다.
