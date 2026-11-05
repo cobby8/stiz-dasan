@@ -13,8 +13,8 @@
 | 구분 | 확인한 사실 | 출시 전 남은 조건 |
 |---|---|---|
 | Android | `apps/driver-android` WebView+위치 서비스 통합 기반. `/store-app` 진입, target/compile SDK 36, 최소 API 26 | 정식 패키지·업턴랩스 서명·스토어 소유 확인, 실제 설치·업데이트 |
-| Android 산출물 | 기본 debug `kr.stiz.driver.unified`, 이번 격리 APK `kr.stiz.driver.sandbox`, 0.1.0(1). release는 `kr.stiz.driver` unsigned | debug 자동 서명은 정식 배포 서명이 아님. 최종 식별자·서명 확정 필요 |
-| iOS | UIKit/WKWebView, 기본 개발 ID `kr.stiz.academy.dev`·최소 iOS 16. 별도 STIZ Ad Hoc 시험은 `kr.co.upturnlabs.stizdasan`·0.1.0/build 4 | 시험 ID·팀·프로파일 및 IPA 검증/등록 아이폰 설치 완료. 운영 Release·스토어 서명은 별도 |
+| Android 산출물 | 기본 debug `kr.stiz.driver.unified`, 격리 APK `kr.stiz.driver.sandbox`. **release는 `kr.co.upturnlabs.stizdasan` 1.0.0(1) unsigned**(2026-11-05 ID 통일, 기존 `kr.stiz.driver` release는 설치 이력 없음) | 업턴랩스 업로드 키 서명·Play 앱 서명 등록 필요 |
+| iOS | UIKit/WKWebView, Debug 개발 ID `kr.stiz.academy.dev`·최소 iOS 16. **Release는 `kr.co.upturnlabs.stizdasan`·1.0.0·표시 이름 STIZ 농구교실**, AppIcon 1024·PrivacyInfo 추가(2026-11-05). Ad Hoc 시험은 같은 ID·0.1.0 | 시험 ID·팀·프로파일 및 IPA 검증/등록 아이폰 설치 완료. 운영 Release·스토어 서명은 별도 |
 | iOS 빌드·실행 | `95646eba`의 Codemagic 서명 build 4가 완료됐고 IPA 서명·단일 기기 대조 후 USB 설치. 합성 홈·PNG 공유/첨부·날짜·키보드·회전 부분 통과 | 최신 웹 화면 반영·실제 인증·가족·결제 전체 흐름 미검증. 무서명 시뮬레이터 zip과 아이폰 IPA는 구분 |
 | 실행 차단 | 검증 브랜치 Vercel 자동 배포 차단, Codemagic 수동 실행. 승인된 Ad Hoc 서명 작업은 존재하며 TestFlight 업로드 미실행 | main 자동 배포까지 차단한 설정은 아님. 추가 원격 빌드·설치·서명·운영 배포·TestFlight·제출은 각각 승인 필요 |
 
@@ -90,3 +90,11 @@ Apple 4.8 로그인 요건은 실제 로그인·서비스 유형과 예외로 �
 Google 12명·14일 시험은 2023-11-13 이후 생성된 개인 계정 기준이다. 업턴랩스 실제 계정 유형을 확인하지 않고 면제로 확정하지 않는다. [Google 개인 계정 시험](https://support.google.com/googleplay/android-developer/answer/14151465?hl=en)
 
 순서: **격리 시험 환경 → 승인된 설치 빌드 → 인증·가족·기사 → 청구·결제·알림 → 네 역할 실기기 → 심사 자료**. 설치·Apple 서명·새 원격 빌드·외부 시험 배포·운영 활성화·TestFlight·공개 제출은 각각 버전과 영향을 제시하고 승인받는다. 이 문서 정정은 그 실행 승인이 아니다.
+
+## 7. 2026-11-05 진행분
+
+- 앱 이름 **STIZ 농구교실**, ID `kr.co.upturnlabs.stizdasan`(iOS Release·Android release) 확정·반영.
+- Codemagic `stiz-ios-app-store`(수동·TestFlight 업로드만) 정의. 실행 전 원장님 준비물은 [Codemagic 문서](stiz-ios-codemagic.md) 끝 절.
+- `/.well-known/apple-app-site-association`: `APPLE_TEAM_ID` 없으면 404. 운영 앱 간편로그인은 여전히 차단.
+- 앱 간편로그인 서버의 Origin "null" 무조건 통과를 막음(앱이 직접 연 consume POST·Sec-Fetch-Site none 만 허용).
+- 제출 서류 초안: [store-listing-draft.md](store-listing-draft.md).
