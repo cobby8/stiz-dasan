@@ -67,6 +67,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-05 | developer(claude/driver-assign-join-fix): 기사 「새 학생 배정」 버그 3건 — A) 합류(JOIN) 행이 칸 맨 뒤 번호(nextSortOrder)로 들어가 다른 반·PIVOT 뒤로 가던 것 → planRosterInsert 에서 「그 이름 첫 묶음 마지막 행 바로 뒤 + 요일 전체 +1」(관리자 공통, 다음 달도 같은 이름 있으면 JOIN). B) joinOptions 에 같은 달 다른 요일·반 정류장(이름+좌표, 그 칸에 없는 이름) 추가·300m 안 최근접 추천·고르면 OTHER→INSERT(자리=추가거리 최소). C) 이미 이름 우선이라 그대로. tsc 0 · 셔틀/명단 테스트 471 통과 | 검수 대기 |
 | 11-05 | developer(claude/tenure-uniform-free, 미커밋): ① 총 재원기간 — Student.tenure* 3칸 + 순수 계산 student-tenure.ts(기준월 뒤 사이트 수강 달만 더함) + 조회 student-tenure-query.ts(실패 시 null) → 학생 상세 기본정보 한 줄. ② 3년 재원 유니폼 무료 링크 — UniformFreeGrant 표(마이그레이션 20261105120000), /apply/uniform/free/[token](noindex), 신청은 FOR UPDATE 잠금·NEEDS_REVIEW 저장(본사 자동발송 없음, 원장 «재전송»), 관리자 «무료 증정» 배지. tsc 0, 새 테스트 22건 통과, 전체 2936 중 실패 3 = 기존 건(A-15·P-11·관리자 오류원문 StudentDetailClient:1292) | 검수 대기 |
 | 11-05 | tester: 기사님 새 학생 배정 + 셔틀 진행 상태 전환(미커밋분) 검증 — tsc 0, 셔틀 .ts 113-0, 관련 .mjs 636 중 633(실패 3 = 유니폼 기존 건), npm test 2914 중 2911(같은 3건, 새 실패 0). 실례 7건(최윤호·박윤우×2·김태은·김현호·박보겸 4칸·이성빈 2칸) 기대값 일치, POST 거절 403/404/404/409 테스트로 확인. 참고: 학생 id 없는 이름+전화 행은 진행 상태=배차 대기·기사님 목록=빠짐으로 갈림 | 통과 |
 | 11-05 | developer: 기사님 「새 학생 배정」(/staff/shuttle/assign) — 승인 셔틀 신청+ACTIVE 수강의 남은 칸(요일×등·하원)을 한 칸씩 명단에 넣기. driverAssign(Logic).ts·API(GET/POST, DB 역할 재확인·자격 재검사·잠금 안 guard)·화면, addRosterStudent 본문을 addRosterStudentAs 로 분리(감사 via=DRIVER_ASSIGN). tsc 통과·테스트 15건+관련 110건 통과 | 검수 대기 |

@@ -6,7 +6,7 @@ import { ALREADY_ASSIGNED, assertLegStillOpen, buildAssignAddInput, buildAssignB
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
 import { findRouteCell, suggestPlacement } from "./regularRosterPlacementLogic.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { validateAddInput } from "./regularRosterEditLogic.ts";
+import { buildAddRows, planRosterInsert, validateAddInput } from "./regularRosterEditLogic.ts";
 
 // 기사님 「새 학생 배정」 순수 로직 — 남은 칸 · 휴원 제외 · 이미 있는 칸 제외 · 추천 전달 · 저장 입력 재검사.
 
@@ -175,4 +175,117 @@ test("요청 형식 검사: 잘못된 값은 400", () => {
     { ...ok, choice: { kind: "JOIN", stopIndex: -1 } }, { ...ok, choice: { kind: "MOVE" } }, { ...ok, routeVersion: "" }]) {
     assert.throws(() => parseAssignRequest(bad), (e: any) => e instanceof DriverAssignError && e.status === 400);
   }
+});
+
+// ── 2026-11-05 운영 버그 재현: 목(4) 19:20~20:40반 이성빈 ──────────────────
+// 하루 운행은 여러 반이 한 줄로 이어진다(sortOrder 는 요일 전체 공유, 사이에 PIVOT/RETURN).
+const SB_PIN = { lat: 37.62005, lng: 127.15342 };
+const YU = "유승한내들센트럴 정문 맘스테이션"; // 핀에서 약 97m
+const YU_PT = { latitude: 37.62092, longitude: 127.15342 };
+function thursday(): any[] {
+  seq = 0;
+  const t = (over: Record<string, unknown>) => r({ weekday: 4, weekdayLabel: "목", classTime: "19:20~20:40", ...over });
+  return [
+    t({ id: "hong-b", studentName: "홍유희", studentId: "hong", stopName: YU, ...YU_PT, arriveTime: "19:05", sortOrder: 23 }),
+    // 앞 반 하원 행들(같은 차, 다른 반)
+    ...[24, 25, 26, 27].map((n) => t({ id: `prev-${n}`, classTime: "18:00~19:10", direction: "ALIGHT", stopName: `앞반${n}`, arriveTime: "19:15", sortOrder: n })),
+    t({ id: "kim-b", studentName: "김현호", studentId: "kim", stopName: "다산동 공원", latitude: 37.61, longitude: 127.16, arriveTime: "19:12", sortOrder: 28 }),
+    t({ id: "pivot", direction: "PIVOT", studentName: null, studentId: null, stopName: "학원", sortOrder: 29 }),
+    t({ id: "hong-a", direction: "ALIGHT", studentName: "홍유희", studentId: "hong", stopName: YU, ...YU_PT, arriveTime: "20:50", sortOrder: 38 }),
+    t({ id: "return", direction: "RETURN", studentName: null, studentId: null, stopName: "학원 복귀", sortOrder: 39 }),
+    t({ id: "kim-a", direction: "ALIGHT", studentName: "김현호", studentId: "kim", stopName: "다산동 공원", latitude: 37.61, longitude: 127.16, arriveTime: "20:58", sortOrder: 40 }),
+  ];
+}
+function seongbin(): any {
+  const pin = { name: "이성빈 집", address: "다산동 100", latitude: SB_PIN.lat, longitude: SB_PIN.lng };
+  return student({ studentId: "sb", name: "이성빈", parentPhone: "010-3333-4444", pickup: pin, dropoff: pin,
+    enrolled: [{ weekday: 4, startTime: "19:20", endTime: "20:40", className: "목반", programName: "정규", status: "ACTIVE" }] });
+}
+/** 저장 입력 → 서버와 같은 삽입 계획 → 메모리 명단에 적용(SQL: 요일 전체 sortOrder ≥ shiftFrom +1 후 새 행). */
+function saveAndApply(rows: any[], input: Record<string, unknown>) {
+  const add = validateAddInput(input);
+  const plan = planRosterInsert(buildAddRows(add, rows, "이성빈"), add.placements, rows);
+  const out = rows.map((x) => ({ ...x }));
+  for (const u of plan.spread) out.find((x) => x.id === u.id).sortOrder = u.sortOrder;
+  for (const st of plan.steps) {
+    if (st.shiftFrom != null) for (const x of out) if (x.weekday === st.row.weekday && x.sortOrder >= st.shiftFrom) x.sortOrder += 1;
+    out.push({ ...st.row, id: "new-sb", studentName: "이성빈" });
+  }
+  return out;
+}
+const orderOf = (rows: any[]) => Object.fromEntries(rows.map((x) => [x.id, x.sortOrder]));
+const req = (over: Record<string, unknown>): any => ({ month: "2026-11", studentId: "sb", weekday: 4, includeNextMonth: false, ...over });
+
+test("버그A 재현: 유승한내들 JOIN 이면 홍유희(23) 바로 뒤 24 — 예전엔 칸 맨 뒤 29(PIVOT 앞)로 들어갔다", () => {
+  const rows = thursday();
+  const s = seongbin();
+  const leg = openLegsFor(s, rows).find((l: any) => l.direction === "BOARD")!;
+  const plan = planLeg(s, leg, rows, ACADEMY, DEPOT);
+  assert.deepEqual(plan.route.map((x: any) => x.label), [YU, "다산동 공원"]);
+  const yu = plan.joinOptions.find((o: any) => o.label === YU)!;
+  assert.equal(yu.stopIndex, 0);
+  assert.ok(yu.distanceMeters! >= 90 && yu.distanceMeters! <= 100);
+  const input = buildAssignAddInput(req({ direction: "BOARD", routeVersion: plan.routeVersion, choice: { kind: "JOIN", stopIndex: 0 } }), s, rows, ACADEMY, DEPOT);
+  const applied = saveAndApply(rows, input);
+  const after = orderOf(applied);
+  assert.equal(after["new-sb"], 24);
+  assert.deepEqual([after["hong-b"], after["prev-24"], after["prev-27"], after["kim-b"], after["pivot"]], [23, 25, 28, 29, 30]);
+  assert.equal(applied.find((x: any) => x.id === "new-sb").stopName, YU);
+});
+
+test("버그A 재현(하원): 홍유희 38 · RETURN 39 · 김현호 40 → 이성빈 39(홍유희 바로 뒤), RETURN 40, 김현호 41", () => {
+  const rows = thursday();
+  const s = seongbin();
+  const leg = openLegsFor(s, rows).find((l: any) => l.direction === "ALIGHT")!;
+  const plan = planLeg(s, leg, rows, ACADEMY, DEPOT);
+  assert.deepEqual(plan.route.map((x: any) => x.label), [YU, "다산동 공원"]);
+  const input = buildAssignAddInput(req({ direction: "ALIGHT", routeVersion: plan.routeVersion, choice: { kind: "JOIN", stopIndex: 0 } }), s, rows, ACADEMY, DEPOT);
+  const after = orderOf(saveAndApply(rows, input));
+  assert.deepEqual([after["hong-a"], after["new-sb"], after["return"], after["kim-a"]], [38, 39, 40, 41]);
+  assert.equal(after["pivot"], 29); // 앞쪽 행은 그대로
+});
+
+test("버그B: 그 칸에 없는 같은 달 다른 요일 정류장(38m)도 후보 — 가장 가까워 추천, 고르면 그 이름·좌표로 새 정차(INSERT)", () => {
+  const JAI = "다산이편한세상자이 후문";
+  const rows = [
+    ...thursday(),
+    // 월요일 다른 반 명단에만 있는 정류장(핀에서 약 38m)
+    r({ weekday: 1, classTime: "16:00~17:00", stopName: JAI, latitude: 37.62039, longitude: 127.15342, studentName: "월요학생", studentId: "mon1", sortOrder: 3 }),
+  ];
+  const s = seongbin();
+  const leg = openLegsFor(s, rows).find((l: any) => l.direction === "BOARD")!;
+  const plan = planLeg(s, leg, rows, ACADEMY, DEPOT);
+  const first = plan.joinOptions[0];
+  assert.equal(first.label, JAI);
+  assert.equal(first.otherDay, true);
+  assert.equal(first.stopIndex, null);
+  assert.equal(first.recommended, true);
+  assert.ok(first.distanceMeters! >= 35 && first.distanceMeters! <= 41);
+  assert.ok(plan.joinOptions.some((o: any) => o.label === YU && !o.otherDay && !o.recommended)); // 97m 는 후보로 남되 추천 아님
+  assert.deepEqual(plan.defaultChoice, { kind: "OTHER", key: first.key });
+  // 자리 = 추가 거리 최소(관리자 추천 ③과 같은 계산) — 그 칸 정차 합류로 바뀌지 않는다
+  const expected = suggestPlacement({ stops: findRouteCell(rows, 4, "19:20~20:40", "BOARD"), direction: "BOARD", stopName: "", student: { lat: 37.62039, lng: 127.15342 }, academy: ACADEMY, depot: DEPOT, joinRadiusMeters: -1 });
+  assert.equal(first.position, (expected.choice as any).position);
+
+  const input = buildAssignAddInput(req({ direction: "BOARD", routeVersion: plan.routeVersion, choice: { kind: "OTHER", key: first.key } }), s, rows, ACADEMY, DEPOT);
+  const board = input.board as any;
+  assert.deepEqual([board.stopName, board.latitude, board.longitude], [JAI, 37.62039, 127.15342]);
+  const mode = (input.placements as any[])[0].mode;
+  assert.ok(mode === "BEFORE" || mode === "END");
+  assert.equal(validateAddInput(input).board!.stopName, JAI);
+  // 화면에 없던 key 는 409(다시 불러오기)
+  assert.throws(() => buildAssignAddInput(req({ direction: "BOARD", routeVersion: plan.routeVersion, choice: { kind: "OTHER", key: "없음|0|0" } }), s, rows, ACADEMY, DEPOT),
+    (e: any) => e instanceof DriverAssignError && e.code === "ROUTE_CHANGED");
+  // 요청 형식: OTHER 는 key 문자열 필수
+  const ok = { month: "2026-11", studentId: "sb", weekday: 4, direction: "BOARD", routeVersion: "x", choice: { kind: "OTHER", key: first.key } };
+  assert.deepEqual(parseAssignRequest(ok).choice, { kind: "OTHER", key: first.key });
+  assert.throws(() => parseAssignRequest({ ...ok, choice: { kind: "OTHER", key: "" } }), (e: any) => e.status === 400);
+});
+
+test("버그C: 새 정류장 이름은 학생 위치 이름 우선, 이름이 없으면 주소", () => {
+  const far = { latitude: 37.5, longitude: 127.3 };
+  const named = student({ pickup: { name: "우리집 앞", address: "다산동 9", ...far }, dropoff: null });
+  assert.equal(planLeg(named, openLegsFor(named, roster())[0], roster(), ACADEMY, DEPOT).newStop?.name, "우리집 앞");
+  const unnamed = student({ pickup: { name: null, address: "다산동 9", ...far }, dropoff: null });
+  assert.equal(planLeg(unnamed, openLegsFor(unnamed, roster())[0], roster(), ACADEMY, DEPOT).newStop?.name, "다산동 9");
 });

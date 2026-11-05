@@ -24,7 +24,11 @@ const KNOWN: Record<string, string> = {
   MONTH_OUT_OF_RANGE: "이번 달·다음 달 운행표에만 넣을 수 있어요.",
 };
 
-type Choice = { kind: "JOIN"; stopIndex: number } | { kind: "INSERT"; position: number };
+// OTHER = 같은 달 다른 요일·반 정류장(그 칸엔 없음) — 그 이름·좌표로 새 정차가 정해진 자리에 들어간다.
+type Choice = { kind: "JOIN"; stopIndex: number } | { kind: "INSERT"; position: number } | { kind: "OTHER"; key: string };
+type JoinOption = AssignLegPlan["joinOptions"][number];
+const optionChoice = (o: JoinOption): Choice => (o.otherDay ? { kind: "OTHER", key: o.key ?? "" } : { kind: "JOIN", stopIndex: o.stopIndex ?? 0 });
+const sameOption = (c: Choice | null, o: JoinOption) => (o.otherDay ? c?.kind === "OTHER" && c.key === o.key : c?.kind === "JOIN" && c.stopIndex === o.stopIndex);
 type View = { mode: "list" } | { mode: "assign"; studentId: string; legKey: string };
 
 function monthLabel(m: string) { return `${Number(m.slice(5, 7))}월`; }
@@ -204,8 +208,9 @@ function AssignView({ month, board, student, leg, notice, warn, onNotice, onBack
     }
   }
 
-  // ② 순서 목록 — 새로 넣을 자리(+)를 끼워 보여 준다. 합류면 그 정류장 바로 뒤, 새 정류장이면 고른 자리.
-  const plusAt = choice?.kind === "JOIN" ? choice.stopIndex + 1 : position;
+  // ② 순서 목록 — 새로 넣을 자리(+)를 끼워 보여 준다. 합류면 그 정류장 바로 뒤, 다른 요일 정류장이면 서버가 정한 자리, 새 정류장이면 고른 자리.
+  const otherOpt = choice?.kind === "OTHER" ? leg.joinOptions.find((o) => sameOption(choice, o)) ?? null : null;
+  const plusAt = choice?.kind === "JOIN" ? choice.stopIndex + 1 : otherOpt ? otherOpt.position ?? n : position;
   const joinedStop = choice?.kind === "JOIN" ? leg.route[choice.stopIndex] : null;
   const rows: { no: string; stop: string; riders: string; mine?: boolean }[] = [];
   leg.route.forEach((s, i) => {
@@ -216,7 +221,7 @@ function AssignView({ month, board, student, leg, notice, warn, onNotice, onBack
   function plusRow() {
     return joinedStop
       ? { no: "+", stop: `${student.name} 여기서 함께 ${leg.direction === "BOARD" ? "탑승" : "하차"}`, riders: `${joinedStop.label} · 새로 넣을 자리`, mine: true }
-      : { no: "+", stop: `${student.name} 새 정류장`, riders: `${leg.newStop?.name ?? ""} · 새로 넣을 자리`, mine: true };
+      : { no: "+", stop: `${student.name} 새 정류장`, riders: `${otherOpt ? otherOpt.label : leg.newStop?.name ?? ""} · 새로 넣을 자리`, mine: true };
   }
   const endRow = leg.direction === "BOARD" ? `학원 도착 · ${leg.startTime} 수업` : null;
   const startRow = leg.direction === "ALIGHT" ? "학원 출발" : null;
@@ -256,16 +261,16 @@ function AssignView({ month, board, student, leg, notice, warn, onNotice, onBack
           <p className="break-words text-xs text-[var(--color-academy-muted)]">학생 위치: {place ?? "등록 안 됨"}</p>
           <div role="radiogroup" aria-labelledby="where-title" className="space-y-2">
             {leg.joinOptions.map((o) => {
-              const active = choice?.kind === "JOIN" && choice.stopIndex === o.stopIndex;
+              const active = sameOption(choice, o);
               return (
-                <button key={o.stopIndex} type="button" role="radio" aria-checked={active} disabled={saving} onClick={() => setChoice({ kind: "JOIN", stopIndex: o.stopIndex })} className={radio(active)}>
+                <button key={o.key ?? `i${o.stopIndex}`} type="button" role="radio" aria-checked={active} disabled={saving} onClick={() => setChoice(optionChoice(o))} className={radio(active)}>
                   <Dot active={active} />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="break-words text-sm font-bold">{o.label}
                       {o.recommended && <span className="ml-1 rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-px text-xs font-medium text-[var(--color-academy-primary)]">추천</span>}
                     </span>
                     <span className="text-xs text-[var(--color-academy-muted)]">
-                      지금 서는 정류장{o.distanceMeters != null ? ` · 학생 위치에서 약 ${o.distanceMeters}m` : ""} · 이미 {o.riders}명
+                      {o.otherDay ? "다른 요일 정류장" : "지금 서는 정류장"}{o.distanceMeters != null ? ` · 학생 위치에서 약 ${o.distanceMeters}m` : ""}{o.otherDay ? "" : ` · 이미 ${o.riders}명`}
                     </span>
                   </span>
                 </button>
@@ -302,6 +307,7 @@ function AssignView({ month, board, student, leg, notice, warn, onNotice, onBack
               className="min-h-11 flex-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-sm disabled:opacity-40">한 칸 아래로</button>
           </div>
           {choice?.kind === "JOIN" && <p className="text-xs text-[var(--color-academy-muted)]">기존 정류장에 함께 타면 그 정류장 순서를 따라요. 순서를 바꾸려면 새 정류장을 고르세요.</p>}
+          {choice?.kind === "OTHER" && <p className="text-xs text-[var(--color-academy-muted)]">다른 요일 정류장은 운행 거리가 가장 적게 늘어나는 자리에 들어가요.</p>}
         </section>
 
         {board.laterMonths.length > 0 && (

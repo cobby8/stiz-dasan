@@ -185,12 +185,13 @@ test("중간 삽입: 같은 정류장이 앞뒤에 흩어져 있어도(A,B,A) �
   assert.deepEqual(relativeOrder(after), relativeOrder(rows));
 });
 
-test("합류(JOIN): 밀지 않고 칸 맨 뒤 + 대상 정차 이름·좌표·시각 → 기사님 화면에선 그 정차 학생 끝에 묶임", () => {
+test("합류(JOIN): 그 정차 학생 행 바로 뒤 번호 + 대상 정차 이름·좌표·시각 → 기사님 화면에선 그 정차 학생 끝에 묶임", () => {
   const rows = sampleDay();
   const input = addInput([{ weekday: 1, classTime: "17:00~18:00", direction: "BOARD", mode: "JOIN", rowId: "r3" }]);
   const plan = planRosterInsert(buildAddRows(input, rows, "신입"), input.placements, rows);
   const steps = plan.steps;
-  assert.equal(steps[0].shiftFrom, null); // 다른 행 번호를 건드리지 않음
+  assert.equal(steps[0].shiftFrom, 4); // B(r3=3) 바로 뒤 — 칸 맨 뒤(7)가 아니다(2026-11-05 버그)
+  assert.equal(steps[0].row.sortOrder, 4);
   assert.equal(steps[0].mode, "JOIN");
   assert.equal(steps[0].row.stopName, "B");
   assert.equal(steps[0].row.arriveTime, "16:40");

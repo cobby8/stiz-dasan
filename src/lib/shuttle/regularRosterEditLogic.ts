@@ -2,6 +2,10 @@
 // 서버(regularRosterEdit.ts)와 화면(RegularShuttleClient)이 같은 규칙을 쓰고, node --test 로 고정한다.
 // ⚠️ node 타입 제거 실행으로 테스트하므로 '@/' 경로 import·enum 을 쓰지 않는다.
 
+// 합류 자리 계산은 기사님 화면이 정차를 묶는 이름 규칙(공백·대소문자 무시)과 같아야 한다.
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { normalizeStopName } from "./regularDriverRouteLogic.ts";
+
 export type RosterDirection = "BOARD" | "ALIGHT";
 
 export const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"] as const;
@@ -456,8 +460,10 @@ function spreadCellTies(work: RosterPlacementRow[], weekday: number, direction: 
  * buildAddRows 가 만든 새 행(맨 뒤 기준)에 칸별 삽입 위치를 적용해 실행 계획을 만든다(순수 함수).
  * - END(또는 위치 없음): 예전과 똑같이 그 칸 맨 뒤 번호(밀기 없음).
  * - BEFORE: 칸 겹침을 벌린 뒤, 기준 행 번호를 새 행이 갖고 그 요일의 그 번호 이상을 +1.
- * - JOIN : 밀지 않고 칸 맨 뒤 + 대상 정차의 정류장 이름(글자 그대로)·좌표·시각 복사.
- *          기사님 화면은 같은 이름을 처음 나온 위치에 한 정차로 묶으므로 결과는 합류와 같다.
+ * - JOIN : 대상 정차의 정류장 이름(글자 그대로)·좌표·시각 복사 + 그 정차 학생 행 **바로 뒤** 번호(요일의 그 뒤 행 +1).
+ *          2026-11-05 운영 버그: 예전엔 칸 맨 뒤 번호를 줘서, 하루 운행이 여러 반·PIVOT/RETURN 으로 이어진 요일에
+ *          합류 학생이 학원 경유(PIVOT) 바로 앞 등 엉뚱한 번호로 들어갔다(목 19:20 유승한내들 23 → 29).
+ *          자리 기준 = 칸 안에서 그 이름이 처음 나온 묶음(연속 행)의 마지막 행 — 기사님 화면이 정차를 그리는 위치.
  * 기준 행이 그 칸(같은 요일·방향·수업시간의 학생 행)이 아니면 거부한다 — 화면과 DB 가 어긋난 상태라서.
  */
 export function planRosterInsert(
@@ -478,7 +484,8 @@ export function planRosterInsert(
   const original = new Map(existing.map((r) => [r.id, r.sortOrder]));
   for (const base of rows) {
     const p = placementOf(base);
-    if (p?.mode === "BEFORE" && p.rowId) {
+    // JOIN 도 「그 정차 바로 뒤」 번호를 쓰므로 칸 안 겹침을 먼저 벌린다(겹친 다른 정차 뒤로 가지 않게).
+    if ((p?.mode === "BEFORE" || p?.mode === "JOIN") && p.rowId) {
       refOf(base, p.rowId); // 칸 확인
       spreadCellTies(work, base.weekday, base.direction, base.classTime);
     }
@@ -507,8 +514,16 @@ export function planRosterInsert(
         ? { latitude: ref.latitude, longitude: ref.longitude }
         : { latitude: row.latitude, longitude: row.longitude };
       // 시각은 검증 없이 대상 정차 값을 그대로 복사한다('16:40:00' 같은 옛 표기도 그대로).
-      row = { ...row, classTime, stopName: ref.stopName || row.stopName, ...coord, arriveTime: ref.arriveTime ?? null,
-        sortOrder: nextSortOrder(work, base.weekday, base.direction, classTime) };
+      // 자리: 칸 안(기사님 화면 순서)에서 그 이름이 처음 나온 묶음의 마지막 행 바로 뒤.
+      const key = normalizeStopName(ref.stopName);
+      const cell = work.filter((r) => inCell(r, base.weekday, base.direction, base.classTime)).sort(rowOrder);
+      let last = cell.findIndex((r) => normalizeStopName(r.stopName) === key);
+      if (last < 0) last = cell.findIndex((r) => r.id === ref.id); // 이름이 비어도 기준 행 자체는 칸 안에 있다
+      while (last + 1 < cell.length && normalizeStopName(cell[last + 1].stopName) === key) last += 1;
+      shiftFrom = cell[last].sortOrder + 1;
+      // 요일 전체에서 그 번호 이상을 +1 → 다른 반·PIVOT/RETURN 행의 서로 간 순서는 그대로, 새 행만 끼어든다.
+      for (const r of work) if (r.weekday === base.weekday && r.sortOrder >= shiftFrom) r.sortOrder += 1;
+      row = { ...row, classTime, stopName: ref.stopName || row.stopName, ...coord, arriveTime: ref.arriveTime ?? null, sortOrder: shiftFrom };
       used = "JOIN";
     } else {
       const stop = p?.fallbackStop;
@@ -530,7 +545,7 @@ export function planRosterInsert(
 /**
  * 이후 달(FROM_THIS_MONTH)용 삽입 위치.
  * - BEFORE: 이 달 기준 행의 대응 행(findCounterpartRows: 같은 학생·요일·방향·수업시간)으로 바꾼다. 없으면 맨 뒤 + fellBack.
- * - JOIN  : 그 달도 칸 맨 뒤 + 이 달 합류 정차의 정류장 값. 그 달 그 칸에 같은 이름 정차가 없으면(묶이지 않으면) fellBack.
+ * - JOIN  : 그 달 그 칸에 같은 이름 정차가 있으면 그 정차에 JOIN(바로 뒤 번호). 없으면 칸 맨 뒤 + 이 달 합류 정차의 정류장 값 + fellBack.
  */
 export function mapPlacementsToMonth(
   placements: readonly RosterPlacementInput[] | undefined,
@@ -543,8 +558,10 @@ export function mapPlacementsToMonth(
     if (p.mode === "JOIN") {
       if (!src?.stopName) return { ...p, mode: "END", rowId: null, fellBack: true };
       const fallbackStop = { stopName: src.stopName, arriveTime: src.arriveTime ?? null, latitude: src.latitude ?? null, longitude: src.longitude ?? null };
-      const grouped = targetRows.some((r) => inCell(r, p.weekday, p.direction, p.classTime) && r.stopName === src.stopName);
-      return { ...p, mode: "END", rowId: null, fallbackStop, ...(grouped ? {} : { fellBack: true }) };
+      // 그 달 칸에 같은 이름 정차가 있으면 그 달도 그 정차 바로 뒤에 합류(맨 뒤에 붙이면 이 달과 같은 버그).
+      const grouped = targetRows.find((r) => inCell(r, p.weekday, p.direction, p.classTime) && r.stopName === src.stopName);
+      if (grouped) return { ...p, mode: "JOIN", rowId: grouped.id };
+      return { ...p, mode: "END", rowId: null, fallbackStop, fellBack: true };
     }
     const hit = src ? findCounterpartRows(src, targetRows)[0] : undefined;
     if (hit) return { ...p, rowId: hit.id };

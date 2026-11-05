@@ -7,7 +7,7 @@
 // ⚠️ node 타입 제거 실행으로 테스트하므로 '@/' 경로 import·enum 을 쓰지 않는다(런타임 import 는 .ts 확장자).
 
 // @ts-expect-error -- TypeScript runtime test compatibility
-import { enrolledClassSlots, findRouteCell, resolveCellPlacement, resolveStudentPoint, studentRosterRows, suggestPlacement, type EnrolledClass, type GeoPoint, type PlacementChoice } from "./regularRosterPlacementLogic.ts";
+import { enrolledClassSlots, findRouteCell, JOIN_RADIUS_METERS, resolveCellPlacement, resolveStudentPoint, studentRosterRows, suggestPlacement, type EnrolledClass, type GeoPoint, type PlacementChoice } from "./regularRosterPlacementLogic.ts";
 // @ts-expect-error -- TypeScript runtime test compatibility
 import { WEEKDAY_LABELS, type RosterDirection } from "./regularRosterEditLogic.ts";
 // @ts-expect-error -- TypeScript runtime test compatibility
@@ -60,7 +60,27 @@ export type AssignRouteStop = {
   riders: string[];
 };
 
-export type AssignJoinOption = { stopIndex: number; label: string; distanceMeters: number | null; riders: number; recommended: boolean };
+/**
+ * 「기존 정류장에 태우기」 후보 한 줄.
+ * - 그 칸 정차: stopIndex = route 안 자리, otherDay = false.
+ * - 같은 달 다른 요일·반 정류장(2026-11-05 추가): stopIndex = null, otherDay = true, key 로 고른다.
+ *   고르면 그 정류장 이름·좌표로 새 정차를 position 자리(운행 거리가 가장 적게 늘어나는 자리)에 넣는다.
+ */
+export type AssignJoinOption = {
+  stopIndex: number | null;
+  /** 다른 요일 정류장 식별값(이름|위도|경도). 그 칸 정차는 null. */
+  key: string | null;
+  otherDay: boolean;
+  /** 다른 요일 정류장을 넣을 자리(0 = 첫 정차 앞, route.length = 맨 뒤). 그 칸 정차는 null. */
+  position: number | null;
+  label: string; distanceMeters: number | null; riders: number; recommended: boolean;
+};
+
+/** 기사님 화면 선택 — 관리자와 같은 JOIN/INSERT + 「다른 요일 정류장」(OTHER). */
+export type AssignChoice = PlacementChoice | { kind: "OTHER"; key: string };
+
+/** 다른 요일·반 정류장(그 칸에 없는 이름) — 저장할 때 이름·좌표를 그대로 쓴다. */
+type OtherStop = { key: string; name: string; lat: number; lng: number };
 
 export type AssignLegPlan = OpenLeg & {
   key: string;
@@ -73,7 +93,7 @@ export type AssignLegPlan = OpenLeg & {
   /** ① 「학생 위치에 새 정류장」 — 학생 상세 위치가 없거나 같은 이름 정류장이 이미 있으면 null. */
   newStop: { name: string; address: string } | null;
   /** 처음 골라 둘 값(추천). */
-  defaultChoice: PlacementChoice | null;
+  defaultChoice: AssignChoice | null;
   /** 새 정류장의 처음 자리(0 = 첫 정차 앞, route.length = 맨 뒤). */
   defaultPosition: number;
   reason: string;
@@ -173,6 +193,37 @@ function newStopPlace(student: AssignStudentInput, direction: RosterDirection): 
   return (direction === "BOARD" ? student.pickup : student.dropoff) ?? (direction === "BOARD" ? student.dropoff : student.pickup);
 }
 
+/** 다른 요일 정류장 식별값 — 이름(공백 무시)과 좌표가 같으면 같은 정류장. */
+function otherStopKey(name: string, lat: number, lng: number): string {
+  return `${normalizeStopName(name)}|${lat}|${lng}`;
+}
+
+/**
+ * 같은 달 명단 전체에서 좌표 있는 고유 정류장(이름+좌표) 중 그 칸에 없는 이름.
+ * 그 칸에 같은 이름 정차가 있으면 뺀다 — 고르면 기사님 화면에서 그 정차로 합쳐지므로 「그 칸 정차」 후보와 같다.
+ */
+function otherDayStops(stops: readonly RegularShuttleStop[], cell: readonly { label: string }[]): OtherStop[] {
+  const inCell = new Set(cell.map((s) => normalizeStopName(s.label)));
+  const seen = new Map<string, OtherStop>();
+  for (const s of stops) {
+    if (s.direction !== "BOARD" && s.direction !== "ALIGHT") continue; // 운영 정차(PIVOT/RETURN) 제외
+    const name = (s.stopName ?? "").trim();
+    if (!name || inCell.has(normalizeStopName(name))) continue;
+    const lat = s.latitude, lng = s.longitude;
+    if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const key = otherStopKey(name, lat, lng);
+    if (!seen.has(key)) seen.set(key, { key, name, lat, lng });
+  }
+  return [...seen.values()];
+}
+
+/** 다른 요일 정류장을 그 칸에 새 정차로 넣을 자리 — 관리자 추천 ③(추가 거리 최소)을 그대로 쓴다. */
+function otherStopPosition(cell: Parameters<typeof suggestPlacement>[0]["stops"], direction: RosterDirection, o: OtherStop, academy: GeoPoint | null, depot: GeoPoint | null): number {
+  // stopName 은 비운다(그 칸에 없는 이름이라 ① 이름 합류가 없음) · 반경 -1 = ② 가까운 정차 합류를 끈다.
+  const s = suggestPlacement({ stops: cell, direction, stopName: "", student: { lat: o.lat, lng: o.lng }, academy, depot, joinRadiusMeters: -1 });
+  return s.choice.kind === "INSERT" ? s.choice.position : cell.length;
+}
+
 /**
  * 한 칸의 배정 화면 재료 — 지금 운행 순서 · 「기존 정류장에 태우기」 후보 · 「새 정류장」 · 추천.
  * 추천은 관리자 학생 추가와 같은 suggestPlacement(같은 이름/300m 안 정차 합류, 아니면 운행 거리가 가장 적게 늘어나는 자리).
@@ -188,29 +239,52 @@ export function planLeg(student: AssignStudentInput, leg: OpenLeg, stops: readon
   const clash = placeName ? cell.some((s: { label: string }) => normalizeStopName(s.label) === normalizeStopName(placeName)) : false;
   const newStop = place && placeName && !clash ? { name: placeName, address: place.address } : null;
 
-  // ① 기존 정류장 후보: 학생 위치가 있으면 가까운 순(1km 안, 최대 3곳) + 추천 합류 정차, 없으면 전부(거리 모름).
+  // ① 기존 정류장 후보: 학생 위치가 있으면 가까운 순(1km 안, 최대 3곳) + 추천, 없으면 그 칸 정차 전부(거리 모름).
+  //    2026-11-05: 그 칸에 없는 「같은 달 다른 요일·반 정류장」도 거리순 후보에 넣는다(38m 정류장이 빠지고 97m 가 추천되던 버그).
   const sugJoin = suggestion.choice.kind === "JOIN" ? suggestion.choice.stopIndex : -1;
-  type Cand = { stopIndex: number; d: number | null };
+  type Cand = { stopIndex: number | null; other: OtherStop | null; d: number | null };
   let cands: Cand[] = cell.map((s: { lat: number | null; lng: number | null }, i: number) => ({
-    stopIndex: i,
+    stopIndex: i, other: null,
     d: point && s.lat != null && s.lng != null ? distanceMeters(point.lat, point.lng, s.lat, s.lng) : null,
   }));
   if (point) {
-    cands = cands.filter((c) => c.stopIndex === sugJoin || (c.d != null && c.d <= JOIN_OPTION_RADIUS_METERS))
-      .sort((a, b) => (a.stopIndex === sugJoin ? -1 : b.stopIndex === sugJoin ? 1 : (a.d ?? Infinity) - (b.d ?? Infinity)))
-      .slice(0, JOIN_OPTION_LIMIT);
-  } else if (sugJoin >= 0) {
-    cands = [cands[sugJoin], ...cands.filter((c) => c.stopIndex !== sugJoin)];
+    for (const o of otherDayStops(stops, cell)) cands.push({ stopIndex: null, other: o, d: distanceMeters(point.lat, point.lng, o.lat, o.lng) });
   }
-  const joinOptions: AssignJoinOption[] = cands.map((c) => ({
-    stopIndex: c.stopIndex, label: cell[c.stopIndex].label, distanceMeters: c.d == null ? null : Math.round(c.d),
-    riders: cell[c.stopIndex].rows.length, recommended: c.stopIndex === sugJoin,
-  }));
+  // 추천: 이름이 같은 그 칸 정차(관리자 추천 ①)는 그대로 둔다. 아니면 합류 반경(300m, 기존 값) 안 후보 중 가장 가까운 곳.
+  const sameName = sugJoin >= 0 && !!placeName && normalizeStopName(cell[sugJoin].label) === normalizeStopName(placeName);
+  let rec: Cand | null = sugJoin >= 0 ? cands[sugJoin] : null;
+  if (!sameName && point) {
+    for (const c of cands) {
+      if (c.d == null || c.d > JOIN_RADIUS_METERS) continue;
+      if (!rec || rec.d == null || c.d < rec.d - 1e-6) rec = c;
+    }
+  }
+  if (point) {
+    cands = cands.filter((c) => c === rec || (c.d != null && c.d <= JOIN_OPTION_RADIUS_METERS))
+      .sort((a, b) => (a === rec ? -1 : b === rec ? 1 : (a.d ?? Infinity) - (b.d ?? Infinity)))
+      .slice(0, JOIN_OPTION_LIMIT);
+  } else if (rec) {
+    cands = [rec, ...cands.filter((c) => c !== rec)];
+  }
+  const joinOptions: AssignJoinOption[] = cands.map((c) => c.other
+    ? {
+      stopIndex: null, key: c.other.key, otherDay: true,
+      // 자리 = 관리자 추천 ③(운행 거리가 가장 적게 늘어나는 자리) — 합류 반경을 꺼서 그 칸 정차 합류로 바뀌지 않게.
+      position: otherStopPosition(cell, leg.direction, c.other, academy, depot),
+      label: c.other.name, distanceMeters: c.d == null ? null : Math.round(c.d), riders: 0, recommended: c === rec,
+    }
+    : {
+      stopIndex: c.stopIndex, key: null, otherDay: false, position: null,
+      label: cell[c.stopIndex as number].label, distanceMeters: c.d == null ? null : Math.round(c.d),
+      riders: cell[c.stopIndex as number].rows.length, recommended: c === rec,
+    });
 
   // 새 정류장 처음 자리 = 추천 끼울 자리, 추천이 합류면 그 정류장 바로 뒤.
   const defaultPosition = suggestion.choice.kind === "INSERT" ? suggestion.choice.position : Math.min(sugJoin + 1, cell.length);
-  let defaultChoice: PlacementChoice | null = suggestion.choice;
-  if (suggestion.choice.kind === "INSERT" && !newStop) defaultChoice = joinOptions[0] ? { kind: "JOIN", stopIndex: joinOptions[0].stopIndex } : null;
+  const toChoice = (o: AssignJoinOption): AssignChoice => (o.otherDay ? { kind: "OTHER", key: o.key as string } : { kind: "JOIN", stopIndex: o.stopIndex as number });
+  const recOption = joinOptions.find((o) => o.recommended) ?? null;
+  let defaultChoice: AssignChoice | null = recOption ? toChoice(recOption) : suggestion.choice;
+  if (defaultChoice.kind === "INSERT" && !newStop) defaultChoice = joinOptions[0] ? toChoice(joinOptions[0]) : null;
   const blocked = !newStop && joinOptions.length === 0
     ? "학생 승차·하차 위치가 아직 없어 이 칸은 넣을 수 없어요. 학원에 위치 등록을 부탁해 주세요."
     : null;
@@ -257,7 +331,7 @@ export type AssignRequest = {
   studentId: string;
   weekday: number;
   direction: RosterDirection;
-  choice: PlacementChoice;
+  choice: AssignChoice;
   routeVersion: string;
   includeNextMonth: boolean;
 };
@@ -278,8 +352,9 @@ export function parseAssignRequest(raw: unknown): AssignRequest {
   if (!direction) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
   const c = o.choice as Record<string, unknown> | null;
   const isIndex = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 500;
-  let choice: PlacementChoice;
+  let choice: AssignChoice;
   if (c && c.kind === "JOIN" && isIndex(c.stopIndex)) choice = { kind: "JOIN", stopIndex: c.stopIndex as number };
+  else if (c && c.kind === "OTHER" && typeof c.key === "string" && c.key.length > 0 && c.key.length <= 300) choice = { kind: "OTHER", key: c.key };
   else if (c && c.kind === "INSERT" && isIndex(c.position)) choice = { kind: "INSERT", position: c.position as number };
   else throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
   const routeVersion = typeof o.routeVersion === "string" ? o.routeVersion.slice(0, 64) : "";
@@ -308,20 +383,30 @@ export function buildAssignAddInput(req: AssignRequest, student: AssignStudentIn
   if (plan.blocked) throw new DriverAssignError(plan.blocked, 409, "LOCATION_REQUIRED");
 
   const n = plan.route.length;
-  const { choice } = req;
-  if (choice.kind === "JOIN" && choice.stopIndex >= n) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
-  if (choice.kind === "INSERT" && (choice.position > n || !plan.newStop)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  const asked = req.choice;
+  if (asked.kind === "JOIN" && asked.stopIndex >= n) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  if (asked.kind === "INSERT" && (asked.position > n || !plan.newStop)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  // 다른 요일 정류장 = 화면에 보여 준 후보 중 같은 key 만(그사이 명단이 바뀌어 없으면 다시 불러오기).
+  const other = asked.kind === "OTHER" ? plan.joinOptions.find((o) => o.otherDay && o.key === asked.key) : undefined;
+  const otherStop = other ? otherDayStops(stops, plan.route).find((o) => o.key === other.key) ?? null : null;
+  if (asked.kind === "OTHER" && (!other || !otherStop || other.position == null || other.position > n)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  // 다른 요일 정류장은 관리자와 같은 「새 정차(INSERT)」로 넣는다 — 자리는 화면에 보여 준 그 자리.
+  const choice: PlacementChoice = asked.kind === "OTHER" ? { kind: "INSERT", position: other!.position as number } : asked;
 
   const place = newStopPlace(student, req.direction);
   const res = resolveCellPlacement({
     stops, weekday: leg.weekday, classTime: leg.classTime, direction: leg.direction,
-    stopName: plan.newStop?.name ?? "", student: studentPointFor(student, req.direction, stops),
+    stopName: otherStop?.name ?? plan.newStop?.name ?? "",
+    // 시각 보간은 실제로 차가 서는 곳(다른 요일 정류장이면 그 정류장 좌표) 기준.
+    student: otherStop ? { lat: otherStop.lat, lng: otherStop.lng } : studentPointFor(student, req.direction, stops),
     academy, depot, studentId: student.studentId, override: { choice },
   });
-  // 정류장 값: 합류 = 그 정류장 이름(이름·좌표·시각은 서버가 대상 행에서 복사), 새 정류장 = 학생 상세 위치.
+  // 정류장 값: 합류 = 그 정류장 이름(이름·좌표·시각은 서버가 대상 행에서 복사), 다른 요일 정류장 = 그 이름·좌표, 새 정류장 = 학생 상세 위치.
   const stop = choice.kind === "JOIN"
     ? { stopName: res.stops[choice.stopIndex].label, arriveTime: null, latitude: null, longitude: null }
-    : { stopName: plan.newStop!.name, arriveTime: res.arriveTime, latitude: place!.latitude, longitude: place!.longitude };
+    : otherStop
+      ? { stopName: otherStop.name, arriveTime: res.arriveTime, latitude: otherStop.lat, longitude: otherStop.lng }
+      : { stopName: plan.newStop!.name, arriveTime: res.arriveTime, latitude: place!.latitude, longitude: place!.longitude };
   const placement: Record<string, unknown> = {
     weekday: leg.weekday, classTime: leg.classTime, direction: leg.direction, mode: res.request.mode, rowId: res.request.rowId,
   };
