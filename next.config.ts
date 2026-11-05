@@ -36,6 +36,12 @@ const nextConfig: NextConfig = {
         destination: "/api/assetlinks",
       },
       {
+        // 아이폰 유니버설 링크·비밀번호 자동완성용 Apple App Site Association. 확장자 없는 고정 주소다.
+        // 팀 ID 환경변수(APPLE_TEAM_ID)가 없으면 404 를 돌려준다.
+        source: "/.well-known/apple-app-site-association",
+        destination: "/api/apple-app-site-association",
+      },
+      {
         // 선생님에게 공유하는 주소는 기억하기 쉬운 /staff/install로 유지한다.
         source: "/staff/install",
         destination: "/teacher-app",
