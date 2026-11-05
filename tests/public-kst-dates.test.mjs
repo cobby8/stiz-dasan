@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as kst from "../src/lib/datetime/kst.ts";
 import * as galleryMedia from "../src/lib/galleryMedia.ts";
+import * as shuttlePlaceName from "../src/lib/enrollment/shuttle-place-name.ts";
 
 const require = createRequire(import.meta.url);
 const stamp = "2026-10-21T15:30:00Z";
@@ -23,6 +24,7 @@ function loadPage(file, overrides = {}) {
     if (Object.hasOwn(overrides, id)) return overrides[id];
     if (id === "@/lib/datetime/kst") return kst;
     if (id === "@/lib/galleryMedia") return galleryMedia;
+    if (id === "@/lib/enrollment/shuttle-place-name") return shuttlePlaceName;
     if (id === "next/link") return { default: ({ children, ...props }) => React.createElement("a", props, children) };
     if (id === "next/navigation") return { notFound: () => { throw new Error("not found"); } };
     if (id === "@/lib/sanitize") return { sanitizeHtml: (value) => value };
