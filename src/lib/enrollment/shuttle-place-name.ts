@@ -65,3 +65,20 @@ export function sanitizeLoadedPlaceName(name: string | null | undefined, locatio
     if (!trimmed || isPlaceNameSameAsAddress(trimmed, location)) return "";
     return trimmed;
 }
+
+/**
+ * 위치를 「다시 고르기」 했을 때 이름 칸에 둘 값.
+ * - 학부모가 직접 적은 이름은 지우지 않는다(핀만 살짝 옮겨도 다시 적게 하면 안 된다).
+ * - 이름이 비었거나 이전 위치의 자동값(지도 장소명) 그대로면 새 위치의 자동값으로 바꾼다(장소명 없으면 빈칸).
+ */
+export function nextPlaceNameAfterRepick(
+    currentName: string | null | undefined,
+    previousLocation: ShuttlePlaceAddressLike,
+    nextLocation: ShuttlePlaceAddressLike,
+): string {
+    const current = currentName?.trim() ?? "";
+    if (!current || current === initialPlaceNameFromMap(previousLocation)) {
+        return initialPlaceNameFromMap(nextLocation);
+    }
+    return currentName ?? "";
+}

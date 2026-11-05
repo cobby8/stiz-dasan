@@ -12,6 +12,7 @@ const {
     shuttlePlaceNameError,
     initialPlaceNameFromMap,
     sanitizeLoadedPlaceName,
+    nextPlaceNameAfterRepick,
 } = await loadTsModule("src/lib/enrollment/shuttle-place-name.ts");
 
 const pin = { address: "경기 남양주시 다산동 4002-1", roadAddress: "경기 남양주시 다산중앙로 100" };
@@ -50,6 +51,25 @@ test("이전 신청 불러오기: 주소가 이름으로 저장돼 있었으면 
     assert.equal(sanitizeLoadedPlaceName(null, pin), "");
 });
 
+test("다시 고르기: 직접 적은 이름은 유지한다", () => {
+    const before = { ...pin, placeName: "다산 롯데캐슬" };
+    const after = { address: "경기 남양주시 다산동 4003", placeName: "다산 자이" };
+    assert.equal(nextPlaceNameAfterRepick("롯데캐슬 후문 맘스테이션", before, after), "롯데캐슬 후문 맘스테이션");
+    assert.equal(nextPlaceNameAfterRepick("후문 앞", pin, { address: "다른 주소" }), "후문 앞");
+});
+
+test("다시 고르기: 이전 자동값 그대로면 새 위치 장소명으로 바꾼다", () => {
+    const before = { ...pin, placeName: "다산 롯데캐슬" };
+    assert.equal(nextPlaceNameAfterRepick("다산 롯데캐슬", before, { address: "x", placeName: "다산 자이" }), "다산 자이");
+    assert.equal(nextPlaceNameAfterRepick("다산 롯데캐슬", before, { address: "x" }), "");
+});
+
+test("다시 고르기: 빈칸이면 새 장소명, 장소명 없으면 빈칸", () => {
+    assert.equal(nextPlaceNameAfterRepick("", undefined, { address: "x", placeName: "다산 자이" }), "다산 자이");
+    assert.equal(nextPlaceNameAfterRepick("  ", pin, pin), "");
+    assert.equal(nextPlaceNameAfterRepick(undefined, undefined, pin), "");
+});
+
 test("화면·서버가 같은 규칙을 쓰고, 주소 자동 채움은 사라졌다", () => {
     const form = fs.readFileSync("src/app/apply/enroll/EnrollApplicationForm.tsx", "utf8");
     const steps = fs.readFileSync("src/app/apply/enroll/EnrollApplicationLaterSteps.tsx", "utf8");
@@ -61,7 +81,8 @@ test("화면·서버가 같은 규칙을 쓰고, 주소 자동 채움은 사라�
     assert.match(form, /sanitizeLoadedPlaceName\(existing\.shuttleDropoff/);
 
     assert.doesNotMatch(steps, /placeName \?\? location\.address/);
-    assert.match(steps, /initialPlaceNameFromMap\(location\)/);
+    assert.match(steps, /nextPlaceNameAfterRepick\(form\.shuttlePickup, form\.shuttlePickupLocationData, location\)/);
+    assert.match(steps, /nextPlaceNameAfterRepick\(form\.shuttleDropoff, form\.shuttleDropoffLocationData, location\)/);
     assert.match(steps, /타는 곳 이름/);
     assert.match(steps, /내리는 곳 이름/);
 

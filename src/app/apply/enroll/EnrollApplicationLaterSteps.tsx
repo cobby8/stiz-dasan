@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import FontFreeIcon, { type FontFreeIconName } from "@/components/ui/FontFreeIcon";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
-import { initialPlaceNameFromMap } from "@/lib/enrollment/shuttle-place-name";
+import { nextPlaceNameAfterRepick } from "@/lib/enrollment/shuttle-place-name";
 
 interface AvailableSlot {
     slotKey: string;
@@ -292,11 +292,12 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                     onConfirm={(location: MapLocationData) => {
                         // 이름 칸에는 지도가 준 가게·건물 이름만 미리 넣는다. 주소뿐이면 빈칸 → 학부모가 직접 적는다.
                         // (예전엔 주소를 자동으로 넣어 「다산동 4002-1」만 남고 기사님이 어디서 태울지 몰랐다)
+                        // 「다시 고르기」 때 학부모가 직접 적은 이름은 지우지 않는다(자동값·빈칸일 때만 새 장소명으로).
                         if (locationPicker === "pickup") {
-                            update("shuttlePickup", initialPlaceNameFromMap(location));
+                            update("shuttlePickup", nextPlaceNameAfterRepick(form.shuttlePickup, form.shuttlePickupLocationData, location));
                             update("shuttlePickupLocationData", location);
                         } else {
-                            update("shuttleDropoff", initialPlaceNameFromMap(location));
+                            update("shuttleDropoff", nextPlaceNameAfterRepick(form.shuttleDropoff, form.shuttleDropoffLocationData, location));
                             update("shuttleDropoffLocationData", location);
                         }
                         update("shuttleLocationConsent", false);
