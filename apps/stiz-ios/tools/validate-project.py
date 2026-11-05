@@ -12,7 +12,7 @@ defined = re.findall(r"^\s*(A[0-9A-F]{23}) =", project, re.M)
 references = set(re.findall(r"\bA[0-9A-F]{23}\b", project))
 assert len(defined) == len(set(defined)), "프로젝트 ID 중복"
 assert references == set(defined), "프로젝트 파일 참조 누락"
-for file in ["AppDelegate.swift", "NavigationPolicy.swift", "NativeAuthPolicy.swift", "NativeAuthCoordinator.swift", "WebViewController.swift", "Info.plist", "Assets.xcassets"]:
+for file in ["AppDelegate.swift", "NavigationPolicy.swift", "NativeAuthPolicy.swift", "NativeAuthCoordinator.swift", "WebViewController.swift", "Info.plist", "Assets.xcassets", "PrivacyInfo.xcprivacy"]:
     assert (root / "STIZ" / file).exists(), file
     assert f"path = {file};" in project, file
 for path in (root / "STIZ").rglob("*.json"):
@@ -35,6 +35,18 @@ assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
 assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.0;" in release_settings
 assert info["CFBundleDisplayName"] == "STIZ 농구교실"
+# 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
+assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"
+icon = json.loads((root / "STIZ/Assets.xcassets/AppIcon.appiconset/Contents.json").read_text(encoding="utf-8"))
+assert [(i["size"], i["filename"]) for i in icon["images"]] == [("1024x1024", "AppIcon-1024.png")]
+png = (root / "STIZ/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png").read_bytes()
+assert png[:8] == b"\x89PNG\r\n\x1a\n" and int.from_bytes(png[16:20], "big") == 1024 and int.from_bytes(png[20:24], "big") == 1024
+assert png[25] == 2, "앱스토어 아이콘은 투명 채널 없는 RGB 여야 함"
+assert "path = PrivacyInfo.xcprivacy;" in project and "A00000000000000000000026" in project.split("PBXResourcesBuildPhase")[1].split("\n")[0]
+with (root / "STIZ/PrivacyInfo.xcprivacy").open("rb") as handle:
+    privacy = plistlib.load(handle)
+assert privacy["NSPrivacyTracking"] is False and privacy["NSPrivacyTrackingDomains"] == []
+assert all(not item["NSPrivacyCollectedDataTypeTracking"] for item in privacy["NSPrivacyCollectedDataTypes"])
 assert info["ITSAppUsesNonExemptEncryption"] is False, "HTTPS 표준 암호화만 사용(수출 규정 면제)"
 workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
 validate_workflows(workflow)
