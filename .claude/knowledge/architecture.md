@@ -100,5 +100,5 @@
 ### [2026-11-05] 정규배차 시간순 화면 = 두 RouteSection(방향별 상태·저장) + display:contents + CSS order
 - **분류**: architecture
 - **발견자**: developer
-- **내용**: `/admin/shuttle/regular-dispatch` 는 등원·하원 RouteSection 을 `timeOrdered` 로 한 flex 목록에 넣는다. 섹션 겉 상자·카드 그리드는 `contents` 로 풀리고 회차 카드마다 `order = runTimelineOrder()`(`lib/regular/regularDispatchOrder.ts`: 등원 classStart·하원 classEnd → tripLabel → departTime, 같은 시각이면 하원 먼저). 저장 바(-2/-1)·지도(1e7)도 order 로 배치. 상태를 끌어올리지 않고 섞지만 **탭 이동 순서는 DOM(등원 전부 → 하원 전부)**. 방학특강(DispatchClient)은 prop 을 안 줘 DOM 그대로 — `timeOrdered` 분기 밖을 고치면 방학특강도 바뀐다.
+- **내용**: `/admin/shuttle/regular-dispatch` 는 등원·하원 RouteSection 을 `timeOrdered` 로 한 flex 목록에 넣는다. 섹션 겉 상자·카드 그리드는 `contents` 로 풀리고 회차 카드마다 `order = runTimelineOrder()`(`lib/regular/regularDispatchOrder.ts`: **실제 출발 시각 departTime(손 수정 반영)** → 없으면 등원 classStart−30분·하원 classEnd → tripLabel → 맨 뒤, 「수업시간 확인 필요」 회차는 맨 뒤, 같은 시각이면 등원 먼저. ⚠ 처음엔 수업 시작/종료를 기준으로 써서 17시 수업 등원(16:35 출발)이 16시 수업 하원(17:05 출발) 뒤로 갔다 — 운영에서 원장이 지적, «시간순» = 차가 움직이는 순서). 저장 바(-2/-1)·지도(1e7)도 order 로 배치. 상태를 끌어올리지 않고 섞지만 **탭 이동 순서는 DOM(등원 전부 → 하원 전부)**. 방학특강(DispatchClient)은 prop 을 안 줘 DOM 그대로 — `timeOrdered` 분기 밖을 고치면 방학특강도 바뀐다.
 - **참조횟수**: 0

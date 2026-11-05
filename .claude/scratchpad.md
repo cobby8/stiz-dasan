@@ -67,6 +67,8 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-05 | developer(claude/regular-dispatch-depart-order): 운영 지적 「16시 등원, 17시 등원, 16시 하차 순이 시간순」 반영 — runTimelineOrder 1순위를 카드 출발 시각(departTime·손 수정 반영)으로, 없으면 등원 수업−30분·하원 종료 → tripLabel → 맨 뒤, 「수업시간 확인 필요」 회차는 맨 뒤, 동률 등원 먼저. 방향 배지 dark: 변형. tsc 0, src/lib/regular 28-0, regular-*·admin-list-standard 122-0 | 검수 대기 |
+| 11-05 | reviewer: regular-dispatch-by-time(f1923403) 검수 — 통과(필수 0). timeOrdered=false 분기 DOM 동일 확인·저장은 방향별 saveRoute·지도 스크롤 자기 방향 mapRef·제거 상태 잔존 0. tsc 0, 대상 테스트 148-0. 권장: ① 수업시간 누락 회차 맨 뒤로 ② 방향 배지 dark: 변형 ③ 지도 맨 아래까지 스크롤이 김(의도된 설계, 실사용 확인) — ①② 는 depart-order 에서 반영 | 통과 |
 | 11-05 | reviewer(a9692f50 합류 자리·다른 요일 정류장): 통과. 시프트는 그 달·그 요일·잠금 안 계산(다음 달은 그 달 행 기준 별도 planRosterInsert), BEFORE/END 회귀 없음, OTHER key 결정적·서버 재계산, 실례 재현 OK. 직접 돌린 경계(겹친 번호·다음 달 번호/시각 복사·빈 이름) 통과, 테스트 125-0. 권장: ① 같은 이름·좌표 약간 다른 다른 요일 정류장이 후보 3칸을 중복으로 채울 수 있음(이름 기준 중복 제거) ② mapPlacementsToMonth JOIN 은 글자 그대로 비교(공백 차이면 맨 뒤+fellBack) | 통과 |
 | 11-05 | developer(claude/driver-assign-join-fix): 기사 「새 학생 배정」 버그 3건 — A) 합류(JOIN) 행이 칸 맨 뒤 번호(nextSortOrder)로 들어가 다른 반·PIVOT 뒤로 가던 것 → planRosterInsert 에서 「그 이름 첫 묶음 마지막 행 바로 뒤 + 요일 전체 +1」(관리자 공통, 다음 달도 같은 이름 있으면 JOIN). B) joinOptions 에 같은 달 다른 요일·반 정류장(이름+좌표, 그 칸에 없는 이름) 추가·300m 안 최근접 추천·고르면 OTHER→INSERT(자리=추가거리 최소). C) 이미 이름 우선이라 그대로. tsc 0 · 셔틀/명단 테스트 471 통과 | 검수 대기 |
 | 11-05 | developer(claude/enroll-shuttle-place-name): 수강신청 셔틀 「타는 곳/내리는 곳 이름」 — 지도 핀 뒤 주소 자동 채움 제거(장소명만 미리 채움), 이름 비었거나 주소와 같으면 화면·서버 모두 거절(순수 규칙 lib/enrollment/shuttle-place-name.ts), 이전 신청의 주소=이름은 빈칸, 저장 라벨은 학부모 입력 우선. tsc 0, 신청·셔틀 테스트 534 통과(새 6건 포함) | 검수 대기 |

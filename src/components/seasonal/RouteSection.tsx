@@ -10,7 +10,7 @@ import { confirmedEtaMin, etaMinToLabel, reapplyManualEtaVehicles } from "@/lib/
 import { findSamePlaceIndex } from "@/lib/seasonal/stopMerge";
 // 정규 배차 손편집(차량 간 정차·학생 이동, 학생 빼기)의 순수 계산. 화면은 결과만 반영한다.
 import { moveStopToVehicle, moveStudentToVehicle, removeStudentFromRoute, overCapacityVehicles, runTimeChange, type EditResult } from "@/lib/regular/regularRouteEdit";
-// 정규 배차 화면: 등원·하원 회차 카드를 하루 시간순으로 섞어 보일 때의 순서 값(같은 시각이면 하원 먼저).
+// 정규 배차 화면: 등원·하원 회차 카드를 하루 시간순(그 차의 실제 출발 시각 순)으로 섞어 보일 때의 순서 값.
 import { runTimelineOrder } from "@/lib/regular/regularDispatchOrder";
 
 // 한 방향(등원 또는 하원)의 노선 섹션 — 목록 + 지도 + 순서변경/재계산/무료탑승 드래그/출발조정/저장을 자립적으로 담는다.
@@ -755,7 +755,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
               <div className="flex items-center justify-between bg-brand-navy-900 px-4 py-2.5 text-white">
                 <span className="font-black">
                   {/* 시간순 모드: 등원·하원 카드가 섞이므로 카드마다 방향 배지를 붙인다 */}
-                  {timeOrdered && <span className={`mr-1.5 rounded-full px-2 py-0.5 text-xs font-black ${isPickup ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{dirLabel}</span>}
+                  {timeOrdered && <span className={`mr-1.5 rounded-full px-2 py-0.5 text-xs font-black ${isPickup ? "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-100" : "bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-100"}`}>{dirLabel}</span>}
                   🚐 {v.vehicleName}{v.tripLabel ? ` · ${v.tripLabel}` : ""}
                 </span>
                 <span className="flex items-center gap-2">

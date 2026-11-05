@@ -109,7 +109,7 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
 
         {/* 시간대별 회차 목록(2026-11-05 원장 지시: 등원·하원 묶음 대신 시간순, 위쪽 정차 요약 표는 없앰).
             두 RouteSection 은 방향별 상태·저장을 그대로 갖고(timeOrdered), 이 flex 목록 안에 회차 카드를 CSS order 로 섞어 놓는다.
-            순서: 등원 저장 바 · 하원 저장 바(맨 위) → 회차 카드 시간순(같은 시각이면 하원 먼저) → 등원·하원 지도(맨 아래). */}
+            순서: 등원 저장 바 · 하원 저장 바(맨 위) → 회차 카드 출발 시각순(같은 시각이면 등원 먼저) → 등원·하원 지도(맨 아래). */}
         <p className="mt-3 text-[12px] text-gray-500 dark:text-gray-400">{DOW_LABEL[day] ?? day} 회차를 시간순으로 보여 줍니다. 저장은 등원·하원 바의 버튼으로 방향별로 합니다.</p>
         <div className="mt-2 flex flex-wrap gap-3">
           <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} />
