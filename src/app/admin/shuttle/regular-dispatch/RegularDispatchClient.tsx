@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import RouteSection from "@/components/seasonal/RouteSection";
@@ -8,7 +8,7 @@ import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
 import DriverRequestPanel from "@/components/admin/DriverRequestPanel";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
 
-// 정규 셔틀 동적배차 — 요일별로 관리한다. 요일 탭을 고르면 그 요일의 등원 → 하원 노선을 함께 보여준다.
+// 정규 셔틀 동적배차 — 요일별로 관리한다. 요일 탭을 고르면 그 요일의 등원·하원 회차를 시간순으로 섞어 보여준다.
 // 방학특강 배차 화면(DispatchClient)과 동일 UX 를 재사용하되, 관리 단위가 "날짜"가 아니라 "요일"이다.
 // RouteSection 에 apiBase="/api/admin/regular/dispatch" 를 주입해 정규 저장/불러오기/재계산 엔드포인트를 태운다.
 // 명단 편집(무료탑승 드래그·학생 상세 모달)은 방학특강 전용이라 rosterEditable=false 로 끈다.
@@ -34,14 +34,7 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   // 월 이동 뒤 이전 요일에 명단이 없으면 새 달의 선택 가능한 요일로 즉시 맞춘다.
   const day = weekdays.length > 0 && !weekdays.includes(selectedDay)
     ? (weekdays.includes(initialDay) ? initialDay : weekdays[0]) : selectedDay;
-  const [timelinePickup, setTimelinePickup] = useState<DispatchSuggestion>(initialPickup);
-  const [timelineDropoff, setTimelineDropoff] = useState<DispatchSuggestion>(initialDropoff);
-  const [pickupReady, setPickupReady] = useState(true);
-  const [dropoffReady, setDropoffReady] = useState(true);
-  const timelineLoading = !pickupReady || !dropoffReady || timelinePickup.date !== day || timelineDropoff.date !== day;
-  const [timelineError, setTimelineError] = useState<string | null>(null);
   const visibleMismatches = classTimeMismatches.filter((row) => row.dayOfWeek === day);
-  const timelineRows = useMemo(() => buildTimelineRows(timelinePickup, timelineDropoff), [timelinePickup, timelineDropoff]);
   // 등원·하원 섹션의 '저장 안 한 변경' 여부. 요일·월을 바꾸면 화면이 새 노선으로 바뀌어 편집이 사라지므로 먼저 묻는다.
   const [dirtyPickup, setDirtyPickup] = useState(false);
   const [dirtyDropoff, setDirtyDropoff] = useState(false);
@@ -64,13 +57,6 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
       .catch(() => null);
   }, []);
   useEffect(() => { loadPendingRequestCount(); }, [loadPendingRequestCount]);
-
-  const onPickupRoute = useCallback((route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => {
-    setTimelinePickup({ ...route, loadedFromSaved: state.saved }); setPickupReady(state.ready); setTimelineError(null);
-  }, []);
-  const onDropoffRoute = useCallback((route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => {
-    setTimelineDropoff({ ...route, loadedFromSaved: state.saved }); setDropoffReady(state.ready); setTimelineError(null);
-  }, []);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
@@ -121,87 +107,15 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
 
         {visibleMismatches.length > 0 && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100"><p className="font-black">⚠ 등원·하원 수업시간이 다른 학생 {visibleMismatches.length}명</p><ul className="mt-1 space-y-1">{visibleMismatches.map((row) => <li key={`${row.studentName}-${row.pickupClassTime}-${row.dropoffClassTime}`}><b>{row.studentName}</b> · 등원 {row.pickupClassTime} / 하원 {row.dropoffClassTime}</li>)}</ul><p className="mt-1 font-bold">자동으로 고치지 않았습니다. 셔틀 명단 탭에서 수업시간을 확인해 주세요.</p></div>}
 
-        <p className="mt-3 text-[12.5px] font-black text-gray-700 dark:text-gray-200">📅 {DOW_LABEL[day] ?? day} 시간순 노선</p>
-        <div className="mt-2 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between bg-brand-navy-900 px-4 py-2.5 text-white">
-            <span className="font-black">🚐 하루 운행 흐름 · {dirtyPickup || dirtyDropoff ? "저장 전 변경" : timelinePickup.loadedFromSaved && timelineDropoff.loadedFromSaved ? "저장 노선" : "표시 노선"}</span>
-            <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold">{timelineRows.length}개 정차</span>
-          </div>
-          {timelineLoading && <p className="px-4 py-3 text-sm font-bold text-gray-500 dark:text-gray-300">노선을 다시 계산 중입니다…</p>}
-          {timelineError && <p className="px-4 py-3 text-sm font-bold text-red-500">⚠ {timelineError}</p>}
-          {!timelineLoading && !timelineError && timelineRows.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm font-bold text-gray-400">이 요일에 표시할 셔틀 정차가 없습니다.</p>
-          )}
-          {!timelineLoading && timelineRows.length > 0 && (
-            // 한 줄 행 표: 시각(오른쪽·자릿수 고정) | 정류장 | 승차/하차 | 학생 | 차량. 말줄임 없이 좁으면 가로 스크롤.
-            <div className="overflow-x-auto">
-              <table className="admin-list-table w-full border-collapse text-sm">
-                <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
-                  <tr>
-                    <th className="admin-cell-num px-3 py-2">시각</th>
-                    <th className="px-2 py-2">정류장</th>
-                    <th className="px-2 py-2">구분</th>
-                    <th className="px-2 py-2">학생</th>
-                    <th className="px-2 py-2">차량</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-academy-line)]">
-                  {timelineRows.map((row, index) => (
-                    <tr key={`${row.direction}-${row.vehicle}-${row.time}-${row.label}-${index}`}>
-                      <td className="admin-cell-num px-3 py-1.5 font-black text-[var(--color-academy-ink)]">{row.time}</td>
-                      <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
-                        {row.label}
-                        {row.isHub && <span className="ml-1.5 rounded bg-[var(--color-academy-success)] px-1.5 text-xs font-black text-white">무료탑승</span>}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-black ${row.direction === "PICKUP" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"}`}>
-                          {row.direction === "PICKUP" ? "승차" : "하차"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{row.students.join(", ")}</td>
-                      <td className="px-2 py-1.5 text-xs font-bold text-[var(--color-academy-muted)]">{row.vehicle}{row.trip ? ` · ${row.trip}` : ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        {/* 시간대별 회차 목록(2026-11-05 원장 지시: 등원·하원 묶음 대신 시간순, 위쪽 정차 요약 표는 없앰).
+            두 RouteSection 은 방향별 상태·저장을 그대로 갖고(timeOrdered), 이 flex 목록 안에 회차 카드를 CSS order 로 섞어 놓는다.
+            순서: 등원 저장 바 · 하원 저장 바(맨 위) → 회차 카드 시간순(같은 시각이면 하원 먼저) → 등원·하원 지도(맨 아래). */}
+        <p className="mt-3 text-[12px] text-gray-500 dark:text-gray-400">{DOW_LABEL[day] ?? day} 회차를 시간순으로 보여 줍니다. 저장은 등원·하원 바의 버튼으로 방향별로 합니다.</p>
+        <div className="mt-2 flex flex-wrap gap-3">
+          <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} />
+          <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onDropoffDirty} />
         </div>
-
-        {/* 실제 편집 영역 — 기본으로 펼쳐 둔다(위 타임라인은 요약). 문구 "방향별 세부 조정 열기"는 테스트가 지킨다. */}
-        <details open className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
-          <summary className="cursor-pointer text-sm font-black text-gray-800 dark:text-gray-100">방향별 세부 조정 열기</summary>
-          <p className="mt-1 text-[12px] text-gray-500 dark:text-gray-400">등원·하원은 각각 저장합니다.</p>
-          <div className="mt-3 space-y-3">
-            <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onPickupDirty} onRouteChange={onPickupRoute} />
-            <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} regularEditing onDirtyChange={onDropoffDirty} onRouteChange={onDropoffRoute} />
-          </div>
-        </details>
       </div>
     </div>
   );
-}
-
-function etaToMinutes(value: string | undefined | null, fallback: number | undefined | null): number {
-  if (typeof fallback === "number" && Number.isFinite(fallback)) return fallback;
-  const match = String(value ?? "").match(/(\d{1,2}):(\d{2})/);
-  if (!match) return 9999;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
-function buildTimelineRows(pickup: DispatchSuggestion, dropoff: DispatchSuggestion) {
-  const toRows = (suggestion: DispatchSuggestion, direction: "PICKUP" | "DROPOFF") => suggestion.vehicles.flatMap((vehicle) =>
-    vehicle.stops.map((stop) => ({
-      direction,
-      time: stop.etaLabel?.match(/(\d{1,2}:\d{2})/)?.[1] ?? "--:--",
-      minutes: etaToMinutes(stop.etaLabel, stop.etaManual ?? stop.etaMinutes),
-      label: stop.label,
-      isHub: Boolean(stop.isHub),
-      vehicle: vehicle.vehicleName,
-      trip: vehicle.tripLabel,
-      students: stop.students.map((student) => student.grade ? `${student.name}·${student.grade}` : student.name),
-    })),
-  );
-  return [...toRows(pickup, "PICKUP"), ...toRows(dropoff, "DROPOFF")]
-    .sort((a, b) => a.minutes - b.minutes || (a.direction === "PICKUP" ? -1 : 1));
 }

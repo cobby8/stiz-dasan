@@ -1,7 +1,7 @@
 "use client";
 
 import { publicErrorText } from "@/components/ui/public-error-text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { RouteMapCanvas } from "@/components/seasonal/DispatchRouteMap";
 import type { DispatchSuggestion, DispatchChange } from "@/lib/seasonal/shuttle-optimize";
 import StudentDetailModal from "@/components/seasonal/StudentDetailModal";
@@ -10,6 +10,8 @@ import { confirmedEtaMin, etaMinToLabel, reapplyManualEtaVehicles } from "@/lib/
 import { findSamePlaceIndex } from "@/lib/seasonal/stopMerge";
 // 정규 배차 손편집(차량 간 정차·학생 이동, 학생 빼기)의 순수 계산. 화면은 결과만 반영한다.
 import { moveStopToVehicle, moveStudentToVehicle, removeStudentFromRoute, overCapacityVehicles, runTimeChange, type EditResult } from "@/lib/regular/regularRouteEdit";
+// 정규 배차 화면: 등원·하원 회차 카드를 하루 시간순으로 섞어 보일 때의 순서 값(같은 시각이면 하원 먼저).
+import { runTimelineOrder } from "@/lib/regular/regularDispatchOrder";
 
 // 한 방향(등원 또는 하원)의 노선 섹션 — 목록 + 지도 + 순서변경/재계산/무료탑승 드래그/출발조정/저장을 자립적으로 담는다.
 // 날짜·기준위치가 바뀌면(refreshKey) 그 방향을 다시 계산한다.
@@ -139,7 +141,10 @@ function relocateInPlace(
 // regularEditing: 정규 배차 전용 손편집(차량 이동·학생 빼기·모바일 ↑↓·저장 안 됨 표시·이탈 경고·확인창).
 //   기본 false — 방학특강 화면은 이 prop 을 주지 않으므로 기존 동작 그대로다.
 // onDirtyChange: 저장 안 한 변경 여부를 부모에 알린다(정규 화면이 요일·월 전환 전에 확인창을 띄운다).
-export default function RouteSection({ initial, date, refreshKey, apiBase = "/api/admin/seasonal/dispatch", rosterEditable = true, serviceMonth, drivers, regularEditing = false, onDirtyChange, onRouteChange }: { initial: DispatchSuggestion; date: string; refreshKey: number; apiBase?: string; rosterEditable?: boolean; serviceMonth?: string; drivers?: { id: string; name: string }[]; regularEditing?: boolean; onDirtyChange?: (dirty: boolean) => void; onRouteChange?: (route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => void }) {
+// timeOrdered: 정규 배차 화면 전용. 이 섹션의 겉 상자를 풀고(display: contents) 회차 카드마다 CSS order 를 매겨,
+//   부모의 한 목록(flex) 안에서 등원·하원 카드가 하루 시간순으로 섞여 보이게 한다. 상태·저장은 지금처럼 방향별로 이 섹션이 가진다.
+//   기본 false — 방학특강 화면은 이 prop 을 주지 않으므로 DOM·모양이 그대로다.
+export default function RouteSection({ initial, date, refreshKey, apiBase = "/api/admin/seasonal/dispatch", rosterEditable = true, serviceMonth, drivers, regularEditing = false, timeOrdered = false, onDirtyChange, onRouteChange }: { initial: DispatchSuggestion; date: string; refreshKey: number; apiBase?: string; rosterEditable?: boolean; serviceMonth?: string; drivers?: { id: string; name: string }[]; regularEditing?: boolean; timeOrdered?: boolean; onDirtyChange?: (dirty: boolean) => void; onRouteChange?: (route: DispatchSuggestion, state: { ready: boolean; dirty: boolean; saved: boolean }) => void }) {
   const direction = initial.direction;
   const isPickup = direction === "PICKUP";
   const [sug, setSug] = useState<DispatchSuggestion>(initial);
@@ -628,28 +633,65 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
   const mapStartPt = isPickup ? (sug.depot ?? sug.academy) : sug.academy;
   const mapEndPt = isPickup ? sug.academy : (sug.depot ?? sug.academy);
   const sectionTime = (sug.timeGroups?.length ?? 0) > 1 ? "시간대별" : (isPickup ? sug.classStart : sug.classEnd);
+  const dirLabel = isPickup ? "등원" : "하원";
+  // 시간순 모드: 지도는 카드 목록 아래에 있으므로, 카드의 「🗺 지도」를 누르면 그 방향 지도로 스크롤한다.
+  const mapRef = useRef<HTMLElement | null>(null);
+  // 시간순 모드에서 터치 영역 44px(min-h-11) 를 맞춘다. 방학특강은 기존 크기 그대로.
+  const tlBtn = timeOrdered ? " min-h-11" : "";
+
+  // 좌표 누락 학생 안내 — 방학특강은 기존 자리(지도 아래), 시간순 모드는 그 방향 저장 바 안에 둔다.
+  const unassignedNode = sug.unassigned.length > 0 && (
+    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[12.5px] font-black text-amber-800 dark:text-amber-200">⚠ 좌표가 없어 배차하지 못한 학생 {sug.unassigned.length}명</div>
+        {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-black text-white">좌표 설정으로 이동</a>}
+      </div>
+      {rosterEditable ? (
+        <div className="mt-1 text-[12px] text-amber-700 dark:text-amber-200">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div>
+      ) : (
+        <details className="mt-2 text-[12px] text-amber-700 dark:text-amber-200"><summary className="cursor-pointer font-bold">누락 학생 확인</summary><div className="mt-1">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div></details>
+      )}
+    </div>
+  );
+
+  // 시간순 모드: 헤더(자동 제안·저장 버튼)·안내 문구를 「방향별 저장 바」 한 상자로 묶어 목록 맨 위에 둔다
+  // (등원 바 → 하원 바, PC 에선 나란히). 방학특강은 감싸지 않고 그대로 돌려준다(DOM 변화 없음).
+  function wrapControls(node: ReactNode) {
+    if (!timeOrdered) return node;
+    return (
+      <div style={{ order: isPickup ? -2 : -1 }} className="w-full rounded-2xl border border-[var(--color-academy-line)] bg-white p-3 lg:w-[calc(50%-0.375rem)] dark:border-gray-700 dark:bg-gray-800">
+        {node}
+        {unassignedNode}
+      </div>
+    );
+  }
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+    <section className={timeOrdered ? "contents" : "rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"}>
+      {wrapControls(<>
       {/* 섹션 헤더: 시간 · 방향 */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <span className={`grid h-8 w-8 place-items-center rounded-xl text-lg ${isPickup ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"}`}>{isPickup ? "⬆" : "⬇"}</span>
           <div>
-            <p className="text-[15px] font-black text-gray-900 dark:text-white">{sectionTime ?? "-"} · {isPickup ? "등원" : "하원"}</p>
+            {/* 시간순 모드: 회차 카드는 아래 시간순 목록에 있으므로 이 바는 «어느 방향을 저장하는지»만 분명히 한다 */}
+            {timeOrdered
+              ? <p className="text-[15px] font-black text-gray-900 dark:text-white">{dirLabel} 노선 · 회차 {sug.vehicles.length}개</p>
+              : <p className="text-[15px] font-black text-gray-900 dark:text-white">{sectionTime ?? "-"} · {isPickup ? "등원" : "하원"}</p>}
             <p className="text-[11.5px] font-bold text-gray-500">{sug.timeGroups && sug.timeGroups.length > 1 ? `${sug.timeGroups.length}개 수업시간` : `${sug.classStart ?? "-"}${sug.classEnd ? `~${sug.classEnd}` : ""} 수업`} · 탑승 {sug.totalRiders}명{rerouting ? " · 🔄 경로 재계산…" : ""}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 print:hidden">
+        <div className={`flex items-center gap-1.5 print:hidden${timeOrdered ? " flex-wrap" : ""}`}>
           {regularEditing && dirty && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-black text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">● 저장 안 됨</span>}
           <button onClick={() => {
             // 정규 모드: 저장본을 보고 있거나 손편집이 있으면 덮어쓰기 전에 확인한다.
             if (regularEditing && (loadedFromSaved || dirty) && !window.confirm("손으로 고친 순서·시각·배정이 사라집니다. 계속할까요?")) return;
             setLoadedFromSaved(false); setSaveMsg(null); void generate(date);
-          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className="rounded-lg bg-brand-navy-900 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
-          <button onClick={saveRoute} disabled={saving || saveBlocked || sug.vehicles.length === 0} className="rounded-lg bg-brand-orange-500 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50">{saving ? "저장 중…" : "💾 저장"}</button>
-          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className="rounded-lg border border-blue-300 px-2.5 py-1.5 text-[12px] font-black text-blue-700 disabled:opacity-50 dark:border-blue-500/40 dark:text-blue-300">{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
-          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className="rounded-lg border border-red-300 px-2.5 py-1.5 text-[12px] font-black text-red-600 disabled:opacity-50 dark:border-red-500/40 dark:text-red-300">{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
+          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className={`rounded-lg bg-brand-navy-900 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900${tlBtn}`}>{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
+          {/* 시간순 모드: 등원·하원 카드가 한 목록에 섞이므로 저장 버튼에 방향을 적어 «무엇을 저장하는지» 분명히 한다 */}
+          <button onClick={saveRoute} disabled={saving || saveBlocked || sug.vehicles.length === 0} className={`rounded-lg bg-brand-orange-500 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{saving ? "저장 중…" : timeOrdered ? `💾 ${dirLabel} 저장` : "💾 저장"}</button>
+          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className={`rounded-lg border border-blue-300 px-2.5 py-1.5 text-[12px] font-black text-blue-700 disabled:opacity-50 dark:border-blue-500/40 dark:text-blue-300${tlBtn}`}>{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
+          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className={`rounded-lg border border-red-300 px-2.5 py-1.5 text-[12px] font-black text-red-600 disabled:opacity-50 dark:border-red-500/40 dark:text-red-300${tlBtn}`}>{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
         </div>
       </div>
 
@@ -703,15 +745,21 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       )}
 
       {sug.vehicles.length === 0 && <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">이 날짜에 배차할 {isPickup ? "등원" : "하원"} 셔틀 학생이 없습니다.</div>}
+      </>)}
 
-      <div className="mt-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4">
-        <div className="grid min-w-0 gap-3">
+      {/* 시간순 모드: 아래 두 겹 상자를 풀어(contents) 카드가 부모 목록의 직접 항목이 되게 한다 → CSS order 로 시간순 정렬 */}
+      <div className={timeOrdered ? "contents" : "mt-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4"}>
+        <div className={timeOrdered ? "contents" : "grid min-w-0 gap-3"}>
           {sug.vehicles.map((v, vIdx) => (
-            <div key={vIdx} className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
+            <div key={vIdx} style={timeOrdered ? { order: runTimelineOrder(v, isPickup, vIdx) } : undefined} className={`overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700${timeOrdered ? " w-full bg-white dark:bg-gray-800" : ""}`}>
               <div className="flex items-center justify-between bg-brand-navy-900 px-4 py-2.5 text-white">
-                <span className="font-black">🚐 {v.vehicleName}{v.tripLabel ? ` · ${v.tripLabel}` : ""}</span>
+                <span className="font-black">
+                  {/* 시간순 모드: 등원·하원 카드가 섞이므로 카드마다 방향 배지를 붙인다 */}
+                  {timeOrdered && <span className={`mr-1.5 rounded-full px-2 py-0.5 text-xs font-black ${isPickup ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{dirLabel}</span>}
+                  🚐 {v.vehicleName}{v.tripLabel ? ` · ${v.tripLabel}` : ""}
+                </span>
                 <span className="flex items-center gap-2">
-                  <button type="button" onClick={() => setMapVehicle(vIdx)} className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold hover:bg-white/25 print:hidden">🗺 지도</button>
+                  <button type="button" onClick={() => { setMapVehicle(vIdx); if (timeOrdered) mapRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }} className={`rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold hover:bg-white/25 print:hidden${tlBtn}`}>🗺 지도</button>
                   <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${v.over ? "bg-red-500" : "bg-white/15"}`}>{v.passengers} / {v.capacity}명{regularEditing && v.over ? " · 정원 초과" : ""}</span>
                 </span>
               </div>
@@ -823,7 +871,8 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         </div>
 
         {sug.vehicles.length > 0 && (
-          <aside className="mt-3 lg:mt-0 lg:sticky lg:top-4 print:hidden">
+          // 시간순 모드: 지도는 모든 회차 카드 뒤(등원 지도 → 하원 지도, PC 에선 나란히)에 둔다.
+          <aside ref={mapRef} style={timeOrdered ? { order: isPickup ? 10_000_000 : 10_000_001 } : undefined} className={timeOrdered ? "w-full scroll-mt-4 lg:w-[calc(50%-0.375rem)] print:hidden" : "mt-3 lg:mt-0 lg:sticky lg:top-4 print:hidden"}>
             <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between gap-2 bg-brand-navy-900 px-3 py-2 text-white">
                 <span className="text-xs font-black">🗺 {isPickup ? "등원" : "하원"} 경로{rerouting ? " · 🔄" : ""}</span>
@@ -845,19 +894,8 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         )}
       </div>
 
-      {sug.unassigned.length > 0 && (
-        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[12.5px] font-black text-amber-800 dark:text-amber-200">⚠ 좌표가 없어 배차하지 못한 학생 {sug.unassigned.length}명</div>
-            {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-black text-white">좌표 설정으로 이동</a>}
-          </div>
-          {rosterEditable ? (
-            <div className="mt-1 text-[12px] text-amber-700 dark:text-amber-200">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div>
-          ) : (
-            <details className="mt-2 text-[12px] text-amber-700 dark:text-amber-200"><summary className="cursor-pointer font-bold">누락 학생 확인</summary><div className="mt-1">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div></details>
-          )}
-        </div>
-      )}
+      {/* 시간순 모드에선 위 저장 바 안에 이미 그렸다(wrapControls) */}
+      {!timeOrdered && unassignedNode}
 
       {openStu && (
         <StudentDetailModal

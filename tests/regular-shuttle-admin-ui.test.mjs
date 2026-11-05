@@ -107,11 +107,22 @@ test("등원과 하원 수업시간이 다르면 자동 수정하지 않고 관�
   assert.match(regularDispatchClient, /자동으로 고치지 않았습니다/);
 });
 
-test("정규 배차 화면은 등원과 하원을 시간순 타임라인으로 먼저 보여준다", () => {
-  assert.match(regularDispatchClient, /시간순 노선/);
-  assert.match(regularDispatchClient, /하루 운행 흐름/);
-  assert.match(regularDispatchClient, /buildTimelineRows/);
-  assert.match(regularDispatchClient, /방향별 세부 조정 열기/);
+// 2026-11-05 원장 지시: 「등원·하원이 나뉘어 보이는데 시간대별로 보이게. 시간순 노선은 필요 없어」.
+// 예전엔 위에 요약 표(시간순 노선·하루 운행 흐름) + 아래 「방향별 세부 조정」(등원 묶음 → 하원 묶음)이었다.
+// 이제 요약 표는 없애고, 두 방향 회차 카드를 한 목록에 시간순(같은 시각이면 하원 먼저)으로 섞는다.
+test("정규 배차 화면은 등원·하원 회차 카드를 한 목록에 시간순으로 섞어 보여준다", () => {
+  assert.doesNotMatch(regularDispatchClient, /시간순 노선/);
+  assert.doesNotMatch(regularDispatchClient, /하루 운행 흐름/);
+  assert.doesNotMatch(regularDispatchClient, /buildTimelineRows/);
+  assert.doesNotMatch(regularDispatchClient, /방향별 세부 조정 열기/);
+  // 두 방향 모두 시간순 모드로 한 flex 목록 안에 놓는다(상태·저장은 방향별 그대로)
+  assert.equal((regularDispatchClient.match(/timeOrdered regularEditing onDirtyChange=/g) ?? []).length, 2);
+  assert.match(regularDispatchClient, /<div className="mt-2 flex flex-wrap gap-3">/);
+  // 공용 섹션: 시간순 모드에서만 겉 상자를 풀고 카드에 순서 값·방향 배지·방향이 적힌 저장 버튼
+  assert.match(seasonalRouteSection, /timeOrdered = false/);
+  assert.match(seasonalRouteSection, /order: runTimelineOrder\(v, isPickup, vIdx\)/);
+  assert.match(seasonalRouteSection, /`💾 \$\{dirLabel\} 저장`/);
+  assert.match(seasonalRouteSection, /\{timeOrdered && <span[^>]*>\{dirLabel\}<\/span>\}/);
 });
 
 test("정규 배차는 차량별 담당 기사를 선택해 저장한다", () => {
