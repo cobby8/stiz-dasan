@@ -146,6 +146,12 @@ class SignedSandboxTests(unittest.TestCase):
             workflow + "      - signing-key.p12\n",
             workflow + "  another-workflow:\n    triggering:\n      events: []\n",
             workflow.replace("    artifacts:", "    publishing:\n      app_store_connect: enabled\n    artifacts:", 1),
+            # 스토어 작업: 심사 자동 제출·다른 키·자동 실행·비밀값·명령 추가는 모두 차단
+            workflow.replace("submit_to_app_store: false", "submit_to_app_store: true"),
+            workflow.replace("app_store_connect: upturnlabs-asc-key", "app_store_connect: bdr-asc-key"),
+            "events: [push]".join(workflow.rsplit("events: []", 1)),  # 마지막(스토어) 작업만 자동 실행으로
+            workflow.replace("        bundle_identifier: kr.co.upturnlabs.stizdasan", "        bundle_identifier: kr.co.upturnlabs.stizdasan\n        APP_STORE_CONNECT_KEY_ID: SECRET"),
+            workflow.replace("xcode-project use-profiles", "xcode-project use-profiles\n          curl https://attacker.invalid"),
         ]:
             with self.subTest(invalid=invalid[:25]):
                 with self.assertRaises(GateError):

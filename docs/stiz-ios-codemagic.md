@@ -70,3 +70,12 @@
 `NavigationPolicyTests.swift`의 실제 Swift 실행은 #2에서 완료했다. 앱 안 본인인증·외부 결제 복귀·사진 업로드·네이티브 푸시·자녀 연결·실제 로그인·계정 삭제 전체 흐름은 출시 전 기기 검증 대상으로 남아 있다. 웹의 기능 검증을 이 네이티브 기능의 통과 근거로 대신 사용하지 않는다. `/staff/run`과 `/staff/shuttle`의 iOS 기사 운행 진입은 차단하며 관리자 `/admin`의 셔틀 관리는 별도 웹 업무다.
 
 참고: [Codemagic 시뮬레이터 빌드](https://docs.codemagic.io/yaml-code-signing/ios-simulator-builds/), [네이티브 iOS 빌드](https://docs.codemagic.io/yaml-quick-start/building-a-native-ios-app/). 최소 iOS 16은 현재 프로젝트 개발 기준이며 최종 지원 범위와 제출 SDK는 출시 시 다시 확인한다.
+
+## 스토어 배포 작업 `stiz-ios-app-store` (2026-11-05 추가)
+
+원장님 결정으로 App Store 배포 빌드와 TestFlight 업로드 작업을 **정의만** 해 두었다. 수동 실행이며 심사 제출(`submit_to_app_store`)은 false 다. 실행·업로드는 원장님 승인 후에만 한다.
+
+- 번들 `kr.co.upturnlabs.stizdasan`, Release 구성, 표시 이름 `STIZ 농구교실`, 버전 1.0.0, 빌드 번호는 Codemagic `$BUILD_NUMBER`.
+- 서명: `ios_signing.distribution_type: app_store` → `xcode-project use-profiles` → `xcode-project build-ipa`. 비밀값은 파일에 없다.
+- 원장님 준비물: (1) App Store Connect 에서 앱 등록(번들 ID·이름) (2) App Store Connect API 키(App Manager 이상) 발급 → Codemagic Team settings → Integrations → Developer Portal 에 **이름 `upturnlabs-asc-key`** 로 등록 (3) Codemagic Code signing identities 에 업턴랩스 Apple Distribution 인증서 등록 또는 생성.
+- 지킴이: `scripts/native-release-readiness.mjs`(`codemagic-store-upload`)와 `apps/stiz-ios/tools/native_signed_sandbox.py` 가 이 블록 전체 지문을 고정한다. 블록을 고치면 두 파일의 지문을 함께 바꾸고 테스트를 돌린다.

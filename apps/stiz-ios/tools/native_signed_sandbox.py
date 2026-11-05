@@ -18,6 +18,8 @@ PROFILE_REFERENCE = "stiz-dasan-adhoc-sandbox-2026"
 CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
 VERSION = "0.1.0"
 BUILD = "6"
+# codemagic.yaml 의 스토어 작업 블록(주석 제외) 지문. scripts/native-release-readiness.mjs 와 같은 값.
+APPROVED_STORE_WORKFLOW = "9e8a416cf1acd7ddad81ee40578a41052a7fa50eb8a94644ab626e8d2fc041aa"
 SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.25": {
     "NSExceptionAllowsInsecureHTTPLoads": False,
     "NSExceptionMinimumTLSVersion": "TLSv1.2",
@@ -40,15 +42,21 @@ def validate_workflows(text):
     cleaned = re.sub(r"(?m)^\s*#.*$", "", text)
     headers = list(re.finditer(r"(?m)^  ([a-z0-9-]+):\s*$", cleaned))
     names = [match.group(1) for match in headers]
-    require(names == ["stiz-ios-simulator", "stiz-ios-sandbox-adhoc"], "승인된 워크플로 두 개만 허용합니다")
-    require(not re.search(r"(?m)^\s*(publishing|integrations|app_store_connect):", cleaned), "스토어 업로드·추가 연동 금지")
+    require(names == ["stiz-ios-simulator", "stiz-ios-sandbox-adhoc", "stiz-ios-app-store"], "승인된 워크플로 세 개만 허용합니다")
+    # 업로드·연동 설정은 마지막 스토어 작업(2026-11-05 원장님 결정) 안에서만 허용한다.
+    require(not re.search(r"(?m)^\s*(publishing|integrations|app_store_connect):", cleaned[:headers[2].start()]),
+            "시뮬레이터·격리 작업의 스토어 업로드·추가 연동 금지")
     blocks = [cleaned[match.end():headers[index + 1].start() if index + 1 < len(headers) else len(cleaned)]
               for index, match in enumerate(headers)]
     for block in blocks:
         require(len(re.findall(r"(?m)^\s*triggering:", block)) == 1, "수동 실행 설정 중복·누락")
         events = re.findall(r"(?m)^\s*events:(.*)$", block)
         require(len(events) == 1 and re.fullmatch(r"\s*\[\s*\]\s*", events[0]), "자동 빌드 실행 금지")
-    simulator, signed = blocks
+    simulator, signed, _store = blocks
+    store = cleaned[headers[2].start():].replace("\r\n", "\n").rstrip()
+    require(hashlib.sha256(store.encode("utf-8")).hexdigest() == APPROVED_STORE_WORKFLOW, "승인되지 않은 스토어 작업 변경")
+    require("submit_to_app_store: false" in store and "app_store_connect: upturnlabs-asc-key" in store, "TestFlight 업로드만·업턴랩스 키 이름만")
+    require(not re.search(r"bdr-asc-key|\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:", store), "스토어 작업에 비밀값·다른 키 금지")
     # 승인된 명령 묶음의 지문을 고정한다. 추가 업로드·우회 명령은 한 줄이어도 차단한다.
     approved_scripts = ["9f176863b4cc2e12c7b1f2cf1fae2bcf55bc69e640a44f8470b4c9efd4eb8c3f",
                         "b1e51ffd5f835ce293ec416a9f421ad56c52fae95845c416d0ee1c6eaccaf58d"]
