@@ -30,7 +30,7 @@ type Actor = { appUserId: string };
 const driverCondition = `(u.role::text='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`;
 
 /** 역할 캐시가 남아 있어도 회수된 권한이 열리지 않게 **현재 DB 역할**로 확인한다(DRIVER 또는 ADMIN·VICE_ADMIN). */
-export async function authorizeAssign(actor: Actor): Promise<void> {
+export async function authorizeAssign(actor: Actor): Promise<{ admin: boolean; driver: boolean }> {
   const rows = await prisma.$queryRawUnsafe<Array<{ admin: boolean; driver: boolean }>>(
     `SELECT (u.role::text IN ('ADMIN','VICE_ADMIN')) AS admin, ${driverCondition} AS driver
        FROM "User" u WHERE u.id=$1 AND u."withdrawnAt" IS NULL`,
@@ -38,6 +38,8 @@ export async function authorizeAssign(actor: Actor): Promise<void> {
   );
   const role = rows[0];
   if (!role || (!role.admin && !role.driver)) throw new DriverAssignError("이 작업을 처리할 권한이 없습니다.", 403, "FORBIDDEN");
+  // 감사 기록에서 「어느 화면에서 넣었나」를 가르려고 역할을 돌려준다.
+  return { admin: Boolean(role.admin), driver: Boolean(role.driver) };
 }
 
 /** 'YYYY-MM' 이후(초과)에 이미 만들어진 명단 달 — 「같이 넣기」 문구용. */
@@ -177,8 +179,11 @@ export async function getDriverAssignBoard(actor: Actor, month: string): Promise
  * ⑥ 달 잠금 안에서 ④를 한 번 더(동시에 두 사람이 넣는 경우).
  */
 export async function assignDriverCell(actor: Actor, raw: unknown) {
-  await authorizeAssign(actor);
+  const role = await authorizeAssign(actor);
   const req = parseAssignRequest(raw);
+  // 관리자 정규배차 화면에서 넣은 것만 via 를 ADMIN_DISPATCH 로 남긴다.
+  // 화면 표시(source)만 믿지 않고 현재 DB 역할이 관리자일 때만 바꾼다 — 기사님 기록은 그대로 DRIVER_ASSIGN.
+  const fromAdminDispatch = role.admin && (raw as { source?: unknown } | null)?.source === "ADMIN_DISPATCH";
   // 기사님은 이번 달·다음 달 운행표에만 넣는다(지난 달·먼 달 명단을 바꾸지 않게).
   const now = koreaServiceMonth();
   const [ny, nm] = now.split("-").map(Number);
@@ -189,7 +194,7 @@ export async function assignDriverCell(actor: Actor, raw: unknown) {
   if (!student) throw new DriverAssignError("셔틀 신청이 승인된 학생이 아니에요.", 404, "NOT_ELIGIBLE");
   const input = buildAssignAddInput(req, student, stops, base.academy, base.depot);
   const result = await addRosterStudentAs(actor.appUserId, input, {
-    via: "DRIVER_ASSIGN",
+    via: fromAdminDispatch ? "ADMIN_DISPATCH" : "DRIVER_ASSIGN",
     guard: (rows) => assertLegStillOpen(rows as unknown as RegularShuttleStop[], student, req.weekday, req.direction),
   });
   return { added: result.added, appliedMonths: result.appliedMonths, skippedMonths: result.skippedMonths };

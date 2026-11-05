@@ -7,7 +7,8 @@ import type { ShuttleIntakeItem, ShuttleIntakeDashboard } from "@/lib/enrollment
 const FIELD = "min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-base text-[var(--color-academy-ink)]";
 const BUTTON = "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold disabled:opacity-50";
 const DAYS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
-const REVIEW_LABELS = { PENDING: "기사 검토 대기", PROPOSED: "기사 제안 도착", NEEDS_CONFIRMATION: "추가 확인 필요", STALE: "신청 변경·재검토 필요" };
+// 관리자 정규배차의 「신규 배차 학생」 줄도 같은 상태 이름을 쓴다(export).
+export const REVIEW_LABELS = { PENDING: "기사 검토 대기", PROPOSED: "기사 제안 도착", NEEDS_CONFIRMATION: "추가 확인 필요", STALE: "신청 변경·재검토 필요" };
 type Mode = "admin" | "driver";
 type Payload = ShuttleIntakeDashboard;
 type ShuttleIntakeDriver = NonNullable<ShuttleIntakeDashboard["drivers"]>[number];

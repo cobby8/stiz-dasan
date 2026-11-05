@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 // (방학특강 운영 탭바 SeasonalSectionTabs와 분리)
 
 const ITEMS: Array<{ key: string; href: string; label: string; icon: string }> = [
-  { key: "intake", href: "/admin/shuttle/intake", label: "신규 셔틀 신청", icon: "person_add" },
+  // 「신규 셔틀 신청」 탭은 2026-11-05 정규 배차 화면(신규 배차 학생 줄)으로 합쳤다. 옛 주소는 정규 배차로 넘어간다.
   // 매달 사용하는 정규 수업 메뉴를 앞에 두고, 계절성 방학특강 메뉴는 뒤로 배치한다.
   { key: "regular-dispatch", href: "/admin/shuttle/regular-dispatch", label: "정규 배차", icon: "route" },
   { key: "regular", href: "/admin/shuttle/regular", label: "셔틀 명단", icon: "groups" },
@@ -18,7 +18,6 @@ const ITEMS: Array<{ key: string; href: string; label: string; icon: string }> =
 ];
 
 function resolveActiveKey(pathname: string): string {
-  if (pathname.startsWith("/admin/shuttle/intake")) return "intake";
   if (pathname.startsWith("/admin/seasonal/dispatch")) return "dispatch";
   // 접두 충돌 주의: shuttle-notice 를 shuttle 보다 먼저 판정한다(아래 regular 쌍과 같은 이유).
   if (pathname.startsWith("/admin/seasonal/shuttle-notice")) return "notice";

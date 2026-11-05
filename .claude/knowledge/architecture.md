@@ -102,3 +102,9 @@
 - **발견자**: developer
 - **내용**: `/admin/shuttle/regular-dispatch` 는 등원·하원 RouteSection 을 `timeOrdered` 로 한 flex 목록에 넣는다. 섹션 겉 상자·카드 그리드는 `contents` 로 풀리고 회차 카드마다 `order = runTimelineOrder()`(`lib/regular/regularDispatchOrder.ts`: 등원 classStart·하원 classEnd → tripLabel → departTime, 같은 시각이면 하원 먼저). 저장 바(-2/-1)·지도(1e7)도 order 로 배치. 상태를 끌어올리지 않고 섞지만 **탭 이동 순서는 DOM(등원 전부 → 하원 전부)**. 방학특강(DispatchClient)은 prop 을 안 줘 DOM 그대로 — `timeOrdered` 분기 밖을 고치면 방학특강도 바뀐다.
 - **참조횟수**: 0
+
+### [2026-11-05] 신규 셔틀 학생 배정 = 정규배차 패널 + 공용 한 칸 배정(AssignLegView) 하나
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 관리자 「신규 셔틀 신청」 탭은 폐지(`/admin/shuttle/intake` → `/admin/shuttle/regular-dispatch?month=` redirect). 정규배차 요일 탭 아래 `NewStudentDispatchPanel`(목록 기준 = `getDriverAssignBoard`, 기사 검토 배지·요청 = 기존 `/api/admin/shuttle/intake`)이 칩 → 모달로 `AssignLegView` 를 띄운다. 기사님 `/staff/shuttle/assign` 도 같은 `src/components/shuttle/assign/AssignLegView.tsx` 를 쓴다 — **한 칸 배정 UI를 고칠 땐 이 파일 하나**(사본 금지, 테스트가 `function AssignView(` 부재 확인). 넣기 API 는 둘 다 `/api/staff/shuttle/assign`(관리자도 requireStaff·authorizeAssign 통과), 감사 via 는 관리자 역할 + body.source="ADMIN_DISPATCH" 일 때만 ADMIN_DISPATCH. 넣은 뒤 RouteSection 은 `refreshKey`(월×1000+횟수)로 다시 읽되 저장 안 한 편집(dirty)이 있으면 덮지 않는다. 기사 검토 화면(ShuttleIntakeClient driver 모드)은 그대로.
+- **참조횟수**: 0
