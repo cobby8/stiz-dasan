@@ -135,8 +135,9 @@ test("한 페이지의 대상이 모두 보류돼도 다음 페이지가 있으�
  const f = harness("admin", []); const first = f.data(); first.hasMore = true; f.setData(first); await f.settle(); assert.match(f.html(), /다음 신청 목록을 확인/); assert.match(f.html(), /신청 더 보기/); assert.doesNotMatch(f.html(), /신규 셔틀 신청이 없습니다/);
 });
 test("새 화면은 계정 권한 검사를 거치며 공용 토큰 화면을 수정하지 않고 메뉴에서 연결한다", () => {
- const admin = readFileSync("src/app/admin/shuttle/intake/page.tsx", "utf8"), driver = readFileSync("src/app/staff/shuttle/intake/page.tsx", "utf8");
- assert.match(admin, /await requireAdmin\(\)/); assert.match(driver, /await requireStaff\(\)/); assert.match(driver, /shuttleScope\(staff.roles\) === "NONE"/);
- assert.match(readFileSync("src/app/admin/shuttle/ShuttleSectionTabs.tsx", "utf8"), /\/admin\/shuttle\/intake/); assert.match(readFileSync("src/app/staff/shuttle/page.tsx", "utf8"), /\/staff\/shuttle\/intake/);
+ const driver = readFileSync("src/app/staff/shuttle/intake/page.tsx", "utf8");
+ assert.match(driver, /await requireStaff\(\)/); assert.match(driver, /shuttleScope\(staff.roles\) === "NONE"/);
+ // 관리자 「신규 셔틀 신청」 탭은 2026-11-05 정규 배차로 합쳤다 — 탭 없음·옛 주소는 정규 배차로(상세는 admin-dispatch-intake-merge 테스트).
+ assert.doesNotMatch(readFileSync("src/app/admin/shuttle/ShuttleSectionTabs.tsx", "utf8"), /href: "\/admin\/shuttle\/intake"/); assert.match(readFileSync("src/app/staff/shuttle/page.tsx", "utf8"), /\/staff\/shuttle\/intake/);
  const source = readFileSync(FILE, "utf8"); assert.match(source, /min-h-11/); assert.match(source, /text-base/); assert.match(source, /type="time"/); assert.doesNotMatch(source, /\/api\/driver\/request|\/api\/admin\/regular\/dispatch|regular-notice/);
 });

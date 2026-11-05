@@ -151,6 +151,17 @@ test("저장 정상: 기사 userId 로 addRosterStudentAs(via DRIVER_ASSIGN) —
   assert.equal(state.adds[0].input.placements[0].rowId, "r2");
 });
 
+test("감사 기록 via: 관리자 정규배차(source=ADMIN_DISPATCH)만 ADMIN_DISPATCH · 기사가 같은 표시를 보내도 DRIVER_ASSIGN", async () => {
+  const { state, mod } = fixture();
+  const board = await mod.getDriverAssignBoard({ appUserId: "admin" }, "2026-11");
+  const leg = board.students[0].legs[0];
+  const body = { month: "2026-11", studentId: "new1", weekday: 1, direction: "BOARD", choice: { kind: "JOIN", stopIndex: 1 }, routeVersion: leg.routeVersion, includeNextMonth: true };
+  await mod.assignDriverCell({ appUserId: "admin" }, { ...body, source: "ADMIN_DISPATCH" });
+  await mod.assignDriverCell({ appUserId: "driver" }, { ...body, source: "ADMIN_DISPATCH" });
+  await mod.assignDriverCell({ appUserId: "admin" }, body);
+  assert.deepEqual(state.adds.map((a) => [a.actorId, a.via]), [["admin", "ADMIN_DISPATCH"], ["driver", "DRIVER_ASSIGN"], ["admin", "DRIVER_ASSIGN"]]);
+});
+
 test("명단 쓰기 경로: 원장 addRosterStudent 는 requireAdmin 그대로, 본문은 addRosterStudentAs 하나 · 감사 기록에 actorId·via", () => {
   const edit = read("src/lib/shuttle/regularRosterEdit.ts");
   assert.match(edit, /export async function addRosterStudent\(raw: unknown\)[^\n]*\{\s*const admin = await requireAdmin\(\);\s*return addRosterStudentAs\(admin\.appUserId, raw\);/);
@@ -170,7 +181,12 @@ test("API: 로그인 없음 401 · 오류 원문 비노출 · 화면 링크와 �
   assert.doesNotMatch(read("src/lib/shuttle/driverAssign.ts"), /prisma\.\w+\.(findMany|findFirst|create|update|upsert)\(/);
 
   assert.match(read("src/app/staff/shuttle/page.tsx"), /href="\/staff\/shuttle\/assign"[\s\S]*새 학생 배정/);
-  const ui = read("src/app/staff/shuttle/assign/DriverAssignClient.tsx");
+  // 한 칸 배정 화면은 관리자 정규배차 모달과 같이 쓰는 공용 컴포넌트로 옮겼다(2026-11-05) — 두 파일을 합쳐 본다.
+  const page = read("src/app/staff/shuttle/assign/DriverAssignClient.tsx");
+  assert.match(page, /import AssignLegView, \{ monthLabel \} from "@\/components\/shuttle\/assign\/AssignLegView"/);
+  assert.match(page, /<AssignLegView key=/);
+  assert.doesNotMatch(page, /function AssignView\(/); // 사본을 남기지 않는다(한쪽만 고쳐지는 사고 방지)
+  const ui = page + read("src/components/shuttle/assign/AssignLegView.tsx");
   for (const text of ["새 학생 배정", "배정할 학생", "남은 칸", "배정 시작", "이미 운행표에 있는 학생은 여기 나오지 않아요.", "학생 위치에 새 정류장", "한 칸 위로", "한 칸 아래로", "운행표에 같이 넣기", "넣는 중…", "넣지 못했어요. 잠시 뒤 다시 해 주세요.", "에 넣었어요", "다시 시도"]) {
     assert.ok(ui.includes(text), `문구 없음: ${text}`);
   }

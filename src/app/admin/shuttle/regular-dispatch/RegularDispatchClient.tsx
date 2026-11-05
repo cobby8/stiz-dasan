@@ -6,6 +6,8 @@ import Link from "next/link";
 import RouteSection from "@/components/seasonal/RouteSection";
 import DriverLocationPanel from "@/components/admin/DriverLocationPanel";
 import DriverRequestPanel from "@/components/admin/DriverRequestPanel";
+// 「신규 셔틀 신청」 탭을 없애고 이 화면에서 새 학생을 바로 순서에 넣는다(2026-11-05 원장 지시).
+import NewStudentDispatchPanel from "@/components/shuttle/assign/NewStudentDispatchPanel";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
 
 // 정규 셔틀 동적배차 — 요일별로 관리한다. 요일 탭을 고르면 그 요일의 등원·하원 회차를 시간순으로 섞어 보여준다.
@@ -14,6 +16,7 @@ import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
 // 명단 편집(무료탑승 드래그·학생 상세 모달)은 방학특강 전용이라 rosterEditable=false 로 끈다.
 
 const REGULAR_API = "/api/admin/regular/dispatch";
+const DOW_KEYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DOW_LABEL: Record<string, string> = {
   Mon: "월요일", Tue: "화요일", Wed: "수요일", Thu: "목요일", Fri: "금요일", Sat: "토요일", Sun: "일요일",
 };
@@ -40,10 +43,31 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
   const [dirtyDropoff, setDirtyDropoff] = useState(false);
   const onPickupDirty = useCallback((d: boolean) => setDirtyPickup(d), []);
   const onDropoffDirty = useCallback((d: boolean) => setDirtyDropoff(d), []);
+  // 사람이 직접 고친 편집 여부(자동 초안 계산은 제외). 운영은 저장 노선이 없는 요일이 많아 자동 초안만으로도 dirty 가 켜진다 —
+  // 신규 학생을 넣은 뒤 회차 카드 새로고침은 이 값으로만 막는다(요일·월 이동 확인 confirmLeave 는 dirty 그대로).
+  const [editedPickup, setEditedPickup] = useState(false);
+  const [editedDropoff, setEditedDropoff] = useState(false);
+  const onPickupEdited = useCallback((e: boolean) => setEditedPickup(e), []);
+  const onDropoffEdited = useCallback((e: boolean) => setEditedDropoff(e), []);
   // 배차 월이 바뀌면(router.push ?month=) 이 컴포넌트는 그대로 남아 RouteSection 이 다시 불러오지 않는다.
   // 월마다 다른 refreshKey 를 넘겨 새 달 노선을 다시 불러오게 한다(편집·「저장 안 됨」도 초기화) — 옛 달 노선이 새 달로 저장되는 사고 방지.
-  const monthRefreshKey = Number(serviceMonth.replace(/\D/g, "")) || 0;
+  // 신규 학생을 순서에 넣으면 rosterReloadTick 을 올려 같은 달이어도 회차 카드를 다시 불러온다(월 값과 겹치지 않게 ×1000).
+  const [rosterReloadTick, setRosterReloadTick] = useState(0);
+  const [rosterNotice, setRosterNotice] = useState("");
+  const monthRefreshKey = Number(serviceMonth.replace(/\D/g, "")) * 1000 + rosterReloadTick || 0;
   const confirmLeave = () => !(dirtyPickup || dirtyDropoff) || window.confirm("저장하지 않은 노선 수정이 있습니다. 이동하면 사라집니다. 계속할까요?");
+  // 신규 학생을 한 칸 넣은 직후 — 사람이 고친 저장 안 한 편집이 있으면 덮어쓰지 않고 알리기만 한다(편집 보호).
+  // 자동 초안(저장 노선 없음)만 있으면 잃을 손편집이 없으니 바로 다시 불러온다.
+  const onStudentAssigned = () => {
+    if (editedPickup || editedDropoff) {
+      setRosterNotice("저장하지 않은 노선 수정이 있어 새로고침하지 않았습니다. 노선을 저장한 뒤 「회차 다시 불러오기」를 눌러 주세요.");
+      return;
+    }
+    setRosterNotice("");
+    setRosterReloadTick((t) => t + 1);
+  };
+  const reloadRoutes = () => { if (!confirmLeave()) return; setRosterNotice(""); setRosterReloadTick((t) => t + 1); };
+  const selectedWeekday = DOW_KEYS.indexOf(day);
   // 기사님 실시간 위치·변경 요청 — 옛 노선 편성 화면에만 있던 진입 버튼을 이 화면으로 옮겼다(2026-10-03).
   const [showDriverLocations, setShowDriverLocations] = useState(false);
   const [showDriverRequests, setShowDriverRequests] = useState(false);
@@ -105,6 +129,16 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
           ))}
         </div>
 
+        {/* 신규 배차 학생 — 한 줄 요약(누르면 펼침) · 칩을 누르면 기사님 화면과 같은 한 칸 배정 모달.
+            월이 바뀌면 key 로 새로 그려 모달·안내를 초기화한다. */}
+        <NewStudentDispatchPanel key={serviceMonth} month={serviceMonth} selectedWeekday={selectedWeekday >= 0 ? selectedWeekday : null} onAssigned={onStudentAssigned} />
+        {rosterNotice && <div role="status" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+          <span className="min-w-0 break-keep">{rosterNotice}</span>
+          <button type="button" onClick={reloadRoutes} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]">
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">refresh</span>회차 다시 불러오기
+          </button>
+        </div>}
+
         {visibleMismatches.length > 0 && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100"><p className="font-black">⚠ 등원·하원 수업시간이 다른 학생 {visibleMismatches.length}명</p><ul className="mt-1 space-y-1">{visibleMismatches.map((row) => <li key={`${row.studentName}-${row.pickupClassTime}-${row.dropoffClassTime}`}><b>{row.studentName}</b> · 등원 {row.pickupClassTime} / 하원 {row.dropoffClassTime}</li>)}</ul><p className="mt-1 font-bold">자동으로 고치지 않았습니다. 셔틀 명단 탭에서 수업시간을 확인해 주세요.</p></div>}
 
         {/* 시간대별 회차 목록(2026-11-05 원장 지시: 등원·하원 묶음 대신 시간순, 위쪽 정차 요약 표는 없앰).
@@ -112,8 +146,8 @@ export default function RegularDispatchClient({ weekdays, initialDay, initialPic
             순서: 등원 저장 바 · 하원 저장 바(맨 위) → 회차 카드 출발 시각순(같은 시각이면 등원 먼저) → 등원·하원 지도(맨 아래). */}
         <p className="mt-3 text-[12px] text-gray-500 dark:text-gray-400">{DOW_LABEL[day] ?? day} 회차를 시간순으로 보여 줍니다. 저장은 등원·하원 바의 버튼으로 방향별로 합니다.</p>
         <div className="mt-2 flex flex-wrap gap-3">
-          <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} />
-          <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onDropoffDirty} />
+          <RouteSection initial={initialPickup} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onPickupDirty} onUserEditChange={onPickupEdited} />
+          <RouteSection initial={initialDropoff} date={day} refreshKey={monthRefreshKey} apiBase={REGULAR_API} rosterEditable={false} serviceMonth={serviceMonth} drivers={drivers} timeOrdered regularEditing onDirtyChange={onDropoffDirty} onUserEditChange={onDropoffEdited} />
         </div>
       </div>
     </div>

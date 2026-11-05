@@ -56,9 +56,10 @@ test("배차 월을 바꾸면 두 방향 모두 새 달 노선을 다시 불러�
 });
 
 test("저장 요청 중에 생긴 편집은 「저장 안 됨」을 지우지 않는다", () => {
-  assert.match(routeSection, /function markDirty\(\) \{ editSeq\.current \+= 1; setDirty\(true\); \}/);
+  // 2026-11-05: 사람 편집 표시(setUserEdited)가 같이 켜지고 꺼진다 — 「저장 안 됨」 규칙은 그대로.
+  assert.match(routeSection, /function markDirty\(\) \{ editSeq\.current \+= 1; setDirty\(true\); setUserEdited\(true\); \}/);
   assert.match(routeSection, /const seqAtStart = editSeq\.current;/);
-  assert.match(routeSection, /if \(editSeq\.current === seqAtStart\) setDirty\(false\);/);
+  assert.match(routeSection, /if \(editSeq\.current === seqAtStart\) \{ setDirty\(false\); setUserEdited\(false\); \}/);
   assert.match(routeSection, /verified\?\.saved\?\.savedAt !== j.savedAt/); // 응답뿐 아니라 재조회 결과까지 일치해야 저장 완료
 });
 
