@@ -32,6 +32,11 @@ export default async function StaffShuttlePage() {
           <span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span>
           새 학생 셔틀 검토
         </Link>
+        {/* 셔틀 신청이 승인됐는데 아직 운행표에 없는 칸을 기사님이 바로 넣는 화면 */}
+        <Link href="/staff/shuttle/assign" className="mt-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold">
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">playlist_add</span>
+          새 학생 배정
+        </Link>
       </div>
       <StaffShuttleDashboardClient dashboard={dashboard} canManageShuttle={canManageShuttle} />
     </>

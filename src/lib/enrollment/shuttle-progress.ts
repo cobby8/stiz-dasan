@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
-export type ShuttleProgressStatus = "NOT_REQUESTED" | "REQUESTED" | "LOCATION_REQUIRED" | "ROSTER_PENDING" | "DISPATCH_PENDING" | "RECONFIRM_REQUIRED" | "NOTICE_PENDING" | "NOTICE_ACCEPTED" | "COMPLETE" | "UNKNOWN";
+// ASSIGNED = 저장 노선 없이 월별 셔틀 명단(=기사님 화면)에 정상 반영됨. PAUSED = 휴원 중이라 배정 불필요.
+export type ShuttleProgressStatus = "NOT_REQUESTED" | "REQUESTED" | "LOCATION_REQUIRED" | "ROSTER_PENDING" | "DISPATCH_PENDING" | "RECONFIRM_REQUIRED" | "NOTICE_PENDING" | "NOTICE_ACCEPTED" | "COMPLETE" | "ASSIGNED" | "PAUSED" | "UNKNOWN";
 export type ShuttleDirection = "PICKUP" | "DROPOFF";
 export type ShuttleProgressLeg = { dayOfWeek: string; direction: ShuttleDirection; status: ShuttleProgressStatus; label: string; detail: string; timeLabel: string | null };
 export type EnrollmentShuttleProgress = { status: ShuttleProgressStatus; label: string; detail: string; serviceMonth: string; confirmedCount: number; totalCount: number; legs: ShuttleProgressLeg[]; rosterHref: string; dispatchHref: string };
@@ -8,13 +9,18 @@ export type ShuttleApplication = { id: string; status?: string; convertedStudent
 export function requestedShuttleMonth(value: ShuttleApplication["requestedStartOn"]): string | null { const text = value instanceof Date ? (Number.isFinite(value.getTime()) ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(value) : "") : String(value ?? ""); return /^\d{4}-(?:0[1-9]|1[012])-\d{2}(?:T|$)/.test(text) ? text.slice(0,7) : null; }
 export type ShuttleRosterRow = { id: string; serviceMonth: string; weekday: number; direction: string; studentId: string | null; classTime?: string | null; arriveTime?: string | null; stopName: string; latitude?: number | null; longitude?: number | null; sortOrder?: number };
 export type ShuttleRoute = { serviceMonth: string; dayOfWeek: string; direction: string; payload: unknown; classStart?: string | null; classEnd?: string | null };
-export type ShuttleClass = { id: string; dayOfWeek: string; active: boolean; startTime?: string; endTime?: string };
+// active = 수강 상태 ACTIVE. status 는 Enrollment.status 원문(휴원 PAUSED 구분용).
+export type ShuttleClass = { id: string; dayOfWeek: string; active: boolean; status?: string; startTime?: string; endTime?: string };
 export type ShuttleLocation = { studentId: string; kind: string; latitude: number; longitude: number; consentVersion: string; confirmedAt: unknown };
 export type ShuttleNotice = { studentId: string; serviceMonth: string; stableEventKey: string; payloadHash: string; status: string; messageBody: string; recipientPhone: string; sentAt?: unknown; createdAt?: Date | string };
 export type ShuttleDelivery = { stableEventKey: string | null; status: string; providerStatus: string | null; bodyHash: string | null; recipientPhoneHash: string | null; providerMessageId?: string | null; sentAt?: unknown };
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
-export const SHUTTLE_PROGRESS_LABELS: Record<ShuttleProgressStatus, string> = { NOT_REQUESTED: "미신청", REQUESTED: "신청 접수", LOCATION_REQUIRED: "위치 확인 필요", ROSTER_PENDING: "배차 대기", DISPATCH_PENDING: "노선 확정 대기", RECONFIRM_REQUIRED: "배차 재확인 필요", NOTICE_PENDING: "안내 발송 대기", NOTICE_ACCEPTED: "발송 접수·전달 미확인", COMPLETE: "안내 완료", UNKNOWN: "확인 불가" };
+export const SHUTTLE_PROGRESS_LABELS: Record<ShuttleProgressStatus, string> = { NOT_REQUESTED: "미신청", REQUESTED: "신청 접수", LOCATION_REQUIRED: "위치 확인 필요", ROSTER_PENDING: "배차 대기", DISPATCH_PENDING: "노선 확정 대기", RECONFIRM_REQUIRED: "배차 재확인 필요", NOTICE_PENDING: "안내 발송 대기", NOTICE_ACCEPTED: "발송 접수·전달 미확인", COMPLETE: "안내 완료", ASSIGNED: "배차 완료", PAUSED: "휴원 중", UNKNOWN: "확인 불가" };
+// 배차가 끝난 칸(더 할 일이 배차가 아니라 안내뿐이거나, 기사님 화면 반영으로 끝난 칸)
+const SETTLED: ShuttleProgressStatus[] = ["ASSIGNED", "NOTICE_PENDING", "NOTICE_ACCEPTED", "COMPLETE"];
+// 명단의 수업 칸("16:00~17:00", 60·80분 단위)은 실제 수업("16:00~16:55")과 끝 시각이 다르다 → 시작 시각만 비교한다.
+const rosterStartTime = (classTime: string | null | undefined) => (classTime ?? "").replace(/\s/g, "").split("~")[0];
 const obj = (v: unknown): Record<string, unknown> => v != null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};
 const list = (v: unknown): Record<string, unknown>[] => Array.isArray(v) ? v.map(obj) : [];
 // 키 순서는 비교 결과에 영향을 주지 않는다. 배열 순서(운행 순서)는 그대로 보존한다.
@@ -53,29 +59,37 @@ export function enrollmentShuttleProgress(input: { application: ShuttleApplicati
   const { application: app, serviceMonth, roster, routes } = input;
   const legs: ShuttleProgressLeg[] = [];
   const studentQuery = app.convertedStudentId ? `&studentId=${encodeURIComponent(app.convertedStudentId)}` : "";
-  const result = (status: ShuttleProgressStatus, detail: string): EnrollmentShuttleProgress => ({ status, label: SHUTTLE_PROGRESS_LABELS[status], detail, serviceMonth, confirmedCount: legs.filter(l => ["NOTICE_PENDING", "NOTICE_ACCEPTED", "COMPLETE"].includes(l.status)).length, totalCount: legs.length, legs, rosterHref: `/admin/shuttle/regular?month=${serviceMonth}${studentQuery}`, dispatchHref: `/admin/shuttle/regular-dispatch?month=${serviceMonth}${studentQuery}` });
+  const result = (status: ShuttleProgressStatus, detail: string): EnrollmentShuttleProgress => ({ status, label: SHUTTLE_PROGRESS_LABELS[status], detail, serviceMonth, confirmedCount: legs.filter(l => SETTLED.includes(l.status)).length, totalCount: legs.length, legs, rosterHref: `/admin/shuttle/regular?month=${serviceMonth}${studentQuery}`, dispatchHref: `/admin/shuttle/regular-dispatch?month=${serviceMonth}${studentQuery}` });
   if (!app.shuttleNeeded) return result("NOT_REQUESTED", "셔틀을 신청하지 않았습니다.");
   if (input.readFailed) return result("UNKNOWN", "셔틀 자료를 불러오지 못했습니다. 다시 확인해 주세요.");
   const startMonth = requestedShuttleMonth(app.requestedStartOn);
   if (startMonth && serviceMonth < startMonth) return { ...result("REQUESTED", `${startMonth} 수강 시작 예정입니다. 시작 월의 배차를 확인해 주세요.`), label: "수강 시작 전" };
   if (app.status !== "APPROVED" || !app.convertedStudentId) return result("REQUESTED", "수강 승인과 원생 연결 후 배차를 진행합니다.");
-  const assigned = [...new Set((app.assignedClassId ?? "").split(",").map(s => s.trim()).filter(Boolean))];
-  if (!assigned.length || assigned.some(id => !input.classes.some(c => c.id === id && c.active && DOW.includes(c.dayOfWeek)))) return result("RECONFIRM_REQUIRED", "배정 반의 현재 수강 상태와 요일을 확인해 주세요.");
+  // 반은 신청서의 assignedClassId 가 아니라 학생의 «현재 수강»으로 본다(조회부가 ACTIVE·PAUSED 만 넘긴다).
+  // 반 이동(옛 반 WITHDRAWN → 새 반 ACTIVE)·휴원이 있어도 옛 반 기록 때문에 재확인으로 빠지지 않게 한다.
+  const activeClasses = input.classes.filter(c => c.active);
+  if (!activeClasses.length && input.classes.some(c => c.status === "PAUSED")) return result("PAUSED", "휴원 중이라 셔틀 배정이 필요 없습니다.");
+  if (!activeClasses.length || activeClasses.some(c => !DOW.includes(c.dayOfWeek))) return result("RECONFIRM_REQUIRED", "배정 반의 현재 수강 상태와 요일을 확인해 주세요.");
   const studentId = app.convertedStudentId;
-  if (!["PICKUP", "DROPOFF"].every(kind => input.locations.some(l => l.studentId === studentId && l.kind === kind && l.consentVersion === "2026-07-21" && l.confirmedAt != null && Number.isFinite(new Date(String(l.confirmedAt)).getTime()) && Number.isFinite(l.latitude) && Math.abs(l.latitude) <= 90 && Number.isFinite(l.longitude) && Math.abs(l.longitude) <= 180))) return result("LOCATION_REQUIRED", "학생 상세에서 동의가 확인된 승차·하차 위치를 확인해 주세요.");
-  const days = [...new Set(assigned.map(id => input.classes.find(c => c.id === id)!.dayOfWeek))].sort((a,b) => DOW.indexOf(a) - DOW.indexOf(b));
+  const days = [...new Set(activeClasses.map(c => c.dayOfWeek))].sort((a,b) => DOW.indexOf(a) - DOW.indexOf(b));
+  const rowsOf = (dayOfWeek: string, direction: ShuttleDirection) => roster.filter(r => r.serviceMonth === serviceMonth && DOW[r.weekday] === dayOfWeek && r.direction === (direction === "PICKUP" ? "BOARD" : "ALIGHT"));
+  // 위치는 «아직 명단에 없는 칸»을 새로 배정할 때만 필요하다. 모든 칸이 이미 명단에 있으면 막지 않는다.
+  const rosterMissing = days.some(dayOfWeek => (["PICKUP", "DROPOFF"] as const).some(direction => !rowsOf(dayOfWeek, direction).some(r => r.studentId === studentId)));
+  if (rosterMissing && !["PICKUP", "DROPOFF"].every(kind => input.locations.some(l => l.studentId === studentId && l.kind === kind && l.consentVersion === "2026-07-21" && l.confirmedAt != null && Number.isFinite(new Date(String(l.confirmedAt)).getTime()) && Number.isFinite(l.latitude) && Math.abs(l.latitude) <= 90 && Number.isFinite(l.longitude) && Math.abs(l.longitude) <= 180))) return result("LOCATION_REQUIRED", "학생 상세에서 동의가 확인된 승차·하차 위치를 확인해 주세요.");
   const selectedRoutes: ShuttleRoute[] = [];
   for (const dayOfWeek of days) for (const direction of ["PICKUP", "DROPOFF"] as const) {
-    const dayRows = roster.filter(r => r.serviceMonth === serviceMonth && DOW[r.weekday] === dayOfWeek && r.direction === (direction === "PICKUP" ? "BOARD" : "ALIGHT"));
+    const dayRows = rowsOf(dayOfWeek, direction);
     const mine = dayRows.filter(r => r.studentId === studentId);
-    const classTimes = assigned.map(id => input.classes.find(c => c.id === id)!).filter(c => c.dayOfWeek === dayOfWeek).map(c => `${c.startTime ?? ""}~${c.endTime ?? ""}`);
+    const startTimes = activeClasses.filter(c => c.dayOfWeek === dayOfWeek).map(c => (c.startTime ?? "").trim()).filter(Boolean);
+    const rosterStart = rosterStartTime(mine[0]?.classTime);
     let status: ShuttleProgressStatus = "NOTICE_PENDING", detail = "현재 노선에 배정됐습니다.", eta: string | null = null;
     const saved = routes.filter(r => r.serviceMonth === serviceMonth && r.dayOfWeek === dayOfWeek && r.direction === direction);
     if (mine.length === 0) { status = "ROSTER_PENDING"; detail = "해당 월·요일의 셔틀 명단에 추가해 주세요."; }
     else if (mine.length !== 1 || mine.some(r => !Number.isFinite(r.latitude) || !Number.isFinite(r.longitude))) { status = "RECONFIRM_REQUIRED"; detail = "중복 명단 또는 정류장 좌표를 확인해 주세요."; }
-    else if (input.locations.some(l => l.studentId === studentId && l.kind === direction && (Math.abs(l.latitude - Number(mine[0].latitude)) > 1e-5 || Math.abs(l.longitude - Number(mine[0].longitude)) > 1e-5))) { status = "RECONFIRM_REQUIRED"; detail = "현재 확인된 승하차 위치와 명단 정류장을 대조해 주세요."; }
-    else if (!classTimes.includes((mine[0].classTime ?? "").replace(/\s/g, ""))) { status = "RECONFIRM_REQUIRED"; detail = "배정 반의 현재 수업시간과 셔틀 명단을 대조해 주세요."; }
-    else if (saved.length === 0) { status = "DISPATCH_PENDING"; detail = "명단은 반영됐지만 저장된 확정 노선이 없습니다."; }
+    // 학부모 위치와 명단 정류장 좌표 차이는 더 이상 보지 않는다 — 기사님은 공용 정류장(아파트 정문 등)을 쓰므로 원래 다르다.
+    else if (!rosterStart || !startTimes.includes(rosterStart)) { status = "RECONFIRM_REQUIRED"; detail = "배정 반의 현재 수업시간과 셔틀 명단을 대조해 주세요."; }
+    // 저장 노선이 없는 요일·방향은 명단 자체가 기사님 화면이다 → 명단에 정상으로 들어갔으면 배차 완료.
+    else if (saved.length === 0) { status = "ASSIGNED"; detail = "기사님 운행표에 반영됐습니다."; eta = (mine[0].arriveTime ?? "").match(/\b(?:[01]\d|2[0-3]):[0-5]\d\b/)?.[0] ?? null; }
     else if (saved.length !== 1 || !hasCurrentRouteConfirmation(saved[0], dayRows)) { status = "RECONFIRM_REQUIRED"; detail = "현재 명단과 일치하는 노선 확인 근거가 필요합니다."; }
     else {
       const passengers = routeStudent(saved[0], studentId);
@@ -88,8 +102,14 @@ export function enrollmentShuttleProgress(input: { application: ShuttleApplicati
     }
     legs.push({ dayOfWeek, direction, status, label: `${DAY_LABELS[DOW.indexOf(dayOfWeek)]} ${direction === "PICKUP" ? "등원" : "하원"} · ${SHUTTLE_PROGRESS_LABELS[status]}`, detail, timeLabel: eta });
   }
-  const pending = legs.find(l => !["NOTICE_PENDING", "NOTICE_ACCEPTED", "COMPLETE"].includes(l.status));
-  if (pending) return result(pending.status, `${serviceMonth} · ${legs.filter(l => l.status === "NOTICE_PENDING").length}/${legs.length}개 배차 확정. ${pending.detail}`);
+  const pending = legs.find(l => !SETTLED.includes(l.status));
+  if (pending) return result(pending.status, `${serviceMonth} · ${legs.filter(l => SETTLED.includes(l.status)).length}/${legs.length}개 배차 확정. ${pending.detail}`);
+  // 저장 노선이 없는 칸이 하나라도 있으면 노선 안내문(buildStudentRouteNotice)을 만들 수 없다(모든 칸의 저장 노선 필요).
+  // 섞인 경우 안내 단계를 계산하면 영원히 「안내 발송 대기」로 남으므로, 기사님 화면 기준인 배차 완료로 단순화한다.
+  if (legs.some(l => l.status === "ASSIGNED")) {
+    for (const leg of legs) { leg.status = "ASSIGNED"; leg.label = `${DAY_LABELS[DOW.indexOf(leg.dayOfWeek)]} ${leg.direction === "PICKUP" ? "등원" : "하원"} · ${SHUTTLE_PROGRESS_LABELS.ASSIGNED}`; }
+    return result("ASSIGNED", `${serviceMonth} · 기사님 운행표에 반영됐습니다.`);
+  }
   const fingerprint = studentRouteFingerprint(studentId, selectedRoutes, roster);
   const eventKey = shuttleNoticeEventKey(serviceMonth, studentId, fingerprint);
   const sent = (input.notices ?? []).filter(n => n.studentId === studentId && n.serviceMonth === serviceMonth && n.status === "SENT").sort((a,b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());

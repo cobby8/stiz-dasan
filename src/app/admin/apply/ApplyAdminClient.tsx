@@ -359,7 +359,8 @@ function matchesApplicationWorkFilter(
     if (workFilter === "ALL") return true;
     if (workFilter === "NEEDS_ACTION") return app.status === "PENDING";
     if (workFilter === "CLASS_ASSIGNMENT") return app.status === "PENDING" && !app.assignedClassId;
-    if (workFilter === "SHUTTLE") return app.shuttleNeeded && app.shuttleProgress?.status !== "COMPLETE";
+    // 안내 완료·배차 완료(기사님 운행표 반영)·휴원 중은 더 처리할 셔틀 일이 없다.
+    if (workFilter === "SHUTTLE") return app.shuttleNeeded && !["COMPLETE", "ASSIGNED", "PAUSED"].includes(app.shuttleProgress?.status ?? "");
     if (workFilter === "TRIAL_LINKED") return Boolean(app.trialLeadId);
     if (workFilter === "TIME_CHECK") return !preferredSlotLabel;
     return true;

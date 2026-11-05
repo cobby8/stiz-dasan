@@ -84,3 +84,9 @@
 - **발견자**: developer
 - **내용**: 연결 판정은 순수 모듈 `src/lib/enrollment/trialLeadMatch.ts`(`decideTrialLeadMatch` → AUTO/SUGGEST/NONE, 한글 음절 편집거리), DB 읽기·저장은 `src/lib/enrollment/trialLeadLinkService.ts` 한 곳(`linkTrialLeadToApplication` = 조건부 UPDATE 한 트랜잭션, 승인된 신청서면 체험 CONVERTED, ApplicationContactLog UPDATED 2줄, 문자 없음). 비교 시점 3곳: 신청 제출(`submitEnrollApplication`, accessCode 없을 때 AUTO 만), 체험 이름·번호 수정(`updateTrialLead` → `autoLinkApplicationsForTrialLead`), 관리자 신청 목록 후보+[연결](`getEnrollTrialLinkSuggestions`/`linkEnrollApplicationToTrialLead`). 새 연결 경로를 만들면 SQL 을 또 쓰지 말고 이 두 파일을 쓴다. 테스트 `tests/enrollment-trial-lead-match.test.mjs`.
 - **참조횟수**: 0
+
+### [2026-11-05] 기사님 「새 학생 배정」 = 순수 판정(driverAssignLogic)+연결부(driverAssign)+addRosterStudentAs
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `/staff/shuttle/assign` 은 승인 셔틀 신청(APPROVED+shuttleNeeded)+ACTIVE 수강(개시일 ≤ 그 달)의 「남은 칸(요일×등·하원)」을 관리자 학생 추가와 같은 함수(enrolledClassSlots·findRouteCell·suggestPlacement·resolveCellPlacement)로 계산한다. 쓰기는 `regularRosterEdit.addRosterStudentAs(actorId, raw, { via, guard })` 하나 — ⚠️ 이 함수는 권한 확인을 하지 않으므로 호출부가 현재 DB 역할을 먼저 확인한다(원장 = addRosterStudent 의 requireAdmin, 기사 = driverAssign.authorizeAssign). guard 는 달 잠금 안에서 「그 칸이 아직 비었는지」 마지막 확인. 감사 기록은 ShuttleAuditLog REGULAR_ROSTER_ADD(actorId=기사 userId, afterJSON.via="DRIVER_ASSIGN").
+- **참조횟수**: 0

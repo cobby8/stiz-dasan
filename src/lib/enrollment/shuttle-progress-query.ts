@@ -22,7 +22,6 @@ export async function getEnrollmentShuttleProgress(applications: ShuttleApplicat
   if (!isServiceMonth(serviceMonth)) throw new Error("적용 월을 확인해 주세요.");
   const result: Record<string, EnrollmentShuttleProgress> = {};
   const ids = [...new Set(applications.flatMap(a => a.shuttleNeeded && a.convertedStudentId ? [a.convertedStudentId] : []))];
-  const classIds = [...new Set(applications.flatMap(a => (a.assignedClassId ?? "").split(",").map(s => s.trim()).filter(Boolean)))];
   if (!ids.length) {
     for (const application of applications) result[application.id] = enrollmentShuttleProgress({ application, serviceMonth, classes: [], locations: [], roster: [], routes: [] });
     return result;
@@ -34,7 +33,9 @@ export async function getEnrollmentShuttleProgress(applications: ShuttleApplicat
     // 표를 만들지 않고 존재 여부만 읽어, 발송 이력 없음과 조회 장애를 구분한다.
     const ledger = await db.$queryRawUnsafe<Array<{ noticeLedger: string | null }>>(`SELECT to_regclass('public."RegularShuttleNoticeBatch"')::text AS "noticeLedger"`);
     const [classes, locations, roster, routes, notices, parents] = await Promise.all([
-      db.$queryRawUnsafe<Array<ShuttleClass & { studentId: string }>>(`SELECT c.id,c."dayOfWeek",c."startTime",c."endTime",e."studentId",(e.status='ACTIVE') AS active FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId" WHERE e."studentId"=ANY($1::text[]) AND c.id=ANY($2::text[])`, ids, classIds),
+      // 신청서의 assignedClassId 가 아니라 학생의 현재 수강(ACTIVE·PAUSED)을 본다. 반 이동 뒤 옛 반(WITHDRAWN)은 빠진다.
+      // 개시일이 해당 월 말 이후인 수강은 그 달 배차 대상이 아니다(startsOn null = 기존 수강 이력이라 포함). date 컬럼이라 시간대 변환 없음.
+      db.$queryRawUnsafe<Array<ShuttleClass & { studentId: string }>>(`SELECT c.id,c."dayOfWeek",c."startTime",c."endTime",e."studentId",e.status,(e.status='ACTIVE') AS active FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId" WHERE e."studentId"=ANY($1::text[]) AND e.status IN ('ACTIVE','PAUSED') AND (e."startsOn" IS NULL OR e."startsOn" < (to_date($2,'YYYY-MM') + interval '1 month')::date)`, ids, serviceMonth),
       db.$queryRawUnsafe<ShuttleLocation[]>(`SELECT "studentId",kind,latitude,longitude,"consentVersion","confirmedAt" FROM "StudentShuttleLocation" WHERE "studentId"=ANY($1::text[])`, ids),
       // 전체 명단을 비교해야 다른 정차 변경도 이전 노선 확정의 근거로 사용하지 않는다.
       db.$queryRawUnsafe<ShuttleRosterRow[]>(`SELECT id,"serviceMonth",weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 ORDER BY id`, serviceMonth),

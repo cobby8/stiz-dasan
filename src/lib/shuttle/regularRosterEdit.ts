@@ -180,6 +180,26 @@ async function insertRosterRows(
 
 export async function addRosterStudent(raw: unknown): Promise<{ added: number } & RosterScopeResult> {
   const admin = await requireAdmin();
+  return addRosterStudentAs(admin.appUserId, raw);
+}
+
+/** 학생 추가를 원장 외의 경로(기사님 「새 학생 배정」)가 부를 때 쓰는 선택값. */
+export type AddRosterStudentOptions = {
+  /** 감사 기록 afterJSON.via — 어느 화면에서 넣었는지(예: "DRIVER_ASSIGN"). 원장 화면은 비워 둔다(기록 모양 그대로). */
+  via?: string;
+  /**
+   * 달 잠금을 잡은 직후, 그 달 명단 행으로 마지막 확인을 한다(던지면 트랜잭션 전체가 취소된다).
+   * 왜: 화면 검사와 저장 사이에 다른 사람이 같은 칸을 넣는 경우를 잠금 안에서 막으려고.
+   */
+  guard?: (rows: RosterPlacementRow[]) => void;
+};
+
+/**
+ * 학생 추가 본문 — ⚠️ 권한 확인을 하지 않는다. 부르는 쪽이 현재 DB 역할을 먼저 확인해야 한다
+ * (원장 = addRosterStudent 의 requireAdmin, 기사님 = driverAssign 의 DRIVER/ADMIN 확인).
+ * actorId 는 감사 기록에 남길 사용자(User.id)다.
+ */
+export async function addRosterStudentAs(actorId: string, raw: unknown, opts: AddRosterStudentOptions = {}): Promise<{ added: number } & RosterScopeResult> {
   const input = validateAddInput(raw);
 
   // 학생을 골랐으면 이름·전화를 학생/학부모 정보에서 채운다. 이름만 입력했으면 전화 없이 둔다.
@@ -205,6 +225,7 @@ export async function addRosterStudent(raw: unknown): Promise<{ added: number } 
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     // 고른 달은 중복이면 거부(오류 안내), 이후 달은 이미 있는 행만 건너뛰고 나머지를 만든다.
     const existing = await monthPlacementRows(tx, input.serviceMonth);
+    opts.guard?.(existing); // 기사님 배정: 잠금 안에서 「그 칸이 아직 비었는지」 마지막 확인
     // 운행표에서 고른 자리(중간 삽입·합류)를 적용한 실행 단계. 고른 자리가 없으면 예전처럼 그 수업 맨 뒤.
     const plan = planRosterInsert(buildAddRows(input, existing, studentName), input.placements, existing);
     const shifted = await applyInsertPlan(tx, input.serviceMonth, plan, who);
@@ -226,7 +247,8 @@ export async function addRosterStudent(raw: unknown): Promise<{ added: number } 
       if (monthSteps.some((s) => s.fellBack)) endPlacedMonths.push(m);
       appliedMonths.push(m);
     }
-    await audit(tx, admin.appUserId, "REGULAR_ROSTER_ADD", null, {
+    await audit(tx, actorId, "REGULAR_ROSTER_ADD", null, {
+      ...(opts.via ? { via: opts.via } : {}), // 누가(actorId)·어느 화면(via)에서 넣었는지
       serviceMonth: input.serviceMonth, scope: input.scope, appliedMonths, endPlacedMonths, studentId: input.studentId, studentName, rows,
       placements: input.placements ?? [], shifted, spread: plan.spread,
       steps: steps.map((s) => ({ mode: s.mode, shiftFrom: s.shiftFrom, weekday: s.row.weekday, direction: s.row.direction, sortOrder: s.row.sortOrder })),

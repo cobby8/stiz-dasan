@@ -1,0 +1,345 @@
+// 기사님 「새 학생 배정」 — 남은 칸 계산 · 칸별 운행 순서·추천 · 저장 요청 만들기(순수 함수, DB 접근 없음).
+// ─────────────────────────────────────────────────────────────────────────────
+// 왜 필요한가(2026-11-05): 셔틀 신청이 승인된 새 학생을 원장이 명단에 넣기 전까지 기사님 화면(운행표)에 안 보였다.
+//   기사님이 휴대폰에서 「아직 운행표에 없는 칸(요일 × 등원/하원)」을 보고 한 칸씩 바로 넣게 한다.
+// 계산은 관리자 학생 추가와 **같은 함수**(enrolledClassSlots·findRouteCell·suggestPlacement·resolveCellPlacement)를 쓴다.
+//   새 규칙을 만들지 않는다 — 화면 순서·추천·저장 위치가 관리자 화면과 어긋나지 않게.
+// ⚠️ node 타입 제거 실행으로 테스트하므로 '@/' 경로 import·enum 을 쓰지 않는다(런타임 import 는 .ts 확장자).
+
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { enrolledClassSlots, findRouteCell, resolveCellPlacement, resolveStudentPoint, studentRosterRows, suggestPlacement, type EnrolledClass, type GeoPoint, type PlacementChoice } from "./regularRosterPlacementLogic.ts";
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { WEEKDAY_LABELS, type RosterDirection } from "./regularRosterEditLogic.ts";
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { normalizeStopName } from "./regularDriverRouteLogic.ts";
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { distanceMeters } from "../seasonal/stopMerge.ts";
+import type { RegularShuttleStop } from "./regularSheet";
+
+/** 「기존 정류장에 태우기」 후보로 보여 줄 최대 거리(미터). 합류 추천 반경(300m)보다 넓게 — 기사님이 고를 여지. */
+export const JOIN_OPTION_RADIUS_METERS = 1000;
+/** 후보 정류장은 가까운 순으로 최대 이만큼만(휴대폰 한 화면). */
+export const JOIN_OPTION_LIMIT = 3;
+
+/** 사용자에게 그대로 보여 줄 오류(한국어) + HTTP 상태. API 가 그대로 돌려준다. */
+export class DriverAssignError extends Error {
+  status: number;
+  code: string;
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** 학생 상세 위치(StudentShuttleLocation) 한 건. */
+export type AssignPlace = { name: string | null; address: string; latitude: number; longitude: number };
+
+/** 서버가 DB 에서 읽어 넘기는 학생 한 명의 재료. */
+export type AssignStudentInput = {
+  studentId: string;
+  name: string;
+  grade: string | null;
+  /** 신청서의 셔틀 희망 시각(예: "16:40"). */
+  wishTime: string | null;
+  /** 명단의 이름+전화 행(학생 id 없는 옛 행)을 같은 학생으로 묶을 때만 쓴다. 화면에는 내려가지 않는다. */
+  parentPhone: string | null;
+  /** 수강(다니는 ACTIVE·휴원 PAUSED). 개시일이 그 달 이후인 수강은 서버가 이미 뺐다. */
+  enrolled: EnrolledClass[];
+  pickup: AssignPlace | null;
+  dropoff: AssignPlace | null;
+};
+
+/** 남은 칸 한 개 = 요일 × 방향. classTime 은 그 요일 명단 칸 글자(관리자 학생 추가와 같은 맞춤). */
+export type OpenLeg = { weekday: number; direction: RosterDirection; classTime: string; startTime: string; label: string };
+
+export type AssignRouteStop = {
+  label: string;
+  arriveTime: string | null;
+  /** 이미 타는 학생 — 이름만(전화·주소 금지). */
+  riders: string[];
+};
+
+export type AssignJoinOption = { stopIndex: number; label: string; distanceMeters: number | null; riders: number; recommended: boolean };
+
+export type AssignLegPlan = OpenLeg & {
+  key: string;
+  /** 지금 기사님 화면의 그 수업·방향 순서. */
+  route: AssignRouteStop[];
+  /** 화면을 연 뒤 운행표가 바뀌었는지 저장할 때 확인하는 값(행 id 묶음의 짧은 지문). */
+  routeVersion: string;
+  /** ① 「기존 정류장에 태우기」 후보(가까운 순). */
+  joinOptions: AssignJoinOption[];
+  /** ① 「학생 위치에 새 정류장」 — 학생 상세 위치가 없거나 같은 이름 정류장이 이미 있으면 null. */
+  newStop: { name: string; address: string } | null;
+  /** 처음 골라 둘 값(추천). */
+  defaultChoice: PlacementChoice | null;
+  /** 새 정류장의 처음 자리(0 = 첫 정차 앞, route.length = 맨 뒤). */
+  defaultPosition: number;
+  reason: string;
+  /** 새 정류장도 기존 정류장도 고를 수 없을 때의 안내(그 칸은 이번 화면에서 넣지 못함). */
+  blocked: string | null;
+};
+
+export type AssignStudentPlan = {
+  studentId: string;
+  name: string;
+  grade: string | null;
+  wishTime: string | null;
+  /** 수업 요약 — 「월·수 17:00~17:55」. */
+  classes: string;
+  pickup: string | null;
+  dropoff: string | null;
+  legs: AssignLegPlan[];
+};
+
+const DIR_ORDER: Record<RosterDirection, number> = { BOARD: 0, ALIGHT: 1 };
+const DIR_KO: Record<RosterDirection, string> = { BOARD: "등원", ALIGHT: "하원" };
+const rank = (w: number) => (w === 0 ? 7 : w); // 월 → 일 순서
+
+function placeText(p: AssignPlace | null): string | null {
+  if (!p) return null;
+  return (p.name ?? "").trim() || p.address.trim() || null;
+}
+
+/** 다니는 수업 요약 — 같은 시각이면 요일을 묶는다(「월·수 17:00~17:55」). 휴원 수업은 뺀다. */
+export function summarizeClasses(enrolled: readonly EnrolledClass[]): string {
+  const byTime = new Map<string, number[]>();
+  for (const c of enrolled) {
+    if (c.status === "PAUSED") continue;
+    const t = `${c.startTime}~${c.endTime}`;
+    const list = byTime.get(t) ?? [];
+    if (!list.includes(c.weekday)) list.push(c.weekday);
+    byTime.set(t, list);
+  }
+  return [...byTime.entries()]
+    .map(([t, days]) => `${days.sort((a, b) => rank(a) - rank(b)).map((d) => WEEKDAY_LABELS[d]).join("·")} ${t}`)
+    .join(", ");
+}
+
+/**
+ * 남은 칸 — 다니는(ACTIVE) 수업 요일 × 등원/하원 중, 그 달 명단에 이 학생의 같은 요일·방향 행이 없는 칸.
+ * - 휴원(PAUSED) 수업은 칸을 만들지 않는다(휴원만 있는 학생은 칸 0 → 목록에서 빠진다).
+ * - 「이미 있는지」는 관리자 명단이 학생을 묶는 규칙(studentRosterRows: 학생 id, 또는 이름+학부모 전화)으로 본다.
+ * - 한 요일에 수업이 둘이면 등원은 이른 수업, 하원은 늦은 수업 칸으로 넣는다.
+ */
+export function openLegsFor(student: Pick<AssignStudentInput, "studentId" | "name" | "parentPhone" | "enrolled">, stops: readonly RegularShuttleStop[]): OpenLeg[] {
+  const active = student.enrolled.filter((c) => c.status !== "PAUSED");
+  // 명단 칸 글자는 그 달 명단의 같은 시작 시각 글자에 맞춘다(16:00~16:55 수업 → 「16:00~17:00」 칸).
+  const slots = enrolledClassSlots(active, stops.map((s) => ({ weekday: s.weekday, classTime: s.classTime })));
+  const riding = studentRosterRows(stops, { id: student.studentId, name: student.name, parentPhone: student.parentPhone });
+  const out: OpenLeg[] = [];
+  const weekdays = [...new Set(slots.map((s: { weekday: number }) => s.weekday))] as number[];
+  for (const weekday of weekdays) {
+    const daySlots = slots.filter((s: { weekday: number }) => s.weekday === weekday); // 시각 순(enrolledClassSlots 가 정렬)
+    for (const direction of ["BOARD", "ALIGHT"] as const) {
+      if (riding.some((r) => r.weekday === weekday && r.direction === direction)) continue; // 이미 운행표에 있음
+      const slot = direction === "BOARD" ? daySlots[0] : daySlots[daySlots.length - 1];
+      out.push({
+        weekday, direction, classTime: slot.classTime, startTime: slot.enrolledTime.split("~")[0] ?? slot.classTime,
+        label: `${WEEKDAY_LABELS[weekday]} ${DIR_KO[direction]}`,
+      });
+    }
+  }
+  return out.sort((a, b) => rank(a.weekday) - rank(b.weekday) || DIR_ORDER[a.direction] - DIR_ORDER[b.direction]);
+}
+
+/** 짧은 지문(djb2) — 운행표 칸의 행 id 순서가 같으면 같은 값. 화면을 연 뒤 순서가 바뀌었는지만 본다. */
+export function routeVersionOf(route: readonly { rows: { rowId: string }[] }[]): string {
+  const text = route.map((s) => s.rows.map((r) => r.rowId).join(",")).join("|");
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return `${route.length}-${h.toString(36)}`;
+}
+
+/** 추천 거리 계산에 쓸 학생 위치 — 학생 상세 위치(그 방향 → 반대 방향) 우선, 없으면 관리자 화면과 같은 규칙(resolveStudentPoint). */
+function studentPointFor(student: AssignStudentInput, direction: RosterDirection, stops: readonly RegularShuttleStop[]): GeoPoint | null {
+  const own = direction === "BOARD" ? student.pickup : student.dropoff;
+  const other = direction === "BOARD" ? student.dropoff : student.pickup;
+  const place = own ?? other;
+  if (place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude)) return { lat: place.latitude, lng: place.longitude };
+  const riding = studentRosterRows(stops, { id: student.studentId, name: student.name, parentPhone: student.parentPhone });
+  return resolveStudentPoint({
+    direction,
+    draft: { stopName: "", latitude: null, longitude: null },
+    rosterStops: stops,
+    places: { pickup: student.pickup, dropoff: student.dropoff },
+    riding,
+  }).point;
+}
+
+/** 새 정류장에 쓸 학생 상세 위치(그 방향 → 반대 방향). */
+function newStopPlace(student: AssignStudentInput, direction: RosterDirection): AssignPlace | null {
+  return (direction === "BOARD" ? student.pickup : student.dropoff) ?? (direction === "BOARD" ? student.dropoff : student.pickup);
+}
+
+/**
+ * 한 칸의 배정 화면 재료 — 지금 운행 순서 · 「기존 정류장에 태우기」 후보 · 「새 정류장」 · 추천.
+ * 추천은 관리자 학생 추가와 같은 suggestPlacement(같은 이름/300m 안 정차 합류, 아니면 운행 거리가 가장 적게 늘어나는 자리).
+ */
+export function planLeg(student: AssignStudentInput, leg: OpenLeg, stops: readonly RegularShuttleStop[], academy: GeoPoint | null, depot: GeoPoint | null): AssignLegPlan {
+  const cell = findRouteCell(stops, leg.weekday, leg.classTime, leg.direction);
+  const point = studentPointFor(student, leg.direction, stops);
+  const place = newStopPlace(student, leg.direction);
+  const placeName = place ? placeText(place) ?? "" : "";
+  const suggestion = suggestPlacement({ stops: cell, direction: leg.direction, stopName: placeName, student: point, academy, depot });
+
+  // 기사님 화면은 정류장 이름 글자로 정차를 묶는다 → 같은 이름이 이미 있으면 「새 정류장」이 아니라 그 정류장 합류가 된다.
+  const clash = placeName ? cell.some((s: { label: string }) => normalizeStopName(s.label) === normalizeStopName(placeName)) : false;
+  const newStop = place && placeName && !clash ? { name: placeName, address: place.address } : null;
+
+  // ① 기존 정류장 후보: 학생 위치가 있으면 가까운 순(1km 안, 최대 3곳) + 추천 합류 정차, 없으면 전부(거리 모름).
+  const sugJoin = suggestion.choice.kind === "JOIN" ? suggestion.choice.stopIndex : -1;
+  type Cand = { stopIndex: number; d: number | null };
+  let cands: Cand[] = cell.map((s: { lat: number | null; lng: number | null }, i: number) => ({
+    stopIndex: i,
+    d: point && s.lat != null && s.lng != null ? distanceMeters(point.lat, point.lng, s.lat, s.lng) : null,
+  }));
+  if (point) {
+    cands = cands.filter((c) => c.stopIndex === sugJoin || (c.d != null && c.d <= JOIN_OPTION_RADIUS_METERS))
+      .sort((a, b) => (a.stopIndex === sugJoin ? -1 : b.stopIndex === sugJoin ? 1 : (a.d ?? Infinity) - (b.d ?? Infinity)))
+      .slice(0, JOIN_OPTION_LIMIT);
+  } else if (sugJoin >= 0) {
+    cands = [cands[sugJoin], ...cands.filter((c) => c.stopIndex !== sugJoin)];
+  }
+  const joinOptions: AssignJoinOption[] = cands.map((c) => ({
+    stopIndex: c.stopIndex, label: cell[c.stopIndex].label, distanceMeters: c.d == null ? null : Math.round(c.d),
+    riders: cell[c.stopIndex].rows.length, recommended: c.stopIndex === sugJoin,
+  }));
+
+  // 새 정류장 처음 자리 = 추천 끼울 자리, 추천이 합류면 그 정류장 바로 뒤.
+  const defaultPosition = suggestion.choice.kind === "INSERT" ? suggestion.choice.position : Math.min(sugJoin + 1, cell.length);
+  let defaultChoice: PlacementChoice | null = suggestion.choice;
+  if (suggestion.choice.kind === "INSERT" && !newStop) defaultChoice = joinOptions[0] ? { kind: "JOIN", stopIndex: joinOptions[0].stopIndex } : null;
+  const blocked = !newStop && joinOptions.length === 0
+    ? "학생 승차·하차 위치가 아직 없어 이 칸은 넣을 수 없어요. 학원에 위치 등록을 부탁해 주세요."
+    : null;
+
+  return {
+    ...leg,
+    key: `${leg.weekday}|${leg.direction}`,
+    route: cell.map((s: { label: string; arriveTime: string | null; rows: { name: string }[] }) => ({ label: s.label, arriveTime: s.arriveTime, riders: s.rows.map((r) => r.name) })),
+    routeVersion: routeVersionOf(cell),
+    joinOptions,
+    newStop,
+    defaultChoice: blocked ? null : defaultChoice,
+    defaultPosition,
+    reason: suggestion.reason,
+    blocked,
+  };
+}
+
+/** 학생 목록 → 화면 목록. 남은 칸이 0 인 학생(이미 다 들어감·휴원만 있음)은 뺀다. */
+export function buildAssignBoard(input: {
+  students: readonly AssignStudentInput[];
+  stops: readonly RegularShuttleStop[];
+  academy: GeoPoint | null;
+  depot: GeoPoint | null;
+}): AssignStudentPlan[] {
+  const out: AssignStudentPlan[] = [];
+  for (const s of input.students) {
+    const legs = openLegsFor(s, input.stops);
+    if (legs.length === 0) continue;
+    out.push({
+      studentId: s.studentId, name: s.name, grade: s.grade, wishTime: s.wishTime,
+      classes: summarizeClasses(s.enrolled),
+      pickup: placeText(s.pickup), dropoff: placeText(s.dropoff),
+      legs: legs.map((leg) => planLeg(s, leg, input.stops, input.academy, input.depot)),
+    });
+  }
+  return out;
+}
+
+// ── 저장 요청 검사·변환 ─────────────────────────────────────────
+
+export type AssignRequest = {
+  month: string;
+  studentId: string;
+  weekday: number;
+  direction: RosterDirection;
+  choice: PlacementChoice;
+  routeVersion: string;
+  includeNextMonth: boolean;
+};
+
+const BAD_REQUEST = "요청 형식이 올바르지 않습니다.";
+
+/** POST 본문 검사 — 형식만 본다(자격·빈 칸 여부는 서버가 DB 로 다시 본다). */
+export function parseAssignRequest(raw: unknown): AssignRequest {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const o = raw as Record<string, unknown>;
+  const month = typeof o.month === "string" ? o.month.trim() : "";
+  if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const studentId = typeof o.studentId === "string" ? o.studentId.trim() : "";
+  if (!studentId || studentId.length > 64) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const weekday = o.weekday;
+  if (typeof weekday !== "number" || !Number.isInteger(weekday) || weekday < 0 || weekday > 6) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const direction = o.direction === "BOARD" || o.direction === "ALIGHT" ? o.direction : null;
+  if (!direction) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const c = o.choice as Record<string, unknown> | null;
+  const isIndex = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 500;
+  let choice: PlacementChoice;
+  if (c && c.kind === "JOIN" && isIndex(c.stopIndex)) choice = { kind: "JOIN", stopIndex: c.stopIndex as number };
+  else if (c && c.kind === "INSERT" && isIndex(c.position)) choice = { kind: "INSERT", position: c.position as number };
+  else throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  const routeVersion = typeof o.routeVersion === "string" ? o.routeVersion.slice(0, 64) : "";
+  if (!routeVersion) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+  return { month, studentId, weekday, direction, choice, routeVersion, includeNextMonth: o.includeNextMonth !== false };
+}
+
+export const ROUTE_CHANGED = "운행표가 그사이 바뀌었어요. 새 순서를 다시 불러왔어요.";
+export const ALREADY_ASSIGNED = "이미 운행표에 있어요.";
+
+/**
+ * 서버 재검사 + addRosterStudent 입력 만들기.
+ * student 는 서버가 DB 에서 다시 읽은 「승인된 셔틀 신청 + 다니는 수업」 학생이다(클라이언트 값을 믿지 않는다).
+ * - 그 요일·방향이 다니는 수업 칸이 아니거나 이미 명단에 있으면 409
+ * - 화면을 연 뒤 그 칸 순서가 바뀌었으면 409(다시 불러오기)
+ * - 고른 자리는 관리자 화면과 같은 resolveCellPlacement 로 「기준 행 id·시각」을 다시 계산한다.
+ */
+export function buildAssignAddInput(req: AssignRequest, student: AssignStudentInput, stops: readonly RegularShuttleStop[], academy: GeoPoint | null, depot: GeoPoint | null): Record<string, unknown> {
+  // 「다니는 수업 요일인지」를 먼저 본다 — 이미 들어간 칸과 처음부터 없는 칸을 구분해 안내한다.
+  const active = student.enrolled.filter((c) => c.status !== "PAUSED");
+  if (!active.some((c) => c.weekday === req.weekday)) throw new DriverAssignError("이 요일에 다니는 수업이 없어요.", 409, "NOT_CLASS_DAY");
+  const leg = openLegsFor(student, stops).find((l) => l.weekday === req.weekday && l.direction === req.direction);
+  if (!leg) throw new DriverAssignError(ALREADY_ASSIGNED, 409, "ALREADY_ASSIGNED");
+  const plan = planLeg(student, leg, stops, academy, depot);
+  if (plan.routeVersion !== req.routeVersion) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  if (plan.blocked) throw new DriverAssignError(plan.blocked, 409, "LOCATION_REQUIRED");
+
+  const n = plan.route.length;
+  const { choice } = req;
+  if (choice.kind === "JOIN" && choice.stopIndex >= n) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  if (choice.kind === "INSERT" && (choice.position > n || !plan.newStop)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+
+  const place = newStopPlace(student, req.direction);
+  const res = resolveCellPlacement({
+    stops, weekday: leg.weekday, classTime: leg.classTime, direction: leg.direction,
+    stopName: plan.newStop?.name ?? "", student: studentPointFor(student, req.direction, stops),
+    academy, depot, studentId: student.studentId, override: { choice },
+  });
+  // 정류장 값: 합류 = 그 정류장 이름(이름·좌표·시각은 서버가 대상 행에서 복사), 새 정류장 = 학생 상세 위치.
+  const stop = choice.kind === "JOIN"
+    ? { stopName: res.stops[choice.stopIndex].label, arriveTime: null, latitude: null, longitude: null }
+    : { stopName: plan.newStop!.name, arriveTime: res.arriveTime, latitude: place!.latitude, longitude: place!.longitude };
+  const placement: Record<string, unknown> = {
+    weekday: leg.weekday, classTime: leg.classTime, direction: leg.direction, mode: res.request.mode, rowId: res.request.rowId,
+  };
+  if (choice.kind === "INSERT") placement.arriveTime = res.arriveTime;
+  return {
+    serviceMonth: req.month,
+    scope: req.includeNextMonth ? "FROM_THIS_MONTH" : "THIS_MONTH",
+    studentId: student.studentId,
+    studentName: student.name,
+    slots: [{ weekday: leg.weekday, classTime: leg.classTime }],
+    board: leg.direction === "BOARD" ? stop : null,
+    alight: leg.direction === "ALIGHT" ? stop : null,
+    placements: [placement],
+  };
+}
+
+/** 트랜잭션 안(달 잠금 뒤) 마지막 확인 — 그 사이 다른 사람이 같은 칸을 넣었으면 409. */
+export function assertLegStillOpen(rows: readonly RegularShuttleStop[], student: Pick<AssignStudentInput, "studentId" | "name" | "parentPhone">, weekday: number, direction: RosterDirection): void {
+  const riding = studentRosterRows(rows, { id: student.studentId, name: student.name, parentPhone: student.parentPhone });
+  if (riding.some((r) => r.weekday === weekday && r.direction === direction)) throw new DriverAssignError(ALREADY_ASSIGNED, 409, "ALREADY_ASSIGNED");
+}
