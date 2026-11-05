@@ -93,6 +93,25 @@ test('정확한 OAuth GET callback만 교차 사이트 복귀를 허용하고 PO
   for(const [path,method,flag]of [['/auth/native/consume','POST',true],['/auth/native/start','POST',false],['/auth/native/browser','GET',true],['/auth/native/callback','POST',true]])assert.throws(()=>http.nativeContext(request(path,method),flag));
   assert.throws(()=>http.nativeContext(new next.NextRequest('https://attacker.invalid/auth/native/callback'),true));
 });
+test('Origin "null"은 앱이 직접 연 consume POST(Sec-Fetch-Site: none)만 허용한다',()=>{
+  const {http}=httpHarness();const base='https://www.stiz-dasan.kr';
+  const request=(path,method,headers)=>new next.NextRequest(base+path,{method,headers});
+  // 허용: 같은 출처 / Origin 없음(앱 네트워크 호출) / 앱이 직접 연 consume POST
+  assert.doesNotThrow(()=>http.nativeContext(request('/auth/native/start','POST',{origin:base})));
+  assert.doesNotThrow(()=>http.nativeContext(request('/auth/native/start','POST',{})));
+  assert.doesNotThrow(()=>http.nativeContext(request('/auth/native/consume','POST',{origin:'null','sec-fetch-site':'none'})));
+  // 거부: 출처를 숨긴 요청(샌드박스 iframe 등)·다른 경로·다른 사이트
+  for(const [path,method,headers] of [
+    ['/auth/native/consume','POST',{origin:'null'}],
+    ['/auth/native/consume','POST',{origin:'null','sec-fetch-site':'same-origin'}],
+    ['/auth/native/consume','POST',{origin:'null','sec-fetch-site':'cross-site'}],
+    ['/auth/native/start','POST',{origin:'null','sec-fetch-site':'none'}],
+    ['/auth/native/cancel','POST',{origin:'null','sec-fetch-site':'none'}],
+    ['/auth/native/browser','GET',{origin:'null','sec-fetch-site':'none'}],
+    ['/auth/native/start','POST',{origin:'https://attacker.invalid'}],
+    ['/auth/native/start','POST',{origin:base,'sec-fetch-site':'cross-site'}],
+  ])assert.throws(()=>http.nativeContext(request(path,method,headers)),undefined,`${path} ${JSON.stringify(headers)}`);
+});
 test('네이티브 POST 본문은 형식·크기·중복 필드를 검증한다',async()=>{
   const {http}=httpHarness();const request=(body,type)=>new next.NextRequest('https://www.stiz-dasan.kr/auth/native/consume',{method:'POST',headers:{'content-type':type},body});
   assert.deepEqual(await http.nativeBody(request('code=a&state=b','application/x-www-form-urlencoded')),{code:'a',state:'b'});
