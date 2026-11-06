@@ -1306,8 +1306,8 @@ export default function StudentDetailClient({
                                     <label className="text-xs font-bold text-gray-500">대조 메모<input value={uniformForm.note} onChange={(e) => setUniformForm((v) => ({ ...v, note: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
                                 </div>
                                 <div className="mt-3 flex items-center justify-between gap-3">
-                                    <p className="text-[11px] text-gray-400">미확인 학생은 추측하지 않고 확인보류로 남깁니다.</p>
-                                    <button type="button" disabled={uniformSaving} onClick={() => { setUniformSaving(true); setUniformFeedback(null); void updateStudentUniform(student.id, uniformForm).then(() => setUniformFeedback("저장되었습니다.")).catch((e) => setUniformFeedback(e instanceof Error ? e.message : "저장 실패")).finally(() => setUniformSaving(false)); }} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
+                                    <p className="text-xs text-gray-400">미확인 학생은 추측하지 않고 확인보류로 남깁니다.</p>
+                                    <button type="button" disabled={uniformSaving} onClick={() => { setUniformSaving(true); setUniformFeedback(null); void updateStudentUniform(student.id, uniformForm).then(() => setUniformFeedback("저장되었습니다.")).catch((e) => setUniformFeedback(adminErrorText(e, "유니폼 정보를 저장하지 못했습니다."))).finally(() => setUniformSaving(false)); }} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
                                 </div>
                                 {uniformFeedback && <p className="mt-2 text-xs font-bold text-[var(--color-academy-primary)]">{uniformFeedback}</p>}
                             </div>
