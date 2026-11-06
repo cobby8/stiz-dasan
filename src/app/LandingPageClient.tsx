@@ -5,7 +5,6 @@ import TestimonialCarousel from "@/components/landing/TestimonialCarousel";
 import CTABanner from "@/components/landing/CTABanner";
 import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
 import SectionLayout from "@/components/ui/SectionLayout";
-import { sanitizeHtml } from "@/lib/sanitize";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
 import "@/components/landing/public-home.css";
@@ -39,10 +38,6 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
   const heroSlides = heroPhoto
     ? [heroPhoto, ...galleryMediaItems.filter((item) => item.url !== heroPhoto.url).slice(0, 2)].map(({ url, alt }) => ({ url, alt }))
     : [];
-  const introductionText = settings.introductionText as string | undefined;
-  const introductionHtml = sanitizeHtml(!introductionText
-    ? "아이들이 농구를 통해 협동심과 건강한 체력을 기를 수 있도록 최선을 다해 지도합니다."
-    : introductionText.includes("<") ? introductionText : introductionText.replace(/\n/g, "<br>"));
 
   return (
     <>
@@ -60,12 +55,13 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
           </div>
         </div>
       </HomeHeroSlider>
+      {/* 철학 한 줄(원장 선택 2026-11-07) — 넓은 여백 가운데 큰 글씨 한 줄 + 설명. 소개 전문은 /about 에 그대로 있다. */}
+      <section className="public-home-philosophy" aria-labelledby="public-home-philosophy-title">
+        <h2 id="public-home-philosophy-title">잘하는 것보다, 좋아하는 게 먼저예요.</h2>
+        <p>농구가 즐거워야 자신감도 실력도 따라옵니다.<br />아이가 먼저 기다리는 수업을 만듭니다.</p>
+        <Link href="/about">학원과 코치진 소개 <span aria-hidden="true">→</span></Link>
+      </section>
       <div className="public-home-updates">
-        <details className="public-home-introduction">
-          <summary>학원 소개 더보기</summary>
-          <div dangerouslySetInnerHTML={{ __html: introductionHtml }} />
-          <Link href="/about">학원과 코치진 소개 <span aria-hidden="true">→</span></Link>
-        </details>
         {notices.length > 0 && <section className="public-home-notices" aria-labelledby="public-home-notices-title">
           <div className="public-home-notices__heading"><h2 id="public-home-notices-title">공지사항</h2><Link href="/notices">전체보기 <span aria-hidden="true">→</span></Link></div>
           <ul>{notices.map((notice) => <li key={notice.id}><Link href={`/notices/${notice.id}`}>
