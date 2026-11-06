@@ -83,3 +83,26 @@
  .stiz-public-sport .public-cta__actions>*{padding-inline:.8rem;font-size:.76rem}
 }
 @media(prefers-reduced-motion:no-preference){.stiz-public-sport .public-home-gallery a:hover img{transform:scale(1.025);transition:transform 160ms ease}}
+/* ── 큰 첫 화면(2026-11-06 원장 요청 «첫 화면도 지금보다 크게») ──
+   홈 첫 화면만 «상단 배너 200px 이하» 규칙의 예외. 화면 높이에서 머리 메뉴만큼 뺀 만큼 채운다. */
+.stiz-public-sport .public-home-hero--large{display:flex;flex-direction:column;min-height:clamp(34rem,calc(100svh - 7.5rem),56rem)}
+.stiz-public-sport .public-home-hero--large::after{background:linear-gradient(180deg,rgba(12,14,17,.35) 0%,var(--color-public-hero-clear) 38%,var(--color-public-hero-scrim) 100%)}
+.stiz-public-sport .public-home-hero--large .public-home-hero__image{opacity:0;transition:opacity .9s ease}
+.stiz-public-sport .public-home-hero--large .public-home-hero__image.is-active{opacity:1}
+.stiz-public-sport .public-home-hero--large .public-home-hero__content{flex:1;justify-content:flex-end;padding-block:3rem 4.5rem}
+.stiz-public-sport .public-home-hero--large h1{font-size:clamp(2.4rem,5.2vw,4.4rem);max-width:46rem;line-height:1.16}
+.stiz-public-sport .public-home-hero--large .public-home-lead{font-size:1.05rem}
+.stiz-public-sport .public-home-hero--large .public-home-hero__actions a{min-height:3.25rem;padding:.8rem 1.5rem;font-size:.95rem}
+/* 사진 넘김 표시 — 누르는 칸은 44px, 보이는 막대는 가늘게 */
+.stiz-public-sport .public-home-hero__dots{position:absolute;left:50%;bottom:.75rem;transform:translateX(-50%);display:flex;gap:.25rem;z-index:1}
+.stiz-public-sport .public-home-hero__dots button{width:2.75rem;height:2.75rem;display:grid;place-items:center;background:transparent;border:0;cursor:pointer}
+.stiz-public-sport .public-home-hero__dots span{display:block;width:1.75rem;height:3px;border-radius:2px;background:rgba(255,255,255,.4)}
+.stiz-public-sport .public-home-hero__dots button[aria-current="true"] span{background:var(--color-public-white)}
+@media(prefers-reduced-motion:reduce){.stiz-public-sport .public-home-hero--large .public-home-hero__image{transition:none}}
+@media(max-width:767px){
+ .stiz-public-sport .public-home-hero--large{min-height:clamp(30rem,calc(100svh - 5.5rem),44rem)}
+ .stiz-public-sport .public-home-hero--large .public-home-hero__content{padding-block:2rem 3.75rem}
+ .stiz-public-sport .public-home-hero--large h1{font-size:2.35rem}
+ .stiz-public-sport .public-home-hero--large .public-home-lead{font-size:.95rem}
+ .stiz-public-sport .public-home-hero--large .public-home-hero__actions a{min-height:3rem;font-size:.85rem}
+ }

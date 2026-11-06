@@ -3,6 +3,7 @@ import TrustBadges from "@/components/landing/TrustBadges";
 import ProcessSteps from "@/components/landing/ProcessSteps";
 import TestimonialCarousel from "@/components/landing/TestimonialCarousel";
 import CTABanner from "@/components/landing/CTABanner";
+import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
@@ -33,7 +34,11 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
     .filter((item) => item.type === "image" && isDurableGalleryMediaUrl(item.url))
     .slice(0, 8);
   const displayImages = galleryMediaItems.map((item) => item.url);
+  // 첫 화면 슬라이드: 지금까지 쓰던 대표 사진을 첫 장으로 두고, 최근 공개 사진 2장을 더한다.
   const heroPhoto = galleryMediaItems.at(-1);
+  const heroSlides = heroPhoto
+    ? [heroPhoto, ...galleryMediaItems.filter((item) => item.url !== heroPhoto.url).slice(0, 2)].map(({ url, alt }) => ({ url, alt }))
+    : [];
   const introductionText = settings.introductionText as string | undefined;
   const introductionHtml = sanitizeHtml(!introductionText
     ? "아이들이 농구를 통해 협동심과 건강한 체력을 기를 수 있도록 최선을 다해 지도합니다."
@@ -41,9 +46,8 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
 
   return (
     <>
-      <section className="public-home-hero" aria-labelledby="public-home-title">
-        {heroPhoto && <img src={heroPhoto.url} alt={heroPhoto.alt} fetchPriority="high" decoding="async" className="public-home-hero__image" />}
-        {/* 메인 사진의 높이를 복원하고 제목·소개·버튼을 세로로 배치한다.
+      <HomeHeroSlider slides={heroSlides}>
+        {/* 화면을 거의 채우는 큰 사진 위에 제목·소개·버튼을 아래쪽에 둔다(원장 요청 2026-11-06).
             현재 문구와 신청·프로그램 이동 경로는 그대로 유지한다. */}
         <div className="public-home-hero__content">
           <div className="public-home-hero__text">
@@ -55,7 +59,7 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
             <Link href="/programs">전체 프로그램 보기 <span aria-hidden="true">→</span></Link>
           </div>
         </div>
-      </section>
+      </HomeHeroSlider>
       <div className="public-home-updates">
         <details className="public-home-introduction">
           <summary>학원 소개 더보기</summary>
