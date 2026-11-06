@@ -145,8 +145,8 @@
     align-items: stretch;
     gap: 3px;
     min-width: 0;
-    min-height: 56px;
-    padding: 4px;
+    min-height: 64px;
+    padding: 4px 3px;
     text-align: left;
     background: transparent;
     color: var(--color-public-ink);
@@ -172,7 +172,19 @@
     background: var(--color-public-dark);
     color: var(--color-public-white) !important;
 }
-.stiz-public-sport .annual-calendar-dots { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding-left: 2px; }
+.stiz-public-sport .annual-calendar-dots { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-left: 2px; }
+/* 휴대폰 칸의 짧은 이름 — 색 점 + 두 글자(최소 12px) */
+.stiz-public-sport .annual-calendar-short {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: .75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    color: var(--color-public-ink);
+}
+.stiz-public-sport .annual-calendar-short.is-closed { color: var(--color-public-accent); }
 .stiz-public-sport .annual-calendar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .stiz-public-sport .annual-calendar-more { font-size: .75rem; font-weight: 700; color: var(--color-public-muted); line-height: 1; }
 .stiz-public-sport .annual-calendar-titles { display: none; }
@@ -219,11 +231,4 @@
 .dark .stiz-public-sport .annual-calendar-day.is-today {
     background: var(--color-public-orange);
     color: var(--color-public-dark) !important;
-}
-/* 휴무 칸은 색에만 기대지 않게 작은 «휴무» 글자를 같이 둔다 */
-.stiz-public-sport .annual-calendar-closed-label {
-    font-size: .75rem;
-    font-weight: 700;
-    color: var(--color-public-accent);
-    line-height: 1;
 }

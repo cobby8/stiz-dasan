@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CLOSED_RE } from "@/lib/classSchedule";
-import { buildMonthGrid, eventsByDay } from "./annualCalendar";
+import { buildMonthGrid, eventsByDay, shortEventLabel } from "./annualCalendar";
 import type { SerializedEvent } from "./AnnualEventsClient";
 
 // 구분 색 점 — 목록형·범례와 같은 색(같은 뜻은 같은 색)
@@ -73,15 +73,27 @@ export default function AnnualCalendarView({ year, month, events, todayYmd, onSe
                                     ].filter(Boolean).join(" ")}
                                 >
                                     <span className={`annual-calendar-day${isToday ? " is-today" : ""}`}>{cell.day}</span>
-                                    {cell.inMonth && closed && <span className="annual-calendar-closed-label" aria-hidden="true">휴무</span>}
                                     {cell.inMonth && dayEvents.length > 0 && (
                                         <>
-                                            {/* 휴대폰: 색 점(최대 3개) + 남은 개수 */}
+                                            {/* 휴대폰: 짧은 이름(개강·종강·휴무…) 2개 + 남은 개수. 같은 이름은 한 번만 */}
                                             <span className="annual-calendar-dots" aria-hidden="true">
-                                                {dayEvents.slice(0, 3).map((ev) => (
-                                                    <span key={ev.id} className={`annual-calendar-dot ${CATEGORY_DOT[ev.category] ?? CATEGORY_DOT["일반"]}`} />
-                                                ))}
-                                                {dayEvents.length > 3 && <span className="annual-calendar-more">+{dayEvents.length - 3}</span>}
+                                                {(() => {
+                                                    const labels = [...new Map(dayEvents.map((ev) => {
+                                                        const short = shortEventLabel(ev.title, ev.category);
+                                                        return [short, { short, dot: CATEGORY_DOT[ev.category] ?? CATEGORY_DOT["일반"] }] as const;
+                                                    })).values()];
+                                                    return (
+                                                        <>
+                                                            {labels.slice(0, 2).map((l) => (
+                                                                <span key={l.short} className={`annual-calendar-short${l.short === "휴무" ? " is-closed" : ""}`}>
+                                                                    <span className={`annual-calendar-dot ${l.dot}`} />
+                                                                    {l.short}
+                                                                </span>
+                                                            ))}
+                                                            {labels.length > 2 && <span className="annual-calendar-more">+{labels.length - 2}</span>}
+                                                        </>
+                                                    );
+                                                })()}
                                             </span>
                                             {/* PC: 짧은 제목 2개 + 남은 개수 */}
                                             <span className="annual-calendar-titles" aria-hidden="true">

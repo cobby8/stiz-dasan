@@ -102,7 +102,9 @@ test("달력형은 실제 날짜 칸에 일정을 놓고 여러 날 휴무를 �
     // 11/4·11/5 두 칸 모두 휴무 표시 + «휴무» 글자
     assert.match(html, /aria-label="11월 4일 수요일, 일정 1개, 학원 휴무"/);
     assert.match(html, /aria-label="11월 5일 목요일, 일정 1개, 학원 휴무"/);
-    assert.equal((html.match(/annual-calendar-closed-label/g) || []).length, 2);
+    assert.equal((html.match(/annual-calendar-short is-closed"><span class="annual-calendar-dot [^"]+"><\/span>휴무/g) || []).length, 2);
+    // 수강월 일정은 짧은 이름 «개강» 으로 보인다
+    assert.match(html, /<\/span>개강<\/span>/);
     // 수강월이 12월이어도 달력은 실제 날짜(11/30) 칸에 둔다
     assert.match(html, /aria-label="11월 30일 월요일, 일정 1개"/);
     assert.doesNotMatch(html, /다음달행사/);

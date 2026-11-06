@@ -43,6 +43,28 @@ export function buildMonthGrid(year: number, month: number): CalendarCell[][] {
     return weeks;
 }
 
+// 휴대폰 달력 칸(폭 약 47px)에 들어갈 두 글자 이름 — 원장 요청(2026-11-06) «개강·종강 등으로 줄여서».
+// 위에서부터 먼저 맞는 것을 쓴다(«겨울방학특강 1차 종강» 은 종강, «방학특강 모집 개시» 는 모집).
+const SHORT_LABEL_RULES: Array<[RegExp, string]> = [
+    [/휴무|휴강|휴가/, "휴무"],
+    [/모집/, "모집"],
+    [/종강|종료/, "종강"],
+    [/개강|시작/, "개강"],
+    [/대관/, "대관"],
+    [/대회|시장기|교류전|U\d{2}/, "대회"],
+    [/체험/, "체험"],
+    [/수업/, "수업"],
+    [/스포츠클럽/, "클럽"],
+    [/공사/, "공사"],
+];
+const CATEGORY_SHORT: Record<string, string> = { 대회: "대회", 방학: "방학", 특별행사: "행사", 정기행사: "행사" };
+
+/** 일정 제목을 달력 칸용 짧은 이름으로 줄인다. 규칙에 없으면 구분(대회·방학·행사) 이름, 그것도 없으면 «일정». */
+export function shortEventLabel(title: string, category?: string): string {
+    for (const [re, label] of SHORT_LABEL_RULES) if (re.test(title)) return label;
+    return (category && CATEGORY_SHORT[category]) || "일정";
+}
+
 // 여러 날 일정을 하루씩 펼칠 때의 상한 — 잘못 입력된 긴 기간이 화면을 멈추지 않게 한다.
 const MAX_SPAN_DAYS = 120;
 

@@ -50,3 +50,24 @@ test("끝이 시작보다 앞선 일정은 시작일에만, 자정에 끝나는 
     assert.equal(map.get("2026-11-12")?.map((e) => e.id).join(), "night");
     assert.ok(!map.get("2026-11-13"));
 });
+
+test("휴대폰 칸 짧은 이름: 개강·종강·휴무 등 실제 제목에서 두 글자로", () => {
+    const L = (t, c) => cal.shortEventLabel(t, c);
+    assert.equal(L("11월 개강"), "개강");
+    assert.equal(L("12월 종강"), "종강");
+    assert.equal(L("겨울방학특강 1차 개강"), "개강");
+    assert.equal(L("여름방학특강 종료"), "종강");
+    assert.equal(L("방학특강 모집 개시"), "모집"); // «개시» 가 있어도 모집이 먼저
+    assert.equal(L("학원 휴무 (추석 연휴)"), "휴무");
+    assert.equal(L("학원휴무"), "휴무");
+    assert.equal(L("농구교실 휴무"), "휴무");
+    assert.equal(L("여름휴가"), "휴무");
+    assert.equal(L("[다산2호점 대관] 댄스스포츠"), "대관");
+    assert.equal(L("하남시장기 U12"), "대회");
+    assert.equal(L("성인반 교류전"), "대회");
+    assert.equal(L("대체육관 수업"), "수업");
+    assert.equal(L("새봄중 스포츠클럽"), "클럽");
+    assert.equal(L("이병하 신혼여행", "특별행사"), "행사");
+    assert.equal(L("알 수 없는 일정"), "일정");
+    for (const t of ["11월 개강", "학원 휴무 (5월 연휴)", "[다산1호점 대관] 댄스스포츠"]) assert.ok(L(t).length <= 2, t);
+});
