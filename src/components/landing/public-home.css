@@ -13,10 +13,11 @@
 .stiz-public-sport .public-home-hero__actions a+a{background:rgba(12,14,17,.45);color:var(--color-public-white);border:1px solid var(--color-public-white)}
 .stiz-public-sport .public-home-hero__actions a+a:hover{background:var(--color-public-on-dark-hover)}
 .stiz-public-sport .public-home-updates{width:min(100% - 3rem,72rem);margin-inline:auto}
-.stiz-public-sport .public-home-introduction{border-bottom:1px solid var(--color-public-line);padding-block:.8rem;font-size:.84rem;line-height:1.85;color:var(--color-public-muted)}
-.stiz-public-sport .public-home-introduction summary{min-height:2.6rem;display:list-item;align-content:center;cursor:pointer;font-weight:700;color:var(--color-public-accent)}
-.stiz-public-sport .public-home-introduction>div{padding-block:.7rem;overflow-wrap:anywhere}
-.stiz-public-sport .public-home-introduction>a{display:inline-flex;align-items:center;min-height:2.75rem;gap:.75rem;font-weight:700;color:var(--color-public-accent)}
+/* 철학 한 줄: 넓은 여백 가운데 큰 글씨 하나가 주인공(2단계 2026-11-07) */
+.stiz-public-sport .public-home-philosophy{width:min(100% - 3rem,48rem);margin-inline:auto;padding-block:clamp(2.5rem,6vw,4rem);text-align:center;border-bottom:1px solid var(--color-public-line)}
+.stiz-public-sport .public-home-philosophy h2{margin:0;font-size:clamp(1.45rem,3.2vw,2.2rem);font-weight:900;letter-spacing:-.045em;line-height:1.35;text-wrap:balance;word-break:keep-all}
+.stiz-public-sport .public-home-philosophy p{margin:1rem 0 0;font-size:.92rem;line-height:1.85;color:var(--color-public-muted);word-break:keep-all}
+.stiz-public-sport .public-home-philosophy>a{display:inline-flex;align-items:center;min-height:2.75rem;gap:.6rem;margin-top:.9rem;font-size:.84rem;font-weight:700;color:var(--color-public-accent)}
 .stiz-public-sport .public-home-notices{display:grid;grid-template-columns:7rem 1fr;gap:1rem;padding-block:1.1rem;border-bottom:1px solid var(--color-public-line)}
 .stiz-public-sport .public-home-notices__heading h2{font-size:.9rem;font-weight:800;margin:0}
 .stiz-public-sport .public-home-notices__heading>a{font-size:.7rem;min-height:2.75rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--color-public-accent)}
