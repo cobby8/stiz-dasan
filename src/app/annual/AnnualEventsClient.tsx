@@ -3,9 +3,15 @@
 import { useState, useMemo, useEffect, useRef, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import EventDetailPanel from "./EventDetailPanel";
+import AnnualCalendarView from "./AnnualCalendarView";
 import { DAY_NAMES } from "@/lib/classSchedule";
+import { todayKst } from "@/lib/datetime/kst";
 import { getKoreanAnnualPeriod, isSameAnnualPeriod, type AnnualPeriod } from "./annualPeriod";
 import "./annual-months.css";
+
+// 달력형/목록형 — 원장 결정(2026-11-06): 달력형 기본, 고른 보기는 그 기기에 기억한다.
+export type AnnualViewMode = "calendar" | "list";
+const VIEW_STORAGE_KEY = "stiz.annual.view";
 
 // 5분마다 서버 데이터 자동 새로고침
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
@@ -42,9 +48,26 @@ interface Props {
     classDays: number[];
     // 서버에서 계산된 수강 연도별·수강월별 수업일자: { 연도: { 수강월(0-11): { 요일(0-6): [ISO날짜, ...] } } }
     yearlySchedules: Record<number, Record<number, Record<number, string[]>>>;
+    /** 처음 보기(기본 달력형). 기기에 기억된 보기가 있으면 그쪽이 우선한다. */
+    defaultView?: AnnualViewMode;
 }
 
-export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props) {
+export default function AnnualEventsClient({ allEvents, yearlySchedules, defaultView = "calendar" }: Props) {
+    const [view, setView] = useState<AnnualViewMode>(defaultView);
+    // 오늘 날짜는 브라우저에 붙은 뒤에 넣는다 — 5분 캐시된 서버 화면에 어제 날짜가 박혀 화면이 어긋나지 않게.
+    const [todayYmd, setTodayYmd] = useState<string | null>(null);
+    // 기억된 보기 읽기 — 개인 설정이라 브라우저 저장소를 쓰고, 막혀 있으면 기본값으로 둔다.
+    useEffect(() => {
+        setTodayYmd(todayKst());
+        try {
+            const saved = window.localStorage.getItem(VIEW_STORAGE_KEY);
+            if (saved === "calendar" || saved === "list") setView(saved);
+        } catch { /* 사생활 보호 모드 등 — 기본 보기 유지 */ }
+    }, []);
+    function changeView(next: AnnualViewMode) {
+        setView(next);
+        try { window.localStorage.setItem(VIEW_STORAGE_KEY, next); } catch { /* 저장 못 해도 화면은 바뀐다 */ }
+    }
     const router      = useRouter();
     const [currentPeriod, setCurrentPeriod] = useState(getKoreanAnnualPeriod);
     const [selection, setSelection] = useState<AnnualPeriod>(currentPeriod);
@@ -63,6 +86,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
     useEffect(() => {
         const updateCurrentPeriod = () => {
             const next = getKoreanAnnualPeriod();
+            setTodayYmd(todayKst()); // 자정이 지나면 달력의 «오늘» 표시도 넘긴다
             const previous = currentPeriodRef.current;
             if (!isSameAnnualPeriod(previous, next)) {
                 currentPeriodRef.current = next;
@@ -242,9 +266,19 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                             <h2>{selectedYear}년 {MONTH_NAMES[mon]}</h2>
                                             {isThisMonth && <span className="annual-current-label">이번 달</span>}
                                             {isNextMonth && <span className="annual-next-label">다음 달</span>}
-                                            <span className="annual-event-count">일정 {eventCount}개</span>
+                                            {view === "list" && <span className="annual-event-count">일정 {eventCount}개</span>}
+                                            <div className={`annual-view-toggle${view === "calendar" ? " ml-auto" : ""}`} role="group" aria-label="보기 방식">
+                                                <button type="button" aria-pressed={view === "calendar"} onClick={() => changeView("calendar")}>
+                                                    <span className="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+                                                    달력
+                                                </button>
+                                                <button type="button" aria-pressed={view === "list"} onClick={() => changeView("list")}>
+                                                    <span className="material-symbols-outlined" aria-hidden="true">view_list</span>
+                                                    목록
+                                                </button>
+                                            </div>
                                         </div>
-                                        {sortedKeys.length === 0 && (
+                                        {view === "list" && sortedKeys.length === 0 && (
                                             <div className="public-card annual-empty-month">
                                                 <p>{selectedYear}년 {MONTH_NAMES[mon]}에 등록된 행사가 없습니다.</p>
                                                 {hasSchedule && <p>수업 날짜는 아래에서 확인해 주세요.</p>}
@@ -302,8 +336,19 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                             </div>
                                         )}
 
+                                        {/* 달력형 — 실제 날짜 칸에 일정을 놓는다(목록형은 수강월 기준) */}
+                                        {view === "calendar" && (
+                                            <AnnualCalendarView
+                                                year={selectedYear}
+                                                month={mon}
+                                                events={allEvents}
+                                                todayYmd={todayYmd}
+                                                onSelectEvent={setSelectedEvent}
+                                            />
+                                        )}
+
                                         {/* 날짜별 이벤트 그룹 — 카드 스타일 개선 */}
-                                        <div className="space-y-3 mb-8">
+                                        {view === "list" && <div className="space-y-3 mb-8">
                                             {sortedKeys.map(dateKey => {
                                                 const events = dateMap[dateKey];
                                                 const d   = new Date(dateKey);
@@ -377,7 +422,7 @@ export default function AnnualEventsClient({ allEvents, yearlySchedules }: Props
                                                     </div>
                                                 );
                                             })}
-                                        </div>
+                                        </div>}
                                     </div>
                                 );
                             })}

@@ -91,3 +91,139 @@
     line-height: 1.8;
 }
 .stiz-public-sport .annual-event-row { min-width: 0; min-height: 44px; }
+
+/* ── 보기 전환(달력 | 목록) — 수업시간표의 카드/표 버튼과 같은 크기(44px) ── */
+.stiz-public-sport .annual-view-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-public-line);
+    border-radius: 999px;
+}
+.stiz-public-sport .annual-view-toggle button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    padding: 0 14px;
+    background: var(--color-public-paper);
+    color: var(--color-public-muted);
+    font-size: .75rem;
+    font-weight: 700;
+}
+.stiz-public-sport .annual-view-toggle button[aria-pressed="true"] {
+    background: var(--color-public-dark);
+    color: var(--color-public-white);
+}
+.stiz-public-sport .annual-view-toggle .material-symbols-outlined { font-size: 16px; }
+
+/* ── 달력형 ── */
+.stiz-public-sport .annual-calendar { margin-bottom: 24px; }
+.stiz-public-sport .annual-calendar-grid {
+    border: 1px solid var(--color-public-line);
+    border-radius: var(--color-public-radius);
+    overflow: hidden;
+    background: var(--color-public-paper);
+}
+.stiz-public-sport .annual-calendar-row {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.stiz-public-sport .annual-calendar-row + .annual-calendar-row { border-top: 1px solid var(--color-public-line); }
+.stiz-public-sport .annual-calendar-dow {
+    padding: 6px 0;
+    text-align: center;
+    font-size: .75rem;
+    font-weight: 700;
+    color: var(--color-public-muted);
+}
+.stiz-public-sport .annual-calendar-dow.is-sunday,
+.stiz-public-sport .annual-calendar-cell.is-sunday .annual-calendar-day { color: var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 0;
+    min-height: 56px;
+    padding: 4px;
+    text-align: left;
+    background: transparent;
+    color: var(--color-public-ink);
+}
+.stiz-public-sport .annual-calendar-cell + .annual-calendar-cell { border-left: 1px solid var(--color-public-line); }
+.stiz-public-sport .annual-calendar-cell.is-outside { opacity: .35; cursor: default; }
+/* 학원 휴무 = 옅은 바탕으로 «쉬는 날» 이 한눈에 */
+.stiz-public-sport .annual-calendar-cell.is-closed { background: color-mix(in srgb, var(--color-public-accent) 10%, var(--color-public-paper)); }
+.stiz-public-sport .annual-calendar-cell.is-selected { box-shadow: inset 0 0 0 2px var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-cell:not(:disabled):hover { box-shadow: inset 0 0 0 1px var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-cell.is-selected:hover { box-shadow: inset 0 0 0 2px var(--color-public-accent); }
+.stiz-public-sport .annual-calendar-day {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: .75rem;
+    font-weight: 700;
+}
+.stiz-public-sport .annual-calendar-day.is-today {
+    background: var(--color-public-dark);
+    color: var(--color-public-white) !important;
+}
+.stiz-public-sport .annual-calendar-dots { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding-left: 2px; }
+.stiz-public-sport .annual-calendar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.stiz-public-sport .annual-calendar-more { font-size: .75rem; font-weight: 700; color: var(--color-public-muted); line-height: 1; }
+.stiz-public-sport .annual-calendar-titles { display: none; }
+.stiz-public-sport .annual-calendar-title { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.stiz-public-sport .annual-calendar-title-text {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: .75rem;
+    font-weight: 600;
+}
+/* PC(넓은 칸)에서는 점 대신 짧은 제목을 보여 준다 */
+@media (min-width: 768px) {
+    .stiz-public-sport .annual-calendar-cell { min-height: 88px; padding: 6px; }
+    .stiz-public-sport .annual-calendar-dots { display: none; }
+    .stiz-public-sport .annual-calendar-titles { display: flex; flex-direction: column; gap: 2px; }
+}
+.stiz-public-sport .annual-calendar-detail { margin-top: 12px; }
+.stiz-public-sport .annual-calendar-detail-date { margin-bottom: 6px; font-size: .875rem; font-weight: 900; color: var(--color-public-ink); }
+.stiz-public-sport .annual-calendar-hint { font-size: .875rem; color: var(--color-public-muted); }
+.stiz-public-sport .annual-calendar-detail-list {
+    border: 1px solid var(--color-public-line);
+    border-radius: var(--color-public-radius);
+    background: var(--color-public-paper);
+    overflow: hidden;
+}
+.stiz-public-sport .annual-calendar-detail-list li + li { border-top: 1px solid var(--color-public-line); }
+.stiz-public-sport .annual-calendar-detail-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 48px;
+    padding: 8px 14px;
+    text-align: left;
+    color: var(--color-public-ink);
+}
+.stiz-public-sport .annual-calendar-detail-category { flex-shrink: 0; font-size: .75rem; font-weight: 700; color: var(--color-public-muted); }
+.stiz-public-sport .annual-calendar-detail-title { min-width: 0; flex: 1; font-size: .875rem; font-weight: 700; word-break: keep-all; }
+.stiz-public-sport .annual-calendar-detail-arrow { flex-shrink: 0; color: var(--color-public-muted); }
+/* 다크 모드: 어두운 바탕(--color-public-dark)은 카드와 구분이 안 돼, 연도 버튼과 같은 «주황 바탕 + 어두운 글자» 로 */
+.dark .stiz-public-sport .annual-view-toggle button[aria-pressed="true"],
+.dark .stiz-public-sport .annual-calendar-day.is-today {
+    background: var(--color-public-orange);
+    color: var(--color-public-dark) !important;
+}
+/* 휴무 칸은 색에만 기대지 않게 작은 «휴무» 글자를 같이 둔다 */
+.stiz-public-sport .annual-calendar-closed-label {
+    font-size: .75rem;
+    font-weight: 700;
+    color: var(--color-public-accent);
+    line-height: 1;
+}
