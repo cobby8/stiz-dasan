@@ -2,15 +2,15 @@
 // 근거: https://docs.tossplace.com/guide/pos-integration/plugin/develop/package.html
 //       https://docs.tossplace.com/guide/pos-integration/plugin/how-to-work.html (웹 워커 = DOM 없음)
 // 하는 일:
-//   1) 30초마다 우리 서버의 대기 «현장 결제» 요청 확인(실패하면 지수 백오프)
-//   2) 새 요청 → 토스트 «홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193) [결제하기]»
-//   3) [결제하기] → 결제 흐름(charge.ts)
+//   1) 약 14초마다 우리 서버의 대기 «현장 결제» 요청 확인(실패하면 지수 백오프)
+//   2) 새 요청 → 바로 결제 흐름(charge.ts)으로 결제창을 연다(2026-11-08 원장 요청: 누르는 단계 없이)
+//   3) 바로 못 열면(다른 주문이 담겨 있음·준비 중·오류) 토스트 «… 현장 결제 요청 [결제하기]» 로 남긴다
 //   4) 결제/취소 신호 → 서버에 참고 보고
 import { posPluginSdk, PosPluginSdkRateLimitError } from "@tossplace/pos-plugin-sdk";
 import { createServerApi } from "../core/api.ts";
 import { nextPollDelay } from "../core/backoff.ts";
 import { createChargeFlow } from "../core/charge.ts";
-import { pickNotifications } from "../core/notify.ts";
+import { isFirstNotice, needsManualFallback, pickNotifications } from "../core/notify.ts";
 import type { NotifyLog } from "../core/notify.ts";
 import { notificationMessage } from "../core/order.ts";
 import type { PosSdkLike } from "../core/pos-types.ts";
@@ -72,6 +72,11 @@ async function pollOnce(): Promise<void> {
     failures = 0;
     authWarned = false;
     for (const req of pickNotifications(res.data, notified, Date.now())) {
+      // 처음 받은 요청은 버튼을 기다리지 않고 바로 결제창을 연다(한 번에 한 건 — 다음 건은 결제 화면이 차 있어 버튼 알림으로 남는다)
+      if (isFirstNotice(notified, req.id)) {
+        const result = await flow.startCharge(req);
+        if (!needsManualFallback(result)) continue;
+      }
       posPluginSdk.toast.success({
         message: notificationMessage(req),
         button: { text: "결제하기", onClick: () => void flow.startCharge(req) },
