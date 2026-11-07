@@ -36,7 +36,6 @@ import {
   buildIntakeResultMessage,
   buildKakaoChannelInviteMessage,
   buildRentalGuideMessage,
-  cleanExtraLine,
   isIntakeResultStatus,
   maskPhone,
   normalizeMobilePhone,

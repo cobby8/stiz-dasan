@@ -4,6 +4,8 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
 import SmsTemplateClient from "./templates/SmsTemplateClient";
+// 고객 안내 문자(대관 안내 등) — 미리보기 → 원장 승인 → 1건 발송 공용 부품
+import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 
 interface CoachPhone {
     id: string;
@@ -129,7 +131,13 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
             {activeTab === "automation" && <AutomationPanel />}
             {activeTab === "templates" && <SmsTemplateClient />}
             {activeTab === "history" && <HistoryPanel />}
-            {activeTab === "manual" && <ManualSendPanel initialCoaches={initialCoaches} />}
+            {activeTab === "manual" && (
+                <>
+                    {/* 외부 고객용 정해진 안내(대관) — 직원 대량 발송과 분리해 위에 둔다 */}
+                    <CustomerGuidePanel />
+                    <ManualSendPanel initialCoaches={initialCoaches} />
+                </>
+            )}
         </div>
     );
 }
@@ -622,6 +630,24 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                     <span className="material-symbols-outlined text-[19px]">send</span>
                     {pending ? "대량 발송 접수 중..." : batchIsActive ? "대량 발송 처리 중" : `${recipients.length}명 대량 발송 접수`}
                 </button>
+            </div>
+        </section>
+    );
+}
+
+/**
+ * 고객 안내 보내기 — 번호를 넣고 정해진 안내 문구를 미리본 뒤 1건만 보낸다.
+ * 대관 관리 화면이 생기면 같은 부품(CustomerNoticeSender kind="RENTAL_GUIDE")에 신청자 번호를 넣어 그대로 쓴다.
+ */
+function CustomerGuidePanel() {
+    return (
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <h2 className="font-extrabold text-gray-900 dark:text-white">대관 안내 보내기</h2>
+            <div className="mt-3 max-w-md">
+                <CustomerNoticeSender
+                    kind="RENTAL_GUIDE"
+                    hint="요금·실내 운동화·주차·신청 링크가 담긴 안내를 문의하신 분께 보냅니다. 계좌는 넣지 않아요."
+                />
             </div>
         </section>
     );

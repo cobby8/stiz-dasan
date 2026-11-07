@@ -137,3 +137,9 @@ test("카카오 연결 화면의 채널 주소는 관리자 설정값에서 온�
   assert.doesNotMatch(page, /pf\.kakao\.com/);
   assert.match(page, /kakaoChannelLinks\(\(await getAcademySettings\(\)\)\?\.kakaoChannelUrl\)\.chatUrl/);
 });
+
+test("문자 화면 «수동 발송» 탭에 대관 안내 보내기(공용 부품 재사용)", () => {
+  const sms = readFileSync("src/app/admin/sms/SmsClient.tsx", "utf8");
+  assert.match(sms, /<CustomerGuidePanel \/>/);
+  assert.match(sms, /<CustomerNoticeSender[\s\S]{0,40}kind="RENTAL_GUIDE"/);
+});
