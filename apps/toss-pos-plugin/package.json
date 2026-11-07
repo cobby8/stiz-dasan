@@ -1,0 +1,24 @@
+{
+  "name": "stiz-toss-pos-plugin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "STIZ 농구교실 토스 POS 플러그인 — 사이트의 «현장 결제» 요청을 POS 결제 화면으로 넘긴다",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "zip": "node scripts/build.mjs && node scripts/zip.mjs",
+    "test": "node --test \"tests/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tossplace/pos-plugin-sdk": "0.0.31"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

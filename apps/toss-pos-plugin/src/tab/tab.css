@@ -1,0 +1,40 @@
+/* 탭 화면 스타일 — 색은 변수 한 곳에서만 정한다(하드코딩 금지 원칙). 터치 영역 44px, 글자 최소 13px */
+:root {
+  --c-bg: #ffffff;
+  --c-text: #191f28;
+  --c-muted: #6b7684;
+  --c-line: #e5e8eb;
+  --c-primary: #3182f6;
+  --c-primary-text: #ffffff;
+  --c-warn: #f04452;
+  --c-ok: #03b26c;
+  --c-soft: #f2f4f6;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 8px 12px; font: 14px/1.4 system-ui, sans-serif; color: var(--c-text); background: var(--c-bg); }
+h2 { font-size: 14px; margin: 12px 0 4px; }
+.bar { display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--c-line); }
+.grow { flex: 1; }
+.pill { font-size: 13px; padding: 2px 8px; border-radius: 999px; background: var(--c-soft); color: var(--c-muted); }
+.pill.ok { color: var(--c-ok); }
+.pill.bad { color: var(--c-warn); }
+.row { display: flex; gap: 8px; align-items: center; }
+.box { padding: 8px 0; border-bottom: 1px solid var(--c-line); }
+.box label { display: block; font-size: 13px; color: var(--c-muted); margin-bottom: 4px; }
+input { flex: 1; min-height: 44px; padding: 0 10px; font-size: 15px; border: 1px solid var(--c-line); border-radius: 8px; }
+.btn { min-height: 44px; min-width: 44px; padding: 0 14px; font-size: 14px; border: 1px solid var(--c-line); border-radius: 8px; background: var(--c-soft); color: var(--c-text); }
+.btn.primary { background: var(--c-primary); color: var(--c-primary-text); border-color: var(--c-primary); }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: 0.5; }
+.muted { color: var(--c-muted); font-size: 13px; }
+.msg { min-height: 20px; margin: 6px 0; font-size: 13px; }
+.msg.bad { color: var(--c-warn); }
+.msg.ok { color: var(--c-ok); }
+/* 목록 = 한 줄 행(높이 ≈52px) */
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { display: flex; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--c-line); }
+.list li .who { font-weight: 600; min-width: 64px; }
+.list li .what { flex: 1; color: var(--c-muted); overflow-wrap: anywhere; }
+.list li .amt { font-weight: 600; white-space: nowrap; }
+.list li .code { font-size: 13px; color: var(--c-muted); white-space: nowrap; }
+.list .empty { color: var(--c-muted); font-size: 13px; min-height: 36px; }
