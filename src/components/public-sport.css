@@ -234,6 +234,20 @@ body[data-public-overlay] .stiz-public-sport .public-floating-btn { display: non
 .stiz-public-sport .public-site-header[data-menu-layout="drawer"] .public-menu-trigger { display: inline-flex; }
 .stiz-public-sport .public-site-header[data-menu-layout="expanded"] .public-menu-trigger { display: none; }
 .stiz-public-sport .public-menu-trigger { align-items: center; justify-content: center; gap: 4px; min-height: 44px; }
+/* 상단 메뉴 정리(2026-11-07 원장 요청 «간격과 배치가 별로»):
+   폭을 본문(72rem)에 맞추고, 「로고·메뉴」는 왼쪽, 버튼은 오른쪽 끝. 간격은 gap 으로 둬서
+   메뉴 접힘 계산(useHeaderMenuFit — gap 포함)과 어긋나지 않게 한다. */
+@media (min-width: 768px) {
+  .stiz-public-sport .public-header-row { max-width: calc(72rem + 3rem); padding-inline: 1.5rem; justify-content: flex-start; gap: 40px; }
+  .stiz-public-sport .public-header-actions { margin-left: auto; gap: 8px; }
+  .stiz-public-sport .public-desktop-accounts { gap: 8px; }
+  .stiz-public-sport .public-desktop-nav { gap: 4px; }
+  .stiz-public-sport .public-desktop-nav > a,
+  .stiz-public-sport .public-desktop-nav > div > button { padding-inline: 12px; }
+  .stiz-public-sport .public-desktop-nav > div > button { gap: 2px; }
+  .stiz-public-sport .public-desktop-nav > div > button > :last-child { width: 16px; height: 16px; font-size: 16px; }
+  .stiz-public-sport .public-header-actions :is(a, button):not(.public-menu-trigger) { min-height: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+}
 @media (max-width: 639px) {
   .stiz-public-sport .public-menu-prefix { display: none; }
   .stiz-public-sport .public-header-row { min-height: 64px; padding-inline: 12px; gap: 6px; }
