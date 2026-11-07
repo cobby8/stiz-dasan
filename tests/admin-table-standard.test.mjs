@@ -70,12 +70,13 @@ test("수납 목록은 원생명 아래 내부 설명과 청구번호를 노출�
 test("수납 상태 변경과 삭제는 수퍼관리자에게만 열린다", () => {
   assert.match(financePage, /currentAdminRole=\{adminUser\.appUserRole\}/);
   assert.match(financeClient, /canManageCriticalFinance = currentAdminRole === "ADMIN"/);
-  assert.match(financeClient, /canManageCriticalFinance && p\.status !== "PAID"/);
+  // 납부처리는 미납·연체에만(2026-11-08 «납부 처리» 창 전환)
+  assert.match(financeClient, /canManageCriticalFinance && \["PENDING", "OVERDUE"\]\.includes\(p\.status\)/);
   assert.match(financeClient, /canManageCriticalFinance && p\.status === "PENDING"/);
   assert.match(financeClient, /canManageCriticalFinance && p\.status === "PAID"/);
   assert.match(adminActions, /async function requireFinanceOwner/);
   assert.match(adminActions, /export async function updatePaymentStatus[\s\S]*?await requireFinanceOwner\(\)/);
-  assert.match(adminActions, /export async function markTerminalPaymentPaid[\s\S]*?const admin = await requireFinanceOwner\(\)/);
+  assert.match(adminActions, /export async function recordBankTransferPayment[\s\S]*?const admin = await requireFinanceOwner\(\)/);
   assert.match(adminActions, /export async function deletePayment[\s\S]*?await requireFinanceOwner\(\)/);
   assert.match(adminActions, /export async function bulkUpdatePaymentStatus[\s\S]*?await requireFinanceOwner\(\)/);
 });

@@ -14,7 +14,7 @@ await mkdir(evidence, { recursive: true });
 const globals = await readFile(path.join(root, 'src/app/globals.css'), 'utf8');
 const academy = await readFile(path.join(root, 'src/app/academy-theme.css'), 'utf8');
 const css = (await postcss([tailwind()]).process(globals, { from: path.join(root, 'src/app/globals.css') })).css + academy;
-const actionNames = ['createPayment', 'cancelUnpaidPayment', 'updatePaymentStatus', 'deletePayment', 'previewMonthlyInvoices', 'generateMonthlyInvoices', 'refreshPaymentLedger', 'sendInvoiceLinksForMonth', 'sendUnpaidReminders', 'bulkUpdatePaymentStatus', 'markTerminalPaymentPaid'];
+const actionNames = ['createPayment', 'cancelUnpaidPayment', 'updatePaymentStatus', 'deletePayment', 'previewMonthlyInvoices', 'generateMonthlyInvoices', 'refreshPaymentLedger', 'sendInvoiceLinksForMonth', 'sendUnpaidReminders', 'bulkUpdatePaymentStatus', 'recordBankTransferPayment'];
 const harness = await startStatusBrowserHarness({
   css,
   mocks: {

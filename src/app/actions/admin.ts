@@ -49,11 +49,18 @@ import {
     ensureInvoicesForMonth,
     ensurePaymentInfrastructure,
     markOverduePayments,
-    markPaymentPaid,
-    recordTerminalPayment,
     recordPaymentAudit,
     syncInvoiceStatusesForMonth,
 } from "@/lib/payment-ledger";
+// 관리자 «납부 처리»(계좌이체 기록) 규칙 — 화면과 같은 판정을 쓴다(2026-11-08)
+import {
+    BANK_TRANSFER_AUDIT_ACTION,
+    BANK_TRANSFER_METHOD,
+    bankTransferResultMessage,
+    splitRecordableTargets,
+    validateBankTransferInput,
+    type SkipReason,
+} from "@/lib/payments/bankTransferRecord";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
 import { isMonthlyInvoiceNotificationEligible } from "@/lib/billing/notification-policy";
 import {
@@ -1739,20 +1746,17 @@ export async function cancelUnpaidPayment(id: string, reason: string) {
     revalidatePath("/mypage");
 }
 
+// 납부완료(PAID)는 방법·근거 없이 만들지 않는다(2026-11-08 원장 결정).
+// 계좌이체는 recordBankTransferPayment, 현장 결제는 토스 POS 확인, 온라인은 토스 웹훅이 각각
+// lib/payment-ledger 의 markPaymentPaid 를 직접 부른다 — 이 상태 변경 함수들은 PAID 를 받지 않는다.
+const DIRECT_PAID_BLOCKED_MESSAGE = "납부완료는 «납부 처리» 창에서 결제 방법을 골라 기록해 주세요.";
+
 export async function updatePaymentStatus(id: string, status: string) {
     await requireFinanceOwner();
+    // try 밖에서 막아야 안내 문구가 «수납 상태 변경 실패»로 뭉개지지 않는다
+    if (status === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
     try {
         await ensurePaymentInfrastructure();
-        if (status === "PAID") {
-            await markPaymentPaid({
-                paymentId: id,
-                actorType: "ADMIN",
-                method: "MANUAL",
-            });
-            revalidateFinanceCaches();
-            return;
-        }
-
         const invoice = await ensureInvoiceForPayment(id);
         const invoiceStatus = status === "OVERDUE"
             ? "OVERDUE"
@@ -1785,39 +1789,105 @@ export async function updatePaymentStatus(id: string, status: string) {
     revalidateFinanceCaches();
 }
 
-export async function markTerminalPaymentPaid(data: {
-    paymentId: string;
-    approvalNo: string;
-    receivedAt?: string;
-    memo?: string;
+/**
+ * 계좌이체 납부 기록(관리자 «납부 처리» 창 · 2026-11-08 원장 결정)
+ * - 입금일·입금자명을 받아야만 납부완료가 된다. 여러 건이면 같은 입금 정보로 한 번에 기록한다.
+ * - 미납·연체만 바꾸고, 이미 납부·취소·환불은 건너뛰어 결과로 알려 준다.
+ * - 한 트랜잭션: 청구 잠금 → Payment·PaymentInvoice 갱신 → 건마다 감사 기록. 하나라도 어긋나면 전부 되돌린다.
+ * (예전 «현장 단말기 결제 반영» markTerminalPaymentPaid 는 이 창으로 대체되어 지웠다.
+ *  이미 단말기로 기록된 결제는 Payment.method·paidProvider 값이 그대로 남아 화면 표시가 유지된다.)
+ */
+export async function recordBankTransferPayment(data: {
+    paymentIds: string[];
+    depositDate: string;
+    depositorName: string;
+    memo?: string | null;
 }) {
+    // 권한 = 기존 납부 처리와 같은 재무 권한(원장 ADMIN)
     const admin = await requireFinanceOwner();
-    const paymentId = data.paymentId?.trim();
-    const approvalNo = data.approvalNo?.trim();
-
-    if (!paymentId) {
-        throw new Error("수납 기록을 선택해 주세요.");
-    }
-    if (!approvalNo) {
-        throw new Error("단말기 승인번호를 입력해 주세요.");
-    }
+    // 서버가 다시 검사한다(화면 검사를 믿지 않는다). 미래 입금일 기준은 KST 오늘.
+    const checked = validateBankTransferInput(data, todayKst());
+    if (!checked.ok) throw new Error(checked.error);
+    const { paymentIds, depositDate, depositorName, memo } = checked.value;
 
     try {
-        const result = await recordTerminalPayment({
-            paymentId,
-            approvalNo,
-            receivedAt: data.receivedAt || null,
-            memo: data.memo || null,
-            method: "CARD",
-            actorType: "ADMIN",
-            actorId: admin.appUserId,
+        await ensurePaymentInfrastructure();
+        // 청구서가 없는 옛 청구도 있으므로 먼저 맞춰 둔다(멱등 — 기존 납부 처리와 같은 준비 단계)
+        for (const id of paymentIds) await ensureInvoiceForPayment(id);
+
+        const result = await prisma.$transaction(async (tx) => {
+            // 동시에 토스 웹훅·POS 확인이 같은 청구를 바꾸지 못하게 잠근다
+            const rows = await tx.$queryRawUnsafe<{ id: string; status: string; amount: number; invoiceId: string | null }[]>(
+                `SELECT p.id, p.status, p.amount, i.id AS "invoiceId"
+                   FROM "Payment" p
+                   LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+                  WHERE p.id = ANY($1::text[])
+                  ORDER BY p.id
+                  FOR UPDATE OF p`,
+                paymentIds,
+            );
+            const { recordable, skipped } = splitRecordableTargets(rows, paymentIds);
+            if (recordable.length === 0) return { recorded: [] as typeof rows, skipped };
+
+            // paidDate 는 시간대 없는 timestamp — 날짜 문자열을 그대로 '그날 00:00' 으로 넣는다.
+            // UTC 로 읽어도(toISOString) KST 로 두 번 걸어 읽어도 같은 날짜가 나온다.
+            const updated = await tx.$executeRawUnsafe(
+                `UPDATE "Payment"
+                    SET status = 'PAID', "paidDate" = $2::date::timestamp, method = $3, "updatedAt" = NOW()
+                  WHERE id = ANY($1::text[]) AND status IN ('PENDING', 'OVERDUE')`,
+                recordable, depositDate, BANK_TRANSFER_METHOD,
+            );
+            if (Number(updated) !== recordable.length) {
+                throw new Error("처리 중 청구 상태가 바뀌어 기록하지 않았어요. 다시 조회해 주세요.");
+            }
+            // PaymentInvoice.paidAt 은 timestamptz — Payment.paidDate 와 «같은 순간»(입금일 00:00 UTC = KST 09:00)으로 넣는다.
+            // KST 자정(전날 15:00 UTC)으로 넣으면 UTC 로 날짜를 자르는 화면에서 하루 앞당겨 보인다.
+            await tx.$executeRawUnsafe(
+                `UPDATE "PaymentInvoice"
+                    SET status = 'PAID', "paidAt" = ($2::date::timestamp AT TIME ZONE 'UTC'), "updatedAt" = NOW()
+                  WHERE "paymentId" = ANY($1::text[])`,
+                recordable, depositDate,
+            );
+
+            const recorded = rows.filter((row) => recordable.includes(row.id));
+            for (const row of recorded) {
+                // 근거 기록: 누가·언제 입금·누구 이름으로·이전 상태
+                await tx.$executeRawUnsafe(
+                    `INSERT INTO "PaymentAuditLog" (
+                        id, "paymentId", "invoiceId", "actorType", "actorId", action, message, metadata, "createdAt"
+                     ) VALUES (
+                        gen_random_uuid()::text, $1, $2, 'ADMIN', $3, $4, $5, $6::jsonb, NOW()
+                     )`,
+                    row.id,
+                    row.invoiceId,
+                    admin.appUserId,
+                    BANK_TRANSFER_AUDIT_ACTION,
+                    "관리자 계좌이체 납부 기록",
+                    JSON.stringify({
+                        method: BANK_TRANSFER_METHOD,
+                        depositDate,
+                        depositorName,
+                        memo,
+                        previousStatus: row.status,
+                        amount: Number(row.amount),
+                        batchSize: recordable.length,
+                    }),
+                );
+            }
+            return { recorded, skipped };
         });
+
         revalidateFinanceCaches();
         revalidatePath("/mypage");
-        return result;
+        return {
+            recordedCount: result.recorded.length,
+            recordedAmount: result.recorded.reduce((sum, row) => sum + Number(row.amount), 0),
+            skipped: result.skipped as Array<{ id: string; reason: SkipReason }>,
+            message: bankTransferResultMessage(result.recorded.length, result.skipped.length),
+        };
     } catch (e) {
-        console.error("Failed to mark terminal payment:", e);
-        throw new Error(e instanceof Error ? e.message : "현장 단말기 결제 반영 실패");
+        console.error("Failed to record bank transfer payment:", e);
+        throw new Error(e instanceof Error ? e.message : "계좌이체 납부 기록 실패");
     }
 }
 
@@ -3725,20 +3795,12 @@ export async function sendUnpaidReminders() {
 // 선택한 결제 건들의 상태를 한번에 변경 (체크박스 일괄 처리용)
 export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) {
     await requireFinanceOwner();
+    // 일괄 납부완료도 방법·근거 없이는 만들지 않는다 — recordBankTransferPayment 를 쓴다
+    if (newStatus === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
     if (ids.length === 0) return;
 
     try {
         await ensurePaymentInfrastructure();
-        if (newStatus === "PAID") {
-            await Promise.all(ids.map((id) => markPaymentPaid({
-                paymentId: id,
-                actorType: "ADMIN",
-                method: "MANUAL",
-            })));
-            revalidateFinanceCaches();
-            return;
-        }
-
         const placeholders = ids.map((_, i) => `$${i + 2}`).join(",");
         await prisma.$executeRawUnsafe(
             `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders})`,
