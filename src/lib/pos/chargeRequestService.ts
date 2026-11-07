@@ -720,7 +720,10 @@ export async function cancelChargeRequestByAdmin(input: { requestId: string; adm
     );
     if (rows.length === 0) throw new ChargeRequestError("NOT_CLAIMABLE", "이미 끝났거나 취소된 요청입니다.");
     // 감사 기록은 묶인 청구마다(청구 상세 이력에서 각자 보이게). 항목이 없는 옛 요청은 대표 청구 1건.
-    const found = await prisma.$queryRawUnsafe<{ paymentId: string }[]>(ITEMS_SQL, [rows[0].id]);
+    // 취소는 이미 확정됐다 — 항목 조회가 실패해도 오류로 돌려주지 않고 대표 청구 1건으로 기록한다(검수 권장 2026-11-08)
+    const found = await prisma
+        .$queryRawUnsafe<{ paymentId: string }[]>(ITEMS_SQL, [rows[0].id])
+        .catch(() => [] as { paymentId: string }[]);
     const paymentIds = found && found.length > 0 ? [...new Set(found.map((it) => it.paymentId))] : [rows[0].paymentId];
     for (const paymentId of paymentIds) {
         await recordPaymentAudit({
