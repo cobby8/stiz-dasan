@@ -199,7 +199,6 @@ export default function PosChargeRequestModal({
                             {won(request.amount)}
                             {request.paidKst ? ` · ${request.paidKst} 결제` : ""}
                         </p>
-                        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">랠리즈에도 납부 처리해 주세요.</p>
                     </div>
                 ) : (
                     <div className="mt-4">

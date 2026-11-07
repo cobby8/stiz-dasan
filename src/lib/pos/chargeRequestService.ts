@@ -799,7 +799,7 @@ export async function matchChargeRequestsForOrder(input: {
     await notifyOnce(
         request.id,
         "slackNotifiedAt",
-        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n사이트 청구서를 납부완료로 바꿨습니다. 랠리즈에도 처리해 주세요.`,
+        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n사이트 청구서를 납부완료로 바꿨습니다.`,
     );
     notes.push(`${code} 자동 납부 반영`);
     return { handledTossPaymentIds: handled, note: notes.join(" · ") };

@@ -2,7 +2,8 @@
  * 토스POS 결제 → 슬랙 DM 알림 — 순수 로직 모듈 (DB·네트워크·환경변수 없음)
  *
  * ■ 무엇을 하나
- *   POS 결제 1건마다 원장에게 "랠리즈에서 현장결제 처리하셨나요?" 를 묻는다.
+ *   POS 결제 1건마다 원장에게 "현장 결제를 확인해 주세요" 를 묻는다.
+ *   (2026-11-08 랠리즈 사용 중단 — 사람에게 보이는 «랠리즈에 처리» 안내는 지웠다. 원장 버튼으로만 납부하는 규칙은 그대로.)
  *   청구서의 원본은 **랠리즈**다. 사이트 청구서(Payment)는 랠리즈를 뒤따라 복사되는 사본이라
  *   사이트가 랠리즈를 앞서면 안 된다 → 사이트 납부 반영은 **원장이 버튼으로 확인했을 때만** 한다.
  *
@@ -44,8 +45,8 @@ export const PICK_KINDS = new Set([NOTICE_KIND.NO_MEMO, NOTICE_KIND.AMBIGUOUS, N
 
 /** 슬랙 버튼 action_id. 원생 고르기는 `pos_notice_pick:<원생ID>` 형식이다. */
 export const ACTION = {
-  CONFIRM_PAY: "pos_notice_confirm_pay", // [랠리즈 처리함 · 사이트 납부 반영] — 유일한 돈 쓰기 버튼
-  ACK: "pos_notice_ack", // [랠리즈 처리함] / [확인함] — 기록만
+  CONFIRM_PAY: "pos_notice_confirm_pay", // [사이트 납부 반영] — 유일한 돈 쓰기 버튼
+  ACK: "pos_notice_ack", // [확인함] — 기록만
   IGNORE: "pos_notice_ignore", // [학원 외 결제]
   PICK_PREFIX: "pos_notice_pick:",
 };
@@ -394,7 +395,7 @@ export function buildNoticeMessage(input) {
   }
   if (input.reason) detail += `\n(${escapeSlack(input.reason)})`;
   if (detail) blocks.push({ type: "section", text: { type: "mrkdwn", text: detail } });
-  blocks.push({ type: "section", text: { type: "mrkdwn", text: "*랠리즈에서 현장결제 처리하셨나요?*" } });
+  blocks.push({ type: "section", text: { type: "mrkdwn", text: "*현장 결제를 확인해 주세요.*" } });
   if (input.warningLine) {
     blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: escapeSlack(input.warningLine) }] });
   }
@@ -408,7 +409,7 @@ export function buildNoticeMessage(input) {
     if (kind === NOTICE_KIND.AUTO_CANDIDATE) {
       blocks.push({
         type: "actions",
-        elements: [button("랠리즈 처리함 · 사이트 납부 반영", ACTION.CONFIRM_PAY, v, "primary"), ignore],
+        elements: [button("사이트 납부 반영", ACTION.CONFIRM_PAY, v, "primary"), ignore],
       });
     } else if (PICK_KINDS.has(kind)) {
       const candidates = input.candidates ?? [];
@@ -429,16 +430,16 @@ export function buildNoticeMessage(input) {
           elements: [{ type: "mrkdwn", text: `후보가 많아 앞의 ${candidates.length}명만 보여 드립니다(외 ${input.overflow}명).` }],
         });
       }
-      blocks.push({ type: "actions", elements: [button("랠리즈 처리함", ACTION.ACK, v), ignore] });
+      blocks.push({ type: "actions", elements: [button("확인함", ACTION.ACK, v), ignore] });
     } else if (kind === NOTICE_KIND.ALREADY_PAID) {
       blocks.push({ type: "actions", elements: [button("확인함", ACTION.ACK, v), ignore] });
     } else {
       // NO_SITE_INVOICE · AMOUNT_MISMATCH — 확인 기록만 남긴다(돈은 건드리지 않음)
-      blocks.push({ type: "actions", elements: [button("랠리즈 처리함", ACTION.ACK, v), ignore] });
+      blocks.push({ type: "actions", elements: [button("확인함", ACTION.ACK, v), ignore] });
     }
   }
 
-  const text = `토스POS 결제 ${amountText} (${notice.kstDateTime || "시각 미상"}) — 랠리즈에서 현장결제 처리하셨나요?`;
+  const text = `토스POS 결제 ${amountText} (${notice.kstDateTime || "시각 미상"}) — 현장 결제를 확인해 주세요.`;
   return { text, blocks };
 }
 

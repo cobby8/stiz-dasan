@@ -33,7 +33,7 @@ async function tryProcessNow(eventRowId: string) {
  *
  * ■ 청구서를 여기서 바꾸지 않는 이유
  *   청구서의 원본은 랠리즈다. 사이트 납부 반영은 원장이 슬랙 DM 의 버튼
- *   [랠리즈 처리함 · 사이트 납부 반영]을 눌렀을 때만 한다(/api/slack/interactions).
+ *   [사이트 납부 반영]을 눌렀을 때만 한다(/api/slack/interactions).
  *   예외 하나(원장 결정 D1, 2026-11-07): 관리자가 미리 만든 «현장 결제» 요청의 번호(STIZ:S-482193)가
  *   주문 메모에 있고, 토스 재조회로 금액·상태가 맞으면 processPosWebhookEvent 안에서 자동 납부한다
  *   (src/lib/pos/chargeRequestService.ts). 근거는 이 라우트의 서명 검증 + 재조회 두 겹뿐이다.

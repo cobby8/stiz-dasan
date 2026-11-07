@@ -5,7 +5,7 @@
  * 돈을 지키는 규칙 (이 파일의 존재 이유)
  * ─────────────────────────────────────────────────────────────────────────
  * 1. 사이트 청구서를 "납부"로 바꾸는 길은 **단 하나**:
- *    [랠리즈 처리함 · 사이트 납부 반영] 버튼(CONFIRM_PAY) → 재확인 통과 → markPaymentPaid.
+ *    [사이트 납부 반영] 버튼(CONFIRM_PAY) → 재확인 통과 → markPaymentPaid.
  *    Payment 를 직접 UPDATE 하지 않는다(청구서·감사로그가 어긋난다).
  * 2. 재확인은 **누른 순간** DB 에서 한 문장(조건부 UPDATE)으로 한다:
  *    - 알림이 아직 '확인 대기' 상태인가(두 번 눌러도 두 번째는 0건)
@@ -113,7 +113,7 @@ export async function handleSlackNoticeAction(action: SlackNoticeAction, ctx: Sl
     if (action.type === "CONFIRM_PAY") return confirmPay(notice, ctx, where);
     if (action.type === "PICK") return pickStudent(notice, action.studentId, ctx, where);
 
-    // [랠리즈 처리함] / [확인함] / [학원 외 결제] — 상태만 바꾼다(돈은 건드리지 않음).
+    // [확인함] / [학원 외 결제] — 상태만 바꾼다(돈은 건드리지 않음).
     const nextStatus = action.type === "IGNORE" ? "IGNORED" : "CONFIRMED";
     const done = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `UPDATE "PosPaymentNotice"
@@ -133,7 +133,7 @@ export async function handleSlackNoticeAction(action: SlackNoticeAction, ctx: Sl
             ? `➖ 학원 외 결제로 처리 (${stamp()})`
             : effectiveKind(notice) === NOTICE_KIND.ALREADY_PAID
               ? `✅ 이중결제 여부 확인함 (${stamp()})`
-              : `✅ 랠리즈 처리 확인 (${stamp()})`;
+              : `✅ 확인함 (${stamp()})`;
     const fresh = (await loadNotice(notice.id)) ?? notice;
     await refreshNoticeMessage(fresh, { resultLine }, where);
 }
@@ -178,7 +178,7 @@ async function pickStudent(
     if (fresh) await refreshNoticeMessage(fresh, {}, where);
 }
 
-/** [랠리즈 처리함 · 사이트 납부 반영] — 이 프로젝트에서 POS 결제로 돈을 쓰는 유일한 경로. */
+/** [사이트 납부 반영] — 이 프로젝트에서 POS 결제로 돈을 쓰는 유일한 경로. */
 async function confirmPay(
     notice: NoticeRow,
     ctx: SlackActionContext,
@@ -261,7 +261,7 @@ async function confirmPay(
     const fresh = (await loadNotice(notice.id)) ?? notice;
     await refreshNoticeMessage(
         fresh,
-        { resultLine: `✅ 랠리즈 처리 확인 · 사이트 ${notice.targetMonth}월 청구 납부 반영 (${stamp()})` },
+        { resultLine: `✅ 사이트 ${notice.targetMonth}월 청구 납부 반영 (${stamp()})` },
         where,
     );
 }

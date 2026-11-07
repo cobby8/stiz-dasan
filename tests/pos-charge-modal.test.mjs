@@ -25,7 +25,7 @@ test("상태별 문구가 새 흐름대로 있다", async () => {
   assert.match(code, /tone: "danger"/, "요청 취소는 위험 작업 확인 창을 거친다");
   // PAID
   assert.match(code, /납부완료로 반영됐습니다/);
-  assert.match(code, /랠리즈에도 납부 처리해 주세요\./);
+  assert.doesNotMatch(code, /랠리즈/, "랠리즈 사용 중단(2026-11-08) — 랠리즈 처리 안내 없음");
   // HELD
   assert.match(code, /자동 반영 보류/);
   assert.match(code, /슬랙 결제 확인 알림에서 처리해 주세요\./);

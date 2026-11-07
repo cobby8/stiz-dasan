@@ -426,7 +426,7 @@ test("웹훅 매칭: 조건이 맞으면 선점 1행 뒤 markPaymentPaid 1회(�
   const claim = globalThis.__cs.calls.find((c) => /SET status = 'PAID'/.test(c.sql));
   // 마지막 인자 = 분할 결제 기록(note). 단건이면 null(기존 note 유지)
   assert.deepEqual(claim.args, ["r1", "o-1", "tp-1", "2026-11-07T14:20:00+09:00", 180000, null]);
-  assert.ok(globalThis.__cs.slack.some((t) => /자동 납부 반영/.test(t) && /랠리즈/.test(t)));
+  assert.ok(globalThis.__cs.slack.some((t) => /자동 납부 반영/.test(t) && !/랠리즈/.test(t)));
 });
 
 test("웹훅 매칭: 금액 불일치(주문 완료) → 납부 안 함, 요청 HELD + 슬랙 «보류», 기존 확인 알림으로 넘김", async () => {

@@ -159,13 +159,13 @@ test("DM: 필수 문구와 분류별 버튼", () => {
   const all = (m) => JSON.stringify(m.blocks);
 
   const auto = N.buildNoticeMessage({ notice, kind: K.AUTO_CANDIDATE, studentName: "이시윤" });
-  assert.match(all(auto), /랠리즈에서 현장결제 처리하셨나요\?/);
+  assert.match(all(auto), /현장 결제를 확인해 주세요\./);
   assert.match(all(auto), /₩180,000/);
   assert.match(all(auto), /2026-09-28 14:20/);
   assert.match(all(auto), /토요일 4교시/);
   assert.match(all(auto), /사이트 청구서 10월 ₩180,000 미납 → 함께 납부 처리합니다/);
   assert.deepEqual(ids(auto), [N.ACTION.CONFIRM_PAY, N.ACTION.IGNORE]);
-  assert.match(all(auto), /랠리즈 처리함 · 사이트 납부 반영/);
+  assert.match(all(auto), /사이트 납부 반영/);
 
   const pick = N.buildNoticeMessage({ notice, kind: K.NO_MEMO, candidates: [{ id: "s-kim", name: "김대건", classes: [] }], overflow: 3 });
   assert.deepEqual(ids(pick), [`${N.ACTION.PICK_PREFIX}s-kim`, N.ACTION.ACK, N.ACTION.IGNORE]);
@@ -326,7 +326,7 @@ test("[사이트 납부 반영]: 재확인(선점) 통과 시에만 markPaymentP
   assert.ok(claimAt >= 0, "선점 UPDATE 가 먼저 실행된다");
   assert.ok(!r.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "Payment 를 직접 고치지 않는다");
   const update = r.slack.find((s) => s.op === "update");
-  assert.match(JSON.stringify(update.blocks), /✅ 랠리즈 처리 확인 · 사이트 10월 청구 납부 반영/);
+  assert.match(JSON.stringify(update.blocks), /✅ 사이트 10월 청구 납부 반영/);
 });
 
 test("[사이트 납부 반영]: 누른 순간 재확인이 실패하면 쓰지 않고 이유를 남긴다", async () => {
