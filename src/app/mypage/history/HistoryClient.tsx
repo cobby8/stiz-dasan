@@ -4,6 +4,8 @@
 // getMyPageHistory가 반환한 자녀별 전체 기록을 자녀 선택 + 출결/수납 두 목록으로 보여준다.
 import { useState } from "react";
 import Link from "next/link";
+import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
+import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { kstLabel } from "@/lib/datetime/kst";
 // 출결 기록 달별 묶음 — KST 날짜로 바꿔 묶는 공용 함수(toISOString 은 하루 밀린다)
@@ -70,6 +72,8 @@ type HistoryChild = {
         receiptUrl?: string | null;
         invoiceId?: string | null;
         canCheckout?: boolean;
+        /** 무통장입금 계좌(입금 대기·만료). 대표 보호자에게만 온다. */
+        virtualAccount?: PublicVirtualAccountView | null;
         invoiceNo?: string | null;
     }[];
 };
@@ -270,6 +274,11 @@ export default function HistoryClient({
                                                             )}
                                                         </div>
                                                     </div>
+                                                    {p.virtualAccount && (
+                                                        <div className="mt-2">
+                                                            <VirtualAccountNotice compact account={p.virtualAccount} />
+                                                        </div>
+                                                    )}
                                                     <div className="mt-3 flex flex-wrap justify-end gap-2">
                                                         {canPay && (
                                                             <Link

@@ -4,6 +4,8 @@ import ChildConnectionNotice from "@/components/account/ChildConnectionNotice";
 
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
+import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
+import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 // 설치된 학부모 앱은 /mypage 밖으로 나가면 돌아올 길이 없다.
 // 길잡이 링크는 감추고(HideInInstalledApp), 내용인 링크는 이동만 막는다(AppSafeLink).
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
@@ -100,6 +102,8 @@ type ChildData = {
         receiptUrl?: string | null;
         invoiceId?: string | null;
         canCheckout?: boolean;
+        /** 무통장입금 계좌(입금 대기·만료). 대표 보호자에게만 온다. */
+        virtualAccount?: PublicVirtualAccountView | null;
         invoiceNo?: string | null;
         invoiceStatus?: string | null;
         invoiceCheckoutUrl?: string | null;
@@ -492,6 +496,12 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                     {PAYMENT_STATUS[p.status]?.label || p.status}
                                 </span>
                             </div>
+                            {/* 무통장입금 계좌를 받아 둔 경우 — 입금 대기(계좌·복사) 또는 기한 만료 안내 */}
+                            {p.virtualAccount && (
+                                <div className="mt-3">
+                                    <VirtualAccountNotice compact account={p.virtualAccount} />
+                                </div>
+                            )}
                             {p.invoiceId && p.canCheckout !== false && (
                                 <Link
                                     href={`/payments/${p.invoiceId}`}
@@ -1013,6 +1023,11 @@ export default function MyPageClient({ data, gallery = [], notices = [], notific
                                                 )}
                                             </div>
                                         </div>
+                                        {p.virtualAccount && (
+                                            <div className="mt-2">
+                                                <VirtualAccountNotice compact account={p.virtualAccount} />
+                                            </div>
+                                        )}
                                         <div className="mt-3 flex flex-wrap justify-end gap-2">
                                             {canPay && (
                                                 <Link

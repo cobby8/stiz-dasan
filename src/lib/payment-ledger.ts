@@ -5,6 +5,26 @@ import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 import {
+    VA_EXPIRED_STATUS,
+    VA_METHOD,
+    VA_WAITING_STATUS,
+    decideVirtualAccountClose,
+    decideVirtualAccountWebhook,
+    extractVirtualAccountIssue,
+    isDepositCallbackPayload,
+    isVirtualAccountTransaction,
+    shouldRetryDepositCallback,
+    parseTossTimestamp,
+    readStoredIssue,
+    stripPaymentSecret,
+    stripWebhookSecrets,
+    toPublicVirtualAccountView,
+    toTossMobilePhone,
+    type PublicVirtualAccountView,
+} from "@/lib/payments/virtualAccount";
+import { buildIssuedRawResponse, checkDepositSecret } from "@/lib/payments/virtualAccountSecret";
+import { postMessage } from "@/lib/slack/client";
+import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
     buildCafe24PaymentBridgePayload,
@@ -75,6 +95,8 @@ type PaymentTransactionRow = {
     paymentKey?: string | null;
     amount: number;
     status: string;
+    method?: string | null;
+    rawResponse?: unknown;
     invoiceStatus?: string;
     paymentStatus?: string;
 };
@@ -127,6 +149,8 @@ function makeTossWebhookEventId(input: {
     orderId: string | null;
     status: string | null;
     totalAmount: number | null;
+    /** 가상계좌 입금 알림의 transactionKey(없으면 createdAt). 입금·입금취소가 반복돼도 서로 다른 알림으로 본다. */
+    depositKey?: string | null;
 }) {
     if (input.explicitEventId) return input.explicitEventId;
 
@@ -137,6 +161,8 @@ function makeTossWebhookEventId(input: {
             orderId: input.orderId,
             status: input.status,
             totalAmount: input.totalAmount,
+            // 카드 등 기존 알림의 지문이 바뀌지 않게 값이 있을 때만 칸을 넣는다
+            ...(input.depositKey ? { depositKey: input.depositKey } : {}),
         }
         : input.payload;
     const digest = createHash("sha256")
@@ -854,6 +880,10 @@ export async function createCheckoutSession(input: {
     invoiceId: string;
     owner: PaymentOwnerIdentity;
     origin: string;
+    /** 학부모가 고른 결제 수단(CARD·TRANSFER·VIRTUAL_ACCOUNT). 없으면 예전처럼 동작. */
+    method?: string | null;
+    /** 열린 입금 계좌를 닫고 다른 수단으로 결제하겠다는 학부모 확인(화면 확인 단계를 거친 경우만 true). */
+    closeOpenVirtualAccount?: boolean;
 }) {
     await ensurePaymentInfrastructure();
 
@@ -882,6 +912,42 @@ export async function createCheckoutSession(input: {
             providerReady: false,
             configurationMissing: true,
         };
+    }
+
+    // 기한 안의 입금 대기 계좌가 이미 있으면 새 결제를 시작하지 않고 그 계좌를 돌려준다.
+    // (두 계좌에 각각 입금되는 이중 납부를 서버에서 막는다 — 화면 버튼만 숨기는 걸로는 부족하다)
+    if (config.provider === "TOSS") {
+        const vaState = await getVirtualAccountState(invoice.invoiceId);
+        if (vaState && !vaState.expired) {
+            // 원장 결정(11-08): 다른 수단(카드·계좌이체)을 확인하고 고르면 열린 계좌를 토스에서 닫고 새 결제를 연다.
+            // 무통장입금을 다시 고르거나 확인 없이 부르면 예전처럼 그 계좌를 다시 보여 준다.
+            const wantsOtherMethod = input.closeOpenVirtualAccount === true
+                && (input.method === "CARD" || input.method === "TRANSFER");
+            if (!wantsOtherMethod) {
+                return {
+                    ok: true as const,
+                    provider: config.provider,
+                    providerLabel: config.providerLabel,
+                    providerReady: config.providerReady,
+                    openVirtualAccount: vaState,
+                };
+            }
+            const closed = await closeOpenVirtualAccount(invoice.invoiceId);
+            if (closed === "PAID") {
+                // 닫는 사이 입금이 들어왔다 — 입금이 이긴다. 새 결제를 열지 않는다.
+                return { ok: false as const, error: "이미 납부가 완료된 청구서입니다.", alreadyPaid: true };
+            }
+            if (closed === "FAIL") {
+                // 닫았는지 확신할 수 없으면 결제창을 열지 않는다(이중 납부 방지 우선).
+                return {
+                    ok: false as const,
+                    error: "입금 계좌를 닫지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                    providerReady: config.providerReady,
+                    providerError: true as const,
+                    retryable: true,
+                };
+            }
+        }
     }
 
     const cleanOrigin = input.origin.replace(/\/$/, "");
@@ -1049,9 +1115,294 @@ export async function createCheckoutSession(input: {
         orderName,
         customerName: invoice.parentName || invoice.studentName || "STIZ 학부모",
         customerEmail: invoice.parentEmail,
+        // 가상계좌 발급·입금 안내 문자를 토스가 보낼 번호. 형식이 확실할 때만 넘긴다(틀리면 결제창 오류).
+        customerMobilePhone: toTossMobilePhone(invoice.parentPhone),
         successUrl,
         failUrl,
     };
+}
+
+/**
+ * 청구서의 가장 최근 가상계좌(입금 대기·만료)를 학부모 화면 모양으로 돌려준다. 없으면 null.
+ * 저장된 칸 중 발급 정보(virtualAccountIssue)만 읽는다 — secret 해시는 SELECT 하지 않는다.
+ * 소유권 확인은 부르는 쪽(getInvoiceForParent 통과 후)이 한다.
+ */
+export async function getVirtualAccountState(invoiceId: string, nowMs: number = Date.now()): Promise<PublicVirtualAccountView | null> {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<Array<{ status: string; issue: unknown }>>(
+        `SELECT status, "rawResponse"->'virtualAccountIssue' AS issue
+         FROM "PaymentTransaction"
+         WHERE "invoiceId" = $1
+           AND status IN ('${VA_WAITING_STATUS}', '${VA_EXPIRED_STATUS}')
+           AND "rawResponse"->'virtualAccountIssue' IS NOT NULL
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        invoiceId,
+    );
+    const row = rows[0];
+    const issue = row ? readStoredIssue(row.issue) : null;
+    return issue ? toPublicVirtualAccountView(issue, row!.status, nowMs) : null;
+}
+
+/**
+ * 입금 대기 계좌를 «입금 대기 해제(EXPIRED)»로 정리한다. 청구·청구서는 미납 그대로.
+ * 웹훅(만료·취소)과 «다른 수단으로 결제»가 같이 쓴다. 이미 다른 상태면 0 을 돌려준다(멱등).
+ */
+type VirtualAccountActor = { actorType: "PARENT" | "ADMIN" | "WEBHOOK" | "SYSTEM"; actorId?: string | null };
+
+async function releaseVirtualAccountTx(tx: PaymentTransactionRow, reason: string, actor: VirtualAccountActor) {
+    const released = await prisma.$executeRawUnsafe(
+        `UPDATE "PaymentTransaction"
+         SET status = '${VA_EXPIRED_STATUS}', "failureCode" = $2, "updatedAt" = NOW()
+         WHERE id = $1 AND status = '${VA_WAITING_STATUS}'`,
+        tx.id, `VIRTUAL_ACCOUNT_${reason}`,
+    );
+    if (released === 1) {
+        await recordPaymentAudit({
+            paymentId: tx.paymentId,
+            invoiceId: tx.invoiceId,
+            transactionId: tx.id,
+            actorType: actor.actorType,
+            actorId: actor.actorId ?? (actor.actorType === "PARENT" ? tx.parentId : null),
+            action: "VIRTUAL_ACCOUNT_RELEASED",
+            message: actor.actorType === "PARENT"
+                ? "Virtual account closed because the parent chose another payment method"
+                : actor.actorType === "ADMIN"
+                    ? "Virtual account closed by admin"
+                    : "Toss virtual account expired or canceled before deposit",
+            metadata: { provider: "TOSS", orderId: tx.orderId, tossStatus: reason },
+        });
+        revalidatePaymentCaches();
+    }
+    return released;
+}
+
+/**
+ * 토스 재조회로 «입금 완료(DONE)»가 확인된 가상계좌를 납부 완료로 반영한다.
+ * 금액·면세·이중 납부 검사는 웹훅과 같은 규칙(decideVirtualAccountWebhook). 반영 못 하면 감사 기록 + 원장 알림.
+ */
+async function payVerifiedVirtualAccount(tx: PaymentTransactionRow, verified: TossPaymentResult, depositedAt: string | null) {
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT status FROM "Payment" WHERE id = $1`,
+        tx.paymentId,
+    );
+    const decision = decideVirtualAccountWebhook({
+        isDepositCallback: false,
+        // 우리가 토스 API 를 직접 불러 받은 결과라 secret 대조 대상이 아니다(웹훅 쪽은 부르기 전에 이미 대조했다)
+        secretCheck: "NOT_STORED",
+        tx: { orderId: tx.orderId, amount: Number(tx.amount), status: tx.status, paymentKey: tx.paymentKey ?? null },
+        paymentStatus: statusRows[0]?.status ?? null,
+        verified,
+    });
+    if (decision.action === "ALREADY_DONE") return { ok: true as const };
+    if (decision.action !== "PAY") {
+        const code = decision.action === "REJECT" || decision.action === "IGNORE" ? decision.code : `VIRTUAL_ACCOUNT_${decision.action}`;
+        await recordVirtualAccountReview(tx, code, decision.action === "REJECT" && decision.alert);
+        return { ok: false as const, error: code };
+    }
+    // 입금 시각: 토스 조회의 approvedAt(입금 완료 시각) → 없으면 알림 본문 createdAt(시간대 없는 KST) → 없으면 지금.
+    const paidAt = parseTossTimestamp(verified.approvedAt) ?? parseTossTimestamp(depositedAt);
+    const finalized = await finalizeVerifiedTossPayment({ tx, payment: verified, actorType: "WEBHOOK", paidAt });
+    if (finalized.ok) {
+        revalidatePaymentCaches();
+        return { ok: true as const };
+    }
+    // 잠금 안에서 다시 보니 이미 납부됐다 등 — 납부 처리하지 않고 알린다.
+    await recordVirtualAccountReview(tx, finalized.error, true);
+    return { ok: false as const, error: finalized.error };
+}
+
+/**
+ * 토스 결제 취소 API(POST /v1/payments/{paymentKey}/cancel) — 입금 전 가상계좌를 닫는다.
+ * 입금 전(WAITING_FOR_DEPOSIT) 취소라 환불 계좌(refundReceiveAccount)를 보내지 않는다.
+ * 성공 여부는 응답이 아니라 부르는 쪽의 재조회로 판정한다.
+ */
+async function requestTossVirtualAccountCancel(tx: PaymentTransactionRow): Promise<boolean> {
+    const { secretKey } = getPaymentProviderConfig();
+    if (!secretKey || !tx.paymentKey) return false;
+    try {
+        const response = await fetch(`https://api.tosspayments.com/v1/payments/${encodeURIComponent(tx.paymentKey)}/cancel`, {
+            method: "POST",
+            headers: {
+                Authorization: `Basic ${encodeTossSecret(secretKey)}`,
+                "Content-Type": "application/json",
+                // 닫기를 두 번 눌러도 토스에서 한 번만 처리되게
+                "Idempotency-Key": makeUuidFromSeed(`stiz-va-close:${tx.id}:${tx.paymentKey}`),
+            },
+            body: JSON.stringify({ cancelReason: "학부모가 다른 결제 수단을 선택해 입금 계좌를 닫음" }),
+            cache: "no-store",
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 학부모가 다른 수단을 고를 때 청구서의 열린 입금 계좌를 닫는다.
+ *  - CLOSED: 닫힘 확인(재조회 CANCELED/EXPIRED) → 새 결제 진행
+ *  - PAID:   닫는 사이 입금이 먼저 들어옴(입금이 이긴다) → 납부 반영, 새 결제 막음
+ *  - FAIL:   닫혔는지 확신 못 함 → 새 결제 막음(«잠시 후 다시»)
+ */
+async function closeOpenVirtualAccount(
+    invoiceId: string,
+    actor: VirtualAccountActor = { actorType: "PARENT" },
+): Promise<"CLOSED" | "PAID" | "FAIL"> {
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT * FROM "PaymentTransaction"
+         WHERE "invoiceId" = $1 AND status = '${VA_WAITING_STATUS}'
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        invoiceId,
+    );
+    const tx = rows[0];
+
+    let outcome: "CLOSED" | "PAID" | "FAIL" = "FAIL";
+    if (!tx) {
+        // 그사이 웹훅이 먼저 처리했다(입금 또는 만료). 아래 청구 상태 재확인이 판정한다.
+        outcome = "CLOSED";
+    } else if (tx.paymentKey) {
+        const first = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+        let verified = first.kind === "verified" ? first.payment : null;
+        let step = first.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
+        if (step === "CANCEL") {
+            await requestTossVirtualAccountCancel(tx);
+            // 취소 응답만 믿지 않고 다시 조회해 «닫힘»을 확인한다(그사이 입금됐을 수도 있다).
+            const after = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+            verified = after.kind === "verified" ? after.payment : null;
+            step = after.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
+            if (step === "CANCEL") step = "FAIL"; // 여전히 입금 대기 = 닫기 실패
+        }
+        if (step === "RELEASED" && verified) {
+            await releaseVirtualAccountTx(tx, String(verified.status), actor);
+            outcome = "CLOSED";
+        } else if (step === "PAID" && verified) {
+            await payVerifiedVirtualAccount(tx, verified, null);
+            outcome = "PAID";
+        }
+    }
+
+    // 마지막으로 청구 상태를 다시 본다 — 닫는 사이 다른 경로(웹훅·현장)로 납부됐으면 새 결제를 막는다.
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT p.status FROM "PaymentInvoice" i JOIN "Payment" p ON p.id = i."paymentId" WHERE i.id = $1`,
+        invoiceId,
+    );
+    if (statusRows[0]?.status === "PAID") return "PAID";
+    return outcome;
+}
+
+/**
+ * 원장이 수납 목록에서 «가상계좌 닫기». 학부모의 «다른 방법으로 결제»와 같은 닫기 함수를 쓴다.
+ * 권한 확인은 부르는 쪽(서버 액션 — 원장만)이 한다.
+ */
+export async function closeVirtualAccountByAdmin(input: { paymentId: string; adminUserId: string }) {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<Array<{ invoiceId: string }>>(
+        `SELECT i.id AS "invoiceId" FROM "PaymentInvoice" i WHERE i."paymentId" = $1 LIMIT 1`,
+        input.paymentId,
+    );
+    const invoiceId = rows[0]?.invoiceId;
+    if (!invoiceId) return { ok: false as const, message: "청구서를 찾을 수 없습니다." };
+    const open = await getVirtualAccountState(invoiceId);
+    if (!open || open.expired) return { ok: false as const, message: "닫을 입금 대기 계좌가 없습니다." };
+    const closed = await closeOpenVirtualAccount(invoiceId, { actorType: "ADMIN", actorId: input.adminUserId });
+    if (closed === "PAID") return { ok: false as const, message: "이미 입금돼 납부 완료로 반영했습니다. 계좌는 닫지 않았습니다." };
+    if (closed === "FAIL") return { ok: false as const, message: "토스에서 계좌를 닫지 못했습니다. 잠시 후 다시 시도해 주세요." };
+    return { ok: true as const };
+}
+
+/**
+ * 매일 점검(cron) — 입금 대기 거래를 토스에 다시 물어 놓친 입금·만료를 줍는다.
+ * 웹훅이 끝내 안 왔거나 재조회가 늦었던 건이 영구 미납으로 남지 않게 하는 안전망.
+ * 같은 판정 함수(decideVirtualAccountClose)와 같은 반영 함수를 써서 여러 번 돌아도 결과가 같다.
+ */
+export async function sweepWaitingVirtualAccounts(limit = 100) {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT * FROM "PaymentTransaction"
+         WHERE status = '${VA_WAITING_STATUS}' AND "paymentKey" IS NOT NULL
+         ORDER BY "createdAt" ASC
+         LIMIT $1`,
+        limit,
+    );
+    const result = { checked: rows.length, paid: 0, released: 0, waiting: 0, failed: 0 };
+    for (const tx of rows) {
+        const lookup = await getVerifiedTossPayment(tx.paymentKey ?? null, tx.orderId);
+        const verified = lookup.kind === "verified" ? lookup.payment : null;
+        const step = lookup.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
+        if (step === "PAID" && verified) {
+            const paid = await payVerifiedVirtualAccount(tx, verified, null);
+            if (paid.ok) result.paid += 1; else result.failed += 1;
+        } else if (step === "RELEASED" && verified) {
+            await releaseVirtualAccountTx(tx, String(verified.status), { actorType: "SYSTEM" });
+            result.released += 1;
+        } else if (step === "CANCEL") {
+            result.waiting += 1; // 아직 입금 전 — 그대로 둔다
+        } else {
+            result.failed += 1;
+        }
+    }
+    return result;
+}
+
+/**
+ * 가상계좌 발급(승인 응답 WAITING_FOR_DEPOSIT)을 거래에 기록한다. 청구서·청구는 미납 그대로 둔다.
+ * secret 원문은 저장하지 않고 해시만 남긴다(buildIssuedRawResponse).
+ */
+async function recordVirtualAccountIssued(input: {
+    tx: PaymentTransactionRow;
+    payment: TossPaymentResult;
+    actorType: "PARENT" | "WEBHOOK";
+}): Promise<PublicVirtualAccountView | "PAID" | null> {
+    const issue = extractVirtualAccountIssue(input.payment, Number(input.tx.amount));
+    const paymentKey = readString(input.payment.paymentKey);
+    if (!issue || !paymentKey) return null;
+
+    const updated = await prisma.$executeRawUnsafe(
+        `UPDATE "PaymentTransaction"
+         SET status = '${VA_WAITING_STATUS}', "paymentKey" = $2, method = COALESCE($3, method),
+             "rawResponse" = $4::jsonb, "failureCode" = NULL, "failureMessage" = NULL, "updatedAt" = NOW()
+         WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS', '${VA_WAITING_STATUS}')`,
+        input.tx.id,
+        paymentKey,
+        readString(input.payment.method),
+        JSON.stringify(buildIssuedRawResponse(input.payment, issue)),
+    );
+    if (updated === 1) {
+        await recordPaymentAudit({
+            paymentId: input.tx.paymentId,
+            invoiceId: input.tx.invoiceId,
+            transactionId: input.tx.id,
+            actorType: input.actorType,
+            actorId: input.actorType === "PARENT" ? input.tx.parentId : null,
+            action: "VIRTUAL_ACCOUNT_ISSUED",
+            message: "Toss virtual account issued; waiting for deposit",
+            metadata: { provider: "TOSS", orderId: input.tx.orderId, bankName: issue.bankName, dueDate: issue.dueDate },
+        });
+        revalidatePaymentCaches();
+    } else {
+        // 0건 = 그사이 다른 경로가 거래를 바꿨다. 입금 알림이 먼저 와 DONE 이면 «납부 완료»로 답한다.
+        const current = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+            `SELECT status FROM "PaymentTransaction" WHERE id = $1`,
+            input.tx.id,
+        );
+        if (current[0]?.status === "DONE") return "PAID";
+    }
+    return toPublicVirtualAccountView(issue, VA_WAITING_STATUS, Date.now());
+}
+
+/** 가상계좌 이상 상황(금액 불일치·이중 납부 등)을 원장 슬랙 DM 으로 알린다. 실패해도 웹훅 처리는 계속한다. */
+async function alertVirtualAccountIssue(text: string) {
+    const owner = (process.env.SLACK_OWNER_USER_ID || "").trim();
+    if (!owner) {
+        console.warn(`[virtual-account] 원장 슬랙 ID 없음 — 알림 생략: ${text}`);
+        return;
+    }
+    try {
+        await postMessage({ channel: owner, text });
+    } catch (error) {
+        console.error("[virtual-account] 슬랙 알림 실패:", error instanceof Error ? error.message : error);
+    }
 }
 
 function encodeTossSecret(secretKey: string) {
@@ -1104,6 +1455,8 @@ async function finalizeVerifiedTossPayment(input: {
     payment: TossPaymentResult;
     actorType: "PARENT" | "WEBHOOK";
     actorId?: string | null;
+    /** 실제 납부 시각(가상계좌 = 입금 시각). 없으면 지금. */
+    paidAt?: Date | null;
 }) {
     const paymentKey = readString(input.payment.paymentKey);
     const orderId = readString(input.payment.orderId);
@@ -1140,31 +1493,41 @@ async function finalizeVerifiedTossPayment(input: {
         if (current.status === "DONE" && current.paymentStatus === "PAID" && current.invoiceStatus === "PAID") {
             return { ok: true as const, alreadyConfirmed: true };
         }
-        if (!["READY", "IN_PROGRESS", "DONE"].includes(current.status)
+        // 가상계좌: 입금 전에 다른 수단으로 이미 납부된 청구면 덮어쓰지 않는다(이중 납부 — 원장 확인 필요).
+        const isVirtualAccount = current.status === VA_WAITING_STATUS || current.status === VA_EXPIRED_STATUS
+            || input.payment.method === VA_METHOD;
+        if (isVirtualAccount && (current.paymentStatus === "PAID" || current.invoiceStatus === "PAID")) {
+            return { ok: false as const, error: "VIRTUAL_ACCOUNT_ALREADY_PAID" };
+        }
+        if (!["READY", "IN_PROGRESS", "DONE", VA_WAITING_STATUS, VA_EXPIRED_STATUS].includes(current.status)
             || ["REFUNDED", "CANCELED"].includes(current.paymentStatus ?? "")
             || ["REFUNDED", "CANCELED"].includes(current.invoiceStatus ?? "")
             || current.status === "CANCELED") {
             return { ok: false as const, error: "PAYMENT_ALREADY_CLOSED" };
         }
 
+        // 납부 시각: ISO(UTC) 문자열로 넘긴다. "paidDate" 는 시간대 없는(timestamp) 칸이라
+        // UTC 벽시계로 바꿔 넣고(AT TIME ZONE 'UTC'), 나머지 timestamptz 칸은 그대로 넣는다.
+        const paidAtIso = input.paidAt && !Number.isNaN(input.paidAt.getTime()) ? input.paidAt.toISOString() : null;
         const paymentUpdated = await db.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = 'PAID', "paidDate" = COALESCE("paidDate", NOW()),
+            `UPDATE "Payment" SET status = 'PAID', "paidDate" = COALESCE("paidDate", ($6::timestamptz AT TIME ZONE 'UTC'), NOW()),
              method = COALESCE($2, method), "paidProvider" = 'TOSS', "providerOrderId" = $3,
              "providerPaymentKey" = $4, "receiptUrl" = COALESCE($5, "receiptUrl"), "updatedAt" = NOW()
              WHERE id = $1 AND status IN ('PENDING', 'OVERDUE', 'PAID')`,
-            current.paymentId, readString(input.payment.method), orderId, paymentKey, receiptUrl,
+            current.paymentId, readString(input.payment.method), orderId, paymentKey, receiptUrl, paidAtIso,
         );
         const invoiceUpdated = await db.$executeRawUnsafe(
-            `UPDATE "PaymentInvoice" SET status = 'PAID', "paidAt" = COALESCE("paidAt", NOW()), "updatedAt" = NOW()
+            `UPDATE "PaymentInvoice" SET status = 'PAID', "paidAt" = COALESCE("paidAt", $2::timestamptz, NOW()), "updatedAt" = NOW()
              WHERE id = $1 AND status IN ('ISSUED', 'SENT', 'OVERDUE', 'PAID')`,
-            current.invoiceId,
+            current.invoiceId, paidAtIso,
         );
         const transactionUpdated = await db.$executeRawUnsafe(
             `UPDATE "PaymentTransaction" SET status = 'DONE', "paymentKey" = $2,
              method = COALESCE($3, method), "receiptUrl" = COALESCE($4, "receiptUrl"),
-             "approvedAt" = COALESCE("approvedAt", NOW()), "rawResponse" = $5::jsonb, "updatedAt" = NOW()
-             WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS', 'DONE')`,
-            current.id, paymentKey, readString(input.payment.method), receiptUrl, JSON.stringify(input.payment),
+             "approvedAt" = COALESCE("approvedAt", $6::timestamptz, NOW()), "rawResponse" = $5::jsonb, "updatedAt" = NOW()
+             WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS', 'DONE', '${VA_WAITING_STATUS}', '${VA_EXPIRED_STATUS}')`,
+            current.id, paymentKey, readString(input.payment.method), receiptUrl,
+            JSON.stringify(stripPaymentSecret(input.payment)), paidAtIso,
         );
         if (paymentUpdated !== 1 || invoiceUpdated !== 1 || transactionUpdated !== 1) {
             throw new Error("PAYMENT_LEDGER_STATE_CONFLICT");
@@ -1173,7 +1536,7 @@ async function finalizeVerifiedTossPayment(input: {
             `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, 'PAYMENT_MARK_PAID', 'Verified Toss payment marked as paid', $6::jsonb, NOW())`,
             current.paymentId, current.invoiceId, current.id, input.actorType, input.actorId ?? null,
-            JSON.stringify({ provider: "TOSS", orderId, paymentKey: "[verified]" }),
+            JSON.stringify({ provider: "TOSS", orderId, paymentKey: "[verified]", method: readString(input.payment.method), paidAt: paidAtIso }),
         );
         return { ok: true as const, alreadyConfirmed: false };
     });
@@ -1217,7 +1580,7 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
         await db.$executeRawUnsafe(
             `UPDATE "PaymentTransaction" SET status = 'CANCELED', "rawResponse" = $2::jsonb, "updatedAt" = NOW()
              WHERE id = $1 AND status = 'DONE'`,
-            current.id, JSON.stringify(input.payment),
+            current.id, JSON.stringify(stripPaymentSecret(input.payment)),
         );
         await db.$executeRawUnsafe(
             `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
@@ -1267,6 +1630,24 @@ export async function confirmTossPayment(input: {
         return { ok: true as const, alreadyConfirmed: true };
     }
 
+    // 이미 다른 결제(현장·관리자·다른 결제키)로 납부된 청구서 — 토스 승인을 부르지 않는다(카드·가상계좌 공통 이중 납부 방지).
+    // 승인하지 않은 결제창 인증은 토스에서 자동으로 소멸해 돈이 빠져나가지 않는다.
+    if ((tx.paymentStatus === "PAID" || tx.invoiceStatus === "PAID") && tx.paymentKey !== input.paymentKey) {
+        return { ok: false as const, error: "이미 납부가 완료된 청구서입니다.", alreadyPaid: true as const };
+    }
+
+    // 이미 발급된 가상계좌(성공 화면 새로고침·재시도) — 토스를 다시 부르지 않고 저장된 계좌를 보여 준다.
+    if (tx.status === VA_WAITING_STATUS && tx.paymentKey === input.paymentKey) {
+        const issue = readStoredIssue(asRecord(tx.rawResponse).virtualAccountIssue);
+        if (issue) {
+            return {
+                ok: true as const,
+                waitingForDeposit: true as const,
+                virtualAccount: toPublicVirtualAccountView(issue, tx.status, Date.now()),
+            };
+        }
+    }
+
     const { secretKey } = getPaymentProviderConfig();
     if (!secretKey) {
         return { ok: false as const, error: "Toss Payments 서버 키가 설정되어 있지 않습니다." };
@@ -1300,6 +1681,14 @@ export async function confirmTossPayment(input: {
 
     if (!response.ok) {
         const lookup = await getVerifiedTossPayment(input.paymentKey, input.orderId);
+        // 승인 응답을 못 받았는데 실제로는 가상계좌가 발급된 경우(조회 응답에는 secret 이 없다 → 해시 없이 저장,
+        // 입금 알림 때는 토스 재조회 결과만으로 판정한다).
+        if (lookup.kind === "verified" && lookup.payment.status === VA_WAITING_STATUS
+            && lookup.payment.orderId === tx.orderId && Number(lookup.payment.totalAmount) === Number(tx.amount)) {
+            const view = await recordVirtualAccountIssued({ tx, payment: lookup.payment, actorType: "PARENT" });
+            if (view === "PAID") return { ok: true as const, alreadyConfirmed: true };
+            if (view) return { ok: true as const, waitingForDeposit: true as const, virtualAccount: view, recovered: true as const };
+        }
         if (lookup.kind === "verified") {
             const recovered = await finalizeVerifiedTossPayment({
                 tx,
@@ -1307,7 +1696,7 @@ export async function confirmTossPayment(input: {
                 actorType: "PARENT",
                 actorId: tx.parentId,
             });
-            if (recovered.ok) return { ok: true as const, payment: lookup.payment, recovered: true as const };
+            if (recovered.ok) return { ok: true as const, payment: stripPaymentSecret(lookup.payment), recovered: true as const };
         }
 
         const retryable = response.status === 429 || response.status >= 500 || lookup.kind === "retryable";
@@ -1336,6 +1725,14 @@ export async function confirmTossPayment(input: {
         };
     }
 
+    // 무통장입금(가상계좌): 승인 = 계좌 발급. 돈은 아직 안 들어왔으니 납부 완료로 바꾸지 않는다.
+    if (result.status === VA_WAITING_STATUS && result.paymentKey === input.paymentKey
+        && result.orderId === input.orderId && Number(result.totalAmount) === Number(tx.amount)) {
+        const view = await recordVirtualAccountIssued({ tx, payment: result, actorType: "PARENT" });
+        if (view === "PAID") return { ok: true as const, alreadyConfirmed: true };
+        if (view) return { ok: true as const, waitingForDeposit: true as const, virtualAccount: view };
+    }
+
     if (result.status !== "DONE" || result.paymentKey !== input.paymentKey
         || result.orderId !== input.orderId || Number(result.totalAmount) !== Number(tx.amount)) {
         await prisma.$executeRawUnsafe(
@@ -1349,7 +1746,7 @@ export async function confirmTossPayment(input: {
              WHERE id = $1`,
             tx.id,
             input.paymentKey,
-            JSON.stringify(result),
+            JSON.stringify(stripPaymentSecret(result)),
         );
         return { ok: false as const, error: "Toss 결제 검증에 실패했습니다." };
     }
@@ -1357,7 +1754,8 @@ export async function confirmTossPayment(input: {
     const finalized = await finalizeVerifiedTossPayment({ tx, payment: result, actorType: "PARENT", actorId: tx.parentId });
     if (!finalized.ok) return { ok: false as const, error: "결제 완료 처리에 실패했습니다." };
 
-    return { ok: true as const, payment: result };
+    // 학부모에게 돌려주는 응답 — secret 칸은 지운다(가상계좌가 아니어도 같은 규칙).
+    return { ok: true as const, payment: stripPaymentSecret(result) };
 }
 
 export async function recordTossWebhook(payload: unknown) {
@@ -1365,7 +1763,11 @@ export async function recordTossWebhook(payload: unknown) {
 
     const payloadRecord = asRecord(payload);
     const data = asRecord(payloadRecord.data ?? payload);
-    const eventType = readString(payloadRecord.eventType) ?? readString(payloadRecord.type) ?? readString(data.status);
+    // 가상계좌 입금 알림(DEPOSIT_CALLBACK)은 eventType 칸이 없다 → 이름을 붙여 기록·중복 판정에 쓴다.
+    const depositCallback = isDepositCallbackPayload(payloadRecord);
+    const eventType = depositCallback
+        ? "DEPOSIT_CALLBACK"
+        : readString(payloadRecord.eventType) ?? readString(payloadRecord.type) ?? readString(data.status);
     const paymentKey = readString(data.paymentKey);
     const orderId = readString(data.orderId);
     const eventId = makeTossWebhookEventId({
@@ -1376,6 +1778,7 @@ export async function recordTossWebhook(payload: unknown) {
         orderId,
         status: readString(data.status),
         totalAmount: readNumber(data.totalAmount),
+        depositKey: depositCallback ? readString(payloadRecord.transactionKey) ?? readString(payloadRecord.createdAt) : null,
     });
 
     const eventRows = await prisma.$queryRawUnsafe<Array<{ id: string; processed: boolean }>>(
@@ -1396,7 +1799,8 @@ export async function recordTossWebhook(payload: unknown) {
         eventType,
         paymentKey,
         orderId,
-        JSON.stringify(payload),
+        // 지문(eventId)은 위에서 원문으로 만들었다. 저장할 때만 secret(가상계좌 입금 알림 비밀값)을 가린다.
+        JSON.stringify(stripWebhookSecrets(payload)),
     );
 
     const eventRecordId = eventRows[0]?.id ?? null;
@@ -1426,6 +1830,22 @@ export async function recordTossWebhook(payload: unknown) {
         return { ok: true as const, processed: false, eventId: eventRecordId };
     }
 
+    // 가상계좌 거래: secret 대조를 토스 조회보다 먼저 한다(위조 알림이면 토스 API 를 부르지 않는다).
+    const virtualAccountTx = depositCallback || isVirtualAccountTransaction(tx);
+    const secretCheck = virtualAccountTx
+        ? checkDepositSecret(readString(payloadRecord.secret) ?? readString(data.secret), asRecord(tx.rawResponse).depositSecretHash)
+        : null;
+    if (secretCheck === "MISMATCH" || (depositCallback && secretCheck === "NOT_PROVIDED")) {
+        const code = secretCheck === "MISMATCH" ? "DEPOSIT_SECRET_MISMATCH" : "DEPOSIT_SECRET_MISSING";
+        console.warn(`[virtual-account] ${code} orderId=${tx.orderId}`);
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent" SET error = $2, "processedAt" = NOW() WHERE id = $1`,
+            eventRecordId, code,
+        );
+        // processed=false 로 남겨 같은 지문의 진짜 알림이 오면 다시 처리되게 한다.
+        return { ok: true as const, processed: false, eventId: eventRecordId };
+    }
+
     const lookup = await getVerifiedTossPayment(paymentKey, orderId);
     if (lookup.kind === "retryable") {
         await prisma.$executeRawUnsafe(
@@ -1436,6 +1856,20 @@ export async function recordTossWebhook(payload: unknown) {
     }
 
     const verified = lookup.kind === "verified" ? lookup.payment : null;
+
+    if (virtualAccountTx && secretCheck) {
+        const handled = await applyVirtualAccountWebhook({
+            tx,
+            verified,
+            depositCallback,
+            secretCheck,
+            eventRecordId,
+            depositedAt: readString(payloadRecord.createdAt),
+            callbackStatus: depositCallback ? readString(payloadRecord.status) : null,
+        });
+        // null = 입금 뒤 전액 취소(환불) → 아래 기존 취소 경로가 처리한다.
+        if (handled) return handled;
+    }
     const matches = verified
         && verified.status === "DONE"
         && verified.orderId === tx.orderId
@@ -1499,6 +1933,110 @@ export async function recordTossWebhook(payload: unknown) {
         eventRecordId,
     );
     return { ok: true as const, processed: false, eventId: eventRecordId };
+}
+
+/**
+ * 가상계좌 거래에 온 웹훅(입금·만료·취소)을 장부에 반영한다. 판정은 decideVirtualAccountWebhook(순수)이 하고
+ * 여기서는 그 결과대로만 움직인다. 같은 알림이 여러 번 와도 결과가 같다(멱등).
+ */
+async function applyVirtualAccountWebhook(input: {
+    tx: PaymentTransactionRow;
+    verified: TossPaymentResult | null;
+    depositCallback: boolean;
+    secretCheck: ReturnType<typeof checkDepositSecret>;
+    eventRecordId: string | null;
+    depositedAt: string | null;
+    /** DEPOSIT_CALLBACK 본문의 status(입금 알림일 때만) */
+    callbackStatus?: string | null;
+}): Promise<{ ok: true; processed: boolean; eventId: string | null; retryable?: boolean } | null> {
+    const { tx, verified, eventRecordId } = input;
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT status FROM "Payment" WHERE id = $1`,
+        tx.paymentId,
+    );
+    const decision = decideVirtualAccountWebhook({
+        isDepositCallback: input.depositCallback,
+        secretCheck: input.secretCheck,
+        tx: { orderId: tx.orderId, amount: Number(tx.amount), status: tx.status, paymentKey: tx.paymentKey ?? null },
+        paymentStatus: statusRows[0]?.status ?? null,
+        verified,
+    });
+
+    const finishEvent = async (processed: boolean, error: string | null) => {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent" SET processed = $2, error = $3, "processedAt" = NOW() WHERE id = $1`,
+            eventRecordId, processed, error,
+        );
+        return { ok: true as const, processed, eventId: eventRecordId };
+    };
+
+    if (decision.action === "DELEGATE") return null;
+
+    if (decision.action === "ALREADY_DONE") return finishEvent(true, null);
+
+    if (decision.action === "PAY") {
+        // decide 는 토스 재조회 결과가 있을 때만 PAY 를 준다. 혹시 없으면 반영하지 않는다.
+        if (!verified) return finishEvent(false, "TOSS_PAYMENT_NOT_VERIFIED");
+        const paid = await payVerifiedVirtualAccount(tx, verified, input.depositedAt);
+        return paid.ok ? finishEvent(true, null) : finishEvent(false, paid.error);
+    }
+
+    if (decision.action === "RELEASE") {
+        // «입금 대기»만 푼다. 청구·청구서는 미납 그대로(학부모가 다시 발급하거나 다른 수단으로 낸다).
+        await releaseVirtualAccountTx(tx, decision.reason, { actorType: "WEBHOOK" });
+        return finishEvent(true, null);
+    }
+
+    if (decision.action === "REJECT") {
+        await recordVirtualAccountReview(tx, decision.code, decision.alert);
+        return finishEvent(false, decision.code);
+    }
+
+    // 입금 알림은 «입금됐다(DONE)»고 하는데 토스 조회가 아직 따라오지 못했다(입금 대기·4xx).
+    // 200 으로 끝내면 토스가 다시 보내지 않아 영구 미납이 된다 → 503 으로 재전송을 받는다(매일 점검 cron 이 한 번 더 줍는다).
+    if (shouldRetryDepositCallback(input.depositCallback, input.callbackStatus ?? null, decision)) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PaymentWebhookEvent" SET error = $2 WHERE id = $1`,
+            eventRecordId, `RETRY_${decision.code}`,
+        );
+        return { ok: true as const, processed: false, eventId: eventRecordId, retryable: true };
+    }
+
+    // IGNORE — 아직 입금 대기 등 장부에 반영할 게 없다.
+    return finishEvent(false, decision.code);
+}
+
+const VIRTUAL_ACCOUNT_ALERT_TEXT: Record<string, string> = {
+    VIRTUAL_ACCOUNT_AMOUNT_MISMATCH: "입금 금액이 청구 금액과 달라 납부 처리하지 않았습니다.",
+    VIRTUAL_ACCOUNT_TAX_FREE_MISMATCH: "입금 건이 면세로 처리되지 않아 납부 처리하지 않았습니다.",
+    VIRTUAL_ACCOUNT_ALREADY_PAID: "이미 다른 방법으로 납부된 청구서에 가상계좌 입금이 들어왔습니다(이중 납부 — 환불 확인 필요).",
+    VIRTUAL_ACCOUNT_INVOICE_CLOSED: "취소·환불된 청구서에 가상계좌 입금이 들어왔습니다(환불 확인 필요).",
+    VIRTUAL_ACCOUNT_TX_CLOSED: "닫힌 거래에 가상계좌 입금이 들어왔습니다(확인 필요).",
+    VIRTUAL_ACCOUNT_DEPOSIT_REVERSED: "납부 완료된 가상계좌 입금이 은행에서 취소됐습니다(장부 확인 필요).",
+};
+
+/**
+ * 자동 처리하지 않은 가상계좌 건을 감사 기록으로 남기고, 필요하면 원장에게 알린다.
+ * 같은 거래·같은 사유는 한 번만 기록·알림한다(토스 알림 재전송 대비).
+ */
+async function recordVirtualAccountReview(tx: PaymentTransactionRow, code: string, alert: boolean) {
+    const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+         SELECT gen_random_uuid()::text, $1, $2, $3, 'WEBHOOK', NULL, 'VIRTUAL_ACCOUNT_REVIEW', $4, $5::jsonb, NOW()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM "PaymentAuditLog"
+           WHERE "transactionId" = $3 AND action = 'VIRTUAL_ACCOUNT_REVIEW' AND message = $4
+         )
+         RETURNING id`,
+        tx.paymentId, tx.invoiceId, tx.id, code,
+        JSON.stringify({ provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount) }),
+    );
+    if (inserted.length > 0 && alert) {
+        const reason = VIRTUAL_ACCOUNT_ALERT_TEXT[code] ?? `가상계좌 입금 확인 필요(${code}).`;
+        await alertVirtualAccountIssue(
+            `[가상계좌 확인 필요] ${reason}\n주문 ${tx.orderId} · ${Number(tx.amount).toLocaleString("ko-KR")}원 · /admin/finance 에서 확인해 주세요.`,
+        );
+    }
 }
 
 function makeCafe24WebhookEventId(input: {

@@ -82,6 +82,7 @@ test("학부모 실제 홈은 예정 반을 수강중으로 세지 않고 개시
     "@/components/pwa/HideInInstalledApp": { __esModule: true, default: ({ children }) => children },
     "@/components/pwa/AppSafeLink": link, "@/app/actions/admin": {},
     "@/lib/mypage/summary": summary, "@/lib/datetime/kst": { formatKstDate: (value) => String(value) },
+    "@/components/parent/VirtualAccountNotice": nullComponent,
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     parent: { id: "parent-a", name: "합성 부모" },

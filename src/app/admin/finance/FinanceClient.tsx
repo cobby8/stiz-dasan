@@ -30,6 +30,7 @@ import PosChargeCancelModal from "./PosChargeCancelModal";
 import { posMethodLabel } from "@/lib/pos/charge-request.mjs";
 // «납부 처리» 창(2026-11-08) — 결제 방법(계좌이체·현장 결제)을 골라 근거를 남겨야만 납부완료가 된다
 import RecordPaymentModal from "./RecordPaymentModal";
+import VirtualAccountCloseDialog from "./VirtualAccountCloseDialog";
 
 type Payment = {
     id: string;
@@ -405,6 +406,7 @@ export default function FinanceClient({
     const [posChargeTarget, setPosChargeTarget] = useState<Payment | null>(null);
     // 결제 취소(토스 POS) 창을 띄울 청구서
     const [posCancelTarget, setPosCancelTarget] = useState<Payment | null>(null);
+    const [vaCloseTarget, setVaCloseTarget] = useState<Payment | null>(null); // «가상계좌 닫기» 확인창 대상
     // 보기 방식(목록 | 상태별) — 브라우저에 기억
     const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "list");
     // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
@@ -831,6 +833,10 @@ export default function FinanceClient({
                     onSelect: () => setPosChargeTarget(p),
                 },
             ] : []),
+            // 무통장입금 입금 대기 건 — 원장이 계좌를 닫는다(위험 확인창). 서버가 원장 권한을 다시 확인한다.
+            ...(canManageCriticalFinance && p.transactionStatus === "WAITING_FOR_DEPOSIT" && p.status !== "PAID" ? [
+                { key: "va-close", label: "가상계좌 닫기", icon: "block", tone: "danger" as const, disabled: busy, onSelect: () => setVaCloseTarget(p) },
+            ] : []),
             // 납부처리: 바로 PAID 로 바꾸지 않고 «납부 처리» 창(방법 선택 + 근거 입력)을 연다.
             // 미납·연체만 — 서버도 같은 상태만 기록한다(취소·환불 건은 메뉴에 안 보인다).
             ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) ? [
@@ -955,6 +961,8 @@ export default function FinanceClient({
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
                         {statusInfo.label}
                     </span>
+                    {/* 무통장입금 계좌 발급 후 입금 전 — 상태값은 그대로(미납), 표시만 붙인다 */}
+                    {p.transactionStatus === "WAITING_FOR_DEPOSIT" && p.status !== "PAID" && <span className="ml-1 whitespace-nowrap text-xs font-bold text-[var(--color-academy-muted)]">입금 대기 · 가상계좌</span>}
                 </td>
                 {/* ⚡ 작업: 메뉴 클릭이 행 클릭(패널)으로 번지지 않게 전파 차단 */}
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
@@ -1042,6 +1050,13 @@ export default function FinanceClient({
 
     return (
         <div className="max-w-5xl mx-auto">
+            {vaCloseTarget && (
+                <VirtualAccountCloseDialog
+                    target={{ id: vaCloseTarget.id, studentName: vaCloseTarget.studentName, amount: vaCloseTarget.amount }}
+                    onClose={() => setVaCloseTarget(null)}
+                    onClosed={() => void loadMonth(year, month)}
+                />
+            )}
             {posChargeTarget && (
                 <PosChargeRequestModal
                     target={{
