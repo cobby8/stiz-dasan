@@ -99,9 +99,12 @@ export function lineItemTitles(order) {
 }
 
 /**
- * 주문에서 **카드 · 승인** 결제만 골라 알림 1건씩으로 만든다.
- * 현금·취소 결제는 대상이 아니다(현장 카드 결제만 랠리즈 처리가 필요하다).
+ * 주문에서 **카드·바코드(간편결제) · 승인** 결제만 골라 알림 1건씩으로 만든다.
+ * 현금·외부·취소 결제는 대상이 아니다(VAN 승인번호로 확인되는 현장 결제만).
+ * 2026-11-08: 토스페이(간편결제)는 sourceType «BARCODE» 로 온다(VAN DAOU 승인번호 있음) —
+ *   CARD 만 받다가 현장 결제 S-862568 가 «카드 승인 결제 없음»으로 빠진 사고로 추가.
  */
+export const NOTICE_SOURCE_TYPES = new Set(["CARD", "BARCODE"]);
 export function extractNoticePayments(order) {
   const orderId = asId(order?.id ?? order?.orderId);
   const payments = Array.isArray(order?.payments) ? order.payments : [];
@@ -111,7 +114,7 @@ export function extractNoticePayments(order) {
   for (const payment of payments) {
     const sourceType = String(payment?.sourceType ?? "").toUpperCase();
     const state = String(payment?.state ?? "").toUpperCase();
-    if (sourceType !== "CARD" || state !== "APPROVED") continue;
+    if (!NOTICE_SOURCE_TYPES.has(sourceType) || state !== "APPROVED") continue;
     const paymentId = payment?.id == null ? "" : String(payment.id).trim();
     const amount = Math.round(Number(payment?.amount));
     if (!orderId || !paymentId || !Number.isFinite(amount)) continue;

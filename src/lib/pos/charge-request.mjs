@@ -205,7 +205,7 @@ export function decideChargeMatch({ request, site, approved = [], others = [], n
   if (status === CHARGE_STATUS.CANCELLED) return none(MATCH_ACTION.SKIP, "취소된 요청입니다.");
   if (status === CHARGE_STATUS.HELD) return none(MATCH_ACTION.SKIP, "이미 확인 대기 중인 요청입니다.");
 
-  if (approved.length === 0) return none(MATCH_ACTION.SKIP, "카드 승인 결제가 아직 없습니다.");
+  if (approved.length === 0) return none(MATCH_ACTION.SKIP, "카드·간편결제 승인 결제가 아직 없습니다.");
   if (approved.length > 1) return none(MATCH_ACTION.HOLD, `한 주문에 카드 결제가 ${approved.length}건입니다.`);
   const payment = approved[0];
   const hold = (reason) => ({ action: MATCH_ACTION.HOLD, reason, payment });

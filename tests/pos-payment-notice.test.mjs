@@ -118,7 +118,7 @@ test("웹훅 본문에서 주문 ID 를 방어적으로 뽑는다", () => {
   assert.equal(N.extractOrderIdFromWebhook(null).orderId, "");
 });
 
-test("알림 대상은 카드 · 승인 결제뿐이다", () => {
+test("알림 대상은 카드·바코드(토스페이 등 간편결제) · 승인 결제뿐이다", () => {
   const order = {
     id: "o-1",
     memo: "토4 이시윤 10월",
@@ -127,10 +127,14 @@ test("알림 대상은 카드 · 승인 결제뿐이다", () => {
       { id: "pay-card", sourceType: "CARD", state: "APPROVED", amount: 180000, approvedAt: "2026-09-28T05:20:00Z" },
       { id: "pay-cash", sourceType: "CASH", state: "APPROVED", amount: 1000, approvedAt: "2026-09-28T05:20:00Z" },
       { id: "pay-cancel", sourceType: "CARD", state: "CANCELLED", amount: 180000, approvedAt: "2026-09-28T05:20:00Z" },
+      { id: "pay-ext", sourceType: "EXTERNAL", state: "APPROVED", amount: 1000, approvedAt: "2026-09-28T05:20:00Z" },
     ],
   };
   const list = N.extractNoticePayments(order);
   assert.deepEqual(list.map((p) => p.tossPaymentId), ["pay-card"]);
+  // 2026-11-08 운영(S-862568): 토스페이는 sourceType BARCODE 로 온다 → 현장 결제 자동 반영 대상
+  const tosspay = N.extractNoticePayments({ id: "o-2", payments: [{ id: "pay-bar", sourceType: "barcode", state: "APPROVED", amount: 1000, approvedAt: "2026-11-07T16:39:16Z" }] });
+  assert.deepEqual(tosspay.map((p) => p.tossPaymentId), ["pay-bar"]);
   assert.equal(list[0].kstDateTime, "2026-09-28 14:20", "UTC 05:20 은 KST 14:20");
   assert.equal(list[0].approvedAtIso, "2026-09-28T14:20:00+09:00");
   assert.equal(list[0].lineItems, "토요일 4교시");
