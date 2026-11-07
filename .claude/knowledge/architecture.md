@@ -147,6 +147,11 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 관리자 ⚡ «결제 취소»(PAID·paidProvider TOSS_POS)는 PosChargeRequest.cancelState=REQUESTED 만 남긴다(청구서 id 로만 요청을 찾아 IDOR 차단). 플러그인 롱폴링 응답 `cancels[]` → `/cancel/claim`(SENT, 결제 ID 는 서버가 감사기록 POS_CHARGE_PAYMENTS→note→대표결제 순으로 계산) → payment.cancel → `/cancel/report`(기록만, FAILED 면 사이트 «POS 에서 직접 취소»). 환불은 matchChargeRequestsForOrder ①의 settleCancelForRow 가 재조회 주문으로 decideChargeCancel(FULL/PARTIAL/NONE) → FULL 이면 한 트랜잭션에서 MARK_REFUND_SQL + payment-ledger refundPaidPaymentInTx. POS 직접 취소도 같은 길. chargeRequestService 는 Payment 를 직접 UPDATE 하지 않는다(테스트가 막음). 같은 함수의 retryLater=true(분할 대기·납부 기록 복구 대기)면 웹훅을 processedAt 비운 채 두어 10분 스윕이 다시 본다. 마이그레이션 20261108120000 은 코드 배포보다 먼저 적용해야 한다(VIEW_SQL·MATCH_SELECT 가 새 칸을 읽음).
+### [2026-11-08] 현장 결제 묶음 = 요청 1건 + PosChargeRequestItem N건, 대표 청구는 요청.paymentId 그대로
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 같은 학생 미납 여러 건을 POS 결제 한 번으로(원장 결정). 요청 표는 그대로(합계·면세 합계·대표 청구 = 1번 항목)라 단건 코드·인덱스가 그대로 돈다. 묶인 청구는 `PosChargeRequestItem`(마이그레이션 20261108180000, 코드보다 먼저 적용). 같은 청구가 두 열린 요청에 못 들어가게 항목 `"open"`+부분 유일 인덱스, 요청 상태가 열린 상태를 벗어나면 트리거가 닫는다(상태 UPDATE 가 어디서 오든). 서비스의 SQL 은 조각 `ITEMS_OF_R`(항목 없는 옛 요청 = 대표 청구 1건)·`ALL_ITEMS_UNPAID_SQL`(전부 미납·금액 그대로·합계=요청 금액)·`hasPaymentSql(n)`(대표이거나 항목) 을 끼워 쓴다 — 청구 id 로 요청을 찾는 새 SQL 은 반드시 hasPaymentSql. 묶음 납부는 `markPaymentsPaidTogether`(payment-ledger, 한 트랜잭션·건마다 조건부 UPDATE·하나라도 0행이면 전부 되돌림), 단건은 예전 markPaymentPaid — 둘 다 writeLedgerPaid 한 곳에서만. 환불·감사 기록은 묶인 청구마다. 유일 위반 이름 정규식은 `PosChargeRequest(?:Item)?_` (Item 표 인덱스를 놓쳐 동시 생성 처리가 깨질 뻔함 — 테스트로 고정).
+- **참조횟수**: 0
 ### [2026-11-08] 무통장입금(가상계좌) = 거래(PaymentTransaction) 상태만 «입금 대기», 청구 상태는 새로 안 만듦
 - **분류**: architecture
 - **발견자**: developer
