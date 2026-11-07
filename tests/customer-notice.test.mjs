@@ -126,3 +126,14 @@ test("카카오 접수함: 처리를 마친 접수에 결과 안내 부품을 �
   assert.match(kakaoUi, /isIntakeResultStatus\(row\.status\) && identityOk/);
   assert.match(kakaoUi, /setJustDecidedId\(id\);\r?\n\s*router\.refresh\(\)/);
 });
+
+test("학생 상세: 학부모 번호가 있을 때 카카오채널 링크 보내기(학생 id 로만)", () => {
+  const detail = readFileSync("src/app/admin/students/[id]/StudentDetailClient.tsx", "utf8");
+  assert.match(detail, /\{student\.parent\.phone && \([\s\S]{0,200}<CustomerNoticeSender kind="KAKAO_CHANNEL_INVITE" studentId=\{student\.id\} \/>/);
+});
+
+test("카카오 연결 화면의 채널 주소는 관리자 설정값에서 온다(박힌 주소 없음)", () => {
+  const page = readFileSync("src/app/kakao-connect/page.tsx", "utf8");
+  assert.doesNotMatch(page, /pf\.kakao\.com/);
+  assert.match(page, /kakaoChannelLinks\(\(await getAcademySettings\(\)\)\?\.kakaoChannelUrl\)\.chatUrl/);
+});
