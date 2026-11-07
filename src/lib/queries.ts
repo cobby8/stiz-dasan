@@ -2442,6 +2442,30 @@ export const getPublicTestimonials = cache(async () => {
     }
 });
 
+// 홈 숫자 띠(2026-11-07 원장 결정) — 지어내지 않고 DB에서 센다. 재원생 수는 공개 금지라 세지 않는다.
+// 운영 반 = 수강 중(ACTIVE) 학생이 있는 반, 수업 요일 = 그 반들의 요일 수.
+export const getHomeStats = cache(async () => {
+    try {
+        const rows = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT (SELECT count(*) FROM "Coach")::int AS coaches,
+                    count(DISTINCT e."classId")::int AS "activeClasses",
+                    count(DISTINCT c."dayOfWeek")::int AS "activeDays"
+             FROM "Enrollment" e
+             JOIN "Class" c ON c.id = e."classId"
+             WHERE e.status = 'ACTIVE'`
+        );
+        const r = rows[0] ?? {};
+        return {
+            coaches: Number(r.coaches ?? 0),
+            activeClasses: Number(r.activeClasses ?? r.activeclasses ?? 0),
+            activeDays: Number(r.activeDays ?? r.activedays ?? 0),
+        };
+    } catch (e) {
+        console.error("[getHomeStats] failed:", e);
+        return null;
+    }
+});
+
 // 전체 후기 조회 (관리자용 — 공개/비공개 모두, order 오름차순)
 export const getAllTestimonials = cache(async () => {
     try {

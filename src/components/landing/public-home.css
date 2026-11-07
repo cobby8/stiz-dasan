@@ -48,6 +48,19 @@
 .stiz-public-sport .public-home-notices__title{flex:1;min-width:0;overflow-wrap:anywhere}
 .stiz-public-sport .public-home-notices time{font-size:.68rem;color:var(--color-public-muted);white-space:nowrap}
 .stiz-public-sport .public-home-notices__pin{color:var(--color-public-accent);font-size:.65rem;font-weight:700;flex-shrink:0}
+/* 검정 숫자 띠(4단계 2026-11-07): 큰 숫자는 이 띠의 주인공. PC 4칸 · 휴대폰 2칸 */
+.stiz-public-sport .public-home-stats{background:var(--color-public-dark);color:var(--color-public-hero-ink)}
+.stiz-public-sport .public-home-stats__inner{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:1.8rem 1.4rem}
+.stiz-public-sport .public-home-stats ul{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;list-style:none;margin:0;padding:0}
+.stiz-public-sport .public-home-stats li{display:flex;flex-direction:column;gap:.2rem;min-width:0;padding-inline-start:1rem;border-inline-start:2px solid var(--color-public-orange)}
+.stiz-public-sport .public-home-stats strong{font-size:clamp(1.7rem,3.4vw,2.5rem);font-weight:900;letter-spacing:-.04em;line-height:1.1;color:var(--color-public-hero-ink)}
+.stiz-public-sport .public-home-stats strong small{margin-inline-start:.15rem;font-size:.5em;font-weight:800}
+.stiz-public-sport .public-home-stats li span{font-size:.78rem;opacity:.8}
+.stiz-public-sport .public-home-stats p{margin:1.3rem 0 0;padding-top:1rem;border-top:1px solid color-mix(in srgb,var(--color-public-hero-ink) 14%,transparent);font-size:.8rem;line-height:1.7;opacity:.78;word-break:keep-all}
+@media (max-width:767px){
+.stiz-public-sport .public-home-stats__inner{width:calc(100% - 2rem);padding-block:1.4rem 1.1rem}
+.stiz-public-sport .public-home-stats ul{grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem .75rem}
+}
 .stiz-public-sport .public-home-facts{width:min(100% - 3rem,72rem);padding-block:1.1rem;margin-inline:auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;list-style:none;border-bottom:1px solid var(--color-public-line)}
 .stiz-public-sport .public-home-facts li{display:flex;flex-direction:column;gap:.25rem;padding-inline:.75rem;border-inline-end:1px solid var(--color-public-line);min-width:0}
 .stiz-public-sport .public-home-facts li:first-child{padding-inline-start:0}

@@ -36,7 +36,7 @@ test("실제 홈 서버 페이지는 주소가 준비되지 않아도 첫 HTML�
   const empty = () => null;
   const queries = {
     getAcademySettings: async () => ({}), getPublicTestimonials: async () => [],
-    getGalleryPosts: async () => [], getNotices: async () => [], getPrograms: async () => [],
+    getGalleryPosts: async () => [], getNotices: async () => [], getPrograms: async () => [], getHomeStats: async () => null,
   };
   const Home = compile("../src/app/page.tsx", Object.fromEntries([
     ["@/lib/queries", queries], ["@/lib/payments/tossReview", { hasSellablePrice: () => true }],["@/components/PublicSiteTheme", { default: Theme }],

@@ -4,6 +4,7 @@ import ProcessSteps from "@/components/landing/ProcessSteps";
 import TestimonialCarousel from "@/components/landing/TestimonialCarousel";
 import CTABanner from "@/components/landing/CTABanner";
 import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
+import HomeStatsBand, { type HomeStats } from "@/components/landing/HomeStatsBand";
 import HomeProgramTiles, { type HomeProgramTile } from "@/components/landing/HomeProgramTiles";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
@@ -20,12 +21,13 @@ function getGalleryMediaItems(posts: GalleryPost[]): GalleryMediaItem[] {
   })));
 }
 
-export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], programTiles = [], naverPlaceUrl }: {
+export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], programTiles = [], homeStats = null, naverPlaceUrl }: {
   initialSettings: any;
   testimonials?: { name: string; info: string; text: string; rating: number }[];
   galleryPosts?: GalleryPost[];
   notices?: HomeNotice[];
   programTiles?: HomeProgramTile[];
+  homeStats?: HomeStats | null;
   naverPlaceUrl?: string;
 }) {
   const settings = initialSettings || {};
@@ -74,7 +76,8 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
           </Link></li>)}</ul>
         </section>}
       </div>
-      <TrustBadges />
+      {/* 숫자를 못 세면(조회 실패) 예전 안내 4칸을 그대로 보인다 */}
+      {homeStats ? <HomeStatsBand stats={homeStats} /> : <TrustBadges />}
       <ProcessSteps />
       {settings.youtubeUrl && (() => {
         const raw = settings.youtubeUrl as string;

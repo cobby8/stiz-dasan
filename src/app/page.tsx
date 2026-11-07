@@ -8,7 +8,7 @@
  * - revalidate: 60 유지 (캐싱 정책 변경 없음)
  */
 
-import { getAcademySettings, getGalleryPosts, getNotices, getPrograms, getPublicTestimonials } from "@/lib/queries";
+import { getAcademySettings, getGalleryPosts, getHomeStats, getNotices, getPrograms, getPublicTestimonials } from "@/lib/queries";
 import { hasSellablePrice } from "@/lib/payments/tossReview";
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
@@ -34,14 +34,16 @@ export default async function Home() {
   let galleryPosts: any[] = [];
   let notices: any[] = [];
   let programs: any[] = [];
+  let stats: Awaited<ReturnType<typeof getHomeStats>> = null;
   try {
     // 학원 설정 + 공개 후기 + 갤러리 + 공지를 병렬로 조회 (성능 최적화)
-    [settings, testimonials, galleryPosts, notices, programs] = await Promise.all([
+    [settings, testimonials, galleryPosts, notices, programs, stats] = await Promise.all([
       getAcademySettings(),
       getPublicTestimonials(),
       getGalleryPosts({ limit: 24, publicOnly: true }),
       getNotices({ limit: 4, publicOnly: true }),
       getPrograms(),
+      getHomeStats(),
     ]);
   } catch (e) {
     console.error("Failed to load data for landing page:", e);
@@ -51,6 +53,9 @@ export default async function Home() {
   const programTiles = programs
     .filter((p) => p.imageUrl && hasSellablePrice(p))
     .map((p) => ({ id: p.id, name: p.name, targetAge: p.targetAge ?? null, imageUrl: p.imageUrl }));
+
+  // 숫자 띠: 프로그램 수는 /programs 와 같은 기준(0원 숨김)으로 센다
+  const homeStats = stats ? { ...stats, programs: programs.filter((p) => hasSellablePrice(p)).length } : null;
 
   // 헤더/푸터에 전달할 데이터 추출
   const phone = settings?.contactPhone || "010-0000-0000";
@@ -100,6 +105,7 @@ export default async function Home() {
           galleryPosts={galleryPosts}
           notices={notices}
           programTiles={programTiles}
+          homeStats={homeStats}
           naverPlaceUrl={naverPlaceUrl}
         />
       </main>
