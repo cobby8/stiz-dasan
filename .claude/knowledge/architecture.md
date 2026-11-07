@@ -113,4 +113,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 공개 `/rental`(로그인 없음) → 관리자 `/admin/rental`(사이드바 «요청·신청함»). 요금·1시간 칸·상태 전이·문자 문구는 `src/lib/rental/gym-rental-rules.ts` 한 곳(화면 실시간 표시와 서버 저장 직전 재계산이 같은 함수). DB 는 `gym-rental-service.ts`(prisma import 없음, db 인자 → 가짜 DB 테스트). 가능 칸 = 09~22시 중 Class(dayOfWeek Mon~Sun)·SpecialProgramSessionDate(취소 제외)·승인된 대관과 안 겹치고 아직 시작 안 한 칸. 연간일정 휴무일은 열지 않음(보수적). 이중 확정 방지 = 승인 시 FOR UPDATE + 날짜 advisory lock + **EXCLUDE USING gist(tstzrange(startAt,endAt)) WHERE status IN 승인 이후 4종** — 코드 `RENTAL_HOLDING_STATUSES` 와 같은 집합인지 테스트가 비교. 알림 `gym-rental-notify.ts`: 원장 = 규칙 RENTAL_NEW_ADMIN(끄면 문자·슬랙·앱 알림 모두 멈춤 → 운영 시험 때 이걸로 막음), 신청자 승인·확정 = env `RENTAL_APPLICANT_SMS_ENABLED=1`, 접수 = 전용 env `RENTAL_APPLICANT_RECEIVED_SMS_ENABLED=1`(남의 번호 악용 방지), 둘 다 규칙도 켜야 함(꺼진 채 배포). 원장 문자는 10분 창 키로 한 통(슬랙 건별). 공개 신청은 tx+advisory lock 안에서 연락처·IP(x-forwarded-for 첫 값 sha256) 한도 확인 후 저장. 승인 때 loadRentalSlots 로 수업·특강 재확인. 반 판정은 이름 `[` 시작 제외+ACTIVE 수강생 있는 반만. 계좌는 서버 전용 `gym-rental-notify.ts`(server-only)에만 — 규칙 모듈은 브라우저 번들에 실리므로 금지, 테스트가 클라이언트 import 그래프를 검사.
+### [2026-11-07] 고객 안내 문자 = 공용 «미리보기 → 원장 승인 → 1건 발송» 한 벌
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 문구는 `src/lib/customer-notice/templates.ts`(import 없는 순수 함수), 서버는 `src/app/actions/customer-notice.ts` 의 prepareCustomerNotice/sendCustomerNotice, 화면은 `src/components/admin/CustomerNoticeSender.tsx`(kind 별 props). 승인 기록은 OperationsAuditLog(CUSTOMER_NOTICE_PREVIEW/CLAIMED/RESULT, 번호·문구는 해시만), 발송은 관리자 수동 문자와 같은 장부(MessageDeliveryBatch·NotificationDelivery, trigger MANUAL_MESSAGE, eventType=kind). 새 안내를 늘릴 때는 kind 하나 + resolveNotice 분기 + 문구 함수만 추가한다. 카카오채널 주소는 `kakaoChannelLinks(settings.kakaoChannelUrl)` 로만 만든다.
 - **참조횟수**: 0

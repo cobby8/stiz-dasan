@@ -40,6 +40,7 @@ test("관리자 원생 상세는 예정 반을 수강중·이전반과 구분하
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent,
+    "@/components/admin/CustomerNoticeSender": nullComponent,
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     student: { id: "student-a", name: "합성 학생", birthDate: "2016-01-01", gender: "남", createdAt: "2026-11-03", parentId: "parent-a", parent: {}, memo: null },
