@@ -177,6 +177,11 @@ export default function PosChargeCancelModal({
                                     : "보통 몇 초 안에 끝나요. POS 화면에 확인 창이 뜨면 눌러 주세요."}
                             </p>
                         </div>
+                        {cancel.confirmLate && (
+                            <p role="alert" className="mt-3 text-sm font-semibold text-[var(--color-academy-danger)]">
+                                POS 취소는 됐지만 토스 확인이 늦어요. 잠시 후 수납 화면에서 확인해 주세요.
+                            </p>
+                        )}
                         {cancel.pickupLate && (
                             <p role="alert" className="mt-3 text-sm font-semibold text-[var(--color-academy-danger)]">
                                 POS 가 응답하지 않습니다. POS 에서 직접 취소해 주세요. 취소하면 여기서도 자동으로 환불로 바뀝니다.

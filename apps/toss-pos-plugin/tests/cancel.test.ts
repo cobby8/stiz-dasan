@@ -157,3 +157,20 @@ test("계약: 취소 선점 응답 — 주문 ID·결제 ID 가 없으면 null(�
   assert.equal(parseCancelReport({ ok: true, cancelState: "SENT", refunded: false }), "SENT");
   assert.equal(parseCancelReport({ ok: true, cancelState: "DONE", refunded: true }), "DONE");
 });
+
+test("안전: 결제를 못 읽거나 주문 번호가 비어 있으면 취소하지 않고 failed 보고(사이트 «POS 에서 직접 취소»)", async () => {
+  // 결제 조회 실패(가짜 POS 에 없는 결제)
+  let f = fakeSdk({});
+  let a = fakeApi();
+  let r = await createCancelFlow({ sdk: f.sdk, api: a.api }).run(JOB);
+  assert.equal(r.result, "failed");
+  assert.ok(!f.log.some((l) => l.startsWith("cancel:")), "취소를 시도하지 않는다");
+  assert.match(a.reports[0].body.message ?? "", /읽지 못했어요/);
+  // 주문 번호 없음
+  f = fakeSdk({ "tp-1": { state: "APPROVED", orderId: "" } });
+  a = fakeApi();
+  r = await createCancelFlow({ sdk: f.sdk, api: a.api }).run(JOB);
+  assert.equal(r.result, "failed");
+  assert.ok(!f.log.some((l) => l.startsWith("cancel:")));
+  assert.match(a.reports[0].body.message ?? "", /주문 번호를 확인하지 못했어요/);
+});

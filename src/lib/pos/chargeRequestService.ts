@@ -73,6 +73,9 @@ const cancelVerdictOf = decideChargeCancel as (input: { paymentIds: string[]; or
 const cancelCheck = cancelEligibility as unknown as (input: unknown) => { ok: boolean; reason: string };
 const itemNameOf = buildChargeItemName as (input: { year: number | null; month: number | null; type: string; maskedName: string }) => string;
 
+/** POS 가 취소 완료를 보고한 뒤 토스 확인을 기다리는 «정상» 시간(분). 넘으면 관리자 창에 늦어진다는 안내 */
+const CANCEL_CONFIRM_LATE_MIN = 3;
+
 // ───────────────────────────── 타입 ─────────────────────────────
 
 /** 승인 결제 1건(payment-notice.mjs 의 extractChargePayments 결과 중 쓰는 칸 — 결제 방식 무관) */
@@ -119,6 +122,8 @@ type ViewRow = {
     cancelPickupLate?: boolean;
     /** 플러그인이 취소 결과를 보고했나 */
     cancelReported?: boolean;
+    /** POS 취소 완료 보고 뒤 CANCEL_CONFIRM_LATE_MIN 분이 지나도 토스 확인(DONE)이 없음 */
+    cancelConfirmLate?: boolean;
     paidProvider?: string | null;
 };
 
@@ -177,6 +182,7 @@ const VIEW_SQL = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount,
         to_char(r."refundedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "refundedKst",
         (r."cancelState" = 'REQUESTED' AND r."cancelRequestedAt" < now() - interval '${CANCEL_PICKUP_TIMEOUT_SEC} seconds') AS "cancelPickupLate",
         (r."cancelReportedAt" IS NOT NULL) AS "cancelReported",
+        (r."cancelState" = 'SENT' AND r."cancelReportedAt" < now() - interval '${CANCEL_CONFIRM_LATE_MIN} minutes') AS "cancelConfirmLate",
         p.type AS "paymentType", p.year, p.month, p.status AS "paymentStatus", p."paidProvider",
         st.name AS "studentName"
    FROM "PosChargeRequest" r
@@ -685,7 +691,11 @@ export async function matchChargeRequestsForOrder(input: {
     const paidRows = await loadMatchRows(`WHERE r."tossOrderId" = $1 AND r.status = 'PAID'`, orderId);
     for (const row of paidRows) {
         const settled = await settleCancelForRow(row, order, orderId);
-        if (settled) notes.push(settled);
+        if (settled) {
+            notes.push(settled.note);
+            // 납부 기록이 아직 진행 중일 수 있는 틈에 취소가 왔다 → 스윕이 다시 와서 환불·알림을 마무리한다
+            if (settled.retry) retryLater = true;
+        }
     }
 
     // ② 메모 번호 → 요청. 번호가 0개·2개 이상이면 자동 처리하지 않는다(기존 흐름).
@@ -823,6 +833,11 @@ export async function matchChargeRequestsForOrder(input: {
     await recordChargePaymentsAudit({ claimed: claimed[0], orderId, method, payments, redact });
 
     handled.push(...idsOf(payments));
+    // 납부 기록 «사이»에 취소 웹훅이 먼저 와서 요청을 DONE 으로 만들었으면, 방금 쓴 납부를 곧바로 환불로 되돌린다(검수 P-1).
+    if (await refundIfCancelledDuringLedger(claimed[0], request)) {
+        notes.push(`${code} 납부 기록 중 POS 취소 확인 → 환불`);
+        return done();
+    }
     const split = payments.length > 1 ? ` · 분할 ${payments.length}건` : "";
     await notifyOnce(
         request.id,
@@ -941,6 +956,7 @@ async function repairLedgerPaid(input: {
         return { note: "납부 기록 복구 실패(스윕이 다시 시도)", retry: true };
     }
     await recordChargePaymentsAudit({ claimed: leased[0], orderId, method, payments, redact });
+    if (await refundIfCancelledDuringLedger(leased[0], request)) return { note: "납부 기록 복구 중 POS 취소 확인 → 환불", retry: false };
     const split = payments.length > 1 ? ` · 분할 ${payments.length}건` : "";
     await notifyOnce(
         request.id,
@@ -986,7 +1002,7 @@ const MARK_REFUND_SQL = `UPDATE "PosChargeRequest"
  *   일부 취소 → 요청 PARTIAL + note, 청구서는 그대로 → 슬랙 «확인 필요»
  * 여러 번 불려도 안전하다(조건부 UPDATE · 알림 표시 칸 선점).
  */
-async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string): Promise<string | null> {
+async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string): Promise<{ note: string; retry: boolean } | null> {
     const ids = await chargePaymentIdsFor(row);
     const verdict = cancelVerdictOf({ paymentIds: ids, order });
     if (verdict.action === "NONE") return null;
@@ -1006,30 +1022,77 @@ async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string
             "cancelNotifiedAt",
             `⚠️ POS 결제 일부만 취소됨 — 현장 결제 ${describe(row)}\n취소 ${verdict.cancelled.length}건 / 전체 ${ids.length}건. 사이트 청구서는 납부완료 그대로입니다. 남은 결제를 POS 에서 취소하거나 수납 화면에서 확인해 주세요.`,
         );
-        return `${row.shortCode} POS 일부 취소 → 확인 필요`;
+        return { note: `${row.shortCode} POS 일부 취소 → 확인 필요`, retry: false };
     }
 
     // 전부 취소 → 환불. 요청 표시와 청구서 환불을 한 트랜잭션으로(한쪽만 남지 않게).
+    // 요청이 이미 DONE 이어도(재전송·앞선 처리) 청구가 PAID 면 다시 환불을 시도한다 — 조건부 UPDATE 라 몇 번이든 안전하고,
+    // «요청 PAID → 청구서 기록» 틈에 취소가 먼저 와서 나중에 청구서가 PAID 로 써진 경우도 여기서 바로잡힌다(검수 P-1).
     const result = await prisma.$transaction(async (db) => {
         const marked = await db.$queryRawUnsafe<{ id: string }[]>(MARK_REFUND_SQL, row.id);
-        if (marked.length === 0) return null; // 이미 환불 확정됨(재전송·다른 웹훅)
-        const refunded = await refundPaidPaymentInTx(db, {
-            paymentId: row.paymentId,
-            actorType: "WEBHOOK",
-            actorId: `pos-charge:${row.shortCode}`,
-            message: `현장 결제 ${row.shortCode} POS 결제 취소 확인 → 환불`,
-            metadata: { provider: "TOSS_POS", shortCode: row.shortCode, tossOrderId: orderId, cancelledPaymentIds: verdict.cancelled },
-        });
-        return { refunded };
+        const refunded = await refundPaidPaymentInTx(db, refundInput(row, orderId, verdict.cancelled));
+        return { marked: marked.length > 0, refunded };
     });
-    if (result?.refunded) revalidatePaymentCaches();
-    const tail = result && !result.refunded
-        ? `\n사이트 청구서가 납부완료 상태가 아니어서(${row.paymentStatus}) 그대로 두었습니다. 수납 화면에서 확인해 주세요.`
-        : "\n사이트 청구서를 환불로 바꿨습니다.";
+    if (result.refunded) {
+        revalidatePaymentCaches();
+        await notifyOnce(row.id, "refundNotifiedAt", `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}\n사이트 청구서를 환불로 바꿨습니다.`);
+        return { note: `${row.shortCode} POS 취소 → 환불 처리`, retry: false };
+    }
+    // 환불할 게 없었다 = 청구가 PAID 가 아니다. 지금 상태를 DB 에서 다시 읽고 실제 상태대로 알린다.
+    const cur = await prisma.$queryRawUnsafe<{ paymentStatus: string | null; ledgerMayRun: boolean }[]>(
+        `SELECT p.status AS "paymentStatus",
+                (COALESCE(r."paidRecordedAt", r."paidAt") > now() - interval '2 minutes') AS "ledgerMayRun"
+           FROM "PosChargeRequest" r JOIN "Payment" p ON p.id = r."paymentId"
+          WHERE r.id = $1`,
+        row.id,
+    );
+    const status = String(cur[0]?.paymentStatus ?? row.paymentStatus ?? "");
+    if (["PENDING", "OVERDUE"].includes(status) && cur[0]?.ledgerMayRun) {
+        // 납부 기록이 아직 진행 중일 수 있다 → 알림을 미루고 다시 본다(기록이 끝나면 그쪽이 환불하거나, 다음 스윕이 환불한다)
+        return { note: `${row.shortCode} POS 취소 확인 · 납부 기록 진행 중이라 다시 확인`, retry: true };
+    }
+    const tail = ["PENDING", "OVERDUE"].includes(status)
+        ? "\n납부 기록 전에 결제가 취소돼 사이트 청구는 미납 그대로입니다(돈은 POS 에서 돌려줌)."
+        : status === "REFUNDED"
+            ? "\n사이트 청구는 이미 환불 상태입니다."
+            : `\n사이트 청구 상태가 ${status || "알 수 없음"}이라 그대로 두었습니다. 수납 화면에서 확인해 주세요.`;
     // 알림은 표시 칸으로 한 번만 — 앞선 처리가 알림 직전에 멈췄으면 여기서 이어서 보낸다.
     await notifyOnce(row.id, "refundNotifiedAt", `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}${tail}`);
-    if (!result) return `${row.shortCode} 이미 환불 처리됨`;
-    return `${row.shortCode} ${result.refunded ? "POS 취소 → 환불 처리" : "POS 취소 확인(청구서 미납이라 그대로)"}`;
+    return { note: `${row.shortCode} ${result.marked ? "POS 취소 확인" : "이미 취소 확정됨"}(청구 ${status || "?"})`, retry: false };
+}
+
+/** 환불 감사 기록 입력(취소 확정·납부 직후 재확인 공용) */
+function refundInput(row: Pick<MatchRow, "paymentId" | "shortCode">, orderId: string | null, cancelledPaymentIds: string[] | null) {
+    return {
+        paymentId: row.paymentId,
+        actorType: "WEBHOOK" as const,
+        actorId: `pos-charge:${row.shortCode}`,
+        message: `현장 결제 ${row.shortCode} POS 결제 취소 확인 → 환불`,
+        metadata: { provider: "TOSS_POS", shortCode: row.shortCode, tossOrderId: orderId, cancelledPaymentIds },
+    };
+}
+
+/**
+ * 원장부 납부 기록 «직후» 취소 상태 재확인(검수 P-1). 기록하는 사이에 취소 웹훅이 먼저 와서 요청을 DONE 으로 만들고
+ * (그때는 청구가 아직 미납이라 환불할 게 없었다) 그 뒤 markPaymentPaid 가 청구를 PAID 로 써 버리면 돈이 어긋난다.
+ * 요청이 DONE 이면 같은 원장부 함수로 바로 환불한다. 환불했으면 true(호출한 쪽은 «납부 반영» 알림을 보내지 않는다).
+ */
+async function refundIfCancelledDuringLedger(claimed: ClaimedRow, request: MatchRow): Promise<boolean> {
+    const rows = await prisma.$queryRawUnsafe<{ cancelState: string | null; tossOrderId: string | null }[]>(
+        `SELECT "cancelState", "tossOrderId" FROM "PosChargeRequest" WHERE id = $1`,
+        request.id,
+    );
+    if (rows[0]?.cancelState !== "DONE") return false;
+    const refunded = await prisma.$transaction((db) =>
+        refundPaidPaymentInTx(db, refundInput({ paymentId: claimed.paymentId, shortCode: claimed.shortCode }, rows[0].tossOrderId, null)),
+    );
+    if (refunded) revalidatePaymentCaches();
+    await notifyOnce(
+        request.id,
+        "refundNotifiedAt",
+        `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(request)}\n${refunded ? "사이트 청구서를 환불로 바꿨습니다." : "사이트 청구는 환불 상태입니다."}`,
+    );
+    return true;
 }
 
 // ───────────────────────────── 관리자 «결제 취소» ─────────────────────────────
@@ -1051,6 +1114,8 @@ export type AdminChargeCancelView = {
     pickupLate: boolean;
     /** POS 가 취소를 끝냈다고 보고함(토스 확인 대기) */
     reported: boolean;
+    /** 보고 뒤 3분이 지나도 토스 확인이 안 옴 → «잠시 후 수납 화면에서 확인» 안내 */
+    confirmLate: boolean;
     /** 지금 «결제 취소»를 누를 수 있나 + 못 하면 이유 */
     canRequest: boolean;
     blockReason: string;
@@ -1075,6 +1140,7 @@ function toCancelView(row: ViewRow): AdminChargeCancelView {
         refundedKst: row.refundedKst ?? null,
         pickupLate: Boolean(row.cancelPickupLate),
         reported: Boolean(row.cancelReported),
+        confirmLate: Boolean(row.cancelConfirmLate),
         canRequest: check.ok && !noOrder,
         blockReason: check.ok && noOrder ? "토스 주문 번호가 없어 POS 로 취소를 보낼 수 없습니다." : check.reason,
     };

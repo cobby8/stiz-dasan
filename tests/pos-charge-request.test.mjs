@@ -354,6 +354,8 @@ const PRISMA_STUB = toDataUrl(`
       if (/SET "cancelState" = 'DONE'/.test(sql)) return S().markRefundRows ?? [{ id: "r1" }];
       if (/FROM "PaymentAuditLog"/.test(sql)) return S().auditIds ? [{ ids: S().auditIds }] : [];
       if (/AS "tooSoon"/.test(sql)) return S().why ? [S().why] : [];
+      if (/AS "ledgerMayRun"/.test(sql)) return [S().cur ?? { paymentStatus: null, ledgerMayRun: false }];
+      if (/SELECT "cancelState", "tossOrderId" FROM "PosChargeRequest" WHERE id = \\$1/.test(sql)) return S().cancelStateAfter ? [{ cancelState: S().cancelStateAfter, tossOrderId: "o-1" }] : [{ cancelState: null, tossOrderId: "o-1" }];
       if (/SET "updatedAt" = now\\(\\)\\s+WHERE r\\.id = \\$1 AND r\\.status = 'PAID' AND r\\."cancelState" IS NULL/.test(sql)) return S().leaseRows ?? [];
       if (/SET "cancelState" = 'REQUESTED'/.test(sql)) return S().requestCancelRows ?? [{ id: "r1" }];
       if (/SET "cancelState" = 'SENT'/.test(sql)) return S().cancelClaimRows ?? [{ id: "r1" }];
@@ -961,20 +963,92 @@ test("결제 취소 흐름: 사이트 요청(SENT) 중 토스 웹훅이 전부 �
   assert.equal(globalThis.__cs.refunds.length, 1, "첫 웹훅 = 환불");
   const mark = globalThis.__cs.calls.find((c) => /SET "cancelState" = 'DONE'/.test(c.sql));
   assert.match(mark.sql, /WHERE id = \$1 AND status = 'PAID' AND "cancelState" IS DISTINCT FROM 'DONE'/, "조건부 UPDATE 한 문장");
-  // 재전송: 요청이 이미 DONE(선점 0행) → 원장부 환불을 부르지 않는다
-  await runMatch({ paidRows: [{ ...paidRow, cancelState: "DONE" }], request: null, markRefundRows: [] }, { order, approved: [] });
-  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "두 번째는 환불하지 않는다");
-  assert.ok(!globalThis.__cs.revalidated);
-});
-
-test("결제 취소 흐름: 청구서가 이미 납부완료가 아니면(관리자가 먼저 환불 등) 요청만 DONE, 슬랙에 «그대로 두었습니다»", async () => {
-  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  // 재전송: 요청이 이미 DONE(선점 0행)·청구는 이미 환불 → 원장부 조건부 UPDATE 가 0행(false) → 목록 갱신·«환불로 바꿨습니다» 없음
   await runMatch(
-    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "REFUNDED" })], request: null, refundResult: false },
+    { paidRows: [{ ...paidRow, cancelState: "DONE", paymentStatus: "REFUNDED" }], request: null, markRefundRows: [], refundResult: false, cur: { paymentStatus: "REFUNDED", ledgerMayRun: false } },
     { order, approved: [] },
   );
-  assert.ok(globalThis.__cs.slack.some((t) => /그대로 두었습니다/.test(t)));
+  assert.ok(!globalThis.__cs.revalidated, "두 번째는 청구를 바꾸지 않는다");
+  assert.ok(!globalThis.__cs.slack.some((t) => /환불로 바꿨습니다/.test(t)));
+});
+
+test("결제 취소 흐름: 청구가 PAID 가 아니면 요청만 DONE, 슬랙 문구는 실제 청구 상태대로(환불 상태 / 그대로 두었습니다)", async () => {
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  const row = reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "REFUNDED" });
+  await runMatch({ paidRows: [row], request: null, refundResult: false, cur: { paymentStatus: "REFUNDED", ledgerMayRun: false } }, { order, approved: [] });
+  assert.ok(globalThis.__cs.slack.some((t) => /이미 환불 상태입니다/.test(t)), "관리자가 먼저 환불한 경우");
   assert.ok(!globalThis.__cs.revalidated, "청구서가 안 바뀌었으면 갱신할 것도 없다");
+  await runMatch({ paidRows: [row], request: null, refundResult: false, cur: { paymentStatus: "CANCELED", ledgerMayRun: false } }, { order, approved: [] });
+  assert.ok(globalThis.__cs.slack.some((t) => /CANCELED이라 그대로 두었습니다/.test(t)));
+});
+
+// ── 검수 P-1: «요청 PAID → 청구서 납부 기록» 틈에 취소 웹훅이 먼저 온 경우 ──
+
+test("P-1 틈: 취소 웹훅이 납부 기록보다 먼저 옴(청구 아직 미납·방금 PAID) → 환불할 게 없으니 알림 미루고 retryLater(스윕 재확인)", async () => {
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PENDING" })], request: null, refundResult: false, cur: { paymentStatus: "PENDING", ledgerMayRun: true } },
+    { order, approved: [] },
+  );
+  assert.equal(r.retryLater, true, "웹훅을 처리 완료로 두지 않는다");
+  assert.ok(!globalThis.__cs.slack.some((t) => /POS 결제 취소 확인/.test(t)), "실제 상태가 정해지기 전에는 알리지 않는다");
+  assert.ok(globalThis.__cs.calls.some((c) => /SET "cancelState" = 'DONE'/.test(c.sql)), "요청은 취소 확정");
+});
+
+test("P-1 틈: 그 뒤 원래 처리의 납부 기록이 끝남 → 직후 재확인에서 요청 DONE 이면 바로 환불(«납부 반영» 알림 대신 «환불»)", async () => {
+  const r = await runMatch({ cancelStateAfter: "DONE" });
+  assert.equal(globalThis.__cs.paid.length, 1, "납부 기록은 이미 썼다");
+  assert.equal(globalThis.__cs.refunds.length, 1, "곧바로 환불로 되돌린다");
+  assert.equal(globalThis.__cs.refunds[0].paymentId, "p-nov");
+  assert.equal(globalThis.__cs.revalidated, 1);
+  assert.ok(globalThis.__cs.slack.some((t) => /POS 결제 취소 확인/.test(t) && /환불로 바꿨습니다/.test(t)));
+  assert.ok(!globalThis.__cs.slack.some((t) => /자동 납부 반영/.test(t)), "납부 반영 알림은 보내지 않는다");
+  assert.match(r.note, /납부 기록 중 POS 취소 확인 → 환불/);
+});
+
+test("P-1 틈: 재확인마저 못 했어도(함수가 멈춤) 다음 스윕의 취소 확정이 «요청 DONE + 청구 PAID» 를 환불로 바로잡는다", async () => {
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [] },
+    { order, approved: [] },
+  );
+  assert.equal(globalThis.__cs.refunds.length, 1, "이미 DONE 이어도 청구가 PAID 면 환불");
+  assert.ok(globalThis.__cs.slack.some((t) => /환불로 바꿨습니다/.test(t)));
+});
+
+test("P-1 틈: 납부 기록 전에 취소됐고 기록이 끝내 안 됨(2분 지남) → 청구는 미납 그대로라는 실제 상태로 알림", async () => {
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PENDING" })], request: null, refundResult: false, cur: { paymentStatus: "PENDING", ledgerMayRun: false } },
+    { order, approved: [] },
+  );
+  assert.equal(r.retryLater, false);
+  assert.ok(globalThis.__cs.slack.some((t) => /미납 그대로입니다/.test(t)));
+});
+
+test("P-1: 납부 직후 재확인은 정상·복구 두 경로 모두, 원장부 환불 함수로만(Payment 직접 UPDATE 없음)", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  assert.equal([...src.matchAll(/await refundIfCancelledDuringLedger\(/g)].length, 2);
+  const fn = src.slice(src.indexOf("async function refundIfCancelledDuringLedger"));
+  assert.match(fn.slice(0, fn.indexOf("\n}\n")), /refundPaidPaymentInTx\(db,/);
+  assert.doesNotMatch(src, /UPDATE\s+"Payment"/);
+});
+
+test("P-2: 토스 POS 납부 건은 기존 «환불» 메뉴를 숨기고 «결제 취소»만", async () => {
+  const finance = await readFile(FINANCE, "utf8");
+  assert.match(finance, /canManageCriticalFinance && p\.status === "PAID" && p\.paidProvider !== "TOSS_POS" \? \[\s*\{\s*key: "refund"/);
+});
+
+test("P-4: POS 취소 보고 뒤 3분 넘게 토스 확인이 없으면 창에 늦어진다는 안내(판단은 DB 시계)", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView({ cancelState: "SENT", cancelReported: true, cancelConfirmLate: true })] };
+  const v = await svc.getChargeCancelForPayment("p-nov");
+  assert.equal(v.confirmLate, true);
+  const src = await readFile(SERVICE, "utf8");
+  assert.match(src, /\(r\."cancelState" = 'SENT' AND r\."cancelReportedAt" < now\(\) - interval '\$\{CANCEL_CONFIRM_LATE_MIN\} minutes'\) AS "cancelConfirmLate"/);
+  assert.match(src, /const CANCEL_CONFIRM_LATE_MIN = 3;/);
+  const modal = await readFile(CANCEL_MODAL, "utf8");
+  assert.match(modal, /POS 취소는 됐지만 토스 확인이 늦어요\. 잠시 후 수납 화면에서 확인해 주세요\./);
 });
 
 test("결제 취소 흐름: 결제가 아직 승인 상태면(취소 전) 아무것도 하지 않는다", async () => {

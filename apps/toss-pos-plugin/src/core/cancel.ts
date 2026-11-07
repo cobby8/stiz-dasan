@@ -59,10 +59,13 @@ export function createCancelFlow(deps: CancelFlowDeps) {
     try {
       const p = await sdk.payment.getPayment(paymentId);
       state = String(p.state ?? "").toUpperCase();
-      // 서버가 준 주문과 다른 주문의 결제면 절대 취소하지 않는다(남의 매출 보호)
-      if (p.orderId && String(p.orderId) !== claim.tossOrderId) return "다른 주문의 결제";
+      // 서버가 준 주문과 같은 주문의 결제인지 «확인될 때만» 취소한다(남의 매출 보호, 검수 2026-11-08).
+      // 주문 ID 가 비어 있으면 확인할 수 없으니 취소하지 않고 실패로 보고 → 사이트가 «POS 에서 직접 취소» 안내.
+      if (!p.orderId) return "결제의 주문 번호를 확인하지 못했어요";
+      if (String(p.orderId) !== claim.tossOrderId) return "다른 주문의 결제";
     } catch {
-      // 상태를 못 읽어도 취소는 시도한다 — 이미 취소된 결제면 POS 가 거절하고, 그건 실패로 보고된다
+      // 결제를 못 읽으면 어떤 결제인지 확인할 수 없다 → 취소를 시도하지 않고 실패로 보고한다
+      return "결제 상태를 읽지 못했어요";
     }
     if (CANCELLED_STATES.has(state)) return "already";
     try {

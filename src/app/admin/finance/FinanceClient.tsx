@@ -950,7 +950,8 @@ export default function FinanceClient({
                     onSelect: () => setPosCancelTarget(p),
                 },
             ] : []),
-            ...(canManageCriticalFinance && p.status === "PAID" ? [
+            // 토스 POS 납부 건은 «환불» 대신 위의 «결제 취소»만(POS 결제는 그대로 둔 채 청구만 환불되는 일 방지)
+            ...(canManageCriticalFinance && p.status === "PAID" && p.paidProvider !== "TOSS_POS" ? [
                 {
                     key: "refund",
                     label: "환불",
