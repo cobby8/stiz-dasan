@@ -118,9 +118,9 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "TRIAL_ENROLL_GUIDE_PARENT",
         "수강신청서 안내 (학부모)",
         "PARENT",
-        "스티즈 수강신청서\n링크에서 작성해주세요 :)\n{{enrollLink}}",
-        "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송",
-        '["enrollLink"]',
+        "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
+        "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·스포츠고글 제휴 안내 포함, 장문)",
+        '["childName","enrollLink","academyPhone"]',
     ],
     [
         "ENROLL_CONFIRM_PARENT",
@@ -221,7 +221,7 @@ export async function ensureSmsTemplates(): Promise<void> {
                 trigger, name, target, body, isActive, description, variables,
             );
         }
-        // 기존 운영 DB에 남은 기본 장문만 새 단문으로 교체한다.
+        // 기존 DB에 남은 옛 기본 문구(장문·단문)만 2026-11-07 문구(준비물·스포츠고글 제휴 안내)로 교체한다.
         // 관리자가 직접 수정한 문구는 덮어쓰지 않는다.
         await prisma.$executeRawUnsafe(
             `UPDATE "SmsTemplate"
@@ -231,11 +231,12 @@ export async function ensureSmsTemplates(): Promise<void> {
                     variables = $4,
                     "updatedAt" = NOW()
               WHERE trigger = 'TRIAL_ENROLL_GUIDE_PARENT'
-                AND body = $5`,
+                AND body IN ($5, $6)`,
             "수강신청서 안내 (학부모)",
+            "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
+            "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·스포츠고글 제휴 안내 포함, 장문)",
+            '["childName","enrollLink","academyPhone"]',
             "스티즈 수강신청서\n링크에서 작성해주세요 :)\n{{enrollLink}}",
-            "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송",
-            '["enrollLink"]',
             "[STIZ] {{childName}} 학생 체험수업 상담 감사드립니다.\n정규 수강신청서는 아래 링크에서 작성해주세요.\n{{enrollLink}}\n작성 후 확인되는 대로 입학 안내를 도와드리겠습니다.\n문의: {{academyPhone}}",
         );
         // 신규·복원 DB에서도 템플릿과 자동 발송 규칙이 같은 시점에 준비되게 한다.

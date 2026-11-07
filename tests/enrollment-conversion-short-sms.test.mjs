@@ -42,16 +42,22 @@ test("90바이트는 SMS이고 한 바이트라도 넘으면 공급자 호출 �
   );
 });
 
-test("등록전환 발송부는 실제 템플릿 단문 검사 후 추적 발송한다", () => {
+// 2026-11-07: 준비물·스포츠고글 제휴 안내가 들어가며 수강신청 안내는 장문(LMS)도 허용한다.
+test("등록전환 발송부는 단문 강제 없이 추적 발송하고 학원 전화를 넘긴다", () => {
   const admin = readFileSync(
     new URL("../src/app/actions/admin.ts", import.meta.url),
     "utf8",
   );
+  const start = admin.indexOf("export async function sendPostTrialEnrollGuide");
+  const end = admin.indexOf("type TrialApplicationSmsResendResult", start);
+  const body = admin.slice(start, end);
 
-  assert.match(admin, /assertSolapiShortSms\(renderedMessage\)[\s\S]*?sendParentSmsWithResult\(/);
+  assert.ok(start > 0 && end > start);
+  assert.doesNotMatch(body, /assertSolapiShortSms|forceSms/);
+  assert.match(body, /templateVariables = \{ childName, parentName, enrollLink, academyPhone \}/);
   assert.match(
-    admin,
-    /eventType:\s*"TRIAL_ENROLL_GUIDE"[\s\S]*?eventId:\s*`trial:\$\{trialLeadId\}:enroll-guide`[\s\S]*?forceSms:\s*true/,
+    body,
+    /eventType:\s*"TRIAL_ENROLL_GUIDE"[\s\S]*?eventId:\s*`trial:\$\{trialLeadId\}:enroll-guide`/,
   );
 });
 

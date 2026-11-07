@@ -43,7 +43,6 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { createTrialEnrollShortLink } from "@/lib/enroll-short-link";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { validateAcademyCoordinateInput } from "@/lib/shuttle/academyLocation";
-import { assertSolapiShortSms } from "@/lib/sms-byte-length";
 import { renderSmsTemplate } from "@/lib/smsTemplate";
 import {
     ensureInvoiceForPayment,
@@ -5817,7 +5816,12 @@ export async function sendPostTrialEnrollGuide(
     const { shortUrl: enrollLink } = await createTrialEnrollShortLink(trialLeadId);
     const childName = lead.childName ?? lead.childname ?? "";
     const parentName = lead.parentName ?? lead.parentname ?? "";
-    const templateVariables = { childName, parentName, enrollLink };
+    // 문구에 «문의: 학원 전화»를 넣기 위해 설정의 대표 번호를 함께 넘긴다.
+    const settingsRows = await prisma.$queryRawUnsafe<any[]>(
+        `SELECT "contactPhone" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`,
+    );
+    const academyPhone = settingsRows[0]?.contactPhone ?? settingsRows[0]?.contactphone ?? "";
+    const templateVariables = { childName, parentName, enrollLink, academyPhone };
     const renderedMessage = await renderSmsTemplate("TRIAL_ENROLL_GUIDE_PARENT", templateVariables);
     if (!renderedMessage) {
         return {
@@ -5826,16 +5830,9 @@ export async function sendPostTrialEnrollGuide(
             message: "수강신청 안내 문자 템플릿을 사용할 수 없습니다.",
         };
     }
-    try {
-        assertSolapiShortSms(renderedMessage);
-    } catch {
-        return {
-            enrollLink,
-            sent: false,
-            message: "단문 기준을 초과해 발송하지 않았습니다. 문자 템플릿이나 짧은 링크 주소를 확인해주세요.",
-        };
-    }
 
+    // 2026-11-07: 준비물·스포츠고글 제휴 안내가 들어가며 단문(한글 45자)을 넘는다.
+    // 단문 강제를 풀어 길이에 따라 SMS/LMS 가 자동으로 정해지게 한다(장문 건당 45원).
     const smsResult = await sendParentSmsWithResult(
         parentPhone || "",
         "TRIAL_ENROLL_GUIDE_PARENT",
@@ -5843,7 +5840,6 @@ export async function sendPostTrialEnrollGuide(
         {
             eventType: "TRIAL_ENROLL_GUIDE",
             eventId: `trial:${trialLeadId}:enroll-guide`,
-            forceSms: true,
         },
     );
 
@@ -6653,7 +6649,7 @@ export async function resetSmsTemplate(id: string) {
             ENROLL_APPROVED_COACH: "[STIZ] 수강 신청이 승인되었습니다.\n학생: {{childName}} ({{childGrade}})\n배정 반: {{className}}",
             TRIAL_CONFIRM_PARENT: "[STIZ] {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}",
             TRIAL_SCHEDULED_PARENT: "[STIZ] {{childName}} 체험수업 일정이 확정되었습니다.\n일시: {{scheduledDate}}\n반: {{className}}\n문의: {{academyPhone}}",
-            TRIAL_ENROLL_GUIDE_PARENT: "스티즈 수강신청서\n링크에서 작성해주세요 :)\n{{enrollLink}}",
+            TRIAL_ENROLL_GUIDE_PARENT: "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
             ENROLL_CONFIRM_PARENT: "[STIZ] {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}",
             ENROLL_APPROVED_PARENT: "[STIZ] {{childName}} 수강이 확정되었습니다.\n배정 반: {{className}}\n상세 안내는 별도 연락드리겠습니다.",
             INVOICE_PARENT: "[STIZ] {{month}}월 수강료 안내\n{{childName}}: {{amount}}원\n납부기한: {{dueDate}}",
