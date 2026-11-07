@@ -136,3 +136,10 @@
 - **발견자**: developer
 - **내용**: 자체 package.json·tsconfig·node_modules. 루트 `tsconfig.json` exclude·`eslint.config.mjs` ignore 에 `apps/toss-pos-plugin` 이 빠지면 루트 `**/*.ts` 포함 때문에 next build(Vercel)가 깨진다. 핵심 로직은 `src/core/*`(SDK 를 import 하지 않고 pos-types.ts 최소 모양을 인자로 받음 → node --test 가짜 SDK), 실제 SDK 와 맞는지는 `tests/sdk-compat.typecheck.ts` 가 tsc 로 확인. 서버 API 주소·응답 해석은 `src/core/contract.ts` 한 곳(camel/snake 둘 다 읽음). SDK 0.0.31 은 **주문 전체 메모를 넣는 함수가 없어** `STIZ:S-xxxx` 를 항목 메모+item.code 에 넣는다 → 서버 웹훅 매칭은 lineItems[].memo·item.code 도 봐야 한다. 요청 제한은 http 포함 60초 100·30분 200번. 운영 매장 배포 = 라이브 검수(월·목)+VAN 대리점 활성화, 개발 배포는 테스트 단말기 5대.
 - **참조횟수**: 0
+
+### [2026-11-08] 현장 결제 매칭 = 방식 무관·분할 결제 합계, 결제 목록은 «알림용»과 «매칭용» 두 함수
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: payment-notice.mjs 의 extractNoticePayments(카드·BARCODE, 슬랙 확인 DM 용)와 extractChargePayments(APPROVED 전부, 현장 결제 매칭용)는 같은 내부 함수 한 벌이다. decideChargeMatch 는 승인 결제 합계·면세 합계로 판정하고 주문 진행 중(isOrderCompleted=false) 합계 부족이면 SKIP(waiting, 그 결제들의 DM 도 미룸)·완료 뒤 부족이면 HOLD. 분할이면 대표 결제(가장 먼저 승인)만 PosChargeRequest.tossPaymentId(유일), 나머지는 note+PaymentAuditLog(POS_CHARGE_PAYMENTS), 이중 매칭은 CLAIM_PAY_SQL 의 «같은 tossOrderId 다른 요청 PAID» NOT EXISTS 로 막는다. Payment.method 는 posMethodOf(CARD·CASH·EASY_PAY·BANK_TRANSFER·ETC, 분할 «CARD+CASH»), 표시는 posMethodLabel(«현장 · 카드+현금»). adminDisplayText.ts 는 테스트가 import 없이 단독 실행하므로 다른 모듈을 import 하지 말고 이름만 맞춘다(테스트가 비교).
+- **참조횟수**: 0
+
