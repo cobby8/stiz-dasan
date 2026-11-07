@@ -61,6 +61,12 @@
 | R-7② | lib/seasonal/shuttleRoster.ts:166~176 | 권장 | 다음 시즌 신청자가 목록·확정 버튼에서 사라짐(시즌 스코프 전체 합산) |
 | R-8② | admin/seasonal/shuttle/ShuttleRosterClient.tsx | 권장 | 제외 되돌리기가 세션 한정(새로고침 시 복구 UI 소멸) |
 | M-1 | actions/admin.ts `bookMakeupSession` | 참고 | 정원 검증이 "조회 후 INSERT"라 극단적 동시 요청에선 이론상 1건 초과 가능(DB 제약 아님) |
+| P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
+| P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
+
+### 리뷰 결과 (reviewer · 11-08 POS 결제 취소 b7ef25d0)
+📊 종합 판정: 통과(머지 가능 · 차단 없음, 권장 P-1·P-2). 마이그레이션은 build 에 migrate deploy 가 없으므로 **배포 전 apply_migration 필수**(안 하면 플러그인 GET·CLAIM_PAY 가 칸 없음으로 실패 → 현장 결제 전체 정지).
+✅ 환불은 settleCancelForRow(토스 재조회 order)만 · report 는 기록만 · MARK_REFUND+refundPaidPaymentInTx 한 트랜잭션 조건부 · 일부/누락 결제는 PARTIAL(안전 방향) · 플러그인 ID 는 서버 DB 값·getPayment orderId 대조 · 마이그레이션 NULL 허용 칸만·CHECK 는 NULL 통과. 테스트 루트 3160-0(보고 3165와 5건 차이)·플러그인 65-0.
 
 ---
 
@@ -68,6 +74,8 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-08 | developer 수정 1차(claude/pos-auto-charge, 검수 권장 5건): P-1 납부 기록 틈에 취소가 먼저 오면 — 취소 확정은 요청이 DONE 이어도 청구 PAID 면 환불(수렴), 청구 미납·방금 PAID 면 알림 미루고 retryLater, 납부 기록 직후 cancelState 재확인→DONE 이면 바로 환불(정상·복구 두 경로), 슬랙 문구는 실제 청구 상태대로 · P-2 토스 POS 납부 건은 «환불» 메뉴 숨김 · P-3 플러그인 결제 조회 실패·주문번호 없음이면 취소 안 하고 failed · P-4 POS 취소 보고 뒤 3분 토스 확인 없으면 창 안내. 사이트 tsc 0·가드 5+본 3167 통과, 플러그인 tsc 0·66 통과, zip 재생성 | 검수 대기 |
+| 11-08 | reviewer: POS 결제 취소(0bded3e8..66c2cdd6) 검수 — 차단 0·권장 2(P-1 납부기록/취소 경합, P-2 TOSS_POS «환불» 메뉴). 테스트 3160-0·65-0 | 통과 |
 | 11-08 | developer(claude/pos-auto-charge): 사이트 «결제 취소» → POS 결제 취소 → 토스 웹훅 확인 시 청구 REFUNDED. 마이그레이션 20261108120000_pos_charge_cancel(칸 추가만·**운영 미적용, 코드보다 먼저 적용**) · 환불 쓰기 = payment-ledger refundPaidPaymentInTx(트랜잭션) · 분할 결제는 전부 취소일 때만(일부=PARTIAL+알림) · POS 직접 취소도 같은 길 · 플러그인 cancel.ts(선점→getPayment→payment.cancel→재확인→보고) · 롱폴링 cancels[]·cancels=1 일 때만 깨움 · ALREADY_DONE+청구서 미납이면 30초 임대 뒤 납부 기록 복구 · 웹훅 4초 초과 시 after() · 분할 대기 retryLater(웹훅 미완료로 둬 스윕 재확인, 만료 뒤 HOLD) · justPaid=paidRecordedAt 기준. 사이트 tsc 0·test 3165-0, 플러그인 tsc 0·test 65-0, zip 재생성 | 검수 대기 |
 | 11-08 | developer(claude/pos-auto-charge): POS 즉시 결제창 — ① charge.ts 금액 검사: addLineItem 반환값 대신 다시 읽기(최대 3번·0.3초), 기준=항목 1개·항목가×수량=금액·면세·메모 번호, 합계는 >0 이고 다를 때만 불일치, 보고 reason 에 실제 값(S-704715 대응) ② 롱폴링 `?wait=20&known=` (src/lib/pos/plugin-long-poll.mjs 순수 루프·1초 EXISTS·maxDuration 30·abort) + 워커 25초 제한·연속 조기응답 0→14초 완화(정상 30분 90번·최악 133번) ③ 자동 경로 silent(alert 없음)·다음 대기 먼저 예약·자동 1건 ④ 창 문구 «보통 몇 초 안에». 사이트 tsc 0·test 3114-0, 플러그인 tsc 0·test 53-0, zip 재생성 | 검수 대기 |
 | 11-08 | developer(claude/pos-auto-charge-site): «현장 결제» 창 단순화 — 플러그인 자동 결제창 전제로 큰 결제 번호·메모 입력 안내·30분·새로고침 제거, «POS로 결제 보내기»→«POS로 보냈어요 · 결제 기다리는 중»(3초 자동 읽기, 탭 숨김·창 닫힘 시 멈춤)·«요청 취소». 서버 매칭·shortCode 그대로(보류·지난 요청 줄 작은 글씨만). tests/pos-charge-modal.test.mjs 3건 신설. tsc 0·npm test 3104-0 | 검수 대기 |
@@ -77,4 +85,3 @@
 | 11-07 | developer(claude/toss-pos-plugin): 토스 POS 플러그인 apps/toss-pos-plugin(자체 package.json·tsconfig, 루트 tsconfig exclude·eslint ignore 1줄씩). 워커(30초 폴링·지수 백오프·토스트 [결제하기]→선점→draftOrder 비었는지 2회 확인→면세 항목 id0·메모/상품코드 STIZ:S-xxxx→startPayment, paid/cancel 은 order.getOrder 로 우리 주문만 참고 보고)+탭(대기 요청·미납 검색·토큰 secureStore). SDK 0.0.31 문서·타입 직접 확인: **주문 전체 메모 함수 없음 → 서버 웹훅은 lineItems[].memo/item.code 도 봐야**. 운영 매장은 라이브 검수+VAN 대리점 활성화 필요. 테스트 37/37·tsc 0·zip 2개 재검증 OK. main 미머지 | 검수 대기 |
 | 11-07 | developer(claude/toss-tax-free): 토스 면세 정리 — 요청 2곳 taxFreeAmount 는 10-29(9960667a)에 이미 반영돼 있어, 계산을 src/lib/payments/taxFree.ts(taxFreeAmountFor·describeTaxFreeMismatch) 한 곳으로 모으고 승인 응답(finalizeVerifiedTossPayment·심사 success) 면세 아님이면 console.warn. 셔틀비 면세 = 원장 10-29 결정. 저장은 기존 rawResponse. 화면 변경 0줄. tsc·npm test 3057/3057. main 미머지 | 검수 대기 |
 | 11-07 | developer(claude/kakao-chat-flows, 690e2701·d60b7070·084c6767·8f2e3053): 카카오 대화 완결 — ①결석 신청·취소(kakao-absence-flow → reportRegularAbsence/cancelRegularAbsence) ②당일 셔틀 안 탐·다른 곳·취소(kakao-shuttle-flow → submit/cancelShuttleException) ③정규 셔틀 신청·중단·장소·시간 = 요일·방향·장소·시작일을 structuredJson(effectiveDate·shuttleIntent·details)에 담아 SUBMITTED 접수 ④RENTAL 의도+대관 카드(/rental 링크만, 셔틀·정책보다 앞). 공용 상태 저장 kakao-flow-store(흐름 열 때 보강·결석·셔틀·초안 모두 닫음). 스키마 변경 없음. tsc·npm test 3002/3002. main 미머지 → reviewer·security-reviewer 대기 | 검수 대기 |
-| 11-07 | developer(체육관 대관): 공개 /rental(안내·날짜칩·1시간 칸·인원/냉난방·실시간 요금·동의·완료 화면에만 계좌) + 관리자 /admin/rental(한 줄 행·상태 칩·⚡/상세 패널·확인 창, 승인→입금 확인→사용 완료→환불·취소) + GymRentalRequest(EXCLUDE 겹침 제약·RLS) + 문자 규칙 4종(원장 켬·신청자 3종 끔+env 스위치). 운영 DB 시험 실행(BEGIN…ROLLBACK)으로 겹침 제약 23P01 확인. 실제 적용·머지·배포는 독립 검수 후. tsc 0·eslint 0·전체 2993 통과(새 19) | 검수 대기 |
