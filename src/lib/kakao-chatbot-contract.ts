@@ -21,13 +21,22 @@ export type ParentRequestKind =
   | "SHUTTLE_SKIP" | "SHUTTLE_LOCATION" | "SHUTTLE_START_STOP" | "SHUTTLE_CHANGE" | "SHUTTLE_FEE"
   | "PAYMENT_CONFIRM" | "BILLING_CORRECTION" | "RECEIPT" | "REFUND"
   | "CLASS_CHANGE" | "CLASS_ADD" | "PAUSE" | "RESUME" | "WITHDRAW"
-  | "CONTACT_CHANGE" | "CONSULTATION" | "HUMAN" | "UNKNOWN";
+  | "CONTACT_CHANGE" | "CONSULTATION" | "RENTAL" | "HUMAN" | "UNKNOWN";
 
 export function getKakaoUserKey(payload: KakaoSkillPayload): string | null {
   const user = payload.userRequest?.user;
   const propertyKey = user?.properties?.plusfriendUserKey ?? user?.properties?.botUserKey;
   const value = typeof propertyKey === "string" ? propertyKey : user?.id;
   return typeof value === "string" && value.trim().length <= 200 ? value.trim() : null;
+}
+
+// 체육관 대관 문의. 「대관 차량 되나요」가 셔틀로 새지 않도록 셔틀 검사보다 앞에서 본다.
+// 「체육관/코트/농구장 + 빌리다·대여·렌트」도 대관이다(「농구공 대여」처럼 장소가 없는 말은 아니다).
+const RENTAL_PATTERN = /대관|(체육관|코트|농구장|구장)\s*(을|를|좀|도)?\s*(빌|대여|렌트|렌탈)/;
+
+/** 체육관 대관 문의인가(연결·미연결 모두 같은 기준) */
+export function isKakaoRentalIntent(source: string): boolean {
+  return RENTAL_PATTERN.test(source.replace(/\s+/g, " ").trim());
 }
 
 export function classifyParentUtterance(source: string): ParentRequestKind {
@@ -43,6 +52,7 @@ export function classifyParentUtterance(source: string): ParentRequestKind {
   if (/복귀|다시\s*다니/.test(text)) return "RESUME";
   if (/수업.*추가|반.*추가/.test(text)) return "CLASS_ADD";
   if (/반\s*변경|요일.*변경|시간.*변경|옮기/.test(text)) return "CLASS_CHANGE";
+  if (RENTAL_PATTERN.test(text)) return "RENTAL";
   // 「차」는 독립 단어(앞에 한글이 붙지 않고, 뒤가 띄어쓰기·끝·「를」)일 때만 셔틀로 본다.
   // 예전 /차\s/ 는 「주차 가능한가요?」의 「차 」까지 잡아 정책 질문이 셔틀 접수로 샜다(주차·자차·정차·차감·차례 등 합성어 제외).
   // 단 학원차·통학차·봉고차·노란차·픽업차·승합차는 셔틀을 부르는 말이라 앞말 예외로 허용한다(검수 회귀 수정).
@@ -121,4 +131,29 @@ export function buildKakaoSkillResponse(input: {
         }),
     },
   };
+}
+
+// ── 체육관 대관 안내 ─────────────────────────────────────────────────────
+// 연결·미연결 모두 같은 카드를 받는다. 계좌는 넣지 않는다(신청 페이지에서 안내).
+// 신청 페이지(/rental)는 별도 브랜치에서 배포된다 — 여기서는 링크만 건다.
+export const KAKAO_RENTAL_TEXT = [
+  "· 요금: 1시간 40,000원, 이후 1시간마다 30,000원",
+  "· 냉난방: 시간당 5,000원",
+  "· 10명 초과 시 1인당 시간당 3,000원",
+  "· 보증금 20,000원(사용 후 환불)",
+  "· 실내 운동화 필수",
+  "· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.",
+  "",
+  "아래 ‘대관 신청하기’에서 날짜·시간을 신청해 주세요.",
+].join("\n");
+
+/** 대관 안내 카드(요금·주의사항 + 신청 버튼). quickReplies 는 연결 여부에 따라 다르게 준다. */
+export function kakaoRentalReply(origin: string, quickReplies: string[] = ["체험 문의", "상담 안내"]) {
+  const base = origin.replace(/\/+$/, "");
+  return buildKakaoSkillResponse({
+    title: "체육관 대관 안내",
+    text: KAKAO_RENTAL_TEXT,
+    buttons: [{ action: "webLink", label: "대관 신청하기", webLinkUrl: `${base}/rental` }],
+    quickReplies,
+  });
 }

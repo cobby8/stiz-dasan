@@ -104,8 +104,11 @@ function makeDb({ credits = null, students = null } = {}) {
         .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 1)
         .map((row) => ({ id: row.id, structuredJson: structuredClone(row.structuredJson) }));
     }
-    if (/INSERT INTO "KakaoParentIntake"/.test(sql) && /kakao:makeup:/.test(sql)) {
-      const row = { id: `flow-${++db.seq}`, identityId: args[0], studentId: args[1], kind: "MAKEUP", sourceText: args[2], structuredJson: JSON.parse(args[3]), status: "MAKEUP_FLOW", updatedAt: Date.now() };
+    if (/INSERT INTO "KakaoParentIntake"/.test(sql) && /kakao:(makeup|flow):/.test(sql)) {
+      // 보강 흐름(kakao:makeup:)과 결석·셔틀 흐름(kakao:flow:)이 같은 표를 쓴다 — SQL 에 적힌 kind·status 를 읽는다
+      const status = /'([A-Z_]+_FLOW)'/.exec(sql)?.[1] ?? "MAKEUP_FLOW";
+      const kind = /,'([A-Z_]+)',\$3/.exec(sql)?.[1] ?? "MAKEUP";
+      const row = { id: `flow-${++db.seq}`, identityId: args[0], studentId: args[1], kind, sourceText: args[2], structuredJson: JSON.parse(args[3]), status, updatedAt: Date.now() };
       db.intakes.push(row);
       return [{ id: row.id }];
     }
@@ -175,7 +178,8 @@ function makeDb({ credits = null, students = null } = {}) {
   async function execute(sql, ...args) {
     db.calls.push(sql);
     if (/UPDATE "KakaoParentIntake" SET status='CANCELED'.*WHERE "identityId"=\$1 AND status IN/s.test(sql)) {
-      const statuses = /'MAKEUP_FLOW'/.test(sql) ? ["DRAFT", "NEEDS_DETAILS", "MAKEUP_FLOW"] : ["DRAFT", "NEEDS_DETAILS"];
+      // SQL 의 IN (...) 목록을 그대로 읽는다(보강 흐름을 열면 결석·셔틀 흐름도 닫히는지까지 본다)
+      const statuses = [.../status IN \(([^)]*)\)/.exec(sql)[1].matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
       let n = 0;
       for (const row of db.intakes) if (row.identityId === args[0] && statuses.includes(row.status)) { row.status = "CANCELED"; n += 1; }
       return n;
@@ -568,6 +572,23 @@ test("챗봇 우선순위: 보강은 대화 흐름, 정책 질문·다른 업무
   db.intakes.push({ id: "d1", identityId: "i1", studentId: "s1", kind: "CONSULTATION", sourceText: "문의", status: "DRAFT", updatedAt: Date.now() });
   await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "r7");
   assert.equal(db.intakes.find((row) => row.id === "d1").status, "CANCELED");
+});
+
+test("챗봇 우선순위(2026-11-07): 대관은 카드, 당일 셔틀은 셔틀 대화, 보강 대화 중 셔틀 말이면 보강 대화가 닫힌다", async () => {
+  const db = makeDb();
+  const neverPolicy = async () => assert.fail("정책 답변으로 가지 않는다");
+  const rental = await chatbot.handleLinkedMessage(IDENTITY, "대관 차량 되나요?", "q1", neverPolicy);
+  assert.equal(rental.template.outputs[0].textCard.title, "체육관 대관 안내");
+  assert.match(rental.template.outputs[0].textCard.buttons[0].webLinkUrl, /\/rental$/);
+
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "q2");
+  const shuttle = await chatbot.handleLinkedMessage(IDENTITY, "내일 셔틀 안 타요", "q3", neverPolicy);
+  assert.match(textOf(shuttle), /등원·하원 중 어느 쪽/);
+  assert.ok(db.intakes.every((row) => row.status !== "MAKEUP_FLOW"), "보강 대화는 닫힌다");
+  assert.equal(db.intakes.filter((row) => row.status === "SHUTTLE_FLOW").length, 1);
+  // 셔틀 대화 중 「보강 신청」이면 셔틀 대화도 닫힌다(동시에 두 흐름이 살아 있지 않다)
+  await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "q4");
+  assert.equal(db.intakes.filter((row) => row.status === "SHUTTLE_FLOW").length, 0);
 });
 
 test("소스 계약: raw SQL 만, 보호자 조건, 웹과 같은 예약·취소 함수", () => {

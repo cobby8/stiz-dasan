@@ -9,8 +9,8 @@ import {
   type KakaoSkillPayload,
   type LinkedPolicyHook,
 } from "@/lib/kakao-parent-chatbot";
-import { getKakaoRequestId, type ParentRequestKind } from "@/lib/kakao-chatbot-contract";
-import { hasKakaoNewEnrollmentHint, isKakaoParentAuthIntent, kakaoConnectLinkReply, kakaoGuestEntry } from "@/lib/kakao-guest-entry";
+import { getKakaoRequestId, isKakaoRentalIntent, type ParentRequestKind } from "@/lib/kakao-chatbot-contract";
+import { hasKakaoNewEnrollmentHint, isKakaoParentAuthIntent, kakaoConnectLinkReply, kakaoGuestEntry, kakaoRentalReply } from "@/lib/kakao-guest-entry";
 import { guestPolicyEscalateResponse, isGuestPolicyCandidate, runPolicyFlow } from "@/lib/kakao-policy-qa";
 import { hashPolicyUserKey, realPolicyFlowDeps } from "@/lib/kakao-policy-qa-service";
 
@@ -59,6 +59,8 @@ export async function POST(request: NextRequest) {
     const identity = await resolveIdentity(botId, userKey);
     if (!identity || identity.status !== "ACTIVE" || !identity.parentUserId) {
       const origin = process.env.NEXT_PUBLIC_SITE_URL || request.nextUrl.origin;
+      // 대관 문의는 정책 답변(Gemini)보다 먼저 정해진 안내 카드로 답한다(요금이 바뀌어도 카드 한 곳만 고치면 된다).
+      if (isKakaoRentalIntent(utterance)) return NextResponse.json(kakaoRentalReply(origin));
       // 인증 의도·신규 신호(체험·수강 신청·상담 등)가 아닌 "질문"만 정책 답변을 시도한다.
       // 답을 못 하면 원장님 확인 안내 + 상담 버튼. 꺼짐·한도 초과면 null → 아래 기존 안내.
       if (isGuestPolicyCandidate(utterance, isKakaoParentAuthIntent(utterance), hasKakaoNewEnrollmentHint(utterance))) {

@@ -78,3 +78,33 @@ test("인증 링크 안내 — 15분·활성화 안내, 재사용/교체 문구"
   assert.match(card(reused).description, /다시 보여드려요\. 9분 안에 열어 주세요/);
   assert.match(card(reused).description, /기존 학부모 계정 활성화/);
 });
+
+// ── 체육관 대관(2026-11-07) ─────────────────────────────────────────────
+test("대관 문의는 상담·인증·셔틀보다 먼저 대관 카드 — 요금·실내화·주차 안내 + 신청 버튼, 계좌는 없다", async () => {
+  const { kakaoRentalReply } = await loadTsModule("src/lib/kakao-guest-entry.ts");
+  for (const text of ["대관 문의", "대관 차량 되나요?", "체육관 빌릴 수 있나요", "코트 대여 가능한가요", "대관비 얼마예요", "기존 회원인데 대관 되나요"]) {
+    const result = kakaoGuestEntry(text, "https://example.test/");
+    assert.ok(result, text);
+    assert.equal(card(result).title, "체육관 대관 안내", text);
+    const button = card(result).buttons[0];
+    assert.equal(button.label, "대관 신청하기", text);
+    assert.equal(button.webLinkUrl, "https://example.test/rental", text);
+  }
+  const description = card(kakaoRentalReply("https://example.test")).description;
+  for (const word of [/40,000원/, /30,000원/, /시간당 5,000원/, /1인당 시간당 3,000원/, /보증금 20,000원\(사용 후 환불\)/, /실내 운동화 필수/, /주민센터 주차장/]) {
+    assert.match(description, word);
+  }
+  assert.doesNotMatch(description, /계좌|은행|입금/);
+  assert.ok([...description].length <= 400, "textCard 400자 안");
+  // 대관과 무관한 말은 기존 안내 그대로
+  assert.equal(card(kakaoGuestEntry("상담 안내", "https://example.test")).buttons[1].webLinkUrl, "https://example.test/apply");
+  assert.notEqual(card(kakaoGuestEntry("농구공 대여되나요", "https://example.test")).title, "체육관 대관 안내");
+});
+
+test("스킬 경로: 미연결 사용자의 대관은 정책 답변(Gemini)보다 먼저 카드", () => {
+  const route = readFileSync("src/app/api/kakao/chatbot/skill/route.ts", "utf8");
+  const rental = route.indexOf("if (isKakaoRentalIntent(utterance))");
+  assert.ok(rental > 0);
+  assert.ok(rental < route.indexOf("isGuestPolicyCandidate(utterance"), "대관 카드가 정책 답변보다 앞");
+  assert.ok(rental < route.indexOf("await issueLink"));
+});

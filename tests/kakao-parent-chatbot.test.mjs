@@ -90,3 +90,28 @@ test("셔틀 판정의 「차」는 독립 단어만 — 주차·자차·차감 
     assert.equal(classifyParentUtterance(source), "SHUTTLE_SKIP", source);
   }
 });
+
+test("경계 사례 — 대관·주차·결석 취소·당일 셔틀(2026-11-07)", () => {
+  // 「주차 가능한가요」는 셔틀로 새면 안 된다(483562f8 회귀)
+  assert.doesNotMatch(classifyParentUtterance("주차 가능한가요?"), /^SHUTTLE_|^RENTAL$/);
+  // 대관은 셔틀 검사보다 앞 — 「차량」이 있어도 대관
+  assert.equal(classifyParentUtterance("대관 차량 되나요?"), "RENTAL");
+  assert.equal(classifyParentUtterance("체육관 빌릴 수 있나요"), "RENTAL");
+  assert.equal(classifyParentUtterance("코트 대여 문의드려요"), "RENTAL");
+  assert.notEqual(classifyParentUtterance("농구공 대여되나요"), "RENTAL");
+  // 결석 취소는 결석(대화 흐름이 「취소」로 취소 목록을 연다), 당일 셔틀은 미탑승
+  assert.equal(classifyParentUtterance("결석 취소할게요"), "REGULAR_ABSENCE");
+  assert.equal(classifyParentUtterance("내일 셔틀 안 타요"), "SHUTTLE_SKIP");
+});
+
+test("연결된 학부모 경로: 대관 카드는 정책 답변·접수보다 먼저, 결석·셔틀 대화는 보강 다음", async () => {
+  const source = await readFile("src/lib/kakao-parent-chatbot.ts", "utf8");
+  const rental = source.indexOf('if (kind === "RENTAL")');
+  assert.ok(rental > 0);
+  assert.ok(rental < source.indexOf("isLinkedPolicyCandidate(kind"), "대관이 정책 답변보다 앞");
+  const makeup = source.indexOf("await handleMakeupConversation(");
+  const absence = source.indexOf("await handleAbsenceConversation(");
+  const shuttle = source.indexOf("await handleShuttleConversation(");
+  const draft = source.indexOf("await latestDraft(identity.id)");
+  assert.ok(makeup > 0 && makeup < absence && absence < shuttle && shuttle < draft);
+});

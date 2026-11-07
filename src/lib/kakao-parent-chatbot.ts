@@ -8,6 +8,7 @@ import {
 import {
   buildKakaoSkillResponse,
   classifyParentUtterance,
+  kakaoRentalReply,
   type ParentRequestKind,
 } from "@/lib/kakao-chatbot-contract";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
@@ -192,7 +193,7 @@ const KIND_LABEL: Record<ParentRequestKind, string> = {
   SHUTTLE_SKIP: "당일 셔틀 미탑승", SHUTTLE_LOCATION: "당일 다른 장소 탑승", SHUTTLE_START_STOP: "정규 셔틀 신청·중단",
   SHUTTLE_CHANGE: "셔틀 장소·시간 변경", SHUTTLE_FEE: "셔틀비 문의·면제", PAYMENT_CONFIRM: "입금 확인", BILLING_CORRECTION: "청구 금액 확인",
   RECEIPT: "영수증 요청", REFUND: "환불·결제 취소", CLASS_CHANGE: "반·요일·시간 변경", CLASS_ADD: "수업 추가", PAUSE: "휴원",
-  RESUME: "복귀", WITHDRAW: "퇴원", CONTACT_CHANGE: "연락처 변경", CONSULTATION: "기타 상담", HUMAN: "상담원 연결", UNKNOWN: "내용 확인 필요",
+  RESUME: "복귀", WITHDRAW: "퇴원", CONTACT_CHANGE: "연락처 변경", CONSULTATION: "기타 상담", RENTAL: "체육관 대관 문의", HUMAN: "상담원 연결", UNKNOWN: "내용 확인 필요",
 };
 
 export function kakaoText(text: string, quickReplies: string[] = [], webLink?: { label: string; url: string }) {
@@ -462,6 +463,8 @@ export async function handleLinkedMessage(
   if (kind === "UNKNOWN" && /^(메뉴|처음|시작)$/.test(text)) {
     return kakaoText(`${parentDisplayName}, 무엇을 도와드릴까요? 평소처럼 문장으로 말씀하셔도 알아들을게요.`, ["결석·보강", "셔틀", "청구·영수증", "수강 변경", "정보·상담"]);
   }
+  // 체육관 대관 문의: 정책 답변·접수보다 먼저 정해진 안내 카드(미연결 사용자와 같은 카드)
+  if (kind === "RENTAL") return kakaoRentalReply(siteUrl(""), ["메뉴", "상담원 연결"]);
   const directKind = DIRECT_KIND_LINKS[kind];
   if (directKind) {
     return kakaoText(

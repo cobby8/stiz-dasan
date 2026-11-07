@@ -1,4 +1,7 @@
-import { buildKakaoSkillResponse, type KakaoCardButton } from "@/lib/kakao-chatbot-contract";
+import { buildKakaoSkillResponse, isKakaoRentalIntent, kakaoRentalReply, type KakaoCardButton } from "@/lib/kakao-chatbot-contract";
+
+// 대관 안내 카드는 연결된 학부모 경로도 같이 쓰므로 계약 모듈에 있다(여기서도 다시 내보낸다).
+export { kakaoRentalReply } from "@/lib/kakao-chatbot-contract";
 
 // 인증 흐름으로 보낼 정확한 메뉴 문구(바로가기 버튼이 보내는 말)
 const AUTH_EXACT = /^(기존 수강생 인증|학부모 인증하기|인증|계정 연결)$/;
@@ -31,6 +34,8 @@ const AUTH_BUTTON: KakaoCardButton = { action: "message", label: "기존 수강�
 /** 공개 안내만 반환한다. 학생 조회·접수·인증 레코드 생성은 하지 않는다. */
 export function kakaoGuestEntry(utterance: string, origin: string) {
   const text = utterance.replace(/\s+/g, " ").trim();
+  // 대관은 «문의» 상담 분기·인증보다 먼저(「대관 문의」가 상담 안내로, 「기존 회원 대관」이 인증으로 새지 않게)
+  if (isKakaoRentalIntent(text)) return kakaoRentalReply(origin);
   if (isKakaoParentAuthIntent(text)) return null;
   const base = origin.replace(/\/+$/, "");
   const isTrial = /체험/.test(text);
