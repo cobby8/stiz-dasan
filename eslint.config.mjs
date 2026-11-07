@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 토스 POS 플러그인은 자체 package.json·tsconfig 로 따로 검사한다(사이트 빌드와 분리)
+    "apps/toss-pos-plugin/**",
   ]),
 ]);
 

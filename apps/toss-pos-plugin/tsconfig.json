@@ -1,0 +1,18 @@
+{
+  // 플러그인 전용 타입 검사 설정 — 사이트(루트) tsconfig 와 완전히 분리한다.
+  // node --test 가 .ts 파일을 «타입만 지우고» 바로 실행하므로, 지울 수 없는 문법(enum 등)은 금지한다.
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "WebWorker"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

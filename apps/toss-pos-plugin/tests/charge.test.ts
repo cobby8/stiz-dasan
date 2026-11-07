@@ -1,0 +1,266 @@
+// 결제 흐름 테스트 — 가짜 SDK 로 «다른 주문 담김 · 중복 클릭 · 선점 실패 · 정상 · 결제 신호»를 확인
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { RECENT_KEY, addRecent, createChargeFlow, parseRecent } from "../src/core/charge.ts";
+import type { ServerApi, ApiResult } from "../src/core/api.ts";
+import type { ChargeRequest, ReportBody } from "../src/core/contract.ts";
+import type { DraftLineItemInput, DraftOrderLike, OrderLike, PosSdkLike } from "../src/core/pos-types.ts";
+import { pickNotifications } from "../src/core/notify.ts";
+import type { NotifyLog } from "../src/core/notify.ts";
+import { createTokenStore, maskToken, normalizeToken } from "../src/core/token.ts";
+
+const NOW = Date.parse("2026-11-07T10:00:00+09:00");
+
+const REQ: ChargeRequest = {
+  id: "req-1",
+  shortCode: "S-4821",
+  studentName: "김○○",
+  title: "수강료(11월)",
+  amount: 100000,
+  taxFreeAmount: 100000,
+  expiresAt: "2026-11-07T10:30:00+09:00",
+  status: "PENDING",
+};
+
+/** 가짜 POS: 호출 순서를 log 에 남긴다 */
+function fakeSdk(opts: { draftItems?: number; secondDraftItems?: number; orders?: Record<string, OrderLike> } = {}) {
+  const log: string[] = [];
+  const store = new Map<string, string>();
+  let draft: DraftOrderLike = { lineItems: Array.from({ length: opts.draftItems ?? 0 }, (_, i) => ({ key: `k${i}`, quantity: 1 })) };
+  let gets = 0;
+  const sdk: PosSdkLike = {
+    draftOrder: {
+      async get() {
+        gets += 1;
+        log.push("draft.get");
+        if (gets === 2 && opts.secondDraftItems) {
+          draft = { lineItems: Array.from({ length: opts.secondDraftItems }, (_, i) => ({ key: `x${i}`, quantity: 1 })) };
+        }
+        return draft;
+      },
+      async clear() {
+        log.push("draft.clear");
+        draft = { lineItems: [] };
+      },
+      async addLineItem(item: DraftLineItemInput) {
+        log.push(`draft.add:${item.memo}:${item.itemPrice.priceValue}:${item.itemPrice.isTaxFree}`);
+        draft = { lineItems: [{ key: item.key, memo: item.memo, quantity: 1 }], price: { orderPriceValue: item.itemPrice.priceValue } };
+        return draft;
+      },
+      async startPayment() {
+        log.push("draft.startPayment");
+      },
+    },
+    order: {
+      async getOrder(id: string) {
+        log.push(`order.get:${id}`);
+        return opts.orders?.[id] ?? { id, lineItems: [{ memo: "아메리카노" }] };
+      },
+    },
+    payment: {
+      async getPayment(id: string) {
+        return { id, orderId: "o", amountMoney: 100000, taxExemptMoney: 100000 };
+      },
+    },
+    toast: {
+      success: (p) => log.push(`toast.success:${p.message}`),
+      warn: (p) => log.push(`toast.warn:${p.message}`),
+      error: (p) => log.push(`toast.error:${p.message}`),
+    },
+    alert: { open: (p) => log.push(`alert:${p.message}`) },
+    storage: {
+      async get(k: string) {
+        return store.get(k);
+      },
+      async set(k: string, v: string) {
+        store.set(k, v);
+      },
+    },
+  };
+  return { sdk, log, store };
+}
+
+function fakeApi(claimResult: ApiResult<ChargeRequest> = { ok: true, data: REQ }, reportStatus = "SENT") {
+  const calls: string[] = [];
+  const reports: { id: string; body: ReportBody }[] = [];
+  const api = {
+    async listRequests() {
+      return { ok: true as const, data: [] };
+    },
+    async claim(id: string) {
+      calls.push(`claim:${id}`);
+      return claimResult;
+    },
+    async chargeUnpaid(pid: string) {
+      calls.push(`chargeUnpaid:${pid}`);
+      return claimResult;
+    },
+    async report(id: string, body: ReportBody) {
+      calls.push(`report:${id}:${body.event}`);
+      reports.push({ id, body });
+      return { ok: true as const, data: reportStatus };
+    },
+    async searchUnpaid() {
+      return { ok: true as const, data: [] };
+    },
+  } as unknown as ServerApi;
+  return { api, calls, reports };
+}
+
+test("정상: 선점 → 비우기 → 면세 항목 추가 → 결제 시작, 최근 목록에 기록", async () => {
+  const { sdk, log, store } = fakeSdk();
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.deepEqual(calls, ["claim:req-1"]);
+  assert.deepEqual(log, ["draft.get", "draft.get", "draft.clear", "draft.add:STIZ:S-4821:100000:true", "draft.startPayment"]);
+  assert.equal(parseRecent(store.get(RECENT_KEY))[0].id, "req-1");
+});
+
+test("다른 주문이 담겨 있으면: 서버를 부르지 않고 덮어쓰지 않는다", async () => {
+  const { sdk, log } = fakeSdk({ draftItems: 2 });
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "draft_not_empty");
+  assert.deepEqual(calls, []);
+  assert.ok(!log.includes("draft.clear"));
+  assert.ok(log.some((l) => l.startsWith("alert:결제 화면에 다른 상품")));
+});
+
+test("선점하는 사이 상품이 담기면: 덮어쓰지 않고 서버에 start_failed 보고", async () => {
+  const { sdk, log } = fakeSdk({ secondDraftItems: 1 });
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "draft_not_empty");
+  assert.deepEqual(calls, ["claim:req-1", "report:req-1:start_failed"]);
+  assert.ok(!log.includes("draft.clear"));
+});
+
+test("선점 실패(이미 가져감): 주문을 건드리지 않음", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api } = fakeApi({ ok: false, kind: "conflict", code: 409, message: "이미 다른 곳에서" });
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "claim_failed");
+  assert.ok(!log.some((l) => l.startsWith("draft.add")));
+  assert.ok(log.includes("toast.warn:이미 다른 곳에서"));
+});
+
+test("과세 섞인 요청: 결제 화면을 열지 않고 start_failed 보고", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api, calls } = fakeApi({ ok: true, data: { ...REQ, taxFreeAmount: 0 } });
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "invalid");
+  assert.ok(calls.includes("report:req-1:start_failed"));
+  assert.ok(!log.includes("draft.startPayment"));
+});
+
+test("중복 클릭: 준비 중 두 번째 클릭은 무시(선점 1번만)", async () => {
+  const { sdk } = fakeSdk();
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  const [a, b] = await Promise.all([flow.startCharge(REQ), flow.startCharge(REQ)]);
+  assert.deepEqual([a, b].sort(), ["busy", "started"]);
+  assert.equal(calls.filter((c) => c.startsWith("claim")).length, 1);
+  assert.equal(flow.isBusy(), false);
+});
+
+test("POS 오류: 토스트로 안내하고 잠금 풀림", async () => {
+  const { sdk, log } = fakeSdk();
+  sdk.draftOrder.startPayment = async () => {
+    throw new Error("boom");
+  };
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "error");
+  assert.ok(log.some((l) => l.startsWith("toast.error:")));
+  assert.ok(calls.includes("report:req-1:start_failed"));
+  assert.equal(flow.isBusy(), false);
+});
+
+test("미납 목록에서 결제: chargeUnpaid 로 선점", async () => {
+  const { sdk } = fakeSdk();
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startChargeForUnpaid("pay-9"), "started");
+  assert.deepEqual(calls, ["chargeUnpaid:pay-9"]);
+});
+
+test("결제 신호: 우리 주문이 아니면 무시, 우리 주문이면 1번만 보고", async () => {
+  const { sdk, store } = fakeSdk({ orders: { o1: { id: "o1", lineItems: [{ memo: "STIZ:S-4821" }] } } });
+  store.set(RECENT_KEY, JSON.stringify([{ id: "req-1", shortCode: "S-4821", amount: 100000, at: NOW }]));
+  const { api, reports } = fakeApi(undefined, "PAID");
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.handlePaymentEvent("paid", "pX", "other"), "ignored");
+  assert.equal(await flow.handlePaymentEvent("paid", "p1", "o1"), "reported");
+  assert.equal(await flow.handlePaymentEvent("paid", "p1", "o1"), "ignored");
+  assert.deepEqual(reports, [
+    { id: "req-1", body: { event: "paid", tossOrderId: "o1", tossPaymentId: "p1", amount: 100000, taxExemptAmount: 100000 } },
+  ]);
+  assert.equal(await flow.handlePaymentEvent("cancel", "p1", "o1"), "reported");
+  assert.equal(reports[1].body.event, "cancel");
+});
+
+test("결제 신호: 이 기기에서 시작하지 않은 번호면 보고하지 않음(서버 웹훅이 맞춘다)", async () => {
+  const { sdk } = fakeSdk({ orders: { o1: { id: "o1", lineItems: [{ memo: "STIZ:S-9999" }] } } });
+  const { api, reports } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.handlePaymentEvent("paid", "p1", "o1"), "unknown");
+  assert.equal(reports.length, 0);
+});
+
+test("최근 목록: 망가진 값은 빈 목록, 같은 번호는 교체, 최대 20건", () => {
+  assert.deepEqual(parseRecent("{깨짐"), []);
+  assert.deepEqual(parseRecent(undefined), []);
+  let list = addRecent([], { id: "a", shortCode: "S-0001", amount: 1, at: 1 });
+  list = addRecent(list, { id: "b", shortCode: "S-0001", amount: 1, at: 2 });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, "b");
+  for (let i = 0; i < 30; i++) list = addRecent(list, { id: `x${i}`, shortCode: `S-${1000 + i}`, amount: 1, at: i });
+  assert.equal(list.length, 20);
+});
+
+test("알림 고르기: 새 요청 1번, 5분 뒤 다시, 최대 3번, 사라지면 기록 삭제", () => {
+  const log: NotifyLog = new Map();
+  const reqs = [REQ, { ...REQ, id: "sent", status: "SENT" }, { ...REQ, id: "old", expiresAt: "2026-11-07T00:00:00Z" }];
+  assert.deepEqual(pickNotifications(reqs, log, NOW).map((r) => r.id), ["req-1"]);
+  assert.deepEqual(pickNotifications(reqs, log, NOW + 60_000), []);
+  assert.deepEqual(pickNotifications(reqs, log, NOW + 5 * 60_000).map((r) => r.id), ["req-1"]);
+  assert.deepEqual(pickNotifications(reqs, log, NOW + 10 * 60_000).map((r) => r.id), ["req-1"]);
+  assert.deepEqual(pickNotifications(reqs, log, NOW + 15 * 60_000), []);
+  pickNotifications([], log, NOW + 16 * 60_000);
+  assert.equal(log.size, 0);
+});
+
+test("토큰: 모양 검사·마스킹·캐시(secureStore 를 매번 읽지 않음)", async () => {
+  assert.equal(normalizeToken("  " + "a".repeat(32) + " "), "a".repeat(32));
+  assert.equal(normalizeToken("짧음"), null);
+  assert.equal(normalizeToken("a".repeat(31) + " b"), null);
+  assert.equal(normalizeToken(123), null);
+  assert.equal(maskToken("abcdefgh"), "••••efgh");
+  assert.equal(maskToken(undefined), "없음");
+  let reads = 0;
+  const mem = new Map<string, string>();
+  const store = createTokenStore({
+    async get(k) {
+      reads += 1;
+      return mem.get(k);
+    },
+    async set(k, v) {
+      mem.set(k, v);
+    },
+    async del(k) {
+      mem.delete(k);
+    },
+  });
+  assert.equal(await store.get(), undefined);
+  assert.equal(await store.set("bad"), false);
+  assert.equal(await store.set("T".repeat(40)), true);
+  await store.get();
+  await store.get();
+  assert.equal(reads, 1);
+  store.reload();
+  assert.equal(await store.get(), "T".repeat(40));
+  assert.equal(reads, 2);
+  await store.clear();
+  assert.equal(await store.get(), undefined);
+});

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STIZ 현장 결제</title>
+    <link rel="stylesheet" href="./tab.css" />
+  </head>
+  <body>
+    <!-- 머리줄: 제목 + 연결 상태 + 새로고침 (한 줄) -->
+    <header class="bar">
+      <strong>STIZ 현장 결제</strong>
+      <span id="conn" class="pill">확인 중</span>
+      <span class="grow"></span>
+      <button id="refresh" class="btn">새로고침</button>
+      <button id="toggle-token" class="btn ghost">토큰</button>
+    </header>
+
+    <!-- 토큰 입력(평소엔 접혀 있음) -->
+    <section id="token-box" class="box" hidden>
+      <label for="token-input">사이트 연결 토큰 — 사이트 관리자 «POS 연결»에서 발급받아 붙여 넣으세요</label>
+      <div class="row">
+        <input id="token-input" type="password" autocomplete="off" placeholder="토큰 붙여 넣기" />
+        <button id="token-save" class="btn primary">저장</button>
+        <button id="token-clear" class="btn ghost">삭제</button>
+      </div>
+      <p id="token-state" class="muted"></p>
+    </section>
+
+    <p id="msg" class="msg" role="status"></p>
+
+    <!-- 대기 요청: 사이트에서 «현장 결제»를 누른 건 -->
+    <section>
+      <h2>대기 요청 <span id="req-count" class="muted"></span></h2>
+      <ul id="req-list" class="list"></ul>
+    </section>
+
+    <!-- 미납 검색: POS 에서 직접 골라 결제 -->
+    <section>
+      <h2>미납 검색</h2>
+      <form id="search-form" class="row">
+        <input id="search-q" type="search" placeholder="원생 이름 일부" minlength="1" />
+        <button class="btn">검색</button>
+      </form>
+      <ul id="unpaid-list" class="list"></ul>
+    </section>
+
+    <script src="./tab.js"></script>
+  </body>
+</html>
