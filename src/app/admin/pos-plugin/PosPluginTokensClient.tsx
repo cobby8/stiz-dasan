@@ -31,9 +31,9 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
             title: "새 POS 연결 코드 만들기",
             description:
                 activeCount > 0
-                    ? "새 코드를 만들면 지금 쓰는 코드 1개만 남기고 더 오래된 코드는 끊깁니다. POS 설정에 새 코드를 넣은 뒤 옛 코드를 끊어 주세요."
-                    : "만든 코드는 이 화면에서 한 번만 보입니다. 바로 POS 플러그인 설정에 붙여 넣어 주세요.",
-            confirmLabel: "코드 만들기",
+                    ? "새 POS 연결 코드를 만들면 지금 쓰는 코드 1개만 남기고 더 오래된 코드는 끊깁니다. POS 설정에 새 코드를 넣은 뒤 옛 코드를 끊어 주세요."
+                    : "만든 POS 연결 코드는 이 화면에서 한 번만 보입니다. 바로 POS 플러그인 설정에 붙여 넣어 주세요.",
+            confirmLabel: "POS 연결 코드 만들기",
             tone: "primary",
         });
         if (!ok) return;
@@ -53,7 +53,7 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
     async function handleRevoke(token: PosPluginTokenRow) {
         const ok = await confirm({
             title: `«${token.label}» 연결 끊기`,
-            description: "이 코드를 쓰는 POS 는 바로 요청을 못 가져갑니다. 되돌릴 수 없어 새 코드를 만들어야 합니다.",
+            description: "이 POS 연결 코드를 쓰는 POS 는 바로 요청을 못 가져갑니다. 되돌릴 수 없어 새 코드를 만들어야 합니다.",
             confirmLabel: "연결 끊기",
             tone: "danger",
         });
@@ -80,7 +80,7 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
             {newToken && (
                 // 주인공: 방금 만든 코드(한 번만 보임)
                 <section className="rounded-lg border border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] p-4">
-                    <p className="text-sm font-bold text-[var(--color-academy-ink)]">새 연결 코드 — 이 화면을 닫으면 다시 볼 수 없습니다</p>
+                    <p className="text-sm font-bold text-[var(--color-academy-ink)]">새 POS 연결 코드 — 이 화면을 닫으면 다시 볼 수 없습니다</p>
                     <p className="mt-2 break-all rounded-md bg-[var(--color-academy-surface)] p-3 font-mono text-sm text-[var(--color-academy-ink)]">{newToken}</p>
                     <div className="mt-3 flex items-center gap-2">
                         <button type="button" onClick={() => void handleCopy()} className="academy-button-primary">
@@ -105,7 +105,7 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
                         />
                     </label>
                     <button type="button" onClick={() => void handleIssue()} disabled={busy || !label.trim()} className="academy-button-primary">
-                        {busy ? "처리 중…" : "새 연결 코드 만들기"}
+                        {busy ? "처리 중…" : "새 POS 연결 코드 만들기"}
                     </button>
                 </div>
                 {message && (
@@ -117,10 +117,10 @@ export default function PosPluginTokensClient({ initialTokens }: { initialTokens
 
             <section className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
                 <h2 className="border-b border-[var(--color-academy-line)] px-4 py-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
-                    연결 코드 {tokens.filter((t) => t.active).length}개 사용 중
+                    POS 연결 코드 {tokens.filter((t) => t.active).length}개 사용 중
                 </h2>
                 {tokens.length === 0 ? (
-                    <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">아직 만든 코드가 없습니다.</p>
+                    <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">아직 만든 POS 연결 코드가 없습니다.</p>
                 ) : (
                     <ul>
                         {tokens.map((t) => (

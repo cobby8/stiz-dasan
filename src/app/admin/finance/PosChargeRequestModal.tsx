@@ -7,9 +7,9 @@ import { cancelPosChargeRequest, createPosChargeRequest, loadPosChargeRequest } 
 import type { AdminChargeRequestView } from "@/lib/pos/chargeRequestService";
 
 /**
- * «현장 결제» 창 — 청구서 1건을 토스 POS 로 받을 때 쓰는 결제 번호(S-4821)를 만들고 크게 보여 준다.
+ * «현장 결제» 창 — 청구서 1건을 토스 POS 로 받을 때 쓰는 결제 번호(S-482193)를 만들고 크게 보여 준다.
  *
- * 흐름: [결제 번호 만들기] → 번호·금액 크게 표시 → 선생님이 POS 주문 메모에 «STIZ:S-4821» 입력 후 카드 결제
+ * 흐름: [결제 번호 만들기] → 번호·금액 크게 표시 → 선생님이 POS 주문 메모에 «STIZ:S-482193» 입력 후 카드 결제
  *       → 토스가 결제를 알려 주면 서버가 확인해 납부완료로 바꾼다([결제 확인]으로 다시 볼 수 있다).
  * 이 창은 돈을 직접 바꾸지 않는다. 납부완료는 토스 결제 확인으로만 된다.
  */

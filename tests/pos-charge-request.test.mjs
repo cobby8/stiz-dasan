@@ -37,26 +37,30 @@ const transpile = async (file) =>
 
 // ───────────────────────── 1. 번호 ─────────────────────────
 
-test("번호: S-+4자리, 0 채움, 범위 밖은 오류", () => {
-  assert.equal(R.formatShortCode(7), "S-0007");
-  assert.equal(R.formatShortCode(4821), "S-4821");
-  assert.throws(() => R.formatShortCode(10000));
+test("번호: S-+6자리(오기입이 다른 요청과 우연히 맞을 확률 100만 분의 1), 0 채움, 범위 밖은 오류", () => {
+  assert.equal(R.formatShortCode(7), "S-000007");
+  assert.equal(R.formatShortCode(482193), "S-482193");
+  assert.throws(() => R.formatShortCode(1_000_000));
   assert.throws(() => R.formatShortCode(-1));
-  assert.equal(R.randomShortCode((max) => { assert.equal(max, 10000); return 42; }), "S-0042");
-  assert.ok(R.isShortCode("S-4821"));
-  assert.ok(!R.isShortCode("S-482"));
-  assert.ok(!R.isShortCode("s-4821"));
-  assert.equal(R.buildChargeMemo("S-4821"), "STIZ:S-4821");
-  assert.throws(() => R.buildChargeMemo("4821"));
+  assert.equal(R.randomShortCode((max) => { assert.equal(max, 1_000_000); return 42; }), "S-000042");
+  assert.ok(R.isShortCode("S-482193"));
+  assert.ok(!R.isShortCode("S-4821"), "4자리는 더 이상 번호가 아니다");
+  assert.ok(!R.isShortCode("s-482193"));
+  assert.equal(R.buildChargeMemo("S-482193"), "STIZ:S-482193");
+  assert.throws(() => R.buildChargeMemo("482193"));
+  assert.throws(() => R.buildChargeMemo("S-4821"));
 });
 
-test("번호: 무작위 번호는 항상 DB CHECK 형식(^S-[0-9]{4}$)에 맞는다", () => {
-  for (const n of [0, 1, 99, 999, 1000, 9999]) assert.match(R.randomShortCode(() => n), /^S-[0-9]{4}$/);
+test("번호: 무작위 번호는 항상 DB CHECK 형식(^S-[0-9]{6}$)에 맞는다", () => {
+  for (const n of [0, 1, 99, 9999, 100000, 999999]) assert.match(R.randomShortCode(() => n), /^S-[0-9]{6}$/);
 });
 
 // ───────────────────────── 2. 메모에서 번호 찾기 ─────────────────────────
 
-test("메모 파싱: 손으로 친 흔한 변형을 받아 S-dddd 로 정리한다", () => {
+test("메모 파싱: 손으로 친 흔한 변형을 받아 S-숫자 로 정리한다", () => {
+  for (const memo of ["STIZ:S-482193", "stiz: s-482193", "STIZ S482193", "STIZ：S-482193", "이시윤 / STIZ:S-482193 10월"]) {
+    assert.deepEqual(R.extractChargeCodesFromText(memo), ["S-482193"], memo);
+  }
   for (const memo of ["STIZ:S-4821", "stiz: s-4821", "STIZ S4821", "STIZ：S-4821", "이시윤 / STIZ:S-4821 10월", "STIZ:S 4821"]) {
     assert.deepEqual(R.extractChargeCodesFromText(memo), ["S-4821"], memo);
   }
@@ -100,9 +104,9 @@ test("현장 결제 대상: 수강료·셔틀비 미납만", () => {
 // ───────────────────────── 4. 매칭 판정 ─────────────────────────
 
 const EXPIRES = "2026-11-07T05:30:00Z"; // KST 14:30
-const baseReq = { status: "PENDING", amount: 180000, tossPaymentId: null, expiresAt: EXPIRES };
+const baseReq = { status: "PENDING", amount: 180000, taxFreeAmount: 180000, tossPaymentId: null, expiresAt: EXPIRES };
 const baseSite = { status: "PENDING", amount: 180000, type: "MONTHLY" };
-const pay = (over = {}) => ({ tossPaymentId: "tp-1", tossOrderId: "o-1", amount: 180000, approvedAtIso: "2026-11-07T14:20:00+09:00", ...over });
+const pay = (over = {}) => ({ tossPaymentId: "tp-1", tossOrderId: "o-1", amount: 180000, approvedAtIso: "2026-11-07T14:20:00+09:00", taxExemptAmount: 180000, ...over });
 const decide = (over = {}) =>
   R.decideChargeMatch({ request: baseReq, site: baseSite, approved: [pay()], others: [], nowMs: Date.parse("2026-11-07T05:20:00Z"), ...over });
 
@@ -117,6 +121,21 @@ test("매칭: 금액 불일치는 보류(HOLD) — 선생님이 POS 에서 금�
   const r = decide({ approved: [pay({ amount: 170000 })] });
   assert.equal(r.action, "HOLD");
   assert.match(r.reason, /170000원.*180000원/);
+});
+
+test("매칭: 토스 결제 면세 금액(taxExemptAmount)이 요청 면세액과 다르거나 못 읽으면 보류(세금 신고 보호)", () => {
+  const taxed = decide({ approved: [pay({ taxExemptAmount: 0 })] });
+  assert.equal(taxed.action, "HOLD");
+  assert.match(taxed.reason, /면세 금액\(0원\).*180000원/);
+  assert.equal(decide({ approved: [pay({ taxExemptAmount: 90000 })] }).action, "HOLD");
+  assert.equal(decide({ approved: [pay({ taxExemptAmount: null })] }).action, "HOLD");
+  assert.match(decide({ approved: [pay({ taxExemptAmount: undefined })] }).reason, /면세 금액을 확인하지 못했습니다/);
+  assert.equal(decide({ approved: [pay({ taxExemptAmount: "180000" })] }).action, "PAY", "문자열 숫자도 읽는다");
+});
+
+test("taxExemptAmountsOf: 결제 ID → 면세 금액, 칸이 없으면 null", () => {
+  const order = { payments: [{ id: 1, taxExemptAmount: 180000 }, { id: "x", taxExemptAmount: "" }, { id: "y" }] };
+  assert.deepEqual(R.taxExemptAmountsOf(order), { 1: 180000, x: null, y: null });
 });
 
 test("매칭: 청구서가 이미 납부·금액이 바뀜·취소면 보류", () => {
@@ -191,7 +210,8 @@ test("마이그레이션: 상태 CHECK 목록 = CHARGE_STATUS, 열린 상태 부
   }
   assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "PosChargeRequest_tossPaymentId_key"[\s\S]*?WHERE "tossPaymentId" IS NOT NULL/);
   assert.match(migration, /CHECK \("taxFreeAmount" BETWEEN 0 AND amount\)/);
-  assert.match(migration, /"shortCode" TEXT NOT NULL CHECK \("shortCode" ~ '\^S-\[0-9\]\{4\}\$'\)/);
+  assert.match(migration, /"shortCode" TEXT NOT NULL CHECK \("shortCode" ~ '\^S-\[0-9\]\{6\}\$'\)/);
+  assert.equal(R.SHORT_CODE_RE.source, String.raw`^S-\d{6}$`, "코드 형식 = DB CHECK(6자리)");
   assert.match(migration, /"tokenHash" TEXT NOT NULL UNIQUE CHECK \("tokenHash" ~ '\^\[0-9a-f\]\{64\}\$'\)/);
 });
 
@@ -220,7 +240,8 @@ const PRISMA_STUB = toDataUrl(`
       if (/r\\."tossOrderId" = \\$1 AND r\\.status = 'PAID'/.test(sql)) return S().paidRows ?? [];
       if (/r\\."shortCode" = \\$1/.test(sql)) return S().request ? [S().request] : [];
       if (/SET status = 'PAID'/.test(sql)) { if (S().claimThrows) throw new Error(S().claimThrows); return S().claimRows ?? []; }
-      if (/SET status = 'HELD'/.test(sql)) return [{ id: "r1" }];
+      if (/SET status = 'HELD'/.test(sql)) return S().holdRows ?? [{ id: "r1" }];
+      if (/SELECT status, "tossPaymentId" FROM "PosChargeRequest"/.test(sql)) return S().reread ? [S().reread] : [];
       if (/"slackNotifiedAt" = now\\(\\)|"cancelNotifiedAt" = now\\(\\)/.test(sql)) return [{ id: "r1" }];
       if (/SELECT status FROM "Payment"/.test(sql)) return [{ status: S().paymentStatusAfter ?? "PENDING" }];
       if (/FROM "PosPluginToken"/.test(sql)) return S().tokens ?? [];
@@ -257,16 +278,16 @@ async function loadService() {
 }
 
 const reqRow = (over = {}) => ({
-  id: "r1", shortCode: "S-4821", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
+  id: "r1", shortCode: "S-482193", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
   tossPaymentId: null, tossOrderId: null, expiresAtTs: "2026-11-07T05:30:00Z",
   paymentType: "MONTHLY", year: 2026, month: 11, paymentStatus: "PENDING", paymentAmount: 180000, studentName: "홍길동",
   ...over,
 });
-const ORDER = { id: "o-1", memo: "STIZ:S-4821", payments: [{ id: "tp-1", sourceType: "CARD", state: "APPROVED", amount: 180000 }] };
+const ORDER = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "APPROVED", amount: 180000, taxExemptAmount: 180000 }] };
 
 async function runMatch(state = {}, { order = ORDER, approved = [pay()] } = {}) {
   const svc = await loadService();
-  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], request: reqRow(), claimRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-4821" }], ...state };
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], request: reqRow(), claimRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-482193" }], ...state };
   const saved = process.env.SLACK_OWNER_USER_ID;
   process.env.SLACK_OWNER_USER_ID = "U-OWNER";
   try {
@@ -299,6 +320,27 @@ test("웹훅 매칭: 금액 불일치 → 납부 안 함, 요청 HELD + 슬랙 �
   assert.equal(globalThis.__cs.paid.length, 0);
   assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
   assert.ok(globalThis.__cs.slack.some((t) => /보류/.test(t)));
+});
+
+test("웹훅 매칭: 토스 결제가 과세로 잡힘(taxExemptAmount 0) → 납부 안 함, HELD", async () => {
+  const order = { ...ORDER, payments: [{ ...ORDER.payments[0], taxExemptAmount: 0 }] };
+  const r = await runMatch({}, { order });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  const held = globalThis.__cs.calls.find((c) => /SET status = 'HELD'/.test(c.sql));
+  assert.match(held.args[2], /면세 금액/);
+});
+
+test("웹훅 매칭: 동시에 온 두 웹훅 — 진 쪽(선점 0행·보류 0행)은 요청이 같은 결제로 PAID 면 처리 끝(슬랙 확인 DM 중복 없음)", async () => {
+  const r = await runMatch({ claimRows: [], holdRows: [], reread: { status: "PAID", tossPaymentId: "tp-1" } });
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-1"]);
+  assert.equal(globalThis.__cs.paid.length, 0, "진 쪽은 다시 납부하지 않는다");
+  assert.ok(!globalThis.__cs.slack.some((t) => /보류/.test(t)));
+});
+
+test("웹훅 매칭: 진 쪽인데 요청이 다른 결제로 PAID(중복 결제) → 처리 끝으로 보지 않고 기존 흐름", async () => {
+  const r = await runMatch({ claimRows: [], holdRows: [], reread: { status: "PAID", tossPaymentId: "tp-0" } });
+  assert.deepEqual(r.handledTossPaymentIds, []);
 });
 
 test("웹훅 매칭: 이미 납부된 청구서 → 납부 안 함, HELD", async () => {
@@ -397,7 +439,7 @@ test("보고: 같은 요청+같은 event 두 번째는 duplicate(아무것도 �
 test("claim·charge 응답: taxFreeAmount 가 금액과 같고, 이름은 가린 값(studentName·studentLabel), itemTitle·memo 포함", async () => {
   const svc = await loadService();
   const row = {
-    id: "0b8f0f5e-1111-4222-8333-944445555666", shortCode: "S-4821", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
+    id: "0b8f0f5e-1111-4222-8333-944445555666", shortCode: "S-482193", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
     expiresAtUtc: "2026-11-07T05:30:00Z", expiresKstHm: "14:30", createdAtUtc: "2026-11-07T05:00:00Z", paidKst: null, isExpired: false,
     note: null, createdVia: "ADMIN", paymentType: "MONTHLY", year: 2026, month: 11, paymentStatus: "PENDING", studentName: "홍길동",
   };
@@ -407,7 +449,7 @@ test("claim·charge 응답: taxFreeAmount 가 금액과 같고, 이름은 가린
   assert.equal(v.studentName, "홍*동");
   assert.equal(v.studentLabel, "홍*동");
   assert.equal(v.itemTitle, "2026년 11월 수강료(홍*동)");
-  assert.equal(v.memo, "STIZ:S-4821");
+  assert.equal(v.memo, "STIZ:S-482193");
   assert.equal(v.expiresAt, "2026-11-07T05:30:00Z");
   assert.ok(!JSON.stringify(v).includes("홍길동"), "실명이 응답에 없다");
 });

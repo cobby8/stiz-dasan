@@ -10,7 +10,7 @@
  * 안 하는 일: 이 파일은 Payment · PaymentInvoice 를 **직접 쓰지 않는다.**
  *           사이트 납부 반영은 두 곳뿐이다:
  *           ① 원장이 슬랙 버튼을 눌렀을 때 paymentNoticeActions.ts
- *           ② 관리자가 미리 만든 «현장 결제» 요청(메모 STIZ:S-4821)과 맞을 때 chargeRequestService.ts (원장 결정 D1)
+ *           ② 관리자가 미리 만든 «현장 결제» 요청(메모 STIZ:S-482193)과 맞을 때 chargeRequestService.ts (원장 결정 D1)
  *
  * 판단 로직은 ./payment-notice.mjs(순수 모듈) 한 벌이다. 여기는 DB·토스·슬랙 입출력만 한다.
  */
@@ -344,7 +344,7 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
 
     const payments = extractNoticePayments(order) as ReturnType<typeof extractNoticePayments>;
 
-    // «현장 결제» 요청 매칭(원장 결정 D1): 메모 번호(STIZ:S-4821)로 요청과 맞으면 자동 납부.
+    // «현장 결제» 요청 매칭(원장 결정 D1): 메모 번호(STIZ:S-482193)로 요청과 맞으면 자동 납부.
     // 자동 납부된 결제는 아래 슬랙 확인 알림을 만들지 않는다. 그 밖의 결제(요청 없음·보류)는 지금 흐름 그대로.
     // 매칭이 실패해도 알림 흐름은 막지 않는다(원장 확인 DM 이 안전망).
     let chargeHandled = new Set<string>();

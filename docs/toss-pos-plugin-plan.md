@@ -35,7 +35,7 @@
 | 칸 | 뜻 |
 |----|----|
 | id (uuid) | 요청 번호 |
-| shortCode | 사람이 읽는 6자리 번호(예: `S-4821`) — POS 메모·화면에 크게 표시 |
+| shortCode | 사람이 읽는 번호 S-+숫자 6자리(예: `S-482193`, 손 입력 오기입이 다른 요청과 우연히 맞지 않게) — POS 메모·화면에 크게 표시 |
 | paymentId | 청구서(Payment.id) |
 | amount (Int) | 요청 순간의 청구 금액(스냅샷) |
 | taxFreeAmount (Int) | 면세 금액(수강료 = amount 전액) |
@@ -55,13 +55,13 @@ DB 제약(코드가 아니라 DB 가 막게):
 ### 2-2. 순서
 1. 관리자 청구서 → «현장 결제» 버튼 → 서버 액션(원장·재무 권한, `requireFinanceOwner`)이
    청구서가 PENDING/OVERDUE 인지, 열린 요청이 없는지 확인 후 PosChargeRequest(PENDING) 생성.
-   화면에 **번호 `S-4821` · 원생 · 금액**을 크게 표시.
+   화면에 **번호 `S-482193` · 원생 · 금액**을 크게 표시.
 2. (플러그인) 워커가 20~30초마다 `GET /api/pos-plugin/charge-requests` 폴링 → 새 요청이 있으면 POS 에 알림.
 3. 선생님이 알림/탭에서 «결제» → `POST /api/pos-plugin/charge-requests/{id}/claim`
    (조건부 UPDATE `status='PENDING' AND expiresAt>now()` → SENT, 영향 1행일 때만 성공) → 응답으로 금액·면세·메모 문구.
-4. 플러그인이 draftOrder 생성: 상품명 «2026년 11월 수강료(홍길동)», 금액, 면세, **메모 `STIZ:S-4821`** → 결제 시작 → 카드.
+4. 플러그인이 draftOrder 생성: 상품명 «2026년 11월 수강료(홍길동)», 금액, 면세, **메모 `STIZ:S-482193`** → 결제 시작 → 카드.
 5. 토스 웹훅 도착 → 기존 `processPosWebhookEvent` 앞단에 **«요청 번호 매칭»** 추가:
-   메모에서 `STIZ:S-\d{4}` 를 찾고, 요청이 SENT 이고 금액이 일치하고 토스 재조회(fetchTossOrderById)로 APPROVED 확인되면
+   메모에서 `STIZ:S-\d{6}` 를 찾고(파서는 플러그인 계약대로 4~6자리를 읽지만 번호는 6자리), 요청이 SENT 이고 금액이 일치하고 토스 재조회(fetchTossOrderById)로 APPROVED 확인되면
    → 한 문장 조건부 UPDATE 로 요청 PAID 선점 → `markPaymentPaid`(provider `TOSS_POS`, providerOrderId=토스 주문, paymentKey=토스 결제 ID).
 6. 플러그인이 결제 완료를 받으면 `POST .../{id}/report`(참고용 기록만, 납부 처리 안 함). 서버 응답이 PAID 면 POS 에 «사이트 납부완료» 토스트.
 
@@ -92,7 +92,7 @@ DB 제약(코드가 아니라 DB 가 막게):
   관리자 화면 «POS 연결»에서 원장이 발급 → 한 번만 보여 주고 POS 설정에 붙여 넣기 → secureStore 보관. 회전 = 새 토큰 발급 후 옛 토큰 revoke(동시에 2개까지 유효해 끊김 없음).
   비교는 `timingSafeEqual`. 헤더 `Authorization: Bearer`.
 - **권한 범위**: 토큰이 할 수 있는 일은 ①열린 요청 목록 ②claim ③결과 보고 ④미납 목록(이름 일부·반·금액만, 전화번호·주소 없음). **납부 처리 API 는 토큰에 없음.**
-- **IDOR**: claim/report 는 요청 id 만 받고, 금액·청구서는 **서버 DB 값**만 쓴다(본문 금액 무시). 미납 목록은 2호점(다산) 학생만.
+- **IDOR**: claim/report 는 요청 id 만 받고, 금액·청구서는 **서버 DB 값**만 쓴다(본문 금액 무시). 미납 목록은 현재 단일 지점이라 지점 필터 없음 — 지점이 늘면 필터를 추가한다.
 - **위조 방지**: 납부 확정은 웹훅 서명 검증(`verifyWebhookSignature`) + Open API 재조회 두 겹. 플러그인 보고는 기록용.
 - **속도 제한**: 토큰당 분당 60회, 실패 인증은 IP 당 제한. 로그에 토큰 원문·카드번호 금지(`redact` 재사용).
 - **관리자 쪽**: «현장 결제» 버튼과 토큰 발급은 원장(재무 권한)만. 신설 화면은 `AdminShellClient` 의 `EXTRA_GROUPS` 에 등록 + 테스트 고정(사고 2회 함정).
@@ -135,7 +135,7 @@ src/lib/pos/charge-request.mjs ← 순수 규칙: 번호 형식·메모 파싱·
 |------|------|------|------|------|
 | 0 | 문서 확인: 1장 표 Q1~Q8 을 URL 근거로 확정 | PM(브라우저 도구) | 없음 | 면세·서버 호출 불가 판명 시 4단계 이후 중단 |
 | 1 | PosChargeRequest 표 + 순수 규칙 모듈(번호·메모 파싱·만료·면세) + 테스트 | developer | 없음(0과 **병렬**) | DB 제약 누락 시 중복 요청 |
-| 2 | 관리자 «현장 결제» 버튼 → 번호 크게 표시 화면(POS 메모에 `STIZ:S-4821` 입력 안내), 만료 스윕 | developer | 1 | 원장 권한 누락(IDOR) |
+| 2 | 관리자 «현장 결제» 버튼 → 번호 크게 표시 화면(POS 메모에 `STIZ:S-482193` 입력 안내), 만료 스윕 | developer | 1 | 원장 권한 누락(IDOR) |
 | 3 | 웹훅 매칭 강화: 메모 번호 → 요청 → 재조회 → 자동 납부(D1 결정대로) + 취소·불일치 슬랙 DM | developer → tester+reviewer(+security) **병렬** | 2, D1 | 돈이 움직이는 단계. 이 단계까지로 **플러그인 없이 운영 가능** |
 | 4 | 플러그인 전용 API + 토큰 표·발급 화면 | developer → security-reviewer | 0, 3 | 토큰 유출·미납 목록 개인정보 |
 | 5 | 플러그인 앱(워커 폴링·알림, draftOrder·결제 시작) | developer | 0, 4 | SDK 가 가설과 다르면 재설계 |
@@ -161,8 +161,8 @@ CORS: 환경변수 `POS_PLUGIN_ALLOWED_ORIGINS`(쉼표) 에 있는 Origin 만 �
 
 **요청(request) 모양**
 ```
-{ id, shortCode:"S-4821", status:"PENDING|SENT|…", amount:180000, taxFreeAmount:180000,
-  itemName:"2026년 11월 수강료(홍*동)", itemTitle:(itemName 과 같음), memo:"STIZ:S-4821",
+{ id, shortCode:"S-482193", status:"PENDING|SENT|…", amount:180000, taxFreeAmount:180000,
+  itemName:"2026년 11월 수강료(홍*동)", itemTitle:(itemName 과 같음), memo:"STIZ:S-482193",
   studentLabel:"홍*동", studentName:(studentLabel 과 같음 — 가린 이름), expiresAt:"…Z", createdAt:"…Z" }
 ```
 `taxFreeAmount` 는 항상 들어 있고 `taxFreeAmountFor(amount)`(= 전액, D2)로 만들 때 저장한 값이다.
@@ -177,7 +177,8 @@ CORS: 환경변수 `POS_PLUGIN_ALLOWED_ORIGINS`(쉼표) 에 있는 Origin 만 �
 
 **웹훅 매칭**(서버만): 주문 `memo` · `lineItems[].memo` · `lineItems[].code` · `lineItems[].item.memo` · `lineItems[].item.code` 에서
 `STIZ[:：]? S-?\d{4,6}` 를 찾는다(손 입력 변형 허용). 번호가 정확히 1개 + 카드 승인 1건 + 금액 = 요청 금액 + 청구서 미납·금액 그대로 +
-승인 시각 ≤ 만료 시각이면 자동 납부(`markPaymentPaid`, CARD·TOSS_POS). 하나라도 어긋나면 요청 HELD + 기존 슬랙 확인 알림.
+승인 시각 ≤ 만료 시각 + **토스 결제 `taxExemptAmount` = 요청 `taxFreeAmount`**(칸이 없어도 보류)이면 자동 납부(`markPaymentPaid`, CARD·TOSS_POS).
+하나라도 어긋나면 요청 HELD + 기존 슬랙 확인 알림. 동시에 온 두 웹훅 중 진 쪽은 요청이 같은 결제로 PAID 면 처리 끝(슬랙 확인 DM 중복 없음).
 
 **설계안과 달라진 점(계약 변경)**
 - 탭 흐름 경로를 `POST /api/pos-plugin/unpaid/{paymentId}/charge` 로 확정(플러그인 팀 제안).
@@ -186,3 +187,7 @@ CORS: 환경변수 `POS_PLUGIN_ALLOWED_ORIGINS`(쉼표) 에 있는 Origin 만 �
 - 만료: 2-3 표의 «SENT 후 만료돼도 정상 매칭»을 «**결제 승인 시각**이 만료 전이면 매칭, 뒤면 HELD»로 좁혔다(PM 지시: 만료는 HELD).
 - 권한: «현장 결제»·토큰 발급은 원장(ADMIN)만(부원장 불가) — 기존 «단말기 결제 반영»과 같은 재무 권한.
 - 셔틀비(SHUTTLE)도 «현장 결제» 대상(D2: 면세).
+- 번호 6자리(`S-482193`, DB CHECK `^S-[0-9]{6}$`) — 검수 반영. 플러그인 파서 `S-\d{4,6}` 그대로 호환.
+- 자동 납부 조건에 면세 금액 일치 추가(다르거나 못 읽으면 HELD).
+- 미납 목록 지점 필터 없음(현재 단일 지점 — 지점 추가 시 필터).
+- 관리자 화면 용어 «POS 연결 코드»(= 매장 토큰)로 통일.

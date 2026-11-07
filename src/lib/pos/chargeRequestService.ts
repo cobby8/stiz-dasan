@@ -34,6 +34,7 @@ import {
     maskStudentName,
     nonApprovedPayments,
     paymentTypeLabel,
+    taxExemptAmountsOf,
     randomShortCode,
 } from "./charge-request.mjs";
 
@@ -619,10 +620,18 @@ export async function matchChargeRequestsForOrder(input: {
         return { handledTossPaymentIds: handled, note: notes.join(" · ") };
     }
 
+    // 결제마다 토스가 알려 준 면세 금액(taxExemptAmount)을 붙여 판정한다(요청 면세액과 다르면 보류).
+    const exempt = taxExemptAmountsOf(order) as Record<string, number | null>;
     const verdict = decide({
-        request: { status: request.status, amount: request.amount, tossPaymentId: request.tossPaymentId, expiresAt: request.expiresAtTs },
+        request: {
+            status: request.status,
+            amount: request.amount,
+            taxFreeAmount: Number(request.taxFreeAmount),
+            tossPaymentId: request.tossPaymentId,
+            expiresAt: request.expiresAtTs,
+        },
         site: { status: request.paymentStatus, amount: request.paymentAmount, type: request.paymentType },
-        approved,
+        approved: approved.map((p) => ({ ...p, taxExemptAmount: exempt[p.tossPaymentId] ?? null })),
         others: nonApprovedPayments(order),
     });
 
@@ -645,6 +654,18 @@ export async function matchChargeRequestsForOrder(input: {
                 "slackNotifiedAt",
                 `⏸️ 현장 결제 자동 반영 보류 — ${describe(request)}\n사유: ${reason}\n이어서 오는 결제 확인 알림에서 처리해 주세요.`,
             );
+        } else if (verdict.payment) {
+            // 보류 0행 = 그 사이 상태가 바뀜. 동시에 온 다른 웹훅(주문·결제 알림)이 «이 결제로» 이미 자동 납부했으면
+            // 처리 끝으로 본다 — 안 그러면 납부된 결제에 슬랙 확인 DM 이 한 통 더 간다.
+            const now = await prisma.$queryRawUnsafe<{ status: string; tossPaymentId: string | null }[]>(
+                `SELECT status, "tossPaymentId" FROM "PosChargeRequest" WHERE id = $1`,
+                request.id,
+            );
+            if (now[0]?.status === "PAID" && now[0].tossPaymentId === verdict.payment.tossPaymentId) {
+                handled.push(verdict.payment.tossPaymentId);
+                notes.push(`${code} 다른 알림이 이미 자동 반영함`);
+                return { handledTossPaymentIds: handled, note: notes.join(" · ") };
+            }
         }
         notes.push(`${code} 보류: ${reason}`);
         return { handledTossPaymentIds: handled, note: notes.join(" · ") };

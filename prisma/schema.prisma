@@ -3097,7 +3097,7 @@ model PosPaymentNotice {
 ///    부분 유일 인덱스 3개(열린 요청의 paymentId·shortCode, tossPaymentId). 코드는 raw SQL 로만 쓴다.
 model PosChargeRequest {
   id                  String    @id @default(dbgenerated("gen_random_uuid()::text"))
-  shortCode           String // S-4821
+  shortCode           String // S-482193
   paymentId           String
   amount              Int
   taxFreeAmount       Int

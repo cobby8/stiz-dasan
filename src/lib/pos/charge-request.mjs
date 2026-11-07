@@ -2,8 +2,8 @@
  * 토스 POS «현장 결제» 요청 — 순수 규칙 모듈 (DB·네트워크·환경변수 없음)
  *
  * ■ 무엇을 하나
- *   관리자가 청구서에서 «현장 결제»를 누르면 번호(S-4821)가 붙은 요청이 생긴다.
- *   선생님이 POS 주문 메모에 «STIZ:S-4821» 을 넣고(또는 플러그인이 넣고) 카드 결제를 받으면,
+ *   관리자가 청구서에서 «현장 결제»를 누르면 번호(S-482193)가 붙은 요청이 생긴다.
+ *   선생님이 POS 주문 메모에 «STIZ:S-482193» 을 넣고(또는 플러그인이 넣고) 카드 결제를 받으면,
  *   토스 웹훅 → 주문 재조회 → 이 모듈의 판정(decideChargeMatch)으로 «자동 납부 / 보류 / 넘김»을 정한다.
  *
  * ■ 여기 있는 것
@@ -39,28 +39,34 @@ export const CHARGEABLE_PAYMENT_STATUSES = Object.freeze(["PENDING", "OVERDUE"])
 /** 요청 유효 시간(분). SQL 에서 now() + interval 로 쓴다(서버 시계 대신 DB 시계). */
 export const CHARGE_EXPIRES_MINUTES = 30;
 
-/** 번호 형식: S- + 숫자 4자리 (예: S-4821) */
-export const SHORT_CODE_RE = /^S-\d{4}$/;
+/**
+ * 번호 형식: S- + 숫자 6자리 (예: S-482193).
+ * 6자리인 이유(검수 2026-11-07): 선생님이 손으로 잘못 친 번호가 «같은 금액의 다른 열린 요청»과 우연히 맞을 확률을
+ * 낮춘다(4자리는 1만 개 중 하나, 6자리는 100만 개 중 하나).
+ */
+export const SHORT_CODE_RE = /^S-\d{6}$/;
+/** 번호 숫자 자리 수 */
+export const SHORT_CODE_DIGITS = 6;
 
 /** POS 메모 앞머리 — 학원 결제임을 표시해 다른 메모(이름·반)와 섞여도 찾을 수 있게 한다. */
 export const MEMO_PREFIX = "STIZ:";
 
 /**
  * 메모에서 번호 찾기. 선생님이 손으로 칠 때의 흔한 변형을 받아 준다:
- *   «STIZ:S-4821» «stiz: s-4821» «STIZ S4821» «STIZ：S-4821»(전각 콜론)
- * 단, «STIZ» 머리말은 반드시 있어야 한다 — 맨 숫자 4자리는 전화번호·금액과 헷갈린다.
- * 숫자는 4~6자리까지 읽는다(플러그인 계약 /STIZ:S-\d{4,6}/ — 지금 번호는 4자리, 나중에 늘려도 매칭이 안 깨지게).
- * 7자리 이상 이어지면 번호가 아니다.
+ *   «STIZ:S-482193» «stiz: s-482193» «STIZ S482193» «STIZ：S-482193»(전각 콜론)
+ * 단, «STIZ» 머리말은 반드시 있어야 한다 — 맨 숫자는 전화번호·금액과 헷갈린다.
+ * 숫자는 4~6자리까지 읽는다(플러그인 계약 /STIZ:S-\d{4,6}/). 지금 번호는 6자리라 4·5자리는 읽혀도
+ * 맞는 요청이 없어 자동 처리되지 않는다. 7자리 이상 이어지면 번호가 아니다.
  */
 const MEMO_CODE_RE = /STIZ\s*[:：]?\s*S\s*-?\s*(\d{4,6})(?!\d)/gi;
 
 // ───────────────────────────── 번호 ─────────────────────────────
 
-/** 0~9999 숫자 → «S-0042» */
+/** 0~999999 숫자 → «S-000042» */
 export function formatShortCode(n) {
   const value = Math.trunc(Number(n));
-  if (!Number.isFinite(value) || value < 0 || value > 9999) throw new Error(`번호 범위 밖: ${n}`);
-  return `S-${String(value).padStart(4, "0")}`;
+  if (!Number.isFinite(value) || value < 0 || value > 999999) throw new Error(`번호 범위 밖: ${n}`);
+  return `S-${String(value).padStart(SHORT_CODE_DIGITS, "0")}`;
 }
 
 /**
@@ -68,20 +74,20 @@ export function formatShortCode(n) {
  * 충돌(열린 요청끼리 같은 번호)은 DB 부분 유일 인덱스가 막고, 호출한 쪽이 다시 뽑는다.
  */
 export function randomShortCode(randomInt) {
-  return formatShortCode(randomInt(10000));
+  return formatShortCode(randomInt(1_000_000));
 }
 
 export function isShortCode(value) {
   return typeof value === "string" && SHORT_CODE_RE.test(value);
 }
 
-/** 메모 문구(POS 주문 메모에 넣는 값). 예: «STIZ:S-4821» */
+/** 메모 문구(POS 주문 메모에 넣는 값). 예: «STIZ:S-482193» */
 export function buildChargeMemo(shortCode) {
   if (!isShortCode(shortCode)) throw new Error(`번호 형식이 아닙니다: ${shortCode}`);
   return `${MEMO_PREFIX}${shortCode}`;
 }
 
-/** 아무 글에서 번호를 모두 찾아 «S-dddd» 로 정리(중복 제거, 나온 순서). */
+/** 아무 글에서 번호를 모두 찾아 «S-숫자» 로 정리(중복 제거, 나온 순서). */
 export function extractChargeCodesFromText(text) {
   const out = [];
   for (const m of String(text ?? "").matchAll(MEMO_CODE_RE)) {
@@ -115,6 +121,21 @@ export function extractChargeCodes(order) {
  * 주문 안의 «승인 아닌» 결제(취소·부분취소 등). 이 중 하나라도 있으면 자동 반영하지 않는다.
  * 카드 승인 결제 목록은 payment-notice.mjs 의 extractNoticePayments 한 벌을 쓴다(사본 금지).
  */
+/**
+ * 주문의 결제별 면세 금액(토스플레이스 결제의 taxExemptAmount). 칸이 없으면 null.
+ * 결제 ID → 면세 금액. 판정은 decideChargeMatch 가 한다.
+ */
+export function taxExemptAmountsOf(order) {
+  const out = {};
+  for (const p of Array.isArray(order?.payments) ? order.payments : []) {
+    if (p?.id == null) continue;
+    const raw = p?.taxExemptAmount;
+    const n = raw == null || raw === "" ? NaN : Number(raw);
+    out[String(p.id)] = Number.isFinite(n) ? Math.round(n) : null;
+  }
+  return out;
+}
+
 export function nonApprovedPayments(order) {
   const out = [];
   for (const p of Array.isArray(order?.payments) ? order.payments : []) {
@@ -161,9 +182,9 @@ const toMs = (v) => {
 /**
  * 웹훅으로 온 주문 1건 ↔ 요청 1건 판정.
  *
- * @param input.request   { status, amount, tossPaymentId, expiresAt }   (DB 값)
+ * @param input.request   { status, amount, taxFreeAmount, tossPaymentId, expiresAt }   (DB 값)
  * @param input.site      { status, amount, type }                        (청구서 DB 값)
- * @param input.approved  [{ tossPaymentId, amount, approvedAtIso }]      (카드·승인 결제)
+ * @param input.approved  [{ tossPaymentId, amount, approvedAtIso, taxExemptAmount }]  (카드·승인 결제, 면세는 taxExemptAmountsOf)
  * @param input.others    [{ id, state }]                                 (승인 아닌 결제)
  * @param input.nowMs     승인 시각을 모를 때 쓸 현재 시각
  * @returns {{ action: string, reason: string, payment: object|null }}
@@ -194,6 +215,14 @@ export function decideChargeMatch({ request, site, approved = [], others = [], n
   }
   if (Math.round(Number(payment.amount)) !== Number(request.amount)) {
     return hold(`결제 금액(${Number(payment.amount)}원)이 요청 금액(${Number(request.amount)}원)과 다릅니다.`);
+  }
+  // 면세 금액: 토스 결제의 면세(taxExemptAmount)가 요청 면세액과 다르면 세금 신고가 틀어진다 → 원장 확인.
+  // 칸을 못 읽으면(null) 면세로 처리됐는지 알 수 없으니 역시 보류한다(첫 실결제로 응답 모양을 확인할 것).
+  if (payment.taxExemptAmount == null || !Number.isFinite(Number(payment.taxExemptAmount))) {
+    return hold("토스 결제의 면세 금액을 확인하지 못했습니다(과세로 결제됐을 수 있음).");
+  }
+  if (Math.round(Number(payment.taxExemptAmount)) !== Number(request.taxFreeAmount)) {
+    return hold(`면세 금액(${Number(payment.taxExemptAmount)}원)이 요청 면세액(${Number(request.taxFreeAmount)}원)과 다릅니다.`);
   }
   if (!site) return hold("청구서를 찾지 못했습니다.");
   if (!CHARGEABLE_PAYMENT_STATUSES.includes(String(site.status))) {

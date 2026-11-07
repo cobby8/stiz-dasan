@@ -83,7 +83,7 @@ export async function loadPosPluginTokens(): Promise<ActionResult<{ tokens: PosP
         await requireFinanceOwner();
         return { ok: true, tokens: await listPosPluginTokens() };
     } catch (error) {
-        return failure(error, "POS 연결 목록을 불러오지 못했습니다.");
+        return failure(error, "POS 연결 코드 목록을 불러오지 못했습니다.");
     }
 }
 
@@ -104,10 +104,10 @@ export async function revokePosPluginTokenAction(tokenId: string): Promise<Actio
     try {
         const admin = await requireFinanceOwner();
         const done = await revokePosPluginToken({ tokenId: String(tokenId ?? ""), adminUserId: admin.appUserId });
-        if (!done) return { ok: false, message: "이미 끊긴 연결입니다." };
+        if (!done) return { ok: false, message: "이미 끊긴 POS 연결 코드입니다." };
         revalidatePath("/admin/pos-plugin");
         return { ok: true };
     } catch (error) {
-        return failure(error, "POS 연결을 끊지 못했습니다.");
+        return failure(error, "POS 연결 코드를 끊지 못했습니다.");
     }
 }

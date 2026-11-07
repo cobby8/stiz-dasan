@@ -10,8 +10,8 @@
 -- ───────────── 현장 결제 요청 (POS 로 보낼 결제 요청 쪽지함) ─────────────
 CREATE TABLE IF NOT EXISTS "PosChargeRequest" (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  -- 사람이 읽는 번호(예: S-4821). POS 주문 메모에 «STIZ:S-4821» 로 들어간다.
-  "shortCode" TEXT NOT NULL CHECK ("shortCode" ~ '^S-[0-9]{4}$'),
+  -- 사람이 읽는 번호(예: S-482193). POS 주문 메모에 «STIZ:S-482193» 로 들어간다.
+  "shortCode" TEXT NOT NULL CHECK ("shortCode" ~ '^S-[0-9]{6}$'),
   "paymentId" TEXT NOT NULL REFERENCES "Payment"(id) ON DELETE CASCADE,
   -- 요청 순간의 청구 금액(서버 DB 값 스냅샷). 플러그인이 보낸 금액은 절대 쓰지 않는다.
   amount INTEGER NOT NULL CHECK (amount > 0),
