@@ -27,7 +27,7 @@ import {
 import PosChargeRequestModal from "./PosChargeRequestModal";
 // 토스 POS 결제 취소 창(2026-11-08) — 환불은 토스 취소 확인으로만 바뀐다
 import PosChargeCancelModal from "./PosChargeCancelModal";
-import { posMethodLabel } from "@/lib/pos/charge-request.mjs";
+import { chargeItemsSummary, posMethodLabel, sortChargeItems } from "@/lib/pos/charge-request.mjs";
 // «납부 처리» 창(2026-11-08) — 결제 방법(계좌이체·현장 결제)을 골라 근거를 남겨야만 납부완료가 된다
 import RecordPaymentModal from "./RecordPaymentModal";
 import VirtualAccountCloseDialog from "./VirtualAccountCloseDialog";
@@ -402,8 +402,8 @@ export default function FinanceClient({
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
     // «납부 처리» 창 대상(1건 = 행 메뉴, 여러 건 = 체크박스 선택). null 이면 창 닫힘
     const [recordTargets, setRecordTargets] = useState<Payment[] | null>(null);
-    // 현장 결제(토스 POS) 창을 띄울 청구서
-    const [posChargeTarget, setPosChargeTarget] = useState<Payment | null>(null);
+    // 현장 결제(토스 POS) 창을 띄울 청구서 — 1건, 또는 같은 학생 여러 건(POS 결제 한 번으로 묶음)
+    const [posChargeTargets, setPosChargeTargets] = useState<Payment[] | null>(null);
     // 결제 취소(토스 POS) 창을 띄울 청구서
     const [posCancelTarget, setPosCancelTarget] = useState<Payment | null>(null);
     const [vaCloseTarget, setVaCloseTarget] = useState<Payment | null>(null); // «가상계좌 닫기» 확인창 대상
@@ -830,7 +830,7 @@ export default function FinanceClient({
                     label: "현장 결제",
                     icon: "contactless",
                     disabled: busy,
-                    onSelect: () => setPosChargeTarget(p),
+                    onSelect: () => setPosChargeTargets([p]),
                 },
             ] : []),
             // 무통장입금 입금 대기 건 — 원장이 계좌를 닫는다(위험 확인창). 서버가 원장 권한을 다시 확인한다.
@@ -1057,16 +1057,29 @@ export default function FinanceClient({
                     onClosed={() => void loadMonth(year, month)}
                 />
             )}
-            {posChargeTarget && (
+            {posChargeTargets && posChargeTargets.length > 0 && (
                 <PosChargeRequestModal
-                    target={{
-                        id: posChargeTarget.id,
-                        studentName: posChargeTarget.studentName,
-                        amount: posChargeTarget.amount,
-                        title: posChargeTarget.description
-                            || `${posChargeTarget.year ?? year}년 ${posChargeTarget.month ?? month}월 ${posChargeTarget.type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
-                    }}
-                    onClose={() => setPosChargeTarget(null)}
+                    target={posChargeTargets.length === 1
+                        ? {
+                            id: posChargeTargets[0].id,
+                            paymentIds: [posChargeTargets[0].id],
+                            studentName: posChargeTargets[0].studentName,
+                            amount: posChargeTargets[0].amount,
+                            title: posChargeTargets[0].description
+                                || `${posChargeTargets[0].year ?? year}년 ${posChargeTargets[0].month ?? month}월 ${posChargeTargets[0].type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
+                        }
+                        : (() => {
+                            // 같은 학생 여러 건 — 서버와 같은 순서(연·월 → 수강료·셔틀비)로 «수강료 11월 외 1건» 요약
+                            const sorted = sortChargeItems(posChargeTargets) as Payment[];
+                            return {
+                                id: sorted[0].id,
+                                paymentIds: sorted.map((p) => p.id),
+                                studentName: sorted[0].studentName,
+                                amount: sorted.reduce((sum, p) => sum + p.amount, 0),
+                                title: chargeItemsSummary(sorted.map((p) => ({ year: p.year ?? year, month: p.month ?? month, type: p.type }))),
+                            };
+                        })()}
+                    onClose={() => setPosChargeTargets(null)}
                     onPaid={() => void loadMonth(year, month)}
                 />
             )}
@@ -1085,13 +1098,14 @@ export default function FinanceClient({
             )}
             {recordTargets && (
                 <RecordPaymentModal
-                    targets={recordTargets.map((t) => ({ id: t.id, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status }))}
+                    targets={recordTargets.map((t) => ({ id: t.id, studentId: t.studentId, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status }))}
                     onClose={() => setRecordTargets(null)}
-                    onChoosePos={(t) => {
-                        // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다
-                        const payment = recordTargets.find((r) => r.id === t.id) ?? null;
+                    onChoosePos={(chosen) => {
+                        // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다 — 여러 건이면 같은 학생 묶음(POS 결제 한 번)
+                        const ids = new Set(chosen.map((t) => t.id));
+                        const payments = recordTargets.filter((r) => ids.has(r.id));
                         setRecordTargets(null);
-                        setPosChargeTarget(payment);
+                        setPosChargeTargets(payments.length > 0 ? payments : null);
                     }}
                     onRecorded={(message) => {
                         setRecordTargets(null);

@@ -106,7 +106,13 @@ zip 구조(문서 기준):
 | `GET /api/pos-plugin/unpaid?q=이름` | `{ ok, items: [{paymentId, studentLabel, className, title, amount, …}] }` | — |
 | `POST /api/pos-plugin/unpaid/{paymentId}/charge` | `{ ok, request }` (생성+선점) | 409 `NOT_CLAIMABLE`/`NOT_ELIGIBLE`/`CHANGED` |
 
-요청 = `{ id, shortCode:"S-482193"(4~6자리 허용), studentLabel:"홍*동"(가린 이름), itemName:"2026년 11월 수강료(홍*동)", amount, taxFreeAmount, memo, expiresAt, status }`
+요청 = `{ id, shortCode:"S-482193"(4~6자리 허용), studentLabel:"홍*동"(가린 이름), itemName:"2026년 11월 수강료(홍*동)", amount, taxFreeAmount, memo, expiresAt, status, items:[…] }`
+
+- **묶음(2026-11-08 원장 결정 «같은 학생이면 한 번에 결제»)**: `items: [{ itemName, amount, taxFreeAmount, memo }]` — 청구마다 1개.
+  플러그인은 항목마다 주문 항목 1개를 담고(key `stiz-번호`, `stiz-번호-2` …, 메모·상품 코드는 전부 같은 `STIZ:번호`),
+  다시 읽어 «항목 수 = N · 항목마다 금액·면세·메모 일치 · 합계 = amount» 일 때만 결제 화면을 엽니다. 하나라도 어긋나면 비우고 멈춥니다.
+  항목 합계·면세 합계가 요청과 다르거나 항목이 10개(`MAX_ITEMS`)를 넘으면 담지도 않습니다. `items` 가 없으면(옛 서버) 요청 하나 = 항목 하나.
+  요청 한도: 담기가 항목 수만큼 늘어 결제 1건 약 12+N번(최대 24번).
 
 - 탭 화면은 PENDING 과 함께 **SENT(이 매장이 선점했지만 결제 시작이 안 된 건)** 도 «다시 결제» 버튼으로 보여 줍니다.
 - POS 알림·탭 목록에서는 상품명의 «(가린 이름)»을 떼어 이름이 한 번만 보이게 합니다(결제 화면 상품명은 서버 값 그대로).

@@ -1,13 +1,14 @@
 // 현장 결제 흐름 — 요청을 POS 결제 화면으로 넘기고, 결제/취소 신호를 서버에 «참고용»으로 알린다.
 // ⚠️ 납부완료 처리는 서버가 토스플레이스 웹훅(서명 검증) + Open API 재조회로만 한다.
 //    여기서 보내는 보고는 기기 위 코드가 보내는 말이라 위조될 수 있으므로, 서버는 기록용으로만 쓴다.
-// 요청 한도(60초 100번·30분 200번)에 드는 결제 1건당 SDK 호출 — 약 13번:
-//   시작 9번(주문 확인 2·선점 http 1·비우기 1·담기 1·다시 읽기 1~3·기록 읽기/쓰기 2·결제 화면 1)
-//   + 결제 신호 4번(주문 조회 1·기록 읽기 1·결제 조회 1·보고 http 1). 다시 읽기가 늘면 최대 15번.
+// 요청 한도(60초 100번·30분 200번)에 드는 결제 1건당 SDK 호출 — 단건 약 13번, 묶음(항목 N개)은 약 12+N번:
+//   시작 8+N번(주문 확인 2·선점 http 1·비우기 1·담기 N·다시 읽기 1~3·기록 읽기/쓰기 2·결제 화면 1)
+//   + 결제 신호 4번(주문 조회 1·기록 읽기 1·결제 조회 1·보고 http 1). 다시 읽기가 늘면 최대 14+N번.
+//   N 은 서버·플러그인 모두 최대 10(MAX_ITEMS)이라 묶음 1건도 최대 24번 — 롱폴링(60초 3번)과 합쳐 60초 100번 안이다.
 import type { ServerApi, ApiResult } from "./api.ts";
 import { kindMessage } from "./api.ts";
 import type { ChargeRequest } from "./contract.ts";
-import { buildLineItem, checkDraftAfterAdd, findShortCodeInOrder, formatWon, validateForPos } from "./order.ts";
+import { buildLineItems, checkDraftAfterAdd, findShortCodeInOrder, formatWon, validateForPos } from "./order.ts";
 import type { PosSdkLike } from "./pos-types.ts";
 
 /** 최근 선점한 요청(번호 → 요청 id) 기록 — 결제 신호가 오면 어느 요청인지 찾는 데 쓴다 */
@@ -138,10 +139,13 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         return "draft_not_empty";
       }
       // 5) 비어 있음을 확인했으니 비우기(남은 주문 할인 등 초기화) → 수강료 항목 추가
+      //    묶음(같은 학생 여러 건)이면 청구마다 항목 1개씩, 서버가 준 순서대로(모두 같은 STIZ:번호 메모)
       await sdk.draftOrder.clear();
-      await sdk.draftOrder.addLineItem(buildLineItem(claimed));
+      for (const line of buildLineItems(claimed)) {
+        await sdk.draftOrder.addLineItem(line);
+      }
       // 6) 들어간 결과를 «다시 읽어» 확인한다. addLineItem 반환값은 합계 재계산 전일 수 있어(2026-11-08 S-704715)
-      //    판단에 쓰지 않는다. 기준 = 우리 항목 1개 · 항목가×수량 = 금액 · 면세 일치 · 메모 번호(order.ts checkDraftAfterAdd)
+      //    판단에 쓰지 않는다. 기준 = 우리 항목 N개 · 항목마다 항목가×수량 = 금액 · 면세 일치 · 메모 번호 + 합계(order.ts checkDraftAfterAdd)
       let check = checkDraftAfterAdd(await sdk.draftOrder.get(), claimed);
       // 통과했어도 합계가 아직 0(재계산 전)이면 끝까지 다시 읽는다 — 자동 할인·봉사료가 뒤늦게 붙는 경우를 잡기 위해.
       // 마지막 시도까지 합계가 0이면 항목 기준 판단으로 통과(검수 권장 2026-11-08)

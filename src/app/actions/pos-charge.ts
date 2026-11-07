@@ -8,6 +8,7 @@ import {
     createChargeRequestByAdmin,
     getChargeCancelForPayment,
     getChargeRequestForPayment,
+    getChargeRequestForPayments,
     requestChargeCancelByAdmin,
     type AdminChargeCancelView,
     type AdminChargeRequestView,
@@ -44,22 +45,37 @@ function failure(error: unknown, fallback: string): { ok: false; message: string
     return { ok: false, message: fallback };
 }
 
-/** 청구서의 현재(또는 가장 최근) 현장 결제 요청 */
-export async function loadPosChargeRequest(paymentId: string): Promise<ActionResult<{ request: AdminChargeRequestView | null }>> {
+/**
+ * 브라우저가 보낸 청구 id(1건 문자열 또는 여러 건 배열) → 문자열 배열. 모양이 이상하면 빈 배열(서버가 «찾지 못함»으로 막는다).
+ * 같은 학생·대상 유형·미납·금액은 서비스(createRow)가 DB 값으로 다시 확인한다 — 여기서는 모양만 본다.
+ */
+function paymentIdsOf(value: unknown): string[] {
+    const list = Array.isArray(value) ? value : [value];
+    if (list.length > 20) return [];
+    return list.map((v) => (typeof v === "string" ? v : "")).filter((v) => v.length > 0);
+}
+
+/** 청구서의 현재(또는 가장 최근) 현장 결제 요청. 여러 건이면 정확히 그 묶음으로 만든 요청 */
+export async function loadPosChargeRequest(paymentIds: string | string[]): Promise<ActionResult<{ request: AdminChargeRequestView | null }>> {
     try {
         await requireFinanceOwner();
-        return { ok: true, request: await getChargeRequestForPayment(String(paymentId ?? "")) };
+        const ids = paymentIdsOf(paymentIds);
+        const request = ids.length > 1 ? await getChargeRequestForPayments(ids) : await getChargeRequestForPayment(ids[0] ?? "");
+        return { ok: true, request };
     } catch (error) {
         return failure(error, "현장 결제 요청을 불러오지 못했습니다.");
     }
 }
 
-/** «현장 결제» — 요청 만들기(이미 열린 요청이 있으면 그것을 돌려준다) */
-export async function createPosChargeRequest(paymentId: string): Promise<ActionResult<{ request: AdminChargeRequestView; existing: boolean }>> {
+/**
+ * «현장 결제» — 요청 만들기(이미 같은 묶음의 열린 요청이 있으면 그것을 돌려준다).
+ * 여러 건 = 같은 학생의 수강료·셔틀비 미납을 POS 결제 한 번으로(2026-11-08 원장 결정). 학생이 섞이면 서버가 막는다.
+ */
+export async function createPosChargeRequest(paymentIds: string | string[]): Promise<ActionResult<{ request: AdminChargeRequestView; existing: boolean }>> {
     try {
         const admin = await requireFinanceOwner();
         const result = await createChargeRequestByAdmin({
-            paymentId: String(paymentId ?? ""),
+            paymentIds: paymentIdsOf(paymentIds),
             adminUserId: admin.appUserId,
             adminName: admin.appUserName,
         });

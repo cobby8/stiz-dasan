@@ -1,6 +1,6 @@
 // 순수 규칙: 현장 결제 요청 → POS 임시 주문 항목 변환, 메모 형식, 금액 검증, 알림 문구.
 // SDK 를 부르지 않는 «계산만» 하는 함수들이라 node --test 로 그대로 검사한다.
-import type { ChargeRequest } from "./contract.ts";
+import type { ChargeItem, ChargeRequest } from "./contract.ts";
 import type { DraftLineItemInput, DraftOrderLike, OrderLike } from "./pos-types.ts";
 
 /** 메모 머리말. 서버 웹훅 매칭이 이 글자를 찾는다 */
@@ -9,8 +9,28 @@ export const MEMO_PREFIX = "STIZ:";
 const SHORT_CODE_RE = /^S-\d{4,6}$/;
 const MEMO_FIND_RE = /STIZ:(S-\d{4,6})(?!\d)/;
 
-/** 한 번에 받을 수 있는 최대 금액 — 오타(0 하나 더)로 큰돈이 결제되는 것 방지 */
+/** 한 번에 받을 수 있는 최대 금액 — 오타(0 하나 더)로 큰돈이 결제되는 것 방지(서버 MAX_CHARGE_TOTAL 과 같은 값) */
 export const MAX_AMOUNT = 5_000_000;
+
+/**
+ * 한 요청에 담을 수 있는 최대 항목 수(서버 MAX_CHARGE_ITEMS 와 같은 값).
+ * 항목 1개마다 담기 SDK 호출이 1번 늘어 요청 한도(60초 100번)에 든다 — 10개면 결제 1건 약 22번.
+ */
+export const MAX_ITEMS = 10;
+
+/**
+ * 요청의 POS 주문 항목들. 서버가 items[] 를 주면 그것, 안 주면(옛 서버·단건) 요청 하나 = 항목 하나.
+ * 묶음(같은 학생 여러 건을 결제 한 번, 2026-11-08)은 항목이 여러 개다.
+ */
+export function itemsOf(req: Pick<ChargeRequest, "title" | "amount" | "taxFreeAmount" | "items">): ChargeItem[] {
+  if (Array.isArray(req.items) && req.items.length > 0) return req.items;
+  return [{ title: req.title, amount: req.amount, taxFreeAmount: req.taxFreeAmount }];
+}
+
+/** 항목 key — 1번은 예전 단건과 같은 «stiz-번호», 2번부터 «stiz-번호-2» … */
+export function lineKey(shortCode: string, index: number): string {
+  return index === 0 ? `stiz-${shortCode}` : `stiz-${shortCode}-${index + 1}`;
+}
 
 export function isValidShortCode(code: string): boolean {
   return SHORT_CODE_RE.test(code);
@@ -73,6 +93,21 @@ export function validateForPos(req: ChargeRequest, nowMs: number): Validation {
     return { ok: false, reason: "면세·과세가 섞인 청구는 플러그인으로 결제할 수 없어요. POS 에서 직접 입력해 주세요." };
   }
   if (isExpired(req, nowMs)) return { ok: false, reason: "만료된 요청이에요. 사이트에서 다시 «현장 결제»를 눌러 주세요." };
+  // 묶음 항목: 항목마다 금액·면세가 올바르고, 합계·면세 합계가 요청과 같아야 한다(하나라도 어긋나면 결제창을 열지 않는다)
+  const items = itemsOf(req);
+  if (items.length > MAX_ITEMS) return { ok: false, reason: `한 번에 담을 수 있는 청구(${MAX_ITEMS}건)를 넘었어요. 사이트에서 나눠 보내 주세요.` };
+  for (const it of items) {
+    if (!Number.isInteger(it.amount) || it.amount <= 0) return { ok: false, reason: "청구 항목 금액이 올바르지 않아요. 사이트에서 확인해 주세요." };
+    if (!Number.isInteger(it.taxFreeAmount)) return { ok: false, reason: "청구 항목의 면세 금액 정보가 없어요. 사이트에서 확인해 주세요." };
+    if (it.taxFreeAmount !== it.amount) {
+      return { ok: false, reason: "면세·과세가 섞인 청구는 플러그인으로 결제할 수 없어요. POS 에서 직접 입력해 주세요." };
+    }
+  }
+  const sum = items.reduce((acc, it) => acc + it.amount, 0);
+  const taxFreeSum = items.reduce((acc, it) => acc + it.taxFreeAmount, 0);
+  if (sum !== req.amount || taxFreeSum !== req.taxFreeAmount) {
+    return { ok: false, reason: "청구 항목 합계가 요청 금액과 달라요. 사이트에서 확인해 주세요." };
+  }
   return { ok: true };
 }
 
@@ -81,12 +116,17 @@ export function validateForPos(req: ChargeRequest, nowMs: number): Validation {
  * - item.id 0 = 토스 POS 에 등록되지 않은 상품(문서 TIP)
  * - 주문 전체 메모를 넣는 SDK 함수가 없어(0.0.31), 번호를 «항목 메모»와 «상품 코드» 두 곳에 넣는다
  * - 수량·메모를 선생님이 실수로 바꾸지 못하게 잠근다(바뀌면 금액·매칭이 틀어진다)
+ * - item·index 를 주면 묶음의 그 항목(청구 1건)으로 만든다. 안 주면 요청 하나 = 항목 하나(예전과 같음).
+ *   메모·상품 코드는 모든 항목이 같은 번호(STIZ:S-…) — 서버는 주문에서 번호 «1개»를 찾는다.
  */
-export function buildLineItem(req: ChargeRequest): DraftLineItemInput {
+export function buildLineItem(req: ChargeRequest, item?: ChargeItem, index = 0): DraftLineItemInput {
   const memo = formatMemo(req.shortCode);
-  const title = itemTitleFor(req);
+  const line = item ?? { title: req.title, amount: req.amount, taxFreeAmount: req.taxFreeAmount };
+  const title = itemTitleFor({ title: line.title || req.title });
+  const amount = line.amount;
+  const taxFreeAmount = line.taxFreeAmount;
   return {
-    key: `stiz-${req.shortCode}`,
+    key: lineKey(req.shortCode, index),
     item: {
       id: 0,
       title,
@@ -96,10 +136,10 @@ export function buildLineItem(req: ChargeRequest): DraftLineItemInput {
       type: "ITEM",
     },
     itemPrice: {
-      isTaxFree: req.taxFreeAmount === req.amount,
+      isTaxFree: taxFreeAmount === amount,
       priceType: "FIXED",
       priceUnit: 1,
-      priceValue: req.amount,
+      priceValue: amount,
       title,
     },
     discount: [],
@@ -109,6 +149,11 @@ export function buildLineItem(req: ChargeRequest): DraftLineItemInput {
     diningOption: "HERE",
     metadata: { disableMemoEdit: true, disableOptionEdit: true, disableQuantityEdit: true },
   };
+}
+
+/** 요청 → 담을 항목 전부(청구별 1개, 순서 = 서버 항목 순서). 단건은 buildLineItem(req) 하나와 같다. */
+export function buildLineItems(req: ChargeRequest): DraftLineItemInput[] {
+  return itemsOf(req).map((it, i) => buildLineItem(req, it, i));
 }
 
 /**
@@ -140,8 +185,14 @@ export type DraftCheck = { ok: boolean; settled: boolean; detail: string };
  *   - 면세 여부가 요청과 같을 것(값이 있을 때)
  *   - 주문 합계(orderPriceValue)는 «0보다 크고 금액과 다를 때만» 불일치로 본다(예: 매장 자동 할인이 붙음)
  * detail 은 서버 보고용 실제 값 요약(예: «n=1 item=1000x1 unit=1 total=0 taxFree=true memo=ok»). 개인정보 없음.
+ *
+ * 묶음(항목 N개, 2026-11-08): 같은 기준을 «항목마다» 적용한다 — 담긴 항목 수 = N, 항목마다 메모 번호·금액·면세 일치,
+ * 그리고 주문 합계(계산돼 있으면) = 요청 합계. 항목은 key(stiz-번호, stiz-번호-2 …)로 찾고, key 가 없으면 담은 순서로 본다.
+ * 단건(항목 1개)은 아래 예전 판단을 그대로 쓴다(detail 모양도 같다).
  */
 export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req: ChargeRequest): DraftCheck {
+  const expected = itemsOf(req);
+  if (expected.length > 1) return checkBundleDraft(draft, req, expected);
   const items = draft?.lineItems ?? [];
   const li = items[0];
   const total = draft?.price?.orderPriceValue;
@@ -168,6 +219,49 @@ export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req
   // 합계가 계산돼 있고(0보다 큼) 금액과 다르면 할인·봉사료 등이 붙은 것 — 그대로 결제하면 금액이 틀린다
   if (ok && typeof total === "number" && total > 0 && total !== req.amount) ok = false;
   return { ok, settled: typeof total === "number" && total > 0, detail };
+}
+
+/** 묶음(항목 N개) 담긴 결과 확인 — checkDraftAfterAdd 의 항목별 일반화 */
+function checkBundleDraft(draft: DraftOrderLike | null | undefined, req: ChargeRequest, expected: ChargeItem[]): DraftCheck {
+  const lines = draft?.lineItems ?? [];
+  const total = draft?.price?.orderPriceValue;
+  const parts: string[] = [];
+  const taxFlags: string[] = [];
+  let ok = lines.length === expected.length;
+  let allMemo = true;
+  let priceUnknown = false;
+  const used = new Set<number>();
+  expected.forEach((want, i) => {
+    // key 로 찾고(같은 줄을 두 번 쓰지 않게), 없으면 담은 순서
+    const byKey = lines.findIndex((l, j) => !used.has(j) && l.key === lineKey(req.shortCode, i));
+    const j = byKey >= 0 ? byKey : used.has(i) ? -1 : i;
+    const li = j >= 0 ? lines[j] : undefined;
+    if (j >= 0) used.add(j);
+    const price = li?.itemPrice?.priceValue;
+    const qty = li?.quantity;
+    const taxFree = li?.itemPrice?.isTaxFree;
+    const memoOk = !!li && (parseMemo(li.memo) === req.shortCode || parseMemo(li.item?.code) === req.shortCode);
+    parts.push(`${fmt(price)}x${fmt(qty)}`);
+    taxFlags.push(fmt(taxFree));
+    if (!memoOk) {
+      allMemo = false;
+      ok = false;
+    } else if (typeof price === "number" && typeof qty === "number") {
+      // 항목 금액이 보이면 그것이 기준(청구 1건 금액)
+      if (price * qty !== want.amount) ok = false;
+    } else {
+      priceUnknown = true;
+    }
+    if (typeof taxFree === "boolean" && taxFree !== (want.taxFreeAmount === want.amount)) ok = false;
+  });
+  // 항목 금액을 하나라도 못 읽으면 주문 합계로만 확인할 수 있다(합계도 없으면 확인 불가 → 멈춤)
+  if (ok && priceUnknown) ok = typeof total === "number" && total === req.amount;
+  // 합계가 계산돼 있고(0보다 큼) 요청 합계와 다르면 할인·봉사료 등이 붙은 것
+  if (ok && typeof total === "number" && total > 0 && total !== req.amount) ok = false;
+  const detail =
+    `n=${lines.length}/${expected.length} items=${parts.join(",")} total=${fmt(total)} ` +
+    `taxFree=${taxFlags.join(",")} memo=${allMemo ? "ok" : "no"}`;
+  return { ok, settled: typeof total === "number" && total > 0, detail: detail.slice(0, 250) };
 }
 
 function fmt(v: unknown): string {

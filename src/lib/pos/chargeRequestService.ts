@@ -18,7 +18,7 @@
 
 import { randomInt } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { markPaymentPaid, recordPaymentAudit, refundPaidPaymentInTx, revalidatePaymentCaches, type LedgerSqlClient } from "@/lib/payment-ledger";
+import { markPaymentPaid, markPaymentsPaidTogether, recordPaymentAudit, refundPaidPaymentInTx, revalidatePaymentCaches, type LedgerSqlClient } from "@/lib/payment-ledger";
 import { taxFreeAmountFor } from "@/lib/payments/taxFree";
 import { postMessage } from "@/lib/slack/client";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -44,6 +44,11 @@ import {
     cancelEligibility,
     chargePaymentIdsOf,
     decideChargeCancel,
+    MAX_CHARGE_ITEMS,
+    buildChargeBundleName,
+    chargeBundleEligibility,
+    chargeItemsSummary,
+    sortChargeItems,
 } from "./charge-request.mjs";
 
 // 순수 JS(.mjs) 함수는 TS 가 인자 타입을 좁게 추론한다 → 이 파일에서만 느슨하게 받는다.
@@ -72,6 +77,11 @@ const cancelVerdictOf = decideChargeCancel as (input: { paymentIds: string[]; or
 };
 const cancelCheck = cancelEligibility as unknown as (input: unknown) => { ok: boolean; reason: string };
 const itemNameOf = buildChargeItemName as (input: { year: number | null; month: number | null; type: string; maskedName: string }) => string;
+type ItemNameInput = { year: number | null; month: number | null; type: string };
+const bundleNameOf = buildChargeBundleName as (input: { items: ItemNameInput[]; maskedName: string }) => string;
+const summaryOf = chargeItemsSummary as (items: ItemNameInput[]) => string;
+const bundleCheck = chargeBundleEligibility as unknown as (payments: unknown[]) => { ok: boolean; reason: string };
+const sortItems = sortChargeItems as <T>(payments: T[]) => T[];
 
 /** POS 가 취소 완료를 보고한 뒤 토스 확인을 기다리는 «정상» 시간(분). 넘으면 관리자 창에 늦어진다는 안내 */
 const CANCEL_CONFIRM_LATE_MIN = 3;
@@ -141,8 +151,13 @@ export type AdminChargeRequestView = {
     isExpired: boolean;
     note: string | null;
     studentName: string;
+    /** 단건 = «2026년 11월 수강료», 묶음 = «수강료 11월 외 1건» */
     itemLabel: string;
     memo: string;
+    /** 묶인 청구 수(단건 1) */
+    itemCount: number;
+    /** 묶인 청구(POS 주문 항목 순서) */
+    items: { paymentId: string; itemLabel: string; amount: number }[];
 };
 
 /** 플러그인 API 응답용(이름 가림) — docs/toss-pos-plugin-plan.md «API 계약»과 같은 모양 */
@@ -161,7 +176,41 @@ export type PluginChargeRequestView = {
     studentName: string;
     expiresAt: string;
     createdAt: string;
+    /**
+     * POS 주문 항목(청구별 1개 · 단건도 1개). 플러그인은 이것대로 항목을 담고 «항목마다 금액·면세·메모 + 합계»를 확인한다.
+     * 합계 = amount, 면세 합계 = taxFreeAmount. memo 는 전부 같은 번호(STIZ:S-…) — 웹훅 매칭이 주문에서 번호 1개를 찾는다.
+     */
+    items: PluginChargeItemView[];
 };
+
+/** 플러그인 응답의 POS 주문 항목 1개(이름 가림) */
+export type PluginChargeItemView = {
+    itemName: string;
+    itemTitle: string;
+    amount: number;
+    taxFreeAmount: number;
+    memo: string;
+};
+
+/** 요청에 묶인 청구 1건 + 그 청구의 지금 DB 값(PosChargeRequestItem ⨝ Payment). 항목이 없는 옛 요청은 대표 청구 1건으로 만든다. */
+type ChargeItemRow = {
+    requestId: string;
+    paymentId: string;
+    /** 요청 순간 스냅샷 금액 */
+    amount: number;
+    taxFreeAmount: number;
+    position: number;
+    paymentType: string;
+    year: number | null;
+    month: number | null;
+    /** 청구의 지금 상태·금액·납부 경로 */
+    paymentStatus: string;
+    paymentAmount: number;
+    paidProvider: string | null;
+};
+
+const UNPAID_STATUSES = ["PENDING", "OVERDUE"];
+const isUnpaid = (status: unknown) => UNPAID_STATUSES.includes(String(status));
 
 // ───────────────────────────── SQL ─────────────────────────────
 
@@ -189,44 +238,96 @@ const VIEW_SQL = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount,
    JOIN "Payment" p ON p.id = r."paymentId"
    JOIN "Student" st ON st.id = p."studentId"`;
 
-/** 열린 요청 중 시간이 지난 것을 EXPIRED 로(전체 또는 청구서 1건). */
-const EXPIRE_SQL = `UPDATE "PosChargeRequest"
-      SET status = 'EXPIRED', "updatedAt" = now()
-    WHERE status IN ('PENDING', 'SENT') AND "expiresAt" <= now()
-      AND ($1::text IS NULL OR "paymentId" = $1)
-    RETURNING id`;
+// ── 묶음(2026-11-08): 요청 1건이 청구 여러 건(PosChargeRequestItem)을 묶는다. 아래 조각을 각 문장에 끼운다. ──
 
 /**
- * 요청 만들기 — 청구서 상태·금액을 **INSERT 하는 그 문장에서** 다시 확인한다.
- * 금액은 Payment.amount(DB 값)를 그대로 복사한다. 같은 청구서에 열린 요청이 있으면 부분 유일 인덱스가 막는다.
+ * 요청 r 에 묶인 청구(청구 id·스냅샷 금액). 항목이 없는 옛 요청(마이그레이션 적용 전후 틈에 옛 코드가 만든 것)은 대표 청구 1건.
+ * 요청 표의 별칭이 r 인 문장에서만 쓴다.
  */
-const INSERT_SQL = `INSERT INTO "PosChargeRequest" (
+const ITEMS_OF_R = `(SELECT i."paymentId", i.amount FROM "PosChargeRequestItem" i WHERE i."requestId" = r.id
+          UNION ALL
+          SELECT r."paymentId", r.amount
+           WHERE NOT EXISTS (SELECT 1 FROM "PosChargeRequestItem" i0 WHERE i0."requestId" = r.id))`;
+
+/**
+ * 묶인 청구 «전부»가 아직 미납 + 금액이 스냅샷 그대로 + 수강료·셔틀비, 그리고 항목 합계 = 요청 금액.
+ * 하나라도 어긋나면(이미 납부·금액 변경·청구 삭제) 거짓 → 선점·납부를 하지 않는다(일부만 납부 금지).
+ * 청구가 지워졌으면(LEFT JOIN 이 NULL) COALESCE 가 false 로 만들어 «어긋남»으로 센다.
+ */
+const ALL_ITEMS_UNPAID_SQL = `NOT EXISTS (SELECT 1 FROM ${ITEMS_OF_R} it LEFT JOIN "Payment" p ON p.id = it."paymentId"
+                       WHERE NOT COALESCE(p.status IN ('PENDING', 'OVERDUE') AND p.amount = it.amount AND p.type IN ('MONTHLY', 'SHUTTLE'), false))
+      AND (SELECT sum(it.amount) FROM ${ITEMS_OF_R} it) = r.amount`;
+
+/** 요청 r 이 청구 $n 을 묶고 있나(대표 청구이거나 항목에 있거나) */
+function hasPaymentSql(n: number): string {
+    const param = "$" + String(n);
+    return `(r."paymentId" = ${param} OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" ih WHERE ih."requestId" = r.id AND ih."paymentId" = ${param}))`;
+}
+
+/** 열린 요청 중 시간이 지난 것을 EXPIRED 로(전체 또는 그 청구서가 묶인 요청). */
+const EXPIRE_SQL = `UPDATE "PosChargeRequest" r
+      SET status = 'EXPIRED', "updatedAt" = now()
+    WHERE r.status IN ('PENDING', 'SENT') AND r."expiresAt" <= now()
+      AND ($1::text IS NULL OR ${hasPaymentSql(1)})
+    RETURNING r.id`;
+
+/**
+ * 요청 만들기 — 청구서 상태·금액·학생을 **INSERT 하는 그 문장에서** 다시 확인한다.
+ * $9 = 청구 id 들(POS 주문 항목 순서), $10 = 직전에 읽은 금액들(DB 값). 그 사이 하나라도 납부·금액 변경이면 0행.
+ * 대표 청구(paymentId) = 1번 항목, 금액 = Payment.amount 합계(DB 값), 같은 학생이어야 한다.
+ * 같은 청구서에 열린 요청이 있으면 부분 유일 인덱스(요청의 대표 청구 · 항목 표의 열린 항목)가 막는다.
+ */
+const INSERT_SQL = `WITH want AS (
+        SELECT u.pid, u.amt, u.ord FROM unnest($9::text[], $10::int[]) WITH ORDINALITY AS u(pid, amt, ord)
+      ), ok AS (
+        SELECT p.id, p.amount, p."studentId", w.ord
+          FROM want w
+          JOIN "Payment" p ON p.id = w.pid AND p.amount = w.amt
+         WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE')
+      )
+      INSERT INTO "PosChargeRequest" (
         "shortCode", "paymentId", amount, "taxFreeAmount", status, "expiresAt",
         "createdVia", "createdByUserId", "createdByName", "claimedAt", "claimedByTokenId"
       )
-      SELECT $1, p.id, p.amount, $2::int, $3, now() + ($4::int * interval '1 minute'),
+      SELECT $1, (SELECT ok.id FROM ok ORDER BY ok.ord LIMIT 1), (SELECT sum(ok.amount) FROM ok)::int, $2::int, $3,
+             now() + ($4::int * interval '1 minute'),
              $5, $6, $7, CASE WHEN $8::text IS NULL THEN NULL ELSE now() END, $8::text
-        FROM "Payment" p
-       WHERE p.id = $9 AND p.amount = $10::int
-         AND p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE')
+       WHERE (SELECT count(*) FROM ok) = cardinality($9::text[])
+         AND (SELECT count(DISTINCT ok."studentId") FROM ok) = 1
+      RETURNING id`;
+
+/** 묶인 청구 항목 — 같은 트랜잭션에서 요청 바로 뒤에. 금액은 위에서 확인한 DB 값($3), 면세는 taxFreeAmountFor($4). */
+const INSERT_ITEMS_SQL = `INSERT INTO "PosChargeRequestItem" ("requestId", "paymentId", amount, "taxFreeAmount", position)
+      SELECT $1, p.id, u.amt, u.tf, u.ord::int
+        FROM unnest($2::text[], $3::int[], $4::int[]) WITH ORDINALITY AS u(pid, amt, tf, ord)
+        JOIN "Payment" p ON p.id = u.pid AND p.amount = u.amt AND p.status IN ('PENDING', 'OVERDUE')
       RETURNING id`;
 
 /**
+ * 요청들에 묶인 청구 + 그 청구의 지금 값(이름은 요청 쪽 대표 청구의 학생 = 묶음 전체의 학생).
+ */
+const ITEMS_SQL = `SELECT i."requestId", i."paymentId", i.amount, i."taxFreeAmount", i.position,
+        p.type AS "paymentType", p.year, p.month, p.status AS "paymentStatus", p.amount AS "paymentAmount", p."paidProvider"
+   FROM "PosChargeRequestItem" i
+   JOIN "Payment" p ON p.id = i."paymentId"
+  WHERE i."requestId" = ANY($1::text[])
+  ORDER BY i."requestId", i.position`;
+
+/**
  * 플러그인 선점(PENDING → SENT). 같은 토큰이 다시 부르면(응답을 못 받고 재시도) 그대로 성공.
- * 청구서가 그 사이 바뀌었으면(납부·금액 수정) 0행.
+ * 묶인 청구가 그 사이 바뀌었으면(하나라도 납부·금액 수정) 0행.
  */
 const CLAIM_SQL = `UPDATE "PosChargeRequest" r
       SET status = 'SENT', "claimedAt" = COALESCE(r."claimedAt", now()), "claimedByTokenId" = $2, "updatedAt" = now()
     WHERE r.id = $1 AND r."expiresAt" > now()
       AND (r.status = 'PENDING' OR (r.status = 'SENT' AND r."claimedByTokenId" = $2))
-      AND EXISTS (SELECT 1 FROM "Payment" p
-                   WHERE p.id = r."paymentId" AND p.status IN ('PENDING', 'OVERDUE') AND p.amount = r.amount)
+      AND ${ALL_ITEMS_UNPAID_SQL}
     RETURNING r.id`;
 
 /**
  * 자동 납부 선점 — 이 문장이 1행을 바꿨을 때만 원장부에 납부를 쓴다.
  * 결제 승인 시각이 만료 전이어야 하고(늦게 온 웹훅·스윕이 먼저 EXPIRED 로 바꾼 경우도 살린다),
- * 청구서가 아직 미납이고 금액이 요청과 같아야 한다. 같은 토스 결제가 다른 요청에 이미 붙었으면 유일 인덱스가 막는다.
+ * 묶인 청구가 «전부» 아직 미납이고 금액이 스냅샷과 같아야 한다(ALL_ITEMS_UNPAID_SQL). 같은 토스 결제가 다른 요청에 이미 붙었으면 유일 인덱스가 막는다.
  * 분할 결제(2026-11-08): 유일 칸(tossPaymentId)에는 대표 결제(가장 먼저 승인) 1건만 넣고, 나머지 결제 ID 는
  * note($6)·감사 기록(PaymentAuditLog)에 남긴다. 나머지 결제의 이중 매칭은 «같은 토스 주문이 다른 요청에 이미 PAID»
  * 조건(NOT EXISTS)으로 막는다 — 한 주문의 결제는 전부 그 주문 몫이라 주문 단위로 막으면 결제 단위로도 막힌다.
@@ -240,9 +341,7 @@ const CLAIM_PAY_SQL = `UPDATE "PosChargeRequest" r
       AND COALESCE($4::timestamptz, now()) <= r."expiresAt"
       AND NOT EXISTS (SELECT 1 FROM "PosChargeRequest" o
                        WHERE o.id <> r.id AND o."tossOrderId" = $2 AND o.status = 'PAID')
-      AND EXISTS (SELECT 1 FROM "Payment" p
-                   WHERE p.id = r."paymentId" AND p.status IN ('PENDING', 'OVERDUE')
-                     AND p.amount = r.amount AND p.type IN ('MONTHLY', 'SHUTTLE'))
+      AND ${ALL_ITEMS_UNPAID_SQL}
     RETURNING r.id, r."paymentId", r."shortCode"`;
 
 /** 보류(HELD) — 열린/만료 요청만. 토스 결제 ID 는 note 에만 적는다(유일 인덱스는 «납부된 결제» 용). */
@@ -259,16 +358,64 @@ const readEnv = (name: string) => (typeof process.env[name] === "string" ? (proc
 function uniqueViolation(error: unknown): string | null {
     const message = String((error as Error)?.message ?? "");
     if (!/23505|unique constraint|duplicate key/i.test(message)) return null;
-    const m = /"(PosChargeRequest_[A-Za-z_]+)"/.exec(message);
+    // 요청 표(PosChargeRequest_…)와 묶음 항목 표(PosChargeRequestItem_…) 인덱스 둘 다
+    const m = /"(PosChargeRequest(?:Item)?_[A-Za-z_]+)"/.exec(message);
     return m ? m[1] : "unknown";
 }
 
-function toAdminView(row: ViewRow): AdminChargeRequestView {
+/** 항목이 없는 옛 요청 → 대표 청구 1건(요청 금액 = 그 청구 금액) */
+function fallbackItem(row: ViewRow & { paymentAmount?: number }): ChargeItemRow {
+    return {
+        requestId: row.id,
+        paymentId: row.paymentId,
+        amount: Number(row.amount),
+        taxFreeAmount: Number(row.taxFreeAmount),
+        position: 1,
+        paymentType: row.paymentType,
+        year: row.year,
+        month: row.month,
+        paymentStatus: String(row.paymentStatus),
+        paymentAmount: Number(row.paymentAmount ?? row.amount),
+        paidProvider: row.paidProvider ?? null,
+    };
+}
+
+/** 요청들의 묶인 청구(항목 순서). 한 번의 조회로 읽고, 항목이 없는 요청은 대표 청구 1건으로 채운다. */
+async function itemsByRequest(rows: Array<ViewRow & { paymentAmount?: number }>): Promise<Map<string, ChargeItemRow[]>> {
+    const map = new Map<string, ChargeItemRow[]>();
+    if (rows.length === 0) return map;
+    const found = await prisma.$queryRawUnsafe<ChargeItemRow[]>(ITEMS_SQL, rows.map((r) => r.id));
+    for (const it of found ?? []) {
+        const list = map.get(it.requestId) ?? [];
+        list.push({
+            ...it,
+            amount: Number(it.amount),
+            taxFreeAmount: Number(it.taxFreeAmount),
+            position: Number(it.position),
+            paymentAmount: Number(it.paymentAmount),
+            paidProvider: it.paidProvider ?? null,
+        });
+        map.set(it.requestId, list);
+    }
+    for (const row of rows) if (!map.has(row.id)) map.set(row.id, [fallbackItem(row)]);
+    return map;
+}
+
+async function itemsOf(row: ViewRow & { paymentAmount?: number }): Promise<ChargeItemRow[]> {
+    return (await itemsByRequest([row])).get(row.id) ?? [fallbackItem(row)];
+}
+
+/** 항목 → 상품명 입력 */
+const nameInputOf = (it: ChargeItemRow): ItemNameInput => ({ year: it.year, month: it.month, type: it.paymentType });
+
+function toAdminView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]): AdminChargeRequestView {
     // 자동 납부는 «요청 PAID 선점 → 원장부(청구서) 납부 기록» 순서다. 그 짧은 틈에 관리자 창이 PAID 를 읽으면
     // 목록을 다시 읽어도 청구서가 아직 미납이라 «미납»으로 남았다(2026-11-08 원장 화면). 청구서가 아직 미납이면
     // 관리자 화면엔 «결제 기다리는 중»(SENT, 만료 아님)으로 보여 계속 읽게 하고, 청구서까지 납부된 뒤 PAID 로 보인다.
     // 단, PAID 로 바뀐 지 2분 이내일 때만 — 서버가 그 틈에 멈춘 드문 경우 창이 끝없이 기다리지 않게.
-    const ledgerPending = row.status === "PAID" && Boolean(row.justPaid) && ["PENDING", "OVERDUE"].includes(String(row.paymentStatus));
+    // 묶음은 묶인 청구 중 하나라도 아직 미납이면 기다린다(원장부는 묶음을 한 트랜잭션으로 쓴다).
+    const ledgerPending = row.status === "PAID" && Boolean(row.justPaid)
+        && (isUnpaid(row.paymentStatus) || items.some((it) => isUnpaid(it.paymentStatus)));
     return {
         id: row.id,
         shortCode: row.shortCode,
@@ -282,14 +429,26 @@ function toAdminView(row: ViewRow): AdminChargeRequestView {
         isExpired: ledgerPending ? false : Boolean(row.isExpired),
         note: row.note,
         studentName: row.studentName,
-        itemLabel: itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
+        itemLabel: items.length > 1
+            ? summaryOf(items.map(nameInputOf))
+            : itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
         memo: buildChargeMemo(row.shortCode),
+        itemCount: items.length,
+        items: items.map((it) => ({
+            paymentId: it.paymentId,
+            itemLabel: itemNameOf({ ...nameInputOf(it), maskedName: "" }),
+            amount: it.amount,
+        })),
     };
 }
 
-function toPluginView(row: ViewRow): PluginChargeRequestView {
+function toPluginView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]): PluginChargeRequestView {
     const masked = maskStudentName(row.studentName);
-    const itemName = itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: masked });
+    // 대표 상품명: 단건 = «2026년 11월 수강료(홍*동)» 그대로, 묶음 = «2026년 11월 수강료 외 1건(홍*동)»
+    const itemName = items.length > 1
+        ? bundleNameOf({ items: items.map(nameInputOf), maskedName: masked })
+        : itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: masked });
+    const memo = buildChargeMemo(row.shortCode);
     return {
         id: row.id,
         shortCode: row.shortCode,
@@ -299,11 +458,18 @@ function toPluginView(row: ViewRow): PluginChargeRequestView {
         taxFreeAmount: Number(row.taxFreeAmount),
         itemName,
         itemTitle: itemName,
-        memo: buildChargeMemo(row.shortCode),
+        memo,
         studentLabel: masked,
         studentName: masked,
         expiresAt: row.expiresAtUtc,
         createdAt: row.createdAtUtc,
+        // 항목별 금액·면세(요청 순간 스냅샷). 단건은 항목 1개 = 요청 금액·면세 그대로.
+        items: items.length > 1
+            ? items.map((it) => {
+                const name = itemNameOf({ ...nameInputOf(it), maskedName: masked });
+                return { itemName: name, itemTitle: name, amount: it.amount, taxFreeAmount: it.taxFreeAmount, memo };
+            })
+            : [{ itemName, itemTitle: itemName, amount: Number(row.amount), taxFreeAmount: Number(row.taxFreeAmount), memo }],
     };
 }
 
@@ -351,81 +517,138 @@ export async function expireStaleChargeRequests(paymentId: string | null = null)
 
 // ───────────────────────────── 만들기·취소·조회 ─────────────────────────────
 
-type PaymentRow = { id: string; type: string; status: string; amount: number };
+type PaymentRow = { id: string; studentId: string; type: string; status: string; amount: number; year: number | null; month: number | null };
 
-async function loadPayment(paymentId: string): Promise<PaymentRow | null> {
+async function loadPayments(paymentIds: string[]): Promise<PaymentRow[]> {
     const rows = await prisma.$queryRawUnsafe<PaymentRow[]>(
-        `SELECT id, type, status, amount FROM "Payment" WHERE id = $1`,
-        paymentId,
+        `SELECT id, "studentId", type, status, amount, year, month FROM "Payment" WHERE id = ANY($1::text[])`,
+        paymentIds,
     );
-    return rows[0] ? { ...rows[0], amount: Number(rows[0].amount) } : null;
+    return (rows ?? []).map((r) => ({ ...r, amount: Number(r.amount) }));
 }
 
-async function openRequestFor(paymentId: string): Promise<ViewRow | null> {
-    const rows = await loadView(`WHERE r."paymentId" = $1 AND r.status IN ('PENDING', 'SENT') LIMIT 1`, paymentId);
-    return rows[0] ?? null;
+/** 이 청구들 중 하나라도 묶고 있는 열린 요청 */
+async function openRequestsFor(paymentIds: string[]): Promise<ViewRow[]> {
+    return loadView(
+        `WHERE r.status IN ('PENDING', 'SENT')
+           AND (r."paymentId" = ANY($1::text[])
+                OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" ih WHERE ih."requestId" = r.id AND ih."paymentId" = ANY($1::text[])))
+         ORDER BY r."createdAt" DESC
+         LIMIT 5`,
+        paymentIds,
+    );
+}
+
+/** 두 청구 id 목록이 같은 묶음인가(순서 무관) */
+const sameSet = (a: string[], b: string[]) => a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+
+/**
+ * 이미 열린 요청이 있을 때: 정확히 같은 청구 묶음이면 그것을 돌려주고(같은 버튼을 두 번 누름),
+ * 일부만 겹치면 막는다 — 같은 청구가 두 열린 요청에 들어가면 한 결제가 두 번 받힐 수 있다.
+ */
+async function existingOpenFor(paymentIds: string[]): Promise<ViewRow | null> {
+    const open = await openRequestsFor(paymentIds);
+    if (open.length === 0) return null;
+    const items = await itemsByRequest(open);
+    const same = open.find((r) => sameSet((items.get(r.id) ?? []).map((it) => it.paymentId), paymentIds));
+    if (same && open.length === 1) return same;
+    const codes = open.map((r) => r.shortCode).join(", ");
+    throw new ChargeRequestError(
+        "ALREADY_OPEN",
+        `선택한 청구가 이미 POS 로 보낸 다른 결제 요청(${codes})에 들어 있습니다. 그 요청이 끝나거나 취소된 뒤 다시 보내 주세요.`,
+    );
 }
 
 /**
- * 요청 만들기. 이미 열린 요청이 있으면 새로 만들지 않고 그것을 돌려준다(existing: true).
+ * 요청 만들기(청구 1건 또는 같은 학생의 여러 건). 이미 같은 묶음의 열린 요청이 있으면 그것을 돌려준다(existing: true).
  * claimTokenId 를 주면(플러그인 탭) 만들면서 바로 SENT 로 선점한다.
+ * 요청 + 항목은 한 트랜잭션 — 항목이 하나라도 못 들어가면(그 사이 납부·다른 요청에 들어감) 요청도 남지 않는다.
  */
 async function createRow(input: {
-    paymentId: string;
+    paymentIds: string[];
     via: "ADMIN" | "PLUGIN";
     actorUserId: string | null;
     actorName: string | null;
     claimTokenId: string | null;
 }): Promise<{ row: ViewRow; existing: boolean }> {
-    const paymentId = String(input.paymentId ?? "").trim();
-    if (!paymentId || paymentId.length > 100) throw new ChargeRequestError("NOT_FOUND", "청구서를 찾지 못했습니다.");
+    const paymentIds = [...new Set((Array.isArray(input.paymentIds) ? input.paymentIds : []).map((id) => String(id ?? "").trim()))];
+    if (paymentIds.length === 0 || paymentIds.some((id) => !id || id.length > 100)) {
+        throw new ChargeRequestError("NOT_FOUND", "청구서를 찾지 못했습니다.");
+    }
+    if (paymentIds.length > MAX_CHARGE_ITEMS) {
+        throw new ChargeRequestError("NOT_ELIGIBLE", `한 번에 현장 결제할 수 있는 청구는 ${MAX_CHARGE_ITEMS}건까지입니다.`);
+    }
 
-    await expireStaleChargeRequests(paymentId);
-    const payment = await loadPayment(paymentId);
-    if (!payment) throw new ChargeRequestError("NOT_FOUND", "청구서를 찾지 못했습니다.");
-    const check = eligibility(payment);
+    for (const id of paymentIds) await expireStaleChargeRequests(id);
+    // 서버에서 다시 확인: 청구가 다 있고 · 수강료·셔틀비 · 미납 · 금액 정상 · 같은 학생(화면 판단은 믿지 않는다)
+    const loaded = await loadPayments(paymentIds);
+    if (loaded.length !== paymentIds.length) throw new ChargeRequestError("NOT_FOUND", "청구서를 찾지 못했습니다.");
+    const check = paymentIds.length === 1 ? eligibility(loaded[0]) : bundleCheck(loaded);
     if (!check.ok) throw new ChargeRequestError("NOT_ELIGIBLE", check.reason);
 
-    const open = await openRequestFor(paymentId);
+    const open = await existingOpenFor(paymentIds);
     if (open) return { row: open, existing: true };
 
-    // 면세 금액 — 토스페이먼츠 경로와 같은 한 함수(원장 결정 D2: 수강료·셔틀비 전액 면세)
-    const taxFree = taxFreeAmountFor(payment.amount);
+    // POS 주문 항목 순서(연·월 → 수강료·셔틀비). 1번이 대표 청구.
+    const sorted = sortItems(loaded);
+    const ids = sorted.map((p) => p.id);
+    const amounts = sorted.map((p) => p.amount);
+    // 면세 금액 — 토스페이먼츠 경로와 같은 한 함수(원장 결정 D2: 수강료·셔틀비 전액 면세). 청구마다 계산해 더한다.
+    const taxFrees = sorted.map((payment) => taxFreeAmountFor(payment.amount));
+    const taxFree = taxFrees.reduce((acc, n) => acc + n, 0);
+    const total = amounts.reduce((acc, n) => acc + n, 0);
     for (let attempt = 0; attempt < 8; attempt += 1) {
         const code = randomShortCode(randomInt) as string;
         try {
-            const inserted = await prisma.$queryRawUnsafe<{ id: string }[]>(
-                INSERT_SQL,
-                code,
-                taxFree,
-                input.claimTokenId ? "SENT" : "PENDING",
-                CHARGE_EXPIRES_MINUTES,
-                input.via,
-                input.actorUserId,
-                input.actorName,
-                input.claimTokenId,
-                paymentId,
-                payment.amount,
-            );
-            if (inserted.length === 0) throw new ChargeRequestError("CHANGED", "청구서 상태나 금액이 방금 바뀌었습니다. 화면을 새로고침해 주세요.");
-            const rows = await loadView(`WHERE r.id = $1`, inserted[0].id);
+            const requestId = await prisma.$transaction(async (db) => {
+                const inserted = await db.$queryRawUnsafe<{ id: string }[]>(
+                    INSERT_SQL,
+                    code,
+                    taxFree,
+                    input.claimTokenId ? "SENT" : "PENDING",
+                    CHARGE_EXPIRES_MINUTES,
+                    input.via,
+                    input.actorUserId,
+                    input.actorName,
+                    input.claimTokenId,
+                    ids,
+                    amounts,
+                );
+                if (inserted.length === 0) throw new ChargeRequestError("CHANGED", "청구서 상태나 금액이 방금 바뀌었습니다. 화면을 새로고침해 주세요.");
+                const items = await db.$queryRawUnsafe<{ id: string }[]>(INSERT_ITEMS_SQL, inserted[0].id, ids, amounts, taxFrees);
+                if (items.length !== ids.length) throw new ChargeRequestError("CHANGED", "청구서 상태나 금액이 방금 바뀌었습니다. 화면을 새로고침해 주세요.");
+                return inserted[0].id;
+            });
+            const rows = await loadView(`WHERE r.id = $1`, requestId);
             if (!rows[0]) throw new ChargeRequestError("NOT_FOUND", "만든 요청을 다시 읽지 못했습니다.");
-            await recordPaymentAudit({
-                paymentId,
-                actorType: input.via === "ADMIN" ? "ADMIN" : "SYSTEM",
-                actorId: input.via === "ADMIN" ? input.actorUserId : `pos-token:${input.claimTokenId}`,
-                action: "POS_CHARGE_REQUEST_CREATED",
-                message: `현장 결제 요청 ${code} (${formatChargeWon(payment.amount)})`,
-                metadata: { requestId: inserted[0].id, shortCode: code, amount: payment.amount, taxFreeAmount: taxFree, via: input.via },
-            }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+            // 감사 기록은 묶인 청구마다(청구 상세 이력에서 각자 보이게)
+            for (const payment of sorted) {
+                await recordPaymentAudit({
+                    paymentId: payment.id,
+                    actorType: input.via === "ADMIN" ? "ADMIN" : "SYSTEM",
+                    actorId: input.via === "ADMIN" ? input.actorUserId : `pos-token:${input.claimTokenId}`,
+                    action: "POS_CHARGE_REQUEST_CREATED",
+                    message: ids.length > 1
+                        ? `현장 결제 요청 ${code} (묶음 ${ids.length}건 · 합계 ${formatChargeWon(total)} 중 ${formatChargeWon(payment.amount)})`
+                        : `현장 결제 요청 ${code} (${formatChargeWon(payment.amount)})`,
+                    metadata: {
+                        requestId,
+                        shortCode: code,
+                        amount: payment.amount,
+                        taxFreeAmount: taxFreeAmountFor(payment.amount),
+                        via: input.via,
+                        ...(ids.length > 1 ? { bundle: { paymentIds: ids, total, taxFreeTotal: taxFree } } : {}),
+                    },
+                }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+            }
             return { row: rows[0], existing: false };
         } catch (error) {
             if (error instanceof ChargeRequestError) throw error;
             const index = uniqueViolation(error);
             if (index === "PosChargeRequest_open_shortCode_key") continue; // 번호가 겹쳤다 → 다시 뽑는다
-            if (index === "PosChargeRequest_open_payment_key") {
-                // 다른 사람이 동시에 같은 청구서로 만들었다 → 그 요청을 보여 준다
-                const again = await openRequestFor(paymentId);
+            if (index === "PosChargeRequest_open_payment_key" || index === "PosChargeRequestItem_open_payment_key") {
+                // 다른 사람이 동시에 같은 청구로 만들었다 → 같은 묶음이면 그 요청을 보여 주고, 아니면 막는다
+                const again = await existingOpenFor(paymentIds);
                 if (again) return { row: again, existing: true };
             }
             throw error;
@@ -434,28 +657,48 @@ async function createRow(input: {
     throw new ChargeRequestError("CODE_EXHAUSTED", "번호를 만들지 못했습니다. 잠시 후 다시 눌러 주세요.");
 }
 
-/** 관리자 «현장 결제» 버튼 */
-export async function createChargeRequestByAdmin(input: { paymentId: string; adminUserId: string; adminName: string }) {
+/** 관리자 «현장 결제» — 청구 1건, 또는 같은 학생의 여러 건(«선택 항목 납부 처리 → 현장 결제»)을 POS 결제 한 번으로 */
+export async function createChargeRequestByAdmin(input: { paymentIds: string[]; adminUserId: string; adminName: string }) {
     const { row, existing } = await createRow({
-        paymentId: input.paymentId,
+        paymentIds: input.paymentIds,
         via: "ADMIN",
         actorUserId: input.adminUserId,
         actorName: input.adminName,
         claimTokenId: null,
     });
-    return { request: toAdminView(row), existing };
+    return { request: toAdminView(row, await itemsOf(row)), existing };
 }
 
-/** 관리자 화면: 이 청구서의 최근 요청(열린 것 우선, 없으면 가장 최근 것) */
+/** 관리자 화면: 이 청구서가 묶인 최근 요청(열린 것 우선, 없으면 가장 최근 것) */
 export async function getChargeRequestForPayment(paymentId: string): Promise<AdminChargeRequestView | null> {
     await expireStaleChargeRequests(paymentId);
     const rows = await loadView(
-        `WHERE r."paymentId" = $1
+        `WHERE ${hasPaymentSql(1)}
          ORDER BY (r.status IN ('PENDING', 'SENT')) DESC, r."createdAt" DESC
          LIMIT 1`,
         paymentId,
     );
-    return rows[0] ? toAdminView(rows[0]) : null;
+    return rows[0] ? toAdminView(rows[0], await itemsOf(rows[0])) : null;
+}
+
+/**
+ * 관리자 화면(여러 건): 정확히 이 청구 묶음으로 만든 최근 요청. 1건이면 getChargeRequestForPayment 와 같다.
+ * 일부만 겹치는 요청(다른 묶음)은 보여 주지 않는다 — «보내기»를 누르면 서버가 겹침을 막고 이유를 알려 준다.
+ */
+export async function getChargeRequestForPayments(paymentIds: string[]): Promise<AdminChargeRequestView | null> {
+    const ids = [...new Set((Array.isArray(paymentIds) ? paymentIds : []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+    if (ids.length <= 1) return ids[0] ? getChargeRequestForPayment(ids[0]) : null;
+    if (ids.length > MAX_CHARGE_ITEMS || ids.some((id) => id.length > 100)) return null;
+    for (const id of ids) await expireStaleChargeRequests(id);
+    const rows = await loadView(
+        `WHERE ${hasPaymentSql(1)}
+         ORDER BY (r.status IN ('PENDING', 'SENT')) DESC, r."createdAt" DESC
+         LIMIT 10`,
+        ids[0],
+    );
+    const items = await itemsByRequest(rows);
+    const row = rows.find((r) => sameSet((items.get(r.id) ?? []).map((it) => it.paymentId), ids));
+    return row ? toAdminView(row, items.get(row.id)) : null;
 }
 
 /** 관리자 취소 — 열린 요청만. 돈은 건드리지 않는다. */
@@ -489,7 +732,8 @@ export async function listOpenChargeRequestsForPlugin(): Promise<PluginChargeReq
          ORDER BY r."createdAt" ASC
          LIMIT 50`,
     );
-    return rows.map(toPluginView);
+    const items = await itemsByRequest(rows);
+    return rows.map((row) => toPluginView(row, items.get(row.id)));
 }
 
 /**
@@ -517,13 +761,16 @@ export async function claimChargeRequestForPlugin(requestId: string, tokenId: st
     if (claimed.length === 0) {
         throw new ChargeRequestError("NOT_CLAIMABLE", "이미 다른 곳에서 가져갔거나, 만료·취소된 요청입니다.");
     }
-    return toPluginView(rows[0]);
+    return toPluginView(rows[0], await itemsOf(rows[0]));
 }
 
-/** POS 탭에서 미납을 골랐을 때 — 요청을 만들면서 바로 선점(같은 청구서에 대기 요청이 있으면 그걸 선점). */
+/**
+ * POS 탭에서 미납을 골랐을 때 — 요청을 만들면서 바로 선점(같은 청구서 단건 대기 요청이 있으면 그걸 선점).
+ * 그 청구가 관리자가 보낸 «묶음» 요청에 들어 있으면 막는다(ALREADY_OPEN) — 묶음은 대기 목록에서 결제한다.
+ */
 export async function createAndClaimForPlugin(paymentId: string, tokenId: string): Promise<PluginChargeRequestView> {
-    const { row, existing } = await createRow({ paymentId, via: "PLUGIN", actorUserId: null, actorName: null, claimTokenId: tokenId });
-    if (!existing) return toPluginView(row);
+    const { row, existing } = await createRow({ paymentIds: [paymentId], via: "PLUGIN", actorUserId: null, actorName: null, claimTokenId: tokenId });
+    if (!existing) return toPluginView(row, await itemsOf(row));
     return claimChargeRequestForPlugin(row.id, tokenId);
 }
 
@@ -603,7 +850,9 @@ export async function listUnpaidForPlugin(query: string): Promise<PluginUnpaidIt
         `SELECT p.id AS "paymentId", s.name AS "studentName", c.name AS "className", p.type, p.year, p.month,
                 p.amount, p.status,
                 EXISTS (SELECT 1 FROM "PosChargeRequest" r
-                         WHERE r."paymentId" = p.id AND r.status IN ('PENDING', 'SENT') AND r."expiresAt" > now()) AS "hasOpenRequest"
+                         WHERE r.status IN ('PENDING', 'SENT') AND r."expiresAt" > now()
+                           AND (r."paymentId" = p.id
+                                OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" ih WHERE ih."requestId" = r.id AND ih."paymentId" = p.id))) AS "hasOpenRequest"
            FROM "Payment" p
            JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
            LEFT JOIN "Class" c ON c.id = p."classId"
@@ -637,6 +886,8 @@ type MatchRow = ViewRow & {
     cancelState: string | null;
     /** DB 시계로 지금 만료됐나(분할 결제 대기 판단) */
     isExpiredNow: boolean;
+    /** 묶인 청구(항목 순서 · 단건·옛 요청은 대표 청구 1건) — loadMatchRows 가 채운다 */
+    items: ChargeItemRow[];
 };
 
 const MATCH_SELECT = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount, r."taxFreeAmount",
@@ -650,11 +901,22 @@ const MATCH_SELECT = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amo
    JOIN "Student" st ON st.id = p."studentId"`;
 
 async function loadMatchRows(where: string, ...params: unknown[]): Promise<MatchRow[]> {
-    const rows = await prisma.$queryRawUnsafe<MatchRow[]>(`${MATCH_SELECT} ${where}`, ...params);
-    return rows.map((r) => ({ ...r, amount: Number(r.amount), paymentAmount: Number(r.paymentAmount) }));
+    const raw = await prisma.$queryRawUnsafe<Omit<MatchRow, "items">[]>(`${MATCH_SELECT} ${where}`, ...params);
+    const rows = raw.map((r) => ({ ...r, amount: Number(r.amount), paymentAmount: Number(r.paymentAmount), items: [] as ChargeItemRow[] }));
+    // 묶인 청구를 한 번에 붙인다(판정·납부·환불·알림이 모두 이 목록을 본다)
+    const items = await itemsByRequest(rows);
+    for (const row of rows) row.items = items.get(row.id) ?? [fallbackItem(row)];
+    return rows;
 }
 
-function describe(row: Pick<MatchRow, "shortCode" | "studentName" | "year" | "month" | "paymentType" | "amount">) {
+/** 이 요청의 묶인 청구(없으면 대표 청구 1건) */
+const itemsOfRow = (row: MatchRow): ChargeItemRow[] => (row.items && row.items.length > 0 ? row.items : [fallbackItem(row)]);
+
+/** 슬랙 문구용 요청 설명. 단건 «S-… · 홍길동 · 2026년 11월 수강료 · 180,000원», 묶음 «S-… · 홍길동 · 수강료 11월 외 1건 · 합계 280,000원» */
+function describe(row: Pick<MatchRow, "shortCode" | "studentName" | "year" | "month" | "paymentType" | "amount"> & { items?: ChargeItemRow[] }) {
+    if (row.items && row.items.length > 1) {
+        return `${row.shortCode} · ${row.studentName} · ${summaryOf(row.items.map(nameInputOf))} · 합계 ${formatChargeWon(row.amount)}`;
+    }
     const when = row.year && row.month ? `${row.year}년 ${row.month}월 ` : "";
     return `${row.shortCode} · ${row.studentName} · ${when}${paymentTypeLabel(row.paymentType)} · ${formatChargeWon(row.amount)}`;
 }
@@ -730,6 +992,10 @@ export async function matchChargeRequestsForOrder(input: {
             isExpiredNow: Boolean(request.isExpiredNow),
         },
         site: { status: request.paymentStatus, amount: request.paymentAmount, type: request.paymentType },
+        // 묶음이면 묶인 청구 «전부»를 본다(하나라도 이미 납부·금액 변경이면 보류). 단건은 site 그대로.
+        items: itemsOfRow(request).length > 1
+            ? itemsOfRow(request).map((it) => ({ status: it.paymentStatus, paymentAmount: it.paymentAmount, amount: it.amount, type: it.paymentType }))
+            : null,
         approved: approved.map((p) => ({ ...p, taxExemptAmount: exempt[p.tossPaymentId] ?? null })),
         others: nonApprovedPayments(order),
         orderCompleted: completedOf(order, input.eventType ?? ""),
@@ -740,7 +1006,9 @@ export async function matchChargeRequestsForOrder(input: {
         handled.push(...idsOf(mine));
         // 요청은 PAID 인데 청구서가 아직 미납 = «선점 → 원장부 기록» 사이에 함수가 멈췄던 것(웹훅 4초 응답 뒤 등).
         // 같은 결제·같은 금액이면 원장부 기록을 다시 시도한다(멱등 — 임대 SQL 이 한 곳만 통과시킨다). 취소가 걸린 요청은 건드리지 않는다.
-        if (["PENDING", "OVERDUE"].includes(String(request.paymentStatus)) && !request.cancelState) {
+        // 묶음: 묶인 청구 중 하나라도 미납이면 복구 대상(임대 SQL 이 «전부 미납»일 때만 통과 — 섞여 있으면 사람에게 알린다).
+        const ledgerUnpaid = isUnpaid(request.paymentStatus) || itemsOfRow(request).some((it) => isUnpaid(it.paymentStatus));
+        if (ledgerUnpaid && !request.cancelState) {
             const repaired = await repairLedgerPaid({ request, orderId, payments: mine, paidAtIso: verdict.paidAtIso, redact });
             notes.push(`${code} ${repaired.note}`);
             if (repaired.retry) retryLater = true;
@@ -811,10 +1079,12 @@ export async function matchChargeRequestsForOrder(input: {
 
     try {
         // 원장부 기록 — 정상 경로와 복구 경로(repairLedgerPaid)가 같은 도우미(writeLedgerPaid, 파일 맨 아래)를 쓴다.
-        await writeLedgerPaid({ claimed: claimed[0], orderId, method, payment, paidAtIso: verdict.paidAtIso });
+        // 묶음은 묶인 청구 전부를 한 트랜잭션으로(하나라도 이미 납부·금액 변경이면 전부 되돌려 아래 보류로).
+        await writeLedgerPaid({ claimed: claimed[0], orderId, method, payment, paidAtIso: verdict.paidAtIso, items: itemsOfRow(request) });
     } catch (error) {
         const message = redact((error as Error).message);
         console.error("[pos-charge] 자동 납부 반영 실패:", message, { requestId: request.id });
+        // 대표 청구로 판단한다 — 묶음은 한 트랜잭션이라 대표가 미납이면 전부 미납이다.
         const now = await prisma.$queryRawUnsafe<{ status: string }[]>(`SELECT status FROM "Payment" WHERE id = $1`, claimed[0].paymentId);
         if (now[0]?.status !== "PAID") {
             // 납부가 안 됐다 → 보류로 돌리고 기존 슬랙 확인 흐름에 맡긴다(돈이 들어온 건 사실이므로 사람이 확인).
@@ -830,7 +1100,7 @@ export async function matchChargeRequestsForOrder(input: {
         }
     }
 
-    await recordChargePaymentsAudit({ claimed: claimed[0], orderId, method, payments, redact });
+    await recordChargePaymentsAudit({ claimed: claimed[0], orderId, method, payments, redact, items: itemsOfRow(request) });
 
     handled.push(...idsOf(payments));
     // 납부 기록 «사이»에 취소 웹훅이 먼저 와서 요청을 DONE 으로 만들었으면, 방금 쓴 납부를 곧바로 환불로 되돌린다(검수 P-1).
@@ -839,10 +1109,11 @@ export async function matchChargeRequestsForOrder(input: {
         return done();
     }
     const split = payments.length > 1 ? ` · 분할 ${payments.length}건` : "";
+    const bundle = itemsOfRow(request).length > 1 ? `청구 ${itemsOfRow(request).length}건을 모두` : "사이트 청구서를";
     await notifyOnce(
         request.id,
         "slackNotifiedAt",
-        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n사이트 청구서를 납부완료로 바꿨습니다.`,
+        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n${bundle} 납부완료로 바꿨습니다.`,
     );
     notes.push(`${code} 자동 납부 반영`);
     return done();
@@ -853,10 +1124,32 @@ export async function matchChargeRequestsForOrder(input: {
 type ClaimedRow = { id?: string; paymentId: string; shortCode: string };
 
 /**
- * 원장부(청구서)에 납부를 쓴다 — 이 파일에서 markPaymentPaid 를 부르는 유일한 곳.
+ * 원장부(청구서)에 납부를 쓴다 — 이 파일에서 markPaymentPaid·markPaymentsPaidTogether 를 부르는 유일한 곳.
  * 부르는 쪽은 둘뿐이다: ① CLAIM_PAY_SQL 선점 1행 뒤(정상) ② REPAIR_LEASE_SQL 임대 1행 뒤(멈춘 기록 복구).
+ * 단건 = markPaymentPaid(예전과 같음) · 묶음 = markPaymentsPaidTogether(묶인 청구 전부를 한 트랜잭션, 하나라도 안 되면 전부 되돌림).
  */
-async function writeLedgerPaid(input: { claimed: ClaimedRow; orderId: string; method: string; payment: ApprovedPayment; paidAtIso: string | null }) {
+async function writeLedgerPaid(input: {
+    claimed: ClaimedRow;
+    orderId: string;
+    method: string;
+    payment: ApprovedPayment;
+    paidAtIso: string | null;
+    items: ChargeItemRow[];
+}) {
+    if (input.items.length > 1) {
+        await markPaymentsPaidTogether({
+            items: input.items.map((it) => ({ paymentId: it.paymentId, amount: it.amount })),
+            actorType: "WEBHOOK",
+            actorId: `pos-charge:${input.claimed.shortCode}`,
+            method: input.method,
+            provider: "TOSS_POS",
+            providerOrderId: input.orderId,
+            paymentKey: input.payment.tossPaymentId,
+            paidAt: input.paidAtIso,
+            bundle: { shortCode: input.claimed.shortCode, paymentIds: input.items.map((it) => it.paymentId) },
+        });
+        return;
+    }
     await markPaymentPaid({
         paymentId: input.claimed.paymentId,
         actorType: "WEBHOOK",
@@ -871,31 +1164,40 @@ async function writeLedgerPaid(input: { claimed: ClaimedRow; orderId: string; me
     });
 }
 
-/** 감사 기록 — 이 납부에 쓰인 토스 결제 전부(분할이면 여러 건)와 방식. 실패해도 납부는 이미 끝났으니 막지 않는다. */
+/**
+ * 감사 기록 — 이 납부에 쓰인 토스 결제 전부(분할이면 여러 건)와 방식. 실패해도 납부는 이미 끝났으니 막지 않는다.
+ * 묶음은 묶인 청구마다 한 줄씩(청구 상세 이력에서 각자 보이게). 취소 때 결제 ID 는 대표 청구의 기록에서 읽는다.
+ */
 async function recordChargePaymentsAudit(input: {
     claimed: ClaimedRow;
     orderId: string;
     method: string;
     payments: ApprovedPayment[];
     redact: (message: string) => string;
+    items: ChargeItemRow[];
 }) {
     const splitNote = input.payments.length > 1 ? describePayments(input.payments).slice(0, 1000) : null;
-    try {
-        await recordPaymentAudit({
-            paymentId: input.claimed.paymentId,
-            actorType: "WEBHOOK",
-            actorId: `pos-charge:${input.claimed.shortCode}`,
-            action: "POS_CHARGE_PAYMENTS",
-            message: splitNote ?? `현장 결제 1건(${input.method})`,
-            metadata: {
-                shortCode: input.claimed.shortCode,
-                tossOrderId: input.orderId,
-                method: input.method,
-                payments: input.payments.map((p) => ({ tossPaymentId: p.tossPaymentId, sourceType: p.sourceType ?? null, amount: p.amount })),
-            },
-        });
-    } catch (error) {
-        console.error("[pos-charge] 감사 기록 실패(납부는 반영됨):", input.redact((error as Error).message), { paymentId: input.claimed.paymentId });
+    const bundle = input.items.length > 1;
+    const targets = bundle ? input.items.map((it) => it.paymentId) : [input.claimed.paymentId];
+    for (const paymentId of targets) {
+        try {
+            await recordPaymentAudit({
+                paymentId,
+                actorType: "WEBHOOK",
+                actorId: `pos-charge:${input.claimed.shortCode}`,
+                action: "POS_CHARGE_PAYMENTS",
+                message: `${bundle ? `묶음 ${input.items.length}건 · ` : ""}${splitNote ?? `현장 결제 1건(${input.method})`}`.slice(0, 1000),
+                metadata: {
+                    shortCode: input.claimed.shortCode,
+                    tossOrderId: input.orderId,
+                    method: input.method,
+                    payments: input.payments.map((p) => ({ tossPaymentId: p.tossPaymentId, sourceType: p.sourceType ?? null, amount: p.amount })),
+                    ...(bundle ? { bundle: { paymentIds: input.items.map((it) => it.paymentId), amounts: input.items.map((it) => it.amount) } } : {}),
+                },
+            });
+        } catch (error) {
+            console.error("[pos-charge] 감사 기록 실패(납부는 반영됨):", input.redact((error as Error).message), { paymentId });
+        }
     }
 }
 
@@ -903,16 +1205,14 @@ async function recordChargePaymentsAudit(input: {
  * 멈춘 납부 기록 복구용 «임대» — 요청은 PAID(같은 토스 주문)인데 청구서가 아직 미납일 때 한 곳만 통과시킨다.
  * - PAID 로 바뀐 지 30초가 지나야(원래 처리가 아직 진행 중일 수 있는 틈은 건드리지 않는다)
  * - updatedAt 30초 임대(두 웹훅·스윕이 동시에 복구하지 않게 — 통과한 쪽이 updatedAt 을 지금으로 바꾼다)
- * - 취소가 걸린 요청은 제외, 청구서 금액·종류도 선점 때와 같은 조건
+ * - 취소가 걸린 요청은 제외, 묶인 청구 «전부»가 선점 때와 같은 조건(미납·금액·종류) — 섞여 있으면 0행 → 사람에게 알림
  */
 const REPAIR_LEASE_SQL = `UPDATE "PosChargeRequest" r
       SET "updatedAt" = now()
     WHERE r.id = $1 AND r.status = 'PAID' AND r."cancelState" IS NULL AND r."tossOrderId" = $2
       AND COALESCE(r."paidRecordedAt", r."paidAt") < now() - interval '30 seconds'
       AND r."updatedAt" < now() - interval '30 seconds'
-      AND EXISTS (SELECT 1 FROM "Payment" p
-                   WHERE p.id = r."paymentId" AND p.status IN ('PENDING', 'OVERDUE')
-                     AND p.amount = r.amount AND p.type IN ('MONTHLY', 'SHUTTLE'))
+      AND ${ALL_ITEMS_UNPAID_SQL}
     RETURNING r.id, r."paymentId", r."shortCode"`;
 
 /**
@@ -931,10 +1231,12 @@ async function repairLedgerPaid(input: {
     if (leased.length === 0) {
         // 못 빌림 = 아직 30초 안(원래 처리 중일 수 있음)·다른 곳이 복구 중·그 사이 청구서가 바뀜.
         // 시간 문제면 다시 오고, 아니면(청구 금액이 바뀌는 등) 사람에게 알린다.
+        // paymentStatus = 묶인 청구가 «전부» PAID 면 'PAID'(다른 곳이 마침), 아니면 대표 청구 상태.
         const why = await prisma.$queryRawUnsafe<{ tooSoon: boolean; paymentStatus: string | null }[]>(
             `SELECT (COALESCE(r."paidRecordedAt", r."paidAt") >= now() - interval '30 seconds'
                      OR r."updatedAt" >= now() - interval '30 seconds') AS "tooSoon",
-                    p.status AS "paymentStatus"
+                    CASE WHEN NOT EXISTS (SELECT 1 FROM ${ITEMS_OF_R} it JOIN "Payment" ip ON ip.id = it."paymentId" WHERE ip.status <> 'PAID')
+                         THEN 'PAID' ELSE p.status END AS "paymentStatus"
                FROM "PosChargeRequest" r JOIN "Payment" p ON p.id = r."paymentId"
               WHERE r.id = $1`,
             request.id,
@@ -944,24 +1246,25 @@ async function repairLedgerPaid(input: {
         await notifyOnce(
             request.id,
             "slackNotifiedAt",
-            `⚠️ 현장 결제 납부 기록 확인 필요 — ${describe(request)}\n결제는 확인됐지만 청구서가 미납 그대로이고 자동 복구 조건(금액·종류)이 맞지 않습니다. 관리자 수납 화면에서 확인해 주세요.`,
+            `⚠️ 현장 결제 납부 기록 확인 필요 — ${describe(request)}\n결제는 확인됐지만 청구서가 미납 그대로이고 자동 복구 조건(금액·종류${itemsOfRow(request).length > 1 ? "·묶인 청구 전부 미납" : ""})이 맞지 않습니다. 관리자 수납 화면에서 확인해 주세요.`,
         );
         return { note: "납부 기록 복구 조건 불일치 → 원장 알림", retry: false };
     }
     const method = methodOf(payments.map((p) => String(p.sourceType ?? "")));
     try {
-        await writeLedgerPaid({ claimed: leased[0], orderId, method, payment: payments[0], paidAtIso: input.paidAtIso });
+        await writeLedgerPaid({ claimed: leased[0], orderId, method, payment: payments[0], paidAtIso: input.paidAtIso, items: itemsOfRow(request) });
     } catch (error) {
         console.error("[pos-charge] 납부 기록 복구 실패(스윕이 다시 시도):", redact((error as Error).message), { requestId: request.id });
         return { note: "납부 기록 복구 실패(스윕이 다시 시도)", retry: true };
     }
-    await recordChargePaymentsAudit({ claimed: leased[0], orderId, method, payments, redact });
+    await recordChargePaymentsAudit({ claimed: leased[0], orderId, method, payments, redact, items: itemsOfRow(request) });
     if (await refundIfCancelledDuringLedger(leased[0], request)) return { note: "납부 기록 복구 중 POS 취소 확인 → 환불", retry: false };
     const split = payments.length > 1 ? ` · 분할 ${payments.length}건` : "";
+    const bundle = itemsOfRow(request).length > 1 ? `청구 ${itemsOfRow(request).length}건을 모두` : "사이트 청구서를";
     await notifyOnce(
         request.id,
         "slackNotifiedAt",
-        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n사이트 청구서를 납부완료로 바꿨습니다.`,
+        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n${bundle} 납부완료로 바꿨습니다.`,
     );
     return { note: "멈췄던 납부 기록 복구", retry: false };
 }
@@ -1028,23 +1331,39 @@ async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string
     // 전부 취소 → 환불. 요청 표시와 청구서 환불을 한 트랜잭션으로(한쪽만 남지 않게).
     // 요청이 이미 DONE 이어도(재전송·앞선 처리) 청구가 PAID 면 다시 환불을 시도한다 — 조건부 UPDATE 라 몇 번이든 안전하고,
     // «요청 PAID → 청구서 기록» 틈에 취소가 먼저 와서 나중에 청구서가 PAID 로 써진 경우도 여기서 바로잡힌다(검수 P-1).
+    const items = itemsOfRow(row);
     const result = await prisma.$transaction(async (db) => {
         const marked = (await db.$queryRawUnsafe<{ id: string }[]>(MARK_REFUND_SQL, row.id)).length > 0;
         // 이번에 처음 취소 확정(marked)이면 환불한다. 이미 DONE 이었으면(재전송·스윕) «청구의 마지막 납부·상태 기록이
         // 이 현장 결제의 자동 납부(pos-charge:번호)일 때만» 환불한다 — 관리자가 그 뒤 일부러 다시 납부 처리한 건을
         // 재전송 웹훅이 몰래 환불로 되돌리지 않게(재검수 2026-11-08).
-        const allowed = marked || (await lastLedgerWriteIsThisCharge(db, row));
-        const refunded = allowed ? await refundPaidPaymentInTx(db, refundInput(row, orderId, verdict.cancelled)) : false;
-        return { marked, allowed, refunded };
+        // 묶음(2026-11-08): POS 결제 하나에 묶인 청구 «전부»를 같은 판단으로 환불한다(같은 트랜잭션).
+        let allowedAny = false;
+        let refundedCount = 0;
+        for (const it of items) {
+            const target = { paymentId: it.paymentId, shortCode: row.shortCode };
+            const allowed = marked || (await lastLedgerWriteIsThisCharge(db, target));
+            if (!allowed) continue;
+            allowedAny = true;
+            if (await refundPaidPaymentInTx(db, refundInput(target, orderId, verdict.cancelled))) refundedCount += 1;
+        }
+        return { marked, allowed: allowedAny, refunded: refundedCount > 0, refundedCount };
     });
     if (result.refunded) {
         revalidatePaymentCaches();
-        await notifyOnce(row.id, "refundNotifiedAt", `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}\n사이트 청구서를 환불로 바꿨습니다.`);
-        return { note: `${row.shortCode} POS 취소 → 환불 처리`, retry: false };
+        const what = items.length <= 1
+            ? "사이트 청구서를 환불로 바꿨습니다."
+            : result.refundedCount === items.length
+                ? `묶인 청구 ${items.length}건을 모두 환불로 바꿨습니다.`
+                : `묶인 청구 ${items.length}건 중 ${result.refundedCount}건만 환불로 바꿨습니다(나머지는 그 사이 다른 경로로 처리됨). 수납 화면에서 확인해 주세요.`;
+        await notifyOnce(row.id, "refundNotifiedAt", `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}\n${what}`);
+        return { note: `${row.shortCode} POS 취소 → 환불 처리${items.length > 1 ? `(${result.refundedCount}/${items.length}건)` : ""}`, retry: false };
     }
     // 환불할 게 없었다 = 청구가 PAID 가 아니다. 지금 상태를 DB 에서 다시 읽고 실제 상태대로 알린다.
+    // 묶음은 묶인 청구 중 하나라도 PAID 면 'PAID' 로 본다(아래 판단이 «다시 확인 / 다른 경로 납부»로 간다).
     const cur = await prisma.$queryRawUnsafe<{ paymentStatus: string | null; ledgerMayRun: boolean }[]>(
-        `SELECT p.status AS "paymentStatus",
+        `SELECT CASE WHEN EXISTS (SELECT 1 FROM ${ITEMS_OF_R} it JOIN "Payment" ip ON ip.id = it."paymentId" WHERE ip.status = 'PAID')
+                     THEN 'PAID' ELSE p.status END AS "paymentStatus",
                 (COALESCE(r."paidRecordedAt", r."paidAt") > now() - interval '2 minutes') AS "ledgerMayRun"
            FROM "PosChargeRequest" r JOIN "Payment" p ON p.id = r."paymentId"
           WHERE r.id = $1`,
@@ -1119,9 +1438,15 @@ async function refundIfCancelledDuringLedger(claimed: ClaimedRow, request: Match
         request.id,
     );
     if (rows[0]?.cancelState !== "DONE") return false;
-    const refunded = await prisma.$transaction((db) =>
-        refundPaidPaymentInTx(db, refundInput({ paymentId: claimed.paymentId, shortCode: claimed.shortCode }, rows[0].tossOrderId, null)),
-    );
+    // 묶음이면 방금 납부로 쓴 청구 «전부»를 한 트랜잭션으로 되돌린다(단건은 대표 청구 1건 — 예전과 같다)
+    const targets = itemsOfRow(request).length > 1 ? itemsOfRow(request).map((it) => it.paymentId) : [claimed.paymentId];
+    const refunded = await prisma.$transaction(async (db) => {
+        let any = false;
+        for (const paymentId of targets) {
+            if (await refundPaidPaymentInTx(db, refundInput({ paymentId, shortCode: claimed.shortCode }, rows[0].tossOrderId, null))) any = true;
+        }
+        return any;
+    });
     if (refunded) revalidatePaymentCaches();
     await notifyOnce(
         request.id,
@@ -1137,10 +1462,14 @@ async function refundIfCancelledDuringLedger(claimed: ClaimedRow, request: Match
 export type AdminChargeCancelView = {
     requestId: string;
     shortCode: string;
+    /** 요청 금액(묶음이면 합계 — POS 결제 하나를 취소하면 이만큼 돌려준다) */
     amount: number;
     paidKst: string | null;
     studentName: string;
+    /** 단건 = «2026년 11월 수강료», 묶음 = «수강료 11월 외 1건» */
     itemLabel: string;
+    /** 묶인 청구 수(단건 1) — 2 이상이면 취소하면 전부 환불된다 */
+    itemCount: number;
     paymentStatus: string;
     /** NULL = 취소 없음 · REQUESTED · SENT · FAILED · PARTIAL · DONE */
     cancelState: string | null;
@@ -1157,10 +1486,12 @@ export type AdminChargeCancelView = {
     blockReason: string;
 };
 
-function toCancelView(row: ViewRow): AdminChargeCancelView {
+function toCancelView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]): AdminChargeCancelView {
     const check = cancelCheck({
         request: { status: row.status, cancelState: row.cancelState ?? null },
         site: { status: row.paymentStatus, paidProvider: row.paidProvider ?? null },
+        // 묶음이면 묶인 청구 전부가 토스 POS 납부완료여야 취소를 보낼 수 있다
+        sites: items.length > 1 ? items.map((it) => ({ status: it.paymentStatus, paidProvider: it.paidProvider })) : null,
     });
     const noOrder = !row.tossOrderId;
     return {
@@ -1169,7 +1500,10 @@ function toCancelView(row: ViewRow): AdminChargeCancelView {
         amount: Number(row.amount),
         paidKst: row.paidKst,
         studentName: row.studentName,
-        itemLabel: itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
+        itemLabel: items.length > 1
+            ? summaryOf(items.map(nameInputOf))
+            : itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
+        itemCount: items.length,
         paymentStatus: row.paymentStatus,
         cancelState: row.cancelState ?? null,
         cancelReportMessage: row.cancelReportMessage ?? null,
@@ -1182,12 +1516,15 @@ function toCancelView(row: ViewRow): AdminChargeCancelView {
     };
 }
 
-/** 이 청구서를 납부시킨 현장 결제 요청(가장 최근 PAID). 청구서 id 로만 찾는다(요청 id 를 밖에서 받지 않음 — IDOR 방지). */
+/**
+ * 이 청구서를 납부시킨 현장 결제 요청(가장 최근 PAID — 대표 청구든 묶음의 다른 청구든).
+ * 청구서 id 로만 찾는다(요청 id 를 밖에서 받지 않음 — IDOR 방지).
+ */
 async function paidRequestRowFor(paymentId: string): Promise<ViewRow | null> {
     const id = String(paymentId ?? "").trim();
     if (!id || id.length > 100) return null;
     const rows = await loadView(
-        `WHERE r."paymentId" = $1 AND r.status = 'PAID'
+        `WHERE ${hasPaymentSql(1)} AND r.status = 'PAID'
          ORDER BY r."paidAt" DESC NULLS LAST, r."createdAt" DESC
          LIMIT 1`,
         id,
@@ -1198,18 +1535,19 @@ async function paidRequestRowFor(paymentId: string): Promise<ViewRow | null> {
 /** 관리자 «결제 취소» 창: 지금 상태 */
 export async function getChargeCancelForPayment(paymentId: string): Promise<AdminChargeCancelView | null> {
     const row = await paidRequestRowFor(paymentId);
-    return row ? toCancelView(row) : null;
+    return row ? toCancelView(row, await itemsOf(row)) : null;
 }
 
 /**
  * 관리자 «결제 취소» — 요청에 «취소할 일»(REQUESTED)을 남긴다. 돈은 여기서 안 움직인다.
- * 실제 환불은 POS 가 취소한 뒤 토스 웹훅이 오면 settleCancelForRow 가 한다.
- * 조건은 UPDATE 한 문장 안에서 다시 확인한다(청구서 납부완료·토스 POS·같은 청구서).
+ * 실제 환불은 POS 가 취소한 뒤 토스 웹훅이 오면 settleCancelForRow 가 한다(묶음이면 묶인 청구 전부).
+ * 조건은 UPDATE 한 문장 안에서 다시 확인한다(묶인 청구 «전부» 납부완료·토스 POS · 요청과 청구가 맞물림).
  */
 export async function requestChargeCancelByAdmin(input: { paymentId: string; adminUserId: string }): Promise<AdminChargeCancelView> {
     const row = await paidRequestRowFor(input.paymentId);
     if (!row) throw new ChargeRequestError("NOT_FOUND", "현장 결제로 납부된 기록을 찾지 못했습니다.");
-    const view = toCancelView(row);
+    const items = await itemsOf(row);
+    const view = toCancelView(row, items);
     if (!view.canRequest) throw new ChargeRequestError("NOT_ELIGIBLE", view.blockReason || "결제 취소를 보낼 수 없습니다.");
     const updated = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `UPDATE "PosChargeRequest" r
@@ -1218,24 +1556,29 @@ export async function requestChargeCancelByAdmin(input: { paymentId: string; adm
                 "cancelReportedAt" = NULL, "cancelReportMessage" = NULL, "updatedAt" = now()
           WHERE r.id = $1 AND r."paymentId" = $3 AND r.status = 'PAID' AND r."tossOrderId" IS NOT NULL
             AND (r."cancelState" IS NULL OR r."cancelState" IN ('FAILED', 'PARTIAL'))
-            AND EXISTS (SELECT 1 FROM "Payment" p
-                         WHERE p.id = r."paymentId" AND p.status = 'PAID' AND p."paidProvider" = 'TOSS_POS')
+            AND NOT EXISTS (SELECT 1 FROM ${ITEMS_OF_R} it LEFT JOIN "Payment" p ON p.id = it."paymentId"
+                             WHERE NOT COALESCE(p.status = 'PAID' AND p."paidProvider" = 'TOSS_POS', false))
           RETURNING r.id`,
         row.id,
         input.adminUserId,
         row.paymentId,
     );
     if (updated.length === 0) throw new ChargeRequestError("CHANGED", "그 사이 상태가 바뀌었습니다. 창을 닫고 다시 열어 주세요.");
-    await recordPaymentAudit({
-        paymentId: row.paymentId,
-        actorType: "ADMIN",
-        actorId: input.adminUserId,
-        action: "POS_CHARGE_CANCEL_REQUESTED",
-        message: `현장 결제 ${row.shortCode} POS 결제 취소 요청 (${formatChargeWon(row.amount)})`,
-        metadata: { requestId: row.id, shortCode: row.shortCode, previousCancelState: row.cancelState ?? null },
-    }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+    // 감사 기록은 묶인 청구마다(어느 청구에서 눌렀든 전부 환불 대상이 된다)
+    for (const it of items) {
+        await recordPaymentAudit({
+            paymentId: it.paymentId,
+            actorType: "ADMIN",
+            actorId: input.adminUserId,
+            action: "POS_CHARGE_CANCEL_REQUESTED",
+            message: items.length > 1
+                ? `현장 결제 ${row.shortCode} POS 결제 취소 요청 (묶음 ${items.length}건 · 합계 ${formatChargeWon(row.amount)})`
+                : `현장 결제 ${row.shortCode} POS 결제 취소 요청 (${formatChargeWon(row.amount)})`,
+            metadata: { requestId: row.id, shortCode: row.shortCode, previousCancelState: row.cancelState ?? null, ...(items.length > 1 ? { bundleSize: items.length } : {}) },
+        }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+    }
     const after = await paidRequestRowFor(row.paymentId);
-    return toCancelView(after ?? row);
+    return toCancelView(after ?? row, items);
 }
 
 // ───────────────────────────── 플러그인: 취소할 일 ─────────────────────────────
@@ -1253,14 +1596,17 @@ export type PluginCancelJobView = {
 /** 플러그인이 «취소할 일»을 선점했을 때 받는 값 — 취소할 토스 주문·결제 ID 는 서버 DB 값만 */
 export type PluginCancelClaimView = PluginCancelJobView & { tossOrderId: string; tossPaymentIds: string[] };
 
-function toCancelJobView(row: ViewRow): PluginCancelJobView {
+function toCancelJobView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]): PluginCancelJobView {
     const masked = maskStudentName(row.studentName);
     return {
         id: row.id,
         shortCode: row.shortCode,
+        // 묶음이면 합계(POS 결제 하나 = 주문 하나를 취소)
         amount: Number(row.amount),
         studentName: masked,
-        itemName: itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: masked }),
+        itemName: items.length > 1
+            ? bundleNameOf({ items: items.map(nameInputOf), maskedName: masked })
+            : itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: masked }),
         cancelState: String(row.cancelState ?? ""),
     };
 }
@@ -1277,7 +1623,8 @@ export async function listCancelJobsForPlugin(): Promise<PluginCancelJobView[]> 
          ORDER BY r."cancelRequestedAt" ASC NULLS LAST
          LIMIT 20`,
     );
-    return rows.map(toCancelJobView);
+    const items = await itemsByRequest(rows);
+    return rows.map((row) => toCancelJobView(row, items.get(row.id)));
 }
 
 /**
@@ -1316,7 +1663,7 @@ export async function claimCancelForPlugin(requestId: string, tokenId: string): 
     const row = rows[0];
     if (!row || !row.tossOrderId) throw new ChargeRequestError("NOT_FOUND", "요청을 찾지 못했습니다.");
     const tossPaymentIds = await chargePaymentIdsFor({ paymentId: row.paymentId, tossOrderId: row.tossOrderId, tossPaymentId: row.tossPaymentId, note: row.note });
-    return { ...toCancelJobView(row), tossOrderId: row.tossOrderId, tossPaymentIds };
+    return { ...toCancelJobView(row, await itemsOf(row)), tossOrderId: row.tossOrderId, tossPaymentIds };
 }
 
 export const PLUGIN_CANCEL_RESULTS = ["DONE", "FAILED"] as const;

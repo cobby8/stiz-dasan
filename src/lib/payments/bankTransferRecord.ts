@@ -115,19 +115,32 @@ export function bankTransferResultMessage(recordedCount: number, skippedCount: n
  * - 여러 건 한 번에 결제는 다음 단계에서 추가(지금은 1건만)
  * - 수강료·셔틀비 미납만
  */
-export function posChargeAvailability(targets: Array<{ type: string; status: string }>):
+export function posChargeAvailability(targets: Array<{ type: string; status: string; studentId?: string | null }>):
     { enabled: true } | { enabled: false; reason: string } {
     if (targets.length === 0) return { enabled: false, reason: "납부 처리할 청구를 선택해 주세요." };
-    if (targets.length > 1) return { enabled: false, reason: "같은 학생 여러 건 한 번에 결제는 곧 추가됩니다." };
-    const [target] = targets;
-    if (!(RECORDABLE_STATUSES as readonly string[]).includes(target.status)) {
-        return { enabled: false, reason: "미납·연체 청구만 현장 결제할 수 있어요." };
+    // 여러 건(2026-11-08 원장 결정 «같은 학생이면 한 번에 결제»): 같은 학생 · 수강료·셔틀비 · 미납만, 최대 POS_CHARGE_MAX_ITEMS 건.
+    // 화면 판단일 뿐이다 — 서버(createRow)가 DB 값으로 같은 규칙을 다시 확인한다.
+    if (targets.length > POS_CHARGE_MAX_ITEMS) {
+        return { enabled: false, reason: `현장 결제는 한 번에 ${POS_CHARGE_MAX_ITEMS}건까지 묶을 수 있어요.` };
     }
-    if (!(POS_CHARGE_TYPES as readonly string[]).includes(target.type)) {
-        return { enabled: false, reason: "수강료·셔틀비만 현장 결제할 수 있어요." };
+    if (targets.length > 1) {
+        const students = new Set(targets.map((t) => String(t.studentId ?? "")));
+        if (students.size !== 1 || students.has("")) {
+            return { enabled: false, reason: "다른 학생이 섞여 있어요. 현장 결제는 같은 학생 청구만 한 번에 받을 수 있어요." };
+        }
+    }
+    const multi = targets.length > 1;
+    if (targets.some((t) => !(RECORDABLE_STATUSES as readonly string[]).includes(t.status))) {
+        return { enabled: false, reason: multi ? "미납·연체가 아닌 청구가 섞여 있어요. 미납·연체 청구만 현장 결제할 수 있어요." : "미납·연체 청구만 현장 결제할 수 있어요." };
+    }
+    if (targets.some((t) => !(POS_CHARGE_TYPES as readonly string[]).includes(t.type))) {
+        return { enabled: false, reason: multi ? "수강료·셔틀비가 아닌 청구가 섞여 있어요. 수강료·셔틀비만 현장 결제할 수 있어요." : "수강료·셔틀비만 현장 결제할 수 있어요." };
     }
     return { enabled: true };
 }
+
+/** 현장 결제 한 번에 묶을 수 있는 청구 수 — 서버 MAX_CHARGE_ITEMS(src/lib/pos/charge-request.mjs)와 같은 값(테스트로 비교) */
+export const POS_CHARGE_MAX_ITEMS = 10;
 
 /**
  * 여러 건 납부 처리 창에 보일 «대상 학생» 한 줄.

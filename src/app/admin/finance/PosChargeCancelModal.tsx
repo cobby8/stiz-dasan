@@ -109,11 +109,20 @@ export default function PosChargeCancelModal({
         };
     }, [isWorking, refresh]);
 
+    // 묶음(같은 학생 여러 건을 POS 결제 한 번으로 받은 것) — 취소하면 묶인 청구가 «전부» 환불된다.
+    // 그래서 제목은 고른 한 건이 아니라 묶음 전체(«홍길동 · 수강료 11월 외 1건 · 합계 280,000원»)를 보인다.
+    const isBundle = (cancel?.itemCount ?? 1) > 1;
+    const heading = isBundle && cancel
+        ? `${target.studentName} · ${cancel.itemLabel} · 합계 ${won(cancel.amount)}`
+        : `${target.studentName} · ${won(target.amount)}`;
+
     async function handleRequest() {
         // 돈이 나가는 작업 — 위험 작업 확인 창(대상·금액·되돌릴 수 없음을 보고 누르게)
         const ok = await confirm({
-            title: `${target.studentName} · ${won(target.amount)} 결제 취소`,
-            description: "POS 결제가 취소되고 청구는 환불로 바뀝니다. 되돌릴 수 없습니다.",
+            title: `${heading} 결제 취소`,
+            description: isBundle && cancel
+                ? `POS 결제가 취소되고 함께 결제한 청구 ${cancel.itemCount}건이 모두 환불로 바뀝니다. 되돌릴 수 없습니다.`
+                : "POS 결제가 취소되고 청구는 환불로 바뀝니다. 되돌릴 수 없습니다.",
             confirmLabel: "결제 취소",
             tone: "danger",
         });
@@ -139,11 +148,11 @@ export default function PosChargeCancelModal({
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <p className="text-xs font-bold text-[var(--color-academy-danger)]">결제 취소 · 토스 POS</p>
-                        <h2 id="pos-cancel-title" className="mt-0.5 truncate text-lg font-extrabold text-[var(--color-academy-ink)]">
-                            {target.studentName} · {won(target.amount)}
+                        <h2 id="pos-cancel-title" className={`mt-0.5 text-lg font-extrabold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
+                            {heading}
                         </h2>
                         <p className="text-sm text-[var(--color-academy-muted)]">
-                            {target.title}
+                            {isBundle ? `함께 결제한 청구 ${cancel?.itemCount ?? 0}건이 같이 취소돼요` : target.title}
                             {cancel?.paidKst ? ` · ${cancel.paidKst} 결제` : ""}
                         </p>
                     </div>
@@ -160,7 +169,9 @@ export default function PosChargeCancelModal({
                     </p>
                 ) : state === "DONE" ? (
                     <div className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-4" aria-live="polite">
-                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">환불 처리됐습니다</p>
+                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">
+                            환불 처리됐습니다{isBundle && cancel ? ` · 청구 ${cancel.itemCount}건 모두` : ""}
+                        </p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                             POS 결제 취소가 확인됐습니다{cancel.refundedKst ? ` · ${cancel.refundedKst}` : ""}
                         </p>

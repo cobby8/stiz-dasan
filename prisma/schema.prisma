@@ -3140,6 +3140,26 @@ model PosChargeRequest {
   @@index([paymentId, createdAt(sort: Desc)])
 }
 
+/// 토스 POS «현장 결제» 묶음의 청구 항목 — 요청 1건이 청구 여러 건(같은 학생)을 묶는다
+/// (migration 20261108180000_pos_charge_request_items 의 사본). 단건 요청도 항목 1개로 적는다.
+/// ⚠️ DB 에는 더 있다: requestId → PosChargeRequest · paymentId → Payment FK(ON DELETE CASCADE), 금액·면세·순서 CHECK,
+///    부분 유일 인덱스("open" 인 항목의 paymentId 하나 — 같은 청구가 두 열린 요청에 못 들어감),
+///    요청 상태가 열린 상태를 벗어나면 open=false 로 바꾸는 트리거. 코드는 raw SQL 로만 쓴다.
+model PosChargeRequestItem {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  requestId     String
+  paymentId     String
+  amount        Int
+  taxFreeAmount Int
+  position      Int
+  open          Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([requestId, paymentId])
+  @@unique([requestId, position])
+  @@index([paymentId])
+}
+
 /// POS 플러그인 매장 토큰 — 원문은 저장하지 않고 SHA-256 해시만 (migration 20261107150000 의 사본)
 model PosPluginToken {
   id              String    @id @default(dbgenerated("gen_random_uuid()::text"))

@@ -702,6 +702,97 @@ export async function markPaymentPaid(input: {
     revalidatePaymentCaches();
 }
 
+/**
+ * 청구 여러 건을 «한 트랜잭션으로» 납부완료 — 토스 POS 현장 결제 «묶음»(같은 학생 여러 건을 POS 결제 한 번, 2026-11-08 원장 결정)에서만 쓴다.
+ * 왜 따로 두나: markPaymentPaid 를 건마다 부르면 중간에 멈췄을 때 «일부만 납부»가 남는다. 묶음은 전부 아니면 전무여야 한다.
+ * - 건마다 «아직 미납 + 금액 그대로 + 수강료·셔틀비»일 때만 바꾼다(조건부 UPDATE). 하나라도 0행이면 오류 → 전부 되돌린다.
+ * - 청구·청구서·감사 기록 모양은 markPaymentPaid 와 같다(action PAYMENT_MARK_PAID — 취소 확정의 «출처 확인»이 이 값을 본다).
+ * - 청구서(PaymentInvoice)는 트랜잭션 «밖»에서 먼저 만들어 둔다(월 단위로 한꺼번에 만드는 함수라 트랜잭션을 길게 잡지 않게).
+ */
+export async function markPaymentsPaidTogether(input: {
+    items: { paymentId: string; amount: number }[];
+    actorType: LedgerActorType;
+    actorId?: string | null;
+    method?: string | null;
+    provider?: string | null;
+    providerOrderId?: string | null;
+    paymentKey?: string | null;
+    paidAt?: Date | string | null;
+    /** 감사 기록에 같이 남길 묶음 정보(번호·청구 id 목록 등) */
+    bundle?: Record<string, unknown>;
+}) {
+    await ensurePaymentInfrastructure();
+    if (input.items.length === 0) throw new Error("묶음 납부: 청구가 없습니다.");
+    const paidAt = input.paidAt ? new Date(input.paidAt) : null;
+    if (paidAt && Number.isNaN(paidAt.getTime())) {
+        throw new Error("Invalid paidAt date");
+    }
+    // 청구서 먼저(이미 있으면 그대로 돌려준다)
+    const invoiceIds: (string | null)[] = [];
+    for (const item of input.items) {
+        invoiceIds.push((await ensureInvoiceForPayment(item.paymentId))?.id ?? null);
+    }
+
+    await prisma.$transaction(async (db) => {
+        for (let i = 0; i < input.items.length; i += 1) {
+            const item = input.items[i];
+            const changed = await db.$queryRawUnsafe<{ id: string }[]>(
+                `UPDATE "Payment"
+                 SET status = 'PAID',
+                     "paidDate" = COALESCE("paidDate", $7::timestamp, NOW()),
+                     method = COALESCE($2, method),
+                     "paidProvider" = COALESCE($3, "paidProvider"),
+                     "providerOrderId" = COALESCE($4, "providerOrderId"),
+                     "providerPaymentKey" = COALESCE($5, "providerPaymentKey"),
+                     "receiptUrl" = COALESCE($6, "receiptUrl"),
+                     "updatedAt" = NOW()
+                 WHERE id = $1 AND status IN ('PENDING', 'OVERDUE') AND amount = $8::int AND type IN ('MONTHLY', 'SHUTTLE')
+                 RETURNING id`,
+                item.paymentId,
+                input.method ?? null,
+                input.provider ?? null,
+                input.providerOrderId ?? null,
+                input.paymentKey ?? null,
+                null,
+                paidAt,
+                item.amount,
+            );
+            // 하나라도 못 바꾸면(이미 납부·금액 변경) 전부 되돌린다 — 일부만 납부 금지
+            if (changed.length === 0) {
+                throw new Error(`묶음 납부 중단: 청구 ${item.paymentId} 가 미납이 아니거나 금액이 바뀌었습니다(전부 되돌림).`);
+            }
+            const invoiceId = invoiceIds[i];
+            if (invoiceId) {
+                await db.$executeRawUnsafe(
+                    `UPDATE "PaymentInvoice"
+                     SET status = 'PAID', "paidAt" = COALESCE("paidAt", $2::timestamp, NOW()), "updatedAt" = NOW()
+                     WHERE id = $1`,
+                    invoiceId,
+                    paidAt,
+                );
+            }
+            await db.$executeRawUnsafe(
+                `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, NULL, $3, $4, 'PAYMENT_MARK_PAID', 'Payment marked as paid', $5::jsonb, NOW())`,
+                item.paymentId,
+                invoiceId,
+                input.actorType,
+                input.actorId ?? null,
+                JSON.stringify({
+                    method: input.method,
+                    provider: input.provider,
+                    providerOrderId: input.providerOrderId ?? null,
+                    paymentKey: input.paymentKey ? "[saved]" : null,
+                    paidAt: paidAt?.toISOString() ?? null,
+                    bundle: { ...(input.bundle ?? {}), size: input.items.length, position: i + 1 },
+                }),
+            );
+        }
+    });
+
+    revalidatePaymentCaches();
+}
+
 /** 트랜잭션 안에서 쓰는 raw SQL 두 개만 받는다(prisma 본체 또는 $transaction 의 db) */
 export type LedgerSqlClient = Pick<typeof prisma, "$executeRawUnsafe" | "$queryRawUnsafe">;
 

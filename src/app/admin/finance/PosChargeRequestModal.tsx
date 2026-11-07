@@ -16,9 +16,23 @@ import type { AdminChargeRequestView } from "@/lib/pos/chargeRequestService";
  * 결제 번호(shortCode)는 서버가 결제를 맞춰 보는 내부 값이라 크게 보여 주지 않는다.
  * 보류·지난 요청 줄에만 슬랙 알림과 대조할 수 있게 작은 회색 글씨로 남긴다.
  * 이 창은 돈을 직접 바꾸지 않는다. 납부완료는 토스 결제 확인으로만 된다.
+ *
+ * 묶음(2026-11-08 원장 결정 «같은 학생이면 한 번에 결제»): paymentIds 가 2건 이상이면 같은 학생의 미납 여러 건을
+ * POS 결제 한 번(주문 하나·항목 여러 개)으로 보낸다. 제목은 «홍길동 · 수강료 11월 외 1건 · 합계 280,000원».
+ * 결제가 확인되면 묶인 청구가 전부 납부완료가 된다(일부만 납부되는 일은 없다 — 어긋나면 보류).
  */
 
-type Target = { id: string; studentName: string; amount: number; title: string };
+type Target = {
+    /** 대표 청구(묶음이면 1번 항목) */
+    id: string;
+    /** 보낼 청구 전부(1건이면 [id]) */
+    paymentIds?: string[];
+    studentName: string;
+    /** 금액(묶음이면 합계) */
+    amount: number;
+    /** 단건 «2026년 11월 수강료» · 묶음 «수강료 11월 외 1건» */
+    title: string;
+};
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 
@@ -42,6 +56,13 @@ export default function PosChargeRequestModal({
     onPaid: () => void;
 }) {
     const { confirm, confirmDialog } = useAdminConfirm();
+    // 보낼 청구 id 들 — 문자열 열쇠로 들고 있어야 매번 새 배열이 와도 다시 불러오기가 반복되지 않는다
+    const idsKey = (target.paymentIds && target.paymentIds.length > 0 ? target.paymentIds : [target.id]).join(",");
+    const isBundle = idsKey.includes(",");
+    // 제목: 단건 «홍길동 · 180,000원», 묶음 «홍길동 · 수강료 11월 외 1건 · 합계 280,000원»
+    const heading = isBundle
+        ? `${target.studentName} · ${target.title} · 합계 ${won(target.amount)}`
+        : `${target.studentName} · ${won(target.amount)}`;
     const [request, setRequest] = useState<AdminChargeRequestView | null>(null);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
@@ -66,7 +87,7 @@ export default function PosChargeRequestModal({
         if (inFlightRef.current) return;
         inFlightRef.current = true;
         try {
-            const result = await loadPosChargeRequest(target.id);
+            const result = await loadPosChargeRequest(idsKey.split(","));
             if (!mountedRef.current) return;
             if (!result.ok) {
                 setMessage(result.message);
@@ -79,7 +100,7 @@ export default function PosChargeRequestModal({
             inFlightRef.current = false;
             if (mountedRef.current) setLoading(false);
         }
-    }, [target.id]);
+    }, [idsKey]);
 
     useEffect(() => {
         void refresh();
@@ -119,13 +140,13 @@ export default function PosChargeRequestModal({
     async function handleCreate() {
         const ok = await confirm({
             title: "POS로 결제 보내기",
-            description: `${target.studentName} · ${won(target.amount)} 을 토스 POS 로 보낼까요? POS에 결제창이 바로 열립니다.`,
+            description: `${heading} 을 토스 POS 로 보낼까요? POS에 결제창이 바로 열립니다.${isBundle ? " 결제 한 번으로 선택한 청구가 모두 납부완료됩니다." : ""}`,
             confirmLabel: "보내기",
             tone: "primary",
         });
         if (!ok) return;
         setBusy(true);
-        const result = await createPosChargeRequest(target.id);
+        const result = await createPosChargeRequest(idsKey.split(","));
         setBusy(false);
         if (!result.ok) {
             setMessage(result.message);
@@ -164,10 +185,20 @@ export default function PosChargeRequestModal({
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <p className="text-xs font-bold text-[var(--color-academy-primary)]">현장 결제 · 토스 POS</p>
-                        <h2 id="pos-charge-title" className="mt-0.5 truncate text-lg font-extrabold text-[var(--color-academy-ink)]">
-                            {target.studentName} · {won(target.amount)}
+                        {/* 묶음 제목은 길어질 수 있어 자르지 않고 줄을 바꾼다 */}
+                        <h2 id="pos-charge-title" className={`mt-0.5 text-lg font-extrabold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
+                            {heading}
                         </h2>
-                        <p className="text-sm text-[var(--color-academy-muted)]">{target.title}</p>
+                        {isBundle ? (
+                            // 묶인 청구를 한 줄로(잘림 없이 줄바꿈) — 무엇이 한 번에 결제되는지 창 안에서 확인
+                            <p className="text-sm text-[var(--color-academy-muted)]">
+                                {request && request.itemCount > 1
+                                    ? request.items.map((it) => `${it.itemLabel} ${won(it.amount)}`).join(" · ")
+                                    : `청구 ${idsKey.split(",").length}건을 POS 결제 한 번으로 받아요`}
+                            </p>
+                        ) : (
+                            <p className="text-sm text-[var(--color-academy-muted)]">{target.title}</p>
+                        )}
                     </div>
                     <button type="button" onClick={onClose} disabled={busy} className="academy-button-text">
                         닫기
@@ -194,7 +225,9 @@ export default function PosChargeRequestModal({
                     </div>
                 ) : request?.status === "PAID" ? (
                     <div className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-4">
-                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">납부완료로 반영됐습니다</p>
+                        <p className="text-base font-extrabold text-[var(--color-academy-success)]">
+                            납부완료로 반영됐습니다{request.itemCount > 1 ? ` · 청구 ${request.itemCount}건 모두` : ""}
+                        </p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                             {won(request.amount)}
                             {request.paidKst ? ` · ${request.paidKst} 결제` : ""}

@@ -6,7 +6,8 @@
  * 왜: 예전 «납부처리»는 누르는 즉시 PAID 가 돼 실수해도 단서가 없고 결제 이력이 남지 않았다.
  *     이제 이 창에서 결제 방법을 고르고 근거를 남겨야만 납부완료가 된다.
  *   - 계좌이체: 입금일·입금자명(필수)·메모(선택) → recordBankTransferPayment (감사 기록이 같이 남는다)
- *   - 현장 결제(POS): 이 창을 닫고 기존 현장 결제 창을 연다(납부완료는 토스 결제 확인으로만)
+ *   - 현장 결제(POS): 이 창을 닫고 기존 현장 결제 창을 연다(납부완료는 토스 결제 확인으로만).
+ *     여러 건이어도 같은 학생의 수강료·셔틀비 미납이면 POS 결제 한 번으로 받는다(2026-11-08 원장 결정).
  * 한 건(행 ⚡ 메뉴)과 여러 건(체크박스 «선택 항목 납부 처리»)이 같은 창을 쓴다.
  */
 import { useState } from "react";
@@ -24,6 +25,8 @@ import {
 
 export type RecordPaymentTarget = {
     id: string;
+    /** 같은 학생인지 확인(현장 결제 여러 건 묶음) */
+    studentId: string;
     studentName: string;
     amount: number;
     type: string;
@@ -33,8 +36,8 @@ export type RecordPaymentTarget = {
 type Props = {
     targets: RecordPaymentTarget[];
     onClose: () => void;
-    /** 현장 결제(POS) 선택 — 부모가 이 창을 닫고 현장 결제 창을 연다(1건일 때만 불린다) */
-    onChoosePos: (target: RecordPaymentTarget) => void;
+    /** 현장 결제(POS) 선택 — 부모가 이 창을 닫고 현장 결제 창을 연다(1건, 또는 같은 학생 여러 건) */
+    onChoosePos: (targets: RecordPaymentTarget[]) => void;
     /** 계좌이체 기록 완료 — 부모가 목록을 다시 불러온다 */
     onRecorded: (message: string) => void;
 };
@@ -124,7 +127,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                             </button>
                             <button
                                 type="button"
-                                onClick={() => { if (pos.enabled) onChoosePos(targets[0]); }}
+                                onClick={() => { if (pos.enabled) onChoosePos(targets); }}
                                 disabled={!pos.enabled}
                                 aria-describedby={pos.enabled ? undefined : "record-payment-pos-reason"}
                                 className="academy-button-secondary flex min-h-14 flex-col items-center justify-center gap-0.5"

@@ -54,6 +54,17 @@ export type CancelClaim = CancelJob & { tossOrderId: string; tossPaymentIds: str
 /** 취소 결과 보고 본문 */
 export type CancelReportBody = { result: "done" | "failed"; message?: string };
 
+/**
+ * POS 주문 항목 1개(청구서 1건) — 묶음 요청(같은 학생 여러 건을 결제 한 번, 2026-11-08)은 여러 개, 단건은 1개.
+ * 서버 계약: 요청의 items[] = { itemName, amount, taxFreeAmount, memo }. 합계 = 요청 amount, 면세 합계 = 요청 taxFreeAmount.
+ */
+export type ChargeItem = {
+  /** 상품명, 예: 2026년 11월 수강료(홍*동) */
+  title: string;
+  amount: number;
+  taxFreeAmount: number;
+};
+
 /** 현장 결제 요청 1건(서버가 준 값 그대로 — 이름은 서버가 마스킹해서 준다) */
 export type ChargeRequest = {
   id: string;
@@ -68,6 +79,11 @@ export type ChargeRequest = {
   /** 만료 시각(ISO 문자열, 시간대 포함). 없으면 null */
   expiresAt: string | null;
   status: string;
+  /**
+   * POS 주문 항목들(서버 items[]). 없으면(옛 서버) 요청 하나 = 항목 하나로 본다 — order.ts itemsOf.
+   * 칸이 하나라도 이상하면 NaN 이 들어가 validateForPos 가 결제창을 열지 않는다.
+   */
+  items?: ChargeItem[];
 };
 
 /** 미납 청구서 1건 */
@@ -132,7 +148,7 @@ export function parseChargeRequest(raw: unknown): ChargeRequest | null {
   const amount = num(pick(raw, "amount"));
   if (!id || !shortCode || !Number.isFinite(amount)) return null;
   const taxFreeRaw = pick(raw, "taxFreeAmount");
-  return {
+  const out: ChargeRequest = {
     id,
     shortCode,
     studentName: str(pick(raw, "studentName", "studentLabel", "name")) || "(이름 없음)",
@@ -143,6 +159,20 @@ export function parseChargeRequest(raw: unknown): ChargeRequest | null {
     expiresAt: str(pick(raw, "expiresAt")) || null,
     status: str(pick(raw, "status")) || "PENDING",
   };
+  // 묶음 항목(2026-11-08). 배열이 오면 그대로 읽고, 칸이 비면 NaN(→ 결제창을 열지 않음). 안 오면(옛 서버) 비워 둔다.
+  const itemsRaw = pick(raw, "items", "lineItems");
+  if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
+    out.items = itemsRaw.map((it): ChargeItem => {
+      if (!isObj(it)) return { title: "", amount: Number.NaN, taxFreeAmount: Number.NaN };
+      const tf = pick(it, "taxFreeAmount");
+      return {
+        title: str(pick(it, "itemTitle", "itemName", "title")),
+        amount: num(pick(it, "amount")),
+        taxFreeAmount: tf === undefined ? Number.NaN : num(tf),
+      };
+    });
+  }
+  return out;
 }
 
 /** 목록 응답 해석: 배열 그 자체 또는 {requests: [...]} / {items: [...]} */

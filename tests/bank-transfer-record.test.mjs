@@ -90,16 +90,37 @@ test("상태 전이: 미납·연체만 기록하고 나머지는 이유와 함�
   assert.match(rules.bankTransferResultMessage(0, 1), /기록한 건이 없어요/);
 });
 
-test("현장 결제(POS): 수강료·셔틀비 미납 1건만 활성, 여러 건이면 안내", () => {
+test("현장 결제(POS): 수강료·셔틀비 미납 — 1건, 또는 같은 학생 여러 건이면 활성(2026-11-08 원장 결정)", () => {
   assert.deepEqual(rules.posChargeAvailability([{ type: "MONTHLY", status: "PENDING" }]), { enabled: true });
   assert.deepEqual(rules.posChargeAvailability([{ type: "SHUTTLE", status: "OVERDUE" }]), { enabled: true });
   const other = rules.posChargeAvailability([{ type: "UNIFORM", status: "PENDING" }]);
   assert.equal(other.enabled, false);
   assert.equal(other.reason, "수강료·셔틀비만 현장 결제할 수 있어요.");
-  const multi = rules.posChargeAvailability([{ type: "MONTHLY", status: "PENDING" }, { type: "MONTHLY", status: "PENDING" }]);
-  assert.equal(multi.enabled, false);
-  assert.equal(multi.reason, "같은 학생 여러 건 한 번에 결제는 곧 추가됩니다.");
   assert.equal(rules.posChargeAvailability([{ type: "MONTHLY", status: "PAID" }]).enabled, false);
+  // 같은 학생 여러 건(수강료+셔틀비, 연체 섞임) → 활성
+  const same = [
+    { type: "MONTHLY", status: "PENDING", studentId: "s1" },
+    { type: "SHUTTLE", status: "OVERDUE", studentId: "s1" },
+  ];
+  assert.deepEqual(rules.posChargeAvailability(same), { enabled: true });
+  // 다른 학생이 섞이면 막고 이유 안내
+  const mixed = rules.posChargeAvailability([...same, { type: "MONTHLY", status: "PENDING", studentId: "s2" }]);
+  assert.equal(mixed.enabled, false);
+  assert.match(mixed.reason, /다른 학생이 섞여 있어요/);
+  // 학생을 모르면(옛 데이터) 막는다
+  assert.equal(rules.posChargeAvailability([{ type: "MONTHLY", status: "PENDING" }, { type: "MONTHLY", status: "PENDING" }]).enabled, false);
+  // 대상 아닌 유형·이미 납부가 섞이면 막는다
+  const uniform = rules.posChargeAvailability([same[0], { type: "UNIFORM", status: "PENDING", studentId: "s1" }]);
+  assert.equal(uniform.enabled, false);
+  assert.match(uniform.reason, /수강료·셔틀비가 아닌 청구가 섞여 있어요/);
+  const paid = rules.posChargeAvailability([same[0], { type: "MONTHLY", status: "PAID", studentId: "s1" }]);
+  assert.equal(paid.enabled, false);
+  assert.match(paid.reason, /미납·연체가 아닌 청구가 섞여 있어요/);
+  // 최대 건수 = 서버 MAX_CHARGE_ITEMS
+  const many = Array.from({ length: rules.POS_CHARGE_MAX_ITEMS + 1 }, () => same[0]);
+  assert.equal(rules.posChargeAvailability(many).enabled, false);
+  // «곧 추가됩니다» 문구는 사라졌다
+  for (const t of [same, [same[0]]]) assert.doesNotMatch(JSON.stringify(rules.posChargeAvailability(t)), /곧 추가/);
 });
 
 test("서버 액션: 재무 권한·서버 재검사·한 트랜잭션·미납만 갱신·계좌이체 수단·감사 기록", () => {
@@ -139,7 +160,10 @@ test("납부 처리 창: 행 메뉴·일괄 버튼이 같은 창을 열고, 현�
   assert.match(finance, /onSelect: \(\) => setRecordTargets\(\[p\]\)/);
   assert.match(finance, /선택 항목 납부 처리/);
   assert.match(finance, /setRecordTargets\(targets\)/);
-  assert.match(finance, /setPosChargeTarget\(payment\)/);
+  // 현장 결제는 고른 청구 전부(1건 또는 같은 학생 여러 건)를 POS 창으로 넘긴다
+  assert.match(finance, /setPosChargeTargets\(payments\.length > 0 \? payments : null\)/);
+  assert.match(modal, /onChoosePos\(targets\)/);
+  assert.match(finance, /studentId: t\.studentId/, "같은 학생 판단용 학생 id 를 창에 넘긴다");
   assert.match(modal, /recordBankTransferPayment\(checked\.value\)/);
   assert.match(modal, /posChargeAvailability\(targets\)/);
   assert.match(modal, /todayKst\(\)/);

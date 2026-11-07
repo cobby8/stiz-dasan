@@ -162,6 +162,59 @@ export function chargeEligibility(payment) {
   return { ok: true, reason: "" };
 }
 
+// ───────────────────────────── 묶음(같은 학생 여러 건을 결제 한 번) ─────────────────────────────
+//
+// 2026-11-08 원장 결정 «같은 학생이면 한 번에 결제». 요청 1건 = POS 주문 1건 = 청구 N건(항목 N개).
+// 단건 요청도 «항목 1개 묶음»으로 같은 규칙을 지난다.
+
+/** 한 요청에 묶을 수 있는 청구 수. POS 주문 항목이 그만큼 늘어 플러그인 SDK 호출도 늘어난다(요청 한도). */
+export const MAX_CHARGE_ITEMS = 10;
+
+/** 한 요청 합계 상한 — 플러그인 MAX_AMOUNT(apps/toss-pos-plugin/src/core/order.ts)와 같은 값. 넘으면 POS 가 결제창을 열지 않는다. */
+export const MAX_CHARGE_TOTAL = 5_000_000;
+
+/**
+ * 청구 여러 건을 한 요청으로 묶을 수 있나. 못 하면 사람이 읽는 이유.
+ * @param payments [{ id, studentId, type, status, amount }] (서버 DB 값)
+ */
+export function chargeBundleEligibility(payments) {
+  const list = Array.isArray(payments) ? payments : [];
+  if (list.length === 0) return { ok: false, reason: "현장 결제할 청구를 선택해 주세요." };
+  if (list.length > MAX_CHARGE_ITEMS) {
+    return { ok: false, reason: `한 번에 현장 결제할 수 있는 청구는 ${MAX_CHARGE_ITEMS}건까지입니다.` };
+  }
+  const ids = list.map((p) => String(p?.id ?? ""));
+  if (new Set(ids).size !== ids.length) return { ok: false, reason: "같은 청구가 두 번 들어 있습니다." };
+  for (const p of list) {
+    const one = chargeEligibility(p);
+    if (!one.ok) return list.length > 1 ? { ok: false, reason: `선택한 청구 중 ${one.reason}` } : one;
+  }
+  // 학생이 섞이면 POS 결제 한 번이 누구 돈인지 갈린다 → 같은 학생만(형제는 학생별로 따로)
+  const students = new Set(list.map((p) => String(p?.studentId ?? "")));
+  if (students.size !== 1 || students.has("")) {
+    return { ok: false, reason: "같은 학생의 청구만 한 번에 현장 결제할 수 있습니다. 학생별로 나눠 보내 주세요." };
+  }
+  const total = list.reduce((acc, p) => acc + Number(p.amount), 0);
+  if (total > MAX_CHARGE_TOTAL) {
+    return { ok: false, reason: `합계(${formatChargeWon(total)})가 한 번에 받을 수 있는 금액(${formatChargeWon(MAX_CHARGE_TOTAL)})을 넘습니다.` };
+  }
+  return { ok: true, reason: "" };
+}
+
+/**
+ * POS 주문 항목 순서 — 연·월 오름차순, 같은 달이면 수강료 → 셔틀비, 마지막은 id.
+ * 맨 앞 항목이 요청의 «대표 청구»(PosChargeRequest.paymentId)가 된다. 원본 배열은 바꾸지 않는다.
+ */
+export function sortChargeItems(payments) {
+  const typeRank = (t) => (t === "MONTHLY" ? 0 : t === "SHUTTLE" ? 1 : 2);
+  const n = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? Number.MAX_SAFE_INTEGER : Number(v));
+  return [...(Array.isArray(payments) ? payments : [])].sort((a, b) =>
+    n(a?.year) - n(b?.year)
+    || n(a?.month) - n(b?.month)
+    || typeRank(a?.type) - typeRank(b?.type)
+    || String(a?.id).localeCompare(String(b?.id)));
+}
+
 // ───────────────────────────── 매칭 판정 ─────────────────────────────
 
 /** 판정 결과 */
@@ -197,7 +250,9 @@ const intOrNull = (v) => {
  *   - 대표 결제 = 가장 먼저 승인된 것(요청의 tossPaymentId 유일 칸에 들어간다).
  *
  * @param input.request   { status, amount, taxFreeAmount, tossPaymentId, expiresAt, isExpiredNow? }   (DB 값 · isExpiredNow = DB 시계로 지금 만료됐나)
- * @param input.site      { status, amount, type }                        (청구서 DB 값)
+ * @param input.site      { status, amount, type }                        (청구서 DB 값 — 단건·대표 청구)
+ * @param input.items     [{ status, paymentAmount, amount, type }]       (묶음일 때 묶인 청구 전부: 청구 DB 상태·금액 + 항목 스냅샷 금액.
+ *                        2건 이상이면 site 대신 이것으로 «전부 미납·금액 그대로·합계 = 요청 금액»을 본다)
  * @param input.approved  [{ tossPaymentId, amount, approvedAtIso, taxExemptAmount, sourceType }]  (방식 무관 승인 결제)
  * @param input.others    [{ id, state }]                                 (승인 아닌 결제)
  * @param input.orderCompleted  주문이 끝났나(모르면 true = 기다리지 않고 보수적으로 보류)
@@ -205,7 +260,7 @@ const intOrNull = (v) => {
  * @returns {{ action: string, reason: string, payment: object|null, payments: object[], paidAtIso: string|null, waiting?: boolean }}
  *   payment = 대표 결제, payments = 이 요청에 쓰인 승인 결제 전부(승인 순), paidAtIso = 마지막 승인 시각(납부일·만료 판단)
  */
-export function decideChargeMatch({ request, site, approved = [], others = [], orderCompleted = true, nowMs = Date.now() }) {
+export function decideChargeMatch({ request, site, items = null, approved = [], others = [], orderCompleted = true, nowMs = Date.now() }) {
   const none = (action, reason, extra = {}) => ({ action, reason, payment: null, payments: [], paidAtIso: null, ...extra });
   if (!request) return none(MATCH_ACTION.SKIP, "번호에 맞는 요청이 없습니다.");
   const status = String(request.status);
@@ -279,12 +334,33 @@ export function decideChargeMatch({ request, site, approved = [], others = [], o
     const label = split ? `면세 금액 합계(${sumExempt}원)` : `면세 금액(${sumExempt}원)`;
     return hold(`${label}이 요청 면세액(${Number(request.taxFreeAmount)}원)과 다릅니다.`);
   }
-  if (!site) return hold("청구서를 찾지 못했습니다.");
-  if (!CHARGEABLE_PAYMENT_STATUSES.includes(String(site.status))) {
-    return hold(site.status === "PAID" ? "청구서가 이미 납부완료입니다." : `청구서 상태가 미납이 아닙니다(${site.status}).`);
-  }
-  if (Number(site.amount) !== Number(request.amount)) {
-    return hold("요청을 만든 뒤 청구 금액이 바뀌었습니다.");
+  if (Array.isArray(items) && items.length > 1) {
+    // 묶음: 묶인 청구 «전부»가 미납·금액 그대로일 때만. 하나라도 어긋나면 일부만 납부하지 않고 전체 보류.
+    const n = items.length;
+    const paid = items.filter((it) => String(it?.status) === "PAID").length;
+    if (paid > 0) return hold(`묶인 청구 ${n}건 중 ${paid}건이 이미 납부완료입니다.`);
+    const notUnpaid = items.filter((it) => !CHARGEABLE_PAYMENT_STATUSES.includes(String(it?.status)));
+    if (notUnpaid.length > 0) {
+      return hold(`묶인 청구 ${n}건 중 ${notUnpaid.length}건이 미납이 아닙니다(${notUnpaid.map((it) => it?.status ?? "없음").join(", ")}).`);
+    }
+    if (items.some((it) => !CHARGEABLE_PAYMENT_TYPES.includes(String(it?.type)))) {
+      return hold("묶인 청구에 수강료·셔틀비가 아닌 청구가 있습니다.");
+    }
+    const changed = items.filter((it) => Number(it?.paymentAmount) !== Number(it?.amount)).length;
+    if (changed > 0) return hold(`요청을 만든 뒤 묶인 청구 ${changed}건의 금액이 바뀌었습니다.`);
+    const itemSum = items.reduce((acc, it) => acc + Number(it?.amount), 0);
+    if (itemSum !== Number(request.amount)) {
+      return hold(`묶인 청구 합계(${itemSum}원)가 요청 금액(${Number(request.amount)}원)과 다릅니다.`);
+    }
+  } else {
+    // 단건(항목 1개·옛 요청): 예전 판정 그대로
+    if (!site) return hold("청구서를 찾지 못했습니다.");
+    if (!CHARGEABLE_PAYMENT_STATUSES.includes(String(site.status))) {
+      return hold(site.status === "PAID" ? "청구서가 이미 납부완료입니다." : `청구서 상태가 미납이 아닙니다(${site.status}).`);
+    }
+    if (Number(site.amount) !== Number(request.amount)) {
+      return hold("요청을 만든 뒤 청구 금액이 바뀌었습니다.");
+    }
   }
   // 만료: 마지막 결제 승인 시각이 만료 시각보다 늦으면 자동 반영하지 않는다(승인 시각을 모르면 지금 시각).
   const expiresMs = toMs(request.expiresAt);
@@ -450,11 +526,20 @@ export function decideChargeCancel({ paymentIds, order }) {
  * 관리자 «결제 취소»를 걸 수 있나. 못 하면 사람이 읽는 이유.
  * @param {{ request: { status: string, cancelState: string|null } | null, site: { status: string, paidProvider: string|null } | null }} input
  */
-export function cancelEligibility({ request, site }) {
+export function cancelEligibility({ request, site, sites = null }) {
   if (!request) return { ok: false, reason: "현장 결제로 납부된 기록을 찾지 못했습니다." };
   if (String(request.status) !== CHARGE_STATUS.PAID) return { ok: false, reason: "현장 결제로 납부된 요청이 아닙니다." };
-  if (!site || site.status !== "PAID") return { ok: false, reason: "납부완료 청구서만 결제 취소할 수 있습니다." };
-  if (site.paidProvider !== "TOSS_POS") return { ok: false, reason: "토스 POS 로 받은 결제만 여기서 취소할 수 있습니다." };
+  if (Array.isArray(sites) && sites.length > 1) {
+    // 묶음: POS 결제 하나를 취소하면 묶인 청구가 «전부» 환불된다 → 전부 토스 POS 납부완료일 때만
+    const notPaid = sites.filter((s) => s?.status !== "PAID").length;
+    if (notPaid > 0) return { ok: false, reason: `묶인 청구 ${sites.length}건 중 ${notPaid}건이 납부완료가 아닙니다. 수납 화면에서 확인해 주세요.` };
+    if (sites.some((s) => s?.paidProvider !== "TOSS_POS")) {
+      return { ok: false, reason: "묶인 청구 중 토스 POS 가 아닌 방법으로 납부된 건이 있습니다. POS 에서 직접 취소해 주세요." };
+    }
+  } else {
+    if (!site || site.status !== "PAID") return { ok: false, reason: "납부완료 청구서만 결제 취소할 수 있습니다." };
+    if (site.paidProvider !== "TOSS_POS") return { ok: false, reason: "토스 POS 로 받은 결제만 여기서 취소할 수 있습니다." };
+  }
   const cs = request.cancelState ?? null;
   if (cs === CANCEL_STATE.DONE) return { ok: false, reason: "이미 환불 처리됐습니다." };
   if (cs === CANCEL_STATE.REQUESTED || cs === CANCEL_STATE.SENT) return { ok: false, reason: "이미 POS 에 결제 취소를 보냈습니다." };
@@ -485,6 +570,34 @@ export function buildChargeItemName({ year, month, type, maskedName }) {
   const when = year && month ? `${year}년 ${month}월 ` : "";
   const who = maskedName ? `(${maskedName})` : "";
   return `${when}${paymentTypeLabel(type)}${who}`.slice(0, 60);
+}
+
+/**
+ * 묶음 요약(관리자 화면·슬랙). 항목 순서대로 받는다(sortChargeItems).
+ *   1건 → «2026년 11월 수강료»  /  여러 건 → «수강료 11월 외 1건»
+ * @param items [{ year, month, type }]
+ */
+export function chargeItemsSummary(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) return "";
+  const [first] = list;
+  if (list.length === 1) return buildChargeItemName({ year: first.year, month: first.month, type: first.type, maskedName: "" }).trim();
+  const when = first.month ? ` ${first.month}월` : "";
+  return `${paymentTypeLabel(first.type)}${when} 외 ${list.length - 1}건`;
+}
+
+/**
+ * 묶음 요청의 POS 대표 상품명(플러그인 알림·목록). 예: «2026년 11월 수강료 외 1건(홍*동)».
+ * 항목별 상품명은 buildChargeItemName 을 그대로 쓴다. 1건이면 buildChargeItemName 과 같다.
+ */
+export function buildChargeBundleName({ items, maskedName }) {
+  const list = Array.isArray(items) ? items : [];
+  const [first] = list;
+  if (!first) return buildChargeItemName({ year: null, month: null, type: "", maskedName });
+  if (list.length === 1) return buildChargeItemName({ ...first, maskedName });
+  const when = first.year && first.month ? `${first.year}년 ${first.month}월 ` : "";
+  const who = maskedName ? `(${maskedName})` : "";
+  return `${when}${paymentTypeLabel(first.type)} 외 ${list.length - 1}건${who}`.slice(0, 60);
 }
 
 /** 원 단위 표시 (180000 → «180,000원») */
