@@ -343,8 +343,8 @@ function clientBundleFiles(entry) {
 }
 
 test("공개 신청 화면의 브라우저 번들 경로에 입금 계좌가 없다(계좌는 서버 전용 모듈에만)", () => {
-  // 토스 카드사 심사 중에는 공개 메뉴에 노출하지 않는다(2026-11-07 원장 A안) — 심사 후 메뉴를 열 때 이 줄을 되돌린다.
-  assert.doesNotMatch(read("src/components/PublicHeader.tsx"), /\{ href: "\/rental", label: "체육관 대관" \}/);
+  // 카드사 심사 승인(2026-11-07) 뒤 원장 지시로 공개 메뉴에 노출한다.
+  assert.match(read("src/components/PublicHeader.tsx"), /\{ href: "\/rental", label: "체육관 대관" \}/);
   const files = clientBundleFiles("src/app/rental/RentalClient.tsx");
   assert.ok(files.includes("src/lib/rental/gym-rental-rules.ts"), "규칙 모듈은 번들에 들어간다(그래서 계좌를 두면 안 된다)");
   assert.ok(files.includes("src/app/actions/rental.ts"), "서버 액션 파일까지는 따라간다");
