@@ -352,6 +352,7 @@ const PRISMA_STUB = toDataUrl(`
     $queryRawUnsafe: async (sql, ...args) => {
       S().calls.push({ sql, args });
       if (/SET "cancelState" = 'DONE'/.test(sql)) return S().markRefundRows ?? [{ id: "r1" }];
+      if (/SELECT action, "actorType", "actorId" FROM "PaymentAuditLog"/.test(sql)) return S().lastLedger ? [S().lastLedger] : [];
       if (/FROM "PaymentAuditLog"/.test(sql)) return S().auditIds ? [{ ids: S().auditIds }] : [];
       if (/AS "tooSoon"/.test(sql)) return S().why ? [S().why] : [];
       if (/AS "ledgerMayRun"/.test(sql)) return [S().cur ?? { paymentStatus: null, ledgerMayRun: false }];
@@ -1009,10 +1010,14 @@ test("P-1 틈: 그 뒤 원래 처리의 납부 기록이 끝남 → 직후 재�
 test("P-1 틈: 재확인마저 못 했어도(함수가 멈춤) 다음 스윕의 취소 확정이 «요청 DONE + 청구 PAID» 를 환불로 바로잡는다", async () => {
   const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
   await runMatch(
-    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [] },
+    {
+      paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [],
+      // 청구의 마지막 납부 기록 = 이 현장 결제의 자동 납부
+      lastLedger: { action: "PAYMENT_MARK_PAID", actorType: "WEBHOOK", actorId: "pos-charge:S-482193" },
+    },
     { order, approved: [] },
   );
-  assert.equal(globalThis.__cs.refunds.length, 1, "이미 DONE 이어도 청구가 PAID 면 환불");
+  assert.equal(globalThis.__cs.refunds.length, 1, "이미 DONE 이어도 마지막 납부 기록이 이 현장 결제면 환불");
   assert.ok(globalThis.__cs.slack.some((t) => /환불로 바꿨습니다/.test(t)));
 });
 
@@ -1291,4 +1296,67 @@ test("관리자 «결제 취소» 창·메뉴: 위험 작업 확인 문구, 3초
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     assert.match(body.slice(0, body.indexOf("\n}\n")), /await requireFinanceOwner\(\)/, `${name}: 원장만(권한 없는 사용자 거부)`);
   }
+});
+
+// ── 재검수 2026-11-08: READ COMMITTED 경합 · 관리자가 다시 납부한 건 보호 ──
+
+const CANCELLED_ORDER = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+
+test("재검수 1: 첫 취소 확정 때 환불 UPDATE 는 미납으로 봤는데 다시 읽으니 PAID(납부 기록이 그 사이 확정) → 알림 없이 retryLater", async () => {
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PENDING" })], request: null, refundResult: false, cur: { paymentStatus: "PAID", ledgerMayRun: true } },
+    { order: CANCELLED_ORDER, approved: [] },
+  );
+  assert.equal(r.retryLater, true, "PAID 로 고착되지 않게 스윕이 다시 본다");
+  assert.ok(!globalThis.__cs.slack.some((t) => /POS 결제 취소 확인/.test(t)), "«그대로 두었습니다» 같은 잘못된 알림을 보내지 않는다");
+  // 다음 스윕: 요청은 이미 DONE(선점 0행)이지만 마지막 납부 기록 = 이 현장 결제 → 환불로 수렴
+  await runMatch(
+    {
+      paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [],
+      lastLedger: { action: "PAYMENT_MARK_PAID", actorType: "WEBHOOK", actorId: "pos-charge:S-482193" },
+    },
+    { order: CANCELLED_ORDER, approved: [] },
+  );
+  assert.equal(globalThis.__cs.refunds.length, 1);
+  assert.ok(globalThis.__cs.slack.some((t) => /환불로 바꿨습니다/.test(t)));
+});
+
+test("재검수 2: 요청은 이미 DONE · 청구 PAID 인데 마지막 납부 기록이 관리자(수동 납부) → 환불하지 않고 한 번만 알림", async () => {
+  const r = await runMatch(
+    {
+      paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [],
+      lastLedger: { action: "PAYMENT_MARK_PAID", actorType: "ADMIN", actorId: null },
+      cur: { paymentStatus: "PAID", ledgerMayRun: false },
+    },
+    { order: CANCELLED_ORDER, approved: [] },
+  );
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "관리자가 다시 납부 처리한 건은 되돌리지 않는다");
+  assert.equal(r.retryLater, false);
+  assert.ok(globalThis.__cs.slack.some((t) => /자동 환불하지 않았습니다/.test(t)));
+  const q = globalThis.__cs.calls.find((c) => /SELECT action, "actorType", "actorId" FROM "PaymentAuditLog"/.test(c.sql));
+  assert.deepEqual(q.args, ["p-nov"]);
+  assert.match(q.sql, /action IN \('PAYMENT_MARK_PAID', 'PAYMENT_STATUS_UPDATE', 'PAYMENT_REFUNDED'\)/);
+  assert.match(q.sql, /ORDER BY "createdAt" DESC\s+LIMIT 1/);
+});
+
+test("재검수 2: 마지막 기록이 이 현장 결제 자동 납부라도 그 뒤 관리자 상태 변경·다른 번호면 환불 안 함 · 처음 확정(marked)은 출처 확인 없이 환불", async () => {
+  const base = { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "DONE" })], request: null, markRefundRows: [], cur: { paymentStatus: "PAID", ledgerMayRun: false } };
+  await runMatch({ ...base, lastLedger: { action: "PAYMENT_STATUS_UPDATE", actorType: "ADMIN", actorId: null } }, { order: CANCELLED_ORDER, approved: [] });
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0);
+  await runMatch({ ...base, lastLedger: { action: "PAYMENT_MARK_PAID", actorType: "WEBHOOK", actorId: "pos-charge:S-999999" } }, { order: CANCELLED_ORDER, approved: [] });
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "다른 현장 결제의 기록이면 아니다");
+  // 처음 취소 확정(선점 1행) — 출처 조회 없이 환불
+  await runMatch({ paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID" })], request: null }, { order: CANCELLED_ORDER, approved: [] });
+  assert.equal(globalThis.__cs.refunds.length, 1);
+  assert.ok(!globalThis.__cs.calls.some((c) => /SELECT action, "actorType", "actorId" FROM "PaymentAuditLog"/.test(c.sql)));
+});
+
+test("재검수 2: 출처 표기는 markPaymentPaid 감사 기록 값과 같다(action PAYMENT_MARK_PAID · actorId pos-charge:번호)", async () => {
+  const ledger = await readFile("src/lib/payment-ledger.ts", "utf8");
+  const mark = ledger.slice(ledger.indexOf("export async function markPaymentPaid"), ledger.indexOf("export async function refundPaidPaymentInTx"));
+  assert.match(mark, /action: "PAYMENT_MARK_PAID"/);
+  assert.match(mark, /actorId: input\.actorId \?\? null/);
+  const src = await readFile(SERVICE, "utf8");
+  assert.match(src, /actorId: `pos-charge:\$\{input\.claimed\.shortCode\}`/, "자동 납부는 pos-charge:번호로 남긴다");
+  assert.match(src, /last\[0\]\?\.actorId === `pos-charge:\$\{row\.shortCode\}`/);
 });

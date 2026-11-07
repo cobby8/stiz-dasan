@@ -18,7 +18,7 @@
 
 import { randomInt } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { markPaymentPaid, recordPaymentAudit, refundPaidPaymentInTx, revalidatePaymentCaches } from "@/lib/payment-ledger";
+import { markPaymentPaid, recordPaymentAudit, refundPaidPaymentInTx, revalidatePaymentCaches, type LedgerSqlClient } from "@/lib/payment-ledger";
 import { taxFreeAmountFor } from "@/lib/payments/taxFree";
 import { postMessage } from "@/lib/slack/client";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -1029,9 +1029,13 @@ async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string
     // 요청이 이미 DONE 이어도(재전송·앞선 처리) 청구가 PAID 면 다시 환불을 시도한다 — 조건부 UPDATE 라 몇 번이든 안전하고,
     // «요청 PAID → 청구서 기록» 틈에 취소가 먼저 와서 나중에 청구서가 PAID 로 써진 경우도 여기서 바로잡힌다(검수 P-1).
     const result = await prisma.$transaction(async (db) => {
-        const marked = await db.$queryRawUnsafe<{ id: string }[]>(MARK_REFUND_SQL, row.id);
-        const refunded = await refundPaidPaymentInTx(db, refundInput(row, orderId, verdict.cancelled));
-        return { marked: marked.length > 0, refunded };
+        const marked = (await db.$queryRawUnsafe<{ id: string }[]>(MARK_REFUND_SQL, row.id)).length > 0;
+        // 이번에 처음 취소 확정(marked)이면 환불한다. 이미 DONE 이었으면(재전송·스윕) «청구의 마지막 납부·상태 기록이
+        // 이 현장 결제의 자동 납부(pos-charge:번호)일 때만» 환불한다 — 관리자가 그 뒤 일부러 다시 납부 처리한 건을
+        // 재전송 웹훅이 몰래 환불로 되돌리지 않게(재검수 2026-11-08).
+        const allowed = marked || (await lastLedgerWriteIsThisCharge(db, row));
+        const refunded = allowed ? await refundPaidPaymentInTx(db, refundInput(row, orderId, verdict.cancelled)) : false;
+        return { marked, allowed, refunded };
     });
     if (result.refunded) {
         revalidatePaymentCaches();
@@ -1047,6 +1051,20 @@ async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string
         row.id,
     );
     const status = String(cur[0]?.paymentStatus ?? row.paymentStatus ?? "");
+    if (status === "PAID") {
+        if (result.allowed) {
+            // 환불 UPDATE 때는 아직 미납으로 보였는데 지금은 PAID = 납부 기록이 그 사이에 확정됨(READ COMMITTED 경합).
+            // 알리지 않고 다시 본다 — 다음 스윕의 이 함수가 «마지막 기록 = 이 현장 결제»를 확인하고 환불로 수렴시킨다.
+            return { note: `${row.shortCode} POS 취소 확인 · 납부 기록이 방금 확정돼 다시 확인`, retry: true };
+        }
+        // 관리자 등 다른 출처가 그 뒤 납부 처리함 → 환불하지 않고 한 번만 알린다
+        await notifyOnce(
+            row.id,
+            "cancelNotifiedAt",
+            `⚠️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}\n사이트 청구는 그 뒤 다른 경로로 납부 처리돼 있어 자동 환불하지 않았습니다. 수납 화면에서 확인해 주세요.`,
+        );
+        return { note: `${row.shortCode} POS 취소 확인 · 청구가 다른 경로로 납부돼 있어 환불 안 함`, retry: false };
+    }
     if (["PENDING", "OVERDUE"].includes(status) && cur[0]?.ledgerMayRun) {
         // 납부 기록이 아직 진행 중일 수 있다 → 알림을 미루고 다시 본다(기록이 끝나면 그쪽이 환불하거나, 다음 스윕이 환불한다)
         return { note: `${row.shortCode} POS 취소 확인 · 납부 기록 진행 중이라 다시 확인`, retry: true };
@@ -1059,6 +1077,24 @@ async function settleCancelForRow(row: MatchRow, order: unknown, orderId: string
     // 알림은 표시 칸으로 한 번만 — 앞선 처리가 알림 직전에 멈췄으면 여기서 이어서 보낸다.
     await notifyOnce(row.id, "refundNotifiedAt", `↩️ POS 결제 취소 확인 — 현장 결제 ${describe(row)}${tail}`);
     return { note: `${row.shortCode} ${result.marked ? "POS 취소 확인" : "이미 취소 확정됨"}(청구 ${status || "?"})`, retry: false };
+}
+
+/**
+ * 이 청구의 «마지막 납부·상태 변경 기록»이 이 현장 결제의 자동 납부인가.
+ * 납부 기록 = markPaymentPaid 의 감사 기록 action 'PAYMENT_MARK_PAID'(자동 납부는 actorType WEBHOOK · actorId «pos-charge:번호»,
+ * 관리자 수동 납부는 ADMIN · actorId 없음), 상태 변경 = 'PAYMENT_STATUS_UPDATE'(관리자)·'PAYMENT_REFUNDED'(환불).
+ * 일괄 상태 변경(PAYMENT_BULK_STATUS_UPDATE)은 paymentId 가 비어 있지만, 일괄 «납부»는 markPaymentPaid(ADMIN)를 거쳐
+ * 'PAYMENT_MARK_PAID' 가 따로 남으므로 여기서 걸러진다.
+ */
+async function lastLedgerWriteIsThisCharge(db: LedgerSqlClient, row: Pick<MatchRow, "paymentId" | "shortCode">): Promise<boolean> {
+    const last = await db.$queryRawUnsafe<{ action: string; actorType: string | null; actorId: string | null }[]>(
+        `SELECT action, "actorType", "actorId" FROM "PaymentAuditLog"
+          WHERE "paymentId" = $1 AND action IN ('PAYMENT_MARK_PAID', 'PAYMENT_STATUS_UPDATE', 'PAYMENT_REFUNDED')
+          ORDER BY "createdAt" DESC
+          LIMIT 1`,
+        row.paymentId,
+    );
+    return last[0]?.action === "PAYMENT_MARK_PAID" && last[0]?.actorType === "WEBHOOK" && last[0]?.actorId === `pos-charge:${row.shortCode}`;
 }
 
 /** 환불 감사 기록 입력(취소 확정·납부 직후 재확인 공용) */
