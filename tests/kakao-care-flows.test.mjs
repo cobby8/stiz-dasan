@@ -331,8 +331,11 @@ test("셔틀 의도 경계: 당일 변경·취소만 이 흐름, 정규 이용·
     ["내일 탑승 장소 변경할게요", "DAY"],
     ["셔틀 변경 취소", "DAY_CANCEL"],
     ["내일 셔틀 안 타는 거 취소할게요", "DAY_CANCEL"],
-    ["셔틀 이용 중단할게요", null],
-    ["정규 셔틀 신청·중단", null],
+    ["셔틀 이용 중단할게요", "REGULAR"],
+    ["정규 셔틀 신청·중단", "REGULAR"],
+    ["탑승 장소·시간 변경", "REGULAR"],
+    ["셔틀 타는 곳 바꾸고 싶어요", "REGULAR"],
+    ["셔틀 몇 시에 와요?", null],
     ["셔틀비 얼마예요?", null],
     ["주차 가능한가요?", null],
     ["대관 차량 되나요?", null],
@@ -418,4 +421,72 @@ test("셔틀 대화 중 다른 업무는 닫고 넘긴다, 자녀가 둘이면 �
   assert.ok(db.intakes.every((row) => row.status !== "SHUTTLE_FLOW"));
   const ask = await shuttleSay("내일 셔틀 안 타요", TWO_CHILDREN);
   assert.deepEqual(sends(ask).slice(0, 2), ["지유 내일 셔틀 안 타요", "지호 내일 셔틀 안 타요"]);
+});
+
+// ── 정규 셔틀 변경(원장님 승인 접수) ─────────────────────────────────────
+test("정규 셔틀 말 읽기: 종류·요일·시작일", () => {
+  assert.equal(shuttleFlow.parseRegularShuttleAction("정규 셔틀 신청·중단"), null, "둘 다 걸리면 버튼으로 묻는다");
+  assert.equal(shuttleFlow.parseRegularShuttleAction("셔틀 이용 중단할게요"), "STOP");
+  assert.equal(shuttleFlow.parseRegularShuttleAction("셔틀변경 정규 장소"), "PLACE");
+  assert.equal(shuttleFlow.parseRegularShuttleAction("셔틀 시간 바꿔주세요"), "TIME");
+  assert.deepEqual(shuttleFlow.parseWeekdays("월수금"), ["월", "수", "금"]);
+  assert.deepEqual(shuttleFlow.parseWeekdays("수요일, 월요일"), ["월", "수"]);
+  assert.deepEqual(shuttleFlow.parseWeekdays("셔틀변경 요일 전체"), ["전체"]);
+  assert.equal(shuttleFlow.parseWeekdays("푸르지오"), null);
+  // 2026-11-07 은 토요일 → 다음 화요일 수업 11/10, 다음 주 월요일 11/9
+  assert.deepEqual(shuttleFlow.regularStartChoices("2026-11-07", ["화"]), { nextClass: "2026-11-10", nextWeek: "2026-11-09" });
+  // 월요일 당일이면 다음 주 월요일(오늘 제외)
+  assert.deepEqual(shuttleFlow.regularStartChoices("2026-11-09", ["월"]), { nextClass: "2026-11-16", nextWeek: "2026-11-16" });
+});
+
+test("정규 셔틀 장소 변경: 종류 → 요일 → 방향 → 장소 → 시작일 → 확정 → 원장님 승인 접수(SUBMITTED) 한 건", async () => {
+  const db = makeDb();
+  db.classDays = [{ parentId: "p1", studentId: "s1", dayOfWeek: "Wed" }, { parentId: "p1", studentId: "s1", dayOfWeek: "Mon" }];
+  const action = await shuttleSay("탑승 장소·시간 변경");
+  assert.match(textOf(action), /정규 셔틀을 어떻게 바꿀까요/);
+  const days = await shuttleSay("셔틀변경 정규 장소");
+  assert.deepEqual(sends(days).slice(0, 3), ["셔틀변경 요일 월", "셔틀변경 요일 수", "셔틀변경 요일 전체"]);
+  // 다니지 않는 요일은 받지 않는다
+  assert.match(textOf(await shuttleSay("금요일")), /금요일은 지금 다니는 수업이 없어요/);
+  await shuttleSay("월 수");
+  await shuttleSay("하원");
+  const start = await shuttleSay("푸르지오 2단지 정문");
+  assert.match(textOf(start), /언제부터/);
+  const startButton = sends(start)[0];
+  assert.match(startButton, /^셔틀변경 시작 \d{4}-\d{2}-\d{2}$/);
+  const confirm = await shuttleSay(startButton);
+  assert.match(textOf(confirm), /원장님께 접수할까요/);
+  assert.match(textOf(confirm), /탑승 장소: 푸르지오 2단지 정문/);
+  await shuttleSay("접수할게요");
+  const row = db.intakes.find((item) => item.status === "SUBMITTED");
+  assert.equal(row.kind, "SHUTTLE_CHANGE");
+  assert.equal(row.structuredJson.shuttleIntent, "CHANGE");
+  assert.equal(row.structuredJson.effectiveDate, startButton.slice(-10));
+  assert.equal(row.structuredJson.studentId, "s1");
+  assert.deepEqual(row.structuredJson.regularShuttle.days, ["월", "수"]);
+  assert.equal(row.structuredJson.regularShuttle.direction, "DROPOFF");
+  assert.match(row.structuredJson.details, /요일: 월·수/);
+  assert.equal(db.alerts.length, 1, "원장님 앱 알림 한 번");
+  assert.equal(db.calls.filter((c) => c[0] === "submitShuttle").length, 0, "정규 변경은 바로 반영하지 않는다");
+  // 같은 확정을 다시 눌러도 접수는 한 건
+  await shuttleSay("셔틀변경 정규 확정");
+  assert.equal(db.intakes.filter((item) => item.status === "SUBMITTED").length, 1);
+});
+
+test("정규 셔틀 중단: 장소는 묻지 않고, 다니는 요일이 하나면 요일도 건너뛴다", async () => {
+  const db = makeDb();
+  db.classDays = [{ parentId: "p1", studentId: "s1", dayOfWeek: "Tue" }];
+  const dir = await shuttleSay("셔틀 이용 중단할게요");
+  assert.match(textOf(dir), /등원·하원 중 어느 쪽/);
+  const start = await shuttleSay("등하원 모두");
+  assert.match(textOf(start), /언제부터/);
+  // 오늘·지난 날짜는 시작일로 받지 않는다
+  assert.match(textOf(await shuttleSay("오늘부터요")), /내일부터 90일 안/);
+  assert.match(textOf(await shuttleSay("다음 주부터요")), /원장님께 접수할까요/);
+  await shuttleSay("네");
+  const row = db.intakes.find((item) => item.status === "SUBMITTED");
+  assert.equal(row.kind, "SHUTTLE_START_STOP");
+  assert.equal(row.structuredJson.shuttleIntent, "STOP");
+  assert.equal(row.structuredJson.effectiveDate, shuttleFlow.regularStartChoices(TODAY, ["화"]).nextWeek);
+  assert.deepEqual(row.structuredJson.regularShuttle.days, ["화"]);
 });
