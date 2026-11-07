@@ -18,6 +18,7 @@ import {
     DEPOSITOR_NAME_MAX,
     MEMO_MAX,
     posChargeAvailability,
+    targetNamesSummary,
     validateBankTransferInput,
 } from "@/lib/payments/bankTransferRecord";
 
@@ -95,7 +96,13 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
                             {heading}
                         </h2>
                         {targets.length > 1 && (
-                            <p className="text-sm text-[var(--color-academy-muted)]">선택한 모든 건에 같은 입금 정보로 기록돼요.</p>
+                            <>
+                                {/* 누구 청구인지 창 안에서 확인 — 많으면 «홍길동, 김철수 외 N명» */}
+                                <p className="truncate text-sm font-bold text-[var(--color-academy-ink)]">
+                                    대상 {targetNamesSummary(targets)}
+                                </p>
+                                <p className="text-sm text-[var(--color-academy-muted)]">선택한 모든 건에 같은 입금 정보로 기록돼요.</p>
+                            </>
                         )}
                     </div>
                     <button type="button" onClick={close} disabled={submitting} className="academy-button-text">

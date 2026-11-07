@@ -128,3 +128,19 @@ export function posChargeAvailability(targets: Array<{ type: string; status: str
     }
     return { enabled: true };
 }
+
+/**
+ * 여러 건 납부 처리 창에 보일 «대상 학생» 한 줄.
+ * 왜: «3건 · 합계»만 보이면 누구 청구를 처리하는지 창 안에서 확인할 길이 없다(잘못 고른 건을 못 알아챈다).
+ * - 같은 학생의 여러 청구는 이름 한 번만(처음 나온 순서 유지)
+ * - 이름이 maxNames 명을 넘으면 «홍길동, 김철수 외 N명»
+ */
+export function targetNamesSummary(targets: Array<{ studentName: string }>, maxNames = 2): string {
+    const names: string[] = [];
+    for (const t of targets) {
+        const name = (t.studentName ?? "").trim() || "이름 없음";
+        if (!names.includes(name)) names.push(name);
+    }
+    if (names.length <= maxNames) return names.join(", ");
+    return `${names.slice(0, maxNames).join(", ")} 외 ${names.length - maxNames}명`;
+}

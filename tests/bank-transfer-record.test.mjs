@@ -153,3 +153,28 @@ test("단말기 제거 회귀: 메뉴·모달·서버 액션·원장부 함수�
   // 예전에 단말기로 기록된 결제의 표시 이름은 유지
   assert.match(finance, /TOSS_TERMINAL: "현장 단말기"/);
 });
+
+test("검수 보완: 수동 기록 표시(paidProvider MANUAL)·청구서 PAID/CANCELED 덮지 않기·토스 키 미변경", () => {
+  const body = fnBody(actions, "recordBankTransferPayment");
+  // 교사 수납 확인·특강 수동 납부와 같은 관례
+  assert.match(body, /"paidProvider" = 'MANUAL'/);
+  // 청구서도 이미 납부·취소면 덮지 않는다
+  assert.match(body, /WHERE "paymentId" = ANY\(\$1::text\[\]\) AND status NOT IN \('PAID', 'CANCELED'\)/);
+  // 수동 경로는 토스 주문번호·결제키를 건드리지 않는다
+  assert.doesNotMatch(body, /"providerOrderId" =|"providerPaymentKey" =/);
+});
+
+test("여러 건 납부 처리 창: 대상 학생 이름 한 줄(중복 제거·많으면 «외 N명»)", () => {
+  const s = rules.targetNamesSummary;
+  assert.equal(s([{ studentName: "홍길동" }]), "홍길동");
+  assert.equal(s([{ studentName: "홍길동" }, { studentName: " 홍길동 " }]), "홍길동");
+  assert.equal(s([{ studentName: "홍길동" }, { studentName: "김철수" }]), "홍길동, 김철수");
+  assert.equal(
+    s([{ studentName: "홍길동" }, { studentName: "김철수" }, { studentName: "이영희" }, { studentName: "박민수" }]),
+    "홍길동, 김철수 외 2명",
+  );
+  assert.equal(s([{ studentName: "" }]), "이름 없음");
+  assert.equal(s([{ studentName: "가" }, { studentName: "나" }], 1), "가 외 1명");
+  // 창이 실제로 이 한 줄을 여러 건일 때 보인다
+  assert.match(modal, /targets\.length > 1 &&[\s\S]*대상 \{targetNamesSummary\(targets\)\}/);
+});

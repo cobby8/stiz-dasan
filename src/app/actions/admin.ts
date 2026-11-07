@@ -1831,9 +1831,12 @@ export async function recordBankTransferPayment(data: {
 
             // paidDate 는 시간대 없는 timestamp — 날짜 문자열을 그대로 '그날 00:00' 으로 넣는다.
             // UTC 로 읽어도(toISOString) KST 로 두 번 걸어 읽어도 같은 날짜가 나온다.
+            // paidProvider = 'MANUAL' — 교사 수납 확인(staff-billing)·특강 수동 납부와 같은 관례.
+            // 토스 주문번호·결제키(providerOrderId/providerPaymentKey)는 다른 수동 경로처럼 건드리지 않는다.
             const updated = await tx.$executeRawUnsafe(
                 `UPDATE "Payment"
-                    SET status = 'PAID', "paidDate" = $2::date::timestamp, method = $3, "updatedAt" = NOW()
+                    SET status = 'PAID', "paidDate" = $2::date::timestamp, method = $3,
+                        "paidProvider" = 'MANUAL', "updatedAt" = NOW()
                   WHERE id = ANY($1::text[]) AND status IN ('PENDING', 'OVERDUE')`,
                 recordable, depositDate, BANK_TRANSFER_METHOD,
             );
@@ -1842,10 +1845,11 @@ export async function recordBankTransferPayment(data: {
             }
             // PaymentInvoice.paidAt 은 timestamptz — Payment.paidDate 와 «같은 순간»(입금일 00:00 UTC = KST 09:00)으로 넣는다.
             // KST 자정(전날 15:00 UTC)으로 넣으면 UTC 로 날짜를 자르는 화면에서 하루 앞당겨 보인다.
+            // 청구서가 이미 납부·취소면 덮지 않는다(교사 수납 확인과 같은 조건 — 토스 취소 직후 경합 대비).
             await tx.$executeRawUnsafe(
                 `UPDATE "PaymentInvoice"
                     SET status = 'PAID', "paidAt" = ($2::date::timestamp AT TIME ZONE 'UTC'), "updatedAt" = NOW()
-                  WHERE "paymentId" = ANY($1::text[])`,
+                  WHERE "paymentId" = ANY($1::text[]) AND status NOT IN ('PAID', 'CANCELED')`,
                 recordable, depositDate,
             );
 
