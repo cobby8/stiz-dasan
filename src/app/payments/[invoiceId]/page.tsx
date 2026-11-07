@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
-import { getInvoiceForParent, getPaymentProviderConfig } from "@/lib/payment-ledger";
+import { getInvoiceForParent, getPaymentProviderConfig, getVirtualAccountState } from "@/lib/payment-ledger";
 import PaymentCheckoutClient from "./PaymentCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -48,12 +48,15 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
     const isClosed = ["REFUNDED", "CANCELED"].includes(invoice.paymentStatus) || invoice.invoiceStatus === "CANCELED";
     const receiptHref = invoice.receiptUrl || invoice.transactionReceiptUrl || undefined;
     const isOverdue = !isPaid && !isClosed && invoice.paymentStatus === "OVERDUE";
-    const statusLabel = isPaid ? "납부 완료" : isClosed ? "청구 취소" : isOverdue ? "연체" : "미납";
+    // 무통장입금 계좌(입금 대기·만료) — 소유권 확인(getInvoiceForParent) 뒤에만 읽는다. 학부모 화면용 칸만 온다.
+    const virtualAccount = !isPaid && !isClosed ? await getVirtualAccountState(invoice.invoiceId) : null;
+    const waitingDeposit = Boolean(virtualAccount && !virtualAccount.expired);
+    const statusLabel = isPaid ? "납부 완료" : isClosed ? "청구 취소" : waitingDeposit ? "입금 대기" : isOverdue ? "연체" : "미납";
     const statusClass = isPaid
         ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-200"
         : isClosed
             ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            : isOverdue
+            : isOverdue && !waitingDeposit
                 ? "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200"
                 : "bg-yellow-100 text-yellow-800 dark:bg-brand-neon-lime/15 dark:text-brand-neon-lime";
 
@@ -153,6 +156,7 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                                     provider={providerConfig.provider}
                                     providerLabel={providerConfig.providerLabel}
                                     amount={Number(invoice.amount)}
+                                    virtualAccount={virtualAccount}
                                 />
                             </div>
                         )}

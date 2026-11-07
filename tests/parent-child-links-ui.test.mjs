@@ -155,6 +155,8 @@ test("추가 가족의 수납 히스토리는 금액·상태를 유지하고 대
     "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts"),
     "@/components/admin/list/monthDateGroups": compileModuleWith("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts") }),
     react: { ...React, useState: (initial) => React.useState(initial === "attendance" ? "payments" : initial) },
+    // 무통장입금 계좌 안내 — 픽스처 청구에 계좌가 없어 그려지지 않는다(빈 부품)
+    "@/components/parent/VirtualAccountNotice": { default: () => null },
   });
   const render = (canCheckout) => renderToStaticMarkup(React.createElement(History, { children: [{
     id: "child-fixture", name: "합성 학생", attendance: { total: 0, present: 0, absent: 0, late: 0, rate: null, records: [] },

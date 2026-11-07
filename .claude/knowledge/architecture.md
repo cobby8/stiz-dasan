@@ -136,3 +136,9 @@
 - **발견자**: developer
 - **내용**: 자체 package.json·tsconfig·node_modules. 루트 `tsconfig.json` exclude·`eslint.config.mjs` ignore 에 `apps/toss-pos-plugin` 이 빠지면 루트 `**/*.ts` 포함 때문에 next build(Vercel)가 깨진다. 핵심 로직은 `src/core/*`(SDK 를 import 하지 않고 pos-types.ts 최소 모양을 인자로 받음 → node --test 가짜 SDK), 실제 SDK 와 맞는지는 `tests/sdk-compat.typecheck.ts` 가 tsc 로 확인. 서버 API 주소·응답 해석은 `src/core/contract.ts` 한 곳(camel/snake 둘 다 읽음). SDK 0.0.31 은 **주문 전체 메모를 넣는 함수가 없어** `STIZ:S-xxxx` 를 항목 메모+item.code 에 넣는다 → 서버 웹훅 매칭은 lineItems[].memo·item.code 도 봐야 한다. 요청 제한은 http 포함 60초 100·30분 200번. 운영 매장 배포 = 라이브 검수(월·목)+VAN 대리점 활성화, 개발 배포는 테스트 단말기 5대.
 - **참조횟수**: 0
+
+### [2026-11-08] 무통장입금(가상계좌) = 거래(PaymentTransaction) 상태만 «입금 대기», 청구 상태는 새로 안 만듦
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 승인 응답 WAITING_FOR_DEPOSIT → `PaymentTransaction.status='WAITING_FOR_DEPOSIT'`·method «가상계좌»·rawResponse 에 `virtualAccountIssue`(은행·계좌·예금주·기한·금액)+`depositSecretHash`(SHA-256, 원문 secret 저장 안 함). 청구(Payment)·청구서는 미납 그대로. 판정은 순수 `src/lib/payments/virtualAccount.ts`(decideVirtualAccountWebhook: PAY·ALREADY_DONE·RELEASE·REJECT·IGNORE·DELEGATE), secret 해시·비교는 서버 전용 `virtualAccountSecret.ts`(학부모 화면이 import 하면 번들에 node:crypto). 웹훅은 secret 대조→토스 재조회→finalizeVerifiedTossPayment(paidAt 인자, paidDate 무tz=`$::timestamptz AT TIME ZONE 'UTC'`). 학부모 화면용 조회는 `rawResponse->'virtualAccountIssue'` 만 SELECT(마이페이지 2경로는 queries.ts `PARENT_VIRTUAL_ACCOUNT_LATERAL` 공용). ⚠️ DEPOSIT_CALLBACK createdAt 은 시간대 없는 KST → `parseTossTimestamp`.
+- **참조횟수**: 0

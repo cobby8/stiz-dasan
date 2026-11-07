@@ -992,6 +992,8 @@ export default function FinanceClient({
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
                         {statusInfo.label}
                     </span>
+                    {/* 무통장입금 계좌 발급 후 입금 전 — 상태값은 그대로(미납), 표시만 붙인다 */}
+                    {p.transactionStatus === "WAITING_FOR_DEPOSIT" && p.status !== "PAID" && <span className="ml-1 whitespace-nowrap text-xs font-bold text-[var(--color-academy-muted)]">입금 대기 · 가상계좌</span>}
                 </td>
                 {/* ⚡ 작업: 메뉴 클릭이 행 클릭(패널)으로 번지지 않게 전파 차단 */}
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>

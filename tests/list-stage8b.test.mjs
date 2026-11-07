@@ -36,6 +36,8 @@ test("출결 히스토리는 KST 날짜로 달별 묶음·오른쪽 날짜·상�
     "@/components/admin/list/StatusCountChips": chips,
     "@/lib/datetime/kst": kst,
     "@/components/admin/list/monthDateGroups": monthGroups,
+    // 무통장입금 계좌 안내(수납 탭 전용) — 이 출결 검증과 무관해 빈 부품으로 둔다
+    "@/components/parent/VirtualAccountNotice": { default: () => null },
   }).default;
   const html = renderToStaticMarkup(React.createElement(History, { children: [{
     id: "c1", name: "합성 학생",

@@ -10,6 +10,7 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
+import { parentVirtualAccountView } from "@/lib/payments/virtualAccount";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
@@ -880,6 +881,18 @@ function getMonthDateRange(year: number, month: number) {
     return { startStr, endStr };
 }
 
+// 학부모 마이페이지 두 곳(메인·전체 내역)이 같이 쓰는 «최근 가상계좌» 조인 — 한쪽만 고치지 않게 한 곳에 둔다.
+// 발급 정보(virtualAccountIssue)만 고른다. secret 해시(depositSecretHash)는 SELECT 하지 않는다.
+const PARENT_VIRTUAL_ACCOUNT_LATERAL = `LEFT JOIN LATERAL (
+                        SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
+                        FROM "PaymentTransaction" t
+                        WHERE t."paymentId" = p.id
+                          AND t.status IN ('WAITING_FOR_DEPOSIT', 'EXPIRED')
+                          AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
+                        ORDER BY t."createdAt" DESC
+                        LIMIT 1
+                     ) va ON true`;
+
 export const getPayments = cache(async (year?: number, month?: number) => {
     try {
         await ensurePaymentInfrastructure();
@@ -1128,9 +1141,11 @@ export async function getMyPageData(parentUserId: string) {
                     `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate",
                             p.type, p.description, p.method, p."receiptUrl",
                             i.id AS invoice_id, i."invoiceNo", i.status AS invoice_status,
-                            i."checkoutUrl" AS invoice_checkout_url
+                            i."checkoutUrl" AS invoice_checkout_url,
+                            va.status AS va_status, va.issue AS va_issue
                      FROM "Payment" p
                      LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+                     ${PARENT_VIRTUAL_ACCOUNT_LATERAL}
                      WHERE p."studentId" = $1
                      ORDER BY p."dueDate" DESC LIMIT 5`,
                     studentId
@@ -1178,6 +1193,10 @@ export async function getMyPageData(parentUserId: string) {
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
                         invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
+                        // 무통장입금 계좌 — 결제 담당(대표) 보호자에게만. secret 은 SQL 에서 아예 고르지 않는다.
+                        virtualAccount: s.parentId === parent.id
+                            ? parentVirtualAccountView(p.status, p.va_status, p.va_issue, Date.now())
+                            : null,
                     })),
                 };
             })
@@ -1243,9 +1262,11 @@ export async function getMyPageHistory(parentUserId: string) {
                     `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate",
                             p.type, p.description, p.method, p."receiptUrl",
                             i.id AS invoice_id, i."invoiceNo", i.status AS invoice_status,
-                            i."checkoutUrl" AS invoice_checkout_url
+                            i."checkoutUrl" AS invoice_checkout_url,
+                            va.status AS va_status, va.issue AS va_issue
                      FROM "Payment" p
                      LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+                     ${PARENT_VIRTUAL_ACCOUNT_LATERAL}
                      WHERE p."studentId" = $1
                      ORDER BY p."dueDate" DESC`,
                     studentId
@@ -1288,6 +1309,10 @@ export async function getMyPageHistory(parentUserId: string) {
                         invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                         invoiceStatus: p.invoice_status ?? null,
                         invoiceCheckoutUrl: s.parentId === parent.id ? (p.invoice_checkout_url ?? null) : null,
+                        // 무통장입금 계좌 — 결제 담당(대표) 보호자에게만. secret 은 SQL 에서 아예 고르지 않는다.
+                        virtualAccount: s.parentId === parent.id
+                            ? parentVirtualAccountView(p.status, p.va_status, p.va_issue, Date.now())
+                            : null,
                     })),
                 };
             })
