@@ -14,6 +14,7 @@ import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { LINKED_ESCALATE_LEAD, isLinkedPolicyCandidate, parsePolicyIntakeShortcut, type KakaoReply } from "@/lib/kakao-policy-qa";
 import { handleMakeupConversation } from "@/lib/kakao-makeup-flow";
 import { handleAbsenceConversation } from "@/lib/kakao-absence-flow";
+import { handleShuttleConversation } from "@/lib/kakao-shuttle-flow";
 
 export { classifyParentUtterance, getKakaoUserKey } from "@/lib/kakao-chatbot-contract";
 export type { KakaoSkillPayload, ParentRequestKind } from "@/lib/kakao-chatbot-contract";
@@ -379,6 +380,17 @@ export async function handleLinkedMessage(
   });
   if (absence) return absence;
 
+  // 당일 셔틀 변경(안 탐·다른 곳)·취소도 대화 안에서 끝낸다. 셔틀 대화와 무관하면 null.
+  const shuttleLink = DIRECT_REQUEST_LINKS["오늘 셔틀 안 타요"];
+  const shuttle = await handleShuttleConversation({
+    identityId: identity.id,
+    parentUserId: identity.parentUserId,
+    children,
+    text,
+    webLink: { label: shuttleLink.label, url: siteUrl(shuttleLink.path) },
+  });
+  if (shuttle) return shuttle;
+
   const draft = await latestDraft(identity.id);
   if (draft && (CANCEL_WORDS.test(text) || text === "다시 말할게요")) {
     await prisma.$executeRawUnsafe(`UPDATE "KakaoParentIntake" SET status='CANCELED',"updatedAt"=now() WHERE id=$1 AND status IN ('DRAFT','NEEDS_DETAILS')`, draft.id);
@@ -423,7 +435,7 @@ export async function handleLinkedMessage(
 
   const submenu: Record<string, string[]> = {
     "결석·보강": ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"],
-    "셔틀": ["오늘 셔틀 안 타요", "오늘 다른 곳에서 타요", "정규 셔틀 신청·중단", "탑승 장소·시간 변경", "셔틀비 문의"],
+    "셔틀": ["오늘 셔틀 안 타요", "오늘 다른 곳에서 타요", "셔틀 변경 취소", "정규 셔틀 신청·중단", "탑승 장소·시간 변경", "셔틀비 문의"],
     "청구·영수증": ["입금했어요", "청구 금액 확인", "영수증 요청", "환불·결제 취소 상담"],
     "수강 변경": ["반·요일·시간 변경", "수업 추가", "휴원", "복귀", "퇴원"],
     "정보·상담": ["연락처 변경", "기타 상담", "상담원 연결"],

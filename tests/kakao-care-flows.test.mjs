@@ -54,6 +54,7 @@ function load(file) {
 const kst = await import(load("src/lib/datetime/kst.ts"));
 const store = await import(load("src/lib/kakao-flow-store.ts"));
 const absenceFlow = await import(load("src/lib/kakao-absence-flow.ts"));
+const shuttleFlow = await import(load("src/lib/kakao-shuttle-flow.ts"));
 
 const TODAY = kst.todayKst();
 const day = (n) => kst.addDaysKst(TODAY, n);
@@ -315,4 +316,106 @@ test("소스 계약: raw SQL 만, 웹과 같은 결석 함수, 보호자 조건"
   const storeSource = readFileSync("src/lib/kakao-flow-store.ts", "utf8");
   assert.match(storeSource, /pg_advisory_xact_lock/);
   assert.match(storeSource, /"structuredJson"->>'step'=\$2/, "단계 선점(중복 방지)");
+});
+
+// ── 당일 셔틀 변경 ───────────────────────────────────────────────────────
+const shuttleSay = (text, children = ONE_CHILD, parentUserId = "p1") =>
+  shuttleFlow.handleShuttleConversation({ identityId: "i1", parentUserId, children, text, webLink: { label: "오늘 셔틀 변경하기", url: "https://x.test/mypage/shuttle" } });
+
+test("셔틀 의도 경계: 당일 변경·취소만 이 흐름, 정규 이용·셔틀비·주차는 아니다", () => {
+  const cases = [
+    ["내일 셔틀 안 타요", "DAY"],
+    ["오늘 하원 셔틀은 안 타요", "DAY"],
+    ["오늘 다른 곳에서 차 탈게요", "DAY"],
+    ["오늘 다른 곳에서 타요", "DAY"],
+    ["내일 탑승 장소 변경할게요", "DAY"],
+    ["셔틀 변경 취소", "DAY_CANCEL"],
+    ["내일 셔틀 안 타는 거 취소할게요", "DAY_CANCEL"],
+    ["셔틀 이용 중단할게요", null],
+    ["정규 셔틀 신청·중단", null],
+    ["셔틀비 얼마예요?", null],
+    ["주차 가능한가요?", null],
+    ["대관 차량 되나요?", null],
+    ["셔틀", null],
+  ];
+  for (const [text, expected] of cases) assert.equal(shuttleFlow.shuttleIntentOf(text), expected, text);
+});
+
+test("방향·종류 말 읽기", () => {
+  assert.equal(shuttleFlow.parseShuttleDirection("셔틀변경 등하원"), "BOTH");
+  assert.equal(shuttleFlow.parseShuttleDirection("등·하원 둘 다요"), "BOTH");
+  assert.equal(shuttleFlow.parseShuttleDirection("하원만요"), "DROPOFF");
+  assert.equal(shuttleFlow.parseShuttleDirection("등원"), "PICKUP");
+  assert.equal(shuttleFlow.parseShuttleDirection("올 때요"), null, "누구 기준인지 모호한 말은 버튼으로 다시 묻는다");
+  assert.equal(shuttleFlow.parseShuttleKind("안 타요"), "SKIP");
+  assert.equal(shuttleFlow.parseShuttleKind("셔틀변경 다른 장소"), "LOCATION");
+  assert.deepEqual(shuttleFlow.shuttleDateChoices("2026-12-30", 3), ["2026-12-30", "2026-12-31", "2027-01-01"]);
+});
+
+test("「내일 셔틀 안 타요」: 날짜·종류는 첫 문장에서, 방향만 묻고 확정 → submitShuttleException", async () => {
+  const db = makeDb();
+  const ask = await shuttleSay("내일 셔틀 안 타요");
+  assert.match(textOf(ask), /등원·하원 중 어느 쪽/);
+  const confirm = await shuttleSay("셔틀변경 하원");
+  assert.match(textOf(confirm), /이대로 바꿀까요/);
+  assert.match(textOf(confirm), /안 타요/);
+  assert.equal(db.calls.filter((c) => c[0] === "submitShuttle").length, 0, "확정 전에는 저장하지 않는다");
+  const done = await shuttleSay("셔틀변경 확정");
+  assert.match(textOf(done), /셔틀 변경 완료/);
+  assert.deepEqual(db.calls.filter((c) => c[0] === "submitShuttle"), [["submitShuttle", "p1", { studentId: "s1", serviceDate: day(1), direction: "DROPOFF", kind: "SKIP", location: undefined }]]);
+  // 같은 확정을 다시 눌러도 한 번만
+  await shuttleSay("셔틀변경 확정");
+  assert.equal(db.calls.filter((c) => c[0] === "submitShuttle").length, 1);
+});
+
+test("다른 곳 탑승: 날짜 번호 → 방향 → 종류 → 장소 글 → 확정", async () => {
+  const db = makeDb();
+  const dates = await shuttleSay("셔틀 탈 장소가 달라요 다른 곳에서 타요");
+  assert.match(textOf(dates), /바꿀 날을 골라/);
+  assert.ok(sends(dates).length <= 10);
+  await shuttleSay("셔틀변경 날짜 3번");
+  const kindAsk = await shuttleSay("등원");
+  assert.match(textOf(kindAsk), /타실 곳을 적어/, "첫 문장의 「다른 곳」은 다시 묻지 않는다");
+  const confirm = await shuttleSay("푸르지오 2단지 정문");
+  assert.match(textOf(confirm), /푸르지오 2단지 정문/);
+  await shuttleSay("네");
+  assert.deepEqual(db.calls.find((c) => c[0] === "submitShuttle")[2], { studentId: "s1", serviceDate: day(2), direction: "PICKUP", kind: "LOCATION", location: "푸르지오 2단지 정문" });
+});
+
+test("14일 넘는 날짜는 받지 않는다, 저장 함수 거절은 그대로 알린다", async () => {
+  const db = makeDb();
+  await shuttleSay("오늘 셔틀 안 타요");
+  await shuttleSay("그만");
+  await shuttleSay("셔틀 안 타요");
+  const far = await shuttleSay(kst.kstLabel(day(20)).replace(/\(.+\)/, ""));
+  assert.match(textOf(far), /14일 안의 날짜/);
+  db.shuttleResult = { ok: false, message: "본인 자녀만 신청할 수 있습니다." };
+  await shuttleSay("1번");
+  await shuttleSay("등하원");
+  const res = await shuttleSay("확정");
+  assert.match(textOf(res), /셔틀 변경을 못 했어요: 본인 자녀만/);
+});
+
+test("당일 변경 취소: 내 자녀 것만 목록 → 확정 → cancelShuttleException(id)", async () => {
+  const db = makeDb();
+  db.exceptions = [
+    { id: "x1", parentId: "p1", studentName: "지유", serviceDate: day(1), direction: "DROPOFF", kind: "SKIP", location: null },
+    { id: "x9", parentId: "p9", studentName: "남의집", serviceDate: day(1), direction: "DROPOFF", kind: "SKIP", location: null },
+  ];
+  const list = await shuttleSay("셔틀 변경 취소");
+  assert.match(textOf(list), /취소할 번호/);
+  assert.doesNotMatch(textOf(list), /남의집/);
+  await shuttleSay("셔틀변경 취소 1번");
+  const done = await shuttleSay("취소할게요");
+  assert.match(textOf(done), /셔틀 변경을 취소했어요/);
+  assert.deepEqual(db.calls.filter((c) => c[0] === "cancelShuttle"), [["cancelShuttle", "p1", "x1"]]);
+});
+
+test("셔틀 대화 중 다른 업무는 닫고 넘긴다, 자녀가 둘이면 이름 붙여 원래 문장을 돌려받는다", async () => {
+  const db = makeDb();
+  await shuttleSay("내일 셔틀 안 타요");
+  assert.equal(await shuttleSay("영수증 요청"), null);
+  assert.ok(db.intakes.every((row) => row.status !== "SHUTTLE_FLOW"));
+  const ask = await shuttleSay("내일 셔틀 안 타요", TWO_CHILDREN);
+  assert.deepEqual(sends(ask).slice(0, 2), ["지유 내일 셔틀 안 타요", "지호 내일 셔틀 안 타요"]);
 });
