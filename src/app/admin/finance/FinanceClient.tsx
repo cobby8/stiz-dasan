@@ -1,6 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
-import { toKstYmd, todayKst } from "@/lib/datetime/kst";
+import { toKstYmd } from "@/lib/datetime/kst";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -22,14 +22,14 @@ import {
     refreshPaymentLedger,
     sendInvoiceLinksForMonth,
     sendUnpaidReminders,
-    bulkUpdatePaymentStatus,
-    markTerminalPaymentPaid,
 } from "@/app/actions/admin";
 // 토스 POS «현장 결제» 번호 창(2026-11-07) — 납부완료는 토스 결제 확인으로만 바뀐다
 import PosChargeRequestModal from "./PosChargeRequestModal";
 // 토스 POS 결제 취소 창(2026-11-08) — 환불은 토스 취소 확인으로만 바뀐다
 import PosChargeCancelModal from "./PosChargeCancelModal";
 import { posMethodLabel } from "@/lib/pos/charge-request.mjs";
+// «납부 처리» 창(2026-11-08) — 결제 방법(계좌이체·현장 결제)을 골라 근거를 남겨야만 납부완료가 된다
+import RecordPaymentModal from "./RecordPaymentModal";
 
 type Payment = {
     id: string;
@@ -190,6 +190,8 @@ const METHOD_LABELS: Record<string, string> = {
 const PROVIDER_LABELS: Record<string, string> = {
     TOSS: "토스페이먼츠",
     TOSS_POS: "토스 POS(현장)",
+    // 예전 «단말기» 메뉴로 기록된 결제(메뉴는 2026-11-08 제거, 과거 기록 표시는 유지)
+    TOSS_TERMINAL: "현장 단말기",
     CAFE24_BRIDGE: "본사 카페24",
     MANUAL: "직접 처리",
 };
@@ -236,11 +238,6 @@ export function toDateStr(d: Date | string | null): string {
 
 function formatAmount(n: number): string {
     return n.toLocaleString("ko-KR") + "원";
-}
-
-/** 날짜 입력칸 기본값 = 오늘(KST). 기기 시간대와 무관하게 KST 공용 모듈에서 만든다. */
-function toDateInputValue() {
-    return todayKst();
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -402,11 +399,8 @@ export default function FinanceClient({
     const [sheetApplying, setSheetApplying] = useState(false);
     const [sheetError, setSheetError] = useState<string | null>(null);
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
-    const [terminalTarget, setTerminalTarget] = useState<Payment | null>(null);
-    const [terminalApprovalNo, setTerminalApprovalNo] = useState("");
-    const [terminalReceivedAt, setTerminalReceivedAt] = useState(toDateInputValue());
-    const [terminalMemo, setTerminalMemo] = useState("");
-    const [terminalSubmitting, setTerminalSubmitting] = useState(false);
+    // «납부 처리» 창 대상(1건 = 행 메뉴, 여러 건 = 체크박스 선택). null 이면 창 닫힘
+    const [recordTargets, setRecordTargets] = useState<Payment[] | null>(null);
     // 현장 결제(토스 POS) 창을 띄울 청구서
     const [posChargeTarget, setPosChargeTarget] = useState<Payment | null>(null);
     // 결제 취소(토스 POS) 창을 띄울 청구서
@@ -606,59 +600,6 @@ export default function FinanceClient({
         }
     }
 
-    function openTerminalModal(payment: Payment) {
-        if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 납부 완료 처리를 할 수 있습니다.");
-            return;
-        }
-
-        setTerminalTarget(payment);
-        setTerminalApprovalNo(payment.providerOrderId ?? "");
-        setTerminalReceivedAt(toDateInputValue());
-        setTerminalMemo("");
-    }
-
-    function closeTerminalModal() {
-        if (terminalSubmitting) return;
-        setTerminalTarget(null);
-        setTerminalApprovalNo("");
-        setTerminalReceivedAt(toDateInputValue());
-        setTerminalMemo("");
-    }
-
-    async function handleTerminalSubmit(e: React.FormEvent) {
-        e.preventDefault();
-        if (!terminalTarget) return;
-        if (!canManageCriticalFinance) {
-            alert("수퍼관리자만 납부 완료 처리를 할 수 있습니다.");
-            return;
-        }
-        if (!terminalApprovalNo.trim()) {
-            alert("단말기 승인번호를 입력해 주세요.");
-            return;
-        }
-
-        setTerminalSubmitting(true);
-        try {
-            const result = await markTerminalPaymentPaid({
-                paymentId: terminalTarget.id,
-                approvalNo: terminalApprovalNo.trim(),
-                receivedAt: terminalReceivedAt,
-                memo: terminalMemo.trim() || undefined,
-            });
-            alert(result.message);
-            setTerminalTarget(null);
-            setTerminalApprovalNo("");
-            setTerminalReceivedAt(toDateInputValue());
-            setTerminalMemo("");
-            await loadMonth(year, month);
-        } catch (err: unknown) {
-            alert(getErrorMessage(err, "현장 단말기 결제 반영 실패"));
-        } finally {
-            setTerminalSubmitting(false);
-        }
-    }
-
     // 개별 삭제
     async function handleDelete(id: string) {
         if (!canManageCriticalFinance) {
@@ -796,23 +737,16 @@ export default function FinanceClient({
     }
 
     // 일괄 수납 처리
-    async function handleBulkPaid() {
+    function handleBulkPaid() {
         if (!canManageCriticalFinance) {
             alert("수퍼관리자만 일괄 수납 처리를 할 수 있습니다.");
             return;
         }
         if (selectedIds.size === 0) { alert("선택된 항목이 없습니다."); return; }
-        if (!confirm(`선택한 ${selectedIds.size}건을 납부완료 처리하시겠습니까?`)) return;
-        setBusy(true);
-        try {
-            await bulkUpdatePaymentStatus(Array.from(selectedIds), "PAID");
-            setSelectedIds(new Set());
-            await loadMonth(year, month);
-        } catch (err: unknown) {
-            alert(getErrorMessage(err, "일괄 처리 실패"));
-        } finally {
-            setBusy(false);
-        }
+        // 바로 PAID 로 바꾸지 않고 «납부 처리» 창(여러 건 모드)을 연다 — 미납·연체만 대상
+        const targets = payments.filter((p) => selectedIds.has(p.id) && ["PENDING", "OVERDUE"].includes(p.status));
+        if (targets.length === 0) { alert("선택한 항목 중 미납·연체 청구가 없습니다."); return; }
+        setRecordTargets(targets);
     }
 
     // 1단계: 상태를 뺀 조건(원생 지정·검색·반) — 상태 칩 건수는 이 목록에서 센다
@@ -897,23 +831,16 @@ export default function FinanceClient({
                     onSelect: () => setPosChargeTarget(p),
                 },
             ] : []),
-            ...(canManageCriticalFinance && p.status !== "PAID" ? [
-                {
-                    key: "terminal",
-                    label: "단말기",
-                    icon: "point_of_sale",
-                    disabled: busy || terminalSubmitting,
-                    onSelect: () => openTerminalModal(p),
-                },
+            // 납부처리: 바로 PAID 로 바꾸지 않고 «납부 처리» 창(방법 선택 + 근거 입력)을 연다.
+            // 미납·연체만 — 서버도 같은 상태만 기록한다(취소·환불 건은 메뉴에 안 보인다).
+            ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) ? [
                 {
                     key: "paid",
                     label: "납부처리",
                     icon: "check_circle",
                     tone: "primary" as const,
                     disabled: busy,
-                    onSelect: () => {
-                        void handleStatusChange(p.id, "PAID");
-                    },
+                    onSelect: () => setRecordTargets([p]),
                 },
             ] : []),
             ...(canManageCriticalFinance && p.status === "PENDING" ? [
@@ -1141,103 +1068,23 @@ export default function FinanceClient({
                     onRefunded={() => void loadMonth(year, month)}
                 />
             )}
-            {terminalTarget && (
-                <AdminModal
-                    titleId="terminal-payment-title"
-                    onClose={() => { if (!terminalSubmitting) closeTerminalModal(); }}
-                    closeOnBackdrop={false}
-                    panelClassName="max-w-md border border-gray-200 dark:border-gray-700 dark:bg-gray-900"
-                >
-                    <form
-                        onSubmit={handleTerminalSubmit}
-                        className="w-full p-5"
-                    >
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-wide text-brand-orange-500 dark:text-brand-neon-lime">
-                                    현장 단말기
-                                </p>
-                                <h2 id="terminal-payment-title" className="mt-1 text-lg font-extrabold text-gray-900 dark:text-white">
-                                    현장 단말기 결제 반영
-                                </h2>
-                                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                                    {terminalTarget.studentName} · {formatAmount(terminalTarget.amount)}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={closeTerminalModal}
-                                disabled={terminalSubmitting}
-                                className="rounded-lg px-2 py-1 text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-                            >
-                                닫기
-                            </button>
-                        </div>
-
-                        <div className="mt-5 space-y-4">
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
-                                    단말기 승인번호 *
-                                </label>
-                                <input
-                                    type="text"
-                                    value={terminalApprovalNo}
-                                    onChange={(e) => setTerminalApprovalNo(e.target.value)}
-                                    required
-                                    placeholder="예: 12345678"
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:ring-brand-neon-lime"
-                                />
-                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    단말기 영수증의 승인번호를 입력해 두면 나중에 거래내역과 대조하기 쉽습니다.
-                                </p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
-                                    결제일 *
-                                </label>
-                                <input
-                                    type="date"
-                                    value={terminalReceivedAt}
-                                    onChange={(e) => setTerminalReceivedAt(e.target.value)}
-                                    required
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:ring-brand-neon-lime"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
-                                    메모
-                                </label>
-                                <textarea
-                                    value={terminalMemo}
-                                    onChange={(e) => setTerminalMemo(e.target.value)}
-                                    rows={3}
-                                    placeholder="예: 현장 카드 단말기 결제"
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:focus:ring-brand-neon-lime"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="mt-5 flex justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={closeTerminalModal}
-                                disabled={terminalSubmitting}
-                                className="rounded-lg px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-                            >
-                                취소
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={terminalSubmitting}
-                                className="rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                            >
-                                {terminalSubmitting ? "반영 중..." : "납부완료 반영"}
-                            </button>
-                        </div>
-                    </form>
-                </AdminModal>
+            {recordTargets && (
+                <RecordPaymentModal
+                    targets={recordTargets.map((t) => ({ id: t.id, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status }))}
+                    onClose={() => setRecordTargets(null)}
+                    onChoosePos={(t) => {
+                        // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다
+                        const payment = recordTargets.find((r) => r.id === t.id) ?? null;
+                        setRecordTargets(null);
+                        setPosChargeTarget(payment);
+                    }}
+                    onRecorded={(message) => {
+                        setRecordTargets(null);
+                        setSelectedIds(new Set());
+                        setFinanceNotice(message);
+                        void loadMonth(year, month);
+                    }}
+                />
             )}
 
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

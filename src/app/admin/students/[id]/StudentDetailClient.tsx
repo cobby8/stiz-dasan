@@ -70,7 +70,8 @@ const ENROLLMENT_SEG_SELECTED: Record<string, string> = {
     WITHDRAWN: "bg-red-600 text-white dark:bg-red-500 dark:text-white",
 };
 
-// 결제 상태 변경 옵션(완납/대기/연체/취소) — 서버 updatePaymentStatus 가 받는 status 값과 1:1
+// 결제 상태 변경 옵션(완납/대기/연체/취소). 완납(PAID)은 이미 완납인 건의 «현재 상태» 표시용으로만 남는다 —
+// 서버 updatePaymentStatus 는 PAID 를 거부한다(납부완료는 수납 관리 «납부 처리» 창에서만, 2026-11-08)
 const PAY_STATUS_OPTIONS = [
     { value: "PAID", label: "완납" },
     { value: "PENDING", label: "대기" },
@@ -1577,7 +1578,8 @@ export default function StudentDetailClient({
                                                   {editing && (
                                                     <div className="mt-2.5 pl-[76px]">
                                                         <div className="inline-flex overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
-                                                            {PAY_STATUS_OPTIONS.map((option) => {
+                                                            {/* 완납은 여기서 바로 고르지 않는다(2026-11-08) — 수납 관리 «납부 처리»에서 방법·근거를 남겨야 한다 */}
+                                                            {PAY_STATUS_OPTIONS.filter((option) => option.value !== "PAID" || p.status === "PAID").map((option) => {
                                                                 const selected = p.status === option.value;
                                                                 return (
                                                                     <button
@@ -1597,6 +1599,11 @@ export default function StudentDetailClient({
                                                             })}
                                                         </div>
                                                         {updating && <span className="ml-2 text-xs font-medium text-gray-400">변경 중…</span>}
+                                                        {p.status !== "PAID" && (
+                                                            <p className="mt-1.5 text-xs text-[var(--color-academy-muted)]">
+                                                                납부완료는 <Link href="/admin/finance" prefetch={false} className="font-bold text-[var(--color-academy-primary)] underline">수납 관리</Link>의 «납부처리»에서 결제 방법과 함께 기록해요.
+                                                            </p>
+                                                        )}
                                                     </div>
                                                   )}
                                                   {/* 실패 사유(권한 없음 등) 표면화 — 조용한 실패 금지 */}
