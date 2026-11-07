@@ -469,7 +469,8 @@ export default function FinanceClient({
         setFinanceNotice(null);
         setSelectedIds(new Set()); // 선택 초기화
         try {
-            const res = await fetch(`/api/admin/finance?year=${y}&month=${m}`);
+            // no-store: 응답의 Cache-Control(max-age=30·swr=120) 때문에 납부 직후 다시 읽어도 브라우저가 옛 목록(미납)을 주던 문제(2026-11-08)
+            const res = await fetch(`/api/admin/finance?year=${y}&month=${m}`, { cache: "no-store" });
             if (!res.ok) {
                 throw new Error("Failed to load finance data.");
             }

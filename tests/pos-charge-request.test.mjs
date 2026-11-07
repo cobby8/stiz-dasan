@@ -523,6 +523,37 @@ test("웹훅 매칭: 자동 납부한 결제가 POS 에서 취소되면 되돌�
   assert.ok(!globalThis.__cs.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "청구서를 되돌리지 않는다");
 });
 
+// ───────────────────── 7-1a. 결제 직후 목록 갱신 (2026-11-08 원장 화면) ─────────────────────
+
+test("관리자 창: 요청 PAID 인데 청구서가 아직 미납(원장부 기록 중·2분 이내)이면 «기다리는 중»으로 보여 계속 읽게 한다", async () => {
+  const svc = await loadService();
+  const view = (over) => ({
+    id: "r1", shortCode: "S-482193", paymentId: "p-nov", status: "PAID", amount: 180000, taxFreeAmount: 180000,
+    expiresAtUtc: "2026-11-07T05:30:00Z", expiresKstHm: "14:30", createdAtUtc: "2026-11-07T05:00:00Z", paidKst: "2026-11-07 14:20",
+    isExpired: true, justPaid: true, note: null, createdVia: "ADMIN", paymentType: "MONTHLY", year: 2026, month: 11,
+    paymentStatus: "PENDING", studentName: "홍길동", ...over,
+  });
+  const read = async (over) => {
+    globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [view(over)] };
+    return svc.getChargeRequestForPayment("p-nov");
+  };
+  let r = await read({});
+  assert.equal(r.status, "SENT");
+  assert.equal(r.isExpired, false, "만료 시각이 지났어도 기다림을 이어 간다(창이 PAID 를 다시 읽어 목록을 갱신)");
+  r = await read({ paymentStatus: "PAID" });
+  assert.equal(r.status, "PAID", "청구서까지 납부되면 PAID");
+  r = await read({ justPaid: false });
+  assert.equal(r.status, "PAID", "2분이 지나면 그대로(끝없이 기다리지 않음)");
+  const src = await readFile(SERVICE, "utf8");
+  assert.match(src, /\(r\.status = 'PAID' AND r\."updatedAt" > now\(\) - interval '2 minutes'\) AS "justPaid"/, "시각 판단은 DB 시계");
+});
+
+test("수납 목록 다시 읽기는 브라우저 캐시를 쓰지 않는다(응답 Cache-Control max-age=30 때문에 납부 직후 옛 목록이 보였다)", async () => {
+  const fin = await readFile(FINANCE, "utf8");
+  assert.match(fin, /fetch\(`\/api\/admin\/finance\?year=\$\{y\}&month=\$\{m\}`, \{ cache: "no-store" \}\)/);
+  assert.match(fin, /onPaid=\{\(\) => void loadMonth\(year, month\)\}/);
+});
+
 // ───────────────────── 7-1b. 웹훅 매칭: 방식 무관 · 분할 결제 ─────────────────────
 
 const SPLIT_ORDER = {

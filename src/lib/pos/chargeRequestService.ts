@@ -89,6 +89,8 @@ type ViewRow = {
     createdAtUtc: string;
     paidKst: string | null;
     isExpired: boolean;
+    /** PAID 로 바뀐 지 2분 이내(DB 시계) — 원장부 납부 기록이 아직 진행 중일 수 있는 틈 */
+    justPaid?: boolean;
     note: string | null;
     createdVia: string;
     paymentType: string;
@@ -146,6 +148,7 @@ const VIEW_SQL = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount,
         to_char(r."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "createdAtUtc",
         to_char(r."paidAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "paidKst",
         (r."expiresAt" <= now()) AS "isExpired",
+        (r.status = 'PAID' AND r."updatedAt" > now() - interval '2 minutes') AS "justPaid",
         r.note, r."createdVia",
         p.type AS "paymentType", p.year, p.month, p.status AS "paymentStatus",
         st.name AS "studentName"
@@ -228,17 +231,22 @@ function uniqueViolation(error: unknown): string | null {
 }
 
 function toAdminView(row: ViewRow): AdminChargeRequestView {
+    // 자동 납부는 «요청 PAID 선점 → 원장부(청구서) 납부 기록» 순서다. 그 짧은 틈에 관리자 창이 PAID 를 읽으면
+    // 목록을 다시 읽어도 청구서가 아직 미납이라 «미납»으로 남았다(2026-11-08 원장 화면). 청구서가 아직 미납이면
+    // 관리자 화면엔 «결제 기다리는 중»(SENT, 만료 아님)으로 보여 계속 읽게 하고, 청구서까지 납부된 뒤 PAID 로 보인다.
+    // 단, PAID 로 바뀐 지 2분 이내일 때만 — 서버가 그 틈에 멈춘 드문 경우 창이 끝없이 기다리지 않게.
+    const ledgerPending = row.status === "PAID" && Boolean(row.justPaid) && ["PENDING", "OVERDUE"].includes(String(row.paymentStatus));
     return {
         id: row.id,
         shortCode: row.shortCode,
         paymentId: row.paymentId,
-        status: row.status,
+        status: ledgerPending ? "SENT" : row.status,
         amount: Number(row.amount),
         taxFreeAmount: Number(row.taxFreeAmount),
         expiresAt: row.expiresAtUtc,
         expiresKstHm: row.expiresKstHm,
         paidKst: row.paidKst,
-        isExpired: Boolean(row.isExpired),
+        isExpired: ledgerPending ? false : Boolean(row.isExpired),
         note: row.note,
         studentName: row.studentName,
         itemLabel: itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
