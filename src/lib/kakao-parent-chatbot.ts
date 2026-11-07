@@ -8,9 +8,9 @@ import {
 import {
   buildKakaoSkillResponse,
   classifyParentUtterance,
-  kakaoRentalReply,
   type ParentRequestKind,
 } from "@/lib/kakao-chatbot-contract";
+import { kakaoRentalReply } from "@/lib/kakao-rental-reply";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { LINKED_ESCALATE_LEAD, isLinkedPolicyCandidate, parsePolicyIntakeShortcut, type KakaoReply } from "@/lib/kakao-policy-qa";
 import { handleMakeupConversation } from "@/lib/kakao-makeup-flow";

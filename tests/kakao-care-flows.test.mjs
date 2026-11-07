@@ -110,6 +110,13 @@ function makeDb() {
         .filter((row) => row.parentId === args[0] && !row.canceled && row.serviceDate >= args[1])
         .map(({ id, studentName, serviceDate, direction, kind, location }) => ({ id, studentName, serviceDate, direction, kind, location }));
     }
+    if (/kind IN \('SHUTTLE_START_STOP','SHUTTLE_CHANGE'\)/.test(sql)) {
+      // 같은 학생의 처리 전(SUBMITTED·PROCESSING·HELD) 정규 셔틀 접수
+      assert.match(sql, /status IN \('SUBMITTED','PROCESSING','HELD'\)/);
+      return db.intakes
+        .filter((row) => row.studentId === args[0] && row.id !== args[1] && ["SHUTTLE_START_STOP", "SHUTTLE_CHANGE"].includes(row.kind) && ["SUBMITTED", "PROCESSING", "HELD"].includes(row.status))
+        .map((row) => ({ id: row.id }));
+    }
     if (/FROM "Enrollment" e/.test(sql) && /"dayOfWeek"/.test(sql)) {
       assert.match(sql, /s\."parentId"=\$1/);
       return (db.classDays ?? []).filter((row) => row.parentId === args[0] && row.studentId === args[1]).map(({ dayOfWeek }) => ({ dayOfWeek }));
@@ -336,6 +343,11 @@ test("셔틀 의도 경계: 당일 변경·취소만 이 흐름, 정규 이용·
     ["탑승 장소·시간 변경", "REGULAR"],
     ["셔틀 타는 곳 바꾸고 싶어요", "REGULAR"],
     ["셔틀 몇 시에 와요?", null],
+    // 묻는 말은 정규 변경 흐름이 아니라 예전처럼 원문 접수(검수 2026-11-07)
+    ["셔틀 시간 바뀌었나요?", null],
+    ["셔틀 노선 바뀌었어요?", null],
+    ["셔틀 신청 가능한가요", null],
+    ["셔틀 시간 바꿔 주세요", "REGULAR"],
     ["셔틀비 얼마예요?", null],
     ["주차 가능한가요?", null],
     ["대관 차량 되나요?", null],
@@ -489,4 +501,53 @@ test("정규 셔틀 중단: 장소는 묻지 않고, 다니는 요일이 하나�
   assert.equal(row.structuredJson.shuttleIntent, "STOP");
   assert.equal(row.structuredJson.effectiveDate, shuttleFlow.regularStartChoices(TODAY, ["화"]).nextWeek);
   assert.deepEqual(row.structuredJson.regularShuttle.days, ["화"]);
+});
+
+// ── 검수 반영(2026-11-07) ───────────────────────────────────────────────
+test("날짜 단계에서 다른 업무 문장은 날짜로 삼키지 않고 대화를 닫는다", async () => {
+  const db = makeDb();
+  await absenceSay("결석 신청");
+  assert.equal(await absenceSay("내일 셔틀 안 타요"), null, "셔틀 업무로 넘어간다");
+  assert.equal(await absenceSay("11/20 청구 금액 확인"), null);
+  assert.ok(db.intakes.every((row) => row.status !== "ABSENCE_FLOW"));
+  assert.equal(db.calls.filter((c) => c[0] === "report").length, 0);
+  // 결석 자신의 날짜 말은 그대로 받는다
+  await absenceSay("결석 신청");
+  assert.match(textOf(await absenceSay(kst.kstLabel(day(1)).replace(/\(.+\)/, "") + " 결석")), /사유를 골라/);
+
+  await shuttleSay("셔틀 안 타요");
+  assert.equal(await shuttleSay("11/20 청구 금액 확인"), null);
+  assert.ok(db.intakes.every((row) => row.status !== "SHUTTLE_FLOW"));
+  assert.equal(db.calls.filter((c) => c[0] === "submitShuttle").length, 0);
+});
+
+test("정규 셔틀 시작일 단계도 다른 업무 문장은 닫고 넘긴다", async () => {
+  const db = makeDb();
+  db.classDays = [{ parentId: "p1", studentId: "s1", dayOfWeek: "Tue" }];
+  await shuttleSay("셔틀 이용 중단할게요");
+  const start = await shuttleSay("하원");
+  assert.match(textOf(start), /언제부터/);
+  assert.equal(await shuttleSay("다음 주 영수증 요청"), null);
+  assert.ok(db.intakes.every((row) => row.status !== "SHUTTLE_FLOW"));
+});
+
+test("같은 학생에게 처리 전 정규 셔틀 접수가 있으면 «이미 접수되어 있어요»", async () => {
+  const db = makeDb();
+  db.classDays = [{ parentId: "p1", studentId: "s1", dayOfWeek: "Tue" }];
+  db.intakes.push({ id: "old", identityId: "i-other", studentId: "s1", kind: "SHUTTLE_CHANGE", sourceText: "셔틀 장소 변경", structuredJson: {}, status: "HELD", updatedAt: Date.now() });
+  await shuttleSay("셔틀 이용 중단할게요");
+  await shuttleSay("하원");
+  await shuttleSay("다음 주부터");
+  const res = await shuttleSay("접수할게요");
+  assert.match(textOf(res), /이미 접수되어 있어요/);
+  assert.equal(db.intakes.filter((row) => row.status === "SUBMITTED").length, 0, "새 접수를 만들지 않는다");
+  assert.equal(db.alerts.length, 0);
+  assert.ok(db.intakes.every((row) => row.status !== "SHUTTLE_FLOW"), "대화는 닫힌다");
+  // 원장님이 처리를 끝낸(APPLIED·REJECTED 등) 접수는 막지 않는다
+  db.intakes.find((row) => row.id === "old").status = "REJECTED";
+  await shuttleSay("셔틀 이용 중단할게요");
+  await shuttleSay("하원");
+  await shuttleSay("다음 주부터");
+  await shuttleSay("접수할게요");
+  assert.equal(db.intakes.filter((row) => row.status === "SUBMITTED").length, 1);
 });

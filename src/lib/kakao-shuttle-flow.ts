@@ -31,6 +31,8 @@ export const SHUTTLE_FLOW_STATUS = "SHUTTLE_FLOW";
 /** 날짜 바로가기로 보여 주는 날 수(오늘부터) — 바로가기 10개 = 날짜 8 + 그만 + 여유 */
 export const SHUTTLE_DATE_CHOICES = 8;
 const MAX_ITEMS = 8;
+/** 원장님이 아직 처리하지 않은 접수 상태(신규·처리 중·확인 필요) — 이 상태의 정규 셔틀 접수가 있으면 새로 받지 않는다 */
+const REGULAR_PENDING_SQL = ["SUBMITTED", "PROCESSING", "HELD"].map((s) => `'${s}'`).join(",");
 
 type ExceptionItem = { id: string; studentName: string; serviceDate: string; label: string };
 
@@ -368,8 +370,31 @@ async function confirmRegular(flow: FlowRow<ShuttleState>, today: string): Promi
   const state = flow.state;
   if (nextRegularStep(state) !== "R_CONFIRM" || !state.studentId) return renderStep({ ...state, step: nextRegularStep(state) }, today, null);
   const { kind, structured } = buildRegularShuttleIntake(state);
-  // 흐름 상태일 때만 SUBMITTED 로 바뀐다 — 같은 확정이 두 번 와도 접수는 한 건.
-  if (!(await store.submit(flow.id, kind, structured))) return flowReply("이미 접수된 요청이에요.", ["셔틀", "메뉴"]);
+  const studentId = state.studentId;
+  // 같은 학생에게 원장님이 아직 처리하지 않은 정규 셔틀 접수가 있으면 새로 만들지 않는다(중복 접수 방지).
+  // 학생 단위 잠금 안에서 «확인 → 접수»를 한 번에 해서, 두 보호자가 동시에 눌러도 한 건만 생긴다.
+  const outcome = await prisma.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `kakao-regular-shuttle:${studentId}`);
+    const pending = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "KakaoParentIntake"
+        WHERE "studentId"=$1 AND id<>$2 AND kind IN ('SHUTTLE_START_STOP','SHUTTLE_CHANGE')
+          AND status IN (${REGULAR_PENDING_SQL}) LIMIT 1`,
+      studentId, flow.id,
+    );
+    if (pending.length) return "DUPLICATE" as const;
+    // 흐름 상태일 때만 SUBMITTED 로 바뀐다 — 같은 확정이 두 번 와도 접수는 한 건.
+    const changed = await tx.$executeRawUnsafe(
+      `UPDATE "KakaoParentIntake" SET status='SUBMITTED',kind=$2,"structuredJson"=$3::jsonb,"confirmedAt"=now(),"updatedAt"=now()
+        WHERE id=$1 AND status='${SHUTTLE_FLOW_STATUS}'`,
+      flow.id, kind, JSON.stringify(structured),
+    );
+    return Number(changed) > 0 ? "SUBMITTED" as const : "ALREADY" as const;
+  });
+  if (outcome === "DUPLICATE") {
+    await store.close(flow.id, "CANCELED");
+    return flowReply(`${state.studentName} 학생의 정규 셔틀 요청이 이미 접수되어 있어요. 원장님이 확인한 뒤 연락드릴게요. 내용을 바꾸시려면 「원장님께 셔틀 문의」라고 말씀해 주세요.`, ["메뉴"]);
+  }
+  if (outcome === "ALREADY") return flowReply("이미 접수된 요청이에요.", ["셔틀", "메뉴"]);
   await notifyAdminsOfKakaoIntake({
     intakeId: flow.id,
     kindLabel: ACTION_LABEL[state.action!],
@@ -429,6 +454,12 @@ async function confirmDayCancel(flow: FlowRow<ShuttleState>, today: string): Pro
   return flowReply(`셔틀 변경을 취소했어요: ${item.studentName} 학생 ${item.label}\n\n원래 셔틀대로 타요. 기사님 화면에도 반영됐어요.`, ["셔틀", "메뉴"]);
 }
 
+/** 분류가 없거나(날짜·번호만) 셔틀 자신의 말인가 — 다른 업무 문장의 날짜를 셔틀 날짜로 삼키지 않으려고 쓴다 */
+function isOwnOrPlainText(text: string): boolean {
+  const kind = classifyParentUtterance(text);
+  return kind === "UNKNOWN" || kind.startsWith("SHUTTLE_");
+}
+
 function isStrayShortReply(text: string): boolean {
   return [...text].length <= 6 && !FLOW_MENU_TEXT.test(text) && classifyParentUtterance(text) === "UNKNOWN";
 }
@@ -464,6 +495,8 @@ async function continueFlow(input: ShuttleFlowInput, flow: FlowRow<ShuttleState>
   switch (state.step) {
     case "DATE": {
       const pick = parseNumberPick(text, PICK_DATE);
+      // 다른 업무 문장(「11/20 청구 금액 확인」)의 날짜는 셔틀 날짜가 아니다 → 이 대화를 닫고 그 업무로.
+      if (pick === null && !isOwnOrPlainText(text)) return null;
       const said = pick === null ? parseKoreanDateYmd(text, today) : null;
       if (pick === null && !said) break;
       const date = pick !== null ? state.dates?.[pick - 1] : said;
@@ -533,6 +566,7 @@ async function continueFlow(input: ShuttleFlowInput, flow: FlowRow<ShuttleState>
     }
     case "R_START": {
       const fromButton = new RegExp(`^${P} 시작 (\\d{4}-\\d{2}-\\d{2})$`).exec(text)?.[1] ?? null;
+      if (!fromButton && !isOwnOrPlainText(text)) return null;
       // 「다음 주부터」「다음 수업부터」도 버튼과 같은 날짜로 읽는다
       const choices = regularStartChoices(today, state.days?.[0] === "전체" ? state.classDays ?? [] : state.days ?? []);
       const said = fromButton ?? (/다음\s*주/.test(text) ? choices.nextWeek : /다음\s*수업/.test(text) ? choices.nextClass : parseKoreanDateYmd(text, today));
@@ -554,6 +588,8 @@ async function continueFlow(input: ShuttleFlowInput, flow: FlowRow<ShuttleState>
 }
 
 const SHUTTLE_KINDS = new Set<ParentRequestKind>(["SHUTTLE_SKIP", "SHUTTLE_LOCATION", "SHUTTLE_START_STOP", "SHUTTLE_CHANGE", "SHUTTLE_FEE"]);
+// 질문 꼴: 물음표·「~나요/~까요/~었어요/~인가요/~는지」. 「바꿔 주세요」「중단할게요」 같은 요청은 걸리지 않는다.
+const REGULAR_QUESTION = /[?？]|나요|까요|[었았였]어요|[인한는건]가요|는지|되나/;
 const DATE_WORD = /오늘|내일|모레|당일|\d{1,2}\s*(월|\/|\.)\s*\d{1,2}/;
 
 /**
@@ -572,6 +608,8 @@ export function shuttleIntentOf(text: string): "DAY" | "DAY_CANCEL" | "REGULAR" 
   if (/취소/.test(text) && !/정규|매주|중단|신청|이용/.test(text)) return "DAY_CANCEL";
   if (kind === "SHUTTLE_SKIP" || kind === "SHUTTLE_LOCATION") return "DAY";
   if (kind === "SHUTTLE_CHANGE" && DATE_WORD.test(text) && /장소|정류장|곳|데서/.test(text)) return "DAY";
+  // 묻는 말(「셔틀 시간 바뀌었나요?」「노선 바뀌었어요?」)은 요청이 아니다 → 예전처럼 원문 접수(원장님이 답한다)
+  if (REGULAR_QUESTION.test(text)) return null;
   if (kind === "SHUTTLE_START_STOP") return "REGULAR";
   if (kind === "SHUTTLE_CHANGE" && /변경|바꾸|바꿔|바뀌|옮기/.test(text)) return "REGULAR";
   return null;

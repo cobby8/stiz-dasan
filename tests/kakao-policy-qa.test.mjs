@@ -481,9 +481,12 @@ async function loadLinkedChatbot() {
   // 결석·셔틀 대화(kakao-absence-flow·kakao-shuttle-flow)도 tests/kakao-care-flows.test.mjs 가 따로 검증한다 — 여기선 null
   const absenceStub = toDataUrl(`export async function handleAbsenceConversation() { return null; }`);
   const shuttleStub = toDataUrl(`export async function handleShuttleConversation() { return null; }`);
+  // 대관 카드(kakao-rental-reply)는 tests/kakao-guest-entry.test.mjs 가 실제로 검증한다 — 여기선 제목만 있는 카드
+  const rentalStub = toDataUrl(`export function kakaoRentalReply() { return { version: "2.0", template: { outputs: [{ textCard: { title: "체육관 대관 안내", description: "", buttons: [] } }], quickReplies: [] } }; }`);
   return import(toDataUrl(code.split('"@/lib/kakao-makeup-flow"').join(`"${makeupStub}"`)
     .split('"@/lib/kakao-absence-flow"').join(`"${absenceStub}"`)
-    .split('"@/lib/kakao-shuttle-flow"').join(`"${shuttleStub}"`)));
+    .split('"@/lib/kakao-shuttle-flow"').join(`"${shuttleStub}"`)
+    .split('"@/lib/kakao-rental-reply"').join(`"${rentalStub}"`)));
 }
 
 const IDENTITY = { id: "i1", parentUserId: "p1", status: "ACTIVE" };

@@ -108,3 +108,20 @@ test("스킬 경로: 미연결 사용자의 대관은 정책 답변(Gemini)보�
   assert.ok(rental < route.indexOf("isGuestPolicyCandidate(utterance"), "대관 카드가 정책 답변보다 앞");
   assert.ok(rental < route.indexOf("await issueLink"));
 });
+
+test("대관 요금은 RENTAL_FEE 한 곳 — 카카오 카드와 고객 안내 문자 문구가 같은 값을 쓴다", async () => {
+  const rules = await loadTsModule("src/lib/rental/gym-rental-rules.ts");
+  const { KAKAO_RENTAL_TEXT } = await loadTsModule("src/lib/kakao-rental-reply.ts");
+  const templates = await loadTsModule("src/lib/customer-notice/templates.ts");
+  const guide = templates.buildRentalGuideMessage();
+  const fee = rules.RENTAL_FEE;
+  for (const amount of [fee.firstHour, fee.extraHour, fee.airconPerHour, fee.extraPersonPerHour, fee.deposit]) {
+    assert.ok(KAKAO_RENTAL_TEXT.includes(rules.formatWon(amount)), `카드에 ${amount}`);
+    // 안내 문자 문구(templates.ts)는 import 없는 순수 모듈 규칙 때문에 숫자를 직접 적는다 — 요금이 바뀌면 여기서 깨진다
+    assert.ok(guide.includes(rules.formatWon(amount)), `안내 문자에 ${amount}`);
+  }
+  assert.ok(KAKAO_RENTAL_TEXT.includes(`${fee.baseHeadcount}명 초과`));
+  // 카드 모듈은 계좌 값을 가진 서버 전용 모듈을 부르지 않는다
+  const source = readFileSync("src/lib/kakao-rental-reply.ts", "utf8");
+  assert.doesNotMatch(source, /gym-rental-notify|server-only|계좌:|bankAccount/);
+});

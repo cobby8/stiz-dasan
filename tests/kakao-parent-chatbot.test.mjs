@@ -99,6 +99,9 @@ test("경계 사례 — 대관·주차·결석 취소·당일 셔틀(2026-11-07)
   assert.equal(classifyParentUtterance("체육관 빌릴 수 있나요"), "RENTAL");
   assert.equal(classifyParentUtterance("코트 대여 문의드려요"), "RENTAL");
   assert.notEqual(classifyParentUtterance("농구공 대여되나요"), "RENTAL");
+  // 「대관 시간 변경」은 반 변경이 아니라 대관
+  assert.equal(classifyParentUtterance("대관 시간 변경하고 싶어요"), "RENTAL");
+  assert.equal(classifyParentUtterance("화요일 수업 시간 변경"), "CLASS_CHANGE");
   // 결석 취소는 결석(대화 흐름이 「취소」로 취소 목록을 연다), 당일 셔틀은 미탑승
   assert.equal(classifyParentUtterance("결석 취소할게요"), "REGULAR_ABSENCE");
   assert.equal(classifyParentUtterance("내일 셔틀 안 타요"), "SHUTTLE_SKIP");

@@ -283,6 +283,12 @@ async function confirmCancel(flow: FlowRow<AbsenceState>, today: string): Promis
   return flowReply(`결석 신청을 취소했어요: ${item.studentName} 학생 ${item.label}\n\n그날 수업에 오는 것으로 원장님·코치님께 전달됐어요.`, ["결석 신청", "메뉴"]);
 }
 
+/** 분류가 없거나(날짜·번호만) 결석 자신의 말인가 — 다른 업무 문장의 날짜를 결석 날짜로 삼키지 않으려고 쓴다 */
+function isOwnOrPlainText(text: string): boolean {
+  const kind = classifyParentUtterance(text);
+  return kind === "UNKNOWN" || kind === "REGULAR_ABSENCE";
+}
+
 /** 대화 중 6자 이하의 어떤 업무로도 분류되지 않는 짧은 말(「ㅇㅋ」 등) — 지금 단계를 다시 보여 준다. */
 function isStrayShortReply(text: string): boolean {
   return [...text].length <= 6 && !FLOW_MENU_TEXT.test(text) && classifyParentUtterance(text) === "UNKNOWN";
@@ -306,7 +312,9 @@ async function continueFlow(input: AbsenceFlowInput, flow: FlowRow<AbsenceState>
   switch (state.step) {
     case "DATE": {
       const pick = parseNumberPick(text, PICK_DATE);
-      // 번호 대신 날짜로 말해도 받는다(「11/20」「내일」)
+      // 번호 대신 날짜로 말해도 받는다(「11/20」「내일」). 단 다른 업무 문장(「내일 셔틀 안 타요」
+      // 「11/20 청구 금액 확인」)의 날짜는 결석 날짜가 아니다 → 이 대화를 닫고 그 업무로 넘긴다.
+      if (pick === null && !isOwnOrPlainText(text)) return null;
       const said = pick === null ? parseKoreanDateYmd(text, today) : null;
       const byDate = said ? (state.dates ?? []).filter((item) => item.date === said) : [];
       const chosen = pick !== null ? state.dates?.[pick - 1] : byDate.length === 1 ? byDate[0] : undefined;

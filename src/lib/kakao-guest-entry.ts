@@ -1,7 +1,8 @@
-import { buildKakaoSkillResponse, isKakaoRentalIntent, kakaoRentalReply, type KakaoCardButton } from "@/lib/kakao-chatbot-contract";
+import { buildKakaoSkillResponse, isKakaoRentalIntent, type KakaoCardButton } from "@/lib/kakao-chatbot-contract";
+import { kakaoRentalReply } from "@/lib/kakao-rental-reply";
 
-// 대관 안내 카드는 연결된 학부모 경로도 같이 쓰므로 계약 모듈에 있다(여기서도 다시 내보낸다).
-export { kakaoRentalReply } from "@/lib/kakao-chatbot-contract";
+// 대관 안내 카드는 연결된 학부모 경로도 같이 쓰므로 별도 모듈(kakao-rental-reply)에 있다(여기서도 다시 내보낸다).
+export { kakaoRentalReply } from "@/lib/kakao-rental-reply";
 
 // 인증 흐름으로 보낼 정확한 메뉴 문구(바로가기 버튼이 보내는 말)
 const AUTH_EXACT = /^(기존 수강생 인증|학부모 인증하기|인증|계정 연결)$/;
