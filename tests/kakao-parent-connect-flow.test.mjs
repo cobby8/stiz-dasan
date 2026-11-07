@@ -45,7 +45,12 @@ async function loadChatbot(live) {
     .split('"@/lib/kakao-chatbot-contract"').join(`"${contract}"`);
   // 보강 대화(kakao-makeup-flow)는 tests/kakao-makeup-flow.test.mjs 가 따로 실행 검증한다 — 여기선 "보강과 무관"(null)
   const makeupStub = toDataUrl(`export async function handleMakeupConversation() { return null; }`);
-  return import(toDataUrl(code.split('"@/lib/kakao-makeup-flow"').join(`"${makeupStub}"`)));
+  // 결석·셔틀 대화(kakao-absence-flow·kakao-shuttle-flow)도 tests/kakao-care-flows.test.mjs 가 따로 검증한다 — 여기선 null
+  const absenceStub = toDataUrl(`export async function handleAbsenceConversation() { return null; }`);
+  const shuttleStub = toDataUrl(`export async function handleShuttleConversation() { return null; }`);
+  return import(toDataUrl(code.split('"@/lib/kakao-makeup-flow"').join(`"${makeupStub}"`)
+    .split('"@/lib/kakao-absence-flow"').join(`"${absenceStub}"`)
+    .split('"@/lib/kakao-shuttle-flow"').join(`"${shuttleStub}"`)));
 }
 
 async function withSecret(fn) {

@@ -98,8 +98,9 @@ function makeDb({ credits = null, students = null } = {}) {
     if (/FROM "KakaoParentIntake" r LEFT JOIN "Student"/.test(sql)) return [];
     // 보강 대화 상태
     if (/SELECT id,"structuredJson" FROM "KakaoParentIntake"/.test(sql)) {
+      const flowStatus = /status='([A-Z_]+)'/.exec(sql)?.[1];
       return db.intakes
-        .filter((row) => row.identityId === args[0] && row.status === "MAKEUP_FLOW" && row.updatedAt > Date.now() - 30 * 60_000)
+        .filter((row) => row.identityId === args[0] && row.status === flowStatus && row.updatedAt > Date.now() - 30 * 60_000)
         .sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 1)
         .map((row) => ({ id: row.id, structuredJson: structuredClone(row.structuredJson) }));
     }
@@ -108,6 +109,9 @@ function makeDb({ credits = null, students = null } = {}) {
       db.intakes.push(row);
       return [{ id: row.id }];
     }
+    // 결석 흐름(parent-regular-absence): 이 가짜 DB 에는 정규 수강이 없다
+    if (/JOIN "Enrollment" e ON e\."studentId" = s\.id AND e\.status = 'ACTIVE'/.test(sql)) return [];
+    if (/FROM "RegularAbsence" ra/.test(sql)) return [];
     // 보강권 조회(카카오 흐름)
     if (/mc\.status='AVAILABLE' AND mc\."expiresAt">now\(\)/.test(sql)) {
       return db.credits
@@ -546,7 +550,7 @@ test("챗봇 우선순위: 보강은 대화 흐름, 정책 질문·다른 업무
 
   // 결석·보강 메뉴에 「보강 신청」「보강 취소」
   const menu = await chatbot.handleLinkedMessage(IDENTITY, "결석·보강", "r3");
-  assert.deepEqual(replies(menu), ["정규수업 결석", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"]);
+  assert.deepEqual(replies(menu), ["정규수업 결석", "결석 취소", "방학특강 결석", "보강 신청", "보강 취소", "조퇴 상담"]);
 
   // 보강 대화 중에 정책 질문 → 보강 대화는 닫히고 정책 연결점이 불린다
   await chatbot.handleLinkedMessage(IDENTITY, "보강 신청", "r4");
@@ -555,8 +559,9 @@ test("챗봇 우선순위: 보강은 대화 흐름, 정책 질문·다른 업무
   assert.equal(policyCalls, 1);
   assert.ok(db.intakes.filter((row) => row.kind === "MAKEUP").every((row) => row.status !== "MAKEUP_FLOW"));
 
-  // 결석은 기존 화면 링크 그대로
-  const absence = await chatbot.handleLinkedMessage(IDENTITY, "오늘 결석할게요", "r6");
+  // 결석은 이제 결석 대화 흐름(kakao-absence-flow)이 받는다. 화면 링크는 보조 버튼으로 남는다.
+  const absence = await chatbot.handleLinkedMessage(IDENTITY, "오늘 결석할게요", "r6", neverPolicy);
+  assert.match(textOf(absence), /결석 신청할 수 있는 정규 수업이 없어요/);
   assert.match(absence.template.outputs[0].textCard.buttons[0].webLinkUrl, /\/mypage\/regular-absence$/);
 
   // 보강 대화를 시작하면 작성 중이던 접수 초안은 닫힌다(남은 「네」가 엉뚱한 접수를 확정하지 않게)

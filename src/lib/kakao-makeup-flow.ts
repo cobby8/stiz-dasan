@@ -3,6 +3,8 @@ import { bookMakeup, cancelMakeupBooking, getMakeupOptionsForCredit } from "@/li
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
 import { buildKakaoSkillResponse, classifyParentUtterance, KAKAO_TEXT_CARD_DESCRIPTION_MAX, type KakaoQuickReply } from "@/lib/kakao-chatbot-contract";
 import { addDaysKst, kstAt, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
+// 새 보강 대화를 열 때 결석·셔틀 대화도 함께 닫는다(동시에 두 흐름이 살아 있으면 「네」가 엉뚱한 흐름을 확정한다).
+import { KAKAO_OPEN_FLOW_CLOSE_SQL } from "@/lib/kakao-flow-store";
 
 // ── 카카오 「보강 신청·취소」 대화 흐름 (연결된 학부모 전용) ─────────────────────
 //
@@ -216,7 +218,7 @@ async function openFlow(identityId: string, sourceText: string, state: FlowState
     await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, identityId);
     await tx.$executeRawUnsafe(
       `UPDATE "KakaoParentIntake" SET status='CANCELED',"updatedAt"=now()
-        WHERE "identityId"=$1 AND status IN ('DRAFT','NEEDS_DETAILS','${MAKEUP_FLOW_STATUS}')`,
+        WHERE "identityId"=$1 AND status IN (${KAKAO_OPEN_FLOW_CLOSE_SQL})`,
       identityId,
     );
     if (!state) return null;
