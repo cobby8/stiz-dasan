@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
             invoiceId,
             owner: { authUserId: user.id, email: user.email ?? null },
             origin,
+            // 고른 결제 수단과 «열린 입금 계좌를 닫고 다른 수단으로» 확인 여부(확인창을 거친 경우만 true)
+            method: typeof body?.method === "string" ? body.method : null,
+            closeOpenVirtualAccount: body?.closeOpenVirtualAccount === true,
         });
 
         if (!result.ok) {

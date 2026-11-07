@@ -116,7 +116,11 @@ export default function PaymentCheckoutClient({
     );
     const expiredAccount = virtualAccount && virtualAccount.expired ? virtualAccount : null;
 
-    async function startPayment(selected: TossPaymentMethod = method) {
+    // «다른 방법으로 결제» 확인 단계를 펼쳤는가(열린 입금 계좌가 있을 때만 쓴다)
+    const [switching, setSwitching] = useState(false);
+
+    // closeAccount=true: 열린 입금 계좌를 서버가 토스에서 닫은 뒤 새 결제를 연다(확인 단계를 거친 경우만).
+    async function startPayment(selected: TossPaymentMethod = method, closeAccount = false) {
         if (!providerReady) {
             setError("온라인 결제 설정이 아직 완료되지 않았습니다. 학원으로 문의해 주세요.");
             return;
@@ -129,7 +133,7 @@ export default function PaymentCheckoutClient({
             const response = await fetch("/api/payments/checkout", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ invoiceId }),
+                body: JSON.stringify({ invoiceId, method: selected, closeOpenVirtualAccount: closeAccount }),
             });
             const data = (await response.json()) as CheckoutResponse;
 
@@ -201,9 +205,48 @@ export default function PaymentCheckoutClient({
         return (
             <div className="mt-6">
                 <VirtualAccountNotice account={openAccount} />
-                <p className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
-                    다른 방법으로 내고 싶으면 학원으로 문의해 주세요.
-                </p>
+                {error && (
+                    <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+                        {error}
+                    </div>
+                )}
+                {providerReady && provider === "TOSS" && !switching && (
+                    <button
+                        type="button"
+                        onClick={() => setSwitching(true)}
+                        className="mt-3 min-h-11 w-full rounded-xl border border-gray-300 px-4 text-sm font-bold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+                    >
+                        다른 방법으로 결제(계좌가 닫혀요)
+                    </button>
+                )}
+                {switching && (
+                    // 위험 확인: 계좌를 닫으면 되돌릴 수 없으니 무엇이 일어나는지 먼저 알리고 수단을 고르게 한다.
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+                        <p className="font-extrabold">지금 받은 입금 계좌를 닫을까요?</p>
+                        <p className="mt-1 text-xs">닫으면 그 계좌로는 입금할 수 없어요. 이미 입금했다면 닫지 말고 잠시 기다려 주세요.</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            {PAYMENT_METHODS.filter((option) => option.value !== "VIRTUAL_ACCOUNT").map((option) => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    disabled={loading}
+                                    onClick={() => void startPayment(option.value, true)}
+                                    className="min-h-11 rounded-lg bg-red-600 px-3 text-sm font-bold text-white disabled:opacity-60"
+                                >
+                                    {loading ? "계좌 닫는 중..." : `계좌 닫고 ${option.label}`}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            disabled={loading}
+                            onClick={() => setSwitching(false)}
+                            className="mt-2 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-bold text-gray-700 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                        >
+                            그대로 두기
+                        </button>
+                    </div>
+                )}
             </div>
         );
     }

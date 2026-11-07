@@ -87,6 +87,10 @@
     {
       "path": "/api/cron/pos-notice-sweep",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/virtual-account-sweep",
+      "schedule": "0 0 * * *"
     }
   ]
 }

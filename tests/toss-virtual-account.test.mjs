@@ -194,9 +194,13 @@ test("정상 입금: 납부 완료 처리가 입금 대기 거래를 받고, 입
     assert.match(body, /"paidProvider" = 'TOSS'/);
     assert.match(body, /'PAYMENT_MARK_PAID'/);
     assert.match(body, /VIRTUAL_ACCOUNT_ALREADY_PAID/);
+    // 납부 반영은 웹훅·계좌 닫기·매일 점검이 같이 쓰는 payVerifiedVirtualAccount 한 곳
+    const pay = fnBody(ledger, "async function payVerifiedVirtualAccount(");
+    assert.match(pay, /parseTossTimestamp\(verified\.approvedAt\) \?\? parseTossTimestamp\(depositedAt\)/);
+    assert.match(pay, /actorType: "WEBHOOK"/);
+    assert.match(pay, /decideVirtualAccountWebhook\(/);
     const apply = fnBody(ledger, "async function applyVirtualAccountWebhook(");
-    assert.match(apply, /parseTossTimestamp\(verified\.approvedAt\) \?\? parseTossTimestamp\(input\.depositedAt\)/);
-    assert.match(apply, /actorType: "WEBHOOK"/);
+    assert.match(apply, /payVerifiedVirtualAccount\(tx, verified, input\.depositedAt\)/);
 });
 
 test("수단 표시: 토스가 돌려주는 «가상계좌»를 그대로 저장해 관리자·학부모 화면에 한국어로 보인다", () => {
@@ -231,10 +235,13 @@ test("만료 해제 SQL 은 거래 상태만 EXPIRED 로 바꾸고 청구·청�
     const body = fnBody(ledger, "async function applyVirtualAccountWebhook(");
     const start = body.indexOf('decision.action === "RELEASE"');
     const block = body.slice(start, body.indexOf('decision.action === "REJECT"'));
-    assert.match(block, /SET status = '\$\{VA_EXPIRED_STATUS\}'/);
-    assert.match(block, /WHERE id = \$1 AND status = '\$\{VA_WAITING_STATUS\}'/);
-    assert.doesNotMatch(block, /UPDATE "Payment"/);
-    assert.doesNotMatch(block, /UPDATE "PaymentInvoice"/);
+    assert.match(block, /releaseVirtualAccountTx\(tx, decision\.reason, \{ actorType: "WEBHOOK" \}\)/);
+    // 해제 SQL 은 웹훅·계좌 닫기·매일 점검이 같이 쓰는 releaseVirtualAccountTx 한 곳
+    const release = fnBody(ledger, "async function releaseVirtualAccountTx(");
+    assert.match(release, /SET status = '\$\{VA_EXPIRED_STATUS\}'/);
+    assert.match(release, /WHERE id = \$1 AND status = '\$\{VA_WAITING_STATUS\}'/);
+    assert.doesNotMatch(release, /UPDATE "Payment"/);
+    assert.doesNotMatch(release, /UPDATE "PaymentInvoice"/);
     assert.match(notice, /기한 만료 — 다시 발급/);
 });
 
@@ -350,4 +357,145 @@ test("입금 시각: 시간대 없는 DEPOSIT_CALLBACK createdAt 은 KST 로 읽
     assert.equal(va.parseTossTimestamp("2026-11-30T15:30:00Z").toISOString(), "2026-11-30T15:30:00.000Z");
     assert.equal(va.parseTossTimestamp("아님"), null);
     assert.equal(va.parseTossTimestamp(null), null);
+});
+
+// ── 11-08 추가 1: 다른 방법 허용 — 열린 계좌 자동 닫기(원장 결정) ─────────────────
+const checkoutRoute = readFileSync(new URL("../src/app/api/payments/checkout/route.ts", import.meta.url), "utf8");
+
+test("계좌 닫기 판정: 입금 대기면 CANCEL, 입금됐으면 PAID(입금이 이긴다), 만료·취소면 RELEASED, 그 밖은 FAIL", () => {
+    const t = { orderId: "STIZ-1-abc", paymentKey: "pk-va-1" };
+    assert.equal(va.decideVirtualAccountClose({ ...issuedResponse, status: "WAITING_FOR_DEPOSIT" }, t), "CANCEL");
+    assert.equal(va.decideVirtualAccountClose(doneLookup, t), "PAID");
+    assert.equal(va.decideVirtualAccountClose({ ...doneLookup, status: "CANCELED" }, t), "RELEASED");
+    assert.equal(va.decideVirtualAccountClose({ ...doneLookup, status: "EXPIRED" }, t), "RELEASED");
+    assert.equal(va.decideVirtualAccountClose({ ...doneLookup, status: "IN_PROGRESS" }, t), "FAIL");
+    assert.equal(va.decideVirtualAccountClose(null, t), "FAIL");
+    assert.equal(va.decideVirtualAccountClose({ ...doneLookup, orderId: "다른주문" }, t), "FAIL");
+    assert.equal(va.decideVirtualAccountClose({ ...doneLookup, paymentKey: "다른키" }, t), "FAIL");
+});
+
+test("결제 준비: 확인을 거친 카드·계좌이체만 계좌를 닫고, 무통장입금·확인 없음은 열린 계좌를 다시 보여 준다", () => {
+    const body = fnBody(ledger, "export async function createCheckoutSession(");
+    assert.match(body, /input\.closeOpenVirtualAccount === true\s+&& \(input\.method === "CARD" \|\| input\.method === "TRANSFER"\)/);
+    assert.match(body, /if \(!wantsOtherMethod\) \{[\s\S]*?openVirtualAccount: vaState/);
+    // 닫기 결과: 입금이 먼저면 «이미 납부», 실패면 결제창을 열지 않음(재시도 안내) — 둘 다 새 거래 INSERT 보다 먼저
+    const close = body.indexOf("closeOpenVirtualAccount(invoice.invoiceId)");
+    const insert = body.indexOf('INSERT INTO "PaymentTransaction"');
+    assert.ok(close > 0 && close < insert);
+    assert.match(body, /closed === "PAID"[\s\S]*?alreadyPaid: true/);
+    assert.match(body, /closed === "FAIL"[\s\S]*?잠시 후 다시 시도해 주세요[\s\S]*?retryable: true/);
+    assert.match(checkoutRoute, /method: typeof body\?\.method === "string" \? body\.method : null/);
+    assert.match(checkoutRoute, /closeOpenVirtualAccount: body\?\.closeOpenVirtualAccount === true/);
+});
+
+test("계좌 닫기: 토스 취소 API 뒤 재조회로 닫힘을 확인하고, 여전히 입금 대기면 실패, 마지막에 청구 상태를 다시 본다", () => {
+    const body = fnBody(ledger, "async function closeOpenVirtualAccount(");
+    const cancel = body.indexOf("requestTossVirtualAccountCancel(tx)");
+    const relookup = body.indexOf("getVerifiedTossPayment(tx.paymentKey, tx.orderId)", cancel);
+    assert.ok(cancel > 0 && relookup > cancel, "취소 뒤 재조회");
+    assert.match(body, /if \(step === "CANCEL"\) step = "FAIL"/);
+    assert.match(body, /step === "RELEASED" && verified[\s\S]*?releaseVirtualAccountTx/);
+    assert.match(body, /step === "PAID" && verified[\s\S]*?payVerifiedVirtualAccount/);
+    assert.match(body, /statusRows\[0\]\?\.status === "PAID"\) return "PAID"/);
+    const api = fnBody(ledger, "async function requestTossVirtualAccountCancel(");
+    assert.match(api, /\/v1\/payments\/\$\{encodeURIComponent\(tx\.paymentKey\)\}\/cancel/);
+    assert.match(api, /Idempotency-Key/);
+    assert.doesNotMatch(api, /refundReceiveAccount/); // 입금 전 취소라 환불 계좌 불필요
+});
+
+test("학부모 화면: 계좌 안내 아래 «다른 방법으로 결제(계좌가 닫혀요)» + 확인 단계, 확인 후에만 닫기 요청", () => {
+    assert.match(checkoutClient, /다른 방법으로 결제\(계좌가 닫혀요\)/);
+    assert.match(checkoutClient, /지금 받은 입금 계좌를 닫을까요\?/);
+    assert.match(checkoutClient, /startPayment\(option\.value, true\)/);
+    assert.match(checkoutClient, /closeOpenVirtualAccount: closeAccount/);
+    assert.match(checkoutClient, /그대로 두기/);
+});
+
+// ── 11-08 추가 2: 웹훅 원문 저장 시 secret 가림 ─────────────────────────────
+test("웹훅 기록: 최상위·data 안의 secret 을 가리고 원본은 건드리지 않는다", () => {
+    const deposit = { createdAt: "2026-11-08T10:00:00.000000", secret: SECRET, status: "DONE", transactionKey: "tk", orderId: "o" };
+    const statusChanged = { eventType: "PAYMENT_STATUS_CHANGED", data: { ...issuedResponse } };
+    assert.ok(!JSON.stringify(va.stripWebhookSecrets(deposit)).includes(SECRET));
+    assert.ok(!JSON.stringify(va.stripWebhookSecrets(statusChanged)).includes(SECRET));
+    assert.equal(va.stripWebhookSecrets(deposit).orderId, "o");
+    assert.equal(deposit.secret, SECRET);
+    assert.equal(statusChanged.data.secret, SECRET);
+});
+
+test("웹훅 기록: 지문(eventId)은 원문으로 먼저 만들고, INSERT 에는 가린 본문만 넣는다", () => {
+    const body = fnBody(ledger, "export async function recordTossWebhook(");
+    const fingerprint = body.indexOf("makeTossWebhookEventId(");
+    const insert = body.indexOf('INSERT INTO "PaymentWebhookEvent"');
+    assert.ok(fingerprint > 0 && fingerprint < insert);
+    assert.match(body, /JSON\.stringify\(stripWebhookSecrets\(payload\)\)/);
+    assert.doesNotMatch(body, /JSON\.stringify\(payload\)/);
+    // 전액 취소 반영 거래 기록도 가린다
+    assert.match(fnBody(ledger, "async function applyVerifiedTossFullCancel("), /JSON\.stringify\(stripPaymentSecret\(input\.payment\)\)/);
+});
+
+// ── 검수 권장 1: 입금 알림 놓침 → 503 재전송 + 매일 점검 cron ───────────────────
+test("입금 알림은 DONE 인데 재조회가 아직 입금 대기·조회 실패면 503 으로 토스 재전송을 받는다", () => {
+    const still = { action: "IGNORE", code: "VIRTUAL_ACCOUNT_STILL_WAITING" };
+    const notVerified = { action: "IGNORE", code: "TOSS_PAYMENT_NOT_VERIFIED" };
+    assert.equal(va.shouldRetryDepositCallback(true, "DONE", still), true);
+    assert.equal(va.shouldRetryDepositCallback(true, "DONE", notVerified), true);
+    // 입금 알림이 아니거나, 본문이 DONE 이 아니거나, 이미 판정이 난 건은 재전송받지 않는다
+    assert.equal(va.shouldRetryDepositCallback(false, "DONE", still), false);
+    assert.equal(va.shouldRetryDepositCallback(true, "WAITING_FOR_DEPOSIT", still), false);
+    assert.equal(va.shouldRetryDepositCallback(true, "DONE", { action: "REJECT", code: "X", alert: true }), false);
+    assert.equal(va.shouldRetryDepositCallback(true, "DONE", { action: "IGNORE", code: "TOSS_PARTIAL_CANCEL_REVIEW" }), false);
+    const apply = fnBody(ledger, "async function applyVirtualAccountWebhook(");
+    assert.match(apply, /shouldRetryDepositCallback\(input\.depositCallback, input\.callbackStatus \?\? null, decision\)[\s\S]*?retryable: true/);
+    // 웹훅 라우트는 retryable 이면 503
+    const route = readFileSync(new URL("../src/app/api/payments/toss/webhook/route.ts", import.meta.url), "utf8");
+    assert.match(route, /result\.retryable \? 503 : 200/);
+});
+
+test("매일 점검 cron: CRON_SECRET 확인 + vercel.json 매일 UTC 00:00(KST 09:00) 등록 + 입금 대기 거래만 토스 재조회", () => {
+    const route = readFileSync(new URL("../src/app/api/cron/virtual-account-sweep/route.ts", import.meta.url), "utf8");
+    assert.match(route, /process\.env\.CRON_SECRET/);
+    assert.match(route, /Bearer \$\{secret\}/);
+    assert.match(route, /sweepWaitingVirtualAccounts\(\)/);
+    const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+    assert.ok(vercel.crons.some((c) => c.path === "/api/cron/virtual-account-sweep" && c.schedule === "0 0 * * *"));
+    const sweep = fnBody(ledger, "export async function sweepWaitingVirtualAccounts(");
+    assert.match(sweep, /WHERE status = '\$\{VA_WAITING_STATUS\}' AND "paymentKey" IS NOT NULL/);
+    assert.match(sweep, /step === "PAID" && verified[\s\S]*?payVerifiedVirtualAccount/);
+    assert.match(sweep, /step === "RELEASED" && verified[\s\S]*?releaseVirtualAccountTx/);
+});
+
+// ── 검수 권장 2: 승인 전 이중 납부 방지 ───────────────────────────────────────
+test("승인: 이미 납부된 청구서에 다른 결제키가 오면 토스 승인을 부르지 않고 «이미 납부»로 거부한다", () => {
+    const confirm = fnBody(ledger, "export async function confirmTossPayment(");
+    const guard = confirm.indexOf('(tx.paymentStatus === "PAID" || tx.invoiceStatus === "PAID") && tx.paymentKey !== input.paymentKey');
+    const tossCall = confirm.indexOf("https://api.tosspayments.com/v1/payments/confirm");
+    assert.ok(guard > 0 && guard < tossCall);
+    assert.match(confirm.slice(guard, tossCall), /이미 납부가 완료된 청구서입니다/);
+});
+
+// ── 검수 권장 3: 관리자 «가상계좌 닫기» ───────────────────────────────────────
+test("관리자: 원장만, 입금 대기 건에만 «가상계좌 닫기», 위험 확인창을 거쳐 같은 닫기 함수를 부른다", () => {
+    const action = readFileSync(new URL("../src/app/actions/virtual-account.ts", import.meta.url), "utf8");
+    assert.match(action, /^"use server";/);
+    assert.match(action, /requireAdmin\(\)[\s\S]*?appUserRole !== "ADMIN"/);
+    assert.match(financeClient, /canManageCriticalFinance && p\.transactionStatus === "WAITING_FOR_DEPOSIT" && p\.status !== "PAID"/);
+    assert.match(financeClient, /key: "va-close", label: "가상계좌 닫기"/);
+    const dialog = readFileSync(new URL("../src/app/admin/finance/VirtualAccountCloseDialog.tsx", import.meta.url), "utf8");
+    assert.match(dialog, /AdminConfirmDialog/);
+    assert.match(dialog, /tone="danger"/);
+    const admin = fnBody(ledger, "export async function closeVirtualAccountByAdmin(");
+    assert.match(admin, /closeOpenVirtualAccount\(invoiceId, \{ actorType: "ADMIN", actorId: input\.adminUserId \}\)/);
+});
+
+// ── 검수 권장 4: 발급 0건 재확인 · 입금 알림 지문 ─────────────────────────────
+test("발급 기록 0건이면 거래 상태를 다시 보고 DONE 이면 «납부 완료»로 답한다", () => {
+    const body = fnBody(ledger, "async function recordVirtualAccountIssued(");
+    assert.match(body, /current\[0\]\?\.status === "DONE"\) return "PAID"/);
+    const confirm = fnBody(ledger, "export async function confirmTossPayment(");
+    assert.equal(confirm.split('view === "PAID") return { ok: true as const, alreadyConfirmed: true }').length - 1, 2);
+});
+
+test("입금 알림 지문에 transactionKey(없으면 createdAt)를 넣되, 카드 등 기존 알림 지문은 그대로", () => {
+    assert.match(ledger, /depositKey: depositCallback \? readString\(payloadRecord\.transactionKey\) \?\? readString\(payloadRecord\.createdAt\) : null/);
+    assert.match(ledger, /\.\.\.\(input\.depositKey \? \{ depositKey: input\.depositKey \} : \{\}\)/);
 });

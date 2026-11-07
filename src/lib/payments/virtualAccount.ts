@@ -172,6 +172,54 @@ export function stripPaymentSecret<T>(payment: T): T {
 }
 
 /**
+ * 웹훅 본문을 DB(PaymentWebhookEvent.payload)에 남기기 전에 secret 을 가린다.
+ * DEPOSIT_CALLBACK 은 최상위에, PAYMENT_STATUS_CHANGED 는 data(결제 객체) 안에 secret 이 있다.
+ * ⚠️ 중복 판정 지문(eventId)은 가리기 전 원문으로 먼저 만든다 — 순서를 바꾸지 말 것.
+ */
+export function stripWebhookSecrets<T>(payload: T): T {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+    const copy = stripPaymentSecret(payload) as Record<string, unknown>;
+    if (copy.data && typeof copy.data === "object" && !Array.isArray(copy.data)) {
+        copy.data = stripPaymentSecret(copy.data);
+    }
+    return copy as T;
+}
+
+/**
+ * 입금 알림(DEPOSIT_CALLBACK)을 503 으로 돌려 토스 재전송을 받을지.
+ * 본문은 «입금됐다(DONE)»인데 토스 조회가 아직 입금 대기이거나 조회가 실패(4xx)해 반영을 못 한 경우만 true.
+ * 200 으로 끝내면 토스가 다시 보내지 않아 입금된 돈이 영구 미납으로 남는다.
+ */
+export function shouldRetryDepositCallback(
+    isDepositCallback: boolean,
+    callbackStatus: string | null,
+    decision: VirtualAccountWebhookDecision,
+): boolean {
+    if (!isDepositCallback || callbackStatus !== "DONE" || decision.action !== "IGNORE") return false;
+    return decision.code === "VIRTUAL_ACCOUNT_STILL_WAITING" || decision.code === "TOSS_PAYMENT_NOT_VERIFIED";
+}
+
+/** 다른 수단으로 결제하려고 입금 대기 계좌를 닫을 때, 토스 재조회 결과로 다음 할 일을 정한다. */
+export type VirtualAccountCloseStep =
+    | "CANCEL"   // 아직 입금 전 → 토스 결제 취소 API 로 닫는다
+    | "RELEASED" // 이미 닫힘(만료·취소) → 거래만 EXPIRED 로 정리하고 새 결제 진행
+    | "PAID"     // 이미 입금됨 → 입금이 이긴다. 납부 반영 후 새 결제를 막는다
+    | "FAIL";    // 모르는 상태·다른 결제 → 새 결제를 열지 않는다(이중 납부 방지 우선)
+
+export function decideVirtualAccountClose(
+    verified: Record<string, unknown> | null,
+    tx: { orderId: string; paymentKey?: string | null },
+): VirtualAccountCloseStep {
+    if (!verified || verified.orderId !== tx.orderId) return "FAIL";
+    if (tx.paymentKey && verified.paymentKey && verified.paymentKey !== tx.paymentKey) return "FAIL";
+    const status = typeof verified.status === "string" ? verified.status : "";
+    if (status === VA_WAITING_STATUS) return "CANCEL";
+    if (status === "DONE") return "PAID";
+    if (RELEASE_STATUSES.has(status)) return "RELEASED";
+    return "FAIL";
+}
+
+/**
  * 웹훅 본문이 DEPOSIT_CALLBACK(가상계좌 입금 알림)인가.
  * 토스 DEPOSIT_CALLBACK 본문 = { createdAt, secret, status, transactionKey, orderId } — eventType 칸이 없다.
  */
