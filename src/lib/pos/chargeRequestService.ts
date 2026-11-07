@@ -36,17 +36,36 @@ import {
     paymentTypeLabel,
     taxExemptAmountsOf,
     randomShortCode,
+    describeChargePayments,
+    isOrderCompleted,
+    posMethodLabel,
+    posMethodOf,
 } from "./charge-request.mjs";
 
 // 순수 JS(.mjs) 함수는 TS 가 인자 타입을 좁게 추론한다 → 이 파일에서만 느슨하게 받는다.
-const decide = decideChargeMatch as unknown as (input: unknown) => { action: string; reason: string; payment: ApprovedPayment | null };
+const decide = decideChargeMatch as unknown as (input: unknown) => {
+    action: string;
+    reason: string;
+    /** 대표 결제(가장 먼저 승인된 것) */
+    payment: ApprovedPayment | null;
+    /** 이 요청에 쓰인 승인 결제 전부(분할이면 여러 건, 승인 순) */
+    payments: ApprovedPayment[];
+    /** 마지막 승인 시각(납부일·만료 판단) */
+    paidAtIso: string | null;
+    /** 분할 결제 중간이라 남은 결제를 기다리는 중 */
+    waiting?: boolean;
+};
+const methodOf = posMethodOf as (sourceTypes: string[]) => string;
+const describePayments = describeChargePayments as (payments: ApprovedPayment[]) => string;
+const posLabelOf = (method: string) => (posMethodLabel as (m: string) => string | null)(method) ?? method;
+const completedOf = isOrderCompleted as (order: unknown, eventType?: string) => boolean;
 const eligibility = chargeEligibility as unknown as (payment: unknown) => { ok: boolean; reason: string };
 const itemNameOf = buildChargeItemName as (input: { year: number | null; month: number | null; type: string; maskedName: string }) => string;
 
 // ───────────────────────────── 타입 ─────────────────────────────
 
-/** 카드·승인 결제 1건(payment-notice.mjs 의 extractNoticePayments 결과 중 쓰는 칸) */
-export type ApprovedPayment = { tossPaymentId: string; tossOrderId: string; amount: number; approvedAtIso: string | null };
+/** 승인 결제 1건(payment-notice.mjs 의 extractChargePayments 결과 중 쓰는 칸 — 결제 방식 무관) */
+export type ApprovedPayment = { tossPaymentId: string; tossOrderId: string; amount: number; approvedAtIso: string | null; sourceType?: string };
 
 /** 실패 사유 코드 — 관리자 화면·플러그인 API 가 같이 쓴다 */
 export type ChargeErrorCode = "NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_OPEN" | "NOT_CLAIMABLE" | "CHANGED" | "CODE_EXHAUSTED";
@@ -172,13 +191,19 @@ const CLAIM_SQL = `UPDATE "PosChargeRequest" r
  * 자동 납부 선점 — 이 문장이 1행을 바꿨을 때만 원장부에 납부를 쓴다.
  * 결제 승인 시각이 만료 전이어야 하고(늦게 온 웹훅·스윕이 먼저 EXPIRED 로 바꾼 경우도 살린다),
  * 청구서가 아직 미납이고 금액이 요청과 같아야 한다. 같은 토스 결제가 다른 요청에 이미 붙었으면 유일 인덱스가 막는다.
+ * 분할 결제(2026-11-08): 유일 칸(tossPaymentId)에는 대표 결제(가장 먼저 승인) 1건만 넣고, 나머지 결제 ID 는
+ * note($6)·감사 기록(PaymentAuditLog)에 남긴다. 나머지 결제의 이중 매칭은 «같은 토스 주문이 다른 요청에 이미 PAID»
+ * 조건(NOT EXISTS)으로 막는다 — 한 주문의 결제는 전부 그 주문 몫이라 주문 단위로 막으면 결제 단위로도 막힌다.
+ * $4 = 마지막 승인 시각(만료 판단·납부일).
  */
 const CLAIM_PAY_SQL = `UPDATE "PosChargeRequest" r
       SET status = 'PAID', "tossOrderId" = $2, "tossPaymentId" = $3,
-          "paidAt" = COALESCE($4::timestamptz, now()), "updatedAt" = now()
+          "paidAt" = COALESCE($4::timestamptz, now()), note = COALESCE($6::text, r.note), "updatedAt" = now()
     WHERE r.id = $1 AND r.amount = $5::int
       AND r.status IN ('PENDING', 'SENT', 'EXPIRED')
       AND COALESCE($4::timestamptz, now()) <= r."expiresAt"
+      AND NOT EXISTS (SELECT 1 FROM "PosChargeRequest" o
+                       WHERE o.id <> r.id AND o."tossOrderId" = $2 AND o.status = 'PAID')
       AND EXISTS (SELECT 1 FROM "Payment" p
                    WHERE p.id = r."paymentId" AND p.status IN ('PENDING', 'OVERDUE')
                      AND p.amount = r.amount AND p.type IN ('MONTHLY', 'SHUTTLE'))
@@ -588,22 +613,29 @@ function describe(row: Pick<MatchRow, "shortCode" | "studentName" | "year" | "mo
 /**
  * 토스 재조회로 받은 주문 1건을 «현장 결제» 요청과 맞춘다.
  * 돌려주는 handledTossPaymentIds 의 결제는 기존 슬랙 확인 알림(PosPaymentNotice)을 만들지 않는다
- * (자동 납부됐거나, 같은 결제로 이미 자동 납부된 재전송). 나머지는 전부 기존 흐름 그대로.
+ * (자동 납부됐거나, 같은 결제로 이미 자동 납부된 재전송, 분할 결제의 남은 결제를 기다리는 중). 나머지는 전부 기존 흐름 그대로.
+ *
+ * approved = 이 주문의 **방식 무관** 승인 결제(payment-notice.mjs 의 extractChargePayments).
+ * eventType = 웹훅 종류(order.order.completed 면 주문이 끝난 것 — 분할 결제 합계가 모자라면 그때 보류).
  */
 export async function matchChargeRequestsForOrder(input: {
     order: unknown;
     orderId: string;
     approved: ApprovedPayment[];
+    eventType?: string;
     redact: (message: string) => string;
 }): Promise<{ handledTossPaymentIds: string[]; note: string }> {
     const { order, orderId, approved, redact } = input;
     const handled: string[] = [];
     const notes: string[] = [];
+    const idsOf = (list: ApprovedPayment[]) => list.map((p) => p.tossPaymentId);
 
     // ① POS 에서 취소된 자동 납부 건 — 납부를 되돌리지 않고(환불은 사람이) 원장에게 알린다.
+    //    분할 결제는 대표 결제만 유일 칸에 있으므로, 주문 안에 승인 아닌 결제(취소·부분취소)가 하나라도 생겨도 알린다.
     const paidRows = await loadMatchRows(`WHERE r."tossOrderId" = $1 AND r.status = 'PAID'`, orderId);
+    const cancelledInOrder = (nonApprovedPayments(order) as unknown[]).length > 0;
     for (const row of paidRows) {
-        const stillApproved = approved.some((p) => p.tossPaymentId === row.tossPaymentId);
+        const stillApproved = approved.some((p) => p.tossPaymentId === row.tossPaymentId) && !cancelledInOrder;
         if (stillApproved) continue;
         await prisma.$executeRawUnsafe(
             `UPDATE "PosChargeRequest"
@@ -635,7 +667,7 @@ export async function matchChargeRequestsForOrder(input: {
         return { handledTossPaymentIds: handled, note: notes.join(" · ") };
     }
 
-    // 결제마다 토스가 알려 준 면세 금액(taxExemptAmount)을 붙여 판정한다(요청 면세액과 다르면 보류).
+    // 결제마다 토스가 알려 준 면세 금액(taxExemptAmount)을 붙여 판정한다(합계가 요청 면세액과 다르면 보류).
     const exempt = taxExemptAmountsOf(order) as Record<string, number | null>;
     const verdict = decide({
         request: {
@@ -648,26 +680,31 @@ export async function matchChargeRequestsForOrder(input: {
         site: { status: request.paymentStatus, amount: request.paymentAmount, type: request.paymentType },
         approved: approved.map((p) => ({ ...p, taxExemptAmount: exempt[p.tossPaymentId] ?? null })),
         others: nonApprovedPayments(order),
+        orderCompleted: completedOf(order, input.eventType ?? ""),
     });
 
     if (verdict.action === MATCH_ACTION.ALREADY_DONE && verdict.payment) {
-        handled.push(verdict.payment.tossPaymentId);
+        handled.push(...idsOf(verdict.payments.length > 0 ? verdict.payments : [verdict.payment]));
         notes.push(`${code} 이미 자동 반영됨`);
         return { handledTossPaymentIds: handled, note: notes.join(" · ") };
     }
     if (verdict.action === MATCH_ACTION.SKIP) {
+        // 분할 결제 중간: 아직 판단 전이라 그 결제들의 슬랙 확인 알림도 미룬다(주문 완료 웹훅에서 납부 또는 보류 → 그때 알림).
+        if (verdict.waiting) handled.push(...idsOf(verdict.payments));
         notes.push(`${code} ${verdict.reason}`);
         return { handledTossPaymentIds: handled, note: notes.join(" · ") };
     }
 
     const hold = async (reason: string) => {
-        const paymentRef = verdict.payment ? ` (토스 결제 ${verdict.payment.tossPaymentId})` : "";
+        const paymentRef = verdict.payments.length > 1
+            ? ` (토스 결제 ${idsOf(verdict.payments).join(", ")})`
+            : verdict.payment ? ` (토스 결제 ${verdict.payment.tossPaymentId})` : "";
         const done = await prisma.$queryRawUnsafe<{ id: string }[]>(HOLD_SQL, request.id, orderId, `${reason}${paymentRef}`.slice(0, 1000));
         if (done.length > 0) {
             await notifyOnce(
                 request.id,
                 "slackNotifiedAt",
-                `⏸️ 현장 결제 자동 반영 보류 — ${describe(request)}\n사유: ${reason}\n이어서 오는 결제 확인 알림에서 처리해 주세요.`,
+                `⏸️ 현장 결제 자동 반영 보류 — ${describe(request)}\n사유: ${reason}\n카드·간편결제는 이어서 오는 결제 확인 알림에서, 현금·계좌이체 등은 관리자 수납 화면에서 처리해 주세요.`,
             );
         } else if (verdict.payment) {
             // 보류 0행 = 그 사이 상태가 바뀜. 동시에 온 다른 웹훅(주문·결제 알림)이 «이 결제로» 이미 자동 납부했으면
@@ -677,7 +714,7 @@ export async function matchChargeRequestsForOrder(input: {
                 request.id,
             );
             if (now[0]?.status === "PAID" && now[0].tossPaymentId === verdict.payment.tossPaymentId) {
-                handled.push(verdict.payment.tossPaymentId);
+                handled.push(...idsOf(verdict.payments.length > 0 ? verdict.payments : [verdict.payment]));
                 notes.push(`${code} 다른 알림이 이미 자동 반영함`);
                 return { handledTossPaymentIds: handled, note: notes.join(" · ") };
             }
@@ -689,10 +726,14 @@ export async function matchChargeRequestsForOrder(input: {
     if (verdict.action === MATCH_ACTION.HOLD || !verdict.payment) return hold(verdict.reason);
 
     // ③ 자동 납부 — 한 문장 선점이 1행일 때만 원장부에 쓴다.
+    //    대표 결제 = 가장 먼저 승인된 결제(유일 칸), 납부일 = 마지막 승인 시각, 분할이면 나머지 결제 ID 를 note 에.
     const payment = verdict.payment;
+    const payments = verdict.payments.length > 0 ? verdict.payments : [payment];
+    const method = methodOf(payments.map((p) => String(p.sourceType ?? "")));
+    const splitNote = payments.length > 1 ? describePayments(payments).slice(0, 1000) : null;
     let claimed: { id: string; paymentId: string; shortCode: string }[] = [];
     try {
-        claimed = await prisma.$queryRawUnsafe(CLAIM_PAY_SQL, request.id, orderId, payment.tossPaymentId, payment.approvedAtIso, request.amount);
+        claimed = await prisma.$queryRawUnsafe(CLAIM_PAY_SQL, request.id, orderId, payment.tossPaymentId, verdict.paidAtIso, request.amount, splitNote);
     } catch (error) {
         if (uniqueViolation(error)) {
             // 이 토스 결제가 이미 다른 요청에 붙었다 → 자동 처리하지 않고 기존 흐름
@@ -701,19 +742,20 @@ export async function matchChargeRequestsForOrder(input: {
         }
         throw error;
     }
-    if (claimed.length === 0) return hold("확정하는 순간 청구서·요청 상태가 바뀌었습니다.");
+    if (claimed.length === 0) return hold("확정하는 순간 청구서·요청 상태가 바뀌었습니다(또는 같은 주문이 다른 요청에 이미 반영됨).");
 
     try {
         await markPaymentPaid({
             paymentId: claimed[0].paymentId,
             actorType: "WEBHOOK",
             actorId: `pos-charge:${claimed[0].shortCode}`,
-            // 기존 POS 납부 표기(슬랙 [사이트 납부 반영] 버튼)와 같게
-            method: "CARD",
+            // 실제 결제 방식(2026-11-08): CARD·CASH·EASY_PAY(QR·토스페이)·BANK_TRANSFER·ETC, 분할이면 «CARD+CASH».
+            // 단건 카드는 예전과 같은 «CARD» 그대로다. 화면은 posMethodLabel 이 «현장 · 카드+현금» 으로 보여 준다.
+            method,
             provider: "TOSS_POS",
             providerOrderId: orderId,
             paymentKey: payment.tossPaymentId,
-            paidAt: payment.approvedAtIso,
+            paidAt: verdict.paidAtIso,
         });
     } catch (error) {
         const message = redact((error as Error).message);
@@ -733,11 +775,31 @@ export async function matchChargeRequestsForOrder(input: {
         }
     }
 
-    handled.push(payment.tossPaymentId);
+    // 감사 기록 — 이 납부에 쓰인 토스 결제 전부(분할이면 여러 건)와 방식. 기록이 실패해도 납부는 이미 끝났으니 막지 않는다.
+    try {
+        await recordPaymentAudit({
+            paymentId: claimed[0].paymentId,
+            actorType: "WEBHOOK",
+            actorId: `pos-charge:${claimed[0].shortCode}`,
+            action: "POS_CHARGE_PAYMENTS",
+            message: splitNote ?? `현장 결제 1건(${method})`,
+            metadata: {
+                shortCode: claimed[0].shortCode,
+                tossOrderId: orderId,
+                method,
+                payments: payments.map((p) => ({ tossPaymentId: p.tossPaymentId, sourceType: p.sourceType ?? null, amount: p.amount })),
+            },
+        });
+    } catch (error) {
+        console.error("[pos-charge] 감사 기록 실패(납부는 반영됨):", redact((error as Error).message), { requestId: request.id });
+    }
+
+    handled.push(...idsOf(payments));
+    const split = payments.length > 1 ? ` · 분할 ${payments.length}건` : "";
     await notifyOnce(
         request.id,
         "slackNotifiedAt",
-        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)}\n사이트 청구서를 납부완료로 바꿨습니다. 랠리즈에도 처리해 주세요.`,
+        `✅ 자동 납부 반영 — 현장 결제 ${describe(request)} (${posLabelOf(method)}${split})\n사이트 청구서를 납부완료로 바꿨습니다. 랠리즈에도 처리해 주세요.`,
     );
     notes.push(`${code} 자동 납부 반영`);
     return { handledTossPaymentIds: handled, note: notes.join(" · ") };

@@ -3,13 +3,13 @@
  *
  * ■ 무엇을 하나
  *   관리자가 청구서에서 «현장 결제»를 누르면 번호(S-482193)가 붙은 요청이 생긴다.
- *   선생님이 POS 주문 메모에 «STIZ:S-482193» 을 넣고(또는 플러그인이 넣고) 카드 결제를 받으면,
+ *   선생님이 POS 주문 메모에 «STIZ:S-482193» 을 넣고(또는 플러그인이 넣고) 결제를 받으면(카드·현금·QR·계좌이체 등 방식 무관, 분할 포함),
  *   토스 웹훅 → 주문 재조회 → 이 모듈의 판정(decideChargeMatch)으로 «자동 납부 / 보류 / 넘김»을 정한다.
  *
  * ■ 여기 있는 것
  *   - 상태 목록(DB CHECK·부분 유일 인덱스와 같은 목록 — 테스트가 마이그레이션과 비교한다)
  *   - 번호 만들기·형식 검사, 주문 메모에서 번호 찾기
- *   - 매칭 판정(금액·상태·만료·여러 결제·부분취소)
+ *   - 매칭 판정(금액·상태·만료·분할 결제 합계·부분취소) · 결제 방식 → Payment.method 값·표시
  *   - 이름 가리기, POS 상품명·메모 문구
  *
  * 설계: docs/toss-pos-plugin-plan.md. 테스트: tests/pos-charge-request.test.mjs
@@ -119,7 +119,7 @@ export function extractChargeCodes(order) {
 
 /**
  * 주문 안의 «승인 아닌» 결제(취소·부분취소 등). 이 중 하나라도 있으면 자동 반영하지 않는다.
- * 카드 승인 결제 목록은 payment-notice.mjs 의 extractNoticePayments 한 벌을 쓴다(사본 금지).
+ * 승인 결제 목록(방식 무관)은 payment-notice.mjs 의 extractChargePayments 한 벌을 쓴다(사본 금지).
  */
 /**
  * 주문의 결제별 면세 금액(토스플레이스 결제의 taxExemptAmount). 칸이 없으면 null.
@@ -179,50 +179,95 @@ const toMs = (v) => {
   return Number.isFinite(ms) ? ms : null;
 };
 
+/** 결제 금액·면세 금액을 정수로(못 읽으면 null) */
+const intOrNull = (v) => {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : null;
+};
+
 /**
  * 웹훅으로 온 주문 1건 ↔ 요청 1건 판정.
  *
+ * ■ 결제 방식(2026-11-08 원장 지시): 카드·현금·QR/토스페이(BARCODE)·계좌이체·외부·선불 — **방식과 무관하게**
+ *   APPROVED 결제를 전부 인정한다. 번호가 붙은 주문은 학생·금액이 서버에서 이미 정해져 있기 때문이다.
+ * ■ 분할 결제: 한 주문의 승인 결제가 여러 건이면 «합계 금액 = 요청 금액» + «합계 면세 = 요청 면세»일 때 납부.
+ *   - 합계가 아직 모자라면 주문이 끝나기 전에는 SKIP(waiting) — 다음 결제의 웹훅·주문 완료 웹훅에서 다시 본다.
+ *   - 주문이 끝났는데도 모자라면 HOLD.
+ *   - 대표 결제 = 가장 먼저 승인된 것(요청의 tossPaymentId 유일 칸에 들어간다).
+ *
  * @param input.request   { status, amount, taxFreeAmount, tossPaymentId, expiresAt }   (DB 값)
  * @param input.site      { status, amount, type }                        (청구서 DB 값)
- * @param input.approved  [{ tossPaymentId, amount, approvedAtIso, taxExemptAmount }]  (카드·승인 결제, 면세는 taxExemptAmountsOf)
+ * @param input.approved  [{ tossPaymentId, amount, approvedAtIso, taxExemptAmount, sourceType }]  (방식 무관 승인 결제)
  * @param input.others    [{ id, state }]                                 (승인 아닌 결제)
+ * @param input.orderCompleted  주문이 끝났나(모르면 true = 기다리지 않고 보수적으로 보류)
  * @param input.nowMs     승인 시각을 모를 때 쓸 현재 시각
- * @returns {{ action: string, reason: string, payment: object|null }}
+ * @returns {{ action: string, reason: string, payment: object|null, payments: object[], paidAtIso: string|null, waiting?: boolean }}
+ *   payment = 대표 결제, payments = 이 요청에 쓰인 승인 결제 전부(승인 순), paidAtIso = 마지막 승인 시각(납부일·만료 판단)
  */
-export function decideChargeMatch({ request, site, approved = [], others = [], nowMs = Date.now() }) {
-  const none = (action, reason) => ({ action, reason, payment: null });
+export function decideChargeMatch({ request, site, approved = [], others = [], orderCompleted = true, nowMs = Date.now() }) {
+  const none = (action, reason, extra = {}) => ({ action, reason, payment: null, payments: [], paidAtIso: null, ...extra });
   if (!request) return none(MATCH_ACTION.SKIP, "번호에 맞는 요청이 없습니다.");
   const status = String(request.status);
 
-  // 이미 납부 반영된 요청: 같은 결제면 «처리 끝», 다른 결제면 중복 결제 → 기존 흐름(ALREADY_PAID 로 원장 확인)
+  // 승인 순서로 정렬(시각을 모르면 뒤로) — 대표 결제는 맨 앞, 납부일은 맨 뒤 시각.
+  const sorted = [...approved].sort((a, b) => {
+    const am = toMs(a?.approvedAtIso);
+    const bm = toMs(b?.approvedAtIso);
+    if (am !== bm) return am == null ? 1 : bm == null ? -1 : am - bm;
+    return String(a?.tossPaymentId).localeCompare(String(b?.tossPaymentId));
+  });
+  const payment = sorted[0] ?? null;
+  // 승인 시각을 하나라도 모르면 «마지막 시각»을 알 수 없다 → null(호출한 쪽이 지금 시각을 쓴다)
+  const allTimed = sorted.length > 0 && sorted.every((p) => toMs(p.approvedAtIso) != null);
+  const lastIso = allTimed ? sorted[sorted.length - 1].approvedAtIso : null;
+  const sumAmount = sorted.reduce((acc, p) => acc + (intOrNull(p.amount) ?? 0), 0);
+  const base = { payment, payments: sorted, paidAtIso: lastIso };
+
+  // 이미 납부 반영된 요청: 같은 대표 결제면 «처리 끝», 다른 결제면 중복 결제 → 기존 흐름(ALREADY_PAID 로 원장 확인)
   if (status === CHARGE_STATUS.PAID) {
-    const same = approved.find((p) => p.tossPaymentId && p.tossPaymentId === request.tossPaymentId);
-    return same
-      ? { action: MATCH_ACTION.ALREADY_DONE, reason: "이미 자동 납부 반영된 결제입니다.", payment: same }
-      : none(MATCH_ACTION.SKIP, "요청은 이미 다른 결제로 납부 반영됐습니다(중복 결제 의심).");
+    const same = sorted.find((p) => p.tossPaymentId && p.tossPaymentId === request.tossPaymentId);
+    if (!same) return none(MATCH_ACTION.SKIP, "요청은 이미 다른 결제로 납부 반영됐습니다(중복 결제 의심).");
+    // 분할 결제였으면(합계 = 요청 금액) 그 주문의 승인 결제 전부가 이 요청 몫이다. 아니면 대표 결제만.
+    const mine = sumAmount === Number(request.amount) ? sorted : [same];
+    return { action: MATCH_ACTION.ALREADY_DONE, reason: "이미 자동 납부 반영된 결제입니다.", payment: same, payments: mine, paidAtIso: lastIso };
   }
   // 취소·보류된 요청은 다시 자동 처리하지 않는다 → 기존 슬랙 흐름
   if (status === CHARGE_STATUS.CANCELLED) return none(MATCH_ACTION.SKIP, "취소된 요청입니다.");
   if (status === CHARGE_STATUS.HELD) return none(MATCH_ACTION.SKIP, "이미 확인 대기 중인 요청입니다.");
 
-  if (approved.length === 0) return none(MATCH_ACTION.SKIP, "카드·간편결제 승인 결제가 아직 없습니다.");
-  if (approved.length > 1) return none(MATCH_ACTION.HOLD, `한 주문에 카드 결제가 ${approved.length}건입니다.`);
-  const payment = approved[0];
-  const hold = (reason) => ({ action: MATCH_ACTION.HOLD, reason, payment });
+  if (sorted.length === 0) return none(MATCH_ACTION.SKIP, "승인된 결제가 아직 없습니다.");
+  const hold = (reason) => ({ action: MATCH_ACTION.HOLD, reason, ...base });
+  const split = sorted.length > 1;
+  const what = split ? `결제 ${sorted.length}건 합계` : "결제 금액";
 
+  // 취소·부분취소가 섞인 주문은 합계를 믿을 수 없다 → 원장 확인
   if (others.length > 0) {
     return hold(`주문에 취소·부분취소된 결제가 있습니다(${others.map((o) => o.state || "상태 없음").join(", ")}).`);
   }
-  if (Math.round(Number(payment.amount)) !== Number(request.amount)) {
-    return hold(`결제 금액(${Number(payment.amount)}원)이 요청 금액(${Number(request.amount)}원)과 다릅니다.`);
+  if (sorted.some((p) => intOrNull(p.amount) == null)) return hold("결제 금액을 읽지 못한 결제가 있습니다.");
+  const want = Number(request.amount);
+  if (sumAmount < want && !orderCompleted) {
+    // 분할 결제 중간(첫 결제만 승인됨) — 아직 판단하지 않는다. 다음 웹훅·주문 완료 웹훅에서 다시 본다.
+    return {
+      action: MATCH_ACTION.SKIP,
+      reason: `${what}(${sumAmount}원)가 요청 금액(${want}원)보다 적어 남은 결제를 기다립니다.`,
+      waiting: true,
+      ...base,
+    };
   }
-  // 면세 금액: 토스 결제의 면세(taxExemptAmount)가 요청 면세액과 다르면 세금 신고가 틀어진다 → 원장 확인.
-  // 칸을 못 읽으면(null) 면세로 처리됐는지 알 수 없으니 역시 보류한다(첫 실결제로 응답 모양을 확인할 것).
-  if (payment.taxExemptAmount == null || !Number.isFinite(Number(payment.taxExemptAmount))) {
+  if (sumAmount !== want) {
+    return hold(`${what}(${sumAmount}원)이 요청 금액(${want}원)과 다릅니다.`);
+  }
+  // 면세 금액: 토스 결제의 면세(taxExemptAmount) 합계가 요청 면세액과 다르면 세금 신고가 틀어진다 → 원장 확인.
+  // 한 건이라도 칸을 못 읽으면(null) 면세로 처리됐는지 알 수 없으니 역시 보류한다(보수적).
+  if (sorted.some((p) => intOrNull(p.taxExemptAmount) == null)) {
     return hold("토스 결제의 면세 금액을 확인하지 못했습니다(과세로 결제됐을 수 있음).");
   }
-  if (Math.round(Number(payment.taxExemptAmount)) !== Number(request.taxFreeAmount)) {
-    return hold(`면세 금액(${Number(payment.taxExemptAmount)}원)이 요청 면세액(${Number(request.taxFreeAmount)}원)과 다릅니다.`);
+  const sumExempt = sorted.reduce((acc, p) => acc + intOrNull(p.taxExemptAmount), 0);
+  if (sumExempt !== Number(request.taxFreeAmount)) {
+    const label = split ? `면세 금액 합계(${sumExempt}원)` : `면세 금액(${sumExempt}원)`;
+    return hold(`${label}이 요청 면세액(${Number(request.taxFreeAmount)}원)과 다릅니다.`);
   }
   if (!site) return hold("청구서를 찾지 못했습니다.");
   if (!CHARGEABLE_PAYMENT_STATUSES.includes(String(site.status))) {
@@ -231,9 +276,9 @@ export function decideChargeMatch({ request, site, approved = [], others = [], n
   if (Number(site.amount) !== Number(request.amount)) {
     return hold("요청을 만든 뒤 청구 금액이 바뀌었습니다.");
   }
-  // 만료: 결제 승인 시각이 만료 시각보다 늦으면 자동 반영하지 않는다(승인 시각을 모르면 지금 시각).
+  // 만료: 마지막 결제 승인 시각이 만료 시각보다 늦으면 자동 반영하지 않는다(승인 시각을 모르면 지금 시각).
   const expiresMs = toMs(request.expiresAt);
-  const paidMs = toMs(payment.approvedAtIso) ?? nowMs;
+  const paidMs = toMs(lastIso) ?? nowMs;
   if (status === CHARGE_STATUS.EXPIRED && (expiresMs == null || paidMs > expiresMs)) {
     return hold("요청 유효 시간(30분)이 지난 뒤 결제됐습니다.");
   }
@@ -241,7 +286,75 @@ export function decideChargeMatch({ request, site, approved = [], others = [], n
   if (![CHARGE_STATUS.PENDING, CHARGE_STATUS.SENT, CHARGE_STATUS.EXPIRED].includes(status)) {
     return hold(`요청 상태가 올바르지 않습니다(${status}).`);
   }
-  return { action: MATCH_ACTION.PAY, reason: "번호·금액·청구서 상태 일치", payment };
+  return {
+    action: MATCH_ACTION.PAY,
+    reason: split ? `번호·분할 결제 ${sorted.length}건 합계·청구서 상태 일치` : "번호·금액·청구서 상태 일치",
+    ...base,
+  };
+}
+
+/**
+ * 주문이 끝났나(분할 결제의 «마지막 판단» 시점). 웹훅 종류(order.order.completed) 또는 토스 재조회 주문의 상태·완료 시각으로 본다.
+ * 셋 다 없으면 false — 아직 결제가 더 올 수 있다고 본다(합계가 맞으면 그대로 납부되니 기다림은 «모자랄 때»만 생긴다).
+ */
+export function isOrderCompleted(order, eventType = "") {
+  if (/order\.completed/i.test(String(eventType ?? ""))) return true;
+  const state = String(order?.orderState ?? order?.state ?? "").toUpperCase();
+  if (["COMPLETED", "COMPLETE", "DONE", "PAID", "CLOSED"].includes(state)) return true;
+  return Boolean(order?.completedAt);
+}
+
+// ───────────────────────────── 결제 방식 ─────────────────────────────
+
+/**
+ * 토스 결제 sourceType → 사이트 Payment.method 값.
+ * 기존 값(CARD·CASH·BANK_TRANSFER)은 그대로 쓰고, 새로 생긴 것만 EASY_PAY(QR·토스페이)·ETC(외부·선불·모름).
+ * 단건 카드는 예전과 같은 «CARD» 라 월 대사(p.method = 'CARD')·기존 화면이 그대로 동작한다.
+ */
+export const POS_METHOD_BY_SOURCE = Object.freeze({
+  CARD: "CARD",
+  CASH: "CASH",
+  BARCODE: "EASY_PAY",
+  ACCOUNT_TRANSFER: "BANK_TRANSFER",
+});
+
+/** Payment.method 조각 → 화면 이름 */
+export const POS_METHOD_LABELS = Object.freeze({
+  CARD: "카드",
+  CASH: "현금",
+  EASY_PAY: "간편결제(QR·토스페이)",
+  BANK_TRANSFER: "계좌이체",
+  ETC: "기타",
+});
+
+/** 승인 결제들의 sourceType 목록 → Payment.method 값. 분할이면 «CARD+CASH»(나온 순서, 중복 제거). */
+export function posMethodOf(sourceTypes) {
+  const out = [];
+  for (const raw of Array.isArray(sourceTypes) ? sourceTypes : []) {
+    const code = POS_METHOD_BY_SOURCE[String(raw ?? "").toUpperCase()] ?? "ETC";
+    if (!out.includes(code)) out.push(code);
+  }
+  return out.length > 0 ? out.join("+") : "ETC";
+}
+
+/**
+ * 토스 POS 로 받은 결제의 화면 표시. «CARD» → «현장 · 카드», «CARD+CASH» → «현장 · 카드+현금».
+ * 모르는 조각이 섞이면 null(호출한 쪽이 기존 표시를 쓴다).
+ */
+export function posMethodLabel(method) {
+  const parts = String(method ?? "").split("+").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0 || parts.some((p) => !POS_METHOD_LABELS[p])) return null;
+  return `현장 · ${parts.map((p) => POS_METHOD_LABELS[p]).join("+")}`;
+}
+
+/** 이 주문 결제 기록 문구(요청 note·감사 기록용). 예: «분할 결제 2건: tp-1(카드 100,000원) + tp-2(현금 80,000원)» */
+export function describeChargePayments(payments) {
+  const list = Array.isArray(payments) ? payments : [];
+  const parts = list.map((p) => {
+    const code = POS_METHOD_BY_SOURCE[String(p?.sourceType ?? "").toUpperCase()] ?? "ETC";
+    return `${p?.tossPaymentId}(${POS_METHOD_LABELS[code]} ${formatChargeWon(p?.amount)})`;
+  });
+  return `분할 결제 ${list.length}건: ${parts.join(" + ")}`;
 }
 
 // ───────────────────────────── 표시 ─────────────────────────────

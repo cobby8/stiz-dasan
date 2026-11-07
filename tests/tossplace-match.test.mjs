@@ -206,6 +206,36 @@ test("① 한 주문번호에 여러 건이 얽히면 전부 보류", () => {
   assert.equal(r.tossResults[0].candidates.length, 2);
 });
 
+// 현장 결제 요청 주문(메모 STIZ:S-xxxxxx) — 사이트가 방식 무관 자동 납부한 건(2026-11-08)
+const posSite = (over = {}) => ({ ...siteRow({ date: "2026-09-03", amount: 180000, providerOrderId: "order-POS" }), method: "CARD+CASH", paidProvider: "TOSS_POS", ...over });
+const posOrder = (payments) => ({
+  ...tossOrder({ date: "2026-09-03", amount: 180000, orderId: "order-POS", memo: "STIZ:S-482193" }),
+  payments: payments.map(([id, sourceType, amount]) => ({ id, orderId: "order-POS", state: "APPROVED", sourceType, amount, approvedAt: "2026-09-03T05:00:00Z" })),
+});
+
+test("현장 결제 요청 주문은 현금·QR(BARCODE) 결제도 대사 대상(카드 외 참고 목록으로 빠지지 않음), 일반 현금은 그대로 참고 목록", () => {
+  const result = buildReconciliation({
+    month: "2026-09",
+    siteRows: [posSite({ method: "EASY_PAY" })],
+    tossPayments: tossRows([posOrder([["pay-qr", "BARCODE", 180000]]), tossOrder({ date: "2026-09-04", amount: 5000, sourceType: "CASH" })]),
+  });
+  assert.deepEqual(result.toss.approved.map((r) => r.paymentId), ["pay-qr"]);
+  assert.deepEqual(result.toss.nonCard.map((r) => r.sourceType), ["CASH"]);
+  assert.equal(result.main.siteResults[0].category, CATEGORY.MATCHED_BY_ID);
+});
+
+test("현장 결제 분할 결제(카드+현금): 사이트 1건(TOSS_POS) ↔ 같은 주문 토스 2건 합계 일치 → 정상 매칭, 합계 다르면 그대로 보류", () => {
+  const toss = tossRows([posOrder([["pay-c", "CARD", 100000], ["pay-h", "CASH", 80000]])]);
+  const ok = matchSets([posSite()], toss);
+  assert.equal(ok.siteResults[0].category, CATEGORY.MATCHED_BY_ID);
+  assert.deepEqual(ok.tossResults.map((e) => e.category), [CATEGORY.MATCHED_BY_ID, CATEGORY.MATCHED_BY_ID]);
+  const short = matchSets([posSite({ amount: 200000 })], toss);
+  assert.equal(short.siteResults[0].category, CATEGORY.HELD_ID_MULTIPLE);
+  // 번호 없는 일반 주문의 여러 결제는 종전처럼 보류(추측 금지)
+  const plain = tossRows([{ ...posOrder([["pay-c2", "CARD", 100000], ["pay-c3", "CARD", 80000]]), lineItems: [{ item: { title: "수강료" } }] }]);
+  assert.equal(matchSets([posSite()], plain).siteResults[0].category, CATEGORY.HELD_ID_MULTIPLE);
+});
+
 test("② 같은 날·같은 금액 1건씩이면 정상 매칭", () => {
   const site = [siteRow({ date: "2026-09-05", amount: 80000 })];
   const toss = tossRows([tossOrder({ date: "2026-09-05", amount: 80000 })]);

@@ -106,6 +106,21 @@ export function lineItemTitles(order) {
  */
 export const NOTICE_SOURCE_TYPES = new Set(["CARD", "BARCODE"]);
 export function extractNoticePayments(order) {
+  return extractApprovedPayments(order, (sourceType) => NOTICE_SOURCE_TYPES.has(sourceType));
+}
+
+/**
+ * «현장 결제» 요청 매칭 전용 — **결제 방식과 무관하게** 승인(APPROVED) 결제를 전부 고른다(2026-11-08 원장 지시).
+ * 카드·현금·QR/토스페이(BARCODE)·계좌이체·외부·선불 모두. 요청 번호가 붙은 주문은 학생·금액이 서버에서
+ * 이미 정해져 있어서 방식을 따질 필요가 없다. 슬랙 확인 알림(extractNoticePayments)은 범위를 넓히지 않는다.
+ * 모양은 extractNoticePayments 와 같고 sourceType 칸이 있다(결제 방식 기록용).
+ */
+export function extractChargePayments(order) {
+  return extractApprovedPayments(order, () => true);
+}
+
+/** 승인 결제 → 1건씩. accept(sourceType) 가 true 인 방식만. 두 함수(알림·매칭)가 같은 모양을 쓰도록 한 벌로 둔다. */
+function extractApprovedPayments(order, accept) {
   const orderId = asId(order?.id ?? order?.orderId);
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   const titles = lineItemTitles(order);
@@ -114,7 +129,7 @@ export function extractNoticePayments(order) {
   for (const payment of payments) {
     const sourceType = String(payment?.sourceType ?? "").toUpperCase();
     const state = String(payment?.state ?? "").toUpperCase();
-    if (!NOTICE_SOURCE_TYPES.has(sourceType) || state !== "APPROVED") continue;
+    if (!accept(sourceType) || state !== "APPROVED") continue;
     const paymentId = payment?.id == null ? "" : String(payment.id).trim();
     const amount = Math.round(Number(payment?.amount));
     if (!orderId || !paymentId || !Number.isFinite(amount)) continue;
@@ -123,6 +138,8 @@ export function extractNoticePayments(order) {
       tossPaymentId: paymentId,
       tossOrderId: orderId,
       amount,
+      // 결제 방식(CARD·CASH·BARCODE·ACCOUNT_TRANSFER·EXTERNAL·PREPAID_VALUE) — 사이트 Payment.method 기록용
+      sourceType,
       // DB(timestamptz)에 넣을 값. KST 로 해석한 시각에 +09:00 을 붙여 절대 시각으로 만든다.
       approvedAtIso: kst ? `${kst.kstDateTime.replace(" ", "T")}+09:00` : null,
       kstDate: kst ? kst.kstDate : "",

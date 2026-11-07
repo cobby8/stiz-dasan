@@ -26,6 +26,7 @@ import {
 } from "@/app/actions/admin";
 // 토스 POS «현장 결제» 번호 창(2026-11-07) — 납부완료는 토스 결제 확인으로만 바뀐다
 import PosChargeRequestModal from "./PosChargeRequestModal";
+import { posMethodLabel } from "@/lib/pos/charge-request.mjs";
 
 type Payment = {
     id: string;
@@ -185,9 +186,22 @@ const METHOD_LABELS: Record<string, string> = {
 
 const PROVIDER_LABELS: Record<string, string> = {
     TOSS: "토스페이먼츠",
+    TOSS_POS: "토스 POS(현장)",
     CAFE24_BRIDGE: "본사 카페24",
     MANUAL: "직접 처리",
 };
+
+/**
+ * 결제 수단 표시. 토스 POS(현장 결제)로 받은 건 «현장 · 카드», 분할이면 «현장 · 카드+현금».
+ * 그 밖에는 기존 표시 그대로(저장 값은 바꾸지 않고 보여 줄 때만 바꾼다). 기존 «CARD» 기록도 그대로 읽힌다.
+ */
+function methodText(method: string | null | undefined, provider: string | null | undefined): string | null {
+    if (!method) return null;
+    const pos = (posMethodLabel as (m: string) => string | null)(method);
+    if (provider === "TOSS_POS" && pos) return pos;
+    // EASY_PAY·ETC·«CARD+CASH» 같은 POS 전용 값은 경로가 비어 있어도 POS 표시로 읽는다
+    return METHOD_LABELS[method] ?? pos ?? method;
+}
 
 const SHEET_RECONCILE_ACTION_LABELS: Record<string, string> = {
     CREATE: "생성",
@@ -987,7 +1001,7 @@ export default function FinanceClient({
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{toDateStr(p.dueDate)}</td>
                 <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{toDateStr(p.paidDate)}</td>
                 {/* 수단: 넓은 화면에서만. 결제 경로·승인번호·영수증은 상세 패널 */}
-                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{p.method ? (METHOD_LABELS[p.method] ?? p.method) : "-"}</td>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{methodText(p.method, p.paidProvider) ?? "-"}</td>
                 <td className="px-2 py-1.5">
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
                         {statusInfo.label}
@@ -1700,7 +1714,7 @@ export default function FinanceClient({
                     { label: "금액", value: <span className="font-bold tabular-nums">{formatAmount(d.amount)}</span> },
                     { label: "납부기한", value: <span className="tabular-nums">{toDateStr(d.dueDate)}</span> },
                     { label: "납부일", value: d.paidDate ? <span className="tabular-nums">{toDateStr(d.paidDate)}</span> : null },
-                    { label: "결제 수단", value: d.method ? (METHOD_LABELS[d.method] ?? d.method) : null },
+                    { label: "결제 수단", value: methodText(d.method, d.paidProvider) },
                     { label: "결제 경로", value: d.paidProvider ? (PROVIDER_LABELS[d.paidProvider] ?? d.paidProvider) : null },
                     { label: "승인번호", value: d.providerOrderId },
                     { label: "청구번호", value: d.invoiceNo },

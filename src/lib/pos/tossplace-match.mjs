@@ -19,6 +19,9 @@
  *   - toISOString().slice(0,10) / getDay() / getHours() 같은 로컬시간 의존 코드는 쓰지 않는다.
  */
 
+// 현장 결제 번호(STIZ:S-xxxxxx) 찾기는 charge-request.mjs 한 벌(사본 금지). 그 파일은 import 가 없어 순환이 생기지 않는다.
+import { extractChargeCodes } from "./charge-request.mjs";
+
 // ───────────────────────────── 상수 ─────────────────────────────
 
 /** 대사 결과 분류 코드 (CSV 에 그대로 들어간다) */
@@ -461,6 +464,8 @@ export function flattenTossOrders(orders, options = {}) {
     const orderId = String(order?.id ?? order?.orderId ?? "");
     const items = joinLineItems(order);
     const memo = parseMemoNames(order);
+    // 현장 결제 요청 번호가 붙은 주문인가 — 이런 주문은 결제 방식(현금·QR·계좌이체 등)과 무관하게 사이트가 자동 납부한다.
+    const posCharge = extractChargeCodes(order).length > 0;
     const payments = Array.isArray(order?.payments) ? order.payments : [];
     if (payments.length === 0) {
       invalid.push({ orderId, reason: "주문에 결제 정보가 없습니다", orderState: order?.orderState ?? "" });
@@ -496,6 +501,7 @@ export function flattenTossOrders(orders, options = {}) {
         paymentId,
         state,
         sourceType: String(payment?.sourceType ?? "").toUpperCase(),
+        posCharge,
         paymentMethod: String(payment?.paymentMethod ?? ""),
         van: String(payment?.van ?? ""),
         approvedNo: String(payment?.approvedNo ?? payment?.cardDetails?.approvalNo ?? ""),
@@ -609,7 +615,11 @@ export function partitionSiteRows(rows, month) {
   return { paid, canceled, otherStatus, paidBuffer, canceledBuffer, otherBranch };
 }
 
-/** 토스 결제 행을 카드/상태/월 기준으로 나눈다. 카드(CARD) 가 아닌 건 대사에서 제외하고 참고 목록으로만 둔다. */
+/**
+ * 토스 결제 행을 카드/상태/월 기준으로 나눈다. 카드(CARD) 가 아닌 건 대사에서 제외하고 참고 목록으로만 둔다.
+ * 단, 현장 결제 요청 번호가 붙은 주문(posCharge)의 결제는 방식과 무관하게 대사에 넣는다(2026-11-08) —
+ * 사이트가 그 결제로 자동 납부(paidProvider TOSS_POS)하므로, 빼면 사이트 납부가 «토스 결제 없음»처럼 보인다.
+ */
 export function partitionTossPayments(rows, month) {
   const approved = [];
   const cancelled = [];
@@ -620,7 +630,7 @@ export function partitionTossPayments(rows, month) {
 
   for (const row of rows) {
     const inMonth = isInMonth(row.kstDate, month);
-    if (row.sourceType !== "CARD") {
+    if (row.sourceType !== "CARD" && !row.posCharge) {
       if (inMonth) nonCard.push(row);
       continue;
     }
@@ -692,6 +702,22 @@ export function matchSets(siteRows, tossRows, options = {}) {
         assign(siteResult, s, CATEGORY.HELD_AMOUNT_MISMATCH, reason, [candidateOf(t, s, "ID")], groupId);
         assign(tossResult, t, CATEGORY.HELD_AMOUNT_MISMATCH, reason, [candidateOf(s, t, "ID")], groupId);
       }
+      continue;
+    }
+    // 현장 결제 요청의 분할 결제(카드+현금 등): 사이트 1건(토스 POS 자동 납부) ↔ 같은 주문의 토스 여러 건, 합계 일치.
+    // 서버가 «합계 = 요청 금액»을 확인하고 납부했으므로 추측이 아니다 → 정상 매칭.
+    if (
+      siteGroup.length === 1 &&
+      tossGroup.length > 1 &&
+      siteGroup[0].paidProvider === "TOSS_POS" &&
+      tossGroup.every((t) => t.posCharge) &&
+      sumAmount(tossGroup) === siteGroup[0].amount
+    ) {
+      const s = siteGroup[0];
+      const reason = `현장 결제 분할 결제 ${tossGroup.length}건 합계와 주문번호가 일치`;
+      assign(siteResult, s, CATEGORY.MATCHED_BY_ID, reason, [], groupId);
+      for (const t of tossGroup) assign(tossResult, t, CATEGORY.MATCHED_BY_ID, reason, [], groupId);
+      groups.push({ id: groupId, kind: "ID", kstDate: tossGroup[0].kstDate, amount: s.amount, siteRows: [s], tossRows: tossGroup });
       continue;
     }
     // 합계가 같으면 "한 번 결제를 사이트에서 나눠 기록한 것"일 가능성이 높다.

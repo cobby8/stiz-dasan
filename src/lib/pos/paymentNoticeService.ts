@@ -27,6 +27,7 @@ import {
     buildNoticeMessage,
     classifyInvoiceRows,
     classifyNotice,
+    extractChargePayments,
     extractNoticePayments,
     extractOrderIdFromWebhook,
     resolveNoticeStudent,
@@ -342,15 +343,18 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
         return { notices: 0, note };
     }
 
+    // 슬랙 확인 알림 대상(카드·간편결제)과 «현장 결제» 매칭 대상(방식 무관 승인 결제 전부)은 범위가 다르다.
     const payments = extractNoticePayments(order) as ReturnType<typeof extractNoticePayments>;
+    const chargePayments = extractChargePayments(order) as ReturnType<typeof extractChargePayments>;
 
     // «현장 결제» 요청 매칭(원장 결정 D1): 메모 번호(STIZ:S-482193)로 요청과 맞으면 자동 납부.
+    // 결제 방식(카드·현금·QR·계좌이체 등)·분할 결제와 무관하게 판단한다(2026-11-08 원장 지시).
     // 자동 납부된 결제는 아래 슬랙 확인 알림을 만들지 않는다. 그 밖의 결제(요청 없음·보류)는 지금 흐름 그대로.
     // 매칭이 실패해도 알림 흐름은 막지 않는다(원장 확인 DM 이 안전망).
     let chargeHandled = new Set<string>();
     let chargeNote = "";
     try {
-        const matched = await matchChargeRequestsForOrder({ order, orderId, approved: payments, redact });
+        const matched = await matchChargeRequestsForOrder({ order, orderId, approved: chargePayments, eventType: type, redact });
         chargeHandled = new Set(matched.handledTossPaymentIds);
         chargeNote = matched.note;
     } catch (error) {

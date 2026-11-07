@@ -106,7 +106,7 @@ test("현장 결제 대상: 수강료·셔틀비 미납만", () => {
 const EXPIRES = "2026-11-07T05:30:00Z"; // KST 14:30
 const baseReq = { status: "PENDING", amount: 180000, taxFreeAmount: 180000, tossPaymentId: null, expiresAt: EXPIRES };
 const baseSite = { status: "PENDING", amount: 180000, type: "MONTHLY" };
-const pay = (over = {}) => ({ tossPaymentId: "tp-1", tossOrderId: "o-1", amount: 180000, approvedAtIso: "2026-11-07T14:20:00+09:00", taxExemptAmount: 180000, ...over });
+const pay = (over = {}) => ({ tossPaymentId: "tp-1", tossOrderId: "o-1", amount: 180000, approvedAtIso: "2026-11-07T14:20:00+09:00", taxExemptAmount: 180000, sourceType: "CARD", ...over });
 const decide = (over = {}) =>
   R.decideChargeMatch({ request: baseReq, site: baseSite, approved: [pay()], others: [], nowMs: Date.parse("2026-11-07T05:20:00Z"), ...over });
 
@@ -157,8 +157,9 @@ test("매칭: 만료 — 승인 시각이 만료 뒤면 보류, 만료 전 승�
   assert.equal(decide({ approved: [pay({ approvedAtIso: null })] }).action, "PAY");
 });
 
-test("매칭: 한 주문에 카드 결제가 여럿·취소/부분취소 결제가 섞이면 보류", () => {
-  assert.equal(decide({ approved: [pay(), pay({ tossPaymentId: "tp-2", amount: 0 })] }).action, "HOLD");
+test("매칭: 취소/부분취소 결제가 섞이면 보류(분할이어도)", () => {
+  const splitPays = [pay({ amount: 100000, taxExemptAmount: 100000 }), pay({ tossPaymentId: "tp-2", amount: 80000, taxExemptAmount: 80000 })];
+  assert.equal(decide({ approved: splitPays, others: [{ id: "tp-3", state: "CANCELLED" }] }).action, "HOLD");
   const partial = decide({ others: [{ id: "tp-x", state: "CANCELLED" }] });
   assert.equal(partial.action, "HOLD");
   assert.match(partial.reason, /취소/);
@@ -180,6 +181,119 @@ test("매칭: 취소·보류된 요청, 요청 없음, 승인 결제 없음은 �
 test("nonApprovedPayments: 승인 아닌 결제만", () => {
   const order = { payments: [{ id: 1, state: "APPROVED" }, { id: 2, state: "cancelled", sourceType: "card" }] };
   assert.deepEqual(R.nonApprovedPayments(order), [{ id: "2", state: "CANCELLED", sourceType: "CARD" }]);
+});
+
+// ───────────────────── 4-2. 결제 방식 무관 · 분할 결제 (2026-11-08 원장 지시) ─────────────────────
+
+const SOURCE_TYPES = ["CARD", "CASH", "BARCODE", "ACCOUNT_TRANSFER", "EXTERNAL", "PREPAID_VALUE"];
+
+test("방식 무관: 카드·현금·QR/토스페이·계좌이체·외부·선불 단건 모두 자동 납부(PAY)", () => {
+  for (const sourceType of SOURCE_TYPES) {
+    const r = decide({ approved: [pay({ sourceType })] });
+    assert.equal(r.action, "PAY", sourceType);
+    assert.equal(r.payment.tossPaymentId, "tp-1");
+  }
+});
+
+test("결제 방식 기록: sourceType → Payment.method (단건 카드는 기존 CARD 그대로), 분할은 «CARD+CASH»", () => {
+  assert.equal(R.posMethodOf(["CARD"]), "CARD");
+  assert.equal(R.posMethodOf(["CASH"]), "CASH");
+  assert.equal(R.posMethodOf(["BARCODE"]), "EASY_PAY");
+  assert.equal(R.posMethodOf(["ACCOUNT_TRANSFER"]), "BANK_TRANSFER");
+  assert.equal(R.posMethodOf(["EXTERNAL"]), "ETC");
+  assert.equal(R.posMethodOf(["PREPAID_VALUE"]), "ETC");
+  assert.equal(R.posMethodOf(["card", "CASH", "CARD"]), "CARD+CASH", "소문자도 읽고 중복은 한 번");
+  assert.equal(R.posMethodOf([]), "ETC");
+  assert.equal(R.posMethodLabel("CARD"), "현장 · 카드");
+  assert.equal(R.posMethodLabel("CASH"), "현장 · 현금");
+  assert.equal(R.posMethodLabel("EASY_PAY"), "현장 · 간편결제(QR·토스페이)");
+  assert.equal(R.posMethodLabel("BANK_TRANSFER"), "현장 · 계좌이체");
+  assert.equal(R.posMethodLabel("ETC"), "현장 · 기타");
+  assert.equal(R.posMethodLabel("CARD+CASH"), "현장 · 카드+현금");
+  assert.equal(R.posMethodLabel("RALLYZ"), null, "모르는 값은 null → 화면이 기존 표시를 쓴다");
+  assert.equal(R.posMethodLabel(""), null);
+});
+
+test("결제 방식 화면 표시: 수납 목록·상세는 TOSS_POS 면 «현장 · …», 원생 상세 이름표(adminDisplayText)도 같은 이름", async () => {
+  const fin = await readFile(FINANCE, "utf8");
+  assert.match(fin, /\{methodText\(p\.method, p\.paidProvider\) \?\? "-"\}/, "목록 «수단» 칸");
+  assert.match(fin, /label: "결제 수단", value: methodText\(d\.method, d\.paidProvider\)/, "상세 패널");
+  const code = await transpile("src/components/admin/adminDisplayText.ts");
+  const D = await import(toDataUrl(code));
+  for (const key of Object.keys(R.POS_METHOD_LABELS)) assert.equal(D.paymentMethodLabel(key), R.POS_METHOD_LABELS[key], key);
+  assert.equal(D.paymentMethodLabel("CARD+CASH"), "카드+현금");
+  assert.equal(D.paymentMethodLabel("CARD"), "카드", "기존 CARD 기록 표시 그대로");
+});
+
+// 분할 결제: 카드 100,000 (14:10) + 현금 80,000 (14:20) = 180,000 · 면세 합계 180,000
+const card1 = pay({ tossPaymentId: "tp-card", amount: 100000, taxExemptAmount: 100000, approvedAtIso: "2026-11-07T14:10:00+09:00" });
+const cash2 = pay({ tossPaymentId: "tp-cash", sourceType: "CASH", amount: 80000, taxExemptAmount: 80000, approvedAtIso: "2026-11-07T14:20:00+09:00" });
+
+test("분할 결제: 합계 금액·합계 면세가 요청과 같으면 납부 — 대표 결제 = 먼저 승인, 납부일 = 마지막 승인", () => {
+  const r = decide({ approved: [cash2, card1] }); // 순서가 뒤섞여 와도
+  assert.equal(r.action, "PAY");
+  assert.equal(r.payment.tossPaymentId, "tp-card");
+  assert.deepEqual(r.payments.map((p) => p.tossPaymentId), ["tp-card", "tp-cash"]);
+  assert.equal(r.paidAtIso, "2026-11-07T14:20:00+09:00");
+  assert.match(r.reason, /분할 결제 2건/);
+  assert.equal(R.describeChargePayments(r.payments), "분할 결제 2건: tp-card(카드 100,000원) + tp-cash(현금 80,000원)");
+});
+
+test("분할 결제: 합계가 모자라면 주문 완료 전엔 SKIP(기다림), 완료 뒤엔 HOLD", () => {
+  const waiting = decide({ approved: [card1], orderCompleted: false });
+  assert.equal(waiting.action, "SKIP");
+  assert.equal(waiting.waiting, true);
+  assert.match(waiting.reason, /남은 결제를 기다립니다/);
+  assert.deepEqual(waiting.payments.map((p) => p.tossPaymentId), ["tp-card"]);
+  const done = decide({ approved: [card1], orderCompleted: true });
+  assert.equal(done.action, "HOLD");
+  assert.match(done.reason, /100000원.*180000원/);
+  // 기본값은 «완료로 본다»(모르면 기다리지 않고 보수적으로 보류)
+  assert.equal(decide({ approved: [card1] }).action, "HOLD");
+  // 합계가 넘치면 완료 전이어도 바로 보류
+  assert.equal(decide({ approved: [card1, cash2, pay({ tossPaymentId: "tp-x", amount: 1000, taxExemptAmount: 1000 })], orderCompleted: false }).action, "HOLD");
+});
+
+test("분할 결제: 면세 합계가 다르거나 한 건이라도 면세 정보가 없으면 보류", () => {
+  const taxed = decide({ approved: [card1, { ...cash2, taxExemptAmount: 0 }] });
+  assert.equal(taxed.action, "HOLD");
+  assert.match(taxed.reason, /면세 금액 합계\(100000원\).*180000원/);
+  const unknown = decide({ approved: [card1, { ...cash2, taxExemptAmount: null }] });
+  assert.equal(unknown.action, "HOLD");
+  assert.match(unknown.reason, /면세 금액을 확인하지 못했습니다/);
+});
+
+test("분할 결제: 마지막 결제가 만료 뒤면 보류, 이미 PAID(대표 결제 같음)면 ALREADY_DONE 로 결제 전부를 처리 끝", () => {
+  assert.equal(decide({ approved: [card1, { ...cash2, approvedAtIso: "2026-11-07T14:31:00+09:00" }] }).action, "HOLD");
+  const again = decide({ request: { ...baseReq, status: "PAID", tossPaymentId: "tp-card" }, approved: [card1, cash2] });
+  assert.equal(again.action, "ALREADY_DONE");
+  assert.deepEqual(again.payments.map((p) => p.tossPaymentId), ["tp-card", "tp-cash"]);
+});
+
+test("보류 문구에 «카드» 전제가 없다(방식 무관)", () => {
+  assert.doesNotMatch(decide({ approved: [] }).reason, /카드/);
+  assert.doesNotMatch(decide({ approved: [card1] }).reason, /카드/);
+});
+
+test("주문 완료 판단: 웹훅 종류(order.order.completed) · 주문 상태 · 완료 시각", () => {
+  assert.equal(R.isOrderCompleted({}, "order.order.completed.v1"), true);
+  assert.equal(R.isOrderCompleted({ orderState: "COMPLETED" }, "payment.approved"), true);
+  assert.equal(R.isOrderCompleted({ completedAt: "2026-11-07T14:20:00" }), true);
+  assert.equal(R.isOrderCompleted({ orderState: "OPENED" }, "payment.payment.approved.v1"), false);
+  assert.equal(R.isOrderCompleted(null, ""), false);
+});
+
+test("extractChargePayments: 방식 무관 승인 결제 전부(sourceType 포함), 알림 목록(extractNoticePayments)은 카드·간편결제만 그대로", async () => {
+  const N = await import(fileUrl("src/lib/pos/payment-notice.mjs"));
+  const order = {
+    id: "o-9",
+    payments: SOURCE_TYPES.map((sourceType, i) => ({ id: `p${i}`, sourceType, state: "APPROVED", amount: 1000, approvedAt: "2026-11-07T14:20:00+09:00" }))
+      .concat([{ id: "p-cancel", sourceType: "CASH", state: "CANCELLED", amount: 1000 }]),
+  };
+  const all = N.extractChargePayments(order);
+  assert.deepEqual(all.map((p) => p.sourceType), SOURCE_TYPES);
+  assert.ok(all.every((p) => p.tossOrderId === "o-9" && p.approvedAtIso));
+  assert.deepEqual(N.extractNoticePayments(order).map((p) => p.sourceType), ["CARD", "BARCODE"]);
 });
 
 // ───────────────────────── 5. 표시 ─────────────────────────
@@ -310,12 +424,13 @@ test("웹훅 매칭: 조건이 맞으면 선점 1행 뒤 markPaymentPaid 1회(�
   assert.equal(p.actorType, "WEBHOOK");
   assert.equal(p.paidAt, "2026-11-07T14:20:00+09:00");
   const claim = globalThis.__cs.calls.find((c) => /SET status = 'PAID'/.test(c.sql));
-  assert.deepEqual(claim.args, ["r1", "o-1", "tp-1", "2026-11-07T14:20:00+09:00", 180000]);
+  // 마지막 인자 = 분할 결제 기록(note). 단건이면 null(기존 note 유지)
+  assert.deepEqual(claim.args, ["r1", "o-1", "tp-1", "2026-11-07T14:20:00+09:00", 180000, null]);
   assert.ok(globalThis.__cs.slack.some((t) => /자동 납부 반영/.test(t) && /랠리즈/.test(t)));
 });
 
-test("웹훅 매칭: 금액 불일치 → 납부 안 함, 요청 HELD + 슬랙 «보류», 기존 확인 알림으로 넘김", async () => {
-  const r = await runMatch({}, { approved: [pay({ amount: 170000 })] });
+test("웹훅 매칭: 금액 불일치(주문 완료) → 납부 안 함, 요청 HELD + 슬랙 «보류», 기존 확인 알림으로 넘김", async () => {
+  const r = await runMatch({}, { order: { ...ORDER, orderState: "COMPLETED" }, approved: [pay({ amount: 170000 })] });
   assert.deepEqual(r.handledTossPaymentIds, []);
   assert.equal(globalThis.__cs.paid.length, 0);
   assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
@@ -406,6 +521,97 @@ test("웹훅 매칭: 자동 납부한 결제가 POS 에서 취소되면 되돌�
   assert.equal(globalThis.__cs.paid.length, 0);
   assert.ok(globalThis.__cs.slack.some((t) => /POS 에서 취소됨/.test(t)));
   assert.ok(!globalThis.__cs.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "청구서를 되돌리지 않는다");
+});
+
+// ───────────────────── 7-1b. 웹훅 매칭: 방식 무관 · 분할 결제 ─────────────────────
+
+const SPLIT_ORDER = {
+  id: "o-1",
+  memo: "STIZ:S-482193",
+  payments: [
+    { id: "tp-card", sourceType: "CARD", state: "APPROVED", amount: 100000, taxExemptAmount: 100000 },
+    { id: "tp-cash", sourceType: "CASH", state: "APPROVED", amount: 80000, taxExemptAmount: 80000 },
+  ],
+};
+const splitApproved = [card1, cash2];
+
+test("웹훅 매칭: 방식별 단건 — 실제 방식이 Payment.method 에 기록된다(현금 CASH · QR EASY_PAY · 계좌이체 BANK_TRANSFER · 외부 ETC)", async () => {
+  const expected = { CARD: "CARD", CASH: "CASH", BARCODE: "EASY_PAY", ACCOUNT_TRANSFER: "BANK_TRANSFER", EXTERNAL: "ETC", PREPAID_VALUE: "ETC" };
+  for (const [sourceType, method] of Object.entries(expected)) {
+    const order = { ...ORDER, payments: [{ ...ORDER.payments[0], sourceType }] };
+    const r = await runMatch({}, { order, approved: [pay({ sourceType })] });
+    assert.deepEqual(r.handledTossPaymentIds, ["tp-1"], sourceType);
+    assert.equal(globalThis.__cs.paid.length, 1, sourceType);
+    assert.equal(globalThis.__cs.paid[0].method, method, sourceType);
+    assert.equal(globalThis.__cs.paid[0].provider, "TOSS_POS");
+  }
+});
+
+test("웹훅 매칭: 분할 결제 합계 일치 → 납부 1회(대표 결제·마지막 승인 시각·«CARD+CASH»), 결제 둘 다 처리 끝, note·감사 기록에 결제 전부", async () => {
+  const r = await runMatch({}, { order: SPLIT_ORDER, approved: splitApproved });
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-card", "tp-cash"]);
+  assert.equal(globalThis.__cs.paid.length, 1);
+  const p = globalThis.__cs.paid[0];
+  assert.equal(p.method, "CARD+CASH");
+  assert.equal(p.paymentKey, "tp-card");
+  assert.equal(p.paidAt, "2026-11-07T14:20:00+09:00");
+  const claim = globalThis.__cs.calls.find((c) => /SET status = 'PAID'/.test(c.sql));
+  assert.equal(claim.args[2], "tp-card", "유일 칸에는 대표 결제 1건");
+  assert.match(claim.args[5], /tp-card.*tp-cash/);
+  const audit = globalThis.__cs.audits.find((a) => a.action === "POS_CHARGE_PAYMENTS");
+  assert.deepEqual(audit.metadata.payments.map((x) => x.tossPaymentId), ["tp-card", "tp-cash"]);
+  assert.ok(globalThis.__cs.slack.some((t) => /현장 · 카드\+현금/.test(t) && /분할 2건/.test(t)));
+});
+
+test("웹훅 매칭: 분할 결제 첫 결제만 승인(주문 진행 중) → SKIP·납부/보류 없음, 그 결제의 확인 알림도 미룸 → 주문 완료 후에도 모자라면 HELD", async () => {
+  const first = { ...SPLIT_ORDER, orderState: "OPENED", payments: [SPLIT_ORDER.payments[0]] };
+  let r = await runMatch({}, { order: first, approved: [card1] });
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-card"], "기다리는 동안 슬랙 확인 DM 을 만들지 않는다");
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(!globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+  assert.match(r.note, /기다립니다/);
+  // 주문 완료 웹훅(order.order.completed) — 그래도 100,000원뿐이면 보류
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], request: reqRow(), claimRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-482193" }] };
+  r = await svc.matchChargeRequestsForOrder({ order: first, orderId: "o-1", approved: [card1], eventType: "order.order.completed.v1", redact: (m) => m });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 분할 결제에 취소 결제가 섞임 → HELD", async () => {
+  const order = { ...SPLIT_ORDER, payments: [...SPLIT_ORDER.payments, { id: "tp-x", sourceType: "CARD", state: "CANCELLED", amount: 5000 }] };
+  const r = await runMatch({}, { order, approved: splitApproved });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 분할 결제 면세 합계 불일치 → HELD", async () => {
+  const order = { ...SPLIT_ORDER, payments: [SPLIT_ORDER.payments[0], { ...SPLIT_ORDER.payments[1], taxExemptAmount: 0 }] };
+  const r = await runMatch({}, { order, approved: splitApproved });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  const held = globalThis.__cs.calls.find((c) => /SET status = 'HELD'/.test(c.sql));
+  assert.match(held.args[2], /면세 금액 합계/);
+});
+
+test("이중 매칭 방지: 선점 SQL 이 «같은 토스 주문이 다른 요청에 이미 PAID» 를 막고, 막히면(0행) 납부 안 함", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  const sql = src.slice(src.indexOf("const CLAIM_PAY_SQL"), src.indexOf("RETURNING r.id, r.\"paymentId\", r.\"shortCode\""));
+  assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "PosChargeRequest" o\s+WHERE o\.id <> r\.id AND o\."tossOrderId" = \$2 AND o\.status = 'PAID'\)/);
+  const r = await runMatch({ claimRows: [] }, { order: SPLIT_ORDER, approved: splitApproved });
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.deepEqual(r.handledTossPaymentIds, []);
+});
+
+test("웹훅 매칭: 자동 납부한 분할 결제 중 나머지 결제가 POS 에서 취소되면 «POS 에서 취소됨» 알림", async () => {
+  const order = { ...SPLIT_ORDER, payments: [SPLIT_ORDER.payments[0], { ...SPLIT_ORDER.payments[1], state: "CANCELLED" }] };
+  await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-card", tossOrderId: "o-1" })], request: reqRow({ status: "PAID", tossPaymentId: "tp-card" }) },
+    { order, approved: [card1] },
+  );
+  assert.ok(globalThis.__cs.slack.some((t) => /POS 에서 취소됨/.test(t)));
+  assert.equal(globalThis.__cs.paid.length, 0);
 });
 
 // ───────────────────────── 7-2. 플러그인 보고·응답 모양 ─────────────────────────
@@ -580,7 +786,10 @@ test("돈 쓰기: chargeRequestService 의 markPaymentPaid 는 한 곳, 선점(C
 
 test("웹훅 처리: 매칭 결과로 처리된 결제만 알림에서 빼고, 매칭 실패는 알림 흐름을 막지 않는다", async () => {
   const src = await readFile(NOTICE_SERVICE, "utf8");
-  assert.match(src, /matchChargeRequestsForOrder\(\{ order, orderId, approved: payments, redact \}\)/);
+  // 매칭에는 방식 무관 승인 결제(extractChargePayments) + 웹훅 종류(주문 완료 판단)를 넘긴다. 알림 목록은 그대로.
+  assert.match(src, /matchChargeRequestsForOrder\(\{ order, orderId, approved: chargePayments, eventType: type, redact \}\)/);
+  assert.match(src, /const chargePayments = extractChargePayments\(order\)/);
+  assert.match(src, /const payments = extractNoticePayments\(order\)/);
   assert.match(src, /payments\.filter\(\(p\) => !chargeHandled\.has\(p\.tossPaymentId\)\)/);
   assert.match(src, /expireStaleChargeRequests\(null\)/, "10분 스윕이 만료를 처리한다");
 });

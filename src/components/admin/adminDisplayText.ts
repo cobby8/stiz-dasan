@@ -59,11 +59,18 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
   TOSS: "토스",
   MANUAL: "직접 처리",
   UNPAID: "미납",
+  // 토스 POS 현장 결제가 새로 쓰는 값(2026-11-08) — charge-request.mjs 의 POS_METHOD_LABELS 와 같은 이름.
+  // 이 파일은 테스트가 import 없이 단독 실행하므로 그 모듈을 불러오지 않고 이름만 맞춘다(테스트가 비교).
+  EASY_PAY: "간편결제(QR·토스페이)",
+  ETC: "기타",
 };
 
 /** 결제 수단을 한국어로. 이미 한국어로 저장된 값은 그대로, 모르는 영문 코드는 «수단 미확인». */
 export function paymentMethodLabel(method: string | null | undefined): string {
   if (!method) return "";
   if (PAYMENT_METHOD_LABEL[method]) return PAYMENT_METHOD_LABEL[method];
+  // 분할 결제(«CARD+CASH») → «카드+현금»
+  const parts = method.split("+");
+  if (parts.length > 1 && parts.every((p) => PAYMENT_METHOD_LABEL[p])) return parts.map((p) => PAYMENT_METHOD_LABEL[p]).join("+");
   return HANGUL.test(method) ? method : "수단 미확인";
 }
