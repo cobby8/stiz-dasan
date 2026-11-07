@@ -7,10 +7,14 @@ import { cancelPosChargeRequest, createPosChargeRequest, loadPosChargeRequest } 
 import type { AdminChargeRequestView } from "@/lib/pos/chargeRequestService";
 
 /**
- * «현장 결제» 창 — 청구서 1건을 토스 POS 로 받을 때 쓰는 결제 번호(S-482193)를 만들고 크게 보여 준다.
+ * «현장 결제» 창 — 청구서 1건을 토스 POS 로 보내 카드 결제를 받는다.
  *
- * 흐름: [결제 번호 만들기] → 번호·금액 크게 표시 → 선생님이 POS 주문 메모에 «STIZ:S-482193» 입력 후 카드 결제
- *       → 토스가 결제를 알려 주면 서버가 확인해 납부완료로 바꾼다([결제 확인]으로 다시 볼 수 있다).
+ * 흐름(2026-11-08 개편): [POS로 결제 보내기] → 확인 한 번 → 결제 요청 생성
+ *       → 토스 POS 플러그인이 요청을 받아 주문 메모·금액을 넣고 결제창을 «자동으로» 연다(사람이 번호를 옮겨 적지 않는다)
+ *       → 카드 결제가 끝나면 토스가 알려 주고 서버가 확인해 납부완료로 바꾼다.
+ *       창이 열려 있는 동안 3초마다 상태를 다시 읽어 결과를 바로 보여 준다(창을 닫거나 탭을 숨기면 멈춘다).
+ * 결제 번호(shortCode)는 서버가 결제를 맞춰 보는 내부 값이라 크게 보여 주지 않는다.
+ * 보류·지난 요청 줄에만 슬랙 알림과 대조할 수 있게 작은 회색 글씨로 남긴다.
  * 이 창은 돈을 직접 바꾸지 않는다. 납부완료는 토스 결제 확인으로만 된다.
  */
 
@@ -18,13 +22,13 @@ type Target = { id: string; studentName: string; amount: number; title: string }
 
 const won = (n: number) => `${Math.round(n).toLocaleString("ko-KR")}원`;
 
-const STATUS_TEXT: Record<string, string> = {
-    PENDING: "결제 기다리는 중",
-    SENT: "POS 에서 결제 진행 중",
-    PAID: "납부완료로 반영됨",
-    CANCELLED: "취소된 요청",
-    EXPIRED: "시간이 지난 요청",
-    HELD: "원장 확인 필요",
+/** 자동으로 상태를 다시 읽는 간격(밀리초) */
+const POS_CHARGE_POLL_MS = 3000;
+
+/** 지난 요청 한 줄에 붙이는 말 */
+const PAST_TEXT: Record<string, string> = {
+    CANCELLED: "취소됨",
+    EXPIRED: "만료됨",
 };
 
 export default function PosChargeRequestModal({
@@ -47,31 +51,76 @@ export default function PosChargeRequestModal({
     useEffect(() => {
         onPaidRef.current = onPaid;
     }, [onPaid]);
+    // 같은 순간에 두 번 읽지 않게(3초 자동 읽기와 취소 후 읽기가 겹칠 때)
+    const inFlightRef = useRef(false);
+    // 창이 닫힌 뒤 늦게 도착한 응답은 버린다
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     const refresh = useCallback(async () => {
-        setLoading(true);
-        const result = await loadPosChargeRequest(target.id);
-        setLoading(false);
-        if (!result.ok) {
-            setMessage(result.message);
-            return;
+        if (inFlightRef.current) return;
+        inFlightRef.current = true;
+        try {
+            const result = await loadPosChargeRequest(target.id);
+            if (!mountedRef.current) return;
+            if (!result.ok) {
+                setMessage(result.message);
+                return;
+            }
+            setRequest(result.request);
+            setMessage("");
+            if (result.request?.status === "PAID") onPaidRef.current();
+        } finally {
+            inFlightRef.current = false;
+            if (mountedRef.current) setLoading(false);
         }
-        setRequest(result.request);
-        setMessage("");
-        if (result.request?.status === "PAID") onPaidRef.current();
     }, [target.id]);
 
     useEffect(() => {
         void refresh();
     }, [refresh]);
 
-    const isOpen = !!request && (request.status === "PENDING" || request.status === "SENT") && !request.isExpired;
+    // POS 로 보낸 뒤 결제를 기다리는 상태
+    const isWaiting = !!request && (request.status === "PENDING" || request.status === "SENT") && !request.isExpired;
+
+    // 기다리는 동안만 3초마다 자동으로 다시 읽는다. 탭이 숨겨지면 멈추고, 다시 보이면 바로 한 번 읽고 이어 간다.
+    // 창이 닫히면(컴포넌트가 사라지면) 정리 함수가 타이머를 멈춘다.
+    useEffect(() => {
+        if (!isWaiting) return;
+        let timer: ReturnType<typeof setInterval> | null = null;
+        const start = () => {
+            if (timer === null) timer = setInterval(() => void refresh(), POS_CHARGE_POLL_MS);
+        };
+        const stop = () => {
+            if (timer !== null) clearInterval(timer);
+            timer = null;
+        };
+        const onVisibility = () => {
+            if (document.visibilityState === "visible") {
+                void refresh();
+                start();
+            } else {
+                stop();
+            }
+        };
+        if (document.visibilityState === "visible") start();
+        document.addEventListener("visibilitychange", onVisibility);
+        return () => {
+            stop();
+            document.removeEventListener("visibilitychange", onVisibility);
+        };
+    }, [isWaiting, refresh]);
 
     async function handleCreate() {
         const ok = await confirm({
-            title: `${target.studentName} · ${won(target.amount)} 현장 결제 번호 만들기`,
-            description: "30분 동안 쓸 수 있는 결제 번호를 만듭니다. 토스 POS 에서 카드 결제를 받으면 납부완료로 바뀝니다.",
-            confirmLabel: "번호 만들기",
+            title: "POS로 결제 보내기",
+            description: `${target.studentName} · ${won(target.amount)} 을 토스 POS 로 보낼까요? POS에 결제창이 바로 열립니다.`,
+            confirmLabel: "보내기",
             tone: "primary",
         });
         if (!ok) return;
@@ -83,18 +132,18 @@ export default function PosChargeRequestModal({
             return;
         }
         setRequest(result.request);
-        setMessage(result.existing ? "이미 만들어 둔 번호가 있어 그 번호를 보여 드립니다." : "");
+        setMessage(result.existing ? "이미 보낸 요청이 있어 그 요청의 결제를 기다립니다." : "");
     }
 
     async function handleCancel() {
         if (!request) return;
         const ok = await confirm({
-            title: `결제 번호 ${request.shortCode} 취소`,
+            title: "결제 요청 취소",
             description:
                 request.status === "SENT"
                     ? "POS 에서 이미 결제를 진행 중일 수 있습니다. 취소한 뒤 결제가 들어오면 슬랙 확인 알림으로 넘어갑니다."
-                    : "이 번호로는 더 이상 자동 납부 반영이 되지 않습니다.",
-            confirmLabel: "번호 취소",
+                    : "이 요청으로는 더 이상 자동 납부 반영이 되지 않습니다.",
+            confirmLabel: "요청 취소",
             tone: "danger",
         });
         if (!ok) return;
@@ -104,6 +153,9 @@ export default function PosChargeRequestModal({
         if (!result.ok) setMessage(result.message);
         await refresh();
     }
+
+    // 지난 요청이 만료인지 취소인지(만료 시간이 지났으면 상태가 PENDING 이어도 만료로 본다)
+    const pastStatus = request && request.isExpired && request.status !== "CANCELLED" ? "EXPIRED" : (request?.status ?? "");
 
     return (
         <>
@@ -124,34 +176,19 @@ export default function PosChargeRequestModal({
 
                 {loading && !request ? (
                     <p className="mt-6 text-sm text-[var(--color-academy-muted)]">불러오는 중…</p>
-                ) : isOpen && request ? (
+                ) : isWaiting && request ? (
                     <div className="mt-4">
-                        {/* 주인공 하나: 결제 번호 — 선생님이 POS 앞에서 멀리서도 읽을 수 있게 크게 */}
-                        <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-5 text-center">
-                            <p className="text-sm font-bold text-[var(--color-academy-muted)]">결제 번호</p>
-                            <p className="mt-1 font-mono text-5xl font-black tracking-wider text-[var(--color-academy-ink)]" aria-live="polite">
-                                {request.shortCode}
-                            </p>
-                            <p className="mt-2 text-xl font-extrabold text-[var(--color-academy-ink)]">{won(request.amount)}</p>
-                            <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-                                {STATUS_TEXT[request.status]} · {request.expiresKstHm}까지
+                        {/* 주인공 하나: 지금 상태 — 사람이 따로 할 일은 없고 POS 결제만 기다린다 */}
+                        <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-4 py-4 text-center" aria-live="polite">
+                            <p className="text-base font-extrabold text-[var(--color-academy-ink)]">POS로 보냈어요 · 결제 기다리는 중</p>
+                            <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{won(request.amount)}</p>
+                            <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
+                                보통 10초 안에 POS에 결제창이 열려요. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요.
                             </p>
                         </div>
-                        <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[var(--color-academy-ink)]">
-                            <li>
-                                토스 POS 주문 메모에 <b className="font-mono">{request.memo}</b> 를 넣어 주세요.
-                            </li>
-                            <li>금액 {won(request.amount)}을 그대로 카드 결제하면 납부완료로 바뀝니다.</li>
-                        </ol>
-                        <p className="mt-2 text-xs text-[var(--color-academy-muted)]">
-                            금액을 바꾸거나 메모를 빼면 자동 반영되지 않고 슬랙 확인 알림으로 넘어갑니다.
-                        </p>
-                        <div className="mt-4 flex items-center gap-2">
+                        <div className="mt-4 flex">
                             <button type="button" onClick={() => void handleCancel()} disabled={busy} className="academy-button-danger">
-                                번호 취소
-                            </button>
-                            <button type="button" onClick={() => void refresh()} disabled={busy || loading} className="academy-button-primary ml-auto">
-                                {loading ? "확인 중…" : "결제 확인"}
+                                요청 취소
                             </button>
                         </div>
                     </div>
@@ -159,7 +196,7 @@ export default function PosChargeRequestModal({
                     <div className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-4">
                         <p className="text-base font-extrabold text-[var(--color-academy-success)]">납부완료로 반영됐습니다</p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-                            결제 번호 {request.shortCode} · {won(request.amount)}
+                            {won(request.amount)}
                             {request.paidKst ? ` · ${request.paidKst} 결제` : ""}
                         </p>
                         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">랠리즈에도 납부 처리해 주세요.</p>
@@ -168,22 +205,21 @@ export default function PosChargeRequestModal({
                     <div className="mt-4">
                         {request?.status === "HELD" ? (
                             <div className="rounded-lg border border-[var(--color-academy-danger)] px-4 py-3 text-sm">
-                                <p className="font-bold text-[var(--color-academy-danger)]">자동 반영 보류 · {request.shortCode}</p>
+                                <p className="font-bold text-[var(--color-academy-danger)]">자동 반영 보류</p>
                                 <p className="mt-1 text-[var(--color-academy-ink)]">{request.note ?? "확인이 필요합니다."}</p>
                                 <p className="mt-1 text-[var(--color-academy-muted)]">슬랙 결제 확인 알림에서 처리해 주세요.</p>
+                                {/* 슬랙 알림과 맞춰 볼 때만 쓰는 내부 번호 — 작은 회색 글씨 */}
+                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{request.shortCode}</p>
                             </div>
                         ) : request ? (
                             <p className="text-sm text-[var(--color-academy-muted)]">
-                                지난 번호 {request.shortCode} · {STATUS_TEXT[request.isExpired && request.status !== "CANCELLED" ? "EXPIRED" : request.status] ?? request.status}
+                                지난 요청 · {PAST_TEXT[pastStatus] ?? pastStatus}
+                                <span className="ml-1 text-xs">{request.shortCode}</span>
                             </p>
-                        ) : (
-                            <p className="text-sm text-[var(--color-academy-muted)]">
-                                토스 POS 로 받을 결제 번호를 만듭니다. 30분 동안 쓸 수 있어요.
-                            </p>
-                        )}
+                        ) : null}
                         <div className="mt-4 flex">
                             <button type="button" onClick={() => void handleCreate()} disabled={busy} className="academy-button-primary ml-auto">
-                                {busy ? "만드는 중…" : "결제 번호 만들기"}
+                                {busy ? "보내는 중…" : "POS로 결제 보내기"}
                             </button>
                         </div>
                     </div>

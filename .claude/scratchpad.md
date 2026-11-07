@@ -67,6 +67,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-08 | developer(claude/pos-auto-charge-site): «현장 결제» 창 단순화 — 플러그인 자동 결제창 전제로 큰 결제 번호·메모 입력 안내·30분·새로고침 제거, «POS로 결제 보내기»→«POS로 보냈어요 · 결제 기다리는 중»(3초 자동 읽기, 탭 숨김·창 닫힘 시 멈춤)·«요청 취소». 서버 매칭·shortCode 그대로(보류·지난 요청 줄 작은 글씨만). tests/pos-charge-modal.test.mjs 3건 신설. tsc 0·npm test 3104-0 | 검수 대기 |
 | 11-07 | developer 수정 1차(claude/pos-charge-request, 검수 권장 5건): ① 동시 웹훅 진 쪽 보류 0행이면 다시 읽어 같은 결제로 PAID 면 처리 끝(슬랙 DM 중복 방지) ② 번호 6자리 S-482193(정규식·CHECK·테스트·문서) ③ 토스 taxExemptAmount ≠ 요청 면세액(또는 못 읽음)이면 HELD ④ 문서 «2호점 학생만» → «현재 단일 지점, 지점 추가 시 필터» ⑤ /admin/pos-plugin 용어 «POS 연결 코드» 통일+유출 시 끊기 안내. tsc 0·npm test 3101-0 | 완료 |
 | 11-07 | developer(claude/pos-charge-request): 토스 POS «현장 결제» 1~3단계+플러그인 서버 API — PosChargeRequest·PosPluginToken 마이그레이션(20261107150000, **운영 미적용**)·순수 규칙 charge-request.mjs·chargeRequestService(웹훅 매칭→자동 납부/HELD)·⚡ «현장 결제» 창·/admin/pos-plugin(토큰 발급·끊기)·/api/pos-plugin 5경로. 플러그인 팀 계약 변경 4건 반영(item.code 매칭·unpaid/{id}/charge·start_failed 중복 1회·taxFreeAmount). 계약 docs 8장. tsc 0·npm test 전체 통과 | 검수 대기 |
 | 11-07 | developer 수정 1차(claude/toss-pos-plugin, 검수 의견 5건): ① 탭에 SENT(이 매장 선점·결제 시작 실패)도 «다시 결제» ② payment.on 은 워커만(탭 등록 제거) ③ 실패 응답 {error,message,retryAfterSeconds} 반영 — NOT_ELIGIBLE/CHANGED/NOT_CLAIMABLE 등 쉬운 안내, 모르는 코드는 서버 문구, 429 는 retryAfter 만큼 대기 ④ 용어 «POS 연결 코드» 통일·알림/탭에서 상품명의 «(가린 이름)» 떼어 이름 1번 ⑤ README «연결 코드 새면 /admin/pos-plugin 에서 바로 끊기». 서버 8장 칸(itemName·studentLabel·paid) 읽기, S-482193 6자리·stizpos_ 모양 테스트, zip 비밀값 검사에 stizpos_ 추가. 테스트 42/42·tsc 0·zip 재검증 OK | 검수 대기 |
