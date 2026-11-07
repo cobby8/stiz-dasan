@@ -31,3 +31,17 @@ export function pickNotifications(requests: ChargeRequest[], log: NotifyLog, now
   for (const id of [...log.keys()]) if (!alive.has(id)) log.delete(id);
   return out;
 }
+
+/** 처음 받은 요청인지(처음이면 버튼을 기다리지 않고 바로 결제창을 연다 — 2026-11-08 원장 요청) */
+export function isFirstNotice(log: NotifyLog, id: string): boolean {
+  return log.get(id)?.count === 1;
+}
+
+/**
+ * 자동으로 결제창을 열지 못했을 때 «결제하기» 버튼 알림을 남겨야 하는지.
+ * - busy(다른 결제 준비 중)·draft_not_empty(결제 화면에 다른 주문)·error(POS 오류) → 나중에 사람이 누를 수 있게 남긴다
+ * - started(열림)·claim_failed(다른 POS 가 가져감·만료)·invalid(금액 검사 실패) → 남기지 않는다
+ */
+export function needsManualFallback(result: string): boolean {
+  return result === "busy" || result === "draft_not_empty" || result === "error";
+}
