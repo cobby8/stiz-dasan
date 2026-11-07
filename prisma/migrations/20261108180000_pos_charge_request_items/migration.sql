@@ -4,7 +4,7 @@
 -- ■ 모양
 --   PosChargeRequest 1건(번호·합계·면세 합계·상태) ─ PosChargeRequestItem N건(청구서별 금액·면세).
 --   요청의 "paymentId" 는 그대로 두고 «대표 청구»(항목 1번)를 넣는다 → 기존 단건 코드·인덱스가 그대로 동작한다.
---   단건 요청도 항목 1개로 같이 적는다(새 코드). 이 파일 적용 전에 만든 요청은 아래 «채우기»로 항목 1개를 만든다.
+--   단건 요청도 항목 1개로 같이 적는다(INSERT 트리거 + 새 코드). 이 파일 적용 전에 만든 요청은 아래 «채우기»로 항목 1개를 만든다.
 --
 -- ■ 같은 청구가 두 «열린» 요청에 들어가지 않게
 --   부분 유일 인덱스는 다른 표(요청 상태)를 볼 수 없어서, 항목에 "open" 표시를 두고 «"open" = true 인 항목의
@@ -18,6 +18,8 @@
 -- 여러 번 실행해도 같은 결과(IF NOT EXISTS / ON CONFLICT DO NOTHING / CREATE OR REPLACE).
 --
 -- 되돌림 SQL:
+--   DROP TRIGGER IF EXISTS "PosChargeRequest_add_rep_item_trg" ON "PosChargeRequest";
+--   DROP FUNCTION IF EXISTS pos_charge_request_add_rep_item();
 --   DROP TRIGGER IF EXISTS "PosChargeRequest_close_items_trg" ON "PosChargeRequest";
 --   DROP FUNCTION IF EXISTS pos_charge_request_close_items();
 --   DROP TABLE IF EXISTS "PosChargeRequestItem";
@@ -60,6 +62,25 @@ CREATE TRIGGER "PosChargeRequest_close_items_trg"
   AFTER UPDATE OF status ON "PosChargeRequest"
   FOR EACH ROW WHEN (OLD.status IS DISTINCT FROM NEW.status)
   EXECUTE FUNCTION pos_charge_request_close_items();
+
+-- 배포 전환 틈 막기(검수 2026-11-08): 요청이 INSERT 되면 «대표 청구» 항목(1번)을 DB 가 바로 넣는다.
+-- 이 파일 적용 뒤·새 코드 배포 전에 옛 코드가 만든 단건 요청도 항목 표의 «열린 항목 유일 인덱스»에 걸린다
+-- (같은 청구가 묶음과 단건 두 열린 요청에 들어가지 않게). 새 코드는 같은 트랜잭션에서 항목을 다시 쓰며
+-- ON CONFLICT ("requestId","paymentId") DO UPDATE 로 이 행을 흡수한다(묶음이면 대표 항목 금액을 그 청구 몫으로 고친다).
+-- 다른 열린 요청에 이미 든 청구면 여기서 유일 위반 → 요청 INSERT 자체가 실패한다(의도).
+CREATE OR REPLACE FUNCTION pos_charge_request_add_rep_item() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO "PosChargeRequestItem" ("requestId", "paymentId", amount, "taxFreeAmount", position, "open")
+  VALUES (NEW.id, NEW."paymentId", NEW.amount, NEW."taxFreeAmount", 1, NEW.status IN ('PENDING','SENT'))
+  ON CONFLICT ("requestId", "paymentId") DO NOTHING;
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS "PosChargeRequest_add_rep_item_trg" ON "PosChargeRequest";
+CREATE TRIGGER "PosChargeRequest_add_rep_item_trg"
+  AFTER INSERT ON "PosChargeRequest"
+  FOR EACH ROW EXECUTE FUNCTION pos_charge_request_add_rep_item();
 
 -- 채우기: 이 파일 적용 전에 만든 요청(전부 단건)에 항목 1개. 열린 요청만 open=true.
 INSERT INTO "PosChargeRequestItem" ("requestId", "paymentId", amount, "taxFreeAmount", position, "open", "createdAt")

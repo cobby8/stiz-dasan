@@ -296,11 +296,18 @@ const INSERT_SQL = `WITH want AS (
          AND (SELECT count(DISTINCT ok."studentId") FROM ok) = 1
       RETURNING id`;
 
-/** 묶인 청구 항목 — 같은 트랜잭션에서 요청 바로 뒤에. 금액은 위에서 확인한 DB 값($3), 면세는 taxFreeAmountFor($4). */
+/**
+ * 묶인 청구 항목 — 같은 트랜잭션에서 요청 바로 뒤에. 금액은 위에서 확인한 DB 값($3), 면세는 taxFreeAmountFor($4).
+ * 요청 INSERT 트리거(pos_charge_request_add_rep_item)가 대표 청구 항목(1번, 금액 = 요청 합계)을 먼저 넣어 두므로
+ * 같은 (요청, 청구) 행은 ON CONFLICT 로 덮어써 흡수한다 — 대표 항목이 두 줄 생기지 않고, 묶음이면 대표 항목 금액이 그 청구 몫으로 고쳐진다.
+ * RETURNING 은 새로 넣은 행·덮어쓴 행 모두 돌려주므로 행 수 = 청구 수.
+ */
 const INSERT_ITEMS_SQL = `INSERT INTO "PosChargeRequestItem" ("requestId", "paymentId", amount, "taxFreeAmount", position)
       SELECT $1, p.id, u.amt, u.tf, u.ord::int
         FROM unnest($2::text[], $3::int[], $4::int[]) WITH ORDINALITY AS u(pid, amt, tf, ord)
         JOIN "Payment" p ON p.id = u.pid AND p.amount = u.amt AND p.status IN ('PENDING', 'OVERDUE')
+      ON CONFLICT ("requestId", "paymentId") DO UPDATE
+         SET amount = EXCLUDED.amount, "taxFreeAmount" = EXCLUDED."taxFreeAmount", position = EXCLUDED.position
       RETURNING id`;
 
 /**
@@ -712,14 +719,21 @@ export async function cancelChargeRequestByAdmin(input: { requestId: string; adm
         input.adminUserId,
     );
     if (rows.length === 0) throw new ChargeRequestError("NOT_CLAIMABLE", "이미 끝났거나 취소된 요청입니다.");
-    await recordPaymentAudit({
-        paymentId: rows[0].paymentId,
-        actorType: "ADMIN",
-        actorId: input.adminUserId,
-        action: "POS_CHARGE_REQUEST_CANCELLED",
-        message: `현장 결제 요청 ${rows[0].shortCode} 취소`,
-        metadata: { requestId: rows[0].id },
-    }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+    // 감사 기록은 묶인 청구마다(청구 상세 이력에서 각자 보이게). 항목이 없는 옛 요청은 대표 청구 1건.
+    const found = await prisma.$queryRawUnsafe<{ paymentId: string }[]>(ITEMS_SQL, [rows[0].id]);
+    const paymentIds = found && found.length > 0 ? [...new Set(found.map((it) => it.paymentId))] : [rows[0].paymentId];
+    for (const paymentId of paymentIds) {
+        await recordPaymentAudit({
+            paymentId,
+            actorType: "ADMIN",
+            actorId: input.adminUserId,
+            action: "POS_CHARGE_REQUEST_CANCELLED",
+            message: paymentIds.length > 1
+                ? `현장 결제 요청 ${rows[0].shortCode} 취소 (묶음 ${paymentIds.length}건)`
+                : `현장 결제 요청 ${rows[0].shortCode} 취소`,
+            metadata: { requestId: rows[0].id, ...(paymentIds.length > 1 ? { bundleSize: paymentIds.length } : {}) },
+        }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+    }
 }
 
 // ───────────────────────────── 플러그인 API ─────────────────────────────
@@ -1084,7 +1098,9 @@ export async function matchChargeRequestsForOrder(input: {
     } catch (error) {
         const message = redact((error as Error).message);
         console.error("[pos-charge] 자동 납부 반영 실패:", message, { requestId: request.id });
-        // 대표 청구로 판단한다 — 묶음은 한 트랜잭션이라 대표가 미납이면 전부 미납이다.
+        // 대표 청구로 판단한다 — 묶음 납부(markPaymentsPaidTogether)는 한 트랜잭션이라 대표가 미납이면 전부 미납이다.
+        // ⚠️ 이 판단은 «묶음 = 한 트랜잭션»에 기대고 있다. 묶음 경로에 단건 markPaymentPaid 를 건마다 섞어 부르면
+        //    일부만 납부된 채 여기서 «미납»으로 보고 HOLD 해 버린다 — 섞지 말 것(writeLedgerPaid 참고).
         const now = await prisma.$queryRawUnsafe<{ status: string }[]>(`SELECT status FROM "Payment" WHERE id = $1`, claimed[0].paymentId);
         if (now[0]?.status !== "PAID") {
             // 납부가 안 됐다 → 보류로 돌리고 기존 슬랙 확인 흐름에 맡긴다(돈이 들어온 건 사실이므로 사람이 확인).

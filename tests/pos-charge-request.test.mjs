@@ -356,6 +356,7 @@ const PRISMA_STUB = toDataUrl(`
       if (/INSERT INTO "PosChargeRequest" \\(/.test(sql)) return S().insertRows ?? [];
       if (/INSERT INTO "PosChargeRequestItem"/.test(sql)) { if (S().itemInsertThrows) throw new Error(S().itemInsertThrows); return S().itemInsertRows ?? []; }
       if (/FROM "Payment" WHERE id = ANY/.test(sql)) return S().payments ?? [];
+      if (/SET status = 'CANCELLED', "cancelledAt" = now\\(\\), "cancelledBy" = \\$2/.test(sql)) return S().cancelRows ?? [];
       if (/SET "cancelState" = 'DONE'/.test(sql)) return S().markRefundRows ?? [{ id: "r1" }];
       if (/SELECT action, "actorType", "actorId" FROM "PaymentAuditLog"/.test(sql)) return S().lastLedger ? [S().lastLedger] : [];
       if (/FROM "PaymentAuditLog"/.test(sql)) return S().auditIds ? [{ ids: S().auditIds }] : [];
@@ -1803,4 +1804,73 @@ test("묶음 화면: 납부 처리 창 → 같은 학생 여러 건 현장 결�
   assert.doesNotMatch(record + (await readFile("src/lib/payments/bankTransferRecord.ts", "utf8")), /곧 추가됩니다/);
   const actions = await readFile(ACTIONS, "utf8");
   assert.match(actions, /getChargeRequestForPayments\(ids\)/);
+});
+
+// ── 검수 반영(2026-11-08): 배포 전환 틈 · 요청 취소 감사 기록 · 청구 id 모양 ──
+
+test("배포 전환 틈: 요청 INSERT 트리거가 대표 청구 항목(1번)을 넣어 옛 코드의 단건도 열린 항목 유일 인덱스에 걸린다", async () => {
+  const m = await readFile(BUNDLE_MIGRATION, "utf8");
+  const fnStart = m.indexOf("CREATE OR REPLACE FUNCTION pos_charge_request_add_rep_item()");
+  const fn = m.slice(fnStart, m.indexOf("END $$;", fnStart));
+  assert.match(fn, /INSERT INTO "PosChargeRequestItem" \("requestId", "paymentId", amount, "taxFreeAmount", position, "open"\)/);
+  assert.match(fn, /VALUES \(NEW\.id, NEW\."paymentId", NEW\.amount, NEW\."taxFreeAmount", 1, NEW\.status IN \(/);
+  const open = /NEW\.status IN \(([^)]*)\)\)/.exec(fn);
+  assert.deepEqual(listIn(open[1]).sort(), [...R.OPEN_CHARGE_STATUSES].sort());
+  // 흡수는 «같은 요청·같은 청구»만 — 다른 열린 요청에 든 청구(열린 항목 유일 인덱스)는 삼키지 않고 실패시킨다
+  assert.match(fn, /ON CONFLICT \("requestId", "paymentId"\) DO NOTHING;/);
+  assert.doesNotMatch(fn, /ON CONFLICT DO NOTHING/);
+  assert.match(m, /CREATE TRIGGER "PosChargeRequest_add_rep_item_trg"\s+AFTER INSERT ON "PosChargeRequest"\s+FOR EACH ROW EXECUTE FUNCTION pos_charge_request_add_rep_item\(\);/);
+  assert.match(m, /--\s+DROP TRIGGER IF EXISTS "PosChargeRequest_add_rep_item_trg" ON "PosChargeRequest";/);
+  assert.match(m, /--\s+DROP FUNCTION IF EXISTS pos_charge_request_add_rep_item\(\);/);
+  // 트리거는 표를 만든 뒤에(항목 표가 있어야 함)
+  assert.ok(m.indexOf('CREATE TABLE IF NOT EXISTS "PosChargeRequestItem"') < m.indexOf('CREATE TRIGGER "PosChargeRequest_add_rep_item_trg"'));
+});
+
+test("배포 전환 틈: 새 코드의 항목 INSERT 는 트리거가 넣은 대표 행을 ON CONFLICT 로 덮어써 흡수(대표 항목 중복 없음 · 묶음 대표 금액 교정)", async () => {
+  await runCreate({
+    payments: BUNDLE_PAYMENTS,
+    viewRows: (sql) => (/WHERE r\.id = \$1/.test(sql) ? [bundleView()] : []),
+    insertRows: [{ id: "r9" }],
+    itemInsertRows: [{ id: "i1" }, { id: "i2" }],
+    items: BUNDLE_ITEMS.map((it) => ({ ...it, requestId: "r9" })),
+  }, ["p-nov", "p-oct"]);
+  const items = globalThis.__cs.calls.find((c) => /INSERT INTO "PosChargeRequestItem"/.test(c.sql));
+  assert.match(items.sql, /ON CONFLICT \("requestId", "paymentId"\) DO UPDATE\s+SET amount = EXCLUDED\.amount, "taxFreeAmount" = EXCLUDED\."taxFreeAmount", position = EXCLUDED\.position/);
+  // 대표 청구(1번 항목) = 요청의 paymentId — 트리거가 넣는 행과 새 코드의 1번 항목이 같은 (요청, 청구)
+  const ins = globalThis.__cs.calls.find((c) => /INSERT INTO "PosChargeRequest" \(/.test(c.sql));
+  assert.match(ins.sql, /\(SELECT ok\.id FROM ok ORDER BY ok\.ord LIMIT 1\)/);
+  // 행 수 확인(덮어쓴 대표 행도 RETURNING 에 나온다) — 하나라도 모자라면 CHANGED 로 전부 되돌림
+  const short = await runCreate({ payments: BUNDLE_PAYMENTS, viewRows: () => [], insertRows: [{ id: "r9" }], itemInsertRows: [{ id: "i1" }] }, ["p-nov", "p-oct"]);
+  assert.equal(short.code, "CHANGED");
+});
+
+test("요청 취소: 감사 기록을 묶인 청구마다(항목 없는 옛 요청은 대표 청구 1건)", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelRows: [{ id: "r1", paymentId: "p-oct", shortCode: "S-482193" }], items: BUNDLE_ITEMS };
+  await svc.cancelChargeRequestByAdmin({ requestId: "r1", adminUserId: "admin-1" });
+  let audits = globalThis.__cs.audits.filter((a) => a.action === "POS_CHARGE_REQUEST_CANCELLED");
+  assert.deepEqual(audits.map((a) => a.paymentId), ["p-oct", "p-nov"]);
+  assert.match(audits[0].message, /묶음 2건/);
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-482193" }] };
+  await svc.cancelChargeRequestByAdmin({ requestId: "r1", adminUserId: "admin-1" });
+  audits = globalThis.__cs.audits.filter((a) => a.action === "POS_CHARGE_REQUEST_CANCELLED");
+  assert.deepEqual(audits.map((a) => a.paymentId), ["p-nov"]);
+  assert.equal(audits[0].message, "현장 결제 요청 S-482193 취소");
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelRows: [] };
+  await assert.rejects(svc.cancelChargeRequestByAdmin({ requestId: "r1", adminUserId: "admin-1" }), (e) => e.code === "NOT_CLAIMABLE");
+});
+
+test("관리자 동작: 청구 id 에 문자열 아닌 값·빈 값이 하나라도 섞이면 통째로 거절(빈 배열)", async () => {
+  const src = await readFile(ACTIONS, "utf8");
+  const start = src.indexOf("function paymentIdsOf");
+  const body = src.slice(start, src.indexOf("\n}\n", start) + 2);
+  const js = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const paymentIdsOf = new Function(`${js}; return paymentIdsOf;`)();
+  assert.deepEqual(paymentIdsOf("p-1"), ["p-1"]);
+  assert.deepEqual(paymentIdsOf(["p-1", "p-2"]), ["p-1", "p-2"]);
+  assert.deepEqual(paymentIdsOf(["p-1", 2]), [], "숫자가 섞이면 거절");
+  assert.deepEqual(paymentIdsOf(["p-1", { id: "p-2" }]), []);
+  assert.deepEqual(paymentIdsOf(["p-1", ""]), [], "빈 값이 섞이면 거절");
+  assert.deepEqual(paymentIdsOf([null]), []);
+  assert.deepEqual(paymentIdsOf(Array.from({ length: 21 }, (_, i) => `p-${i}`)), []);
 });

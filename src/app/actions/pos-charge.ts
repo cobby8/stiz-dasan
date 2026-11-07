@@ -52,7 +52,10 @@ function failure(error: unknown, fallback: string): { ok: false; message: string
 function paymentIdsOf(value: unknown): string[] {
     const list = Array.isArray(value) ? value : [value];
     if (list.length > 20) return [];
-    return list.map((v) => (typeof v === "string" ? v : "")).filter((v) => v.length > 0);
+    // 문자열이 아니거나 빈 값이 하나라도 섞이면 통째로 거절(빈 배열 → 서버가 «찾지 못함»). 일부만 걸러 보내면
+    // 사용자가 고른 것과 다른 묶음이 만들어질 수 있다.
+    if (list.some((v) => typeof v !== "string" || v.trim().length === 0)) return [];
+    return list as string[];
 }
 
 /** 청구서의 현재(또는 가장 최근) 현장 결제 요청. 여러 건이면 정확히 그 묶음으로 만든 요청 */
