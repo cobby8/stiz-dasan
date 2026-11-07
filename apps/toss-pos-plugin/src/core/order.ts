@@ -128,7 +128,8 @@ export function notificationMessage(req: ChargeRequest): string {
   return `${req.studentName} ${titleWithoutName(req)} ${formatWon(req.amount)} 현장 결제 요청 (${req.shortCode})`;
 }
 
-export type DraftCheck = { ok: boolean; detail: string };
+/** settled = 주문 합계가 계산돼 있음(0보다 큼). 0이면 아직 재계산 전일 수 있어 할인·봉사료를 못 본 상태다 */
+export type DraftCheck = { ok: boolean; settled: boolean; detail: string };
 
 /**
  * 결제 화면에 담은 뒤 «정말 우리 요청 그대로 들어갔는지» 판단(2026-11-08 운영 사고 S-704715 로 기준 변경).
@@ -166,7 +167,7 @@ export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req
   if (ok && typeof taxFree === "boolean" && taxFree !== expectedTaxFree) ok = false;
   // 합계가 계산돼 있고(0보다 큼) 금액과 다르면 할인·봉사료 등이 붙은 것 — 그대로 결제하면 금액이 틀린다
   if (ok && typeof total === "number" && total > 0 && total !== req.amount) ok = false;
-  return { ok, detail };
+  return { ok, settled: typeof total === "number" && total > 0, detail };
 }
 
 function fmt(v: unknown): string {

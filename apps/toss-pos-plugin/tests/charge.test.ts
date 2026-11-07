@@ -316,6 +316,22 @@ test("담은 직후 아직 안 보이면 짧게 다시 읽고(최대 3번) 열�
   assert.equal(log.filter((l) => l === "draft.get").length, 2 + 3);
 });
 
+test("합계가 처음엔 0이었다가 뒤늦게 할인이 붙으면: 끝까지 다시 읽어 잡아내고 결제 화면을 열지 않는다", async () => {
+  const { sdk, log } = fakeSdk({ afterAdd: (item, n) => readback(item, { total: n < 2 ? 0 : 90000 }) });
+  const { api } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "invalid");
+  assert.ok(!log.includes("draft.startPayment"));
+});
+
+test("합계가 처음부터 계산돼 있으면(금액과 같음) 다시 읽지 않고 바로 연다", async () => {
+  const { sdk, log } = fakeSdk({ afterAdd: (item) => readback(item, { total: REQ.amount }) });
+  const { api } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.equal(log.filter((l) => l === "draft.get").length, 2 + 1);
+});
+
 test("금액 불일치: 비우고 멈추며, 서버 보고에 실제 값(항목가·수량·합계·면세)을 남긴다", async () => {
   const cases: Array<[string, Parameters<typeof readback>[1], string]> = [
     ["자동 할인으로 합계가 다름", { total: 90000 }, "total=90000"],

@@ -143,7 +143,9 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       // 6) 들어간 결과를 «다시 읽어» 확인한다. addLineItem 반환값은 합계 재계산 전일 수 있어(2026-11-08 S-704715)
       //    판단에 쓰지 않는다. 기준 = 우리 항목 1개 · 항목가×수량 = 금액 · 면세 일치 · 메모 번호(order.ts checkDraftAfterAdd)
       let check = checkDraftAfterAdd(await sdk.draftOrder.get(), claimed);
-      for (let i = 1; i < DRAFT_RECHECK_TRIES && !check.ok; i++) {
+      // 통과했어도 합계가 아직 0(재계산 전)이면 끝까지 다시 읽는다 — 자동 할인·봉사료가 뒤늦게 붙는 경우를 잡기 위해.
+      // 마지막 시도까지 합계가 0이면 항목 기준 판단으로 통과(검수 권장 2026-11-08)
+      for (let i = 1; i < DRAFT_RECHECK_TRIES && (!check.ok || !check.settled); i++) {
         await sleep(DRAFT_RECHECK_GAP_MS);
         check = checkDraftAfterAdd(await sdk.draftOrder.get(), claimed);
       }
