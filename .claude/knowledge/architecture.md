@@ -108,3 +108,9 @@
 - **발견자**: developer
 - **내용**: 관리자 「신규 셔틀 신청」 탭은 폐지(`/admin/shuttle/intake` → `/admin/shuttle/regular-dispatch?month=` redirect). 정규배차 요일 탭 아래 `NewStudentDispatchPanel`(목록 기준 = `getDriverAssignBoard`, 기사 검토 배지·요청 = 기존 `/api/admin/shuttle/intake`)이 칩 → 모달로 `AssignLegView` 를 띄운다. 기사님 `/staff/shuttle/assign` 도 같은 `src/components/shuttle/assign/AssignLegView.tsx` 를 쓴다 — **한 칸 배정 UI를 고칠 땐 이 파일 하나**(사본 금지, 테스트가 `function AssignView(` 부재 확인). 넣기 API 는 둘 다 `/api/staff/shuttle/assign`(관리자도 requireStaff·authorizeAssign 통과), 감사 via 는 관리자 역할 + body.source="ADMIN_DISPATCH" 일 때만 ADMIN_DISPATCH. 넣은 뒤 RouteSection 은 `refreshKey`(월×1000+횟수)로 다시 읽되 저장 안 한 편집(dirty)이 있으면 덮지 않는다. 기사 검토 화면(ShuttleIntakeClient driver 모드)은 그대로.
 - **참조횟수**: 0
+
+### [2026-11-07] 체육관 대관 = 순수 규칙(gym-rental-rules) + DB 연결부(db 인자) + 알림 + EXCLUDE 제약
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 공개 `/rental`(로그인 없음) → 관리자 `/admin/rental`(사이드바 «요청·신청함»). 요금·1시간 칸·상태 전이·문자 문구는 `src/lib/rental/gym-rental-rules.ts` 한 곳(화면 실시간 표시와 서버 저장 직전 재계산이 같은 함수). DB 는 `gym-rental-service.ts`(prisma import 없음, db 인자 → 가짜 DB 테스트). 가능 칸 = 09~22시 중 Class(dayOfWeek Mon~Sun)·SpecialProgramSessionDate(취소 제외)·승인된 대관과 안 겹치고 아직 시작 안 한 칸. 연간일정 휴무일은 열지 않음(보수적). 이중 확정 방지 = 승인 시 FOR UPDATE + 날짜 advisory lock + **EXCLUDE USING gist(tstzrange(startAt,endAt)) WHERE status IN 승인 이후 4종** — 코드 `RENTAL_HOLDING_STATUSES` 와 같은 집합인지 테스트가 비교. 알림 `gym-rental-notify.ts`: 원장 = 규칙 RENTAL_NEW_ADMIN(끄면 문자·슬랙·앱 알림 모두 멈춤 → 운영 시험 때 이걸로 막음), 신청자 3종 = env `RENTAL_APPLICANT_SMS_ENABLED=1` **그리고** 규칙 켜기(둘 다 꺼진 채 배포). 계좌는 env `RENTAL_BANK_ACCOUNT`(기본 하나은행) — 신청 완료 화면·승인 문자에만.
+- **참조횟수**: 0

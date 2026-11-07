@@ -63,6 +63,7 @@ const NAV_GROUPS = [
       { href: "/seasonal", label: "방학특강" },
       { href: "/schedule", label: "수업시간표" },
       { href: "/annual", label: "연간일정표" },
+      { href: "/rental", label: "체육관 대관" },
     ],
   },
   {

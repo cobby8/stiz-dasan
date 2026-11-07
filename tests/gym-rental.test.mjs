@@ -1,0 +1,280 @@
+// 체육관 대관 — 요금·가능 시간·상태 전이·DB 제약 일치·알림 스위치를 실제로 실행해 검증한다.
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { loadTsModule } from "./_ts-module.mjs";
+
+const rules = await loadTsModule("src/lib/rental/gym-rental-rules.ts");
+const service = await loadTsModule("src/lib/rental/gym-rental-service.ts");
+const kst = await loadTsModule("src/lib/datetime/kst.ts");
+const read = (p) => readFileSync(p, "utf8");
+const MIGRATION = read("prisma/migrations/20261107120000_add_gym_rental_request/migration.sql");
+
+test("요금: 2시간·12명·냉난방 = 이용료 92,000 + 보증금 20,000 = 112,000", () => {
+  const fee = rules.calculateRentalFee({ hours: 2, headcount: 12, useAircon: true });
+  assert.equal(fee.baseFee, 70_000);
+  assert.equal(fee.airconFee, 10_000);
+  assert.equal(fee.extraPeopleFee, 12_000);
+  assert.equal(fee.usageFee, 92_000);
+  assert.equal(fee.deposit, 20_000);
+  assert.equal(fee.total, 112_000);
+});
+
+test("요금: 1시간·10명·냉난방 없음 = 40,000 + 보증금, 10명까지는 추가 없음", () => {
+  const fee = rules.calculateRentalFee({ hours: 1, headcount: 10, useAircon: false });
+  assert.equal(fee.usageFee, 40_000);
+  assert.equal(fee.total, 60_000);
+  assert.equal(rules.calculateRentalFee({ hours: 3, headcount: 11, useAircon: false }).usageFee, 40_000 + 60_000 + 9_000);
+});
+
+test("요금: 범위 밖 시간·인원은 거절", () => {
+  assert.throws(() => rules.calculateRentalFee({ hours: 0, headcount: 5, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ hours: rules.RENTAL_MAX_HOURS + 1, headcount: 5, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ hours: 1, headcount: 0, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ hours: 1, headcount: rules.RENTAL_MAX_HEADCOUNT + 1, useAircon: false }));
+});
+
+const MON = "2026-11-09"; // 월요일
+const CLASSES = [
+  { dayOfWeek: "Mon", startTime: "16:00", endTime: "16:55" },
+  { dayOfWeek: "Mon", startTime: "19:20", endTime: "20:35" },
+  { dayOfWeek: "Tue", startTime: "09:00", endTime: "12:00" }, // 다른 요일 — 월요일 칸에 영향 없음
+];
+
+test("가능 시간: 그 요일 수업과 겹치는 칸만 막고, 끝나는 시각과 시작 시각이 같으면 안 겹친다", () => {
+  assert.equal(kst.kstDow(MON), 1);
+  const slots = rules.buildRentalSlots({ date: MON, classes: CLASSES, busy: [], nowMs: kst.kstAt("2026-11-01", "00:00") });
+  const by = Object.fromEntries(slots.map((s) => [s.hour, s.reason]));
+  assert.equal(slots[0].hour, rules.RENTAL_OPEN_HOUR);
+  assert.equal(slots.at(-1).hour, rules.RENTAL_CLOSE_HOUR - 1);
+  assert.equal(by[9], "OPEN"); // 화요일 수업은 무관
+  assert.equal(by[15], "OPEN");
+  assert.equal(by[16], "CLASS");
+  assert.equal(by[17], "OPEN"); // 16:55 종료 → 17시 칸 비어 있음
+  assert.equal(by[19], "CLASS");
+  assert.equal(by[20], "CLASS"); // 20:35 종료 → 20시 칸 막힘
+  assert.equal(by[21], "OPEN");
+});
+
+test("가능 시간: 지난 시각·승인된 대관·특강 회차는 막힌다", () => {
+  const slots = rules.buildRentalSlots({
+    date: MON,
+    classes: CLASSES,
+    busy: [{ startMinute: 10 * 60 + 30, endMinute: 11 * 60 }], // 특강 10:30~11:00
+    bookedBusy: [{ startMinute: 13 * 60, endMinute: 15 * 60 }], // 승인 대관 13~15시
+    nowMs: kst.kstAt(MON, "09:30"),
+  });
+  const by = Object.fromEntries(slots.map((s) => [s.hour, s.reason]));
+  assert.equal(by[9], "PAST");
+  assert.equal(by[10], "CLASS");
+  assert.equal(by[11], "OPEN");
+  assert.equal(by[13], "BOOKED");
+  assert.equal(by[14], "BOOKED");
+  assert.equal(rules.maxContinuousHours(slots, 11), 2); // 11,12 → 13시 막힘
+  assert.equal(rules.isRangeAvailable(slots, 11, 2), true);
+  assert.equal(rules.isRangeAvailable(slots, 11, 3), false);
+  assert.equal(rules.isRangeAvailable(slots, 16, 1), false);
+});
+
+test("KST 시각: 정시 → 절대 시각이 한국 시간 기준(UTC 서버에서도 같은 값)", () => {
+  assert.equal(new Date(rules.rentalInstantMs(MON, 9)).toISOString(), "2026-11-09T00:00:00.000Z");
+  assert.equal(new Date(rules.rentalInstantMs(MON, 22)).toISOString(), "2026-11-09T13:00:00.000Z");
+  assert.equal(new Date(rules.rentalInstantMs("2026-12-31", 24)).toISOString(), "2026-12-31T15:00:00.000Z");
+});
+
+test("신청 가능 날짜: 오늘부터 정해진 날 수까지만", () => {
+  assert.equal(rules.isBookableDate("2026-11-07", "2026-11-07"), true);
+  assert.equal(rules.isBookableDate("2026-11-06", "2026-11-07"), false);
+  assert.equal(rules.isBookableDate(kst.addDaysKst("2026-11-07", rules.RENTAL_BOOKING_DAYS), "2026-11-07"), true);
+  assert.equal(rules.isBookableDate(kst.addDaysKst("2026-11-07", rules.RENTAL_BOOKING_DAYS + 1), "2026-11-07"), false);
+  assert.equal(rules.isBookableDate("2026-02-30", "2026-01-01"), false);
+});
+
+test("DB 제약과 코드 상태 목록이 같은 집합이다(EXCLUDE·CHECK)", () => {
+  const exclude = /EXCLUDE USING gist[\s\S]*?WHERE \(status IN \(([^)]*)\)\)/.exec(MIGRATION);
+  assert.ok(exclude, "EXCLUDE 제약이 있어야 한다");
+  const holding = exclude[1].match(/'([A-Z_]+)'/g).map((s) => s.slice(1, -1)).sort();
+  assert.deepEqual(holding, [...rules.RENTAL_HOLDING_STATUSES].sort());
+  const check = /status IN \(('REQUESTED'[^)]*)\)/.exec(MIGRATION);
+  const all = check[1].match(/'([A-Z_]+)'/g).map((s) => s.slice(1, -1)).sort();
+  assert.deepEqual(all, [...rules.RENTAL_STATUSES].sort());
+  // RLS·권한 회수
+  assert.match(MIGRATION, /ALTER TABLE "GymRentalRequest" ENABLE ROW LEVEL SECURITY/);
+  assert.match(MIGRATION, /REVOKE ALL ON "GymRentalRequest" FROM %I/);
+  // 신청자 문자 규칙은 꺼진 채로 만든다
+  for (const trigger of ["RENTAL_RECEIVED_APPLICANT", "RENTAL_APPROVED_APPLICANT", "RENTAL_CONFIRMED_APPLICANT"]) {
+    assert.match(MIGRATION, new RegExp(`'${trigger}'[^\\n]*'EXTERNAL', 'PARENT', false`), trigger);
+  }
+});
+
+test("상태 전이: 승인 → 입금 확인 → 사용 완료 → 환불, 거절은 승인 전만", () => {
+  assert.deepEqual(rules.allowedRentalActions("REQUESTED").sort(), ["approve", "reject"]);
+  assert.deepEqual(rules.allowedRentalActions("APPROVED").sort(), ["cancel", "confirmPayment"]);
+  assert.deepEqual(rules.allowedRentalActions("PAID").sort(), ["cancel", "complete"]);
+  assert.deepEqual(rules.allowedRentalActions("COMPLETED"), ["refund"]);
+  for (const done of ["REFUNDED", "REJECTED", "CANCELLED"]) assert.deepEqual(rules.allowedRentalActions(done), []);
+  for (const s of rules.RENTAL_STATUSES) assert.ok(rules.RENTAL_STATUS_LABEL[s], s);
+});
+
+const SAMPLE = {
+  applicantName: "김대관", applicantPhone: "01012345678", rentalDate: MON, startHour: 10, endHour: 12,
+  headcount: 12, useAircon: true, usageFee: 92_000, deposit: 20_000, totalAmount: 112_000, purpose: "동호회 연습",
+};
+
+test("문자 문구: 계좌는 승인 문자에만, 원장 알림·접수 문자에는 없다", () => {
+  const account = rules.resolveRentalBankAccount("");
+  assert.equal(account, "하나은행 55491019425407 (예금주 권혜미)");
+  assert.equal(rules.resolveRentalBankAccount(" 국민 123 (홍) "), "국민 123 (홍)");
+  const approved = rules.buildRentalApprovedApplicantSms(SAMPLE, account);
+  assert.match(approved, /55491019425407/);
+  assert.match(approved, /112,000원/);
+  assert.doesNotMatch(rules.buildRentalReceivedApplicantSms(SAMPLE), /55491019425407/);
+  assert.doesNotMatch(rules.buildRentalAdminAlert(SAMPLE), /55491019425407/);
+  assert.match(rules.buildRentalAdminAlert(SAMPLE), /2026년 11월 9일\(월\) 10:00~12:00/);
+  assert.match(rules.buildRentalConfirmedApplicantSms(SAMPLE), /실내운동화/);
+  assert.match(rules.buildRentalConfirmedApplicantSms(SAMPLE), /주민센터 주차장/);
+});
+
+test("휴대폰 번호 정리: 숫자만, 010 형식만", () => {
+  assert.equal(rules.normalizeRentalPhone("010-1234-5678"), "01012345678");
+  assert.equal(rules.normalizeRentalPhone("02-123-4567"), "");
+  assert.equal(rules.normalizeRentalPhone("abc"), "");
+  assert.equal(rules.formatRentalPhone("01012345678"), "010-1234-5678");
+});
+
+// ── 가짜 DB 로 서비스 실행 ─────────────────────────────────────────────────
+function fakeDb({ rentals = [], counts = { phone10: 0, phoneDay: 0, all10: 0 }, existing = [] } = {}) {
+  const calls = [];
+  const db = {
+    calls,
+    inserted: null,
+    async $queryRawUnsafe(sql, ...values) {
+      calls.push({ sql, values });
+      if (sql.includes(`FROM "Class"`)) return CLASSES;
+      if (sql.includes(`"SpecialProgramSessionDate"`)) return [];
+      if (sql.includes(`AS "startsAt"`)) return rentals;
+      if (sql.includes("COUNT(*) FILTER")) return [counts];
+      if (sql.startsWith(`SELECT id, "rentalDate"`) && sql.includes(`"applicantPhone" = $1 AND "rentalDate"`)) return existing;
+      if (sql.includes(`INSERT INTO "GymRentalRequest"`)) {
+        db.inserted = values;
+        return [{ id: "00000000-0000-4000-8000-000000000001", rentalDate: values[0], startHour: values[1], endHour: values[2],
+          headcount: values[5], useAircon: values[6], applicantName: values[7], applicantPhone: values[8], purpose: values[9],
+          usageFee: values[10], deposit: values[11], totalAmount: values[12], status: "REQUESTED" }];
+      }
+      throw new Error(`예상 못 한 SQL: ${sql.slice(0, 60)}`);
+    },
+    async $executeRawUnsafe() { return 1; },
+  };
+  return db;
+}
+
+const NOW = kst.kstAt("2026-11-07", "12:00");
+const GOOD = {
+  rentalDate: MON, startHour: 10, hours: 2, headcount: 12, useAircon: true,
+  applicantName: " 김대관 ", applicantPhone: "010-1234-5678", purpose: "동호회 연습", agreedRules: true,
+  usageFee: 1, totalAmount: 1, // 화면이 보낸 금액은 무시돼야 한다
+};
+
+test("신청: 금액은 서버가 다시 계산하고, KST 기준 절대 시각을 저장한다", async () => {
+  const db = fakeDb();
+  const result = await service.createRentalRequest(db, GOOD, NOW);
+  assert.equal(result.ok, true);
+  assert.equal(result.duplicate, false);
+  const v = db.inserted;
+  assert.equal(v[3], "2026-11-09T01:00:00.000Z"); // 10시 KST
+  assert.equal(v[4], "2026-11-09T03:00:00.000Z"); // 12시 KST
+  assert.equal(v[7], "김대관");
+  assert.equal(v[8], "01012345678");
+  assert.deepEqual([v[10], v[11], v[12]], [92_000, 20_000, 112_000]);
+});
+
+test("신청: 수업 시간·승인된 대관과 겹치면 거절, 동의·목적 없으면 거절", async () => {
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, startHour: 16, hours: 1 }, NOW)).ok, false);
+  const booked = fakeDb({ rentals: [{ startsAt: "2026-11-09T02:00:00.000Z", endsAt: "2026-11-09T03:00:00.000Z" }] }); // 11~12시
+  assert.equal((await service.createRentalRequest(booked, GOOD, NOW)).ok, false);
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, agreedRules: false }, NOW)).ok, false);
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, purpose: "  " }, NOW)).ok, false);
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, applicantPhone: "123" }, NOW)).ok, false);
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, rentalDate: "2026-11-06" }, NOW)).ok, false);
+});
+
+test("신청: 같은 연락처 반복은 막고, 같은 시간 재신청은 새로 만들지 않는다", async () => {
+  const limited = fakeDb({ counts: { phone10: service.RENTAL_RATE_LIMIT.perPhone10Min, phoneDay: 0, all10: 0 } });
+  const r = await service.createRentalRequest(limited, GOOD, NOW);
+  assert.equal(r.ok, false);
+  assert.equal(limited.inserted, null);
+  const dup = fakeDb({ existing: [{ id: "x", status: "REQUESTED" }] });
+  const d = await service.createRentalRequest(dup, GOOD, NOW);
+  assert.equal(d.ok, true);
+  assert.equal(d.duplicate, true);
+  assert.equal(dup.inserted, null);
+});
+
+function fakeTx({ status = "REQUESTED", clash = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async $queryRawUnsafe(sql, ...values) {
+      calls.push({ sql, values });
+      if (sql.includes("FOR UPDATE")) return [{ id: values[0], status, rentalDate: MON, deposit: 20_000 }];
+      if (sql.includes(`FROM "GymRentalRequest" o`)) return clash ? [{ id: "other" }] : [];
+      if (sql.startsWith(`UPDATE "GymRentalRequest"`)) return [{ id: values[0], status: values[1] }];
+      throw new Error(`예상 못 한 SQL: ${sql.slice(0, 60)}`);
+    },
+    async $executeRawUnsafe(sql, ...values) { calls.push({ sql, values }); return 1; },
+  };
+}
+const ID = "00000000-0000-4000-8000-000000000001";
+
+test("승인: 그날 잠금 후 겹치는 승인 대관이 있으면 거절, 없으면 APPROVED", async () => {
+  const tx = fakeTx();
+  const ok = await service.transitionRentalInTx(tx, ID, "approve", "admin");
+  assert.equal(ok.ok, true);
+  assert.equal(ok.request.status, "APPROVED");
+  assert.ok(tx.calls.some((c) => c.sql.includes("pg_advisory_xact_lock") && c.values[0] === `gym-rental:${MON}`));
+  const clash = await service.transitionRentalInTx(fakeTx({ clash: true }), ID, "approve", "admin");
+  assert.equal(clash.ok, false);
+});
+
+test("상태 전이: 맞지 않는 상태·잘못된 환불 금액은 거절", async () => {
+  assert.equal((await service.transitionRentalInTx(fakeTx({ status: "PAID" }), ID, "approve", "a")).ok, false);
+  assert.equal((await service.transitionRentalInTx(fakeTx({ status: "COMPLETED" }), ID, "refund", "a", { depositRefunded: 25_000 })).ok, false);
+  const refund = fakeTx({ status: "COMPLETED" });
+  assert.equal((await service.transitionRentalInTx(refund, ID, "refund", "a", { depositRefunded: 15_000 })).ok, true);
+  const update = refund.calls.find((c) => c.sql.startsWith(`UPDATE "GymRentalRequest"`));
+  assert.equal(update.values[3], 15_000);
+  assert.equal((await service.transitionRentalInTx(fakeTx(), "not-a-uuid", "approve", "a")).ok, false);
+  assert.equal((await service.transitionRentalInTx(fakeTx(), ID, "explode", "a")).ok, false);
+  assert.equal(service.isRentalOverlapViolation({ code: "23P01" }), true);
+  assert.equal(service.isRentalOverlapViolation(new Error("other")), false);
+});
+
+// ── 연결(메뉴·권한·스위치) ─────────────────────────────────────────────────
+test("관리자 메뉴 «요청·신청함»에서 체육관 대관 화면에 도달할 수 있다", () => {
+  const shell = read("src/app/admin/AdminShellClient.tsx");
+  const requests = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
+  assert.match(requests, /\["\/admin\/rental", "체육관 대관", "🏟️"\]/);
+  assert.match(shell, /"🏟️": "stadium"/);
+});
+
+test("공개 메뉴에 체육관 대관이 있고, 공개 화면 본문에 계좌번호가 없다", () => {
+  assert.match(read("src/components/PublicHeader.tsx"), /\{ href: "\/rental", label: "체육관 대관" \}/);
+  for (const file of ["src/app/rental/page.tsx", "src/app/rental/RentalClient.tsx"]) {
+    assert.doesNotMatch(read(file), /55491019425407/, file);
+  }
+  assert.match(read("src/app/rental/RentalClient.tsx"), /publicErrorText\(/);
+});
+
+test("관리자 액션은 requireAdmin, 신청자 문자는 스위치(RENTAL_APPLICANT_SMS_ENABLED) 뒤에", () => {
+  const actions = read("src/app/actions/rental.ts");
+  for (const fn of ["getAdminRentalRequests", "updateRentalStatus"]) {
+    const body = actions.slice(actions.indexOf(`export async function ${fn}`));
+    assert.match(body.slice(0, 300), /await requireAdmin\(\)/, fn);
+  }
+  const notify = read("src/lib/rental/gym-rental-notify.ts");
+  assert.match(notify, /process\.env\.RENTAL_APPLICANT_SMS_ENABLED === "1"/);
+  const applicantFn = notify.slice(notify.indexOf("export async function sendRentalApplicantSms"));
+  assert.match(applicantFn.slice(0, 260), /if \(!isRentalApplicantSmsEnabled\(\)\) return;/);
+  // 원장 알림은 관리자 역할 계정만
+  assert.match(notify, /role IN \('ADMIN','VICE_ADMIN'\)/);
+});

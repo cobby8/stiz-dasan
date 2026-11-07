@@ -670,6 +670,41 @@ model UniformFreeGrant {
   @@index([studentId])
 }
 
+/// 체육관 대관 신청(공개 /rental → 관리자 /admin/rental).
+/// 상태: REQUESTED → APPROVED(입금 대기) → PAID(확정) → COMPLETED → REFUNDED, 또는 REJECTED·CANCELLED.
+/// 참고: 승인 이후 상태끼리 시간이 겹치지 않게 하는 EXCLUDE 제약(GymRentalRequest_no_overlap)은
+/// Prisma 로 표현할 수 없어 여기에 적지 않는다 — prisma/migrations/20261107120000_add_gym_rental_request.
+model GymRentalRequest {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  rentalDate      String // 'YYYY-MM-DD' (KST)
+  startHour       Int
+  endHour         Int
+  startAt         DateTime  @db.Timestamptz(6)
+  endAt           DateTime  @db.Timestamptz(6)
+  headcount       Int
+  useAircon       Boolean   @default(false)
+  applicantName   String
+  applicantPhone  String // 숫자만
+  purpose         String?
+  usageFee        Int
+  deposit         Int
+  totalAmount     Int
+  depositRefunded Int?
+  status          String    @default("REQUESTED")
+  rulesAgreedAt   DateTime  @db.Timestamptz(6)
+  adminMemo       String?
+  decidedByUserId String?
+  approvedAt      DateTime? @db.Timestamptz(6)
+  paidAt          DateTime? @db.Timestamptz(6)
+  completedAt     DateTime? @db.Timestamptz(6)
+  refundedAt      DateTime? @db.Timestamptz(6)
+  closedAt        DateTime? @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([rentalDate])
+}
+
 /// 학부모의 청구서 관련 요청: "입금했어요"(확인 요청)와 "영수증 주세요".
 /// 지금까지는 문자로 받아 원장이 통장을 확인하고 손으로 납부 처리했다.
 /// 참고: "같은 청구서·같은 종류의 대기 요청은 한 건"은 DB 부분 유니크 인덱스로 막는다.

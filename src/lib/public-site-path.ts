@@ -2,6 +2,7 @@
 const PUBLIC_SECTIONS = [
   "/about", "/programs", "/schedule", "/annual", "/gallery", "/notices",
   "/faq", "/terms", "/privacy", "/apply", "/seasonal", "/shop", "/simulator",
+  "/rental", // 체육관 대관 신청(2026-11-07)
 ];
 const PUBLIC_ENTRIES = [
   "/", "/login", "/signup", "/signup/parent", "/parent", "/parent-app", "/teacher-app",
