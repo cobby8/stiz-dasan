@@ -1,5 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { toKstYmd, todayKst } from "@/lib/datetime/kst";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -220,20 +221,24 @@ const FINANCE_VIEW_OPTIONS = [
 // 상태 칩·상태별 묶음 순서. 값은 필터 모달 «납부 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const PAYMENT_STATUS_ORDER = ["PENDING", "OVERDUE", "PAID", "REFUNDED", "CANCELED"] as const;
 
-function toDateStr(d: Date | string | null): string {
+/**
+ * 날짜 표시(납부일·납부기한·발송일) — **KST 달력 날짜**로.
+ * 2026-11-08 고침: 예전엔 toISOString()(UTC 날짜)라 KST 00~09시 납부가 하루 전으로 보였다
+ * (운영 실측: paidDate 2026-11-07 16:50:45 UTC = KST 11-08 01:50 납부가 목록에 «2026-11-07»).
+ * 실행 테스트: tests/kst-display-fixes.test.mjs
+ */
+export function toDateStr(d: Date | string | null): string {
     if (!d) return "-";
-    const date = typeof d === "string" ? new Date(d) : d;
-    return date.toISOString().split("T")[0];
+    return toKstYmd(d) || "-";
 }
 
 function formatAmount(n: number): string {
     return n.toLocaleString("ko-KR") + "원";
 }
 
-function toDateInputValue(date = new Date()) {
-    const localDate = new Date(date);
-    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
-    return localDate.toISOString().slice(0, 10);
+/** 날짜 입력칸 기본값 = 오늘(KST). 기기 시간대와 무관하게 KST 공용 모듈에서 만든다. */
+function toDateInputValue() {
+    return todayKst();
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

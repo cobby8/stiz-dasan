@@ -187,3 +187,30 @@ test("4. 셔틀 대시보드 — 오늘 노선이 오늘로 분류된다(서버 
   assert.equal(m.formatRouteDate("2026-12-01T00:00:00.000Z"), "12월 1일 (화)");
   assert.equal(m.formatRouteDate("2026-10-30T15:00:00.000Z"), "10월 31일 (토)");
 });
+
+// ── 수납 관리 목록·상세 날짜(FinanceClient.toDateStr) — 2026-11-08 «납부일 하루 전» 운영 사고
+// paidDate 는 무tz UTC 로 저장된다(2026-11-07 16:50:45 = KST 11-08 01:50). UTC 날짜로 그리면 하루 전이 보인다.
+test("수납 관리 날짜(toDateStr): UTC 서버에서도 KST 달력 날짜 — 자정~09시 경계·월말·연말", () => {
+  const m = loadTsx("src/app/admin/finance/FinanceClient.tsx");
+  // 운영 실측 값 그대로
+  assert.equal(m.toDateStr(new Date("2026-11-07T16:50:45.000Z")), "2026-11-08");
+  assert.equal(m.toDateStr("2026-11-07T16:50:45.000Z"), "2026-11-08", "JSON 으로 넘어온 문자열도 같다");
+  // KST 자정 경계: 14:59:59Z = KST 23:59:59(같은 날), 15:00Z = KST 다음 날 00:00
+  assert.equal(m.toDateStr("2026-11-07T14:59:59.000Z"), "2026-11-07");
+  assert.equal(m.toDateStr("2026-11-07T15:00:00.000Z"), "2026-11-08");
+  // KST 09시 경계(00:00Z = KST 09:00) — 날짜만 저장된 납부기한도 그대로
+  assert.equal(m.toDateStr("2026-11-10T00:00:00.000Z"), "2026-11-10");
+  assert.equal(m.toDateStr("2026-11-09T23:59:59.000Z"), "2026-11-10", "KST 08:59");
+  // 월말·연말
+  assert.equal(m.toDateStr("2026-11-30T15:30:00.000Z"), "2026-12-01");
+  assert.equal(m.toDateStr("2026-12-31T15:00:00.000Z"), "2027-01-01");
+  // 빈 값·못 읽는 값
+  assert.equal(m.toDateStr(null), "-");
+  assert.equal(m.toDateStr("엉뚱한 값"), "-");
+});
+
+test("수납 관리 첫 화면의 «이번 달»은 KST 기준(서버 getMonth 금지)", () => {
+  const page = readFileSync("src/app/admin/finance/page.tsx", "utf8");
+  assert.match(page, /todayKst\(\)\.split\("-"\)\.map\(Number\)/);
+  assert.doesNotMatch(page, /\.getMonth\(\)|\.getFullYear\(\)/);
+});
