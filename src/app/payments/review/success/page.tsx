@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { isReviewOrderId, readTossReviewConfig } from "@/lib/payments/tossReview";
+import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 
 export const dynamic = "force-dynamic";
 
@@ -69,8 +70,11 @@ async function confirmReviewPayment(input: { paymentKey: string; orderId: string
             body: JSON.stringify({ paymentKey: input.paymentKey, orderId: input.orderId, amount: input.amount }),
             cache: "no-store",
         });
-        const data = (await response.json().catch(() => ({}))) as { orderName?: string; totalAmount?: number; message?: string; code?: string };
+        const data = (await response.json().catch(() => ({}))) as { orderName?: string; totalAmount?: number; taxFreeAmount?: number; suppliedAmount?: number; vat?: number; message?: string; code?: string };
         if (response.ok) {
+            // 면세 처리 확인 — 아니어도 결제 완료 화면은 그대로, 서버 로그에만 경고를 남긴다.
+            const taxFreeWarning = describeTaxFreeMismatch(data);
+            if (taxFreeWarning) console.warn(`[toss-tax-free] orderId=${input.orderId} ${taxFreeWarning}`);
             return { ok: true, orderName: data.orderName ?? "수강료", amount: data.totalAmount ?? input.amount };
         }
         if (data.code === "ALREADY_PROCESSED_PAYMENT") {

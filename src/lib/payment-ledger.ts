@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
+import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 import {
     CAFE24_PAYMENT_PROVIDER,
     Cafe24PaymentBridgeError,
@@ -1249,6 +1250,11 @@ async function finalizeVerifiedTossPayment(input: {
     ) {
         return { ok: false as const, error: "TOSS_PAYMENT_NOT_VERIFIED" };
     }
+
+    // 면세 처리 확인 — 승인·복구·웹훅이 모두 이 함수를 거친다. 면세가 아니어도 결제는 그대로 반영하고
+    // 경고만 남긴다(응답 원문은 아래 rawResponse 에 taxFreeAmount·suppliedAmount·vat 째로 저장된다).
+    const taxFreeWarning = describeTaxFreeMismatch(input.payment);
+    if (taxFreeWarning) console.warn(`[toss-tax-free] orderId=${orderId} ${taxFreeWarning}`);
 
     const receiptUrl = readString(asRecord(input.payment.receipt).url)
         ?? readString(asRecord(input.payment.card).receiptUrl);

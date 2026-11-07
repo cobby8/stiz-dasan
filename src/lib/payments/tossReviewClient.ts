@@ -11,6 +11,8 @@
  *   서버 checkout API 는 DB 를 읽기만 한다. 주문자 이름·휴대폰은 토스 결제창에만 넘긴다.
  */
 
+import { taxFreeAmountFor } from "@/lib/payments/taxFree";
+
 type CheckoutResponse = {
     clientKey?: string;
     customerKey?: string;
@@ -88,7 +90,7 @@ export async function openReviewCardPayment(input: {
         method: "CARD",
         amount: { currency: "KRW", value: data.amount },
         // 면세사업자 — 청구서 결제와 같이 전액 면세(PaymentCheckoutClient 참고)
-        taxFreeAmount: data.amount,
+        taxFreeAmount: taxFreeAmountFor(data.amount),
         orderId: data.orderId,
         orderName: data.orderName,
         successUrl: data.successUrl,
