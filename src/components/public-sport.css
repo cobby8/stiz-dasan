@@ -246,7 +246,7 @@ body[data-public-overlay] .stiz-public-sport .public-floating-btn { display: non
   .stiz-public-sport .public-desktop-nav > div > button { padding-inline: 12px; }
   .stiz-public-sport .public-desktop-nav > div > button { gap: 2px; }
   .stiz-public-sport .public-desktop-nav > div > button > :last-child { width: 16px; height: 16px; font-size: 16px; }
-  .stiz-public-sport .public-header-actions :is(a, button):not(.public-menu-trigger) { min-height: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  .stiz-public-sport .public-header-actions :is(a, button):not(.public-menu-trigger) { min-height: 40px; height: 40px; }
 }
 @media (max-width: 639px) {
   .stiz-public-sport .public-menu-prefix { display: none; }
