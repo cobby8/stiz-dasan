@@ -108,3 +108,9 @@
 - **발견자**: developer
 - **내용**: 관리자 「신규 셔틀 신청」 탭은 폐지(`/admin/shuttle/intake` → `/admin/shuttle/regular-dispatch?month=` redirect). 정규배차 요일 탭 아래 `NewStudentDispatchPanel`(목록 기준 = `getDriverAssignBoard`, 기사 검토 배지·요청 = 기존 `/api/admin/shuttle/intake`)이 칩 → 모달로 `AssignLegView` 를 띄운다. 기사님 `/staff/shuttle/assign` 도 같은 `src/components/shuttle/assign/AssignLegView.tsx` 를 쓴다 — **한 칸 배정 UI를 고칠 땐 이 파일 하나**(사본 금지, 테스트가 `function AssignView(` 부재 확인). 넣기 API 는 둘 다 `/api/staff/shuttle/assign`(관리자도 requireStaff·authorizeAssign 통과), 감사 via 는 관리자 역할 + body.source="ADMIN_DISPATCH" 일 때만 ADMIN_DISPATCH. 넣은 뒤 RouteSection 은 `refreshKey`(월×1000+횟수)로 다시 읽되 저장 안 한 편집(dirty)이 있으면 덮지 않는다. 기사 검토 화면(ShuttleIntakeClient driver 모드)은 그대로.
 - **참조횟수**: 0
+
+### [2026-11-07] 고객 안내 문자 = 공용 «미리보기 → 원장 승인 → 1건 발송» 한 벌
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 문구는 `src/lib/customer-notice/templates.ts`(import 없는 순수 함수), 서버는 `src/app/actions/customer-notice.ts` 의 prepareCustomerNotice/sendCustomerNotice, 화면은 `src/components/admin/CustomerNoticeSender.tsx`(kind 별 props). 승인 기록은 OperationsAuditLog(CUSTOMER_NOTICE_PREVIEW/CLAIMED/RESULT, 번호·문구는 해시만), 발송은 관리자 수동 문자와 같은 장부(MessageDeliveryBatch·NotificationDelivery, trigger MANUAL_MESSAGE, eventType=kind). 새 안내를 늘릴 때는 kind 하나 + resolveNotice 분기 + 문구 함수만 추가한다. 카카오채널 주소는 `kakaoChannelLinks(settings.kakaoChannelUrl)` 로만 만든다.
+- **참조횟수**: 0
