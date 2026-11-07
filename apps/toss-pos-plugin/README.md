@@ -4,11 +4,11 @@
 선생님이 **[결제하기]** 한 번으로 수강료(면세)가 담긴 결제 화면을 여는 플러그인입니다.
 
 ```
-사이트 «현장 결제» ─▶ 서버에 요청(S-4821) 생성
+사이트 «현장 결제» ─▶ 서버에 요청(S-482193) 생성
                          │  (30초마다 확인)
 POS 워커 ◀───────────────┘
-  └ 토스트 «김○○ 수강료(11월) 100,000원 현장 결제 요청 (S-4821) [결제하기]»
-       └ [결제하기] → 서버 선점(SENT) → 결제 화면에 «수강료(11월) 100,000원 · 면세 · 메모 STIZ:S-4821»
+  └ 토스트 «홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193) [결제하기]»
+       └ [결제하기] → 서버 선점(SENT) → 결제 화면에 «2026년 11월 수강료(홍*동) 180,000원 · 면세 · 메모 STIZ:S-482193»
             └ 카드 결제(사람) → 토스플레이스 웹훅 → 서버가 재조회 후 납부완료
                  └ (참고) 플러그인도 «결제 시도됨»을 서버에 알림 — 납부 처리 근거로는 쓰지 않음
 ```
@@ -23,12 +23,12 @@ POS 워커 ◀───────────────┘
 | `src/core/contract.ts` | 서버 API 주소·응답 해석(**계약은 이 파일 한 곳**) |
 | `src/core/order.ts` | 요청 → POS 주문 항목 변환, 메모 `STIZ:S-xxxx`, 금액·면세 검증 |
 | `src/core/charge.ts` | 결제 흐름(다른 주문 담김·중복 클릭·선점 순서), 결제/취소 신호 보고 |
-| `src/core/api.ts` | 서버 호출(Bearer 토큰), 오류 종류 분류 |
+| `src/core/api.ts` | 서버 호출(Bearer POS 연결 코드), 오류 코드 → 화면 안내 |
 | `src/core/backoff.ts` | 폴링 30초 + 실패 시 지수 백오프(최대 10분) |
 | `src/core/notify.ts` | 같은 요청 알림 반복 방지(5분 간격 최대 3번) |
-| `src/core/token.ts` | 토큰 secureStore 보관·모양 검사·마스킹 |
+| `src/core/token.ts` | POS 연결 코드 secureStore 보관·모양 검사·마스킹 |
 | `src/worker/main.ts` | 웹 워커(백그라운드): 폴링·알림·결제 신호 |
-| `src/tab/*` | 탭 화면: 대기 요청·미납 검색·토큰 입력 |
+| `src/tab/*` | 탭 화면: 대기·선점 요청(다시 결제)·미납 검색·연결 코드 입력 |
 | `scripts/build.mjs` · `scripts/zip.mjs` | 묶기 · 업로드용 zip 만들기 |
 | `tests/*.test.ts` | 단위 테스트(`node --test`) · `sdk-compat.typecheck.ts` = 실제 SDK 타입과 맞는지 |
 
@@ -47,7 +47,7 @@ zip 구조(문서 기준):
 
 ## 원장님 설치 순서
 
-> ⚠️ 비밀값(토큰)은 이 문서·코드·zip 어디에도 없습니다. POS 에서 사람이 직접 넣습니다.
+> ⚠️ 비밀값(POS 연결 코드)은 이 문서·코드·zip 어디에도 없습니다. POS 에서 사람이 직접 넣습니다.
 
 1. **개발자센터 로그인** — https://developers.tossplace.com (업턴랩스 계정 `kimsubin@upturnlabs.co.kr`)
 2. **플러그인 등록** — [내 플러그인] → [플러그인 등록]
@@ -60,15 +60,23 @@ zip 구조(문서 기준):
 5. **POS 시리얼 확인** — POS → 설정 → 정보 → 포스정보/소프트웨어 → «포스 시리얼 번호»
 6. **테스트 단말기 등록** — 개발자센터 → 이 플러그인 → 테스트 단말기 → 단말기 등록(5번의 시리얼)
 7. **POS 재시작** — POS 우측 상단 설정 → **다시 시작** (새 zip 을 올릴 때마다 재시작)
-8. **토큰 넣기** — 사이트 관리자 «POS 연결»에서 토큰 발급(한 번만 보임) → 둘 중 하나에 붙여 넣기
-   - POS 메뉴 → 기타 → 외부 서비스 설정 → **STIZ 현장 결제** 탭 → [토큰] → 붙여 넣기 → 저장 (권장)
-   - 또는 POS 설정 → 외부 서비스 설정 → «사이트 연결 토큰» 칸
+8. **POS 연결 코드 넣기** — 사이트 관리자 «POS 연결»(`/admin/pos-plugin`)에서 연결 코드 발급(한 번만 보임) → 둘 중 하나에 붙여 넣기
+   - POS 메뉴 → 기타 → 외부 서비스 설정 → **STIZ 현장 결제** 탭 → [연결 코드] → 붙여 넣기 → 저장 (권장)
+   - 또는 POS 설정 → 외부 서비스 설정 → «POS 연결 코드» 칸
    - 탭 머리줄이 **연결됨** 이면 성공
 9. **1,000원 시험 결제·취소**
    1. 사이트에서 1,000원 시험 청구서 → «현장 결제» → 번호(S-xxxx) 확인
    2. 30초 안에 POS 에 알림 → [결제하기] → 결제 화면에 «1,000원 · 면세» 확인 → 카드 결제
    3. 사이트에서 청구서 **납부완료**, 토스 매출 리포트에서 **면세** 로 잡혔는지 확인
    4. POS 에서 그 결제 **취소** → 사이트 청구서는 자동으로 되돌아가지 **않음**(사람이 처리) 확인
+
+### ⚠️ POS 연결 코드가 샜다면 — 바로 끊기
+연결 코드는 «이 매장 POS 가 사이트에 현장 결제 요청을 묻고 미납 목록을 볼 수 있는 열쇠»입니다.
+채팅·사진·메모 등으로 남에게 보였거나 POS 기기를 잃어버렸다면 **기다리지 말고**:
+1. 사이트 관리자 **`/admin/pos-plugin`**(«POS 연결») → 그 연결 코드 **끊기** — 그 순간부터 그 코드로는 아무것도 못 합니다.
+2. 같은 화면에서 새 연결 코드 발급 → POS 탭 [연결 코드]에 다시 넣기.
+- 연결 코드로는 **납부 처리를 할 수 없습니다**(납부는 토스 웹훅으로만). 그래도 미납 목록(가린 이름·금액)이 보이므로 바로 끊습니다.
+- 연결 코드를 카카오톡·문자·사진으로 주고받지 마세요. 사이트 화면에서 복사해 POS 에 바로 붙여 넣습니다.
 
 ### 운영 매장에서 쓰려면 (문서: 검수 및 배포하기)
 - 개발 배포는 **검수 없이 즉시**, 단 **테스트 단말기 최대 5대**에만 적용됩니다.
@@ -78,17 +86,26 @@ zip 구조(문서 기준):
 
 ## 서버 API 계약 (플러그인이 부르는 것)
 
-모든 호출: `Authorization: Bearer <매장 토큰>` · JSON. 칸 이름은 camelCase/snake_case 둘 다 읽습니다.
+정본은 서버 브랜치 `docs/toss-pos-plugin-plan.md` **8장**입니다. 아래는 플러그인이 쓰는 부분 요약입니다.
+
+모든 호출: `Authorization: Bearer <POS 연결 코드(stizpos_…)>` · JSON. 칸 이름은 camelCase/snake_case 둘 다 읽습니다.
+실패 응답 `{ ok:false, error, message }` 의 `error` 코드는 화면 안내로 바꿔 보여 줍니다
+(`NOT_CLAIMABLE` 다른 POS 가 가져감·만료 / `NOT_ELIGIBLE` 미납 청구서가 아님 / `CHANGED` 청구 금액이 바뀜 /
+`RATE_LIMITED` + `retryAfterSeconds` 만큼 쉼 / `UNAUTHORIZED` 연결 코드 오류 / 모르는 코드는 서버 문구 그대로).
 
 | 메서드·경로 | 응답(성공) | 실패 |
 |---|---|---|
-| `GET /api/pos-plugin/charge-requests` | `{ requests: [요청] }` | 401 토큰 오류 |
-| `POST /api/pos-plugin/charge-requests/{id}/claim` | `{ request: 요청 }` (status SENT) | 409/410 이미 선점·만료 |
-| `POST /api/pos-plugin/charge-requests/{id}/report` 본문 `{event:'paid'|'cancel'|'start_failed', tossOrderId?, tossPaymentId?, amount?, taxExemptAmount?, reason?}` | `{ status }` (PAID 면 POS 에 «사이트 납부완료») | — |
-| `GET /api/pos-plugin/unpaid?q=이름` | `{ items: [{paymentId, studentName, className, title, amount}] }` | — |
-| `POST /api/pos-plugin/unpaid/{paymentId}/charge` (제안) | `{ request: 요청 }` (생성+선점) | 409 열린 요청 있음 |
+| `GET /api/pos-plugin/charge-requests` | `{ ok, requests: [요청] }` (PENDING·SENT) | 401 |
+| `POST /api/pos-plugin/charge-requests/{id}/claim` | `{ ok, request }` (SENT, 같은 연결 코드 재시도 성공) | 409 `NOT_CLAIMABLE` |
+| `POST /api/pos-plugin/charge-requests/{id}/report` 본문 `{event:'paid'|'cancel'|'start_failed', reason?}` | `{ ok, status, paid, duplicate }` (paid 면 POS 에 «사이트 납부완료») | — |
+| `GET /api/pos-plugin/unpaid?q=이름` | `{ ok, items: [{paymentId, studentLabel, className, title, amount, …}] }` | — |
+| `POST /api/pos-plugin/unpaid/{paymentId}/charge` | `{ ok, request }` (생성+선점) | 409 `NOT_CLAIMABLE`/`NOT_ELIGIBLE`/`CHANGED` |
 
-요청 = `{ id, shortCode:"S-4821", studentName:"김○○"(마스킹), itemTitle:"수강료(11월)", amount, taxFreeAmount, expiresAt(ISO, 시간대 포함), status }`
+요청 = `{ id, shortCode:"S-482193"(4~6자리 허용), studentLabel:"홍*동"(가린 이름), itemName:"2026년 11월 수강료(홍*동)", amount, taxFreeAmount, memo, expiresAt, status }`
+
+- 탭 화면은 PENDING 과 함께 **SENT(이 매장이 선점했지만 결제 시작이 안 된 건)** 도 «다시 결제» 버튼으로 보여 줍니다.
+- POS 알림·탭 목록에서는 상품명의 «(가린 이름)»을 떼어 이름이 한 번만 보이게 합니다(결제 화면 상품명은 서버 값 그대로).
+- 결제/취소 신호(`payment.on`)는 **워커만** 받습니다. 탭은 등록하지 않아 주문 조회·안내가 두 번 나지 않습니다.
 
 - 플러그인은 `taxFreeAmount === amount` 일 때만 결제 화면을 엽니다(수강료 = 전액 면세). 다르면 멈춥니다.
 - **메모 위치**: SDK 0.0.31 에는 «주문 전체 메모»를 넣는 함수가 없어, `STIZ:S-4821` 을

@@ -111,7 +111,19 @@ export function buildLineItem(req: ChargeRequest): DraftLineItemInput {
   };
 }
 
-/** POS 알림 문구: «김○○ 수강료(11월) 100,000원 현장 결제 요청 (S-4821)» */
+/**
+ * 화면용 상품명: 서버 상품명에 가린 이름이 «(홍*동)»으로 붙어 오므로, 이름 칸과 같이 보일 때는 뗀다.
+ * (POS 결제 화면에 들어가는 상품명은 buildLineItem 이 서버 값 그대로 쓴다)
+ */
+export function titleWithoutName(req: Pick<ChargeRequest, "title" | "studentName">): string {
+  const title = itemTitleFor(req);
+  const name = (req.studentName ?? "").trim();
+  if (!name) return title;
+  const stripped = title.split(`(${name})`).join("").split(name).join("").replace(/\s{2,}/g, " ").trim();
+  return stripped || title;
+}
+
+/** POS 알림 문구: «홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193)» — 이름은 한 번만 */
 export function notificationMessage(req: ChargeRequest): string {
-  return `${req.studentName} ${itemTitleFor(req)} ${formatWon(req.amount)} 현장 결제 요청 (${req.shortCode})`;
+  return `${req.studentName} ${titleWithoutName(req)} ${formatWon(req.amount)} 현장 결제 요청 (${req.shortCode})`;
 }

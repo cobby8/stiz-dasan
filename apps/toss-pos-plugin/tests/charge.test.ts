@@ -234,6 +234,8 @@ test("알림 고르기: 새 요청 1번, 5분 뒤 다시, 최대 3번, 사라지
 test("토큰: 모양 검사·마스킹·캐시(secureStore 를 매번 읽지 않음)", async () => {
   assert.equal(normalizeToken("  " + "a".repeat(32) + " "), "a".repeat(32));
   assert.equal(normalizeToken("짧음"), null);
+  // 서버가 발급하는 실제 모양(stizpos_ + base64url)
+  assert.equal(normalizeToken("stizpos_AbC-12_xyz" + "Q".repeat(30)), "stizpos_AbC-12_xyz" + "Q".repeat(30));
   assert.equal(normalizeToken("a".repeat(31) + " b"), null);
   assert.equal(normalizeToken(123), null);
   assert.equal(maskToken("abcdefgh"), "••••efgh");

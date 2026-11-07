@@ -13,14 +13,14 @@
       <span id="conn" class="pill">확인 중</span>
       <span class="grow"></span>
       <button id="refresh" class="btn">새로고침</button>
-      <button id="toggle-token" class="btn ghost">토큰</button>
+      <button id="toggle-token" class="btn ghost">연결 코드</button>
     </header>
 
-    <!-- 토큰 입력(평소엔 접혀 있음) -->
+    <!-- POS 연결 코드 입력(평소엔 접혀 있음) -->
     <section id="token-box" class="box" hidden>
-      <label for="token-input">사이트 연결 토큰 — 사이트 관리자 «POS 연결»에서 발급받아 붙여 넣으세요</label>
+      <label for="token-input">POS 연결 코드 — 사이트 관리자 «POS 연결»에서 발급받아 붙여 넣으세요</label>
       <div class="row">
-        <input id="token-input" type="password" autocomplete="off" placeholder="토큰 붙여 넣기" />
+        <input id="token-input" type="password" autocomplete="off" placeholder="연결 코드 붙여 넣기" />
         <button id="token-save" class="btn primary">저장</button>
         <button id="token-clear" class="btn ghost">삭제</button>
       </div>

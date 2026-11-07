@@ -9,7 +9,7 @@ import {
   parseReportStatus,
   parseUnpaidList,
 } from "../src/core/contract.ts";
-import { classifyStatus, createServerApi } from "../src/core/api.ts";
+import { ERROR_CODE_MESSAGE, classifyStatus, createServerApi, failureFromBody, kindMessage } from "../src/core/api.ts";
 import type { HttpLike } from "../src/core/pos-types.ts";
 
 test("목록: camelCase·snake_case·data 감싸개 모두 읽는다", () => {
@@ -44,6 +44,45 @@ test("미납 목록·보고 상태 해석", () => {
   assert.equal(parseReportStatus({ request: { status: "PAID" } }), "PAID");
   assert.equal(parseReportStatus({ data: { status: "SENT" } }), "SENT");
   assert.equal(parseReportStatus(null), "");
+});
+
+test("서버 최종 계약 칸 이름(itemName·studentLabel)·보고 응답 paid:true", () => {
+  const [r] = parseChargeRequestList({
+    ok: true,
+    requests: [{ id: "a", shortCode: "S-482193", status: "SENT", amount: 180000, taxFreeAmount: 180000, itemName: "2026년 11월 수강료(홍*동)", studentLabel: "홍*동", memo: "STIZ:S-482193", expiresAt: "2026-11-07T01:30:00Z" }],
+  });
+  assert.equal(r.title, "2026년 11월 수강료(홍*동)");
+  assert.equal(r.studentName, "홍*동");
+  assert.equal(r.status, "SENT");
+  assert.equal(parseReportStatus({ ok: true, status: "SENT", paid: true, duplicate: false }), "PAID");
+  assert.equal(parseReportStatus({ ok: true, status: "SENT", paid: false, duplicate: true }), "SENT");
+  const [u] = parseUnpaidList({ ok: true, items: [{ paymentId: "p", studentLabel: "이*수", className: "토요", title: "수강료", amount: 1000, status: "PENDING", hasOpenRequest: false }] });
+  assert.equal(u.studentName, "이*수");
+});
+
+test("실패 안내: 서버 오류 코드를 버리지 않고 쉬운 말로", () => {
+  const c = (body: unknown, kind: Parameters<typeof failureFromBody>[0] = "conflict", code = 409) =>
+    failureFromBody(kind, code, typeof body === "string" ? body : JSON.stringify(body));
+  assert.equal(c({ ok: false, error: "NOT_ELIGIBLE", message: "x" }).message, ERROR_CODE_MESSAGE.NOT_ELIGIBLE);
+  assert.match(c({ ok: false, error: "NOT_ELIGIBLE" }).message, /미납 청구서가 아니에요/);
+  assert.match(c({ ok: false, error: "CHANGED" }).message, /청구 금액이 바뀌었어요/);
+  assert.equal(c({ ok: false, error: "NOT_CLAIMABLE" }).error, "NOT_CLAIMABLE");
+  // 모르는 코드면 서버 문구, 문구도 없으면 종류별 기본 안내
+  assert.equal(c({ ok: false, error: "NEW_THING", message: "서버가 준 안내" }).message, "서버가 준 안내");
+  assert.equal(c("<html>").message, kindMessage("conflict"));
+  const rl = c({ ok: false, error: "RATE_LIMITED", retryAfterSeconds: 42 }, "rate", 429);
+  assert.equal(rl.retryAfterSeconds, 42);
+  assert.equal(rl.kind, "rate");
+});
+
+test("API: 409 본문의 error 코드가 결과까지 전달된다", async () => {
+  const { http } = fakeHttp(() => ({ code: 409, body: JSON.stringify({ ok: false, error: "CHANGED", message: "changed" }) }));
+  const r = await createServerApi({ http, getToken: async () => "stizpos_" + "a".repeat(30) }).chargeUnpaid("p1");
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.error, "CHANGED");
+    assert.match(r.message, /청구 금액이 바뀌었어요/);
+  }
 });
 
 test("HTTP 상태 → 실패 종류", () => {

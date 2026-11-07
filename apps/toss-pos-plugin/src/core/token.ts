@@ -2,8 +2,8 @@
 // 근거: https://docs.tossplace.com/reference/plugin-sdk/pos/secureStore.html
 //       https://docs.tossplace.com/reference/plugin-sdk/pos/setting.html
 // 입력 경로 두 가지:
-//   ① 탭 화면의 «토큰 입력» 칸 → 바로 secureStore 에 저장(권장)
-//   ② POS 설정 → 외부 서비스 설정의 «사이트 연결 토큰» 칸(setting) → 워커가 읽어 secureStore 로 옮긴다
+//   ① 탭 화면의 «연결 코드» 칸 → 바로 secureStore 에 저장(권장)
+//   ② POS 설정 → 외부 서비스 설정의 «POS 연결 코드» 칸(setting) → 워커가 읽어 secureStore 로 옮긴다
 // 토큰은 코드·zip·README 어디에도 넣지 않는다.
 
 export const TOKEN_KEY = "stiz_site_token";

@@ -79,7 +79,11 @@ function makeZip(files) {
 function assertNoSecrets(files) {
   for (const f of files) {
     const text = readFileSync(f.abs, "utf8");
-    if (/Bearer [A-Za-z0-9._~-]{20,}/.test(text) || /stiz_site_token["']?\s*[:=]\s*["'][A-Za-z0-9._~-]{20,}/.test(text)) {
+    if (
+      /Bearer [A-Za-z0-9._~-]{20,}/.test(text) ||
+      /stiz_site_token["']?\s*[:=]\s*["'][A-Za-z0-9._~-]{20,}/.test(text) ||
+      /stizpos_[A-Za-z0-9_-]{16,}/.test(text) // 서버가 발급하는 POS 연결 코드 모양
+    ) {
       throw new Error(`비밀값으로 보이는 문자열이 있어요: ${f.rel}`);
     }
   }

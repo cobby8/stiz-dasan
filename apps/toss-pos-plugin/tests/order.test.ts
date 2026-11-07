@@ -10,6 +10,7 @@ import {
   itemTitleFor,
   notificationMessage,
   parseMemo,
+  titleWithoutName,
   validateForPos,
 } from "../src/core/order.ts";
 import type { ChargeRequest } from "../src/core/contract.ts";
@@ -103,6 +104,24 @@ test("원 표시: 기기 언어와 무관하게 쉼표", () => {
 
 test("알림 문구", () => {
   assert.equal(notificationMessage(req()), "김○○ 수강료(11월) 100,000원 현장 결제 요청 (S-4821)");
+});
+
+test("6자리 번호(S-482193)도 그대로 통과·변환", () => {
+  const r = req({ shortCode: "S-482193" });
+  assert.deepEqual(validateForPos(r, NOW), { ok: true });
+  assert.equal(buildLineItem(r).memo, "STIZ:S-482193");
+  assert.equal(parseMemo("STIZ:S-482193"), "S-482193");
+});
+
+test("서버 상품명에 가린 이름이 붙어 와도 알림에는 이름이 한 번만", () => {
+  const r = req({ studentName: "홍*동", title: "2026년 11월 수강료(홍*동)", amount: 180000, taxFreeAmount: 180000, shortCode: "S-482193" });
+  assert.equal(titleWithoutName(r), "2026년 11월 수강료");
+  assert.equal(notificationMessage(r), "홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193)");
+  // POS 결제 화면 상품명은 서버 값 그대로
+  assert.equal(buildLineItem(r).item.title, "2026년 11월 수강료(홍*동)");
+  // 이름만 있는 상품명이면 원래 값 유지, 이름이 비면 그대로
+  assert.equal(titleWithoutName({ title: "(홍*동)", studentName: "홍*동" }), "(홍*동)");
+  assert.equal(titleWithoutName({ title: "수강료", studentName: "" }), "수강료");
 });
 
 test("결제된 주문에서 번호 찾기: 항목 메모 → 상품 코드 → 주문 메모", () => {

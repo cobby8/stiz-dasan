@@ -104,8 +104,8 @@ export function parseChargeRequest(raw: unknown): ChargeRequest | null {
   return {
     id,
     shortCode,
-    studentName: str(pick(raw, "studentName", "name")) || "(이름 없음)",
-    title: str(pick(raw, "itemTitle", "title", "label")),
+    studentName: str(pick(raw, "studentName", "studentLabel", "name")) || "(이름 없음)",
+    title: str(pick(raw, "itemTitle", "itemName", "title", "label")),
     amount,
     // 면세 금액이 비어 오면 NaN 으로 두어 검증에서 막는다(과세로 잘못 결제되는 것 방지)
     taxFreeAmount: taxFreeRaw === undefined ? Number.NaN : num(taxFreeRaw),
@@ -149,7 +149,7 @@ export function parseUnpaidList(body: unknown): UnpaidItem[] {
     if (!paymentId || !Number.isFinite(amount)) continue;
     out.push({
       paymentId,
-      studentName: str(pick(raw, "studentName", "name")) || "(이름 없음)",
+      studentName: str(pick(raw, "studentName", "studentLabel", "name")) || "(이름 없음)",
       className: str(pick(raw, "className", "programName")),
       title: str(pick(raw, "itemTitle", "title", "label")),
       amount,
@@ -162,6 +162,8 @@ export function parseUnpaidList(body: unknown): UnpaidItem[] {
 export function parseReportStatus(body: unknown): string {
   const b = unwrap(body);
   if (!isObj(b)) return "";
+  // 서버 계약 8장: { ok, status, paid, duplicate } — paid 가 true 면 납부완료로 본다
+  if (b.paid === true) return "PAID";
   if (isObj(b.request)) return str(pick(b.request, "status"));
   return str(pick(b, "status"));
 }

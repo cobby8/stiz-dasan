@@ -3,7 +3,7 @@
 //       https://docs.tossplace.com/guide/pos-integration/plugin/how-to-work.html (웹 워커 = DOM 없음)
 // 하는 일:
 //   1) 30초마다 우리 서버의 대기 «현장 결제» 요청 확인(실패하면 지수 백오프)
-//   2) 새 요청 → 토스트 «김○○ 수강료(11월) 100,000원 현장 결제 요청 [결제하기]»
+//   2) 새 요청 → 토스트 «홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193) [결제하기]»
 //   3) [결제하기] → 결제 흐름(charge.ts)
 //   4) 결제/취소 신호 → 서버에 참고 보고
 import { posPluginSdk, PosPluginSdkRateLimitError } from "@tossplace/pos-plugin-sdk";
@@ -33,11 +33,11 @@ async function setupSettingScreen(): Promise<void> {
   await posPluginSdk.setting.setInputs([
     {
       id: SETTING_TOKEN_ID,
-      label: "사이트 연결 토큰 (사이트 관리자 «POS 연결»에서 발급)",
+      label: "POS 연결 코드 (사이트 관리자 «POS 연결»에서 발급)",
       type: "password",
       required: false,
       default: "",
-      placeholder: "토큰을 붙여 넣으세요",
+      placeholder: "연결 코드를 붙여 넣으세요",
     },
   ]);
 }
@@ -50,7 +50,7 @@ async function adoptSettingToken(): Promise<void> {
     await tokens.set(t);
     authWarned = false;
     failures = 0;
-    posPluginSdk.toast.success({ message: "사이트 연결 토큰을 저장했어요." });
+    posPluginSdk.toast.success({ message: "POS 연결 코드를 저장했어요." });
   }
 }
 
@@ -93,7 +93,9 @@ async function pollOnce(): Promise<void> {
     return;
   }
   failures += 1;
-  schedule(nextPollDelay(failures, { rateLimited: res.kind === "rate" }));
+  // 서버가 «몇 초 뒤에 다시»를 알려 주면(429 retryAfterSeconds) 그보다 먼저 부르지 않는다
+  const serverWaitMs = (res.retryAfterSeconds ?? 0) * 1000;
+  schedule(Math.max(serverWaitMs, nextPollDelay(failures, { rateLimited: res.kind === "rate" })));
 }
 
 async function main(): Promise<void> {

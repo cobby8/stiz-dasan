@@ -1,12 +1,12 @@
 // 탭 화면(iframe) 진입점 — POS 메뉴 → 기타 → 외부 서비스 설정 → «STIZ 현장 결제»로 연다.
 // 근거: https://docs.tossplace.com/guide/pos-integration/plugin/develop/iframe-package.html
-// 보여주는 것: 대기 요청 목록 · 미납 검색 · 토큰 입력/교체. 이름은 서버가 마스킹해 준 그대로 쓴다.
+// 보여주는 것: 대기·선점 요청 목록 · 미납 검색 · POS 연결 코드 입력/교체. 이름은 서버가 마스킹해 준 그대로 쓴다.
 import { posPluginSdk, PosPluginSdkRateLimitError } from "@tossplace/pos-plugin-sdk";
 import { createServerApi } from "../core/api.ts";
 import { createChargeFlow } from "../core/charge.ts";
 import type { StartResult } from "../core/charge.ts";
 import type { ChargeRequest, UnpaidItem } from "../core/contract.ts";
-import { formatWon, itemTitleFor } from "../core/order.ts";
+import { formatWon, titleWithoutName } from "../core/order.ts";
 import type { PosSdkLike } from "../core/pos-types.ts";
 import { createTokenStore, maskToken } from "../core/token.ts";
 
@@ -37,7 +37,10 @@ function setConn(state: "ok" | "bad" | "", text: string): void {
 }
 
 /** 한 줄 행 만들기 — 글자는 전부 textContent 로 넣어 HTML 로 해석되지 않게 한다 */
-function rowEl(parts: { who: string; what: string; amt: number; code?: string }, onPay: (btn: HTMLButtonElement) => void): HTMLLIElement {
+function rowEl(
+  parts: { who: string; what: string; amt: number; code?: string; payLabel?: string },
+  onPay: (btn: HTMLButtonElement) => void,
+): HTMLLIElement {
   const li = document.createElement("li");
   const cells: [string, string][] = [
     ["who", parts.who],
@@ -53,7 +56,7 @@ function rowEl(parts: { who: string; what: string; amt: number; code?: string },
   }
   const btn = document.createElement("button");
   btn.className = "btn primary";
-  btn.textContent = "결제하기";
+  btn.textContent = parts.payLabel ?? "결제하기";
   btn.addEventListener("click", () => onPay(btn));
   li.appendChild(btn);
   return li;
@@ -92,19 +95,28 @@ async function loadRequests(): Promise<void> {
   const list = $("req-list");
   const res = await api.listRequests();
   if (!res.ok) {
-    setConn("bad", res.kind === "no_token" ? "토큰 없음" : "연결 안 됨");
+    setConn("bad", res.kind === "no_token" ? "연결 코드 없음" : "연결 안 됨");
     list.replaceChildren(emptyEl(res.message));
     $("req-count").textContent = "";
     return;
   }
   setConn("ok", "연결됨");
-  const pending = res.data.filter((r: ChargeRequest) => r.status === "PENDING");
-  $("req-count").textContent = `${pending.length}건`;
+  // 대기(PENDING)뿐 아니라 선점(SENT)됐지만 결제 시작이 안 된 요청도 보여 «다시 결제»할 수 있게 한다.
+  // 같은 연결 코드로 다시 선점하면 서버가 성공시키고, 다른 POS 가 가져간 건이면 409(NOT_CLAIMABLE) 안내가 뜬다.
+  const open = res.data.filter((r: ChargeRequest) => r.status === "PENDING" || r.status === "SENT");
+  $("req-count").textContent = `${open.length}건`;
   list.replaceChildren(
-    ...(pending.length
-      ? pending.map((r) =>
-          rowEl({ who: r.studentName, what: itemTitleFor(r), amt: r.amount, code: r.shortCode }, (b) =>
-            void pay(b, () => flow.startCharge(r)),
+    ...(open.length
+      ? open.map((r) =>
+          rowEl(
+            {
+              who: r.studentName,
+              what: titleWithoutName(r),
+              amt: r.amount,
+              code: r.shortCode,
+              payLabel: r.status === "SENT" ? "다시 결제" : "결제하기",
+            },
+            (b) => void pay(b, () => flow.startCharge(r)),
           ),
         )
       : [emptyEl("대기 중인 요청이 없어요.")]),
@@ -125,7 +137,7 @@ async function search(q: string): Promise<void> {
   list.replaceChildren(
     ...(res.data.length
       ? res.data.map((u: UnpaidItem) =>
-          rowEl({ who: u.studentName, what: [u.className, itemTitleFor(u)].filter(Boolean).join(" · "), amt: u.amount }, (b) =>
+          rowEl({ who: u.studentName, what: [u.className, titleWithoutName(u)].filter(Boolean).join(" · "), amt: u.amount }, (b) =>
             void pay(b, () => flow.startChargeForUnpaid(u.paymentId)),
           ),
         )
@@ -134,7 +146,7 @@ async function search(q: string): Promise<void> {
 }
 
 async function showTokenState(): Promise<void> {
-  $("token-state").textContent = `저장된 토큰: ${maskToken(await tokens.get())}`;
+  $("token-state").textContent = `저장된 POS 연결 코드: ${maskToken(await tokens.get())}`;
 }
 
 function bind(): void {
@@ -147,18 +159,18 @@ function bind(): void {
   $("token-save").addEventListener("click", async () => {
     const input = $<HTMLInputElement>("token-input");
     const ok = await tokens.set(input.value);
-    input.value = ""; // 화면에 토큰이 남지 않게 바로 지운다
+    input.value = ""; // 화면에 연결 코드가 남지 않게 바로 지운다
     if (!ok) {
-      setMsg("토큰 모양이 맞지 않아요. 사이트에서 복사한 값을 그대로 붙여 넣어 주세요.", "bad");
+      setMsg("POS 연결 코드 모양이 맞지 않아요. 사이트에서 복사한 값을 그대로 붙여 넣어 주세요.", "bad");
       return;
     }
-    setMsg("토큰을 저장했어요.", "ok");
+    setMsg("POS 연결 코드를 저장했어요.", "ok");
     await showTokenState();
     await loadRequests();
   });
   $("token-clear").addEventListener("click", async () => {
     await tokens.clear();
-    setMsg("토큰을 지웠어요.");
+    setMsg("POS 연결 코드를 지웠어요.");
     await showTokenState();
     await loadRequests();
   });
@@ -170,9 +182,8 @@ function bind(): void {
 
 function main(): void {
   bind();
-  // 탭이 따로 설치된 경우에도 결제 신호를 참고 보고한다(같은 플러그인이면 서버가 중복을 무시해야 함 — 계약 참고)
-  posPluginSdk.payment.on("paid", (p: string, o: string) => void flow.handlePaymentEvent("paid", p, o).catch(() => undefined));
-  posPluginSdk.payment.on("cancel", (p: string, o: string) => void flow.handlePaymentEvent("cancel", p, o).catch(() => undefined));
+  // 결제/취소 신호는 워커만 처리한다(탭까지 등록하면 주문 조회·토스트가 두 번씩 난다).
+  // 납부 확정은 어차피 서버가 토스 웹훅으로 하므로 탭에서 받지 않아도 빠지는 것이 없다.
   void loadRequests();
   setInterval(() => {
     if (document.visibilityState === "visible") void loadRequests();
