@@ -390,7 +390,7 @@ test("결제 준비: 확인을 거친 카드·계좌이체만 계좌를 닫고, 
 
 test("계좌 닫기: 토스 취소 API 뒤 재조회로 닫힘을 확인하고, 여전히 입금 대기면 실패, 마지막에 청구 상태를 다시 본다", () => {
     const body = fnBody(ledger, "async function closeOpenVirtualAccount(");
-    const cancel = body.indexOf("requestTossVirtualAccountCancel(tx)");
+    const cancel = body.indexOf("requestTossVirtualAccountCancel(tx, actor.actorType)");
     const relookup = body.indexOf("getVerifiedTossPayment(tx.paymentKey, tx.orderId)", cancel);
     assert.ok(cancel > 0 && relookup > cancel, "취소 뒤 재조회");
     assert.match(body, /if \(step === "CANCEL"\) step = "FAIL"/);
@@ -400,7 +400,8 @@ test("계좌 닫기: 토스 취소 API 뒤 재조회로 닫힘을 확인하고, 
     const api = fnBody(ledger, "async function requestTossVirtualAccountCancel(");
     assert.match(api, /\/v1\/payments\/\$\{encodeURIComponent\(tx\.paymentKey\)\}\/cancel/);
     assert.match(api, /Idempotency-Key/);
-    assert.doesNotMatch(api, /refundReceiveAccount/); // 입금 전 취소라 환불 계좌 불필요
+    // 입금 전 취소라 환불 계좌 불필요 — 경고 주석은 빼고 실제 코드만 본다
+    assert.doesNotMatch(api.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""), /refundReceiveAccount/);
 });
 
 test("학부모 화면: 계좌 안내 아래 «다른 방법으로 결제(계좌가 닫혀요)» + 확인 단계, 확인 후에만 닫기 요청", () => {
@@ -482,7 +483,8 @@ test("관리자: 원장만, 입금 대기 건에만 «가상계좌 닫기», 위
     assert.match(financeClient, /key: "va-close", label: "가상계좌 닫기"/);
     const dialog = readFileSync(new URL("../src/app/admin/finance/VirtualAccountCloseDialog.tsx", import.meta.url), "utf8");
     assert.match(dialog, /AdminConfirmDialog/);
-    assert.match(dialog, /tone="danger"/);
+    // 확인 전에는 위험 톤(«이미 입금» 안내 뒤에만 주황 확인 버튼)
+    assert.match(dialog, /tone=\{paidNotice \? "primary" : "danger"\}/);
     const admin = fnBody(ledger, "export async function closeVirtualAccountByAdmin(");
     assert.match(admin, /closeOpenVirtualAccount\(invoiceId, \{ actorType: "ADMIN", actorId: input\.adminUserId \}\)/);
 });
@@ -498,4 +500,74 @@ test("발급 기록 0건이면 거래 상태를 다시 보고 DONE 이면 «납�
 test("입금 알림 지문에 transactionKey(없으면 createdAt)를 넣되, 카드 등 기존 알림 지문은 그대로", () => {
     assert.match(ledger, /depositKey: depositCallback \? readString\(payloadRecord\.transactionKey\) \?\? readString\(payloadRecord\.createdAt\) : null/);
     assert.match(ledger, /\.\.\.\(input\.depositKey \? \{ depositKey: input\.depositKey \} : \{\}\)/);
+});
+
+// ── 배포 전 검수 보완(11-08): 취소 안전장치·멱등키·부분 취소·점검 견고성 ─────────────
+test("취소 요청 본문에 refundReceiveAccount·cancelAmount 가 없다(입금 완료 건 환불을 토스가 거절하게 하는 안전장치)", () => {
+    const api = fnBody(ledger, "async function requestTossVirtualAccountCancel(");
+    // 주석의 경고 문구는 남기고, 실제 코드(주석 제거본)에는 두 키가 없어야 한다
+    assert.match(api, /refundReceiveAccount·cancelAmount 절대 넣지 말 것/);
+    const code = api.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /refundReceiveAccount|cancelAmount/);
+    assert.match(code, /body: JSON\.stringify\(\{ cancelReason: virtualAccountCancelReason\(actorType\) \}\)/);
+    assert.match(code, /signal: AbortSignal\.timeout\(TOSS_FETCH_TIMEOUT_MS\)/);
+});
+
+test("취소 멱등키: 같은 10분(KST) 안은 같은 키, 10분 뒤 재시도는 새 키", () => {
+    const at = (iso) => Date.parse(iso);
+    const seed = (ms) => va.virtualAccountCancelIdempotencySeed("tx1", "pk1", ms);
+    assert.equal(seed(at("2026-11-08T09:00:00+09:00")), "stiz-va-close:tx1:pk1:2026-11-08T09:00");
+    assert.equal(seed(at("2026-11-08T09:09:59+09:00")), seed(at("2026-11-08T09:00:00+09:00")));
+    assert.notEqual(seed(at("2026-11-08T09:10:00+09:00")), seed(at("2026-11-08T09:09:59+09:00")));
+    // KST 자정 경계 = UTC 15:00 — 날짜가 KST 로 넘어간다
+    assert.equal(seed(at("2026-11-08T15:05:00Z")), "stiz-va-close:tx1:pk1:2026-11-09T00:00");
+    const api = fnBody(ledger, "async function requestTossVirtualAccountCancel(");
+    assert.match(api, /makeUuidFromSeed\(virtualAccountCancelIdempotencySeed\(tx\.id, tx\.paymentKey, Date\.now\(\)\)\)/);
+});
+
+test("취소 사유는 누가 닫았는지에 따라 다르다", () => {
+    assert.match(va.virtualAccountCancelReason("PARENT"), /학부모/);
+    assert.match(va.virtualAccountCancelReason("ADMIN"), /관리자/);
+    assert.match(va.virtualAccountCancelReason("SYSTEM"), /시스템/);
+    assert.notEqual(va.virtualAccountCancelReason("PARENT"), va.virtualAccountCancelReason("ADMIN"));
+});
+
+test("부분 취소(PARTIAL_CANCELED): 닫기·점검은 FAIL + 원장 확인, 웹훅도 «입금 대기 해제»로 풀지 않는다", () => {
+    const t = { orderId: issuedResponse.orderId, paymentKey: issuedResponse.paymentKey };
+    const partial = { ...issuedResponse, status: "PARTIAL_CANCELED" };
+    assert.equal(va.decideVirtualAccountClose(partial, t), "FAIL");
+    assert.equal(va.virtualAccountCloseReviewCode(partial), "VIRTUAL_ACCOUNT_PARTIAL_CANCELED");
+    assert.equal(va.virtualAccountCloseReviewCode({ ...issuedResponse, status: "IN_PROGRESS" }), null);
+    assert.equal(va.virtualAccountCloseReviewCode(null), null);
+    // 웹훅: 납부 반영 전 부분 취소 = 원장 알림, 반영 후 부분 취소 = 기존대로 확인 대기
+    const base = { isDepositCallback: false, secretCheck: "NOT_STORED", paymentStatus: "PENDING", verified: partial };
+    const waitingTx = { orderId: t.orderId, amount: 180000, status: "WAITING_FOR_DEPOSIT", paymentKey: t.paymentKey };
+    assert.deepEqual(va.decideVirtualAccountWebhook({ ...base, tx: waitingTx }), { action: "REJECT", code: "VIRTUAL_ACCOUNT_PARTIAL_CANCELED", alert: true });
+    assert.deepEqual(va.decideVirtualAccountWebhook({ ...base, tx: { ...waitingTx, status: "DONE" } }), { action: "IGNORE", code: "TOSS_PARTIAL_CANCEL_REVIEW" });
+    // 만료·취소는 그대로 해제
+    assert.equal(va.decideVirtualAccountWebhook({ ...base, tx: waitingTx, verified: { ...partial, status: "EXPIRED" } }).action, "RELEASE");
+    // 연결부: 닫기·점검 둘 다 FAIL 에서 원장 확인 기록을 부른다(알림 문구 등록)
+    assert.match(fnBody(ledger, "async function closeOpenVirtualAccount("), /step === "FAIL"\) \{[\s\S]*?reviewUnclosableVirtualAccount\(tx, verified\)/);
+    assert.match(fnBody(ledger, "export async function sweepWaitingVirtualAccounts("), /if \(step === "FAIL"\) await reviewUnclosableVirtualAccount\(tx, verified\)/);
+    assert.match(fnBody(ledger, "async function reviewUnclosableVirtualAccount("), /recordVirtualAccountReview\(tx, code, true\)/);
+    assert.match(ledger, /VIRTUAL_ACCOUNT_PARTIAL_CANCELED: "/);
+});
+
+test("매일 점검 견고성: 건별 try/catch·시간 예산·토스 조회 10초 제한·cron maxDuration 60", () => {
+    const sweep = fnBody(ledger, "export async function sweepWaitingVirtualAccounts(");
+    assert.match(sweep, /for \(const tx of rows\) \{[\s\S]*?try \{[\s\S]*?\} catch \(error\) \{\s*result\.failed \+= 1;/);
+    assert.match(sweep, /Date\.now\(\) - startedAt > budgetMs[\s\S]*?result\.deferred = rows\.length - result\.checked;\s*break;/);
+    assert.match(fnBody(ledger, "async function requestTossPayment("), /signal: AbortSignal\.timeout\(TOSS_FETCH_TIMEOUT_MS\)/);
+    assert.match(ledger, /const TOSS_FETCH_TIMEOUT_MS = 10_000;/);
+    const route = readFileSync(new URL("../src/app/api/cron/virtual-account-sweep/route.ts", import.meta.url), "utf8");
+    assert.match(route, /export const maxDuration = 60;/);
+});
+
+test("관리자 닫기: «이미 입금돼 반영»은 paid 로 돌려주고 확인창은 성공 톤으로 보인다", () => {
+    const admin = fnBody(ledger, "export async function closeVirtualAccountByAdmin(");
+    assert.match(admin, /closed === "PAID"\) return \{ ok: false as const, paid: true as const,/);
+    const dialog = readFileSync(new URL("../src/app/admin/finance/VirtualAccountCloseDialog.tsx", import.meta.url), "utf8");
+    assert.match(dialog, /if \(result\.paid\) setPaidNotice\(result\.message\);\s*else setError\(result\.message\);/);
+    assert.match(dialog, /var\(--color-academy-success-soft\)/);
+    assert.match(dialog, /tone=\{paidNotice \? "primary" : "danger"\}/);
 });

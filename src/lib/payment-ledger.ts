@@ -20,6 +20,9 @@ import {
     stripWebhookSecrets,
     toPublicVirtualAccountView,
     toTossMobilePhone,
+    virtualAccountCancelIdempotencySeed,
+    virtualAccountCancelReason,
+    virtualAccountCloseReviewCode,
     type PublicVirtualAccountView,
 } from "@/lib/payments/virtualAccount";
 import { buildIssuedRawResponse, checkDepositSecret } from "@/lib/payments/virtualAccountSecret";
@@ -128,6 +131,11 @@ function makeTossCustomerKey(invoice: Pick<ParentInvoiceRow, "parentId" | "paren
 function isUuidLike(value: string) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
+
+/** 토스 조회·가상계좌 취소 요청의 응답 대기 한도(10초). 승인(confirm)은 «승인됐는데 끊김» 위험이 있어 따로 둔다. */
+const TOSS_FETCH_TIMEOUT_MS = 10_000;
+/** 매일 점검의 시간 예산 — cron maxDuration 60초 안에서 마무리(남은 건은 다음 날) */
+const SWEEP_TIME_BUDGET_MS = 45_000;
 
 function makeUuidFromSeed(seed: string) {
     const hex = createHash("sha256").update(seed).digest("hex");
@@ -1216,8 +1224,12 @@ async function payVerifiedVirtualAccount(tx: PaymentTransactionRow, verified: To
  * 토스 결제 취소 API(POST /v1/payments/{paymentKey}/cancel) — 입금 전 가상계좌를 닫는다.
  * 입금 전(WAITING_FOR_DEPOSIT) 취소라 환불 계좌(refundReceiveAccount)를 보내지 않는다.
  * 성공 여부는 응답이 아니라 부르는 쪽의 재조회로 판정한다.
+ *
+ * ⚠️ refundReceiveAccount·cancelAmount 절대 넣지 말 것 — 입금 완료 건 환불을 토스가 거절하게 하는 안전장치.
+ *    닫는 사이 입금이 먼저 들어오면 토스가 이 요청을 거절하고, 재조회가 DONE 을 보고 납부로 반영한다.
+ *    두 키를 넣으면 그 입금이 조용히 환불돼 버린다. (tests/toss-virtual-account.test.mjs 가 본문을 검사한다)
  */
-async function requestTossVirtualAccountCancel(tx: PaymentTransactionRow): Promise<boolean> {
+async function requestTossVirtualAccountCancel(tx: PaymentTransactionRow, actorType: VirtualAccountActor["actorType"]): Promise<boolean> {
     const { secretKey } = getPaymentProviderConfig();
     if (!secretKey || !tx.paymentKey) return false;
     try {
@@ -1226,11 +1238,15 @@ async function requestTossVirtualAccountCancel(tx: PaymentTransactionRow): Promi
             headers: {
                 Authorization: `Basic ${encodeTossSecret(secretKey)}`,
                 "Content-Type": "application/json",
-                // 닫기를 두 번 눌러도 토스에서 한 번만 처리되게
-                "Idempotency-Key": makeUuidFromSeed(`stiz-va-close:${tx.id}:${tx.paymentKey}`),
+                // 같은 10분 안의 연타는 토스에서 한 번만, 10분 뒤 재시도는 새 시도로(실패 응답에 갇히지 않게)
+                "Idempotency-Key": makeUuidFromSeed(virtualAccountCancelIdempotencySeed(tx.id, tx.paymentKey, Date.now())),
             },
-            body: JSON.stringify({ cancelReason: "학부모가 다른 결제 수단을 선택해 입금 계좌를 닫음" }),
+            // 누가 닫았는지 토스 쪽 기록에도 남긴다(학부모·원장·시스템)
+            // ⚠️ refundReceiveAccount·cancelAmount 절대 넣지 말 것 — 입금 완료 건 환불을 토스가 거절하게 하는 안전장치
+            body: JSON.stringify({ cancelReason: virtualAccountCancelReason(actorType) }),
             cache: "no-store",
+            // 토스가 응답하지 않으면 10초 뒤 포기 — 재조회가 결과를 판정한다
+            signal: AbortSignal.timeout(TOSS_FETCH_TIMEOUT_MS),
         });
         return response.ok;
     } catch {
@@ -1266,7 +1282,7 @@ async function closeOpenVirtualAccount(
         let verified = first.kind === "verified" ? first.payment : null;
         let step = first.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
         if (step === "CANCEL") {
-            await requestTossVirtualAccountCancel(tx);
+            await requestTossVirtualAccountCancel(tx, actor.actorType);
             // 취소 응답만 믿지 않고 다시 조회해 «닫힘»을 확인한다(그사이 입금됐을 수도 있다).
             const after = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
             verified = after.kind === "verified" ? after.payment : null;
@@ -1279,6 +1295,9 @@ async function closeOpenVirtualAccount(
         } else if (step === "PAID" && verified) {
             await payVerifiedVirtualAccount(tx, verified, null);
             outcome = "PAID";
+        } else if (step === "FAIL") {
+            // 부분 취소처럼 자동으로 못 푸는 상태면 원장 확인으로 넘긴다(닫기 실패 = 새 결제 막음)
+            await reviewUnclosableVirtualAccount(tx, verified);
         }
     }
 
@@ -1306,7 +1325,8 @@ export async function closeVirtualAccountByAdmin(input: { paymentId: string; adm
     const open = await getVirtualAccountState(invoiceId);
     if (!open || open.expired) return { ok: false as const, message: "닫을 입금 대기 계좌가 없습니다." };
     const closed = await closeOpenVirtualAccount(invoiceId, { actorType: "ADMIN", actorId: input.adminUserId });
-    if (closed === "PAID") return { ok: false as const, message: "이미 입금돼 납부 완료로 반영했습니다. 계좌는 닫지 않았습니다." };
+    // 실패가 아니라 «입금이 이겼다» — 화면은 성공 톤으로 보인다(paid: true)
+    if (closed === "PAID") return { ok: false as const, paid: true as const, message: "이미 입금돼 납부 완료로 반영했습니다. 계좌는 닫지 않았습니다." };
     if (closed === "FAIL") return { ok: false as const, message: "토스에서 계좌를 닫지 못했습니다. 잠시 후 다시 시도해 주세요." };
     return { ok: true as const };
 }
@@ -1316,7 +1336,7 @@ export async function closeVirtualAccountByAdmin(input: { paymentId: string; adm
  * 웹훅이 끝내 안 왔거나 재조회가 늦었던 건이 영구 미납으로 남지 않게 하는 안전망.
  * 같은 판정 함수(decideVirtualAccountClose)와 같은 반영 함수를 써서 여러 번 돌아도 결과가 같다.
  */
-export async function sweepWaitingVirtualAccounts(limit = 100) {
+export async function sweepWaitingVirtualAccounts(limit = 100, budgetMs = SWEEP_TIME_BUDGET_MS) {
     await ensurePaymentInfrastructure();
     const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
         `SELECT * FROM "PaymentTransaction"
@@ -1325,24 +1345,49 @@ export async function sweepWaitingVirtualAccounts(limit = 100) {
          LIMIT $1`,
         limit,
     );
-    const result = { checked: rows.length, paid: 0, released: 0, waiting: 0, failed: 0 };
+    const startedAt = Date.now();
+    const result = { checked: 0, paid: 0, released: 0, waiting: 0, failed: 0, deferred: 0 };
     for (const tx of rows) {
-        const lookup = await getVerifiedTossPayment(tx.paymentKey ?? null, tx.orderId);
-        const verified = lookup.kind === "verified" ? lookup.payment : null;
-        const step = lookup.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
-        if (step === "PAID" && verified) {
-            const paid = await payVerifiedVirtualAccount(tx, verified, null);
-            if (paid.ok) result.paid += 1; else result.failed += 1;
-        } else if (step === "RELEASED" && verified) {
-            await releaseVirtualAccountTx(tx, String(verified.status), { actorType: "SYSTEM" });
-            result.released += 1;
-        } else if (step === "CANCEL") {
-            result.waiting += 1; // 아직 입금 전 — 그대로 둔다
-        } else {
+        // cron 제한 시간(maxDuration 60초) 안에 끝내려고, 시간 예산을 넘기면 남은 건은 다음 점검으로 미룬다
+        if (Date.now() - startedAt > budgetMs) {
+            result.deferred = rows.length - result.checked;
+            break;
+        }
+        result.checked += 1;
+        // 한 건이 터져도(DB·네트워크) 실패로 세고 나머지는 계속 본다
+        try {
+            const lookup = await getVerifiedTossPayment(tx.paymentKey ?? null, tx.orderId);
+            const verified = lookup.kind === "verified" ? lookup.payment : null;
+            const step = lookup.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
+            if (step === "PAID" && verified) {
+                const paid = await payVerifiedVirtualAccount(tx, verified, null);
+                if (paid.ok) result.paid += 1; else result.failed += 1;
+            } else if (step === "RELEASED" && verified) {
+                await releaseVirtualAccountTx(tx, String(verified.status), { actorType: "SYSTEM" });
+                result.released += 1;
+            } else if (step === "CANCEL") {
+                result.waiting += 1; // 아직 입금 전 — 그대로 둔다
+            } else {
+                result.failed += 1;
+                // 부분 취소 등은 원장 확인 기록(같은 사유는 한 번만 — 매일 돌아도 알림이 쌓이지 않는다)
+                if (step === "FAIL") await reviewUnclosableVirtualAccount(tx, verified);
+            }
+        } catch (error) {
             result.failed += 1;
+            console.error(
+                "[virtual-account-sweep] tx failed:",
+                tx.id,
+                error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200),
+            );
         }
     }
     return result;
+}
+
+/** 닫기·매일 점검이 FAIL 일 때, 원장 확인이 필요한 상태(부분 취소)면 확인 기록 + 알림을 남긴다. */
+async function reviewUnclosableVirtualAccount(tx: PaymentTransactionRow, verified: TossPaymentResult | null) {
+    const code = virtualAccountCloseReviewCode(verified);
+    if (code) await recordVirtualAccountReview(tx, code, true);
 }
 
 /**
@@ -1431,6 +1476,8 @@ async function requestTossPayment(path: string): Promise<TossLookupResult> {
             method: "GET",
             headers: { Authorization: `Basic ${encodeTossSecret(secretKey)}` },
             cache: "no-store",
+            // 응답 없는 토스 조회에 cron·화면이 매달리지 않게 10초 뒤 포기(→ retryable)
+            signal: AbortSignal.timeout(TOSS_FETCH_TIMEOUT_MS),
         });
         if (response.status === 429 || response.status >= 500) {
             return { kind: "retryable", reason: `TOSS_LOOKUP_${response.status}` };
@@ -2013,6 +2060,7 @@ const VIRTUAL_ACCOUNT_ALERT_TEXT: Record<string, string> = {
     VIRTUAL_ACCOUNT_INVOICE_CLOSED: "취소·환불된 청구서에 가상계좌 입금이 들어왔습니다(환불 확인 필요).",
     VIRTUAL_ACCOUNT_TX_CLOSED: "닫힌 거래에 가상계좌 입금이 들어왔습니다(확인 필요).",
     VIRTUAL_ACCOUNT_DEPOSIT_REVERSED: "납부 완료된 가상계좌 입금이 은행에서 취소됐습니다(장부 확인 필요).",
+    VIRTUAL_ACCOUNT_PARTIAL_CANCELED: "가상계좌 입금 건이 토스에서 부분 취소돼 자동 처리하지 않았습니다(장부 확인 필요).",
 };
 
 /**

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { sweepWaitingVirtualAccounts } from "@/lib/payment-ledger";
 
 export const dynamic = "force-dynamic";
+// 토스 조회가 건마다 최대 10초 — 점검 함수는 45초 예산 안에서 멈추고, 함수 자체는 60초까지 허용
+export const maxDuration = 60;
 
 /**
  * 무통장입금(가상계좌) 매일 점검 — 매일 KST 09:00 (UTC 00:00).

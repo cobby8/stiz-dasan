@@ -13,7 +13,7 @@
 //   secret 해시·대조는 virtualAccountSecret.ts(서버 전용)에 따로 둔다.
 
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
-import { formatKstDate, kstHm } from "@/lib/datetime/kst";
+import { formatKstDate, kstHm, todayKst } from "@/lib/datetime/kst";
 
 /** 계좌 유효 시간 — 토스 최대값 2160시간(90일). 청구 기한과 상관없이 넉넉히 연다. */
 export const VIRTUAL_ACCOUNT_VALID_HOURS = 2160;
@@ -215,8 +215,41 @@ export function decideVirtualAccountClose(
     const status = typeof verified.status === "string" ? verified.status : "";
     if (status === VA_WAITING_STATUS) return "CANCEL";
     if (status === "DONE") return "PAID";
+    // 부분 취소 = 입금된 돈의 일부만 환불된 상태. «입금 대기 해제»로 풀면 받은 돈이 장부에서 사라진다
+    // → 닫기 실패로 두고(새 결제 막음) 원장 확인으로 넘긴다(virtualAccountCloseReviewCode).
+    if (status === "PARTIAL_CANCELED") return "FAIL";
     if (RELEASE_STATUSES.has(status)) return "RELEASED";
     return "FAIL";
+}
+
+/**
+ * 닫기·매일 점검이 FAIL 로 끝났을 때 원장 확인 기록을 남길 사유. 그냥 «다시 시도»로 둘 건이면 null.
+ * 지금은 토스 PARTIAL_CANCELED(입금 후 일부 환불)만 — 자동으로 풀지도 납부로 반영하지도 않는다.
+ */
+export function virtualAccountCloseReviewCode(verified: Record<string, unknown> | null): string | null {
+    return verified?.status === "PARTIAL_CANCELED" ? "VIRTUAL_ACCOUNT_PARTIAL_CANCELED" : null;
+}
+
+/** 토스 취소 API 에 남는 사유 — 누가 닫았는지 토스 상점관리자에서도 구분되게. */
+export function virtualAccountCancelReason(actorType: "PARENT" | "ADMIN" | "WEBHOOK" | "SYSTEM"): string {
+    if (actorType === "PARENT") return "학부모가 다른 결제 수단을 선택해 입금 계좌를 닫음";
+    if (actorType === "ADMIN") return "학원 관리자가 입금 대기 계좌를 닫음";
+    return "학원 시스템이 입금 대기 계좌를 닫음";
+}
+
+/** 같은 시도 묶음으로 보는 시간 폭 — 10분 */
+export const VA_CANCEL_ATTEMPT_WINDOW_MS = 10 * 60_000;
+
+/**
+ * 토스 취소 API 의 Idempotency-Key 씨앗.
+ * 왜 시각을 섞나: 토스는 같은 키의 «첫 응답»을 저장해 두고 다시 돌려준다. 키가 거래마다 고정이면
+ * 한 번 실패(일시 오류)한 뒤로는 영영 같은 실패만 받는다. KST 10분 단위 시각을 섞어
+ * 같은 10분 안의 연타는 한 번으로, 10분 뒤 재시도는 새 시도로 보낸다.
+ * 이중 처리 걱정은 없다 — 성공 여부는 응답이 아니라 토스 재조회로 판정한다.
+ */
+export function virtualAccountCancelIdempotencySeed(txId: string, paymentKey: string, nowMs: number): string {
+    const slotMs = Math.floor(nowMs / VA_CANCEL_ATTEMPT_WINDOW_MS) * VA_CANCEL_ATTEMPT_WINDOW_MS;
+    return `stiz-va-close:${txId}:${paymentKey}:${todayKst(slotMs)}T${kstHm(slotMs)}`;
 }
 
 /**
@@ -300,6 +333,9 @@ export function decideVirtualAccountWebhook(input: {
 
     if (RELEASE_STATUSES.has(status)) {
         if (tx.status === "DONE") return status === "CANCELED" ? { action: "DELEGATE" } : { action: "IGNORE", code: "TOSS_PARTIAL_CANCEL_REVIEW" };
+        // 납부 반영 전인데 부분 취소 = 입금을 놓친 뒤 일부 환불된 것. 닫기·매일 점검과 같은 판단:
+        // «입금 대기 해제»로 풀지 않고 원장 확인(알림)으로 넘긴다.
+        if (status === "PARTIAL_CANCELED") return { action: "REJECT", code: "VIRTUAL_ACCOUNT_PARTIAL_CANCELED", alert: true };
         return { action: "RELEASE", reason: status };
     }
 

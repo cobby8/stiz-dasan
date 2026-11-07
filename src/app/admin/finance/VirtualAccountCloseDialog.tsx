@@ -19,6 +19,8 @@ export default function VirtualAccountCloseDialog({
 }) {
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | undefined>(undefined);
+    // «이미 입금돼 납부 완료로 반영» — 실패가 아니므로 빨간 오류 대신 성공 톤 안내로 보인다
+    const [paidNotice, setPaidNotice] = useState<string | null>(null);
 
     async function handleConfirm() {
         setPending(true);
@@ -31,7 +33,8 @@ export default function VirtualAccountCloseDialog({
             return;
         }
         // 실패해도 «이미 입금돼 납부 완료로 반영»일 수 있으니 목록은 새로 읽는다. 창은 열어 둬 이유를 보여 준다.
-        setError(result.message);
+        if (result.paid) setPaidNotice(result.message);
+        else setError(result.message);
         onClosed();
     }
 
@@ -39,13 +42,18 @@ export default function VirtualAccountCloseDialog({
         <AdminConfirmDialog
             titleId="virtual-account-close-title"
             title={`"${target.studentName}" 가상계좌 닫기`}
-            description={`${target.amount.toLocaleString("ko-KR")}원 입금 대기 계좌를 토스에서 닫습니다.\n닫으면 학부모가 그 계좌로 입금할 수 없고, 청구는 미납 그대로 남습니다.\n이미 입금됐다면 닫지 않고 납부 완료로 반영합니다.`}
-            confirmLabel="계좌 닫기"
-            tone="danger"
+            description={paidNotice ? (
+                <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 font-bold text-[var(--color-academy-success)]">
+                    {paidNotice}
+                </p>
+            ) : `${target.amount.toLocaleString("ko-KR")}원 입금 대기 계좌를 토스에서 닫습니다.\n닫으면 학부모가 그 계좌로 입금할 수 없고, 청구는 미납 그대로 남습니다.\n이미 입금됐다면 닫지 않고 납부 완료로 반영합니다.`}
+            // 입금이 이미 반영됐으면 더 닫을 게 없다 — 확인 버튼은 창 닫기(주황)로 바뀐다
+            confirmLabel={paidNotice ? "확인" : "계좌 닫기"}
+            tone={paidNotice ? "primary" : "danger"}
             pending={pending}
             pendingLabel="닫는 중..."
             error={error}
-            onConfirm={() => void handleConfirm()}
+            onConfirm={() => { if (paidNotice) onClose(); else void handleConfirm(); }}
             onCancel={onClose}
         />
     );

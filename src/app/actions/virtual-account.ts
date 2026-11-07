@@ -10,7 +10,8 @@ import { closeVirtualAccountByAdmin } from "@/lib/payment-ledger";
  * 권한 = 원장(ADMIN)만 — 현장 결제·단말기 반영과 같은 재무 권한 기준.
  * 오류는 throw 대신 { ok:false, message } 로 돌려준다(배포 환경은 throw 한 문구를 화면에 숨긴다).
  */
-export async function closeVirtualAccountAction(paymentId: string): Promise<{ ok: true } | { ok: false; message: string }> {
+// paid: true = 닫는 사이 입금이 먼저 들어와 납부 완료로 반영됨(실패가 아님 — 화면은 성공 톤)
+export async function closeVirtualAccountAction(paymentId: string): Promise<{ ok: true } | { ok: false; message: string; paid?: true }> {
     try {
         const admin = await requireAdmin();
         if (admin.appUserRole !== "ADMIN") return { ok: false, message: "원장만 가상계좌를 닫을 수 있습니다." };
