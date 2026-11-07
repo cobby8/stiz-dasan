@@ -99,8 +99,8 @@ export default function TestimonialCarousel({
                   key={index}
                   className="flex-shrink-0 w-[280px] md:w-[320px] snap-start bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 transition-colors"
                 >
-                  {/* 별점 */}
-                  <div className="text-lg mb-3">{renderStars(item.rating)}</div>
+                  {/* 별점 — 별점이 없는 후기(rating 0, 예: 네이버 방문자 리뷰)는 별을 지어내지 않고 숨긴다 */}
+                  {item.rating > 0 && <div className="text-lg mb-3">{renderStars(item.rating)}</div>}
 
                   {/* 후기 내용 — 따옴표로 감싸서 후기 느낌 강조 */}
                   <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-4 min-h-[80px]">

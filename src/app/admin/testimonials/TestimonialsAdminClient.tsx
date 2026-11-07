@@ -368,8 +368,8 @@ export default function TestimonialsAdminClient({
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">별점</label>
                                     <select value={rating} onChange={e => setRating(Number(e.target.value))}
                                         className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2.5 text-sm">
-                                        {[5, 4, 3, 2, 1].map(v => (
-                                            <option key={v} value={v}>{v}점</option>
+                                        {[5, 4, 3, 2, 1, 0].map(v => (
+                                            <option key={v} value={v}>{v > 0 ? `${v}점` : "별점 없음"}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -435,7 +435,7 @@ export default function TestimonialsAdminClient({
                                         <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{t.order}</td>
                                         <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{t.name}</td>
                                         <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{t.info || "-"}</td>
-                                        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{t.rating}점</td>
+                                        <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{t.rating > 0 ? `${t.rating}점` : "없음"}</td>
                                         <td className="px-2 py-1.5"><TestimonialVisibilityBadge isPublic={t.isPublic} /></td>
                                         <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{toKstYmd(t.createdAt)}</td>
                                         {/* 관리: 위·아래·수정·삭제(행 클릭=상세 패널과 겹치지 않게 전파 차단). 함수·인자·막힘 조건은 기존 그대로 */}
