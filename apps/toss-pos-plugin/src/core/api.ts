@@ -3,13 +3,15 @@
 import {
   API_PATHS,
   SERVER_ORIGIN,
+  parseCancelClaim,
+  parseCancelReport,
   parseChargeRequestList,
   parseClaimResponse,
   parseReportStatus,
   parseUnpaidList,
   parseWaitList,
 } from "./contract.ts";
-import type { ChargeRequest, ReportBody, UnpaidItem, WaitListResult } from "./contract.ts";
+import type { CancelClaim, CancelReportBody, ChargeRequest, ReportBody, UnpaidItem, WaitListResult } from "./contract.ts";
 import type { HttpLike, HttpResponseLike } from "./pos-types.ts";
 
 /** 실패 종류 — 화면 안내와 백오프가 이 값으로 갈린다 */
@@ -164,6 +166,11 @@ export function createServerApi(deps: ApiDeps) {
       call("GET", API_PATHS.unpaid(q), null, parseUnpaidList),
     chargeUnpaid: (paymentId: string): Promise<ApiResult<ChargeRequest>> =>
       call("POST", API_PATHS.chargeUnpaid(paymentId), {}, parseClaimResponse),
+    /** «결제 취소할 일» 가져가기 — 취소할 주문·결제 ID 는 서버 값만 쓴다 */
+    cancelClaim: (id: string): Promise<ApiResult<CancelClaim>> => call("POST", API_PATHS.cancelClaim(id), {}, parseCancelClaim),
+    /** 취소 결과 참고 보고(환불 확정은 서버가 토스 웹훅으로) */
+    cancelReport: (id: string, body: CancelReportBody): Promise<ApiResult<string>> =>
+      call("POST", API_PATHS.cancelReport(id), body, parseCancelReport),
   };
 }
 

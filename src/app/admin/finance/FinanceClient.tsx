@@ -27,6 +27,8 @@ import {
 } from "@/app/actions/admin";
 // 토스 POS «현장 결제» 번호 창(2026-11-07) — 납부완료는 토스 결제 확인으로만 바뀐다
 import PosChargeRequestModal from "./PosChargeRequestModal";
+// 토스 POS 결제 취소 창(2026-11-08) — 환불은 토스 취소 확인으로만 바뀐다
+import PosChargeCancelModal from "./PosChargeCancelModal";
 import { posMethodLabel } from "@/lib/pos/charge-request.mjs";
 
 type Payment = {
@@ -407,6 +409,8 @@ export default function FinanceClient({
     const [terminalSubmitting, setTerminalSubmitting] = useState(false);
     // 현장 결제(토스 POS) 창을 띄울 청구서
     const [posChargeTarget, setPosChargeTarget] = useState<Payment | null>(null);
+    // 결제 취소(토스 POS) 창을 띄울 청구서
+    const [posCancelTarget, setPosCancelTarget] = useState<Payment | null>(null);
     // 보기 방식(목록 | 상태별) — 브라우저에 기억
     const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "list");
     // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
@@ -935,6 +939,17 @@ export default function FinanceClient({
                     },
                 },
             ] : []),
+            // 결제 취소: 토스 POS(현장 결제)로 납부된 건만 — POS 결제를 취소하고, 토스 확인 뒤 환불로 바뀐다. 서버가 한 번 더 확인한다.
+            ...(canManageCriticalFinance && p.status === "PAID" && p.paidProvider === "TOSS_POS" ? [
+                {
+                    key: "pos-cancel",
+                    label: "결제 취소",
+                    icon: "credit_card_off",
+                    tone: "danger" as const,
+                    disabled: busy,
+                    onSelect: () => setPosCancelTarget(p),
+                },
+            ] : []),
             ...(canManageCriticalFinance && p.status === "PAID" ? [
                 {
                     key: "refund",
@@ -1110,6 +1125,19 @@ export default function FinanceClient({
                     }}
                     onClose={() => setPosChargeTarget(null)}
                     onPaid={() => void loadMonth(year, month)}
+                />
+            )}
+            {posCancelTarget && (
+                <PosChargeCancelModal
+                    target={{
+                        id: posCancelTarget.id,
+                        studentName: posCancelTarget.studentName,
+                        amount: posCancelTarget.amount,
+                        title: posCancelTarget.description
+                            || `${posCancelTarget.year ?? year}년 ${posCancelTarget.month ?? month}월 ${posCancelTarget.type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
+                    }}
+                    onClose={() => setPosCancelTarget(null)}
+                    onRefunded={() => void loadMonth(year, month)}
                 />
             )}
             {terminalTarget && (

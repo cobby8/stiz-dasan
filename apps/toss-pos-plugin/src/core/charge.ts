@@ -213,7 +213,8 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         });
       }
     } else {
-      sdk.toast.warn({ message: `${shortCode} POS 결제가 취소됐어요. 사이트 청구서는 자동으로 되돌리지 않아요 — 원장님께 알려 주세요.` });
+      // 2026-11-08: 사이트가 토스 취소 확인(웹훅) 뒤 청구를 자동으로 «환불»로 바꾼다(분할 결제는 전부 취소됐을 때만)
+      sdk.toast.warn({ message: `${shortCode} POS 결제가 취소됐어요. 토스 확인 후 사이트 청구는 자동으로 환불 처리돼요.` });
     }
     if (!res.ok) {
       reported.delete(dedupeKey); // 다음 신호 때 다시 보고할 수 있게

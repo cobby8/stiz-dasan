@@ -351,12 +351,19 @@ const PRISMA_STUB = toDataUrl(`
   export const prisma = {
     $queryRawUnsafe: async (sql, ...args) => {
       S().calls.push({ sql, args });
+      if (/SET "cancelState" = 'DONE'/.test(sql)) return S().markRefundRows ?? [{ id: "r1" }];
+      if (/FROM "PaymentAuditLog"/.test(sql)) return S().auditIds ? [{ ids: S().auditIds }] : [];
+      if (/AS "tooSoon"/.test(sql)) return S().why ? [S().why] : [];
+      if (/SET "updatedAt" = now\\(\\)\\s+WHERE r\\.id = \\$1 AND r\\.status = 'PAID' AND r\\."cancelState" IS NULL/.test(sql)) return S().leaseRows ?? [];
+      if (/SET "cancelState" = 'REQUESTED'/.test(sql)) return S().requestCancelRows ?? [{ id: "r1" }];
+      if (/SET "cancelState" = 'SENT'/.test(sql)) return S().cancelClaimRows ?? [{ id: "r1" }];
+      if (/SET "cancelReportedAt" = now\\(\\)/.test(sql)) return S().cancelReportRows ?? [];
       if (/r\\."tossOrderId" = \\$1 AND r\\.status = 'PAID'/.test(sql)) return S().paidRows ?? [];
       if (/r\\."shortCode" = \\$1/.test(sql)) return S().request ? [S().request] : [];
       if (/SET status = 'PAID'/.test(sql)) { if (S().claimThrows) throw new Error(S().claimThrows); return S().claimRows ?? []; }
       if (/SET status = 'HELD'/.test(sql)) return S().holdRows ?? [{ id: "r1" }];
       if (/SELECT status, "tossPaymentId" FROM "PosChargeRequest"/.test(sql)) return S().reread ? [S().reread] : [];
-      if (/"slackNotifiedAt" = now\\(\\)|"cancelNotifiedAt" = now\\(\\)/.test(sql)) return [{ id: "r1" }];
+      if (/"slackNotifiedAt" = now\\(\\)|"cancelNotifiedAt" = now\\(\\)|"refundNotifiedAt" = now\\(\\)/.test(sql)) return [{ id: "r1" }];
       if (/SELECT status FROM "Payment"/.test(sql)) return [{ status: S().paymentStatusAfter ?? "PENDING" }];
       if (/FROM "PosPluginToken"/.test(sql)) return S().tokens ?? [];
       if (/SET status = 'SENT'/.test(sql)) return S().claimViewRows ?? [];
@@ -365,11 +372,15 @@ const PRISMA_STUB = toDataUrl(`
       return [];
     },
     $executeRawUnsafe: async (sql, ...args) => { S().calls.push({ sql, args, exec: true }); return 1; },
+    // 트랜잭션은 같은 가짜를 그대로 넘긴다(환불 = 요청 DONE 표시 + 원장부 환불이 한 트랜잭션)
+    $transaction: async (fn) => { S().transactions = (S().transactions ?? 0) + 1; return fn(prisma); },
   };
 `);
 const LEDGER_STUB = toDataUrl(`
   export async function markPaymentPaid(input) { globalThis.__cs.paid.push(input); if (globalThis.__cs.ledgerThrows) throw new Error("ledger failed"); }
   export async function recordPaymentAudit(input) { globalThis.__cs.audits.push(input); }
+  export async function refundPaidPaymentInTx(db, input) { (globalThis.__cs.refunds ??= []).push(input); return globalThis.__cs.refundResult ?? true; }
+  export function revalidatePaymentCaches() { globalThis.__cs.revalidated = (globalThis.__cs.revalidated ?? 0) + 1; }
 `);
 const SLACK_STUB = toDataUrl(`
   export async function postMessage(m) { globalThis.__cs.slack.push(m.text); return { channel: "D1", ts: "1" }; }
@@ -393,7 +404,7 @@ async function loadService() {
 
 const reqRow = (over = {}) => ({
   id: "r1", shortCode: "S-482193", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
-  tossPaymentId: null, tossOrderId: null, expiresAtTs: "2026-11-07T05:30:00Z",
+  tossPaymentId: null, tossOrderId: null, expiresAtTs: "2026-11-07T05:30:00Z", isExpiredNow: false, cancelState: null, note: null,
   paymentType: "MONTHLY", year: 2026, month: 11, paymentStatus: "PENDING", paymentAmount: 180000, studentName: "홍길동",
   ...over,
 });
@@ -512,15 +523,21 @@ test("웹훅 매칭: 원장부 기록 실패 + 청구서가 아직 미납 → �
   assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'[\s\S]*WHERE id = \$1 AND status = 'PAID'/.test(c.sql)));
 });
 
-test("웹훅 매칭: 자동 납부한 결제가 POS 에서 취소되면 되돌리지 않고 원장에게 «POS 에서 취소됨» 알림", async () => {
+test("웹훅 매칭: POS 에서 직접 취소(사이트 요청 없음) → 토스 재조회로 전부 취소 확인되면 청구서 환불(원장부 함수·한 트랜잭션) + 슬랙", async () => {
   const r = await runMatch(
-    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1" })], request: null },
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID" })], request: null },
     { order: { id: "o-1", memo: "STIZ:S-4821", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] }, approved: [] },
   );
   assert.deepEqual(r.handledTossPaymentIds, []);
-  assert.equal(globalThis.__cs.paid.length, 0);
-  assert.ok(globalThis.__cs.slack.some((t) => /POS 에서 취소됨/.test(t)));
-  assert.ok(!globalThis.__cs.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "청구서를 되돌리지 않는다");
+  assert.equal(globalThis.__cs.paid.length, 0, "납부는 다시 쓰지 않는다");
+  assert.equal(globalThis.__cs.transactions, 1, "요청 DONE 표시와 환불이 한 트랜잭션");
+  assert.equal(globalThis.__cs.refunds.length, 1);
+  assert.equal(globalThis.__cs.refunds[0].paymentId, "p-nov");
+  assert.deepEqual(globalThis.__cs.refunds[0].metadata.cancelledPaymentIds, ["tp-1"]);
+  assert.equal(globalThis.__cs.revalidated, 1, "수납 목록 즉시 갱신");
+  assert.ok(globalThis.__cs.slack.some((t) => /POS 결제 취소 확인/.test(t) && /환불로 바꿨습니다/.test(t)));
+  assert.match(r.note, /환불 처리/);
+  assert.ok(!globalThis.__cs.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "청구서는 이 파일이 직접 바꾸지 않는다(원장부 함수)");
 });
 
 // ───────────────────── 7-1a. 결제 직후 목록 갱신 (2026-11-08 원장 화면) ─────────────────────
@@ -545,7 +562,12 @@ test("관리자 창: 요청 PAID 인데 청구서가 아직 미납(원장부 기
   r = await read({ justPaid: false });
   assert.equal(r.status, "PAID", "2분이 지나면 그대로(끝없이 기다리지 않음)");
   const src = await readFile(SERVICE, "utf8");
-  assert.match(src, /\(r\.status = 'PAID' AND r\."updatedAt" > now\(\) - interval '2 minutes'\) AS "justPaid"/, "시각 판단은 DB 시계");
+  // 납부 «기록» 시각 기준(취소 알림 note 등으로 updatedAt 이 바뀌어도 영향 없게 — 2026-11-08 검수)
+  assert.match(src, /\(r\.status = 'PAID' AND COALESCE\(r\."paidRecordedAt", r\."paidAt"\) > now\(\) - interval '2 minutes'\) AS "justPaid"/, "시각 판단은 DB 시계");
+  assert.doesNotMatch(src, /r\."updatedAt" > now\(\) - interval '2 minutes'/);
+  // PAID 로 바뀌는 그 문장에서 기록 시각을 남긴다
+  const claimSql = src.slice(src.indexOf("const CLAIM_PAY_SQL"), src.indexOf("RETURNING r.id, r.\"paymentId\", r.\"shortCode\""));
+  assert.match(claimSql, /"paidRecordedAt" = now\(\)/);
 });
 
 test("수납 목록 다시 읽기는 브라우저 캐시를 쓰지 않는다(응답 Cache-Control max-age=30 때문에 납부 직후 옛 목록이 보였다)", async () => {
@@ -635,14 +657,29 @@ test("이중 매칭 방지: 선점 SQL 이 «같은 토스 주문이 다른 요�
   assert.deepEqual(r.handledTossPaymentIds, []);
 });
 
-test("웹훅 매칭: 자동 납부한 분할 결제 중 나머지 결제가 POS 에서 취소되면 «POS 에서 취소됨» 알림", async () => {
+test("웹훅 매칭: 자동 납부한 분할 결제 중 일부만 취소 → 환불하지 않고 PARTIAL(보류) + «일부만 취소됨» 알림", async () => {
   const order = { ...SPLIT_ORDER, payments: [SPLIT_ORDER.payments[0], { ...SPLIT_ORDER.payments[1], state: "CANCELLED" }] };
-  await runMatch(
-    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-card", tossOrderId: "o-1" })], request: reqRow({ status: "PAID", tossPaymentId: "tp-card" }) },
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-card", tossOrderId: "o-1", paymentStatus: "PAID" })], request: reqRow({ status: "PAID", tossPaymentId: "tp-card" }), auditIds: ["tp-card", "tp-cash"] },
     { order, approved: [card1] },
   );
-  assert.ok(globalThis.__cs.slack.some((t) => /POS 에서 취소됨/.test(t)));
+  assert.ok(globalThis.__cs.slack.some((t) => /일부만 취소됨/.test(t)));
   assert.equal(globalThis.__cs.paid.length, 0);
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "일부 취소는 환불하지 않는다");
+  const partial = globalThis.__cs.calls.find((c) => /SET "cancelState" = 'PARTIAL'/.test(c.sql));
+  assert.ok(partial, "요청을 PARTIAL 로 표시");
+  assert.match(partial.sql, /"cancelState" IS DISTINCT FROM 'DONE'/, "이미 환불된 요청은 되돌리지 않는다");
+  assert.match(r.note, /일부 취소/);
+});
+
+test("웹훅 매칭: 분할 결제가 전부 취소 → 환불(결제 ID 는 감사 기록에서)", async () => {
+  const order = { ...SPLIT_ORDER, payments: SPLIT_ORDER.payments.map((p) => ({ ...p, state: "CANCELLED" })) };
+  await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-card", tossOrderId: "o-1", paymentStatus: "PAID" })], request: null, auditIds: ["tp-card", "tp-cash"] },
+    { order, approved: [] },
+  );
+  assert.equal(globalThis.__cs.refunds.length, 1);
+  assert.deepEqual(globalThis.__cs.refunds[0].metadata.cancelledPaymentIds, ["tp-card", "tp-cash"]);
 });
 
 // ───────────────────────── 7-2. 플러그인 보고·응답 모양 ─────────────────────────
@@ -771,6 +808,8 @@ async function walk(dir, out = []) {
 test("플러그인 API: 4개 경로가 있고 전부 토큰 인증(handlePluginRequest)을 거치며, 납부 처리 경로가 없다", async () => {
   const files = (await walk(PLUGIN_API_DIR)).map((f) => f.split(path.sep).join("/")).sort();
   assert.deepEqual(files, [
+    "src/app/api/pos-plugin/charge-requests/[id]/cancel/claim/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/cancel/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/route.ts",
@@ -779,14 +818,14 @@ test("플러그인 API: 4개 경로가 있고 전부 토큰 인증(handlePluginR
   ]);
   for (const f of files.concat([HTTP])) {
     const code = await readFile(f, "utf8");
-    assert.doesNotMatch(code, /markPaymentPaid|matchChargeRequestsForOrder|UPDATE\s+"Payment"/, `${f} 에 납부 경로가 있으면 안 된다`);
+    assert.doesNotMatch(code, /markPaymentPaid|matchChargeRequestsForOrder|refundPaidPaymentInTx|UPDATE\s+"Payment"/, `${f} 에 납부·환불 경로가 있으면 안 된다`);
     if (f.endsWith("route.ts")) {
       const handlers = [...code.matchAll(/export async function (GET|POST)/g)].length;
       const guarded = [...code.matchAll(/handlePluginRequest\(req/g)].length;
       assert.equal(guarded, handlers, `${f}: 모든 GET/POST 가 인증을 거친다`);
     }
   }
-  for (const f of ["src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts", "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts"]) {
+  for (const f of ["src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts", "src/app/api/pos-plugin/charge-requests/[id]/cancel/claim/route.ts", "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts"]) {
     assert.doesNotMatch(await readFile(f, "utf8"), /readJsonBody|req\.json/, `${f} 는 본문(금액)을 받지 않는다`);
   }
   assert.match(await readFile("src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts", "utf8"), /createAndClaimForPlugin\(paymentId, auth\.tokenId\)/);
@@ -829,7 +868,7 @@ test("관리자 동작: 원장(ADMIN)만 + 오류는 문구로 돌려준다, ⚡
   const actions = await readFile(ACTIONS, "utf8");
   assert.match(actions, /^"use server";/);
   const exported = [...actions.matchAll(/export async function (\w+)/g)].map((m) => m[1]);
-  assert.equal(exported.length, 6);
+  assert.equal(exported.length, 8);
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     const head = body.slice(0, body.indexOf("\n}\n"));
@@ -845,5 +884,337 @@ test("새 코드에 서버 시계 날짜 금지 패턴이 없다(날짜는 DB �
   for (const f of [RULES, SERVICE, AUTH, HTTP, ACTIONS, "src/app/admin/finance/PosChargeRequestModal.tsx", "src/app/admin/pos-plugin/PosPluginTokensClient.tsx"]) {
     const code = await readFile(f, "utf8");
     assert.doesNotMatch(code, /toISOString\(\)\.slice\(0,\s*10\)|getUTCDay|getDay\(\)|getHours\(\)|getDate\(\)/, f);
+  }
+});
+
+// ───────────────────────── 9. 결제 취소(사이트 → POS) · 환불 확정 (2026-11-08) ─────────────────────────
+//
+// 원장 지시 «사이트에서 결제 취소하면 POS 결제도 취소되게». 위험은 넷이다.
+//  ① 플러그인 말(위조 가능)만 듣고 환불하는 것 → 환불은 토스 재조회 주문으로만
+//  ② 분할 결제 일부만 취소됐는데 환불하는 것 → 전부 취소일 때만
+//  ③ 남의 청구서 요청을 취소하게 만드는 것(IDOR) → 청구서 id 로만 찾고, UPDATE 가 같은 청구서를 다시 확인
+//  ④ 웹훅이 4초를 넘겨 함수가 멈추면 «요청 PAID + 청구서 미납»이 남는 것 → ALREADY_DONE 때 복구
+
+const CANCEL_MIGRATION = "prisma/migrations/20261108120000_pos_charge_cancel/migration.sql";
+const CANCEL_MODAL = "src/app/admin/finance/PosChargeCancelModal.tsx";
+
+test("취소 규칙: decideChargeCancel — 전부 취소=FULL, 일부·부분취소·사라짐=PARTIAL, 전부 승인=NONE", async () => {
+  const R = await import(fileUrl(RULES));
+  const order = (states) => ({ payments: Object.entries(states).map(([id, state]) => ({ id, state })) });
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a"], order: order({ a: "CANCELLED" }) }).action, "FULL");
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a", "b"], order: order({ a: "CANCELED", b: "REFUNDED" }) }).action, "FULL");
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a", "b"], order: order({ a: "CANCELLED", b: "APPROVED" }) }).action, "PARTIAL");
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a"], order: order({ a: "PARTIAL_CANCELLED" }) }).action, "PARTIAL", "부분취소는 전부 취소가 아니다");
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a", "b"], order: order({ a: "CANCELLED" }) }).action, "PARTIAL", "주문에서 사라진 결제는 취소로 보지 않는다");
+  assert.equal(R.decideChargeCancel({ paymentIds: ["a", "b"], order: order({ a: "APPROVED", b: "APPROVED" }) }).action, "NONE");
+  assert.equal(R.decideChargeCancel({ paymentIds: [], order: order({}) }).action, "NONE");
+});
+
+test("취소 규칙: chargePaymentIdsOf — 감사 기록 → note(분할 결제 문구) → 대표 결제, 대표 결제는 항상 포함·중복 없음", async () => {
+  const R = await import(fileUrl(RULES));
+  assert.deepEqual(R.chargePaymentIdsOf({ tossPaymentId: "tp-card", auditPaymentIds: ["tp-card", "tp-cash"] }), ["tp-card", "tp-cash"]);
+  const note = R.describeChargePayments([
+    { tossPaymentId: "tp-card", sourceType: "CARD", amount: 100000 },
+    { tossPaymentId: "tp-cash", sourceType: "CASH", amount: 80000 },
+  ]);
+  assert.deepEqual(R.chargePaymentIdsOf({ tossPaymentId: "tp-card", note }), ["tp-card", "tp-cash"], "note 문구를 다시 읽는다");
+  assert.deepEqual(R.chargePaymentIdsOf({ tossPaymentId: "tp-1", note: "보류 사유 (토스 결제 tp-9)" }), ["tp-1"], "분할 문구가 아니면 대표 결제만");
+  assert.deepEqual(R.chargePaymentIdsOf({ tossPaymentId: null, note: null }), []);
+});
+
+test("취소 규칙: cancelEligibility — 토스 POS 납부완료·PAID 요청만, 진행 중·환불 끝은 거부, 실패·일부 취소는 다시 가능", async () => {
+  const R = await import(fileUrl(RULES));
+  const ok = (cancelState = null, site = { status: "PAID", paidProvider: "TOSS_POS" }, status = "PAID") =>
+    R.cancelEligibility({ request: { status, cancelState }, site });
+  assert.equal(ok().ok, true);
+  assert.equal(ok("FAILED").ok, true);
+  assert.equal(ok("PARTIAL").ok, true);
+  assert.equal(ok("REQUESTED").ok, false);
+  assert.equal(ok("SENT").ok, false);
+  assert.equal(ok("DONE").ok, false);
+  assert.equal(ok(null, { status: "REFUNDED", paidProvider: "TOSS_POS" }).ok, false, "이미 환불된 청구서");
+  assert.equal(ok(null, { status: "PAID", paidProvider: "TOSS" }).ok, false, "온라인 결제(토스페이먼츠)는 이 길이 아니다");
+  assert.equal(ok(null, undefined, "HELD").ok, false, "자동 납부된 요청만");
+  assert.equal(R.cancelEligibility({ request: null, site: null }).ok, false);
+});
+
+test("마이그레이션(취소): 칸 추가만 · cancelState CHECK = CANCEL_STATE · 되돌림 SQL · schema.prisma 사본", async () => {
+  const R = await import(fileUrl(RULES));
+  const sql = await readFile(CANCEL_MIGRATION, "utf8");
+  const m = /"cancelState" IN \(([^)]*)\)/.exec(sql);
+  assert.ok(m, "cancelState CHECK 가 있다");
+  const inDb = m[1].split(",").map((x) => x.trim().replace(/'/g, "")).sort();
+  assert.deepEqual(inDb, Object.values(R.CANCEL_STATE).sort());
+  assert.doesNotMatch(sql, /DROP TABLE|DELETE FROM|TRUNCATE|ALTER COLUMN/, "데이터를 지우거나 바꾸지 않는다");
+  assert.match(sql, /--\s+ALTER TABLE "PosChargeRequest" DROP CONSTRAINT IF EXISTS "PosChargeRequest_cancelState_check";/);
+  const schema = await readFile("prisma/schema.prisma", "utf8");
+  const block = schema.slice(schema.indexOf("model PosChargeRequest {"), schema.indexOf("model PosPluginToken {"));
+  for (const col of [...sql.matchAll(/ADD COLUMN IF NOT EXISTS "(\w+)"/g)].map((x) => x[1])) {
+    assert.match(block, new RegExp(`\\n\\s+${col}\\s`), `schema.prisma 에 ${col} 이 있다`);
+  }
+});
+
+test("결제 취소 흐름: 사이트 요청(SENT) 중 토스 웹훅이 전부 취소를 알리면 REFUNDED(환불), 같은 웹훅이 또 와도 두 번 환불하지 않는다", async () => {
+  const paidRow = reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "SENT" });
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  await runMatch({ paidRows: [paidRow], request: null }, { order, approved: [] });
+  assert.equal(globalThis.__cs.refunds.length, 1, "첫 웹훅 = 환불");
+  const mark = globalThis.__cs.calls.find((c) => /SET "cancelState" = 'DONE'/.test(c.sql));
+  assert.match(mark.sql, /WHERE id = \$1 AND status = 'PAID' AND "cancelState" IS DISTINCT FROM 'DONE'/, "조건부 UPDATE 한 문장");
+  // 재전송: 요청이 이미 DONE(선점 0행) → 원장부 환불을 부르지 않는다
+  await runMatch({ paidRows: [{ ...paidRow, cancelState: "DONE" }], request: null, markRefundRows: [] }, { order, approved: [] });
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "두 번째는 환불하지 않는다");
+  assert.ok(!globalThis.__cs.revalidated);
+});
+
+test("결제 취소 흐름: 청구서가 이미 납부완료가 아니면(관리자가 먼저 환불 등) 요청만 DONE, 슬랙에 «그대로 두었습니다»", async () => {
+  const order = { id: "o-1", memo: "STIZ:S-482193", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] };
+  await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "REFUNDED" })], request: null, refundResult: false },
+    { order, approved: [] },
+  );
+  assert.ok(globalThis.__cs.slack.some((t) => /그대로 두었습니다/.test(t)));
+  assert.ok(!globalThis.__cs.revalidated, "청구서가 안 바뀌었으면 갱신할 것도 없다");
+});
+
+test("결제 취소 흐름: 결제가 아직 승인 상태면(취소 전) 아무것도 하지 않는다", async () => {
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PAID", cancelState: "SENT" })], request: reqRow({ status: "PAID", tossPaymentId: "tp-1", paymentStatus: "PAID" }) },
+  );
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0);
+  assert.ok(!globalThis.__cs.calls.some((c) => /"cancelState" = 'PARTIAL'/.test(c.sql)));
+  assert.match(r.note, /이미 자동 반영됨/);
+});
+
+test("원장부 환불 함수: 청구 PAID 일 때만 REFUNDED(조건부)·납부일 비움·청구서 CANCELED·감사 기록, 트랜잭션 db 로만 쓴다", async () => {
+  const src = await readFile("src/lib/payment-ledger.ts", "utf8");
+  const fn = /export async function refundPaidPaymentInTx[\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+  assert.match(fn, /UPDATE "Payment" SET status = 'REFUNDED', "paidDate" = NULL[\s\S]*WHERE id = \$1 AND status = 'PAID'/);
+  assert.match(fn, /if \(changed\.length === 0\) return false;/, "이미 바뀌었으면 청구서·감사 기록도 건드리지 않는다");
+  assert.match(fn, /UPDATE "PaymentInvoice" SET status = 'CANCELED'/);
+  assert.match(fn, /'PAYMENT_REFUNDED'/);
+  assert.doesNotMatch(fn, /prisma\./, "넘겨받은 db(트랜잭션)만 쓴다");
+  // 서비스: 환불은 settleCancelForRow 안, 트랜잭션 안에서만
+  const svc = await readFile(SERVICE, "utf8");
+  assert.equal([...svc.matchAll(/await refundPaidPaymentInTx\(/g)].length, 1);
+  const settle = svc.slice(svc.indexOf("async function settleCancelForRow"), svc.indexOf("// ───────────────────────────── 관리자 «결제 취소»"));
+  assert.match(settle, /prisma\.\$transaction\(async \(db\) => \{[\s\S]*MARK_REFUND_SQL[\s\S]*refundPaidPaymentInTx\(db,/);
+  // 플러그인 보고 경로에는 환불이 없다
+  const report = svc.slice(svc.indexOf("export async function reportCancelFromPlugin"));
+  assert.doesNotMatch(report, /refundPaidPaymentInTx|'DONE'|REFUNDED/);
+});
+
+// ── ALREADY_DONE 복구(웹훅 4초 응답 뒤 함수가 멈춘 경우) ──
+
+test("ALREADY_DONE 복구: 요청 PAID + 청구서 미납 → 임대 1행이면 원장부 납부를 다시 쓴다(같은 결제·방식·주문)", async () => {
+  const r = await runMatch({
+    request: reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1", paymentStatus: "PENDING" }),
+    leaseRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-482193" }],
+  });
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-1"], "슬랙 확인 DM 은 만들지 않는다");
+  assert.equal(globalThis.__cs.paid.length, 1, "원장부 기록 1회");
+  assert.equal(globalThis.__cs.paid[0].paymentKey, "tp-1");
+  assert.equal(globalThis.__cs.paid[0].provider, "TOSS_POS");
+  assert.equal(r.retryLater, false);
+  assert.match(r.note, /멈췄던 납부 기록 복구/);
+  const lease = globalThis.__cs.calls.find((c) => /r\."cancelState" IS NULL AND r\."tossOrderId" = \$2/.test(c.sql));
+  assert.match(lease.sql, /COALESCE\(r\."paidRecordedAt", r\."paidAt"\) < now\(\) - interval '30 seconds'/, "원래 처리가 진행 중일 틈은 건드리지 않는다");
+  assert.match(lease.sql, /r\."updatedAt" < now\(\) - interval '30 seconds'/, "동시에 두 곳이 복구하지 않게 임대");
+  assert.match(lease.sql, /p\.status IN \('PENDING', 'OVERDUE'\)/);
+});
+
+test("ALREADY_DONE 복구: 아직 30초 안이면 복구하지 않고 retryLater(스윕이 다시) · 청구서가 이미 납부면 할 일 없음", async () => {
+  let r = await runMatch({ request: reqRow({ status: "PAID", tossPaymentId: "tp-1", paymentStatus: "PENDING" }), leaseRows: [], why: { tooSoon: true, paymentStatus: "PENDING" } });
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.equal(r.retryLater, true);
+  r = await runMatch({ request: reqRow({ status: "PAID", tossPaymentId: "tp-1", paymentStatus: "PAID" }) });
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.equal(r.retryLater, false);
+  assert.ok(!globalThis.__cs.calls.some((c) => /r\."cancelState" IS NULL AND r\."tossOrderId" = \$2/.test(c.sql)), "청구서가 납부면 임대도 안 한다");
+});
+
+test("ALREADY_DONE 복구: 결제 취소가 걸린 요청은 납부를 다시 쓰지 않는다(환불을 덮어쓰지 않게)", async () => {
+  await runMatch({ request: reqRow({ status: "PAID", tossPaymentId: "tp-1", paymentStatus: "PENDING", cancelState: "REQUESTED" }), leaseRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-482193" }] });
+  assert.equal(globalThis.__cs.paid.length, 0);
+});
+
+test("ALREADY_DONE 복구: markPaymentPaid 는 writeLedgerPaid 한 곳에서만, 부르는 곳은 선점 1행 뒤·임대 1행 뒤 둘뿐", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  assert.equal([...src.matchAll(/await markPaymentPaid\(/g)].length, 1);
+  const calls = [...src.matchAll(/await writeLedgerPaid\(/g)].map((m) => m.index);
+  assert.equal(calls.length, 2);
+  const claimAt = src.indexOf("prisma.$queryRawUnsafe(CLAIM_PAY_SQL");
+  assert.ok(calls[0] > src.indexOf("claimed.length === 0", claimAt), "정상 경로: 선점 0행 확인 뒤");
+  const repair = src.slice(src.indexOf("async function repairLedgerPaid"));
+  assert.ok(repair.indexOf("leased.length === 0") < repair.indexOf("await writeLedgerPaid("), "복구 경로: 임대 0행 확인 뒤");
+});
+
+// ── 분할 결제 대기 중 주문이 버려지는 경우(검수 2026-11-08) ──
+
+test("분할 결제 대기: 유효 시간 안이면 SKIP(waiting) + retryLater(웹훅을 처리 완료로 두지 않음) → 지나면 HOLD+알림", async () => {
+  const first = { ...SPLIT_ORDER, orderState: "OPENED", payments: [SPLIT_ORDER.payments[0]] };
+  let r = await runMatch({}, { order: first, approved: [card1] });
+  assert.equal(r.retryLater, true, "스윕이 다시 본다");
+  assert.ok(!globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+  // 30분이 지난 뒤 스윕이 다시 부름(DB 시계로 만료) — 주문은 여전히 진행 중(버려짐)
+  r = await runMatch({ request: reqRow({ isExpiredNow: true }) }, { order: first, approved: [card1] });
+  assert.equal(r.retryLater, false);
+  assert.deepEqual(r.handledTossPaymentIds, [], "보류되면 그 결제의 슬랙 확인 DM 도 나간다");
+  const held = globalThis.__cs.calls.find((c) => /SET status = 'HELD'/.test(c.sql));
+  assert.match(held.args[2], /유효 시간\(30분\)이 지났습니다/);
+  assert.ok(globalThis.__cs.slack.some((t) => /보류/.test(t)));
+  // 스윕이 먼저 EXPIRED 로 바꾼 경우도 같다
+  r = await runMatch({ request: reqRow({ status: "EXPIRED" }) }, { order: first, approved: [card1] });
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("분할 결제 대기: 순수 판정 — 만료 전 대기, 만료 뒤 보류, 합계가 맞으면 만료 전 그대로 납부", async () => {
+  const R = await import(fileUrl(RULES));
+  const request = { status: "SENT", amount: 180000, taxFreeAmount: 180000, tossPaymentId: null, expiresAt: "2026-11-07T05:30:00Z" };
+  const site = { status: "PENDING", amount: 180000, type: "MONTHLY" };
+  const one = [{ ...card1 }];
+  assert.equal(R.decideChargeMatch({ request: { ...request, isExpiredNow: false }, site, approved: one, orderCompleted: false }).action, "SKIP");
+  assert.equal(R.decideChargeMatch({ request: { ...request, isExpiredNow: true }, site, approved: one, orderCompleted: false }).action, "HOLD");
+  // DB 값이 없으면 nowMs 로 판단(호환)
+  assert.equal(R.decideChargeMatch({ request, site, approved: one, orderCompleted: false, nowMs: Date.parse("2026-11-07T05:00:00Z") }).action, "SKIP");
+  assert.equal(R.decideChargeMatch({ request, site, approved: one, orderCompleted: false, nowMs: Date.parse("2026-11-07T06:00:00Z") }).action, "HOLD");
+});
+
+test("웹훅 처리부: retryLater 면 markEvent(처리 완료) 대신 noteEvent(사유만) — 스윕이 사흘 안에서 다시 부른다", async () => {
+  const src = await readFile(NOTICE_SERVICE, "utf8");
+  assert.match(src, /chargeRetryLater = matched\.retryLater;/);
+  const tail = src.slice(src.indexOf("if (chargeRetryLater) {"), src.indexOf("await markEvent(eventRowId, \"RECEIVED\", note);"));
+  assert.match(tail, /await noteEvent\(eventRowId,/);
+  assert.match(tail, /return \{ notices: noticePayments\.length, note \};/);
+});
+
+// ── 관리자 «결제 취소» · 플러그인 취소 API ──
+
+const cancelView = (over = {}) => ({
+  id: "r1", shortCode: "S-482193", paymentId: "p-nov", status: "PAID", amount: 180000, taxFreeAmount: 180000,
+  expiresAtUtc: "2026-11-07T05:30:00Z", expiresKstHm: "14:30", createdAtUtc: "2026-11-07T05:00:00Z", paidKst: "2026-11-07 14:20",
+  isExpired: true, justPaid: false, note: null, createdVia: "ADMIN", paymentType: "MONTHLY", year: 2026, month: 11,
+  paymentStatus: "PAID", paidProvider: "TOSS_POS", studentName: "홍길동", tossOrderId: "o-1", tossPaymentId: "tp-1",
+  cancelState: null, cancelReportMessage: null, refundedKst: null, cancelPickupLate: false, cancelReported: false, ...over,
+});
+
+test("관리자 «결제 취소»: 청구서 id 로만 요청을 찾고, UPDATE 가 같은 청구서·납부완료·토스 POS 를 다시 확인(IDOR 방지) + 감사 기록", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView()] };
+  const v = await svc.requestChargeCancelByAdmin({ paymentId: "p-nov", adminUserId: "admin-1" });
+  assert.equal(v.requestId, "r1");
+  const find = globalThis.__cs.calls.find((c) => /FROM "PosChargeRequest" r\s+JOIN "Payment"/.test(c.sql));
+  assert.match(find.sql, /WHERE r\."paymentId" = \$1 AND r\.status = 'PAID'/);
+  assert.deepEqual(find.args, ["p-nov"]);
+  const upd = globalThis.__cs.calls.find((c) => /SET "cancelState" = 'REQUESTED'/.test(c.sql));
+  assert.match(upd.sql, /WHERE r\.id = \$1 AND r\."paymentId" = \$3 AND r\.status = 'PAID'/);
+  assert.match(upd.sql, /p\.status = 'PAID' AND p\."paidProvider" = 'TOSS_POS'/);
+  assert.match(upd.sql, /r\."cancelState" IS NULL OR r\."cancelState" IN \('FAILED', 'PARTIAL'\)/);
+  assert.deepEqual(upd.args, ["r1", "admin-1", "p-nov"]);
+  assert.ok(globalThis.__cs.audits.some((a) => a.action === "POS_CHARGE_CANCEL_REQUESTED" && a.actorId === "admin-1"));
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.equal((globalThis.__cs.refunds ?? []).length, 0, "요청만 남긴다 — 돈은 웹훅 확인 뒤");
+});
+
+test("관리자 «결제 취소»: 거부 — 기록 없음·토스 POS 아님·이미 진행 중·환불 끝·그 사이 상태 바뀜", async () => {
+  const svc = await loadService();
+  const attempt = async (rows, extra = {}) => {
+    globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: rows, ...extra };
+    try {
+      await svc.requestChargeCancelByAdmin({ paymentId: "p-nov", adminUserId: "admin-1" });
+      return null;
+    } catch (e) {
+      return e;
+    }
+  };
+  assert.equal((await attempt([]))?.code, "NOT_FOUND");
+  assert.equal((await attempt([cancelView({ paidProvider: "TOSS" })]))?.code, "NOT_ELIGIBLE");
+  assert.equal((await attempt([cancelView({ cancelState: "SENT" })]))?.code, "NOT_ELIGIBLE");
+  assert.equal((await attempt([cancelView({ cancelState: "DONE" })]))?.code, "NOT_ELIGIBLE");
+  assert.equal((await attempt([cancelView({ tossOrderId: null })]))?.code, "NOT_ELIGIBLE");
+  assert.equal((await attempt([cancelView()], { requestCancelRows: [] }))?.code, "CHANGED");
+  assert.equal(await attempt([cancelView({ cancelState: "FAILED" })]), null, "실패했으면 다시 보낼 수 있다");
+});
+
+test("관리자 «결제 취소» 창 상태: 진행 중·POS 무응답(90초)·실패·환불 완료", async () => {
+  const svc = await loadService();
+  const read = async (over) => {
+    globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView(over)] };
+    return svc.getChargeCancelForPayment("p-nov");
+  };
+  assert.equal((await read({})).canRequest, true);
+  const working = await read({ cancelState: "REQUESTED", cancelPickupLate: true });
+  assert.equal(working.canRequest, false);
+  assert.equal(working.pickupLate, true);
+  const failed = await read({ cancelState: "FAILED", cancelReportMessage: "카드 취소 거절" });
+  assert.equal(failed.canRequest, true);
+  assert.equal(failed.cancelReportMessage, "카드 취소 거절");
+  const done = await read({ cancelState: "DONE", paymentStatus: "REFUNDED", refundedKst: "2026-11-08 10:00" });
+  assert.equal(done.cancelState, "DONE");
+  assert.equal(done.canRequest, false);
+  const src = await readFile(SERVICE, "utf8");
+  assert.match(src, /\(r\."cancelState" = 'REQUESTED' AND r\."cancelRequestedAt" < now\(\) - interval '\$\{CANCEL_PICKUP_TIMEOUT_SEC\} seconds'\) AS "cancelPickupLate"/, "무응답 판단은 DB 시계");
+});
+
+test("플러그인 취소 선점: 취소할 토스 주문·결제 ID 는 서버 DB 값(분할이면 전부), 선점 SQL 은 REQUESTED·같은 토큰·2분 넘은 것만", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView({ cancelState: "SENT" })], auditIds: ["tp-1", "tp-2"] };
+  const job = await svc.claimCancelForPlugin("0b5c6c1e-1111-4222-8333-944445555666", "tok-1");
+  assert.equal(job.tossOrderId, "o-1");
+  assert.deepEqual(job.tossPaymentIds, ["tp-1", "tp-2"]);
+  assert.equal(job.studentName, "홍*동", "이름은 가린다");
+  const claim = globalThis.__cs.calls.find((c) => /SET "cancelState" = 'SENT'/.test(c.sql));
+  assert.match(claim.sql, /r\."cancelState" = 'REQUESTED'/);
+  assert.match(claim.sql, /r\."cancelClaimedByTokenId" = \$2 OR r\."cancelClaimedAt" < now\(\) - interval '2 minutes'/);
+  // 선점 실패 → NOT_CLAIMABLE, 이상한 id → NOT_FOUND
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelClaimRows: [] };
+  await assert.rejects(svc.claimCancelForPlugin("0b5c6c1e-1111-4222-8333-944445555666", "tok-2"), (e) => e.code === "NOT_CLAIMABLE");
+  await assert.rejects(svc.claimCancelForPlugin("'; DROP", "tok-2"), (e) => e.code === "NOT_FOUND");
+});
+
+test("플러그인 취소 보고: 가져간 토큰만 · failed 는 FAILED 표시만 · done 으로는 환불하지 않음 · 결과 값 검사", async () => {
+  const svc = await loadService();
+  assert.equal(svc.normalizePluginCancelResult("done"), "DONE");
+  assert.equal(svc.normalizePluginCancelResult("FAILED"), "FAILED");
+  assert.equal(svc.normalizePluginCancelResult("refunded"), null);
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelReportRows: [{ cancelState: "SENT" }] };
+  const r = await svc.reportCancelFromPlugin({ requestId: "0b5c6c1e-1111-4222-8333-944445555666", tokenId: "tok-1", result: "DONE", message: "ok" });
+  assert.deepEqual(r, { cancelState: "SENT", refunded: false }, "done 보고는 상태를 바꾸지 않는다(웹훅 대기)");
+  const sql = globalThis.__cs.calls.find((c) => /SET "cancelReportedAt" = now\(\)/.test(c.sql));
+  assert.match(sql.sql, /WHERE id = \$1 AND "cancelClaimedByTokenId" = \$4/);
+  assert.match(sql.sql, /WHEN \$2::text = 'FAILED' AND "cancelState" IN \('REQUESTED', 'SENT'\) THEN 'FAILED'/);
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], cancelReportRows: [] };
+  await assert.rejects(
+    svc.reportCancelFromPlugin({ requestId: "0b5c6c1e-1111-4222-8333-944445555666", tokenId: "tok-x", result: "FAILED" }),
+    (e) => e.code === "NOT_CLAIMABLE",
+    "다른 토큰은 보고할 수 없다",
+  );
+});
+
+test("롱폴링 취소 깨우기: 새 취소 요청(90초 안)·known 에 없는 것만 — 오래된 요청으로 1초마다 깨우지 않는다", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  const fn = /export async function hasUnknownCancelJob[\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+  assert.match(fn, /"cancelState" = 'REQUESTED' AND "cancelRequestedAt" > now\(\) - interval '\$\{CANCEL_PICKUP_TIMEOUT_SEC\} seconds'/);
+  assert.match(fn, /NOT \(id = ANY\(\$1::text\[\]\)\)/);
+  assert.doesNotMatch(fn, /UPDATE|JOIN/);
+});
+
+test("관리자 «결제 취소» 창·메뉴: 위험 작업 확인 문구, 3초 자동 확인, 실패 안내, 환불 완료 문구 · 메뉴는 토스 POS 납부완료에만", async () => {
+  const code = await readFile(CANCEL_MODAL, "utf8");
+  assert.match(code, /POS 결제가 취소되고 청구는 환불로 바뀝니다\. 되돌릴 수 없습니다\./);
+  assert.match(code, /tone: "danger"/);
+  assert.match(code, /const POS_CANCEL_POLL_MS = 3000;/);
+  assert.match(code, /POS 에서 직접 취소해 주세요/);
+  assert.match(code, /환불 처리됐습니다/);
+  assert.match(code, /visibilitychange/, "탭을 숨기면 자동 확인을 멈춘다");
+  assert.doesNotMatch(code, /toISOString\(\)\.slice\(0,\s*10\)|getUTCDay|getDay\(\)|getHours\(\)|getDate\(\)/);
+  const finance = await readFile(FINANCE, "utf8");
+  assert.match(finance, /canManageCriticalFinance && p\.status === "PAID" && p\.paidProvider === "TOSS_POS"/);
+  assert.match(finance, /key: "pos-cancel"/);
+  assert.match(finance, /onRefunded=\{\(\) => void loadMonth\(year, month\)\}/);
+  const actions = await readFile(ACTIONS, "utf8");
+  for (const name of ["loadPosChargeCancel", "requestPosChargeCancel"]) {
+    const body = actions.slice(actions.indexOf(`export async function ${name}`));
+    assert.match(body.slice(0, body.indexOf("\n}\n")), /await requireFinanceOwner\(\)/, `${name}: 원장만(권한 없는 사용자 거부)`);
   }
 });

@@ -78,6 +78,9 @@ function fakeSdk(
       async getPayment(id: string) {
         return { id, orderId: "o", amountMoney: 100000, taxExemptMoney: 100000 };
       },
+      async cancel() {
+        log.push("payment.cancel");
+      },
     },
     toast: {
       success: (p) => log.push(`toast.success:${p.message}`),

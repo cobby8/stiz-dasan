@@ -196,7 +196,7 @@ const intOrNull = (v) => {
  *   - 주문이 끝났는데도 모자라면 HOLD.
  *   - 대표 결제 = 가장 먼저 승인된 것(요청의 tossPaymentId 유일 칸에 들어간다).
  *
- * @param input.request   { status, amount, taxFreeAmount, tossPaymentId, expiresAt }   (DB 값)
+ * @param input.request   { status, amount, taxFreeAmount, tossPaymentId, expiresAt, isExpiredNow? }   (DB 값 · isExpiredNow = DB 시계로 지금 만료됐나)
  * @param input.site      { status, amount, type }                        (청구서 DB 값)
  * @param input.approved  [{ tossPaymentId, amount, approvedAtIso, taxExemptAmount, sourceType }]  (방식 무관 승인 결제)
  * @param input.others    [{ id, state }]                                 (승인 아닌 결제)
@@ -247,6 +247,16 @@ export function decideChargeMatch({ request, site, approved = [], others = [], o
   }
   if (sorted.some((p) => intOrNull(p.amount) == null)) return hold("결제 금액을 읽지 못한 결제가 있습니다.");
   const want = Number(request.amount);
+  // 분할 결제 대기는 «요청 유효 시간 안»에서만(2026-11-08 검수): 주문이 끝나지 않은 채 버려지면
+  // 완료 웹훅이 영영 안 와서 슬랙 확인·보류 알림이 사라진다. 유효 시간이 지나면 기다리지 않고 보류한다
+  // (웹훅 처리부는 대기 판정이면 처리 완료로 표시하지 않아, 10분 스윕이 다시 와서 이 줄로 보류시킨다).
+  // 지금 만료됐나 = DB 시계 값(request.isExpiredNow)이 있으면 그것, 없으면 nowMs 와 만료 시각 비교
+  const waitExpiresMs = toMs(request.expiresAt);
+  const waitExpired = status === CHARGE_STATUS.EXPIRED
+    || (typeof request.isExpiredNow === "boolean" ? request.isExpiredNow : waitExpiresMs != null && nowMs > waitExpiresMs);
+  if (sumAmount < want && !orderCompleted && waitExpired) {
+    return hold(`${what}(${sumAmount}원)가 요청 금액(${want}원)보다 적은 채 요청 유효 시간(30분)이 지났습니다.`);
+  }
   if (sumAmount < want && !orderCompleted) {
     // 분할 결제 중간(첫 결제만 승인됨) — 아직 판단하지 않는다. 다음 웹훅·주문 완료 웹훅에서 다시 본다.
     return {
@@ -355,6 +365,101 @@ export function describeChargePayments(payments) {
     return `${p?.tossPaymentId}(${POS_METHOD_LABELS[code]} ${formatChargeWon(p?.amount)})`;
   });
   return `분할 결제 ${list.length}건: ${parts.join(" + ")}`;
+}
+
+// ───────────────────────────── 결제 취소(사이트 → POS) · 환불 판정 ─────────────────────────────
+//
+// 2026-11-08 원장 지시 «사이트에서 결제 취소하면 POS 결제도 취소되게».
+// 흐름: 관리자 «결제 취소» → 요청 cancelState=REQUESTED → 플러그인이 가져가(SENT) payment.cancel 호출
+//       → 토스 웹훅 → 주문 재조회 → decideChargeCancel 이 «전부 취소»면 청구서 환불(REFUNDED).
+// 환불 확정은 토스 웹훅 재조회로만 한다(플러그인 보고는 기록만 — 납부 확정과 같은 원칙).
+// POS 에서 사람이 직접 취소해도 같은 웹훅이 오므로 같은 길로 환불된다.
+
+/** 결제 취소 진행 상태. DB CHECK 와 같은 목록이다(테스트가 마이그레이션과 비교). */
+export const CANCEL_STATE = Object.freeze({
+  REQUESTED: "REQUESTED", // 사이트에서 취소 요청(플러그인이 아직 안 가져감)
+  SENT: "SENT", // 플러그인이 가져가 POS 에서 취소 중
+  FAILED: "FAILED", // 플러그인이 취소하지 못함 → POS 에서 직접 취소 안내
+  PARTIAL: "PARTIAL", // 분할 결제 중 일부만 취소됨 → 사람 확인(청구서는 그대로)
+  DONE: "DONE", // 토스 웹훅으로 전부 취소 확인 → 청구서 환불
+});
+
+/** 다시 «결제 취소»를 누를 수 있는 상태(취소 없음·실패·일부만 취소) */
+export const RETRYABLE_CANCEL_STATES = Object.freeze([CANCEL_STATE.FAILED, CANCEL_STATE.PARTIAL]);
+
+/** 토스 결제 상태 중 «취소 끝»으로 보는 값(부분취소 등 그 밖의 값은 취소 끝이 아니다) */
+export const CANCELLED_PAYMENT_STATES = Object.freeze(["CANCELLED", "CANCELED", "REFUNDED"]);
+
+/** 사이트 취소 요청 뒤 플러그인이 이 시간(초) 안에 안 가져가면 «POS 에서 직접 취소» 안내 */
+export const CANCEL_PICKUP_TIMEOUT_SEC = 90;
+
+const PAYMENT_ID_RE = /^[A-Za-z0-9_-]{1,100}$/;
+
+/**
+ * 이 요청으로 납부된 토스 결제 ID 전부. 분할 결제는 대표 결제만 유일 칸(tossPaymentId)에 있어서
+ * 감사 기록(POS_CHARGE_PAYMENTS metadata.payments) → note(«분할 결제 N건: id(…) + id(…)») → 대표 결제 순으로 찾는다.
+ * 대표 결제는 항상 포함한다. 나온 순서, 중복 제거.
+ * @param {{ tossPaymentId?: string|null, note?: string|null, auditPaymentIds?: string[]|null }} input
+ * @returns {string[]}
+ */
+export function chargePaymentIdsOf({ tossPaymentId, note, auditPaymentIds }) {
+  const out = [];
+  const push = (v) => {
+    const id = String(v ?? "").trim();
+    if (PAYMENT_ID_RE.test(id) && !out.includes(id)) out.push(id);
+  };
+  push(tossPaymentId);
+  if (Array.isArray(auditPaymentIds) && auditPaymentIds.length > 0) {
+    for (const id of auditPaymentIds) push(id);
+    return out;
+  }
+  const m = /분할 결제 \d+건:\s*(.+)/.exec(String(note ?? ""));
+  if (m) for (const part of m[1].matchAll(/([A-Za-z0-9_-]{1,100})\(/g)) push(part[1]);
+  return out;
+}
+
+/**
+ * 토스 재조회 주문 ↔ 이 요청의 결제들 → 취소 판정.
+ *   FULL    요청의 결제가 «전부» 취소 끝 → 청구서 환불
+ *   PARTIAL 일부만 취소·부분취소·주문에서 사라짐 → 청구서 그대로, 사람 확인
+ *   NONE    전부 아직 승인 → 할 일 없음
+ * @param {{ paymentIds: string[], order: any }} input
+ * @returns {{ action: "FULL"|"PARTIAL"|"NONE", cancelled: string[], other: { id: string, state: string }[] }}
+ */
+export function decideChargeCancel({ paymentIds, order }) {
+  const byId = new Map();
+  for (const p of Array.isArray(order?.payments) ? order.payments : []) {
+    if (p?.id != null) byId.set(String(p.id), String(p?.state ?? "").toUpperCase());
+  }
+  const ids = Array.isArray(paymentIds) ? paymentIds : [];
+  const cancelled = [];
+  const other = [];
+  let approved = 0;
+  for (const id of ids) {
+    const state = byId.has(id) ? byId.get(id) : "MISSING";
+    if (CANCELLED_PAYMENT_STATES.includes(state)) cancelled.push(id);
+    else if (state === "APPROVED") approved += 1;
+    else other.push({ id, state });
+  }
+  if (ids.length > 0 && cancelled.length === ids.length) return { action: "FULL", cancelled, other };
+  if (approved === ids.length) return { action: "NONE", cancelled, other };
+  return { action: "PARTIAL", cancelled, other };
+}
+
+/**
+ * 관리자 «결제 취소»를 걸 수 있나. 못 하면 사람이 읽는 이유.
+ * @param {{ request: { status: string, cancelState: string|null } | null, site: { status: string, paidProvider: string|null } | null }} input
+ */
+export function cancelEligibility({ request, site }) {
+  if (!request) return { ok: false, reason: "현장 결제로 납부된 기록을 찾지 못했습니다." };
+  if (String(request.status) !== CHARGE_STATUS.PAID) return { ok: false, reason: "현장 결제로 납부된 요청이 아닙니다." };
+  if (!site || site.status !== "PAID") return { ok: false, reason: "납부완료 청구서만 결제 취소할 수 있습니다." };
+  if (site.paidProvider !== "TOSS_POS") return { ok: false, reason: "토스 POS 로 받은 결제만 여기서 취소할 수 있습니다." };
+  const cs = request.cancelState ?? null;
+  if (cs === CANCEL_STATE.DONE) return { ok: false, reason: "이미 환불 처리됐습니다." };
+  if (cs === CANCEL_STATE.REQUESTED || cs === CANCEL_STATE.SENT) return { ok: false, reason: "이미 POS 에 결제 취소를 보냈습니다." };
+  if (cs !== null && !RETRYABLE_CANCEL_STATES.includes(cs)) return { ok: false, reason: `취소 상태가 올바르지 않습니다(${cs}).` };
+  return { ok: true, reason: "" };
 }
 
 // ───────────────────────────── 표시 ─────────────────────────────

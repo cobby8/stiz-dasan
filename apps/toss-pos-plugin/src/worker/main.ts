@@ -8,11 +8,13 @@
 //   3) 바로 못 열면(다른 주문이 담겨 있음·준비 중·오류) 토스트 «… 현장 결제 요청 [결제하기]» 로 남긴다
 //   요청 한도: 정상 30분 90번 + 결제 1건당 SDK 호출 약 13번(backoff.ts 머리말 검산)
 //   4) 결제/취소 신호 → 서버에 참고 보고
+//   5) 롱폴링 응답의 «결제 취소할 일»(사이트에서 [결제 취소]) → 토스 POS 결제 취소(cancel.ts, 2026-11-08)
 import { posPluginSdk, PosPluginSdkRateLimitError } from "@tossplace/pos-plugin-sdk";
 import { createServerApi } from "../core/api.ts";
 import { LONG_POLL_WAIT_SEC, nextAfterLongPoll, nextPollDelay } from "../core/backoff.ts";
+import { createCancelFlow } from "../core/cancel.ts";
 import { createChargeFlow } from "../core/charge.ts";
-import type { ChargeRequest } from "../core/contract.ts";
+import type { CancelJob, ChargeRequest } from "../core/contract.ts";
 import { isFirstNotice, needsManualFallback, pickNotifications } from "../core/notify.ts";
 import type { NotifyLog } from "../core/notify.ts";
 import { notificationMessage } from "../core/order.ts";
@@ -25,6 +27,7 @@ const isRateLimitError = (e: unknown) => PosPluginSdkRateLimitError.isPosPluginS
 const tokens = createTokenStore(posPluginSdk.secureStore);
 const api = createServerApi({ http: posPluginSdk.http, getToken: () => tokens.get(), isRateLimitError });
 const flow = createChargeFlow({ sdk, api });
+const cancelFlow = createCancelFlow({ sdk, api });
 
 const notified: NotifyLog = new Map();
 let failures = 0;
@@ -86,12 +89,24 @@ async function tick(): Promise<void> {
     // 어떤 오류가 나도 폴링이 멈추지 않도록 항상 다음 회차를 예약한다
     console.error("[stiz] 폴링 오류", e instanceof Error ? e.message : e);
     failures += 1;
-    outcome = { delayMs: nextPollDelay(failures), fresh: [] };
+    outcome = { delayMs: nextPollDelay(failures), fresh: [], cancels: [] };
   } finally {
     inFlight = false;
   }
   schedule(outcome.delayMs);
   handleFresh(outcome.fresh);
+  handleCancels(outcome.cancels);
+}
+
+/**
+ * 결제 취소할 일 처리 — 한 건씩 차례로(같은 결제 화면을 두고 겹치지 않게). 결과 안내는 cancel.ts 가 한다.
+ * 다음 폴링을 먼저 예약한 뒤 부르므로 취소가 오래 걸려도(POS 확인 창) 폴링은 멈추지 않는다.
+ */
+let cancelChain: Promise<unknown> = Promise.resolve();
+function handleCancels(jobs: CancelJob[]): void {
+  for (const job of jobs) {
+    cancelChain = cancelChain.then(() => cancelFlow.run(job)).catch((e) => console.error("[stiz] 결제 취소 처리 실패", e));
+  }
 }
 
 /** 대기 요청 [결제하기] 토스트(자동으로 못 열었거나 두 번째 이후 요청) */
@@ -123,7 +138,7 @@ function handleFresh(fresh: ChargeRequest[]): void {
   }
 }
 
-type PollOutcome = { delayMs: number; fresh: ChargeRequest[] };
+type PollOutcome = { delayMs: number; fresh: ChargeRequest[]; cancels: CancelJob[] };
 
 async function pollOnce(): Promise<PollOutcome> {
   const startedAt = Date.now();
@@ -131,12 +146,12 @@ async function pollOnce(): Promise<PollOutcome> {
   if (res.ok) {
     failures = 0;
     authWarned = false;
-    const { requests, longPoll } = res.data;
-    // 이번에 본 대기 요청 = 다음 대기에서 서버가 «이것 때문에» 바로 답하지 않게 알려 줄 목록
-    seenPending = requests.filter((r) => r.status === "PENDING").map((r) => r.id).slice(0, 20);
+    const { requests, longPoll, cancels } = res.data;
+    // 이번에 본 대기 요청·취소할 일 = 다음 대기에서 서버가 «이것 때문에» 바로 답하지 않게 알려 줄 목록(합쳐 최대 20개)
+    seenPending = [...requests.filter((r) => r.status === "PENDING").map((r) => r.id), ...cancels.map((c) => c.id)].slice(0, 20);
     const next = nextAfterLongPoll({ longPoll, elapsedMs: Date.now() - startedAt, earlyStreak });
     earlyStreak = next.earlyStreak;
-    return { delayMs: next.delayMs, fresh: pickNotifications(requests, notified, Date.now()) };
+    return { delayMs: next.delayMs, fresh: pickNotifications(requests, notified, Date.now()), cancels };
   }
   earlyStreak = 0;
   // 실패 처리: 토큰 문제는 한 번만 크게 알리고, 나머지는 조용히 간격을 늘린다
@@ -148,12 +163,12 @@ async function pollOnce(): Promise<PollOutcome> {
     // 토큰을 넣을 때까지는 secureStore 를 다시 읽어 본다(탭 화면에서 넣었을 수 있음)
     tokens.reload();
     failures = Math.min(failures + 1, 5);
-    return { delayMs: nextPollDelay(failures), fresh: [] };
+    return { delayMs: nextPollDelay(failures), fresh: [], cancels: [] };
   }
   failures += 1;
   // 서버가 «몇 초 뒤에 다시»를 알려 주면(429 retryAfterSeconds) 그보다 먼저 부르지 않는다
   const serverWaitMs = (res.retryAfterSeconds ?? 0) * 1000;
-  return { delayMs: Math.max(serverWaitMs, nextPollDelay(failures, { rateLimited: res.kind === "rate" })), fresh: [] };
+  return { delayMs: Math.max(serverWaitMs, nextPollDelay(failures, { rateLimited: res.kind === "rate" })), fresh: [], cancels: [] };
 }
 
 async function main(): Promise<void> {
@@ -172,6 +187,8 @@ async function main(): Promise<void> {
     void flow.handlePaymentEvent("paid", paymentId, orderId).catch((e) => console.error("[stiz] paid 처리 실패", e));
   });
   posPluginSdk.payment.on("cancel", (paymentId: string, orderId: string) => {
+    // 사이트 [결제 취소]로 이 기기가 방금 취소한 결제면 안내를 한 번 더 띄우지 않는다(cancel.ts 가 이미 안내함)
+    if (cancelFlow.wasCancelledHere(paymentId)) return;
     void flow.handlePaymentEvent("cancel", paymentId, orderId).catch((e) => console.error("[stiz] cancel 처리 실패", e));
   });
   schedule(3_000); // POS 부팅 직후 몰리지 않게 3초 뒤 첫 확인

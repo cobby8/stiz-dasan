@@ -13,9 +13,11 @@ export const API_PATHS = {
   /**
    * 롱폴링: 서버가 최대 waitSec 초 기다렸다가 «모르는 대기 요청»이 생기면 바로 답한다(2026-11-08).
    * known = 이미 알림을 띄운 대기 요청 id(서버가 이것 때문에 즉시 답하지 않게). 최대 20개.
+   * cancels=1 = «결제 취소할 일»도 받는다는 표시(2026-11-08) — 이걸 보낸 기기만 새 취소 요청으로도 대기가 깨어난다.
+   *   known 에는 이미 받은 취소 요청 id 도 넣는다(같은 id 공간).
    */
   chargeRequestsWait: (waitSec: number, known: string[] = []) => {
-    const q = `wait=${Math.max(0, Math.floor(waitSec))}`;
+    const q = `wait=${Math.max(0, Math.floor(waitSec))}&cancels=1`;
     const ids = known.slice(0, 20).map(encodeURIComponent).join(",");
     return `/api/pos-plugin/charge-requests?${q}${ids ? `&known=${ids}` : ""}`;
   },
@@ -30,7 +32,27 @@ export const API_PATHS = {
    * (보고서 «계약 변경 제안» 참고).
    */
   chargeUnpaid: (paymentId: string) => `/api/pos-plugin/unpaid/${encodeURIComponent(paymentId)}/charge`,
+  /** «결제 취소할 일» 가져가기(REQUESTED → SENT). 응답으로 취소할 토스 주문·결제 ID(서버 DB 값)를 받는다 */
+  cancelClaim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/claim`,
+  /** 결제 취소 결과 참고 보고 { result: done|failed, message }. 환불은 서버가 토스 웹훅+재조회로만 한다 */
+  cancelReport: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/report`,
 } as const;
+
+/** 사이트에서 «결제 취소»를 누른 요청 1건(롱폴링 응답 cancels[]) — 결제 ID 는 선점 응답에서만 온다 */
+export type CancelJob = {
+  id: string;
+  shortCode: string;
+  amount: number;
+  /** 가린 이름 */
+  studentName: string;
+  title: string;
+};
+
+/** 선점한 «결제 취소할 일» — 취소할 토스 주문·결제 ID(분할이면 여러 건) */
+export type CancelClaim = CancelJob & { tossOrderId: string; tossPaymentIds: string[] };
+
+/** 취소 결과 보고 본문 */
+export type CancelReportBody = { result: "done" | "failed"; message?: string };
 
 /** 현장 결제 요청 1건(서버가 준 값 그대로 — 이름은 서버가 마스킹해서 준다) */
 export type ChargeRequest = {
@@ -142,13 +164,54 @@ export function parseChargeRequestList(body: unknown): ChargeRequest[] {
     .filter((r): r is ChargeRequest => r !== null);
 }
 
-/** 롱폴링 응답: 목록 + 서버가 실제로 기다려 준 초(waitSec). waitSec 이 없으면 wait 를 모르는 옛 서버다 */
-export type WaitListResult = { requests: ChargeRequest[]; longPoll: boolean };
+/** 취소할 일 1건 해석. 필수 칸(id·번호)이 없으면 null(=무시) */
+export function parseCancelJob(raw: unknown): CancelJob | null {
+  if (!isObj(raw)) return null;
+  const id = str(pick(raw, "id", "requestId"));
+  const shortCode = str(pick(raw, "shortCode", "code"));
+  if (!id || !shortCode) return null;
+  const amount = num(pick(raw, "amount"));
+  return {
+    id,
+    shortCode,
+    amount: Number.isFinite(amount) ? amount : 0,
+    studentName: str(pick(raw, "studentName", "studentLabel")) || "(이름 없음)",
+    title: str(pick(raw, "itemName", "itemTitle", "title")),
+  };
+}
+
+/**
+ * 롱폴링 응답: 목록 + 서버가 실제로 기다려 준 초(waitSec) + 취소할 일(cancels).
+ * waitSec 이 없으면 wait 를 모르는 옛 서버다. cancels 가 없으면(옛 서버) 빈 목록.
+ */
+export type WaitListResult = { requests: ChargeRequest[]; longPoll: boolean; cancels: CancelJob[] };
 
 export function parseWaitList(body: unknown): WaitListResult {
   const b = unwrap(body);
   const w = isObj(b) ? num(pick(b, "waitSec")) : NaN;
-  return { requests: parseChargeRequestList(body), longPoll: Number.isFinite(w) && w > 0 };
+  const cancels = listOf(body, "cancels").map(parseCancelJob).filter((c): c is CancelJob => c !== null);
+  return { requests: parseChargeRequestList(body), longPoll: Number.isFinite(w) && w > 0, cancels };
+}
+
+/** 취소 선점 응답 {cancel: {...}} 해석. 주문 ID·결제 ID 가 하나도 없으면 null(취소하지 않는다) */
+export function parseCancelClaim(body: unknown): CancelClaim | null {
+  const b = unwrap(body);
+  const raw = isObj(b) && isObj(b.cancel) ? b.cancel : b;
+  const job = parseCancelJob(raw);
+  if (!job || !isObj(raw)) return null;
+  const tossOrderId = str(pick(raw, "tossOrderId"));
+  const idsRaw = pick(raw, "tossPaymentIds");
+  const tossPaymentIds = Array.isArray(idsRaw) ? idsRaw.map(str).filter((x) => x.length > 0) : [];
+  if (!tossOrderId || tossPaymentIds.length === 0) return null;
+  return { ...job, tossOrderId, tossPaymentIds };
+}
+
+/** 취소 보고 응답 → 서버의 취소 상태(DONE 이면 사이트 환불까지 끝남) */
+export function parseCancelReport(body: unknown): string {
+  const b = unwrap(body);
+  if (!isObj(b)) return "";
+  if (b.refunded === true) return "DONE";
+  return str(pick(b, "cancelState"));
 }
 
 /** 선점·미납결제 응답: {request: {...}} 또는 요청 객체 그 자체 */

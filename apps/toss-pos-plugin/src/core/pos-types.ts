@@ -72,7 +72,14 @@ export type PosSdkLike = {
     startPayment(): Promise<void>;
   };
   order: { getOrder(orderId: string): Promise<OrderLike> };
-  payment: { getPayment(paymentId: string): Promise<PaymentLike> };
+  payment: {
+    getPayment(paymentId: string): Promise<PaymentLike>;
+    /**
+     * 주문의 결제 1건 취소(SDK 0.0.31 payment.cancel(order, payment)). CARD·CASH 는 토스 POS 가 처리한다.
+     * 근거 https://docs.tossplace.com/reference/plugin-sdk/pos/payment.html — 카드는 POS 에서 사람 확인이 필요할 수 있다(실기기 확인).
+     */
+    cancel(order: { id: string }, payment: { id: string }): Promise<void>;
+  };
   toast: {
     success(p: { message: string; button?: { text: string; onClick: () => void } }): void;
     warn(p: { message: string; button?: { text: string; onClick: () => void } }): void;

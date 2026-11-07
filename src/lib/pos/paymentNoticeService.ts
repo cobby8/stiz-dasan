@@ -353,10 +353,13 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
     // 매칭이 실패해도 알림 흐름은 막지 않는다(원장 확인 DM 이 안전망).
     let chargeHandled = new Set<string>();
     let chargeNote = "";
+    // 분할 결제 대기·납부 기록 복구 대기면 true — 이 알림을 «처리 완료»로 두지 않아 10분 스윕이 다시 본다(사흘 안).
+    let chargeRetryLater = false;
     try {
         const matched = await matchChargeRequestsForOrder({ order, orderId, approved: chargePayments, eventType: type, redact });
         chargeHandled = new Set(matched.handledTossPaymentIds);
         chargeNote = matched.note;
+        chargeRetryLater = matched.retryLater;
     } catch (error) {
         console.error("[pos-charge] 요청 매칭 실패(슬랙 확인 흐름으로 진행):", redact((error as Error).message), { eventRowId });
     }
@@ -398,6 +401,12 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
     }
     const baseNote = noticePayments.length > 0 ? `카드 승인 결제 ${noticePayments.length}건 알림` : "카드 승인 결제 없음";
     const note = chargeNote ? `${baseNote} · 현장 결제: ${chargeNote}` : baseNote;
+    if (chargeRetryLater) {
+        // 대기 상태를 DB 에 남긴다(웹훅 note) — processedAt 을 비워 두면 스윕이 다시 부른다.
+        // 분할 결제가 버려져도 요청 유효 시간(30분)이 지나면 다음 스윕에서 보류+알림으로 끝난다(decideChargeMatch).
+        await noteEvent(eventRowId, `${note} · 다시 확인 예정`);
+        return { notices: noticePayments.length, note };
+    }
     await markEvent(eventRowId, "RECEIVED", note);
     return { notices: noticePayments.length, note };
 }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SIGNATURE_REASON_LABEL, verifyWebhookSignature } from "@/lib/pos/webhookSignature";
 import { processPosWebhookEvent } from "@/lib/pos/paymentNoticeService";
@@ -6,23 +6,35 @@ import { processPosWebhookEvent } from "@/lib/pos/paymentNoticeService";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** 알림 처리(토스 재조회 + 슬랙 DM)에 쓰는 최대 시간. 넘기면 응답부터 하고 나머지는 10분 스윕이 줍는다. */
+/** 알림 처리(토스 재조회 + 슬랙 DM)를 응답 전에 기다리는 최대 시간. 넘기면 응답부터 하고 처리는 after() 로 이어 간다. */
 const PROCESS_TIMEOUT_MS = 4000;
 
 /**
  * 새로 저장된 알림을 바로 처리해 본다(원장에게 DM). **응답 내용은 절대 바꾸지 않는다.**
- * 실패·시간초과여도 조용히 넘어간다 — 저장은 이미 끝났고 스윕(/api/cron/pos-notice-sweep)이 다시 시도한다.
+ * 4초를 넘기면 토스에 먼저 답하되, 처리 자체는 끊지 않는다 — Next 16 after() 가 응답 뒤에도 함수를 살려 둬
+ * «요청 PAID → 청구서 납부 기록» 같은 돈 경로가 중간에 멈추지 않게 한다(2026-11-08 검수 건의).
+ * 그래도 멈추면(함수 강제 종료) 알림이 «처리 완료»가 아니라서 10분 스윕이 다시 부르고,
+ * 매칭은 ALREADY_DONE 이어도 청구서가 미납이면 납부 기록을 다시 시도한다(chargeRequestService 의 repairLedgerPaid).
  */
 async function tryProcessNow(eventRowId: string) {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // 처리 약속(promise)은 한 번만 만든다 — 시간 초과 뒤에도 같은 처리가 이어지게(두 번 돌리지 않는다)
+    const work = processPosWebhookEvent(eventRowId).then(
+        () => "DONE" as const,
+        (processError) => {
+            console.error("[tossplace-webhook] 알림 처리 실패(스윕이 다시 시도):", (processError as Error).message, { eventRowId });
+            return "FAILED" as const;
+        },
+    );
     try {
         const timeout = new Promise<"TIMEOUT">((resolve) => {
             timer = setTimeout(() => resolve("TIMEOUT"), PROCESS_TIMEOUT_MS);
         });
-        const result = await Promise.race([processPosWebhookEvent(eventRowId), timeout]);
-        if (result === "TIMEOUT") console.warn("[tossplace-webhook] 알림 처리 시간 초과 — 스윕이 이어서 처리", { eventRowId });
-    } catch (processError) {
-        console.error("[tossplace-webhook] 알림 처리 실패(스윕이 다시 시도):", (processError as Error).message, { eventRowId });
+        const result = await Promise.race([work, timeout]);
+        if (result === "TIMEOUT") {
+            console.warn("[tossplace-webhook] 알림 처리 4초 초과 — 응답 뒤에도 이어서 처리(after)", { eventRowId });
+            after(() => work.then(() => undefined));
+        }
     } finally {
         if (timer) clearTimeout(timer);
     }

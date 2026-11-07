@@ -6,7 +6,10 @@ import {
     ChargeRequestError,
     cancelChargeRequestByAdmin,
     createChargeRequestByAdmin,
+    getChargeCancelForPayment,
     getChargeRequestForPayment,
+    requestChargeCancelByAdmin,
+    type AdminChargeCancelView,
     type AdminChargeRequestView,
 } from "@/lib/pos/chargeRequestService";
 import {
@@ -74,6 +77,33 @@ export async function cancelPosChargeRequest(requestId: string): Promise<ActionR
         return { ok: true };
     } catch (error) {
         return failure(error, "현장 결제 요청을 취소하지 못했습니다.");
+    }
+}
+
+/**
+ * «결제 취소» 창 — 이 청구서를 납부시킨 현장 결제의 취소 상태.
+ * 청구서 id 만 받는다(요청 id 는 서버가 그 청구서에서 찾는다 — 다른 청구서의 요청을 건드리지 못하게).
+ */
+export async function loadPosChargeCancel(paymentId: string): Promise<ActionResult<{ cancel: AdminChargeCancelView | null }>> {
+    try {
+        await requireFinanceOwner();
+        return { ok: true, cancel: await getChargeCancelForPayment(String(paymentId ?? "")) };
+    } catch (error) {
+        return failure(error, "결제 취소 상태를 불러오지 못했습니다.");
+    }
+}
+
+/**
+ * «결제 취소» — POS 에 결제 취소를 보낸다(요청에 «취소할 일» 표시만). 돈은 여기서 안 움직인다:
+ * 청구서 환불은 POS 가 취소한 뒤 토스 웹훅 + 재조회로 확인될 때만 된다.
+ */
+export async function requestPosChargeCancel(paymentId: string): Promise<ActionResult<{ cancel: AdminChargeCancelView }>> {
+    try {
+        const admin = await requireFinanceOwner();
+        const cancel = await requestChargeCancelByAdmin({ paymentId: String(paymentId ?? ""), adminUserId: admin.appUserId });
+        return { ok: true, cancel };
+    } catch (error) {
+        return failure(error, "결제 취소를 보내지 못했습니다.");
     }
 }
 

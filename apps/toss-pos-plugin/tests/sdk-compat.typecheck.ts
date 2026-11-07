@@ -4,7 +4,7 @@
 import { posPluginSdk } from "@tossplace/pos-plugin-sdk";
 import { buildLineItem } from "../src/core/order.ts";
 import type { ChargeRequest } from "../src/core/contract.ts";
-import type { DraftOrderLike, HttpLike, OrderLike, PaymentLike } from "../src/core/pos-types.ts";
+import type { DraftOrderLike, HttpLike, OrderLike, PaymentLike, PosSdkLike } from "../src/core/pos-types.ts";
 
 declare const req: ChargeRequest;
 
@@ -14,6 +14,9 @@ export async function compatCheck(): Promise<void> {
   const d2: DraftOrderLike = await posPluginSdk.draftOrder.get();
   const o: OrderLike = await posPluginSdk.order.getOrder("x");
   const p: PaymentLike = await posPluginSdk.payment.getPayment("x");
+  // 결제 취소(2026-11-08): payment.cancel({ id: orderId }, { id: paymentId }): Promise<void>
+  const cancelFn: PosSdkLike["payment"]["cancel"] = posPluginSdk.payment.cancel;
+  await posPluginSdk.payment.cancel({ id: "o" }, { id: "p" });
   posPluginSdk.toast.success({ message: "m", button: { text: "t", onClick: () => undefined } });
   posPluginSdk.alert.open({ message: "m" });
   const s: string | undefined = await posPluginSdk.storage.get("k");
@@ -21,5 +24,5 @@ export async function compatCheck(): Promise<void> {
   const h: HttpLike = posPluginSdk.http;
   const r = await posPluginSdk.http.get("https://www.stiz-dasan.kr/x", [["A", "b"]], { timeoutMs: 25_000 });
   const code: number = r.code;
-  void [d, d2, o, p, s, h, code];
+  void [d, d2, o, p, s, h, code, cancelFn];
 }

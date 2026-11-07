@@ -549,8 +549,12 @@ test("웹훅 라우트: 새로 저장된 경우에만 처리하고, 처리 실�
   assert.match(src.webhook, /RETURNING id/);
   assert.match(src.webhook, /if \(insertedRows\[0\]\) await tryProcessNow\(insertedRows\[0\]\.id\)/);
   const fn = src.webhook.slice(src.webhook.indexOf("async function tryProcessNow"), src.webhook.indexOf("export async function POST"));
-  assert.match(fn, /catch \(processError\)/);
+  assert.match(fn, /\(processError\) =>/, "처리 실패는 잡아서 기록만(응답을 바꾸지 않는다)");
   assert.match(fn, /PROCESS_TIMEOUT_MS/);
+  // 4초를 넘기면 응답 뒤에도 같은 처리를 이어 간다(돈 경로가 중간에 멈추지 않게 — 2026-11-08 검수)
+  assert.match(src.webhook, /import \{ NextRequest, NextResponse, after \} from "next\/server"/);
+  assert.match(fn, /if \(result === "TIMEOUT"\) \{[\s\S]*after\(\(\) => work\.then/);
+  assert.equal([...fn.matchAll(/processPosWebhookEvent\(/g)].length, 1, "처리는 한 번만 시작한다(시간 초과 뒤 다시 돌리지 않음)");
 });
 
 test("슬랙 클라이언트: ok:false 를 실패로 보고, 토큰이 없으면 한국어 오류", () => {

@@ -3121,6 +3121,17 @@ model PosChargeRequest {
   cancelledBy         String?
   slackNotifiedAt     DateTime? @db.Timestamptz(6)
   cancelNotifiedAt    DateTime? @db.Timestamptz(6)
+  // 결제 취소(사이트 → POS)·환불 확정 — migration 20261108120000_pos_charge_cancel 의 사본
+  paidRecordedAt         DateTime? @db.Timestamptz(6)
+  cancelState            String? // REQUESTED | SENT | FAILED | PARTIAL | DONE
+  cancelRequestedAt      DateTime? @db.Timestamptz(6)
+  cancelRequestedBy      String?
+  cancelClaimedAt        DateTime? @db.Timestamptz(6)
+  cancelClaimedByTokenId String?
+  cancelReportedAt       DateTime? @db.Timestamptz(6)
+  cancelReportMessage    String?
+  refundedAt             DateTime? @db.Timestamptz(6)
+  refundNotifiedAt       DateTime? @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @db.Timestamptz(6)
 

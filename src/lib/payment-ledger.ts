@@ -680,6 +680,44 @@ export async function markPaymentPaid(input: {
     revalidatePaymentCaches();
 }
 
+/** 트랜잭션 안에서 쓰는 raw SQL 두 개만 받는다(prisma 본체 또는 $transaction 의 db) */
+export type LedgerSqlClient = Pick<typeof prisma, "$executeRawUnsafe" | "$queryRawUnsafe">;
+
+/**
+ * 납부완료 청구 → 환불(REFUNDED) 로 바꾼다. 청구서는 취소(CANCELED), 감사 기록 1줄.
+ * 토스 POS 현장 결제가 «토스 웹훅 재조회로» 전액 취소 확인됐을 때만 부른다(chargeRequestService).
+ * 호출한 쪽의 트랜잭션(db) 안에서 돈다 — 요청 표시(취소 완료)와 함께 한 번에 확정되게.
+ * 조건부 UPDATE(status = 'PAID')라 여러 번 불려도 한 번만 바뀐다. 바뀌었으면 true.
+ * 납부일은 비운다(관리자 화면 «환불»·토스 전액 취소 반영과 같은 관례 — POS 대조가 paidDate 로 납부 건을 고른다).
+ */
+export async function refundPaidPaymentInTx(
+    db: LedgerSqlClient,
+    input: { paymentId: string; actorType: LedgerActorType; actorId?: string | null; message: string; metadata?: unknown },
+): Promise<boolean> {
+    const changed = await db.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "Payment" SET status = 'REFUNDED', "paidDate" = NULL, "updatedAt" = NOW()
+          WHERE id = $1 AND status = 'PAID'
+          RETURNING id`,
+        input.paymentId,
+    );
+    if (changed.length === 0) return false;
+    await db.$executeRawUnsafe(
+        `UPDATE "PaymentInvoice" SET status = 'CANCELED', "canceledAt" = COALESCE("canceledAt", NOW()), "updatedAt" = NOW()
+          WHERE "paymentId" = $1 AND status <> 'CANCELED'`,
+        input.paymentId,
+    );
+    await db.$executeRawUnsafe(
+        `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+         VALUES (gen_random_uuid()::text, $1, NULL, NULL, $2, $3, 'PAYMENT_REFUNDED', $4, $5::jsonb, NOW())`,
+        input.paymentId,
+        input.actorType,
+        input.actorId ?? null,
+        input.message.slice(0, 500),
+        JSON.stringify(input.metadata ?? {}),
+    );
+    return true;
+}
+
 function toTerminalDate(value: string | Date | null | undefined) {
     if (!value) return new Date();
     if (value instanceof Date) return value;

@@ -174,12 +174,12 @@ test("롱폴링 API: ?wait=20&known=… 로 부르고 시간 제한 25초, waitS
   const { http, calls } = fakeHttp(() => ({ code: 200, body: JSON.stringify(bodies[i++]) }));
   const api = createServerApi({ http, getToken: async () => "t".repeat(32) });
   const r1 = await api.waitRequests({ waitSec: LONG_POLL_WAIT_SEC, known: ["id-1", "id/2"] });
-  assert.equal(calls[0].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20&known=id-1,id%2F2");
+  assert.equal(calls[0].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20&cancels=1&known=id-1,id%2F2");
   assert.equal(calls[0].options?.timeoutMs, 25_000);
   assert.equal(longPollTimeoutMs(20), 25_000);
   assert.ok(r1.ok && r1.data.longPoll && r1.data.requests[0].id === "b");
   const r2 = await api.waitRequests({ waitSec: 20 });
-  assert.equal(calls[1].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20");
+  assert.equal(calls[1].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20&cancels=1");
   assert.ok(r2.ok && r2.data.longPoll);
   const r3 = await api.waitRequests({ waitSec: 20 });
   assert.ok(r3.ok && !r3.data.longPoll, "waitSec 없으면 옛 서버 → 14초 간격으로 돌아간다");
