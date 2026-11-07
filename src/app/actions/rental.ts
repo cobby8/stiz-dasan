@@ -8,7 +8,9 @@
  * 공개 액션은 개인 정보(다른 사람의 이름·번호)를 절대 돌려주지 않는다 — 가능 시간은 «칸 상태»만.
  * 금액은 서버가 다시 계산한다(gym-rental-service.createRentalRequest).
  */
+import { createHash } from "node:crypto";
 import { after } from "next/server";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
@@ -26,6 +28,17 @@ import {
 import { notifyAdminsOfRentalRequest, rentalBankAccount, sendRentalApplicantSms } from "@/lib/rental/gym-rental-notify";
 
 // ── 공개 ─────────────────────────────────────────────────────────────────
+/**
+ * 접속 주소(IP) 지문 — x-forwarded-for 의 첫 값(Vercel 이 채우는 실제 손님 주소)을 sha256 으로.
+ * 원문 IP 는 저장하지 않는다. 주소를 모르면 null(연락처 한도·전체 한도는 그대로 걸린다).
+ */
+async function clientIpHash(): Promise<string | null> {
+  const h = await headers();
+  const ip = (h.get("x-forwarded-for") ?? "").split(",")[0]?.trim() || h.get("x-real-ip")?.trim() || "";
+  if (!ip) return null;
+  return createHash("sha256").update(`gym-rental:${ip}`).digest("hex");
+}
+
 export type RentalSlotsResult = { ok: true; date: string; slots: RentalSlot[] } | { ok: false; message: string };
 
 export async function getRentalSlots(date: string): Promise<RentalSlotsResult> {
@@ -62,7 +75,9 @@ export async function submitRentalRequest(input: RentalApplyInput & { honeypot?:
   // 스팸 방지: 숨김 칸에 값이 있으면 자동 입력으로 보고 저장하지 않는다(기존 공개 폼과 같은 방식)
   if (input?.honeypot) return { ok: false, message: "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요." };
   try {
-    const result = await createRentalRequest(prisma, input, Date.now());
+    const ipHash = await clientIpHash();
+    // 한도 확인과 저장을 한 트랜잭션에서(서비스 안의 advisory lock 으로 줄 세움)
+    const result = await prisma.$transaction((tx) => createRentalRequest(tx, input, Date.now(), ipHash));
     if (!result.ok) return result;
     const r = result.request;
     if (!result.duplicate) {
@@ -133,12 +148,16 @@ export async function getAdminRentalRequests(): Promise<AdminRentalRow[]> {
 export async function updateRentalStatus(
   id: string,
   action: string,
-  options: { memo?: string; depositRefunded?: number | null } = {},
+  options: { memo?: string; depositRefunded?: number | null; cancelRefund?: number | null } = {},
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const admin = await requireAdmin();
   if (!isRentalAction(action)) return { ok: false, error: "알 수 없는 작업입니다." };
   try {
-    const result = await prisma.$transaction((tx) => transitionRentalInTx(tx, id, action, admin.appUserId, options));
+    const result = await prisma.$transaction((tx) => transitionRentalInTx(tx, id, action, admin.appUserId, {
+      memo: options.memo,
+      depositRefunded: options.depositRefunded,
+      cancelRefund: options.cancelRefund,
+    }));
     if (!result.ok) return { ok: false, error: result.message };
     const r = result.request;
     // 신청자 안내(스위치 꺼져 있으면 아무 일도 없음)

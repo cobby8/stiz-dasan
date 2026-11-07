@@ -262,13 +262,25 @@ export function cleanRentalText(raw: unknown, maxLength: number): string {
     .slice(0, maxLength);
 }
 
-// ── 계좌(설정값 한 곳) ────────────────────────────────────────────────────
-/** 기본 입금 계좌 — 환경변수 RENTAL_BANK_ACCOUNT 가 있으면 그 값을 쓴다. */
-export const DEFAULT_RENTAL_BANK_ACCOUNT = "하나은행 55491019425407 (예금주 권혜미)";
+// ── 계좌 ─────────────────────────────────────────────────────────────────
+// 🚫 입금 계좌 값은 이 파일에 두지 않는다. 이 파일은 공개 신청 화면(RentalClient)이 import 해서
+//    손님 브라우저 번들에 그대로 실린다. 계좌는 서버 전용 gym-rental-notify.ts 에만 있다(테스트가 번들 경로를 검사).
 
-export function resolveRentalBankAccount(envValue: string | null | undefined): string {
-  const value = String(envValue ?? "").trim();
-  return value || DEFAULT_RENTAL_BANK_ACCOUNT;
+// ── 원장 알림 묶기 ───────────────────────────────────────────────────────
+/** 원장 알림 문자는 10분 창마다 한 통 — 같은 창에 들어온 신청은 문자 한 통으로 묶는다(슬랙은 건별) */
+export const RENTAL_ADMIN_SMS_WINDOW_MS = 10 * 60_000;
+
+export function rentalAdminSmsWindowKey(createdAtMs: number): string {
+  return `rental-window:${Math.floor(createdAtMs / RENTAL_ADMIN_SMS_WINDOW_MS)}`;
+}
+
+// ── 확정 뒤 취소 환불 ────────────────────────────────────────────────────
+/** 입금 확인(확정) 뒤 취소는 돌려준 금액(0~입금액)을 꼭 적는다. 맞으면 금액, 틀리면 null */
+export function parseCancelRefund(raw: unknown, totalAmount: number): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > totalAmount) return null;
+  return value;
 }
 
 // ── 문자 문구 ─────────────────────────────────────────────────────────────
@@ -297,9 +309,10 @@ function usageLine(input: RentalMessageInput): string {
 }
 
 /** 원장님께 가는 «새 신청» 알림 (문자·슬랙 공용) */
-export function buildRentalAdminAlert(input: RentalMessageInput): string {
+export function buildRentalAdminAlert(input: RentalMessageInput, pendingCount = 1): string {
   return [
-    "[STIZ 체육관 대관 신청]",
+    // 10분 안에 여러 건이 들어오면 문자는 첫 건만 가므로, 대기 건수를 함께 알린다
+    pendingCount > 1 ? `[STIZ 체육관 대관 신청 · 승인 대기 ${pendingCount}건]` : "[STIZ 체육관 대관 신청]",
     `${input.applicantName} ${formatRentalPhone(input.applicantPhone)}`,
     usageLine(input),
     `이용료 ${formatWon(input.usageFee)} + 보증금 ${formatWon(input.deposit)} = ${formatWon(input.totalAmount)}`,

@@ -690,6 +690,8 @@ model GymRentalRequest {
   deposit         Int
   totalAmount     Int
   depositRefunded Int?
+  cancelRefundAmount Int? // 확정 뒤 취소 때 돌려준 금액
+  clientIpHash    String? // 남용 방지용 접속 주소 지문(sha256)
   status          String    @default("REQUESTED")
   rulesAgreedAt   DateTime  @db.Timestamptz(6)
   adminMemo       String?

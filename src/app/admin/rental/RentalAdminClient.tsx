@@ -53,7 +53,7 @@ const CONFIRM_TEXT: Partial<Record<RentalAction, { description: string; tone: "d
   reject: { description: "신청을 거절합니다. 신청자에게는 따로 연락해 주세요.", tone: "danger" },
   confirmPayment: { description: "입금을 확인하고 대관을 확정합니다.", tone: "primary" },
   refund: { description: "보증금 환불을 마친 것으로 기록합니다. 차감했다면 실제 돌려준 금액을 적어 주세요.", tone: "primary" },
-  cancel: { description: "대관을 취소하고 이 시간을 다시 열어 둡니다. 입금을 받았다면 따로 환불해 주세요.", tone: "danger" },
+  cancel: { description: "대관을 취소하고 이 시간을 다시 열어 둡니다. 입금을 받았다면 실제로 돌려준 금액을 적어 주세요.", tone: "danger" },
 };
 
 function StatusBadge({ status }: { status: RentalStatus }) {
@@ -82,7 +82,7 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
   const chips = RENTAL_STATUSES.map((status) => ({ value: status, label: RENTAL_STATUS_LABEL[status], count: counts.get(status) ?? 0 }));
   const visible = statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
 
-  function run(id: string, action: RentalAction, options: { memo?: string; depositRefunded?: number | null } = {}) {
+  function run(id: string, action: RentalAction, options: { memo?: string; depositRefunded?: number | null; cancelRefund?: number | null } = {}) {
     setError("");
     startTransition(async () => {
       const result = await updateRentalStatus(id, action, options);
@@ -130,6 +130,8 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
   const detail = detailId ? rows.find((row) => row.id === detailId) ?? null : null;
   const confirmRow = confirming ? rows.find((row) => row.id === confirming.id) ?? null : null;
   const confirmText = confirming ? CONFIRM_TEXT[confirming.action] : undefined;
+  // 입금 확인(확정)된 대관의 취소 = 돌려준 금액 입력이 필요한 경우
+  const paidCancel = confirming?.action === "cancel" && confirmRow?.status === "PAID";
 
   return (
     <div className="space-y-3">
@@ -235,6 +237,12 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
                 <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatWon(detail.depositRefunded)}{detail.depositRefunded < detail.deposit ? ` (차감 ${formatWon(detail.deposit - detail.depositRefunded)})` : ""}</dd>
               </>
             )}
+            {detail.cancelRefundAmount !== null && (
+              <>
+                <dt className="font-bold text-[var(--color-academy-muted)]">취소 환불</dt>
+                <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatWon(detail.cancelRefundAmount)}</dd>
+              </>
+            )}
             <dt className="font-bold text-[var(--color-academy-muted)]">신청일</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detail.createdAt)}</dd>
             {detail.adminMemo && (
@@ -256,14 +264,16 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
             <div className="space-y-2">
               <p>{kstLabel(confirmRow.rentalDate)} {rentalTimeLabel(confirmRow.startHour, confirmRow.endHour)} · {formatWon(confirmRow.totalAmount)}</p>
               <p>{confirmText.description}</p>
-              {confirming.action === "refund" && (
+              {(confirming.action === "refund" || paidCancel) && (
                 <label className="block font-bold text-[var(--color-academy-ink)]">
-                  돌려준 보증금(원)
+                  {/* 확정(입금 확인) 뒤 취소는 이미 돈을 받았으므로 돌려준 금액을 꼭 적는다(0원도 직접 입력) */}
+                  {paidCancel ? `돌려준 금액(원, 필수 · 0 ~ ${confirmRow.totalAmount.toLocaleString("ko-KR")})` : "돌려준 보증금(원)"}
                   <input
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    max={confirmRow.deposit}
+                    max={paidCancel ? confirmRow.totalAmount : confirmRow.deposit}
+                    required={paidCancel}
                     value={refundAmount}
                     onChange={(e) => setRefundAmount(e.target.value)}
                     className="mt-1 block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal tabular-nums"
@@ -290,6 +300,8 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
           onConfirm={() => run(confirming.id, confirming.action, {
             memo,
             depositRefunded: confirming.action === "refund" ? (refundAmount === "" ? null : Number(refundAmount)) : null,
+            // 비워 두면 서버가 «금액을 입력해 주세요»로 거절한다
+            cancelRefund: paidCancel ? (refundAmount === "" ? null : Number(refundAmount)) : null,
           })}
         />
       )}

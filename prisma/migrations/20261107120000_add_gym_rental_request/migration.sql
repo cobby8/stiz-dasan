@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS "GymRentalRequest" (
   "totalAmount" INTEGER NOT NULL,
   -- 환불한 보증금(차감 후). 환불 완료 때만 채운다.
   "depositRefunded" INTEGER CHECK ("depositRefunded" IS NULL OR ("depositRefunded" >= 0 AND "depositRefunded" <= deposit)),
+  -- 확정(입금 확인) 뒤 취소할 때 실제로 돌려준 금액(0~입금액). 그 경우에만 채운다.
+  "cancelRefundAmount" INTEGER CHECK ("cancelRefundAmount" IS NULL OR ("cancelRefundAmount" >= 0 AND "cancelRefundAmount" <= "totalAmount")),
+  -- 남용 방지용 접속 주소 지문(sha256, 원문 IP 는 저장하지 않는다)
+  "clientIpHash" TEXT CHECK ("clientIpHash" IS NULL OR "clientIpHash" ~ '^[0-9a-f]{64}$'),
   status TEXT NOT NULL DEFAULT 'REQUESTED'
     CHECK (status IN ('REQUESTED','APPROVED','PAID','COMPLETED','REFUNDED','REJECTED','CANCELLED')),
   "rulesAgreedAt" TIMESTAMPTZ(6) NOT NULL,
@@ -57,6 +61,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS "GymRentalRequest_rentalDate_idx" ON "GymRentalRequest" ("rentalDate");
 CREATE INDEX IF NOT EXISTS "GymRentalRequest_status_createdAt_idx" ON "GymRentalRequest" (status, "createdAt" DESC);
 CREATE INDEX IF NOT EXISTS "GymRentalRequest_phone_createdAt_idx" ON "GymRentalRequest" ("applicantPhone", "createdAt" DESC);
+CREATE INDEX IF NOT EXISTS "GymRentalRequest_ip_createdAt_idx" ON "GymRentalRequest" ("clientIpHash", "createdAt" DESC);
 
 -- 공개 키(anon/authenticated)로는 못 읽게 — 서버(Prisma)만 접근
 ALTER TABLE "GymRentalRequest" ENABLE ROW LEVEL SECURITY;
@@ -68,7 +73,9 @@ DO $$ DECLARE r text; BEGIN FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOO
 END LOOP; END $$;
 
 -- 문자 자동 규칙(/admin/sms 에서 켜고 끈다). 문구는 코드(gym-rental-rules.ts)에 있다.
--- 원장 알림은 켜 두고, 신청자 안내 3종은 꺼 둔다(원장님 문구 확인 후 켬 + 환경변수 RENTAL_APPLICANT_SMS_ENABLED=1).
+-- 원장 알림은 켜 두고, 신청자 안내 3종은 꺼 둔다(원장님 문구 확인 후 켬).
+-- 승인·확정 문자는 환경변수 RENTAL_APPLICANT_SMS_ENABLED=1, 접수 문자는 남의 번호로도 보낼 수 있어
+-- 별도 스위치 RENTAL_APPLICANT_RECEIVED_SMS_ENABLED=1 까지 있어야 나간다.
 INSERT INTO "MessageAutomationRule"
   (id, trigger, name, "audienceScope", target, "isActive", "requestedChannel", "fallbackEnabled", "fallbackChannel", "templateId", description, "createdAt", "updatedAt")
 VALUES

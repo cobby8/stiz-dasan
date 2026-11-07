@@ -21,6 +21,7 @@ import {
   isRangeAvailable,
   isRentalAction,
   normalizeRentalPhone,
+  parseCancelRefund,
   rentalInstantMs,
   type RentalAction,
   type RentalBusyRange,
@@ -57,32 +58,34 @@ export async function loadRentalSlots(db: RawSqlClient, date: string, nowMs: num
   const dayStart = new Date(dayStartMs).toISOString();
   const dayEnd = new Date(dayEndMs).toISOString();
 
-  const [classes, sessions, rentals] = await Promise.all([
-    // 정규 반(요일 반)만. Archived·Seasonal 은 요일 시간표가 아니다.
-    db.$queryRawUnsafe<RentalClassRow[]>(
-      `SELECT "dayOfWeek", "startTime", "endTime" FROM "Class"
-        WHERE "dayOfWeek" IN ('Mon','Tue','Wed','Thu','Fri','Sat','Sun')`,
-    ),
-    // 방학특강 회차(취소된 상품 제외)
-    db.$queryRawUnsafe<InstantRow[]>(
-      `SELECT d."startsAt", d."endsAt"
-         FROM "SpecialProgramSessionDate" d
-         JOIN "SpecialProgramOffering" o ON o.id = d."offeringId"
-        WHERE o.status <> 'CANCELLED'
-          AND d."startsAt" < $2::timestamptz AND d."endsAt" > $1::timestamptz`,
-      dayStart,
-      dayEnd,
-    ),
-    // 이미 승인된(시간을 차지한) 대관
-    db.$queryRawUnsafe<InstantRow[]>(
-      `SELECT "startAt" AS "startsAt", "endAt" AS "endsAt"
-         FROM "GymRentalRequest"
-        WHERE status IN (${HOLDING_SQL})
-          AND "startAt" < $2::timestamptz AND "endAt" > $1::timestamptz`,
-      dayStart,
-      dayEnd,
-    ),
-  ]);
+  // 승인 트랜잭션(tx) 안에서도 부르므로 동시에 쏘지 않고 차례로 조회한다.
+  // 정규 반(요일 반)만. Archived·Seasonal 은 요일 시간표가 아니고,
+  // «[종료]» 처럼 이름이 '[' 로 시작하는 끝난 반과 ACTIVE 수강생이 없는 반은 실제 수업이 없어 뺀다.
+  const classes = await db.$queryRawUnsafe<RentalClassRow[]>(
+    `SELECT c."dayOfWeek", c."startTime", c."endTime" FROM "Class" c
+      WHERE c."dayOfWeek" IN ('Mon','Tue','Wed','Thu','Fri','Sat','Sun')
+        AND c.name NOT LIKE '[%'
+        AND EXISTS (SELECT 1 FROM "Enrollment" e WHERE e."classId" = c.id AND e.status = 'ACTIVE')`,
+  );
+  // 방학특강 회차(취소된 상품 제외)
+  const sessions = await db.$queryRawUnsafe<InstantRow[]>(
+    `SELECT d."startsAt", d."endsAt"
+       FROM "SpecialProgramSessionDate" d
+       JOIN "SpecialProgramOffering" o ON o.id = d."offeringId"
+      WHERE o.status <> 'CANCELLED'
+        AND d."startsAt" < $2::timestamptz AND d."endsAt" > $1::timestamptz`,
+    dayStart,
+    dayEnd,
+  );
+  // 이미 승인된(시간을 차지한) 대관
+  const rentals = await db.$queryRawUnsafe<InstantRow[]>(
+    `SELECT "startAt" AS "startsAt", "endAt" AS "endsAt"
+       FROM "GymRentalRequest"
+      WHERE status IN (${HOLDING_SQL})
+        AND "startAt" < $2::timestamptz AND "endAt" > $1::timestamptz`,
+    dayStart,
+    dayEnd,
+  );
 
   const booked = toDayMinutes(rentals, dayStartMs);
   return buildRentalSlots({
@@ -121,6 +124,7 @@ export type RentalRecord = {
   deposit: number;
   totalAmount: number;
   depositRefunded: number | null;
+  cancelRefundAmount: number | null;
   status: RentalStatus;
   adminMemo: string | null;
   createdAt: Date | string;
@@ -136,16 +140,24 @@ export type RentalApplyResult =
   | { ok: false; message: string };
 
 const RECORD_COLUMNS = `id, "rentalDate", "startHour", "endHour", headcount, "useAircon", "applicantName", "applicantPhone",
-  purpose, "usageFee", deposit, "totalAmount", "depositRefunded", status, "adminMemo", "createdAt",
+  purpose, "usageFee", deposit, "totalAmount", "depositRefunded", "cancelRefundAmount", status, "adminMemo", "createdAt",
   "approvedAt", "paidAt", "completedAt", "refundedAt", "closedAt"`;
 
 /** 같은 연락처 반복 신청 제한(기존 공개 폼과 같은 방식 — 짧은 시간 횟수 제한) */
-export const RENTAL_RATE_LIMIT = { perPhone10Min: 3, perPhoneDay: 6, global10Min: 30 } as const;
+export const RENTAL_RATE_LIMIT = { perPhone10Min: 3, perPhoneDay: 6, perIp10Min: 5, perIpDay: 15, global10Min: 30 } as const;
 
 /**
  * 공개 신청 1건. 금액은 여기서 **다시 계산**한다(화면이 보낸 금액은 받지도 않는다).
+ * ⚠️ 반드시 트랜잭션의 tx 로 부른다 — 한도 확인과 저장 사이에 다른 신청이 끼지 않게
+ *    신청 전체를 advisory lock 하나로 줄 세운다(동시에 여러 건을 쏴서 한도를 넘기는 것 방지).
+ * clientIpHash: 접속 주소의 sha256(원문 IP 는 저장하지 않는다). 모르면 null.
  */
-export async function createRentalRequest(db: RawSqlClient, input: RentalApplyInput, nowMs: number): Promise<RentalApplyResult> {
+export async function createRentalRequest(
+  db: RawSqlClient,
+  input: RentalApplyInput,
+  nowMs: number,
+  clientIpHash: string | null = null,
+): Promise<RentalApplyResult> {
   const rentalDate = String(input.rentalDate ?? "");
   const startHour = Number(input.startHour);
   const hours = Number(input.hours);
@@ -171,6 +183,10 @@ export async function createRentalRequest(db: RawSqlClient, input: RentalApplyIn
     return { ok: false, message: (error as Error).message };
   }
 
+  // 여기부터 저장까지 공개 신청은 한 줄로 선다(트랜잭션이 끝나면 자동으로 풀린다)
+  await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "gym-rental:apply");
+  const ipHash = clientIpHash && /^[0-9a-f]{64}$/.test(clientIpHash) ? clientIpHash : null;
+
   // 같은 연락처·같은 시간 신청이 이미 살아 있으면 새로 만들지 않고 그 건을 보여 준다(두 번 누름 방지)
   const existing = await db.$queryRawUnsafe<RentalRecord[]>(
     `SELECT ${RECORD_COLUMNS} FROM "GymRentalRequest"
@@ -181,17 +197,22 @@ export async function createRentalRequest(db: RawSqlClient, input: RentalApplyIn
   );
   if (existing[0]) return { ok: true, duplicate: true, request: existing[0] };
 
-  const counts = await db.$queryRawUnsafe<Array<{ phone10: number; phoneDay: number; all10: number }>>(
+  const counts = await db.$queryRawUnsafe<Array<{ phone10: number; phoneDay: number; ip10: number; ipDay: number; all10: number }>>(
     `SELECT
        COUNT(*) FILTER (WHERE "applicantPhone" = $1 AND "createdAt" > now() - interval '10 minutes')::int AS phone10,
-       COUNT(*) FILTER (WHERE "applicantPhone" = $1 AND "createdAt" > now() - interval '1 day')::int AS "phoneDay",
+       COUNT(*) FILTER (WHERE "applicantPhone" = $1)::int AS "phoneDay",
+       COUNT(*) FILTER (WHERE $2::text IS NOT NULL AND "clientIpHash" = $2::text AND "createdAt" > now() - interval '10 minutes')::int AS ip10,
+       COUNT(*) FILTER (WHERE $2::text IS NOT NULL AND "clientIpHash" = $2::text)::int AS "ipDay",
        COUNT(*) FILTER (WHERE "createdAt" > now() - interval '10 minutes')::int AS all10
      FROM "GymRentalRequest" WHERE "createdAt" > now() - interval '1 day'`,
     applicantPhone,
+    ipHash,
   );
-  const c = counts[0] ?? { phone10: 0, phoneDay: 0, all10: 0 };
+  const c = counts[0] ?? { phone10: 0, phoneDay: 0, ip10: 0, ipDay: 0, all10: 0 };
   if (Number(c.phone10) >= RENTAL_RATE_LIMIT.perPhone10Min
     || Number(c.phoneDay) >= RENTAL_RATE_LIMIT.perPhoneDay
+    || Number(c.ip10) >= RENTAL_RATE_LIMIT.perIp10Min
+    || Number(c.ipDay) >= RENTAL_RATE_LIMIT.perIpDay
     || Number(c.all10) >= RENTAL_RATE_LIMIT.global10Min) {
     return { ok: false, message: "신청이 너무 많이 접수되었습니다. 잠시 후 다시 시도해주세요." };
   }
@@ -207,15 +228,15 @@ export async function createRentalRequest(db: RawSqlClient, input: RentalApplyIn
     `INSERT INTO "GymRentalRequest" (
        "rentalDate", "startHour", "endHour", "startAt", "endAt", headcount, "useAircon",
        "applicantName", "applicantPhone", purpose, "usageFee", deposit, "totalAmount",
-       status, "rulesAgreedAt", "createdAt", "updatedAt"
+       "clientIpHash", status, "rulesAgreedAt", "createdAt", "updatedAt"
      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13,
-       'REQUESTED', now(), now(), now())
+       $14, 'REQUESTED', now(), now(), now())
      RETURNING ${RECORD_COLUMNS}`,
     rentalDate, startHour, endHour,
     new Date(rentalInstantMs(rentalDate, startHour)).toISOString(),
     new Date(rentalInstantMs(rentalDate, endHour)).toISOString(),
     fee.headcount, useAircon, applicantName, applicantPhone, purpose,
-    fee.usageFee, fee.deposit, fee.total,
+    fee.usageFee, fee.deposit, fee.total, ipHash,
   );
   if (!rows[0]) return { ok: false, message: "신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
   return { ok: true, duplicate: false, request: rows[0] };
@@ -235,7 +256,7 @@ export async function listRentalRequests(db: RawSqlClient): Promise<RentalRecord
 }
 
 // ── 관리자: 상태 바꾸기 ───────────────────────────────────────────────────
-export type RentalTransitionOptions = { memo?: unknown; depositRefunded?: unknown };
+export type RentalTransitionOptions = { memo?: unknown; depositRefunded?: unknown; cancelRefund?: unknown; nowMs?: number };
 export type RentalTransitionResult =
   | { ok: true; request: RentalRecord; previousStatus: RentalStatus }
   | { ok: false; message: string };
@@ -256,8 +277,11 @@ export async function transitionRentalInTx(
   if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, message: "대관 신청을 찾을 수 없습니다." };
   const rule = RENTAL_TRANSITIONS[action];
 
-  const locked = await tx.$queryRawUnsafe<Array<{ id: string; status: RentalStatus; rentalDate: string; deposit: number }>>(
-    `SELECT id, status, "rentalDate", deposit FROM "GymRentalRequest" WHERE id = $1 FOR UPDATE`,
+  const locked = await tx.$queryRawUnsafe<Array<{
+    id: string; status: RentalStatus; rentalDate: string; deposit: number; startHour: number; endHour: number; totalAmount: number;
+  }>>(
+    `SELECT id, status, "rentalDate", deposit, "startHour", "endHour", "totalAmount"
+       FROM "GymRentalRequest" WHERE id = $1 FOR UPDATE`,
     id,
   );
   const row = locked[0];
@@ -278,6 +302,20 @@ export async function transitionRentalInTx(
       id,
     );
     if (clash[0]) return { ok: false, message: "이미 승인된 다른 대관과 시간이 겹칩니다. 거절하거나 시간을 조정해 주세요." };
+    // 신청한 뒤에 생긴 정규 수업·특강 회차와 겹치거나 이미 시작한 시간이면 승인하지 않는다
+    const slots = await loadRentalSlots(tx, row.rentalDate, options.nowMs ?? Date.now());
+    if (!isRangeAvailable(slots, row.startHour, row.endHour - row.startHour)) {
+      return { ok: false, message: "그 시간에 수업·특강이 생겼거나 이미 지난 시간입니다. 거절하거나 시간을 조정해 주세요." };
+    }
+  }
+
+  // 입금 확인(확정) 뒤 취소 = 돈이 이미 들어왔다 → 돌려준 금액을 꼭 적는다
+  let cancelRefund: number | null = null;
+  if (action === "cancel" && row.status === "PAID") {
+    cancelRefund = parseCancelRefund(options.cancelRefund, row.totalAmount);
+    if (cancelRefund === null) {
+      return { ok: false, message: `돌려준 금액을 0원 ~ ${row.totalAmount.toLocaleString("ko-KR")}원 사이로 입력해 주세요.` };
+    }
   }
 
   let depositRefunded: number | null = null;
@@ -289,7 +327,11 @@ export async function transitionRentalInTx(
     }
   }
 
-  const memo = cleanRentalText(options.memo, 200);
+  const typedMemo = cleanRentalText(options.memo, 200);
+  // 확정 뒤 취소는 돌려준 금액을 메모에도 남긴다(누가 얼마를 돌려줬는지 기록)
+  const memo = cancelRefund !== null
+    ? `환불 ${cancelRefund.toLocaleString("ko-KR")}원${typedMemo ? ` · ${typedMemo}` : ""}`
+    : typedMemo;
   const stampColumn: Record<RentalAction, string> = {
     approve: `"approvedAt"`,
     reject: `"closedAt"`,
@@ -305,13 +347,14 @@ export async function transitionRentalInTx(
             ${stampColumn[action]} = now(),
             "decidedByUserId" = $3,
             "depositRefunded" = COALESCE($4::int, "depositRefunded"),
+            "cancelRefundAmount" = COALESCE($8::int, "cancelRefundAmount"),
             -- 메모는 덮어쓰지 않고 한 줄씩 덧붙인다(누가 언제 왜 바꿨는지 남게)
             "adminMemo" = CASE WHEN $5::text = '' THEN "adminMemo"
                                ELSE left(concat_ws(E'\n', "adminMemo", $6::text || ': ' || $5::text), 500) END,
             "updatedAt" = now()
       WHERE id = $1 AND status = $7
       RETURNING ${RECORD_COLUMNS}`,
-    id, rule.to, actorUserId, depositRefunded, memo, rule.label, row.status,
+    id, rule.to, actorUserId, depositRefunded, memo, rule.label, row.status, cancelRefund,
   );
   if (!updated[0]) return { ok: false, message: "이미 다른 상태로 바뀐 신청입니다. 새로고침 후 다시 확인해 주세요." };
   return { ok: true, request: updated[0], previousStatus: row.status };
