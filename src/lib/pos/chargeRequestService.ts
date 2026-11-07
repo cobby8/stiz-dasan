@@ -426,6 +426,21 @@ export async function listOpenChargeRequestsForPlugin(): Promise<PluginChargeReq
     return rows.map(toPluginView);
 }
 
+/**
+ * 롱폴링 대기 중 약 1초마다 부르는 «가벼운» 확인 — 플러그인이 모르는(known 에 없는) 대기 요청이 있는지만.
+ * 만료 정리(UPDATE)나 이름·청구서 JOIN 없이 (status, expiresAt) 인덱스만 본다. 있으면 그때 목록을 다시 읽는다.
+ */
+export async function hasUnknownPendingChargeRequest(knownIds: string[]): Promise<boolean> {
+    const rows = await prisma.$queryRawUnsafe<{ found: boolean }[]>(
+        `SELECT EXISTS (
+            SELECT 1 FROM "PosChargeRequest"
+             WHERE status = 'PENDING' AND "expiresAt" > now() AND NOT (id = ANY($1::text[]))
+         ) AS found`,
+        knownIds,
+    );
+    return Boolean(rows[0]?.found);
+}
+
 /** 선점(PENDING → SENT). 응답 금액·면세·메모는 서버 DB 값. */
 export async function claimChargeRequestForPlugin(requestId: string, tokenId: string): Promise<PluginChargeRequestView> {
     const id = String(requestId ?? "").trim();

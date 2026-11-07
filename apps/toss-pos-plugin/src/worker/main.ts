@@ -2,14 +2,17 @@
 // 근거: https://docs.tossplace.com/guide/pos-integration/plugin/develop/package.html
 //       https://docs.tossplace.com/guide/pos-integration/plugin/how-to-work.html (웹 워커 = DOM 없음)
 // 하는 일:
-//   1) 약 14초마다 우리 서버의 대기 «현장 결제» 요청 확인(실패하면 지수 백오프)
-//   2) 새 요청 → 바로 결제 흐름(charge.ts)으로 결제창을 연다(2026-11-08 원장 요청: 누르는 단계 없이)
+//   1) 롱폴링: 서버에 «최대 20초 기다려 줘» 하고 묻고, 답이 오면 곧바로 다음 대기를 건다(실패하면 지수 백오프).
+//      새 요청은 생기는 즉시 답이 와서 보통 1~2초 안에 결제창이 열린다(옛 서버면 14초 간격 폴링으로 돌아간다)
+//   2) 새 요청 → 바로 결제 흐름(charge.ts)으로 결제창을 연다(2026-11-08 원장 요청: 누르는 단계 없이, 한 번에 1건)
 //   3) 바로 못 열면(다른 주문이 담겨 있음·준비 중·오류) 토스트 «… 현장 결제 요청 [결제하기]» 로 남긴다
+//   요청 한도: 정상 30분 90번 + 결제 1건당 SDK 호출 약 13번(backoff.ts 머리말 검산)
 //   4) 결제/취소 신호 → 서버에 참고 보고
 import { posPluginSdk, PosPluginSdkRateLimitError } from "@tossplace/pos-plugin-sdk";
 import { createServerApi } from "../core/api.ts";
-import { nextPollDelay } from "../core/backoff.ts";
+import { LONG_POLL_WAIT_SEC, nextAfterLongPoll, nextPollDelay } from "../core/backoff.ts";
 import { createChargeFlow } from "../core/charge.ts";
+import type { ChargeRequest } from "../core/contract.ts";
 import { isFirstNotice, needsManualFallback, pickNotifications } from "../core/notify.ts";
 import type { NotifyLog } from "../core/notify.ts";
 import { notificationMessage } from "../core/order.ts";
@@ -27,6 +30,12 @@ const notified: NotifyLog = new Map();
 let failures = 0;
 let authWarned = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** 롱폴링이 진행 중인지(최대 25초) — 두 줄로 겹쳐 돌지 않게 */
+let inFlight = false;
+/** 서버가 연속으로 «일찍» 답한 횟수(backoff.ts nextAfterLongPoll) */
+let earlyStreak = 0;
+/** 직전 응답의 대기 요청 id(최대 20개) — 서버에 known 으로 보낸다 */
+let seenPending: string[] = [];
 
 /** 설정 화면(POS 설정 → 외부 서비스 설정)에 토큰 칸을 만든다 */
 async function setupSettingScreen(): Promise<void> {
@@ -57,34 +66,79 @@ async function adoptSettingToken(): Promise<void> {
 function schedule(delayMs: number): void {
   if (timer) clearTimeout(timer);
   timer = setTimeout(() => {
-    // 어떤 오류가 나도 폴링이 멈추지 않도록 항상 다음 회차를 예약한다
-    pollOnce().catch((e) => {
-      console.error("[stiz] 폴링 오류", e instanceof Error ? e.message : e);
-      failures += 1;
-      schedule(nextPollDelay(failures));
-    });
+    timer = undefined;
+    void tick();
   }, delayMs);
 }
 
-async function pollOnce(): Promise<void> {
-  const res = await api.listRequests();
+/**
+ * 한 회차: 롱폴링 → 다음 회차 예약 → (그 다음에) 새 요청 처리.
+ * 다음 회차를 먼저 예약하므로 결제 흐름(startCharge)이 멈춰도 폴링은 계속 돈다.
+ */
+async function tick(): Promise<void> {
+  // 이미 대기 중인 요청이 있으면(설정 변경으로 앞당겨진 경우 등) 겹쳐 걸지 않는다 — 그쪽이 끝나면 다음을 예약한다
+  if (inFlight) return;
+  inFlight = true;
+  let outcome: PollOutcome;
+  try {
+    outcome = await pollOnce();
+  } catch (e) {
+    // 어떤 오류가 나도 폴링이 멈추지 않도록 항상 다음 회차를 예약한다
+    console.error("[stiz] 폴링 오류", e instanceof Error ? e.message : e);
+    failures += 1;
+    outcome = { delayMs: nextPollDelay(failures), fresh: [] };
+  } finally {
+    inFlight = false;
+  }
+  schedule(outcome.delayMs);
+  handleFresh(outcome.fresh);
+}
+
+/** 대기 요청 [결제하기] 토스트(자동으로 못 열었거나 두 번째 이후 요청) */
+function buttonToast(req: ChargeRequest): void {
+  posPluginSdk.toast.success({
+    message: notificationMessage(req),
+    button: { text: "결제하기", onClick: () => void flow.startCharge(req) }, // 사람이 누른 경로 = alert 안내 그대로
+  });
+}
+
+/**
+ * 새로 알릴 요청 처리. 처음 받은 요청 1건만 버튼 없이 바로 결제창을 연다(2026-11-08 원장 요청).
+ * 나머지는 곧바로 [결제하기] 토스트. 자동 시작은 화면을 막는 alert 없이(silent) — 못 열면 토스트로 남긴다.
+ */
+function handleFresh(fresh: ChargeRequest[]): void {
+  let autoUsed = false;
+  for (const req of fresh) {
+    if (!autoUsed && isFirstNotice(notified, req.id) && !flow.isBusy()) {
+      autoUsed = true;
+      void flow
+        .startCharge(req, { silent: true })
+        .then((result) => {
+          if (needsManualFallback(result)) buttonToast(req);
+        })
+        .catch(() => buttonToast(req));
+      continue;
+    }
+    buttonToast(req);
+  }
+}
+
+type PollOutcome = { delayMs: number; fresh: ChargeRequest[] };
+
+async function pollOnce(): Promise<PollOutcome> {
+  const startedAt = Date.now();
+  const res = await api.waitRequests({ waitSec: LONG_POLL_WAIT_SEC, known: seenPending });
   if (res.ok) {
     failures = 0;
     authWarned = false;
-    for (const req of pickNotifications(res.data, notified, Date.now())) {
-      // 처음 받은 요청은 버튼을 기다리지 않고 바로 결제창을 연다(한 번에 한 건 — 다음 건은 결제 화면이 차 있어 버튼 알림으로 남는다)
-      if (isFirstNotice(notified, req.id)) {
-        const result = await flow.startCharge(req);
-        if (!needsManualFallback(result)) continue;
-      }
-      posPluginSdk.toast.success({
-        message: notificationMessage(req),
-        button: { text: "결제하기", onClick: () => void flow.startCharge(req) },
-      });
-    }
-    schedule(nextPollDelay(0));
-    return;
+    const { requests, longPoll } = res.data;
+    // 이번에 본 대기 요청 = 다음 대기에서 서버가 «이것 때문에» 바로 답하지 않게 알려 줄 목록
+    seenPending = requests.filter((r) => r.status === "PENDING").map((r) => r.id).slice(0, 20);
+    const next = nextAfterLongPoll({ longPoll, elapsedMs: Date.now() - startedAt, earlyStreak });
+    earlyStreak = next.earlyStreak;
+    return { delayMs: next.delayMs, fresh: pickNotifications(requests, notified, Date.now()) };
   }
+  earlyStreak = 0;
   // 실패 처리: 토큰 문제는 한 번만 크게 알리고, 나머지는 조용히 간격을 늘린다
   if (res.kind === "no_token" || res.kind === "auth") {
     if (!authWarned) {
@@ -94,13 +148,12 @@ async function pollOnce(): Promise<void> {
     // 토큰을 넣을 때까지는 secureStore 를 다시 읽어 본다(탭 화면에서 넣었을 수 있음)
     tokens.reload();
     failures = Math.min(failures + 1, 5);
-    schedule(nextPollDelay(failures));
-    return;
+    return { delayMs: nextPollDelay(failures), fresh: [] };
   }
   failures += 1;
   // 서버가 «몇 초 뒤에 다시»를 알려 주면(429 retryAfterSeconds) 그보다 먼저 부르지 않는다
   const serverWaitMs = (res.retryAfterSeconds ?? 0) * 1000;
-  schedule(Math.max(serverWaitMs, nextPollDelay(failures, { rateLimited: res.kind === "rate" })));
+  return { delayMs: Math.max(serverWaitMs, nextPollDelay(failures, { rateLimited: res.kind === "rate" })), fresh: [] };
 }
 
 async function main(): Promise<void> {

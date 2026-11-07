@@ -7,8 +7,9 @@ import {
   parseClaimResponse,
   parseReportStatus,
   parseUnpaidList,
+  parseWaitList,
 } from "./contract.ts";
-import type { ChargeRequest, ReportBody, UnpaidItem } from "./contract.ts";
+import type { ChargeRequest, ReportBody, UnpaidItem, WaitListResult } from "./contract.ts";
 import type { HttpLike, HttpResponseLike } from "./pos-types.ts";
 
 /** 실패 종류 — 화면 안내와 백오프가 이 값으로 갈린다 */
@@ -109,7 +110,13 @@ export function createServerApi(deps: ApiDeps) {
   const timeoutMs = deps.timeoutMs ?? 10_000;
 
   /** 공통 호출: 토큰 붙이기 → 호출 → 상태 분류 → JSON 해석 */
-  async function call<T>(method: "GET" | "POST", path: string, payload: unknown, parse: (body: unknown) => T | null): Promise<ApiResult<T>> {
+  async function call<T>(
+    method: "GET" | "POST",
+    path: string,
+    payload: unknown,
+    parse: (body: unknown) => T | null,
+    callTimeoutMs = timeoutMs,
+  ): Promise<ApiResult<T>> {
     const token = await deps.getToken();
     if (!token) return fail("no_token");
     const headers: [string, string][] = [
@@ -121,8 +128,8 @@ export function createServerApi(deps: ApiDeps) {
     try {
       res =
         method === "GET"
-          ? await deps.http.get(origin + path, headers, { timeoutMs })
-          : await deps.http.post(origin + path, payload ?? {}, headers, { timeoutMs });
+          ? await deps.http.get(origin + path, headers, { timeoutMs: callTimeoutMs })
+          : await deps.http.post(origin + path, payload ?? {}, headers, { timeoutMs: callTimeoutMs });
     } catch (e) {
       if (deps.isRateLimitError?.(e)) return fail("rate");
       return fail("network");
@@ -144,6 +151,12 @@ export function createServerApi(deps: ApiDeps) {
   return {
     listRequests: (): Promise<ApiResult<ChargeRequest[]>> =>
       call("GET", API_PATHS.chargeRequests, null, parseChargeRequestList),
+    /**
+     * 롱폴링 목록(워커 전용). 서버가 최대 waitSec 초 붙잡고 있다가 답하므로 시간 제한을 «대기 + 5초»로 늘린다
+     * (20초 대기 → 25초). 근거: SDK http.get(url, headers, { timeoutMs }) — docs.tossplace.com/reference/plugin-sdk/pos/http.html
+     */
+    waitRequests: (opts: { waitSec: number; known?: string[] }): Promise<ApiResult<WaitListResult>> =>
+      call("GET", API_PATHS.chargeRequestsWait(opts.waitSec, opts.known), null, parseWaitList, longPollTimeoutMs(opts.waitSec)),
     claim: (id: string): Promise<ApiResult<ChargeRequest>> => call("POST", API_PATHS.claim(id), {}, parseClaimResponse),
     report: (id: string, body: ReportBody): Promise<ApiResult<string>> =>
       call("POST", API_PATHS.report(id), body, parseReportStatus),
@@ -152,6 +165,11 @@ export function createServerApi(deps: ApiDeps) {
     chargeUnpaid: (paymentId: string): Promise<ApiResult<ChargeRequest>> =>
       call("POST", API_PATHS.chargeUnpaid(paymentId), {}, parseClaimResponse),
   };
+}
+
+/** 롱폴링 한 번의 시간 제한: 서버 대기 + 여유 5초(20초 → 25초) */
+export function longPollTimeoutMs(waitSec: number): number {
+  return Math.max(0, Math.floor(waitSec)) * 1000 + 5_000;
 }
 
 export type ServerApi = ReturnType<typeof createServerApi>;

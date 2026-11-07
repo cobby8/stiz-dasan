@@ -1,7 +1,7 @@
 // 순수 규칙: 현장 결제 요청 → POS 임시 주문 항목 변환, 메모 형식, 금액 검증, 알림 문구.
 // SDK 를 부르지 않는 «계산만» 하는 함수들이라 node --test 로 그대로 검사한다.
 import type { ChargeRequest } from "./contract.ts";
-import type { DraftLineItemInput, OrderLike } from "./pos-types.ts";
+import type { DraftLineItemInput, DraftOrderLike, OrderLike } from "./pos-types.ts";
 
 /** 메모 머리말. 서버 웹훅 매칭이 이 글자를 찾는다 */
 export const MEMO_PREFIX = "STIZ:";
@@ -126,4 +126,49 @@ export function titleWithoutName(req: Pick<ChargeRequest, "title" | "studentName
 /** POS 알림 문구: «홍*동 2026년 11월 수강료 180,000원 현장 결제 요청 (S-482193)» — 이름은 한 번만 */
 export function notificationMessage(req: ChargeRequest): string {
   return `${req.studentName} ${titleWithoutName(req)} ${formatWon(req.amount)} 현장 결제 요청 (${req.shortCode})`;
+}
+
+export type DraftCheck = { ok: boolean; detail: string };
+
+/**
+ * 결제 화면에 담은 뒤 «정말 우리 요청 그대로 들어갔는지» 판단(2026-11-08 운영 사고 S-704715 로 기준 변경).
+ * 예전엔 addLineItem 반환값의 orderPriceValue(주문 합계)를 금액과 비교했는데, 담은 직후 합계가 재계산 전(0 등)이라
+ * 정상 요청도 «금액이 달라» 멈췄다. 이제 기준은 «항목» 자체다:
+ *   - 담긴 항목이 정확히 1개이고, 그 항목 메모(또는 상품 코드)에 STIZ:번호가 있을 것
+ *   - 그 항목의 priceValue × quantity 가 요청 금액과 같을 것
+ *   - 면세 여부가 요청과 같을 것(값이 있을 때)
+ *   - 주문 합계(orderPriceValue)는 «0보다 크고 금액과 다를 때만» 불일치로 본다(예: 매장 자동 할인이 붙음)
+ * detail 은 서버 보고용 실제 값 요약(예: «n=1 item=1000x1 unit=1 total=0 taxFree=true memo=ok»). 개인정보 없음.
+ */
+export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req: ChargeRequest): DraftCheck {
+  const items = draft?.lineItems ?? [];
+  const li = items[0];
+  const total = draft?.price?.orderPriceValue;
+  const price = li?.itemPrice?.priceValue;
+  const qty = li?.quantity;
+  const taxFree = li?.itemPrice?.isTaxFree;
+  const memoOk = !!li && (parseMemo(li.memo) === req.shortCode || parseMemo(li.item?.code) === req.shortCode);
+  const detail =
+    `n=${items.length} item=${fmt(price)}x${fmt(qty)} unit=${fmt(li?.itemPrice?.priceUnit)} ` +
+    `total=${fmt(total)} taxFree=${fmt(taxFree)} memo=${memoOk ? "ok" : "no"}`;
+
+  const expectedTaxFree = req.taxFreeAmount === req.amount;
+  let ok = items.length === 1 && memoOk;
+  if (ok) {
+    if (typeof price === "number" && typeof qty === "number") {
+      // 항목 금액이 보이면 그것이 기준
+      ok = price * qty === req.amount;
+    } else {
+      // 항목 금액을 못 읽으면 주문 합계로만 확인할 수 있다(합계도 없으면 확인 불가 → 멈춤)
+      ok = typeof total === "number" && total === req.amount;
+    }
+  }
+  if (ok && typeof taxFree === "boolean" && taxFree !== expectedTaxFree) ok = false;
+  // 합계가 계산돼 있고(0보다 큼) 금액과 다르면 할인·봉사료 등이 붙은 것 — 그대로 결제하면 금액이 틀린다
+  if (ok && typeof total === "number" && total > 0 && total !== req.amount) ok = false;
+  return { ok, detail };
+}
+
+function fmt(v: unknown): string {
+  return v === undefined || v === null ? "?" : String(v);
 }

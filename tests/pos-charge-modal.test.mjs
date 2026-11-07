@@ -20,7 +20,7 @@ test("상태별 문구가 새 흐름대로 있다", async () => {
   assert.match(code, /을 토스 POS 로 보낼까요\? POS에 결제창이 바로 열립니다\./);
   // PENDING·SENT
   assert.match(code, /POS로 보냈어요 · 결제 기다리는 중/);
-  assert.match(code, /보통 10초 안에 POS에 결제창이 열려요\. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요\./);
+  assert.match(code, /보통 몇 초 안에 POS에 결제창이 열려요\. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요\./);
   assert.match(code, />\s*요청 취소\s*</);
   assert.match(code, /tone: "danger"/, "요청 취소는 위험 작업 확인 창을 거친다");
   // PAID

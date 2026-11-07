@@ -4,7 +4,7 @@
 import { posPluginSdk } from "@tossplace/pos-plugin-sdk";
 import { buildLineItem } from "../src/core/order.ts";
 import type { ChargeRequest } from "../src/core/contract.ts";
-import type { DraftOrderLike, OrderLike, PaymentLike } from "../src/core/pos-types.ts";
+import type { DraftOrderLike, HttpLike, OrderLike, PaymentLike } from "../src/core/pos-types.ts";
 
 declare const req: ChargeRequest;
 
@@ -17,5 +17,9 @@ export async function compatCheck(): Promise<void> {
   posPluginSdk.toast.success({ message: "m", button: { text: "t", onClick: () => undefined } });
   posPluginSdk.alert.open({ message: "m" });
   const s: string | undefined = await posPluginSdk.storage.get("k");
-  void [d, d2, o, p, s];
+  // 롱폴링: http.get 세 번째 인자 { timeoutMs } (docs.tossplace.com/reference/plugin-sdk/pos/http.html)
+  const h: HttpLike = posPluginSdk.http;
+  const r = await posPluginSdk.http.get("https://www.stiz-dasan.kr/x", [["A", "b"]], { timeoutMs: 25_000 });
+  const code: number = r.code;
+  void [d, d2, o, p, s, h, code];
 }

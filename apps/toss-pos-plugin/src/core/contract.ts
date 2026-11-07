@@ -10,6 +10,15 @@ export const SERVER_ORIGIN = "https://www.stiz-dasan.kr";
 export const API_PATHS = {
   /** 열린(PENDING) 현장 결제 요청 목록 */
   chargeRequests: "/api/pos-plugin/charge-requests",
+  /**
+   * 롱폴링: 서버가 최대 waitSec 초 기다렸다가 «모르는 대기 요청»이 생기면 바로 답한다(2026-11-08).
+   * known = 이미 알림을 띄운 대기 요청 id(서버가 이것 때문에 즉시 답하지 않게). 최대 20개.
+   */
+  chargeRequestsWait: (waitSec: number, known: string[] = []) => {
+    const q = `wait=${Math.max(0, Math.floor(waitSec))}`;
+    const ids = known.slice(0, 20).map(encodeURIComponent).join(",");
+    return `/api/pos-plugin/charge-requests?${q}${ids ? `&known=${ids}` : ""}`;
+  },
   /** 요청 선점(PENDING → SENT). 응답으로 금액·면세·메모 문구를 받는다 */
   claim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/claim`,
   /** «결제 시도됨» 참고 보고. 납부 처리는 서버가 웹훅+재조회로만 한다 */
@@ -131,6 +140,15 @@ export function parseChargeRequestList(body: unknown): ChargeRequest[] {
   return listOf(body, "requests", "items", "chargeRequests", "charge_requests")
     .map(parseChargeRequest)
     .filter((r): r is ChargeRequest => r !== null);
+}
+
+/** 롱폴링 응답: 목록 + 서버가 실제로 기다려 준 초(waitSec). waitSec 이 없으면 wait 를 모르는 옛 서버다 */
+export type WaitListResult = { requests: ChargeRequest[]; longPoll: boolean };
+
+export function parseWaitList(body: unknown): WaitListResult {
+  const b = unwrap(body);
+  const w = isObj(b) ? num(pick(b, "waitSec")) : NaN;
+  return { requests: parseChargeRequestList(body), longPoll: Number.isFinite(w) && w > 0 };
 }
 
 /** 선점·미납결제 응답: {request: {...}} 또는 요청 객체 그 자체 */

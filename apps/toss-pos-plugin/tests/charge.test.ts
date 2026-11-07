@@ -23,11 +23,21 @@ const REQ: ChargeRequest = {
 };
 
 /** 가짜 POS: 호출 순서를 log 에 남긴다 */
-function fakeSdk(opts: { draftItems?: number; secondDraftItems?: number; orders?: Record<string, OrderLike> } = {}) {
+function fakeSdk(
+  opts: {
+    draftItems?: number;
+    secondDraftItems?: number;
+    orders?: Record<string, OrderLike>;
+    /** 담은 뒤 다시 읽을 때 POS 가 보여 줄 주문(회차별). 없으면 담은 그대로 + 합계 = 항목가 */
+    afterAdd?: (item: DraftLineItemInput, readNo: number) => DraftOrderLike;
+  } = {},
+) {
   const log: string[] = [];
   const store = new Map<string, string>();
   let draft: DraftOrderLike = { lineItems: Array.from({ length: opts.draftItems ?? 0 }, (_, i) => ({ key: `k${i}`, quantity: 1 })) };
   let gets = 0;
+  let added: DraftLineItemInput | null = null;
+  let readsAfterAdd = 0;
   const sdk: PosSdkLike = {
     draftOrder: {
       async get() {
@@ -36,16 +46,23 @@ function fakeSdk(opts: { draftItems?: number; secondDraftItems?: number; orders?
         if (gets === 2 && opts.secondDraftItems) {
           draft = { lineItems: Array.from({ length: opts.secondDraftItems }, (_, i) => ({ key: `x${i}`, quantity: 1 })) };
         }
+        if (added && opts.afterAdd) return opts.afterAdd(added, ++readsAfterAdd);
         return draft;
       },
       async clear() {
         log.push("draft.clear");
         draft = { lineItems: [] };
+        added = null;
       },
       async addLineItem(item: DraftLineItemInput) {
         log.push(`draft.add:${item.memo}:${item.itemPrice.priceValue}:${item.itemPrice.isTaxFree}`);
-        draft = { lineItems: [{ key: item.key, memo: item.memo, quantity: 1 }], price: { orderPriceValue: item.itemPrice.priceValue } };
-        return draft;
+        added = item;
+        draft = {
+          lineItems: [{ key: item.key, memo: item.memo, quantity: item.quantity, item: { code: item.item.code }, itemPrice: { ...item.itemPrice } }],
+          price: { orderPriceValue: item.itemPrice.priceValue },
+        };
+        // 운영(2026-11-08 S-704715)처럼 반환값은 합계가 재계산 전(0)이다 — 판단에 쓰지 않아야 한다
+        return { ...draft, price: { orderPriceValue: 0 } };
       },
       async startPayment() {
         log.push("draft.startPayment");
@@ -78,6 +95,20 @@ function fakeSdk(opts: { draftItems?: number; secondDraftItems?: number; orders?
     },
   };
   return { sdk, log, store };
+}
+
+const sleep0 = async () => undefined;
+
+/** 다시 읽은 주문 모양 만들기 */
+function readback(item: DraftLineItemInput, over: { total?: number; price?: number; qty?: number; taxFree?: boolean; extra?: number; memo?: string } = {}): DraftOrderLike {
+  const li = {
+    key: item.key,
+    memo: over.memo ?? item.memo,
+    quantity: over.qty ?? item.quantity,
+    itemPrice: { priceValue: over.price ?? item.itemPrice.priceValue, priceUnit: 1, isTaxFree: over.taxFree ?? item.itemPrice.isTaxFree },
+  };
+  const extra = Array.from({ length: over.extra ?? 0 }, (_, i) => ({ key: `o${i}`, quantity: 1 }));
+  return { lineItems: [li, ...extra], price: { orderPriceValue: over.total ?? 0 } };
 }
 
 function fakeApi(claimResult: ApiResult<ChargeRequest> = { ok: true, data: REQ }, reportStatus = "SENT") {
@@ -113,7 +144,8 @@ test("정상: 선점 → 비우기 → 면세 항목 추가 → 결제 시작, �
   const flow = createChargeFlow({ sdk, api, now: () => NOW });
   assert.equal(await flow.startCharge(REQ), "started");
   assert.deepEqual(calls, ["claim:req-1"]);
-  assert.deepEqual(log, ["draft.get", "draft.get", "draft.clear", "draft.add:STIZ:S-4821:100000:true", "draft.startPayment"]);
+  // 담은 뒤 반환값(합계 0)이 아니라 «다시 읽은» 주문으로 판단한다
+  assert.deepEqual(log, ["draft.get", "draft.get", "draft.clear", "draft.add:STIZ:S-4821:100000:true", "draft.get", "draft.startPayment"]);
   assert.equal(parseRecent(store.get(RECENT_KEY))[0].id, "req-1");
 });
 
@@ -265,4 +297,68 @@ test("토큰: 모양 검사·마스킹·캐시(secureStore 를 매번 읽지 않
   assert.equal(reads, 2);
   await store.clear();
   assert.equal(await store.get(), undefined);
+});
+
+test("운영 사고 재현(S-704715): 합계가 0(재계산 전)이어도 항목가×수량이 맞으면 결제 화면을 연다", async () => {
+  const { sdk, log } = fakeSdk({ afterAdd: (item) => readback(item, { total: 0 }) });
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.deepEqual(calls, ["claim:req-1"]);
+  assert.ok(log.includes("draft.startPayment"));
+});
+
+test("담은 직후 아직 안 보이면 짧게 다시 읽고(최대 3번) 열린다", async () => {
+  const { sdk, log } = fakeSdk({ afterAdd: (item, n) => (n < 3 ? { lineItems: [], price: { orderPriceValue: 0 } } : readback(item)) });
+  const { api } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.equal(log.filter((l) => l === "draft.get").length, 2 + 3);
+});
+
+test("금액 불일치: 비우고 멈추며, 서버 보고에 실제 값(항목가·수량·합계·면세)을 남긴다", async () => {
+  const cases: Array<[string, Parameters<typeof readback>[1], string]> = [
+    ["자동 할인으로 합계가 다름", { total: 90000 }, "total=90000"],
+    ["항목가가 다름", { price: 1000, total: 0 }, "item=1000x1"],
+    ["수량이 2", { qty: 2 }, "item=100000x2"],
+    ["면세가 꺼짐", { taxFree: false }, "taxFree=false"],
+    ["다른 항목이 섞임", { extra: 1 }, "n=2"],
+    ["메모 번호가 없음", { memo: "다른 메모" }, "memo=no"],
+  ];
+  for (const [name, over, expect] of cases) {
+    const { sdk, log } = fakeSdk({ afterAdd: (item) => readback(item, over) });
+    const { api, reports } = fakeApi();
+    const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+    assert.equal(await flow.startCharge(REQ), "invalid", name);
+    assert.ok(!log.includes("draft.startPayment"), name);
+    assert.equal(log.at(-2), "draft.clear", name);
+    const reason = reports[0]?.body.reason ?? "";
+    assert.match(reason, /^draft_mismatch n=\d+ item=/, name);
+    assert.ok(reason.includes(expect), `${name}: ${reason}`);
+    assert.ok(reason.length <= 300, name);
+    assert.ok(log.some((l) => l.startsWith("alert:주문 금액이 요청과 달라")), name);
+  }
+});
+
+test("자동 시작(silent): 화면을 막는 alert 를 띄우지 않는다 — 다른 주문은 조용히, 금액 문제는 경고 토스트", async () => {
+  {
+    const { sdk, log } = fakeSdk({ draftItems: 1 });
+    const flow = createChargeFlow({ sdk, api: fakeApi().api, now: () => NOW });
+    assert.equal(await flow.startCharge(REQ, { silent: true }), "draft_not_empty");
+    assert.ok(!log.some((l) => l.startsWith("alert:") || l.startsWith("toast.")), log.join("|"));
+  }
+  {
+    const { sdk, log } = fakeSdk({ afterAdd: (item) => readback(item, { total: 90000 }) });
+    const flow = createChargeFlow({ sdk, api: fakeApi().api, now: () => NOW, sleep: sleep0 });
+    assert.equal(await flow.startCharge(REQ, { silent: true }), "invalid");
+    assert.ok(!log.some((l) => l.startsWith("alert:")));
+    assert.ok(log.some((l) => l.startsWith("toast.warn:주문 금액이 요청과 달라")));
+  }
+  {
+    const { sdk, log } = fakeSdk();
+    const flow = createChargeFlow({ sdk, api: fakeApi().api, now: () => NOW });
+    const [a, b] = await Promise.all([flow.startCharge(REQ), flow.startCharge(REQ, { silent: true })]);
+    assert.deepEqual([a, b], ["started", "busy"]);
+    assert.ok(!log.some((l) => l.startsWith("toast.warn:결제를 준비하고")), "자동 경로 busy 는 안내를 겹치지 않는다");
+  }
 });

@@ -34,8 +34,16 @@ export type DraftLineItemInput = {
 };
 
 export type DraftOrderLike = {
-  lineItems: Array<{ key: string; memo?: string; quantity: number; item?: { code?: string } }>;
+  lineItems: Array<{
+    key: string;
+    memo?: string;
+    quantity: number;
+    item?: { code?: string };
+    // 담긴 항목의 가격 — 금액 검사(order.ts checkDraftAfterAdd)가 이 값으로 판단한다
+    itemPrice?: { priceValue?: number; priceUnit?: number; isTaxFree?: boolean };
+  }>;
   memo?: string;
+  // orderPriceValue = 원주문금액 + 할인 + 보증금 + 봉사료(SDK 타입 PluginDraftOrderPrice). 담은 직후엔 재계산 전일 수 있다
   price?: { orderPriceValue?: number };
 };
 

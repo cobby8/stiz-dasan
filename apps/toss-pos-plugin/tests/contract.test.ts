@@ -9,7 +9,8 @@ import {
   parseReportStatus,
   parseUnpaidList,
 } from "../src/core/contract.ts";
-import { ERROR_CODE_MESSAGE, classifyStatus, createServerApi, failureFromBody, kindMessage } from "../src/core/api.ts";
+import { ERROR_CODE_MESSAGE, classifyStatus, createServerApi, failureFromBody, kindMessage, longPollTimeoutMs } from "../src/core/api.ts";
+import { LONG_POLL_WAIT_SEC } from "../src/core/backoff.ts";
 import type { HttpLike } from "../src/core/pos-types.ts";
 
 test("목록: camelCase·snake_case·data 감싸개 모두 읽는다", () => {
@@ -99,16 +100,16 @@ test("HTTP 상태 → 실패 종류", () => {
 
 /** 가짜 http — 부른 주소·헤더·본문을 기록 */
 function fakeHttp(respond: (method: string, url: string) => { code: number; body: string } | Error) {
-  const calls: { method: string; url: string; headers?: [string, string][]; payload?: unknown }[] = [];
+  const calls: { method: string; url: string; headers?: [string, string][]; payload?: unknown; options?: { timeoutMs?: number } }[] = [];
   const http: HttpLike = {
-    async get(url, headers) {
-      calls.push({ method: "GET", url, headers });
+    async get(url, headers, options) {
+      calls.push({ method: "GET", url, headers, options });
       const r = respond("GET", url);
       if (r instanceof Error) throw r;
       return r;
     },
-    async post(url, payload, headers) {
-      calls.push({ method: "POST", url, headers, payload });
+    async post(url, payload, headers, options) {
+      calls.push({ method: "POST", url, headers, payload, options });
       const r = respond("POST", url);
       if (r instanceof Error) throw r;
       return r;
@@ -161,4 +162,30 @@ test("API: 네트워크 오류·요청 제한·깨진 JSON·409 분류", async (
     assert.equal(r.ok, false);
     assert.equal(!r.ok && r.kind, kind);
   }
+});
+
+test("롱폴링 API: ?wait=20&known=… 로 부르고 시간 제한 25초, waitSec 칸으로 새 서버인지 안다", async () => {
+  const bodies = [
+    { requests: [{ id: "b", shortCode: "S-5678", amount: 1000, taxFreeAmount: 1000, status: "PENDING" }], waitSec: 20 },
+    { success: true, data: { requests: [], wait_sec: 20 } }, // snake_case 감싸개
+    { requests: [] }, // 옛 서버(wait 모름)
+  ];
+  let i = 0;
+  const { http, calls } = fakeHttp(() => ({ code: 200, body: JSON.stringify(bodies[i++]) }));
+  const api = createServerApi({ http, getToken: async () => "t".repeat(32) });
+  const r1 = await api.waitRequests({ waitSec: LONG_POLL_WAIT_SEC, known: ["id-1", "id/2"] });
+  assert.equal(calls[0].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20&known=id-1,id%2F2");
+  assert.equal(calls[0].options?.timeoutMs, 25_000);
+  assert.equal(longPollTimeoutMs(20), 25_000);
+  assert.ok(r1.ok && r1.data.longPoll && r1.data.requests[0].id === "b");
+  const r2 = await api.waitRequests({ waitSec: 20 });
+  assert.equal(calls[1].url, SERVER_ORIGIN + "/api/pos-plugin/charge-requests?wait=20");
+  assert.ok(r2.ok && r2.data.longPoll);
+  const r3 = await api.waitRequests({ waitSec: 20 });
+  assert.ok(r3.ok && !r3.data.longPoll, "waitSec 없으면 옛 서버 → 14초 간격으로 돌아간다");
+  // 다른 호출의 시간 제한은 그대로 10초
+  await api.claim("a");
+  assert.equal(calls[3].options?.timeoutMs, 10_000);
+  // known 은 최대 20개만 보낸다(주소 길이)
+  assert.equal(API_PATHS.chargeRequestsWait(20, Array.from({ length: 30 }, (_, k) => `k${k}`)).split(",").length, 20);
 });

@@ -1,10 +1,13 @@
 // 현장 결제 흐름 — 요청을 POS 결제 화면으로 넘기고, 결제/취소 신호를 서버에 «참고용»으로 알린다.
 // ⚠️ 납부완료 처리는 서버가 토스플레이스 웹훅(서명 검증) + Open API 재조회로만 한다.
 //    여기서 보내는 보고는 기기 위 코드가 보내는 말이라 위조될 수 있으므로, 서버는 기록용으로만 쓴다.
+// 요청 한도(60초 100번·30분 200번)에 드는 결제 1건당 SDK 호출 — 약 13번:
+//   시작 9번(주문 확인 2·선점 http 1·비우기 1·담기 1·다시 읽기 1~3·기록 읽기/쓰기 2·결제 화면 1)
+//   + 결제 신호 4번(주문 조회 1·기록 읽기 1·결제 조회 1·보고 http 1). 다시 읽기가 늘면 최대 15번.
 import type { ServerApi, ApiResult } from "./api.ts";
 import { kindMessage } from "./api.ts";
 import type { ChargeRequest } from "./contract.ts";
-import { buildLineItem, findShortCodeInOrder, formatWon, validateForPos } from "./order.ts";
+import { buildLineItem, checkDraftAfterAdd, findShortCodeInOrder, formatWon, validateForPos } from "./order.ts";
 import type { PosSdkLike } from "./pos-types.ts";
 
 /** 최근 선점한 요청(번호 → 요청 id) 기록 — 결제 신호가 오면 어느 요청인지 찾는 데 쓴다 */
@@ -25,7 +28,21 @@ export type ChargeFlowDeps = {
   sdk: PosSdkLike;
   api: ServerApi;
   now?: () => number;
+  /** 담은 뒤 다시 읽기 전 잠깐 기다리기(테스트는 0초) */
+  sleep?: (ms: number) => Promise<void>;
 };
+
+export type StartOptions = {
+  /**
+   * 자동 시작(워커가 새 요청을 받자마자 여는 경로)이면 true — 화면을 막는 alert 를 띄우지 않는다.
+   * 못 열면 워커가 [결제하기] 토스트를 남기고, 금액·면세 문제는 짧은 경고 토스트로만 알린다.
+   */
+  silent?: boolean;
+};
+
+/** 담은 뒤 주문을 다시 읽는 횟수와 간격 — POS 가 합계를 재계산할 틈(최대 약 0.6초) */
+export const DRAFT_RECHECK_TRIES = 3;
+export const DRAFT_RECHECK_GAP_MS = 300;
 
 /** 최근 선점 목록 읽기(망가진 값은 빈 목록) */
 export function parseRecent(raw: string | undefined): RecentCharge[] {
@@ -46,6 +63,7 @@ export function addRecent(list: RecentCharge[], item: RecentCharge): RecentCharg
 export function createChargeFlow(deps: ChargeFlowDeps) {
   const { sdk, api } = deps;
   const now = deps.now ?? (() => Date.now());
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   // 중복 클릭 잠금: 결제 준비 중에는 두 번째 [결제하기] 를 무시한다
   let busy = false;
   // 같은 결제 신호를 두 번 보고하지 않게(paid 는 분할결제마다 한 번씩 온다)
@@ -79,9 +97,16 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   /**
    * 결제 시작 공통 경로. claimFn = 서버 선점 호출(대기 요청이면 claim, 미납 목록이면 chargeUnpaid).
    */
-  async function start(claimFn: () => Promise<ApiResult<ChargeRequest>>): Promise<StartResult> {
+  async function start(claimFn: () => Promise<ApiResult<ChargeRequest>>, opts: StartOptions = {}): Promise<StartResult> {
+    const silent = opts.silent === true;
+    // 사람이 누른 경로는 alert(확인 눌러야 닫힘), 자동 경로는 막지 않는 경고 토스트
+    const notice = (message: string, blocking: boolean) => {
+      if (!silent) sdk.alert.open({ message });
+      else if (blocking) sdk.toast.warn({ message });
+    };
     if (busy) {
-      sdk.toast.warn({ message: "결제를 준비하고 있어요. 잠시만 기다려 주세요." });
+      // 자동 경로에선 워커가 [결제하기] 토스트를 따로 남기므로 안내를 겹치지 않는다
+      if (!silent) sdk.toast.warn({ message: "결제를 준비하고 있어요. 잠시만 기다려 주세요." });
       return "busy";
     }
     busy = true;
@@ -89,7 +114,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     try {
       // 1) 서버를 건드리기 전에 먼저 확인: 다른 주문이 담겨 있으면 덮어쓰지 않는다
       if (!(await isDraftEmpty())) {
-        sdk.alert.open({ message: DRAFT_BUSY_MSG });
+        notice(DRAFT_BUSY_MSG, false); // 자동 경로: [결제하기] 토스트로 충분
         return "draft_not_empty";
       }
       // 2) 서버 선점(PENDING → SENT). 다른 POS 가 먼저 가져갔으면 여기서 409
@@ -103,24 +128,30 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       const v = validateForPos(claimed, now());
       if (!v.ok) {
         await reportStartFailed(claimed, v.reason);
-        sdk.alert.open({ message: v.reason });
+        notice(v.reason, true);
         return "invalid";
       }
       // 4) 선점하는 사이 누가 상품을 담았을 수 있어 한 번 더 확인
       if (!(await isDraftEmpty())) {
         await reportStartFailed(claimed, "draft_not_empty");
-        sdk.alert.open({ message: DRAFT_BUSY_MSG });
+        notice(DRAFT_BUSY_MSG, false);
         return "draft_not_empty";
       }
       // 5) 비어 있음을 확인했으니 비우기(남은 주문 할인 등 초기화) → 수강료 항목 추가
       await sdk.draftOrder.clear();
-      const updated = await sdk.draftOrder.addLineItem(buildLineItem(claimed));
-      // 6) 들어간 결과를 다시 확인: 항목 1개 · 금액 일치가 아니면 결제 화면을 열지 않는다
-      const total = updated.price?.orderPriceValue;
-      if (updated.lineItems.length !== 1 || (typeof total === "number" && total !== claimed.amount)) {
+      await sdk.draftOrder.addLineItem(buildLineItem(claimed));
+      // 6) 들어간 결과를 «다시 읽어» 확인한다. addLineItem 반환값은 합계 재계산 전일 수 있어(2026-11-08 S-704715)
+      //    판단에 쓰지 않는다. 기준 = 우리 항목 1개 · 항목가×수량 = 금액 · 면세 일치 · 메모 번호(order.ts checkDraftAfterAdd)
+      let check = checkDraftAfterAdd(await sdk.draftOrder.get(), claimed);
+      for (let i = 1; i < DRAFT_RECHECK_TRIES && !check.ok; i++) {
+        await sleep(DRAFT_RECHECK_GAP_MS);
+        check = checkDraftAfterAdd(await sdk.draftOrder.get(), claimed);
+      }
+      if (!check.ok) {
         await sdk.draftOrder.clear();
-        await reportStartFailed(claimed, "draft_mismatch");
-        sdk.alert.open({ message: "주문 금액이 요청과 달라 결제를 멈췄어요. 사이트에서 확인해 주세요." });
+        // 서버에 실제 값을 남긴다(서버는 300자까지 보관) — 다음에 같은 일이 나면 원인을 바로 본다
+        await reportStartFailed(claimed, `draft_mismatch ${check.detail}`);
+        notice("주문 금액이 요청과 달라 결제를 멈췄어요. 사이트에서 확인해 주세요.", true);
         return "invalid";
       }
       await remember(claimed);
@@ -137,8 +168,8 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   }
 
   /** 대기 요청에서 [결제하기] */
-  function startCharge(req: Pick<ChargeRequest, "id">): Promise<StartResult> {
-    return start(() => api.claim(req.id));
+  function startCharge(req: Pick<ChargeRequest, "id">, opts: StartOptions = {}): Promise<StartResult> {
+    return start(() => api.claim(req.id), opts);
   }
 
   /** 미납 목록에서 [결제하기] — 서버가 요청 생성 + 선점을 한 번에 */

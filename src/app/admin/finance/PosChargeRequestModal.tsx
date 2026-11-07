@@ -183,7 +183,7 @@ export default function PosChargeRequestModal({
                             <p className="text-base font-extrabold text-[var(--color-academy-ink)]">POS로 보냈어요 · 결제 기다리는 중</p>
                             <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{won(request.amount)}</p>
                             <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
-                                보통 10초 안에 POS에 결제창이 열려요. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요.
+                                보통 몇 초 안에 POS에 결제창이 열려요. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요.
                             </p>
                         </div>
                         <div className="mt-4 flex">
