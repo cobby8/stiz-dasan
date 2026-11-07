@@ -35,6 +35,7 @@
 @media (prefers-reduced-motion:reduce){.stiz-public-sport .public-home-programs img{transition:none}}
 @media (max-width:767px){
 .stiz-public-sport .public-home-programs ul{grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}
+.stiz-public-sport .public-home-programs li a{aspect-ratio:1/1}
 .stiz-public-sport .public-home-programs li:last-child:nth-child(odd){grid-column:1/-1}
 .stiz-public-sport .public-home-programs li:last-child:nth-child(odd) a{aspect-ratio:2/1}
 }
