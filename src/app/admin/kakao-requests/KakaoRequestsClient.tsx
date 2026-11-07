@@ -8,6 +8,9 @@ import { decideKakaoParentIntake, type KakaoIntakeDecision } from "@/app/actions
 import { prepareKakaoReconfirmationNotice, sendKakaoReconfirmationNotice } from "@/app/actions/kakao-reconfirmation-notice";
 import { kakaoFollowupSummary, isKakaoFollowupOverdue, type KakaoFollowupCommand } from "@/lib/kakaoIntakeFollowup";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+// 처리 결과 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송(자동 발송 없음)
+import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
+import { isIntakeResultStatus } from "@/lib/customer-notice/templates";
 // 목록 행의 접수일·시각은 KST 모듈로만(기기 시간대를 따라가지 않게)
 import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
 
@@ -112,6 +115,8 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
     });
   }
   const [checkedAt] = useState(() => Date.now());
+  // 방금 처리한 접수 — 새 상태가 오면 결과 문자 «미리보기»를 바로 열어 준다(보내기는 원장이 직접)
+  const [justDecidedId, setJustDecidedId] = useState("");
   function decide(id: string, decision: KakaoIntakeDecision) {
     const row = rows.find(item => item.id === id);
     if (!row) return;
@@ -124,6 +129,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         setNotes(current => { const next = { ...current }; delete next[id]; return next; });
         setReviewDetails(current => { const next = { ...current }; delete next[id]; return next; });
         setEditRevisions(current => { const next = { ...current }; delete next[id]; return next; });
+        setJustDecidedId(id);
         router.refresh();
       } catch (caught) { setError(adminErrorText(caught, "처리 중 오류가 발생했습니다.")); }
     });
@@ -240,6 +246,11 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         <p className="mt-3 rounded-xl bg-[var(--color-academy-primary-soft)] p-3 text-xs text-[var(--color-academy-ink)]"><b>이관 후:</b> 변경 요청은 승인 대기 상태입니다. 외부 서비스 반영과 알림 발송은 별도 승인 전까지 보류됩니다.</p>
         {row.operationsRequestId && <Link href="/admin/operations-sync" className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">생성된 운영 원장 확인</Link>}
         {row.decidedAt && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{row.decidedByName ?? "관리자"} · {formatDate(row.decidedAt)} · {row.decisionNote ?? "메모 없음"}</p>}
+        {isIntakeResultStatus(row.status) && identityOk && <section aria-label="학부모 결과 안내" className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
+          <b className="text-sm text-[var(--color-academy-ink)]">학부모께 처리 결과 안내</b>
+          {/* key 에 상태를 넣어, 상태가 바뀌면 새 문구로 미리보기를 다시 만든다 */}
+          <div className="mt-2"><CustomerNoticeSender key={`${row.id}:${row.status}`} kind="KAKAO_INTAKE_RESULT" intakeId={row.id} autoOpen={justDecidedId === row.id} hint="문자 문구를 먼저 보여 드려요. «이대로 보내기»를 눌러야만 1건 발송됩니다. 같은 결과는 한 번만 보낼 수 있어요." /></div>
+        </section>}
         {row.status === "APPROVED" && row.commands.some(command => command.parentReconfirmationRequired && !command.parentConfirmed) && <button type="button" disabled={pending || !identityOk} onClick={() => { setOpenId(""); prepareNotice(rowId); }} className="mt-3 min-h-11 rounded-xl border px-3 disabled:opacity-40">재확인 링크·안내 준비 (미발송)</button>}
         {REVIEWABLE.has(row.status) && <div className="mt-4 space-y-3">
           {TRANSFERABLE.has(row.kind) && <section className="space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-3">
