@@ -1,0 +1,113 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { requireAdmin } from "@/lib/auth-guard";
+import {
+    ChargeRequestError,
+    cancelChargeRequestByAdmin,
+    createChargeRequestByAdmin,
+    getChargeRequestForPayment,
+    type AdminChargeRequestView,
+} from "@/lib/pos/chargeRequestService";
+import {
+    issuePosPluginToken,
+    listPosPluginTokens,
+    revokePosPluginToken,
+    type PosPluginTokenRow,
+} from "@/lib/pos/pluginAuth";
+
+/**
+ * 토스 POS «현장 결제» · «POS 연결(토큰)» 관리자 동작.
+ *
+ * Server Action 은 브라우저에서 직접 POST 로 부를 수 있으므로 **첫 줄에서 권한을 다시 확인**한다.
+ * 권한 = 원장(ADMIN)만 — 기존 «단말기 결제 반영»(markTerminalPaymentPaid)과 같은 재무 권한 기준.
+ * 오류는 throw 대신 { ok:false, message } 로 돌려준다(배포 환경은 throw 한 문구를 화면에 숨긴다).
+ */
+
+export type ActionResult<T> = ({ ok: true } & T) | { ok: false; message: string };
+
+async function requireFinanceOwner() {
+    const admin = await requireAdmin();
+    if (admin.appUserRole !== "ADMIN") throw new ChargeRequestError("NOT_ELIGIBLE", "원장만 현장 결제·POS 연결을 다룰 수 있습니다.");
+    return admin;
+}
+
+function failure(error: unknown, fallback: string): { ok: false; message: string } {
+    if (error instanceof ChargeRequestError) return { ok: false, message: error.message };
+    const message = String((error as Error)?.message ?? "");
+    // 권한 문구(requireAdmin)는 그대로 보여 주고, 그 밖의 내부 오류는 감춘다.
+    if (/권한|로그인/.test(message)) return { ok: false, message };
+    console.error("[pos-charge-action]", message.slice(0, 300));
+    return { ok: false, message: fallback };
+}
+
+/** 청구서의 현재(또는 가장 최근) 현장 결제 요청 */
+export async function loadPosChargeRequest(paymentId: string): Promise<ActionResult<{ request: AdminChargeRequestView | null }>> {
+    try {
+        await requireFinanceOwner();
+        return { ok: true, request: await getChargeRequestForPayment(String(paymentId ?? "")) };
+    } catch (error) {
+        return failure(error, "현장 결제 요청을 불러오지 못했습니다.");
+    }
+}
+
+/** «현장 결제» — 요청 만들기(이미 열린 요청이 있으면 그것을 돌려준다) */
+export async function createPosChargeRequest(paymentId: string): Promise<ActionResult<{ request: AdminChargeRequestView; existing: boolean }>> {
+    try {
+        const admin = await requireFinanceOwner();
+        const result = await createChargeRequestByAdmin({
+            paymentId: String(paymentId ?? ""),
+            adminUserId: admin.appUserId,
+            adminName: admin.appUserName,
+        });
+        return { ok: true, ...result };
+    } catch (error) {
+        return failure(error, "현장 결제 요청을 만들지 못했습니다.");
+    }
+}
+
+/** 요청 취소(열린 요청만, 돈은 안 움직임) */
+export async function cancelPosChargeRequest(requestId: string): Promise<ActionResult<object>> {
+    try {
+        const admin = await requireFinanceOwner();
+        await cancelChargeRequestByAdmin({ requestId: String(requestId ?? ""), adminUserId: admin.appUserId });
+        return { ok: true };
+    } catch (error) {
+        return failure(error, "현장 결제 요청을 취소하지 못했습니다.");
+    }
+}
+
+/** POS 연결 — 토큰 목록 */
+export async function loadPosPluginTokens(): Promise<ActionResult<{ tokens: PosPluginTokenRow[] }>> {
+    try {
+        await requireFinanceOwner();
+        return { ok: true, tokens: await listPosPluginTokens() };
+    } catch (error) {
+        return failure(error, "POS 연결 목록을 불러오지 못했습니다.");
+    }
+}
+
+/** POS 연결 — 새 토큰 발급(= 회전). 원문은 이 응답에서 한 번만 나간다. */
+export async function issuePosPluginTokenAction(label: string): Promise<ActionResult<{ token: string; revokedCount: number }>> {
+    try {
+        const admin = await requireFinanceOwner();
+        const result = await issuePosPluginToken({ label, adminUserId: admin.appUserId });
+        revalidatePath("/admin/pos-plugin");
+        return { ok: true, ...result };
+    } catch (error) {
+        return failure(error, "POS 연결 코드를 만들지 못했습니다.");
+    }
+}
+
+/** POS 연결 — 토큰 끊기 */
+export async function revokePosPluginTokenAction(tokenId: string): Promise<ActionResult<object>> {
+    try {
+        const admin = await requireFinanceOwner();
+        const done = await revokePosPluginToken({ tokenId: String(tokenId ?? ""), adminUserId: admin.appUserId });
+        if (!done) return { ok: false, message: "이미 끊긴 연결입니다." };
+        revalidatePath("/admin/pos-plugin");
+        return { ok: true };
+    } catch (error) {
+        return failure(error, "POS 연결을 끊지 못했습니다.");
+    }
+}

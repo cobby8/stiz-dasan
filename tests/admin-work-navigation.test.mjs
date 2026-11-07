@@ -55,7 +55,7 @@ test('주요 업무 여섯 개는 탭 전환 없이 렌더링되고 셔틀은 �
 test('이전 보조 기능의 진입이 남고 실제 페이지 파일이 존재한다', () => {
   const html = shell();
   const paths = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
-  for (const route of ['/admin/requests', '/admin/enrollment-changes', '/admin/kakao-requests', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/staff/quick-post', '/admin/seasonal', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/uniform', '/admin/settings', '/admin/coaches', '/admin/programs', '/admin/schedule', '/admin/notices', '/admin/gallery', '/admin/faq', '/admin/testimonials', '/admin/terms', '/admin/privacy', '/admin/notification-deliveries', '/admin/kakao-policy', '/admin/stats', '/admin/sms', '/admin/import', '/admin/staff', '/admin/media-revocations']) {
+  for (const route of ['/admin/requests', '/admin/enrollment-changes', '/admin/kakao-requests', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/staff/quick-post', '/admin/seasonal', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/pos-plugin', '/admin/uniform', '/admin/settings', '/admin/coaches', '/admin/programs', '/admin/schedule', '/admin/notices', '/admin/gallery', '/admin/faq', '/admin/testimonials', '/admin/terms', '/admin/privacy', '/admin/notification-deliveries', '/admin/kakao-policy', '/admin/stats', '/admin/sms', '/admin/import', '/admin/staff', '/admin/media-revocations']) {
     assert.ok(paths.includes(route), `${route} 진입 누락`);
   }
   for (const route of paths.filter((path) => path.startsWith('/admin') || path.startsWith('/staff'))) {

@@ -126,3 +126,9 @@
 - **발견자**: developer
 - **내용**: 문구는 `src/lib/customer-notice/templates.ts`(import 없는 순수 함수), 서버는 `src/app/actions/customer-notice.ts` 의 prepareCustomerNotice/sendCustomerNotice, 화면은 `src/components/admin/CustomerNoticeSender.tsx`(kind 별 props). 승인 기록은 OperationsAuditLog(CUSTOMER_NOTICE_PREVIEW/CLAIMED/RESULT, 번호·문구는 해시만), 발송은 관리자 수동 문자와 같은 장부(MessageDeliveryBatch·NotificationDelivery, trigger MANUAL_MESSAGE, eventType=kind). 새 안내를 늘릴 때는 kind 하나 + resolveNotice 분기 + 문구 함수만 추가한다. 카카오채널 주소는 `kakaoChannelLinks(settings.kakaoChannelUrl)` 로만 만든다.
 - **참조횟수**: 0
+
+### [2026-11-07] 토스 POS «현장 결제» = 순수 규칙(charge-request.mjs) + 실행부(chargeRequestService.ts) + 플러그인 API(토큰)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 관리자 수납 ⚡ «현장 결제»(MONTHLY·SHUTTLE 미납, 원장만) → `PosChargeRequest`(번호 S-dddd, 금액·면세 DB 스냅샷, 30분, 열린 요청 부분 유일 인덱스). 웹훅 `processPosWebhookEvent` 가 재조회한 주문으로 `matchChargeRequestsForOrder` 를 먼저 부르고, 자동 납부(조건부 UPDATE 선점 → markPaymentPaid CARD·TOSS_POS)한 결제만 PosPaymentNotice 에서 뺀다 — 그 밖은 기존 슬랙 확인 흐름(D1). 판정(금액·만료·여러 결제·부분취소·중복)은 순수 `decideChargeMatch` 한 곳. 플러그인 API `/api/pos-plugin/**` 는 `handlePluginRequest`(Bearer 토큰 SHA-256·timingSafeEqual·분당 제한) 경유만, 납부 경로 없음. 토큰 화면 `/admin/pos-plugin`. 계약 = docs/toss-pos-plugin-plan.md 8장.
+- **참조횟수**: 0

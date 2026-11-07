@@ -3092,6 +3092,56 @@ model PosPaymentNotice {
   @@index([tossOrderId])
 }
 
+/// 토스 POS «현장 결제» 요청 (migration 20261107150000_add_pos_charge_request 의 사본)
+/// ⚠️ DB 에는 더 있다: paymentId → Payment FK(ON DELETE CASCADE), shortCode 형식·상태·면세 CHECK,
+///    부분 유일 인덱스 3개(열린 요청의 paymentId·shortCode, tossPaymentId). 코드는 raw SQL 로만 쓴다.
+model PosChargeRequest {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  shortCode           String // S-4821
+  paymentId           String
+  amount              Int
+  taxFreeAmount       Int
+  status              String    @default("PENDING") // PENDING | SENT | PAID | CANCELLED | EXPIRED | HELD
+  expiresAt           DateTime  @db.Timestamptz(6)
+  createdVia          String    @default("ADMIN") // ADMIN | PLUGIN
+  createdByUserId     String?
+  createdByName       String?
+  claimedAt           DateTime? @db.Timestamptz(6)
+  claimedByTokenId    String?
+  tossOrderId         String?
+  tossPaymentId       String?
+  paidAt              DateTime? @db.Timestamptz(6)
+  note                String?
+  heldAt              DateTime? @db.Timestamptz(6)
+  pluginReportedEvent String?
+  pluginReportedAt    DateTime? @db.Timestamptz(6)
+  pluginReportMessage String?
+  pluginReportedEvents String[] @default([])
+  cancelledAt         DateTime? @db.Timestamptz(6)
+  cancelledBy         String?
+  slackNotifiedAt     DateTime? @db.Timestamptz(6)
+  cancelNotifiedAt    DateTime? @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([shortCode, createdAt(sort: Desc)])
+  @@index([status, expiresAt])
+  @@index([paymentId, createdAt(sort: Desc)])
+}
+
+/// POS 플러그인 매장 토큰 — 원문은 저장하지 않고 SHA-256 해시만 (migration 20261107150000 의 사본)
+model PosPluginToken {
+  id              String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  tokenHash       String    @unique
+  tokenPrefix     String
+  label           String
+  createdByUserId String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  lastUsedAt      DateTime? @db.Timestamptz(6)
+  revokedAt       DateTime? @db.Timestamptz(6)
+  revokedByUserId String?
+}
+
 /// 카카오 정책 답변 — 정책 문서 버전 이력 (migration 20261009120000_add_kakao_policy_qa 의 사본)
 /// 저장할 때마다 한 줄 추가한다. 가장 최근 행이 현재 문서다.
 /// ⚠️ DB 에는 content 길이 CHECK(30000자)가 더 있다.

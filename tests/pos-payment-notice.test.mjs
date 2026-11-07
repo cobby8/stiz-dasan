@@ -239,6 +239,17 @@ const TOSS_STUB = toDataUrl(`
   export async function fetchTossOrderById(p) { globalThis.__toss.push(p); return { order: globalThis.__state.order, eventId: "e" }; }
 `);
 
+// «현장 결제» 매칭(2026-11-07 D1)은 자기 테스트(tests/pos-charge-request.test.mjs)가 있다.
+// 여기서는 «매칭이 처리했다고 한 결제는 슬랙 확인 알림을 만들지 않는다»는 경계만 본다.
+const CHARGE_STUB = toDataUrl(`
+  export async function matchChargeRequestsForOrder(input) {
+    globalThis.__charge = (globalThis.__charge ?? []).concat([input.orderId]);
+    if (globalThis.__state.chargeThrows) throw new Error("charge match failed");
+    return { handledTossPaymentIds: globalThis.__state.chargeHandled ?? [], note: globalThis.__state.chargeNote ?? "" };
+  }
+  export async function expireStaleChargeRequests() { return 0; }
+`);
+
 let loaded = null;
 async function loadModules() {
   if (loaded) return loaded;
@@ -247,6 +258,7 @@ async function loadModules() {
     .split('"@/lib/prisma"').join(`"${PRISMA_STUB}"`)
     .split('"@/lib/slack/client"').join(`"${SLACK_STUB}"`)
     .split('"./tossplaceClient"').join(`"${TOSS_STUB}"`)
+    .split('"./chargeRequestService"').join(`"${CHARGE_STUB}"`)
     .split('"./tossplace-match.mjs"').join(`"${fileUrl("src/lib/pos/tossplace-match.mjs")}"`)
     .split('"./payment-notice.mjs"').join(`"${fileUrl(NOTICE_MODULE)}"`);
   const svcUrl = toDataUrl(svc);
@@ -410,6 +422,48 @@ test("웹훅 처리: 카드·승인 결제만 결제ID 로 한 줄씩 기록(ON 
   assert.equal(inserts[0].args[9], "p-oct");
   assert.ok(!globalThis.__calls.some((c) => /UPDATE\s+"Payment"|INSERT INTO "Payment"/.test(c.sql)));
   assert.ok(globalThis.__calls.some((c) => /UPDATE "PosWebhookEvent"[\s\S]*"processedAt" = now\(\)/.test(c.sql)));
+});
+
+async function runWebhookWithCharge(chargeState) {
+  const { service } = await loadModules();
+  globalThis.__state = {
+    events: [{ id: "ev3", eventType: "order.order.completed.v1", payload: { type: "order.order.completed.v1", data: { id: "o-3" } }, processedAt: null }],
+    order: {
+      id: "o-3", memo: "STIZ:S-4821", lineItems: [{ item: { title: "2026년 10월 수강료(이*윤)" } }],
+      payments: [{ id: "pay-3", sourceType: "CARD", state: "APPROVED", amount: 180000, approvedAt: "2026-09-28T05:20:00Z" }],
+    },
+    roster: [], monthRows: [], sendClaim: [],
+    ...chargeState,
+  };
+  globalThis.__calls = []; globalThis.__slack = []; globalThis.__toss = []; globalThis.__charge = [];
+  const env = { TOSS_PLACE_ACCESS_KEY: "k", TOSS_PLACE_ACCESS_SECRET: "s", TOSS_PLACE_MERCHANT_ID: "324744" };
+  const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try {
+    return await service.processPosWebhookEvent("ev3");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v == null) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test("D1 경계: 현장 결제 매칭이 자동 납부한 결제는 슬랙 확인 알림(PosPaymentNotice)을 만들지 않는다", async () => {
+  const r = await runWebhookWithCharge({ chargeHandled: ["pay-3"], chargeNote: "S-4821 자동 납부 반영" });
+  assert.equal(r.notices, 0);
+  assert.deepEqual(globalThis.__charge, ["o-3"], "재조회한 주문으로 매칭을 부른다");
+  assert.ok(!globalThis.__calls.some((c) => /INSERT INTO "PosPaymentNotice"/.test(c.sql)));
+  assert.match(r.note, /현장 결제: S-4821 자동 납부 반영/);
+});
+
+test("D1 경계: 매칭이 처리하지 않은 결제(요청 없음·보류)는 지금처럼 슬랙 확인 알림으로 간다", async () => {
+  const r = await runWebhookWithCharge({ chargeHandled: [] });
+  assert.equal(r.notices, 1);
+  assert.ok(globalThis.__calls.some((c) => /INSERT INTO "PosPaymentNotice"/.test(c.sql)));
+});
+
+test("D1 경계: 매칭이 터져도 슬랙 확인 알림은 그대로 나간다(안전망)", async () => {
+  const r = await runWebhookWithCharge({ chargeThrows: true });
+  assert.equal(r.notices, 1);
+  assert.ok(globalThis.__calls.some((c) => /INSERT INTO "PosPaymentNotice"/.test(c.sql)));
 });
 
 test("웹훅 처리: 다루지 않는 알림 종류는 IGNORED 로 표시하고 끝낸다", async () => {

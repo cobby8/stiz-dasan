@@ -1,0 +1,567 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
+
+/**
+ * 토스 POS «현장 결제» 요청 회귀 테스트 (2026-11-07, 원장 결정 D1·D2).
+ *
+ * 위험은 셋이다.
+ *  ① 조건이 안 맞는 결제(금액 다름·이미 납부·만료·부분취소·중복)를 자동 납부 처리하는 것
+ *  ② 플러그인(기기 위 코드라 위조 가능)의 말만 듣고 납부 처리하는 것
+ *  ③ 매장 토큰 없이·틀린 토큰으로 API 를 쓰는 것
+ * 그래서 규칙은 순수 모듈을 **실행**하고, 매칭·인증은 가짜 prisma 를 끼워 **실행**하고,
+ * 계약(DB 제약과 코드 상수가 같은 목록 · 플러그인 API 에 납부 경로 없음)은 소스에서 확인한다.
+ */
+
+const RULES = "src/lib/pos/charge-request.mjs";
+const SERVICE = "src/lib/pos/chargeRequestService.ts";
+const AUTH = "src/lib/pos/pluginAuth.ts";
+const HTTP = "src/lib/pos/pluginHttp.ts";
+const RATE = "src/lib/seasonal/public-rate-limit.ts";
+const MIGRATION = "prisma/migrations/20261107150000_add_pos_charge_request/migration.sql";
+const ACTIONS = "src/app/actions/pos-charge.ts";
+const FINANCE = "src/app/admin/finance/FinanceClient.tsx";
+const NOTICE_SERVICE = "src/lib/pos/paymentNoticeService.ts";
+const PLUGIN_API_DIR = "src/app/api/pos-plugin";
+
+const fileUrl = (f) => pathToFileURL(path.resolve(f)).href;
+const R = await import(fileUrl(RULES));
+const toDataUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const transpile = async (file) =>
+  ts.transpileModule(await readFile(file, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+
+// ───────────────────────── 1. 번호 ─────────────────────────
+
+test("번호: S-+4자리, 0 채움, 범위 밖은 오류", () => {
+  assert.equal(R.formatShortCode(7), "S-0007");
+  assert.equal(R.formatShortCode(4821), "S-4821");
+  assert.throws(() => R.formatShortCode(10000));
+  assert.throws(() => R.formatShortCode(-1));
+  assert.equal(R.randomShortCode((max) => { assert.equal(max, 10000); return 42; }), "S-0042");
+  assert.ok(R.isShortCode("S-4821"));
+  assert.ok(!R.isShortCode("S-482"));
+  assert.ok(!R.isShortCode("s-4821"));
+  assert.equal(R.buildChargeMemo("S-4821"), "STIZ:S-4821");
+  assert.throws(() => R.buildChargeMemo("4821"));
+});
+
+test("번호: 무작위 번호는 항상 DB CHECK 형식(^S-[0-9]{4}$)에 맞는다", () => {
+  for (const n of [0, 1, 99, 999, 1000, 9999]) assert.match(R.randomShortCode(() => n), /^S-[0-9]{4}$/);
+});
+
+// ───────────────────────── 2. 메모에서 번호 찾기 ─────────────────────────
+
+test("메모 파싱: 손으로 친 흔한 변형을 받아 S-dddd 로 정리한다", () => {
+  for (const memo of ["STIZ:S-4821", "stiz: s-4821", "STIZ S4821", "STIZ：S-4821", "이시윤 / STIZ:S-4821 10월", "STIZ:S 4821"]) {
+    assert.deepEqual(R.extractChargeCodesFromText(memo), ["S-4821"], memo);
+  }
+});
+
+test("메모 파싱: STIZ 머리말 없는 숫자는 번호가 아니고, 숫자는 4~6자리까지만(플러그인 계약 S-\d{4,6})", () => {
+  assert.deepEqual(R.extractChargeCodesFromText("S-4821"), []);
+  assert.deepEqual(R.extractChargeCodesFromText("010-4821-1234"), []);
+  assert.deepEqual(R.extractChargeCodesFromText("STIZ:S-482"), []);
+  assert.deepEqual(R.extractChargeCodesFromText("STIZ:S-48210"), ["S-48210"], "5자리도 읽는다(요청이 없으면 매칭 안 됨)");
+  assert.deepEqual(R.extractChargeCodesFromText("STIZ:S-4821001"), [], "7자리 이상은 번호가 아니다");
+  assert.deepEqual(R.extractChargeCodesFromText(""), []);
+  assert.deepEqual(R.extractChargeCodesFromText(null), []);
+});
+
+test("메모 파싱: 주문·품목·상품 메모를 다 보고, 같은 번호는 한 번, 다른 번호는 둘 다", () => {
+  const order = { memo: "STIZ:S-1111", lineItems: [{ memo: "STIZ:S-1111" }, { item: { memo: "stiz:s-2222" } }] };
+  assert.deepEqual(R.extractChargeCodes(order), ["S-1111", "S-2222"]);
+  assert.deepEqual(R.extractChargeCodes({}), []);
+});
+
+test("메모 파싱: 플러그인이 넣는 자리(lineItems[].memo · lineItems[].item.code)에서도 찾는다", () => {
+  assert.deepEqual(R.extractChargeCodes({ memo: null, lineItems: [{ item: { code: "STIZ:S-4821", title: "수강료(11월)" } }] }), ["S-4821"]);
+  assert.deepEqual(R.extractChargeCodes({ lineItems: [{ memo: "STIZ:S-4821", item: { code: "STIZ:S-4821" } }] }), ["S-4821"]);
+  assert.deepEqual(R.extractChargeCodes({ lineItems: [{ code: "STIZ:S-0420" }] }), ["S-0420"]);
+});
+
+// ───────────────────────── 3. 청구서 판정 ─────────────────────────
+
+test("현장 결제 대상: 수강료·셔틀비 미납만", () => {
+  assert.ok(R.chargeEligibility({ type: "MONTHLY", status: "PENDING", amount: 180000 }).ok);
+  assert.ok(R.chargeEligibility({ type: "SHUTTLE", status: "OVERDUE", amount: 30000 }).ok);
+  assert.ok(!R.chargeEligibility({ type: "UNIFORM", status: "PENDING", amount: 50000 }).ok, "유니폼은 과세라 제외");
+  assert.ok(!R.chargeEligibility({ type: "OTHER", status: "PENDING", amount: 1000 }).ok);
+  assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "PAID", amount: 180000 }).ok);
+  assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "CANCELLED", amount: 180000 }).ok);
+  assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "PENDING", amount: 0 }).ok);
+  assert.ok(!R.chargeEligibility(null).ok);
+});
+
+// ───────────────────────── 4. 매칭 판정 ─────────────────────────
+
+const EXPIRES = "2026-11-07T05:30:00Z"; // KST 14:30
+const baseReq = { status: "PENDING", amount: 180000, tossPaymentId: null, expiresAt: EXPIRES };
+const baseSite = { status: "PENDING", amount: 180000, type: "MONTHLY" };
+const pay = (over = {}) => ({ tossPaymentId: "tp-1", tossOrderId: "o-1", amount: 180000, approvedAtIso: "2026-11-07T14:20:00+09:00", ...over });
+const decide = (over = {}) =>
+  R.decideChargeMatch({ request: baseReq, site: baseSite, approved: [pay()], others: [], nowMs: Date.parse("2026-11-07T05:20:00Z"), ...over });
+
+test("매칭: 번호·금액·청구서 미납·만료 전이면 자동 납부(PAY)", () => {
+  const r = decide();
+  assert.equal(r.action, "PAY");
+  assert.equal(r.payment.tossPaymentId, "tp-1");
+  assert.equal(decide({ request: { ...baseReq, status: "SENT" } }).action, "PAY");
+});
+
+test("매칭: 금액 불일치는 보류(HOLD) — 선생님이 POS 에서 금액을 고친 경우", () => {
+  const r = decide({ approved: [pay({ amount: 170000 })] });
+  assert.equal(r.action, "HOLD");
+  assert.match(r.reason, /170000원.*180000원/);
+});
+
+test("매칭: 청구서가 이미 납부·금액이 바뀜·취소면 보류", () => {
+  assert.equal(decide({ site: { ...baseSite, status: "PAID" } }).action, "HOLD");
+  assert.match(decide({ site: { ...baseSite, status: "PAID" } }).reason, /이미 납부완료/);
+  assert.equal(decide({ site: { ...baseSite, amount: 200000 } }).action, "HOLD");
+  assert.equal(decide({ site: { ...baseSite, status: "CANCELLED" } }).action, "HOLD");
+  assert.equal(decide({ site: null }).action, "HOLD");
+});
+
+test("매칭: 만료 — 승인 시각이 만료 뒤면 보류, 만료 전 승인이면 스윕이 EXPIRED 로 바꿨어도 납부", () => {
+  assert.equal(decide({ approved: [pay({ approvedAtIso: "2026-11-07T14:31:00+09:00" })] }).action, "HOLD");
+  assert.match(decide({ approved: [pay({ approvedAtIso: "2026-11-07T14:31:00+09:00" })] }).reason, /30분/);
+  // 승인은 14:20(만료 전), 웹훅이 늦게 와서 그 사이 스윕이 EXPIRED 로 바꿈 → 돈은 제때 들어왔다
+  assert.equal(decide({ request: { ...baseReq, status: "EXPIRED" } }).action, "PAY");
+  assert.equal(decide({ request: { ...baseReq, status: "EXPIRED" }, approved: [pay({ approvedAtIso: "2026-11-07T15:00:00+09:00" })] }).action, "HOLD");
+  // 승인 시각을 모르면 지금 시각으로 본다
+  assert.equal(decide({ approved: [pay({ approvedAtIso: null })], nowMs: Date.parse("2026-11-07T06:00:00Z") }).action, "HOLD");
+  assert.equal(decide({ approved: [pay({ approvedAtIso: null })] }).action, "PAY");
+});
+
+test("매칭: 한 주문에 카드 결제가 여럿·취소/부분취소 결제가 섞이면 보류", () => {
+  assert.equal(decide({ approved: [pay(), pay({ tossPaymentId: "tp-2", amount: 0 })] }).action, "HOLD");
+  const partial = decide({ others: [{ id: "tp-x", state: "CANCELLED" }] });
+  assert.equal(partial.action, "HOLD");
+  assert.match(partial.reason, /취소/);
+});
+
+test("매칭: 이미 PAID — 같은 결제면 ALREADY_DONE(재전송), 다른 결제면 SKIP(중복 결제 → 기존 슬랙 흐름)", () => {
+  const paidReq = { ...baseReq, status: "PAID", tossPaymentId: "tp-1" };
+  assert.equal(decide({ request: paidReq }).action, "ALREADY_DONE");
+  assert.equal(decide({ request: paidReq, approved: [pay({ tossPaymentId: "tp-9" })] }).action, "SKIP");
+});
+
+test("매칭: 취소·보류된 요청, 요청 없음, 승인 결제 없음은 손대지 않는다(SKIP)", () => {
+  assert.equal(decide({ request: { ...baseReq, status: "CANCELLED" } }).action, "SKIP");
+  assert.equal(decide({ request: { ...baseReq, status: "HELD" } }).action, "SKIP");
+  assert.equal(decide({ request: null }).action, "SKIP");
+  assert.equal(decide({ approved: [] }).action, "SKIP");
+});
+
+test("nonApprovedPayments: 승인 아닌 결제만", () => {
+  const order = { payments: [{ id: 1, state: "APPROVED" }, { id: 2, state: "cancelled", sourceType: "card" }] };
+  assert.deepEqual(R.nonApprovedPayments(order), [{ id: "2", state: "CANCELLED", sourceType: "CARD" }]);
+});
+
+// ───────────────────────── 5. 표시 ─────────────────────────
+
+test("이름 가리기·상품명", () => {
+  assert.equal(R.maskStudentName("홍길동"), "홍*동");
+  assert.equal(R.maskStudentName("홍길"), "홍*");
+  assert.equal(R.maskStudentName("남궁민수"), "남**수");
+  assert.equal(R.maskStudentName("홍"), "*");
+  assert.equal(R.maskStudentName(""), "");
+  assert.equal(R.buildChargeItemName({ year: 2026, month: 11, type: "MONTHLY", maskedName: "홍*동" }), "2026년 11월 수강료(홍*동)");
+  assert.equal(R.buildChargeItemName({ year: 2026, month: 11, type: "SHUTTLE", maskedName: "" }), "2026년 11월 셔틀비");
+});
+
+// ───────────────────────── 6. DB 제약 = 코드 상수 ─────────────────────────
+
+const migration = await readFile(MIGRATION, "utf8");
+const listIn = (sqlFragment) => [...sqlFragment.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+
+test("마이그레이션: 상태 CHECK 목록 = CHARGE_STATUS, 열린 상태 부분 유일 인덱스 = OPEN_CHARGE_STATUSES", () => {
+  const check = /status IN \(([^)]*)\)\)/.exec(migration);
+  assert.ok(check, "상태 CHECK 가 있다");
+  assert.deepEqual(listIn(check[1]).sort(), Object.values(R.CHARGE_STATUS).sort());
+  for (const name of ["PosChargeRequest_open_payment_key", "PosChargeRequest_open_shortCode_key"]) {
+    const m = new RegExp(`"${name}"[\\s\\S]*?WHERE status IN \\(([^)]*)\\)`).exec(migration);
+    assert.ok(m, `${name} 부분 유일 인덱스`);
+    assert.deepEqual(listIn(m[1]).sort(), [...R.OPEN_CHARGE_STATUSES].sort());
+  }
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS "PosChargeRequest_tossPaymentId_key"[\s\S]*?WHERE "tossPaymentId" IS NOT NULL/);
+  assert.match(migration, /CHECK \("taxFreeAmount" BETWEEN 0 AND amount\)/);
+  assert.match(migration, /"shortCode" TEXT NOT NULL CHECK \("shortCode" ~ '\^S-\[0-9\]\{4\}\$'\)/);
+  assert.match(migration, /"tokenHash" TEXT NOT NULL UNIQUE CHECK \("tokenHash" ~ '\^\[0-9a-f\]\{64\}\$'\)/);
+});
+
+test("마이그레이션: 두 표 모두 RLS + anon/authenticated 회수, 되돌림 SQL 이 적혀 있다", () => {
+  for (const table of ["PosChargeRequest", "PosPluginToken"]) {
+    assert.match(migration, new RegExp(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY`));
+    assert.match(migration, new RegExp(`REVOKE ALL ON "${table}" FROM PUBLIC`));
+    assert.match(migration, new RegExp(`REVOKE ALL ON "${table}" FROM %I`));
+    assert.match(migration, new RegExp(`--\\s+DROP TABLE IF EXISTS "${table}";`));
+  }
+});
+
+test("schema.prisma 사본에 두 표가 있다", async () => {
+  const schema = await readFile("prisma/schema.prisma", "utf8");
+  assert.match(schema, /model PosChargeRequest \{/);
+  assert.match(schema, /model PosPluginToken \{/);
+});
+
+// ───────────────────────── 7. 웹훅 매칭 실행 (가짜 prisma) ─────────────────────────
+
+const PRISMA_STUB = toDataUrl(`
+  const S = () => globalThis.__cs;
+  export const prisma = {
+    $queryRawUnsafe: async (sql, ...args) => {
+      S().calls.push({ sql, args });
+      if (/r\\."tossOrderId" = \\$1 AND r\\.status = 'PAID'/.test(sql)) return S().paidRows ?? [];
+      if (/r\\."shortCode" = \\$1/.test(sql)) return S().request ? [S().request] : [];
+      if (/SET status = 'PAID'/.test(sql)) { if (S().claimThrows) throw new Error(S().claimThrows); return S().claimRows ?? []; }
+      if (/SET status = 'HELD'/.test(sql)) return [{ id: "r1" }];
+      if (/"slackNotifiedAt" = now\\(\\)|"cancelNotifiedAt" = now\\(\\)/.test(sql)) return [{ id: "r1" }];
+      if (/SELECT status FROM "Payment"/.test(sql)) return [{ status: S().paymentStatusAfter ?? "PENDING" }];
+      if (/FROM "PosPluginToken"/.test(sql)) return S().tokens ?? [];
+      if (/SET status = 'SENT'/.test(sql)) return S().claimViewRows ?? [];
+      if (/FROM "PosChargeRequest" r\\s+JOIN "Payment"/.test(sql)) return S().viewRows ?? [];
+      if (/SELECT status FROM "PosChargeRequest"/.test(sql)) return [{ status: "SENT" }];
+      return [];
+    },
+    $executeRawUnsafe: async (sql, ...args) => { S().calls.push({ sql, args, exec: true }); return 1; },
+  };
+`);
+const LEDGER_STUB = toDataUrl(`
+  export async function markPaymentPaid(input) { globalThis.__cs.paid.push(input); if (globalThis.__cs.ledgerThrows) throw new Error("ledger failed"); }
+  export async function recordPaymentAudit(input) { globalThis.__cs.audits.push(input); }
+`);
+const SLACK_STUB = toDataUrl(`
+  export async function postMessage(m) { globalThis.__cs.slack.push(m.text); return { channel: "D1", ts: "1" }; }
+`);
+const TAXFREE_STUB = toDataUrl(`export function taxFreeAmountFor(amount) { return amount; }`);
+const VIS_STUB = toDataUrl(`export function notMergedStudent(a) { return a + '."mergedIntoStudentId" IS NULL'; }`);
+
+let service = null;
+async function loadService() {
+  if (service) return service;
+  const code = (await transpile(SERVICE))
+    .split('"@/lib/prisma"').join(`"${PRISMA_STUB}"`)
+    .split('"@/lib/payment-ledger"').join(`"${LEDGER_STUB}"`)
+    .split('"@/lib/payments/taxFree"').join(`"${TAXFREE_STUB}"`)
+    .split('"@/lib/slack/client"').join(`"${SLACK_STUB}"`)
+    .split('"@/lib/studentVisibility"').join(`"${VIS_STUB}"`)
+    .split('"./charge-request.mjs"').join(`"${fileUrl(RULES)}"`);
+  service = await import(toDataUrl(code));
+  return service;
+}
+
+const reqRow = (over = {}) => ({
+  id: "r1", shortCode: "S-4821", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
+  tossPaymentId: null, tossOrderId: null, expiresAtTs: "2026-11-07T05:30:00Z",
+  paymentType: "MONTHLY", year: 2026, month: 11, paymentStatus: "PENDING", paymentAmount: 180000, studentName: "홍길동",
+  ...over,
+});
+const ORDER = { id: "o-1", memo: "STIZ:S-4821", payments: [{ id: "tp-1", sourceType: "CARD", state: "APPROVED", amount: 180000 }] };
+
+async function runMatch(state = {}, { order = ORDER, approved = [pay()] } = {}) {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], request: reqRow(), claimRows: [{ id: "r1", paymentId: "p-nov", shortCode: "S-4821" }], ...state };
+  const saved = process.env.SLACK_OWNER_USER_ID;
+  process.env.SLACK_OWNER_USER_ID = "U-OWNER";
+  try {
+    return await svc.matchChargeRequestsForOrder({ order, orderId: "o-1", approved, redact: (m) => m });
+  } finally {
+    if (saved == null) delete process.env.SLACK_OWNER_USER_ID; else process.env.SLACK_OWNER_USER_ID = saved;
+  }
+}
+
+test("웹훅 매칭: 조건이 맞으면 선점 1행 뒤 markPaymentPaid 1회(카드·TOSS_POS·토스 주문/결제 ID) + 슬랙 «자동 납부 반영»", async () => {
+  const r = await runMatch();
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-1"]);
+  assert.equal(globalThis.__cs.paid.length, 1);
+  const p = globalThis.__cs.paid[0];
+  assert.equal(p.paymentId, "p-nov");
+  assert.equal(p.method, "CARD");
+  assert.equal(p.provider, "TOSS_POS");
+  assert.equal(p.providerOrderId, "o-1");
+  assert.equal(p.paymentKey, "tp-1");
+  assert.equal(p.actorType, "WEBHOOK");
+  assert.equal(p.paidAt, "2026-11-07T14:20:00+09:00");
+  const claim = globalThis.__cs.calls.find((c) => /SET status = 'PAID'/.test(c.sql));
+  assert.deepEqual(claim.args, ["r1", "o-1", "tp-1", "2026-11-07T14:20:00+09:00", 180000]);
+  assert.ok(globalThis.__cs.slack.some((t) => /자동 납부 반영/.test(t) && /랠리즈/.test(t)));
+});
+
+test("웹훅 매칭: 금액 불일치 → 납부 안 함, 요청 HELD + 슬랙 «보류», 기존 확인 알림으로 넘김", async () => {
+  const r = await runMatch({}, { approved: [pay({ amount: 170000 })] });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+  assert.ok(globalThis.__cs.slack.some((t) => /보류/.test(t)));
+});
+
+test("웹훅 매칭: 이미 납부된 청구서 → 납부 안 함, HELD", async () => {
+  const r = await runMatch({ request: reqRow({ paymentStatus: "PAID" }) });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 만료 뒤 결제 → 납부 안 함, HELD", async () => {
+  await runMatch({ request: reqRow({ status: "EXPIRED" }) }, { approved: [pay({ approvedAtIso: "2026-11-07T15:00:00+09:00" })] });
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 선점이 0행(그 사이 상태가 바뀜) → 납부 안 함, HELD", async () => {
+  const r = await runMatch({ claimRows: [] });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 같은 토스 결제가 다른 요청에 이미 붙음(유일 제약) → 납부 안 함, 기존 흐름", async () => {
+  const r = await runMatch({ claimThrows: 'duplicate key value violates unique constraint "PosChargeRequest_tossPaymentId_key"' });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+});
+
+test("웹훅 매칭: 주문·결제 알림 두 번 — 두 번째는 ALREADY_DONE 로 처리 끝(알림 안 만들고 납부도 다시 안 함)", async () => {
+  const r = await runMatch({ request: reqRow({ status: "PAID", tossPaymentId: "tp-1" }) });
+  assert.deepEqual(r.handledTossPaymentIds, ["tp-1"]);
+  assert.equal(globalThis.__cs.paid.length, 0);
+});
+
+test("웹훅 매칭: 다른 결제로 이미 PAID 인 요청에 또 결제(중복 결제) → 손대지 않고 기존 슬랙 흐름", async () => {
+  const r = await runMatch({ request: reqRow({ status: "PAID", tossPaymentId: "tp-0" }) });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(!globalThis.__cs.calls.some((c) => /SET status = 'HELD'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 메모에 번호가 없거나 둘 이상이면 아무것도 안 한다(D1: 요청 없는 POS 결제는 슬랙 확인)", async () => {
+  let r = await runMatch({}, { order: { ...ORDER, memo: "홍길동 11월" } });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  r = await runMatch({}, { order: { ...ORDER, memo: "STIZ:S-4821 STIZ:S-1234" } });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+});
+
+test("웹훅 매칭: 원장부 기록 실패 + 청구서가 아직 미납 → 요청을 HELD 로 되돌리고 기존 확인 알림으로", async () => {
+  const r = await runMatch({ ledgerThrows: true, paymentStatusAfter: "PENDING" });
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.ok(globalThis.__cs.calls.some((c) => /SET status = 'HELD'[\s\S]*WHERE id = \$1 AND status = 'PAID'/.test(c.sql)));
+});
+
+test("웹훅 매칭: 자동 납부한 결제가 POS 에서 취소되면 되돌리지 않고 원장에게 «POS 에서 취소됨» 알림", async () => {
+  const r = await runMatch(
+    { paidRows: [reqRow({ status: "PAID", tossPaymentId: "tp-1", tossOrderId: "o-1" })], request: null },
+    { order: { id: "o-1", memo: "STIZ:S-4821", payments: [{ id: "tp-1", sourceType: "CARD", state: "CANCELLED", amount: 180000 }] }, approved: [] },
+  );
+  assert.deepEqual(r.handledTossPaymentIds, []);
+  assert.equal(globalThis.__cs.paid.length, 0);
+  assert.ok(globalThis.__cs.slack.some((t) => /POS 에서 취소됨/.test(t)));
+  assert.ok(!globalThis.__cs.calls.some((c) => /UPDATE\s+"Payment"/.test(c.sql)), "청구서를 되돌리지 않는다");
+});
+
+// ───────────────────────── 7-2. 플러그인 보고·응답 모양 ─────────────────────────
+
+test("보고 event: 플러그인 소문자(paid·cancel·start_failed)와 대문자 모두 받고, 모르는 값은 거부", async () => {
+  const svc = await loadService();
+  assert.equal(svc.normalizePluginReportEvent("paid"), "PAID");
+  assert.equal(svc.normalizePluginReportEvent("cancel"), "CANCELLED");
+  assert.equal(svc.normalizePluginReportEvent("start_failed"), "START_FAILED");
+  assert.equal(svc.normalizePluginReportEvent("start-failed"), "START_FAILED");
+  assert.equal(svc.normalizePluginReportEvent("SENT"), "SENT");
+  assert.equal(svc.normalizePluginReportEvent("approve"), null);
+  assert.equal(svc.normalizePluginReportEvent(undefined), null);
+  // DB CHECK 목록 = 코드 목록
+  const m = /"pluginReportedEvent" IN \(([^)]*)\)/.exec(migration);
+  assert.deepEqual(listIn(m[1]).sort(), [...svc.PLUGIN_REPORT_EVENTS].sort());
+});
+
+test("보고: 같은 요청+같은 event 두 번째는 duplicate(아무것도 안 바꿈), PAID 보고로 납부하지 않음", async () => {
+  const svc = await loadService();
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [] };
+  const r = await svc.reportChargeRequestFromPlugin({ requestId: "0b8f0f5e-1111-4222-8333-944445555666", tokenId: "t1", event: "PAID", message: "x" });
+  // 가짜 DB 는 UPDATE 에 0행 → 중복으로 보고 지금 상태만 읽는다
+  assert.equal(r.duplicate, true);
+  const upd = globalThis.__cs.calls.find((c) => /UPDATE "PosChargeRequest"/.test(c.sql));
+  assert.match(upd.sql, /NOT \(\$2::text = ANY\("pluginReportedEvents"\)\)/);
+  assert.match(upd.sql, /array_append\("pluginReportedEvents", \$2::text\)/);
+  assert.equal(globalThis.__cs.paid.length, 0);
+});
+
+test("claim·charge 응답: taxFreeAmount 가 금액과 같고, 이름은 가린 값(studentName·studentLabel), itemTitle·memo 포함", async () => {
+  const svc = await loadService();
+  const row = {
+    id: "0b8f0f5e-1111-4222-8333-944445555666", shortCode: "S-4821", paymentId: "p-nov", status: "SENT", amount: 180000, taxFreeAmount: 180000,
+    expiresAtUtc: "2026-11-07T05:30:00Z", expiresKstHm: "14:30", createdAtUtc: "2026-11-07T05:00:00Z", paidKst: null, isExpired: false,
+    note: null, createdVia: "ADMIN", paymentType: "MONTHLY", year: 2026, month: 11, paymentStatus: "PENDING", studentName: "홍길동",
+  };
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [row], claimViewRows: [{ id: row.id }] };
+  const v = await svc.claimChargeRequestForPlugin(row.id, "t1");
+  assert.equal(v.taxFreeAmount, v.amount);
+  assert.equal(v.studentName, "홍*동");
+  assert.equal(v.studentLabel, "홍*동");
+  assert.equal(v.itemTitle, "2026년 11월 수강료(홍*동)");
+  assert.equal(v.memo, "STIZ:S-4821");
+  assert.equal(v.expiresAt, "2026-11-07T05:30:00Z");
+  assert.ok(!JSON.stringify(v).includes("홍길동"), "실명이 응답에 없다");
+});
+
+// ───────────────────────── 8. 매장 토큰 인증 실행 ─────────────────────────
+
+const NEXT_STUB = toDataUrl(`
+  class Headers2 { constructor(init = {}) { this.m = new Map(Object.entries(init)); } set(k, v) { this.m.set(k, v); } get(k) { return this.m.get(k) ?? null; } }
+  export class NextResponse {
+    constructor(body, init = {}) { this.body = body; this.status = init.status ?? 200; this.headers = new Headers2(init.headers ?? {}); }
+    static json(body, init = {}) { return new NextResponse(body, init); }
+  }
+`);
+let auth = null;
+async function loadAuth() {
+  if (auth) return auth;
+  const rate = await transpile(RATE);
+  const code = (await transpile(AUTH))
+    .split('"@/lib/prisma"').join(`"${PRISMA_STUB}"`)
+    .split('"next/server"').join(`"${NEXT_STUB}"`)
+    .split('"@/lib/seasonal/public-rate-limit"').join(`"${toDataUrl(rate)}"`);
+  auth = await import(toDataUrl(code));
+  return auth;
+}
+const reqWith = (authorization, ip = "1.1.1.1") => ({
+  headers: { get: (k) => ({ authorization, "x-real-ip": ip })[k.toLowerCase()] ?? null },
+});
+
+test("토큰: 형식·해시·상수시간 비교", async () => {
+  const A = await loadAuth();
+  const { token, hash, prefix } = A.generatePosToken();
+  assert.match(token, /^stizpos_[A-Za-z0-9_-]{43}$/);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+  assert.equal(A.hashPosToken(token), hash);
+  assert.ok(token.startsWith(prefix) && prefix.length === 12);
+  assert.equal(A.readBearerToken(`Bearer ${token}`), token);
+  assert.equal(A.readBearerToken(token), null, "Bearer 없으면 거부");
+  assert.equal(A.readBearerToken("Bearer abc"), null, "앞머리 없으면 거부");
+  assert.equal(A.readBearerToken(null), null);
+  assert.ok(A.sameHash(hash, hash));
+  assert.ok(!A.sameHash(hash, hash.slice(0, 63) + "0") || hash.endsWith("0"));
+  assert.ok(!A.sameHash(hash, "short"));
+});
+
+test("토큰 인증: 없음·틀림은 401, 맞으면 통과, 실패를 반복하면 429", async () => {
+  const A = await loadAuth();
+  const { token, hash } = A.generatePosToken();
+  globalThis.__cs = { calls: [], tokens: [{ id: "t1", tokenHash: hash }] };
+  let r = await A.authenticatePosPlugin(reqWith(null, "9.9.9.1"));
+  assert.equal(r.response.status, 401);
+  assert.equal(r.response.body.error, "UNAUTHORIZED");
+  r = await A.authenticatePosPlugin(reqWith(`Bearer ${A.generatePosToken().token}`, "9.9.9.1"));
+  assert.equal(r.response.status, 401, "다른(끊긴) 토큰");
+  r = await A.authenticatePosPlugin(reqWith(`Bearer ${token}`, "9.9.9.1"));
+  assert.equal(r.auth.tokenId, "t1");
+  // 같은 주소에서 실패 10회 넘기면 429
+  let last;
+  for (let i = 0; i < 12; i += 1) last = await A.authenticatePosPlugin(reqWith("Bearer stizpos_wrong", "9.9.9.2"));
+  assert.equal(last.response.status, 429);
+  assert.equal(last.response.body.error, "RATE_LIMITED");
+});
+
+test("토큰 인증: 끊긴 토큰은 조회 대상이 아니다(revokedAt IS NULL 만 읽는다)", async () => {
+  const src = await readFile(AUTH, "utf8");
+  assert.match(src, /FROM "PosPluginToken" WHERE "revokedAt" IS NULL/);
+  assert.match(src, /timingSafeEqual/);
+  assert.match(src, /LIMIT \$2::int/, "회전 시 최신 2개만 남긴다");
+  assert.equal(await (await loadAuth()).MAX_ACTIVE_POS_TOKENS, 2);
+});
+
+// ───────────────────────── 9. 소스 계약 ─────────────────────────
+
+async function walk(dir, out = []) {
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) await walk(p, out);
+    else out.push(p);
+  }
+  return out;
+}
+
+test("플러그인 API: 4개 경로가 있고 전부 토큰 인증(handlePluginRequest)을 거치며, 납부 처리 경로가 없다", async () => {
+  const files = (await walk(PLUGIN_API_DIR)).map((f) => f.split(path.sep).join("/")).sort();
+  assert.deepEqual(files, [
+    "src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/report/route.ts",
+    "src/app/api/pos-plugin/charge-requests/route.ts",
+    "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts",
+    "src/app/api/pos-plugin/unpaid/route.ts",
+  ]);
+  for (const f of files.concat([HTTP])) {
+    const code = await readFile(f, "utf8");
+    assert.doesNotMatch(code, /markPaymentPaid|matchChargeRequestsForOrder|UPDATE\s+"Payment"/, `${f} 에 납부 경로가 있으면 안 된다`);
+    if (f.endsWith("route.ts")) {
+      const handlers = [...code.matchAll(/export async function (GET|POST)/g)].length;
+      const guarded = [...code.matchAll(/handlePluginRequest\(req/g)].length;
+      assert.equal(guarded, handlers, `${f}: 모든 GET/POST 가 인증을 거친다`);
+    }
+  }
+  for (const f of ["src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts", "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts"]) {
+    assert.doesNotMatch(await readFile(f, "utf8"), /readJsonBody|req\.json/, `${f} 는 본문(금액)을 받지 않는다`);
+  }
+  assert.match(await readFile("src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts", "utf8"), /createAndClaimForPlugin\(paymentId, auth\.tokenId\)/);
+});
+
+test("돈 쓰기: chargeRequestService 의 markPaymentPaid 는 한 곳, 선점(CLAIM_PAY_SQL) 1행 확인 뒤에만", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  assert.doesNotMatch(src, /UPDATE\s+"Payment"|UPDATE\s+"PaymentInvoice"/);
+  const calls = [...src.matchAll(/await markPaymentPaid\(/g)];
+  assert.equal(calls.length, 1);
+  const claimAt = src.indexOf("prisma.$queryRawUnsafe(CLAIM_PAY_SQL");
+  const emptyAt = src.indexOf("claimed.length === 0", claimAt);
+  const payAt = src.indexOf("await markPaymentPaid(");
+  assert.ok(claimAt > 0 && emptyAt > claimAt && payAt > emptyAt);
+  // 선점 SQL 이 재확인 조건을 담는다(청구서 미납·금액 같음·만료 전)
+  const sql = src.slice(src.indexOf("const CLAIM_PAY_SQL"), src.indexOf("RETURNING r.id, r.\"paymentId\", r.\"shortCode\""));
+  assert.match(sql, /p\.status IN \('PENDING', 'OVERDUE'\)/);
+  assert.match(sql, /p\.amount = r\.amount/);
+  assert.match(sql, /<= r\."expiresAt"/);
+  // 플러그인 보고는 상태 표시만(PAID 로 바꾸지 않는다)
+  const report = src.slice(src.indexOf("export async function reportChargeRequestFromPlugin"), src.indexOf("export type PluginUnpaidItem"));
+  assert.doesNotMatch(report, /'PAID'|markPaymentPaid/);
+  // 금액은 DB 값: 만들 때 Payment.amount 를 복사
+  assert.match(src, /SELECT \$1, p\.id, p\.amount, \$2::int/);
+  // 면세는 토스페이먼츠와 같은 한 함수
+  assert.match(src, /taxFreeAmountFor\(payment\.amount\)/);
+});
+
+test("웹훅 처리: 매칭 결과로 처리된 결제만 알림에서 빼고, 매칭 실패는 알림 흐름을 막지 않는다", async () => {
+  const src = await readFile(NOTICE_SERVICE, "utf8");
+  assert.match(src, /matchChargeRequestsForOrder\(\{ order, orderId, approved: payments, redact \}\)/);
+  assert.match(src, /payments\.filter\(\(p\) => !chargeHandled\.has\(p\.tossPaymentId\)\)/);
+  assert.match(src, /expireStaleChargeRequests\(null\)/, "10분 스윕이 만료를 처리한다");
+});
+
+test("관리자 동작: 원장(ADMIN)만 + 오류는 문구로 돌려준다, ⚡ 메뉴는 수강료·셔틀비 미납에만", async () => {
+  const actions = await readFile(ACTIONS, "utf8");
+  assert.match(actions, /^"use server";/);
+  const exported = [...actions.matchAll(/export async function (\w+)/g)].map((m) => m[1]);
+  assert.equal(exported.length, 6);
+  for (const name of exported) {
+    const body = actions.slice(actions.indexOf(`export async function ${name}`));
+    const head = body.slice(0, body.indexOf("\n}\n"));
+    assert.match(head, /await requireFinanceOwner\(\)/, `${name} 첫머리에서 권한 확인`);
+  }
+  assert.match(actions, /admin\.appUserRole !== "ADMIN"/);
+  const finance = await readFile(FINANCE, "utf8");
+  assert.match(finance, /\["MONTHLY", "SHUTTLE"\]\.includes\(p\.type\) && \["PENDING", "OVERDUE"\]\.includes\(p\.status\)/);
+  assert.match(finance, /key: "pos-charge"/);
+});
+
+test("새 코드에 서버 시계 날짜 금지 패턴이 없다(날짜는 DB 에서 KST 로)", async () => {
+  for (const f of [RULES, SERVICE, AUTH, HTTP, ACTIONS, "src/app/admin/finance/PosChargeRequestModal.tsx", "src/app/admin/pos-plugin/PosPluginTokensClient.tsx"]) {
+    const code = await readFile(f, "utf8");
+    assert.doesNotMatch(code, /toISOString\(\)\.slice\(0,\s*10\)|getUTCDay|getDay\(\)|getHours\(\)|getDate\(\)/, f);
+  }
+});

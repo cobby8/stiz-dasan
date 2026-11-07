@@ -24,6 +24,8 @@ import {
     bulkUpdatePaymentStatus,
     markTerminalPaymentPaid,
 } from "@/app/actions/admin";
+// 토스 POS «현장 결제» 번호 창(2026-11-07) — 납부완료는 토스 결제 확인으로만 바뀐다
+import PosChargeRequestModal from "./PosChargeRequestModal";
 
 type Payment = {
     id: string;
@@ -384,6 +386,8 @@ export default function FinanceClient({
     const [terminalReceivedAt, setTerminalReceivedAt] = useState(toDateInputValue());
     const [terminalMemo, setTerminalMemo] = useState("");
     const [terminalSubmitting, setTerminalSubmitting] = useState(false);
+    // 현장 결제(토스 POS) 창을 띄울 청구서
+    const [posChargeTarget, setPosChargeTarget] = useState<Payment | null>(null);
     // 보기 방식(목록 | 상태별) — 브라우저에 기억
     const [viewMode, changeViewMode] = useRememberedListView(FINANCE_VIEW_STORAGE_KEY, FINANCE_VIEW_VALUES, "list");
     // 행을 눌러 연 상세 패널의 청구 id(재조회 뒤에도 최신 값을 보이게 id 로 들고 있다)
@@ -859,6 +863,16 @@ export default function FinanceClient({
                     },
                 },
             ] : []),
+            // 현장 결제: 수강료·셔틀비 미납만(원장 결정 D2 — 둘 다 면세). 서버가 한 번 더 확인한다.
+            ...(canManageCriticalFinance && ["MONTHLY", "SHUTTLE"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) ? [
+                {
+                    key: "pos-charge",
+                    label: "현장 결제",
+                    icon: "contactless",
+                    disabled: busy,
+                    onSelect: () => setPosChargeTarget(p),
+                },
+            ] : []),
             ...(canManageCriticalFinance && p.status !== "PAID" ? [
                 {
                     key: "terminal",
@@ -1065,6 +1079,19 @@ export default function FinanceClient({
 
     return (
         <div className="max-w-5xl mx-auto">
+            {posChargeTarget && (
+                <PosChargeRequestModal
+                    target={{
+                        id: posChargeTarget.id,
+                        studentName: posChargeTarget.studentName,
+                        amount: posChargeTarget.amount,
+                        title: posChargeTarget.description
+                            || `${posChargeTarget.year ?? year}년 ${posChargeTarget.month ?? month}월 ${posChargeTarget.type === "SHUTTLE" ? "셔틀비" : "수강료"}`,
+                    }}
+                    onClose={() => setPosChargeTarget(null)}
+                    onPaid={() => void loadMonth(year, month)}
+                />
+            )}
             {terminalTarget && (
                 <AdminModal
                     titleId="terminal-payment-title"

@@ -7,8 +7,10 @@
  * 하는 일  : ① 웹훅이 알려준 주문을 토스에 **다시 조회**(GET 전용)
  *           ② 카드·승인 결제마다 `PosPaymentNotice` 한 줄(결제 ID 로 중복 차단)
  *           ③ 원장에게 슬랙 DM("랠리즈에서 현장결제 처리하셨나요?")
- * 안 하는 일: Payment · PaymentInvoice 를 **절대 쓰지 않는다.**
- *           사이트 납부 반영은 원장이 버튼을 눌렀을 때 paymentNoticeActions.ts 에서만 한다.
+ * 안 하는 일: 이 파일은 Payment · PaymentInvoice 를 **직접 쓰지 않는다.**
+ *           사이트 납부 반영은 두 곳뿐이다:
+ *           ① 원장이 슬랙 버튼을 눌렀을 때 paymentNoticeActions.ts
+ *           ② 관리자가 미리 만든 «현장 결제» 요청(메모 STIZ:S-4821)과 맞을 때 chargeRequestService.ts (원장 결정 D1)
  *
  * 판단 로직은 ./payment-notice.mjs(순수 모듈) 한 벌이다. 여기는 DB·토스·슬랙 입출력만 한다.
  */
@@ -16,6 +18,7 @@
 import { prisma } from "@/lib/prisma";
 import { postMessage, updateMessage, type SlackBlock } from "@/lib/slack/client";
 import { fetchTossOrderById } from "./tossplaceClient";
+import { expireStaleChargeRequests, matchChargeRequestsForOrder } from "./chargeRequestService";
 import { parseMemoNames, redactSecrets } from "./tossplace-match.mjs";
 import {
     NOTICE_KIND,
@@ -340,9 +343,24 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
     }
 
     const payments = extractNoticePayments(order) as ReturnType<typeof extractNoticePayments>;
-    if (payments.length > 0) {
+
+    // «현장 결제» 요청 매칭(원장 결정 D1): 메모 번호(STIZ:S-4821)로 요청과 맞으면 자동 납부.
+    // 자동 납부된 결제는 아래 슬랙 확인 알림을 만들지 않는다. 그 밖의 결제(요청 없음·보류)는 지금 흐름 그대로.
+    // 매칭이 실패해도 알림 흐름은 막지 않는다(원장 확인 DM 이 안전망).
+    let chargeHandled = new Set<string>();
+    let chargeNote = "";
+    try {
+        const matched = await matchChargeRequestsForOrder({ order, orderId, approved: payments, redact });
+        chargeHandled = new Set(matched.handledTossPaymentIds);
+        chargeNote = matched.note;
+    } catch (error) {
+        console.error("[pos-charge] 요청 매칭 실패(슬랙 확인 흐름으로 진행):", redact((error as Error).message), { eventRowId });
+    }
+
+    const noticePayments = payments.filter((p) => !chargeHandled.has(p.tossPaymentId));
+    if (noticePayments.length > 0) {
         const roster = await loadRoster();
-        for (const p of payments) {
+        for (const p of noticePayments) {
             const target = resolveNoticeTarget(p.memoRaw, p.kstDate) as { year: number | null; month: number | null };
             const result = classify({
                 memoRaw: p.memoRaw,
@@ -374,9 +392,10 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
             if (ids[0]) await sendNotice(ids[0].id);
         }
     }
-    const note = payments.length > 0 ? `카드 승인 결제 ${payments.length}건 알림` : "카드 승인 결제 없음";
+    const baseNote = noticePayments.length > 0 ? `카드 승인 결제 ${noticePayments.length}건 알림` : "카드 승인 결제 없음";
+    const note = chargeNote ? `${baseNote} · 현장 결제: ${chargeNote}` : baseNote;
     await markEvent(eventRowId, "RECEIVED", note);
-    return { notices: payments.length, note };
+    return { notices: noticePayments.length, note };
 }
 
 // ───────────────────────────── 스윕(10분마다) ─────────────────────────────
@@ -385,7 +404,14 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
  * 놓친 것 줍기: ① 처리 안 된 웹훅(오래된 것부터 조금씩) ② DM 이 안 나간 알림.
  * 사흘/이레가 지난 것은 더 붙잡지 않는다(계속 실패하는 1건이 매번 시간을 먹지 않게).
  */
-export async function runPosNoticeSweep(): Promise<{ events: number; sent: number; failed: number }> {
+export async function runPosNoticeSweep(): Promise<{ events: number; sent: number; failed: number; expired: number }> {
+    // ⓪ 30분 지난 «현장 결제» 요청을 만료로(돈은 안 움직인다). 실패해도 스윕은 계속.
+    let expired = 0;
+    try {
+        expired = await expireStaleChargeRequests(null);
+    } catch (error) {
+        console.error("[pos-notice-sweep] 현장 결제 만료 처리 실패:", redact((error as Error).message));
+    }
     const events = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `SELECT id FROM "PosWebhookEvent"
           WHERE "processedAt" IS NULL AND status = 'RECEIVED'
@@ -416,7 +442,7 @@ export async function runPosNoticeSweep(): Promise<{ events: number; sent: numbe
         if (r === "SENT") sent += 1;
         if (r === "FAILED") failed += 1;
     }
-    return { events: events.length, sent, failed };
+    return { events: events.length, sent, failed, expired };
 }
 
 /** 원생을 고른 뒤·재확인 실패 뒤 다시 판정할 때 쓰는 공용 함수(버튼 처리에서 사용). */

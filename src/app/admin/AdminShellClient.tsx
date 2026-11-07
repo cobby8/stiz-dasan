@@ -55,6 +55,7 @@ const EXTRA_GROUPS = [
         ["/admin/payment-requests", "입금 확인·영수증", "🧾"],
         ["/admin/payment-confirmations", "현장 수납 승인", "💵"],
         ["/admin/pos-reconcile", "POS 결제 대사", "🧮"],
+        ["/admin/pos-plugin", "POS 연결", "🔌"],
         ["/admin/uniform", "유니폼 주문", "👕"],
     ] },
     { label: "홈페이지·소식", icon: "web", items: [

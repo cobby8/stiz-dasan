@@ -113,6 +113,10 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
         reason: "토큰 지정 링크 검증·미리보기 2건 + 관리자가 학생 id 로 보는 링크 목록",
     },
     "lib/kakao-parent-chatbot.ts": { count: 1, reason: "중복 요청 id 지정 재조회(LEFT JOIN)" },
+    "lib/pos/chargeRequestService.ts": {
+        count: 2,
+        reason: "현장 결제 요청(청구서 id 지정)의 원생 이름 표시·웹훅 매칭 — 청구 조회라 숨기면 돈이 사라진다(미납 목록은 필터 적용)",
+    },
     "lib/mediaRevocationQueue.ts": { count: 1, reason: "미디어 철회 작업 이력(LEFT JOIN, 학생 이름 표시)" },
     "app/admin/kakao-requests/page.tsx": { count: 1, reason: "카카오 접수 처리 목록(기록, LEFT JOIN)" },
     "app/api/admin/operational-deliveries/route.ts": { count: 1, reason: "알림 발송 이력(LEFT JOIN)" },
