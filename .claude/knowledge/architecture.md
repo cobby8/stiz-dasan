@@ -143,3 +143,8 @@
 - **내용**: payment-notice.mjs 의 extractNoticePayments(카드·BARCODE, 슬랙 확인 DM 용)와 extractChargePayments(APPROVED 전부, 현장 결제 매칭용)는 같은 내부 함수 한 벌이다. decideChargeMatch 는 승인 결제 합계·면세 합계로 판정하고 주문 진행 중(isOrderCompleted=false) 합계 부족이면 SKIP(waiting, 그 결제들의 DM 도 미룸)·완료 뒤 부족이면 HOLD. 분할이면 대표 결제(가장 먼저 승인)만 PosChargeRequest.tossPaymentId(유일), 나머지는 note+PaymentAuditLog(POS_CHARGE_PAYMENTS), 이중 매칭은 CLAIM_PAY_SQL 의 «같은 tossOrderId 다른 요청 PAID» NOT EXISTS 로 막는다. Payment.method 는 posMethodOf(CARD·CASH·EASY_PAY·BANK_TRANSFER·ETC, 분할 «CARD+CASH»), 표시는 posMethodLabel(«현장 · 카드+현금»). adminDisplayText.ts 는 테스트가 import 없이 단독 실행하므로 다른 모듈을 import 하지 말고 이름만 맞춘다(테스트가 비교).
 - **참조횟수**: 0
 
+### [2026-11-08] 토스 POS 결제 취소 = 사이트 요청(cancelState) → 플러그인 cancel.ts → 토스 웹훅 재조회로만 환불
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 관리자 ⚡ «결제 취소»(PAID·paidProvider TOSS_POS)는 PosChargeRequest.cancelState=REQUESTED 만 남긴다(청구서 id 로만 요청을 찾아 IDOR 차단). 플러그인 롱폴링 응답 `cancels[]` → `/cancel/claim`(SENT, 결제 ID 는 서버가 감사기록 POS_CHARGE_PAYMENTS→note→대표결제 순으로 계산) → payment.cancel → `/cancel/report`(기록만, FAILED 면 사이트 «POS 에서 직접 취소»). 환불은 matchChargeRequestsForOrder ①의 settleCancelForRow 가 재조회 주문으로 decideChargeCancel(FULL/PARTIAL/NONE) → FULL 이면 한 트랜잭션에서 MARK_REFUND_SQL + payment-ledger refundPaidPaymentInTx. POS 직접 취소도 같은 길. chargeRequestService 는 Payment 를 직접 UPDATE 하지 않는다(테스트가 막음). 같은 함수의 retryLater=true(분할 대기·납부 기록 복구 대기)면 웹훅을 processedAt 비운 채 두어 10분 스윕이 다시 본다. 마이그레이션 20261108120000 은 코드 배포보다 먼저 적용해야 한다(VIEW_SQL·MATCH_SELECT 가 새 칸을 읽음).
+- **참조횟수**: 0
