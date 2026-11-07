@@ -4,6 +4,7 @@ import ProcessSteps from "@/components/landing/ProcessSteps";
 import TestimonialCarousel from "@/components/landing/TestimonialCarousel";
 import CTABanner from "@/components/landing/CTABanner";
 import HomeHeroSlider from "@/components/landing/HomeHeroSlider";
+import HomeProgramTiles, { type HomeProgramTile } from "@/components/landing/HomeProgramTiles";
 import SectionLayout from "@/components/ui/SectionLayout";
 import { isDurableGalleryMediaUrl, parseGalleryMediaJSON } from "@/lib/galleryMedia";
 import { formatKstDate, toKstYmd } from "@/lib/datetime/kst";
@@ -19,11 +20,12 @@ function getGalleryMediaItems(posts: GalleryPost[]): GalleryMediaItem[] {
   })));
 }
 
-export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], naverPlaceUrl }: {
+export default function LandingPageClient({ initialSettings, testimonials, galleryPosts = [], notices = [], programTiles = [], naverPlaceUrl }: {
   initialSettings: any;
   testimonials?: { name: string; info: string; text: string; rating: number }[];
   galleryPosts?: GalleryPost[];
   notices?: HomeNotice[];
+  programTiles?: HomeProgramTile[];
   naverPlaceUrl?: string;
 }) {
   const settings = initialSettings || {};
@@ -58,9 +60,10 @@ export default function LandingPageClient({ initialSettings, testimonials, galle
       {/* 철학 한 줄(원장 선택 2026-11-07) — 넓은 여백 가운데 큰 글씨 한 줄 + 설명. 소개 전문은 /about 에 그대로 있다. */}
       <section className="public-home-philosophy" aria-labelledby="public-home-philosophy-title">
         <h2 id="public-home-philosophy-title">잘하는 것보다, 좋아하는 게 먼저예요.</h2>
-        <p>농구가 즐거워야 자신감도 실력도 따라옵니다.<br />아이가 먼저 기다리는 수업을 만듭니다.</p>
+        <p>농구가 즐거워야 자신감도 실력도 따라옵니다.<br />아이가 가고 싶은 수업을 만들어 갑니다.</p>
         <Link href="/about">학원과 코치진 소개 <span aria-hidden="true">→</span></Link>
       </section>
+      <HomeProgramTiles programs={programTiles} />
       <div className="public-home-updates">
         {notices.length > 0 && <section className="public-home-notices" aria-labelledby="public-home-notices-title">
           <div className="public-home-notices__heading"><h2 id="public-home-notices-title">공지사항</h2><Link href="/notices">전체보기 <span aria-hidden="true">→</span></Link></div>

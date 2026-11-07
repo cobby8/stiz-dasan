@@ -36,10 +36,10 @@ test("실제 홈 서버 페이지는 주소가 준비되지 않아도 첫 HTML�
   const empty = () => null;
   const queries = {
     getAcademySettings: async () => ({}), getPublicTestimonials: async () => [],
-    getGalleryPosts: async () => [], getNotices: async () => [],
+    getGalleryPosts: async () => [], getNotices: async () => [], getPrograms: async () => [],
   };
   const Home = compile("../src/app/page.tsx", Object.fromEntries([
-    ["@/lib/queries", queries], ["@/components/PublicSiteTheme", { default: Theme }],
+    ["@/lib/queries", queries], ["@/lib/payments/tossReview", { hasSellablePrice: () => true }],["@/components/PublicSiteTheme", { default: Theme }],
     ["@/lib/publicMetadata", { buildPublicMetadata: () => ({}) }],
     ...["@/components/PublicHeader", "@/components/PublicFooter", "./LandingPageClient",
       "@/components/chat/ChatBotButton", "@/components/guide-tour/GuideTourLazyTrigger"].map((name) => [name, { default: empty }]),

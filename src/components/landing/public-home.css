@@ -18,6 +18,26 @@
 .stiz-public-sport .public-home-philosophy h2{margin:0;font-size:clamp(1.45rem,3.2vw,2.2rem);font-weight:900;letter-spacing:-.045em;line-height:1.35;text-wrap:balance;word-break:keep-all}
 .stiz-public-sport .public-home-philosophy p{margin:1rem 0 0;font-size:.92rem;line-height:1.85;color:var(--color-public-muted);word-break:keep-all}
 .stiz-public-sport .public-home-philosophy>a{display:inline-flex;align-items:center;min-height:2.75rem;gap:.6rem;margin-top:.9rem;font-size:.84rem;font-weight:700;color:var(--color-public-accent)}
+/* 프로그램 사진 타일(3단계 2026-11-07): PC 5칸 한 줄, 휴대폰 2칸(홀수면 마지막이 한 줄 전체) */
+.stiz-public-sport .public-home-programs{width:min(100% - 3rem,72rem);margin-inline:auto;padding-block:1.6rem;border-bottom:1px solid var(--color-public-line)}
+.stiz-public-sport .public-home-programs__heading{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.8rem}
+.stiz-public-sport .public-home-programs__heading h2{margin:0;font-size:1.05rem;font-weight:900;letter-spacing:-.03em}
+.stiz-public-sport .public-home-programs__heading>a{display:inline-flex;align-items:center;gap:.5rem;min-height:2.75rem;font-size:.8rem;font-weight:700;color:var(--color-public-accent)}
+.stiz-public-sport .public-home-programs ul{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.75rem;list-style:none;margin:0;padding:0}
+.stiz-public-sport .public-home-programs li{min-width:0}
+.stiz-public-sport .public-home-programs li a{position:relative;isolation:isolate;display:flex;align-items:flex-end;aspect-ratio:4/5;overflow:hidden;border-radius:var(--color-public-radius);background:var(--color-public-dark);color:var(--color-public-hero-ink);text-decoration:none}
+.stiz-public-sport .public-home-programs li a::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(0deg,var(--color-public-hero-scrim),transparent 62%)}
+.stiz-public-sport .public-home-programs img{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;transition:transform .4s ease}
+.stiz-public-sport .public-home-programs li a:hover img,.stiz-public-sport .public-home-programs li a:focus-visible img{transform:scale(1.04)}
+.stiz-public-sport .public-home-programs__text{display:flex;flex-direction:column;gap:.2rem;padding:.85rem;min-width:0}
+.stiz-public-sport .public-home-programs__text strong{font-size:.95rem;font-weight:800;line-height:1.35;word-break:keep-all}
+.stiz-public-sport .public-home-programs__text span{font-size:.75rem;opacity:.88;word-break:keep-all}
+@media (prefers-reduced-motion:reduce){.stiz-public-sport .public-home-programs img{transition:none}}
+@media (max-width:767px){
+.stiz-public-sport .public-home-programs ul{grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}
+.stiz-public-sport .public-home-programs li:last-child:nth-child(odd){grid-column:1/-1}
+.stiz-public-sport .public-home-programs li:last-child:nth-child(odd) a{aspect-ratio:2/1}
+}
 .stiz-public-sport .public-home-notices{display:grid;grid-template-columns:7rem 1fr;gap:1rem;padding-block:1.1rem;border-bottom:1px solid var(--color-public-line)}
 .stiz-public-sport .public-home-notices__heading h2{font-size:.9rem;font-weight:800;margin:0}
 .stiz-public-sport .public-home-notices__heading>a{font-size:.7rem;min-height:2.75rem;display:inline-flex;align-items:center;gap:.5rem;color:var(--color-public-accent)}

@@ -8,7 +8,8 @@
  * - revalidate: 60 유지 (캐싱 정책 변경 없음)
  */
 
-import { getAcademySettings, getGalleryPosts, getNotices, getPublicTestimonials } from "@/lib/queries";
+import { getAcademySettings, getGalleryPosts, getNotices, getPrograms, getPublicTestimonials } from "@/lib/queries";
+import { hasSellablePrice } from "@/lib/payments/tossReview";
 import PublicHeader from "@/components/PublicHeader";
 import PublicFooter from "@/components/PublicFooter";
 import LandingPageClient from "./LandingPageClient";
@@ -32,17 +33,24 @@ export default async function Home() {
   let testimonials: any[] = [];
   let galleryPosts: any[] = [];
   let notices: any[] = [];
+  let programs: any[] = [];
   try {
     // 학원 설정 + 공개 후기 + 갤러리 + 공지를 병렬로 조회 (성능 최적화)
-    [settings, testimonials, galleryPosts, notices] = await Promise.all([
+    [settings, testimonials, galleryPosts, notices, programs] = await Promise.all([
       getAcademySettings(),
       getPublicTestimonials(),
       getGalleryPosts({ limit: 24, publicOnly: true }),
       getNotices({ limit: 4, publicOnly: true }),
+      getPrograms(),
     ]);
   } catch (e) {
     console.error("Failed to load data for landing page:", e);
   }
+
+  // 홈 프로그램 타일: /programs 와 같은 기준(0원 숨김)에 사진이 있는 것만
+  const programTiles = programs
+    .filter((p) => p.imageUrl && hasSellablePrice(p))
+    .map((p) => ({ id: p.id, name: p.name, targetAge: p.targetAge ?? null, imageUrl: p.imageUrl }));
 
   // 헤더/푸터에 전달할 데이터 추출
   const phone = settings?.contactPhone || "010-0000-0000";
@@ -91,6 +99,7 @@ export default async function Home() {
           testimonials={testimonials}
           galleryPosts={galleryPosts}
           notices={notices}
+          programTiles={programTiles}
           naverPlaceUrl={naverPlaceUrl}
         />
       </main>
