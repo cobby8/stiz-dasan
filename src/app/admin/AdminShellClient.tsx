@@ -41,6 +41,7 @@ const EXTRA_GROUPS = [
         ["/admin/withdrawals", "회원 탈퇴 신청", "🚪"],
         ["/admin/role-requests", "직원 역할 신청", "🪪"],
         ["/admin/kakao-requests", "카카오 접수함", "🗨️"],
+        ["/admin/rental", "체육관 대관", "🏟️"],
     ] },
     { label: "수업 운영", icon: "event_note", items: [
         ["/admin/absence", "정규 결석 신고", "🙅"],
@@ -224,7 +225,7 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public"};
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (

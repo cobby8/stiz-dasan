@@ -7,6 +7,9 @@ import { getVerifiedParentState } from "@/lib/auth-guard";
 import { bindIdentity, isKakaoConnectTokenUsable } from "@/lib/kakao-parent-chatbot";
 import { detectInstallEnvironment } from "@/lib/pwa/installEnvironment";
 import { InAppBrowserEscapeCard } from "@/components/pwa/InstallHelp";
+// 카카오채널 주소는 관리자 설정(AcademySettings.kakaoChannelUrl) 한 곳에서만 — 화면마다 박아 두지 않는다
+import { getAcademySettings } from "@/lib/queries";
+import { kakaoChannelLinks } from "@/lib/customer-notice/templates";
 
 // 카카오채널 「기존 수강생 인증」 링크가 여는 화면.
 // 학부모가 보는 주소는 /mypage/kakao-connect 그대로다(next.config rewrite → 이 화면).
@@ -22,8 +25,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const CHANNEL_CHAT_URL = "https://pf.kakao.com/_HhaQG/chat";
-
 export default async function KakaoConnectPage({
   searchParams,
 }: {
@@ -31,6 +32,8 @@ export default async function KakaoConnectPage({
 }) {
   const params = await searchParams;
   const token = params.token?.trim() || "";
+  // 설정이 비어 있으면 운영 채널 주소로 대신한다(kakaoChannelLinks 안의 예비값)
+  const CHANNEL_CHAT_URL = kakaoChannelLinks((await getAcademySettings())?.kakaoChannelUrl).chatUrl;
 
   if (params.done === "1") {
     return (

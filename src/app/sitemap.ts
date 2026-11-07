@@ -19,6 +19,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
         { url: `${baseUrl}/simulator`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
         // 연간 일정
         { url: `${baseUrl}/annual`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.6 },
+        // 체육관 대관(/rental)은 토스 심사 후 메뉴 노출과 함께 추가한다.
         // 갤러리
         { url: `${baseUrl}/gallery`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.7 },
         // 공지사항

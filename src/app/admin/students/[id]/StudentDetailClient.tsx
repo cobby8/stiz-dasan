@@ -10,6 +10,8 @@ import AdminModal from "@/components/admin/AdminModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
+// 학부모에게 카카오채널 링크 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송
+import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import type { StudentTenure } from "@/lib/student-tenure";
 
 type MediaItem = { url: string; type: "image" | "video" };
@@ -1181,6 +1183,12 @@ export default function StudentDetailClient({
                                     <span className="w-14 shrink-0 text-xs font-bold text-gray-400">주소</span>
                                     <span className="font-medium text-gray-800 dark:text-gray-100">{student.address || "-"}</span>
                                 </div>
+                                {/* 학부모 번호가 있을 때만: 카카오채널 추가 링크 + 계정 연결 방법 안내 (번호는 서버가 학생 id 로 다시 찾는다) */}
+                                {student.parent.phone && (
+                                    <div className="border-t border-[var(--color-academy-line)] pt-2.5">
+                                        <CustomerNoticeSender kind="KAKAO_CHANNEL_INVITE" studentId={student.id} />
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

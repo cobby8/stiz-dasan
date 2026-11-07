@@ -63,6 +63,7 @@ const NAV_GROUPS = [
       { href: "/seasonal", label: "방학특강" },
       { href: "/schedule", label: "수업시간표" },
       { href: "/annual", label: "연간일정표" },
+      // 체육관 대관(/rental)은 토스 카드사 심사가 끝난 뒤 메뉴에 노출한다(2026-11-07 원장 A안). 링크로는 지금도 접속 가능.
     ],
   },
   {
