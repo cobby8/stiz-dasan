@@ -225,13 +225,8 @@ test("토스 심사 중 /programs·결제·푸터는 이번 작업에서 바뀌�
   assert.doesNotMatch(homeCss, /\.stiz-public-sport \.public-cta__actions>\*\{[^}]*border:/); // 기본 버튼 높이도 그대로(테두리 없음)
   // SectionLayout 기본(라벨·가운데 큰 제목)도 유지 — /programs 가 쓴다.
   assert.match(read("src/components/ui/SectionLayout.tsx"), /text-3xl md:text-4xl font-extrabold/);
-  // 이 작업 커밋들이 금지 구역 파일을 건드리지 않았는지(작업 기준점 68be6db3 이후, 있으면 확인).
-  // 카드사 심사가 끝나 /programs 를 다시 고칠 때는 이 git 비교 단언을 지운다.
-  let changed = "";
-  try {
-    changed = execFileSync("git", ["diff", "--name-only", "68be6db3", "HEAD", "--", "src/app/programs", "src/app/payments", "src/components/PublicFooter.tsx", "src/app/programs/order"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  } catch { changed = ""; }
-  assert.equal(changed.trim(), "");
+  // 금지 구역 git 비교 단언은 카드사 심사 승인(2026-11-07, 국내 9개사)으로 지웠다.
+  // 이후 결제 요청 면세값(taxFreeAmount) 정리 커밋(379760d0)이 /payments 를 고쳤다.
 });
 
 test("P-13 작은 글자 12px·닫기/글씨 버튼 44px", () => {
