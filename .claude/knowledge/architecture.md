@@ -108,3 +108,9 @@
 - **발견자**: developer
 - **내용**: 관리자 「신규 셔틀 신청」 탭은 폐지(`/admin/shuttle/intake` → `/admin/shuttle/regular-dispatch?month=` redirect). 정규배차 요일 탭 아래 `NewStudentDispatchPanel`(목록 기준 = `getDriverAssignBoard`, 기사 검토 배지·요청 = 기존 `/api/admin/shuttle/intake`)이 칩 → 모달로 `AssignLegView` 를 띄운다. 기사님 `/staff/shuttle/assign` 도 같은 `src/components/shuttle/assign/AssignLegView.tsx` 를 쓴다 — **한 칸 배정 UI를 고칠 땐 이 파일 하나**(사본 금지, 테스트가 `function AssignView(` 부재 확인). 넣기 API 는 둘 다 `/api/staff/shuttle/assign`(관리자도 requireStaff·authorizeAssign 통과), 감사 via 는 관리자 역할 + body.source="ADMIN_DISPATCH" 일 때만 ADMIN_DISPATCH. 넣은 뒤 RouteSection 은 `refreshKey`(월×1000+횟수)로 다시 읽되 저장 안 한 편집(dirty)이 있으면 덮지 않는다. 기사 검토 화면(ShuttleIntakeClient driver 모드)은 그대로.
 - **참조횟수**: 0
+
+### [2026-11-07] 카카오 결석·셔틀 대화 = kakao-flow-store(공용 상태) + 흐름별 파일, 웹과 같은 저장 함수
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 보강 흐름 방식을 결석(`kakao-absence-flow`·status ABSENCE_FLOW)·셔틀(`kakao-shuttle-flow`·SHUTTLE_FLOW, 당일/당일취소/정규 3모드)로 확장. 상태 SQL(활성 30분·단계 선점 advance·close·submit)은 `kakao-flow-store.createFlowStore` 한 곳, 새 흐름을 열 때 `KAKAO_OPEN_FLOW_CLOSE_SQL`(초안+모든 흐름)을 닫는다 — 보강 흐름도 같은 목록. 챗봇 순서: 재확인 → 보강 → 결석 → 셔틀 → 초안 → 메뉴 → 분류(RENTAL 카드) → 정책 → 접수. 정규 셔틀은 흐름 행을 그대로 SUBMITTED 로 바꿔 관리자 접수함이 effectiveDate·shuttleIntent·details 를 미리 채운다. 테스트: `tests/kakao-care-flows.test.mjs`(가짜 DB 실행). 챗봇을 올리는 다른 테스트(policy-qa·connect-flow)는 흐름 모듈 3개를 null 스텁으로 끼운다 — 새 흐름을 추가하면 그 두 곳에도 스텁 추가.
+- **참조횟수**: 0
