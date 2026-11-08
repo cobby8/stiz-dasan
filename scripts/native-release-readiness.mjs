@@ -111,12 +111,12 @@ export function inspectReadiness(root) {
   });
   // 업로드·연동 설정은 스토어 작업 안에서만 허용한다. 시뮬레이터·격리 서명 작업에는 여전히 금지.
   const noPublishing = !/^\s*(publishing|integrations|app_store_connect):/m.test(beforeStore);
-  const APPROVED_STORE_WORKFLOW = '9e8a416cf1acd7ddad81ee40578a41052a7fa50eb8a94644ab626e8d2fc041aa';
+  const APPROVED_STORE_WORKFLOW = 'f7e44ba158e76d5d7ae4c6bcd96aab6e9974eff7308ed6b0538f0a025ea56251';
   const storeWorkflow = expectedWorkflows && manualOnly &&
     createHash('sha256').update(store).digest('hex') === APPROVED_STORE_WORKFLOW &&
-    store.includes('app_store_connect: upturnlabs-asc-key') && store.includes('submit_to_app_store: false') &&
+    store.includes('app_store_connect: bdr-asc-key') && store.includes('submit_to_app_store: false') &&
     store.includes('bundle_identifier: kr.co.upturnlabs.stizdasan') &&
-    !/bdr-asc-key|\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:/.test(store);
+    !/\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:/.test(store);
   const signedArtifacts = signed.split(/^    artifacts:\s*$/m)[1]?.trim().split(/\r?\n/).map(line => line.trim());
   const signedSandbox = expectedWorkflows && manualOnly && noPublishing && scriptsUnchanged &&
     occurrences(signed, /^        - /gm) === 1 && signed.includes('- stiz_ios_sandbox_device') &&

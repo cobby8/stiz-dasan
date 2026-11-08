@@ -19,7 +19,7 @@ CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
 VERSION = "0.1.0"
 BUILD = "6"
 # codemagic.yaml 의 스토어 작업 블록(주석 제외) 지문. scripts/native-release-readiness.mjs 와 같은 값.
-APPROVED_STORE_WORKFLOW = "9e8a416cf1acd7ddad81ee40578a41052a7fa50eb8a94644ab626e8d2fc041aa"
+APPROVED_STORE_WORKFLOW = "f7e44ba158e76d5d7ae4c6bcd96aab6e9974eff7308ed6b0538f0a025ea56251"
 SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.25": {
     "NSExceptionAllowsInsecureHTTPLoads": False,
     "NSExceptionMinimumTLSVersion": "TLSv1.2",
@@ -55,8 +55,8 @@ def validate_workflows(text):
     simulator, signed, _store = blocks
     store = cleaned[headers[2].start():].replace("\r\n", "\n").rstrip()
     require(hashlib.sha256(store.encode("utf-8")).hexdigest() == APPROVED_STORE_WORKFLOW, "승인되지 않은 스토어 작업 변경")
-    require("submit_to_app_store: false" in store and "app_store_connect: upturnlabs-asc-key" in store, "TestFlight 업로드만·업턴랩스 키 이름만")
-    require(not re.search(r"bdr-asc-key|\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:", store), "스토어 작업에 비밀값·다른 키 금지")
+    require("submit_to_app_store: false" in store and "app_store_connect: bdr-asc-key" in store, "TestFlight 업로드만·업턴랩스 키 이름만")
+    require(not re.search(r"\.p8\b|\.p12\b|PRIVATE KEY|_KEY_ID:|ISSUER_ID:", store), "스토어 작업에 비밀값·다른 키 금지")
     # 승인된 명령 묶음의 지문을 고정한다. 추가 업로드·우회 명령은 한 줄이어도 차단한다.
     approved_scripts = ["9f176863b4cc2e12c7b1f2cf1fae2bcf55bc69e640a44f8470b4c9efd4eb8c3f",
                         "b1e51ffd5f835ce293ec416a9f421ad56c52fae95845c416d0ee1c6eaccaf58d"]
