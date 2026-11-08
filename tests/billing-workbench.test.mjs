@@ -475,3 +475,47 @@ test("대회준비반(주말+수요일)+일반 반 1개 학생은 첫 대회준�
  assert.deepEqual(["ace:a-sun8","ace:b-wed7","ace:c-fri5"].map(id=>row(id).baseAmount),[300000,0,0]);
  assert.ok(row("ace:a-sun8").basis.some(b=>/대회준비반 월 300,000원 고정/.test(b)));
 });
+// 원장 확정(2026-11-09): 대회준비반 고정 요금(30만 묶음·평일만 15만)에는 형제할인·3회 달 차감을 붙이지 않는다.
+const compProgram={programId:"comp",programName:"대회준비반",price:300000,priceWeek1:null,priceWeek2:null,priceWeek3:null,priceDaily:null,runsShuttle:true,shuttleFeeOverride:null};
+function compSiblingDatabase(aceClasses){
+ const db=pricingDatabase();
+ const ace={...db.state.enrollments[0],studentId:"ace",studentName:"대표",parentId:"parent-a",birthDate:"2014-01-01"};
+ // 형제(parent-a): kid-1(주중취미 주2회)·kid-2(주중취미 주1회)·ace(대회준비반)
+ db.state.enrollments=[...db.state.enrollments,...aceClasses.map(c=>({...ace,...c}))];
+ db.state.shuttleStops=[];
+ return db;
+}
+test("형제+대회준비반 묶음: 묶음 행은 형제할인 없음, 묶음 밖 일반 반과 다른 형제는 형제할인 그대로",async()=>{
+ const db=compSiblingDatabase([{...compProgram,classId:"a-sun8",dayOfWeek:"Sun",slotKey:"Sun-8"},{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},
+  {...hobbyProgram,classId:"c-fri5",dayOfWeek:"Fri"},{...hobbyProgram,classId:"d-thu",dayOfWeek:"Thu"}]);
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("ace:a-sun8").baseAmount,300000);assert.equal(row("ace:a-sun8").discountAmount,0);
+ assert.ok(row("ace:a-sun8").basis.some(b=>/고정 요금 — 형제할인·3회 달 차감 없음/.test(b)),row("ace:a-sun8").basis.join(" / "));
+ assert.ok(!row("ace:a-sun8").basis.some(b=>/형제할인 10% 제안/.test(b)));
+ assert.equal(row("ace:c-fri5").discountAmount,0); // 포함된 일반 반(0원)
+ assert.equal(row("ace:d-thu").baseAmount,100000);assert.equal(row("ace:d-thu").discountAmount,10000); // 묶음 밖 일반 반은 형제할인
+ assert.equal(row("kid-2:tue").discountAmount,10000); // 다른 형제는 그대로
+});
+test("3회 달+대회준비반 묶음: 300,000원에서 차감하지 않고, 같은 달 일반 반은 차감",async()=>{
+ const db=compSiblingDatabase([{...compProgram,classId:"a-sun8",dayOfWeek:"Sun",slotKey:"Sun-8"},{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"}]);
+ db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("ace:a-sun8").prorationAmount,0);assert.equal(row("ace:a-sun8").totalAmount,300000);
+ assert.ok(!row("ace:a-sun8").reviewReasons.some(r=>/기간 조정/.test(r)),row("ace:a-sun8").reviewReasons.join(" / "));
+ assert.ok(row("kid-2:tue").prorationAmount>0); // 일반 반은 3회 달 차감 그대로
+});
+test("대회준비반 수요일만: 150,000원 고정, 형제·3회 달이어도 할인·차감 없음",async()=>{
+ const db=compSiblingDatabase([{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"}]);
+ db.state.events.push({title:"SHORT_MONTH",date:"2026-11-01",endDate:null});
+ const view=await readWorkbench(db.tx,"2026-11",true),r=view.rows.find(x=>x.id==="ace:b-wed7");
+ assert.deepEqual([r.baseAmount,r.discountAmount,r.prorationAmount,r.totalAmount],[150000,0,0,150000]);
+ assert.ok(r.basis.some(b=>/평일\(수요일\)만 월 150,000원 고정/.test(b)));
+});
+test("대회준비반 수요일+일반 반: 대회준비반 150,000 고정(할인 없음), 일반 반은 일반 요금+형제할인+확인 경고",async()=>{
+ const db=compSiblingDatabase([{...compProgram,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},{...hobbyProgram,classId:"c-mon",dayOfWeek:"Mon"}]);
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.deepEqual([row("ace:b-wed7").baseAmount,row("ace:b-wed7").discountAmount],[150000,0]);
+ // 일반 반은 대회준비반을 빼고 주1회 → 100,000, 형제할인 10%
+ assert.deepEqual([row("ace:c-mon").baseAmount,row("ace:c-mon").discountAmount],[100000,10000]);
+ assert.ok(row("ace:c-mon").reviewReasons.some(x=>/평일 대회준비반\(150,000원 고정\)과 일반 반 1개/.test(x)));
+});

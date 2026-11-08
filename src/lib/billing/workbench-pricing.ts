@@ -44,7 +44,15 @@ export type TuitionPlan = {
   basis: string | null;
   /** 관리자가 꼭 봐야 할 경고(주N회 요금 빈 칸, 여러 프로그램 수강 등) */
   warning: string | null;
+  /**
+   * 고정 요금 행(대회준비반 30만 원 묶음·평일만 15만 원) — 형제할인·3회 달 차감을 붙이지 않는다.
+   * 원장 결정(2026-11-09 «월 30만 원 고정»). 서비스는 이 값이 true 면 할인·기간 조정 제안을 0 으로 둔다.
+   */
+  fixedFee?: boolean;
 };
+
+/** 고정 요금 행의 근거 문구 — 화면·테스트가 같은 문장을 쓴다. */
+export const FIXED_FEE_NOTE = "고정 요금 — 형제할인·3회 달 차감 없음";
 
 const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 const validAmount = (v: number | null | undefined): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
@@ -82,14 +90,18 @@ const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
  * 원장 결정(2026-11-09 원문): «대회준비반은 현재 휴강 중, 월 30만원 고정, 주말 대회준비반 훈련 필수 +
  * 수요일 7교시 대회준비반 훈련 필수 + 추가로 다른 일반 반 중 1회 선택».
  * → 주말 대회준비반 반이 있는 학생 = 30만원 묶음(대회준비반 반 전부 + 일반 반 1개).
- *   주말 훈련 없이 평일 대회준비반만 다니는 학생(10~11월 «수요일 7교시만» 수강, 원장이 건별로 150,000원 결정)은
- *   묶음이 아니라 일반 규칙으로 계산하고 확인 경고를 단다.
+ *   주말 훈련 없이 평일 대회준비반만 다니는 학생 = 월 150,000원 고정(COMPETITION_WEEKDAY_ONLY_FEE).
+ *   근거: 10~11월 «수요일 7교시만» 수강생(임지호·이지민·박하준)을 원장이 건별로 15만 원 처리 → 2026-11-09 원장 확정.
+ *   평일 대회준비반 + 일반 반이 함께 있으면 대회준비반 행만 150,000원 고정, 일반 반은 일반 규칙(N 에 대회준비반 행 제외) + 확인 경고.
+ * 두 고정 요금 모두 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 «월 30만 원 고정»).
  */
 export const COMPETITION_PROGRAM_NAMES: ReadonlySet<string> = new Set(["대회준비반"]);
 /** 대회준비반 묶음 월 요금(원장 결정 «월 30만원 고정»). */
 export const COMPETITION_PACKAGE_FEE = 300_000;
 /** 묶음에 포함되는 일반 반 개수(원장 결정 «다른 일반 반 중 1회 선택»). */
 export const COMPETITION_INCLUDED_GENERAL_CLASSES = 1;
+/** 주말 훈련 없이 평일(수요일) 대회준비반만 다니는 학생의 월 요금(원장 확정 2026-11-09). */
+export const COMPETITION_WEEKDAY_ONLY_FEE = 150_000;
 
 export function isCompetitionProgram(programName: string | null | undefined): boolean {
   return COMPETITION_PROGRAM_NAMES.has((programName ?? "").trim());
@@ -151,7 +163,8 @@ function planGeneralRows(rows: readonly TuitionEnrollment[], result: Map<string,
  * 학생별로 수강료 제안값을 정한다.
  * 넘기는 등록은 «이번 달 청구 대상(제외되지 않은)» 것만이어야 한다 — 휴원 반까지 세면 주N회가 잘못 오른다.
  * 1) 주말 대회준비반 반이 있으면 대회준비반 묶음(30만원 고정, 첫 대회준비반 행에 몰고 나머지 0원).
- * 2) 그 밖에는 일반 규칙(학생 전체 주 횟수 N 기준 주N회 요금 ÷ N).
+ * 2) 평일 대회준비반만 있으면 대회준비반 행 15만원 고정 + 일반 반은 일반 규칙(대회준비반 제외 N).
+ * 3) 그 밖에는 일반 규칙(학생 전체 주 횟수 N 기준 주N회 요금 ÷ N).
  */
 export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Map<string, TuitionPlan> {
   const result = new Map<string, TuitionPlan>();
@@ -164,17 +177,18 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Ma
     const isWeekend = (e: TuitionEnrollment) => WEEKEND_DAYS.has(e.dayOfWeek ?? "");
     if (comp.some(isWeekend)) {
       // 대회준비반 묶음: 대회준비반 반 전부 + 일반 반 1개까지 합계 300,000원.
-      const packageBasis = `대회준비반 월 ${won(COMPETITION_PACKAGE_FEE)} 고정(주말·수요일 대회준비반 훈련 + 일반 반 ${COMPETITION_INCLUDED_GENERAL_CLASSES}회 포함)`;
+      const packageBasis = `대회준비반 월 ${won(COMPETITION_PACKAGE_FEE)} 고정(주말·수요일 대회준비반 훈련 + 일반 반 ${COMPETITION_INCLUDED_GENERAL_CLASSES}회 포함) · ${FIXED_FEE_NOTE}`;
       const missingWeekday = comp.every(isWeekend)
         ? "대회준비반 수요일 7교시 훈련(필수) 등록이 없습니다. 수강 반을 확인해 주세요." : null;
       comp.forEach((e, i) => result.set(e.key, {
         baseAmount: i === 0 ? COMPETITION_PACKAGE_FEE : 0,
         basis: i === 0 ? packageBasis : `${packageBasis} — 금액은 첫 대회준비반 행에 포함`,
         warning: missingWeekday,
+        fixedFee: true, // 묶음 행 — 형제할인·3회 달 차감 없음
       }));
       const included = general.slice(0, COMPETITION_INCLUDED_GENERAL_CLASSES);
       const extra = general.slice(COMPETITION_INCLUDED_GENERAL_CLASSES);
-      for (const e of included) result.set(e.key, { baseAmount: 0, basis: `${packageBasis} — 포함된 일반 반(0원)`, warning: missingWeekday });
+      for (const e of included) result.set(e.key, { baseAmount: 0, basis: `${packageBasis} — 포함된 일반 반(0원)`, warning: missingWeekday, fixedFee: true });
       if (extra.length) {
         // 일반 반이 2개 이상이면 1개만 묶음에 넣고 나머지는 일반 규칙(그 반들의 주 횟수 기준)으로 계산한다.
         planGeneralRows(extra, result, joinWarnings(missingWeekday,
@@ -182,11 +196,23 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Ma
       }
       continue;
     }
-    // 주말 훈련 없이 평일 대회준비반만 다니면 묶음 조건이 아니다 — 일반 규칙으로 두고 금액 확인을 요청한다.
-    const weekdayOnlyComp = comp.length
-      ? "대회준비반 주말 훈련 없이 평일 대회준비반만 수강해 월 300,000원 고정을 적용하지 않았습니다. 금액을 확인해 주세요(10~11월 «수요일 7교시만» 수강은 원장 결정 150,000원)."
-      : null;
-    planGeneralRows(rows, result, weekdayOnlyComp);
+    if (comp.length) {
+      // 주말 훈련 없이 평일 대회준비반만: 대회준비반 행 합계 150,000원 고정(첫 행에 몰고 나머지 0원).
+      const weekdayBasis = `대회준비반 평일(수요일)만 월 ${won(COMPETITION_WEEKDAY_ONLY_FEE)} 고정 · ${FIXED_FEE_NOTE}`;
+      comp.forEach((e, i) => result.set(e.key, {
+        baseAmount: i === 0 ? COMPETITION_WEEKDAY_ONLY_FEE : 0,
+        basis: i === 0 ? weekdayBasis : `${weekdayBasis} — 금액은 첫 대회준비반 행에 포함`,
+        warning: null,
+        fixedFee: true,
+      }));
+      // 일반 반이 함께 있으면 일반 규칙으로 따로 계산한다(주 횟수 N 에 대회준비반 행은 넣지 않는다) + 확인 경고.
+      if (general.length) {
+        planGeneralRows(general, result,
+          `평일 대회준비반(${won(COMPETITION_WEEKDAY_ONLY_FEE)} 고정)과 일반 반 ${general.length}개를 함께 수강합니다. 일반 반은 일반 요금으로 따로 계산했습니다. 확인해 주세요.`);
+      }
+      continue;
+    }
+    planGeneralRows(rows, result, null);
   }
   return result;
 }
