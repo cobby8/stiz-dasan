@@ -24,6 +24,16 @@ import {
 } from "@/lib/shuttle/regularRosterEditLogic";
 import type { RosterStudentContext, RosterStudentSearchResult } from "@/lib/shuttle/regularRosterEdit";
 import { checkRosterRows } from "@/lib/shuttle/regularRosterCheckLogic";
+import {
+  buildRosterEnrollmentReport,
+  describeRosterEnrollmentStudent,
+  indexRosterEnrollments,
+  rosterCopyWarningText,
+  rosterEntryFlags,
+  summarizeRosterEnrollmentReport,
+  type RosterEnrollment,
+  type RosterEnrollmentFlag,
+} from "@/lib/shuttle/regularRosterEnrollmentCheckLogic";
 import { defaultStopFromRiding, enrolledClassSlots, resolveCellPlacement, resolveStudentPoint, studentRosterRows, type PlacementOverride, type ResolvedStudentPoint, type StudentPointSource } from "@/lib/shuttle/regularRosterPlacementLogic";
 import DriverOrderView from "./DriverOrderView";
 import AddRiderRoutePanel, { type PanelDirection } from "./AddRiderRoutePanel";
@@ -121,6 +131,26 @@ const LOCATION_LINK_STATUS: Record<RegularLocationLinkState["status"], string> =
   REVOKED: "취소",
 };
 
+/**
+ * 수강 점검 배지(작게). 색은 테마 토큰만 쓴다 — 다니는 반 없음 = 위험색, 수업 없는 요일 = 주의색, 한쪽만 = 흐린 참고색.
+ * 글자 크기는 최소 12px(text-xs)를 지킨다.
+ */
+function EnrollmentFlagBadges({ flags }: { flags: RosterEnrollmentFlag[] }) {
+  if (flags.length === 0) return null;
+  const tone = (kind: RosterEnrollmentFlag["kind"]) => kind === "NO_ACTIVE_CLASS"
+    ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+    : kind === "NO_CLASS_ON_DAY"
+      ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
+      : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]";
+  return (
+    <>
+      {flags.map((f) => (
+        <span key={f.label} title={f.detail} className={`ml-1 inline-block rounded px-1.5 py-0.5 align-middle text-xs font-bold ${tone(f.kind)}`}>{f.label}</span>
+      ))}
+    </>
+  );
+}
+
 export default function RegularShuttleClient({ initialStops, initialMonth, months, currentMonth, initialStudentId }: {
   initialStops: RegularShuttleStop[];
   initialMonth: string;
@@ -201,6 +231,25 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   const classTimes = useMemo(() => [...new Set(stops.map((s) => s.classTime).filter((c): c is string => Boolean(c)))].sort(), [stops]);
   // 명단 점검(기사님 화면에서 빠지거나 어긋나 보일 행). 자동으로 고치지 않고 알리기만 한다.
   const issues = useMemo(() => checkRosterRows(stops), [stops]);
+
+  // 수강 점검 — 휴원·퇴원·반 변경 뒤에도 명단에 남은 학생에게 경고 배지만 붙인다(자동으로 빼지 않는다).
+  // 서버에서는 그 달 명단 학생의 «지금» 수강만 받아 오고, 판정은 순수 함수가 한다.
+  const [enrollCheck, setEnrollCheck] = useState<{ month: string; enrollments: RosterEnrollment[]; autoCreatedFrom: string | null; reviewed: boolean } | null>(null);
+  // 명단에 있는 학생 id 묶음이 바뀔 때만 다시 받는다(정류장 시각만 고친 경우엔 다시 부르지 않게).
+  const rosterStudentIds = useMemo(() => [...new Set(stops.map((s) => s.studentId).filter(Boolean))].sort().join(","), [stops]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`/api/admin/shuttle/regular-roster?enrollmentCheck=1&month=${encodeURIComponent(serviceMonth)}`, { cache: "no-store" })
+      .then(async (r) => { const j = await r.json().catch(() => null); if (!cancelled && r.ok && j?.check) setEnrollCheck({ month: serviceMonth, ...j.check }); })
+      .catch(() => { /* 점검은 보조 정보라 실패해도 명단은 그대로 쓴다 */ });
+    return () => { cancelled = true; };
+  }, [serviceMonth, rosterStudentIds]);
+  // 다른 달 자료가 남아 있으면 쓰지 않는다(달을 바꾼 직전 잠깐 동안 엉뚱한 배지가 붙지 않게).
+  const enrollIndex = useMemo(() => (enrollCheck && enrollCheck.month === serviceMonth ? indexRosterEnrollments(enrollCheck.enrollments) : null), [enrollCheck, serviceMonth]);
+  const enrollReport = useMemo(() => (enrollCheck && enrollCheck.month === serviceMonth ? buildRosterEnrollmentReport(stops, enrollCheck.enrollments) : null), [enrollCheck, serviceMonth, stops]);
+  const enrollSummary = enrollReport ? summarizeRosterEnrollmentReport(enrollReport) : "";
+  // 자동 복사로 만들어진 달인데 확인이 필요한 학생이 있고, 아직 «확인했어요»를 안 눌렀으면 월 넘김 확인을 받는다.
+  const needsMonthReview = !!(enrollCheck && enrollCheck.month === serviceMonth && enrollCheck.autoCreatedFrom && !enrollCheck.reviewed && (enrollReport?.problems.length ?? 0) > 0);
   const laterMonths = useMemo(() => availableMonths.filter((m) => m > serviceMonth).sort(), [availableMonths, serviceMonth]);
 
   // 요일·월이 바뀌면 그 요일의 정규 배차 저장 노선 사용 여부를 다시 확인한다(조회 전용).
@@ -252,8 +301,30 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     await loadMonth(serviceMonth);
   }
 
+  /**
+   * 월 넘김 전 점검 — 복사할 원본 달의 «확인이 필요한 학생» 문구(없으면 빈 문자열).
+   * 원본 달 명단과 그 학생들의 지금 수강을 받아 같은 순수 함수로 판정한다. 못 불러오면 그 사실만 알린다.
+   */
+  async function copyWarningFor(sourceMonth: string): Promise<string> {
+    try {
+      const [rosterRes, checkRes] = await Promise.all([
+        fetch(`/api/admin/shuttle/regular?month=${encodeURIComponent(sourceMonth)}`, { cache: "no-store" }),
+        fetch(`/api/admin/shuttle/regular-roster?enrollmentCheck=1&month=${encodeURIComponent(sourceMonth)}`, { cache: "no-store" }),
+      ]);
+      const roster = await rosterRes.json().catch(() => null);
+      const check = await checkRes.json().catch(() => null);
+      if (!rosterRes.ok || !checkRes.ok || !check?.check) throw new Error("점검 자료 없음");
+      return rosterCopyWarningText(buildRosterEnrollmentReport(roster?.stops ?? [], check.check.enrollments ?? []));
+    } catch {
+      return "(수강 점검을 불러오지 못했습니다 — 복사한 뒤 그 달 명단의 점검 줄을 확인해 주세요.)";
+    }
+  }
+
   async function copyMonth(sourceMonth: string, targetMonth: string) {
-    if (busy || !window.confirm(`${sourceMonth} 명단을 ${targetMonth} 명단으로 복사할까요?\n복사한 뒤 ${targetMonth}에서 바뀐 학생만 고치면 됩니다.`)) return;
+    if (busy) return;
+    // 휴원·퇴원·반 변경 뒤 남은 학생이 그대로 넘어가므로, 복사 전에 목록을 보여 주고 확인받는다(자동으로 빼지 않는다).
+    const warning = await copyWarningFor(sourceMonth);
+    if (!window.confirm(`${sourceMonth} 명단을 ${targetMonth} 명단으로 복사할까요?\n복사한 뒤 ${targetMonth}에서 바뀐 학생만 고치면 됩니다.${warning ? `\n\n${warning}` : ""}`)) return;
     setBusy(true); setErr(null); setMsg(null);
     try {
       const j = await rosterCall("POST", { action: "copyMonth", sourceMonth, targetMonth });
@@ -261,6 +332,18 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     } catch (e: unknown) { setErr(adminErrorText(e, "명단을 만들지 못했습니다.")); setBusy(false); return; }
     setBusy(false);
     await loadMonth(targetMonth);
+  }
+
+  // 자동으로 만든 달의 월 넘김 점검 «확인했어요» — 기록만 남기고 명단은 바꾸지 않는다.
+  async function markMonthReviewed() {
+    if (busy || !enrollReport) return;
+    setBusy(true); setErr(null);
+    try {
+      await rosterCall("POST", { action: "monthReviewed", serviceMonth, flaggedCount: enrollReport.problems.length });
+      setEnrollCheck((c) => (c && c.month === serviceMonth ? { ...c, reviewed: true } : c));
+      setMsg(`${serviceMonth} 월 넘김 점검을 확인했습니다. 남은 경고는 학생 행 배지로 계속 보입니다.`);
+    } catch (e: unknown) { setErr(adminErrorText(e, "확인 기록을 남기지 못했습니다.")); }
+    finally { setBusy(false); }
   }
 
   function openAdd() {
@@ -963,6 +1046,29 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
               </details>
             )}
 
+            {/* 수강 점검 요약 한 줄 — 휴원·퇴원·반 변경 뒤 남은 학생(이 달 전체). 펼치면 학생 목록. 자동으로 빼지 않는다. */}
+            {enrollReport && enrollSummary && (
+              <details open={needsMonthReview} className="mt-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]">
+                <summary className="cursor-pointer font-black">
+                  <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-warning)]" aria-hidden="true">warning</span>
+                  수강 점검: {enrollSummary}
+                  {enrollReport.unlinkedCount > 0 && <span className="ml-1 font-bold text-[var(--color-academy-muted)]">· 학생 연결 없음 {enrollReport.unlinkedCount}명(점검 불가)</span>}
+                </summary>
+                {needsMonthReview && enrollCheck?.autoCreatedFrom && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 font-bold">
+                    <span>이 달 명단은 {enrollCheck.autoCreatedFrom} 명단을 자동으로 복사해 만들었습니다. 아래 학생도 그대로 넘어왔습니다.</span>
+                    <button type="button" disabled={busy} onClick={() => void markMonthReviewed()}
+                      className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-black disabled:opacity-50">확인했어요</button>
+                  </div>
+                )}
+                <ul className="mt-2 space-y-1">
+                  {enrollReport.problems.map((r) => <li key={r.key}>· {describeRosterEnrollmentStudent(r)}</li>)}
+                  {enrollReport.notes.map((r) => <li key={r.key} className="text-[var(--color-academy-muted)]">· {describeRosterEnrollmentStudent(r)}</li>)}
+                </ul>
+                <p className="mt-2 font-bold">지금 수강 기준입니다. 자동으로 빼지 않았습니다 — 학생 행의 ⚡(반이동·빼기)로 정리해 주세요. «한쪽만»은 직접 데려가는 경우라면 정상입니다.</p>
+              </details>
+            )}
+
             {view === "driver" && (
               <DriverOrderView
                 stops={stops}
@@ -1018,6 +1124,8 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
                                 <span className="font-black text-[var(--color-academy-ink)]">{entry.studentName}</span>
                                 {/* 메모가 있으면 표시만 — 내용은 상세 패널에서 전부 */}
                                 {note && <span className="material-symbols-outlined ml-1 align-middle text-base text-[var(--color-academy-muted)]" aria-label="메모 있음" title="메모 있음">sticky_note_2</span>}
+                                {/* 수강 점검 배지(다니는 반 없음·수업 없는 요일·한쪽만) — 설명은 마우스를 올리거나 상세 패널에서 */}
+                                {enrollIndex && <EnrollmentFlagBadges flags={rosterEntryFlags(entry, active, enrollIndex)} />}
                               </td>
                               <td className="px-2 py-1.5">{stopCell(entry.board)}</td>
                               <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{entry.board ? entry.board.arriveTime || "-" : ""}</td>
@@ -1062,6 +1170,9 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
           { label: "위치 링크", value: link ? `${LOCATION_LINK_STATUS[link.status]}${link.lastSubmittedAt ? ` · 제출 ${fmtImported(link.lastSubmittedAt)}` : ""}${link.status === "ACTIVE" ? ` · 만료 ${fmtImported(link.expiresAt)}` : ""}` : d.studentId ? "발급 안 함" : "학생 연결 없음(링크 불가)" },
           ...(notes.length > 0 ? [{ label: "메모", value: notes.join(" / ") }] : []),
         ];
+        // 수강 점검 경고가 있으면 설명 문장까지 보여 준다(행 배지는 짧은 글자만).
+        const flags = enrollIndex ? rosterEntryFlags(d, active, enrollIndex) : [];
+        if (flags.length > 0) rows.push({ label: "점검", value: <span className="flex flex-col gap-1">{flags.map((f) => <span key={f.label}><EnrollmentFlagBadges flags={[f]} /> {f.detail}</span>)}</span> });
         return (
           <ListDetailPanel onClose={() => setDetail(null)} titleId="roster-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-4 flex items-center gap-2">

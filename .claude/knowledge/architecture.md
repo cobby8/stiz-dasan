@@ -171,4 +171,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 청구 준비 행은 «학생×반»이라 주2회 학생은 행 2개다. `readWorkbench` 가 먼저 행마다 청구 대상(excluded)을 정하고(scopeOf), 청구 대상 반만 `src/lib/billing/workbench-pricing.ts` 에 넘긴다 — planWeeklyTuition(같은 프로그램 N반 → 주N회 요금을 N으로 나눔, 남는 원은 첫 행, 빈 칸이면 주1회×N+경고, 여러 프로그램 수강은 경고만), planShuttleFee(그달 `RegularShuttleStop` 의 studentId 연결 행만, 셔틀 운행 평일 반 주 횟수 → 1만/1.5만/2만·직접입력 최대값·Sun-8 면제), siblingDiscountStudents(같은 parentId 청구 대상 자녀 2명↑, 상수 `REGULAR_SIBLING_DISCOUNT_TARGET` ALL/SECOND_AND_LATER)+siblingDiscountAmount(수강료 10% 절사, 셔틀 제외). 적용은 확정 월 장부 없는 행만, 저장 초안 payload 가 항상 이긴다. 셔틀비는 학생의 «첫 발행 대상 행» 1개에만, 다른 반 초안에 셔틀비 저장·이번 달 기존 청구가 있으면 제안 안 함. 셔틀 명단은 sourceVersion 해시에 포함. 셔틀비 규칙의 다른 사본: ProgramFormPanel/ProgramsAdminClient/programs/page 의 autoShuttle 표, studentBilling.ts 의 Sun-8 — 바꾸면 같이 바꾼다.
+### [2026-11-08] 셔틀 명단 점검·카카오 셔틀 신청 할 일 = 순수 판정 + 기존 표 상태값(새 표 없음, 자동 삭제 없음)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 명단 수강 점검 `src/lib/shuttle/regularRosterEnrollmentCheckLogic.ts`(다니는 반 없음·수업 없는 요일·한쪽만) — 서버 `getRosterEnrollmentCheck` 는 그 달 명단 학생의 지금 Enrollment(ACTIVE/PAUSED)와 자동 생성 달 여부만 읽고 판정은 화면에서. 월 넘김 확인 = 수동 복사 전 confirm(`rosterCopyWarningText`) + 자동 생성 달 «확인했어요» = `ShuttleAuditLog` action `REGULAR_ROSTER_MONTH_REVIEWED`(자동 생성 기록 `REGULAR_ROSTER_AUTO_MONTH` 와 짝). ② 카카오 정규 셔틀 신청(START) 할 일 `src/lib/kakaoShuttleRosterTask.ts` — 완료 = `KakaoParentIntake.structuredJson.rosterTask.doneAt` + 결정 전 상태면 APPLIED(이관 APPROVED 는 유지) + 감사 `SHUTTLE_ROSTER_DONE`. 명단 추가는 기존 `/admin/shuttle/regular?month=&studentId=` 딥링크(«신청 학생 선택해 명단 추가») 재사용.
 - **참조횟수**: 0

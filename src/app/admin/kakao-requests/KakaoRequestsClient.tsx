@@ -13,6 +13,9 @@ import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import { isIntakeResultStatus } from "@/lib/customer-notice/templates";
 // 목록 행의 접수일·시각은 KST 모듈로만(기기 시간대를 따라가지 않게)
 import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
+// 정규 셔틀 신청 → 원장 할 일 «셔틀 명단에 넣어 주세요»(셔틀 명단 화면과 같은 판정·같은 완료 함수)
+import { isShuttleRosterTask, shuttleRosterTaskDoneAt, shuttleRosterTaskHref, shuttleRosterTaskSummary } from "@/lib/kakaoShuttleRosterTask";
+import { completeKakaoShuttleRosterTask } from "@/app/actions/kakao-shuttle-roster-task";
 
 export type KakaoRequestAdminRow = {
   revision: string;
@@ -48,7 +51,13 @@ const formatDate = (value: string) => new Intl.DateTimeFormat("ko-KR", { timeZon
 // 목록 행용 짧은 시각 «14:05» (KST)
 const formatTime = (value: string) => formatKstDate(value, { hour:"2-digit", minute:"2-digit", hour12:false }, "-");
 
-const NEEDS_FROM_CLASS = new Set(["PAUSE","WITHDRAW","RESUME","CLASS_CHANGE"]);
+// 상태 이름 — 원장이 «셔틀 명단 반영 완료»로 닫은 접수는 「자동 반영 완료」가 아니라 「셔틀 명단 반영」으로 보인다.
+function statusLabel(row: Pick<KakaoRequestAdminRow, "status" | "structuredJson">): string {
+  if (row.status === "APPLIED" && shuttleRosterTaskDoneAt(row.structuredJson)) return "셔틀 명단 반영";
+  return LABEL[row.status] ?? "상태 확인 필요";
+}
+
+const NEEDS_FROM_CLASS =new Set(["PAUSE","WITHDRAW","RESUME","CLASS_CHANGE"]);
 const NEEDS_TO_CLASS = new Set(["CLASS_CHANGE","CLASS_ADD"]);
 const NEEDS_SHUTTLE = new Set(["SHUTTLE_START_STOP","SHUTTLE_CHANGE","SHUTTLE_FEE"]);
 
@@ -134,6 +143,18 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       } catch (caught) { setError(adminErrorText(caught, "처리 중 오류가 발생했습니다.")); }
     });
   }
+  // «셔틀 명단에 넣어 주세요» 할 일 완료 표시 — 명단은 바꾸지 않고, 학부모에게 보내지도 않는다.
+  function completeRosterTask(id: string, studentName: string | null) {
+    if (!window.confirm(`${studentName ?? "학생"} 정규 셔틀 신청을 «셔틀 명단 반영 완료»로 표시할까요?\n셔틀 명단 화면에서 학생을 넣은 뒤 눌러 주세요. 학부모에게 문자는 보내지 않습니다.`)) return;
+    setError("");
+    startTransition(async () => {
+      try {
+        const result = await completeKakaoShuttleRosterTask({ intakeId: id });
+        if (!result.ok) return setError(result.message);
+        router.refresh();
+      } catch (caught) { setError(adminErrorText(caught, "처리 표시를 남기지 못했습니다.")); }
+    });
+  }
   // 행 클릭 상세 패널 대상 — 예전 카드 본문(원문·검토 입력·결정 버튼)을 그대로 패널에서 연다.
   // 입력 중인 검토값(notes·reviewDetails)은 행 id 로 저장돼 있어 패널을 닫았다 열어도 남는다.
   const [openId, setOpenId] = useState("");
@@ -194,6 +215,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
                   !identityOk ? "인증·연결 확인" : null,
                   overdue ? "24시간 경과" : null,
                   row.hasProcessingError ? "오류 기록" : null,
+                  isShuttleRosterTask(row) ? "셔틀 명단 넣기" : null,
                 ].filter((flag): flag is string => Boolean(flag));
                 return <tr
                   key={row.id}
@@ -206,7 +228,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
                   {/* 날짜·시각은 오른쪽 + 자릿수 폭 고정 */}
                   <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(row.createdAt) || "-"}</td>
                   <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{formatTime(row.createdAt)}</td>
-                  <td className="px-2 py-1.5"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">{LABEL[row.status] ?? "상태 확인 필요"}</span></td>
+                  <td className="px-2 py-1.5"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span></td>
                   <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</td>
                   <td className="px-2 py-1.5 font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</td>
                   <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{row.studentGrade ?? "-"}</td>
@@ -235,11 +257,20 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       const currentClasses = classes.filter(option => row.currentClassIds.includes(option.id));
       const followup = kakaoFollowupSummary(row.status, row.commands);
       return <ListDetailPanel onClose={() => setOpenId("")} titleId="kakao-request-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-ink)]">{LABEL[row.status] ?? "상태 확인 필요"}</span><span className="text-xs font-bold text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div><button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span><span className="text-xs font-bold text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div><button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
         <time className="mt-1 block text-xs tabular-nums text-[var(--color-academy-muted)]">{formatDate(row.createdAt)}</time>
         {error && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
         <p className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm">{row.sourceText}</p>
         {followup && <p className="mt-3 rounded-xl border p-3 text-sm font-bold">{followup}</p>}
+        {/* 원장 할 일: 정규 셔틀 신청은 셔틀 명단에 넣어야 실제 운행에 반영된다. 넣은 뒤 «반영 완료»를 누르면 접수가 닫힌다. */}
+        {isShuttleRosterTask(row) && row.studentId && <section aria-label="셔틀 명단 할 일" className="mt-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
+          <b>셔틀 명단에 넣어 주세요</b>
+          {shuttleRosterTaskSummary(row.structuredJson) && <p className="mt-1 text-xs">{shuttleRosterTaskSummary(row.structuredJson)}</p>}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Link href={shuttleRosterTaskHref(row.studentId, row.structuredJson)} prefetch={false} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">셔틀 명단 열기</Link>
+            <button type="button" disabled={pending} onClick={() => completeRosterTask(rowId, row.studentName)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold disabled:opacity-40">셔틀 명단 반영 완료</button>
+          </div>
+        </section>}
         {row.hasProcessingError && <p className="mt-2 text-xs font-bold">처리 보류·오류 기록 있음 · 학생/날짜/필수 정보와 실제 반영 이력을 확인해 주세요.</p>}
         {isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt) && <p className="mt-2 text-xs font-bold">접수 후 24시간 경과 · 후속 진행 여부 확인</p>}
         <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary>{(() => { const items = readableDetails(row.structuredJson, classes); return items.length ? <dl className="mt-2 space-y-1">{items.map(([label, value]) => <div key={label} className="flex gap-2"><dt className="shrink-0 font-bold">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{value}</dd></div>)}</dl> : <p className="mt-2">세부 정보 없음</p>; })()}</details></section>

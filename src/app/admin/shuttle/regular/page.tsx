@@ -4,6 +4,8 @@ import SeasonalHeader from "../../seasonal/SeasonalHeader";
 import { getRegularShuttleMonths, getRegularShuttleStops } from "@/lib/shuttle/regularImport";
 import { koreaServiceMonth, pickServiceMonthFor, isServiceMonth } from "@/lib/regular/serviceMonth";
 import { ensureRegularRosterMonths } from "@/lib/shuttle/regularRosterEdit";
+import KakaoShuttleRosterTasks from "./KakaoShuttleRosterTasks";
+import { getOpenKakaoShuttleRosterTasks, type KakaoShuttleRosterTaskItem } from "@/lib/kakao-shuttle-roster-task-query";
 
 export const dynamic = "force-dynamic";
 
@@ -19,11 +21,15 @@ export default async function RegularShuttlePage({ searchParams }: { searchParam
   const initialMonth = requested.month && isServiceMonth(requested.month) ? requested.month : pickServiceMonthFor(months, currentMonth) ?? months[months.length - 1] ?? currentMonth;
   const data = await getRegularShuttleStops(initialMonth);
   const initial = JSON.parse(JSON.stringify(data)) as typeof data;
+  // 원장 할 일: 카카오 정규 셔틀 신청 → «셔틀 명단에 넣어 주세요». 조회 실패해도 명단 화면은 떠야 하므로 빈 목록으로 둔다.
+  let rosterTasks: KakaoShuttleRosterTaskItem[] = [];
+  try { rosterTasks = await getOpenKakaoShuttleRosterTasks(); } catch (e) { console.error("[admin/shuttle/regular] 카카오 셔틀 신청 할 일 조회 실패", e); }
 
   return (
     <>
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" subtitle="정규 수업 셔틀 이용 학생 명단을 요일·수업별로 관리합니다." />
       <ShuttleSectionTabs />
+      <KakaoShuttleRosterTasks tasks={rosterTasks} />
       <RegularShuttleClient initialStops={initial.stops} initialMonth={initialMonth} months={initial.months} currentMonth={currentMonth} initialStudentId={requested.studentId?.slice(0,64)} />
     </>
   );
