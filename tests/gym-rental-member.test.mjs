@@ -551,3 +551,21 @@ test("공개 화면: 페이지는 정적(ISR) 그대로, 로그인 여부는 서
   assert.doesNotMatch(client, /studentName|학원에 등록된 학생 이름/);
   assert.match(client, /memberStudentId: memberFree \? memberStudentId : ""/);
 });
+
+test("신청 완료: 맨 위로 튀지 않고 접수증으로 스크롤, 계좌·금액 복사가 접수증 맨 위(원장 지시 2026-11-08)", () => {
+  const client = read("src/app/rental/RentalClient.tsx");
+  // 예전 원인 — 접수 직후 window.scrollTo(맨 위)로 히어로·요금 안내가 보이고 접수증은 아래로 밀렸다
+  assert.doesNotMatch(client, /window\.scrollTo\(\{ top: 0/);
+  assert.match(client, /receiptRef\.current\?\.scrollIntoView\(\{ behavior: reduceMotion \? "auto" : "smooth", block: "start" \}\)/);
+  assert.match(client, /prefers-reduced-motion: reduce/);
+  assert.match(client, /receiptTitleRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(client, /ref=\{receiptTitleRef\} tabIndex=\{-1\}/);
+  assert.match(client, /ref=\{receiptRef\} className="public-card scroll-mt-24/);
+  // 입금 계좌·복사 버튼이 접수 번호보다 위
+  const receiptStart = client.indexOf("ref={receiptRef}");
+  assert.ok(client.indexOf('"계좌 복사"', receiptStart) < client.indexOf("접수 번호", receiptStart));
+  assert.ok(client.indexOf('"금액 복사"', receiptStart) < client.indexOf("접수 번호", receiptStart));
+  // 복사값은 그대로 — 계좌는 서버가 만든 bankCopyText, 금액은 숫자만
+  assert.match(client, /copyText\("account", receipt\.bankCopyText\)/);
+  assert.match(client, /copyText\("amount", String\(receipt\.totalAmount\)\)/);
+});

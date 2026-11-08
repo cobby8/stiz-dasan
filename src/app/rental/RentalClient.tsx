@@ -109,6 +109,20 @@ export default function RentalClient() {
   const [copied, setCopied] = useState<"" | "account" | "amount">("");
   const [pending, startTransition] = useTransition();
   const errorRef = useRef<HTMLDivElement>(null);
+  // 신청 완료 화면(접수증) — 접수 직후 이 카드가 첫 화면에 보이게 스크롤·포커스를 옮긴다
+  const receiptRef = useRef<HTMLDivElement>(null);
+  const receiptTitleRef = useRef<HTMLHeadingElement>(null);
+
+  // 접수증이 화면에 붙은 «뒤»에 옮긴다(붙기 전에는 옮길 대상이 없다).
+  // 예전엔 window.scrollTo(맨 위)라 히어로·요금 안내가 보이고 접수증은 아래로 밀려 있었다(원장 지시 2026-11-08).
+  useEffect(() => {
+    if (!receipt) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // 화면 읽기 프로그램도 «접수되었습니다»부터 읽게 제목에 포커스 — 포커스가 멋대로 스크롤하지 않게 막고 직접 옮긴다
+    receiptTitleRef.current?.focus({ preventScroll: true });
+    // 위쪽 고정 헤더에 가리지 않게 카드에 scroll-mt 를 줬다
+    receiptRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }, [receipt]);
 
   // 로그인 계정·연결 재원생을 한 번 묻는다. 신청자 칸이 비어 있으면 계정 이름·번호로 미리 채운다(수정 가능).
   useEffect(() => {
@@ -234,7 +248,7 @@ export default function RentalClient() {
         }
         setReceipt(result.receipt);
         setDuplicate(result.duplicate);
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        // 스크롤은 접수증이 그려진 뒤 위 useEffect 가 한다(맨 위로 올리지 않는다)
       } catch (err) {
         showError(publicErrorText(err, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
       }
@@ -256,15 +270,65 @@ export default function RentalClient() {
     const nothingToPay = receipt.totalAmount === 0; // 재원생 2시간 이내 = 입금 없음
     const steps = nothingToPay ? ["신청 접수", "원장님 승인", "확정"] : ["신청 접수", "원장님 승인", "입금", "확정"];
     return (
-      <div className="public-card p-4 sm:p-5" aria-live="polite">
+      // scroll-mt-24 = 위쪽 고정 헤더 높이만큼 띄워서 멈춘다(헤더에 제목이 가리지 않게)
+      <div ref={receiptRef} className="public-card scroll-mt-24 p-4 sm:p-5" aria-live="polite">
         <div className="flex items-center gap-2">
           <FontFreeIcon name="check_circle" size={28} className="text-[var(--color-public-accent)]" />
-          <h2 className="text-xl font-black text-[var(--color-public-ink)]">{duplicate ? "이미 접수된 신청입니다" : "대관 신청이 접수되었습니다"}</h2>
+          {/* tabIndex=-1: Tab 으로 가지는 않지만, 접수 직후 코드로 포커스를 줄 수 있게 */}
+          <h2 ref={receiptTitleRef} tabIndex={-1} className="text-xl font-black text-[var(--color-public-ink)] outline-none">{duplicate ? "이미 접수된 신청입니다" : "대관 신청이 접수되었습니다"}</h2>
         </div>
         <p className="mt-1 text-sm break-keep text-[var(--color-public-muted)]">
           <b className="text-[var(--color-public-ink)]">원장님 승인 후 확정</b>됩니다.
           {nothingToPay ? " 승인 문자를 기다려 주세요." : " 승인 안내를 받으면 아래 계좌로 입금해 주세요."}
         </p>
+
+        {/* 입금 안내 — 첫 화면(스크롤 없이)에 계좌·금액과 복사 버튼이 바로 보이게 제목 바로 아래에 둔다(원장 지시 2026-11-08).
+            이 화면에서만 계좌를 보여 준다. 입금할 돈이 없으면 계좌 대신 기다림 안내 */}
+        {nothingToPay ? (
+          <div className="mt-3 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
+            <p className="text-base font-black break-keep text-[var(--color-public-ink)]">입금할 금액이 없어요. 원장님 승인 문자를 기다려 주세요</p>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
+            {/* 계좌 줄: 계좌 글자 + 바로 옆 [계좌 복사] (근접성 — 복사 버튼을 복사할 값 옆에) */}
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-[var(--color-public-muted)]">입금 계좌</p>
+                <p className="text-sm font-bold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
+              </div>
+              <button type="button" onClick={() => copyText("account", receipt.bankCopyText)} className="public-btn-secondary min-h-11 shrink-0 px-3 text-sm">
+                {copied === "account" ? "계좌를 복사했어요" : "계좌 복사"}
+              </button>
+            </div>
+            {/* 금액 줄: 금액 + 바로 옆 [금액 복사] — 복사값은 숫자만 */}
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-[var(--color-public-muted)]">입금할 금액</p>
+                <p className="text-2xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
+              </div>
+              <button type="button" onClick={() => copyText("amount", String(receipt.totalAmount))} className="public-btn-secondary min-h-11 shrink-0 px-3 text-sm">
+                {copied === "amount" ? "금액을 복사했어요" : "금액 복사"}
+              </button>
+            </div>
+            <p className="text-xs break-keep text-[var(--color-public-muted)]">
+              승인 안내를 받은 뒤 입금해 주세요. 입금자명은 신청자 이름으로 해 주세요. 입금이 확인되면 확정됩니다.
+            </p>
+          </div>
+        )}
+
+        {/* 넣은 내용(접수 번호·일시 등) — 입금 안내 아래로 내렸다 */}
+        <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+          <dt className="text-[var(--color-public-muted)]">접수 번호</dt>
+          <dd className="font-bold tabular-nums text-[var(--color-public-ink)]">{receipt.number}</dd>
+          <dt className="text-[var(--color-public-muted)]">이용 일시</dt>
+          <dd className="font-bold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {formatRentalTime(receipt.startMinute, receipt.endMinute)}</dd>
+          <dt className="text-[var(--color-public-muted)]">인원</dt>
+          <dd className="text-[var(--color-public-ink)]">{receipt.headcount}명{receipt.useAircon ? " · 냉난방 사용" : ""}</dd>
+          <dt className="text-[var(--color-public-muted)]">이용료</dt>
+          <dd className="tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.usageFee)}{receipt.memberFree ? " (재원생 2시간 무료 적용)" : ""}</dd>
+          <dt className="text-[var(--color-public-muted)]">보증금</dt>
+          <dd className="tabular-nums text-[var(--color-public-ink)]">{receipt.deposit > 0 ? `${formatWon(receipt.deposit)} (사용 후 환불)` : "없음"}</dd>
+        </dl>
 
         {/* 단계 표시 — 지금 어디인지 */}
         <ol className={`mt-4 grid gap-1 text-center text-xs font-bold ${nothingToPay ? "grid-cols-3" : "grid-cols-4"}`}>
@@ -279,43 +343,6 @@ export default function RentalClient() {
             </li>
           ))}
         </ol>
-
-        <dl className="mt-4 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
-          <dt className="text-[var(--color-public-muted)]">접수 번호</dt>
-          <dd className="font-bold tabular-nums text-[var(--color-public-ink)]">{receipt.number}</dd>
-          <dt className="text-[var(--color-public-muted)]">이용 일시</dt>
-          <dd className="font-bold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {formatRentalTime(receipt.startMinute, receipt.endMinute)}</dd>
-          <dt className="text-[var(--color-public-muted)]">인원</dt>
-          <dd className="text-[var(--color-public-ink)]">{receipt.headcount}명{receipt.useAircon ? " · 냉난방 사용" : ""}</dd>
-          <dt className="text-[var(--color-public-muted)]">이용료</dt>
-          <dd className="tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.usageFee)}{receipt.memberFree ? " (재원생 2시간 무료 적용)" : ""}</dd>
-          <dt className="text-[var(--color-public-muted)]">보증금</dt>
-          <dd className="tabular-nums text-[var(--color-public-ink)]">{receipt.deposit > 0 ? `${formatWon(receipt.deposit)} (사용 후 환불)` : "없음"}</dd>
-        </dl>
-
-        {/* 입금 안내 — 이 화면에서만 계좌를 보여 준다. 입금할 돈이 없으면 계좌 대신 기다림 안내 */}
-        {nothingToPay ? (
-          <div className="mt-4 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
-            <p className="text-base font-black break-keep text-[var(--color-public-ink)]">입금할 금액이 없어요. 원장님 승인 문자를 기다려 주세요</p>
-          </div>
-        ) : (
-          <div className="mt-4 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
-            <p className="text-sm font-bold text-[var(--color-public-muted)]">입금할 금액</p>
-            <p className="text-2xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
-            <p className="mt-2 text-sm font-bold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
-            <p className="mt-1 text-xs break-keep text-[var(--color-public-muted)]">
-              승인 안내를 받은 뒤 입금해 주세요. 입금자명은 신청자 이름으로 해 주세요. 입금이 확인되면 확정됩니다.
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => copyText("account", receipt.bankCopyText)} className="public-btn-secondary w-full px-2 text-sm">
-                {copied === "account" ? "계좌를 복사했어요" : "계좌 복사"}
-              </button>
-              <button type="button" onClick={() => copyText("amount", String(receipt.totalAmount))} className="public-btn-secondary w-full px-2 text-sm">
-                {copied === "amount" ? "금액을 복사했어요" : "금액 복사"}
-              </button>
-            </div>
-          </div>
-        )}
 
         <ul className="mt-4 space-y-1 text-sm break-keep text-[var(--color-public-ink)]">
           <li>· 실내운동화를 꼭 챙겨 오세요.</li>
