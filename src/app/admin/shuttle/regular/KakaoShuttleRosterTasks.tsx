@@ -49,7 +49,10 @@ export default function KakaoShuttleRosterTasks({ tasks }: { tasks: KakaoShuttle
               {task.inRoster && <span className="rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">명단에 있음</span>}
               <span className="ml-auto flex gap-1">
                 {/* 명단 화면이 ?studentId= 를 받아 «신청 학생 선택해 명단 추가»를 띄운다(기존 기능) */}
-                <Link href={task.href} prefetch={false} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black">명단에 넣기</Link>
+                {/* 병합 후 학생을 못 찾으면 주소가 없다 — 엉뚱한(흡수된) 학생으로 명단에 넣지 않게 버튼을 숨기고 안내만 한다 */}
+                {task.href
+                  ? <Link href={task.href} prefetch={false} className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black">명단에 넣기</Link>
+                  : <span className="inline-flex min-h-11 items-center px-1 text-xs font-bold text-[var(--color-academy-muted)]">학생 확인 필요(카카오 접수함)</span>}
                 <button type="button" disabled={pending} onClick={() => complete(task)} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-black disabled:opacity-50">완료</button>
               </span>
             </li>

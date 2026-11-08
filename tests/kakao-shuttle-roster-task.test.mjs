@@ -39,3 +39,17 @@ test("할 일이 셔틀 명단 화면 맨 위와 카카오 접수함 패널에 �
 test("새 정규 셔틀 신청 알림은 그 달 셔틀 명단으로 바로 간다", () => {
   assert.match(flow, /state\.action === "START" \? \{ linkUrl: shuttleRosterTaskHref\(studentId, structured\) \}/);
 });
+
+test("병합으로 흡수된 접수 학생은 병합 후 학생 기준으로 명단을 판정·연결하고, 못 찾으면 «명단에 넣기»를 숨긴다", () => {
+  // 명단 대상 학생 = 살아 있는 접수 학생 또는 (흡수됐으면) 살아 있는 병합 후 학생
+  assert.match(query, /COALESCE\(s\.id, m\.id\) AS "rosterStudentId"/);
+  assert.match(query, /LEFT JOIN "Student" o ON o\.id=r\."studentId" AND o\."mergedIntoStudentId" IS NOT NULL/);
+  assert.match(query, /LEFT JOIN "Student" m ON m\.id=o\."mergedIntoStudentId" AND m\."mergedIntoStudentId" IS NULL/);
+  // 명단 존재 판정·주소 모두 병합 후 학생 id 로
+  assert.match(query, /x\."studentId"=t\."rosterStudentId"/);
+  assert.doesNotMatch(query, /x\."studentId"=r\."studentId"/);
+  assert.match(query, /href: r\.rosterStudentId \? shuttleRosterTaskHref\(String\(r\.rosterStudentId\), r\.structuredJson\) : null/);
+  // 주소가 없으면 버튼 대신 안내
+  assert.match(panel, /\{task\.href\s*\?\s*<Link href=\{task\.href\}/);
+  assert.match(panel, /학생 확인 필요/);
+});

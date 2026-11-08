@@ -426,3 +426,35 @@ test("셔틀 명단이 바뀌면 원본 버전이 바뀐다(저장 초안 재검
  db.state.shuttleStops.push({serviceMonth:"2026-11",studentId:"kid-2",studentName:"동생"});
  assert.notEqual((await readWorkbench(db.tx,"2026-11",true)).sourceVersion,before);
 });
+// ── 검수 권장 반영(2026-11-08): 저장값≠제안값 알림 · 셔틀비 미제안 검토 사유 · 확정 장부 학생은 장부 셔틀비만 ──
+test("저장 초안이 새 요금 기준 제안과 다르면 검토 사유에 알리고 저장값은 그대로 둔다",async()=>{
+ const db=pricingDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ const target=view.rows.find(r=>r.id==="kid-1:mon");
+ assert.equal(target.baseAmount,80000);assert.equal(target.discountAmount,8000);assert.equal(target.shuttleAmount,15000);
+ const save={action:"SAVE",month:"2026-11",sourceVersion:view.sourceVersion,requestId:"request-old-price",rows:[{id:target.id,expectedVersion:target.version,baseAmount:100000,discountAmount:8000,prorationAmount:0,carryAmount:0,shuttleAmount:15000,reason:"옛 요금으로 저장"}]};
+ ({view}=await mutateWorkbench(db,save,"admin",true));
+ let row=view.rows.find(r=>r.id==="kid-1:mon");
+ assert.equal(row.baseAmount,100000); // 저장값 유지
+ const note="수강료: 새 요금 기준 제안 80,000원과 다릅니다(저장값 100,000원)";
+ assert.ok(!row.basis.some(b=>/새 요금 기준/.test(b))); // 근거에 영구 경고로 남기지 않는다
+ // 원본이 바뀌어(옛 기준 초안) 재검토 상태가 되면 검토 사유에 보인다
+ db.state.shuttleStops.push({serviceMonth:"2026-11",studentId:"someone-else",studentName:"다른 아이"});
+ row=(await readWorkbench(db.tx,"2026-11",true)).rows.find(r=>r.id==="kid-1:mon");
+ assert.ok(row.reviewReasons.includes(note));assert.equal(row.baseAmount,100000);assert.equal(row.status,"REVIEW");
+ assert.ok(!row.reviewReasons.some(r=>/^(할인|셔틀비): 새 요금/.test(r))); // 같은 칸은 알리지 않는다
+});
+test("기존 청구 때문에 셔틀비를 제안하지 않으면 검토 사유에도 남긴다",async()=>{
+ const db=pricingDatabase();db.state.payments.push({id:"rallyz",studentId:"kid-1",classId:"mon",amount:95000,status:"PAID",type:"MONTHLY"});
+ const row=(await readWorkbench(db.tx,"2026-11",true)).rows.find(r=>r.id==="kid-1:wed");
+ assert.equal(row.shuttleAmount,0);
+ assert.ok(row.reviewReasons.some(r=>/제안하지 않음.*셔틀비가 빠지거나 두 번/.test(r)));
+});
+test("확정 장부가 있는 학생은 장부 뒤 추가된 반이 정렬상 앞이어도 셔틀비를 새로 제안하지 않고 장부 셔틀비를 쓴다",async()=>{
+ const db=pricingDatabase();
+ // 장부에는 수요일 반만 있다(월요일 반은 장부 확정 뒤 추가). 정렬상 kid-1:mon 이 먼저 처리된다.
+ db.state.registers.push({studentId:"kid-1",month:"2026-11",status:"CONFIRMED",version:1,payload:{studentId:"kid-1",month:"2026-11",classes:[{classId:"wed",status:"ACTIVE",periodStart:"2026-11-01",periodEnd:"2026-11-30",baseAmount:80000,discountAmount:8000,carryAmount:0,prorationAmount:0,basis:"확정"}],shuttleAmount:20000,shuttleBasis:"장부 셔틀",reason:"확인"}});
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").shuttleAmount,0);
+ assert.equal(row("kid-1:wed").shuttleAmount,20000);
+ assert.ok(!row("kid-1:mon").basis.some(b=>/셔틀 명단 있음/.test(b))); // 새 셔틀비 제안·미제안 문구 없음
+});
