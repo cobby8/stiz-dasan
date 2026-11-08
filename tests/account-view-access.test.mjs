@@ -39,7 +39,7 @@ for (const role of ['ADMIN', 'VICE_ADMIN', 'INSTRUCTOR']) {
     const { access, queries } = fixture({ role, account: { role, hasOwnChildren: true, username: null, phoneVerifiedAt: null } });
     const result = await access.getAccountViewAccess();
     assert.equal(result.role, role);
-    assert.deepEqual(result.views.map(x => x.key), role === 'INSTRUCTOR' ? ['teacher', 'parent'] : ['admin', 'teacher', 'parent']);
+    assert.deepEqual(result.views.map(x => x.key), role === 'INSTRUCTOR' ? ['teacher', 'parent'] : ['admin', 'teacher', 'driver', 'parent']);
     assert.deepEqual(queries[0].args, ['auth-owner']);
     assert.match(queries[0].query, /"authUserId" = \$1 OR \(u\."authUserId" IS NULL AND u\.id = \$1\)/);
     assert.doesNotMatch(queries[0].query, /email|UPDATE|INSERT|DELETE/i);
@@ -52,7 +52,7 @@ for (const role of ['ADMIN', 'VICE_ADMIN', 'INSTRUCTOR']) {
 }
 test('이메일로 직원 계정만 찾았어도 직접 Auth 연결이 없으면 자녀 보기는 안 열림', async () => {
   const { access } = fixture({ role: 'ADMIN', account: null });
-  assert.deepEqual((await access.getAccountViewAccess()).views.map(x => x.key), ['admin', 'teacher']);
+  assert.deepEqual((await access.getAccountViewAccess()).views.map(x => x.key), ['admin', 'teacher', 'driver']);
 });
 for (const [description, username, phoneVerifiedAt, allowed] of [
   ['휴대폰 확인', 'parent-user', new Date(), true],
@@ -79,8 +79,8 @@ test('승인된 추가 역할만 화면을 열고, 신청 중인 역할은 열�
   assert.deepEqual(views.resolveAccountViews('PARENT', true, [{ role: 'INSTRUCTOR', status: 'PENDING' }]).map(x => x.key), ['parent']);
   // 추가 역할로는 관리자 화면이 열리지 않는다.
   assert.equal(views.resolveAccountViews('PARENT', true, [{ role: 'ADMIN', status: 'ACTIVE' }]).some(x => x.key === 'admin'), false);
-  // 관리자는 셔틀을 관리자 화면에서 다루므로 기사님 화면을 따로 띄우지 않는다.
-  assert.deepEqual(views.resolveAccountViews('ADMIN', false, [{ role: 'DRIVER', status: 'ACTIVE' }]).map(x => x.key), ['admin', 'teacher']);
+  // 관리자도 기사님 화면(운행표 확인)을 메뉴에서 연다(2026-11-08 원장 결정).
+  assert.deepEqual(views.resolveAccountViews('ADMIN', false, [{ role: 'DRIVER', status: 'ACTIVE' }]).map(x => x.key), ['admin', 'teacher', 'driver']);
 });
 test('로그아웃·조회 실패는 권한을 추정하지 않고 메뉴 닫음', async () => {
   for (const option of [{ signedOut: true }, { dbFailure: true }]) {
