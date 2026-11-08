@@ -3,6 +3,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 import { getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { getAcademySettings } from "@/lib/queries";
+import { academyBankAccount } from "@/lib/payments/academy-bank-account";
 import PaymentRequestClient, { type PaymentContact } from "./PaymentRequestClient";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export default async function ParentPaymentsPage() {
   const contact: PaymentContact = {
     phone: phone && phone !== PLACEHOLDER_PHONE ? phone : null,
     kakaoChannelUrl: typeof settings?.kakaoChannelUrl === "string" && settings.kakaoChannelUrl.trim() ? settings.kakaoChannelUrl.trim() : null,
+    // 입금 계좌 — 로그인한 학부모 화면에만 값으로 넘긴다(서버 전용 모듈, 원장 확인 2026-11-09)
+    bankAccount: academyBankAccount(),
   };
 
   return <PaymentRequestClient rows={rows} payReady={payReady} contact={contact} />;

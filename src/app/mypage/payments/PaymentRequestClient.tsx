@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /** 온라인 결제가 안 될 때 안내할 학원 연락처(학원 설정값). 없으면 null */
-export type PaymentContact = { phone: string | null; kakaoChannelUrl: string | null };
+export type PaymentContact = { phone: string | null; kakaoChannelUrl: string | null; bankAccount?: string | null };
 
 export default function PaymentRequestClient({
   rows,
@@ -36,6 +36,7 @@ export default function PaymentRequestClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null); // 계좌번호를 복사한 청구 행 id
   const [method, setMethod] = useState<PaymentMethodKind>("TRANSFER");
   const [paidOn, setPaidOn] = useState("");
   const [depositorName, setDepositorName] = useState("");
@@ -226,8 +227,27 @@ export default function PaymentRequestClient({
                       {!row.canCheckout ? "온라인 결제는 대표 보호자 계정에서 할 수 있어요" : "지금은 온라인 결제를 쓸 수 없어요"}
                     </p>
                     <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-                      학원 계좌로 입금하신 뒤 아래 «입금했어요 알리기»를 눌러 주세요. 입금 계좌는 학원에 문의해 주세요.
+                      {contact.bankAccount
+                        ? "아래 학원 계좌로 입금하신 뒤 «입금했어요 알리기»를 눌러 주세요."
+                        : "학원 계좌로 입금하신 뒤 아래 «입금했어요 알리기»를 눌러 주세요. 입금 계좌는 학원에 문의해 주세요."}
                     </p>
+                    {contact.bankAccount && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 break-all font-bold tabular-nums">{contact.bankAccount}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // 계좌번호만(숫자) 복사 — 은행 앱 붙여넣기용. 복사가 막힌 기기는 화면의 글자를 길게 눌러 복사.
+                            const digits = (contact.bankAccount ?? "").replace(/[^0-9]/g, "");
+                            navigator.clipboard?.writeText(digits).then(() => setCopied(row.paymentId)).catch(() => undefined);
+                          }}
+                          className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-bold"
+                        >
+                          <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">content_copy</span>
+                          {copied === row.paymentId ? "복사됨" : "계좌번호 복사"}
+                        </button>
+                      </div>
+                    )}
                     {(contact.phone || contact.kakaoChannelUrl) && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {contact.phone && (
