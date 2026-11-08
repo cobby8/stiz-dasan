@@ -86,7 +86,7 @@ test("[요금] 미리보기 = 청구 제안값(대표 5가지)", () => {
   const cases = [
     ["주2회 한 프로그램 + 셔틀", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Wed")], true, { tuitionTotal: 160000, shuttleFee: 15000 }],
     ["반 4개(주4회 칸 없음 → 청구와 같은 대체 계산)", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Tue"), cls("c", "hobby", "Wed"), cls("d", "hobby", "Thu")], true, { tuitionTotal: 400000, shuttleFee: 20000 }],
-    ["여러 프로그램 + 셔틀(직접 입력 셔틀비가 있으면 그 값)", [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true, { tuitionTotal: 210000, shuttleFee: 25000 }],
+    ["여러 프로그램 + 셔틀(직접 입력 셔틀비가 있으면 그 값)", [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true, { tuitionTotal: 170000, shuttleFee: 25000 }], // 5a2ec1d9 «여러 프로그램 합산» 규칙 반영
     ["주말 판정은 반 요일 기준(주말 반은 셔틀 횟수에서 빠짐)", [cls("a", "hobby", "Tue"), cls("b", "weekend", "Sat")], true, { tuitionTotal: 220000, shuttleFee: 10000 }],
     ["일8 대표팀이면 셔틀비 전체 면제", [cls("a", "hobby", "Mon"), cls("b", "elite", "Sun", "Sun-8")], true, { tuitionTotal: 250000, shuttleFee: 0 }],
   ];
