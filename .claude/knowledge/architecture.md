@@ -163,6 +163,11 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: `gym-rental-rules.ts` 의 `RENTAL_APPLICANT_TEMPLATES`(#{변수} 틀) + `buildRentalApplicantMessage` 가 본문과 variables 를 같은 맵에서 만든다(알림톡은 등록 문구와 한 글자라도 다르면 실패). 발송은 `sendTrackedSms({ alimtalk })` → notification.ts 가 `sendMessageDetailed` 에 그대로 전달(장부 유지, 다른 호출은 alimtalk 없음 = 기존 문자). 템플릿 id 는 env `RENTAL_ALIMTALK_*`, 실제 알림톡 시도는 /admin/sms 규칙 채널이 알림톡 + 외부 알림톡 채널 켜짐 + SOLAPI_KAKAO_PF_ID 일 때만. 심사 문서 `docs/kakao-alimtalk-rental-templates.md` 는 테스트가 틀과 글자 대조. 재원생 무료 = 로그인한 PARENT 계정(getVerifiedParentState 통과)의 «내 자녀»(`childAccessSql("s","$1")` — 가족 공유·본인 연결 포함) 중 재원(병합 제외+시작된 ACTIVE 수강+끝난 반 제외) 학생만(`listRentalMemberStudents`). 이름·번호 대조는 쓰지 않는다(맞히기 공격). 공개 /rental 은 정적 유지, 로그인 여부는 액션 `getRentalMemberContext` 로 묻는다.
+### [2026-11-09] 학부모 알림톡 = 공용 금고 parent-alimtalk-templates.ts (대관 패턴 일반화)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 알림톡으로 바꾼 학부모 트리거는 `src/lib/messaging/parent-alimtalk-templates.ts` 의 `PARENT_ALIMTALK_TEMPLATES`(#{한글변수} 틀 + 호출부 키 연결 + 기본값)가 정본이다. 문자 본문 = 알림톡 본문. `notification.ts resolveParentMessage` 가 `sendParentSms`·`sendParentSmsWithResult`(체험·셔틀)와 `seasonal/notifications.ts`(특강, `dispatchReservedSmsDelivery({alimtalk})`)에서 금고 틀을 쓰고, 빈 변수면 옛 DB 문구로 «문자만» 보낸다. DB `SmsTemplate` 은 isActive 스위치 + 대체 문구 + 화면 표시용(/admin/sms 문구 화면은 금고 트리거 본문 수정 잠금). 템플릿 id = env `ALIMTALK_TPL_*`(alimtalk-config.ts). 가드 `tests/parent-alimtalk-templates.test.mjs`: 코드의 `*_PARENT`/`*_APPLICANT` 문자열은 금고 또는 `SMS_ONLY_PARENT_TRIGGERS` 에만 — 새 학부모 문자를 만들면 둘 중 하나에 넣어야 테스트가 통과한다. 머리말 상수 `PARENT_MESSAGE_PREFIX`(«[스티즈농구교실]»). 심사 문서 `docs/kakao-alimtalk-parent-templates.md` 는 테스트가 글자 대조.
+- **참조횟수**: 0
 ### [2026-11-08] 정규 수업 기록 «같은 반·같은 날 = 하나» = regularSession.ts 한 곳 · 보강 온 아이 출석 = makeup-attendance.ts
 - **분류**: architecture
 - **발견자**: developer
