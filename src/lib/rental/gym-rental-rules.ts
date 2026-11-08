@@ -25,6 +25,9 @@ const RENTAL_FEE_HALF = {
 
 export const RENTAL_FEE = {
   ...RENTAL_FEE_HALF,
+  // 재원생 무료: 시간 요금 중 앞 2시간분(40,000 + 30,000 = 70,000원)까지 무료(2026-11-08 원장 확정)
+  memberFreeMinutes: 120,
+  memberFreeCap: RENTAL_FEE_HALF.firstHour + RENTAL_FEE_HALF.extraHalfHour * 2,
   extraHour: RENTAL_FEE_HALF.extraHalfHour * 2, // 시간당 30,000원(안내용)
   airconPerHour: RENTAL_FEE_HALF.airconPerHalfHour * 2, // 시간당 5,000원(안내용)
   extraPersonPerHour: RENTAL_FEE_HALF.extraPersonPerHalfHour * 2, // 1인·시간당 3,000원(안내용)
@@ -107,19 +110,35 @@ export function isRentalAction(value: unknown): value is RentalAction {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(RENTAL_TRANSITIONS, value);
 }
 
-/** 지금 상태에서 누를 수 있는 버튼 목록 */
-export function allowedRentalActions(status: string): RentalAction[] {
+/**
+ * 지금 상태에서 누를 수 있는 버튼 목록.
+ * row 를 넘기면 보증금 0원(재원생 무료) 건은 «보증금 환불» 버튼을 뺀다 — 사용 완료가 마지막 단계다.
+ */
+export function allowedRentalActions(status: string, row?: { deposit?: number | null }): RentalAction[] {
+  const noDeposit = row !== undefined && Number(row.deposit ?? 0) === 0;
   return (Object.keys(RENTAL_TRANSITIONS) as RentalAction[]).filter((action) =>
-    (RENTAL_TRANSITIONS[action].from as readonly string[]).includes(status),
+    (RENTAL_TRANSITIONS[action].from as readonly string[]).includes(status) && !(action === "refund" && noDeposit),
   );
 }
 
+/**
+ * 버튼을 눌렀을 때 실제로 갈 상태. 승인인데 입금할 금액이 0원(재원생 2시간 이내 무료)이면
+ * 입금 대기 없이 바로 «확정(PAID)» 으로 간다. 화면 미리보기와 서버가 같은 함수를 본다.
+ */
+export function rentalTransitionTarget(action: RentalAction, row: { totalAmount: number }): RentalStatus {
+  if (action === "approve" && Number(row.totalAmount) === 0) return "PAID";
+  return RENTAL_TRANSITIONS[action].to;
+}
+
 // ── 요금 계산 ─────────────────────────────────────────────────────────────
-export type RentalFeeInput = { durationMinutes: number; headcount: number; useAircon: boolean };
+/** memberFree = 재원생 무료(서버가 로그인 학부모 계정의 연결 재원생인지 확인한 뒤에만 true 로 계산해 저장) */
+export type RentalFeeInput = { durationMinutes: number; headcount: number; useAircon: boolean; memberFree?: boolean };
 export type RentalFeeBreakdown = {
   durationMinutes: number;
   headcount: number;
-  baseFee: number; // 시간 요금
+  baseFee: number; // 시간 요금(무료 빼기 전)
+  freeDiscount: number; // 재원생 무료로 빠진 시간 요금(일반 신청은 0)
+  memberFree: boolean;
   airconFee: number; // 냉난방
   extraPeopleFee: number; // 인원 추가
   extraPeople: number;
@@ -140,6 +159,7 @@ export function isValidRentalDuration(minutes: number): boolean {
  * 대관 요금(30분 단위). 서버는 저장 직전에 **이 함수로 다시** 계산한다(화면 금액을 믿지 않는다).
  * 예) 2시간·12명·냉난방 = 40,000+15,000×2 + 2,500×4 + 2명×1,500×4 = 92,000 + 보증금 20,000 = 112,000
  * 예) 1시간 30분·10명 = 40,000+15,000 = 55,000
+ * 예) 재원생 3시간·12명·냉난방 = (100,000-70,000) + 15,000 + 18,000 = 63,000, 보증금 0
  */
 export function calculateRentalFee(input: RentalFeeInput): RentalFeeBreakdown {
   const durationMinutes = Number(input.durationMinutes);
@@ -155,17 +175,23 @@ export function calculateRentalFee(input: RentalFeeInput): RentalFeeBreakdown {
   const airconFee = input.useAircon ? RENTAL_FEE.airconPerHalfHour * halves : 0;
   const extraPeople = Math.max(0, headcount - RENTAL_FEE.baseHeadcount);
   const extraPeopleFee = extraPeople * RENTAL_FEE.extraPersonPerHalfHour * halves;
-  const usageFee = baseFee + airconFee + extraPeopleFee;
+  const memberFree = input.memberFree === true;
+  // 재원생: 시간 요금 중 2시간분(70,000원)까지만 빼 준다. 냉난방·인원 추가는 그대로 받고, 보증금은 없다.
+  const freeDiscount = memberFree ? Math.min(baseFee, RENTAL_FEE.memberFreeCap) : 0;
+  const usageFee = baseFee - freeDiscount + airconFee + extraPeopleFee;
+  const deposit = memberFree ? 0 : RENTAL_FEE.deposit;
   return {
     durationMinutes,
     headcount,
     baseFee,
+    freeDiscount,
+    memberFree,
     airconFee,
     extraPeopleFee,
     extraPeople,
     usageFee,
-    deposit: RENTAL_FEE.deposit,
-    total: usageFee + RENTAL_FEE.deposit,
+    deposit,
+    total: usageFee + deposit,
   };
 }
 
@@ -269,6 +295,7 @@ function maxMinutesFrom(blocks: RentalBlock[], start: number, closeMinute: numbe
  * 이미 지난 시각도 막는다. 시작 후보는 «영업 시작 ~ 22:00 - 1시간» 범위다.
  * - 정규 수업은 요일만 본다(dayOfWeek 가 Mon~Sun 인 반만 — Archived·Seasonal 은 제외).
  * - 연간일정 휴무일에도 정규 수업 시간은 막아 둔다(보수적 — 원장 판단으로 바꿀 수 있게 보고).
+ * - 일요일은 정규 수업·특강 회차를 무시하고 승인된 대관만 막는다(스포라운드 수업 — 원장 2026-11-08).
  */
 export function buildRentalDay(input: {
   date: string;
@@ -278,15 +305,19 @@ export function buildRentalDay(input: {
   nowMs: number;
 }): RentalDay | null {
   if (!isKstYmd(input.date)) return null;
-  const dowCode = DOW_CODE[kstDow(input.date)];
+  const dow = kstDow(input.date);
+  const dowCode = DOW_CODE[dow];
+  // 일요일은 스포라운드 수업이라 학원 정규 수업·특강 회차를 막지 않는다(2026-11-08 원장 지시).
+  // 승인된 대관(BOOKED)만 막는다. 서버 검증도 이 함수를 쓰므로 함께 바뀐다.
+  const ignoreSchedule = dow === 0;
   const valid = (r: RentalBusyRange) => Number.isFinite(r.startMinute) && Number.isFinite(r.endMinute) && r.endMinute > r.startMinute;
-  const classBlocks: RentalBlock[] = input.classes
+  const classBlocks: RentalBlock[] = (ignoreSchedule ? [] : input.classes)
     .filter((row) => row.dayOfWeek === dowCode)
     .map((row) => ({ startMinute: hmToMinutes(row.startTime), endMinute: hmToMinutes(row.endTime), reason: "CLASS" as const }))
     .filter(valid);
   const bookedBlocks: RentalBlock[] = (input.bookedBusy ?? []).filter(valid).map((r) => ({ ...r, reason: "BOOKED" as const }));
   // busy 는 특강 회차 — 예약 목록과 똑같은 구간이면 예약으로 본다(사유 표시만 다르다)
-  const otherBlocks: RentalBlock[] = input.busy
+  const otherBlocks: RentalBlock[] = (ignoreSchedule ? [] : input.busy)
     .filter(valid)
     .filter((r) => !bookedBlocks.some((b) => b.startMinute === r.startMinute && b.endMinute === r.endMinute))
     .map((r) => ({ ...r, reason: "CLASS" as const }));
@@ -386,9 +417,53 @@ export function cleanRentalText(raw: unknown, maxLength: number): string {
     .slice(0, maxLength);
 }
 
+// ── 환불 계좌 입력 ─────────────────────────────────────────────
+/** 보증금 환불 계좌 은행 목록(신청서 선택지 = 서버 허용 목록) */
+export const RENTAL_REFUND_BANKS = [
+  "KB국민은행", "신한은행", "우리은행", "하나은행", "NH농협은행", "지역농축협", "IBK기업은행",
+  "카카오뱅크", "토스뱅크", "케이뱅크", "SC제일은행", "한국씨티은행", "새마을금고", "신협", "우체국",
+  "수협은행", "KDB산업은행", "iM뱅크(대구)", "부산은행", "경남은행", "광주은행", "전북은행", "제주은행",
+] as const;
+
+/** 계좌번호 → 숫자만(10~16자리). 틀리면 "" */
+export function normalizeRefundAccount(raw: unknown): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  return /^\d{10,16}$/.test(digits) ? digits : "";
+}
+
+export type RentalRefundInput = { refundBank: unknown; refundAccount: unknown; refundHolder: unknown };
+export type RentalRefundCheck =
+  | { ok: true; refundBank: string; refundAccount: string; refundHolder: string }
+  | { ok: false; message: string };
+
+/** 환불 계좌 3칸 검사 — 화면과 서버가 같은 함수를 쓴다(보증금이 있는 신청만 부른다) */
+export function checkRentalRefundAccount(input: RentalRefundInput): RentalRefundCheck {
+  const refundBank = String(input.refundBank ?? "");
+  if (!(RENTAL_REFUND_BANKS as readonly string[]).includes(refundBank)) return { ok: false, message: "보증금을 돌려받을 은행을 골라 주세요." };
+  const refundAccount = normalizeRefundAccount(input.refundAccount);
+  if (!refundAccount) return { ok: false, message: "환불 계좌번호를 숫자 10~16자리로 입력해 주세요." };
+  const refundHolder = cleanRentalText(input.refundHolder, 20).replace(/\s+/g, " ");
+  if (!refundHolder) return { ok: false, message: "환불 계좌 예금주를 입력해 주세요." };
+  return { ok: true, refundBank, refundAccount, refundHolder };
+}
+
+
 // ── 계좌 ─────────────────────────────────────────────────────────────────
 // 🚫 입금 계좌 값은 이 파일에 두지 않는다. 이 파일은 공개 신청 화면(RentalClient)이 import 해서
 //    손님 브라우저 번들에 그대로 실린다. 계좌는 서버 전용 gym-rental-notify.ts 에만 있다(테스트가 번들 경로를 검사).
+
+/**
+ * (계좌 값은 서버 전용 모듈에 있고, 이 함수는 받은 글자만 다듬는다)
+ * 간편송금 붙여넣기용 «은행명 계좌번호» — 예금주(괄호·«예금주 ○○»)는 뺀다.
+ * 예) "OO은행 1234567890 (예금주 홍길동)" → "OO은행 1234567890"
+ */
+export function rentalBankCopyText(account: string): string {
+  return String(account ?? "")
+    .replace(/\([^)]*\)/g, " ") // 괄호 안(예금주 등) 제거
+    .replace(/예금주\s*[:：]?\s*\S+/g, " ") // 괄호 없이 적힌 «예금주 ○○» 제거
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 // ── 원장 알림 묶기 ───────────────────────────────────────────────────────
 /** 원장 알림 문자는 10분 창마다 한 통 — 같은 창에 들어온 신청은 문자 한 통으로 묶는다(슬랙은 건별) */
@@ -422,6 +497,8 @@ export type RentalMessageInput = {
   deposit: number;
   totalAmount: number;
   purpose?: string | null;
+  memberFree?: boolean | null; // 재원생 무료 대관
+  rejectReason?: string | null; // 거절 사유
 };
 
 function dateText(date: string): string {
@@ -447,7 +524,7 @@ export function buildRentalAdminAlert(input: RentalMessageInput, pendingCount = 
     pendingCount > 1 ? `[STIZ 체육관 대관 신청 · 승인 대기 ${pendingCount}건]` : "[STIZ 체육관 대관 신청]",
     `${input.applicantName} ${formatRentalPhone(input.applicantPhone)}`,
     usageLine(input),
-    `이용료 ${formatWon(input.usageFee)} + 보증금 ${formatWon(input.deposit)} = ${formatWon(input.totalAmount)}`,
+    `${input.memberFree ? "재원생 무료 · " : ""}이용료 ${formatWon(input.usageFee)} + 보증금 ${formatWon(input.deposit)} = ${formatWon(input.totalAmount)}`,
     input.purpose ? `목적: ${input.purpose.slice(0, 60)}` : "",
     "승인·거절: 관리자 > 체육관 대관",
   ].filter(Boolean).join("\n");
@@ -458,7 +535,7 @@ const RENTAL_NOTICE_LINES = [
   "· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.",
 ];
 
-/** 신청자 — 접수 안내(스위치로 꺼 둠) */
+/** 신청자 — 접수 안내(스위치로 꺼 둠 · 알림톡 템플릿 없음) */
 export function buildRentalReceivedApplicantSms(input: RentalMessageInput): string {
   return [
     "[스티즈농구교실] 체육관 대관 신청이 접수되었습니다.",
@@ -468,25 +545,151 @@ export function buildRentalReceivedApplicantSms(input: RentalMessageInput): stri
   ].join("\n");
 }
 
-/** 신청자 — 승인 + 입금 계좌(스위치로 꺼 둠) */
-export function buildRentalApprovedApplicantSms(input: RentalMessageInput, bankAccount: string): string {
-  return [
-    "[스티즈농구교실] 체육관 대관이 승인되었습니다.",
-    usageLine(input),
-    `입금 금액 ${formatWon(input.totalAmount)}(이용료 ${formatWon(input.usageFee)} + 보증금 ${formatWon(input.deposit)})`,
-    `입금 계좌: ${bankAccount}`,
-    `입금자명은 신청자 이름(${input.applicantName})으로 해 주세요. 입금이 확인되면 대관이 확정됩니다.`,
-    "보증금은 사용 후 환불되며, 정리정돈·냉난방·인원 미준수 시 차감될 수 있습니다.",
-  ].join("\n");
-}
+// ── 신청자 문자 = 알림톡 틀 하나 ─────────────────────────────────────────
+// 왜 «틀 + 변수»인가: 카카오 알림톡은 심사에 등록한 문구와 글자가 한 자라도 다르면 발송이 실패한다.
+// 그래서 문자 본문도 이 틀에 변수를 넣어 만든다 → 문자 = 알림톡 본문이 늘 같다(테스트로 확인).
+// 틀 문구는 원장 승인본 그대로다(2026-11-08). 고치면 카카오 재심사가 필요하다 — docs/kakao-alimtalk-rental-templates.md
+const RULE_LINES = [
+  "[이용 수칙]",
+  "· 실내운동화 필수",
+  "· 신청한 시간·인원 지키기",
+  "· 사용 후 정리정돈, 냉난방 끄고 퇴실",
+  "· 주차는 인근 주민센터 주차장 이용",
+];
+const DEPOSIT_RULE_LINE = "· 수칙을 지키지 않으면 보증금이 차감될 수 있어요";
+const PAY_GUIDE_LINE = "입금자명은 신청자 이름으로 해 주세요. 입금 확인 후 확정 문자를 드려요.";
 
-/** 신청자 — 입금 확인 = 확정(스위치로 꺼 둠) */
-export function buildRentalConfirmedApplicantSms(input: RentalMessageInput): string {
-  return [
+export const RENTAL_APPLICANT_TEMPLATES = {
+  /** 승인(일반) — 이용료 + 보증금 입금 안내 */
+  approved: [
+    "[스티즈농구교실] 체육관 대관이 승인되었습니다.",
+    "#{이용일} #{시간} · #{인원}명",
+    "입금 #{총액}(이용료 #{이용료} + 보증금 #{보증금})",
+    "#{계좌}",
+    PAY_GUIDE_LINE,
+    ...RULE_LINES,
+    DEPOSIT_RULE_LINE,
+  ].join("\n"),
+  /** 승인(재원생 · 입금 0원) — 바로 확정 */
+  approvedMemberFree: [
+    "[스티즈농구교실] 재원생 무료 체육관 대관이 확정되었습니다.",
+    "#{이용일} #{시간} · #{인원}명",
+    "이용료 무료(재원생 2시간 무료)",
+    ...RULE_LINES,
+  ].join("\n"),
+  /** 승인(재원생 · 2시간 초과·냉난방·인원 추가로 입금할 금액 있음) — 보증금 없음 */
+  approvedMemberPay: [
+    "[스티즈농구교실] 재원생 체육관 대관이 승인되었습니다.",
+    "#{이용일} #{시간} · #{인원}명",
+    "입금 #{총액}(#{요금내역}, 보증금 없음)",
+    "#{계좌}",
+    PAY_GUIDE_LINE,
+    ...RULE_LINES,
+  ].join("\n"),
+  /** 거절 */
+  rejected: [
+    "[스티즈농구교실] 죄송합니다. 신청하신 체육관 대관이 어렵습니다.",
+    "#{이용일} #{시간}",
+    "사유: #{사유}",
+    "다른 시간으로 다시 신청해 주세요. www.stiz-dasan.kr/rental",
+  ].join("\n"),
+  /** 확정(입금 확인) — 기존 문구 유지 */
+  confirmed: [
     "[스티즈농구교실] 체육관 대관이 확정되었습니다.",
-    usageLine(input),
+    "#{이용일} #{시간} · #{이용인원}",
     "장소: 스티즈농구교실 다산2호점(다산동 6158-4, 1층)",
     ...RENTAL_NOTICE_LINES,
     "사용 후 정리정돈 확인이 끝나면 보증금을 환불해 드립니다.",
-  ].join("\n");
+  ].join("\n"),
+  /** 확정(입금 확인) · 보증금 0원(재원생) — «보증금 환불» 문장 제외 */
+  confirmedNoDeposit: [
+    "[스티즈농구교실] 체육관 대관이 확정되었습니다.",
+    "#{이용일} #{시간} · #{이용인원}",
+    "장소: 스티즈농구교실 다산2호점(다산동 6158-4, 1층)",
+    ...RENTAL_NOTICE_LINES,
+  ].join("\n"),
+} as const;
+export type RentalApplicantTemplateKey = keyof typeof RENTAL_APPLICANT_TEMPLATES;
+
+/** 틀의 #{변수} 를 값으로 바꾼다. 값이 없는 변수가 남으면 오류(빈칸 문자 방지) */
+export function fillRentalTemplate(template: string, variables: Record<string, string>): string {
+  return template.replace(/#\{([^}]+)\}/g, (_, key: string) => {
+    const value = variables[`#{${key}}`];
+    if (value === undefined || value === "") throw new Error(`대관 문자 변수 ${key} 값이 없습니다.`);
+    return value;
+  });
 }
+
+/** 재원생 유료분 요약 — «2시간 초과 30,000원 + 냉난방 15,000원 + 인원 추가 18,000원» */
+export function rentalMemberPayItems(input: RentalMessageInput): string {
+  const { startMinute, endMinute } = rentalMinutesOf(input);
+  let fee: RentalFeeBreakdown | null = null;
+  try {
+    fee = calculateRentalFee({ durationMinutes: endMinute - startMinute, headcount: input.headcount, useAircon: input.useAircon, memberFree: true });
+  } catch {
+    fee = null;
+  }
+  if (!fee) return `이용료 ${formatWon(input.usageFee)}`;
+  const items = [
+    fee.baseFee - fee.freeDiscount > 0 ? `2시간 초과 ${formatWon(fee.baseFee - fee.freeDiscount)}` : "",
+    fee.airconFee > 0 ? `냉난방 ${formatWon(fee.airconFee)}` : "",
+    fee.extraPeopleFee > 0 ? `인원 추가 ${formatWon(fee.extraPeopleFee)}` : "",
+  ].filter(Boolean);
+  return items.length > 0 ? items.join(" + ") : `이용료 ${formatWon(input.usageFee)}`;
+}
+
+export type RentalApplicantKind = "approved" | "rejected" | "confirmed";
+export type RentalApplicantMessage = { templateKey: RentalApplicantTemplateKey; body: string; variables: Record<string, string> };
+
+/**
+ * 신청자 문자 한 통 — 어떤 틀을 쓸지 고르고, 변수 맵(알림톡 variables)과 문자 본문을 **같은 맵**에서 만든다.
+ * 승인: 재원생 0원 → approvedMemberFree / 재원생 유료 → approvedMemberPay / 일반 → approved
+ * 확정: 보증금 0원 → confirmedNoDeposit / 그 외 → confirmed
+ */
+export function buildRentalApplicantMessage(
+  kind: RentalApplicantKind,
+  input: RentalMessageInput,
+  bankAccount: string,
+): RentalApplicantMessage {
+  const member = input.memberFree === true;
+  const templateKey: RentalApplicantTemplateKey = kind === "approved"
+    ? (member ? (Number(input.totalAmount) === 0 ? "approvedMemberFree" : "approvedMemberPay") : "approved")
+    : kind === "rejected"
+      ? "rejected"
+      : Number(input.deposit) === 0 ? "confirmedNoDeposit" : "confirmed";
+  const all: Record<string, string> = {
+    "#{이용일}": dateText(input.rentalDate),
+    "#{시간}": rentalTimeText(input),
+    "#{인원}": String(input.headcount),
+    "#{이용인원}": `${input.headcount}명${input.useAircon ? " · 냉난방" : ""}`,
+    "#{총액}": formatWon(input.totalAmount),
+    "#{이용료}": formatWon(input.usageFee),
+    "#{보증금}": formatWon(input.deposit),
+    "#{계좌}": bankAccount,
+    "#{요금내역}": rentalMemberPayItems(input),
+    "#{사유}": cleanRentalText(input.rejectReason, 100) || "학원 일정",
+  };
+  const template = RENTAL_APPLICANT_TEMPLATES[templateKey];
+  // 알림톡에는 그 틀에 실제로 쓰인 변수만 넘긴다(등록 템플릿과 변수 목록이 같아야 한다)
+  const used = [...new Set(template.match(/#\{[^}]+\}/g) ?? [])];
+  const variables = Object.fromEntries(used.map((key) => [key, all[key]]));
+  return { templateKey, body: fillRentalTemplate(template, variables), variables };
+}
+
+/** 신청자 — 승인 + 입금 계좌 (옛 이름 유지: 일반·재원생 틀을 자동으로 고른다) */
+export function buildRentalApprovedApplicantSms(input: RentalMessageInput, bankAccount: string): string {
+  return buildRentalApplicantMessage("approved", input, bankAccount).body;
+}
+
+/** 신청자 — 입금 확인 = 확정 */
+export function buildRentalConfirmedApplicantSms(input: RentalMessageInput): string {
+  return buildRentalApplicantMessage("confirmed", input, "-").body;
+}
+
+/** 신청자 — 거절(사유 포함) */
+export function buildRentalRejectedApplicantSms(input: RentalMessageInput): string {
+  return buildRentalApplicantMessage("rejected", input, "-").body;
+}
+
+/** 거절 사유 빠른 선택(관리자 확인창). «직접 입력»은 화면에서 칸을 연다. */
+export const RENTAL_REJECT_REASONS = ["그 시간에 학원 일정이 있어요", "신청 인원이 너무 많아요"] as const;

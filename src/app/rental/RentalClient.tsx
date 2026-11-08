@@ -4,6 +4,10 @@
  * 체육관 대관 신청 폼(공개).
  * 요금은 화면에서 실시간으로 보여 주지만, 저장 금액은 서버가 같은 함수(calculateRentalFee)로 다시 계산한다.
  * 날짜는 월 달력(오늘~60일), 시작은 10분 단위, 이용은 30분 단위(1~6시간) — 2026-11-08 원장 지시.
+ * 시간은 «시간 고르기» 버튼 → 시트(RentalTimeSheet)에서 고른다(칸 80여 개를 화면에 펼치지 않는다 — 승인표 2026-11-08).
+ * 재원생 무료(2시간)·보증금 환불 계좌·개인정보 동의 — 2026-11-08 원장 승인.
+ * 재원생 무료는 «로그인한 학부모 계정의 연결 재원생»만(원장 지시) — 로그인 여부는 이 화면이 서버 액션으로 묻는다
+ * (페이지는 정적 그대로라 캐시가 바뀌지 않는다).
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
@@ -12,12 +16,13 @@ import { publicErrorText } from "@/components/ui/public-error-text";
 import { addDaysKst, kstDow, todayKst } from "@/lib/datetime/kst";
 import {
   RENTAL_BOOKING_DAYS,
-  RENTAL_DURATION_STEP_MINUTES,
   RENTAL_FEE,
   RENTAL_MAX_HEADCOUNT,
   RENTAL_MIN_MINUTES,
+  RENTAL_REFUND_BANKS,
   buildRentalCalendar,
   calculateRentalFee,
+  checkRentalRefundAccount,
   formatRentalPhone,
   formatRentalTime,
   formatWon,
@@ -25,9 +30,15 @@ import {
   rentalDurationLabel,
   shiftYm,
   type RentalDay,
-  type RentalStartOption,
 } from "@/lib/rental/gym-rental-rules";
-import { getRentalSlots, submitRentalRequest, type RentalSubmitResult } from "@/app/actions/rental";
+import {
+  getRentalMemberContext,
+  getRentalSlots,
+  submitRentalRequest,
+  type RentalMemberContext,
+  type RentalSubmitResult,
+} from "@/app/actions/rental";
+import RentalTimeSheet, { availableRentalHours } from "./RentalTimeSheet";
 
 const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"];
 const BLOCK_LABEL = { CLASS: "수업", BOOKED: "예약" } as const;
@@ -47,17 +58,7 @@ function monthTitle(ym: string) {
   return `${y}년 ${m}월`;
 }
 
-/** 시작 후보를 «시» 단위 줄로 묶는다(가능한 칸이 하나도 없는 시는 뺀다) — 근접성: 같은 시끼리 한 줄 */
-function groupByHour(starts: RentalStartOption[]): Array<{ hour: number; options: RentalStartOption[] }> {
-  const rows = new Map<number, RentalStartOption[]>();
-  for (const option of starts) {
-    const hour = Math.floor(option.minute / 60);
-    rows.set(hour, [...(rows.get(hour) ?? []), option]);
-  }
-  return [...rows.entries()]
-    .filter(([, options]) => options.some((o) => o.available))
-    .map(([hour, options]) => ({ hour, options }));
-}
+const INPUT_CLASS = "mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]";
 
 export default function RentalClient() {
   // 「오늘」은 손님 기기에서 연 순간에 정한다 — 페이지는 미리 만들어 두는(정적) 화면이라
@@ -80,19 +81,52 @@ export default function RentalClient() {
   const dayError = dayState.date === date ? dayState.error : "";
   const [startMinute, setStartMinute] = useState<number | null>(null);
   const [durationMinutes, setDurationMinutes] = useState(RENTAL_MIN_MINUTES);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const timeButtonRef = useRef<HTMLButtonElement>(null);
   const [headcount, setHeadcount] = useState(6);
   const [useAircon, setUseAircon] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [purpose, setPurpose] = useState("");
+  // 재원생 무료 — 로그인한 학부모 계정에 연결된 재원생이 있을 때만 체크칸이 보인다. 서버가 계정 연결·재원을 다시 확인한다.
+  const [memberCtx, setMemberCtx] = useState<RentalMemberContext | null>(null);
+  const [memberChecked, setMemberChecked] = useState(false);
+  const [pickedStudentId, setPickedStudentId] = useState("");
+  const memberStudents = memberCtx?.students ?? [];
+  const memberFree = memberChecked && memberStudents.length > 0;
+  // 학생이 한 명이면 따로 고르지 않는다
+  const memberStudentId = memberStudents.length === 1 ? memberStudents[0].id : pickedStudentId;
+  // 보증금 환불 계좌(보증금이 있는 신청만)
+  const [refundBank, setRefundBank] = useState("");
+  const [refundAccount, setRefundAccount] = useState("");
+  const [refundHolder, setRefundHolder] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [honeypot, setHoneypot] = useState("");
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [duplicate, setDuplicate] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"" | "account" | "amount">("");
   const [pending, startTransition] = useTransition();
   const errorRef = useRef<HTMLDivElement>(null);
+
+  // 로그인 계정·연결 재원생을 한 번 묻는다. 신청자 칸이 비어 있으면 계정 이름·번호로 미리 채운다(수정 가능).
+  useEffect(() => {
+    let alive = true;
+    getRentalMemberContext()
+      .then((ctx) => {
+        if (!alive) return;
+        setMemberCtx(ctx);
+        if (ctx.name) setName((current) => current || ctx.name);
+        if (ctx.phone) setPhone((current) => current || formatRentalPhone(ctx.phone.replace(/\D/g, "")));
+      })
+      .catch(() => {
+        if (alive) setMemberCtx({ signedIn: false, name: "", phone: "", students: [] });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 날짜가 바뀌면 그날 가능 시간을 새로 받는다. 늦게 온 옛 응답이 새 날짜를 덮지 않게 막는다.
   useEffect(() => {
@@ -111,22 +145,21 @@ export default function RentalClient() {
     };
   }, [date]);
 
-  const startRows = useMemo(() => (day ? groupByHour(day.starts) : []), [day]);
+  const openHours = useMemo(() => (day ? availableRentalHours(day) : []), [day]);
   const selectedOption = day && startMinute !== null ? day.starts.find((s) => s.minute === startMinute) ?? null : null;
-  const maxMinutes = selectedOption?.available ? selectedOption.maxMinutes : 0;
-  // 이용 시간 칩: 1시간, 1시간 30분, … 그 시작 시각에서 이어서 쓸 수 있는 최대까지
-  const durationChoices = useMemo(() => {
-    const list: number[] = [];
-    for (let m = RENTAL_MIN_MINUTES; m <= maxMinutes; m += RENTAL_DURATION_STEP_MINUTES) list.push(m);
-    return list;
-  }, [maxMinutes]);
-  const fee = useMemo(() => {
+  // 고른 시간이 그사이 막혔으면(새로 받은 가능 시간 기준) 고른 것으로 치지 않는다
+  const timeChosen = startMinute !== null && !!selectedOption?.available && selectedOption.maxMinutes >= durationMinutes;
+
+  // 요금 미리보기 — 재원생 체크 시 무료 적용 «가정»(서버 확인 후 확정)
+  const feeOf = (minutes: number) => {
     try {
-      return calculateRentalFee({ durationMinutes, headcount, useAircon });
+      return calculateRentalFee({ durationMinutes: minutes, headcount, useAircon, memberFree });
     } catch {
       return null;
     }
-  }, [durationMinutes, headcount, useAircon]);
+  };
+  const fee = feeOf(durationMinutes); // 계산이 가벼워 매번 다시 계산한다
+  const needsRefundAccount = (fee?.deposit ?? RENTAL_FEE.deposit) > 0;
 
   // 날짜를 바꾸면 고른 시간은 비운다(다른 날의 칸이라)
   function selectDate(ymd: string) {
@@ -135,10 +168,16 @@ export default function RentalClient() {
     setDurationMinutes(RENTAL_MIN_MINUTES);
   }
 
-  function chooseStart(option: RentalStartOption) {
-    setStartMinute(option.minute);
-    // 이어서 쓸 수 있는 시간보다 길게 골라 둔 상태면 줄인다
-    setDurationMinutes((current) => Math.min(Math.max(RENTAL_MIN_MINUTES, current), Math.max(RENTAL_MIN_MINUTES, option.maxMinutes)));
+  function closeSheet() {
+    setSheetOpen(false);
+    // 닫으면 포커스를 «시간 고르기» 버튼으로 돌려준다
+    requestAnimationFrame(() => timeButtonRef.current?.focus());
+  }
+
+  function confirmTime(start: number, minutes: number) {
+    setStartMinute(start);
+    setDurationMinutes(minutes);
+    closeSheet();
   }
 
   function changeHeadcount(delta: number) {
@@ -153,11 +192,18 @@ export default function RentalClient() {
   function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (startMinute === null || !selectedOption?.available) return showError("이용할 시작 시간을 골라 주세요.");
+    if (!timeChosen) return showError("이용할 시간을 골라 주세요. «시간 고르기»를 눌러 주세요.");
     if (!name.trim()) return showError("신청자 이름을 입력해 주세요.");
     if (!phone.trim()) return showError("휴대폰 번호를 입력해 주세요.");
     if (!purpose.trim()) return showError("사용 목적을 입력해 주세요. 예: 동호회 농구 연습");
+    if (memberFree && !memberStudentId) return showError("재원생 무료 대관은 학생을 골라 주세요.");
+    if (needsRefundAccount) {
+      // 서버와 같은 검사 함수 — 화면에서 먼저 알려 준다
+      const checked = checkRentalRefundAccount({ refundBank, refundAccount, refundHolder });
+      if (!checked.ok) return showError(checked.message);
+    }
     if (!agreed) return showError("이용 규칙에 동의해 주세요.");
+    if (!agreedPrivacy) return showError("개인정보 수집·이용에 동의해 주세요. 동의하지 않으면 신청할 수 없어요.");
     startTransition(async () => {
       try {
         const result = await submitRentalRequest({
@@ -170,6 +216,13 @@ export default function RentalClient() {
           applicantPhone: phone,
           purpose,
           agreedRules: agreed,
+          agreedPrivacy,
+          memberFree,
+          memberStudentId: memberFree ? memberStudentId : "", // 서버가 이 계정의 연결 재원생인지 다시 확인한다
+          // 재원생 무료(보증금 0원)면 환불 계좌를 보내지 않는다
+          refundBank: needsRefundAccount ? refundBank : "",
+          refundAccount: needsRefundAccount ? refundAccount : "",
+          refundHolder: needsRefundAccount ? refundHolder : "",
           honeypot,
         });
         if (!result.ok) {
@@ -188,17 +241,20 @@ export default function RentalClient() {
     });
   }
 
-  async function copyAccount(text: string) {
+  // 간편송금에 붙여넣기 좋게 — 계좌는 «은행명 계좌번호»(예금주 제외, 서버가 만들어 준다), 금액은 숫자만
+  async function copyText(kind: "account" | "amount", text: string) {
     try {
-      await navigator.clipboard.writeText(text.replace(/\s*\(.*\)\s*$/, ""));
-      setCopied(true);
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
     } catch {
-      setCopied(false);
+      setCopied("");
     }
   }
 
   // ── 신청 완료 화면: 접수 번호 · 넣은 내용 · 지금 단계 · 다음 할 일 · 입금 계좌 ──
   if (receipt) {
+    const nothingToPay = receipt.totalAmount === 0; // 재원생 2시간 이내 = 입금 없음
+    const steps = nothingToPay ? ["신청 접수", "원장님 승인", "확정"] : ["신청 접수", "원장님 승인", "입금", "확정"];
     return (
       <div className="public-card p-4 sm:p-5" aria-live="polite">
         <div className="flex items-center gap-2">
@@ -206,12 +262,13 @@ export default function RentalClient() {
           <h2 className="text-xl font-black text-[var(--color-public-ink)]">{duplicate ? "이미 접수된 신청입니다" : "대관 신청이 접수되었습니다"}</h2>
         </div>
         <p className="mt-1 text-sm break-keep text-[var(--color-public-muted)]">
-          <b className="text-[var(--color-public-ink)]">원장님 승인 후 확정</b>됩니다. 승인 안내를 받으면 아래 계좌로 입금해 주세요.
+          <b className="text-[var(--color-public-ink)]">원장님 승인 후 확정</b>됩니다.
+          {nothingToPay ? " 승인 문자를 기다려 주세요." : " 승인 안내를 받으면 아래 계좌로 입금해 주세요."}
         </p>
 
         {/* 단계 표시 — 지금 어디인지 */}
-        <ol className="mt-4 grid grid-cols-4 gap-1 text-center text-xs font-bold">
-          {["신청 접수", "원장님 승인", "입금", "확정"].map((step, index) => (
+        <ol className={`mt-4 grid gap-1 text-center text-xs font-bold ${nothingToPay ? "grid-cols-3" : "grid-cols-4"}`}>
+          {steps.map((step, index) => (
             <li
               key={step}
               className={`rounded-[var(--color-public-radius)] border px-1 py-2 ${index === 0
@@ -231,23 +288,34 @@ export default function RentalClient() {
           <dt className="text-[var(--color-public-muted)]">인원</dt>
           <dd className="text-[var(--color-public-ink)]">{receipt.headcount}명{receipt.useAircon ? " · 냉난방 사용" : ""}</dd>
           <dt className="text-[var(--color-public-muted)]">이용료</dt>
-          <dd className="tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.usageFee)}</dd>
+          <dd className="tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.usageFee)}{receipt.memberFree ? " (재원생 2시간 무료 적용)" : ""}</dd>
           <dt className="text-[var(--color-public-muted)]">보증금</dt>
-          <dd className="tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.deposit)} (사용 후 환불)</dd>
+          <dd className="tabular-nums text-[var(--color-public-ink)]">{receipt.deposit > 0 ? `${formatWon(receipt.deposit)} (사용 후 환불)` : "없음"}</dd>
         </dl>
 
-        {/* 입금 안내 — 이 화면에서만 계좌를 보여 준다 */}
-        <div className="mt-4 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
-          <p className="text-sm font-bold text-[var(--color-public-muted)]">입금할 금액</p>
-          <p className="text-2xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
-          <p className="mt-2 text-sm font-bold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
-          <p className="mt-1 text-xs break-keep text-[var(--color-public-muted)]">
-            승인 안내를 받은 뒤 입금해 주세요. 입금자명은 신청자 이름으로 해 주세요. 입금이 확인되면 확정됩니다.
-          </p>
-          <button type="button" onClick={() => copyAccount(receipt.bankAccount)} className="public-btn-secondary mt-2 w-full text-sm">
-            {copied ? "계좌번호를 복사했어요" : "계좌번호 복사"}
-          </button>
-        </div>
+        {/* 입금 안내 — 이 화면에서만 계좌를 보여 준다. 입금할 돈이 없으면 계좌 대신 기다림 안내 */}
+        {nothingToPay ? (
+          <div className="mt-4 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
+            <p className="text-base font-black break-keep text-[var(--color-public-ink)]">입금할 금액이 없어요. 원장님 승인 문자를 기다려 주세요</p>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] bg-[var(--color-public-tint)] p-3">
+            <p className="text-sm font-bold text-[var(--color-public-muted)]">입금할 금액</p>
+            <p className="text-2xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(receipt.totalAmount)}</p>
+            <p className="mt-2 text-sm font-bold break-keep text-[var(--color-public-ink)]">{receipt.bankAccount}</p>
+            <p className="mt-1 text-xs break-keep text-[var(--color-public-muted)]">
+              승인 안내를 받은 뒤 입금해 주세요. 입금자명은 신청자 이름으로 해 주세요. 입금이 확인되면 확정됩니다.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => copyText("account", receipt.bankCopyText)} className="public-btn-secondary w-full px-2 text-sm">
+                {copied === "account" ? "계좌를 복사했어요" : "계좌 복사"}
+              </button>
+              <button type="button" onClick={() => copyText("amount", String(receipt.totalAmount))} className="public-btn-secondary w-full px-2 text-sm">
+                {copied === "amount" ? "금액을 복사했어요" : "금액 복사"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <ul className="mt-4 space-y-1 text-sm break-keep text-[var(--color-public-ink)]">
           <li>· 실내운동화를 꼭 챙겨 오세요.</li>
@@ -271,6 +339,14 @@ export default function RentalClient() {
           <input tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
         </label>
       </div>
+
+      {/* 로그인 안 했으면 맨 위에서 로그인 유도 — 입력하기 전에 보이게(로그인하러 가면 입력값은 사라진다) */}
+      {memberCtx && !memberCtx.signedIn && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--color-public-radius)] bg-[var(--color-public-tint)] px-3 py-2">
+          <p className="min-w-0 flex-1 text-sm font-bold break-keep text-[var(--color-public-ink)]">재원생 가족이면 로그인하고 신청하면 2시간 무료</p>
+          <Link href="/login?redirect=%2Frental" className="public-btn-secondary shrink-0 px-3 text-sm">로그인</Link>
+        </div>
+      )}
 
       {/* 1. 날짜 — 월 달력. 오늘~60일 안만 고를 수 있고, 지난 날·범위 밖은 흐리게 */}
       <fieldset className="min-w-0">
@@ -327,16 +403,16 @@ export default function RentalClient() {
         </div>
       </fieldset>
 
-      {/* 2. 시간 — 시작 10분 단위(시별 한 줄), 이용 30분 단위 */}
+      {/* 2. 시간 — 버튼 하나. 누르면 시트에서 시 → 분 → 이용 시간 */}
       <fieldset className="min-w-0">
         <legend className="text-base font-black text-[var(--color-public-ink)]">
-          시작 시간 <span className="text-sm font-bold text-[var(--color-public-muted)]">{longDate(date)}</span>
+          시간 <span className="text-sm font-bold text-[var(--color-public-muted)]">{longDate(date)}</span>
         </legend>
         {dayError ? (
           <p role="alert" className="mt-2 text-sm font-bold text-[var(--color-public-accent)]">{dayError}</p>
         ) : !day ? (
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">가능한 시간을 확인하는 중…</p>
-        ) : startRows.length === 0 ? (
+        ) : openHours.length === 0 ? (
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">이 날은 비어 있는 시간이 없습니다. 다른 날짜를 골라 주세요.</p>
         ) : (
           <>
@@ -346,57 +422,38 @@ export default function RentalClient() {
                 <> · 제외 {day.blocks.map((b) => `${BLOCK_LABEL[b.reason]} ${minuteLabel(b.startMinute)}~${minuteLabel(b.endMinute)}`).join(", ")}</>
               )}
             </p>
-            <div className="mt-2 space-y-1" role="group" aria-label="시작 시간">
-              {startRows.map((row) => (
-                <div key={row.hour} className="grid grid-cols-6 gap-1">
-                  {row.options.map((option) => {
-                    const active = option.minute === startMinute;
-                    return (
-                      <button
-                        key={option.minute}
-                        type="button"
-                        disabled={!option.available}
-                        aria-pressed={active}
-                        onClick={() => chooseStart(option)}
-                        className={`min-h-11 rounded-[var(--color-public-radius)] border text-sm font-bold tabular-nums ${!option.available
-                          ? "cursor-not-allowed border-dashed border-[var(--color-public-line)] text-[var(--color-public-muted)] opacity-40"
-                          : active
-                            ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
-                            : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+            <button
+              ref={timeButtonRef}
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              aria-haspopup="dialog"
+              className={`mt-2 flex min-h-12 w-full items-center gap-2 rounded-[var(--color-public-radius)] border px-3 text-left text-sm font-bold ${timeChosen
+                ? "border-[var(--color-public-accent)] text-[var(--color-public-ink)]"
+                : "border-[var(--color-public-ink)] text-[var(--color-public-ink)]"}`}
+            >
+              <FontFreeIcon name="calendar_today" size={20} />
+              <span className="min-w-0 flex-1 tabular-nums">
+                {timeChosen && startMinute !== null ? formatRentalTime(startMinute, startMinute + durationMinutes) : "시간 고르기"}
+              </span>
+              {timeChosen && <span className="text-[var(--color-public-accent)]">변경</span>}
+            </button>
           </>
         )}
-
-        {startMinute !== null && durationChoices.length > 0 && (
-          <div className="mt-3">
-            <p className="text-sm font-bold text-[var(--color-public-ink)]">
-              이용 시간 <span className="font-semibold text-[var(--color-public-muted)]">{formatRentalTime(startMinute, startMinute + durationMinutes)}</span>
-            </p>
-            <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="이용 시간">
-              {durationChoices.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={durationMinutes === m}
-                  onClick={() => setDurationMinutes(m)}
-                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-bold ${durationMinutes === m
-                    ? "border-[var(--color-public-ink)] bg-[var(--color-public-ink)] text-[var(--color-public-paper)]"
-                    : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
-                >
-                  {rentalDurationLabel(m)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </fieldset>
+
+      {/* 시트는 열 때마다 새로 만든다(지금 고른 값에서 시작) */}
+      {sheetOpen && day && (
+        <RentalTimeSheet
+          open
+          day={day}
+          dateLabel={longDate(date)}
+          initialStart={startMinute}
+          initialDuration={durationMinutes}
+          priceOf={(minutes) => feeOf(minutes)?.total ?? null}
+          onClose={closeSheet}
+          onConfirm={confirmTime}
+        />
+      )}
 
       {/* 3. 인원·냉난방 */}
       <fieldset className="min-w-0">
@@ -419,34 +476,68 @@ export default function RentalClient() {
           </div>
           <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--color-public-ink)]">
             <input type="checkbox" checked={useAircon} onChange={(e) => setUseAircon(e.target.checked)} className="h-5 w-5 accent-[var(--color-public-accent)]" />
-            냉난방 사용(30분당 {formatWon(RENTAL_FEE.airconPerHalfHour)})
+            냉난방 사용(1시간 {formatWon(RENTAL_FEE.airconPerHour)})
           </label>
         </div>
         {headcount > RENTAL_FEE.baseHeadcount && (
           <p className="mt-1 text-xs text-[var(--color-public-muted)]">
-            {RENTAL_FEE.baseHeadcount}명을 넘는 {headcount - RENTAL_FEE.baseHeadcount}명은 1인·30분당 {formatWon(RENTAL_FEE.extraPersonPerHalfHour)}이 추가됩니다.
+            {RENTAL_FEE.baseHeadcount}명을 넘는 {headcount - RENTAL_FEE.baseHeadcount}명은 1인 1시간 {formatWon(RENTAL_FEE.extraPersonPerHour)}이 추가됩니다.
           </p>
         )}
       </fieldset>
 
-      {/* 4. 실시간 요금 */}
+      {/* 4. 재원생 무료 — 로그인한 학부모 계정에 연결된 재원생이 있을 때만(없으면 아예 보이지 않는다) */}
+      {memberStudents.length > 0 && (
+        <fieldset className="min-w-0">
+          <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm break-keep text-[var(--color-public-ink)]">
+            <input type="checkbox" checked={memberChecked} onChange={(e) => setMemberChecked(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-public-accent)]" />
+            <span>
+              <b>재원생 무료 대관</b> — 2시간까지 무료(가족·친구 함께 가능). 냉난방·인원 추가는 별도, 보증금은 없어요.
+            </span>
+          </label>
+          {memberChecked && memberStudents.length > 1 && (
+            <div className="mt-1 flex flex-wrap gap-1.5" role="group" aria-label="재원생 고르기">
+              {memberStudents.map((student) => (
+                <button
+                  key={student.id}
+                  type="button"
+                  aria-pressed={pickedStudentId === student.id}
+                  onClick={() => setPickedStudentId(student.id)}
+                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-bold ${pickedStudentId === student.id
+                    ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
+                    : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
+                >
+                  {student.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {memberChecked && memberStudents.length === 1 && (
+            <p className="mt-1 text-xs text-[var(--color-public-muted)]">재원생: {memberStudents[0].name}</p>
+          )}
+        </fieldset>
+      )}
+
+      {/* 5. 실시간 요금 */}
       {fee && (
         <div className="rounded-[var(--color-public-radius)] bg-[var(--color-public-tint)] p-3 text-sm" aria-live="polite">
           <dl className="space-y-1">
             <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">시간 요금({rentalDurationLabel(fee.durationMinutes)})</dt><dd className="tabular-nums">{formatWon(fee.baseFee)}</dd></div>
+            {fee.freeDiscount > 0 && <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">재원생 2시간 무료</dt><dd className="tabular-nums">−{formatWon(fee.freeDiscount)}</dd></div>}
             {fee.airconFee > 0 && <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">냉난방</dt><dd className="tabular-nums">{formatWon(fee.airconFee)}</dd></div>}
             {fee.extraPeopleFee > 0 && <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">인원 추가({fee.extraPeople}명)</dt><dd className="tabular-nums">{formatWon(fee.extraPeopleFee)}</dd></div>}
-            <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">보증금(환불)</dt><dd className="tabular-nums">{formatWon(fee.deposit)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">보증금(환불)</dt><dd className="tabular-nums">{fee.deposit > 0 ? formatWon(fee.deposit) : "없음"}</dd></div>
           </dl>
           <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-[var(--color-public-line)] pt-2">
             <span className="font-bold text-[var(--color-public-ink)]">입금할 금액</span>
             <span className="text-xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(fee.total)}</span>
           </div>
-          {startMinute === null && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시작 시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
+          {!timeChosen && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
+          {memberFree && <p className="mt-1 text-xs text-[var(--color-public-muted)]">재원생 무료는 서버 확인 후 확정돼요.</p>}
         </div>
       )}
 
-      {/* 5. 신청자 정보 */}
+      {/* 6. 신청자 정보 */}
       <fieldset className="min-w-0 space-y-2">
         <legend className="text-base font-black text-[var(--color-public-ink)]">신청자</legend>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -458,7 +549,7 @@ export default function RentalClient() {
               maxLength={40}
               autoComplete="name"
               placeholder="입금자명과 같게"
-              className="mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]"
+              className={INPUT_CLASS}
             />
           </label>
           <label className="block text-sm font-bold text-[var(--color-public-ink)]">
@@ -473,7 +564,7 @@ export default function RentalClient() {
               inputMode="tel"
               autoComplete="tel"
               placeholder="010-1234-5678"
-              className="mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal tabular-nums text-[var(--color-public-ink)]"
+              className={`${INPUT_CLASS} tabular-nums`}
             />
           </label>
         </div>
@@ -484,19 +575,66 @@ export default function RentalClient() {
             onChange={(e) => setPurpose(e.target.value)}
             maxLength={300}
             placeholder="예: 동호회 농구 연습, 아이 생일 파티"
-            className="mt-1 block min-h-11 w-full rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-3 font-normal text-[var(--color-public-ink)]"
+            className={INPUT_CLASS}
           />
         </label>
       </fieldset>
 
-      {/* 6. 규칙 동의 */}
-      <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm break-keep text-[var(--color-public-ink)]">
-        <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-public-accent)]" />
-        <span>
-          <b>이용 규칙에 동의합니다.</b> 실내운동화 착용, 사용 후 정리정돈·냉난방 끄기, 인원 준수를 지키지 않으면 보증금이 차감될 수 있습니다.
-          연락처는 대관 안내에만 씁니다.
-        </span>
-      </label>
+      {/* 7. 보증금 환불 계좌 — 보증금이 있을 때만(재원생 무료는 보증금 0원이라 숨긴다) */}
+      {needsRefundAccount && (
+        <fieldset className="min-w-0 space-y-2">
+          <legend className="text-base font-black text-[var(--color-public-ink)]">
+            보증금 환불 계좌 <span className="text-sm font-bold text-[var(--color-public-muted)]">사용 후 이 계좌로 돌려드려요</span>
+          </legend>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+            <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+              은행
+              <select value={refundBank} onChange={(e) => setRefundBank(e.target.value)} className={INPUT_CLASS}>
+                <option value="">은행 선택</option>
+                {RENTAL_REFUND_BANKS.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+              계좌번호
+              <input
+                value={refundAccount}
+                onChange={(e) => setRefundAccount(e.target.value.replace(/[^\d-]/g, "").slice(0, 20))}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="숫자만 10~16자리"
+                className={`${INPUT_CLASS} tabular-nums`}
+              />
+            </label>
+          </div>
+          <label className="block text-sm font-bold text-[var(--color-public-ink)]">
+            예금주
+            <input value={refundHolder} onChange={(e) => setRefundHolder(e.target.value)} maxLength={20} autoComplete="off" className={INPUT_CLASS} />
+          </label>
+        </fieldset>
+      )}
+
+      {/* 8. 동의 — 이용 규칙 + 개인정보(둘 다 필수) */}
+      <div className="space-y-2">
+        <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm break-keep text-[var(--color-public-ink)]">
+          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-public-accent)]" />
+          <span>
+            <b>(필수) 이용 규칙에 동의합니다.</b> 실내운동화 착용, 사용 후 정리정돈·냉난방 끄기, 인원 준수
+            {/* 재원생 무료는 보증금이 없어 «차감» 문장을 보이지 않는다(저장 값과는 무관) */}
+            {memberFree ? "를 지키겠습니다." : "를 지키지 않으면 보증금이 차감될 수 있습니다."}
+          </span>
+        </label>
+        <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm break-keep text-[var(--color-public-ink)]">
+          <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-public-accent)]" />
+          <span>
+            <b>(필수) 개인정보 수집·이용에 동의합니다.</b>
+            <span className="mt-1 block text-xs text-[var(--color-public-muted)]">
+              수집 항목: 이름·연락처·보증금 환불 계좌(재원생 무료는 로그인 계정·고른 학생) · 목적: 대관 신청 확인·연락·보증금 환불 ·
+              보유 기간: 대관 종료 후 보증금 환불 완료 시점부터 1년(법령이 따로 정한 경우 그 기간) ·
+              동의하지 않을 수 있으나, 동의하지 않으면 대관 신청을 할 수 없어요.
+            </span>
+          </span>
+        </label>
+      </div>
 
       {error && (
         <div ref={errorRef} role="alert" className="flex items-center gap-2 rounded-[var(--color-public-radius)] border border-[var(--color-public-accent)] px-3 py-2 text-sm font-bold text-[var(--color-public-accent)]">
@@ -507,7 +645,7 @@ export default function RentalClient() {
 
       {/* 화면의 주인공 버튼은 이것 하나 */}
       <button type="submit" disabled={pending} className="public-btn-primary w-full text-base">
-        {pending ? "신청하는 중…" : fee && startMinute !== null ? `대관 신청하기 · ${formatWon(fee.total)}` : "대관 신청하기"}
+        {pending ? "신청하는 중…" : fee && timeChosen ? `대관 신청하기 · ${formatWon(fee.total)}` : "대관 신청하기"}
       </button>
       <p className="-mt-3 text-center text-xs text-[var(--color-public-muted)]">지금은 신청만 접수돼요. 결제는 원장님 승인 후 계좌이체로 합니다.</p>
     </form>

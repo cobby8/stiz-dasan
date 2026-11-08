@@ -4,6 +4,7 @@
  * 관리자 — 체육관 대관 신청 목록(/admin/rental).
  * 한 줄 행 목록 + 상태 칩 + 행 클릭 상세 패널. 작업 버튼(⚡·패널)은 같은 목록(buildActions)을 쓴다.
  * 누를 수 있는 버튼은 규칙 모듈의 상태 전이표(allowedRentalActions)에서 나온다 — 서버도 같은 표로 다시 검사한다.
+ * 2026-11-08: 재원생 무료 배지 · 거절 사유(필수) · 확인창 문자 미리보기 · 환불 계좌(사용 완료 단계) · «문자 실패» 표시.
  */
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -15,14 +16,18 @@ import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { kstLabel } from "@/lib/datetime/kst";
 import {
+  RENTAL_REJECT_REASONS,
   RENTAL_STATUSES,
   RENTAL_STATUS_LABEL,
   RENTAL_TRANSITIONS,
   allowedRentalActions,
+  buildRentalApplicantMessage,
   formatRentalPhone,
   formatWon,
   rentalTimeText,
+  rentalTransitionTarget,
   type RentalAction,
+  type RentalApplicantKind,
   type RentalStatus,
 } from "@/lib/rental/gym-rental-rules";
 import { updateRentalStatus, type AdminRentalRow } from "@/app/actions/rental";
@@ -49,12 +54,18 @@ const STATUS_TONE: Record<RentalStatus, string> = {
 
 // 확인 창 문구 — 무엇이 일어나는지 한두 줄
 const CONFIRM_TEXT: Partial<Record<RentalAction, { description: string; tone: "danger" | "primary" }>> = {
-  approve: { description: "이 시간이 다른 신청에 대해 막힙니다. 신청자에게 입금 계좌를 안내해 주세요.", tone: "primary" },
-  reject: { description: "신청을 거절합니다. 신청자에게는 따로 연락해 주세요.", tone: "danger" },
+  approve: { description: "이 시간이 다른 신청에 대해 막힙니다. 신청자에게 입금 계좌를 안내합니다.", tone: "primary" },
+  reject: { description: "신청을 거절합니다. 사유가 신청자 문자에 그대로 나갑니다.", tone: "danger" },
   confirmPayment: { description: "입금을 확인하고 대관을 확정합니다.", tone: "primary" },
   refund: { description: "보증금 환불을 마친 것으로 기록합니다. 차감했다면 실제 돌려준 금액을 적어 주세요.", tone: "primary" },
   cancel: { description: "대관을 취소하고 이 시간을 다시 열어 둡니다. 입금을 받았다면 실제로 돌려준 금액을 적어 주세요.", tone: "danger" },
 };
+
+// 버튼 → 신청자 문자 종류(미리보기용 · 서버 updateRentalStatus 와 같은 짝)
+const SMS_KIND: Partial<Record<RentalAction, RentalApplicantKind>> = { approve: "approved", reject: "rejected", confirmPayment: "confirmed" };
+const CUSTOM_REASON = "__custom__";
+
+type SmsOn = Record<RentalApplicantKind, boolean>;
 
 function StatusBadge({ status }: { status: RentalStatus }) {
   return (
@@ -64,14 +75,33 @@ function StatusBadge({ status }: { status: RentalStatus }) {
   );
 }
 
-export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) {
+/** «재원생 무료(학생명)» 배지 */
+function MemberBadge({ row }: { row: AdminRentalRow }) {
+  if (!row.memberFree) return null;
+  return (
+    <span className="inline-flex rounded-md bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">
+      재원생 무료{row.memberStudentName ? `(${row.memberStudentName})` : ""}
+    </span>
+  );
+}
+
+/** 마지막 신청자 문자가 실패했으면 «문자 실패» */
+function smsFailed(row: AdminRentalRow): boolean {
+  return String(row.applicantSmsStatus ?? "").startsWith("FAILED");
+}
+
+export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: AdminRentalRow[]; bankAccount: string; smsOn: SmsOn }) {
   const router = useRouter();
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<{ id: string; action: RentalAction } | null>(null);
   const [memo, setMemo] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
+  const [reasonChoice, setReasonChoice] = useState("");
+  const [customReason, setCustomReason] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [copiedId, setCopiedId] = useState("");
   const [pending, startTransition] = useTransition();
 
   const counts = useMemo(() => {
@@ -82,17 +112,28 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
   const chips = RENTAL_STATUSES.map((status) => ({ value: status, label: RENTAL_STATUS_LABEL[status], count: counts.get(status) ?? 0 }));
   const visible = statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
 
-  function run(id: string, action: RentalAction, options: { memo?: string; depositRefunded?: number | null; cancelRefund?: number | null } = {}) {
+  const rejectReason = reasonChoice === CUSTOM_REASON ? customReason.trim() : reasonChoice;
+
+  function run(
+    id: string,
+    action: RentalAction,
+    options: { memo?: string; depositRefunded?: number | null; cancelRefund?: number | null; rejectReason?: string } = {},
+  ) {
     setError("");
+    setNotice("");
     startTransition(async () => {
       const result = await updateRentalStatus(id, action, options);
       if (!result.ok) {
         setError(adminMessageText(result.error, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;
       }
+      // 상태는 바뀌었다. 문자만 실패했으면 따로 알린다(전화로 안내할 수 있게)
+      if (result.sms === "FAILED") setNotice("처리는 끝났지만 신청자 문자를 보내지 못했어요. 전화로 안내해 주세요.");
       setConfirming(null);
       setMemo("");
       setRefundAmount("");
+      setReasonChoice("");
+      setCustomReason("");
       router.refresh();
     });
   }
@@ -100,17 +141,25 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
   function openConfirm(row: AdminRentalRow, action: RentalAction) {
     setError("");
     setMemo("");
+    setReasonChoice("");
+    setCustomReason("");
     setRefundAmount(action === "refund" ? String(row.deposit) : "");
     setConfirming({ id: row.id, action });
   }
 
+  function actionLabel(row: AdminRentalRow, action: RentalAction): string {
+    // 입금할 금액이 0원(재원생 2시간 이내)이면 승인 = 바로 확정
+    if (action === "approve" && rentalTransitionTarget(action, row) === "PAID") return "승인(바로 확정)";
+    return RENTAL_TRANSITIONS[action].label;
+  }
+
   function buildActions(row: AdminRentalRow): AdminQuickAction[] {
     const id = row.id; // 패널을 닫은 뒤 실행돼도 대상이 바뀌지 않게 미리 붙잡아 둔다
-    // 순서: 진행 버튼 먼저, 거절·취소(위험)는 뒤로
-    const actions = allowedRentalActions(row.status).sort((a, b) => Number(a === "reject" || a === "cancel") - Number(b === "reject" || b === "cancel"));
+    // 순서: 진행 버튼 먼저, 거절·취소(위험)는 뒤로. 보증금 0원 건은 «보증금 환불» 단계가 없다(row 를 넘김).
+    const actions = allowedRentalActions(row.status, row).sort((a, b) => Number(a === "reject" || a === "cancel") - Number(b === "reject" || b === "cancel"));
     return actions.map((action) => ({
       key: action,
-      label: RENTAL_TRANSITIONS[action].label,
+      label: actionLabel(row, action),
       icon: ACTION_ICON[action],
       tone: action === "reject" || action === "cancel" ? "danger" : action === "complete" ? "default" : "primary",
       disabled: pending,
@@ -127,11 +176,31 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
     }
   }
 
+  async function copyRefund(row: AdminRentalRow) {
+    try {
+      await navigator.clipboard.writeText(`${row.refundBank ?? ""} ${row.refundAccount ?? ""}`.trim());
+      setCopiedId(row.id);
+    } catch {
+      setCopiedId("");
+    }
+  }
+
   const detail = detailId ? rows.find((row) => row.id === detailId) ?? null : null;
   const confirmRow = confirming ? rows.find((row) => row.id === confirming.id) ?? null : null;
   const confirmText = confirming ? CONFIRM_TEXT[confirming.action] : undefined;
   // 입금 확인(확정)된 대관의 취소 = 돌려준 금액 입력이 필요한 경우
   const paidCancel = confirming?.action === "cancel" && confirmRow?.status === "PAID";
+  const smsKind = confirming ? SMS_KIND[confirming.action] : undefined;
+  // 보낼 문자 미리보기 — 서버가 보낼 본문과 같은 함수(틀 + 변수)
+  let smsPreview = "";
+  if (confirmRow && smsKind) {
+    try {
+      smsPreview = buildRentalApplicantMessage(smsKind, { ...confirmRow, rejectReason: rejectReason || "(사유를 골라 주세요)" }, bankAccount).body;
+    } catch {
+      smsPreview = "";
+    }
+  }
+  const approveFree = confirming?.action === "approve" && confirmRow ? rentalTransitionTarget("approve", confirmRow) === "PAID" : false;
 
   return (
     <div className="space-y-3">
@@ -141,7 +210,8 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
           체육관 대관
         </h1>
         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
-          홈페이지 «체육관 대관»에서 들어온 신청입니다. 승인 → 입금 확인(확정) → 사용 완료 → 보증금 환불 순서로 눌러 주세요. 승인한 시간은 다른 신청에서 막힙니다.
+          홈페이지 «체육관 대관»에서 들어온 신청입니다. 승인 → 입금 확인(확정) → 사용 완료 → 보증금 환불 순서로 눌러 주세요.
+          재원생 무료(입금 0원)는 승인하면 바로 확정되고, 보증금이 없어 사용 완료가 마지막입니다.
         </p>
       </div>
 
@@ -149,6 +219,9 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
 
       {error && !confirming && (
         <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
+      )}
+      {notice && (
+        <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-warning)]">{notice}</p>
       )}
 
       {visible.length === 0 ? (
@@ -185,7 +258,16 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
                     <td className="admin-cell-center px-2 py-1.5"><StatusBadge status={row.status} /></td>
                     <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(row.rentalDate)}</td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{rentalTimeText(row)}</td>
-                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.applicantName}</td>
+                    <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                      {/* 이름 옆에 배지를 붙여 한 줄 유지(컴팩트) */}
+                      <span className="inline-flex flex-wrap items-center gap-1">
+                        {row.applicantName}
+                        <MemberBadge row={row} />
+                        {smsFailed(row) && (
+                          <span className="inline-flex rounded-md bg-[var(--color-academy-danger-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-danger)]">문자 실패</span>
+                        )}
+                      </span>
+                    </td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.headcount}명{row.useAircon ? " · 냉난방" : ""}</td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{formatWon(row.totalAmount)}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{kstLabel(row.createdAt)}</td>
@@ -207,6 +289,7 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
           <div className="mb-4 flex items-center gap-2">
             <h3 id="rental-detail-panel-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">{detail.applicantName}</h3>
             <StatusBadge status={detail.status} />
+            <MemberBadge row={detail} />
             <button
               type="button"
               onClick={() => setDetailId(null)}
@@ -229,8 +312,31 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
             <dd className="whitespace-pre-wrap break-keep text-[var(--color-academy-ink)]">{detail.purpose || "—"}</dd>
             <dt className="font-bold text-[var(--color-academy-muted)]">금액</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">
-              이용료 {formatWon(detail.usageFee)} + 보증금 {formatWon(detail.deposit)} = <b>{formatWon(detail.totalAmount)}</b>
+              {detail.memberFree ? "재원생 2시간 무료 · " : ""}이용료 {formatWon(detail.usageFee)} + 보증금 {formatWon(detail.deposit)} = <b>{formatWon(detail.totalAmount)}</b>
             </dd>
+            {detail.rejectReason && (
+              <>
+                <dt className="font-bold text-[var(--color-academy-muted)]">거절 사유</dt>
+                <dd className="break-keep text-[var(--color-academy-ink)]">{detail.rejectReason}</dd>
+              </>
+            )}
+            {/* 환불 계좌는 «사용 완료·환불 완료» 단계에서만 서버가 보내 준다 */}
+            {detail.refundAccount && (
+              <>
+                <dt className="font-bold text-[var(--color-academy-muted)]">환불 계좌</dt>
+                <dd className="flex flex-wrap items-center gap-2 tabular-nums text-[var(--color-academy-ink)]">
+                  <span>{detail.refundBank} {detail.refundAccount} · {detail.refundHolder}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyRefund(detail)}
+                    className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 text-xs font-bold text-[var(--color-academy-ink)]"
+                  >
+                    <span className="material-symbols-outlined" aria-hidden="true">content_copy</span>
+                    {copiedId === detail.id ? "복사함" : "복사"}
+                  </button>
+                </dd>
+              </>
+            )}
             {detail.depositRefunded !== null && (
               <>
                 <dt className="font-bold text-[var(--color-academy-muted)]">환불</dt>
@@ -241,6 +347,12 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
               <>
                 <dt className="font-bold text-[var(--color-academy-muted)]">취소 환불</dt>
                 <dd className="tabular-nums text-[var(--color-academy-ink)]">{formatWon(detail.cancelRefundAmount)}</dd>
+              </>
+            )}
+            {smsFailed(detail) && (
+              <>
+                <dt className="font-bold text-[var(--color-academy-muted)]">문자</dt>
+                <dd className="font-bold text-[var(--color-academy-danger)]">마지막 안내 문자 실패 — 전화로 안내해 주세요</dd>
               </>
             )}
             <dt className="font-bold text-[var(--color-academy-muted)]">신청일</dt>
@@ -259,11 +371,47 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
       {confirming && confirmRow && confirmText && (
         <AdminConfirmDialog
           titleId="rental-confirm-title"
-          title={`${confirmRow.applicantName} · ${RENTAL_TRANSITIONS[confirming.action].label}`}
+          title={`${confirmRow.applicantName} · ${actionLabel(confirmRow, confirming.action)}`}
           description={
             <div className="space-y-2">
-              <p>{kstLabel(confirmRow.rentalDate)} {rentalTimeText(confirmRow)} · {formatWon(confirmRow.totalAmount)}</p>
-              <p>{confirmText.description}</p>
+              <p>{kstLabel(confirmRow.rentalDate)} {rentalTimeText(confirmRow)} · {formatWon(confirmRow.totalAmount)}{confirmRow.memberFree ? " · 재원생 무료" : ""}</p>
+              <p>{approveFree ? "입금할 금액이 0원이라 승인하면 바로 확정됩니다. 이 시간은 다른 신청에서 막힙니다." : confirmText.description}</p>
+              {/* 재원생 무료는 로그인한 학부모 계정의 연결 학생일 때만 들어온다 — 어느 계정이 신청했는지 한 줄로 보인다 */}
+              {confirming.action === "approve" && confirmRow.memberFree && (
+                <p className="font-bold text-[var(--color-academy-warning)]">
+                  재원생 무료 · 로그인 계정: {confirmRow.applicantUserName || "확인 필요"}로 신청(학생: {confirmRow.memberStudentName || "확인 필요"})
+                </p>
+              )}
+              {confirming.action === "reject" && (
+                <div className="space-y-1.5">
+                  <p className="font-bold text-[var(--color-academy-ink)]">거절 사유(필수)</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="거절 사유 빠른 선택">
+                    {[...RENTAL_REJECT_REASONS, CUSTOM_REASON].map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        aria-pressed={reasonChoice === reason}
+                        onClick={() => setReasonChoice(reason)}
+                        className={`min-h-11 rounded-lg border px-3 text-xs font-bold ${reasonChoice === reason
+                          ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
+                          : "border-[var(--color-academy-line)] text-[var(--color-academy-ink)]"}`}
+                      >
+                        {reason === CUSTOM_REASON ? "직접 입력" : reason}
+                      </button>
+                    ))}
+                  </div>
+                  {reasonChoice === CUSTOM_REASON && (
+                    <input
+                      value={customReason}
+                      onChange={(e) => setCustomReason(e.target.value)}
+                      maxLength={100}
+                      placeholder="신청자 문자에 그대로 나가요"
+                      aria-label="거절 사유 직접 입력"
+                      className="block min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 font-normal"
+                    />
+                  )}
+                </div>
+              )}
               {(confirming.action === "refund" || paidCancel) && (
                 <label className="block font-bold text-[var(--color-academy-ink)]">
                   {/* 확정(입금 확인) 뒤 취소는 이미 돈을 받았으므로 돌려준 금액을 꼭 적는다(0원도 직접 입력) */}
@@ -280,6 +428,15 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
                   />
                 </label>
               )}
+              {/* 보낼 문자 미리보기 — 꺼져 있으면 «문자 꺼짐»(상태만 바뀌고 문자는 안 나간다) */}
+              {smsKind && (
+                <div className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-2">
+                  <p className="text-xs font-black text-[var(--color-academy-muted)]">
+                    신청자 문자 {smsOn[smsKind] ? "· 보냄" : "· 문자 꺼짐(보내지 않음)"}
+                  </p>
+                  {smsPreview && <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-keep font-sans text-xs text-[var(--color-academy-ink)]">{smsPreview}</pre>}
+                </div>
+              )}
               <label className="block font-bold text-[var(--color-academy-ink)]">
                 메모(선택)
                 <input
@@ -292,17 +449,25 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
               </label>
             </div>
           }
-          confirmLabel={RENTAL_TRANSITIONS[confirming.action].label}
+          confirmLabel={actionLabel(confirmRow, confirming.action)}
           tone={confirmText.tone}
           pending={pending}
           error={error}
           onCancel={() => setConfirming(null)}
-          onConfirm={() => run(confirming.id, confirming.action, {
-            memo,
-            depositRefunded: confirming.action === "refund" ? (refundAmount === "" ? null : Number(refundAmount)) : null,
-            // 비워 두면 서버가 «금액을 입력해 주세요»로 거절한다
-            cancelRefund: paidCancel ? (refundAmount === "" ? null : Number(refundAmount)) : null,
-          })}
+          onConfirm={() => {
+            // 거절은 사유가 없으면 보내지 않는다(서버도 다시 막는다)
+            if (confirming.action === "reject" && !rejectReason) {
+              setError("거절 사유를 골라 주세요. 신청자 문자에 그대로 나갑니다.");
+              return;
+            }
+            run(confirming.id, confirming.action, {
+              memo,
+              depositRefunded: confirming.action === "refund" ? (refundAmount === "" ? null : Number(refundAmount)) : null,
+              // 비워 두면 서버가 «금액을 입력해 주세요»로 거절한다
+              cancelRefund: paidCancel ? (refundAmount === "" ? null : Number(refundAmount)) : null,
+              rejectReason: confirming.action === "reject" ? rejectReason : undefined,
+            });
+          }}
         />
       )}
     </div>

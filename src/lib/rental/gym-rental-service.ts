@@ -16,6 +16,7 @@ import {
   RENTAL_TRANSITIONS,
   buildRentalDay,
   calculateRentalFee,
+  checkRentalRefundAccount,
   cleanRentalText,
   isBookableDate,
   isRentalAction,
@@ -25,6 +26,7 @@ import {
   parseCancelRefund,
   rentalHourColumns,
   rentalInstantMs,
+  rentalTransitionTarget,
   type RentalAction,
   type RentalBusyRange,
   type RentalClassRow,
@@ -113,6 +115,13 @@ export type RentalApplyInput = {
   applicantPhone: unknown;
   purpose: unknown;
   agreedRules: unknown;
+  // 2026-11-08 추가 — 재원생 무료·보증금 환불 계좌·개인정보 동의
+  memberFree?: unknown; // «재원생 무료 대관» 체크
+  memberStudentId?: unknown; // 재원생 무료로 고른 학생(로그인 계정의 연결 학생인지 서버가 다시 확인)
+  refundBank?: unknown;
+  refundAccount?: unknown;
+  refundHolder?: unknown;
+  agreedPrivacy?: unknown; // 개인정보 수집·이용 동의(필수)
 };
 
 export type RentalRecord = {
@@ -134,6 +143,16 @@ export type RentalRecord = {
   cancelRefundAmount: number | null;
   status: RentalStatus;
   adminMemo: string | null;
+  memberFree: boolean;
+  memberStudentId: string | null;
+  memberStudentName?: string | null; // 관리자 목록에서만 채운다
+  applicantUserId?: string | null; // 로그인해서 신청한 계정(앱 User.id)
+  applicantUserName?: string | null; // 관리자 목록에서만 채운다
+  refundBank: string | null;
+  refundAccount: string | null;
+  refundHolder: string | null;
+  rejectReason: string | null;
+  applicantSmsStatus: string | null; // 마지막 신청자 문자 결과 «SENT|FAILED|OFF:종류»
   createdAt: Date | string;
   approvedAt: Date | string | null;
   paidAt: Date | string | null;
@@ -150,7 +169,43 @@ export type RentalApplyResult =
 const RECORD_COLUMNS = `id, "rentalDate", "startHour", "endHour",
   COALESCE("startMinute", "startHour" * 60)::int AS "startMinute", COALESCE("endMinute", "endHour" * 60)::int AS "endMinute", headcount, "useAircon", "applicantName", "applicantPhone",
   purpose, "usageFee", deposit, "totalAmount", "depositRefunded", "cancelRefundAmount", status, "adminMemo", "createdAt",
-  "approvedAt", "paidAt", "completedAt", "refundedAt", "closedAt"`;
+  "approvedAt", "paidAt", "completedAt", "refundedAt", "closedAt",
+  "memberFree", "memberStudentId", "refundBank", "refundAccount", "refundHolder", "rejectReason", "applicantSmsStatus", "applicantUserId"`;
+
+/**
+ * 재원생 무료 대관 = «로그인한 학부모 계정»이 고른 연결 학생이 지금 재원 중일 때만(원장 2026-11-08).
+ * 이름·번호 대조는 쓰지 않는다(맞혀 보기 공격이 생긴다).
+ *
+ * viewer.accessSql = 마이페이지 «내 자녀» 범위와 같은 조건(@/lib/account/child-access 의 childAccessSql("s", "$1")).
+ *   가족 공유 연결(ParentStudentAccess ACTIVE)이 켜져 있으면 그것도 포함된다. 이 파일은 순수(DB 인자) 모듈이라
+ *   서버 액션이 만들어 넘긴다.
+ * 재원 = 병합 제외 + 시작된 ACTIVE 수강 1건 이상(휴원·퇴원·시작 전 예정 제외) + 끝난 반([종료]) 제외.
+ * 계정 역할이 PARENT 가 아니면(원장·강사·기사 등 직원 계정) 빈 목록 — 직원 계정은 무료 적용 안 됨.
+ */
+export type RentalMemberViewer = { appUserId: string; role: string; accessSql: string };
+export type RentalMemberStudent = { id: string; name: string };
+
+export async function listRentalMemberStudents(db: RawSqlClient, viewer: RentalMemberViewer | null): Promise<RentalMemberStudent[]> {
+  if (!viewer || viewer.role !== "PARENT") return [];
+  // accessSql 은 코드가 만든 조각만 받는다(사용자 입력 아님 — childAccessSql 가 식별자를 검사한다)
+  if (!/^\(?s\."parentId" = \$1/.test(viewer.accessSql)) return [];
+  return db.$queryRawUnsafe<RentalMemberStudent[]>(
+    `SELECT s.id, s.name FROM "Student" s
+      WHERE s."mergedIntoStudentId" IS NULL
+        AND ${viewer.accessSql}
+        AND EXISTS (
+          SELECT 1 FROM "Enrollment" e JOIN "Class" c ON c.id = e."classId"
+           WHERE e."studentId" = s.id AND e.status = 'ACTIVE' AND c.name NOT LIKE '[%'
+             AND (e."startsOn" IS NULL OR e."startsOn" <= (now() AT TIME ZONE 'Asia/Seoul')::date)
+        )
+      ORDER BY s.name ASC
+      LIMIT 20`,
+    viewer.appUserId,
+  );
+}
+
+export const RENTAL_MEMBER_LOGIN_MESSAGE = "재원생 무료 대관은 재원생 가족 계정으로 로그인해서 신청해 주세요.";
+export const RENTAL_MEMBER_STUDENT_MESSAGE = "고른 학생이 이 계정에 연결된 재원생이 아니에요. 학생을 다시 골라 주세요.";
 
 /** 같은 연락처 반복 신청 제한(기존 공개 폼과 같은 방식 — 짧은 시간 횟수 제한) */
 export const RENTAL_RATE_LIMIT = { perPhone10Min: 3, perPhoneDay: 6, perIp10Min: 5, perIpDay: 15, global10Min: 30 } as const;
@@ -166,6 +221,7 @@ export async function createRentalRequest(
   input: RentalApplyInput,
   nowMs: number,
   clientIpHash: string | null = null,
+  viewer: RentalMemberViewer | null = null, // 로그인 계정(없으면 비로그인 신청)
 ): Promise<RentalApplyResult> {
   const rentalDate = String(input.rentalDate ?? "");
   // 새 화면은 분으로 보낸다. 옛 화면(정시·시간)이 보낸 값은 분으로 바꿔 같은 검사를 거친다.
@@ -192,12 +248,25 @@ export async function createRentalRequest(
   if (!applicantPhone) return { ok: false, message: "휴대폰 번호를 정확히 입력해 주세요. 예: 010-1234-5678" };
   if (!purpose) return { ok: false, message: "사용 목적을 입력해 주세요. 예: 동호회 농구 연습" };
   if (input.agreedRules !== true) return { ok: false, message: "이용 규칙에 동의해 주세요." };
+  // 이름·연락처·환불 계좌를 받으므로 개인정보 수집·이용 동의가 없으면 받지 않는다
+  if (input.agreedPrivacy !== true) return { ok: false, message: "개인정보 수집·이용에 동의해 주세요. 동의하지 않으면 신청할 수 없어요." };
+  const wantsMemberFree = input.memberFree === true;
+  const pickedStudentId = wantsMemberFree ? String(input.memberStudentId ?? "") : "";
+  if (wantsMemberFree && !viewer) return { ok: false, message: RENTAL_MEMBER_LOGIN_MESSAGE };
+  if (wantsMemberFree && !pickedStudentId) return { ok: false, message: "재원생 무료 대관은 학생을 골라 주세요." };
 
   let fee;
   try {
-    fee = calculateRentalFee({ durationMinutes, headcount, useAircon });
+    fee = calculateRentalFee({ durationMinutes, headcount, useAircon, memberFree: wantsMemberFree });
   } catch (error) {
     return { ok: false, message: (error as Error).message };
+  }
+  // 보증금이 있는 신청만 환불 계좌가 필요하다(재원생 무료는 보증금 0원이라 받지 않는다)
+  let refund: { refundBank: string; refundAccount: string; refundHolder: string } | null = null;
+  if (fee.deposit > 0) {
+    const checked = checkRentalRefundAccount({ refundBank: input.refundBank, refundAccount: input.refundAccount, refundHolder: input.refundHolder });
+    if (!checked.ok) return { ok: false, message: checked.message };
+    refund = checked;
   }
 
   // 여기부터 저장까지 공개 신청은 한 줄로 선다(트랜잭션이 끝나면 자동으로 풀린다)
@@ -235,6 +304,16 @@ export async function createRentalRequest(
     return { ok: false, message: "신청이 너무 많이 접수되었습니다. 잠시 후 다시 시도해주세요." };
   }
 
+  // 재원생 확인 — 저장 직전에 서버가 직접 본다(화면의 체크만 믿지 않는다)
+  let memberStudentId: string | null = null;
+  if (wantsMemberFree) {
+    // 화면이 보낸 학생 id 를 믿지 않는다 — 이 계정의 연결 재원생 목록 안에 있어야 한다
+    const students = await listRentalMemberStudents(db, viewer);
+    if (viewer?.role !== "PARENT") return { ok: false, message: RENTAL_MEMBER_LOGIN_MESSAGE };
+    memberStudentId = students.find((st) => st.id === pickedStudentId)?.id ?? null;
+    if (!memberStudentId) return { ok: false, message: RENTAL_MEMBER_STUDENT_MESSAGE };
+  }
+
   // 화면을 연 뒤 시간이 지났거나 다른 대관이 승인됐을 수 있다 — 서버가 다시 본다
   // 영업 시간(평일 09시·주말 10시 ~ 22시)·수업·특강·승인 대관 겹침을 서버가 다시 본다
   const day = await loadRentalDay(db, rentalDate, nowMs);
@@ -248,15 +327,19 @@ export async function createRentalRequest(
     `INSERT INTO "GymRentalRequest" (
        "rentalDate", "startHour", "endHour", "startAt", "endAt", headcount, "useAircon",
        "applicantName", "applicantPhone", purpose, "usageFee", deposit, "totalAmount",
-       "clientIpHash", status, "rulesAgreedAt", "createdAt", "updatedAt", "startMinute", "endMinute"
+       "clientIpHash", status, "rulesAgreedAt", "createdAt", "updatedAt", "startMinute", "endMinute",
+       "memberFree", "memberStudentId", "refundBank", "refundAccount", "refundHolder", "privacyAgreedAt", "applicantUserId"
      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13,
-       $14, 'REQUESTED', now(), now(), now(), $15, $16)
+       $14, 'REQUESTED', now(), now(), now(), $15, $16,
+       $17, $18, $19, $20, $21, now(), $22)
      RETURNING ${RECORD_COLUMNS}`,
     rentalDate, startHour, endHour,
     new Date(rentalInstantMs(rentalDate, startMinute)).toISOString(),
     new Date(rentalInstantMs(rentalDate, endMinute)).toISOString(),
     fee.headcount, useAircon, applicantName, applicantPhone, purpose,
     fee.usageFee, fee.deposit, fee.total, ipHash, startMinute, endMinute,
+    fee.memberFree, memberStudentId, refund?.refundBank ?? null, refund?.refundAccount ?? null, refund?.refundHolder ?? null,
+    viewer?.appUserId ?? null, // 로그인해서 신청했으면 그 계정(무료 여부와 상관없이 남긴다)
   );
   if (!rows[0]) return { ok: false, message: "신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
   return { ok: true, duplicate: false, request: rows[0] };
@@ -265,18 +348,23 @@ export async function createRentalRequest(
 // ── 관리자: 목록 ──────────────────────────────────────────────────────────
 export async function listRentalRequests(db: RawSqlClient): Promise<RentalRecord[]> {
   // 처리할 것(승인 대기 → 입금 대기 → 확정 → 환불 대기) 먼저, 같은 상태 안에서는 이용일 가까운 순
+  // 재원생 무료 건은 확인된 학생 이름을 같이 읽는다(관리자 배지용)
   return db.$queryRawUnsafe<RentalRecord[]>(
-    `SELECT ${RECORD_COLUMNS} FROM "GymRentalRequest"
-      ORDER BY CASE status WHEN 'REQUESTED' THEN 0 WHEN 'APPROVED' THEN 1 WHEN 'PAID' THEN 2
-                           WHEN 'COMPLETED' THEN 3 ELSE 4 END,
-               CASE WHEN status IN ('REFUNDED','REJECTED','CANCELLED') THEN NULL ELSE "startAt" END ASC NULLS LAST,
+    `SELECT ${RECORD_COLUMNS},
+            (SELECT st.name FROM "Student" st WHERE st.id = "GymRentalRequest"."memberStudentId") AS "memberStudentName",
+            (SELECT au.name FROM "User" au WHERE au.id = "GymRentalRequest"."applicantUserId") AS "applicantUserName"
+       FROM "GymRentalRequest"
+      -- 보증금 0원(재원생 무료)의 사용 완료는 더 할 일이 없으므로 끝난 것(환불 완료와 같은 자리)으로 둔다
+      ORDER BY CASE WHEN status = 'REQUESTED' THEN 0 WHEN status = 'APPROVED' THEN 1 WHEN status = 'PAID' THEN 2
+                    WHEN status = 'COMPLETED' AND deposit > 0 THEN 3 ELSE 4 END,
+               CASE WHEN status IN ('REFUNDED','REJECTED','CANCELLED') OR (status = 'COMPLETED' AND deposit = 0) THEN NULL ELSE "startAt" END ASC NULLS LAST,
                "createdAt" DESC
       LIMIT 300`,
   );
 }
 
 // ── 관리자: 상태 바꾸기 ───────────────────────────────────────────────────
-export type RentalTransitionOptions = { memo?: unknown; depositRefunded?: unknown; cancelRefund?: unknown; nowMs?: number };
+export type RentalTransitionOptions = { memo?: unknown; depositRefunded?: unknown; cancelRefund?: unknown; rejectReason?: unknown; nowMs?: number };
 export type RentalTransitionResult =
   | { ok: true; request: RentalRecord; previousStatus: RentalStatus }
   | { ok: false; message: string };
@@ -340,6 +428,18 @@ export async function transitionRentalInTx(
     }
   }
 
+  // 거절은 사유가 꼭 있어야 한다(신청자 문자에 그대로 나간다)
+  let rejectReason: string | null = null;
+  if (action === "reject") {
+    rejectReason = cleanRentalText(options.rejectReason, 100).replace(/\s+/g, " ") || null;
+    if (!rejectReason) return { ok: false, message: "거절 사유를 골라 주세요. 신청자 문자에 그대로 나갑니다." };
+  }
+
+  // 보증금이 없는 건(재원생 무료)은 사용 완료가 마지막 — 보증금 환불 단계가 없다
+  if (action === "refund" && Number(row.deposit) === 0) {
+    return { ok: false, message: "보증금이 없는 대관이라 환불할 보증금이 없습니다." };
+  }
+
   let depositRefunded: number | null = null;
   if (action === "refund") {
     const raw = options.depositRefunded;
@@ -363,10 +463,15 @@ export async function transitionRentalInTx(
     cancel: `"closedAt"`,
   };
 
+  // 승인인데 입금할 금액이 0원이면 바로 확정(PAID) — 입금 확인 시각도 같이 찍는다
+  const target = rentalTransitionTarget(action, row);
+  const extraStamp = action === "approve" && target === "PAID" ? `"paidAt" = now(),` : "";
   const updated = await tx.$queryRawUnsafe<RentalRecord[]>(
     `UPDATE "GymRentalRequest"
         SET status = $2,
             ${stampColumn[action]} = now(),
+            ${extraStamp}
+            "rejectReason" = COALESCE($9::text, "rejectReason"),
             "decidedByUserId" = $3,
             "depositRefunded" = COALESCE($4::int, "depositRefunded"),
             "cancelRefundAmount" = COALESCE($8::int, "cancelRefundAmount"),
@@ -376,7 +481,7 @@ export async function transitionRentalInTx(
             "updatedAt" = now()
       WHERE id = $1 AND status = $7
       RETURNING ${RECORD_COLUMNS}`,
-    id, rule.to, actorUserId, depositRefunded, memo, rule.label, row.status, cancelRefund,
+    id, target, actorUserId, depositRefunded, memo, rule.label, row.status, cancelRefund, rejectReason,
   );
   if (!updated[0]) return { ok: false, message: "이미 다른 상태로 바뀐 신청입니다. 새로고침 후 다시 확인해 주세요." };
   return { ok: true, request: updated[0], previousStatus: row.status };
@@ -386,4 +491,13 @@ export async function transitionRentalInTx(
 export function isRentalOverlapViolation(error: unknown): boolean {
   const text = `${(error as { code?: string })?.code ?? ""} ${(error as Error)?.message ?? ""}`;
   return /23P01|GymRentalRequest_no_overlap|exclusion constraint/i.test(text);
+}
+
+/** 마지막 신청자 문자 결과 기록 — «SENT|FAILED|OFF:approved» 처럼 결과:종류. 관리자 화면 «문자 실패» 표시용 */
+export async function saveRentalSmsStatus(db: RawSqlClient, id: string, value: string): Promise<void> {
+  await db.$executeRawUnsafe(
+    `UPDATE "GymRentalRequest" SET "applicantSmsStatus" = left($2, 40), "updatedAt" = now() WHERE id = $1`,
+    id,
+    value,
+  );
 }

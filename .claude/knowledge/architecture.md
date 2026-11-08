@@ -158,3 +158,9 @@
 - **발견자**: developer
 - **내용**: 승인 응답 WAITING_FOR_DEPOSIT → `PaymentTransaction.status='WAITING_FOR_DEPOSIT'`·method «가상계좌»·rawResponse 에 `virtualAccountIssue`(은행·계좌·예금주·기한·금액)+`depositSecretHash`(SHA-256, 원문 secret 저장 안 함). 청구(Payment)·청구서는 미납 그대로. 판정은 순수 `src/lib/payments/virtualAccount.ts`(decideVirtualAccountWebhook: PAY·ALREADY_DONE·RELEASE·REJECT·IGNORE·DELEGATE), secret 해시·비교는 서버 전용 `virtualAccountSecret.ts`(학부모 화면이 import 하면 번들에 node:crypto). 웹훅은 secret 대조→토스 재조회→finalizeVerifiedTossPayment(paidAt 인자, paidDate 무tz=`$::timestamptz AT TIME ZONE 'UTC'`). 학부모 화면용 조회는 `rawResponse->'virtualAccountIssue'` 만 SELECT(마이페이지 2경로는 queries.ts `PARENT_VIRTUAL_ACCOUNT_LATERAL` 공용). ⚠️ DEPOSIT_CALLBACK createdAt 은 시간대 없는 KST → `parseTossTimestamp`. 해제·납부 반영은 웹훅·학부모/원장 «계좌 닫기»(closeOpenVirtualAccount: 토스 취소→재조회)·매일 점검 cron(`/api/cron/virtual-account-sweep`)이 `releaseVirtualAccountTx`·`payVerifiedVirtualAccount` 한 곳을 같이 쓴다. 웹훅 원문은 `stripWebhookSecrets` 로 가려 저장(지문은 원문으로 먼저).
 - **참조횟수**: 0
+
+### [2026-11-08] 대관 신청자 문자 = 알림톡 틀 하나(틀+변수 → 문자 본문·알림톡 variables 동시 생성)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `gym-rental-rules.ts` 의 `RENTAL_APPLICANT_TEMPLATES`(#{변수} 틀) + `buildRentalApplicantMessage` 가 본문과 variables 를 같은 맵에서 만든다(알림톡은 등록 문구와 한 글자라도 다르면 실패). 발송은 `sendTrackedSms({ alimtalk })` → notification.ts 가 `sendMessageDetailed` 에 그대로 전달(장부 유지, 다른 호출은 alimtalk 없음 = 기존 문자). 템플릿 id 는 env `RENTAL_ALIMTALK_*`, 실제 알림톡 시도는 /admin/sms 규칙 채널이 알림톡 + 외부 알림톡 채널 켜짐 + SOLAPI_KAKAO_PF_ID 일 때만. 심사 문서 `docs/kakao-alimtalk-rental-templates.md` 는 테스트가 틀과 글자 대조. 재원생 무료 = 로그인한 PARENT 계정(getVerifiedParentState 통과)의 «내 자녀»(`childAccessSql("s","$1")` — 가족 공유·본인 연결 포함) 중 재원(병합 제외+시작된 ACTIVE 수강+끝난 반 제외) 학생만(`listRentalMemberStudents`). 이름·번호 대조는 쓰지 않는다(맞히기 공격). 공개 /rental 은 정적 유지, 로그인 여부는 액션 `getRentalMemberContext` 로 묻는다.
+- **참조횟수**: 0

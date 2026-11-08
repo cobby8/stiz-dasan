@@ -177,7 +177,11 @@ function fakeDb({ classes = CLASSES, rentals = [] } = {}) {
   };
   return db;
 }
-const BASE = { rentalDate: MON, headcount: 8, useAircon: false, applicantName: "김대관", applicantPhone: "010-1234-5678", purpose: "연습", agreedRules: true };
+const BASE = {
+  rentalDate: MON, headcount: 8, useAircon: false, applicantName: "김대관", applicantPhone: "010-1234-5678", purpose: "연습", agreedRules: true,
+  // 2026-11-08 필수 추가 — 개인정보 동의 + 보증금 환불 계좌
+  agreedPrivacy: true, refundBank: "하나은행", refundAccount: "12345678901", refundHolder: "김대관",
+};
 const apply = (db, extra) => service.createRentalRequest(db, { ...BASE, ...extra }, NOW);
 
 test("신청: 수업 20:40 종료 직후 20:40 시작 1시간 저장 — 분·정시 컬럼·절대 시각(KST)", async () => {

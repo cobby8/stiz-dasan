@@ -15,12 +15,12 @@ import { createNotificationRecord, sendTrackedSms } from "@/lib/notification";
 import { postMessage } from "@/lib/slack/client";
 import {
   buildRentalAdminAlert,
-  buildRentalApprovedApplicantSms,
-  buildRentalConfirmedApplicantSms,
+  buildRentalApplicantMessage,
   buildRentalReceivedApplicantSms,
   rentalAdminSmsWindowKey,
   rentalTimeText,
   RENTAL_ADMIN_SMS_WINDOW_MS,
+  type RentalApplicantTemplateKey,
   type RentalMessageInput,
 } from "@/lib/rental/gym-rental-rules";
 
@@ -40,8 +40,30 @@ export const RENTAL_ADMIN_TRIGGER = "RENTAL_NEW_ADMIN";
 export const RENTAL_APPLICANT_TRIGGERS = {
   received: "RENTAL_RECEIVED_APPLICANT",
   approved: "RENTAL_APPROVED_APPLICANT",
+  rejected: "RENTAL_REJECTED_APPLICANT", // 2026-11-08 추가 — 마이그레이션 20261108230000 이 /admin/sms 규칙(꺼짐)으로 등록
   confirmed: "RENTAL_CONFIRMED_APPLICANT",
 } as const;
+export type RentalApplicantSmsKind = keyof typeof RENTAL_APPLICANT_TRIGGERS;
+
+/**
+ * 알림톡 템플릿 id 환경변수 — 틀(RENTAL_APPLICANT_TEMPLATES)마다 하나. 비어 있으면 그 문자는 문자(LMS)로만 나간다.
+ * 카카오 심사 등록 문구: docs/kakao-alimtalk-rental-templates.md
+ */
+export const RENTAL_ALIMTALK_ENV: Record<RentalApplicantTemplateKey, string> = {
+  approved: "RENTAL_ALIMTALK_APPROVED",
+  approvedMemberFree: "RENTAL_ALIMTALK_APPROVED_MEMBER_FREE",
+  approvedMemberPay: "RENTAL_ALIMTALK_APPROVED_MEMBER_PAY",
+  rejected: "RENTAL_ALIMTALK_REJECTED",
+  confirmed: "RENTAL_ALIMTALK_CONFIRMED",
+  confirmedNoDeposit: "RENTAL_ALIMTALK_CONFIRMED_NO_DEPOSIT", // 선택(재원생 유료 건의 확정 문자)
+};
+
+export function rentalAlimtalkTemplateId(key: RentalApplicantTemplateKey): string {
+  return String(process.env[RENTAL_ALIMTALK_ENV[key]] ?? "").trim();
+}
+
+/** 신청자 문자 결과 — SENT(보냄) · FAILED(실패) · OFF(스위치·규칙이 꺼져 보내지 않음) */
+export type RentalSmsOutcome = "SENT" | "FAILED" | "OFF";
 
 /** 기본 수신자: 원장 김수빈·권혜미(둘 다 ADMIN). RENTAL_NOTIFY_USER_IDS(쉼표 구분)로 바꿀 수 있다. */
 export const DEFAULT_RENTAL_NOTIFY_USER_IDS = [
@@ -148,28 +170,61 @@ export async function notifyAdminsOfRentalRequest(request: RentalRow): Promise<v
   }
 }
 
-/** 신청자 안내 문자 — 스위치가 꺼져 있으면 아무것도 하지 않는다 */
-export async function sendRentalApplicantSms(
-  kind: keyof typeof RENTAL_APPLICANT_TRIGGERS,
-  request: RentalRow,
-): Promise<void> {
-  // 접수 문자는 전용 스위치, 승인·확정 문자는 공용 스위치. 둘 다 /admin/sms 규칙도 켜져 있어야 나간다.
-  if (kind === "received" ? !isRentalReceivedSmsEnabled() : !isRentalApplicantSmsEnabled()) return;
+/** 신청자 문자 규칙이 켜져 있는가(/admin/sms) — 관리자 확인창의 «문자 꺼짐» 표시용 */
+export async function loadRentalApplicantSmsSwitches(): Promise<Record<"approved" | "rejected" | "confirmed", boolean>> {
+  const off = { approved: false, rejected: false, confirmed: false };
+  if (!isRentalApplicantSmsEnabled()) return off;
   try {
-    const body = kind === "received"
-      ? buildRentalReceivedApplicantSms(request)
-      : kind === "approved"
-        ? buildRentalApprovedApplicantSms(request, rentalBankAccount())
-        : buildRentalConfirmedApplicantSms(request);
-    await sendTrackedSms({
+    const rows = await prisma.$queryRawUnsafe<Array<{ trigger: string; isActive: boolean }>>(
+      `SELECT trigger, "isActive" FROM "MessageAutomationRule" WHERE trigger = ANY($1::text[])`,
+      [RENTAL_APPLICANT_TRIGGERS.approved, RENTAL_APPLICANT_TRIGGERS.rejected, RENTAL_APPLICANT_TRIGGERS.confirmed],
+    );
+    const active = (trigger: string) => rows.some((r) => r.trigger === trigger && r.isActive === true);
+    return {
+      approved: active(RENTAL_APPLICANT_TRIGGERS.approved),
+      rejected: active(RENTAL_APPLICANT_TRIGGERS.rejected),
+      confirmed: active(RENTAL_APPLICANT_TRIGGERS.confirmed),
+    };
+  } catch {
+    return off;
+  }
+}
+
+/**
+ * 신청자 안내 문자 — 스위치가 꺼져 있으면 아무것도 하지 않는다(OFF).
+ * 승인·거절·확정은 알림톡 틀과 같은 본문을 만들고, 템플릿 id 가 있으면 알림톡 → 실패 시 같은 본문 문자로 대체.
+ * 결과를 돌려준다(관리자 화면 «문자 실패» 표시). 오류는 삼키고 FAILED 로 돌려준다 — 상태 변경은 되돌리지 않는다.
+ */
+export async function sendRentalApplicantSms(
+  kind: RentalApplicantSmsKind,
+  request: RentalRow,
+): Promise<RentalSmsOutcome> {
+  // 접수 문자는 전용 스위치, 승인·거절·확정 문자는 공용 스위치. 둘 다 /admin/sms 규칙도 켜져 있어야 나간다.
+  if (kind === "received" ? !isRentalReceivedSmsEnabled() : !isRentalApplicantSmsEnabled()) return "OFF";
+  try {
+    let body: string;
+    let alimtalk: { templateId: string; variables: Record<string, string> } | undefined;
+    if (kind === "received") {
+      body = buildRentalReceivedApplicantSms(request);
+    } else {
+      const message = buildRentalApplicantMessage(kind, request, rentalBankAccount());
+      body = message.body;
+      const templateId = rentalAlimtalkTemplateId(message.templateKey);
+      if (templateId) alimtalk = { templateId, variables: message.variables };
+    }
+    const result = await sendTrackedSms({
       eventType: RENTAL_EVENT_TYPE,
       eventId: request.id,
       trigger: RENTAL_APPLICANT_TRIGGERS[kind],
       recipientRole: "PARENT",
       recipientPhone: request.applicantPhone,
       body,
+      alimtalk,
     });
+    if (result.ok) return "SENT";
+    return result.reason === "AUTOMATION_DISABLED" ? "OFF" : "FAILED";
   } catch (error) {
     console.error("[gym-rental] applicant sms failed:", (error as Error).message);
+    return "FAILED";
   }
 }

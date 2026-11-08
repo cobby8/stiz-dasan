@@ -3,7 +3,7 @@
 ## 파일별 요약
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
-| architecture.md | 19 | 2026-11-08 |
+| architecture.md | 20 | 2026-11-08 |
 | errors.md | 9 | 2026-10-24 |
 | conventions.md | 29 | 2026-10-25 |
 | decisions.md | 20 | 2026-10-06 |
@@ -23,8 +23,8 @@
 - **apiSuccess snake_case 자동변환** · **IDOR** · **`prisma db push` 금지** → errors / decisions
 
 ## 최근 추가된 지식 (최근 5건)
-1. [architecture] 체육관 대관 = 순수 규칙+db 인자 연결부+EXCLUDE 제약, 신청자 문자 이중 스위치 (2026-11-07)
-2. [convention] 관리자 메뉴 등록 검사 기준 정정 — 셸이 EXTRA_GROUPS 로 통합돼 「경로 3회」 기준은 폐기 (2026-10-25)
-3. [error] 같은 규칙의 두 입력 경로 중 한쪽만 고쳐 DB 제약이 UPDATE 를 거부 — 관리자가 셔틀 취소 불가였던 막힌 길 (2026-10-24)
-4. [architecture] 체험↔수강신청 연결 = 순수 판정(trialLeadMatch)+연결부(trialLeadLinkService) 한 곳, 비교 시점 3곳 (2026-10-23)
-5. [architecture] 카카오 보강 신청·취소 대화 = KakaoParentIntake(MAKEUP_FLOW) 상태 + parent-makeup 함수 그대로, 「결석·보강」 메뉴 제외 (2026-10-17)
+1. [architecture] 대관 신청자 문자 = 알림톡 틀 하나(문자=알림톡 본문, sendTrackedSms alimtalk 전달) (2026-11-08)
+2. [architecture] 체육관 대관 = 순수 규칙+db 인자 연결부+EXCLUDE 제약, 신청자 문자 이중 스위치 (2026-11-07)
+3. [convention] 관리자 메뉴 등록 검사 기준 정정 — 셸이 EXTRA_GROUPS 로 통합돼 「경로 3회」 기준은 폐기 (2026-10-25)
+4. [error] 같은 규칙의 두 입력 경로 중 한쪽만 고쳐 DB 제약이 UPDATE 를 거부 — 관리자가 셔틀 취소 불가였던 막힌 길 (2026-10-24)
+5. [architecture] 체험↔수강신청 연결 = 순수 판정(trialLeadMatch)+연결부(trialLeadLinkService) 한 곳, 비교 시점 3곳 (2026-10-23)

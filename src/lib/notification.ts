@@ -42,6 +42,9 @@ type SmsDeliveryOptions = {
     audienceScope?: "INTERNAL" | "EXTERNAL" | "SECURITY";
     forceSms?: boolean;
     source?: MessageLedgerSource;
+    // 알림톡 템플릿(선택). 넘긴 호출만 알림톡을 시도한다 — 템플릿 id·카카오 채널(PF ID)이 없거나
+    // 규칙 채널이 문자면 지금처럼 문자로만 나간다. 본문(body)은 등록 템플릿에 변수를 넣은 결과와 같아야 한다.
+    alimtalk?: { templateId: string; variables?: Record<string, string> };
 };
 
 type AutomationPolicy = {
@@ -411,8 +414,8 @@ async function sendSmsForNotification(input: SmsDeliveryOptions): Promise<SmsSen
         fallbackEnabled: policy.fallbackEnabled,
         fallbackChannel: policy.fallbackChannel,
         forceSms: input.forceSms,
-        // 승인된 알림톡 변수 계약이 연결되기 전에는 기존 SMS/LMS로만 안전하게 대체한다.
-        alimtalk: undefined,
+        // 승인된 알림톡 변수 계약을 넘긴 호출(예: 체육관 대관)만 알림톡을 시도하고, 나머지는 기존 SMS/LMS 그대로.
+        alimtalk: input.alimtalk?.templateId?.trim() ? input.alimtalk : undefined,
     });
     const result = applyAutomationPolicyAudit(dispatchResult, policy);
     const finalized = await finishLedgerSmsDelivery(deliveryId, result);

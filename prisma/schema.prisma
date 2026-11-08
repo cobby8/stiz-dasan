@@ -703,6 +703,16 @@ model GymRentalRequest {
   completedAt     DateTime? @db.Timestamptz(6)
   refundedAt      DateTime? @db.Timestamptz(6)
   closedAt        DateTime? @db.Timestamptz(6)
+  // 재원생 무료·환불 계좌·개인정보 동의·거절 사유·문자 결과 — 20261108230000_gym_rental_member_refund
+  memberFree         Boolean   @default(false) // 재원생 무료(서버 확인 완료 건만 true)
+  memberStudentId    String? // 확인된 학생 id
+  refundBank         String? // 보증금 환불 은행
+  refundAccount      String? // 환불 계좌번호(숫자만, CHECK 10~16자리)
+  refundHolder       String? // 환불 계좌 예금주
+  privacyAgreedAt    DateTime? @db.Timestamptz(6) // 개인정보 수집·이용 동의 시각
+  rejectReason       String? // 거절 사유(신청자 문자에 나감)
+  applicantSmsStatus String? // 마지막 신청자 문자 결과 «SENT|FAILED|OFF:종류»
+  applicantUserId    String? // 로그인해서 신청한 계정(User.id)
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @db.Timestamptz(6)
 

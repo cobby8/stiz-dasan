@@ -182,6 +182,8 @@ const NOW = kst.kstAt("2026-11-07", "12:00");
 const GOOD = {
   rentalDate: MON, startMinute: 600, durationMinutes: 120, headcount: 12, useAircon: true,
   applicantName: " 김대관 ", applicantPhone: "010-1234-5678", purpose: "동호회 연습", agreedRules: true,
+  // 2026-11-08 필수 추가 — 개인정보 동의 + 보증금 환불 계좌(일반 신청)
+  agreedPrivacy: true, refundBank: "하나은행", refundAccount: "123-4567-890123", refundHolder: "김대관",
   usageFee: 1, totalAmount: 1, // 화면이 보낸 금액은 무시돼야 한다
 };
 
@@ -384,7 +386,8 @@ test("관리자 액션은 requireAdmin, 신청자 문자는 스위치(RENTAL_APP
   // 접수 문자는 남의 번호로도 보낼 수 있어 전용 스위치 없이는 절대 안 나간다
   assert.match(notify, /process\.env\.RENTAL_APPLICANT_RECEIVED_SMS_ENABLED === "1"/);
   const applicantFn = notify.slice(notify.indexOf("export async function sendRentalApplicantSms"));
-  assert.match(applicantFn.slice(0, 400), /if \(kind === "received" \? !isRentalReceivedSmsEnabled\(\) : !isRentalApplicantSmsEnabled\(\)\) return;/);
+  // 2026-11-08: 결과(SENT/FAILED/OFF)를 돌려주게 바뀌어 꺼짐이면 "OFF" 를 돌려준다(관리자 화면 «문자 실패» 표시용)
+  assert.match(applicantFn.slice(0, 500), /if \(kind === "received" \? !isRentalReceivedSmsEnabled\(\) : !isRentalApplicantSmsEnabled\(\)\) return "OFF";/);
   // 원장 알림 문자는 10분 창 키로 장부 중복을 걸러 한 통으로 묶는다(슬랙은 건별)
   assert.match(notify, /eventId: smsEventId/);
   assert.match(notify, /if \(admin\.phone && sendSms\)/);
@@ -392,7 +395,8 @@ test("관리자 액션은 requireAdmin, 신청자 문자는 스위치(RENTAL_APP
   assert.notEqual(rules.rentalAdminSmsWindowKey(kst.kstAt(MON, "10:09")), rules.rentalAdminSmsWindowKey(kst.kstAt(MON, "10:11")));
   assert.match(rules.buildRentalAdminAlert(SAMPLE, 3), /승인 대기 3건/);
   // 공개 신청은 한도 확인·저장을 한 트랜잭션에서, IP 는 x-forwarded-for 첫 값의 지문으로
-  assert.match(actions, /prisma\.\$transaction\(\(tx\) => createRentalRequest\(tx, input, Date\.now\(\), ipHash\)\)/);
+  // 2026-11-08: 로그인 계정(viewer)을 같이 넘긴다(재원생 무료 확인·신청 계정 기록)
+  assert.match(actions, /prisma\.\$transaction\(\(tx\) => createRentalRequest\(tx, input, Date\.now\(\), ipHash, viewer\)\)/);
   assert.match(actions, /get\("x-forwarded-for"\) \?\? ""\)\.split\(","\)\[0\]/);
   // 원장 알림은 관리자 역할 계정만
   assert.match(notify, /role IN \('ADMIN','VICE_ADMIN'\)/);
