@@ -87,8 +87,8 @@ test("[요금] 미리보기 = 청구 제안값(대표 5가지)", () => {
     ["주2회 한 프로그램 + 셔틀", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Wed")], true, { tuitionTotal: 160000, shuttleFee: 15000 }],
     ["반 4개(주4회 칸 없음 → 청구와 같은 대체 계산)", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Tue"), cls("c", "hobby", "Wed"), cls("d", "hobby", "Thu")], true, { tuitionTotal: 400000, shuttleFee: 20000 }],
     ["여러 프로그램 + 셔틀(직접 입력 셔틀비가 있으면 그 값)", [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true, { tuitionTotal: 170000, shuttleFee: 25000 }], // 5a2ec1d9 «여러 프로그램 합산» 규칙 반영
-    ["주말 판정은 반 요일 기준(주말 반은 셔틀 횟수에서 빠짐)", [cls("a", "hobby", "Tue"), cls("b", "weekend", "Sat")], true, { tuitionTotal: 220000, shuttleFee: 10000 }],
-    ["일8 대표팀이면 셔틀비 전체 면제", [cls("a", "hobby", "Mon"), cls("b", "elite", "Sun", "Sun-8")], true, { tuitionTotal: 250000, shuttleFee: 0 }],
+    ["주말 판정은 반 요일 기준(주말 반은 셔틀 횟수에서 빠짐)", [cls("a", "hobby", "Tue"), cls("b", "weekend", "Sat")], true, { tuitionTotal: 200000, shuttleFee: 10000 }], // 여러 프로그램 합산 규칙
+    ["일8 대표팀이면 셔틀비 전체 면제", [cls("a", "hobby", "Mon"), cls("b", "elite", "Sun", "Sun-8")], true, { tuitionTotal: 230000, shuttleFee: 0 }], // 여러 프로그램 합산 규칙
   ];
   for (const [label, classes, shuttleOn, expected] of cases) {
     const preview = tuition.previewRegularTuition(PROGRAMS, classes, shuttleOn);
@@ -96,9 +96,9 @@ test("[요금] 미리보기 = 청구 제안값(대표 5가지)", () => {
     assert.deepEqual({ tuitionTotal: preview.tuitionTotal, shuttleFee: preview.shuttleFee }, billing, `${label}: 청구 제안값과 달라졌다`);
     assert.deepEqual(billing, expected, `${label}: 기대 금액`);
   }
-  // 셔틀을 안 쓰면 0, 여러 프로그램이면 청구 화면과 같은 경고가 붙는다
+  // 셔틀을 안 쓰면 0
   assert.equal(tuition.previewRegularTuition(PROGRAMS, [cls("a", "hobby", "Mon")], false).shuttleFee, 0);
-  assert.match(tuition.previewRegularTuition(PROGRAMS, [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true).lines[0].warning ?? "", /여러 프로그램/);
+  // 5a2ec1d9 부터 청구는 여러 프로그램을 «합산»하고 경고 대신 근거에 적는다 → 미리보기도 경고 없음(청구와 같음)
 });
 
 test("[요금] 미리보기는 자체 계산 없이 청구 모듈을 부르고, 셔틀 자동 요금 상수도 청구 모듈 하나", async () => {
