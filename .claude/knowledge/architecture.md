@@ -158,3 +158,8 @@
 - **발견자**: developer
 - **내용**: 승인 응답 WAITING_FOR_DEPOSIT → `PaymentTransaction.status='WAITING_FOR_DEPOSIT'`·method «가상계좌»·rawResponse 에 `virtualAccountIssue`(은행·계좌·예금주·기한·금액)+`depositSecretHash`(SHA-256, 원문 secret 저장 안 함). 청구(Payment)·청구서는 미납 그대로. 판정은 순수 `src/lib/payments/virtualAccount.ts`(decideVirtualAccountWebhook: PAY·ALREADY_DONE·RELEASE·REJECT·IGNORE·DELEGATE), secret 해시·비교는 서버 전용 `virtualAccountSecret.ts`(학부모 화면이 import 하면 번들에 node:crypto). 웹훅은 secret 대조→토스 재조회→finalizeVerifiedTossPayment(paidAt 인자, paidDate 무tz=`$::timestamptz AT TIME ZONE 'UTC'`). 학부모 화면용 조회는 `rawResponse->'virtualAccountIssue'` 만 SELECT(마이페이지 2경로는 queries.ts `PARENT_VIRTUAL_ACCOUNT_LATERAL` 공용). ⚠️ DEPOSIT_CALLBACK createdAt 은 시간대 없는 KST → `parseTossTimestamp`. 해제·납부 반영은 웹훅·학부모/원장 «계좌 닫기»(closeOpenVirtualAccount: 토스 취소→재조회)·매일 점검 cron(`/api/cron/virtual-account-sweep`)이 `releaseVirtualAccountTx`·`payVerifiedVirtualAccount` 한 곳을 같이 쓴다. 웹훅 원문은 `stripWebhookSecrets` 로 가려 저장(지문은 원문으로 먼저).
 - **참조횟수**: 0
+### [2026-11-08] 셔틀 명단 점검·카카오 셔틀 신청 할 일 = 순수 판정 + 기존 표 상태값(새 표 없음, 자동 삭제 없음)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 명단 수강 점검 `src/lib/shuttle/regularRosterEnrollmentCheckLogic.ts`(다니는 반 없음·수업 없는 요일·한쪽만) — 서버 `getRosterEnrollmentCheck` 는 그 달 명단 학생의 지금 Enrollment(ACTIVE/PAUSED)와 자동 생성 달 여부만 읽고 판정은 화면에서. 월 넘김 확인 = 수동 복사 전 confirm(`rosterCopyWarningText`) + 자동 생성 달 «확인했어요» = `ShuttleAuditLog` action `REGULAR_ROSTER_MONTH_REVIEWED`(자동 생성 기록 `REGULAR_ROSTER_AUTO_MONTH` 와 짝). ② 카카오 정규 셔틀 신청(START) 할 일 `src/lib/kakaoShuttleRosterTask.ts` — 완료 = `KakaoParentIntake.structuredJson.rosterTask.doneAt` + 결정 전 상태면 APPLIED(이관 APPROVED 는 유지) + 감사 `SHUTTLE_ROSTER_DONE`. 명단 추가는 기존 `/admin/shuttle/regular?month=&studentId=` 딥링크(«신청 학생 선택해 명단 추가») 재사용.
+- **참조횟수**: 0
