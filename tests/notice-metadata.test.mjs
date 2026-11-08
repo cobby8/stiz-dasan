@@ -33,3 +33,13 @@ test("공지가 없으면 검색 제외(noindex)", () => {
   assert.equal(meta.robots.index, false);
   assert.equal(meta.alternates, undefined);
 });
+
+test("script·style 안의 글자는 설명에 남지 않는다", () => {
+  const d = noticeDescription("<style>.a{color:red}</style><p>안내</p><script>alert(1)</script>");
+  assert.equal(d, "안내");
+});
+
+test("반 대상 공지는 검색 제외, 전체 공지는 검색 허용", () => {
+  assert.equal(buildNoticeMetadata({ id: "a", title: "t", content: "c", targetType: "CLASS" }).robots.index, false);
+  assert.equal(buildNoticeMetadata({ id: "a", title: "t", content: "c", targetType: "ALL" }).robots?.index === false, false);
+});
