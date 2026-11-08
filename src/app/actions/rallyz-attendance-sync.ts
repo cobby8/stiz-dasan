@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { syncCreditForRegularSession } from "@/lib/makeup/credit-service";
+import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
 import { ensureOperationsSyncInfrastructure } from "@/lib/operationsSyncInfrastructure";
 import { decideAttendanceWrite, parseRallyzAttendanceJson } from "@/lib/rallyzAttendanceSync";
 
@@ -94,13 +95,10 @@ export async function applyRallyzAttendanceSync(runId: string) {
     // 트랜잭션 콜백 안에서는 위 null 검사가 타입에 이어지지 않아 값을 미리 붙잡아 둔다(보강권 대상 기록용).
     const creditStudentId = item.studentId;
     const creditStatus = item.siteStatus;
+    const sessionClassId = item.classId;
     await prisma.$transaction(async (tx) => {
-      const sessionKey = `${item.classId}:${item.sourceDate}`;
-      const sessions = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-        `INSERT INTO "Session" (id,"classId",date,"sessionKey",status,"createdAt","updatedAt")
-         VALUES (gen_random_uuid()::text,$1,$2::date,$3,'PLANNED',now(),now())
-         ON CONFLICT ("sessionKey") DO UPDATE SET "updatedAt"=now() RETURNING id`, item.classId, item.sourceDate, sessionKey,
-      );
+      // 같은 반·같은 날 수업 기록 하나 — 관리자 출결·코치 앱과 같은 판정 함수(키 없는 옛 기록도 입양).
+      const sessions = [{ id: await findOrCreateRegularSession(tx, { classId: sessionClassId, dateYmd: item.sourceDate }) }];
       const existing = await tx.$queryRawUnsafe<Array<{ id: string; status: string; note: string | null }>>(
         `SELECT id,status,note FROM "Attendance" WHERE "sessionId"=$1 AND "studentId"=$2 LIMIT 1`, sessions[0].id, item.studentId,
       );
