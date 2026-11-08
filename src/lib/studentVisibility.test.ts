@@ -70,6 +70,7 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
         reason: "POS 대조용 결제 조회. mergedIntoStudentId 를 SELECT 해서 직접 판정한다(FROM 앞이라 가드가 못 봄)",
     },
     "lib/pos/paymentNoticeService.ts": { count: 1, reason: "id 지정 POS 결제 알림 1건의 학생 이름(LEFT JOIN)" },
+    "lib/rental/gym-rental-service.ts": { count: 1, reason: "관리자 대관 목록에서 신청 당시 저장한 memberStudentId 1건의 학생 이름(id 지정 조회 — 병합돼도 이름 표시만)" },
 
     // 기록 테이블 (2026-10-02 정리)
     // 병합 엔진(tables.ts)이 이제 보강권·결석·셔틀 예외·반 변경 신청까지 대표 학생에게 옮긴다.
