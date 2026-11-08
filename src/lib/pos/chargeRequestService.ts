@@ -130,6 +130,8 @@ type ViewRow = {
     refundedKst?: string | null;
     /** 취소 요청 뒤 CANCEL_PICKUP_TIMEOUT_SEC 가 지나도 플러그인이 안 가져감 */
     cancelPickupLate?: boolean;
+    /** 결제 요청이 CHARGE_PICKUP_TIMEOUT_SEC 넘게 PENDING(POS 가 안 받아 감) */
+    chargePickupLate?: boolean;
     /** 플러그인이 취소 결과를 보고했나 */
     cancelReported?: boolean;
     /** POS 취소 완료 보고 뒤 CANCEL_CONFIRM_LATE_MIN 분이 지나도 토스 확인(DONE)이 없음 */
@@ -158,6 +160,8 @@ export type AdminChargeRequestView = {
     itemCount: number;
     /** 묶인 청구(POS 주문 항목 순서) */
     items: { paymentId: string; itemLabel: string; amount: number }[];
+    /** POS 로 보낸 지 CHARGE_PICKUP_TIMEOUT_SEC 가 지나도 아직 PENDING(POS 가 안 받아 감) → «POS 가 응답이 없어요» 안내(DB 시계) */
+    pickupLate: boolean;
 };
 
 /** 플러그인 API 응답용(이름 가림) — docs/toss-pos-plugin-plan.md «API 계약»과 같은 모양 */
@@ -209,6 +213,9 @@ type ChargeItemRow = {
     paidProvider: string | null;
 };
 
+/** 결제 요청을 POS 가 이만큼(초) 안 받아 가면 관리자 창에 «POS 가 응답이 없어요» — 취소 쪽(CANCEL_PICKUP_TIMEOUT_SEC)과 같은 90초. 요청은 자동 취소하지 않는다 */
+const CHARGE_PICKUP_TIMEOUT_SEC = 90;
+
 const UNPAID_STATUSES = ["PENDING", "OVERDUE"];
 const isUnpaid = (status: unknown) => UNPAID_STATUSES.includes(String(status));
 
@@ -230,6 +237,7 @@ const VIEW_SQL = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount,
         r."tossOrderId", r."tossPaymentId", r."cancelState", r."cancelReportMessage",
         to_char(r."refundedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "refundedKst",
         (r."cancelState" = 'REQUESTED' AND r."cancelRequestedAt" < now() - interval '${CANCEL_PICKUP_TIMEOUT_SEC} seconds') AS "cancelPickupLate",
+        (r.status = 'PENDING' AND r."createdAt" < now() - interval '${CHARGE_PICKUP_TIMEOUT_SEC} seconds') AS "chargePickupLate",
         (r."cancelReportedAt" IS NOT NULL) AS "cancelReported",
         (r."cancelState" = 'SENT' AND r."cancelReportedAt" < now() - interval '${CANCEL_CONFIRM_LATE_MIN} minutes') AS "cancelConfirmLate",
         p.type AS "paymentType", p.year, p.month, p.status AS "paymentStatus", p."paidProvider",
@@ -446,6 +454,8 @@ function toAdminView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)])
             itemLabel: itemNameOf({ ...nameInputOf(it), maskedName: "" }),
             amount: it.amount,
         })),
+        // 원장부 대기(ledgerPending)면 상태를 SENT 로 보이므로 무응답 안내도 끈다
+        pickupLate: !ledgerPending && row.status === "PENDING" && Boolean(row.chargePickupLate),
     };
 }
 
@@ -1489,6 +1499,11 @@ export type AdminChargeCancelView = {
     itemLabel: string;
     /** 묶인 청구 수(단건 1) — 2 이상이면 취소하면 전부 환불된다 */
     itemCount: number;
+    /**
+     * 취소하면 환불될 청구 목록(POS 주문 항목 순서) — 창·확인창에 줄마다 «종류·월·금액»을 보인다.
+     * amount = 요청 순간 스냅샷(POS 가 돌려주는 금액). 항목 표가 비어 있는 옛 요청은 대표 청구 1건.
+     */
+    items: AdminChargeCancelItem[];
     paymentStatus: string;
     /** NULL = 취소 없음 · REQUESTED · SENT · FAILED · PARTIAL · DONE */
     cancelState: string | null;
@@ -1503,6 +1518,19 @@ export type AdminChargeCancelView = {
     /** 지금 «결제 취소»를 누를 수 있나 + 못 하면 이유 */
     canRequest: boolean;
     blockReason: string;
+};
+
+/** 결제 취소 창의 환불될 청구 1건 */
+export type AdminChargeCancelItem = {
+    paymentId: string;
+    /** MONTHLY · SHUTTLE · OTHER … */
+    type: string;
+    year: number | null;
+    month: number | null;
+    amount: number;
+    studentName: string;
+    /** «2026년 11월 수강료» — 화면에 그대로 쓰는 이름 */
+    itemLabel: string;
 };
 
 function toCancelView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]): AdminChargeCancelView {
@@ -1523,6 +1551,16 @@ function toCancelView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)]
             ? summaryOf(items.map(nameInputOf))
             : itemNameOf({ year: row.year, month: row.month, type: row.paymentType, maskedName: "" }),
         itemCount: items.length,
+        // 묶음은 한 학생만 묶이므로(만들 때 확인) 이름은 요청의 대표 청구 학생
+        items: items.map((it) => ({
+            paymentId: it.paymentId,
+            type: it.paymentType,
+            year: it.year,
+            month: it.month,
+            amount: it.amount,
+            studentName: row.studentName,
+            itemLabel: itemNameOf({ ...nameInputOf(it), maskedName: "" }),
+        })),
         paymentStatus: row.paymentStatus,
         cancelState: row.cancelState ?? null,
         cancelReportMessage: row.cancelReportMessage ?? null,

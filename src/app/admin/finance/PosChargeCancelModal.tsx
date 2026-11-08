@@ -112,31 +112,54 @@ export default function PosChargeCancelModal({
     // 묶음(같은 학생 여러 건을 POS 결제 한 번으로 받은 것) — 취소하면 묶인 청구가 «전부» 환불된다.
     // 그래서 제목은 고른 한 건이 아니라 묶음 전체(«홍길동 · 수강료 11월 외 1건 · 합계 280,000원»)를 보인다.
     const isBundle = (cancel?.itemCount ?? 1) > 1;
-    const heading = isBundle && cancel
-        ? `${target.studentName} · ${cancel.itemLabel} · 합계 ${won(cancel.amount)}`
-        : `${target.studentName} · ${won(target.amount)}`;
+    // 다 불러오기 전에는 금액을 쓰지 않는다 — 고른 한 건 금액이 먼저 떴다가 묶음 합계로 바뀌면 헷갈린다
+    const heading = !cancel
+        ? (loading ? `${target.studentName} · 불러오는 중` : target.studentName)
+        : isBundle
+            ? `${target.studentName} · ${cancel.itemLabel} · 합계 ${won(cancel.amount)}`
+            : `${target.studentName} · ${won(cancel.amount)}`;
 
     async function handleRequest() {
-        // 돈이 나가는 작업 — 위험 작업 확인 창(대상·금액·되돌릴 수 없음을 보고 누르게)
+        if (!cancel) return;
+        // 돈이 나가는 작업 — 위험 작업 확인 창. 무엇이 얼마 환불되는지 줄마다 보이고,
+        // «되돌릴 수 없음» 체크를 해야 확정 버튼이 켜진다(진입 버튼과 글자도 달라 연달아 두 번 눌러 환불되지 않게).
         const ok = await confirm({
-            title: `${heading} 결제 취소`,
-            description: isBundle && cancel
-                ? `POS 결제가 취소되고 함께 결제한 청구 ${cancel.itemCount}건이 모두 환불로 바뀝니다. 되돌릴 수 없습니다.`
-                : "POS 결제가 취소되고 청구는 환불로 바뀝니다. 되돌릴 수 없습니다.",
-            confirmLabel: "결제 취소",
+            title: "결제 취소 · 환불",
+            description: (
+                <>
+                    <CancelItemList cancel={cancel} />
+                    <span className="mt-2 block font-semibold text-[var(--color-academy-danger)]">
+                        POS 결제(카드·현금)가 바로 취소되고 되돌릴 수 없어요.
+                        {isBundle
+                            ? ` 함께 결제한 청구 ${cancel.itemCount}건이 모두 환불로 바뀝니다.`
+                            : " POS 결제가 취소되고 청구는 환불로 바뀝니다."}
+                    </span>
+                </>
+            ),
+            acknowledgeLabel: "되돌릴 수 없는 환불임을 확인했어요",
+            // 확정 버튼 = 누구에게 얼마를 돌려주는지 그대로(«결제시험(원장) 5,000원 환불하기»)
+            confirmLabel: `${target.studentName} ${won(cancel.amount)} 환불하기`,
             tone: "danger",
         });
         if (!ok) return;
         setBusy(true);
-        const result = await requestPosChargeCancel(target.id);
-        setBusy(false);
-        if (!result.ok) {
-            setMessage(result.message);
-            await refresh();
-            return;
+        // try/finally — 연결이 끊겨 오류가 나도 «보내는 중…»에서 굳지 않게
+        try {
+            const result = await requestPosChargeCancel(target.id);
+            if (!result.ok) {
+                setMessage(result.message);
+                await refresh();
+                return;
+            }
+            setCancel(result.cancel);
+            setMessage("");
+        } catch {
+            // 서버에는 취소가 남았을 수도 있다 — 다시 읽어 실제 상태를 보인다
+            setMessage("연결이 끊겨 결과를 받지 못했어요. 상태를 다시 확인합니다.");
+            void refresh();
+        } finally {
+            if (mountedRef.current) setBusy(false);
         }
-        setCancel(result.cancel);
-        setMessage("");
     }
 
     const state = cancel?.cancelState ?? null;
@@ -219,9 +242,14 @@ export default function PosChargeCancelModal({
                                 POS 로 받은 결제를 취소합니다. 카드는 승인 취소, 현금은 POS 기록이 취소됩니다.
                             </p>
                         )}
+                        {/* 환불될 청구를 줄마다(종류·월·금액) + 합계 */}
+                        <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm">
+                            <CancelItemList cancel={cancel} />
+                        </div>
                         {!cancel.canRequest && cancel.blockReason && (
                             <p className="mt-2 text-sm text-[var(--color-academy-muted)]">{cancel.blockReason}</p>
                         )}
+                        {/* 위험 등급(빨강) · 오른쪽 끝(위의 «닫기»와 떨어진 자리) · 확인창 확정 버튼과 다른 글자 */}
                         <div className="mt-4 flex">
                             <button
                                 type="button"
@@ -229,7 +257,7 @@ export default function PosChargeCancelModal({
                                 disabled={busy || !cancel.canRequest}
                                 className="academy-button-danger ml-auto"
                             >
-                                {busy ? "보내는 중…" : state === "FAILED" || state === "PARTIAL" ? "다시 결제 취소" : "결제 취소"}
+                                {busy ? "보내는 중…" : state === "FAILED" || state === "PARTIAL" ? "다시 환불 진행…" : "환불 진행…"}
                             </button>
                         </div>
                     </div>
@@ -245,5 +273,23 @@ export default function PosChargeCancelModal({
         {/* 확인 창은 바깥에 — 창 안에 겹치면 키보드 포커스가 꼬인다 */}
         {confirmDialog}
         </>
+    );
+}
+
+/** 환불될 청구 목록 — 줄마다 «2026년 11월 수강료 … 180,000원», 맨 아래 합계 굵게(취소 창·확인창 공용) */
+function CancelItemList({ cancel }: { cancel: AdminChargeCancelView }) {
+    return (
+        <span className="block">
+            {cancel.items.map((it) => (
+                <span key={it.paymentId} className="flex justify-between gap-3 py-0.5 text-[var(--color-academy-ink)]">
+                    <span className="min-w-0 break-keep">{it.itemLabel}</span>
+                    <span className="shrink-0 tabular-nums">{won(it.amount)}</span>
+                </span>
+            ))}
+            <span className="mt-1 flex justify-between gap-3 border-t border-[var(--color-academy-line)] pt-1 font-extrabold text-[var(--color-academy-ink)]">
+                <span>합계{cancel.itemCount > 1 ? ` · ${cancel.itemCount}건` : ""}</span>
+                <span className="shrink-0 tabular-nums">{won(cancel.amount)}</span>
+            </span>
+        </span>
     );
 }

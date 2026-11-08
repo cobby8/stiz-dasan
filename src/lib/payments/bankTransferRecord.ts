@@ -157,3 +157,142 @@ export function targetNamesSummary(targets: Array<{ studentName: string }>, maxN
     if (names.length <= maxNames) return names.join(", ");
     return `${names.slice(0, maxNames).join(", ")} 외 ${names.length - maxNames}명`;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * «안 되는 건만 빼고 나머지로 진행» 계획 (2026-11-08 원장 지시 «막다른 흐린 버튼 없애기»)
+ *
+ * 왜: 예전엔 고른 청구 중 하나라도 규칙에 어긋나면 POS 버튼이 통째로 흐려지고 작은 글씨만 나와
+ *     원장이 어디서 막혔는지 몰랐다. 이제는 어긋난 건을 «사유와 함께 빼고», 나머지로 바로 진행할 버튼을 준다.
+ *   - 계좌이체: 미납·연체만 기록(이미 납부·환불·취소는 뺀다)
+ *   - 현장 결제: 위 + 유니폼(본사 직접 구매)·금액 0원 이하도 빼고, 학생별로 묶어 10건씩 나눈다
+ * 화면 판단일 뿐이다 — 서버가 DB 값으로 같은 규칙을 다시 확인한다.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type PlanTarget = {
+    id: string;
+    studentId?: string | null;
+    studentName: string;
+    amount: number;
+    type: string;
+    status: string;
+    month?: number | null;
+    year?: number | null;
+    label?: string;
+};
+
+/** 빼는 사유 — 상태(이미 납부·환불·취소·기타)·종류(유니폼)·금액(0원 이하) */
+export type ExcludeReason = "ALREADY_PAID" | "REFUNDED" | "CANCELED" | "NOT_UNPAID" | "UNIFORM" | "ZERO_AMOUNT";
+
+/** 사유 칩·안내 문구에 쓰는 짧은 이름 */
+export const EXCLUDE_REASON_LABEL: Record<ExcludeReason, string> = {
+    ALREADY_PAID: "이미 납부",
+    REFUNDED: "환불",
+    CANCELED: "취소",
+    NOT_UNPAID: "미납 아님",
+    UNIFORM: "유니폼(본사 구매)",
+    ZERO_AMOUNT: "금액 0원",
+};
+
+export type Excluded<T> = { target: T; reason: ExcludeReason };
+
+/** 상태만 보고 빼는 사유(미납·연체면 null) — 계좌이체·현장 결제 공통 */
+function statusExcludeReason(status: string): ExcludeReason | null {
+    if ((RECORDABLE_STATUSES as readonly string[]).includes(status)) return null;
+    if (status === "PAID") return "ALREADY_PAID";
+    if (status === "REFUNDED") return "REFUNDED";
+    if (status === "CANCELED" || status === "CANCELLED") return "CANCELED";
+    return "NOT_UNPAID";
+}
+
+/** 계좌이체 계획: 미납·연체만 기록하고 나머지는 사유와 함께 뺀다(고른 순서 유지) */
+export function planBankTransfer<T extends PlanTarget>(targets: T[]): { recordable: T[]; excluded: Excluded<T>[] } {
+    const recordable: T[] = [];
+    const excluded: Excluded<T>[] = [];
+    for (const t of targets) {
+        const reason = statusExcludeReason(t.status);
+        if (reason) excluded.push({ target: t, reason });
+        else recordable.push(t);
+    }
+    return { recordable, excluded };
+}
+
+export type PosGroup<T> = {
+    /** 같은 학생 묶음 키(학생 id 없는 옛 데이터는 청구 id 로 각자 1건) */
+    key: string;
+    studentName: string;
+    targets: T[];
+    total: number;
+    /** 한 학생이 10건을 넘어 나뉘었을 때 몇 번째 묶음인지(1부터) · 전체 묶음 수 */
+    part: number;
+    parts: number;
+};
+
+/**
+ * 현장 결제 계획: 결제 가능한 청구를 학생별로 묶고(각 POS_CHARGE_MAX_ITEMS 건 이하), 안 되는 건은 사유와 함께 뺀다.
+ * - 사유 판정 순서: 상태 → 종류(유니폼) → 금액(0원 이하). 한 건에 사유 하나만 붙인다.
+ * - 묶음 순서 = 학생이 처음 나온 순서, 묶음 안 순서 = 고른 순서.
+ */
+export function planPosCharge<T extends PlanTarget>(targets: T[]): { groups: PosGroup<T>[]; excluded: Excluded<T>[] } {
+    const excluded: Excluded<T>[] = [];
+    const byStudent = new Map<string, T[]>();
+    for (const t of targets) {
+        const reason = statusExcludeReason(t.status)
+            ?? (!(POS_CHARGE_TYPES as readonly string[]).includes(t.type) ? "UNIFORM" : null)
+            ?? (!(Number(t.amount) > 0) ? "ZERO_AMOUNT" : null);
+        if (reason) { excluded.push({ target: t, reason }); continue; }
+        // 학생 id 가 없으면 같은 학생인지 알 수 없다 → 청구마다 따로 묶는다
+        const sid = String(t.studentId ?? "").trim();
+        const key = sid ? `s:${sid}` : `p:${t.id}`;
+        const list = byStudent.get(key);
+        if (list) list.push(t);
+        else byStudent.set(key, [t]);
+    }
+    const groups: PosGroup<T>[] = [];
+    for (const [key, list] of byStudent) {
+        // 10건 넘으면 10건씩 나눈다(서버 MAX_CHARGE_ITEMS 와 같은 한도)
+        const parts = Math.ceil(list.length / POS_CHARGE_MAX_ITEMS);
+        for (let i = 0; i < parts; i++) {
+            const chunk = list.slice(i * POS_CHARGE_MAX_ITEMS, (i + 1) * POS_CHARGE_MAX_ITEMS);
+            groups.push({
+                key: parts > 1 ? `${key}#${i + 1}` : key,
+                studentName: (chunk[0].studentName ?? "").trim() || "이름 없음",
+                targets: chunk,
+                total: chunk.reduce((sum, t) => sum + t.amount, 0),
+                part: i + 1,
+                parts,
+            });
+        }
+    }
+    return { groups, excluded };
+}
+
+const TYPE_NAME: Record<string, string> = { MONTHLY: "수강료", SHUTTLE: "셔틀비", UNIFORM: "유니폼", OTHER: "기타" };
+
+/** 청구 한 줄 이름 — 부모가 넘긴 label 우선, 없으면 «11월 수강료»처럼 만든다 */
+export function planTargetLabel(t: Pick<PlanTarget, "type" | "month" | "label">): string {
+    const label = (t.label ?? "").trim();
+    if (label) return label;
+    const name = TYPE_NAME[t.type] ?? "청구";
+    return t.month ? `${t.month}월 ${name}` : name;
+}
+
+/**
+ * 뺀 건 안내 한 줄 — «이미 납부 1건(홍길동 11월 수강료)은 빼고, 미납 2건 합계 5,000원만 처리할까요?»
+ * 사유별로 묶고, 사유마다 이름은 2건까지만 보이고 나머지는 «외 N건».
+ */
+export function excludedNotice<T extends PlanTarget>(excluded: Excluded<T>[], processCount: number, processTotal: number): string {
+    const byReason = new Map<ExcludeReason, T[]>();
+    for (const e of excluded) {
+        const list = byReason.get(e.reason);
+        if (list) list.push(e.target);
+        else byReason.set(e.reason, [e.target]);
+    }
+    const parts: string[] = [];
+    for (const [reason, list] of byReason) {
+        const names = list.slice(0, 2).map((t) => `${(t.studentName ?? "").trim() || "이름 없음"} ${planTargetLabel(t)}`);
+        const more = list.length > 2 ? ` 외 ${list.length - 2}건` : "";
+        parts.push(`${EXCLUDE_REASON_LABEL[reason]} ${list.length}건(${names.join(", ")}${more})`);
+    }
+    if (processCount === 0) return `${parts.join(", ")}은 처리할 수 없어서 남는 청구가 없어요.`;
+    return `${parts.join(", ")}은 빼고, 미납 ${processCount}건 합계 ${processTotal.toLocaleString("ko-KR")}원만 처리할까요?`;
+}

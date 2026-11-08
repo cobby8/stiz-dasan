@@ -146,14 +146,22 @@ export default function PosChargeRequestModal({
         });
         if (!ok) return;
         setBusy(true);
-        const result = await createPosChargeRequest(idsKey.split(","));
-        setBusy(false);
-        if (!result.ok) {
-            setMessage(result.message);
-            return;
+        // try/finally — 연결이 끊겨 오류가 나도 버튼이 «보내는 중…»에서 굳지 않게
+        try {
+            const result = await createPosChargeRequest(idsKey.split(","));
+            if (!result.ok) {
+                setMessage(result.message);
+                return;
+            }
+            setRequest(result.request);
+            setMessage(result.existing ? "이미 보낸 요청이 있어 그 요청의 결제를 기다립니다." : "");
+        } catch {
+            // 서버에는 요청이 만들어졌을 수도 있다 — 다시 읽어 실제 상태를 보인다
+            setMessage("연결이 끊겨 결과를 받지 못했어요. 상태를 다시 확인합니다.");
+            void refresh();
+        } finally {
+            if (mountedRef.current) setBusy(false);
         }
-        setRequest(result.request);
-        setMessage(result.existing ? "이미 보낸 요청이 있어 그 요청의 결제를 기다립니다." : "");
     }
 
     async function handleCancel() {
@@ -169,9 +177,15 @@ export default function PosChargeRequestModal({
         });
         if (!ok) return;
         setBusy(true);
-        const result = await cancelPosChargeRequest(request.id);
-        setBusy(false);
-        if (!result.ok) setMessage(result.message);
+        // try/finally — 오류가 나도 버튼이 막힌 채로 남지 않게
+        try {
+            const result = await cancelPosChargeRequest(request.id);
+            if (!result.ok) setMessage(result.message);
+        } catch {
+            setMessage("연결이 끊겨 결과를 받지 못했어요. 상태를 다시 확인합니다.");
+        } finally {
+            if (mountedRef.current) setBusy(false);
+        }
         await refresh();
     }
 
@@ -217,6 +231,12 @@ export default function PosChargeRequestModal({
                                 보통 몇 초 안에 POS에 결제창이 열려요. 안 열리면 POS의 STIZ 탭에서 결제할 수 있어요.
                             </p>
                         </div>
+                        {/* POS 가 90초 넘게 요청을 안 받아 감(PENDING) — 판단은 서버 DB 시계. 요청은 그대로 두고 계속 기다린다 */}
+                        {request.status === "PENDING" && request.pickupLate && (
+                            <p role="alert" className="mt-3 text-sm font-semibold text-[var(--color-academy-danger)]">
+                                POS가 응답이 없어요. POS가 켜져 있고 STIZ 탭이 연결돼 있는지 확인해 주세요.
+                            </p>
+                        )}
                         <div className="mt-4 flex">
                             <button type="button" onClick={() => void handleCancel()} disabled={busy} className="academy-button-danger">
                                 요청 취소

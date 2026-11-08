@@ -160,15 +160,20 @@ test("PAID 직접 변경 차단: 상태 변경 함수 두 개는 PAID 를 거부
 });
 
 test("납부 처리 창: 행 메뉴·일괄 버튼이 같은 창을 열고, 현장 결제는 기존 POS 창으로 넘긴다", () => {
-  assert.match(finance, /onSelect: \(\) => setRecordTargets\(\[p\]\)/);
+  assert.match(finance, /onSelect: \(\) => \{?\s*(?:setRecordPreferPos\(false\);\s*)?setRecordTargets\(\[p\]\)/);
   assert.match(finance, /선택 항목 납부 처리/);
   assert.match(finance, /setRecordTargets\(targets\)/);
   // 현장 결제는 고른 청구 전부(1건 또는 같은 학생 여러 건)를 POS 창으로 넘긴다
   assert.match(finance, /setPosChargeTargets\(payments\.length > 0 \? payments : null\)/);
-  assert.match(modal, /onChoosePos\(targets\)/);
+  // 안 되는 건을 뺀 «결제 가능 묶음»만 넘긴다(2026-11-08 막다른 버튼 제거)
+  assert.match(modal, /onChoosePos\(pos\.groups\[0\]\.targets\)/);
+  assert.match(modal, /onChoosePos\(g\.targets\)/);
   assert.match(finance, /studentId: t\.studentId/, "같은 학생 판단용 학생 id 를 창에 넘긴다");
   assert.match(modal, /recordBankTransferPayment\(checked\.value\)/);
-  assert.match(modal, /posChargeAvailability\(targets\)/);
+  assert.match(modal, /planPosCharge\(targets\)/);
+  assert.match(modal, /planBankTransfer\(targets\)/);
+  // 계좌이체는 미납·연체인 건의 id 만 보낸다
+  assert.match(modal, /paymentIds: transfer\.recordable\.map\(\(t\) => t\.id\)/);
   assert.match(modal, /todayKst\(\)/);
   assert.match(modal, /합계/);
 });
@@ -203,5 +208,89 @@ test("여러 건 납부 처리 창: 대상 학생 이름 한 줄(중복 제거·
   assert.equal(s([{ studentName: "" }]), "이름 없음");
   assert.equal(s([{ studentName: "가" }, { studentName: "나" }], 1), "가 외 1명");
   // 창이 실제로 이 한 줄을 여러 건일 때 보인다
-  assert.match(modal, /targets\.length > 1 &&[\s\S]*대상 \{targetNamesSummary\(targets\)\}/);
+  assert.match(modal, /\$\{targetNamesSummary\(targets\)\} · \$\{targets\.length\}건 선택/);
+});
+
+// ── 2026-11-08 원장 지시: 막다른 흐린 버튼 없애기 · 이미 납부 건 알리고 나머지만 처리 ──
+const T = (id, o = {}) => ({ id, studentId: "s1", studentName: "홍길동", amount: 2500, type: "MONTHLY", status: "PENDING", month: 11, ...o });
+const ids = (list) => list.map((t) => t.id);
+
+test("planPosCharge: 단일 OK — 묶음 1개, 제외 없음", () => {
+  const r = rules.planPosCharge([T("a")]);
+  assert.equal(r.groups.length, 1);
+  assert.deepEqual(ids(r.groups[0].targets), ["a"]);
+  assert.equal(r.groups[0].total, 2500);
+  assert.equal(r.excluded.length, 0);
+});
+
+test("planPosCharge: 이미 납부·환불·취소가 섞이면 그것만 빼고 나머지로 묶는다", () => {
+  const r = rules.planPosCharge([T("a"), T("b", { status: "PAID" }), T("c", { type: "SHUTTLE", status: "OVERDUE" }), T("d", { status: "REFUNDED" }), T("e", { status: "CANCELED" })]);
+  assert.deepEqual(ids(r.groups[0].targets), ["a", "c"]);
+  assert.equal(r.groups[0].total, 5000);
+  assert.deepEqual(r.excluded.map((e) => [e.target.id, e.reason]), [["b", "ALREADY_PAID"], ["d", "REFUNDED"], ["e", "CANCELED"]]);
+  // 안내 문구: 어느 건이 왜 빠지고 몇 건·얼마가 처리되는지
+  const msg = rules.excludedNotice(r.excluded.slice(0, 1), 2, 5000);
+  assert.equal(msg, "이미 납부 1건(홍길동 11월 수강료)은 빼고, 미납 2건 합계 5,000원만 처리할까요?");
+});
+
+test("planPosCharge: 유니폼·금액 0원은 POS 에서만 빠지고 계좌이체로는 기록 가능", () => {
+  const list = [T("a"), T("u", { type: "UNIFORM" }), T("z", { amount: 0, type: "OTHER" })];
+  const r = rules.planPosCharge(list);
+  assert.deepEqual(ids(r.groups[0].targets), ["a"]);
+  assert.deepEqual(r.excluded.map((e) => e.reason), ["UNIFORM", "ZERO_AMOUNT"]);
+  const b = rules.planBankTransfer(list);
+  assert.deepEqual(ids(b.recordable), ["a", "u", "z"]);
+  assert.equal(b.excluded.length, 0);
+});
+
+test("planPosCharge: 학생 둘이면 학생마다 묶음(처음 나온 순서) · 학생 id 없는 옛 데이터는 각자 1건", () => {
+  const r = rules.planPosCharge([T("a"), T("k", { studentId: "s2", studentName: "김철수" }), T("b"), T("x", { studentId: "" }), T("y", { studentId: null })]);
+  assert.deepEqual(r.groups.map((g) => [g.studentName, ids(g.targets)]), [
+    ["홍길동", ["a", "b"]],
+    ["김철수", ["k"]],
+    ["홍길동", ["x"]],
+    ["홍길동", ["y"]],
+  ]);
+  assert.equal(new Set(r.groups.map((g) => g.key)).size, 4, "묶음 키가 겹치지 않는다");
+});
+
+test("planPosCharge: 같은 학생 11건이면 10건 + 1건으로 나눈다(서버 한도와 같음)", () => {
+  const list = Array.from({ length: 11 }, (_, i) => T(`p${i}`));
+  const r = rules.planPosCharge(list);
+  assert.deepEqual(r.groups.map((g) => g.targets.length), [rules.POS_CHARGE_MAX_ITEMS, 1]);
+  assert.deepEqual(r.groups.map((g) => [g.part, g.parts]), [[1, 2], [2, 2]]);
+  assert.equal(r.groups[0].total, 25000);
+  assert.ok(r.groups.every((g) => g.targets.length <= rules.POS_CHARGE_MAX_ITEMS));
+});
+
+test("planPosCharge: 전부 불가면 묶음 0개 — 사유가 모두 남는다", () => {
+  const r = rules.planPosCharge([T("a", { status: "PAID" }), T("u", { type: "UNIFORM" }), T("m", { amount: -1 })]);
+  assert.equal(r.groups.length, 0);
+  assert.deepEqual(r.excluded.map((e) => e.reason), ["ALREADY_PAID", "UNIFORM", "ZERO_AMOUNT"]);
+  assert.match(rules.excludedNotice(r.excluded, 0, 0), /남는 청구가 없어요/);
+  // 창은 이때만 버튼 대신 사유를 보인다
+  assert.match(modal, /현장 결제할 수 있는 청구가 없어요/);
+});
+
+test("planBankTransfer·문구: 미납 아닌 건은 사유와 함께 빼고, 이름은 사유별 2건까지 «외 N건»", () => {
+  const b = rules.planBankTransfer([T("a", { status: "PAID", label: "2026년 11월 수강료" }), T("b"), T("c", { status: "PAID", month: 10 }), T("d", { status: "PAID", studentName: "김철수" })]);
+  assert.deepEqual(ids(b.recordable), ["b"]);
+  assert.equal(
+    rules.excludedNotice(b.excluded, 1, 2500),
+    "이미 납부 3건(홍길동 2026년 11월 수강료, 홍길동 10월 수강료 외 1건)은 빼고, 미납 1건 합계 2,500원만 처리할까요?",
+  );
+  assert.equal(rules.planTargetLabel({ type: "SHUTTLE" }), "셔틀비");
+  assert.equal(rules.planTargetLabel({ type: "OTHER", month: 3 }), "3월 기타");
+});
+
+test("납부 처리 창: preferPos 면 현장 결제 확인 화면으로 바로 열리고 계좌이체로 돌아갈 수 있다 · 같은 입금 정보 문구는 계좌이체 화면에", () => {
+  assert.match(modal, /preferPos\?: boolean/);
+  assert.match(modal, /useState<Step>\(\(\) => \(preferPos \? "pos" : "choose"\)\)/);
+  assert.match(modal, /POS로 결제 요청/);
+  assert.match(modal, /다른 방법\(계좌이체\)/);
+  const transferAt = modal.indexOf('step === "transfer" && (');
+  assert.ok(transferAt > 0);
+  assert.ok(modal.indexOf("선택한 모든 건에 같은 입금 정보로 기록돼요") > transferAt, "문구는 계좌이체 입력 화면에만");
+  // 막다른 흐린 POS 버튼(disabled={!pos.enabled})은 없어졌다
+  assert.doesNotMatch(modal, /disabled=\{!pos\.enabled\}/);
 });

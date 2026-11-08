@@ -104,10 +104,10 @@ test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 같은 handleS
   const finance = read("../src/app/admin/finance/FinanceClient.tsx");
   const block = finance.slice(finance.indexOf('key: "refund"'), finance.indexOf('key: "delete"'));
   assert.match(block, /tone: "danger" as const/);
-  assert.match(block, /원생 \$\{formatAmount\(p\.amount\)\}원을 환불 처리할까요\?/);
+  assert.match(block, /원생 \$\{formatAmount\(p\.amount\)\}을 환불 처리할까요\?/);
   assert.ok(block.indexOf("await askConfirm(") < block.indexOf('void handleStatusChange(p.id, "REFUNDED")'));
   // 확인 모달 버튼 44px·학원 변수색
-  assert.match(finance, /className="academy-button-danger-solid ml-auto">\{busy \? "처리 중…" : "청구 취소"\}/);
+  assert.match(finance, /className="academy-button-danger-solid ml-auto">\{busy \? "처리 중…" : "청구서 삭제"\}/);
   assert.match(finance, /className="academy-button-primary ml-auto">\{busy \? "처리 중…" : "청구 생성"\}/);
 });
 

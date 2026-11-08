@@ -19,6 +19,11 @@ export type AdminConfirmOptions = {
     cancelLabel?: string;
     /** danger(기본) = 꽉 찬 빨강 · primary = 꽉 찬 주황(되돌릴 수 있는 확정) */
     tone?: "danger" | "primary";
+    /**
+     * (선택) 되돌릴 수 없는 일(환불 등)에만 — 있으면 확정 버튼 위에 체크 칸이 나오고, 체크해야 확정 버튼이 켜진다.
+     * 같은 자리를 연달아 두 번 눌러 확정되는 사고를 막는다. 창이 열릴 때마다 체크는 풀린 상태로 시작한다.
+     */
+    acknowledgeLabel?: string;
 };
 
 type AdminConfirmDialogProps = AdminConfirmOptions & {
@@ -37,6 +42,7 @@ export default function AdminConfirmDialog({
     confirmLabel = "확인",
     cancelLabel = "그만",
     tone = "danger",
+    acknowledgeLabel,
     titleId,
     onConfirm,
     onCancel,
@@ -44,6 +50,10 @@ export default function AdminConfirmDialog({
     pendingLabel = "처리 중...",
     error,
 }: AdminConfirmDialogProps) {
+    // 체크 칸 상태 — 창이 새로 뜨면(컴포넌트가 새로 만들어지면) 항상 false 부터
+    const [acknowledged, setAcknowledged] = useState(false);
+    // 체크 칸이 있는데 아직 체크 안 했으면 확정 버튼을 막는다
+    const blocked = Boolean(acknowledgeLabel) && !acknowledged;
     return (
         <AdminModal
             titleId={titleId}
@@ -59,6 +69,19 @@ export default function AdminConfirmDialog({
             {error && (
                 <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>
             )}
+            {acknowledgeLabel && (
+                // 터치 44px — 줄 전체가 눌리는 칸
+                <label className="mt-4 flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border border-[var(--color-academy-danger)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
+                    <input
+                        type="checkbox"
+                        checked={acknowledged}
+                        onChange={(e) => setAcknowledged(e.target.checked)}
+                        disabled={pending}
+                        className="h-5 w-5 shrink-0 accent-[var(--color-academy-danger)]"
+                    />
+                    <span className="break-keep">{acknowledgeLabel}</span>
+                </label>
+            )}
             <div className="mt-5 flex items-center gap-3">
                 <button type="button" onClick={onCancel} disabled={pending} className="academy-button-text">
                     {cancelLabel}
@@ -66,7 +89,7 @@ export default function AdminConfirmDialog({
                 <button
                     type="button"
                     onClick={onConfirm}
-                    disabled={pending}
+                    disabled={pending || blocked}
                     className={`ml-auto ${tone === "danger" ? "academy-button-danger-solid" : "academy-button-primary"}`}
                 >
                     {pending ? pendingLabel : confirmLabel}
@@ -85,6 +108,8 @@ export default function AdminConfirmDialog({
  */
 export function useAdminConfirm() {
     const [options, setOptions] = useState<AdminConfirmOptions | null>(null);
+    // 질문을 띄울 때마다 1씩 — key 로 써서 «떠 있는 창을 새 질문으로 바꿀 때»도 체크 칸이 풀린 상태로 새로 시작하게
+    const [openSeq, setOpenSeq] = useState(0);
     const titleId = useId(); // 한 화면에 훅을 둘 써도 제목 id 가 겹치지 않게
     const resolverRef = useRef<((value: boolean) => void) | null>(null);
 
@@ -92,6 +117,7 @@ export function useAdminConfirm() {
         // 이미 떠 있는 질문이 있으면 «그만»으로 끝내고 새 질문을 띄운다
         resolverRef.current?.(false);
         setOptions(next);
+        setOpenSeq((n) => n + 1);
         return new Promise<boolean>((resolve) => {
             resolverRef.current = resolve;
         });
@@ -105,6 +131,7 @@ export function useAdminConfirm() {
 
     const confirmDialog = options ? (
         <AdminConfirmDialog
+            key={openSeq}
             {...options}
             titleId={titleId}
             onConfirm={() => settle(true)}

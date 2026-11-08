@@ -928,6 +928,9 @@ export const getPayments = cache(async (year?: number, month?: number) => {
              ORDER BY p."dueDate" DESC`,
             ...params
         );
+        // 토스 POS «현장 결제» 정보(2026-11-08) — 묶음 표시(«묶음 N건»)와 «기록 영구 삭제» 숨김에 쓴다.
+        // 별도 쿼리 + try/catch: POS 표가 아직 없는 환경에서도 수납 목록 자체는 그대로 보이게.
+        const posInfo = await getPaymentPosInfo(rows.map((r: any) => String(r.id)));
         return rows.map((r: any) => ({
             id: r.id,
             studentId: r.studentId ?? r.studentid,
@@ -959,12 +962,60 @@ export const getPayments = cache(async (year?: number, month?: number) => {
             reminderCount: Number(r.reminderCount ?? r.remindercount ?? 0),
             transactionStatus: r.transaction_status ?? null,
             createdAt: r.createdAt ?? r.createdat,
+            // 한 POS 결제로 함께 결제된 묶음(항목 2개 이상)일 때만 번호·건수. 아니면 null
+            posBundleCode: posInfo.get(String(r.id))?.bundleCode ?? null,
+            posBundleSize: posInfo.get(String(r.id))?.bundleSize ?? null,
+            // POS 요청(열림·납부·보류·취소 진행)에 묶여 있으면 true — «기록 영구 삭제»를 숨긴다(서버도 다시 확인)
+            posLocked: posInfo.get(String(r.id))?.locked ?? false,
         }));
     } catch (e) {
         console.error("[getPayments] failed:", e);
         return [];
     }
 });
+
+/**
+ * 청구서별 POS 요청 정보. 요청 «항목» 표(묶음)와 요청의 대표 청구("paymentId", 항목이 없는 옛 요청) 둘 다 본다.
+ * - bundleCode/bundleSize: 결제가 일어난 요청(PAID 이거나 결제 취소가 시작된 것) 중 항목 2개 이상인 것의 번호·건수
+ * - locked: 삭제하면 POS 기록까지 같이 지워지는 요청(열림·납부·보류·취소 진행)에 묶였나
+ * 실패하면 빈 정보(목록은 그대로 보이고, 삭제는 서버 deletePayment 가 따로 막는다).
+ */
+async function getPaymentPosInfo(paymentIds: string[]) {
+    const info = new Map<string, { bundleCode: string | null; bundleSize: number | null; locked: boolean }>();
+    if (paymentIds.length === 0) return info;
+    try {
+        const rows = await prisma.$queryRawUnsafe<any[]>(
+            `WITH links AS (
+                SELECT it."paymentId" AS payment_id, it."requestId" AS request_id FROM "PosChargeRequestItem" it
+                 WHERE it."paymentId" = ANY($1::text[])
+                UNION
+                SELECT r."paymentId", r.id FROM "PosChargeRequest" r WHERE r."paymentId" = ANY($1::text[])
+             )
+             SELECT l.payment_id, r."shortCode" AS short_code, r.status, r."cancelState" AS cancel_state, r."createdAt" AS created_at,
+                    (SELECT COUNT(*)::int FROM "PosChargeRequestItem" x WHERE x."requestId" = r.id) AS item_count
+               FROM links l JOIN "PosChargeRequest" r ON r.id = l.request_id
+              ORDER BY r."createdAt" DESC`,
+            paymentIds,
+        );
+        for (const row of rows) {
+            const id = String(row.payment_id);
+            const current = info.get(id) ?? { bundleCode: null, bundleSize: null, locked: false };
+            const status = String(row.status);
+            const paidLike = status === "PAID" || row.cancel_state != null;
+            if (paidLike || ["PENDING", "SENT", "HELD"].includes(status)) current.locked = true;
+            // 최신 요청부터 보므로 처음 만난 «결제된 묶음»만 쓴다
+            const count = Number(row.item_count ?? 0);
+            if (!current.bundleCode && paidLike && count >= 2) {
+                current.bundleCode = String(row.short_code);
+                current.bundleSize = count;
+            }
+            info.set(id, current);
+        }
+    } catch (e) {
+        console.warn("[getPayments] POS 묶음 정보 조회 실패(목록은 그대로):", (e as Error).message);
+    }
+    return info;
+}
 
 // ── 청구 템플릿 조회 ────────────────────────────────────────────────────────────
 export const getBillingTemplates = cache(async () => {

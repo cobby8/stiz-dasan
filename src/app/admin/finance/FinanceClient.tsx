@@ -60,6 +60,11 @@ type Payment = {
     transactionStatus?: string | null;
     reminderCount?: number;
     createdAt: Date | string;
+    // 한 POS 결제로 함께 결제된 묶음 번호·건수(묶음일 때만, 서버 getPayments)
+    posBundleCode?: string | null;
+    posBundleSize?: number | null;
+    // POS 요청에 묶인 청구 — «기록 영구 삭제» 숨김(서버 deletePayment 도 다시 막는다)
+    posLocked?: boolean;
 };
 
 type Student = {
@@ -241,6 +246,14 @@ function formatAmount(n: number): string {
     return n.toLocaleString("ko-KR") + "원";
 }
 
+// 사람이 읽는 청구 이름 — «2026년 11월 수강료». 월이 없는 청구(기타 등)는 설명, 그것도 없으면 종류만.
+// «납부 처리» 창의 청구 목록·«이미 납부» 안내와 상세 패널 «함께 결제한 청구»가 같이 쓴다.
+function paymentLabel(p: Pick<Payment, "type" | "month" | "year" | "description">): string {
+    const typeLabel = TYPE_LABELS[p.type] || p.type;
+    if (p.year && p.month) return `${p.year}년 ${p.month}월 ${typeLabel}`;
+    return p.description?.trim() || typeLabel;
+}
+
 function getErrorMessage(error: unknown, fallback: string) {
     return adminErrorText(error, fallback);
 }
@@ -402,6 +415,8 @@ export default function FinanceClient({
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
     // «납부 처리» 창 대상(1건 = 행 메뉴, 여러 건 = 체크박스 선택). null 이면 창 닫힘
     const [recordTargets, setRecordTargets] = useState<Payment[] | null>(null);
+    // true 면 «납부 처리» 창이 «현장 결제» 확인 화면으로 바로 열린다(«이 학생 미납 모두 현장 결제» 메뉴)
+    const [recordPreferPos, setRecordPreferPos] = useState(false);
     // 현장 결제(토스 POS) 창을 띄울 청구서 — 1건, 또는 같은 학생 여러 건(POS 결제 한 번으로 묶음)
     const [posChargeTargets, setPosChargeTargets] = useState<Payment[] | null>(null);
     // 결제 취소(토스 POS) 창을 띄울 청구서
@@ -578,7 +593,7 @@ export default function FinanceClient({
             setCancelTarget(null);
             await loadMonth(year, month);
         } catch (err: unknown) {
-            setCancelError(getErrorMessage(err, "미납 청구 취소 실패"));
+            setCancelError(getErrorMessage(err, "청구서 삭제 실패"));
         } finally {
             setBusy(false);
         }
@@ -745,9 +760,11 @@ export default function FinanceClient({
             return;
         }
         if (selectedIds.size === 0) { alert("선택된 항목이 없습니다."); return; }
-        // 바로 PAID 로 바꾸지 않고 «납부 처리» 창(여러 건 모드)을 연다 — 미납·연체만 대상
-        const targets = payments.filter((p) => selectedIds.has(p.id) && ["PENDING", "OVERDUE"].includes(p.status));
-        if (targets.length === 0) { alert("선택한 항목 중 미납·연체 청구가 없습니다."); return; }
+        // 바로 PAID 로 바꾸지 않고 «납부 처리» 창(여러 건 모드)을 연다.
+        // 고른 것 전부를 넘긴다 — 이미 납부된 건은 창 안에서 «이미 납부 N건 — 나머지만 처리할까요?»로 보여 준다.
+        const targets = payments.filter((p) => selectedIds.has(p.id));
+        if (targets.length === 0) { alert("선택된 항목이 없습니다."); return; }
+        setRecordPreferPos(false);
         setRecordTargets(targets);
     }
 
@@ -761,6 +778,9 @@ export default function FinanceClient({
     const visiblePayments = baseFilteredPayments.filter((payment) =>
         !paymentStatusFilter || (paymentStatusFilter === "UNPAID" ? ["PENDING", "OVERDUE"].includes(payment.status) : payment.status === paymentStatusFilter),
     );
+    // 고른 것 중 지금 필터·검색에 안 보이는 건수 — 선택 막대에 «화면 밖 N건 포함»으로 알린다(모르고 같이 처리하지 않게)
+    const visibleIdSet = new Set(visiblePayments.map((payment) => payment.id));
+    const hiddenSelectedCount = Array.from(selectedIds).filter((id) => !visibleIdSet.has(id)).length;
     // 상태 칩: 칩 값 = 필터 select 값. 다시 누르면 ""(전체) — «필터 초기화»와 같은 값
     const statusChipItems = PAYMENT_STATUS_ORDER.map((value) => ({
         value,
@@ -804,6 +824,8 @@ export default function FinanceClient({
     // ⚡ 빠른 작업 목록(기존 행 작업 그대로) — 행 메뉴와 상세 패널이 같은 목록을 쓴다
     function buildRowActions(p: Payment): AdminQuickAction[] {
         const invoiceHref = getInvoiceHref(p);
+        // 지금 목록(이 달)에서 같은 학생의 미납·연체 전부 — «이 학생 미납 모두 현장 결제» 메뉴용
+        const studentUnpaid = payments.filter((x) => x.studentId === p.studentId && ["PENDING", "OVERDUE"].includes(x.status));
         return [
             ...(invoiceHref ? [
                 {
@@ -846,7 +868,18 @@ export default function FinanceClient({
                     icon: "check_circle",
                     tone: "primary" as const,
                     disabled: busy,
-                    onSelect: () => setRecordTargets([p]),
+                    onSelect: () => { setRecordPreferPos(false); setRecordTargets([p]); },
+                },
+            ] : []),
+            // 이 학생 미납 모두 현장 결제(원장 의견 2026-11-08): 지금 목록의 같은 학생 미납·연체가 2건 이상일 때만.
+            // 바로 결제하지 않고 «납부 처리» 창을 «현장 결제» 확인 화면으로 열어 청구 목록·금액·합계를 보고 누르게 한다.
+            ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) && studentUnpaid.length >= 2 ? [
+                {
+                    key: "pos-charge-student",
+                    label: `이 학생 미납 모두 현장 결제 (${studentUnpaid.length}건)`,
+                    icon: "point_of_sale",
+                    disabled: busy,
+                    onSelect: () => { setRecordPreferPos(true); setRecordTargets(studentUnpaid); },
                 },
             ] : []),
             ...(canManageCriticalFinance && p.status === "PENDING" ? [
@@ -863,7 +896,8 @@ export default function FinanceClient({
             ...(canManageCriticalFinance && ["PENDING", "OVERDUE"].includes(p.status) ? [
                 {
                     key: "cancel",
-                    label: "청구 취소",
+                    // 원장 의견(2026-11-08): «청구 취소» → «청구서 삭제». 동작은 그대로(cancelUnpaidPayment — 사유를 남기고 취소 상태로)
+                    label: "청구서 삭제",
                     icon: "cancel",
                     tone: "danger" as const,
                     disabled: busy,
@@ -894,8 +928,8 @@ export default function FinanceClient({
                     disabled: busy,
                     onSelect: async () => {
                         if (await askConfirm({
-                            title: `${p.studentName} 원생 ${formatAmount(p.amount)}원 환불`,
-                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}원을 환불 처리할까요?`,
+                            title: `${p.studentName} 원생 ${formatAmount(p.amount)} 환불`,
+                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}을 환불 처리할까요?`,
                             confirmLabel: "환불 처리",
                         })) {
                             void handleStatusChange(p.id, "REFUNDED");
@@ -903,15 +937,18 @@ export default function FinanceClient({
                     },
                 },
             ] : []),
-            ...(canManageCriticalFinance ? [
+            // 기록 영구 삭제: 납부완료·토스 POS 결제·POS 요청에 묶인 청구는 숨긴다(카드 결제 기록이 같이 사라지므로 결제 취소로만).
+            // 서버 deletePayment 가 DB 로 같은 조건을 한 번 더 확인한다.
+            ...(canManageCriticalFinance && p.status !== "PAID" && p.paidProvider !== "TOSS_POS" && !p.posLocked && !p.posBundleCode ? [
                 {
                     key: "delete",
-                    label: "삭제",
+                    // «청구서 삭제»(취소 처리)와 헷갈리지 않게 «영구»를 붙인다
+                    label: "기록 영구 삭제",
                     icon: "delete",
                     tone: "danger" as const,
                     disabled: busy,
                     onSelect: async () => {
-                        if (await askConfirm({ title: `"${p.studentName}" 수납 기록 삭제`, description: "이 수납 기록이 바로 삭제됩니다.", confirmLabel: "삭제" })) {
+                        if (await askConfirm({ title: `"${p.studentName}" 수납 기록 영구 삭제`, description: "이 수납 기록이 되돌릴 수 없게 지워집니다. 취소 기록을 남기려면 «청구서 삭제»를 쓰세요.", confirmLabel: "영구 삭제" })) {
                             void handleDelete(p.id);
                         }
                     },
@@ -961,6 +998,8 @@ export default function FinanceClient({
                     <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusInfo.color}`}>
                         {statusInfo.label}
                     </span>
+                    {/* 한 POS 결제로 함께 결제된 묶음 — 배지 옆 작은 글자(한 줄 유지, 12px). 내역은 상세 패널 */}
+                    {p.posBundleCode && p.posBundleSize && <span className="ml-1 whitespace-nowrap text-xs font-bold text-[var(--color-academy-muted)]" title={`현장 결제 ${p.posBundleCode}`}>묶음 {p.posBundleSize}건</span>}
                     {/* 무통장입금 계좌 발급 후 입금 전 — 상태값은 그대로(미납), 표시만 붙인다 */}
                     {p.transactionStatus === "WAITING_FOR_DEPOSIT" && p.status !== "PAID" && <span className="ml-1 whitespace-nowrap text-xs font-bold text-[var(--color-academy-muted)]">입금 대기 · 가상계좌</span>}
                 </td>
@@ -1098,7 +1137,10 @@ export default function FinanceClient({
             )}
             {recordTargets && (
                 <RecordPaymentModal
-                    targets={recordTargets.map((t) => ({ id: t.id, studentId: t.studentId, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status }))}
+                    // label = «2026년 11월 수강료»처럼 사람이 읽는 청구 이름(창의 청구 목록·«이미 납부» 안내에 쓴다)
+                    targets={recordTargets.map((t) => ({ id: t.id, studentId: t.studentId, studentName: t.studentName, amount: t.amount, type: t.type, status: t.status, month: t.month, year: t.year, label: paymentLabel(t) }))}
+                    // true 면 «현장 결제» 확인 화면으로 바로 연다(청구 목록·금액·합계 → «POS로 결제 요청»)
+                    preferPos={recordPreferPos}
                     onClose={() => setRecordTargets(null)}
                     onChoosePos={(chosen) => {
                         // 이 창을 닫고 기존 현장 결제(토스 POS) 창을 연다 — 여러 건이면 같은 학생 묶음(POS 결제 한 번)
@@ -1116,14 +1158,12 @@ export default function FinanceClient({
                 />
             )}
 
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">수납/결제 관리</h1>
-                    <p className="mt-0.5 text-sm font-semibold text-gray-500 dark:text-gray-400">
-                        {year}년 {month}월 수납 현황
-                    </p>
-                </div>
-                {/* 월 선택은 표 바로 위 가운데로 옮김(2026-11-08 원장 지시) — 아래 «상태 칩 · 월 · 보기 전환» 줄 */}
+            {/* 제목만 남은 머리 영역(월 선택은 표 바로 위 «상태 칩 · 월 · 보기 전환» 줄로 옮김 — 2026-11-08 원장 지시) */}
+            <div className="mb-3">
+                <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">수납/결제 관리</h1>
+                <p className="mt-0.5 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                    {year}년 {month}월 수납 현황
+                </p>
             </div>
 
             {financeNotice && (
@@ -1549,7 +1589,7 @@ export default function FinanceClient({
             {canManageCriticalFinance && selectedIds.size > 0 && (
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--brand-accent)] bg-white px-3 py-1.5 dark:bg-gray-900">
                     <span className="text-sm font-bold text-gray-900 dark:text-white">
-                        {selectedIds.size}건 선택 · 합계 {formatAmount(payments.filter((p) => selectedIds.has(p.id)).reduce((sum, p) => sum + Number(p.amount || 0), 0))}
+                        {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(payments.filter((p) => selectedIds.has(p.id)).reduce((sum, p) => sum + Number(p.amount || 0), 0))}
                     </span>
                     <div className="flex items-center gap-1">
                         <button
@@ -1630,6 +1670,9 @@ export default function FinanceClient({
                 const d = detailPayment;
                 const detailStatus = STATUS_LABELS[d.status] || STATUS_LABELS.PENDING;
                 const detailActions = buildRowActions(d);
+                // 한 POS 결제로 함께 결제한 청구 — 지금 목록(이 달)의 같은 묶음 번호 행. 다른 달 청구는 건수만(«외 N건(다른 달)»)
+                const bundleRows = d.posBundleCode ? payments.filter((x) => x.posBundleCode === d.posBundleCode) : [];
+                const bundleOtherCount = d.posBundleSize ? Math.max(0, d.posBundleSize - bundleRows.length) : 0;
                 const alertParts = [
                     d.notifiedAt ? `${toDateStr(d.notifiedAt)} 발송` : null,
                     d.reminderCount ? `${d.reminderCount}회` : null,
@@ -1686,6 +1729,23 @@ export default function FinanceClient({
                                 </div>
                             ))}
                         </dl>
+                        {/* 함께 결제한 청구(묶음일 때만) — 이름·종류·월·금액 한 줄씩 */}
+                        {d.posBundleCode && (
+                            <section className="mt-4 rounded-xl border border-[var(--color-academy-line)] p-3" aria-label="함께 결제한 청구">
+                                <h4 className="mb-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                                    함께 결제한 청구 {d.posBundleSize}건 <span className="text-xs font-bold text-[var(--color-academy-muted)]">현장 결제 {d.posBundleCode}</span>
+                                </h4>
+                                <ul className="grid gap-1 text-sm">
+                                    {bundleRows.map((x) => (
+                                        <li key={x.id} className="flex items-center justify-between gap-2">
+                                            <span className="min-w-0 break-keep text-[var(--color-academy-ink)]">{x.studentName} · {paymentLabel(x)}</span>
+                                            <span className="shrink-0 font-bold tabular-nums text-[var(--color-academy-ink)]">{formatAmount(x.amount)}</span>
+                                        </li>
+                                    ))}
+                                    {bundleOtherCount > 0 && <li className="text-xs font-bold text-[var(--color-academy-muted)]">외 {bundleOtherCount}건(다른 달)</li>}
+                                </ul>
+                            </section>
+                        )}
                         {/* 작업: 행 ⚡ 메뉴와 같은 목록·같은 권한. 패널을 닫고 기존 동작(모달·확인창)을 그대로 실행한다 */}
                         {detailActions.length > 0 && (
                             <AdminPanelActions actions={detailActions} onBeforeSelect={() => setDetailPaymentId(null)} />
@@ -1704,7 +1764,7 @@ export default function FinanceClient({
                     <div className="space-y-4 text-sm text-gray-700 dark:text-gray-200">
                         <h2 id="manual-payment-preview-title" className="text-lg font-black text-gray-900 dark:text-white">수동 청구 확인</h2>
                         <p>{selectedStudent?.name || "학생 미선택"} · {selectedStudent?.classes.find((item) => item.id === classId)?.name || "수업 연결 없음"}</p>
-                        <p>{TYPE_LABELS[paymentType] || paymentType} · {formatAmount(amount)}원 · 납부 기한 {dueDate}</p>
+                        <p>{TYPE_LABELS[paymentType] || paymentType} · {formatAmount(amount)} · 납부 기한 {dueDate}</p>
                         <p>상태: {STATUS_LABELS[canManageCriticalFinance ? status : "PENDING"]?.label ?? status}</p>
                         <p className={notifyParent ? "font-bold text-red-700 dark:text-red-300" : "font-bold"}>
                             학부모 알림: {notifyParent ? `${selectedStudent?.parent.name || "연결된 학부모"}에게 사이트 알림 1건` : "보내지 않음"}
@@ -1726,11 +1786,11 @@ export default function FinanceClient({
                     closeOnBackdrop={!busy}
                 >
                     <div className="space-y-4">
-                        <h2 id="cancel-unpaid-title" className="text-lg font-black text-gray-900 dark:text-white">미납 청구 취소</h2>
+                        <h2 id="cancel-unpaid-title" className="text-lg font-black text-gray-900 dark:text-white">청구서 삭제</h2>
                         <p className="text-sm text-gray-700 dark:text-gray-200">
                             {cancelTarget.studentName} · {cancelTarget.year ?? year}년 {cancelTarget.month ?? month}월 · {cancelTarget.className || cancelTarget.description || "수업 연결 정보 없음"}
                         </p>
-                        <p className="font-bold text-gray-900 dark:text-white">{formatAmount(cancelTarget.amount)}원 · {STATUS_LABELS[cancelTarget.status]?.label ?? cancelTarget.status} → 취소</p>
+                        <p className="font-bold text-gray-900 dark:text-white">{formatAmount(cancelTarget.amount)} · {STATUS_LABELS[cancelTarget.status]?.label ?? cancelTarget.status} → 취소</p>
                         <p className="text-xs text-gray-500 dark:text-gray-300">기록은 삭제하지 않고 취소 사유와 담당자를 감사 이력에 남깁니다. 학부모 알림은 보내지 않습니다.</p>
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                             취소 사유
@@ -1747,7 +1807,7 @@ export default function FinanceClient({
                         {/* 위험 확정(청구 취소)은 오른쪽 끝 꽉 찬 위험색, 닫기는 왼쪽 글자 버튼 — 둘 다 44px */}
                         <div className="flex items-center gap-3">
                             <button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="academy-button-text">닫기</button>
-                            <button type="button" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelUnpaid()} className="academy-button-danger-solid ml-auto">{busy ? "처리 중…" : "청구 취소"}</button>
+                            <button type="button" disabled={busy || !cancelReason.trim()} onClick={() => void submitCancelUnpaid()} className="academy-button-danger-solid ml-auto">{busy ? "처리 중…" : "청구서 삭제"}</button>
                         </div>
                     </div>
                 </AdminModal>

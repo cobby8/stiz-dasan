@@ -64,3 +64,12 @@ test("기다리는 동안만 3초마다 자동으로 다시 읽고, 탭이 숨�
   // 정리 함수에서 타이머를 멈춘다(창 닫힘)
   assert.match(code, /clearInterval\(timer\)/);
 });
+
+test("POS 가 90초 넘게 안 받아 가면(PENDING) 확인 안내 · 요청은 자동 취소하지 않는다 · 오류가 나도 «보내는 중…»에서 굳지 않는다", async () => {
+  const code = await readFile(MODAL, "utf8");
+  assert.match(code, /request\.status === "PENDING" && request\.pickupLate/);
+  assert.match(code, /POS가 응답이 없어요\. POS가 켜져 있고 STIZ 탭이 연결돼 있는지 확인해 주세요\./);
+  // 보내기·요청 취소 둘 다 finally 에서 busy 를 푼다
+  assert.equal((code.match(/finally \{\s*if \(mountedRef\.current\) setBusy\(false\);/g) ?? []).length, 2);
+  assert.doesNotMatch(code, /pickupLate[^\n]*cancelPosChargeRequest/, "무응답이어도 요청을 자동 취소하지 않는다");
+});

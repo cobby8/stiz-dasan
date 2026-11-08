@@ -1304,7 +1304,8 @@ test("롱폴링 취소 깨우기: 새 취소 요청(90초 안)·known 에 없는
 
 test("관리자 «결제 취소» 창·메뉴: 위험 작업 확인 문구, 3초 자동 확인, 실패 안내, 환불 완료 문구 · 메뉴는 토스 POS 납부완료에만", async () => {
   const code = await readFile(CANCEL_MODAL, "utf8");
-  assert.match(code, /POS 결제가 취소되고 청구는 환불로 바뀝니다\. 되돌릴 수 없습니다\./);
+  assert.match(code, /POS 결제가 취소되고 청구는 환불로 바뀝니다\./);
+  assert.match(code, /POS 결제\(카드·현금\)가 바로 취소되고 되돌릴 수 없어요\./);
   assert.match(code, /tone: "danger"/);
   assert.match(code, /const POS_CANCEL_POLL_MS = 3000;/);
   assert.match(code, /POS 에서 직접 취소해 주세요/);
@@ -1874,4 +1875,65 @@ test("관리자 동작: 청구 id 에 문자열 아닌 값·빈 값이 하나라
   assert.deepEqual(paymentIdsOf(["p-1", ""]), [], "빈 값이 섞이면 거절");
   assert.deepEqual(paymentIdsOf([null]), []);
   assert.deepEqual(paymentIdsOf(Array.from({ length: 21 }, (_, i) => `p-${i}`)), []);
+});
+
+// ── 검수 반영(2026-11-08 원장 승인표): 결제 취소 확인 강화 · 묶인 청구 목록 · 제목 · 굳음 · POS 무응답 ──
+
+test("결제 취소 창 정보: items 에 환불될 청구를 줄마다(종류·월·스냅샷 금액·학생) · 항목 없는 옛 요청은 대표 청구 1건", async () => {
+  const svc = await loadService();
+  const paid = BUNDLE_ITEMS.map((it) => ({ ...it, paymentStatus: "PAID", paidProvider: "TOSS_POS" }));
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView({ paymentId: "p-oct", month: 10, amount: 280000, taxFreeAmount: 280000 })], items: paid };
+  let v = await svc.getChargeCancelForPayment("p-nov");
+  assert.deepEqual(v.items, [
+    { paymentId: "p-oct", type: "MONTHLY", year: 2026, month: 10, amount: 140000, studentName: "홍길동", itemLabel: "2026년 10월 수강료" },
+    { paymentId: "p-nov", type: "MONTHLY", year: 2026, month: 11, amount: 140000, studentName: "홍길동", itemLabel: "2026년 11월 수강료" },
+  ]);
+  assert.equal(v.items.reduce((sum, it) => sum + it.amount, 0), v.amount, "줄 합계 = 환불 합계");
+  globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [cancelView()] };
+  v = await svc.getChargeCancelForPayment("p-nov");
+  assert.deepEqual(v.items, [{ paymentId: "p-nov", type: "MONTHLY", year: 2026, month: 11, amount: 180000, studentName: "홍길동", itemLabel: "2026년 11월 수강료" }]);
+});
+
+test("현장 결제 창 정보: PENDING 이 90초 넘으면 pickupLate(DB 시계) · SENT·원장부 대기 중이면 끈다", async () => {
+  const svc = await loadService();
+  const read = async (over) => {
+    globalThis.__cs = { calls: [], paid: [], audits: [], slack: [], viewRows: [bundleView({ paymentId: "p-nov", amount: 180000, taxFreeAmount: 180000, month: 11, ...over })] };
+    return svc.getChargeRequestForPayment("p-nov");
+  };
+  assert.equal((await read({ chargePickupLate: true })).pickupLate, true);
+  assert.equal((await read({ chargePickupLate: false })).pickupLate, false);
+  assert.equal((await read({ status: "SENT", chargePickupLate: true })).pickupLate, false, "POS 가 받아 간 뒤에는 안내하지 않는다");
+  assert.equal((await read({ status: "PAID", justPaid: true, paymentStatus: "PENDING", chargePickupLate: true })).pickupLate, false);
+  const src = await readFile(SERVICE, "utf8");
+  assert.match(src, /\(r\.status = 'PENDING' AND r\."createdAt" < now\(\) - interval '\$\{CHARGE_PICKUP_TIMEOUT_SEC\} seconds'\) AS "chargePickupLate"/);
+  assert.match(src, /const CHARGE_PICKUP_TIMEOUT_SEC = 90;/);
+});
+
+test("결제 취소 확인: 체크 1개 + 이름·금액 확정 버튼 · 진입 버튼과 다른 글자 · 불러오기 전 제목에 금액 없음 · 굳지 않음", async () => {
+  const code = await readFile(CANCEL_MODAL, "utf8");
+  assert.match(code, /title: "결제 취소 · 환불"/);
+  assert.match(code, /acknowledgeLabel: "되돌릴 수 없는 환불임을 확인했어요"/);
+  assert.match(code, /confirmLabel: `\$\{target\.studentName\} \$\{won\(cancel\.amount\)\} 환불하기`/);
+  // 진입 버튼은 «환불 진행…» — 확인창 확정 버튼과 글자가 달라 같은 자리를 두 번 눌러도 바로 환불되지 않는다
+  assert.match(code, /"환불 진행…"/);
+  assert.doesNotMatch(code, /confirmLabel: "결제 취소"/);
+  assert.match(code, /className="academy-button-danger ml-auto"/);
+  // 묶인 청구 목록(줄마다) + 합계
+  assert.match(code, /cancel\.items\.map\(/);
+  assert.match(code, /합계\{cancel\.itemCount > 1/);
+  // 제목: 불러오는 중에는 금액 없음, 불러온 뒤 cancel.amount(합계) — 고른 한 건 금액(target.amount)을 쓰지 않는다
+  assert.match(code, /`\$\{target\.studentName\} · 불러오는 중`/);
+  assert.doesNotMatch(code, /won\(target\.amount\)/);
+  // 오류가 나도 «보내는 중…»에서 굳지 않게
+  assert.match(code, /finally \{\s*if \(mountedRef\.current\) setBusy\(false\);/);
+});
+
+test("공용 확인 창: acknowledgeLabel 이 있으면 체크해야 확정 · 창마다 체크 해제로 시작 · 없으면 예전 그대로", async () => {
+  const code = await readFile("src/components/admin/AdminConfirmDialog.tsx", "utf8");
+  assert.match(code, /acknowledgeLabel\?: string;/);
+  assert.match(code, /const \[acknowledged, setAcknowledged\] = useState\(false\);/);
+  assert.match(code, /const blocked = Boolean\(acknowledgeLabel\) && !acknowledged;/);
+  assert.match(code, /disabled=\{pending \|\| blocked\}/);
+  assert.match(code, /min-h-\[44px\]/, "체크 칸 터치 44px");
+  assert.match(code, /key=\{openSeq\}/, "새 질문마다 새로 만들어 체크가 풀린다");
 });

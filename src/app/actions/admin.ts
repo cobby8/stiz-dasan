@@ -1895,10 +1895,34 @@ export async function recordBankTransferPayment(data: {
     }
 }
 
+// 카드(POS)로 받았거나 납부완료인 청구는 삭제하면 결제 기록·POS 요청까지 같이 지워진다 — 환불(결제 취소)로만 되돌린다
+const PAYMENT_DELETE_BLOCKED_MESSAGE = "카드로 받은 결제는 삭제할 수 없어요. 먼저 결제 취소(환불)를 해 주세요.";
+
 export async function deletePayment(id: string) {
     await requireFinanceOwner();
+    // 삭제 전 DB 에서 직접 확인(화면에서 메뉴를 숨겨도 서버가 한 번 더 막는다).
+    // 조건: 납부완료(PAID) · 토스 POS 결제(paidProvider) · POS 요청(열림·납부·보류·취소 진행)에 묶인 청구.
+    // POS 표 조회가 실패하면 «확인 못 함»이므로 삭제하지 않는다(안전한 쪽).
+    let blocked = false;
     try {
         await ensurePaymentInfrastructure();
+        const rows = await prisma.$queryRawUnsafe<{ blocked: boolean }[]>(
+            `SELECT (p.status = 'PAID' OR p."paidProvider" = 'TOSS_POS' OR EXISTS (
+                        SELECT 1 FROM "PosChargeRequest" r
+                         WHERE (r."paymentId" = p.id
+                                OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" it WHERE it."requestId" = r.id AND it."paymentId" = p.id))
+                           AND (r.status IN ('PENDING','SENT','PAID','HELD') OR r."cancelState" IS NOT NULL)
+                    )) AS blocked
+               FROM "Payment" p WHERE p.id = $1`,
+            id,
+        );
+        blocked = rows[0]?.blocked === true;
+    } catch (e) {
+        console.error("Failed to check payment before delete:", e);
+        throw new Error("수납 기록 삭제 실패");
+    }
+    if (blocked) throw new Error(PAYMENT_DELETE_BLOCKED_MESSAGE);
+    try {
         await prisma.$executeRawUnsafe(`DELETE FROM "PaymentTransaction" WHERE "paymentId" = $1`, id);
         await prisma.$executeRawUnsafe(`DELETE FROM "PaymentInvoice" WHERE "paymentId" = $1`, id);
         await prisma.$executeRawUnsafe(`DELETE FROM "Payment" WHERE id = $1`, id);
