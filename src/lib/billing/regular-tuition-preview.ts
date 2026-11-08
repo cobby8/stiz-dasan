@@ -114,6 +114,8 @@ export function previewRegularTuition(
             studentId: NEW_STUDENT_KEY,
             programId: p.id,
             programName: p.name,
+            // 반 요일 — 대회준비반 주말 묶음(30만)과 평일만(15만)을 청구와 같게 가르려면 필요하다.
+            dayOfWeek: c.dayOfWeek,
             price: p.price,
             priceWeek1: p.priceWeek1,
             priceWeek2: p.priceWeek2,

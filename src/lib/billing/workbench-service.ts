@@ -164,13 +164,16 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
         // 경고는 관리자 저장 뒤 검토 사유가 걸러져도 남도록 근거에도 적는다.
         if (tuition.warning) { reviewReasons.push(tuition.warning); basis.push(`확인: ${tuition.warning}`); }
       }
+      // 대회준비반 고정 요금 행(30만 원 묶음·평일만 15만 원)은 형제할인·3회 달 차감을 붙이지 않는다(원장 확정 2026-11-09).
+      // 같은 학생의 다른 일반 반 행은 fixedFee 가 아니므로 형제할인을 그대로 받는다.
+      // (근거 문구 FIXED_FEE_NOTE 는 tuition.basis 에 이미 들어 있다.)
       // 형제할인 제안: 수강료(기본 금액)에만 10%, 셔틀비 제외. 기간 조정보다 먼저 정해야 3회 달 차감이 할인 후 금액 기준이 된다.
-      if (siblingStudents.has(e.studentId)) {
+      if (siblingStudents.has(e.studentId) && !tuition?.fixedFee) {
         amounts.discountAmount = siblingDiscountAmount(amounts.baseAmount);
         basis.push(`형제할인 ${REGULAR_SIBLING_DISCOUNT_PERCENT}% 제안 → ${amounts.discountAmount.toLocaleString("ko-KR")}원(셔틀비 제외)`);
       }
       reviewReasons.push("할인·셔틀 및 수강 기간을 검토해 주세요.");
-      if (isShortMonth) {
+      if (isShortMonth && !tuition?.fixedFee) {
         amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
         basis.push(`월 ${STANDARD_MONTHLY_SESSIONS}회 기준 중 ${STANDARD_MONTHLY_SESSIONS - monthSessions}회 적은 달 → ${amounts.prorationAmount.toLocaleString("ko-KR")}원 차감`);
       }
@@ -227,9 +230,13 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     // 3회 달을 그달 전체로 청구하는데 기간 조정이 할인 후 금액 기준과 다르면 알린다(장부·저장 초안 포함).
     // 기간을 좁힌 경우(일부 수강)는 관리자가 직접 계산한 값이라 비교하지 않는다.
     if (isShortMonth && participates && scheduledDates.length === monthSessions) {
-      const expected = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
+      // 대회준비반 고정 요금 행은 3회 달 차감이 없으므로 기대값 0(장부 확정 행은 제안이 없어 일반 기준).
+      const fixed = !classReg && !excluded && Boolean(tuitionPlans.get(id)?.fixedFee);
+      const expected = fixed ? 0 : shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
       if (amounts.prorationAmount !== expected) {
-        const note = `연간 일정 ${monthSessions}회인 달은 기간 조정이 할인 후 금액 기준 ${expected.toLocaleString("ko-KR")}원이어야 합니다(현재 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`;
+        const note = fixed
+          ? `대회준비반 고정 요금은 3회 달 차감이 없습니다(현재 기간 조정 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`
+          : `연간 일정 ${monthSessions}회인 달은 기간 조정이 할인 후 금액 기준 ${expected.toLocaleString("ko-KR")}원이어야 합니다(현재 ${amounts.prorationAmount.toLocaleString("ko-KR")}원).`;
         reviewReasons.push(note);
         basis.push(`확인: ${note}`); // 관리자 저장 뒤 검토 사유가 걸러져도 근거에는 남긴다
       }

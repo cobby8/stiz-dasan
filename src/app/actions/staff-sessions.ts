@@ -435,6 +435,30 @@ export async function saveStaffAttendance(input: {
   return { ok: true as const, attendanceId: saved[0].id, changed, ...extra };
 }
 
+/**
+ * 수업 종료 안내를 받을 «보강 온 아이» 학부모.
+ * - 그날 그 반 보강 예약(예약됨·참석 — 명단과 같은 makeupOnClassDateSql) 중 이 회차 출결이 출석·지각인 아이만.
+ * - 결석한 보강 아이는 그 반 수업을 듣지 않았으므로 보내지 않는다(리포트 화면도 출석한 수업 기준).
+ * - 특강 회차(sessionDateId)는 보강 대상이 아니라 빈 목록.
+ * 학부모는 학생으로 바로 찾는다(getStudentParentRecipients — 출석 알림과 같은 경로).
+ */
+async function getMakeupCompletedParentRecipients(
+  session: { classId: string; sessionDateId: string | null; date?: Date | string },
+  sessionId: string,
+): Promise<ParentRecipient[]> {
+  if (session.sessionDateId) return [];
+  const rows = await prisma.$queryRawUnsafe<{ studentId: string }[]>(
+    `SELECT DISTINCT ms."studentId"
+       FROM "MakeupSession" ms
+       JOIN "Student" st ON st.id = ms."studentId" AND ${notMergedStudent("st")}
+      WHERE ${makeupOnClassDateSql("ms", "$1", "$3")}
+        AND EXISTS (SELECT 1 FROM "Attendance" a
+                     WHERE a."sessionId" = $2 AND a."studentId" = ms."studentId" AND a.status IN ('PRESENT','LATE'))`,
+    session.classId, sessionId, session.date,
+  );
+  return getStudentParentRecipients(rows.map((r) => r.studentId));
+}
+
 export async function completeClassSession(input: {
   sessionId: string;
   /** 오늘 수업 한 줄(선택). 비워도 출결·사진만으로 리포트가 된다. */
@@ -516,6 +540,7 @@ export async function completeClassSession(input: {
   revalidatePath(`/staff/sessions/${input.sessionId}`);
 
   // 종료 안내는 결석 여부와 관계없이 이 수업의 전체 재원생 학부모에게 보냅니다.
+  // 보강 온 아이는 출석·지각한 경우에만 그 학부모에게도 보냅니다(getMakeupCompletedParentRecipients).
   // 수업 종료 저장은 학부모 알림보다 우선입니다. 알림 장애가 이미 끝난 수업을 실패로 되돌리지 않게 격리합니다.
   // ★ 알림 발송은 NotificationDelivery 큐에 먼저 기록되고 push-outbox 크론(매분)이 재발송을 보장하므로,
   //   여기서 발송 완료를 끝까지 기다리지 않는다. 발송이 느리면(푸시·SMS 지연) 응답이 막혀 화면이 "종료 처리 중"에서
@@ -526,7 +551,12 @@ export async function completeClassSession(input: {
   const NOTIFY_BUDGET_MS = 3500;
   try {
     const notifyWork = (async () => {
-      const recipients = await getSessionParentRecipients(session);
+      const regularRecipients = await getSessionParentRecipients(session);
+      // 보강 온 아이 학부모에게도 같은 안내(2026-11-09 원장 승인) — 반 수강생이 아니라 위 조회로는 안 잡힌다.
+      // 같은 키 규칙(session:…:student:…:user:…)이라 정규·보강에 겹친 아이가 있어도 두 번 나가지 않는다.
+      const makeupRecipients = await getMakeupCompletedParentRecipients(session, input.sessionId);
+      const seen = new Set(regularRecipients.map((r) => `${r.studentId}:${r.userId}`));
+      const recipients = [...regularRecipients, ...makeupRecipients.filter((r) => !seen.has(`${r.studentId}:${r.userId}`))];
       const results = await Promise.allSettled(recipients.map((recipient) => deliverParentNotification({
         eventType: "CLASS_COMPLETED",
         dedupeKey: `session:${input.sessionId}:completed:student:${recipient.studentId}:user:${recipient.userId}`,
