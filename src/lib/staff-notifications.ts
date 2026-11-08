@@ -35,6 +35,21 @@ export async function getClassParentRecipients(classId: string, studentIds?: str
   );
 }
 
+/**
+ * 학생 id 로 학부모를 바로 찾는다 — 반 수강(Enrollment)을 거치지 않는다.
+ * 보강 온 아이는 이 반 수강생이 아니라 getClassParentRecipients 로는 안 잡혀 출석 알림이 빠졌다(2026-11-09 원장 승인).
+ * 수신자 기준(Student.parentId)은 getClassParentRecipients 와 같다.
+ */
+export async function getStudentParentRecipients(studentIds: string[]) {
+  if (!studentIds.length) return [] as ParentRecipient[];
+  return prisma.$queryRawUnsafe<ParentRecipient[]>(
+    `SELECT DISTINCT s.id AS "studentId", s.name AS "studentName", s."parentId" AS "userId"
+     FROM "Student" s
+     WHERE s.id = ANY($1::text[]) AND ${notMergedStudent("s")} AND s."parentId" IS NOT NULL`,
+    studentIds,
+  );
+}
+
 /** 앱 알림과 푸시를 서로 다른 장부 행으로 기록해 채널별 실제 결과를 보존합니다. */
 export async function deliverParentNotification(input: {
   eventType: string;

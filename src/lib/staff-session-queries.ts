@@ -7,6 +7,7 @@ import {
 } from "@/lib/staff-class-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
+import { absenceReportOf } from "@/lib/regular/attendance-absence-reason";
 
 export type StaffTodayClass = {
   id: string;
@@ -62,7 +63,8 @@ export type StaffSessionStudent = {
   arrivedAt: string | null;
   // 학부모가 미리 넣은 결석 신고. 선생님이 모르고 출석을 찍으면 신고가 헛것이 된다.
   // 정규 수업에만 있다(방학특강은 좌석 기준 별도 흐름이라 null).
-  absenceReport: { reason: string; status: string } | null;
+  // source: SHEET=출석부에서 «질병·부상»으로 표시한 것 / PARENT=학부모 사전 신고(attendance-absence-reason.ts).
+  absenceReport: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
   // 다른 반 아이가 이 수업에 보강 온 경우 true(정규 수업만). 출석 처리하면 보강 예약이 «참석»·보강권 «사용»이 된다.
   makeup: boolean;
 };
@@ -368,12 +370,15 @@ export async function getStaffSessionStudents(
       arrivedAt: Date | string | null;
       absenceReason: string | null;
       absenceStatus: string | null;
+      absenceNote: string | null;
+      absenceReportedBy: string | null;
     }>
   >(
     // 사전 결석 신고를 함께 읽는다. 이게 없으면 선생님이 신고 사실을 모른 채
     // 출석을 찍고, 학부모가 미리 알린 의미가 사라진다.
     `SELECT st.id, st.name, a.status, a.note AS "attendanceNote", a."arrivedAt",
-            ra.reason AS "absenceReason", ra.status AS "absenceStatus"
+            ra.reason AS "absenceReason", ra.status AS "absenceStatus",
+            ra.note AS "absenceNote", ra."reportedByUserId" AS "absenceReportedBy"
      FROM "Enrollment" e
      JOIN "Student" st ON st.id = e."studentId" AND ${notMergedStudent("st")}
      LEFT JOIN "Attendance" a ON a."sessionId" = $1 AND a."studentId" = st.id
@@ -401,7 +406,7 @@ export async function getStaffSessionStudents(
     attendanceNote: row.attendanceNote,
     arrivedAt: toIso(row.arrivedAt),
     absenceReport: row.absenceReason
-      ? { reason: row.absenceReason, status: row.absenceStatus ?? "REPORTED" }
+      ? absenceReportOf({ reason: row.absenceReason, status: row.absenceStatus ?? "REPORTED", note: row.absenceNote, reportedByUserId: row.absenceReportedBy })
       : null,
     makeup: false,
   }));

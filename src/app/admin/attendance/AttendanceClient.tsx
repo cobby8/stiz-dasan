@@ -30,7 +30,16 @@ type StudentRecord = {
     studentName: string;
     status: string | null;
     attendanceId: string | null;
+    // 그날 결석 신고(정규만). source=SHEET 출석부 표시 / PARENT 학부모 신고
+    absenceReport?: { reason: string; status: string; source: "SHEET" | "PARENT" } | null;
+    // 화면에서 고른 «질병·부상» 표시(저장 전 값). 없으면 absenceReport 를 따른다.
+    illness?: boolean;
 };
+
+// 질병·부상 표시 현재값: 화면에서 바꾼 값 → 없으면 저장된 신고 사유
+function illnessOf(s: StudentRecord) {
+    return s.illness ?? s.absenceReport?.reason === "ILLNESS_INJURY";
+}
 
 type AttendanceClassesPayload = {
     classes: ClassItem[];
@@ -193,6 +202,13 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         setDirty(true);
     }
 
+    // 결석일 때만 쓰는 «질병·부상» 표시 토글(저장 버튼을 눌러야 반영)
+    function toggleIllness(studentId: string) {
+        setStudents((prev) => prev.map((s) => (s.studentId === studentId ? { ...s, illness: !illnessOf(s) } : s)));
+        setSaved(false);
+        setDirty(true);
+    }
+
     function markAll(status: string) {
         setStudents((prev) => prev.map((s) => ({ ...s, status })));
         setSaved(false);
@@ -203,16 +219,22 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
         if (!selectedLesson || !date) return;
         const records = students
             .filter((s) => s.status)
-            .map((s) => ({ studentId: s.studentId, status: s.status! }));
+            // 결석이면 질병·부상 표시 여부를 함께 보낸다(정규만. 서버가 학부모 신고 행은 건드리지 않는다).
+            .map((s) => ({
+                studentId: s.studentId,
+                status: s.status!,
+                ...(s.status === "ABSENT" && !selectedLesson.sessionDateId ? { absenceReason: illnessOf(s) ? "ILLNESS_INJURY" as const : null } : {}),
+            }));
         if (records.length === 0) {
             alert("출결 상태를 선택해주세요.");
             return;
         }
         setSaving(true);
         try {
-            await saveAttendance(selectedLesson.id, date, records, { sessionDateId: selectedLesson.sessionDateId });
+            const result = await saveAttendance(selectedLesson.id, date, records, { sessionDateId: selectedLesson.sessionDateId });
             await loadAttendance({ resetSaved: false });
             setSaved(true);
+            if (result?.absenceMessages?.length) alert(result.absenceMessages.join(" / "));
         } catch (err: any) {
             alert(adminErrorText(err, "저장 실패"));
         } finally {
@@ -439,9 +461,25 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                             {/* 학생 한 줄 행: 이름 왼쪽 · 출석/결석/지각 버튼 오른쪽(44px) */}
                             <ul className="flex-1 divide-y divide-[var(--color-academy-line)] border-y border-[var(--color-academy-line)]">
                                 {students.map((s) => (
-                                    <li key={s.studentId} className="flex items-center justify-between gap-2 px-4 py-1">
+                                    <li key={s.studentId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-1">
                                         <span className="min-w-0 break-keep font-bold text-[var(--color-academy-ink)]">{s.studentName}</span>
-                                        <div className="flex shrink-0 gap-1" role="group" aria-label={`${s.studentName} 출결`}>
+                                        <div className="flex shrink-0 flex-wrap justify-end gap-1" role="group" aria-label={`${s.studentName} 출결`}>
+                                            {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 이월 검토 후보(정규만). 학부모 신고가 있으면 그 사유를 따른다 */}
+                                            {s.status === "ABSENT" && !selectedLesson.sessionDateId && (
+                                                <button
+                                                    type="button"
+                                                    aria-pressed={illnessOf(s)}
+                                                    disabled={s.absenceReport?.source === "PARENT"}
+                                                    title={s.absenceReport?.source === "PARENT" ? "학부모 결석 신고 사유를 따릅니다(결석 관리에서 변경)" : undefined}
+                                                    onClick={() => toggleIllness(s.studentId)}
+                                                    className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-2 text-sm font-bold disabled:opacity-60 ${illnessOf(s)
+                                                        ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
+                                                >
+                                                    <span className="material-symbols-outlined text-base" aria-hidden="true">{illnessOf(s) ? "check_box" : "check_box_outline_blank"}</span>
+                                                    질병·부상
+                                                </button>
+                                            )}
                                             {STATUS_OPTIONS.map((opt) => {
                                                 const on = s.status === opt.value;
                                                 return (

@@ -3,12 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
-import { applyMakeupAttendanceInTx, findMakeupBookings } from "@/lib/makeup/makeup-attendance";
+import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess } from "@/lib/staff-class-access";
-import { deliverParentNotification, getClassParentRecipients } from "@/lib/staff-notifications";
+import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { adoptRegularSessionKey, regularSessionKey } from "@/lib/regular/regularSession";
+import {
+  absencePlanMessage,
+  applyAttendanceAbsenceReasonInTx,
+  type AbsenceReasonIntent,
+  type AbsenceReportState,
+} from "@/lib/regular/attendance-absence-reason";
 
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
@@ -299,10 +305,20 @@ export async function saveSessionMemo(input: { sessionId: string; notes: string 
   return { ok: true as const };
 }
 
-export async function saveStaffAttendance(input: { sessionId: string; attendanceKey: string; status: AttendanceStatus; note?: string }) {
+export async function saveStaffAttendance(input: {
+  sessionId: string;
+  attendanceKey: string;
+  status: AttendanceStatus;
+  note?: string;
+  /** 결석 사유 — "ILLNESS_INJURY"=질병·부상 표시, null=표시 끄기, 생략=그대로(출석·지각이면 출석부 사유는 지워짐). 정규 수강생만. */
+  absenceReason?: AbsenceReasonIntent;
+}) {
   const { session, access } = await requireSessionAccess(input.sessionId);
   if (session.status !== "IN_PROGRESS") return { ok: false as const, message: "진행 중인 수업에서만 출결을 기록할 수 있습니다." };
   if (!["PRESENT", "LATE", "ABSENT"].includes(input.status)) return { ok: false as const, message: "올바른 출결 상태가 아닙니다." };
+  if (input.absenceReason !== undefined && input.absenceReason !== null && input.absenceReason !== "ILLNESS_INJURY") {
+    return { ok: false as const, message: "올바른 결석 사유가 아닙니다." };
+  }
 
   // 방학특강(seasonal) 세션은 좌석(SpecialProgramEnrollmentDate)이 출결 정본이다.
   //  - attendanceKey = enrollmentDateId(좌석). 미전환 신청자도 좌석이 있어 여기서 처리된다.
@@ -366,9 +382,32 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
     }
   }
 
+  // 결석 사유(질병·부상) — 정규 수강생만. 보강 온 아이의 결석은 자기 반 결석이 아니라 이월 대상이 아니다.
+  // 청구 작업대의 이월 후보(RegularAbsence reason=ILLNESS_INJURY)와 같은 곳·같은 값으로 저장한다.
+  // 실패해도 출결은 유지한다(위와 같은 이유) — 대신 화면에 다시 눌러 달라고 알린다.
+  let absenceReport: AbsenceReportState | undefined;
+  let absenceMessage: string | null = null;
+  if (!isMakeup) {
+    try {
+      const applied = await prisma.$transaction((tx) => applyAttendanceAbsenceReasonInTx(tx, {
+        studentId, classId: session.classId, dateYmd: sessionYmd, attendanceStatus: input.status,
+        intent: input.absenceReason, confirmedByUserId: null, actorUserId: access.staff.appUserId,
+      }));
+      absenceReport = applied.report;
+      absenceMessage = absencePlanMessage(applied.plan);
+    } catch (error) {
+      console.error("[saveStaffAttendance] 결석 사유 저장 실패(출결은 저장됨)", { sessionId: input.sessionId, studentId, error });
+      if (input.absenceReason !== undefined) absenceMessage = "출결은 저장됐지만 질병·부상 표시는 저장하지 못했습니다. 다시 눌러 주세요.";
+    }
+  }
+  const extra = { absenceReport, ...(absenceMessage ? { absenceMessage } : {}) };
+
   if (changed && (input.status === "PRESENT" || input.status === "LATE")) {
     try {
-      const [recipient] = await getSessionParentRecipients(session, [studentId]);
+      // 보강 온 아이는 이 반 수강생이 아니라 반 기준 조회로는 학부모가 안 잡힌다 → 학생으로 바로 찾는다.
+      const [recipient] = isMakeup
+        ? await getStudentParentRecipients([studentId])
+        : await getSessionParentRecipients(session, [studentId]);
       if (recipient) {
         const delivery = await deliverParentNotification({
           eventType: input.status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
@@ -381,7 +420,7 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
           attendanceId: saved[0].id,
         });
         if (!delivery.duplicate && delivery.push?.status === "FAILED") {
-          return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const };
+          return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const, ...extra };
         }
       }
     } catch (error) {
@@ -390,10 +429,10 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
         studentId,
         error,
       });
-      return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const };
+      return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const, ...extra };
     }
   }
-  return { ok: true as const, attendanceId: saved[0].id, changed };
+  return { ok: true as const, attendanceId: saved[0].id, changed, ...extra };
 }
 
 export async function completeClassSession(input: {
@@ -439,7 +478,21 @@ export async function completeClassSession(input: {
            AND NOT EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = e."studentId")`,
         session.classId, input.sessionId, session.date,
       );
-  if (Number(missing[0]?.count ?? 0) > 0) return { ok: false as const, message: "출결을 확인하지 않은 학생이 있습니다." };
+  // 보강 온 아이도 출결을 찍어야 종료할 수 있다(2026-11-09 원장 승인) — 명단 조회와 같은 makeupOnClassDateSql 조건.
+  // 보강을 안 찍고 끝내면 예약이 «예약됨»에 남아 보강권이 줄지 않는다(관리자가 따로 눌러야 했던 그 문제).
+  const missingMakeup = session.sessionDateId
+    ? [{ count: BigInt(0) }]
+    : await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT COUNT(DISTINCT ms."studentId")::bigint AS count
+           FROM "MakeupSession" ms
+           JOIN "Student" st ON st.id = ms."studentId" AND ${notMergedStudent("st")}
+          WHERE ${makeupOnClassDateSql("ms", "$1", "$3")}
+            AND NOT EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $2 AND a."studentId" = ms."studentId")`,
+        session.classId, input.sessionId, session.date,
+      );
+  if (Number(missing[0]?.count ?? 0) + Number(missingMakeup[0]?.count ?? 0) > 0) {
+    return { ok: false as const, message: "출결을 확인하지 않은 학생이 있습니다(보강 온 아이 포함)." };
+  }
 
   // 리포트를 종료와 같은 UPDATE 로 처리한다. 지금까지는 리포트 작성·발행이 관리자
   // 전용이라(requireAdmin) 선생님이 수업을 마쳐도 원장이 PC 에서 다시 써야 나갔고,
