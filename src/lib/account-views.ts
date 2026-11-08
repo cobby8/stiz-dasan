@@ -24,8 +24,9 @@ export function resolveAccountViews(
   const views: AccountViewOption[] = [];
   if (roles.admin) views.push({ key: "admin", label: "관리자", href: "/admin" });
   if (roles.teacher) views.push({ key: "teacher", label: "선생님", href: "/staff" });
-  // 관리자는 셔틀을 관리자 화면에서 다루므로 따로 넣지 않는다(기사님 화면은 본인 노선 체크용).
-  if (roles.driver && !roles.admin) views.push({ key: "driver", label: "기사님", href: "/staff/shuttle" });
+  // 관리자도 기사님이 보는 운행표를 메뉴 한 번으로 확인한다(2026-11-08 원장 결정 — 예전엔 관리자를 뺐다).
+  // 셔틀 화면(/staff/shuttle)은 원래 관리자를 받아 준다(shuttleScope).
+  if (roles.driver || roles.admin) views.push({ key: "driver", label: "기사님", href: "/staff/shuttle" });
   // 학부모 화면은 휴대폰 인증·자녀 연결 규칙을 지킨 결과(canUseParentView)만 따른다.
   if (canUseParentView) views.push({ key: "parent", label: "학부모", href: "/mypage" });
   return views;
