@@ -34,6 +34,8 @@ export type TuitionEnrollment = ProgramPrices & {
   studentId: string;
   programId: string | null;
   programName?: string | null;
+  /** 반 요일(Mon~Sun). 대회준비반 «주말 훈련» 판별에 쓴다. 없으면 주말 아님으로 본다. */
+  dayOfWeek?: string | null;
 };
 
 export type TuitionPlan = {
@@ -69,45 +71,122 @@ export function splitTierPrice(total: number, parts: number): number[] {
   return Array.from({ length: parts }, (_, i) => each + (i === 0 ? rest : 0));
 }
 
+/** 주말 요일. 대회준비반 «주말 훈련» 판별과 셔틀 미운행(주말 수업) 판단에 같이 쓴다. */
+const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
+
+// ── 대회준비반 ─────────────────────────────────────────────
 /**
- * 학생별·프로그램별로 묶어 주N회 요금을 행에 나눠 담는다.
- * 넘기는 등록은 «이번 달 청구 대상(제외되지 않은)» 것만이어야 한다 — 휴원 반까지 세면 주2회로 잘못 오른다.
- * 프로그램 id 가 없거나 주N회 칸이 비면 기존 방식(행마다 p.price)으로 두고 경고를 단다.
+ * 대회준비반 판별 = 프로그램 이름(앞뒤 공백 제거 후 정확히 일치). 이 상수 한 곳에서만 정한다.
+ * 운영 DB(2026-11-09) Program «대회준비반»(id 88dbc742-…) — 반: 수요일 7교시(Wed-7)·일요일 8교시(Sun-8, 일8 대표팀).
+ *
+ * 원장 결정(2026-11-09 원문): «대회준비반은 현재 휴강 중, 월 30만원 고정, 주말 대회준비반 훈련 필수 +
+ * 수요일 7교시 대회준비반 훈련 필수 + 추가로 다른 일반 반 중 1회 선택».
+ * → 주말 대회준비반 반이 있는 학생 = 30만원 묶음(대회준비반 반 전부 + 일반 반 1개).
+ *   주말 훈련 없이 평일 대회준비반만 다니는 학생(10~11월 «수요일 7교시만» 수강, 원장이 건별로 150,000원 결정)은
+ *   묶음이 아니라 일반 규칙으로 계산하고 확인 경고를 단다.
+ */
+export const COMPETITION_PROGRAM_NAMES: ReadonlySet<string> = new Set(["대회준비반"]);
+/** 대회준비반 묶음 월 요금(원장 결정 «월 30만원 고정»). */
+export const COMPETITION_PACKAGE_FEE = 300_000;
+/** 묶음에 포함되는 일반 반 개수(원장 결정 «다른 일반 반 중 1회 선택»). */
+export const COMPETITION_INCLUDED_GENERAL_CLASSES = 1;
+
+export function isCompetitionProgram(programName: string | null | undefined): boolean {
+  return COMPETITION_PROGRAM_NAMES.has((programName ?? "").trim());
+}
+
+/** 경고 문장 여러 개를 하나로(빈 값은 버린다). */
+const joinWarnings = (...items: Array<string | null | undefined>): string | null => {
+  const list = items.filter((v): v is string => Boolean(v));
+  return list.length ? list.join(" ") : null;
+};
+
+/**
+ * 일반 규칙: 학생의 청구 대상 반 «전체» 주 횟수 N(프로그램 무관)으로 각 반 프로그램의 주N회 요금 ÷ N.
+ * 원장 결정(2026-11-09 원문): «주중경기반 1회 + 주말경기반 1회면 총 주2회 수강이니 각 프로그램의 주2회 요금에
+ * 해당하는 금액으로 계산. 주중경기반 8만, 주말경기반 9만이면 17만».
+ * - 반마다 원 단위 절사, 프로그램별 절사로 남는 원은 학생의 첫 행에 붙인다(한 프로그램만 다니면 합계 = 주N회 요금 그대로).
+ * - 그 프로그램의 주N회 칸이 비면 기존 방식(그 반은 주1회 요금)으로 두고 경고한다.
+ * - 프로그램을 모르는 등록(programId 없음)은 N 에 세지 않고 주1회 요금 그대로 둔다(기존 동작).
+ */
+function planGeneralRows(rows: readonly TuitionEnrollment[], result: Map<string, TuitionPlan>, extraWarning: string | null) {
+  for (const e of rows.filter(r => !r.programId)) result.set(e.key, { baseAmount: e.price, basis: null, warning: extraWarning });
+  const known = rows.filter(r => r.programId);
+  if (!known.length) return;
+  const n = known.length;
+  // 프로그램 → 등록 목록 (입력 순서 유지 = 서비스의 studentId,classId 정렬 순서)
+  const groups = new Map<string, TuitionEnrollment[]>();
+  for (const e of known) groups.set(e.programId!, [...(groups.get(e.programId!) ?? []), e]);
+  const label = (e: TuitionEnrollment) => e.programName ?? "프로그램";
+  // 여러 프로그램이면 «어떻게 N 을 셌는지»를 근거에 적는다(예전의 «여러 프로그램 수강» 경고를 대신한다).
+  const summary = groups.size > 1 ? `여러 프로그램 합산 주${n}회(${[...groups.values()].map(g => `${label(g[0])} 주${g.length}회`).join(" + ")})` : null;
+  let remainder = 0;
+  for (const group of groups.values()) {
+    const tier = weeklyTierPrice(group[0], n);
+    if (tier === null) {
+      // 주N회 요금 빈 칸 → 기존 방식(반마다 주1회 요금). 과다 청구 가능성이 있어 반드시 경고.
+      for (const e of group) result.set(e.key, {
+        baseAmount: e.price,
+        basis: n > 1 ? `${summary ? `${summary} · ` : ""}${label(e)} 주${n}회 요금 미설정 → 주1회 요금 ${won(e.price)} × ${group.length}반` : null,
+        warning: joinWarnings(n > 1 ? `${label(e)} 주${n}회 요금이 비어 있어 주1회 요금 × ${group.length}반으로 계산했습니다. 프로그램 요금을 확인해 주세요.` : null, extraWarning),
+      });
+      continue;
+    }
+    const each = Math.floor(tier / n);
+    // 이 프로그램 몫(반 수 × 요금 ÷ N, 원 단위 절사)과 반별 절사 합의 차이 = 첫 행에 붙일 남는 원
+    remainder += Math.floor((tier * group.length) / n) - each * group.length;
+    for (const e of group) result.set(e.key, {
+      baseAmount: each,
+      basis: summary ? `${summary} → ${label(e)} 주${n}회 요금 ${won(tier)} ÷ ${n}` : n > 1 ? `주${n}회 요금 ${won(tier)} ÷ ${n}반` : null,
+      warning: extraWarning,
+    });
+  }
+  if (remainder > 0) {
+    const first = result.get(known[0].key)!;
+    result.set(known[0].key, { ...first, baseAmount: first.baseAmount + remainder });
+  }
+}
+
+/**
+ * 학생별로 수강료 제안값을 정한다.
+ * 넘기는 등록은 «이번 달 청구 대상(제외되지 않은)» 것만이어야 한다 — 휴원 반까지 세면 주N회가 잘못 오른다.
+ * 1) 주말 대회준비반 반이 있으면 대회준비반 묶음(30만원 고정, 첫 대회준비반 행에 몰고 나머지 0원).
+ * 2) 그 밖에는 일반 규칙(학생 전체 주 횟수 N 기준 주N회 요금 ÷ N).
  */
 export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Map<string, TuitionPlan> {
   const result = new Map<string, TuitionPlan>();
-  // 학생 → 프로그램 → 등록 목록 (입력 순서 유지 = 서비스의 studentId,classId 정렬 순서)
-  const byStudent = new Map<string, Map<string, TuitionEnrollment[]>>();
-  for (const e of enrollments) {
-    const programs = byStudent.get(e.studentId) ?? new Map<string, TuitionEnrollment[]>();
-    const groupKey = e.programId ?? `no-program:${e.key}`; // 프로그램을 모르면 묶지 않는다
-    programs.set(groupKey, [...(programs.get(groupKey) ?? []), e]);
-    byStudent.set(e.studentId, programs);
-  }
-  for (const programs of byStudent.values()) {
-    // 여러 프로그램(예: 주말경기반 + 주중경기반)을 함께 다니면 랠리즈는 합산 요금을 쓴 사례가 있어 자동으로 확정하지 않는다.
-    const mixed = programs.size > 1
-      ? `여러 프로그램을 함께 수강합니다(${[...programs.values()].map(g => `${g[0].programName ?? "프로그램"} 주${g.length}회`).join(" + ")}). 프로그램별 요금을 더한 값이라 합산 할인 여부를 확인해 주세요.`
-      : null;
-    for (const group of programs.values()) {
-      const count = group.length;
-      const tier = weeklyTierPrice(group[0], count);
-      if (tier === null) {
-        // 주N회 요금 빈 칸 → 기존 방식(반마다 주1회 요금). 과다 청구 가능성이 있어 반드시 경고.
-        for (const e of group) result.set(e.key, {
-          baseAmount: e.price,
-          basis: count > 1 ? `주${count}회 요금 미설정 → 주1회 요금 ${won(e.price)} × ${count}반` : null,
-          warning: count > 1 ? `${e.programName ?? "프로그램"} 주${count}회 요금이 비어 있어 주1회 요금 × ${count}반으로 계산했습니다. 프로그램 요금을 확인해 주세요.` : mixed,
-        });
-        continue;
-      }
-      const parts = splitTierPrice(tier, count);
-      group.forEach((e, i) => result.set(e.key, {
-        baseAmount: parts[i],
-        basis: count > 1 ? `주${count}회 요금 ${won(tier)} ÷ ${count}반` : null,
-        warning: mixed,
+  // 학생 → 등록 목록 (입력 순서 유지)
+  const byStudent = new Map<string, TuitionEnrollment[]>();
+  for (const e of enrollments) byStudent.set(e.studentId, [...(byStudent.get(e.studentId) ?? []), e]);
+  for (const rows of byStudent.values()) {
+    const comp = rows.filter(e => isCompetitionProgram(e.programName));
+    const general = rows.filter(e => !isCompetitionProgram(e.programName));
+    const isWeekend = (e: TuitionEnrollment) => WEEKEND_DAYS.has(e.dayOfWeek ?? "");
+    if (comp.some(isWeekend)) {
+      // 대회준비반 묶음: 대회준비반 반 전부 + 일반 반 1개까지 합계 300,000원.
+      const packageBasis = `대회준비반 월 ${won(COMPETITION_PACKAGE_FEE)} 고정(주말·수요일 대회준비반 훈련 + 일반 반 ${COMPETITION_INCLUDED_GENERAL_CLASSES}회 포함)`;
+      const missingWeekday = comp.every(isWeekend)
+        ? "대회준비반 수요일 7교시 훈련(필수) 등록이 없습니다. 수강 반을 확인해 주세요." : null;
+      comp.forEach((e, i) => result.set(e.key, {
+        baseAmount: i === 0 ? COMPETITION_PACKAGE_FEE : 0,
+        basis: i === 0 ? packageBasis : `${packageBasis} — 금액은 첫 대회준비반 행에 포함`,
+        warning: missingWeekday,
       }));
+      const included = general.slice(0, COMPETITION_INCLUDED_GENERAL_CLASSES);
+      const extra = general.slice(COMPETITION_INCLUDED_GENERAL_CLASSES);
+      for (const e of included) result.set(e.key, { baseAmount: 0, basis: `${packageBasis} — 포함된 일반 반(0원)`, warning: missingWeekday });
+      if (extra.length) {
+        // 일반 반이 2개 이상이면 1개만 묶음에 넣고 나머지는 일반 규칙(그 반들의 주 횟수 기준)으로 계산한다.
+        planGeneralRows(extra, result, joinWarnings(missingWeekday,
+          `대회준비반 학생이 일반 반을 ${general.length}개 수강합니다. ${COMPETITION_INCLUDED_GENERAL_CLASSES}개는 ${won(COMPETITION_PACKAGE_FEE)}에 포함하고 나머지 ${extra.length}개는 일반 요금으로 계산했습니다. 확인해 주세요.`));
+      }
+      continue;
     }
+    // 주말 훈련 없이 평일 대회준비반만 다니면 묶음 조건이 아니다 — 일반 규칙으로 두고 금액 확인을 요청한다.
+    const weekdayOnlyComp = comp.length
+      ? "대회준비반 주말 훈련 없이 평일 대회준비반만 수강해 월 300,000원 고정을 적용하지 않았습니다. 금액을 확인해 주세요(10~11월 «수요일 7교시만» 수강은 원장 결정 150,000원)."
+      : null;
+    planGeneralRows(rows, result, weekdayOnlyComp);
   }
   return result;
 }
@@ -116,8 +195,6 @@ export function planWeeklyTuition(enrollments: readonly TuitionEnrollment[]): Ma
 
 /** 프로그램 화면 «자동 계산» 표와 같은 값(ProgramFormPanel.tsx SHUTTLE 표). 주 수업 횟수 → 월 셔틀비. */
 export const AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT: readonly number[] = [0, 10_000, 15_000, 20_000];
-/** 주말 수업은 셔틀을 운행하지 않는다(프로그램 화면 규칙). */
-const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
 /** 일8 대표팀은 다른 요일 셔틀을 타도 월 셔틀비 전체 면제(studentBilling.ts FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS 와 같은 값). */
 export const FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS: ReadonlySet<string> = new Set(["Sun-8"]);
 
@@ -132,18 +209,57 @@ export type ShuttleEnrollment = {
 
 export type ShuttlePlan = { amount: number; basis: string | null; warning: string | null };
 
+/** 셔틀 명단(RegularShuttleStop)에서 그 학생이 타고 내리는 정류장 한 건 */
+export type ShuttleStopUse = { direction: string; stopName: string };
+
+/**
+ * 정규 셔틀 «무료 거점» 정류장 이름 — 이 상수 한 곳에서만 정한다(띄어쓰기는 무시하고 비교).
+ *
+ * 근거:
+ *   - 원장(2026-11-09): «1호점 앞 버스정류장에서 타는 학생은 무료거점에서 타는 거라 셔틀비 안 받아».
+ *   - 코덱스 지식 `.Codex/knowledge/conventions.md` [2026-09-02] «정규 무료셔틀은 시트 구분값으로 청구에서 제외»:
+ *     `1호점 앞 버스정류장` 승차 학생은 정규 셔틀 명단에는 포함하지만 셔틀비를 받지 않는다.
+ *   - 옛 시트 가져오기(src/lib/studentBilling.ts hasFullShuttleFeeExemption): `셔틀비 구분=무료셔틀` 이면 학생 월 셔틀비 전체 0.
+ *   - 하원 하차 지점: 무료 거점의 하차는 길 건너 버스정류장(AcademySettings.shuttleHubDropoffName «새봄중 앞 버스정류장»,
+ *     migration 20260728000000_add_shuttle_hub_dropoff). 정규 명단에서는 «새봄중학교 앞 버스정류장» 하차로 적힌다.
+ *     단, 이 정류장은 일반 승차 학생도 내리는 곳이라(12월 명단: 이도경·이윤건) «거점 승차가 있는 학생»에게만 무료로 본다.
+ * 운영 명단(2026-11·12)에서 «1호점 앞 버스정류장»은 승차(BOARD)로만 쓰인다.
+ */
+export const FREE_SHUTTLE_HUB_STOPS: Readonly<{ board: readonly string[]; alight: readonly string[] }> = {
+  board: ["1호점 앞 버스정류장"],
+  alight: ["새봄중학교 앞 버스정류장"],
+};
+const stopKey = (name: string | null | undefined) => (name ?? "").replace(/\s+/g, "");
+const isHubBoard = (s: ShuttleStopUse) => s.direction === "BOARD" && FREE_SHUTTLE_HUB_STOPS.board.some(n => stopKey(n) === stopKey(s.stopName));
+const isHubAlight = (s: ShuttleStopUse) => s.direction === "ALIGHT" && FREE_SHUTTLE_HUB_STOPS.alight.some(n => stopKey(n) === stopKey(s.stopName));
+
 /**
  * 그 달 셔틀 명단에 있는 학생의 월 셔틀비 제안값.
  * - 명단에 없으면 0(제안 없음).
  * - 셔틀비 면제 반(일8 대표팀)에 다니면 0.
+ * - 무료 거점: 명단의 승차가 전부 «1호점 앞 버스정류장»이고 하차가 거점 하차(또는 없음)뿐이면 0.
+ *   거점 승차와 일반 정류장 이용이 섞여 있으면 아래 일반 셔틀비를 제안하되 확인 경고를 단다.
  * - 셔틀 운행 반(평일·runsShuttle·직접입력 0 아님)의 주 수업 횟수로 10,000/15,000/20,000.
  * - 그 반들의 프로그램에 «직접 입력» 셔틀비가 있으면 그중 큰 값.
  */
-export function planShuttleFee(onRoster: boolean, enrollments: readonly ShuttleEnrollment[]): ShuttlePlan {
+export function planShuttleFee(onRoster: boolean, enrollments: readonly ShuttleEnrollment[], stops: readonly ShuttleStopUse[] = []): ShuttlePlan {
   if (!onRoster) return { amount: 0, basis: null, warning: null };
   if (enrollments.some(e => e.slotKey && FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS.has(e.slotKey))) {
     return { amount: 0, basis: "셔틀 명단 있음 · 일8 대표팀 셔틀비 면제", warning: null };
   }
+  const usesHub = stops.some(isHubBoard);
+  if (usesHub && stops.every(s => isHubBoard(s) || isHubAlight(s))) {
+    return { amount: 0, basis: `셔틀 명단 있음 · 무료 거점(${FREE_SHUTTLE_HUB_STOPS.board[0]}) 승차 — 셔틀비 없음`, warning: null };
+  }
+  const plan = regularShuttlePlan(enrollments);
+  if (!usesHub) return plan;
+  // 거점 승차가 있지만 다른 정류장도 이용 — 일부 요일만 유료인지 원장 확인이 필요하다.
+  const hubNote = `셔틀 명단에서 무료 거점(${FREE_SHUTTLE_HUB_STOPS.board[0]}) 승차와 다른 정류장 이용이 섞여 있어 일반 셔틀비를 제안했습니다. 셔틀비를 받을지 확인해 주세요.`;
+  return { ...plan, warning: plan.warning ? `${plan.warning} ${hubNote}` : hubNote };
+}
+
+/** 무료 거점·면제 판단 뒤의 일반 셔틀비(주 수업 횟수표 또는 프로그램 지정값). */
+function regularShuttlePlan(enrollments: readonly ShuttleEnrollment[]): ShuttlePlan {
   const eligible = enrollments.filter(e => e.runsShuttle && !WEEKEND_DAYS.has(e.dayOfWeek) && e.shuttleFeeOverride !== 0);
   if (!eligible.length) {
     return { amount: 0, basis: null, warning: "셔틀 명단에 있지만 셔틀을 운행하는 평일 반이 없어 셔틀비를 제안하지 않았습니다. 확인해 주세요." };
