@@ -430,6 +430,11 @@ export async function sendPerMessageBulkDetailed(items: PerMessageBulkItem[]): P
     // 비즈뿌리오는 카카오를 보내지 않는다 — 한 통씩 문자로(호출부가 카카오 항목은 문자 본문을 넘긴다)
     const results: SmsBulkDeliveryResult[] = [];
     for (const item of items) {
+        // 방어: 브랜드 메시지(광고 표시 본문)는 문자로 바꿔 보내지 않는다 — 수신 동의 없는 광고 문자 금지
+        if (item.kakao?.kind === "BMS_FREE") {
+            results.push({ deliveryId: item.deliveryId, to: normalizeSmsNumber(item.to), status: "FAILED", provider, reason: "BMS_NOT_DELIVERED: provider does not support brand messages" });
+            continue;
+        }
         const result = await sendSmsDetailed(item.to, item.body);
         const uncertain = !result.ok && /timed out/i.test(result.reason ?? "");
         results.push({
