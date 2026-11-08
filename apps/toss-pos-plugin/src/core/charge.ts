@@ -8,7 +8,7 @@
 import type { ServerApi, ApiResult } from "./api.ts";
 import { kindMessage } from "./api.ts";
 import type { ChargeRequest } from "./contract.ts";
-import { buildLineItems, checkDraftAfterAdd, findShortCodeInOrder, formatWon, validateForPos } from "./order.ts";
+import { buildLineItems, checkDraftAfterAdd, findShortCodeInOrder, formatWon, parseMemo, validateForPos } from "./order.ts";
 import type { PosSdkLike } from "./pos-types.ts";
 
 /** 최근 선점한 요청(번호 → 요청 id) 기록 — 결제 신호가 오면 어느 요청인지 찾는 데 쓴다 */
@@ -69,6 +69,8 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   let busy = false;
   // 같은 결제 신호를 두 번 보고하지 않게(paid 는 분할결제마다 한 번씩 온다)
   const reported = new Set<string>();
+  // 결제 완료 신호를 받은 요청 번호(startPayment 가 결제 뒤 오류를 내도 «실패»로 안내하지 않으려고)
+  const paidCodes = new Set<string>();
 
   async function isDraftEmpty(): Promise<boolean> {
     const d = await sdk.draftOrder.get();
@@ -84,6 +86,25 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       await api.report(req.id, { event: "start_failed", reason });
     } catch {
       /* 보고 실패는 무시 — 서버 만료 스윕이 정리한다 */
+    }
+  }
+
+  /**
+   * startPayment 가 오류를 냈을 때 결제가 실제로는 진행됐는지.
+   * paid = 이 번호의 결제 완료 신호를 받음 · left_draft = 결제 화면(장바구니)에 우리 항목이 없음 · stuck = 우리 항목이 그대로(진짜 실패)
+   * 결제 신호가 조금 늦게 올 수 있어 짧게(최대 약 0.9초) 기다리며 다시 본다.
+   */
+  async function paymentProceeded(shortCode: string): Promise<"paid" | "left_draft" | "stuck"> {
+    for (let i = 0; i < DRAFT_RECHECK_TRIES; i++) {
+      if (paidCodes.has(shortCode)) return "paid";
+      if (i < DRAFT_RECHECK_TRIES - 1) await sleep(DRAFT_RECHECK_GAP_MS);
+    }
+    try {
+      const d = await sdk.draftOrder.get();
+      const ours = (d.lineItems ?? []).some((li) => (parseMemo(li.memo) ?? parseMemo(li.item?.code)) === shortCode);
+      return ours ? "stuck" : "left_draft";
+    } catch {
+      return "stuck"; // 확인이 안 되면 예전처럼 오류로 안내
     }
   }
 
@@ -161,8 +182,26 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         return "invalid";
       }
       await remember(claimed);
+      // 같은 번호가 이 화면에서 다시 나와도 예전 결제 신호로 오인하지 않게(검수 권장 2026-11-08)
+      paidCodes.delete(claimed.shortCode);
       // 7) 결제 화면으로 전환 — 카드 꽂기·서명은 사람이 한다
-      await sdk.draftOrder.startPayment();
+      // ⚠️ 결제 신호(payment.on("paid"))는 워커에만 걸려 있어, 탭 화면에서 시작한 결제는 paidCodes 가 비어
+      //    아래 판정이 장바구니 확인(left_draft → 확인 안내)으로만 간다. 안전한 쪽이라 그대로 둔다.
+      try {
+        await sdk.draftOrder.startPayment();
+      } catch (e) {
+        // 2026-11-08 실측(S-092770·S-290064·S-754720): 토스 POS 는 결제가 «끝난 뒤» startPayment 를 오류로 돌려줄 때가 있다
+        // (서버에는 PAID 다음에 START_FAILED pos_error 가 찍힘). 그대로 «다시 시도해 주세요»를 띄우면 이중 결제를 부를 수 있어,
+        // 결제가 진행됐는지 먼저 본다.
+        const after = await paymentProceeded(claimed.shortCode);
+        if (after === "paid") return "started"; // 결제 완료 신호를 이미 받음 — 조용히 끝(완료 토스트는 결제 신호 쪽이 띄움)
+        if (after === "left_draft") {
+          // 우리 항목이 결제 화면(장바구니)에서 빠졌다 = 결제 단계로 넘어갔다. 다시 결제하라고 하지 않는다.
+          sdk.toast.warn({ message: `${claimed.shortCode} 결제 화면 상태를 확인해 주세요. 결제가 끝났다면 사이트에 자동 반영돼요.` });
+          return "started";
+        }
+        throw e; // 우리 항목이 그대로 남아 있음 = 정말 못 연 것 → 아래 오류 안내
+      }
       return "started";
     } catch (e) {
       if (claimed) await reportStartFailed(claimed, "pos_error");
@@ -192,6 +231,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     const shortCode = findShortCodeInOrder(order);
     if (!shortCode) return "ignored";
     reported.add(dedupeKey);
+    if (event === "paid") paidCodes.add(shortCode);
 
     const recent = parseRecent(await sdk.storage.get(RECENT_KEY)).find((r) => r.shortCode === shortCode);
     if (!recent) {

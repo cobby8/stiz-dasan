@@ -205,11 +205,40 @@ test("POS 오류: 토스트로 안내하고 잠금 풀림", async () => {
     throw new Error("boom");
   };
   const { api, calls } = fakeApi();
-  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
   assert.equal(await flow.startCharge(REQ), "error");
   assert.ok(log.some((l) => l.startsWith("toast.error:")));
   assert.ok(calls.includes("report:req-1:start_failed"));
   assert.equal(flow.isBusy(), false);
+});
+
+test("결제가 끝난 뒤 startPayment 가 오류(2026-11-08 실측): 결제 신호를 받았으면 오류 안내·실패 보고 없이 started", async () => {
+  const { sdk, log } = fakeSdk({ orders: { o9: { id: "o9", lineItems: [{ memo: "STIZ:S-4821" }] } } });
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  sdk.draftOrder.startPayment = async () => {
+    // 결제 화면에서 결제가 끝나고(결제 신호) 나서야 오류로 돌아온다
+    await flow.handlePaymentEvent("paid", "p9", "o9");
+    throw new Error("closed");
+  };
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.ok(!log.some((l) => l.startsWith("toast.error:")));
+  assert.ok(!calls.includes("report:req-1:start_failed"));
+  assert.ok(calls.includes("report:req-1:paid"));
+});
+
+test("startPayment 오류인데 우리 항목이 장바구니에서 빠짐: 다시 결제하라고 하지 않고 확인 안내만", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api, calls } = fakeApi();
+  sdk.draftOrder.startPayment = async () => {
+    await sdk.draftOrder.clear(); // 결제 단계로 넘어가며 장바구니가 비었다
+    throw new Error("closed");
+  };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.ok(!log.some((l) => l.startsWith("toast.error:")));
+  assert.ok(log.some((l) => l.startsWith("toast.warn:S-4821 결제 화면 상태를 확인")));
+  assert.ok(!calls.includes("report:req-1:start_failed"));
 });
 
 test("미납 목록에서 결제: chargeUnpaid 로 선점", async () => {
