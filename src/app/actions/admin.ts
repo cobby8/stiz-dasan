@@ -12,6 +12,15 @@ import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
+import {
+    canAdminEditParentAccount,
+    insertPrimaryGuardian,
+    linkParentAccountForNewStudent,
+    ParentAccountLinkError,
+    validatePrimaryGuardian,
+    type ParentLinkDb,
+    type PrimaryGuardian,
+} from "@/lib/students/parentAccountLink";
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import { requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
@@ -988,7 +997,8 @@ export async function createStudent(data: {
     gender?: string | null;
     parentName: string;
     parentPhone?: string | null;
-    parentEmail?: string | null;
+    // 주 보호자 관계(엄마·아빠 등) — Guardian.relation 으로 저장. 이메일은 받지 않는다(매칭에 쓰지 않음)
+    parentRelation?: string | null;
     // 새 필드: 엑셀 업로드 일괄 등록에서도 사용
     phone?: string | null;       // 학생 휴대폰번호
     school?: string | null;      // 학교명
@@ -996,56 +1006,72 @@ export async function createStudent(data: {
     address?: string | null;     // 주소
     enrollDate?: string | null;  // 입회일자
     memo?: string | null;        // 메모
-}) {
+}): Promise<AdminStudentCreateResult> {
     await requireAdmin();
+    const name = String(data.name ?? "").trim();
+    if (!name || !data.birthDate) return { ok: false, error: "학생 이름과 생년월일을 입력해 주세요." };
+    // 주 보호자(관계·이름·휴대폰) 필수 — 휴대폰이 학부모 계정을 찾는 열쇠다
+    const guardian = validatePrimaryGuardian({ relation: data.parentRelation, name: data.parentName, phone: data.parentPhone });
+    if (!guardian.ok) return { ok: false, error: guardian.error };
+
+    let result: AdminStudentCreateResult;
     try {
-        // 학부모 User 생성 또는 조회 (이메일 기준)
-        let parentId: string;
-        const email = data.parentEmail?.trim() || `parent_${Date.now()}@stiz.local`;
-
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "User" WHERE email = $1 LIMIT 1`, email
+        // 계정 확정·학생·주 보호자를 한 트랜잭션으로 — 중간에 실패하면 빈 계정도 남지 않는다
+        const created = await prisma.$transaction(
+            (tx) => insertAdminStudentWithGuardian(tx, { ...data, name }, guardian.value),
+            { timeout: 15_000 },
         );
-
-        if (existing.length > 0) {
-            parentId = existing[0].id;
-            // 이름/전화번호 업데이트
-            await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, "updatedAt" = NOW() WHERE id = $3`,
-                data.parentName, data.parentPhone || null, parentId,
-            );
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                 RETURNING id`,
-                email, data.parentName, data.parentPhone || null,
-            );
-            parentId = rows[0].id;
-        }
-
-        // 원생 생성: 새 필드(phone, school, grade, address, enrollDate, memo) 포함
-        await prisma.$executeRawUnsafe(
-            `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", phone, school, grade, address, "enrollDate", memo, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8, $9::timestamp, $10, NOW(), NOW())`,
-            data.name,
-            data.birthDate,
-            data.gender || null,
-            parentId,
-            data.phone || null,
-            data.school || null,
-            data.grade || null,
-            data.address || null,
-            data.enrollDate || null,
-            data.memo || null,
-        );
+        result = { ok: true, ...created };
     } catch (e) {
+        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
         console.error("Failed to create student:", e);
         throw new Error("원생 등록 실패");
     }
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();
+    return result;
+}
+
+/** 관리자 직접 등록(목록 «원생 등록»·체험 «정규 전환»)의 결과. 안내가 필요한 실패는 throw 대신 ok:false 로 돌려준다
+ *  (운영 빌드는 서버 액션이 던진 오류 문구를 화면에 그대로 보내지 않는다). */
+export type AdminStudentCreateResult =
+    | { ok: true; studentId: string; parentAccountCreated: boolean; staffAccount: boolean }
+    | { ok: false; error: string };
+
+/**
+ * [트랜잭션 안에서] 학부모 계정 확정 → Student INSERT → 주 보호자 Guardian INSERT.
+ * 계정 연결 규칙은 parentAccountLink 한 곳에 있다(이메일 매칭·기존 계정 덮어쓰기 없음).
+ */
+async function insertAdminStudentWithGuardian(
+    tx: ParentLinkDb,
+    student: {
+        name: string; birthDate: string; gender?: string | null;
+        phone?: string | null; school?: string | null; grade?: string | null;
+        address?: string | null; enrollDate?: string | null; memo?: string | null;
+    },
+    guardian: PrimaryGuardian,
+) {
+    const link = await linkParentAccountForNewStudent(tx, guardian);
+    const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", phone, school, grade, address, "enrollDate", memo, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8, $9::timestamp, $10, NOW(), NOW())
+         RETURNING id`,
+        student.name,
+        student.birthDate,
+        student.gender || null,
+        link.parentId,
+        student.phone || null,
+        student.school || null,
+        student.grade || null,
+        student.address || null,
+        student.enrollDate || null,
+        student.memo || null,
+    );
+    const studentId = rows[0].id;
+    // 입력한 보호자 정보는 계정이 아니라 Guardian(주 보호자)에 남긴다 — 알림·본인인증 자녀 연결이 이 기록을 쓴다
+    await insertPrimaryGuardian(tx, studentId, guardian);
+    return { studentId, parentAccountCreated: link.created, staffAccount: link.staffAccount };
 }
 
 export async function updateStudentMemo(id: string, memo: string) {
@@ -1099,7 +1125,7 @@ export async function updateStudent(id: string, data: {
     gender?: string | null;
     parentName: string;
     parentPhone?: string | null;
-    // 학부모 이메일(데이터계약 parent.email 대응). 인라인 편집에서 전달
+    // 학부모 이메일 — 예전 화면 호환용으로 받기만 하고 저장하지 않는다(로그인 이메일은 학부모가 가입 때 정한다)
     parentEmail?: string | null;
     // 새 필드: 학생 추가 정보
     phone?: string | null;
@@ -1107,8 +1133,9 @@ export async function updateStudent(id: string, data: {
     grade?: string | null;
     address?: string | null;
     enrollDate?: string | null;
-}) {
+}): Promise<{ parentAccountUpdated: boolean }> {
     await requireAdmin();
+    let parentAccountUpdated = false;
     try {
         // 원생 정보 업데이트: 새 필드(phone, school, grade, address, enrollDate) 포함
         await prisma.$executeRawUnsafe(
@@ -1120,15 +1147,29 @@ export async function updateStudent(id: string, data: {
             data.phone || null, data.school || null, data.grade || null,
             data.address || null, data.enrollDate || null,
         );
-        // 학부모 정보도 업데이트
-        const student = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT "parentId" FROM "Student" WHERE id = $1`, id
+        // 학부모 계정(User)은 학원이 만든 «빈 계정»(PARENT·로그인 미연결·합성 이메일)일 때만 이름·번호를 고친다.
+        // 예전엔 이름·번호·이메일을 무조건 덮어써서 ① 이메일을 안 넘기는 목록 «수정»이 email=NULL(NOT NULL 위반)로 늘 실패했고
+        // ② 학생이 직원 계정에 붙어 있으면 직원 계정 정보가 바뀌었다. 이메일은 어떤 경우에도 고치지 않는다.
+        const parentRows = await prisma.$queryRawUnsafe<{ id: string; role: string; authUserId: string | null; email: string | null }[]>(
+            `SELECT u.id, u.role::text AS role, u."authUserId", u.email
+               FROM "Student" s JOIN "User" u ON u.id = s."parentId"
+              WHERE s.id = $1`,
+            id,
         );
-        if (student[0]) {
+        const parent = parentRows[0];
+        if (parent && canAdminEditParentAccount(parent)) {
+            const nextName = String(data.parentName ?? "").trim();
+            const nextPhone = parentPhoneDigits(data.parentPhone);
+            // 비운 값으로는 덮지 않는다 — 번호는 학부모가 가입할 때 이 계정을 찾는 열쇠라 쓸 수 있는 번호일 때만 바꾼다
             await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, email = $3, "updatedAt" = NOW() WHERE id = $4`,
-                data.parentName, data.parentPhone || null, data.parentEmail || null, student[0].parentId ?? student[0].parentid,
+                `UPDATE "User"
+                    SET name = COALESCE($1, name),
+                        phone = COALESCE($2, phone),
+                        "updatedAt" = NOW()
+                  WHERE id = $3 AND role = 'PARENT' AND "authUserId" IS NULL`,
+                nextName || null, isUsablePhoneKey(nextPhone) ? nextPhone : null, parent.id,
             );
+            parentAccountUpdated = true;
         }
     } catch (e) {
         console.error("Failed to update student:", e);
@@ -1137,6 +1178,8 @@ export async function updateStudent(id: string, data: {
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();
+    // 화면이 «학부모 계정은 바꾸지 않았음»을 안내할 수 있게 알려 준다
+    return { parentAccountUpdated };
 }
 
 export async function deleteStudent(id: string) {
@@ -2733,27 +2776,21 @@ export async function bulkCreateStudents(
                         existingStudentId,
                     );
 
+                    // 보호자1은 학부모 계정(User)을 덮어쓰지 않고 주 보호자 Guardian 으로 다시 넣는다(신규 분기와 같은 형식).
+                    // 예전엔 계정 이름을 «아버지»·«보호자» 같은 관계명으로 덮었다(로그인하는 학부모 계정 포함) — 2026-11-09 제거.
+                    if (student.guardian1Phone || student.guardian1Relation) {
+                        await prisma.$executeRawUnsafe(
+                            `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
+                             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, true, NOW(), NOW())`,
+                            existingStudentId,
+                            student.guardian1Relation || "보호자",
+                            student.guardian1Relation || "보호자",
+                            student.guardian1Phone || null,
+                        );
+                    }
+
                     // 보호자2,3 Guardian 테이블에 INSERT
                     await insertGuardians(existingStudentId, student);
-
-                    // 보호자1 정보도 업데이트 (User 테이블)
-                    if (student.guardian1Phone) {
-                        const parentRows = await prisma.$queryRawUnsafe<any[]>(
-                            `SELECT "parentId" FROM "Student" WHERE id = $1`,
-                            existingStudentId,
-                        );
-                        const parentId = parentRows[0]?.parentId ?? parentRows[0]?.parentid;
-                        if (parentId) {
-                            await prisma.$executeRawUnsafe(
-                                `UPDATE "User" SET
-                                    name = $1, phone = $2, "updatedAt" = NOW()
-                                 WHERE id = $3`,
-                                student.guardian1Relation || "보호자",
-                                student.guardian1Phone,
-                                parentId,
-                            );
-                        }
-                    }
 
                     result.updated++;
                     finalStudentId = existingStudentId;
@@ -4536,59 +4573,46 @@ export async function convertTrialToStudent(
         gender?: string | null;
         parentName: string;
         parentPhone?: string | null;
+        // 주 보호자 관계 — 체험 전환 창엔 칸이 없어 비우면 «보호자»로 저장
+        parentRelation?: string | null;
+        // 예전 화면 호환용으로 받기만 하고 쓰지 않는다(이메일로 계정을 찾지 않는다)
         parentEmail?: string | null;
         memo?: string | null;
     }
-) {
+): Promise<AdminStudentCreateResult> {
     await requireAdmin();
     await ensureTrialLeadTable();
 
+    const name = String(studentData.name ?? "").trim();
+    if (!name || !studentData.birthDate) return { ok: false, error: "아이 이름과 생년월일을 입력해 주세요." };
+    // 학부모 계정은 목록 «원생 등록»과 같은 규칙(parentAccountLink) — 주 보호자 휴대폰 필수
+    const guardian = validatePrimaryGuardian({
+        relation: studentData.parentRelation?.trim() || "보호자",
+        name: studentData.parentName,
+        phone: studentData.parentPhone,
+    });
+    if (!guardian.ok) return { ok: false, error: guardian.error };
+
+    let result: AdminStudentCreateResult;
     try {
-        // 1. 학부모 User 생성 또는 조회 (createStudent와 동일한 패턴)
-        let parentId: string;
-        const email = studentData.parentEmail?.trim() || `parent_${Date.now()}@stiz.local`;
-
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "User" WHERE email = $1 LIMIT 1`, email
-        );
-
-        if (existing.length > 0) {
-            parentId = existing[0].id;
-            await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, "updatedAt" = NOW() WHERE id = $3`,
-                studentData.parentName, studentData.parentPhone || null, parentId,
+        result = await prisma.$transaction(async (tx) => {
+            // 1. 학부모 계정 확정 + Student + 주 보호자 Guardian
+            const created = await insertAdminStudentWithGuardian(
+                tx,
+                { name, birthDate: studentData.birthDate, gender: studentData.gender, memo: studentData.memo },
+                guardian.value,
             );
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                 RETURNING id`,
-                email, studentData.parentName, studentData.parentPhone || null,
+            // 2. TrialLead 전환 처리 (상태 + 전환일 + 연결 Student ID) — 같은 트랜잭션이라 학생만 생기고 전환이 빠지는 일이 없다
+            await tx.$executeRawUnsafe(
+                `UPDATE "TrialLead"
+                 SET status = 'CONVERTED', "convertedDate" = NOW(), "convertedStudentId" = $1, "updatedAt" = NOW()
+                 WHERE id = $2`,
+                created.studentId, leadId,
             );
-            parentId = rows[0].id;
-        }
-
-        // 2. Student 생성 (RETURNING id로 새 학생 ID 획득)
-        const studentRows = await prisma.$queryRawUnsafe<any[]>(
-            `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", memo, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, NOW(), NOW())
-             RETURNING id`,
-            studentData.name,
-            studentData.birthDate,
-            studentData.gender || null,
-            parentId,
-            studentData.memo || null,
-        );
-        const newStudentId = studentRows[0].id;
-
-        // 3. TrialLead 전환 처리 (상태 + 전환일 + 연결 Student ID)
-        await prisma.$executeRawUnsafe(
-            `UPDATE "TrialLead"
-             SET status = 'CONVERTED', "convertedDate" = NOW(), "convertedStudentId" = $1, "updatedAt" = NOW()
-             WHERE id = $2`,
-            newStudentId, leadId,
-        );
+            return { ok: true as const, ...created };
+        }, { timeout: 15_000 });
     } catch (e) {
+        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
         console.error("Failed to convert trial to student:", e);
         throw new Error("정규 등록 전환 실패");
     }
@@ -4598,6 +4622,7 @@ export async function convertTrialToStudent(
     revalidatePath("/admin");
     revalidateTrialAdminCaches();
     revalidateStudentAdminCaches();
+    return result;
 }
 
 // ── 대기자(Waitlist) 관리 ─────────────────────────────────────────────────────

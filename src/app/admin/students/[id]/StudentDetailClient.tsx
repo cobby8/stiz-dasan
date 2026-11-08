@@ -550,6 +550,8 @@ export default function StudentDetailClient({
     const [isSavingSection, startSectionTransition] = useTransition();
     const [sectionSaved, setSectionSaved] = useState<null | "header" | "profile">(null);
     const [sectionError, setSectionError] = useState<string | null>(null);
+    // 학부모 이름·전화를 바꾸려 했지만 로그인 계정이라 서버가 그대로 둔 경우 안내 표시
+    const [parentLockedNotice, setParentLockedNotice] = useState(false);
     // 편집 폼: 전체 편집 필드를 한 객체로 관리(편집 안 한 섹션 값은 현재값 유지 → 저장 시 함께 전송)
     const [editForm, setEditForm] = useState({
         name: "", grade: "", school: "", birthDate: "", gender: "", enrollDate: "",
@@ -714,7 +716,7 @@ export default function StudentDetailClient({
         setSectionError(null);
         startSectionTransition(async () => {
             try {
-                await updateStudent(student.id, {
+                const result = await updateStudent(student.id, {
                     name: editForm.name,
                     birthDate: editForm.birthDate,
                     gender: editForm.gender || null,
@@ -727,6 +729,10 @@ export default function StudentDetailClient({
                     address: editForm.address || null,
                     enrollDate: editForm.enrollDate || null,
                 });
+                // 학부모 칸을 실제로 고쳤는데 서버가 계정을 안 바꿨으면(로그인·직원 계정) 안내한다
+                const parentChanged = editForm.parentName.trim() !== (student.parent.name ?? "").trim()
+                    || editForm.parentPhone.trim() !== (student.parent.phone ?? "").trim();
+                setParentLockedNotice(parentChanged && !result.parentAccountUpdated);
                 await loadData();
                 setEditSection(null);
                 setSectionSaved(section);
@@ -1131,6 +1137,12 @@ export default function StudentDetailClient({
                                 </div>
                             }
                         />
+                        {/* 저장은 됐지만 로그인 계정이라 학부모 이름·전화는 그대로 둔 경우 안내 */}
+                        {parentLockedNotice && editSection !== "profile" && (
+                            <p role="status" className="mb-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)]">
+                                학부모 로그인 계정의 이름·전화는 바꾸지 않았습니다. 아래 «보호자» 카드에서 고쳐 주세요.
+                            </p>
+                        )}
                         {editSection === "profile" ? (
                             // (B) 편집 폼: 학생 전화·학부모 이름·학부모 전화·학부모 이메일·주소
                             <div className="space-y-2.5">
@@ -1146,10 +1158,10 @@ export default function StudentDetailClient({
                                     <span className="mb-1 block text-xs font-bold text-gray-400">학부모 전화</span>
                                     <input type="tel" value={editForm.parentPhone} onChange={(e) => setField("parentPhone", e.target.value)} className={EDIT_INPUT_CLASS} />
                                 </label>
-                                <label className="block">
-                                    <span className="mb-1 block text-xs font-bold text-gray-400">학부모 이메일</span>
-                                    <input type="email" value={editForm.parentEmail} onChange={(e) => setField("parentEmail", e.target.value)} className={EDIT_INPUT_CLASS} />
-                                </label>
+                                {/* 학부모 이메일 칸은 2026-11-09 제거 — 로그인 이메일은 학부모가 가입 때 정하고, 관리자 화면에서 바꾸지 않는다 */}
+                                <p className="text-xs text-[var(--color-academy-muted)]">
+                                    학부모 이름·전화는 학원이 만든 계정(학부모 가입 전)일 때만 바뀝니다. 로그인하는 학부모 계정은 «보호자» 카드에서 고쳐 주세요.
+                                </p>
                                 <label className="block">
                                     <span className="mb-1 block text-xs font-bold text-gray-400">주소</span>
                                     <input type="text" value={editForm.address} onChange={(e) => setField("address", e.target.value)} className={EDIT_INPUT_CLASS} />

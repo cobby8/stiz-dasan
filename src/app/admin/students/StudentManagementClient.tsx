@@ -299,6 +299,11 @@ const STUDENT_STATUS_CHIPS = [
 ] as const;
 // 상태 기본값 — 처음 열 때·필터 초기화·켜진 칩을 다시 누를 때 모두 이 값으로 돌아간다
 const DEFAULT_STATUS_FILTER = "ACTIVE";
+// 등록 폼 주 보호자 «관계» 선택지 — Guardian.relation 에 그대로 저장된다(상세 «보호자» 카드에서 자유롭게 고칠 수 있다)
+const GUARDIAN_RELATION_OPTIONS = ["엄마", "아빠", "할머니", "할아버지", "기타 보호자"] as const;
+// 등록·수정 폼 입력칸 공통 모양(터치 44px·학원 색 토큰)
+const STUDENT_FORM_INPUT_CLASS =
+    "min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-sm text-[var(--color-academy-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]";
 
 // 요일 → 시작시간 순으로 정렬한 활성 수강 목록(목록 칸·상세 패널이 같은 순서를 쓰게)
 function sortEnrollmentsByDay(enrollments: Student["enrollments"]) {
@@ -503,9 +508,13 @@ export default function StudentManagementClient({
     const [gender, setGender] = useState("");
     const [parentName, setParentName] = useState("");
     const [parentPhone, setParentPhone] = useState("");
-    const [parentEmail, setParentEmail] = useState("");
+    // 주 보호자 관계(엄마·아빠 등) — 새 등록 때 Guardian(주 보호자)으로 저장된다. 학부모 이메일 칸은 없앴다(계정 매칭에 쓰지 않음)
+    const [parentRelation, setParentRelation] = useState("");
     // 개인정보보호법 준수: 보호자 동의 확인 체크박스 (미성년자 개인정보 수집 시 필수)
     const [guardianConsent, setGuardianConsent] = useState(false);
+    // 폼 안 오류(서버가 돌려준 안내 문구) · 저장 뒤 목록 위 안내 한 줄
+    const [formError, setFormError] = useState<string | null>(null);
+    const [formNotice, setFormNotice] = useState<string | null>(null);
 
     function resetForm() {
         setName("");
@@ -513,8 +522,9 @@ export default function StudentManagementClient({
         setGender("");
         setParentName("");
         setParentPhone("");
-        setParentEmail("");
+        setParentRelation("");
         setGuardianConsent(false);
+        setFormError(null);
         setShowForm(false);
         setEditingId(null);
     }
@@ -525,7 +535,8 @@ export default function StudentManagementClient({
         setGender(s.gender || "");
         setParentName(s.parent.name || "");
         setParentPhone(s.parent.phone || "");
-        setParentEmail(s.parent.email || "");
+        setFormError(null);
+        setFormNotice(null);
         setEditingId(s.id);
         setShowForm(true);
     }
@@ -533,35 +544,68 @@ export default function StudentManagementClient({
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!name.trim() || !birthDate || !parentName.trim()) return;
+        // 새 등록은 주 보호자 관계·휴대폰 필수 — 휴대폰이 학부모 계정을 찾는 열쇠다
+        if (!editingId && (!parentRelation.trim() || !parentPhone.trim())) {
+            setFormError("주 보호자 관계와 휴대폰 번호를 입력해 주세요.");
+            return;
+        }
         // 신규 등록 시 보호자 동의 필수 (개인정보보호법: 미성년자 정보 수집 시 법정대리인 동의)
         if (!editingId && !guardianConsent) {
-            alert("보호자 개인정보 수집 동의를 확인해주세요.");
+            setFormError("보호자 개인정보 수집 동의를 확인해 주세요.");
             return;
         }
         setBusy(true);
+        setFormError(null);
         try {
             if (editingId) {
-                await updateStudent(editingId, {
+                const editedStudent = students.find((item) => item.id === editingId);
+                const result = await updateStudent(editingId, {
                     name: name.trim(),
                     birthDate,
                     gender: gender || null,
                     parentName: parentName.trim(),
                     parentPhone: parentPhone.trim() || null,
                 });
+                // 로그인하는 학부모 계정·직원 계정은 이름·번호를 바꾸지 않는다 — 바꾸려 했으면 어디서 고치는지 알려 준다
+                const parentChanged = editedStudent
+                    && (parentName.trim() !== (editedStudent.parent.name || "") || parentPhone.trim() !== (editedStudent.parent.phone || ""));
+                setFormNotice(!result.parentAccountUpdated && parentChanged
+                    ? "학생 정보는 저장했습니다. 학부모 로그인 계정의 이름·번호는 바꾸지 않았어요 — 학생 상세의 «보호자» 카드에서 고쳐 주세요."
+                    : null);
+                resetForm();
+                await loadData();
             } else {
-                await createStudent({
+                const result = await createStudent({
                     name: name.trim(),
                     birthDate,
                     gender: gender || null,
                     parentName: parentName.trim(),
-                    parentPhone: parentPhone.trim() || null,
-                    parentEmail: parentEmail.trim() || null,
+                    parentPhone: parentPhone.trim(),
+                    parentRelation: parentRelation.trim(),
                 });
+                if (!result.ok) {
+                    // 번호 형식·같은 번호 계정 여러 개 등 — 폼을 닫지 않고 그 자리에 안내
+                    setFormError(result.error);
+                    return;
+                }
+                resetForm();
+                await loadData();
+                // 새 학생은 수강 반이 없어 기본 «활성» 필터에 안 보인다 → «미배정»으로 바꾸고 상세 패널을 바로 연다
+                setSearch("");
+                setFilterClass("");
+                setFilterGrade("");
+                setFilterSchool("");
+                setFilterStatus("NONE");
+                setDetailStudentId(result.studentId);
+                setFormNotice([
+                    `${name.trim()} 학생을 등록했습니다.`,
+                    result.parentAccountCreated ? "새 학부모 계정을 만들었어요(학부모가 같은 번호로 가입하면 자동 연결)." : result.staffAccount ? "" : "같은 번호의 기존 학부모 계정에 연결했어요.",
+                    result.staffAccount ? "같은 번호의 학부모 계정이 없어 직원 계정(직원 자녀)에 연결했어요." : "",
+                    "반 배정은 열린 패널의 «수강등록»에서 해 주세요.",
+                ].filter(Boolean).join(" "));
             }
-            resetForm();
-            await loadData();
         } catch (err: unknown) {
-            alert(adminErrorText(err, "저장 실패"));
+            setFormError(adminErrorText(err, "저장에 실패했습니다. 잠시 후 다시 시도해 주세요."));
         } finally {
             setBusy(false);
         }
@@ -868,7 +912,7 @@ export default function StudentManagementClient({
                         </button>
                         {/* 기존 1명씩 수동 등록 버튼 */}
                         <button
-                            onClick={() => { resetForm(); setShowForm(true); }}
+                            onClick={() => { resetForm(); setFormNotice(null); setShowForm(true); }}
                             className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
                         >
                             + 원생 등록
@@ -941,23 +985,39 @@ export default function StudentManagementClient({
 
                 </div>
             </CompactListFilters>
+            {/* 저장 뒤 안내 한 줄(등록 결과·학부모 계정 연결 결과) */}
+            {formNotice && (
+                <div role="status" className="mb-2 flex items-start gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-primary)]" aria-hidden="true">check_circle</span>
+                    <p className="min-w-0 flex-1 break-keep">{formNotice}</p>
+                    <button
+                        type="button"
+                        onClick={() => setFormNotice(null)}
+                        aria-label="안내 닫기"
+                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                    >
+                        <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+                    </button>
+                </div>
+            )}
             {showForm && (
-                <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
-                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">{editingId ? "원생 수정" : "새 원생 등록"}</h3>
+                <form onSubmit={handleSubmit} className="mb-3 space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4">
+                    <h3 className="text-base font-black text-[var(--color-academy-ink)]">{editingId ? "원생 수정" : "새 원생 등록"}</h3>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">이름 *</label>
+                    {/* 학생 3칸 + 주 보호자 3칸 — PC 3열·태블릿 2열·모바일 1열 */}
+                    <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">이름 *</span>
                             <input
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 required
                                 placeholder="홍길동"
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className={STUDENT_FORM_INPUT_CLASS}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">생년월일 *</label>
+                        </label>
+                        <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">생년월일 *</span>
                             <input
                                 type="text"
                                 inputMode="numeric"
@@ -976,83 +1036,101 @@ export default function StudentManagementClient({
                                     setBirthDate(formatted);
                                 }}
                                 required
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className={STUDENT_FORM_INPUT_CLASS}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">성별</label>
+                        </label>
+                        <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">성별</span>
                             <select
                                 value={gender}
                                 onChange={(e) => setGender(e.target.value)}
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className={STUDENT_FORM_INPUT_CLASS}
                             >
                                 <option value="">선택 안함</option>
                                 <option value="남">남</option>
                                 <option value="여">여</option>
                             </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">학부모 이름 *</label>
+                        </label>
+                        {/* 주 보호자 관계 — 새 등록 때만(수정에서 보호자는 학생 상세 «보호자» 카드가 맡는다) */}
+                        {!editingId && (
+                            <label className="block min-w-0">
+                                <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">주 보호자 관계 *</span>
+                                <select
+                                    value={parentRelation}
+                                    onChange={(e) => setParentRelation(e.target.value)}
+                                    required
+                                    className={STUDENT_FORM_INPUT_CLASS}
+                                >
+                                    <option value="">선택</option>
+                                    {GUARDIAN_RELATION_OPTIONS.map((relation) => (
+                                        <option key={relation} value={relation}>{relation}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
+                        <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">{editingId ? "학부모 이름 *" : "주 보호자 이름 *"}</span>
                             <input
                                 value={parentName}
                                 onChange={(e) => setParentName(e.target.value)}
                                 required
                                 placeholder="보호자 이름"
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className={STUDENT_FORM_INPUT_CLASS}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">학부모 연락처</label>
+                        </label>
+                        <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">{editingId ? "학부모 연락처" : "주 보호자 휴대폰 *"}</span>
                             <input
+                                type="tel"
+                                inputMode="tel"
                                 value={parentPhone}
                                 onChange={(e) => setParentPhone(e.target.value)}
+                                required={!editingId}
                                 placeholder="010-0000-0000"
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className={STUDENT_FORM_INPUT_CLASS}
                             />
-                        </div>
-                        {!editingId && (
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">학부모 이메일</label>
-                                <input
-                                    type="email"
-                                    value={parentEmail}
-                                    onChange={(e) => setParentEmail(e.target.value)}
-                                    placeholder="parent@email.com"
-                                    className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                                />
-                            </div>
-                        )}
+                        </label>
                     </div>
+                    {!editingId && (
+                        <p className="text-xs text-[var(--color-academy-muted)]">
+                            같은 휴대폰 번호의 학부모 계정이 있으면 그 계정에 연결하고, 없으면 새로 만듭니다. 기존 계정의 이름·번호는 바꾸지 않습니다.
+                        </p>
+                    )}
 
                     {/* 신규 등록 시에만 보호자 동의 확인 체크박스 표시 (수정 시에는 불필요) */}
                     {!editingId && (
-                        <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
-                            <label className="flex items-start gap-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={guardianConsent}
-                                    onChange={(e) => setGuardianConsent(e.target.checked)}
-                                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-orange-500 dark:text-brand-neon-lime focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                                />
-                                <span className="text-sm text-gray-700 dark:text-gray-200">
-                                    보호자로부터 <strong>개인정보 수집 및 이용 동의</strong>를 받았음을 확인합니다
-                                    <span className="text-red-500 ml-1">(필수)</span>
-                                </span>
-                            </label>
-                            <p className="text-xs text-gray-400 mt-1 ml-6">
-                                미성년자 개인정보 수집 시 법정대리인(보호자)의 동의가 필요합니다.
-                            </p>
-                        </div>
+                        <label className="flex min-h-11 cursor-pointer items-center gap-2 border-t border-[var(--color-academy-line)] pt-2 text-sm text-[var(--color-academy-ink)]">
+                            <input
+                                type="checkbox"
+                                checked={guardianConsent}
+                                onChange={(e) => setGuardianConsent(e.target.checked)}
+                                className="h-5 w-5 shrink-0 rounded accent-[var(--color-academy-primary)]"
+                            />
+                            <span className="break-keep">
+                                보호자로부터 <strong>개인정보 수집·이용 동의</strong>를 받았음을 확인합니다
+                                <span className="ml-1 text-[var(--color-academy-warning)]">(필수 · 미성년자는 법정대리인 동의 필요)</span>
+                            </span>
+                        </label>
                     )}
 
-                    <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-white dark:hover:text-white">
+                    {formError && (
+                        <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+                            {formError}
+                        </p>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={resetForm}
+                            className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                        >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy || (!editingId && !guardianConsent)}
-                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600 transition disabled:opacity-50"
+                            className="inline-flex min-h-11 items-center rounded-lg bg-[var(--color-academy-primary)] px-5 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                         >
                             {busy ? "저장 중..." : editingId ? "수정" : "등록"}
                         </button>
