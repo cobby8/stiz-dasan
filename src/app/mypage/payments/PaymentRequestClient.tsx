@@ -239,13 +239,23 @@ export default function PaymentRequestClient({
                           onClick={() => {
                             // 계좌번호만(숫자) 복사 — 은행 앱 붙여넣기용. 복사가 막힌 기기는 화면의 글자를 길게 눌러 복사.
                             const digits = (contact.bankAccount ?? "").replace(/[^0-9]/g, "");
-                            navigator.clipboard?.writeText(digits).then(() => setCopied(row.paymentId)).catch(() => undefined);
+                            const done = (mark: string) => {
+                              setCopied(mark);
+                              setTimeout(() => setCopied(null), 2500); // 잠시 뒤 원래 문구로
+                            };
+                            if (!navigator.clipboard) { done(`fail:${row.paymentId}`); return; }
+                            navigator.clipboard.writeText(digits).then(() => done(row.paymentId)).catch(() => done(`fail:${row.paymentId}`));
                           }}
                           className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-bold"
                         >
                           <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">content_copy</span>
                           {copied === row.paymentId ? "복사됨" : "계좌번호 복사"}
                         </button>
+                        {copied === `fail:${row.paymentId}` && (
+                          <span role="status" className="w-full text-xs text-[var(--color-academy-muted)]">
+                            복사가 안 됐어요. 계좌번호를 길게 눌러 복사해 주세요.
+                          </span>
+                        )}
                       </div>
                     )}
                     {(contact.phone || contact.kakaoChannelUrl) && (
