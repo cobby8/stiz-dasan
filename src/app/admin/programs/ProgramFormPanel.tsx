@@ -3,6 +3,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useEffect, useState, useTransition } from "react";
 import { createProgram, updateProgram } from "@/app/actions/admin";
+import { isWeekendOnlyDays, REGULAR_FREQ_TIERS, WEEKEND_DAYS } from "@/lib/billing/regular-tuition-preview";
 
 const DAY_OPTIONS = [
     { key: "Mon", label: "월" },
@@ -14,14 +15,9 @@ const DAY_OPTIONS = [
     { key: "Sun", label: "일" },
 ];
 
-const WEEKEND = new Set(["Sat", "Sun"]);
-
-const FREQ_TIERS = [
-    { key: "priceWeek1" as const, label: "주 1회", autoShuttle: 10000 },
-    { key: "priceWeek2" as const, label: "주 2회", autoShuttle: 15000 },
-    { key: "priceWeek3" as const, label: "주 3회", autoShuttle: 20000 },
-    { key: "priceDaily" as const, label: "매일반", autoShuttle: 20000 },
-];
+// 주말 요일·주 횟수별 가격 칸·셔틀 자동 요금은 한 곳(regular-tuition-preview)에서 가져온다 — 목록·등록 창과 같은 값
+const WEEKEND = WEEKEND_DAYS;
+const FREQ_TIERS = REGULAR_FREQ_TIERS;
 
 const INPUT = "w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800";
 
@@ -58,10 +54,7 @@ interface ProgramForm {
     imageUrl: string;
 }
 
-function isWeekendOnly(days: string[]): boolean {
-    if (days.length === 0) return false;
-    return days.every((d) => WEEKEND.has(d));
-}
+const isWeekendOnly = isWeekendOnlyDays;
 
 function emptyForm(): ProgramForm {
     return {

@@ -25,7 +25,8 @@ export const CUSTOMER_NOTICE_PREVIEW_TTL_MINUTES = 10;
 /** 결과 안내에 원장이 덧붙이는 한 줄의 최대 길이 */
 export const CUSTOMER_NOTICE_EXTRA_LINE_MAX = 200;
 
-const PREFIX = "[STIZ 농구교실]";
+// 머리말 — 학부모 대상 문자 전부 [스티즈농구교실] 로 통일(2026-11-09 원장 결정)
+const PREFIX = "[스티즈농구교실]";
 export const RENTAL_APPLY_URL = "https://www.stiz-dasan.kr/rental";
 /** 설정값이 비어 있을 때만 쓰는 예비 채널 주소(실제 운영 채널) */
 export const FALLBACK_KAKAO_CHANNEL_URL = "https://pf.kakao.com/_HhaQG";

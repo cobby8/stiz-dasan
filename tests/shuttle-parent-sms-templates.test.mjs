@@ -19,14 +19,12 @@ function loadRenderTemplate() {
 test("셔틀 학부모 안내 템플릿 2종을 기본 템플릿으로 제공한다", () => {
   assert.match(templates, /"SHUTTLE_ROUTE_CONFIRMED_PARENT"/);
   assert.match(templates, /"SHUTTLE_NO_SHOW_PARENT"/);
-  assert.match(
-    templates,
-    /\[STIZ\] \{\{학생명\}\} 셔틀 \{\{운행방향\}\} 안내\\n\{\{운행일\}\} \{\{예정시간\}\} \/ \{\{정류장\}\}/,
-  );
-  assert.match(
-    templates,
-    /\[STIZ\] \{\{학생명\}\} 학생이 오늘 \{\{운행방향\}\} 셔틀에 미탑승 처리되었습니다\. 확인 부탁드립니다\./,
-  );
+  // 2026-11-09: 두 문구는 알림톡 금고 틀이 정본(문자 = 알림톡 본문, 머리말 [스티즈농구교실])
+  assert.match(templates, /parentAlimtalkSmsTemplateBody\("SHUTTLE_ROUTE_CONFIRMED_PARENT"\)/);
+  assert.match(templates, /parentAlimtalkSmsTemplateBody\("SHUTTLE_NO_SHOW_PARENT"\)/);
+  const registry = fs.readFileSync("src/lib/messaging/parent-alimtalk-templates.ts", "utf8");
+  assert.match(registry, /`\$\{P\} #\{학생명\} 셔틀 #\{운행방향\} 안내`,\n\s+"#\{운행일\} #\{예정시간\} \/ #\{정류장\}"/);
+  assert.match(registry, /`\$\{P\} #\{학생명\} 학생이 오늘 #\{운행방향\} 셔틀에 미탑승 처리되었습니다\. 확인 부탁드립니다\.`/);
   assert.match(templates, /\\p\{L\}/, "한글 변수명도 실제 값으로 치환해야 한다");
 });
 

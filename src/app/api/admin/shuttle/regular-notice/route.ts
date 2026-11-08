@@ -41,7 +41,7 @@ async function canonicalPayload(body: NoticeBody) {
   const confirmed = buildStudentRouteNotice(studentId, serviceMonth, routes, roster);
   // 명단의 희망 시간이 아닌 현재 저장 노선의 실제 시각을 안내한다.
   change.after = confirmed.text;
-  const messageBody = monthlyChange ? regularShuttleChangeMessage(change, serviceMonth) : `[STIZ 농구교실] ${change.studentName} 학생 ${serviceMonth} 확정 차량 일정입니다.\n${confirmed.text}\n이전 안내 대신 위 일정을 확인해 주세요.`;
+  const messageBody = monthlyChange ? regularShuttleChangeMessage(change, serviceMonth) : `[스티즈농구교실] ${change.studentName} 학생 ${serviceMonth} 확정 차량 일정입니다.\n${confirmed.text}\n이전 안내 대신 위 일정을 확인해 주세요.`;
   if (!messageBody) throw new Error("현재 차량표에서 문자 본문을 만들 수 없습니다.");
   const stableEventKey = confirmed.eventKey;
   const payloadHash = hashMessageBody(JSON.stringify({ stableEventKey, recipientPhone, messageBody }));

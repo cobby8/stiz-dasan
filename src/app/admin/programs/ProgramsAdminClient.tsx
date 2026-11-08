@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { deleteProgram, reorderPrograms } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { isWeekendOnlyDays, REGULAR_FREQ_TIERS, shuttleFeeAmount } from "@/lib/billing/regular-tuition-preview";
 
 const ProgramFormPanel = dynamic(() => import("./ProgramFormPanel"), {
     loading: () => null,
@@ -23,19 +24,9 @@ const DAY_OPTIONS = [
     { key: "Sun", label: "일" },
 ];
 
-const WEEKEND = new Set(["Sat", "Sun"]);
-
-const FREQ_TIERS = [
-    { key: "priceWeek1" as const, label: "주 1회", autoShuttle: 10000 },
-    { key: "priceWeek2" as const, label: "주 2회", autoShuttle: 15000 },
-    { key: "priceWeek3" as const, label: "주 3회", autoShuttle: 20000 },
-    { key: "priceDaily" as const, label: "매일반", autoShuttle: 20000 },
-];
-
-function isWeekendOnly(days: string[]): boolean {
-    if (days.length === 0) return false;
-    return days.every((d) => WEEKEND.has(d));
-}
+// 주 횟수별 가격 칸·셔틀 자동 요금·주말 판정은 한 곳(regular-tuition-preview)에서 가져온다 — 등록 창 미리보기와 같은 값
+const FREQ_TIERS = REGULAR_FREQ_TIERS;
+const isWeekendOnly = isWeekendOnlyDays;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -68,13 +59,9 @@ function displayShuttleFee(
     freqKey: typeof FREQ_TIERS[number]["key"],
     weekend: boolean,
 ): string | null {
-    if (weekend) return null; // no service
-    if (shuttleFeeOverride === 0) return null; // explicitly disabled
-    if (shuttleFeeOverride != null && shuttleFeeOverride > 0)
-        return shuttleFeeOverride.toLocaleString() + "원";
-    // auto
-    const tier = FREQ_TIERS.find((t) => t.key === freqKey);
-    return tier ? tier.autoShuttle.toLocaleString() + "원" : null;
+    // 판정(주말·끔·직접 입력·자동)은 공용 함수, 여기서는 «원» 표기만 붙인다
+    const fee = shuttleFeeAmount(shuttleFeeOverride, freqKey, weekend);
+    return fee == null ? null : fee.toLocaleString() + "원";
 }
 
 function ProgramsLoadingFallback() {

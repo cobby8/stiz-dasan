@@ -5,12 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
-    createStudent,
     updateStudent,
     deleteStudent,
     enrollStudent,
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+import type { StudentRegistered } from "./StudentRegisterModal";
 import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import CompactListFilters from "@/components/academy/CompactListFilters";
@@ -20,6 +20,11 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 
 const ExcelUploadModal = dynamic(() => import("./ExcelUploadModal"), {
+    ssr: false,
+    loading: () => null,
+});
+// 새 «원생 등록» 창(3단계) — 누를 때만 불러온다
+const StudentRegisterModal = dynamic(() => import("./StudentRegisterModal"), {
     ssr: false,
     loading: () => null,
 });
@@ -299,9 +304,7 @@ const STUDENT_STATUS_CHIPS = [
 ] as const;
 // 상태 기본값 — 처음 열 때·필터 초기화·켜진 칩을 다시 누를 때 모두 이 값으로 돌아간다
 const DEFAULT_STATUS_FILTER = "ACTIVE";
-// 등록 폼 주 보호자 «관계» 선택지 — Guardian.relation 에 그대로 저장된다(상세 «보호자» 카드에서 자유롭게 고칠 수 있다)
-const GUARDIAN_RELATION_OPTIONS = ["엄마", "아빠", "할머니", "할아버지", "기타 보호자"] as const;
-// 등록·수정 폼 입력칸 공통 모양(터치 44px·학원 색 토큰)
+// 수정 폼 입력칸 공통 모양(터치 44px·학원 색 토큰). 새 등록은 StudentRegisterModal(3단계 창)이 맡는다
 const STUDENT_FORM_INPUT_CLASS =
     "min-h-11 w-full min-w-0 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-sm text-[var(--color-academy-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]";
 
@@ -394,7 +397,9 @@ export default function StudentManagementClient({
     const [allStudentsLoaded, setAllStudentsLoaded] = useState(!initialPartial);
     const [backgroundLoading, setBackgroundLoading] = useState(false);
     const [autoLoadRequested, setAutoLoadRequested] = useState(false);
+    // 인라인 폼은 «수정» 전용. 새 등록은 3단계 창(showRegister)
     const [showForm, setShowForm] = useState(false);
+    const [showRegister, setShowRegister] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [search, setSearch] = useState("");
@@ -508,10 +513,6 @@ export default function StudentManagementClient({
     const [gender, setGender] = useState("");
     const [parentName, setParentName] = useState("");
     const [parentPhone, setParentPhone] = useState("");
-    // 주 보호자 관계(엄마·아빠 등) — 새 등록 때 Guardian(주 보호자)으로 저장된다. 학부모 이메일 칸은 없앴다(계정 매칭에 쓰지 않음)
-    const [parentRelation, setParentRelation] = useState("");
-    // 개인정보보호법 준수: 보호자 동의 확인 체크박스 (미성년자 개인정보 수집 시 필수)
-    const [guardianConsent, setGuardianConsent] = useState(false);
     // 폼 안 오류(서버가 돌려준 안내 문구) · 저장 뒤 목록 위 안내 한 줄
     const [formError, setFormError] = useState<string | null>(null);
     const [formNotice, setFormNotice] = useState<string | null>(null);
@@ -522,8 +523,6 @@ export default function StudentManagementClient({
         setGender("");
         setParentName("");
         setParentPhone("");
-        setParentRelation("");
-        setGuardianConsent(false);
         setFormError(null);
         setShowForm(false);
         setEditingId(null);
@@ -543,72 +542,61 @@ export default function StudentManagementClient({
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        if (!name.trim() || !birthDate || !parentName.trim()) return;
-        // 새 등록은 주 보호자 관계·휴대폰 필수 — 휴대폰이 학부모 계정을 찾는 열쇠다
-        if (!editingId && (!parentRelation.trim() || !parentPhone.trim())) {
-            setFormError("주 보호자 관계와 휴대폰 번호를 입력해 주세요.");
-            return;
-        }
-        // 신규 등록 시 보호자 동의 필수 (개인정보보호법: 미성년자 정보 수집 시 법정대리인 동의)
-        if (!editingId && !guardianConsent) {
-            setFormError("보호자 개인정보 수집 동의를 확인해 주세요.");
-            return;
-        }
+        // 인라인 폼은 «수정» 전용 — 새 등록은 3단계 창(StudentRegisterModal)
+        if (!editingId || !name.trim() || !birthDate || !parentName.trim()) return;
         setBusy(true);
         setFormError(null);
+        let saved: Awaited<ReturnType<typeof updateStudent>> | null = null;
+        const editedStudent = students.find((item) => item.id === editingId);
         try {
-            if (editingId) {
-                const editedStudent = students.find((item) => item.id === editingId);
-                const result = await updateStudent(editingId, {
-                    name: name.trim(),
-                    birthDate,
-                    gender: gender || null,
-                    parentName: parentName.trim(),
-                    parentPhone: parentPhone.trim() || null,
-                });
-                // 로그인하는 학부모 계정·직원 계정은 이름·번호를 바꾸지 않는다 — 바꾸려 했으면 어디서 고치는지 알려 준다
-                const parentChanged = editedStudent
-                    && (parentName.trim() !== (editedStudent.parent.name || "") || parentPhone.trim() !== (editedStudent.parent.phone || ""));
-                setFormNotice(!result.parentAccountUpdated && parentChanged
-                    ? "학생 정보는 저장했습니다. 학부모 로그인 계정의 이름·번호는 바꾸지 않았어요 — 학생 상세의 «보호자» 카드에서 고쳐 주세요."
-                    : null);
-                resetForm();
-                await loadData();
-            } else {
-                const result = await createStudent({
-                    name: name.trim(),
-                    birthDate,
-                    gender: gender || null,
-                    parentName: parentName.trim(),
-                    parentPhone: parentPhone.trim(),
-                    parentRelation: parentRelation.trim(),
-                });
-                if (!result.ok) {
-                    // 번호 형식·같은 번호 계정 여러 개 등 — 폼을 닫지 않고 그 자리에 안내
-                    setFormError(result.error);
-                    return;
-                }
-                resetForm();
-                await loadData();
-                // 새 학생은 수강 반이 없어 기본 «활성» 필터에 안 보인다 → «미배정»으로 바꾸고 상세 패널을 바로 연다
-                setSearch("");
-                setFilterClass("");
-                setFilterGrade("");
-                setFilterSchool("");
-                setFilterStatus("NONE");
-                setDetailStudentId(result.studentId);
-                setFormNotice([
-                    `${name.trim()} 학생을 등록했습니다.`,
-                    result.parentAccountCreated ? "새 학부모 계정을 만들었어요(학부모가 같은 번호로 가입하면 자동 연결)." : result.staffAccount ? "" : "같은 번호의 기존 학부모 계정에 연결했어요.",
-                    result.staffAccount ? "같은 번호의 학부모 계정이 없어 직원 계정(직원 자녀)에 연결했어요." : "",
-                    "반 배정은 열린 패널의 «수강등록»에서 해 주세요.",
-                ].filter(Boolean).join(" "));
-            }
+            saved = await updateStudent(editingId, {
+                name: name.trim(),
+                birthDate,
+                gender: gender || null,
+                parentName: parentName.trim(),
+                parentPhone: parentPhone.trim() || null,
+            });
         } catch (err: unknown) {
+            // 저장 실패는 폼을 닫지 않고 폼 안에 보여 준다
             setFormError(adminErrorText(err, "저장에 실패했습니다. 잠시 후 다시 시도해 주세요."));
-        } finally {
             setBusy(false);
+            return;
         }
+        // 저장이 끝난 뒤에만 안내 → 폼 닫기 → 목록 새로 읽기 순서(1차 검수 권장: 예전엔 닫힌 폼에 오류를 써서 안 보였다).
+        // 목록 읽기 실패는 loadData 가 목록 위(dataError)에 따로 보여 준다.
+        // 로그인하는 학부모 계정·직원 계정은 이름·번호를 바꾸지 않는다 — 바꾸려 했으면 어디서 고치는지 알려 준다
+        const parentChanged = editedStudent
+            && (parentName.trim() !== (editedStudent.parent.name || "") || parentPhone.trim() !== (editedStudent.parent.phone || ""));
+        setFormNotice(saved.parentPhoneConflict
+            ? "학생 정보는 저장했습니다. 바꾸려던 휴대폰 번호는 다른 계정이 이미 쓰고 있어 그대로 두었어요 — 학생 상세의 «보호자» 카드에서 확인해 주세요."
+            : !saved.parentAccountUpdated && parentChanged
+                ? "학생 정보는 저장했습니다. 학부모 로그인 계정의 이름·번호는 바꾸지 않았어요 — 학생 상세의 «보호자» 카드에서 고쳐 주세요."
+                : null);
+        resetForm();
+        setBusy(false);
+        await loadData();
+    }
+
+    // 3단계 등록 창이 저장을 마치면 — 창 닫기 → 새 학생이 보이게 필터 정리 + 상세 패널 열기 → 안내 → 목록 새로 읽기
+    async function handleRegistered(result: StudentRegistered) {
+        setShowRegister(false);
+        setSearch("");
+        setFilterClass("");
+        setFilterGrade("");
+        setFilterSchool("");
+        // 반을 골랐으면 «전체»(시작일이 미래면 «수강 예정»이라 활성 필터에 안 보인다), 반 나중 배정이면 «미배정»
+        setFilterStatus(result.classCount > 0 ? "" : "NONE");
+        setDetailStudentId(result.studentId);
+        setFormNotice([
+            `${result.name} 학생을 등록했습니다.`,
+            result.staffAccount
+                ? "같은 번호의 학부모 계정이 없어 직원 계정(직원 자녀)에 연결했어요."
+                : result.parentAccountCreated
+                    ? "새 학부모 계정을 만들었어요(학부모가 같은 번호로 가입하면 자동 연결)."
+                    : "같은 번호의 기존 학부모 계정에 연결했어요.",
+            result.classCount > 0 ? "" : "반 배정은 열린 패널의 «수강등록»에서 해 주세요.",
+        ].filter(Boolean).join(" "));
+        await loadData();
     }
 
     async function handleDelete(id: string) {
@@ -912,7 +900,7 @@ export default function StudentManagementClient({
                         </button>
                         {/* 기존 1명씩 수동 등록 버튼 */}
                         <button
-                            onClick={() => { resetForm(); setFormNotice(null); setShowForm(true); }}
+                            onClick={() => { resetForm(); setFormNotice(null); setShowRegister(true); }}
                             className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
                         >
                             + 원생 등록
@@ -1000,11 +988,12 @@ export default function StudentManagementClient({
                     </button>
                 </div>
             )}
-            {showForm && (
+            {/* 인라인 폼 = «수정» 전용(목록 ⚡ 수정). 새 등록은 3단계 창 */}
+            {showForm && editingId && (
                 <form onSubmit={handleSubmit} className="mb-3 space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4">
-                    <h3 className="text-base font-black text-[var(--color-academy-ink)]">{editingId ? "원생 수정" : "새 원생 등록"}</h3>
+                    <h3 className="text-base font-black text-[var(--color-academy-ink)]">원생 수정</h3>
 
-                    {/* 학생 3칸 + 주 보호자 3칸 — PC 3열·태블릿 2열·모바일 1열 */}
+                    {/* 학생 3칸 + 학부모 2칸 — PC 3열·태블릿 2열·모바일 1열 */}
                     <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
                         <label className="block min-w-0">
                             <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">이름 *</span>
@@ -1051,25 +1040,8 @@ export default function StudentManagementClient({
                                 <option value="여">여</option>
                             </select>
                         </label>
-                        {/* 주 보호자 관계 — 새 등록 때만(수정에서 보호자는 학생 상세 «보호자» 카드가 맡는다) */}
-                        {!editingId && (
-                            <label className="block min-w-0">
-                                <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">주 보호자 관계 *</span>
-                                <select
-                                    value={parentRelation}
-                                    onChange={(e) => setParentRelation(e.target.value)}
-                                    required
-                                    className={STUDENT_FORM_INPUT_CLASS}
-                                >
-                                    <option value="">선택</option>
-                                    {GUARDIAN_RELATION_OPTIONS.map((relation) => (
-                                        <option key={relation} value={relation}>{relation}</option>
-                                    ))}
-                                </select>
-                            </label>
-                        )}
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">{editingId ? "학부모 이름 *" : "주 보호자 이름 *"}</span>
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">학부모 이름 *</span>
                             <input
                                 value={parentName}
                                 onChange={(e) => setParentName(e.target.value)}
@@ -1079,39 +1051,20 @@ export default function StudentManagementClient({
                             />
                         </label>
                         <label className="block min-w-0">
-                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">{editingId ? "학부모 연락처" : "주 보호자 휴대폰 *"}</span>
+                            <span className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">학부모 연락처</span>
                             <input
                                 type="tel"
                                 inputMode="tel"
                                 value={parentPhone}
                                 onChange={(e) => setParentPhone(e.target.value)}
-                                required={!editingId}
                                 placeholder="010-0000-0000"
                                 className={STUDENT_FORM_INPUT_CLASS}
                             />
                         </label>
                     </div>
-                    {!editingId && (
-                        <p className="text-xs text-[var(--color-academy-muted)]">
-                            같은 휴대폰 번호의 학부모 계정이 있으면 그 계정에 연결하고, 없으면 새로 만듭니다. 기존 계정의 이름·번호는 바꾸지 않습니다.
-                        </p>
-                    )}
-
-                    {/* 신규 등록 시에만 보호자 동의 확인 체크박스 표시 (수정 시에는 불필요) */}
-                    {!editingId && (
-                        <label className="flex min-h-11 cursor-pointer items-center gap-2 border-t border-[var(--color-academy-line)] pt-2 text-sm text-[var(--color-academy-ink)]">
-                            <input
-                                type="checkbox"
-                                checked={guardianConsent}
-                                onChange={(e) => setGuardianConsent(e.target.checked)}
-                                className="h-5 w-5 shrink-0 rounded accent-[var(--color-academy-primary)]"
-                            />
-                            <span className="break-keep">
-                                보호자로부터 <strong>개인정보 수집·이용 동의</strong>를 받았음을 확인합니다
-                                <span className="ml-1 text-[var(--color-academy-warning)]">(필수 · 미성년자는 법정대리인 동의 필요)</span>
-                            </span>
-                        </label>
-                    )}
+                    <p className="text-xs text-[var(--color-academy-muted)]">
+                        로그인하는 학부모 계정·직원 계정의 이름·번호는 여기서 바뀌지 않아요. 보호자 연락처는 학생 상세 «보호자» 카드에서 고쳐 주세요.
+                    </p>
 
                     {formError && (
                         <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
@@ -1129,10 +1082,10 @@ export default function StudentManagementClient({
                         </button>
                         <button
                             type="submit"
-                            disabled={busy || (!editingId && !guardianConsent)}
+                            disabled={busy}
                             className="inline-flex min-h-11 items-center rounded-lg bg-[var(--color-academy-primary)] px-5 text-sm font-bold text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                         >
-                            {busy ? "저장 중..." : editingId ? "수정" : "등록"}
+                            {busy ? "저장 중..." : "수정"}
                         </button>
                     </div>
                 </form>
@@ -1337,6 +1290,13 @@ export default function StudentManagementClient({
             )}
 
             {/* 엑셀 업로드 모달 — 파일 선택 -> 미리보기 -> 일괄 등록 */}
+            {showRegister && (
+                <StudentRegisterModal
+                    onClose={() => setShowRegister(false)}
+                    onRegistered={(result) => void handleRegistered(result)}
+                    onOpenStudent={(id) => { setShowRegister(false); setFilterStatus(""); setSearch(""); setDetailStudentId(id); }}
+                />
+            )}
             {showExcelUpload && (
                 <ExcelUploadModal
                     isOpen={showExcelUpload}

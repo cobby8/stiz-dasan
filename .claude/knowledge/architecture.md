@@ -163,6 +163,11 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: `gym-rental-rules.ts` 의 `RENTAL_APPLICANT_TEMPLATES`(#{변수} 틀) + `buildRentalApplicantMessage` 가 본문과 variables 를 같은 맵에서 만든다(알림톡은 등록 문구와 한 글자라도 다르면 실패). 발송은 `sendTrackedSms({ alimtalk })` → notification.ts 가 `sendMessageDetailed` 에 그대로 전달(장부 유지, 다른 호출은 alimtalk 없음 = 기존 문자). 템플릿 id 는 env `RENTAL_ALIMTALK_*`, 실제 알림톡 시도는 /admin/sms 규칙 채널이 알림톡 + 외부 알림톡 채널 켜짐 + SOLAPI_KAKAO_PF_ID 일 때만. 심사 문서 `docs/kakao-alimtalk-rental-templates.md` 는 테스트가 틀과 글자 대조. 재원생 무료 = 로그인한 PARENT 계정(getVerifiedParentState 통과)의 «내 자녀»(`childAccessSql("s","$1")` — 가족 공유·본인 연결 포함) 중 재원(병합 제외+시작된 ACTIVE 수강+끝난 반 제외) 학생만(`listRentalMemberStudents`). 이름·번호 대조는 쓰지 않는다(맞히기 공격). 공개 /rental 은 정적 유지, 로그인 여부는 액션 `getRentalMemberContext` 로 묻는다.
+### [2026-11-09] 학부모 알림톡 = 공용 금고 parent-alimtalk-templates.ts (대관 패턴 일반화)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 알림톡으로 바꾼 학부모 트리거는 `src/lib/messaging/parent-alimtalk-templates.ts` 의 `PARENT_ALIMTALK_TEMPLATES`(#{한글변수} 틀 + 호출부 키 연결 + 기본값)가 정본이다. 문자 본문 = 알림톡 본문. `notification.ts resolveParentMessage` 가 `sendParentSms`·`sendParentSmsWithResult`(체험·셔틀)와 `seasonal/notifications.ts`(특강, `dispatchReservedSmsDelivery({alimtalk})`)에서 금고 틀을 쓰고, 빈 변수면 옛 DB 문구로 «문자만» 보낸다. DB `SmsTemplate` 은 isActive 스위치 + 대체 문구 + 화면 표시용(/admin/sms 문구 화면은 금고 트리거 본문 수정 잠금). 템플릿 id = env `ALIMTALK_TPL_*`(alimtalk-config.ts). 가드 `tests/parent-alimtalk-templates.test.mjs`: 코드의 `*_PARENT`/`*_APPLICANT` 문자열은 금고 또는 `SMS_ONLY_PARENT_TRIGGERS` 에만 — 새 학부모 문자를 만들면 둘 중 하나에 넣어야 테스트가 통과한다. 머리말 상수 `PARENT_MESSAGE_PREFIX`(«[스티즈농구교실]»). 심사 문서 `docs/kakao-alimtalk-parent-templates.md` 는 테스트가 글자 대조.
+- **참조횟수**: 0
 ### [2026-11-08] 정규 수업 기록 «같은 반·같은 날 = 하나» = regularSession.ts 한 곳 · 보강 온 아이 출석 = makeup-attendance.ts
 - **분류**: architecture
 - **발견자**: developer
@@ -175,4 +180,10 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: ① 명단 수강 점검 `src/lib/shuttle/regularRosterEnrollmentCheckLogic.ts`(다니는 반 없음·수업 없는 요일·한쪽만) — 서버 `getRosterEnrollmentCheck` 는 그 달 명단 학생의 지금 Enrollment(ACTIVE/PAUSED)와 자동 생성 달 여부만 읽고 판정은 화면에서. 월 넘김 확인 = 수동 복사 전 confirm(`rosterCopyWarningText`) + 자동 생성 달 «확인했어요» = `ShuttleAuditLog` action `REGULAR_ROSTER_MONTH_REVIEWED`(자동 생성 기록 `REGULAR_ROSTER_AUTO_MONTH` 와 짝). ② 카카오 정규 셔틀 신청(START) 할 일 `src/lib/kakaoShuttleRosterTask.ts` — 완료 = `KakaoParentIntake.structuredJson.rosterTask.doneAt` + 결정 전 상태면 APPLIED(이관 APPROVED 는 유지) + 감사 `SHUTTLE_ROSTER_DONE`. 명단 추가는 기존 `/admin/shuttle/regular?month=&studentId=` 딥링크(«신청 학생 선택해 명단 추가») 재사용.
+- **참조횟수**: 0
+
+### [2026-11-09] 관리자 원생 등록 = 3단계 창 + 서버 액션 하나(트랜잭션 하나)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 목록 «원생 등록»·체험 ⚡«원생 등록»이 같은 `src/app/admin/students/StudentRegisterModal.tsx` → `src/app/actions/student-register.ts`(`registerStudent`·`previewStudentRegistration`·`getStudentRegisterOptions`). 입력 검증은 창·서버 공용 `src/lib/students/student-register-rules.ts`(반 필수/«반은 나중에 배정», 주 보호자 휴대폰 필수, 지점은 반 장소에서 자동·원본 문장 형식 저장, 개인정보 확인 → agreementsJSON.adminRegister). 신청서 승인과 공유: 정원 경고 `lib/enrollment/class-capacity.ts`, 셔틀 위치 저장 SQL `lib/students/student-shuttle-location-upsert.ts`(승인 동작은 tests/student-register.test.mjs 의 vm 실행으로 고정). 수강료 표시는 `lib/billing/regular-tuition-preview.ts`(청구 모듈과 무관, 프로그램 화면 2곳도 여기서 상수 사용). 인라인 폼은 «수정» 전용. 문자 발송 없음.
 - **참조횟수**: 0

@@ -288,7 +288,7 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
         reserved, current.id,
       );
     });
-    if (process.env.NODE_ENV !== "test" && !(await sendAuthenticationSms(row!.phone, `[STIZ 농구교실] 회원가입 인증번호: ${code} (5분 이내 입력)`))) {
+    if (process.env.NODE_ENV !== "test" && !(await sendAuthenticationSms(row!.phone, `[스티즈농구교실] 회원가입 인증번호: ${code} (5분 이내 입력)`))) {
       throw new Error("인증번호 문자 발송에 실패했습니다.");
     }
     await prisma.$executeRawUnsafe(`UPDATE "ParentSignupOtpSend" SET status='SENT' WHERE "verificationId"=$1 AND status='RESERVED'`, row!.id);

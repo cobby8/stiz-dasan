@@ -19,6 +19,7 @@ import {
     autoConvertSmsKeywords,
     resetSmsTemplate,
 } from "@/app/actions/admin";
+import { isParentAlimtalkTrigger, parentAlimtalkSmsTemplateBody } from "@/lib/messaging/parent-alimtalk-templates";
 
 // ── 타입 정의 ────────────────────────────────────────────────────────────────
 interface SmsTemplate {
@@ -217,6 +218,8 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
 
 // ── 개별 템플릿 카드 컴포넌트 ──────────────────────────────────────────────────
 function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload: () => Promise<void> | void }) {
+    // 카카오 알림톡에 등록한 문구는 코드(금고)가 정본이라 여기서 고칠 수 없다 — 실제 발송 문구를 읽기 전용으로 보여 준다
+    const lockedBody = isParentAlimtalkTrigger(template.trigger) ? parentAlimtalkSmsTemplateBody(template.trigger) : null;
     const [body, setBody] = useState(template.body);
     const [isActive, setIsActive] = useState(template.isActive);
     const [preview, setPreview] = useState<string | null>(null);
@@ -292,7 +295,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             return;
         }
         try {
-            const result = await previewSmsTemplate(body);
+            const result = await previewSmsTemplate(lockedBody ?? body);
             setPreview(result);
         } catch {
             setPreview("[미리보기 오류]");
@@ -327,8 +330,8 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
         }
     };
 
-    // 본문이 수정되었는지 확인
-    const isModified = body !== template.body || isActive !== template.isActive;
+    // 본문이 수정되었는지 확인(잠긴 문구는 본문 수정이 없다 — 켜기/끄기는 토글이 바로 저장)
+    const isModified = !lockedBody && (body !== template.body || isActive !== template.isActive);
 
     return (
         <div className={`bg-white dark:bg-gray-800 rounded-xl border ${isActive ? "border-gray-200 dark:border-gray-700" : "border-gray-200 dark:border-gray-700 opacity-60"} shadow-sm overflow-hidden`}>
@@ -365,7 +368,19 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                 </p>
             )}
 
+            {/* 알림톡 등록 문구 — 읽기 전용 안내 */}
+            {lockedBody && (
+                <div className="px-5 py-3">
+                    <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">lock</span>
+                        카카오 알림톡에 등록한 문구라 여기서 고칠 수 없어요. 바꾸려면 개발 요청 후 카카오 재심사가 필요합니다. 켜기/끄기는 그대로 쓸 수 있어요.
+                    </p>
+                    <pre className="w-full whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 font-mono text-sm leading-relaxed text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">{lockedBody}</pre>
+                </div>
+            )}
+
             {/* 메시지 편집 textarea */}
+            {!lockedBody && (
             <div className="px-5 py-3">
                 <textarea
                     ref={textareaRef}
@@ -398,6 +413,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     </p>
                 )}
             </div>
+            )}
 
             {/* 미리보기 영역 */}
             {preview !== null && (
@@ -420,6 +436,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                         <span className="material-symbols-outlined text-[14px]">visibility</span>
                         {preview !== null ? "닫기" : "미리보기"}
                     </button>
+                    {!lockedBody && (
                     <button
                         onClick={handleAutoConvert}
                         className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
@@ -428,6 +445,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                         <span className="material-symbols-outlined text-[14px]">auto_fix_high</span>
                         자동 변환
                     </button>
+                    )}
                     <button
                         onClick={handleReset}
                         className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition-colors"
@@ -437,6 +455,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                         초기화
                     </button>
                 </div>
+                {!lockedBody && (
                 <button
                     onClick={handleSave}
                     disabled={saving || !isModified}
@@ -453,6 +472,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     </span>
                     {saving ? "저장 중..." : saved ? "저장됨" : "저장"}
                 </button>
+                )}
             </div>
         </div>
     );

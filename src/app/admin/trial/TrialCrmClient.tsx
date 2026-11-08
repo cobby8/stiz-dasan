@@ -18,7 +18,6 @@ import {
     sendPostTrialEnrollGuide,
     sendTrialCoachNotice,
     resendTrialApplicationSms,
-    resendTrialAttendedSms,
     recordApplicationContact,
     confirmTrialFeePayment,
     sendManualSms,
@@ -822,22 +821,10 @@ export default function TrialCrmClient({
             } else if (newStatus === "CONVERTED") {
                 updates.convertedDate = new Date().toISOString();
             }
-            const result = await updateTrialLead(lead.id, updates);
+            // 체험 완료 감사 문자는 2026-11-09 없앴다 — 상태 변경 결과만 안내한다
+            await updateTrialLead(lead.id, updates);
             await loadTrialData();
-            if (result?.attendedSms.attempted && !result.attendedSms.sent) {
-                const needsOperatorCheck = result.attendedSms.message?.includes("자동 재전송")
-                    || result.attendedSms.message?.includes("결과 확인")
-                    || result.attendedSms.message?.includes("처리 중");
-                const smsFailureGuide = needsOperatorCheck
-                    ? result.attendedSms.message
-                    : `${result.attendedSms.message || "문자 발송에 실패했습니다."} 상세 보기에서 '완료 문자 재시도'를 눌러 다시 시도해주세요.`;
-                showFeedback(
-                    "error",
-                    `${lead.childName} 상태는 변경됐지만 문자 발송은 실패했습니다. ${smsFailureGuide}`,
-                );
-            } else {
-                showFeedback("success", `${lead.childName} 상태를 ${STATUS_CONFIG[newStatus]?.label ?? "변경"}으로 바꿨습니다.`);
-            }
+            showFeedback("success", `${lead.childName} 상태를 ${STATUS_CONFIG[newStatus]?.label ?? "변경"}으로 바꿨습니다.`);
         } catch {
             showFeedback("error", "상태 변경 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");
         } finally {
@@ -991,6 +978,11 @@ export default function TrialCrmClient({
         }
         const enrollGuide = lead.status === "ATTENDED" ? buildEnrollGuideAction(lead) : null;
         if (enrollGuide) actions.push(enrollGuide);
+        // 체험 → 원생 바로 등록(원장 결정 2026-11-09): 체험을 마쳤고 아직 원생이 없고, 학부모 수강신청서도 안 온 경우만.
+        // 신청서가 왔으면 «수강 신청» 승인으로 등록한다(같은 학생이 두 번 생기지 않게).
+        if ((lead.status === "ATTENDED" || lead.status === "CONVERTED") && !lead.convertedStudentId && !lead.enrollApplicationReceivedAt) {
+            actions.push({ key: "register-student", label: "원생 등록", icon: "how_to_reg", disabled: busy, onSelect: () => setShowConvertModal(lead) });
+        }
         return actions;
     }
 
@@ -1026,19 +1018,7 @@ export default function TrialCrmClient({
         }
     }
 
-    async function handleResendAttendedSms(lead: TrialLead) {
-        if (busy) return;
-        setBusy(true);
-        try {
-            const result = await resendTrialAttendedSms(lead.id);
-            await loadTrialData();
-            showFeedback(result.sent ? "success" : "error", result.message);
-        } catch {
-            showFeedback("error", "체험 완료 문자 재시도에 실패했습니다. 연락처와 문자 장부를 확인해주세요.");
-        } finally {
-            setBusy(false);
-        }
-    }
+    // (2026-11-09) 체험 완료 감사 문자를 없애며 «완료 문자 재시도» 버튼·처리도 지웠다.
 
     // 목록 한 줄(행). 목록 보기와 상태별 보기가 같은 행을 쓴다.
     function renderTrialRow(lead: TrialLead) {
@@ -1347,7 +1327,6 @@ export default function TrialCrmClient({
                     }}
                     onCoachNotice={() => void handleSendCoachNotice(showDetailModal)}
                     onResendSms={() => void handleResendApplicationSms(showDetailModal)}
-                    onResendAttendedSms={() => void handleResendAttendedSms(showDetailModal)}
                     onConfirmTrialFee={() => void handleConfirmTrialFee(showDetailModal)}
                     busy={busy}
                     trialFeeBusy={Boolean(trialFeeBusyId)}
@@ -1493,7 +1472,6 @@ function TrialLeadDetailModal({
     onLost,
     onCoachNotice,
     onResendSms,
-    onResendAttendedSms,
     onConfirmTrialFee,
     busy,
     trialFeeBusy,
@@ -1511,7 +1489,6 @@ function TrialLeadDetailModal({
     onLost: () => void;
     onCoachNotice: () => void;
     onResendSms: () => void;
-    onResendAttendedSms: () => void;
     onConfirmTrialFee: () => void;
     busy: boolean;
     trialFeeBusy: boolean;
@@ -1628,12 +1605,6 @@ function TrialLeadDetailModal({
                         <button type="button" onClick={onResendSms} className={DETAIL_ACTION_CLASS}>
                             <span className="material-symbols-outlined text-base">sms_failed</span>
                             문자 재발송
-                        </button>
-                    )}
-                    {lead.status === "ATTENDED" && (
-                        <button type="button" onClick={onResendAttendedSms} disabled={busy} className={`${DETAIL_ACTION_CLASS} disabled:opacity-50`}>
-                            <span className="material-symbols-outlined text-base">forward_to_inbox</span>
-                            완료 문자 재시도
                         </button>
                     )}
                     {!isClosedTrialStatus(lead.status) && (lead.status === "NEW" || lead.status === "CONTACTED" || lead.status === "SCHEDULED") && (

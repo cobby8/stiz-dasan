@@ -346,7 +346,7 @@ export async function sendParentClaimOtp(rawToken: string) {
       );
       return { ok: true };
     }
-    const sent = await sendAuthenticationSms(phone, `[STIZ 농구교실] 보호자 계정 인증번호: ${code} (5분 이내 입력)`);
+    const sent = await sendAuthenticationSms(phone, `[스티즈농구교실] 보호자 계정 인증번호: ${code} (5분 이내 입력)`);
     if (!sent) throw new Error("인증번호 문자 발송에 실패했습니다.");
     await prisma.$executeRawUnsafe(
       `INSERT INTO "ParentAccountClaimOtpSend" (id, "claimId", "phoneHash", status, "createdAt") VALUES ($1, $2, $3, 'SENT', NOW())`,
