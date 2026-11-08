@@ -183,6 +183,20 @@ test("수업 종료: 출결을 안 찍은 보강 아이가 있으면 종료를 �
   assert.ok(end.indexOf("missingMakeup") < end.search(/SET status = 'COMPLETED'/));
 });
 
+test("수업 종료 안내: 출석·지각한 보강 아이 학부모에게도 같은 경로·같은 중복 방지 키로 보낸다(결석 보강 아이 제외)", () => {
+  const helper = staff.slice(staff.indexOf("async function getMakeupCompletedParentRecipients"), staff.indexOf("export async function completeClassSession"));
+  assert.match(helper, /if \(session\.sessionDateId\) return \[\];/, "특강 회차는 보강 대상 아님");
+  assert.match(helper, /makeupOnClassDateSql\("ms", "\$1", "\$3"\)/, "명단과 같은 보강 예약 조건(예약됨·참석)");
+  assert.match(helper, /a\."sessionId" = \$2 AND a\."studentId" = ms\."studentId" AND a\.status IN \('PRESENT','LATE'\)/, "출석·지각만");
+  assert.match(helper, /notMergedStudent\("st"\)/);
+  assert.match(helper, /return getStudentParentRecipients\(/, "학부모는 학생으로 바로 찾는다");
+  const end = staff.slice(staff.indexOf("export async function completeClassSession"));
+  assert.match(end, /getMakeupCompletedParentRecipients\(session, input\.sessionId\)/);
+  // 정규·보강 모두 같은 deliverParentNotification 호출 하나·같은 키 규칙
+  assert.match(end, /const recipients = \[\.\.\.regularRecipients, \.\.\.makeupRecipients\.filter/);
+  assert.match(end, /eventType: "CLASS_COMPLETED",\s*dedupeKey: `session:\$\{input\.sessionId\}:completed:student:\$\{recipient\.studentId\}:user:\$\{recipient\.userId\}`/);
+});
+
 test("보강 아이 출석·지각 알림은 반 수강 조회가 아니라 그 학생 학부모로 직접 보낸다", () => {
   assert.match(staff, /isMakeup\s*\? await getStudentParentRecipients\(\[studentId\]\)\s*: await getSessionParentRecipients\(session, \[studentId\]\)/);
   const notif = readFileSync("src/lib/staff-notifications.ts", "utf8");
