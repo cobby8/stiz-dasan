@@ -89,16 +89,18 @@ export async function getRegularBoardingMap(date: string): Promise<Record<string
   } catch { return {}; }
 }
 
-/** 그 날 결석 신고된 학생 목록(이름 + 학부모 전화 + 사유). 셔틀 명단과 이름·전화로 근사 매칭하는 데 쓴다.
+/** 그 날 결석 신고된 학생 목록(이름 + 학부모 전화). 셔틀 명단과 이름·전화로 근사 매칭하는 데 쓴다.
  *  status IN (REPORTED, CONFIRMED) 만 — CANCELLED 제외. 학부모 신고·출석부 질병·부상 모두 포함.
  *  ⚠️ 이 목록의 학생은 기사님 명단에서 **빼지 않는다**(2026-11-09 원장 지시) — «결석» 뱃지 + 흐린 행으로 표시만 한다.
+ *  🔒 결석 사유(reason)는 **읽지 않는다** — 질병·부상은 건강 민감정보인데 이 결과는 로그인 없는 기사님 토큰 화면으로 간다.
+ *     기사님 뱃지는 항상 «결석»뿐이다. 사유를 SELECT 에 넣지 말 것(테스트로 고정).
  *  인증 없음(기사님 화면이 읽는다). 테이블/조회 실패 시 빈 배열(안전). */
-export async function getRegularAbsentPeople(date: string): Promise<{ name: string; phone: string | null; reason: string | null }[]> {
+export async function getRegularAbsentPeople(date: string): Promise<{ name: string; phone: string | null }[]> {
   const d = normDate(date);
   if (!d) return [];
   try {
     const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT s."name" AS "name", u."phone" AS "phone", ra."reason" AS "reason"
+      `SELECT s."name" AS "name", u."phone" AS "phone"
          FROM "RegularAbsence" ra
          JOIN "Student" s ON s."id" = ra."studentId"
          LEFT JOIN "User" u ON u."id" = s."parentId"
@@ -106,11 +108,7 @@ export async function getRegularAbsentPeople(date: string): Promise<{ name: stri
       d,
     );
     return rows
-      .map((r) => ({
-        name: String(r.name ?? "").trim(),
-        phone: (r.phone as string | null) ?? null,
-        reason: typeof r.reason === "string" ? r.reason : null, // 뱃지 «결석·질병» 문구용
-      }))
+      .map((r) => ({ name: String(r.name ?? "").trim(), phone: (r.phone as string | null) ?? null }))
       .filter((r) => r.name.length > 0);
   } catch { return []; }
 }

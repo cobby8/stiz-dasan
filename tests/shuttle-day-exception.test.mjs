@@ -153,5 +153,6 @@ test("기사님 화면에서 결석과 다른 배지로 보인다", () => {
   // 2026-10-30 게슈탈트 T-12: 하드코딩 bg-blue-600 → 화면 전용 변수 --color-driver-note(파랑). 결석(danger)과는 계속 다른 색.
   assert.match(client, /rider\.shuttleNote && <span className="rounded-md bg-\[var\(--color-driver-note\)\]/);
   assert.doesNotMatch(client, /rider\.shuttleNote && <span className="[^"]*danger/);
-  assert.match(client, /오늘 결석/);
+  // 결석 뱃지(위험색 · 항상 «결석», 2026-11-09 사유 비노출로 문구 통일)는 따로 있다.
+  assert.match(client, /bg-\[var\(--color-academy-danger\)\][^"]*">\s*<span[^>]*>event_busy<\/span>\{rider\.absentLabel \|\| "결석"\}/);
 });

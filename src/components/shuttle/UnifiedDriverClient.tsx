@@ -433,7 +433,7 @@ export default function UnifiedDriverClient({
                               {/* 결석 뱃지 — 이름 바로 옆, 진한 바탕 + 흰 글자(14px)로 운전 중에도 한눈에. 흐린 행 안에서도 흐리지 않는다. */}
                               {view.absentReported && (
                                 <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[14px] font-black text-[var(--color-academy-on-primary)]">
-                                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "오늘 결석"}
+                                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "결석"}
                                 </span>
                               )}
                               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
@@ -469,9 +469,9 @@ export default function UnifiedDriverClient({
                         </div>}
                         {(saveState || stored || view.absentDefault) && <div className={styles.riderStatusLine}>
                           {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
-                            : view.absentDefault ? <p className="text-[13px] font-semibold text-[var(--color-academy-muted)]">결석 신고 · 정차 안 해도 됨 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
+                            : view.absentDefault ? <p className="text-[13px] font-semibold text-[var(--color-academy-muted)]">이 아이는 안 태워도 돼요 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
                           {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
-                          {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} 대기로 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
+                          {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} ${view.absentReported ? "결석으로" : "대기로"} 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
                         </div>}
                         {menuKey === rowKey && (
                           <div className="mt-2 flex gap-3">

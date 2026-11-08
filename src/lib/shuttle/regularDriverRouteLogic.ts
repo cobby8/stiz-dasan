@@ -18,7 +18,7 @@ import type { RegularShuttleStop } from "./regularSheet";
 export type DriverRow = { rowId: string; name: string; parentPhone: string | null; studentPhone: string | null;
   /** 그날 결석 신고(학부모 신고·출석부 질병·부상). 명단에서 빼지 않고 «결석» 뱃지 + 흐린 행으로만 보인다. */
   absent?: boolean;
-  /** 결석 뱃지 문구(예: «결석·질병»). absent 일 때만 붙는다. */
+  /** 결석 뱃지 문구(항상 «결석» — 사유는 민감정보라 싣지 않는다). absent 일 때만 붙는다. */
   absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null };
@@ -82,7 +82,7 @@ export function attachShuttleDayNotes(
 
 
 /**
- * 결석으로 표시된 행에 뱃지 문구(«결석·질병» 등)를 덧붙인다.
+ * 결석으로 표시된 행에 뱃지 문구(«결석»)를 덧붙인다. 🔒 결석 사유는 넣지 않는다(로그인 없는 기사님 화면).
  *
  * 왜 뒤에서 덧붙이나: attachShuttleDayNotes 와 같은 이유 — 명단을 만드는 경로가 저장 노선·폴백 두 갈래라
  * 조립 안에 심으면 한쪽만 고쳐지기 쉽다. 결석 행은 **지우지 않는다**(원장 지시 2026-11-09) — 표시만 바꾼다.

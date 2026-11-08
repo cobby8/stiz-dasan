@@ -30,7 +30,7 @@ export type UnifiedRider = {
   studentPhone: string | null;
   /** 그날 결석으로 잡힌 학생(정규=결석 뱃지·기본 «결석», 특강=결석예정). 명단에서 빼지 않는다. */
   absent: boolean;
-  /** 정규 결석 뱃지 문구(예: «결석·질병»). 없으면 화면이 기본 문구를 쓴다. */
+  /** 정규 결석 뱃지 문구(항상 «결석» · 사유 없음). 없으면 화면이 기본 «결석»을 쓴다. */
   absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null;

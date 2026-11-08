@@ -10,8 +10,8 @@
 //    전화가 양쪽 다 있으면 전화까지 대조해 오매칭을 최소화한다.
 //    완전 정합(명단 ↔ Student.id 백필)은 이 작업 범위 밖이다.
 
-// 결석자(학생 계정에서 뽑은 이름 + 학부모 전화). reason = RegularAbsence.reason(기사님 뱃지 문구용, 없을 수 있음).
-export type AbsentPerson = { name: string; phone: string | null; reason?: string | null };
+// 결석자(학생 계정에서 뽑은 이름 + 학부모 전화)
+export type AbsentPerson = { name: string; phone: string | null };
 // 셔틀 명단 승객(텍스트 이름 + 학부모 전화)
 export type Passenger = { name: string | null; phone: string | null };
 
@@ -56,16 +56,7 @@ export function isPassengerAbsent(passenger: Passenger, absentees: AbsentPerson[
   return matchAbsentee(passenger, absentees) !== null;
 }
 
-// 기사님 화면 결석 뱃지 문구 — «결석» 뒤에 사유를 짧게 붙인다(휴대폰 한 줄에 들어가게).
-// 왜: 원장 지시(2026-11-09) «결석 아이를 명단에서 빼지 말고 결석 뱃지가 잘 보이게» — 사유가 보이면
-//     기사님이 «오늘 이 집은 안 들러도 된다»를 바로 안다. 모르는 사유 값은 그냥 «결석».
-const ABSENCE_BADGE_REASON: Record<string, string> = {
-  ILLNESS_INJURY: "질병",
-  PERSONAL: "개인사정",
-  FAMILY_TRIP: "가족여행",
-  SCHOOL_EVENT: "학교행사",
-};
-export function absenceBadgeLabel(reason: string | null | undefined): string {
-  const short = reason ? ABSENCE_BADGE_REASON[reason] : undefined;
-  return short ? `결석·${short}` : "결석";
-}
+// 기사님 화면 결석 뱃지 문구 — 항상 «결석» 하나뿐이다.
+// 🔒 사유(질병·부상 등)는 건강 민감정보라 로그인 없는 기사님 토큰 화면에 절대 싣지 않는다(검수 2026-11-09).
+//    기사님은 «오늘 이 아이는 안 태워도 된다»만 알면 충분하다.
+export const DRIVER_ABSENCE_LABEL = "결석";

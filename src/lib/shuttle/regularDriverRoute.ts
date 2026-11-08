@@ -7,7 +7,7 @@ import { getRegularShuttleRiders } from "@/lib/regular/shuttleRoster";
 import { DOW_NAMES } from "@/lib/regular/shuttleRosterLogic";
 import { pickServiceMonthFor } from "@/lib/regular/serviceMonth";
 import { kstDow } from "@/lib/datetime/kst";
-import { absenceBadgeLabel, matchAbsentee } from "@/lib/regular/regularAbsenceMatch";
+import { DRIVER_ABSENCE_LABEL, matchAbsentee } from "@/lib/regular/regularAbsenceMatch";
 import {
   assembleRegularDriverClasses,
   attachAbsenceLabels,
@@ -88,11 +88,9 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
 
   // 결석 매칭: 이름(+가능하면 학부모 전화)으로 그날 결석자와 이어 붙인다(best-effort) — 종전과 동일.
   // ⚠️ 결석 학생은 명단에서 빼지 않는다(원장 지시 2026-11-09). absent 표시 + 아래에서 뱃지 문구만 붙인다.
+  // 🔒 뱃지는 사유 없이 항상 «결석»(건강 민감정보를 로그인 없는 기사님 화면에 내리지 않는다).
   const isAbsent = (p: { name: string | null; phone: string | null }) => matchAbsentee(p, absentees) !== null;
-  const absentLabelOf = (p: { name: string | null; phone: string | null }) => {
-    const hit = matchAbsentee(p, absentees);
-    return hit ? absenceBadgeLabel(hit.reason) : null;
-  };
+  const absentLabelOf = (p: { name: string | null; phone: string | null }) => (isAbsent(p) ? DRIVER_ABSENCE_LABEL : null);
 
   // 요일·방향별 저장 노선. 테이블이 없거나 실패하면 null → 자동으로 폴백.
   const [savedPickup, savedDropoff] = await Promise.all(
