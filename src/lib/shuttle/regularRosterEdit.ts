@@ -9,6 +9,7 @@ import { pickRegularRouteSource } from "./regularDriverRouteLogic";
 import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 import { isKoreanCoordinate } from "./academyLocation";
 import { dowToWeekday, type EnrolledClass, type GeoPoint } from "./regularRosterPlacementLogic";
+import type { RosterEnrollment } from "./regularRosterEnrollmentCheckLogic";
 import {
   buildAddRows,
   mapPlacementsToMonth,
@@ -765,4 +766,67 @@ export async function ensureRegularRosterMonths(now: Date = new Date()): Promise
     if (done) created.push(done);
   }
   return { currentMonth, created };
+}
+
+// ── 수강 점검(휴원·퇴원·반 변경 뒤 남은 학생) — 조회 + 「확인했어요」 기록 ──────────
+
+/**
+ * 셔틀 명단 화면의 수강 점검에 쓰는 자료(조회 전용).
+ * - enrollments: 그 달 명단에 있는 학생들의 지금 수강(다님·휴원). 퇴원은 오지 않는다 → 화면이 «다니는 반 없음»으로 본다.
+ * - autoCreatedFrom: 그 달이 직전 달을 «자동 복사»해 만들어졌으면 원본 달(월 넘김 확인 배너용), 아니면 null.
+ * - reviewed: 원장이 그 달 월 넘김 점검을 «확인했어요»로 넘겼는지.
+ * ⚠️ 판정 자체는 순수 함수(regularRosterEnrollmentCheckLogic)가 한다. 여기서는 읽기만 하고 아무것도 지우지 않는다.
+ */
+export async function getRosterEnrollmentCheck(rawMonth: unknown): Promise<{
+  enrollments: RosterEnrollment[];
+  autoCreatedFrom: string | null;
+  reviewed: boolean;
+}> {
+  await requireAdmin();
+  const month = normalizeRosterMonth(rawMonth);
+  const [rows, auto, reviewed] = await Promise.all([
+    // 삭제된 프로그램은 제외(학생 추가 화면의 등록 수업 조회와 같은 기준).
+    prisma.$queryRawUnsafe<{ studentId: string; dayOfWeek: string | null; status: string }[]>(
+      `SELECT DISTINCT e."studentId", c."dayOfWeek", e."status"
+         FROM "Enrollment" e
+         JOIN "Class" c ON c."id"=e."classId"
+         JOIN "Program" p ON p."id"=c."programId"
+        WHERE e."status" IN ('ACTIVE','PAUSED') AND p."deletedAt" IS NULL
+          AND e."studentId" IN (SELECT DISTINCT "studentId" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "studentId" IS NOT NULL)`,
+      month,
+    ),
+    prisma.$queryRawUnsafe<{ sourceMonth: string | null }[]>(
+      `SELECT "beforeJSON"->>'sourceMonth' AS "sourceMonth" FROM "ShuttleAuditLog"
+        WHERE "action"='REGULAR_ROSTER_AUTO_MONTH' AND "afterJSON"->>'targetMonth'=$1
+        ORDER BY "createdAt" DESC LIMIT 1`,
+      month,
+    ),
+    prisma.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT COUNT(*)::int AS n FROM "ShuttleAuditLog"
+        WHERE "action"='REGULAR_ROSTER_MONTH_REVIEWED' AND "afterJSON"->>'serviceMonth'=$1`,
+      month,
+    ),
+  ]);
+  const enrollments: RosterEnrollment[] = [];
+  for (const r of rows) {
+    const weekday = dowToWeekday(r.dayOfWeek); // 방학특강(Seasonal) 등 요일이 아닌 반은 null → 빼고 본다
+    if (weekday == null) continue;
+    enrollments.push({ studentId: String(r.studentId), weekday, status: r.status === "PAUSED" ? "PAUSED" : "ACTIVE" });
+  }
+  return { enrollments, autoCreatedFrom: auto[0]?.sourceMonth ?? null, reviewed: (Number(reviewed[0]?.n) || 0) > 0 };
+}
+
+/**
+ * 월 넘김 점검 «확인했어요» — 자동으로 만든 달의 경고 목록을 원장이 봤다는 기록만 남긴다.
+ * 명단은 한 줄도 바꾸지 않는다(정리는 원장이 학생 행 ⚡ 로 직접). 두 번 눌러도 기록이 하나 더 쌓일 뿐 해가 없다.
+ */
+export async function markRosterMonthReviewed(raw: unknown): Promise<{ reviewed: true }> {
+  const admin = await requireAdmin();
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const month = normalizeRosterMonth(body.serviceMonth);
+  const flagged = Math.max(0, Math.min(10000, Math.trunc(Number(body.flaggedCount) || 0)));
+  await prisma.$transaction(async (tx) => {
+    await audit(tx, admin.appUserId, "REGULAR_ROSTER_MONTH_REVIEWED", null, { serviceMonth: month, flaggedCount: flagged });
+  });
+  return { reviewed: true };
 }
