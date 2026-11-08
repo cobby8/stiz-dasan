@@ -156,10 +156,12 @@ const SRC_FILES = walk("src").map((p) => ({ path: p.replace(/\\/g, "/"), code: r
 
 test("가드: 코드에 나오는 학부모 트리거(*_PARENT·*_APPLICANT)는 금고 또는 «문자 전용 허용목록»에만 있다", () => {
   const allowed = new Set([...TRIGGERS, ...Object.keys(reg.SMS_ONLY_PARENT_TRIGGERS)]);
+  // 문자 트리거가 아닌 같은 모양의 상수(예: 결석 반영 계획 종류 BLOCKED_PARENT)는 제외
+  const NOT_MESSAGE_TRIGGERS = new Set(["BLOCKED_PARENT"]);
   const unknown = [];
   for (const file of SRC_FILES) {
     for (const m of file.code.matchAll(/["'`]([A-Z][A-Z0-9_]*_(?:PARENT|APPLICANT))["'`]/g)) {
-      if (!allowed.has(m[1])) unknown.push(`${file.path}: ${m[1]}`);
+      if (!allowed.has(m[1]) && !NOT_MESSAGE_TRIGGERS.has(m[1])) unknown.push(`${file.path}: ${m[1]}`);
     }
   }
   assert.deepEqual(unknown, [], "새 학부모 문자는 금고(parent-alimtalk-templates.ts)에 넣거나 SMS_ONLY_PARENT_TRIGGERS 에 이유와 함께 적는다");
