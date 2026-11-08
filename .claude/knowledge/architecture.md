@@ -2,6 +2,12 @@
 <!-- 담당: planner-architect, developer | 최대 30항목 -->
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 
+### 2026-11-09 학부모 공지 = 대량 큐의 «받는 사람마다 다른 본문» 항목(알림톡·브랜드 메시지·문자)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 대량 발송 큐 `reserveManualMessageQueue` 에 선택 인자 `items`(사람별 body + kakao{ALIMTALK|BMS_FREE})·`requestedChannel` 을 더했다. items 가 있으면 payload 에 `perItem:true` 가 실려 크론 `manual-message-dispatch` 가 `sendPerMessageBulkDetailed`(솔라피 send-many 에 메시지별 type ATA/BMS_FREE/SMS)로 보낸다 — 없으면 예전 «공통 본문» 경로 그대로(BATCH_BODY_MISMATCH 검사 유지). 카카오가 명시 거절하면 같은 내용을 문자로 1회, 응답 불확실은 재시도 금지. 장부 channel 칸은 DB CHECK 때문에 BMS 를 못 넣어 SMS 로 두고 종류는 messageType=BMS. 공지 틀은 `NOTICE_ALIMTALK_TEMPLATES`(자동 트리거 9종과 분리), 순수 규칙 `src/lib/messaging/parent-notice.ts`, 서버 `src/app/actions/parent-notice.ts`(미리보기→승인 재계산, OperationsAuditLog PARENT_NOTICE_*).
+- **참조횟수**: 0
+
 ### 2026-10-08 카카오 학부모 인증·기존 빈 계정 활성화 흐름
 - **분류**: architecture
 - **발견자**: developer

@@ -340,6 +340,113 @@ async function sendSolapiSmsBulk(
     options?: SmsSendOptions,
 ): Promise<SmsBulkSendResult> {
     const messageType = options?.messageType ?? getSmsMessageType(body);
+    return postSolapiSendMany(deliveries, deliveries.map((delivery) => ({
+        to: normalizeSmsNumber(delivery.to),
+        from: SOLAPI_SENDER,
+        text: body,
+        type: messageType,
+        ...(messageType === "LMS" ? { subject: "STIZ 알림" } : {}),
+        customFields: { deliveryId: delivery.deliveryId },
+    })));
+}
+
+/**
+ * 받는 사람마다 다른 본문·종류(문자/알림톡/브랜드 메시지)로 묶어 보내는 대량 발송 한 통(학부모 공지, 2026-11-09).
+ * 카카오 옵션 규격은 솔라피 문서 그대로:
+ *  - 알림톡(ATA): kakaoOptions { pfId, templateId, variables, buttons, disableSms:false } + from(대체 문자용)
+ *  - 브랜드 메시지 자유형 텍스트형(BMS_FREE): kakaoOptions { pfId, bms: { targeting: "I"(채널 친구), chatBubbleType: "TEXT" } }
+ *    https://solapi.com/developers/api/kakao-bms-free-text · 대체 발송(LMS)은 disableSms:false + from
+ */
+export type PerMessageKakao =
+    | {
+        kind: "ALIMTALK";
+        templateId: string;
+        variables: Record<string, string>;
+        buttons?: Array<{ buttonName: string; buttonType: string; linkMo: string; linkPc?: string }>;
+    }
+    | { kind: "BMS_FREE" };
+
+export type PerMessageBulkItem = { deliveryId: string; to: string; body: string; kakao?: PerMessageKakao };
+
+function solapiPerMessage(item: PerMessageBulkItem): JsonObject {
+    const base = {
+        to: normalizeSmsNumber(item.to),
+        // 대체 발송(카카오 실패 → 문자)은 등록 발신번호(from)가 있어야 동작한다
+        from: SOLAPI_SENDER,
+        text: item.body,
+        customFields: { deliveryId: item.deliveryId },
+    };
+    const pfId = String(process.env.SOLAPI_KAKAO_PF_ID ?? "").trim();
+    if (item.kakao?.kind === "ALIMTALK") {
+        return {
+            ...base,
+            type: "ATA",
+            kakaoOptions: {
+                pfId,
+                templateId: item.kakao.templateId,
+                variables: item.kakao.variables,
+                ...(item.kakao.buttons?.length ? { buttons: item.kakao.buttons } : {}),
+                disableSms: false,
+            },
+        };
+    }
+    if (item.kakao?.kind === "BMS_FREE") {
+        return {
+            ...base,
+            type: "BMS_FREE",
+            kakaoOptions: {
+                pfId,
+                disableSms: false,
+                bms: { targeting: "I", chatBubbleType: "TEXT" },
+            },
+        };
+    }
+    const messageType = getSmsMessageType(item.body);
+    return { ...base, type: messageType, ...(messageType === "LMS" ? { subject: "스티즈농구교실 안내" } : {}) };
+}
+
+export async function sendPerMessageBulkDetailed(items: PerMessageBulkItem[]): Promise<SmsBulkSendResult> {
+    if (items.length === 0 || items.length > 500) {
+        throw new Error("SMS bulk delivery count must be between 1 and 500.");
+    }
+    if (new Set(items.map((item) => item.deliveryId)).size !== items.length) {
+        throw new Error("SMS bulk deliveryId values must be unique.");
+    }
+    const provider = currentSmsProvider();
+    const deliveries = items.map((item) => ({ deliveryId: item.deliveryId, to: item.to }));
+    if (provider === "SOLAPI") {
+        const missingReason = smsProviderMissingReason(provider);
+        if (missingReason) {
+            return {
+                provider,
+                deliveries: deliveries.map((delivery) => ({ ...delivery, to: normalizeSmsNumber(delivery.to), status: "FAILED", provider, reason: missingReason })),
+            };
+        }
+        return postSolapiSendMany(deliveries, items.map(solapiPerMessage));
+    }
+    // 비즈뿌리오는 카카오를 보내지 않는다 — 한 통씩 문자로(호출부가 카카오 항목은 문자 본문을 넘긴다)
+    const results: SmsBulkDeliveryResult[] = [];
+    for (const item of items) {
+        const result = await sendSmsDetailed(item.to, item.body);
+        const uncertain = !result.ok && /timed out/i.test(result.reason ?? "");
+        results.push({
+            deliveryId: item.deliveryId,
+            to: result.to,
+            status: result.ok ? "ACCEPTED" : uncertain ? "UNCERTAIN" : "FAILED",
+            provider,
+            groupId: result.groupId,
+            messageId: result.messageId,
+            reason: result.reason,
+        });
+    }
+    return { provider, deliveries: results };
+}
+
+/** 솔라피 send-many/detail 한 번 호출 + 응답을 «접수/명시 거절/불확실»로 나눈다(문자 묶음·공지 묶음 공용) */
+async function postSolapiSendMany(
+    deliveries: SmsBulkDelivery[],
+    messages: JsonObject[],
+): Promise<SmsBulkSendResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), SMS_REQUEST_TIMEOUT_MS);
 
@@ -352,14 +459,7 @@ async function sendSolapiSmsBulk(
                 Authorization: makeSolapiAuthHeader(),
             },
             body: JSON.stringify({
-                messages: deliveries.map((delivery) => ({
-                    to: normalizeSmsNumber(delivery.to),
-                    from: SOLAPI_SENDER,
-                    text: body,
-                    type: messageType,
-                    ...(messageType === "LMS" ? { subject: "STIZ 알림" } : {}),
-                    customFields: { deliveryId: delivery.deliveryId },
-                })),
+                messages,
                 showMessageList: true,
                 allowDuplicates: false,
             }),

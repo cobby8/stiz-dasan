@@ -182,6 +182,152 @@ export const PARENT_ALIMTALK_TEMPLATES = {
 
 export type ParentAlimtalkTrigger = keyof typeof PARENT_ALIMTALK_TEMPLATES;
 
+// ═════════════════════ 공지 알림톡 3종(2026-11-09 원장 결정) ═════════════════════
+//
+// 왜 위 9종과 따로 두나: 위 9종은 «자동 발송 규칙(트리거)»이 보내는 안내이고, 이 3종은 원장이 /admin/sms 에서
+// 직접 써서 재원생 학부모 전체에게 보내는 «공지»다. 트리거·DB 문자 틀이 없어 자동 발송 가드와 섞지 않는다.
+// 규칙은 같다 — 문자 본문 = 알림톡 본문, 빈 변수 금지, 문구를 바꾸면 심사 문서·카카오 템플릿도 같이(재심사).
+
+/** 모든 공지 틀의 웹링크 버튼. 도메인은 등록 문구에 고정하고 경로만 변수(카카오 규칙: 프로토콜·도메인은 고정 영역) */
+export const NOTICE_BUTTON_NAME = "공지 자세히 보기";
+export const NOTICE_LINK_BASE = "https://www.stiz-dasan.kr/";
+export const NOTICE_BUTTON_LINK_TEMPLATE = `${NOTICE_LINK_BASE}#{공지경로}`;
+/** 공지를 고르지 않으면 공지 목록으로 */
+export const DEFAULT_NOTICE_PATH = "notices";
+
+/** 선택 칸이 비었을 때 들어가는 기본 문장(빈 변수 금지 규칙 때문에 줄을 비우지 않는다) */
+export const NOTICE_EMPTY_DEFAULTS = {
+  /** 휴무 공지의 #{보강안내} — 학원 휴무는 보강 없음이 기본 정책이라(2027 연간일정) «없음»으로 */
+  makeupNotice: "보강: 없음",
+  /** 행사 공지의 #{신청안내} — 비우면 «신청 필요 없음»으로 읽히게 */
+  applyNotice: "별도 신청은 필요 없습니다.",
+} as const;
+
+export type NoticeAlimtalkSpec = {
+  name: string;
+  envKey: string;
+  body: string;
+  /** 틀 변수 → 화면 입력 칸 키 */
+  vars: Record<string, string>;
+  defaults?: Record<string, string>;
+};
+
+export const NOTICE_ALIMTALK_TEMPLATES = {
+  /** N1 학원 휴무 안내(반 단위가 아니라 학원 전체 휴무) */
+  NOTICE_CLOSURE: {
+    name: "학원 휴무 안내",
+    envKey: "ALIMTALK_TPL_NOTICE_CLOSURE",
+    body: [
+      `${P} 학원 휴무 안내`,
+      "안녕하세요, #{학생명} 학부모님.",
+      "#{휴무기간} 학원 전체 휴무입니다.",
+      "사유: #{사유}",
+      "#{보강안내}",
+      "문의: #{학원전화}",
+    ].join("\n"),
+    vars: {
+      "#{학생명}": "studentName", "#{휴무기간}": "closurePeriod", "#{사유}": "reason",
+      "#{보강안내}": "makeupNotice", "#{학원전화}": "academyPhone",
+    },
+    defaults: { makeupNotice: NOTICE_EMPTY_DEFAULTS.makeupNotice, academyPhone: DEFAULT_ACADEMY_PHONE },
+  },
+  /** N2 행사 안내(재원생 대상) */
+  NOTICE_EVENT: {
+    name: "행사 안내",
+    envKey: "ALIMTALK_TPL_NOTICE_EVENT",
+    body: [
+      `${P} 행사 안내`,
+      "안녕하세요, #{학생명} 학부모님.",
+      "재원생 대상 #{행사명} 일정을 안내드립니다.",
+      "· 일시: #{일시}",
+      "· 장소: #{장소}",
+      "· 내용: #{내용}",
+      "#{신청안내}",
+      "문의: #{학원전화}",
+    ].join("\n"),
+    vars: {
+      "#{학생명}": "studentName", "#{행사명}": "eventName", "#{일시}": "eventDate", "#{장소}": "eventPlace",
+      "#{내용}": "eventDetail", "#{신청안내}": "applyNotice", "#{학원전화}": "academyPhone",
+    },
+    defaults: { applyNotice: NOTICE_EMPTY_DEFAULTS.applyNotice, academyPhone: DEFAULT_ACADEMY_PHONE },
+  },
+  /** N3 ○월 수업 안내 */
+  NOTICE_MONTHLY: {
+    name: "월 수업 안내",
+    envKey: "ALIMTALK_TPL_NOTICE_MONTHLY",
+    body: [
+      `${P} #{월}월 수업 안내`,
+      "안녕하세요, #{학생명} 학부모님.",
+      "#{월}월 수업 일정과 안내 사항을 알려드립니다.",
+      "· 휴무일: #{휴무일}",
+      "· 수강료: #{수강료안내}",
+      "· 안내 사항: #{안내사항}",
+      "문의: #{학원전화}",
+    ].join("\n"),
+    vars: {
+      "#{월}": "month", "#{학생명}": "studentName", "#{휴무일}": "closedDays",
+      "#{수강료안내}": "tuitionNotice", "#{안내사항}": "notes", "#{학원전화}": "academyPhone",
+    },
+    defaults: { academyPhone: DEFAULT_ACADEMY_PHONE },
+  },
+} satisfies Record<string, NoticeAlimtalkSpec>;
+
+export type NoticeAlimtalkKind = keyof typeof NOTICE_ALIMTALK_TEMPLATES;
+
+export function isNoticeAlimtalkKind(kind: unknown): kind is NoticeAlimtalkKind {
+  return typeof kind === "string" && Object.prototype.hasOwnProperty.call(NOTICE_ALIMTALK_TEMPLATES, kind);
+}
+
+export type NoticeAlimtalkMessage = {
+  kind: NoticeAlimtalkKind;
+  envKey: string;
+  /** 문자·알림톡 공통 본문 */
+  body: string;
+  variables: Record<string, string>;
+  /** 알림톡 버튼(등록 템플릿의 버튼과 이름·유형이 같아야 한다). 링크는 경로만 바뀐다 */
+  button: { buttonName: string; buttonType: "WL"; linkMo: string; linkPc: string };
+};
+
+/**
+ * 공지 경로 정리 — 도메인 고정·경로만 변수라 «notices/아이디» 같은 상대 경로만 받는다.
+ * 앞 «/» 는 떼고, 영문·숫자·-_/ 밖의 글자가 있으면 공지 목록으로 돌린다(남의 사이트로 못 보내게).
+ */
+export function normalizeNoticePath(value: string | null | undefined): string {
+  const path = String(value ?? "").trim().replace(/^\/+/, "");
+  if (!path || path.length > 120 || !/^[A-Za-z0-9][A-Za-z0-9_\-/]*$/.test(path) || path.includes("//")) return DEFAULT_NOTICE_PATH;
+  return path;
+}
+
+/**
+ * 화면 입력값(+학생명·학원전화)으로 공지 알림톡 본문·변수·버튼을 만든다.
+ * 선택 칸이 비면 defaults 로 채우고, 필수 칸이 비면 오류(빈칸 문장 금지).
+ */
+export function buildNoticeAlimtalkMessage(
+  kind: NoticeAlimtalkKind,
+  callerVariables: Record<string, string | null | undefined>,
+  noticePath?: string | null,
+): NoticeAlimtalkMessage {
+  const spec: NoticeAlimtalkSpec = NOTICE_ALIMTALK_TEMPLATES[kind];
+  const variables: Record<string, string> = {};
+  for (const key of templateVariableKeys(spec.body)) {
+    const callerKey = spec.vars[key];
+    if (!callerKey) throw new Error(`알림톡 변수 ${key} 의 연결이 없습니다.`);
+    const raw = String(callerVariables[callerKey] ?? "").trim();
+    variables[key] = raw || spec.defaults?.[callerKey] || "";
+  }
+  const path = normalizeNoticePath(noticePath);
+  const link = `${NOTICE_LINK_BASE}${path}`;
+  const body = fillAlimtalkTemplate(spec.body, variables);
+  return {
+    kind,
+    envKey: spec.envKey,
+    body,
+    // 버튼 링크의 경로 변수도 같은 맵에 넣는다(등록 템플릿에 정의된 변수라 보내도 된다). 버튼도 아래에 직접 넘긴다
+    variables: { ...variables, "#{공지경로}": path },
+    button: { buttonName: NOTICE_BUTTON_NAME, buttonType: "WL", linkMo: link, linkPc: link },
+  };
+}
+
 /**
  * 금고 밖에서 학부모에게 «문자로만» 나가도 되는 트리거(가드 테스트가 이 목록과 금고만 허용한다).
  * 새 학부모 문자를 만들 때는 금고에 넣거나, 여기에 이유와 함께 적는다.

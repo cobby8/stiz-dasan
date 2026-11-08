@@ -9,6 +9,8 @@ import { PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 // 학부모 가입 안내 — 같은 미리보기·승인 절차, 발송은 기존 대량 발송 큐
 import ParentSignupGuideSender from "@/components/admin/ParentSignupGuideSender";
+// 학부모 공지(카톡 틀 3종·자유 공지) — 같은 미리보기·승인 절차, 받는 사람은 서버가 재원생 학부모로 계산
+import ParentNoticeSender from "@/components/admin/ParentNoticeSender";
 
 interface CoachPhone {
     id: string;
@@ -19,7 +21,8 @@ interface CoachPhone {
 
 type CenterTab = "automation" | "templates" | "history" | "manual";
 type Audience = "INTERNAL" | "EXTERNAL" | "SECURITY";
-type Channel = "ALIMTALK" | "SMS" | "LMS" | "RCS";
+// BMS = 카카오 브랜드 메시지(학부모 자유 공지, 2026-11-09) — 발송 이력에만 나온다
+type Channel = "ALIMTALK" | "SMS" | "LMS" | "RCS" | "BMS";
 
 interface AutomationRule {
     id: string;
@@ -89,6 +92,7 @@ const CHANNEL_LABELS: Record<Channel, string> = {
     SMS: "SMS",
     LMS: "LMS",
     RCS: "RCS",
+    BMS: "카카오 브랜드 메시지",
 };
 
 const SMS_ERROR_LABEL: Record<string, string> = {
@@ -138,6 +142,8 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
                 <>
                     {/* 재원생 미가입 학부모에게 가입 안내(받는 사람은 서버가 계산) */}
                     <ParentSignupGuidePanel />
+                    {/* 재원생 학부모 전체에게 공지(카톡 틀 = 알림톡, 자유 공지 = 브랜드 메시지 또는 문자) */}
+                    <ParentNoticePanel />
                     {/* 외부 고객용 정해진 안내(대관) — 직원 대량 발송과 분리해 위에 둔다 */}
                     <CustomerGuidePanel />
                     <ManualSendPanel initialCoaches={initialCoaches} />
@@ -636,6 +642,18 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                     <span className="material-symbols-outlined text-[19px]">send</span>
                     {pending ? "대량 발송 접수 중..." : batchIsActive ? "대량 발송 처리 중" : `${recipients.length}명 대량 발송 접수`}
                 </button>
+            </div>
+        </section>
+    );
+}
+
+/** 학부모 공지 보내기 — 카톡 틀(휴무·행사·월 안내)은 변수 칸만, 자유 공지는 본문만 쓴다 */
+function ParentNoticePanel() {
+    return (
+        <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <h2 className="font-extrabold text-gray-900 dark:text-white">학부모 공지 보내기</h2>
+            <div className="mt-3 max-w-2xl">
+                <ParentNoticeSender />
             </div>
         </section>
     );
