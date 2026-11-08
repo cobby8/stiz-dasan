@@ -50,7 +50,8 @@ test("방학특강 명단은 정규 결석 신고를 끌어다 쓰지 않는다"
 });
 
 test("출석 화면에 사전 신고가 보인다", () => {
-  assert.match(sessionClient, /student\.absenceReport && \(/);
+  // 학부모 신고만 «학부모 결석 알림»으로 띄운다(출석부가 만든 질병·부상 표시는 아래 체크 버튼으로 보인다).
+  assert.match(sessionClient, /student\.absenceReport\?\.source === "PARENT" && \(/);
   assert.match(sessionClient, /학부모 결석 알림/);
   // 사유 표기는 학부모 화면과 같은 표를 쓴다.
   assert.match(sessionClient, /REASON_LABEL as ABSENCE_REASON_LABEL/);

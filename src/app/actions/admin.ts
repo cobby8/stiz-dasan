@@ -83,6 +83,7 @@ import { normalizedTrialPreferencePatch } from "@/lib/trial-schedule-display";
 import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib/trial-fee-confirmation";
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
+import { absencePlanMessage, applyAttendanceAbsenceReasonInTx } from "@/lib/regular/attendance-absence-reason";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
 import { findOrCreateRegularSession, resolveSessionLogTarget } from "@/lib/regular/regularSession";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
@@ -1416,8 +1417,15 @@ async function syncAdminSeasonalMakeupCredit(sessionDateId: string, studentId: s
     await syncCreditForSeasonalSeat({ enrollmentDateId: seats[0].id, studentId, status });
 }
 
-export async function saveAttendance(classId: string, date: string, records: { studentId: string; status: string }[], options?: { sessionDateId?: string | null }) {
+// absenceReason(정규만): "ILLNESS_INJURY"=질병·부상 결석 표시 / null=표시 끄기 / 생략=그대로.
+// 관리자가 찍은 질병·부상은 바로 «확정(CONFIRMED)» — 청구 작업대 이월 후보가 된다(이월 적용은 증빙 확인 후).
+export async function saveAttendance(classId: string, date: string, records: { studentId: string; status: string; absenceReason?: "ILLNESS_INJURY" | null }[], options?: { sessionDateId?: string | null }) {
     const admin = await requireAdmin();
+    if (records.some((r) => r.absenceReason !== undefined && r.absenceReason !== null && r.absenceReason !== "ILLNESS_INJURY")) {
+        throw new Error("올바른 결석 사유가 아닙니다.");
+    }
+    // 화면에 띄울 결석 사유 안내(막힘·실패). 출결 저장 자체는 성공으로 둔다.
+    const absenceMessages: string[] = [];
     const sessionDateId = options?.sessionDateId?.trim() || null;
     if (sessionDateId) {
         try {
@@ -1482,7 +1490,7 @@ export async function saveAttendance(classId: string, date: string, records: { s
         revalidatePath("/admin/attendance");
         revalidatePath("/staff");
         revalidatePath("/mypage");
-        return;
+        return { ok: true as const, absenceMessages: [] as string[] };
     }
     try {
         const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
@@ -1518,6 +1526,22 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 });
             }
         }
+        // 결석 사유(질병·부상) — 코치 출석부와 같은 함수·같은 저장 위치(RegularAbsence). 실패해도 출결은 유지.
+        if (isKstYmd(date)) {
+            for (const rec of records) {
+                try {
+                    const applied = await prisma.$transaction((tx) => applyAttendanceAbsenceReasonInTx(tx, {
+                        studentId: rec.studentId, classId, dateYmd: date, attendanceStatus: rec.status,
+                        intent: rec.absenceReason, confirmedByUserId: admin.appUserId, actorUserId: admin.appUserId,
+                    }));
+                    const msg = absencePlanMessage(applied.plan);
+                    if (msg) absenceMessages.push(msg);
+                } catch (error) {
+                    console.error("[saveAttendance] 결석 사유 저장 실패(출결은 저장됨)", { sessionId, studentId: rec.studentId, error });
+                    if (rec.absenceReason !== undefined) absenceMessages.push("일부 학생의 질병·부상 표시를 저장하지 못했습니다. 다시 저장해 주세요.");
+                }
+            }
+        }
         // 출결 완료 알림 → 학부모에게 전송
         const studentIds = records.map(r => r.studentId);
         const dateStr = new Date(date).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
@@ -1533,7 +1557,9 @@ export async function saveAttendance(classId: string, date: string, records: { s
         throw new Error("출결 저장 실패");
     }
     revalidatePath("/admin/attendance");
+    revalidatePath("/admin/absence");
     revalidatePath("/mypage");
+    return { ok: true as const, absenceMessages: [...new Set(absenceMessages)] };
 }
 
 // ── 수납 관리 ──────────────────────────────────────────────────────────────────

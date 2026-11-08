@@ -52,7 +52,7 @@ test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘,
   assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
   assert.match(session, /onClick=\{\(\) => updateAttendance\(student\.id, status\)\}/);
-  assert.match(session, /saveStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, status \}\)/);
+  assert.match(session, /saveStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, status, absenceReason \}\)/);
 });
 
 test("T-04 기사님 탑승: 같은 버튼 재탭은 무시, 되돌리기는 별도 버튼(status null), 간격 12px, 미탑승 danger", () => {

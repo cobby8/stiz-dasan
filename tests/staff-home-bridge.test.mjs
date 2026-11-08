@@ -71,7 +71,7 @@ test("시스템 뒤로가기도 수업 기록 저장 성공 뒤에만 허용한�
 
 test("전체 출석은 학생별 성공 결과를 즉시 반영하고 부분 실패를 안내한다", () => {
   assert.match(sessionSource, /for \(const \[index, student\] of unchecked\.entries\(\)\)/);
-  assert.match(sessionSource, /row\.id === student\.id \? \{ \.\.\.row, status: "PRESENT" \}/);
+  assert.match(sessionSource, /row\.id === student\.id\s*\?\s*\{ \.\.\.row, status: "PRESENT"/);
   assert.match(sessionSource, /화면에 반영된 학생은 저장됐으니 남은 학생만 다시 처리해 주세요/);
   assert.match(sessionSource, /aria-busy=\{pending && Boolean\(bulkAttendanceProgress\)\}/);
 });

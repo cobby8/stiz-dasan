@@ -16,6 +16,7 @@ import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
+import { absenceReportOf, type AbsenceReportState } from "@/lib/regular/attendance-absence-reason";
 
 // 값을 불리언으로 안전 변환 (TEXT 컬럼에서 'false' 문자열이 올 수 있음)
 const toBool = (v: any, fallback: boolean): boolean => {
@@ -854,9 +855,22 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
             );
         }
 
+        // 그날 결석 신고(학부모 신고·출석부 «질병·부상» 표시) — 관리자 화면의 질병·부상 체크 초기값.
+        // 코치 출석부(staff-session-queries)와 같은 absenceReportOf 로 출처(SHEET/PARENT)를 가른다.
+        const absenceRows = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT "studentId", reason, status, note, "reportedByUserId"
+               FROM "RegularAbsence"
+              WHERE "classId" = $1 AND date = $2::date AND status IN ('REPORTED','CONFIRMED')`,
+            classId, date
+        );
+        const absenceByStudent = new Map<string, AbsenceReportState>(
+            absenceRows.map((r: any) => [r.studentId, absenceReportOf(r)]),
+        );
+
         return {
             session,
             students: enrolled.map((e: any) => ({
+                absenceReport: absenceByStudent.get(e.studentId ?? e.studentid) ?? null,
                 studentId: e.studentId ?? e.studentid,
                 studentName: e.student_name,
                 status: attendances.find(

@@ -55,6 +55,14 @@ const STATUS_ICON: Record<AttendanceStatus, string> = {
   ABSENT: "close",
 };
 
+// 출결 저장 결과의 결석 사유 부분(정규 수강생만 값이 온다. 방학특강·보강 저장 결과엔 없다).
+type AbsenceResultExtra = { absenceReport?: StaffSessionStudent["absenceReport"]; absenceMessage?: string | null };
+/** 서버가 결석 신고 상태를 돌려줬으면 그 값으로 덮어쓸 조각, 아니면 빈 조각 */
+function absenceReportPatch(result: object): Partial<Pick<StaffSessionStudent, "absenceReport">> {
+  const report = (result as AbsenceResultExtra).absenceReport;
+  return report === undefined ? {} : { absenceReport: report };
+}
+
 function formatElapsed(seconds: number) {
   const hours = Math.floor(seconds / 3600).toString().padStart(2, "0");
   const minutes = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
@@ -301,6 +309,9 @@ export default function SessionInProgressClient({
     };
   }, [session.startedAt]);
 
+  // 아직 안 찍은 보강 온 아이 수 — «전체 출석» 버튼에 함께 처리된다고 보여 준다.
+  const uncheckedMakeup = useMemo(() => students.filter((student) => student.makeup && !student.status).length, [students]);
+
   const counts = useMemo(
     () => ({
       PRESENT: students.filter((student) => student.status === "PRESENT").length,
@@ -313,13 +324,15 @@ export default function SessionInProgressClient({
 
   // studentId 파라미터명이지만 실제로는 로스터 행의 고유 id(정규=studentId / 방학특강=enrollmentDateId)다.
   // 서버에는 그 행의 attendanceKey(방학특강이면 좌석ID)를 넘겨 좌석 기준으로 저장한다.
-  function updateAttendance(rowId: string, status: AttendanceStatus) {
+  // absenceReason: "ILLNESS_INJURY"=질병·부상 표시 / null=표시 끄기 / 생략=그대로(출석·지각이면 서버가 출석부 사유를 지운다).
+  // 수업 중에는 언제든 다른 버튼을 눌러 출석↔지각↔결석을 고칠 수 있다(보강권도 서버가 따라 맞춘다).
+  function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
     setMessage("");
     const target = students.find((student) => student.id === rowId);
     if (!target) return;
     startTransition(async () => {
       try {
-        const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status });
+        const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status, absenceReason });
         if (!result.ok) {
           setMessage(result.message);
           return;
@@ -331,11 +344,16 @@ export default function SessionInProgressClient({
                   ...student,
                   status,
                   arrivedAt: status === "LATE" ? student.arrivedAt || new Date().toISOString() : null,
+                  // 서버가 돌려준 결석 신고 상태로 맞춘다(정규 수강생만 값이 온다).
+                  ...absenceReportPatch(result),
                 }
               : student,
           ),
         );
-        if (result.notificationWarning) {
+        const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
+        if (absenceMessage) {
+          setMessage(absenceMessage);
+        } else if (result.notificationWarning) {
           setMessage("출결은 저장됐지만 학부모 알림은 재전송이 필요합니다.");
         }
       } catch {
@@ -361,7 +379,9 @@ export default function SessionInProgressClient({
             return;
           }
           setStudents((current) => current.map((row) => (
-            row.id === student.id ? { ...row, status: "PRESENT" } : row
+            row.id === student.id
+              ? { ...row, status: "PRESENT", ...absenceReportPatch(result) }
+              : row
           )));
           setBulkAttendanceProgress(`${index + 1}/${unchecked.length} 처리 중`);
         }
@@ -472,8 +492,10 @@ export default function SessionInProgressClient({
         </section>
 
         <button type="button" disabled={pending || counts.UNCHECKED === 0} aria-busy={pending && Boolean(bulkAttendanceProgress)} onClick={markAllPresent} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
-          {bulkAttendanceProgress || "미확인 학생 전체 출석"}
+          {/* 미확인이면 보강 온 아이도 함께 출석 처리된다(원장 2026-11-09 «보강도 전체 출석에서 체크»). */}
+          {bulkAttendanceProgress || (uncheckedMakeup > 0 ? `미확인 학생 전체 출석 (보강 ${uncheckedMakeup}명 포함)` : "미확인 학생 전체 출석")}
         </button>
+        <p className="text-xs font-bold text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
         {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{message}</p>}
 
         <div aria-live="polite" className="text-xs font-bold text-[var(--color-academy-muted)]">
@@ -514,7 +536,7 @@ export default function SessionInProgressClient({
               </button>}
               {/* 학부모가 미리 넣은 결석 신고. 이게 안 보이면 선생님이 모르고 출석을 찍어
                   학부모가 미리 알린 의미가 사라진다. 확정건은 원장이 확인한 것이라 따로 표시한다. */}
-              {student.absenceReport && (
+              {student.absenceReport?.source === "PARENT" && (
                 <p className="mt-2 inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-black text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
                   <span className="material-symbols-outlined text-sm" aria-hidden="true">event_busy</span>
                   학부모 결석 알림
@@ -531,6 +553,25 @@ export default function SessionInProgressClient({
                   </StatusChoiceButton>
                 ))}
               </div>
+              {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 «이월 검토» 후보가 된다(이월 적용은 원장이 증빙 확인 후).
+                  정규 수강생만(보강 온 아이·방학특강은 대상 아님). 학부모가 이미 신고한 날은 그 사유를 따른다. */}
+              {student.status === "ABSENT" && !student.makeup && !session.sessionDateId && (() => {
+                const illness = student.absenceReport?.reason === "ILLNESS_INJURY";
+                const parentLocked = student.absenceReport?.source === "PARENT";
+                return <button
+                  type="button"
+                  aria-pressed={illness}
+                  disabled={pending || parentLocked}
+                  onClick={() => updateAttendance(student.id, "ABSENT", illness ? null : "ILLNESS_INJURY")}
+                  className={`mt-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-black disabled:opacity-60 ${illness
+                    ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}
+                >
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">{illness ? "check_box" : "check_box_outline_blank"}</span>
+                  질병·부상 결석
+                  {parentLocked && <span className="text-xs">(학부모 신고)</span>}
+                </button>;
+              })()}
             </article>;
           })}
         </section>
