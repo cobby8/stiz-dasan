@@ -450,7 +450,7 @@ export default function SessionLogModal({
                     {/* 방학특강 회차 기록은 출석을 특강 좌석 명단으로 관리하므로 여기서 받지 않는다 */}
                     {seasonalEdit ? (
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                        방학특강 회차 기록이에요. 출석은 방학특강 출석 화면에서 관리해요 — 여기서는 주제·내용·사진만 고쳐집니다.
+                        방학특강 회차 기록이에요. 출석은 «방학특강 › 출석 관리»에서 관리해요 — 여기서는 주제·내용·사진만 고쳐집니다.
                     </p>
                     ) : (
                     <div>
