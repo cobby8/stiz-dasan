@@ -5,13 +5,18 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { validateMonthlyRegisterDraft } from "./monthly-register";
 import { WorkbenchError, carryPool, allocateCarry, filterWorkbenchDates, validateWorkbenchCommand, validateWorkbenchMonth, workbenchTotal, shortMonthProration, STANDARD_MONTHLY_SESSIONS,
   type WorkbenchAmounts, type WorkbenchView, type WorkbenchRow, type WorkbenchOperation, type WorkbenchCalendarSnapshot } from "./workbench";
+// 주N회 요금·셔틀비·형제할인 «제안값» 규칙은 순수 모듈 한 곳에서만 정한다.
+import { planWeeklyTuition, planShuttleFee, siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_PERCENT, type ShuttlePlan } from "./workbench-pricing";
 
 export type WorkbenchTx = {
   $queryRawUnsafe<T>(sql: string, ...values: unknown[]): Promise<T>;
   $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number>;
 };
 export type WorkbenchDb = { $transaction<T>(work: (tx: WorkbenchTx) => Promise<T>, options?: { isolationLevel: "Serializable" | "RepeatableRead"; timeout?: number }): Promise<T> };
-type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; startsOn?: Date | string | null; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string };
+type Enrollment = { studentId: string; studentName: string; classId: string; className: string; status: string; startsOn?: Date | string | null; price: number; dayOfWeek: string; createdAt: Date | string; updatedAt: Date | string;
+  // 주N회 요금·셔틀비·형제할인 제안에 쓰는 칸(조회에 없을 수도 있어 선택값)
+  programId?: string | null; programName?: string | null; priceWeek1?: number | null; priceWeek2?: number | null; priceWeek3?: number | null; priceDaily?: number | null;
+  runsShuttle?: boolean | null; shuttleFeeOverride?: number | null; slotKey?: string | null; parentId?: string | null; birthDate?: string | null };
 type Register = { studentId: string; month: string; status: string; payload: unknown; version: number };
 type Stored = { id: string; month: string; studentId: string; classId: string; version: number; status: "DRAFT" | "CONFIRMED" | "ISSUED" | "ZERO"; payload: WorkbenchAmounts; reason: string; sourceVersion: string; paymentId: string | null; periodStart?:string|null;periodEnd?:string|null;scheduledDates?:string[];calculationBasis?:Record<string,unknown> };
 type Absence = { id: string; studentId: string; studentName: string; classId: string; date: string; reason: string; status: string; makeupStatus: string | null; resolution: string | null };
@@ -39,7 +44,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   validateWorkbenchMonth(month);
   const [year, monthNumber] = month.split("-").map(Number);
   const enrollments = take(await tx.$queryRawUnsafe<Enrollment[]>(`SELECT e."studentId", s.name AS "studentName", e."classId", c.name AS "className", e.status, e."startsOn"::text AS "startsOn",
-    p.price, c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
+    p.price, p.id AS "programId", p.name AS "programName", p."priceWeek1", p."priceWeek2", p."priceWeek3", p."priceDaily", p."runsShuttle", p."shuttleFeeOverride", c."slotKey",
+    to_char(s."birthDate",'YYYY-MM-DD') AS "birthDate", c."dayOfWeek", s."parentId", c."updatedAt" AS "classUpdatedAt", p."updatedAt" AS "programUpdatedAt", e."createdAt", e."updatedAt" FROM "Enrollment" e JOIN "Student" s ON s.id=e."studentId"
     JOIN "Class" c ON c.id=e."classId" JOIN "Program" p ON p.id=c."programId"
     WHERE ${notMergedStudent("s")} ORDER BY e."studentId",e."classId" LIMIT ${limit}`));
   const payments = take(await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; status: string; amount: number; type: string; updatedAt: Date | string }>>(`SELECT id,"studentId","classId",status,amount,type,"updatedAt" FROM "Payment" WHERE year=$1 AND month=$2 ORDER BY id LIMIT ${limit}`, year, monthNumber));
@@ -67,6 +73,11 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const makeupSource = await exists(tx,"MakeupCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;sourceKey:string;status:string;updatedAt:Date|string;makeupSessionId:string|null}>>(`SELECT id,"studentId","sourceKey",status,"updatedAt","makeupSessionId" FROM "MakeupCredit" ORDER BY id LIMIT ${limit}`)) : [];
   const attendance = await exists(tx,"Attendance") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string;classId:string;date:string;status:string;updatedAt:Date|string}>>(`SELECT t.id,t."studentId",se."classId",to_char(se.date,'YYYY-MM-DD') AS date,t.status,t."updatedAt" FROM "Attendance" t JOIN "Session" se ON se.id=t."sessionId" ORDER BY t.id LIMIT ${limit}`)) : [];
   const seasonalCredits = await exists(tx,"SpecialProgramCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string|null;amount:number;status:string;updatedAt:Date|string}>>(`SELECT cr.id,a."convertedStudentId" AS "studentId",cr.amount,cr.status,cr."updatedAt" FROM "SpecialProgramCredit" cr JOIN "SpecialProgramApplicationItem" it ON it.id=cr."applicationItemId" JOIN "SpecialProgramApplication" a ON a.id=it."applicationId" WHERE cr.status='ACTIVE' ORDER BY cr.id LIMIT ${limit}`)) : [];
+  // 그 달 셔틀 명단(셔틀 명단 탭에서 편집하는 RegularShuttleStop). 학생 연결(studentId)된 승차·하차 행만 이용자로 본다.
+  // 이름만 있고 학생 연결이 없는 행은 동명이인 오청구 위험이 있어 자동 제안에 쓰지 않고 안내만 한다.
+  const shuttleStops = await exists(tx,"RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string}>>(`SELECT DISTINCT "studentId","studentName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId" LIMIT ${limit}`,month)) : [];
+  const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
+  const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
   for(const credit of credits) if(credit.basis?.originMonth && credit.basis.classId) {
     const b=credit.basis,issued=[...originDrafts,...drafts].find(d=>d.studentId===credit.studentId&&d.classId===b.classId&&d.month===b.originMonth&&["ISSUED","ZERO"].includes(d.status));
     const reg=registers.find(r=>r.studentId===credit.studentId&&r.month===b.originMonth&&r.status==="CONFIRMED");
@@ -94,25 +105,43 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const completedCurrentDrafts=drafts.filter(d=>["ISSUED","ZERO"].includes(d.status));
   const calendarSource=calendar?.kind??"DB";
   const officialCalendarFingerprint=calendar?hash({kind:calendar.kind,events:calendar.events,fingerprint:calendar.fingerprint}):null;
-  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits });
+  const sourceVersion = hash({ month, enrollments, payments, invoices, registers, events, officialCalendarFingerprint, calendarSource, credits, usages, absences, bookings, originDrafts, completedCurrentDrafts, originPayments, originInvoices, makeupSource, attendance, seasonalCredits, shuttleStops });
   const pool = (studentId:string)=>carryPool(credits.filter(c=>c.studentId===studentId),usages.filter(u=>u.studentId===studentId),month);
   const available = (studentId: string) => pool(studentId).available;
   const assignedShuttle = new Set<string>(), assignedCarry = new Map<string, number>();
-  const rows: WorkbenchRow[] = enrollments.map(e => {
-    const id = `${e.studentId}:${e.classId}`, saved = drafts.find(d => d.id === id);
+  // 행마다 «이번 달 청구 대상인가(excluded)»를 먼저 한 번에 정한다.
+  // 주N회 요금(같은 프로그램 몇 반)·형제할인(재원 형제 몇 명)은 다른 행의 제외 여부를 알아야 셀 수 있어서다.
+  const scopeOf = (e: Enrollment) => {
     const register = registers.find(r => r.studentId === e.studentId && r.month===month && r.status === "CONFIRMED");
     let reg: ReturnType<typeof validateMonthlyRegisterDraft> | null = null;
     if (register) { try { reg = validateMonthlyRegisterDraft(register.payload); } catch { /* 잘못된 확정 장부는 발행을 막는다. */ } }
-    const basis: string[] = [], reviewReasons: string[] = [], blockingReasons: string[] = [];
     const allScheduledDates = getMonthlyClassDates(eventValues, month, e.dayOfWeek);
     const classReg = reg?.classes.find(c => c.classId === e.classId);
     const startsOn = typeof e.startsOn === "string" ? e.startsOn : null;
-    const proposedStart=saved?.periodStart??classReg?.periodStart??allScheduledDates[0]??null;
     const futurePeriod=Boolean(startsOn && allScheduledDates.length && startsOn > allScheduledDates.at(-1)!);
+    const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE") || futurePeriod;
+    return { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded };
+  };
+  const scopes = new Map<string, ReturnType<typeof scopeOf>>(enrollments.map(e => [`${e.studentId}:${e.classId}`, scopeOf(e)]));
+  const billable = enrollments.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.excluded);
+  // (1) 주N회 요금: 확정 장부가 없는 청구 대상 반만 학생·프로그램별로 묶어 계산한다.
+  const tuitionPlans = planWeeklyTuition(billable.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.classReg).map(e => ({
+    key: `${e.studentId}:${e.classId}`, studentId: e.studentId, programId: e.programId ?? null, programName: e.programName ?? null,
+    price: e.price, priceWeek1: e.priceWeek1 ?? null, priceWeek2: e.priceWeek2 ?? null, priceWeek3: e.priceWeek3 ?? null, priceDaily: e.priceDaily ?? null })));
+  // (2) 셔틀비: 그 달 명단에 있는 학생만, 청구 대상 반의 주 횟수로 제안한다.
+  const shuttlePlans = new Map<string, ShuttlePlan>();
+  for (const studentId of new Set(billable.map(e => e.studentId))) shuttlePlans.set(studentId, planShuttleFee(shuttleRiders.has(studentId),
+    billable.filter(e => e.studentId === studentId).map(e => ({ dayOfWeek: e.dayOfWeek, slotKey: e.slotKey ?? null, runsShuttle: Boolean(e.runsShuttle), shuttleFeeOverride: e.shuttleFeeOverride ?? null }))));
+  // (3) 형제할인: 같은 학부모의 «이번 달 청구 대상 반이 있는» 자녀가 2명 이상이면 대상.
+  const siblingStudents = siblingDiscountStudents(billable.map(e => ({ studentId: e.studentId, parentId: e.parentId ?? null, birthDate: e.birthDate ?? null, name: e.studentName })));
+  const rows: WorkbenchRow[] = enrollments.map(e => {
+    const id = `${e.studentId}:${e.classId}`, saved = drafts.find(d => d.id === id);
+    const { register, reg, allScheduledDates, classReg, startsOn, futurePeriod, excluded } = scopes.get(id)!;
+    const basis: string[] = [], reviewReasons: string[] = [], blockingReasons: string[] = [];
+    const proposedStart=saved?.periodStart??classReg?.periodStart??allScheduledDates[0]??null;
     const periodStart=futurePeriod ? null : startsOn && proposedStart && startsOn > proposedStart ? startsOn : proposedStart;
     const periodEnd=futurePeriod ? null : saved?.periodEnd??classReg?.periodEnd??allScheduledDates.at(-1)??null;
     const scheduledDates=periodStart&&periodEnd&&periodStart<=periodEnd?filterWorkbenchDates(allScheduledDates,periodStart,periodEnd):[];
-    const excluded = e.status !== "ACTIVE" || Boolean(classReg && classReg.status !== "ACTIVE") || futurePeriod;
     let amounts: WorkbenchAmounts = { baseAmount: excluded ? 0 : e.price, discountAmount: 0, prorationAmount: 0, carryAmount: 0, shuttleAmount: 0 };
     // 정가는 월 4회 기준. 연간 일정상 그달 전체 수업이 4회 미만이면 모자란 회차만큼 뺀다(설 주간·연휴가 낀 달).
     const monthSessions = allScheduledDates.length;
@@ -124,6 +153,19 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       if (!assignedShuttle.has(e.studentId) && !excluded) { amounts.shuttleAmount = reg!.shuttleAmount; assignedShuttle.add(e.studentId); }
     } else if (!excluded) {
       basis.push("등록 반의 프로그램 수강료");
+      // 같은 프로그램을 주 N회 다니면 주N회 요금을 반 수로 나눈 값(빈 칸이면 기존 방식 + 경고).
+      const tuition = tuitionPlans.get(id);
+      if (tuition) {
+        amounts.baseAmount = tuition.baseAmount;
+        if (tuition.basis) basis.push(tuition.basis);
+        // 경고는 관리자 저장 뒤 검토 사유가 걸러져도 남도록 근거에도 적는다.
+        if (tuition.warning) { reviewReasons.push(tuition.warning); basis.push(`확인: ${tuition.warning}`); }
+      }
+      // 형제할인 제안: 수강료(기본 금액)에만 10%, 셔틀비 제외. 기간 조정보다 먼저 정해야 3회 달 차감이 할인 후 금액 기준이 된다.
+      if (siblingStudents.has(e.studentId)) {
+        amounts.discountAmount = siblingDiscountAmount(amounts.baseAmount);
+        basis.push(`형제할인 ${REGULAR_SIBLING_DISCOUNT_PERCENT}% 제안 → ${amounts.discountAmount.toLocaleString("ko-KR")}원(셔틀비 제외)`);
+      }
       reviewReasons.push("할인·셔틀 및 수강 기간을 검토해 주세요.");
       if (isShortMonth) {
         amounts.prorationAmount = shortMonthProration(amounts.baseAmount, monthSessions, amounts.discountAmount);
@@ -142,6 +184,19 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
     const balance = available(e.studentId);
     const remaining = Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0));
     amounts.carryAmount = !participates ? 0 : Math.min(remaining, Math.max(0, amounts.baseAmount - amounts.discountAmount - amounts.prorationAmount));
+    // 셔틀비 제안: 확정 장부가 없는 학생의 «첫 번째 발행 대상 반» 한 행에만(학생당 한 청구 규칙).
+    // 사람이 저장한 값은 아래 saved 덮어쓰기로 우선한다. 다른 반 초안에 셔틀비를 이미 저장했거나
+    // 이번 달 기존 청구(랠리즈 사본 등)가 있으면 셔틀비가 이미 들어갔을 수 있어 제안하지 않는다.
+    if (!classReg && participates && !assignedShuttle.has(e.studentId)) {
+      assignedShuttle.add(e.studentId);
+      const plan = shuttlePlans.get(e.studentId);
+      const savedElsewhere = drafts.some(d => d.studentId === e.studentId && d.id !== id && (d.payload?.shuttleAmount ?? 0) > 0);
+      const billedThisMonth = payments.some(p => p.studentId === e.studentId && !["CANCELED", "CANCELLED"].includes(p.status) && p.type !== "UNIFORM");
+      if (plan && plan.amount > 0 && !savedElsewhere && !billedThisMonth) { amounts.shuttleAmount = plan.amount; if (plan.basis) basis.push(plan.basis); }
+      else if (plan && plan.amount > 0) basis.push("셔틀 명단 있음 · 다른 청구에 셔틀비가 있을 수 있어 제안하지 않음");
+      else if (plan?.basis) basis.push(plan.basis);
+      if (plan?.warning) { reviewReasons.push(plan.warning); basis.push(`확인: ${plan.warning}`); }
+    }
     if (saved && !["ISSUED", "ZERO"].includes(saved.status)) amounts = saved.payload;
     if (saved && ["ISSUED", "ZERO"].includes(saved.status)) amounts = saved.payload;
     // 3회 달을 그달 전체로 청구하는데 기간 조정이 할인 후 금액 기준과 다르면 알린다(장부·저장 초안 포함).
@@ -174,7 +229,10 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
       periodEnd, scheduledDates, monthDates: allScheduledDates, carryAvailable: balance, remainingCarry: Math.max(0, balance - (assignedCarry.get(e.studentId) ?? 0)), dueDate: monthlyBillingDueDate(year,monthNumber), blockingReasons };
   });
   return { month, sourceVersion, storageReady, writesEnabled: writesEnabled && storageReady, rows,carrySettlementReady:true,calendarSource,
-    notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[]],
+    notices:[...seasonalCredits.length?[`기존 특강 이월 ${seasonalCredits.length}건은 별도 대조·이관이 필요합니다. 자동 중복 적립하지 않습니다.`]:[],
+      // 셔틀비 제안의 근거가 되는 명단 상태를 알린다(명단이 없거나 학생 연결이 빠지면 셔틀비가 0원으로 시작한다).
+      ...!shuttleStops.length?[`${month} 셔틀 명단이 없어 셔틀비를 자동 제안하지 않았습니다.`]:[],
+      ...unlinkedShuttleNames.length?[`셔틀 명단에서 학생과 연결되지 않은 ${unlinkedShuttleNames.length}명(${unlinkedShuttleNames.slice(0,5).join(", ")}${unlinkedShuttleNames.length>5?" 외":""})은 셔틀비를 자동 제안하지 않았습니다.`]:[]],
     absences: absences.map(a => ({ ...a, reviewReasons: a.resolution ? [] : [a.status !== "CONFIRMED" ? "결석 확인 필요" : "이월·보강 중 하나를 선택해 주세요.", ...a.makeupStatus?.split(",").some(s => ["USED", "ATTENDED", "NO_SHOW"].includes(s)) ? ["보강 사용 내역이 있어 자동 이월할 수 없습니다."] : []] })),
     summary: { total: rows.length, ready: rows.filter(r => r.status === "READY").length, review: rows.filter(r => r.status === "REVIEW").length,
       excluded: rows.filter(r => r.status === "EXCLUDED").length, issued: rows.filter(r => r.status === "ISSUED").length,
