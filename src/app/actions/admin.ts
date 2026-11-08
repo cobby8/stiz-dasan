@@ -55,6 +55,7 @@ import { validateAcademyCoordinateInput } from "@/lib/shuttle/academyLocation";
 import { renderSmsTemplate } from "@/lib/smsTemplate";
 import {
     PARENT_MESSAGE_PREFIX,
+    manualMessagePrefix,
     isParentAlimtalkTrigger,
     parentAlimtalkSmsTemplateBody,
 } from "@/lib/messaging/parent-alimtalk-templates";
@@ -6341,8 +6342,8 @@ export async function enqueueManualSmsBatch(
     if (normalized.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
         throw new Error(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 접수할 수 있습니다.`);
     }
-    // 머리말 통일(2026-11-09): 학부모 대상 문자는 모두 [스티즈농구교실]
-    const body = `${PARENT_MESSAGE_PREFIX} ${message.trim()}`;
+    // 머리말(2026-11-09): 학부모(EXTERNAL) = [스티즈농구교실], 직원(INTERNAL) = 예전 [STIZ]
+    const body = `${manualMessagePrefix(options.audienceScope || "EXTERNAL")} ${message.trim()}`;
     const queued = await reserveManualMessageQueue({
         requestId,
         actorUserId: admin.appUserId,
@@ -6400,11 +6401,11 @@ export async function sendManualSms(
         throw new Error(`한 번에 ${MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 발송할 수 있습니다.`);
     }
 
-    // 머리말 통일(2026-11-09): 학부모 대상 문자는 모두 [스티즈농구교실]
-    const body = `${PARENT_MESSAGE_PREFIX} ${message.trim()}`;
     const purpose = options?.purpose?.trim() || "관리자 수동 문자 발송";
     const reason = options?.reason?.trim() || "관리자 문자센터에서 직접 발송";
     const audienceScope = options?.audienceScope || "INTERNAL";
+    // 머리말(2026-11-09): 학부모(EXTERNAL) = [스티즈농구교실], 직원(INTERNAL) = 예전 [STIZ]
+    const body = `${manualMessagePrefix(audienceScope)} ${message.trim()}`;
     const requestId = validateManualMessageRequestId(options?.requestId);
     const requestFingerprint = createHash("sha256")
         .update(`${admin.appUserId}:${body}:${normalized.recipients.join(",")}`)

@@ -7,7 +7,11 @@
  */
 import { PARENT_ALIMTALK_TEMPLATES, type ParentAlimtalkTrigger } from "./parent-alimtalk-templates";
 
-export function parentAlimtalkTemplateId(trigger: ParentAlimtalkTrigger): string {
-  const envKey = PARENT_ALIMTALK_TEMPLATES[trigger].envKey;
+/** 환경변수 이름으로 id 를 읽는다 — buildParentAlimtalkMessage 가 고른 틀(기본/«순번 없는 판»)의 envKey 를 넘긴다 */
+export function alimtalkTemplateIdForEnv(envKey: string): string {
   return String(process.env[envKey] ?? "").trim();
+}
+
+export function parentAlimtalkTemplateId(trigger: ParentAlimtalkTrigger): string {
+  return alimtalkTemplateIdForEnv(PARENT_ALIMTALK_TEMPLATES[trigger].envKey);
 }

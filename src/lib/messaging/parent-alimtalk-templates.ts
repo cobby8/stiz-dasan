@@ -17,6 +17,26 @@
 /** 머리말 — 학부모 대상 문자 전부 이 이름으로 통일(원장 결정 2026-11-09) */
 export const PARENT_MESSAGE_PREFIX = "[스티즈농구교실]";
 
+/** 직원(내부) 대상 수동 문자의 머리말 — 예전 그대로 둔다(검수 정정 2026-11-09: 학부모만 통일) */
+export const STAFF_MESSAGE_PREFIX = "[STIZ]";
+
+/** 수동 문자 머리말: 학부모(EXTERNAL)만 [스티즈농구교실], 직원(INTERNAL)은 예전 [STIZ] */
+export function manualMessagePrefix(audienceScope: "INTERNAL" | "EXTERNAL"): string {
+  return audienceScope === "EXTERNAL" ? PARENT_MESSAGE_PREFIX : STAFF_MESSAGE_PREFIX;
+}
+
+/**
+ * 예약 발송 본문에 학부모 머리말을 붙인다(크론 전용).
+ *  - 이미 머리말([STIZ…]/[스티즈농구교실])이 있으면 그대로 — 겹치지 않게
+ *  - 배포 전에 예약된 등원 안내는 «농구교실 등원 셔틀 안내»로 시작한다 → 제목의 «농구교실 »을 떼고 붙여
+ *    즉시 발송과 같은 «[스티즈농구교실] 등원 셔틀 안내»가 되게 한다(«[스티즈농구교실] 농구교실…» 겹침 방지)
+ */
+export function withParentPrefix(body: string): string {
+  if (body.startsWith("[STIZ") || body.startsWith(PARENT_MESSAGE_PREFIX)) return body;
+  const normalized = body.startsWith("농구교실 등원 셔틀 안내") ? body.slice("농구교실 ".length) : body;
+  return `${PARENT_MESSAGE_PREFIX} ${normalized}`;
+}
+
 /** 학원 전화가 설정에 비어 있을 때 쓰는 대표번호(보안 알림 문구와 같은 번호) */
 export const DEFAULT_ACADEMY_PHONE = "070-8824-5712";
 
@@ -31,6 +51,11 @@ export type ParentAlimtalkSpec = {
   vars: Record<string, string>;
   /** 호출부 값이 비었을 때 넣을 값(빈 변수 방지). 없으면 오류 → 문자로 대체 */
   defaults?: Record<string, string>;
+  /**
+   * 호출부 값(callerKey)이 비었을 때 쓰는 «그 줄이 없는» 별도 틀. 빈칸 줄을 만들지 않으려고 둔다.
+   * 별도 알림톡 템플릿이라 envKey 가 따로 있다(비어 있으면 이 판은 문자로만 나간다).
+   */
+  whenEmpty?: { callerKey: string; name: string; envKey: string; body: string };
 };
 
 const P = PARENT_MESSAGE_PREFIX;
@@ -142,6 +167,16 @@ export const PARENT_ALIMTALK_TEMPLATES = {
       "자리 발생 시 안내드리겠습니다.",
     ].join("\n"),
     vars: { "#{학생명}": "childName", "#{특강명}": "offeringTitle", "#{대기순번}": "waitlistOrder" },
+    // 신청서 단위로 대기 처리했는데 항목에 순번이 하나도 없을 때 — «대기순번:» 줄 없이 보낸다(빈칸 금지)
+    whenEmpty: {
+      callerKey: "waitlistOrder",
+      name: "특강 대기 접수(순번 없음)",
+      envKey: "ALIMTALK_TPL_SPECIAL_APPLICATION_WAITLISTED_NO_ORDER",
+      body: [
+        `${P} #{학생명} 학생의 #{특강명} 특강은 대기 접수되었습니다.`,
+        "자리 발생 시 안내드리겠습니다.",
+      ].join("\n"),
+    },
   },
 } satisfies Record<string, ParentAlimtalkSpec>;
 
@@ -201,14 +236,17 @@ export function buildParentAlimtalkMessage(
   callerVariables: Record<string, string | null | undefined>,
 ): ParentAlimtalkMessage {
   const spec: ParentAlimtalkSpec = PARENT_ALIMTALK_TEMPLATES[trigger];
+  // 특정 값이 비면 «그 줄 없는 판» 틀로 바꾼다(예: 대기순번 없는 대기 안내)
+  const alt = spec.whenEmpty && !String(callerVariables[spec.whenEmpty.callerKey] ?? "").trim() ? spec.whenEmpty : null;
+  const body = alt ? alt.body : spec.body;
   const variables: Record<string, string> = {};
-  for (const key of templateVariableKeys(spec.body)) {
+  for (const key of templateVariableKeys(body)) {
     const callerKey = spec.vars[key];
     if (!callerKey) throw new Error(`알림톡 변수 ${key} 의 연결이 없습니다.`);
     const raw = String(callerVariables[callerKey] ?? "").trim();
     variables[key] = raw || spec.defaults?.[callerKey] || "";
   }
-  return { trigger, envKey: spec.envKey, body: fillAlimtalkTemplate(spec.body, variables), variables };
+  return { trigger, envKey: alt ? alt.envKey : spec.envKey, body: fillAlimtalkTemplate(body, variables), variables };
 }
 
 /**

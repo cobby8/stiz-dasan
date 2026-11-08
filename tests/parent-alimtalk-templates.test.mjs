@@ -60,8 +60,39 @@ test("빈 변수: 기본값(반·학원전화)은 채우고, 기본값 없는 �
   assert.doesNotMatch(cancelled.body, /문의: $/m);
   // 특강 문자 버그②: 특강명·대기순번이 비면 알림톡 틀을 만들지 않는다
   assert.throws(() => reg.buildParentAlimtalkMessage("SPECIAL_APPLICATION_CANCELLED_PARENT", { ...SAMPLE, offeringTitle: "" }));
-  assert.throws(() => reg.buildParentAlimtalkMessage("SPECIAL_APPLICATION_WAITLISTED_PARENT", { ...SAMPLE, waitlistOrder: " " }));
   assert.throws(() => reg.fillAlimtalkTemplate("#{없음}", {}));
+});
+
+test("대기순번이 없으면 «대기순번:» 줄 없는 판(별도 템플릿)으로 — 빈칸 줄 금지", () => {
+  const spec = reg.PARENT_ALIMTALK_TEMPLATES.SPECIAL_APPLICATION_WAITLISTED_PARENT;
+  for (const empty of ["", " ", undefined]) {
+    const m = reg.buildParentAlimtalkMessage("SPECIAL_APPLICATION_WAITLISTED_PARENT", { ...SAMPLE, waitlistOrder: empty });
+    assert.equal(m.body, "[스티즈농구교실] 홍길동 학생의 겨울특강 슈팅반 특강은 대기 접수되었습니다.\n자리 발생 시 안내드리겠습니다.");
+    assert.doesNotMatch(m.body, /대기순번/);
+    assert.equal(m.envKey, "ALIMTALK_TPL_SPECIAL_APPLICATION_WAITLISTED_NO_ORDER");
+    assert.deepEqual(Object.keys(m.variables).sort(), reg.templateVariableKeys(spec.whenEmpty.body).sort());
+  }
+  const withOrder = reg.buildParentAlimtalkMessage("SPECIAL_APPLICATION_WAITLISTED_PARENT", SAMPLE);
+  assert.match(withOrder.body, /대기순번: 2/);
+  assert.equal(withOrder.envKey, "ALIMTALK_TPL_SPECIAL_APPLICATION_WAITLISTED");
+  // 순번 없는 판도 심사 문서에 글자 그대로
+  const doc = read("docs/kakao-alimtalk-parent-templates.md");
+  assert.ok(doc.includes("```\n" + spec.whenEmpty.body + "\n```"));
+  assert.ok(doc.includes(spec.whenEmpty.envKey));
+  // 발송부는 고른 틀의 envKey 로 id 를 읽는다(기본 틀 id 로 «순번 없는 판»을 보내면 카카오가 거절)
+  assert.match(read("src/lib/notification.ts"), /alimtalkTemplateIdForEnv\(message\.envKey\)/);
+});
+
+test("머리말 규칙: 수동 문자는 학부모만 [스티즈농구교실]·직원은 [STIZ], 예약 발송은 겹치지 않게", () => {
+  assert.equal(reg.manualMessagePrefix("EXTERNAL"), "[스티즈농구교실]");
+  assert.equal(reg.manualMessagePrefix("INTERNAL"), "[STIZ]");
+  // 예약 발송(크론): 머리말 없음 → 붙임 / 이미 있음 → 그대로 / 배포 전 예약된 «농구교실 등원 셔틀 안내» → 겹침 없이
+  assert.equal(reg.withParentPrefix("공지입니다"), "[스티즈농구교실] 공지입니다");
+  assert.equal(reg.withParentPrefix("[STIZ] 공지"), "[STIZ] 공지");
+  assert.equal(reg.withParentPrefix("[스티즈농구교실] 공지"), "[스티즈농구교실] 공지");
+  assert.equal(reg.withParentPrefix("농구교실 등원 셔틀 안내\n\n박윤우 학부모님"), "[스티즈농구교실] 등원 셔틀 안내\n\n박윤우 학부모님");
+  assert.equal(reg.withParentPrefix("등원 셔틀 안내\n본문"), "[스티즈농구교실] 등원 셔틀 안내\n본문");
+  assert.match(read("src/app/api/cron/scheduled-messages/route.ts"), /const body = withParentPrefix\(item\.body\);/);
 });
 
 test("DB 문자 틀 표기({{x}})로 바꿔 같은 값을 넣으면 알림톡 본문과 같은 글자다", () => {
@@ -82,7 +113,16 @@ test("심사 문서: 등록 문구가 코드 틀과 글자까지 같고 환경�
     assert.ok(doc.includes(trigger), trigger);
   }
   assert.match(doc, /검수자 의견/);
-  assert.match(doc, /대체 발송\(문자\)»: \*\*사용 안 함\*\*/);
+  // 솔라피 대체 발송은 켠다 — 접수 뒤 전달 실패(카톡 미설치 등)는 솔라피만 잡는다(2026-11-09 검수 정정)
+  assert.match(doc, /솔라피 «대체 발송»: \*\*문자메시지\(본문 동일\)로 켬\*\*/);
+  assert.doesNotMatch(doc, /사용 안 함\*\* 으로 등록/);
+  assert.match(read("docs/kakao-alimtalk-rental-templates.md"), /솔라피 «대체 발송»: \*\*문자메시지\(본문 동일\)로 켬\*\*/);
+  // 코드가 솔라피 대체 문자를 켠 채로 보낸다(disableSms:false 명시, true 금지) + from 발신번호를 넘긴다
+  const dispatch = read("src/lib/message-dispatch.ts");
+  assert.match(dispatch, /kakaoOptions: \{[\s\S]*?disableSms: false,/);
+  assert.doesNotMatch(dispatch, /disableSms: true/);
+  assert.match(dispatch, /from: normalizePhone\(process\.env\.SOLAPI_SENDER \|\| ""\),\s*text: input\.body,\s*kakaoOptions:/);
+  assert.match(doc, /https:\/\/solapi\.com\/developers\/api\/messages-disablesms/);
 });
 
 test("운영 동기화 마이그레이션이 금고 문구를 그대로 담는다", () => {
@@ -146,10 +186,11 @@ test("가드: 학부모 대상 문구의 머리말은 [스티즈농구교실] (�
   for (const m of smsTemplate.matchAll(/\[\s*"([A-Z_]+)",\s*"[^"]*",\s*"PARENT",\s*([^\n]+)/g)) {
     assert.doesNotMatch(m[2], /\[STIZ/, m[1]);
   }
-  // 수동 문자 발송부 머리말
+  // 수동 문자 발송부 머리말 — 수신 대상(EXTERNAL/INTERNAL)에 따라 고른다(두 함수 모두)
   const admin = read("src/app/actions/admin.ts");
   assert.doesNotMatch(admin, /const body = `\[STIZ\] /);
-  assert.match(admin, /const body = `\$\{PARENT_MESSAGE_PREFIX\} \$\{message\.trim\(\)\}`/);
+  assert.match(admin, /const body = `\$\{manualMessagePrefix\(options\.audienceScope \|\| "EXTERNAL"\)\} \$\{message\.trim\(\)\}`/);
+  assert.match(admin, /const audienceScope = options\?\.audienceScope \|\| "INTERNAL";[\s\S]{0,200}const body = `\$\{manualMessagePrefix\(audienceScope\)\} \$\{message\.trim\(\)\}`/);
 });
 
 test("연결: 특강·셔틀·체험 경로가 금고 틀과 알림톡을 넘긴다", () => {
@@ -167,6 +208,8 @@ test("연결: 특강·셔틀·체험 경로가 금고 틀과 알림톡을 넘긴
   const route = read("src/app/api/admin/seasonal/route.ts");
   assert.doesNotMatch(route, /offeringTitle: "", waitlistOrder: ""/);
   assert.match(route, /\.\.\.\(await loadApplicationSmsSummary\(application\.id\)\)/);
+  // 요약 조회가 실패해도 상태 변경 응답이 500 이 되지 않는다
+  assert.match(route, /async function loadApplicationSmsSummary[\s\S]*?\}\)\.catch\(\(error: unknown\) => \{[\s\S]*?return \[\] as Array/);
   assert.match(route, /\.\.\.applicationSmsSummary\(application\.items\)/);
   // 관리자 문구 화면: 금고 트리거는 본문 수정 거절
   const admin = read("src/app/actions/admin.ts");

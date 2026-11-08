@@ -17,7 +17,7 @@ import {
 } from "@/lib/message-dispatch";
 import type { MessageAudience, MessageChannel } from "@/lib/message-channel-policy";
 import { buildParentAlimtalkMessage, isParentAlimtalkTrigger } from "@/lib/messaging/parent-alimtalk-templates";
-import { parentAlimtalkTemplateId } from "@/lib/messaging/alimtalk-config";
+import { alimtalkTemplateIdForEnv } from "@/lib/messaging/alimtalk-config";
 import {
     claimMessageDelivery,
     finalizeMessageDelivery,
@@ -987,7 +987,8 @@ export function resolveParentMessage(
     if (!isParentAlimtalkTrigger(trigger)) return { body: dbBody };
     try {
         const message = buildParentAlimtalkMessage(trigger, variables);
-        const templateId = parentAlimtalkTemplateId(trigger);
+        // 고른 틀(기본 또는 «순번 없는 판»)의 환경변수에서 id 를 읽는다
+        const templateId = alimtalkTemplateIdForEnv(message.envKey);
         return templateId
             ? { body: message.body, alimtalk: { templateId, variables: message.variables } }
             : { body: message.body };

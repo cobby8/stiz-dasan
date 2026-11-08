@@ -144,10 +144,15 @@ function applicationSmsSummary(items: Array<{ waitlistOrder: number | null; offe
 }
 
 async function loadApplicationSmsSummary(applicationId: string) {
+  // 상태 변경은 이미 커밋됐다 — 요약 조회가 실패해도 500 을 내지 않고 빈 값으로 보낸다
+  // (빈 특강명이면 금고 틀을 못 채워 옛 문구 문자로 대체된다)
   const items = await prisma.specialProgramApplicationItem.findMany({
     where: { applicationId },
     select: { waitlistOrder: true, offering: { select: { title: true } } },
     orderBy: { createdAt: "asc" },
+  }).catch((error: unknown) => {
+    console.error("[seasonal] application sms summary failed:", (error as Error)?.message);
+    return [] as Array<{ waitlistOrder: number | null; offering: { title: string } }>;
   });
   return applicationSmsSummary(items);
 }
