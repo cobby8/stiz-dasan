@@ -823,8 +823,8 @@ export default function FinanceClient({
                     },
                 },
             ] : []),
-            // 현장 결제: 수강료·셔틀비 미납만(원장 결정 D2 — 둘 다 면세). 서버가 한 번 더 확인한다.
-            ...(canManageCriticalFinance && ["MONTHLY", "SHUTTLE"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) ? [
+            // 현장 결제: 수강료·셔틀비·기타 미납만(모두 면세 — D2, 기타는 2026-11-08 추가). 서버가 한 번 더 확인한다.
+            ...(canManageCriticalFinance && ["MONTHLY", "SHUTTLE", "OTHER"].includes(p.type) && ["PENDING", "OVERDUE"].includes(p.status) ? [
                 {
                     key: "pos-charge",
                     label: "현장 결제",
@@ -1123,25 +1123,7 @@ export default function FinanceClient({
                         {year}년 {month}월 수납 현황
                     </p>
                 </div>
-                <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white p-1 text-sm font-extrabold text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
-                    <button
-                        type="button"
-                        onClick={prevMonth}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                        aria-label="이전 달"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-                    </button>
-                    <span className="min-w-24 text-center">{year}.{String(month).padStart(2, "0")}</span>
-                    <button
-                        type="button"
-                        onClick={nextMonth}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                        aria-label="다음 달"
-                    >
-                        <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-                    </button>
-                </div>
+                {/* 월 선택은 표 바로 위 가운데로 옮김(2026-11-08 원장 지시) — 아래 «상태 칩 · 월 · 보기 전환» 줄 */}
             </div>
 
             {financeNotice && (
@@ -1351,22 +1333,6 @@ export default function FinanceClient({
                 </span>
             </section>
 
-            {/* 일괄 처리 바 — 선택된 항목이 있을 때만 표시 */}
-            {canManageCriticalFinance && selectedIds.size > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex items-center justify-between">
-                    <span className="text-sm font-medium text-blue-700">
-                        {selectedIds.size}건 선택됨
-                    </span>
-                    <button
-                        onClick={handleBulkPaid}
-                        disabled={busy}
-                        className="bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-bold hover:bg-green-700 transition disabled:opacity-50"
-                    >
-                        선택 항목 납부 처리
-                    </button>
-                </div>
-            )}
-
             {/* 수동 생성 폼 */}
             {showForm && (
                 <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
@@ -1538,21 +1504,73 @@ export default function FinanceClient({
             </section>
             {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 전체) + 보기 전환(목록 | 상태별).
                 칩은 필터 모달의 «납부 상태»(paymentStatusFilter)와 같은 값을 공유한다. */}
-            <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <StatusCountChips
-                    ariaLabel="납부 상태별 건수"
-                    items={statusChipItems}
-                    selected={paymentStatusFilter}
-                    onSelect={applyPaymentStatusFilter}
-                    allValue=""
-                />
-                <ListViewToggle
-                    value={viewMode}
-                    options={FINANCE_VIEW_OPTIONS}
-                    ariaLabel="수납 보기 방식"
-                    onChange={changeViewMode}
-                />
+            {/* 한 줄: 상태 칩(왼쪽) · 월 선택(가운데) · 보기 전환(오른쪽). 좁은 화면은 월 선택이 맨 위 한 줄. */}
+            <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2 lg:grid lg:grid-cols-[1fr_auto_1fr]">
+                <div className="order-2 min-w-0 lg:order-none">
+                    <StatusCountChips
+                        ariaLabel="납부 상태별 건수"
+                        items={statusChipItems}
+                        selected={paymentStatusFilter}
+                        onSelect={applyPaymentStatusFilter}
+                        allValue=""
+                    />
+                </div>
+                <div className="order-1 flex w-full justify-center lg:order-none lg:w-auto">
+                    <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white p-0.5 text-sm font-extrabold text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                        <button
+                            type="button"
+                            onClick={prevMonth}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            aria-label="이전 달"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+                        </button>
+                        <span className="min-w-20 text-center tabular-nums">{year}.{String(month).padStart(2, "0")}</span>
+                        <button
+                            type="button"
+                            onClick={nextMonth}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            aria-label="다음 달"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+                        </button>
+                    </div>
+                </div>
+                <div className="order-3 lg:order-none lg:justify-self-end">
+                    <ListViewToggle
+                        value={viewMode}
+                        options={FINANCE_VIEW_OPTIONS}
+                        ariaLabel="수납 보기 방식"
+                        onChange={changeViewMode}
+                    />
+                </div>
             </div>
+            {/* 일괄 처리 막대 — 고른 청구가 있을 때만, 표 바로 위(체크한 곳 가까이). 2026-11-08 원장 지시로 위치 이동 */}
+            {canManageCriticalFinance && selectedIds.size > 0 && (
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--brand-accent)] bg-white px-3 py-1.5 dark:bg-gray-900">
+                    <span className="text-sm font-bold text-gray-900 dark:text-white">
+                        {selectedIds.size}건 선택 · 합계 {formatAmount(payments.filter((p) => selectedIds.has(p.id)).reduce((sum, p) => sum + Number(p.amount || 0), 0))}
+                    </span>
+                    <div className="flex items-center gap-1">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedIds(new Set())}
+                            disabled={busy}
+                            className="min-h-11 rounded-lg px-3 text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
+                        >
+                            선택 해제
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleBulkPaid}
+                            disabled={busy}
+                            className="min-h-11 rounded-lg bg-[var(--brand-accent)] px-4 text-sm font-bold text-[var(--brand-accent-contrast)] transition disabled:opacity-50"
+                        >
+                            선택 항목 납부 처리
+                        </button>
+                    </div>
+                </div>
+            )}
             {/* 수납 목록 테이블 */}
             {visiblePayments.length === 0 ? (
                 <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">

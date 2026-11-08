@@ -746,7 +746,7 @@ export async function markPaymentsPaidTogether(input: {
                      "providerPaymentKey" = COALESCE($5, "providerPaymentKey"),
                      "receiptUrl" = COALESCE($6, "receiptUrl"),
                      "updatedAt" = NOW()
-                 WHERE id = $1 AND status IN ('PENDING', 'OVERDUE') AND amount = $8::int AND type IN ('MONTHLY', 'SHUTTLE')
+                 WHERE id = $1 AND status IN ('PENDING', 'OVERDUE') AND amount = $8::int AND type IN ('MONTHLY', 'SHUTTLE', 'OTHER')
                  RETURNING id`,
                 item.paymentId,
                 input.method ?? null,

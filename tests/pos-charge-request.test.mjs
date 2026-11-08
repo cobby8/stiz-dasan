@@ -90,11 +90,12 @@ test("메모 파싱: 플러그인이 넣는 자리(lineItems[].memo · lineItems
 
 // ───────────────────────── 3. 청구서 판정 ─────────────────────────
 
-test("현장 결제 대상: 수강료·셔틀비 미납만", () => {
+test("현장 결제 대상: 수강료·셔틀비·기타 미납만(기타는 2026-11-08 추가)", () => {
   assert.ok(R.chargeEligibility({ type: "MONTHLY", status: "PENDING", amount: 180000 }).ok);
   assert.ok(R.chargeEligibility({ type: "SHUTTLE", status: "OVERDUE", amount: 30000 }).ok);
   assert.ok(!R.chargeEligibility({ type: "UNIFORM", status: "PENDING", amount: 50000 }).ok, "유니폼은 과세라 제외");
-  assert.ok(!R.chargeEligibility({ type: "OTHER", status: "PENDING", amount: 1000 }).ok);
+  assert.ok(R.chargeEligibility({ type: "OTHER", status: "PENDING", amount: 1000 }).ok, "기타도 면세로 허용");
+  assert.equal(R.paymentTypeLabel("OTHER"), "기타");
   assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "PAID", amount: 180000 }).ok);
   assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "CANCELLED", amount: 180000 }).ok);
   assert.ok(!R.chargeEligibility({ type: "MONTHLY", status: "PENDING", amount: 0 }).ok);
@@ -857,7 +858,7 @@ test("돈 쓰기: chargeRequestService 의 markPaymentPaid 는 한 곳, 선점(C
   assert.match(sql, /<= r\."expiresAt"/);
   const all = src.slice(src.indexOf("const ALL_ITEMS_UNPAID_SQL"), src.indexOf("function hasPaymentSql"));
   assert.match(all, /NOT EXISTS \(SELECT 1 FROM \$\{ITEMS_OF_R\} it LEFT JOIN "Payment" p ON p\.id = it\."paymentId"/);
-  assert.match(all, /NOT COALESCE\(p\.status IN \('PENDING', 'OVERDUE'\) AND p\.amount = it\.amount AND p\.type IN \('MONTHLY', 'SHUTTLE'\), false\)/, "청구가 지워졌으면(NULL) 어긋남으로 센다");
+  assert.match(all, /NOT COALESCE\(p\.status IN \('PENDING', 'OVERDUE'\) AND p\.amount = it\.amount AND p\.type IN \('MONTHLY', 'SHUTTLE', 'OTHER'\), false\)/, "청구가 지워졌으면(NULL) 어긋남으로 센다");
   assert.match(all, /\(SELECT sum\(it\.amount\) FROM \$\{ITEMS_OF_R\} it\) = r\.amount/);
   // 항목이 없는 옛 요청은 대표 청구 1건으로 본다(마이그레이션 적용 전후 틈)
   const itemsOf = src.slice(src.indexOf("const ITEMS_OF_R"), src.indexOf("const ALL_ITEMS_UNPAID_SQL"));
@@ -868,7 +869,7 @@ test("돈 쓰기: chargeRequestService 의 markPaymentPaid 는 한 곳, 선점(C
   // 금액은 DB 값: 만들 때 Payment.amount 합계(그 문장에서 미납·금액·같은 학생 재확인)
   const insert = src.slice(src.indexOf("const INSERT_SQL"), src.indexOf("const INSERT_ITEMS_SQL"));
   assert.match(insert, /JOIN "Payment" p ON p\.id = w\.pid AND p\.amount = w\.amt/);
-  assert.match(insert, /WHERE p\.status IN \('PENDING', 'OVERDUE'\) AND p\.type IN \('MONTHLY', 'SHUTTLE'\)/);
+  assert.match(insert, /WHERE p\.status IN \('PENDING', 'OVERDUE'\) AND p\.type IN \('MONTHLY', 'SHUTTLE', 'OTHER'\)/);
   assert.match(insert, /\(SELECT sum\(ok\.amount\) FROM ok\)::int/);
   assert.match(insert, /\(SELECT count\(\*\) FROM ok\) = cardinality\(\$9::text\[\]\)/, "청구가 하나라도 빠지면 0행");
   assert.match(insert, /\(SELECT count\(DISTINCT ok\."studentId"\) FROM ok\) = 1/, "학생이 섞이면 0행");
@@ -898,7 +899,7 @@ test("관리자 동작: 원장(ADMIN)만 + 오류는 문구로 돌려준다, ⚡
   }
   assert.match(actions, /admin\.appUserRole !== "ADMIN"/);
   const finance = await readFile(FINANCE, "utf8");
-  assert.match(finance, /\["MONTHLY", "SHUTTLE"\]\.includes\(p\.type\) && \["PENDING", "OVERDUE"\]\.includes\(p\.status\)/);
+  assert.match(finance, /\["MONTHLY", "SHUTTLE", "OTHER"\]\.includes\(p\.type\) && \["PENDING", "OVERDUE"\]\.includes\(p\.status\)/);
   assert.match(finance, /key: "pos-charge"/);
 });
 
@@ -1456,7 +1457,7 @@ test("묶음 매칭(순수): 전부 미납·금액 그대로면 PAY, 하나라�
   v = run({ items: [items[0], { ...items[1], paymentAmount: 150000 }] });
   assert.match(v.reason, /1건의 금액이 바뀌었습니다/);
   v = run({ items: [items[0], { ...items[1], type: "UNIFORM" }] });
-  assert.match(v.reason, /수강료·셔틀비가 아닌/);
+  assert.match(v.reason, /현장 결제할 수 없는 종류/);
   v = run({ items: [items[0], { ...items[1], amount: 100000, paymentAmount: 100000 }] });
   assert.match(v.reason, /합계\(240000원\)가 요청 금액\(280000원\)과 다릅니다/);
   // 결제 합계·면세 합계는 묶음 합계와 비교(분할 포함)
@@ -1680,7 +1681,7 @@ test("묶음 매칭: 원장부 함수는 묶인 청구마다 «미납·금액 �
   const ledger = await readFile("src/lib/payment-ledger.ts", "utf8");
   const fn = ledger.slice(ledger.indexOf("export async function markPaymentsPaidTogether"), ledger.indexOf("/** 트랜잭션 안에서 쓰는 raw SQL"));
   assert.match(fn, /await prisma\.\$transaction\(async \(db\) => \{/);
-  assert.match(fn, /WHERE id = \$1 AND status IN \('PENDING', 'OVERDUE'\) AND amount = \$8::int AND type IN \('MONTHLY', 'SHUTTLE'\)/);
+  assert.match(fn, /WHERE id = \$1 AND status IN \('PENDING', 'OVERDUE'\) AND amount = \$8::int AND type IN \('MONTHLY', 'SHUTTLE', 'OTHER'\)/);
   assert.match(fn, /if \(changed\.length === 0\) \{\s*throw new Error/);
   assert.match(fn, /'PAYMENT_MARK_PAID'/, "취소 확정의 출처 확인(lastLedgerWriteIsThisCharge)이 읽는 값과 같다");
   assert.match(fn, /revalidatePaymentCaches\(\);/);

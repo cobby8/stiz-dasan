@@ -30,8 +30,8 @@ export const CHARGE_STATUS = Object.freeze({
 /** «열린» 요청 — 같은 청구서·같은 번호로 하나만 있을 수 있다(부분 유일 인덱스와 같은 목록). */
 export const OPEN_CHARGE_STATUSES = Object.freeze(["PENDING", "SENT"]);
 
-/** «현장 결제»를 만들 수 있는 청구서 종류 — 수강료·셔틀비(둘 다 면세, 원장 결정 D2). */
-export const CHARGEABLE_PAYMENT_TYPES = Object.freeze(["MONTHLY", "SHUTTLE"]);
+/** «현장 결제»를 만들 수 있는 청구서 종류 — 수강료·셔틀비·기타(모두 면세 — D2, 기타는 2026-11-08 원장 지시로 추가). */
+export const CHARGEABLE_PAYMENT_TYPES = Object.freeze(["MONTHLY", "SHUTTLE", "OTHER"]);
 
 /** «현장 결제»를 만들 수 있는 청구서 상태 — 미납만. */
 export const CHARGEABLE_PAYMENT_STATUSES = Object.freeze(["PENDING", "OVERDUE"]);
@@ -152,7 +152,7 @@ export function nonApprovedPayments(order) {
 export function chargeEligibility(payment) {
   if (!payment) return { ok: false, reason: "청구서를 찾지 못했습니다." };
   if (!CHARGEABLE_PAYMENT_TYPES.includes(String(payment.type))) {
-    return { ok: false, reason: "현장 결제는 수강료·셔틀비 청구서에만 쓸 수 있습니다." };
+    return { ok: false, reason: "현장 결제는 수강료·셔틀비·기타 청구서에만 쓸 수 있습니다." };
   }
   if (!CHARGEABLE_PAYMENT_STATUSES.includes(String(payment.status))) {
     return { ok: false, reason: "미납 청구서에만 현장 결제를 요청할 수 있습니다." };
@@ -344,7 +344,7 @@ export function decideChargeMatch({ request, site, items = null, approved = [], 
       return hold(`묶인 청구 ${n}건 중 ${notUnpaid.length}건이 미납이 아닙니다(${notUnpaid.map((it) => it?.status ?? "없음").join(", ")}).`);
     }
     if (items.some((it) => !CHARGEABLE_PAYMENT_TYPES.includes(String(it?.type)))) {
-      return hold("묶인 청구에 수강료·셔틀비가 아닌 청구가 있습니다.");
+      return hold("묶인 청구에 현장 결제할 수 없는 종류의 청구가 있습니다.");
     }
     const changed = items.filter((it) => Number(it?.paymentAmount) !== Number(it?.amount)).length;
     if (changed > 0) return hold(`요청을 만든 뒤 묶인 청구 ${changed}건의 금액이 바뀌었습니다.`);
@@ -562,7 +562,7 @@ export function maskStudentName(name) {
 
 /** 청구서 종류 → 사람 말 */
 export function paymentTypeLabel(type) {
-  return type === "SHUTTLE" ? "셔틀비" : type === "MONTHLY" ? "수강료" : "청구";
+  return type === "SHUTTLE" ? "셔틀비" : type === "MONTHLY" ? "수강료" : type === "OTHER" ? "기타" : "청구";
 }
 
 /** POS 상품명. 예: «2026년 11월 수강료(홍*동)» — 이름은 가린 값을 받는다. */

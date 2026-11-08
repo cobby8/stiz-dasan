@@ -14,8 +14,8 @@ export const BANK_TRANSFER_METHOD = "BANK_TRANSFER";
 export const BANK_TRANSFER_AUDIT_ACTION = "PAYMENT_BANK_TRANSFER_RECORD";
 /** 납부 처리할 수 있는 상태 — 미납·연체만. 이미 납부·환불·취소는 건너뛴다. */
 export const RECORDABLE_STATUSES = ["PENDING", "OVERDUE"] as const;
-/** 현장 결제(토스 POS)는 수강료·셔틀비만(원장 결정 D2 — 둘 다 면세) */
-export const POS_CHARGE_TYPES = ["MONTHLY", "SHUTTLE"] as const;
+/** 현장 결제(토스 POS)는 수강료·셔틀비·기타(모두 면세 — D2, 기타는 2026-11-08 원장 지시로 추가). 유니폼은 본사 직접 구매라 제외 */
+export const POS_CHARGE_TYPES = ["MONTHLY", "SHUTTLE", "OTHER"] as const;
 
 export const DEPOSITOR_NAME_MAX = 40;
 export const MEMO_MAX = 200;
@@ -134,7 +134,7 @@ export function posChargeAvailability(targets: Array<{ type: string; status: str
         return { enabled: false, reason: multi ? "미납·연체가 아닌 청구가 섞여 있어요. 미납·연체 청구만 현장 결제할 수 있어요." : "미납·연체 청구만 현장 결제할 수 있어요." };
     }
     if (targets.some((t) => !(POS_CHARGE_TYPES as readonly string[]).includes(t.type))) {
-        return { enabled: false, reason: multi ? "수강료·셔틀비가 아닌 청구가 섞여 있어요. 수강료·셔틀비만 현장 결제할 수 있어요." : "수강료·셔틀비만 현장 결제할 수 있어요." };
+        return { enabled: false, reason: multi ? "유니폼 청구가 섞여 있어요. 유니폼은 본사 직접 구매라 현장 결제할 수 없어요 — 유니폼을 빼고 골라 주세요." : "유니폼 청구는 현장 결제할 수 없어요(본사 직접 구매)." };
     }
     return { enabled: true };
 }

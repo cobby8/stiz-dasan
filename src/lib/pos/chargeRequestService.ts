@@ -255,7 +255,7 @@ const ITEMS_OF_R = `(SELECT i."paymentId", i.amount FROM "PosChargeRequestItem" 
  * 청구가 지워졌으면(LEFT JOIN 이 NULL) COALESCE 가 false 로 만들어 «어긋남»으로 센다.
  */
 const ALL_ITEMS_UNPAID_SQL = `NOT EXISTS (SELECT 1 FROM ${ITEMS_OF_R} it LEFT JOIN "Payment" p ON p.id = it."paymentId"
-                       WHERE NOT COALESCE(p.status IN ('PENDING', 'OVERDUE') AND p.amount = it.amount AND p.type IN ('MONTHLY', 'SHUTTLE'), false))
+                       WHERE NOT COALESCE(p.status IN ('PENDING', 'OVERDUE') AND p.amount = it.amount AND p.type IN ('MONTHLY', 'SHUTTLE', 'OTHER'), false))
       AND (SELECT sum(it.amount) FROM ${ITEMS_OF_R} it) = r.amount`;
 
 /** 요청 r 이 청구 $n 을 묶고 있나(대표 청구이거나 항목에 있거나) */
@@ -283,7 +283,7 @@ const INSERT_SQL = `WITH want AS (
         SELECT p.id, p.amount, p."studentId", w.ord
           FROM want w
           JOIN "Payment" p ON p.id = w.pid AND p.amount = w.amt
-         WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE')
+         WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE', 'OTHER')
       )
       INSERT INTO "PosChargeRequest" (
         "shortCode", "paymentId", amount, "taxFreeAmount", status, "expiresAt",
@@ -873,7 +873,7 @@ export async function listUnpaidForPlugin(query: string): Promise<PluginUnpaidIt
            FROM "Payment" p
            JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
            LEFT JOIN "Class" c ON c.id = p."classId"
-          WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE') AND p.amount > 0
+          WHERE p.status IN ('PENDING', 'OVERDUE') AND p.type IN ('MONTHLY', 'SHUTTLE', 'OTHER') AND p.amount > 0
             AND ($1::text = '' OR s.name ILIKE '%' || $1::text || '%')
           ORDER BY p.year DESC NULLS LAST, p.month DESC NULLS LAST, s.name ASC
           LIMIT 30`,

@@ -95,7 +95,10 @@ test("현장 결제(POS): 수강료·셔틀비 미납 — 1건, 또는 같은 �
   assert.deepEqual(rules.posChargeAvailability([{ type: "SHUTTLE", status: "OVERDUE" }]), { enabled: true });
   const other = rules.posChargeAvailability([{ type: "UNIFORM", status: "PENDING" }]);
   assert.equal(other.enabled, false);
-  assert.equal(other.reason, "수강료·셔틀비만 현장 결제할 수 있어요.");
+  assert.equal(other.reason, "유니폼 청구는 현장 결제할 수 없어요(본사 직접 구매).");
+  // 기타 청구도 면세로 현장 결제 가능(2026-11-08 원장 지시)
+  assert.deepEqual(rules.posChargeAvailability([{ type: "OTHER", status: "PENDING" }]), { enabled: true });
+  assert.deepEqual(rules.posChargeAvailability([{ type: "OTHER", status: "PENDING", studentId: "s1" }, { type: "OTHER", status: "PENDING", studentId: "s1" }]), { enabled: true });
   assert.equal(rules.posChargeAvailability([{ type: "MONTHLY", status: "PAID" }]).enabled, false);
   // 같은 학생 여러 건(수강료+셔틀비, 연체 섞임) → 활성
   const same = [
@@ -112,7 +115,7 @@ test("현장 결제(POS): 수강료·셔틀비 미납 — 1건, 또는 같은 �
   // 대상 아닌 유형·이미 납부가 섞이면 막는다
   const uniform = rules.posChargeAvailability([same[0], { type: "UNIFORM", status: "PENDING", studentId: "s1" }]);
   assert.equal(uniform.enabled, false);
-  assert.match(uniform.reason, /수강료·셔틀비가 아닌 청구가 섞여 있어요/);
+  assert.match(uniform.reason, /유니폼 청구가 섞여 있어요/);
   const paid = rules.posChargeAvailability([same[0], { type: "MONTHLY", status: "PAID", studentId: "s1" }]);
   assert.equal(paid.enabled, false);
   assert.match(paid.reason, /미납·연체가 아닌 청구가 섞여 있어요/);
