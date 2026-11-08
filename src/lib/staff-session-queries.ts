@@ -6,6 +6,7 @@ import {
   requireStaffSeasonalSessionAccess,
 } from "@/lib/staff-class-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
 
 export type StaffTodayClass = {
   id: string;
@@ -62,6 +63,8 @@ export type StaffSessionStudent = {
   // 학부모가 미리 넣은 결석 신고. 선생님이 모르고 출석을 찍으면 신고가 헛것이 된다.
   // 정규 수업에만 있다(방학특강은 좌석 기준 별도 흐름이라 null).
   absenceReport: { reason: string; status: string } | null;
+  // 다른 반 아이가 이 수업에 보강 온 경우 true(정규 수업만). 출석 처리하면 보강 예약이 «참석»·보강권 «사용»이 된다.
+  makeup: boolean;
 };
 
 type TodayClassRow = Omit<StaffTodayClass, "startedAt" | "kind" | "scheduleKey" | "sessionDateId"> & {
@@ -351,6 +354,7 @@ export async function getStaffSessionStudents(
       arrivedAt: toIso(row.arrivedAt),
       // 방학특강은 좌석(SpecialProgramAbsence) 기준의 별도 결석 흐름을 쓴다.
       absenceReport: null,
+      makeup: false,
     }));
   }
 
@@ -386,7 +390,7 @@ export async function getStaffSessionStudents(
     sessionKinds[0]?.date ?? null,
   );
   // 정규는 studentId 가 곧 로스터 키다(기존과 동일). attendanceKey=studentId.
-  return rows.map((row) => ({
+  const regular: StaffSessionStudent[] = rows.map((row) => ({
     id: row.id,
     attendanceKey: row.id,
     studentId: row.id,
@@ -399,5 +403,42 @@ export async function getStaffSessionStudents(
     absenceReport: row.absenceReason
       ? { reason: row.absenceReason, status: row.absenceStatus ?? "REPORTED" }
       : null,
+    makeup: false,
   }));
+
+  // 보강 온 아이 — 이 반·이 날(KST)에 보강 예약(예약됨·참석)된 다른 반 학생을 명단 뒤에 «보강»으로 붙인다.
+  // 조건은 출결 저장(saveStaffAttendance)과 같은 makeupOnClassDateSql 을 쓴다(한쪽만 바뀌면 «보이는데 저장 거부»가 된다).
+  const sessionYmd = sessionKinds[0]?.date ?? null;
+  if (!sessionYmd) return regular;
+  const makeupRows = await prisma.$queryRawUnsafe<
+    Array<{ id: string; name: string; status: StaffSessionStudent["status"]; attendanceNote: string | null; arrivedAt: Date | string | null }>
+  >(
+    `SELECT DISTINCT ON (st.id) st.id, st.name, a.status, a.note AS "attendanceNote", a."arrivedAt"
+       FROM "MakeupSession" ms
+       JOIN "Student" st ON st.id = ms."studentId" AND ${notMergedStudent("st")}
+       LEFT JOIN "Attendance" a ON a."sessionId" = $1 AND a."studentId" = st.id
+      WHERE ${makeupOnClassDateSql("ms", "$2", "$3")}
+      ORDER BY st.id`,
+    sessionId,
+    classId,
+    sessionYmd,
+  );
+  const regularIds = new Set(regular.map((row) => row.id));
+  const makeup: StaffSessionStudent[] = makeupRows
+    .filter((row) => !regularIds.has(row.id)) // 자기 반 보강(이미 정규 명단에 있음)은 두 번 띄우지 않는다
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+    .map((row) => ({
+      id: row.id,
+      attendanceKey: row.id,
+      studentId: row.id,
+      name: row.name,
+      grade: null,
+      phone: null,
+      status: row.status,
+      attendanceNote: row.attendanceNote,
+      arrivedAt: toIso(row.arrivedAt),
+      absenceReport: null,
+      makeup: true,
+    }));
+  return [...regular, ...makeup];
 }

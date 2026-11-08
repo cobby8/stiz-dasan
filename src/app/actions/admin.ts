@@ -84,6 +84,7 @@ import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
@@ -1493,23 +1494,9 @@ export async function saveAttendance(classId: string, date: string, records: { s
         );
         const eligibleIds = new Set(eligible.map(row => row.studentId));
         if (records.some(row => !eligibleIds.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
-        // 세션 생성 또는 조회
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL LIMIT 1`,
-            classId, date
-        );
-        let sessionId: string;
-        if (existing.length > 0) {
-            sessionId = existing[0].id;
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Session" (id, "classId", date, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, NOW(), NOW())
-                 RETURNING id`,
-                classId, date
-            );
-            sessionId = rows[0].id;
-        }
+        // 세션 생성 또는 조회 — 코치 앱·랠리즈와 같은 판정 함수 하나를 쓴다(같은 반·같은 날 = 기록 하나).
+        // 예전엔 키 없이 새 기록을 만들어, 그 뒤 코치가 수업을 시작하면 기록이 둘로 갈라질 수 있었다.
+        const sessionId = await prisma.$transaction(tx => findOrCreateRegularSession(tx, { classId, dateYmd: date }));
 
         // 각 학생 출석 기록 upsert
         for (const rec of records) {
@@ -2994,18 +2981,11 @@ export async function saveSessionLog(data: {
             const ids = new Set(eligible.map(row => row.studentId));
             if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
         }
-        // ── 1. 해당 classId + date로 기존 Session 검색 ──
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date LIMIT 1`,
-            data.classId, data.date
-        );
-
-        let sessionId: string;
-
-        if (existing.length > 0) {
-            // ── 2. 기존 Session이 있으면 UPDATE ──
-            sessionId = existing[0].id;
-            await prisma.$executeRawUnsafe(
+        // ── 1~3. 같은 반·같은 날 기록을 찾거나 만들고(코치 앱·출결 화면과 같은 판정 함수) 내용을 덮어쓴다 ──
+        // 예전엔 키 없이 새 기록을 만들어, 그 뒤 코치가 수업을 시작하면 기록이 둘로 갈라질 수 있었다.
+        const sessionId = await prisma.$transaction(async tx => {
+            const id = await findOrCreateRegularSession(tx, { classId: data.classId, dateYmd: data.date });
+            await tx.$executeRawUnsafe(
                 `UPDATE "Session" SET
                     topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()
                  WHERE id = $5`,
@@ -3013,23 +2993,10 @@ export async function saveSessionLog(data: {
                 data.content || null,
                 data.photosJSON || null,
                 data.coachId || null,
-                sessionId,
+                id,
             );
-        } else {
-            // ── 3. 없으면 새 Session INSERT ──
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Session" (id, "classId", date, topic, content, "photosJSON", "coachId", "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, NOW(), NOW())
-                 RETURNING id`,
-                data.classId,
-                data.date,
-                data.topic || null,
-                data.content || null,
-                data.photosJSON || null,
-                data.coachId || null,
-            );
-            sessionId = rows[0].id;
-        }
+            return id;
+        });
 
         // ── 4. 출석 데이터가 있으면 각 학생별 Attendance UPSERT ──
         // 기존 saveAttendance와 동일한 ON CONFLICT 패턴 사용

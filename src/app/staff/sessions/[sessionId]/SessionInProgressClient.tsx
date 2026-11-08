@@ -488,12 +488,19 @@ export default function SessionInProgressClient({
             const fee = feesByRoster.get(student.id);
             return <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
               <div className="flex items-center justify-between">
-                <strong className="text-base dark:text-white">{student.name}</strong>
+                <span className="flex items-center gap-1.5">
+                  <strong className="text-base dark:text-white">{student.name}</strong>
+                  {/* 다른 반 아이가 보강 온 경우. 출석을 찍으면 보강권이 사용 처리되고, 결석이면 보강권은 그대로 남는다. */}
+                  {student.makeup && (
+                    <span className="rounded-md bg-[var(--color-academy-primary-soft)] px-1.5 py-0.5 text-xs font-black text-[var(--brand-accent)]">보강</span>
+                  )}
+                </span>
                 {student.status
                   ? <StatusPill tone={STATUS_TONE[student.status]} icon={STATUS_ICON[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
                   : <StatusPill tone="neutral" icon="help">미확인</StatusPill>}
               </div>
-              <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
+              {/* 보강 온 아이는 이 반 수강생이 아니라 이 반 수강료를 보여주지 않는다. */}
+              {!student.makeup && <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
                 <span className="text-xs font-bold text-[var(--color-academy-ink)]">
                   {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
                     <span className="text-[var(--color-academy-muted)]">{feeData ? monthlyFeeLabel(feeData.month, fee?.period, fee?.sourceLabel) : "수강료"} </span>
@@ -504,7 +511,7 @@ export default function SessionInProgressClient({
                   {!feeLoading && !feeError && (fee?.statusLabel || "확인 필요")}
                   <span className="material-symbols-outlined text-base" aria-hidden="true">chevron_right</span>
                 </span>
-              </button>
+              </button>}
               {/* 학부모가 미리 넣은 결석 신고. 이게 안 보이면 선생님이 모르고 출석을 찍어
                   학부모가 미리 알린 의미가 사라진다. 확정건은 원장이 확인한 것이라 따로 표시한다. */}
               {student.absenceReport && (

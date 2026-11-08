@@ -163,4 +163,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: `gym-rental-rules.ts` 의 `RENTAL_APPLICANT_TEMPLATES`(#{변수} 틀) + `buildRentalApplicantMessage` 가 본문과 variables 를 같은 맵에서 만든다(알림톡은 등록 문구와 한 글자라도 다르면 실패). 발송은 `sendTrackedSms({ alimtalk })` → notification.ts 가 `sendMessageDetailed` 에 그대로 전달(장부 유지, 다른 호출은 alimtalk 없음 = 기존 문자). 템플릿 id 는 env `RENTAL_ALIMTALK_*`, 실제 알림톡 시도는 /admin/sms 규칙 채널이 알림톡 + 외부 알림톡 채널 켜짐 + SOLAPI_KAKAO_PF_ID 일 때만. 심사 문서 `docs/kakao-alimtalk-rental-templates.md` 는 테스트가 틀과 글자 대조. 재원생 무료 = 로그인한 PARENT 계정(getVerifiedParentState 통과)의 «내 자녀»(`childAccessSql("s","$1")` — 가족 공유·본인 연결 포함) 중 재원(병합 제외+시작된 ACTIVE 수강+끝난 반 제외) 학생만(`listRentalMemberStudents`). 이름·번호 대조는 쓰지 않는다(맞히기 공격). 공개 /rental 은 정적 유지, 로그인 여부는 액션 `getRentalMemberContext` 로 묻는다.
+### [2026-11-08] 정규 수업 기록 «같은 반·같은 날 = 하나» = regularSession.ts 한 곳 · 보강 온 아이 출석 = makeup-attendance.ts
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 정규 Session 자연키는 `regularSessionKey(반id, YYYY-MM-DD)` 하나. 관리자 출결(saveAttendance)·수업일지(saveSessionLog)·랠리즈 반영은 `findOrCreateRegularSession(tx, …)`, 코치 «수업 시작»·«예정 내용»은 `adoptRegularSessionKey(tx, …)`+`regularSessionKey`(모두 트랜잭션 안·키별 advisory 잠금). 키 없는 옛 기록은 «입양»(키를 붙임)해 둘로 갈라지지 않는다. Session 을 새로 만드는 경로를 추가하면 반드시 이 파일을 거친다(테스트 `regular-session-single-record` 가 admin.ts 의 키 없는 INSERT 를 막음). 보강: 코치 출석부 명단은 `makeupOnClassDateSql`(makeupDate timestamptz 에 시간대 한 번)로 이 반·이 날 BOOKED/ATTENDED 예약 아이를 «보강»으로 붙이고, 출결 저장도 같은 조건으로 판정 → `applyMakeupAttendanceInTx`(lockCompensation·FOR UPDATE·조건부 UPDATE) 뒤 기존 `syncCreditForMakeupSession`(ATTENDED→USED·BOOKED→RESERVED). 출석·지각=참석(같은 날 한 건만), 결석=보강권 안 씀·참석이었으면 되돌림. 보강 아이는 `syncCreditForRegularSession`(결석 보강권 발급)을 타지 않는다.
 - **참조횟수**: 0

@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { syncCreditForMakeupSession, syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { applyMakeupAttendanceInTx, findMakeupBookings } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess } from "@/lib/staff-class-access";
 import { deliverParentNotification, getClassParentRecipients } from "@/lib/staff-notifications";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { adoptRegularSessionKey, regularSessionKey } from "@/lib/regular/regularSession";
 
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
@@ -249,8 +251,12 @@ export async function savePlannedClassContent(input: {
     return { ok: false as const, message: "수업 날짜를 다시 확인해 주세요." };
   }
 
-  const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : `${input.classId}:${input.date}`;
-  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+  // 정규 수업 키는 관리자 출결·랠리즈와 같은 함수(regularSessionKey)로 만든다.
+  const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : regularSessionKey(input.classId, input.date);
+  const rows = await prisma.$transaction(async (tx) => {
+    // 관리자가 먼저 출결을 저장해 «키 없는» 기록이 있으면 그 기록에 키를 붙여 같은 기록을 쓴다(기록 갈라짐 방지).
+    if (!sessionDateId) await adoptRegularSessionKey(tx, input.classId, input.date);
+    return tx.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "Session" (
        id, "classId", date, "sessionKey", status, "plannedContent", "coachId", "specialProgramSessionDateId", "createdAt", "updatedAt"
      ) VALUES (
@@ -267,7 +273,8 @@ export async function savePlannedClassContent(input: {
     input.plannedContent.trim() || null,
     access.coachId,
     sessionDateId,
-  );
+    );
+  });
 
   if (!rows[0]) {
     return { ok: false as const, message: "진행 중이거나 종료된 수업의 예정 내용은 여기서 바꿀 수 없습니다." };
@@ -313,7 +320,10 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
   // 정규(비seasonal): attendanceKey = studentId. 기존 동작 그대로.
   const studentId = input.attendanceKey;
   const enrolled = await isSessionRosterStudent(session.classId, session.sessionDateId, studentId, session.date);
-  if (!enrolled) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
+  // 정규 명단에 없으면 «이 반·이 날 보강 예약된 아이»인지 본다(명단 조회와 같은 조건 — makeupOnClassDateSql).
+  const sessionYmd = String(session.date).slice(0, 10);
+  const isMakeup = !enrolled && (await findMakeupBookings(prisma, { studentId, classId: session.classId, dateYmd: sessionYmd })).length > 0;
+  if (!enrolled && !isMakeup) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
 
   const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
@@ -331,13 +341,30 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
     input.sessionId, studentId, input.status, input.note?.trim() || null, access.staff.appUserId,
   );
 
-  // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수. 실패해도 출결은 유지한다(위와 같은 이유).
-  try {
-    await syncCreditForRegularSession({ sessionId: input.sessionId, studentId, status: input.status });
-  } catch (error) {
-    console.error("[saveStaffAttendance] 보강권 처리 실패(출결은 저장됨)", {
-      sessionId: input.sessionId, studentId, error,
-    });
+  if (isMakeup) {
+    // 보강 온 아이 — 이 반 결석으로 보강권을 새로 주면 안 된다(syncCreditForRegularSession 을 타지 않는다).
+    // 출석·지각이면 보강 예약 «참석» → 보강권 «사용», 결석이면 보강권을 쓰지 않고 참석 표시였으면 «예약됨»으로 되돌린다.
+    // 실패해도 출결은 유지한다(위와 같은 이유).
+    try {
+      const applied = await prisma.$transaction((tx) => applyMakeupAttendanceInTx(tx, {
+        studentId, classId: session.classId, dateYmd: sessionYmd, status: input.status,
+      }));
+      // 보강권 상태 전이는 관리자 보강 상태 변경(updateMakeupStatus)과 같은 함수를 쓴다: ATTENDED→USED, BOOKED→RESERVED.
+      for (const t of applied) await syncCreditForMakeupSession({ makeupSessionId: t.id, status: t.to });
+    } catch (error) {
+      console.error("[saveStaffAttendance] 보강 예약·보강권 처리 실패(출결은 저장됨)", {
+        sessionId: input.sessionId, studentId, error,
+      });
+    }
+  } else {
+    // 보강권 — 결석이면 발급, 출석·지각으로 정정되면 회수. 실패해도 출결은 유지한다(위와 같은 이유).
+    try {
+      await syncCreditForRegularSession({ sessionId: input.sessionId, studentId, status: input.status });
+    } catch (error) {
+      console.error("[saveStaffAttendance] 보강권 처리 실패(출결은 저장됨)", {
+        sessionId: input.sessionId, studentId, error,
+      });
+    }
   }
 
   if (changed && (input.status === "PRESENT" || input.status === "LATE")) {
@@ -611,12 +638,17 @@ export async function startClassSession(input: {
       );
       if (!validDate[0]) return { ok: false, code: "INVALID_INPUT", message: "오늘 예정된 특강 회차가 아닙니다." };
     }
-    const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : `${classId}:${date}`;
+    // 정규 수업 키는 관리자 출결·랠리즈와 같은 함수(regularSessionKey)로 만든다.
+    const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : regularSessionKey(classId, date);
     const result = await prisma.$transaction(async (tx) => {
       // 교사별 잠금은 두 휴대폰에서 동시에 눌러도 한 수업만 열리게 하는 안전장치입니다.
       // pg_advisory_xact_lock는 void를 반환한다. $queryRawUnsafe로 부르면 Prisma가 void 컬럼 역직렬화에 실패(P2010)하므로,
       // 결과를 읽지 않는 $executeRawUnsafe로 호출한다(락은 fire-and-forget).
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, access.staff.appUserId);
+
+      // 관리자가 먼저 출결을 저장해 «키 없는» 같은 반·같은 날 기록이 있으면, 새로 만들지 않고 그 기록에 키를 붙여 이어 쓴다.
+      // (예전엔 여기서 키로만 찾아 기록이 둘로 갈라질 수 있었다)
+      if (!sessionDateId) await adoptRegularSessionKey(tx, classId, date);
 
       // 같은 수업의 빠른 중복 클릭은 새 장부를 만들지 않고 기존 장부로 복귀합니다.
       const existing = await tx.$queryRawUnsafe<SessionStartRow[]>(
