@@ -458,3 +458,20 @@ test("확정 장부가 있는 학생은 장부 뒤 추가된 반이 정렬상 �
  assert.equal(row("kid-1:wed").shuttleAmount,20000);
  assert.ok(!row("kid-1:mon").basis.some(b=>/셔틀 명단 있음/.test(b))); // 새 셔틀비 제안·미제안 문구 없음
 });
+// ── 원장 결정 2026-11-09: 무료 거점 셔틀·대회준비반 30만원 묶음이 화면 행까지 이어지는지 ──
+test("무료 거점(1호점 앞 버스정류장)만 타는 학생은 셔틀비 0원, 근거에 무료 거점이 남는다",async()=>{
+ const db=pricingDatabase();
+ db.state.shuttleStops=[{serviceMonth:"2026-11",studentId:"kid-1",studentName:"형",direction:"BOARD",stopName:"1호점 앞 버스정류장"},{serviceMonth:"2026-11",studentId:"kid-1",studentName:"형",direction:"ALIGHT",stopName:"새봄중학교 앞 버스정류장"}];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows.find(r=>r.id==="kid-1:mon");
+ assert.equal(row.shuttleAmount,0);
+ assert.ok(row.basis.some(b=>/무료 거점\(1호점 앞 버스정류장\)/.test(b)));
+});
+test("대회준비반(주말+수요일)+일반 반 1개 학생은 첫 대회준비반 행에 300,000원, 나머지 0원",async()=>{
+ const db=pricingDatabase();
+ const comp={programId:"comp",programName:"대회준비반",price:300000,priceWeek1:null,priceWeek2:null,priceWeek3:null,priceDaily:null,runsShuttle:true,shuttleFeeOverride:null};
+ const base={...db.state.enrollments[0],studentId:"ace",studentName:"대표",parentId:null,birthDate:null};
+ db.state.enrollments=[{...base,...comp,classId:"a-sun8",dayOfWeek:"Sun",slotKey:"Sun-8"},{...base,...comp,classId:"b-wed7",dayOfWeek:"Wed",slotKey:"Wed-7"},{...base,...hobbyProgram,classId:"c-fri5",dayOfWeek:"Fri"}];
+ const view=await readWorkbench(db.tx,"2026-11",true),row=id=>view.rows.find(r=>r.id===id);
+ assert.deepEqual(["ace:a-sun8","ace:b-wed7","ace:c-fri5"].map(id=>row(id).baseAmount),[300000,0,0]);
+ assert.ok(row("ace:a-sun8").basis.some(b=>/대회준비반 월 300,000원 고정/.test(b)));
+});

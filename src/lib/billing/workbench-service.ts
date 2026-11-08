@@ -75,7 +75,8 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   const seasonalCredits = await exists(tx,"SpecialProgramCredit") ? take(await tx.$queryRawUnsafe<Array<{id:string;studentId:string|null;amount:number;status:string;updatedAt:Date|string}>>(`SELECT cr.id,a."convertedStudentId" AS "studentId",cr.amount,cr.status,cr."updatedAt" FROM "SpecialProgramCredit" cr JOIN "SpecialProgramApplicationItem" it ON it.id=cr."applicationItemId" JOIN "SpecialProgramApplication" a ON a.id=it."applicationId" WHERE cr.status='ACTIVE' ORDER BY cr.id LIMIT ${limit}`)) : [];
   // 그 달 셔틀 명단(셔틀 명단 탭에서 편집하는 RegularShuttleStop). 학생 연결(studentId)된 승차·하차 행만 이용자로 본다.
   // 이름만 있고 학생 연결이 없는 행은 동명이인 오청구 위험이 있어 자동 제안에 쓰지 않고 안내만 한다.
-  const shuttleStops = await exists(tx,"RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string}>>(`SELECT DISTINCT "studentId","studentName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId" LIMIT ${limit}`,month)) : [];
+  // 무료 거점(1호점 앞 버스정류장) 판정에 쓰도록 방향·정류장 이름도 함께 읽는다.
+  const shuttleStops = await exists(tx,"RegularShuttleStop") ? take(await tx.$queryRawUnsafe<Array<{studentId:string|null;studentName:string;direction:string;stopName:string}>>(`SELECT DISTINCT "studentId","studentName",direction,"stopName" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND direction IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName")<>'' ORDER BY "studentName","studentId",direction,"stopName" LIMIT ${limit}`,month)) : [];
   const shuttleRiders = new Set(shuttleStops.map(r=>r.studentId).filter((v):v is string=>Boolean(v)));
   const unlinkedShuttleNames = [...new Set(shuttleStops.filter(r=>!r.studentId).map(r=>r.studentName))];
   for(const credit of credits) if(credit.basis?.originMonth && credit.basis.classId) {
@@ -124,14 +125,16 @@ export async function readWorkbench(tx: WorkbenchTx, month: string, writesEnable
   };
   const scopes = new Map<string, ReturnType<typeof scopeOf>>(enrollments.map(e => [`${e.studentId}:${e.classId}`, scopeOf(e)]));
   const billable = enrollments.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.excluded);
-  // (1) 주N회 요금: 확정 장부가 없는 청구 대상 반만 학생·프로그램별로 묶어 계산한다.
+  // (1) 수강료: 확정 장부가 없는 청구 대상 반만 학생 단위로 계산한다(전체 주 횟수 N 기준 주N회 요금·대회준비반 30만원 묶음).
   const tuitionPlans = planWeeklyTuition(billable.filter(e => !scopes.get(`${e.studentId}:${e.classId}`)!.classReg).map(e => ({
-    key: `${e.studentId}:${e.classId}`, studentId: e.studentId, programId: e.programId ?? null, programName: e.programName ?? null,
+    key: `${e.studentId}:${e.classId}`, studentId: e.studentId, programId: e.programId ?? null, programName: e.programName ?? null, dayOfWeek: e.dayOfWeek,
     price: e.price, priceWeek1: e.priceWeek1 ?? null, priceWeek2: e.priceWeek2 ?? null, priceWeek3: e.priceWeek3 ?? null, priceDaily: e.priceDaily ?? null })));
   // (2) 셔틀비: 그 달 명단에 있는 학생만, 청구 대상 반의 주 횟수로 제안한다.
   const shuttlePlans = new Map<string, ShuttlePlan>();
   for (const studentId of new Set(billable.map(e => e.studentId))) shuttlePlans.set(studentId, planShuttleFee(shuttleRiders.has(studentId),
-    billable.filter(e => e.studentId === studentId).map(e => ({ dayOfWeek: e.dayOfWeek, slotKey: e.slotKey ?? null, runsShuttle: Boolean(e.runsShuttle), shuttleFeeOverride: e.shuttleFeeOverride ?? null }))));
+    billable.filter(e => e.studentId === studentId).map(e => ({ dayOfWeek: e.dayOfWeek, slotKey: e.slotKey ?? null, runsShuttle: Boolean(e.runsShuttle), shuttleFeeOverride: e.shuttleFeeOverride ?? null })),
+    // 그 학생의 명단 정류장(무료 거점 판정)
+    shuttleStops.filter(r => r.studentId === studentId).map(r => ({ direction: r.direction, stopName: r.stopName }))));
   // (3) 형제할인: 같은 학부모의 «이번 달 청구 대상 반이 있는» 자녀가 2명 이상이면 대상.
   const siblingStudents = siblingDiscountStudents(billable.map(e => ({ studentId: e.studentId, parentId: e.parentId ?? null, birthDate: e.birthDate ?? null, name: e.studentName })));
   const rows: WorkbenchRow[] = enrollments.map(e => {
