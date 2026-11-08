@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   PAYMENT_METHODS,
@@ -19,7 +20,19 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: "미납", OVERDUE: "연체", PAID: "납부 완료", REFUNDED: "환불",
 };
 
-export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[] }) {
+/** 온라인 결제가 안 될 때 안내할 학원 연락처(학원 설정값). 없으면 null */
+export type PaymentContact = { phone: string | null; kakaoChannelUrl: string | null };
+
+export default function PaymentRequestClient({
+  rows,
+  payReady = false,
+  contact = { phone: null, kakaoChannelUrl: null },
+}: {
+  rows: ParentPaymentRow[];
+  /** 온라인 결제(토스 등) 설정이 끝났는가 — 결제 화면과 같은 판정(getPaymentProviderConfig) */
+  payReady?: boolean;
+  contact?: PaymentContact;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
@@ -131,6 +144,8 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
             const claimPending = row.pending.find((item) => item.kind === "PAYMENT_CLAIM");
             const receiptPending = row.pending.find((item) => item.kind === "RECEIPT");
             const open = openId === row.paymentId;
+            // 온라인 결제 버튼을 보여 줄 조건: 결제 설정 완료 + 청구서 있음 + 대표 보호자(마이페이지 홈과 같은 기준)
+            const canPayOnline = payReady && Boolean(row.invoiceId) && row.canCheckout;
             return (
               <li key={row.paymentId} className="rounded-2xl bg-white p-4 shadow-sm dark:bg-gray-800">
                 <div className="flex items-start justify-between gap-2">
@@ -191,14 +206,67 @@ export default function PaymentRequestClient({ rows }: { rows: ParentPaymentRow[
                   </a>
                 )}
 
-                {/* 미납이면 입금 확인, 납부 완료면 영수증 — 상황에 맞는 버튼 하나만 보여준다. */}
+                {/* 미납 + 대표 보호자 + 결제 설정 완료 → 기존 결제 화면(/payments/[청구서])으로 보낸다.
+                    결제 로직·금액(면세 포함)은 그 화면이 그대로 처리한다. 여기서는 길만 연결한다. */}
+                {unpaid && !claimPending && canPayOnline && (
+                  <Link
+                    href={`/payments/${encodeURIComponent(row.invoiceId!)}`}
+                    className="mt-3 flex min-h-12 w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)]"
+                  >
+                    <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">credit_card</span>
+                    결제하기
+                  </Link>
+                )}
+
+                {/* 결제 버튼을 못 보여 줄 때는 눌리지 않는 버튼 대신 «왜·어떻게»를 알려 준다. */}
+                {unpaid && !claimPending && !canPayOnline && (
+                  <div className="mt-3 rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
+                    <p className="flex items-center gap-1.5 font-bold">
+                      <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">account_balance</span>
+                      {!row.canCheckout ? "온라인 결제는 대표 보호자 계정에서 할 수 있어요" : "지금은 온라인 결제를 쓸 수 없어요"}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                      학원 계좌로 입금하신 뒤 아래 «입금했어요 알리기»를 눌러 주세요. 입금 계좌는 학원에 문의해 주세요.
+                    </p>
+                    {(contact.phone || contact.kakaoChannelUrl) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {contact.phone && (
+                          <a
+                            href={`tel:${contact.phone.replace(/[^0-9+]/g, "")}`}
+                            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-bold"
+                          >
+                            <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">call</span>
+                            {contact.phone}
+                          </a>
+                        )}
+                        {contact.kakaoChannelUrl && (
+                          <a
+                            href={contact.kakaoChannelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-xs font-bold"
+                          >
+                            <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">chat</span>
+                            카카오 채널로 문의
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 계좌로 따로 입금한 경우를 위한 기존 흐름 — 결제 버튼이 있으면 보조 버튼으로 내려 준다. */}
                 {unpaid && !claimPending && (
                   <button
                     type="button"
                     onClick={() => setOpenId(open ? null : row.paymentId)}
-                    className="mt-3 min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)]"
+                    className={
+                      canPayOnline
+                        ? "mt-2 min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] text-sm font-bold text-[var(--color-academy-muted)]"
+                        : "mt-3 min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)]"
+                    }
                   >
-                    입금했어요 알리기
+                    {canPayOnline ? "이미 계좌로 입금했어요" : "입금했어요 알리기"}
                   </button>
                 )}
                 {row.status === "PAID" && !receiptPending && !row.receiptUrl && (

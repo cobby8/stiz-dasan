@@ -34,6 +34,10 @@ export type ParentPaymentRow = {
   dueDate: string | null;
   paidDate: string | null;
   invoiceNo: string | null;
+  /** 온라인 결제 화면(/payments/[invoiceId])으로 가는 청구서 id. 청구서가 아직 없으면 null */
+  invoiceId: string | null;
+  /** 결제 담당(대표) 보호자인가 — 마이페이지 홈과 같은 기준(학생의 parentId 가 본인). 연결 가족은 결제 버튼 대신 안내만 본다. */
+  canCheckout: boolean;
   receiptUrl: string | null;
   /** 진행 중인 요청(종류별로 최대 한 건씩) */
   pending: { id: string; kind: string; createdAt: string }[];
@@ -47,7 +51,8 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
             p.description, p.amount, p.status, p."receiptUrl",
             to_char(p."dueDate",'YYYY-MM-DD') AS "dueDate",
             to_char(p."paidDate",'YYYY-MM-DD') AS "paidDate",
-            i."invoiceNo"
+            i."invoiceNo", i.id AS "invoiceId",
+            (s."parentId" = $1) AS "canCheckout"
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
        LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
@@ -80,6 +85,8 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
     dueDate: row.dueDate ?? null,
     paidDate: row.paidDate ?? null,
     invoiceNo: row.invoiceNo ?? null,
+    invoiceId: row.invoiceId ?? null,
+    canCheckout: row.canCheckout === true,
     receiptUrl: row.receiptUrl ?? null,
     pending: requests
       .filter((item) => item.paymentId === row.paymentId && item.status === "PENDING")

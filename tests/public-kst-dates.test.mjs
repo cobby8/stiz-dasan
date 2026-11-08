@@ -29,6 +29,8 @@ function loadPage(file, overrides = {}) {
     if (id === "next/navigation") return { notFound: () => { throw new Error("not found"); } };
     if (id === "@/lib/sanitize") return { sanitizeHtml: (value) => value };
     if (id === "@/lib/publicMetadata") return { buildPublicMetadata: (value) => value };
+    // 공지 상세가 generateMetadata 용으로 불러온다(메타 자체는 tests/notice-metadata.test.mjs 가 검증)
+    if (id === "@/lib/noticeMetadata") return { buildNoticeMetadata: () => ({}) };
     if (id === "@/lib/noticeContent") return { stripHtmlForPreview: (value) => value, toNoticeHtml: (value) => value, isHtmlContent: () => false, isImageAttachment: () => false };
     if (id === "@/lib/queries") return { getNotices: async () => [notice], getNoticeById: async () => notice, getAcademySettings: async () => ({ contactPhone: "" }) };
     if (id.startsWith("@/components/") || id === "./GalleryLightboxController") return { default: passthrough };
