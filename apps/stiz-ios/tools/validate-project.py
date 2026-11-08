@@ -50,7 +50,11 @@ assert all(not item["NSPrivacyCollectedDataTypeTracking"] for item in privacy["N
 assert info["ITSAppUsesNonExemptEncryption"] is False, "HTTPS 표준 암호화만 사용(수출 규정 면제)"
 workflow = (root.parents[1] / "codemagic.yaml").read_text(encoding="utf-8")
 validate_workflows(workflow)
-assert "bdr-asc-key" not in workflow and "mac_mini_m2" in workflow
+# 업턴랩스 팀 키(bdr-asc-key)는 스토어 작업에만 — BDR 앱과 함께 쓴다(원장 결정 2026-11-08). 다른 작업에서는 금지.
+before_store, store_part = workflow.split("\n  stiz-ios-app-store:", 1)
+assert "app_store_connect:" not in re.sub(r"(?m)^\s*#.*$", "", before_store), "시뮬레이터·격리 작업에 스토어 키 금지"
+assert "app_store_connect: bdr-asc-key" in store_part
+assert "mac_mini_m2" in workflow
 view = (root / "STIZ/WebViewController.swift").read_text(encoding="utf-8")
 assert "WKContentRuleListStore.default().compileContentRuleList" in view
 assert "guard sandboxProtectionReady else { return }" in view, "통신 차단 준비 전 페이지 로드 금지"
