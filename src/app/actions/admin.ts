@@ -84,7 +84,7 @@ import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
-import { findOrCreateRegularSession } from "@/lib/regular/regularSession";
+import { findOrCreateRegularSession, resolveSessionLogTarget } from "@/lib/regular/regularSession";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
@@ -2963,6 +2963,7 @@ export async function saveSessionLog(data: {
     content?: string;       // 수업 상세 내용
     photosJSON?: string;    // 사진 URL 배열 JSON 문자열 (클라이언트에서 JSON.stringify 완료)
     coachId?: string;       // 담당 코치 ID
+    sessionId?: string;     // 수정 모드: 고칠 기록 id(방학특강 회차 기록일 수도 있다). 없으면 새로 작성
     attendances?: Array<{   // 출석 데이터 (선택)
         studentId: string;
         status: string;     // PRESENT, ABSENT, LATE
@@ -2981,10 +2982,11 @@ export async function saveSessionLog(data: {
             const ids = new Set(eligible.map(row => row.studentId));
             if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
         }
-        // ── 1~3. 같은 반·같은 날 기록을 찾거나 만들고(코치 앱·출결 화면과 같은 판정 함수) 내용을 덮어쓴다 ──
-        // 예전엔 키 없이 새 기록을 만들어, 그 뒤 코치가 수업을 시작하면 기록이 둘로 갈라질 수 있었다.
+        // ── 1~3. 고칠 기록을 정하고 내용을 덮어쓴다 ──
+        // 수정: 화면이 고른 기록(이 반 것인지 확인) 그대로 — 방학특강 회차 기록을 고칠 때 정규 기록이 새로 생기지 않게.
+        // 새로 작성: 같은 반·같은 날 기록을 찾거나 만든다(코치 앱·출결 화면과 같은 판정 함수 findOrCreateRegularSession).
         const sessionId = await prisma.$transaction(async tx => {
-            const id = await findOrCreateRegularSession(tx, { classId: data.classId, dateYmd: data.date });
+            const id = await resolveSessionLogTarget(tx, { classId: data.classId, dateYmd: data.date, sessionId: data.sessionId });
             await tx.$executeRawUnsafe(
                 `UPDATE "Session" SET
                     topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()

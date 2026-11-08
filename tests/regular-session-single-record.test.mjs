@@ -34,6 +34,12 @@ function fakeDb(initial = []) {
       throw new Error(`예상 밖 SQL: ${sql}`);
     },
     async $queryRawUnsafe(sql, ...values) {
+      if (sql.includes(`SELECT id FROM "Session" WHERE id = $1 AND "classId" = $2`)) {
+        calls.push("pick");
+        assert.match(sql, /FOR UPDATE/, "수정 대상 기록은 잠그고 읽는다");
+        const [id, classId] = values;
+        return rows.filter((r) => r.id === id && r.classId === classId).map(({ id }) => ({ id }));
+      }
       if (sql.includes(`INSERT INTO "Session"`)) {
         calls.push("upsert");
         const [classId, ymd, key] = values;
@@ -144,7 +150,7 @@ function body(source, name) {
 
 test("관리자 출결 저장(정규)·수업일지·랠리즈는 findOrCreateRegularSession 으로 기록을 찾는다", () => {
   assert.match(body(admin, "saveAttendance"), /findOrCreateRegularSession\(tx, \{ classId, dateYmd: date \}\)/);
-  assert.match(body(admin, "saveSessionLog"), /findOrCreateRegularSession\(tx, \{ classId: data\.classId, dateYmd: data\.date \}\)/);
+  assert.match(body(admin, "saveSessionLog"), /resolveSessionLogTarget\(tx, \{ classId: data\.classId, dateYmd: data\.date, sessionId: data\.sessionId \}\)/);
   assert.match(body(rallyz, "applyRallyzAttendanceSync"), /findOrCreateRegularSession\(tx,/);
 });
 
@@ -161,4 +167,37 @@ test("코치 수업 시작·예정 내용 저장은 같은 키 함수 + 키 없�
     assert.match(b, /adoptRegularSessionKey\(tx,/, `${name}: adoptRegularSessionKey`);
     assert.doesNotMatch(b, /`\$\{(input\.)?classId\}:\$\{(input\.)?date\}`/, `${name}: 키를 손으로 조립하지 않는다`);
   }
+});
+
+// ── 수업일지 수정: 반 상세 목록의 방학특강 회차 기록을 고쳐도 정규 기록이 새로 생기지 않는다(검수 필수1) ──
+test("특강 회차 기록을 수정하면 그 기록만 고치고 새 정규 기록을 만들지 않는다", async () => {
+  const db = fakeDb([{ id: "seasonal-1", classId: "c1", date: "2026-11-08", seasonal: "spd-1" }]);
+  const id = await mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08", sessionId: "seasonal-1" });
+  assert.equal(id, "seasonal-1");
+  assert.equal(db.rows.length, 1, "정규 기록이 새로 생기지 않는다");
+  assert.deepEqual(db.calls, ["pick"]);
+});
+
+test("다른 반 기록 id 로는 수정하지 못한다(새 기록도 만들지 않는다)", async () => {
+  const db = fakeDb([{ id: "other", classId: "c2", date: "2026-11-08" }]);
+  await assert.rejects(() => mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08", sessionId: "other" }), /이 반에서 찾지 못했습니다/);
+  assert.equal(db.rows.length, 1);
+});
+
+test("새로 작성(기록 id 없음)은 같은 반·같은 날 정규 기록 하나 규칙을 탄다", async () => {
+  const db = fakeDb([{ id: "legacy", classId: "c1", date: "2026-11-08" }]);
+  assert.equal(await mod.resolveSessionLogTarget(db, { classId: "c1", dateYmd: "2026-11-08" }), "legacy");
+  assert.deepEqual(db.calls, ["lock", "adopt", "upsert"]);
+});
+
+test("수업일지 화면은 수정 모드에서 날짜를 그대로 두면 기록 id 를 함께 보낸다", () => {
+  const modal = readFileSync("src/app/admin/classes/[id]/SessionLogModal.tsx", "utf8");
+  assert.match(modal, /sessionId: initialData && initialData\.date === date \? initialData\.id : undefined/);
+});
+
+test("관리자 출결 화면은 같은 날 기록이 둘이면 키 있는 기록을 먼저 고른다", () => {
+  const queries = readFileSync("src/lib/queries.ts", "utf8");
+  const start = queries.indexOf("export const getAttendanceByDateAndClass");
+  const b = queries.slice(start, queries.indexOf("\nexport ", start + 1));
+  assert.match(b, /"specialProgramSessionDateId" IS NULL\s+ORDER BY \("sessionKey" IS NULL\), "createdAt" LIMIT 1/);
 });

@@ -29,6 +29,15 @@ function fakeDb(bookings, { carry = [] } = {}) {
         calls.push(`update:${id}:${from}->${to}`);
         return 1;
       }
+      // 보강권 전이 — syncCreditForMakeupSession 과 같은 UPDATE(회수된 권은 그대로)를 같은 db(트랜잭션)로 받는다.
+      if (sql.includes(`UPDATE "MakeupCredit" SET status=$2`)) {
+        assert.match(sql, /status <> 'REVOKED'/);
+        const [id, next] = values;
+        if (!credits.has(id) || credits.get(id) === "REVOKED") return 0;
+        credits.set(id, next);
+        calls.push(`credit:${id}->${next}`);
+        return 1;
+      }
       throw new Error(`예상 밖 SQL: ${sql}`);
     },
     async $queryRawUnsafe(sql, ...values) {
@@ -48,11 +57,9 @@ function fakeDb(bookings, { carry = [] } = {}) {
   return db;
 }
 
-/** 코치 출결 저장 한 번 = 트랜잭션 안 예약 전이 + 그 뒤 보강권 전이. */
+/** 코치 출결 저장 한 번 = 한 트랜잭션 안에서 예약 전이 + 보강권 전이(호출부가 따로 맞추지 않는다). */
 async function coachMarks(db, status, who = { studentId: "s1", classId: "c9", dateYmd: "2026-11-08" }) {
-  const applied = await mod.applyMakeupAttendanceInTx(db, { ...who, status });
-  for (const t of applied) db.credits.set(t.id, t.to === "ATTENDED" ? "USED" : "RESERVED");
-  return applied;
+  return mod.applyMakeupAttendanceInTx(db, { ...who, status });
 }
 const usedCount = (db) => [...db.credits.values()].filter((s) => s === "USED").length;
 
@@ -155,6 +162,46 @@ test("코치 출결 저장: 보강 아이는 보강 예약 전이 + 기존 보�
   const makeupBranch = b.slice(b.indexOf("if (isMakeup) {"), b.indexOf("} else {", b.indexOf("if (isMakeup) {")))
     .split(/\r?\n/).filter((line) => !line.trim().startsWith("//")).join("\n");
   assert.match(makeupBranch, /applyMakeupAttendanceInTx\(tx,/);
-  assert.match(makeupBranch, /syncCreditForMakeupSession\(\{ makeupSessionId: t\.id, status: t\.to \}\)/);
+  // 보강권 전이는 applyMakeupAttendanceInTx 안 같은 트랜잭션에서 한다 — 트랜잭션 뒤 따로 부르지 않는다.
+  assert.doesNotMatch(makeupBranch, /syncCreditForMakeupSession/);
   assert.doesNotMatch(makeupBranch, /syncCreditForRegularSession/);
+});
+
+// ── 검수 권장 반영(2026-11-08) ──
+test("보강권 상태는 예약 전이와 같은 트랜잭션(db)에서 바뀐다 — 관리자 경로와 같은 표", async () => {
+  const db = fakeDb([{ id: "m1", status: "BOOKED" }]);
+  await mod.applyMakeupAttendanceInTx(db, { studentId: "s1", classId: "c9", dateYmd: "2026-11-08", status: "PRESENT" });
+  assert.deepEqual(db.calls.filter((c) => c !== "lock"), ["update:m1:BOOKED->ATTENDED", "credit:m1->USED"]);
+  assert.deepEqual(mod.MAKEUP_CREDIT_STATUS_FOR, { ATTENDED: "USED", BOOKED: "RESERVED" });
+  // credit-service.ts 의 syncCreditForMakeupSession 과 같은 전이표·같은 UPDATE 문
+  const credit = readFileSync("src/lib/makeup/credit-service.ts", "utf8");
+  assert.match(credit, /input\.status === "ATTENDED" \? "USED"/);
+  assert.match(credit, /input\.status === "BOOKED" \? "RESERVED"/);
+  const src = readFileSync("src/lib/makeup/makeup-attendance.ts", "utf8");
+  assert.match(src, /UPDATE "MakeupCredit" SET status=\$2, "updatedAt"=now\(\) WHERE "makeupSessionId" = \$1 AND status <> 'REVOKED'/);
+});
+
+test("회수(REVOKED)된 보강권은 코치 출석으로 되살리지 않는다", async () => {
+  const db = fakeDb([{ id: "m1", status: "BOOKED" }]);
+  db.credits.set("m1", "REVOKED");
+  await coachMarks(db, "PRESENT");
+  assert.equal(db.rows[0].status, "ATTENDED");
+  assert.equal(db.credits.get("m1"), "REVOKED");
+});
+
+test("이월로 정산된 결석의 보강이면 «예약됨» 되돌림도 막는다", async () => {
+  const db = fakeDb([{ id: "m1", status: "ATTENDED" }], { carry: ["m1"] });
+  await assert.rejects(() => coachMarks(db, "ABSENT"), (e) => e.name === "CompensationConflict");
+  assert.equal(db.rows[0].status, "ATTENDED");
+  assert.equal(db.credits.get("m1"), "USED");
+});
+
+test("코치 수강료 확인은 보강 온 아이를 빼고 읽는다(다른 반 청구 자료가 내려가지 않게)", () => {
+  const fees = readFileSync("src/lib/staff-monthly-fees.ts", "utf8");
+  const start = fees.indexOf("async function readContext(");
+  assert.notEqual(start, -1, "readContext 함수가 없습니다");
+  const b = fees.slice(start, fees.indexOf("\nexport ", start + 1));
+  assert.match(b, /const students = roster\.filter\(s => !s\.makeup\);/);
+  // 결제 조회 대상 학생 목록은 걸러진 students 에서 만든다
+  assert.match(b, /const studentIds = students\.filter/);
 });

@@ -10,7 +10,8 @@
 //                  → 보강권도 «예약됨(RESERVED)»으로 돌아간다(되돌림 경로).
 //   · 같은 날 같은 반에 예약이 여럿이어도 출석 한 번에 **한 건만** 참석 처리한다(두 번 차감 금지).
 //   · 관리자가 정한 «무단 불참(NO_SHOW)»·«취소(CANCELLED)»는 코치 출석이 건드리지 않는다.
-//   보강권 상태 전이 자체는 기존 syncCreditForMakeupSession(관리자 보강 상태 변경과 같은 함수)을 재사용한다.
+//   보강권 상태 전이는 관리자 보강 상태 변경(syncCreditForMakeupSession)과 같은 표·같은 UPDATE 를
+//   예약 전이와 «같은 트랜잭션» 안에서 한다(예약만 바뀌고 보강권이 안 바뀌는 반쪽 상태 방지).
 //
 // DB 접근은 인자로 받은 db(트랜잭션) 로만 한다 — 테스트가 가짜 db 로 실제 실행해 본다.
 import { assertMakeupSessionAllowed, lockCompensation } from "@/lib/billing/absence-compensation-guard";
@@ -77,8 +78,13 @@ export async function findMakeupBookings(
 }
 
 /**
- * 출결에 맞춰 보강 예약 상태를 바꾼다. **트랜잭션 안에서** 부른다(보강·이월 정산과 같은 잠금을 잡는다).
- * 돌려준 전이 목록으로 호출부가 트랜잭션 뒤에 보강권(syncCreditForMakeupSession)을 맞춘다.
+ * 예약 상태 → 보강권 상태. credit-service.ts 의 syncCreditForMakeupSession 과 같은 표다
+ * (코치 출석이 만드는 전이는 참석·예약됨 두 가지뿐이라 그 두 줄만 둔다).
+ */
+export const MAKEUP_CREDIT_STATUS_FOR: Record<MakeupTransition["to"], "USED" | "RESERVED"> = { ATTENDED: "USED", BOOKED: "RESERVED" };
+
+/**
+ * 출결에 맞춰 보강 예약 상태와 보강권 상태를 **한 트랜잭션 안에서** 바꾼다(보강·이월 정산과 같은 잠금을 잡는다).
  * 이월로 정산된 결석의 보강이면 assertMakeupSessionAllowed 가 CompensationConflict 를 던진다 → 호출부가 기록만 남긴다.
  */
 export async function applyMakeupAttendanceInTx(
@@ -90,14 +96,22 @@ export async function applyMakeupAttendanceInTx(
   const plan = planMakeupAttendance(bookings, input.status);
   const applied: MakeupTransition[] = [];
   for (const t of plan) {
-    // 참석 처리는 «이월 정산된 결석의 보강이 아닌지» 관리자 경로(updateMakeupStatus)와 같은 검사를 거친다.
-    if (t.to === "ATTENDED") await assertMakeupSessionAllowed(db, t.id);
+    // 참석 처리·되돌림 모두 «이월 정산된 결석의 보강이 아닌지» 관리자 경로(updateMakeupStatus)와 같은 검사를 거친다.
+    // (이월로 정산된 보강을 코치 결석으로 «예약됨»에 되살리면 이월과 보강을 둘 다 받게 된다)
+    await assertMakeupSessionAllowed(db, t.id);
     // 조건부 UPDATE — 그 사이 상태가 바뀌었으면 0행이 되어 건너뛴다(두 번 차감 방지의 마지막 방어선).
     const n = await db.$executeRawUnsafe(
       `UPDATE "MakeupSession" SET status = $2, "updatedAt" = NOW() WHERE id = $1 AND status = $3`,
       t.id, t.to, t.from,
     );
-    if (Number(n) > 0) applied.push(t);
+    if (Number(n) > 0) {
+      // 보강권도 같은 트랜잭션에서 맞춘다 — syncCreditForMakeupSession 의 같은 전이와 같은 UPDATE(회수된 권은 그대로).
+      await db.$executeRawUnsafe(
+        `UPDATE "MakeupCredit" SET status=$2, "updatedAt"=now() WHERE "makeupSessionId" = $1 AND status <> 'REVOKED'`,
+        t.id, MAKEUP_CREDIT_STATUS_FOR[t.to],
+      );
+      applied.push(t);
+    }
   }
   return applied;
 }

@@ -80,3 +80,26 @@ export async function findOrCreateRegularSession(
   if (!rows[0]?.id) throw new Error("수업 기록을 만들지 못했습니다.");
   return rows[0].id;
 }
+
+/**
+ * 수업일지(관리자 «수업 기록») 저장 대상 기록 id.
+ * - 수정(sessionId 있음): 반 상세의 수업 목록은 이 반에 연결된 방학특강 회차 기록도 보여 준다.
+ *   그래서 날짜로 다시 찾지 않고(= 정규 기록을 새로 만들지 않고) 화면이 고른 그 기록을 그대로 고친다.
+ *   단, 그 기록이 정말 이 반의 기록인지 확인한다(다른 반 기록을 id 로 고치는 것을 막는다).
+ * - 새로 작성(sessionId 없음): 같은 반·같은 날 정규 기록 하나 규칙(findOrCreateRegularSession).
+ * ⚠️ 반드시 트랜잭션 안에서 부른다(수정 대상 행을 잠근다).
+ */
+export async function resolveSessionLogTarget(
+  db: RegularSessionDb,
+  input: { classId: string; dateYmd: string; sessionId?: string | null },
+): Promise<string> {
+  if (input.sessionId) {
+    const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "Session" WHERE id = $1 AND "classId" = $2 FOR UPDATE`,
+      input.sessionId, input.classId,
+    );
+    if (!rows[0]?.id) throw new Error("수정할 수업 기록을 이 반에서 찾지 못했습니다. 화면을 새로고침해 주세요.");
+    return rows[0].id;
+  }
+  return findOrCreateRegularSession(db, { classId: input.classId, dateYmd: input.dateYmd });
+}

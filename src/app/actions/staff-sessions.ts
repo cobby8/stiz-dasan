@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { syncCreditForMakeupSession, syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
 import { applyMakeupAttendanceInTx, findMakeupBookings } from "@/lib/makeup/makeup-attendance";
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess } from "@/lib/staff-class-access";
 import { deliverParentNotification, getClassParentRecipients } from "@/lib/staff-notifications";
@@ -346,11 +346,10 @@ export async function saveStaffAttendance(input: { sessionId: string; attendance
     // 출석·지각이면 보강 예약 «참석» → 보강권 «사용», 결석이면 보강권을 쓰지 않고 참석 표시였으면 «예약됨»으로 되돌린다.
     // 실패해도 출결은 유지한다(위와 같은 이유).
     try {
-      const applied = await prisma.$transaction((tx) => applyMakeupAttendanceInTx(tx, {
+      // 예약 전이와 보강권 전이(ATTENDED→USED, BOOKED→RESERVED — 관리자 보강 상태 변경과 같은 표)를 한 트랜잭션으로.
+      await prisma.$transaction((tx) => applyMakeupAttendanceInTx(tx, {
         studentId, classId: session.classId, dateYmd: sessionYmd, status: input.status,
       }));
-      // 보강권 상태 전이는 관리자 보강 상태 변경(updateMakeupStatus)과 같은 함수를 쓴다: ATTENDED→USED, BOOKED→RESERVED.
-      for (const t of applied) await syncCreditForMakeupSession({ makeupSessionId: t.id, status: t.to });
     } catch (error) {
       console.error("[saveStaffAttendance] 보강 예약·보강권 처리 실패(출결은 저장됨)", {
         sessionId: input.sessionId, studentId, error,

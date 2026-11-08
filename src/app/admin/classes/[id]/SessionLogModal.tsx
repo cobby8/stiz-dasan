@@ -248,6 +248,9 @@ export default function SessionLogModal({
                 // 사진 URL 배열을 JSON 문자열로 변환하여 전달
                 photosJSON: photoUrls.length > 0 ? JSON.stringify(photoUrls) : undefined,
                 coachId: coachId || undefined,
+                // 수정 모드에서 날짜를 그대로 두면 그 기록(방학특강 회차일 수도 있음)을 id 로 고친다.
+                // 날짜를 바꾸면 그 날짜의 정규 기록으로 새로 저장한다(예전과 같은 동작).
+                sessionId: initialData && initialData.date === date ? initialData.id : undefined,
                 // 학생이 있을 때만 출석 데이터 전달
                 attendances: visibleAttendances.length > 0
                     ? visibleAttendances.map((a) => ({ studentId: a.studentId, status: a.status }))
@@ -262,7 +265,7 @@ export default function SessionLogModal({
         } finally {
             setSaving(false);
         }
-    }, [classId, date, topic, content, photoUrls, coachId, visibleAttendances, onSaved, handleClose]);
+    }, [classId, date, topic, content, photoUrls, coachId, visibleAttendances, initialData, onSaved, handleClose]);
 
     // 모달이 닫혀있으면 렌더링하지 않음
     if (!isOpen) return null;

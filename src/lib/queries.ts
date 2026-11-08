@@ -823,8 +823,10 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
         }
 
         const sessions = await prisma.$queryRawUnsafe<any[]>(
+            // 같은 날 정규 기록이 (예전 데이터로) 둘이면 키 있는 기록(코치 앱·수업일지와 같은 정본)을 먼저 고른다.
             `SELECT id, "classId", date, notes FROM "Session"
-             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL LIMIT 1`,
+             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL
+             ORDER BY ("sessionKey" IS NULL), "createdAt" LIMIT 1`,
             classId, date
         );
         const session = sessions[0] ?? null;
