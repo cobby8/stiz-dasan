@@ -9,8 +9,17 @@ import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeCont
 import { sanitizeHtml } from "@/lib/sanitize";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { buildNoticeMetadata } from "@/lib/noticeMetadata";
+import type { Metadata } from "next";
 
 export const revalidate = 60;
+
+// 공지마다 제목·요약·canonical(/notices/[id])을 따로 단다 — 홈 메타를 물려받아 검색에서 중복 처리되던 문제.
+// getNoticeById 는 react cache 로 감싸져 있어 본문 렌더와 같은 요청에서 DB 를 두 번 읽지 않는다.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+    const { id } = await params;
+    return buildNoticeMetadata(await getNoticeById(id));
+}
 
 export default async function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
