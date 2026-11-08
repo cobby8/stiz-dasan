@@ -161,7 +161,18 @@ export default function TrialCrmModals({
                     lead={convertLead}
                     onClose={onCloseConvert}
                     onSubmit={(studentData) =>
-                        runAction(() => convertTrialToStudent(convertLead.id, studentData), onCloseConvert, "정규 원생으로 등록했습니다.")
+                        runAction(
+                            async () => {
+                                // 번호 없음·같은 번호 계정 여러 개 같은 안내는 ok:false 로 온다 → 창을 닫지 않고 그 문구를 보여 준다
+                                const result = await convertTrialToStudent(convertLead.id, studentData);
+                                if (!result.ok) throw new Error(result.error);
+                                return result;
+                            },
+                            onCloseConvert,
+                            "정규 원생으로 등록했습니다.",
+                            undefined,
+                            true,
+                        )
                     }
                     busy={busy}
                 />
@@ -867,7 +878,6 @@ function ConvertModal({
         gender?: string | null;
         parentName: string;
         parentPhone?: string | null;
-        parentEmail?: string | null;
         memo?: string | null;
     }) => void;
     busy: boolean;
@@ -878,15 +888,15 @@ function ConvertModal({
         gender: "",
         parentName: lead.parentName,
         parentPhone: lead.parentPhone,
-        parentEmail: "",
         memo: lead.memo || "",
     });
     const [formError, setFormError] = useState("");
 
     function handleSubmit(e: FormEvent) {
         e.preventDefault();
-        if (!form.name.trim() || !form.birthDate || !form.parentName.trim()) {
-            setFormError("아이 이름, 생년월일, 학부모 이름을 입력해주세요.");
+        // 학부모 연락처는 계정을 찾는 열쇠라 필수(이메일 칸은 2026-11-09 제거 — 계정 매칭에 쓰지 않는다)
+        if (!form.name.trim() || !form.birthDate || !form.parentName.trim() || !form.parentPhone?.trim()) {
+            setFormError("아이 이름, 생년월일, 학부모 이름·연락처를 입력해주세요.");
             return;
         }
         setFormError("");
@@ -896,7 +906,6 @@ function ConvertModal({
             gender: form.gender || null,
             parentName: form.parentName,
             parentPhone: form.parentPhone || null,
-            parentEmail: form.parentEmail || null,
             memo: form.memo || null,
         });
     }
@@ -958,7 +967,7 @@ function ConvertModal({
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학부모 연락처</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학부모 연락처 *</label>
                         <input
                             type="tel"
                             value={form.parentPhone}
@@ -973,16 +982,6 @@ function ConvertModal({
                             placeholder="숫자만 입력 (자동 변환: 010-1234-5678)"
                         />
                         <p className="text-xs text-gray-400 mt-1">숫자만 입력하면 자동으로 000-0000-0000 형식으로 변환됩니다</p>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학부모 이메일</label>
-                        <input
-                            type="email"
-                            value={form.parentEmail}
-                            onChange={(e) => setForm({ ...form, parentEmail: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                            placeholder="로그인에 사용됩니다 (선택)"
-                        />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">메모</label>
