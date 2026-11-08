@@ -4,8 +4,10 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { formatPhoneInput } from "@/lib/application-display-format";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { createTrialLead, convertTrialToStudent, updateTrialLead } from "@/app/actions/admin";
+import { createTrialLead, updateTrialLead } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
+// 체험 → 원생 등록은 목록 «원생 등록»과 같은 3단계 창(체험 정보를 미리 채움). 예전 작은 전환 창을 대체한다
+import StudentRegisterModal, { type StudentRegisterPrefill } from "@/app/admin/students/StudentRegisterModal";
 import {
     seoulDateInputValue,
     seoulTimeInputValue,
@@ -157,24 +159,17 @@ export default function TrialCrmModals({
             )}
 
             {convertLead && (
-                <ConvertModal
-                    lead={convertLead}
+                <StudentRegisterModal
+                    prefill={trialRegisterPrefill(convertLead)}
                     onClose={onCloseConvert}
-                    onSubmit={(studentData) =>
-                        runAction(
-                            async () => {
-                                // 번호 없음·같은 번호 계정 여러 개 같은 안내는 ok:false 로 온다 → 창을 닫지 않고 그 문구를 보여 준다
-                                const result = await convertTrialToStudent(convertLead.id, studentData);
-                                if (!result.ok) throw new Error(result.error);
-                                return result;
-                            },
-                            onCloseConvert,
-                            "정규 원생으로 등록했습니다.",
-                            undefined,
-                            true,
-                        )
-                    }
-                    busy={busy}
+                    onRegistered={async (registered) => {
+                        // 저장(학생·보호자·수강·체험 «등록전환»)은 이미 한 트랜잭션으로 끝났다 → 목록 새로 읽기 → 창 닫기 → 안내
+                        const refreshed = await onSaved();
+                        onCloseConvert();
+                        onFeedback(refreshed ? "success" : "error", refreshed
+                            ? `${registered.name} 학생을 정규 원생으로 등록했습니다.`
+                            : "원생 등록은 저장됐지만 목록을 새로 불러오지 못했습니다. 새로고침 후 확인해주세요.");
+                    }}
                 />
             )}
 
@@ -864,153 +859,22 @@ function AddLeadModal({
     );
 }
 
-function ConvertModal({
-    lead,
-    onClose,
-    onSubmit,
-    busy,
-}: {
-    lead: TrialLead;
-    onClose: () => void;
-    onSubmit: (data: {
-        name: string;
-        birthDate: string;
-        gender?: string | null;
-        parentName: string;
-        parentPhone?: string | null;
-        memo?: string | null;
-    }) => void;
-    busy: boolean;
-}) {
-    const [form, setForm] = useState({
+/** 체험 기록 → 등록 창 미리 채움 값. 생년·성별은 등록 창 형식(2016-03-15 · 남/여)일 때만 채운다 */
+function trialRegisterPrefill(lead: TrialLead): StudentRegisterPrefill {
+    const birth = /^\d{4}-\d{2}-\d{2}/.test(lead.childBirthDate ?? "") ? String(lead.childBirthDate).slice(0, 10) : "";
+    const gender = lead.childGender === "남" || lead.childGender === "여" ? lead.childGender : "";
+    return {
+        trialLeadId: lead.id,
         name: lead.childName,
-        birthDate: "2015-01-01",
-        gender: "",
+        birthDate: birth,
+        gender,
+        grade: lead.childGrade,
+        school: lead.childSchool,
         parentName: lead.parentName,
         parentPhone: lead.parentPhone,
-        memo: lead.memo || "",
-    });
-    const [formError, setFormError] = useState("");
-
-    function handleSubmit(e: FormEvent) {
-        e.preventDefault();
-        // 학부모 연락처는 계정을 찾는 열쇠라 필수(이메일 칸은 2026-11-09 제거 — 계정 매칭에 쓰지 않는다)
-        if (!form.name.trim() || !form.birthDate || !form.parentName.trim() || !form.parentPhone?.trim()) {
-            setFormError("아이 이름, 생년월일, 학부모 이름·연락처를 입력해주세요.");
-            return;
-        }
-        setFormError("");
-        onSubmit({
-            name: form.name,
-            birthDate: form.birthDate,
-            gender: form.gender || null,
-            parentName: form.parentName,
-            parentPhone: form.parentPhone || null,
-            memo: form.memo || null,
-        });
-    }
-
-    return (
-        <AdminModal onClose={onClose} titleId="trial-convert-title" panelClassName="max-w-md p-6">
-                <h2 id="trial-convert-title" className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-emerald-500">how_to_reg</span>
-                    정규 등록 전환
-                </h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                    체험 학생 &quot;{lead.childName}&quot;을 정규 원생으로 등록합니다.
-                </p>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {formError && (
-                        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">
-                            {formError}
-                        </p>
-                    )}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">아이 이름 *</label>
-                        <input
-                            type="text"
-                            value={form.name}
-                            onChange={(e) => setForm({ ...form, name: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">생년월일 *</label>
-                        <input
-                            type="date"
-                            min="1950-01-01"
-                            max="2025-12-31"
-                            value={form.birthDate}
-                            onChange={(e) => setForm({ ...form, birthDate: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">성별</label>
-                        <select
-                            value={form.gender}
-                            onChange={(e) => setForm({ ...form, gender: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                        >
-                            <option value="">선택 안함</option>
-                            <option value="남">남</option>
-                            <option value="여">여</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학부모 이름 *</label>
-                        <input
-                            type="text"
-                            value={form.parentName}
-                            onChange={(e) => setForm({ ...form, parentName: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학부모 연락처 *</label>
-                        <input
-                            type="tel"
-                            value={form.parentPhone}
-                            onChange={(e) => {
-                                const nums = e.target.value.replace(/\D/g, "").slice(0, 11);
-                                let formatted = nums;
-                                if (nums.length > 7) formatted = `${nums.slice(0, 3)}-${nums.slice(3, 7)}-${nums.slice(7)}`;
-                                else if (nums.length > 3) formatted = `${nums.slice(0, 3)}-${nums.slice(3)}`;
-                                setForm({ ...form, parentPhone: formatted });
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
-                            placeholder="숫자만 입력 (자동 변환: 010-1234-5678)"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">숫자만 입력하면 자동으로 000-0000-0000 형식으로 변환됩니다</p>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">메모</label>
-                        <textarea
-                            value={form.memo}
-                            onChange={(e) => setForm({ ...form, memo: e.target.value })}
-                            rows={2}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime resize-none"
-                        />
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:bg-gray-900 transition-colors text-sm font-medium"
-                        >
-                            취소
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={busy}
-                            className="flex-1 px-4 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium disabled:opacity-50"
-                        >
-                            {busy ? "등록 중..." : "정규 등록"}
-                        </button>
-                    </div>
-                </form>
-        </AdminModal>
-    );
+        memo: lead.memo,
+        referralSource: "체험수업",
+    };
 }
 
 function LostModal({

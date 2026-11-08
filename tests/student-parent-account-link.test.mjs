@@ -180,7 +180,12 @@ test("updateStudent 는 이메일을 쓰지 않고, 빈 계정일 때만 학부�
   assert.match(body, /canAdminEditParentAccount\(parent\)/);
   assert.match(body, /WHERE id = \$3 AND role = 'PARENT' AND "authUserId" IS NULL/, "SQL 에서도 한 번 더 막는다");
   assert.match(body, /COALESCE\(\$1, name\)/, "빈 값으로 덮지 않는다");
-  assert.match(body, /return \{ parentAccountUpdated \}/);
+  assert.match(body, /return \{ parentAccountUpdated, parentPhoneConflict \}/);
+  // 1차 검수 권장(2026-11-09): «고쳤다»는 실제로 바뀐 행이 있을 때만, 다른 계정이 쓰는 번호로는 바꾸지 않는다
+  assert.match(body, /const changed = await prisma\.\$executeRawUnsafe\(/);
+  assert.match(body, /parentAccountUpdated = changed > 0/);
+  assert.match(body, /AND id <> \$2 AND "withdrawnAt" IS NULL/);
+  assert.match(body, /phoneToSave = null;\s*parentPhoneConflict = true/);
 });
 
 test("엑셀 덮어쓰기 모드는 학부모 계정 이름을 관계명으로 덮지 않고 보호자1을 주 보호자로 다시 넣는다", () => {
@@ -196,17 +201,25 @@ test("신청서 승인 경로는 이번 변경과 무관하게 그대로(명시 
   assert.doesNotMatch(body, /linkParentAccountForNewStudent/);
 });
 
-test("목록 등록 폼: 이메일 칸 없음·관계 칸·휴대폰 필수·등록 뒤 새 학생 상세를 연다", () => {
+test("목록: «원생 등록»은 3단계 창, 인라인 폼은 수정 전용 · 저장 뒤 안내→닫기→새로 읽기 순서", () => {
   assert.doesNotMatch(listClient, /parentEmail/, "학부모 이메일 칸·상태 제거");
-  assert.match(listClient, /parentRelation: parentRelation\.trim\(\)/);
-  assert.match(listClient, /주 보호자 관계 \*/);
-  assert.match(listClient, /주 보호자 휴대폰 \*/);
-  assert.match(listClient, /required=\{!editingId\}/);
-  assert.match(listClient, /setFilterStatus\("NONE"\);\s*setDetailStudentId\(result\.studentId\)/, "기본 «활성» 필터에 안 보이던 문제");
-  assert.match(listClient, /if \(!result\.ok\) \{\s*\/\/[^\n]*\n\s*setFormError\(result\.error\)/);
+  assert.doesNotMatch(listClient, /createStudent/, "새 등록은 registerStudent(3단계 창)로만");
+  assert.match(listClient, /setShowRegister\(true\)/);
+  assert.match(listClient, /<StudentRegisterModal/);
+  assert.match(listClient, /\{showForm && editingId && \(/, "인라인 폼은 수정 전용");
+  // 등록 뒤: 새 학생이 보이게 필터 정리 + 상세 패널 열기(기본 «활성» 필터에 안 보이던 문제)
+  assert.match(listClient, /setFilterStatus\(result\.classCount > 0 \? "" : "NONE"\);\s*setDetailStudentId\(result\.studentId\)/);
+  // 수정: 저장 실패는 폼 안에, 성공 뒤에만 안내 → 폼 닫기 → 목록 새로 읽기
+  const submit = listClient.slice(listClient.indexOf("async function handleSubmit"), listClient.indexOf("async function handleRegistered"));
+  assert.ok(submit.indexOf("setFormError(adminErrorText") < submit.indexOf("setFormNotice("));
+  assert.ok(submit.indexOf("setFormNotice(") < submit.indexOf("resetForm()"));
+  assert.ok(submit.indexOf("resetForm()") < submit.indexOf("await loadData()"));
+  assert.match(submit, /saved\.parentPhoneConflict/);
 });
 
-test("체험 정규 전환 창: 이메일 칸 없음, 안내 오류는 창을 닫지 않고 보여 준다", () => {
+test("체험 정규 전환 = 같은 3단계 등록 창(체험 정보 미리 채움·체험 id 전달), 이메일 칸 없음", () => {
   assert.doesNotMatch(trialModals, /parentEmail/);
-  assert.match(trialModals, /if \(!result\.ok\) throw new Error\(result\.error\)/);
+  assert.doesNotMatch(trialModals, /function ConvertModal/, "예전 작은 전환 창은 없앴다");
+  assert.match(trialModals, /<StudentRegisterModal\s+prefill=\{trialRegisterPrefill\(convertLead\)\}/);
+  assert.match(trialModals, /trialLeadId: lead\.id/);
 });

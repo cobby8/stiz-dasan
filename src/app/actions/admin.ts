@@ -9,6 +9,10 @@ import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
+// 정원 경고·셔틀 위치 저장 = 신청서 승인과 새 «원생 등록»이 같이 쓰는 한 곳
+import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
+import { upsertStudentShuttleLocation } from "@/lib/students/student-shuttle-location-upsert";
+import { UNIFORM_STATUS_VALUES } from "@/lib/students/student-register-rules";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
@@ -1105,7 +1109,8 @@ export async function updateStudentUniform(id: string, data: {
     note?: string | null;
 }) {
     await requireAdmin();
-    const allowed = new Set(["보유", "미보유", "신청", "주문", "수령완료", "미수령", "확인보류", "해당없음", "미신청"]);
+    // 허용값은 새 «원생 등록» 창과 같은 목록 한 곳(student-register-rules)
+    const allowed = new Set<string>(UNIFORM_STATUS_VALUES);
     if (data.status && !allowed.has(data.status)) throw new Error("유니폼 상태값이 올바르지 않습니다.");
     try {
         await prisma.$executeRawUnsafe(
@@ -1140,9 +1145,11 @@ export async function updateStudent(id: string, data: {
     grade?: string | null;
     address?: string | null;
     enrollDate?: string | null;
-}): Promise<{ parentAccountUpdated: boolean }> {
+}): Promise<{ parentAccountUpdated: boolean; parentPhoneConflict: boolean }> {
     await requireAdmin();
     let parentAccountUpdated = false;
+    // 빈 계정 번호를 다른 계정과 같은 번호로 바꾸려다 번호를 유지했는지(화면 안내용)
+    let parentPhoneConflict = false;
     try {
         // 원생 정보 업데이트: 새 필드(phone, school, grade, address, enrollDate) 포함
         await prisma.$executeRawUnsafe(
@@ -1168,15 +1175,32 @@ export async function updateStudent(id: string, data: {
             const nextName = String(data.parentName ?? "").trim();
             const nextPhone = parentPhoneDigits(data.parentPhone);
             // 비운 값으로는 덮지 않는다 — 번호는 학부모가 가입할 때 이 계정을 찾는 열쇠라 쓸 수 있는 번호일 때만 바꾼다
-            await prisma.$executeRawUnsafe(
+            let phoneToSave = isUsablePhoneKey(nextPhone) ? nextPhone : null;
+            // 다른 계정(학부모·직원)이 이미 쓰는 번호로 바꾸면 같은 번호 계정이 둘이 되어 학부모 가입이 «학원 문의»로 막힌다
+            // → 번호는 그대로 두고 화면에 안내한다(1차 검수 권장, 2026-11-09)
+            if (phoneToSave) {
+                const taken = await prisma.$queryRawUnsafe<{ id: string }[]>(
+                    `SELECT id FROM "User"
+                      WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+                        AND id <> $2 AND "withdrawnAt" IS NULL
+                      LIMIT 1`,
+                    phoneToSave, parent.id,
+                );
+                if (taken.length > 0) {
+                    phoneToSave = null;
+                    parentPhoneConflict = true;
+                }
+            }
+            const changed = await prisma.$executeRawUnsafe(
                 `UPDATE "User"
                     SET name = COALESCE($1, name),
                         phone = COALESCE($2, phone),
                         "updatedAt" = NOW()
                   WHERE id = $3 AND role = 'PARENT' AND "authUserId" IS NULL`,
-                nextName || null, isUsablePhoneKey(nextPhone) ? nextPhone : null, parent.id,
+                nextName || null, phoneToSave, parent.id,
             );
-            parentAccountUpdated = true;
+            // 실제로 바뀐 행이 있을 때만 «고쳤다»고 알린다(그 사이 로그인 연결돼 SQL 조건에 걸리면 0행)
+            parentAccountUpdated = changed > 0;
         }
     } catch (e) {
         console.error("Failed to update student:", e);
@@ -1185,8 +1209,8 @@ export async function updateStudent(id: string, data: {
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();
-    // 화면이 «학부모 계정은 바꾸지 않았음»을 안내할 수 있게 알려 준다
-    return { parentAccountUpdated };
+    // 화면이 «학부모 계정은 바꾸지 않았음»·«번호는 그대로 둠»을 안내할 수 있게 알려 준다
+    return { parentAccountUpdated, parentPhoneConflict };
 }
 
 export async function deleteStudent(id: string) {
@@ -2831,96 +2855,52 @@ export async function bulkCreateStudents(
 
             // 기존 학생이 처리된 경우 (skip 또는 overwrite) 신규 등록은 건너뜀
             if (!finalStudentId) {
-            // ── 3. 신규 학생: 보호자1 User 생성 또는 조회 ──
-            let parentId: string;
+            // ── 3. 신규 학생: 보호자1 번호로 학부모 계정 확정 — 목록·체험·등록 창과 같은 규칙(parentAccountLink) 한 곳 ──
+            // 보호자1 이름은 관계명(예: "아버지")을 사용, 없으면 "보호자" (엑셀에 보호자 이름 칸이 없다)
+            const guardian1Label = student.guardian1Relation || "보호자";
+            // 번호가 없거나 형식이 틀리면 계정을 찾을 열쇠가 없어 이 행은 실패로 남긴다(예전엔 번호 없는 빈 계정을 만들어
+            // 학부모가 영영 가입·연결을 못 했다). 안내 문구는 엑셀 실패 목록에 그대로 보인다.
+            const guardian1 = validatePrimaryGuardian({ relation: guardian1Label, name: guardian1Label, phone: student.guardian1Phone });
+            if (!guardian1.ok) throw new Error(`보호자1 휴대폰: ${guardian1.error}`);
 
-            // 보호자1 이름은 관계명(예: "아버지")을 사용, 없으면 "보호자"
-            const parentName = student.guardian1Relation || "보호자";
-            // 랠리즈 엑셀에 email이 없으므로 자동 생성 (기존 createStudent 패턴 동일)
-            const parentEmail = `parent_${Date.now()}_${student.rowNumber}@stiz.local`;
+            // 계정 확정·학생·보호자1~3 을 한 트랜잭션으로 — 중간에 실패하면 빈 계정도 남지 않는다
+            const newStudentId = await prisma.$transaction(async (tx) => {
+                // 같은 번호 PARENT 1명 → 그 계정 / 없으면 같은 번호 직원 1명 / 둘 다 없으면 빈 계정(parent_<번호>@stiz.local)
+                // 기존 계정의 이름·번호·이메일은 바꾸지 않는다. 같은 번호 계정이 여럿이면 오류 → 이 행만 실패
+                const link = await linkParentAccountForNewStudent(tx, guardian1.value);
 
-            if (student.guardian1Phone) {
-                // 전화번호로 기존 보호자 검색 (같은 전화번호 = 같은 보호자)
-                // 숫자만 남겨 비교한다 — 저장 형식이 '010-1234-5678'과 '01012345678'로 섞여 있어
-                // 글자 그대로 비교하면 같은 사람을 못 찾고 보호자·학생이 복제된다.
-                const existingParent = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT id FROM "User"
-                      WHERE role = 'PARENT'
-                        AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
-                      ORDER BY ("authUserId" IS NOT NULL) DESC, "createdAt" ASC
-                      LIMIT 1`,
-                    parentPhoneDigits(student.guardian1Phone),
-                );
+                // ── 4. Student INSERT ──
+                // 생년월일이 없으면 기본값(2000-01-01) 사용 — birthDate는 NOT NULL 컬럼
+                const birthDateValue = student.birthDate || "2000-01-01T00:00:00.000Z";
 
-                if (existingParent.length > 0) {
-                    parentId = existingParent[0].id;
-                } else {
-                    // 보호자1 신규 생성
-                    const rows = await prisma.$queryRawUnsafe<any[]>(
-                        `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                         VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                         RETURNING id`,
-                        parentEmail,
-                        parentName,
-                        student.guardian1Phone,
-                    );
-                    parentId = rows[0].id;
-                }
-            } else {
-                // 전화번호 없으면 무조건 새 User 생성
-                const rows = await prisma.$queryRawUnsafe<any[]>(
-                    `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
+                const studentRows = await tx.$queryRawUnsafe<any[]>(
+                    `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId",
+                        phone, school, grade, address, "enrollDate", memo,
+                        "createdAt", "updatedAt")
+                     VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4,
+                        $5, $6, $7, $8, $9::timestamp, $10,
+                        NOW(), NOW())
                      RETURNING id`,
-                    parentEmail,
-                    parentName,
-                    null,
+                    student.name,
+                    birthDateValue,
+                    student.gender || null,
+                    link.parentId,
+                    student.phone || null,
+                    student.school || null,
+                    student.grade || null,
+                    student.address || null,
+                    student.enrollDate || null,
+                    student.memo || null,
                 );
-                parentId = rows[0].id;
-            }
+                const createdId: string = studentRows[0].id;
 
-            // ── 4. Student INSERT ──
-            // 생년월일이 없으면 기본값(2000-01-01) 사용 — birthDate는 NOT NULL 컬럼
-            const birthDateValue = student.birthDate || "2000-01-01T00:00:00.000Z";
+                // ── 5. 보호자1 = 주 보호자 Guardian (입력값은 계정이 아니라 Guardian 에 남긴다) ──
+                await insertPrimaryGuardian(tx, createdId, guardian1.value);
 
-            const studentRows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId",
-                    phone, school, grade, address, "enrollDate", memo,
-                    "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4,
-                    $5, $6, $7, $8, $9::timestamp, $10,
-                    NOW(), NOW())
-                 RETURNING id`,
-                student.name,
-                birthDateValue,
-                student.gender || null,
-                parentId,
-                student.phone || null,
-                student.school || null,
-                student.grade || null,
-                student.address || null,
-                student.enrollDate || null,
-                student.memo || null,
-            );
-
-            const newStudentId = studentRows[0].id;
-
-            // ── 5. 보호자1도 Guardian 테이블에 기록 (isPrimary = true) ──
-            // 보호자1은 User에도 있고 Guardian에도 있음 (이중 저장)
-            // 이유: Guardian 테이블에서 모든 보호자를 일괄 조회할 수 있도록
-            if (student.guardian1Phone || student.guardian1Relation) {
-                await prisma.$executeRawUnsafe(
-                    `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, true, NOW(), NOW())`,
-                    newStudentId,
-                    student.guardian1Relation || "보호자",
-                    student.guardian1Relation || "보호자",
-                    student.guardian1Phone || null,
-                );
-            }
-
-            // ── 6. 보호자2,3 Guardian 테이블에 INSERT ──
-            await insertGuardians(newStudentId, student);
+                // ── 6. 보호자2,3 Guardian 테이블에 INSERT ──
+                await insertGuardians(createdId, student, tx);
+                return createdId;
+            }, { timeout: 15_000 });
 
             result.created++;
             finalStudentId = newStudentId;
@@ -2989,10 +2969,15 @@ export async function bulkCreateStudents(
  * - isPrimary = false (보호자2,3은 보조 보호자)
  * - 관계명 또는 전화번호가 하나라도 있으면 저장
  */
-async function insertGuardians(studentId: string, student: BulkStudentInput) {
+async function insertGuardians(
+    studentId: string,
+    student: BulkStudentInput,
+    // 신규 등록은 트랜잭션(tx) 안에서 부른다. 덮어쓰기 모드는 예전처럼 prisma 로 바로 쓴다
+    db: { $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number> } = prisma,
+) {
     // 보호자2
     if (student.guardian2Relation || student.guardian2Phone) {
-        await prisma.$executeRawUnsafe(
+        await db.$executeRawUnsafe(
             `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW(), NOW())`,
             studentId,
@@ -3004,7 +2989,7 @@ async function insertGuardians(studentId: string, student: BulkStudentInput) {
 
     // 보호자3
     if (student.guardian3Relation || student.guardian3Phone) {
-        await prisma.$executeRawUnsafe(
+        await db.$executeRawUnsafe(
             `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW(), NOW())`,
             studentId,
@@ -5053,26 +5038,8 @@ export async function approveEnrollApplication(
     //       그래서 '하드 차단'이 아니라 '경고 후 재확인(force)' 방식으로 처리한다.
     //       ★ 트랜잭션 진입 전에 '읽기만' 수행 → DB 변경 0(부작용 없이 되돌릴 수 있음).
     if (data.force !== true && Array.isArray(data.classIds) && data.classIds.length > 0) {
-        const overCapacity: { classId: string; name: string; current: number; capacity: number }[] = [];
-        for (const classId of data.classIds) {
-            // 각 반의 정원(capacity)과 '현재 ACTIVE 수강 인원' 조회(병합된 학생은 제외).
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT c.name AS name, c.capacity AS capacity,
-                        (SELECT COUNT(*) FROM "Enrollment" e
-                         JOIN "Student" s ON s.id = e."studentId"
-                         WHERE e."classId" = c.id AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}
-                        )::int AS current
-                 FROM "Class" c WHERE c.id = $1 LIMIT 1`,
-                classId,
-            );
-            if (rows.length === 0) continue;
-            const capacity = Number(rows[0].capacity ?? rows[0].CAPACITY);
-            const current = Number(rows[0].current ?? rows[0].CURRENT);
-            // 이미 정원을 채운(current >= capacity) 반에 한 명 더 넣으면 초과 → 경고 대상.
-            if (Number.isFinite(capacity) && Number.isFinite(current) && current >= capacity) {
-                overCapacity.push({ classId, name: rows[0].name ?? "", current, capacity });
-            }
-        }
+        // 각 반의 정원과 '현재 ACTIVE 수강 인원(병합 제외)'을 비교한다 — 새 «원생 등록»과 같은 함수(class-capacity) 한 곳.
+        const overCapacity = await findOverCapacityClasses(prisma, data.classIds);
         // 초과 반이 하나라도 있으면 아무 것도 바꾸지 않고 경고만 반환 → UI가 재확인 후 force:true로 재호출.
         if (overCapacity.length > 0) {
             return { ok: false as const, code: "CAPACITY_WARNING" as const, classes: overCapacity };
@@ -5358,48 +5325,28 @@ export async function approveEnrollApplication(
 
         // 학부모가 지도에서 확인한 탑승·하차 위치는 함께 저장한다.
         if (shouldCopyShuttleLocations) {
+            // 저장 SQL(INSERT INTO "StudentShuttleLocation" … ON CONFLICT ("studentId", kind) DO UPDATE)은
+            // 새 «원생 등록»과 같은 함수(student-shuttle-location-upsert) 한 곳에 있다. 값은 신청서에서 그대로 읽는다.
             const upsertLocation = (
                 kind: "PICKUP" | "DROPOFF",
                 prefix: "shuttlePickup" | "shuttleDropoff",
-            ) => tx.$executeRawUnsafe(
-                `INSERT INTO "StudentShuttleLocation" (
-                    id, "studentId", kind, name, address, "roadAddress",
-                    latitude, longitude, "placeId", source, "accuracyMeters",
-                    "confirmedAt", "consentVersion", "createdAt", "updatedAt"
-                 ) VALUES (
-                    gen_random_uuid()::text, $1, $2, $12, $3, $4,
-                    $5, $6, $7, $8, $9, $10::timestamptz, $11, NOW(), NOW()
-                 )
-                 ON CONFLICT ("studentId", kind) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    address = EXCLUDED.address,
-                    "roadAddress" = EXCLUDED."roadAddress",
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    "placeId" = EXCLUDED."placeId",
-                    source = EXCLUDED.source,
-                    "accuracyMeters" = EXCLUDED."accuracyMeters",
-                    "confirmedAt" = EXCLUDED."confirmedAt",
-                    "consentVersion" = EXCLUDED."consentVersion",
-                    "updatedAt" = NOW()`,
-                studentId,
+            ) => upsertStudentShuttleLocation(tx, {
+                studentId: studentId!,
                 kind,
-                readAppField(`${prefix}Address`),
-                readAppField(`${prefix}RoadAddress`),
-                readAppField(`${prefix}Latitude`),
-                readAppField(`${prefix}Longitude`),
-                readAppField(`${prefix}PlaceId`),
-                readAppField(`${prefix}Source`),
-                readAppField(`${prefix}AccuracyMeters`),
-                readAppField(`${prefix}ConfirmedAt`),
-                consentVersion,
-                // $12: 장소명(라벨) — G2에서 EnrollmentApplication.shuttlePickup/shuttleDropoff 라벨 컬럼에 저장된 값.
+                // 장소명(라벨) — G2에서 EnrollmentApplication.shuttlePickup/shuttleDropoff 라벨 컬럼에 저장된 값.
                 // prefix 자체가 라벨 컬럼명(접미사 없는 shuttlePickup/shuttleDropoff)이라 그대로 읽는다.
-                // 값이 없으면 도로명주소 -> 지번주소 순으로 폴백(관리자 수동확정 service.ts와 동일 철학, 단 name null 방지).
-                readAppField(prefix)
-                    ?? readAppField(`${prefix}RoadAddress`)
-                    ?? readAppField(`${prefix}Address`),
-            );
+                // 값이 없으면 공용 함수가 도로명주소 -> 지번주소 순으로 폴백한다(name null 방지).
+                name: readAppField(prefix),
+                address: readAppField(`${prefix}Address`),
+                roadAddress: readAppField(`${prefix}RoadAddress`),
+                latitude: readAppField(`${prefix}Latitude`),
+                longitude: readAppField(`${prefix}Longitude`),
+                placeId: readAppField(`${prefix}PlaceId`),
+                source: readAppField(`${prefix}Source`),
+                accuracyMeters: readAppField(`${prefix}AccuracyMeters`),
+                confirmedAt: readAppField(`${prefix}ConfirmedAt`),
+                consentVersion,
+            });
             await upsertLocation("PICKUP", "shuttlePickup");
             await upsertLocation("DROPOFF", "shuttleDropoff");
         }

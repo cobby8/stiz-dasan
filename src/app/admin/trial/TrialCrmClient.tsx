@@ -978,6 +978,11 @@ export default function TrialCrmClient({
         }
         const enrollGuide = lead.status === "ATTENDED" ? buildEnrollGuideAction(lead) : null;
         if (enrollGuide) actions.push(enrollGuide);
+        // 체험 → 원생 바로 등록(원장 결정 2026-11-09): 체험을 마쳤고 아직 원생이 없고, 학부모 수강신청서도 안 온 경우만.
+        // 신청서가 왔으면 «수강 신청» 승인으로 등록한다(같은 학생이 두 번 생기지 않게).
+        if ((lead.status === "ATTENDED" || lead.status === "CONVERTED") && !lead.convertedStudentId && !lead.enrollApplicationReceivedAt) {
+            actions.push({ key: "register-student", label: "원생 등록", icon: "how_to_reg", disabled: busy, onSelect: () => setShowConvertModal(lead) });
+        }
         return actions;
     }
 

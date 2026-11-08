@@ -181,3 +181,9 @@
 - **발견자**: developer
 - **내용**: ① 명단 수강 점검 `src/lib/shuttle/regularRosterEnrollmentCheckLogic.ts`(다니는 반 없음·수업 없는 요일·한쪽만) — 서버 `getRosterEnrollmentCheck` 는 그 달 명단 학생의 지금 Enrollment(ACTIVE/PAUSED)와 자동 생성 달 여부만 읽고 판정은 화면에서. 월 넘김 확인 = 수동 복사 전 confirm(`rosterCopyWarningText`) + 자동 생성 달 «확인했어요» = `ShuttleAuditLog` action `REGULAR_ROSTER_MONTH_REVIEWED`(자동 생성 기록 `REGULAR_ROSTER_AUTO_MONTH` 와 짝). ② 카카오 정규 셔틀 신청(START) 할 일 `src/lib/kakaoShuttleRosterTask.ts` — 완료 = `KakaoParentIntake.structuredJson.rosterTask.doneAt` + 결정 전 상태면 APPLIED(이관 APPROVED 는 유지) + 감사 `SHUTTLE_ROSTER_DONE`. 명단 추가는 기존 `/admin/shuttle/regular?month=&studentId=` 딥링크(«신청 학생 선택해 명단 추가») 재사용.
 - **참조횟수**: 0
+
+### [2026-11-09] 관리자 원생 등록 = 3단계 창 + 서버 액션 하나(트랜잭션 하나)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 목록 «원생 등록»·체험 ⚡«원생 등록»이 같은 `src/app/admin/students/StudentRegisterModal.tsx` → `src/app/actions/student-register.ts`(`registerStudent`·`previewStudentRegistration`·`getStudentRegisterOptions`). 입력 검증은 창·서버 공용 `src/lib/students/student-register-rules.ts`(반 필수/«반은 나중에 배정», 주 보호자 휴대폰 필수, 지점은 반 장소에서 자동·원본 문장 형식 저장, 개인정보 확인 → agreementsJSON.adminRegister). 신청서 승인과 공유: 정원 경고 `lib/enrollment/class-capacity.ts`, 셔틀 위치 저장 SQL `lib/students/student-shuttle-location-upsert.ts`(승인 동작은 tests/student-register.test.mjs 의 vm 실행으로 고정). 수강료 표시는 `lib/billing/regular-tuition-preview.ts`(청구 모듈과 무관, 프로그램 화면 2곳도 여기서 상수 사용). 인라인 폼은 «수정» 전용. 문자 발송 없음.
+- **참조횟수**: 0
