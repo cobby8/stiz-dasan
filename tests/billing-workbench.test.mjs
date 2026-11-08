@@ -9,8 +9,9 @@ const {roundCarryTotal,workbenchTotal,validateWorkbenchCommand,carryPool,allocat
 const registerUrl=url(await readFile("src/lib/billing/monthly-register.ts","utf8"));
 const dueUrl=url(await readFile("src/lib/billing-due-date.ts","utf8"));
 const visibilityUrl=url(await readFile("src/lib/studentVisibility.ts","utf8"));
+const pricingUrl=url(await readFile("src/lib/billing/workbench-pricing.ts","utf8"));
 const serviceSource=await readFile("src/lib/billing/workbench-service.ts","utf8");
-const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`));
+const serviceUrl=url(serviceSource.replace('import { getMonthlyClassDates } from "@/lib/enrollment/monthlyClassDates";','const getMonthlyClassDates=(events,month)=>events.some(e=>e.title==="NO_SCHEDULE")?[]:events.some(e=>e.title==="SHORT_MONTH")&&month==="2026-11"?["2026-11-07","2026-11-14","2026-11-21"]:(month==="2026-10"?["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]:["2026-11-07","2026-11-14","2026-11-21","2026-11-28"]).filter(d=>!(d==="2026-10-10"&&events.some(e=>e.title==="CLOSE_OCT_10")));').replace('from "@/lib/billing-due-date"',`from "${dueUrl}"`).replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-pricing"',`from "${pricingUrl}"`));
 const {readWorkbench,mutateWorkbench}=await import(serviceUrl);
 const absenceSource=await readFile("src/lib/billing/workbench-absence.ts","utf8");
 const absenceUrl=url(absenceSource.replace('from "@/lib/studentVisibility"',`from "${visibilityUrl}"`).replace('from "./monthly-register"',`from "${registerUrl}"`).replace('from "./workbench"',`from "${modelUrl}"`).replace('from "./workbench-service"',`from "${serviceUrl}"`).replace('await import("@/lib/enrollment/monthlyClassDates")','({getMonthlyClassDates:()=>["2026-10-03","2026-10-10","2026-10-17","2026-10-24"]})'));
@@ -58,6 +59,8 @@ function database({credit=0,secondClass=false}={}){
   if(sql.includes('FROM "Class"'))return [{dayOfWeek:"Sat"}];
   if(sql.includes('FROM "BillingWorkbenchOperation"'))return structuredClone(state.operations.filter(o=>o.requestId===v[0]));
   if(sql.includes('FROM "Student"'))return state.studentHidden?[]:[{id:"student-a"}];
+  // 셔틀 명단(그 달 승차·하차 이용자). 기본은 비어 있음 → 셔틀비 제안 없음.
+  if(sql.includes('FROM "RegularShuttleStop"'))return structuredClone((state.shuttleStops??[]).filter(r=>r.serviceMonth===v[0]));
   throw new Error(`unexpected read ${sql}`);
  },async $executeRawUnsafe(sql,...v){
   if(sql.includes("pg_advisory"))return 1;
@@ -373,4 +376,53 @@ test("같은 날 개시는 포함하고 기존 개시일 미상 수강의 기간
  const db=database();db.state.enrollments[0].startsOn="2026-11-07";
  assert.equal((await readWorkbench(db.tx,"2026-11",true)).rows[0].scheduledDates.length,4);
  db.state.enrollments[0].startsOn=null;assert.equal((await readWorkbench(db.tx,"2026-11",true)).rows[0].scheduledDates.length,4);
+});
+// ── 주N회 요금·셔틀비·형제할인 «제안값» (2026-11-08) ──
+const hobbyProgram={programId:"hobby",programName:"주중취미반",price:100000,priceWeek1:100000,priceWeek2:160000,priceWeek3:210000,priceDaily:null,runsShuttle:true,shuttleFeeOverride:null,slotKey:null};
+function pricingDatabase(){
+ const db=database();
+ db.state.enrollments=[
+  {...db.state.enrollments[0],...hobbyProgram,studentId:"kid-1",studentName:"형",classId:"mon",dayOfWeek:"Mon",parentId:"parent-a",birthDate:"2015-01-01"},
+  {...db.state.enrollments[0],...hobbyProgram,studentId:"kid-1",studentName:"형",classId:"wed",dayOfWeek:"Wed",parentId:"parent-a",birthDate:"2015-01-01"},
+  {...db.state.enrollments[0],...hobbyProgram,studentId:"kid-2",studentName:"동생",classId:"tue",dayOfWeek:"Tue",parentId:"parent-a",birthDate:"2017-01-01"},
+ ];
+ db.state.shuttleStops=[{serviceMonth:"2026-11",studentId:"kid-1",studentName:"형"},{serviceMonth:"2026-11",studentId:null,studentName:"연결안됨"}];
+ return db;
+}
+test("주2회 학생은 주2회 요금을 반 수로 나누고, 형제는 수강료만 10% 할인, 셔틀비는 첫 반 한 행에만",async()=>{
+ const view=await readWorkbench(pricingDatabase().tx,"2026-11",true);
+ const row=id=>view.rows.find(r=>r.id===id);
+ assert.equal(row("kid-1:mon").baseAmount,80000);assert.equal(row("kid-1:wed").baseAmount,80000);
+ assert.equal(row("kid-1:mon").discountAmount,8000);assert.equal(row("kid-2:tue").discountAmount,10000);
+ assert.equal(row("kid-1:mon").shuttleAmount,15000);assert.equal(row("kid-1:wed").shuttleAmount,0);assert.equal(row("kid-2:tue").shuttleAmount,0);
+ // 형 합계 = 160,000 − 16,000 + 셔틀 15,000(할인 대상 아님)
+ assert.equal(row("kid-1:mon").totalAmount+row("kid-1:wed").totalAmount,159000);
+ assert.ok(row("kid-1:mon").basis.some(b=>/주2회 요금 160,000원/.test(b)));
+ assert.ok(view.notices.some(n=>/연결되지 않은 1명/.test(n)));
+});
+test("휴원 형제는 세지 않고, 휴원 반은 주N회 횟수에서 뺀다",async()=>{
+ const db=pricingDatabase();db.state.enrollments[1].status="PAUSED";db.state.enrollments[2].status="PAUSED";
+ const view=await readWorkbench(db.tx,"2026-11",true),row=view.rows.find(r=>r.id==="kid-1:mon");
+ assert.equal(row.baseAmount,100000);assert.equal(row.discountAmount,0);assert.equal(row.shuttleAmount,10000);
+});
+test("사람이 저장한 할인·셔틀 값은 제안값으로 덮어쓰지 않는다",async()=>{
+ const db=pricingDatabase();let view=await readWorkbench(db.tx,"2026-11",true);
+ const target=view.rows.find(r=>r.id==="kid-1:mon");
+ const save={action:"SAVE",month:"2026-11",sourceVersion:view.sourceVersion,requestId:"request-manual-discount",rows:[{id:target.id,expectedVersion:target.version,baseAmount:80000,discountAmount:20000,prorationAmount:0,carryAmount:0,shuttleAmount:0,reason:"원장 지시 별도 할인·셔틀 무료"}]};
+ ({view}=await mutateWorkbench(db,save,"admin",true));
+ const saved=view.rows.find(r=>r.id==="kid-1:mon");
+ assert.equal(saved.discountAmount,20000);assert.equal(saved.shuttleAmount,0);
+ // 저장 행이 셔틀 첫 행이라 다른 반에 셔틀비를 다시 제안하지 않는다
+ assert.equal(view.rows.find(r=>r.id==="kid-1:wed").shuttleAmount,0);
+});
+test("이번 달 기존 청구가 있는 학생에게는 셔틀비를 다시 제안하지 않는다",async()=>{
+ const db=pricingDatabase();db.state.payments.push({id:"rallyz",studentId:"kid-1",classId:"mon",amount:95000,status:"PAID",type:"MONTHLY"});
+ const view=await readWorkbench(db.tx,"2026-11",true);
+ assert.equal(view.rows.find(r=>r.id==="kid-1:wed").shuttleAmount,0);
+ assert.ok(view.rows.find(r=>r.id==="kid-1:wed").basis.some(b=>/제안하지 않음/.test(b)));
+});
+test("셔틀 명단이 바뀌면 원본 버전이 바뀐다(저장 초안 재검토)",async()=>{
+ const db=pricingDatabase();const before=(await readWorkbench(db.tx,"2026-11",true)).sourceVersion;
+ db.state.shuttleStops.push({serviceMonth:"2026-11",studentId:"kid-2",studentName:"동생"});
+ assert.notEqual((await readWorkbench(db.tx,"2026-11",true)).sourceVersion,before);
 });

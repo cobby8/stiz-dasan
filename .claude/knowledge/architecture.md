@@ -167,4 +167,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 정규 Session 자연키는 `regularSessionKey(반id, YYYY-MM-DD)` 하나. 관리자 출결(saveAttendance)·수업일지(saveSessionLog)·랠리즈 반영은 `findOrCreateRegularSession(tx, …)`, 코치 «수업 시작»·«예정 내용»은 `adoptRegularSessionKey(tx, …)`+`regularSessionKey`(모두 트랜잭션 안·키별 advisory 잠금). 키 없는 옛 기록은 «입양»(키를 붙임)해 둘로 갈라지지 않는다. Session 을 새로 만드는 경로를 추가하면 반드시 이 파일을 거친다(테스트 `regular-session-single-record` 가 admin.ts 의 키 없는 INSERT 를 막음). 보강: 코치 출석부 명단은 `makeupOnClassDateSql`(makeupDate timestamptz 에 시간대 한 번)로 이 반·이 날 BOOKED/ATTENDED 예약 아이를 «보강»으로 붙이고, 출결 저장도 같은 조건으로 판정 → `applyMakeupAttendanceInTx`(lockCompensation·FOR UPDATE·조건부 UPDATE) 뒤 기존 `syncCreditForMakeupSession`(ATTENDED→USED·BOOKED→RESERVED). 출석·지각=참석(같은 날 한 건만), 결석=보강권 안 씀·참석이었으면 되돌림. 보강 아이는 `syncCreditForRegularSession`(결석 보강권 발급)을 타지 않는다.
+### [2026-11-08] 청구 준비 제안값(주N회 요금·셔틀비·형제할인) = 순수 workbench-pricing + readWorkbench 사전 판정
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 청구 준비 행은 «학생×반»이라 주2회 학생은 행 2개다. `readWorkbench` 가 먼저 행마다 청구 대상(excluded)을 정하고(scopeOf), 청구 대상 반만 `src/lib/billing/workbench-pricing.ts` 에 넘긴다 — planWeeklyTuition(같은 프로그램 N반 → 주N회 요금을 N으로 나눔, 남는 원은 첫 행, 빈 칸이면 주1회×N+경고, 여러 프로그램 수강은 경고만), planShuttleFee(그달 `RegularShuttleStop` 의 studentId 연결 행만, 셔틀 운행 평일 반 주 횟수 → 1만/1.5만/2만·직접입력 최대값·Sun-8 면제), siblingDiscountStudents(같은 parentId 청구 대상 자녀 2명↑, 상수 `REGULAR_SIBLING_DISCOUNT_TARGET` ALL/SECOND_AND_LATER)+siblingDiscountAmount(수강료 10% 절사, 셔틀 제외). 적용은 확정 월 장부 없는 행만, 저장 초안 payload 가 항상 이긴다. 셔틀비는 학생의 «첫 발행 대상 행» 1개에만, 다른 반 초안에 셔틀비 저장·이번 달 기존 청구가 있으면 제안 안 함. 셔틀 명단은 sourceVersion 해시에 포함. 셔틀비 규칙의 다른 사본: ProgramFormPanel/ProgramsAdminClient/programs/page 의 autoShuttle 표, studentBilling.ts 의 Sun-8 — 바꾸면 같이 바꾼다.
 - **참조횟수**: 0
