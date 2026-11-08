@@ -41,6 +41,7 @@ import {
     buildAdminRegisterAgreements,
     findDuplicateSuspects,
     normalizeRegisterClassIds,
+    STUDENT_BIRTH_KST_YMD_SQL,
     validateStudentRegisterInput,
     type DuplicateCandidateRow,
     type DuplicateSuspect,
@@ -60,6 +61,8 @@ export type RegisterClassOption = {
     startTime: string;
     endTime: string;
     location: string | null;
+    /** 시간표 슬롯(예: Sun-8) — 셔틀비 미리보기의 대표팀 면제 판정에 쓴다 */
+    slotKey: string | null;
     capacity: number;
     /** 지금 ACTIVE 수강 인원(병합 제외) — 정원 경고와 같은 기준 */
     activeCount: number;
@@ -71,6 +74,8 @@ export type RegisterProgramOption = {
     id: string;
     name: string;
     days: string | null;
+    /** 주1회 요금(청구 모듈 weeklyTierPrice 가 주1회에 쓰는 값) */
+    price: number;
     priceWeek1: number | null;
     priceWeek2: number | null;
     priceWeek3: number | null;
@@ -90,7 +95,7 @@ export type StudentRegisterOptions = {
 export async function getStudentRegisterOptions(): Promise<StudentRegisterOptions> {
     await requireAdmin();
     const classes = await prisma.$queryRawUnsafe<RegisterClassOption[]>(
-        `SELECT c.id, c.name, c."dayOfWeek", c."startTime", c."endTime", c.location, c.capacity,
+        `SELECT c.id, c.name, c."dayOfWeek", c."startTime", c."endTime", c.location, c."slotKey", c.capacity,
                 (SELECT COUNT(*) FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId"
                   WHERE e."classId" = c.id AND e.status = 'ACTIVE' AND ${notMergedStudent("s")})::int AS "activeCount",
                 p.id AS "programId", p.name AS "programName"
@@ -99,12 +104,14 @@ export async function getStudentRegisterOptions(): Promise<StudentRegisterOption
           ORDER BY c."startTime", c.name`,
     );
     const programs = await prisma.$queryRawUnsafe<RegisterProgramOption[]>(
-        `SELECT id, name, days, "priceWeek1", "priceWeek2", "priceWeek3", "priceDaily",
+        `SELECT id, name, days, price, "priceWeek1", "priceWeek2", "priceWeek3", "priceDaily",
                 "shuttleFeeOverride", "runsShuttle"
            FROM "Program" WHERE "deletedAt" IS NULL ORDER BY "order", name`,
     );
     return { classes, programs, today: todayKst() };
 }
+
+type DbReader = { $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T> };
 
 // ── 1단계 미리보기: 학부모 계정 후보 + 중복 의심 학생 (읽기 전용) ───────────
 
@@ -119,11 +126,12 @@ export type StudentRegisterPreview = {
     duplicates: DuplicateSuspect[];
 };
 
-/** 같은 이름 학생 후보(병합 제외) + 그 학생의 보호자 번호들 + 지금 수강 중인 반 이름 */
-async function readDuplicateCandidates(name: string): Promise<DuplicateCandidateRow[]> {
-    // birthDate 는 시간대 없는 timestamp(자정)라 시간대 변환 없이 날짜만 꺼낸다
-    return prisma.$queryRawUnsafe<DuplicateCandidateRow[]>(
-        `SELECT s.id, s.name, to_char(s."birthDate", 'YYYY-MM-DD') AS "birthDate",
+/** 같은 이름 학생 후보(병합 제외) + 그 학생의 보호자 번호들 + 지금 수강 중인 반 이름. db = prisma 또는 트랜잭션 tx */
+async function readDuplicateCandidates(db: DbReader, name: string): Promise<DuplicateCandidateRow[]> {
+    // 생년은 KST 달력 날짜로 꺼낸다(STUDENT_BIRTH_KST_YMD_SQL — 무tz 컬럼이라 «두 번» 건다).
+    // 운영엔 자정 행과 «한국 자정을 UTC 로 넣은 전날 15:00» 행이 섞여 있어, 날짜만 자르면 15:00 행이 하루 앞당겨진다.
+    return db.$queryRawUnsafe<DuplicateCandidateRow[]>(
+        `SELECT s.id, s.name, ${STUDENT_BIRTH_KST_YMD_SQL("s")} AS "birthDate",
                 ARRAY_REMOVE(
                     ARRAY[regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g')]
                     || COALESCE((SELECT array_agg(regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g'))
@@ -181,7 +189,7 @@ export async function previewStudentRegistration(input: {
     }
 
     const duplicates = name
-        ? findDuplicateSuspects(await readDuplicateCandidates(name), {
+        ? findDuplicateSuspects(await readDuplicateCandidates(prisma, name), {
             name,
             birthDate: String(input?.birthDate ?? ""),
             guardianPhones: [digits, ...(input?.guardianPhones ?? [])],
@@ -200,6 +208,12 @@ export type RegisterStudentResult =
 
 /** 트랜잭션 안에서 «안내 문구로 멈춤» — 롤백되고 ok:false 로 돌려준다(운영 빌드는 던진 오류 문구를 화면에 안 보낸다) */
 class RegisterAbort extends Error {}
+/** 트랜잭션 안 중복 재확인에 걸림 — 롤백 후 DUPLICATE_SUSPECT 로 돌려준다 */
+class RegisterDuplicate extends RegisterAbort {
+    constructor(readonly duplicates: DuplicateSuspect[]) {
+        super("방금 같은 학생이 등록된 것 같습니다. 확인 후 새로 등록할지 골라 주세요.");
+    }
+}
 
 /** 등록 대상 정규반(정규·미삭제 프로그램)만 — 신청서 승인과 같은 조건 */
 const REGULAR_CLASS_SQL = `SELECT c.id, c.name, c.location FROM "Class" c JOIN "Program" p ON p.id=c."programId"
@@ -231,6 +245,12 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
     if (!checked.ok) return { ok: false, code: "INVALID", error: checked.error, step: checked.step };
     const data = checked.value;
     const classIds = normalizeRegisterClassIds(data.classIds);
+    // 중복 판정 대상 — 트랜잭션 전 확인과 트랜잭션 안 재확인이 같은 값을 쓴다
+    const duplicateTarget = {
+        name: data.student.name,
+        birthDate: data.student.birthDate,
+        guardianPhones: [data.primaryGuardian.phone, ...data.extraGuardians.map((g) => g.phone)],
+    };
 
     // 1) 반 유효성 — 정규·미삭제 프로그램 반만(트랜잭션 전에 읽기만)
     if (classIds.length > 0) {
@@ -248,11 +268,7 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
     }
     // 3) 중복 의심 — 서버에서 한 번 더(창의 미리보기와 같은 판정)
     if (!data.allowDuplicate) {
-        const duplicates = findDuplicateSuspects(await readDuplicateCandidates(data.student.name), {
-            name: data.student.name,
-            birthDate: data.student.birthDate,
-            guardianPhones: [data.primaryGuardian.phone, ...data.extraGuardians.map((g) => g.phone)],
-        });
+        const duplicates = findDuplicateSuspects(await readDuplicateCandidates(prisma, data.student.name), duplicateTarget);
         if (duplicates.length > 0) {
             return { ok: false, code: "DUPLICATE_SUSPECT", duplicates, error: "이미 있는 학생일 수 있습니다. 확인 후 새로 등록할지 골라 주세요." };
         }
@@ -279,6 +295,13 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
 
             // (c) 학부모 계정 확정 — 기존 계정은 읽기만(이름·번호·이메일 UPDATE 없음)
             const link = await linkParentAccountForNewStudent(tx, data.primaryGuardian);
+
+            // (c-2) 번호 잠금을 잡은 직후 중복을 한 번 더 — 같은 학생을 두 화면에서 동시에 등록하면 위의 사전 확인은
+            //       둘 다 통과한다. 같은 주 보호자 번호는 이 잠금으로 줄을 서므로, 뒤에 온 쪽이 여기서 먼저 온 학생을 본다.
+            if (!data.allowDuplicate) {
+                const again = findDuplicateSuspects(await readDuplicateCandidates(tx, data.student.name), duplicateTarget);
+                if (again.length > 0) throw new RegisterDuplicate(again);
+            }
 
             // (d) 학생 — 지점은 반 장소에서 자동, 모르면 직접 고른 값(원장 결정 s-branch)
             const branch = branchFromClassLocations(locked.map((c) => c.location)) ?? data.branch;
@@ -379,6 +402,9 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
         revalidateAfterRegister(Boolean(data.trialLeadId));
         return { ok: true, ...saved, classCount: classIds.length };
     } catch (e) {
+        if (e instanceof RegisterDuplicate) {
+            return { ok: false, code: "DUPLICATE_SUSPECT", duplicates: e.duplicates, error: e.message };
+        }
         if (e instanceof ParentAccountLinkError || e instanceof RegisterAbort) {
             return { ok: false, code: "INVALID", error: e.message };
         }

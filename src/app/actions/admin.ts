@@ -2763,7 +2763,8 @@ function parseClassNameToSlotKey(className: string): string | null {
  * 6. className이 있으면: slotKey로 파싱 → Class 검색 → 자동 수강 등록
  *
  * PgBouncer 호환을 위해 $queryRawUnsafe / $executeRawUnsafe만 사용
- * 트랜잭션 사용 불가이므로, 건별 INSERT + 실패 목록 반환 방식
+ * 학생 1명 신규 분기(계정 확정·학생·보호자1~3)는 트랜잭션 하나(prisma.$transaction — 원시 SQL 이라 PgBouncer 에서도 동작).
+ * 엑셀 전체는 묶지 않는다 — 한 행이 실패해도 나머지는 등록하고 실패 목록으로 돌려준다.
  */
 export async function bulkCreateStudents(
     students: BulkStudentInput[],

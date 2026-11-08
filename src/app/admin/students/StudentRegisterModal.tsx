@@ -202,7 +202,12 @@ export default function StudentRegisterModal({
     const dayClasses = (options?.classes ?? []).filter((c) => c.dayOfWeek === dayTab);
     const autoBranch = branchFromClassLocations(selectedClasses.map((c) => c.location));
     const tuition = useMemo(
-        () => previewRegularTuition(options?.programs ?? [], selectedClasses.map((c) => c.programId), shuttleNeeded),
+        // 청구 제안값과 같은 계산(청구 모듈 함수 호출) — 반 요일·슬롯을 넘겨 주말·대표팀 면제도 같게
+        () => previewRegularTuition(
+            options?.programs ?? [],
+            selectedClasses.map((c) => ({ id: c.id, programId: c.programId, dayOfWeek: c.dayOfWeek, slotKey: c.slotKey })),
+            shuttleNeeded,
+        ),
         [options, selectedClasses, shuttleNeeded],
     );
     const duplicates = preview?.duplicates ?? [];
@@ -566,8 +571,13 @@ export default function StudentRegisterModal({
                         {tuition.lines.length > 0 && (
                             <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
                                 <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-primary)]" aria-hidden="true">payments</span>
-                                {tuition.lines.map((l) => `${l.programName} ${l.freqLabel} · 월 ${l.tuition != null ? won(l.tuition) : "요금 미설정"}${l.shuttleFee ? ` (+셔틀 ${won(l.shuttleFee)})` : ""}`).join(" / ")}
-                                <span className="ml-1 text-xs text-[var(--color-academy-muted)]">참고 금액 · 청구는 월 장부에서</span>
+                                {tuition.lines.map((l) => `${l.programName} 주${l.weeklyCount}회 · 월 ${won(l.tuition)}`).join(" + ")}
+                                {shuttleNeeded && tuition.shuttleFee > 0 ? ` (+셔틀 ${won(tuition.shuttleFee)})` : ""}
+                                <span className="ml-1 text-xs text-[var(--color-academy-muted)]">청구 자동 제안과 같은 참고 금액 · 청구는 월 장부에서</span>
+                                {/* 청구 화면과 같은 경고(주N회 요금 빈 칸·여러 프로그램·셔틀 운행 반 없음) */}
+                                {[...new Set([...tuition.lines.map((l) => l.warning), tuition.shuttleWarning].filter(Boolean))].map((w) => (
+                                    <span key={w} className="mt-1 block text-xs text-[var(--color-academy-warning)]">{w}</span>
+                                ))}
                             </p>
                         )}
 
@@ -649,8 +659,8 @@ export default function StudentRegisterModal({
                             <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">
                                 {assignLater ? "반 나중에 배정" : `${selectedClasses.map((c) => c.name).join(", ")} (주 ${selectedClasses.length}회)`}
                                 {` · ${startOn} 시작`}
-                                {tuition.tuitionTotal != null ? ` · 월 ${won(tuition.tuitionTotal)}` : ""}
-                                {shuttleNeeded ? ` · 셔틀${tuition.shuttleTotal ? ` ${won(tuition.shuttleTotal)}` : ""}` : ""}
+                                {tuition.lines.length > 0 ? ` · 월 ${won(tuition.tuitionTotal)}` : ""}
+                                {shuttleNeeded ? ` · 셔틀${tuition.shuttleFee ? ` ${won(tuition.shuttleFee)}` : ""}` : ""}
                             </dd>
                         </dl>
 

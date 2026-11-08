@@ -14,7 +14,7 @@
  *
  * ■ 이 파일은 prisma·next 를 import 하지 않는다 — `node --test` 로 실제 실행해 검증한다.
  */
-import { isKstYmd } from "@/lib/datetime/kst";
+import { isKstYmd, toKstYmd } from "@/lib/datetime/kst";
 import {
     MAX_GUARDIANS_PER_STUDENT,
     normalizeGuardianPhone,
@@ -353,6 +353,26 @@ export function validateStudentRegisterInput(input: StudentRegisterInput, todayY
  */
 export function buildAdminRegisterAgreements(adminUserId: string, atIso: string, onYmd: string): string {
     return JSON.stringify({ adminRegister: { privacy: true, by: adminUserId, at: atIso, on: onYmd } });
+}
+
+/**
+ * Student.birthDate → KST 달력 날짜(YYYY-MM-DD) SQL 조각.
+ * 컬럼은 시간대 없는 timestamp(schema.prisma: `birthDate DateTime`, @db 지정 없음 = timestamp(3))라
+ * 전역 규칙대로 «두 번» 건다: 먼저 UTC 로 «해석»하고 그다음 서울 시각으로 바꾼다. 한 번만 걸면 9시간 밀린다.
+ * - 자정 저장 행(2016-03-15 00:00) → KST 09:00 → 2016-03-15 (같은 날)
+ * - «한국 자정을 UTC 로 넣은» 행(2016-03-14 15:00) → KST 다음 날 00:00 → 2016-03-15 (원래 생일)
+ * JS 쪽 같은 규칙은 birthDateKstYmd(두 경우를 테스트로 고정).
+ */
+export function STUDENT_BIRTH_KST_YMD_SQL(alias: string): string {
+    return `to_char((${alias}."birthDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')`;
+}
+
+/** 시간대 없는 DB 값("YYYY-MM-DD HH:MM:SS" — UTC 로 본다) 또는 Date → KST 달력 날짜. SQL 조각과 같은 규칙 */
+export function birthDateKstYmd(value: string | Date | null | undefined): string {
+    if (value == null || value === "") return "";
+    const instant = value instanceof Date ? value : new Date(`${String(value).trim().replace(" ", "T").replace(/Z$/, "")}Z`);
+    if (Number.isNaN(instant.getTime())) return "";
+    return toKstYmd(instant);
 }
 
 /** 중복 의심 후보 한 줄(SQL 결과) */

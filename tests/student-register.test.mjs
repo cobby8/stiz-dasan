@@ -10,6 +10,7 @@ import { loadTsModule } from "./_ts-module.mjs";
 // 수강료 상수는 프로그램 화면 2곳에서 한 곳으로 모았다 → 금액이 그대로인지 못박는다.
 
 const tuition = await loadTsModule("src/lib/billing/regular-tuition-preview.ts");
+const pricing = await loadTsModule("src/lib/billing/workbench-pricing.ts");
 const capacity = await loadTsModule("src/lib/enrollment/class-capacity.ts");
 const shuttle = await loadTsModule("src/lib/students/student-shuttle-location-upsert.ts");
 const rules = await loadTsModule("src/lib/students/student-register-rules.ts");
@@ -58,27 +59,58 @@ test("[요금] 프로그램 화면 2곳은 상수를 따로 갖지 않고 공용
   assert.match(programsList, /shuttleFeeAmount\(shuttleFeeOverride, freqKey, weekend\)/);
 });
 
-test("[요금] 고른 반 → 프로그램별 주 n회 가격(+셔틀)", () => {
-  const programs = [
-    { id: "p1", name: "초등부", days: "Mon,Wed", priceWeek1: 120000, priceWeek2: 200000, priceWeek3: 270000, priceDaily: null, shuttleFeeOverride: null, runsShuttle: true },
-    { id: "p2", name: "주말반", days: "Sat", priceWeek1: 130000, priceWeek2: null, priceWeek3: null, priceDaily: null, shuttleFeeOverride: null, runsShuttle: true },
+/** 청구 준비(workbench)가 같은 학생·같은 반으로 내놓을 «제안값» — 청구 모듈 함수를 직접 불러 계산 */
+function billingSuggestion(programs, classes, onRoster) {
+  const byId = new Map(programs.map((p) => [p.id, p]));
+  const plans = pricing.planWeeklyTuition(classes.map((c) => {
+    const p = byId.get(c.programId);
+    return { key: `s1:${c.id}`, studentId: "s1", programId: p.id, programName: p.name, price: p.price, priceWeek1: p.priceWeek1, priceWeek2: p.priceWeek2, priceWeek3: p.priceWeek3, priceDaily: p.priceDaily };
+  }));
+  const tuitionTotal = [...plans.values()].reduce((sum, plan) => sum + plan.baseAmount, 0);
+  const shuttle = pricing.planShuttleFee(onRoster, classes.map((c) => {
+    const p = byId.get(c.programId);
+    return { dayOfWeek: c.dayOfWeek, slotKey: c.slotKey, runsShuttle: p.runsShuttle, shuttleFeeOverride: p.shuttleFeeOverride };
+  }));
+  return { tuitionTotal, shuttleFee: shuttle.amount };
+}
+
+const PROGRAMS = [
+  { id: "hobby", name: "주중취미", price: 100000, priceWeek1: 100000, priceWeek2: 160000, priceWeek3: 210000, priceDaily: null, shuttleFeeOverride: null, runsShuttle: true },
+  { id: "match", name: "주중경기", price: 110000, priceWeek1: 110000, priceWeek2: 180000, priceWeek3: null, priceDaily: null, shuttleFeeOverride: 25000, runsShuttle: true },
+  { id: "weekend", name: "주말반", price: 120000, priceWeek1: 120000, priceWeek2: null, priceWeek3: null, priceDaily: null, shuttleFeeOverride: null, runsShuttle: true },
+  { id: "elite", name: "대표팀", price: 150000, priceWeek1: 150000, priceWeek2: null, priceWeek3: null, priceDaily: null, shuttleFeeOverride: null, runsShuttle: true },
+];
+const cls = (id, programId, dayOfWeek, slotKey = null) => ({ id, programId, dayOfWeek, slotKey });
+
+test("[요금] 미리보기 = 청구 제안값(대표 5가지)", () => {
+  const cases = [
+    ["주2회 한 프로그램 + 셔틀", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Wed")], true, { tuitionTotal: 160000, shuttleFee: 15000 }],
+    ["반 4개(주4회 칸 없음 → 청구와 같은 대체 계산)", [cls("a", "hobby", "Mon"), cls("b", "hobby", "Tue"), cls("c", "hobby", "Wed"), cls("d", "hobby", "Thu")], true, { tuitionTotal: 400000, shuttleFee: 20000 }],
+    ["여러 프로그램 + 셔틀(직접 입력 셔틀비가 있으면 그 값)", [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true, { tuitionTotal: 210000, shuttleFee: 25000 }],
+    ["주말 판정은 반 요일 기준(주말 반은 셔틀 횟수에서 빠짐)", [cls("a", "hobby", "Tue"), cls("b", "weekend", "Sat")], true, { tuitionTotal: 220000, shuttleFee: 10000 }],
+    ["일8 대표팀이면 셔틀비 전체 면제", [cls("a", "hobby", "Mon"), cls("b", "elite", "Sun", "Sun-8")], true, { tuitionTotal: 250000, shuttleFee: 0 }],
   ];
-  const two = tuition.previewRegularTuition(programs, ["p1", "p1"], true);
-  assert.deepEqual(two.lines.map((l) => [l.freqLabel, l.tuition, l.shuttleFee]), [["주 2회", 200000, 15000]]);
-  assert.equal(two.tuitionTotal, 200000);
-  assert.equal(two.shuttleTotal, 15000);
-  // 주말반은 셔틀 없음, 셔틀 안 쓰면 0
-  const mixed = tuition.previewRegularTuition(programs, ["p1", "p2"], true);
-  assert.deepEqual(mixed.lines.map((l) => [l.programId, l.tuition, l.shuttleFee]), [["p1", 120000, 10000], ["p2", 130000, null]]);
-  assert.equal(mixed.tuitionTotal, 250000);
-  assert.equal(tuition.previewRegularTuition(programs, ["p1"], false).shuttleTotal, 0);
-  // 그 횟수 가격이 없으면 «요금 미설정»(합계도 null)
-  const missing = tuition.previewRegularTuition(programs, ["p2", "p2"], false);
-  assert.equal(missing.lines[0].tuition, null);
-  assert.equal(missing.tuitionTotal, null);
-  // 셔틀 운행 안 하는 프로그램
-  const noShuttle = tuition.previewRegularTuition([{ ...programs[0], runsShuttle: false }], ["p1"], true);
-  assert.equal(noShuttle.lines[0].shuttleFee, null);
+  for (const [label, classes, shuttleOn, expected] of cases) {
+    const preview = tuition.previewRegularTuition(PROGRAMS, classes, shuttleOn);
+    const billing = billingSuggestion(PROGRAMS, classes, shuttleOn);
+    assert.deepEqual({ tuitionTotal: preview.tuitionTotal, shuttleFee: preview.shuttleFee }, billing, `${label}: 청구 제안값과 달라졌다`);
+    assert.deepEqual(billing, expected, `${label}: 기대 금액`);
+  }
+  // 셔틀을 안 쓰면 0, 여러 프로그램이면 청구 화면과 같은 경고가 붙는다
+  assert.equal(tuition.previewRegularTuition(PROGRAMS, [cls("a", "hobby", "Mon")], false).shuttleFee, 0);
+  assert.match(tuition.previewRegularTuition(PROGRAMS, [cls("a", "hobby", "Mon"), cls("b", "match", "Thu")], true).lines[0].warning ?? "", /여러 프로그램/);
+});
+
+test("[요금] 미리보기는 자체 계산 없이 청구 모듈을 부르고, 셔틀 자동 요금 상수도 청구 모듈 하나", async () => {
+  const source = await readFile("src/lib/billing/regular-tuition-preview.ts", "utf8");
+  assert.match(source, /from "@\/lib\/billing\/workbench-pricing"/);
+  assert.match(source, /planWeeklyTuition\(enrollments\)/);
+  assert.match(source, /planShuttleFee\(useShuttle,/);
+  assert.doesNotMatch(source, /1[05]_?000|20_?000/, "금액 숫자를 따로 두지 않는다");
+  assert.deepEqual(tuition.REGULAR_FREQ_TIERS.map((t) => t.autoShuttle), [
+    pricing.AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT[1], pricing.AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT[2],
+    pricing.AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT[3], pricing.AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT[3],
+  ]);
 });
 
 // ── 신청서 승인에서 뽑은 공용 함수 — 승인 동작 고정 ────────────────────────
@@ -297,6 +329,29 @@ test("[규칙] 중복 의심: 이름+생년 또는 이름+보호자 번호", () 
   assert.deepEqual(found.map((d) => [d.id, d.reason]), [["a", "SAME_BIRTH"], ["b", "SAME_GUARDIAN_PHONE"]]);
 });
 
+test("[규칙] 생년 KST 날짜: 무tz 컬럼에 «두 번» 걸고, 자정 행·전날 15:00 행 모두 원래 생일", async () => {
+  const schema = await readFile("prisma/schema.prisma", "utf8");
+  const model = schema.slice(schema.indexOf("model Student {"), schema.indexOf("}", schema.indexOf("model Student {")));
+  assert.match(model, /\n\s*birthDate\s+DateTime\s*\n/, "@db.Timestamptz 가 없는 = 시간대 없는 timestamp");
+  assert.equal(rules.STUDENT_BIRTH_KST_YMD_SQL("s"), `to_char((s."birthDate" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')`);
+  // 같은 규칙의 JS 판(값을 UTC 로 보고 서울 날짜로)
+  assert.equal(rules.birthDateKstYmd("2016-03-15 00:00:00"), "2016-03-15", "자정 저장 행 → KST 09:00 → 같은 날");
+  assert.equal(rules.birthDateKstYmd("2016-03-14 15:00:00"), "2016-03-15", "한국 자정을 UTC 로 넣은 행 → 다음 날 = 원래 생일");
+  assert.equal(rules.birthDateKstYmd("2016-03-14 14:59:59"), "2016-03-14");
+  assert.equal(rules.birthDateKstYmd("2015-12-31 15:00:00.000"), "2016-01-01", "연말 경계");
+  assert.equal(rules.birthDateKstYmd("2016-02-28 15:00:00"), "2016-02-29", "윤년");
+  assert.equal(rules.birthDateKstYmd(new Date("2016-03-14T15:00:00.000Z")), "2016-03-15");
+  assert.equal(rules.birthDateKstYmd(""), "");
+  // 중복 확인 SQL 은 이 조각을 쓴다(날짜만 자르지 않는다)
+  assert.match(action, /\$\{STUDENT_BIRTH_KST_YMD_SQL\("s"\)\} AS "birthDate"/);
+  assert.doesNotMatch(action, /to_char\(s\."birthDate", 'YYYY-MM-DD'\)/);
+});
+
+test("[규칙] 새로 저장하는 생년 형식은 기존 등록 경로(createStudent·엑셀)와 같은 «YYYY-MM-DD → ::timestamp» 자정", () => {
+  assert.match(fnBlock(action, "registerStudent"), /VALUES \(gen_random_uuid\(\)::text, \$1, \$2::timestamp,/);
+  assert.match(admin.slice(admin.indexOf("async function insertAdminStudentWithGuardian(")), /VALUES \(gen_random_uuid\(\)::text, \$1, \$2::timestamp,/);
+});
+
 test("[규칙] 개인정보 동의 확인은 agreementsJSON 의 adminRegister 아래에 누가·언제·그날", () => {
   assert.deepEqual(JSON.parse(rules.buildAdminRegisterAgreements("admin-1", "2026-11-09T01:02:03.000Z", "2026-11-09")), {
     adminRegister: { privacy: true, by: "admin-1", at: "2026-11-09T01:02:03.000Z", on: "2026-11-09" },
@@ -334,6 +389,29 @@ test("[등록] 관리자 확인 → 검증 → 정원·중복 경고(읽기만) 
   // 지점 = 반 장소 자동, 모를 때만 직접 고른 값 / 개인정보 확인 기록
   assert.match(inTx, /branchFromClassLocations\(locked\.map\(\(c\) => c\.location\)\) \?\? data\.branch/);
   assert.match(inTx, /buildAdminRegisterAgreements\(admin\.appUserId, new Date\(\)\.toISOString\(\), today\)/);
+});
+
+test("[등록] 번호 잠금을 잡은 직후 트랜잭션 안에서 중복을 다시 본다(동시 등록)", () => {
+  const body = fnBlock(action, "registerStudent");
+  const inTx = body.slice(body.indexOf("prisma.$transaction("));
+  const lock = inTx.indexOf("linkParentAccountForNewStudent(tx, data.primaryGuardian)");
+  const recheck = inTx.indexOf("readDuplicateCandidates(tx, data.student.name)");
+  const insert = inTx.indexOf('INSERT INTO "Student"');
+  assert.ok(lock >= 0 && lock < recheck && recheck < insert, "잠금 → 재확인 → 학생 INSERT 순서");
+  assert.match(inTx, /if \(!data\.allowDuplicate\) \{\s*const again = findDuplicateSuspects\(await readDuplicateCandidates\(tx, data\.student\.name\), duplicateTarget\);\s*if \(again\.length > 0\) throw new RegisterDuplicate\(again\);/);
+  assert.match(body, /if \(e instanceof RegisterDuplicate\) \{\s*return \{ ok: false, code: "DUPLICATE_SUSPECT", duplicates: e\.duplicates/);
+});
+
+test("[엑셀] 일괄 등록 설명 주석이 실제 동작(학생 1명 = 트랜잭션 하나)과 맞다", () => {
+  assert.doesNotMatch(admin, /트랜잭션 사용 불가이므로/);
+  assert.match(admin, /학생 1명 신규 분기\(계정 확정·학생·보호자1~3\)는 트랜잭션 하나/);
+});
+
+test("[화면] 체험 생년은 글자 자르기 대신 서울 날짜로 채운다", async () => {
+  const trialModals = await readFile("src/app/admin/trial/TrialCrmModals.tsx", "utf8");
+  const fn = trialModals.slice(trialModals.indexOf("function trialRegisterPrefill"));
+  assert.match(fn, /const birth = seoulDateInputValue\(lead\.childBirthDate\)/);
+  assert.doesNotMatch(fn.slice(0, 600), /\.slice\(0, 10\)/);
 });
 
 test("[등록] 기존 학부모 계정을 고치지 않고, 문자·알림을 보내지 않고, 원시 SQL 만 쓴다", () => {

@@ -859,9 +859,10 @@ function AddLeadModal({
     );
 }
 
-/** 체험 기록 → 등록 창 미리 채움 값. 생년·성별은 등록 창 형식(2016-03-15 · 남/여)일 때만 채운다 */
+/** 체험 기록 → 등록 창 미리 채움 값. 생년은 서울 날짜(2016-03-15), 성별은 남/여일 때만 채운다 */
 function trialRegisterPrefill(lead: TrialLead): StudentRegisterPrefill {
-    const birth = /^\d{4}-\d{2}-\d{2}/.test(lead.childBirthDate ?? "") ? String(lead.childBirthDate).slice(0, 10) : "";
+    // 시각이 붙은 값도 서울 날짜로 바꿔 채운다 — 글자 자르기는 «전날 15:00(UTC)» 값을 하루 앞당긴다
+    const birth = seoulDateInputValue(lead.childBirthDate);
     const gender = lead.childGender === "남" || lead.childGender === "여" ? lead.childGender : "";
     return {
         trialLeadId: lead.id,
