@@ -12,21 +12,23 @@
 import { addDaysKst, isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
 import {
   RENTAL_HOLDING_STATUSES,
-  RENTAL_MAX_HOURS,
+  RENTAL_START_STEP_MINUTES,
   RENTAL_TRANSITIONS,
-  buildRentalSlots,
+  buildRentalDay,
   calculateRentalFee,
   cleanRentalText,
   isBookableDate,
-  isRangeAvailable,
   isRentalAction,
+  isRentalRangeAvailable,
+  isValidRentalDuration,
   normalizeRentalPhone,
   parseCancelRefund,
+  rentalHourColumns,
   rentalInstantMs,
   type RentalAction,
   type RentalBusyRange,
   type RentalClassRow,
-  type RentalSlot,
+  type RentalDay,
   type RentalStatus,
 } from "@/lib/rental/gym-rental-rules";
 
@@ -50,9 +52,9 @@ function toDayMinutes(rows: InstantRow[], dayStartMs: number): RentalBusyRange[]
     .filter((row) => Number.isFinite(row.startMinute) && Number.isFinite(row.endMinute) && row.endMinute > row.startMinute);
 }
 
-/** 그날의 1시간 칸 — 정규 수업·특강 회차·승인된 대관을 빼고 계산 */
-export async function loadRentalSlots(db: RawSqlClient, date: string, nowMs: number): Promise<RentalSlot[]> {
-  if (!isKstYmd(date)) return [];
+/** 그날의 시작 후보(10분 간격) — 정규 수업·특강 회차·승인된 대관을 빼고 계산 */
+export async function loadRentalDay(db: RawSqlClient, date: string, nowMs: number): Promise<RentalDay | null> {
+  if (!isKstYmd(date)) return null;
   const dayStartMs = kstAt(date);
   const dayEndMs = kstAt(addDaysKst(date, 1));
   const dayStart = new Date(dayStartMs).toISOString();
@@ -88,7 +90,7 @@ export async function loadRentalSlots(db: RawSqlClient, date: string, nowMs: num
   );
 
   const booked = toDayMinutes(rentals, dayStartMs);
-  return buildRentalSlots({
+  return buildRentalDay({
     date,
     classes,
     busy: toDayMinutes(sessions, dayStartMs),
@@ -100,8 +102,11 @@ export async function loadRentalSlots(db: RawSqlClient, date: string, nowMs: num
 // ── 신청 접수 ─────────────────────────────────────────────────────────────
 export type RentalApplyInput = {
   rentalDate: unknown;
-  startHour: unknown;
-  hours: unknown;
+  startMinute?: unknown; // 그날 KST 0시부터 분(10분 단위)
+  durationMinutes?: unknown; // 이용 분(30분 단위, 60~360)
+  // 옛 화면(정시 칸)이 보내던 값 — 배포 직후 열려 있던 화면에서 와도 받아 준다
+  startHour?: unknown;
+  hours?: unknown;
   headcount: unknown;
   useAircon: unknown;
   applicantName: unknown;
@@ -115,6 +120,8 @@ export type RentalRecord = {
   rentalDate: string;
   startHour: number;
   endHour: number;
+  startMinute: number;
+  endMinute: number;
   headcount: number;
   useAircon: boolean;
   applicantName: string;
@@ -139,7 +146,9 @@ export type RentalApplyResult =
   | { ok: true; duplicate: boolean; request: RentalRecord }
   | { ok: false; message: string };
 
-const RECORD_COLUMNS = `id, "rentalDate", "startHour", "endHour", headcount, "useAircon", "applicantName", "applicantPhone",
+// 분 컬럼이 빈 옛 행(배포 전환 틈에 옛 코드가 저장한 행)은 정시 값으로 채워 읽는다
+const RECORD_COLUMNS = `id, "rentalDate", "startHour", "endHour",
+  COALESCE("startMinute", "startHour" * 60)::int AS "startMinute", COALESCE("endMinute", "endHour" * 60)::int AS "endMinute", headcount, "useAircon", "applicantName", "applicantPhone",
   purpose, "usageFee", deposit, "totalAmount", "depositRefunded", "cancelRefundAmount", status, "adminMemo", "createdAt",
   "approvedAt", "paidAt", "completedAt", "refundedAt", "closedAt"`;
 
@@ -159,8 +168,13 @@ export async function createRentalRequest(
   clientIpHash: string | null = null,
 ): Promise<RentalApplyResult> {
   const rentalDate = String(input.rentalDate ?? "");
-  const startHour = Number(input.startHour);
-  const hours = Number(input.hours);
+  // 새 화면은 분으로 보낸다. 옛 화면(정시·시간)이 보낸 값은 분으로 바꿔 같은 검사를 거친다.
+  const startMinute = input.startMinute !== undefined && input.startMinute !== null
+    ? Number(input.startMinute)
+    : Number(input.startHour) * 60;
+  const durationMinutes = input.durationMinutes !== undefined && input.durationMinutes !== null
+    ? Number(input.durationMinutes)
+    : Number(input.hours) * 60;
   const headcount = Number(input.headcount);
   const useAircon = input.useAircon === true;
   const applicantName = cleanRentalText(input.applicantName, 40).replace(/\s+/g, " ");
@@ -168,9 +182,12 @@ export async function createRentalRequest(
   const purpose = cleanRentalText(input.purpose, 300) || null;
 
   if (!isBookableDate(rentalDate, todayKst(nowMs))) return { ok: false, message: "신청할 수 없는 날짜입니다. 날짜를 다시 골라 주세요." };
-  if (!Number.isInteger(startHour) || !Number.isInteger(hours) || hours < 1 || hours > RENTAL_MAX_HOURS) {
+  // 화면 값을 믿지 않는다 — 시작은 10분 단위, 이용은 30분 단위(1~6시간)
+  if (!Number.isInteger(startMinute) || startMinute < 0 || startMinute % RENTAL_START_STEP_MINUTES !== 0
+    || !isValidRentalDuration(durationMinutes)) {
     return { ok: false, message: "이용 시간을 다시 골라 주세요." };
   }
+  const endMinute = startMinute + durationMinutes;
   if (!applicantName) return { ok: false, message: "신청자 이름을 입력해 주세요." };
   if (!applicantPhone) return { ok: false, message: "휴대폰 번호를 정확히 입력해 주세요. 예: 010-1234-5678" };
   if (!purpose) return { ok: false, message: "사용 목적을 입력해 주세요. 예: 동호회 농구 연습" };
@@ -178,7 +195,7 @@ export async function createRentalRequest(
 
   let fee;
   try {
-    fee = calculateRentalFee({ hours, headcount, useAircon });
+    fee = calculateRentalFee({ durationMinutes, headcount, useAircon });
   } catch (error) {
     return { ok: false, message: (error as Error).message };
   }
@@ -190,10 +207,11 @@ export async function createRentalRequest(
   // 같은 연락처·같은 시간 신청이 이미 살아 있으면 새로 만들지 않고 그 건을 보여 준다(두 번 누름 방지)
   const existing = await db.$queryRawUnsafe<RentalRecord[]>(
     `SELECT ${RECORD_COLUMNS} FROM "GymRentalRequest"
-      WHERE "applicantPhone" = $1 AND "rentalDate" = $2 AND "startHour" = $3 AND "endHour" = $4
+      WHERE "applicantPhone" = $1 AND "rentalDate" = $2
+        AND COALESCE("startMinute", "startHour" * 60) = $3 AND COALESCE("endMinute", "endHour" * 60) = $4
         AND status IN ('REQUESTED','APPROVED','PAID')
       ORDER BY "createdAt" DESC LIMIT 1`,
-    applicantPhone, rentalDate, startHour, startHour + hours,
+    applicantPhone, rentalDate, startMinute, endMinute,
   );
   if (existing[0]) return { ok: true, duplicate: true, request: existing[0] };
 
@@ -218,25 +236,27 @@ export async function createRentalRequest(
   }
 
   // 화면을 연 뒤 시간이 지났거나 다른 대관이 승인됐을 수 있다 — 서버가 다시 본다
-  const slots = await loadRentalSlots(db, rentalDate, nowMs);
-  if (!isRangeAvailable(slots, startHour, hours)) {
-    return { ok: false, message: "선택한 시간에 수업이나 다른 대관이 있습니다. 다른 시간을 골라 주세요." };
+  // 영업 시간(평일 09시·주말 10시 ~ 22시)·수업·특강·승인 대관 겹침을 서버가 다시 본다
+  const day = await loadRentalDay(db, rentalDate, nowMs);
+  if (!isRentalRangeAvailable(day, startMinute, durationMinutes)) {
+    return { ok: false, message: "선택한 시간에 수업이나 다른 대관이 있거나 이용 가능 시간이 아닙니다. 다른 시간을 골라 주세요." };
   }
 
-  const endHour = startHour + hours;
+  // 기존 정시 컬럼(NOT NULL·CHECK)은 내림/올림으로 계속 채운다. 겹침 판정은 분 단위 startAt/endAt 이 기준.
+  const { startHour, endHour } = rentalHourColumns(startMinute, endMinute);
   const rows = await db.$queryRawUnsafe<RentalRecord[]>(
     `INSERT INTO "GymRentalRequest" (
        "rentalDate", "startHour", "endHour", "startAt", "endAt", headcount, "useAircon",
        "applicantName", "applicantPhone", purpose, "usageFee", deposit, "totalAmount",
-       "clientIpHash", status, "rulesAgreedAt", "createdAt", "updatedAt"
+       "clientIpHash", status, "rulesAgreedAt", "createdAt", "updatedAt", "startMinute", "endMinute"
      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6, $7, $8, $9, $10, $11, $12, $13,
-       $14, 'REQUESTED', now(), now(), now())
+       $14, 'REQUESTED', now(), now(), now(), $15, $16)
      RETURNING ${RECORD_COLUMNS}`,
     rentalDate, startHour, endHour,
-    new Date(rentalInstantMs(rentalDate, startHour)).toISOString(),
-    new Date(rentalInstantMs(rentalDate, endHour)).toISOString(),
+    new Date(rentalInstantMs(rentalDate, startMinute)).toISOString(),
+    new Date(rentalInstantMs(rentalDate, endMinute)).toISOString(),
     fee.headcount, useAircon, applicantName, applicantPhone, purpose,
-    fee.usageFee, fee.deposit, fee.total, ipHash,
+    fee.usageFee, fee.deposit, fee.total, ipHash, startMinute, endMinute,
   );
   if (!rows[0]) return { ok: false, message: "신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." };
   return { ok: true, duplicate: false, request: rows[0] };
@@ -278,9 +298,11 @@ export async function transitionRentalInTx(
   const rule = RENTAL_TRANSITIONS[action];
 
   const locked = await tx.$queryRawUnsafe<Array<{
-    id: string; status: RentalStatus; rentalDate: string; deposit: number; startHour: number; endHour: number; totalAmount: number;
+    id: string; status: RentalStatus; rentalDate: string; deposit: number; startMinute: number; endMinute: number; totalAmount: number;
   }>>(
-    `SELECT id, status, "rentalDate", deposit, "startHour", "endHour", "totalAmount"
+    `SELECT id, status, "rentalDate", deposit,
+            COALESCE("startMinute", "startHour" * 60)::int AS "startMinute",
+            COALESCE("endMinute", "endHour" * 60)::int AS "endMinute", "totalAmount"
        FROM "GymRentalRequest" WHERE id = $1 FOR UPDATE`,
     id,
   );
@@ -303,8 +325,8 @@ export async function transitionRentalInTx(
     );
     if (clash[0]) return { ok: false, message: "이미 승인된 다른 대관과 시간이 겹칩니다. 거절하거나 시간을 조정해 주세요." };
     // 신청한 뒤에 생긴 정규 수업·특강 회차와 겹치거나 이미 시작한 시간이면 승인하지 않는다
-    const slots = await loadRentalSlots(tx, row.rentalDate, options.nowMs ?? Date.now());
-    if (!isRangeAvailable(slots, row.startHour, row.endHour - row.startHour)) {
+    const day = await loadRentalDay(tx, row.rentalDate, options.nowMs ?? Date.now());
+    if (!isRentalRangeAvailable(day, Number(row.startMinute), Number(row.endMinute) - Number(row.startMinute))) {
       return { ok: false, message: "그 시간에 수업·특강이 생겼거나 이미 지난 시간입니다. 거절하거나 시간을 조정해 주세요." };
     }
   }

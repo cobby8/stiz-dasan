@@ -21,7 +21,7 @@ import {
   allowedRentalActions,
   formatRentalPhone,
   formatWon,
-  rentalTimeLabel,
+  rentalTimeText,
   type RentalAction,
   type RentalStatus,
 } from "@/lib/rental/gym-rental-rules";
@@ -184,7 +184,7 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
                   >
                     <td className="admin-cell-center px-2 py-1.5"><StatusBadge status={row.status} /></td>
                     <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{kstLabel(row.rentalDate)}</td>
-                    <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{rentalTimeLabel(row.startHour, row.endHour)}</td>
+                    <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{rentalTimeText(row)}</td>
                     <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{row.applicantName}</td>
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-ink)] sm:table-cell">{row.headcount}명{row.useAircon ? " · 냉난방" : ""}</td>
                     <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{formatWon(row.totalAmount)}</td>
@@ -218,7 +218,7 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
           </div>
           <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
             <dt className="font-bold text-[var(--color-academy-muted)]">이용</dt>
-            <dd className="text-[var(--color-academy-ink)]">{kstLabel(detail.rentalDate)} {rentalTimeLabel(detail.startHour, detail.endHour)}</dd>
+            <dd className="text-[var(--color-academy-ink)]">{kstLabel(detail.rentalDate)} {rentalTimeText(detail)}</dd>
             <dt className="font-bold text-[var(--color-academy-muted)]">연락처</dt>
             <dd className="tabular-nums text-[var(--color-academy-ink)]">
               <a href={`tel:${detail.applicantPhone}`} className="underline">{formatRentalPhone(detail.applicantPhone)}</a>
@@ -262,7 +262,7 @@ export default function RentalAdminClient({ rows }: { rows: AdminRentalRow[] }) 
           title={`${confirmRow.applicantName} · ${RENTAL_TRANSITIONS[confirming.action].label}`}
           description={
             <div className="space-y-2">
-              <p>{kstLabel(confirmRow.rentalDate)} {rentalTimeLabel(confirmRow.startHour, confirmRow.endHour)} · {formatWon(confirmRow.totalAmount)}</p>
+              <p>{kstLabel(confirmRow.rentalDate)} {rentalTimeText(confirmRow)} · {formatWon(confirmRow.totalAmount)}</p>
               <p>{confirmText.description}</p>
               {(confirming.action === "refund" || paidCancel) && (
                 <label className="block font-bold text-[var(--color-academy-ink)]">

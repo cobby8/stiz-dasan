@@ -3,6 +3,7 @@
 /**
  * 체육관 대관 신청 폼(공개).
  * 요금은 화면에서 실시간으로 보여 주지만, 저장 금액은 서버가 같은 함수(calculateRentalFee)로 다시 계산한다.
+ * 날짜는 월 달력(오늘~60일), 시작은 10분 단위, 이용은 30분 단위(1~6시간) — 2026-11-08 원장 지시.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
@@ -11,34 +12,51 @@ import { publicErrorText } from "@/components/ui/public-error-text";
 import { addDaysKst, kstDow, todayKst } from "@/lib/datetime/kst";
 import {
   RENTAL_BOOKING_DAYS,
+  RENTAL_DURATION_STEP_MINUTES,
   RENTAL_FEE,
   RENTAL_MAX_HEADCOUNT,
+  RENTAL_MIN_MINUTES,
+  buildRentalCalendar,
   calculateRentalFee,
   formatRentalPhone,
+  formatRentalTime,
   formatWon,
-  maxContinuousHours,
-  rentalTimeLabel,
-  type RentalSlot,
+  minuteLabel,
+  rentalDurationLabel,
+  shiftYm,
+  type RentalDay,
+  type RentalStartOption,
 } from "@/lib/rental/gym-rental-rules";
 import { getRentalSlots, submitRentalRequest, type RentalSubmitResult } from "@/app/actions/rental";
 
 const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"];
-const QUICK_DAYS = 14; // 날짜 칩으로 바로 고를 수 있는 날 수(그 뒤는 달력 입력)
-const REASON_LABEL: Record<RentalSlot["reason"], string> = { OPEN: "", CLASS: "수업", BOOKED: "예약됨", PAST: "지남" };
+const BLOCK_LABEL = { CLASS: "수업", BOOKED: "예약" } as const;
 
 // 「오늘」은 바뀌어도 알릴 필요가 없다 — 서버 렌더 때는 빈 값, 손님 기기에서는 그 순간의 한국 날짜
 const noopSubscribe = () => () => {};
 
 type Receipt = Extract<RentalSubmitResult, { ok: true }>["receipt"];
 
-function dateChipLabel(ymd: string) {
-  const [, m, d] = ymd.split("-").map(Number);
-  return { day: `${m}/${d}`, dow: DOW_KO[kstDow(ymd)] };
-}
-
 function longDate(ymd: string) {
   const [y, m, d] = ymd.split("-").map(Number);
   return `${y}년 ${m}월 ${d}일(${DOW_KO[kstDow(ymd)]})`;
+}
+
+function monthTitle(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  return `${y}년 ${m}월`;
+}
+
+/** 시작 후보를 «시» 단위 줄로 묶는다(가능한 칸이 하나도 없는 시는 뺀다) — 근접성: 같은 시끼리 한 줄 */
+function groupByHour(starts: RentalStartOption[]): Array<{ hour: number; options: RentalStartOption[] }> {
+  const rows = new Map<number, RentalStartOption[]>();
+  for (const option of starts) {
+    const hour = Math.floor(option.minute / 60);
+    rows.set(hour, [...(rows.get(hour) ?? []), option]);
+  }
+  return [...rows.entries()]
+    .filter(([, options]) => options.some((o) => o.available))
+    .map(([hour, options]) => ({ hour, options }));
 }
 
 export default function RentalClient() {
@@ -46,16 +64,22 @@ export default function RentalClient() {
   // 서버가 만든 시점의 날짜를 쓰면 다음 날 화면이 어제부터 시작한다.
   const today = useSyncExternalStore(noopSubscribe, () => todayKst(), () => "");
   const lastDay = useMemo(() => (today ? addDaysKst(today, RENTAL_BOOKING_DAYS) : ""), [today]);
-  const quickDates = useMemo(() => (today ? Array.from({ length: QUICK_DAYS }, (_, i) => addDaysKst(today, i)) : []), [today]);
 
   const [pickedDate, setPickedDate] = useState("");
   const date = pickedDate || today; // 고르기 전에는 오늘
+  // 달력에 보이는 달("YYYY-MM"). 고르기 전에는 오늘이 있는 달.
+  const [pickedYm, setPickedYm] = useState("");
+  const viewYm = pickedYm || today.slice(0, 7);
+  const firstYm = today.slice(0, 7);
+  const lastYm = lastDay.slice(0, 7);
+  const calendar = useMemo(() => (viewYm && today ? buildRentalCalendar(viewYm, today) : []), [viewYm, today]);
+
   // 가능 시간은 «어느 날짜의 것인지»와 함께 둔다 — 날짜를 바꾸면 옛 날짜 칸이 잠깐이라도 보이지 않게
-  const [slotState, setSlotState] = useState<{ date: string; slots: RentalSlot[] | null; error: string }>({ date: "", slots: null, error: "" });
-  const slots = slotState.date === date ? slotState.slots : null;
-  const slotError = slotState.date === date ? slotState.error : "";
-  const [startHour, setStartHour] = useState<number | null>(null);
-  const [hours, setHours] = useState(1);
+  const [dayState, setDayState] = useState<{ date: string; day: RentalDay | null; error: string }>({ date: "", day: null, error: "" });
+  const day = dayState.date === date ? dayState.day : null;
+  const dayError = dayState.date === date ? dayState.error : "";
+  const [startMinute, setStartMinute] = useState<number | null>(null);
+  const [durationMinutes, setDurationMinutes] = useState(RENTAL_MIN_MINUTES);
   const [headcount, setHeadcount] = useState(6);
   const [useAircon, setUseAircon] = useState(false);
   const [name, setName] = useState("");
@@ -77,38 +101,44 @@ export default function RentalClient() {
     getRentalSlots(date)
       .then((result) => {
         if (!alive) return;
-        setSlotState({ date, slots: result.ok ? result.slots : null, error: result.ok ? "" : result.message });
+        setDayState({ date, day: result.ok ? result.day : null, error: result.ok ? "" : result.message });
       })
       .catch(() => {
-        if (alive) setSlotState({ date, slots: null, error: "가능한 시간을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
+        if (alive) setDayState({ date, day: null, error: "가능한 시간을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." });
       });
     return () => {
       alive = false;
     };
   }, [date]);
 
-  const maxHours = slots && startHour !== null ? maxContinuousHours(slots, startHour) : 0;
+  const startRows = useMemo(() => (day ? groupByHour(day.starts) : []), [day]);
+  const selectedOption = day && startMinute !== null ? day.starts.find((s) => s.minute === startMinute) ?? null : null;
+  const maxMinutes = selectedOption?.available ? selectedOption.maxMinutes : 0;
+  // 이용 시간 칩: 1시간, 1시간 30분, … 그 시작 시각에서 이어서 쓸 수 있는 최대까지
+  const durationChoices = useMemo(() => {
+    const list: number[] = [];
+    for (let m = RENTAL_MIN_MINUTES; m <= maxMinutes; m += RENTAL_DURATION_STEP_MINUTES) list.push(m);
+    return list;
+  }, [maxMinutes]);
   const fee = useMemo(() => {
     try {
-      return calculateRentalFee({ hours: Math.max(1, hours), headcount, useAircon });
+      return calculateRentalFee({ durationMinutes, headcount, useAircon });
     } catch {
       return null;
     }
-  }, [hours, headcount, useAircon]);
-  const openCount = slots?.filter((slot) => slot.available).length ?? 0;
+  }, [durationMinutes, headcount, useAircon]);
 
   // 날짜를 바꾸면 고른 시간은 비운다(다른 날의 칸이라)
   function selectDate(ymd: string) {
     setPickedDate(ymd);
-    setStartHour(null);
-    setHours(1);
+    setStartMinute(null);
+    setDurationMinutes(RENTAL_MIN_MINUTES);
   }
 
-  function chooseStart(hour: number) {
-    setStartHour(hour);
+  function chooseStart(option: RentalStartOption) {
+    setStartMinute(option.minute);
     // 이어서 쓸 수 있는 시간보다 길게 골라 둔 상태면 줄인다
-    const max = slots ? maxContinuousHours(slots, hour) : 1;
-    setHours((current) => Math.min(Math.max(1, current), Math.max(1, max)));
+    setDurationMinutes((current) => Math.min(Math.max(RENTAL_MIN_MINUTES, current), Math.max(RENTAL_MIN_MINUTES, option.maxMinutes)));
   }
 
   function changeHeadcount(delta: number) {
@@ -123,7 +153,7 @@ export default function RentalClient() {
   function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
-    if (startHour === null) return showError("이용할 시작 시간을 골라 주세요.");
+    if (startMinute === null || !selectedOption?.available) return showError("이용할 시작 시간을 골라 주세요.");
     if (!name.trim()) return showError("신청자 이름을 입력해 주세요.");
     if (!phone.trim()) return showError("휴대폰 번호를 입력해 주세요.");
     if (!purpose.trim()) return showError("사용 목적을 입력해 주세요. 예: 동호회 농구 연습");
@@ -132,8 +162,8 @@ export default function RentalClient() {
       try {
         const result = await submitRentalRequest({
           rentalDate: date,
-          startHour,
-          hours,
+          startMinute, // 그날 KST 0시부터 분 — 서버가 10분 단위·영업 시간·겹침을 다시 검사한다
+          durationMinutes,
           headcount,
           useAircon,
           applicantName: name,
@@ -146,7 +176,7 @@ export default function RentalClient() {
           showError(publicErrorText(result.message, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
           // 그사이 다른 대관이 승인됐을 수 있으니 시간을 새로 받는다
           const fresh = await getRentalSlots(date);
-          if (fresh.ok) setSlotState({ date, slots: fresh.slots, error: "" });
+          if (fresh.ok) setDayState({ date, day: fresh.day, error: "" });
           return;
         }
         setReceipt(result.receipt);
@@ -197,7 +227,7 @@ export default function RentalClient() {
           <dt className="text-[var(--color-public-muted)]">접수 번호</dt>
           <dd className="font-bold tabular-nums text-[var(--color-public-ink)]">{receipt.number}</dd>
           <dt className="text-[var(--color-public-muted)]">이용 일시</dt>
-          <dd className="font-bold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {rentalTimeLabel(receipt.startHour, receipt.endHour)}</dd>
+          <dd className="font-bold text-[var(--color-public-ink)]">{longDate(receipt.rentalDate)} {formatRentalTime(receipt.startMinute, receipt.endMinute)}</dd>
           <dt className="text-[var(--color-public-muted)]">인원</dt>
           <dd className="text-[var(--color-public-ink)]">{receipt.headcount}명{receipt.useAircon ? " · 냉난방 사용" : ""}</dd>
           <dt className="text-[var(--color-public-muted)]">이용료</dt>
@@ -242,95 +272,125 @@ export default function RentalClient() {
         </label>
       </div>
 
-      {/* 1. 날짜 */}
+      {/* 1. 날짜 — 월 달력. 오늘~60일 안만 고를 수 있고, 지난 날·범위 밖은 흐리게 */}
       <fieldset className="min-w-0">
         <legend className="text-base font-black text-[var(--color-public-ink)]">날짜</legend>
-        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="날짜 바로 고르기">
-          {quickDates.map((ymd) => {
-            const label = dateChipLabel(ymd);
-            const active = ymd === date;
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setPickedYm(shiftYm(viewYm, -1))}
+            disabled={viewYm <= firstYm}
+            aria-label="이전 달"
+            className="flex h-11 w-11 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] text-[var(--color-public-ink)] disabled:opacity-40"
+          >
+            <FontFreeIcon name="chevron_left" size={20} />
+          </button>
+          <p className="text-sm font-black tabular-nums text-[var(--color-public-ink)]" aria-live="polite">{monthTitle(viewYm)}</p>
+          <button
+            type="button"
+            onClick={() => setPickedYm(shiftYm(viewYm, 1))}
+            disabled={viewYm >= lastYm}
+            aria-label="다음 달"
+            className="flex h-11 w-11 items-center justify-center rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] text-[var(--color-public-ink)] disabled:opacity-40"
+          >
+            <FontFreeIcon name="chevron_right" size={20} />
+          </button>
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1 text-center text-xs font-bold text-[var(--color-public-muted)]" aria-hidden="true">
+          {DOW_KO.map((d) => <span key={d} className="py-1">{d}</span>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1" role="group" aria-label={`${monthTitle(viewYm)} 날짜`}>
+          {calendar.map((cell, index) => {
+            if (!cell) return <span key={`blank-${index}`} aria-hidden="true" />;
+            const active = cell.date === date;
             return (
               <button
-                key={ymd}
+                key={cell.date}
                 type="button"
+                disabled={!cell.bookable}
                 aria-pressed={active}
-                onClick={() => selectDate(ymd)}
-                className={`flex min-h-11 min-w-12 shrink-0 flex-col items-center justify-center rounded-[var(--color-public-radius)] border px-2 text-xs font-bold leading-tight ${active
-                  ? "border-[var(--color-public-ink)] bg-[var(--color-public-ink)] text-[var(--color-public-paper)]"
-                  : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
+                aria-label={`${longDate(cell.date)}${cell.isToday ? " 오늘" : ""}`}
+                onClick={() => selectDate(cell.date)}
+                className={`flex min-h-11 flex-col items-center justify-center rounded-[var(--color-public-radius)] border text-sm font-bold leading-tight tabular-nums ${!cell.bookable
+                  ? "cursor-not-allowed border-transparent text-[var(--color-public-muted)] opacity-40"
+                  : active
+                    ? "border-[var(--color-public-ink)] bg-[var(--color-public-ink)] text-[var(--color-public-paper)]"
+                    : cell.isToday
+                      ? "border-[var(--color-public-accent)] text-[var(--color-public-ink)]"
+                      : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
               >
-                <span className="tabular-nums">{label.day}</span>
-                <span className={active ? "" : "text-[var(--color-public-muted)]"}>{label.dow}</span>
+                {cell.day}
+                {cell.isToday && <span className="text-xs font-semibold">오늘</span>}
               </button>
             );
           })}
         </div>
-        <label className="mt-2 flex items-center gap-2 text-sm text-[var(--color-public-muted)]">
-          다른 날짜
-          <input
-            type="date"
-            value={date}
-            min={today}
-            max={lastDay}
-            onChange={(e) => e.target.value && selectDate(e.target.value)}
-            className="min-h-11 rounded-[var(--color-public-radius)] border border-[var(--color-public-line)] bg-[var(--color-public-paper)] px-2 text-[var(--color-public-ink)]"
-          />
-        </label>
       </fieldset>
 
-      {/* 2. 시간 */}
+      {/* 2. 시간 — 시작 10분 단위(시별 한 줄), 이용 30분 단위 */}
       <fieldset className="min-w-0">
         <legend className="text-base font-black text-[var(--color-public-ink)]">
           시작 시간 <span className="text-sm font-bold text-[var(--color-public-muted)]">{longDate(date)}</span>
         </legend>
-        {slotError ? (
-          <p role="alert" className="mt-2 text-sm font-bold text-[var(--color-public-accent)]">{slotError}</p>
-        ) : !slots ? (
+        {dayError ? (
+          <p role="alert" className="mt-2 text-sm font-bold text-[var(--color-public-accent)]">{dayError}</p>
+        ) : !day ? (
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">가능한 시간을 확인하는 중…</p>
-        ) : openCount === 0 ? (
+        ) : startRows.length === 0 ? (
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">이 날은 비어 있는 시간이 없습니다. 다른 날짜를 골라 주세요.</p>
         ) : (
-          <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-7" role="group" aria-label="시작 시간">
-            {slots.map((slot) => {
-              const inRange = startHour !== null && slot.hour >= startHour && slot.hour < startHour + hours;
-              return (
-                <button
-                  key={slot.hour}
-                  type="button"
-                  disabled={!slot.available}
-                  aria-pressed={inRange}
-                  onClick={() => chooseStart(slot.hour)}
-                  className={`flex min-h-11 flex-col items-center justify-center rounded-[var(--color-public-radius)] border text-sm font-bold leading-tight tabular-nums ${!slot.available
-                    ? "cursor-not-allowed border-dashed border-[var(--color-public-line)] text-[var(--color-public-muted)] opacity-60"
-                    : inRange
-                      ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
-                      : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
-                >
-                  {slot.label}
-                  {!slot.available && <span className="text-xs font-semibold">{REASON_LABEL[slot.reason]}</span>}
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <p className="mt-1 text-xs break-keep text-[var(--color-public-muted)]">
+              이용 가능 {minuteLabel(day.openMinute)}~{minuteLabel(day.closeMinute)}
+              {day.blocks.length > 0 && (
+                <> · 제외 {day.blocks.map((b) => `${BLOCK_LABEL[b.reason]} ${minuteLabel(b.startMinute)}~${minuteLabel(b.endMinute)}`).join(", ")}</>
+              )}
+            </p>
+            <div className="mt-2 space-y-1" role="group" aria-label="시작 시간">
+              {startRows.map((row) => (
+                <div key={row.hour} className="grid grid-cols-6 gap-1">
+                  {row.options.map((option) => {
+                    const active = option.minute === startMinute;
+                    return (
+                      <button
+                        key={option.minute}
+                        type="button"
+                        disabled={!option.available}
+                        aria-pressed={active}
+                        onClick={() => chooseStart(option)}
+                        className={`min-h-11 rounded-[var(--color-public-radius)] border text-sm font-bold tabular-nums ${!option.available
+                          ? "cursor-not-allowed border-dashed border-[var(--color-public-line)] text-[var(--color-public-muted)] opacity-40"
+                          : active
+                            ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-[var(--color-public-white)]"
+                            : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
-        {startHour !== null && maxHours > 0 && (
+        {startMinute !== null && durationChoices.length > 0 && (
           <div className="mt-3">
             <p className="text-sm font-bold text-[var(--color-public-ink)]">
-              이용 시간 <span className="font-semibold text-[var(--color-public-muted)]">{rentalTimeLabel(startHour, startHour + hours)}</span>
+              이용 시간 <span className="font-semibold text-[var(--color-public-muted)]">{formatRentalTime(startMinute, startMinute + durationMinutes)}</span>
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5" role="group" aria-label="이용 시간">
-              {Array.from({ length: maxHours }, (_, i) => i + 1).map((h) => (
+              {durationChoices.map((m) => (
                 <button
-                  key={h}
+                  key={m}
                   type="button"
-                  aria-pressed={hours === h}
-                  onClick={() => setHours(h)}
-                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-bold ${hours === h
+                  aria-pressed={durationMinutes === m}
+                  onClick={() => setDurationMinutes(m)}
+                  className={`min-h-11 rounded-[var(--color-public-radius)] border px-3 text-sm font-bold ${durationMinutes === m
                     ? "border-[var(--color-public-ink)] bg-[var(--color-public-ink)] text-[var(--color-public-paper)]"
                     : "border-[var(--color-public-line)] text-[var(--color-public-ink)]"}`}
                 >
-                  {h}시간
+                  {rentalDurationLabel(m)}
                 </button>
               ))}
             </div>
@@ -359,12 +419,12 @@ export default function RentalClient() {
           </div>
           <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--color-public-ink)]">
             <input type="checkbox" checked={useAircon} onChange={(e) => setUseAircon(e.target.checked)} className="h-5 w-5 accent-[var(--color-public-accent)]" />
-            냉난방 사용(시간당 {formatWon(RENTAL_FEE.airconPerHour)})
+            냉난방 사용(30분당 {formatWon(RENTAL_FEE.airconPerHalfHour)})
           </label>
         </div>
         {headcount > RENTAL_FEE.baseHeadcount && (
           <p className="mt-1 text-xs text-[var(--color-public-muted)]">
-            {RENTAL_FEE.baseHeadcount}명을 넘는 {headcount - RENTAL_FEE.baseHeadcount}명은 1인·1시간당 {formatWon(RENTAL_FEE.extraPersonPerHour)}이 추가됩니다.
+            {RENTAL_FEE.baseHeadcount}명을 넘는 {headcount - RENTAL_FEE.baseHeadcount}명은 1인·30분당 {formatWon(RENTAL_FEE.extraPersonPerHalfHour)}이 추가됩니다.
           </p>
         )}
       </fieldset>
@@ -373,7 +433,7 @@ export default function RentalClient() {
       {fee && (
         <div className="rounded-[var(--color-public-radius)] bg-[var(--color-public-tint)] p-3 text-sm" aria-live="polite">
           <dl className="space-y-1">
-            <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">시간 요금({fee.hours}시간)</dt><dd className="tabular-nums">{formatWon(fee.baseFee)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">시간 요금({rentalDurationLabel(fee.durationMinutes)})</dt><dd className="tabular-nums">{formatWon(fee.baseFee)}</dd></div>
             {fee.airconFee > 0 && <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">냉난방</dt><dd className="tabular-nums">{formatWon(fee.airconFee)}</dd></div>}
             {fee.extraPeopleFee > 0 && <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">인원 추가({fee.extraPeople}명)</dt><dd className="tabular-nums">{formatWon(fee.extraPeopleFee)}</dd></div>}
             <div className="flex justify-between gap-3"><dt className="text-[var(--color-public-muted)]">보증금(환불)</dt><dd className="tabular-nums">{formatWon(fee.deposit)}</dd></div>
@@ -382,7 +442,7 @@ export default function RentalClient() {
             <span className="font-bold text-[var(--color-public-ink)]">입금할 금액</span>
             <span className="text-xl font-black tabular-nums text-[var(--color-public-ink)]">{formatWon(fee.total)}</span>
           </div>
-          {startHour === null && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시작 시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
+          {startMinute === null && <p className="mt-1 text-xs text-[var(--color-public-muted)]">시작 시간을 고르면 그 시간 기준으로 확정됩니다.</p>}
         </div>
       )}
 
@@ -447,7 +507,7 @@ export default function RentalClient() {
 
       {/* 화면의 주인공 버튼은 이것 하나 */}
       <button type="submit" disabled={pending} className="public-btn-primary w-full text-base">
-        {pending ? "신청하는 중…" : fee && startHour !== null ? `대관 신청하기 · ${formatWon(fee.total)}` : "대관 신청하기"}
+        {pending ? "신청하는 중…" : fee && startMinute !== null ? `대관 신청하기 · ${formatWon(fee.total)}` : "대관 신청하기"}
       </button>
       <p className="-mt-3 text-center text-xs text-[var(--color-public-muted)]">지금은 신청만 접수돼요. 결제는 원장님 승인 후 계좌이체로 합니다.</p>
     </form>

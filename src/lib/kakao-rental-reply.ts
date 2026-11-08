@@ -6,9 +6,11 @@ import { formatWon, RENTAL_FEE } from "@/lib/rental/gym-rental-rules";
 // 연결·미연결 모두 같은 카드를 받는다. 계좌는 넣지 않는다(신청 후 원장님 승인 문자로 안내).
 // 요금 숫자를 여기 직접 적지 않는다 — 원장님이 요금을 바꾸면 RENTAL_FEE 한 곳만 고치면 된다.
 export const KAKAO_RENTAL_TEXT = [
-  `· 요금: 1시간 ${formatWon(RENTAL_FEE.firstHour)}, 이후 1시간마다 ${formatWon(RENTAL_FEE.extraHour)}`,
-  `· 냉난방: 시간당 ${formatWon(RENTAL_FEE.airconPerHour)}`,
-  `· ${RENTAL_FEE.baseHeadcount}명 초과 시 1인당 시간당 ${formatWon(RENTAL_FEE.extraPersonPerHour)}`,
+  // 30분 단위 요금(2026-11-08 원장 확정) — 시간당 값도 함께 적어 익숙한 기준으로 비교할 수 있게
+  `· 요금: 첫 1시간 ${formatWon(RENTAL_FEE.firstHour)}, 이후 30분마다 ${formatWon(RENTAL_FEE.extraHalfHour)}(시간당 ${formatWon(RENTAL_FEE.extraHour)})`,
+  `· 냉난방: 시간당 ${formatWon(RENTAL_FEE.airconPerHour)}(30분 ${formatWon(RENTAL_FEE.airconPerHalfHour)})`,
+  `· ${RENTAL_FEE.baseHeadcount}명 초과 시 1인당 시간당 ${formatWon(RENTAL_FEE.extraPersonPerHour)}(30분 ${formatWon(RENTAL_FEE.extraPersonPerHalfHour)})`,
+  "· 시작 10분 단위, 이용 30분 단위(최소 1시간)",
   `· 보증금 ${formatWon(RENTAL_FEE.deposit)}(사용 후 환불)`,
   "· 실내 운동화 필수",
   "· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.",

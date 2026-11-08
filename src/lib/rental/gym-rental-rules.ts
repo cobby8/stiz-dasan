@@ -11,26 +11,52 @@
  */
 import { isKstYmd, kstAt, kstDow, addDaysKst } from "@/lib/datetime/kst";
 
-// ── 요금(원장님 확정 2026-11-07, 문구 그대로) ───────────────────────────────
-export const RENTAL_FEE = {
-  firstHour: 40_000, // 1시간 40,000원
-  extraHour: 30_000, // 이후 시간당 30,000원 추가
-  airconPerHour: 5_000, // 냉난방 사용 시 시간당 5,000원
+// ── 요금(30분 단위 · 2026-11-08 원장 확정) ─────────────────────────────────
+// 30분 단가가 기준값이다. 시간당 값(extraHour 등)은 안내 문구용으로 30분 단가×2 로 만든다
+// → 정수 시간으로 쓰면 2026-11-07 시간 단위 요금과 금액이 정확히 같다(테스트로 확인).
+const RENTAL_FEE_HALF = {
+  firstHour: 40_000, // 첫 1시간 40,000원
+  extraHalfHour: 15_000, // 그다음 30분마다 15,000원(= 시간당 30,000원의 절반)
+  airconPerHalfHour: 2_500, // 냉난방 30분당 2,500원
   baseHeadcount: 10, // 최대 10명
-  extraPersonPerHour: 3_000, // 초과 시 1인당 1시간 3,000원
+  extraPersonPerHalfHour: 1_500, // 10명 초과 1인·30분당 1,500원
   deposit: 20_000, // 보증금(사용 후 환불)
 } as const;
 
+export const RENTAL_FEE = {
+  ...RENTAL_FEE_HALF,
+  extraHour: RENTAL_FEE_HALF.extraHalfHour * 2, // 시간당 30,000원(안내용)
+  airconPerHour: RENTAL_FEE_HALF.airconPerHalfHour * 2, // 시간당 5,000원(안내용)
+  extraPersonPerHour: RENTAL_FEE_HALF.extraPersonPerHalfHour * 2, // 1인·시간당 3,000원(안내용)
+} as const;
+
 // ── 운영 범위 ───────────────────────────────────────────────────────────
-/** 대관 칸을 보여 주는 시간 범위(KST 정시). 09시 시작 ~ 22시 종료(마지막 칸 21~22시). */
+/** 평일 대관 시작 가능 시각(KST 정시) — 09:00 */
 export const RENTAL_OPEN_HOUR = 9;
+/** 주말(토·일) 대관 시작 가능 시각 — 10:00 (2026-11-08 원장 지시) */
+export const RENTAL_WEEKEND_OPEN_HOUR = 10;
+/** 모든 요일 종료 시각 — 22:00 까지 */
 export const RENTAL_CLOSE_HOUR = 22;
+export const RENTAL_CLOSE_MINUTE = RENTAL_CLOSE_HOUR * 60;
+/** 시작 시각 간격(분) — 수업이 20:40 에 끝나면 20:40 부터 시작할 수 있게 10분 단위 */
+export const RENTAL_START_STEP_MINUTES = 10;
+/** 이용 시간 간격(분) — 30분 단위 */
+export const RENTAL_DURATION_STEP_MINUTES = 30;
+/** 최소 이용 시간(분) — 1시간 미만은 받지 않는다 */
+export const RENTAL_MIN_MINUTES = 60;
 /** 한 번에 신청할 수 있는 최대 시간 */
 export const RENTAL_MAX_HOURS = 6;
+export const RENTAL_MAX_MINUTES = RENTAL_MAX_HOURS * 60;
 /** 인원 입력 상한(실수 입력 방지). 10명 넘으면 추가 요금이 붙는다. */
 export const RENTAL_MAX_HEADCOUNT = 30;
 /** 오늘부터 며칠 뒤까지 신청을 받는가 */
 export const RENTAL_BOOKING_DAYS = 60;
+
+/** 그날 대관을 시작할 수 있는 가장 이른 분(KST 0시 기준). 토·일 10:00, 평일 09:00. */
+export function rentalOpenMinute(date: string): number {
+  const dow = kstDow(date); // 요일은 kst 모듈(Date.UTC 기준)만 쓴다
+  return (dow === 0 || dow === 6 ? RENTAL_WEEKEND_OPEN_HOUR : RENTAL_OPEN_HOUR) * 60;
+}
 
 // ── 상태 ────────────────────────────────────────────────────────────────
 export const RENTAL_STATUSES = [
@@ -89,9 +115,9 @@ export function allowedRentalActions(status: string): RentalAction[] {
 }
 
 // ── 요금 계산 ─────────────────────────────────────────────────────────────
-export type RentalFeeInput = { hours: number; headcount: number; useAircon: boolean };
+export type RentalFeeInput = { durationMinutes: number; headcount: number; useAircon: boolean };
 export type RentalFeeBreakdown = {
-  hours: number;
+  durationMinutes: number;
   headcount: number;
   baseFee: number; // 시간 요금
   airconFee: number; // 냉난방
@@ -102,26 +128,36 @@ export type RentalFeeBreakdown = {
   total: number; // 입금할 금액 = 이용료 + 보증금
 };
 
+/** 이용 분이 규칙(60~360분, 30분 단위)에 맞는가 */
+export function isValidRentalDuration(minutes: number): boolean {
+  return Number.isInteger(minutes)
+    && minutes >= RENTAL_MIN_MINUTES
+    && minutes <= RENTAL_MAX_MINUTES
+    && minutes % RENTAL_DURATION_STEP_MINUTES === 0;
+}
+
 /**
- * 대관 요금. 서버는 저장 직전에 **이 함수로 다시** 계산한다(화면 금액을 믿지 않는다).
- * 예) 2시간·12명·냉난방 = 40,000+30,000 + 5,000×2 + 2명×3,000×2 = 92,000 + 보증금 20,000 = 112,000
+ * 대관 요금(30분 단위). 서버는 저장 직전에 **이 함수로 다시** 계산한다(화면 금액을 믿지 않는다).
+ * 예) 2시간·12명·냉난방 = 40,000+15,000×2 + 2,500×4 + 2명×1,500×4 = 92,000 + 보증금 20,000 = 112,000
+ * 예) 1시간 30분·10명 = 40,000+15,000 = 55,000
  */
 export function calculateRentalFee(input: RentalFeeInput): RentalFeeBreakdown {
-  const hours = Math.floor(Number(input.hours));
+  const durationMinutes = Number(input.durationMinutes);
   const headcount = Math.floor(Number(input.headcount));
-  if (!Number.isFinite(hours) || hours < 1 || hours > RENTAL_MAX_HOURS) {
-    throw new Error(`이용 시간은 1~${RENTAL_MAX_HOURS}시간 사이로 골라 주세요.`);
+  if (!isValidRentalDuration(durationMinutes)) {
+    throw new Error(`이용 시간은 1시간~${RENTAL_MAX_HOURS}시간 사이에서 30분 단위로 골라 주세요.`);
   }
   if (!Number.isFinite(headcount) || headcount < 1 || headcount > RENTAL_MAX_HEADCOUNT) {
     throw new Error(`인원은 1~${RENTAL_MAX_HEADCOUNT}명 사이로 입력해 주세요.`);
   }
-  const baseFee = RENTAL_FEE.firstHour + RENTAL_FEE.extraHour * (hours - 1);
-  const airconFee = input.useAircon ? RENTAL_FEE.airconPerHour * hours : 0;
+  const halves = durationMinutes / RENTAL_DURATION_STEP_MINUTES; // 30분 칸 수(2~12)
+  const baseFee = RENTAL_FEE.firstHour + RENTAL_FEE.extraHalfHour * (halves - 2); // 첫 1시간 = 30분 칸 2개
+  const airconFee = input.useAircon ? RENTAL_FEE.airconPerHalfHour * halves : 0;
   const extraPeople = Math.max(0, headcount - RENTAL_FEE.baseHeadcount);
-  const extraPeopleFee = extraPeople * RENTAL_FEE.extraPersonPerHour * hours;
+  const extraPeopleFee = extraPeople * RENTAL_FEE.extraPersonPerHalfHour * halves;
   const usageFee = baseFee + airconFee + extraPeopleFee;
   return {
-    hours,
+    durationMinutes,
     headcount,
     baseFee,
     airconFee,
@@ -137,7 +173,7 @@ export function formatWon(amount: number): string {
   return `${Math.round(amount).toLocaleString("ko-KR")}원`;
 }
 
-// ── 가능 시간 계산 ────────────────────────────────────────────────────────
+// ── 가능 시간 계산(분 단위) ───────────────────────────────────────────────
 const DOW_CODE = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 /** "HH:MM" → 분. 형식이 틀리면 NaN */
@@ -150,77 +186,141 @@ export function hmToMinutes(hm: string | null | undefined): number {
   return h * 60 + min;
 }
 
+/** 분 → "HH:MM" (1440 = "24:00") */
+export function minuteLabel(minute: number): string {
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+
+/** 분 길이 → "1시간 30분" / "2시간" / "30분" */
+export function rentalDurationLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}분`;
+  return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
+}
+
+/**
+ * 대관 시간 표시는 **이 함수 하나로** — 관리자 화면·문자·카카오·슬랙·앱 알림이 모두 쓴다.
+ * 예) 1240, 1330 → "20:40~22:10 (1시간 30분)"
+ */
+export function formatRentalTime(startMinute: number, endMinute: number): string {
+  return `${minuteLabel(startMinute)}~${minuteLabel(endMinute)} (${rentalDurationLabel(endMinute - startMinute)})`;
+}
+
+/**
+ * 저장된 행의 분 값. 분 컬럼이 비어 있는 옛 행(마이그레이션 전 저장분)은 정시 값으로 대신한다.
+ * DB 조회는 COALESCE 로 이미 채워 오지만, 화면에 넘어온 값이 비어도 깨지지 않게 한 겹 더 둔다.
+ */
+export function rentalMinutesOf(row: { startHour: number; endHour: number; startMinute?: number | null; endMinute?: number | null }) {
+  const startMinute = Number.isInteger(row.startMinute) ? Number(row.startMinute) : row.startHour * 60;
+  const endMinute = Number.isInteger(row.endMinute) ? Number(row.endMinute) : row.endHour * 60;
+  return { startMinute, endMinute };
+}
+
 export type RentalClassRow = { dayOfWeek: string; startTime: string; endTime: string };
 /** 그 날짜의 다른 사용(특강 회차·승인된 대관)을 «그날 KST 분» 구간으로 넘긴다 */
 export type RentalBusyRange = { startMinute: number; endMinute: number };
 
-export type RentalSlot = {
-  hour: number; // 시작 시각(정시)
-  label: string; // "09:00"
+export type RentalBlockReason = "CLASS" | "BOOKED";
+export type RentalBlock = RentalBusyRange & { reason: RentalBlockReason };
+
+/** 시작 시각 후보 하나(10분 간격) */
+export type RentalStartOption = {
+  minute: number; // 그날 KST 0시부터 분
+  label: string; // "20:40"
   available: boolean;
   reason: "OPEN" | "CLASS" | "BOOKED" | "PAST";
+  maxMinutes: number; // 이 시각에 시작해 이어서 쓸 수 있는 최대 분(30분 단위, 못 쓰면 0)
 };
 
-function hourLabel(hour: number): string {
-  return `${String(hour).padStart(2, "0")}:00`;
-}
+/** 하루치 가능 시간 — 화면과 서버 검증이 같은 값을 본다 */
+export type RentalDay = {
+  date: string;
+  openMinute: number; // 평일 540(09:00) · 주말 600(10:00)
+  closeMinute: number; // 1320(22:00)
+  blocks: RentalBlock[]; // 막힌 구간(수업·특강 = CLASS, 승인된 대관 = BOOKED)
+  starts: RentalStartOption[];
+};
 
 /** [aStart, aEnd) 와 [bStart, bEnd) 가 겹치는가(끝과 시작이 같으면 안 겹침) */
 function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
   return aStart < bEnd && bStart < aEnd;
 }
 
+/** [start, end) 와 겹치는 막힌 구간의 사유(없으면 null). 수업이 예약보다 앞선다. */
+function blockReason(blocks: RentalBlock[], start: number, end: number): RentalBlockReason | null {
+  const hit = blocks.filter((b) => overlaps(start, end, b.startMinute, b.endMinute));
+  if (hit.length === 0) return null;
+  return hit.some((b) => b.reason === "CLASS") ? "CLASS" : "BOOKED";
+}
+
+/** 시작 분에서 이어서 쓸 수 있는 최대 분(60~360, 30분 단위). 1시간도 못 쓰면 0. */
+function maxMinutesFrom(blocks: RentalBlock[], start: number, closeMinute: number): number {
+  let max = 0;
+  for (let d = RENTAL_MIN_MINUTES; d <= RENTAL_MAX_MINUTES && start + d <= closeMinute; d += RENTAL_DURATION_STEP_MINUTES) {
+    if (blockReason(blocks, start, start + d)) break;
+    max = d;
+  }
+  return max;
+}
+
 /**
- * 하루치 1시간 칸. 정규 수업(요일 반)·특강 회차·이미 승인된 대관과 겹치면 막고,
- * 이미 시작한 칸(오늘의 지난 시각)도 막는다.
+ * 하루치 시작 후보(10분 간격). 정규 수업(요일 반)·특강 회차·이미 승인된 대관과 겹치면 막고,
+ * 이미 지난 시각도 막는다. 시작 후보는 «영업 시작 ~ 22:00 - 1시간» 범위다.
  * - 정규 수업은 요일만 본다(dayOfWeek 가 Mon~Sun 인 반만 — Archived·Seasonal 은 제외).
  * - 연간일정 휴무일에도 정규 수업 시간은 막아 둔다(보수적 — 원장 판단으로 바꿀 수 있게 보고).
  */
-export function buildRentalSlots(input: {
+export function buildRentalDay(input: {
   date: string;
   classes: RentalClassRow[];
-  busy: RentalBusyRange[]; // 특강 회차 + 승인된 대관
-  bookedBusy?: RentalBusyRange[]; // 승인된 대관만 따로(사유 표시용). busy 에 포함돼 있어도 된다.
+  busy: RentalBusyRange[]; // 특강 회차 (+ 승인된 대관이 섞여 있어도 된다)
+  bookedBusy?: RentalBusyRange[]; // 승인된 대관(사유 «예약됨» 표시용)
   nowMs: number;
-}): RentalSlot[] {
-  if (!isKstYmd(input.date)) return [];
+}): RentalDay | null {
+  if (!isKstYmd(input.date)) return null;
   const dowCode = DOW_CODE[kstDow(input.date)];
-  const classRanges = input.classes
+  const valid = (r: RentalBusyRange) => Number.isFinite(r.startMinute) && Number.isFinite(r.endMinute) && r.endMinute > r.startMinute;
+  const classBlocks: RentalBlock[] = input.classes
     .filter((row) => row.dayOfWeek === dowCode)
-    .map((row) => ({ startMinute: hmToMinutes(row.startTime), endMinute: hmToMinutes(row.endTime) }))
-    .filter((row) => Number.isFinite(row.startMinute) && Number.isFinite(row.endMinute) && row.endMinute > row.startMinute);
-  const booked = input.bookedBusy ?? [];
+    .map((row) => ({ startMinute: hmToMinutes(row.startTime), endMinute: hmToMinutes(row.endTime), reason: "CLASS" as const }))
+    .filter(valid);
+  const bookedBlocks: RentalBlock[] = (input.bookedBusy ?? []).filter(valid).map((r) => ({ ...r, reason: "BOOKED" as const }));
+  // busy 는 특강 회차 — 예약 목록과 똑같은 구간이면 예약으로 본다(사유 표시만 다르다)
+  const otherBlocks: RentalBlock[] = input.busy
+    .filter(valid)
+    .filter((r) => !bookedBlocks.some((b) => b.startMinute === r.startMinute && b.endMinute === r.endMinute))
+    .map((r) => ({ ...r, reason: "CLASS" as const }));
+  const blocks = [...classBlocks, ...otherBlocks, ...bookedBlocks].sort((a, b) => a.startMinute - b.startMinute);
 
-  const slots: RentalSlot[] = [];
-  for (let hour = RENTAL_OPEN_HOUR; hour < RENTAL_CLOSE_HOUR; hour += 1) {
-    const s = hour * 60;
-    const e = s + 60;
-    let reason: RentalSlot["reason"] = "OPEN";
-    if (kstAt(input.date, hourLabel(hour)) <= input.nowMs) reason = "PAST";
-    else if (classRanges.some((r) => overlaps(s, e, r.startMinute, r.endMinute))) reason = "CLASS";
-    else if (booked.some((r) => overlaps(s, e, r.startMinute, r.endMinute))) reason = "BOOKED";
-    else if (input.busy.some((r) => overlaps(s, e, r.startMinute, r.endMinute))) reason = "CLASS";
-    slots.push({ hour, label: hourLabel(hour), available: reason === "OPEN", reason });
+  const openMinute = rentalOpenMinute(input.date);
+  const closeMinute = RENTAL_CLOSE_MINUTE;
+  const dayStartMs = kstAt(input.date); // 그날 KST 0시
+  const starts: RentalStartOption[] = [];
+  for (let minute = openMinute; minute + RENTAL_MIN_MINUTES <= closeMinute; minute += RENTAL_START_STEP_MINUTES) {
+    let reason: RentalStartOption["reason"] = "OPEN";
+    let maxMinutes = 0;
+    if (dayStartMs + minute * 60_000 <= input.nowMs) reason = "PAST";
+    else {
+      // 최소 1시간 안에 막힌 구간이 있으면 그 사유, 없으면 이어서 쓸 수 있는 최대 시간을 센다
+      reason = blockReason(blocks, minute, minute + RENTAL_MIN_MINUTES) ?? "OPEN";
+      if (reason === "OPEN") maxMinutes = maxMinutesFrom(blocks, minute, closeMinute);
+    }
+    starts.push({ minute, label: minuteLabel(minute), available: reason === "OPEN" && maxMinutes > 0, reason, maxMinutes });
   }
-  return slots;
+  return { date: input.date, openMinute, closeMinute, blocks, starts };
 }
 
-/** 시작 칸에서 이어서 쓸 수 있는 최대 시간(중간에 막힌 칸이 나오면 거기까지) */
-export function maxContinuousHours(slots: RentalSlot[], startHour: number): number {
-  let count = 0;
-  for (const slot of slots) {
-    if (slot.hour < startHour) continue;
-    if (slot.hour !== startHour + count || !slot.available) break;
-    count += 1;
-    if (count >= RENTAL_MAX_HOURS) break;
-  }
-  return count;
-}
-
-/** 신청한 [startHour, startHour+hours) 가 모두 가능한 칸인가 */
-export function isRangeAvailable(slots: RentalSlot[], startHour: number, hours: number): boolean {
-  if (!Number.isInteger(startHour) || !Number.isInteger(hours) || hours < 1) return false;
-  return maxContinuousHours(slots, startHour) >= hours;
+/**
+ * 신청한 [startMinute, startMinute+durationMinutes) 를 쓸 수 있는가 — 서버 검증의 기준.
+ * 화면 값을 믿지 않고 시작 10분 단위·이용 30분 단위(60~360)·영업 시간·겹침을 모두 다시 본다.
+ */
+export function isRentalRangeAvailable(day: RentalDay | null, startMinute: number, durationMinutes: number): boolean {
+  if (!day) return false;
+  if (!Number.isInteger(startMinute) || startMinute % RENTAL_START_STEP_MINUTES !== 0) return false;
+  if (!isValidRentalDuration(durationMinutes)) return false;
+  if (startMinute < day.openMinute || startMinute + durationMinutes > day.closeMinute) return false;
+  const option = day.starts.find((s) => s.minute === startMinute);
+  return !!option && option.available && option.maxMinutes >= durationMinutes;
 }
 
 /** 신청 가능한 날짜인가(오늘 ~ 오늘+RENTAL_BOOKING_DAYS) */
@@ -229,14 +329,38 @@ export function isBookableDate(date: string, today: string): boolean {
   return date >= today && date <= addDaysKst(today, RENTAL_BOOKING_DAYS);
 }
 
-/** KST 날짜+정시 → 절대 시각(ms). DB 의 startAt/endAt(timestamptz) 에 넣는 값. */
-export function rentalInstantMs(date: string, hour: number): number {
-  if (hour === 24) return kstAt(addDaysKst(date, 1), "00:00");
-  return kstAt(date, hourLabel(hour));
+/** KST 날짜 + 그날 0시부터 분 → 절대 시각(ms). DB 의 startAt/endAt(timestamptz)에 넣는 값. 한국은 서머타임이 없다. */
+export function rentalInstantMs(date: string, minute: number): number {
+  return kstAt(date) + minute * 60_000;
 }
 
-export function rentalTimeLabel(startHour: number, endHour: number): string {
-  return `${hourLabel(startHour)}~${hourLabel(endHour)}`;
+/** 분 → 기존 정시 컬럼 값(startHour 내림 · endHour 올림). DB CHECK(endHour > startHour)를 늘 만족한다. */
+export function rentalHourColumns(startMinute: number, endMinute: number): { startHour: number; endHour: number } {
+  return { startHour: Math.floor(startMinute / 60), endHour: Math.ceil(endMinute / 60) };
+}
+
+// ── 달력(신청 화면) ───────────────────────────────────────────────────────
+/** "YYYY-MM" 에 n달 더하기(달력 이동용 — 시간대가 끼지 않는 정수 계산) */
+export function shiftYm(ym: string, n: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const index = y * 12 + (m - 1) + n;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
+export type RentalCalendarCell = { date: string; day: number; bookable: boolean; isToday: boolean } | null;
+
+/**
+ * 월 달력 칸(일요일 시작, 앞쪽 빈칸은 null). bookable = 오늘~60일 안.
+ * 날짜·요일은 kst 모듈(addDaysKst·kstDow)만 쓴다.
+ */
+export function buildRentalCalendar(ym: string, today: string): RentalCalendarCell[] {
+  const first = `${ym}-01`;
+  if (!isKstYmd(first)) return [];
+  const cells: RentalCalendarCell[] = Array.from({ length: kstDow(first) }, () => null);
+  for (let date = first; date.startsWith(ym); date = addDaysKst(date, 1)) {
+    cells.push({ date, day: Number(date.slice(8, 10)), bookable: isBookableDate(date, today), isToday: date === today });
+  }
+  return cells;
 }
 
 // ── 입력 정리 ─────────────────────────────────────────────────────────────
@@ -290,6 +414,8 @@ export type RentalMessageInput = {
   rentalDate: string;
   startHour: number;
   endHour: number;
+  startMinute?: number | null; // 분 단위 시각(없으면 정시 값으로 대신)
+  endMinute?: number | null;
   headcount: number;
   useAircon: boolean;
   usageFee: number;
@@ -304,8 +430,14 @@ function dateText(date: string): string {
   return `${y}년 ${m}월 ${d}일(${dow})`;
 }
 
+/** 저장된 행 → "20:40~22:10 (1시간 30분)" (알림·문자·관리자 화면 공용) */
+export function rentalTimeText(row: { startHour: number; endHour: number; startMinute?: number | null; endMinute?: number | null }): string {
+  const { startMinute, endMinute } = rentalMinutesOf(row);
+  return formatRentalTime(startMinute, endMinute);
+}
+
 function usageLine(input: RentalMessageInput): string {
-  return `${dateText(input.rentalDate)} ${rentalTimeLabel(input.startHour, input.endHour)} · ${input.headcount}명${input.useAircon ? " · 냉난방" : ""}`;
+  return `${dateText(input.rentalDate)} ${rentalTimeText(input)} · ${input.headcount}명${input.useAircon ? " · 냉난방" : ""}`;
 }
 
 /** 원장님께 가는 «새 신청» 알림 (문자·슬랙 공용) */

@@ -14,16 +14,16 @@ export const revalidate = 3600;
 
 export const metadata = buildPublicMetadata({
   title: "체육관 대관 | STIZ 농구교실 다산2호점",
-  description: "스티즈농구교실 다산2호점 실내 농구 체육관 대관 안내. 수업이 없는 시간에 1시간 단위로 신청할 수 있습니다.",
+  description: "스티즈농구교실 다산2호점 실내 농구 체육관 대관 안내. 수업이 없는 시간에 10분 단위로 시작해 30분 단위로 신청할 수 있습니다(최소 1시간).",
   path: "/rental",
 });
 
-// 요금표 — 숫자는 규칙 모듈(RENTAL_FEE) 한 곳에서 읽는다(계산과 표가 어긋나지 않게)
+// 요금표 — 숫자는 규칙 모듈(RENTAL_FEE) 한 곳에서 읽는다(계산과 표가 어긋나지 않게). 30분 단위(2026-11-08 원장 확정)
 const FEE_ROWS: Array<[string, string]> = [
   ["기본 1시간", formatWon(RENTAL_FEE.firstHour)],
-  ["이후 1시간마다", `+${formatWon(RENTAL_FEE.extraHour)}`],
-  ["냉난방 사용", `시간당 +${formatWon(RENTAL_FEE.airconPerHour)}`],
-  [`인원 ${RENTAL_FEE.baseHeadcount}명 초과`, `1인·1시간당 +${formatWon(RENTAL_FEE.extraPersonPerHour)}`],
+  ["이후 30분마다", `+${formatWon(RENTAL_FEE.extraHalfHour)}`],
+  ["냉난방 사용", `30분당 +${formatWon(RENTAL_FEE.airconPerHalfHour)}`],
+  [`인원 ${RENTAL_FEE.baseHeadcount}명 초과`, `1인·30분당 +${formatWon(RENTAL_FEE.extraPersonPerHalfHour)}`],
   ["보증금(사용 후 환불)", formatWon(RENTAL_FEE.deposit)],
 ];
 
@@ -36,7 +36,7 @@ export default function RentalPage() {
         <div className="mx-auto max-w-5xl">
           <h1>체육관 대관</h1>
           <p className="break-keep">
-            스티즈농구교실 다산2호점 · 다산동 6158-4, 1층 · 수업 없는 시간 1시간 단위 · {formatWon(RENTAL_FEE.firstHour)}부터
+            스티즈농구교실 다산2호점 · 다산동 6158-4, 1층 · 수업 없는 시간 30분 단위(최소 1시간) · {formatWon(RENTAL_FEE.firstHour)}부터
           </p>
         </div>
       </section>
@@ -66,6 +66,7 @@ export default function RentalPage() {
                 <li>· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.</li>
                 <li>· 최대 {RENTAL_FEE.baseHeadcount}명 기준, 넘으면 인원 추가 요금</li>
                 <li>· 사용 후 정리정돈, 냉난방은 끄고 퇴실</li>
+                <li>· 평일 09:00~22:00 · 주말 10:00~22:00 (수업 시간 제외)</li>
               </ul>
             </div>
             <div className="public-card p-4 text-sm break-keep text-[var(--color-public-muted)]">

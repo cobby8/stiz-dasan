@@ -15,12 +15,12 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { todayKst } from "@/lib/datetime/kst";
-import { isBookableDate, isRentalAction, type RentalSlot, type RentalStatus } from "@/lib/rental/gym-rental-rules";
+import { isBookableDate, isRentalAction, type RentalDay, type RentalStatus } from "@/lib/rental/gym-rental-rules";
 import {
   createRentalRequest,
   isRentalOverlapViolation,
   listRentalRequests,
-  loadRentalSlots,
+  loadRentalDay,
   transitionRentalInTx,
   type RentalApplyInput,
   type RentalRecord,
@@ -39,13 +39,16 @@ async function clientIpHash(): Promise<string | null> {
   return createHash("sha256").update(`gym-rental:${ip}`).digest("hex");
 }
 
-export type RentalSlotsResult = { ok: true; date: string; slots: RentalSlot[] } | { ok: false; message: string };
+// 그날 시작 후보(10분 간격)·막힌 구간 — 다른 사람의 이름·번호는 담지 않는다
+export type RentalSlotsResult = { ok: true; date: string; day: RentalDay } | { ok: false; message: string };
 
 export async function getRentalSlots(date: string): Promise<RentalSlotsResult> {
   const nowMs = Date.now();
   if (!isBookableDate(String(date ?? ""), todayKst(nowMs))) return { ok: false, message: "신청할 수 없는 날짜입니다." };
   try {
-    return { ok: true, date, slots: await loadRentalSlots(prisma, date, nowMs) };
+    const day = await loadRentalDay(prisma, date, nowMs);
+    if (!day) return { ok: false, message: "신청할 수 없는 날짜입니다." };
+    return { ok: true, date, day };
   } catch (error) {
     console.error("[rental] slots failed:", (error as Error).message);
     return { ok: false, message: "가능한 시간을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." };
@@ -61,6 +64,8 @@ export type RentalSubmitResult =
         rentalDate: string;
         startHour: number;
         endHour: number;
+        startMinute: number; // 그날 KST 0시부터 분
+        endMinute: number;
         headcount: number;
         useAircon: boolean;
         usageFee: number;
@@ -96,6 +101,8 @@ export async function submitRentalRequest(input: RentalApplyInput & { honeypot?:
         rentalDate: r.rentalDate,
         startHour: r.startHour,
         endHour: r.endHour,
+        startMinute: r.startMinute,
+        endMinute: r.endMinute,
         headcount: r.headcount,
         useAircon: r.useAircon,
         usageFee: r.usageFee,

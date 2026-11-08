@@ -19,6 +19,7 @@ import {
   buildRentalConfirmedApplicantSms,
   buildRentalReceivedApplicantSms,
   rentalAdminSmsWindowKey,
+  rentalTimeText,
   RENTAL_ADMIN_SMS_WINDOW_MS,
   type RentalMessageInput,
 } from "@/lib/rental/gym-rental-rules";
@@ -118,7 +119,8 @@ export async function notifyAdminsOfRentalRequest(request: RentalRow): Promise<v
         userId: admin.id,
         type: RENTAL_EVENT_TYPE,
         title: "체육관 대관 신청",
-        message: `${request.applicantName} · ${request.rentalDate} ${request.startHour}시~${request.endHour}시`,
+        // 시간 표시는 규칙 모듈의 공용 함수("20:40~22:10 (1시간 30분)")
+        message: `${request.applicantName} · ${request.rentalDate} ${rentalTimeText(request)}`,
         linkUrl: "/admin/rental",
       }));
       if (admin.phone && sendSms) {

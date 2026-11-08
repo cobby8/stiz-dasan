@@ -679,6 +679,8 @@ model GymRentalRequest {
   rentalDate      String // 'YYYY-MM-DD' (KST)
   startHour       Int
   endHour         Int
+  startMinute     Int? // 그날 KST 0시부터 분(10분 단위 시작) — 20261108210000_gym_rental_minutes
+  endMinute       Int? // 그날 KST 0시부터 분(30분 단위 이용)
   startAt         DateTime  @db.Timestamptz(6)
   endAt           DateTime  @db.Timestamptz(6)
   headcount       Int

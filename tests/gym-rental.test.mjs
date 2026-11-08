@@ -12,7 +12,7 @@ const read = (p) => readFileSync(p, "utf8");
 const MIGRATION = read("prisma/migrations/20261107120000_add_gym_rental_request/migration.sql");
 
 test("요금: 2시간·12명·냉난방 = 이용료 92,000 + 보증금 20,000 = 112,000", () => {
-  const fee = rules.calculateRentalFee({ hours: 2, headcount: 12, useAircon: true });
+  const fee = rules.calculateRentalFee({ durationMinutes: 120, headcount: 12, useAircon: true });
   assert.equal(fee.baseFee, 70_000);
   assert.equal(fee.airconFee, 10_000);
   assert.equal(fee.extraPeopleFee, 12_000);
@@ -22,17 +22,19 @@ test("요금: 2시간·12명·냉난방 = 이용료 92,000 + 보증금 20,000 = 
 });
 
 test("요금: 1시간·10명·냉난방 없음 = 40,000 + 보증금, 10명까지는 추가 없음", () => {
-  const fee = rules.calculateRentalFee({ hours: 1, headcount: 10, useAircon: false });
+  const fee = rules.calculateRentalFee({ durationMinutes: 60, headcount: 10, useAircon: false });
   assert.equal(fee.usageFee, 40_000);
   assert.equal(fee.total, 60_000);
-  assert.equal(rules.calculateRentalFee({ hours: 3, headcount: 11, useAircon: false }).usageFee, 40_000 + 60_000 + 9_000);
+  assert.equal(rules.calculateRentalFee({ durationMinutes: 180, headcount: 11, useAircon: false }).usageFee, 40_000 + 60_000 + 9_000);
 });
 
 test("요금: 범위 밖 시간·인원은 거절", () => {
-  assert.throws(() => rules.calculateRentalFee({ hours: 0, headcount: 5, useAircon: false }));
-  assert.throws(() => rules.calculateRentalFee({ hours: rules.RENTAL_MAX_HOURS + 1, headcount: 5, useAircon: false }));
-  assert.throws(() => rules.calculateRentalFee({ hours: 1, headcount: 0, useAircon: false }));
-  assert.throws(() => rules.calculateRentalFee({ hours: 1, headcount: rules.RENTAL_MAX_HEADCOUNT + 1, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: 0, headcount: 5, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: 30, headcount: 5, useAircon: false })); // 1시간 미만
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: 70, headcount: 5, useAircon: false })); // 30분 단위 아님
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: rules.RENTAL_MAX_MINUTES + 30, headcount: 5, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: 60, headcount: 0, useAircon: false }));
+  assert.throws(() => rules.calculateRentalFee({ durationMinutes: 60, headcount: rules.RENTAL_MAX_HEADCOUNT + 1, useAircon: false }));
 });
 
 const MON = "2026-11-09"; // 월요일
@@ -42,45 +44,54 @@ const CLASSES = [
   { dayOfWeek: "Tue", startTime: "09:00", endTime: "12:00" }, // 다른 요일 — 월요일 칸에 영향 없음
 ];
 
-test("가능 시간: 그 요일 수업과 겹치는 칸만 막고, 끝나는 시각과 시작 시각이 같으면 안 겹친다", () => {
+// 시작 후보(분) → 사유. 분 단위로 찾는다.
+const reasonAt = (day, hm) => day.starts.find((o) => o.minute === rules.hmToMinutes(hm))?.reason;
+const maxAt = (day, hm) => day.starts.find((o) => o.minute === rules.hmToMinutes(hm))?.maxMinutes;
+
+test("가능 시간: 그 요일 수업과 겹치는 시작만 막고, 끝나는 시각과 시작 시각이 같으면 안 겹친다", () => {
   assert.equal(kst.kstDow(MON), 1);
-  const slots = rules.buildRentalSlots({ date: MON, classes: CLASSES, busy: [], nowMs: kst.kstAt("2026-11-01", "00:00") });
-  const by = Object.fromEntries(slots.map((s) => [s.hour, s.reason]));
-  assert.equal(slots[0].hour, rules.RENTAL_OPEN_HOUR);
-  assert.equal(slots.at(-1).hour, rules.RENTAL_CLOSE_HOUR - 1);
-  assert.equal(by[9], "OPEN"); // 화요일 수업은 무관
-  assert.equal(by[15], "OPEN");
-  assert.equal(by[16], "CLASS");
-  assert.equal(by[17], "OPEN"); // 16:55 종료 → 17시 칸 비어 있음
-  assert.equal(by[19], "CLASS");
-  assert.equal(by[20], "CLASS"); // 20:35 종료 → 20시 칸 막힘
-  assert.equal(by[21], "OPEN");
+  const day = rules.buildRentalDay({ date: MON, classes: CLASSES, busy: [], nowMs: kst.kstAt("2026-11-01", "00:00") });
+  assert.equal(day.starts[0].label, "09:00"); // 평일 09시부터
+  assert.equal(day.starts.at(-1).label, "21:00"); // 22시까지 최소 1시간 → 마지막 시작 21:00
+  assert.equal(reasonAt(day, "09:00"), "OPEN"); // 화요일 수업은 무관
+  assert.equal(reasonAt(day, "15:00"), "OPEN"); // 15:00~16:00 은 16:00 수업 직전까지
+  assert.equal(maxAt(day, "15:00"), 60);
+  assert.equal(reasonAt(day, "15:10"), "CLASS"); // 1시간이 16:00 수업과 겹침
+  assert.equal(reasonAt(day, "16:50"), "CLASS");
+  assert.equal(reasonAt(day, "17:00"), "OPEN"); // 16:55 종료 → 17:00 시작 가능(16:55 는 10분 단위가 아님)
+  assert.equal(reasonAt(day, "19:00"), "CLASS");
+  assert.equal(reasonAt(day, "20:30"), "CLASS"); // 20:35 종료
+  assert.equal(reasonAt(day, "20:40"), "OPEN"); // 끝나고 바로
+  assert.equal(maxAt(day, "20:40"), 60); // 20:40~21:40, 22:00 넘김(1시간 30분)은 불가
 });
 
 test("가능 시간: 지난 시각·승인된 대관·특강 회차는 막힌다", () => {
-  const slots = rules.buildRentalSlots({
+  const day = rules.buildRentalDay({
     date: MON,
     classes: CLASSES,
     busy: [{ startMinute: 10 * 60 + 30, endMinute: 11 * 60 }], // 특강 10:30~11:00
     bookedBusy: [{ startMinute: 13 * 60, endMinute: 15 * 60 }], // 승인 대관 13~15시
     nowMs: kst.kstAt(MON, "09:30"),
   });
-  const by = Object.fromEntries(slots.map((s) => [s.hour, s.reason]));
-  assert.equal(by[9], "PAST");
-  assert.equal(by[10], "CLASS");
-  assert.equal(by[11], "OPEN");
-  assert.equal(by[13], "BOOKED");
-  assert.equal(by[14], "BOOKED");
-  assert.equal(rules.maxContinuousHours(slots, 11), 2); // 11,12 → 13시 막힘
-  assert.equal(rules.isRangeAvailable(slots, 11, 2), true);
-  assert.equal(rules.isRangeAvailable(slots, 11, 3), false);
-  assert.equal(rules.isRangeAvailable(slots, 16, 1), false);
+  assert.equal(reasonAt(day, "09:00"), "PAST");
+  assert.equal(reasonAt(day, "09:30"), "PAST"); // 지금 이 순간 = 이미 시작
+  assert.equal(reasonAt(day, "09:40"), "CLASS"); // 09:40~10:40 이 특강과 겹침
+  assert.equal(reasonAt(day, "10:00"), "CLASS");
+  assert.equal(reasonAt(day, "11:00"), "OPEN");
+  assert.equal(reasonAt(day, "13:00"), "BOOKED");
+  assert.equal(reasonAt(day, "14:00"), "BOOKED");
+  assert.equal(maxAt(day, "11:00"), 120); // 11~13시 → 13시 막힘
+  assert.equal(rules.isRentalRangeAvailable(day, 660, 120), true);
+  assert.equal(rules.isRentalRangeAvailable(day, 660, 150), false);
+  assert.equal(rules.isRentalRangeAvailable(day, 960, 60), false); // 16시 수업
+  assert.ok(day.blocks.some((b) => b.reason === "BOOKED" && b.startMinute === 780));
 });
 
-test("KST 시각: 정시 → 절대 시각이 한국 시간 기준(UTC 서버에서도 같은 값)", () => {
-  assert.equal(new Date(rules.rentalInstantMs(MON, 9)).toISOString(), "2026-11-09T00:00:00.000Z");
-  assert.equal(new Date(rules.rentalInstantMs(MON, 22)).toISOString(), "2026-11-09T13:00:00.000Z");
-  assert.equal(new Date(rules.rentalInstantMs("2026-12-31", 24)).toISOString(), "2026-12-31T15:00:00.000Z");
+test("KST 시각: 분 → 절대 시각이 한국 시간 기준(UTC 서버에서도 같은 값)", () => {
+  assert.equal(new Date(rules.rentalInstantMs(MON, 9 * 60)).toISOString(), "2026-11-09T00:00:00.000Z");
+  assert.equal(new Date(rules.rentalInstantMs(MON, 22 * 60)).toISOString(), "2026-11-09T13:00:00.000Z");
+  assert.equal(new Date(rules.rentalInstantMs(MON, 20 * 60 + 40)).toISOString(), "2026-11-09T11:40:00.000Z");
+  assert.equal(new Date(rules.rentalInstantMs("2026-12-31", 24 * 60)).toISOString(), "2026-12-31T15:00:00.000Z");
 });
 
 test("신청 가능 날짜: 오늘부터 정해진 날 수까지만", () => {
@@ -118,7 +129,7 @@ test("상태 전이: 승인 → 입금 확인 → 사용 완료 → 환불, 거�
 });
 
 const SAMPLE = {
-  applicantName: "김대관", applicantPhone: "01012345678", rentalDate: MON, startHour: 10, endHour: 12,
+  applicantName: "김대관", applicantPhone: "01012345678", rentalDate: MON, startHour: 10, endHour: 12, startMinute: 600, endMinute: 720,
   headcount: 12, useAircon: true, usageFee: 92_000, deposit: 20_000, totalAmount: 112_000, purpose: "동호회 연습",
 };
 
@@ -129,7 +140,7 @@ test("문자 문구: 계좌는 승인 문자에만, 원장 알림·접수 문자
   assert.match(approved, /112,000원/);
   assert.doesNotMatch(rules.buildRentalReceivedApplicantSms(SAMPLE), /55491019425407/);
   assert.doesNotMatch(rules.buildRentalAdminAlert(SAMPLE), /55491019425407/);
-  assert.match(rules.buildRentalAdminAlert(SAMPLE), /2026년 11월 9일\(월\) 10:00~12:00/);
+  assert.match(rules.buildRentalAdminAlert(SAMPLE), /2026년 11월 9일\(월\) 10:00~12:00 \(2시간\)/);
   assert.match(rules.buildRentalConfirmedApplicantSms(SAMPLE), /실내운동화/);
   assert.match(rules.buildRentalConfirmedApplicantSms(SAMPLE), /주민센터 주차장/);
 });
@@ -158,7 +169,7 @@ function fakeDb({ rentals = [], counts = { phone10: 0, phoneDay: 0, all10: 0 }, 
         db.inserted = values;
         return [{ id: "00000000-0000-4000-8000-000000000001", rentalDate: values[0], startHour: values[1], endHour: values[2],
           headcount: values[5], useAircon: values[6], applicantName: values[7], applicantPhone: values[8], purpose: values[9],
-          usageFee: values[10], deposit: values[11], totalAmount: values[12], status: "REQUESTED" }];
+          usageFee: values[10], deposit: values[11], totalAmount: values[12], startMinute: values[14], endMinute: values[15], status: "REQUESTED" }];
       }
       throw new Error(`예상 못 한 SQL: ${sql.slice(0, 60)}`);
     },
@@ -169,7 +180,7 @@ function fakeDb({ rentals = [], counts = { phone10: 0, phoneDay: 0, all10: 0 }, 
 
 const NOW = kst.kstAt("2026-11-07", "12:00");
 const GOOD = {
-  rentalDate: MON, startHour: 10, hours: 2, headcount: 12, useAircon: true,
+  rentalDate: MON, startMinute: 600, durationMinutes: 120, headcount: 12, useAircon: true,
   applicantName: " 김대관 ", applicantPhone: "010-1234-5678", purpose: "동호회 연습", agreedRules: true,
   usageFee: 1, totalAmount: 1, // 화면이 보낸 금액은 무시돼야 한다
 };
@@ -188,7 +199,7 @@ test("신청: 금액은 서버가 다시 계산하고, KST 기준 절대 시각�
 });
 
 test("신청: 수업 시간·승인된 대관과 겹치면 거절, 동의·목적 없으면 거절", async () => {
-  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, startHour: 16, hours: 1 }, NOW)).ok, false);
+  assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, startMinute: 960, durationMinutes: 60 }, NOW)).ok, false);
   const booked = fakeDb({ rentals: [{ startsAt: "2026-11-09T02:00:00.000Z", endsAt: "2026-11-09T03:00:00.000Z" }] }); // 11~12시
   assert.equal((await service.createRentalRequest(booked, GOOD, NOW)).ok, false);
   assert.equal((await service.createRentalRequest(fakeDb(), { ...GOOD, agreedRules: false }, NOW)).ok, false);
@@ -226,7 +237,7 @@ test("신청: 같은 접속 주소 10분 5건·하루 15건이면 막는다", as
 
 test("가능 시간: 끝난 반([종료])과 ACTIVE 수강생 없는 반은 조회에서 뺀다", async () => {
   const db = fakeDb();
-  await service.loadRentalSlots(db, MON, NOW);
+  await service.loadRentalDay(db, MON, NOW);
   const sql = db.calls.find((c) => c.sql.includes(`FROM "Class"`)).sql;
   assert.match(sql, /c\.name NOT LIKE '\[%'/);
   assert.match(sql, /EXISTS \(SELECT 1 FROM "Enrollment" e WHERE e\."classId" = c\.id AND e\.status = 'ACTIVE'\)/);
@@ -245,12 +256,14 @@ test("신청: 같은 연락처 반복은 막고, 같은 시간 재신청은 새�
 });
 
 function fakeTx({ status = "REQUESTED", clash = false, startHour = 10, endHour = 12, sessions = [] } = {}) {
+  const startMinute = startHour * 60;
+  const endMinute = endHour * 60;
   const calls = [];
   return {
     calls,
     async $queryRawUnsafe(sql, ...values) {
       calls.push({ sql, values });
-      if (sql.includes("FOR UPDATE")) return [{ id: values[0], status, rentalDate: MON, deposit: 20_000, startHour, endHour, totalAmount: 112_000 }];
+      if (sql.includes("FOR UPDATE")) return [{ id: values[0], status, rentalDate: MON, deposit: 20_000, startMinute, endMinute, totalAmount: 112_000 }];
       if (sql.includes(`FROM "GymRentalRequest" o`)) return clash ? [{ id: "other" }] : [];
       // 승인 때 다시 보는 가능 시간(정규 반·특강·승인 대관)
       if (sql.includes(`FROM "Class"`)) return CLASSES;
