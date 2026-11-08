@@ -138,6 +138,26 @@ test("받는 사람: 휴대폰만, 같은 번호는 한 통(형제 이름 모음
     { phone: "01022223333", studentNames: ["홍길동", "홍길순"] },
   ]);
   assert.equal(invalidPhoneCount, 2);
+  // 이름 빈 학생만 있는 번호는 빼고 «이름 없는 N명»으로 센다(이름 있는 형제가 있으면 그 번호는 남는다)
+  const named = notice.selectNoticeRecipients([
+    { studentName: "  ", phone: "01099990000" },
+    { studentName: "", phone: "01088880000" },
+    { studentName: "", phone: "01011112222" },
+    { studentName: "김민수", phone: "01011112222" },
+  ]);
+  assert.equal(named.noNameCount, 2);
+  assert.deepEqual(named.recipients, [{ phone: "01011112222", studentNames: ["김민수"] }]);
+});
+
+test("중복 차단 지문: 종류+입력값+버튼 경로 — 키 순서와 무관, 값·경로가 다르면 다르다, 자유 공지는 경로 무시", () => {
+  const a = notice.noticeContentKey("NOTICE_CLOSURE", { reason: "공사", closurePeriod: "11/17" }, "notices");
+  const b = notice.noticeContentKey("NOTICE_CLOSURE", { closurePeriod: "11/17", reason: "공사" }, "notices");
+  assert.equal(a, b);
+  assert.notEqual(a, notice.noticeContentKey("NOTICE_CLOSURE", { closurePeriod: "11/18", reason: "공사" }, "notices"));
+  assert.notEqual(a, notice.noticeContentKey("NOTICE_CLOSURE", { closurePeriod: "11/17", reason: "공사" }, "notices/x1"));
+  assert.notEqual(a, notice.noticeContentKey("NOTICE_EVENT", { closurePeriod: "11/17", reason: "공사" }, "notices"));
+  assert.equal(notice.noticeContentKey("FREE", { message: "안내" }, "notices"), notice.noticeContentKey("FREE", { message: "안내" }, "notices/x1"));
+  assert.equal(notice.BMS_NOT_DELIVERED_PREFIX, "BMS_NOT_DELIVERED:");
 });
 
 test("문자로 깨지는 글자 없음(EUC-KR 완성형): 공지 틀·기본 문장·자유 공지 머리말과 수신거부 줄", () => {
@@ -187,35 +207,72 @@ test("브랜드 메시지 시간: KST 08:00 ≤ 시각 < 20:50, 접수는 마감
 
 test("연결: 솔라피 규격(ATA·BMS_FREE)·크론 분기·서버 동작·화면", () => {
   const sms = read("src/lib/sms.ts");
-  // 브랜드 메시지 자유형 텍스트형 — 채널 친구(I), 대체 문자 켬, from(발신번호)
-  assert.match(sms, /type: "BMS_FREE",\s*kakaoOptions: \{\s*pfId,\s*disableSms: false,\s*bms: \{ targeting: "I", chatBubbleType: "TEXT" \},/);
+  // 브랜드 메시지 자유형 텍스트형 — 채널 친구(I), 문자 대체 «끔»(광고 문자 금지, 검수 (나)안)
+  assert.match(sms, /type: "BMS_FREE",\s*kakaoOptions: \{\s*pfId,[\s\S]*?disableSms: true,\s*bms: \{ targeting: "I", chatBubbleType: "TEXT" \},/);
+  // 알림톡은 정보성이라 대체 문자 켬
   assert.match(sms, /type: "ATA",\s*kakaoOptions: \{[\s\S]*?templateId: item\.kakao\.templateId,[\s\S]*?disableSms: false,/);
   assert.match(sms, /from: SOLAPI_SENDER,\s*text: item\.body,/);
-  assert.doesNotMatch(sms, /disableSms: true/);
+  assert.equal((sms.match(/disableSms: true/g) ?? []).length, 1, "disableSms:true 는 브랜드 메시지 한 곳뿐");
 
   const cron = read("src/app/api/cron/manual-message-dispatch/route.ts");
   assert.match(cron, /if \(claimed\.some\(\(item\) => item\.perItem\)\)/);
   assert.match(cron, /BMS_SEND_WINDOW_CLOSED/);
   assert.match(cron, /BATCH_BODY_MISMATCH/); // 예전 문자 묶음 검사는 그대로
-  // 카카오가 명시적으로 거절된 사람만 문자로 한 번(불확실은 재시도 금지)
-  assert.match(cron, /if \(solapi && item\.kakao && delivery\?\.status === "FAILED"\) \{ retry\.push\(item\); continue; \}/);
-  assert.match(cron, /body: item\.kakao\?\.kind === "ALIMTALK" \? item\.kakao\.smsBody : item\.body,/);
+  // 알림톡만 명시 거절 시 문자로 한 번(브랜드 메시지는 제외 · 불확실은 재시도 금지)
+  assert.match(cron, /if \(solapi && item\.kakao\?\.kind === "ALIMTALK" && delivery\?\.status === "FAILED"\) \{ retry\.push\(item\); continue; \}/);
+  assert.doesNotMatch(cron, /if \(solapi && item\.kakao && delivery/);
+  // 카카오 못 보내는 공급자에서 브랜드 메시지는 문자로 바꾸지 않고 실패(사유 구분)
+  assert.match(cron, /item\.kakao\?\.kind === "BMS_FREE" && !solapi\) \{\s*await failBrandMessage\(item, "PROVIDER_NOT_KAKAO"\)/);
+  assert.match(cron, /errorCode: `\$\{BMS_NOT_DELIVERED_PREFIX\}\$\{reason\}`/);
+  assert.match(cron, /messageType === "BMS" \? `\$\{BMS_NOT_DELIVERED_PREFIX\}\$\{reason\}` : reason/);
+  // 알림톡 거절 → 문자 대체가 장부에 맞게(채널·fallbackUsed)
+  assert.match(cron, /await record\(item, second, type, \{ used: true, channel: type \}\)/);
+  assert.match(cron, /markManualMessageAccepted\(\{[\s\S]*?channel: actualChannel, fallbackUsed: fallback\.used, fallbackChannel: fallback\.channel \?\? null,/);
+  const reconcile = read("src/app/api/cron/manual-message-reconcile/route.ts");
+  assert.match(reconcile, /delivery\.messageType === "BMS" && result\.status !== "SUCCESS"\s*\? `\$\{BMS_NOT_DELIVERED_PREFIX\}/);
+  assert.ok(reconcile.includes(`const BMS_NOT_DELIVERED_PREFIX = "${notice.BMS_NOT_DELIVERED_PREFIX}";`), "크론 복사본과 정본 값이 같아야 한다");
 
   const ledger = read("src/lib/message-ledger.ts");
   assert.match(ledger, /items\?: ManualQueueItem\[\]/);
+  // 접수 표시 때 채널·대체 여부도 남긴다(채널은 허용 목록으로 거른다)
+  assert.match(ledger, /const channel = input\.channel && ALLOWED_DELIVERY_CHANNELS\.has\(input\.channel\) \? input\.channel : null;/);
+  assert.match(ledger, /channel=COALESCE\(\$5, channel\), "fallbackUsed"=COALESCE\(\$6, "fallbackUsed"\)/);
+  assert.match(ledger, /"updatedAt" AS "acceptedAt","messageType"/);
   // 장부 channel 칸은 DB CHECK 안의 값만(브랜드 메시지는 SMS 로 두고 종류는 messageType)
   assert.match(ledger, /const channel = item\.kakao\?\.kind === "ALIMTALK" \? "ALIMTALK" : "SMS";/);
 
   const action = read("src/app/actions/parent-notice.ts");
-  for (const name of ["getParentNoticeOptions", "prepareParentNotice", "sendParentNotice"]) {
+  for (const name of [
+    "getParentNoticeOptions", "prepareParentNotice", "sendParentNotice",
+    "prepareParentNoticeSmsResend", "sendParentNoticeSmsResend", "getParentNoticeBrandResults",
+  ]) {
     const body = action.slice(action.indexOf(`export async function ${name}`));
-    assert.ok(body.indexOf("await requireAdmin()") > -1 && body.indexOf("await requireAdmin()") < body.indexOf("prisma."), name);
+    // 관리자 확인이 DB 조회(prisma. 또는 loadBrandResults/resolve…)보다 먼저
+    const firstDb = Math.min(...["prisma.", "loadBrandResults(", "resolveResend(", "resolveParentNotice("]
+      .map((needle) => body.indexOf(needle)).filter((index) => index > -1));
+    assert.ok(body.indexOf("await requireAdmin()") > -1 && body.indexOf("await requireAdmin()") < firstDb, name);
   }
   assert.match(action, /notMergedStudent\("s"\)/);
   assert.match(action, /e\.status = 'ACTIVE'/);
   assert.match(action, /brandMessageWindow\(Date\.now\(\), BMS_QUEUE_MARGIN_MINUTES\)/);
   assert.match(action, /isBrandFreeNoticeEnabled\(\) && kakaoChannelReady\(\)/);
   assert.match(action, /reserveManualMessageQueue\(\{/);
+  // 30분 중복 차단은 «종류+입력값+버튼 경로» 지문(받는 사람 변화로 풀리지 않게)
+  assert.match(action, /const contentHash = hashMessageBody\(noticeContentKey\(kind, fieldsForBinding \?\? \{\}, noticePath\)\);/);
+  assert.match(action, /"detailsJson"->>'contentHash' = \$2/);
+  assert.match(action, /approvalId, binding\.contentHash, DUPLICATE_WINDOW_MINUTES/);
+  // 카톡 틀 묶음 지문 본문 = 틀 + 입력값(틀 원문만이 아님)
+  assert.match(action, /commonBody = `\$\{NOTICE_ALIMTALK_TEMPLATES\[kind\]\.body\}\\n\\n\$\{noticeContentKey\(kind, fields, noticePath\)\}`;/);
+  // 정보성 문자 다시 보내기: 광고 표시 없는 «[스티즈농구교실] 내용», 공통 본문 큐(items 없음), 한 묶음 한 번
+  const resend = action.slice(action.indexOf("async function resolveResend"));
+  assert.match(resend, /const body = buildFreeNoticeSmsText\(message\);/);
+  assert.doesNotMatch(resend, /buildFreeNoticeBrandText|BMS_AD_MARK/);
+  assert.match(resend, /if \(result\.pending > 0\)/);
+  assert.match(resend, /"detailsJson"->>'sourceBatchId' = \$2/);
+  const resendQueue = action.slice(action.indexOf("requestId: `${RESEND_REQUEST_PREFIX}${approvalId}`"));
+  assert.doesNotMatch(resendQueue.slice(0, 600), /items:/);
+  assert.match(read("src/components/admin/ParentNoticeSender.tsx"), /카톡 친구가 아니어서 못 받은 학부모 \{item\.notDelivered\}명/);
+  assert.match(read("src/components/admin/ParentNoticeSender.tsx"), /이분들께는 정보성 문자로 다시 보낼까요\?/);
 
   const client = read("src/app/admin/sms/SmsClient.tsx");
   assert.match(client, /<ParentNoticePanel \/>/);

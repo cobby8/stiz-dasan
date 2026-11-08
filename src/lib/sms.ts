@@ -354,8 +354,8 @@ async function sendSolapiSmsBulk(
  * 받는 사람마다 다른 본문·종류(문자/알림톡/브랜드 메시지)로 묶어 보내는 대량 발송 한 통(학부모 공지, 2026-11-09).
  * 카카오 옵션 규격은 솔라피 문서 그대로:
  *  - 알림톡(ATA): kakaoOptions { pfId, templateId, variables, buttons, disableSms:false } + from(대체 문자용)
- *  - 브랜드 메시지 자유형 텍스트형(BMS_FREE): kakaoOptions { pfId, bms: { targeting: "I"(채널 친구), chatBubbleType: "TEXT" } }
- *    https://solapi.com/developers/api/kakao-bms-free-text · 대체 발송(LMS)은 disableSms:false + from
+ *  - 브랜드 메시지 자유형 텍스트형(BMS_FREE): kakaoOptions { pfId, disableSms:true, bms: { targeting: "I"(채널 친구), chatBubbleType: "TEXT" } }
+ *    https://solapi.com/developers/api/kakao-bms-free-text · 광고 문자 대체를 막으려고 대체 발송은 끈다
  */
 export type PerMessageKakao =
     | {
@@ -371,7 +371,7 @@ export type PerMessageBulkItem = { deliveryId: string; to: string; body: string;
 function solapiPerMessage(item: PerMessageBulkItem): JsonObject {
     const base = {
         to: normalizeSmsNumber(item.to),
-        // 대체 발송(카카오 실패 → 문자)은 등록 발신번호(from)가 있어야 동작한다
+        // 알림톡 대체 발송(카카오 실패 → 문자)은 등록 발신번호(from)가 있어야 동작한다
         from: SOLAPI_SENDER,
         text: item.body,
         customFields: { deliveryId: item.deliveryId },
@@ -396,7 +396,10 @@ function solapiPerMessage(item: PerMessageBulkItem): JsonObject {
             type: "BMS_FREE",
             kakaoOptions: {
                 pfId,
-                disableSms: false,
+                // 문자 대체 끔(검수 (나)안): 브랜드 메시지는 광고성이라 대체 문자도 «(광고)» 광고 문자가 된다.
+                // 수신 동의(080 수신거부) 없이 광고 문자가 나가는 길을 없애고, 못 받은 학부모는 원장이 따로
+                // «광고 표시 없는 정보성 문자»로 다시 보낼지 고른다(actions/parent-notice.ts)
+                disableSms: true,
                 bms: { targeting: "I", chatBubbleType: "TEXT" },
             },
         };

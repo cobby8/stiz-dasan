@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSolapiBatchResults } from "@/lib/sms";
+// 브랜드 메시지 못 받음 사유 앞머리 — src/lib/messaging/parent-notice.ts 의 BMS_NOT_DELIVERED_PREFIX 와 같은 값
+// (이 크론은 실행 검사 테스트가 import 를 제한해 상수만 복사한다. tests/parent-notice.test.mjs 가 두 값이 같은지 본다)
+const BMS_NOT_DELIVERED_PREFIX = "BMS_NOT_DELIVERED:";
 import { finalizeManualSolapiResult, finalizeMessageDeliveryBatch, getPendingManualSolapiDeliveries, getPendingManualSolapiGroups, markManualMessageUncertain } from "@/lib/message-ledger";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +32,12 @@ export async function GET(request: NextRequest) {
         if (result.status === "PENDING") { pending++; continue; }
         await finalizeManualSolapiResult({
           deliveryId: delivery.id, ok: result.status === "SUCCESS",
-          providerStatus: result.statusCode || result.status, errorCode: result.reason,
+          providerStatus: result.statusCode || result.status,
+          // 브랜드 메시지(학부모 자유 공지)는 문자 대체를 끄고 보낸다 — 못 받은 건(채널 친구 아님 등)을 따로 세어
+          // 원장이 «정보성 문자로 다시 보내기»를 고를 수 있게 사유 앞머리를 붙인다
+          errorCode: delivery.messageType === "BMS" && result.status !== "SUCCESS"
+            ? `${BMS_NOT_DELIVERED_PREFIX}${result.reason ?? result.statusCode ?? ""}`
+            : result.reason,
         });
         if (result.status === "SUCCESS") sent++; else failed++;
       }

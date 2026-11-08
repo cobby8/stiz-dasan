@@ -6,7 +6,8 @@
  *     템플릿 id(env ALIMTALK_TPL_NOTICE_*)가 없거나 알림톡이 거절되면 같은 본문을 문자로 보낸다.
  *  ② «자유 공지» = 카카오 브랜드 메시지(BMS 자유형·텍스트형). 카카오가 «광고성» 메시지로 분류하므로
  *     앞에 (광고)·끝에 수신거부 안내를 넣고, 밤(20:50~08:00)에는 보내지 않는다.
- *     채널 친구가 아니면 솔라피가 문자(LMS)로 대신 보낸다(대체 발송). 스위치(env)가 꺼져 있으면 지금처럼 문자.
+ *     문자로 자동 대체하지 않는다(광고 문자 금지 — 검수 (나)안). 못 받은 학부모는 원장이 골라 «광고 표시 없는
+ *     정보성 문자»로 다시 보낸다. 스위치(env)가 꺼져 있으면 지금처럼 문자.
  *
  * import 는 순수 모듈만(테스트가 그대로 실행한다).
  */
@@ -118,11 +119,22 @@ export function selectNoticeRecipients(candidates: NoticeCandidate[]) {
       byPhone.set(phone, { phone, studentNames: name ? [name] : [] });
     }
   }
+  // 학생 이름이 하나도 없는 번호는 «안녕하세요,  학부모님» 이 되므로 빼고, 화면에 «이름 없는 N명 제외»로 보인다
+  const noNameCount = [...byPhone.values()].filter((item) => item.studentNames.length === 0).length;
   const recipients = [...byPhone.values()]
     .filter((item) => item.studentNames.length > 0)
     .map((item) => ({ ...item, studentNames: [...item.studentNames].sort((a, b) => a.localeCompare(b, "ko")) }))
     .sort((a, b) => (a.phone < b.phone ? -1 : a.phone > b.phone ? 1 : 0));
-  return { recipients, invalidPhoneCount };
+  return { recipients, invalidPhoneCount, noNameCount };
+}
+
+/**
+ * 30분 중복 접수 차단·묶음 지문용 «공지 내용 지문 원문» — 종류 + 입력값 + 버튼 경로.
+ * 받는 사람(학생명) 이 바뀌어도 같은 공지면 같은 값이 나오게, 키 순서를 고정해 만든다.
+ */
+export function noticeContentKey(kind: ParentNoticeKind, values: Record<string, string>, noticePath: string | null): string {
+  const sorted = Object.keys(values).sort().map((key) => [key, values[key]]);
+  return JSON.stringify({ kind, values: sorted, noticePath: kind === "FREE" ? null : noticePath });
 }
 
 /** 알림톡 한 통(받는 사람 1명분) — 문자로 대신 보낼 때 쓸 본문(버튼 링크를 본문 끝에 붙임)도 같이 */
@@ -198,6 +210,13 @@ export function brandMessageWindow(nowMs: number = Date.now(), marginMinutes = 0
   const open = nowMs >= startMs && nowMs < endMs - marginMinutes * 60_000;
   return { open, nowHm: kstHm(nowMs), startMs, endMs };
 }
+
+/**
+ * 브랜드 메시지를 못 받은 건의 장부 사유 앞머리(2026-11-09 검수 (나)안).
+ * 브랜드 메시지는 광고성이라 «수신 동의 없는 광고 문자»가 나가지 않게 문자 대체를 끄고 보낸다(disableSms:true).
+ * 대신 못 받은 학부모 수를 세어 원장이 «광고 표시 없는 정보성 문자»로 다시 보낼지 고른다.
+ */
+export const BMS_NOT_DELIVERED_PREFIX = "BMS_NOT_DELIVERED:";
 
 /** 접수 여유 — 크론(매분)·묶음 처리 시간을 생각해 마감 10분 전부터 새 접수를 막는다 */
 export const BMS_QUEUE_MARGIN_MINUTES = 10;

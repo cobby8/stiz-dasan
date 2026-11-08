@@ -181,14 +181,23 @@ export async function markManualMessageAccepted(input: {
   providerGroupId: string;
   providerMessageId?: string | null;
   messageType?: string | null;
+  /** 실제로 나간 채널(알림톡 거절 → 문자 대체면 SMS). DB CHECK 밖의 값은 무시한다 */
+  channel?: string | null;
+  /** 카카오 → 문자로 대신 보냈는지(학부모 공지, 2026-11-09) */
+  fallbackUsed?: boolean;
+  fallbackChannel?: string | null;
 }) {
+  const channel = input.channel && ALLOWED_DELIVERY_CHANNELS.has(input.channel) ? input.channel : null;
   await prisma.$executeRawUnsafe(
     `UPDATE "NotificationDelivery"
         SET status='SENDING', provider='SOLAPI', "providerGroupId"=$2, "providerMessageId"=$3,
             "providerStatus"='ACCEPTED', "messageType"=COALESCE($4,"messageType"),
+            channel=COALESCE($5, channel), "fallbackUsed"=COALESCE($6, "fallbackUsed"),
+            "fallbackChannel"=COALESCE($7, "fallbackChannel"),
             "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW()
       WHERE id=$1 AND source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'`,
     input.deliveryId, input.providerGroupId, input.providerMessageId ?? null, input.messageType ?? null,
+    channel, input.fallbackUsed ?? null, input.fallbackChannel ?? null,
   );
 }
 
@@ -217,8 +226,8 @@ export async function getPendingManualSolapiGroups(limit = 20) {
 }
 
 export async function getPendingManualSolapiDeliveries(groupId: string) {
-  return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date }>>(
-    `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt" FROM "NotificationDelivery"
+  return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date; messageType: string | null }>>(
+    `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt","messageType" FROM "NotificationDelivery"
       WHERE source='MANUAL' AND ((trigger='MANUAL_MESSAGE' AND status='SENDING')
         OR (trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT'))
         AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId"=$1`,

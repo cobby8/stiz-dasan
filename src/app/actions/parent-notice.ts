@@ -46,7 +46,9 @@ import {
   buildNoticeAlimtalkItems,
   isParentNoticeKind,
   normalizeNoticeFields,
+  noticeContentKey,
   selectNoticeRecipients,
+  BMS_NOT_DELIVERED_PREFIX,
   type ParentNoticeKind,
 } from "@/lib/messaging/parent-notice";
 import { maskPersonName, maskPhone } from "@/lib/customer-notice/templates";
@@ -82,6 +84,21 @@ export type ParentNoticeOptions = {
   /** 지금 브랜드 메시지를 접수할 수 있는 시간인지(KST) */
   brandWindowOpen: boolean;
   brandWindowLabel: string;
+  /** 최근 3일 브랜드 메시지 공지 결과 — 카톡으로 못 받은 학부모를 정보성 문자로 다시 보낼지 고르는 곳 */
+  brandResults: ParentNoticeBrandResult[];
+};
+
+export type ParentNoticeBrandResult = {
+  batchId: string;
+  /** 접수 시각(ISO) */
+  createdAt: string;
+  total: number;
+  /** 카톡으로 못 받은 학부모(채널 친구 아님·카톡 미사용·마감 지남 등) */
+  notDelivered: number;
+  /** 아직 결과 확인 중 */
+  pending: number;
+  /** 이미 정보성 문자로 다시 보냈는지(한 묶음당 한 번만) */
+  resent: boolean;
 };
 
 export type ParentNoticePreview = {
@@ -92,6 +109,8 @@ export type ParentNoticePreview = {
   channelNote: string;
   recipientCount: number;
   invalidPhoneCount: number;
+  /** 학생 이름이 비어 빠진 번호 수 */
+  noNameCount: number;
   /** 처음 몇 명 — 이름 가림 + 끝 4자리 */
   sample: string[];
   /** 첫 번째 받는 분의 문구(학생 이름은 가림) */
@@ -159,6 +178,11 @@ export async function getParentNoticeOptions(): Promise<ParentNoticeOptions | Pa
       brandMessageEnabled: isBrandFreeNoticeEnabled() && kakaoChannelReady(),
       brandWindowOpen: brandMessageWindow(Date.now(), BMS_QUEUE_MARGIN_MINUTES).open,
       brandWindowLabel: brandWindowLabel(),
+      // 결과 조회가 실패해도 공지 보내기 화면은 열린다
+      brandResults: await loadBrandResults(null).catch((error: unknown) => {
+        console.error("[parent-notice] 브랜드 메시지 결과 조회 실패", error);
+        return [] as ParentNoticeBrandResult[];
+      }),
     };
   } catch (error) {
     console.error("[parent-notice] 화면 준비 실패", error);
@@ -180,7 +204,7 @@ async function resolveParentNotice(input: ParentNoticeInput) {
       WHERE e.status = 'ACTIVE'
       ORDER BY s.id`,
   );
-  const { recipients, invalidPhoneCount } = selectNoticeRecipients(rows);
+  const { recipients, invalidPhoneCount, noNameCount } = selectNoticeRecipients(rows);
   if (recipients.length === 0) throw new NoticeProblem("보낼 학부모가 없습니다. (재원생 학부모 휴대폰 번호를 확인해 주세요)");
   if (recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
     throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
@@ -208,7 +232,8 @@ async function resolveParentNotice(input: ParentNoticeInput) {
       commonBody = buildFreeNoticeBrandText(message);
       const notAfter = new Date(window.endMs).toISOString();
       items = recipients.map((item) => ({ recipient: item.phone, body: commonBody, kakao: { kind: "BMS_FREE", notAfter } }));
-      channelNote = "카카오 브랜드 메시지(채널 친구에게 카톡, 친구가 아니면 솔라피가 문자로 대신 보냄 · 광고 표시 포함)";
+      // 문자 대체 없음(검수 (나)안) — 못 받은 분은 결과 화면에서 원장이 정보성 문자로 다시 보낼지 고른다
+      channelNote = "카카오 브랜드 메시지(채널 친구에게만 카톡 · 광고 표시 포함 · 문자로 자동 대체하지 않음)";
     } else {
       // 지금처럼 문자 — 모두 같은 본문이라 기존 묶음 발송 그대로(items 없음)
       channel = "SMS";
@@ -241,7 +266,8 @@ async function resolveParentNotice(input: ParentNoticeInput) {
         },
       }
       : { recipient: item.phone, body: item.smsBody });
-    commonBody = NOTICE_ALIMTALK_TEMPLATES[kind].body;
+    // 묶음 지문용 대표 본문: 틀 원문만 쓰면 다른 공지도 같은 지문이 되므로 입력값·버튼 경로를 붙인다
+    commonBody = `${NOTICE_ALIMTALK_TEMPLATES[kind].body}\n\n${noticeContentKey(kind, fields, noticePath)}`;
     channelNote = ready
       ? "카카오 알림톡(실패하면 같은 내용을 문자로)"
       : "문자(알림톡 템플릿 id 가 아직 없어요 — 같은 내용을 문자로 보냅니다)";
@@ -255,6 +281,8 @@ async function resolveParentNotice(input: ParentNoticeInput) {
   }
 
   const bodies = items ? items.map((item) => item.body) : [commonBody];
+  // 30분 중복 차단 지문 — 종류 + 입력값 + 버튼 경로(받는 사람이 바뀌어도 같은 공지면 같은 값)
+  const contentHash = hashMessageBody(noticeContentKey(kind, fieldsForBinding ?? {}, noticePath));
   const binding = {
     kind: "PARENT_NOTICE" as const,
     noticeKind: kind,
@@ -264,8 +292,9 @@ async function resolveParentNotice(input: ParentNoticeInput) {
     // 받는 번호 묶음·문구 묶음의 지문 — 미리보기 뒤에 한 명·한 글자라도 바뀌면 보내기를 멈춘다
     recipientSetHash: hashMessageBody(recipients.map((item) => hashMessageRecipientPhone(item.phone)).join(",")),
     bodyHash: hashMessageBody(bodies.join("\u0000")),
+    contentHash,
   };
-  return { kind, channel, channelNote, recipients, invalidPhoneCount, commonBody, items, previewBody, binding, fieldsForBinding };
+  return { kind, channel, channelNote, recipients, invalidPhoneCount, noNameCount, commonBody, items, previewBody, binding, fieldsForBinding };
 }
 
 /** 1) 미리보기만 만든다. 이 단계에서는 절대 보내지 않는다. */
@@ -290,6 +319,7 @@ export async function prepareParentNotice(input: ParentNoticeInput): Promise<Par
       channelNote: notice.channelNote,
       recipientCount: notice.recipients.length,
       invalidPhoneCount: notice.invalidPhoneCount,
+      noNameCount: notice.noNameCount,
       sample: notice.recipients.slice(0, PREVIEW_SAMPLE).map((item) => `${item.studentNames.map(maskPersonName).join("·")} 학생 학부모 · ${maskPhone(item.phone)}`),
       message: notice.previewBody,
       messageType: notice.channel === "ALIMTALK" ? "ALIMTALK" : notice.channel === "BMS" ? "BMS" : getSmsMessageType(notice.previewBody),
@@ -342,10 +372,10 @@ export async function sendParentNotice(input: { approvalId: string; approved: bo
            FROM "OperationsAuditLog"
           WHERE action = 'PARENT_NOTICE_CLAIMED'
             AND ("detailsJson"->>'approvalId' = $1
-                 OR ("detailsJson"->>'bodyHash' = $2 AND "createdAt" > now() - make_interval(mins => $3::int)))
+                 OR ("detailsJson"->>'contentHash' = $2 AND "createdAt" > now() - make_interval(mins => $3::int)))
           ORDER BY ("detailsJson"->>'approvalId' = $1) DESC
           LIMIT 1`,
-        approvalId, binding.bodyHash, DUPLICATE_WINDOW_MINUTES,
+        approvalId, binding.contentHash, DUPLICATE_WINDOW_MINUTES,
       );
       if (recent[0]) return recent[0].reason;
       const inserted = await tx.$queryRawUnsafe<Array<{ id: string }>>(
@@ -398,5 +428,234 @@ export async function sendParentNotice(input: { approvalId: string; approved: bo
       ).catch(() => undefined);
     }
     return { ok: false, status: "HELD", message: "발송 접수를 하지 못해 공지를 보내지 않았습니다. 잠시 후 미리보기부터 다시 해 주세요." };
+  }
+}
+
+// ═════════════════════ 브랜드 메시지를 못 받은 학부모 → 정보성 문자로 다시 보내기(검수 (나)안) ═════════════════════
+//
+// 브랜드 메시지는 광고성이라 문자 대체를 끄고 보낸다(수신 동의 없는 광고 문자 0건). 채널 친구가 아니거나 카톡을 안 써서
+// 못 받은 학부모는 장부에 «실패(BMS_NOT_DELIVERED:…)»로 남는다. 원장이 원하면 같은 내용을 «광고 표시 없는 일반 문자»
+// («[스티즈농구교실] 내용», 기존 수동 문자와 같은 모양)로 다시 보낸다 — 별도 미리보기·승인, 기존 대량 문자 큐 그대로.
+// 한 묶음당 한 번만, 묶음의 결과 확인이 다 끝난 뒤에만(확인 중인 사람이 나중에 실패로 바뀌어 빠지지 않게).
+
+const RESEND_REQUEST_PREFIX = "parent-notice-resend-";
+const BRAND_RESULT_DAYS = 3;
+/** 묶음 장부 열쇠 `manual:bulk:<관리자>:parent-notice-<미리보기 id>` 에서 미리보기 id 를 꺼낸다 */
+function approvalIdOfBatchKey(stableEventKey: string) {
+  const marker = `:${REQUEST_PREFIX}`;
+  const index = stableEventKey.lastIndexOf(marker);
+  return index >= 0 ? stableEventKey.slice(index + marker.length) : "";
+}
+
+/** 최근 브랜드 메시지 공지 묶음의 결과(batchId 를 주면 그 묶음만) */
+async function loadBrandResults(batchId: string | null): Promise<ParentNoticeBrandResult[]> {
+  const rows = await prisma.$queryRawUnsafe<Array<{
+    batchId: string; createdAt: Date; total: number; notDelivered: number; pending: number; resent: boolean;
+  }>>(
+    `SELECT b.id AS "batchId", b."createdAt",
+            COUNT(d.id)::int AS total,
+            (COUNT(d.id) FILTER (WHERE d.status = 'FAILED' AND d."errorCode" LIKE $1))::int AS "notDelivered",
+            (COUNT(d.id) FILTER (WHERE d.status IN ('PENDING', 'SENDING')))::int AS pending,
+            EXISTS (SELECT 1 FROM "OperationsAuditLog" a
+                     WHERE a.action = 'PARENT_NOTICE_RESEND_CLAIMED' AND a."detailsJson"->>'sourceBatchId' = b.id) AS resent
+       FROM "MessageDeliveryBatch" b
+       JOIN "NotificationDelivery" d ON d."batchId" = b.id
+      WHERE b.source = 'MANUAL' AND b."requestedChannel" = 'BMS'
+        AND b."stableEventKey" LIKE $2
+        AND b."createdAt" > now() - make_interval(days => $3::int)
+        AND ($4::text IS NULL OR b.id = $4)
+      GROUP BY b.id
+      ORDER BY b."createdAt" DESC
+      LIMIT 5`,
+    `${BMS_NOT_DELIVERED_PREFIX}%`, `manual:bulk:%:${REQUEST_PREFIX}%`, BRAND_RESULT_DAYS, batchId,
+  );
+  return rows.map((row) => ({
+    batchId: row.batchId,
+    createdAt: new Date(row.createdAt).toISOString(),
+    total: Number(row.total),
+    notDelivered: Number(row.notDelivered),
+    pending: Number(row.pending),
+    resent: row.resent === true,
+  }));
+}
+
+export type ParentNoticeResendPreview = {
+  ok: true;
+  approvalId: string;
+  sourceBatchId: string;
+  recipientCount: number;
+  /** 못 받은 건 중 지금 재원생 학부모 번호와 맞지 않아 빠진 수(퇴원·번호 변경) */
+  droppedCount: number;
+  sample: string[];
+  message: string;
+  messageType: "SMS" | "LMS";
+  expiresAt: string;
+};
+
+/** 다시 보낼 받는 사람·문구를 서버에서 계산한다(미리보기·보내기 직전 두 번) */
+async function resolveResend(sourceBatchId: string) {
+  const id = typeof sourceBatchId === "string" ? sourceBatchId.trim() : "";
+  if (!id || id.length > 100) throw new NoticeProblem("다시 보낼 공지를 다시 골라 주세요.");
+  const [result] = await loadBrandResults(id);
+  if (!result) throw new NoticeProblem(`최근 ${BRAND_RESULT_DAYS}일 안의 브랜드 메시지 공지만 다시 보낼 수 있어요.`);
+  if (result.resent) throw new NoticeProblem("이 공지는 이미 정보성 문자로 다시 보냈습니다.");
+  if (result.pending > 0) throw new NoticeProblem(`아직 결과를 확인 중인 학부모가 ${result.pending}명 있어요. 잠시 뒤 다시 확인해 주세요.`);
+  if (result.notDelivered === 0) throw new NoticeProblem("카톡으로 못 받은 학부모가 없습니다.");
+
+  // 원래 공지 내용 = 그 묶음을 만든 미리보기의 입력값(자유 공지 본문)
+  const batches = await prisma.$queryRawUnsafe<Array<{ stableEventKey: string }>>(
+    `SELECT "stableEventKey" FROM "MessageDeliveryBatch" WHERE id = $1 LIMIT 1`, id,
+  );
+  const approvalId = approvalIdOfBatchKey(batches[0]?.stableEventKey ?? "");
+  const previews = await prisma.$queryRawUnsafe<Array<{ message: string | null }>>(
+    `SELECT "detailsJson"->'input'->'fields'->>'message' AS message FROM "OperationsAuditLog"
+      WHERE id = $1 AND action = 'PARENT_NOTICE_PREVIEW' AND "detailsJson"->>'channel' = 'BMS' LIMIT 1`,
+    approvalId,
+  );
+  const message = String(previews[0]?.message ?? "").trim();
+  if (!message) throw new NoticeProblem("원래 공지 내용을 찾지 못했습니다. «자유 공지»로 새로 보내 주세요.");
+  // 광고 표시 없는 일반 문자 — 기존 수동 문자와 같은 «[스티즈농구교실] 내용»
+  const body = buildFreeNoticeSmsText(message);
+
+  // 못 받은 번호는 장부에 지문(HMAC)만 있다 → 지금 재원생 학부모 번호의 지문과 맞춰 찾는다
+  const failed = await prisma.$queryRawUnsafe<Array<{ phoneHash: string }>>(
+    `SELECT DISTINCT "recipientPhoneHash" AS "phoneHash" FROM "NotificationDelivery"
+      WHERE "batchId" = $1 AND status = 'FAILED' AND "errorCode" LIKE $2 AND "recipientPhoneHash" IS NOT NULL`,
+    id, `${BMS_NOT_DELIVERED_PREFIX}%`,
+  );
+  const failedHashes = new Set(failed.map((row) => row.phoneHash));
+  const rows = await prisma.$queryRawUnsafe<Array<{ studentName: string; phone: string | null }>>(
+    `SELECT DISTINCT ON (s.id) s.name AS "studentName", u.phone
+       FROM "Enrollment" e
+       JOIN "Student" s ON s.id = e."studentId" AND ${notMergedStudent("s")}
+       JOIN "User" u ON u.id = s."parentId" AND u."withdrawnAt" IS NULL
+      WHERE e.status = 'ACTIVE'
+      ORDER BY s.id`,
+  );
+  const recipients = selectNoticeRecipients(rows).recipients
+    .filter((item) => failedHashes.has(hashMessageRecipientPhone(item.phone)));
+  const binding = {
+    kind: "PARENT_NOTICE_SMS_RESEND" as const,
+    sourceBatchId: id,
+    recipientCount: recipients.length,
+    recipientSetHash: hashMessageBody(recipients.map((item) => hashMessageRecipientPhone(item.phone)).join(",")),
+    bodyHash: hashMessageBody(body),
+    channel: "SMS",
+  };
+  return { sourceBatchId: id, recipients, droppedCount: Math.max(0, failedHashes.size - recipients.length), body, binding };
+}
+
+/** 정보성 문자 다시 보내기 — 1) 미리보기(아직 안 보냄) */
+export async function prepareParentNoticeSmsResend(input: { batchId: string }): Promise<ParentNoticeResendPreview | ParentNoticeFailure> {
+  const admin = await requireAdmin();
+  try {
+    const resend = await resolveResend(input?.batchId);
+    if (resend.recipients.length === 0) throw new NoticeProblem("다시 보낼 학부모가 없습니다. (못 받은 분이 퇴원했거나 번호가 바뀌었어요)");
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; expiresAt: string }>>(
+      `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+       VALUES (gen_random_uuid()::text, 'PARENT_NOTICE_RESEND_PREVIEW', 'ADMIN', $1, $2::jsonb)
+       RETURNING id, to_char((now() + make_interval(mins => $3::int)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "expiresAt"`,
+      admin.appUserId, JSON.stringify(resend.binding), PREVIEW_TTL_MINUTES,
+    );
+    return {
+      ok: true,
+      approvalId: rows[0].id,
+      sourceBatchId: resend.sourceBatchId,
+      recipientCount: resend.recipients.length,
+      droppedCount: resend.droppedCount,
+      sample: resend.recipients.slice(0, PREVIEW_SAMPLE).map((item) => `${item.studentNames.map(maskPersonName).join("·")} 학생 학부모 · ${maskPhone(item.phone)}`),
+      message: resend.body,
+      messageType: getSmsMessageType(resend.body),
+      expiresAt: rows[0].expiresAt,
+    };
+  } catch (error) {
+    if (!(error instanceof NoticeProblem)) console.error("[parent-notice] 문자 다시 보내기 미리보기 실패", error);
+    return { ok: false, message: problemText(error, "미리보기를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.") };
+  }
+}
+
+/** 정보성 문자 다시 보내기 — 2) 원장이 승인한 미리보기 그대로 대량 문자 큐에 접수 */
+export async function sendParentNoticeSmsResend(input: { approvalId: string; approved: boolean }): Promise<ParentNoticeSendResult> {
+  const admin = await requireAdmin();
+  if (input?.approved !== true) return { ok: false, status: "HELD", message: "미리보기를 확인하고 «보내기»를 눌러 주세요." };
+  let claimId: string | null = null;
+  let resend: Awaited<ReturnType<typeof resolveResend>>;
+  let approvalId: string;
+  try {
+    approvalId = typeof input.approvalId === "string" ? input.approvalId.trim() : "";
+    if (!approvalId || approvalId.length > 100) throw new NoticeProblem("미리보기를 다시 열어 주세요.");
+    const approvals = await prisma.$queryRawUnsafe<Array<{ detailsJson: Record<string, unknown> | null }>>(
+      `SELECT "detailsJson" FROM "OperationsAuditLog"
+        WHERE id = $1 AND action = 'PARENT_NOTICE_RESEND_PREVIEW' AND "actorUserId" = $2
+          AND "createdAt" > now() - make_interval(mins => $3::int) LIMIT 1`,
+      approvalId, admin.appUserId, PREVIEW_TTL_MINUTES,
+    );
+    const approved = approvals[0]?.detailsJson;
+    if (!approved) throw new NoticeProblem("미리보기 시간이 지났습니다. 미리보기를 다시 열어 주세요.");
+    resend = await resolveResend(String(approved.sourceBatchId ?? ""));
+    const binding = resend.binding;
+    const same = (Object.keys(binding) as Array<keyof typeof binding>).every((key) => (approved[key] ?? null) === (binding[key] ?? null));
+    if (!same || resend.recipients.length === 0) throw new NoticeProblem("받는 사람이나 문구가 미리보기 때와 달라졌습니다. 미리보기를 다시 열어 주세요.");
+    // 한 묶음당 한 번만 — 잠금을 걸고 같은 원래 묶음으로 이미 접수했는지 본다
+    const claimed = await prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, "parent-notice-resend");
+      const recent = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "OperationsAuditLog"
+          WHERE action = 'PARENT_NOTICE_RESEND_CLAIMED'
+            AND ("detailsJson"->>'approvalId' = $1 OR "detailsJson"->>'sourceBatchId' = $2) LIMIT 1`,
+        approvalId, binding.sourceBatchId,
+      );
+      if (recent[0]) return "DONE";
+      const inserted = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+         VALUES (gen_random_uuid()::text, 'PARENT_NOTICE_RESEND_CLAIMED', 'ADMIN', $1, $2::jsonb) RETURNING id`,
+        admin.appUserId, JSON.stringify({ ...binding, approvalId }),
+      );
+      claimId = inserted[0]?.id ?? null;
+      return "OK";
+    });
+    if (claimed === "DONE") return { ok: false, status: "HELD", message: "이 공지는 이미 정보성 문자로 다시 보냈습니다. 중복으로 보내지 않았습니다." };
+  } catch (error) {
+    if (!(error instanceof NoticeProblem)) console.error("[parent-notice] 문자 다시 보내기 준비 실패", error);
+    return { ok: false, status: "HELD", message: problemText(error, "발송을 준비하지 못했습니다. 문자는 보내지 않았습니다.") };
+  }
+
+  try {
+    // 기존 수동 대량 문자 큐 그대로(모두 같은 본문 = items 없음)
+    const queued = await reserveManualMessageQueue({
+      requestId: `${RESEND_REQUEST_PREFIX}${approvalId}`,
+      actorUserId: admin.appUserId,
+      actorName: admin.appUserName,
+      purpose: "학부모 공지 · 카톡 못 받은 분께 정보성 문자",
+      reason: "브랜드 메시지를 받지 못한 재원생 학부모에게 원장 승인 후 광고 표시 없는 문자로 재발송",
+      audienceScope: "EXTERNAL",
+      body: resend.body,
+      recipients: resend.recipients.map((item) => item.phone),
+    });
+    return {
+      ok: true,
+      status: "QUEUED",
+      batchId: queued.batchId,
+      message: `${resend.recipients.length}명에게 문자로 보내도록 접수했습니다. 결과는 «발송 이력» 탭에서 볼 수 있어요.`,
+    };
+  } catch (error) {
+    console.error("[parent-notice] 문자 다시 보내기 큐 접수 실패", error);
+    if (claimId) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "OperationsAuditLog" SET action = 'PARENT_NOTICE_RESEND_ABORTED' WHERE id = $1 AND action = 'PARENT_NOTICE_RESEND_CLAIMED'`, claimId,
+      ).catch(() => undefined);
+    }
+    return { ok: false, status: "HELD", message: "발송 접수를 하지 못해 문자를 보내지 않았습니다. 잠시 후 미리보기부터 다시 해 주세요." };
+  }
+}
+
+/** 화면 «결과 다시 확인» — 최근 브랜드 메시지 공지 결과만 다시 읽는다 */
+export async function getParentNoticeBrandResults(): Promise<{ ok: true; brandResults: ParentNoticeBrandResult[] } | ParentNoticeFailure> {
+  await requireAdmin();
+  try {
+    return { ok: true, brandResults: await loadBrandResults(null) };
+  } catch (error) {
+    console.error("[parent-notice] 브랜드 메시지 결과 조회 실패", error);
+    return { ok: false, message: "결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요." };
   }
 }
