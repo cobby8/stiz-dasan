@@ -28,8 +28,10 @@ export type UnifiedRider = {
   grade: string | null;
   parentPhone: string | null;
   studentPhone: string | null;
-  /** 그날 결석으로 잡힌 학생(정규=자동 제외 표시, 특강=결석예정). */
+  /** 그날 결석으로 잡힌 학생(정규=결석 뱃지·기본 «결석», 특강=결석예정). 명단에서 빼지 않는다. */
   absent: boolean;
+  /** 정규 결석 뱃지 문구(예: «결석·질병»). 없으면 화면이 기본 문구를 쓴다. */
+  absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null;
 };
@@ -225,6 +227,7 @@ export function buildRegularRows(classes: DriverClass[]): UnifiedRow[] {
             parentPhone: r.parentPhone ?? null,
             studentPhone: r.studentPhone ?? null,
             absent: Boolean(r.absent),
+            absentLabel: r.absentLabel ?? null,
             shuttleNote: r.shuttleNote ?? null,
           })),
         });
@@ -250,10 +253,58 @@ export function sortUnifiedRows(rows: UnifiedRow[]): UnifiedRow[] {
     });
 }
 
+export type BoardingStatus = "BOARDED" | "NOSHOW" | "SELF";
+
+/**
+ * 탑승자 한 명의 «화면에 보이는» 상태.
+ *
+ * 원장 지시(2026-11-09): 정규 결석 신고 학생은 명단에서 빼지 않고 그대로 두되 «결석» 뱃지를 붙이고
+ * 행을 흐리게 한다. 탑승 버튼은 그대로 누를 수 있다(실제로 탔으면 체크). 저장 기록이 없으면 기본 «결석»(NOSHOW).
+ *   - absentReported: 정규 결석 신고 학생인가(특강 «결석예정»은 종전대로 체크 대상 — 여기 해당 없음)
+ *   - status: 저장된 상태가 있으면 그것, 없으면 결석 학생만 NOSHOW(기본값 · 저장하지 않음)
+ *   - absentDefault: 저장 기록 없이 기본 «결석»으로 보이는 중인가(되돌리기 버튼을 띄우지 않는 기준)
+ *   - dimmed: 행을 흐리게 할지(결석 신고 + 탑승·자차로 바뀌지 않음)
+ */
+export function riderBoardingView(
+  rider: Pick<UnifiedRider, "kind" | "absent">,
+  stored: BoardingStatus | null | undefined,
+): { absentReported: boolean; status: BoardingStatus | null; absentDefault: boolean; dimmed: boolean } {
+  const absentReported = rider.kind === "REGULAR" && Boolean(rider.absent);
+  const saved = stored ?? null;
+  const status: BoardingStatus | null = saved ?? (absentReported ? "NOSHOW" : null);
+  return {
+    absentReported,
+    status,
+    absentDefault: absentReported && saved == null,
+    dimmed: absentReported && status !== "BOARDED" && status !== "SELF",
+  };
+}
+
+/** 결석 학생 저장 기록이 없을 때 보일 기본 상태(정규 결석 = NOSHOW, 그 외 = 없음). */
+export function riderDefaultStatus(rider: Pick<UnifiedRider, "kind" | "absent">): BoardingStatus | null {
+  return riderBoardingView(rider, null).status;
+}
+
+/**
+ * 한 정차의 결석 요약 — 정차 머리에 «결석 N명», 전원이 결석이면 «정차 안 해도 됨»을 띄우는 근거.
+ * 같은 학생이 한 정차에 두 번 들어 있어도 키 기준 1명으로 센다.
+ */
+export function stopAbsenceSummary(
+  riders: UnifiedRider[],
+  boarding: Record<string, BoardingStatus>,
+): { absentCount: number; allSkippable: boolean } {
+  const unique = [...new Map(riders.map((rider) => [rider.key, rider])).values()];
+  const views = unique.map((rider) => riderBoardingView(rider, boarding[rider.key]));
+  return {
+    absentCount: views.filter((view) => view.absentReported).length,
+    allSkippable: views.length > 0 && views.every((view) => view.dimmed),
+  };
+}
+
 /** 진행률(중복 탑승건은 키 기준 1건으로 센다 — 헤더 숫자와 행 합이 어긋나지 않게). */
 export function countProgress(
   rows: UnifiedRow[],
-  boarding: Record<string, "BOARDED" | "NOSHOW" | "SELF">,
+  boarding: Record<string, BoardingStatus>,
 ): { total: number; boarded: number; noshow: number; self: number } {
   const seen = new Set<string>();
   let total = 0, boarded = 0, noshow = 0, self = 0;
@@ -262,7 +313,8 @@ export function countProgress(
       if (seen.has(rider.key)) continue;
       seen.add(rider.key);
       total += 1;
-      const st = boarding[rider.key];
+      // 정규 결석 신고 학생은 저장 기록이 없어도 기본 «결석»으로 센다(명단에 남아 있으니 분모에도 들어간다).
+      const st = riderBoardingView(rider, boarding[rider.key]).status;
       if (st === "BOARDED") boarded += 1;
       else if (st === "NOSHOW") noshow += 1;
       else if (st === "SELF") self += 1;

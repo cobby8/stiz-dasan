@@ -74,6 +74,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer: 기사님 셔틀 결석 아이 «빼지 말고 뱃지» — 정규 결석(학부모 신고·출석부 질병 모두) 행 유지·«결석·질병» 뱃지·흐린 행·기본 결석(탑승 누르면 체크)·정차 «결석 N명·정차 안 해도 됨». 판정 riderBoardingView/stopAbsenceSummary. tests 3507-0·guards 5-0 | 검수대기 |
 | 11-09 | pm(main 2f385fd6): 원장 2차 답 반영 — 여러 프로그램 합산·대회준비반 30만 묶음·1호점 무료 거점 셔틀비 0, 출석 질병·부상 결석(RegularAbsence)·보강 아이 종료 필수·출석 알림, 학부모 가입 안내 보내기(미리보기→원장 직접 발송), 입금 계좌 안내, 특강 회차 수업일지 출석 차단. 데이터: 셔틀 명단 18행 삭제(감사기록), 미납 POS 5건 43만 납부완료. tests 3449-0·guards 5-0. 3차 결정표 Bf1CPJqw76JGK5yp1Z7LmG 대기 | 배포 |
 | 11-09 | developer 수정 1차(원생 등록 2차 검수 반영 5건): ① 수강료 미리보기가 청구 모듈 workbench-pricing 의 planWeeklyTuition·planShuttleFee 를 그대로 호출(반 요일·슬롯 전달 → 주말·일8 면제·직접 입력 셔틀비·반 4개 대체 계산 청구와 동일), 셔틀 자동 요금 상수는 AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT 하나 ② 체험 생년 seoulDateInputValue ③ registerStudent 번호 잠금 직후 tx 로 중복 재확인→RegisterDuplicate ④ 엑셀 «트랜잭션 사용 불가» 주석 갱신 ⑤ 중복 판정 생년을 KST 날짜로(무tz 두 번 AT TIME ZONE, 자정·전날 15:00 행 둘 다 원래 생일 테스트). tsc 0·tests 3434-0·KST 가드 6-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | tester: 05f77383 원생 등록 2차 검수 — 통과. tsc 0·tests 3428-0·studentVisibility 5-0·KST 가드 6-0. registerStudent 가짜 tx 실행 23-0(INSERT 순서·반 없음/2개·셔틀·사진동의·체험 CONVERTED·7단계 중간 실패 시 커밋 0·정원/중복 경고 시 tx 없음·KST 자정 경계). 수강료 상수 예전 2화면과 동일. 관찰 3(차단 아님): 반 나중 배정+지점 미선택 시 branch null 저장 · 유선번호(02-…)도 주 보호자 휴대폰 통과(이전 커밋 공용 규칙) · 장소에 «다산1호점» 있으면 2호점 판정 | 통과 |

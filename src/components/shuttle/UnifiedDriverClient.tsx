@@ -15,7 +15,7 @@ import styles from "./DriverWorkspace.module.css";
 import { StatusChoiceButton, StatusUndoButton } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
-import { type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
+import { riderBoardingView, riderDefaultStatus, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
@@ -230,10 +230,11 @@ export default function UnifiedDriverClient({
 
   // 화면 요약만 계산한다. 저장 중이거나 서버 확인이 안 된 기록은 완료로 세지 않는다.
   function checkSummary(riders: UnifiedRider[]) {
-    const targets = [...new Map(riders.filter((rider) => !(rider.kind === "REGULAR" && rider.absent)).map((rider) => [rider.key, rider])).values()];
+    // 결석 학생도 명단에 남아 있으므로 분모에 넣는다(원장 지시 2026-11-09). 기록이 없으면 기본 «결석»이라 체크된 것으로 센다.
+    const targets = [...new Map(riders.map((rider) => [rider.key, rider])).values()];
     const checked = targets.filter((rider) => {
       const state = saveStates[rider.key]?.state;
-      return initialBoardingReliable && (!state || state === "saved") && ["BOARDED", "NOSHOW", "SELF"].includes(boarding[rider.key]);
+      return initialBoardingReliable && (!state || state === "saved") && riderBoardingView(rider, boarding[rider.key]).status != null;
     }).length;
     return { total: targets.length, checked };
   }
@@ -341,6 +342,8 @@ export default function UnifiedDriverClient({
           const editable = editing && row.kind === "REGULAR";
           const isUpcoming = !editing && upcoming.nextKey === row.key;
           const checks = checkSummary(row.riders);
+          // 정차 머리에 «결석 N명» — 전원 결석이면 «정차 안 해도 됨»까지 한눈에(순서는 그대로 둔다).
+          const absence = stopAbsenceSummary(row.riders, boarding);
           return (
             <li
               key={row.key}
@@ -396,7 +399,8 @@ export default function UnifiedDriverClient({
                   <span className="font-bold text-[var(--color-academy-primary)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
                   {row.groupLabel && <span>{row.groupLabel}</span>}
                   {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
-                  <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : row.riders.some((rider) => rider.kind === "REGULAR" && rider.absent) ? "사전 결석 · 체크 대상 없음" : "체크 대상 없음" : "기록 확인 필요"}</span>
+                  <span>{initialBoardingReliable ? checks.total > 0 ? `체크 ${checks.checked}/${checks.total}${checks.checked === checks.total ? " · 체크 완료" : ""}` : "체크 대상 없음" : "기록 확인 필요"}</span>
+                  {absence.absentCount > 0 && <span className="font-black text-[var(--color-academy-danger)]">결석 {absence.absentCount}명{absence.allSkippable ? " · 정차 안 해도 됨" : ""}</span>}
                   {row.isHub && <span className="font-bold text-green-700">무료 거점</span>}
                   {row.pending && <span className="font-bold text-amber-700">순서 확인 필요</span>}
                   {row.warn && <span className="font-bold text-amber-700">노선 밖 승객 · 정차 확인 필요</span>}
@@ -409,60 +413,67 @@ export default function UnifiedDriverClient({
               {row.riders.length > 0 && (
                 <div className={`${styles.riders} space-y-1`}>
                   {row.riders.map((rider) => {
-                    const status = boarding[rider.key] ?? null;
+                    // 저장된 상태(없으면 null). 화면에 보이는 상태(status)는 결석 학생이면 기본 «결석»(NOSHOW)이 된다.
+                    const stored = boarding[rider.key] ?? null;
+                    const status = boarding[rider.key] ?? riderDefaultStatus(rider);
                     const parent = digits(rider.parentPhone), child = digits(rider.studentPhone);
                     const saveState = saveStates[rider.key];
                     const isBusy = busy[rider.key] || !initialBoardingReliable || saveState?.state === "unknown";
                     const selfLabel = isPickup ? "자차등원" : "자차하원";
-                    // 정규는 그날 결석 신고가 자동 매칭되면 아예 체크 대상에서 뺀다(종전 동작 그대로).
-                    const lockedAbsent = rider.absent && rider.kind === "REGULAR";
+                    // 원장 지시(2026-11-09): 정규 결석 신고 학생은 명단에서 빼지 않는다 — 순서 그대로, «결석» 뱃지 + 흐린 행.
+                    // 탑승 버튼은 그대로 누를 수 있고(실제로 탔으면 체크), 기록이 없으면 기본 «결석»으로 보인다.
+                    const view = riderBoardingView(rider, stored);
                     const rowKey = `${row.key}:${rider.checkId}`;
                     return (
-                      <div key={rowKey} className={`${styles.rider} academy-driver-rider rounded-xl ${lockedAbsent ? "bg-red-50" : "bg-gray-50"}`}>
+                      <div key={rowKey} className={`${styles.rider} academy-driver-rider rounded-xl ${view.dimmed ? "bg-[var(--color-academy-danger-soft)]" : "bg-gray-50"}`}>
                         <div className={styles.riderMain}>
                           <div className={styles.riderInfo}>
                             <div className={styles.identity}>
-                              <span className={`break-all text-[19px] font-black ${lockedAbsent ? "text-gray-400 line-through" : "text-gray-900"}`}>{rider.name}</span>
+                              <span className={`break-all text-[19px] font-black ${view.dimmed ? "text-[var(--color-academy-muted)]" : "text-gray-900"}`}>{rider.name}</span>
+                              {/* 결석 뱃지 — 이름 바로 옆, 진한 바탕 + 흰 글자(14px)로 운전 중에도 한눈에. 흐린 행 안에서도 흐리지 않는다. */}
+                              {view.absentReported && (
+                                <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[14px] font-black text-[var(--color-academy-on-primary)]">
+                                  <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "오늘 결석"}
+                                </span>
+                              )}
                               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
                             </div>
-                            {!lockedAbsent && (parent || child) && <div className={styles.contacts}>
+                            {(parent || child) && <div className={styles.contacts}>
                               {parent && <a href={`tel:${parent}`} aria-label={`${rider.name} 학부모 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학부모</a>}
                               {child && <a href={`tel:${child}`} aria-label={`${rider.name} 학생 전화`}><span aria-hidden="true" className="material-symbols-outlined">call</span>학생</a>}
                             </div>}
                           </div>
-                          {lockedAbsent ? (
-                            <span className="rounded-xl border-2 border-[var(--color-academy-danger)] px-3 py-2 text-[15px] font-black text-[var(--color-academy-danger)]">미{isPickup ? "탑승" : "하차"}(결석)</span>
-                          ) : (
-                            <div className={styles.boardingActions}>
-                              {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
-                              <StatusChoiceButton tone="success" icon="check" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
-                                className="text-[15px]">
-                                {isPickup ? "탑승" : "하차"}
-                              </StatusChoiceButton>
-                              <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
-                                onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
-                                미{isPickup ? "탑승" : "하차"}
-                              </StatusChoiceButton>
-                            </div>
-                          )}
+                          <div className={styles.boardingActions}>
+                            {/* 게슈탈트 T-04: 선생님 탑승 체크와 같은 상태 버튼(탑승=success, 미탑승=danger), 간격 12px */}
+                            <StatusChoiceButton tone="success" icon="check" disabled={isBusy} active={status === "BOARDED"} onClick={() => { setMenuKey(null); void setStatus(rider, "BOARDED"); }}
+                              className="text-[15px]">
+                              {isPickup ? "탑승" : "하차"}
+                            </StatusChoiceButton>
+                            <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW" || status === "SELF"} ariaExpanded={menuKey === rowKey}
+                              onClick={() => setMenuKey(menuKey === rowKey ? null : rowKey)} className="text-[15px]">
+                              미{isPickup ? "탑승" : "하차"}
+                            </StatusChoiceButton>
+                          </div>
                         </div>
-                        {(lockedAbsent || rider.shuttleNote || (rider.absent && status !== "BOARDED" && status !== "SELF") || status === "NOSHOW" || status === "SELF") && <div className={styles.riderNotes}>
-                              {lockedAbsent && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">오늘 결석</span>}
-                              {rider.absent && !lockedAbsent && status !== "BOARDED" && status !== "SELF" && (
+                        {(rider.shuttleNote || (rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF") || (!view.absentReported && status === "NOSHOW") || status === "SELF") && <div className={styles.riderNotes}>
+                              {/* 특강 «결석예정»은 종전대로(체크 대상 · 정규 결석 뱃지와 구분) */}
+                              {rider.absent && !view.absentReported && status !== "BOARDED" && status !== "SELF" && (
                                 <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석예정</span>
                               )}
-                              {!lockedAbsent && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
-                              {!lockedAbsent && status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
+                              {/* 정규 결석 학생은 이름 옆 뱃지가 이미 «결석»이라 같은 말을 두 번 띄우지 않는다 */}
+                              {!view.absentReported && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
+                              {status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
                               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}
                               {rider.shuttleNote && <span className="rounded-md bg-[var(--color-driver-note)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{rider.shuttleNote}</span>}
                         </div>}
-                        {(saveState || (!lockedAbsent && status)) && <div className={styles.riderStatusLine}>
-                          {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p> : <span />}
-                          {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼 */}
-                          {!lockedAbsent && status && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} 대기로 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
+                        {(saveState || stored || view.absentDefault) && <div className={styles.riderStatusLine}>
+                          {saveState ? <p role="status" className={`text-xs font-semibold ${saveState.state === "failed" || saveState.state === "unknown" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>{saveState.message}{saveState.state === "unknown" && <button type="button" disabled={busy[rider.key]} onClick={() => void setStatus(rider, "BOARDED", true)} className="ml-2 inline-flex min-h-11 min-w-11 items-center underline">저장 상태 확인</button>}</p>
+                            : view.absentDefault ? <p className="text-[13px] font-semibold text-[var(--color-academy-muted)]">결석 신고 · 정차 안 해도 됨 (탔으면 «{isPickup ? "탑승" : "하차"}»)</p> : <span />}
+                          {/* 잘못 눌렀을 때만 쓰는 되돌리기 — 상태 버튼과 떨어진 작은 글자 버튼(결석 학생은 기본 «결석»으로 돌아간다) */}
+                          {stored && <StatusUndoButton disabled={isBusy} ariaLabel={`${rider.name} 대기로 되돌리기`} onClick={() => { setMenuKey(null); void setStatus(rider, null); }} />}
                         </div>}
-                        {!lockedAbsent && menuKey === rowKey && (
+                        {menuKey === rowKey && (
                           <div className="mt-2 flex gap-3">
                             <StatusChoiceButton tone="danger" icon="close" disabled={isBusy} active={status === "NOSHOW"} onClick={() => { void setStatus(rider, "NOSHOW"); setMenuKey(null); }}
                               className="min-h-12 flex-1 text-[16px]">결석(안 옴)</StatusChoiceButton>
@@ -481,7 +492,7 @@ export default function UnifiedDriverClient({
         })}
       </ol>
 
-      <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다.</p></details>
+      <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>
     </AcademyTheme>
   );
 }
