@@ -965,6 +965,8 @@ export const getPayments = cache(async (year?: number, month?: number) => {
             // 한 POS 결제로 함께 결제된 묶음(항목 2개 이상)일 때만 번호·건수. 아니면 null
             posBundleCode: posInfo.get(String(r.id))?.bundleCode ?? null,
             posBundleSize: posInfo.get(String(r.id))?.bundleSize ?? null,
+            // 묶음 맞추기 기준(요청 id) — 번호(shortCode)는 닫힌 요청끼리 다시 쓰일 수 있어 표시용으로만 쓴다
+            posBundleId: posInfo.get(String(r.id))?.bundleId ?? null,
             // POS 요청(열림·납부·보류·취소 진행)에 묶여 있으면 true — «기록 영구 삭제»를 숨긴다(서버도 다시 확인)
             posLocked: posInfo.get(String(r.id))?.locked ?? false,
         }));
@@ -981,7 +983,7 @@ export const getPayments = cache(async (year?: number, month?: number) => {
  * 실패하면 빈 정보(목록은 그대로 보이고, 삭제는 서버 deletePayment 가 따로 막는다).
  */
 async function getPaymentPosInfo(paymentIds: string[]) {
-    const info = new Map<string, { bundleCode: string | null; bundleSize: number | null; locked: boolean }>();
+    const info = new Map<string, { bundleCode: string | null; bundleId: string | null; bundleSize: number | null; locked: boolean }>();
     if (paymentIds.length === 0) return info;
     try {
         const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -991,7 +993,7 @@ async function getPaymentPosInfo(paymentIds: string[]) {
                 UNION
                 SELECT r."paymentId", r.id FROM "PosChargeRequest" r WHERE r."paymentId" = ANY($1::text[])
              )
-             SELECT l.payment_id, r."shortCode" AS short_code, r.status, r."cancelState" AS cancel_state, r."createdAt" AS created_at,
+             SELECT l.payment_id, r.id AS request_id, r."shortCode" AS short_code, r.status, r."cancelState" AS cancel_state, r."createdAt" AS created_at,
                     (SELECT COUNT(*)::int FROM "PosChargeRequestItem" x WHERE x."requestId" = r.id) AS item_count
                FROM links l JOIN "PosChargeRequest" r ON r.id = l.request_id
               ORDER BY r."createdAt" DESC`,
@@ -999,7 +1001,7 @@ async function getPaymentPosInfo(paymentIds: string[]) {
         );
         for (const row of rows) {
             const id = String(row.payment_id);
-            const current = info.get(id) ?? { bundleCode: null, bundleSize: null, locked: false };
+            const current = info.get(id) ?? { bundleCode: null, bundleId: null, bundleSize: null, locked: false };
             const status = String(row.status);
             const paidLike = status === "PAID" || row.cancel_state != null;
             if (paidLike || ["PENDING", "SENT", "HELD"].includes(status)) current.locked = true;
@@ -1007,6 +1009,7 @@ async function getPaymentPosInfo(paymentIds: string[]) {
             const count = Number(row.item_count ?? 0);
             if (!current.bundleCode && paidLike && count >= 2) {
                 current.bundleCode = String(row.short_code);
+                current.bundleId = String(row.request_id);
                 current.bundleSize = count;
             }
             info.set(id, current);

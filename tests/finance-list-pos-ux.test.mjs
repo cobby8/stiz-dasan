@@ -18,21 +18,21 @@ function body(source, head) {
   return end > 0 ? rest.slice(0, end + indent.length + 2) : rest;
 }
 
-test("서버 삭제: 납부완료·토스 POS·POS 요청에 묶인 청구는 DB 로 확인해 막는다", () => {
+test("서버 삭제: 토스 POS·POS 요청에 묶인 청구만 DB 로 확인해 막는다(계좌이체 납부완료는 예전처럼 삭제 가능)", () => {
   const del = body(actions, "export async function deletePayment");
   assert.match(del, /await requireFinanceOwner\(\)/);
-  assert.match(del, /p\.status = 'PAID'/);
+  assert.doesNotMatch(del, /p\.status = 'PAID'/, "원장 승인 범위는 POS 결제만");
   assert.match(del, /p\."paidProvider" = 'TOSS_POS'/);
   assert.match(del, /"PosChargeRequestItem"/);
   assert.match(del, /r\."cancelState" IS NOT NULL/);
   // 확인 쿼리가 DELETE 보다 먼저
   assert.ok(del.indexOf("$queryRawUnsafe") < del.indexOf("DELETE FROM"));
   assert.match(del, /if \(blocked\) throw new Error\(PAYMENT_DELETE_BLOCKED_MESSAGE\)/);
-  assert.match(actions, /카드로 받은 결제는 삭제할 수 없어요\. 먼저 결제 취소\(환불\)를 해 주세요\./);
+  assert.match(actions, /현장 결제\(POS\)로 받았거나 POS 요청에 묶인 청구는 삭제할 수 없어요\. 먼저 결제 취소\(환불\)를 해 주세요\./);
 });
 
-test("⚡ 메뉴: «기록 영구 삭제»는 납부완료·POS 결제·묶인 청구에서 숨긴다", () => {
-  assert.match(finance, /p\.status !== "PAID" && p\.paidProvider !== "TOSS_POS" && !p\.posLocked && !p\.posBundleCode \? \[\s*\{\s*key: "delete"/);
+test("⚡ 메뉴: «기록 영구 삭제»는 POS 결제·묶인 청구에서 숨긴다", () => {
+  assert.match(finance, /p\.paidProvider !== "TOSS_POS" && !p\.posLocked && !p\.posBundleCode \? \[\s*\{\s*key: "delete"/);
   assert.match(finance, /label: "기록 영구 삭제"/);
   assert.doesNotMatch(finance, /label: "삭제"/);
 });

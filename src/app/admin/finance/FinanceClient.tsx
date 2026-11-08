@@ -62,6 +62,7 @@ type Payment = {
     createdAt: Date | string;
     // 한 POS 결제로 함께 결제된 묶음 번호·건수(묶음일 때만, 서버 getPayments)
     posBundleCode?: string | null;
+    posBundleId?: string | null;
     posBundleSize?: number | null;
     // POS 요청에 묶인 청구 — «기록 영구 삭제» 숨김(서버 deletePayment 도 다시 막는다)
     posLocked?: boolean;
@@ -937,9 +938,9 @@ export default function FinanceClient({
                     },
                 },
             ] : []),
-            // 기록 영구 삭제: 납부완료·토스 POS 결제·POS 요청에 묶인 청구는 숨긴다(카드 결제 기록이 같이 사라지므로 결제 취소로만).
+            // 기록 영구 삭제: 토스 POS 결제·POS 요청에 묶인 청구는 숨긴다(현장 결제 기록이 같이 사라지므로 결제 취소로만). 계좌이체 등 다른 납부완료는 예전처럼 지울 수 있다.
             // 서버 deletePayment 가 DB 로 같은 조건을 한 번 더 확인한다.
-            ...(canManageCriticalFinance && p.status !== "PAID" && p.paidProvider !== "TOSS_POS" && !p.posLocked && !p.posBundleCode ? [
+            ...(canManageCriticalFinance && p.paidProvider !== "TOSS_POS" && !p.posLocked && !p.posBundleCode ? [
                 {
                     key: "delete",
                     // «청구서 삭제»(취소 처리)와 헷갈리지 않게 «영구»를 붙인다
@@ -1671,7 +1672,7 @@ export default function FinanceClient({
                 const detailStatus = STATUS_LABELS[d.status] || STATUS_LABELS.PENDING;
                 const detailActions = buildRowActions(d);
                 // 한 POS 결제로 함께 결제한 청구 — 지금 목록(이 달)의 같은 묶음 번호 행. 다른 달 청구는 건수만(«외 N건(다른 달)»)
-                const bundleRows = d.posBundleCode ? payments.filter((x) => x.posBundleCode === d.posBundleCode) : [];
+                const bundleRows = d.posBundleId ? payments.filter((x) => x.posBundleId === d.posBundleId) : [];
                 const bundleOtherCount = d.posBundleSize ? Math.max(0, d.posBundleSize - bundleRows.length) : 0;
                 const alertParts = [
                     d.notifiedAt ? `${toDateStr(d.notifiedAt)} 발송` : null,
