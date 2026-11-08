@@ -2985,8 +2985,13 @@ export async function saveSessionLog(data: {
         // ── 1~3. 고칠 기록을 정하고 내용을 덮어쓴다 ──
         // 수정: 화면이 고른 기록(이 반 것인지 확인) 그대로 — 방학특강 회차 기록을 고칠 때 정규 기록이 새로 생기지 않게.
         // 새로 작성: 같은 반·같은 날 기록을 찾거나 만든다(코치 앱·출결 화면과 같은 판정 함수 findOrCreateRegularSession).
-        const sessionId = await prisma.$transaction(async tx => {
+        const { sessionId, isSeasonal } = await prisma.$transaction(async tx => {
             const id = await resolveSessionLogTarget(tx, { classId: data.classId, dateYmd: data.date, sessionId: data.sessionId });
+            // 방학특강 회차 기록인지 — 맞으면 아래 4단계(정규반 출석 저장)를 건너뛴다.
+            const kind = await tx.$queryRawUnsafe<Array<{ seasonal: boolean }>>(
+                `SELECT ("specialProgramSessionDateId" IS NOT NULL) AS seasonal FROM "Session" WHERE id = $1`,
+                id,
+            );
             await tx.$executeRawUnsafe(
                 `UPDATE "Session" SET
                     topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()
@@ -2997,12 +3002,15 @@ export async function saveSessionLog(data: {
                 data.coachId || null,
                 id,
             );
-            return id;
+            return { sessionId: id, isSeasonal: kind[0]?.seasonal === true };
         });
 
         // ── 4. 출석 데이터가 있으면 각 학생별 Attendance UPSERT ──
         // 기존 saveAttendance와 동일한 ON CONFLICT 패턴 사용
-        if (data.attendances && data.attendances.length > 0) {
+        // ⚠️ 방학특강 회차 기록에는 정규반 명단 출석을 넣지 않는다.
+        //    넣으면 특강을 신청하지 않은 정규반 아이들이 «출석»으로 남고,
+        //    출석이 생긴 회차는 특강 날짜를 지우거나 옮길 수 없게 막힌다(session-bridge).
+        if (!isSeasonal && data.attendances && data.attendances.length > 0) {
             for (const rec of data.attendances) {
                 await prisma.$executeRawUnsafe(
                     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "createdAt", "updatedAt")

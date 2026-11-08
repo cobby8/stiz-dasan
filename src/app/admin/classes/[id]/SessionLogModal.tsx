@@ -41,6 +41,7 @@ export type SessionInitialData = {
     content: string;
     coachId: string;
     photos: string[];           // photosJSON을 파싱한 URL 배열
+    isSeasonal?: boolean;       // 방학특강 회차 기록이면 true(출석 칸 숨김)
     attendances: Array<{        // 기존 출석 데이터
         studentId: string;
         status: string;
@@ -251,8 +252,8 @@ export default function SessionLogModal({
                 // 수정 모드에서 날짜를 그대로 두면 그 기록(방학특강 회차일 수도 있음)을 id 로 고친다.
                 // 날짜를 바꾸면 그 날짜의 정규 기록으로 새로 저장한다(예전과 같은 동작).
                 sessionId: initialData && initialData.date === date ? initialData.id : undefined,
-                // 학생이 있을 때만 출석 데이터 전달
-                attendances: visibleAttendances.length > 0
+                // 학생이 있을 때만 출석 데이터 전달(방학특강 회차 기록이면 보내지 않음 — 서버도 한 번 더 막는다)
+                attendances: !(initialData?.isSeasonal && initialData.date === date) && visibleAttendances.length > 0
                     ? visibleAttendances.map((a) => ({ studentId: a.studentId, status: a.status }))
                     : undefined,
             });
@@ -272,6 +273,8 @@ export default function SessionLogModal({
 
     // 수정 모드 여부 판별
     const isEditMode = !!initialData;
+    // 날짜를 그대로 둔 방학특강 회차 기록 수정 — 출석 칸을 숨긴다(날짜를 바꾸면 정규 기록으로 저장되므로 다시 보인다)
+    const seasonalEdit = !!initialData?.isSeasonal && initialData.date === date;
 
     return (
         // 모달 배경 오버레이 — ExcelUploadModal과 동일한 패턴
@@ -444,6 +447,12 @@ export default function SessionLogModal({
                     </div>
 
                     {/* === 섹션 3: 출석 체크 === */}
+                    {/* 방학특강 회차 기록은 출석을 특강 좌석 명단으로 관리하므로 여기서 받지 않는다 */}
+                    {seasonalEdit ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                        방학특강 회차 기록이에요. 출석은 방학특강 출석 화면에서 관리해요 — 여기서는 주제·내용·사진만 고쳐집니다.
+                    </p>
+                    ) : (
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -515,6 +524,7 @@ export default function SessionLogModal({
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* ── 에러 메시지 ── */}
                     {errorMsg && (
