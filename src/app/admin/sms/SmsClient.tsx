@@ -6,6 +6,8 @@ import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
 import SmsTemplateClient from "./templates/SmsTemplateClient";
 // 고객 안내 문자(대관 안내 등) — 미리보기 → 원장 승인 → 1건 발송 공용 부품
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
+// 학부모 가입 안내 — 같은 미리보기·승인 절차, 발송은 기존 대량 발송 큐
+import ParentSignupGuideSender from "@/components/admin/ParentSignupGuideSender";
 
 interface CoachPhone {
     id: string;
@@ -133,6 +135,8 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
             {activeTab === "history" && <HistoryPanel />}
             {activeTab === "manual" && (
                 <>
+                    {/* 재원생 미가입 학부모에게 가입 안내(받는 사람은 서버가 계산) */}
+                    <ParentSignupGuidePanel />
                     {/* 외부 고객용 정해진 안내(대관) — 직원 대량 발송과 분리해 위에 둔다 */}
                     <CustomerGuidePanel />
                     <ManualSendPanel initialCoaches={initialCoaches} />
@@ -630,6 +634,21 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                     <span className="material-symbols-outlined text-[19px]">send</span>
                     {pending ? "대량 발송 접수 중..." : batchIsActive ? "대량 발송 처리 중" : `${recipients.length}명 대량 발송 접수`}
                 </button>
+            </div>
+        </section>
+    );
+}
+
+/**
+ * 학부모 가입 안내 보내기 — 재원생 학부모 중 계정이 없는 분께 가입 링크를 한 번에.
+ * 받는 사람은 서버가 계산하고, 미리보기(받는 사람 N명·처음 몇 명) → 원장 확인 뒤에만 접수된다.
+ */
+function ParentSignupGuidePanel() {
+    return (
+        <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <h2 className="font-extrabold text-gray-900 dark:text-white">학부모 가입 안내 보내기</h2>
+            <div className="mt-3 max-w-md">
+                <ParentSignupGuideSender />
             </div>
         </section>
     );
