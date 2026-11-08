@@ -9,7 +9,7 @@ test("기본 seed는 중복 접수·배정 전 강사·체험 감사 문자를 �
   for (const trigger of [
     "TRIAL_NEW_COACH",
     "TRIAL_CONFIRM_PARENT",
-    "TRIAL_ATTENDED_PARENT",
+    // TRIAL_ATTENDED_PARENT 는 2026-11-09 규칙 자체를 제거(원장 결정)
     "ENROLL_NEW_COACH",
     "ENROLL_CONFIRM_PARENT",
     "SPECIAL_APPLICATION_RECEIVED_PARENT",

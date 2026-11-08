@@ -54,6 +54,11 @@ import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { validateAcademyCoordinateInput } from "@/lib/shuttle/academyLocation";
 import { renderSmsTemplate } from "@/lib/smsTemplate";
 import {
+    PARENT_MESSAGE_PREFIX,
+    isParentAlimtalkTrigger,
+    parentAlimtalkSmsTemplateBody,
+} from "@/lib/messaging/parent-alimtalk-templates";
+import {
     ensureInvoiceForPayment,
     ensureInvoicesForMonth,
     ensurePaymentInfrastructure,
@@ -4309,11 +4314,9 @@ export async function updateTrialLead(
         else entries.push(["scheduledDate", nextScheduledDate] as const);
     }
 
-    const shouldSendAttendedSms =
-        data.status === "ATTENDED"
-        && previousLead
-        && !(previousLead.attendedSmsSentAt ?? previousLead.attendedsmssentat);
-    let attendedSmsResult: { attempted: boolean; sent: boolean; message?: string } = {
+    // 체험 완료 감사 문자(TRIAL_ATTENDED_PARENT)는 2026-11-09 원장 결정으로 없앴다(가입 유도 문구 · 알림톡 심사 반려 위험).
+    // 화면·테스트가 쓰는 응답 모양은 그대로 두고 «보내지 않음»으로 고정한다.
+    const attendedSmsResult: { attempted: boolean; sent: boolean; message?: string } = {
         attempted: false,
         sent: false,
     };
@@ -4483,62 +4486,6 @@ export async function updateTrialLead(
                 scheduledSmsResult.errors.push("일정은 저장됐지만 문자 발송 준비 중 오류가 발생했습니다.");
             }
         }
-
-        if (shouldSendAttendedSms) {
-            attendedSmsResult = { attempted: true, sent: false };
-            const leads = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT "childName", "parentName", "parentPhone"
-                 FROM "TrialLead" WHERE id = $1 LIMIT 1`,
-                id,
-            );
-            const lead = leads[0];
-            const parentPhone = lead?.parentPhone ?? lead?.parentphone;
-
-            if (lead && parentPhone) {
-                const settings = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT "contactPhone" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`
-                );
-                const academyPhone = settings[0]?.contactPhone ?? settings[0]?.contactphone ?? "";
-                const childName = lead.childName ?? lead.childname ?? "";
-                const parentName = lead.parentName ?? lead.parentname ?? "";
-
-                const smsResult = await sendParentSmsWithResult(
-                    parentPhone,
-                    "TRIAL_ATTENDED_PARENT",
-                    {
-                        childName,
-                        parentName,
-                        academyPhone,
-                        enrollLink: buildEnrollLink(id),
-                    },
-                    {
-                        eventType: "TRIAL_ATTENDED",
-                        eventId: `trial:${id}:attended`,
-                    },
-                );
-                attendedSmsResult = {
-                    attempted: true,
-                    sent: smsResult.ok,
-                    // 장부 확정 실패처럼 자동 재시도하면 안 되는 경우를 UI가 정확히 안내하도록 원인부터 전달한다.
-                    message: smsResult.ok
-                        ? undefined
-                        : smsResult.reason || "체험 완료 문자는 발송되지 않아 다시 시도할 수 있습니다.",
-                };
-
-                // 실제 문자 성공(또는 장부상 기존 성공 확인)일 때만 완료 시각을 남긴다.
-                if (smsResult.ok) {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE "TrialLead"
-                         SET "attendedSmsSentAt" = COALESCE("attendedSmsSentAt", NOW()),
-                             "updatedAt" = NOW()
-                         WHERE id = $1`,
-                        id,
-                    );
-                }
-            } else {
-                attendedSmsResult.message = "학부모 전화번호가 없어 체험 완료 문자를 발송하지 못했습니다.";
-            }
-        }
     } catch (e) {
         console.error("Failed to update trial lead:", e);
         throw new Error("체험 리드 수정 실패");
@@ -4552,19 +4499,7 @@ export async function updateTrialLead(
     };
 }
 
-// 상태 변경과 분리된 체험 완료 문자 전용 재시도 액션이다.
-export async function resendTrialAttendedSms(id: string) {
-    const result = await updateTrialLead(id, { status: "ATTENDED" });
-    if (!result?.attendedSms.attempted) {
-        return { sent: true, message: "이미 발송 완료된 체험 완료 문자입니다." };
-    }
-    return {
-        sent: result.attendedSms.sent,
-        message: result.attendedSms.sent
-            ? "체험 완료 문자를 발송했습니다."
-            : result.attendedSms.message || "체험 완료 문자 발송에 실패했습니다. 문자 장부를 확인해주세요.",
-    };
-}
+// (2026-11-09) 체험 완료 문자 재시도 액션 resendTrialAttendedSms 는 문자 자체를 없애며 함께 지웠다.
 
 /**
  * 체험 리드 삭제
@@ -6128,7 +6063,8 @@ export async function resendTrialApplicationSms(trialLeadId: string): Promise<Tr
             academyPhone,
         });
         const parentMessage = renderedParentMessage
-            || `[STIZ] ${childName} 체험수업 신청이 접수되었습니다.\n일정 확정 후 다시 안내드리겠습니다.\n문의: ${academyPhone}`;
+            // DB 틀이 없을 때의 대체 문구 — 기본 틀(TRIAL_CONFIRM_PARENT)과 글자를 맞췄다(머리말 통일·«확정 시»)
+            || `${PARENT_MESSAGE_PREFIX} ${childName} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: ${academyPhone}`;
         targetLabels.add("학부모");
         smsTasks.push(sendTrackedSms({
             eventType: "TRIAL_APPLICATION",
@@ -6405,7 +6341,8 @@ export async function enqueueManualSmsBatch(
     if (normalized.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
         throw new Error(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 접수할 수 있습니다.`);
     }
-    const body = `[STIZ] ${message.trim()}`;
+    // 머리말 통일(2026-11-09): 학부모 대상 문자는 모두 [스티즈농구교실]
+    const body = `${PARENT_MESSAGE_PREFIX} ${message.trim()}`;
     const queued = await reserveManualMessageQueue({
         requestId,
         actorUserId: admin.appUserId,
@@ -6463,7 +6400,8 @@ export async function sendManualSms(
         throw new Error(`한 번에 ${MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 발송할 수 있습니다.`);
     }
 
-    const body = `[STIZ] ${message.trim()}`;
+    // 머리말 통일(2026-11-09): 학부모 대상 문자는 모두 [스티즈농구교실]
+    const body = `${PARENT_MESSAGE_PREFIX} ${message.trim()}`;
     const purpose = options?.purpose?.trim() || "관리자 수동 문자 발송";
     const reason = options?.reason?.trim() || "관리자 문자센터에서 직접 발송";
     const audienceScope = options?.audienceScope || "INTERNAL";
@@ -6616,6 +6554,9 @@ async function requireMessageSettingAuditInfrastructure() {
     }
 }
 
+// 알림톡으로 바뀐 학부모 문구의 본문 수정 거절 안내(화면이 그대로 보여 준다)
+const SMS_TEMPLATE_ALIMTALK_LOCKED = "카카오 알림톡에 등록한 문구라 여기서 고칠 수 없습니다. 바꾸려면 개발 요청 후 카카오 재심사가 필요합니다.";
+
 /**
  * updateSmsTemplate — 템플릿 본문/활성 상태 수정
  *
@@ -6662,6 +6603,10 @@ export async function updateSmsTemplate(
                 id,
             );
             if (!before) throw new Error("템플릿을 찾을 수 없습니다.");
+            // 알림톡 등록 문구(코드 금고가 정본)는 화면에서 본문을 바꿀 수 없다 — 켜기/끄기만 허용
+            if (data.body !== undefined && data.body !== before.body && isParentAlimtalkTrigger(before.trigger)) {
+                throw new Error(SMS_TEMPLATE_ALIMTALK_LOCKED);
+            }
             await tx.$executeRawUnsafe(
                 `UPDATE "SmsTemplate" SET ${sets.join(", ")} WHERE id = $${idx}`,
                 ...values,
@@ -6713,6 +6658,7 @@ export async function updateSmsTemplate(
     } catch (e) {
         console.error("[updateSmsTemplate] failed:", e);
         if ((e as Error).message === "문자 설정 DB 업데이트가 필요합니다.") throw e;
+        if ((e as Error).message === SMS_TEMPLATE_ALIMTALK_LOCKED) throw e;
         throw new Error("템플릿 수정 실패");
     }
 
@@ -6765,16 +6711,16 @@ export async function resetSmsTemplate(id: string) {
             ENROLL_NEW_ADMIN: "[STIZ] 새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}",
             ENROLL_NEW_COACH: "[STIZ] 새 수강 신청\n{{childName}} ({{childGrade}})",
             ENROLL_APPROVED_COACH: "[STIZ] 수강 신청이 승인되었습니다.\n학생: {{childName}} ({{childGrade}})\n배정 반: {{className}}",
-            TRIAL_CONFIRM_PARENT: "[STIZ] {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}",
-            TRIAL_SCHEDULED_PARENT: "[STIZ] {{childName}} 체험수업 일정이 확정되었습니다.\n일시: {{scheduledDate}}\n반: {{className}}\n문의: {{academyPhone}}",
-            TRIAL_ENROLL_GUIDE_PARENT: "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
-            ENROLL_CONFIRM_PARENT: "[STIZ] {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}",
-            ENROLL_APPROVED_PARENT: "[STIZ] {{childName}} 수강이 확정되었습니다.\n배정 반: {{className}}\n상세 안내는 별도 연락드리겠습니다.",
-            INVOICE_PARENT: "[STIZ] {{month}}월 수강료 안내\n{{childName}}: {{amount}}원\n납부기한: {{dueDate}}",
-            UNPAID_PARENT: "[STIZ] 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.",
+            // 학부모 문구 — 머리말 [스티즈농구교실] 통일(2026-11-09). 수강 확정·수납 안내는 보내는 코드가 없어 뺐다.
+            TRIAL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}`,
+            ENROLL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}`,
+            UNPAID_PARENT: `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
         };
 
-        const defaultBody = defaultBodies[trigger];
+        // 알림톡 금고 트리거는 금고 문구로 복원한다(체험 일정 확정·수강신청서 안내·셔틀·특강 5종)
+        const defaultBody = isParentAlimtalkTrigger(trigger)
+            ? parentAlimtalkSmsTemplateBody(trigger)
+            : defaultBodies[trigger];
         if (!defaultBody) throw new Error("기본 템플릿을 찾을 수 없습니다.");
 
         const [availability] = await prisma.$queryRawUnsafe<Array<{ automationAvailable: boolean }>>(
@@ -6792,12 +6738,15 @@ export async function resetSmsTemplate(id: string) {
                 id,
             );
             if (!before) throw new Error("템플릿을 찾을 수 없습니다.");
+            // 알림톡 금고 문구는 «문구만 맞추고» 켜짐/꺼짐은 그대로 둔다(꺼 둔 특강 접수·승인이 켜지지 않게)
+            const keepActive = isParentAlimtalkTrigger(trigger);
             await tx.$executeRawUnsafe(
-                `UPDATE "SmsTemplate" SET body = $1, "isActive" = true, "updatedAt" = NOW() WHERE id = $2`,
+                `UPDATE "SmsTemplate" SET body = $1, "isActive" = CASE WHEN $3::boolean THEN "isActive" ELSE true END, "updatedAt" = NOW() WHERE id = $2`,
                 defaultBody,
                 id,
+                keepActive,
             );
-            if (availability.automationAvailable) {
+            if (availability.automationAvailable && !keepActive) {
                 await tx.$executeRawUnsafe(
                     `UPDATE "MessageAutomationRule"
                         SET "isActive" = true, "updatedAt" = NOW()

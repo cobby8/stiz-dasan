@@ -131,6 +131,27 @@ async function notifyItemStatus(result: Awaited<ReturnType<typeof updateSpecialP
   });
 }
 
+/**
+ * 신청서 «단위» 알림의 특강명·대기순번 — 예전엔 빈칸("")으로 보내 «홍길동 학생의  특강 신청이 취소되었습니다»처럼 나갔다.
+ * 신청 항목 제목을 합치고(항목 단위 알림과 같은 offering.title), 대기순번은 순번이 있는 항목만 모은다.
+ * 순번이 하나도 없으면 빈 값 → 알림톡 금고가 빈 변수로 판단해 옛 문자 문구로 대체한다.
+ */
+function applicationSmsSummary(items: Array<{ waitlistOrder: number | null; offering: { title: string } }>) {
+  return {
+    offeringTitle: items.map((item) => item.offering.title).filter(Boolean).join(", "),
+    waitlistOrder: items.map((item) => item.waitlistOrder).filter((order): order is number => typeof order === "number" && order > 0).join(", "),
+  };
+}
+
+async function loadApplicationSmsSummary(applicationId: string) {
+  const items = await prisma.specialProgramApplicationItem.findMany({
+    where: { applicationId },
+    select: { waitlistOrder: true, offering: { select: { title: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return applicationSmsSummary(items);
+}
+
 async function admin() {
   try {
     return await requireAdmin();
@@ -1154,7 +1175,7 @@ async function retrySeasonalNotification(params: { id: string; scope: string; tr
     return manualRetrySeasonalSms({
       trigger: params.trigger, applicationId: application.id, recipientPhone: application.parentPhone,
       variables: { childName: application.childName, parentName: application.parentName, seasonTitle: application.season.title,
-        offeringTitle: application.items.map((item) => item.offering.title).join(", "), waitlistOrder: "" },
+        ...applicationSmsSummary(application.items) },
       deliveryRunId,
     });
   }
@@ -1452,7 +1473,7 @@ export async function PATCH(request: NextRequest) {
         deliveryId: applicationChange.reservation.deliveryId,
         trigger: applicationChange.trigger,
         recipientPhone: application.parentPhone,
-        variables: { childName: application.childName, parentName: application.parentName, seasonTitle: "", offeringTitle: "", waitlistOrder: "" },
+        variables: { childName: application.childName, parentName: application.parentName, seasonTitle: "", ...(await loadApplicationSmsSummary(application.id)) },
       }) : applicationChange.reservation;
       return NextResponse.json({ application, notification, ...(notificationNeedsWarning(notification) ? { notificationWarning: true } : {}) });
     }

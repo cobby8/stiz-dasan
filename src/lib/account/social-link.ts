@@ -88,10 +88,11 @@ export function isLinkVerificationIdFor(identityVerificationId: string, authUser
 
 /** 연결 알림 문자 — 본인이 아니면 바로 알 수 있게(남이 붙였을 때의 안전장치). */
 export function socialLinkNoticeBody(providerLabel: string): string {
-  return `[STIZ 농구교실] 회원님 계정에 ${providerLabel} 로그인이 연결되었습니다. 본인이 하지 않았다면 바로 학원(070-8824-5712)으로 연락해 주세요.`;
+  // 머리말 [스티즈농구교실] 통일(2026-11-09)
+  return `[스티즈농구교실] 회원님 계정에 ${providerLabel} 로그인이 연결되었습니다. 본인이 하지 않았다면 바로 학원(070-8824-5712)으로 연락해 주세요.`;
 }
 
 /** 본인인증으로 기존 계정에 로그인된 순간의 알림 — 연결 단계에서 취소해도 «들어왔다»는 사실은 알린다. */
 export function identityLoginNoticeBody(): string {
-  return "[STIZ 농구교실] 휴대폰 명의 본인인증으로 회원님 계정에 로그인되었습니다. 본인이 하지 않았다면 바로 학원(070-8824-5712)으로 연락해 주세요.";
+  return "[스티즈농구교실] 휴대폰 명의 본인인증으로 회원님 계정에 로그인되었습니다. 본인이 하지 않았다면 바로 학원(070-8824-5712)으로 연락해 주세요.";
 }

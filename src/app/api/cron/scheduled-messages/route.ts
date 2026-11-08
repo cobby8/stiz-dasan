@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendSmsDetailed } from "@/lib/sms";
 import { claimDue, markSent, markFailed } from "@/lib/scheduled-message";
+import { PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 import {
   reserveMessageDeliveryBatch, reserveMessageDelivery,
   claimMessageDelivery, finalizeMessageDelivery,
@@ -27,7 +28,10 @@ export async function GET(req: NextRequest) {
   let sent = 0, failed = 0, skipped = 0;
   for (const item of due) {
     try {
-      const body = item.body.startsWith("[STIZ]") ? item.body : `[STIZ] ${item.body}`;
+      // 머리말 통일(2026-11-09): 이미 머리말(옛 [STIZ] 포함)이 있으면 그대로, 없으면 [스티즈농구교실]
+      const body = item.body.startsWith("[STIZ]") || item.body.startsWith(PARENT_MESSAGE_PREFIX)
+        ? item.body
+        : `${PARENT_MESSAGE_PREFIX} ${item.body}`;
       const stableEventKey = `scheduled:${item.requestId}`;
 
       const batchId = await reserveMessageDeliveryBatch({

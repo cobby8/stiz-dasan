@@ -16,6 +16,8 @@ import {
     type MessageDispatchResult,
 } from "@/lib/message-dispatch";
 import type { MessageAudience, MessageChannel } from "@/lib/message-channel-policy";
+import { buildParentAlimtalkMessage, isParentAlimtalkTrigger } from "@/lib/messaging/parent-alimtalk-templates";
+import { parentAlimtalkTemplateId } from "@/lib/messaging/alimtalk-config";
 import {
     claimMessageDelivery,
     finalizeMessageDelivery,
@@ -554,6 +556,8 @@ export async function dispatchReservedSmsDelivery(input: {
     deliveryId: string;
     recipientPhone: string;
     body: string;
+    // 알림톡 틀(선택). 규칙 채널이 알림톡이고 템플릿 id 가 있을 때만 쓰이며, 실패하면 같은 본문을 문자로 보낸다.
+    alimtalk?: { templateId: string; variables?: Record<string, string> };
 }): Promise<FailClosedSmsDeliveryResult> {
     const recipientNo = normalizeSmsPhone(input.recipientPhone);
     if (recipientNo.length < 10 || recipientNo.length > 11) return { ok: false, status: "FAILED", deliveryId: input.deliveryId, errorCode: "INVALID_RECIPIENT" };
@@ -662,6 +666,8 @@ export async function dispatchReservedSmsDelivery(input: {
         requestedChannel: policy.deliveryChannel,
         fallbackEnabled: policy.fallbackEnabled,
         fallbackChannel: policy.fallbackChannel,
+        // 수동 재확인 안내는 승인 바인딩이 문자(SMS)로 못박혀 있어 알림톡을 넘기지 않는다(2차에서 함께 전환).
+        alimtalk: !manualReconfirmation && input.alimtalk?.templateId?.trim() ? input.alimtalk : undefined,
     });
     const result = applyAutomationPolicyAudit(dispatchResult, policy);
     const errorCode = safeSmsErrorCode(result);
@@ -968,6 +974,29 @@ export async function notifyAdmins(
     }
 }
 
+// ── 학부모 문구 결정: 알림톡 금고(코드 틀) 우선 ────────────────────────────────
+// 금고에 있는 트리거는 DB 문구 대신 코드 틀로 본문을 만들고(문자 = 알림톡 본문),
+// 템플릿 id 가 있으면 알림톡 정보를 함께 돌려준다. 빈 변수로 틀을 못 채우면
+// 옛 DB 문구(dbBody)로 «문자만» 보낸다 — 학부모가 아예 못 받는 일은 만들지 않는다.
+// DB 템플릿 ON/OFF(isActive)는 호출 전에 renderSmsTemplate 가 이미 확인한다.
+export function resolveParentMessage(
+    trigger: string,
+    variables: Record<string, string>,
+    dbBody: string,
+): { body: string; alimtalk?: { templateId: string; variables: Record<string, string> } } {
+    if (!isParentAlimtalkTrigger(trigger)) return { body: dbBody };
+    try {
+        const message = buildParentAlimtalkMessage(trigger, variables);
+        const templateId = parentAlimtalkTemplateId(trigger);
+        return templateId
+            ? { body: message.body, alimtalk: { templateId, variables: message.variables } }
+            : { body: message.body };
+    } catch (error) {
+        console.warn(`[parent-alimtalk] trigger=${trigger} 틀을 채우지 못해 문자로 보냅니다:`, (error as Error).message);
+        return { body: dbBody };
+    }
+}
+
 // ── 학부모에게 SMS 직접 발송 (전화번호 기반, 인앱 알림 아님) ─────────────────
 // 학부모 PARENT 템플릿 발송용: parentPhone으로 직접 SMS 발송
 // 실패해도 메인 로직에 영향 없음 (fire-and-forget)
@@ -980,6 +1009,8 @@ export async function sendParentSms(
     try {
         const msg = await renderSmsTemplate(trigger, variables);
         if (msg && parentPhone) {
+            // 알림톡 금고 트리거면 코드 틀 본문 + 알림톡 정보로 바꾼다
+            const resolved = resolveParentMessage(trigger, variables, msg);
             await sendSmsForNotification({
                 eventType: options?.eventType || trigger,
                 eventId: options?.eventId,
@@ -987,7 +1018,8 @@ export async function sendParentSms(
                 recipientPhone: parentPhone,
                 recipientRole: "PARENT",
                 trigger,
-                body: msg,
+                body: resolved.body,
+                alimtalk: resolved.alimtalk,
             });
         }
     } catch (e) {
@@ -1009,12 +1041,15 @@ export async function sendParentSmsWithResult(
         if (!recipientNo) return { ok: false, to: recipientNo, reason: "INVALID_RECIPIENT" };
         if (!msg) return { ok: false, to: recipientNo, reason: "SMS_TEMPLATE_UNAVAILABLE" };
 
+        // 알림톡 금고 트리거(체험 일정 확정·수강신청서 안내·셔틀 등)는 코드 틀 본문 + 알림톡 정보
+        const resolved = resolveParentMessage(trigger, variables, msg);
         return await sendSmsForNotification({
             ...options,
             recipientPhone: recipientNo,
             recipientRole: "PARENT",
             trigger,
-            body: msg,
+            body: resolved.body,
+            alimtalk: resolved.alimtalk,
         });
     } catch (e) {
         console.error(`[sendParentSmsWithResult] trigger=${trigger} failed:`, e);

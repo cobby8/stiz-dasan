@@ -3,6 +3,7 @@ import {
   dispatchReservedSmsDelivery,
   finalizeReservedSmsWithoutDispatch,
   reserveFailClosedSmsDelivery,
+  resolveParentMessage,
   type SmsLedgerDb,
 } from "@/lib/notification";
 import { renderSmsTemplateResult } from "@/lib/smsTemplate";
@@ -70,23 +71,49 @@ export async function reserveSeasonalParentSms(
   return { ...reserved, ...(requiresFreshSecret(input.trigger) ? { requiresReissue: true } : {}) };
 }
 
+/**
+ * 학원 대표 전화 — 특강 문자 7종의 «문의: #{학원전화}» 가 빈칸으로 나가던 버그(2026-11-09) 수정.
+ * 호출부가 7곳이라 각각 고치지 않고, 보내기 직전 이 한 곳에서 채운다. 조회 실패는 빈 값(금고 기본값이 대신 채움).
+ */
+async function academyContactPhone(): Promise<string> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ contactPhone: string | null }>>(
+      `SELECT "contactPhone" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`,
+    );
+    return String(rows[0]?.contactPhone ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function dispatchSeasonalParentSms(input: {
   deliveryId: string;
   trigger: SeasonalSmsTrigger;
   recipientPhone: string;
   variables: Record<string, string>;
 }): Promise<SeasonalSmsDeliveryResult> {
-  const rendered = await renderSmsTemplateResult(input.trigger, input.variables);
+  // 호출부가 학원 전화를 넘기지 않았으면 설정값으로 채운다
+  const variables = input.variables.academyPhone?.trim()
+    ? input.variables
+    : { ...input.variables, academyPhone: await academyContactPhone() };
+  const rendered = await renderSmsTemplateResult(input.trigger, variables);
   if (!rendered.ok) {
     const result: SeasonalSmsDeliveryResult = { ok: false, status: "FAILED", deliveryId: input.deliveryId, errorCode: rendered.reason };
     await finalizeReservedSmsWithoutDispatch({ deliveryId: input.deliveryId, status: "FAILED", errorCode: rendered.reason });
     return { ...result, ...(requiresFreshSecret(input.trigger) && !result.ok ? { requiresReissue: true } : {}) };
   }
-  if (seasonalSmsBytes(rendered.body) > SEASONAL_SMS_MAX_BYTES) {
+  // 알림톡 금고 트리거(특강 결제 요청·취소·접수·승인·대기)는 코드 틀 본문 + 알림톡 정보로 보낸다
+  const message = resolveParentMessage(input.trigger, variables, rendered.body);
+  if (seasonalSmsBytes(message.body) > SEASONAL_SMS_MAX_BYTES) {
     await finalizeReservedSmsWithoutDispatch({ deliveryId: input.deliveryId, status: "FAILED", errorCode: "MESSAGE_TOO_LONG" });
     return { ok: false, status: "FAILED", deliveryId: input.deliveryId, errorCode: "MESSAGE_TOO_LONG", ...(requiresFreshSecret(input.trigger) ? { requiresReissue: true } : {}) };
   }
-  const result = await dispatchReservedSmsDelivery({ deliveryId: input.deliveryId, recipientPhone: input.recipientPhone, body: rendered.body });
+  const result = await dispatchReservedSmsDelivery({
+    deliveryId: input.deliveryId,
+    recipientPhone: input.recipientPhone,
+    body: message.body,
+    alimtalk: message.alimtalk,
+  });
   return { ...result, ...(requiresFreshSecret(input.trigger) && !result.ok ? { requiresReissue: true } : {}) };
 }
 

@@ -32,7 +32,7 @@ test("카카오 채널 주소: 설정값에서 추가·채팅 주소를 만든�
 test("접수 결과 문구 — 상태별 전문", () => {
   const approved = T.buildIntakeResultMessage({ studentName: "김민수", intakeKind: "PAUSE", status: "APPROVED" });
   assert.equal(approved, [
-    "[STIZ 농구교실] 안녕하세요, 김민수 학부모님.",
+    "[스티즈농구교실] 안녕하세요, 김민수 학부모님.", // 2026-11-09 머리말 통일
     "카카오채널로 보내 주신 휴원 요청을 확인했습니다. 담당자가 반영을 준비하고 있으며, 반영이 끝나면 다시 안내드리겠습니다.",
     "궁금하신 점은 카카오채널로 편하게 말씀해 주세요.",
   ].join("\n"));
@@ -48,7 +48,7 @@ test("접수 결과 문구 — 상태별 전문", () => {
 
 test("카카오채널 링크 안내 — 전문", () => {
   assert.equal(T.buildKakaoChannelInviteMessage({ studentName: "이서준", channelSettingUrl: "https://pf.kakao.com/_HhaQG" }), [
-    "[STIZ 농구교실] 안녕하세요, 이서준 학부모님.",
+    "[스티즈농구교실] 안녕하세요, 이서준 학부모님.", // 2026-11-09 머리말 통일
     "카카오채널에서 결석·셔틀·보강을 바로 신청하실 수 있어요.",
     "",
     "1) 채널 추가: https://pf.kakao.com/_HhaQG/friend",

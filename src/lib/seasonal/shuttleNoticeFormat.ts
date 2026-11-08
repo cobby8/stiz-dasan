@@ -104,7 +104,7 @@ export function groupTimesByDay(times: NoticeTime[]): { dows: number[]; minutes:
 }
 
 /**
- * 한 학생의 안내 문안을 만든다. 발송부가 앞에 "[STIZ] "를 자동으로 붙이므로 여기서는 넣지 않는다.
+ * 한 학생의 안내 문안을 만든다. 발송부가 앞에 "[스티즈농구교실] "를 자동으로 붙이므로 여기서는 넣지 않는다.
  * 요일마다 시각이 다르면 줄을 나눠 적는다(합치면 실제보다 이른 시각을 안내하게 된다).
  */
 export function buildNoticeBody(input: NoticeInput): string {
@@ -117,7 +117,8 @@ export function buildNoticeBody(input: NoticeInput): string {
     : ["▪ 탑승 예상 시간", ...groups.map((g) => `   · ${formatDays(g.dows)} ${toKoreanTime(g.minutes)}`)];
 
   return [
-    "농구교실 등원 셔틀 안내",
+    // 발송부가 «[스티즈농구교실] »을 앞에 붙인다(2026-11-09 머리말 통일) → «[스티즈농구교실] 등원 셔틀 안내»
+    "등원 셔틀 안내",
     "",
     `${input.studentName} 학부모님, 안녕하세요.`,
     startLine

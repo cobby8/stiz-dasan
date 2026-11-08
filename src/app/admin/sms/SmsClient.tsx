@@ -4,6 +4,7 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
 import SmsTemplateClient from "./templates/SmsTemplateClient";
+import { PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 // 고객 안내 문자(대관 안내 등) — 미리보기 → 원장 승인 → 1건 발송 공용 부품
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 // 학부모 가입 안내 — 같은 미리보기·승인 절차, 발송은 기존 대량 발송 큐
@@ -481,7 +482,8 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
         if (mode === "select") return coaches.filter(coach => selectedIds.has(coach.id)).map(coach => coach.phone);
         return manualNumbers.split(/[,;\n]+/).map(value => value.trim().replace(/\D/g, "")).filter(value => value.length >= 10);
     }, [coaches, manualNumbers, mode, selectedIds]);
-    const bytes = new TextEncoder().encode(`[STIZ] ${message}`).length;
+    // 발송부(sendManualSms·enqueueManualSmsBatch)가 붙이는 머리말과 같은 글자로 길이를 잰다
+    const bytes = new TextEncoder().encode(`${PARENT_MESSAGE_PREFIX} ${message}`).length;
     const acceptedCount = batch?.accepted ?? batch?.recipients?.filter(item => item.providerStatus === "ACCEPTED").length ?? 0;
     const batchIsActive = batch?.status === "PENDING" || batch?.status === "PROCESSING" || Boolean(batch?.pending) || Boolean(batch?.processing) || acceptedCount > 0;
 
@@ -593,7 +595,7 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                 <h2 className="font-extrabold text-gray-900 dark:text-white">메시지 작성</h2>
                 <textarea disabled={batchIsActive} value={message} onChange={event => { setMessage(event.target.value); resetRequest(); }} rows={9} maxLength={1000} placeholder="보낼 메시지를 입력하세요." className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
                 <div className="mt-2 flex justify-between text-xs text-gray-500">
-                    <span>발송할 때 [STIZ]가 자동으로 붙습니다.</span>
+                    <span>발송할 때 {PARENT_MESSAGE_PREFIX}가 자동으로 붙습니다.</span>
                     <strong>{bytes}바이트 · {bytes > 90 ? "LMS" : "SMS"}</strong>
                 </div>
                 {batch && (

@@ -27,7 +27,8 @@ test("특강 문자는 안정적인 이벤트 ID와 명시적 retry run만 사�
   assert.match(seasonal, /stableSeasonalEventId/);
   assert.match(seasonal, /input\.applicationId, input\.itemId \|\| "application", input\.trigger/);
   assert.match(seasonal, /deliveryRunId: input\.deliveryRunId/);
-  assert.match(seasonal, /renderSmsTemplateResult\(input\.trigger, input\.variables\)/);
+  // 2026-11-09: 학원 전화를 채운 변수(variables)로 렌더링한다(«문의: » 빈칸 버그 수정)
+  assert.match(seasonal, /renderSmsTemplateResult\(input\.trigger, variables\)/);
 });
 
 test("장부 claim 실패 시 공급자를 호출하지 않는 fail-closed 순서다", () => {
