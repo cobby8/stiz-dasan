@@ -15,8 +15,20 @@ test("location picker shows clear states while saving or locating", () => {
   assert.match(picker, /confirmPending = false/);
   assert.match(picker, /isLocating/);
   assert.match(picker, /aria-busy=\{confirmPending \|\| isLocating\}/);
-  assert.match(picker, /confirmPending \? "저장 중\.\.\." : isLocating \? "현재 위치 확인 중\.\.\." : location \? "이 위치로 선택" : "위치 선택 필요"/);
+  assert.match(picker, /confirmPending \? "저장 중\.\.\." : isLocating \? "현재 위치 확인 중\.\.\." : placeNameMissing \? "장소명을 적어 주세요" : location \? "이 위치로 선택" : "위치 선택 필요"/);
   assert.match(studentDetail, /confirmPending=\{shuttleSaving\}/);
+});
+
+test("[장소명 필수 2026-11-09] 켠 곳(원생 등록·학부모 셔틀 링크)만 이름이 비면 «위치 선택»을 끄고 안내한다", () => {
+  assert.match(picker, /requirePlaceName = false/, "기본은 꺼짐 — 학원 위치·정류장 편집은 그대로");
+  assert.match(picker, /const placeNameMissing = requirePlaceName && !hasShuttlePlaceName\(placeName\)/);
+  assert.match(picker, /disabled=\{confirmPending \|\| placeNameMissing\}/);
+  assert.match(picker, /\{placeNameMissing && \(\s*<p id=\{`\$\{titleId\}-place-name-hint`\}[^>]*>\{SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE\}<\/p>/);
+  assert.match(picker, /if \(requirePlaceName && !trimmedName\) \{/, "확정 함수도 한 번 더 막는다");
+  const modal = fs.readFileSync("src/app/admin/students/StudentRegisterModal.tsx", "utf8");
+  const parent = fs.readFileSync("src/app/shuttle/location/[token]/RegularShuttleLocationClient.tsx", "utf8");
+  assert.match(modal, /<LocationPickerModal[\s\S]*?requirePlaceName[\s\S]*?\/>/);
+  assert.match(parent, /<LocationPickerModal[^>]*requirePlaceName/);
 });
 
 test("location picker explains why confirm cannot save without coordinates", () => {

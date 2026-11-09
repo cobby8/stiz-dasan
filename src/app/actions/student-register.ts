@@ -39,13 +39,17 @@ import {
 import {
     branchFromClassLocations,
     buildAdminRegisterAgreements,
+    decideUniformFromOrders,
     findDuplicateSuspects,
     normalizeRegisterClassIds,
     STUDENT_BIRTH_KST_YMD_SQL,
+    UNIFORM_ORDER_SOURCE,
+    uniformNameKey,
     validateStudentRegisterInput,
     type DuplicateCandidateRow,
     type DuplicateSuspect,
     type StudentRegisterInput,
+    type UniformOrderSummary,
 } from "@/lib/students/student-register-rules";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
@@ -66,6 +70,11 @@ export type RegisterClassOption = {
     capacity: number;
     /** 지금 ACTIVE 수강 인원(병합 제외) — 정원 경고와 같은 기준 */
     activeCount: number;
+    /**
+     * 대상 학년(예: 초3~초6) — 공개 시간표와 같은 출처를 차례로 본다:
+     * 시간표 슬롯(ScheduleSlot.gradeRange) → 직접 만든 슬롯(CustomClassSlot.gradeRange) → 프로그램 대상(Program.targetAge). 모두 비면 null
+     */
+    gradeRange: string | null;
     programId: string;
     programName: string;
 };
@@ -98,6 +107,13 @@ export async function getStudentRegisterOptions(): Promise<StudentRegisterOption
         `SELECT c.id, c.name, c."dayOfWeek", c."startTime", c."endTime", c.location, c."slotKey", c.capacity,
                 (SELECT COUNT(*) FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId"
                   WHERE e."classId" = c.id AND e.status = 'ACTIVE' AND ${notMergedStudent("s")})::int AS "activeCount",
+                -- 대상 학년: 슬롯 → 직접 만든 슬롯 → 프로그램 순(빈 글자는 없는 것으로). 하위 질의라 반 줄이 늘지 않는다
+                COALESCE(
+                    (SELECT NULLIF(btrim(ss."gradeRange"), '') FROM "ScheduleSlot" ss WHERE ss."slotKey" = c."slotKey" LIMIT 1),
+                    (SELECT NULLIF(btrim(cs."gradeRange"), '') FROM "CustomClassSlot" cs
+                      WHERE cs.id = c."slotKey" OR ('custom-' || cs.id) = c."slotKey" LIMIT 1),
+                    NULLIF(btrim(p."targetAge"), '')
+                ) AS "gradeRange",
                 p.id AS "programId", p.name AS "programName"
            FROM "Class" c JOIN "Program" p ON p.id = c."programId"
           WHERE c."dayOfWeek" <> 'Seasonal' AND p."deletedAt" IS NULL
@@ -124,7 +140,39 @@ export type ParentAccountPreview =
 export type StudentRegisterPreview = {
     account: ParentAccountPreview;
     duplicates: DuplicateSuspect[];
+    /** 같은 보호자 번호·학생 이름의 유니폼 주문 내역(없으면 null) — 3단계 요약에 표시만, 저장 때 서버가 다시 읽는다 */
+    uniform: UniformOrderSummary | null;
 };
+
+/**
+ * 같은 보호자 번호(입력한 보호자 휴대폰 중 하나) + 같은 학생 이름(띄어쓰기 무시) 품목이 있는 유니폼 주문.
+ * 유니폼 신청서는 학생 id 없이 «보호자 번호 + 학생 이름»만 남기므로 이 둘로 맞춘다. 읽기만 한다.
+ */
+async function readUniformOrderSummary(db: DbReader, studentName: string, phones: string[]): Promise<UniformOrderSummary | null> {
+    const nameKey = uniformNameKey(studentName);
+    const phoneKeys = [...new Set(phones.map((p) => normalizeGuardianPhone(p)).filter(isUsablePhoneKey))];
+    if (!nameKey || phoneKeys.length === 0) return null;
+    const rows = await db.$queryRawUnsafe<Array<{
+        orderStatus: string; stizSyncStatus: string; stizOrderNumber: string | null; createdAt: Date; lastSentAt: Date | null;
+    }>>(
+        `SELECT o."orderStatus", o."stizSyncStatus", o."stizOrderNumber", o."createdAt", o."lastSentAt"
+           FROM "UniformOrder" o
+          WHERE o."parentPhoneDigits" = ANY($1::text[])
+            AND EXISTS (SELECT 1 FROM "UniformOrderItem" i
+                         WHERE i."uniformOrderId" = o.id AND regexp_replace(i."studentName", '\\s', '', 'g') = $2)
+          ORDER BY o."createdAt"
+          LIMIT 50`,
+        phoneKeys, nameKey,
+    );
+    // createdAt·lastSentAt 은 timestamptz 라 Date 로 온다 → 순간(ISO) 그대로 넘긴다(달력 날짜로 자르지 않는다)
+    return decideUniformFromOrders(rows.map((r) => ({
+        orderStatus: r.orderStatus,
+        stizSyncStatus: r.stizSyncStatus,
+        stizOrderNumber: r.stizOrderNumber,
+        createdAt: new Date(r.createdAt).toISOString(),
+        lastSentAt: r.lastSentAt ? new Date(r.lastSentAt).toISOString() : null,
+    })));
+}
 
 /** 같은 이름 학생 후보(병합 제외) + 그 학생의 보호자 번호들 + 지금 수강 중인 반 이름. db = prisma 또는 트랜잭션 tx */
 async function readDuplicateCandidates(db: DbReader, name: string): Promise<DuplicateCandidateRow[]> {
@@ -195,7 +243,8 @@ export async function previewStudentRegistration(input: {
             guardianPhones: [digits, ...(input?.guardianPhones ?? [])],
         })
         : [];
-    return { account, duplicates };
+    const uniform = name ? await readUniformOrderSummary(prisma, name, [digits, ...(input?.guardianPhones ?? [])]) : null;
+    return { account, duplicates, uniform };
 }
 
 // ── 저장 ─────────────────────────────────────────────────────────────────────
@@ -306,15 +355,20 @@ export async function registerStudent(input: StudentRegisterInput): Promise<Regi
             // (d) 학생 — 지점은 반 장소에서 자동, 모르면 직접 고른 값(원장 결정 s-branch)
             const branch = branchFromClassLocations(locked.map((c) => c.location)) ?? data.branch;
             const agreements = buildAdminRegisterAgreements(admin.appUserId, new Date().toISOString(), today);
+            // 유니폼 — 창에서 고르지 않고, 같은 보호자 번호·학생 이름의 기존 주문 내역으로 채운다(없으면 비워 둔다).
+            // 시각 칸은 학생 상세 «유니폼» 저장(updateStudentUniform)과 같은 «ISO → ::timestamptz» 방식
+            const uniform = await readUniformOrderSummary(tx, data.student.name, duplicateTarget.guardianPhones);
             const [student] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
                 `INSERT INTO "Student" (id, name, "birthDate", gender, grade, school, phone, address, "referralSource",
-                        "parentId", "enrollDate", memo, "uniformStatus", branch, "agreementsJSON", "createdAt", "updatedAt")
+                        "parentId", "enrollDate", memo, "uniformStatus", "uniformAppliedAt", "uniformOrderedAt", "uniformSource",
+                        branch, "agreementsJSON", "createdAt", "updatedAt")
                  VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8,
-                        $9, $10::date, $11, $12, $13, $14, NOW(), NOW())
+                        $9, $10::date, $11, $12, $15::timestamptz, $16::timestamptz, $17, $13, $14, NOW(), NOW())
                  RETURNING id`,
                 data.student.name, data.student.birthDate, data.student.gender, data.student.grade, data.student.school,
                 data.student.phone, data.student.address, data.student.referralSource,
-                link.parentId, data.startOn, data.memo, data.uniformStatus, branch, agreements,
+                link.parentId, data.startOn, data.memo, uniform?.status ?? null, branch, agreements,
+                uniform?.appliedAt ?? null, uniform?.orderedAt ?? null, uniform ? UNIFORM_ORDER_SOURCE : null,
             );
             const studentId = student.id;
 

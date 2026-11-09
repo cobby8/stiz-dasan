@@ -9,10 +9,13 @@ const service = readFileSync("src/lib/shuttle/regularLocationLink.ts", "utf8");
 const adminApi = readFileSync("src/app/api/admin/shuttle/regular-location-links/route.ts", "utf8");
 const publicApi = readFileSync("src/app/api/shuttle/regular-location/[token]/route.ts", "utf8");
 
+// 장소명 필수 규칙(placeNameRule)은 import 를 지운 하네스에 원문 그대로 앞에 붙인다(값을 테스트에 베끼지 않게)
+const placeNameRule = readFileSync("src/lib/shuttle/placeNameRule.ts", "utf8").replace(/^export /gm, "");
+
 // 외부 DB 없이 실제 위치 validator만 원본 TypeScript에서 실행한다.
 const validatorBlock = service.slice(service.indexOf("export class RegularLocationLinkError"), service.indexOf("function serializeLocations"))
   .replace(/const defaultDb = prisma as unknown as LocationDb;/, "");
-const js = ts.transpileModule(`const LOCATION_SOURCES = new Set(["MAP_PIN", "SEARCH", "CURRENT_LOCATION"]);\n${validatorBlock.replace(/export class/, "class")}`, {
+const js = ts.transpileModule(`${placeNameRule}\nconst LOCATION_SOURCES = new Set(["MAP_PIN", "SEARCH", "CURRENT_LOCATION"]);\n${validatorBlock.replace(/export class/, "class")}`, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText.replace("export function validateRegularLocation", "export function validateRegularLocation");
 const { validateRegularLocation } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
@@ -26,7 +29,7 @@ async function loadSubmitModule() {
     .replace(/export async function listRegularLocationLinks[\s\S]*?export async function getRegularLocationLink/, "export async function getRegularLocationLink")
     .replace(/export async function getRegularLocationLink[\s\S]*?export async function submitRegularLocations/, "export async function submitRegularLocations")
     .replace(/createHash\("sha256"\)/g, "createHash(\"sha256\")");
-  const transpiled = ts.transpileModule(`import { createHash } from "node:crypto"; const SHUTTLE_LOCATION_CONSENT_VERSION="2026-07-21"; ${body}`, {
+  const transpiled = ts.transpileModule(`import { createHash } from "node:crypto"; const SHUTTLE_LOCATION_CONSENT_VERSION="2026-07-21";\n${placeNameRule}\n${body}`, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   return import(`data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`);
@@ -64,12 +67,24 @@ test("공개 링크는 만료·취소·학생 보호자 관계·용도를 검증
 });
 
 test("위치 validator는 좌표 범위·source·accuracy를 fail-closed 검증한다", () => {
-  const valid = validateRegularLocation({ address: "다산 정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN", accuracyMeters: 5 });
+  const valid = validateRegularLocation({ name: "롯데캐슬 정문", address: "다산 정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN", accuracyMeters: 5 });
   assert.equal(valid.latitude, 37.6);
-  assert.throws(() => validateRegularLocation({ address: "A", latitude: 91, longitude: 127, source: "MAP_PIN" }));
-  assert.throws(() => validateRegularLocation({ address: "A", latitude: 37, longitude: 181, source: "MAP_PIN" }));
-  assert.throws(() => validateRegularLocation({ address: "A", latitude: 37, longitude: 127, source: "ADMIN_PIN" }));
-  assert.throws(() => validateRegularLocation({ address: "A", latitude: 37, longitude: 127, source: "MAP_PIN", accuracyMeters: -1 }));
+  assert.equal(valid.name, "롯데캐슬 정문");
+  assert.throws(() => validateRegularLocation({ name: "정문", address: "A", latitude: 91, longitude: 127, source: "MAP_PIN" }));
+  assert.throws(() => validateRegularLocation({ name: "정문", address: "A", latitude: 37, longitude: 181, source: "MAP_PIN" }));
+  assert.throws(() => validateRegularLocation({ name: "정문", address: "A", latitude: 37, longitude: 127, source: "ADMIN_PIN" }));
+  assert.throws(() => validateRegularLocation({ name: "정문", address: "A", latitude: 37, longitude: 127, source: "MAP_PIN", accuracyMeters: -1 }));
+});
+
+test("[장소명 필수 2026-11-09] 학부모 링크 저장은 장소명이 비면 거부하고 주소로 대신 채우지 않는다", () => {
+  for (const name of [undefined, null, "", "   "]) {
+    assert.throws(
+      () => validateRegularLocation({ name, address: "다산동 4002-1", roadAddress: "다산순환로 1", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" }),
+      (error) => error.code === "PLACE_NAME_REQUIRED" && /아이가 타는 곳 이름/.test(error.message),
+      `name=${JSON.stringify(name)}`,
+    );
+  }
+  assert.equal(validateRegularLocation({ name: "  정문  ", address: "A", latitude: 37, longitude: 127, source: "SEARCH" }).name, "정문");
 });
 
 test("재제출은 같은 학생 kind를 upsert하고 저장 후 서버에서 재조회한다", () => {
@@ -120,7 +135,7 @@ test("fake DB roundtrip은 저장 후 재조회하고 동일 payload 재시도 �
       return 1;
     },
   };
-  const payload = { purpose: "REGULAR_SHUTTLE_LOCATION", consentVersion: "2026-07-21", pickup: { address: "정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" } };
+  const payload = { purpose: "REGULAR_SHUTTLE_LOCATION", consentVersion: "2026-07-21", pickup: { name: "정문 앞", address: "정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" } };
   const first = await submitRegularLocations("token", payload, db);
   const second = await submitRegularLocations("token", payload, db);
   assert.equal(first.locations.PICKUP.address, "정문");
@@ -141,6 +156,6 @@ test("tx 직전 취소·만료되면 저장하지 않는다", async () => {
     },
     async $executeRawUnsafe() { writes += 1; return 1; },
   };
-  await assert.rejects(() => submitRegularLocations("token", { purpose: "REGULAR_SHUTTLE_LOCATION", consentVersion: "2026-07-21", pickup: { address: "정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" } }, db), /만료되었거나 취소/);
+  await assert.rejects(() => submitRegularLocations("token", { purpose: "REGULAR_SHUTTLE_LOCATION", consentVersion: "2026-07-21", pickup: { name: "정문 앞", address: "정문", latitude: 37.6, longitude: 127.1, source: "MAP_PIN" } }, db), /만료되었거나 취소/);
   assert.equal(writes, 0);
 });

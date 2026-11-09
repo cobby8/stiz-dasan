@@ -22,6 +22,7 @@ import {
 } from "@/lib/guardians/guardianLogic";
 import { validatePrimaryGuardian, type PrimaryGuardian } from "@/lib/students/parentAccountLink";
 import { validateStudentMediaConsentScopes } from "@/lib/studentMediaConsentAdminPolicy";
+import { SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
 
 /** 유니폼 상태 허용값 — 학생 상세 «유니폼» 저장(updateStudentUniform)과 같은 집합 */
 export const UNIFORM_STATUS_VALUES = ["보유", "미보유", "신청", "주문", "수령완료", "미수령", "확인보류", "해당없음", "미신청"] as const;
@@ -33,6 +34,16 @@ export const MEDIA_CONSENT_METHODS = [
     { value: "IN_PERSON", label: "대면" },
     { value: "DIGITAL", label: "온라인" },
 ] as const;
+
+/**
+ * 등록 창 사진 동의 체크박스의 «확인 방법» 기본값(2026-11-09 원장 지시: 선택칸 → 체크박스 하나).
+ * 원생 등록은 상담·등록 자리에서 보호자에게 직접 묻는 일이 대부분이라 «대면»으로 남긴다.
+ * 서버 검증은 그대로 MEDIA_CONSENT_METHODS 허용 목록을 본다(이 값도 그 안에 있다 — 테스트로 고정).
+ */
+export const REGISTER_MEDIA_CONSENT_METHOD = "IN_PERSON" as const;
+
+/** 셔틀 장소명이 비었을 때 화면·서버가 같이 쓰는 안내 — 규칙 한 곳(placeNameRule)에서 다시 내보낸다 */
+export { SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE };
 
 /** 가입 경로 선택지(Student.referralSource 에 그대로 저장) */
 export const REFERRAL_SOURCE_OPTIONS = ["지인소개", "네이버", "인스타그램", "전단지", "현수막·간판", "체험수업", "기타"] as const;
@@ -168,7 +179,7 @@ export type StudentRegisterInput = {
     /** 수강 시작일(YYYY-MM-DD, KST 달력 값) */
     startOn: string;
     shuttle: { needed: boolean; pickup?: RegisterLocationInput | null; dropoff?: RegisterLocationInput | null };
-    uniformStatus?: string | null;
+    // 유니폼은 창에서 고르지 않는다 — 서버가 같은 보호자 번호·학생 이름의 주문 내역을 보고 채운다(2026-11-09)
     /** 사진·초상권 동의를 확인했으면 값, 확인 안 했으면 null(기록하지 않는다) */
     mediaConsent?: { internalAllowed: boolean; galleryAllowed: boolean; instagramAllowed: boolean; method: string } | null;
     memo?: string | null;
@@ -194,7 +205,6 @@ export type NormalizedStudentRegister = {
     branch: string | null;
     startOn: string;
     shuttle: { needed: boolean; pickup: RegisterLocation | null; dropoff: RegisterLocation | null };
-    uniformStatus: string | null;
     mediaConsent: { internalAllowed: boolean; galleryAllowed: boolean; instagramAllowed: boolean; method: string } | null;
     memo: string | null;
     force: boolean;
@@ -291,12 +301,12 @@ export function validateStudentRegisterInput(input: StudentRegisterInput, todayY
     const dropoff = shuttleNeeded ? normalizeRegisterLocation(input.shuttle?.dropoff) : null;
     if (shuttleNeeded && input.shuttle?.pickup && !pickup) return { ok: false, error: "탑승 위치를 지도에서 다시 골라 주세요.", step: 2 };
     if (shuttleNeeded && input.shuttle?.dropoff && !dropoff) return { ok: false, error: "하차 위치를 지도에서 다시 골라 주세요.", step: 2 };
+    // 장소명 필수(2026-11-09) — 기사님 명단·배차 정류장 이름이 이 값이다. 주소만 있으면 어디서 태울지 모른다.
+    // (저장 SQL 의 «장소명 없으면 도로명→지번» 대체는 옛 데이터·다른 경로 호환용으로 그대로 둔다)
+    if (pickup && !pickup.name) return { ok: false, error: `탑승 위치: ${SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}`, step: 2 };
+    if (dropoff && !dropoff.name) return { ok: false, error: `하차 위치: ${SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}`, step: 2 };
 
-    // 3단계 — 유니폼·사진 동의·메모·개인정보 동의
-    const uniformStatus = input.uniformStatus ? String(input.uniformStatus) : null;
-    if (uniformStatus && !(UNIFORM_STATUS_VALUES as readonly string[]).includes(uniformStatus)) {
-        return { ok: false, error: "유니폼 상태 값이 올바르지 않습니다.", step: 3 };
-    }
+    // 3단계 — 사진 동의·메모·개인정보 동의 (유니폼은 서버가 주문 내역으로 채운다)
     let mediaConsent: NormalizedStudentRegister["mediaConsent"] = null;
     if (input.mediaConsent) {
         const m = input.mediaConsent;
@@ -337,7 +347,6 @@ export function validateStudentRegisterInput(input: StudentRegisterInput, todayY
             branch,
             startOn,
             shuttle: { needed: shuttleNeeded, pickup, dropoff },
-            uniformStatus,
             mediaConsent,
             memo: optional(input.memo, MAX_MEMO),
             force: input.force === true,
@@ -415,4 +424,58 @@ export function findDuplicateSuspects(
         }
     }
     return out;
+}
+
+// ── 유니폼: 기존 주문 내역 → 학생 유니폼 상태 (2026-11-09 원장 지시) ─────────────
+
+/** 유니폼 주문 한 건(UniformOrder 읽기 결과 — 같은 보호자 번호 + 같은 학생 이름 품목이 있는 주문만) */
+export type UniformOrderMatchRow = {
+    orderStatus: string;
+    stizSyncStatus: string;
+    stizOrderNumber: string | null;
+    /** 접수 시각(ISO) */
+    createdAt: string;
+    /** 업체 전송 시각(ISO) — 전송 전이면 null */
+    lastSentAt: string | null;
+};
+
+/** 주문 내역에서 읽어 낸 유니폼 상태 — status 는 UNIFORM_STATUS_VALUES 안의 값만 */
+export type UniformOrderSummary = {
+    status: "신청" | "주문";
+    /** 가장 처음 접수한 시각(ISO) → Student.uniformAppliedAt */
+    appliedAt: string;
+    /** 업체 주문이 처음 들어간 시각(ISO) → Student.uniformOrderedAt. 아직이면 null */
+    orderedAt: string | null;
+    /** 취소 안 된 주문 수 */
+    orderCount: number;
+};
+
+/** Student.uniformSource 에 남길 출처(학생 상세 «유니폼» 칸 출처 값 «사이트주문»과 같음) */
+export const UNIFORM_ORDER_SOURCE = "사이트주문";
+
+/** 업체(STIZ)에 주문이 실제로 들어간 상태 — 전송 완료 또는 업체 쪽에 이미 있음(중복) */
+const UNIFORM_ORDERED_SYNC = new Set(["SENT", "DUPLICATE"]);
+
+/** 이름 비교용 — 띄어쓰기만 무시(유니폼 신청서에 «김 루빈»처럼 적는 경우). SQL 쪽은 regexp_replace(…, '\s', '', 'g') */
+export function uniformNameKey(name: string | null | undefined): string {
+    return String(name ?? "").replace(/\s+/g, "");
+}
+
+/**
+ * 주문 내역 → 유니폼 상태(순수 함수). 취소된 주문은 뺀다. 남는 게 없으면 null(= 주문 내역 없음).
+ * - 업체 주문이 들어간 주문(주문번호 있음·전송 완료·업체 중복)이 하나라도 있으면 «주문», 접수만 됐으면 «신청».
+ * - «수령완료»는 주문 기록에 학원 도착 정보가 없어 여기서 정하지 않는다(학생 상세에서 직접 바꾼다).
+ */
+export function decideUniformFromOrders(rows: UniformOrderMatchRow[]): UniformOrderSummary | null {
+    const live = rows.filter((r) => r.orderStatus !== "CANCELED");
+    if (live.length === 0) return null;
+    // ISO 문자열은 글자 순서 = 시간 순서
+    const earliest = (values: string[]) => [...values].sort()[0];
+    const ordered = live.filter((r) => Boolean(r.stizOrderNumber) || UNIFORM_ORDERED_SYNC.has(r.stizSyncStatus));
+    return {
+        status: ordered.length > 0 ? "주문" : "신청",
+        appliedAt: earliest(live.map((r) => r.createdAt)),
+        orderedAt: ordered.length > 0 ? earliest(ordered.map((r) => r.lastSentAt ?? r.createdAt)) : null,
+        orderCount: live.length,
+    };
 }

@@ -3,7 +3,9 @@
 /**
  * 관리자 «원생 등록» 창 — 창 하나 3단계(모바일은 아래에서 올라오는 시트). 2026-11-09 원장 승인 설계.
  *
- * ① 학생·보호자 → ② 수업·셔틀 → ③ 확인(유니폼·사진 동의·메모·개인정보 동의 + 요약) → «등록» 한 번.
+ * ① 학생·보호자 → ② 수업·셔틀 → ③ 확인(사진 동의·메모·개인정보 동의 + 요약) → «등록» 한 번.
+ * 2026-11-09 실사용 후 원장 지시: 반 줄에 대상 학년 · 셔틀 장소명 필수 · 유니폼은 주문 내역으로 자동(선택칸 없음) ·
+ * 사진 동의는 체크박스 하나(확인 방법 = 대면 기본값).
  * 저장은 서버 액션 registerStudent 하나(트랜잭션 하나)라 중간에 실패하면 아무것도 남지 않는다.
  * 목록 «원생 등록»과 체험 «원생 등록»(체험 정보를 미리 채움)이 같은 창을 쓴다.
  *
@@ -27,10 +29,10 @@ import {
     branchFromClassLocations,
     branchLabel,
     GUARDIAN_RELATION_CHOICES,
-    MEDIA_CONSENT_METHODS,
     REFERRAL_SOURCE_OPTIONS,
     REGISTER_BRANCH_OPTIONS,
-    UNIFORM_STATUS_VALUES,
+    REGISTER_MEDIA_CONSENT_METHOD,
+    SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE,
     validateRegisterStep1,
     type DuplicateSuspect,
 } from "@/lib/students/student-register-rules";
@@ -145,13 +147,11 @@ export default function StudentRegisterModal({
     const [dropoff, setDropoff] = useState<MapLocationData | null>(null);
     const [pickerKind, setPickerKind] = useState<"PICKUP" | "DROPOFF" | null>(null);
 
-    // ③ 확인
-    const [uniformStatus, setUniformStatus] = useState("");
+    // ③ 확인 — 유니폼은 고르지 않는다(서버가 주문 내역으로 채움). 사진 동의는 체크박스 하나 + 범위 3칸
     const [mediaChecked, setMediaChecked] = useState(false);
     const [mediaInternal, setMediaInternal] = useState(false);
     const [mediaGallery, setMediaGallery] = useState(false);
     const [mediaInstagram, setMediaInstagram] = useState(false);
-    const [mediaMethod, setMediaMethod] = useState("");
     const [memo, setMemo] = useState(prefill?.memo ?? "");
     const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
 
@@ -239,13 +239,17 @@ export default function StudentRegisterModal({
         if (step === 2) {
             if (!assignLater && classIds.length === 0) { setError("수강할 반을 고르거나 «반은 나중에 배정»을 체크해 주세요."); return; }
             if (!startOn) { setError("수강 시작일을 입력해 주세요."); return; }
+            // 셔틀 위치는 장소명 필수(지도 창이 이미 막지만, 서버와 같은 기준으로 한 번 더)
+            if (shuttleNeeded && [pickup, dropoff].some((l) => l && !l.placeName?.trim())) {
+                setError(SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE);
+                return;
+            }
             setStep(3);
         }
     }
 
     async function submit(force = false) {
         if (!privacyConfirmed) { setError("보호자 개인정보 수집·이용 동의를 받았는지 확인해 주세요."); return; }
-        if (mediaChecked && !mediaMethod) { setError("사진 동의를 어떻게 확인했는지 골라 주세요."); return; }
         setSaving(true);
         setError(null);
         try {
@@ -266,9 +270,9 @@ export default function StudentRegisterModal({
                     pickup: shuttleNeeded ? pickup : null,
                     dropoff: shuttleNeeded ? dropoff : null,
                 },
-                uniformStatus: uniformStatus || null,
+                // 체크했을 때만 동의 기록 — 확인 방법은 기본값(대면). 범위 3칸·정책 버전 저장 구조는 그대로
                 mediaConsent: mediaChecked
-                    ? { internalAllowed: mediaInternal, galleryAllowed: mediaGallery, instagramAllowed: mediaInstagram, method: mediaMethod }
+                    ? { internalAllowed: mediaInternal, galleryAllowed: mediaGallery, instagramAllowed: mediaInstagram, method: REGISTER_MEDIA_CONSENT_METHOD }
                     : null,
                 memo,
                 privacyConfirmed,
@@ -292,7 +296,7 @@ export default function StudentRegisterModal({
             }
             if (result.code === "DUPLICATE_SUSPECT") {
                 // 그 사이 다른 화면에서 같은 학생이 등록됐을 수 있다 → 1단계로 돌아가 확인받는다
-                setPreview((current) => ({ account: current?.account ?? { kind: "NO_PHONE" }, duplicates: result.duplicates }));
+                setPreview((current) => ({ account: current?.account ?? { kind: "NO_PHONE" }, duplicates: result.duplicates, uniform: current?.uniform ?? null }));
                 setDuplicateAck(false);
                 setStep(1);
                 setError(result.error);
@@ -520,6 +524,12 @@ export default function StudentRegisterModal({
                                             <label className={`flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${checked ? "bg-[var(--color-academy-primary-soft)]" : "hover:bg-[var(--color-academy-soft)]"}`}>
                                                 <input type="checkbox" checked={checked} onChange={() => toggleClass(c.id)} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
                                                 <span className="min-w-0 flex-1 truncate font-bold text-[var(--color-academy-ink)]">{c.name}</span>
+                                                {/* 대상 학년(예: 초3~초6) — 반 고를 때 가장 먼저 보는 값이라 모바일에서도 보인다 */}
+                                                {c.gradeRange && (
+                                                    <span className="max-w-[6.5rem] shrink-0 truncate text-xs font-bold text-[var(--color-academy-primary)]" title={`대상 ${c.gradeRange}`}>
+                                                        {c.gradeRange}
+                                                    </span>
+                                                )}
                                                 <span className="hidden shrink-0 text-xs text-[var(--color-academy-muted)] sm:inline">{c.startTime}~{c.endTime}</span>
                                                 {c.location && <span className="hidden max-w-[8rem] shrink-0 truncate text-xs text-[var(--color-academy-muted)] md:inline">{c.location}</span>}
                                                 <span className={`shrink-0 text-xs tabular-nums font-bold ${full ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
@@ -595,6 +605,7 @@ export default function StudentRegisterModal({
                                             <button key={kind} type="button" onClick={() => setPickerKind(kind)} className={`${BTN_SECONDARY} justify-start text-left`}>
                                                 <span className="material-symbols-outlined text-lg" aria-hidden="true">{value ? "check_circle" : "location_on"}</span>
                                                 <span className="min-w-0 truncate">
+                                                    {/* 장소명은 지도 창에서 필수로 받는다 */}
                                                     {kind === "PICKUP" ? "탑승" : "하차"}: {value ? (value.placeName || value.roadAddress || value.address) : "지도에서 고르기(선택)"}
                                                 </span>
                                             </button>
@@ -609,27 +620,27 @@ export default function StudentRegisterModal({
 
                 {step === 3 && (
                     <>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                            <label className="block min-w-0">
-                                <span className={LABEL}>유니폼</span>
-                                <select value={uniformStatus} onChange={(e) => setUniformStatus(e.target.value)} className={INPUT}>
-                                    <option value="">선택 안함</option>
-                                    {UNIFORM_STATUS_VALUES.map((v) => <option key={v} value={v}>{v}</option>)}
-                                </select>
-                            </label>
-                            <label className="block min-w-0">
-                                <span className={LABEL}>사진 동의 확인 방법</span>
-                                <select value={mediaMethod} onChange={(e) => { setMediaMethod(e.target.value); setMediaChecked(Boolean(e.target.value)); }} className={INPUT}>
-                                    <option value="">기록 안 함</option>
-                                    {MEDIA_CONSENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                                </select>
-                            </label>
-                        </div>
+                        {/* 사진 동의 — 체크하면 기록(범위 3칸은 기본 모두 켬, 필요하면 끔), 안 하면 기록 안 함 */}
+                        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
+                            <input
+                                type="checkbox"
+                                checked={mediaChecked}
+                                onChange={(e) => {
+                                    const on = e.target.checked;
+                                    setMediaChecked(on);
+                                    // 켜면 동의 범위 3칸을 모두 켠다(«활용 동의» = 전체 동의). 끄면 범위도 비운다
+                                    setMediaInternal(on); setMediaGallery(on); setMediaInstagram(on);
+                                }}
+                                className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]"
+                            />
+                            사진·영상 활용 동의를 받았어요
+                        </label>
                         {mediaChecked && (
-                            <fieldset className="flex flex-wrap gap-x-4">
+                            <fieldset className="-mt-2 flex flex-wrap gap-x-4 pl-7">
                                 <legend className="sr-only">사진 사용 동의 범위</legend>
                                 {([
-                                    ["내부 보관", mediaInternal, (v: boolean) => { setMediaInternal(v); if (!v) { setMediaGallery(false); setMediaInstagram(false); } }],
+                                    // 범위를 모두 끄면 «동의 받음» 체크도 함께 끈다(빈 동의 기록을 남기지 않게)
+                                    ["내부 보관", mediaInternal, (v: boolean) => { setMediaInternal(v); if (!v) { setMediaGallery(false); setMediaInstagram(false); setMediaChecked(false); } }],
                                     ["갤러리", mediaGallery, (v: boolean) => { setMediaGallery(v); if (v) setMediaInternal(true); else setMediaInstagram(false); }],
                                     ["인스타그램", mediaInstagram, (v: boolean) => { setMediaInstagram(v); if (v) { setMediaInternal(true); setMediaGallery(true); } }],
                                 ] as const).map(([label, checked, set]) => (
@@ -661,6 +672,15 @@ export default function StudentRegisterModal({
                                 {` · ${startOn} 시작`}
                                 {tuition.lines.length > 0 ? ` · 월 ${won(tuition.tuitionTotal)}` : ""}
                                 {shuttleNeeded ? ` · 셔틀${tuition.shuttleFee ? ` ${won(tuition.shuttleFee)}` : ""}` : ""}
+                            </dd>
+                            {/* 유니폼 — 같은 보호자 번호·학생 이름의 주문 내역을 보고 서버가 자동으로 채운다(표시만) */}
+                            <dt className="font-bold text-[var(--color-academy-muted)]">유니폼</dt>
+                            <dd className="min-w-0 break-keep text-[var(--color-academy-ink)]">
+                                {!preview
+                                    ? "주문 내역 확인 중(등록할 때 다시 확인해요)"
+                                    : preview.uniform
+                                        ? `주문 내역 있음(${preview.uniform.status}${preview.uniform.orderCount > 1 ? ` · ${preview.uniform.orderCount}건` : ""})`
+                                        : "주문 내역 없음"}
                             </dd>
                         </dl>
 
@@ -715,6 +735,7 @@ export default function StudentRegisterModal({
                 <LocationPickerModal
                     title={`셔틀 ${pickerKind === "PICKUP" ? "탑승" : "하차"} 위치`}
                     initialValue={(pickerKind === "PICKUP" ? pickup : dropoff) ?? undefined}
+                    requirePlaceName
                     onConfirm={(location) => {
                         if (pickerKind === "PICKUP") setPickup(location);
                         else setDropoff(location);

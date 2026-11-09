@@ -295,8 +295,70 @@ test("[규칙] 셔틀 위치·사진 동의·유니폼 값 검증", () => {
   assert.equal(media({ internalAllowed: true, galleryAllowed: true, instagramAllowed: false, method: "WRITTEN" }).ok, true);
   assert.equal(media({ internalAllowed: false, galleryAllowed: true, instagramAllowed: false, method: "WRITTEN" }).ok, false);
   assert.equal(media({ internalAllowed: true, galleryAllowed: false, instagramAllowed: false, method: "" }).ok, false);
-  assert.equal(rules.validateStudentRegisterInput(validInput({ uniformStatus: "수령완료" }), TODAY).ok, true);
-  assert.equal(rules.validateStudentRegisterInput(validInput({ uniformStatus: "아무거나" }), TODAY).ok, false);
+  // 창의 체크박스가 보내는 기본 방법(대면)은 사진 동의 화면 허용 목록 안에 있어야 한다
+  assert.ok(rules.MEDIA_CONSENT_METHODS.some((m) => m.value === rules.REGISTER_MEDIA_CONSENT_METHOD));
+  assert.equal(rules.REGISTER_MEDIA_CONSENT_METHOD, "IN_PERSON");
+  assert.equal(media({ internalAllowed: true, galleryAllowed: true, instagramAllowed: true, method: rules.REGISTER_MEDIA_CONSENT_METHOD }).ok, true);
+  // 유니폼은 입력으로 받지 않는다(보내도 저장값에 없다 — 서버가 주문 내역으로 채움)
+  const withUniform = rules.validateStudentRegisterInput(validInput({ uniformStatus: "수령완료" }), TODAY);
+  assert.equal(withUniform.ok, true);
+  assert.equal("uniformStatus" in withUniform.value, false);
+});
+
+test("[규칙] 셔틀 장소명 필수(2026-11-09) — 비면 2단계에서 막고, 저장 SQL 의 주소 대체는 옛 데이터용으로 남는다", () => {
+  const loc = { address: "다산동 1", roadAddress: "다산순환로 1", latitude: 37.6, longitude: 127.15, source: "SEARCH" };
+  for (const placeName of [undefined, "", "   "]) {
+    const r = rules.validateStudentRegisterInput(validInput({ shuttle: { needed: true, pickup: { ...loc, placeName } } }), TODAY);
+    assert.equal(r.ok, false, `탑승 placeName=${JSON.stringify(placeName)}`);
+    assert.equal(r.step, 2);
+    assert.match(r.error, /아이가 타는 곳 이름을 적어 주세요/);
+  }
+  const drop = rules.validateStudentRegisterInput(validInput({ shuttle: { needed: true, pickup: { ...loc, placeName: "정문" }, dropoff: loc } }), TODAY);
+  assert.equal(drop.ok, false);
+  assert.match(drop.error, /^하차 위치/);
+  // 셔틀을 안 쓰면 위치·장소명은 보지 않는다
+  assert.equal(rules.validateStudentRegisterInput(validInput({ shuttle: { needed: false, pickup: loc } }), TODAY).ok, true);
+});
+
+test("[유니폼] 주문 내역 → 상태: 취소 제외 · 업체 주문 들어갔으면 «주문», 접수만이면 «신청», 없으면 null", () => {
+  const row = (o) => ({ orderStatus: "RECEIVED", stizSyncStatus: "PENDING", stizOrderNumber: null, createdAt: "2026-10-01T03:00:00.000Z", lastSentAt: null, ...o });
+  assert.equal(rules.decideUniformFromOrders([]), null);
+  assert.equal(rules.decideUniformFromOrders([row({ orderStatus: "CANCELED", stizSyncStatus: "SENT" })]), null, "취소만 있으면 내역 없음");
+  assert.deepEqual(rules.decideUniformFromOrders([row({ stizSyncStatus: "NEEDS_REVIEW" })]),
+    { status: "신청", appliedAt: "2026-10-01T03:00:00.000Z", orderedAt: null, orderCount: 1 });
+  const mixed = rules.decideUniformFromOrders([
+    row({ createdAt: "2026-10-05T00:00:00.000Z", stizSyncStatus: "SENT", stizOrderNumber: "A-1", lastSentAt: "2026-10-05T00:01:00.000Z" }),
+    row({ createdAt: "2026-09-30T23:00:00.000Z", stizSyncStatus: "RETRY_WAIT" }),
+    row({ createdAt: "2026-09-01T00:00:00.000Z", orderStatus: "CANCELED" }),
+  ]);
+  assert.deepEqual(mixed, { status: "주문", appliedAt: "2026-09-30T23:00:00.000Z", orderedAt: "2026-10-05T00:01:00.000Z", orderCount: 2 });
+  // 업체 중복(이미 그쪽에 있음)도 주문으로 본다 — 전송 시각이 없으면 접수 시각
+  assert.equal(rules.decideUniformFromOrders([row({ stizSyncStatus: "DUPLICATE" })]).orderedAt, "2026-10-01T03:00:00.000Z");
+  // 상태 값은 학생 유니폼 허용 목록 안에 있다
+  for (const s of ["신청", "주문"]) assert.ok(rules.UNIFORM_STATUS_VALUES.includes(s));
+  assert.equal(rules.uniformNameKey(" 김 루빈 "), "김루빈");
+});
+
+test("[유니폼] 저장은 트랜잭션 안에서 주문 내역을 다시 읽어 채우고, 미리보기도 같은 함수(읽기만)", () => {
+  const body = fnBlock(action, "registerStudent");
+  const inTx = body.slice(body.indexOf("prisma.$transaction("));
+  assert.match(inTx, /const uniform = await readUniformOrderSummary\(tx, data\.student\.name, duplicateTarget\.guardianPhones\)/);
+  assert.match(inTx, /uniform\?\.status \?\? null/);
+  assert.match(inTx, /uniform \? UNIFORM_ORDER_SOURCE : null/);
+  assert.doesNotMatch(body, /data\.uniformStatus/);
+  assert.match(fnBlock(action, "previewStudentRegistration"), /readUniformOrderSummary\(prisma, name,/);
+  const reader = action.slice(action.indexOf("async function readUniformOrderSummary"), action.indexOf("export async function previewStudentRegistration"));
+  assert.match(reader, /o\."parentPhoneDigits" = ANY\(\$1::text\[\]\)/);
+  assert.match(reader, /regexp_replace\(i\."studentName", '\\\\s', '', 'g'\) = \$2/);
+  assert.doesNotMatch(reader, /INSERT|UPDATE|DELETE|\$executeRawUnsafe/);
+});
+
+test("[반 선택] 대상 학년은 슬롯 → 직접 만든 슬롯 → 프로그램 대상 순(스키마 변경 없음)", () => {
+  const options = fnBlock(action, "getStudentRegisterOptions");
+  assert.match(options, /FROM "ScheduleSlot" ss WHERE ss\."slotKey" = c\."slotKey"/);
+  assert.match(options, /FROM "CustomClassSlot" cs[\s\S]*'custom-' \|\| cs\.id/);
+  assert.match(options, /NULLIF\(btrim\(p\."targetAge"\), ''\)\s*\) AS "gradeRange"/);
+  assert.match(modal, /\{c\.gradeRange && \(/);
 });
 
 test("[규칙] 유니폼 허용값은 학생 상세 저장(updateStudentUniform)과 같은 목록 한 곳", () => {
