@@ -140,6 +140,8 @@ export default function RunBoard({
     const map = new Map<string, number>();
     for (const el of listRef.current?.querySelectorAll<HTMLElement>("[data-run-key]") ?? []) map.set(el.dataset.runKey!, el.getBoundingClientRect().top);
     flipFrom.current = map;
+    // 안전장치 — 바깥에서 순서가 안 바뀌어 다시 그리기가 없으면 한 프레임 뒤 기억값을 버린다.
+    requestAnimationFrame(() => { if (flipFrom.current === map) flipFrom.current = null; });
   }
   useLayoutEffect(() => {
     const before = flipFrom.current;
@@ -155,13 +157,17 @@ export default function RunBoard({
       el.animate?.([{ transform: `translateY(${dy}px)` }, { transform: "translateY(0)" }], { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" });
     }
   }, [rows]);
-  // ▲▼ 도 같은 애니메이션으로 옮긴다.
+  // ▲▼ 도 같은 애니메이션으로 옮긴다. 맨 위에서 ▲ 처럼 못 옮길 땐 위치를 기억하지 않는다
+  // (기억값이 남으면 다음에 시각만 바꿔도 엉뚱한 애니메이션이 돈다).
   function moveWithAnimation(row: UnifiedRow, dir: -1 | 1) {
-    rememberPositions();
+    const same = rows.filter((r) => r.groupKey === row.groupKey && !r.isTerminal);
+    if (same[same.findIndex((r) => r.key === row.key) + dir]) rememberPositions();
     onMove(row, dir);
   }
 
   function startHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
+    // 마우스 왼쪽 버튼(터치·펜은 0)만 끌기 — 오른쪽 버튼·가운데 버튼은 무시.
+    if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     pointerAt.current = { x: event.clientX, y: event.clientY, row };
@@ -241,7 +247,8 @@ export default function RunBoard({
           {/* 놓일 자리 삽입선 — 카드 사이 틈(8px) 한가운데에 굵은 선 */}
           {lineBefore && <span aria-hidden="true" data-drop-line className="pointer-events-none absolute inset-x-0 -top-[6px] h-[4px] rounded-full bg-[var(--color-academy-info)] before:absolute before:-left-1 before:-top-[4px] before:h-3 before:w-3 before:rounded-full before:bg-[var(--color-academy-info)]" />}
           {lineAfter && <span aria-hidden="true" data-drop-line className="pointer-events-none absolute inset-x-0 -bottom-[6px] h-[4px] rounded-full bg-[var(--color-academy-info)] before:absolute before:-left-1 before:-top-[4px] before:h-3 before:w-3 before:rounded-full before:bg-[var(--color-academy-info)]" />}
-          <button type="button" aria-label={`${row.label} 끌어서 순서 옮기기`} title="끌어서 순서 옮기기"
+          {/* 손잡이는 마우스·손가락 전용 — 키보드 탭 순서에서 빼고(▲▼ 가 키보드 대안), 이름표로 안내한다. */}
+          <button type="button" tabIndex={-1} aria-label={`${row.label} 끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요`} title="끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요"
             onPointerDown={(event) => startHandleDrag(event, row)}
             onPointerMove={(event) => moveHandleDrag(event, row)}
             onPointerUp={endHandleDrag}

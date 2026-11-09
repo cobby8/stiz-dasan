@@ -58,7 +58,8 @@ test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲�
   assert.equal((html.match(/type="time"/g) ?? []).length, 2);
   assert.match(html, /aria-label="A아파트 정문 정차 시간"/);
   assert.equal((html.match(/drag_indicator/g) ?? []).length, 2);
-  assert.match(html, /aria-label="A아파트 정문 끌어서 순서 옮기기"/);
+  // 리뷰 반영: 손잡이는 탭 순서에서 빼고(▲▼ 가 키보드 대안) 이름표로 안내
+  assert.match(html, /tabindex="-1" aria-label="A아파트 정문 끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요"/);
   assert.match(html, /aria-label="B초등학교 후문 순서 아래로"/);
   assert.equal((html.match(/data-run-key=/g) ?? []).length, 2);
   // 손잡이만 touch-none(카드 위에서는 화면 스크롤 가능), 기본 끌기(draggable)는 쓰지 않는다

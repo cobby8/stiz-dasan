@@ -95,6 +95,10 @@ test("끌기 피드백 배선: 떠다니는 카드·삽입선·놓으면 이동 
   assert.match(board, /const to = target > from \? target - 1 : target;/);
   assert.match(board, /rememberPositions\(\); latest\.current\.onDropOn\(same\[to\]\);/);
   assert.match(board, /prefers-reduced-motion: reduce/);
+  // 리뷰 반영: 못 옮길 때는 위치를 기억하지 않고, 기억값은 한 프레임 뒤 버린다 · 왼쪽 버튼만 끌기
+  assert.match(board, /if \(same\[same\.findIndex\(\(r\) => r\.key === row\.key\) \+ dir\]\) rememberPositions\(\);/);
+  assert.match(board, /requestAnimationFrame\(\(\) => \{ if \(flipFrom\.current === map\) flipFrom\.current = null; \}\);/);
+  assert.match(board, /if \(event\.button !== 0\) return;/);
   assert.match(board, /onPointerCancel=\{cancelHandleDrag\}/);
   // 순서 덮어쓰기·저장은 여전히 바깥(관리자 화면)의 일 — 카드 틀은 저장 API 를 모른다.
   assert.doesNotMatch(board, /\/api\//);
@@ -106,7 +110,11 @@ test("관리자 PC 지도: 기존 카카오 지도 부품 재사용 · 넓은 �
   assert.match(editor, /window\.matchMedia\("\(min-width: 1024px\)"\)/);
   assert.match(editor, /<aside aria-label="노선 지도" className="hidden lg:sticky lg:top-\[4\.5rem\] lg:block">/);
   assert.match(editor, /\{wide\s*\? <RouteMapCanvas start=\{null\} end=\{null\} stops=\{mapStops\}/);
-  assert.match(editor, /selectedGroupKey=\{wide \? mapGroupKey : null\}\s*onSelectBlock=\{setPickedGroup\}/);
+  assert.match(editor, /selectedGroupKey=\{wide \? mapGroupKey : null\}[\s\S]{0,120}onSelectBlock=\{wide \? setPickedGroup : undefined\}/);
+  // 리뷰 반영: 지도는 좌표·이름·순번 문자열이 바뀔 때만 다시 그린다(시각 입력 때 확대·위치 초기화 방지)
+  assert.match(editor, /const mapStops = useMemo\(\(\) => mapStopsNow, \[mapStopsKey\]\);/);
+  // 리뷰 반영: 편집 칩 «반 이동»도 44px
+  assert.doesNotMatch(editor, /min-h-9/);
   // 마커 번호 = 카드 순번(stopRows 순서 + 1)
   assert.match(editor, /\.map\(\(r, i\) => \(\{ row: r, badge: String\(i \+ 1\) \}\)\)/);
 });

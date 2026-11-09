@@ -278,13 +278,14 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   const [pickedGroup, setPickedGroup] = useState<string | null>(null);
   const mapGroupKey = stopRows.some((r) => r.groupKey === pickedGroup) ? pickedGroup : stopRows[0]?.groupKey ?? null;
   const mapRows = stopRows.filter((r) => r.groupKey === mapGroupKey);
-  const mapStops = useMemo<RouteMapStop[]>(() => stopRows
+  const mapStopsNow: RouteMapStop[] = stopRows
     .map((r, i) => ({ row: r, badge: String(i + 1) }))
     .filter(({ row }) => row.groupKey === mapGroupKey && row.lat != null && row.lng != null)
-    .map(({ row, badge }) => ({ lat: row.lat!, lng: row.lng!, label: row.label, badge, kind: "stop" as const })),
-  // stopRows 는 ordered 에서 매번 새로 만들어지므로 ordered 를 기준으로 다시 계산한다(지도 다시 그리기 최소화).
+    .map(({ row, badge }) => ({ lat: row.lat!, lng: row.lng!, label: row.label, badge, kind: "stop" as const }));
+  // 지도는 «좌표·이름·순번»이 실제로 바뀔 때만 다시 그린다 — 시각만 고칠 때 지도 확대·위치가 초기화되지 않게(리뷰 반영).
+  const mapStopsKey = mapStopsNow.map((s) => `${s.badge}|${s.lat}|${s.lng}|${s.label}`).join(";");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [ordered, mapGroupKey]);
+  const mapStops = useMemo(() => mapStopsNow, [mapStopsKey]);
   // 휴대폰·좁은 화면에서는 지도를 만들지 않는다(카카오 지도 불러오기 생략). 처음 그릴 땐 false → 화면에 붙은 뒤 판정.
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -323,7 +324,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
             className="min-h-11 pl-2 pr-0.5 text-left text-[15px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
           {links.map((l) => (
             <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`} title="반 이동 · 재배정"
-              className="inline-flex min-h-9 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-1.5 text-[12px] font-black text-[var(--color-academy-on-primary)]">
+              className="inline-flex min-h-11 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-1.5 text-[12px] font-black text-[var(--color-academy-on-primary)]">
               <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none">swap_horiz</span>반 이동
             </button>
           ))}
@@ -446,7 +447,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           renderStopMeta={renderStopMeta}
           renderRider={renderRider}
           selectedGroupKey={wide ? mapGroupKey : null}
-          onSelectBlock={setPickedGroup}
+          // 지도가 없는 좁은 화면에서는 머리를 누를 이유가 없으니 글자만(버튼 아님).
+          onSelectBlock={wide ? setPickedGroup : undefined}
         />
       </AcademyTheme>
 
