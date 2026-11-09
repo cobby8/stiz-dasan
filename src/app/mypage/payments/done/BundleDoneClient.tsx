@@ -104,13 +104,14 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
                     <span className={`material-symbols-outlined text-3xl leading-none ${tone}`} aria-hidden="true">{icon}</span>
                     <div className="min-w-0">
                         <h1 className="text-lg font-black text-[var(--color-academy-ink)]">{heading}</h1>
-                        <p className="text-xs text-[var(--color-academy-muted)]">
-                            {state === "success" ? "청구 탭에서 납부 내역을 확인할 수 있어요."
-                                : state === "deposit" ? "아래 계좌로 합계를 입금하면 자동으로 납부 완료돼요."
-                                : state === "pending" ? (message || "중복 결제를 막기 위해 새 결제 전에 다시 확인해 주세요.")
-                                : state === "error" ? (message || "돈이 빠져나갔는데 이 화면이 보이면 학원으로 문의해 주세요.")
-                                : "잠시만 기다려 주세요."}
-                        </p>
+                        {/* 보조 문장은 할 일이 있을 때만(확인 중·실패). 완료·입금 안내는 아래 목록·계좌 안내가 대신한다 */}
+                        {(state === "pending" || state === "error") && (
+                            <p className="text-xs text-[var(--color-academy-muted)]">
+                                {state === "pending"
+                                    ? (message || "새로 결제하기 전에 «다시 확인»을 눌러 주세요.")
+                                    : (message || "돈이 빠져나갔다면 학원에 문의해 주세요.")}
+                            </p>
+                        )}
                     </div>
                 </div>
                 {state === "deposit" && order?.virtualAccount && (
