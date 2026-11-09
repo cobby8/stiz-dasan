@@ -36,6 +36,8 @@ const EASE = "cubic-bezier(.2,.8,.2,1)";
  * tops/heights = 끌기 시작 때 잰 같은 묶음 카드들의 문서 좌표 위치·높이. target = 지금 놓일 자리(묶음 안 순번).
  */
 type DragSession = {
+  /** 이 끌기를 시작한 포인터(손가락 하나·마우스) — 다른 손가락의 움직임·떼기는 무시한다. */
+  pointerId: number;
   cards: HTMLElement[]; tops: number[]; heights: number[];
   from: number; target: number; startDocY: number; pointerY: number;
   /** 다른 카드가 밀리는 거리 = 끄는 카드 높이 + 카드 사이 틈. */
@@ -45,6 +47,12 @@ type DragSession = {
   /** 끌기 시작 때 창에 건 Esc·스크롤 감시를 떼는 함수(함수는 렌더마다 새로 만들어지므로 건 그 함수를 기억해 둔다). */
   detach: () => void;
 };
+
+/**
+ * 눌렀지만 아직 들어 올리지 않은 상태 — LIFT_PX 이상 움직여야 끌기로 본다(가볍게 탭만 하면 카드가 떴다 내려앉는 깜빡임이 없다).
+ */
+type PendingDrag = { pointerId: number; row: UnifiedRow; cardEl: HTMLElement; startClientY: number; startScrollY: number };
+const LIFT_PX = 5;
 
 // 움직임 줄이기 설정을 켠 사람에게는 밀림·안착 애니메이션 없이 바로 자리만 바뀐다.
 function reducedMotion() {
@@ -100,22 +108,41 @@ export default function RunBoard({
   const latest = useRef({ rows, onDropOn, onDragKeyChange });
   latest.current = { rows, onDropOn, onDragKeyChange };
   const session = useRef<DragSession | null>(null);
+  const pending = useRef<PendingDrag | null>(null);
   const scrollFrame = useRef<number | null>(null);
+  // 안착 애니메이션 뒤 순서를 바꾸는 타이머 — 화면을 떠나면 지운다.
+  const settleTimer = useRef<number | null>(null);
 
-  // 같은 묶음(끌기가 허용되는 범위) 카드 요소들 — 화면 순서대로.
-  function groupCards(groupKey: string): HTMLElement[] {
-    const all = listRef.current?.querySelectorAll<HTMLElement>("[data-run-group]") ?? [];
+  // 끌기 범위 카드 요소들 — 화면 순서대로. «누른 카드가 든 블록(section)» 안의 같은 묶음 카드만.
+  // 왜 블록으로 좁히나? 같은 묶음이 «(이어서)» 블록으로 끊겨 사이에 다른 묶음이 끼면, 목록 전체에서 고를 때
+  // 블록 간 거리(수백 px)를 한 칸으로 계산해 끄는 중 카드가 크게 밀려 겹쳤다(리뷰 지적).
+  function groupCards(cardEl: HTMLElement, groupKey: string): HTMLElement[] {
+    const scope = cardEl.closest("section") ?? listRef.current;
+    const all = scope?.querySelectorAll<HTMLElement>("[data-run-group]") ?? [];
     return [...all].filter((el) => el.dataset.runGroup === groupKey);
   }
+  // 이 포인터 이벤트가 지금 끌기(또는 들어 올리기 대기)를 시작한 포인터인가 — 두 번째 손가락은 무시.
+  function ownPointer(event: PointerEvent<HTMLElement>) {
+    const id = session.current?.pointerId ?? pending.current?.pointerId;
+    return id != null && id === event.pointerId;
+  }
 
-  function beginDrag(event: PointerEvent<HTMLElement>, row: UnifiedRow, cardEl: HTMLElement | null) {
-    // 마우스 왼쪽 버튼(터치·펜은 0)만 끌기 — 오른쪽·가운데 버튼은 무시. 안착 애니메이션 중이면 새 끌기를 받지 않는다.
-    if (event.button !== 0 || session.current || !cardEl) return;
-    const cards = groupCards(row.groupKey);
-    const from = cards.indexOf(cardEl);
-    if (from < 0) return;
+  // 누르기 — 아직 들어 올리지 않고 «대기»만 한다(LIFT_PX 움직이면 liftDrag).
+  function pressDrag(event: PointerEvent<HTMLElement>, row: UnifiedRow, cardEl: HTMLElement | null) {
+    // 마우스 왼쪽 버튼(터치·펜은 0)만 끌기 — 오른쪽·가운데 버튼은 무시. 끌기·안착 중이면 새 누르기를 받지 않는다.
+    if (event.button !== 0 || session.current || pending.current || !cardEl) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    pending.current = { pointerId: event.pointerId, row, cardEl, startClientY: event.clientY, startScrollY: window.scrollY };
+  }
+
+  // 들어 올리기 — 같은 묶음 카드 위치를 재 두고 끌기 시작.
+  function liftDrag(p: PendingDrag, pointerY: number) {
+    pending.current = null;
+    const { row, cardEl } = p;
+    const cards = groupCards(cardEl, row.groupKey);
+    const from = cards.indexOf(cardEl);
+    if (from < 0) return;
     // 위치는 «문서 좌표»(화면 좌표 + 스크롤)로 재 둔다 — 자동 스크롤이 돌아도 계산이 그대로 맞는다.
     const sy = window.scrollY;
     const rects = cards.map((el) => el.getBoundingClientRect());
@@ -137,7 +164,8 @@ export default function RunBoard({
     window.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onScroll, { passive: true });
     const detach = () => { window.removeEventListener("keydown", onKey); window.removeEventListener("scroll", onScroll); };
-    session.current = { cards, tops, heights, from, target: from, startDocY: event.clientY + sy, pointerY: event.clientY, step: heights[from] + spacing, settling: false, detach };
+    // 시작점 = 처음 누른 자리(대기 중 움직인 5px 만큼 카드가 바로 따라붙는다).
+    session.current = { pointerId: p.pointerId, cards, tops, heights, from, target: from, startDocY: p.startClientY + p.startScrollY, pointerY, step: heights[from] + spacing, settling: false, detach };
     latest.current.onDragKeyChange(row.key);
     updateDrag();
   }
@@ -188,6 +216,13 @@ export default function RunBoard({
   }
 
   function moveDrag(event: PointerEvent<HTMLElement>) {
+    if (!ownPointer(event)) return;
+    // 아직 대기 중이면 LIFT_PX 이상 움직였을 때 들어 올린다.
+    const p = pending.current;
+    if (p) {
+      if (Math.abs(event.clientY - p.startClientY) < LIFT_PX) return;
+      liftDrag(p, event.clientY);
+    }
     const s = session.current;
     if (!s || s.settling) return;
     s.pointerY = event.clientY;
@@ -195,6 +230,14 @@ export default function RunBoard({
     // 가장자리에 들어오면 루프 시작(이미 돌고 있으면 그대로).
     if (scrollFrame.current == null) autoScrollStep();
   }
+  // 손가락 떼기(commit=true) · 취소(pointercancel·포인터 붙잡기 풀림 = false) — 그 끌기를 시작한 포인터만.
+  function endPointer(event: PointerEvent<HTMLElement>, commit: boolean) {
+    if (!ownPointer(event)) return;
+    // 들어 올리기 전에 뗐으면 = 그냥 탭 — 아무것도 바뀌지 않는다.
+    if (pending.current) { pending.current = null; return; }
+    finishDrag(commit);
+  }
+
   // 놓기(commit=true) / 취소(false) — 끄는 카드를 빈 자리(취소면 원래 자리)로 미끄러뜨린 뒤 데이터 순서를 한 번 바꾼다.
   function finishDrag(commit: boolean) {
     const s = session.current;
@@ -212,7 +255,8 @@ export default function RunBoard({
     // 취소(또는 제자리)면 밀렸던 카드들도 제자리로.
     if (target === from) cards.forEach((el, i) => { if (i !== from) el.style.transform = ""; });
     const targetKey = cards[target]?.dataset.runKey;
-    window.setTimeout(() => {
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null;
       // flushSync = 순서 바꾸기를 «지금 이 순간» 화면에 반영 → 바로 뒤에 transform 을 지워도 깜빡이지 않는다
       // (새 순서의 제자리 = 지금 카드들이 transform 으로 가 있는 자리).
       flushSync(() => {
@@ -230,10 +274,18 @@ export default function RunBoard({
       session.current = null;
     }, reduce ? 0 : SHIFT_MS + 10);
   }
-  // 화면을 떠나면(언마운트) 돌던 스크롤·키 감시를 멈춘다.
+  // 화면을 떠나면(언마운트) 돌던 스크롤·키 감시·안착 타이머를 멈추고, 바깥의 «끄는 중» 표시도 지운다
+  // (안착 타이머가 언마운트 뒤에 순서를 바꾸지 않게).
   useEffect(() => () => {
     stopAutoScroll();
-    session.current?.detach();
+    if (settleTimer.current != null) window.clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+    pending.current = null;
+    if (session.current) {
+      session.current.detach();
+      session.current = null;
+      latest.current.onDragKeyChange(null);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -242,11 +294,11 @@ export default function RunBoard({
     if (!editing || row.kind !== "REGULAR" || row.isTerminal) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest("button,input,a")) return;
-    beginDrag(event, row, event.currentTarget);
+    pressDrag(event, row, event.currentTarget);
   }
   // 관리자 손잡이(⠿) 끌기 시작 — 손잡이가 든 카드 줄(li)이 통째로 움직인다.
   function startHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
-    beginDrag(event, row, event.currentTarget.closest("li"));
+    pressDrag(event, row, event.currentTarget.closest("li"));
   }
 
   // ── ▲▼ 의 «미끄러지는» 이동 애니메이션(FLIP: 옮기기 전 위치를 기억 → 새 위치에서 거꾸로 출발해 제자리로) ──
@@ -312,9 +364,11 @@ export default function RunBoard({
           <button type="button" tabIndex={-1} aria-label={`${row.label} 끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요`} title="끌어서 순서 옮기기 · ▲▼ 버튼으로도 옮길 수 있어요"
             onPointerDown={(event) => startHandleDrag(event, row)}
             onPointerMove={moveDrag}
-            onPointerUp={() => finishDrag(true)}
+            onPointerUp={(event) => endPointer(event, true)}
             // 끌기 취소(전화 수신·시스템 제스처 등) — 순서는 그대로, 카드들이 제자리로 돌아간다.
-            onPointerCancel={() => finishDrag(false)}
+            onPointerCancel={(event) => endPointer(event, false)}
+            // 포인터 붙잡기가 풀려도(창 전환·요소 교체 등) 끌기가 허공에 남지 않게 취소한다. 정상 떼기 뒤에 오는 것은 이미 안착 중이라 무시된다.
+            onLostPointerCapture={(event) => endPointer(event, false)}
             // ⚠️ touch-none 클래스만으로는 안 된다 — academy-theme.css 의 `.academy-app :is(button, a) { touch-action: manipulation }`
             //    (레이어 밖 규칙)이 Tailwind 유틸리티를 이겨, 휴대폰에서 손가락을 움직이면 브라우저가 끌기를 취소(pointercancel)했다.
             //    인라인 style 은 그 규칙보다 우선한다.
@@ -356,8 +410,9 @@ export default function RunBoard({
         data-dragging={dragKey === row.key || undefined}
         onPointerDown={(event) => startCardDrag(event, row)}
         onPointerMove={moveDrag}
-        onPointerUp={() => finishDrag(true)}
-        onPointerCancel={() => finishDrag(false)}
+        onPointerUp={(event) => endPointer(event, true)}
+        onPointerCancel={(event) => endPointer(event, false)}
+        onLostPointerCapture={(event) => endPointer(event, false)}
         // ⚠️ 끌기 중 손가락 움직임을 화면 스크롤이 가로채지 않게 — 클래스(touch-none)만 믿지 않고 인라인으로도 건다.
         style={editable ? { touchAction: "none" } : undefined}
         id={focusKey && focusKey === row.key ? "run-focus" : undefined}

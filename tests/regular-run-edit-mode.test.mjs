@@ -72,8 +72,9 @@ test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속
   assert.match(board, /scrollFrame\.current = requestAnimationFrame\(autoScrollStep\)/);
   // 2026-11-09 3차(실시간 재배치): 놓기·취소(finishDrag) 첫머리에서 바로 정지 + 창 감시(Esc·스크롤) 해제.
   assert.match(board, /s\.settling = true;\s*stopAutoScroll\(\);\s*s\.detach\(\);/);
-  // 화면을 떠나면 스크롤 루프·창 감시 정지
-  assert.match(board, /useEffect\(\(\) => \(\) => \{\s*stopAutoScroll\(\);\s*session\.current\?\.detach\(\);/);
+  // 화면을 떠나면 스크롤 루프·안착 타이머·창 감시 정지
+  assert.match(board, /useEffect\(\(\) => \(\) => \{\s*stopAutoScroll\(\);\s*if \(settleTimer\.current != null\) window\.clearTimeout\(settleTimer\.current\);/);
+  assert.match(board, /if \(session\.current\) \{\s*session\.current\.detach\(\);/);
   // 스크롤로 카드 위치가 바뀌면 그 프레임에 끄는 카드·밀린 카드를 다시 맞춘다
   assert.match(board, /window\.scrollBy\(0, dy\);\s*updateDrag\(\);/);
 });
