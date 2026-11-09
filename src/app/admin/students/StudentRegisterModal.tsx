@@ -628,8 +628,8 @@ export default function StudentRegisterModal({
                                 onChange={(e) => {
                                     const on = e.target.checked;
                                     setMediaChecked(on);
-                                    // 켜면 동의 범위 3칸을 모두 켠다(«활용 동의» = 전체 동의). 끄면 범위도 비운다
-                                    setMediaInternal(on); setMediaGallery(on); setMediaInstagram(on);
+                                    // 켜면 내부 보관·갤러리만 켠다. 인스타그램(외부 공개)은 따로 확인받고 직접 켠다(옵트인). 끄면 범위도 비운다
+                                    setMediaInternal(on); setMediaGallery(on); setMediaInstagram(false);
                                 }}
                                 className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]"
                             />
