@@ -714,7 +714,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
       <div className="mt-4 flex justify-end gap-2">
         <button type="button" onClick={() => setDialog(null)} className="rounded-xl border border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)]">취소</button>
         <button type="button" disabled={busy} onClick={onSave}
-          className={`rounded-xl px-4 py-2 text-sm font-black text-white disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger)]" : "bg-[var(--color-academy-primary-hover)]"}`}>{busy ? "저장 중…" : saveLabel}</button>
+          className={`rounded-xl px-4 py-2 text-sm font-black text-white disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger-fill)]" : "bg-[var(--color-academy-primary-hover)]"}`}>{busy ? "저장 중…" : saveLabel}</button>
       </div>
     );
     const errBox = dialogErr && <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {dialogErr}</p>;
@@ -930,7 +930,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
           <button type="button" disabled={busy} onClick={() => void submitDialog("DELETE", { ids: entryIds(dialog.entry) }, `${label} 학생을 ${WEEKDAY_LABELS[dialog.weekday]}요일 명단에서 뺐습니다.`)}
             className="min-h-11 rounded-xl border border-[var(--color-academy-danger)] px-4 text-sm font-black text-[var(--color-academy-danger)] disabled:opacity-50">{WEEKDAY_LABELS[dialog.weekday]}요일만 빼기</button>
           <button type="button" disabled={busy} onClick={() => void submitDialog("DELETE", { ids: allIds }, `${label} 학생을 ${serviceMonth} 명단에서 모두 뺐습니다.`)}
-            className="min-h-11 rounded-xl bg-[var(--color-academy-danger)] px-4 text-sm font-black text-white disabled:opacity-50">{serviceMonth} 전체 요일 빼기 ({allIds.length}개 정류장)</button>
+            className="min-h-11 rounded-xl bg-[var(--color-academy-danger-fill)] px-4 text-sm font-black text-white disabled:opacity-50">{serviceMonth} 전체 요일 빼기 ({allIds.length}개 정류장)</button>
           <button type="button" onClick={() => setDialog(null)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-muted)]">취소</button>
         </div>
         {errBox}

@@ -889,7 +889,7 @@ export default function StudentManagementClient({
                         {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
                         <button
                             onClick={() => setShowExcelUpload(true)}
-                            className="min-h-11 bg-[var(--color-academy-success)] text-white px-3 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-success)] transition"
+                            className="min-h-11 border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-3 py-2 rounded-lg font-bold transition"
                         >
                             엑셀 업로드
                         </button>

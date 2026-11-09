@@ -10,8 +10,13 @@
   --color-academy-success-soft: #f0fdf4;
   --color-academy-warning: #b45309;
   --color-academy-warning-soft: #fffbeb;
-  --color-academy-danger: #b91c1c;
-  --color-academy-danger-soft: #fef2f2;
+  --color-academy-danger: #b91c1c;        /* 위험 «글자»·테두리 버튼 — 흰 바탕 6.47 */
+  --color-academy-danger-soft: #fef2f2;   /* 위험 배지 바탕·위험 버튼 올림 */
+  /* 2026-11-09 원장 «빨강이 애매하다» → 역할별로 나눴다. 벽돌빛 #b91c1c 를 큰 채움에 쓰면 탁해 보여서
+     채움은 맑은 빨강, 글자는 진한 빨강(대비 유지), 확인 상자 테두리는 연한 빨강. */
+  --color-academy-danger-fill: #dc2626;   /* 꽉 찬 위험 버튼(최종 확정만) — 흰 글자 4.83 */
+  --color-academy-danger-fill-hover: #b91c1c;
+  --color-academy-danger-line: #fecaca;   /* 위험 확인 상자의 얇은 테두리(장식선 — 왼쪽 띠가 위험색을 맡는다) */
   --color-academy-info: #1d4ed8;          /* 신설 — 보강·입금 확인 중·오늘만 변경 */
   --color-academy-info-soft: #eff6ff;
   --color-academy-neutral: #4b5563;       /* 신설 — 휴무·취소·환불·자차 */
@@ -195,14 +200,16 @@
   background: var(--color-academy-danger-soft);
 }
 
+/* 최종 확정 — 맑은 빨강 채움(올리면 진한 빨강). 흰 글자 대비 4.5 이상은 color-contrast 테스트가 지킨다 */
 .academy-app .academy-button-danger-solid {
-  border: 1px solid var(--color-academy-danger);
-  background: var(--color-academy-danger);
+  border: 1px solid var(--color-academy-danger-fill);
+  background: var(--color-academy-danger-fill);
   color: #ffffff;
 }
 
 .academy-app .academy-button-danger-solid:hover:not(:disabled) {
-  filter: brightness(0.92);
+  border-color: var(--color-academy-danger-fill-hover);
+  background: var(--color-academy-danger-fill-hover);
 }
 
 /* 글자만 있는 버튼(돌아가기·닫기·되돌리기) */

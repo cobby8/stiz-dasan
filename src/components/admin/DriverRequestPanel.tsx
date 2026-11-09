@@ -119,7 +119,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
               <div className="flex gap-2">
                 <button type="button" disabled={busy[req.id]}
                   onClick={() => resolve(req.id, "approve")}
-                  className="flex-1 h-11 rounded-xl bg-[var(--color-academy-success)] text-[15px] font-black text-white disabled:opacity-60 active:bg-[var(--color-academy-success)]">
+                  className="flex-1 h-11 rounded-xl bg-[var(--color-academy-primary)] text-[15px] font-black text-[var(--color-academy-on-primary)] disabled:opacity-60 active:bg-[var(--color-academy-primary-hover)]">
                   {busy[req.id] ? "처리 중…" : "✅ 승인"}
                 </button>
                 <button type="button" disabled={busy[req.id]}

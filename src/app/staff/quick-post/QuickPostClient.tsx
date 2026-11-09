@@ -346,7 +346,7 @@ export default function QuickPostClient({
               {canApprove && (
                 <Link
                   href="/admin/gallery"
-                  className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-success)] px-3 text-sm font-black text-white"
+                  className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 text-sm font-black"
                 >
                   관리자 갤러리 보기
                   <SymbolIcon name="arrow_forward" size={17} />
@@ -369,7 +369,7 @@ export default function QuickPostClient({
                       href={draft.instagramPermalink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-success)] px-3 text-sm font-black text-white"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 text-sm font-black"
                     >
                       인스타그램 게시물 보기
                       <SymbolIcon name="arrow_forward" size={17} />

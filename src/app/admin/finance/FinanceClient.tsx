@@ -1667,12 +1667,14 @@ export default function FinanceClient({
                         <span className="text-sm font-bold text-[var(--color-academy-ink)]">
                             {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(selectedTotal)}
                         </span>
-                        <div className="flex flex-wrap items-center justify-end gap-1">
+                        {/* contents: 버튼들이 막대 줄에 바로 놓인다 — 환불 확인을 펼치면(basis-full) 확인 줄만 아래로 내려가고
+                            «선택 해제»는 첫 줄 오른쪽(ml-auto)에 남아 확인 상자와 겹치거나 혼자 한 줄을 차지하지 않는다 */}
+                        <div className="contents">
                             <button
                                 type="button"
                                 onClick={() => setSelectedIds(new Set())}
                                 disabled={busy}
-                                className="min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                                className="ml-auto min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
                             >
                                 선택 해제
                             </button>
