@@ -8,10 +8,13 @@ import DriverRequestPanel from "@/components/admin/DriverRequestPanel";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 // 기사님 화면과 같은 카드 틀(RunBoard) + 같은 순수 조립 함수(buildRegularRunRows) — 관리자 화면 = 기사님 화면.
 import RunBoard from "@/components/shuttle/run/RunBoard";
+// PC 오른쪽 노선 지도 — 방학특강·옛 정규 배차가 쓰던 카카오 지도 부품 그대로(마커 번호 + 선).
+import { RouteMapCanvas, type RouteMapStop } from "@/components/seasonal/DispatchRouteMap";
 import styles from "@/components/shuttle/DriverWorkspace.module.css";
 import NewStudentDispatchPanel from "@/components/shuttle/assign/NewStudentDispatchPanel";
 import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
 import { buildRegularRunRows } from "@/lib/shuttle/regularRunRows";
+import { runBlockLabel } from "@/lib/shuttle/runBlocks";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
 import { formatRosterMonths, rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
@@ -269,36 +272,74 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     : laterMonths.length > 0 ? `${formatRosterMonths([serviceMonth, ...laterMonths])} 명단에 반영` : "다음 달은 이 달을 복사해 만들어요";
   const riderCount = new Set(stopRows.flatMap((r) => r.riders.map((x) => x.checkId))).size;
 
-  // 카드 머리 보조 줄(관리자) — 학생 수 + (편집 모드) «정류장 수정».
+  // ── PC 오른쪽 노선 지도(≥1024px) ──
+  // 블록 머리를 누르면 그 묶음(수업시간 × 등/하원)을 지도에 띄운다. 고른 게 없거나 요일이 바뀌어 사라지면 첫 묶음.
+  // 마커 번호 = 카드 순번(화면에 보이는 숫자 그대로) — 순서·시각을 바꾸면 지도도 바로 따라간다.
+  const [pickedGroup, setPickedGroup] = useState<string | null>(null);
+  const mapGroupKey = stopRows.some((r) => r.groupKey === pickedGroup) ? pickedGroup : stopRows[0]?.groupKey ?? null;
+  const mapRows = stopRows.filter((r) => r.groupKey === mapGroupKey);
+  const mapStops = useMemo<RouteMapStop[]>(() => stopRows
+    .map((r, i) => ({ row: r, badge: String(i + 1) }))
+    .filter(({ row }) => row.groupKey === mapGroupKey && row.lat != null && row.lng != null)
+    .map(({ row, badge }) => ({ lat: row.lat!, lng: row.lng!, label: row.label, badge, kind: "stop" as const })),
+  // stopRows 는 ordered 에서 매번 새로 만들어지므로 ordered 를 기준으로 다시 계산한다(지도 다시 그리기 최소화).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [ordered, mapGroupKey]);
+  // 휴대폰·좁은 화면에서는 지도를 만들지 않는다(카카오 지도 불러오기 생략). 처음 그릴 땐 false → 화면에 붙은 뒤 판정.
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // 카드 머리 보조 줄(관리자) — 보기 모드 = 학생 수. 편집 모드 = 한 줄 카드 오른쪽 «정류장 수정»(학생 수는 칩으로 보인다).
   function renderStopMeta(row: UnifiedRow) {
     return (
       <>
-        <span>{row.riders.length}명</span>
+        {!editing && <span>{row.riders.length}명</span>}
         {editing && row.kind === "REGULAR" && row.riders.length > 0 && (
           <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "stop", rowIds: row.riders.map((x) => x.checkId) })}
-            className="inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] underline underline-offset-2">
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit_location_alt</span>정류장 수정
+            aria-label={`${row.label} 정류장 수정`} title="정류장 수정(이름·위치·시각)"
+            className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] underline underline-offset-2">
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit_location_alt</span>정류장
           </button>
         )}
       </>
     );
   }
 
-  // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 이름(누르면 셔틀 정보 창) · ×(명단에서 빼기).
+  // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 칩: 이름(누르면 셔틀 정보 창) · ×(명단에서 빼기).
   // 반 이동 표시는 배정 할 일이라 두 모드 모두 누를 수 있다.
   function renderRider(row: UnifiedRow, rider: UnifiedRider) {
     const links = reassignByRowId.get(rider.checkId) ?? [];
+    // 편집 모드 = 한 줄 카드 안의 «칩»(이름 → 셔틀 정보 창 · × → 명단에서 빼기). 넓게 빈 학생 칸을 없앤다.
+    if (editing) {
+      return (
+        <span key={`${row.key}:${rider.checkId}`} className="inline-flex items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+          <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
+            className="min-h-11 pl-2 pr-0.5 text-left text-[15px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
+          {links.map((l) => (
+            <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`} title="반 이동 · 재배정"
+              className="inline-flex min-h-9 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-1.5 text-[12px] font-black text-[var(--color-academy-on-primary)]">
+              <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none">swap_horiz</span>반 이동
+            </button>
+          ))}
+          <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "remove", rowId: rider.checkId })} aria-label={`${rider.name} 명단에서 빼기`}
+            className="grid h-11 w-11 place-items-center text-[var(--color-academy-danger)] lg:w-8">
+            <span aria-hidden="true" className="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </span>
+      );
+    }
     return (
       <div key={`${row.key}:${rider.checkId}`} className={`${styles.rider} rounded-xl bg-[var(--color-academy-soft)]`}>
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
-              {editing ? (
-                <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
-                  className="min-h-11 break-all text-left text-[19px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
-              ) : (
-                <span className="break-all text-[19px] font-black text-[var(--color-academy-ink)]">{rider.name}</span>
-              )}
+              <span className="break-all text-[19px] font-black text-[var(--color-academy-ink)]">{rider.name}</span>
               {rider.grade && <span className="text-[14px] text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {links.map((l) => (
                 <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
@@ -308,14 +349,6 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
               ))}
             </div>
           </div>
-          {editing && (
-            <div className={styles.boardingActions}>
-              <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "remove", rowId: rider.checkId })} aria-label={`${rider.name} 명단에서 빼기`}
-                className="grid h-11 w-11 place-items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-danger)]">
-                <span aria-hidden="true" className="material-symbols-outlined text-[22px]">close</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -371,8 +404,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {message && <p role="status" className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{message}</p>}
       {error && <p role="alert" className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
 
+      {/* PC(≥1024px) = 왼쪽 운행표 · 오른쪽 고정 지도. 좁은 화면은 운행표만(지도 숨김). */}
+      <div className="mt-2 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-4">
       {/* 운행표 — 기사님 화면과 같은 카드(같은 CSS·같은 테마). 탑승 버튼 대신 편집 손잡이. */}
-      <AcademyTheme role="driver" className={`${styles.workspace} mx-auto mt-2`}>
+      <AcademyTheme role="driver" className={`${styles.workspace} mx-auto min-w-0`}>
         {editing ? (
           // 편집 중 고정 줄 — 긴 목록을 내려도 [저장]이 늘 보이게(sticky). 좁은 화면은 두 줄로 접힌다.
           <div className="sticky top-14 z-10 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] px-3 py-2">
@@ -410,8 +445,33 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           onTimeChange={(row, value) => setTimeOverride((t) => ({ ...t, [row.key]: value }))}
           renderStopMeta={renderStopMeta}
           renderRider={renderRider}
+          selectedGroupKey={wide ? mapGroupKey : null}
+          onSelectBlock={setPickedGroup}
         />
       </AcademyTheme>
+
+      {/* 노선 지도(PC 전용) — 고른 묶음의 정류장을 카드 순번대로 마커 + 점선. 내려도 늘 보이게 sticky. */}
+      {stopRows.length > 0 && (
+        <aside aria-label="노선 지도" className="hidden lg:sticky lg:top-[4.5rem] lg:block">
+          <div className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
+            <p className="flex flex-wrap items-center gap-x-1.5 px-3 py-2 text-[14px] font-black text-[var(--color-academy-ink)]">
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-[var(--color-academy-muted)]">map</span>
+              {mapRows[0] ? runBlockLabel(mapRows[0]) : "노선"}
+              <span className="text-[12px] font-bold text-[var(--color-academy-muted)]">정류장 {mapRows.length}곳</span>
+            </p>
+            {wide
+              ? <RouteMapCanvas start={null} end={null} stops={mapStops} heightClass="h-[58vh]" />
+              : <div className="h-[58vh] bg-[var(--color-academy-soft)]" />}
+            {mapStops.length < mapRows.length && (
+              <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-[12px] font-bold text-[var(--color-academy-warning)]">
+                위치가 없는 정류장 {mapRows.length - mapStops.length}곳은 지도에 안 보여요 — «정류장 수정»에서 위치를 정해 주세요.
+              </p>
+            )}
+            <p className="border-t border-[var(--color-academy-line)] px-3 py-2 text-[12px] font-bold text-[var(--color-academy-muted)]">왼쪽 묶음 머리를 누르면 그 노선을 보여 줘요.</p>
+          </div>
+        </aside>
+      )}
+      </div>
 
       {dialog?.kind === "student" && (
         <StudentShuttleDialog key={dialog.rowId} stops={stops} rowId={dialog.rowId} serviceMonth={serviceMonth} laterMonths={laterMonths} defaultScope={defaultScope}

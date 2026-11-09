@@ -18,9 +18,13 @@ const transpile = (src) => ts.transpileModule(src, {
 // CSS 모듈은 클래스 이름 그대로, 지도 링크 모듈은 실제 파일을 변환해 붙인다.
 const links = { exports: {} };
 new Function("require", "module", "exports", transpile(await readFile("src/lib/maps/coordinate-links.ts", "utf8")))(require, links, links.exports);
+// 묶음 나누기(순수 모듈)도 실제 파일을 변환해 붙인다.
+const blocksMod = { exports: {} };
+new Function("require", "module", "exports", transpile(await readFile("src/lib/shuttle/runBlocks.ts", "utf8")))(require, blocksMod, blocksMod.exports);
 const fakeRequire = (id) => {
   if (id.endsWith(".module.css")) return new Proxy({}, { get: (_t, k) => (k === "__esModule" ? false : String(k)) });
   if (id === "@/lib/maps/coordinate-links") return links.exports;
+  if (id === "@/lib/shuttle/runBlocks") return blocksMod.exports;
   return require(id);
 };
 const loaded = { exports: {} };
@@ -65,7 +69,9 @@ test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲�
 test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속, 끌기 끝·화면 떠나면 정지", async () => {
   const board = await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8");
   assert.match(board, /scrollFrame\.current = requestAnimationFrame\(autoScrollStep\)/);
-  assert.match(board, /function endHandleDrag\(\) \{\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
+  // 2026-11-09 2차: 놓을 때 삽입선 자리로 옮기려고 손가락 정보를 먼저 꺼내 둔다(그다음 바로 정지).
+  assert.match(board, /function endHandleDrag\(\) \{\s*const at = pointerAt\.current;\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
+  assert.match(board, /function cancelHandleDrag\(\) \{\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
   assert.match(board, /useEffect\(\(\) => stopAutoScroll, \[\]\)/);
   // 스크롤로 손가락 아래 카드가 바뀌면 그 프레임에 다시 맞춘다
   assert.match(board, /window\.scrollBy\(0, dy\);\s*placeUnderFinger\(\);/);
@@ -73,6 +79,9 @@ test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속
 
 test("기사님 모드는 이번 변경과 무관 — 손잡이·data-run-key 없이 옛 방식(카드 전체 끌기·넓은 시각 칸) 그대로", () => {
   const view = render({ mode: "driver", editing: false });
+  // 2026-11-09 2차: 기사님 화면에도 묶음 머리(글자만, 버튼 아님)가 붙는다 — 카드 안 마크업·탑승 버튼은 그대로.
+  assert.match(view, /<h3[^>]*>[\s\S]*16:30 수업 · 등원[\s\S]*정류장 2곳 · 학생 2명 · 16:10<\/span><\/h3>/);
+  assert.doesNotMatch(view, /aria-pressed|지도 보기|data-drop-line/);
   assert.match(view, /길안내/);
   assert.doesNotMatch(view, /drag_indicator|data-run-key/);
   const edit = render({ mode: "driver", editing: true });
@@ -95,8 +104,13 @@ test("관리자 화면 배선: [수정] 하나 → 편집 모드, 정류장 수�
   assert.match(editor, /<span className="text-\[12px\]">\{scopeHint\}<\/span>/);
   // 보기 모드에는 편집 버튼이 없다
   assert.match(editor, /\{editing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
-  assert.match(editor, /\{editing && \(\s*<div className=\{styles\.boardingActions\}>/);
-  assert.match(editor, /\{editing \? \(\s*<button type="button" disabled=\{savingOrder\} onClick=\{\(\) => openDialog\(\{ kind: "student"/);
+  // 2026-11-09 2차: 편집 모드 학생 = 한 줄 카드 안 칩(이름 → 셔틀 정보 창 · × → 빼기). 보기 모드 학생 줄엔 둘 다 없다.
+  const riderFn = editor.slice(editor.indexOf("function renderRider("), editor.indexOf("  return (\n    <div className=\"mx-auto max-w-6xl"));
+  const [chip, viewRider] = riderFn.split(/\n    \}\n    return \(/);
+  assert.ok(viewRider, "편집 칩(if (editing) { … })과 보기 줄이 나뉘어 있어야 한다");
+  assert.match(chip, /if \(editing\) \{\s*return \(\s*<span key=/);
+  assert.match(chip, /openDialog\(\{ kind: "student", rowId: rider\.checkId \}\)[\s\S]*openDialog\(\{ kind: "remove", rowId: rider\.checkId \}\)/);
+  assert.doesNotMatch(viewRider, /kind: "remove"|kind: "student"/);
   // 바꾼 순서·시각이 있으면 창을 열기 전에 먼저 저장(편집 모드 유지)
   assert.match(editor, /if \(!window\.confirm\("바꾼 순서·시각을 먼저 저장할까요\?"\)\) return;\s*if \(await saveOrder\(true\)\) open\(\);/);
   // 저장 안 한 변경이 없으면 이동 확인을 띄우지 않는다

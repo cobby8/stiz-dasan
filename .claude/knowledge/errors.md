@@ -116,4 +116,8 @@
 - **분류**: error
 - **발견자**: debugger
 - **내용**: 학부모 수강 변경(휴원) «신청하기»가 «동작 안 함»으로 신고됨. ① 오류(role=alert)는 화면 맨 위·접수 완료는 맨 아래라, 휴대폰에서 내려 버튼을 누른 사람에게 둘 다 안 보였다. 아이폰 날짜 고르기는 `min` 을 무시해 휴원 시작일 이전 복귀일이 골라지고, 그 거절 문구가 화면 밖에 떴다. ② `startTransition(async)` 안에서 `await` 뒤 부른 `router.refresh()` 는 끝날 때까지 기다려 주지 않아 pending 이 먼저 풀리고 «신청하기»가 다시 살아난다 → 다시 누르면 «이미 검토 중인 신청» 400. 해결: 결과 문구를 누른 버튼 바로 위로(notice 묶음), 접수 성공한 수강 등록은 새 내역이 올 때까지 잠금(`submittedFor`)+«신청 내역 다시 불러오기», 휴원 복귀일은 보내기 전에 시작일과 비교. 검사: `tests/enrollment-change-submit-feedback.test.mjs`(가짜 react 훅으로 컴포넌트 함수를 직접 불러 onClick 을 누른다 — react-dom 없이 상호작용 검사). 셔틀·결석·보강 신청 화면도 오류가 맨 위에 있어 같은 신고가 날 수 있다.
+### [2026-11-09] Tailwind `touch-none` 이 테마 CSS 에 져서 휴대폰 끌기가 바로 취소됨
+- **분류**: error
+- **발견자**: developer
+- **내용**: `academy-theme.css` 의 `.academy-app :is(button, a) { touch-action: manipulation }` 은 레이어 밖 규칙이라 `@layer utilities` 안의 Tailwind `touch-none` 을 이긴다. 관리자 운행표 손잡이(⠿, button)가 휴대폰에서 손가락을 움직이자마자 pointercancel 로 끌기가 끊겼다(마우스는 정상이라 PC 에선 안 보임). 해결: 손잡이에 인라인 `style={{ touchAction: "none" }}`. 버튼·링크에 touch-action/기타 속성을 Tailwind 로 걸 때 테마의 `:is(button, a)` 규칙과 겹치는지 먼저 본다. 확인법: Playwright `hasTouch` + CDP `Input.dispatchTouchEvent` 로 pointer 이벤트 순서 기록(scratchpad shuttle-blocks/drag-e2e.mjs).
 - **참조횟수**: 0
