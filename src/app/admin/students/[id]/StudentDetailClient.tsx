@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, useTransition, type FormEvent } from 
 import Link from "next/link";
 import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst } from "@/lib/datetime/kst";
+import { pickMonthSummary, toHhmm } from "@/lib/studentDetailFormat";
 import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
@@ -310,14 +311,6 @@ function getMonthlyPaymentInfo(history: StudentActivityData["monthlyHistory"][nu
     };
 }
 
-function getCurrentMonthHistory(monthlyHistory: StudentActivityData["monthlyHistory"]) {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    return monthlyHistory.find((history) => history.year === currentYear && history.month === currentMonth)
-        ?? monthlyHistory[0]
-        ?? null;
-}
 
 // 공통 카드 컨테이너 클래스 — 기존 앱 카드 관례를 그대로 사용(하드코딩 색 없음)
 // 학생의 정보와 편집 동선은 유지하고 역할 공통 카드 표면을 공유한다.
@@ -354,8 +347,9 @@ function formatShuttleConfirmedAt(value: Date | string | null): string {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// 배차용 셔틀 위치 한 방향(승차/하차) 블록 — 주소·좌표·확정일 + 위치 설정 버튼
-// loc이 없으면 "미설정" 빈 상태를 보여준다. 저장 로직은 부모(saveShuttleLocation)가 담당.
+// 배차용 셔틀 위치 한 방향(승차/하차) — 한 줄 행: 아이콘·라벨 · 장소명(또는 «미설정») · [위치 설정/수정]
+// 2026-11-09 원장 «좌측이 길다» — 큰 칸(주소·좌표 두 줄)을 한 줄로 줄였다. 도로명 주소·좌표·확정일은 장소명에 마우스를 올리면 보인다.
+// loc이 없거나 좌표가 없으면 «미설정». 저장 로직은 부모(saveShuttleLocation)가 담당.
 function ShuttleLocationBlock({
     label, icon, loc, onEdit, disabled,
 }: {
@@ -366,36 +360,34 @@ function ShuttleLocationBlock({
     disabled: boolean;
 }) {
     const hasCoord = loc && loc.latitude != null && loc.longitude != null;
-    const addr = loc ? (loc.roadAddress || loc.address || loc.name) : null;
+    // 한 줄에는 사람이 부르는 장소명을 먼저(없으면 주소) 보여준다
+    const place = loc ? (loc.name || loc.roadAddress || loc.address) : null;
+    const addr = loc ? (loc.roadAddress || loc.address) : null;
+    const detail = hasCoord
+        ? [addr, `📍 ${loc!.latitude!.toFixed(6)}, ${loc!.longitude!.toFixed(6)}`, loc!.confirmedAt ? `${formatShuttleConfirmedAt(loc!.confirmedAt)} 확정` : null]
+            .filter(Boolean).join(" · ")
+        : undefined;
     return (
-        <div className="rounded-xl border border-[var(--color-academy-line)] p-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-[var(--color-academy-ink)]">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
-                        <SymbolIcon name={icon} size={14} />
-                    </span>
-                    {label}
-                </span>
-                <button
-                    onClick={onEdit}
-                    disabled={disabled}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
-                >
-                    <SymbolIcon name={hasCoord ? "edit_location" : "add_location_alt"} size={13} />
-                    {hasCoord ? "위치 수정" : "위치 설정"}
-                </button>
-            </div>
+        <div className="flex min-h-11 items-center gap-2 py-1">
+            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
+                <SymbolIcon name={icon} size={14} />
+            </span>
+            <span className="w-8 shrink-0 text-[13px] font-bold text-[var(--color-academy-ink)]">{label}</span>
             {hasCoord ? (
-                <div className="space-y-0.5 pl-8">
-                    <p className="text-[13px] text-[var(--color-academy-ink)]">{addr || "주소 미상"}</p>
-                    <p className="text-xs text-[var(--color-academy-faint)]">
-                        📍 {loc!.latitude!.toFixed(6)}, {loc!.longitude!.toFixed(6)}
-                        {loc!.confirmedAt ? ` · ${formatShuttleConfirmedAt(loc!.confirmedAt)} 확정` : ""}
-                    </p>
-                </div>
+                <span title={detail} className="min-w-0 flex-1 truncate text-[13px] text-[var(--color-academy-ink)]">{place || "주소 미상"}</span>
             ) : (
-                <p className="pl-8 text-[12px] text-[var(--color-academy-faint)]">{label} 위치 미설정</p>
+                <span className="min-w-0 flex-1 text-xs text-[var(--color-academy-faint)]">미설정</span>
             )}
+            <button
+                type="button"
+                onClick={onEdit}
+                disabled={disabled}
+                aria-label={`${label} ${hasCoord ? "위치 수정" : "위치 설정"}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+            >
+                <SymbolIcon name={hasCoord ? "edit_location" : "add_location_alt"} size={13} />
+                {hasCoord ? "위치 수정" : "위치 설정"}
+            </button>
         </div>
     );
 }
@@ -1004,7 +996,11 @@ export default function StudentDetailClient({
     const representativeStatusInfo = getEnrollmentStatusInfo(representativeStatus);
     const totalPaid = payments.filter(p => p.status === "PAID").reduce((s, p) => s + p.amount, 0);
     const unpaid = payments.filter(p => p.status === "PENDING" || p.status === "OVERDUE");
-    const currentMonthHistory = getCurrentMonthHistory(monthlyHistory);
+    // 요약 칸에 보여줄 달 — 이번 달(KST) 장부가 있으면 그 달, 없으면 최근 달(isThisMonth=false → 라벨을 «최근 장부»로)
+    // 예전엔 기기 시계로 이번 달을 찾고, 없으면 최근 달을 «이번 달»이라고 보여줘서 11월에 9월이 떴다.
+    const monthSummary = pickMonthSummary(monthlyHistory, todayKst());
+    const currentMonthHistory = monthSummary?.row ?? null;
+    const isThisMonth = monthSummary?.isThisMonth ?? false;
     const currentMonthPaymentInfo = currentMonthHistory ? getMonthlyPaymentInfo(currentMonthHistory) : null;
     // 장부 수납(시트 원장) — 금액/청구/셔틀 신호가 있는 월만 노출
     const ledgerHistory = monthlyHistory.filter(
@@ -1161,7 +1157,8 @@ export default function StudentDetailClient({
                         <SymbolIcon name="account_balance_wallet" size={22} />
                     </div>
                     <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-academy-faint)]">이번 달 수납</p>
+                        {/* 이번 달 장부가 없으면 최근 달을 보여주므로 «이번 달»이라 부르지 않는다 */}
+                        <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-academy-faint)]">{isThisMonth ? "이번 달 수납" : "최근 장부 수납"}</p>
                         {currentMonthHistory ? (
                             <>
                                 <p className="flex items-center gap-1.5 text-lg font-extrabold text-[var(--color-academy-ink)]">
@@ -1284,18 +1281,9 @@ export default function StudentDetailClient({
 
                     {/* 셔틀 (배차용 실제 위치 — StudentShuttleLocation) */}
                     <div className={CARD_CLASS}>
-                        <SectionTitle
-                            icon="directions_bus"
-                            title="셔틀 위치 (배차용)"
-                            right={
-                                (pickupLoc || dropoffLoc) ? (
-                                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">설정됨</span>
-                                ) : (
-                                    <span className="rounded-full px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">미설정</span>
-                                )
-                            }
-                        />
-                        <div className="space-y-2">
+                        {/* 설정됨/미설정 배지는 아래 두 줄이 이미 말해 주므로 뺐다(2026-11-09 정리) */}
+                        <SectionTitle icon="directions_bus" title="셔틀 위치 (배차용)" />
+                        <div className="-my-1 divide-y divide-[var(--color-academy-line)]">
                             {/* 승차(PICKUP) */}
                             <ShuttleLocationBlock
                                 label="승차"
@@ -1320,19 +1308,20 @@ export default function StudentDetailClient({
                         {shuttleNotice && !shuttleError && (
                             <p role="status" className="mt-2 text-xs font-semibold text-[var(--color-academy-success)]">{shuttleNotice}</p>
                         )}
-                        {/* 신청서 희망 셔틀(시트 장부)은 참고용 작은 줄로만 남긴다(혼동 방지) */}
-                        {currentMonthHistory?.shuttle.needed && (
-                            <p className="mt-2 border-t border-[var(--color-academy-line)] pt-2 text-xs text-[var(--color-academy-faint)]">
-                                신청서 희망: 승차 {currentMonthHistory.shuttle.pickup || "미입력"}
-                                {currentMonthHistory.shuttle.preferredTime ? ` (${currentMonthHistory.shuttle.preferredTime})` : ""}
-                                {" · 하차 "}{currentMonthHistory.shuttle.dropoff || "승차와 동일"}
-                                {` · ${formatMonthLabel(currentMonthHistory)} 기준`}
-                            </p>
-                        )}
+                        {/* 신청서 희망 셔틀(시트 장부)은 참고용 한 줄로만 남긴다(혼동 방지). 시각은 «오후 3:45:00» → «15:45», 넘치면 말줄임 + 마우스 올리면 전체 */}
+                        {currentMonthHistory?.shuttle.needed && (() => {
+                            const hope = currentMonthHistory.shuttle;
+                            const hopeTime = toHhmm(hope.preferredTime);
+                            // 잘려도 시각이 보이게 «희망(9월) 15:45 · 승차 … · 하차 …» 순서로 쓴다
+                            const hopeMonth = currentMonthHistory.month ? `${currentMonthHistory.month}월` : formatMonthLabel(currentMonthHistory);
+                            const hopeText = `신청서 희망(${hopeMonth})${hopeTime ? ` ${hopeTime}` : ""} · 승차 ${hope.pickup || "미입력"} · 하차 ${hope.dropoff || "승차와 동일"}`;
+                            return (
+                                <p title={hopeText} className="mt-2 truncate border-t border-[var(--color-academy-line)] pt-2 text-xs text-[var(--color-academy-faint)]">
+                                    {hopeText}
+                                </p>
+                            );
+                        })()}
                     </div>
-
-                    {/* 학생을 다시 검색하지 않고 현재 학생의 학부모 요청 링크만 관리한다. */}
-                    <ParentRequestLinkPanel studentId={student.id} studentName={student.name} />
 
                     {/* 메모 */}
                     <div className={CARD_CLASS}>
@@ -1352,7 +1341,7 @@ export default function StudentDetailClient({
                         <textarea
                             value={memo}
                             onChange={e => { setMemo(e.target.value); setMemoSaved(false); }}
-                            rows={4}
+                            rows={3}
                             placeholder="특이사항·건강 이슈"
                             className="w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                         />
@@ -1389,26 +1378,6 @@ export default function StudentDetailClient({
                     {/* ===== 개요 탭 ===== */}
                     {activeTab === "overview" && (
                         <div className="space-y-4">
-                            <div className={CARD_CLASS}>
-                                <SectionTitle icon="checkroom" title="유니폼 보유 정보" right={<span className="text-xs text-[var(--color-academy-faint)]">세 시트·사이트 주문 대조</span>} />
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">상태
-                                        <select value={uniformForm.status} onChange={(e) => setUniformForm((v) => ({ ...v, status: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`}>
-                                            <option value="">미확인</option><option value="보유">보유</option><option value="미보유">미보유</option><option value="신청">신청</option><option value="주문">주문</option><option value="수령완료">수령완료</option><option value="미수령">미수령</option><option value="확인보류">확인보류</option><option value="미신청">미신청</option><option value="해당없음">해당없음</option>
-                                        </select>
-                                    </label>
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">출처<input value={uniformForm.source} onChange={(e) => setUniformForm((v) => ({ ...v, source: e.target.value }))} placeholder="가입신청서 · 유니폼 신청서 · 사이트 주문" className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">신청일<input type="date" value={uniformForm.appliedAt} onChange={(e) => setUniformForm((v) => ({ ...v, appliedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">주문일<input type="date" value={uniformForm.orderedAt} onChange={(e) => setUniformForm((v) => ({ ...v, orderedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">수령일<input type="date" value={uniformForm.receivedAt} onChange={(e) => setUniformForm((v) => ({ ...v, receivedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
-                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">대조 메모<input value={uniformForm.note} onChange={(e) => setUniformForm((v) => ({ ...v, note: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
-                                </div>
-                                <div className="mt-3 flex items-center justify-between gap-3">
-                                    <p className="text-xs text-[var(--color-academy-faint)]">미확인 학생은 추측하지 않고 확인보류로 남깁니다.</p>
-                                    <button type="button" disabled={uniformSaving} onClick={() => { setUniformSaving(true); setUniformFeedback(null); void updateStudentUniform(student.id, uniformForm).then(() => setUniformFeedback("저장되었습니다.")).catch((e) => setUniformFeedback(adminErrorText(e, "유니폼 정보를 저장하지 못했습니다."))).finally(() => setUniformSaving(false)); }} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
-                                </div>
-                                {uniformFeedback && <p className="mt-2 text-xs font-bold text-[var(--color-academy-ink)]">{uniformFeedback}</p>}
-                            </div>
                             <div className={CARD_CLASS}>
                                 <SectionTitle
                                     icon="menu_book"
@@ -1498,8 +1467,8 @@ export default function StudentDetailClient({
                             <div className={CARD_CLASS}>
                                 <SectionTitle
                                     icon="summarize"
-                                    title="이번 달 요약"
-                                    right={currentMonthHistory && <span className="text-xs font-bold text-[var(--color-academy-faint)]">{formatMonthLabel(currentMonthHistory)}</span>}
+                                    title={isThisMonth ? "이번 달 요약" : "최근 장부 요약"}
+                                    right={currentMonthHistory && <span className="text-xs font-bold text-[var(--color-academy-faint)]">{formatMonthLabel(currentMonthHistory)}{isThisMonth ? "" : " 기준 · 이번 달 기록 없음"}</span>}
                                 />
                                 {currentMonthHistory ? (
                                     <div className="grid gap-3 sm:grid-cols-2">
@@ -1538,6 +1507,31 @@ export default function StudentDetailClient({
                                     <EmptyState text="최신 월별 이력이 없습니다." />
                                 )}
                             </div>
+
+                            {/* 유니폼은 가끔 고치는 정보라 자주 보는 수강 반·요약 아래로 내렸다(2026-11-09 정리) */}
+                            <div className={CARD_CLASS}>
+                                <SectionTitle icon="checkroom" title="유니폼 보유 정보" right={<span className="text-xs text-[var(--color-academy-faint)]">세 시트·사이트 주문 대조</span>} />
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">상태
+                                        <select value={uniformForm.status} onChange={(e) => setUniformForm((v) => ({ ...v, status: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`}>
+                                            <option value="">미확인</option><option value="보유">보유</option><option value="미보유">미보유</option><option value="신청">신청</option><option value="주문">주문</option><option value="수령완료">수령완료</option><option value="미수령">미수령</option><option value="확인보류">확인보류</option><option value="미신청">미신청</option><option value="해당없음">해당없음</option>
+                                        </select>
+                                    </label>
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">출처<input value={uniformForm.source} onChange={(e) => setUniformForm((v) => ({ ...v, source: e.target.value }))} placeholder="가입신청서 · 유니폼 신청서 · 사이트 주문" className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">신청일<input type="date" value={uniformForm.appliedAt} onChange={(e) => setUniformForm((v) => ({ ...v, appliedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">주문일<input type="date" value={uniformForm.orderedAt} onChange={(e) => setUniformForm((v) => ({ ...v, orderedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">수령일<input type="date" value={uniformForm.receivedAt} onChange={(e) => setUniformForm((v) => ({ ...v, receivedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">대조 메모<input value={uniformForm.note} onChange={(e) => setUniformForm((v) => ({ ...v, note: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1`} /></label>
+                                </div>
+                                <div className="mt-3 flex items-center justify-between gap-3">
+                                    <p className="text-xs text-[var(--color-academy-faint)]">미확인 학생은 추측하지 않고 확인보류로 남깁니다.</p>
+                                    <button type="button" disabled={uniformSaving} onClick={() => { setUniformSaving(true); setUniformFeedback(null); void updateStudentUniform(student.id, uniformForm).then(() => setUniformFeedback("저장되었습니다.")).catch((e) => setUniformFeedback(adminErrorText(e, "유니폼 정보를 저장하지 못했습니다."))).finally(() => setUniformSaving(false)); }} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
+                                </div>
+                                {uniformFeedback && <p className="mt-2 text-xs font-bold text-[var(--color-academy-ink)]">{uniformFeedback}</p>}
+                            </div>
+
+                            {/* 학부모 요청 링크 — 가끔 쓰는 기능이라 좌측 레일에서 개요 맨 아래로 옮겼다(좌우 높이 맞춤). 현재 학생의 링크만 관리한다. */}
+                            <ParentRequestLinkPanel studentId={student.id} studentName={student.name} />
                         </div>
                     )}
 

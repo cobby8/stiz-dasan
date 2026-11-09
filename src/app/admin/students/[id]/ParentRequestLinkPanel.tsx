@@ -61,11 +61,12 @@ export default function ParentRequestLinkPanel({ studentId, studentName }: { stu
   }
 
   return (
-    <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-extrabold text-[var(--color-academy-ink)]">학부모 요청 링크</h3>
-          <p className="mt-1 text-xs leading-5 text-[var(--color-academy-muted)]">학부모가 요청 내용을 확인해 제출하며, 관리자 승인 전에는 반영되지 않습니다.</p>
+    // 2026-11-09 정리: 설명 두 줄 → 한 줄(제목 옆 작은 글씨). 학생 상세 «개요» 탭 맨 아래에 놓인다.
+    <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 text-xs text-[var(--color-academy-muted)]">
+          <h3 className="mr-2 inline text-sm font-extrabold text-[var(--color-academy-ink)]">학부모 요청 링크</h3>
+          관리자가 승인해야 반영됩니다.
         </div>
         <button type="button" disabled={isPending} onClick={createLink} className="min-h-9 shrink-0 rounded-lg bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white disabled:opacity-50">
           {isPending ? "처리 중…" : "링크 생성"}

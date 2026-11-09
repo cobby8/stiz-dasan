@@ -90,38 +90,13 @@
 - components/seasonal/RouteSection.tsx:695·698·699·759 — 치환 때 `dark:…${tlBtn}` / `dark:…${timeOrdered ? …}` 의 `${` 까지 지워짐(813909ac). 695/698/699: 클래스 끝이 `disabled:opacity-50}` 가 되어 비활성 흐림·시간순 보기 min-h-11(터치 44px) 사라짐 → `disabled:opacity-50${tlBtn}` 로. 759: `${timeOrdered` 가 빠져 `? " w-full bg-white" : ""}` 가 글자 그대로 클래스가 됨(항상 w-full, 시간순 bg-white 없음) → `` border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}` `` 로. 같은 유형 다른 파일 0(파일별 `${` 개수 비교)
 🟡 권장: DispatchRouteMap.tsx:40 getComputedStyle 값이 빈 문자열일 때 대비 `|| "#1d4ed8"` 기본값 / RegularRouteSection 화살표 칸 `${"…"}` 은 상수 문자열로 단순화(동작 무관)
 
-### 리뷰 결과 (reviewer · 기간 결석, claude/absence-period 미커밋)
-📊 종합 판정: 통과(필수 0 · 권장 4). tsc 0 · absence-period-plan+kst 가드+scheduled-enrollment-ui 29-0. studentMerge/tables.test 1건 실패는 기존 누락 5개(UniformFreeGrant 등) — 이번 변경 무관
-✅ 잘된 점: 전역 잠금(lockCompensation)+FOR UPDATE+ON CONFLICT DO NOTHING, 취소 UPDATE 에 periodId·reportedByUserId IS NULL 재조건, 정산(모든 resolution)·보강(workbench-absence 와 같은 AT TIME ZONE 1회) 보호, 복귀일 당일 제외, 겹침 [시작,복귀), 날짜 전부 문자열·to_char, 연간일정 빈 달 추측 안 함, 크론 CRON_SECRET·runner 분리로 크론 함수 미노출, requireAdmin 전부, 반 id 수강중 검증, 마이그레이션 IF NOT EXISTS·RLS·되돌림 SQL, 알림 제외 조건이 학부모 행(reportedByUserId 있음)·출석부 행은 안 막음
-🟡 권장:
-- absence-period-service.ts:95·98 — 새로 수강 시작한 반은 coveredUntil «이후»만 채워짐(이미 덮은 최대 ~2달은 빠짐). runner/route 주석 «새 반 수업일도 채운다»와 다름 → 반 추가 시 처음부터 다시 보거나 주석 정정
-- absence-period-service.ts:180·197 — ENDED 기간을 «등록 취소»하면, 복귀 후 출석부가 되살린 행(attendance-absence-reason.ts:162 가 periodId 를 안 지움)까지 취소됨 → 취소 UPDATE 에 `note LIKE '기간 결석 · %'` 추가 또는 출석부 되살림에서 periodId=NULL
-- 수강 종료한 반의 이미 만든 미래 결석 행은 그대로 남음(셔틀·청구 영향 적음, 참고)
-- AbsencePeriodPanel.tsx:32·177 — 복귀일 지난 ACTIVE 기간이 «복귀» 칩인데 «복귀 처리» 버튼 노출 / :391 min=startDate 인데 시작일은 거부(min 을 다음 날로)
-참고(기존 코드·범위 밖): parent-regular-absence.ts:255-261 ON CONFLICT 의 `OR reason IS DISTINCT` 때문에 학부모가 다른 사유로 신고하면 CONFIRMED(기간 결석 포함) 행이 REPORTED 로 덮임 — 주석 «확정건은 못 덮게»와 다름
-
-### 테스트 결과 (tester · 기간 결석, claude/absence-period 미커밋)
-| 테스트 항목 | 결과 | 비고 |
-|---|---|---|
-| tsc --noEmit | ✅ 통과 | 0 |
-| absence-period-plan.test | ✅ 통과 | 19-0 |
-| test:guards(studentVisibility) | ✅ 통과 | 5-0 |
-| 전체 tests/*.test.mjs | ✅ 통과 | 3648-0 |
-| studentMerge/tables.test.ts | ⚠️ 기존 실패 | 누락 5개(UniformFreeGrant 등) — RegularAbsencePeriod 는 등록됨, 이번 변경 무관 |
-| 순수 경계(휴무 시작·복귀일 당일 제외·12월→1/31·startsOn·11/30 월 경계·빈 달·이어 계산·KST 15:00 UTC) | ✅ 통과 | TZ=UTC / 로컬 KST 동일 |
-| 임시 Postgres 18(54331): 마이그레이션 2회·등록→복귀→겹침→크론 연장→목록→취소→SET NULL→CHECK | ✅ 통과 | 로컬 KST·TZ=UTC 2회 |
-📊 종합: 7개 중 6개 통과 / 실패 0 (기존 실패 1)
-
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
-| 11-09 | developer(기간 결석 재검수 1건): 취소 행 되살리기는 처음 등록에서만, 크론 연장·복귀 처리는 일부러 취소한 날 건너뜀. tsc·관련 96·실DB 통과 | 검수 대기 |
-| 11-09 | reviewer(기간 결석 권장 1·2·4 반영분 재검수): 통과 — 필수 0. 출석부 되살림의 periodId=NULL 은 취소된 행에만·표 없으면 생략이라 기존 흐름 무변경. 크론 매일 재확인은 기간 수가 적어 부담 작음. 권장 1: 시작일부터 다시 보므로 관리자·학부모·출석부가 취소한 «기간 밖» 행(periodId NULL)을 크론이 기간 결석으로 되살림(service.ts REACTIVATE 분기). tsc 0·관련 51-0 | 통과 |
-| 11-09 | developer(기간 결석 검수 반영 3건): 반마다 시작일부터 재계산(기간 도중 새 반·개별 취소 유지)·크론이 복귀 전 기간 매일 재확인, 취소 UPDATE 에 note «기간 결석 · » 조건, 출석부 되살리기에서 periodId 끊기(표 있을 때만), 화면 «복귀함»·복귀일 최소 시작일+1. tsc·전체 3652·실DB 통과 | 검수 대기 |
-| 11-09 | tester(기간 결석 미커밋): tsc 0·plan 19-0·가드 5-0·전체 3648-0·경계 9종·임시 PG 흐름 2회(KST/UTC) 통과. tables.test 기존 실패만 | 통과 |
-| 11-09 | reviewer(기간 결석 미커밋): 통과 — 필수 0·권장 4(새 반 기존 구간 누락·ENDED 취소 시 출석부 되살린 행·종료 반 미래 행·패널 버튼/min). 기존 학부모 ON CONFLICT 덮어쓰기 참고. tsc 0·관련 29-0 | 통과 |
-| 11-09 | developer(기간 결석, claude/absence-period 미커밋): RegularAbsencePeriod 표+RegularAbsence.periodId 마이그레이션(20261109180000, PM apply_migration 필요·코드보다 먼저), 순수 absence-period-plan+db 연결부 service+runner, 액션 4종, 크론 /api/cron/absence-periods(15:40 UTC), 학생 상세 수강·출결 탭 카드. 알림 재조정에서 기간 행 제외. tsc·새 테스트 19·관련 95·임시 Postgres 실행 검증 통과 | 검수 대기 |
+| 11-09 | 기간 결석(f7aa34a8): RegularAbsencePeriod+periodId(운영 적용), 학생 상세 수강·출결 카드, 크론 /api/cron/absence-periods. developer 구현·reviewer 2회 통과·tester 전체 3648-0·임시 PG 흐름 통과. 크론 연장은 사람이 취소한 날 안 되살림 | 완료 |
+| 11-09 | developer(관리자 학생 상세 좌우 정리, 원장 «좌측 길다»): 좌측 = 연락처·보호자·셔틀·메모, 학부모 요청 링크는 개요 맨 아래로·개요 순서 수강 반→요약→유니폼. 보호자 계정 전화 회색 상자→한 줄+ⓘ, 보호자 버튼 줄 합침, 셔틀 승차/하차 한 줄 행·배지 삭제·«신청서 희망(9월) 15:45 · …» 한 줄, 요청 링크 설명 1줄, 메모 4→3줄. 9월 원인 = 기기 시계로 이번 달 찾고 없으면 최근 달을 «이번 달»로 표기 → todayKst+pickMonthSummary, 아니면 «최근 장부 요약/수납». 1366px 좌 1331→934·우 811→905. tsc 0·tests 3632-0 | 완료(검수 대기) |
+| 11-09 | debugger(원장 «휴원 신청하기 동작 안 함»): 서버·API·휴원 판정은 정상(코드상). 화면 원인 — 오류는 맨 위·접수 완료는 맨 아래라 휴대폰에서 안 보임(아이폰 날짜 min 무시 → 시작일 이전 복귀일 거절 문구가 화면 밖), 접수 직후 refresh 전 «신청하기» 재활성 → 두 번째 누름 «이미 검토 중» 400. EnrollmentChangeClient: 결과 문구 버튼 바로 위·접수 후 잠금(submittedFor)·복귀일 사전 확인. 신규 tests/enrollment-change-submit-feedback.test.mjs(옛 코드 4-fail 재현). tsc 0·tests 3633-0·studentVisibility 5-0·KST 가드 통과. errors.md 기록 | 완료(커밋, 미푸시) |
 | 11-09 | reviewer(색상 4~7·마무리 99710062..4cde00e5, 스크립트로 색/비색 분류): 수정 필요 — RouteSection 4줄 `${` 유실(비활성 흐림·44px·시간순 칸 클래스 깨짐). 그 외 색 외 변경 전부 의도·로직 무변경·기준선 정확. tsc 0·tests 3629-0 | 수정 필요(필수 1·권장 2) |
 | 11-09 | developer(색상 4단계 학부모 화면): mypage·account·payments·components/parent 23파일 하드코딩 색 797→0(기준선 12341→11544), dark: 삭제, 장식 아이콘·알림 분류 중립·셔틀 변경 목록 파랑 남용 정리·셔틀 상태 statusTones 뜻(접수 warning·준비 info)·«중요» danger→warning·별점 ink·주 색 글자→ink. payments/review/* 는 academy-app 밖+토스 심사 중이라 제외. tsc 0·tests 3629-0 | 완료 |
 | 11-09 | developer(색상 정리 5단계 선생님·기사님): 하드코딩 색 630건 → 토큰·statusTones, dark: 삭제, 기준선 12,341→11,711, 리뷰 지적 2건(기한 지난 미납 위험·미납 배지 4px) 반영. tsc 0·tests 3629-0·shuttle 159-0 | 완료(커밋, 미푸시) |
@@ -129,3 +104,6 @@
 | 11-09 | developer(일정 달력 색 구분, 원장 «수업·출석·지각 색 구분 안 돼»): 출석 초록 채운 점·지각 주황 빈 고리·결석 빨강 ×·행사 파랑 별·수업 연청회 칸·휴무 회색 칸 «휴»·오늘 검정 굵은 테두리, 범례 같은 부품. 토큰 --color-academy-cal-* (academy-theme.css) 신설. tsc 0·tests 3617-0 | 완료 |
 | 11-09 | reviewer(결제 화면 정리 3922555d): 통과 — 조건 분기·API·금액·토스 호출 무변경 확인, tsc 0·tests 3611-0. 권장: 복사 버튼 aria-label 고정이라 «복사됨» 못 읽음(3곳)·«결제하면 바로 납부 완료» 무통장과 충돌·카페24 반영 안내 사라짐·청구 탭 머리말 «알려 주면 빨라요» 빠짐·커밋 메시지 «면세» 안내 없음 | 통과(권장 5) |
 | 11-09 | developer 수정 1차(일정 탭 리뷰 A-1·A-2): 옛 해시 #parent-absence-hub → /mypage/regular-absence, 소식 공지 고정(isPinned)은 3개월 지나도 보이고 3개 안에서 맨 앞 + 테스트. scratchpad 정리(끝난 검수 섹션·해결된 N-1/C-1 삭제, 로그 10건) | 완료(커밋, 미푸시) |
+| 11-09 | developer(일정 탭 개편·소식 공지·홈 문구, 원장 지시): 일정 = 한 달 달력(연간일정 행사·휴무 + 우리 아이 수업일 + 출결)·수강 반·셔틀 배정, 수납 기록·신청 줄 제거(수강 변경 신청 → «⋯» 메뉴), HistoryClient 삭제. 소식 공지 3개월·3개+더보기. 홈 줄바꿈 2줄·문구 정리. tsc 0·tests 3612-0·studentVisibility 5-0·KST 가드 통과 | 완료(커밋, 미푸시) |
+| 11-09 | developer(원장 점검 «시간 수정 없음·드래그로 이동»): 관리자 정규 운행표 = 평소 보기만, 화면 위 [수정] → 편집 모드(카드마다 시각 칸·손잡이 ⠿ 끌기(터치=elementFromPoint, 손잡이만 touch-none)·▲▼ 보조·정류장 수정·×·학생 창), 편집 중 고정 줄(적용 범위 select·저장 안 됨·취소/저장). 바꾼 순서 있으면 창 열기 전 먼저 저장(편집 유지). RunBoard admin 편집 분기만 추가 — driver HTML 수정 전과 동일(일회 비교 4경우). 신규 tests/regular-run-edit-mode.test.mjs. tests 3615-0·shuttle 159-0·tsc 0·KST 가드 통과. 서버 변경 없음 · 리뷰 반영 B-1 고정 줄 top-14·z-10 / B-2 적용 범위 «N월~M월 명단에 반영» / B-3 가장자리 자동 스크롤 rAF 루프 | 완료 |
+| 11-09 | developer(결제 화면 정리, 원장 «내부창 복잡·설명 많음·줄바꿈»): 단건 /payments/[id] 남색 배너·4칸 중복·하단 돌아가기 제거→청구 정보 한 덩어리(항목·상태/아이·납기/금액/번호·발행 작게), 수단 한 줄 3칸(설명 줄 삭제, 이름 «카드·간편결제/계좌이체/무통장입금»), 주 버튼 «N원 결제하기», 부가 안내 «결제 안내» 접기. 계좌 안내 부품=계좌+«복사» 한 줄·토큰색. 묶음·완료·청구 탭 반복 문구 삭제·«~요»·복사 버튼 짧게·취소 버튼 44px·회색/호박색→토큰. 로직·API·금액·토스 호출 무변경. 테스트 1줄(무통장 이름 고정) 갱신. tsc 0·tests 3611-0·studentVisibility 5-0·KST 32-0 | 완료(커밋, 미푸시) |

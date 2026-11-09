@@ -38,8 +38,13 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   const sending = useRef(false);
   const [uncertainSource, setUncertainSource] = useState<EnrollmentChangeOptions | null>(null);
   const uncertain = uncertainSource !== null;
+  // 접수에 성공한 수강 등록. 새 내역(검토 중)이 화면에 올 때까지 같은 신청을 다시 못 누르게 잠근다.
+  // (router.refresh 는 끝날 때까지 기다려 주지 않아, 그 사이 «신청하기»가 다시 살아나
+  //  두 번째 누름이 «이미 검토 중인 신청» 오류가 됐다 — 2026-11-09 휴원 신청 신고)
+  const [submittedFor, setSubmittedFor] = useState<string | null>(null);
 
   const child = initial.children[childIdx];
+  const awaitingReload = Boolean(child && !child.pending && submittedFor === child.enrollmentId);
   // 지금 다니는 반은 고를 수 없다. 골라봐야 아무것도 바뀌지 않는다.
   const selectable = useMemo(
     () => initial.classes.filter((item) => item.classId !== child?.currentClassId),
@@ -77,6 +82,14 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
 
   function submit() {
     if (!child) return;
+    // 아이폰 날짜 고르기는 min 을 무시해 휴원 시작일 이전 복귀일도 고를 수 있다. 보내기 전에 언제부터인지 알려 준다.
+    // 문자열 비교로 충분하다("YYYY-MM-DD" 는 글자 순서 = 날짜 순서).
+    const firstResume = earliestResumeOn(initial.effectiveFrom);
+    if (kind === "PAUSE" && resumeOn && firstResume && resumeOn < firstResume) {
+      setDone("");
+      setError(`휴원은 ${initial.effectiveFrom}부터라 복귀 예정일은 ${firstResume} 이후로 골라 주세요. 아직 모르면 비워 두셔도 됩니다.`);
+      return;
+    }
     startTransition(async () => {
       const ok = await send({
         enrollmentId: child.enrollmentId,
@@ -87,6 +100,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         reason,
       });
       if (!ok) return;
+      setSubmittedFor(child.enrollmentId);
       setDone("신청이 접수되었습니다. 학원에서 확인 후 알려드립니다.");
       setToClassId("");
       setEffectiveFrom(initial.effectiveFrom);
@@ -99,10 +113,33 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   function cancel(id: string) {
     startTransition(async () => {
       if (!(await send({ action: "cancel", id }))) return;
+      setSubmittedFor(null);
       setDone("신청을 취소했습니다.");
       router.refresh();
     });
   }
+
+  // 결과 문구는 방금 누른 버튼 바로 위에 둔다(2026-11-09 휴원 신청 «동작 안 함» 신고).
+  // 화면 맨 위에 두면 휴대폰에서 아래로 내려 «신청하기»를 누른 사람에게는
+  // 오류(예: 복귀일이 휴원 시작일 이전)도 접수 완료도 보이지 않아 «무반응»으로 느껴진다.
+  const notice = (
+    <>
+      {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {uncertain && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
+            {pending ? "확인 중..." : "접수 결과 다시 확인"}
+          </button>
+          {uncertainSource !== initial && (
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
+              내역 확인했어요
+            </button>
+          )}
+        </div>
+      )}
+      {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
+    </>
+  );
 
   if (initial.children.length === 0) {
     return (
@@ -125,20 +162,6 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           반 변경은 원하시는 날짜를 고를 수 있어요.
         </p>
       </div>
-
-      {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
-      {uncertain && (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
-            {pending ? "확인 중..." : "접수 결과 다시 확인"}
-          </button>
-          {uncertainSource !== initial && (
-            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
-              내역 확인했어요
-            </button>
-          )}
-        </div>
-      )}
 
       {initial.children.length > 1 && (
         <select
@@ -169,6 +192,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
               {pauseResumeLabel(child.pending.resumeOn)}
             </p>
           )}
+          {(error || uncertain || done) && <div className="mt-3 space-y-2">{notice}</div>}
           {/* 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(child.pending.id) 그대로 */}
           <InlineConfirm
             label="신청 취소하기"
@@ -297,6 +321,8 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
             />
           </div>
 
+          {notice}
+
           {kind === "WITHDRAW" ? (
             // 퇴원은 되돌리기 어렵다 → 위험색 버튼 + 한 번 더 확인(M-03). 확인 후 제출 함수·내용은 같다(submit)
             <InlineConfirm
@@ -305,7 +331,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
               confirmLabel="퇴원 신청하기"
               keepLabel="돌아가기"
               onConfirm={submit}
-              disabled={uncertain}
+              disabled={uncertain || awaitingReload}
               pending={pending}
               pendingLabel="접수 중..."
               className="flex"
@@ -314,17 +340,21 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           ) : (
             <button
               type="button"
-              disabled={pending || uncertain || (kind === "CLASS_CHANGE" && !toClassId)}
+              disabled={pending || uncertain || awaitingReload || (kind === "CLASS_CHANGE" && !toClassId)}
               onClick={submit}
               className="academy-button-primary w-full"
             >
-              {pending ? "접수 중..." : "신청하기"}
+              {awaitingReload ? "접수됨 · 신청 내역 불러오는 중..." : pending ? "접수 중..." : "신청하기"}
+            </button>
+          )}
+          {/* 새 내역이 끝내 안 오면(전파 지연·통신 끊김) 손으로 다시 불러온다. 다시 «신청»하게 두지 않는다. */}
+          {awaitingReload && !pending && (
+            <button type="button" onClick={() => router.refresh()} className="academy-button-secondary w-full">
+              신청 내역 다시 불러오기
             </button>
           )}
         </section>
       )}
-
-      {done && <p className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
 
       <p className="text-center text-xs text-[var(--color-academy-faint)]">
         요금이 달라지는 반으로 옮기면 학원에서 다시 안내드립니다.
