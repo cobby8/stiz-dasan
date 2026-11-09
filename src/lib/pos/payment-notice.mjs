@@ -122,6 +122,24 @@ export function extractChargePayments(order) {
   return extractApprovedPayments(order, () => true);
 }
 
+/**
+ * 주문에서 **취소된(전액·부분) 결제** ID 를 고른다 — 이미 사이트 납부로 반영한 POS 결제가 나중에 취소됐는지 보는 용도.
+ * 상태 이름이 CANCELLED·CANCELED·REFUNDED 이거나 «CANCEL»·«REFUND» 를 품으면(PARTIAL_CANCELLED 등) 취소로 본다.
+ * 결제 방식은 따지지 않는다(알림은 카드·바코드뿐이지만, 호출한 쪽이 알림 표와 결제 ID 로 다시 거른다).
+ * @returns {{ tossPaymentId: string, state: string }[]}
+ */
+export function extractCancelledPayments(order) {
+  const payments = Array.isArray(order?.payments) ? order.payments : [];
+  const out = [];
+  for (const payment of payments) {
+    const state = String(payment?.state ?? "").toUpperCase();
+    if (!/CANCEL|REFUND/.test(state)) continue;
+    const paymentId = payment?.id == null ? "" : String(payment.id).trim();
+    if (paymentId) out.push({ tossPaymentId: paymentId, state });
+  }
+  return out;
+}
+
 /** 승인 결제 → 1건씩. accept(sourceType) 가 true 인 방식만. 두 함수(알림·매칭)가 같은 모양을 쓰도록 한 벌로 둔다. */
 function extractApprovedPayments(order, accept) {
   const orderId = asId(order?.id ?? order?.orderId);
@@ -322,6 +340,20 @@ export function buildCandidateList({ kind, students, classTitles, nameCandidates
 /** 슬랙 mrkdwn 특수문자 무력화(메모에 <, >, & 가 있어도 링크·멘션으로 바뀌지 않게) */
 export function escapeSlack(text) {
   return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * «취소된 POS 결제가 사이트 납부로 남아 있음» 경고 문구(슬랙 DM·관리자 알림 공용).
+ * 사이트 청구를 자동으로 미납으로 되돌리지 않는다 — 사람이 환불·재청구를 판단한다.
+ * @param {{ studentName: string|null, year: number|null, month: number|null, amount: number, state: string, kstDateTime?: string }} input
+ */
+export function buildCancelWarning(input) {
+  const who = input.studentName ? String(input.studentName) : "원생 미상";
+  const bill = input.year != null && input.month != null ? `${input.year}년 ${input.month}월 수강료` : "청구";
+  const when = input.kstDateTime ? ` · 결제 ${input.kstDateTime}` : "";
+  const title = "취소된 POS 결제가 사이트 납부로 남아 있음";
+  const message = `${who} · ${bill} ${formatWon(input.amount)} — POS 결제가 취소(${input.state})됐는데 사이트 청구는 납부완료 그대로입니다${when}. 수납 관리에서 환불·재청구를 확인해 주세요.`;
+  return { title, message, slackText: `⚠️ *${escapeSlack(title)}*\n${escapeSlack(message)}` };
 }
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);

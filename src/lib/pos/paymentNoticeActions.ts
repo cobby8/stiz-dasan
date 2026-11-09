@@ -30,7 +30,7 @@ import {
     type NoticeRow,
 } from "./paymentNoticeService";
 import { NOTICE_KIND, PICK_KINDS, kstStamp } from "./payment-notice.mjs";
-import { claimNoticeAndMarkPaid } from "./paymentNoticePay";
+import { CONFLICT_RESULT_TEXT, claimNoticeAndMarkPaid } from "./paymentNoticePay";
 
 export type SlackNoticeAction =
     | { type: "CONFIRM_PAY"; noticeId: string }
@@ -188,6 +188,13 @@ async function confirmPay(
             { warningLine: `⚠️ 사이트 납부 반영을 하지 않았습니다 — 누른 시점에 청구서 상태가 달라졌습니다 (${stamp()})` },
             where,
         );
+        return;
+    }
+
+    if (result.outcome === "CONFLICT") {
+        // 누른 사이에 다른 경로가 먼저 납부 → 쓰지 않았다. 버튼 없이 «이중 수납 확인 필요» 결과 줄.
+        const fresh = (await loadNotice(notice.id)) ?? notice;
+        await refreshNoticeMessage(fresh, { resultLine: `${CONFLICT_RESULT_TEXT} (${stamp()})` }, where);
         return;
     }
 

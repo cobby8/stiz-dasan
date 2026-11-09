@@ -12,7 +12,9 @@
  * 그래서 재확인 SQL 조각과 납부 함수 호출을 여기 한 곳에만 둔다.
  *
  * 돈을 지키는 규칙
- *  - Payment 를 직접 UPDATE 하지 않는다. 원장부 함수 markPaymentPaid 만 부른다(청구서·감사로그 일관성).
+ *  - Payment 를 직접 UPDATE 하지 않는다. 원장부 함수 markPaymentsPaidTogether(1건)만 부른다(청구서·감사로그 일관성).
+ *    이 함수는 «미납 + 금액 그대로»일 때만 바꾸고 0행이면 예외로 전부 되돌린다 — 선점과 납부 사이에
+ *    다른 경로(현장 결제·직원 수납 승인·관리자 기록)가 먼저 납부해도 덮어쓰지 않는다(2026-11-10 검수).
  *  - 선점(조건부 UPDATE 한 문장)이 1행일 때만 납부한다. 같은 청구서 두 번 반영은
  *    부분 유일 인덱스 "PosPaymentNotice_sitePaymentId_marked_key" 가 DB 에서 한 번 더 막는다.
  *  - 자동(AUTO)은 수동보다 조건이 더 엄격하다: 같은 청구에 «다른 수납 기록»이 걸려 있으면 자동으로 끝내지 않고
@@ -21,7 +23,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { markPaymentPaid } from "@/lib/payment-ledger";
+import { markPaymentsPaidTogether } from "@/lib/payment-ledger";
 import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
 
 /** 자동 반영이 decidedBySlackUser 칸에 남기는 표시(슬랙 사용자 ID 와 겹치지 않는 모양) */
@@ -72,7 +74,7 @@ export const NOTICE_AUTO_EXTRA_SQL = `
                    WHERE pm.id = n."sitePaymentId" AND ${rallyzMirrorExclusionSql("pm")})`;
 
 const CLAIM_RETURNING_SQL = `
-    RETURNING n.id, n."sitePaymentId", n."tossOrderId", n."tossPaymentId",
+    RETURNING n.id, n."sitePaymentId", n."tossOrderId", n."tossPaymentId", n.amount::int AS amount,
               to_char(n."approvedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "approvedAtUtc"`;
 
 /**
@@ -97,18 +99,43 @@ export const AUTO_CLAIM_PAY_SQL = `UPDATE "PosPaymentNotice" n
     WHERE n.id = $1
       AND n.status IN ('PENDING', 'NOTIFIED', 'FAILED') AND n.kind = 'AUTO_CANDIDATE'${NOTICE_PAY_RECHECK_SQL}${NOTICE_AUTO_EXTRA_SQL}${CLAIM_RETURNING_SQL}`;
 
-type ClaimRow = { id: string; sitePaymentId: string; tossOrderId: string; tossPaymentId: string; approvedAtUtc: string | null };
+type ClaimRow = {
+    id: string;
+    sitePaymentId: string;
+    tossOrderId: string;
+    tossPaymentId: string;
+    amount: number;
+    approvedAtUtc: string | null;
+};
 
 export type NoticePayResult =
     /** 재확인 실패(또는 다른 알림과 동시 선점) — 아무것도 쓰지 않았다 */
     | { outcome: "NOT_CLAIMED" }
-    /** 납부 반영됨. error 가 있으면 원장부 쓰기 중 오류가 났지만 청구는 PAID 로 확인됐다 */
+    /** 납부 반영됨. error 가 있으면 원장부 쓰기 뒤 오류가 났지만 이 결제로 PAID 된 것을 확인했다 */
     | { outcome: "PAID"; sitePaymentId: string; error: string | null }
     /** 원장부 쓰기 실패 + 청구가 미납 그대로 → 선점을 풀어 다시 처리할 수 있게 했다 */
-    | { outcome: "REVERTED"; error: string };
+    | { outcome: "REVERTED"; error: string }
+    /** 선점과 납부 사이에 «다른 경로»가 먼저 납부했다(0행) → 선점을 풀고 쓰지 않았다. 이중 수납 확인 필요 */
+    | { outcome: "CONFLICT"; sitePaymentId: string; error: string };
+
+/** 원장 DM 결과 줄 — 다른 경로가 먼저 납부해 반영하지 않았을 때(버튼·자동 공통 문구) */
+export const CONFLICT_RESULT_TEXT = "⚠️ 이미 다른 경로로 납부됨 — 이중 수납 확인 필요(이 POS 결제는 사이트에 반영하지 않았습니다)";
+
+/** 선점 되돌리기(납부가 안 됐을 때). CONFIRMED 인 것만 — 다른 처리가 이미 상태를 바꿨으면 건드리지 않는다. */
+async function releaseClaim(noticeId: string, previousStatus: string, message: string) {
+    await prisma.$executeRawUnsafe(
+        `UPDATE "PosPaymentNotice"
+            SET status = $2, "siteMarkedPaid" = false, "decidedBySlackUser" = NULL, "decidedAt" = NULL,
+                error = $3, "updatedAt" = now()
+          WHERE id = $1 AND status = 'CONFIRMED'`,
+        noticeId,
+        previousStatus,
+        message,
+    );
+}
 
 /**
- * 선점(한 문장) → 원장부 납부(markPaymentPaid) → 실패 시 실제 청구 상태로 판단해 선점 되돌리기.
+ * 선점(한 문장) → 원장부 납부(markPaymentsPaidTogether 1건) → 실패 시 실제 청구 상태로 판단해 선점 되돌리기.
  * @param previousStatus 선점 전 알림 상태(되돌릴 때 이 값으로 돌린다)
  * @param redact 오류 문구에서 키를 가리는 함수(paymentNoticeService.redact)
  */
@@ -135,10 +162,12 @@ export async function claimNoticeAndMarkPaid(input: {
     if (claimed.length === 0) return { outcome: "NOT_CLAIMED" };
 
     // ② 선점 성공 → 원장부 함수로만 납부 처리(청구서·감사로그 PAYMENT_MARK_PAID 가 함께 남는다).
+    //    1건짜리 «묶음» 함수를 쓰는 이유: «미납 + 금액 그대로 + 종류»일 때만 바꾸는 조건부 UPDATE 라서,
+    //    선점 뒤 다른 경로가 먼저 납부했으면 0행 → 예외 → 아무것도 안 쓰고 되돌린다(덮어쓰기 금지).
     const claim = claimed[0];
     try {
-        await markPaymentPaid({
-            paymentId: claim.sitePaymentId,
+        await markPaymentsPaidTogether({
+            items: [{ paymentId: claim.sitePaymentId, amount: Number(claim.amount) }],
             // 자동은 «시스템이 토스 재조회로 확인» — 감사 기록에서 사람 클릭과 구분된다.
             actorType: auto ? "SYSTEM" : "ADMIN",
             actorId: auto ? `pos-notice-auto:${input.noticeId}` : `slack:${decidedBy}`,
@@ -147,30 +176,29 @@ export async function claimNoticeAndMarkPaid(input: {
             providerOrderId: claim.tossOrderId,
             paymentKey: claim.tossPaymentId,
             paidAt: claim.approvedAtUtc ?? null,
+            bundle: { source: "POS_NOTICE", noticeId: input.noticeId, mode: input.mode },
         });
         return { outcome: "PAID", sitePaymentId: claim.sitePaymentId, error: null };
     } catch (error) {
         const message = input.redact((error as Error).message);
         console.error("[pos-notice] 납부 반영 실패:", message, { noticeId: input.noticeId, mode: input.mode });
-        // 반쯤 쓰였을 수 있다 → 실제 청구서 상태를 보고 판단한다.
-        const rows = await prisma.$queryRawUnsafe<{ status: string }[]>(
-            `SELECT status FROM "Payment" WHERE id = $1`,
+        // 실제 청구 상태로 판단한다: 이 결제로 PAID 인가 / 다른 경로로 PAID 인가 / 아직 미납인가.
+        const rows = await prisma.$queryRawUnsafe<{ status: string; providerPaymentKey: string | null }[]>(
+            `SELECT status, "providerPaymentKey" FROM "Payment" WHERE id = $1`,
             claim.sitePaymentId,
         );
-        if (rows[0]?.status !== "PAID") {
-            // 납부가 안 됐으면 선점을 풀어 다시 처리할 수 있게 한다(자동이면 원장 버튼이 안전망).
-            await prisma.$executeRawUnsafe(
-                `UPDATE "PosPaymentNotice"
-                    SET status = $2, "siteMarkedPaid" = false, "decidedBySlackUser" = NULL, "decidedAt" = NULL,
-                        error = $3, "updatedAt" = now()
-                  WHERE id = $1 AND status = 'CONFIRMED'`,
-                input.noticeId,
-                input.previousStatus,
-                message,
-            );
-            return { outcome: "REVERTED", error: message };
+        const row = rows[0];
+        if (row?.status === "PAID" && row.providerPaymentKey === claim.tossPaymentId) {
+            // 이 결제로 납부는 끝났고 그 뒤(캐시 무효화 등)에서 오류 — 결과는 납부 반영.
+            await prisma.$executeRawUnsafe(`UPDATE "PosPaymentNotice" SET error = $2 WHERE id = $1`, input.noticeId, message);
+            return { outcome: "PAID", sitePaymentId: claim.sitePaymentId, error: message };
         }
-        await prisma.$executeRawUnsafe(`UPDATE "PosPaymentNotice" SET error = $2 WHERE id = $1`, input.noticeId, message);
-        return { outcome: "PAID", sitePaymentId: claim.sitePaymentId, error: message };
+        // 납부가 안 됐으므로 선점을 푼다(siteMarkedPaid=false — 이 알림이 납부한 것처럼 남지 않게).
+        await releaseClaim(input.noticeId, input.previousStatus, message);
+        if (row?.status === "PAID") {
+            // 다른 경로가 먼저 납부(0행) — 돈이 두 번 들어왔을 수 있다. 사람이 확인해야 한다.
+            return { outcome: "CONFLICT", sitePaymentId: claim.sitePaymentId, error: message };
+        }
+        return { outcome: "REVERTED", error: message };
     }
 }

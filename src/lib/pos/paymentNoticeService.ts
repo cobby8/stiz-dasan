@@ -21,12 +21,14 @@ import { prisma } from "@/lib/prisma";
 import { postMessage, updateMessage, type SlackBlock } from "@/lib/slack/client";
 import { fetchTossOrderById } from "./tossplaceClient";
 import { expireStaleChargeRequests, matchChargeRequestsForOrder } from "./chargeRequestService";
-import { claimNoticeAndMarkPaid } from "./paymentNoticePay";
+import { AUTO_DECIDER, CONFLICT_RESULT_TEXT, claimNoticeAndMarkPaid } from "./paymentNoticePay";
 import { parseMemoNames, redactSecrets } from "./tossplace-match.mjs";
 import {
     NOTICE_KIND,
     PICK_KINDS,
     buildCandidateList,
+    buildCancelWarning,
+    extractCancelledPayments,
     kstStamp,
     buildNoticeMessage,
     classifyInvoiceRows,
@@ -294,9 +296,11 @@ const AUTO_OPEN_STATUSES = ["PENDING", "NOTIFIED", "FAILED"];
  * - 쓰기는 공용 핵심부(claimNoticeAndMarkPaid, mode AUTO)만 — 선점 SQL 이 금액·미납 1건·이중결제·다른 알림 반영을
  *   다시 보고, 자동에만 «직원 현금·계좌 확인 대기 / 진행 중·보류된 현장 결제 요청 / 랠리즈 사본»이면 멈춘다.
  * - 멈추면(NOT_CLAIMED) 아무것도 쓰지 않고 슬랙 DM 의 버튼을 그대로 둔다(원장 확인으로 남김) + 경고 한 줄.
+ * - 선점 뒤 다른 경로가 먼저 납부했으면(CONFLICT) 쓰지 않고 «이중 수납 확인 필요» 결과 줄.
+ * - 처음 DM 이 실패해 메시지가 없으면 결과 전용 DM 을 한 번 보낸다(sendAutoResultNotice — 실패하면 스윕이 다시).
  * - 여러 번 불려도 안전하다(선점이 1행일 때만 납부). 슬랙 갱신 실패는 납부 결과를 바꾸지 않는다.
  */
-export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HELD" | "REVERTED" | "SKIPPED"> {
+export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HELD" | "REVERTED" | "CONFLICT" | "SKIPPED"> {
     const notice = await loadNotice(noticeId);
     if (
         !notice ||
@@ -307,14 +311,21 @@ export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HEL
         return "SKIPPED";
     }
     const result = await claimNoticeAndMarkPaid({ noticeId, mode: "AUTO", previousStatus: notice.status, redact });
-    const outcome = result.outcome === "PAID" ? "PAID" : result.outcome === "REVERTED" ? "REVERTED" : "HELD";
+    const outcome = result.outcome === "NOT_CLAIMED" ? "HELD" : result.outcome;
 
     // 이미 보낸 DM 이 있으면 결과를 적는다(없으면 refreshNoticeMessage 가 아무것도 안 한다).
     try {
         const fresh = (await loadNotice(noticeId)) ?? notice;
         const stamp = kstStamp() as string;
         if (outcome === "PAID") {
-            await refreshNoticeMessage(fresh, { resultLine: `✅ POS 결제 확인 — 사이트 ${notice.targetMonth}월 청구 자동 납부 반영 (${stamp})` });
+            if (fresh.slackChannel && fresh.slackTs) {
+                await refreshNoticeMessage(fresh, { resultLine: autoPaidResultLine(fresh, stamp) });
+            } else {
+                // 처음 DM 이 실패(FAILED)·미발송이면 고칠 메시지가 없다 → 결과 전용 DM 을 한 번 새로 보낸다.
+                await sendAutoResultNotice(noticeId);
+            }
+        } else if (outcome === "CONFLICT") {
+            await refreshNoticeMessage(fresh, { resultLine: `${CONFLICT_RESULT_TEXT} (${stamp})` });
         } else if (outcome === "HELD") {
             await refreshNoticeMessage(fresh, {
                 warningLine: `⚠️ 자동 납부 반영 보류 — 같은 청구에 다른 수납 기록(직원 현금·계좌 확인 대기·진행 중인 현장 결제)이 있거나 청구서 상태가 달라졌습니다. 확인 후 버튼을 눌러 주세요 (${stamp})`,
@@ -326,6 +337,152 @@ export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HEL
         console.error("[pos-notice] 자동 반영 결과 DM 갱신 실패:", redact((error as Error).message), { noticeId, outcome });
     }
     return outcome;
+}
+
+/** 자동 납부 반영 결과 줄(기존 DM 고치기·결과 전용 DM 공용) */
+function autoPaidResultLine(notice: Pick<NoticeRow, "targetMonth">, stamp: string): string {
+    return `✅ POS 결제 확인 — 사이트 ${notice.targetMonth}월 청구 자동 납부 반영 (${stamp})`;
+}
+
+/** 결과 전용 DM 을 보내는 중이라는 표시(slackTs 칸). 실제 ts 는 숫자·점이라 겹치지 않는다. */
+const SENDING_MARK = "SENDING";
+
+/**
+ * 자동 납부됐는데 DM 이 하나도 없는 알림(처음 DM 실패·미발송)에 «결과 전용» DM 을 한 번 보낸다(버튼 없음).
+ * 한 번만 가게: slackTs 를 SENDING 으로 먼저 선점(조건부 UPDATE)하고, 보내면 실제 채널·ts 로 바꾼다.
+ * 실패하면 slackTs 를 비워 10분 스윕이 다시 시도한다(이레 안). 선점 뒤 서버가 죽은 SENDING 은 5분 뒤 다시 잡는다.
+ */
+export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "SKIPPED" | "FAILED"> {
+    const claimed = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "PosPaymentNotice"
+            SET "slackTs" = $3, "updatedAt" = now()
+          WHERE id = $1 AND status = 'CONFIRMED' AND "siteMarkedPaid" = true AND "decidedBySlackUser" = $2
+            AND ("slackTs" IS NULL OR ("slackTs" = $3 AND "updatedAt" < now() - interval '5 minutes'))
+          RETURNING id`,
+        noticeId,
+        AUTO_DECIDER,
+        SENDING_MARK,
+    );
+    if (claimed.length === 0) return "SKIPPED";
+    try {
+        const owner = readEnv("SLACK_OWNER_USER_ID");
+        if (!owner) throw new Error("원장 슬랙 ID(SLACK_OWNER_USER_ID)가 설정되지 않아 DM 을 보내지 못했습니다.");
+        const notice = await loadNotice(noticeId);
+        if (!notice) return "SKIPPED";
+        const message = await renderNotice(notice, { resultLine: autoPaidResultLine(notice, kstStamp() as string) });
+        const sent = await postMessage({ channel: owner, text: message.text, blocks: message.blocks });
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PosPaymentNotice" SET "slackChannel" = $2, "slackTs" = $3, error = NULL, "updatedAt" = now() WHERE id = $1`,
+            noticeId,
+            sent.channel,
+            sent.ts,
+        );
+        return "SENT";
+    } catch (error) {
+        const message = redact((error as Error).message);
+        console.error("[pos-notice] 자동 반영 결과 DM 실패:", message, { noticeId });
+        await prisma.$executeRawUnsafe(
+            `UPDATE "PosPaymentNotice" SET "slackTs" = NULL, error = $2, "updatedAt" = now() WHERE id = $1 AND "slackTs" = $3`,
+            noticeId,
+            message,
+            SENDING_MARK,
+        );
+        return "FAILED";
+    }
+}
+
+// ───────────────────────────── 납부 반영 뒤 POS 취소 경고 ─────────────────────────────
+
+/** 감사 기록 action — 같은 알림에 경고를 한 번만 보내는 표시도 겸한다(actorId = pos-notice:<알림 id>). */
+export const CANCEL_WARN_ACTION = "POS_NOTICE_CANCELLED_WHILE_PAID";
+
+type CancelWarnRow = {
+    id: string;
+    tossPaymentId: string;
+    sitePaymentId: string;
+    amount: number;
+    kstDateTime: string;
+    studentName: string | null;
+    year: number | null;
+    month: number | null;
+};
+
+/**
+ * 재조회한 주문에서 «취소된(전액·부분) 결제»가 이미 사이트 납부로 반영된 알림(siteMarkedPaid)이면
+ * 원장 슬랙 DM + 관리자 알림 벨로 «취소된 POS 결제가 사이트 납부로 남아 있음»을 한 번 알린다.
+ * 사이트 청구를 미납으로 되돌리지 **않는다**(원장 결정 — 환불·재청구는 사람이 판단).
+ * 중복 방지: 알림마다 advisory lock 안에서 감사 기록(CANCEL_WARN_ACTION)을 «없을 때만» 넣고, 넣은 쪽만 알린다.
+ * ⚡ 현장 결제(PosChargeRequest) 쪽 취소는 chargeRequestService 가 따로 처리한다 — 그 결제엔 알림 행이 없다.
+ */
+export async function warnCancelledNoticePayments(order: unknown): Promise<number> {
+    const cancelled = extractCancelledPayments(order) as { tossPaymentId: string; state: string }[];
+    if (cancelled.length === 0) return 0;
+    const stateOf = new Map(cancelled.map((c) => [c.tossPaymentId, c.state]));
+    // 청구가 아직 PAID 인 것만 — 이미 환불·취소 처리됐으면 경고할 게 없다.
+    const rows = await prisma.$queryRawUnsafe<CancelWarnRow[]>(
+        `SELECT n.id, n."tossPaymentId", n."sitePaymentId", n.amount::float8 AS amount,
+                COALESCE(to_char(n."approvedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI'), '') AS "kstDateTime",
+                s.name AS "studentName", p.year, p.month
+           FROM "PosPaymentNotice" n
+           JOIN "Payment" p ON p.id = n."sitePaymentId"
+           LEFT JOIN "Student" s ON s.id = p."studentId" -- 경고 문구용 이름만(병합된 학생이어도 그 청구의 이름을 보인다, s."mergedIntoStudentId" 무관)
+          WHERE n."tossPaymentId" = ANY($1::text[]) AND n."siteMarkedPaid" = true AND p.status = 'PAID'`,
+        cancelled.map((c) => c.tossPaymentId),
+    );
+    let warned = 0;
+    for (const row of rows) {
+        const text = buildCancelWarning({
+            studentName: row.studentName,
+            year: row.year,
+            month: row.month,
+            amount: Number(row.amount),
+            state: stateOf.get(row.tossPaymentId) ?? "CANCELLED",
+            kstDateTime: row.kstDateTime,
+        }) as { title: string; message: string; slackText: string };
+        // ① 한 번만: 같은 알림 키로 잠그고, 경고 기록이 없을 때만 넣는다(넣은 쪽만 알린다).
+        const first = await prisma.$transaction(async (db) => {
+            await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `pos-notice-cancel:${row.id}`);
+            const inserted = await db.$queryRawUnsafe<{ id: string }[]>(
+                `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+                 SELECT gen_random_uuid()::text, $1, NULL, NULL, 'SYSTEM', $2, $3, $4, $5::jsonb, NOW()
+                  WHERE NOT EXISTS (SELECT 1 FROM "PaymentAuditLog" a WHERE a.action = $3 AND a."actorId" = $2)
+                 RETURNING id`,
+                row.sitePaymentId,
+                `pos-notice:${row.id}`,
+                CANCEL_WARN_ACTION,
+                text.title,
+                JSON.stringify({ noticeId: row.id, tossPaymentId: row.tossPaymentId, state: stateOf.get(row.tossPaymentId) ?? null }),
+            );
+            return inserted.length > 0;
+        });
+        if (!first) continue;
+        warned += 1;
+        // ② 관리자 알림 벨(ADMIN·VICE_ADMIN) — 슬랙을 놓쳐도 사이트에서 보이게. 실패해도 DM 은 시도한다.
+        try {
+            await prisma.$executeRawUnsafe(
+                `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
+                 SELECT gen_random_uuid()::text, u.id, 'PAYMENT', $1, $2, '/admin/finance', false, NOW()
+                   FROM "User" u WHERE u.role IN ('ADMIN', 'VICE_ADMIN')`,
+                text.title,
+                text.message,
+            );
+        } catch (error) {
+            console.error("[pos-notice] 취소 경고 알림 벨 실패:", redact((error as Error).message), { noticeId: row.id });
+        }
+        // ③ 원장 슬랙 DM(버튼 없음)
+        try {
+            const owner = readEnv("SLACK_OWNER_USER_ID");
+            if (!owner) throw new Error("원장 슬랙 ID(SLACK_OWNER_USER_ID)가 설정되지 않아 DM 을 보내지 못했습니다.");
+            await postMessage({
+                channel: owner,
+                text: `${text.title} — ${text.message}`,
+                blocks: [{ type: "section", text: { type: "mrkdwn", text: text.slackText } }],
+            });
+        } catch (error) {
+            console.error("[pos-notice] 취소 경고 DM 실패(알림 벨에는 남음):", redact((error as Error).message), { noticeId: row.id });
+        }
+    }
+    return warned;
 }
 
 // ───────────────────────────── 웹훅 처리 ─────────────────────────────
@@ -390,6 +547,14 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
         const note = `주문 조회 실패(스윕이 다시 시도): ${redact((error as Error).message)}`;
         await noteEvent(eventRowId, note);
         return { notices: 0, note };
+    }
+
+    // 이미 사이트 납부로 반영한 POS 결제가 취소됐으면 원장·관리자에게 한 번 알린다(청구는 되돌리지 않음).
+    // 실패해도 아래 매칭·알림 흐름은 막지 않는다.
+    try {
+        await warnCancelledNoticePayments(order);
+    } catch (error) {
+        console.error("[pos-notice] 취소 경고 처리 실패:", redact((error as Error).message), { eventRowId });
     }
 
     // 슬랙 확인 알림 대상(카드·간편결제)과 «현장 결제» 매칭 대상(방식 무관 승인 결제 전부)은 범위가 다르다.
@@ -511,6 +676,23 @@ export async function runPosNoticeSweep(): Promise<{ events: number; sent: numbe
     let failed = 0;
     for (const n of pending) {
         const r = await sendNotice(n.id);
+        if (r === "SENT") sent += 1;
+        if (r === "FAILED") failed += 1;
+    }
+
+    // 자동 납부됐는데 DM 이 하나도 안 나간 알림 → 결과 전용 DM 다시 시도(sendAutoResultNotice 가 한 번만 보낸다).
+    const autoUnsent = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "PosPaymentNotice"
+          WHERE status = 'CONFIRMED' AND "siteMarkedPaid" = true AND "decidedBySlackUser" = $1
+            AND ("slackTs" IS NULL OR ("slackTs" = $2 AND "updatedAt" < now() - interval '5 minutes'))
+            AND "createdAt" > now() - interval '7 days'
+          ORDER BY "createdAt" ASC
+          LIMIT 20`,
+        AUTO_DECIDER,
+        SENDING_MARK,
+    );
+    for (const n of autoUnsent) {
+        const r = await sendAutoResultNotice(n.id);
         if (r === "SENT") sent += 1;
         if (r === "FAILED") failed += 1;
     }
