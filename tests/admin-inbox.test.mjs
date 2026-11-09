@@ -141,8 +141,10 @@ test('상담 탭 자리 — consult-inbox.ts 두 함수(목록·개수)만 부�
   assert.match(consult, /export async function listConsultInboxRows\(/);
   assert.match(consult, /export async function countConsultAction\(/);
   assert.match(page, /import \{ listConsultInboxRows \} from "@\/lib\/requests\/consult-inbox"/);
-  assert.match(consult, /listConsultInboxRows\(_query: ConsultInboxQuery\): Promise<ConsultInboxRow\[\]>/);
-  assert.match(consult, /bucket: InboxBucket;/);
+  // 통합(11-10): 스텁 대신 상담 작업의 실제 구현 — 신청함 InboxQuery 의 같은 칸(bucket·from·to·limitPerKind)을 받는다
+  assert.match(consult, /query: Pick<InboxQuery, "bucket" \| "from" \| "to" \| "limitPerKind">,\s*\): Promise<ConsultInboxRow\[\]>/);
+  // 조회 실패해도 빈 목록 — 신청함 전체가 죽지 않게
+  assert.match(consult, /catch \(error\) \{[\s\S]*?return \[\];/);
   assert.match(page, /listConsultInboxRows\(\{ bucket: "ACTION", from, to \}\)/);
   assert.match(inbox, /import \{ countConsultAction \} from "@\/lib\/requests\/consult-inbox"/);
   // 상담 목록 실패가 다른 탭을 죽이지 않는다
