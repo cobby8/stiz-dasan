@@ -90,10 +90,28 @@
 - components/seasonal/RouteSection.tsx:695·698·699·759 — 치환 때 `dark:…${tlBtn}` / `dark:…${timeOrdered ? …}` 의 `${` 까지 지워짐(813909ac). 695/698/699: 클래스 끝이 `disabled:opacity-50}` 가 되어 비활성 흐림·시간순 보기 min-h-11(터치 44px) 사라짐 → `disabled:opacity-50${tlBtn}` 로. 759: `${timeOrdered` 가 빠져 `? " w-full bg-white" : ""}` 가 글자 그대로 클래스가 됨(항상 w-full, 시간순 bg-white 없음) → `` border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}` `` 로. 같은 유형 다른 파일 0(파일별 `${` 개수 비교)
 🟡 권장: DispatchRouteMap.tsx:40 getComputedStyle 값이 빈 문자열일 때 대비 `|| "#1d4ed8"` 기본값 / RegularRouteSection 화살표 칸 `${"…"}` 은 상수 문자열로 단순화(동작 무관)
 
+## 구현 기록 (developer) — 신청함 5·6단계 학부모 «수업» 탭 (11-10)
+📝 탭 홈·수업·청구·소식(d5) · /mypage/classes 아이 칩→반 카드→신청 내역 타임라인(3개월)→하단 시트 · d8 취소 요청 · queries.ts KST
+| 파일 | 변경 |
+|---|---|
+| src/app/mypage/classes/{page,ClassesClient,RequestTimeline}.tsx | 신규 — 반 카드·타임라인·시트([취소]/[취소 요청]/신청 화면) |
+| src/lib/parent/{classCards,classes-overview}.ts · lib/mypage/requestPreset.ts | 신규 — 순수 계산 / 조회(childAccessSql+notMergedStudent) / ?studentId=&enrollmentId=&kind= 미리 고르기 |
+| src/lib/requests/{parent-timeline-rules,parent-timeline}.ts | 신규 — 단계·버튼 규칙(catalog 이름 그대로) / 7종류 조회 |
+| MyPageBottomNav·ParentMoreMenu·layout | 수업 탭(also: history·결석·보강·특강·셔틀·수강 변경), ⋯ 메뉴 수강 변경 제거 |
+| enrollment-change·regular-absence·makeup·shuttle page+Client | 프리셋 받기(힌트만 — 목록은 서버가 거른 내 자녀) |
+| parent-change-request.ts | 이력 includeOpen/withCancelRequest 옵션, requestScheduledChangeCancel(d8) |
+| admin-change-request.ts·actions/enrollment-changes.ts·admin/enrollment-changes | 취소 요청 목록·승인(적용 전만 CANCELED)/거절, 화면 맨 위 «학부모 취소 요청 N건» |
+| change-decision-notify.ts·parentChangeStatus.ts | CANCEL_APPROVED/REJECTED 앱 알림(받는 사람 = 취소 요청 보호자) |
+| prisma/migrations/20261110130000_enrollment_change_cancel_request + schema.prisma | **운영 미적용** — 칸 5개+CHECK+부분 인덱스, 코드보다 먼저 apply_migration |
+| queries.ts·kst.ts | getMonthDateRange·getDashboardExtendedStats → addMonthsYm(신규, 테스트) |
+💡 tester: tests/parent-classes-tab·parent-request-timeline·enrollment-cancel-request·kst-datetime. 마이그레이션 전엔 관리자 취소 요청 목록 빈 목록·타임라인 칸 없이 재조회(화면은 열림). PNG: scratchpad\classes-tab\{before,after,after-sheet}-{390,1366}.png
+⚠️ reviewer: d8 승인 UPDATE 조건(APPROVED·appliedAt NULL·effectiveFrom>KST 오늘·적용 명령 없음) vs 적용 크론(APPROVED FOR UPDATE) 경합, 방학특강 표는 전환된 studentId 만 자녀 권한으로 읽음(전화번호 매칭 아님 — 미전환 자녀 신청은 타임라인에 안 보임)
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
 | 11-10 | developer(원장 점검: 정규 셔틀 운행표 묶음별 연필): 화면 위 [수정] 제거 → 묶음 머리 오른쪽 연필(36px 원·44px 터치, «16:00 등원 묶음 수정») · 누른 묶음만 편집 · 그 머리 줄 [취소][저장]+아래 한 줄 적용 범위(sticky) · 다른 묶음 연필 시 미저장 확인. RunBoard editingGroupKey/onEditBlock/renderEditActions/renderEditBar(기사님 미전달=변경 없음). tsc 0·tests 3765-0·shuttle 159-0·끌기 e2e 전부 통과 | 완료(커밋, 미푸시) |
 | 11-10 | debugger(원장 «김루빈 휴원 신청했는데 복귀 버튼 안 보여»): 코드 결함 없음. 운영 pg_stat_statements(읽기 전용) 시각표 — 11-09 20:19 KST 화면 3회·20:20 신청 2회 서버 도착(본인 자녀 확인 2/2 통과) 뒤 중복 확인·INSERT 0회 = 입력 검사 400(휴원에서 가능한 건 복귀 예정일 ≤ 12-01 뿐). 당시 옛 화면은 오류가 맨 위라 원장은 접수된 줄 앎(20:38 수정 전). 11-10 00:36 화면 1회 = 신청 0건이라 검토 중 상자 없음, 다니는 반이라 «복귀» 없음(설계: 복귀는 휴원 시작 뒤). 학부모 계정이 저장한 신청은 운영 전체 0건(86건 전부 관리자). 재현 테스트 1건 추가(한 학생 두 반). tsc 0·전체 3765-0·studentVisibility 5-0. 앱 코드 무변경 | 완료(제안 3건 승인 대기) |
