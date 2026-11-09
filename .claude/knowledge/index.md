@@ -3,11 +3,9 @@
 ## 파일별 요약
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
-| architecture.md | 20 | 2026-11-08 |
-| errors.md | 12 | 2026-11-09 |
-| architecture.md | 27 | 2026-11-09 |
-| errors.md | 10 | 2026-11-09 |
-| conventions.md | 29 | 2026-10-25 |
+| architecture.md | 19 (주제별 묶음, 11-10 정리) | 2026-11-10 |
+| errors.md | 16 | 2026-11-10 |
+| conventions.md | 31 (30 초과 — 다음 추가 때 병합) | 2026-11-10 |
 | decisions.md | 20 | 2026-10-06 |
 | lessons.md | 6 | 2026-10-02 |
 
@@ -25,6 +23,7 @@
 - **apiSuccess snake_case 자동변환** · **IDOR** · **`prisma db push` 금지** → errors / decisions
 
 ## 최근 추가된 지식 (최근 5건)
+0. [architecture] architecture 48→19 주제별 묶음 정리 · 신청함 «변경» 휴원 승인 = 칸 열 때 미리보기(PauseSettlementBox, 수강 변경 화면과 문구 비교 테스트) (2026-11-10)
 1. [architecture] 대관 신청자 문자 = 알림톡 틀 하나(문자=알림톡 본문, sendTrackedSms alimtalk 전달) (2026-11-08)
 2. [architecture] 체육관 대관 = 순수 규칙+db 인자 연결부+EXCLUDE 제약, 신청자 문자 이중 스위치 (2026-11-07)
 3. [convention] 관리자 메뉴 등록 검사 기준 정정 — 셸이 EXTRA_GROUPS 로 통합돼 「경로 3회」 기준은 폐기 (2026-10-25)
