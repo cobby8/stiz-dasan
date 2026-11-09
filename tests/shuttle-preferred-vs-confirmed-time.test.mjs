@@ -30,7 +30,8 @@ test("학부모 마이페이지 확정 시간은 한국시간으로 고정한다
 
 // 라벨 통일.
 test("확정/희망 라벨을 화면별로 통일한다", () => {
-    assert.match(myPage, /dark:text-gray-400">확정 시간<\/dt>/);
+    // 2026-11-09 색상 4단계: 학부모 화면은 밝은 화면 고정이라 dark: 클래스를 지웠다 — 라벨만 확인한다
+    assert.match(myPage, /">확정 시간<\/dt>/);
     assert.doesNotMatch(myPage, />예정 시간</);
     assert.match(enrollForm, /helper="참고용입니다\. 실제 탑승시간은 배차 확정 후 안내됩니다\."/);
 });

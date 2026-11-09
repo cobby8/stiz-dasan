@@ -407,12 +407,12 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                 className="flex w-full items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 <span className="flex shrink-0 items-center gap-2">
-                                    <SymbolIcon name="event" size={18} className="text-brand-navy-900 dark:text-gray-200" />
-                                    <span className="whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">다음 수업</span>
+                                    <SymbolIcon name="event" size={18} className="text-[var(--color-academy-ink)]" />
+                                    <span className="whitespace-nowrap text-sm font-medium text-[var(--color-academy-muted)]">다음 수업</span>
                                 </span>
                                 <span className="min-w-0 text-right">
-                                    <span className="block whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">{nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}</span>
-                                    <span className="block break-keep text-xs text-gray-500 dark:text-gray-400">{nextClass.className}</span>
+                                    <span className="block whitespace-nowrap text-sm font-bold text-[var(--color-academy-ink)]">{nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}</span>
+                                    <span className="block break-keep text-xs text-[var(--color-academy-muted)]">{nextClass.className}</span>
                                 </span>
                             </Link>
                         )}
@@ -425,10 +425,10 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                     className="flex min-w-0 flex-1 items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                                 >
                                     <span className="flex shrink-0 items-center gap-2">
-                                        <SymbolIcon name="airport_shuttle" size={18} className="text-blue-600 dark:text-blue-300" />
-                                        <span className="whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">오늘 셔틀</span>
+                                        <SymbolIcon name="airport_shuttle" size={18} className="text-[var(--color-academy-muted)]" />
+                                        <span className="whitespace-nowrap text-sm font-medium text-[var(--color-academy-muted)]">오늘 셔틀</span>
                                     </span>
-                                    <span className="text-right text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+                                    <span className="text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">
                                         {/* 확정 승·하차 시각이 있으면 한 줄씩(한 줄에 둘이면 좁은 폭에서 전화 버튼 옆으로 넘친다), 없으면 운행 건수 */}
                                         {todayShuttleLines.length === 0
                                             ? `운행 ${todayShuttles.length}건`
@@ -458,7 +458,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {makeupAvailable > 0 && (
                         <li>
                             <Link href="/mypage/makeup" className={TODO_ROW}>
-                                <SymbolIcon name="event_repeat" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                                <SymbolIcon name="event_repeat" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
                                 <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">보강 예약</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">보강권 <span className="tabular-nums">{makeupAvailable}</span>장</span>
                                 <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
@@ -468,7 +468,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {seasonalUpcoming > 0 && (
                         <li>
                             <Link href="/mypage/seasonal" className={TODO_ROW}>
-                                <SymbolIcon name="sports_basketball" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                                <SymbolIcon name="sports_basketball" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
                                 <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">방학특강 결석·보강</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">남은 <span className="tabular-nums">{seasonalUpcoming}</span>회</span>
                                 <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
@@ -478,7 +478,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {(answerCount > 0 || pendingRequestCount > 0) && (
                         <li>
                             <button type="button" onClick={openRequests} className={TODO_ROW}>
-                                <SymbolIcon name="forum" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                                <SymbolIcon name="forum" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
                                 <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">보낸 메시지</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">
                                     {answerCount > 0 ? <>학원 답변 <span className="tabular-nums">{answerCount}</span>건</> : <>답변 대기 <span className="tabular-nums">{pendingRequestCount}</span>건</>}
@@ -490,7 +490,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {newNoticeCount > 0 && (
                         <li>
                             <Link href="/mypage/reports#news-notices" className={TODO_ROW}>
-                                <SymbolIcon name="campaign" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                                <SymbolIcon name="campaign" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
                                 <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">새 공지</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]"><span className="tabular-nums">{newNoticeCount}</span>건</span>
                                 <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
@@ -505,7 +505,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                             onClick={() => setShowNotifications(!showNotifications)}
                             className={TODO_ROW}
                         >
-                            <SymbolIcon name="notifications" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
+                            <SymbolIcon name="notifications" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
                             <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">알림</span>
                             <span className="shrink-0 text-[var(--color-academy-muted)]">
                                 {unreadCount > 0 ? <>안 읽은 알림 <span className="tabular-nums font-bold text-[var(--color-academy-danger)]">{unreadCount}</span>건</> : "새 알림 없음"}
@@ -529,21 +529,21 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                 )}
 
                                 {notifications.length === 0 ? (
-                                    <div className="px-4 py-3 text-center text-gray-400 text-sm">
+                                    <div className="px-4 py-3 text-center text-[var(--color-academy-faint)] text-sm">
                                         알림이 없습니다
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+                                    <div className="divide-y divide-[var(--color-academy-line)] max-h-80 overflow-y-auto">
                                         {notifications.map(n => (
                                             <div
                                                 key={n.id}
-                                                className={`px-4 py-3 flex items-start gap-3 ${!n.isRead ? "bg-orange-50/50" : ""}`}
+                                                className={`px-4 py-3 flex items-start gap-3 ${!n.isRead ? "bg-[var(--color-academy-info-soft)]" : ""}`}
                                             >
                                                 {/* 알림 타입 아이콘 */}
                                                 <div className={`mt-0.5 p-1.5 rounded-full flex-shrink-0 ${
-                                                    n.type === "ATTENDANCE" ? "bg-green-100 text-green-600" :
-                                                    n.type === "PAYMENT" ? "bg-red-100 text-red-600" :
-                                                    "bg-blue-100 text-blue-600"
+                                                    n.type === "ATTENDANCE" ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" :
+                                                    n.type === "PAYMENT" ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" :
+                                                    "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"
                                                 }`}>
                                                     <SymbolIcon
                                                         name={n.type === "ATTENDANCE" ? "event_available" : n.type === "PAYMENT" ? "credit_card" : "notifications"}
@@ -552,11 +552,11 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                                 </div>
 
                                                 <div className="flex-1 min-w-0">
-                                                    <p className={`text-sm ${!n.isRead ? "font-bold text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-200"}`}>
+                                                    <p className={`text-sm ${!n.isRead ? "font-bold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}`}>
                                                         {n.title}
                                                     </p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{n.message}</p>
-                                                    <p className="text-xs text-gray-400 mt-1">
+                                                    <p className="text-xs text-[var(--color-academy-muted)] mt-0.5">{n.message}</p>
+                                                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">
                                                         {formatAlertTime(n.createdAt)}
                                                     </p>
                                                 </div>
@@ -608,35 +608,35 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
             {/* 방학특강 신청 자녀(전환 대기중) — 정식 학생으로 아직 전환되지 않아
                 위 판에 안 뜨는 자녀를 따로 안내한다. 목록이 비면 통째로 숨김. */}
             {pendingSeasonalChildren.length > 0 && (
-                <section aria-labelledby="pending-seasonal-heading" className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20">
+                <section aria-labelledby="pending-seasonal-heading" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-4 shadow-sm">
                     <div className="mb-3">
                         <div className="flex items-center gap-2">
-                            <SymbolIcon name="hourglass_top" size={20} className="text-amber-600 dark:text-amber-300" />
-                            <h2 id="pending-seasonal-heading" className="font-bold text-gray-900 dark:text-white">방학특강 신청 자녀</h2>
+                            <SymbolIcon name="hourglass_top" size={20} className="text-[var(--color-academy-warning)]" />
+                            <h2 id="pending-seasonal-heading" className="font-bold text-[var(--color-academy-ink)]">방학특강 신청 자녀</h2>
                         </div>
-                        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                             학생 등록 후 정규 수업·청구가 보여요.
                         </p>
                     </div>
                     <div className="space-y-2">
                         {pendingSeasonalChildren.map((c, idx) => (
-                            <div key={`${c.childName}-${idx}`} className="rounded-xl border border-amber-200 bg-white p-3 dark:border-amber-900/40 dark:bg-gray-800">
+                            <div key={`${c.childName}-${idx}`} className="rounded-xl border border-[var(--color-academy-line)] bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
-                                    <div className="font-bold text-gray-900 dark:text-white">
+                                    <div className="font-bold text-[var(--color-academy-ink)]">
                                         {c.childName}
                                         {c.childGrade && (
-                                            <span className="ml-2 text-xs font-medium text-gray-500 dark:text-gray-400">{c.childGrade}</span>
+                                            <span className="ml-2 text-xs font-medium text-[var(--color-academy-muted)]">{c.childGrade}</span>
                                         )}
                                     </div>
                                     {c.upcomingCount > 0 && (
-                                        <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                                        <span className="shrink-0 rounded-full bg-[var(--color-academy-warning-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-warning)]">
                                             예정 {c.upcomingCount}회
                                         </span>
                                     )}
                                 </div>
                                 {c.offeringTitles.length > 0 && (
-                                    <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                                        <span className="text-gray-500 dark:text-gray-400">신청 특강: </span>
+                                    <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+                                        <span className="text-[var(--color-academy-muted)]">신청 특강: </span>
                                         {c.offeringTitles.join(", ")}
                                     </p>
                                 )}
@@ -663,7 +663,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                 ].map((item) => (
                     <Link key={item.label} href={item.href}
                         className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-1 py-2 text-xs font-bold text-[var(--color-academy-ink)] transition-colors hover:border-[var(--color-academy-primary)]">
-                        <SymbolIcon name={item.icon} size={22} className="text-[var(--color-academy-primary)]" />
+                        <SymbolIcon name={item.icon} size={22} className="text-[var(--color-academy-ink)]" />
                         <span className="break-keep text-center">{item.label}</span>
                     </Link>
                 ))}
@@ -677,21 +677,21 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                             : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
                     }`}
                 >
-                    <SymbolIcon name="send" size={22} className="text-[var(--color-academy-primary)]" />
+                    <SymbolIcon name="send" size={22} className="text-[var(--color-academy-ink)]" />
                     <span className="break-keep text-center">문의</span>
                 </button>
             </nav>
 
             {/* 학원에 메시지 보내기 — «문의»를 누르면 열린다 */}
             {showRequestForm && (
-                <div id="parent-request-form" className="scroll-mt-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl p-4 shadow-sm space-y-3">
+                <div id="parent-request-form" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl p-4 shadow-sm space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-bold text-gray-900 dark:text-white">학원에 메시지 보내기</h3>
+                        <h3 className="font-bold text-[var(--color-academy-ink)]">학원에 메시지 보내기</h3>
                         <button type="button" onClick={() => (showRequests ? setShowRequests(false) : openRequests())} className="academy-button-text">
                             <SymbolIcon name="forum" size={16} />
                             보낸 메시지
                             {pendingRequestCount > 0 && (
-                                <span className="bg-yellow-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
+                                <span className="bg-[var(--color-academy-warning)] text-white text-xs font-bold px-1.5 py-0.5 rounded-full">{pendingRequestCount}</span>
                             )}
                         </button>
                     </div>
@@ -699,7 +699,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {/* 유형 선택을 없앤 이유: 유형별로 나눠 받으면 학원이 그 유형대로 처리해 줄 것처럼
                         보이는데, 실제로는 전부 사람이 읽고 손으로 처리하는 메모였다. 결석처럼 진짜
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
-                    <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                    <div className="rounded-xl bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] px-3 py-2 text-xs text-[var(--color-academy-warning)] leading-relaxed">
                         결석은 여기 적지 마시고{" "}
                         <Link href="/mypage/regular-absence" className="font-bold underline">결석 신고</Link>·
                         <Link href="/mypage/seasonal" className="font-bold underline">방학특강 결석</Link>·
@@ -710,11 +710,11 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     {/* 자녀 선택 (여러 명일 때) */}
                     {data.children.length > 1 && (
                         <div>
-                            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">자녀 선택</label>
+                            <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">자녀 선택</label>
                             <select
                                 value={selectedIdx}
                                 onChange={e => setSelectedIdx(Number(e.target.value))}
-                                className="w-full min-h-11 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm"
+                                className="w-full min-h-11 border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm"
                             >
                                 {data.children.map((c, i) => (
                                     <option key={c.id} value={i}>{c.name}</option>
@@ -725,22 +725,22 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
 
                     {/* 날짜 */}
                     <div>
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">
+                        <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">
                             해당 날짜 (선택)
                         </label>
                         <input type="date" min="2020-01-01" max="2030-12-31" value={reqDate} onChange={e => setReqDate(e.target.value)}
-                            className="w-full min-h-11 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm" />
+                            className="w-full min-h-11 border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm" />
                     </div>
 
                     {/* 내용 */}
                     <div>
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">메시지</label>
+                        <label className="text-xs font-medium text-[var(--color-academy-muted)] mb-1 block">메시지</label>
                         <textarea
                             value={reqContent}
                             onChange={e => setReqContent(e.target.value)}
                             placeholder="문의하실 내용을 편하게 적어주세요"
                             rows={4}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm resize-none"
+                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm resize-none"
                         />
                     </div>
 
@@ -773,34 +773,34 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
 
             {/* 보낸 메시지 — «처리할 일»의 «보낸 메시지» 줄이나 폼 위 «보낸 메시지»로 연다 */}
             {showRequests && (
-                <section id="parent-request-list" aria-label="보낸 메시지" className="scroll-mt-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
+                <section id="parent-request-list" aria-label="보낸 메시지" className="scroll-mt-4 bg-white border border-[var(--color-academy-line)] rounded-2xl shadow-sm overflow-hidden">
                     <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-1">
                         <h3 className="text-sm font-bold text-[var(--color-academy-ink)]">보낸 메시지</h3>
                         <button type="button" onClick={() => setShowRequests(false)} className="academy-button-text">닫기</button>
                     </div>
                     {myRequests.length === 0 ? (
-                        <div className="p-6 text-center text-gray-400 text-sm">보낸 메시지가 없습니다</div>
+                        <div className="p-6 text-center text-[var(--color-academy-faint)] text-sm">보낸 메시지가 없습니다</div>
                     ) : (
-                        <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+                        <div className="divide-y divide-[var(--color-academy-line)] max-h-96 overflow-y-auto">
                             {myRequests.map(r => {
                                 const st = REQUEST_STATUS[r.status] || REQUEST_STATUS.PENDING;
                                 return (
                                     <div key={r.id} className="px-4 py-3">
                                         <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm font-bold text-gray-900 dark:text-white">{r.title}</span>
+                                            <span className="text-sm font-bold text-[var(--color-academy-ink)]">{r.title}</span>
                                             <span className={`text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1 ${st.color}`}>
                                                 <SymbolIcon name={st.iconName} size={12} /> {st.label}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{r.content}</p>
+                                        <p className="text-xs text-[var(--color-academy-muted)] line-clamp-2">{r.content}</p>
                                         {r.adminNote && (
-                                            <div className="mt-2 bg-blue-50 rounded-lg px-3 py-2">
-                                                <p className="text-xs text-blue-700">
+                                            <div className="mt-2 bg-[var(--color-academy-info-soft)] rounded-lg px-3 py-2">
+                                                <p className="text-xs text-[var(--color-academy-info)]">
                                                     <span className="font-bold">학원 답변:</span> {r.adminNote}
                                                 </p>
                                             </div>
                                         )}
-                                        <p className="text-xs text-gray-400 mt-1">
+                                        <p className="text-xs text-[var(--color-academy-faint)] mt-1">
                                             {formatAlertTime(r.createdAt)}
                                         </p>
                                     </div>

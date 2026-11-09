@@ -321,7 +321,7 @@ export default function BundleCheckoutClient({
                                             />
                                             <span className="min-w-0 flex-1">
                                                 <span className="block break-keep text-sm font-bold text-[var(--color-academy-ink)]">
-                                                    <span className="mr-1 text-[var(--color-academy-primary)]">{item.studentName}</span>
+                                                    <span className="mr-1 font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
                                                     {item.title}
                                                 </span>
                                                 {item.blockReason && (

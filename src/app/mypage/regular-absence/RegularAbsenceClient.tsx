@@ -145,39 +145,39 @@ export default function RegularAbsenceClient({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
-          <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">event_busy</span>
+        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">event_busy</span>
           정규수업 결석 신고
         </h1>
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
-      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+      <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         신고한 결석은 선생님과 기사님에게 표시됩니다.
       </p>
 
       {/* 예정 보강(읽기 전용) — 관리자가 지정한 자녀의 보강 일정 */}
       {makeups.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-950 dark:bg-blue-950/30">
-          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-black text-blue-800 dark:text-blue-300">
+        <div className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)] p-4">
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-black text-[var(--color-academy-info)]">
             <span className="material-symbols-outlined text-lg">event_repeat</span>
             예정 보강
           </h2>
-          <ul className="divide-y divide-blue-100 overflow-hidden rounded-xl bg-white dark:divide-blue-950 dark:bg-gray-900">
+          <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl bg-white">
             {makeups.map((m) => (
               // 한 줄 행: 학생 · 보강 반(줄바꿈 허용) · 보강 날짜(오른쪽) · 상태 / 아래 줄에 원래 결석
               <li key={m.id} className="px-3 py-2">
                 <div className="flex min-h-7 items-center gap-2">
-                  <span className="shrink-0 text-sm font-black text-gray-900 dark:text-gray-100">{m.studentName}</span>
-                  <span className="min-w-0 flex-1 break-keep text-sm text-gray-600 dark:text-gray-300">{m.makeupClassName ?? "보강 반"}</span>
+                  <span className="shrink-0 text-sm font-black text-[var(--color-academy-ink)]">{m.studentName}</span>
+                  <span className="min-w-0 flex-1 break-keep text-sm text-[var(--color-academy-muted)]">{m.makeupClassName ?? "보강 반"}</span>
                   {m.makeupDateLabel && (
-                    <span className="shrink-0 text-right text-sm font-bold tabular-nums text-gray-900 dark:text-gray-100">{m.makeupDateLabel}</span>
+                    <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{m.makeupDateLabel}</span>
                   )}
-                  <span className="inline-flex shrink-0 items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-black text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                  <span className="inline-flex shrink-0 items-center rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-info)]">
                     {m.statusLabel}
                   </span>
                 </div>
                 {(m.originalClassName || m.originalDateLabel) && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                  <p className="text-xs text-[var(--color-academy-faint)]">
                     (결석: {m.originalClassName ?? ""}
                     {m.originalDateLabel ? ` ${m.originalDateLabel}` : ""})
                   </p>
@@ -185,45 +185,45 @@ export default function RegularAbsenceClient({
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-2 text-xs text-[var(--color-academy-muted)]">
             보강 일정은 학원에서 지정합니다. 변경이 필요하면 학원으로 문의해 주세요.
           </p>
         </div>
       )}
 
       {msg && (
-        <div className="mb-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-success)]">
           {msg}
         </div>
       )}
       {err && (
-        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
 
       {!hasAnyClass ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+        <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
           다가오는 정규수업이 없습니다.
         </div>
       ) : (
         <div className="space-y-5">
           {childGroups.map((child) => (
             <div key={child.studentId}>
-              <h2 className="mb-2 px-1 text-sm font-black text-gray-900 dark:text-gray-100">{child.studentName}</h2>
+              <h2 className="mb-2 px-1 text-sm font-black text-[var(--color-academy-ink)]">{child.studentName}</h2>
               <div className="space-y-3">
                 {child.groups.map((group) => (
                   // 날짜 묶음(오늘/이번 주/다음 주/이후) — 묶음 제목 오른쪽에 건수
                   <section
                     key={group.key}
                     aria-label={`${child.studentName} ${group.label}`}
-                    className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white dark:border-gray-800 dark:bg-gray-800"
+                    className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white"
                   >
-                    <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)] dark:bg-gray-900 dark:text-gray-100">
+                    <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)]">
                       <span>{group.label}</span>
                       <span className="tabular-nums text-[var(--color-academy-muted)]">{group.items.length}</span>
                     </h3>
-                    <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700">
+                    <ul className="divide-y divide-[var(--color-academy-line)]">
                       {group.items.map((d) => {
                         const key = dateKey(d);
                         const busy = busyKey === key;
@@ -232,30 +232,30 @@ export default function RegularAbsenceClient({
                             {/* 한 줄 행: 반·시각(왼쪽, 줄바꿈 허용) · 날짜(오른쪽, 숫자 폭 고정) · 동작 버튼 */}
                             <div className="flex min-h-11 flex-wrap items-center gap-2">
                               <div className="min-w-0 flex-1">
-                                <p className="break-keep text-sm font-bold text-brand-navy-900 dark:text-white">
+                                <p className="break-keep text-sm font-bold text-[var(--color-academy-ink)]">
                                   {d.className}
-                                  <span className="ml-1.5 text-xs font-normal tabular-nums text-gray-400">{d.startTime}</span>
+                                  <span className="ml-1.5 text-xs font-normal tabular-nums text-[var(--color-academy-faint)]">{d.startTime}</span>
                                 </p>
                                 {/* 상태 배지와 사유를 따로 나눠 보인다(«확정됨 · 사유» 이어 붙이지 않음) */}
                                 {d.locked ? (
                                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-black text-green-700 dark:bg-green-950 dark:text-green-300">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-success-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-success)]">
                                       <span className="material-symbols-outlined text-sm">check_circle</span>
                                       확정됨
                                     </span>
-                                    {d.reasonLabel && <span className="text-xs text-gray-600 dark:text-gray-300">{d.reasonLabel}</span>}
-                                    <span className="text-xs text-gray-400">학원 확정 (변경은 문의)</span>
+                                    {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
+                                    <span className="text-xs text-[var(--color-academy-faint)]">학원 확정 (변경은 문의)</span>
                                   </p>
                                 ) : d.reported ? (
                                   <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-warning)]">
                                       결석 신고됨
                                     </span>
-                                    {d.reasonLabel && <span className="text-xs text-gray-600 dark:text-gray-300">{d.reasonLabel}</span>}
+                                    {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
                                   </p>
                                 ) : null}
                               </div>
-                              <span className="shrink-0 text-right text-sm font-bold tabular-nums text-gray-800 dark:text-gray-100">{d.dateLabel}</span>
+                              <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{d.dateLabel}</span>
 
                               {/* 액션 — 기존과 같은 조건·같은 함수(신고 취소 / 결석 신고 폼 열기) */}
                               {d.locked ? null : d.reported ? (
@@ -287,7 +287,7 @@ export default function RegularAbsenceClient({
                                 <select
                                   value={reason[key] || ""}
                                   onChange={(e) => setReason((prev) => ({ ...prev, [key]: e.target.value }))}
-                                  className="min-h-11 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                  className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-white px-2 text-sm font-bold text-[var(--color-academy-ink)]"
                                   aria-label="결석 사유"
                                 >
                                   <option value="">사유 선택</option>

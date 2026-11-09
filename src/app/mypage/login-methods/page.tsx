@@ -59,39 +59,39 @@ export default async function LoginMethodsPage({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
-          <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">link</span>
+        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">link</span>
           간편로그인 연결
         </h1>
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
-      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+      <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         연결해 두면 다음부터 아이디·비밀번호 없이 그 방법으로 같은 계정에 로그인됩니다. 자녀 정보는 그대로입니다.
       </p>
 
       {justLinked && (
-        <p role="status" className="mb-3 rounded-xl bg-green-50 px-3 py-2 text-sm font-semibold text-green-800 dark:bg-green-950/40 dark:text-green-200">
+        <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-success)]">
           {PARENT_OAUTH_LABELS[justLinked]} 연결을 마쳤습니다.
         </p>
       )}
       {error && (
-        <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>
+        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
       )}
 
       {rows.length === 0 ? (
-        <p className="rounded-2xl border border-gray-200 p-3.5 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+        <p className="rounded-2xl border border-[var(--color-academy-line)] p-3.5 text-sm text-[var(--color-academy-muted)]">
           지금 연결할 수 있는 간편로그인이 없습니다.
         </p>
       ) : (
         <div className="grid gap-2">
           {rows.map((provider) => (
-            <div key={provider} className="flex min-h-14 items-center gap-3 rounded-2xl border border-gray-200 px-3.5 py-2.5 dark:border-gray-800">
-              <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+            <div key={provider} className="flex min-h-14 items-center gap-3 rounded-2xl border border-[var(--color-academy-line)] px-3.5 py-2.5">
+              <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
                 {provider === "apple" && <AppleLogo />}
                 {PARENT_OAUTH_LABELS[provider]}
               </span>
               {linked.has(provider) ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-green-100 px-2 py-1 text-xs font-bold text-green-800 dark:bg-green-950 dark:text-green-200">
+                <span className="inline-flex items-center gap-1 rounded-md bg-[var(--color-academy-success-soft)] px-2 py-1 text-xs font-bold text-[var(--color-academy-success)]">
                   <span className="material-symbols-outlined text-sm" aria-hidden>check_circle</span>
                   연결됨
                 </span>
@@ -99,7 +99,7 @@ export default async function LoginMethodsPage({
                 // <Link> 금지 — 미리 불러오기가 시작 주소를 열면 로그인 열쇠(PKCE)가 덮어써진다(2026-10-26 사고).
                 <a
                   href={`/auth/oauth/${provider}?intent=link`}
-                  className="inline-flex min-h-11 items-center rounded-xl bg-brand-orange-500 px-4 text-sm font-bold text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                  className="inline-flex min-h-11 items-center rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-white"
                 >
                   연결하기
                 </a>

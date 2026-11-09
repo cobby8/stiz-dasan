@@ -119,13 +119,13 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
-          <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">event_repeat</span>
+        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">event_repeat</span>
           보강 예약
         </h1>
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
-      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+      <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         결석 1회당 보강권 1장이 발급됩니다. <strong>결석일로부터 2개월</strong> 안에 사용해 주세요.
         기간이 지나면 자동으로 소멸합니다.
       </p>
@@ -136,23 +136,23 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
       </div>
 
       {msg && (
-        <div className="mb-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-success)]">
           {msg}
         </div>
       )}
       {err && (
-        <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+        <div className="mb-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)]">
           {err}
         </div>
       )}
 
       {credits.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+        <div className="rounded-2xl border border-dashed border-[var(--color-academy-line-input)] bg-white px-6 py-16 text-center text-sm text-[var(--color-academy-muted)]">
           발급된 보강권이 없습니다.
         </div>
       ) : (
         // 카드 묶음 대신 한 목록 안의 행(divide-y)으로 — 휴대폰 첫 화면에 더 많은 보강권이 보이게
-        <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white dark:divide-gray-700 dark:border-gray-800 dark:bg-gray-800">
+        <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
           {visibleCredits.map((c) => {
             const expired = c.expiresYmd < today && (c.status === "AVAILABLE" || c.status === "RESERVED");
             const badge = statusBadge(c, expired);
@@ -161,8 +161,8 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
               <li key={c.id} className="px-3 py-2.5">
                 {/* 1줄: 학생 · 구분(정규/방학특강) · 상태(오른쪽) — «·»로 잇던 글을 요소로 나눔 */}
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-sm font-black text-gray-900 dark:text-gray-100">{c.studentName}</span>
-                  <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)] dark:border-gray-700 dark:text-gray-300">
+                  <span className="text-sm font-black text-[var(--color-academy-ink)]">{c.studentName}</span>
+                  <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
                     {c.sourceLabel}
                   </span>
                   <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-xs font-black ${badge.cls}`}>
@@ -170,17 +170,17 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                   </span>
                 </div>
                 {/* 2줄: 결석일(왼쪽) · 사용 기한(오른쪽, 숫자 폭 고정) */}
-                <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-3 text-xs text-[var(--color-academy-muted)] dark:text-gray-400">
+                <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-3 text-xs text-[var(--color-academy-muted)]">
                   <span className="tabular-nums">{c.absenceLabel} 결석</span>
                   <span className="text-right tabular-nums">사용 기한 {c.expiresLabel}까지</span>
                 </div>
 
                 {/* 예약 완료 상태 */}
                 {c.booking && c.status === "RESERVED" && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-blue-50 py-1 pl-3 pr-1 dark:bg-blue-950/40">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--color-academy-info-soft)] py-1 pl-3 pr-1">
                     {/* 예약한 반(왼쪽, 줄바꿈 허용) · 날짜(오른쪽) · 취소 버튼 */}
-                    <span className="min-w-0 flex-1 break-keep text-sm font-bold text-blue-800 dark:text-blue-200">{c.booking.className}</span>
-                    <span className="shrink-0 text-sm font-bold tabular-nums text-blue-800 dark:text-blue-200">{c.booking.dateLabel}</span>
+                    <span className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-info)]">{c.booking.className}</span>
+                    <span className="shrink-0 text-sm font-bold tabular-nums text-[var(--color-academy-info)]">{c.booking.dateLabel}</span>
                     {/* 예약 취소 = 그 자리 확인(C-M1) 후 기존 cancel(c.id) 그대로 */}
                     <InlineConfirm
                       label="예약 취소"
@@ -208,28 +208,28 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                     {openId === c.id && (
                       <div className="mt-3 space-y-2">
                         {busy === c.id && options.length === 0 && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">수업을 불러오는 중…</p>
+                          <p className="text-xs text-[var(--color-academy-muted)]">수업을 불러오는 중…</p>
                         )}
                         {busy !== c.id && options.length === 0 && (
-                          <p className="rounded-xl bg-gray-50 px-3 py-4 text-center text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                          <p className="rounded-xl bg-[var(--color-academy-soft)] px-3 py-4 text-center text-xs text-[var(--color-academy-muted)]">
                             지금 예약할 수 있는 수업이 없습니다. 학원으로 문의해 주세요.
                           </p>
                         )}
                         {options.map((o) => (
-                          <div key={o.classId} className="rounded-xl border border-gray-100 p-3 dark:border-gray-700">
+                          <div key={o.classId} className="rounded-xl border border-[var(--color-academy-line)] p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="text-sm font-black text-gray-900 dark:text-gray-100">
+                              <div className="text-sm font-black text-[var(--color-academy-ink)]">
                                 {o.className}
-                                <span className="ml-2 text-xs font-bold text-gray-500 dark:text-gray-400">
+                                <span className="ml-2 text-xs font-bold text-[var(--color-academy-muted)]">
                                   {DOW_KO[o.dayOfWeek] ?? o.dayOfWeek} {o.startTime}
                                   {o.endTime ? `~${o.endTime}` : ""}
                                 </span>
                               </div>
-                              <span className="text-xs font-black tabular-nums text-gray-500 dark:text-gray-400">
+                              <span className="text-xs font-black tabular-nums text-[var(--color-academy-muted)]">
                                 {o.remaining}자리 남음
                               </span>
                             </div>
-                            <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                            <div className="mt-1 text-xs text-[var(--color-academy-faint)]">
                               대상 학년 {o.grades.join("·")}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -271,7 +271,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
         </ul>
       )}
 
-      <p className="mt-5 text-xs leading-relaxed text-gray-400 dark:text-gray-500">
+      <p className="mt-5 text-xs leading-relaxed text-[var(--color-academy-faint)]">
         · 보강은 학년이 맞는 다른 수업으로만 예약할 수 있습니다.<br />
         · 예약을 미리 취소하면 보강권은 그대로 유지됩니다.<br />
         · 예약 후 알리지 않고 오지 않으면 보강권을 사용한 것으로 처리됩니다.

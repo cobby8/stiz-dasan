@@ -75,42 +75,42 @@ export default function RolesClient({
         <Link href="/mypage" aria-label="마이페이지로" className="academy-back-link">
           <span className="material-symbols-outlined" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="flex items-center gap-2 text-lg font-black text-brand-navy-900 dark:text-white">
-          <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">badge</span>
+        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+          <span className="material-symbols-outlined text-[var(--color-academy-ink)]">badge</span>
           역할 추가 신청
         </h1>
       </div>
       {/* 화면 맨 위 설명 한 줄 = 본문 14px */}
-      <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+      <p className="mb-4 text-sm text-[var(--color-academy-muted)]">
         학원에서 선생님·기사님으로도 일하시면 신청해 주세요. 원장님이 확인하면 한 계정으로 화면을 오갈 수 있습니다.
       </p>
 
       <div className="mb-4 grid gap-2">
         {rows.map((row) => (
-          <div key={row.role} className="flex flex-wrap items-start gap-3 rounded-2xl border border-gray-200 p-3.5 dark:border-gray-800">
+          <div key={row.role} className="flex flex-wrap items-start gap-3 rounded-2xl border border-[var(--color-academy-line)] p-3.5">
             {row.state === "NONE" ? (
               <input
                 id={`role-${row.role}`}
                 type="checkbox"
                 checked={selected.includes(row.role)}
                 onChange={() => toggle(row.role)}
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime"
+                className="mt-1 h-4 w-4 rounded border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] focus:ring-[var(--color-academy-primary)]"
               />
             ) : (
               <span
-                className={`material-symbols-outlined mt-0.5 text-lg ${row.state === "ACTIVE" ? "text-green-600" : "text-amber-500"}`}
+                className={`material-symbols-outlined mt-0.5 text-lg ${row.state === "ACTIVE" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}
                 aria-hidden
               >
                 {row.state === "ACTIVE" ? "check_circle" : "hourglass_top"}
               </span>
             )}
             <label htmlFor={`role-${row.role}`} className="min-w-0 flex-1">
-              <span className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+              <span className="flex items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
                 {row.label}
-                {row.state === "ACTIVE" && <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-800 dark:bg-green-950 dark:text-green-200">사용 중</span>}
-                {row.state === "PENDING" && <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200">원장님 확인 중</span>}
+                {row.state === "ACTIVE" && <span className="rounded-md bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">사용 중</span>}
+                {row.state === "PENDING" && <span className="rounded-md bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">원장님 확인 중</span>}
               </span>
-              <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">{ROLE_DESCRIPTIONS[row.role]}</span>
+              <span className="mt-0.5 block text-xs text-[var(--color-academy-muted)]">{ROLE_DESCRIPTIONS[row.role]}</span>
             </label>
             {row.state === "PENDING" && (
               // 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(row.role) 그대로
@@ -128,10 +128,10 @@ export default function RolesClient({
       </div>
 
       {error && (
-        <p className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>
+        <p className="mb-3 rounded-xl bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
       )}
       {notice && (
-        <p role="status" className="mb-3 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">{notice}</p>
+        <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-info-soft)] px-3 py-2 text-sm text-[var(--color-academy-info)]">{notice}</p>
       )}
 
       {rows.some((row) => row.state === "NONE") && (

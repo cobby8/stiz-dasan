@@ -236,7 +236,7 @@ export default function ScheduleHub({
                                 <div className="min-w-0 flex-1">
                                     <p className="break-keep text-sm font-bold text-[var(--color-academy-ink)]">{e.className}</p>
                                     {/* 승인된 반은 개시일 전에도 수강 중 — 첫 수업 전이면 개시일만 안내 */}
-                                    {e.startsLater && <p className="text-xs font-bold text-[var(--color-academy-primary)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
+                                    {e.startsLater && <p className="text-xs font-bold text-[var(--color-academy-info)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
                                 </div>
                                 <span className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime}~{e.endTime}

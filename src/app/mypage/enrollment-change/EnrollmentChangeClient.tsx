@@ -107,8 +107,8 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   if (initial.children.length === 0) {
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">수강 변경 신청</h1>
-        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-gray-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
+        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
           지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
         </p>
       </main>
@@ -118,22 +118,22 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">수강 변경 신청</h1>
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
         {/* 적용일을 먼저 알린다. 언제부터 바뀌는지 모르고 신청하면 그게 곧 문의가 된다. */}
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          휴원·퇴원은 <b className="text-brand-navy-900 dark:text-white">{initial.effectiveFrom}</b>부터 적용됩니다.
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+          휴원·퇴원은 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 적용됩니다.
           반 변경은 원하시는 날짜를 고를 수 있어요.
         </p>
       </div>
 
-      {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
       {uncertain && (
         <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
             {pending ? "확인 중..." : "접수 결과 다시 확인"}
           </button>
           {uncertainSource !== initial && (
-            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
               내역 확인했어요
             </button>
           )}
@@ -144,7 +144,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         <select
           value={childIdx}
           onChange={(event) => setChildIdx(Number(event.target.value))}
-          className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-800"
+          className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
         >
           {initial.children.map((item, index) => (
             <option key={item.enrollmentId} value={index}>
@@ -155,17 +155,17 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
       )}
 
       {child?.pending ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950/30">
-          <p className="text-sm font-black text-amber-900 dark:text-amber-200">
+        <section className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-5">
+          <p className="text-sm font-black text-[var(--color-academy-warning)]">
             {CHANGE_STATUS_LABEL.PENDING}인 신청이 있습니다
           </p>
-          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
+          <p className="mt-1 text-sm text-[var(--color-academy-warning)]">
             {CHANGE_KIND_LABEL[child.pending.kind as ChangeKind] ?? "수강 변경"}
             {child.pending.toClassName ? ` · ${child.pending.toClassName}` : ""} · {child.pending.effectiveFrom}부터
             {child.pending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
           </p>
           {child.pending.kind === "PAUSE" && (
-            <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-200">
+            <p className="mt-1 text-sm font-bold text-[var(--color-academy-warning)]">
               {pauseResumeLabel(child.pending.resumeOn)}
             </p>
           )}
@@ -182,11 +182,11 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           />
         </section>
       ) : (
-        <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm dark:bg-gray-800">
+        <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm">
           <div>
-            <p className="text-xs font-bold text-gray-500 dark:text-gray-400">지금 다니는 반</p>
-            <p className="font-black text-brand-navy-900 dark:text-white">
-              {child.currentClassName} <span className="text-sm font-bold text-gray-500">· {child.currentProgramName}</span>
+            <p className="text-xs font-bold text-[var(--color-academy-muted)]">지금 다니는 반</p>
+            <p className="font-black text-[var(--color-academy-ink)]">
+              {child.currentClassName} <span className="text-sm font-bold text-[var(--color-academy-muted)]">· {child.currentProgramName}</span>
             </p>
           </div>
 
@@ -204,18 +204,18 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{KIND_HELP[kind]}</p>
+          <p className="text-xs text-[var(--color-academy-muted)]">{KIND_HELP[kind]}</p>
 
           {kind === "CLASS_CHANGE" && (
             <div>
-              <label htmlFor="to-class" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+              <label htmlFor="to-class" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
                 옮기고 싶은 반
               </label>
               <select
                 id="to-class"
                 value={toClassId}
                 onChange={(event) => setToClassId(event.target.value)}
-                className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
               >
                 <option value="">반을 선택해 주세요</option>
                 {selectable.map((item) => (
@@ -226,12 +226,12 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 ))}
               </select>
               {/* 만석이어도 신청은 받는다(원장 결정). 대신 기대를 정확히 만든다. */}
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                 정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
               </p>
 
               {/* 시작일을 학부모가 고른다. 달 중간이면 그달 수강료는 회차대로 다시 계산된다. */}
-              <label htmlFor="effective-from" className="mt-4 mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+              <label htmlFor="effective-from" className="mt-4 mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
                 언제부터 옮길까요?
               </label>
               <input
@@ -241,9 +241,9 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 min={initial.minEffectiveFrom}
                 max={initial.maxEffectiveFrom}
                 onChange={(event) => setEffectiveFrom(event.target.value)}
-                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
               />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                 달 중간부터 옮기면 그달 수강료를 수업 회차대로 다시 계산해 안내드립니다.
               </p>
             </div>
@@ -252,7 +252,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           {kind === "PAUSE" && (
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
-                <label htmlFor="resume-on" className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                <label htmlFor="resume-on" className="text-xs font-bold text-[var(--color-academy-muted)]">
                   복귀 예정일
                 </label>
                 {resumeOn && (
@@ -273,9 +273,9 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
                 min={earliestResumeOn(initial.effectiveFrom)}
                 aria-describedby="resume-on-help"
                 onChange={(event) => setResumeOn(event.target.value)}
-                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
               />
-              <p id="resume-on-help" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p id="resume-on-help" className="mt-1 text-xs text-[var(--color-academy-muted)]">
                 {resumeOn ? `${resumeOn} 복귀 예정` : "아직 정해지지 않았다면 비워두세요. ‘복귀일 미정’으로 접수됩니다."}
                 {" "}예정일에 자동으로 복귀 처리되지는 않습니다.
               </p>
@@ -283,7 +283,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
           )}
 
           <div>
-            <label htmlFor="change-reason" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+            <label htmlFor="change-reason" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
               사유 (선택)
             </label>
             <textarea
@@ -293,7 +293,7 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
               rows={3}
               maxLength={500}
               placeholder="학원에서 참고할 내용을 적어주세요"
-              className="w-full rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+              className="w-full rounded-xl border border-[var(--color-academy-line)] p-3 text-sm"
             />
           </div>
 
@@ -324,9 +324,9 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         </section>
       )}
 
-      {done && <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
+      {done && <p className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
 
-      <p className="text-center text-xs text-gray-400">
+      <p className="text-center text-xs text-[var(--color-academy-faint)]">
         요금이 달라지는 반으로 옮기면 학원에서 다시 안내드립니다.
       </p>
     </main>

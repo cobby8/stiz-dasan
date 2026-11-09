@@ -71,12 +71,12 @@ function ClaimUnavailable({
   actionLabel = "로그인으로 이동",
 }: { title: string; message: string; actionHref?: string; actionLabel?: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 dark:bg-gray-950">
-      <section className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-lg dark:bg-gray-900" aria-labelledby="claim-unavailable-title">
+    <main className="flex min-h-screen items-center justify-center bg-[var(--color-academy-soft)] px-4 py-10">
+      <section className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-lg" aria-labelledby="claim-unavailable-title">
         <span className="material-symbols-outlined text-5xl text-[var(--brand-accent)]" aria-hidden="true">info</span>
-        <h1 id="claim-unavailable-title" className="mt-4 text-xl font-black text-gray-900 dark:text-white">{title}</h1>
-        <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">{message}</p>
-        <a href={actionHref} className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-navy-900 px-4 font-bold text-white">{actionLabel}</a>
+        <h1 id="claim-unavailable-title" className="mt-4 text-xl font-black text-[var(--color-academy-ink)]">{title}</h1>
+        <p className="mt-3 text-sm leading-6 text-[var(--color-academy-muted)]">{message}</p>
+        <a href={actionHref} className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-academy-primary)] px-4 font-bold text-white">{actionLabel}</a>
       </section>
     </main>
   );
