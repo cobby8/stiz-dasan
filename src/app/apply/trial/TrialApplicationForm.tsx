@@ -12,11 +12,14 @@ import { trackMetaEvent } from "@/components/MetaPixel";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { trialDayForDate, trialScheduleError, trialScheduleForDate, trialSlotPeriod as getSlotPeriod, type TrialScheduleSelection } from "./trialScheduleSelection";
+import TrialVisitGuide from "./TrialVisitGuide";
 
 interface Props {
     availableSlots: AvailableSlot[];
     contactPhone: string;
     initialSource: string;
+    /** 체험비(설정값)·온라인 결제 가능 여부 — 온라인이면 계좌 안내 대신 신청 직후 결제 링크(2026-11-10) */
+    trialFee?: { amount: number; amountLabel: string; onlinePayment: boolean };
 }
 
 interface FormData {
@@ -77,7 +80,10 @@ const INITIAL_FORM: FormData = {
     honeypot: "",
 };
 
-export default function TrialApplicationForm({ availableSlots, contactPhone, initialSource }: Props) {
+export default function TrialApplicationForm({ availableSlots, contactPhone, initialSource, trialFee }: Props) {
+    // 온라인 결제가 켜져 있으면 계좌 입금 안내 대신 «신청 후 바로 결제». 꺼져 있으면 예전 계좌 안내 그대로.
+    const onlinePayment = Boolean(trialFee?.onlinePayment);
+    const feeLabel = trialFee?.amountLabel ?? TRIAL_FEE_PAYMENT_INFO.amountLabel;
     const [step, setStep] = useState(1);
     const [form, setForm] = useState<FormData>({ ...INITIAL_FORM, source: initialSource });
     const [error, setErrorMessage] = useState("");
@@ -88,6 +94,9 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     const [paymentNotice, setPaymentNotice] = useState("");
     const [isPending, startTransition] = useTransition();
     const [errorVersion, setErrorVersion] = useState(0);
+    // 신청 직후 서버가 준 결제 링크 토큰(이 신청에만 묶임). 없으면 계좌 안내로 대체한다.
+    // ⚠️ useState 순서: 렌더 테스트가 훅 순서(0=step, 1=form …)로 상태를 흉내 내므로 새 상태는 맨 뒤에 둔다.
+    const [paymentToken, setPaymentToken] = useState<string | null>(null);
     const errorRef = useRef<HTMLDivElement>(null);
 
     const setError = (message: string) => {
@@ -272,6 +281,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     honeypot: form.honeypot,
                 });
                 setCompletionMode(result.mode === "updated" ? "updated" : "created");
+                setPaymentToken((result as { paymentToken?: string | null }).paymentToken ?? null);
                 trackMetaEvent("Lead", {
                     content_name: "Trial application",
                     content_category: "Application",
@@ -301,11 +311,23 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{contactPhone}</a>
                     로 전화해주세요.
                 </p>
+                {paymentToken ? (
+                    // 온라인 결제: 이 신청에 묶인 결제 링크로 바로 결제 → 결제 확인 = 체험 확정
+                    <div className="mb-6 space-y-3 text-left">
+                        <a href={`/apply/trial/pay/${encodeURIComponent(paymentToken)}`} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-public-trial)] px-4 text-base font-black text-[var(--color-public-white)] hover:bg-[var(--color-public-trial-hover)]">
+                            체험수업비 {feeLabel} 결제하기
+                        </a>
+                        <p className="text-xs text-[var(--color-public-muted)]">카드·계좌이체·무통장입금으로 결제할 수 있어요. 결제가 확인되면 체험수업이 확정돼요.</p>
+                        <TrialVisitGuide feeLabel={feeLabel} onlinePayment />
+                    </div>
+                ) : (
+                <>
+                <div className="mb-3 text-left"><TrialVisitGuide feeLabel={feeLabel} onlinePayment={false} /></div>
                 <div className="mb-6 rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
                     <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
                     <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
                     <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
-                        <InfoRow label="금액" value={TRIAL_FEE_PAYMENT_INFO.amountLabel} />
+                        <InfoRow label="금액" value={feeLabel} />
                         <InfoRow label="은행" value={TRIAL_FEE_PAYMENT_INFO.bankName} />
                         <InfoRow label="계좌" value={TRIAL_FEE_PAYMENT_INFO.accountNumber} />
                         <InfoRow label="예금주" value={TRIAL_FEE_PAYMENT_INFO.accountHolder} />
@@ -320,6 +342,8 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     </div>
                     {paymentNotice && <p className="mt-3 text-xs font-semibold text-[var(--color-public-strong)] dark:text-brand-neon-lime">{paymentNotice}</p>}
                 </div>
+                </>
+                )}
                 <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-6 py-3 font-medium text-white transition-colors hover:bg-[var(--color-public-dark)]">
                     <FontFreeIcon name="home" size={18} />
                     홈으로 돌아가기
@@ -411,11 +435,19 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                             <FontFreeIcon name="payments" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             비용 확인
                         </h2>
+                        {onlinePayment ? (
+                            // 온라인 결제: 계좌 대신 «신청 후 바로 결제» 안내만(금액은 설정값)
+                            <div className="space-y-3 rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-paper)] p-4">
+                                <h3 className="text-lg font-black text-[var(--color-public-ink)]">체험수업비 {feeLabel}</h3>
+                                <p className="text-sm text-[var(--color-public-muted)]">신청을 마치면 바로 카드·계좌이체·무통장입금으로 결제할 수 있어요. 결제가 확인되면 체험수업이 확정돼요.</p>
+                                <TrialVisitGuide feeLabel={feeLabel} onlinePayment />
+                            </div>
+                        ) : (
                         <div className="rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
                             <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
                             <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
                             <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
-                                <InfoRow label="금액" value={TRIAL_FEE_PAYMENT_INFO.amountLabel} />
+                                <InfoRow label="금액" value={feeLabel} />
                                 <InfoRow label="은행" value={TRIAL_FEE_PAYMENT_INFO.bankName} />
                                 <InfoRow label="계좌" value={TRIAL_FEE_PAYMENT_INFO.accountNumber} />
                                 <InfoRow label="예금주" value={TRIAL_FEE_PAYMENT_INFO.accountHolder} />
@@ -430,9 +462,10 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                             </div>
                             {paymentNotice && <p className="mt-3 text-xs font-semibold text-[var(--color-public-strong)] dark:text-brand-neon-lime">{paymentNotice}</p>}
                         </div>
+                        )}
                         <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
                             <input type="checkbox" checked={form.trialFeeNoticeAgreed} onChange={(event) => update("trialFeeNoticeAgreed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime" />
-                            <span>체험수업 비용과 입금 계좌를 확인했습니다.</span>
+                            <span>{onlinePayment ? `체험수업 비용(${feeLabel})과 결제 안내를 확인했습니다.` : "체험수업 비용과 입금 계좌를 확인했습니다."}</span>
                         </label>
                         <input type="text" value={form.honeypot} onChange={(event) => update("honeypot", event.target.value)} className="hidden" tabIndex={-1} autoComplete="off" />
                     </div>

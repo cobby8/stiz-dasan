@@ -49,6 +49,8 @@ function harness(t, { initialStep = 1, form = {}, availableSlots = slots, existi
     "@/lib/datetime/kst": kst,
     "@/components/ui/public-error-text": publicErrorText,
     "./trialScheduleSelection": schedule,
+    // 체험 안내(위치·준비물·확정 조건) 표시 부품 — 일정 검증과 무관해 빈 부품으로(2026-11-10 체험비 온라인 결제)
+    "./TrialVisitGuide": { default: () => null },
     "@/components/ui/FontFreeIcon": { default: () => null },
     "@/components/MetaPixel": { trackMetaEvent() {} },
     "next/link": { default: ({ children }) => React.createElement("span", null, children) },

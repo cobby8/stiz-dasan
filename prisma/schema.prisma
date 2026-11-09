@@ -1017,6 +1017,11 @@ model AcademySettings {
   // 셔틀 확정 명단 킬 스위치. true=확정 명단 사용 / false·NULL=끔(항상 원본 조회, 전환 이전과 동일).
   // 원장이 재배포 없이 되돌릴 수 있어야 해서 환경변수가 아니라 DB에 둔다.
   shuttleRosterConfirmedMode  Boolean?
+  // 체험비 온라인 결제·안내 자동 발송(마이그레이션 20261110150000). 안내 스위치 2개는 원장 문구 승인 전이라 기본 false
+  trialFeeAmount              Int      @default(10000)
+  trialOnlinePaymentEnabled   Boolean  @default(false)
+  trialGuideAutoSend          Boolean  @default(false)
+  enrollGuideAutoSend         Boolean  @default(false)
 }
 
 model ClassSlotOverride {
@@ -1762,16 +1767,47 @@ model TrialLead {
   trialDate                   DateTime?             @db.Timestamptz(6) // Google Form: 체험수업 희망일
   trialFeeConfirmed           Boolean               @default(false) // 학원(관리자)이 실제 입금을 확인함 — 관리자 전용 버튼에서만 true
   trialFeeNoticeAgreedAt      DateTime?             @db.Timestamptz(6) // 학부모가 신청서에서 「체험비·입금 계좌 확인」에 체크한 시각(입금 아님)
+  // 체험비 온라인 결제(마이그레이션 20261110150000) — 결제 링크 토큰 해시(원문 저장 안 함) · 결제 요약 · 결제 완료 시각
+  paymentTokenHash            String?
+  trialFeePaymentStatus       String? // WAITING_FOR_DEPOSIT | PAID | REFUNDED | NEEDS_REFUND (DB CHECK)
+  trialFeePaidAt              DateTime?             @db.Timestamptz(6)
   hopeNote                    String? // 바라는 점 (자유 입력)
   agreedTerms                 Boolean               @default(false) // 이용약관 동의 여부
   agreedPrivacy               Boolean               @default(false) // 개인정보 수집/이용 동의 여부
   createdAt                   DateTime              @default(now()) @db.Timestamptz(6)
   updatedAt                   DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
   enrollmentShortLinks        EnrollmentShortLink[]
+  trialFeePayments            TrialFeePayment[]
 
   @@index([status])
   @@index([createdAt])
   @@index([status, createdAt])
+}
+
+/// 체험비 토스 주문 1건 = 1행 (마이그레이션 20261110150000 의 사본). 체험 신청자는 원생이 아니라 PaymentTransaction 을 못 써서 따로 둔다.
+/// 부분 유일 인덱스(신청당 DONE 1건 · WAITING_FOR_DEPOSIT 1건)·CHECK 는 SQL 에만 있다.
+model TrialFeePayment {
+  id               String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  trialLeadId      String? // 신청을 지우면 NULL(돈 기록은 남김 — ON DELETE SET NULL)
+  provider         String     @default("TOSS")
+  orderId          String     @unique
+  paymentKey       String?    @unique
+  amount           Int
+  taxFreeAmount    Int
+  status           String     @default("READY") // READY | WAITING_FOR_DEPOSIT | DONE | CANCELED | EXPIRED | FAILED | NEEDS_REFUND
+  method           String?
+  receiptUrl       String?
+  failureCode      String?
+  failureMessage   String?
+  confirmStartedAt DateTime?  @db.Timestamptz(6)
+  approvedAt       DateTime?  @db.Timestamptz(6)
+  canceledAt       DateTime?  @db.Timestamptz(6)
+  rawResponse      Json?
+  createdAt        DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime   @default(now()) @updatedAt @db.Timestamptz(6)
+  trialLead        TrialLead? @relation(fields: [trialLeadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([trialLeadId, createdAt])
 }
 
 // 체험 완료 후 수강신청서로 안전하게 연결하는 만료형 짧은 링크

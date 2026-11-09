@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { recordTossWebhook } from "@/lib/payment-ledger";
+import { isTrialFeeWebhook, recordTrialFeeTossWebhook } from "@/lib/trial-fee/trialFeePaymentService";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,11 @@ export async function POST(req: NextRequest) {
             payload = JSON.parse(rawBody);
         } catch {
             return NextResponse.json({ error: "올바른 JSON 웹훅이 아닙니다." }, { status: 400 });
+        }
+        // 체험비 주문(TRIAL-)은 청구 장부가 아니라 체험비 장부로 — 같은 웹훅 주소를 함께 쓴다(토스에 등록한 주소는 그대로)
+        if (isTrialFeeWebhook(payload)) {
+            const trialResult = await recordTrialFeeTossWebhook(payload);
+            return NextResponse.json(trialResult, { status: trialResult.retryable ? 503 : 200 });
         }
         const result = await recordTossWebhook(payload);
         return NextResponse.json(result, { status: result.retryable ? 503 : 200 });

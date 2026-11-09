@@ -3157,6 +3157,9 @@ export const getTrialLeads = cache(async (statusOrOptions?: string | AdminListQu
             trialFeeConfirmed: r.trialFeeConfirmed ?? r.trialfeeconfirmed ?? false,
             // 학부모 「비용·계좌 확인」 체크 시각 — 입금 확인과 별개(화면에서 「입금 대기(학부모 동의함)」)
             trialFeeNoticeAgreedAt: r.trialFeeNoticeAgreedAt ?? r.trialfeenoticeagreedat ?? null,
+            // 체험비 온라인 결제 요약(2026-11-10) — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND (칸이 없으면 null)
+            trialFeePaymentStatus: r.trialFeePaymentStatus ?? null,
+            trialFeePaidAt: r.trialFeePaidAt ?? null,
             hopeNote: r.hopeNote ?? r.hopenote ?? null,
             agreedTerms: r.agreedTerms ?? r.agreedterms ?? false,
             agreedPrivacy: r.agreedPrivacy ?? r.agreedprivacy ?? false,

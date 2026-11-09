@@ -33,7 +33,7 @@ function ContentBlock({ html }: { html: string }) {
 const DEFAULT_FAQ_DATA = [
     {
         question: "체험수업 비용이 얼마인가요?",
-        answer: "체험수업은 1회 1만원의 체험비가 있습니다. 운동복과 실내화를 준비해 주시면 됩니다. 실제로 다닐 수 있는 요일과 시간대의 수업에서 체험하시길 권장합니다.",
+        answer: "체험수업은 1회 1만원의 체험비가 있습니다. 실내용 운동화, 운동복장, 물을 준비해 주세요. 신청 후 체험비가 확인되면 체험수업이 확정됩니다. 실제로 다닐 수 있는 요일과 시간대의 수업에서 체험하시길 권장합니다.",
     },
     {
         question: "수강료는 언제 납부하나요?",
@@ -135,7 +135,7 @@ export default function ApplyPageClient({
                                 {/* 체험 혜택 강조 태그들 */}
                                 <div className="flex flex-wrap gap-2 mb-4">
                                     <Badge variant="success" size="sm">체험비 1만원</Badge>
-                                    <Badge variant="info" size="sm">준비물: 운동복, 실내화</Badge>
+                                    <Badge variant="info" size="sm">준비물: 운동복·실내화·물</Badge>
                                 </div>
 
                                 {trialContentHtml ? (

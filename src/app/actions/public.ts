@@ -13,6 +13,8 @@ import { decideTrialLeadForNewApplication } from "@/lib/enrollment/trialLeadLink
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { notifyAdmins } from "@/lib/notification";
 import { buildContactSaveName } from "@/lib/contactSaveName";
+// 체험비 온라인 결제 링크(2026-11-10) — 신청 직후 토큰 발급(꺼져 있으면 null → 화면은 계좌 안내)
+import { issueTrialPaymentToken } from "@/lib/trial-fee/trialFeePaymentService";
 import {
     issueEnrollmentAccountHandoff,
 } from "@/lib/enrollment-account-handoff";
@@ -370,7 +372,9 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             revalidatePath("/admin");
             revalidatePath("/admin/apply");
             revalidatePath("/admin/trial");
-            return { success: true, id: existingId, mode: "updated" as const, duplicate: true };
+            // 다시 낸 신청서도 새 결제 링크를 준다(예전 링크는 무효 — 원문 토큰은 저장하지 않으므로)
+            const paymentToken = await issueTrialPaymentToken(existingId);
+            return { success: true, id: existingId, mode: "updated" as const, duplicate: true, paymentToken };
         }
 
         const recentSubmissions = await prisma.$queryRawUnsafe<{ count: number }[]>(
@@ -470,7 +474,9 @@ export async function submitTrialApplication(data: TrialApplicationInput) {
             ),
         ]);
 
-        return { success: true, id: trialLeadId, mode: "created" as const };
+        // 체험비 결제 링크 — 온라인 결제가 꺼져 있거나 발급에 실패하면 null(신청은 그대로 접수)
+        const paymentToken = rows[0]?.id ? await issueTrialPaymentToken(rows[0].id) : null;
+        return { success: true, id: trialLeadId, mode: "created" as const, paymentToken };
     } catch (e) {
         console.error("[submitTrialApplication] failed:", e);
         throw new Error("신청 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");

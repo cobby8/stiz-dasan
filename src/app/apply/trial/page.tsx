@@ -4,6 +4,7 @@ import PublicPageLayout from "@/components/PublicPageLayout";
 import AnimateOnScroll from "@/components/ui/AnimateOnScroll";
 import TrialApplicationForm from "./TrialApplicationForm";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
+import { getTrialFeePublicInfo } from "@/lib/trial-fee/trialFeePaymentService";
 
 export const revalidate = 60;
 
@@ -17,9 +18,11 @@ export const metadata = buildPublicMetadata({
 export default async function TrialApplyPage({ searchParams }: { searchParams: Promise<{ utm_source?: string; utm_medium?: string }> }) {
     const params = await searchParams;
     const initialSource = params.utm_source?.toLowerCase() === "naver" && params.utm_medium?.toLowerCase() === "cpc" ? "NAVER_AD" : "";
-    const [slots, settings] = await Promise.all([
+    const [slots, settings, trialFee] = await Promise.all([
         getAvailableTrialSlots(),
         getAcademySettings(),
+        // 체험비 금액(설정값)·온라인 결제 가능 여부 — 꺼져 있으면 예전 계좌 안내
+        getTrialFeePublicInfo(),
     ]);
 
     // 체험수업은 항상 자체 신청 폼을 사용한다(외부 폼으로 리다이렉트하지 않는다).
@@ -38,7 +41,7 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
 
             <section className="public-content-section bg-[var(--color-public-tint)] py-8 dark:bg-[var(--color-public-paper)] md:py-12">
                 <div className="mx-auto max-w-2xl px-4">
-                    <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} />
+                    <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} trialFee={trialFee} />
                 </div>
             </section>
         </PublicPageLayout>

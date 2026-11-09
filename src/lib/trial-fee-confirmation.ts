@@ -69,7 +69,14 @@ export async function confirmTrialFeeOnce(
 export function trialFeeStatusLabel(lead: {
     trialFeeConfirmed?: boolean | null;
     trialFeeNoticeAgreedAt?: string | Date | null;
-}): "입금 완료" | "입금 대기(학부모 동의함)" | "입금 대기" {
+    /** 온라인 결제 요약(2026-11-10) — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND. 없으면 예전 문구 그대로 */
+    trialFeePaymentStatus?: string | null;
+}): "입금 완료" | "입금 대기(학부모 동의함)" | "입금 대기" | "결제 완료(온라인)" | "입금 대기(무통장 계좌 발급)" | "환불 완료" | "이중 결제(환불 필요)" {
+    // 온라인 결제 흔적이 있으면 그 상태를 먼저 보인다(문구는 trialFeeRules 와 같은 글자)
+    if (lead.trialFeePaymentStatus === "NEEDS_REFUND") return "이중 결제(환불 필요)";
+    if (lead.trialFeePaymentStatus === "PAID" && lead.trialFeeConfirmed) return "결제 완료(온라인)";
+    if (lead.trialFeePaymentStatus === "WAITING_FOR_DEPOSIT" && !lead.trialFeeConfirmed) return "입금 대기(무통장 계좌 발급)";
+    if (lead.trialFeePaymentStatus === "REFUNDED" && !lead.trialFeeConfirmed) return "환불 완료";
     if (lead.trialFeeConfirmed) return "입금 완료";
     return lead.trialFeeNoticeAgreedAt ? "입금 대기(학부모 동의함)" : "입금 대기";
 }
@@ -98,4 +105,83 @@ export async function confirmTrialFeeWithAudit(
         );
         return result;
     });
+}
+
+// ───────────────────────── 체험비 온라인 결제(2026-11-10) ─────────────────────────
+// trialFeeConfirmed 를 true 로 쓰는 곳은 이 파일 하나뿐이어야 한다(가드 테스트). 그래서 온라인 결제 완료·환불의
+// 신청 행 반영도 여기 둔다. 결제 기록(TrialFeePayment) 쪽은 src/lib/trial-fee/trialFeeLedger.ts 가 맡는다.
+
+type TrialFeeSqlDb = {
+    $queryRawUnsafe<T>(query: string, ...values: unknown[]): Promise<T>;
+    $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
+};
+
+/**
+ * 온라인 결제 완료 → 신청을 «체험비 결제 완료(체험 확정)»로. 트랜잭션 안에서 부른다(결제 기록 반영과 한 묶음).
+ * 이미 학원이 입금 확인한 신청이면 값은 그대로 두고 changed=false(부르는 쪽이 이중 납부로 처리).
+ */
+export async function markTrialFeePaidOnlineInTx(
+    tx: TrialFeeSqlDb,
+    trialLeadId: string,
+    note: string,
+): Promise<{ changed: boolean }> {
+    const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `UPDATE "TrialLead"
+         SET "trialFeeConfirmed" = true,
+             "trialFeePaidAt" = COALESCE("trialFeePaidAt", NOW()),
+             "trialFeePaymentStatus" = 'PAID',
+             "updatedAt" = NOW()
+         WHERE id = $1
+           AND COALESCE("trialFeeConfirmed", false) = false
+         RETURNING id`,
+        trialLeadId,
+    );
+    if (rows.length === 0) return { changed: false };
+    await tx.$executeRawUnsafe(
+        `INSERT INTO "ApplicationContactLog" (
+            id, "targetType", "trialLeadId", "enrollmentApplicationId", action, note,
+            "createdByUserId", "createdByName", "createdAt", "updatedAt"
+        ) VALUES (
+            gen_random_uuid()::text, 'TRIAL', $1, NULL, 'UPDATED',
+            $2, NULL, '온라인 결제', NOW(), NOW()
+        )`,
+        trialLeadId,
+        note,
+    );
+    return { changed: true };
+}
+
+/**
+ * 온라인 결제 전액 취소(환불) → 신청의 체험비 상태를 «환불 완료»로 되돌린다(입금 확인 해제).
+ * 온라인 결제 완료(PAID)였던 신청만 바꾼다 — 계좌 입금으로 확인한 신청은 건드리지 않는다.
+ */
+export async function markTrialFeeRefundedInTx(
+    tx: TrialFeeSqlDb,
+    trialLeadId: string,
+    actor: TrialFeeAuditActor,
+): Promise<{ changed: boolean }> {
+    const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `UPDATE "TrialLead"
+         SET "trialFeeConfirmed" = false,
+             "trialFeePaymentStatus" = 'REFUNDED',
+             "updatedAt" = NOW()
+         WHERE id = $1
+           AND "trialFeePaymentStatus" = 'PAID'
+         RETURNING id`,
+        trialLeadId,
+    );
+    if (rows.length === 0) return { changed: false };
+    await tx.$executeRawUnsafe(
+        `INSERT INTO "ApplicationContactLog" (
+            id, "targetType", "trialLeadId", "enrollmentApplicationId", action, note,
+            "createdByUserId", "createdByName", "createdAt", "updatedAt"
+        ) VALUES (
+            gen_random_uuid()::text, 'TRIAL', $1, NULL, 'UPDATED',
+            '체험비 온라인 결제 환불(전액 취소)', $2, $3, NOW(), NOW()
+        )`,
+        trialLeadId,
+        actor.userId,
+        actor.userName,
+    );
+    return { changed: true };
 }

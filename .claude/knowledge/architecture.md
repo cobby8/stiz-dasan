@@ -257,3 +257,9 @@
 - **발견자**: developer
 - **내용**: 서버 액션 `src/app/actions/payment-bulk-refund.ts` 가 DB 로 다시 읽은 행을 `planBulkRefund` 에 넣어 갈래를 나눈다(막을 것 하나라도 있으면 전부 미실행). TOSS=`refundTossPaymentByAdmin`(payment-ledger: 재조회→감사→취소 API 전액→재조회 FULL 일 때만 applyVerifiedTossFullCancel, 가상계좌 DONE 은 환불 계좌 필요라 차단), TOSS_POS=`requestChargeCancelByAdmin`(비동기, 결과 REQUESTED), 그 밖(MANUAL)=`refundPaidPaymentInTx`, CAFE24_BRIDGE 차단. 묶음(토스 항목·POS 항목)은 전부 골라야 하고 부분 취소는 지원 안 함. ⚡ 한 건 «환불»도 같은 runRefund→refundSelectedPayments([id]) 로 통일(PM 결정), updatePaymentStatus·bulkUpdatePaymentStatus 는 REFUNDED 를 거부한다 — 새 환불 경로를 만들 때도 이 액션만 부른다.
 - **참조횟수**: 0
+
+### [2026-11-10] 체험비 온라인 결제 = 결제 링크 토큰 + 별도 표(TrialFeePayment), 토스 호출·면세·가상계좌 판정은 청구 것 재사용
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 체험 신청자는 원생·로그인이 없어 PaymentTransaction(청구·청구서·학생 id 필수)을 못 쓴다 → `TrialFeePayment`(마이그레이션 20261110150000, 신청당 DONE 1건·WAITING 1건 부분 유일 인덱스, FK ON DELETE SET NULL). 권한 = 신청 직후 발급하는 결제 링크 토큰(32바이트, `TrialLead.paymentTokenHash` 해시만 저장, 원문은 신청 완료 응답에만) → `/apply/trial/pay/[token]`. 순수 규칙 `src/lib/trial-fee/trialFeeRules.ts`, 장부 `trialFeeLedger.ts`(db 인자, 가짜 DB 테스트), 실행부 `trialFeePaymentService.ts`(payment-ledger 의 getVerifiedTossPayment·encodeTossSecret·makeUuidFromSeed·readTossErrorMessage 를 export 해 재사용). 토스 웹훅은 같은 주소에서 주문번호 `TRIAL-` 이면 `recordTrialFeeTossWebhook` 으로 갈라진다. `trialFeeConfirmed=true` 쓰기는 여전히 `trial-fee-confirmation.ts` 한 곳(가드 테스트) — 온라인 확정·환불 반영 함수도 거기 있다. 설정 `AcademySettings.trialFeeAmount·trialOnlinePaymentEnabled`(기본 꺼짐 = 예전 계좌 안내). 체험·등록 안내 초안 `guideMessages.ts`(코치 = 슬롯 키→Coach.phone, 기사 = DRIVER 역할 User.phone) — 자동 발송 스위치 2개 기본 false + 문자 규칙 isActive=false(원장 승인 전 미리보기만). 원생 등록 액션은 «문자 없음» 테스트가 있어 등록 안내를 거기에 연결하지 않았다.
+- **참조횟수**: 0
