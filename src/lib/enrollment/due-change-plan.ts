@@ -13,15 +13,18 @@ export type DueEnrollmentSnapshot = {
 } | null;
 
 export type DueChangePlan =
-  | { action: "APPLY"; expectedStatus: string; nextStatus: "PAUSED" | "WITHDRAWN" }
+  | { action: "APPLY"; expectedStatus: string; nextStatus: "PAUSED" | "WITHDRAWN" | "ACTIVE" }
   | { action: "HOLD"; reason: string };
 
 /** 자동 적용 대상 종류별: 바꿔도 되는 현재 상태 → 바꿀 상태 */
-const AUTO_APPLY: Record<string, { from: string[]; to: "PAUSED" | "WITHDRAWN"; label: string }> = {
+const AUTO_APPLY: Record<string, { from: string[]; to: "PAUSED" | "WITHDRAWN" | "ACTIVE"; label: string }> = {
   // 휴원은 다니고 있는 학생만. 이미 휴원이면 사람이 확인한다.
   PAUSE: { from: ["ACTIVE"], to: "PAUSED", label: "휴원" },
   // 퇴원은 다니는 중이거나 휴원 중인 학생 모두 가능하다.
   WITHDRAW: { from: ["ACTIVE", "PAUSED"], to: "WITHDRAWN", label: "퇴원" },
+  // 복귀는 휴원 중인 학생만(2026-11-09 학부모 복귀 신청 추가). 휴원과 같은 모델 — 사이트만 바꾸고 랠리즈는 «확인 필요»로 남긴다.
+  // 이미 다니는 중(ACTIVE)이면 누군가 먼저 복귀시킨 것이라 두 번 적용하지 않고 사람이 확인한다.
+  RESUME: { from: ["PAUSED"], to: "ACTIVE", label: "복귀" },
 };
 
 export const DEFAULT_HOLD_REASON = "시트·Rallyz 반영 및 세 시스템 재조회 승인 대기";

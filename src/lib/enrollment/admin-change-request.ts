@@ -90,7 +90,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     id: row.id,
     studentName: row.studentName,
     kind: row.kind,
-    // 복귀(RESUME)는 관리자 직접 변경에서만 생긴다(학부모 신청 종류에는 없음).
+    // 복귀(RESUME)는 관리자 직접 변경 + 학부모 복귀 신청(휴원 중인 반, 2026-11-09~)에서 생긴다.
     kindLabel: CHANGE_KIND_LABEL[row.kind as ChangeKind] ?? (row.kind === "RESUME" ? "복귀" : row.kind),
     fromClassName: row.fromClassName ?? null,
     toClassName: row.toClassName ?? null,
@@ -353,7 +353,7 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   actor: string;
   studentName: string | null;
   enrollment: { id: string; classId: string; status: string; className: string };
-  nextStatus: "PAUSED" | "WITHDRAWN";
+  nextStatus: "PAUSED" | "WITHDRAWN" | "ACTIVE"; // ACTIVE = 학부모 복귀 신청 승인분
 }) {
   const { key, row, actor, enrollment } = input;
   const requestId = crypto.randomUUID();

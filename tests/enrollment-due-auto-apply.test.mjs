@@ -75,7 +75,21 @@ test("보호자 연결이 끊겼거나 수강이 신청과 다르면 보류한�
 });
 
 test("모르는 종류는 보류한다", () => {
-  assert.equal(planDueEnrollmentChange({ ...base, kind: "RESUME", enrollment: enrollment("PAUSED") }).action, "HOLD");
+  assert.equal(planDueEnrollmentChange({ ...base, kind: "CLASS_ADD", enrollment: enrollment("PAUSED") }).action, "HOLD");
+});
+
+// 2026-11-09 학부모 복귀 신청 추가: 승인된 복귀는 복귀일에 휴원 → 수강 중으로 사이트에 반영한다(휴원과 같은 모델).
+test("복귀: 휴원 중일 때만 ACTIVE 로 적용하고, 이미 다니는 중·퇴원이면 사람이 확인한다", () => {
+  assert.deepEqual(
+    planDueEnrollmentChange({ ...base, kind: "RESUME", enrollment: enrollment("PAUSED") }),
+    { action: "APPLY", expectedStatus: "PAUSED", nextStatus: "ACTIVE" },
+  );
+  const already = planDueEnrollmentChange({ ...base, kind: "RESUME", enrollment: enrollment("ACTIVE") });
+  assert.equal(already.action, "HOLD");
+  assert.match(already.reason, /이미 복귀 상태/);
+  assert.equal(planDueEnrollmentChange({ ...base, kind: "RESUME", enrollment: enrollment("WITHDRAWN") }).action, "HOLD");
+  // 보호자 연결이 끊긴 신청은 복귀도 보류
+  assert.equal(planDueEnrollmentChange({ ...base, parentConfirmed: false, kind: "RESUME", enrollment: enrollment("PAUSED") }).action, "HOLD");
 });
 
 test("적용 경로는 판정 함수 결과로만 사이트를 바꾸고 원장 키를 유지한다", () => {

@@ -14,6 +14,16 @@ export const CHANGE_KIND_LABEL: Record<ChangeKind, string> = {
   WITHDRAW: "퇴원",
 };
 
+/**
+ * 복귀(RESUME) — 휴원 중(PAUSED)인 반에만 내는 신청이다.
+ * 다니는 반에서 고르는 세 종류(CHANGE_KINDS)와 출발 상태가 달라 따로 둔다.
+ * (CHANGE_KINDS 에 넣으면 다니는 반 화면의 종류 버튼에도 «복귀»가 생긴다.)
+ */
+export const RESUME_KIND = "RESUME" as const;
+
+/** 학부모 화면·원장 알림에 쓰는 종류 이름. 복귀까지 포함한다. */
+export const REQUEST_KIND_LABEL: Record<string, string> = { ...CHANGE_KIND_LABEL, [RESUME_KIND]: "복귀" };
+
 export const CHANGE_STATUS_LABEL: Record<string, string> = {
   PENDING: "검토 중",
   APPROVED: "승인됨",
@@ -138,7 +148,10 @@ export type ChangeRequestError =
   | "REASON_TOO_LONG"
   | "INVALID_EFFECTIVE_DATE"
   | "EFFECTIVE_DATE_TOO_SOON"
-  | "EFFECTIVE_DATE_TOO_FAR";
+  | "EFFECTIVE_DATE_TOO_FAR"
+  | "RESUME_DATE_REQUIRED"
+  | "RESUME_DATE_PAST"
+  | "RESUME_DATE_TOO_FAR";
 
 /**
  * 신청 내용이 종류에 맞는지 본다. 소유권·정원은 여기서 보지 않는다(DB 를 봐야 한다).
@@ -186,4 +199,25 @@ export const CHANGE_REQUEST_MESSAGE: Record<ChangeRequestError, string> = {
   INVALID_EFFECTIVE_DATE: "변경 시작일을 다시 확인해 주세요.",
   EFFECTIVE_DATE_TOO_SOON: "변경 시작일은 내일 이후로 선택해 주세요.",
   EFFECTIVE_DATE_TOO_FAR: "변경 시작일은 3개월 이내로 선택해 주세요.",
+  RESUME_DATE_REQUIRED: "복귀 희망일을 골라 주세요.",
+  RESUME_DATE_PAST: "복귀 희망일은 오늘 이후로 골라 주세요.",
+  RESUME_DATE_TOO_FAR: "복귀 희망일은 3개월 이내로 골라 주세요.",
 };
+
+/**
+ * 복귀 신청의 복귀 희망일(= 다시 다니기 시작하는 날)을 검사한다.
+ *
+ * 오늘(KST)도 고를 수 있다 — 쉬던 아이가 «오늘부터» 나오는 일이 흔하다.
+ * 지난날은 막는다(이미 지난 수업의 출석·청구가 꼬인다). 너무 먼 날은 반 사정을 알 수 없어 3개월로 묶는다.
+ * 고른 날짜를 조용히 바꾸지 않고 거절한다(신청한 날과 실제 복귀일이 달라지면 안 된다).
+ */
+export function resolveResumeDate(input: { requested?: unknown; today: string }):
+  { ok: true; resumeFrom: string } | { ok: false; error: ChangeRequestError } {
+  const requested = typeof input.requested === "string" ? input.requested.trim() : "";
+  if (!requested) return { ok: false, error: "RESUME_DATE_REQUIRED" };
+  if (!isYmd(requested)) return { ok: false, error: "INVALID_RESUME_DATE" };
+  // "YYYY-MM-DD" 는 글자 순서 = 날짜 순서라 문자열 비교로 충분하다.
+  if (requested < input.today) return { ok: false, error: "RESUME_DATE_PAST" };
+  if (requested > addMonths(input.today, MAX_EFFECTIVE_MONTHS_AHEAD)) return { ok: false, error: "RESUME_DATE_TOO_FAR" };
+  return { ok: true, resumeFrom: requested };
+}
