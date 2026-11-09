@@ -4,7 +4,10 @@ import { adminErrorText, paymentMethodLabel } from "@/components/admin/adminDisp
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
-import { todayKst } from "@/lib/datetime/kst";
+import { todayKst, toKstYmd } from "@/lib/datetime/kst";
+// 청구/수납 탭 — 청구서 발행·수정·삭제 창과, 서버와 같은 «수정 가능» 판정(2026-11-09)
+import { CancelInvoiceModal, EditInvoiceModal, IssueInvoiceModal, type CancelablePayment, type EditablePayment } from "./StudentBillingModals";
+import { unpaidEditBlockReason } from "@/lib/payments/studentBillingRules";
 import { pickMonthSummary, toHhmm } from "@/lib/studentDetailFormat";
 import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -201,6 +204,13 @@ type StudentActivityData = {
         issuedAt?: Date | string | null;
         payableUntil?: Date | string | null;
         receiptUrl?: string | null;
+        // 청구/수납 탭의 수정·삭제 판단용(getStudentActivity 가 채운다)
+        classId?: string | null;
+        className?: string | null;
+        year?: number | null;
+        month?: number | null;
+        posLocked?: boolean;
+        checkoutActive?: boolean;
     }[];
     attendanceStats: { total: number; present: number; absent: number; late: number; excused: number; rate: number };
     galleryPosts: { id: string; title: string | null; mediaJSON: string; createdAt: Date | string }[];
@@ -437,6 +447,8 @@ export default function StudentDetailClient({
     classes = [],
     shuttleLocations = [],
     tenure = null,
+    billingParentSendEnabled = false,
+    canManageFinance = false,
 }: {
     data?: StudentActivityData;
     studentId?: string;
@@ -446,6 +458,11 @@ export default function StudentDetailClient({
     shuttleLocations?: ShuttleLocationRow[];
     // 총 재원기간 — page.tsx 가 getStudentTenure 로 전달(자료 없으면 null → 표시 안 함)
     tenure?: StudentTenure | null;
+    // 학부모 청구 안내 사이트 발송 잠금이 풀렸나 — page.tsx 가 서버 환경변수로 판정해 전달(기본 잠금)
+    billingParentSendEnabled?: boolean;
+    // 재무 소유자(원장)인가 — page.tsx 가 서버 requireFinanceOwner 와 같은 기준(isFinanceOwnerRole)으로 판정해 전달.
+    // 청구서 수정·삭제 메뉴는 이때만 보인다(발행은 관리자 누구나 — 서버 createPayment 가 requireAdmin)
+    canManageFinance?: boolean;
 }) {
     const [activityData, setActivityData] = useState<StudentActivityData | null>(initialData ?? null);
     const [loading, setLoading] = useState(!initialData);
@@ -467,6 +484,10 @@ export default function StudentDetailClient({
     // 반 줄 ⋯ 메뉴: 반 이동 창 대상 / 삭제 확인 창(빨간 확인 — 공용 부품)
     const [moveSource, setMoveSource] = useState<EnrollmentMoveSource | null>(null);
     const { confirm: confirmDanger, confirmDialog: dangerConfirmDialog } = useAdminConfirm();
+    // 청구/수납 탭: 발행 창 열림 · 수정 대상 · 삭제(취소 처리) 대상
+    const [issueOpen, setIssueOpen] = useState(false);
+    const [billingEditTarget, setBillingEditTarget] = useState<EditablePayment | null>(null);
+    const [billingCancelTarget, setBillingCancelTarget] = useState<CancelablePayment | null>(null);
     // ── 반 추가 상태 (E3) ───────────────────────────────────
     // showClassPicker: 반 선택 UI 펼침 / enrollingClassId: 등록 처리 중(disabled)
     // enrollError: 수강 반 추가/상태 변경 실패 사유
@@ -1021,7 +1042,7 @@ export default function StudentDetailClient({
     const tabs: { key: TabKey; label: string; count?: number }[] = [
         { key: "overview", label: "개요" },
         { key: "class", label: "수강·출결", count: attendances.length },
-        { key: "pay", label: "수납" },
+        { key: "pay", label: "청구/수납" },
         { key: "history", label: "월별 히스토리", count: monthlyHistory.length },
         { key: "photo", label: "사진", count: galleryPosts.length },
     ];
@@ -1606,7 +1627,13 @@ export default function StudentDetailClient({
                                 <SectionTitle
                                     icon="receipt_long"
                                     title="청구·납부"
-                                    right={<span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">시스템</span>}
+                                    right={
+                                        // 상세에서 바로 청구서 발행(2026-11-09) — 수납 관리로 가서 학생을 찾지 않아도 되게
+                                        <button type="button" onClick={() => setIssueOpen(true)} className="academy-button-secondary inline-flex min-h-11 items-center gap-1 px-3 text-sm">
+                                            <SymbolIcon name="add" size={16} />
+                                            청구서 발행
+                                        </button>
+                                    }
                                 />
                                 {payments.length === 0 ? (
                                     <EmptyState text="청구·납부 내역이 없습니다." />
@@ -1619,6 +1646,13 @@ export default function StudentDetailClient({
                                             const updating = payUpdatingId === p.id;    // 이 건 처리 중(disabled)
                                             const changed = payChangedId === p.id;      // 방금 변경 성공("변경됨")
                                             const rowError = payError?.id === p.id ? payError.message : null;
+                                            // 미납·연체 건만 수정·삭제 메뉴를 단다. 수정 가능 여부는 서버와 같은 판정(최종 판단은 서버)
+                                            const unpaidRow = p.status === "PENDING" || p.status === "OVERDUE";
+                                            const editBlocked = unpaidRow
+                                                ? unpaidEditBlockReason({ status: p.status, invoiceStatus: p.invoiceStatus, posLocked: p.posLocked, parentCheckoutActive: p.checkoutActive })
+                                                : null;
+                                            const dueYmd = toKstYmd(p.dueDate);
+                                            const periodLabel = p.year && p.month ? `${p.year}년 ${p.month}월` : dueYmd.slice(0, 7);
                                             return (
                                                 <div key={p.id} className="py-3">
                                                   <div className="flex items-start gap-3">
@@ -1661,6 +1695,35 @@ export default function StudentDetailClient({
                                                             >
                                                                 <SymbolIcon name={editing ? "close" : "edit"} size={13} />
                                                             </button>
+                                                            {/* ⋯ 메뉴: 청구서 수정 · 청구서 삭제(위험 — 맨 아래 구분선 밑, 사유 입력 창에서 확정) */}
+                                                            {unpaidRow && canManageFinance && (
+                                                                <AdminQuickActionMenu
+                                                                    label={`${periodLabel} ${p.description || "청구"} 작업`}
+                                                                    actions={[
+                                                                        {
+                                                                            key: "edit",
+                                                                            label: "청구서 수정",
+                                                                            icon: "edit_note",
+                                                                            disabled: Boolean(editBlocked) || updating,
+                                                                            onSelect: () => setBillingEditTarget({ id: p.id, amount: p.amount, description: p.description ?? null, dueYmd, periodLabel }),
+                                                                        },
+                                                                        {
+                                                                            key: "cancel",
+                                                                            label: "청구서 삭제",
+                                                                            icon: "delete",
+                                                                            tone: "danger",
+                                                                            disabled: updating,
+                                                                            onSelect: () => setBillingCancelTarget({
+                                                                                id: p.id,
+                                                                                amount: p.amount,
+                                                                                statusLabel: info.label,
+                                                                                periodLabel,
+                                                                                classLabel: p.className || p.description || "수업 연결 정보 없음",
+                                                                            }),
+                                                                        },
+                                                                    ]}
+                                                                />
+                                                            )}
                                                         </div>
                                                     </div>
                                                   </div>
@@ -1695,6 +1758,10 @@ export default function StudentDetailClient({
                                                             </p>
                                                         )}
                                                     </div>
+                                                  )}
+                                                  {/* 수정할 수 없는 미납 건은 이유를 한 줄로(POS 요청·학부모 결제 진행 등) */}
+                                                  {editBlocked && unpaidRow && canManageFinance && (
+                                                    <p className="mt-1 pl-[76px] text-xs text-[var(--color-academy-faint)]">수정 불가 — {editBlocked}</p>
                                                   )}
                                                   {/* 실패 사유(권한 없음 등) 표면화 — 조용한 실패 금지 */}
                                                   {rowError && (
@@ -1913,6 +1980,24 @@ export default function StudentDetailClient({
                 />
             )}
             {dangerConfirmDialog}
+            {/* 청구/수납 탭의 발행·수정·삭제 창 — 성공하면 상세를 다시 불러온다(서버가 수납 관리 캐시도 무효화) */}
+            {issueOpen && (
+                <IssueInvoiceModal
+                    studentId={student.id}
+                    studentName={student.name}
+                    classOptions={activeEnrollments.map((e) => ({ classId: e.classId, label: `${e.className}${e.dayOfWeek ? ` (${e.dayOfWeek})` : ""}` }))}
+                    hasParent={Boolean(student.parentId)}
+                    parentSendEnabled={billingParentSendEnabled}
+                    onClose={() => setIssueOpen(false)}
+                    onDone={loadData}
+                />
+            )}
+            {billingEditTarget && (
+                <EditInvoiceModal studentId={student.id} payment={billingEditTarget} onClose={() => setBillingEditTarget(null)} onDone={loadData} />
+            )}
+            {billingCancelTarget && (
+                <CancelInvoiceModal studentName={student.name} payment={billingCancelTarget} onClose={() => setBillingCancelTarget(null)} onDone={loadData} />
+            )}
 
             {/* 배차용 셔틀 위치 지도 선택 모달 — 핀(좌표) 확정 시에만 저장(서버가 좌표 필수 검증) */}
             {pickerKind && (

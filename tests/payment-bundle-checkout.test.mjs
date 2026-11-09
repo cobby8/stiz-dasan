@@ -386,6 +386,11 @@ function claimDb(state) {
                 }
                 if (/mirror_log/.test(sql)) return [];
                 if (/SELECT status FROM "Payment" WHERE id = \$1/.test(sql)) return [{ status: state.payments[args[0]].status }];
+                // 단건 승인 직전 금액 재확인(관리자 «청구서 수정» 경합 — 2026-11-09)
+                if (/SELECT amount FROM "PaymentTransaction" WHERE id = \$1/.test(sql)) return [{ amount: state.txs[args[0]].amount }];
+                if (/AS "invoiceAmount"/.test(sql)) {
+                    return args[0].map((id) => ({ paymentId: id, paymentAmount: state.payments[id].amount, invoiceAmount: state.payments[id].invoiceAmount ?? state.payments[id].amount }));
+                }
                 if (/t\.status = 'IN_PROGRESS'/.test(sql)) {
                     return Object.values(state.txs)
                         .filter((t) => t.id !== args[0] && t.provider === "TOSS" && t.status === "IN_PROGRESS"
@@ -415,7 +420,7 @@ function claimState() {
     return {
         txs: {
             "tx-a": { id: "tx-a", provider: "TOSS", status: "READY", paymentId: "pay-1", updatedAtMs: 0 }, // 묶음(pay-1·pay-2)
-            "tx-b": { id: "tx-b", provider: "TOSS", status: "READY", paymentId: "pay-2", updatedAtMs: 0 }, // 단건(pay-2) — 다른 탭
+            "tx-b": { id: "tx-b", provider: "TOSS", status: "READY", paymentId: "pay-2", amount: 50000, updatedAtMs: 0 }, // 단건(pay-2) — 다른 탭
             "tx-c": { id: "tx-c", provider: "TOSS", status: "READY", paymentId: "pay-3", updatedAtMs: 0 }, // 묶음(pay-2·pay-3)
         },
         items: {
@@ -686,6 +691,10 @@ function bundleStartResponder(ownRows, extra = () => undefined) {
             return ownRows.filter((r) => !ids || ids.includes(r.paymentId));
         }
         if (/AND \(t\."paymentId" = ANY\(\$1::text\[\]\)/.test(sql)) return [];
+        // 잠금 뒤 금액 재확인 — 처음 읽은 금액 그대로(관리자 수정 없음)
+        if (/AS "invoiceAmount"/.test(sql)) {
+            return ownRows.filter((r) => args[0].includes(r.paymentId)).map((r) => ({ paymentId: r.paymentId, paymentAmount: r.amount, invoiceAmount: r.invoiceAmount ?? r.amount }));
+        }
         if (/INTERVAL '30 minutes'/.test(sql)) return [];
         if (/INSERT INTO "PaymentTransaction"/.test(sql)) return [{ id: "tx-new" }];
         if (/INSERT INTO "PaymentTransactionItem"/.test(sql)) return 1;
@@ -870,4 +879,146 @@ test("계약: 마이그레이션은 표·인덱스 추가만 · 위치 상한 = 
     assert.match(code, /ENABLE ROW LEVEL SECURITY/);
     assert.match(migration, /되돌림 SQL/);
     assert.match(schema, /model PaymentTransactionItem \{[\s\S]*?transactionId String[\s\S]*?taxFreeAmount Int/);
+});
+
+// ───────────────────────────── 5. 관리자 «청구서 수정» 경합(2026-11-09 검수 지적) ─────────────────────────────
+// 학부모 결제 시작은 금액을 잠금 «밖»에서 읽는다. 그 사이 관리자가 같은 잠금(stiz-payment-checkout:{청구 id})을 쥐고
+// 금액을 고치면, 결제 쪽은 잠금을 얻은 «뒤» 다시 읽어 옛 금액 주문을 만들지 않아야 한다.
+
+test("경합: 단건 결제 시작 중 관리자가 금액을 고쳤으면(잠금 뒤 재확인) 옛 금액 주문을 만들지 않는다", async () => {
+    const calls = fakePrisma((sql) => {
+        if (/FROM "PaymentInvoice" i/.test(sql) && /"rallyzMirror"/.test(sql)) {
+            // 잠금 밖에서 처음 읽은 금액 50,000
+            return [{ invoiceId: "inv-2", paymentId: "pay-2", studentId: "stu-2", parentId: "u1", invoiceStatus: "SENT",
+                amount: 50000, title: "11월 셔틀비", paymentStatus: "PENDING", studentName: "김서윤", parentEmail: "p@x", rallyzMirror: false }];
+        }
+        if (/AS "invoiceAmount"/.test(sql)) return [{ paymentId: "pay-2", paymentAmount: 60000, invoiceAmount: 60000 }]; // 관리자가 고친 뒤
+        return undefined;
+    });
+    await withToss(null, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-2", owner, origin: "https://stiz.example", method: "CARD" });
+        assert.equal(result.ok, false);
+        assert.equal(result.amountChanged, true);
+        assert.match(result.error, /청구 금액이 바뀌었어요/);
+        assert.equal(calls.some(isInsertTx), false, "옛 금액 READY 주문을 만들지 않는다");
+        const lockAt = calls.findIndex((c) => /pg_advisory_xact_lock/.test(c.sql));
+        const freshAt = calls.findIndex((c) => /AS "invoiceAmount"/.test(c.sql));
+        assert.ok(lockAt >= 0 && freshAt > lockAt, "잠근 뒤에 금액을 다시 읽는다");
+        assert.equal(calls[lockAt].args[0], "stiz-payment-checkout:pay-2", "관리자 수정과 같은 잠금 키");
+    });
+});
+
+test("경합: 단건 결제 시작 — 금액이 그대로면 예전처럼 주문을 만든다", async () => {
+    const calls = fakePrisma((sql) => {
+        if (/FROM "PaymentInvoice" i/.test(sql) && /"rallyzMirror"/.test(sql)) {
+            return [{ invoiceId: "inv-2", paymentId: "pay-2", studentId: "stu-2", parentId: "u1", invoiceStatus: "SENT",
+                amount: 50000, title: "11월 셔틀비", paymentStatus: "PENDING", studentName: "김서윤", parentEmail: "p@x", rallyzMirror: false }];
+        }
+        if (/AS "invoiceAmount"/.test(sql)) return [{ paymentId: "pay-2", paymentAmount: 50000, invoiceAmount: 50000 }];
+        if (/INSERT INTO "PaymentTransaction"/.test(sql)) return [{ id: "tx-new" }];
+        return undefined;
+    });
+    await withToss(null, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-2", owner, origin: "https://stiz.example", method: "CARD" });
+        assert.notEqual(result.amountChanged, true);
+        const insert = calls.find(isInsertTx);
+        assert.ok(insert, "주문 생성");
+        assert.equal(insert.args[7], 50000);
+    });
+});
+
+test("경합: 묶음 결제 시작 중 한 건 금액이 바뀌었으면 거래·항목을 만들지 않는다", async () => {
+    const rows = [
+        row({ paymentId: "pay-2", invoiceId: "inv-2", studentId: "stu-2", studentName: "김서윤", type: "SHUTTLE", amount: 50000, invoiceAmount: 50000 }),
+        row(),
+    ];
+    const calls = fakePrisma(bundleStartResponder(rows, (sql, args) => {
+        // 잠금 뒤 금액 재확인만(후보 조회도 같은 별칭을 쓰므로 isPayer 조회는 뺀다)
+        if (/AS "invoiceAmount"/.test(sql) && !/AS "isPayer"/.test(sql)) {
+            return args[0].map((id) => (id === "pay-2"
+                ? { paymentId: id, paymentAmount: 55000, invoiceAmount: 55000 } // 관리자가 고친 뒤
+                : { paymentId: id, paymentAmount: 180000, invoiceAmount: 180000 }));
+        }
+        return undefined;
+    }));
+    await withToss(null, async () => {
+        const result = await ledger.createBundleCheckoutSession({ parentUserId: "u1", paymentIds: ["pay-2", "pay-1"], origin: "https://stiz.example/", method: "CARD" });
+        assert.equal(result.ok, false);
+        assert.equal(result.blocked, "AMOUNT_CHANGED");
+        assert.equal(calls.some(isInsertTx), false);
+        assert.equal(calls.some((c) => /INSERT INTO "PaymentTransactionItem"/.test(c.sql)), false);
+    });
+});
+
+test("경합: 단건 승인 직전 — 주문 금액과 지금 청구 금액이 다르면 승인하지 않는다(«승인 진행 중» 표시도 안 함)", async () => {
+    const state = claimState();
+    state.payments["pay-2"].amount = 60000; // 주문(tx-b 50,000) 뒤 관리자가 고침
+    const fake = claimDb(state);
+    assert.equal(await claim(fake, "tx-b", "pay-2"), "AMOUNT_CHANGED");
+    assert.equal(state.txs["tx-b"].status, "READY");
+    state.payments["pay-2"].amount = 50000;
+    assert.equal(await claim(fake, "tx-b", "pay-2"), null, "금액이 같으면 예전처럼 통과");
+});
+
+test("계약: 관리자 «청구서 수정»은 결제와 같은 잠금을 거래 맨 앞에서 잡는다", async () => {
+    const admin = await readFile("src/app/actions/admin.ts", "utf8");
+    const body = admin.slice(admin.indexOf("export async function updateUnpaidPayment"), admin.indexOf("let _galleryInstagramColumnsEnsured"));
+    assert.match(body, /prisma\.\$transaction\(async \(tx\) => \{\s*(?:\/\/[^\n]*\n\s*)*await lockPaymentsForCheckout\(tx, \[paymentId\]\);/);
+});
+
+// ───────────────────────────── 6. «학부모 결제 진행 중» 시간 제한(2026-11-09 재검수) ─────────────────────────────
+// 만료 코드가 없어 결제창을 열고 닫은 READY 주문이 남는다. 시간 제한이 없으면 그 청구는 영원히 «수정 불가»가 된다.
+
+test("결제 진행 판정: 오래된 READY 는 막지 않고, 30분 안 READY·IN_PROGRESS 는 막는다", () => {
+    const now = Date.parse("2026-11-09T12:00:00Z");
+    const ago = (min) => new Date(now - min * 60_000).toISOString();
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "READY", updatedAt: ago(5) }, now), true);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "IN_PROGRESS", updatedAt: ago(29) }, now), true);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "READY", updatedAt: ago(31) }, now), false, "결제창 닫고 떠난 주문");
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "READY", updatedAt: ago(60 * 24 * 7) }, now), false);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "READY", updatedAt: null }, now), false);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "DONE", updatedAt: ago(1) }, now), false);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "FAILED", updatedAt: ago(1) }, now), false);
+});
+
+test("결제 진행 판정: 가상계좌는 기한 남은 것만(기한 지남·만료 상태는 막지 않음, 발급 정보 못 읽으면 막음)", () => {
+    const now = Date.parse("2026-11-09T12:00:00Z");
+    const old = new Date(now - 60 * 24 * 60_000).toISOString(); // 하루 전에 발급(updatedAt 은 상관없다)
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "WAITING_FOR_DEPOSIT", updatedAt: old, issue: OPEN_ISSUE }, now), true);
+    const expired = { ...OPEN_ISSUE, dueDate: "2026-11-08T23:59:00+09:00" };
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "WAITING_FOR_DEPOSIT", updatedAt: old, issue: expired }, now), false);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "EXPIRED", updatedAt: old, issue: OPEN_ISSUE }, now), false);
+    assert.equal(ledgerDb.isParentCheckoutActive({ status: "WAITING_FOR_DEPOSIT", updatedAt: old, issue: null }, now), true, "안전한 쪽");
+});
+
+test("실행: 결제 진행 청구 id — 대표·묶음 항목 모두, 판정은 한 함수", async () => {
+    const now = Date.now();
+    const calls = [];
+    const db = {
+        async $queryRawUnsafe(sql, ...args) {
+            calls.push({ sql, args });
+            return [
+                { paymentId: "pay-1", status: "READY", updatedAt: new Date(now - 5 * 60_000), issue: null },        // 30분 안 → 진행
+                { paymentId: "pay-2", status: "READY", updatedAt: new Date(now - 90 * 60_000), issue: null },       // 오래됨 → 아님
+                { paymentId: "pay-3", status: "WAITING_FOR_DEPOSIT", updatedAt: new Date(now - 90 * 60_000), issue: OPEN_ISSUE }, // 기한 남음
+                { paymentId: "pay-4", status: "WAITING_FOR_DEPOSIT", updatedAt: new Date(now), issue: { ...OPEN_ISSUE, dueDate: "2020-01-01T00:00:00+09:00" } },
+            ];
+        },
+        async $executeRawUnsafe() { return 0; },
+    };
+    const active = await ledgerDb.findParentCheckoutActivePaymentIds(db, ["pay-1", "pay-2", "pay-3", "pay-4"], now);
+    assert.deepEqual([...active].sort(), ["pay-1", "pay-3"]);
+    assert.match(calls[0].sql, /SELECT it\."paymentId" FROM "PaymentTransactionItem" it WHERE it\."transactionId" = t\.id/, "묶음 항목도 본다");
+    assert.deepEqual(await ledgerDb.findParentCheckoutActivePaymentIds(db, [], now), new Set());
+});
+
+test("계약: 30분은 결제 재사용 기준과 같은 값, 수정 서버·상세 조회가 같은 함수를 쓴다", async () => {
+    const bundle = await loadTsModule("src/lib/payments/checkoutBundle.ts");
+    assert.equal(bundle.CHECKOUT_REUSE_MINUTES, 30);
+    const reuse = [...ledgerSrc.matchAll(/"requestedAt" > NOW\(\) - INTERVAL '(\d+) minutes'/g)].map((m) => Number(m[1]));
+    assert.ok(reuse.length >= 2 && reuse.every((min) => min === bundle.CHECKOUT_REUSE_MINUTES), `재사용 기준 ${reuse}`);
+    const admin = await readFile("src/app/actions/admin.ts", "utf8");
+    assert.match(admin, /findParentCheckoutActivePaymentIds\(tx, \[paymentId\], Date\.now\(\)\)/);
+    assert.match(queriesSrc, /findParentCheckoutActivePaymentIds\(prisma, payments\.map/);
+    assert.doesNotMatch(admin + queriesSrc, /AS checkout_active/, "SQL 따로 만들지 않는다");
 });

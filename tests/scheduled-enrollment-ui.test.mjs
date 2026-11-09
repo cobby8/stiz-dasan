@@ -53,6 +53,9 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     "@/components/admin/CustomerNoticeSender": nullComponent,
+    // 청구/수납 탭의 발행·수정·삭제 창(2026-11-09) — 이 테스트는 수강 줄만 보므로 빈 부품·판정으로 둔다
+    "./StudentBillingModals": { IssueInvoiceModal: () => null, EditInvoiceModal: () => null, CancelInvoiceModal: () => null },
+    "@/lib/payments/studentBillingRules": { unpaidEditBlockReason: () => null },
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {
     student: { id: "student-a", name: "합성 학생", birthDate: "2016-01-01", gender: "남", createdAt: "2026-11-03", parentId: "parent-a", parent: {}, memo: null },
