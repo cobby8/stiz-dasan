@@ -32,6 +32,8 @@ import {
   type RentalStatus,
 } from "@/lib/rental/gym-rental-rules";
 import { updateRentalStatus, type AdminRentalRow } from "@/app/actions/rental";
+// 신청함 «대관» 탭에 끼울 때 «처리할 것 / 완료»를 나누는 기준 — 신청함과 같은 칸 판정(catalog 한 곳)
+import { bucketFor, deriveRentalStatus } from "@/lib/requests/catalog";
 
 const ACTION_ICON: Record<RentalAction, string> = {
   approve: "check_circle",
@@ -93,7 +95,12 @@ function smsFailed(row: AdminRentalRow): boolean {
   return String(row.applicantSmsStatus ?? "").startsWith("FAILED");
 }
 
-export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: AdminRentalRow[]; bankAccount: string; smsOn: SmsOn }) {
+/**
+ * embedded = 신청함 «대관» 탭 안에 끼운 모양(2026-11-10 원장 결정 k1·k2).
+ * 제목·상태 칩을 숨기고 «처리할 것(승인 대기 → 진행 중)» 먼저, 끝난 건은 맨 아래 «완료 보기»로 접는다.
+ * 처리 버튼·확인 창·문자 미리보기는 옛 대관 화면과 같은 코드 그대로다.
+ */
+export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded = false }: { rows: AdminRentalRow[]; bankAccount: string; smsOn: SmsOn; embedded?: boolean }) {
   const router = useRouter();
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -106,6 +113,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
   const [notice, setNotice] = useState("");
   const [copiedId, setCopiedId] = useState("");
   const [pending, startTransition] = useTransition();
+  const [showDone, setShowDone] = useState(false);
 
   const counts = useMemo(() => {
     const map = new Map<string, number>();
@@ -113,7 +121,14 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
     return map;
   }, [rows]);
   const chips = RENTAL_STATUSES.map((status) => ({ value: status, label: RENTAL_STATUS_LABEL[status], count: counts.get(status) ?? 0 }));
-  const visible = statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
+  // 끼운 모양: 처리 필요(승인 대기) → 진행 중(입금 대기·확정·환불 대기) 순, 같은 칸 안은 원래 순서 유지. 완료는 펼쳤을 때만 맨 아래
+  // 보증금 0원(재원생 무료) 대관의 «사용 완료»는 끝난 일(deriveRentalStatus)
+  const rank = (row: AdminRentalRow) => ({ ACTION: 0, ONGOING: 1, DONE: 2 })[bucketFor("RENTAL", deriveRentalStatus(row.status, row.deposit))];
+  const openRows = embedded ? rows.filter((row) => rank(row) < 2).sort((a, b) => rank(a) - rank(b)) : [];
+  const doneRows = embedded ? rows.filter((row) => rank(row) === 2) : [];
+  const visible = embedded
+    ? [...openRows, ...(showDone ? doneRows : [])]
+    : statusFilter === "ALL" ? rows : rows.filter((row) => row.status === statusFilter);
 
   const rejectReason = reasonChoice === CUSTOM_REASON ? customReason.trim() : reasonChoice;
 
@@ -207,6 +222,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
 
   return (
     <div className="space-y-3">
+      {!embedded && (
       <div>
         <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
           <span className="material-symbols-outlined text-[var(--color-academy-primary)]" aria-hidden="true">sports_basketball</span>
@@ -217,8 +233,9 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
           재원생 무료(입금 0원)는 승인하면 바로 확정되고, 보증금이 없어 사용 완료가 마지막입니다.
         </p>
       </div>
+      )}
 
-      <StatusCountChips items={chips} selected={statusFilter} onSelect={setStatusFilter} ariaLabel="대관 상태별 건수" />
+      {!embedded && <StatusCountChips items={chips} selected={statusFilter} onSelect={setStatusFilter} ariaLabel="대관 상태별 건수" />}
 
       {error && !confirming && (
         <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">{error}</p>
@@ -229,7 +246,7 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
 
       {visible.length === 0 ? (
         <p className="rounded-xl border border-[var(--color-academy-line)] px-4 py-4 text-center text-sm text-[var(--color-academy-muted)]">
-          {rows.length === 0 ? "아직 들어온 대관 신청이 없습니다." : "이 상태의 신청이 없습니다."}
+          {rows.length === 0 ? "아직 들어온 대관 신청이 없습니다." : embedded ? "처리할 대관이 없습니다." : "이 상태의 신청이 없습니다."}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
@@ -285,6 +302,14 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn }: { rows: 
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* 끼운 모양: 끝난 대관은 맨 아래 «완료 보기»로 접어 둔다 */}
+      {embedded && doneRows.length > 0 && (
+        <button type="button" onClick={() => setShowDone((value) => !value)} aria-expanded={showDone} className="academy-button-text">
+          {showDone ? "완료 접기" : `완료 보기 ${doneRows.length}`}
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">{showDone ? "expand_less" : "expand_more"}</span>
+        </button>
       )}
 
       {detail && !confirming && (

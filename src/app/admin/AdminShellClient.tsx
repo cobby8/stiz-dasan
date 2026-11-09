@@ -37,7 +37,8 @@ function isShuttlePath(pathname: string): boolean {
 // 2026-11-10 신청함 통합(원장 결정 d2): 옛 «요청·신청함» 묶음(학부모 요청·수강 변경·탈퇴·직원 역할·카카오·대관)은
 // 메뉴에서 빼고 최상위 «신청함»(/admin/inbox) 하나로 모았다. 옛 주소는 그대로 살아 있다(신청함 상세 칸 «기존 화면에서 열기»).
 // 신청함을 거치는 옛 화면 목록 — 그 화면에 들어가 있으면 «신청함» 메뉴를 켜 둔다(길 잃지 않게)
-const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests", "/admin/rental"] as const;
+// 2026-11-10 원장 결정 k4: «신청·상담»(/admin/apply) 메뉴도 신청함 체험·수강 탭과 ⚙ 신청 설정으로 옮겼다(주소는 산다)
+const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests", "/admin/rental", "/admin/apply"] as const;
 const EXTRA_GROUPS = [
     { label: "수업 운영", icon: "event_note", items: [
         ["/admin/absence", "정규 결석 신고", "🙅"],
@@ -140,9 +141,8 @@ export default function AdminShellClient({
                 </div>
                 <nav aria-label="관리자 업무 메뉴" className="min-h-0 p-3 space-y-1 flex-1 overflow-y-auto [@media(max-height:500px)]:p-2">
                     <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="오늘 업무" />
-                    {/* 신청함 — 14종류 신청을 한 곳에서. 배지 = 처리 필요 건수 */}
+                    {/* 신청함 — 체험·수강·상담·대관·변경·기타 6탭. 배지 = 처리 필요 건수 */}
                     <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} icon="📨" label="신청함" badge={inboxCount ?? undefined} />
-                    <NavItem href="/admin/apply" active={matchesNavPath(pathname, "/admin/apply")} icon="📝" label="신청·상담" />
                     <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생" />
                     <NavItem href="/admin/attendance" active={matchesNavPath(pathname, "/admin/attendance") && !matchesNavPath(pathname, "/admin/attendance/report")} icon="✅" label="수업·출결" />
                     <NavItem href="/admin/finance" active={matchesNavPath(pathname, "/admin/finance")} icon="💳" label="청구·수납" />

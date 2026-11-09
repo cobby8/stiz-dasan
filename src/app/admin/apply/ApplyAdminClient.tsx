@@ -6,7 +6,7 @@ import { formatEnrollmentMonthsShort, formatEnrollmentStartOn, formatPreferredSl
 import type { EnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress";
 import EnrollmentShuttleProgressView from "./EnrollmentShuttleProgressView";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
@@ -186,7 +186,22 @@ interface ApplyAdminClientProps {
     initialTrialStats?: TrialStats;
     initialTrialClasses?: ClassInfo[];
     initialTrialPagination?: ListPagination;
+    /**
+     * 화면 모양(2026-11-10 원장 결정 k1·k4 — 신청함 재편).
+     * - "full"(기본): 옛 /admin/apply 그대로(주소는 살린다)
+     * - "trial" | "applications" | "waitlist": 신청함 «체험»·«수강(신청/대기)» 탭 안에 한 화면만 끼운다(제목·업무 탭 숨김)
+     * - "settings": 신청함 ⚙ «신청 설정» — 유입 통계·안내 설정 두 탭만
+     * 목록·상세·처리 로직은 모드와 상관없이 같은 코드다.
+     */
+    mode?: ApplyAdminMode;
+    /**
+     * 처리(저장·승인·문자 등)가 성공할 때마다 부르는 선택 콜백 — 신청함에 끼울 때 탭 배지·메뉴 숫자를 다시 읽게 한다.
+     * 옛 /admin/apply 는 넘기지 않는다(동작 그대로).
+     */
+    onChanged?: () => void;
 }
+
+export type ApplyAdminMode = "full" | "trial" | "applications" | "waitlist" | "settings";
 
 type ApplyPayload = {
     applications: EnrollApplication[];
@@ -432,7 +447,14 @@ export default function ApplyAdminClient({
     initialTrialStats,
     initialTrialClasses,
     initialTrialPagination,
+    mode = "full",
+    onChanged,
 }: ApplyAdminClientProps) {
+    // 콜백은 ref 로 붙잡는다 — 부모가 매번 새 함수를 넘겨도 아래 useCallback 들이 다시 만들어지지 않게
+    const onChangedRef = useRef(onChanged);
+    onChangedRef.current = onChanged;
+    // 끼워 쓰기 모드면 제목·업무 탭 줄을 숨기고 그 한 화면만 보인다(신청함이 탭을 맡는다)
+    const embedded = mode === "trial" || mode === "applications" || mode === "waitlist";
     const hasInitialApplyData = Boolean(initialApplications && initialClasses);
     const [applications, setApplications] = useState<EnrollApplication[]>(initialApplications ?? []);
     const [stats, setStats] = useState<EnrollStats>(initialStats ?? EMPTY_STATS);
@@ -448,7 +470,8 @@ export default function ApplyAdminClient({
     const [workFilter, setWorkFilter] = useState<ApplicationWorkFilter>("ALL");
     const [searchQuery, setSearchQuery] = useState("");
     const [visibleLimit, setVisibleLimit] = useState(APPLICATION_PAGE_SIZE);
-    const [activeTab, setActiveTab] = useState<TabType>("trial");
+    // 처음 열 탭 — 모드가 정한다(설정 모드는 유입 통계부터)
+    const [activeTab, setActiveTab] = useState<TabType>(embedded ? (mode as TabType) : mode === "settings" ? "sources" : "trial");
     const [feedback, setFeedback] = useState<FeedbackState>(null);
     const [sourceStatsRange, setSourceStatsRange] = useState<SourceStatsRange>("30D");
     const [sourceStatsData, setSourceStatsData] = useState<SourceStatsPayload | null>(null);
@@ -555,6 +578,8 @@ export default function ApplyAdminClient({
     const showFeedback = useCallback((type: "success" | "error", message: string) => {
         setFeedback({ type, message });
         window.setTimeout(() => setFeedback(null), 3500);
+        // 성공 = 무언가 바뀌었다 → 신청함이면 배지·메뉴 숫자 갱신
+        if (type === "success") onChangedRef.current?.();
     }, []);
     const handleRecordContact = useCallback(async (
         app: EnrollApplication,
@@ -1011,7 +1036,9 @@ export default function ApplyAdminClient({
     }
 
     return (
-        <div className="min-w-0 space-y-4">
+        <div className={`min-w-0 ${embedded ? "space-y-3" : "space-y-4"}`}>
+            {/* 제목 줄 — 옛 /admin/apply 에서만(신청함·신청 설정은 자기 제목이 있다) */}
+            {mode === "full" && (
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold text-[var(--color-academy-ink)]">
                     <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">how_to_reg</span>
@@ -1024,8 +1051,11 @@ export default function ApplyAdminClient({
                     </Link>
                 </div>
             </div>
+            )}
 
-            {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다. */}
+            {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다.
+                신청함에 끼운 화면은 탭 줄이 없다(신청함 탭이 대신한다). 신청 설정은 통계·안내 두 탭만. */}
+            {!embedded && (
             <div role="group" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                 {([
                     { key: "trial", label: "체험 문의", icon: "sports_basketball", count: initialTrialStats?.NEW ?? 0, countLabel: "신규" },
@@ -1033,7 +1063,7 @@ export default function ApplyAdminClient({
                     { key: "waitlist", label: "대기자", icon: "hourglass_top", count: 0, countLabel: "" },
                     { key: "sources", label: "유입 통계", icon: "insights", count: 0, countLabel: "" },
                     { key: "settings", label: "안내 설정", icon: "tune", count: 0, countLabel: "" },
-                ] as const).map(tab => {
+                ] as const).filter(tab => mode !== "settings" || tab.key === "sources" || tab.key === "settings").map(tab => {
                     const active = activeTab === tab.key;
                     return (
                         <button
@@ -1058,6 +1088,7 @@ export default function ApplyAdminClient({
                     );
                 })}
             </div>
+            )}
 
             {feedback && (
                 <div
@@ -1082,6 +1113,7 @@ export default function ApplyAdminClient({
                     initialStats={initialTrialStats}
                     initialClasses={initialTrialClasses}
                     initialPagination={initialTrialPagination}
+                    onChanged={onChanged}
                 />
             ) : activeTab === "applications" ? (
                 !applyLoaded ? (

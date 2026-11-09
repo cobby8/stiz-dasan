@@ -51,7 +51,9 @@ export type RequestKind =
   | "WITHDRAWAL" // 회원 탈퇴 User.withdrawRequestedAt
   | "ROLE_GRANT" // 직원 역할 신청 UserRoleGrant
   | "MEDIA_REVOCATION" // 사진 공개 회수 MediaRevocationJob
-  | "STAFF_PAYMENT"; // 현장 수납 승인 StaffPaymentConfirmationRequest
+  | "STAFF_PAYMENT" // 현장 수납 승인 StaffPaymentConfirmationRequest(직원이 현금·계좌로 받은 것 — POS 근거가 없어 원장 승인 필요)
+  | "CHILD_LINK" // 학부모 연결 요청 ChildLinkRequest(기존 보호자가 승인 — 원장은 지켜본다)
+  | "CONSULT"; // 상담 신청(신설) — 목록·개수는 consult-inbox.ts 가 따로 읽는다(아래 어댑터 UNION 에 없다)
 
 export type StatusEntry = {
   bucket: InboxBucket;
@@ -156,6 +158,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       APPROVED: going("입금 대기"),
       PAID: going("확정"),
       COMPLETED: going("보증금 환불 대기"),
+      // 파생: 사용 완료 + 보증금 0원(재원생 무료) — 돌려줄 보증금이 없어 사용 완료가 마지막 단계다
+      COMPLETED_NO_DEPOSIT: ok("사용 완료"),
       REFUNDED: ok("환불 완료"),
       REJECTED: no("거절"),
       CANCELLED: off("취소"),
@@ -182,6 +186,28 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
   {
     kind: "STAFF_PAYMENT", label: "현장 수납 승인", icon: "point_of_sale", adminHref: "/admin/payment-confirmations", parentFacing: false,
     statuses: { PENDING: act("승인 대기"), APPROVED: ok("승인"), REJECTED: no("반려") },
+  },
+  {
+    // 상담(2026-11-10 원장 결정 k1 신설) — 행은 consult-inbox.ts 가 만든다. 상세 처리 = 신청함 안(adminHref 도 신청함 상담 탭)
+    kind: "CONSULT", label: "상담", icon: "support_agent", adminHref: "/admin/inbox?kind=CONSULT", parentFacing: false,
+    statuses: {
+      NEW: act("새 상담"),
+      CONTACTED: going("연락함"),
+      DONE: ok("상담 완료"),
+      CANCELED: off("취소"),
+    },
+  },
+  {
+    // 학부모 연결 요청 — 먼저 연결된 보호자가 승인한다(원장 손이 필요 없다 → 처리 필요가 아니라 진행 중).
+    // EXPIRED 는 파생: PENDING 인데 기한(expiresAt)이 지난 건(학부모 화면 getChildConnectionState 와 같은 판정)
+    kind: "CHILD_LINK", label: "학부모 연결", icon: "family_restroom", adminHref: "/admin/students", parentFacing: false,
+    statuses: {
+      PENDING: going("기존 보호자 승인 대기"),
+      APPROVED: ok("연결됨"),
+      REJECTED: no("거절"),
+      CANCELED: off("요청 취소"),
+      EXPIRED: off("기한 만료"),
+    },
   },
 ];
 
@@ -256,6 +282,18 @@ export function deriveEnrollmentChangeStatus(
   return status === "APPROVED" && appliedAt ? "APPLIED" : status;
 }
 
+/** 대관 «사용 완료 + 보증금 0원» 파생 상태 이름 — 신청함 SQL·대관 화면 «완료 보기»가 같은 글자를 쓴다 */
+export const RENTAL_COMPLETED_NO_DEPOSIT = "COMPLETED_NO_DEPOSIT";
+
+/**
+ * 대관 파생 상태. 사용 완료(COMPLETED)인데 보증금이 0원(재원생 무료)이면 환불할 게 없어 «완료».
+ * 보증금이 있으면 기존대로 «보증금 환불 대기»(진행 중). 보증금 값을 모르면(null) 예전 판정 그대로.
+ */
+export function deriveRentalStatus(status: string, deposit: number | string | null | undefined): string {
+  if (status === "COMPLETED" && deposit != null && deposit !== "" && Number(deposit) === 0) return RENTAL_COMPLETED_NO_DEPOSIT;
+  return status;
+}
+
 /** 탈퇴: 탈퇴 완료 시각이 있으면 완료, 아니면 신청 */
 export function deriveWithdrawalStatus(withdrawnAt: Date | string | null | undefined): string {
   return withdrawnAt ? "WITHDRAWN" : "REQUESTED";
@@ -268,3 +306,109 @@ export function deriveShuttleDayStatus(canceledAt: Date | string | null | undefi
 
 /** 일괄 처리(d4)를 허락하는 종류 — 결석 확정·문의 «확인함»만 */
 export const BULK_ACTION_KINDS: readonly RequestKind[] = ["REGULAR_ABSENCE", "PARENT_REQUEST"];
+
+// ── 신청함 탭(2026-11-10 원장 결정 k1·k2) ─────────────────────────────────────
+//
+// 왜: 종류가 많아 «처리 필요/진행 중/완료» 상태 탭만으로는 원장이 «무슨 일»인지 한눈에 못 본다.
+// 그래서 맨 위를 «일의 종류» 6탭(체험·수강·상담·대관·변경·기타)으로 나누고, 상태는 탭 안에서
+// «처리할 것(처리 필요+진행 중) 먼저 → 완료는 맨 아래 «완료 보기»» 순서로 보인다.
+//
+// - 체험·수강은 catalog 종류가 아니다 — /admin/apply 의 기존 목록·처리 화면을 그대로 끌어다 쓴다.
+// - 상담은 신설 기능 — catalog 종류(CONSULT)지만 목록·개수는 src/lib/requests/consult-inbox.ts 가 따로 읽는다.
+// - 대관은 catalog 종류(RENTAL)지만 화면은 기존 대관 화면(문자 미리보기·환불 금액 입력)을 그대로 쓴다.
+// - 변경·기타는 catalog 어댑터의 공통 한 줄 목록.
+
+export type InboxTab = "TRIAL" | "ENROLL" | "CONSULT" | "RENTAL" | "CHANGE" | "OTHER";
+
+export type InboxTabEntry = { tab: InboxTab; label: string; icon: string };
+
+/** 화면에 나오는 순서 그대로(원장 결정 k1) */
+export const INBOX_TABS: readonly InboxTabEntry[] = [
+  { tab: "TRIAL", label: "체험", icon: "sports_basketball" },
+  { tab: "ENROLL", label: "수강", icon: "assignment" },
+  { tab: "CONSULT", label: "상담", icon: "support_agent" },
+  { tab: "RENTAL", label: "대관", icon: "stadium" },
+  { tab: "CHANGE", label: "변경", icon: "swap_horiz" },
+  { tab: "OTHER", label: "기타", icon: "more_horiz" },
+];
+
+/** 종류 → 탭. 종류를 새로 만들면 여기도 넣어야 tsc 가 통과한다(Record 라 빠지면 오류) */
+export const KIND_TAB: Record<RequestKind, InboxTab> = {
+  // 변경 = 결석·보강·셔틀(오늘만·정류장)·반 이동·휴원·복귀·퇴원·특강 결석/보강
+  ENROLLMENT_CHANGE: "CHANGE",
+  REGULAR_ABSENCE: "CHANGE",
+  MAKEUP: "CHANGE",
+  SHUTTLE_DAY: "CHANGE",
+  SEASONAL_ABSENCE: "CHANGE",
+  SEASONAL_MAKEUP: "CHANGE",
+  // 대관
+  RENTAL: "RENTAL",
+  // 기타 = 문의·불편 신고·학부모 연결·탈퇴·직원 역할·카카오·사진 회수·«입금했어요»·현장 수납 승인
+  PARENT_REQUEST: "OTHER",
+  PAYMENT_REQUEST: "OTHER",
+  KAKAO: "OTHER",
+  WITHDRAWAL: "OTHER",
+  ROLE_GRANT: "OTHER",
+  MEDIA_REVOCATION: "OTHER",
+  CHILD_LINK: "OTHER",
+  // 상담
+  CONSULT: "CONSULT",
+  // 현장 수납 승인 — 직원이 현금·계좌로 받았다고 올린 것. POS 근거가 없어 승인이 남는다(2026-11-10 정정: 신청함에서 빼지 않는다)
+  STAFF_PAYMENT: "OTHER",
+};
+
+export type InboxSubTab = { key: string; label: string; kinds?: readonly RequestKind[] };
+
+/** 탭 안 작은 분류(원장 결정 k1) — 없는 탭은 분류 없이 전부 */
+export const TAB_SUBS: Partial<Record<InboxTab, readonly InboxSubTab[]>> = {
+  // 수강 = 기존 /admin/apply 의 «수강신청»·«대기자» 두 화면
+  ENROLL: [
+    { key: "APPLY", label: "신청" },
+    { key: "WAITLIST", label: "대기" },
+  ],
+  CHANGE: [
+    { key: "ABSENCE", label: "결석·보강", kinds: ["REGULAR_ABSENCE", "MAKEUP", "SEASONAL_ABSENCE", "SEASONAL_MAKEUP"] },
+    { key: "SHUTTLE", label: "셔틀", kinds: ["SHUTTLE_DAY"] },
+    { key: "ENROLLMENT", label: "수강", kinds: ["ENROLLMENT_CHANGE"] },
+  ],
+};
+
+export function isInboxTab(value: unknown): value is InboxTab {
+  return typeof value === "string" && INBOX_TABS.some((entry) => entry.tab === value);
+}
+
+export function tabOfKind(kind: RequestKind): InboxTab {
+  return KIND_TAB[kind];
+}
+
+export function tabLabel(tab: InboxTab): string {
+  return INBOX_TABS.find((entry) => entry.tab === tab)?.label ?? tab;
+}
+
+/** 주소의 작은 분류 값 → 그 탭에 있는 분류만 통과(모르면 null = 전체) */
+export function subOf(tab: InboxTab, value: unknown): InboxSubTab | null {
+  return TAB_SUBS[tab]?.find((sub) => sub.key === value) ?? null;
+}
+
+/** 탭(+작은 분류)에 들어가는 catalog 종류 — 체험·수강은 catalog 종류가 없어 빈 배열 */
+export function kindsOfTab(tab: InboxTab, subKey?: string | null): RequestKind[] {
+  const sub = subKey ? subOf(tab, subKey) : null;
+  if (sub?.kinds) return [...sub.kinds];
+  return REQUEST_KINDS.map((entry) => entry.kind).filter((kind) => KIND_TAB[kind] === tab);
+}
+
+/** 신청함 어댑터(UNION ALL)가 아니라 따로 읽는 종류 — 상담은 consult-inbox.ts 가 목록·개수를 맡는다 */
+export const SEPARATE_LIST_KINDS: readonly RequestKind[] = ["CONSULT"];
+
+/** 탭 옆 배지 숫자(처리 필요) — catalog 종류 합 + 체험·수강·상담처럼 따로 센 숫자 */
+export function tabActionCounts(
+  byKind: Partial<Record<RequestKind, { action: number }>>,
+  extra: Partial<Record<InboxTab, number>> = {},
+): Record<InboxTab, number> {
+  const out = Object.fromEntries(INBOX_TABS.map((entry) => [entry.tab, Number(extra[entry.tab] ?? 0) || 0])) as Record<InboxTab, number>;
+  for (const [kind, slot] of Object.entries(byKind) as Array<[RequestKind, { action: number } | undefined]>) {
+    if (!slot || !KIND_TAB[kind]) continue;
+    out[KIND_TAB[kind]] += Number(slot.action) || 0;
+  }
+  return out;
+}
