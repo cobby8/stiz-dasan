@@ -80,7 +80,9 @@ export default function AdminModal({
         return () => {
             document.removeEventListener("keydown", handleKeyDown);
             document.body.style.overflow = previousOverflow;
-            previousFocusRef.current?.focus();
+            // 창을 연 버튼이 그새 사라졌으면(⚡ 메뉴가 닫히며 지워진 항목 등) 없는 요소에 포커스를 주지 않는다 — 브라우저 기본 위치에 맡긴다
+            const previous = previousFocusRef.current;
+            if (previous?.isConnected) previous.focus();
         };
     }, []);
 

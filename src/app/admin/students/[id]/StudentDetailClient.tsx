@@ -536,7 +536,8 @@ export default function StudentDetailClient({
     // 저장까지 끝난 유니폼 값 — 개요 탭 한 줄 요약은 이 값으로 그린다(창에서 고치다 닫으면 요약은 그대로)
     const [uniformSaved, setUniformSaved] = useState(() => uniformFromStudent(initialData?.student));
     const [uniformSaving, setUniformSaving] = useState(false);
-    const [uniformFeedback, setUniformFeedback] = useState<string | null>(null);
+    // 유니폼 저장 결과 — ok=true 성공(카드 한 줄에 초록), ok=false 실패(창 안에만 빨강). 창을 닫으면 실패 문구는 지운다
+    const [uniformFeedback, setUniformFeedback] = useState<{ ok: boolean; text: string } | null>(null);
     // 지금 열린 상세 창(null = 닫힘). «changes» 창은 어느 달의 변동 기록인지 따로 기억한다
     const [detailModal, setDetailModal] = useState<DetailModalKey>(null);
     const [changesHistoryId, setChangesHistoryId] = useState<string | null>(null);
@@ -1094,8 +1095,8 @@ export default function StudentDetailClient({
         setUniformFeedback(null);
         const next = uniformForm;
         void updateStudentUniform(student.id, next)
-            .then(() => { setUniformSaved(next); setUniformFeedback("저장되었습니다."); setDetailModal(null); })
-            .catch((e) => setUniformFeedback(adminErrorText(e, "유니폼 정보를 저장하지 못했습니다.")))
+            .then(() => { setUniformSaved(next); setUniformFeedback({ ok: true, text: "저장되었습니다." }); setDetailModal(null); })
+            .catch((e) => setUniformFeedback({ ok: false, text: adminErrorText(e, "유니폼 정보를 저장하지 못했습니다.") }))
             .finally(() => setUniformSaving(false));
     }
 
@@ -1494,30 +1495,6 @@ export default function StudentDetailClient({
 
                             {/* «이번 달/최근 장부 요약» 카드는 2차 정리에서 뺐다 — 위 요약 칸 «수납»과 같은 내용이라, 칸을 누르면 뜨는 창에서 본다 */}
 
-                            {/* 메모(특이사항·건강) — 2차 정리: 좌측 레일이 길어 개요 탭 «수강 반» 바로 아래로 옮겼다(휴대폰에서도 더 위에 보인다) */}
-                            <div className={CARD_CLASS}>
-                                <SectionTitle
-                                    icon="edit_note"
-                                    title="메모"
-                                    right={
-                                        <button
-                                            onClick={saveMemo}
-                                            disabled={isPending}
-                                            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 lg:min-h-8"
-                                        >
-                                            <SymbolIcon name="save" size={14} /> {isPending ? "저장 중..." : "저장"}
-                                        </button>
-                                    }
-                                />
-                                <textarea
-                                    value={memo}
-                                    onChange={e => { setMemo(e.target.value); setMemoSaved(false); }}
-                                    rows={3}
-                                    placeholder="특이사항·건강 이슈"
-                                    className="w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
-                                />
-                                {memoSaved && <p className="mt-2 text-xs font-medium text-[var(--color-academy-success)]">저장됨</p>}
-                            </div>
                             {/* 유니폼 — 한 줄 요약(상태·최근 단계 날짜·출처) + [수정] → 입력은 창에서(2차 정리: 6칸 입력판을 화면에서 걷음) */}
                             <div className="academy-panel flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
                                 <h3 className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
@@ -1526,7 +1503,7 @@ export default function StudentDetailClient({
                                 </h3>
                                 <span className={`rounded px-2 py-0.5 text-xs font-bold ${statusToneClass("neutral")}`}>{uniformSaved.status || "미확인"}</span>
                                 <span className="min-w-0 flex-1 truncate text-xs text-[var(--color-academy-muted)]">{uniformSummary}</span>
-                                {uniformFeedback && detailModal !== "uniform" && <span role="status" className="text-xs font-bold text-[var(--color-academy-success)]">{uniformFeedback}</span>}
+                                {uniformFeedback?.ok && detailModal !== "uniform" && <span role="status" className="text-xs font-bold text-[var(--color-academy-success)]">{uniformFeedback.text}</span>}
                                 <button type="button" onClick={openUniformModal} className="academy-button-secondary">
                                     <SymbolIcon name="edit" size={15} />
                                     수정
@@ -1839,6 +1816,30 @@ export default function StudentDetailClient({
                             )}
                         </div>
                     )}
+                    {/* 메모(특이사항·건강) — 탭 바깥 공통 자리: 어느 탭에서든 탭 본문 아래에 보인다(PM 결정 11-09). 좌측 레일은 길어 우측에 둔다 */}
+                    <div className={`${CARD_CLASS} mt-4`}>
+                        <SectionTitle
+                            icon="edit_note"
+                            title="메모"
+                            right={
+                                <button
+                                    onClick={saveMemo}
+                                    disabled={isPending}
+                                    className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 lg:min-h-8"
+                                >
+                                    <SymbolIcon name="save" size={14} /> {isPending ? "저장 중..." : "저장"}
+                                </button>
+                            }
+                        />
+                        <textarea
+                            value={memo}
+                            onChange={e => { setMemo(e.target.value); setMemoSaved(false); }}
+                            rows={3}
+                            placeholder="특이사항·건강 이슈"
+                            className="w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2.5 text-sm text-[var(--color-academy-ink)] focus:ring-2 focus:ring-[var(--color-academy-primary)]"
+                        />
+                        {memoSaved && <p className="mt-2 text-xs font-medium text-[var(--color-academy-success)]">저장됨</p>}
+                    </div>
                 </section>
             </div>
 
@@ -1997,7 +1998,7 @@ export default function StudentDetailClient({
 
             {/* 유니폼 입력 — 기존 6칸 그대로(저장 서버 액션 동일). 성공하면 창을 닫는다 */}
             {detailModal === "uniform" && (
-                <DetailModal titleId="student-uniform-title" title="유니폼 보유 정보" sub="세 시트·사이트 주문 대조" onClose={() => { if (!uniformSaving) setDetailModal(null); }}>
+                <DetailModal titleId="student-uniform-title" title="유니폼 보유 정보" sub="세 시트·사이트 주문 대조" onClose={() => { if (!uniformSaving) { setUniformFeedback(null); setDetailModal(null); } }}>
                     <div className="grid gap-3 sm:grid-cols-2">
                         <label className="text-xs font-bold text-[var(--color-academy-muted)]">
                             <span className="flex items-center gap-1">
@@ -2017,9 +2018,9 @@ export default function StudentDetailClient({
                         <label className="text-xs font-bold text-[var(--color-academy-muted)]">수령일<input type="date" value={uniformForm.receivedAt} onChange={(e) => setUniformForm((v) => ({ ...v, receivedAt: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
                         <label className="text-xs font-bold text-[var(--color-academy-muted)]">대조 메모<input value={uniformForm.note} onChange={(e) => setUniformForm((v) => ({ ...v, note: e.target.value }))} className={`${EDIT_INPUT_CLASS} mt-1 min-h-11`} /></label>
                     </div>
-                    {uniformFeedback && <p role="alert" className="text-xs font-bold text-[var(--color-academy-danger)]">{uniformFeedback}</p>}
+                    {uniformFeedback && !uniformFeedback.ok && <p role="alert" className="text-xs font-bold text-[var(--color-academy-danger)]">{uniformFeedback.text}</p>}
                     <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => setDetailModal(null)} disabled={uniformSaving} className="academy-button-secondary">닫기</button>
+                        <button type="button" onClick={() => { setUniformFeedback(null); setDetailModal(null); }} disabled={uniformSaving} className="academy-button-secondary">닫기</button>
                         <button type="button" disabled={uniformSaving} onClick={saveUniform} className="academy-button-primary">{uniformSaving ? "저장 중…" : "유니폼 정보 저장"}</button>
                     </div>
                 </DetailModal>

@@ -13,7 +13,8 @@ test("공통 관리자 모달은 대화상자 의미와 제목 연결을 제공�
 test("공통 관리자 모달은 키보드 포커스를 가두고 닫은 뒤 원래 위치로 돌린다", () => {
     assert.match(modal, /event\.key === "Escape"/);
     assert.match(modal, /event\.key !== "Tab"/);
-    assert.match(modal, /previousFocusRef\.current\?\.focus\(\)/);
+    // 2026-11-09: 창을 연 버튼이 사라졌으면(⚡ 메뉴 항목 등) 되돌리지 않는다 — 문서에 붙어 있을 때만
+    assert.match(modal, /const previous = previousFocusRef\.current;\s*if \(previous\?\.isConnected\) previous\.focus\(\);/);
     assert.match(modal, /data-admin-modal-initial-focus/);
 });
 

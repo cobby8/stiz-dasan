@@ -82,7 +82,7 @@ export default function ParentRequestLinkPanel({ studentId, studentName }: { stu
       {activeLinks.length > 0 && <ul className="mt-3 space-y-2 border-t border-[var(--color-academy-line)] pt-3">
         {activeLinks.map((link) => <li key={link.id} className="flex items-center justify-between gap-2 text-xs">
           <span className="text-[var(--color-academy-muted)]">{new Date(link.expiresAt).toLocaleString("ko-KR")} 만료</span>
-          <button type="button" disabled={isPending} onClick={() => revokeLink(link.id)} className="min-h-8 rounded-lg border border-[var(--color-academy-line)] px-2 font-black text-[var(--color-academy-danger)] disabled:opacity-50">취소</button>
+          <button type="button" disabled={isPending} onClick={() => revokeLink(link.id)} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-2 font-black text-[var(--color-academy-danger)] disabled:opacity-50 lg:min-h-8">취소</button>
         </li>)}
       </ul>}
       {/* 결과 안내 — 글이 없을 땐 화면에서 숨겨 빈 줄이 자리만 차지하지 않게(알림 영역은 유지) */}
