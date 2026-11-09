@@ -49,6 +49,9 @@ async function tryProcessNow(eventRowId: string) {
  *   예외 하나(원장 결정 D1, 2026-11-07): 관리자가 미리 만든 «현장 결제» 요청의 번호(STIZ:S-482193)가
  *   주문 메모에 있고, 토스 재조회로 금액·상태가 맞으면 processPosWebhookEvent 안에서 자동 납부한다
  *   (src/lib/pos/chargeRequestService.ts). 근거는 이 라우트의 서명 검증 + 재조회 두 겹뿐이다.
+ *   예외 둘(원장 결정, 2026-11-10 «POS 처리 확인되면 끝 — 승인 필요 없음»): 번호 없이 결제됐어도 메모 이름·청구서가
+ *   딱 맞는 결제(AUTO_CANDIDATE)는 같은 두 겹 근거로 자동 납부한다(paymentNoticeService.autoConfirmNotice).
+ *   금액 불일치·이중결제·원생 불명·같은 청구의 다른 수납 기록이 있으면 지금처럼 버튼 확인으로 남는다.
  *   여기서는 저장 후 알림 처리(토스 재조회 → 매칭·DM)만 시도한다. 실패해도 응답은 그대로다.
  *
  * ■ 같은 알림이 두 번 와도 한 번만 남는다

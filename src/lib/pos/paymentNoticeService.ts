@@ -8,9 +8,11 @@
  *           ② 카드·승인 결제마다 `PosPaymentNotice` 한 줄(결제 ID 로 중복 차단)
  *           ③ 원장에게 슬랙 DM("현장 결제를 확인해 주세요")
  * 안 하는 일: 이 파일은 Payment · PaymentInvoice 를 **직접 쓰지 않는다.**
- *           사이트 납부 반영은 두 곳뿐이다:
+ *           사이트 납부 반영은 세 곳뿐이다:
  *           ① 원장이 슬랙 버튼을 눌렀을 때 paymentNoticeActions.ts
  *           ② 관리자가 미리 만든 «현장 결제» 요청(메모 STIZ:S-482193)과 맞을 때 chargeRequestService.ts (원장 결정 D1)
+ *           ③ 분류가 AUTO_CANDIDATE 인 결제를 토스 재조회로 확인했을 때 autoConfirmNotice (2026-11-10 원장 결정
+ *              «POS 처리 확인되면 끝 — 승인 필요 없음»). ①과 ③은 같은 공용 핵심부 paymentNoticePay.ts 만 쓴다.
  *
  * 판단 로직은 ./payment-notice.mjs(순수 모듈) 한 벌이다. 여기는 DB·토스·슬랙 입출력만 한다.
  */
@@ -19,11 +21,13 @@ import { prisma } from "@/lib/prisma";
 import { postMessage, updateMessage, type SlackBlock } from "@/lib/slack/client";
 import { fetchTossOrderById } from "./tossplaceClient";
 import { expireStaleChargeRequests, matchChargeRequestsForOrder } from "./chargeRequestService";
+import { claimNoticeAndMarkPaid } from "./paymentNoticePay";
 import { parseMemoNames, redactSecrets } from "./tossplace-match.mjs";
 import {
     NOTICE_KIND,
     PICK_KINDS,
     buildCandidateList,
+    kstStamp,
     buildNoticeMessage,
     classifyInvoiceRows,
     classifyNotice,
@@ -279,6 +283,51 @@ export async function sendNotice(noticeId: string): Promise<"SENT" | "SKIPPED" |
     }
 }
 
+// ───────────────────────────── 자동 납부 반영 ─────────────────────────────
+
+/** 자동 반영을 시도할 수 있는 알림 상태(원장이 원생을 고른 STUDENT_CHOSEN 은 사람이 판단 중이라 제외) */
+const AUTO_OPEN_STATUSES = ["PENDING", "NOTIFIED", "FAILED"];
+
+/**
+ * 토스 재조회로 확인된 POS 결제를 승인 버튼 없이 사이트 청구에 납부 반영한다(2026-11-10 원장 결정).
+ * - 대상: 처음 분류가 AUTO_CANDIDATE(메모 이름이 원생 1명과 정확히 일치 + 그 달 미납 1건 금액 일치)인 알림만.
+ * - 쓰기는 공용 핵심부(claimNoticeAndMarkPaid, mode AUTO)만 — 선점 SQL 이 금액·미납 1건·이중결제·다른 알림 반영을
+ *   다시 보고, 자동에만 «직원 현금·계좌 확인 대기 / 진행 중·보류된 현장 결제 요청 / 랠리즈 사본»이면 멈춘다.
+ * - 멈추면(NOT_CLAIMED) 아무것도 쓰지 않고 슬랙 DM 의 버튼을 그대로 둔다(원장 확인으로 남김) + 경고 한 줄.
+ * - 여러 번 불려도 안전하다(선점이 1행일 때만 납부). 슬랙 갱신 실패는 납부 결과를 바꾸지 않는다.
+ */
+export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HELD" | "REVERTED" | "SKIPPED"> {
+    const notice = await loadNotice(noticeId);
+    if (
+        !notice ||
+        notice.siteMarkedPaid ||
+        notice.kind !== NOTICE_KIND.AUTO_CANDIDATE ||
+        !AUTO_OPEN_STATUSES.includes(notice.status)
+    ) {
+        return "SKIPPED";
+    }
+    const result = await claimNoticeAndMarkPaid({ noticeId, mode: "AUTO", previousStatus: notice.status, redact });
+    const outcome = result.outcome === "PAID" ? "PAID" : result.outcome === "REVERTED" ? "REVERTED" : "HELD";
+
+    // 이미 보낸 DM 이 있으면 결과를 적는다(없으면 refreshNoticeMessage 가 아무것도 안 한다).
+    try {
+        const fresh = (await loadNotice(noticeId)) ?? notice;
+        const stamp = kstStamp() as string;
+        if (outcome === "PAID") {
+            await refreshNoticeMessage(fresh, { resultLine: `✅ POS 결제 확인 — 사이트 ${notice.targetMonth}월 청구 자동 납부 반영 (${stamp})` });
+        } else if (outcome === "HELD") {
+            await refreshNoticeMessage(fresh, {
+                warningLine: `⚠️ 자동 납부 반영 보류 — 같은 청구에 다른 수납 기록(직원 현금·계좌 확인 대기·진행 중인 현장 결제)이 있거나 청구서 상태가 달라졌습니다. 확인 후 버튼을 눌러 주세요 (${stamp})`,
+            });
+        } else {
+            await refreshNoticeMessage(fresh, { warningLine: `⚠️ 자동 납부 반영 중 오류가 났습니다. 확인 후 버튼을 눌러 주세요 (${stamp})` });
+        }
+    } catch (error) {
+        console.error("[pos-notice] 자동 반영 결과 DM 갱신 실패:", redact((error as Error).message), { noticeId, outcome });
+    }
+    return outcome;
+}
+
 // ───────────────────────────── 웹훅 처리 ─────────────────────────────
 
 async function markEvent(eventRowId: string, status: "RECEIVED" | "IGNORED", note: string) {
@@ -397,6 +446,16 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
                 p.tossPaymentId,
             );
             if (ids[0]) await sendNotice(ids[0].id);
+            // 원장 결정(2026-11-10): 메모 이름·청구서가 딱 맞는(AUTO_CANDIDATE) POS 결제는 버튼 승인 없이 바로 납부 반영.
+            // 금액 불일치·이중결제·원생 불명 등은 지금처럼 슬랙 버튼(원장 확인)으로 남는다.
+            if (ids[0] && result.kind === NOTICE_KIND.AUTO_CANDIDATE) {
+                try {
+                    await autoConfirmNotice(ids[0].id);
+                } catch (error) {
+                    // 자동 반영이 터져도 같은 주문의 다른 결제·웹훅 처리는 계속한다(DM 버튼이 안전망).
+                    console.error("[pos-notice] 자동 납부 반영 실패(원장 확인으로 남김):", redact((error as Error).message), { noticeId: ids[0].id });
+                }
+            }
         }
     }
     const baseNote = noticePayments.length > 0 ? `카드 승인 결제 ${noticePayments.length}건 알림` : "카드 승인 결제 없음";
