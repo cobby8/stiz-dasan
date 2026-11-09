@@ -328,7 +328,7 @@ export default function PaymentCheckoutClient({
                 <details className="text-xs text-[var(--color-academy-muted)]">
                     <summary className="flex min-h-11 cursor-pointer items-center justify-center font-bold">결제 안내</summary>
                     <ul className="space-y-1 pb-1">
-                        <li>· 결제하면 바로 납부 완료돼요.</li>
+                        <li>· 카드·계좌이체는 결제하면 바로 납부 완료돼요.</li>
                         <li>· 무통장입금은 받은 계좌로 90일 안에 아무 은행에서 입금해요.</li>
                         <li>· 현금영수증은 결제창에서 번호를 넣으면 발급돼요.</li>
                         <li>· 영수증은 납부 후 이 화면과 청구 탭에서 볼 수 있어요.</li>

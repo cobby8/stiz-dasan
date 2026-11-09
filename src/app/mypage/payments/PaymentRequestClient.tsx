@@ -120,7 +120,7 @@ export default function PaymentRequestClient({
       <div>
         <h1 className="text-xl font-black text-[var(--color-academy-ink)]">청구·영수증</h1>
         {/* 왜 바로 안 바뀌는지 먼저 알린다. 이걸 모르면 "입금했는데요" 문자가 계속 온다. — 한 줄로 줄였다 */}
-        <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">계좌 입금은 학원이 확인한 뒤 납부 완료돼요.</p>
+        <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">계좌 입금은 학원 확인 뒤 완료돼요. «입금했어요»로 알려 주면 빨라요.</p>
       </div>
 
       {payReady && bundleRows.length > 0 && (

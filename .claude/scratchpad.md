@@ -97,6 +97,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | reviewer(결제 화면 정리 3922555d): 통과 — 조건 분기·API·금액·토스 호출 무변경 확인, tsc 0·tests 3611-0. 권장: 복사 버튼 aria-label 고정이라 «복사됨» 못 읽음(3곳)·«결제하면 바로 납부 완료» 무통장과 충돌·카페24 반영 안내 사라짐·청구 탭 머리말 «알려 주면 빨라요» 빠짐·커밋 메시지 «면세» 안내 없음 | 통과(권장 5) |
 | 11-09 | developer 수정 1차(일정 탭 리뷰 A-1·A-2): 옛 해시 #parent-absence-hub → /mypage/regular-absence, 소식 공지 고정(isPinned)은 3개월 지나도 보이고 3개 안에서 맨 앞 + 테스트. scratchpad 정리(끝난 검수 섹션·해결된 N-1/C-1 삭제, 로그 10건) | 완료(커밋, 미푸시) |
 | 11-09 | developer(일정 탭 개편·소식 공지·홈 문구, 원장 지시): 일정 = 한 달 달력(연간일정 행사·휴무 + 우리 아이 수업일 + 출결)·수강 반·셔틀 배정, 수납 기록·신청 줄 제거(수강 변경 신청 → «⋯» 메뉴), HistoryClient 삭제. 소식 공지 3개월·3개+더보기. 홈 줄바꿈 2줄·문구 정리. tsc 0·tests 3612-0·studentVisibility 5-0·KST 가드 통과 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 점검 «시간 수정 없음·드래그로 이동»): 관리자 정규 운행표 = 평소 보기만, 화면 위 [수정] → 편집 모드(카드마다 시각 칸·손잡이 ⠿ 끌기(터치=elementFromPoint, 손잡이만 touch-none)·▲▼ 보조·정류장 수정·×·학생 창), 편집 중 고정 줄(적용 범위 select·저장 안 됨·취소/저장). 바꾼 순서 있으면 창 열기 전 먼저 저장(편집 유지). RunBoard admin 편집 분기만 추가 — driver HTML 수정 전과 동일(일회 비교 4경우). 신규 tests/regular-run-edit-mode.test.mjs. tests 3615-0·shuttle 159-0·tsc 0·KST 가드 통과. 서버 변경 없음 · 리뷰 반영 B-1 고정 줄 top-14·z-10 / B-2 적용 범위 «N월~M월 명단에 반영» / B-3 가장자리 자동 스크롤 rAF 루프 | 완료 |
@@ -111,4 +112,3 @@
 | 11-09 | developer(정규 셔틀 통합 4·5단계, 원장 «관리자 화면=기사님 화면·직접 수정»): /admin/shuttle/regular-dispatch 를 RegularRunEditor(RunBoard mode=admin + buildRegularRunRows, 월·요일 탭, ▲▼·끌기·시각 → 묶음별 reorder, 카드 «정류장 수정»=editStop, 학생 이름 → 셔틀 정보 창=editStudent, × → 이 칸/이 요일/전체 × 범위 DELETE, 카드 «반 이동·재배정» 표시) + RunEditDialogs 로 교체. 옛 RegularDispatchClient(자동 제안·T맵·차량 이동) 삭제·page 의 T맵/기사 조회 제거. 배정 필요 패널(신규·반 이동 칸 수, onBoard·openRequest) · AssignLegView 재배정 reassign:true+옛 칸 안내. 학생 상세 위치 placeName+requirePlaceName+명단 반영 안내. /staff/run?focus=BOARD|ALIGHT 스크롤(RunBoard focusKey). 5단계: regularRunRows·regularDriverRoute 저장 노선 입력·조회 제거(명단만, pending 끔), routeStatus API 항상 false. 흡수 비교(읽기 전용): 목 등원만 차이(노선 전용 학생 2명 사라짐·자이 후문 2정차 합쳐짐), 그 밖 요일 동일. tsc 0·tests 3553-0·가드 5-0·KST 6-0·shuttle 154-0 | 검수 대기 |
 | 11-09 | developer(정규 셔틀 통합 6단계): 저장 노선 읽기 지점 전부 셔틀 명단 기준으로 교체(학부모 확정 시각·안내 문자·배차 진행·기사 알림·regular-order). tsc 0·tests 3548-0 | 검수 대기 |
 | 11-09 | developer(정규 셔틀 통합 4·5단계): /admin/shuttle/regular-dispatch = RegularRunEditor(RunBoard mode=admin)+RunEditDialogs, 옛 자동 제안 화면 삭제, 운행표는 명단만. tsc 0·tests 3553-0 | 검수 대기 |
-| 11-09 | developer(2단계 리뷰 S-1~S-3): 위치 이름=주소면 서버 거부 · 명단 잠금 tx 첫 쿼리+ReadCommitted · 재배정 옛 칸 = 시작 같음 또는 시간대 겹침(오탐 방지)+테스트 2 | 완료(커밋 683c5866) |
