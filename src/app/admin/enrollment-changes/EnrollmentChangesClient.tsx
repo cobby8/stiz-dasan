@@ -21,7 +21,7 @@ import {
 import { CHANGE_STATUS_LABEL, pauseResumeLabel, syncCheckBadge } from "@/lib/enrollment/changeRequestRules";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
 import type { AdminCancelRequestRow, AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
-import { SETTLEMENT_MODES, SETTLEMENT_MODE_LABEL, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
+import { SETTLEMENT_MODES, SETTLEMENT_MODE_LABEL, SETTLEMENT_PROBLEM_APPROVE_NOTE, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
@@ -191,6 +191,8 @@ export default function EnrollmentChangesClient({
       const result = await decideEnrollmentChange({ requestId, approve, note: notes[requestId], settlement });
       if (!result.ok) {
         setError(result.message);
+        // 서버가 «방식을 골라 주세요»로 거절(금액이 바뀜) → 상세 칸을 열어 새 미리보기(아래 새로고침)에서 고르게 한다
+        if ("needsSettlementChoice" in result && result.needsSettlementChoice) setDetailId(requestId);
         router.refresh();
         return;
       }
@@ -646,6 +648,10 @@ export default function EnrollmentChangesClient({
                   {row.settlementPreview.problems.map((problem) => (
                     <p key={problem} className="mt-1 text-xs font-bold text-[var(--color-academy-danger)]">{problem}</p>
                   ))}
+                  {/* 계산 문제가 있으면 방식을 고를 수 없다 — 검토 중이면 승인 결과를 미리 알린다(신청함과 같은 문구) */}
+                  {row.status === "PENDING" && row.settlementPreview.problems.length > 0 && (
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{SETTLEMENT_PROBLEM_APPROVE_NOTE}</p>
+                  )}
                   {!row.settlementPreview.tablesReady && (
                     <p className="mt-1 text-xs font-bold text-[var(--color-academy-warning)]">수강료 처리 기록 준비 전이라 지금은 금액 미리보기만 됩니다.</p>
                   )}

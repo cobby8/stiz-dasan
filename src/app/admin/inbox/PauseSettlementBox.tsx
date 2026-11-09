@@ -12,11 +12,18 @@
  *  tests/inbox-consult-pause-wiring.test.mjs 가 두 화면 문구가 같은지 비교한다)
  */
 import type { AdminSettlementPreview } from "@/lib/enrollment/admin-change-request";
-import { SETTLEMENT_MODES, SETTLEMENT_MODE_LABEL, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
+import {
+  SETTLEMENT_MODES,
+  SETTLEMENT_MODE_LABEL,
+  SETTLEMENT_PROBLEM_APPROVE_NOTE,
+  settlementChoiceRequired,
+  type SettlementMode,
+} from "@/lib/enrollment/pause-settlement-plan";
 
 /** 이 휴원에 처리할 금액이 있는가 — 있으면 승인 전에 방식을 골라야 한다(수강 변경 화면 needsSettlementChoice 와 같은 규칙) */
 export function pauseNeedsSettlementChoice(preview: AdminSettlementPreview | null): boolean {
-  return Boolean(preview && preview.problems.length === 0 && (preview.paidTotal > 0 || preview.unpaidTotal > 0));
+  // 서버 강제(decideEnrollmentChangeRequest)와 같은 순수 판정 — problems 없고 낸 돈·미납 청구가 있으면 필수
+  return Boolean(preview && settlementChoiceRequired(preview));
 }
 
 /** 돈이 움직이는 처리라 확인창에 금액·길을 그대로 적는다(수강 변경 화면 settlementConfirmText 와 같은 문구) */
@@ -75,6 +82,10 @@ export default function PauseSettlementBox({ state, mode, onMode, disabled }: {
       {preview.problems.map((problem) => (
         <p key={problem} className="mt-1 text-xs font-bold text-[var(--color-academy-danger)]">{problem}</p>
       ))}
+      {/* 계산 문제가 있으면 방식을 고를 수 없다 — 승인 결과를 미리 알린다(수강 변경 화면과 같은 문구) */}
+      {preview.problems.length > 0 && (
+        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{SETTLEMENT_PROBLEM_APPROVE_NOTE}</p>
+      )}
       {!preview.tablesReady && (
         <p className="mt-1 text-xs font-bold text-[var(--color-academy-warning)]">수강료 처리 기록 준비 전이라 지금은 금액 미리보기만 됩니다.</p>
       )}

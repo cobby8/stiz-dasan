@@ -22,7 +22,8 @@ import {
   type RefundRunSummary,
   type SettlementView,
 } from "@/lib/enrollment/pause-settlement";
-import type { SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
+import { SETTLEMENT_CHOICE_REQUIRED_MESSAGE, settlementChoiceRequired, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
+import { todayKst } from "@/lib/datetime/kst";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -271,6 +272,12 @@ export async function decideEnrollmentChangeRequest(input: {
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
   const settlementChoice = input.approve && input.settlement ? input.settlement : null;
+  // 서버 강제(검수 권장 11-10): 휴원 승인인데 처리 방식이 없으면, 지금 금액을 다시 계산해
+  // 처리할 금액이 있고 계산 문제가 없으면 거절한다 — 화면이 옛 미리보기(금액 0)를 들고 있었거나 다른 경로로 불러도
+  // 돈 처리 없이 승인되지 않게. 화면은 needsSettlementChoice 를 보고 미리보기를 다시 불러와 방식 선택을 띄운다.
+  if (input.approve && !settlementChoice && (await pauseApprovalNeedsChoice(input.requestId))) {
+    return { ok: false as const, message: SETTLEMENT_CHOICE_REQUIRED_MESSAGE, needsSettlementChoice: true as const };
+  }
   // 연간 일정(네트워크)은 트랜잭션 «밖»에서 한 번 읽는다 — 잠금을 잡고 기다리지 않게
   const classDatesFor = settlementChoice ? await loadClassDatesFor() : null;
   // 콜백 안에서 채우므로 객체로 둔다(let 이면 TS 가 콜백 밖에서 null 로만 본다)
@@ -331,6 +338,23 @@ export async function decideEnrollmentChangeRequest(input: {
     notificationStatus,
     settlement: settlementResult,
   };
+}
+
+/**
+ * 검토 중인 휴원 승인에 수강료 처리 방식이 «반드시» 필요한가(서버 강제).
+ * - 휴원(PAUSE)·검토 중(PENDING)만 본다 — 다른 종류는 연간 일정(네트워크)도 읽지 않는다
+ * - 기능 시작일(PAUSE_SETTLEMENT_SINCE) 이후 결정분만 대상(지금 승인 = 오늘 결정)
+ * - 처리 기록 표가 준비 안 됐으면(마이그레이션 전) 처리 자체가 불가능하니 강제하지 않는다
+ */
+async function pauseApprovalNeedsChoice(requestId: string): Promise<boolean> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ kind: string }>>(
+    `SELECT kind FROM "EnrollmentChangeRequest" WHERE id = $1 AND status = 'PENDING'`,
+    requestId,
+  );
+  if (rows[0]?.kind !== "PAUSE") return false;
+  if (todayKst() < PAUSE_SETTLEMENT_SINCE) return false;
+  const preview = await getPauseSettlementPreview(requestId);
+  return Boolean(preview && preview.tablesReady && settlementChoiceRequired(preview));
 }
 
 /** 처리 막힘(문구 그대로 보여 줄 것)·청구 경합이면 원장용 문구, 그 밖의 오류면 null(그대로 던진다) */

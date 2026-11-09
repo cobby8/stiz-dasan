@@ -115,7 +115,8 @@ export function actionFailure(result: unknown): string | null {
  * 이 행에서 상세 칸에 바로 보일 처리 버튼(없으면 «기존 화면에서 열기»만).
  * 진행 중 건도 여기서 처리한다(k3) — 각 화면 ⚡ 메뉴와 같은 action·같은 인자. 취소처럼 되돌리기 어려운 건 확인 한 번.
  */
-function actionsFor(row: InboxRow): PanelAction[] {
+// 테스트가 버튼 목록·인자를 직접 확인할 수 있게 내보낸다(tests/inbox-consult-pause-wiring.test.mjs)
+export function actionsFor(row: InboxRow): PanelAction[] {
   const who = row.studentName ?? row.title;
   switch (row.kind) {
     case "ENROLLMENT_CHANGE":
@@ -224,18 +225,21 @@ function actionsFor(row: InboxRow): PanelAction[] {
       // 버튼은 행 ref.actions(지금 상태에서 누를 수 있는 것, 쉼표 구분 — consultActionsFor)에 있는 것만 보인다.
       // 메모 칸 초기값 = ref.adminNote(칸을 열 때 채운다). 메모는 어느 버튼을 눌러도 함께 저장된다(비우면 지운다).
       const allowed = new Set((row.ref?.actions ?? "").split(",").filter(Boolean));
+      // 상태 버튼은 메모 칸을 고쳤을 때만 메모를 보낸다(그대로면 undefined → 서버가 기존 메모 유지).
+      // 다른 관리자가 그 사이 남긴 메모를 처음 값으로 덮어쓰지 않게. «메모 저장»은 항상 보낸다.
+      const changedNote = (note: string) => (note === (row.ref?.adminNote ?? "") ? undefined : note);
       const list: PanelAction[] = [];
       // 위험(취소)은 왼쪽, 주 버튼(상담 완료)은 오른쪽 끝
       if (allowed.has("CANCELED")) {
         list.push({
           key: "consult-cancel", label: "취소", look: "danger",
           confirm: { title: `${who} 상담 취소`, description: "상담 신청이 «취소»로 닫힙니다. 닫힌 상담은 다시 열 수 없습니다.", confirmLabel: "상담 취소", tone: "danger" },
-          run: (note) => updateConsultRequest(row.id, "CANCELED", note),
+          run: (note) => updateConsultRequest(row.id, "CANCELED", changedNote(note)),
         });
       }
       if (allowed.has("NOTE")) list.push({ key: "consult-note", label: "메모 저장", look: "secondary", run: (note) => updateConsultRequest(row.id, "NOTE", note) });
-      if (allowed.has("CONTACTED")) list.push({ key: "consult-contacted", label: "연락함", look: "secondary", run: (note) => updateConsultRequest(row.id, "CONTACTED", note) });
-      if (allowed.has("DONE")) list.push({ key: "consult-done", label: "상담 완료", look: "primary", run: (note) => updateConsultRequest(row.id, "DONE", note) });
+      if (allowed.has("CONTACTED")) list.push({ key: "consult-contacted", label: "연락함", look: "secondary", run: (note) => updateConsultRequest(row.id, "CONTACTED", changedNote(note)) });
+      if (allowed.has("DONE")) list.push({ key: "consult-done", label: "상담 완료", look: "primary", run: (note) => updateConsultRequest(row.id, "DONE", changedNote(note)) });
       return list;
     }
     default:
@@ -304,6 +308,8 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   // 휴원 수강료 미리보기(열린 칸 key 별) · 고른 처리 방식
   const [pausePreview, setPausePreview] = useState<{ key: string; state: PausePreviewState } | null>(null);
   const [pauseMode, setPauseMode] = useState<SettlementMode | null>(null);
+  // 휴원 승인이 거절되면(방식 필요·금액 바뀜·지문 불일치) 미리보기를 다시 불러오는 신호
+  const [pauseReload, setPauseReload] = useState(0);
 
   // 체험·수강 화면은 목록을 스스로 고친다 — 처리가 끝나면 서버 화면만 다시 그려 탭 배지·메뉴 숫자를 맞춘다
   const refreshCounts = () => router.refresh();
@@ -368,7 +374,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         setPausePreview({ key: pauseKey, state: { status: "error", message: adminErrorText(error, "휴원 수강료 미리보기를 읽지 못했습니다. 수강 변경 화면에서 처리해 주세요.") } });
       });
     return () => { alive = false; };
-  }, [pauseKey, pauseRequestId]);
+  }, [pauseKey, pauseRequestId, pauseReload]);
   const openActions = open ? withPauseSettlement(open, actionsFor(open)) : [];
 
   /** 휴원 «승인» 버튼만 수강료 처리와 묶는다(수강 변경 화면과 같은 규칙: 금액 있고 문제 없으면 방식 필수) */
@@ -414,7 +420,12 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
       try {
         const result = await action.run(note);
         const failure = actionFailure(result);
-        if (failure) { setMessage({ tone: "error", text: failure }); return; }
+        if (failure) {
+          setMessage({ tone: "error", text: failure });
+          // 휴원 승인 거절(서버 «방식을 골라 주세요»·금액 바뀜) → 새 미리보기로 방식 선택을 다시 띄운다
+          if (action.key === "approve" && isPendingPause(row)) setPauseReload((n) => n + 1);
+          return;
+        }
         // 처리는 됐지만 남은 문제(토스 환불 확인 실패 등)가 있으면 경고로 알린다
         const warning = action.warnOf?.(result) ?? null;
         setMessage(warning

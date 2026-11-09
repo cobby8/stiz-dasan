@@ -20,6 +20,21 @@ export const SETTLEMENT_MODES = ["CARRY", "REFUND", "NONE"] as const;
 export type SettlementMode = (typeof SETTLEMENT_MODES)[number];
 export const SETTLEMENT_MODE_LABEL: Record<SettlementMode, string> = { CARRY: "이월", REFUND: "환불", NONE: "없음" };
 
+/**
+ * 휴원 승인 때 수강료 처리 방식을 «반드시» 골라야 하는가 — 처리할 금액(낸 돈·미납 청구)이 있고 계산 문제가 없을 때.
+ * 화면(수강 변경 화면·신청함)과 서버 강제(decideEnrollmentChangeRequest)가 같은 조건을 쓴다.
+ * 계산 문제(problems)가 있으면 고를 수 없으니 «처리 없이 승인만» 된다.
+ */
+export function settlementChoiceRequired(p: { problems: readonly string[]; paidTotal: number; unpaidTotal: number }): boolean {
+  return p.problems.length === 0 && (p.paidTotal > 0 || p.unpaidTotal > 0);
+}
+
+/** 서버가 «방식을 안 골랐다»로 승인을 거절할 때의 문구 — 화면은 이 거절을 받으면 미리보기를 다시 불러온다 */
+export const SETTLEMENT_CHOICE_REQUIRED_MESSAGE = "수강료 처리 방식을 골라 주세요(금액이 바뀌었어요).";
+
+/** problems 가 있을 때 승인 버튼 위 안내(수강 변경 화면·신청함 같은 문구) */
+export const SETTLEMENT_PROBLEM_APPROVE_NOTE = "승인하면 수강료 처리 없이 승인만 돼요. 처리는 수강 변경 화면에서 하세요.";
+
 export function isSettlementMode(value: unknown): value is SettlementMode {
   return typeof value === "string" && (SETTLEMENT_MODES as readonly string[]).includes(value);
 }

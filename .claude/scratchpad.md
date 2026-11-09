@@ -3,7 +3,7 @@
 ## 현재 작업
 - **상태(2026-11-10)**: 검수 완료 7브랜치 통합 + 신청함 연결 A(상담 버튼)·B(휴원 승인 전 수강료 처리) — 통합 브랜치 worktree-agent-ad19b9c3dfc159299, 미푸시. 연결 A·B 는 검수 대기.
 - ⚠️ **배포 전 필수**: 운영 apply_migration 4개(20261110150000 체험비 · 160000 상담 · 170000 학부모 알림 설정 · 180000 휴원 수강료). 130000 은 적용됨.
-- 테스트 기준선(11-10 통합 후): tests 4001-0 · studentVisibility 5-0 · tsc 0 · prisma validate 통과
+- 테스트 기준선(11-10 통합 후): tests 4006-0 · studentVisibility 5-0 · tsc 0 · prisma validate 통과
 
 ## 진행 현황
 | 항목 | 상태 |
@@ -79,6 +79,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(연결 A·B 검수 권장 3건): 서버 강제(휴원 승인에 방식 없고 금액 있으면 «수강료 처리 방식을 골라 주세요(금액이 바뀌었어요)» 거절·needsSettlementChoice → 신청함 미리보기 재조회·수강 변경 화면 상세 칸 열기) · 상담 상태 버튼은 메모 안 고치면 note=undefined · problems 안내 문구 두 화면 공용 상수 · 판정 settlementChoiceRequired 공용 | 완료(미푸시) |
 | 11-10 | developer(7브랜치 통합+연결): ①알림·설정→②보강권→③상담→④신청함 6탭→⑤POS 자동 납부→⑥휴원 수강료→⑦체험비 결제 merge(코드 충돌 0, 문서 합집합·consult-inbox=③·ParentMoreMenu 삭제 유지) · A 상담 탭 버튼 · B 휴원 승인 전 수강료 미리보기·방식 필수 · architecture 48→19 묶음 · 테스트 2건 시그니처 갱신 | 완료(미푸시) |
 | 11-10 | developer(원장 k7·m5 머리줄·설정): ⋯→⚙ /mypage/settings(내 정보 이름 수정·연락처 보기, 비밀번호 바꾸기(현재 비번 재확인·비번 로그인만), 간편로그인, 자녀·가족 초대, 형제·자매 상담 링크, 알림 설정(휴대폰 알림+종류별 출결·청구·공지·셔틀), 글자 크기 3단(쿠키→layout html 배율), 문제 신고·문의(OTHER), 앱 정보, 로그아웃·탈퇴, 테마 숨김) · 🔔 ParentNotificationBell(배지 9+·시트/드롭다운·알림 설정 줄) · 홈 알림 칸 제거 · 종류별 거르기=pushNotification 한 곳(표 없으면 보냄) · 마이그레이션 20261110170000_parent_notification_preference(운영 미적용) · tests/parent-settings | 커밋(미푸시) |
 | 11-10 | developer(원장 점검 k5·k6 학부모 보완): 알림 읽음=학부모 전용 actions/parent-notifications.ts(requireVerifiedParent·WHERE "userId"=로그인 사용자, 관리자 함수는 유지) · 알림 줄 전체 누름=읽음+내부 linkUrl 이동(safeInternalHref) · 수업 탭 반 카드→한 달 달력(ScheduleHub MonthCalendar 공용·getParentMonthViews)→신청 내역, «달력 ▸» 제거 · 버튼 [결석][보강][셔틀][변경 ▾] 한 줄(휴원 중=복귀 신청 유지) · 아이 선택 기억(?child=+localStorage, useRememberedChild/RememberChildSync — 홈·수업·일정) · tests 3827 pass | 커밋(미푸시) |
@@ -88,4 +89,3 @@
 | 11-10 | developer(현장 수납 승인 자동화, 원장 m1 «POS 확인되면 끝»): 번호 없는 POS 카드 결제 중 AUTO_CANDIDATE(메모 이름 1명 정확 일치+그 달 미납 1건 금액 일치)는 슬랙 버튼 없이 자동 납부(새 공용 핵심부 lib/pos/paymentNoticePay.ts — 버튼·자동이 같은 재확인 SQL 조각·markPaymentPaid 1곳, 자동은 SYSTEM·pos-notice-auto:id). 자동 전용 보류 조건 = 직원 현금·계좌 확인 대기·현장 결제 요청 PENDING/SENT/HELD/PAID·랠리즈 사본 → DM 버튼 그대로. 직원 현금·계좌 확인 요청(StaffPaymentConfirmationRequest)은 POS 근거가 없어 승인 유지(선택지 보고). 마이그레이션 없음. tsc 0·tests 3828-0·studentVisibility 5-0. **검수 후속**: 납부를 markPaymentsPaidTogether(1건, 미납+금액 그대로)로 → 0행이면 선점 해제+«이중 수납 확인 필요»(버튼 경로 공통) · 처음 DM 실패한 자동 납부는 결과 전용 DM(slackTs SENDING 선점, 스윕 재시도) · 납부 반영 뒤 POS 취소면 원장 DM+관리자 알림 벨 1회(advisory lock+감사 기록 POS_NOTICE_CANCELLED_WHILE_PAID, 청구 되돌리지 않음). tests 3837-0. **권장 3건**: CONFLICT=알림 닫힌 채(CONFIRMED·SYSTEM:conflict·error CONFLICT:)+감사 POS_NOTICE_PAID_ELSEWHERE+알림 벨(DM 없으면 결과 DM) · 취소 판정=CANCELLED_PAYMENT_STATES+PARTIAL_CANCEL(L)ED · 현장 결제 요청 묶인 주문·결제는 취소 경고 제외. tsc 종료 0·tests 3840-0 | 검수 대기(미푸시) |
 | 11-10 | developer(휴원 시작일 자유 + 승인 시 수강료 처리 m6): 시작일 오늘(수업 전)/내일~3개월 · 이월·환불·없음 자동 계산·실행(토스 부분 취소 신설·현금/랠리즈/POS=할 일·미납 감액·이월 다음 청구 차감) · 알림 «○원 예정». tsc 0·tests 3841-0·studentVisibility 5-0. ⚠️ 마이그레이션 20261110180000 운영 미적용 | 검수 대기(미푸시) |
 | 11-10 | developer(체험비 앱 결제·안내 준비): 결제 링크 토큰→토스(카드·계좌이체·무통장, 면세)→체험 확정 · TrialFeePayment 표(마이그레이션 20261110150000 미적용) · 웹훅 TRIAL- 갈래 · 원장 환불 · 안내 2종 초안·미리보기(발송 꺼짐) · 테스트 24 | 완료(커밋, 미푸시) |
-| 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |

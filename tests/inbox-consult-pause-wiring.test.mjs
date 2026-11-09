@@ -33,9 +33,10 @@ const parts = load("src/app/admin/inbox/PauseSettlementBox.tsx", { "@/lib/enroll
 test("A 상담: updateConsultRequest 연결 — ref.actions 에 있는 버튼만, 취소는 확인 한 번", () => {
   assert.match(client, /import \{ updateConsultRequest \} from "@\/app\/actions\/consult"/);
   assert.match(client, /const allowed = new Set\(\(row\.ref\?\.actions \?\? ""\)\.split\(","\)\.filter\(Boolean\)\)/);
-  for (const action of ["CANCELED", "NOTE", "CONTACTED", "DONE"]) {
-    assert.match(client, new RegExp(`allowed\\.has\\("${action}"\\)[\\s\\S]{0,400}updateConsultRequest\\(row\\.id, "${action}", note\\)`), action);
+  for (const action of ["CANCELED", "CONTACTED", "DONE"]) {
+    assert.match(client, new RegExp(`allowed\\.has\\("${action}"\\)[\\s\\S]{0,400}updateConsultRequest\\(row\\.id, "${action}", changedNote\\(note\\)\\)`), action);
   }
+  assert.match(client, /allowed\.has\("NOTE"\)[\s\S]{0,200}updateConsultRequest\(row\.id, "NOTE", note\)/, "메모 저장은 항상 보낸다");
   // 취소만 확인 창(위험)
   assert.match(client, /key: "consult-cancel", label: "취소", look: "danger",\s*confirm: \{ title: `\$\{who\} 상담 취소`/);
   // 예전 «PM 통합 단계에서 연결» 자리 표시는 지웠다
@@ -70,7 +71,11 @@ test("B 규칙: 금액이 있고 문제 없으면 방식 필수 — 수강 변�
   assert.equal(parts.pauseNeedsSettlementChoice(null), false);
   // 수강 변경 화면의 원래 조건(금액·문제)과 글자 그대로 비교
   assert.match(changes, /p\.problems\.length === 0 && \(p\.paidTotal > 0 \|\| p\.unpaidTotal > 0\)/);
-  assert.match(box, /preview\.problems\.length === 0 && \(preview\.paidTotal > 0 \|\| preview\.unpaidTotal > 0\)/);
+  assert.match(box, /preview && settlementChoiceRequired\(preview\)/);
+  // 공용 순수 판정(서버 강제와 같은 조건)
+  assert.equal(plan.settlementChoiceRequired({ problems: [], paidTotal: 1, unpaidTotal: 0 }), true);
+  assert.equal(plan.settlementChoiceRequired({ problems: [], paidTotal: 0, unpaidTotal: 0 }), false);
+  assert.equal(plan.settlementChoiceRequired({ problems: ["x"], paidTotal: 1, unpaidTotal: 1 }), false);
 });
 
 test("B 문구: 확인창·안내 문구가 수강 변경 화면과 같다", () => {
@@ -130,4 +135,113 @@ test("B 렌더: 금액 있는 미리보기는 세 방식 버튼, 문제 있으�
   assert.doesNotMatch(problem, /role="radio"/);
   assert.match(renderToStaticMarkup(React.createElement(Box, { state: { status: "loading" }, mode: null, onMode() {}, disabled: false })), /계산하는 중/);
   assert.equal(renderToStaticMarkup(React.createElement(Box, { state: { status: "ready", preview: null }, mode: null, onMode() {}, disabled: false })), "");
+});
+
+// ── 검수 권장 3건(11-10) ─────────────────────────────────────────────────
+// 모르는 «@/…»·next 모듈은 아무 함수나 돌려주는 빈 모듈로(맨 위 SQL 조각 함수 호출이 죽지 않게)
+const stubModule = () => new Proxy({}, { get: (_, key) => (key === "__esModule" ? true : () => "") });
+const loadLoose = (path, mocks) => {
+  const absolute = resolve(path);
+  const compiled = ts.transpileModule(read(absolute), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
+    fileName: absolute,
+  }).outputText;
+  const module = new Module(absolute);
+  module.filename = absolute;
+  module.paths = Module._nodeModulePaths(resolve("."));
+  module.require = (name) => (name in mocks ? mocks[name] : /^(@\/|next\/|\.\/)/.test(name) ? stubModule() : nodeRequire(name));
+  module._compile(compiled, absolute);
+  return module.exports;
+};
+
+test("권장2 상담 메모: 상태 버튼은 메모가 처음 값과 같으면 undefined(서버가 유지), 고치면 보냄 · «메모 저장»은 항상", async () => {
+  const calls = [];
+  const inbox = loadLoose("src/app/admin/inbox/InboxClient.tsx", {
+    "@/app/actions/consult": { updateConsultRequest: async (...args) => { calls.push(args); return { ok: true }; } },
+    "@/lib/requests/catalog": { ENROLLMENT_CANCEL_REQUESTED: "CANCEL_REQUESTED", BULK_ACTION_KINDS: [] },
+  });
+  const row = { kind: "CONSULT", id: "c1", studentName: "합성", title: "상담 신청 · 초3", rawStatus: "NEW", facts: [],
+    ref: { phone: "01012345678", adminNote: "처음 메모", actions: "CONTACTED,DONE,CANCELED,NOTE" } };
+  const actions = inbox.actionsFor(row);
+  assert.deepEqual(actions.map((a) => a.key), ["consult-cancel", "consult-note", "consult-contacted", "consult-done"]);
+  const byKey = Object.fromEntries(actions.map((a) => [a.key, a]));
+  for (const key of ["consult-contacted", "consult-done", "consult-cancel"]) await byKey[key].run("처음 메모");
+  assert.deepEqual(calls.map((c) => c[2]), [undefined, undefined, undefined], "그대로면 메모를 보내지 않는다");
+  calls.length = 0;
+  await byKey["consult-done"].run("고친 메모");
+  await byKey["consult-contacted"].run("");
+  await byKey["consult-note"].run("처음 메모");
+  assert.deepEqual(calls, [["c1", "DONE", "고친 메모"], ["c1", "CONTACTED", ""], ["c1", "NOTE", "처음 메모"]]);
+  // 끝난 상담 = 메모만
+  assert.deepEqual(inbox.actionsFor({ ...row, rawStatus: "DONE", ref: { ...row.ref, actions: "NOTE" } }).map((a) => a.key), ["consult-note"]);
+});
+
+/** 서버 승인 함수를 가짜 DB·미리보기로 실행 */
+function serverHarness({ kind = "PAUSE", preview }) {
+  const sqls = [];
+  const prisma = {
+    async $queryRawUnsafe(sql) { sqls.push(sql); return sql.includes('SELECT kind FROM "EnrollmentChangeRequest"') ? [{ kind }] : []; },
+    async $transaction() { sqls.push("TX"); return []; }, // 승인 UPDATE 까지 왔다는 표시(행 없음 → «이미 처리된 신청»)
+  };
+  const mod = loadLoose("src/lib/enrollment/admin-change-request.ts", {
+    "@/lib/prisma": { prisma },
+    "@/lib/enrollment/pause-settlement-plan": plan,
+    "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
+    "@/lib/enrollment/pause-settlement": {
+      previewPauseSettlement: async () => preview && { requestId: "r1", previewKey: "k", lines: [], ready: true, tablesReady: preview.tablesReady ?? true,
+        plan: { paidTotal: preview.paidTotal ?? 0, unpaidTotal: preview.unpaidTotal ?? 0, problems: preview.problems ?? [], lines: [] } },
+    },
+    "@/lib/enrollment/monthlyClassDates": { loadAnnualPlanEvents: async () => [], getMonthlyClassDates: () => [] },
+  });
+  return { mod, sqls };
+}
+
+test("권장1 서버 강제: 휴원 승인에 방식이 없고 처리할 금액이 있으면 거절(needsSettlementChoice) — 승인 UPDATE 안 함", async () => {
+  const { mod, sqls } = serverHarness({ preview: { paidTotal: 50000 } });
+  const result = await mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true, settlement: null });
+  assert.deepEqual(result, { ok: false, message: plan.SETTLEMENT_CHOICE_REQUIRED_MESSAGE, needsSettlementChoice: true });
+  assert.equal(plan.SETTLEMENT_CHOICE_REQUIRED_MESSAGE, "수강료 처리 방식을 골라 주세요(금액이 바뀌었어요).");
+  assert.ok(!sqls.includes("TX"), "거절이면 승인 트랜잭션에 들어가지 않는다");
+  // 미납 청구만 있어도 강제
+  const unpaid = serverHarness({ preview: { unpaidTotal: 30000 } });
+  assert.equal((await unpaid.mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true })).needsSettlementChoice, true);
+});
+
+test("권장1 서버 강제 예외: 금액 없음·계산 문제·표 준비 전·휴원 아님·거절은 예전처럼 진행", async () => {
+  const cases = [
+    { name: "금액 없음", h: { preview: { paidTotal: 0, unpaidTotal: 0 } } },
+    { name: "계산 문제", h: { preview: { paidTotal: 50000, problems: ["반 요일을 알 수 없어요."] } } },
+    { name: "표 준비 전", h: { preview: { paidTotal: 50000, tablesReady: false } } },
+    { name: "휴원 아님", h: { kind: "WITHDRAW", preview: { paidTotal: 50000 } } },
+  ];
+  for (const { name, h } of cases) {
+    const { mod, sqls } = serverHarness(h);
+    const result = await mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true, settlement: null });
+    assert.ok(sqls.includes("TX"), `${name}: 승인 트랜잭션까지 간다`);
+    assert.equal(result.needsSettlementChoice, undefined, name);
+  }
+  const { mod, sqls } = serverHarness({ preview: { paidTotal: 50000 } });
+  await mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: false, settlement: null });
+  assert.ok(sqls.includes("TX") && !sqls.some((s) => String(s).includes("SELECT kind")), "거절은 미리보기를 계산하지 않는다");
+});
+
+test("권장1 화면: 서버 거절을 받으면 미리보기 다시 불러오기(신청함)·상세 칸 열기(수강 변경 화면)", () => {
+  assert.match(client, /if \(action\.key === "approve" && isPendingPause\(row\)\) setPauseReload\(\(n\) => n \+ 1\)/);
+  assert.match(client, /\}, \[pauseKey, pauseRequestId, pauseReload\]\);/);
+  assert.match(changes, /"needsSettlementChoice" in result && result\.needsSettlementChoice\) setDetailId\(requestId\)/);
+});
+
+test("권장3 problems 안내: 두 화면이 같은 상수 문구를 보인다", () => {
+  assert.equal(plan.SETTLEMENT_PROBLEM_APPROVE_NOTE, "승인하면 수강료 처리 없이 승인만 돼요. 처리는 수강 변경 화면에서 하세요.");
+  for (const source of [box, changes]) {
+    assert.match(source, /SETTLEMENT_PROBLEM_APPROVE_NOTE[\s\S]*\{SETTLEMENT_PROBLEM_APPROVE_NOTE\}/);
+  }
+  const React = nodeRequire("react");
+  const { renderToStaticMarkup } = nodeRequire("react-dom/server");
+  const html = renderToStaticMarkup(React.createElement(parts.default, {
+    state: { status: "ready", preview: preview({ problems: ["반 요일을 알 수 없어요."] }) }, mode: null, onMode() {}, disabled: false,
+  }));
+  assert.ok(html.includes(plan.SETTLEMENT_PROBLEM_APPROVE_NOTE));
+  const clean = renderToStaticMarkup(React.createElement(parts.default, { state: { status: "ready", preview: preview() }, mode: null, onMode() {}, disabled: false }));
+  assert.ok(!clean.includes(plan.SETTLEMENT_PROBLEM_APPROVE_NOTE), "문제 없으면 안내 없음");
 });
