@@ -3,7 +3,10 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
-import { isTrackingBlockedLocation, isTrackingBlockedPath } from "@/lib/privacy/trackingExclusion";
+import { TOKEN_QUERY_KEYS, isTrackingBlockedLocation, isTrackingBlockedPath } from "@/lib/privacy/trackingExclusion";
+
+// 인라인 스크립트에 넣을 «토큰 쿼리 이름» — trackingExclusion.ts 의 같은 상수를 그대로 직렬화(기준 한 곳)
+const TOKEN_QUERY_KEYS_JSON = JSON.stringify(TOKEN_QUERY_KEYS);
 
 const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID || "537084849778028";
 const TRACK_RETRY_LIMIT = 3;
@@ -57,12 +60,19 @@ export default function MetaPixel() {
 
     if (!META_PIXEL_ID || pathBlocked) return null;
 
-    // disablePushState: 픽셀이 화면 이동(history.pushState)마다 스스로 PageView 를 보내는 기능을 끈다.
-    // PageView 는 위 useEffect 가 판정을 거쳐 직접 보낸다 — 그래야 앱 안 이동으로 토큰 화면에 들어가도 새지 않는다.
+    // ① 맨 앞: 주소 쿼리에 토큰 이름(token·t·access·enrollmentHandoff·handoff)이 있으면 픽셀을 싣지도 init 하지도 않고 끝낸다.
+    //    (경로는 서버 렌더에서 이미 걸렀고, 쿼리는 서버 렌더 시점에 모르므로 브라우저에서 한 번 더 — isTrackingBlockedLocation 과 같은 목록)
+    // ② disablePushState: 픽셀이 화면 이동(history.pushState)마다 스스로 PageView 를 보내는 기능을 끈다.
+    //    PageView 는 위 useEffect 가 판정을 거쳐 직접 보낸다 — 그래야 앱 안 이동으로 토큰 화면에 들어가도 새지 않는다.
+    // ③ autoConfig=false: 버튼 클릭 등 «자동 이벤트»를 끈다(앱 안 이동으로 토큰 화면에 간 뒤 클릭이 주소째 나가지 않게). init 보다 앞이어야 한다.
     return (
         <>
             <Script id="meta-pixel" strategy="afterInteractive">
                 {`
+                    (function(){
+                    var keys=${TOKEN_QUERY_KEYS_JSON};
+                    var q=new URLSearchParams(window.location.search);
+                    for(var i=0;i<keys.length;i++){if(q.has(keys[i]))return;}
                     !function(f,b,e,v,n,t,s)
                     {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
                     n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -72,7 +82,9 @@ export default function MetaPixel() {
                     s.parentNode.insertBefore(t,s)}(window, document,'script',
                     'https://connect.facebook.net/en_US/fbevents.js');
                     fbq.disablePushState = true;
+                    fbq('set', 'autoConfig', false, '${META_PIXEL_ID}');
                     fbq('init', '${META_PIXEL_ID}');
+                    })();
                 `}
             </Script>
             <noscript>

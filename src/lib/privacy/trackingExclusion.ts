@@ -27,7 +27,8 @@ export const TOKEN_PATH_PREFIXES = [
 ] as const;
 
 /** 주소 «쿼리»에 열쇠가 들어가는 이름 — 어느 경로든 이 이름이 있으면 추적하지 않는다 */
-export const TOKEN_QUERY_KEYS = ["token", "t", "access"] as const;
+// enrollmentHandoff·handoff = 수강 신청 → 계정 연결 인계 열쇠(2026-11-10 재검수 추가)
+export const TOKEN_QUERY_KEYS = ["token", "t", "access", "enrollmentHandoff", "handoff"] as const;
 
 /** 경로만으로 판정(서버 렌더에서도 같은 결과 — 픽셀 스크립트를 아예 싣지 않을지 정할 때) */
 export function isTrackingBlockedPath(pathname: string | null | undefined): boolean {

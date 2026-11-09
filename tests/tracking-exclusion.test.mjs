@@ -36,6 +36,8 @@ const BLOCKED = [
   ["/kakao-connect", "?token=abc"],
   ["/mypage/kakao-connect", "?token=abc"],
   ["/apply/enroll", "?access=CODE123"], // 짧은 링크(/e/[code])가 넘기는 접근 코드
+  ["/apply/enroll", "?enrollmentHandoff=abc"],
+  ["/mypage", "?handoff=abc"],
   ["/anything", "?token=abc"],
 ];
 const ALLOWED = [
@@ -83,6 +85,7 @@ test("가드: src/app 의 [token]·[code] 동적 경로는 전부 목록에 있�
 });
 
 /** MetaPixel 을 실제로 불러온다(next 모듈은 가짜) */
+let capturedScript = null;
 function loadPixel(pathname) {
   const code = ts.transpileModule(readFileSync("src/components/MetaPixel.tsx", "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
@@ -91,7 +94,7 @@ function loadPixel(pathname) {
   const deps = {
     react: React,
     "next/navigation": { usePathname: () => pathname },
-    "next/script": { default: ({ id, children }) => React.createElement("script", { "data-id": id }, children) },
+    "next/script": { default: ({ id, children }) => { capturedScript = children; return React.createElement("script", { "data-id": id }, children); } },
     "@/lib/privacy/trackingExclusion": exclusion,
   };
   new Function("require", "exports", code)((id) => (id in deps ? deps[id] : require(id)), exports);
@@ -160,4 +163,54 @@ test("헤더: /apply/trial/pay 아래는 no-referrer·noindex 한 벌만(일반 
     assert.equal(map["Referrer-Policy"], "strict-origin-when-cross-origin", pathname);
     assert.equal(map["X-Robots-Tag"], undefined, pathname);
   }
+});
+
+/** 인라인 픽셀 스크립트를 가짜 브라우저에서 실제로 실행 — 쿼리 토큰이면 아무것도 안 하고, 아니면 autoConfig 끔 → init 순서 */
+function runInlinePixel(search) {
+  capturedScript = null;
+  const { default: MetaPixel } = loadPixel("/apply/enroll");
+  renderToStaticMarkup(React.createElement(MetaPixel));
+  assert.ok(typeof capturedScript === "string" && capturedScript.includes("fbq('init'"));
+  const inserted = [];
+  const sandbox = {
+    location: { search },
+    URLSearchParams,
+    document: {
+      createElement: () => ({}),
+      getElementsByTagName: () => [{ parentNode: { insertBefore: (el) => inserted.push(el) } }],
+    },
+  };
+  sandbox.window = sandbox;
+  vm.runInNewContext(capturedScript, sandbox);
+  return { fbq: sandbox.fbq, inserted };
+}
+
+test("[재검수] 인라인 스크립트: 쿼리 토큰(/apply/enroll?access= 등)이면 픽셀 로딩·init 을 하지 않는다", () => {
+  for (const search of ["?access=CODE123", "?token=x", "?t=x", "?enrollmentHandoff=x", "?handoff=x", "?utm_source=a&access=b"]) {
+    const { fbq, inserted } = runInlinePixel(search);
+    assert.equal(fbq, undefined, search);
+    assert.equal(inserted.length, 0, `${search} fbevents.js 를 싣지 않는다`);
+  }
+});
+
+test("[재검수] 일반 주소: autoConfig=false 가 init 보다 먼저, 푸시 상태 자동 PageView 끔, 스크립트 로딩", () => {
+  for (const search of ["", "?utm_source=naver&utm_medium=cpc", "?test_event_code=TEST1"]) {
+    const { fbq, inserted } = runInlinePixel(search);
+    assert.ok(fbq, search);
+    assert.equal(inserted.length, 1);
+    assert.equal(fbq.disablePushState, true);
+    const calls = fbq.queue.map((args) => Array.from(args));
+    const setAt = calls.findIndex((c) => c[0] === "set" && c[1] === "autoConfig" && c[2] === false);
+    const initAt = calls.findIndex((c) => c[0] === "init");
+    assert.ok(setAt >= 0 && initAt > setAt, JSON.stringify(calls));
+    assert.equal(calls[setAt][3], calls[initAt][1], "같은 픽셀 id 에 autoConfig 를 끈다");
+  }
+});
+
+test("[재검수] 인라인 스크립트의 쿼리 목록 = trackingExclusion 상수(한 곳 기준)", () => {
+  const src = readFileSync("src/components/MetaPixel.tsx", "utf8");
+  assert.match(src, /const TOKEN_QUERY_KEYS_JSON = JSON\.stringify\(TOKEN_QUERY_KEYS\);/);
+  assert.match(src, /var keys=\$\{TOKEN_QUERY_KEYS_JSON\};/);
+  assert.deepEqual([...exclusion.TOKEN_QUERY_KEYS], ["token", "t", "access", "enrollmentHandoff", "handoff"]);
+  for (const key of exclusion.TOKEN_QUERY_KEYS) assert.equal(exclusion.isTrackingBlockedLocation("/", `?${key}=x`), true, key);
 });
