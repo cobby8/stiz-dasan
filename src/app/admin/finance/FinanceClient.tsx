@@ -2,7 +2,7 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { toKstYmd } from "@/lib/datetime/kst";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
@@ -31,6 +31,10 @@ import { chargeItemsSummary, posMethodLabel, sortChargeItems } from "@/lib/pos/c
 // «납부 처리» 창(2026-11-08) — 결제 방법(계좌이체·현장 결제)을 골라 근거를 남겨야만 납부완료가 된다
 import RecordPaymentModal from "./RecordPaymentModal";
 import VirtualAccountCloseDialog from "./VirtualAccountCloseDialog";
+// «선택 항목 환불»(2026-11-09) — 고른 납부완료 청구를 결제 길(토스·POS·현금)대로 환불. 판정은 순수 규칙 한 곳
+import { refundSelectedPayments } from "@/app/actions/payment-bulk-refund";
+import { bulkSelectionMode } from "@/lib/payments/bulkRefund";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 type Payment = {
     id: string;
@@ -454,6 +458,9 @@ export default function FinanceClient({
 
     // 일괄 체크박스 상태
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    // 선택 항목 환불 결과(막대 자리에 남긴다 — 선택이 풀려도 보이게). 이중 클릭은 ref 로 한 번 더 막는다
+    const [bulkRefundNotice, setBulkRefundNotice] = useState<{ tone: "success" | "danger"; lines: string[] } | null>(null);
+    const bulkRefundingRef = useRef(false);
 
     // 수동 생성 폼 상태
     const [studentId, setStudentId] = useState("");
@@ -767,6 +774,37 @@ export default function FinanceClient({
         if (targets.length === 0) { alert("선택된 항목이 없습니다."); return; }
         setRecordPreferPos(false);
         setRecordTargets(targets);
+    }
+
+    // 선택 항목 환불 — 서버가 권한·상태·묶음을 다시 확인하고 갈래별로 기존 환불 함수를 부른다
+    async function handleBulkRefund() {
+        if (!canManageCriticalFinance || bulkRefundingRef.current) return;
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        bulkRefundingRef.current = true;
+        setBusy(true);
+        setBulkRefundNotice(null);
+        try {
+            const result = await refundSelectedPayments(ids);
+            if (!result.ok) {
+                // 막힌 경우(묶음 일부 선택·미납 섞임 등)는 아무것도 처리되지 않았다 — 선택은 그대로 두고 고치게 한다
+                setBulkRefundNotice({ tone: "danger", lines: result.blocks?.length ? result.blocks.map((block) => block.message) : [result.message] });
+                return;
+            }
+            // 실패한 건은 «원생 이름: 사유» 한 줄씩
+            const nameOf = (id: string) => payments.find((payment) => payment.id === id)?.studentName ?? "청구";
+            const failures = result.outcomes
+                .filter((outcome) => outcome.result === "FAILED")
+                .map((outcome) => `${outcome.paymentIds.map(nameOf).join("·")}: ${outcome.message ?? "실패"}`);
+            setBulkRefundNotice({ tone: failures.length > 0 ? "danger" : "success", lines: [result.summary, ...failures] });
+            setSelectedIds(new Set());
+            await loadMonth(year, month);
+        } catch (err: unknown) {
+            setBulkRefundNotice({ tone: "danger", lines: [getErrorMessage(err, "선택 항목 환불 실패")] });
+        } finally {
+            bulkRefundingRef.current = false;
+            setBusy(false);
+        }
     }
 
     // 1단계: 상태를 뺀 조건(원생 지정·검색·반) — 상태 칩 건수는 이 목록에서 센다
@@ -1587,29 +1625,81 @@ export default function FinanceClient({
                 </div>
             </div>
             {/* 일괄 처리 막대 — 고른 청구가 있을 때만, 표 바로 위(체크한 곳 가까이). 2026-11-08 원장 지시로 위치 이동 */}
-            {canManageCriticalFinance && selectedIds.size > 0 && (
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-primary)] bg-white px-3 py-1.5">
-                    <span className="text-sm font-bold text-[var(--color-academy-ink)]">
-                        {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(payments.filter((p) => selectedIds.has(p.id)).reduce((sum, p) => sum + Number(p.amount || 0), 0))}
-                    </span>
-                    <div className="flex items-center gap-1">
-                        <button
-                            type="button"
-                            onClick={() => setSelectedIds(new Set())}
-                            disabled={busy}
-                            className="min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
-                        >
-                            선택 해제
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleBulkPaid}
-                            disabled={busy}
-                            className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition disabled:opacity-50"
-                        >
-                            선택 항목 납부 처리
-                        </button>
+            {canManageCriticalFinance && selectedIds.size > 0 && (() => {
+                // 고른 청구 상태로 버튼을 고른다: 전부 미납 → 납부 처리 · 전부 납부완료 → 환불 · 섞임 → 끔
+                const selectedPayments = payments.filter((p) => selectedIds.has(p.id));
+                const selectedTotal = selectedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const selection = bulkSelectionMode(selectedPayments.map((p) => p.status));
+                // 확인 문장에 «돈이 어디로 돌아가는지» 갈래별 건수를 적는다
+                const tossCount = selectedPayments.filter((p) => p.paidProvider === "TOSS").length;
+                const posCount = selectedPayments.filter((p) => p.paidProvider === "TOSS_POS").length;
+                const manualCount = selectedPayments.length - tossCount - posCount;
+                const refundParts = [
+                    tossCount > 0 ? `온라인 결제 ${tossCount}건은 토스 결제 취소` : null,
+                    posCount > 0 ? `현장 결제 ${posCount}건은 POS로 취소 요청` : null,
+                    manualCount > 0 ? `현금·계좌이체 ${manualCount}건은 장부만 환불(돈은 직접 돌려주세요)` : null,
+                ].filter(Boolean).join(" · ");
+                return (
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-primary)] bg-[var(--color-academy-surface)] px-3 py-1.5">
+                        <span className="text-sm font-bold text-[var(--color-academy-ink)]">
+                            {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(selectedTotal)}
+                        </span>
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds(new Set())}
+                                disabled={busy}
+                                className="min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                            >
+                                선택 해제
+                            </button>
+                            {selection.mode === "REFUND" ? (
+                                // 돈이 나가는 작업 — 위험색 + 그 자리 확인(InlineConfirm). 처리 중엔 두 버튼 모두 잠긴다
+                                <InlineConfirm
+                                    label="선택 항목 환불"
+                                    question={`${selectedIds.size}건 ${formatAmount(selectedTotal)}을 환불할까요? ${refundParts}`}
+                                    confirmLabel="환불하기"
+                                    keepLabel="그만두기"
+                                    pending={busy}
+                                    pendingLabel="환불 중…"
+                                    onConfirm={handleBulkRefund}
+                                    triggerClassName="min-h-11"
+                                    openClassName="basis-full"
+                                />
+                            ) : selection.mode === "MIXED" ? (
+                                <>
+                                    {/* 섞이면 버튼을 끄고 이유를 버튼 바로 옆에 */}
+                                    <span role="status" className="text-xs font-bold text-[var(--color-academy-danger)]">{selection.message}</span>
+                                    <button type="button" disabled className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] opacity-50">
+                                        선택 항목 처리
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleBulkPaid}
+                                    disabled={busy}
+                                    className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition disabled:opacity-50"
+                                >
+                                    선택 항목 납부 처리
+                                </button>
+                            )}
+                        </div>
                     </div>
+                );
+            })()}
+            {/* 선택 항목 환불 결과 — 막대 바로 아래(누른 자리 가까이). 성공하면 선택이 풀리므로 따로 남긴다 */}
+            {bulkRefundNotice && (
+                <div
+                    role={bulkRefundNotice.tone === "danger" ? "alert" : "status"}
+                    className={`mb-2 flex items-start justify-between gap-2 rounded-xl border px-3 py-1.5 text-sm font-bold ${bulkRefundNotice.tone === "danger" ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}
+                >
+                    <div className="grid gap-0.5">
+                        {bulkRefundNotice.lines.map((line, index) => <p key={index}>{line}</p>)}
+                    </div>
+                    <button type="button" onClick={() => setBulkRefundNotice(null)} aria-label="환불 결과 닫기" className="min-h-11 min-w-11 shrink-0 rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+                    </button>
                 </div>
             )}
             {/* 수납 목록 테이블 */}

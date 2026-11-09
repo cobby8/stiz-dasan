@@ -95,6 +95,7 @@
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
 | 11-09 | 학부모 복귀 신청(RESUME, 휴원 중 반)·«휴원 신청 취소» 문구·접수 직후 검토 중 상자 즉시·휴원 예정 안내. 승인 복귀는 due-change-plan 자동 적용(PAUSED→ACTIVE). developer 구현·tsc·전체 3683-0. 검수 대기 | 검수 대기 |
+| 11-09 | 수납 «선택 항목 환불»: 막대 모드(미납=납부·납부완료=환불·섞임=끔), 토스 온라인=취소API→재조회→applyVerifiedTossFullCancel, POS=requestChargeCancelByAdmin, 현금=refundPaidPaymentInTx, 묶음 일부 선택 차단. tsc·전체 3680-0. developer | 검수 대기 |
 | 11-09 | 기간 결석(f7aa34a8): RegularAbsencePeriod+periodId(운영 적용), 학생 상세 수강·출결 카드, 크론 /api/cron/absence-periods. developer 구현·reviewer 2회 통과·tester 전체 3648-0·임시 PG 흐름 통과. 크론 연장은 사람이 취소한 날 안 되살림 | 완료 |
 | 11-09 | developer(관리자 학생 상세 좌우 정리, 원장 «좌측 길다»): 좌측 = 연락처·보호자·셔틀·메모, 학부모 요청 링크는 개요 맨 아래로·개요 순서 수강 반→요약→유니폼. 보호자 계정 전화 회색 상자→한 줄+ⓘ, 보호자 버튼 줄 합침, 셔틀 승차/하차 한 줄 행·배지 삭제·«신청서 희망(9월) 15:45 · …» 한 줄, 요청 링크 설명 1줄, 메모 4→3줄. 9월 원인 = 기기 시계로 이번 달 찾고 없으면 최근 달을 «이번 달»로 표기 → todayKst+pickMonthSummary, 아니면 «최근 장부 요약/수납». 1366px 좌 1331→934·우 811→905. tsc 0·tests 3632-0 | 완료(검수 대기) |
 | 11-09 | debugger(원장 «휴원 신청하기 동작 안 함»): 서버·API·휴원 판정은 정상(코드상). 화면 원인 — 오류는 맨 위·접수 완료는 맨 아래라 휴대폰에서 안 보임(아이폰 날짜 min 무시 → 시작일 이전 복귀일 거절 문구가 화면 밖), 접수 직후 refresh 전 «신청하기» 재활성 → 두 번째 누름 «이미 검토 중» 400. EnrollmentChangeClient: 결과 문구 버튼 바로 위·접수 후 잠금(submittedFor)·복귀일 사전 확인. 신규 tests/enrollment-change-submit-feedback.test.mjs(옛 코드 4-fail 재현). tsc 0·tests 3633-0·studentVisibility 5-0·KST 가드 통과. errors.md 기록 | 완료(커밋, 미푸시) |

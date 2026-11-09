@@ -1897,6 +1897,138 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
     });
 }
 
+/** 관리자 환불 취소 요청의 Idempotency-Key 시드 — 같은 10분 안 연타는 토스에서 한 번만, 10분 뒤 재시도는 새 시도 */
+function adminRefundIdempotencySeed(txId: string, paymentKey: string, nowMs: number): string {
+    // 날짜 함수 없이 10분 칸 번호만 쓴다(시간대가 끼어들 일이 없게)
+    return `stiz-admin-refund:${txId}:${paymentKey}:${Math.floor(nowMs / 600_000)}`;
+}
+
+/** 토스 오류 응답에서 원장이 읽을 문장만 뽑는다(없으면 null) */
+async function readTossErrorMessage(response: Response): Promise<string | null> {
+    try {
+        const body = asRecord(await response.json());
+        return readString(body.message)?.slice(0, 200) ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export type AdminTossRefundResult =
+    | { ok: true; paymentIds: string[]; alreadyApplied: boolean }
+    | { ok: false; message: string };
+
+/**
+ * 관리자 수납 목록 «선택 항목 환불» — 토스 온라인 결제 1건(묶음이면 주문 1건 = 청구 N건)을 전액 취소한다.
+ * 흐름: 토스 재조회(완료·금액·부분취소 없음 확인) → 감사 기록 → 토스 결제 취소 API(전액, cancelAmount 없음)
+ *      → 다시 조회해 «전액 취소»가 확인될 때만 applyVerifiedTossFullCancel(웹훅과 같은 반영 함수, 묶음이면 묶인 청구 전부).
+ * 응답만 믿지 않는다 — 장부는 재조회 결과로만 바뀐다. 웹훅이 뒤에 와도 같은 함수라 두 번 바뀌지 않는다(멱등).
+ * 권한 확인은 부르는 쪽(서버 액션 — 원장만)이 한다. paymentIds = 화면이 고른 청구(묶음 전부를 골랐는지 서버가 다시 본다).
+ */
+export async function refundTossPaymentByAdmin(input: {
+    transactionId: string;
+    paymentIds: string[];
+    adminUserId: string;
+}): Promise<AdminTossRefundResult> {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT * FROM "PaymentTransaction" WHERE id = $1 AND provider = 'TOSS' LIMIT 1`,
+        input.transactionId,
+    );
+    const tx = rows[0];
+    if (!tx || !tx.paymentKey) return { ok: false, message: "토스 결제 기록을 찾지 못했어요." };
+
+    // 이 주문에 묶인 청구 전부(항목 없는 단건 = 대표 청구 하나) — 화면이 고른 것과 정확히 같아야 한다
+    const bundle = await hasBundleItems(prisma, tx.id);
+    const coveredIds = bundle
+        ? (await prisma.$queryRawUnsafe<Array<{ paymentId: string }>>(
+            `SELECT "paymentId" FROM "PaymentTransactionItem" WHERE "transactionId" = $1 ORDER BY position`,
+            tx.id,
+        )).map((row) => row.paymentId)
+        : [tx.paymentId];
+    const picked = new Set(input.paymentIds);
+    if (coveredIds.length !== picked.size || !coveredIds.every((id) => picked.has(id))) {
+        return { ok: false, message: `묶음으로 낸 결제는 함께 환불해야 해요(${coveredIds.length}건).` };
+    }
+
+    // ① 지금 토스 상태 확인 — 이미 전액 취소돼 있으면(상점관리자에서 먼저 취소 등) 장부만 맞춘다
+    const before = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+    if (before.kind !== "verified") return { ok: false, message: "토스에서 결제를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." };
+    const beforeCancel = classifyTossCancel(before.payment, tx, tx.paymentKey);
+    if (beforeCancel.kind === "FULL_CANCEL") {
+        const applied = await applyVerifiedTossFullCancel({ tx, payment: before.payment });
+        return applied.ok
+            ? { ok: true, paymentIds: coveredIds, alreadyApplied: applied.alreadyApplied }
+            : { ok: false, message: "토스에서는 취소됐지만 장부 반영이 막혔어요. 수납 기록을 확인해 주세요." };
+    }
+    if (beforeCancel.kind === "PARTIAL_CANCEL") {
+        return { ok: false, message: "토스에서 일부만 취소된 결제예요. 토스 상점관리자에서 확인해 주세요." };
+    }
+    const verified = before.payment;
+    if (tx.status !== "DONE" || verified.status !== "DONE" || verified.orderId !== tx.orderId
+        || Number(verified.totalAmount) !== Number(tx.amount)
+        || (verified.balanceAmount != null && Number(verified.balanceAmount) !== Number(tx.amount))) {
+        return { ok: false, message: "토스 결제 상태가 장부와 달라 취소하지 않았어요. 토스 상점관리자에서 확인해 주세요." };
+    }
+    // 입금이 끝난 무통장입금(가상계좌)은 환불받을 계좌가 있어야 토스가 돌려준다 — 여기서는 받지 않는다
+    if (verified.method === VA_METHOD || tx.method === VA_METHOD) {
+        return { ok: false, message: "무통장입금으로 낸 결제는 환불 계좌가 필요해요. 토스 상점관리자에서 환불해 주세요." };
+    }
+
+    // ② 감사 기록 먼저(취소 요청이 나간 뒤 서버가 멈춰도 누가 눌렀는지 남게) — 묶인 청구마다
+    for (const paymentId of coveredIds) {
+        await recordPaymentAudit({
+            paymentId,
+            transactionId: tx.id,
+            actorType: "ADMIN",
+            actorId: input.adminUserId,
+            action: "PAYMENT_TOSS_CANCEL_REQUESTED",
+            message: coveredIds.length > 1
+                ? `관리자 토스 결제 전액 취소 요청 (묶음 ${coveredIds.length}건)`
+                : "관리자 토스 결제 전액 취소 요청",
+            metadata: { provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount), bundleSize: coveredIds.length },
+        });
+    }
+
+    // ③ 토스 결제 취소 API — 전액(cancelAmount 를 넣지 않는다 = 남은 금액 전부)
+    const { secretKey } = getPaymentProviderConfig();
+    if (!secretKey) return { ok: false, message: "토스 결제 키가 설정되어 있지 않아요." };
+    let tossError: string | null = null;
+    try {
+        const response = await fetch(`https://api.tosspayments.com/v1/payments/${encodeURIComponent(tx.paymentKey)}/cancel`, {
+            method: "POST",
+            headers: {
+                Authorization: `Basic ${encodeTossSecret(secretKey)}`,
+                "Content-Type": "application/json",
+                "Idempotency-Key": makeUuidFromSeed(adminRefundIdempotencySeed(tx.id, tx.paymentKey, Date.now())),
+            },
+            body: JSON.stringify({ cancelReason: "학원 관리자 환불" }),
+            cache: "no-store",
+            signal: AbortSignal.timeout(TOSS_FETCH_TIMEOUT_MS),
+        });
+        if (!response.ok) tossError = await readTossErrorMessage(response) ?? `토스 응답 ${response.status}`;
+    } catch {
+        tossError = "토스 응답이 없어요";
+    }
+
+    // ④ 응답과 상관없이 다시 조회해 판정한다(성공 응답이 끊겨도, 실패 응답인데 실제로 취소됐어도 맞게)
+    const after = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+    if (after.kind === "verified") {
+        const cancel = classifyTossCancel(after.payment, tx, tx.paymentKey);
+        if (cancel.kind === "FULL_CANCEL") {
+            const applied = await applyVerifiedTossFullCancel({ tx, payment: after.payment });
+            if (applied.ok) {
+                revalidatePaymentCaches();
+                return { ok: true, paymentIds: coveredIds, alreadyApplied: applied.alreadyApplied };
+            }
+            return { ok: false, message: "토스에서는 취소됐지만 장부 반영이 막혔어요. 수납 기록을 확인해 주세요." };
+        }
+        if (cancel.kind === "PARTIAL_CANCEL") {
+            return { ok: false, message: "토스에서 일부만 취소됐어요. 토스 상점관리자에서 확인해 주세요." };
+        }
+    }
+    return { ok: false, message: tossError ? `토스가 취소하지 않았어요(${tossError}).` : "취소가 확인되지 않았어요. 잠시 후 수납 화면에서 다시 확인해 주세요." };
+}
+
 export async function confirmTossPayment(input: {
     paymentKey: string;
     orderId: string;
