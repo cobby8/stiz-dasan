@@ -7,7 +7,7 @@ import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import { deriveEnrollmentChangeStatus, deriveShuttleDayStatus } from "@/lib/requests/catalog";
 import { REASON_LABEL } from "@/lib/regular/regularAbsenceRules";
 import { SHUTTLE_DIRECTION_LABEL, SHUTTLE_EXCEPTION_KIND_LABEL } from "@/lib/shuttle/dayExceptionRules";
-import { sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
+import { absenceCreditLine, sortTimeline, toTimelineView, type ParentTimelineRow, type ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 
 // ── 학부모 «수업» 탭 신청 내역 타임라인(최근 3개월) — 2026-11-10 원장 결정 설계 B ─────────────
 //
@@ -50,7 +50,12 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
     safe("REGULAR_ABSENCE", () => prisma.$queryRawUnsafe<any[]>(
       `SELECT ra.id, s.id AS "studentId", s.name AS "studentName", c.name AS "className",
               to_char(ra.date,'YYYY-MM-DD') AS "date", ra.reason, ra.status, ra."createdAt",
-              to_char(ra."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdOn"
+              to_char(ra."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdOn",
+              -- 신고 즉시 발급된 보강권(2026-11-10) — 키는 보강권 sourceKey 형식 그대로(REGULAR:{반}:{날짜})
+              (SELECT mc.status FROM "MakeupCredit" mc
+                WHERE mc."studentId" = ra."studentId"
+                  AND mc."sourceKey" = 'REGULAR:' || ra."classId" || ':' || to_char(ra.date,'YYYY-MM-DD')
+                LIMIT 1) AS "creditStatus"
          FROM "RegularAbsence" ra
          JOIN "Student" s ON s.id = ra."studentId" AND ${notMergedStudent("s")}
          LEFT JOIN "Class" c ON c.id = ra."classId"
@@ -147,7 +152,13 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       key: `REGULAR_ABSENCE:${r.id}`, kind: "REGULAR_ABSENCE", id: r.id, studentId: r.studentId, studentName: r.studentName,
       title: ["결석", r.className].filter(Boolean).join(" · "), when: kstLabel(r.date),
       createdOn: r.createdOn, createdAt: iso(r.createdAt), rawStatus: r.status,
-      details: r.reason ? [`사유 ${REASON_LABEL[r.reason] ?? "기타"}`] : [], answer: null,
+      details: [
+        ...(r.reason ? [`사유 ${REASON_LABEL[r.reason] ?? "기타"}`] : []),
+        // 취소된 신고에는 보강권 줄을 붙이지 않는다(회수됨)
+        ...(r.status !== "CANCELLED" && absenceCreditLine(r.creditStatus) ? [absenceCreditLine(r.creditStatus)!] : []),
+      ],
+      answer: null,
+      absenceCredit: r.creditStatus ?? null,
       openHref: "/mypage/regular-absence",
     });
   }

@@ -42,6 +42,11 @@ export type IssueResult = { issued: boolean; creditId?: string; reason?: string 
 /**
  * 결석 → 보강권 발급. 이미 있으면 아무것도 하지 않는다(멱등).
  *
+ * 같은 결석의 보강권이 **회수(REVOKED)** 돼 있으면 다시 «사용 가능»으로 되살린다(한 결석 한 장은 그대로).
+ * 이유(2026-11-10): 결석 신고만으로 보강권이 나가게 되면서 «신고 → 신고 취소(회수) → 그날 실제 결석»이 생긴다.
+ *   예전처럼 DO NOTHING 이면 실제 결석인데 보강권이 없다. 예약에 묶였던 흔적(makeupSessionId)이 있는 것과
+ *   이월(CARRY) 정산된 결석(assertRegularMakeupAllowed 가 먼저 막는다)은 되살리지 않는다.
+ *
  * @param absenceYmd 결석일(YYYY-MM-DD, KST). **만료는 이 날짜 기준**으로 계산된다.
  */
 export async function issueMakeupCredit(input: {
@@ -67,7 +72,9 @@ export async function issueMakeupCredit(input: {
        ("studentId","sourceType","sourceKey","absenceDate","expiresAt",
         "originClassId","originItemId","originSessionId","status","note")
      VALUES ($1,$2,$3,$4::timestamptz,$5::timestamptz,$6,$7,$8,'AVAILABLE',$9)
-     ON CONFLICT ("studentId","sourceKey") DO NOTHING
+     ON CONFLICT ("studentId","sourceKey") DO UPDATE
+        SET status = 'AVAILABLE', "updatedAt" = now()
+      WHERE "MakeupCredit".status = 'REVOKED' AND "MakeupCredit"."makeupSessionId" IS NULL
      RETURNING id`,
     input.studentId, input.sourceType, input.sourceKey,
     absenceAt.toISOString(), expiresAt.toISOString(),

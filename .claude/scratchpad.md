@@ -89,10 +89,25 @@
 💡 tester: 실DB 미검증(쓰기 금지) — 마이그레이션 적용 후 신청함 «처리 필요»에 취소 요청 행·메뉴 숫자 포함 확인. 적용 전 DB 면 수강 변경은 예전 그대로 보여야 정상.
 ⚠️ reviewer: fallback 은 «아무 오류»에 한 번 재시도(칸 없음 오류만 고르지 않음) — 진짜 SQL 오류면 두 번 실패 후 기존처럼 failedKinds/null.
 
+## 구현 기록 (developer) — 결석 신고 즉시 보강권 (11-10 k4)
+📝 학부모 정규 결석 신고 순간 보강권 발급 + 신고 취소 시 되돌리기. 키 = 기존 `REGULAR:{classId}:{YYYY-MM-DD}` 그대로(세션 id 미포함 → 신고·출결 같은 키, 마이그레이션 없음)
+| 파일 | 변경 |
+|---|---|
+| src/lib/makeup/absence-report-credit.ts | 신규 — tx 받는 발급(멱등·REVOKED 되살림·CARRY 면 건너뜀)·취소 판정표(decideCreditOnAbsenceCancel)·되돌리기(settle) |
+| src/lib/makeup/credit-service.ts | issueMakeupCredit ON CONFLICT → REVOKED(예약 흔적 없음)만 되살림(신고 취소 후 실제 결석 대비) |
+| src/lib/regular/parent-regular-absence.ts | 신고·취소를 $transaction 으로 + 보강권 발급/되돌리기, 다가오는 수업일에 makeupCredit |
+| src/app/actions/regular-absence-admin.ts | 관리자 취소 같은 tx 에서 ADMIN 규칙(AVAILABLE 만 회수) |
+| api/mypage/regular-absence/route.ts · RegularAbsenceClient · parent-timeline(+rules) · RequestTimeline · kakao-absence-flow | confirmMakeupCancel·오류 3코드·«보강권 1장이 생겼어요»·예약 시 확인 문구·사용 완료 시 취소 숨김 |
+| prisma/sql/backfill_makeup_credit_for_reported_absences.sql | 선택 — 배포 전 접수된 오늘 이후 신고분 채움(운영 미적용) |
+| tests/makeup-credit-absence-report.test.mjs | 22건(신고→발급·출결 결석 후 1장·취소 회수·재신고 되살림·예약·사용 완료·관리자·CARRY·KST 자정) |
+💡 tester: 신고→/mypage/makeup 에 보강권 1장 · 같은 날 출결 결석 저장 → 여전히 1장 · 예약 후 신고 취소 → 확인 문구 → 예약·권 함께 취소 · 보강 출석 처리 후 신고 취소 → 막힘
+⚠️ reviewer: 출결 경로 «되살림» 동작 변경(결석→출석→결석 시 이제 다시 AVAILABLE) · 관리자 «기간 결석» 행은 범위 밖(발급 안 함) · 카카오 취소는 예약 있으면 앱으로 안내
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(결석 신고 즉시 보강권 k4): 신고 순간 발급(키=기존 REGULAR:{반}:{날짜} 그대로라 출결·랠리즈와 1장) · 학부모 취소 = 미사용 회수/예약은 확인 후 예약 취소+회수/사용 완료·지난 예약은 막음 · 관리자 취소 = 기존 회수 규칙 · 출결 결석 확정이면 유지 · 출결 경로 REVOKED 되살림 · 문구 «보강권 1장이 생겼어요»(신고 직후·신청 내역·카톡). 마이그레이션 없음, 채움 SQL 선택(prisma/sql). tsc 0·tests 3843-0·studentVisibility 5-0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
@@ -102,4 +117,3 @@
 | 11-09 | developer(PM 결정 3건, 색상 3차 후속): 셔틀 명단 «확정하기»=주 버튼(검정) · 상태 버튼 위험 채움(StatusChoiceButton·TONE_SOLID_CLASS)=danger-fill+hover · 선생님 학생 시트·반 학생 시트 «학부모 전화»=보조 버튼. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «색 더 정리» 3차): 묶음 버튼 고른 칸=옅은 상태 바탕+진한 글자+안쪽 링(statusTones TONE_SELECTED_CLASS 신설, 학생 상세 수강 상태·결제 상태) · 전화 버튼 보조로 통일(학생 상세 머리·셔틀 명단 펼침·셔틀 학생 상세창·학부모 기사님 전화) · 명단 «확정하기»·«좌표 설정으로 이동»·«반 이동» 주황 채움→warning-soft+테두리 · «안전 복구»=인증 계정 삭제라 danger-fill 유지 · 기사님 결석 꼬리표 danger-fill. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «빨강 애매·퀵버튼 보기 싫다» 색상 2차): 위험색 역할 분리(danger-fill #dc2626·hover #b91c1c·line #fecaca, 글자 #b91c1c 유지) · ⚡ 버튼 중립(흰+입력선+검정 아이콘, 열림=옅은 주 색) · InlineConfirm 흰 바탕+왼쪽 위험 띠 한 줄 · 수납 환불 막대 «선택 해제» 첫 줄 고정 · 위험 아닌 빨강·초록 채움 12곳 정리+위험 확정 6곳 새 채움 · account-deletion 색 토큰화(가드 실패 해소). tsc 0·전체 3734-0. PNG scratchpad/color-fix2 | 완료 |
-| 11-09 | 학생 상세 청구/수납(발행·수정·삭제): studentBillingRules 공용 판정, updateUnpaidPayment(원장), 작업대 차단=쓰기 스위치 기준, 결제·수정 경합 잠금+금액 재확인, 결제 진행 중=30분 내·기한 남은 가상계좌. reviewer 3회·security 1회, 전체 3701-0 | 완료 |

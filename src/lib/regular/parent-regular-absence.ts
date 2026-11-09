@@ -1,5 +1,12 @@
 import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
+import { isMakeupCreditIssuableYmd } from "@/lib/makeup/credit-service";
+import {
+  issueCreditForReportedAbsence,
+  regularAbsenceSourceKey,
+  settleCreditOnAbsenceCancel,
+} from "@/lib/makeup/absence-report-credit";
+import { kstAt } from "@/lib/datetime/kst";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -57,6 +64,8 @@ export type UpcomingClassDate = {
   status: string | null; // REPORTED | CONFIRMED | (CANCELLED 는 조회에서 제외)
   reported: boolean;
   locked: boolean; // 관리자 확정(CONFIRMED)이면 학부모가 못 건드림
+  // 이 결석의 보강권 상태(AVAILABLE·RESERVED·USED·NO_SHOW, 없으면 null) — 신고 취소 확인 문구·막기에 쓴다
+  makeupCredit: string | null;
 };
 
 export type UpcomingChild = {
@@ -108,6 +117,25 @@ export async function getUpcomingRegularClassDates(
     absByKey.set(`${a.studentId}|${a.classId}|${a.date}`, { reason: a.reason, status: a.status });
   }
 
+  // 다가오는 결석의 보강권(오늘 KST 자정 이후 결석분만). 키는 보강권 sourceKey 그대로(REGULAR:{반}:{날짜}).
+  // 조회 실패는 «보강권 정보 없음»으로 — 신고 화면 자체는 떠야 한다.
+  const creditByKey = new Map<string, string>();
+  try {
+    const creditRows = await prisma.$queryRawUnsafe<Array<{ studentId: string; sourceKey: string; status: string }>>(
+      `SELECT mc."studentId" AS "studentId", mc."sourceKey" AS "sourceKey", mc.status
+         FROM "MakeupCredit" mc
+         JOIN "Student" s ON s.id = mc."studentId"
+        WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+          AND mc."sourceType" = 'REGULAR'
+          AND mc.status IN ('AVAILABLE','RESERVED','USED','NO_SHOW')
+          AND mc."absenceDate" >= $2::timestamptz`,
+      parentUserId, new Date(kstAt(today)).toISOString(),
+    );
+    for (const c of creditRows) creditByKey.set(`${c.studentId}|${c.sourceKey}`, c.status);
+  } catch (error) {
+    console.error("[parent-regular-absence] 보강권 조회 실패(화면은 계속):", error instanceof Error ? error.name : "");
+  }
+
   // 자녀별 → 반별 → 다가오는 날짜 목록으로 조립.
   const childMap = new Map<string, UpcomingChild>();
   for (const r of enrollRows) {
@@ -133,6 +161,7 @@ export async function getUpcomingRegularClassDates(
         status,
         reported: status === "REPORTED" || status === "CONFIRMED",
         locked: status === "CONFIRMED",
+        makeupCredit: status ? creditByKey.get(`${r.studentId}|${regularAbsenceSourceKey(r.classId, ymd)}`) ?? null : null,
       } as UpcomingClassDate;
     });
 
@@ -246,33 +275,45 @@ export async function reportRegularAbsence(
   const today = kstTodayYmd();
   if (!isReportableDate(date, owned.dayOfWeek, today)) throw new Error("NOT_REPORTABLE_DATE");
 
-  // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
-  // (가드2: WHERE status<>'CONFIRMED')
-  const saved = await prisma.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
-    `INSERT INTO "RegularAbsence"
-        ("studentId","classId","date","reason","status","reportedByUserId")
-     VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
-     ON CONFLICT ("studentId","classId","date") DO UPDATE
-        SET reason = EXCLUDED.reason,
-            status = 'REPORTED',
-            "reportedByUserId" = EXCLUDED."reportedByUserId",
-            "updatedAt" = now()
-      WHERE "RegularAbsence".status = 'CANCELLED'
-         OR "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason
-     RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
-    studentId, classId, date, reason, parentUserId,
-  );
-  if (!saved[0]) {
-    const current = await prisma.$queryRawUnsafe<{ status: string; reason: string }[]>(
-      `SELECT status, reason FROM "RegularAbsence"
-        WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
-      studentId, classId, date,
+  // 결석 신고 저장 + 보강권 발급을 한 트랜잭션으로(2026-11-10 원장 결정 k4 — 신고 즉시 보강권).
+  // 둘 중 하나만 남는 반쪽 상태(신고는 됐는데 보강권 없음 / 그 반대)를 만들지 않는다.
+  const outcome = await prisma.$transaction(async (tx) => {
+    // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
+    // (가드2: WHERE status<>'CONFIRMED')
+    const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
+      `INSERT INTO "RegularAbsence"
+          ("studentId","classId","date","reason","status","reportedByUserId")
+       VALUES ($1,$2,$3::date,$4,'REPORTED',$5)
+       ON CONFLICT ("studentId","classId","date") DO UPDATE
+          SET reason = EXCLUDED.reason,
+              status = 'REPORTED',
+              "reportedByUserId" = EXCLUDED."reportedByUserId",
+              "updatedAt" = now()
+        WHERE "RegularAbsence".status = 'CANCELLED'
+           OR "RegularAbsence".reason IS DISTINCT FROM EXCLUDED.reason
+       RETURNING id, to_char("updatedAt", 'YYYYMMDDHH24MISSUS') AS "eventVersion"`,
+      studentId, classId, date, reason, parentUserId,
     );
-    if (current[0]?.status === "REPORTED" && current[0].reason === reason) {
-      return { ok: true, reason, notification: null, noOp: true };
+    let noOp = false;
+    if (!saved[0]) {
+      const current = await tx.$queryRawUnsafe<{ status: string; reason: string }[]>(
+        `SELECT status, reason FROM "RegularAbsence"
+          WHERE "studentId"=$1 AND "classId"=$2 AND date=$3::date LIMIT 1`,
+        studentId, classId, date,
+      );
+      if (!(current[0]?.status === "REPORTED" && current[0].reason === reason)) throw new Error("ABSENCE_NOT_CANCELABLE");
+      noOp = true; // 같은 신고를 다시 보냄 — 보강권 발급은 멱등이라 아래에서 한 번 더 확인만 한다(이 기능 이전 신고분도 채워진다)
     }
-    throw new Error("ABSENCE_NOT_CANCELABLE");
+    // 보강권 — 출결 기반 발급과 같은 키(REGULAR:{반}:{날짜})라 나중에 출결이 결석으로 저장돼도 한 장
+    const credit = isMakeupCreditIssuableYmd(date)
+      ? await issueCreditForReportedAbsence(tx, { studentId, classId, absenceYmd: date })
+      : { issued: false };
+    return { saved: saved[0] ?? null, noOp, makeupCreditIssued: credit.issued };
+  });
+  if (outcome.noOp || !outcome.saved) {
+    return { ok: true, reason, notification: null, noOp: true, makeupCreditIssued: outcome.makeupCreditIssued };
   }
+  const saved = [outcome.saved];
 
   const notification = await notifyAdminsOfAbsenceChange({
     kind: "REPORTED",
@@ -286,60 +327,78 @@ export async function reportRegularAbsence(
     eventVersion: `${saved[0].eventVersion}-${createHash("sha256").update(reason).digest("hex")}`,
   });
 
-  return { ok: true, reason, notification };
+  return { ok: true, reason, notification, makeupCreditIssued: outcome.makeupCreditIssued };
 }
 
 // ── 3) 사전 결석 신고 취소 ────────────────────────────────────────────────
 // id 또는 (studentId,classId,date) 로 지목. 본인(부모 자녀)의 REPORTED 건만 취소 가능.
 // 관리자 확정(CONFIRMED)이면 0행 → 차단. 취소 행은 감사·알림 재조정을 위해 보존한다.
+// 보강권(2026-11-10 k4): 같은 트랜잭션에서 그 결석의 보강권을 되돌린다(settleCreditOnAbsenceCancel).
+//   미사용 → 회수 / 보강 예약됨 → confirmMakeupCancel 이 true 일 때만 예약 취소 + 회수(아니면 확인 요청 오류)
+//   / 이미 보강을 들음·예약일 지남 → 신고 취소 자체를 막는다(오류 → 트랜잭션 전체 되돌림).
 export async function cancelRegularAbsence(
   parentUserId: string,
-  input: { id?: string; studentId?: string; classId?: string; date?: string },
+  input: { id?: string; studentId?: string; classId?: string; date?: string; confirmMakeupCancel?: boolean },
 ) {
   const id = input?.id?.trim();
   const studentId = input?.studentId?.trim();
   const classId = input?.classId?.trim();
   const date = input?.date?.trim();
+  const confirmMakeupCancel = input?.confirmMakeupCancel === true;
 
   // 취소 상태와 알림 근거를 같은 행에 남겨 나중에도 전달 실패를 재조정할 수 있게 한다.
   const returning = `RETURNING s.name AS "studentName", c.name AS "className", ra.id, c.id AS "classId", ra."studentId" AS "studentId",
                               to_char(ra.date,'YYYY-MM-DD') AS "date",
                               to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS') AS "eventVersion"`;
   type CanceledRow = { id: string; studentName: string; className: string; classId: string; studentId: string; date: string; eventVersion: string };
-  let canceled: CanceledRow[];
-  if (id) {
-    // id 로 지목: 그 결석이 이 부모 자녀의 것이고 REPORTED 인 경우만 삭제(IDOR 방어).
-    canceled = await prisma.$queryRawUnsafe<CanceledRow[]>(
-      `UPDATE "RegularAbsence" ra
-          SET status = 'CANCELLED', "updatedAt" = NOW()
-         FROM "Student" s, "Class" c
-        WHERE ra."studentId" = s.id
-          AND c.id = ra."classId"
-          AND ${await childAccessSql("s", "$1")}
-          AND ra.id = $2
-          AND ra.status = 'REPORTED'
-        ${returning}`,
-      parentUserId, id,
-    );
-  } else {
-    if (!studentId || !classId || !isYmd(date || "")) throw new Error("ABSENCE_NOT_FOUND");
-    canceled = await prisma.$queryRawUnsafe<CanceledRow[]>(
-      `UPDATE "RegularAbsence" ra
-          SET status = 'CANCELLED', "updatedAt" = NOW()
-         FROM "Student" s, "Class" c
-        WHERE ra."studentId" = s.id
-          AND c.id = ra."classId"
-          AND ${await childAccessSql("s", "$1")}
-          AND ra."studentId" = $2
-          AND ra."classId" = $3
-          AND ra.date = $4::date
-          AND ra.status = 'REPORTED'
-        ${returning}`,
-      parentUserId, studentId, classId, date,
-    );
-  }
+  if (!id && (!studentId || !classId || !isYmd(date || ""))) throw new Error("ABSENCE_NOT_FOUND");
+  // 권한 조건(그 부모의 자녀만)은 기존 그대로 — 트랜잭션 밖에서 SQL 조각만 미리 만든다
+  const access = await childAccessSql("s", "$1");
 
-  if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
+  const { canceled, creditAction } = await prisma.$transaction(async (tx) => {
+    let canceled: CanceledRow[];
+    if (id) {
+      // id 로 지목: 그 결석이 이 부모 자녀의 것이고 REPORTED 인 경우만 취소(IDOR 방어).
+      canceled = await tx.$queryRawUnsafe<CanceledRow[]>(
+        `UPDATE "RegularAbsence" ra
+            SET status = 'CANCELLED', "updatedAt" = NOW()
+           FROM "Student" s, "Class" c
+          WHERE ra."studentId" = s.id
+            AND c.id = ra."classId"
+            AND ${access}
+            AND ra.id = $2
+            AND ra.status = 'REPORTED'
+          ${returning}`,
+        parentUserId, id,
+      );
+    } else {
+      canceled = await tx.$queryRawUnsafe<CanceledRow[]>(
+        `UPDATE "RegularAbsence" ra
+            SET status = 'CANCELLED', "updatedAt" = NOW()
+           FROM "Student" s, "Class" c
+          WHERE ra."studentId" = s.id
+            AND c.id = ra."classId"
+            AND ${access}
+            AND ra."studentId" = $2
+            AND ra."classId" = $3
+            AND ra.date = $4::date
+            AND ra.status = 'REPORTED'
+          ${returning}`,
+        parentUserId, studentId, classId, date,
+      );
+    }
+    if (canceled.length === 0) throw new Error("ABSENCE_NOT_CANCELABLE");
+
+    // 보강권 되돌리기 — 막아야 하면 오류를 던져 위 취소까지 함께 되돌린다
+    const settled = await settleCreditOnAbsenceCancel(tx, {
+      actor: "PARENT",
+      studentId: canceled[0].studentId,
+      classId: canceled[0].classId,
+      absenceYmd: canceled[0].date,
+      confirmBookingCancel: confirmMakeupCancel,
+    });
+    return { canceled, creditAction: settled.action };
+  });
 
   const notification = await notifyAdminsOfAbsenceChange({
     kind: "CANCELED",
@@ -352,5 +411,11 @@ export async function cancelRegularAbsence(
     eventVersion: canceled[0].eventVersion,
   });
 
-  return { ok: true, notification };
+  return {
+    ok: true,
+    notification,
+    // 화면 문구용: 보강권 회수 / 보강 예약까지 함께 취소됐는지
+    makeupCreditRevoked: creditAction === "REVOKE" || creditAction === "CANCEL_BOOKING_AND_REVOKE",
+    makeupBookingCanceled: creditAction === "CANCEL_BOOKING_AND_REVOKE",
+  };
 }

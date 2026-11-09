@@ -257,3 +257,9 @@
 - **발견자**: developer
 - **내용**: 서버 액션 `src/app/actions/payment-bulk-refund.ts` 가 DB 로 다시 읽은 행을 `planBulkRefund` 에 넣어 갈래를 나눈다(막을 것 하나라도 있으면 전부 미실행). TOSS=`refundTossPaymentByAdmin`(payment-ledger: 재조회→감사→취소 API 전액→재조회 FULL 일 때만 applyVerifiedTossFullCancel, 가상계좌 DONE 은 환불 계좌 필요라 차단), TOSS_POS=`requestChargeCancelByAdmin`(비동기, 결과 REQUESTED), 그 밖(MANUAL)=`refundPaidPaymentInTx`, CAFE24_BRIDGE 차단. 묶음(토스 항목·POS 항목)은 전부 골라야 하고 부분 취소는 지원 안 함. ⚡ 한 건 «환불»도 같은 runRefund→refundSelectedPayments([id]) 로 통일(PM 결정), updatePaymentStatus·bulkUpdatePaymentStatus 는 REFUNDED 를 거부한다 — 새 환불 경로를 만들 때도 이 액션만 부른다.
 - **참조횟수**: 0
+
+### [2026-11-10] 정규 보강권 = 출처 둘(결석 신고·출결) · 키 하나 `REGULAR:{classId}:{YYYY-MM-DD}`
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 신고 즉시 발급(`makeup/absence-report-credit.ts`, 호출부 tx 안)과 출결 발급(`credit-service.syncCreditForRegularSession`)이 같은 sourceKey 를 쓴다 — 세션 id 가 키에 없어 신고 시점에도 키가 정해지고 ("studentId","sourceKey") 유니크로 한 장. 두 INSERT 모두 `ON CONFLICT DO UPDATE … WHERE status='REVOKED' AND makeupSessionId IS NULL` 로 «회수된 같은 결석»만 되살린다. 신고 취소 = `decideCreditOnAbsenceCancel` 표(학부모: 미사용 회수·예약은 확인 후 예약 취소+회수·사용 완료/지난 예약은 막음 / 관리자: AVAILABLE 만 회수 / 출결 ABSENT 면 유지). 키 형식을 바꾸면 parent-timeline·parent-regular-absence 의 SQL 문자열 조립도 같이 바꿀 것.
+- **참조횟수**: 0

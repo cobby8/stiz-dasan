@@ -70,7 +70,8 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
     run(
       () => r.kind === "ENROLLMENT_CHANGE"
         ? post("/api/mypage/enrollment-change", { action: "cancel", id: r.id })
-        : post("/api/mypage/regular-absence", { action: "cancel", id: r.id }),
+        // 보강 예약이 있는 결석은 «보강 예약도 함께 취소돼요» 확인을 보고 누른 것 → 함께 취소 허락
+        : post("/api/mypage/regular-absence", { action: "cancel", id: r.id, confirmMakeupCancel: r.absenceCredit === "RESERVED" }),
       "취소했어요.",
     );
   // d8: 승인됐지만 적용 전인 휴원·퇴원 → 원장님께 «취소 요청»(원장님이 승인하면 취소된다)
@@ -145,7 +146,13 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {/* 검토 중 = 바로 취소(기존 취소 API). 서버가 PENDING/REPORTED 인지 다시 본다 */}
             {row.canCancel && !done && (
-              <InlineConfirm label="취소" question="이 신청을 취소할까요?" confirmLabel="취소하기" onConfirm={() => cancel(row)} className="w-full" />
+              <InlineConfirm
+                label="취소"
+                question={row.absenceCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 신청을 취소할까요?" : "이 신청을 취소할까요?"}
+                confirmLabel="취소하기"
+                onConfirm={() => cancel(row)}
+                className="w-full"
+              />
             )}
             {/* 승인됐지만 적용 전 휴원·퇴원 = 원장님께 취소 요청(d8) */}
             {row.canRequestCancel && !done && (
