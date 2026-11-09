@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 // 정규 배차 손편집(2단계) 연결과 방학특강 회귀 방지를 소스 수준에서 고정한다.
 // 계산 자체는 src/lib/regular/regularRouteEdit.test.ts 가 실제로 돌려 검증한다.
 const routeSection = readFileSync("src/components/seasonal/RouteSection.tsx", "utf8");
-const regularClient = readFileSync("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx", "utf8");
+// 2026-11-09 원장 결정: 정규 배차 화면은 기사님과 같은 운행표(RegularRunEditor)로 바꿨다 — RouteSection 정규 손편집은 더 쓰지 않는다.
+const regularClient = readFileSync("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx", "utf8");
 const seasonalClient = readFileSync("src/app/admin/seasonal/dispatch/DispatchClient.tsx", "utf8");
 
 test("방학특강 화면은 정규 손편집·시간순 모드를 켜지 않는다(기본값 false)", () => {
@@ -17,9 +18,9 @@ test("방학특강 화면은 정규 손편집·시간순 모드를 켜지 않는
   assert.match(routeSection, /이 요일의 저장된 노선을 삭제할까요\?/);
 });
 
-// 2026-11-05: 편집 영역을 접는 <details> 를 없애고 회차 카드를 시간순 목록으로 늘 펼쳐 둔다(접을 요약 표가 사라짐).
-test("정규 배차는 두 방향 모두 손편집을 켜고 편집 영역을 접지 않는다", () => {
-  assert.equal((regularClient.match(/regularEditing onDirtyChange=/g) ?? []).length, 2);
+// 2026-11-09: 자동 제안(T맵)·차량 이동·⇄ 제거 — 정규 화면은 RouteSection 을 쓰지 않고, 접는 영역 없이 운행표를 늘 펼친다.
+test("정규 배차는 RouteSection(자동 제안·차량 이동) 없이 운행표를 늘 펼치고 이탈 확인은 유지한다", () => {
+  assert.doesNotMatch(regularClient, /RouteSection|regularEditing|timeOrdered/);
   assert.doesNotMatch(regularClient, /<details/);
   assert.match(regularClient, /confirmLeave\(\)/);
 });
@@ -45,10 +46,7 @@ test("정규 손편집 안전장치: 명단 안내·정원 경고·자동 제안
 });
 
 // ── 2단계 리뷰 수정(2026-10-02) ──
-test("배차 월을 바꾸면 두 방향 모두 새 달 노선을 다시 불러오고, 불러오기 전엔 저장·초기화를 막는다", () => {
-  assert.match(regularClient, /const monthRefreshKey = Number\(serviceMonth\.replace/);
-  assert.equal((regularClient.match(/refreshKey=\{monthRefreshKey\}/g) ?? []).length, 2);
-  assert.doesNotMatch(regularClient, /refreshKey=\{0\}/);
+test("(방학특강 RouteSection) 노선을 다시 불러오기 전엔 저장·초기화를 막는다", () => {
   assert.match(routeSection, /setRouteReady\(false\);\s*\n\s*void switchTo\(date\)/);
   assert.match(routeSection, /const saveBlocked = !routeReady \|\| loading \|\| rerouting \|\| recalcing \|\| pendingReroute/);
   assert.match(routeSection, /if \(saving \|\| !sug\.date \|\| saveBlocked\) return;\n\s*\/\/ 정규 모드: 정원 초과/);

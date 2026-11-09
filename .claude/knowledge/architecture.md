@@ -210,6 +210,22 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 원장 기준(11-09) — Enrollment ACTIVE 면 승인(등록)일부터 «수강 중/재원생». 판정은 `src/lib/enrollment/commencement.ts` 의 `isCurrentEnrollment`(TS)·`currentEnrollmentSql(alias)`(SQL) 한 곳(학생 상태 queries.ts current_status·인원 집계 adminReadPayloads·대관 재원생 listRentalMemberStudents·관리자/학부모 화면). `enrollmentDisplayStatus` 는 이제 status 그대로(SCHEDULED 없음), 개시일 미래 안내는 `enrollmentStartsLater`/payload `startsLater` 로만. 개시일(startsOn)을 쓰는 곳은 ① 청구 시수(billing/workbench-service) ② 출석부 회차 명단(staff-session-queries·staff-class-people·staff-sessions·SessionLogModal `enrollmentHasStarted`) ③ 셔틀 월 배차(driverAssign·shuttle-progress-query) ④ 다음 수업 안내(mypage/summary computeNextClass) 뿐 — 상태·인원 판정에 다시 쓰지 말 것(가드: tests/enrollment-current-rule.test.mjs). 반 줄 편집(반 이동·잘못 등록 삭제)은 `lib/enrollment/admin-enrollment-edit.ts`(순수 판정+연결 기록 수)·`actions/enrollment-admin-edit.ts`.
+### [2026-11-09] 정규 셔틀 명단 편집 → 기사님 알림 · 반 이동 재배정 · 위치 반영 (통합 2단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 명단 쓰기 함수(`regularRosterEdit.ts` add/remove/move/editStop/reorder/editStudentRoster)는 트랜잭션 안에서 `notices` 에 담고 **커밋 뒤** `flushNotices` → `regularRosterNotify.notifyDriversOfRosterChange`(DRIVER 역할 전원·바꾼 본인 제외, `deliverOperationalNotification` 인앱+푸시, 실패는 삼킴). 문구·링크(`/staff/run?date=<그 달 다음 운행일>&focus=BOARD|ALIGHT`)·10분 묶음 키는 순수 `regularRosterNotifyLogic`. 옛 `notifyOperationalStaff includeDriver` 는 저장 노선에서 기사를 찾아 쓰지 않는다. 반 이동 판정은 순수 `regularReassignLogic.planStudentReassign`(옛 칸+새 칸 둘 다 있을 때만) → 보드 `driverAssignLogic.buildAssignBoard`(명단 학생 hasApplication=false 도 재배정만) → 저장 `reassign:true` → `addRosterStudentAs({replaceRowIds})` 한 트랜잭션(옛 행은 서버가 다시 계산). 학생 상세 위치 저장(`service.updateStudentShuttleLocation`)은 장소명 필수 + 같은 tx 에서 `applyLocationToRosterInTx`(이번 달부터, 300m 이름 일치 정류장 합류·아니면 새 위치, 행 id 유지 UPDATE).
+- **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 «하나의 운행표» — 명단 정본·관리자=기사님 같은 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 운행 정본은 `RegularShuttleStop`(명단) 하나. 기사님(`regularDriverRoute.ts`)·관리자(`admin/shuttle/regular-dispatch/RegularRunEditor.tsx`)가 같은 순수 조립 `buildRegularRunRows`(lib/shuttle/regularRunRows.ts)와 같은 카드 틀 `RunBoard`(mode driver|admin)·같은 CSS(DriverWorkspace)를 쓴다. 저장 노선(`RegularDispatchRoute`)은 읽지 않음(테이블은 남김, 흡수 SQL 은 PM). 관리자 편집은 모두 `/api/admin/shuttle/regular-roster`(reorder 묶음별·editStop·editStudent·DELETE 범위), 반 이동 재배정은 배정 보드(`/api/staff/shuttle/assign` reassign:true). 바뀌면 서버가 기사님께 «노선 확인하기»(`/staff/run?date=&focus=BOARD|ALIGHT`) 알림. 관리자 화면에 자체 묶음·자동 제안을 다시 만들지 말 것(가드: tests/regular-roster-driver-view.test.mjs).
+- **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 정본 = 명단 — 저장 노선 읽기 지점 0 (통합 6단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 확정 시각(lib/shuttle/regularRosterEta)·안내 문자/배차 진행(enrollment/shuttle-progress: buildStudentRouteNotice·studentRosterFingerprint)·신청 검토 지문(routes=[] 고정)·결석/셔틀 기사 알림(operational-staff-notification: 그날 명단에 학생 있으면 기사 역할 전원)·월 복사·기사님 순서 저장 API 가 모두 RegularShuttleStop 만 읽는다. RegularDispatchRoute 는 /api/admin/regular/dispatch/saved(부르는 화면 없음)와 regularDispatchRoute.ts 저장 함수에만 남음(테이블 삭제는 별도 결정). 명단 달 고르기는 «그 달 이하 최신 달»(SQL max ≤ 월 = pickServiceMonthFor).
 - **참조횟수**: 0
 
 ### [2026-11-09] 학부모 앱 = 탭 4개(홈·일정·청구·소식) 한 목록 + 앱 범위(/mypage) 안 상세

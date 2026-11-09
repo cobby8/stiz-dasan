@@ -46,12 +46,16 @@ test("정규 차량표는 studentId를 저장하고 월 비교·배차가 이를
   assert.match(roster, /COALESCE\(rss\."studentId", st\."id", 'stop:' \|\| rss\."id"\)/);
 });
 
-test("학부모 ETA는 요청한 월의 확정 배차만 읽는다", () => {
-  assert.match(route, /getConfirmedRegularDispatchEtas\([\s\S]*serviceMonth: string = koreaServiceMonth\(\)/);
-  assert.match(route, /AND "serviceMonth"=\$2/);
-  assert.match(route, /dows, serviceMonth/);
+// 6단계(2026-11-09): 학부모 확정 시각 = 셔틀 명단(기사님 화면과 같은 정본). 저장 노선은 읽지 않는다.
+test("학부모 ETA는 요청한 월 이하 최신 명단만 읽고 저장 노선은 읽지 않는다", () => {
+  const rosterEta = readFileSync("src/lib/shuttle/regularRosterEta.ts", "utf8");
+  assert.match(rosterEta, /getConfirmedRegularRosterEtas\([\s\S]*serviceMonth: string = koreaServiceMonth\(\)/);
+  assert.match(rosterEta, /FROM "RegularShuttleStop" WHERE "serviceMonth" <= \$1/);
+  assert.doesNotMatch(rosterEta, /FROM "RegularDispatchRoute"/);
+  assert.doesNotMatch(route, /function getConfirmedRegularDispatchEtas/);
   assert.match(parent, /routePlan\.serviceDate/);
-  assert.match(parent, /getConfirmedRegularDispatchEtas\(pairs, serviceMonth\)/);
+  assert.match(parent, /getConfirmedRegularRosterEtas\(pairs, serviceMonth\)/);
+  assert.doesNotMatch(parent, /regularDispatchRoute/);
 });
 
 test("한국시간 월 경계는 UTC 월과 달라도 한국 월을 반환한다", () => {

@@ -5,8 +5,9 @@ import { NOT_MERGED_STUDENT } from "@/lib/studentVisibility";
 import { getConfirmedShuttleRoster } from "@/lib/seasonal/shuttleRoster";
 // 방학특강 셔틀의 확정 승/하차 시각은 저장된 배차 노선(SeasonalDispatchRoute)에서 읽는다(T3).
 import { getConfirmedDispatchEtas } from "@/lib/seasonal/dispatchRoute";
-// 정규 셔틀의 확정 승/하차 시각은 저장된 정규 배차 노선(RegularDispatchRoute, 요일×방향)에서 읽는다(Phase 3).
-import { getConfirmedRegularDispatchEtas, regularEtaKey } from "@/lib/regular/regularDispatchRoute";
+// 정규 셔틀의 확정 승/하차 시각은 셔틀 명단(RegularShuttleStop.arriveTime)에서 읽는다(6단계 — 기사님 화면과 같은 정본).
+import { getConfirmedRegularRosterEtas } from "@/lib/shuttle/regularRosterEta";
+import { regularEtaKey } from "@/lib/shuttle/regularRosterEtaLogic";
 
 export type ParentShuttleOverviewItem = {
   id: string;
@@ -181,7 +182,7 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
   }
 
   const regularRoutePassengers = [...regularByRoute.values()];
-  // 정규 확정 승/하차 시각(저장된 정규 배차 노선 기준). 본인 자녀 studentId × 반 요일 쌍만 넘긴다(IDOR 안전).
+  // 정규 확정 승/하차 시각(셔틀 명단 기준). 본인 자녀 studentId × 반 요일 쌍만 넘긴다(IDOR 안전).
   // 요일이 없는(예외) 승객은 조회에서 자연 제외되고, 미배차/미저장이면 null 로 남아 종전과 동일하게 보인다.
   const regularEtaPairs = regularRoutePassengers
     .filter((passenger) => passenger.studentId && passenger.session?.class.dayOfWeek && passenger.routePlan.serviceDate)
@@ -193,7 +194,7 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
   for (const pair of regularEtaPairs) pairsByMonth.set(pair.serviceMonth, [...(pairsByMonth.get(pair.serviceMonth) ?? []), pair]);
   const regularEtaByKey = new Map<string, { pickupEtaLabel: string | null; dropoffEtaLabel: string | null }>();
   await Promise.all([...pairsByMonth].map(async ([serviceMonth, pairs]) => {
-    const rows = await getConfirmedRegularDispatchEtas(pairs, serviceMonth);
+    const rows = await getConfirmedRegularRosterEtas(pairs, serviceMonth);
     for (const [key, value] of rows) regularEtaByKey.set(key, value);
   }));
 

@@ -319,6 +319,54 @@ export function validateStopEditInput(raw: unknown): { serviceMonth: string; id:
   return { serviceMonth: normalizeRosterMonth(o.serviceMonth), id, stop: normalizeStopInput(o.stop), applyToAll: o.applyToAll === true, scope: normalizeRosterScope(o.scope) };
 }
 
+// ── 학생 셔틀 정보 수정(학생 이름 눌러 여는 창 — 2026-11-09) ─────────────────
+
+/** 한 칸(명단 행 하나)의 새 정류장·시각. */
+export type StudentRosterChange = { rowId: string } & RosterStopInput;
+export type StudentRosterEditInput = { serviceMonth: string; scope: RosterScope; studentId: string | null; changes: StudentRosterChange[] };
+
+/**
+ * editStudentRoster 입력 검증 — 그 학생의 요일×등/하원 칸마다 { rowId, stopName, arriveTime, latitude, longitude }.
+ * 행 id 로 받는 이유: 화면이 그 칸을 이미 알고 있고, 행 id 를 유지한 UPDATE 라 탑승 체크가 끊기지 않는다.
+ * 같은 행이 두 번 오면 어느 값을 쓸지 모호하므로 거부한다. 한 학생 칸은 최대 14개(7요일×2방향).
+ */
+export function validateStudentRosterEditInput(raw: unknown): StudentRosterEditInput {
+  const o = obj(raw);
+  if (!Array.isArray(o.changes) || o.changes.length === 0) throw new RosterInputError("바꿀 칸이 없습니다.");
+  if (o.changes.length > MAX_SLOTS) throw new RosterInputError("한 번에 바꿀 칸이 너무 많습니다.");
+  const seen = new Set<string>();
+  const changes = o.changes.map((c) => {
+    const co = obj(c);
+    const rowId = text(co.rowId);
+    if (!rowId) throw new RosterInputError("대상 칸이 없습니다. 화면을 새로고침해 주세요.");
+    if (seen.has(rowId)) throw new RosterInputError("같은 칸이 두 번 들어 있습니다. 화면을 새로고침해 주세요.");
+    seen.add(rowId);
+    return { rowId, ...normalizeStopInput(co, "정류장") };
+  });
+  const studentId = text(o.studentId) || null;
+  if (studentId && studentId.length > 64) throw new RosterInputError("학생 정보가 올바르지 않습니다.");
+  return { serviceMonth: normalizeRosterMonth(o.serviceMonth), scope: normalizeRosterScope(o.scope), studentId, changes };
+}
+
+/**
+ * 고칠 행들이 이 달 명단의 «한 학생» 등·하원 행인지 확인하고 그 행들을 돌려준다(DB 행으로, 잠금 안에서 부른다).
+ * 학생 판정은 명단 화면과 같은 rosterStudentKeyResolver(학생 id, 또는 이름+학부모 전화 끝4자리).
+ * studentId 를 주면 그 학생 행이어야 한다 — 조작된 요청이 남의 행을 섞어 고치는 것을 막는다.
+ */
+export function pickStudentRows<T extends RosterExistingRow>(rows: readonly T[], ids: readonly string[], studentId: string | null): T[] {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const picked = ids.map((id) => byId.get(id));
+  if (picked.some((r) => !r || (r.direction !== "BOARD" && r.direction !== "ALIGHT") || !r.studentName)) {
+    throw new RosterInputError("일부 칸을 이 달 명단에서 찾지 못했습니다. 화면을 새로고침해 주세요.");
+  }
+  const list = picked as T[];
+  const keyOf = rosterStudentKeyResolver(rows.map((r) => ({ ...r, parentPhone: r.parentPhone ?? null })));
+  const keys = new Set(list.map((r) => keyOf({ ...r, parentPhone: r.parentPhone ?? null })));
+  if (keys.size !== 1) throw new RosterInputError("한 번에 한 학생의 칸만 고칠 수 있습니다. 화면을 새로고침해 주세요.");
+  if (studentId && [...keys][0] !== `id:${studentId}`) throw new RosterInputError("다른 학생의 칸이 섞여 있습니다. 화면을 새로고침해 주세요.");
+  return list;
+}
+
 export function validateCopyInput(raw: unknown): { sourceMonth: string; targetMonth: string } {
   const o = obj(raw);
   const sourceMonth = normalizeRosterMonth(o.sourceMonth);

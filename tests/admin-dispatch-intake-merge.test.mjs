@@ -9,7 +9,8 @@ import ts from "typescript";
 
 const read = (file) => readFileSync(file, "utf8");
 const TABS = read("src/app/admin/shuttle/ShuttleSectionTabs.tsx");
-const DISPATCH = read("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx");
+// 2026-11-09: 정규 배차 화면 = 기사님과 같은 운행표(RegularRunEditor). 옛 RouteSection 배차 화면은 없앴다.
+const DISPATCH = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
 const PANEL = read("src/components/shuttle/assign/NewStudentDispatchPanel.tsx");
 const LEG = read("src/components/shuttle/assign/AssignLegView.tsx");
 const DRIVER = read("src/app/staff/shuttle/assign/DriverAssignClient.tsx");
@@ -54,28 +55,22 @@ test("관리자 화면 어디에도 /admin/shuttle/intake 로 가는 링크가 �
   assert.deepEqual(links, []);
 });
 
-test("정규 배차 화면: 신규 배차 학생 패널을 요일 탭 아래에 두고, 월이 바뀌면 새로 그린다", () => {
+test("정규 운행표 화면: «배정 필요» 패널을 요일 탭 아래·운행표 위에 두고, 월이 바뀌면 새로 그린다", () => {
   assert.match(DISPATCH, /import NewStudentDispatchPanel from "@\/components\/shuttle\/assign\/NewStudentDispatchPanel"/);
-  assert.match(DISPATCH, /<NewStudentDispatchPanel key=\{serviceMonth\} month=\{serviceMonth\}/);
-  // 요일 탭(weekdays.map) 다음, 회차 카드(RouteSection) 앞
-  const tabs = DISPATCH.indexOf("weekdays.map((w)");
+  assert.match(DISPATCH, /<NewStudentDispatchPanel key=\{serviceMonth\} month=\{serviceMonth\} selectedWeekday=\{weekday\}/);
+  // 요일 탭(dayCounts.map) 다음, 운행표 카드(RunBoard) 앞
+  const tabs = DISPATCH.indexOf("dayCounts.map((d)");
   const panel = DISPATCH.indexOf("<NewStudentDispatchPanel");
-  const route = DISPATCH.indexOf("<RouteSection ");
-  assert.ok(tabs > 0 && tabs < panel && panel < route, "요일 탭 → 신규 배차 학생 → 회차 카드 순서");
-  // 고른 요일 칸 강조용 요일 번호
-  assert.match(DISPATCH, /selectedWeekday=\{selectedWeekday >= 0 \? selectedWeekday : null\}/);
+  const board = DISPATCH.indexOf("<RunBoard");
+  assert.ok(tabs > 0 && tabs < panel && panel < board, "요일 탭 → 배정 필요 → 운행표 순서");
 });
 
-test("넣은 뒤: 사람이 고친 저장 안 한 편집이 있으면 회차 카드를 덮지 않고 안내, 없으면 refreshKey 로 다시 불러오기", () => {
-  const fn = DISPATCH.slice(DISPATCH.indexOf("const onStudentAssigned"), DISPATCH.indexOf("const reloadRoutes"));
-  assert.match(fn, /if \(editedPickup \|\| editedDropoff\) \{[\s\S]*저장하지 않은 노선 수정이 있어 새로고침하지 않았습니다[\s\S]*return;/);
-  assert.match(fn, /setRosterReloadTick\(\(t\) => t \+ 1\)/);
-  // 수동 다시 불러오기는 이동 확인창(confirmLeave)을 거친다
-  assert.match(DISPATCH, /const reloadRoutes = \(\) => \{ if \(!confirmLeave\(\)\) return;/);
-  // 두 RouteSection 이 같은 refreshKey(월 + 다시 불러오기 횟수)를 받는다
-  assert.match(DISPATCH, /const monthRefreshKey = Number\(serviceMonth\.replace\(\/\\D\/g, ""\)\) \* 1000 \+ rosterReloadTick \|\| 0;/);
-  assert.equal((DISPATCH.match(/refreshKey=\{monthRefreshKey\}/g) ?? []).length, 2);
+test("넣은 뒤: 운행표(명단)를 서버에서 다시 읽는다 · 반 이동 표시는 같은 배정 목록으로", () => {
+  assert.match(DISPATCH, /onAssigned=\{\(\) => \{ setMessage\(null\); router\.refresh\(\); \}\}/);
+  assert.match(DISPATCH, /onBoard=\{setBoard\} openRequest=\{openRequest\}/);
   assert.match(PANEL, /onAssigned\(\);\s*const next = await load\(\);/);
+  // 자동 제안·저장 노선 화면 부품을 다시 쓰지 않는다
+  assert.doesNotMatch(DISPATCH, /RouteSection|\/api\/admin\/regular\/dispatch|refreshKey/);
 });
 
 test("패널: 기준은 기사님과 같은 배정 목록(getDriverAssignBoard API) · 넣기는 공용 AssignLegView + 같은 API", () => {
@@ -94,9 +89,10 @@ test("패널: 기준은 기사님과 같은 배정 목록(getDriverAssignBoard A
   assert.match(PANEL, /items-end justify-center[^"]*sm:items-center/);
   assert.match(PANEL, /e\.key === "Escape"/);
   // 요약 문구 · 0명이면 작은 한 줄
-  assert.match(PANEL, /신규 배차 학생 \{students\.length\}명/);
-  assert.match(PANEL, /남은 칸 <b/);
-  assert.match(PANEL, /text-xs text-\[var\(--color-academy-muted\)\]">신규 배차 학생 없음/);
+  assert.match(PANEL, /배정 필요 \{students\.length\}명/);
+  assert.match(PANEL, /신규 <b/);
+  assert.match(PANEL, /반 이동 <b/);
+  assert.match(PANEL, /text-xs text-\[var\(--color-academy-muted\)\]">배정 필요 학생 없음/);
 });
 
 test("공용 한 칸 배정: 기사님 화면과 관리자 모달이 같은 파일 · 관리자 표시만 덧붙이고 기사 요청 모양은 그대로", () => {
@@ -121,93 +117,6 @@ test("디자인: 학원 토큰 색만 · 글자 12px 이상 · 터치 44px · �
   assert.doesNotMatch(PANEL, /lucide-react/);
 });
 
-/**
- * RegularDispatchClient 를 실제로 실행한다 — React 훅은 아주 작은 가짜(상태 보존·재렌더), RouteSection·패널은 props 만 받아 적는 가짜.
- * (화면 HTML 이 아니라 「넣은 뒤 refreshKey 가 오르나·막히나」 동작을 본다.)
- */
-function dispatchHarness() {
-  const values = []; let cursor = 0; const effects = [];
-  const react = {
-    useState(init) { const i = cursor++; if (!(i in values)) values[i] = typeof init === "function" ? init() : init; return [values[i], (v) => { values[i] = typeof v === "function" ? v(values[i]) : v; }]; },
-    useCallback(fn) { cursor++; return fn; },
-    useEffect() { cursor++; },
-    useRef(init) { const i = cursor++; if (!(i in values)) values[i] = { current: init }; return values[i]; },
-  };
-  let routes = [], panel = null;
-  const jsxStub = (type, props) => {
-    if (type === "RouteSection") routes.push(props);
-    if (type === "Panel") panel = props;
-    // 자식 요소는 문자열로만 모은다(안내 문구 확인용)
-    const kids = props?.children == null ? [] : [].concat(props.children);
-    return { type, props, text: kids.map((k) => (k && typeof k === "object" ? k.text ?? "" : k == null || k === false ? "" : String(k))).join("") };
-  };
-  const js = ts.transpileModule(DISPATCH, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const module = { exports: {} };
-  const mocks = {
-    react,
-    "react/jsx-runtime": { jsx: jsxStub, jsxs: jsxStub, Fragment: "Fragment" },
-    "next/navigation": { useRouter: () => ({ push() {} }) },
-    "next/link": { default: "a" },
-    "@/components/seasonal/RouteSection": { default: "RouteSection" },
-    "@/components/admin/DriverLocationPanel": { default: "DLP" },
-    "@/components/admin/DriverRequestPanel": { default: "DRP" },
-    "@/components/shuttle/assign/NewStudentDispatchPanel": { default: "Panel" },
-  };
-  const confirms = [];
-  vm.runInNewContext(js, { module, exports: module.exports, require: (n) => { if (n in mocks) return mocks[n]; throw new Error(`unexpected import ${n}`); },
-    fetch: async () => ({ ok: false, json: async () => null }), Promise, Number, String, Set, Map, Object, Array, Boolean, encodeURIComponent,
-    window: { confirm: (m) => { confirms.push(m); return true; } } });
-  const props = { weekdays: ["Mon"], initialDay: "Mon", initialPickup: {}, initialDropoff: {}, serviceMonth: "2026-11", months: ["2026-11"], classTimeMismatches: [], drivers: [] };
-  let tree = null;
-  const render = () => { cursor = 0; routes = []; panel = null; tree = module.exports.default(props); return { routes, panel }; };
-  const flat = (n) => (n && typeof n === "object" ? (n.text ?? "") + [].concat(n.props?.children ?? []).map(flat).join("") : "");
-  // 글자에 needle 이 들어간 버튼 찾기(onClick 을 직접 눌러 보려고)
-  const button = (needle) => {
-    const walk = (n) => {
-      if (!n || typeof n !== "object") return null;
-      if (Array.isArray(n)) { for (const c of n) { const f = walk(c); if (f) return f; } return null; }
-      if (n.type === "button" && flat(n).includes(needle)) return n;
-      return walk(n.props?.children);
-    };
-    return walk(tree);
-  };
-  return { render, confirms, button, html: () => JSON.stringify(tree, (k, v) => (typeof v === "function" ? undefined : v)) };
-}
-
-test("실행: 자동 초안만(dirty 켜짐·사람 편집 없음)일 때 넣으면 두 RouteSection 의 refreshKey 가 오른다", () => {
-  const h = dispatchHarness();
-  let { routes } = h.render();
-  assert.equal(routes.length, 2);
-  const before = routes.map((r) => r.refreshKey);
-  // 운영 상황 재현: 저장 노선이 없어 자동 초안 계산 → dirty 만 켜짐
-  routes[0].onDirtyChange(true); routes[1].onDirtyChange(true);
-  routes[0].onUserEditChange(false); routes[1].onUserEditChange(false);
-  let { panel } = h.render();
-  panel.onAssigned();
-  ({ routes } = h.render());
-  assert.deepEqual(routes.map((r) => r.refreshKey), before.map((k) => k + 1));
-  assert.doesNotMatch(h.html(), /새로고침하지 않았습니다/);
-  assert.deepEqual(h.confirms, []); // 자동 초안만이면 확인창도 묻지 않는다
-});
-
-test("실행: 사람이 고친 편집이 있으면 넣어도 refreshKey 그대로 + 안내 · 「회차 다시 불러오기」는 확인 후 올린다", () => {
-  const h = dispatchHarness();
-  let { routes } = h.render();
-  const before = routes.map((r) => r.refreshKey);
-  routes[1].onDirtyChange(true); routes[1].onUserEditChange(true); // 하원 노선을 손으로 고침
-  let { panel } = h.render();
-  panel.onAssigned();
-  ({ routes } = h.render());
-  assert.deepEqual(routes.map((r) => r.refreshKey), before);
-  assert.match(h.html(), /저장하지 않은 노선 수정이 있어 새로고침하지 않았습니다/);
-  // 안내의 버튼 = reloadRoutes → confirmLeave(dirty 기준 확인창)를 거친 뒤 올린다
-  h.button("회차 다시 불러오기").props.onClick();
-  ({ routes } = h.render());
-  assert.equal(h.confirms.length, 1);
-  assert.deepEqual(routes.map((r) => r.refreshKey), before.map((k) => k + 1));
-  assert.doesNotMatch(h.html(), /새로고침하지 않았습니다/);
-});
-
 test("RouteSection: 사람 편집(userEdited)은 markDirty 만 켜고 자동 초안·저장본 읽기·저장 성공 때 끈다 · 방학특강은 이 prop 을 안 쓴다", () => {
   const rs = read("src/components/seasonal/RouteSection.tsx");
   assert.match(rs, /function markDirty\(\) \{ editSeq\.current \+= 1; setDirty\(true\); setUserEdited\(true\); \}/);
@@ -219,8 +128,6 @@ test("RouteSection: 사람 편집(userEdited)은 markDirty 만 켜고 자동 초
   // 「저장 안 됨」 표시·onDirtyChange 는 dirty 그대로
   assert.match(rs, /useEffect\(\(\) => \{ onDirtyChange\?\.\(dirty\); \}, \[dirty, onDirtyChange\]\);/);
   assert.doesNotMatch(read("src/app/admin/seasonal/dispatch/DispatchClient.tsx"), /onUserEditChange/);
-  // 정규 화면의 이동 확인(confirmLeave)은 dirty 기준 그대로
-  assert.match(DISPATCH, /const confirmLeave = \(\) => !\(dirtyPickup \|\| dirtyDropoff\) \|\|/);
 });
 
 test("패널: 저장이 끝났을 때 「지금 열린 모달 = 저장한 학생」일 때만 다음 칸으로 옮기거나 닫는다", () => {

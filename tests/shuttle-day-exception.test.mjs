@@ -25,7 +25,9 @@ const { attachShuttleDayNotes } = await import(
 );
 
 const parentLib = await readFile("src/lib/shuttle/parent-shuttle-exception.ts", "utf8");
-const route = await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8");
+// 2026-11-09: 조립(묶음 → 결석 뱃지 → «오늘만» 변경)은 순수 함수 regularRunRows.ts 로 옮겼다 → 두 파일을 함께 본다.
+const route = (await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8"))
+  + "\n" + (await readFile("src/lib/shuttle/regularRunRows.ts", "utf8"));
 const client = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
 
 const TODAY = { today: "2026-08-09" };
@@ -141,8 +143,8 @@ test("예외 조회가 실패해도 운행 명단은 뜬다", () => {
 });
 
 test("명단을 다 만든 뒤 덧붙인다", () => {
-  // 저장 노선·폴백 두 경로 모두에 적용되어야 하는데, 조립 안에 심으면 한쪽만 고쳐지기 쉽다.
-  assert.match(route, /const classes = assembleRegularDriverClasses\(\{/);
+  // 묶음(명단 순서)을 다 만든 뒤 덧붙인다 — 조립 안에 심으면 한쪽만 고쳐지기 쉽다(5단계: 묶음 = 명단 폴백 하나).
+  assert.match(route, /const classes = buildFallbackClasses\(dayRows, isAbsent\)/);
   assert.match(route, /return attachShuttleDayNotes\(/);
   // 결석과 같은 이름·전화 매칭을 쓴다(시트 명단에는 학생 id 가 없다).
   assert.match(route, /matchAbsentee\(row, \[\{ name: entry\.name, phone: entry\.phone \}\]\)/);

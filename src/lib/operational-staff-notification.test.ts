@@ -20,15 +20,22 @@ const enrollmentSource = readFileSync(
 );
 const vercelSource = readFileSync(new URL("../../vercel.json", import.meta.url), "utf8");
 
-test("운영 알림은 원장·부원장과 실제 연결된 담당 코치 및 정규 배차 기사만 찾는다", () => {
+// 6단계(2026-11-09): 기사 수신자 = «그날 셔틀 명단에 그 학생이 있으면 현재 기사 역할 전원» — 저장 노선은 읽지 않는다.
+test("운영 알림은 원장·부원장과 실제 연결된 담당 코치 및 그날 명단에 학생이 있을 때의 기사만 찾는다", () => {
   assert.match(notificationSource, /'ADMIN','VICE_ADMIN'/);
   assert.match(notificationSource, /co\."userId"/);
   assert.match(notificationSource, /u\.role='INSTRUCTOR'/);
-  assert.match(notificationSource, /u\.role='DRIVER'/);
-  assert.match(notificationSource, /RegularDispatchRoute/);
-  assert.match(notificationSource, /vehicle->>'driverUserId'/);
-  assert.match(notificationSource, /student->>'requestId'=\$4/);
+  assert.match(notificationSource, /u\.role::text='DRIVER'/);
+  assert.match(notificationSource, /"UserRoleGrant" g WHERE g\."userId"=u\.id AND g\.role='DRIVER' AND g\.status='ACTIVE'/);
+  assert.match(notificationSource, /u\."withdrawnAt" IS NULL/);
+  assert.match(notificationSource, /FROM "RegularShuttleStop" s[\s\S]*"serviceMonth" <= \$1[\s\S]*s\.weekday = \$2 AND s\.direction = ANY\(\$3::text\[\]\) AND s\."studentId" = \$4/);
+  assert.doesNotMatch(notificationSource, /FROM "RegularDispatchRoute"|vehicle->>'driverUserId'/);
   assert.doesNotMatch(notificationSource, /FROM "User" u\s+WHERE \$3::boolean AND u\.role='DRIVER'/);
+  // 명단 변경 기사님 알림과 같은 기사 조건(한쪽만 바뀌지 않게 글자 그대로 비교).
+  const rosterNotify = readFileSync(new URL("./shuttle/regularRosterNotify.ts", import.meta.url), "utf8");
+  const cond = (src: string) => src.match(/\(u\.role::text='DRIVER' OR EXISTS \([^`]*\)\)/)?.[0];
+  assert.ok(cond(notificationSource));
+  assert.equal(cond(notificationSource), cond(rosterNotify));
   assert.match(notificationSource, /담당 기사 확인 필요/);
 });
 

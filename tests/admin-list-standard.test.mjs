@@ -243,14 +243,14 @@ test("셔틀 명단: 수업시간 묶음 아래 학생 한 줄 행(등원·하�
   assert.doesNotMatch(table, /\btruncate\b|text-ellipsis|line-clamp/);
 });
 
-const regularDispatchList = read("../src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx");
+const regularDispatchList = read("../src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
 
-// 2026-11-05 원장 지시로 정차 요약 표(하루 타임라인 표)를 없앴다 — 회차 카드 자체를 시간순으로 섞어 보인다.
-test("정규 배차: 요약 표 없이 회차 카드 시간순, 말줄임 없음, 편집 영역은 그대로", () => {
+// 2026-11-05 정차 요약 표 삭제 → 2026-11-09 원장 결정: 관리자 배차 화면 = 기사님 화면과 같은 운행표(RunBoard).
+test("정규 배차: 요약 표 없이 기사님과 같은 운행표 카드, 말줄임 없음, 저장 전 이동 확인 유지", () => {
   assert.doesNotMatch(regularDispatchList, /<table className="admin-list-table/);
   assert.doesNotMatch(regularDispatchList, /\btruncate\b|text-ellipsis|line-clamp/);
-  // 노선 편집(RouteSection 두 방향)·저장 전 이동 확인은 손대지 않는다
-  assert.equal((regularDispatchList.match(/<RouteSection /g) ?? []).length, 2);
+  assert.equal((regularDispatchList.match(/<RunBoard\b/g) ?? []).length, 1);
+  assert.match(regularDispatchList, /mode="admin"/);
   assert.match(regularDispatchList, /confirmLeave\(\)/);
 });
 

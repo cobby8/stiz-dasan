@@ -1,7 +1,7 @@
 import { deliverOperationalNotification, type OperationalNotificationDeliveryResult } from "@/lib/operational-notification-delivery";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { buildDriverLookupContext, selectAssignedDriverIds, type AssignedDriverRow } from "@/lib/operational-driver-resolution";
+import { buildDriverLookupContext, selectRosterDriverIds } from "@/lib/operational-driver-resolution";
 
 export type OperationalRecipientSummary = {
   admin: "NOTIFIED" | "NOT_FOUND";
@@ -42,24 +42,29 @@ async function resolveRecipients(input: { classId?: string; includeCoach: boolea
   );
 }
 
+// 기사 역할 조건 — 명단 변경 기사님 알림(regularRosterNotify)·기사 새 학생 배정 권한과 같다(주 역할 또는 승인된 추가 역할, 탈퇴 제외).
+const DRIVER_CONDITION = `(u.role::text='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`;
+
+// 6단계(2026-11-09): 저장 노선(RegularDispatchRoute)에서 차량 기사를 찾지 않는다 — 셔틀 명단이 정본.
+// 그날(그 달 이하 최신 명단 달·요일·방향) 명단에 그 학생이 있으면 현재 기사 역할 전원에게 보낸다.
+// 명단에 없거나 기사 계정이 없으면 아무에게도 보내지 않고 원장 알림에 «담당 기사 확인 필요»를 붙인다(종전과 같은 보류).
 async function resolveAssignedDrivers(context: DriverContext): Promise<{ recipients: Recipient[]; needsConfirmation: boolean }> {
   const lookup = buildDriverLookupContext(context.serviceDate, context.direction);
   if (!lookup || !context.studentId.trim()) return { recipients: [], needsConfirmation: true };
-  const rows = await prisma.$queryRawUnsafe<AssignedDriverRow[]>(
-    `SELECT vehicle->>'driverUserId' AS "driverUserId", u.id AS "validDriverId", r.direction
-       FROM "RegularDispatchRoute" r
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(r.payload->'vehicles','[]'::jsonb)) vehicle
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(vehicle->'stops','[]'::jsonb)) stop
-       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(stop->'students','[]'::jsonb)) student
-       LEFT JOIN "User" u ON u.id=vehicle->>'driverUserId' AND u.role='DRIVER'
-      WHERE r."serviceMonth"=$1 AND r."dayOfWeek"=$2
-        AND r.direction = ANY($3::text[]) AND student->>'requestId'=$4`,
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT u.id FROM "User" u
+      WHERE u."withdrawnAt" IS NULL AND ${DRIVER_CONDITION}
+        AND EXISTS (
+          SELECT 1 FROM "RegularShuttleStop" s
+           WHERE s."serviceMonth" = (SELECT max("serviceMonth") FROM "RegularShuttleStop" WHERE "serviceMonth" <= $1)
+             AND s.weekday = $2 AND s.direction = ANY($3::text[]) AND s."studentId" = $4)
+      ORDER BY u.id`,
     lookup.serviceMonth,
-    lookup.dayOfWeek,
-    lookup.directions,
+    lookup.weekday,
+    lookup.rosterDirections,
     context.studentId,
   );
-  const selected = selectAssignedDriverIds(rows);
+  const selected = selectRosterDriverIds(rows.map((row) => row.id));
   return {
     recipients: selected.driverIds.map((id) => ({ id, role: "DRIVER" })),
     needsConfirmation: selected.needsConfirmation,

@@ -25,12 +25,16 @@ const BUTTON = "inline-flex min-h-11 items-center justify-center gap-1 rounded-f
 type Target = { studentId: string; legKey: string };
 type Driver = { id: string; name: string };
 
-export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssigned }: {
+export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssigned, onBoard, openRequest }: {
   month: string;
   /** 지금 고른 요일(0=일 ~ 6=토). 그 요일 칸을 강조한다. */
   selectedWeekday: number | null;
-  /** 한 칸을 넣은 직후 — 부모가 아래 회차 카드를 다시 불러올지 정한다(저장 안 한 편집이 있으면 덮지 않음). */
+  /** 한 칸을 넣은 직후 — 부모가 아래 운행표를 다시 불러온다. */
   onAssigned: () => void;
+  /** (선택) 남은 칸 목록을 읽을 때마다 부모에 알린다 — 운행표 카드에 «반 이동» 표시를 붙이는 데 쓴다. */
+  onBoard?: (board: DriverAssignBoard) => void;
+  /** (선택) 부모가 이 칸 창을 열어 달라고 할 때(운행표 카드의 «반 이동» 표시). nonce 가 바뀔 때마다 연다. */
+  openRequest?: { studentId: string; legKey: string; nonce: number } | null;
 }) {
   const [board, setBoard] = useState<DriverAssignBoard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,6 +51,15 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
   // 저장 중에 닫았거나 다른 학생 칩을 열었으면 그 모달을 앞 학생의 다음 칸으로 바꾸지 않는다.
   const targetRef = useRef<Target | null>(null);
   useEffect(() => { targetRef.current = target; }, [target]);
+  // 부모 알림 함수는 ref 로 들고 있는다(함수가 바뀔 때마다 목록을 다시 읽지 않게).
+  const onBoardRef = useRef(onBoard);
+  useEffect(() => { onBoardRef.current = onBoard; }, [onBoard]);
+  // 부모가 «이 칸 열기»를 요청하면 목록을 펼치고 그 칸 창을 연다.
+  useEffect(() => {
+    if (!openRequest) return;
+    setNotice(""); setWarn(""); setExpanded(true);
+    setTarget({ studentId: openRequest.studentId, legKey: openRequest.legKey });
+  }, [openRequest]);
 
   // 남은 칸 목록(다시) 읽기 — 기사님 화면과 같은 API. 결과를 돌려줘 저장 직후 「다음 남은 칸」을 고른다.
   const load = useCallback(async (): Promise<DriverAssignBoard | null> => {
@@ -56,7 +69,7 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
       const res = await fetch(`${ASSIGN_API}?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       const value = await res.json().catch(() => null);
       if (!res.ok || !Array.isArray(value?.students)) throw new Error("load");
-      if (current === seq.current) setBoard(value as DriverAssignBoard);
+      if (current === seq.current) { setBoard(value as DriverAssignBoard); onBoardRef.current?.(value as DriverAssignBoard); }
       return value as DriverAssignBoard;
     } catch {
       if (current === seq.current) setLoadError(true);
@@ -100,6 +113,9 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
   const student = target ? students.find((s) => s.studentId === target.studentId) ?? null : null;
   const leg = student && target ? student.legs.find((l) => l.key === target.legKey) ?? student.legs[0] ?? null : null;
   const dayLegCount = selectedWeekday == null ? 0 : students.reduce((n, s) => n + s.legs.filter((l) => l.weekday === selectedWeekday).length, 0);
+  // 신규 칸 / 반 이동 재배정 칸 수(재배정 = 옛 칸이 사라지고 새 칸이 생긴 학생, 2026-11-09 원장 결정 D4).
+  const reassignLegCount = students.reduce((n, s) => n + s.legs.filter((l) => l.reassign).length, 0);
+  const freshLegCount = (board?.openLegCount ?? 0) - reassignLegCount;
 
   // 저장 성공 → 부모에 알림(회차 카드) → 목록 다시 읽기 → 같은 학생의 다음 남은 칸, 없으면 모달 닫기.
   // 단 「지금 열린 모달 = 저장한 학생」일 때만 모달을 움직인다(닫혔으면 그대로, 다른 학생 모달이면 건드리지 않음).
@@ -135,14 +151,15 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
         </div>
       )}
       {board && !loadError && students.length === 0 && (
-        <p className="text-xs text-[var(--color-academy-muted)]">신규 배차 학생 없음</p>
+        <p className="text-xs text-[var(--color-academy-muted)]">배정 필요 학생 없음 (신규·반 이동)</p>
       )}
       {board && students.length > 0 && (
         <button type="button" aria-expanded={expanded} aria-controls="new-student-dispatch-list" onClick={() => setExpanded((v) => !v)}
           className="flex min-h-11 w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-left text-sm">
           <span className="material-symbols-outlined text-lg text-[var(--color-academy-primary)]" aria-hidden="true">person_add</span>
-          <b>신규 배차 학생 {students.length}명</b>
-          <span className="text-[var(--color-academy-muted)]">· 남은 칸 <b className="text-[var(--color-academy-warning)]">{board.openLegCount}</b></span>
+          <b>배정 필요 {students.length}명</b>
+          <span className="text-[var(--color-academy-muted)]">· 신규 <b className="text-[var(--color-academy-warning)]">{Math.max(0, freshLegCount)}</b>칸</span>
+          {reassignLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 반 이동 <b className="text-[var(--color-academy-warning)]">{reassignLegCount}</b>칸</span>}
           {selectedWeekday != null && dayLegCount > 0 && <span className="text-[var(--color-academy-muted)]">· 이 요일 {dayLegCount}칸</span>}
           <span className="material-symbols-outlined ml-auto text-lg text-[var(--color-academy-muted)]" aria-hidden="true">{expanded ? "expand_less" : "expand_more"}</span>
         </button>
@@ -167,9 +184,10 @@ export default function NewStudentDispatchPanel({ month, selectedWeekday, onAssi
                     // 지금 고른 요일의 칸은 진하게(검정 테두리 + 연한 강조 바탕) — 그 요일 회차 카드와 같이 보며 넣게.
                     const today = l.weekday === selectedWeekday;
                     return (
-                      <button key={l.key} type="button" onClick={() => openLeg(s.studentId, l.key)} aria-label={`${s.name} ${l.label} 순서에 넣기`}
+                      <button key={l.key} type="button" onClick={() => openLeg(s.studentId, l.key)} aria-label={`${s.name} ${l.reassign ? l.reassign.label : `${l.label} 순서에 넣기`}`}
                         className={`${CHIP} ${today ? "border-2 border-[var(--color-academy-ink)] bg-[var(--color-academy-primary-soft)] font-bold" : "border-dashed border-[var(--color-academy-muted)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}>
-                        {l.label}
+                        {/* 반 이동 재배정 칸은 «화→목 등원 (반 이동)»처럼 옛 칸까지 보여 준다. */}
+                        {l.reassign ? l.reassign.label : l.label}
                       </button>
                     );
                   })}

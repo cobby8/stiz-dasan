@@ -10,7 +10,9 @@ import { dowToWeekday, type EnrolledClass, type GeoPoint } from "./regularRoster
 import type { RegularShuttleStop } from "./regularSheet";
 import {
   assertLegStillOpen,
+  assertReassignStillOpen,
   buildAssignAddInput,
+  buildReassignAddInput,
   buildAssignBoard,
   DriverAssignError,
   parseAssignRequest,
@@ -95,11 +97,12 @@ async function basePoints(): Promise<{ academy: GeoPoint | null; depot: GeoPoint
 /**
  * 대상 학생 — 승인된 셔틀 신청(APPROVED + shuttleNeeded + 원생 연결) · 병합 안 된 학생 · 신청 개시월이 그 달 이하.
  * 한 학생에게 신청이 여럿이면 가장 최근 신청(희망 시각)을 쓴다. onlyStudentId 를 주면 그 학생만(저장 재검사).
- * 수강은 다니는(ACTIVE) 것 + 개시일이 그 달 말 이전(또는 개시일 없음). 휴원(PAUSED)은 칸을 만들지 않아 여기서 읽지 않는다.
+ * + (2026-11-09) 신청서가 없어도 그 달 명단에 행이 있는 학생(hasApplication=false, 재배정 판정 전용).
+ * 수강은 다님(ACTIVE)·휴원(PAUSED) + 개시일이 그 달 말 이전(또는 개시일 없음). 휴원은 칸을 만들지 않고 재배정 판정에만 쓴다.
  * 셔틀 미운행 반(classRunsShuttle=false: 주말·성인반 등)도 칸을 만들지 않아 수업 목록에서 뺀다.
  */
 async function loadStudents(month: string, onlyStudentId?: string): Promise<AssignStudentInput[]> {
-  const apps = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+  const applied = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
     // 한 학생당 최근 신청 하나(DISTINCT ON) → 바깥에서 최근 신청 순으로 다시 정렬(새 학생이 위로).
     `SELECT * FROM (SELECT DISTINCT ON (a."convertedStudentId") a."convertedStudentId" AS "studentId", a."shuttleTime", s."name", s."grade", a."createdAt",
             COALESCE(u."phone", (SELECT g."phone" FROM "Guardian" g WHERE g."studentId"=s."id" AND g."phone" IS NOT NULL ORDER BY g."isPrimary" DESC, g."createdAt" ASC LIMIT 1)) AS "parentPhone"
@@ -113,15 +116,35 @@ async function loadStudents(month: string, onlyStudentId?: string): Promise<Assi
       ORDER BY x."createdAt" DESC, x."studentId"`,
     ...(onlyStudentId ? [month, onlyStudentId] : [month]),
   );
+  // 보드 확장(2026-11-09 D4): 신청서가 없어도 그 달 명단에 행이 있는 학생(시트 이관 포함)은 «반 이동 재배정» 판정 재료로 읽는다.
+  // 이 학생들은 hasApplication=false 라 «신규» 칸은 뜨지 않는다(신규 판정은 기존 조건 그대로).
+  const rostered = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT s."id" AS "studentId", s."name", s."grade",
+            COALESCE(u."phone", (SELECT g."phone" FROM "Guardian" g WHERE g."studentId"=s."id" AND g."phone" IS NOT NULL ORDER BY g."isPrimary" DESC, g."createdAt" ASC LIMIT 1)) AS "parentPhone"
+       FROM "Student" s
+       LEFT JOIN "User" u ON u."id"=s."parentId"
+      WHERE s."id" IN (SELECT DISTINCT r."studentId" FROM "RegularShuttleStop" r WHERE r."serviceMonth"=$1 AND r."studentId" IS NOT NULL)
+        AND ${notMergedStudent("s")}
+        ${onlyStudentId ? `AND s."id"=$2` : ""}
+      ORDER BY s."name", s."id"`,
+    ...(onlyStudentId ? [month, onlyStudentId] : [month]),
+  );
+  const appliedIds = new Set(applied.map((a) => String(a.studentId)));
+  // 신청서 학생(최근 신청 순) 먼저, 그다음 명단에만 있는 학생(이름 순).
+  const apps: (Record<string, unknown> & { hasApplication: boolean })[] = [
+    ...applied.map((a) => Object.assign({}, a, { hasApplication: true })),
+    ...rostered.filter((s) => !appliedIds.has(String(s.studentId))).map((s) => Object.assign({}, s, { shuttleTime: null, hasApplication: false })),
+  ];
   if (apps.length === 0) return [];
   const ids = apps.map((a) => String(a.studentId));
 
+  // 휴원(PAUSED)도 읽는다 — 재배정 판정이 «휴원 요일 행은 옛 칸이 아님»을 알아야 해서. 칸 만들기·저장 재검사는 다니는 수업만 본다.
   const classes = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT e."studentId", c."dayOfWeek", c."startTime", c."endTime", c."name" AS "className", p."name" AS "programName", p."runsShuttle"
+    `SELECT e."studentId", c."dayOfWeek", c."startTime", c."endTime", c."name" AS "className", p."name" AS "programName", p."runsShuttle", e."status"
        FROM "Enrollment" e
        JOIN "Class" c ON c."id"=e."classId"
        JOIN "Program" p ON p."id"=c."programId"
-      WHERE e."studentId"=ANY($1::text[]) AND e."status"='ACTIVE' AND p."deletedAt" IS NULL
+      WHERE e."studentId"=ANY($1::text[]) AND e."status" IN ('ACTIVE','PAUSED') AND p."deletedAt" IS NULL
         AND (e."startsOn" IS NULL OR to_char(e."startsOn",'YYYY-MM') <= $2)
       ORDER BY c."startTime" ASC`,
     ids, month,
@@ -142,7 +165,8 @@ async function loadStudents(month: string, onlyStudentId?: string): Promise<Assi
     const list = enrolledBy.get(String(c.studentId)) ?? [];
     list.push({
       weekday, startTime: String(c.startTime ?? ""), endTime: String(c.endTime ?? ""),
-      className: (c.className as string | null) ?? null, programName: (c.programName as string | null) ?? null, status: "ACTIVE",
+      className: (c.className as string | null) ?? null, programName: (c.programName as string | null) ?? null,
+      status: c.status === "PAUSED" ? "PAUSED" : "ACTIVE",
     });
     enrolledBy.set(String(c.studentId), list);
   }
@@ -158,6 +182,7 @@ async function loadStudents(month: string, onlyStudentId?: string): Promise<Assi
         studentId: id, name: String(a.name ?? ""), grade: (a.grade as string | null) ?? null,
         wishTime: (a.shuttleTime as string | null) ?? null, parentPhone: (a.parentPhone as string | null) ?? null,
         enrolled: enrolledBy.get(id) ?? [], pickup: placeOf(id, "PICKUP"), dropoff: placeOf(id, "DROPOFF"),
+        hasApplication: a.hasApplication,
       };
     });
 }
@@ -196,10 +221,24 @@ export async function assignDriverCell(actor: Actor, raw: unknown) {
   if (req.month !== now && req.month !== next) throw new DriverAssignError("이번 달·다음 달 운행표에만 넣을 수 있어요.", 409, "MONTH_OUT_OF_RANGE");
   const [students, stops, base] = await Promise.all([loadStudents(req.month, req.studentId), monthStops(req.month), basePoints()]);
   const student = students[0];
-  if (!student) throw new DriverAssignError("셔틀 신청이 승인된 학생이 아니에요.", 404, "NOT_ELIGIBLE");
+  const via = fromAdminDispatch ? "ADMIN_DISPATCH" : "DRIVER_ASSIGN";
+  if (req.reassign) {
+    // 반 이동 재배정: 신청서가 없어도 명단에 있는 학생이면 된다. 지울 옛 칸은 서버가 다시 계산하고(buildReassignAddInput),
+    // 새 칸 추가 + 옛 칸 삭제를 한 트랜잭션으로(addRosterStudentAs replaceRowIds). 잠금 안에서 짝이 그대로인지 한 번 더 본다.
+    if (!student) throw new DriverAssignError("명단에 있는 학생이 아니에요.", 404, "NOT_ELIGIBLE");
+    const { input, replaceRowIds, pair } = buildReassignAddInput(req, student, stops, base.academy, base.depot);
+    const result = await addRosterStudentAs(actor.appUserId, input, {
+      via: `${via}_REASSIGN`,
+      replaceRowIds,
+      guard: (rows) => assertReassignStillOpen(rows as unknown as RegularShuttleStop[], student, pair),
+    });
+    return { added: result.added, appliedMonths: result.appliedMonths, skippedMonths: result.skippedMonths, replaced: replaceRowIds.length };
+  }
+  // 신규 칸은 예전처럼 승인 셔틀 신청 학생만.
+  if (!student || student.hasApplication === false) throw new DriverAssignError("셔틀 신청이 승인된 학생이 아니에요.", 404, "NOT_ELIGIBLE");
   const input = buildAssignAddInput(req, student, stops, base.academy, base.depot);
   const result = await addRosterStudentAs(actor.appUserId, input, {
-    via: fromAdminDispatch ? "ADMIN_DISPATCH" : "DRIVER_ASSIGN",
+    via,
     guard: (rows) => assertLegStillOpen(rows as unknown as RegularShuttleStop[], student, req.weekday, req.direction),
   });
   return { added: result.added, appliedMonths: result.appliedMonths, skippedMonths: result.skippedMonths };
