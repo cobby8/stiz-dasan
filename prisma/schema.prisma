@@ -727,6 +727,36 @@ model GymRentalRequest {
   @@index([rentalDate])
 }
 
+/// 상담 신청 — 학생 인적 사항·희망 수업·요청사항을 받아 관리자가 유선 연락한다(2026-11-10 원장 승인 k1·m4).
+/// 접수: 홈페이지 /apply/consult · 챗봇 · 학부모 앱(형제 상담). 처리: 관리자 신청함 «상담» 탭.
+/// 참고: 상태·경로 CHECK, «앱 신청이면 requestedByUserId 필수» CHECK, RLS 는
+/// prisma/migrations/20261110160000_consult_request 에 있다(Prisma 로 표현 불가). 코드는 $queryRawUnsafe 로만 읽는다.
+model ConsultRequest {
+  id                String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentName       String
+  grade             String // 학년/나이 텍스트(예: 초3, 6세)
+  guardianName      String?
+  guardianPhone     String // 숫자만(010…)
+  preferredDays     String? // 예: "월·수"
+  preferredTimes    String? // 예: "평일 오후(방과 후)·주말 오전"
+  message           String? // 요청사항
+  source            String // PUBLIC_WEB | CHATBOT | PARENT_APP
+  requestedByUserId String? // 학부모 앱에서 온 경우 User.id
+  clientIpHash      String? // 남용 방지용 접속 주소 지문(sha256)
+  privacyConsentAt  DateTime  @db.Timestamptz(6)
+  status            String    @default("NEW") // NEW | CONTACTED | DONE | CANCELED
+  adminNote         String?
+  contactedAt       DateTime? @db.Timestamptz(6)
+  closedAt          DateTime? @db.Timestamptz(6)
+  handledByUserId   String?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([status, createdAt(sort: Desc)], map: "ConsultRequest_status_createdAt_idx")
+  @@index([guardianPhone, createdAt(sort: Desc)], map: "ConsultRequest_phone_createdAt_idx")
+  @@index([clientIpHash, createdAt(sort: Desc)], map: "ConsultRequest_ip_createdAt_idx")
+}
+
 /// 학부모의 청구서 관련 요청: "입금했어요"(확인 요청)와 "영수증 주세요".
 /// 지금까지는 문자로 받아 원장이 통장을 확인하고 손으로 납부 처리했다.
 /// 참고: "같은 청구서·같은 종류의 대기 요청은 한 건"은 DB 부분 유니크 인덱스로 막는다.

@@ -102,6 +102,19 @@
 | tests/makeup-credit-absence-report.test.mjs | 22건(신고→발급·출결 결석 후 1장·취소 회수·재신고 되살림·예약·사용 완료·관리자·CARRY·KST 자정) |
 💡 tester: 신고→/mypage/makeup 에 보강권 1장 · 같은 날 출결 결석 저장 → 여전히 1장 · 예약 후 신고 취소 → 확인 문구 → 예약·권 함께 취소 · 보강 출석 처리 후 신고 취소 → 막힘
 ⚠️ reviewer: 출결 경로 «되살림» 동작 변경(결석→출석→결석 시 이제 다시 AVAILABLE) · 관리자 «기간 결석» 행은 범위 밖(발급 안 함) · 카카오 취소는 예약 있으면 앱으로 안내
+## 구현 기록 (developer) — 상담 신청 신설 (11-10 원장 k1·m4)
+
+📝 학생 인적 사항·희망 수업·요청사항 접수 → 관리자 벨·웹푸시 → 신청함 «상담» 탭에서 연락함/완료/취소+메모.
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| prisma/migrations/20261110160000_consult_request/migration.sql · schema.prisma | ConsultRequest 표(상태·경로 CHECK·앱 신청 계정 필수 CHECK·RLS) — 운영 미적용(PM apply_migration) | 신규/수정 |
+| src/lib/consult/consult-rules.ts · consult-service.ts | 순수 규칙(검증·상태 지도·전이·한도) / db 인자 연결부(저장·처리·목록·InboxRow 변환) | 신규 |
+| src/lib/requests/consult-inbox.ts | listConsultInboxRows·countConsultAction(실패 시 []/0) | 신규 |
+| src/app/actions/consult.ts | 공개·학부모(requireVerifiedParent)·관리자(requireAdmin) 액션 | 신규 |
+| src/components/consult/ConsultForm.tsx · apply/consult/page.tsx · mypage/consult/page.tsx | 공용 폼(공개/앱 색 묶음) · 화면 2개 | 신규 |
+| apply/ApplyPageClient.tsx · api/chat/route.ts · mypage/ParentMoreMenu.tsx | /apply 세 번째 칸 · [ACTION:CONSULT] · ⋯ 메뉴 1줄 | 수정 |
+💡 tester: tests/consult-request.test.mjs(20). 주의 입력 = privacyConsent "true"(글자)·02 번호·하루 안 같은 번호+학생 중복.
+⚠️ reviewer: InboxRow.kind 에 CONSULT 가 아직 없어 ConsultInboxRow = Omit<InboxRow,"kind">&{kind:"CONSULT"} — catalog 에 CONSULT 추가 시 그대로 맞음.
 
 ## 작업 로그 (최근 10건)
 
@@ -110,6 +123,7 @@
 | 11-10 | developer(원장 k7·m5 머리줄·설정): ⋯→⚙ /mypage/settings(내 정보 이름 수정·연락처 보기, 비밀번호 바꾸기(현재 비번 재확인·비번 로그인만), 간편로그인, 자녀·가족 초대, 형제·자매 상담 링크, 알림 설정(휴대폰 알림+종류별 출결·청구·공지·셔틀), 글자 크기 3단(쿠키→layout html 배율), 문제 신고·문의(OTHER), 앱 정보, 로그아웃·탈퇴, 테마 숨김) · 🔔 ParentNotificationBell(배지 9+·시트/드롭다운·알림 설정 줄) · 홈 알림 칸 제거 · 종류별 거르기=pushNotification 한 곳(표 없으면 보냄) · 마이그레이션 20261110170000_parent_notification_preference(운영 미적용) · tests/parent-settings | 커밋(미푸시) |
 | 11-10 | developer(원장 점검 k5·k6 학부모 보완): 알림 읽음=학부모 전용 actions/parent-notifications.ts(requireVerifiedParent·WHERE "userId"=로그인 사용자, 관리자 함수는 유지) · 알림 줄 전체 누름=읽음+내부 linkUrl 이동(safeInternalHref) · 수업 탭 반 카드→한 달 달력(ScheduleHub MonthCalendar 공용·getParentMonthViews)→신청 내역, «달력 ▸» 제거 · 버튼 [결석][보강][셔틀][변경 ▾] 한 줄(휴원 중=복귀 신청 유지) · 아이 선택 기억(?child=+localStorage, useRememberedChild/RememberChildSync — 홈·수업·일정) · tests 3827 pass | 커밋(미푸시) |
 | 11-10 | developer(결석 신고 즉시 보강권 k4): 신고 순간 발급(키=기존 REGULAR:{반}:{날짜} 그대로라 출결·랠리즈와 1장) · 학부모 취소 = 미사용 회수/예약은 확인 후 예약 취소+회수/사용 완료·지난 예약은 막음 · 관리자 취소 = 기존 회수 규칙 · 출결 결석 확정이면 유지 · 출결 경로 REVOKED 되살림 · 문구 «보강권 1장이 생겼어요»(신고 직후·신청 내역·카톡). 마이그레이션 없음, 채움 SQL 선택(prisma/sql). tsc 0·tests 3843-0·studentVisibility 5-0 | 구현·검증 완료(검수 대기, 미푸시) |
+| 11-10 | developer(상담 신청 신설): ConsultRequest 표+마이그레이션 20261110160000(운영 미적용) · /apply/consult(+/apply 세 번째 칸) · 챗봇 [ACTION:CONSULT] · 학부모 ⋯ 메뉴 «형제·자매 상담 신청»(/mypage/consult, 자동 채움) · 관리자 벨·웹푸시 · consult-inbox.ts(신청함 상담 탭) · 처리 액션(requireAdmin). tsc 0·tests 3841-0·studentVisibility 5-0 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
