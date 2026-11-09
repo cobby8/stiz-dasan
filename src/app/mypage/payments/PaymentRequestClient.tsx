@@ -206,7 +206,8 @@ export default function PaymentRequestClient({
                 {(claimPending || receiptPending) && (
                   <div className="mt-2 space-y-2">
                     {[claimPending, receiptPending].filter(Boolean).map((item) => (
-                      <div key={item!.id} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-academy-warning-soft)] py-1 pl-2 pr-1">
+                      // «확인 중» = 정보(info) — 입금 확인 중 규칙과 같게(PM 결정 11-09)
+                      <div key={item!.id} className="flex items-center justify-between gap-2 rounded-lg bg-[var(--color-academy-info-soft)] py-1 pl-2 pr-1">
                         <p className="text-xs font-bold text-[var(--color-academy-ink)]">
                           {PAYMENT_REQUEST_KIND_LABEL[item!.kind as "PAYMENT_CLAIM" | "RECEIPT"]} 확인 중
                         </p>

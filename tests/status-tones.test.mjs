@@ -36,6 +36,7 @@ test("셔틀: 탑승 정상 · 체크 대기 주의 · 미탑승/결석 위험 �
 
 test("신청: 승인 정상 · 대기 주의 · 반려 위험", () => {
   assert.deepEqual(["APPROVED", "PENDING", "REQUESTED", "REJECTED"].map((s) => REQUEST_TONE[s]), ["success", "warning", "warning", "danger"]);
+  assert.equal(REQUEST_TONE.NO_SHOW, "danger", "체험 노쇼 = 위험(리뷰 지적·PM 결정)");
 });
 
 test("모르는 상태는 중립 — «정상»처럼 보이게 하지 않는다", () => {

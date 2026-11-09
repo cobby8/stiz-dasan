@@ -98,6 +98,7 @@ export const REQUEST_TONE: Record<string, StatusTone> = {
   PENDING: "warning",
   REQUESTED: "warning",
   REJECTED: "danger",
+  NO_SHOW: "danger", // 체험 예약 후 안 옴 = 위험(리뷰 지적·PM 결정 11-09)
   CONFIRMED: "info",
   RESERVED: "info",
   SCHEDULED: "info",

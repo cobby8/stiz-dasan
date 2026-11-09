@@ -1087,9 +1087,9 @@ h1, h2, h3, h4, h5, h6 {
   --sport-rust-50: #faeee8; --sport-rust-100: #f6dfd3; --sport-rust-200: #edc0a9; --sport-rust-300: #e29a77;
   --sport-rust-400: #d4714a; --sport-rust-500: #c4562b; --sport-rust-600: #b94118; --sport-rust-700: #933111;
   --sport-rust-800: #742710; --sport-rust-900: #5a1f0d; --sport-rust-950: #3a1408;
-  /* 차콜 단계 = 학원 앱 회색 토큰과 같은 값(2026-11-09 색상 정리 1단계). 400(#6b7280)부터 흰 바탕 글자 4.5:1 이상. */
+  /* 차콜 단계 = 학원 앱 회색 토큰과 같은 값(2026-11-09 색상 정리 1단계). 400(#636a75 = 흐린 글자 faint)부터 옅은 면 위에서도 글자 4.5:1 이상. */
   --sport-ink-50: #f9fafb; --sport-ink-100: #f3f4f6; --sport-ink-200: #e5e7eb; --sport-ink-300: #d1d5db;
-  --sport-ink-400: #6b7280; --sport-ink-500: #4b5563; --sport-ink-600: #3c4350; --sport-ink-700: #374151;
+  --sport-ink-400: #636a75; --sport-ink-500: #4b5563; --sport-ink-600: #3c4350; --sport-ink-700: #374151;
   --sport-ink-800: #1f2937; --sport-ink-900: #111827; --sport-ink-950: #0b0f17;
   --sport-moss-50: #edf5ef; --sport-moss-100: #dcebe0; --sport-moss-200: #bcd7c4; --sport-moss-300: #94bba0;
   --sport-moss-400: #6e9b7c; --sport-moss-500: #527f62; --sport-moss-600: #3f6754; --sport-moss-700: #345545;

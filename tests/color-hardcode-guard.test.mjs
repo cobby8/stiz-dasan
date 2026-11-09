@@ -15,7 +15,8 @@ import test from "node:test";
 const SRC = "src";
 const BASELINE = "tests/fixtures/color-hardcode-baseline.json";
 // 색 «정의» 파일 — 값이 여기 모여 있어야 한다(세지 않는다).
-// src/lib/ui/colorValues.ts = CSS 변수를 못 쓰는 곳(OG 이미지·theme-color·SVG 차트)의 hex 한 곳(색상 7단계).
+// src/lib/ui/colorValues.ts = CSS 변수를 못 쓰는 곳(OG 이미지·theme-color)의 hex 한 곳(색상 7단계).
+// (SVG 차트 색은 src/components/charts/chartColors.ts — var() 토큰이라 hex 가 없어 따로 뺄 필요가 없다.)
 const TOKEN_FILES = new Set(["src/app/academy-theme.css", "src/app/globals.css", "src/components/public-sport.css", "src/lib/ui/colorValues.ts"]);
 
 const PALETTE = "red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone";

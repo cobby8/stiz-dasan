@@ -66,11 +66,13 @@ const academyPairs = [
   ["보조 글자 / 화면 바탕", A("muted"), A("canvas"), TEXT],
   ["보조 글자 / 옅은 면", A("muted"), A("soft"), TEXT],
   ["흐린 글자 / 카드", A("faint"), A("surface"), TEXT],
+  ["흐린 글자 / 옅은 면", A("faint"), A("soft"), TEXT], // 11-09 마무리: #6b7280(4.39) → #636a75(4.96)
   ["주 버튼 글자 / 주 버튼", A("on-primary"), A("primary"), TEXT],
   ["주 버튼 글자 / 주 버튼 올림", A("on-primary"), A("primary-hover"), TEXT],
   ["행 안 작업·고른 칩 글자 / 그 바탕", A("primary"), A("primary-soft"), TEXT],
   ["입력칸·보조 버튼 테두리 / 카드", A("line-input"), A("surface"), LINE],
-  // 입력선 #8a919c(원장 결정 값)는 연회색 바탕 위에서 2.96 이라 기준(3)에 살짝 못 미친다 → 입력칸·보조 버튼은 카드(흰 면) 위에 둔다.
+  // 입력선: 옛 #8a919c 는 연회색 바탕 위 2.96 이라 기준(3) 미달 → 11-09 마무리에서 #848b96(3.20)으로 진하게.
+  ["입력칸·보조 버튼 테두리 / 화면 바탕", A("line-input"), A("canvas"), LINE],
   ["달력 오늘 테두리 / 카드", A("cal-today"), A("surface"), LINE],
 ];
 for (const tone of ["success", "warning", "danger", "info", "neutral"]) {

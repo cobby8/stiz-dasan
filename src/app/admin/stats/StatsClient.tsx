@@ -439,7 +439,7 @@ export default function StatsClient({
                         <PipelineItem label="연락완료" count={trialStats.CONTACTED} color="yellow" />
                         <PipelineItem label="예약" count={trialStats.SCHEDULED} color="purple" />
                         <PipelineItem label="체험완료" count={trialStats.ATTENDED} color="green" />
-                        <PipelineItem label="등록전환" count={trialStats.CONVERTED} color="orange" />
+                        <PipelineItem label="등록전환" count={trialStats.CONVERTED} color="green" />{/* 등록전환 = 정상(success), PM 결정 11-09 */}
                         <PipelineItem label="이탈" count={trialStats.LOST} color="red" />
                     </div>
                 </div>
