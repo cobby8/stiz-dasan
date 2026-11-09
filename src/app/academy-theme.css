@@ -161,8 +161,9 @@
   border-color: var(--color-academy-primary-hover);
 }
 
+/* 보조 버튼 테두리 = 입력선(흰 바탕 3:1 이상) — 옅은 카드 선(#e5e7eb)이면 버튼 경계가 안 보인다 */
 .academy-app .academy-button-secondary {
-  border: 1px solid var(--color-academy-line);
+  border: 1px solid var(--color-academy-line-input);
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
 }
@@ -221,7 +222,7 @@
   opacity: 0.5;
 }
 
-/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 주황 테두리 + 체크 */
+/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 굵은 주 색 테두리 + 체크. 안 고른 칩 테두리는 입력선(3:1). */
 .academy-app .academy-choice {
   display: inline-flex;
   align-items: center;
@@ -230,7 +231,7 @@
   min-height: 2.75rem;
   padding: 0.5rem 0.875rem;
   border-radius: 0.375rem;
-  border: 1px solid var(--color-academy-line);
+  border: 1px solid var(--color-academy-line-input);
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
   font-size: 0.875rem;
@@ -267,17 +268,39 @@
   background: var(--color-academy-soft);
 }
 
+/* 상태 표시 — 모서리 4px(누르는 칩·알약과 다른 모양, 교과서 6장). 뜻이 있는 상태는 StatusBadge·statusTones 를 쓴다. */
 .academy-app .academy-status {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.1875rem 0.5rem;
-  border-radius: 999px;
-  background: var(--color-academy-soft);
-  color: var(--color-academy-muted);
+  border-radius: 4px;
+  background: var(--color-academy-neutral-soft);
+  color: var(--color-academy-neutral);
   font-size: 0.75rem;
   line-height: 1.5;
   font-weight: 500;
+}
+
+/* 입력칸 공용 모양 — 흰 면 + 입력선(3:1) + 44px. 새 입력칸은 이 클래스를 쓴다(옛 입력칸은 화면을 고칠 때 옮긴다). */
+.academy-app .academy-input {
+  min-height: 2.75rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-academy-line-input);
+  border-radius: 0.375rem;
+  background: var(--color-academy-surface);
+  color: var(--color-academy-ink);
+  font-size: 0.875rem;
+}
+
+.academy-app .academy-input::placeholder {
+  color: var(--color-academy-faint);
+}
+
+.academy-app .academy-input:disabled {
+  background: var(--color-academy-soft);
+  color: var(--color-academy-muted);
 }
 
 .academy-app :is(button, a, input, textarea, select):focus-visible {

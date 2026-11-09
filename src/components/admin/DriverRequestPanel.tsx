@@ -3,6 +3,7 @@ import { adminMessageText } from "@/components/admin/adminDisplayText";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DriverRequestRow } from "@/app/api/admin/driver-requests/route";
+import { REQUEST_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
 const TYPE_LABEL: Record<string, string> = {
   REMOVE: "학생 제외", LOCATION: "주소 변경", ORDER: "순서 고정", OTHER: "기타",
@@ -14,10 +15,11 @@ const TYPE_COLOR: Record<string, string> = {
   OTHER: "bg-gray-100 text-gray-600",
 };
 const STATUS_LABEL: Record<string, string> = { PENDING: "대기", APPROVED: "승인", REJECTED: "거절" };
+// 상태색은 공용 지도(statusTones) — 대기 주의 · 승인 정상 · 거절 위험
 const STATUS_COLOR: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800",
-  APPROVED: "bg-green-100 text-green-700",
-  REJECTED: "bg-gray-100 text-gray-500",
+  PENDING: statusBadgeClass(REQUEST_TONE.PENDING),
+  APPROVED: statusBadgeClass(REQUEST_TONE.APPROVED),
+  REJECTED: statusBadgeClass(REQUEST_TONE.REJECTED),
 };
 
 function fmtDate(iso: string) {
@@ -145,7 +147,7 @@ export default function DriverRequestPanel({ onClose }: { onClose: () => void })
                       <span className="text-[13px] font-semibold text-gray-700 dark:text-gray-300">
                         {req.targetName ?? "-"}
                       </span>
-                      <span className={`ml-auto rounded-md px-2 py-0.5 text-[11px] font-black ${STATUS_COLOR[req.status] ?? ""}`}>
+                      <span className={`ml-auto rounded px-2 py-0.5 text-[11px] font-black ${STATUS_COLOR[req.status] ?? ""}`}>
                         {STATUS_LABEL[req.status] ?? req.status}
                       </span>
                     </div>

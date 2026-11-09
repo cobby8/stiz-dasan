@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { REQUEST_TONE, TONE_BADGE_CLASS, toneFor } from "@/lib/ui/statusTones";
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: "신청 접수 (승인 대기)", SCHEDULED: "보강 확정", ATTENDED: "보강 완료", NO_SHOW: "미출석" };
 
@@ -165,7 +166,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                     {/* 신고됨(본인이 사전 신고) → 상태 배지와 사유를 나눠 표시 */}
                     {s.reported && (
                       <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-black text-amber-700 dark:bg-amber-950 dark:text-amber-300">결석 신고됨</span>
+                        <span className={`rounded px-2 py-0.5 text-xs font-black ${TONE_BADGE_CLASS.warning}`}>결석 신고됨</span>
                         {s.reasonLabel && <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{s.reasonLabel}</span>}
                         {s.locked && <span className="text-xs font-bold text-gray-400">학원 확정 — 변경은 문의</span>}
                       </p>
@@ -222,7 +223,7 @@ export default function SeasonalMakeupClient({ initial }: { initial: any }) {
                 </p>
                 <p className="break-keep text-xs font-bold tabular-nums text-gray-500">{m.absentLabel} 결석 → {m.targetLabel || (m.targetType === "REGULAR" ? "정규수업" : "-")}</p>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-black ${m.status === "REQUESTED" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" : m.status === "ATTENDED" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}>{STATUS_LABEL[m.status] || "상태 확인 중"}</span>
+              <span className={`shrink-0 rounded px-2 py-1 text-xs font-black ${TONE_BADGE_CLASS[toneFor(REQUEST_TONE, m.status, "info")]}`}>{STATUS_LABEL[m.status] || "상태 확인 중"}</span>
             </li>
           ))}
         </ul>

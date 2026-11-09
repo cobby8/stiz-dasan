@@ -18,12 +18,14 @@ import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
 import { enrollmentHasStarted } from "@/lib/enrollment/commencement";
 import { todayKst } from "@/lib/datetime/kst";
+import { ATTENDANCE_TONE, TONE_BADGE_CLASS, TONE_BORDER_CLASS } from "@/lib/ui/statusTones";
 
 // ── 출석 상태 옵션 (AttendanceClient와 동일 패턴) ──
+// 고른 출결 칸 색 = 공용 지도(statusTones): 출석 정상 · 결석 위험 · 지각 주의
 const STATUS_OPTIONS = [
-    { value: "PRESENT", label: "출석", color: "bg-green-100 text-green-700 border-green-300" },
-    { value: "ABSENT", label: "결석", color: "bg-red-100 text-red-700 border-red-300" },
-    { value: "LATE", label: "지각", color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    { value: "PRESENT", label: "출석", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.PRESENT]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.PRESENT]}` },
+    { value: "ABSENT", label: "결석", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.ABSENT]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.ABSENT]}` },
+    { value: "LATE", label: "지각", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.LATE]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.LATE]}` },
 ] as const;
 
 // 오늘 날짜를 YYYY-MM-DD 형식으로 반환

@@ -15,6 +15,7 @@ import {
     toSessionReportPhotoViews,
 } from "@/lib/sessionPhotoEntries";
 import { compressImageForUpload } from "@/lib/clientImageCompression";
+import { ATTENDANCE_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
 // ── 타입 정의 ──────────────────────────────────────────────────────────────────
 
@@ -65,10 +66,11 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 // 출석 상태 라벨/색상
+// 출결 상태색 = 공용 지도(statusTones): 출석 정상 · 지각 주의 · 결석 위험
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-    PRESENT: { label: "출석", color: "bg-green-100 text-green-700" },
-    ABSENT: { label: "결석", color: "bg-red-100 text-red-700" },
-    LATE: { label: "지각", color: "bg-yellow-100 text-yellow-700" },
+    PRESENT: { label: "출석", color: statusBadgeClass(ATTENDANCE_TONE.PRESENT) },
+    ABSENT: { label: "결석", color: statusBadgeClass(ATTENDANCE_TONE.ABSENT) },
+    LATE: { label: "지각", color: statusBadgeClass(ATTENDANCE_TONE.LATE) },
 };
 
 type ReportPayload = {
@@ -530,7 +532,7 @@ function ReportEditForm({
                 ) : (
                     <div className="divide-y divide-gray-100">
                         {report.attendances.map((a) => {
-                            const statusInfo = STATUS_MAP[a.status] || { label: a.status, color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" };
+                            const statusInfo = STATUS_MAP[a.status] || { label: a.status, color: statusBadgeClass("neutral") };
                             const noteData = studentNotes[a.studentId] || { note: "", rating: null };
 
                             return (
@@ -538,7 +540,7 @@ function ReportEditForm({
                                     {/* 학생 이름 + 출석 상태 */}
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="font-bold text-gray-900 dark:text-white">{a.studentName}</span>
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusInfo.color}`}>
+                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${statusInfo.color}`}>
                                             {statusInfo.label}
                                         </span>
                                     </div>

@@ -5,6 +5,7 @@ import { loadStaffClassPeople } from "@/app/actions/staff-class-people";
 import type { StaffClassPerson } from "@/lib/staff-class-people";
 import { useStaffDialog } from "./useStaffDialog";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { ATTENDANCE_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 
 const peopleRequests = new Map<string, Promise<Awaited<ReturnType<typeof loadStaffClassPeople>>>>();
 const phoneHref = (phone: string) => phone.replace(/[^\d+]/g, "");
@@ -55,9 +56,10 @@ export function ClassPeopleSheet({ open, classId, sessionId, sessionDateId, clas
 
 function PersonCard({ person, onOpenBilling }: { person: StaffClassPerson; onOpenBilling: (student: { id: string; name: string }) => void }) {
   const guardian = person.guardians.find((item) => item.isPrimary) ?? person.guardians[0];
-  const attendance = person.todayStatus === "PRESENT" ? ["출석", "bg-green-50 text-green-700"] : person.todayStatus === "LATE" ? ["지각", "bg-amber-50 text-amber-700"] : person.todayStatus === "ABSENT" ? ["결석", "bg-red-50 text-red-700"] : ["미확인", "bg-gray-100 text-gray-600"];
+  // 오늘 출결 표시 — 색은 공용 지도(statusTones), 미확인은 중립
+  const attendance = person.todayStatus === "PRESENT" ? ["출석", TONE_BADGE_CLASS[ATTENDANCE_TONE.PRESENT]] : person.todayStatus === "LATE" ? ["지각", TONE_BADGE_CLASS[ATTENDANCE_TONE.LATE]] : person.todayStatus === "ABSENT" ? ["결석", TONE_BADGE_CLASS[ATTENDANCE_TONE.ABSENT]] : ["미확인", TONE_BADGE_CLASS.neutral];
   return <article className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-    <div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-black dark:text-white">{person.name}</h3><p className="mt-0.5 text-xs text-gray-500">{[person.school, person.grade].filter(Boolean).join(" · ") || "학교·학년 미등록"}</p></div><div className="flex flex-wrap justify-end gap-1.5"><span className={`rounded-full px-2.5 py-1 text-xs font-black ${attendance[1]}`}>{attendance[0]}</span>{person.billing.unpaidCount > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-black text-red-700">미납 {person.billing.unpaidCount}건</span>}</div></div>
+    <div className="flex items-start justify-between gap-3"><div><h3 className="text-lg font-black dark:text-white">{person.name}</h3><p className="mt-0.5 text-xs text-gray-500">{[person.school, person.grade].filter(Boolean).join(" · ") || "학교·학년 미등록"}</p></div><div className="flex flex-wrap justify-end gap-1.5"><span className={`rounded px-2.5 py-1 text-xs font-black ${attendance[1]}`}>{attendance[0]}</span>{person.billing.unpaidCount > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-black text-red-700">미납 {person.billing.unpaidCount}건</span>}</div></div>
     {person.billing.unpaidCount > 0 && <button type="button" onClick={() => onOpenBilling({ id: person.id, name: person.name })} className="mt-3 flex min-h-12 w-full items-center justify-between rounded-xl bg-red-50 px-3 text-left text-sm font-black text-red-700"><span>미납 {person.billing.unpaidAmount.toLocaleString("ko-KR")}원</span><span className="flex items-center">청구 확인 <span className="material-symbols-outlined">chevron_right</span></span></button>}
     <div className="mt-3 grid grid-cols-3 gap-2"><ContactLink phone={person.studentPhone} icon="call" label="학생 전화" /><ContactLink phone={guardian?.phone ?? null} icon="phone_in_talk" label="학부모 전화" accent /><ContactLink phone={guardian?.phone ?? null} icon="sms" label="문자" sms /></div>
     {person.billing.unpaidCount === 0 && <button type="button" onClick={() => onOpenBilling({ id: person.id, name: person.name })} className="mt-2 flex min-h-11 w-full items-center justify-center gap-1 rounded-xl border border-gray-200 text-sm font-black dark:border-gray-700"><span className="material-symbols-outlined text-xl">receipt_long</span>청구 내역</button>}

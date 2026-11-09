@@ -13,6 +13,7 @@ import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
 import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
 import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
+import { statusBadgeClass } from "@/lib/ui/statusTones";
 import {
     updateTrialLead,
     sendPostTrialEnrollGuide,
@@ -154,14 +155,16 @@ const EMPTY_STATS: TrialStats = {
 
 // ── 상태별 라벨/색상/아이콘 매핑 ──────────────────────────────────────────────
 
+// 체험 상태색 = 공용 지도(statusTones). 신규(아직 연락 전 = 처리할 일) 주의 · 연락완료·체험예정(진행 중) 정보 ·
+// 체험완료·등록전환 정상 · 이탈·취소 중립. 같은 색이어도 글자·아이콘이 달라 구분된다.
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-    NEW: { label: "신규", color: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-200", icon: "fiber_new" },
-    CONTACTED: { label: "연락완료", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-200", icon: "call" },
-    SCHEDULED: { label: "체험예정", color: "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-200", icon: "event" },
-    ATTENDED: { label: "체험완료", color: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-200", icon: "check_circle" },
-    CONVERTED: { label: "등록전환", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200", icon: "how_to_reg" },
-    LOST: { label: "이탈", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400", icon: "person_off" },
-    CANCELLED: { label: "취소", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400", icon: "block" },
+    NEW: { label: "신규", color: statusBadgeClass("warning"), icon: "fiber_new" },
+    CONTACTED: { label: "연락완료", color: statusBadgeClass("info"), icon: "call" },
+    SCHEDULED: { label: "체험예정", color: statusBadgeClass("info"), icon: "event" },
+    ATTENDED: { label: "체험완료", color: statusBadgeClass("success"), icon: "check_circle" },
+    CONVERTED: { label: "등록전환", color: statusBadgeClass("success"), icon: "how_to_reg" },
+    LOST: { label: "이탈", color: statusBadgeClass("neutral"), icon: "person_off" },
+    CANCELLED: { label: "취소", color: statusBadgeClass("neutral"), icon: "block" },
 };
 
 // 유입경로 라벨
@@ -1053,7 +1056,7 @@ export default function TrialCrmClient({
                 className="cursor-pointer transition focus:bg-brand-orange-50 focus:outline-none dark:focus:bg-brand-neon-lime/10"
             >
                 <td className="px-2 py-1.5">
-                    <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold sm:h-auto sm:w-auto sm:gap-1 sm:px-2 sm:py-1 ${cfg.color}`} title={cfg.label}>
+                    <span className={`inline-flex h-8 w-8 items-center justify-center rounded text-xs font-bold sm:h-auto sm:w-auto sm:gap-1 sm:px-2 sm:py-1 ${cfg.color}`} title={cfg.label}>
                         <span className="material-symbols-outlined text-lg sm:text-sm">{cfg.icon}</span>
                         <span className="hidden sm:inline">{cfg.label}</span>
                     </span>
@@ -1511,7 +1514,7 @@ function TrialLeadDetailModal({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black ${cfg.color}`}>
+                            <span className={`inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-black ${cfg.color}`}>
                                 <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
                                 {cfg.label}
                             </span>

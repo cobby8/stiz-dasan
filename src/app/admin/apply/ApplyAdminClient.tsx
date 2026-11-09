@@ -899,7 +899,7 @@ export default function ApplyAdminClient({
             >
                 {/* 상태 — 휴대폰에선 아이콘만, sm 이상에서 글자까지 */}
                 <td className="px-2 py-1.5">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${cfg.color}`} title={cfg.label}>
+                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${cfg.color}`} title={cfg.label}>
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">{cfg.icon}</span>
                         <span className="sr-only sm:not-sr-only">{cfg.label}</span>
                     </span>

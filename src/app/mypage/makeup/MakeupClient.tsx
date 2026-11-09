@@ -9,6 +9,7 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -16,14 +17,15 @@ const DOW_KO: Record<string, string> = {
 
 /** 상태 뱃지 — 학부모가 한눈에 "쓸 수 있나"를 알아야 한다. */
 function statusBadge(c: ParentCredit, expired: boolean) {
-  if (expired) return { label: "기간 만료", cls: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" };
+  // 색 = 공용 지도(statusTones): 사용 가능 정상 · 예약(진행 중) 정보 · 무단 불참 위험 · 끝난 것 중립
+  if (expired) return { label: "기간 만료", cls: TONE_BADGE_CLASS.neutral };
   switch (c.status) {
-    case "AVAILABLE": return { label: "사용 가능", cls: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200" };
-    case "RESERVED":  return { label: "예약 완료", cls: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200" };
-    case "USED":      return { label: "보강 완료", cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300" };
-    case "NO_SHOW":   return { label: "무단 불참", cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" };
-    case "REVOKED":   return { label: "출결 정정", cls: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" };
-    default:          return { label: "기간 만료", cls: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400" };
+    case "AVAILABLE": return { label: "사용 가능", cls: TONE_BADGE_CLASS.success };
+    case "RESERVED":  return { label: "예약 완료", cls: TONE_BADGE_CLASS[REQUEST_TONE.RESERVED] };
+    case "USED":      return { label: "보강 완료", cls: TONE_BADGE_CLASS[REQUEST_TONE.USED] };
+    case "NO_SHOW":   return { label: "무단 불참", cls: TONE_BADGE_CLASS.danger };
+    case "REVOKED":   return { label: "출결 정정", cls: TONE_BADGE_CLASS.neutral };
+    default:          return { label: "기간 만료", cls: TONE_BADGE_CLASS.neutral };
   }
 }
 
@@ -163,7 +165,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
                   <span className="rounded-full border border-[var(--color-academy-line)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)] dark:border-gray-700 dark:text-gray-300">
                     {c.sourceLabel}
                   </span>
-                  <span className={`ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-xs font-black ${badge.cls}`}>
+                  <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-xs font-black ${badge.cls}`}>
                     {badge.label}
                   </span>
                 </div>
