@@ -77,6 +77,32 @@ final class AppNavigationPolicy {
     static boolean unfinishedRun(boolean hasSession, boolean stopped, boolean stopPending) {
         return hasSession && (!stopped || stopPending);
     }
+    // 토스 결제창 주소. 「tosspayments.com.evil.example」처럼 뒤에 붙인 가짜 주소는 끝부분 비교로 걸러진다.
+    static boolean isTossPayment(String url) {
+        if (!paymentPageAllowed(url)) return false;
+        try {
+            String host = new URI(url).getHost().toLowerCase(java.util.Locale.ROOT);
+            return host.equals("tosspayments.com") || host.endsWith(".tosspayments.com")
+                || host.equals("toss.im") || host.endsWith(".toss.im");
+        } catch (Exception failure) { return false; }
+    }
+    // 원장 결정(2026-11-09): 결제 중엔 카드사 인증 화면 등 https 이동을 모두 허용한다.
+    static boolean paymentPageAllowed(String url) {
+        try {
+            URI uri = new URI(url);
+            return "https".equals(uri.getScheme()) && uri.getHost() != null && uri.getRawUserInfo() == null
+                && (uri.getPort() == -1 || uri.getPort() == 443);
+        } catch (Exception failure) { return false; }
+    }
+    // 결제 중 바깥 앱으로 넘길 카드사·간편결제 앱 주소. 웹 실행·파일·앱 내부 주소는 넘기지 않는다.
+    static boolean isPaymentAppScheme(String url) {
+        int colon = url == null ? -1 : url.indexOf(':');
+        if (colon <= 0) return false;
+        String scheme = url.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
+        if (!scheme.matches("[a-z][a-z0-9+.-]*")) return false;
+        return !java.util.Arrays.asList("http", "https", "about", "data", "javascript", "file", "blob", "ftp", "content",
+            "stiz-academy-dev", "stiz-academy-android-dev").contains(scheme);
+    }
     static boolean externalActionAllowed(String url, boolean userGesture) {
         if (!userGesture) return false;
         try {
