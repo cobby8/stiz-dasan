@@ -60,7 +60,7 @@ public final class AppNavigationPolicyTest {
             check(!AppNavigationPolicy.isTossPayment(url));
         }
         check(AppNavigationPolicy.paymentPageAllowed("https://card-auth.example.invalid/acs"));
-        for (String url : new String[]{"http://card-auth.example.invalid/", "https://user@card-auth.example.invalid/", "https://card-auth.example.invalid:444/", "file:///x", "javascript:alert(1)"}) {
+        for (String url : new String[]{"http://card-auth.example.invalid/", "https://user@card-auth.example.invalid/", "https://card-auth.example.invalid:444/", "file:///x", "javascript:alert(1)", "https://accounts.google.com/", "https://appleid.apple.com/", "https://abc.supabase.co/auth/v1/authorize"}) {
             check(!AppNavigationPolicy.paymentPageAllowed(url));
         }
         for (String url : new String[]{"ispmobile://TID=x", "kakaotalk://kakaopay/pg?url=x", "supertoss://pay", "kb-acp://pay", "shinhan-sr-ansimclick://pay", "intent://pay#Intent;scheme=ispmobile;package=kvp.jjy.MispAndroid320;end", "market://details?id=x"}) {

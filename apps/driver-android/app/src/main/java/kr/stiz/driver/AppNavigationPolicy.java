@@ -90,8 +90,11 @@ final class AppNavigationPolicy {
     static boolean paymentPageAllowed(String url) {
         try {
             URI uri = new URI(url);
-            return "https".equals(uri.getScheme()) && uri.getHost() != null && uri.getRawUserInfo() == null
-                && (uri.getPort() == -1 || uri.getPort() == 443);
+            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getRawUserInfo() != null
+                || !(uri.getPort() == -1 || uri.getPort() == 443)) return false;
+            // 결제 중에도 외부 로그인 화면은 열지 않는다(아이폰과 같은 규칙).
+            String host = uri.getHost().toLowerCase(java.util.Locale.ROOT);
+            return !host.equals("accounts.google.com") && !host.equals("appleid.apple.com") && !host.endsWith(".supabase.co");
         } catch (Exception failure) { return false; }
     }
     // 결제 중 바깥 앱으로 넘길 카드사·간편결제 앱 주소. 웹 실행·파일·앱 내부 주소는 넘기지 않는다.

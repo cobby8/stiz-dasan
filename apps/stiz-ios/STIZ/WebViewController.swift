@@ -325,22 +325,31 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         address.host = origin.host
         if origin.port != 0 { address.port = origin.port }
         guard let url = address.url else { return false }
-        // 결제 중에는 카드사 인증 화면의 확인창(«결제를 진행할까요?» 등)도 본문에서 띄운 것이면 보여 준다.
-        return frame.isMainFrame && (NavigationPolicy.matchesWebsiteOrigin(url) || paymentActive)
+        return frame.isMainFrame && NavigationPolicy.matchesWebsiteOrigin(url)
+    }
+
+    // 결제 중 카드사 인증 화면의 알림·확인창(«결제를 진행할까요?» 등)은 보여 주되, 우리 앱 안내로 오인하지 않게
+    // 제목을 그 사이트 주소로 단다. 입력창(prompt)은 피싱 위험이 있어 결제 중에도 열지 않는다.
+    private func paymentDialogTitle(_ frame: WKFrameInfo) -> String? {
+        guard paymentActive, frame.isMainFrame, !trustedFrame(frame) else { return nil }
+        let host = frame.securityOrigin.host
+        return host.isEmpty ? nil : host
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        guard trustedFrame(frame), presentedViewController == nil else { completionHandler(); return }
-        let dialog = UIAlertController(title: "STIZ", message: message, preferredStyle: .alert)
+        let candidate = trustedFrame(frame) ? "STIZ" : paymentDialogTitle(frame)
+        guard let title = candidate, presentedViewController == nil else { completionHandler(); return }
+        let dialog = UIAlertController(title: title, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler() })
         present(dialog, animated: true)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        guard trustedFrame(frame), presentedViewController == nil else { completionHandler(false); return }
-        let dialog = UIAlertController(title: "확인", message: message, preferredStyle: .alert)
+        let candidate = trustedFrame(frame) ? "확인" : paymentDialogTitle(frame)
+        guard let title = candidate, presentedViewController == nil else { completionHandler(false); return }
+        let dialog = UIAlertController(title: title, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completionHandler(false) })
         dialog.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler(true) })
         present(dialog, animated: true)

@@ -248,6 +248,10 @@ public final class MainActivity extends Activity {
                 intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
                 intent.setComponent(null);
                 intent.setSelector(null);
+                // 안쪽 대상이 우리 앱 자신이거나 웹·파일 주소면 열지 않는다(결제 앱만 연다).
+                String inner = intent.getScheme() == null ? "" : intent.getScheme().toLowerCase(java.util.Locale.ROOT);
+                if (getPackageName().equals(intent.getPackage()) || !AppNavigationPolicy.isPaymentAppScheme(inner + ":")
+                    && !inner.isEmpty()) { showAppMessage("이 결제 앱 주소는 열 수 없습니다. 다른 결제수단을 골라 주세요."); return; }
                 intent.setFlags(intent.getFlags() & ~(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION));
             } else intent = new Intent(Intent.ACTION_VIEW, uri);
