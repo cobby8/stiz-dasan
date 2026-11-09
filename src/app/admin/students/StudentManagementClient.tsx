@@ -18,6 +18,7 @@ import CompactListFilters from "@/components/academy/CompactListFilters";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
+import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 
 const ExcelUploadModal = dynamic(() => import("./ExcelUploadModal"), {
     ssr: false,
@@ -55,6 +56,7 @@ type Student = {
         status: string;
         displayStatus?: string;
         startsOn?: string | null;
+        startsLater?: boolean;
         dayOfWeek: string;
         startTime: string;
         slotKey: string | null;
@@ -242,7 +244,8 @@ function getLatestStatus(enrollments: Student["enrollments"]): string | null {
     let latestTime = latest.createdAt ? new Date(latest.createdAt).getTime() : 0;
 
     for (const enrollment of enrollments) {
-        if ((enrollment.displayStatus ?? enrollment.status) === "ACTIVE") return "ACTIVE";
+        // 2026-11-09 새 기준: ACTIVE 면 개시일과 무관하게 활성(공용 판정 isCurrentEnrollment)
+        if (isCurrentEnrollment(enrollment.status)) return "ACTIVE";
 
         const createdAt = enrollment.createdAt ? new Date(enrollment.createdAt).getTime() : 0;
         if (createdAt > latestTime) {
@@ -251,20 +254,17 @@ function getLatestStatus(enrollments: Student["enrollments"]): string | null {
         }
     }
 
-    if (enrollments.some((enrollment) => enrollment.displayStatus === "SCHEDULED")) return "SCHEDULED";
-    return latest.displayStatus ?? latest.status;
+    return latest.status;
 }
 
 function getStatusLabel(status: string | null) {
     if (status === "ACTIVE") return "활성";
-    if (status === "SCHEDULED") return "수강 예정";
     if (status === "PAUSED") return "휴원";
     if (status === "WITHDRAWN") return "퇴원";
     return "미배정";
 }
 
 function getStatusPillClass(status: string | null) {
-    if (status === "SCHEDULED") return "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] ring-[var(--color-academy-line)]";
     if (status === "ACTIVE") return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20";
     if (status === "PAUSED") return "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20";
     if (status === "WITHDRAWN") return "bg-red-50 text-red-700 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20";
@@ -272,7 +272,7 @@ function getStatusPillClass(status: string | null) {
 }
 
 function getAssignedEnrollments(enrollments: Student["enrollments"]) {
-    return (enrollments ?? []).filter((enrollment) => ["ACTIVE", "SCHEDULED"].includes(enrollment.displayStatus ?? enrollment.status));
+    return (enrollments ?? []).filter((enrollment) => isCurrentEnrollment(enrollment.status));
 }
 
 // 「반별 보기」에서 쓰는 묶음 한 개(반 하나 또는 맨 끝 «반 없음»)
@@ -297,7 +297,6 @@ const STUDENT_VIEW_OPTIONS = [
 // 상태 칩 순서와 이름. 값은 필터 모달 «수강 상태» select 의 값과 같다(칩·select 가 한 상태를 공유)
 const STUDENT_STATUS_CHIPS = [
     { value: "ACTIVE", label: "활성" },
-    { value: "SCHEDULED", label: "수강 예정" },
     { value: "PAUSED", label: "휴원" },
     { value: "WITHDRAWN", label: "퇴원" },
     { value: "NONE", label: "미배정" },
@@ -584,7 +583,7 @@ export default function StudentManagementClient({
         setFilterClass("");
         setFilterGrade("");
         setFilterSchool("");
-        // 반을 골랐으면 «전체»(시작일이 미래면 «수강 예정»이라 활성 필터에 안 보인다), 반 나중 배정이면 «미배정»
+        // 반을 골랐으면 «전체»(개시일이 미래여도 활성이지만 기존 동작 유지), 반 나중 배정이면 «미배정»
         setFilterStatus(result.classCount > 0 ? "" : "NONE");
         setDetailStudentId(result.studentId);
         setFormNotice([
@@ -628,7 +627,6 @@ export default function StudentManagementClient({
     // 최신 enrollment 기준으로 학생의 대표 상태를 판단
     const loadedStatusCounts = useMemo(() => {
         let active = 0;
-        let scheduled = 0;
         let paused = 0;
         let withdrawn = 0;
         let noEnrollment = 0;
@@ -639,8 +637,6 @@ export default function StudentManagementClient({
                 noEnrollment++;
             } else if (status === "ACTIVE") {
                 active++;
-            } else if (status === "SCHEDULED") {
-                scheduled++;
             } else if (status === "PAUSED") {
                 paused++;
             } else if (status === "WITHDRAWN") {
@@ -650,7 +646,7 @@ export default function StudentManagementClient({
             }
         }
 
-        return { active, scheduled, paused, withdrawn, noEnrollment, total: students.length };
+        return { active, paused, withdrawn, noEnrollment, total: students.length };
     }, [students, studentStatusById]);
     // 현재 인원은 실제 수강 등록으로 집계한다. 과거 시트 요약으로 덮어쓰지 않는다.
     const statusCounts = loadedStatusCounts;
@@ -676,7 +672,7 @@ export default function StudentManagementClient({
             }
             // 반(Class) 필터: 해당 반에 수강 중인 학생만
             if (filterClass) {
-                const hasClass = s.enrollments?.some((e) => e.classId === filterClass && ["ACTIVE", "SCHEDULED"].includes(e.displayStatus ?? e.status));
+                const hasClass = s.enrollments?.some((e) => e.classId === filterClass && isCurrentEnrollment(e.status));
                 if (!hasClass) return false;
             }
             // 학년 필터
@@ -788,7 +784,7 @@ export default function StudentManagementClient({
         if (activeEnrollments.length > 0) {
             return sortEnrollmentsByDay(activeEnrollments).map((e) => (
                 <span key={e.classId} className="mr-2 inline-block">
-                    {shortenClassName(e)}{e.displayStatus === "SCHEDULED" && <span className="ml-1 text-xs text-[var(--color-academy-primary)]">{e.startsOn} 수강 예정</span>}
+                    {shortenClassName(e)}{e.startsLater && <span className="ml-1 text-xs text-[var(--color-academy-primary)]">{e.startsOn} 개시</span>}
                 </span>
             ));
         }
@@ -965,7 +961,6 @@ export default function StudentManagementClient({
                     >
                         <option value="">전체 상태</option>
                         <option value="ACTIVE">활성</option>
-                        <option value="SCHEDULED">수강 예정</option>
                         <option value="PAUSED">휴원</option>
                         <option value="WITHDRAWN">퇴원</option>
                         <option value="NONE">미배정</option>
@@ -1100,7 +1095,6 @@ export default function StudentManagementClient({
                         value: chip.value,
                         label: chip.label,
                         count: chip.value === "ACTIVE" ? statusCounts.active
-                            : chip.value === "SCHEDULED" ? (statusCounts.scheduled ?? loadedStatusCounts.scheduled)
                             : chip.value === "PAUSED" ? statusCounts.paused
                                 : chip.value === "WITHDRAWN" ? statusCounts.withdrawn
                                     : statusCounts.noEnrollment,
@@ -1139,7 +1133,6 @@ export default function StudentManagementClient({
                 <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2 lg:grid-cols-3">
                     {classGroups.map((group) => {
                         const collapsed = collapsedClassKeys.has(group.key);
-                        const scheduledCount = group.students.filter((student) => student.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.displayStatus === "SCHEDULED")).length;
                         return (
                             <section
                                 key={group.key}
@@ -1158,7 +1151,7 @@ export default function StudentManagementClient({
                                         <span className="text-xs text-[var(--color-academy-muted)]">{group.startTime}</span>
                                     )}
                                     <span className="ml-auto text-xs font-bold text-[var(--color-academy-ink)]">
-                                        {scheduledCount > 0 ? `수강 중 ${group.students.length - scheduledCount}명 · 예정 ${scheduledCount}명` : `${group.students.length}명`}
+                                        {`${group.students.length}명`}
                                     </span>
                                     <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">
                                         {collapsed ? "expand_more" : "expand_less"}
@@ -1184,7 +1177,7 @@ export default function StudentManagementClient({
                                                     className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
                                                 >
                                                     {s.name}
-                                                    {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.displayStatus === "SCHEDULED") && <span className="ml-1 text-xs font-normal text-[var(--color-academy-primary)]">예정</span>}
+                                                    {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-primary)]">개시 전</span>}
                                                 </Link>
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
                                                 {/* 학교+연락처: 넉넉하면 한 줄, 카드가 좁으면 연락처가 학교 아래로 내려간다(학교 이름이 한 글자씩 꺾이지 않게) */}
@@ -1329,7 +1322,7 @@ export default function StudentManagementClient({
                                         {e.className}
                                         <span className="ml-1 text-[var(--color-academy-muted)]">
                                             ({DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime})
-                                            {e.displayStatus === "SCHEDULED" && ` · ${e.startsOn} 수강 예정`}
+                                            {e.startsLater && ` · ${e.startsOn} 개시`}
                                         </span>
                                     </li>
                                 ))}

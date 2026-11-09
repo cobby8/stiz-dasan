@@ -46,8 +46,12 @@ test("날짜는 시차 없는 달력 값이며 윤년·잘못된 입력·기간 
  assert.equal(commencement.requireCommencement("2028-02-29"),"2028-02-29");
  for(const value of [null,"", "2026-02-29","2026-13-01","2026-11-01T00:00:00Z","1999-12-31","2101-01-01"]){assert.throws(()=>commencement.requireCommencement(value));}
 });
-test("예정→개시일 당일 출결 포함, 기존 이력 null과 휴원 상태를 보존",()=>{
- assert.equal(commencement.enrollmentDisplayStatus("ACTIVE","2026-12-01","2026-11-30"),"SCHEDULED");
+test("개시일 미래 ACTIVE=수강 중, 개시일 당일부터 출결 포함, 기존 이력 null과 휴원 상태를 보존",()=>{
+ // 2026-11-09 원장 기준: 개시일이 미래여도 ACTIVE 는 수강 중(예정으로 빼지 않는다)
+ assert.equal(commencement.enrollmentDisplayStatus("ACTIVE","2026-12-01","2026-11-30"),"ACTIVE");
+ assert.equal(commencement.isCurrentEnrollment("ACTIVE"),true);
+ assert.equal(commencement.enrollmentStartsLater("2026-12-01","2026-11-30"),true);
+ assert.equal(commencement.enrollmentStartsLater("2026-11-30","2026-11-30"),false);
  assert.equal(commencement.enrollmentDisplayStatus("PAUSED","2026-12-01","2026-11-30"),"PAUSED");
  assert.equal(commencement.enrollmentHasStarted("2026-12-01","2026-11-30"),false);
  assert.equal(commencement.enrollmentHasStarted("2026-12-01","2026-12-01"),true);

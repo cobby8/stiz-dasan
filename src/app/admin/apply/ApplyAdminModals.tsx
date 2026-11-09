@@ -568,7 +568,7 @@ function ApproveModal({
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <label className="block space-y-1 text-sm font-bold">수강 개시일 *
                         <input aria-label="확정 수강 개시일" required type="date" value={startOn} disabled={busy} onChange={event => setStartOn(event.target.value)} className={`${MODAL_INPUT_CLASS} box-border min-h-11 min-w-0 max-w-full text-[17px]`} />
-                        <span className="block text-xs font-normal text-[var(--color-academy-muted)]">미래 날짜는 수강 예정으로 표시하며 해당 날짜부터 출결에 포함합니다.</span>
+                        <span className="block text-xs font-normal text-[var(--color-academy-muted)]">승인하면 바로 수강 중(재원생)으로 등록됩니다. 이 날짜는 출석부·수강료 시수 계산의 시작일입니다.</span>
                     </label>
                     <section aria-label="보호자 계정 연결" className="space-y-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
                         <label className="grid gap-1 text-sm font-bold" htmlFor="enrollment-parent-account">연결할 보호자 계정 *</label>

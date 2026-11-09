@@ -10,6 +10,7 @@
  *  2) 그래도 새는 경우는 DB EXCLUDE 제약(GymRentalRequest_no_overlap)이 막는다 → 23P01 오류.
  */
 import { addDaysKst, isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
+import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
 import {
   RENTAL_HOLDING_STATUSES,
   RENTAL_START_STEP_MINUTES,
@@ -189,14 +190,14 @@ export async function listRentalMemberStudents(db: RawSqlClient, viewer: RentalM
   if (!viewer || viewer.role !== "PARENT") return [];
   // accessSql 은 코드가 만든 조각만 받는다(사용자 입력 아님 — childAccessSql 가 식별자를 검사한다)
   if (!/^\(?s\."parentId" = \$1/.test(viewer.accessSql)) return [];
+  // 재원생 = ACTIVE 수강이 있는 학생(승인일부터). 개시일 전이어도 재원생이다(2026-11-09 원장 기준, 공용 판정 currentEnrollmentSql)
   return db.$queryRawUnsafe<RentalMemberStudent[]>(
     `SELECT s.id, s.name FROM "Student" s
       WHERE s."mergedIntoStudentId" IS NULL
         AND ${viewer.accessSql}
         AND EXISTS (
           SELECT 1 FROM "Enrollment" e JOIN "Class" c ON c.id = e."classId"
-           WHERE e."studentId" = s.id AND e.status = 'ACTIVE' AND c.name NOT LIKE '[%'
-             AND (e."startsOn" IS NULL OR e."startsOn" <= (now() AT TIME ZONE 'Asia/Seoul')::date)
+           WHERE e."studentId" = s.id AND ${currentEnrollmentSql("e")} AND c.name NOT LIKE '[%'
         )
       ORDER BY s.name ASC
       LIMIT 20`,

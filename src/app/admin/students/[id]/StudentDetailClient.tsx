@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, useTransition, type FormEvent } from 
 import Link from "next/link";
 import { updateEnrollmentStatus, updateStudentMemo, updateStudent, updateStudentUniform, updatePaymentStatus, enrollStudent } from "@/app/actions/admin";
 import { todayKst } from "@/lib/datetime/kst";
+import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
@@ -52,7 +53,6 @@ const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
 };
 const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
     ACTIVE: { label: "수강 중", color: "bg-lime-100 text-lime-800 ring-1 ring-lime-200 dark:bg-lime-300/15 dark:text-lime-100 dark:ring-lime-300/25" },
-    SCHEDULED: { label: "수강 예정", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] ring-1 ring-[var(--color-academy-line)]" },
     PAUSED: { label: "휴원", color: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20" },
     WITHDRAWN: { label: "퇴원", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
     NONE: { label: "미배정", color: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700" },
@@ -170,7 +170,7 @@ type StudentActivityData = {
         parent: { name: string | null; phone: string | null; email: string | null };
     };
     enrollments: {
-        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; createdAt: Date | string;
+        id: string; classId: string; status: string; displayStatus?: string; startsOn?: string | null; startsLater?: boolean; createdAt: Date | string;
         className: string; dayOfWeek: string; startTime: string; endTime: string; programName: string;
     }[];
     attendances: { id: string; status: string; date: Date | string; className: string }[];
@@ -237,8 +237,8 @@ function getInvoiceStatusInfo(status: string | null | undefined) {
 
 function getRepresentativeEnrollmentStatus(enrollments: StudentActivityData["enrollments"]) {
     if (enrollments.length === 0) return null;
-    if (enrollments.some((enrollment) => (enrollment.displayStatus ?? enrollment.status) === "ACTIVE")) return "ACTIVE";
-    if (enrollments.some((enrollment) => enrollment.displayStatus === "SCHEDULED")) return "SCHEDULED";
+    // 2026-11-09 새 기준: ACTIVE 수강이 하나라도 있으면 개시일과 무관하게 «수강 중»(공용 판정 isCurrentEnrollment)
+    if (enrollments.some((enrollment) => isCurrentEnrollment(enrollment.status))) return "ACTIVE";
 
     return [...enrollments].sort((a, b) => {
         const bTime = new Date(b.createdAt).getTime();
@@ -248,7 +248,7 @@ function getRepresentativeEnrollmentStatus(enrollments: StudentActivityData["enr
 }
 
 function sortEnrollments(enrollments: StudentActivityData["enrollments"]) {
-    const statusOrder: Record<string, number> = { ACTIVE: 0, SCHEDULED: 1, PAUSED: 2, WITHDRAWN: 3 };
+    const statusOrder: Record<string, number> = { ACTIVE: 0, PAUSED: 2, WITHDRAWN: 3 };
 
     return [...enrollments].sort((a, b) => {
         const statusDiff = (statusOrder[a.displayStatus ?? a.status] ?? 9) - (statusOrder[b.displayStatus ?? b.status] ?? 9);
@@ -892,7 +892,8 @@ export default function StudentDetailClient({
                     </p>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {DAY_LABELS[enrollment.dayOfWeek] || enrollment.dayOfWeek} {enrollment.startTime}~{enrollment.endTime} · {enrollment.programName}
-                        {enrollment.startsOn && ` · ${enrollment.startsOn} 개시`}
+                        {/* 개시일은 안내만(상태는 수강 중 그대로) — 첫 수업 전이면 «개시 예정»으로 */}
+                        {enrollment.startsOn && ` · ${enrollment.startsOn} ${enrollment.startsLater ? "개시 예정" : "개시"}`}
                     </p>
                 </div>
                 {/* 우측: 상태 세그먼트. 퇴원도 이력을 보존하는 상태 변경으로 처리한다. */}
@@ -924,9 +925,9 @@ export default function StudentDetailClient({
     }
 
     const sortedEnrollments = sortEnrollments(enrollments);
-    const activeEnrollments = sortedEnrollments.filter(e => (e.displayStatus ?? e.status) === "ACTIVE");
-    const scheduledEnrollments = sortedEnrollments.filter(e => e.displayStatus === "SCHEDULED");
-    const inactiveEnrollments = sortedEnrollments.filter(e => !["ACTIVE", "SCHEDULED"].includes(e.displayStatus ?? e.status));
+    // 수강 중 = ACTIVE(승인일부터). 개시일이 미래여도 여기 센다 — 개시일은 청구 시수·출석부 회차에만 쓴다
+    const activeEnrollments = sortedEnrollments.filter(e => isCurrentEnrollment(e.status));
+    const inactiveEnrollments = sortedEnrollments.filter(e => !isCurrentEnrollment(e.status));
     const representativeStatus = getRepresentativeEnrollmentStatus(enrollments);
     const representativeStatusInfo = getEnrollmentStatusInfo(representativeStatus);
     const totalPaid = payments.filter(p => p.status === "PAID").reduce((s, p) => s + p.amount, 0);
@@ -1078,7 +1079,7 @@ export default function StudentDetailClient({
                         <p className="text-2xl font-extrabold text-gray-900 dark:text-white">
                             {activeEnrollments.length}<span className="text-base"> 개 반</span>
                         </p>
-                        <p className="truncate text-xs text-gray-400">수강 예정 {scheduledEnrollments.length}개 · 이전/휴원 {inactiveEnrollments.length}개</p>
+                        <p className="truncate text-xs text-gray-400">이전/휴원 {inactiveEnrollments.length}개</p>
                     </div>
                 </div>
 
@@ -1401,12 +1402,11 @@ export default function StudentDetailClient({
                                         </div>
                                     );
                                 })()}
-                                {activeEnrollments.length === 0 && scheduledEnrollments.length === 0 ? (
+                                {activeEnrollments.length === 0 ? (
                                     <EmptyState text="수강 중인 반이 없습니다." />
                                 ) : (
                                     <div className="space-y-2.5">
                                         {activeEnrollments.map(renderEnrollmentRow)}
-                                        {scheduledEnrollments.map(renderEnrollmentRow)}
                                     </div>
                                 )}
                                 {inactiveEnrollments.length > 0 && (

@@ -13,9 +13,30 @@ export function requireCommencement(value: unknown): string {
   if (!date || date < "2000-01-01" || date > "2100-12-31") throw new Error("수강 개시일을 정확히 선택해 주세요.");
   return date;
 }
-export function enrollmentDisplayStatus(status: string, startsOn: unknown, today: string): string {
+/*
+ * 수강 «상태» 판정 규칙 (2026-11-09 원장 지시로 개정 — 이 파일 한 곳에서만 정한다)
+ * - Enrollment 가 ACTIVE 면 등록(승인)한 날부터 «수강 중/재원생»이다. 개시일이 미래여도 «수강 예정»으로 따로 빼지 않는다.
+ * - 개시일(startsOn)은 ① 청구 수강료 시수 계산 ② 그날 이전 수업 회차 출석부 명단 제외 에만 쓴다(enrollmentHasStarted).
+ * 옛 규칙(개시일 > 오늘 이면 SCHEDULED)은 폐기됐다. displayStatus 는 화면 호환을 위해 남겨 두지만 status 와 같다.
+ */
+export const CURRENT_ENROLLMENT_STATUS = "ACTIVE";
+/** 수강 중(재원) 여부 — 개시일과 무관하게 상태만 본다 */
+export function isCurrentEnrollment(status: string | null | undefined): boolean {
+  return status === CURRENT_ENROLLMENT_STATUS;
+}
+/** SQL 쪽 같은 규칙. alias = Enrollment 별칭(코드가 정한 식별자만 넣는다) */
+export function currentEnrollmentSql(alias: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error("invalid alias");
+  return `${alias}.status = '${CURRENT_ENROLLMENT_STATUS}'`;
+}
+/** 화면 표시 상태 — 새 기준에선 status 그대로(개시일이 미래인 ACTIVE 도 ACTIVE) */
+export function enrollmentDisplayStatus(status: string, _startsOn?: unknown, _today?: string): string {
+  return status;
+}
+/** 개시일이 오늘보다 뒤인가 — «11-13 개시» 같은 안내 문구에만 쓴다(상태·인원 판정에 쓰지 말 것) */
+export function enrollmentStartsLater(startsOn: unknown, today: string): boolean {
   const start = commencementYmd(startsOn);
-  return status === "ACTIVE" && start && start > today ? "SCHEDULED" : status;
+  return !!start && isKstYmd(today) && start > today;
 }
 /** SQL의 DATE와 일치하는 날짜 판정. 기존 null 개시일은 기존 동작을 보존한다. */
 export function enrollmentHasStarted(startsOn: unknown, on: string): boolean {

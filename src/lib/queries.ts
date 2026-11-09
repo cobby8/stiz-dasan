@@ -1,4 +1,4 @@
-import { commencementYmd, enrollmentDisplayStatus } from "@/lib/enrollment/commencement";
+import { commencementYmd, currentEnrollmentSql, enrollmentDisplayStatus, enrollmentStartsLater } from "@/lib/enrollment/commencement";
 import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 import { childAccessSql } from "@/lib/account/child-access";
 /**
@@ -414,7 +414,9 @@ export const getStudents = cache(async (limit?: number) => {
                             'className', c.name,
                             'status', e.status,
                             'startsOn', e."startsOn",
-                            'displayStatus', CASE WHEN e.status='ACTIVE' AND e."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date THEN 'SCHEDULED' ELSE e.status END,
+                            /* 2026-11-09 새 기준: ACTIVE 면 개시일이 미래여도 수강 중(displayStatus = status). 개시일 미래 여부는 안내 문구용 startsLater 로만 */
+                            'displayStatus', e.status,
+                            'startsLater', COALESCE(e."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date, false),
                             'dayOfWeek', c."dayOfWeek",
                             'startTime', c."startTime",
                             'slotKey', c."slotKey",
@@ -492,10 +494,7 @@ export const getStudents = cache(async (limit?: number) => {
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
-                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND (due."startsOn" IS NULL OR due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date)) THEN 'ACTIVE'
-                      WHEN EXISTS (SELECT 1 FROM "Enrollment" planned WHERE planned."studentId"=s.id AND planned.status='ACTIVE' AND planned."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date)
-                      AND NOT EXISTS (SELECT 1 FROM "Enrollment" started WHERE started."studentId"=s.id AND started.status='ACTIVE' AND (started."startsOn" IS NULL OR started."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date))
-                      THEN 'SCHEDULED'
+                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND ${currentEnrollmentSql("due")}) THEN 'ACTIVE'
                       WHEN EXISTS (SELECT 1 FROM "Enrollment" paused WHERE paused."studentId"=s.id AND paused.status='PAUSED') THEN 'PAUSED'
                       WHEN EXISTS (SELECT 1 FROM "Enrollment" withdrawn WHERE withdrawn."studentId"=s.id AND withdrawn.status='WITHDRAWN') THEN 'WITHDRAWN'
                       ELSE NULL END AS current_status
@@ -585,6 +584,8 @@ export const getStudentWithEnrollments = cache(async (id: string) => {
                 status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -1232,6 +1233,8 @@ export async function getMyPageData(parentUserId: string) {
                         status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                         className: e.class_name,
                         dayOfWeek: e.dayOfWeek ?? e.dayofweek,
                         startTime: e.startTime ?? e.starttime,
@@ -2120,6 +2123,8 @@ export async function getStudentActivity(studentId: string) {
                 status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -2667,6 +2672,8 @@ export const getClassWithStudents = cache(async (classId: string) => {
                 enrollmentId: s.enrollment_id,
                 startsOn: commencementYmd(s.startsOn ?? s.startson),
                 displayStatus: enrollmentDisplayStatus(s.status, s.startsOn ?? s.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(s.startsOn ?? s.startson, todayKst()),
                 status: s.status,
                 enrolledAt: s.enrolled_at,
                 studentId: s.student_id,

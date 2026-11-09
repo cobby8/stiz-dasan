@@ -252,12 +252,13 @@ test("신청: 로그인 학부모의 연결 재원생이면 2시간 0원·보증
   assert.equal(v[17], "student-1"); // memberStudentId
   assert.deepEqual([v[18], v[19], v[20]], [null, null, null]); // 보증금 0 → 환불 계좌 저장 안 함
   assert.equal(v[21], "parent-1"); // applicantUserId
-  // 학생 범위 = 마이페이지 «내 자녀»(childAccessSql 조각 그대로) + 재원(병합 제외·시작된 ACTIVE·끝난 반 제외)
+  // 학생 범위 = 마이페이지 «내 자녀»(childAccessSql 조각 그대로) + 재원(병합 제외·ACTIVE·끝난 반 제외)
   const sql = db.memberQuery.sql;
   assert.ok(sql.includes(FAMILY_ACCESS), "childAccessSql 조각을 그대로 쓴다(가족 연결 포함)");
   assert.match(sql, /"mergedIntoStudentId" IS NULL/);
   assert.match(sql, /e\.status = 'ACTIVE'/);
-  assert.match(sql, /"startsOn" IS NULL OR e\."startsOn" <= \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
+  // 2026-11-09 원장 기준: 승인(ACTIVE)일부터 재원생 — 개시일 전이어도 무료 대관 대상
+  assert.doesNotMatch(sql, /startsOn/);
   assert.match(sql, /c\.name NOT LIKE '\[%'/);
   assert.doesNotMatch(sql, /phone|regexp_replace/i, "이름·번호 대조는 쓰지 않는다");
   assert.deepEqual(db.memberQuery.values, ["parent-1"]);
