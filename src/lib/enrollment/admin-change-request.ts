@@ -300,7 +300,7 @@ export async function decideEnrollmentChangeRequest(input: {
     if (decided[0].kind !== "PAUSE") throw new SettlementRejected("수강료 처리는 휴원 신청에만 고를 수 있어요.");
     const result = await executePauseSettlementInTx(tx as any, {
       requestId: input.requestId, adminUserId: input.adminUserId,
-      mode: settlementChoice.mode, expectedPreviewKey: settlementChoice.expectedPreviewKey, classDatesFor,
+      mode: settlementChoice.mode, expectedPreviewKey: settlementChoice.expectedPreviewKey, classDatesFor, decidedSince: PAUSE_SETTLEMENT_SINCE,
     });
     if (!result.ok) throw new SettlementRejected(result.message);
     holder.settled = result;
@@ -384,7 +384,7 @@ export async function settleApprovedPause(input: { adminUserId: string; requestI
     settled = await prisma.$transaction(async (tx) => {
       const result = await executePauseSettlementInTx(tx as any, {
         requestId: input.requestId, adminUserId: input.adminUserId,
-        mode: input.settlement?.mode, expectedPreviewKey: input.settlement?.expectedPreviewKey, classDatesFor,
+        mode: input.settlement?.mode, expectedPreviewKey: input.settlement?.expectedPreviewKey, classDatesFor, decidedSince: PAUSE_SETTLEMENT_SINCE,
       });
       // 처리 실패면 트랜잭션 전체를 되돌린다(감액 일부만 남지 않게)
       if (!result.ok) throw new SettlementRejected(result.message);
@@ -740,11 +740,17 @@ export async function decideEnrollmentCancelRequest(input: {
   note?: string | null;
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
-  // 휴원 수강료 처리(환불·이월·감액)가 이미 실행된 휴원은 «취소 승인»으로 되돌리지 않는다 — 돈이 이미 움직였다.
-  if (input.approve && await hasMovedMoneySettlement(prisma, input.requestId)) {
-    return { ok: false as const, message: "이 휴원은 수강료 처리(환불·이월·감액)가 이미 실행돼 여기서 취소할 수 없어요. 수강료를 먼저 정리한 뒤 학원에서 직접 처리해 주세요." };
-  }
+  const blocked = { movedMoney: false };
   const rows = await prisma.$transaction(async (tx) => {
+    // 휴원 수강료 처리(환불·이월·감액)가 이미 실행된 휴원은 «취소 승인»으로 되돌리지 않는다 — 돈이 이미 움직였다.
+    // 신청 행을 먼저 잠근 뒤 확인한다 — 처리 실행(executePauseSettlementInTx)도 같은 행을 잠그므로 둘이 엇갈리지 않는다.
+    if (input.approve) {
+      await tx.$queryRawUnsafe(`SELECT id FROM "EnrollmentChangeRequest" WHERE id = $1 FOR UPDATE`, input.requestId);
+      if (await hasMovedMoneySettlement(tx as any, input.requestId)) {
+        blocked.movedMoney = true;
+        return [];
+      }
+    }
     const decided = input.approve
       // 승인 = 대상 신청 취소. 적용 전·적용일 > KST 오늘·아직 운영 원장(적용 명령)이 없을 때만.
       ? await tx.$queryRawUnsafe<any[]>(
@@ -773,6 +779,9 @@ export async function decideEnrollmentCancelRequest(input: {
     }});
     return decided;
   });
+  if (blocked.movedMoney) {
+    return { ok: false as const, message: "이 휴원은 수강료 처리(환불·이월·감액)가 이미 실행돼 여기서 취소할 수 없어요. 수강료를 먼저 정리한 뒤 학원에서 직접 처리해 주세요." };
+  }
   if (!rows[0]) {
     return {
       ok: false as const,

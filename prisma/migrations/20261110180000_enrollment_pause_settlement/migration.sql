@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS "EnrollmentChangeSettlementLine" (
   "missedDates" JSONB NOT NULL DEFAULT '[]'::jsonb,
   -- 토스 부분 취소에 쓴 거래(PaymentTransaction.id)
   "transactionId" TEXT,
+  -- 토스 부분 취소가 «확실히 실패»한 횟수 — 다시 시도의 멱등 키에 섞는다(결과 모름일 때는 같은 키로 확인만)
+  "failedAttempts" INTEGER NOT NULL DEFAULT 0,
   message TEXT,
   "doneByUserId" TEXT,
   "doneAt" TIMESTAMPTZ(6),

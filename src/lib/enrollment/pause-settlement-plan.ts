@@ -51,8 +51,10 @@ export type PausePaymentInput = {
   classDates: string[];
   /** 같은 청구에서 다른 휴원 처리가 이미 뺀 날 */
   settledDates: string[];
-  /** 다른 처리가 이 미납 청구에서 이미 줄인 금액(회당 단가를 원래 청구 금액으로 계산하려고) */
+  /** 다른 처리가 이 청구에서 이미 줄인 금액(휴원 감액·이월 차감 — 회당 단가를 원래 청구 금액으로 계산하려고) */
   priorReduction: number;
+  /** 그중 이월 차감 금액(있으면 남은 금액보다 많이 빼야 할 때 자동 처리하지 않는다) */
+  carryApplied?: number;
 };
 
 export type PausePlanLine = {
@@ -61,7 +63,7 @@ export type PausePlanLine = {
   ym: string;
   paid: boolean;
   channel: SettlementChannel;
-  /** 단가 계산에 쓴 청구 금액(미납이면 이미 줄인 금액을 더한 원래 금액) */
+  /** 단가 계산에 쓴 청구 금액(이미 줄인 금액을 더한 원래 금액) */
   billAmount: number;
   totalSessions: number;
   missedDates: string[];
@@ -120,8 +122,9 @@ export function planPauseSettlement(input: {
     const dates = [...new Set(p.classDates)].sort();
     // 이 청구 기간에 휴원이 닿는지 먼저 본다 — 일정이 없으면 닿는지도 알 수 없다
     if (dates.length === 0) {
-      // 휴원 시작 수강월보다 앞선 청구는 일정이 없어도 상관없다(휴원과 무관)
-      if (ym >= input.pauseFrom.slice(0, 7)) problems.push(`${ym} 수강월 수업일이 연간 일정에 없어 금액을 계산할 수 없어요.`);
+      // 휴원 시작 수강월보다 앞선 청구, 복귀일이 있는데 복귀 수강월보다 뒤인 청구는 일정이 없어도 상관없다(휴원과 무관)
+      const afterResume = Boolean(input.resumeOn) && ym > String(input.resumeOn).slice(0, 7);
+      if (ym >= input.pauseFrom.slice(0, 7) && !afterResume) problems.push(`${ym} 수강월 수업일이 연간 일정에 없어 금액을 계산할 수 없어요.`);
       continue;
     }
     const settled = new Set(p.settledDates);
@@ -131,9 +134,16 @@ export function planPauseSettlement(input: {
       problems.push(`${ym} 청구는 지금 결제가 진행 중이에요. 결제가 끝나거나 취소된 뒤 다시 해 주세요.`);
       continue;
     }
-    const billAmount = paid ? p.amount : p.amount + Math.max(0, p.priorReduction);
-    // 지금 남은 청구 금액보다 많이 뺄 수는 없다(이미 줄인 미납 청구)
-    const amount = Math.min(pauseLineAmount(billAmount, missed.length, dates.length), p.amount);
+    // 단가는 원래 청구 금액 기준(이미 줄인 감액·이월 차감을 되더한다 — 줄인 뒤 납부한 청구도 같다)
+    const billAmount = p.amount + Math.max(0, p.priorReduction);
+    const raw = pauseLineAmount(billAmount, missed.length, dates.length);
+    // 다른 휴원의 이월이 차감된 달인데 남은 금액보다 더 빼야 하면, 그냥 깎으면 그 이월이 사라진다 → 사람이 확인
+    if (raw > p.amount && (p.carryApplied ?? 0) > 0) {
+      problems.push(`${ym} 청구는 이월이 차감된 달이라 자동으로 뺄 수 없어요. 직접 확인해 주세요.`);
+      continue;
+    }
+    // 지금 남은 청구 금액보다 많이 뺄 수는 없다(이미 줄인 청구·낸 금액)
+    const amount = Math.min(raw, p.amount);
     if (amount <= 0) continue;
     lines.push({
       paymentId: p.paymentId,
@@ -205,7 +215,7 @@ const won = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 
 /** 사람이 해야 할 일 문장(관리자 화면). 할 일이 아니면 null. */
 export function settlementTodoText(line: { kind: string; channel: string; amount: number; status: string }): string | null {
-  if (line.status === "FAILED") return `토스 부분 취소 ${won(line.amount)} 확인 필요 — 다시 시도하거나 토스 상점관리자에서 직접 취소`;
+  if (line.status === "FAILED") return `토스 부분 취소 ${won(line.amount)} 확인 필요 — 다시 시도하거나, 토스 상점관리자에서 직접 취소했다면 «직접 처리함»을 눌러 주세요`;
   if (line.status === "REQUESTED") return `토스 부분 취소 ${won(line.amount)} 결과 확인 중 — 다시 시도로 확인`;
   if (line.status !== "TODO") return null;
   if (line.kind === "UNPAID_REDUCE") return `랠리즈 청구에서 ${won(line.amount)} 감액`;

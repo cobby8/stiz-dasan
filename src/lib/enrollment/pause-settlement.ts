@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
+import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
 import {
   describePausePlan,
   isSettlementMode,
@@ -39,6 +40,8 @@ export type ClassDatesFor = (yearMonth: string, dayOfWeek: string) => string[];
 
 export type TossPartialRefund = (input: {
   transactionId: string; paymentId: string; amount: number; lineId: string; adminUserId: string;
+  /** 확실히 실패한 횟수(멱등 키에 섞는다) */ attempt?: number;
+  /** 이 줄을 만든 시각(ISO) */ notBefore?: string;
 }) => Promise<{ ok: true; alreadyApplied: boolean } | { ok: false; message: string; uncertain: boolean }>;
 
 const WORKBENCH_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))";
@@ -66,13 +69,16 @@ const TX_COVERS_P = `(t."paymentId" = p.id OR EXISTS (SELECT 1 FROM "PaymentTran
 type PauseRequestRow = {
   id: string; kind: string; status: string; studentId: string; fromClassId: string | null;
   pauseFrom: string; resumeOn: string | null; dayOfWeek: string | null;
+  /** 원장이 결정한 날(KST "YYYY-MM-DD") — 기능 시작 전 승인 건을 거르려고 */
+  decidedOn?: string | null;
 };
 
 async function loadPauseRequest(db: SettlementSql, requestId: string, lock: boolean): Promise<PauseRequestRow | null> {
   const rows = await db.$queryRawUnsafe<PauseRequestRow[]>(
     `SELECT r.id, r.kind, r.status, r."studentId", r."fromClassId",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "pauseFrom", to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
-            c."dayOfWeek"
+            c."dayOfWeek",
+            to_char(r."decidedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "decidedOn"
        FROM "EnrollmentChangeRequest" r
        LEFT JOIN "Class" c ON c.id = r."fromClassId"
       WHERE r.id = $1
@@ -83,45 +89,71 @@ async function loadPauseRequest(db: SettlementSql, requestId: string, lock: bool
 }
 
 /** 휴원한 반의 수강료 청구(휴원 시작 수강월 한 달 앞부터) + 결제 경로·진행 중 여부 + 이미 처리된 날 */
-async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tablesReady: boolean, lock: boolean, classDatesFor: ClassDatesFor) {
+/** 이 휴원이 볼 청구의 범위(학생·반·수강료·휴원 시작 수강월 한 달 앞부터) — 별칭 p, 인자 $1 학생 · $2 반 · $3 YYYYMM */
+const PAUSE_PAYMENT_SCOPE = `p."studentId" = $1 AND p."classId" = $2 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
+        AND p.status IN ('PAID','PENDING','OVERDUE') AND p.year IS NOT NULL AND p.month IS NOT NULL
+        AND (p.year * 100 + p.month) >= $3`;
+
+/** 현장 결제(POS) 요청에 묶인 청구 — 별칭 p */
+const POS_BUSY_P = `(EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."paymentId" = p.id AND pi."open")
+             OR EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT')))`;
+
+/**
+ * 휴원한 반의 수강료 청구 + 결제 경로·진행 중 여부 + 이미 처리된 날.
+ * lock=true(실행)면 잠금 순서를 관리자 «청구서 수정»(updateUnpaidPayment)과 같게 한다 — 교착 금지:
+ *   (부르는 쪽이 이미 전역 잠금) → ① 대상 청구 id 를 잠금 없이 읽고 → ② 결제 잠금(lockPaymentsForCheckout, id 정렬순)
+ *   → ③ 그 id 들만 청구 행 FOR UPDATE → ④ 학부모 결제 진행 중 판정(findParentCheckoutActivePaymentIds).
+ * 결제 시작·승인 직전도 같은 결제 잠금을 잡고 금액을 다시 읽으므로, 감액과 «옛 금액 결제»가 엇갈리지 않는다.
+ */
+async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tablesReady: boolean, lock: boolean, classDatesFor: ClassDatesFor, nowMs = Date.now()) {
+  const scopeArgs = [req.studentId, req.fromClassId, ymNumber(req.pauseFrom.slice(0, 7), -1)];
+  let lockedIds: string[] | null = null;
+  if (lock) {
+    const candidates = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT p.id FROM "Payment" p WHERE ${PAUSE_PAYMENT_SCOPE} ORDER BY p.id`, ...scopeArgs,
+    );
+    lockedIds = candidates.map((row) => String(row.id));
+    await lockPaymentsForCheckout(db, lockedIds);
+  }
   const rows = await db.$queryRawUnsafe<any[]>(
     `SELECT p.id, p.year, p.month, p.amount, p.status, p."paidProvider", p.method,
             NOT (${rallyzMirrorExclusionSql("p")}) AS "rallyzMirror",
             tx.id AS "tossTxId", tx.method AS "tossTxMethod",
-            (EXISTS (SELECT 1 FROM "PaymentTransaction" t
-                      WHERE ${TX_COVERS_P}
-                        AND (t.status = 'WAITING_FOR_DEPOSIT'
-                             OR (t.status = 'IN_PROGRESS' AND t."updatedAt" > now() - interval '10 minutes')))
-             OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."paymentId" = p.id AND pi."open")
-             OR EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT'))) AS busy
+            ${POS_BUSY_P} AS "posBusy"
        FROM "Payment" p
        LEFT JOIN LATERAL (
          SELECT t.id, t.method FROM "PaymentTransaction" t
           WHERE t.provider = 'TOSS' AND t.status = 'DONE' AND ${TX_COVERS_P}
           ORDER BY t."approvedAt" DESC NULLS LAST LIMIT 1
        ) tx ON true
-      WHERE p."studentId" = $1 AND p."classId" = $2 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
-        AND p.status IN ('PAID','PENDING','OVERDUE') AND p.year IS NOT NULL AND p.month IS NOT NULL
-        AND (p.year * 100 + p.month) >= $3
+      WHERE ${PAUSE_PAYMENT_SCOPE}${lockedIds ? ` AND p.id = ANY($4::text[])` : ""}
       ORDER BY p.year, p.month, p.id${lock ? " FOR UPDATE OF p" : ""}`,
-    req.studentId, req.fromClassId, ymNumber(req.pauseFrom.slice(0, 7), -1),
+    ...scopeArgs, ...(lockedIds ? [lockedIds] : []),
   );
   const ids = rows.map((row) => String(row.id));
+  // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 관리자 청구서 수정과 같은 판정 함수
+  const checkoutActive = await findParentCheckoutActivePaymentIds(db, ids, nowMs);
   const settled = new Map<string, string[]>();
   const reduced = new Map<string, number>();
+  const carried = new Map<string, number>();
   if (tablesReady && ids.length > 0) {
-    const prior = await db.$queryRawUnsafe<Array<{ paymentId: string; kind: string; amount: number; missedDates: unknown }>>(
-      `SELECT l."paymentId", l.kind, l.amount, l."missedDates"
+    const prior = await db.$queryRawUnsafe<Array<{ paymentId: string; kind: string; amount: number; missedDates: unknown; requestCanceled: boolean }>>(
+      `SELECT l."paymentId", l.kind, l.amount, l."missedDates", (r.status = 'CANCELED') AS "requestCanceled"
          FROM "EnrollmentChangeSettlementLine" l
          JOIN "EnrollmentChangeSettlement" s ON s.id = l."settlementId"
+         JOIN "EnrollmentChangeRequest" r ON r.id = s."requestId"
         WHERE l."paymentId" = ANY($1::text[]) AND s."requestId" <> $2`,
       ids, req.id,
     );
     for (const line of prior) {
-      const dates = Array.isArray(line.missedDates) ? line.missedDates.map(String) : [];
-      settled.set(line.paymentId, [...(settled.get(line.paymentId) ?? []), ...dates]);
-      // 미납 청구를 이미 줄인 금액(휴원 감액·이월 차감) — 회당 단가를 원래 청구 금액으로 계산하려고
+      // 취소된 휴원의 처리가 «뺀 날»은 실제로 빠지지 않았다 → 다시 뺄 수 있게 제외
+      if (!line.requestCanceled) {
+        const dates = Array.isArray(line.missedDates) ? line.missedDates.map(String) : [];
+        settled.set(line.paymentId, [...(settled.get(line.paymentId) ?? []), ...dates]);
+      }
+      // 청구에서 이미 줄인 금액(휴원 감액·이월 차감)은 신청이 취소됐어도 실제로 줄었다 → 원래 금액 계산에 그대로 더한다
       if (line.kind === "UNPAID_REDUCE" || line.kind === "CARRY_APPLY") reduced.set(line.paymentId, (reduced.get(line.paymentId) ?? 0) + Number(line.amount));
+      if (line.kind === "CARRY_APPLY") carried.set(line.paymentId, (carried.get(line.paymentId) ?? 0) + Number(line.amount));
     }
   }
   const payments: PausePaymentInput[] = rows.map((row) => {
@@ -136,10 +168,11 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
       method: row.method ?? null,
       rallyzMirror: Boolean(row.rallyzMirror),
       tossTx: row.tossTxId ? { transactionId: String(row.tossTxId), method: row.tossTxMethod ?? null } : null,
-      busy: Boolean(row.busy),
+      busy: Boolean(row.posBusy) || checkoutActive.has(String(row.id)),
       classDates: req.dayOfWeek ? classDatesFor(ym, req.dayOfWeek) : [],
       settledDates: settled.get(String(row.id)) ?? [],
       priorReduction: reduced.get(String(row.id)) ?? 0,
+      carryApplied: carried.get(String(row.id)) ?? 0,
     };
   });
   return payments;
@@ -188,6 +221,8 @@ export type ExecuteSettlementResult =
  */
 export async function executePauseSettlementInTx(tx: SettlementSql, input: {
   requestId: string; adminUserId: string; mode: unknown; expectedPreviewKey: unknown; classDatesFor: ClassDatesFor;
+  /** 이 날(KST) 이전에 승인된 휴원은 처리하지 않는다(기능 이전 건은 사람이 이미 정리) — 화면 숨김과 같은 기준을 서버에서도 */
+  decidedSince?: string;
 }): Promise<ExecuteSettlementResult> {
   if (!isSettlementMode(input.mode)) return { ok: false, message: "수강료 처리 방식(이월·환불·없음)을 골라 주세요." };
   const mode = input.mode;
@@ -204,6 +239,9 @@ export async function executePauseSettlementInTx(tx: SettlementSql, input: {
   const req = await loadPauseRequest(tx, input.requestId, true);
   if (!req || req.kind !== "PAUSE" || !req.fromClassId) return { ok: false, message: "휴원 신청만 수강료를 처리할 수 있어요." };
   if (req.status !== "APPROVED" && req.status !== "APPLIED") return { ok: false, message: "승인된 휴원만 수강료를 처리할 수 있어요." };
+  if (input.decidedSince && !(req.decidedOn && req.decidedOn >= input.decidedSince)) {
+    return { ok: false, message: "이 기능 전에 승인된 휴원이에요. 수강료는 직접 정리해 주세요." };
+  }
   const existing = await tx.$queryRawUnsafe<Array<{ id: string }>>(
     `SELECT id FROM "EnrollmentChangeSettlement" WHERE "requestId" = $1 LIMIT 1`, req.id,
   );
@@ -326,8 +364,8 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
   settlementId: string; adminUserId: string; refundToss: TossPartialRefund;
 }): Promise<RefundRunSummary> {
   const summary: RefundRunSummary = { done: 0, failed: 0, uncertain: 0, messages: [] };
-  const lines = await db.$queryRawUnsafe<Array<{ id: string; paymentId: string | null; transactionId: string | null; amount: number }>>(
-    `SELECT id, "paymentId", "transactionId", amount FROM "EnrollmentChangeSettlementLine"
+  const lines = await db.$queryRawUnsafe<Array<{ id: string; paymentId: string | null; transactionId: string | null; amount: number; failedAttempts: number; createdAt: Date | string }>>(
+    `SELECT id, "paymentId", "transactionId", amount, "failedAttempts", "createdAt" FROM "EnrollmentChangeSettlementLine"
       WHERE "settlementId" = $1 AND kind = 'REFUND' AND channel = 'TOSS' AND status IN ('REQUESTED','FAILED')
       ORDER BY "createdAt", id`,
     input.settlementId,
@@ -347,6 +385,10 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
       result = await input.refundToss({
         transactionId: line.transactionId, paymentId: line.paymentId, amount: Number(line.amount),
         lineId: line.id, adminUserId: input.adminUserId,
+        // 확실한 실패 뒤 다시 시도는 새 멱등 키(시도 번호), 결과 모름은 같은 키로 확인만
+        attempt: Number(line.failedAttempts ?? 0),
+        // 이 줄을 만든 뒤 생긴 «표식 없는 같은 금액 취소»(상점관리자 직접 취소 등)를 알아보려는 기준 시각
+        notBefore: line.createdAt instanceof Date ? line.createdAt.toISOString() : String(line.createdAt ?? ""),
       });
     } catch {
       result = { ok: false, message: "토스 부분 취소 중 오류가 났어요. 잠시 후 다시 시도해 주세요.", uncertain: true };
@@ -362,9 +404,10 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
     } else {
       // 결과를 모르면 REQUESTED 로 남긴다(다시 시도 = 같은 표식으로 확인부터) · 확실한 실패만 FAILED
       await db.$executeRawUnsafe(
-        `UPDATE "EnrollmentChangeSettlementLine" SET status = $2, message = $3, "updatedAt" = now()
+        `UPDATE "EnrollmentChangeSettlementLine"
+            SET status = $2, message = $3, "failedAttempts" = "failedAttempts" + $4, "updatedAt" = now()
           WHERE id = $1 AND status IN ('REQUESTED','FAILED')`,
-        line.id, result.uncertain ? "REQUESTED" : "FAILED", result.message.slice(0, 300),
+        line.id, result.uncertain ? "REQUESTED" : "FAILED", result.message.slice(0, 300), result.uncertain ? 0 : 1,
       );
       if (result.uncertain) summary.uncertain += 1; else summary.failed += 1;
       summary.messages.push(result.message);
@@ -396,22 +439,30 @@ export async function applyOpenPauseCarries(db: SettlementDb, input: { studentId
     for (const s of open) {
       let remaining = Number(s.carryRemaining);
       const after = s.carryAfterYm && /^\d{4}-\d{2}$/.test(s.carryAfterYm) ? ymNumber(s.carryAfterYm) : 0;
-      const targets = await tx.$queryRawUnsafe<Array<{ id: string; amount: number; year: number; month: number }>>(
-        `SELECT p.id, p.amount, p.year, p.month FROM "Payment" p
-          WHERE p."studentId" = $1 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
+      // 차감 대상 조건(별칭 p) — $1 학생 · $2 기준 수강월 · $3 처리 id
+      const targetScope = `p."studentId" = $1 AND COALESCE(p.type, 'MONTHLY') = 'MONTHLY'
             AND p.status IN ('PENDING','OVERDUE') AND p.amount > 0
             AND p.year IS NOT NULL AND p.month IS NOT NULL AND (p.year * 100 + p.month) > $2
             AND ${rallyzMirrorExclusionSql("p")}
-            AND NOT EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE ${TX_COVERS_P}
-                             AND t.status IN ('IN_PROGRESS','WAITING_FOR_DEPOSIT'))
-            AND NOT EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."paymentId" = p.id AND pi."open")
-            AND NOT EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT'))
+            AND NOT ${POS_BUSY_P}
             AND NOT EXISTS (SELECT 1 FROM "EnrollmentChangeSettlementLine" l
-                             WHERE l."settlementId" = $3 AND l."paymentId" = p.id AND l.kind = 'CARRY_APPLY')
+                             WHERE l."settlementId" = $3 AND l."paymentId" = p.id AND l.kind = 'CARRY_APPLY')`;
+      // 잠금 순서 = 관리자 청구서 수정과 같게: (전역 잠금 뒤) id 를 잠금 없이 읽고 → 결제 잠금(정렬순) → 그 id 만 행 잠금
+      const candidateIds = (await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT p.id FROM "Payment" p WHERE ${targetScope} ORDER BY p.id`, s.studentId, after, s.id,
+      )).map((row) => String(row.id));
+      if (candidateIds.length === 0) continue;
+      await lockPaymentsForCheckout(tx, candidateIds);
+      const locked = await tx.$queryRawUnsafe<Array<{ id: string; amount: number; year: number; month: number }>>(
+        `SELECT p.id, p.amount, p.year, p.month FROM "Payment" p
+          WHERE ${targetScope} AND p.id = ANY($4::text[])
           ORDER BY p.year, p.month, p."createdAt", p.id
           FOR UPDATE OF p`,
-        s.studentId, after, s.id,
+        s.studentId, after, s.id, candidateIds,
       );
+      // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌)인 청구는 이번엔 건너뛴다(다음 크론에서 다시)
+      const active = await findParentCheckoutActivePaymentIds(tx, locked.map((row) => row.id), Date.now());
+      const targets = locked.filter((row) => !active.has(row.id));
       for (const target of targets) {
         if (remaining <= 0) break;
         const use = Math.min(remaining, Number(target.amount));

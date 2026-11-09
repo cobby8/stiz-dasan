@@ -535,6 +535,7 @@ model EnrollmentChangeSettlementLine {
   status        String
   missedDates   Json      @default("[]")
   transactionId String?
+  failedAttempts Int     @default(0)
   message       String?
   doneByUserId  String?
   doneAt        DateTime? @db.Timestamptz(6)
