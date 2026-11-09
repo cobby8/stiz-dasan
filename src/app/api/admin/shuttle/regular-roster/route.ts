@@ -5,7 +5,6 @@ import {
   copyRosterMonth,
   editRosterStop,
   editStudentRoster,
-  getRegularRouteStatus,
   getRosterEnrollmentCheck,
   getRosterStudentContext,
   markRosterMonthReviewed,
@@ -20,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 // 셔틀 명단 편집 API(원장 전용). 각 lib 함수도 requireAdmin 을 다시 확인한다(이중 가드).
 //   GET    ?q=이름                       → 학생 검색(추가 폼)
-//   GET    ?routeStatus=1&month=&weekday= → 그 요일 기사님 화면이 정규 배차 저장 노선을 쓰는지(방향별, 조회 전용)
+//   GET    ?routeStatus=1&month=&weekday= → 항상 «저장 노선 없음»(5단계: 기사님 화면은 명단만 읽는다)
 //   GET    ?context=1&studentId=          → 학생 추가: 등록 수업·상세 위치·학원/차고지 좌표(조회 전용)
 //   GET    ?enrollmentCheck=1&month=      → 수강 점검 자료(휴원·퇴원·반 변경 뒤 남은 학생 판정용, 조회 전용)
 //   POST   { action: "add" | "copyMonth" | "monthReviewed" } → 학생 추가 / 다음 달 명단 만들기 / 월 넘김 점검 확인 기록
@@ -46,8 +45,9 @@ export async function GET(request: Request) {
     await requireAdmin();
     const params = new URL(request.url).searchParams;
     if (params.get("routeStatus")) {
-      const status = await getRegularRouteStatus(params.get("month"), params.get("weekday"));
-      return NextResponse.json({ status }, { headers: { "Cache-Control": "no-store" } });
+      // 5단계(2026-11-09): 기사님 화면이 저장 노선(RegularDispatchRoute)을 더 읽지 않는다 — 명단이 곧 기사님 화면.
+      // 예전 응답(저장 노선 있는 요일 true)을 그대로 두면 명단 화면에 «이 순서는 기사님 화면에 쓰이지 않음»이라는 틀린 배지가 뜬다.
+      return NextResponse.json({ status: { PICKUP: false, DROPOFF: false } }, { headers: { "Cache-Control": "no-store" } });
     }
     // 수강 점검 자료(그 달 명단 학생의 지금 수강 + 자동 생성 달 여부 + 확인 기록). 조회 전용.
     if (params.get("enrollmentCheck")) {

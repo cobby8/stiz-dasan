@@ -34,7 +34,7 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel,
+  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null,
 }: {
   token: string;
   date: string;
@@ -45,6 +45,8 @@ export default function UnifiedDriverClient({
   nextDate: string | null;
   today: string;
   driverLabel: string;
+  /** 알림 «노선 확인하기»(?focus=BOARD|ALIGHT)로 열렸을 때 바뀐 방향 — 그 방향 첫 정규 카드로 바로 스크롤한다. */
+  focusDirection?: "PICKUP" | "DROPOFF" | null;
 }) {
   const router = useRouter();
   const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
@@ -155,6 +157,17 @@ export default function UnifiedDriverClient({
   function displayTime(row: UnifiedRow): string | null {
     return useOrderOverrides && timeOverride[row.key] !== undefined ? timeOverride[row.key] || null : row.time;
   }
+
+  // 알림으로 열렸으면 바뀐 방향(등원/하원)의 첫 정규 카드 — 처음 그릴 때 한 번만 그 자리로 스크롤한다.
+  const focusKey = useMemo(
+    () => (focusDirection ? rows.find((r) => !r.isTerminal && r.kind === "REGULAR" && r.direction === focusDirection)?.key ?? null : null),
+    [focusDirection, rows],
+  );
+  useEffect(() => {
+    if (!focusKey) return;
+    // 위쪽 고정 머리줄에 가리지 않게 화면 가운데로 둔다.
+    document.getElementById("run-focus")?.scrollIntoView({ block: "center" });
+  }, [focusKey]);
 
   // 휴대폰의 시계로 강조만 갱신한다. 운행 순서와 서버의 탑승 기록은 바꾸지 않는다.
   const upcomingStops = useMemo(() => ordered.map((row) => ({ key: row.key, time: useOrderOverrides ? timeOverride[row.key] ?? row.time : row.time, isTerminal: row.isTerminal })), [ordered, timeOverride, useOrderOverrides]);
@@ -420,6 +433,7 @@ export default function UnifiedDriverClient({
         upcoming={upcoming}
         renderStopMeta={renderStopMeta}
         renderRider={renderRider}
+        focusKey={focusKey}
       />
 
       <details className="mt-3 text-[14px] font-semibold text-gray-500"><summary className="min-h-11 cursor-pointer py-3">탑승 체크 사용 안내</summary><p className="pb-2">체크 후 저장 완료를 확인하세요. 잘못 눌렀으면 이름 아래 «대기로 되돌리기»를 누르세요(같은 버튼을 다시 눌러도 바뀌지 않습니다). 미탑승에서는 결석·자차를 구분할 수 있습니다. 결석 신고된 아이는 빨간 «결석» 표시와 함께 기본이 결석이라 들르지 않아도 되고, 실제로 탔으면 «탑승»을 누르세요.</p></details>

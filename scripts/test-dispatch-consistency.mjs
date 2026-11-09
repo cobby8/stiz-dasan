@@ -75,15 +75,13 @@ for (const kind of ['regular','seasonal']) {
   if(expected===500)check(!JSON.stringify(result.body).includes('synthetic database'),'storage details are hidden');
  }
 }
-// When a month has different available weekdays, the rendered date is valid immediately.
+// When a month has different available weekdays, the rendered weekday is valid immediately.
+// 2026-11-09: 정규 운행표(RegularRunEditor)는 월마다 새로 그린다(key=serviceMonth) — 첫 요일은 서버가 그 달 명단에서 고른다.
 {
- const clientSource=readFileSync('src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx','utf8');
- const ast=ts.createSourceFile('RegularDispatchClient.tsx',clientSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
- let initializer;
- function visit(node){if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='day')initializer=node.initializer.getText(ast);ts.forEachChild(node,visit);}visit(ast);
- const choose=vm.runInNewContext(`((selectedDay,weekdays,initialDay)=>(${initializer}))`);
- check(choose('Mon',['Tue'],'Tue')==='Tue','month switch immediately corrects missing weekday');
- check(choose('Mon',['Tue','Wed'],'Fri')==='Tue','unknown initial weekday falls back to first available');
- check(choose('Wed',['Tue','Wed'],'Tue')==='Wed','available selected weekday is preserved');
+ const page=readFileSync('src/app/admin/shuttle/regular-dispatch/page.tsx','utf8');
+ const editor=readFileSync('src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx','utf8');
+ check(/<RegularRunEditor\s+key=\{serviceMonth\}/.test(page),'month switch remounts the run editor');
+ check(/const firstDay = \[1, 2, 3, 4, 5, 6, 0\]\.find\(/.test(page)&&/const initialWeekday = target\?\.weekday \?\? firstDay \?\? 1;/.test(page),'initial weekday falls back to first weekday with riders');
+ check(/const \[weekday, setWeekday\] = useState\(initialWeekday\);/.test(editor),'editor starts from the server-chosen weekday');
 }
 console.log(JSON.stringify({checks,passed:true,scope:'compiled actual RouteSection functions with synthetic hooks and fetch only; no operating access'}));

@@ -215,3 +215,9 @@
 - **발견자**: developer
 - **내용**: 명단 쓰기 함수(`regularRosterEdit.ts` add/remove/move/editStop/reorder/editStudentRoster)는 트랜잭션 안에서 `notices` 에 담고 **커밋 뒤** `flushNotices` → `regularRosterNotify.notifyDriversOfRosterChange`(DRIVER 역할 전원·바꾼 본인 제외, `deliverOperationalNotification` 인앱+푸시, 실패는 삼킴). 문구·링크(`/staff/run?date=<그 달 다음 운행일>&focus=BOARD|ALIGHT`)·10분 묶음 키는 순수 `regularRosterNotifyLogic`. 옛 `notifyOperationalStaff includeDriver` 는 저장 노선에서 기사를 찾아 쓰지 않는다. 반 이동 판정은 순수 `regularReassignLogic.planStudentReassign`(옛 칸+새 칸 둘 다 있을 때만) → 보드 `driverAssignLogic.buildAssignBoard`(명단 학생 hasApplication=false 도 재배정만) → 저장 `reassign:true` → `addRosterStudentAs({replaceRowIds})` 한 트랜잭션(옛 행은 서버가 다시 계산). 학생 상세 위치 저장(`service.updateStudentShuttleLocation`)은 장소명 필수 + 같은 tx 에서 `applyLocationToRosterInTx`(이번 달부터, 300m 이름 일치 정류장 합류·아니면 새 위치, 행 id 유지 UPDATE).
 - **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 «하나의 운행표» — 명단 정본·관리자=기사님 같은 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 운행 정본은 `RegularShuttleStop`(명단) 하나. 기사님(`regularDriverRoute.ts`)·관리자(`admin/shuttle/regular-dispatch/RegularRunEditor.tsx`)가 같은 순수 조립 `buildRegularRunRows`(lib/shuttle/regularRunRows.ts)와 같은 카드 틀 `RunBoard`(mode driver|admin)·같은 CSS(DriverWorkspace)를 쓴다. 저장 노선(`RegularDispatchRoute`)은 읽지 않음(테이블은 남김, 흡수 SQL 은 PM). 관리자 편집은 모두 `/api/admin/shuttle/regular-roster`(reorder 묶음별·editStop·editStudent·DELETE 범위), 반 이동 재배정은 배정 보드(`/api/staff/shuttle/assign` reassign:true). 바뀌면 서버가 기사님께 «노선 확인하기»(`/staff/run?date=&focus=BOARD|ALIGHT`) 알림. 관리자 화면에 자체 묶음·자동 제안을 다시 만들지 말 것(가드: tests/regular-roster-driver-view.test.mjs).
+- **참조횟수**: 0

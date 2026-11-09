@@ -504,6 +504,8 @@ export default function StudentDetailClient({
     const [pickerKind, setPickerKind] = useState<null | "PICKUP" | "DROPOFF">(null);
     const [shuttleSaving, setShuttleSaving] = useState(false);
     const [shuttleError, setShuttleError] = useState<string | null>(null);
+    // 위치 저장 뒤 «명단 N칸 반영» 안내(성공 문구)
+    const [shuttleNotice, setShuttleNotice] = useState<string | null>(null);
 
     // 종류별 현재 위치를 꺼내는 헬퍼
     const pickupLoc = shuttleLocs.find(l => l.kind === "PICKUP") ?? null;
@@ -515,6 +517,7 @@ export default function StudentDetailClient({
         if (!studentId) return;
         setShuttleSaving(true);
         setShuttleError(null);
+        setShuttleNotice(null);
         try {
             const response = await fetch("/api/admin/shuttle", {
                 method: "PATCH",
@@ -525,7 +528,9 @@ export default function StudentDetailClient({
                     action: "confirmLocation",
                     data: {
                         kind, // "PICKUP" | "DROPOFF"
-                        name: value.roadAddress || value.address,
+                        // 장소명(예: «다산이편한세상자이 후문») — 이 이름이 그대로 셔틀 명단 정류장 이름이 된다(2026-11-09 D3).
+                        // 예전처럼 도로명·지번을 보내면 정류장이 «다산동 4002-1» 같은 주소로 바뀐다(서버도 거부).
+                        name: value.placeName?.trim() ?? "",
                         address: value.address,
                         roadAddress: value.roadAddress,
                         latitude: value.latitude,
@@ -551,6 +556,10 @@ export default function StudentDetailClient({
             };
             setShuttleLocs(prev => [...prev.filter(l => l.kind !== kind), nextRow]);
             setPickerKind(null);
+            // 같은 저장에서 셔틀 명단(이번 달부터) 정류장도 바뀐다 — 몇 칸 바뀌었는지 알린다(기사님께는 서버가 알림).
+            const applied = result.location?.rosterApplied ?? result.rosterApplied;
+            const updated = Number(applied?.updated ?? 0);
+            setShuttleNotice(updated > 0 ? `셔틀 명단 ${updated}칸도 «${value.placeName?.trim()}»(으)로 바꿨어요. 정규 셔틀 운행표에서 순서·시각을 확인해 주세요.` : "위치를 저장했어요. (이번 달 셔틀 명단에 이 학생 칸이 없어 명단은 그대로예요)");
         } catch (e) {
             setShuttleError(adminErrorText(e, "위치를 저장하지 못했습니다."));
         } finally {
@@ -1303,6 +1312,10 @@ export default function StudentDetailClient({
                         {shuttleError && (
                             <p className="mt-2 text-xs font-semibold text-red-600 dark:text-red-400">{shuttleError}</p>
                         )}
+                        {/* 위치 저장과 함께 셔틀 명단(이번 달부터)에 반영된 결과 안내 */}
+                        {shuttleNotice && !shuttleError && (
+                            <p role="status" className="mt-2 text-xs font-semibold text-[var(--color-academy-success)]">{shuttleNotice}</p>
+                        )}
                         {/* 신청서 희망 셔틀(시트 장부)은 참고용 작은 줄로만 남긴다(혼동 방지) */}
                         {currentMonthHistory?.shuttle.needed && (
                             <p className="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-400 dark:border-gray-700">
@@ -1902,9 +1915,11 @@ export default function StudentDetailClient({
                     initialValue={(() => {
                         const loc = pickerKind === "PICKUP" ? pickupLoc : dropoffLoc;
                         return loc && loc.latitude != null && loc.longitude != null
-                            ? { address: loc.roadAddress || loc.address || "", latitude: loc.latitude, longitude: loc.longitude, source: "MAP_PIN" as const }
+                            ? { address: loc.roadAddress || loc.address || "", placeName: loc.name ?? undefined, latitude: loc.latitude, longitude: loc.longitude, source: "MAP_PIN" as const }
                             : undefined;
                     })()}
+                    // 장소명 필수 — 아이가 타는 곳 이름이 셔틀 명단 정류장 이름이 된다(원생 등록·학부모 링크와 같은 규칙).
+                    requirePlaceName
                     confirmPending={shuttleSaving}
                     onConfirm={(loc) => void saveShuttleLocation(pickerKind, loc)}
                     onClose={() => setPickerKind(null)}

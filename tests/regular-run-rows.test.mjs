@@ -3,19 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { loadTsModule } from "./_ts-module.mjs";
 
-// 정규 셔틀 «하나의 운행표» 1단계(2026-11-09) — 순수 조립 함수 buildRegularRunRows 추출.
-// 기사님 화면은 **한 글자도** 바뀌면 안 된다(리팩터). 그래서 종전 서버 코드가 하던 조립을
-// 이 테스트 안에 «기준(reference)»으로 그대로 옮겨 적고, 새 함수 결과와 통째로(deepEqual) 비교한다.
-// 저장 노선이 있는 칸 · 없는 칸 · 노선에 없는 승객 칸 · 노선 학생이 명단에 없는 경우를 모두 본다.
+// 정규 셔틀 «하나의 운행표» — 순수 조립 함수 buildRegularRunRows(1단계 추출 · 5단계 명단 전용).
+// 5단계(2026-11-09 원장 결정): 셔틀 명단이 유일한 운행 정본 — 저장 노선(RegularDispatchRoute)은 입력조차 없다.
+// 기준(reference) = 명단 폴백 조립(buildFallbackClasses)에 «확정 전»(pending) 표시만 끈 것. 새 함수 결과와 통째로 비교한다.
 
 const logic = await loadTsModule("src/lib/shuttle/regularDriverRouteLogic.ts");
 const unified = await loadTsModule("src/lib/shuttle/unifiedDriverRunLogic.ts");
 const { buildRegularRunRows, buildRegularRunClasses } = await loadTsModule("src/lib/shuttle/regularRunRows.ts");
 
-// ── 종전 getRegularDriverClasses(2026-11-09 이전)의 조립 순서 그대로 ──────────────
-function referenceClasses({ stops, weekday, isAbsent, absentLabelOf, saved, rowIdsByStudentId, exceptions, matches, describe }) {
+// ── 기준 조립: 요일 고르기 → 명단 묶음(pending 끔) → 결석 뱃지 → «오늘만» 변경 ──────────────
+function referenceClasses({ stops, weekday, isAbsent, absentLabelOf, exceptions, matches, describe }) {
   const dayRows = logic.selectDriverDayRows(stops, weekday);
-  const classes = logic.assembleRegularDriverClasses({ dayRows, isAbsent, saved, rowIdsByStudentId });
+  const classes = logic.buildFallbackClasses(dayRows, isAbsent).map((c) => ({ ...c, pending: false }));
   return logic.attachShuttleDayNotes(logic.attachAbsenceLabels(classes, absentLabelOf), exceptions, matches, describe);
 }
 
@@ -43,30 +42,21 @@ const exceptions = [{ name: "사아", phone: null, direction: "DROPOFF", kind: "
 const matches = (r, entry) => r.name === entry.name;
 const describe = (entry) => (entry.kind === "SKIP" ? "오늘 셔틀 안 탐" : `오늘 ${entry.location}`);
 
-const EMPTY = new Map();
-function inputs({ saved, rowIdsByStudentId }) {
-  const shared = { stops: STOPS, weekday: 4, isAbsent, absentLabelOf, saved, rowIdsByStudentId };
+function inputs() {
+  const shared = { stops: STOPS, weekday: 4, isAbsent, absentLabelOf };
   return {
-    // 종전 서버 코드의 인자 모양
     ref: { ...shared, exceptions, matches, describe },
     // 새 순수 함수의 인자 모양(서버 regularDriverRoute.ts 가 넘기는 것과 같은 모양)
     next: { ...shared, dayNotes: { exceptions, matches, describe } },
   };
 }
 
-function assertSame(label, { saved, rowIdsByStudentId }) {
-  const { ref, next } = inputs({ saved, rowIdsByStudentId });
+test("명단 그대로 — 기사님 화면 조립 결과가 명단 순서·시각 그대로, «순서 확인 필요» 없음", () => {
+  const { ref, next } = inputs();
   const expectedClasses = referenceClasses(ref);
-  // 섹션 단계 동일(기사님 서버 → buildUnifiedRun 으로 넘어가는 값)
-  assert.deepEqual(buildRegularRunClasses(next), expectedClasses, `${label}: 섹션이 종전과 다르다`);
-  // 카드 단계 동일(방학특강 없는 날 기사님 화면 목록 = buildUnifiedRun({ regular }))
-  const expectedRows = unified.buildUnifiedRun({ seasonal: [], regular: expectedClasses });
-  assert.deepEqual(buildRegularRunRows(next), expectedRows, `${label}: 카드 목록이 종전과 다르다`);
-  return expectedRows;
-}
-
-test("저장 노선 없는 칸(명단 그대로) — 새 조립 결과가 종전 기사님 화면과 글자 그대로 같다", () => {
-  const rows = assertSame("폴백", { saved: { PICKUP: null, DROPOFF: null }, rowIdsByStudentId: { PICKUP: EMPTY, DROPOFF: EMPTY } });
+  assert.deepEqual(buildRegularRunClasses(next), expectedClasses);
+  const rows = buildRegularRunRows(next);
+  assert.deepEqual(rows, unified.buildUnifiedRun({ seasonal: [], regular: expectedClasses }));
   // 내용도 확인: 시각순, 시간 미정(D빌라)은 맨 끝, 탑승 체크 키 = 명단 행 id, PIVOT·다른 요일·이름 없는 행 제외.
   assert.deepEqual(rows.map((r) => [r.label, r.time]), [
     ["A아파트 정문", "16:30"], ["B초 후문", "16:40"], ["C마을", "17:35"], ["A아파트 정문", "18:10"], ["C마을", "19:10"], ["D빌라", null],
@@ -75,59 +65,31 @@ test("저장 노선 없는 칸(명단 그대로) — 새 조립 결과가 종전
   assert.equal(rows[0].riders[1].absent, true);
   assert.equal(rows[0].riders[1].absentLabel, "결석");
   assert.equal(rows.find((r) => r.time === "19:10").riders[0].shuttleNote, "오늘 셔틀 안 탐");
-  assert.ok(rows.every((r) => r.pending && !r.warn));
+  // 명단이 정본이라 «임시 순서·확정 전»도, «노선에 없는 승객»도 없다.
+  assert.ok(rows.every((r) => !r.pending && !r.warn));
+  assert.deepEqual([...new Set(rows.map((r) => r.groupLabel))].sort(), ["🕒 17:00~18:00 수업", "🕒 18:00~19:00 수업"]);
   const ids = rows.flatMap((r) => r.riders.map((x) => x.checkId));
   for (const gone of ["p1", "x1", "n1"]) assert.ok(!ids.includes(gone), `${gone} 는 기사님 화면에 없어야 한다`);
 });
 
-test("저장 노선 있는 칸 + 노선에 없는 승객 칸 + 노선 학생이 명단에 없는 경우 — 종전과 같다", () => {
-  // 등원만 저장 노선(하원은 명단 폴백). 노선엔 가나·마바·명단에없는학생, 명단의 다라·사아는 노선에 없음.
-  const saved = {
-    PICKUP: { vehicles: [{ vehicleName: "1호차", tripLabel: "1회차", stops: [
-      { label: "B초 후문", etaLabel: "16:20 승차", lat: 37.62, lng: 127.16, students: [{ requestId: "stu-maba", name: "마바" }] },
-      { label: "차고지", etaLabel: "16:00", students: [] },
-      { label: "A아파트정문", etaManual: 995, students: [{ requestId: "stu-gana", name: "가나" }, { requestId: "stu-ghost", name: "유령", parentPhone: "010-9" }] },
-    ] }] },
-    DROPOFF: null,
-  };
-  const rowIdsByStudentId = {
-    PICKUP: new Map([["stu-gana", ["r1"]], ["stu-maba", ["r3"]], ["stu-dara", ["r2"]], ["stu-saa", ["r4"]]]),
-    DROPOFF: EMPTY,
-  };
-  const rows = assertSame("저장 노선", { saved, rowIdsByStudentId });
-
-  const routeRows = rows.filter((r) => r.groupLabel === "🚐 1호차 · 1회차 · 등원");
-  assert.deepEqual(routeRows.map((r) => [r.label, r.time]), [["B초 후문", "16:20"], ["A아파트정문", "16:35"]]);
-  // 명단에 없는 노선 학생도 숨기지 않고 고정 대체키로 보인다.
-  assert.deepEqual(routeRows[1].riders.map((r) => r.checkId), ["r1", "route:stu-ghost"]);
-  // 노선에 안 실린 명단 행은 «노선에 없는 승객» 칸(warn)으로 뒤에 붙는다 — 아무도 사라지지 않는다.
-  const leftover = rows.filter((r) => r.warn);
-  assert.deepEqual(leftover.flatMap((r) => r.riders.map((x) => x.checkId)).sort(), ["r2", "r4"]);
-  assert.ok(leftover.every((r) => r.groupLabel === "⚠️ 노선에 없는 승객 · 등원"));
-  // 하원은 명단 폴백(수업시간 칸) 그대로.
-  assert.deepEqual(rows.filter((r) => r.direction === "DROPOFF").map((r) => r.groupLabel), ["🕒 17:00~18:00 수업 · 하원", "🕒 18:00~19:00 수업 · 하원", "🕒 17:00~18:00 수업 · 하원"]);
+test("저장 노선을 넘겨도 무시한다(입력 자체가 없음) — 명단을 고치면 기사님 화면이 바로 바뀐다", () => {
+  const { next } = inputs();
+  const withSaved = { ...next, saved: { PICKUP: { vehicles: [{ vehicleName: "1호차", stops: [{ label: "B초 후문", etaLabel: "16:20", students: [{ requestId: "stu-maba" }] }] }] }, DROPOFF: null } };
+  assert.deepEqual(buildRegularRunRows(withSaved), buildRegularRunRows(next));
+  // 명단의 시각·순서를 바꾸면 그대로 반영된다(예전엔 저장 노선 요일은 안 바뀌었다).
+  const edited = STOPS.map((s) => (s.id === "r3" ? { ...s, arriveTime: "16:20", sortOrder: 0 } : s));
+  const rows = buildRegularRunRows({ ...next, stops: edited });
+  assert.deepEqual(rows.slice(0, 2).map((r) => [r.label, r.time]), [["B초 후문", "16:20"], ["A아파트 정문", "16:30"]]);
 });
 
-test("등원·하원 둘 다 저장 노선 — 종전과 같다(하원 노선은 비어 있으면 폴백)", () => {
-  const saved = {
-    PICKUP: { vehicles: [{ vehicleName: "1호차", stops: [{ label: "A아파트 정문", etaLabel: "16:31", students: [{ requestId: "stu-gana" }, { requestId: "stu-dara" }] }] }] },
-    DROPOFF: { vehicles: [{ vehicleName: "2호차", stops: [{ label: "C마을", etaLabel: "19:05", students: [{ requestId: "stu-saa" }] }, { label: "A아파트 정문", etaLabel: "18:12", students: [{ requestId: "stu-gana" }] }] }] },
-  };
-  const rowIdsByStudentId = {
-    PICKUP: new Map([["stu-gana", ["r1"]], ["stu-dara", ["r2"]]]),
-    DROPOFF: new Map([["stu-gana", ["r5"]], ["stu-saa", ["r7"]]]),
-  };
-  assertSame("양방향 저장 노선", { saved, rowIdsByStudentId });
-  // 빈 저장본(학생 0명)은 폴백 — 이 판정도 종전과 같아야 한다.
-  assertSame("빈 저장본", { saved: { PICKUP: { vehicles: [{ stops: [{ label: "x", students: [] }] }] }, DROPOFF: { vehicles: [] } }, rowIdsByStudentId: { PICKUP: EMPTY, DROPOFF: EMPTY } });
-});
-
-test("기본값(결석·저장 노선·오늘만 변경 끔) = 관리자 «월+요일» 기본형 — 종전 관리자 보기와 같은 묶음", () => {
+test("기본값(결석·오늘만 변경 끔) = 관리자 «월+요일» 기본형 — 기사님 화면과 같은 카드(결석 표시만 없음)", () => {
   const NOT_ABSENT = () => false;
-  // 관리자 「기사님 화면」 보기(DriverOrderView)가 쓰던 조립: buildFallbackClasses(selectDriverDayRows(stops, weekday), NOT_ABSENT)
-  const adminClasses = logic.attachAbsenceLabels(logic.buildFallbackClasses(logic.selectDriverDayRows(STOPS, 4), NOT_ABSENT), () => null);
+  const adminClasses = logic.attachAbsenceLabels(logic.buildFallbackClasses(logic.selectDriverDayRows(STOPS, 4), NOT_ABSENT).map((c) => ({ ...c, pending: false })), () => null);
   assert.deepEqual(buildRegularRunClasses({ stops: STOPS, weekday: 4 }), adminClasses);
   assert.deepEqual(buildRegularRunRows({ stops: STOPS, weekday: 4 }), unified.buildUnifiedRun({ regular: adminClasses }));
+  // 관리자 화면 = 기사님 화면: 결석·오늘만 변경 표시를 빼면 카드 순서·시각·묶음·탑승 키가 같다.
+  const strip = (rows) => rows.map((r) => ({ ...r, riders: r.riders.map((x) => ({ ...x, absent: false, absentLabel: null, shuttleNote: null })) }));
+  assert.deepEqual(strip(buildRegularRunRows({ stops: STOPS, weekday: 4 })), strip(buildRegularRunRows(inputs().next)));
   // 결석을 끄면 결석 표시가 없다.
   assert.ok(buildRegularRunRows({ stops: STOPS, weekday: 4 }).every((r) => r.riders.every((x) => !x.absent && !x.shuttleNote)));
   // 운행 없는 요일은 빈 목록.
@@ -140,9 +102,12 @@ test("배선 가드 — 기사님 서버는 순수 조립 함수에 맡기고, �
   assert.match(route, /return buildRegularRunClasses\(\{/);
   // 서버가 조립을 따로 하면 관리자 운행표와 어긋난다 — 직접 호출 금지.
   assert.doesNotMatch(route, /assembleRegularDriverClasses\(|attachShuttleDayNotes\(|attachAbsenceLabels\(/);
+  // 5단계: 저장 노선을 읽지 않는다(명단만).
+  assert.doesNotMatch(route, /getSavedRegularDispatchRoute|regularDispatchRoute"|rowIdsByStudentId|getRegularShuttleRiders/);
 
   const pure = await readFile("src/lib/shuttle/regularRunRows.ts", "utf8");
   assert.doesNotMatch(pure, /from "@\/lib\/prisma"|from "react"|"use client"|"server-only"/, "순수 모듈이어야 한다(브라우저에서도 쓴다)");
+  assert.doesNotMatch(pure, /assembleRegularDriverClasses|saved\?:|rowIdsByStudentId/, "저장 노선 입력은 없앴다(5단계)");
 
   const client = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
   assert.match(client, /import RunBoard from "@\/components\/shuttle\/run\/RunBoard"/);

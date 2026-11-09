@@ -18,7 +18,7 @@ import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLog
 export type RunBoardMode = "driver" | "admin";
 
 export default function RunBoard({
-  rows, mode, editing, dragKey, onDragKeyChange, onDropOn, onMove, displayTime, onTimeChange, upcoming, renderStopMeta, renderRider,
+  rows, mode, editing, dragKey, onDragKeyChange, onDropOn, onMove, displayTime, onTimeChange, upcoming, renderStopMeta, renderRider, focusKey,
 }: {
   /** 이미 화면 순서로 정렬된 카드 목록(정렬은 바깥이 한다 — 편집 중 덮어쓰기 포함). */
   rows: UnifiedRow[];
@@ -42,6 +42,11 @@ export default function RunBoard({
   renderStopMeta?: (row: UnifiedRow) => ReactNode;
   /** 학생 한 명 줄(기사님 = 탑승/미탑승 버튼). 반환 요소에 key 를 달아야 한다. */
   renderRider: (row: UnifiedRow, rider: UnifiedRider) => ReactNode;
+  /**
+   * 바로 보여 줄 카드(알림 «노선 확인하기» → 바뀐 등원/하원 묶음). 그 카드에만 id="run-focus" 를 달아
+   * 바깥 화면이 그 자리로 스크롤한다. 없으면 아무것도 달지 않는다(평소 화면 HTML 그대로).
+   */
+  focusKey?: string | null;
 }) {
   // 카드를 손가락으로 눌러 끌기 시작 — 정규 카드·편집 중에만. 버튼·입력칸·링크를 누른 건 끌기가 아니다.
   function startCardDrag(event: PointerEvent, row: UnifiedRow) {
@@ -87,6 +92,7 @@ export default function RunBoard({
             onPointerEnter={() => editable && dragKey && onDropOn(row)}
             onPointerUp={() => onDragKeyChange(null)}
             onPointerCancel={() => onDragKeyChange(null)}
+            id={focusKey && focusKey === row.key ? "run-focus" : undefined}
             data-upcoming={isUpcoming || undefined}
             aria-current={isUpcoming ? "step" : undefined}
             className={`${styles.stop} ${isUpcoming ? styles.upcoming : ""} academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${

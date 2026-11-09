@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function StaffRunPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; focus?: string }>;
 }) {
   const staff = await requireStaff();
   // 관리자 또는 기사님(승인된 추가 역할 포함)만. 선생님만인 사람은 운행표를 열지 않는다.
@@ -46,5 +46,8 @@ export default async function StaffRunPage({
   const searchDate = sp?.date && isValidRunDate(sp.date) ? sp.date : null;
   // 로그인 경로라 링크를 기기에 기억시키지 않는다(기억 옵션을 켜지 않음) — 계정이 곧 열쇠다.
   // 기억시키면 로그아웃하거나 역할을 회수해도 그 기기에서는 운행표가 계속 열린다.
-  return <UnifiedDriverRunPage token={token} searchDate={searchDate} />;
+  // focus 쿼리 = 명단 변경 알림 «노선 확인하기»의 바뀐 방향(BOARD=등원·ALIGHT=하원). 그 묶음으로 바로 스크롤한다.
+  // 정해진 두 값만 받는다(그 밖의 값은 무시 — 평소 화면 그대로).
+  const focusDirection = sp?.focus === "BOARD" ? "PICKUP" : sp?.focus === "ALIGHT" ? "DROPOFF" : null;
+  return <UnifiedDriverRunPage token={token} searchDate={searchDate} focusDirection={focusDirection} />;
 }

@@ -78,6 +78,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
           choice: choice.kind === "INSERT" ? { kind: "INSERT", position } : choice,
           routeVersion: leg.routeVersion, includeNextMonth: board.laterMonths.length > 0 && withLater,
           ...(source ? { source } : {}), // 관리자 화면 표시(기사님 화면은 보내지 않아 요청 모양이 그대로)
+          // 반 이동 재배정 칸 — 새 칸 추가 + 옛 칸 삭제를 한 번에(지울 옛 행은 서버가 다시 계산한다, 화면 값 불신).
+          ...(leg.reassign ? { reassign: true } : {}),
         }),
       });
       const value = await res.json().catch(() => null);
@@ -88,7 +90,8 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
         onStale(KNOWN[code] ?? FAIL);
         return;
       }
-      setError(KNOWN[code] ?? FAIL);
+      // 재배정 칸은 신청서가 아니라 «명단에 있는 학생»이 기준이라 안내 문구가 다르다.
+      setError(leg.reassign && code === "NOT_ELIGIBLE" ? "명단에 있는 학생이 아니에요. 목록을 새로 불러와 주세요." : KNOWN[code] ?? FAIL);
     } catch {
       setError(FAIL);
     } finally {
@@ -145,6 +148,13 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
       <div className="space-y-6 p-4">
         {notice && <p role="status" className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">{notice}</p>}
         {warn && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">{warn}</p>}
+        {/* 반 이동 재배정 — 넣으면 옛 칸이 같이 빠진다는 것을 먼저 알린다(옛 정류장이 기본 추천으로 따라온다). */}
+        {leg.reassign && (
+          <p className="rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
+            <b>반 이동 · {leg.reassign.label}</b><br />
+            넣으면 옛 칸({WEEKDAY_FULL[leg.reassign.fromWeekday]} {leg.reassign.fromClassTime} · {leg.reassign.fromStopName})은 명단에서 빠져요.
+          </p>
+        )}
         {leg.blocked && <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">{leg.blocked}</p>}
 
         <section className="space-y-2" aria-labelledby="where-title">
@@ -222,7 +232,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
           {/* 이 화면의 채운 주 버튼은 이것 하나(검정). */}
           <button type="button" disabled={saving || !choice || Boolean(leg.blocked)} onClick={() => void save()}
             className="flex h-[52px] w-full items-center justify-center rounded-lg bg-[var(--color-academy-ink)] text-base font-bold text-[var(--color-academy-surface)] disabled:opacity-50">
-            {saving ? "넣는 중…" : `${leg.label} 순서에 넣기`}
+            {saving ? "넣는 중…" : leg.reassign ? `${leg.label} 옮겨 넣기` : `${leg.label} 순서에 넣기`}
           </button>
         </div>
       </div>
