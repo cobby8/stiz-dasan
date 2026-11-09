@@ -103,7 +103,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn"
        FROM "Student" s
        -- 휴원 중(PAUSED)인 반도 보여 준다. 그래야 그 반에 «복귀 신청»을 낼 수 있다.
-       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status IN ('ACTIVE','PAUSED')
+       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status IN ('ACTIVE','PAUSED') AND ${notMergedStudent("s")}
        JOIN "Class" c ON c.id = e."classId" AND ${REGULAR_CLASS_FILTER}
        JOIN "Program" p ON p.id = c."programId"
        LEFT JOIN "EnrollmentChangeRequest" r
