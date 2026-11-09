@@ -162,6 +162,16 @@ export const OPEN_COMMAND_STATUSES = ["PENDING", "HELD", "PARTIAL"] as const;
 export const ADD_COMMAND_KINDS = ["CLASS_ADD", "RESUME"] as const;
 export const DELETED_ENROLLMENT_CLOSE_REASON = "취소: 잘못 등록한 수강을 삭제함(시트·랠리즈 반영 불필요)";
 
+/**
+ * «삭제로 닫힌 명령이 아님» SQL 조건(alias = OperationsCommand 별칭).
+ * 랠리즈 칸 SKIPPED 는 다른 곳에서 «끝남»으로 인정하지 않는다(SKIPPED 는 시트 은퇴 칸만 인정 — sheetRetirement).
+ * 그 의미를 넓히지 않고, 삭제로 닫은 명령만 사유로 골라 «확인 필요»에서 뺀다.
+ */
+export function notClosedByDeletedEnrollmentSql(alias: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error("invalid alias");
+  return `${alias}."holdReason" IS DISTINCT FROM '${DELETED_ENROLLMENT_CLOSE_REASON.replace(/'/g, "''")}'`;
+}
+
 type RawTx = RawDb & { $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number> };
 
 export type ClosedAddCommands = {

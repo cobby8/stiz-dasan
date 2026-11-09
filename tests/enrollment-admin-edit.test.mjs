@@ -186,6 +186,23 @@ test("삭제 서버 동작: 원장 닫기는 같은 트랜잭션에서 DELETE �
   assert.match(detail, /에는 이미 등록돼 있어 직접 정리해 주세요/);
 });
 
+test("삭제로 닫힌 명령은 «확인 필요» 탭·건수(일일 요약)·행 배지에서 빠진다 — RALLYZ SKIPPED 의미는 넓히지 않음", () => {
+  // 조건 문자열 자체: 사유가 정확히 들어가고 따옴표가 안전하게 처리된다
+  const cond = edit.notClosedByDeletedEnrollmentSql("c");
+  assert.equal(cond, `c."holdReason" IS DISTINCT FROM '${edit.DELETED_ENROLLMENT_CLOSE_REASON}'`);
+  assert.throws(() => edit.notClosedByDeletedEnrollmentSql("c; x"));
+  const lib = readFileSync("src/lib/enrollment/admin-change-request.ts", "utf8");
+  const needs = lib.slice(lib.indexOf("const NEEDS_CHECK_SQL"), lib.indexOf("export async function countEnrollmentChangesNeedingCheck"));
+  assert.match(needs, /AND \$\{notClosedByDeletedEnrollmentSql\("c"\)\}/, "확인 필요 조건이 삭제로 닫힌 명령을 뺀다");
+  assert.match(needs, /a\.target = 'RALLYZ' AND a\.status <> 'SUCCEEDED'/, "랠리즈 SKIPPED 를 완료로 보지 않는 기존 규칙 유지");
+  // 건수 함수(탭·일일 요약)가 같은 조건 하나를 쓴다
+  assert.match(lib, /WHERE r\.status = 'APPLIED' AND \$\{NEEDS_CHECK_SQL\}/);
+  assert.match(readFileSync("src/lib/admin-daily-digest-service.ts", "utf8"), /countEnrollmentChangesNeedingCheck\(\)/);
+  // 행 배지가 보는 연결 원장(LATERAL)도 닫힌 명령을 고르지 않는다
+  const lateral = lib.slice(lib.indexOf("LEFT JOIN LATERAL"), lib.indexOf(") oc ON true"));
+  assert.match(lateral, /notClosedByDeletedEnrollmentSql\("c"\)/);
+});
+
 test("원생 상태 집계에 항상 0이던 scheduled 칸이 없다", () => {
   const payloads = readFileSync("src/lib/adminReadPayloads.ts", "utf8");
   // trial_scheduled(체험 예약 수)는 다른 값이라 제외 — 단어 경계로 원생 상태 칸만 본다

@@ -79,12 +79,29 @@
 | [권장] 삭제 시 운영 원장 «수강 등록» 대기 건 미확인·미정리 | ⚠️ 관찰 | enrollment-admin-edit.ts removeMistakenEnrollment |
 📊 종합: 59개 중 59개 통과 / 0개 실패 (권장 1). 스크립트: Temp/.../scratchpad/mock-enroll-edit.test.mjs·billing-edge.test.mjs
 
+### 테스트 결과 (tester · 11-09 재검수 8144e6c7 + e2b02a6d)
+| 테스트 항목 | 결과 | 비고 |
+|-----------|------|------|
+| tsc · 전체 tests · studentVisibility · KST 가드+대상 테스트 | ✅ 통과 | 0 · 3546-0 · 5-0 · 18-0 |
+| 이동: 처리 중 신청 1건이면 차단(쓰기 0·롤백), 출석·결석·셔틀 연결은 이동 안 막음 | ✅ 통과 | 집계 인자 (enr, stu, class) |
+| moveEffectiveMinYmd 11경계(과거/미래 개시·등록일·무효·윤년·연말) + 화면 toKstYmd(KST 자정)=서버 이중 AT TIME ZONE | ✅ 통과 | 개시 전 수강 → 오늘 허용+원래 개시일 승계 |
+| 삭제 차단 결석(CANCELLED 제외)·셔틀 승객(그 반 Session) | ✅ 통과 | 각 1건 차단, 원장/삭제 쓰기 없음 |
+| 원장 닫기: CLASS_ADD/RESUME × PENDING·PARTIAL·HELD 만, SYNCED·WITHDRAW·다른 수강 손대지 않음, SUCCEEDED 칸 보존·알림, 삭제보다 먼저, 감사 | ✅ 통과 | 단계별 DB 오류 8곳·DELETE 0행 → 전부 롤백 |
+| scheduled 집계 제거 — 남은 사용처 없음, 칩은 active/paused/withdrawn/noEnrollment | ✅ 통과 | |
+| [권장] 이동→삭제 시 이동 신청이 «확인 필요»에서 안 빠짐 | ⚠️ 관찰 | 아래 수정 요청 |
+📊 종합: 24(모의)+전체 중 실패 0 (권장 1). 스크립트: Temp/.../scratchpad/mock-enroll-edit2.test.mjs
+
+| 요청자 | 파일 | 문제 | 상태 |
+|------|------|------|------|
+| tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
+
 ---
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | tester(8144e6c7+e2b02a6d): tsc 0·tests 3546-0·가드 통과, 모의 24 통과. 권장: 이동→삭제 시 NEEDS_CHECK 잔류 | 통과(권장 1) |
 | 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |
 | 11-09 | tester(3c4d4cc4+d559228c): 전체 3540-0·tsc 0·가드 통과, 모의 실행 37+청구 경계 5 통과. 권장: 잘못 등록 수강 삭제 시 운영 원장 대기 «수강 등록» 처리 | 통과(권장 1) |
@@ -94,4 +111,3 @@
 | 11-09 | developer(원생 등록 3차, 원장 실사용 4건): ① 반 줄 대상 학년(슬롯 gradeRange→직접 슬롯→Program.targetAge) ② 셔틀 장소명 필수 — lib/shuttle/placeNameRule.ts·지도 창 requirePlaceName(등록 창·학부모 /shuttle/location/[token]만)·서버 validateRegularLocation·등록 규칙 거부 ③ 유니폼 선택칸 삭제 → 보호자 번호+학생 이름 일치 UniformOrder 로 등록 시 자동(주문/신청)·요약 표시 ④ 사진 동의 체크박스(IN_PERSON 기본, 범위 3칸 기본 켬). tsc 0·tests 3526-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | tester(claude/rental-evening): 평일 20:40~22:10 수업 무시·평일 마감 22:10 규칙 — 대관 테스트 3파일 기대값을 원장 규칙에서 직접 계산해 수정(7건)+새 테스트 3개(평일 저녁 90분 가능·100/120분 불가, 저녁 승인대관 막힘, 토 21:10 불가·22:00 마감). 대관 69-0·전체 3520-0·tsc 0 | 통과 |
 | 11-09 | developer: 기사님 셔틀 결석 아이 «빼지 말고 뱃지» — 정규 결석(학부모 신고·출석부 질병 모두) 행 유지·«결석·질병» 뱃지·흐린 행·기본 결석(탑승 누르면 체크)·정차 «결석 N명·정차 안 해도 됨». 판정 riderBoardingView/stopAbsenceSummary. tests 3507-0·guards 5-0 | 검수대기 |
-| 11-09 | pm(main 2f385fd6): 원장 2차 답 반영 — 여러 프로그램 합산·대회준비반 30만 묶음·1호점 무료 거점 셔틀비 0, 출석 질병·부상 결석(RegularAbsence)·보강 아이 종료 필수·출석 알림, 학부모 가입 안내 보내기(미리보기→원장 직접 발송), 입금 계좌 안내, 특강 회차 수업일지 출석 차단. 데이터: 셔틀 명단 18행 삭제(감사기록), 미납 POS 5건 43만 납부완료. tests 3449-0·guards 5-0. 3차 결정표 Bf1CPJqw76JGK5yp1Z7LmG 대기 | 배포 |

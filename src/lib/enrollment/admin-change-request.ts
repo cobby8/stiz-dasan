@@ -6,6 +6,7 @@ import { computeClassChangeProration, describeProration, type ProrationResult } 
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -73,6 +74,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
        -- LATERAL ... LIMIT 1 이라 원장이 여러 건이어도 신청 행이 늘어나지 않는다.
        LEFT JOIN LATERAL (SELECT c.id, c.status, c."holdReason" FROM "OperationsCommand" c
                            WHERE ${LINKED_COMMAND_SQL}
+                             AND ${notClosedByDeletedEnrollmentSql("c")}
                            ORDER BY c."createdAt" DESC LIMIT 1) oc ON true
       WHERE ($1 = 'ALL' OR r.status = $1
              OR ($1 = 'NEEDS_CHECK' AND r.status = 'APPLIED' AND ${NEEDS_CHECK_SQL}))
@@ -127,9 +129,12 @@ const LINKED_COMMAND_SQL = `(c."idempotencyKey" = 'enrollment-change:' || r.id
  * 보류(HELD)된 명령은 사람이 다른 경로로 정리해야 하므로 여기서도 "확인 필요"로 센다.
  * 시트 은퇴로 건너뛴 SHEET(SKIPPED)는 확인할 것이 없으므로 "확인 필요"가 아니다(SKIPPED 는 SHEET 칸만 인정).
  */
+// 잘못 등록 삭제로 닫은 명령(사유 DELETED_ENROLLMENT_CLOSE_REASON, 칸 SKIPPED)은 할 일이 없으므로 «확인 필요»가 아니다.
+// 화면 탭·건수(countEnrollmentChangesNeedingCheck → 일일 요약 포함)가 모두 이 조건 하나를 쓴다.
 const NEEDS_CHECK_SQL = `EXISTS (SELECT 1 FROM "OperationsCommand" c
     JOIN "OperationsSyncAttempt" a ON a."commandId" = c.id
    WHERE ${LINKED_COMMAND_SQL}
+     AND ${notClosedByDeletedEnrollmentSql("c")}
      AND ((a.target = 'SHEET' AND a.status NOT IN ('SUCCEEDED','SKIPPED'))
        OR (a.target = 'RALLYZ' AND a.status <> 'SUCCEEDED')))`;
 
