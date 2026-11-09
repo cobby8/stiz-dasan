@@ -1,0 +1,104 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import test from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
+
+// 2026-11-09 원장 점검: «정류장 수정만 있고 시간 수정 없음. 수정 누르고 드래그앤드랍으로 이동하도록».
+// → 관리자 운행표 = 평소엔 보기만, 화면 위 [수정] 하나로 편집 모드(시각 칸·손잡이 끌기·▲▼·정류장 수정·×).
+// 카드 틀(RunBoard)을 실제로 그려 본다. 기사님 모드(driver)는 이번 변경과 무관해야 한다.
+
+const require = createRequire(import.meta.url);
+const transpile = (src) => ts.transpileModule(src, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+
+// CSS 모듈은 클래스 이름 그대로, 지도 링크 모듈은 실제 파일을 변환해 붙인다.
+const links = { exports: {} };
+new Function("require", "module", "exports", transpile(await readFile("src/lib/maps/coordinate-links.ts", "utf8")))(require, links, links.exports);
+const fakeRequire = (id) => {
+  if (id.endsWith(".module.css")) return new Proxy({}, { get: (_t, k) => (k === "__esModule" ? false : String(k)) });
+  if (id === "@/lib/maps/coordinate-links") return links.exports;
+  return require(id);
+};
+const loaded = { exports: {} };
+new Function("require", "module", "exports", transpile(await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8")))(fakeRequire, loaded, loaded.exports);
+const RunBoard = loaded.exports.default;
+
+const ROWS = [
+  { key: "R:16:30:a:0", kind: "REGULAR", direction: "PICKUP", groupKey: "g1", groupLabel: "🕒 16:30 수업 · 등원", label: "A아파트 정문", subLabel: null,
+    time: "16:10", minutes: 970, seq: 0, lat: 37.6, lng: 127.1, isHub: false, isTerminal: false, pending: false, warn: false,
+    riders: [{ checkId: "row-1", key: "R:row-1", name: "김가나", grade: "초3" }] },
+  { key: "R:16:30:b:1", kind: "REGULAR", direction: "PICKUP", groupKey: "g1", groupLabel: "🕒 16:30 수업 · 등원", label: "B초등학교 후문", subLabel: null,
+    time: null, minutes: null, seq: 1, lat: null, lng: null, isHub: false, isTerminal: false, pending: false, warn: false,
+    riders: [{ checkId: "row-2", key: "R:row-2", name: "이다라", grade: null }] },
+];
+const render = (props) => renderToStaticMarkup(React.createElement(RunBoard, {
+  rows: ROWS, dragKey: null, onDragKeyChange() {}, onDropOn() {}, onMove() {}, displayTime: (r) => r.time, onTimeChange() {},
+  renderRider: (row, rider) => React.createElement("div", { key: rider.checkId }, rider.name), ...props,
+}));
+
+test("관리자 보기 모드: 시각·번호만 보이고 편집 손잡이·시각 칸은 없다", () => {
+  const html = render({ mode: "admin", editing: false });
+  assert.match(html, /16:10/);
+  assert.match(html, /시간 미정/);
+  assert.doesNotMatch(html, /type="time"|drag_indicator|순서 위로|data-run-key/);
+  // 길안내는 기사님 화면에만
+  assert.doesNotMatch(html, /길안내/);
+});
+
+test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲▼, 카드 자체는 스크롤을 막지 않는다", () => {
+  const html = render({ mode: "admin", editing: true });
+  assert.equal((html.match(/type="time"/g) ?? []).length, 2);
+  assert.match(html, /aria-label="A아파트 정문 정차 시간"/);
+  assert.equal((html.match(/drag_indicator/g) ?? []).length, 2);
+  assert.match(html, /aria-label="A아파트 정문 끌어서 순서 옮기기"/);
+  assert.match(html, /aria-label="B초등학교 후문 순서 아래로"/);
+  assert.equal((html.match(/data-run-key=/g) ?? []).length, 2);
+  // 손잡이만 touch-none(카드 위에서는 화면 스크롤 가능), 기본 끌기(draggable)는 쓰지 않는다
+  assert.doesNotMatch(html, /draggable="true"/);
+  assert.doesNotMatch(html, /<li[^>]*touch-none/);
+});
+
+test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속, 끌기 끝·화면 떠나면 정지", async () => {
+  const board = await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8");
+  assert.match(board, /scrollFrame\.current = requestAnimationFrame\(autoScrollStep\)/);
+  assert.match(board, /function endHandleDrag\(\) \{\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
+  assert.match(board, /useEffect\(\(\) => stopAutoScroll, \[\]\)/);
+  // 스크롤로 손가락 아래 카드가 바뀌면 그 프레임에 다시 맞춘다
+  assert.match(board, /window\.scrollBy\(0, dy\);\s*placeUnderFinger\(\);/);
+});
+
+test("기사님 모드는 이번 변경과 무관 — 손잡이·data-run-key 없이 옛 방식(카드 전체 끌기·넓은 시각 칸) 그대로", () => {
+  const view = render({ mode: "driver", editing: false });
+  assert.match(view, /길안내/);
+  assert.doesNotMatch(view, /drag_indicator|data-run-key/);
+  const edit = render({ mode: "driver", editing: true });
+  assert.match(edit, /draggable="true"/);
+  assert.match(edit, /<li[^>]*touch-none cursor-grab/);
+  assert.match(edit, /col-span-3 mt-2 h-12 w-full/);
+  assert.doesNotMatch(edit, /drag_indicator|data-run-key/);
+});
+
+test("관리자 화면 배선: [수정] 하나 → 편집 모드, 정류장 수정·×·학생 창은 편집 모드에서만, 창 열기 전 순서 먼저 저장", async () => {
+  const editor = await readFile("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx", "utf8");
+  // 화면 위 [수정] 하나(옛 «↕ 순서·시간 수정» 버튼 없음) · 편집 중 고정 줄에 취소/저장
+  assert.match(editor, /onClick=\{startEditing\}[\s\S]{0,300}>edit<\/span>수정/);
+  assert.doesNotMatch(editor, /↕ 순서·시간 수정|기사님 화면과 같음/);
+  // 고정 줄은 관리자 머리(AdminShellClient sticky top-0 z-20 h-14) 아래에 붙고 덮지 않는다
+  assert.match(editor, /sticky top-14 z-10/);
+  assert.doesNotMatch(editor, /sticky top-0/);
+  // 적용 범위 옆에 어느 달 명단에 반영되는지 짧게
+  assert.match(editor, /formatRosterMonths\(\[serviceMonth, \.\.\.laterMonths\]\)\} 명단에 반영/);
+  assert.match(editor, /<span className="text-\[12px\]">\{scopeHint\}<\/span>/);
+  // 보기 모드에는 편집 버튼이 없다
+  assert.match(editor, /\{editing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
+  assert.match(editor, /\{editing && \(\s*<div className=\{styles\.boardingActions\}>/);
+  assert.match(editor, /\{editing \? \(\s*<button type="button" disabled=\{savingOrder\} onClick=\{\(\) => openDialog\(\{ kind: "student"/);
+  // 바꾼 순서·시각이 있으면 창을 열기 전에 먼저 저장(편집 모드 유지)
+  assert.match(editor, /if \(!window\.confirm\("바꾼 순서·시각을 먼저 저장할까요\?"\)\) return;\s*if \(await saveOrder\(true\)\) open\(\);/);
+  // 저장 안 한 변경이 없으면 이동 확인을 띄우지 않는다
+  assert.match(editor, /function confirmLeave\(\) \{ return !orderDirty \|\|/);
+});
