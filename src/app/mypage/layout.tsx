@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { logout } from "@/app/actions/auth";
+import { cookies } from "next/headers";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import AppBackButton from "@/components/AppBackButton";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import MyPageBottomNav from "./MyPageBottomNav";
-import ParentMoreMenu from "./ParentMoreMenu";
+import ParentNotificationBell from "./ParentNotificationBell";
+import { getNotifications, getUnreadNotificationCount } from "@/lib/queries";
+import { FONT_SCALE_COOKIE, fontScalePercent, parseFontScale } from "@/lib/mypage/parentSettings";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
@@ -38,14 +40,37 @@ export default async function MyPageLayout({
     // 리다이렉트가 된다(실제 발생: ERR_TOO_MANY_REDIRECTS).
     // /mypage/continue 로 가는 이유: /auth/continue 는 학부모 앱의 영역(/mypage) 밖이라
     // 설치된 앱이 주소표시줄을 띄우며 브라우저로 새어 나간다.
-    await requireVerifiedParent().catch(() => redirect("/mypage/continue?bounced=1"));
-    const { views } = await getAccountViewAccess();
+    const parent = await requireVerifiedParent().catch(() => redirect("/mypage/continue?bounced=1"));
+    // 머리줄 🔔 알림(모든 /mypage 화면 공통, 2026-11-10 원장 결정 k7) — 대상은 로그인한 본인 알림만
+    const [{ views }, notifications, unreadCount, cookieStore] = await Promise.all([
+        getAccountViewAccess(),
+        getNotifications(parent.appUserId),
+        getUnreadNotificationCount(parent.appUserId),
+        cookies(),
+    ]);
+    // 글자 크기(설정 화면) — 쿠키로 서버가 처음부터 그 크기로 그린다(깜빡임 없음). 학부모 화면 안에서만 적용된다.
+    const fontPercent = fontScalePercent(parseFontScale(cookieStore.get(FONT_SCALE_COOKIE)?.value));
+    const bellItems = notifications.map((n) => ({
+        id: n.id, type: n.type, title: n.title, message: n.message, linkUrl: n.linkUrl, isRead: n.isRead, createdAt: n.createdAt,
+    }));
+    // ⚙ 설정 버튼 — 예전 «⋯» 메뉴 자리. 누르는 영역 44×44
+    const settingsLink = (
+        <Link
+            href="/mypage/settings"
+            aria-label="설정"
+            className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
+        >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: "24px" }} aria-hidden="true">settings</span>
+        </Link>
+    );
 
     return (
         // 학부모 앱은 밝은 스포츠 스타일을 적용하고 역할 경계를 유지한다.
         <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
-            {/* 모바일 상단 헤더 — 기존 구조 유지, 그림자/보더 디자인 토큰 통일 */}
-            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-3 md:hidden">
+            {/* 글자 크기 «크게·아주 크게» — html 글자 배율. 학부모 화면을 떠나면 이 줄도 사라져 다른 화면엔 영향 없음 */}
+            {fontPercent !== 100 && <style>{`html{font-size:${fontPercent}%}`}</style>}
+            {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [🔔 N] [⚙] (2026-11-10 원장 결정 k7) */}
+            <header className="bg-[var(--color-academy-surface)] sticky top-0 z-50 border-b border-[var(--color-academy-line)] grid grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 py-2 md:hidden">
                 {/* 설치된 학부모 앱에서는 /mypage 밖으로 나가지 않는다.
                     브라우저로 들어온 사람은 홈페이지에서 왔을 수 있어 기존대로 둔다. */}
                 <AppBackButton fallbackHref="/" scopeHref="/mypage" size="sm" />
@@ -55,19 +80,14 @@ export default async function MyPageLayout({
                 <Link href="/mypage" className="flex items-center gap-2">
                     <Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-20 shrink-0 object-contain" />
                 </Link>
-                {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="text-center font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
-                {/* 로그아웃은 «⋯» 메뉴 안으로(원장 결정 D8 — 자주 안 쓰는 버튼을 일등석에서 뺌) */}
-                <ParentMoreMenu>
-                    <form action={logout}>
-                        <button
-                            type="submit"
-                            // 메뉴 안 로그아웃 — 누르는 높이 44px(min-h-11), 색은 토큰
-                            className="inline-flex min-h-11 w-full items-center rounded-lg px-1 text-sm font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
-                        >
-                            로그아웃
-                        </button>
-                    </form>
-                </ParentMoreMenu>
+                {/* «학부모» 글자는 로고 바로 오른쪽(역할이 둘 이상이면 화면 전환 단추) */}
+                <div className="min-w-0 justify-self-start">
+                    {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
+                </div>
+                {/* 🔔 알림 — 안 읽은 수 배지, 누르면 알림 목록(아래 «알림 설정») */}
+                <ParentNotificationBell notifications={bellItems} unreadCount={unreadCount} />
+                {/* ⚙ 설정 — 계정·비밀번호·가족·알림·글자 크기·앱 정보·문제 신고·로그아웃(예전 «⋯» 메뉴를 대신함) */}
+                {settingsLink}
             </header>
 
             {/* 데스크탑 헤더 — 기존 구조 유지, 호버 트랜지션 통일 */}
@@ -91,16 +111,8 @@ export default async function MyPageLayout({
                     <HideInInstalledApp>
                         <Link href="/" className="hover:text-[var(--color-academy-ink)] transition-colors">홈페이지</Link>
                     </HideInInstalledApp>
-                    <ParentMoreMenu>
-                        <form action={logout}>
-                            <button
-                                type="submit"
-                                className="inline-flex min-h-11 w-full items-center rounded-lg px-1 text-sm font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
-                            >
-                                로그아웃
-                            </button>
-                        </form>
-                    </ParentMoreMenu>
+                    <ParentNotificationBell notifications={bellItems} unreadCount={unreadCount} />
+                    {settingsLink}
                 </div>
             </header>
 

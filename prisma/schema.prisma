@@ -1652,6 +1652,18 @@ model PushSubscription {
   @@index([userId])
 }
 
+// 학부모 앱 알림(웹푸시) 종류별 받기 — 학부모 한 명당 한 줄(2026-11-10 원장 결정 k7).
+// 줄이 없으면 전부 받기. 끄는 건 휴대폰 울림만이고 종 목록(Notification)에는 그대로 쌓인다.
+// 발송 쪽 거르기: src/lib/pushNotification.ts → src/lib/parent-notification-preferences.ts
+model ParentNotificationPreference {
+  userId         String   @id
+  pushAttendance Boolean  @default(true)
+  pushBilling    Boolean  @default(true)
+  pushNotice     Boolean  @default(true)
+  pushShuttle    Boolean  @default(true)
+  updatedAt      DateTime @default(now()) @db.Timestamptz(6)
+}
+
 model Feedback {
   id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   studentId   String

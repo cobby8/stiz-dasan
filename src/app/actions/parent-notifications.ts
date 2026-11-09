@@ -29,7 +29,8 @@ export async function markMyNotificationRead(id: string): Promise<{ ok: boolean 
     console.error("[markMyNotificationRead] failed:", e);
     return { ok: false };
   }
-  revalidatePath("/mypage");
+  // 머리줄 🔔 배지는 모든 /mypage 화면의 layout 이 그린다 → layout 단위로 새로 그린다
+  revalidatePath("/mypage", "layout");
   return { ok: true };
 }
 
@@ -46,6 +47,7 @@ export async function markAllMyNotificationsRead(): Promise<{ ok: boolean }> {
     console.error("[markAllMyNotificationsRead] failed:", e);
     return { ok: false };
   }
-  revalidatePath("/mypage");
+  // 머리줄 🔔 배지는 모든 /mypage 화면의 layout 이 그린다 → layout 단위로 새로 그린다
+  revalidatePath("/mypage", "layout");
   return { ok: true };
 }

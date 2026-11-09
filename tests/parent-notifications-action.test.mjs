@@ -39,8 +39,9 @@ function loadActions(loggedIn) {
   return { actions, calls };
 }
 
-test("① 학부모 홈은 관리자용 읽음 함수(requireAdmin)를 부르지 않고 학부모 전용 동작을 쓴다", () => {
-  const home = read("src/app/mypage/MyPageClient.tsx");
+test("① 학부모 알림(머리줄 🔔)은 관리자용 읽음 함수(requireAdmin)를 부르지 않고 학부모 전용 동작을 쓴다", () => {
+  // 2026-11-10 k7: 알림 목록은 홈 칸에서 머리줄 종(ParentNotificationBell)으로 옮겼다
+  const home = read("src/app/mypage/ParentNotificationBell.tsx");
   assert.doesNotMatch(home, /markNotificationRead|markAllNotificationsRead/, "관리자용 함수 이름이 홈에 없다");
   assert.match(home, /from "@\/app\/actions\/parent-notifications"/);
   assert.match(home, /markAllMyNotificationsRead\(\)/, "모두 읽음은 인자 없이(대상은 서버가 정한다)");
@@ -92,7 +93,7 @@ test("④ 알림 이동 주소: 내부 경로만, 바깥 주소는 null(읽음�
   for (const bad of ["https://evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)", "mypage", "", null, undefined, 3, "/a\nb", "/a\\b"]) {
     assert.equal(nav.safeInternalHref(bad), null, String(bad));
   }
-  const home = read("src/app/mypage/MyPageClient.tsx");
+  const home = read("src/app/mypage/ParentNotificationBell.tsx");
   assert.match(home, /const href = safeInternalHref\(n\.linkUrl\)/);
-  assert.match(home, /if \(!isRead\) await markMyNotificationRead\(id\);\s*if \(href\) router\.push\(href\);/, "읽음 처리 후 내부 주소로 이동");
+  assert.match(home, /if \(!isRead\) await markMyNotificationRead\(id\);\s*if \(href\) \{\s*setOpen\(false\);\s*router\.push\(href\);/, "읽음 처리 후 내부 주소로 이동");
 });
