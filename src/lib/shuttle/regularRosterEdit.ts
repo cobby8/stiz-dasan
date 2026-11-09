@@ -10,7 +10,12 @@ import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 import { isKoreanCoordinate } from "./academyLocation";
 import { dowToWeekday, type EnrolledClass, type GeoPoint } from "./regularRosterPlacementLogic";
 import type { RosterEnrollment } from "./regularRosterEnrollmentCheckLogic";
+import type { RegularShuttleStop } from "./regularSheet";
+import { notifyDriversOfRosterChange, type RosterChangeEvent } from "./regularRosterNotify";
+import { planLocationApply, type LocationKind } from "./regularLocationApplyLogic";
 import {
+  pickStudentRows,
+  validateStudentRosterEditInput,
   buildAddRows,
   mapPlacementsToMonth,
   planRosterInsert,
@@ -118,6 +123,38 @@ async function audit(tx: Tx, actorId: string | null, action: string, before: unk
 
 const ROW_COLUMNS = `"id","serviceMonth","weekday","classTime","arriveTime","stopName","direction","studentName","studentId","studentPhone","parentPhone","note","sortOrder","latitude","longitude"`;
 
+/** 명단 행 목록 → 기사님 알림의 «바뀐 칸»(요일 × 방향). */
+function cellsOf(rows: readonly object[]): { weekday: number; direction: string }[] {
+  return rows.map((r) => {
+    const o = r as Record<string, unknown>; // DB 행(Record)·새 행(RosterNewRow) 모두 weekday·direction 을 갖는다
+    return { weekday: Number(o.weekday), direction: String(o.direction) };
+  });
+}
+
+/** 알림 문구에 쓸 학생 이름 묶음 — «허재원» / «허재원 외 2명». 이름이 없으면 빈 값. */
+function namesLabel(rows: readonly { studentName?: unknown }[]): string {
+  const names = [...new Set(rows.map((r) => String(r.studentName ?? "").trim()).filter(Boolean))];
+  if (names.length === 0) return "";
+  return names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}명`;
+}
+
+/** 저장(트랜잭션)이 끝난 뒤 기사님 알림을 보낸다 — 알림 실패는 저장 결과를 바꾸지 않는다(notify 가 삼킨다). */
+async function flushNotices(events: readonly RosterChangeEvent[]) {
+  for (const e of events) await notifyDriversOfRosterChange(e);
+}
+
+/** 이 달에서 행 id 그대로 지운다(학생 등·하원 행만). 하나라도 없으면 전체 취소 — 화면과 DB 가 어긋난 상태. */
+async function deleteRowsExact(tx: Tx, month: string, ids: readonly string[]): Promise<Record<string, unknown>[]> {
+  const deleted = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
+    `DELETE FROM "RegularShuttleStop"
+      WHERE "id" = ANY($1::text[]) AND "serviceMonth"=$2 AND "direction" IN ('BOARD','ALIGHT')
+      RETURNING ${ROW_COLUMNS}`,
+    [...ids], month,
+  );
+  if (deleted.length !== ids.length) throw new RosterInputError("그사이 명단이 바뀌었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.");
+  return deleted;
+}
+
 // ── 학생 검색(추가 폼) ───────────────────────────────────────
 
 export type RosterStudentPlace = { name: string | null; address: string; latitude: number; longitude: number };
@@ -193,6 +230,12 @@ export type AddRosterStudentOptions = {
    * 왜: 화면 검사와 저장 사이에 다른 사람이 같은 칸을 넣는 경우를 잠금 안에서 막으려고.
    */
   guard?: (rows: RosterPlacementRow[]) => void;
+  /**
+   * 반 이동 재배정(2026-11-09 D4) — 새 칸을 넣는 같은 트랜잭션에서 지울 옛 칸 행 id(이 달).
+   * guard 다음에 지우고(하나라도 없으면 전체 취소), 이후 달(FROM_THIS_MONTH)은 대응 행(같은 학생·요일·방향·수업)도 지운다.
+   * 왜 한 트랜잭션: 새 칸만 들어가고 옛 칸이 남으면 기사님이 두 요일에 데리러 간다. 반대면 학생이 명단에서 사라진다.
+   */
+  replaceRowIds?: string[];
 };
 
 /**
@@ -222,11 +265,16 @@ export async function addRosterStudentAs(actorId: string, raw: unknown, opts: Ad
   }
 
   const who = { studentName, studentId: input.studentId, studentPhone, parentPhone };
-  return prisma.$transaction(async (tx) => {
+  const replaceIds = [...new Set((opts.replaceRowIds ?? []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     // 고른 달은 중복이면 거부(오류 안내), 이후 달은 이미 있는 행만 건너뛰고 나머지를 만든다.
-    const existing = await monthPlacementRows(tx, input.serviceMonth);
+    let existing = await monthPlacementRows(tx, input.serviceMonth);
     opts.guard?.(existing); // 기사님 배정: 잠금 안에서 「그 칸이 아직 비었는지」 마지막 확인
+    // 재배정: 옛 칸을 먼저 지우고 그 뒤 명단으로 삽입 계획을 세운다(새 칸 자리는 옛 칸과 다른 칸이라 기준 행이 지워지지 않는다).
+    const replaced = replaceIds.length > 0 ? await deleteRowsExact(tx, input.serviceMonth, replaceIds) : [];
+    if (replaced.length > 0) existing = await monthPlacementRows(tx, input.serviceMonth);
     // 운행표에서 고른 자리(중간 삽입·합류)를 적용한 실행 단계. 고른 자리가 없으면 예전처럼 그 수업 맨 뒤.
     const plan = planRosterInsert(buildAddRows(input, existing, studentName), input.placements, existing);
     const shifted = await applyInsertPlan(tx, input.serviceMonth, plan, who);
@@ -236,10 +284,22 @@ export async function addRosterStudentAs(actorId: string, raw: unknown, opts: Ad
     const skippedMonths: string[] = [];
     const endPlacedMonths: string[] = [];
     const laterSteps: { month: string; steps: RosterInsertStep[] }[] = [];
+    const laterReplaced: Record<string, unknown>[] = [];
     for (const m of later) {
-      const laterRows = await monthPlacementRows(tx, m);
+      let laterRows = await monthPlacementRows(tx, m);
+      let replacedHere = 0;
+      if (replaced.length > 0) {
+        // 이후 달의 옛 칸 대응 행(같은 학생·요일·방향·수업시간)도 지운다. 없으면(그 달에서 따로 고친 경우) 그대로 둔다.
+        const ids = [...new Set(replaced.flatMap((d) => findCounterpartRows(identityOf(d), laterRows).map((r) => r.id)))];
+        if (ids.length > 0) {
+          const del = await deleteRowsExact(tx, m, ids);
+          laterReplaced.push(...del);
+          replacedHere = del.length;
+          laterRows = await monthPlacementRows(tx, m);
+        }
+      }
       const extra = buildAddRows(input, laterRows, studentName, { skipDuplicates: true });
-      if (extra.length === 0) { skippedMonths.push(m); continue; }
+      if (extra.length === 0) { (replacedHere > 0 ? appliedMonths : skippedMonths).push(m); continue; }
       // 그 달에서는 기준 정차의 대응 행(같은 학생·요일·방향·수업) 기준으로 같은 자리에, 없으면 맨 뒤.
       const monthPlan = planRosterInsert(extra, mapPlacementsToMonth(input.placements, existing, laterRows), laterRows);
       await applyInsertPlan(tx, m, monthPlan, who);
@@ -254,9 +314,18 @@ export async function addRosterStudentAs(actorId: string, raw: unknown, opts: Ad
       placements: input.placements ?? [], shifted, spread: plan.spread,
       steps: steps.map((s) => ({ mode: s.mode, shiftFrom: s.shiftFrom, weekday: s.row.weekday, direction: s.row.direction, sortOrder: s.row.sortOrder })),
       laterSteps: laterSteps.map((l) => ({ month: l.month, steps: l.steps.map((s) => ({ mode: s.mode, fellBack: s.fellBack, shiftFrom: s.shiftFrom, weekday: s.row.weekday, direction: s.row.direction, sortOrder: s.row.sortOrder })) })),
+      // 재배정이면 지운 옛 칸 행 전체(되돌릴 때 그대로 다시 넣을 수 있게). 일반 추가는 칸을 남기지 않는다(기록 모양 그대로).
+      ...(replaced.length > 0 ? { reassign: true, replacedRows: replaced, laterReplacedRows: laterReplaced } : {}),
+    });
+    notices.push({
+      actorId, month: input.serviceMonth, studentId: input.studentId,
+      cells: cellsOf([...rows, ...replaced]),
+      summary: replaced.length > 0 ? `${studentName} 학생 반 이동 재배정` : `${studentName} 학생 추가`,
     });
     return { added: rows.length, appliedMonths, skippedMonths, endPlacedMonths };
   });
+  await flushNotices(notices);
+  return result;
 }
 
 /** 학생 추가 삽입 계획용 행(합류 대상의 정류장 이름·시각·좌표 포함). monthRows 는 다른 편집이 공유하므로 따로 읽는다. */
@@ -413,7 +482,8 @@ function identityOf(r: Record<string, unknown>): RosterRowIdentity {
 export async function removeRosterRows(raw: unknown): Promise<{ removed: number } & RosterScopeResult> {
   const admin = await requireAdmin();
   const input = validateRemoveInput(raw);
-  return prisma.$transaction(async (tx) => {
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     // 학생 등·하원 행만 지운다(학원 경유·복귀 같은 운영 정차는 이 화면에서 지우지 않는다).
     const deleted = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
@@ -441,8 +511,15 @@ export async function removeRosterRows(raw: unknown): Promise<{ removed: number 
       appliedMonths.push(m);
     }
     await audit(tx, admin.appUserId, "REGULAR_ROSTER_REMOVE", { serviceMonth: input.serviceMonth, scope: input.scope, rows: deleted, laterRows: laterDeleted }, { appliedMonths });
+    const who = namesLabel(deleted);
+    notices.push({
+      actorId: admin.appUserId, month: input.serviceMonth, cells: cellsOf(deleted),
+      summary: `${who ? `${who} 학생 ` : ""}명단에서 빼기(${input.scope === "THIS_MONTH" ? "이번 달만" : "이번 달부터 계속"})`,
+    });
     return { removed: deleted.length, appliedMonths, skippedMonths };
   });
+  await flushNotices(notices);
+  return result;
 }
 
 // ── 반이동 ─────────────────────────────────────────────────
@@ -459,7 +536,8 @@ async function applyMoveUpdates(tx: Tx, month: string, updates: { id: string; we
 export async function moveRosterRows(raw: unknown): Promise<{ moved: number } & RosterScopeResult> {
   const admin = await requireAdmin();
   const input = validateMoveInput(raw);
-  return prisma.$transaction(async (tx) => {
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     const existing = await monthRows(tx, input.serviceMonth);
     const updates = buildMoveUpdates(input.ids, input.weekday, input.classTime, existing);
@@ -485,8 +563,17 @@ export async function moveRosterRows(raw: unknown): Promise<{ moved: number } & 
       }
     }
     await audit(tx, admin.appUserId, "REGULAR_ROSTER_MOVE", { serviceMonth: input.serviceMonth, scope: input.scope, rows: before }, { serviceMonth: input.serviceMonth, rows: updates, laterRows: laterUpdates, appliedMonths });
+    const who = namesLabel(before);
+    notices.push({
+      actorId: admin.appUserId, month: input.serviceMonth, studentId: before[0]?.studentId ?? null,
+      // 옛 요일·새 요일 칸 모두 바뀐다.
+      cells: [...cellsOf(before), ...before.map((b) => ({ weekday: input.weekday, direction: b.direction }))],
+      summary: `${who ? `${who} 학생 ` : ""}요일·수업 옮김`,
+    });
     return { moved: updates.length, appliedMonths, skippedMonths };
   });
+  await flushNotices(notices);
+  return result;
 }
 
 // ── 정류장 수정(한 행 / 같은 이름 전체) ──────────────────────────
@@ -495,7 +582,8 @@ export async function editRosterStop(raw: unknown): Promise<{ updated: number } 
   const admin = await requireAdmin();
   const input = validateStopEditInput(raw);
   const { stop } = input;
-  return prisma.$transaction(async (tx) => {
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     const current = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
       `SELECT "stopName","arriveTime","latitude","longitude","weekday","direction","classTime","studentId","studentName","parentPhone"
@@ -504,6 +592,13 @@ export async function editRosterStop(raw: unknown): Promise<{ updated: number } 
     );
     if (!current[0]) throw new RosterInputError("이 달 명단에서 해당 정류장을 찾지 못했습니다. 화면을 새로고침해 주세요.");
     const oldStopName = String(current[0].stopName);
+    // 기사님 알림용 — 「같은 이름 전체」면 그 이름을 쓰는 이 달 칸 모두가 바뀐다(바꾸기 전에 읽는다).
+    const touched = input.applyToAll
+      ? await tx.$queryRawUnsafe<Record<string, unknown>[]>(
+        `SELECT DISTINCT "weekday","direction" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "stopName"=$2`,
+        input.serviceMonth, oldStopName,
+      )
+      : [current[0]];
 
     // 한 달 안에서의 수정: 대상 행(도착시각 포함) + 「같은 이름 전체」면 같은 정류장 이름 행(이름·좌표만).
     // 좌표가 비어 오면(null) 기존 좌표를 유지한다 — 화면에 좌표를 지우는 기능이 없어 null 은 "변경 없음"으로 본다.
@@ -542,8 +637,144 @@ export async function editRosterStop(raw: unknown): Promise<{ updated: number } 
     await audit(tx, admin.appUserId, input.applyToAll ? "REGULAR_ROSTER_STOP_RENAME_ALL" : "REGULAR_ROSTER_STOP_EDIT",
       { serviceMonth: input.serviceMonth, id: input.id, stopName, arriveTime, latitude, longitude },
       { serviceMonth: input.serviceMonth, id: input.id, ...stop, applyToAll: input.applyToAll, scope: input.scope, updated, appliedMonths });
+    notices.push({
+      actorId: admin.appUserId, month: input.serviceMonth, studentId: (current[0].studentId as string | null) ?? null,
+      cells: cellsOf([current[0], ...touched]),
+      summary: input.applyToAll
+        ? `정류장 이름 바꿈 «${oldStopName}» → «${stop.stopName}»`
+        : `${current[0].studentName ? `${String(current[0].studentName)} 학생 ` : ""}정류장 «${stop.stopName}»${stop.arriveTime ? ` ${stop.arriveTime}` : ""}`,
+    });
     return { updated, appliedMonths, skippedMonths };
   });
+  await flushNotices(notices);
+  return result;
+}
+
+// ── 학생 셔틀 정보 수정(학생 이름 눌러 여는 창, 2026-11-09) ─────────────────
+
+/** 행 id 들의 정류장·시각을 바꾼다(행 id 유지 UPDATE — 탑승 체크 키가 끊기지 않게). 좌표가 null 이면 기존 좌표 유지(editRosterStop 과 같은 규칙). */
+async function updateStopRows(tx: Tx, month: string, ids: readonly string[], stop: { stopName: string; arriveTime: string | null; latitude: number | null; longitude: number | null }): Promise<number> {
+  if (ids.length === 0) return 0;
+  return Number(await tx.$executeRawUnsafe(
+    `UPDATE "RegularShuttleStop" SET "stopName"=$1,"arriveTime"=$2,"latitude"=COALESCE($3::double precision,"latitude"),"longitude"=COALESCE($4::double precision,"longitude")
+      WHERE "id" = ANY($5::text[]) AND "serviceMonth"=$6 AND "direction" IN ('BOARD','ALIGHT')`,
+    stop.stopName, stop.arriveTime, stop.latitude, stop.longitude, [...ids], month,
+  )) || 0;
+}
+
+/**
+ * 한 학생의 요일 × 등/하원 칸 정류장·시각을 한 번에 바꾼다(관리자 «학생 셔틀 정보» 창 — 4단계 화면이 부른다).
+ * 입력: { serviceMonth, scope?: THIS_MONTH | FROM_THIS_MONTH(기본), studentId?, changes: [{ rowId, stopName, arriveTime, latitude, longitude }] }
+ * - 고칠 행은 잠금 안에서 «이 달·한 학생의 등·하원 행»인지 다시 확인한다(pickStudentRows). 하나라도 어긋나면 전체 취소.
+ * - FROM_THIS_MONTH 면 이후 달의 대응 행(같은 학생·요일·방향·수업시간)도 같은 값으로. 대응 행이 없는 달은 건너뛴다.
+ * - 순서(sortOrder)는 바꾸지 않는다 — 정류장이 바뀌어 순서가 달라져야 하면 운행표에서 원장이 옮긴다(자동 제안 제거 결정과 일관).
+ * 칸 켜기(새 칸)·끄기(빼기)는 기존 경로(배정 /api/staff/shuttle/assign · 빼기 removeRosterRows)를 쓴다.
+ */
+export async function editStudentRoster(raw: unknown): Promise<{ updated: number } & RosterScopeResult> {
+  const admin = await requireAdmin();
+  const input = validateStudentRosterEditInput(raw);
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
+    const later = await lockForEdit(tx, input.serviceMonth, input.scope);
+    const rows = await monthPlacementRows(tx, input.serviceMonth);
+    const targets = pickStudentRows(rows, input.changes.map((c) => c.rowId), input.studentId);
+    const byId = new Map(targets.map((r) => [r.id, r]));
+    let updated = 0;
+    for (const c of input.changes) updated += await updateStopRows(tx, input.serviceMonth, [c.rowId], c);
+    if (updated !== input.changes.length) throw new RosterInputError("그사이 명단이 바뀌었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.");
+
+    const appliedMonths = [input.serviceMonth];
+    const skippedMonths: string[] = [];
+    for (const m of later) {
+      const laterRows = await monthRows(tx, m);
+      let n = 0;
+      for (const c of input.changes) {
+        const src = byId.get(c.rowId)!;
+        n += await updateStopRows(tx, m, findCounterpartRows(src, laterRows).map((r) => r.id), c);
+      }
+      (n > 0 ? appliedMonths : skippedMonths).push(m);
+    }
+    await audit(tx, admin.appUserId, "REGULAR_ROSTER_STUDENT_EDIT",
+      { serviceMonth: input.serviceMonth, rows: targets.map((t) => ({ id: t.id, weekday: t.weekday, direction: t.direction, classTime: t.classTime, stopName: t.stopName, arriveTime: t.arriveTime, latitude: t.latitude, longitude: t.longitude })) },
+      { serviceMonth: input.serviceMonth, scope: input.scope, changes: input.changes, updated, appliedMonths });
+    const who = namesLabel(targets);
+    notices.push({
+      actorId: admin.appUserId, month: input.serviceMonth, studentId: targets.find((t) => t.studentId)?.studentId ?? input.studentId,
+      cells: cellsOf(targets), summary: `${who ? `${who} 학생 ` : ""}정류장·시각 변경`,
+    });
+    return { updated, appliedMonths, skippedMonths };
+  });
+  await flushNotices(notices);
+  return result;
+}
+
+// ── 학생 위치 수정 → 명단 반영(2026-11-09 D3) ─────────────────────────
+
+export type LocationRosterApplyResult = {
+  /** 실제로 바뀐 달. */
+  appliedMonths: string[];
+  updated: number;
+  /** 달마다 정한 정류장(NAME = 근처 기존 정류장 합류, NEW = 새 위치). */
+  months: { month: string; by: "NAME" | "NEW"; stopName: string; rowIds: string[] }[];
+};
+
+/**
+ * 학생 셔틀 위치 저장과 **같은 트랜잭션** 안에서 부른다(service.updateStudentShuttleLocation) — 한쪽만 저장되는 상태 금지.
+ * 이번 달(KST)과 이미 만들어진 이후 달의 그 학생 kind 방향 행(PICKUP→등원, DROPOFF→하원)을 새 위치로 맞춘다.
+ * 정류장 결정은 순수 함수 planLocationApply(300m 안 이름 맞는 기존 정류장 합류, 없으면 새 위치). 지난 달은 건드리지 않는다.
+ * ⚠️ 권한 확인을 하지 않는다 — 부르는 쪽(관리자 API → requireAdmin)이 책임진다.
+ * 기사님 알림은 커밋 뒤 보내야 하므로 notices 에 담아 돌려준다(flushRosterNotices 로 보낸다).
+ */
+export async function applyLocationToRosterInTx(
+  tx: Tx,
+  actorId: string | null,
+  args: { studentId: string; kind: LocationKind; name: string; latitude: number; longitude: number },
+  currentMonth: string = koreaServiceMonth(),
+): Promise<LocationRosterApplyResult & { notices: RosterChangeEvent[] }> {
+  const found = await tx.$queryRawUnsafe<{ name: string; parentPhone: string | null }[]>(
+    `SELECT s."name",
+            COALESCE(u."phone", (SELECT g."phone" FROM "Guardian" g WHERE g."studentId"=s."id" AND g."phone" IS NOT NULL ORDER BY g."isPrimary" DESC, g."createdAt" ASC LIMIT 1)) AS "parentPhone"
+       FROM "Student" s LEFT JOIN "User" u ON u."id"=s."parentId"
+      WHERE s."id"=$1 AND s."mergedIntoStudentId" IS NULL LIMIT 1`,
+    args.studentId,
+  );
+  const empty = { appliedMonths: [], updated: 0, months: [], notices: [] };
+  if (!found[0]) return empty;
+  const student = { id: args.studentId, name: String(found[0].name ?? ""), parentPhone: found[0].parentPhone ?? null };
+  const later = await lockForEdit(tx, currentMonth, "FROM_THIS_MONTH");
+  const out: LocationRosterApplyResult = { appliedMonths: [], updated: 0, months: [] };
+  const notices: RosterChangeEvent[] = [];
+  for (const m of [currentMonth, ...later]) {
+    const rows = await monthPlacementRows(tx, m);
+    const plan = planLocationApply(rows as unknown as RegularShuttleStop[], student, args.kind, { name: args.name, latitude: args.latitude, longitude: args.longitude });
+    if (!plan || plan.rowIds.length === 0) continue;
+    const n = Number(await tx.$executeRawUnsafe(
+      `UPDATE "RegularShuttleStop" SET "stopName"=$1,"latitude"=$2,"longitude"=$3
+        WHERE "id" = ANY($4::text[]) AND "serviceMonth"=$5 AND "direction"=$6`,
+      plan.stopName, plan.latitude, plan.longitude, plan.rowIds, m, plan.direction,
+    )) || 0;
+    if (n === 0) continue;
+    out.appliedMonths.push(m);
+    out.updated += n;
+    out.months.push({ month: m, by: plan.by, stopName: plan.stopName, rowIds: plan.rowIds });
+    const changed = rows.filter((r) => plan.rowIds.includes(r.id));
+    // 알림은 가장 이른 달 하나만(이번 달·다음 달이 같이 바뀌어도 기사님께는 한 번).
+    if (notices.length === 0) notices.push({
+      actorId, month: m, studentId: args.studentId, cells: cellsOf(changed),
+      summary: `${student.name} 학생 위치 변경 → 정류장 «${plan.stopName}»${plan.by === "NAME" ? "(근처 기존 정류장)" : ""} · 순서·시각 확인 필요`,
+    });
+  }
+  if (out.updated > 0) {
+    await audit(tx, actorId, "REGULAR_ROSTER_LOCATION_APPLY",
+      { studentId: args.studentId, kind: args.kind },
+      { place: { name: args.name, latitude: args.latitude, longitude: args.longitude }, ...out });
+  }
+  return { ...out, notices };
+}
+
+/** applyLocationToRosterInTx 가 돌려준 알림을 커밋 뒤에 보낸다. */
+export async function flushRosterNotices(notices: readonly RosterChangeEvent[]): Promise<void> {
+  await flushNotices(notices);
 }
 
 // ── 기사님 화면 순서·시각(정차 단위) ──────────────────────────────
@@ -587,7 +818,8 @@ async function applyReorderUpdates(tx: Tx, month: string, updates: RosterReorder
 export async function reorderRosterStops(raw: unknown): Promise<{ updated: number } & RosterScopeResult> {
   const admin = await requireAdmin();
   const input = validateReorderInput(raw);
-  return prisma.$transaction(async (tx) => {
+  const notices: RosterChangeEvent[] = [];
+  const result = await prisma.$transaction(async (tx) => {
     const later = await lockForEdit(tx, input.serviceMonth, input.scope);
     const existing = await monthRowsWithTime(tx, input.serviceMonth);
     const updates = buildReorderUpdates(input, existing);
@@ -611,8 +843,15 @@ export async function reorderRosterStops(raw: unknown): Promise<{ updated: numbe
       { serviceMonth: input.serviceMonth, weekday: input.weekday, classTime: input.classTime, direction: input.direction,
         rows: updates.map((u) => ({ id: u.id, sortOrder: byId.get(u.id)?.sortOrder, arriveTime: byId.get(u.id)?.arriveTime ?? null })) },
       { serviceMonth: input.serviceMonth, scope: input.scope, rows: updates, laterRows: laterUpdates, appliedMonths });
+    notices.push({
+      actorId: admin.appUserId, month: input.serviceMonth,
+      cells: [{ weekday: input.weekday, direction: input.direction }],
+      summary: `${input.classTime.split("~")[0]} 수업 정차 순서·시각 변경`,
+    });
     return { updated, appliedMonths, skippedMonths };
   });
+  await flushNotices(notices);
+  return result;
 }
 
 // ── 정규 배차 저장 노선 사용 여부(조회 전용) ───────────────────────

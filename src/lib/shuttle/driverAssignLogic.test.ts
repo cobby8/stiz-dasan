@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { ALREADY_ASSIGNED, assertLegStillOpen, buildAssignAddInput, buildAssignBoard, DriverAssignError, openLegsFor, parseAssignRequest, planLeg, routeVersionOf, summarizeClasses } from "./driverAssignLogic.ts";
+import { ALREADY_ASSIGNED, assertLegStillOpen, assertReassignStillOpen, buildAssignAddInput, buildAssignBoard, buildReassignAddInput, DriverAssignError, openLegsFor, parseAssignRequest, planLeg, routeVersionOf, summarizeClasses } from "./driverAssignLogic.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
 import { findRouteCell, suggestPlacement } from "./regularRosterPlacementLogic.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
@@ -288,4 +288,58 @@ test("버그C: 새 정류장 이름은 학생 위치 이름 우선, 이름이 �
   assert.equal(planLeg(named, openLegsFor(named, roster())[0], roster(), ACADEMY, DEPOT).newStop?.name, "우리집 앞");
   const unnamed = student({ pickup: { name: null, address: "다산동 9", ...far }, dropoff: null });
   assert.equal(planLeg(unnamed, openLegsFor(unnamed, roster())[0], roster(), ACADEMY, DEPOT).newStop?.name, "다산동 9");
+});
+
+// ── 반 이동 재배정(2026-11-09 D4) ────────────────────────────────
+
+/** 명단에 월요일 B 정류장으로 타던 학생이 수요일 반으로 옮긴 경우(신청서 없는 시트 이관 학생). */
+function movedStudent(): any {
+  return student({
+    studentId: "mv1", name: "이동", parentPhone: "010-3333-4444", hasApplication: false,
+    enrolled: [{ weekday: 3, startTime: "17:00", endTime: "17:55", className: "수반", programName: "정규", status: "ACTIVE" }],
+  });
+}
+function movedRoster(): any[] {
+  return [
+    ...roster(),
+    r({ id: "mvB", studentId: "mv1", studentName: "이동", parentPhone: "010-3333-4444", stopName: "B", latitude: 37.62, longitude: 127.1 }),
+    // 수요일 칸(다른 학생) — 같은 B 정류장이 있다
+    r({ id: "wB", weekday: 3, weekdayLabel: "수", stopName: "B", latitude: 37.62, longitude: 127.1, arriveTime: "16:42" }),
+  ];
+}
+
+test("재배정 보드: 신청서 없는 명단 학생도 반 이동 칸이 뜨고, 신규 칸은 띄우지 않는다 · 옛 정류장 이름 합류가 기본값", () => {
+  const board = buildAssignBoard({ students: [movedStudent()], stops: movedRoster(), academy: ACADEMY, depot: DEPOT });
+  assert.equal(board.length, 1);
+  const legs = board[0].legs;
+  assert.deepEqual(legs.map((l: any) => l.label), ["수 등원"]); // 하원은 옛 칸이 없어 재배정 아님(오탐 없음)
+  assert.equal(legs[0].reassign!.label, "월→수 등원 (반 이동)");
+  assert.deepEqual(legs[0].reassign!.replaceRowIds, ["mvB"]);
+  assert.deepEqual(legs[0].defaultChoice, { kind: "JOIN", stopIndex: 0 }); // 수요일 B 정류장
+  // 반 이동이 없는 명단 학생(신청서 없음)은 보드에 뜨지 않는다
+  const still = movedStudent();
+  still.enrolled = [{ weekday: 1, startTime: "17:00", endTime: "17:55", className: null, programName: null, status: "ACTIVE" }];
+  assert.equal(buildAssignBoard({ students: [still], stops: movedRoster(), academy: ACADEMY, depot: DEPOT }).length, 0);
+});
+
+test("재배정 저장: 서버가 짝을 다시 계산해 지울 옛 행을 정하고, 새 칸 입력은 명단 검증을 통과 · 짝이 없으면 409", () => {
+  const stops = movedRoster();
+  const s = movedStudent();
+  const leg = buildAssignBoard({ students: [s], stops, academy: ACADEMY, depot: DEPOT })[0].legs[0];
+  const req = parseAssignRequest({ month: "2026-11", studentId: "mv1", weekday: 3, direction: "BOARD", choice: { kind: "JOIN", stopIndex: 0 }, routeVersion: leg.routeVersion, reassign: true });
+  assert.equal(req.reassign, true);
+  const out = buildReassignAddInput(req, s, stops, ACADEMY, DEPOT);
+  assert.deepEqual(out.replaceRowIds, ["mvB"]);
+  const input = validateAddInput(out.input);
+  assert.deepEqual(input.slots, [{ weekday: 3, classTime: "17:00~18:00" }]);
+  assert.equal(input.board!.stopName, "B");
+  assert.equal(input.placements![0].mode, "JOIN");
+  assert.equal(input.placements![0].rowId, "wB");
+  // 하원은 재배정 칸이 아니다
+  assert.throws(() => buildReassignAddInput({ ...req, direction: "ALIGHT" }, s, stops, ACADEMY, DEPOT), (e: any) => e.code === "NOT_REASSIGN");
+  // 잠금 안 재확인: 그대로면 통과, 옛 행이 이미 지워졌으면 409
+  assertReassignStillOpen(stops, s, out.pair);
+  assert.throws(() => assertReassignStillOpen(stops.filter((x: any) => x.id !== "mvB"), s, out.pair), (e: any) => e.code === "ROUTE_CHANGED");
+  // 신규 경로(reassign 없음)는 예전처럼 동작 — 기본값 false
+  assert.equal(parseAssignRequest({ ...req, reassign: undefined }).reassign, false);
 });
