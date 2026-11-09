@@ -182,7 +182,7 @@
 ### [2026-10-03] 보호자(Guardian)는 학생 상세 「보호자」 카드로 편집 — 전화는 숫자만, 계정(User) 전화와 분리
 - **분류**: convention
 - **발견자**: developer
-- **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다.
+- **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다. (11-09 2차) 학생 상세에서 **전화번호는 보호자 카드 한 곳**에만 보인다 — 한 사람 한 줄+⚡ 메뉴(수정·주 보호자·삭제), 추가·수정은 AdminModal 창. 계정 번호(User.phone)가 보호자 번호와 같으면 그 줄에 «로그인» 배지, 다르면 «로그인 계정» 줄을 따로(`accountName` prop). «연락처 · 프로필»에는 학부모 전화 줄을 다시 두지 않는다(테스트 student-guardians). 머리의 «전화» 버튼이 계정 번호로 건다.
 - **참조횟수**: 0
 
 ### [2026-10-30] 관리자 목록은 공용 부품 + admin-list-table 로 — 전역 표는 가운데 정렬 !important 라 opt-in 필요

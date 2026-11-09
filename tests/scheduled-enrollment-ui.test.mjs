@@ -59,7 +59,9 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     enrollments: [enrollment], attendances: [], payments: [], attendanceStats: { total: 0, present: 0, absent: 0, late: 0, excused: 0, rate: 0 }, galleryPosts: [], monthlyHistory: [],
   } }));
   assert.doesNotMatch(html, /수강 예정/);
-  assert.match(html, /1<span class="text-base"> 개 반<\/span>/, "수강 중 1개 반");
+  // 2026-11-09 2차 정리: «수강 중 N개 반»은 머리 칩·요약 칸에서 빼고 «수강 반» 카드 제목 옆 한 곳에만 둔다
+  assert.match(html, /수강 중 1개 반/, "수강 중 1개 반");
+  assert.doesNotMatch(html, /<span class="text-base"> 개 반<\/span>/, "요약 칸의 반 수(중복)는 없어야 한다");
   assert.match(html, /2099-12-01 개시 예정/);
   assert.match(html, /월요일 5교시/);
   assert.doesNotMatch(html, /수강 중인 반이 없습니다/);
