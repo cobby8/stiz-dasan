@@ -3,9 +3,11 @@
  *
  * ■ 무엇을 하나
  *   POS 결제 1건마다 원장에게 "현장 결제를 확인해 주세요" 를 묻는다.
- *   (2026-11-08 랠리즈 사용 중단 — 사람에게 보이는 «랠리즈에 처리» 안내는 지웠다. 원장 버튼으로만 납부하는 규칙은 그대로.)
- *   청구서의 원본은 **랠리즈**다. 사이트 청구서(Payment)는 랠리즈를 뒤따라 복사되는 사본이라
- *   사이트가 랠리즈를 앞서면 안 된다 → 사이트 납부 반영은 **원장이 버튼으로 확인했을 때만** 한다.
+ *   (2026-11-08 랠리즈 사용 중단 — 사람에게 보이는 «랠리즈에 처리» 안내는 지웠다.)
+ *   2026-11-10 원장 결정 «POS 처리 확인되면 끝 — 승인 필요 없음»: 분류가 AUTO_CANDIDATE 인 결제는
+ *   서버가 토스 재조회 근거로 자동 납부 반영하고(paymentNoticeService.autoConfirmNotice) DM 은 결과 알림이 된다.
+ *   그 밖의 분류(원생 불명·금액 불일치·이중결제·청구서 없음)는 예전처럼 **원장이 버튼으로 확인했을 때만** 반영한다.
+ *   랠리즈 사본 청구(D4)는 자동 반영에서 빠진다(paymentNoticePay.ts).
  *
  * ■ 여기 있는 것
  *   - 웹훅 본문에서 주문 ID 뽑기(본문 모양이 아직 확인되지 않아 방어적으로)
@@ -26,6 +28,8 @@ import {
   resolveTargetBillingMonth,
   toKst,
 } from "./tossplace-match.mjs";
+// 취소 상태 목록은 ⚡ 현장 결제 판정과 한 벌(charge-request.mjs 는 다른 모듈을 import 하지 않아 순환이 없다)
+import { CANCELLED_PAYMENT_STATES } from "./charge-request.mjs";
 
 // ───────────────────────────── 상수 ─────────────────────────────
 
@@ -118,6 +122,26 @@ export function extractNoticePayments(order) {
  */
 export function extractChargePayments(order) {
   return extractApprovedPayments(order, () => true);
+}
+
+/**
+ * 주문에서 **취소된(전액·부분) 결제** ID 를 고른다 — 이미 사이트 납부로 반영한 POS 결제가 나중에 취소됐는지 보는 용도.
+ * 취소 판정은 ⚡ 현장 결제와 같은 목록(CANCELLED_PAYMENT_STATES) + 부분 취소 두 이름만 — «CANCEL» 을 품은
+ * CANCEL_REQUESTED·CANCEL_FAILED 같은 상태는 아직 취소가 아니라서 목록으로 정확히 맞춘다(2026-11-10 검수).
+ * 결제 방식은 따지지 않는다(알림은 카드·바코드뿐이지만, 호출한 쪽이 알림 표와 결제 ID 로 다시 거른다).
+ * @returns {{ tossPaymentId: string, state: string }[]}
+ */
+export const NOTICE_CANCELLED_STATES = Object.freeze([...CANCELLED_PAYMENT_STATES, "PARTIAL_CANCELLED", "PARTIAL_CANCELED"]);
+export function extractCancelledPayments(order) {
+  const payments = Array.isArray(order?.payments) ? order.payments : [];
+  const out = [];
+  for (const payment of payments) {
+    const state = String(payment?.state ?? "").toUpperCase();
+    if (!NOTICE_CANCELLED_STATES.includes(state)) continue;
+    const paymentId = payment?.id == null ? "" : String(payment.id).trim();
+    if (paymentId) out.push({ tossPaymentId: paymentId, state });
+  }
+  return out;
 }
 
 /** 승인 결제 → 1건씩. accept(sourceType) 가 true 인 방식만. 두 함수(알림·매칭)가 같은 모양을 쓰도록 한 벌로 둔다. */
@@ -320,6 +344,33 @@ export function buildCandidateList({ kind, students, classTitles, nameCandidates
 /** 슬랙 mrkdwn 특수문자 무력화(메모에 <, >, & 가 있어도 링크·멘션으로 바뀌지 않게) */
 export function escapeSlack(text) {
   return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * «취소된 POS 결제가 사이트 납부로 남아 있음» 경고 문구(슬랙 DM·관리자 알림 공용).
+ * 사이트 청구를 자동으로 미납으로 되돌리지 않는다 — 사람이 환불·재청구를 판단한다.
+ * @param {{ studentName: string|null, year: number|null, month: number|null, amount: number, state: string, kstDateTime?: string }} input
+ */
+export function buildCancelWarning(input) {
+  const who = input.studentName ? String(input.studentName) : "원생 미상";
+  const bill = input.year != null && input.month != null ? `${input.year}년 ${input.month}월 수강료` : "청구";
+  const when = input.kstDateTime ? ` · 결제 ${input.kstDateTime}` : "";
+  const title = "취소된 POS 결제가 사이트 납부로 남아 있음";
+  const message = `${who} · ${bill} ${formatWon(input.amount)} — POS 결제가 취소(${input.state})됐는데 사이트 청구는 납부완료 그대로입니다${when}. 수납 관리에서 환불·재청구를 확인해 주세요.`;
+  return { title, message, slackText: `⚠️ *${escapeSlack(title)}*\n${escapeSlack(message)}` };
+}
+
+/**
+ * «이중 수납 확인 필요» 경고 문구(관리자 알림 벨용) — POS 결제를 반영하려는데 같은 청구가 이미 다른 경로로 납부됨.
+ * @param {{ studentName: string|null, year: number|null, month: number|null, amount: number, kstDateTime?: string }} input
+ */
+export function buildConflictWarning(input) {
+  const who = input.studentName ? String(input.studentName) : "원생 미상";
+  const bill = input.year != null && input.month != null ? `${input.year}년 ${input.month}월 수강료` : "청구";
+  const when = input.kstDateTime ? ` · POS 결제 ${input.kstDateTime}` : "";
+  const title = "이중 수납 확인 필요";
+  const message = `${who} · ${bill} ${formatWon(input.amount)} — POS 결제가 들어왔는데 이 청구는 이미 다른 경로로 납부됐습니다${when}. 사이트에는 반영하지 않았습니다. 돈이 두 번 들어왔는지 확인해 주세요.`;
+  return { title, message };
 }
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);

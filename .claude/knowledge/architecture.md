@@ -138,6 +138,7 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 관리자 수납 ⚡ «현장 결제»(MONTHLY·SHUTTLE 미납, 원장만) → `PosChargeRequest`(번호 S-dddd, 금액·면세 DB 스냅샷, 30분, 열린 요청 부분 유일 인덱스). 웹훅 `processPosWebhookEvent` 가 재조회한 주문으로 `matchChargeRequestsForOrder` 를 먼저 부르고, 자동 납부(조건부 UPDATE 선점 → markPaymentPaid CARD·TOSS_POS)한 결제만 PosPaymentNotice 에서 뺀다 — 그 밖은 기존 슬랙 확인 흐름(D1). 판정(금액·만료·여러 결제·부분취소·중복)은 순수 `decideChargeMatch` 한 곳. 플러그인 API `/api/pos-plugin/**` 는 `handlePluginRequest`(Bearer 토큰 SHA-256·timingSafeEqual·분당 제한) 경유만, 납부 경로 없음. 토큰 화면 `/admin/pos-plugin`. 계약 = docs/toss-pos-plugin-plan.md 8장.
+  - **[2026-11-10 추가] 번호 없는 POS 결제 자동 납부**: 원장 결정 «POS 처리 확인되면 끝». 알림 분류 AUTO_CANDIDATE 면 `autoConfirmNotice`(paymentNoticeService)가 DM 뒤 바로 반영. 납부 쓰기는 버튼·자동 공통 `lib/pos/paymentNoticePay.ts` 한 곳(`NOTICE_PAY_RECHECK_SQL` 조각을 두 선점 SQL 이 공유, markPaymentPaid 1곳 — 테스트가 막음). 자동 전용 `NOTICE_AUTO_EXTRA_SQL` = 직원 수납 확인 PENDING·현장 결제 요청 PENDING/SENT/HELD/PAID·랠리즈 사본이면 보류(버튼 남김). 직원 현금·계좌 확인(StaffPaymentConfirmationRequest)은 POS 근거가 없어 승인 그대로. 납부는 `markPaymentsPaidTogether`(1건, 조건부) — 0행이면 CONFLICT(선점 해제·이중 수납 경고). 자동 납부인데 DM 이 없으면 `sendAutoResultNotice`(slackTs=SENDING 선점, 스윕 재시도). 납부 반영 뒤 POS 취소는 `warnCancelledNoticePayments` 가 DM+알림 벨 1회(중복 방지 = advisory lock + 감사 action POS_NOTICE_CANCELLED_WHILE_PAID), 청구는 되돌리지 않음.
 ### [2026-11-07] 토스 POS 플러그인 = apps/toss-pos-plugin 독립 패키지(사이트 빌드 밖)
 - **분류**: architecture
 - **발견자**: developer
