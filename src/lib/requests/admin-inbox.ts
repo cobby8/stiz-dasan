@@ -19,14 +19,20 @@ import {
   REQUEST_KINDS,
   statusLabel,
   statusesOf,
+  tabActionCounts,
   type InboxBucket,
+  type InboxTab,
   type RequestKind,
 } from "@/lib/requests/catalog";
+import type { StatusTone } from "@/lib/ui/statusTones";
+// 상담 탭(신설) — 이 파일의 두 함수만 부른다. 상담 작업이 그 파일만 채운다(원장 결정 k1)
+import { countConsultAction } from "@/lib/requests/consult-inbox";
 
 export type InboxFact = [label: string, value: string];
 
 /** 신청함 한 줄 — 종류가 달라도 모양은 같다 */
 export type InboxRow = {
+  /** catalog 종류(상담 "CONSULT" 행은 consult-inbox.ts 가 만든다) */
   kind: RequestKind;
   id: string;
   studentName: string | null;
@@ -45,13 +51,18 @@ export type InboxRow = {
   facts: InboxFact[];
   /** 처리 버튼이 쓰는 추가 값(학부모 계정 id·청구 종류 등) */
   ref?: Record<string, string | null>;
+  /** 색 뜻 — 보통 비워 둔다(catalog 가 정한다). 넣으면 그 색 뜻이 이긴다 */
+  tone?: StatusTone;
 };
 
 export type InboxCounts = {
-  /** 처리 필요 합계(메뉴 배지·«오늘 업무» 카드) */
+  /** 처리 필요 합계(메뉴 배지·«오늘 업무» 카드) — 6탭 전부(체험 새 문의·수강신청 대기·상담 포함) */
   action: number;
+  /** 진행 중 합계(catalog 종류만) */
   ongoing: number;
   byKind: Partial<Record<RequestKind, { action: number; ongoing: number }>>;
+  /** 탭 옆 배지 숫자(처리 필요) — 원장 결정 k1 */
+  byTab: Record<InboxTab, number>;
 };
 
 type RawRow = {
@@ -81,6 +92,8 @@ type Adapter = {
    * 첫 조회가 실패하면 이 식으로 한 번 더 읽는다 — 새 칸 때문에 신청함·메뉴 숫자가 통째로 죽지 않게.
    */
   fallback?: Pick<Adapter, "rawExpr" | "createdAtExpr" | "extra">;
+  /** true 면 메뉴 숫자(UNION ALL 한 번) 계산에서 뺀다 — 처리 필요 상태가 없는 종류(원장 손이 필요 없다) */
+  skipCount?: boolean;
   format: (row: RawRow, extra: Record<string, unknown>) => { title: string; summary: string; facts: InboxFact[]; ref?: Record<string, string | null> };
 };
 
@@ -382,9 +395,32 @@ const ADAPTERS: Adapter[] = [
         ...fact("반", e.className), ...fact("받은 사람", e.staffName), ...fact("메모", e.note), ...fact("원장 메모", e.reviewNote)],
     }),
   },
+  {
+    // 학부모 연결 요청(원장 결정 k1 «기타» 탭) — 승인은 먼저 연결된 보호자가 한다. 원장은 상황만 본다(처리 버튼 없음).
+    // 기한 지난 대기 = 만료(학부모 화면 getChildConnectionState 와 같은 판정)
+    kind: "CHILD_LINK",
+    from: `"ChildLinkRequest" x ${studentJoin("s", `x."studentId"`)} LEFT JOIN "User" ap ON ap.id = x."approverId"`,
+    rawExpr: `CASE WHEN x.status = 'PENDING' AND x."expiresAt" <= now() THEN 'EXPIRED' ELSE x.status END`,
+    studentNameExpr: "s.name",
+    createdAtExpr: `x."createdAt"`,
+    targetDateExpr: "NULL::text",
+    extra: `'requesterName', x."requesterName", 'phoneLast4', x."requesterPhoneLast4", 'relation', x.relation,
+            'approverName', ap.name, 'expiresOn', ${kstYmd(`x."expiresAt"`)}, 'decidedOn', ${kstYmd(`x."decidedAt"`)}`,
+    // 처리 필요 상태가 없어 메뉴 숫자에 안 들어간다 — 개수 SQL 에서 빼 두면 이 표 때문에 숫자 전체가 죽는 일도 없다
+    skipCount: true,
+    format: (row, e) => {
+      const relation = e.relation === "PARENT" ? "부모" : "가족·보호자";
+      return {
+        title: `학부모 연결 · ${text(e.requesterName)}`,
+        summary: join(relation, e.approverName ? `승인할 보호자 ${text(e.approverName)}` : "", row.raw === "PENDING" && e.expiresOn ? `${text(e.expiresOn)}까지` : ""),
+        facts: [...fact("요청자", e.requesterName), ...fact("연락처 끝자리", e.phoneLast4), ["관계", relation], ...fact("승인할 보호자", e.approverName),
+          ...fact("기한", e.expiresOn), ...fact("처리일", e.decidedOn), ["안내", "먼저 연결된 보호자가 앱에서 승인합니다."]],
+      };
+    },
+  },
 ];
 
-// 모든 종류에 어댑터가 하나씩 있어야 한다(빠지면 그 종류가 신청함에서 조용히 사라진다 — 테스트가 확인)
+// 모든 catalog 종류에 어댑터가 하나씩 있어야 한다(빠지면 그 종류가 신청함에서 조용히 사라진다 — 테스트가 확인)
 export const INBOX_ADAPTER_KINDS: readonly RequestKind[] = ADAPTERS.map((a) => a.kind);
 
 /** catalog 의 상태 목록 → SQL 배열 글자. 상태는 영문 대문자만이라 따옴표 탈출이 필요 없지만 한 번 더 거른다 */
@@ -423,7 +459,8 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
  * 정렬: 처리 필요·진행 중은 오래된 것부터(밀린 일 먼저), 완료는 최신부터.
  */
 export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[]; failedKinds: RequestKind[] }> {
-  const wanted = new Set(query.kinds?.length ? query.kinds : REQUEST_KINDS.map((k) => k.kind));
+  // 종류를 안 주면 전부, 빈 배열이면 아무것도(체험·수강처럼 catalog 종류가 없는 탭)
+  const wanted = new Set(query.kinds ?? REQUEST_KINDS.map((k) => k.kind));
   const limit = Math.min(Math.max(Number(query.limitPerKind ?? 150), 1), 500);
   const from = query.from && YMD.test(query.from) ? query.from : null;
   const to = query.to && YMD.test(query.to) ? query.to : null;
@@ -489,7 +526,7 @@ function toInboxRow(adapter: Adapter, row: RawRow): InboxRow {
  * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
  */
 export function buildInboxCountsSql(legacy = false): string {
-  const pieces = ADAPTERS.map((original) => {
+  const pieces = ADAPTERS.filter((original) => !original.skipCount).map((original) => {
     const adapter = legacy ? legacyOf(original) : original;
     const open = [...statusesOf(adapter.kind, "ACTION"), ...statusesOf(adapter.kind, "ONGOING")];
     return `SELECT '${adapter.kind}'::text AS kind, t.raw, COUNT(*)::int AS n
@@ -500,31 +537,69 @@ export function buildInboxCountsSql(legacy = false): string {
   return pieces.join("\nUNION ALL\n");
 }
 
-/** 메뉴 배지·«오늘 업무» 카드 숫자. 실패하면 null(화면은 숫자만 숨긴다 — 관리자 화면 전체를 죽이지 않는다) */
-export async function getInboxCounts(): Promise<InboxCounts | null> {
-  type CountRow = { kind: RequestKind; raw: string; n: number };
+/**
+ * 체험·수강 탭 «처리 필요» 숫자 — /admin/apply 의 탭 숫자와 같은 기준(체험 «새 문의» NEW · 수강신청 «대기» PENDING).
+ * 두 표는 catalog 종류가 아니라 SQL 한 번에 따로 센다.
+ */
+export const APPLY_TAB_COUNTS_SQL = `SELECT (SELECT COUNT(*)::int FROM "TrialLead" WHERE status = 'NEW') AS trial,
+                (SELECT COUNT(*)::int FROM "EnrollmentApplication" WHERE status = 'PENDING') AS enroll`;
+
+async function readApplyTabCounts(): Promise<Partial<Record<InboxTab, number>>> {
   try {
-    return summarizeCounts(await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql()));
+    const [row] = await prisma.$queryRawUnsafe<Array<{ trial: number; enroll: number }>>(APPLY_TAB_COUNTS_SQL);
+    return { TRIAL: Number(row?.trial ?? 0), ENROLL: Number(row?.enroll ?? 0) };
   } catch (error) {
-    // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
-    try {
-      return summarizeCounts(await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(true)));
-    } catch {
-      console.error("[admin-inbox] 개수 조회 실패:", error);
-      return null;
-    }
+    console.error("[admin-inbox] 체험·수강 개수 조회 실패:", error);
+    return {};
   }
 }
 
-/** 순수 합산 — 테스트가 직접 부른다 */
-export function summarizeCounts(rows: Array<{ kind: RequestKind; raw: string; n: number }>): InboxCounts {
-  const counts: InboxCounts = { action: 0, ongoing: 0, byKind: {} };
+async function readConsultCount(): Promise<number> {
+  try {
+    return await countConsultAction();
+  } catch (error) {
+    console.error("[admin-inbox] 상담 개수 조회 실패:", error);
+    return 0;
+  }
+}
+
+/** 메뉴 배지·«오늘 업무» 카드 숫자. 실패하면 null(화면은 숫자만 숨긴다 — 관리자 화면 전체를 죽이지 않는다) */
+export async function getInboxCounts(): Promise<InboxCounts | null> {
+  type CountRow = { kind: RequestKind; raw: string; n: number };
+  const readCatalog = async (): Promise<CountRow[] | null> => {
+    try {
+      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql());
+    } catch (error) {
+      // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
+      try {
+        return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(true));
+      } catch {
+        console.error("[admin-inbox] 개수 조회 실패:", error);
+        return null;
+      }
+    }
+  };
+  // 세 묶음은 서로 기다릴 이유가 없어 동시에 읽는다
+  const [rows, applyCounts, consult] = await Promise.all([readCatalog(), readApplyTabCounts(), readConsultCount()]);
+  if (!rows) return null;
+  return summarizeCounts(rows, { ...applyCounts, CONSULT: consult });
+}
+
+/** 순수 합산 — 테스트가 직접 부른다. extra = catalog 밖 탭(체험·수강·상담)의 처리 필요 숫자 */
+export function summarizeCounts(
+  rows: Array<{ kind: RequestKind; raw: string; n: number }>,
+  extra: Partial<Record<InboxTab, number>> = {},
+): InboxCounts {
+  const counts: InboxCounts = { action: 0, ongoing: 0, byKind: {}, byTab: tabActionCounts({}) };
   for (const row of rows) {
     const bucket = bucketFor(row.kind, row.raw);
     if (bucket === "DONE") continue;
     const slot = (counts.byKind[row.kind] ??= { action: 0, ongoing: 0 });
     const n = Number(row.n) || 0;
-    if (bucket === "ACTION") { slot.action += n; counts.action += n; } else { slot.ongoing += n; counts.ongoing += n; }
+    if (bucket === "ACTION") slot.action += n; else { slot.ongoing += n; counts.ongoing += n; }
   }
+  // 탭 배지 = catalog 종류 합 + 체험·수강·상담. 메뉴 숫자(action)는 탭 배지의 합과 같다(어긋나지 않게 한 곳에서)
+  counts.byTab = tabActionCounts(counts.byKind, extra);
+  counts.action = Object.values(counts.byTab).reduce((sum, n) => sum + n, 0);
   return counts;
 }

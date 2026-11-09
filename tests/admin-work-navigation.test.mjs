@@ -47,8 +47,10 @@ test('주요 업무 일곱 개는 탭 전환 없이 렌더링되고 셔틀은 �
   const html = shell();
   const primary = mainLinks(html);
   // 2026-11-10 신청함 통합: «오늘 업무» 바로 아래 «신청함»이 최상위 메뉴로 들어왔다
-  assert.equal((primary.match(/<a /g) ?? []).length, 7);
-  for (const label of ['오늘 업무', '신청함', '신청·상담', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  // 2026-11-10 원장 결정 k4: «신청·상담»은 신청함 체험·수강 탭과 ⚙ 신청 설정으로 옮겨 메뉴에서 빠졌다(주소는 산다)
+  assert.equal((primary.match(/<a /g) ?? []).length, 6);
+  for (const label of ['오늘 업무', '신청함', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  assert.ok(!primary.includes('신청·상담'));
   assert.ok(primary.includes('href="/admin/inbox"'));
   assert.ok(primary.includes('href="/admin/shuttle/regular-dispatch"'));
   assert.ok(!html.includes('>사이트</button>'));

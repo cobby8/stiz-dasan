@@ -352,7 +352,7 @@ function DashboardContent({
                         ))}
                     </div>
                 ) : pendingCount > 0 && inboxKinds.length === 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
-                {enrollStats.PENDING > 0 && <Link href="/admin/apply" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
+                {enrollStats.PENDING > 0 && <Link href="/admin/inbox?tab=ENROLL" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
             </section>
                 <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
             </div>

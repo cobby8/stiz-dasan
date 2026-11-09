@@ -93,6 +93,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(원장 k1~k4·m1~m3 신청함 재편): 맨 위 6탭(체험·수강·상담·대관·변경·기타, 배지=처리 필요) · catalog KIND_TAB/TAB_SUBS/tabActionCounts · 체험·수강(신청/대기)=ApplyAdminClient mode 끼우기 · 대관=RentalAdminClient embedded(처리할 것 먼저·완료 보기) · 변경·기타=공통 한 줄(처리 필요→진행 중, «완료 보기»), 필터=날짜만 · 진행 중 처리 버튼(보강 4종·결석 신고 취소) · 학부모 연결(CHILD_LINK) 추가 · 현장 수납 승인 기타 탭 유지(PM 정정) · 상담=CONSULT catalog+consult-inbox.ts 스텁(상담 브랜치 계약) · ⚙ 신청 설정(/admin/inbox/settings) · 메뉴 «신청·상담» 제거. tsc 0·전체 3831-0 | 완료(커밋, 미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
