@@ -435,6 +435,10 @@ export default function EnrollmentChangesClient({
                 </div>
               )}
 
+              {/* 학생 상세 ⋯ «반 이동»으로 바로 적용한 건 — 차액 청구서는 여기서 따로 만들지 않는다 */}
+              {row.adminDirectMove && (
+                <p className="mt-2 text-xs font-bold text-[var(--color-academy-primary)]">관리자 즉시 이동 — 차액은 다음 달 청구 준비에서 반영</p>
+              )}
               {row.reason && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-ink)]">{row.reason}</p>}
               <p className="mt-2 text-xs text-[var(--color-academy-muted)]">신청 {row.createdAt}</p>
 

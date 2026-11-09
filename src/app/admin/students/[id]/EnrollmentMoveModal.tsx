@@ -11,12 +11,17 @@ import { useEffect, useMemo, useState } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import { getStudentRegisterOptions, type RegisterClassOption } from "@/app/actions/student-register";
 import { moveEnrollmentToClass } from "@/app/actions/enrollment-admin-edit";
-import { todayKst } from "@/lib/datetime/kst";
+import { todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { moveEffectiveMinYmd } from "@/lib/enrollment/admin-enrollment-edit";
 
 const DAY_KEYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const DAY_LABELS: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
 
-export type EnrollmentMoveSource = { enrollmentId: string; classId: string; className: string; dayOfWeek: string };
+export type EnrollmentMoveSource = {
+    enrollmentId: string; classId: string; className: string; dayOfWeek: string;
+    /** 적용일 하한 계산용 — 개시일(없으면 등록일). 서버 판정과 같은 함수(moveEffectiveMinYmd) */
+    startsOn?: string | null; createdAt?: Date | string | null;
+};
 
 export default function EnrollmentMoveModal({
     studentName,
@@ -53,11 +58,17 @@ export default function EnrollmentMoveModal({
     const candidates = useMemo(() => (classes ?? []).filter((c) => c.id !== source.classId), [classes, source.classId]);
     const dayClasses = candidates.filter((c) => c.dayOfWeek === dayTab);
     const picked = candidates.find((c) => c.id === toClassId) ?? null;
+    // 적용일 하한(기존 수강 시작일) — 서버도 같은 함수로 다시 막는다
+    const minDate = moveEffectiveMinYmd(source.startsOn ?? null, source.createdAt ? toKstYmd(source.createdAt) : null, todayKst());
 
     async function submit(allowOverCapacity = false) {
         if (!picked || saving) return;
         if (effectiveFrom > todayKst()) {
             setError("미래 날짜 이동은 «수강 변경 신청»(예약)으로 해 주세요.");
+            return;
+        }
+        if (minDate && effectiveFrom < minDate) {
+            setError(`이동 적용일은 기존 수강 시작일(${minDate}) 이후로 골라 주세요.`);
             return;
         }
         setSaving(true);
@@ -140,6 +151,7 @@ export default function EnrollmentMoveModal({
                         <input
                             type="date"
                             required
+                            min={minDate ?? undefined}
                             max={todayKst()}
                             value={effectiveFrom}
                             onChange={(event) => setEffectiveFrom(event.target.value)}

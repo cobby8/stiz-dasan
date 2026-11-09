@@ -894,7 +894,7 @@ export default function StudentDetailClient({
         if (statusUpdatingId) return;
         const ok = await confirmDanger({
             title: `"${student.name}" 학생의 «${enrollment.className}» 수강 삭제`,
-            description: "잘못 등록한 수강 기록을 없앱니다.\n출석·청구·보강 기록이 하나라도 있으면 삭제되지 않아요 — 그만두는 반이면 «수강 종료»를 쓰세요.",
+            description: "잘못 등록한 수강 기록을 없앱니다.\n출석·청구·보강·결석·셔틀 기록이 하나라도 있으면 삭제되지 않아요 — 그만두는 반이면 «수강 종료»를 쓰세요.\n시트·랠리즈에 이미 등록된 경우 그쪽은 직접 정리해 주세요.",
             confirmLabel: "삭제",
             tone: "danger",
         });
@@ -969,7 +969,7 @@ export default function StudentDetailClient({
                             label: "반 이동",
                             icon: "swap_horiz",
                             disabled: Boolean(statusUpdatingId) || enrollment.status !== "ACTIVE",
-                            onSelect: () => setMoveSource({ enrollmentId: enrollment.id, classId: enrollment.classId, className: enrollment.className, dayOfWeek: enrollment.dayOfWeek }),
+                            onSelect: () => setMoveSource({ enrollmentId: enrollment.id, classId: enrollment.classId, className: enrollment.className, dayOfWeek: enrollment.dayOfWeek, startsOn: enrollment.startsOn ?? null, createdAt: enrollment.createdAt }),
                         },
                         { key: "delete", label: "삭제(잘못 등록)", icon: "delete", tone: "danger", disabled: Boolean(statusUpdatingId), onSelect: () => deleteEnrollmentRow(enrollment) },
                     ]}

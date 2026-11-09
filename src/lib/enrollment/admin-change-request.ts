@@ -40,6 +40,8 @@ export type AdminChangeRequestRow = {
   /** 시트·랠리즈 반영 상태(PENDING/SUCCEEDED/FAILED). 자동 적용 건의 "확인 필요" 배지에 쓴다. */
   sheetStatus: string | null;
   rallyzStatus: string | null;
+  /** 관리자가 학생 상세에서 바로 옮긴 반 이동(신청자=결정자, 반 변경, 적용됨) — 학부모 신청 아님 */
+  adminDirectMove: boolean;
 };
 
 export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<AdminChangeRequestRow[]> {
@@ -50,6 +52,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
             to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
             r.reason, r.status, r.waitlisted, r."decisionNote", r."invoicedPaymentId",
+            (r.kind = 'CLASS_CHANGE' AND r.status = 'APPLIED' AND r."requestedByUserId" = r."decidedByUserId") AS "adminDirectMove",
             r."studentId", r."fromClassId", r."toClassId", fc."dayOfWeek" AS "fromDay", tc."dayOfWeek" AS "toDay",
             fp.price AS "fromFee", tp.price AS "toFee",
             to_char(r."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "createdAt",
@@ -106,6 +109,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     syncHoldReason: row.syncHoldReason ?? null,
     sheetStatus: row.sheetStatus ?? null,
     rallyzStatus: row.rallyzStatus ?? null,
+    adminDirectMove: Boolean(row.adminDirectMove),
   }));
 }
 

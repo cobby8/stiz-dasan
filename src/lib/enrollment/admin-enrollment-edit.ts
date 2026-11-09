@@ -14,7 +14,18 @@ type RawDb = { $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): 
 
 // ── 반 이동 ───────────────────────────────────────────────────────────────
 
-export type MoveSource = { status: string; classId: string; startsOn: unknown };
+export type MoveSource = { status: string; classId: string; startsOn: unknown; /** 등록일(KST YYYY-MM-DD) — 개시일이 없을 때 적용일 하한 */ createdYmd?: string | null };
+
+/**
+ * 이동 적용일 하한 — 기존 수강 개시일(없으면 등록일 KST)보다 이르면 안 된다. 화면 min 과 서버 판정이 이 함수 하나를 쓴다.
+ * 단 아직 개시 전인 수강(개시일 > 오늘)은 오늘로 낮춘다 — 미래 적용일은 막혀 있어서, 그대로 두면 개시 전엔 옮길 길이 없다.
+ * (이때 새 반은 원래 개시일을 이어받으므로 청구 시수·출석부 기준은 그대로다.)
+ */
+export function moveEffectiveMinYmd(startsOn: unknown, createdYmd: string | null | undefined, today: string): string | null {
+  const base = commencementYmd(startsOn) ?? (createdYmd && isKstYmd(createdYmd) ? createdYmd : null);
+  if (!base) return null;
+  return base > today ? today : base;
+}
 export type MoveTarget = { id: string; capacity: number; activeCount: number; deleted: boolean; seasonal: boolean } | null;
 export type MovePlan =
   | { ok: true; newStartsOn: string }
@@ -25,6 +36,8 @@ export function planEnrollmentMove(input: {
   target: MoveTarget;
   /** 학생이 이미 그 반에 가진 수강 상태(없으면 null) */
   targetExistingStatus: string | null;
+  /** 이 수강의 처리 중(대기·승인 미적용) 수강 변경 신청 수 — 삭제 차단과 같은 기준 */
+  openChangeRequests?: number;
   effectiveDate: string;
   today: string;
   allowOverCapacity?: boolean;
@@ -34,6 +47,10 @@ export function planEnrollmentMove(input: {
   if (!isKstYmd(input.effectiveDate)) return bad("이동 적용일을 정확히 선택해 주세요.");
   // 미래 날짜로 옮기면 그날 전까지 기존 반 출석부에서 빠져 버린다 — 상태 변경(updateEnrollmentStatus)과 같은 규칙
   if (input.effectiveDate > input.today) return bad("미래 날짜 이동은 «수강 변경 신청»(예약)으로 해 주세요.");
+  const min = moveEffectiveMinYmd(input.from.startsOn, input.from.createdYmd, input.today);
+  if (min && input.effectiveDate < min) return bad(`이동 적용일은 기존 수강 시작일(${min}) 이후로 골라 주세요.`);
+  // 학부모 반 변경·휴원 신청이 걸려 있으면 그 신청과 엇갈린다 — 먼저 처리하게 한다
+  if (Number(input.openChangeRequests ?? 0) > 0) return bad("이 수강에 처리 중인 수강 변경 신청이 있어요. 먼저 «수강 변경 신청»에서 처리해 주세요.");
   const t = input.target;
   if (!t || t.deleted || t.seasonal) return bad("옮길 반을 찾을 수 없어요. 반을 다시 골라 주세요.");
   if (t.id === input.from.classId) return bad("지금 반과 다른 반을 골라 주세요.");
@@ -57,6 +74,10 @@ export type EnrollmentLinkCounts = {
   makeups: number;
   makeupCredits: number;
   seasonalItems: number;
+  /** 결석 신고(취소 제외) */
+  regularAbsences: number;
+  /** 그 반 수업 회차에 잡힌 셔틀 승객 */
+  shuttlePassengers: number;
   /** 아직 처리 안 된(대기·승인) 수강 변경 신청 */
   openChangeRequests: number;
 };
@@ -68,6 +89,8 @@ const LINK_LABELS: Array<[keyof EnrollmentLinkCounts, string]> = [
   ["makeups", "보강"],
   ["makeupCredits", "보강권"],
   ["seasonalItems", "특강 신청 연결"],
+  ["regularAbsences", "결석 신고"],
+  ["shuttlePassengers", "셔틀 탑승"],
   ["openChangeRequests", "처리 중인 수강 변경 신청"],
 ];
 
@@ -94,6 +117,10 @@ export async function readEnrollmentLinkCounts(db: RawDb, input: { enrollmentId:
          WHERE m."studentId" = $2 AND (m."originalClassId" = $3 OR m."makeupClassId" = $3))::int AS makeups,
        (SELECT COUNT(*) FROM "MakeupCredit" mc WHERE mc."studentId" = $2 AND mc."originClassId" = $3)::int AS "makeupCredits",
        (SELECT COUNT(*) FROM "SpecialProgramApplicationItem" i WHERE i."enrollmentId" = $1)::int AS "seasonalItems",
+       (SELECT COUNT(*) FROM "RegularAbsence" ra
+         WHERE ra."studentId" = $2 AND ra."classId" = $3 AND ra.status <> 'CANCELLED')::int AS "regularAbsences",
+       (SELECT COUNT(*) FROM "ShuttleRoutePassenger" sp JOIN "Session" ss ON ss.id = sp."sessionId"
+         WHERE sp."studentId" = $2 AND ss."classId" = $3)::int AS "shuttlePassengers",
        (SELECT COUNT(*) FROM "EnrollmentChangeRequest" r
          WHERE r."enrollmentId" = $1 AND r.status IN ('PENDING', 'APPROVED') AND r."appliedAt" IS NULL)::int AS "openChangeRequests",
        (to_regclass('public."BillingWorkbenchDraft"') IS NOT NULL) AS "hasDrafts"`,
@@ -114,6 +141,8 @@ export async function readEnrollmentLinkCounts(db: RawDb, input: { enrollmentId:
     makeups: Number(row?.makeups ?? 0),
     makeupCredits: Number(row?.makeupCredits ?? 0),
     seasonalItems: Number(row?.seasonalItems ?? 0),
+    regularAbsences: Number(row?.regularAbsences ?? 0),
+    shuttlePassengers: Number(row?.shuttlePassengers ?? 0),
     openChangeRequests: Number(row?.openChangeRequests ?? 0),
   };
 }

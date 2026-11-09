@@ -91,7 +91,7 @@ export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow, 
             if (firstDay < daysToStart) minutesUntil += Math.ceil((daysToStart - firstDay) / 7) * 7 * 1440;
             // 달력 날짜를 한국 날짜로 표시한다. 서버·기기의 현지 시간대에 기대지 않는다.
             serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(today + Math.floor((nowKst.minutes + minutesUntil) / 1440) * 86_400_000));
-        } else if (e.displayStatus === "SCHEDULED") continue;
+        }
         if (best == null || minutesUntil < best.minutesUntil) {
             best = {
                 className: e.className,

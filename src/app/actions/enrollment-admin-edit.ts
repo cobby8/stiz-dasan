@@ -62,9 +62,12 @@ export async function moveEnrollmentToClass(input: {
     const result = await prisma.$transaction(async (tx) => {
       // 1) 기존 수강·대상 반·대상 반의 기존 수강을 잠그고 다시 읽는다(화면 값 믿지 않음)
       const [from] = await tx.$queryRawUnsafe<Array<{
-        studentId: string; classId: string; status: EnrollmentStatus; startsOn: string | null; studentName: string; className: string;
+        studentId: string; classId: string; status: EnrollmentStatus; startsOn: string | null; createdYmd: string | null; studentName: string; className: string;
       }>>(
-        `SELECT e."studentId", e."classId", e.status, e."startsOn"::text AS "startsOn", s.name AS "studentName", c.name AS "className"
+        // createdAt 은 시간대 없는 timestamp 라 두 번 건다(UTC 로 읽고 → KST 날짜)
+        `SELECT e."studentId", e."classId", e.status, e."startsOn"::text AS "startsOn",
+                ((e."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul')::date::text AS "createdYmd",
+                s.name AS "studentName", c.name AS "className"
            FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId" JOIN "Class" c ON c.id = e."classId"
           WHERE e.id = $1 AND ${notMergedStudent("s")} FOR UPDATE OF e`,
         input.enrollmentId,
@@ -86,9 +89,11 @@ export async function moveEnrollmentToClass(input: {
         `SELECT id, status FROM "Enrollment" WHERE "studentId" = $1 AND "classId" = $2 FOR UPDATE`,
         from.studentId, input.toClassId,
       );
+      // 처리 중 수강 변경 신청 수 — 삭제 차단과 같은 조회(readEnrollmentLinkCounts)를 재사용
+      const links = await readEnrollmentLinkCounts(tx, { enrollmentId: input.enrollmentId, studentId: from.studentId, classId: from.classId });
       // 2) 판정(순수 함수 한 곳)
       const plan = planEnrollmentMove({
-        from, target: target ?? null, targetExistingStatus: existing?.status ?? null,
+        from, target: target ?? null, targetExistingStatus: existing?.status ?? null, openChangeRequests: links.openChangeRequests,
         effectiveDate, today, allowOverCapacity: input.allowOverCapacity,
       });
       if (!plan.ok) throw new EnrollmentEditError(plan.message, plan.code);

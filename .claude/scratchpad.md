@@ -68,12 +68,25 @@
 📊 종합 판정: 통과(머지 가능 · 차단 없음, 권장 P-1·P-2). 마이그레이션은 build 에 migrate deploy 가 없으므로 **배포 전 apply_migration 필수**(안 하면 플러그인 GET·CLAIM_PAY 가 칸 없음으로 실패 → 현장 결제 전체 정지).
 ✅ 환불은 settleCancelForRow(토스 재조회 order)만 · report 는 기록만 · MARK_REFUND+refundPaidPaymentInTx 한 트랜잭션 조건부 · 일부/누락 결제는 PARTIAL(안전 방향) · 플러그인 ID 는 서버 DB 값·getPayment orderId 대조 · 마이그레이션 NULL 허용 칸만·CHECK 는 NULL 통과. 테스트 루트 3160-0(보고 3165와 5건 차이)·플러그인 65-0.
 
+### 테스트 결과 (tester · 11-09 수강 새 기준 3c4d4cc4 + 반 이동·삭제 d559228c)
+| 테스트 항목 | 결과 | 비고 |
+|-----------|------|------|
+| tsc · 전체 tests · studentVisibility · KST 가드 | ✅ 통과 | 0 · 3540-0 · 5-0 · 16-0 |
+| planEnrollmentMove 경계(같은 반·종료/휴원·미래 적용일·개시일 승계 월말/연말·WITHDRAWN 되살리기·정원 9/10·10/10) | ✅ 통과 | 7건 |
+| moveEnrollmentToClass 가짜 tx(순서·실패 시 쓰기 0·UPDATE 0행/DB 오류 롤백·원장 WITHDRAW+CLASS_ADD/RESUME) | ✅ 통과 | 14건 |
+| removeMistakenEnrollment 가짜 tx(연결 7종 각 1건 차단·DELETE 0행 롤백·감사) | ✅ 통과 | 12건 |
+| 개시일 미래 ACTIVE = 수강 중·대관 무료 대상 / 청구 시수 개시일 기준(11-28·11-29·11-30·10-31·11-08) / 자정 경계 | ✅ 통과 | 9건 |
+| [권장] 삭제 시 운영 원장 «수강 등록» 대기 건 미확인·미정리 | ⚠️ 관찰 | enrollment-admin-edit.ts removeMistakenEnrollment |
+📊 종합: 59개 중 59개 통과 / 0개 실패 (권장 1). 스크립트: Temp/.../scratchpad/mock-enroll-edit.test.mjs·billing-edge.test.mjs
+
 ---
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |
+| 11-09 | tester(3c4d4cc4+d559228c): 전체 3540-0·tsc 0·가드 통과, 모의 실행 37+청구 경계 5 통과. 권장: 잘못 등록 수강 삭제 시 운영 원장 대기 «수강 등록» 처리 | 통과(권장 1) |
 | 11-09 | developer(수강 상태 새 기준+반 줄 편집, 원장 허재원·토 2교시 사례): ① 공용 판정 commencement.ts isCurrentEnrollment/currentEnrollmentSql — ACTIVE면 승인일부터 수강 중·재원생(학생 상태·원생 목록 활성·인원 집계·대관 재원생·학부모 홈), SCHEDULED(수강 예정) 분류 제거, 개시일은 startsLater 안내 문구로만. 청구 시수·출석부 회차·셔틀 월 배차는 개시일 유지 ② 반 줄 «퇴원»→«수강 종료», ⋯ 메뉴 반 이동(actions/enrollment-admin-edit moveEnrollmentToClass — ECR CLASS_CHANGE APPLIED+원장 2건)·삭제(연결 기록 0건일 때만, 서버 재확인). tsc 0·tests 3540-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
@@ -82,5 +95,3 @@
 | 11-09 | developer: 기사님 셔틀 결석 아이 «빼지 말고 뱃지» — 정규 결석(학부모 신고·출석부 질병 모두) 행 유지·«결석·질병» 뱃지·흐린 행·기본 결석(탑승 누르면 체크)·정차 «결석 N명·정차 안 해도 됨». 판정 riderBoardingView/stopAbsenceSummary. tests 3507-0·guards 5-0 | 검수대기 |
 | 11-09 | pm(main 2f385fd6): 원장 2차 답 반영 — 여러 프로그램 합산·대회준비반 30만 묶음·1호점 무료 거점 셔틀비 0, 출석 질병·부상 결석(RegularAbsence)·보강 아이 종료 필수·출석 알림, 학부모 가입 안내 보내기(미리보기→원장 직접 발송), 입금 계좌 안내, 특강 회차 수업일지 출석 차단. 데이터: 셔틀 명단 18행 삭제(감사기록), 미납 POS 5건 43만 납부완료. tests 3449-0·guards 5-0. 3차 결정표 Bf1CPJqw76JGK5yp1Z7LmG 대기 | 배포 |
 | 11-09 | developer 수정 1차(학부모 공지 검수 5건): ① 브랜드 메시지 disableSms:true·크론 문자 재발송에서 BMS 제외·못 받은 건 BMS_NOT_DELIVERED: 사유로 실패 기록 → 화면 «카톡 친구가 아니어서 못 받은 학부모 N명» + «정보성 문자로 다시 보내기»(별도 미리보기·승인, 광고 표시 없는 [스티즈농구교실] 문자, 기존 대량 큐, 묶음당 1회, 결과 확인 끝난 뒤만) ② markManualMessageAccepted 에 channel·fallbackUsed·fallbackChannel ③ 30분 중복 지문 = 종류+입력값+버튼 경로(contentHash) ④ 이름 빈 번호 noNameCount 표시 ⑤ 카톡 틀 묶음 지문 본문에 입력값 포함. tsc 0·tests 3501-0 | 완료(재검수 대기) |
-| 11-09 | developer(학부모 공지): 공지 알림톡 3종(휴무·행사·월 안내, NOTICE_ALIMTALK_TEMPLATES·env ALIMTALK_TPL_NOTICE_*·버튼 «공지 자세히 보기» https://www.stiz-dasan.kr/#{공지경로}·선택 칸 기본 «보강: 없음»/«별도 신청은 필요 없습니다.») + /admin/sms «학부모 공지 보내기»(재원생 학부모 서버 계산·미리보기→승인→대량 큐, 받는 사람마다 다른 본문) + 자유 공지 = 솔라피 BMS 자유형 텍스트형(템플릿 id 불필요·targeting I·(광고)/수신거부 본문 삽입·08:00~20:40 접수·마감 지나면 미발송, 스위치 ALIMTALK_BMS_FREE_NOTICE=on 꺼지면 문자). 큐/크론 per-item 경로 추가(기존 문자 묶음 그대로). tsc 0·tests 3500-0 | 완료(검수 대기) |
-| 11-09 | developer 수정 1차(원생 등록 2차 검수 반영 5건): ① 수강료 미리보기가 청구 모듈 workbench-pricing 의 planWeeklyTuition·planShuttleFee 를 그대로 호출(반 요일·슬롯 전달 → 주말·일8 면제·직접 입력 셔틀비·반 4개 대체 계산 청구와 동일), 셔틀 자동 요금 상수는 AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT 하나 ② 체험 생년 seoulDateInputValue ③ registerStudent 번호 잠금 직후 tx 로 중복 재확인→RegisterDuplicate ④ 엑셀 «트랜잭션 사용 불가» 주석 갱신 ⑤ 중복 판정 생년을 KST 날짜로(무tz 두 번 AT TIME ZONE, 자정·전날 15:00 행 둘 다 원래 생일 테스트). tsc 0·tests 3434-0·KST 가드 6-0·studentVisibility 5-0 | 검수 대기 |
