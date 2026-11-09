@@ -144,6 +144,21 @@ test("저장: 이상한 접속 지문은 버리고, 하루 안 같은 번호·�
   assert.equal(dup.calls.some((c) => c.sql.startsWith("INSERT")), false);
 });
 
+test("저장 순서: 잠금 → 한도 확인 → 중복 확인 → 저장 (중복 응답으로 신청 여부를 무제한 떠보지 못하게)", async () => {
+  const db = fakeDb();
+  await service.createConsultRequest(db, GOOD, { source: "PUBLIC_WEB", clientIpHash: IP });
+  const step = (re) => db.calls.findIndex((c) => re.test(c.sql));
+  const order = [step(/pg_advisory_xact_lock/), step(/AS phone10/), step(/LOWER\("studentName"\)/), step(/^INSERT/)];
+  assert.ok(order.every((i) => i >= 0), JSON.stringify(order));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+
+  // 한도를 넘었으면 같은 번호·학생의 접수가 있어도 «이미 접수» 대신 한도 거절 — 중복 조회 자체를 하지 않는다
+  const probe = fakeDb({ existing: [{ id: "old-id" }], counts: { phone10: 3 } });
+  const r = await service.createConsultRequest(probe, GOOD, { source: "PUBLIC_WEB", clientIpHash: IP });
+  assert.equal(r.ok, false);
+  assert.equal(probe.calls.some((c) => /LOWER\("studentName"\)/.test(c.sql)), false);
+});
+
 test("저장: 한도(번호 10분 3건·하루 6건·접속 주소·전체 10분 30건)를 넘으면 거절", async () => {
   for (const counts of [{ phone10: 3 }, { phoneDay: 6 }, { ip10: 5 }, { ipDay: 15 }, { all10: 30 }]) {
     const db = fakeDb({ counts });

@@ -71,7 +71,8 @@ export type CreateConsultResult =
 /**
  * 상담 신청 1건 저장.
  * ⚠️ 트랜잭션의 tx 로 부른다 — 한도 확인과 저장 사이에 다른 신청이 끼지 않게 advisory lock 으로 줄 세운다.
- * 같은 연락처·같은 학생의 «새 상담»이 하루 안에 있으면 새로 만들지 않고 그 건을 돌려준다(두 번 누름 방지).
+ * 순서: 잠금 → 한도 확인 → 중복 확인 → 저장. 같은 연락처·같은 학생의 «새 상담»이 하루 안에 있으면
+ * 새로 만들지 않고 그 건을 돌려준다(두 번 누름 방지). 한도를 넘으면 중복이어도 한도 거절이 먼저다.
  */
 export async function createConsultRequest(db: ConsultSqlClient, input: ConsultInput, options: CreateConsultOptions): Promise<CreateConsultResult> {
   const checked = validateConsultInput(input);
@@ -84,15 +85,6 @@ export async function createConsultRequest(db: ConsultSqlClient, input: ConsultI
 
   await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, "consult:apply");
 
-  const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
-    `SELECT id FROM "ConsultRequest"
-      WHERE "guardianPhone" = $1 AND LOWER("studentName") = LOWER($2) AND status = 'NEW'
-        AND "createdAt" > now() - interval '1 day'
-      ORDER BY "createdAt" DESC LIMIT 1`,
-    v.guardianPhone, v.studentName,
-  );
-  if (existing[0]) return { ok: true, duplicate: true, id: existing[0].id, value: v };
-
   const counts = await db.$queryRawUnsafe<ConsultRateCounts[]>(
     `SELECT
        COUNT(*) FILTER (WHERE "guardianPhone" = $1 AND "createdAt" > now() - interval '10 minutes')::int AS phone10,
@@ -104,6 +96,16 @@ export async function createConsultRequest(db: ConsultSqlClient, input: ConsultI
     v.guardianPhone, ipHash,
   );
   if (isConsultRateLimited(counts[0])) return { ok: false, message: "신청이 너무 많이 접수되었습니다. 잠시 후 다시 시도해 주세요." };
+
+  // 한도 확인 «뒤»에 중복 확인 — 앞에 두면 «이미 접수» 응답으로 남의 번호·학생 신청 여부를 무제한 떠볼 수 있다(보안 검수 11-10)
+  const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM "ConsultRequest"
+      WHERE "guardianPhone" = $1 AND LOWER("studentName") = LOWER($2) AND status = 'NEW'
+        AND "createdAt" > now() - interval '1 day'
+      ORDER BY "createdAt" DESC LIMIT 1`,
+    v.guardianPhone, v.studentName,
+  );
+  if (existing[0]) return { ok: true, duplicate: true, id: existing[0].id, value: v };
 
   const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
     `INSERT INTO "ConsultRequest" (
