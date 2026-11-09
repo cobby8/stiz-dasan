@@ -176,7 +176,8 @@ test("④ 옛 홈 해시는 옮겨 간 탭으로", () => {
   const { legacyHomeHashTarget } = load("src/lib/mypage/summary.ts");
   assert.equal(legacyHomeHashTarget("#mypage-shuttle"), "/mypage/history#mypage-shuttle");
   assert.equal(legacyHomeHashTarget("mypage-enrollments"), "/mypage/history#mypage-enrollments");
-  assert.equal(legacyHomeHashTarget("parent-absence-hub"), "/mypage/history");
+  // 옛 «결석·보강» 칸 주소는 결석 신고 화면으로(일정 탭에서 신청 줄을 뺐다, 2026-11-09)
+  assert.equal(legacyHomeHashTarget("parent-absence-hub"), "/mypage/regular-absence");
   assert.equal(legacyHomeHashTarget("mypage-feedback"), "/mypage/reports#news-feedback");
   assert.equal(legacyHomeHashTarget("mypage-notifications"), null, "알림은 홈에 그대로");
   assert.equal(legacyHomeHashTarget("constructor"), null);

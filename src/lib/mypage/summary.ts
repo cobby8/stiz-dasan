@@ -199,7 +199,7 @@ export function legacyHomeHashTarget(hash: string): string | null {
     const map: Record<string, string> = {
         "mypage-enrollments": "/mypage/history#mypage-enrollments",
         "mypage-shuttle": "/mypage/history#mypage-shuttle",
-        "parent-absence-hub": "/mypage/history",
+        "parent-absence-hub": "/mypage/regular-absence",
         "mypage-records": "/mypage/history#schedule-records-heading",
         "mypage-feedback": "/mypage/reports#news-feedback",
         "mypage-notices": "/mypage/reports#news-notices",

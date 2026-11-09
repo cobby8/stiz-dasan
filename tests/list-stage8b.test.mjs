@@ -207,7 +207,8 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
         { id: "n2", title: "둘째 공지", content: "", isPinned: false, createdAt: "2026-10-01T00:00:00.000Z" },
         { id: "n3", title: "셋째 공지", content: "", isPinned: false, createdAt: "2026-09-01T00:00:00.000Z" },
         { id: "n4", title: "넷째 공지", content: "", isPinned: false, createdAt: "2026-08-08T15:00:00.000Z" }, // KST 8/9 = 딱 3개월 전 → 보인다
-        { id: "old", title: "오래된 공지", content: "", isPinned: true, createdAt: "2026-08-08T14:00:00.000Z" }, // KST 8/8 → 숨김
+        { id: "old", title: "오래된 공지", content: "", isPinned: false, createdAt: "2026-08-08T14:00:00.000Z" }, // KST 8/8 → 숨김
+        { id: "pin", title: "고정 안내", content: "", isPinned: true, createdAt: "2026-03-02T00:00:00.000Z" }, // 고정 공지 = 오래돼도 보이고 맨 앞
       ],
       getChildrenFeedbacks: async () => [],
       getGalleryByClassIds: async () => [],
@@ -236,12 +237,13 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.match(html, /10\. 31\./);
   assert.ok(html.indexOf("합성 공지") < html.indexOf("드리블 기초"), "공지가 리포트보다 위");
   assert.doesNotMatch(html, /href="#news-feedback"|href="#news-photos"/, "건수 0 인 칸은 칩도 숨긴다");
-  // 공지: 3개월 넘은 것은 숨기고, 3개만 먼저 — 나머지는 «더보기» 안
+  // 공지: 3개월 넘은 것은 숨기고(고정 공지는 예외·맨 앞), 3개만 먼저 — 나머지는 «더보기» 안
   assert.doesNotMatch(html, /오래된 공지/);
-  assert.match(html, /href="#news-notices"[^>]*>공지<span class="tabular-nums[^"]*">4<\/span>/);
+  assert.ok(html.indexOf("고정 안내") > 0 && html.indexOf("고정 안내") < html.indexOf("합성 공지"), "고정 공지는 오래돼도 맨 앞");
+  assert.match(html, /href="#news-notices"[^>]*>공지<span class="tabular-nums[^"]*">5<\/span>/);
   const more = html.indexOf("<details");
-  assert.ok(more > html.indexOf("셋째 공지") && more < html.indexOf("넷째 공지"), "넷째부터 더보기 안");
-  assert.match(html, /더보기 <span class="tabular-nums">1<\/span>/);
+  assert.ok(more > html.indexOf("둘째 공지") && more < html.indexOf("셋째 공지"), "고정 1 + 최근 2 = 3개, 셋째부터 더보기 안");
+  assert.match(html, /더보기 <span class="tabular-nums">2<\/span>/);
 });
 
 test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 시트, 행 안 «취소»는 번지지 않고 바로 취소한다", () => {

@@ -64,27 +64,8 @@
 | P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
 | P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
 
-| N-1 | actions/staff-notices.ts:86-90 findOwnedNotice | 권장 | 관리자가 선생님 반 공지를 편집·저장하면 대상 반이 JSON→쉼표로 바뀌어 `"targetClassIds"=JSON` 정확 비교가 실패 → 응답 유실 후 같은 작업 재확인 시 NOT_FOUND→재제출→«내용이 다릅니다» 반복(중복 공지는 안 생김). 수정: `AND "targetClassIds" IN ($3,$4)`($4=classId) |
-| C-1 | mypage/payments/checkout/BundleCheckoutClient.tsx:170-178·436 | 권장 | ① 서버 data.amount≠화면 total 이면 창 열지 말고 «금액이 바뀌었어요»+router.refresh() ② «이미 계좌로 입금했어요» 버튼이 10건 상한(overCount)을 안 막음 → 서버 거절 전 같은 안내 ③ 175줄 «면세 금액» 등 학부모에게 낯선 말·«~습니다» 말투 섞임 → «결제 금액을 확인하지 못했어요. 학원으로 문의해 주세요» |
 
-### 리뷰 결과 (reviewer · 11-08 POS 결제 취소 b7ef25d0)
-📊 종합 판정: 통과(머지 가능 · 차단 없음, 권장 P-1·P-2). 마이그레이션은 build 에 migrate deploy 가 없으므로 **배포 전 apply_migration 필수**(안 하면 플러그인 GET·CLAIM_PAY 가 칸 없음으로 실패 → 현장 결제 전체 정지).
-✅ 환불은 settleCancelForRow(토스 재조회 order)만 · report 는 기록만 · MARK_REFUND+refundPaidPaymentInTx 한 트랜잭션 조건부 · 일부/누락 결제는 PARTIAL(안전 방향) · 플러그인 ID 는 서버 DB 값·getPayment orderId 대조 · 마이그레이션 NULL 허용 칸만·CHECK 는 NULL 통과. 테스트 루트 3160-0(보고 3165와 5건 차이)·플러그인 65-0.
-
-### 테스트 결과 (tester · 11-09 묶음 결제 전체 b6fa4781~a5fe8e6c)
-| 테스트 항목 | 결과 | 비고 |
-|-----------|------|------|
-| tsc · 전체 tests · studentVisibility · KST 가드 | ✅ 통과 | 0 · 3606-0 · 5-0 · 포함 |
-| checkout 정적 렌더 8종(기본·11건·100만 초과·선택 불가만·온라인 꺼짐·?result=fail·빈 목록·로드 실패) | ✅ 통과 | 기본 체크 2·막힌 1 disabled |
-| checkout 상호작용(가짜 훅): 해제→합계·POST 본문·토스 인자 서버값·taxFreeAmount 없음 차단/0 전달·무통장 옵션·409 확인창(목록/빈 목록)·닫고 결제 close:true·열린 계좌→다른 방법 CARD·submit-bundle·5xx 안내·상한 막힘/풀림·모두 선택/해제 | ✅ 통과 | 31건 |
-| done 상호작용: POST/GET·재시도 4회(총 5회)·재시도 후 성공·입금 대기·CONFIRM_IN_PROGRESS/OPEN_DEPOSIT_EXISTS/NOT_UNPAID 공용 문구+«다시 결제» 숨김·일반 실패·네트워크 끊김·주문 번호 없음 + decideDoneState 9경우 | ✅ 통과 | |
-| 홈 정적 렌더: 2건+ 한 번에 결제·1건 결제하기·연결 가족 청구 보기·합계=pendingPayments·묶음 계좌 1회·null 폴백·청구 없음 | ✅ 통과 | 7건 |
-| 서버(기존 가짜 DB·가짜 fetch 실행 테스트 재확인) + MANUAL/TOSS_POS 경로 확인(L1 오환불 방지 성립) | ✅ 통과 | |
-| 공지 파서 8·옛 해시 5·formatKstDate 경계 6·탭 활성 판정 | ✅ 통과 | |
-| [관찰] 상한 초과(11건)에도 «이미 계좌로 입금했어요(11건)» 버튼 눌림(서버가 10건 거절) | ⚠️ 권장 | reviewer C-1 ②와 같음 |
-| [관찰] «계좌 닫고 결제» 성공 뒤 확인 창이 남음(토스가 페이지 이동해 보통 안 보임) | ⚠️ 경미 | |
-| [관찰] 대표+연결 섞인 계정은 결제 가능 1건이어도 홈 버튼이 «한 번에 결제» / 개시일 안내가 «2026-12-05부터»(다른 곳은 «12월 5일») | ⚠️ 경미 | |
-📊 종합: 실패 0 (권장·경미 관찰 3). 스크립트: Temp/.../scratchpad/render/(ssr·interact·home-ssr·nav).mjs·pure.test.mjs
+- ⚠️ (11-08 POS 결제 취소 리뷰) 마이그레이션은 build 에 migrate deploy 가 없어 **배포 전 apply_migration 필수**(안 하면 현장 결제 전체 정지).
 
 ### 수정 요청 (tester · 11-09 재검수 8144e6c7 + e2b02a6d — 결과는 작업 로그)
 | 요청자 | 파일 | 문제 | 상태 |
@@ -92,30 +73,6 @@
 | tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
 ---
-
-### 리뷰 결과 (reviewer · 11-09 묶음 결제 화면 a5fe8e6c + d90f40b2 + b6fa4781 충돌부)
-📊 종합 판정: 통과(차단 없음 · 권장 N-1·C-1). 관련 테스트 4파일 33-0.
-✅ 금액·건수는 서버 후보값·토스 창은 서버 amount/taxFreeAmount 그대로 · sending ref 로 이중 클릭 차단 · 실패=failUrl ?result=fail 배너, 완료 새로고침=같은 주문 재승인(서버 멱등)·CONFIRM_IN_PROGRESS 등은 «다시 결제» 대신 청구 목록 · 홈 합계=청구 탭 같은 목록(null 이면 옛 기준 폴백)·묶음 계좌 1회 · 연결 가족 [청구 보기] · 단건 결제·청구 탭 기능 보존 · KST(formatKstDate·todayKst·NOW() AT TIME ZONE 1회) · 경로 전부 /mypage 안 · 44px·12px·토큰 색 · 충돌부 startsLater 반영(홈·ScheduleHub) 정상.
-
-## 구현 기록 (developer) — 묶음 결제 화면 갈래 C + B 리뷰 반영 (11-09)
-📝 갈래 B·A(구현 기록은 작업 로그 줄로 요약)를 main 위에 합치고 «한 번에 결제» 화면을 붙였다.
-
-| 파일 | 변경 | 신규/수정 |
-|---|---|---|
-| src/app/mypage/payments/checkout/page.tsx · BundleCheckoutClient.tsx | 미납 체크(selectable 기본 체크·막힘 이유)·합계·상한 안내·결제 방식·토스 창(taxFreeAmount=서버 값)·열린 계좌 충돌 확인·계좌 복사·묶음 «입금했어요» | 신규 |
-| src/app/mypage/payments/done/page.tsx · BundleDoneClient.tsx | 승인/조회 → 성공·입금 대기·확인 중·실패 + 항목·영수증, CONFIRM_IN_PROGRESS 등은 납부 내역 확인 | 신규 |
-| src/app/mypage/MyPageClient.tsx · page.tsx | 청구 줄 = 청구 탭 목록 기준(pendingPayments), [한 번에 결제]/[결제하기]/연결 가족 [청구 보기], 묶음 계좌 1회 표시, 옛 해시 → 탭 | 수정 |
-| src/lib/payments/parent-payment-request.ts | 청구 행에 virtualAccount(단건·묶음, 대표 보호자만) | 수정 |
-| src/app/mypage/payments/PaymentRequestClient.tsx | [한 번에 결제] 진입 줄 + 행별 계좌·«묶은 계좌 · 합계» | 수정 |
-| src/app/payments/[invoiceId]/page.tsx | formatKstDate, 묶음 계좌 합계 안내 | 수정 |
-| src/lib/noticeTargets.ts + queries·news/[id]·NoticesAdminClient | 대상 반 쉼표/JSON 둘 다 읽는 공용 파서, 공지 상세 ALL·CLASS 외 404 | 신규/수정 |
-| src/lib/mypage/summary.ts | legacyHomeHashTarget | 수정 |
-| src/lib/payments/admin-payment-request.ts | 납부 신청 승인 provider MANUAL | 수정 |
-| ScheduleHub·reports/page·scripts/test-parent-workspace-browser.mjs | startsLater 안내·전체보기 44px·옛 앵커 갱신 | 수정 |
-| tests/payment-bundle-ui.test.mjs(신규) + parent-app-structure·gestalt-parent·parent-child-links-ui·scheduled-enrollment-ui | | |
-
-💡 tester: 390px 에서 /mypage/payments/checkout(형제 2명·랠리즈 1건·입금 대기 1건), 상한 초과, ?result=fail, /mypage/payments/done?orderId= 새로고침. 실결제 금지 — 토스 테스트 키로만.
-⚠️ reviewer: 브라우저 스크립트(test-parent-workspace-browser.mjs)는 실행 못 함(playwright·크롬 필요). 관리자 공지 편집이 선생님 JSON 공지를 쉼표로 다시 저장할 수 있음(표시는 정상).
 
 ## 구현 기록 (developer) — 일정 탭 달력·소식 공지 3개월·홈 문구/줄바꿈 (11-09 원장 지시)
 | 파일 | 변경 | 신규/수정 |
@@ -131,10 +88,16 @@
 💡 tester: 360·390px 에서 /mypage/history(이번 달·‹›·?month=2026-13 → 이번 달·자녀 2명 칩), 휴무일 «휴»·출석/결석 점, 연간일정에 그 달 개강/주차가 없으면 «확정 후 보여요» 한 줄. /mypage/reports 공지 4개 이상이면 «더보기». 홈 «⋯» → 수강 변경 신청.
 ⚠️ reviewer: 수업일 계산은 기존 getMonthlyClassDates(휴무일은 UTC 날짜 집합 — 기존 /annual 과 같은 동작) 그대로. getMyPageHistory 는 수납도 읽지만 화면에서 안 씀(공용 쿼리 무수정). 홈 «납부할 청구 · 합계» 줄은 결제 작업 중이라 손대지 않음.
 
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|------|------|----------|----------|------|
+| 1차 | 11-09 | 옛 해시 #parent-absence-hub → /mypage/regular-absence · 고정 공지는 3개월 지나도 보이고 맨 앞(3개 상한 안) | lib/mypage/summary.ts · lib/mypage/parentSchedule.ts · tests/payment-bundle-ui·list-stage8b | reviewer 요청 A-1·A-2 |
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer 수정 1차(일정 탭 리뷰 A-1·A-2): 옛 해시 #parent-absence-hub → /mypage/regular-absence, 소식 공지 고정(isPinned)은 3개월 지나도 보이고 3개 안에서 맨 앞 + 테스트. scratchpad 정리(끝난 검수 섹션·해결된 N-1/C-1 삭제, 로그 10건) | 완료(커밋, 미푸시) |
 | 11-09 | developer(일정 탭 개편·소식 공지·홈 문구, 원장 지시): 일정 = 한 달 달력(연간일정 행사·휴무 + 우리 아이 수업일 + 출결)·수강 반·셔틀 배정, 수납 기록·신청 줄 제거(수강 변경 신청 → «⋯» 메뉴), HistoryClient 삭제. 소식 공지 3개월·3개+더보기. 홈 줄바꿈 2줄·문구 정리. tsc 0·tests 3612-0·studentVisibility 5-0·KST 가드 통과 | 완료(커밋, 미푸시) |
 | 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
 | 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
@@ -144,11 +107,3 @@
 | 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
 | 11-09 | developer(정규 셔틀 통합 6단계 — 저장 노선 읽기 전부 명단으로): 학부모 확정 시각=명단 arriveTime(regularRosterEta+Logic, 그 달 이하 최신 명단 달) · 등원시간 안내 문자=명단 시각·정류장(저장 노선 필수 조건 제거, 지문=학생 명단 칸) · 배차 진행=명단 반영이면 배차 완료, 명단 지문과 같은 안내 전달 시 안내 완료 · 신청 검토 지문 routes=[] 고정(기존 지문 유지) · 결석·셔틀 기사 알림=그날 명단에 학생 있으면 기사 역할 전원(명단 변경 알림과 같은 조건) · 월 복사 명단만 · /api/shuttle/regular-order 명단만+ORM 제거(QA 11월 목 «다른 화면에서 변경» 해소 재현 확인). 남은 저장 노선 접근=/api/admin/regular/dispatch/saved(부르는 화면 없음). tsc 0·tests 3548-0·ts 195-0·KST 6-0 | 검수 대기 |
 | 11-09 | developer(정규 셔틀 통합 4·5단계, 원장 «관리자 화면=기사님 화면·직접 수정»): /admin/shuttle/regular-dispatch 를 RegularRunEditor(RunBoard mode=admin + buildRegularRunRows, 월·요일 탭, ▲▼·끌기·시각 → 묶음별 reorder, 카드 «정류장 수정»=editStop, 학생 이름 → 셔틀 정보 창=editStudent, × → 이 칸/이 요일/전체 × 범위 DELETE, 카드 «반 이동·재배정» 표시) + RunEditDialogs 로 교체. 옛 RegularDispatchClient(자동 제안·T맵·차량 이동) 삭제·page 의 T맵/기사 조회 제거. 배정 필요 패널(신규·반 이동 칸 수, onBoard·openRequest) · AssignLegView 재배정 reassign:true+옛 칸 안내. 학생 상세 위치 placeName+requirePlaceName+명단 반영 안내. /staff/run?focus=BOARD|ALIGHT 스크롤(RunBoard focusKey). 5단계: regularRunRows·regularDriverRoute 저장 노선 입력·조회 제거(명단만, pending 끔), routeStatus API 항상 false. 흡수 비교(읽기 전용): 목 등원만 차이(노선 전용 학생 2명 사라짐·자이 후문 2정차 합쳐짐), 그 밖 요일 동일. tsc 0·tests 3553-0·가드 5-0·KST 6-0·shuttle 154-0 | 검수 대기 |
-| 11-09 | developer(2단계 리뷰 S-1~S-3): 위치 이름=주소면 서버 거부 · 명단 잠금 tx 첫 쿼리+ReadCommitted · 재배정 옛 칸 = 시작 같음 또는 시간대 겹침(오탐 방지)+테스트 2 | 완료(커밋 683c5866) |
-| 11-09 | tester(8144e6c7+e2b02a6d): tsc 0·tests 3546-0·가드 통과, 모의 24 통과. 권장: 이동→삭제 시 NEEDS_CHECK 잔류 | 통과(권장 1) |
-| 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
-| 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |
-| 11-09 | tester(3c4d4cc4+d559228c): 전체 3540-0·tsc 0·가드 통과, 모의 실행 37+청구 경계 5 통과. 권장: 잘못 등록 수강 삭제 시 운영 원장 대기 «수강 등록» 처리 | 통과(권장 1) |
-| 11-09 | developer(수강 상태 새 기준+반 줄 편집, 원장 허재원·토 2교시 사례): ① 공용 판정 commencement.ts isCurrentEnrollment/currentEnrollmentSql — ACTIVE면 승인일부터 수강 중·재원생(학생 상태·원생 목록 활성·인원 집계·대관 재원생·학부모 홈), SCHEDULED(수강 예정) 분류 제거, 개시일은 startsLater 안내 문구로만. 청구 시수·출석부 회차·셔틀 월 배차는 개시일 유지 ② 반 줄 «퇴원»→«수강 종료», ⋯ 메뉴 반 이동(actions/enrollment-admin-edit moveEnrollmentToClass — ECR CLASS_CHANGE APPLIED+원장 2건)·삭제(연결 기록 0건일 때만, 서버 재확인). tsc 0·tests 3540-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
-| 11-09 | developer(정규 셔틀 하나의 운행표 1단계·리팩터): 순수 조립 lib/shuttle/regularRunRows.ts(buildRegularRunClasses/buildRegularRunRows — 요일 고르기→묶음(저장 노선 우선 유지)→결석 뱃지→오늘만 변경→카드) + 카드 틀 components/shuttle/run/RunBoard.tsx(mode driver|admin, 승객 줄은 renderRider 로 끼움). regularDriverRoute 조립 위임·UnifiedDriverClient 는 RunBoard mode=driver. 동일성 tests/regular-run-rows.test.mjs 5개(폴백·저장 노선·노선 밖 승객·route: 대체키·양방향·빈 저장본·기본형) + 정적 렌더 전후 HTML 4장면 동일. 가드 4파일 읽기 대상만 확장. tsc 0·tests 3535-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | developer(정규 셔틀 통합 2단계 — 서버 편집 기능, 원장 D1·D3·D4·D5): 신규 순수 regularReassignLogic(반 이동 재배정 판정)·regularLocationApplyLogic(위치→명단, 300m 이름 일치 합류)·regularRosterNotifyLogic(기사 알림 문구·다음 운행일·10분 묶음 키)+각 test, 서버 regularRosterNotify(DRIVER 역할 전원 인앱+푸시). regularRosterEdit: editStudentRoster·applyLocationToRosterInTx·addRosterStudentAs replaceRowIds·편집 6종 커밋 뒤 알림. 보드 확장(명단 학생·휴원 읽기)·재배정 저장(reassign:true). 학생 상세 위치 장소명 필수+같은 tx 명단 반영. API PATCH editStudent. UI 연결은 4단계. tsc 0·tests 3533-0·src/lib 가드+shuttle 157-0 | 검수 대기 |

@@ -199,11 +199,17 @@ export function monthsBeforeYmd(ymd: string, months: number): string {
     return `${target}-${String(day).padStart(2, "0")}`;
 }
 
-/** 소식 탭 공지 — 게시일(KST)이 3개월 이내인 것만. 순서는 들어온 그대로 */
-export function recentNotices<T extends { createdAt: Date | string }>(list: T[], todayYmd: string, months = 3): T[] {
+/**
+ * 소식 탭 공지 — 게시일(KST)이 3개월 이내인 것만.
+ * 단, 고정(중요) 공지는 오래돼도 남기고 맨 앞에 둔다(학원이 일부러 고정한 안내라서).
+ * 같은 묶음 안의 순서는 들어온 그대로.
+ */
+export function recentNotices<T extends { createdAt: Date | string; isPinned?: boolean | null }>(list: T[], todayYmd: string, months = 3): T[] {
     const cutoff = monthsBeforeYmd(todayYmd, months);
-    return list.filter((n) => {
+    const kept = list.filter((n) => {
+        if (n.isPinned) return true; // 고정 공지는 기간과 무관
         const ymd = toKstYmd(n.createdAt);
         return isKstYmd(ymd) && ymd >= cutoff;
     });
+    return [...kept.filter((n) => n.isPinned), ...kept.filter((n) => !n.isPinned)];
 }
