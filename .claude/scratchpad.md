@@ -70,10 +70,32 @@
 
 ---
 
+## 구현 기록 (developer) — 학부모 화면 구조 갈래 B (11-09)
+
+📝 원장 결정 D1 안 A·D6·D7·D8. 기존 주소 전부 유지(문자 링크 보호). 결제 서버(payment-ledger·lib/payments·app/payments·결제 API) 무수정.
+
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| src/app/mypage/MyPageBottomNav.tsx | PARENT_TABS 4개·isParentTabActive(하위 화면 소속 탭)·variant top(PC) | 수정 |
+| src/app/mypage/ParentMoreMenu.tsx | «⋯» 메뉴(알림·자녀 연결·간편로그인·로그아웃) | 신규 |
+| src/app/mypage/layout.tsx | 로그아웃 → ⋯ 메뉴, PC 4탭 메뉴, «홈으로»→«홈페이지» | 수정 |
+| src/app/mypage/MyPageClient.tsx | 홈=납부 합계 한 줄(PAYMENT_HOME_HREF)+히어로+처리할 일+빠른 실행 4, 접힌 칸·공지·사진·피드백·기록 제거 | 수정 |
+| src/app/mypage/page.tsx | 사진·피드백 조회 제거, 보강권·방학특강 회차 조회 추가 | 수정 |
+| src/app/mypage/ParentShuttleDetail.tsx | 셔틀 배정 상세(홈 접힌 칸에서 이동) | 신규 |
+| src/app/mypage/history/ScheduleHub.tsx · page.tsx · HistoryClient.tsx | 일정 탭 윗부분, embedded, toDateStr KST | 신규/수정 |
+| src/app/mypage/reports/page.tsx | 소식 탭(공지·리포트·피드백·사진, 칩 앵커) | 수정 |
+| src/app/mypage/news/[id]/page.tsx | 앱 안 공지 상세(전체·우리 반 공지만, sanitize) | 신규 |
+| src/lib/mypage/summary.ts | summarizePendingPayments·countRecentAnswers·countRecentNotices | 수정 |
+| tests/parent-app-structure·mypage-home-todo (신규) + 기존 9개 위치 갱신 · kst 가드 R1 21→19 | | |
+
+💡 tester: 휴대폰 390px 홈 첫 화면(청구 있을 때/없을 때), 하위 화면에서 탭 켜짐, ⋯ 메뉴 «알림» → 홈 알림 펼침, 일정 탭 #mypage-shuttle 이동, 소식 공지 → /mypage/news/[id](설치 앱 주소창 안 뜸), 남의 반 공지 id 직접 입력 → 404.
+⚠️ reviewer: 홈 청구 합계는 getMyPageData 자녀별 최근 5건 기준(청구 탭은 60건) · 공지 상세 반 판정은 getMyPageData 의 ACTIVE 수강 기준 · /payments/[invoiceId] formatDate(시간대 없는 toLocaleDateString) 는 결제 담당 영역이라 미수정.
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
 | 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(원생 등록 3차, 원장 실사용 4건): ① 반 줄 대상 학년(슬롯 gradeRange→직접 슬롯→Program.targetAge) ② 셔틀 장소명 필수 — lib/shuttle/placeNameRule.ts·지도 창 requirePlaceName(등록 창·학부모 /shuttle/location/[token]만)·서버 validateRegularLocation·등록 규칙 거부 ③ 유니폼 선택칸 삭제 → 보호자 번호+학생 이름 일치 UniformOrder 로 등록 시 자동(주문/신청)·요약 표시 ④ 사진 동의 체크박스(IN_PERSON 기본, 범위 3칸 기본 켬). tsc 0·tests 3526-0·studentVisibility 5-0 | 검수 대기 |
@@ -83,5 +105,3 @@
 | 11-09 | developer 수정 1차(학부모 공지 검수 5건): ① 브랜드 메시지 disableSms:true·크론 문자 재발송에서 BMS 제외·못 받은 건 BMS_NOT_DELIVERED: 사유로 실패 기록 → 화면 «카톡 친구가 아니어서 못 받은 학부모 N명» + «정보성 문자로 다시 보내기»(별도 미리보기·승인, 광고 표시 없는 [스티즈농구교실] 문자, 기존 대량 큐, 묶음당 1회, 결과 확인 끝난 뒤만) ② markManualMessageAccepted 에 channel·fallbackUsed·fallbackChannel ③ 30분 중복 지문 = 종류+입력값+버튼 경로(contentHash) ④ 이름 빈 번호 noNameCount 표시 ⑤ 카톡 틀 묶음 지문 본문에 입력값 포함. tsc 0·tests 3501-0 | 완료(재검수 대기) |
 | 11-09 | developer(학부모 공지): 공지 알림톡 3종(휴무·행사·월 안내, NOTICE_ALIMTALK_TEMPLATES·env ALIMTALK_TPL_NOTICE_*·버튼 «공지 자세히 보기» https://www.stiz-dasan.kr/#{공지경로}·선택 칸 기본 «보강: 없음»/«별도 신청은 필요 없습니다.») + /admin/sms «학부모 공지 보내기»(재원생 학부모 서버 계산·미리보기→승인→대량 큐, 받는 사람마다 다른 본문) + 자유 공지 = 솔라피 BMS 자유형 텍스트형(템플릿 id 불필요·targeting I·(광고)/수신거부 본문 삽입·08:00~20:40 접수·마감 지나면 미발송, 스위치 ALIMTALK_BMS_FREE_NOTICE=on 꺼지면 문자). 큐/크론 per-item 경로 추가(기존 문자 묶음 그대로). tsc 0·tests 3500-0 | 완료(검수 대기) |
 | 11-09 | developer 수정 1차(원생 등록 2차 검수 반영 5건): ① 수강료 미리보기가 청구 모듈 workbench-pricing 의 planWeeklyTuition·planShuttleFee 를 그대로 호출(반 요일·슬롯 전달 → 주말·일8 면제·직접 입력 셔틀비·반 4개 대체 계산 청구와 동일), 셔틀 자동 요금 상수는 AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT 하나 ② 체험 생년 seoulDateInputValue ③ registerStudent 번호 잠금 직후 tx 로 중복 재확인→RegisterDuplicate ④ 엑셀 «트랜잭션 사용 불가» 주석 갱신 ⑤ 중복 판정 생년을 KST 날짜로(무tz 두 번 AT TIME ZONE, 자정·전날 15:00 행 둘 다 원래 생일 테스트). tsc 0·tests 3434-0·KST 가드 6-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | tester: 05f77383 원생 등록 2차 검수 — 통과. tsc 0·tests 3428-0·studentVisibility 5-0·KST 가드 6-0. registerStudent 가짜 tx 실행 23-0(INSERT 순서·반 없음/2개·셔틀·사진동의·체험 CONVERTED·7단계 중간 실패 시 커밋 0·정원/중복 경고 시 tx 없음·KST 자정 경계). 수강료 상수 예전 2화면과 동일. 관찰 3(차단 아님): 반 나중 배정+지점 미선택 시 branch null 저장 · 유선번호(02-…)도 주 보호자 휴대폰 통과(이전 커밋 공용 규칙) · 장소에 «다산1호점» 있으면 2호점 판정 | 통과 |
-| 11-09 | developer: 원생 등록 2차(3단계 창) — StudentRegisterModal(①학생·보호자 여러 명·계정 미리보기·중복 경고 ②요일 탭+한 줄 행 반·개시일·지점 자동·수강료 미리보기·셔틀 위치 ③유니폼·사진 동의·메모·개인정보 확인+요약) + actions/student-register.ts(registerStudent 트랜잭션 하나: 계정·학생·보호자·수강 startsOn·운영 원장·셔틀 위치·사진 동의·체험 전환). 공용 추출: lib/enrollment/class-capacity.ts·lib/students/student-shuttle-location-upsert.ts(승인 경로도 사용, vm 실행 테스트로 동작 고정)·lib/billing/regular-tuition-preview.ts(프로그램 화면 2곳 상수 통합)·lib/students/student-register-rules.ts. 1차 권장: updateStudent 바뀐 행>0·번호 충돌 시 유지+안내, 엑셀 신규 분기 공용 연결(번호 없음=실패 행), 수정 저장 순서. 체험 ⚡«원생 등록» 진입점. tsc 0·tests 3428-0(신규 21) | 검수 대기 |

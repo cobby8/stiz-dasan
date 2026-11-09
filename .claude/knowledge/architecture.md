@@ -205,3 +205,9 @@
 - **발견자**: developer
 - **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
 - **참조횟수**: 0
+
+### [2026-11-09] 학부모 앱 = 탭 4개(홈·일정·청구·소식) 한 목록 + 앱 범위(/mypage) 안 상세
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 메뉴는 `src/app/mypage/MyPageBottomNav.tsx` 의 `PARENT_TABS` 하나(휴대폰 아래 탭·PC 헤더 `variant="top"` 공용), 소속 하위 화면은 `also`(일정 = regular-absence·makeup·seasonal·shuttle·enrollment-change, 소식 = news). 일정 = `/mypage/history`(위 `ScheduleHub` + 아래 `HistoryClient embedded`), 청구 = `/mypage/payments`, 소식 = `/mypage/reports`(공지·리포트·피드백·사진, 칩은 같은 화면 앵커). 홈 = 납부 합계 한 줄(`PAYMENT_HOME_HREF` — 묶음 결제 때 이 주소만 교체) + 처리할 일 + 빠른 실행 4, 접힌 칸(details) 없음. 셔틀 배정 상세는 `ParentShuttleDetail`. 설치 앱 scope=/mypage 라 공지 상세는 `/mypage/news/[id]`(전체 공지·우리 아이 반 공지만, 아니면 404) — 공개 `/notices/[id]` 로 링크하지 말 것. 로그아웃은 `ParentMoreMenu`(⋯) 안.
+- **참조횟수**: 0

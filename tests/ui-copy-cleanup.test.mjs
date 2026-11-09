@@ -43,7 +43,8 @@ test('공통 특강 헤더는 부제가 없으면 빈 문단도 만들지 않고
   assert.match(explicit, /확인해야 할 안내/);
 });
 test('정규·특강 결석 안내는 자동 배차 제외를 약속하지 않고 전달 범위를 명확히 한다', () => {
-  const home = read('src/app/mypage/MyPageClient.tsx');
+  // 결석 신고 길 안내(정규·방학특강 2줄)는 2026-11-09 홈의 접힌 칸에서 «일정» 탭(ScheduleHub)으로 옮겼다.
+  const home = read('src/app/mypage/MyPageClient.tsx') + read('src/app/mypage/history/ScheduleHub.tsx');
   const absence = read('src/app/mypage/regular-absence/RegularAbsenceClient.tsx');
   assert.equal((home.match(/신고한 결석은 선생님과 기사님에게 표시됩니다/g)||[]).length, 2);
   assert.match(absence, /신고한 결석은 선생님과 기사님에게 표시됩니다/);

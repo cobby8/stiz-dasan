@@ -1,8 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
-import { getMyPageHistory } from "@/lib/queries";
+import { getMyPageHistory, getMyPageData } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
 import HistoryClient from "./HistoryClient";
+import ScheduleHub from "./ScheduleHub";
+import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
+import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
+import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 
 // 출결·수납 전체 히스토리는 실시간 데이터 필요 (자녀 보안 체크)
 export const dynamic = "force-dynamic";
@@ -35,7 +39,16 @@ export default async function MyPageHistoryPage({
 
     // 인증 게이트가 검증한 부모 User.id(appUserId)를 조회 기준으로 사용 (이메일 매칭 없음)
     const parentAuth = await requireVerifiedParent();
-    const data = await getMyPageHistory(parentAuth.appUserId);
+    // «일정» 탭(2026-11-09 안 A) — 기존 출결·수납 기록 위에 수강 반·결석·보강·셔틀을 함께 보인다.
+    // 전부 읽기 전용이고, 위쪽 칸 조회가 실패해도 기존 기록 화면은 그대로 보이게 하나씩 빈 값으로 받는다.
+    const [data, home, shuttleItems, driverContact, makeup, seasonal] = await Promise.all([
+        getMyPageHistory(parentAuth.appUserId),
+        getMyPageData(parentAuth.appUserId),
+        getParentShuttleOverview(parentAuth.appUserId).catch(() => []),
+        getShuttleDriverContact().catch(() => null),
+        getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
+        getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
+    ]);
 
     if (!data || data.children.length === 0) {
         return (
@@ -49,5 +62,16 @@ export default async function MyPageHistoryPage({
 
     const { child } = await searchParams;
 
-    return <HistoryClient initialChildId={child}>{data.children}</HistoryClient>;
+    return (
+        <div>
+            <ScheduleHub
+                childList={home?.children ?? []}
+                shuttleItems={shuttleItems}
+                driverContact={driverContact}
+                makeupAvailable={makeup?.counts.available ?? 0}
+                seasonalUpcoming={seasonal?.seats.length ?? 0}
+            />
+            <HistoryClient initialChildId={child} embedded>{data.children}</HistoryClient>
+        </div>
+    );
 }

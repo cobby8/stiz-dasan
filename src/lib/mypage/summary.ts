@@ -135,3 +135,56 @@ export type ShuttleLite = {
 export function filterTodayShuttle<T extends ShuttleLite>(items: T[], todayStr: string): T[] {
     return items.filter((i) => i.serviceDate != null && i.serviceDate.slice(0, 10) === todayStr);
 }
+
+// ── 홈 «오늘 할 일» 판 집계 (2026-11-09 학부모 화면 재구성 안 A) ──────────────
+// 표시 전용 순수 함수. 홈이 이미 받은 데이터(자녀별 청구·보낸 메시지·공지)를 세기만 한다.
+
+export type PaymentLite = { id: string; amount: number; status: string; canCheckout?: boolean };
+
+export type PendingPaymentSummary = {
+    count: number;           // 납부할 청구 건수(형제 포함, 같은 청구는 한 번만)
+    total: number;           // 합계 금액(원)
+    canCheckoutAny: boolean; // 이 계정이 대표 보호자라 온라인 결제할 수 있는 청구가 하나라도 있는지
+};
+
+/** 미납(PENDING)·연체(OVERDUE) 청구를 자녀 전체에서 모아 건수·합계를 낸다. 금액 0 이하는 뺀다. */
+export function summarizePendingPayments(children: { payments: PaymentLite[] }[]): PendingPaymentSummary {
+    const seen = new Set<string>();
+    let total = 0;
+    let canCheckoutAny = false;
+    for (const child of children) {
+        for (const p of child.payments) {
+            if (p.status !== "PENDING" && p.status !== "OVERDUE") continue;
+            if (seen.has(p.id)) continue; // 같은 청구가 두 자녀 목록에 겹쳐 와도 한 번만 센다
+            const amount = Number(p.amount);
+            if (!Number.isFinite(amount) || amount <= 0) continue;
+            seen.add(p.id);
+            total += amount;
+            if (p.canCheckout !== false) canCheckoutAny = true;
+        }
+    }
+    return { count: seen.size, total, canCheckoutAny };
+}
+
+/** 최근 days 일 안에 «학원 답변»이 달린 보낸 메시지 수. 답변(adminNote)이 비어 있으면 세지 않는다. */
+export function countRecentAnswers(
+    requests: { adminNote: string | null; updatedAt: Date | string }[],
+    nowMs: number,
+    days = 7,
+): number {
+    const since = nowMs - days * 86_400_000;
+    return requests.filter((r) => {
+        if (!r.adminNote || !r.adminNote.trim()) return false;
+        const at = new Date(r.updatedAt).getTime();
+        return Number.isFinite(at) && at >= since;
+    }).length;
+}
+
+/** 최근 days 일 안에 올라온 공지 수(«새 공지 N건» 줄). */
+export function countRecentNotices(notices: { createdAt: Date | string }[], nowMs: number, days = 7): number {
+    const since = nowMs - days * 86_400_000;
+    return notices.filter((n) => {
+        const at = new Date(n.createdAt).getTime();
+        return Number.isFinite(at) && at >= since;
+    }).length;
+}

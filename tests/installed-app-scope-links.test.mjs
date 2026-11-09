@@ -9,6 +9,8 @@ import test from "node:test";
 
 const mypageLayout = await readFile("src/app/mypage/layout.tsx", "utf8");
 const mypageClient = await readFile("src/app/mypage/MyPageClient.tsx", "utf8");
+const newsPage = await readFile("src/app/mypage/reports/page.tsx", "utf8");
+const bottomNav = await readFile("src/app/mypage/MyPageBottomNav.tsx", "utf8");
 const staffLayout = await readFile("src/app/staff/layout.tsx", "utf8");
 const quickPost = await readFile("src/app/staff/quick-post/QuickPostClient.tsx", "utf8");
 const driverClient = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
@@ -17,28 +19,34 @@ const safeLink = await readFile("src/components/pwa/AppSafeLink.tsx", "utf8");
 
 test("학부모 앱의 로고는 공개 홈페이지가 아니라 앱 홈으로 간다", () => {
   // 로고를 무심코 누르는 일이 잦다. 여기서 새면 학부모가 앱으로 못 돌아온다.
-  // 로고 2개(모바일·데스크탑) + 데스크탑 메뉴의 "마이페이지" 1개.
-  assert.equal((mypageLayout.match(/<Link href="\/mypage"/g) || []).length, 3);
+  // 로고 2개(모바일·데스크탑). 데스크탑 «마이페이지» 글자 링크는 2026-11-09 PC 탭 메뉴(홈·일정·청구·소식)로 바뀌었다.
+  assert.equal((mypageLayout.match(/<Link href="\/mypage"/g) || []).length, 2);
+  assert.match(mypageLayout, /<MyPageBottomNav variant="top" \/>/);
+  assert.match(bottomNav, /\{ href: "\/mypage", label: "홈"/);
   // 로고가 공개 홈페이지로 되돌아가면 안 된다.
   assert.doesNotMatch(mypageLayout, /<Link href="\/"[^>]*>\s*<Image/);
   // 남아 있는 "/" 링크는 홈으로 하나뿐이고, 그것도 설치 앱에서는 감춘다.
   assert.match(mypageLayout, /<HideInInstalledApp>[\s\S]{0,300}href="\/"[\s\S]{0,120}<\/HideInInstalledApp>/);
 });
 
+// 공지·사진은 2026-11-09 홈에서 «소식» 탭(/mypage/reports)으로 옮겼다 — 같은 약속을 그 화면에서 지킨다.
 test("학부모 앱의 공개 홈페이지 길잡이는 설치 앱에서 감춘다", () => {
   for (const href of ["/notices", "/gallery"]) {
     assert.match(
-      mypageClient,
+      newsPage,
       new RegExp(`<HideInInstalledApp>[\\s\\S]{0,200}href="${href}"[\\s\\S]{0,200}</HideInInstalledApp>`),
       `${href} 전체보기 링크`,
     );
   }
+  // 공지 상세는 앱 범위 안(/mypage/news/[id])으로 연다 — 공개 /notices/[id] 로 보내면 주소창이 뜬다
+  assert.match(newsPage, /href=\{`\/mypage\/news\/\$\{n\.id\}`\}/);
+  assert.doesNotMatch(newsPage + mypageClient, /href=\{`\/notices\/\$\{n\.id\}`\}/);
 });
 
 test("사진 타일은 감추지 않고 이동만 막는다", () => {
   // 감추면 수업 사진이 통째로 사라진다. 내용은 남기고 이동만 막아야 한다.
-  assert.match(mypageClient, /<AppSafeLink key=\{g\.id\} href="\/gallery"/);
-  assert.doesNotMatch(mypageClient, /<Link key=\{g\.id\} href="\/gallery"/);
+  assert.match(newsPage, /<AppSafeLink key=\{g\.id\} href="\/gallery"/);
+  assert.doesNotMatch(newsPage, /<Link key=\{g\.id\} href="\/gallery"/);
 });
 
 test("선생님 앱의 홈 버튼은 /staff 로 간다", () => {
