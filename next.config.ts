@@ -217,8 +217,21 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // 체험비 결제 링크(/apply/trial/pay/[token] · 완료 /apply/trial/pay/done?t=) — 주소에 결제 열쇠가 있어
+        // 다른 사이트로 리퍼러를 보내지 않고 검색·보관도 막는다(/driver/:token 과 같은 방식). 위치 권한은 주지 않는다.
+        source: "/apply/trial/pay/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      {
         // 권한 허용 경로가 차단 헤더와 겹치지 않도록 한다. 기사 화면은 단일 토큰 주소만 제외한다.
-        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)|shuttle/location(?:/|$))(?!driver/[^/]+/?$|shuttle/(?:run|regular)/[^/]+/?$).*)",
+        // 체험비 결제 링크(apply/trial/pay 와 그 아래)도 위 전용 규칙이 맡으므로 제외(헤더 중복 방지).
+        source: "/((?!staff(?:/|$)|api/staff(?:/|$)|admin(?:/|$)|shuttle/location(?:/|$))(?!driver/[^/]+/?$|shuttle/(?:run|regular)/[^/]+/?$|apply/trial/pay(?:/|$)).*)",
         headers: [
           { key: "X-Frame-Options", value: "DENY" }, // 클릭재킹 방지: iframe 삽입 차단
           { key: "X-Content-Type-Options", value: "nosniff" }, // MIME 스니핑 방지
