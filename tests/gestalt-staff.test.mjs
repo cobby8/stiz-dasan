@@ -124,7 +124,8 @@ test("T-11·T-12 현장 화면: 11px 글자 없음, 하드코딩 의미색은 �
     assert.doesNotMatch(src, /text-\[11px\]/, `${name} 11px`);
   }
   // 기사님 탑승 체크 영역(승객 줄 ~ 사용 안내)만 본다. 순서 편집 «저장»(파랑)은 이번 범위 밖.
-  const riderArea = driver.slice(driver.indexOf("const status = boarding[rider.key]"), driver.indexOf("탑승 체크 사용 안내"));
+  // 2026-11-09 운행표 부품(RunBoard) 추출: 승객 줄은 renderRider 함수(화면 JSX 바로 앞)로 옮겨졌다 → 그 함수 끝까지만 본다.
+  const riderArea = driver.slice(driver.indexOf("const status = boarding[rider.key]"), driver.indexOf('<AcademyTheme role="driver"'));
   assert.ok(riderArea.length > 1000, "승객 줄 영역을 찾아야 한다");
   assert.doesNotMatch(riderArea, /bg-green-600|bg-red-500|bg-violet-600|bg-gray-700|border-red-300|bg-amber-400|bg-blue-600|text-red-\d/);
   assert.match(driver, /runState === "running" && <button[^\n]{0,200}className="academy-button-danger /);

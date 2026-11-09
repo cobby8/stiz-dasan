@@ -25,7 +25,9 @@ const { attachShuttleDayNotes } = await import(
 );
 
 const parentLib = await readFile("src/lib/shuttle/parent-shuttle-exception.ts", "utf8");
-const route = await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8");
+// 2026-11-09: 조립(묶음 → 결석 뱃지 → «오늘만» 변경)은 순수 함수 regularRunRows.ts 로 옮겼다 → 두 파일을 함께 본다.
+const route = (await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8"))
+  + "\n" + (await readFile("src/lib/shuttle/regularRunRows.ts", "utf8"));
 const client = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
 
 const TODAY = { today: "2026-08-09" };

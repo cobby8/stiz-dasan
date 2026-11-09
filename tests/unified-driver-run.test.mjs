@@ -279,7 +279,9 @@ test("통합 화면은 종류별 기존 저장 API·기존 파라미터를 그�
 });
 
 test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 유지한다", async () => {
-  const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
+  // 2026-11-09: 카드 틀(시간·길안내)은 운행표 부품 RunBoard 로, 승객 줄(연락처·탑승 버튼)은 기사님 화면에 남았다 → 함께 본다.
+  const src = (await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8"))
+    + "\n" + (await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8"));
   const css = await readFile("src/components/shuttle/DriverWorkspace.module.css", "utf8");
   // 실제 크기·겹침은 별도 브라우저 검사에서 확인한다. 이 가드는 연결 누락만 확인한다.
   assert.match(src, /className=\{styles\.timeNavigation\}/);
