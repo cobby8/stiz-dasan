@@ -269,8 +269,16 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 신고 즉시 발급(`makeup/absence-report-credit.ts`, 호출부 tx 안)과 출결 발급(`credit-service.syncCreditForRegularSession`)이 같은 sourceKey 를 쓴다 — 세션 id 가 키에 없어 신고 시점에도 키가 정해지고 ("studentId","sourceKey") 유니크로 한 장. 두 INSERT 모두 `ON CONFLICT DO UPDATE … WHERE status='REVOKED' AND makeupSessionId IS NULL` 로 «회수된 같은 결석»만 되살린다. 신고 취소 = `decideCreditOnAbsenceCancel` 표(학부모: 미사용 회수·예약은 확인 후 예약 취소+회수·사용 완료/지난 예약은 막음 / 관리자: AVAILABLE 만 회수 / 출결 ABSENT 면 유지). 키 형식을 바꾸면 parent-timeline·parent-regular-absence 의 SQL 문자열 조립도 같이 바꿀 것.
+- **참조횟수**: 0
+
 ### [2026-11-10] 휴원 수강료 처리(이월·환불·없음) = 순수 계산(pause-settlement-plan) + db 인자 실행부(pause-settlement) + 표 2개
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 금액 = 그 청구 금액 ÷ 그 수강월 그 반 수업 수(getMonthlyClassDates) × 빠지는 수업(휴원 시작 ≤ d < 복귀일), 청구마다 한 번 반올림 — 결석 이월(workbench-absence)과 같은 기준. 승인(`decideEnrollmentChangeRequest` settlement?)과 처리는 한 트랜잭션(전역 STIZ_BILLING_WORKBENCH 잠금 + 신청별 advisory + 신청·청구 FOR UPDATE + 미리보기 지문 대조), 미납 감액은 조건부 UPDATE(0원=CANCELED). 토스 온라인 환불은 커밋 뒤 `partialRefundTossPaymentByAdmin`(줄 REQUESTED → 재조회 cancels[] 표식 `STIZ-PR:<줄 id>`·고정 멱등 키로만 DONE), POS·무통장·랠리즈·현금은 사람 할 일(TODO → «직접 처리함»). 이월은 `carryRemaining` 을 매일 크론(/api/cron/enrollment-changes)이 carryAfterYm 뒤 미납 청구에서 차감. 기록 = `EnrollmentChangeSettlement`(신청당 1행)·`…Line`(마이그레이션 20261110180000). 학부모 알림 한 줄은 notify 가 처리 기록을 읽어 붙인다. 휴원 시작일 최소값 = `earliestPauseStart`(changeRequestRules, import 없음 — today·nowHm 인자).
+- **참조횟수**: 0
+
+### [2026-11-10] 체험비 온라인 결제 = 결제 링크 토큰 + 별도 표(TrialFeePayment), 토스 호출·면세·가상계좌 판정은 청구 것 재사용
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 체험 신청자는 원생·로그인이 없어 PaymentTransaction(청구·청구서·학생 id 필수)을 못 쓴다 → `TrialFeePayment`(마이그레이션 20261110150000, 신청당 DONE 1건·WAITING 1건 부분 유일 인덱스, FK ON DELETE SET NULL). 권한 = 신청 직후 발급하는 결제 링크 토큰(32바이트, `TrialLead.paymentTokenHash` 해시만 저장, 원문은 신청 완료 응답에만) → `/apply/trial/pay/[token]`. 순수 규칙 `src/lib/trial-fee/trialFeeRules.ts`, 장부 `trialFeeLedger.ts`(db 인자, 가짜 DB 테스트), 실행부 `trialFeePaymentService.ts`(payment-ledger 의 getVerifiedTossPayment·encodeTossSecret·makeUuidFromSeed·readTossErrorMessage 를 export 해 재사용). 토스 웹훅은 같은 주소에서 주문번호 `TRIAL-` 이면 `recordTrialFeeTossWebhook` 으로 갈라진다. `trialFeeConfirmed=true` 쓰기는 여전히 `trial-fee-confirmation.ts` 한 곳(가드 테스트) — 온라인 확정·환불 반영 함수도 거기 있다. 설정 `AcademySettings.trialFeeAmount·trialOnlinePaymentEnabled`(기본 꺼짐 = 예전 계좌 안내). 체험·등록 안내 초안 `guideMessages.ts`(코치 = 슬롯 키→Coach.phone, 기사 = DRIVER 역할 User.phone) — 자동 발송 스위치 2개 기본 false + 문자 규칙 isActive=false(원장 승인 전 미리보기만). 원생 등록 액션은 «문자 없음» 테스트가 있어 등록 안내를 거기에 연결하지 않았다.
 - **참조횟수**: 0

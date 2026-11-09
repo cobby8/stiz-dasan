@@ -173,7 +173,7 @@ const TOSS_FETCH_TIMEOUT_MS = 10_000;
 /** 매일 점검의 시간 예산 — cron maxDuration 60초 안에서 마무리(남은 건은 다음 날) */
 const SWEEP_TIME_BUDGET_MS = 45_000;
 
-function makeUuidFromSeed(seed: string) {
+export function makeUuidFromSeed(seed: string) {
     const hex = createHash("sha256").update(seed).digest("hex");
     const variant = ((parseInt(hex[16] || "8", 16) & 0x3) | 0x8).toString(16);
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
@@ -1627,7 +1627,7 @@ async function alertVirtualAccountIssue(text: string) {
     }
 }
 
-function encodeTossSecret(secretKey: string) {
+export function encodeTossSecret(secretKey: string) {
     return Buffer.from(`${secretKey}:`).toString("base64");
 }
 
@@ -1666,7 +1666,7 @@ async function requestTossPayment(path: string): Promise<TossLookupResult> {
     }
 }
 
-async function getVerifiedTossPayment(paymentKey: string | null, orderId: string | null) {
+export async function getVerifiedTossPayment(paymentKey: string | null, orderId: string | null) {
     if (!paymentKey && !orderId) return { kind: "rejected", status: 400 } as const;
     const path = paymentKey
         ? `/v1/payments/${encodeURIComponent(paymentKey)}`
@@ -2051,7 +2051,7 @@ function adminRefundIdempotencySeed(txId: string, paymentKey: string, nowMs: num
 }
 
 /** 토스 오류 응답에서 원장이 읽을 문장만 뽑는다(없으면 null) */
-async function readTossErrorMessage(response: Response): Promise<string | null> {
+export async function readTossErrorMessage(response: Response): Promise<string | null> {
     try {
         const body = asRecord(await response.json());
         return readString(body.message)?.slice(0, 200) ?? null;

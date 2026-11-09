@@ -3,6 +3,10 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
+import { TOKEN_QUERY_KEYS, isTrackingBlockedLocation, isTrackingBlockedPath } from "@/lib/privacy/trackingExclusion";
+
+// 인라인 스크립트에 넣을 «토큰 쿼리 이름» — trackingExclusion.ts 의 같은 상수를 그대로 직렬화(기준 한 곳)
+const TOKEN_QUERY_KEYS_JSON = JSON.stringify(TOKEN_QUERY_KEYS);
 
 const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID || "537084849778028";
 const TRACK_RETRY_LIMIT = 3;
@@ -28,6 +32,9 @@ function withTestEventCode(params?: MetaEventParams) {
 
 export function trackMetaEvent(eventName: string, params?: MetaEventParams, retryCount = 0) {
     if (typeof window === "undefined" || !META_PIXEL_ID) return;
+    // 주소에 열쇠(토큰)가 있는 화면에서는 아무 이벤트도 보내지 않는다 — 픽셀은 주소 전체(dl)를 facebook.com 으로 보낸다.
+    // 재시도(setTimeout)로 다시 불릴 때도 매번 지금 주소로 다시 판정한다(그 사이 화면이 바뀔 수 있다).
+    if (isTrackingBlockedLocation(window.location.pathname, window.location.search)) return;
 
     if (!window.fbq) {
         if (retryCount < TRACK_RETRY_LIMIT) {
@@ -44,17 +51,28 @@ export function trackMetaEvent(eventName: string, params?: MetaEventParams, retr
 
 export default function MetaPixel() {
     const pathname = usePathname();
+    // 토큰 경로에서는 픽셀 스크립트·초기화·noscript 이미지 자체를 싣지 않는다(서버 렌더와 같은 판정 — 경로만 본다)
+    const pathBlocked = isTrackingBlockedPath(pathname);
 
     useEffect(() => {
         trackMetaEvent("PageView");
     }, [pathname]);
 
-    if (!META_PIXEL_ID) return null;
+    if (!META_PIXEL_ID || pathBlocked) return null;
 
+    // ① 맨 앞: 주소 쿼리에 토큰 이름(token·t·access·enrollmentHandoff·handoff)이 있으면 픽셀을 싣지도 init 하지도 않고 끝낸다.
+    //    (경로는 서버 렌더에서 이미 걸렀고, 쿼리는 서버 렌더 시점에 모르므로 브라우저에서 한 번 더 — isTrackingBlockedLocation 과 같은 목록)
+    // ② disablePushState: 픽셀이 화면 이동(history.pushState)마다 스스로 PageView 를 보내는 기능을 끈다.
+    //    PageView 는 위 useEffect 가 판정을 거쳐 직접 보낸다 — 그래야 앱 안 이동으로 토큰 화면에 들어가도 새지 않는다.
+    // ③ autoConfig=false: 버튼 클릭 등 «자동 이벤트»를 끈다(앱 안 이동으로 토큰 화면에 간 뒤 클릭이 주소째 나가지 않게). init 보다 앞이어야 한다.
     return (
         <>
             <Script id="meta-pixel" strategy="afterInteractive">
                 {`
+                    (function(){
+                    var keys=${TOKEN_QUERY_KEYS_JSON};
+                    var q=new URLSearchParams(window.location.search);
+                    for(var i=0;i<keys.length;i++){if(q.has(keys[i]))return;}
                     !function(f,b,e,v,n,t,s)
                     {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
                     n.callMethod.apply(n,arguments):n.queue.push(arguments)};
@@ -63,7 +81,10 @@ export default function MetaPixel() {
                     t.src=v;s=b.getElementsByTagName(e)[0];
                     s.parentNode.insertBefore(t,s)}(window, document,'script',
                     'https://connect.facebook.net/en_US/fbevents.js');
+                    fbq.disablePushState = true;
+                    fbq('set', 'autoConfig', false, '${META_PIXEL_ID}');
                     fbq('init', '${META_PIXEL_ID}');
+                    })();
                 `}
             </Script>
             <noscript>

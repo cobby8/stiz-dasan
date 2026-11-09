@@ -11,6 +11,9 @@ import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
+// 체험비 온라인 결제(2026-11-10) — 목록 짧은 표시·환불 버튼 조건은 순수 규칙 한 곳에서
+import { canRefundTrialFeeOnline, trialFeeListChip } from "@/lib/trial-fee/trialFeeRules";
+import { refundTrialFee } from "@/app/actions/trial-fee";
 import { trialClassShortLabel, trialClassTimeRange, trialConfirmedClassShortLabel, trialPreferredSlotKeyCandidates } from "@/lib/trial-schedule-display";
 import { seoulDateInputValue, seoulTimeInputValue } from "@/lib/trial-schedule-time";
 import { statusBadgeClass } from "@/lib/ui/statusTones";
@@ -65,6 +68,8 @@ export interface TrialLead {
     trialDate: string | null;
     trialFeeConfirmed: boolean; // 학원이 실제 입금을 확인함(관리자 전용 버튼)
     trialFeeNoticeAgreedAt?: string | null; // 학부모가 신청서에서 비용·계좌 안내에 동의한 시각(입금 아님)
+    trialFeePaymentStatus?: string | null; // 체험비 온라인 결제 요약 — PAID·WAITING_FOR_DEPOSIT·REFUNDED·NEEDS_REFUND
+    trialFeePaidAt?: string | null; // 온라인 결제 완료 시각
     hopeNote: string | null;
     agreedTerms: boolean;
     agreedPrivacy: boolean;
@@ -873,6 +878,28 @@ export default function TrialCrmClient({
         }
     }
 
+    // 체험비 환불(토스 전액 취소) — 원장만 서버에서 통과. 체험 신청 상태는 그대로 두고 체험비만 돌려준다.
+    async function handleRefundTrialFee(lead: TrialLead) {
+        if (trialFeeBusyId) return;
+        if (!confirm(`"${lead.childName}" 체험수업비를 카드·계좌로 전액 환불할까요?
+되돌릴 수 없어요. 체험 신청 상태는 그대로예요(취소하려면 상태도 바꿔 주세요).`)) return;
+        setTrialFeeBusyId(lead.id);
+        showFeedback("info", `${lead.childName} 체험비 환불을 요청하는 중입니다...`);
+        try {
+            const result = await refundTrialFee(lead.id);
+            if (!result.ok) {
+                showFeedback("error", result.message);
+                return;
+            }
+            showFeedback("success", result.alreadyApplied ? `${lead.childName} 체험비는 이미 환불된 상태입니다.` : `${lead.childName} 체험비를 환불했습니다.`);
+            await loadTrialData();
+        } catch (error) {
+            showFeedback("error", adminErrorText(error, "체험비 환불 중 문제가 생겼습니다."));
+        } finally {
+            setTrialFeeBusyId(null);
+        }
+    }
+
     async function handleSendManualSms(lead: TrialLead, message: string) {
         if (manualSmsBusy) return;
         setManualSmsBusy(true);
@@ -980,6 +1007,9 @@ export default function TrialCrmClient({
                 : { key: "fee", label: trialFeeBusyId === lead.id ? "확인 중…" : "입금 확인", icon: trialFeeBusyId === lead.id ? "progress_activity" : "paid", disabled: Boolean(trialFeeBusyId), onSelect: () => handleConfirmTrialFee(lead) });
             actions.push({ key: "attended", label: "체험 완료", icon: "check_circle", tone: "primary", disabled: busy, onSelect: () => handleStatusChange(lead, "ATTENDED") });
         }
+        if (canRefundTrialFeeOnline(lead.trialFeePaymentStatus)) {
+            actions.push({ key: "fee-refund", label: trialFeeBusyId === lead.id ? "환불 중…" : "체험비 환불", icon: "currency_exchange", tone: "danger", disabled: Boolean(trialFeeBusyId), onSelect: () => handleRefundTrialFee(lead) });
+        }
         if (!isClosedTrialStatus(lead.status) && !lead.coachNoticeSentAt) {
             actions.push({ key: "coach-notice", label: "쌤 알림", icon: "school", disabled: busy, onSelect: () => handleSendCoachNotice(lead) });
         }
@@ -1046,6 +1076,7 @@ export default function TrialCrmClient({
         const teacherLabel = formatTrialListTeacherName(lead, classesById, classesBySlotKey);
         const schoolLabel = lead.childSchool || "-";
         const gradeLabel = lead.childGrade || lead.childAge || "-";
+        const feeChip = trialFeeListChip(lead);
         return (
             <tr
                 key={`${lead.id}-list`}
@@ -1097,6 +1128,12 @@ export default function TrialCrmClient({
                 <td className="px-2 py-1.5">
                     <span className="block font-black text-[var(--color-academy-ink)]" title={rowTitle}>
                         {lead.childName}
+                        {/* 체험비 상태(결제·입금 대기·환불 필요 등) — 이름 옆 한 단어, 행 높이를 늘리지 않는다 */}
+                        {feeChip && (
+                            <span className={`ml-1 text-xs font-bold ${feeChip.needsAction ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`} title={`체험비: ${trialFeeStatusLabel(lead)}`}>
+                                {feeChip.label}
+                            </span>
+                        )}
                     </span>
                 </td>
                 <td className="hidden px-2 py-1.5 md:table-cell">

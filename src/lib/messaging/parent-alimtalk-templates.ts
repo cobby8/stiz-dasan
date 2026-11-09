@@ -334,6 +334,9 @@ export function buildNoticeAlimtalkMessage(
  */
 export const SMS_ONLY_PARENT_TRIGGERS: Record<string, string> = {
   TRIAL_CONFIRM_PARENT: "공개 폼 접수 확인(꺼짐 유지 — 남의 번호 위험). 3차 후보",
+  // 2026-11-10 초안 — 원장 문구 승인 전이라 자동 발송 스위치 기본 꺼짐(미리보기만). 승인되면 알림톡 금고 후보
+  TRIAL_PAID_GUIDE_PARENT: "체험비 결제 완료 → 체험 확정 안내(src/lib/trial-fee/guideMessages.ts, 스위치 기본 꺼짐)",
+  ENROLL_WELCOME_GUIDE_PARENT: "등록 안내 — 담당 코치·셔틀 기사님 연락처 자동(guideMessages.ts, 스위치 기본 꺼짐)",
   ENROLL_CONFIRM_PARENT: "공개 폼 접수 확인(꺼짐 유지). 3차 후보",
   UNPAID_PARENT: "미납 안내(잠금 — 토스 라이브 때 전환). 3차 후보",
   SPECIAL_APPLICATION_REJECTED_PARENT: "특강 반려(꺼짐). 2차 후보",

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { updateAcademySettings } from "@/app/actions/admin";
+import TrialFeeGuideSettings from "./TrialFeeGuideSettings";
 
 type ApplySettings = {
     trialTitle: string;
@@ -152,7 +153,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                         onChange={(event) => setTrialContent(event.target.value)}
                         rows={6}
                         className={TEXTAREA}
-                        placeholder={"예:\n- 체험수업 1회 1만원\n- 초등학생~중학생 누구나 신청 가능"}
+                        placeholder={"예:\n- 체험수업 1회 1만원(신청 후 바로 결제)\n- 준비물: 실내용 운동화, 운동복장, 물\n- 위치: 남양주시 다산중앙로20번길 10-32, 1층\n- 체험비가 확인되면 체험수업이 확정됩니다"}
                     />
                 </div>
                 <div>
@@ -168,6 +169,9 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
             </SettingsCard>
+
+            {/* 체험비 온라인 결제 설정 + 체험·등록 안내 미리보기(2026-11-10). 자동 발송은 원장 문구 승인 전이라 «꺼짐» 표시만 */}
+            <TrialFeeGuideSettings />
 
             <SettingsCard badge="수강신청" badgeColor="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)]" title="수강신청 안내 설정">
                 <div>
