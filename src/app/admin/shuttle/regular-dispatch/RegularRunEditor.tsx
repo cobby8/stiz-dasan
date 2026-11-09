@@ -16,12 +16,14 @@ import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
 import { rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
-import { monthNote, RemoveRiderDialog, rosterCall, ScopeFields, StopEditDialog, StudentShuttleDialog, type ReassignLink } from "./RunEditDialogs";
+import { monthNote, RemoveRiderDialog, rosterCall, StopEditDialog, StudentShuttleDialog, type ReassignLink } from "./RunEditDialogs";
 
 // 관리자 «정규 셔틀 운행표» — 2026-11-09 원장 결정:
 //   · 관리자 배차 화면 = 기사님 화면과 똑같이 보이고, 같은 화면에서 직접 수정한다.
 //   · 자동 제안(T맵 자동 노선)·차량 이동·⇄ 는 없앴다. 셔틀 명단(RegularShuttleStop)이 유일한 정본이다.
-//   · 카드에서: 순서(▲▼·끌기)·시각 · 정류장 수정 · 학생 이름 → 셔틀 정보 창 · × → 명단에서 빼기.
+//   · 2026-11-09 원장 점검: 평소엔 기사님 화면처럼 «보기만». 화면 위 [수정] 하나를 누르면 편집 모드 —
+//     카드마다 시각 칸 · 손잡이(⠿)로 끌어 순서 이동(▲▼ 보조) · 정류장 수정 · 학생 이름 → 셔틀 정보 창 · × 빼기.
+//     순서·시각은 [저장]에 모아 보내고, 정류장·학생·빼기는 창에서 바로 저장한다(기존 API 그대로).
 //   · «배정 필요» = 신규 + 반 이동 재배정(기존 신규 배차 패널·같은 API). 반 이동 학생은 카드에도 표시.
 //   · 바뀌면 서버가 기사님께 «노선 확인하기» 알림을 보낸다(regularRosterNotify).
 // 정렬·편집 상태는 이 화면이 들고, 카드 그리기는 RunBoard(mode="admin")가 한다.
@@ -123,10 +125,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   function startEditing() { setSourceRows(rows); setSortOverride({}); setTimeOverride({}); setOrderScope(defaultScope); setMessage(null); setError(null); setEditing(true); }
   function cancelEditing() { setEditing(false); setSortOverride({}); setTimeOverride({}); }
 
-  // 저장 = 묶음(수업시간 × 등/하원)마다 명단 «reorder»(그 묶음이 쓰던 순서 번호를 돌려 쓰고 시각을 넣는다).
-  // 바뀐 묶음만 보낸다. 수업시간 글자는 명단 행 그대로(공백까지 — 서버가 글자 그대로 비교한다).
-  async function saveOrder() {
-    if (savingOrder) return;
+  // 바뀐 묶음(수업시간 × 등/하원) 목록 — 저장할 때 보낼 것이자 «저장 안 한 변경이 있나» 판정.
+  // 수업시간 글자는 명단 행 그대로(공백까지 — 서버가 글자 그대로 비교한다).
+  const changedGroups = (() => {
+    if (!editing) return [];
     const groupPayload = (list: UnifiedRow[], timeOf: (r: UnifiedRow) => string | null) => {
       const out = new Map<string, { rowIds: string[]; arriveTime: string | null }[]>();
       for (const r of list) {
@@ -139,8 +141,25 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     };
     const after = groupPayload(ordered, displayTime);
     const before = groupPayload(sourceRows, (r) => r.time);
-    const changed = [...after.entries()].filter(([key, list]) => JSON.stringify(list) !== JSON.stringify(before.get(key)));
-    if (changed.length === 0) { cancelEditing(); return; }
+    return [...after.entries()].filter(([key, list]) => JSON.stringify(list) !== JSON.stringify(before.get(key)));
+  })();
+  const orderDirty = changedGroups.length > 0;
+
+  // 편집 중 창(정류장·학생·빼기)에서 저장하면 router.refresh 로 명단이 새로 온다.
+  // 순서·시각을 안 바꾼 상태면 편집 기준(sourceRows)을 새 명단으로 바꿔 끼운다(편집 모드는 유지).
+  // React 권장 «렌더 중 이전 값 비교» 방식 — 효과(useEffect) 없이 한 번에 맞춘다.
+  const [seenRows, setSeenRows] = useState(rows);
+  if (seenRows !== rows) {
+    setSeenRows(rows);
+    if (editing && !orderDirty) { setSourceRows(rows); setSortOverride({}); setTimeOverride({}); }
+  }
+
+  // 저장 = 묶음마다 명단 «reorder»(그 묶음이 쓰던 순서 번호를 돌려 쓰고 시각을 넣는다). 바뀐 묶음만 보낸다.
+  // keepEditing = 창을 열기 전 «먼저 저장» — 저장 뒤에도 편집 모드를 유지한다. 성공하면 true.
+  async function saveOrder(keepEditing = false): Promise<boolean> {
+    if (savingOrder) return false;
+    const changed = changedGroups;
+    if (changed.length === 0) { if (!keepEditing) cancelEditing(); return true; }
     setSavingOrder(true); setError(null); setMessage(null);
     let done = 0;
     let note = "";
@@ -156,11 +175,19 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         done += 1;
       }
       setMessage(`순서·시각 저장 완료 · ${done}묶음${note} · 기사님께 알림을 보냈어요`);
-      setEditing(false); setSortOverride({}); setTimeOverride({});
+      if (keepEditing) {
+        // 새 명단이 오기 전까지 지금 순서·시각을 편집 기준으로 삼는다(화면이 옛 순서로 튀지 않게).
+        setSourceRows(ordered.map((r, i) => ({ ...r, time: displayTime(r), minutes: parseDriverScheduleTime(displayTime(r)), seq: i })));
+      } else {
+        setEditing(false);
+      }
+      setSortOverride({}); setTimeOverride({});
+      return true;
     } catch (e) {
       // 앞 묶음은 이미 저장됐을 수 있다 — 몇 묶음이 저장됐는지 알리고 화면을 새로 읽는다.
       setError(`${done > 0 ? `${done}묶음은 저장됐고, ` : ""}${adminErrorText(e, "저장하지 못했습니다.")}`);
-      setEditing(false);
+      setEditing(false); setSortOverride({}); setTimeOverride({});
+      return false;
     } finally {
       setSavingOrder(false);
       router.refresh();
@@ -187,7 +214,15 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     const s = sid ? board?.students.find((x) => x.studentId === sid) : null;
     return s ? s.legs.filter((l) => l.reassign).map((l) => ({ studentId: s.studentId, legKey: l.key, label: l.reassign!.label })) : reassignByRowId.get(rowId) ?? [];
   }, [board, stopsById, reassignByRowId]);
-  function openReassign(link: ReassignLink) { setDialog(null); setOpenRequest({ studentId: link.studentId, legKey: link.legKey, nonce: Date.now() }); }
+  function openReassign(link: ReassignLink) { void guardThen(() => { setDialog(null); setOpenRequest({ studentId: link.studentId, legKey: link.legKey, nonce: Date.now() }); }); }
+
+  // 순서·시각을 바꾼 채 다른 창을 열면, 창 저장 뒤 새 명단과 손댄 순서가 엉킨다 → 먼저 저장할지 묻는다.
+  async function guardThen(open: () => void) {
+    if (!orderDirty) { open(); return; }
+    if (!window.confirm("바꾼 순서·시각을 먼저 저장할까요?")) return;
+    if (await saveOrder(true)) open();
+  }
+  function openDialog(next: Dialog) { void guardThen(() => setDialog(next)); }
 
   // ── 편집 창 ──
   const [dialog, setDialog] = useState<Dialog | null>(() => {
@@ -223,18 +258,20 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     return [...by.values()].filter((v) => v.board && v.alight && v.board !== v.alight);
   }, [stops, weekday]);
 
-  function confirmLeave() { return !editing || window.confirm("저장하지 않은 순서·시각 수정이 있습니다. 이동하면 사라집니다. 계속할까요?"); }
+  function confirmLeave() { return !orderDirty || window.confirm("저장하지 않은 순서·시각 수정이 있습니다. 이동하면 사라집니다. 계속할까요?"); }
 
   const stopRows = ordered.filter((r) => !r.isTerminal);
+  // 적용 범위 고르기 글자(예: «11월부터 계속» / «11월만»).
+  const monthLabel = `${Number(serviceMonth.slice(5, 7))}월`;
   const riderCount = new Set(stopRows.flatMap((r) => r.riders.map((x) => x.checkId))).size;
 
-  // 카드 머리 보조 줄(관리자) — 학생 수 + «정류장 수정».
+  // 카드 머리 보조 줄(관리자) — 학생 수 + (편집 모드) «정류장 수정».
   function renderStopMeta(row: UnifiedRow) {
     return (
       <>
         <span>{row.riders.length}명</span>
-        {!editing && row.kind === "REGULAR" && row.riders.length > 0 && (
-          <button type="button" onClick={() => setDialog({ kind: "stop", rowIds: row.riders.map((x) => x.checkId) })}
+        {editing && row.kind === "REGULAR" && row.riders.length > 0 && (
+          <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "stop", rowIds: row.riders.map((x) => x.checkId) })}
             className="inline-flex min-h-11 items-center gap-0.5 rounded-lg px-1 text-[13px] font-bold text-[var(--color-academy-primary)] underline underline-offset-2">
             <span aria-hidden="true" className="material-symbols-outlined text-[16px]">edit_location_alt</span>정류장 수정
           </button>
@@ -243,7 +280,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     );
   }
 
-  // 학생 한 줄(관리자) — 이름(누르면 셔틀 정보 창) · 반 이동 표시 · ×(명단에서 빼기). 탑승 버튼 자리에 × 하나.
+  // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 이름(누르면 셔틀 정보 창) · ×(명단에서 빼기).
+  // 반 이동 표시는 배정 할 일이라 두 모드 모두 누를 수 있다.
   function renderRider(row: UnifiedRow, rider: UnifiedRider) {
     const links = reassignByRowId.get(rider.checkId) ?? [];
     return (
@@ -251,20 +289,24 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
-              <button type="button" disabled={editing} onClick={() => setDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
-                className="min-h-11 break-all text-left text-[19px] font-black text-gray-900 underline decoration-dotted underline-offset-4 disabled:no-underline">{rider.name}</button>
+              {editing ? (
+                <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
+                  className="min-h-11 break-all text-left text-[19px] font-black text-gray-900 underline decoration-dotted underline-offset-4">{rider.name}</button>
+              ) : (
+                <span className="break-all text-[19px] font-black text-gray-900">{rider.name}</span>
+              )}
               {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
               {links.map((l) => (
-                <button key={l.legKey} type="button" disabled={editing} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
+                <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
                   className="inline-flex min-h-11 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-2 text-[13px] font-black text-[var(--color-academy-on-primary)]">
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">swap_horiz</span>반 이동 · 재배정
                 </button>
               ))}
             </div>
           </div>
-          {!editing && (
+          {editing && (
             <div className={styles.boardingActions}>
-              <button type="button" onClick={() => setDialog({ kind: "remove", rowId: rider.checkId })} aria-label={`${rider.name} 명단에서 빼기`}
+              <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "remove", rowId: rider.checkId })} aria-label={`${rider.name} 명단에서 빼기`}
                 className="grid h-11 w-11 place-items-center rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-danger)]">
                 <span aria-hidden="true" className="material-symbols-outlined text-[22px]">close</span>
               </button>
@@ -279,7 +321,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     <div className="mx-auto max-w-6xl px-4 py-3">
       {/* 한 줄 머리: 제목 · 월 · 기사님 위치·요청(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="mr-auto text-base font-black text-[var(--color-academy-ink)]">정규 셔틀 운행표 <span className="text-xs font-bold text-[var(--color-academy-muted)]">기사님 화면과 같음</span></h3>
+        <h3 className="mr-auto text-base font-black text-[var(--color-academy-ink)]">정규 셔틀 운행표</h3>
         <select value={serviceMonth} aria-label="운행 월" onChange={(e) => { if (confirmLeave()) router.push(`/admin/shuttle/regular-dispatch?month=${encodeURIComponent(e.target.value)}`); }}
           className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -291,6 +333,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           <span aria-hidden="true" className="material-symbols-outlined text-lg">inbox</span>기사 요청
           {pendingRequests > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-[var(--color-academy-danger)] px-1 text-xs font-black text-[var(--color-academy-on-primary)]">{pendingRequests}</span>}
         </button>
+        {/* 편집 모드 들어가기 — 화면 위 버튼 하나(운행이 있을 때만). 편집 중엔 아래 고정 줄의 [취소]/[저장]. */}
+        {!editing && stopRows.length > 0 && (
+          <button type="button" onClick={startEditing} className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-ink)] px-4 text-sm font-black text-[var(--color-academy-surface)]">
+            <span aria-hidden="true" className="material-symbols-outlined text-lg">edit</span>수정
+          </button>
+        )}
       </div>
       {showLocations && <DriverLocationPanel onClose={() => setShowLocations(false)} />}
       {showRequests && <DriverRequestPanel onClose={() => { setShowRequests(false); loadPendingRequests(); }} />}
@@ -299,7 +347,8 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       <div role="tablist" aria-label="요일" className="mt-2 flex flex-wrap gap-1 rounded-xl bg-[var(--color-academy-soft)] p-1">
         {dayCounts.map((d) => (
           <button key={d.weekday} type="button" role="tab" aria-selected={weekday === d.weekday}
-            onClick={() => { if (d.weekday !== weekday && confirmLeave()) { cancelEditing(); setWeekday(d.weekday); } }}
+            // 편집 모드는 유지하고 손댄 순서·시각만 버린다 — 새 요일 명단은 위 «렌더 중 비교»가 편집 기준으로 바꿔 끼운다.
+            onClick={() => { if (d.weekday !== weekday && confirmLeave()) { setSortOverride({}); setTimeOverride({}); setWeekday(d.weekday); } }}
             className={`min-h-11 rounded-lg px-3 text-sm font-black ${weekday === d.weekday ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] shadow" : "text-[var(--color-academy-muted)]"}`}>
             {WEEKDAY_LABELS[d.weekday]} <span className="text-xs font-bold">{d.count}</span>
           </button>
@@ -320,24 +369,28 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
       {/* 운행표 — 기사님 화면과 같은 카드(같은 CSS·같은 테마). 탑승 버튼 대신 편집 손잡이. */}
       <AcademyTheme role="driver" className={`${styles.workspace} mx-auto mt-2`}>
-        {stopRows.length > 0 && (
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className={styles.runSummary}>{WEEKDAY_LABELS[weekday]}요일 운행 순서 · {stopRows.length}곳 <span>학생 {riderCount}명</span></p>
-            {!editing ? (
-              <button type="button" onClick={startEditing} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600">↕ 순서·시간 수정</button>
-            ) : (
-              <div className="flex gap-2">
-                <button type="button" onClick={cancelEditing} disabled={savingOrder} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600">취소</button>
-                <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="min-h-11 rounded-lg bg-[var(--color-academy-ink)] px-4 text-[13px] font-black text-[var(--color-academy-surface)]">{savingOrder ? "저장 중…" : "저장"}</button>
-              </div>
-            )}
+        {editing ? (
+          // 편집 중 고정 줄 — 긴 목록을 내려도 [저장]이 늘 보이게(sticky). 좁은 화면은 두 줄로 접힌다.
+          <div className="sticky top-0 z-20 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2">
+            <p className="mr-auto text-[14px] font-black text-[var(--color-academy-ink)]">
+              수정 중{orderDirty && <span className="ml-1 text-[13px] font-bold text-[var(--color-academy-warning)]">· 저장 안 됨</span>}
+              <span className="ml-1 text-[12px] font-bold text-[var(--color-academy-muted)]">⠿ 끌어서 순서 변경</span>
+            </p>
+            <label className="flex items-center gap-1 text-[13px] font-bold text-[var(--color-academy-muted)]">
+              적용
+              <select value={orderScope} onChange={(e) => setOrderScope(e.target.value as RosterScope)} aria-label="순서·시각 적용 범위"
+                className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                <option value="FROM_THIS_MONTH">{monthLabel}부터 계속</option>
+                <option value="THIS_MONTH">{monthLabel}만</option>
+              </select>
+            </label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600">취소</button>
+              <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="min-h-11 rounded-lg bg-[var(--color-academy-ink)] px-4 text-[13px] font-black text-[var(--color-academy-surface)]">{savingOrder ? "저장 중…" : "저장"}</button>
+            </div>
           </div>
-        )}
-        {editing && (
-          <div className="mb-2 rounded-xl bg-blue-50 px-3 py-2 text-[13px] font-bold text-blue-700">
-            같은 묶음(수업시간·등/하원) 안에서 ▲▼ 또는 끌어서 옮겨요. 옮기면 시각 칸도 함께 바뀌고, 시각을 직접 고칠 수도 있어요.
-            <ScopeFields scope={orderScope} onScope={setOrderScope} serviceMonth={serviceMonth} laterMonths={laterMonths} />
-          </div>
+        ) : stopRows.length > 0 && (
+          <p className={`${styles.runSummary} mb-2`}>{WEEKDAY_LABELS[weekday]}요일 운행 순서 · {stopRows.length}곳 <span>학생 {riderCount}명</span></p>
         )}
         {stopRows.length === 0 && <p className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-[16px] font-bold text-gray-400">{WEEKDAY_LABELS[weekday]}요일에는 운행이 없습니다.</p>}
         <RunBoard

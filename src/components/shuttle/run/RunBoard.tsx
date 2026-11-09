@@ -1,6 +1,6 @@
 "use client";
 
-import type { PointerEvent, ReactNode } from "react";
+import { useRef, type PointerEvent, type ReactNode } from "react";
 import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
 import styles from "../DriverWorkspace.module.css";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
@@ -56,6 +56,36 @@ export default function RunBoard({
     onDragKeyChange(row.key);
   }
 
+  // ── 관리자 끌기(손잡이 ⠿ 전용) ──
+  // 왜 기사님과 다르게? 휴대폰에서 손가락으로 끌면 브라우저가 «누른 요소»에 포인터를 붙잡아 두어
+  // 다른 카드의 onPointerEnter 가 오지 않는다. 그래서 손가락 아래 카드를 elementFromPoint 로 직접 찾는다.
+  // 카드 전체가 아니라 손잡이만 끌기용(touch-none)이라, 카드 위에서는 화면 스크롤이 그대로 된다.
+  // 기사님 화면(mode="driver")은 아래 원래 방식 그대로 — 이 손잡이 코드를 쓰지 않는다.
+  const lastOverKey = useRef<string | null>(null);
+  function startHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    lastOverKey.current = row.key;
+    onDragKeyChange(row.key);
+  }
+  function moveHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
+    if (dragKey !== row.key) return;
+    // 화면 위·아래 끝 가까이 끌면 조금씩 스크롤(긴 목록에서 멀리 옮길 때).
+    if (event.clientY < 70) window.scrollBy(0, -14);
+    else if (event.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-run-key]")?.getAttribute("data-run-key") ?? null;
+    // 같은 카드 위에서는 한 번만 옮긴다(옮긴 뒤 카드가 흔들리며 왕복하지 않게).
+    if (!over || over === lastOverKey.current) return;
+    lastOverKey.current = over;
+    if (over === row.key) return;
+    const target = rows.find((r) => r.key === over);
+    if (target) onDropOn(target);
+  }
+  function endHandleDrag() {
+    lastOverKey.current = null;
+    onDragKeyChange(null);
+  }
+
   // 안내 줄(차고지 출발 등)을 뺀 정차 번호(1, 2, 3 …).
   let seq = 0;
 
@@ -78,6 +108,48 @@ export default function RunBoard({
         const url = mode === "driver" ? tmapNavigationCoordinateUrl({ latitude: row.lat, longitude: row.lng, name: row.label }) : null;
         const editable = editing && row.kind === "REGULAR";
         const isUpcoming = mode === "driver" && !editing && upcoming != null && upcoming.nextKey === row.key;
+        // 관리자 편집 카드 = 손잡이(⠿)로 끌기 · 시각 칸은 이름 옆 한 줄 · ▲▼ 는 보조 줄 끝.
+        if (mode === "admin" && editable) {
+          return (
+            <li key={row.key} data-run-key={row.key}
+              className={`${styles.stop} academy-driver-stop rounded-2xl border border-orange-300 bg-orange-50 p-3 ${dragKey === row.key ? "opacity-60 ring-2 ring-[var(--color-academy-primary)]" : ""}`}>
+              <div className={styles.stopHeading}>
+                <button type="button" aria-label={`${row.label} 끌어서 순서 옮기기`} title="끌어서 순서 옮기기"
+                  onPointerDown={(event) => startHandleDrag(event, row)}
+                  onPointerMove={(event) => moveHandleDrag(event, row)}
+                  onPointerUp={endHandleDrag}
+                  onPointerCancel={endHandleDrag}
+                  className="grid h-11 w-11 shrink-0 touch-none cursor-grab place-items-center rounded-lg border border-gray-300 bg-white text-gray-500 active:cursor-grabbing">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[24px]">drag_indicator</span>
+                </button>
+                <div className={`${styles.stopName} ${row.label.length > 18 ? styles.longStopName : ""} ${/\s/.test(row.label) ? styles.spacedStopName : ""}`}><span>{row.label}</span></div>
+                <input
+                  type="time"
+                  value={displayTime(row) ?? ""}
+                  onChange={(event) => onTimeChange(row, event.target.value)}
+                  style={{ flexBasis: "auto" }}
+                  className="ml-auto h-11 w-[8.5rem] shrink-0 rounded-xl border-2 border-blue-200 bg-white px-2 text-[19px] font-black text-blue-700"
+                  aria-label={`${row.label} 정차 시간`}
+                />
+                <div className={styles.stopMeta}>
+                  <span className="font-bold text-[var(--color-academy-primary)]">정규 · {isPickup ? "등원" : "하원"}</span>
+                  {row.groupLabel && <span>{row.groupLabel}</span>}
+                  {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
+                  {renderStopMeta?.(row)}
+                  <span className="ml-auto flex gap-1">
+                    <button type="button" onClick={() => onMove(row, -1)} aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-gray-300 bg-white text-[15px] font-black text-gray-600">▲</button>
+                    <button type="button" onClick={() => onMove(row, 1)} aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-gray-300 bg-white text-[15px] font-black text-gray-600">▼</button>
+                  </span>
+                </div>
+              </div>
+              {row.riders.length > 0 && (
+                <div className={`${styles.riders} space-y-1`}>
+                  {row.riders.map((rider) => renderRider(row, rider))}
+                </div>
+              )}
+            </li>
+          );
+        }
         return (
           <li
             key={row.key}
