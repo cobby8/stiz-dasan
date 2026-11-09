@@ -17,7 +17,7 @@ import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
 import EnrollmentMoveModal, { type EnrollmentMoveSource } from "./EnrollmentMoveModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
-import { PAYMENT_TONE, TONE_SOLID_CLASS } from "@/lib/ui/statusTones";
+import { PAYMENT_TONE, TONE_SELECTED_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
 import AbsencePeriodPanel from "./AbsencePeriodPanel";
@@ -76,11 +76,12 @@ const ENROLLMENT_STATUS_OPTIONS = [
     { value: "WITHDRAWN", label: "수강 종료" },
 ] as const;
 
-// 상태변경 세그먼트 버튼: 선택된 상태를 의미색(성공/경고/위험)으로 채워 시각적으로 구분한다
+// 상태변경 세그먼트 버튼: 고른 칸만 옅은 상태 바탕 + 진한 상태 글자 + 상태색 테두리(2026-11-09 원장 «색 더 정리»).
+// 반마다 반복되는 묶음이라 꽉 찬 초록·주황·빨강은 화면을 시끄럽게 했다 — 고른 칸이 보일 만큼만 조용하게.
 const ENROLLMENT_SEG_SELECTED: Record<string, string> = {
-    ACTIVE: TONE_SOLID_CLASS.success,
-    PAUSED: TONE_SOLID_CLASS.warning,
-    WITHDRAWN: TONE_SOLID_CLASS.danger,
+    ACTIVE: TONE_SELECTED_CLASS.success,
+    PAUSED: TONE_SELECTED_CLASS.warning,
+    WITHDRAWN: TONE_SELECTED_CLASS.danger,
 };
 
 // 결제 상태 변경 옵션(완납/대기/연체/취소). 완납(PAID)은 이미 완납인 건의 «현재 상태» 표시용으로만 남는다 —
@@ -92,12 +93,13 @@ const PAY_STATUS_OPTIONS = [
     { value: "CANCELED", label: "취소" },
 ] as const;
 
-// 결제 상태 세그먼트: 선택된 상태를 의미색(완납=성공/대기=경고/연체·취소=위험·중립)으로 채운다
+// 결제 상태 세그먼트: 고른 칸만 옅은 상태 바탕 + 진한 글자 + 테두리(완납=성공/대기=주의/연체=위험/취소=중립).
+// 뜻 → 색은 PAYMENT_TONE 한 곳을 따른다(같은 상태 = 어느 화면이든 같은 색).
 const PAY_SEG_SELECTED: Record<string, string> = {
-    PAID: "bg-[var(--color-academy-success)] text-white",
-    PENDING: "bg-[var(--color-academy-warning)] text-white",
-    OVERDUE: "bg-[var(--color-academy-danger)] text-white",
-    CANCELED: "bg-[var(--color-academy-muted)] text-white",
+    PAID: TONE_SELECTED_CLASS[PAYMENT_TONE.PAID],
+    PENDING: TONE_SELECTED_CLASS[PAYMENT_TONE.PENDING],
+    OVERDUE: TONE_SELECTED_CLASS[PAYMENT_TONE.OVERDUE],
+    CANCELED: TONE_SELECTED_CLASS[PAYMENT_TONE.CANCELED],
 };
 
 function toDateStr(d: Date | string | null): string {
@@ -1030,7 +1032,7 @@ export default function StudentDetailClient({
                                 disabled={Boolean(statusUpdatingId)}
                                 className={`min-h-11 px-3 text-xs font-bold transition disabled:cursor-not-allowed lg:min-h-8 disabled:opacity-60 ${
                                     selected
-                                        ? ENROLLMENT_SEG_SELECTED[option.value] ?? "bg-[var(--color-academy-primary)] text-white"
+                                        ? ENROLLMENT_SEG_SELECTED[option.value] ?? TONE_SELECTED_CLASS.neutral
                                         : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                                 }`}
                             >
@@ -1202,8 +1204,9 @@ export default function StudentDetailClient({
                 {/* 우측 액션: 전화(학부모 계정 번호로 바로 걸기) · 기본 정보(창 — 편집은 창 안 «수정») · 사진 사용 동의(media-consent 라우트 유지).
                     휴대폰에서는 이름 아래 한 줄로 내려온다. 머리 편집 중에는 기본 정보 자리에 저장·취소가 뜬다. */}
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                    {/* 전화 = 보조 버튼(흰 바탕·테두리·검정 글자) — 이 화면의 주인공이 아니고, 전화 버튼은 어느 화면이든 같은 모양(2026-11-09) */}
                     {callPhone && (
-                        <a href={`tel:${callPhone.replace(/[^0-9]/g, "")}`} aria-label={`학부모 ${callPhone}에 전화`} className="academy-button-primary">
+                        <a href={`tel:${callPhone.replace(/[^0-9]/g, "")}`} aria-label={`학부모 ${callPhone}에 전화`} className="academy-button-secondary">
                             <SymbolIcon name="call" size={16} />
                             전화
                         </a>

@@ -42,6 +42,19 @@ export const TONE_SOLID_CLASS: Record<StatusTone, string> = {
   neutral: "bg-[var(--color-academy-neutral)] text-[var(--color-academy-on-primary)]",
 };
 
+/**
+ * 묶음 버튼에서 «고른 칸»(학생 상세 수강 중/휴원/수강 종료 · 완납/대기/연체) — 2026-11-09 원장 «색 더 정리».
+ * 줄마다 반복되는 묶음이라 꽉 찬 색은 시끄럽다 → 옅은 상태 바탕 + 진한 상태 글자 + 상태색 테두리(안쪽 링 — 칸 크기 그대로).
+ * 고르지 않은 칸은 흰 바탕·회색 글자(화면 쪽에서 정한다).
+ */
+export const TONE_SELECTED_CLASS: Record<StatusTone, string> = {
+  success: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-1 ring-inset ring-[var(--color-academy-success)]",
+  warning: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)] ring-1 ring-inset ring-[var(--color-academy-warning)]",
+  danger: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-1 ring-inset ring-[var(--color-academy-danger)]",
+  info: "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)] ring-1 ring-inset ring-[var(--color-academy-info)]",
+  neutral: "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] ring-1 ring-inset ring-[var(--color-academy-neutral)]",
+};
+
 /** 상태색 테두리(안 눌린 상태 버튼·강조 카드 테두리) */
 export const TONE_BORDER_CLASS: Record<StatusTone, string> = {
   success: "border-[var(--color-academy-success)]",

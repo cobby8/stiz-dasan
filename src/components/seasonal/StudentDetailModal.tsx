@@ -24,10 +24,11 @@ function ContactRow({ label, phone }: { label: string; phone: string | null }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
       <div><div className="text-[11px] font-bold text-[var(--color-academy-faint)]">{label}</div><div className="text-[13px] font-bold text-[var(--color-academy-ink)]">{phone || "미등록"}</div></div>
+      {/* 전화·문자 = 보조 버튼(흰 바탕·테두리·검정 글자) — 전화 버튼 색을 화면마다 같게(2026-11-09) */}
       {d && (
         <div className="flex gap-1.5">
-          <a href={`tel:${d}`} className="rounded-lg bg-[var(--color-academy-success)] px-3 py-1.5 text-[12px] font-black text-white">전화</a>
-          <a href={`sms:${d}`} className="rounded-lg bg-[var(--color-academy-primary)] px-3 py-1.5 text-[12px] font-black text-white">문자</a>
+          <a href={`tel:${d}`} className="rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 py-1.5 text-[12px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">전화</a>
+          <a href={`sms:${d}`} className="rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 py-1.5 text-[12px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">문자</a>
         </div>
       )}
     </div>

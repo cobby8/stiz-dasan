@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   ATTENDANCE_TONE, PAYMENT_TONE, REQUEST_TONE, SHUTTLE_TONE, STATUS_TONES,
-  TONE_BADGE_CLASS, TONE_BORDER_CLASS, TONE_SOLID_CLASS, TONE_TEXT_CLASS, statusBadgeClass, toneFor,
+  TONE_BADGE_CLASS, TONE_BORDER_CLASS, TONE_SELECTED_CLASS, TONE_SOLID_CLASS, TONE_TEXT_CLASS, statusBadgeClass, toneFor,
 } from "../src/lib/ui/statusTones.ts";
 
 // 상태 → 색 지도 한 곳(2026-11-09 원장 결정 · 색상 정리 3단계)을 못 박는다.
@@ -47,7 +47,7 @@ test("모르는 상태는 중립 — «정상»처럼 보이게 하지 않는다
 
 test("다섯 갈래 모두 배지·글자·채움·테두리 클래스가 있고, 색은 토큰(var)만 쓴다", () => {
   for (const tone of STATUS_TONES) {
-    for (const map of [TONE_BADGE_CLASS, TONE_TEXT_CLASS, TONE_SOLID_CLASS, TONE_BORDER_CLASS]) {
+    for (const map of [TONE_BADGE_CLASS, TONE_TEXT_CLASS, TONE_SOLID_CLASS, TONE_BORDER_CLASS, TONE_SELECTED_CLASS]) {
       assert.ok(map[tone], tone);
       assert.doesNotMatch(map[tone], /#[0-9a-f]{3,6}|-(red|green|amber|yellow|blue|gray)-\d/i, `${tone}: ${map[tone]}`);
     }

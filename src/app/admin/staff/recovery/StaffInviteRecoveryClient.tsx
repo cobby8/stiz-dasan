@@ -49,7 +49,9 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
                 <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{item.status} · {item.processingStartedAt ? new Date(item.processingStartedAt).toLocaleString("ko-KR") : "시작 시각 없음"}</p>
                 {item.recoveryError && <p className="mt-2 text-sm text-[var(--color-academy-danger)]">{item.recoveryError}</p>}
               </div>
-              <button type="button" disabled={pending} onClick={() => recover(item)} className="min-h-11 rounded-xl bg-[var(--color-academy-danger)] px-4 font-bold text-white disabled:opacity-50">안전 복구</button>
+              {/* «안전 복구»는 중단된 가입의 로그인 계정(Supabase 인증)을 «삭제»하고 초대를 처음으로 되돌린다 — 되돌릴 수 없어
+                  꽉 찬 위험 버튼(danger-fill, 2026-11-09 위험색 역할 분리)을 유지한다. 누르면 확인창을 한 번 거친다. */}
+              <button type="button" disabled={pending} onClick={() => recover(item)} className="min-h-11 rounded-xl bg-[var(--color-academy-danger-fill)] px-4 font-bold text-white hover:bg-[var(--color-academy-danger-fill-hover)] disabled:opacity-50">안전 복구</button>
             </div>
           </article>
         ))}

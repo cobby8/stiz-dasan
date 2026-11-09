@@ -134,7 +134,8 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
   const parent = digits(row.parentPhone);
   const child = digits(row.childPhone);
   const btn = "rounded-lg border px-2.5 py-1.5 text-xs font-black whitespace-nowrap";
-  const act = "rounded-lg px-2.5 py-1.5 text-xs font-black text-white";
+  // 펼친 «전화»·«문자» = 보조 버튼(흰 바탕·테두리·검정 글자). 예전 초록·검정 채움은 화면마다 전화 색이 달라 통일(2026-11-09)
+  const act = "rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-2.5 py-1.5 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]";
   const cur = open === "parent" ? parent : open === "child" ? child : null;
   return (
     <div className="relative">
@@ -142,12 +143,12 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
         <button type="button" disabled={!parent} onClick={() => setOpen(open === "parent" ? null : "parent")}
           className={`${btn} ${parent ? "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-faint)]"}`}>📞 학부모</button>
         {child && <button type="button" onClick={() => setOpen(open === "child" ? null : "child")}
-          className={`${btn} border-[var(--color-academy-success)] text-[var(--color-academy-success)]`}>📞 학생</button>}
+          className={`${btn} border-[var(--color-academy-line)] text-[var(--color-academy-muted)]`}>📞 학생</button>}
       </div>
       {open && cur && (
         <div className="absolute right-0 z-20 mt-1 flex gap-1.5 rounded-xl border border-[var(--color-academy-line)] bg-white p-1.5 shadow-lg">
-          <a href={`tel:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-[var(--color-academy-success)]`}>전화</a>
-          <a href={`sms:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-[var(--color-academy-primary)]`}>문자</a>
+          <a href={`tel:${cur}`} onClick={() => setOpen(null)} className={act}>전화</a>
+          <a href={`sms:${cur}`} onClick={() => setOpen(null)} className={act}>문자</a>
           <button onClick={() => setOpen(null)} className="rounded-lg px-2 text-xs font-bold text-[var(--color-academy-faint)]">닫기</button>
         </div>
       )}
@@ -436,9 +437,10 @@ export default function ShuttleRosterClient({
             <p className="text-[12.5px] font-bold text-[var(--color-academy-warning)]">
               이 명단은 아직 확정 전입니다. 신청이 바뀌면 명단도 함께 바뀝니다.
             </p>
-            {/* 확정은 되돌리기 어려운 행동이라 확인창을 한 번 거친다. */}
+            {/* 확정은 되돌리기 어려운 행동이라 확인창을 한 번 거친다.
+                색: 주의 안내 띠 안의 버튼이라 주황 채움 대신 옅은 주의 바탕 + 진한 주의 글자 + 테두리(2026-11-09 원장 «색 더 정리») */}
             <button type="button" onClick={confirmRoster} disabled={confirming || rideCount === 0}
-              className="rounded-xl bg-[var(--color-academy-warning)] px-3.5 py-2 text-[13px] font-black text-white disabled:opacity-50">
+              className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3.5 py-2 text-[13px] font-black text-[var(--color-academy-warning)] disabled:opacity-50">
               {confirming ? "확정하는 중..." : `${rideCount}명 확정하기`}
             </button>
           </div>
