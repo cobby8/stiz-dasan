@@ -21,6 +21,8 @@ function fakeDb(initial = [], { resolved = [] } = {}) {
         const row = rows.find((r) => r.id === v[0] && r.status === "CANCELLED");
         if (!row) return 0;
         Object.assign(row, { reason: v[1], status: v[2], note: v[3], reportedByUserId: null, resolvedByUserId: v[4] });
+        // 기간 결석 표가 있으면(가짜 db 는 to_regclass 를 늘 «있음»으로 답한다) 기간 연결도 끊는다
+        if (sql.includes(`"periodId" = NULL`)) row.periodId = null;
         calls.push(`reactivate:${row.id}`);
         return 1;
       }
@@ -150,6 +152,17 @@ test("학부모가 취소했던 날 아이가 아파서 빠지면 그 행을 출
   assert.equal(r.plan, "REACTIVATE");
   assert.equal(db.rows[0].reason, "ILLNESS_INJURY");
   assert.equal(db.rows[0].reportedByUserId, null);
+});
+
+test("관리자 «기간 결석»이 만들었다 취소된 행을 출석부가 되살리면 기간 연결(periodId)을 끊는다", async () => {
+  const db = fakeDb([{ ...ROW, reason: "ILLNESS_INJURY", status: "CANCELLED", note: "기간 결석 · 질병/부상 · 11/6(금)부터", periodId: "period-1" }]);
+  const r = await apply(db, "ABSENT", "ILLNESS_INJURY");
+  assert.equal(r.plan, "REACTIVATE");
+  assert.equal(db.rows[0].note, NOTE, "출석부 행이 된다");
+  assert.equal(db.rows[0].periodId, null, "그 기간의 복귀 처리·등록 취소가 이 행을 건드리지 않게");
+  // 마이그레이션 전(표 없음)에도 UPDATE 가 깨지지 않게 periodId 는 표가 있을 때만 끊는다
+  const src = readFileSync("src/lib/regular/attendance-absence-reason.ts", "utf8");
+  assert.match(src, /to_regclass\('public\."RegularAbsencePeriod"'\)[\s\S]*?\? `, "periodId" = NULL` : ""/);
 });
 
 test("날짜 형식이 틀리면 거부(시간대 계산 없이 YYYY-MM-DD 만)", async () => {

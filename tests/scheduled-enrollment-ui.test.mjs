@@ -49,7 +49,7 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/app/actions/enrollment-admin-edit": {}, "./EnrollmentMoveModal": nullComponent,
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
-    "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent,
+    "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent, "./AbsencePeriodPanel": nullComponent,
     "@/components/admin/CustomerNoticeSender": nullComponent,
   }).default;
   const html = renderToStaticMarkup(React.createElement(Client, { data: {

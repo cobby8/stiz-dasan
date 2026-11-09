@@ -246,3 +246,8 @@
 - **내용**: 후보는 서버 페이지가 `getBundleCheckoutCandidates` 로 바로 읽고, 결제 시작·검사는 POST `/api/mypage/payments/checkout`(토스 창 인자, `taxFreeAmount` 는 서버 합계를 그대로). 완료는 `/mypage/payments/done` 이 `/api/mypage/payments/confirm` POST(토스 복귀)·GET(새로고침). 홈 «납부할 청구» 합계·계좌는 `getParentPaymentRequests`(청구 탭과 같은 목록, 행에 `virtualAccount`)로 센다 — `getMyPageData` 는 자녀별 최근 5건이라 쓰지 않는다. 묶음 계좌는 VA 금액 ≠ 청구 금액으로 알아본다. 공지 대상 반(`Notice.targetClassIds`)은 관리자=쉼표·선생님=JSON 배열 두 모양이라 `src/lib/noticeTargets.ts` 로만 읽는다.
 - **참조횟수**: 0
 
+### [2026-11-09] 관리자 «기간 결석» = 기간 행(RegularAbsencePeriod) + 날짜별 RegularAbsence(periodId)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 부상·질병은 휴원 대신 기간 결석. 수업일 계산은 순수 `src/lib/regular/absence-period-plan.ts`(연간 일정은 `getMonthlyClassDates` 를 함수 인자로 받음 — 그 파일이 queries 를 import 해서), SQL 은 db 인자 연결부 `absence-period-service.ts`(전역 잠금 `lockCompensation`), prisma·캐시는 `absence-period-runner.ts`. 기간 행 note 머리말 `기간 결석 · ` + reportedByUserId NULL 로 알림 재조정이 거른다(복귀·취소 때 기사·코치 «결석 취소» 알림 방지). 복귀 미정은 coveredUntil 을 KST 다음 달 말일까지, 매일 크론이 늘림. 연간 일정에 없는 달은 추측 안 하고 멈춤.
+- **참조횟수**: 0

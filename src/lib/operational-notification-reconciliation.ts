@@ -4,6 +4,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { notifyAdminsOfAbsenceChange } from "@/lib/regular/parent-regular-absence";
 import { notifyAdminsOfShuttleException } from "@/lib/shuttle/parent-shuttle-exception";
 import { SHEET_ABSENCE_NOTE } from "@/lib/regular/attendance-absence-reason";
+import { PERIOD_ABSENCE_NOTE_PREFIX } from "@/lib/regular/absence-period-plan";
 
 type MissingAbsence = { id: string; studentId: string; studentName: string; classId: string; className: string; date: string; reason: string; status: string; eventVersion: string };
 type MissingShuttle = { id: string; studentId: string; studentName: string; serviceDate: string; direction: string; kind: string; location: string | null; note: string | null; canceled: boolean };
@@ -18,11 +19,13 @@ export async function reconcileOperationalNotifications(limit = 20) {
       WHERE ra."updatedAt" >= NOW()-INTERVAL '14 days' AND ra.status IN ('REPORTED','CANCELLED') AND ${notMergedStudent("s")}
         -- 출석부에서 선생님이 찍은 «질병·부상» 결석은 학부모 신고가 아니라 원장에게 «결석 신고» 알림을 복구 발송하지 않는다.
         AND NOT (ra.note IS NOT DISTINCT FROM $2 AND ra."reportedByUserId" IS NULL)
+        -- 관리자 «기간 결석»이 만들고 복귀 처리·등록 취소로 지운 행도 원장이 직접 한 기록이라 알림을 보내지 않는다(note 머리말로 구분).
+        AND NOT (COALESCE(ra.note,'') LIKE $3 AND ra."reportedByUserId" IS NULL)
         AND NOT EXISTS (SELECT 1 FROM "NotificationDelivery" nd WHERE nd."stableEventKey" =
           ('regular-absence:'||ra.id||':'||CASE WHEN ra.status='CANCELLED' THEN 'CANCELED' ELSE 'REPORTED' END||':'||
            to_char(ra."updatedAt",'YYYYMMDDHH24MISSUS')||CASE WHEN ra.status='CANCELLED' THEN ''
              ELSE '-'||encode(digest(ra.reason,'sha256'),'hex') END))
-      ORDER BY ra."updatedAt" LIMIT $1`, safeLimit, SHEET_ABSENCE_NOTE,
+      ORDER BY ra."updatedAt" LIMIT $1`, safeLimit, SHEET_ABSENCE_NOTE, `${PERIOD_ABSENCE_NOTE_PREFIX} · %`,
   );
   let processed = 0;
   let failed = 0;

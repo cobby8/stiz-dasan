@@ -158,10 +158,17 @@ export async function applyAttendanceAbsenceReasonInTx(
   }
   if (plan === "REACTIVATE" && row) {
     // 취소된 행(학부모가 취소했거나 출석부가 껐던 것)을 출석부 행으로 되살린다.
+    // 관리자 «기간 결석»이 만들었다 취소된 행이면 그 기간 연결(periodId)도 끊는다 — 출석부 행이 되었으니
+    // 그 기간의 복귀 처리·등록 취소가 이 행을 건드리면 안 된다. periodId 칸은 기간 결석 표와 같은 마이그레이션에서
+    // 생기므로, 표가 있을 때만 끊는다(마이그레이션 전 배포에서도 이 UPDATE 가 깨지지 않게).
+    const periodFound = await db.$queryRawUnsafe<Array<{ found: string | null }>>(
+      `SELECT to_regclass('public."RegularAbsencePeriod"')::text AS found`,
+    );
+    const unlinkPeriod = periodFound[0]?.found ? `, "periodId" = NULL` : "";
     const n = await db.$executeRawUnsafe(
       `UPDATE "RegularAbsence"
           SET reason = $2, status = $3, note = $4, "reportedByUserId" = NULL,
-              "resolvedByUserId" = $5, "updatedAt" = now()
+              "resolvedByUserId" = $5, "updatedAt" = now()${unlinkPeriod}
         WHERE id = $1 AND status = 'CANCELLED'`,
       row.id, SHEET_ABSENCE_REASON, status, SHEET_ABSENCE_NOTE, input.confirmedByUserId ?? null,
     );

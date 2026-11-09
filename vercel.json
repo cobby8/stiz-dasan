@@ -73,6 +73,10 @@
       "schedule": "30 15 * * *"
     },
     {
+      "path": "/api/cron/absence-periods",
+      "schedule": "40 15 * * *"
+    },
+    {
       "path": "/api/cron/site-ops-bot",
       "schedule": "0 17 * * *"
     },

@@ -16,6 +16,7 @@ import { statusToneClass } from "@/components/admin/StatusBadge";
 import { PAYMENT_TONE, TONE_SOLID_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
+import AbsencePeriodPanel from "./AbsencePeriodPanel";
 // 학부모에게 카카오채널 링크 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
 import type { StudentTenure } from "@/lib/student-tenure";
@@ -1543,6 +1544,14 @@ export default function StudentDetailClient({
                     {/* ===== 수강·출결 탭 ===== */}
                     {activeTab === "class" && (
                         <div className="space-y-4">
+                            {/* 기간 결석(부상·질병) — 휴원 대신 그 기간 수업일만 결석으로. 대상 반 기본값 = 수강 중 반 전부 */}
+                            <AbsencePeriodPanel
+                                studentId={student.id}
+                                studentName={student.name}
+                                activeClasses={enrollments
+                                    .filter((e) => e.status === "ACTIVE")
+                                    .map((e) => ({ classId: e.classId, className: e.className, dayLabel: DAY_LABELS[e.dayOfWeek] ?? e.dayOfWeek, startTime: e.startTime }))}
+                            />
                             <div className={CARD_CLASS}>
                                 <SectionTitle
                                     icon="bar_chart"
