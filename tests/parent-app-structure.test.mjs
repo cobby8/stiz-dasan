@@ -123,7 +123,7 @@ test("④ 일정 탭: 신청 줄·수강 반·셔틀 배정, 방학특강 줄은
   }).default;
   const children = [
     { id: "a", name: "합성 첫째", enrollments: [{ id: "e1", className: "초등 저학년반", dayOfWeek: "Mon", startTime: "16:00", endTime: "17:00" }] },
-    { id: "b", name: "합성 둘째", enrollments: [{ id: "e2", className: "중등반", dayOfWeek: "Sat", startTime: "10:00", endTime: "11:30", displayStatus: "SCHEDULED", startsOn: "2026-12-05" }] },
+    { id: "b", name: "합성 둘째", enrollments: [{ id: "e2", className: "중등반", dayOfWeek: "Sat", startTime: "10:00", endTime: "11:30", displayStatus: "ACTIVE", startsLater: true, startsOn: "2026-12-05" }] },
   ];
   const shuttle = [{ id: "s1", studentId: "b", sourceType: "REGULAR_CLASS", direction: "PICKUP", status: "CONFIRMED", label: "정규", title: "토요 등원", serviceDate: "2026-11-14", routeName: "A노선", stopName: "정문", stopAddress: null, plannedAt: "2026-11-14T00:40:00.000Z", vehicleName: "1호차", rideStatus: null }];
   const off = renderToStaticMarkup(React.createElement(Hub, { childList: children, shuttleItems: shuttle, driverContact: { name: "합성 기사", phone: "010-0000-1111" }, makeupAvailable: 1, seasonalUpcoming: 0 }));
@@ -132,7 +132,8 @@ test("④ 일정 탭: 신청 줄·수강 반·셔틀 배정, 방학특강 줄은
   assert.match(off, /보강권 1장/);
   assert.match(off, /id="mypage-enrollments"/);
   assert.match(off, /합성 둘째<\/span>중등반/, "자녀가 둘이면 이름을 붙인다");
-  assert.match(off, /수강 예정 · 2026-12-05 개시/);
+  assert.match(off, /2026-12-05부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
+  assert.doesNotMatch(off, /수강 예정/);
   assert.match(off, /id="mypage-shuttle"/);
   assert.match(off, /2026년 11월 14일 토/);
   assert.match(off, /dateTime="2026-11-14T00:40:00.000Z">[^<]*09:40</, "확정 시간은 KST(UTC 00:40 = 09:40)");
