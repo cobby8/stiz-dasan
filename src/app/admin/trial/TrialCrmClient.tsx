@@ -140,7 +140,7 @@ type ContactActionType = "CONTACTED" | "NO_ANSWER" | "FOLLOW_UP" | "MEMO";
 type ContactModalState = { lead: TrialLead; defaultAction: ContactActionType } | null;
 type EnrollGuideConfirmState = { lead: TrialLead; convertAfterConfirm: boolean } | null;
 type ManualSmsModalState = { lead: TrialLead } | null;
-const DETAIL_ACTION_CLASS = "inline-flex min-h-8 items-center gap-1.5 rounded-md border border-gray-200 px-3 text-xs font-bold text-gray-700 transition hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-700 dark:border-gray-700 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:bg-brand-neon-lime/10";
+const DETAIL_ACTION_CLASS = "inline-flex min-h-8 items-center gap-1.5 rounded-md border border-[var(--color-academy-line)] px-3 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-ink)]";
 const EMPTY_STATS: TrialStats = {
     NEW: 0,
     CONTACTED: 0,
@@ -523,25 +523,25 @@ function getTrialScheduleItems(
             label: "신청일",
             icon: "inbox",
             value: formatCompactDate(lead.createdAt),
-            className: "border-gray-100 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200",
+            className: "border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
         },
         {
             label: "체험일",
             icon: "event",
             value: lead.trialDate ? formatCompactDate(lead.trialDate) : "미입력",
-            className: "border-lime-100 bg-lime-50 text-lime-800 dark:border-lime-900/50 dark:bg-lime-950/30 dark:text-lime-200",
+            className: "border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
         },
         {
             label: "수업교시",
             icon: "schedule",
             value: preferredSchedule || "미입력",
-            className: "border-purple-100 bg-purple-50 text-purple-800 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-200",
+            className: "border-[var(--color-academy-line)] bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]",
         },
         {
             label: "확정일정",
             icon: "event_available",
             value: confirmedSchedule || "미확정",
-            className: "border-sky-100 bg-sky-50 text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-200",
+            className: "border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]",
         },
     ];
     return items.map((item, index) => {
@@ -599,13 +599,13 @@ function TrialCrmLoadingFallback() {
 
 function TrialCrmErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">체험 문의 정보를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">체험 문의 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -1053,7 +1053,7 @@ export default function TrialCrmClient({
                         setShowDetailModal(lead);
                     }
                 }}
-                className="cursor-pointer transition focus:bg-brand-orange-50 focus:outline-none dark:focus:bg-brand-neon-lime/10"
+                className="cursor-pointer transition focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
                 <td className="px-2 py-1.5">
                     <span className={`inline-flex h-8 w-8 items-center justify-center rounded text-xs font-bold sm:h-auto sm:w-auto sm:gap-1 sm:px-2 sm:py-1 ${cfg.color}`} title={cfg.label}>
@@ -1062,43 +1062,43 @@ export default function TrialCrmClient({
                     </span>
                 </td>
                 <td className="admin-cell-num px-2 py-1.5">
-                    <span className="hidden font-bold text-gray-800 sm:block dark:text-gray-100" title={createdDateLabel}>
+                    <span className="hidden font-bold text-[var(--color-academy-ink)] sm:block" title={createdDateLabel}>
                         {createdDateLabel}
                     </span>
-                    <span className="block font-bold text-gray-800 sm:hidden dark:text-gray-100" title={createdDateLabel}>
+                    <span className="block font-bold text-[var(--color-academy-ink)] sm:hidden" title={createdDateLabel}>
                         {createdDateMobileLabel}
                     </span>
                 </td>
                 <td className="admin-cell-num px-2 py-1.5">
-                    <span className="hidden font-bold text-gray-800 sm:block dark:text-gray-100" title={trialDateLabel}>
+                    <span className="hidden font-bold text-[var(--color-academy-ink)] sm:block" title={trialDateLabel}>
                         {trialDateLabel}
                     </span>
-                    <span className="block font-bold text-gray-800 sm:hidden dark:text-gray-100" title={trialDateLabel}>
+                    <span className="block font-bold text-[var(--color-academy-ink)] sm:hidden" title={trialDateLabel}>
                         {trialDateMobileLabel}
                     </span>
                 </td>
                 <td className="px-2 py-1.5">
-                    <span className="block font-bold text-gray-800 dark:text-gray-100" title={scheduleLabel}>
+                    <span className="block font-bold text-[var(--color-academy-ink)]" title={scheduleLabel}>
                         {scheduleLabel}
                     </span>
                 </td>
                 <td className="hidden px-2 py-1.5 md:table-cell">
-                    <span className="block font-bold text-gray-700 dark:text-gray-200" title={teacherLabel}>
+                    <span className="block font-bold text-[var(--color-academy-muted)]" title={teacherLabel}>
                         {teacherLabel}
                     </span>
                 </td>
                 <td className="px-2 py-1.5">
-                    <span className="block font-black text-gray-900 dark:text-white" title={rowTitle}>
+                    <span className="block font-black text-[var(--color-academy-ink)]" title={rowTitle}>
                         {lead.childName}
                     </span>
                 </td>
                 <td className="hidden px-2 py-1.5 md:table-cell">
-                    <span className="block font-bold text-gray-700 dark:text-gray-200" title={schoolLabel}>
+                    <span className="block font-bold text-[var(--color-academy-muted)]" title={schoolLabel}>
                         {schoolLabel}
                     </span>
                 </td>
                 <td className="px-2 py-1.5">
-                    <span className="block font-bold text-gray-700 dark:text-gray-200" title={gradeLabel}>
+                    <span className="block font-bold text-[var(--color-academy-muted)]" title={gradeLabel}>
                         {gradeLabel}
                     </span>
                 </td>
@@ -1127,9 +1127,9 @@ export default function TrialCrmClient({
             : [];
 
         return (
-            <div className="overflow-x-auto overflow-y-visible rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="overflow-x-auto overflow-y-visible rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
                 <table className="admin-list-table w-full border-collapse text-[13px]">
-                    <thead className="sticky top-0 z-10 bg-gray-50 text-xs font-black uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                    <thead className="sticky top-0 z-10 bg-[var(--color-academy-soft)] text-xs font-black uppercase text-[var(--color-academy-muted)]">
                         <tr>
                             <th className="px-2 py-2">상태</th>
                             <th className="admin-cell-num px-2 py-2">신청일</th>
@@ -1175,10 +1175,10 @@ export default function TrialCrmClient({
                 <div
                     className={`fixed bottom-4 left-4 right-4 z-[120] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-2xl sm:bottom-auto sm:left-auto sm:right-6 sm:top-6 sm:w-[380px] ${
                         feedback.type === "success"
-                            ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200"
+                            ? "border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                             : feedback.type === "info"
-                            ? "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100"
-                            : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                            ? "border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]"
+                            : "border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     }`}
                     role="status"
                 >
@@ -1233,9 +1233,9 @@ export default function TrialCrmClient({
 
             {/* ── 리드 목록 ── */}
             {filteredLeads.length === 0 ? (
-                <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                    <span className="material-symbols-outlined text-5xl text-gray-300">person_search</span>
-                    <p className="text-gray-500 dark:text-gray-400 mt-3">
+                <div className="text-center py-16 bg-white rounded-xl border border-[var(--color-academy-line)]">
+                    <span className="material-symbols-outlined text-5xl text-[var(--color-academy-faint)]">person_search</span>
+                    <p className="text-[var(--color-academy-muted)] mt-3">
                         {searchQuery || workFilter !== "ALL" || dateFilter !== "ALL"
                             ? "조건에 맞는 체험 문의가 없습니다"
                             : filter === "ALL"
@@ -1247,7 +1247,7 @@ export default function TrialCrmClient({
                             type="button"
                             onClick={handleShowMoreLeads}
                             disabled={loadingMore}
-                            className="mt-4 rounded-lg border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                            className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-60"
                         >
                             {loadingMore ? "불러오는 중..." : "다음 50건에서 더 찾아보기"}
                         </button>
@@ -1256,7 +1256,7 @@ export default function TrialCrmClient({
             ) : (
                 <div className="grid gap-4">
                     {renderTrialList()}
-                    {hasMoreLeads && (<div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                    {hasMoreLeads && (<div className="flex flex-col gap-3 rounded-xl border border-[var(--color-academy-line)] bg-white px-4 py-3 text-sm text-[var(--color-academy-muted)] sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {filteredLeads.length}건 중 {visibleLeads.length}건 표시
                         </span>
@@ -1265,7 +1265,7 @@ export default function TrialCrmClient({
                                 type="button"
                                 onClick={handleShowMoreLeads}
                                 disabled={loadingMore}
-                                className="rounded-lg border border-gray-200 px-4 py-2 font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                className="rounded-lg border border-[var(--color-academy-line)] px-4 py-2 font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                             </button>
@@ -1398,31 +1398,31 @@ function EnrollGuideConfirmModal({
         <AdminModal onClose={busy ? () => undefined : onClose} titleId="trial-enroll-guide-confirm-title" panelClassName="max-w-md">
             <div className="p-6">
                 <div className="flex items-start gap-3">
-                    <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-neon-lime text-brand-navy-900">
+                    <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-neon-lime text-[var(--color-academy-ink)]">
                         <span className="material-symbols-outlined">send</span>
                     </span>
                     <div>
-                        <p className="text-xs font-black uppercase tracking-widest text-brand-orange-500 dark:text-brand-neon-lime">
+                        <p className="text-xs font-black uppercase tracking-widest text-[var(--color-academy-ink)]">
                             수강신청 전환
                         </p>
-                        <h2 id="trial-enroll-guide-confirm-title" className="mt-1 text-xl font-black text-gray-900 dark:text-white">
+                        <h2 id="trial-enroll-guide-confirm-title" className="mt-1 text-xl font-black text-[var(--color-academy-ink)]">
                             수강신청서를 전송하시겠습니까?
                         </h2>
-                        <p className="mt-2 text-sm font-semibold leading-6 text-gray-600 dark:text-gray-300">
+                        <p className="mt-2 text-sm font-semibold leading-6 text-[var(--color-academy-muted)]">
                             {lead.childName} 보호자에게 수강신청서 링크를 문자로 발송합니다.
                             같은 신청 건은 중복 발송되지 않습니다.
                         </p>
                     </div>
                 </div>
 
-                <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="mt-5 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-4 text-sm">
                     <div className="flex items-center justify-between gap-3">
-                        <span className="font-bold text-gray-500 dark:text-gray-400">수강생</span>
-                        <span className="font-black text-gray-900 dark:text-white">{lead.childName}</span>
+                        <span className="font-bold text-[var(--color-academy-muted)]">수강생</span>
+                        <span className="font-black text-[var(--color-academy-ink)]">{lead.childName}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
-                        <span className="font-bold text-gray-500 dark:text-gray-400">처리</span>
-                        <span className="font-black text-gray-900 dark:text-white">
+                        <span className="font-bold text-[var(--color-academy-muted)]">처리</span>
+                        <span className="font-black text-[var(--color-academy-ink)]">
                             {convertAfterConfirm ? "등록전환 + 문자 발송" : "문자 발송"}
                         </span>
                     </div>
@@ -1433,7 +1433,7 @@ function EnrollGuideConfirmModal({
                         type="button"
                         onClick={onConfirm}
                         disabled={busy}
-                        className="min-h-11 w-full rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white transition hover:bg-brand-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-300"
+                        className="min-h-11 w-full rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                     >
                         {busy ? "처리 중..." : convertAfterConfirm ? "등록전환 + 문자 발송" : "문자 발송"}
                     </button>
@@ -1442,7 +1442,7 @@ function EnrollGuideConfirmModal({
                             type="button"
                             onClick={onConfirmNoSms}
                             disabled={busy}
-                            className="min-h-11 w-full rounded-xl border border-brand-orange-300 px-4 text-sm font-black text-brand-orange-600 transition hover:bg-brand-orange-50 disabled:opacity-50 dark:border-brand-neon-lime/40 dark:text-brand-neon-lime dark:hover:bg-brand-neon-lime/10"
+                            className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line-input)] px-4 text-sm font-black text-[var(--color-academy-ink)] transition hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50"
                         >
                             {busy ? "처리 중..." : "문자 없이 전환만"}
                         </button>
@@ -1451,7 +1451,7 @@ function EnrollGuideConfirmModal({
                         type="button"
                         onClick={onClose}
                         disabled={busy}
-                        className="min-h-11 w-full rounded-xl border border-gray-200 px-4 text-sm font-black text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                        className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-black text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-line)] disabled:opacity-50"
                     >
                         취소
                     </button>
@@ -1518,9 +1518,9 @@ function TrialLeadDetailModal({
                                 <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
                                 {cfg.label}
                             </span>
-                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400">접수 {formatCompactDateTime(lead.createdAt)}</span>
+                            <span className="text-xs font-bold text-[var(--color-academy-muted)]">접수 {formatCompactDateTime(lead.createdAt)}</span>
                         </div>
-                        <h2 id="trial-detail-modal-title" className="mt-2 text-xl font-black text-gray-900 dark:text-white">
+                        <h2 id="trial-detail-modal-title" className="mt-2 text-xl font-black text-[var(--color-academy-ink)]">
                             {lead.childName} 체험 신청 상세
                         </h2>
                     </div>
@@ -1533,7 +1533,7 @@ function TrialLeadDetailModal({
                             전화
                         </a>
                         {/* 패널이 길어도 위에서 바로 닫을 수 있게 */}
-                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="inline-flex size-11 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900">
+                        <button type="button" onClick={onClose} aria-label="상세 닫기" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                             <span className="material-symbols-outlined text-xl" aria-hidden="true">close</span>
                         </button>
                     </div>
@@ -1553,9 +1553,9 @@ function TrialLeadDetailModal({
 
                 <dl className="mt-5 grid gap-2 sm:grid-cols-2">
                     {details.map(([label, value]) => (
-                        <div key={`trial-detail-row-${label}`} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-                            <dt className="text-xs font-black text-gray-500 dark:text-gray-400">{label}</dt>
-                            <dd className="mt-0.5 break-keep text-sm font-bold text-gray-900 dark:text-white">{value || "미입력"}</dd>
+                        <div key={`trial-detail-row-${label}`} className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
+                            <dt className="text-xs font-black text-[var(--color-academy-muted)]">{label}</dt>
+                            <dd className="mt-0.5 break-keep text-sm font-bold text-[var(--color-academy-ink)]">{value || "미입력"}</dd>
                         </div>
                     ))}
                 </dl>
@@ -1563,17 +1563,17 @@ function TrialLeadDetailModal({
                 {(lead.hopeNote || lead.memo || lead.openFollowUpNote) && (
                     <div className="mt-5 space-y-2">
                         {lead.hopeNote && (
-                            <p className="rounded-lg bg-lime-50 px-3 py-2 text-sm font-bold text-lime-800 dark:bg-lime-950/30 dark:text-lime-200">
+                            <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
                                 희망 메모: {lead.hopeNote}
                             </p>
                         )}
                         {lead.memo && (
-                            <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                            <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)]">
                                 관리 메모: {lead.memo}
                             </p>
                         )}
                         {lead.openFollowUpNote && (
-                            <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+                            <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
                                 재연락 메모: {lead.openFollowUpNote}
                             </p>
                         )}
@@ -1581,7 +1581,7 @@ function TrialLeadDetailModal({
                 )}
 
                 <div className="mt-6 flex flex-wrap justify-end gap-2">
-                    <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900">
+                    <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]">
                         닫기
                     </button>
                     <button type="button" onClick={onContact} className={DETAIL_ACTION_CLASS}>
@@ -1617,27 +1617,27 @@ function TrialLeadDetailModal({
                         </button>
                     )}
                     {lead.status === "SCHEDULED" && (
-                        <button type="button" onClick={onMarkAttended} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={onMarkAttended} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white disabled:opacity-50">
                             <span className="material-symbols-outlined text-base">check_circle</span>
                             체험 완료
                         </button>
                     )}
                     {lead.status === "ATTENDED" && !lead.enrollApplicationReceivedAt && (
-                        <button type="button" onClick={onSendEnrollGuide} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={onSendEnrollGuide} disabled={busy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white disabled:opacity-50">
                             <span className="material-symbols-outlined text-base">send</span>
                             {lead.enrollGuideSentAt ? "수강신청 안내 재발송" : "수강신청 안내"}
                         </button>
                     )}
-                    <button type="button" onClick={onEdit} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-brand-orange-500 px-3 text-xs font-black text-white transition hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400">
+                    <button type="button" onClick={onEdit} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white transition hover:bg-[var(--color-academy-primary-hover)]">
                         <span className="material-symbols-outlined text-base">edit</span>
                         수정
                     </button>
                 </div>
                 {!isClosedTrialStatus(lead.status) && (
-                    <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-800">
-                        <span className="mr-auto text-xs font-bold text-gray-400">종료 작업</span>
-                        <button type="button" onClick={onLost} className="rounded-md px-3 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-900">이탈 처리</button>
-                        <button type="button" onClick={onCancel} className="rounded-md px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">신청 취소</button>
+                    <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-[var(--color-academy-line)] pt-4">
+                        <span className="mr-auto text-xs font-bold text-[var(--color-academy-faint)]">종료 작업</span>
+                        <button type="button" onClick={onLost} className="rounded-md px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">이탈 처리</button>
+                        <button type="button" onClick={onCancel} className="rounded-md px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]">신청 취소</button>
                     </div>
                 )}
             </div>
@@ -1683,11 +1683,11 @@ function TrialContactModal({
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
             >
-                <h2 id="trial-contact-modal-title" className="flex items-center gap-2 text-lg font-black text-gray-900 dark:text-white">
-                    <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">phone_callback</span>
+                <h2 id="trial-contact-modal-title" className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">phone_callback</span>
                     후속 연락 기록
                 </h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                     {lead.childName} · {lead.parentName} {lead.parentPhone}
                 </p>
 
@@ -1699,8 +1699,8 @@ function TrialContactModal({
                             onClick={() => setAction(option)}
                             className={`rounded-xl border px-3 py-2 text-sm font-black transition ${
                                 action === option
-                                    ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-700 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime"
-                                    : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                                    : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
                             {CONTACT_ACTION_LABELS[option]}
@@ -1709,30 +1709,30 @@ function TrialContactModal({
                 </div>
 
                 {action === "FOLLOW_UP" && (
-                    <label className="mt-4 block text-sm font-bold text-gray-700 dark:text-gray-200">
+                    <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
                         다음 연락 예정
                         <input
                             type="datetime-local"
                             value={nextFollowUpAt}
                             onChange={(event) => setNextFollowUpAt(event.target.value)}
-                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-neon-lime"
+                            className="mt-1 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
                         />
                     </label>
                 )}
 
-                <label className="mt-4 block text-sm font-bold text-gray-700 dark:text-gray-200">
+                <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
                     상담 메모
                     <textarea
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
                         rows={4}
-                        className="mt-1 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-neon-lime"
+                        className="mt-1 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
                         placeholder="상담 내용이나 다음에 확인할 내용을 적어주세요"
                     />
                 </label>
 
                 {formError && (
-                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:bg-red-950/40 dark:text-red-200">
+                    <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
                         {formError}
                     </p>
                 )}
@@ -1741,14 +1741,14 @@ function TrialContactModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-xl px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900"
+                        className="rounded-xl px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                     >
                         닫기
                     </button>
                     <button
                         type="submit"
                         disabled={busy}
-                        className="rounded-xl bg-brand-orange-500 px-5 py-2 text-sm font-black text-white transition hover:bg-brand-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+                        className="rounded-xl bg-[var(--color-academy-primary)] px-5 py-2 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                     >
                         {busy ? "저장 중..." : "저장"}
                     </button>

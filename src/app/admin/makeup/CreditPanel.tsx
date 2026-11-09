@@ -47,7 +47,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
             미사용 <strong className="tabular-nums text-[var(--color-academy-success)]">{totals.available}</strong>장
           </span>
           <span className="text-[var(--color-academy-muted)]">
-            예약됨 <strong className="tabular-nums text-[var(--color-academy-primary)]">{totals.reserved}</strong>장
+            예약됨 <strong className="tabular-nums text-[var(--color-academy-ink)]">{totals.reserved}</strong>장
           </span>
           {totals.expiringSoon > 0 && (
             <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 font-black text-[var(--color-academy-warning)]">
@@ -59,7 +59,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
               type="button"
               onClick={() => setListOpen((open) => !open)}
               aria-expanded={listOpen}
-              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
             >
               학생별 보기 <span className="tabular-nums">{students.length}</span>명
               <span className="material-symbols-outlined text-base" aria-hidden="true">{listOpen ? "expand_less" : "expand_more"}</span>
@@ -108,7 +108,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
                     <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{s.parentPhone || "-"}</td>
                     {/* 장 수·남은 일수는 오른쪽 + 자릿수 폭 고정 */}
                     <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-success)]">{s.available > 0 ? `${s.available}장` : "-"}</td>
-                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-primary)]">{s.reserved > 0 ? `${s.reserved}장` : "-"}</td>
+                    <td className="admin-cell-num px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{s.reserved > 0 ? `${s.reserved}장` : "-"}</td>
                     <td className={`admin-cell-num px-2 py-1.5 font-black ${urgency(s.soonestDaysLeft)}`}>{daysText(s.soonestDaysLeft)}</td>
                   </tr>
                 ))}
@@ -159,7 +159,7 @@ export default function CreditPanel({ data }: { data: AdminCreditOverview }) {
                   {c.originClassName ? ` · ${c.originClassName}` : ""}
                 </p>
                 {c.booking && (
-                  <p className="mt-0.5 break-keep break-words text-xs text-[var(--color-academy-primary)]">→ {c.booking}</p>
+                  <p className="mt-0.5 break-keep break-words text-xs text-[var(--color-academy-ink)]">→ {c.booking}</p>
                 )}
               </li>
             ))}

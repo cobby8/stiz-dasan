@@ -326,7 +326,7 @@ export default function ReportListClient({ sessions: initialSessions }: { sessio
                                 type="button"
                                 onClick={() => setDetailSessionId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             >
                                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
                             </button>

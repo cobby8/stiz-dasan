@@ -133,7 +133,7 @@ export default function EnrollmentMoveModal({
                                 <label className={`flex min-h-11 cursor-pointer items-center gap-2 px-3 py-1.5 text-sm ${checked ? "bg-[var(--color-academy-primary-soft)]" : "hover:bg-[var(--color-academy-soft)]"}`}>
                                     <input type="radio" name="move-to-class" checked={checked} onChange={() => { setToClassId(c.id); setOverCapacityAsk(null); }} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
                                     <span className="min-w-0 flex-1 truncate font-bold text-[var(--color-academy-ink)]">{c.name}</span>
-                                    {c.gradeRange && <span className="max-w-[6.5rem] shrink-0 truncate text-xs font-bold text-[var(--color-academy-primary)]" title={`대상 ${c.gradeRange}`}>{c.gradeRange}</span>}
+                                    {c.gradeRange && <span className="max-w-[6.5rem] shrink-0 truncate text-xs font-bold text-[var(--color-academy-ink)]" title={`대상 ${c.gradeRange}`}>{c.gradeRange}</span>}
                                     <span className="hidden shrink-0 text-xs text-[var(--color-academy-muted)] sm:inline">{c.startTime}~{c.endTime}</span>
                                     <span className={`shrink-0 text-xs tabular-nums font-bold ${full ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}`}>
                                         {c.activeCount}/{c.capacity}{full ? " 정원" : ""}

@@ -338,7 +338,7 @@ export default function StudentRegisterModal({
                                     onClick={() => { setError(null); setStep(n); }}
                                     aria-current={current ? "step" : undefined}
                                     className={`flex min-h-11 w-full items-center justify-center gap-1 rounded-lg px-1 text-xs font-bold ${current
-                                        ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
+                                        ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
                                         : n < step ? "text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]" : "text-[var(--color-academy-muted)]"}`}
                                 >
                                     <span className="tabular-nums">{n}</span>
@@ -382,7 +382,7 @@ export default function StudentRegisterModal({
                                 <input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="예: 다산초" className={INPUT} />
                             </label>
                         </div>
-                        <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-primary)]">
+                        <button type="button" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-ink)]">
                             <span className="material-symbols-outlined text-lg" aria-hidden="true">{showMore ? "expand_less" : "expand_more"}</span>
                             더 입력(학생 휴대폰·주소·가입 경로)
                         </button>
@@ -419,7 +419,7 @@ export default function StudentRegisterModal({
                                         <input aria-label={`보호자 ${index + 1} 이름`} value={g.name} onChange={(e) => updateGuardian(index, { name: e.target.value })} placeholder={index === 0 ? "주 보호자 이름 *" : "이름"} className={INPUT} />
                                         <input aria-label={`보호자 ${index + 1} 휴대폰`} value={g.phone} onChange={(e) => updateGuardian(index, { phone: formatPhoneTyping(e.target.value) })} type="tel" inputMode="tel" placeholder={index === 0 ? "휴대폰 * 010-0000-0000" : "휴대폰"} className={`${INPUT} col-span-2 sm:col-span-1`} />
                                         {index === 0 ? (
-                                            <span className="hidden items-center justify-center text-xs font-bold text-[var(--color-academy-primary)] sm:inline-flex">주</span>
+                                            <span className="hidden items-center justify-center text-xs font-bold text-[var(--color-academy-ink)] sm:inline-flex">주</span>
                                         ) : (
                                             <button type="button" onClick={() => setGuardians((rows) => rows.filter((_, i) => i !== index))} aria-label={`보호자 ${index + 1} 빼기`} className="col-span-2 inline-flex min-h-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] sm:col-span-1">
                                                 <span className="material-symbols-outlined text-lg" aria-hidden="true">remove_circle</span>
@@ -429,7 +429,7 @@ export default function StudentRegisterModal({
                                 ))}
                             </div>
                             {guardians.length < MAX_GUARDIANS_PER_STUDENT && (
-                                <button type="button" onClick={() => setGuardians((rows) => [...rows, { relation: "", name: "", phone: "" }])} className="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-primary)]">
+                                <button type="button" onClick={() => setGuardians((rows) => [...rows, { relation: "", name: "", phone: "" }])} className="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-ink)]">
                                     <span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span>
                                     보호자 추가
                                 </button>
@@ -437,7 +437,7 @@ export default function StudentRegisterModal({
                             {/* 계정 연결 미리보기 — 저장 때와 같은 판정 */}
                             {account && account.kind !== "NO_PHONE" && (
                                 <p className="mt-1 flex items-start gap-1 text-xs text-[var(--color-academy-muted)]" role="status">
-                                    <span className="material-symbols-outlined text-base text-[var(--color-academy-primary)]" aria-hidden="true">link</span>
+                                    <span className="material-symbols-outlined text-base text-[var(--color-academy-ink)]" aria-hidden="true">link</span>
                                     <span className="min-w-0 break-keep">
                                         {account.kind === "CREATE_NEW" && "이 번호의 계정이 없어 새 학부모 계정을 만듭니다(학부모가 같은 번호로 가입하면 자동 연결)."}
                                         {account.kind === "AMBIGUOUS" && <strong className="text-[var(--color-academy-danger)]">같은 번호 계정이 {account.accountCount}개라 연결할 수 없습니다. 기존 학생 상세에서 계정을 먼저 정리해 주세요.</strong>}
@@ -468,7 +468,7 @@ export default function StudentRegisterModal({
                                             <button
                                                 type="button"
                                                 onClick={() => (onOpenStudent ? onOpenStudent(d.id) : window.location.assign(`/admin/students/${d.id}`))}
-                                                className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-primary)]"
+                                                className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-[var(--color-academy-ink)]"
                                             >
                                                 그 학생 열기
                                             </button>
@@ -490,7 +490,7 @@ export default function StudentRegisterModal({
                         <div>
                             <div className="flex items-center justify-between gap-2">
                                 <p className={LABEL}>수강 반 * (여러 개 = 주 n회)</p>
-                                <span className="text-xs font-bold text-[var(--color-academy-primary)]">{classIds.length > 0 ? `주 ${classIds.length}회 선택` : ""}</span>
+                                <span className="text-xs font-bold text-[var(--color-academy-ink)]">{classIds.length > 0 ? `주 ${classIds.length}회 선택` : ""}</span>
                             </div>
                             <div role="tablist" aria-label="요일" className="flex gap-1 overflow-x-auto pb-1">
                                 {DAY_KEYS.map((day) => {
@@ -526,7 +526,7 @@ export default function StudentRegisterModal({
                                                 <span className="min-w-0 flex-1 truncate font-bold text-[var(--color-academy-ink)]">{c.name}</span>
                                                 {/* 대상 학년(예: 초3~초6) — 반 고를 때 가장 먼저 보는 값이라 모바일에서도 보인다 */}
                                                 {c.gradeRange && (
-                                                    <span className="max-w-[6.5rem] shrink-0 truncate text-xs font-bold text-[var(--color-academy-primary)]" title={`대상 ${c.gradeRange}`}>
+                                                    <span className="max-w-[6.5rem] shrink-0 truncate text-xs font-bold text-[var(--color-academy-ink)]" title={`대상 ${c.gradeRange}`}>
                                                         {c.gradeRange}
                                                     </span>
                                                 )}
@@ -580,7 +580,7 @@ export default function StudentRegisterModal({
                         {/* 수강료 미리보기 한 줄 — 표시만, 청구는 월 장부에서 */}
                         {tuition.lines.length > 0 && (
                             <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
-                                <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-primary)]" aria-hidden="true">payments</span>
+                                <span className="material-symbols-outlined mr-1 align-middle text-base text-[var(--color-academy-ink)]" aria-hidden="true">payments</span>
                                 {tuition.lines.map((l) => `${l.programName} 주${l.weeklyCount}회 · 월 ${won(l.tuition)}`).join(" + ")}
                                 {shuttleNeeded && tuition.shuttleFee > 0 ? ` (+셔틀 ${won(tuition.shuttleFee)})` : ""}
                                 <span className="ml-1 text-xs text-[var(--color-academy-muted)]">청구 자동 제안과 같은 참고 금액 · 청구는 월 장부에서</span>

@@ -231,7 +231,7 @@ export default function ClassManagementClient({
                 onKeyDown={(event) => handleRowKeyDown(event, cls.id)}
                 className="cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
-                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-primary)]">{dayLabelOf(cls.dayOfWeek)}</td>
+                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{dayLabelOf(cls.dayOfWeek)}</td>
                 {/* 시간: 오른쪽 정렬 + 자릿수 폭 고정 */}
                 <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{cls.startTime || "-"}~{cls.endTime || "-"}</td>
                 <td className="px-2 py-1.5">
@@ -240,7 +240,7 @@ export default function ClassManagementClient({
                         href={`/admin/classes/${cls.id}`}
                         prefetch={false}
                         onClick={(event) => event.stopPropagation()}
-                        className="font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)] hover:underline"
+                        className="font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)] hover:underline"
                     >
                         {cls.name}
                     </Link>
@@ -377,7 +377,7 @@ export default function ClassManagementClient({
                                 type="button"
                                 onClick={() => setDetailClassId(null)}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             >
                                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
                             </button>

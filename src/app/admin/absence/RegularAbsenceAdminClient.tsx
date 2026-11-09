@@ -255,7 +255,7 @@ export default function RegularAbsenceAdminClient({
 
   function makeupBadge(r: RegularAbsenceRow) {
     return r.makeupId ? (
-      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-primary)]">
+      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">
         <span className="material-symbols-outlined text-sm" aria-hidden="true">event_repeat</span>
         {r.makeupStatusLabel}
       </span>
@@ -305,7 +305,7 @@ export default function RegularAbsenceAdminClient({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-            <span className="material-symbols-outlined text-2xl text-[var(--color-academy-primary)]" aria-hidden="true">event_busy</span>
+            <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">event_busy</span>
             정규 수업 결석
           </h2>
           <p className="text-xs text-[var(--color-academy-muted)]">
