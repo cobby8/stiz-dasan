@@ -214,6 +214,7 @@ const PRISMA_STUB = toDataUrl(`
   const answer = (sql) => {
     if (/UPDATE "PosPaymentNotice" n/.test(sql)) { if (S().claimThrows) throw new Error("unique violation"); return S().claimRows; }
     if (/FROM "PosPaymentNotice" n\\s+LEFT JOIN/.test(sql)) return S().notice ? [S().notice] : [];
+    if (/conflict-info/.test(sql)) return S().conflictInfo ?? [{ studentName: "이시윤", year: 2026, month: 10, amount: 180000, kstDateTime: "2026-09-28 14:20" }];
     // 취소 경고: 납부 반영된 알림 + 청구 PAID 조회 / 한 번만 넣는 감사 기록
     if (/n\\."siteMarkedPaid" = true AND p\\.status = 'PAID'/.test(sql)) return S().cancelRows ?? [];
     if (/INSERT INTO "PaymentAuditLog"/.test(sql)) return S().warnInsert ?? [{ id: "a1" }];
@@ -273,7 +274,8 @@ async function loadModules() {
   pay = pay
     .split('"@/lib/prisma"').join(`"${PRISMA_STUB}"`)
     .split('"@/lib/payment-ledger"').join(`"${LEDGER_STUB}"`)
-    .split('"@/lib/billing/parentSendGuard"').join(`"${guardUrl}"`);
+    .split('"@/lib/billing/parentSendGuard"').join(`"${guardUrl}"`)
+    .split('"./payment-notice.mjs"').join(`"${fileUrl(NOTICE_MODULE)}"`);
   const payUrl = toDataUrl(pay);
   let svc = await transpile(SERVICE);
   svc = svc
@@ -592,29 +594,95 @@ test("자동 반영: 원장이 원생을 고른 알림·이미 반영된 알림�
 
 // ─────────── 검수 후속(2026-11-10): 0행 경합 · DM 없는 자동 납부 · 납부 뒤 POS 취소 경고 ───────────
 
-test("0행 경합(자동): 선점 뒤 다른 경로가 먼저 납부 → 쓰지 않고 선점 해제 + «이중 수납 확인 필요» 결과 줄(버튼 없음)", async () => {
+/** CONFLICT 표시 UPDATE(닫힌 채 · siteMarkedPaid=false · SYSTEM:conflict) */
+const isConflictMark = (c) => /"siteMarkedPaid" = false, "decidedBySlackUser" = \$2/.test(c.sql) && c.args[1] === "SYSTEM:conflict";
+
+test("0행 경합(자동): 다른 경로가 먼저 납부 → 쓰지 않고 알림을 닫힌 채 CONFLICT 표시 + 감사 기록·알림 벨 + 결과 줄(버튼 없음)", async () => {
   const { calls, paid, slack } = await runAutoWebhook({
     claimRows: [autoClaimRow], ledgerConflict: true, paymentStatus: "PAID", paymentKey: "someone-else",
   });
   assert.equal(paid.length, 1, "조건부 납부를 한 번 시도했고");
   assert.equal(paid[0].amount, 180000);
-  const release = calls.find((c) => /"siteMarkedPaid" = false, "decidedBySlackUser" = NULL/.test(c.sql));
-  assert.ok(release, "선점을 푼다(이 알림이 납부한 것처럼 남지 않게)");
-  assert.equal(release.args[1], "NOTIFIED");
+  const mark = calls.find(isConflictMark);
+  assert.ok(mark, "CONFLICT 표시");
+  assert.match(mark.sql, /WHERE id = \$1 AND status = 'CONFIRMED'/, "상태를 다시 열지 않는다(버튼이 되살아나지 않게)");
+  assert.match(mark.args[2], /^CONFLICT: /);
+  assert.ok(!calls.some((c) => /"decidedBySlackUser" = NULL/.test(c.sql)), "선점을 열린 상태로 되돌리지 않는다");
+  const audit = calls.find((c) => /INSERT INTO "PaymentAuditLog"/.test(c.sql));
+  assert.deepEqual(audit.args.slice(0, 3), ["p-oct", "pos-notice-conflict:n1", "POS_NOTICE_PAID_ELSEWHERE"]);
+  assert.match(audit.sql, /WHERE NOT EXISTS/);
+  assert.ok(calls.findIndex((c) => /pg_advisory_xact_lock/.test(c.sql)) < calls.indexOf(audit), "잠금 안에서 한 번만");
+  const bell = calls.find((c) => /INSERT INTO "Notification"/.test(c.sql));
+  assert.equal(bell.args[0], "이중 수납 확인 필요");
+  assert.match(bell.args[1], /이시윤 · 2026년 10월 수강료 ₩180,000/);
   const update = slack.find((s) => s.op === "update");
   assert.match(JSON.stringify(update.blocks), /이미 다른 경로로 납부됨 — 이중 수납 확인 필요/);
   assert.doesNotMatch(JSON.stringify(update.blocks), /pos_notice_confirm_pay/);
 });
 
-test("0행 경합(버튼): 원장 버튼도 같은 함수 — 다른 경로가 먼저 납부했으면 쓰지 않고 같은 결과 줄", async () => {
+test("0행 경합: 경고 기록이 이미 있으면(INSERT 0행) 알림 벨을 다시 만들지 않는다", async () => {
+  const { calls } = await runAutoWebhook({
+    claimRows: [autoClaimRow], ledgerConflict: true, paymentStatus: "PAID", paymentKey: "someone-else", warnInsert: [],
+  });
+  assert.ok(calls.some(isConflictMark));
+  assert.ok(!calls.some((c) => /INSERT INTO "Notification"/.test(c.sql)));
+});
+
+test("0행 경합(버튼): 원장 버튼도 같은 함수 — 같은 CONFLICT 표시·경고·결과 줄", async () => {
   const r = await run({ type: "CONFIRM_PAY", noticeId: "n1" }, {
     claimRows: [{ ...autoClaimRow, tossPaymentId: "pay-1" }], ledgerConflict: true, paymentStatus: "PAID", paymentKey: "someone-else",
   });
   assert.equal(r.paid.length, 1);
   assert.equal(r.paid[0].actorType, "ADMIN");
-  assert.ok(r.calls.some((c) => /"siteMarkedPaid" = false, "decidedBySlackUser" = NULL/.test(c.sql)));
+  assert.ok(r.calls.some(isConflictMark));
+  assert.ok(r.calls.some((c) => /INSERT INTO "Notification"/.test(c.sql)));
   const update = r.slack.find((s) => s.op === "update");
   assert.match(JSON.stringify(update.blocks), /이중 수납 확인 필요/);
+});
+
+test("CONFLICT 로 닫힌 알림은 자동 반영 재실행·스윕 DM·버튼이 다시 열지 않는다", async () => {
+  const { service, actions } = await loadModules();
+  const closed = { ...baseNotice, status: "CONFIRMED", siteMarkedPaid: false, decidedBySlackUser: "SYSTEM:conflict" };
+  globalThis.__state = { notice: closed, claimRows: [autoClaimRow] };
+  globalThis.__calls = []; globalThis.__paid = []; globalThis.__slack = [];
+  assert.equal(await service.autoConfirmNotice("n1"), "SKIPPED");
+  assert.equal(globalThis.__paid.length, 0);
+  // 스윕 DM 선점(sendNotice)은 PENDING·FAILED·(ts 없는)NOTIFIED 만 잡는다 — CONFIRMED 는 대상이 아니다
+  const svcSrc = await readFile(SERVICE, "utf8");
+  const send = svcSrc.slice(svcSrc.indexOf("export async function sendNotice"), svcSrc.indexOf("// ───────────────────────────── 웹훅 처리"));
+  const sendFn = send.split(/\r?\n\}\r?\n/)[0];
+  assert.match(sendFn, /status IN \('PENDING', 'FAILED'\)/);
+  assert.doesNotMatch(sendFn, /CONFIRMED/);
+  // 버튼도 «이미 처리됨»
+  const saved = process.env.SLACK_OWNER_USER_ID;
+  process.env.SLACK_OWNER_USER_ID = OWNER;
+  try {
+    globalThis.__calls = []; globalThis.__slack = [];
+    await actions.handleSlackNoticeAction({ type: "CONFIRM_PAY", noticeId: "n1" }, { userId: OWNER, responseUrl: "https://hooks.slack.com/x" });
+    assert.equal(globalThis.__paid.length, 0);
+    assert.match(globalThis.__slack[0].text, /이미 처리됐거나/);
+  } finally {
+    if (saved == null) delete process.env.SLACK_OWNER_USER_ID; else process.env.SLACK_OWNER_USER_ID = saved;
+  }
+});
+
+test("CONFLICT + 처음 DM 없음: 경고 결과 줄만 담은 DM 1통(버튼 없음), CONFLICT 표시(error)는 지우지 않는다", async () => {
+  const saved = process.env.SLACK_OWNER_USER_ID;
+  process.env.SLACK_OWNER_USER_ID = OWNER;
+  try {
+    const { calls, slack } = await runAutoWebhook({
+      claimRows: [autoClaimRow], ledgerConflict: true, paymentStatus: "PAID", paymentKey: "someone-else",
+      notice: { ...baseNotice, tossPaymentId: "pay-card", status: "FAILED", slackChannel: null, slackTs: null, decidedBySlackUser: "SYSTEM:conflict" },
+    });
+    const posts = slack.filter((s) => s.op === "post");
+    assert.equal(posts.length, 1);
+    assert.match(JSON.stringify(posts[0].blocks), /이중 수납 확인 필요/);
+    assert.doesNotMatch(JSON.stringify(posts[0].blocks), /pos_notice_confirm_pay/);
+    const done = calls.find((c) => /SET "slackChannel" = \$2, "slackTs" = \$3/.test(c.sql));
+    assert.match(done.sql, /CASE WHEN "decidedBySlackUser" = \$4 THEN error ELSE NULL END/);
+  } finally {
+    if (saved == null) delete process.env.SLACK_OWNER_USER_ID; else process.env.SLACK_OWNER_USER_ID = saved;
+  }
 });
 
 test("원장부 뒤쪽 오류라도 이 결제로 PAID 면 납부 반영으로 본다(선점 유지)", async () => {
@@ -641,8 +709,8 @@ test("DM 없는 자동 납부: 처음 DM 이 실패(slackTs 없음)면 결과 �
     assert.doesNotMatch(JSON.stringify(posts[0].blocks), /pos_notice_confirm_pay/, "버튼 없음");
     const claim = calls.find((c) => /SET "slackTs" = \$3/.test(c.sql));
     assert.ok(claim, "보내기 전에 slackTs 를 선점한다(한 번만)");
-    assert.deepEqual(claim.args, ["n1", "SYSTEM:auto", "SENDING"]);
-    assert.ok(calls.some((c) => /SET "slackChannel" = \$2, "slackTs" = \$3, error = NULL/.test(c.sql)));
+    assert.deepEqual(claim.args, ["n1", "SYSTEM:auto", "SENDING", "SYSTEM:conflict"]);
+    assert.ok(calls.some((c) => /SET "slackChannel" = \$2, "slackTs" = \$3,/.test(c.sql)));
   } finally {
     if (saved == null) delete process.env.SLACK_OWNER_USER_ID; else process.env.SLACK_OWNER_USER_ID = saved;
   }
@@ -656,18 +724,26 @@ test("DM 없는 자동 납부: 선점을 못 하면(이미 보냄·다른 곳이
   assert.equal(globalThis.__slack.length, 0);
   const svcSrc = await readFile(SERVICE, "utf8");
   const sweep = svcSrc.slice(svcSrc.indexOf("export async function runPosNoticeSweep"));
-  assert.match(sweep, /status = 'CONFIRMED' AND "siteMarkedPaid" = true AND "decidedBySlackUser" = \$1/);
+  assert.match(sweep, /\$\{RESULT_DM_WANTED_SQL\}/, "보내기 선점과 같은 조건 조각");
+  const wanted = svcSrc.slice(svcSrc.indexOf("const RESULT_DM_WANTED_SQL"), svcSrc.indexOf("export async function sendAutoResultNotice"));
+  assert.match(wanted, /"siteMarkedPaid" = true AND "decidedBySlackUser" = \$2/);
+  assert.match(wanted, /"siteMarkedPaid" = false AND "decidedBySlackUser" = \$4/);
   assert.match(sweep, /await sendAutoResultNotice\(n\.id\)/);
 });
 
-test("순수: 취소 결제 고르기 — CANCELLED·CANCELED·REFUNDED·PARTIAL_CANCELLED 는 취소, APPROVED 는 아님", () => {
+test("순수: 취소 결제 고르기 — 현장 결제와 같은 목록 + 부분 취소 두 이름만, CANCEL_REQUESTED·CANCEL_FAILED 는 취소 아님", async () => {
+  const C = await import(fileUrl("src/lib/pos/charge-request.mjs"));
+  for (const st of C.CANCELLED_PAYMENT_STATES) assert.ok(N.NOTICE_CANCELLED_STATES.includes(st), `${st} 는 현장 결제와 같이 취소`);
+  assert.deepEqual(N.NOTICE_CANCELLED_STATES.filter((st) => !C.CANCELLED_PAYMENT_STATES.includes(st)), ["PARTIAL_CANCELLED", "PARTIAL_CANCELED"]);
   const got = N.extractCancelledPayments({
     payments: [
       { id: "a", state: "APPROVED" }, { id: "b", state: "CANCELLED" }, { id: "c", state: "canceled" },
-      { id: "d", state: "REFUNDED" }, { id: "e", state: "PARTIAL_CANCELLED" }, { id: null, state: "CANCELLED" },
+      { id: "d", state: "REFUNDED" }, { id: "e", state: "PARTIAL_CANCELLED" }, { id: "f", state: "PARTIAL_CANCELED" },
+      { id: "g", state: "CANCEL_REQUESTED" }, { id: "h", state: "CANCEL_FAILED" }, { id: "i", state: "REFUND_PENDING" },
+      { id: null, state: "CANCELLED" },
     ],
   });
-  assert.deepEqual(got.map((g) => g.tossPaymentId), ["b", "c", "d", "e"]);
+  assert.deepEqual(got.map((g) => g.tossPaymentId), ["b", "c", "d", "e", "f"]);
   const w = N.buildCancelWarning({ studentName: "이시윤", year: 2026, month: 10, amount: 180000, state: "CANCELLED", kstDateTime: "2026-09-28 14:20" });
   assert.equal(w.title, "취소된 POS 결제가 사이트 납부로 남아 있음");
   assert.match(w.message, /이시윤 · 2026년 10월 수강료 ₩180,000/);
@@ -701,6 +777,8 @@ test("취소 경고: 납부 반영된 POS 결제가 취소되면 원장 DM + 관
   const { calls, paid, slack } = await runCancelWebhook();
   const query = calls.find((c) => /n\."siteMarkedPaid" = true AND p\.status = 'PAID'/.test(c.sql));
   assert.deepEqual(query.args[0], ["pay-card"], "재조회 주문의 취소 결제 ID 로 찾는다");
+  assert.match(query.sql, /NOT EXISTS \(SELECT 1 FROM "PosChargeRequest" r\s+WHERE r\."tossOrderId" = n\."tossOrderId" OR r\."tossPaymentId" = n\."tossPaymentId"\)/,
+    "⚡ 현장 결제 요청에 묶인 결제는 그쪽이 처리 — 경고 대상에서 뺀다");
   const lockAt = calls.findIndex((c) => /pg_advisory_xact_lock/.test(c.sql));
   const auditAt = calls.findIndex((c) => /INSERT INTO "PaymentAuditLog"/.test(c.sql));
   assert.ok(lockAt >= 0 && auditAt > lockAt, "잠금 안에서 «없을 때만» 감사 기록");

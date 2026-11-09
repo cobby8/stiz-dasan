@@ -25,9 +25,97 @@
 import { prisma } from "@/lib/prisma";
 import { markPaymentsPaidTogether } from "@/lib/payment-ledger";
 import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
+import { buildConflictWarning } from "./payment-notice.mjs";
 
 /** 자동 반영이 decidedBySlackUser 칸에 남기는 표시(슬랙 사용자 ID 와 겹치지 않는 모양) */
 export const AUTO_DECIDER = "SYSTEM:auto";
+
+/**
+ * «다른 경로가 먼저 납부(CONFLICT)»로 끝난 알림의 표시. 상태는 CONFIRMED + siteMarkedPaid=false 로 닫아 둔다 —
+ * 열린 상태(NOTIFIED·FAILED 등)로 두면 자동 반영 재실행·스윕 DM 이 버튼을 되살려 경고가 사라진다(2026-11-10 검수).
+ */
+export const CONFLICT_DECIDER = "SYSTEM:conflict";
+
+/** 감사 기록 action — CONFLICT 경고를 알림마다 한 번만(actorId = pos-notice-conflict:<알림 id>) */
+export const CONFLICT_WARN_ACTION = "POS_NOTICE_PAID_ELSEWHERE";
+
+/**
+ * 경고를 «한 번만» 남긴다: key 로 advisory lock 을 잡고, 같은 action·actorId 감사 기록이 없을 때만 넣는다.
+ * 넣었으면 true(= 이번에 알려야 한다). 취소 경고·이중 수납 경고가 같이 쓴다.
+ */
+export async function recordWarningOnce(input: {
+    lockKey: string;
+    paymentId: string | null;
+    actorId: string;
+    action: string;
+    title: string;
+    metadata: Record<string, unknown>;
+}): Promise<boolean> {
+    return prisma.$transaction(async (db) => {
+        await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, input.lockKey);
+        const inserted = await db.$queryRawUnsafe<{ id: string }[]>(
+            `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+             SELECT gen_random_uuid()::text, $1, NULL, NULL, 'SYSTEM', $2, $3, $4, $5::jsonb, NOW()
+              WHERE NOT EXISTS (SELECT 1 FROM "PaymentAuditLog" a WHERE a.action = $3 AND a."actorId" = $2)
+             RETURNING id`,
+            input.paymentId,
+            input.actorId,
+            input.action,
+            input.title,
+            JSON.stringify(input.metadata),
+        );
+        return inserted.length > 0;
+    });
+}
+
+/** 관리자 알림 벨(ADMIN·VICE_ADMIN) 한 줄 — 슬랙을 놓쳐도 사이트에서 보이게. 실패는 호출한 쪽이 잡는다. */
+export async function notifyAdminBell(title: string, message: string, linkUrl = "/admin/finance"): Promise<void> {
+    await prisma.$executeRawUnsafe(
+        `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
+         SELECT gen_random_uuid()::text, u.id, 'PAYMENT', $1, $2, $3, false, NOW()
+           FROM "User" u WHERE u.role IN ('ADMIN', 'VICE_ADMIN')`,
+        title,
+        message,
+        linkUrl,
+    );
+}
+
+/**
+ * CONFLICT 알림: 감사 기록 1줄(중복 방지) + 관리자 알림 벨 «이중 수납 확인 필요(학생·청구·금액)».
+ * 슬랙 DM 결과 줄은 호출한 쪽(버튼·자동)이 고친다. 실패해도 납부 결과(쓰지 않음)는 바뀌지 않는다.
+ */
+async function alertConflict(noticeId: string, sitePaymentId: string, mode: string, redact: (m: string) => string) {
+    try {
+        const rows = await prisma.$queryRawUnsafe<{ studentName: string | null; year: number | null; month: number | null; amount: number; kstDateTime: string }[]>(
+            `SELECT s.name AS "studentName", p.year, p.month, n.amount::float8 AS amount,
+                    COALESCE(to_char(n."approvedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI'), '') AS "kstDateTime"
+               FROM "PosPaymentNotice" n
+               JOIN "Payment" p ON p.id = n."sitePaymentId"
+               LEFT JOIN "Student" s ON s.id = p."studentId" -- 경고 문구용 이름만(병합 여부 s."mergedIntoStudentId" 무관 — 그 청구의 이름)
+              WHERE n.id = $1 /* conflict-info */`,
+            noticeId,
+        );
+        const info = rows[0];
+        const text = buildConflictWarning({
+            studentName: info?.studentName ?? null,
+            year: info?.year ?? null,
+            month: info?.month ?? null,
+            amount: Number(info?.amount ?? 0),
+            kstDateTime: info?.kstDateTime ?? "",
+        }) as { title: string; message: string };
+        const first = await recordWarningOnce({
+            lockKey: `pos-notice-conflict:${noticeId}`,
+            paymentId: sitePaymentId,
+            actorId: `pos-notice-conflict:${noticeId}`,
+            action: CONFLICT_WARN_ACTION,
+            title: text.title,
+            metadata: { noticeId, mode },
+        });
+        if (first) await notifyAdminBell(text.title, text.message);
+    } catch (error) {
+        console.error("[pos-notice] 이중 수납 경고 기록 실패:", redact((error as Error).message), { noticeId });
+    }
+}
 
 /**
  * 수동·자동 공통 재확인 조건(별칭 n = PosPaymentNotice). 하나라도 어긋나면 0행 → 쓰지 않는다.
@@ -115,7 +203,7 @@ export type NoticePayResult =
     | { outcome: "PAID"; sitePaymentId: string; error: string | null }
     /** 원장부 쓰기 실패 + 청구가 미납 그대로 → 선점을 풀어 다시 처리할 수 있게 했다 */
     | { outcome: "REVERTED"; error: string }
-    /** 선점과 납부 사이에 «다른 경로»가 먼저 납부했다(0행) → 선점을 풀고 쓰지 않았다. 이중 수납 확인 필요 */
+    /** 선점과 납부 사이에 «다른 경로»가 먼저 납부했다(0행) → 쓰지 않았다. 알림은 닫힌 채(CONFLICT 표시)·감사 기록·알림 벨. 이중 수납 확인 필요 */
     | { outcome: "CONFLICT"; sitePaymentId: string; error: string };
 
 /** 원장 DM 결과 줄 — 다른 경로가 먼저 납부해 반영하지 않았을 때(버튼·자동 공통 문구) */
@@ -193,12 +281,24 @@ export async function claimNoticeAndMarkPaid(input: {
             await prisma.$executeRawUnsafe(`UPDATE "PosPaymentNotice" SET error = $2 WHERE id = $1`, input.noticeId, message);
             return { outcome: "PAID", sitePaymentId: claim.sitePaymentId, error: message };
         }
-        // 납부가 안 됐으므로 선점을 푼다(siteMarkedPaid=false — 이 알림이 납부한 것처럼 남지 않게).
-        await releaseClaim(input.noticeId, input.previousStatus, message);
         if (row?.status === "PAID") {
             // 다른 경로가 먼저 납부(0행) — 돈이 두 번 들어왔을 수 있다. 사람이 확인해야 한다.
+            // 선점은 «닫힌 채»로 바꾼다(siteMarkedPaid=false · CONFIRMED · CONFLICT 표시) — 다시 열면
+            // 자동 반영 재실행·스윕 DM 이 버튼을 되살려 경고 결과 줄이 사라진다.
+            await prisma.$executeRawUnsafe(
+                `UPDATE "PosPaymentNotice"
+                    SET "siteMarkedPaid" = false, "decidedBySlackUser" = $2, "decidedAt" = now(),
+                        error = $3, "updatedAt" = now()
+                  WHERE id = $1 AND status = 'CONFIRMED'`,
+                input.noticeId,
+                CONFLICT_DECIDER,
+                `CONFLICT: ${message}`.slice(0, 1000),
+            );
+            await alertConflict(input.noticeId, claim.sitePaymentId, input.mode, input.redact);
             return { outcome: "CONFLICT", sitePaymentId: claim.sitePaymentId, error: message };
         }
+        // 아직 미납이므로 선점을 풀어 다시 처리할 수 있게 한다(siteMarkedPaid=false — 납부한 것처럼 남지 않게).
+        await releaseClaim(input.noticeId, input.previousStatus, message);
         return { outcome: "REVERTED", error: message };
     }
 }

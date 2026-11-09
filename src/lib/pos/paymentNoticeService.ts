@@ -21,7 +21,14 @@ import { prisma } from "@/lib/prisma";
 import { postMessage, updateMessage, type SlackBlock } from "@/lib/slack/client";
 import { fetchTossOrderById } from "./tossplaceClient";
 import { expireStaleChargeRequests, matchChargeRequestsForOrder } from "./chargeRequestService";
-import { AUTO_DECIDER, CONFLICT_RESULT_TEXT, claimNoticeAndMarkPaid } from "./paymentNoticePay";
+import {
+    AUTO_DECIDER,
+    CONFLICT_DECIDER,
+    CONFLICT_RESULT_TEXT,
+    claimNoticeAndMarkPaid,
+    notifyAdminBell,
+    recordWarningOnce,
+} from "./paymentNoticePay";
 import { parseMemoNames, redactSecrets } from "./tossplace-match.mjs";
 import {
     NOTICE_KIND,
@@ -80,6 +87,8 @@ export type NoticeRow = {
     slackChannel: string | null;
     slackTs: string | null;
     siteMarkedPaid: boolean;
+    /** 누가 결정했나 — 슬랙 사용자 ID 또는 SYSTEM:auto(자동 반영)·SYSTEM:conflict(다른 경로가 먼저 납부) */
+    decidedBySlackUser?: string | null;
 };
 
 // ───────────────────────────── SQL ─────────────────────────────
@@ -114,7 +123,7 @@ export const NOTICE_SELECT_SQL = `SELECT n.id, n."tossPaymentId", n."tossOrderId
             COALESCE(to_char(n."approvedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'), '') AS "kstDate",
             n."lineItems", n.memo, n."resolvedStudentId", s.name AS "studentName",
             n."targetYear", n."targetMonth", n."sitePaymentId", n.kind, n."pickedKind", n.status,
-            n."slackChannel", n."slackTs", n."siteMarkedPaid"
+            n."slackChannel", n."slackTs", n."siteMarkedPaid", n."decidedBySlackUser"
        FROM "PosPaymentNotice" n
        LEFT JOIN "Student" s ON s.id = n."resolvedStudentId"
       WHERE n.id = $1`;
@@ -325,7 +334,12 @@ export async function autoConfirmNotice(noticeId: string): Promise<"PAID" | "HEL
                 await sendAutoResultNotice(noticeId);
             }
         } else if (outcome === "CONFLICT") {
-            await refreshNoticeMessage(fresh, { resultLine: `${CONFLICT_RESULT_TEXT} (${stamp})` });
+            if (fresh.slackChannel && fresh.slackTs) {
+                await refreshNoticeMessage(fresh, { resultLine: `${CONFLICT_RESULT_TEXT} (${stamp})` });
+            } else {
+                // 처음 DM 이 없었으면 경고 결과 줄만 담은 DM 을 한 번 보낸다(관리자 알림 벨은 핵심부가 이미 남김).
+                await sendAutoResultNotice(noticeId);
+            }
         } else if (outcome === "HELD") {
             await refreshNoticeMessage(fresh, {
                 warningLine: `⚠️ 자동 납부 반영 보류 — 같은 청구에 다른 수납 기록(직원 현금·계좌 확인 대기·진행 중인 현장 결제)이 있거나 청구서 상태가 달라졌습니다. 확인 후 버튼을 눌러 주세요 (${stamp})`,
@@ -348,7 +362,19 @@ function autoPaidResultLine(notice: Pick<NoticeRow, "targetMonth">, stamp: strin
 const SENDING_MARK = "SENDING";
 
 /**
- * 자동 납부됐는데 DM 이 하나도 없는 알림(처음 DM 실패·미발송)에 «결과 전용» DM 을 한 번 보낸다(버튼 없음).
+ * 결과 전용 DM 이 필요한 알림(별칭 없음, 표 칸 그대로): 시스템이 닫았는데 DM 이 하나도 없는 것.
+ *  - 자동 납부 반영(CONFIRMED · siteMarkedPaid · SYSTEM:auto)
+ *  - 이중 수납 경고(CONFIRMED · siteMarkedPaid=false · SYSTEM:conflict)
+ * 인자: $2 = AUTO_DECIDER, $3 = SENDING_MARK, $4 = CONFLICT_DECIDER. 보내기 선점·스윕 목록이 같은 조건을 쓴다.
+ */
+const RESULT_DM_WANTED_SQL = `status = 'CONFIRMED'
+            AND (("siteMarkedPaid" = true AND "decidedBySlackUser" = $2)
+                 OR ("siteMarkedPaid" = false AND "decidedBySlackUser" = $4))
+            AND ("slackTs" IS NULL OR ("slackTs" = $3 AND "updatedAt" < now() - interval '5 minutes'))`;
+
+/**
+ * 시스템이 닫았는데 DM 이 하나도 없는 알림(처음 DM 실패·미발송)에 «결과 전용» DM 을 한 번 보낸다(버튼 없음).
+ * 자동 납부면 «자동 납부 반영», 이중 수납이면 «이미 다른 경로로 납부됨 — 이중 수납 확인 필요» 결과 줄.
  * 한 번만 가게: slackTs 를 SENDING 으로 먼저 선점(조건부 UPDATE)하고, 보내면 실제 채널·ts 로 바꾼다.
  * 실패하면 slackTs 를 비워 10분 스윕이 다시 시도한다(이레 안). 선점 뒤 서버가 죽은 SENDING 은 5분 뒤 다시 잡는다.
  */
@@ -356,12 +382,12 @@ export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "
     const claimed = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `UPDATE "PosPaymentNotice"
             SET "slackTs" = $3, "updatedAt" = now()
-          WHERE id = $1 AND status = 'CONFIRMED' AND "siteMarkedPaid" = true AND "decidedBySlackUser" = $2
-            AND ("slackTs" IS NULL OR ("slackTs" = $3 AND "updatedAt" < now() - interval '5 minutes'))
+          WHERE id = $1 AND ${RESULT_DM_WANTED_SQL}
           RETURNING id`,
         noticeId,
         AUTO_DECIDER,
         SENDING_MARK,
+        CONFLICT_DECIDER,
     );
     if (claimed.length === 0) return "SKIPPED";
     try {
@@ -369,13 +395,21 @@ export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "
         if (!owner) throw new Error("원장 슬랙 ID(SLACK_OWNER_USER_ID)가 설정되지 않아 DM 을 보내지 못했습니다.");
         const notice = await loadNotice(noticeId);
         if (!notice) return "SKIPPED";
-        const message = await renderNotice(notice, { resultLine: autoPaidResultLine(notice, kstStamp() as string) });
+        const stamp = kstStamp() as string;
+        const resultLine =
+            notice.decidedBySlackUser === CONFLICT_DECIDER ? `${CONFLICT_RESULT_TEXT} (${stamp})` : autoPaidResultLine(notice, stamp);
+        const message = await renderNotice(notice, { resultLine });
         const sent = await postMessage({ channel: owner, text: message.text, blocks: message.blocks });
+        // 이중 수납 표시(error 의 CONFLICT: …)는 지우지 않는다 — 나중에 사람이 원인을 볼 수 있게.
         await prisma.$executeRawUnsafe(
-            `UPDATE "PosPaymentNotice" SET "slackChannel" = $2, "slackTs" = $3, error = NULL, "updatedAt" = now() WHERE id = $1`,
+            `UPDATE "PosPaymentNotice"
+                SET "slackChannel" = $2, "slackTs" = $3,
+                    error = CASE WHEN "decidedBySlackUser" = $4 THEN error ELSE NULL END, "updatedAt" = now()
+              WHERE id = $1`,
             noticeId,
             sent.channel,
             sent.ts,
+            CONFLICT_DECIDER,
         );
         return "SENT";
     } catch (error) {
@@ -426,7 +460,10 @@ export async function warnCancelledNoticePayments(order: unknown): Promise<numbe
            FROM "PosPaymentNotice" n
            JOIN "Payment" p ON p.id = n."sitePaymentId"
            LEFT JOIN "Student" s ON s.id = p."studentId" -- 경고 문구용 이름만(병합된 학생이어도 그 청구의 이름을 보인다, s."mergedIntoStudentId" 무관)
-          WHERE n."tossPaymentId" = ANY($1::text[]) AND n."siteMarkedPaid" = true AND p.status = 'PAID'`,
+          WHERE n."tossPaymentId" = ANY($1::text[]) AND n."siteMarkedPaid" = true AND p.status = 'PAID'
+            -- ⚡ 현장 결제 요청에 묶인 주문·결제는 그쪽(chargeRequestService)이 취소·환불을 처리한다 → 여기서 경고하지 않는다
+            AND NOT EXISTS (SELECT 1 FROM "PosChargeRequest" r
+                             WHERE r."tossOrderId" = n."tossOrderId" OR r."tossPaymentId" = n."tossPaymentId")`,
         cancelled.map((c) => c.tossPaymentId),
     );
     let warned = 0;
@@ -439,33 +476,20 @@ export async function warnCancelledNoticePayments(order: unknown): Promise<numbe
             state: stateOf.get(row.tossPaymentId) ?? "CANCELLED",
             kstDateTime: row.kstDateTime,
         }) as { title: string; message: string; slackText: string };
-        // ① 한 번만: 같은 알림 키로 잠그고, 경고 기록이 없을 때만 넣는다(넣은 쪽만 알린다).
-        const first = await prisma.$transaction(async (db) => {
-            await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `pos-notice-cancel:${row.id}`);
-            const inserted = await db.$queryRawUnsafe<{ id: string }[]>(
-                `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
-                 SELECT gen_random_uuid()::text, $1, NULL, NULL, 'SYSTEM', $2, $3, $4, $5::jsonb, NOW()
-                  WHERE NOT EXISTS (SELECT 1 FROM "PaymentAuditLog" a WHERE a.action = $3 AND a."actorId" = $2)
-                 RETURNING id`,
-                row.sitePaymentId,
-                `pos-notice:${row.id}`,
-                CANCEL_WARN_ACTION,
-                text.title,
-                JSON.stringify({ noticeId: row.id, tossPaymentId: row.tossPaymentId, state: stateOf.get(row.tossPaymentId) ?? null }),
-            );
-            return inserted.length > 0;
+        // ① 한 번만: 같은 알림 키로 잠그고, 경고 기록이 없을 때만 넣는다(넣은 쪽만 알린다 — 이중 수납 경고와 같은 함수).
+        const first = await recordWarningOnce({
+            lockKey: `pos-notice-cancel:${row.id}`,
+            paymentId: row.sitePaymentId,
+            actorId: `pos-notice:${row.id}`,
+            action: CANCEL_WARN_ACTION,
+            title: text.title,
+            metadata: { noticeId: row.id, tossPaymentId: row.tossPaymentId, state: stateOf.get(row.tossPaymentId) ?? null },
         });
         if (!first) continue;
         warned += 1;
         // ② 관리자 알림 벨(ADMIN·VICE_ADMIN) — 슬랙을 놓쳐도 사이트에서 보이게. 실패해도 DM 은 시도한다.
         try {
-            await prisma.$executeRawUnsafe(
-                `INSERT INTO "Notification" (id, "userId", type, title, message, "linkUrl", "isRead", "createdAt")
-                 SELECT gen_random_uuid()::text, u.id, 'PAYMENT', $1, $2, '/admin/finance', false, NOW()
-                   FROM "User" u WHERE u.role IN ('ADMIN', 'VICE_ADMIN')`,
-                text.title,
-                text.message,
-            );
+            await notifyAdminBell(text.title, text.message);
         } catch (error) {
             console.error("[pos-notice] 취소 경고 알림 벨 실패:", redact((error as Error).message), { noticeId: row.id });
         }
@@ -680,16 +704,18 @@ export async function runPosNoticeSweep(): Promise<{ events: number; sent: numbe
         if (r === "FAILED") failed += 1;
     }
 
-    // 자동 납부됐는데 DM 이 하나도 안 나간 알림 → 결과 전용 DM 다시 시도(sendAutoResultNotice 가 한 번만 보낸다).
+    // 자동 납부·이중 수납 경고로 닫혔는데 DM 이 하나도 안 나간 알림 → 결과 전용 DM 다시 시도.
+    // ($1 자리는 비워 둔다 — 보내기 선점과 같은 조건 조각(RESULT_DM_WANTED_SQL)의 $2~$4 번호를 그대로 쓰려고)
     const autoUnsent = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `SELECT id FROM "PosPaymentNotice"
-          WHERE status = 'CONFIRMED' AND "siteMarkedPaid" = true AND "decidedBySlackUser" = $1
-            AND ("slackTs" IS NULL OR ("slackTs" = $2 AND "updatedAt" < now() - interval '5 minutes'))
+          WHERE $1::text IS NULL AND ${RESULT_DM_WANTED_SQL}
             AND "createdAt" > now() - interval '7 days'
           ORDER BY "createdAt" ASC
           LIMIT 20`,
+        null,
         AUTO_DECIDER,
         SENDING_MARK,
+        CONFLICT_DECIDER,
     );
     for (const n of autoUnsent) {
         const r = await sendAutoResultNotice(n.id);

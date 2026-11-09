@@ -28,6 +28,8 @@ import {
   resolveTargetBillingMonth,
   toKst,
 } from "./tossplace-match.mjs";
+// 취소 상태 목록은 ⚡ 현장 결제 판정과 한 벌(charge-request.mjs 는 다른 모듈을 import 하지 않아 순환이 없다)
+import { CANCELLED_PAYMENT_STATES } from "./charge-request.mjs";
 
 // ───────────────────────────── 상수 ─────────────────────────────
 
@@ -124,16 +126,18 @@ export function extractChargePayments(order) {
 
 /**
  * 주문에서 **취소된(전액·부분) 결제** ID 를 고른다 — 이미 사이트 납부로 반영한 POS 결제가 나중에 취소됐는지 보는 용도.
- * 상태 이름이 CANCELLED·CANCELED·REFUNDED 이거나 «CANCEL»·«REFUND» 를 품으면(PARTIAL_CANCELLED 등) 취소로 본다.
+ * 취소 판정은 ⚡ 현장 결제와 같은 목록(CANCELLED_PAYMENT_STATES) + 부분 취소 두 이름만 — «CANCEL» 을 품은
+ * CANCEL_REQUESTED·CANCEL_FAILED 같은 상태는 아직 취소가 아니라서 목록으로 정확히 맞춘다(2026-11-10 검수).
  * 결제 방식은 따지지 않는다(알림은 카드·바코드뿐이지만, 호출한 쪽이 알림 표와 결제 ID 로 다시 거른다).
  * @returns {{ tossPaymentId: string, state: string }[]}
  */
+export const NOTICE_CANCELLED_STATES = Object.freeze([...CANCELLED_PAYMENT_STATES, "PARTIAL_CANCELLED", "PARTIAL_CANCELED"]);
 export function extractCancelledPayments(order) {
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   const out = [];
   for (const payment of payments) {
     const state = String(payment?.state ?? "").toUpperCase();
-    if (!/CANCEL|REFUND/.test(state)) continue;
+    if (!NOTICE_CANCELLED_STATES.includes(state)) continue;
     const paymentId = payment?.id == null ? "" : String(payment.id).trim();
     if (paymentId) out.push({ tossPaymentId: paymentId, state });
   }
@@ -354,6 +358,19 @@ export function buildCancelWarning(input) {
   const title = "취소된 POS 결제가 사이트 납부로 남아 있음";
   const message = `${who} · ${bill} ${formatWon(input.amount)} — POS 결제가 취소(${input.state})됐는데 사이트 청구는 납부완료 그대로입니다${when}. 수납 관리에서 환불·재청구를 확인해 주세요.`;
   return { title, message, slackText: `⚠️ *${escapeSlack(title)}*\n${escapeSlack(message)}` };
+}
+
+/**
+ * «이중 수납 확인 필요» 경고 문구(관리자 알림 벨용) — POS 결제를 반영하려는데 같은 청구가 이미 다른 경로로 납부됨.
+ * @param {{ studentName: string|null, year: number|null, month: number|null, amount: number, kstDateTime?: string }} input
+ */
+export function buildConflictWarning(input) {
+  const who = input.studentName ? String(input.studentName) : "원생 미상";
+  const bill = input.year != null && input.month != null ? `${input.year}년 ${input.month}월 수강료` : "청구";
+  const when = input.kstDateTime ? ` · POS 결제 ${input.kstDateTime}` : "";
+  const title = "이중 수납 확인 필요";
+  const message = `${who} · ${bill} ${formatWon(input.amount)} — POS 결제가 들어왔는데 이 청구는 이미 다른 경로로 납부됐습니다${when}. 사이트에는 반영하지 않았습니다. 돈이 두 번 들어왔는지 확인해 주세요.`;
+  return { title, message };
 }
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
