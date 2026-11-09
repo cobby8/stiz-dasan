@@ -216,7 +216,7 @@ export default function RecordPaymentModal({ targets, onClose, onChoosePos, onRe
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-[var(--color-academy-primary)]">
+                        <p className="text-xs font-bold text-[var(--color-academy-ink)]">
                             {step === "pos" ? "현장 결제 확인" : step === "transfer" ? "계좌이체 기록" : "납부 처리"}
                         </p>
                         <h2 id="record-payment-title" className="mt-0.5 truncate text-lg font-extrabold text-[var(--color-academy-ink)]">

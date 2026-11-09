@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHART_COLORS } from "./chartColors";
 
 // 선 그래프 컴포넌트 — 매출 추이, 출석률 추이 등에 사용
 // 순수 SVG로 구현하여 외부 라이브러리 의존 없음
@@ -14,7 +15,7 @@ interface LineChartProps {
 
 export default function LineChart({
     data,
-    color = "var(--brand-accent)",    // 기본: 테마별 브랜드 강조색
+    color = CHART_COLORS.series,    // 기본: 주 색(뜻 없는 계열)
     height = 200,
     unit = "",
     formatValue,
@@ -23,7 +24,7 @@ export default function LineChart({
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
     if (data.length === 0) {
-        return <p className="text-sm text-gray-400 py-8 text-center">데이터가 없습니다</p>;
+        return <p className="text-sm text-[var(--color-academy-faint)] py-8 text-center">데이터가 없습니다</p>;
     }
 
     // SVG 레이아웃 상수
@@ -73,7 +74,7 @@ export default function LineChart({
                         y1={y}
                         x2={width - padding.right}
                         y2={y}
-                        stroke="#e5e7eb"
+                        stroke={CHART_COLORS.grid}
                         strokeWidth="1"
                         strokeDasharray="4 4"
                     />
@@ -132,7 +133,7 @@ export default function LineChart({
                         width="80"
                         height="22"
                         rx="4"
-                        fill="#1f2937"
+                        fill={CHART_COLORS.tooltip}
                         opacity="0.9"
                     />
                     <text
@@ -155,7 +156,7 @@ export default function LineChart({
                     x={p.x}
                     y={height - 6}
                     textAnchor="middle"
-                    fill="#9ca3af"
+                    fill={CHART_COLORS.axis}
                     fontSize="11"
                 >
                     {p.label}

@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: ApplySettings = {
     uniformFormUrl: null,
 };
 
-const INPUT = "w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2.5 text-sm dark:text-white bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800 focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime transition";
+const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] transition";
 const TEXTAREA = INPUT + " resize-none";
 
 export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabProps) {
@@ -103,7 +103,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
 
     if (loading) {
         return (
-            <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+            <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-6 text-center text-sm text-[var(--color-academy-muted)]">
                 신청 안내 설정을 불러오는 중...
             </div>
         );
@@ -111,12 +111,12 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
 
     if (loadError) {
         return (
-            <div className="rounded-xl border border-red-100 bg-white p-6 text-center dark:border-red-900/40 dark:bg-gray-800">
-                <p className="text-sm font-semibold text-red-700 dark:text-red-200">{loadError}</p>
+            <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-6 text-center">
+                <p className="text-sm font-semibold text-[var(--color-academy-danger)]">{loadError}</p>
                 <button
                     type="button"
                     onClick={loadSettings}
-                    className="mt-3 rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="mt-3 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white hover:bg-[var(--color-academy-primary-hover)]"
                 >
                     다시 시도
                 </button>
@@ -127,14 +127,14 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
     return (
         <div className="space-y-8">
             {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-4">
+                <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-line)] text-[var(--color-academy-danger)] text-sm rounded-lg p-4">
                     {error}
                 </div>
             )}
 
-            <SettingsCard badge="체험수업" badgeColor="bg-orange-100 text-brand-orange-600 border border-orange-200 dark:bg-lime-950/40 dark:text-brand-neon-lime dark:border-brand-neon-lime/40" title="체험수업 안내 설정">
+            <SettingsCard badge="체험수업" badgeColor="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] border border-[var(--color-academy-line)]" title="체험수업 안내 설정">
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">섹션 제목</label>
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
                     <input
                         type="text"
                         value={trialTitle}
@@ -144,7 +144,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                         안내 내용
                     </label>
                     <textarea
@@ -156,7 +156,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                         외부 신청 링크
                     </label>
                     <input
@@ -169,9 +169,9 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                 </div>
             </SettingsCard>
 
-            <SettingsCard badge="수강신청" badgeColor="bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-700" title="수강신청 안내 설정">
+            <SettingsCard badge="수강신청" badgeColor="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] border border-[var(--color-academy-line)]" title="수강신청 안내 설정">
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">섹션 제목</label>
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">섹션 제목</label>
                     <input
                         type="text"
                         value={enrollTitle}
@@ -181,7 +181,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                         안내 내용
                     </label>
                     <textarea
@@ -193,7 +193,7 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                     />
                 </div>
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                         외부 신청 링크
                     </label>
                     <input
@@ -206,9 +206,9 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
                 </div>
             </SettingsCard>
 
-            <SettingsCard badge="유니폼" badgeColor="bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/40 dark:text-green-200 dark:border-green-700" title="유니폼 신청 설정">
+            <SettingsCard badge="유니폼" badgeColor="bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)] border border-[var(--color-academy-line)]" title="유니폼 신청 설정">
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                         유니폼 신청 링크
                     </label>
                     <input
@@ -222,11 +222,11 @@ export default function ApplySettingsTab({ initialSettings }: ApplySettingsTabPr
             </SettingsCard>
 
             <div className="flex justify-end gap-3">
-                {saved && <span className="text-sm text-green-600 font-medium self-center">저장 완료</span>}
+                {saved && <span className="text-sm text-[var(--color-academy-success)] font-medium self-center">저장 완료</span>}
                 <button
                     onClick={handleSave}
                     disabled={saving}
-                    className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-orange-600 text-white font-bold px-8 py-3 rounded-xl transition disabled:opacity-40 shadow-sm"
+                    className="bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white font-bold px-8 py-3 rounded-xl transition disabled:opacity-40 shadow-sm"
                 >
                     {saving ? "저장 중..." : "저장하기"}
                 </button>
@@ -247,10 +247,10 @@ function SettingsCard({
     children: ReactNode;
 }) {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+        <div className="bg-white rounded-xl shadow-sm border border-[var(--color-academy-line)] overflow-hidden">
+            <div className="px-6 py-4 border-b border-[var(--color-academy-line)] flex items-center gap-3">
                 <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${badgeColor}`}>{badge}</span>
-                <h2 className="text-base font-bold text-gray-800 dark:text-gray-100">{title}</h2>
+                <h2 className="text-base font-bold text-[var(--color-academy-ink)]">{title}</h2>
             </div>
             <div className="p-6 space-y-4">{children}</div>
         </div>

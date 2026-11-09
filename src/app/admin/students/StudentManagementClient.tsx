@@ -264,10 +264,10 @@ function getStatusLabel(status: string | null) {
 }
 
 function getStatusPillClass(status: string | null) {
-    if (status === "ACTIVE") return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20";
-    if (status === "PAUSED") return "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20";
-    if (status === "WITHDRAWN") return "bg-red-50 text-red-700 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20";
-    return "bg-gray-50 text-gray-500 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700";
+    if (status === "ACTIVE") return "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-line)]";
+    if (status === "PAUSED") return "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)] ring-[var(--color-academy-line)]";
+    if (status === "WITHDRAWN") return "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-[var(--color-academy-line)]";
+    return "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]";
 }
 
 function getAssignedEnrollments(enrollments: Student["enrollments"]) {
@@ -783,7 +783,7 @@ export default function StudentManagementClient({
         if (activeEnrollments.length > 0) {
             return sortEnrollmentsByDay(activeEnrollments).map((e) => (
                 <span key={e.classId} className="mr-2 inline-block">
-                    {shortenClassName(e)}{e.startsLater && <span className="ml-1 text-xs text-[var(--color-academy-primary)]">{e.startsOn} 개시</span>}
+                    {shortenClassName(e)}{e.startsLater && <span className="ml-1 text-xs text-[var(--color-academy-ink)]">{e.startsOn} 개시</span>}
                 </span>
             ));
         }
@@ -807,17 +807,17 @@ export default function StudentManagementClient({
             <div className="max-w-5xl mx-auto space-y-6">
                 <div className="flex items-center justify-between">
                     <div className="space-y-2">
-                        <div className="h-7 w-36 rounded bg-gray-200 animate-pulse dark:bg-gray-700" />
-                        <div className="h-4 w-48 rounded bg-gray-100 animate-pulse dark:bg-gray-800" />
+                        <div className="h-7 w-36 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                        <div className="h-4 w-48 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                     </div>
-                    <div className="h-10 w-28 rounded-lg bg-gray-200 animate-pulse dark:bg-gray-700" />
+                    <div className="h-10 w-28 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
-                <div className="h-11 w-full max-w-md rounded-lg bg-gray-100 animate-pulse dark:bg-gray-800" />
-                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                <div className="h-11 w-full max-w-md rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
                     {Array.from({ length: 8 }).map((_, index) => (
                         <div
                             key={index}
-                            className="h-12 border-b border-gray-100 bg-gray-50/60 animate-pulse last:border-b-0 dark:border-gray-700 dark:bg-gray-900/40"
+                            className="h-12 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/60 animate-pulse last:border-b-0"
                         />
                     ))}
                 </div>
@@ -827,12 +827,12 @@ export default function StudentManagementClient({
 
     if (dataError && students.length === 0) {
         return (
-            <div className="mx-auto max-w-5xl rounded-xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-900/50 dark:bg-red-950/20">
-                <p className="font-bold text-red-700 dark:text-red-200">{dataError}</p>
+            <div className="mx-auto max-w-5xl rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-8 text-center">
+                <p className="font-bold text-[var(--color-academy-danger)]">{dataError}</p>
                 <button
                     type="button"
                     onClick={() => void loadData()}
-                    className="mt-4 rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="mt-4 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
                 >
                     다시 불러오기
                 </button>
@@ -843,7 +843,7 @@ export default function StudentManagementClient({
     return (
         <div className="max-w-5xl mx-auto">
             <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">원생 관리</h1>
+                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">원생 관리</h1>
                 <p className="text-xs text-[var(--color-academy-muted)]">
                     {/* 상태별 숫자는 아래 상태 칩으로 옮겼다(누르면 그 상태만 보기) */}
                     {sheetImportSummary?.studentStatusCounts ? "전체" : allStudentsLoaded ? "전체 목록" : "불러온 목록"} <span className="tabular-nums">{statusCounts.total}</span>명
@@ -881,7 +881,7 @@ export default function StudentManagementClient({
                                 type="button"
                                 onClick={() => void loadData({ background: true })}
                                 disabled={backgroundLoading}
-                                className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                                className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-line)] disabled:cursor-wait disabled:opacity-60"
                             >
                                 {backgroundLoading ? "전체 불러오는 중" : "전체 목록 불러오기"}
                             </button>
@@ -889,14 +889,14 @@ export default function StudentManagementClient({
                         {/* 엑셀 일괄 업로드 버튼 — 랠리즈 다운로드 파일용 */}
                         <button
                             onClick={() => setShowExcelUpload(true)}
-                            className="min-h-11 bg-emerald-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
+                            className="min-h-11 bg-[var(--color-academy-success)] text-white px-3 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-success)] transition"
                         >
                             엑셀 업로드
                         </button>
                         {/* 기존 1명씩 수동 등록 버튼 */}
                         <button
                             onClick={() => { resetForm(); setFormNotice(null); setShowRegister(true); }}
-                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
+                            className="bg-[var(--color-academy-primary)] text-white min-h-11 px-3 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition"
                         >
                             + 원생 등록
                         </button>
@@ -970,13 +970,13 @@ export default function StudentManagementClient({
             {/* 저장 뒤 안내 한 줄(등록 결과·학부모 계정 연결 결과) */}
             {formNotice && (
                 <div role="status" className="mb-2 flex items-start gap-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-3 py-2 text-sm text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-primary)]" aria-hidden="true">check_circle</span>
+                    <span className="material-symbols-outlined text-lg text-[var(--color-academy-ink)]" aria-hidden="true">check_circle</span>
                     <p className="min-w-0 flex-1 break-keep">{formNotice}</p>
                     <button
                         type="button"
                         onClick={() => setFormNotice(null)}
                         aria-label="안내 닫기"
-                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                        className="-my-2 -mr-2 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                     >
                         <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
                     </button>
@@ -1070,7 +1070,7 @@ export default function StudentManagementClient({
                         <button
                             type="button"
                             onClick={resetForm}
-                            className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
+                            className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
                         >
                             취소
                         </button>
@@ -1124,7 +1124,7 @@ export default function StudentManagementClient({
 
             {/* Student list */}
             {filtered.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
+                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
                     {emptyStudentsMessage}
                 </div>
             ) : viewMode === "class" ? (
@@ -1173,10 +1173,10 @@ export default function StudentManagementClient({
                                                     href={`/admin/students/${s.id}`}
                                                     prefetch={false}
                                                     onClick={(event) => event.stopPropagation()}
-                                                    className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-primary)]"
+                                                    className="block whitespace-nowrap leading-[2.75rem] font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]"
                                                 >
                                                     {s.name}
-                                                    {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-primary)]">개시 전</span>}
+                                                    {s.enrollments.some((enrollment) => enrollment.classId === group.key && enrollment.startsLater) && <span className="ml-1 text-xs font-normal text-[var(--color-academy-ink)]">개시 전</span>}
                                                 </Link>
                                                 <span className="whitespace-nowrap text-[var(--color-academy-muted)]">{shortenGrade(s.grade)}</span>
                                                 {/* 학교+연락처: 넉넉하면 한 줄, 카드가 좁으면 연락처가 학교 아래로 내려간다(학교 이름이 한 글자씩 꺾이지 않게) */}
@@ -1195,11 +1195,11 @@ export default function StudentManagementClient({
                     })}
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 칸 왼쪽 정렬·한 줄(말줄임 없음)·칸 폭은 내용에 맞춤(좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-gray-50 text-xs font-black text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
                                 <tr>
                                     <th className="px-2 py-2">이름</th>
                                     <th className="px-2 py-2">학년</th>
@@ -1226,29 +1226,29 @@ export default function StudentManagementClient({
                                                 href={`/admin/students/${s.id}`}
                                                 prefetch={false}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="font-bold text-gray-900 hover:text-brand-orange-500 dark:text-brand-neon-lime transition-colors"
+                                                className="font-bold text-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)] transition-colors"
                                             >
                                                 {s.name}
                                             </Link>
                                         </td>
                                         {/* 학년: shortenGrade로 "초4" 형태 */}
-                                        <td className="px-2 py-1.5 text-gray-700 dark:text-gray-200">
+                                        <td className="px-2 py-1.5 text-[var(--color-academy-muted)]">
                                             {shortenGrade(s.grade)}
                                         </td>
                                         {/* 학교: 모바일 숨김 */}
-                                        <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">
+                                        <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">
                                             {s.school || "-"}
                                         </td>
                                         {/* 수강 반: «월4, 수4» / 반 없음 / 상태 배지 */}
-                                        <td className="px-2 py-1.5 font-bold text-gray-800 dark:text-gray-100">
+                                        <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
                                             {renderClassCell(s)}
                                         </td>
                                         {/* 학부모: 모바일 숨김, shortenParentName으로 간결화 */}
-                                        <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">
+                                        <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">
                                             {shortenParentName(s.parent.name)}
                                         </td>
                                         {/* 연락처: 숫자지만 글자 취급(왼쪽 정렬), 자릿수 폭만 맞춘다 */}
-                                        <td className="hidden px-2 py-1.5 tabular-nums text-gray-700 dark:text-gray-200 md:table-cell">
+                                        <td className="hidden px-2 py-1.5 tabular-nums text-[var(--color-academy-muted)] md:table-cell">
                                             {formatPhone(s.parent.phone)}
                                         </td>
                                         {/* 관리: ⚡ 메뉴. 눌러도 행 클릭(패널 열기)이 같이 일어나지 않게 전파 차단 */}
@@ -1263,7 +1263,7 @@ export default function StudentManagementClient({
                             </tbody>
                         </table>
                     </div>
-                    <div className="flex flex-col gap-3 border-t border-gray-100 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 border-t border-[var(--color-academy-line)] px-4 py-3 text-sm text-[var(--color-academy-muted)] sm:flex-row sm:items-center sm:justify-between">
                         <span>
                             {filtered.length}명 중 {visibleStudents.length}명 표시
                             {!allStudentsLoaded && " · 전체 불러오는 중"}
@@ -1272,7 +1272,7 @@ export default function StudentManagementClient({
                             <button
                                 type="button"
                                 onClick={() => setVisibleLimit((current) => current + STUDENT_PAGE_SIZE)}
-                                className="rounded-lg border border-gray-200 px-4 py-2 font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                className="rounded-lg border border-[var(--color-academy-line)] px-4 py-2 font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
                             >
                                 50명 더 보기
                             </button>
@@ -1398,22 +1398,22 @@ export default function StudentManagementClient({
             {/* 수강 등록 모달 — 프로그램별 그룹화 + 요일/시간 표시 */}
             {enrollModal && (
                 <AdminModal onClose={() => setEnrollModal(null)} titleId="student-enroll-title" panelClassName="max-w-lg p-6">
-                        <h3 id="student-enroll-title" className="font-bold text-lg text-gray-900 dark:text-white mb-4">
+                        <h3 id="student-enroll-title" className="font-bold text-lg text-[var(--color-academy-ink)] mb-4">
                             수강 등록 — {students.find(s => s.id === enrollModal)?.name}
                         </h3>
                         {classes.length === 0 ? (
-                            <p className="text-gray-500 dark:text-gray-400 text-sm">개설된 반이 없습니다. 먼저 반을 개설하세요.</p>
+                            <p className="text-[var(--color-academy-muted)] text-sm">개설된 반이 없습니다. 먼저 반을 개설하세요.</p>
                         ) : (
                             <div className="max-h-[60vh] overflow-y-auto space-y-4">
                                 {/* 프로그램별 그룹으로 표시 */}
                                 {groupClassesByProgram(classes).map((group) => (
                                     <div key={group.programName}>
                                         {/* 프로그램명 헤더 */}
-                                        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-1.5 mb-2">
-                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-200">
+                                        <div className="bg-[var(--color-academy-soft)] rounded-lg px-3 py-1.5 mb-2">
+                                            <span className="text-sm font-bold text-[var(--color-academy-muted)]">
                                                 {group.programName}
                                             </span>
-                                            <span className="text-xs text-gray-400 ml-2">
+                                            <span className="text-xs text-[var(--color-academy-faint)] ml-2">
                                                 ({group.classes.length}개 반)
                                             </span>
                                         </div>
@@ -1424,14 +1424,14 @@ export default function StudentManagementClient({
                                                     key={c.id}
                                                     onClick={() => handleEnroll(enrollModal!, c.id)}
                                                     disabled={busy}
-                                                    className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-brand-orange-400 hover:bg-orange-50 transition disabled:opacity-50"
+                                                    className="w-full text-left px-3 py-2 rounded-lg border border-[var(--color-academy-line)] hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] transition disabled:opacity-50"
                                                 >
                                                     {/* 요일 + 교시명 + 시간 표시 */}
                                                     <div className="flex items-center justify-between">
-                                                        <span className="font-medium text-gray-900 dark:text-white text-sm">
+                                                        <span className="font-medium text-[var(--color-academy-ink)] text-sm">
                                                             {c.name}
                                                         </span>
-                                                        <span className="text-xs text-gray-400">
+                                                        <span className="text-xs text-[var(--color-academy-faint)]">
                                                             {c.startTime}~{c.endTime}
                                                         </span>
                                                     </div>
@@ -1445,7 +1445,7 @@ export default function StudentManagementClient({
                         <div className="mt-4 text-right">
                             <button
                                 onClick={() => setEnrollModal(null)}
-                                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-white dark:hover:text-white"
+                                className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
                             >
                                 닫기
                             </button>

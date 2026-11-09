@@ -16,7 +16,7 @@ import type { MergedSlot } from "@/app/schedule/ScheduleClient";
 
 const ScheduleTableView = dynamic(() => import("@/components/ScheduleTableView"), {
     loading: () => (
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-6 text-center text-sm text-[var(--color-academy-muted)]">
             시간표 미리보기를 불러오는 중...
         </div>
     ),
@@ -32,8 +32,9 @@ const DAY_LABEL: Record<string, string> = {
     Fri: "금요일", Sat: "토요일", Sun: "일요일",
 };
 const DAY_COLOR: Record<string, string> = {
-    Mon: "bg-blue-600", Tue: "bg-green-600", Wed: "bg-yellow-500",
-    Thu: "bg-purple-600", Fri: "bg-red-500", Sat: "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900", Sun: "bg-gray-500",
+    // 요일 머리 띠 = 장식 분류 → 하나의 중립색(요일 글자로 구분, 2026-11-09 색상 정리 6단계)
+    Mon: "bg-[var(--color-academy-neutral)]", Tue: "bg-[var(--color-academy-neutral)]", Wed: "bg-[var(--color-academy-neutral)]",
+    Thu: "bg-[var(--color-academy-neutral)]", Fri: "bg-[var(--color-academy-neutral)]", Sat: "bg-[var(--color-academy-neutral)]", Sun: "bg-[var(--color-academy-neutral)]",
 };
 
 interface Coach {
@@ -161,12 +162,12 @@ function ScheduleLoadingFallback() {
         <div className="space-y-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                    <div className="h-8 w-48 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="mt-2 h-4 w-96 max-w-full rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                    <div className="h-8 w-48 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="mt-2 h-4 w-96 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <div className="h-10 w-36 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-10 w-28 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                    <div className="h-10 w-36 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="h-10 w-28 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
             </div>
 
@@ -174,31 +175,31 @@ function ScheduleLoadingFallback() {
                 {Array.from({ length: 4 }).map((_, index) => (
                     <div
                         key={index}
-                        className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                        className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm"
                     >
-                        <div className="h-4 w-24 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                        <div className="mt-3 h-7 w-16 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                        <div className="h-4 w-24 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                        <div className="mt-3 h-7 w-16 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                     </div>
                 ))}
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="border-b border-gray-100 p-5 dark:border-gray-700">
-                    <div className="h-6 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="mt-2 h-3 w-72 max-w-full rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+            <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white shadow-sm">
+                <div className="border-b border-[var(--color-academy-line)] p-5">
+                    <div className="h-6 w-40 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="mt-2 h-3 w-72 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
                 <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
                     {Array.from({ length: 9 }).map((_, index) => (
-                        <div key={index} className="rounded-xl border border-gray-100 p-4 dark:border-gray-700">
+                        <div key={index} className="rounded-xl border border-[var(--color-academy-line)] p-4">
                             <div className="flex items-center justify-between gap-3">
-                                <div className="h-5 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                                <div className="h-6 w-16 rounded-full bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                <div className="h-5 w-24 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                                <div className="h-6 w-16 rounded-full bg-[var(--color-academy-soft)] animate-pulse" />
                             </div>
                             <div className="mt-4 space-y-2">
-                                <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                                <div className="h-4 w-2/3 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                                <div className="h-4 w-2/3 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                             </div>
-                            <div className="mt-4 h-9 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                            <div className="mt-4 h-9 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                         </div>
                     ))}
                 </div>
@@ -209,13 +210,13 @@ function ScheduleLoadingFallback() {
 
 function ScheduleErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">시간표 데이터를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">시간표 데이터를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -554,23 +555,23 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             {/* 페이지 헤더 */}
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">수업시간표 관리</h1>
+                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)] mb-1">수업시간표 관리</h1>
                     {/* 구글시트에서 불러오는 경우에만 데이터 출처를 안내한다 */}
                     {!isDbScheduleSource && (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">
+                        <p className="text-[var(--color-academy-muted)] text-sm">
                             학년·인원은 구글시트에서 마지막으로 가져온 내용을 보여줍니다. 카드를 클릭하면 편집할 수 있습니다.
                         </p>
                     )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     {/* 편집/표 뷰 토글 */}
-                    <div className="flex rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                    <div className="flex rounded-xl border border-[var(--color-academy-line)] overflow-hidden shadow-sm">
                         <button
                             onClick={() => setAdminViewMode("edit")}
                             className={`flex items-center gap-1 px-3 py-2 text-sm font-bold transition-colors ${
                                 adminViewMode === "edit"
-                                    ? "bg-brand-navy-900 text-white"
-                                    : "bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
+                                    ? "bg-[var(--color-academy-primary)] text-white"
+                                    : "bg-white text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
                             <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>edit</span>
@@ -580,8 +581,8 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                             onClick={() => setAdminViewMode("table")}
                             className={`flex items-center gap-1 px-3 py-2 text-sm font-bold transition-colors ${
                                 adminViewMode === "table"
-                                    ? "bg-brand-navy-900 text-white"
-                                    : "bg-white text-gray-500 hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800"
+                                    ? "bg-[var(--color-academy-primary)] text-white"
+                                    : "bg-white text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
                             <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>table_chart</span>
@@ -592,16 +593,16 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     {!sheetRetired && (
                     <button
                         onClick={() => { setSheetUrlInput(sheetUrl || ""); setShowSheetModal(true); }}
-                        className={`bg-white border text-sm font-bold px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 dark:bg-gray-800 ${hasSheetUrl ? "border-green-300 text-green-800 hover:bg-green-50 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10" : "border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10"}`}
+                        className={`bg-white border text-sm font-bold px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 ${hasSheetUrl ? "border-[var(--color-academy-line)] text-[var(--color-academy-success)] hover:bg-[var(--color-academy-success-soft)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-warning)] hover:bg-[var(--color-academy-warning-soft)]"}`}
                     >
                         <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>link</span>
                         {isDbScheduleSource ? "사이트 시간표" : `구글시트 연동${hasSheetUrl ? " " : " 설정"}`}
-                        {hasSheetUrl && <span className="material-symbols-outlined text-green-600 dark:text-emerald-300" style={{ fontSize: "16px" }}>check_circle</span>}
+                        {hasSheetUrl && <span className="material-symbols-outlined text-[var(--color-academy-success)]" style={{ fontSize: "16px" }}>check_circle</span>}
                     </button>
                     )}
                     {/* 은퇴 상태에서도 지금 원본이 무엇인지는 보이게 — 누를 수 없는 표시 배지 */}
                     {sheetRetired && isDbScheduleSource && (
-                        <span className="bg-white border border-green-300 text-green-800 text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-1.5 dark:bg-gray-800 dark:border-emerald-500/40 dark:text-emerald-300">
+                        <span className="bg-white border border-[var(--color-academy-line)] text-[var(--color-academy-success)] text-sm font-bold px-4 py-2 rounded-xl flex items-center gap-1.5">
                             <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>database</span>
                             사이트 시간표
                         </span>
@@ -618,12 +619,12 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
             {/* 시트 URL 미설정 안내 — 시트 원장 은퇴면 띄우지 않는다 */}
             {adminViewMode === "edit" && !sheetRetired && !hasSheetUrl && !isDbScheduleSource && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                <div className="bg-[var(--color-academy-warning-soft)] border border-[var(--color-academy-line)] rounded-xl p-5 text-sm text-[var(--color-academy-warning)]">
                     <p className="font-bold mb-1">구글시트 URL이 설정되지 않았습니다.</p>
                     <p>
                         <button
                             onClick={() => setShowSheetModal(true)}
-                            className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
+                            className="underline font-medium hover:text-[var(--color-academy-warning)]"
                         >
                             구글시트 연동 설정
                         </button>
@@ -633,7 +634,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
             )}
 
             {adminViewMode === "edit" && !sheetRetired && hasSheetUrl && slots.length === 0 && (
-                <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-10 text-center text-gray-500 dark:text-gray-400">
+                <div className="bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-xl p-10 text-center text-[var(--color-academy-muted)]">
                     <p className="text-lg font-medium mb-1">시트에서 수업 데이터를 찾을 수 없습니다.</p>
                     <p className="text-sm">시트가 공개 설정인지, 주소와 탭이 올바른지 확인해 주세요.</p>
                 </div>
@@ -641,7 +642,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
             {/* ── 요일별 수업 카드 목록 (편집 모드) ── */}
             {adminViewMode === "edit" && activeDays.map((dayKey) => (
-                <div key={dayKey} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div key={dayKey} className="bg-white rounded-xl shadow-sm border border-[var(--color-academy-line)] overflow-hidden">
                     {/* 요일 헤더 */}
                     <div className={`${DAY_COLOR[dayKey]} text-white px-5 py-3 flex items-center gap-3`}>
                         <span className="font-black text-lg">{DAY_LABEL[dayKey]}</span>
@@ -649,7 +650,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     </div>
 
                     {/* 수업 카드 목록 — 컴팩트 한 줄 카드 */}
-                    <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                    <div className="divide-y divide-[var(--color-academy-line)]">
                         {/* 시트 슬롯 — 클릭하면 편집 모달 열림 */}
                         {sheetByDay[dayKey].map((slot) => {
                             const s = getState(slot.slotKey);
@@ -663,44 +664,44 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                                     key={slot.slotKey}
                                     type="button"
                                     onClick={() => setEditingSlotKey(slot.slotKey)}
-                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 transition-colors flex items-center gap-3 group"
+                                    className="w-full text-left px-4 py-3 hover:bg-[var(--color-academy-line)] transition-colors flex items-center gap-3 group"
                                 >
                                     {/* 교시 뱃지 */}
-                                    <span className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
+                                    <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
                                         {slot.period}교시
                                     </span>
 
                                     {/* 시간 */}
-                                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 shrink-0">
+                                    <span className="text-sm font-semibold text-[var(--color-academy-ink)] shrink-0">
                                         {displayStart} ~ {displayEnd}
                                     </span>
                                     {/* 시간 조정 표시 */}
                                     {s.startTimeOverride && (
-                                        <span className="text-[10px] text-brand-orange-600 dark:text-brand-neon-lime shrink-0">(조정)</span>
+                                        <span className="text-[10px] text-[var(--color-academy-ink)] shrink-0">(조정)</span>
                                     )}
 
                                     {/* 레이블 (override 있을 때만) */}
                                     {s.label && (
-                                        <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">{s.label}</span>
+                                        <span className="text-xs text-[var(--color-academy-muted)] shrink-0">{s.label}</span>
                                     )}
 
                                     {/* 학년 범위 */}
                                     {slot.gradeRange && (
-                                        <span className="bg-blue-50 text-blue-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-200 shrink-0 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                                        <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[var(--color-academy-line)] shrink-0">
                                             {slot.gradeRange}
                                         </span>
                                     )}
 
                                     {/* 인원 현황 */}
                                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                                        isFull ? "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300" : "bg-green-50 text-green-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                        isFull ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                                     }`}>
                                         {slot.enrolled}/{s.capacity}명{isFull && " 마감"}
                                     </span>
 
                                     {/* 코치 */}
                                     {assignedCoach && (
-                                        <span className="flex items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full shrink-0 dark:border-orange-500/30 dark:bg-orange-500/10">
+                                        <span className="flex items-center gap-1 text-[11px] text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] px-2 py-0.5 rounded-full shrink-0">
                                             {assignedCoach.imageUrl && <img src={assignedCoach.imageUrl} className="w-3.5 h-3.5 rounded-full object-cover" alt="" />}
                                             {assignedCoach.name}
                                         </span>
@@ -708,7 +709,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
                                     {/* 숨김 상태 표시 */}
                                     {s.isHidden && (
-                                        <span className="flex items-center gap-0.5 text-[11px] text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full shrink-0 dark:text-gray-300">
+                                        <span className="flex items-center gap-0.5 text-[11px] text-[var(--color-academy-faint)] bg-[var(--color-academy-soft)] px-2 py-0.5 rounded-full shrink-0">
                                             <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>visibility_off</span>
                                             숨김
                                         </span>
@@ -716,16 +717,16 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
                                     {/* 메모 아이콘 (메모가 있을 때만) */}
                                     {s.note && (
-                                        <span className="material-symbols-outlined text-brand-orange-400 shrink-0" style={{ fontSize: "16px" }}>push_pin</span>
+                                        <span className="material-symbols-outlined text-[var(--color-academy-ink)] shrink-0" style={{ fontSize: "16px" }}>push_pin</span>
                                     )}
 
                                     {/* 수정/저장 상태 — 우측 정렬 */}
                                     <span className="ml-auto flex items-center gap-2 shrink-0">
-                                        {s.dirty && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title="미저장 변경사항" />}
-                                        {s.saved && !s.dirty && <span className="material-symbols-outlined text-green-500" style={{ fontSize: "16px" }}>check_circle</span>}
-                                        {s.error && <span className="material-symbols-outlined text-red-500" style={{ fontSize: "16px" }}>error</span>}
+                                        {s.dirty && <span className="w-2 h-2 rounded-full bg-[var(--color-academy-warning)] shrink-0" title="미저장 변경사항" />}
+                                        {s.saved && !s.dirty && <span className="material-symbols-outlined text-[var(--color-academy-success)]" style={{ fontSize: "16px" }}>check_circle</span>}
+                                        {s.error && <span className="material-symbols-outlined text-[var(--color-academy-danger)]" style={{ fontSize: "16px" }}>error</span>}
                                         {/* 편집 아이콘 (hover 시 강조) */}
-                                        <span className="material-symbols-outlined text-gray-300 group-hover:text-gray-500 dark:text-gray-400 transition-colors" style={{ fontSize: "18px" }}>chevron_right</span>
+                                        <span className="material-symbols-outlined text-[var(--color-academy-faint)] group-hover:text-[var(--color-academy-muted)] transition-colors" style={{ fontSize: "18px" }}>chevron_right</span>
                                     </span>
                                 </button>
                             );
@@ -739,38 +740,38 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                                     key={`custom-${cs.id}`}
                                     type="button"
                                     onClick={() => startEditCustom(cs)}
-                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800 transition-colors flex items-center gap-3 group"
+                                    className="w-full text-left px-4 py-3 hover:bg-[var(--color-academy-line)] transition-colors flex items-center gap-3 group"
                                 >
                                     {/* 커스텀 뱃지 */}
-                                    <span className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0">
+                                    <span className="bg-[var(--color-academy-primary)] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0">
                                         커스텀
                                     </span>
 
                                     {/* 시간 */}
-                                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 shrink-0">
+                                    <span className="text-sm font-semibold text-[var(--color-academy-ink)] shrink-0">
                                         {cs.startTime} ~ {cs.endTime}
                                     </span>
 
                                     {/* 레이블 */}
-                                    <span className="text-xs text-gray-600 dark:text-gray-300 font-medium shrink-0">{cs.label}</span>
+                                    <span className="text-xs text-[var(--color-academy-muted)] font-medium shrink-0">{cs.label}</span>
 
                                     {/* 학년 범위 */}
                                     {cs.gradeRange && (
-                                        <span className="bg-blue-50 text-blue-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-200 shrink-0 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+                                        <span className="bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[var(--color-academy-line)] shrink-0">
                                             {cs.gradeRange}
                                         </span>
                                     )}
 
                                     {/* 인원 현황 */}
                                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                                        isFull ? "bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300" : "bg-green-50 text-green-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                        isFull ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                                     }`}>
                                         {cs.enrolled}/{cs.capacity}명{isFull && " 마감"}
                                     </span>
 
                                     {/* 코치 */}
                                     {cs.coach && (
-                                        <span className="flex items-center gap-1 text-[11px] text-gray-600 dark:text-gray-300 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full shrink-0 dark:border-orange-500/30 dark:bg-orange-500/10">
+                                        <span className="flex items-center gap-1 text-[11px] text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] px-2 py-0.5 rounded-full shrink-0">
                                             {cs.coach.imageUrl && <img src={cs.coach.imageUrl} className="w-3.5 h-3.5 rounded-full object-cover" alt="" />}
                                             {cs.coach.name}
                                         </span>
@@ -778,7 +779,7 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
                                     {/* 숨김 상태 */}
                                     {cs.isHidden && (
-                                        <span className="flex items-center gap-0.5 text-[11px] text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full shrink-0 dark:text-gray-300">
+                                        <span className="flex items-center gap-0.5 text-[11px] text-[var(--color-academy-faint)] bg-[var(--color-academy-soft)] px-2 py-0.5 rounded-full shrink-0">
                                             <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>visibility_off</span>
                                             숨김
                                         </span>
@@ -786,12 +787,12 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
 
                                     {/* 메모 아이콘 */}
                                     {cs.note && (
-                                        <span className="material-symbols-outlined text-brand-orange-400 shrink-0" style={{ fontSize: "16px" }}>push_pin</span>
+                                        <span className="material-symbols-outlined text-[var(--color-academy-ink)] shrink-0" style={{ fontSize: "16px" }}>push_pin</span>
                                     )}
 
                                     {/* 우측 편집 화살표 */}
                                     <span className="ml-auto shrink-0">
-                                        <span className="material-symbols-outlined text-gray-300 group-hover:text-gray-500 dark:text-gray-400 transition-colors" style={{ fontSize: "18px" }}>chevron_right</span>
+                                        <span className="material-symbols-outlined text-[var(--color-academy-faint)] group-hover:text-[var(--color-academy-muted)] transition-colors" style={{ fontSize: "18px" }}>chevron_right</span>
                                     </span>
                                 </button>
                             );
@@ -799,14 +800,14 @@ export default function ScheduleAdminClient(props: ScheduleAdminClientProps = {}
                     </div>
 
                     {/* 요일 섹션 하단: + 수업 추가 버튼 */}
-                    <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+                    <div className="px-4 py-3 border-t border-[var(--color-academy-line)]">
                         <button
                             onClick={() => {
                                 // 해당 요일을 기본값으로 설정하고 추가 모달 열기
                                 setNewCustomForm({ ...defaultCustomSlotForm(), dayKey });
                                 setIsAddingCustom(true);
                             }}
-                            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-brand-orange-500 dark:text-brand-neon-lime font-medium transition-colors"
+                            className="flex items-center gap-1.5 text-sm text-[var(--color-academy-faint)] hover:text-[var(--color-academy-ink)] font-medium transition-colors"
                         >
                             <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>add_circle</span>
                             수업 추가

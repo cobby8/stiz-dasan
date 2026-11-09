@@ -58,12 +58,12 @@ export default async function PaymentConfirmationsPage({
     <main className="mx-auto max-w-3xl space-y-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 dark:text-white">수납 확인 요청</h1>
+          <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">수납 확인 요청</h1>
         </div>
         {rows.length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm dark:border-amber-500/30 dark:bg-amber-950/30">
-            <p className="font-black text-amber-800 dark:text-amber-200">대기 중 {rows.length}건</p>
-            <p className="text-xs text-amber-700 dark:text-amber-300">{totalAmount.toLocaleString()}원</p>
+          <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] px-4 py-2 text-sm">
+            <p className="font-black text-[var(--color-academy-warning)]">대기 중 {rows.length}건</p>
+            <p className="text-xs text-[var(--color-academy-warning)]">{totalAmount.toLocaleString()}원</p>
           </div>
         )}
       </div>
@@ -76,7 +76,7 @@ export default async function PaymentConfirmationsPage({
             <button
               name="class"
               value=""
-              className={`rounded-full px-3 py-1 text-xs font-bold ${!filterClass ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${!filterClass ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
             >
               전체 반
             </button>
@@ -85,30 +85,30 @@ export default async function PaymentConfirmationsPage({
                 key={cls}
                 name="class"
                 value={cls}
-                className={`rounded-full px-3 py-1 text-xs font-bold ${filterClass === cls ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}
+                className={`rounded-full px-3 py-1 text-xs font-bold ${filterClass === cls ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
               >
                 {cls}
               </button>
             ))}
-            <span className="mx-1 text-gray-200 dark:text-gray-700">|</span>
+            <span className="mx-1 text-[var(--color-academy-faint)]">|</span>
             <button
               name="method"
               value=""
-              className={`rounded-full px-3 py-1 text-xs font-bold ${!filterMethod ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${!filterMethod ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
             >
               전체
             </button>
             <button
               name="method"
               value="CASH"
-              className={`rounded-full px-3 py-1 text-xs font-bold ${filterMethod === "CASH" ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${filterMethod === "CASH" ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
             >
               현금
             </button>
             <button
               name="method"
               value="BANK_TRANSFER"
-              className={`rounded-full px-3 py-1 text-xs font-bold ${filterMethod === "BANK_TRANSFER" ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}
+              className={`rounded-full px-3 py-1 text-xs font-bold ${filterMethod === "BANK_TRANSFER" ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}
             >
               계좌이체
             </button>
@@ -117,23 +117,23 @@ export default async function PaymentConfirmationsPage({
       )}
 
       {filtered.length === 0 ? (
-        <p className="rounded-xl border border-gray-200 p-6 text-center text-gray-500 dark:border-gray-700 dark:text-gray-400">
+        <p className="rounded-xl border border-[var(--color-academy-line)] p-6 text-center text-[var(--color-academy-muted)]">
           {rows.length === 0 ? "대기 중인 수납 확인 요청이 없습니다." : "선택한 조건에 해당하는 요청이 없습니다."}
         </p>
       ) : (
         <div className="space-y-3">
           {filtered.map((r) => (
-            <article key={r.id} className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
+            <article key={r.id} className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h2 className="font-black text-gray-900 dark:text-white">
+                  <h2 className="font-black text-[var(--color-academy-ink)]">
                     {r.studentName}
-                    <span className="ml-2 text-[var(--brand-accent)]">{r.amount.toLocaleString()}원</span>
+                    <span className="ml-2 font-bold text-[var(--color-academy-ink)]">{r.amount.toLocaleString()}원</span>
                   </h2>
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                     {r.className} · {r.staffName} 코치 · {METHOD_LABEL[r.method] ?? r.method}
                   </p>
-                  <p className="mt-1 text-sm font-bold text-gray-700 dark:text-gray-200">
+                  <p className="mt-1 text-sm font-bold text-[var(--color-academy-muted)]">
                     수납일{" "}
                     {new Intl.DateTimeFormat("ko-KR", {
                       dateStyle: "medium",
@@ -150,7 +150,7 @@ export default async function PaymentConfirmationsPage({
                   >
                     <button
                       type="submit"
-                      className="min-h-10 rounded-xl border border-gray-200 px-4 text-sm font-bold text-gray-700 hover:border-red-300 hover:text-red-600 dark:border-gray-700 dark:text-gray-200"
+                      className="min-h-10 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line)] hover:text-[var(--color-academy-danger)]"
                     >
                       반려
                     </button>
@@ -163,7 +163,7 @@ export default async function PaymentConfirmationsPage({
                   >
                     <button
                       type="submit"
-                      className="min-h-10 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-black text-[var(--brand-accent-contrast)]"
+                      className="min-h-10 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-black text-[var(--color-academy-on-primary)]"
                     >
                       납부 승인
                     </button>
@@ -171,7 +171,7 @@ export default async function PaymentConfirmationsPage({
                 </div>
               </div>
               {r.note && (
-                <p className="mt-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                <p className="mt-3 rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">
                   {r.note}
                 </p>
               )}

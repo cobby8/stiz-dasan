@@ -69,48 +69,48 @@ function ProgramsLoadingFallback() {
         <div className="space-y-8">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-44 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-44 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="h-10 w-28 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700" />
-                    <div className="h-10 w-32 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-700" />
+                    <div className="h-10 w-28 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
+                    <div className="h-10 w-32 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
                 </div>
             </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                <div className="h-5 w-64 animate-pulse rounded bg-blue-100" />
+            <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-4">
+                <div className="h-5 w-64 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 <div className="mt-3 flex flex-wrap gap-3">
                     {Array.from({ length: 4 }).map((_, index) => (
                         <div key={index} className="h-8 w-36 animate-pulse rounded-lg bg-white" />
                     ))}
                 </div>
             </div>
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center justify-between gap-4 border-b border-gray-100 bg-gray-50 px-6 py-4 dark:border-gray-800 dark:bg-gray-900/50">
-                    <div className="h-6 w-44 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="h-4 w-44 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+            <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
+                <div className="flex items-center justify-between gap-4 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-6 py-4">
+                    <div className="h-6 w-44 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                    <div className="h-4 w-44 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="divide-y divide-[var(--color-academy-line)]">
                     {Array.from({ length: 5 }).map((_, index) => (
                         <div key={index} className="flex">
-                            <div className="w-10 border-r border-gray-100 dark:border-gray-800">
-                                <div className="mx-auto mt-6 h-5 w-5 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                            <div className="w-10 border-r border-[var(--color-academy-line)]">
+                                <div className="mx-auto mt-6 h-5 w-5 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                             </div>
                             <div className="flex-1 p-5">
                                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                                     <div className="min-w-0 flex-1 space-y-3">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <div className="h-6 w-6 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
-                                            <div className="h-6 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                                            <div className="h-5 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
-                                            <div className="h-5 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                            <div className="h-6 w-6 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                            <div className="h-6 w-40 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                            <div className="h-5 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                            <div className="h-5 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                                         </div>
-                                        <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                                        <div className="h-4 w-1/2 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                        <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                        <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                     </div>
                                     <div className="flex gap-2">
-                                        <div className="h-8 w-14 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                        <div className="h-8 w-14 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                                        <div className="h-8 w-14 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                        <div className="h-8 w-14 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                                     </div>
                                 </div>
                             </div>
@@ -124,8 +124,8 @@ function ProgramsLoadingFallback() {
 
 function ProgramsErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">프로그램 목록을 불러오지 못했습니다.</p>
+        <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">프로그램 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -250,13 +250,13 @@ export default function ProgramsAdminClient({
         <div className="space-y-8">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">프로그램 관리</h1>
+                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">프로그램 관리</h1>
                 </div>
                 {/* 시드 내보내기 버튼 제거: 사이드바 백업 메뉴에 동일 기능이 이미 있다 */}
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setShowAddModal(true)}
-                        className="flex-shrink-0 flex items-center gap-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 hover:bg-orange-600 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition shadow-sm"
+                        className="flex-shrink-0 flex items-center gap-2 bg-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-hover)] text-white font-bold text-sm px-4 py-2.5 rounded-xl transition shadow-sm"
                     >
                         <span className="text-lg leading-none">+</span>
                         프로그램 등록
@@ -274,13 +274,13 @@ export default function ProgramsAdminClient({
                 >
                     {/* Dialog */}
                     <div className="w-full">
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-800 z-10 rounded-t-2xl">
-                            <h2 id="add-program-title" className="text-lg font-bold text-gray-900 dark:text-white">새 프로그램 등록</h2>
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)] sticky top-0 bg-white z-10 rounded-t-2xl">
+                            <h2 id="add-program-title" className="text-lg font-bold text-[var(--color-academy-ink)]">새 프로그램 등록</h2>
                             <button
                                 type="button"
                                 onClick={() => setShowAddModal(false)}
                                 disabled={formPending}
-                                className="text-gray-400 hover:text-gray-600 dark:text-gray-300 transition text-xl leading-none px-1"
+                                className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] transition text-xl leading-none px-1"
                             >
                                 ✕
                             </button>
@@ -335,7 +335,7 @@ export default function ProgramsAdminClient({
                             >
                                 {editId === program.id ? (
                                     <div className="p-6">
-                                        <p className="text-sm font-bold text-blue-700 mb-3">수정 중...</p>
+                                        <p className="text-sm font-bold text-[var(--color-academy-muted)] mb-3">수정 중...</p>
                                         <ProgramFormPanel
                                             mode="edit"
                                             program={program}
@@ -465,7 +465,7 @@ function ProgramRowInline({
             {/* 관리: 수정 · 삭제(확인/취소 두 단계) — 기존 함수·순서 그대로 */}
             <span className="flex items-center justify-center gap-0.5 px-1" onClick={(event) => event.stopPropagation()}>
                 <button type="button" onClick={onEdit}
-                    className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-primary)] transition hover:bg-[var(--color-academy-soft)]">
+                    className="min-h-11 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-ink)] transition hover:bg-[var(--color-academy-soft)]">
                     수정
                 </button>
                 {isDeleting ? (
@@ -534,7 +534,7 @@ function ProgramDetailContent({
                                     <li key={t.key} className="flex flex-wrap items-baseline gap-x-2">
                                         <span className="w-14 text-xs text-[var(--color-academy-muted)]">{t.label}</span>
                                         <strong className="tabular-nums">{Number(program[t.key]).toLocaleString()}원</strong>
-                                        {fee && <span className="text-xs tabular-nums text-[var(--color-academy-primary)]">+ 셔틀 {fee}</span>}
+                                        {fee && <span className="text-xs tabular-nums text-[var(--color-academy-ink)]">+ 셔틀 {fee}</span>}
                                     </li>
                                 );
                             })}

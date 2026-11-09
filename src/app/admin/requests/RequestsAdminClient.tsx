@@ -10,14 +10,14 @@ import { formatKstDate, kstLabel } from "@/lib/datetime/kst";
 // 종류·상태 색은 CSS 변수 토큰(다크 모드도 토큰이 바뀐다)
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
     ABSENCE: { label: "결석 신청", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
-    SHUTTLE: { label: "셔틀 변경", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    SHUTTLE: { label: "셔틀 변경", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]" },
     EARLY_LEAVE: { label: "조퇴 요청", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
     OTHER: { label: "기타", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
 };
 
 const STATUS_OPTIONS = [
     { value: "PENDING", label: "대기중", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]", iconName: "schedule" },
-    { value: "CONFIRMED", label: "확인됨", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]", iconName: "check_circle" },
+    { value: "CONFIRMED", label: "확인됨", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]", iconName: "check_circle" },
     { value: "COMPLETED", label: "상담 종결", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]", iconName: "check_circle" },
     { value: "REJECTED", label: "반려", color: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]", iconName: "cancel" },
 ];
@@ -110,14 +110,14 @@ function RequestsLoadingFallback() {
     return (
         <div className="mx-auto max-w-4xl space-y-6">
             <div>
-                <div className="h-8 w-56 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                <div className="h-8 w-56 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
             </div>
             <div className="flex flex-wrap gap-2">
                 {Array.from({ length: 4 }).map((_, index) => (
                     <div
                         key={index}
-                        className="h-10 w-24 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-700"
+                        className="h-10 w-24 animate-pulse rounded-xl bg-[var(--color-academy-soft)]"
                     />
                 ))}
             </div>
@@ -125,18 +125,18 @@ function RequestsLoadingFallback() {
                 {Array.from({ length: 5 }).map((_, index) => (
                     <div
                         key={index}
-                        className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-800"
+                        className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white shadow-sm"
                     >
                         <div className="flex items-center gap-3 px-5 py-4">
-                            <div className="h-9 w-9 flex-shrink-0 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                            <div className="h-9 w-9 flex-shrink-0 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                             <div className="min-w-0 flex-1 space-y-2">
                                 <div className="flex gap-2">
-                                    <div className="h-5 w-20 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-5 w-48 max-w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                    <div className="h-5 w-20 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                    <div className="h-5 w-48 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                 </div>
-                                <div className="h-4 w-64 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-4 w-64 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                             </div>
-                            <div className="h-5 w-5 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                            <div className="h-5 w-5 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                         </div>
                     </div>
                 ))}
@@ -147,8 +147,8 @@ function RequestsLoadingFallback() {
 
 function RequestsErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="mx-auto max-w-4xl rounded-2xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">요청 목록을 불러오지 못했습니다.</p>
+        <div className="mx-auto max-w-4xl rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">요청 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -412,7 +412,7 @@ export default function RequestsAdminClient({
                                 {req.parentPhone && (
                                     <>
                                         <dt className="font-bold text-[var(--color-academy-muted)]">연락처</dt>
-                                        <dd><a href={`tel:${req.parentPhone}`} className="inline-flex min-h-11 items-center font-bold tabular-nums text-[var(--color-academy-primary)]">{req.parentPhone}</a></dd>
+                                        <dd><a href={`tel:${req.parentPhone}`} className="inline-flex min-h-11 items-center font-bold tabular-nums text-[var(--color-academy-ink)]">{req.parentPhone}</a></dd>
                                     </>
                                 )}
                             </dl>

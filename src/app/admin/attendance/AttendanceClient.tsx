@@ -72,8 +72,8 @@ function KindBadge({ item }: { item: ClassItem }) {
     const isSeasonal = item.kind === "SEASONAL";
     return (
         <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${isSeasonal
-            ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
-            : "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"}`}
+            ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"
+            : "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"}`}
         >
             {isSeasonal ? "특강" : "정규"}
         </span>
@@ -404,7 +404,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                 type="button"
                                 onClick={closeLesson}
                                 aria-label="닫기"
-                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             >
                                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
                             </button>
@@ -452,7 +452,7 @@ export default function AttendanceClient({ classes: initialClasses }: { classes?
                                 <button
                                     type="button"
                                     onClick={() => markAll("PRESENT")}
-                                    className="ml-auto inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)]"
+                                    className="ml-auto inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
                                 >
                                     전체 출석 처리
                                 </button>

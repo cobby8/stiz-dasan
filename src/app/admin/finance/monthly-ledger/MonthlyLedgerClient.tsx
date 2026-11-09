@@ -59,7 +59,7 @@ export default function MonthlyLedgerClient({ initialMonth }: { initialMonth: st
         <h1 className="text-2xl font-bold">월별·반별 장부 점검</h1>
         <p className="mt-2">저장된 청구·납부 기록을 학생과 반별로 나눠 확인합니다. 조회만 하며 청구서나 문자를 만들지 않습니다.</p>
       </header>
-      <div className="rounded-lg border border-[var(--color-brand-orange-500)] p-4 text-sm">
+      <div className="rounded-lg border border-[var(--color-academy-primary)] p-4 text-sm">
         현재 수강 목록은 조회 월의 확정 명부가 아닙니다. 할인·이월·일할계산을 추측하지 않으며, 이 화면만으로 시트를 중단하거나 청구 금액을 확정할 수 없습니다.
       </div>
       <div className="flex flex-wrap items-end gap-3">
