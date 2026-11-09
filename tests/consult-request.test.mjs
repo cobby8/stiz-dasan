@@ -272,7 +272,8 @@ test("연결 지점: /apply 세 번째 칸 · 챗봇 [ACTION:CONSULT] · 학부�
   assert.match(chat, /"\/apply\/consult\?from=chatbot"/);
   assert.match(chat, /응답 맨 끝에 \[ACTION:CONSULT\] 태그/);
   assert.match(read("src/app/apply/consult/page.tsx"), /from\?\.toLowerCase\(\) === "chatbot" \? "CHATBOT"/);
-  assert.match(read("src/app/mypage/ParentMoreMenu.tsx"), /href: "\/mypage\/consult"/);
+  // «⋯» 메뉴(ParentMoreMenu)는 ⚙ 설정 화면으로 바뀌었다 — 상담 링크는 설정 화면에 있다(통합 11-10)
+  assert.match(read("src/app/mypage/settings/page.tsx"), /href="\/mypage\/consult"/);
   const consultPage = read("src/app/mypage/consult/page.tsx");
   assert.match(consultPage, /requireVerifiedParent\(\)/);
   const inbox = read("src/lib/requests/consult-inbox.ts");
