@@ -188,3 +188,22 @@ export function countRecentNotices(notices: { createdAt: Date | string }[], nowM
         return Number.isFinite(at) && at >= since;
     }).length;
 }
+
+/**
+ * 옛 홈 해시 → 새 탭 주소(2026-11-09 학부모 화면 구조 개편).
+ * 예전 홈 접힌 칸(셔틀·수강·기록·결석·피드백)은 «일정»·«소식» 탭으로 옮겼다.
+ * 문자·즐겨찾기로 남은 /mypage#mypage-shuttle 같은 주소가 빈 홈에 멈추지 않게 그 칸으로 넘긴다. 모르는 해시면 null.
+ */
+export function legacyHomeHashTarget(hash: string): string | null {
+    const id = String(hash ?? "").replace(/^#/, "");
+    const map: Record<string, string> = {
+        "mypage-enrollments": "/mypage/history#mypage-enrollments",
+        "mypage-shuttle": "/mypage/history#mypage-shuttle",
+        "parent-absence-hub": "/mypage/history",
+        "mypage-records": "/mypage/history#schedule-records-heading",
+        "mypage-feedback": "/mypage/reports#news-feedback",
+        "mypage-notices": "/mypage/reports#news-notices",
+        "mypage-gallery": "/mypage/reports#news-photos",
+    };
+    return Object.prototype.hasOwnProperty.call(map, id) ? map[id] : null;
+}

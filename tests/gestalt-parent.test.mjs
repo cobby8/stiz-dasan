@@ -217,18 +217,18 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
 
 // 옛 «결제 심사 중 — 홈 수납 블록 손대지 않음(보류)» 검사는 카드사 심사가 끝나(2026-11-07 국내 9개사 승인)
 // 보류가 풀렸고, 원장 결정(2026-11-09 D1 안 A)으로 건별 빨간 카드를 «합계 한 줄»로 바꿔 아래 검사로 대신한다.
-test("홈 맨 위 = «납부할 청구 N건 · 합계» 한 줄, 꽉 찬 버튼은 그 하나(→ 청구 탭), 건별 카드·접힌 기록 칸은 없다", () => {
+test("홈 맨 위 = «납부할 청구 N건 · 합계» 한 줄, 꽉 찬 버튼은 그 하나(→ 한 번에 결제), 건별 카드·접힌 기록 칸은 없다", () => {
   const home = read("src/app/mypage/MyPageClient.tsx");
-  assert.match(home, /const PAYMENT_HOME_HREF = "\/mypage\/payments";/, "묶음 결제 갈래에서 이 주소만 바꾼다");
+  assert.match(home, /const PAYMENT_HOME_HREF = "\/mypage\/payments\/checkout";/, "묶음 결제(한 번에 결제) 화면으로");
   assert.match(home, /납부할 청구 <span className="tabular-nums">\{paySummary\.count\}<\/span>건/);
-  assert.match(home, /<Link href=\{PAYMENT_HOME_HREF\} className="academy-button-primary shrink-0">청구 보기<\/Link>/);
+  assert.match(home, /<Link href=\{paySummary\.canCheckoutAny \? PAYMENT_HOME_HREF : PAYMENT_LIST_HREF\} className="academy-button-primary shrink-0">/);
   // 홈에서 꽉 찬 버튼은 청구 보기 + 폼 안 최종 «메시지 보내기» 두 곳뿐(폼은 «문의»를 눌러야 보인다)
   assert.equal((home.match(/academy-button-primary/g) || []).length, 2);
   assert.doesNotMatch(home, /청구서 확인하고 납부하기/);
   assert.doesNotMatch(home, /<details/, "접힌 칸(details)은 일정·소식 탭으로 옮겼다");
   assert.doesNotMatch(home, /#parent-absence-hub/, "«결석·보강»을 누르면 맨 아래로 뛰던 동작 제거");
   // 무통장입금 계좌는 홈에 계속 보인다(청구 목록 화면엔 계좌 칸이 없다)
-  assert.match(home, /<VirtualAccountNotice compact account=\{p\.virtualAccount\} \/>/);
+  assert.match(home, /<VirtualAccountNotice compact account=\{entry\.account\} \/>/);
   // 빠른 실행 4개
   const quick = home.slice(home.indexOf('aria-label="빠른 실행"'), home.indexOf("</nav>", home.indexOf('aria-label="빠른 실행"')));
   for (const label of ["결석 알리기", "보강 예약", "셔틀 변경", "문의"]) assert.ok(quick.includes(label), label);

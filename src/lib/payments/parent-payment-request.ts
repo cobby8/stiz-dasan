@@ -8,6 +8,8 @@ import {
 } from "@/lib/payments/parentRequestRules";
 import { MAX_BUNDLE_ITEMS } from "@/lib/payments/checkoutBundle";
 import { todayKst } from "@/lib/datetime/kst";
+import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { parentVirtualAccountView, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 
 // ── 학부모의 청구서 요청(입금 확인·영수증) ──────────────────────────────────
 //
@@ -41,11 +43,27 @@ export type ParentPaymentRow = {
   /** 결제 담당(대표) 보호자인가 — 마이페이지 홈과 같은 기준(학생의 parentId 가 본인). 연결 가족은 결제 버튼 대신 안내만 본다. */
   canCheckout: boolean;
   receiptUrl: string | null;
+  /**
+   * 무통장입금 계좌(입금 대기·만료) — 대표 보호자에게만. 묶음 결제 계좌면 amount 가 이 청구 금액보다 크다(합계).
+   * 마이페이지 홈 «납부할 청구» 줄이 같은 기준(이 목록)으로 계좌를 보여 준다(2026-11-09).
+   */
+  virtualAccount: PublicVirtualAccountView | null;
   /** 진행 중인 요청(종류별로 최대 한 건씩) */
   pending: { id: string; kind: string; createdAt: string }[];
   /** 처리 완료된 최근 요청 — 학부모가 결과를 확인할 수 있게 */
   resolved: { id: string; kind: string; status: string; decisionNote: string | null; decidedAt: string | null }[];
 };
+
+// 최근 입금 계좌(단건·묶음) — queries.ts 의 PARENT_VIRTUAL_ACCOUNT_LATERAL 과 같은 범위. secret(depositSecretHash)은 고르지 않는다
+const PARENT_VA_LATERAL = `LEFT JOIN LATERAL (
+         SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
+           FROM "PaymentTransaction" t
+          WHERE ${txCoversPaymentSql("t", "p.id")}
+            AND t.status IN ('WAITING_FOR_DEPOSIT', 'EXPIRED')
+            AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
+          ORDER BY t."createdAt" DESC
+          LIMIT 1
+       ) va ON true`;
 
 export async function getParentPaymentRequests(parentUserId: string): Promise<ParentPaymentRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -54,10 +72,12 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
             to_char(p."dueDate",'YYYY-MM-DD') AS "dueDate",
             to_char(p."paidDate",'YYYY-MM-DD') AS "paidDate",
             i."invoiceNo", i.id AS "invoiceId",
-            (s."parentId" = $1) AS "canCheckout"
+            (s."parentId" = $1) AS "canCheckout",
+            va.status AS "vaStatus", va.issue AS "vaIssue"
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
        LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+       ${PARENT_VA_LATERAL}
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
         AND p.status <> 'CANCELED'
       ORDER BY p."dueDate" DESC NULLS LAST
@@ -90,6 +110,8 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
     invoiceId: row.invoiceId ?? null,
     canCheckout: row.canCheckout === true,
     receiptUrl: row.receiptUrl ?? null,
+    // 계좌는 결제 담당(대표) 보호자에게만 — 연결 가족에게는 보이지 않는다(홈 getMyPageData 와 같은 규칙)
+    virtualAccount: row.canCheckout === true ? parentVirtualAccountView(row.status, row.vaStatus, row.vaIssue, Date.now()) : null,
     pending: requests
       .filter((item) => item.paymentId === row.paymentId && item.status === "PENDING")
       .map((item) => ({ id: item.id, kind: item.kind, createdAt: item.createdAt })),

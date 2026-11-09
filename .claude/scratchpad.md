@@ -97,53 +97,31 @@
 
 ---
 
-## 구현 기록 (developer) — 학부모 화면 구조 갈래 B (11-09)
-
-📝 원장 결정 D1 안 A·D6·D7·D8. 기존 주소 전부 유지(문자 링크 보호). 결제 서버(payment-ledger·lib/payments·app/payments·결제 API) 무수정.
-
-| 파일 | 변경 | 신규/수정 |
-|---|---|---|
-| src/app/mypage/MyPageBottomNav.tsx | PARENT_TABS 4개·isParentTabActive(하위 화면 소속 탭)·variant top(PC) | 수정 |
-| src/app/mypage/ParentMoreMenu.tsx | «⋯» 메뉴(알림·자녀 연결·간편로그인·로그아웃) | 신규 |
-| src/app/mypage/layout.tsx | 로그아웃 → ⋯ 메뉴, PC 4탭 메뉴, «홈으로»→«홈페이지» | 수정 |
-| src/app/mypage/MyPageClient.tsx | 홈=납부 합계 한 줄(PAYMENT_HOME_HREF)+히어로+처리할 일+빠른 실행 4, 접힌 칸·공지·사진·피드백·기록 제거 | 수정 |
-| src/app/mypage/page.tsx | 사진·피드백 조회 제거, 보강권·방학특강 회차 조회 추가 | 수정 |
-| src/app/mypage/ParentShuttleDetail.tsx | 셔틀 배정 상세(홈 접힌 칸에서 이동) | 신규 |
-| src/app/mypage/history/ScheduleHub.tsx · page.tsx · HistoryClient.tsx | 일정 탭 윗부분, embedded, toDateStr KST | 신규/수정 |
-| src/app/mypage/reports/page.tsx | 소식 탭(공지·리포트·피드백·사진, 칩 앵커) | 수정 |
-| src/app/mypage/news/[id]/page.tsx | 앱 안 공지 상세(전체·우리 반 공지만, sanitize) | 신규 |
-| src/lib/mypage/summary.ts | summarizePendingPayments·countRecentAnswers·countRecentNotices | 수정 |
-| tests/parent-app-structure·mypage-home-todo (신규) + 기존 9개 위치 갱신 · kst 가드 R1 21→19 | | |
-
-💡 tester: 휴대폰 390px 홈 첫 화면(청구 있을 때/없을 때), 하위 화면에서 탭 켜짐, ⋯ 메뉴 «알림» → 홈 알림 펼침, 일정 탭 #mypage-shuttle 이동, 소식 공지 → /mypage/news/[id](설치 앱 주소창 안 뜸), 남의 반 공지 id 직접 입력 → 404.
-⚠️ reviewer: 홈 청구 합계는 getMyPageData 자녀별 최근 5건 기준(청구 탭은 60건) · 공지 상세 반 판정은 getMyPageData 의 ACTIVE 수강 기준 · /payments/[invoiceId] formatDate(시간대 없는 toLocaleDateString) 는 결제 담당 영역이라 미수정.
-
-## 구현 기록 (developer) — 묶음 결제 갈래 A(서버·데이터, 2026-11-09)
-📝 학부모 청구 «묶음 결제» 서버: 순수 규칙·장부 연결부·결제 장부 갈래·API·묶음 입금 알림·마이그레이션 파일(적용 전). 화면은 다음 갈래.
+## 구현 기록 (developer) — 묶음 결제 화면 갈래 C + B 리뷰 반영 (11-09)
+📝 갈래 B·A(구현 기록은 작업 로그 줄로 요약)를 main 위에 합치고 «한 번에 결제» 화면을 붙였다.
 
 | 파일 | 변경 | 신규/수정 |
 |---|---|---|
-| src/lib/payments/checkoutBundle.ts | 자격·상한·정렬·면세 합·주문 이름/번호·확정/취소 판정 | 신규 |
-| src/lib/payments/bundleLedger.ts | db 인자 묶음 확정·환불, 항목 포함 SQL 조각 | 신규 |
-| src/lib/payment-ledger.ts | 확정/전액취소 묶음 갈래, 승인 전 재확인, 랠리즈 사본 차단, 열린 계좌 조회·닫기 항목 포함, 묶음 시작·후보·주문 요약 | 수정 |
-| src/lib/queries.ts | 마이페이지·관리자 수납 거래 lateral 항목 포함 | 수정 |
-| src/lib/payments/parent-payment-request.ts · api/mypage/payment-request | 묶음 «입금했어요»(submit-bundle) | 수정 |
-| src/app/api/mypage/payments/checkout · confirm | 화면 갈래용 API | 신규 |
-| prisma/migrations/20261109150000_payment_transaction_items · schema.prisma | 항목 표(추가만) | 신규/수정 |
-| tests/payment-bundle-checkout.test.mjs · toss-virtual-account(닫기 함수 분리 반영) · studentVisibility(2→3) | 테스트 | 신규/수정 |
+| src/app/mypage/payments/checkout/page.tsx · BundleCheckoutClient.tsx | 미납 체크(selectable 기본 체크·막힘 이유)·합계·상한 안내·결제 방식·토스 창(taxFreeAmount=서버 값)·열린 계좌 충돌 확인·계좌 복사·묶음 «입금했어요» | 신규 |
+| src/app/mypage/payments/done/page.tsx · BundleDoneClient.tsx | 승인/조회 → 성공·입금 대기·확인 중·실패 + 항목·영수증, CONFIRM_IN_PROGRESS 등은 납부 내역 확인 | 신규 |
+| src/app/mypage/MyPageClient.tsx · page.tsx | 청구 줄 = 청구 탭 목록 기준(pendingPayments), [한 번에 결제]/[결제하기]/연결 가족 [청구 보기], 묶음 계좌 1회 표시, 옛 해시 → 탭 | 수정 |
+| src/lib/payments/parent-payment-request.ts | 청구 행에 virtualAccount(단건·묶음, 대표 보호자만) | 수정 |
+| src/app/mypage/payments/PaymentRequestClient.tsx | [한 번에 결제] 진입 줄 + 행별 계좌·«묶은 계좌 · 합계» | 수정 |
+| src/app/payments/[invoiceId]/page.tsx | formatKstDate, 묶음 계좌 합계 안내 | 수정 |
+| src/lib/noticeTargets.ts + queries·news/[id]·NoticesAdminClient | 대상 반 쉼표/JSON 둘 다 읽는 공용 파서, 공지 상세 ALL·CLASS 외 404 | 신규/수정 |
+| src/lib/mypage/summary.ts | legacyHomeHashTarget | 수정 |
+| src/lib/payments/admin-payment-request.ts | 납부 신청 승인 provider MANUAL | 수정 |
+| ScheduleHub·reports/page·scripts/test-parent-workspace-browser.mjs | startsLater 안내·전체보기 44px·옛 앵커 갱신 | 수정 |
+| tests/payment-bundle-ui.test.mjs(신규) + parent-app-structure·gestalt-parent·parent-child-links-ui·scheduled-enrollment-ui | | |
 
-💡 tester: 가짜 prisma·fetch 실행 테스트 30건. 실결제는 마이그레이션 적용 후 소액(카드 2건·무통장 2건·전액 취소).
-⚠️ reviewer: finalizeVerifiedBundlePayment 의 무통장/카드 갈림, createBundleCheckoutSession 의 열린 계좌 처리(같은 묶음이면 계좌 반환·다르면 확인 후 닫기).
-
-#### 수정 이력
-| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
-|---|---|---|---|---|
-| 1차 | 11-09 | 토스 승인 직전 짧은 트랜잭션에서 청구 id 정렬순 advisory 잠금 → 재확인(미납·랠리즈·다른 주문 승인 중 10분·다른 입금 대기 계좌) → IN_PROGRESS 표시(claimTossConfirmInTx, 단건·묶음 공용) / 단건·묶음 결제 시작의 열린 계좌 재확인+주문 생성을 같은 잠금 안에 / 전액 취소는 그 주문(paidProvider TOSS+providerOrderId)으로 낸 청구만 환불, 나머지는 건너뛰고 원장 확인. 새 오류 코드 CONFIRM_IN_PROGRESS·OPEN_DEPOSIT_EXISTS. 마이그레이션 변경 없음 | bundleLedger.ts·checkoutBundle.ts·payment-ledger.ts·tests | 보안 리뷰 M1·M2·L1 |
+💡 tester: 390px 에서 /mypage/payments/checkout(형제 2명·랠리즈 1건·입금 대기 1건), 상한 초과, ?result=fail, /mypage/payments/done?orderId= 새로고침. 실결제 금지 — 토스 테스트 키로만.
+⚠️ reviewer: 브라우저 스크립트(test-parent-workspace-browser.mjs)는 실행 못 함(playwright·크롬 필요). 관리자 공지 편집이 선생님 JSON 공지를 쉼표로 다시 저장할 수 있음(표시는 정상).
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(묶음 결제 화면 갈래 C + B 리뷰 반영): B·A·보안수정 cherry-pick 후 main 수강 기준(startsLater) 충돌 해결, /mypage/payments/checkout·done, 홈 청구 줄=청구 탭 기준·[한 번에 결제], 단건 KST·묶음 계좌 안내, 공지 대상 반 공용 파서·상세 ALL/CLASS만, 옛 해시→탭, 납부 신청 승인 MANUAL. tsc 0·tests 3606-0·studentVisibility·KST 가드 통과 | 완료(검수 대기) |
 | 11-09 | developer(묶음 결제 갈래 A — 서버·데이터): PaymentTransactionItem(마이그레이션 20261109150000, 미적용)·checkoutBundle 규칙·bundleLedger(전부 아니면 전무·전액 취소 전부 환불)·확정/취소 묶음 갈래·승인 전 재확인·랠리즈 사본 차단(단건·묶음)·단건 열린 계좌 조회/닫기·마이페이지/관리자 lateral 이 항목까지 봄·API /api/mypage/payments/checkout·confirm·묶음 입금 알림. tsc 0·tests 3560-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
 | 11-09 | tester(8144e6c7+e2b02a6d): tsc 0·tests 3546-0·가드 통과, 모의 24 통과. 권장: 이동→삭제 시 NEEDS_CHECK 잔류 | 통과(권장 1) |
@@ -154,5 +132,3 @@
 | 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(원생 등록 3차, 원장 실사용 4건): ① 반 줄 대상 학년(슬롯 gradeRange→직접 슬롯→Program.targetAge) ② 셔틀 장소명 필수 — lib/shuttle/placeNameRule.ts·지도 창 requirePlaceName(등록 창·학부모 /shuttle/location/[token]만)·서버 validateRegularLocation·등록 규칙 거부 ③ 유니폼 선택칸 삭제 → 보호자 번호+학생 이름 일치 UniformOrder 로 등록 시 자동(주문/신청)·요약 표시 ④ 사진 동의 체크박스(IN_PERSON 기본, 범위 3칸 기본 켬). tsc 0·tests 3526-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | tester(claude/rental-evening): 평일 20:40~22:10 수업 무시·평일 마감 22:10 규칙 — 대관 테스트 3파일 기대값을 원장 규칙에서 직접 계산해 수정(7건)+새 테스트 3개(평일 저녁 90분 가능·100/120분 불가, 저녁 승인대관 막힘, 토 21:10 불가·22:00 마감). 대관 69-0·전체 3520-0·tsc 0 | 통과 |
-| 11-09 | developer: 기사님 셔틀 결석 아이 «빼지 말고 뱃지» — 정규 결석(학부모 신고·출석부 질병 모두) 행 유지·«결석·질병» 뱃지·흐린 행·기본 결석(탑승 누르면 체크)·정차 «결석 N명·정차 안 해도 됨». 판정 riderBoardingView/stopAbsenceSummary. tests 3507-0·guards 5-0 | 검수대기 |

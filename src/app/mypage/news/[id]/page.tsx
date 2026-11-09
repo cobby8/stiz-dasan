@@ -5,6 +5,7 @@ import { getMyPageData, getNoticeById } from "@/lib/queries";
 import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeContent";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 
 // 학부모 앱 안의 공지 상세 (2026-11-09 — 설치 앱 범위 문제).
 // 공개 홈페이지의 /notices/[id] 는 설치된 학부모 앱의 범위(/mypage) 밖이라, 누르면 주소창이 뜨고
@@ -23,8 +24,11 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
     const classIds = new Set(
         (data?.children ?? []).flatMap((c) => c.enrollments.map((e: { classId: string | null }) => e.classId).filter(Boolean) as string[]),
     );
+    // 전체·반 공지 말고 다른 대상(예: 직원 공지)은 학부모에게 보이지 않는다
+    if (notice.targetType !== "ALL" && notice.targetType !== "CLASS") notFound();
     if (notice.targetType === "CLASS") {
-        const targets = String(notice.targetClassIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        // 관리자 공지 = 쉼표 문자열, 선생님 반 공지 = JSON 배열 — 공용 파서로 둘 다 읽는다
+        const targets = parseNoticeTargetClassIds(notice.targetClassIds);
         if (!targets.some((cid) => classIds.has(cid))) notFound();
     }
 

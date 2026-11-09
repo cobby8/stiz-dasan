@@ -89,7 +89,7 @@ test("③ 홈: 납부할 청구 합계 한 줄(형제 합산) + 꽉 찬 버튼 1
   });
   assert.match(html, /납부할 청구 <span class="tabular-nums">2<\/span>건/);
   assert.match(html, /합계 230,000원/);
-  assert.match(html, /href="\/mypage\/payments" class="academy-button-primary shrink-0">청구 보기/);
+  assert.match(html, /href="\/mypage\/payments\/checkout" class="academy-button-primary shrink-0">한 번에 결제/, "2건 이상 = 한 번에 결제 화면");
   assert.equal((html.match(/academy-button-primary/g) || []).length, 1, "꽉 찬 버튼은 하나(문의 폼은 닫혀 있다)");
   assert.match(html, /계좌 000-111/, "무통장입금 계좌는 홈에서 계속 보인다");
   assert.ok(html.indexOf("납부할 청구") < html.indexOf("합성 첫째 학생"), "돈 낼 게 있으면 맨 위");
@@ -101,6 +101,34 @@ test("③ 홈: 납부할 청구 합계 한 줄(형제 합산) + 꽉 찬 버튼 1
   assert.match(html, /셔틀 변경/);
   assert.match(html, /문의/);
   assert.doesNotMatch(html, /<details/);
+});
+
+test("③ 홈: 청구 합계는 청구 탭과 같은 목록(pendingPayments) 기준 — 묶음 계좌는 한 번만, 연결 가족은 청구 보기", () => {
+  const bundleVa = { bankName: "합성은행", accountNumber: "999-000", customerName: null, amount: 300000, dueDate: "2026-11-20", dueLabel: "", expired: false };
+  // getMyPageData 는 최근 5건만 오므로 자녀 목록엔 1건뿐이어도, 청구 탭 기준 목록이 3건이면 3건으로 센다
+  const html = renderHome({
+    data: { parent: { id: "p" }, children: [childA([{ id: "p1", amount: 100000, status: "PENDING", dueDate: "2026-11-10", paidDate: null }])] },
+    pendingPayments: [
+      { id: "p1", amount: 100000, status: "PENDING", canCheckout: true, virtualAccount: bundleVa },
+      { id: "p2", amount: 150000, status: "OVERDUE", canCheckout: true, virtualAccount: bundleVa },
+      { id: "p3", amount: 50000, status: "PENDING", canCheckout: true, virtualAccount: null },
+    ],
+  });
+  assert.match(html, /납부할 청구 <span class="tabular-nums">3<\/span>건/);
+  assert.match(html, /합계 300,000원/);
+  assert.equal((html.match(/계좌 999-000/g) || []).length, 1, "묶음 계좌는 한 번만");
+  assert.match(html, /청구 2건을 묶은 계좌 · 합계 300,000원/);
+  const one = renderHome({
+    data: { parent: { id: "p" }, children: [childA([])] },
+    pendingPayments: [{ id: "p1", amount: 100000, status: "PENDING", canCheckout: true }],
+  });
+  assert.match(one, /href="\/mypage\/payments\/checkout" class="academy-button-primary shrink-0">결제하기/, "1건이면 «결제하기»");
+  const family = renderHome({
+    data: { parent: { id: "p" }, children: [childA([])] },
+    pendingPayments: [{ id: "p1", amount: 100000, status: "PENDING", canCheckout: false }],
+  });
+  assert.match(family, /href="\/mypage\/payments" class="academy-button-primary shrink-0">청구 보기/, "연결 가족은 결제 대신 청구 목록");
+  assert.match(family, /대표 보호자 계정에서/);
 });
 
 test("③ 홈: 청구가 없으면 청구 줄이 없고, 방학특강만 다니면 «결석 알리기»가 방학특강 결석으로 간다", () => {
@@ -150,6 +178,11 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
     all: { id: "all", title: "전체 공지", content: "<p>안녕</p><script>x</script>", targetType: "ALL", targetClassIds: null, attachmentsJSON: null, isPinned: true, createdAt: "2026-10-30T15:05:00.000Z" },
     mine: { id: "mine", title: "우리 반 공지", content: "옛 글", targetType: "CLASS", targetClassIds: "k9, k1", attachmentsJSON: null, isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
     other: { id: "other", title: "남의 반 공지", content: "비밀", targetType: "CLASS", targetClassIds: "k2", attachmentsJSON: null, isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
+    // 선생님 반 공지(actions/staff-notices.ts)는 JSON 배열로 저장된다 — 우리 반이면 보여야 한다
+    teacher: { id: "teacher", title: "선생님 반 공지", content: "준비물", targetType: "CLASS", targetClassIds: '["k1"]', attachmentsJSON: null, isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
+    teacherOther: { id: "teacherOther", title: "남의 반 선생님 공지", content: "비밀", targetType: "CLASS", targetClassIds: '["k2"]', attachmentsJSON: null, isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
+    // 전체·반 공지가 아닌 대상은 학부모에게 보이지 않는다
+    staff: { id: "staff", title: "직원 공지", content: "내부", targetType: "STAFF", targetClassIds: null, attachmentsJSON: null, isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
   };
   let sanitized = 0;
   const Page = load("src/app/mypage/news/[id]/page.tsx", {
@@ -163,6 +196,7 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
     "@/lib/noticeContent": { isHtmlContent: (c) => c.startsWith("<"), isImageAttachment: () => false, toNoticeHtml: (c) => c },
     "@/lib/sanitize": { sanitizeHtml: (html) => { sanitized++; return html.replace(/<script>.*?<\/script>/g, ""); } },
     "@/lib/datetime/kst": kst,
+    "@/lib/noticeTargets": load("src/lib/noticeTargets.ts", {}),
   }).default;
   const all = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "all" }) }));
   assert.match(all, /전체 공지/);
@@ -174,4 +208,7 @@ test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보�
   assert.match(renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "mine" }) })), /우리 반 공지/);
   await assert.rejects(Page({ params: Promise.resolve({ id: "other" }) }), NOT_FOUND);
   await assert.rejects(Page({ params: Promise.resolve({ id: "none" }) }), NOT_FOUND);
+  assert.match(renderToStaticMarkup(await Page({ params: Promise.resolve({ id: "teacher" }) })), /선생님 반 공지/, "JSON 배열 대상 반도 읽는다");
+  await assert.rejects(Page({ params: Promise.resolve({ id: "teacherOther" }) }), NOT_FOUND);
+  await assert.rejects(Page({ params: Promise.resolve({ id: "staff" }) }), NOT_FOUND, "ALL·CLASS 말고는 404");
 });

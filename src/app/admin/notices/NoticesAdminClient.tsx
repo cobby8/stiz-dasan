@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import dynamic from "next/dynamic";
 import { createNotice, updateNotice, deleteNotice } from "@/app/actions/admin";
 import { isImageAttachment, isHtmlContent, plainToEditorHtml, stripHtmlForPreview } from "@/lib/noticeContent";
@@ -241,7 +242,8 @@ export default function NoticesAdminClient({
         // 이미 HTML(리치 에디터로 쓴 공지)이면 그대로 초기값으로 로드한다.
         setContent(isHtmlContent(n.content) ? n.content : plainToEditorHtml(n.content));
         setTargetType(n.targetType);
-        setSelectedClassIds(n.targetClassIds ? n.targetClassIds.split(",").map(s => s.trim()) : []);
+        // 선생님 반 공지는 JSON 배열로 저장된다 — 두 모양 모두 읽는 공용 파서
+        setSelectedClassIds(parseNoticeTargetClassIds(n.targetClassIds));
         setIsPinned(n.isPinned);
         try { setAttachments(n.attachmentsJSON ? JSON.parse(n.attachmentsJSON) : []); } catch { setAttachments([]); }
         setShowForm(true);
@@ -326,7 +328,7 @@ export default function NoticesAdminClient({
     // 반별 공지의 대상 반 이름(이미 받아온 classes 에서 찾는다 — 새 조회 없음)
     function targetClassNames(n: NoticeData): string[] {
         if (n.targetType !== "CLASS" || !n.targetClassIds) return [];
-        return n.targetClassIds.split(",").map(s => s.trim()).filter(Boolean)
+        return parseNoticeTargetClassIds(n.targetClassIds)
             .map(id => classes.find(c => c.id === id)?.name ?? "삭제된 반");
     }
 

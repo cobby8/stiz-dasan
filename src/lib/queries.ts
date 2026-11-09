@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
 import { parentVirtualAccountView } from "@/lib/payments/virtualAccount";
 import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
@@ -1548,7 +1549,8 @@ export async function getNoticesByClassIds(classIds: string[], limit = 20) {
             .filter((r: any) => {
                 const type = r.targetType ?? r.targettype ?? "ALL";
                 if (type === "ALL") return true;
-                const ids = (r.targetClassIds ?? r.targetclassids ?? "").split(",").map((s: string) => s.trim());
+                // 관리자 공지 = 쉼표 문자열, 선생님 반 공지 = JSON 배열 — 둘 다 읽는다(선생님 반 공지가 안 보이던 버그)
+                const ids = parseNoticeTargetClassIds(r.targetClassIds ?? r.targetclassids);
                 return classIds.some(cid => ids.includes(cid));
             })
             .map((r: any) => ({

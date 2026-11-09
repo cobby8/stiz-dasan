@@ -111,7 +111,7 @@ export default async function ParentReportsPage() {
                     <h2 id="news-notices-heading" className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-ink)] dark:bg-gray-900 dark:text-gray-100">
                         <span>학원 공지</span>
                         <HideInInstalledApp>
-                            <Link href="/notices" className="inline-flex min-h-8 items-center text-xs text-[var(--color-academy-primary)] hover:underline">전체보기</Link>
+                            <Link href="/notices" className="inline-flex min-h-11 items-center px-1 text-xs text-[var(--color-academy-primary)] hover:underline">전체보기</Link>
                         </HideInInstalledApp>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700">
@@ -222,7 +222,7 @@ export default async function ParentReportsPage() {
                     <div className="mb-2 flex items-center justify-between px-1">
                         <h2 id="news-photos-heading" className="text-base font-bold text-[var(--color-academy-ink)]">수업 사진</h2>
                         <HideInInstalledApp>
-                            <Link href="/gallery" className="text-xs text-[var(--color-academy-primary)] hover:underline">전체보기</Link>
+                            <Link href="/gallery" className="inline-flex min-h-11 items-center px-1 text-xs text-[var(--color-academy-primary)] hover:underline">전체보기</Link>
                         </HideInInstalledApp>
                     </div>
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

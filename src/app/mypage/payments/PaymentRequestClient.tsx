@@ -15,6 +15,7 @@ import {
   type ReceiptType,
 } from "@/lib/payments/parentRequestRules";
 import type { ParentPaymentRow } from "@/lib/payments/parent-payment-request";
+import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "미납", OVERDUE: "연체", PAID: "납부 완료", REFUNDED: "환불",
@@ -109,6 +110,11 @@ export default function PaymentRequestClient({
     });
   }
 
+  // «한 번에 결제» 진입(2026-11-09 묶음 결제) — 결제 담당 보호자의 미납 청구가 있을 때만.
+  // 실제로 묶을 수 있는지(랠리즈 청구·입금 대기 등)는 그 화면이 서버 판정으로 줄마다 보여 준다.
+  const bundleRows = rows.filter((row) => isUnpaidStatus(row.status) && row.canCheckout);
+  const bundleTotal = bundleRows.reduce((sum, row) => sum + row.amount, 0);
+
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
@@ -118,6 +124,17 @@ export default function PaymentRequestClient({
           입금하셔도 학원에서 확인하기 전까지는 <b>미납</b>으로 보입니다. 아래에서 알려주시면 더 빨리 처리됩니다.
         </p>
       </div>
+
+      {payReady && bundleRows.length > 0 && (
+        <section aria-label="한 번에 결제" className="academy-panel flex items-center gap-3 p-3">
+          <p className="min-w-0 flex-1 break-keep text-sm font-bold text-[var(--color-academy-ink)]">
+            미납 <span className="tabular-nums">{bundleRows.length}</span>건
+            <span className="mx-1 text-[var(--color-academy-muted)]">·</span>
+            <span className="whitespace-nowrap tabular-nums">합계 {bundleTotal.toLocaleString("ko-KR")}원</span>
+          </p>
+          <Link href="/mypage/payments/checkout" className="academy-button-primary min-h-11 shrink-0 px-4 text-sm">한 번에 결제</Link>
+        </section>
+      )}
 
       {done && <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
@@ -167,6 +184,16 @@ export default function PaymentRequestClient({
                     </p>
                   </div>
                 </div>
+
+                {/* 무통장입금 계좌(입금 대기·만료) — 대표 보호자에게만 온다. 묶음 계좌면 합계 금액이 보인다 */}
+                {unpaid && row.virtualAccount && (
+                  <div className="mt-2">
+                    <VirtualAccountNotice compact account={row.virtualAccount} />
+                    {row.virtualAccount.amount !== row.amount && (
+                      <p className="mt-1 text-xs text-[var(--color-academy-muted)]">여러 청구를 묶은 계좌 · 합계 {row.virtualAccount.amount.toLocaleString("ko-KR")}원</p>
+                    )}
+                  </div>
+                )}
 
                 {row.resolved.map((item) => (
                   <p key={item.id} className="mt-2 rounded-xl bg-gray-50 p-2 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300">

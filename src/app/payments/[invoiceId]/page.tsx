@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getInvoiceForParent, getPaymentProviderConfig, getVirtualAccountState } from "@/lib/payment-ledger";
+import { formatKstDate } from "@/lib/datetime/kst";
 import PaymentCheckoutClient from "./PaymentCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +11,9 @@ function formatAmount(amount: number) {
     return `${amount.toLocaleString("ko-KR")}원`;
 }
 
+// 날짜는 한국 달력 기준(서버는 UTC — toLocaleDateString 은 배포 서버에서 하루 밀릴 수 있었다)
 function formatDate(value: Date | string | null) {
-    if (!value) return "-";
-    return new Date(value).toLocaleDateString("ko-KR");
+    return formatKstDate(value, undefined, "-");
 }
 
 export default async function PaymentPage({ params }: { params: Promise<{ invoiceId: string }> }) {
@@ -51,6 +52,8 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
     // 무통장입금 계좌(입금 대기·만료) — 소유권 확인(getInvoiceForParent) 뒤에만 읽는다. 학부모 화면용 칸만 온다.
     const virtualAccount = !isPaid && !isClosed ? await getVirtualAccountState(invoice.invoiceId) : null;
     const waitingDeposit = Boolean(virtualAccount && !virtualAccount.expired);
+    // 묶음 결제(«한 번에 결제»)로 받은 계좌면 금액이 이 청구보다 크다 — 합계를 입금해야 한다고 알린다
+    const bundledAccount = Boolean(virtualAccount && virtualAccount.amount !== Number(invoice.amount));
     const statusLabel = isPaid ? "납부 완료" : isClosed ? "청구 취소" : waitingDeposit ? "입금 대기" : isOverdue ? "연체" : "미납";
     const statusClass = isPaid
         ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-200"
@@ -150,6 +153,15 @@ export default async function PaymentPage({ params }: { params: Promise<{ invoic
                                         결제 완료 후 자동으로 납부 완료 상태로 반영됩니다.
                                     </p>
                                 </div>
+                                {bundledAccount && virtualAccount && (
+                                    <p className="mb-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-ink)]">
+                                        여러 청구를 묶은 계좌 · 합계 {formatAmount(virtualAccount.amount)}
+                                        <span className="mt-1 block text-xs font-normal text-[var(--color-academy-muted)]">
+                                            이 청구({formatAmount(Number(invoice.amount))})만이 아니라 합계를 한 번에 입금해 주세요. 묶은 청구는{" "}
+                                            <Link href="/mypage/payments" className="font-bold underline">청구 목록</Link>에서 볼 수 있어요.
+                                        </span>
+                                    </p>
+                                )}
                                 <PaymentCheckoutClient
                                     invoiceId={invoice.invoiceId}
                                     providerReady={providerConfig.providerReady}

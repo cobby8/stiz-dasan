@@ -12,7 +12,7 @@ import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildre
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
 import {
     getKstNow, getKstDateStr, computeNextClass, nextClassWhenLabel, filterTodayShuttle,
-    summarizePendingPayments, countRecentAnswers, countRecentNotices,
+    summarizePendingPayments, countRecentAnswers, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
 
@@ -24,8 +24,18 @@ import { formatKstDate } from "@/lib/datetime/kst";
 //  «일정»·«소식» 탭과 «처리할 일» 줄로 옮겼다. 홈 타일을 누르면 맨 아래로 뛰던 동작도 없앴다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 홈 청구 줄 버튼의 목적지. 묶음 결제(다음 갈래)가 생기면 이 주소만 바꾼다.
-const PAYMENT_HOME_HREF = "/mypage/payments";
+// 홈 청구 줄 버튼의 목적지 = «한 번에 결제»(묶음 결제, 2026-11-09). 결제 담당(대표) 보호자가 아니면 청구 탭으로.
+const PAYMENT_HOME_HREF = "/mypage/payments/checkout";
+const PAYMENT_LIST_HREF = "/mypage/payments";
+
+/** 홈 «납부할 청구» 줄이 세는 미납 청구 1건 — 청구 탭과 같은 목록(getParentPaymentRequests)에서 온다 */
+type PendingPaymentLite = {
+    id: string;
+    amount: number;
+    status: string;
+    canCheckout?: boolean;
+    virtualAccount?: PublicVirtualAccountView | null;
+};
 
 function formatAmount(n: number): string {
     return n.toLocaleString("ko-KR") + "원";
@@ -162,7 +172,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 아이콘·제목, 오른쪽 숫자/설명, 끝에 화살표. 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0 }: {
+export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null }: {
     data: MyPageData;
     notices?: NoticeItem[];
     notifications?: NotificationItem[];
@@ -176,6 +186,8 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     makeupAvailable?: number;
     /** 앞으로 남은 방학특강 회차 수 — 방학 기간에만 0 보다 크다(원장 결정 D6) */
     seasonalUpcoming?: number;
+    /** 청구 탭과 같은 기준의 미납 청구(자녀 전체). 없으면(조회 실패) 자녀별 최근 내역으로 센다 */
+    pendingPayments?: PendingPaymentLite[] | null;
 }) {
     const [selectedIdx, setSelectedIdx] = useState(0);
     const [showNotifications, setShowNotifications] = useState(false);
@@ -244,11 +256,21 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     const childShuttleOverview = parentShuttleOverview.filter((item) => item.studentId === child.id);
 
     // ── ① 납부할 청구 — 자녀 전체 합계 한 줄(예전엔 건마다 빨간 카드가 쌓여 «주인공»이 여러 개였다) ──
-    const paySummary = summarizePendingPayments(data.children);
-    // 무통장입금 계좌를 받아 둔 미납 청구 — 계좌번호를 홈에서 바로 볼 수 있게 남긴다(청구 목록 화면엔 계좌 칸이 없다)
-    const waitingAccounts = data.children
-        .flatMap((c) => c.payments)
-        .filter((p, i, all) => (p.status === "PENDING" || p.status === "OVERDUE") && p.virtualAccount && all.findIndex((q) => q.id === p.id) === i);
+    // 2026-11-09: 청구 탭과 같은 목록으로 센다(getMyPageData 는 자녀별 최근 5건이라 오래된 미납이 빠졌다)
+    const payList: PendingPaymentLite[] = pendingPayments ?? data.children.flatMap((c) => c.payments);
+    const paySummary = summarizePendingPayments([{ payments: payList }]);
+    // 무통장입금 계좌를 받아 둔 미납 청구 — 계좌번호를 홈에서 바로 볼 수 있게 남긴다.
+    // 묶음 결제 계좌는 여러 청구가 같은 계좌를 품는다 → 계좌 하나에 한 번만 보이고, 묶인 청구 수를 적는다.
+    const waitingAccounts: { key: string; account: PublicVirtualAccountView; count: number }[] = [];
+    const seenPayments = new Set<string>();
+    for (const p of payList) {
+        if ((p.status !== "PENDING" && p.status !== "OVERDUE") || !p.virtualAccount || seenPayments.has(p.id)) continue;
+        seenPayments.add(p.id);
+        const key = `${p.virtualAccount.bankName}-${p.virtualAccount.accountNumber}`;
+        const found = waitingAccounts.find((entry) => entry.key === key);
+        if (found) found.count += 1;
+        else waitingAccounts.push({ key, account: p.virtualAccount, count: 1 });
+    }
 
     // ── ② "오늘/이번주 우리 아이" 요약 (표시 전용, 선택 자녀 기준) ──
     // 렌더 시점의 실제 시각을 KST로 환산해 사용한다(자녀 전환 시 자동 재계산됨).
@@ -278,6 +300,12 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
         const revealHash = () => {
             const id = window.location.hash.slice(1);
             if (!id) return;
+            // 옛 홈 칸 주소(#mypage-shuttle 등)는 그 칸이 옮겨 간 «일정»·«소식» 탭으로 넘긴다(뒤로가기에 빈 홈이 남지 않게 replace)
+            const moved = legacyHomeHashTarget(id);
+            if (moved) {
+                window.location.replace(moved);
+                return;
+            }
             if (id === "mypage-notifications") setShowNotifications(true);
             requestAnimationFrame(() => scrollToSection(id));
         };
@@ -311,15 +339,21 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                             <span className="mx-1 text-[var(--color-academy-muted)]">·</span>
                             <span className="whitespace-nowrap tabular-nums">합계 {formatAmount(paySummary.total)}</span>
                         </p>
-                        <Link href={PAYMENT_HOME_HREF} className="academy-button-primary shrink-0">청구 보기</Link>
+                        {/* 결제 담당 보호자 = «한 번에 결제» 화면으로(1건이면 «결제하기»). 연결 가족은 결제 대신 청구 목록 */}
+                        <Link href={paySummary.canCheckoutAny ? PAYMENT_HOME_HREF : PAYMENT_LIST_HREF} className="academy-button-primary shrink-0">
+                            {!paySummary.canCheckoutAny ? "청구 보기" : paySummary.count > 1 ? "한 번에 결제" : "결제하기"}
+                        </Link>
                     </div>
                     {!paySummary.canCheckoutAny && (
                         <p className="mt-1 text-xs text-[var(--color-academy-muted)]">온라인 결제는 대표 보호자 계정에서 진행해 주세요.</p>
                     )}
                     {/* 무통장입금 계좌를 받아 둔 경우 — 입금 대기(계좌·복사) 또는 기한 만료 안내 */}
-                    {waitingAccounts.map((p) => p.virtualAccount && (
-                        <div key={p.id} className="mt-2">
-                            <VirtualAccountNotice compact account={p.virtualAccount} />
+                    {waitingAccounts.map((entry) => (
+                        <div key={entry.key} className="mt-2">
+                            <VirtualAccountNotice compact account={entry.account} />
+                            {entry.count > 1 && (
+                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">청구 {entry.count}건을 묶은 계좌 · 합계 {formatAmount(entry.account.amount)}</p>
+                            )}
                         </div>
                     ))}
                 </section>
