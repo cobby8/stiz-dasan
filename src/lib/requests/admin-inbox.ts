@@ -173,6 +173,8 @@ const ADAPTERS: Adapter[] = [
         summary: join(classes, row.targetDate ? `${row.targetDate}부터` : "", e.waitlisted ? "희망 반 만석" : ""),
         facts: [["종류", kind], ...fact("반", classes), ...fact("적용일", row.targetDate), ...fact("복귀 예정", e.resumeOn),
           ...fact("사유", e.reason), ...fact("원장 메모", e.decisionNote)],
+        // 신청함 상세 칸이 휴원(PAUSE) 승인 전에 수강료 처리 미리보기를 띄울지 판단한다(통합 11-10)
+        ref: { changeKind: text(e.changeKind) || null } as Record<string, string | null>,
       };
     },
   },

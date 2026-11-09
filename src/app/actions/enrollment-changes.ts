@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 import {
   decideEnrollmentCancelRequest,
   decideEnrollmentChangeRequest,
+  getPauseSettlementPreview,
   issueProrationInvoice,
   retryPauseSettlementRefunds,
   settleApprovedPause,
@@ -55,6 +56,21 @@ function revalidateSettlementCaches() {
   revalidatePath("/admin/finance");
   revalidatePath("/mypage");
   revalidatePath("/mypage/payments");
+}
+
+/**
+ * 신청함 상세 칸 — 휴원 승인 전에 수강료 처리 미리보기(금액·근거·지문)를 받는다. 원장·부원장만.
+ * 수강 변경 화면은 목록 행(row.settlementPreview)으로 받지만, 신청함 행에는 미리보기가 없어 칸을 열 때 따로 읽는다.
+ * 휴원이 아니면 preview = null. 읽기 실패는 승인을 막도록 ok:false 로 돌려준다(금액을 모른 채 승인하지 않게).
+ */
+export async function getPauseTuitionPreview(requestId: string) {
+  await requireAdmin();
+  try {
+    return { ok: true as const, preview: await getPauseSettlementPreview(requestId) };
+  } catch (error) {
+    console.error("[enrollment-changes] 휴원 수강료 미리보기 실패:", (error as Error).message);
+    return { ok: false as const, message: "휴원 수강료 미리보기를 읽지 못했습니다. 수강 변경 화면에서 처리해 주세요." };
+  }
 }
 
 /**

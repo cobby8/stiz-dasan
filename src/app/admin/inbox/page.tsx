@@ -14,6 +14,7 @@ import {
 } from "@/lib/requests/catalog";
 import { getCachedAdminTrialPayload } from "@/lib/adminReadPayloads";
 import { getAdminRentalRequests, getAdminRentalSmsContext } from "@/app/actions/rental";
+import { countOpenPauseSettlements } from "@/lib/enrollment/admin-change-request";
 import InboxClient, { type InboxTabData } from "./InboxClient";
 
 // 신청함 — 체험·수강·상담·대관·변경·기타 6탭(2026-11-10 원장 결정 k1~k4). 실시간 처리 화면이라 캐시하지 않는다.
@@ -115,11 +116,13 @@ async function loadTabData(
   // 변경·기타 = catalog 어댑터 공통 한 줄. 처리 필요 → 진행 중 순서, 완료는 «완료 보기»를 눌렀을 때만 읽는다
   // «?kind=» 로 한 종류만 고른 경우 그 종류만
   const kinds = kind ? [kind] : kindsOfTab(tab, sub);
-  const [action, ongoing, done] = await Promise.all([
+  const [action, ongoing, done, openSettlementCount] = await Promise.all([
     getInboxRows({ bucket: "ACTION", kinds, from, to }),
     getInboxRows({ bucket: "ONGOING", kinds, from, to }),
     showDone ? getInboxRows({ bucket: "DONE", kinds, from, to, limitPerKind: 100 }) : Promise.resolve({ rows: [] as InboxRow[], failedKinds: [] as RequestKind[] }),
+    // 수강 변경이 보이는 «변경» 탭이면 휴원 수강료 처리 남은 일 건수(표가 없거나 실패하면 0 — 화면은 그대로 열린다)
+    kinds.includes("ENROLLMENT_CHANGE") ? countOpenPauseSettlements() : Promise.resolve(0),
   ]);
   const failedKinds = [...new Set([...action.failedKinds, ...ongoing.failedKinds, ...done.failedKinds])];
-  return { type: "ROWS", open: [...action.rows, ...ongoing.rows], done: done.rows, failedKinds, consultFailed: false };
+  return { type: "ROWS", open: [...action.rows, ...ongoing.rows], done: done.rows, failedKinds, consultFailed: false, openSettlementCount };
 }
