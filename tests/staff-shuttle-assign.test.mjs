@@ -44,9 +44,9 @@ function fixture() {
       { studentId: "walk1", status: "APPROVED", shuttleNeeded: false, name: "도보", grade: "초2", shuttleTime: null, parentPhone: null, createdAt: "2026-11-01" },
     ],
     classes: [
-      { studentId: "new1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규" },
-      { studentId: "walk1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규" },
-      { studentId: "other1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규" },
+      { studentId: "new1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규", runsShuttle: true },
+      { studentId: "walk1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규", runsShuttle: true },
+      { studentId: "other1", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", className: "월반", programName: "정규", runsShuttle: true },
     ],
     places: [{ studentId: "new1", kind: "PICKUP", name: "B 근처", address: "다산동 1", latitude: 37.6205, longitude: 127.1 }],
     stops: [
@@ -77,6 +77,8 @@ function fixture() {
     // 「이번 달」을 고정해 날짜에 따라 결과가 바뀌지 않게 한다.
     "@/lib/regular/serviceMonth": { koreaServiceMonth: () => "2026-11" },
     "@/lib/studentVisibility": { notMergedStudent: (a) => `${a}."mergedIntoStudentId" IS NULL` },
+    // 셔틀 운행 반 판정은 청구와 같은 실제 함수(가짜로 바꾸지 않는다).
+    get "@/lib/billing/workbench-pricing"() { return load("src/lib/billing/workbench-pricing.ts"); },
     "@/lib/seasonal/shuttle-optimize": { getSettings: async () => ({ academy: { lat: 37.6, lng: 127.1 }, depot: { lat: 37.64, lng: 127.1 }, hub: null, hubDropoff: null }) },
     "src/lib/shuttle/regularRosterEdit": {
       async addRosterStudentAs(actorId, input, opts) {
@@ -197,4 +199,30 @@ test("API: 로그인 없음 401 · 오류 원문 비노출 · 화면 링크와 �
   assert.match(ui, /material-symbols-outlined/);
   // 오류 원문을 그대로 띄우지 않는다(코드로 고른 안내만)
   assert.doesNotMatch(ui, /value\?\.error|\.message\)/);
+});
+
+// 2026-11-09 원장 발견: 허재원(금7 + 토2 «통쾌한 주말경기반», runsShuttle=false)에게 «토 등원/토 하원» 칸이 생김.
+test("셔틀 미운행 반(토요일 주말경기반·성인반)은 남은 칸에서 빠지고 평일 운행 반 칸은 그대로 · 그 요일 저장도 거절", async () => {
+  const { state, mod } = fixture();
+  state.stops.push({ ...state.stops[0], id: "r5", weekday: 5, classTime: "19:00~20:00", stopName: "C", studentId: "c1", studentName: "다", sortOrder: 1 });
+  state.classes = [
+    { studentId: "new1", dayOfWeek: "Fri", startTime: "19:00", endTime: "19:55", className: "금7", programName: "주중경기", runsShuttle: true },
+    { studentId: "new1", dayOfWeek: "Sat", startTime: "11:00", endTime: "11:55", className: "토2", programName: "통쾌한 주말경기반", runsShuttle: false },
+    { studentId: "new1", dayOfWeek: "Wed", startTime: "21:00", endTime: "22:00", className: "성인반", programName: "성인반", runsShuttle: false },
+  ];
+  const board = JSON.parse(JSON.stringify(await mod.getDriverAssignBoard({ appUserId: "driver" }, "2026-11")));
+  assert.deepEqual(board.students[0].legs.map((l) => l.label), ["금 등원", "금 하원"]);
+  assert.equal(board.openLegCount, 2);
+  assert.doesNotMatch(board.students[0].classes, /토|수/);
+  const classSql = state.sql.find((s) => s.includes(`FROM "Enrollment" e`));
+  assert.match(classSql, /p\."runsShuttle"/);
+  // 화면을 거치지 않고 토요일 칸을 보내도 서버가 「그 요일 수업 없음」으로 거절한다.
+  const body = { month: "2026-11", studentId: "new1", weekday: 6, direction: "BOARD", choice: { kind: "JOIN", stopIndex: 0 }, routeVersion: "x", includeNextMonth: false };
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, body)), "409:NOT_CLASS_DAY");
+  assert.equal(state.adds.length, 0);
+
+  // 토요일반만 다니면 칸 0 → 신규 배차 학생 목록에서 빠진다.
+  state.classes = state.classes.filter((c) => c.dayOfWeek === "Sat");
+  const onlySat = await mod.getDriverAssignBoard({ appUserId: "driver" }, "2026-11");
+  assert.equal(onlySat.students.length, 0);
 });

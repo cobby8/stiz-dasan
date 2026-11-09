@@ -8,7 +8,7 @@ import ts from "typescript";
 const source = await readFile("src/lib/billing/workbench-pricing.ts", "utf8");
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const {
-  weeklyTierPrice, splitTierPrice, planWeeklyTuition, planShuttleFee, COMPETITION_PACKAGE_FEE, COMPETITION_WEEKDAY_ONLY_FEE, FREE_SHUTTLE_HUB_STOPS,
+  weeklyTierPrice, splitTierPrice, planWeeklyTuition, planShuttleFee, classRunsShuttle, COMPETITION_PACKAGE_FEE, COMPETITION_WEEKDAY_ONLY_FEE, FREE_SHUTTLE_HUB_STOPS,
   siblingDiscountStudents, siblingDiscountAmount, REGULAR_SIBLING_DISCOUNT_TARGET,
 } = await import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`);
 
@@ -231,4 +231,20 @@ test("형제할인액은 수강료의 10%, 원 단위 절사, 0 이하는 0", ()
   assert.equal(siblingDiscountAmount(33335), 3333);
   assert.equal(siblingDiscountAmount(0), 0);
   assert.equal(siblingDiscountAmount(-1), 0);
+});
+
+// 2026-11-09: 셔틀 운행 반 판정 한 곳 — 청구 셔틀비·신규 배차 칸·셔틀 신청 검토가 같이 쓴다.
+test("셔틀 운행 반 판정(classRunsShuttle): 평일 + runsShuttle 만 운행, 주말·성인반·값 없음은 미운행", () => {
+  for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri"]) assert.equal(classRunsShuttle({ dayOfWeek: day, runsShuttle: true }), true);
+  assert.equal(classRunsShuttle({ dayOfWeek: "Sat", runsShuttle: false }), false); // 통쾌한 주말경기반
+  assert.equal(classRunsShuttle({ dayOfWeek: "Sat", runsShuttle: true }), false);  // 주말은 운행 표시가 켜져 있어도 미운행
+  assert.equal(classRunsShuttle({ dayOfWeek: "Sun", runsShuttle: true }), false);
+  assert.equal(classRunsShuttle({ dayOfWeek: "Wed", runsShuttle: false }), false); // 성인반
+  assert.equal(classRunsShuttle({ dayOfWeek: "Fri", runsShuttle: null }), false);
+  assert.equal(classRunsShuttle({ dayOfWeek: "Fri" }), false);
+  // 청구 셔틀비도 같은 판정: 금(운행)+토(미운행) -> 주1회 10,000
+  assert.equal(planShuttleFee(true, [
+    { dayOfWeek: "Fri", slotKey: "Fri-7", runsShuttle: true, shuttleFeeOverride: null },
+    { dayOfWeek: "Sat", slotKey: "Sat-2", runsShuttle: false, shuttleFeeOverride: null },
+  ]).amount, 10000);
 });

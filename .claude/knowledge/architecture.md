@@ -193,3 +193,9 @@
 - **발견자**: developer
 - **내용**: 목록 «원생 등록»·체험 ⚡«원생 등록»이 같은 `src/app/admin/students/StudentRegisterModal.tsx` → `src/app/actions/student-register.ts`(`registerStudent`·`previewStudentRegistration`·`getStudentRegisterOptions`). 입력 검증은 창·서버 공용 `src/lib/students/student-register-rules.ts`(반 필수/«반은 나중에 배정», 주 보호자 휴대폰 필수, 지점은 반 장소에서 자동·원본 문장 형식 저장, 개인정보 확인 → agreementsJSON.adminRegister). 신청서 승인과 공유: 정원 경고 `lib/enrollment/class-capacity.ts`, 셔틀 위치 저장 SQL `lib/students/student-shuttle-location-upsert.ts`(승인 동작은 tests/student-register.test.mjs 의 vm 실행으로 고정). 수강료 표시는 `lib/billing/regular-tuition-preview.ts`(청구 모듈과 무관, 프로그램 화면 2곳도 여기서 상수 사용). 인라인 폼은 «수정» 전용. 문자 발송 없음. **11-09 실사용 후**: 반 줄 대상 학년 = `ScheduleSlot.gradeRange → CustomClassSlot.gradeRange → Program.targetAge`(하위 질의, 스키마 변경 없음) · 셔틀 장소명 필수 규칙 한 곳 `src/lib/shuttle/placeNameRule.ts`(지도 창 `requirePlaceName` 옵션 — 원생 등록·학부모 링크 `/shuttle/location/[token]` 만 켬, 서버 `validateRegularLocation`·`validateStudentRegisterInput` 도 거부, 저장 SQL 의 주소 대체는 옛 데이터용 유지) · 유니폼은 입력 없음 — `UniformOrder.parentPhoneDigits ∈ 입력 보호자 번호` + `UniformOrderItem.studentName`(띄어쓰기 무시) 일치 주문을 `decideUniformFromOrders`(취소 제외, 업체 전송=«주문»/접수만=«신청») 로 등록 시점에만 채움(주문→학생 자동 갱신 연결은 없음) · 사진 동의 = 체크박스 하나, 방법 `REGISTER_MEDIA_CONSENT_METHOD`=IN_PERSON.
 - **참조횟수**: 0
+
+### [2026-11-09] 셔틀 운행 반 판정 = classRunsShuttle 한 곳(청구·배차 칸·신청 검토·진행 표시)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `src/lib/billing/workbench-pricing.ts` 의 `classRunsShuttle({dayOfWeek, runsShuttle})` = Program.runsShuttle=true + 평일(월~금). 청구 셔틀비(regularShuttlePlan)·신규 배차 남은 칸(`src/lib/shuttle/driverAssign.ts` loadStudents)·셔틀 신청 검토(`shuttle-review-query.ts` context)·배차 진행(`shuttle-progress-query.ts`)이 같이 쓴다. 수강 조회 SQL 에 `p."runsShuttle"` 를 꼭 같이 읽을 것(빠지면 미운행으로 봐 칸이 사라짐). 아직 안 쓰는 곳: 관리자 명단 «학생 추가» 칩(regularRosterEdit getRosterStudentContext)·명단 수강 점검(getRosterEnrollmentCheck). workbench-pricing 은 테스트가 data URL 로 읽어 import 를 둘 수 없다 — 판정을 다른 파일로 옮기지 말 것.
+- **참조횟수**: 0

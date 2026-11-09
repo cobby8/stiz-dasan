@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { classRunsShuttle } from "@/lib/billing/workbench-pricing";
 import { getEnrollmentShuttleProgress } from "./shuttle-progress-query";
 import { ShuttleReviewError, reviewMonth, reviewId, reviewPage, reviewFingerprint, assertReviewFingerprint, parseReviewResponse } from "./shuttle-review";
 import type { ShuttleIntakeDashboard, ShuttleIntakeItem, ShuttleReview, ShuttleReviewProposal } from "./shuttle-review-types";
@@ -9,7 +10,7 @@ type Db = { $queryRawUnsafe<T>(sql: string, ...values: unknown[]): Promise<T>; $
 type Store = Db & { $transaction<T>(work: (db: Db) => Promise<T>, options?: { isolationLevel: "RepeatableRead" | "Serializable"; timeout: number }): Promise<T> };
 type Actor = { appUserId: string };
 type App = { id: string; status: string; convertedStudentId: string; assignedClassId: string; shuttleNeeded: boolean; requestedStartOn: string | null; shuttleTime: string | null; studentName: string; grade: string | null; applicationVersion: string };
-type Class = ShuttleIntakeItem["classes"][number] & { enrollmentStartOn: string | null; enrollmentVersion: string; classVersion: string };
+type Class = ShuttleIntakeItem["classes"][number] & { enrollmentStartOn: string | null; enrollmentVersion: string; classVersion: string; runsShuttle?: boolean | null };
 type Location = ShuttleIntakeItem["locations"][number] & { confirmedAt: string; consentVersion: string | null; locationVersion: string };
 type ReviewRow = { id: string; applicationId: string; studentId: string; serviceMonth: string; driverUserId: string; driverName: string; sourceFingerprint: string; status: string; note: string | null; proposals: ShuttleReviewProposal[]; requestedAt: string; reviewedAt: string | null };
 const driverCondition = `(u.role::text='DRIVER' OR EXISTS (SELECT 1 FROM "UserRoleGrant" g WHERE g."userId"=u.id AND g.role='DRIVER' AND g.status='ACTIVE'))`;
@@ -28,10 +29,14 @@ async function currentDrivers(db: Db) {
 }
 async function context(db: Db, app: App, month: string, lock = false) {
   const ids = [...new Set(app.assignedClassId.split(",").map(x => x.trim()).filter(Boolean))];
-  const classes = await db.$queryRawUnsafe<Class[]>(`SELECT c.id,c.name,c."dayOfWeek",c."startTime",c."endTime",c."updatedAt"::text AS "classVersion",e."startsOn"::text AS "enrollmentStartOn",e."updatedAt"::text AS "enrollmentVersion" FROM "Class" c JOIN "Enrollment" e ON e."classId"=c.id WHERE e."studentId"=$1 AND c.id=ANY($2::text[]) AND e.status='ACTIVE' ORDER BY c."dayOfWeek",c.id${lock ? ' FOR SHARE OF c,e' : ''}`, app.convertedStudentId, ids);
-  if (!ids.length || classes.length !== ids.length || classes.some(c => !["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].includes(c.dayOfWeek))) throw new ShuttleReviewError("배정 반의 현재 수강 상태를 확인해 주세요.", 409, "SHUTTLE_CLASSES_CHANGED");
+  const enrolled = await db.$queryRawUnsafe<Class[]>(`SELECT c.id,c.name,c."dayOfWeek",c."startTime",c."endTime",c."updatedAt"::text AS "classVersion",e."startsOn"::text AS "enrollmentStartOn",e."updatedAt"::text AS "enrollmentVersion",p."runsShuttle" FROM "Class" c JOIN "Enrollment" e ON e."classId"=c.id JOIN "Program" p ON p.id=c."programId" WHERE e."studentId"=$1 AND c.id=ANY($2::text[]) AND e.status='ACTIVE' ORDER BY c."dayOfWeek",c.id${lock ? ' FOR SHARE OF c,e' : ''}`, app.convertedStudentId, ids);
+  if (!ids.length || enrolled.length !== ids.length || enrolled.some(c => !["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].includes(c.dayOfWeek))) throw new ShuttleReviewError("배정 반의 현재 수강 상태를 확인해 주세요.", 409, "SHUTTLE_CLASSES_CHANGED");
   if (app.requestedStartOn && app.requestedStartOn.slice(0,7) > month) throw new ShuttleReviewError("수강을 시작하는 월부터 검토할 수 있습니다.", 409, "SHUTTLE_START_MONTH_REQUIRED");
-  if (classes.some(c => c.enrollmentStartOn && c.enrollmentStartOn.slice(0,7) > month)) throw new ShuttleReviewError("실제 수강을 시작하는 월부터 검토할 수 있습니다.", 409, "SHUTTLE_START_MONTH_REQUIRED");
+  if (enrolled.some(c => c.enrollmentStartOn && c.enrollmentStartOn.slice(0,7) > month)) throw new ShuttleReviewError("실제 수강을 시작하는 월부터 검토할 수 있습니다.", 409, "SHUTTLE_START_MONTH_REQUIRED");
+  // 셔틀 미운행 반(주말·성인반 등)은 검토 요일·제안 시각·지문에서 뺀다 — 청구 셔틀비·배정 보드와 같은 판정(classRunsShuttle).
+  // 지문에 넣는 값은 화면에 보이는 반과 같은 모양(runsShuttle 칸 없음)으로 맞춘다.
+  const classes = enrolled.filter(c => classRunsShuttle(c)).map(({ runsShuttle: _runsShuttle, ...c }) => c);
+  if (!classes.length) throw new ShuttleReviewError("셔틀을 운행하는 반이 없습니다. 배정 반을 확인해 주세요.", 409, "SHUTTLE_NO_RUNNING_CLASS");
   const locations = await db.$queryRawUnsafe<Location[]>(`SELECT kind,COALESCE(name,'') AS name,address,latitude,longitude,"confirmedAt"::text,"consentVersion","updatedAt"::text AS "locationVersion" FROM "StudentShuttleLocation" WHERE "studentId"=$1 ORDER BY kind${lock ? ' FOR SHARE' : ''}`, app.convertedStudentId);
   const weekdays = [...new Set(classes.map(c => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(c.dayOfWeek)))];
   const roster = await db.$queryRawUnsafe<unknown[]>(`SELECT id,weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder","importedAt"::text FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND weekday=ANY($2::int[]) ORDER BY id${lock ? ' FOR SHARE' : ''}`, month, weekdays);

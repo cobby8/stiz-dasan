@@ -224,6 +224,20 @@ export const AUTO_SHUTTLE_FEE_BY_WEEKLY_COUNT: readonly number[] = [0, 10_000, 1
 /** 일8 대표팀은 다른 요일 셔틀을 타도 월 셔틀비 전체 면제(studentBilling.ts FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS 와 같은 값). */
 export const FULL_SHUTTLE_FEE_EXEMPT_SLOT_KEYS: ReadonlySet<string> = new Set(["Sun-8"]);
 
+/**
+ * 그 반에 셔틀이 다니는가 — «셔틀 운행 반» 판정은 이 함수 한 곳에서만 한다.
+ * 기준: 프로그램 «셔틀 운행»(Program.runsShuttle)이 켜져 있고 평일(월~금) 반.
+ *   - 주말 반(토요일 «통쾌한 주말경기반», 일8 대표팀 등)과 성인반은 셔틀을 운행하지 않는다.
+ * 같이 쓰는 곳(«같은 규칙 두 경로» 방지 — 한쪽만 고치지 말 것):
+ *   - 청구 셔틀비(regularShuttlePlan) — 운행 반 수로 주N회 셔틀비
+ *   - 신규 배차 학생 «남은 칸»(src/lib/shuttle/driverAssign.ts) — 기사님 새 학생 배정·관리자 정규 배차
+ *   - 셔틀 신청 검토(src/lib/enrollment/shuttle-review-query.ts)·배차 진행 표시(shuttle-progress-query.ts)
+ * runsShuttle 이 비어 있으면(null/undefined) 운행하지 않는 것으로 본다 — 조회에서 빠뜨린 경우 칸이 생기지 않게.
+ */
+export function classRunsShuttle(c: { dayOfWeek: string | null | undefined; runsShuttle?: boolean | null }): boolean {
+  return c.runsShuttle === true && !WEEKEND_DAYS.has(c.dayOfWeek ?? "");
+}
+
 /** 셔틀비 판단에 쓰는 «이번 달 청구 대상 등록» 한 건 */
 export type ShuttleEnrollment = {
   dayOfWeek: string;
@@ -286,7 +300,8 @@ export function planShuttleFee(onRoster: boolean, enrollments: readonly ShuttleE
 
 /** 무료 거점·면제 판단 뒤의 일반 셔틀비(주 수업 횟수표 또는 프로그램 지정값). */
 function regularShuttlePlan(enrollments: readonly ShuttleEnrollment[]): ShuttlePlan {
-  const eligible = enrollments.filter(e => e.runsShuttle && !WEEKEND_DAYS.has(e.dayOfWeek) && e.shuttleFeeOverride !== 0);
+  // 셔틀 운행 반(공용 판정) 중 «셔틀비 없음(직접 입력 0)»이 아닌 반만 센다.
+  const eligible = enrollments.filter(e => classRunsShuttle(e) && e.shuttleFeeOverride !== 0);
   if (!eligible.length) {
     return { amount: 0, basis: null, warning: "셔틀 명단에 있지만 셔틀을 운행하는 평일 반이 없어 셔틀비를 제안하지 않았습니다. 확인해 주세요." };
   }

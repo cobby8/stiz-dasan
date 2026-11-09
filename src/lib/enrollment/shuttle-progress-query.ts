@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashMessageRecipientPhone } from "@/lib/message-ledger";
 import { koreaServiceMonth, isServiceMonth } from "@/lib/regular/serviceMonth";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { classRunsShuttle } from "@/lib/billing/workbench-pricing";
 import { enrollmentShuttleProgress, requestedShuttleMonth, shuttleDeliveryEventKey, type EnrollmentShuttleProgress, type ShuttleApplication, type ShuttleClass, type ShuttleDelivery, type ShuttleLocation, type ShuttleNotice, type ShuttleRosterRow, type ShuttleRoute } from "./shuttle-progress";
 
 type Db = { $queryRawUnsafe<T>(query: string, ...values: unknown[]): Promise<T> };
@@ -35,7 +36,8 @@ export async function getEnrollmentShuttleProgress(applications: ShuttleApplicat
     const [classes, locations, roster, routes, notices, parents] = await Promise.all([
       // 신청서의 assignedClassId 가 아니라 학생의 현재 수강(ACTIVE·PAUSED)을 본다. 반 이동 뒤 옛 반(WITHDRAWN)은 빠진다.
       // 개시일이 해당 월 말 이후인 수강은 그 달 배차 대상이 아니다(startsOn null = 기존 수강 이력이라 포함). date 컬럼이라 시간대 변환 없음.
-      db.$queryRawUnsafe<Array<ShuttleClass & { studentId: string }>>(`SELECT c.id,c."dayOfWeek",c."startTime",c."endTime",e."studentId",e.status,(e.status='ACTIVE') AS active FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId" WHERE e."studentId"=ANY($1::text[]) AND e.status IN ('ACTIVE','PAUSED') AND (e."startsOn" IS NULL OR e."startsOn" < (to_date($2,'YYYY-MM') + interval '1 month')::date)`, ids, serviceMonth),
+      // 셔틀 미운행 반(주말·성인반 등)은 아래에서 classRunsShuttle 로 뺀다 — 그 요일 등·하원 칸을 «배차 필요»로 세지 않게(청구 셔틀비와 같은 판정).
+      db.$queryRawUnsafe<Array<ShuttleClass & { studentId: string; runsShuttle: boolean | null }>>(`SELECT c.id,c."dayOfWeek",c."startTime",c."endTime",e."studentId",e.status,(e.status='ACTIVE') AS active,p."runsShuttle" FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId" JOIN "Program" p ON p.id=c."programId" WHERE e."studentId"=ANY($1::text[]) AND e.status IN ('ACTIVE','PAUSED') AND (e."startsOn" IS NULL OR e."startsOn" < (to_date($2,'YYYY-MM') + interval '1 month')::date)`, ids, serviceMonth),
       db.$queryRawUnsafe<ShuttleLocation[]>(`SELECT "studentId",kind,latitude,longitude,"consentVersion","confirmedAt" FROM "StudentShuttleLocation" WHERE "studentId"=ANY($1::text[])`, ids),
       // 전체 명단을 비교해야 다른 정차 변경도 이전 노선 확정의 근거로 사용하지 않는다.
       db.$queryRawUnsafe<ShuttleRosterRow[]>(`SELECT id,"serviceMonth",weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder" FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 ORDER BY id`, serviceMonth),
@@ -45,7 +47,7 @@ export async function getEnrollmentShuttleProgress(applications: ShuttleApplicat
     ]);
     const hashes = notices.map(n => shuttleDeliveryEventKey(n.payloadHash));
     const deliveries = hashes.length ? await db.$queryRawUnsafe<ShuttleDelivery[]>(`SELECT "stableEventKey",status,"providerStatus","bodyHash","recipientPhoneHash","providerMessageId","sentAt" FROM "NotificationDelivery" WHERE "eventType"='REGULAR_SHUTTLE_CHANGE' AND "stableEventKey"=ANY($1::text[])`, hashes) : [];
-    for (const application of applications) result[application.id] = enrollmentShuttleProgress({ application, serviceMonth, classes: classes.filter(c => c.studentId === application.convertedStudentId), locations, roster, routes, notices, deliveries, recipientPhone: parents.find(p => p.studentId === application.convertedStudentId)?.phone, recipientHash: hashMessageRecipientPhone });
+    for (const application of applications) result[application.id] = enrollmentShuttleProgress({ application, serviceMonth, classes: classes.filter(c => c.studentId === application.convertedStudentId && classRunsShuttle(c)), locations, roster, routes, notices, deliveries, recipientPhone: parents.find(p => p.studentId === application.convertedStudentId)?.phone, recipientHash: hashMessageRecipientPhone });
   } catch {
     // 미적용된 표나 조회 장애는 미배차/완료로 위장하지 않는다.
     for (const application of applications) result[application.id] = enrollmentShuttleProgress({ application, serviceMonth, classes: [], locations: [], roster: [], routes: [], readFailed: true });

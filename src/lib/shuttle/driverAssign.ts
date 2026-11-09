@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { koreaServiceMonth } from "@/lib/regular/serviceMonth";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { classRunsShuttle } from "@/lib/billing/workbench-pricing";
 import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 import { isKoreanCoordinate } from "./academyLocation";
 import { addRosterStudentAs } from "./regularRosterEdit";
@@ -95,6 +96,7 @@ async function basePoints(): Promise<{ academy: GeoPoint | null; depot: GeoPoint
  * 대상 학생 — 승인된 셔틀 신청(APPROVED + shuttleNeeded + 원생 연결) · 병합 안 된 학생 · 신청 개시월이 그 달 이하.
  * 한 학생에게 신청이 여럿이면 가장 최근 신청(희망 시각)을 쓴다. onlyStudentId 를 주면 그 학생만(저장 재검사).
  * 수강은 다니는(ACTIVE) 것 + 개시일이 그 달 말 이전(또는 개시일 없음). 휴원(PAUSED)은 칸을 만들지 않아 여기서 읽지 않는다.
+ * 셔틀 미운행 반(classRunsShuttle=false: 주말·성인반 등)도 칸을 만들지 않아 수업 목록에서 뺀다.
  */
 async function loadStudents(month: string, onlyStudentId?: string): Promise<AssignStudentInput[]> {
   const apps = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
@@ -115,7 +117,7 @@ async function loadStudents(month: string, onlyStudentId?: string): Promise<Assi
   const ids = apps.map((a) => String(a.studentId));
 
   const classes = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT e."studentId", c."dayOfWeek", c."startTime", c."endTime", c."name" AS "className", p."name" AS "programName"
+    `SELECT e."studentId", c."dayOfWeek", c."startTime", c."endTime", c."name" AS "className", p."name" AS "programName", p."runsShuttle"
        FROM "Enrollment" e
        JOIN "Class" c ON c."id"=e."classId"
        JOIN "Program" p ON p."id"=c."programId"
@@ -132,6 +134,9 @@ async function loadStudents(month: string, onlyStudentId?: string): Promise<Assi
 
   const enrolledBy = new Map<string, EnrolledClass[]>();
   for (const c of classes) {
+    // 셔틀을 운행하지 않는 반(주말 반·성인반 등 Program.runsShuttle=false)은 칸을 만들지 않는다 — 청구 셔틀비와 같은 판정.
+    // 여기서 빼면 남은 칸·저장 재검사(buildAssignAddInput 의 「그 요일 수업」)가 함께 따라온다.
+    if (!classRunsShuttle({ dayOfWeek: c.dayOfWeek as string | null, runsShuttle: c.runsShuttle as boolean | null })) continue;
     const weekday = dowToWeekday(c.dayOfWeek as string | null);
     if (weekday == null) continue;
     const list = enrolledBy.get(String(c.studentId)) ?? [];

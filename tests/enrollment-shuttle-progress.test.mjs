@@ -55,9 +55,9 @@ test("명단 정류장 좌표 누락·같은 칸 중복은 저장 노선이 없�
 function loadFile(file,imports,globals={}) { const result={};vm.runInNewContext(ts.transpileModule(readFileSync(file,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:result,require:name=>{assert.ok(name in imports,`검사에서 허용하지 않은 접근: ${name}`);return imports[name];},Date,Intl,Map,Set,Object,Array,Number,String,Error,console,...globals});return result; }
 function querySetup(f,fail=false,hasNoticeLedger=true) {
  const calls=[];
- const db={$queryRawUnsafe:async(sql,...values)=>{calls.push({sql,values});if(fail)throw new Error("합성 읽기 장애");if(sql.includes("to_regclass"))return [{noticeLedger:hasNoticeLedger?"RegularShuttleNoticeBatch":null}];if(sql.includes('FROM "Enrollment"'))return f.classes.map(c=>({...c,studentId:"student-1"}));if(sql.includes('FROM "StudentShuttleLocation"'))return f.locations;if(sql.includes('FROM "RegularShuttleStop"'))return f.roster;if(sql.includes('FROM "RegularDispatchRoute"'))return f.routes;if(sql.includes('FROM "RegularShuttleNoticeBatch"'))return f.notices;if(sql.includes('FROM "NotificationDelivery"'))return f.deliveries;if(sql.includes('FROM "Student"'))return [{studentId:"student-1",phone:f.recipientPhone}];throw new Error("예상 밖 읽기");}};
+ const db={$queryRawUnsafe:async(sql,...values)=>{calls.push({sql,values});if(fail)throw new Error("합성 읽기 장애");if(sql.includes("to_regclass"))return [{noticeLedger:hasNoticeLedger?"RegularShuttleNoticeBatch":null}];if(sql.includes('FROM "Enrollment"'))return f.classes.map(c=>({runsShuttle:true,...c,studentId:"student-1"}));if(sql.includes('FROM "StudentShuttleLocation"'))return f.locations;if(sql.includes('FROM "RegularShuttleStop"'))return f.roster;if(sql.includes('FROM "RegularDispatchRoute"'))return f.routes;if(sql.includes('FROM "RegularShuttleNoticeBatch"'))return f.notices;if(sql.includes('FROM "NotificationDelivery"'))return f.deliveries;if(sql.includes('FROM "Student"'))return [{studentId:"student-1",phone:f.recipientPhone}];throw new Error("예상 밖 읽기");}};
  const prisma={...db,$transaction:async(fn,options)=>{assert.equal(options.isolationLevel,"RepeatableRead");return fn(db);}};
- const q=loadFile("src/lib/enrollment/shuttle-progress-query.ts",{"server-only":{},"@/lib/prisma":{prisma},"@/lib/studentVisibility":{notMergedStudent:alias=>`${alias}."mergedIntoStudentId" IS NULL`},"@/lib/message-ledger":{hashMessageRecipientPhone:f.recipientHash},"@/lib/regular/serviceMonth":{koreaServiceMonth:()=>"2026-11",isServiceMonth:v=>/^\d{4}-(0[1-9]|1[012])$/.test(v)},"./shuttle-progress":p});
+ const q=loadFile("src/lib/enrollment/shuttle-progress-query.ts",{"server-only":{},"@/lib/prisma":{prisma},"@/lib/studentVisibility":{notMergedStudent:alias=>`${alias}."mergedIntoStudentId" IS NULL`},"@/lib/message-ledger":{hashMessageRecipientPhone:f.recipientHash},"@/lib/regular/serviceMonth":{koreaServiceMonth:()=>"2026-11",isServiceMonth:v=>/^\d{4}-(0[1-9]|1[012])$/.test(v)},"./shuttle-progress":p,"@/lib/billing/workbench-pricing":loadFile("src/lib/billing/workbench-pricing.ts",{})});
  return {q,db,calls};
 }
 test("실제 배치 조회는 학생 ID별 반을 분리하고 전달 이벤트 키를 사용한다",async()=>{const f=fixture();notice(f,"DELIVERED");const {q,db,calls}=querySetup(f);const result=await q.getEnrollmentShuttleProgress([f.application,{...f.application,id:"other",convertedStudentId:"other-student"}],"2026-11",db);assert.equal(result[f.application.id].status,"COMPLETE");assert.notEqual(result.other.status,"COMPLETE");assert.equal(calls.length,8);const enrollment=calls.find(c=>c.sql.includes('FROM "Enrollment"'));assert.match(enrollment.sql,/e\.status IN \('ACTIVE','PAUSED'\)/);assert.match(enrollment.sql,/"startsOn" IS NULL OR/);assert.doesNotMatch(enrollment.sql,/c\.id=ANY/);assert.equal(enrollment.values[1],"2026-11");const delivery=calls.find(c=>c.sql.includes('FROM "NotificationDelivery"'));assert.equal(delivery.values[0][0],p.shuttleDeliveryEventKey("notice-hash"));assert.ok(calls.every(c=>c.sql.trim().startsWith("SELECT")));});
@@ -109,4 +109,20 @@ test("발송 기록표가 없으면 확정 노선도 안내 완료로 오인하�
  const result=await q.getEnrollmentShuttleProgress([f.application],"2026-11",db);
  assert.equal(result[f.application.id].status,"NOTICE_PENDING");
  assert.ok(!calls.some(c=>c.sql.includes('FROM "NotificationDelivery"')));
+});
+
+// 2026-11-09 원장 발견: 금7+토2 학생에게 «토 등원/토 하원» 칸 — 셔틀 미운행 반(주말·성인반)은 배차 진행 칸에서 뺀다.
+test("셔틀 미운행 반(토요일·성인반)은 배차 진행 칸에서 빠지고 평일 운행 반 결과는 그대로다",async()=>{
+ const base=fixture();notice(base,"DELIVERED");
+ const s0=querySetup(base);
+ const before=(await s0.q.getEnrollmentShuttleProgress([base.application],"2026-11",s0.db))[base.application.id];
+ const f=fixture();notice(f,"DELIVERED");
+ f.classes.push({id:"sat-class",dayOfWeek:"Sat",active:true,startTime:"11:00",endTime:"11:55",runsShuttle:false},{id:"adult-class",dayOfWeek:"Wed",active:true,startTime:"21:00",endTime:"22:00",runsShuttle:false});
+ const {q,db,calls}=querySetup(f);
+ const result=(await q.getEnrollmentShuttleProgress([f.application],"2026-11",db))[f.application.id];
+ assert.equal(result.status,before.status);
+ assert.equal(result.status,"COMPLETE");
+ assert.ok(!JSON.stringify(result).includes("Sat")&&!JSON.stringify(result).includes("Wed"));
+ assert.match(calls.find(c=>c.sql.includes('FROM "Enrollment"')).sql,/JOIN "Program" p ON p\.id=c\."programId"[\s\S]*/);
+ assert.match(calls.find(c=>c.sql.includes('FROM "Enrollment"')).sql,/p\."runsShuttle"/);
 });
