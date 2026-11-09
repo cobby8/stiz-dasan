@@ -95,7 +95,7 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
         : state === "pending" ? "결제 확인 중이에요"
         : "결제가 완료되지 않았어요";
     const icon = state === "success" ? "check_circle" : state === "deposit" ? "savings" : state === "error" ? "error" : "hourglass_top";
-    const tone = state === "success" ? "text-[var(--color-academy-success)]" : state === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-primary)]";
+    const tone = state === "success" ? "text-[var(--color-academy-success)]" : state === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-info)]";
 
     return (
         <main className="mx-auto max-w-lg space-y-3 px-4 py-4">
@@ -131,7 +131,7 @@ export default function BundleDoneClient({ paymentKey, orderId, amount }: { paym
                         {order.items.map((item) => (
                             <li key={item.paymentId} className="flex min-h-11 items-center gap-2 px-3 py-2 text-sm">
                                 <span className="min-w-0 flex-1 break-keep font-bold text-[var(--color-academy-ink)]">
-                                    <span className="mr-1 text-[var(--color-academy-primary)]">{item.studentName}</span>
+                                    <span className="mr-1 font-bold text-[var(--color-academy-ink)]">{item.studentName}</span>
                                     {item.title}
                                 </span>
                                 <span className="shrink-0 text-right tabular-nums">

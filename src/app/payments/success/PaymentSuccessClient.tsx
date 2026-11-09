@@ -106,16 +106,16 @@ export default function PaymentSuccessClient() {
     const isPending = state === "pending";
 
     return (
-        <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
             <div
                 className={`mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full text-sm font-extrabold ${
                     state === "loading"
-                        ? "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-300"
+                        ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
                         : isSuccess
-                            ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-200"
+                            ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
                             : isPending
-                                ? "bg-yellow-100 text-yellow-800 dark:bg-brand-neon-lime/15 dark:text-brand-neon-lime"
-                                : "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200"
+                                ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
+                                : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                 }`}
             >
                 {state === "loading" ? "확인" : isDeposit ? "입금" : isSuccess ? "완료" : isPending ? "대기" : "오류"}
@@ -126,7 +126,7 @@ export default function PaymentSuccessClient() {
                     <VirtualAccountNotice account={result.virtualAccount} />
                 </div>
             )}
-            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                 {isDeposit
                     ? "입금하면 자동으로 납부 완료됩니다. 계좌는 청구서와 마이페이지에서 다시 볼 수 있습니다."
                     : isSuccess
@@ -140,21 +140,21 @@ export default function PaymentSuccessClient() {
                     <button
                         type="button"
                         onClick={retryConfirm}
-                        className="inline-flex rounded-xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                        className="inline-flex rounded-xl border border-[var(--color-academy-line)] px-5 py-3 text-sm font-bold text-[var(--color-academy-muted)]"
                     >
                         다시 확인
                     </button>
                 )}
                 <Link
                     href={invoiceHref}
-                    className="inline-flex rounded-xl bg-brand-orange-500 px-5 py-3 text-sm font-bold text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                    className="inline-flex rounded-xl bg-[var(--color-academy-primary)] px-5 py-3 text-sm font-bold text-white"
                 >
                     {invoiceId ? "청구서 확인" : "마이페이지로 이동"}
                 </Link>
                 {invoiceId && (
                     <Link
                         href="/mypage"
-                        className="inline-flex rounded-xl border border-gray-200 px-5 py-3 text-sm font-bold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                        className="inline-flex rounded-xl border border-[var(--color-academy-line)] px-5 py-3 text-sm font-bold text-[var(--color-academy-muted)]"
                     >
                         마이페이지
                     </Link>

@@ -77,7 +77,7 @@ export default async function MyPageLayout({
                     <Link href="/mypage" className="flex min-w-0 items-center gap-2">
                         <Image src="/stiz-logo.png" alt="STIZ" width={140} height={61} className="h-12 w-auto object-contain" />
                         <span className="hidden lg:inline font-extrabold text-lg text-[var(--color-academy-ink)]">
-                            스티즈농구교실 <span className="text-[var(--color-academy-primary)]">다산2호점</span>
+                            스티즈농구교실 <span className="text-[var(--color-academy-ink)]">다산2호점</span>
                         </span>
                     </Link>
                 </div>
@@ -89,7 +89,7 @@ export default async function MyPageLayout({
                     {/* 브라우저로 들어온 학부모에게는 홈페이지로 가는 길이 필요하지만,
                         설치된 앱에서는 나가면 돌아올 길이 없어 감춘다. */}
                     <HideInInstalledApp>
-                        <Link href="/" className="hover:text-[var(--color-academy-primary)] transition-colors">홈페이지</Link>
+                        <Link href="/" className="hover:text-[var(--color-academy-ink)] transition-colors">홈페이지</Link>
                     </HideInInstalledApp>
                     <ParentMoreMenu>
                         <form action={logout}>

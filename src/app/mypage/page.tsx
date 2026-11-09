@@ -20,11 +20,11 @@ export default async function MyPageDashboard() {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">로그인이 필요합니다</h2>
-                <p className="text-gray-500 dark:text-gray-400 mb-6">마이페이지는 학부모 계정으로 로그인 후 이용할 수 있습니다.</p>
+                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <p className="text-[var(--color-academy-muted)] mb-6">마이페이지는 학부모 계정으로 로그인 후 이용할 수 있습니다.</p>
                 <Link
                     href="/login"
-                    className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold px-6 py-3 rounded-xl hover:bg-orange-600 transition"
+                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
                 >
                     로그인하기
                 </Link>

@@ -133,12 +133,12 @@ export default function ParentAccountActivateClient({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-10 dark:bg-gray-950">
-      <section className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-lg dark:bg-gray-900" aria-labelledby="activate-title">
-        <header className="bg-brand-navy-900 px-6 py-7 text-white">
+    <main className="flex min-h-screen items-center justify-center bg-[var(--color-academy-soft)] px-4 py-10">
+      <section className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-lg" aria-labelledby="activate-title">
+        <header className="bg-[var(--color-academy-primary)] px-6 py-7 text-white">
           <p className="text-sm font-bold text-[var(--brand-accent)]">{selfService ? "STIZ 농구교실" : "STIZ 특강"}</p>
           <h1 id="activate-title" className="mt-1 text-2xl font-black">{selfService ? "기존 학부모 계정 활성화" : "보호자 계정 활성화"}</h1>
-          <p className="mt-2 text-sm leading-6 text-gray-300">{selfService ? "휴대폰 인증이 끝났어요. 앞으로 로그인에 쓸 이메일과 비밀번호만 정해 주세요." : "본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요."}</p>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-academy-faint)]">{selfService ? "휴대폰 인증이 끝났어요. 앞으로 로그인에 쓸 이메일과 비밀번호만 정해 주세요." : "본인 확인 후 결제에 사용할 로그인 정보를 만들어 주세요."}</p>
         </header>
 
         <div className="space-y-5 p-6">
@@ -150,10 +150,10 @@ export default function ParentAccountActivateClient({
 
           {step === "PHONE" && (
             <div className="space-y-4">
-              <div className="rounded-2xl bg-gray-50 p-4 dark:bg-gray-800">
-                <p className="text-xs font-bold text-gray-500">인증번호를 받을 휴대폰</p>
-                <p className="mt-1 text-lg font-black text-gray-900 dark:text-white">{maskedPhone}</p>
-                <p className="mt-2 text-xs text-gray-500">링크 유효기간: {expiryLabel}</p>
+              <div className="rounded-2xl bg-[var(--color-academy-soft)] p-4">
+                <p className="text-xs font-bold text-[var(--color-academy-muted)]">인증번호를 받을 휴대폰</p>
+                <p className="mt-1 text-lg font-black text-[var(--color-academy-ink)]">{maskedPhone}</p>
+                <p className="mt-2 text-xs text-[var(--color-academy-muted)]">링크 유효기간: {expiryLabel}</p>
               </div>
               <PrimaryButton pending={pending} onClick={requestOtp} label="인증번호 받기" pendingLabel="발송 중…" />
             </div>
@@ -162,11 +162,11 @@ export default function ParentAccountActivateClient({
           {step === "OTP" && (
             <div className="space-y-4">
               <div>
-                <label htmlFor="parent-otp" className="text-sm font-bold text-gray-800 dark:text-gray-100">문자로 받은 인증번호</label>
-                <input id="parent-otp" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} maxLength={6} placeholder="000000" className="mt-2 min-h-14 w-full rounded-xl border border-gray-300 bg-white px-4 text-center text-2xl font-black tracking-[0.35em] outline-none focus:border-[var(--brand-accent)] dark:border-gray-700 dark:bg-gray-800" />
+                <label htmlFor="parent-otp" className="text-sm font-bold text-[var(--color-academy-ink)]">문자로 받은 인증번호</label>
+                <input id="parent-otp" inputMode="numeric" autoComplete="one-time-code" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} maxLength={6} placeholder="000000" className="mt-2 min-h-14 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 text-center text-2xl font-black tracking-[0.35em] outline-none focus:border-[var(--brand-accent)]" />
               </div>
               <PrimaryButton pending={pending} disabled={otp.length !== 6} onClick={verifyOtp} label="본인 확인" pendingLabel="확인 중…" />
-              <button type="button" disabled={pending} onClick={requestOtp} className="min-h-11 w-full text-sm font-bold text-gray-500 underline disabled:opacity-50">인증번호 다시 받기</button>
+              <button type="button" disabled={pending} onClick={requestOtp} className="min-h-11 w-full text-sm font-bold text-[var(--color-academy-muted)] underline disabled:opacity-50">인증번호 다시 받기</button>
             </div>
           )}
 
@@ -179,8 +179,8 @@ export default function ParentAccountActivateClient({
             </form>
           )}
 
-          {message && <p role={message.kind === "error" ? "alert" : "status"} aria-live={message.kind === "error" ? "assertive" : "polite"} className={`rounded-xl p-3 text-sm font-bold leading-6 ${message.kind === "error" ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"}`}>{message.text}</p>}
-          <p className="text-center text-xs leading-5 text-gray-500">링크가 만료되거나 계정이 잠기면 반복해서 시도하지 말고 학원에 문의해 주세요.</p>
+          {message && <p role={message.kind === "error" ? "alert" : "status"} aria-live={message.kind === "error" ? "assertive" : "polite"} className={`rounded-xl p-3 text-sm font-bold leading-6 ${message.kind === "error" ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{message.text}</p>}
+          <p className="text-center text-xs leading-5 text-[var(--color-academy-muted)]">링크가 만료되거나 계정이 잠기면 반복해서 시도하지 말고 학원에 문의해 주세요.</p>
         </div>
       </section>
     </main>
@@ -188,11 +188,11 @@ export default function ParentAccountActivateClient({
 }
 
 function ProgressStep({ active, step, label }: { active: boolean; step: string; label: string }) {
-  return <li className={active ? "text-brand-navy-900 dark:text-white" : "text-gray-400"}><span className={`mx-auto mb-1 flex size-7 items-center justify-center rounded-full ${active ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "bg-gray-100 dark:bg-gray-800"}`}>{step}</span>{label}</li>;
+  return <li className={active ? "text-[var(--color-academy-ink)]" : "text-[var(--color-academy-faint)]"}><span className={`mx-auto mb-1 flex size-7 items-center justify-center rounded-full ${active ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "bg-[var(--color-academy-soft)]"}`}>{step}</span>{label}</li>;
 }
 
 function Field({ id, label, type, value, onChange, autoComplete, placeholder }: { id: string; label: string; type: string; value: string; onChange: (value: string) => void; autoComplete: string; placeholder: string }) {
-  return <div><label htmlFor={id} className="text-sm font-bold text-gray-800 dark:text-gray-100">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 outline-none focus:border-[var(--brand-accent)] dark:border-gray-700 dark:bg-gray-800" /></div>;
+  return <div><label htmlFor={id} className="text-sm font-bold text-[var(--color-academy-ink)]">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 outline-none focus:border-[var(--brand-accent)]" /></div>;
 }
 
 function PrimaryButton({ pending, disabled = false, onClick, label, pendingLabel, submit = false }: { pending: boolean; disabled?: boolean; onClick: () => void; label: string; pendingLabel: string; submit?: boolean }) {

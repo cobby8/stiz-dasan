@@ -45,7 +45,7 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
             </Link>
             <header>
                 {notice.isPinned && (
-                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-danger)]">중요 공지</p>
+                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-warning)]">중요 공지</p>
                 )}
                 <h1 className="break-keep text-xl font-extrabold text-[var(--color-academy-ink)]">{notice.title}</h1>
                 <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
@@ -58,13 +58,13 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                 {isHtmlContent(notice.content) ? (
                     // 리치 에디터 HTML 공지 — XSS 제거(sanitizeHtml) 후에만 넣는다. 원문 그대로 넣지 말 것.
                     <div
-                        className="notice-content max-w-none text-gray-700 dark:text-gray-200 [overflow-wrap:anywhere]"
+                        className="notice-content max-w-none text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
                         dangerouslySetInnerHTML={{ __html: sanitizeHtml(notice.content, { linkifyTextUrls: true }) }}
                     />
                 ) : (
                     // 옛 순수 텍스트 공지 — toNoticeHtml 이 이스케이프 + 줄바꿈 + 주소 링크
                     <div
-                        className="max-w-none whitespace-pre-wrap text-[15px] leading-loose text-gray-700 dark:text-gray-200 [overflow-wrap:anywhere]"
+                        className="max-w-none whitespace-pre-wrap text-[15px] leading-loose text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
                         dangerouslySetInnerHTML={{ __html: toNoticeHtml(notice.content) }}
                     />
                 )}
@@ -88,7 +88,7 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                             {fileAtts.map((a, i) => (
                                 <li key={i}>
                                     <a href={a.url} target="_blank" rel="noopener noreferrer"
-                                        className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)]">
+                                        className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
                                         <span className="material-symbols-outlined text-base" aria-hidden="true">download</span>
                                         <span className="min-w-0 break-all">{a.filename}</span>
                                     </a>
