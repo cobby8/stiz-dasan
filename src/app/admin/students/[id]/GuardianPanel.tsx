@@ -189,9 +189,17 @@ export default function GuardianPanel({
             </div>
 
             {/* 로그인 계정 전화 — 주 보호자와 다를 수 있어 혼동 방지용으로 읽기 전용 표시 */}
-            <p className="mb-2 rounded-lg bg-[var(--color-academy-soft)] px-2.5 py-1.5 text-xs text-[var(--color-academy-muted)]">
-                로그인 계정 전화: <span className="font-bold text-[var(--color-academy-muted)]">{accountPhone ? formatGuardianPhone(accountPhone) : "없음"}</span>
-                <span className="block text-xs text-[var(--color-academy-faint)]">계정 전화는 여기서 바뀌지 않습니다(「연락처 · 프로필」에서 수정).</span>
+            {/* 2026-11-09 정리: 회색 설명 상자 → 한 줄 작은 글씨. «여기서 안 바뀜» 안내는 ⓘ 아이콘에 마우스를 올리면 보인다 */}
+            <p className="mb-2 flex items-center gap-1 text-xs text-[var(--color-academy-muted)]">
+                로그인 계정 전화 <span className="font-bold">{accountPhone ? formatGuardianPhone(accountPhone) : "없음"}</span>
+                <span
+                    title="계정 전화는 여기서 바뀌지 않습니다 — «연락처 · 프로필»에서 수정"
+                    aria-label="계정 전화는 여기서 바뀌지 않습니다. 연락처 · 프로필에서 수정"
+                    role="img"
+                    className="inline-flex cursor-help text-[var(--color-academy-faint)]"
+                >
+                    <Icon name="info" size={14} />
+                </span>
             </p>
 
             {!loaded ? (
@@ -205,40 +213,42 @@ export default function GuardianPanel({
                     {guardians.map((g) => (
                         <li key={g.id}>
                             {editingId === g.id ? formView : (
-                                <div className="rounded-xl border border-[var(--color-academy-line)] p-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <p className="flex flex-wrap items-center gap-1.5 text-[13px] font-bold text-[var(--color-academy-ink)]">
-                                                <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{g.relation}</span>
-                                                {g.name && g.name !== g.relation && <span>{g.name}</span>}
-                                                {g.isPrimary && (
-                                                    <span className="rounded-full px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주 보호자</span>
-                                                )}
-                                            </p>
-                                            {g.phone ? (
-                                                <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="mt-0.5 inline-block text-[13px] text-[var(--color-academy-ink)] hover:underline">
-                                                    {formatGuardianPhone(g.phone)}
-                                                </a>
-                                            ) : (
-                                                <p className="mt-0.5 text-[12px] text-[var(--color-academy-faint)]">전화번호 없음</p>
+                                // 2026-11-09 정리: 버튼 줄을 따로 두지 않고 두 줄에 합쳤다 —
+                                // 1줄: 관계·이름·주 보호자 배지 … [주 보호자로] / 2줄: 전화 … [수정][삭제]
+                                <div className="space-y-1.5 rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                            <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{g.relation}</span>
+                                            {g.name && g.name !== g.relation && <span>{g.name}</span>}
+                                            {g.isPrimary && (
+                                                <span className="rounded-full px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주 보호자</span>
                                             )}
-                                        </div>
+                                        </p>
+                                        {editingId === null && !g.isPrimary && (
+                                            <button type="button" onClick={() => makePrimary(g)} disabled={isPending} title="주 보호자로 지정" className={`${SMALL_BTN} shrink-0`}>
+                                                <Icon name="star" size={13} /> 주 보호자로
+                                            </button>
+                                        )}
                                     </div>
-                                    {editingId === null && (
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                            <button type="button" onClick={() => openEdit(g)} disabled={isPending} className={SMALL_BTN}>
-                                                <Icon name="edit" size={13} /> 수정
-                                            </button>
-                                            {!g.isPrimary && (
-                                                <button type="button" onClick={() => makePrimary(g)} disabled={isPending} className={SMALL_BTN}>
-                                                    <Icon name="star" size={13} /> 주 보호자로 지정
+                                    <div className="flex items-center justify-between gap-2">
+                                        {g.phone ? (
+                                            <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="min-w-0 truncate text-[13px] text-[var(--color-academy-ink)] hover:underline">
+                                                {formatGuardianPhone(g.phone)}
+                                            </a>
+                                        ) : (
+                                            <p className="text-[12px] text-[var(--color-academy-faint)]">전화번호 없음</p>
+                                        )}
+                                        {editingId === null && (
+                                            <div className="flex shrink-0 gap-1.5">
+                                                <button type="button" onClick={() => openEdit(g)} disabled={isPending} className={SMALL_BTN}>
+                                                    <Icon name="edit" size={13} /> 수정
                                                 </button>
-                                            )}
-                                            <button type="button" onClick={() => remove(g)} disabled={isPending} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)] disabled:opacity-50">
-                                                <Icon name="delete" size={13} /> 삭제
-                                            </button>
-                                        </div>
-                                    )}
+                                                <button type="button" onClick={() => remove(g)} disabled={isPending} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)] disabled:opacity-50">
+                                                    <Icon name="delete" size={13} /> 삭제
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </li>
