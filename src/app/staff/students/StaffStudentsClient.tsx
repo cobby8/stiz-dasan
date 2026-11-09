@@ -92,13 +92,14 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
   );
 }
 
+// accent(학부모 전화) = 보조 버튼(흰 바탕·입력선 테두리·검정 글자) — 학생마다 반복되는 버튼이라 검정 채움을 걷었다. 전화 버튼은 어느 화면이든 같은 모양(2026-11-09)
 function ContactActions({ label, name, phone, accent = false }: { label: string; name: string; phone: string | null; accent?: boolean }) {
   if (!phone) return <div className="mt-3 flex min-h-12 items-center justify-between rounded-xl bg-[var(--color-academy-soft)] px-3 text-sm text-[var(--color-academy-faint)]"><span>{label} {name}</span><span>번호 없음</span></div>;
   return (
     <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><p className="min-w-0 break-keep text-sm font-bold">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="shrink-0 whitespace-nowrap text-sm font-bold text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border border-[var(--color-academy-line)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
+        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
         <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-bold"><span aria-hidden="true" className="material-symbols-outlined text-xl">sms</span>문자</a>
       </div>
     </div>

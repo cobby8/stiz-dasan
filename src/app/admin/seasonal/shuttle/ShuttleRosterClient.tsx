@@ -438,9 +438,9 @@ export default function ShuttleRosterClient({
               이 명단은 아직 확정 전입니다. 신청이 바뀌면 명단도 함께 바뀝니다.
             </p>
             {/* 확정은 되돌리기 어려운 행동이라 확인창을 한 번 거친다.
-                색: 주의 안내 띠 안의 버튼이라 주황 채움 대신 옅은 주의 바탕 + 진한 주의 글자 + 테두리(2026-11-09 원장 «색 더 정리») */}
+                색: 명단 화면의 주 행동이라 주 버튼(검정) — 화면에 채운 버튼은 이것 하나(2026-11-09 PM 결정, 옛 주황 채움) */}
             <button type="button" onClick={confirmRoster} disabled={confirming || rideCount === 0}
-              className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3.5 py-2 text-[13px] font-black text-[var(--color-academy-warning)] disabled:opacity-50">
+              className="academy-button-primary">
               {confirming ? "확정하는 중..." : `${rideCount}명 확정하기`}
             </button>
           </div>

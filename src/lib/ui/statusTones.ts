@@ -37,7 +37,7 @@ export const TONE_TEXT_CLASS: Record<StatusTone, string> = {
 export const TONE_SOLID_CLASS: Record<StatusTone, string> = {
   success: "bg-[var(--color-academy-success)] text-[var(--color-academy-on-primary)]",
   warning: "bg-[var(--color-academy-warning)] text-[var(--color-academy-on-primary)]",
-  danger: "bg-[var(--color-academy-danger)] text-[var(--color-academy-on-primary)]",
+  danger: "bg-[var(--color-academy-danger-fill)] text-[var(--color-academy-on-primary)]", // 꽉 찬 위험 = danger-fill(맑은 빨강, 11-09)
   info: "bg-[var(--color-academy-info)] text-[var(--color-academy-on-primary)]",
   neutral: "bg-[var(--color-academy-neutral)] text-[var(--color-academy-on-primary)]",
 };

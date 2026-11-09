@@ -18,7 +18,8 @@ export type { StatusTone };
 const FILLED: Record<StatusTone, string> = {
   success: "border-[var(--color-academy-success)] bg-[var(--color-academy-success)] text-[var(--color-academy-on-primary)]",
   warning: "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning)] text-[var(--color-academy-on-primary)]",
-  danger: "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger)] text-[var(--color-academy-on-primary)]",
+  // 위험 채움 = 맑은 빨강(danger-fill), 올리면 진한 빨강 — 꽉 찬 위험색은 어디서나 이 한 벌(2026-11-09 위험색 역할 분리)
+  danger: "border-[var(--color-academy-danger-fill)] bg-[var(--color-academy-danger-fill)] text-[var(--color-academy-on-primary)] hover:border-[var(--color-academy-danger-fill-hover)] hover:bg-[var(--color-academy-danger-fill-hover)]",
   info: "border-[var(--color-academy-info)] bg-[var(--color-academy-info)] text-[var(--color-academy-on-primary)]",
   neutral: "border-[var(--color-academy-neutral)] bg-[var(--color-academy-neutral)] text-[var(--color-academy-on-primary)]",
 };
