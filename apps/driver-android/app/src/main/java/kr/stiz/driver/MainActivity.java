@@ -26,6 +26,8 @@ public final class MainActivity extends Activity {
     private String pendingNavigation;
     private volatile boolean unfinishedRun;
     private volatile String activeRunToken = "";
+    // 토스 결제창에 들어간 뒤 우리 사이트(결제 완료·실패 화면)로 돌아올 때까지만 켜진다.
+    private volatile boolean paymentActive;
     private boolean backRegistered;
     private Object backCallback;
     private String lastErrorDetail, lastErrorToken;
@@ -127,18 +129,37 @@ public final class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                if (!request.isForMainFrame()) return !AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, uri.toString());
+                String url = uri.toString();
+                // 결제 중 카드사·간편결제 앱 호출은 본문·iframe 어디서 와도 바깥 앱으로 넘긴다.
+                if (paymentActive && paymentAllowed() && AppNavigationPolicy.isPaymentAppScheme(url)) { openPaymentApp(uri); return true; }
+                if (!request.isForMainFrame()) {
+                    boolean paymentFrame = paymentAllowed() && (AppNavigationPolicy.isTossPayment(url)
+                        || (paymentActive && AppNavigationPolicy.paymentPageAllowed(url)));
+                    return !(AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, url) || paymentFrame);
+                }
                 if (!unfinishedRun && nativeAuth.begin(uri, request.hasGesture())) return true;
-                if (trustedAppPage(uri)) { navigateSafely(uri); return true; }
-                // External navigation only follows an explicit phone/map action. Arbitrary intents are never parsed.
-                if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(uri.toString(), request.hasGesture())) {
+                if (trustedAppPage(uri)) { paymentActive = false; navigateSafely(uri); return true; }
+                // 토스 결제창은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
+                if (paymentAllowed() && AppNavigationPolicy.isTossPayment(url)) { paymentActive = true; return false; }
+                if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(url)) return false;
+                // 그 밖의 바깥 이동은 사용자가 누른 전화·지도만 연다.
+                if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(url, request.hasGesture())) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
                     catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·지도 앱을 설치해 주세요."); }
-                } else showAppMessage("이 주소는 앱에서 열 수 없습니다. 본인인증·외부 로그인은 앱 연결 준비 후 사용할 수 있습니다.");
+                } else if (unfinishedRun && AppNavigationPolicy.isTossPayment(url)) {
+                    showAppMessage("운행 중에는 결제 화면을 열 수 없습니다. 운행을 마친 뒤 다시 시도해 주세요.");
+                } else showAppMessage("이 주소는 앱에서 열 수 없습니다.");
                 return true;
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 if (BuildConfig.STIZ_SANDBOX && !AppNavigationPolicy.sandboxRequestAllowed(BuildConfig.STIZ_ORIGIN, request.getUrl().toString())) return sandboxDenied();
+                if (request.isForMainFrame()) {
+                    String target = request.getUrl().toString();
+                    // 우리 사이트로 돌아오면 결제 중 상태를 끝낸다. 결제창·카드사 화면은 결제 중에만 통과시킨다.
+                    if (trustedAppPage(request.getUrl())) paymentActive = false;
+                    else if (paymentAllowed() && AppNavigationPolicy.isTossPayment(target)) { paymentActive = true; return super.shouldInterceptRequest(view, request); }
+                    else if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(target)) return super.shouldInterceptRequest(view, request);
+                }
                 boolean nativeConsume = request.isForMainFrame() && nativeAuth.takeConsumePermission(request.getUrl(), request.getMethod());
                 if (request.isForMainFrame() && (!trustedAppPage(request.getUrl())
                     || (!nativeConsume && AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, request.getUrl().toString()))
@@ -163,6 +184,8 @@ public final class MainActivity extends Activity {
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) nativeAuth.consumeFailed(request.getUrl());
+                // 토스 화면을 불러오지 못하면 결제 중 상태를 풀어 우리 사이트를 다시 잠근다.
+                if (request.isForMainFrame() && AppNavigationPolicy.isTossPayment(request.getUrl().toString())) paymentActive = false;
             }
             @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); nativeAuth.consumeFailed(error.getUrl() == null ? null : Uri.parse(error.getUrl())); }
         });
@@ -215,6 +238,35 @@ public final class MainActivity extends Activity {
         setContentView(web);
         web.loadUrl(uri.toString());
     }
+    // 결제는 통합 앱의 운영 화면에서, 운행 중이 아닐 때만 연다(시험 앱·기사님 전용 앱 제외).
+    private boolean paymentAllowed() { return !BuildConfig.STIZ_SANDBOX && BuildConfig.STIZ_UNIFIED_APP && !unfinishedRun; }
+    // 카드사·간편결제 앱 열기. intent:// 는 크롬과 같은 방식으로 정리해 바깥 앱 화면만 연다.
+    private void openPaymentApp(Uri uri) {
+        Intent intent;
+        try {
+            if ("intent".equalsIgnoreCase(uri.getScheme())) {
+                intent = Intent.parseUri(uri.toString(), Intent.URI_INTENT_SCHEME);
+                intent.setComponent(null);
+                intent.setSelector(null);
+                // 안쪽 대상이 우리 앱 자신이거나 웹·파일 주소면 열지 않는다(결제 앱만 연다).
+                String inner = intent.getScheme() == null ? "" : intent.getScheme().toLowerCase(java.util.Locale.ROOT);
+                if (getPackageName().equals(intent.getPackage()) || !AppNavigationPolicy.isPaymentAppScheme(inner + ":")
+                    && !inner.isEmpty()) { showAppMessage("이 결제 앱 주소는 열 수 없습니다. 다른 결제수단을 골라 주세요."); return; }
+                intent.setFlags(intent.getFlags() & ~(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION));
+            } else intent = new Intent(Intent.ACTION_VIEW, uri);
+            intent.addCategory(Intent.CATEGORY_BROWSABLE);
+        } catch (Exception failure) { showAppMessage("결제 앱 주소를 열지 못했습니다. 다른 결제수단을 골라 주세요."); return; }
+        try { startActivity(intent); }
+        catch (ActivityNotFoundException missing) {
+            String pkg = intent.getPackage();
+            if (pkg != null && pkg.matches("[A-Za-z0-9_.]+")) {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg))); return; }
+                catch (ActivityNotFoundException storeMissing) { /* 아래 안내로 넘어간다 */ }
+            }
+            showAppMessage("결제 앱이 설치되어 있지 않습니다. 설치한 뒤 다시 시도하거나 다른 결제수단을 골라 주세요.");
+        } catch (Exception failure) { showAppMessage("결제 앱을 열지 못했습니다. 다른 결제수단을 골라 주세요."); }
+    }
     private void navigateSafely(Uri uri) { navigateSafely(uri, false); }
     private void navigateSafely(Uri uri, boolean back) {
         if (web == null || isFinishing() || isDestroyed() || worker.isShutdown()) return;
@@ -239,6 +291,8 @@ public final class MainActivity extends Activity {
     private void checkObservedNavigation(String url) {
         if (fileChooser != null) fileChooser.navigation(url);
         if (nativeAuth != null) nativeAuth.navigation(url);
+        // 실제로 보이는 주소가 우리 사이트면(토스 이동 실패·취소 포함) 결제 중 상태를 끝낸다.
+        if (url != null && trustedAppPage(Uri.parse(url))) paymentActive = false;
         if (web == null || isFinishing() || isDestroyed() || !trustedAppPage(Uri.parse(url))) return;
         if (needsAccountRunHandoff(url)) {
             web.stopLoading();

@@ -16,6 +16,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var fileDownloads: NativeFileDownloads!
     private var downloadLink: (page: URL, target: URL)?
     private var downloadConverted = false
+    // 토스 결제창에 들어간 뒤 우리 사이트(결제 완료·실패 화면)로 돌아올 때까지만 켜진다.
+    private var paymentActive = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -38,6 +40,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         webView.uiDelegate = self
         pageObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
             guard let self = self else { return }
+            self.syncPaymentState()
             self.nativeAuth.cancelIfPageChanged(self.webView.url)
         }
         webView.allowsBackForwardNavigationGestures = true
@@ -153,10 +156,24 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     private func approve(_ action: WKNavigationAction) -> Bool {
         guard let url = action.request.url else { return false }
-        switch NavigationPolicy.decide(url, userInitiated: action.navigationType == .linkActivated) {
+        switch NavigationPolicy.decide(url, userInitiated: action.navigationType == .linkActivated, paymentActive: paymentActive) {
         case .website:
+            // 우리 사이트로 돌아오면 결제 중 상태를 끝내고 다시 잠근다.
+            paymentActive = false
             nativeAuth.cancelIfPageChanged(nil)
             return true
+        case .paymentStart:
+            paymentActive = true
+            nativeAuth.cancelIfPageChanged(nil)
+            return true
+        case .paymentPage:
+            return true
+        case .paymentApp:
+            // 카드사·간편결제 앱을 연다. 설치돼 있지 않으면 안내한다.
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                guard !opened else { return }
+                self?.alert("결제 앱이 설치되어 있지 않습니다. 앱스토어에서 설치한 뒤 다시 시도하거나 다른 결제수단을 골라 주세요.")
+            }
         case .external:
             if action.sourceFrame.isMainFrame { UIApplication.shared.open(url) }
         case .blockedAuthentication:
@@ -190,8 +207,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 return false
             }
             alert("앱의 간편로그인은 준비 중입니다. 이메일·비밀번호로 로그인해 주세요. 웹사이트에서는 기존 간편로그인을 사용할 수 있습니다.")
+        case .blockedDriver:
+            alert("기사님 운행 화면은 아이폰 앱에서 열 수 없습니다. Android 앱을 이용해 주세요.")
         case .blocked:
-            alert(NavigationPolicy.sandbox.isRequested ? "시험 앱에서는 시험 서버 안의 화면만 열 수 있습니다." : "이 주소는 앱에서 열 수 없습니다. 기사님 운행은 Android 기사님 앱을 이용해 주세요.")
+            alert(NavigationPolicy.sandbox.isRequested ? "시험 앱에서는 시험 서버 안의 화면만 열 수 있습니다." : "이 주소는 앱에서 열 수 없습니다.")
         }
         return false
     }
@@ -225,6 +244,15 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         downloadConverted = false
         // iframe은 새 창이나 외부 앱을 열 권한을 얻지 않는다.
         if navigationAction.targetFrame?.isMainFrame == false {
+            // 결제 중 iframe 안에서 카드사 앱을 부르는 경우만 바깥 앱으로 넘긴다(iframe 자체는 이동하지 않음).
+            if paymentActive, let target = navigationAction.request.url, NavigationPolicy.isPaymentAppScheme(target) {
+                UIApplication.shared.open(target, options: [:]) { [weak self] opened in
+                    guard !opened else { return }
+                    self?.alert("결제 앱이 설치되어 있지 않습니다. 앱스토어에서 설치한 뒤 다시 시도하거나 다른 결제수단을 골라 주세요.")
+                }
+                decisionHandler(.cancel)
+                return
+            }
             decisionHandler(navigationAction.request.url.map { NavigationPolicy.allowsSubframe($0) } == true ? .allow : .cancel)
             return
         }
@@ -248,8 +276,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 return
             }
         }
-        guard let url = navigationResponse.response.url,
-              NavigationPolicy.decide(url, userInitiated: false) == .website else { decisionHandler(.cancel); return }
+        guard let url = navigationResponse.response.url else { decisionHandler(.cancel); return }
+        let responseDecision = NavigationPolicy.decide(url, userInitiated: false, paymentActive: paymentActive)
+        // 결제창·카드사 인증 화면은 표시만 허용한다(파일 내려받기는 우리 사이트에서만).
+        if [.paymentStart, .paymentPage].contains(responseDecision) { decisionHandler(.allow); return }
+        guard responseDecision == .website else { decisionHandler(.cancel); return }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         if disposition.lowercased().hasPrefix("attachment") || !navigationResponse.canShowMIMEType {
             guard let link = downloadLink, link.target == url,
@@ -297,18 +328,28 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         return frame.isMainFrame && NavigationPolicy.matchesWebsiteOrigin(url)
     }
 
+    // 결제 중 카드사 인증 화면의 알림·확인창(«결제를 진행할까요?» 등)은 보여 주되, 우리 앱 안내로 오인하지 않게
+    // 제목을 그 사이트 주소로 단다. 입력창(prompt)은 피싱 위험이 있어 결제 중에도 열지 않는다.
+    private func paymentDialogTitle(_ frame: WKFrameInfo) -> String? {
+        guard paymentActive, frame.isMainFrame, !trustedFrame(frame) else { return nil }
+        let host = frame.securityOrigin.host
+        return host.isEmpty ? nil : host
+    }
+
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        guard trustedFrame(frame), presentedViewController == nil else { completionHandler(); return }
-        let dialog = UIAlertController(title: "STIZ", message: message, preferredStyle: .alert)
+        let candidate = trustedFrame(frame) ? "STIZ" : paymentDialogTitle(frame)
+        guard let title = candidate, presentedViewController == nil else { completionHandler(); return }
+        let dialog = UIAlertController(title: title, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler() })
         present(dialog, animated: true)
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        guard trustedFrame(frame), presentedViewController == nil else { completionHandler(false); return }
-        let dialog = UIAlertController(title: "확인", message: message, preferredStyle: .alert)
+        let candidate = trustedFrame(frame) ? "확인" : paymentDialogTitle(frame)
+        guard let title = candidate, presentedViewController == nil else { completionHandler(false); return }
+        let dialog = UIAlertController(title: title, message: message, preferredStyle: .alert)
         dialog.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completionHandler(false) })
         dialog.addAction(UIAlertAction(title: "확인", style: .default) { _ in completionHandler(true) })
         present(dialog, animated: true)
@@ -375,7 +416,15 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         return "\(guidance)\n\n\(category) · \(failure.code)"
     }
     #endif
+    // 실제로 보이는 주소로 결제 중 상태를 바로잡는다. 토스 이동이 실패·취소돼 우리 사이트에 남으면 다시 잠근다.
+    private func syncPaymentState() {
+        guard let url = webView.url else { return }
+        if NavigationPolicy.matchesWebsiteOrigin(url) { paymentActive = false }
+        else if NavigationPolicy.isTossPayment(url) && !NavigationPolicy.sandbox.isRequested { paymentActive = true }
+    }
+
     private func recover(_ error: Error?) {
+        syncPaymentState()
         // 파일로 전환되며 중단된 웹 탐색은 기존 페이지를 오류 화면으로 바꾸지 않는다.
         if error != nil, downloadConverted || fileDownloads?.isBusy == true { progress.stopAnimating(); return }
         // 주소 전환에 따른 취소는 완료 응답 대기를 해제하지 않는다.

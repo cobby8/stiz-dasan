@@ -75,14 +75,14 @@ workflows:
     artifacts:
       - apps/stiz-ios/build/sandbox-device/STIZ-sandbox.ipa
       - apps/stiz-ios/build/sandbox-device/verification.json
-  # 업턴랩스 App Store Connect API 키는 Codemagic 팀 설정 → Integrations 에 «upturnlabs-asc-key» 이름으로 등록한다.
+  # 업턴랩스 App Store Connect API 키는 Codemagic 팀 설정 → Integrations 의 «bdr-asc-key»(업턴랩스 팀 키 — BDR 앱과 함께 씀, 원장 결정 2026-11-08)를 쓴다.
   # 배포 인증서는 Codemagic 팀 설정 → Code signing identities 에 둔다. 이 파일에는 이름만 있다.
   stiz-ios-app-store:
     name: STIZ 농구교실 App Store 배포 빌드·TestFlight 업로드 (수동·심사 제출 없음)
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
-      app_store_connect: upturnlabs-asc-key
+      app_store_connect: bdr-asc-key
     environment:
       xcode: latest
       ios_signing:

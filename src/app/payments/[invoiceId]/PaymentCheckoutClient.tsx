@@ -298,6 +298,7 @@ export default function PaymentCheckoutClient({
                     })}
                 </div>
             )}
+            {providerReady && provider === "TOSS" && method === "CARD" && <p className="text-xs text-[var(--color-academy-muted)]">토스페이는 토스 앱이 있어야 열려요. 없으면 카드를 골라 주세요.</p>}
 
             {providerReady && provider === "CAFE24_BRIDGE" && (
                 <p className="text-sm font-bold text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>

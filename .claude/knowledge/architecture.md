@@ -251,3 +251,9 @@
 - **발견자**: developer
 - **내용**: 부상·질병은 휴원 대신 기간 결석. 수업일 계산은 순수 `src/lib/regular/absence-period-plan.ts`(연간 일정은 `getMonthlyClassDates` 를 함수 인자로 받음 — 그 파일이 queries 를 import 해서), SQL 은 db 인자 연결부 `absence-period-service.ts`(전역 잠금 `lockCompensation`), prisma·캐시는 `absence-period-runner.ts`. 기간 행 note 머리말 `기간 결석 · ` + reportedByUserId NULL 로 알림 재조정이 거른다(복귀·취소 때 기사·코치 «결석 취소» 알림 방지). 복귀 미정은 coveredUntil 을 KST 다음 달 말일까지, 매일 크론이 늘림. 연간 일정에 없는 달은 추측 안 하고 멈춤.
 - **참조횟수**: 0
+
+### [2026-11-09] 관리자 «선택 항목 환불» = 순수 판정(bulkRefund.ts) + 갈래별 기존 환불 함수
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 서버 액션 `src/app/actions/payment-bulk-refund.ts` 가 DB 로 다시 읽은 행을 `planBulkRefund` 에 넣어 갈래를 나눈다(막을 것 하나라도 있으면 전부 미실행). TOSS=`refundTossPaymentByAdmin`(payment-ledger: 재조회→감사→취소 API 전액→재조회 FULL 일 때만 applyVerifiedTossFullCancel, 가상계좌 DONE 은 환불 계좌 필요라 차단), TOSS_POS=`requestChargeCancelByAdmin`(비동기, 결과 REQUESTED), 그 밖(MANUAL)=`refundPaidPaymentInTx`, CAFE24_BRIDGE 차단. 묶음(토스 항목·POS 항목)은 전부 골라야 하고 부분 취소는 지원 안 함. ⚡ 한 건 «환불»도 같은 runRefund→refundSelectedPayments([id]) 로 통일(PM 결정), updatePaymentStatus·bulkUpdatePaymentStatus 는 REFUNDED 를 거부한다 — 새 환불 경로를 만들 때도 이 액션만 부른다.
+- **참조횟수**: 0

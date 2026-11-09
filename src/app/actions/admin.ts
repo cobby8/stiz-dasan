@@ -1909,11 +1909,15 @@ export async function cancelUnpaidPayment(id: string, reason: string) {
 // 계좌이체는 recordBankTransferPayment, 현장 결제는 토스 POS 확인, 온라인은 토스 웹훅이 각각
 // lib/payment-ledger 의 markPaymentPaid 를 직접 부른다 — 이 상태 변경 함수들은 PAID 를 받지 않는다.
 const DIRECT_PAID_BLOCKED_MESSAGE = "납부완료는 «납부 처리» 창에서 결제 방법을 골라 기록해 주세요.";
+// 환불도 상태 변경으로 만들지 않는다(PM 결정 2026-11-09) — 토스 온라인은 실제 결제 취소, POS 는 POS 취소,
+// 수기만 장부 환불로 갈라 주는 refundSelectedPayments(⚡ «환불»·«선택 항목 환불»)만 쓴다. 여기서 바꾸면 돈은 그대로 둔 채 장부만 환불된다.
+const DIRECT_REFUND_BLOCKED_MESSAGE = "환불은 수납 관리의 ⚡ «환불» 또는 «선택 항목 환불»로 해 주세요.";
 
 export async function updatePaymentStatus(id: string, status: string) {
     await requireFinanceOwner();
     // try 밖에서 막아야 안내 문구가 «수납 상태 변경 실패»로 뭉개지지 않는다
     if (status === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
+    if (status === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
     try {
         await ensurePaymentInfrastructure();
         const invoice = await ensureInvoiceForPayment(id);
@@ -4077,6 +4081,7 @@ export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) 
     await requireFinanceOwner();
     // 일괄 납부완료도 방법·근거 없이는 만들지 않는다 — recordBankTransferPayment 를 쓴다
     if (newStatus === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
+    if (newStatus === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
     if (ids.length === 0) return;
 
     try {

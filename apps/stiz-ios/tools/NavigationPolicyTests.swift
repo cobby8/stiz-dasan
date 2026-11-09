@@ -14,12 +14,12 @@ struct NavigationPolicyTests {
             ("https://www.stiz-dasan.kr/auth/oauth/google", true, .blockedAuthentication),
             ("https://www.stiz-dasan.kr/auth/oauth/apple", true, .blockedAuthentication),
             ("https://www.stiz-dasan.kr/api/auth/parent-link/start", false, .blockedAuthentication),
-            ("https://www.stiz-dasan.kr/driver", true, .blocked),
-            ("https://www.stiz-dasan.kr/driver/example", true, .blocked),
-            ("https://www.stiz-dasan.kr/staff/run", true, .blocked),
-            ("https://www.stiz-dasan.kr/staff/shuttle", true, .blocked),
-            ("https://www.stiz-dasan.kr/staff//run", true, .blocked),
-            ("https://www.stiz-dasan.kr/staff%2Frun", true, .blocked),
+            ("https://www.stiz-dasan.kr/driver", true, .blockedDriver),
+            ("https://www.stiz-dasan.kr/driver/example", true, .blockedDriver),
+            ("https://www.stiz-dasan.kr/staff/run", true, .blockedDriver),
+            ("https://www.stiz-dasan.kr/staff/shuttle", true, .blockedDriver),
+            ("https://www.stiz-dasan.kr/staff//run", true, .blockedDriver),
+            ("https://www.stiz-dasan.kr/staff%2Frun", true, .blockedDriver),
             ("https://www.stiz-dasan.kr/driver%252Fexample", true, .blocked),
             ("https://www.stiz-dasan.kr/one/../driver/example", true, .blocked),
             ("https://www.stiz-dasan.kr:444/admin", false, .blocked),
@@ -46,6 +46,53 @@ struct NavigationPolicyTests {
         for (address, initiated, expected) in cases {
             guard let url = URL(string: address) else { fatalError("Invalid fixture") }
             precondition(NavigationPolicy.decide(url, userInitiated: initiated) == expected, "Navigation case failed: \(address)")
+        }
+        // 결제(원장 결정 2026-11-09): 토스 결제창은 탭 없이도 열고, 결제 중에만 카드사 화면·앱을 허용한다.
+        let payments: [(String, Bool, NavigationPolicy.Decision)] = [
+            ("https://api.tosspayments.com/v1/payments", false, .paymentStart),
+            ("https://pay.toss.im/checkout", false, .paymentStart),
+            ("https://tosspayments.com/", false, .paymentStart),
+            ("https://tosspayments.com.evil.example/", false, .blocked),
+            ("https://eviltosspayments.com/", false, .blocked),
+            ("https://tosspayments.com.evil.example/", true, .blocked),
+            ("http://api.tosspayments.com/", false, .blocked),
+            ("https://api.tosspayments.com:444/", false, .blocked),
+            ("https://user:pass@api.tosspayments.com/", false, .blocked),
+            ("https://card-auth.example.invalid/", false, .blocked),
+            ("ispmobile://TID=example", false, .blocked),
+            ("kakaotalk://kakaopay/pg?url=example", false, .blocked)
+        ]
+        for (address, initiated, expected) in payments {
+            precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: initiated) == expected, "Payment case failed: \(address)")
+        }
+        let paying: [(String, NavigationPolicy.Decision)] = [
+            ("https://card-auth.example.invalid/acs", .paymentPage),
+            ("https://tosspayments.com.evil.example/", .paymentPage),
+            ("https://www.stiz-dasan.kr/mypage/payments/done?paymentKey=x", .website),
+            ("https://www.stiz-dasan.kr/driver", .blockedDriver),
+            ("https://accounts.google.com/", .blockedAuthentication),
+            ("ispmobile://TID=example", .paymentApp),
+            ("kakaotalk://kakaopay/pg?url=example", .paymentApp),
+            ("supertoss://pay?x=1", .paymentApp),
+            ("https://apps.apple.com/kr/app/id369125087", .paymentApp),
+            ("itms-apps://apps.apple.com/app/id369125087", .paymentApp),
+            ("kb-acp://pay", .paymentApp),
+            ("shinhan-sr-ansimclick://pay", .paymentApp),
+            ("hdcardappcardansimclick://pay", .paymentApp),
+            ("intent://pay#Intent;scheme=ispmobile;end", .paymentApp),
+            ("javascript:alert(1)", .blocked),
+            ("data:text/html,hello", .blocked),
+            ("file:///private/example", .blocked),
+            ("http://card-auth.example.invalid/", .blocked),
+            ("stiz-academy-dev://auth/return", .blocked)
+        ]
+        for (address, expected) in paying {
+            precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: false, paymentActive: true) == expected, "Paying case failed: \(address)")
+        }
+        // 시험 앱은 결제 중이라도 결제창을 열지 않는다.
+        let paymentSandbox = SandboxConfiguration.resolve("https://192.168.0.2:8453", debugBuild: true)
+        for address in ["https://api.tosspayments.com/", "ispmobile://TID=example"] {
+            precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: true, paymentActive: true, configuration: paymentSandbox) == .blocked)
         }
         for address in ["http://example.invalid", "tel:000", "javascript:alert(1)", "https://user:pass@map.naver.com", "https://map.naver.com:444/"] {
             precondition(!NavigationPolicy.allowsSubframe(URL(string: address)!))
@@ -146,6 +193,7 @@ struct NavigationPolicyTests {
         precondition(!DownloadPolicy.contentMatches(Data("#!/bin/sh".utf8), mime: "text/plain"))
         print("STIZ iOS download policy: synthetic same-origin, filenames, types, size and content assertions passed")
         print("STIZ iOS navigation policy: \(cases.count) cases passed")
+        print("STIZ iOS payment policy: \(payments.count + paying.count) cases passed")
         print("STIZ iOS native handoff policy: 13 assertions passed")
         print("STIZ iOS sandbox policy: valid/invalid origins, release isolation, navigation and resource rules passed")
     }

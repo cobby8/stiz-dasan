@@ -114,7 +114,7 @@ test("취소 7종은 InlineConfirm 뒤에 기존 함수·인자를 그대로 부
     ["src/app/mypage/makeup/MakeupClient.tsx", /onConfirm=\{\(\) => cancel\(c\.id\)\}/],
     ["src/app/mypage/regular-absence/RegularAbsenceClient.tsx", /onConfirm=\{\(\) => cancel\(d\)\}/],
     ["src/app/mypage/seasonal/SeasonalMakeupClient.tsx", /onConfirm=\{\(\) => cancelAbsence\(s\.enrollmentDateId\)\}/],
-    ["src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx", /onConfirm=\{\(\) => cancel\(child\.pending!\.id\)\}/],
+    ["src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx", /onConfirm=\{\(\) => cancel\(shownPending\.id\)\}/],
     ["src/app/mypage/roles/RolesClient.tsx", /onConfirm=\{\(\) => cancel\(row\.role\)\}/],
     ["src/app/mypage/children/ChildConnectionsClient.tsx", /onConfirm=\{\(\) => run\(async \(\) => \{ const result = await childLinkRequest\(\{ action: "cancel", requestId: row\.id \}\)/],
   ];

@@ -77,5 +77,5 @@
 
 - 번들 `kr.co.upturnlabs.stizdasan`, Release 구성, 표시 이름 `STIZ 농구교실`, 버전 1.0.0, 빌드 번호는 Codemagic `$BUILD_NUMBER`.
 - 서명: `ios_signing.distribution_type: app_store` → `xcode-project use-profiles` → `xcode-project build-ipa`. 비밀값은 파일에 없다.
-- 원장님 준비물: (1) App Store Connect 에서 앱 등록(번들 ID·이름) (2) App Store Connect API 키(App Manager 이상) 발급 → Codemagic Team settings → Integrations → Developer Portal 에 **이름 `upturnlabs-asc-key`** 로 등록 (3) Codemagic Code signing identities 에 업턴랩스 Apple Distribution 인증서 등록 또는 생성.
+- 원장님 준비물: (1) App Store Connect 에서 앱 등록(번들 ID·이름) (2) App Store Connect API 키(App Manager 이상) 발급 → Codemagic Team settings → Integrations → Developer Portal 에 **이름 `bdr-asc-key`** 로 등록 (3) Codemagic Code signing identities 에 업턴랩스 Apple Distribution 인증서 등록 또는 생성.
 - 지킴이: `scripts/native-release-readiness.mjs`(`codemagic-store-upload`)와 `apps/stiz-ios/tools/native_signed_sandbox.py` 가 이 블록 전체 지문을 고정한다. 블록을 고치면 두 파일의 지문을 함께 바꾸고 테스트를 돌린다.

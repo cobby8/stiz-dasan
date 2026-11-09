@@ -89,17 +89,41 @@ test("관리자 보기 모드·기사님 화면: 블록 머리는 있고 카드 
   assert.doesNotMatch(driver, /<button[^>]*aria-pressed/);
 });
 
-test("끌기 피드백 배선: 떠다니는 카드·삽입선·놓으면 이동 애니메이션(움직임 줄이기 존중)·취소는 순서 그대로", async () => {
+test("끌기 배선(3차 실시간 재배치): 끄는 카드가 따라오고 다른 카드가 밀림 · 놓을 때 한 번만 순서 변경 · 취소는 그대로", async () => {
   const board = await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8");
-  assert.match(board, /ghostRef\.current\.style\.top = `\$\{at\.y - \(ghostOffset\.current \?\? 0\)\}px`/);
-  assert.match(board, /const to = target > from \? target - 1 : target;/);
-  assert.match(board, /rememberPositions\(\); latest\.current\.onDropOn\(same\[to\]\);/);
+  // 삽입선·따로 떠다니는 카드(ghost)는 없앴다 — 카드 자체가 transform 으로 움직인다.
+  assert.doesNotMatch(board, /data-drop-line|ghostRef/);
+  assert.match(board, /cards\[from\]\.style\.transform = `translateY\(\$\{top - tops\[from\]\}px\) scale\(1\.02\)`;/);
+  // 지나간 카드만 한 칸(끄는 카드 높이 + 틈)씩 밀린다.
+  assert.match(board, /const shift = from < target && i > from && i <= target \? -s\.step : target < from && i >= target && i < from \? s\.step : 0;/);
+  // 끄는 중에는 순서를 바꾸지 않는다 — onDropOn 은 finishDrag 의 안착 뒤 flushSync 안에서 단 한 번.
+  assert.equal((board.match(/onDropOn\(/g) ?? []).length, 1);
+  assert.match(board, /flushSync\(\(\) => \{[\s\S]{0,200}latest\.current\.onDropOn\(targetRow\);\s*latest\.current\.onDragKeyChange\(null\);/);
+  // 취소(Esc·pointercancel)는 원래 자리로(target = from) — 순서 그대로.
+  assert.match(board, /const target = commit \? s\.target : from;/);
+  assert.match(board, /if \(e\.key === "Escape"\) finishDrag\(false\);/);
+  assert.equal((board.match(/onPointerCancel=\{\(event\) => endPointer\(event, false\)\}/g) ?? []).length, 2);
   assert.match(board, /prefers-reduced-motion: reduce/);
+  assert.match(board, /reduce \? "none" : `transform \$\{SHIFT_MS\}ms \$\{EASE\}`/);
   // 리뷰 반영: 못 옮길 때는 위치를 기억하지 않고, 기억값은 한 프레임 뒤 버린다 · 왼쪽 버튼만 끌기
   assert.match(board, /if \(same\[same\.findIndex\(\(r\) => r\.key === row\.key\) \+ dir\]\) rememberPositions\(\);/);
   assert.match(board, /requestAnimationFrame\(\(\) => \{ if \(flipFrom\.current === map\) flipFrom\.current = null; \}\);/);
-  assert.match(board, /if \(event\.button !== 0\) return;/);
-  assert.match(board, /onPointerCancel=\{cancelHandleDrag\}/);
+  assert.match(board, /if \(event\.button !== 0 \|\| session\.current \|\| pending\.current \|\| !cardEl\) return;/);
+  // 리뷰 반영(3차 권장 4건)
+  // (1) 끌기 범위 = 누른 카드가 든 블록(section) 안 — «(이어서)» 블록 사이에 다른 묶음이 끼어도 블록 간 거리를 한 칸으로 재지 않는다.
+  assert.match(board, /const scope = cardEl\.closest\("section"\) \?\? listRef\.current;/);
+  // (2) 포인터 붙잡기가 풀리면 취소(카드 줄·손잡이 둘 다) · 언마운트 때 안착 타이머 지우고 «끄는 중» 표시 해제
+  assert.equal((board.match(/onLostPointerCapture=\{\(event\) => endPointer\(event, false\)\}/g) ?? []).length, 2);
+  assert.match(board, /if \(settleTimer\.current != null\) window\.clearTimeout\(settleTimer\.current\);/);
+  assert.match(board, /session\.current\.detach\(\);\s*session\.current = null;\s*latest\.current\.onDragKeyChange\(null\);/);
+  // (3) 끌기를 시작한 포인터만 — 움직임·떼기·취소 모두 ownPointer 로 거른다
+  assert.match(board, /return id != null && id === event\.pointerId;/);
+  assert.match(board, /function moveDrag\(event: PointerEvent<HTMLElement>\) \{\s*if \(!ownPointer\(event\)\) return;/);
+  assert.match(board, /function endPointer\(event: PointerEvent<HTMLElement>, commit: boolean\) \{\s*if \(!ownPointer\(event\)\) return;/);
+  // (4) LIFT_PX(5px) 움직여야 들어 올린다 — 그 전에 떼면 그냥 탭(아무것도 안 바뀜)
+  assert.match(board, /const LIFT_PX = 5;/);
+  assert.match(board, /if \(Math\.abs\(event\.clientY - p\.startClientY\) < LIFT_PX\) return;\s*liftDrag\(p, event\.clientY\);/);
+  assert.match(board, /if \(pending\.current\) \{ pending\.current = null; return; \}/);
   // 순서 덮어쓰기·저장은 여전히 바깥(관리자 화면)의 일 — 카드 틀은 저장 API 를 모른다.
   assert.doesNotMatch(board, /\/api\//);
 });

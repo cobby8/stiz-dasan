@@ -2,13 +2,17 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 /**
- * 학생 상세 좌측 레일의 「보호자」 카드.
+ * 학생 상세 좌측 레일의 「보호자」 카드 — 학생 상세에서 «전화번호»를 보여 주는 단 한 곳(2026-11-09 2차 정리).
+ * - 한 사람 = 한 줄(관계·이름·배지 · 전화 · ⚡). 수정·주 보호자 지정·삭제는 ⚡ 메뉴, 추가·수정 입력은 창(AdminModal)에서.
+ * - 학부모 로그인 계정 번호가 보호자 번호와 같으면 그 줄에 «로그인» 배지만 달고, 다르면 «로그인 계정» 줄을 따로 하나 둔다.
  * - 보호자 여러 명(엄마·할머니 등)의 관계·이름·전화를 보여주고 추가·수정·삭제·주 보호자 지정을 한다.
  * - 로그인 계정 전화(User.phone)는 읽기 전용으로만 보여준다 — 여기서 바꾸지 않는다(로그인·알림톡 대상).
  * - 저장은 Server Action(@/app/actions/guardians)이 하고, 응답으로 받은 최신 목록으로 카드만 갱신한다.
  */
 
 import { useCallback, useEffect, useState, useTransition, type FormEvent } from "react";
+import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import {
     addStudentGuardian,
     deleteStudentGuardian,
@@ -45,15 +49,18 @@ function Icon({ name, size = 14 }: { name: string; size?: number }) {
 export default function GuardianPanel({
     studentId,
     accountPhone,
+    accountName = null,
 }: {
     studentId: string;
     // 로그인 계정(Student.parentId → User) 전화 — 읽기 전용 표시용
     accountPhone: string | null;
+    // 로그인 계정 이름 — 계정 번호가 어느 보호자와도 다를 때 «로그인 계정» 줄에 쓴다
+    accountName?: string | null;
 }) {
     const [guardians, setGuardians] = useState<StudentGuardian[]>([]);
     const [loaded, setLoaded] = useState(false);
     // editingId: null = 폼 닫힘 / "new" = 추가 폼 / 그 외 = 해당 보호자 수정 폼
-    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null); // 관리 창(추가·수정 입력 창) 대상
     const [form, setForm] = useState<FormState>(EMPTY_FORM);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
@@ -135,16 +142,21 @@ export default function GuardianPanel({
 
     const canAdd = canAddGuardian(guardians.length);
 
-    // 추가·수정 공용 폼
+    // 로그인 계정 번호와 같은 보호자 찾기(숫자만 비교 — 보호자 번호는 숫자만 저장, 계정 번호는 하이픈이 있을 수 있다)
+    const digits = (v: string | null | undefined) => (v ?? "").replace(/[^0-9]/g, "");
+    const accountDigits = digits(accountPhone);
+    const accountMatchesGuardian = accountDigits !== "" && guardians.some((g) => digits(g.phone) === accountDigits);
+    const editingGuardian = editingId && editingId !== "new" ? guardians.find((g) => g.id === editingId) ?? null : null;
+
+    // 추가·수정 공용 폼 — 창(AdminModal) 안에 그린다. 휴대폰에서는 아래에서 올라오는 시트
     const formView = (
-        <form onSubmit={submitForm} className="space-y-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
-            <p className="text-[12px] font-bold text-[var(--color-academy-ink)]">{editingId === "new" ? "보호자 추가" : "보호자 수정"}</p>
+        <form onSubmit={submitForm} className="space-y-3 px-5 py-4">
             <label className="block">
                 <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">관계 *</span>
-                <input type="text" value={form.relation} maxLength={20} placeholder="예: 모, 조모" onChange={(e) => setForm({ ...form, relation: e.target.value })} className={INPUT_CLASS} />
-                <span className="mt-1 flex flex-wrap gap-1">
+                <input type="text" value={form.relation} maxLength={20} placeholder="예: 모, 조모" onChange={(e) => setForm({ ...form, relation: e.target.value })} className={`${INPUT_CLASS} min-h-11`} data-admin-modal-initial-focus="true" />
+                <span className="mt-1.5 flex flex-wrap gap-1.5">
                     {RELATION_PRESETS.map((r) => (
-                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="rounded-md border border-[var(--color-academy-line)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)] hover:bg-white">
+                        <button key={r} type="button" onClick={() => setForm({ ...form, relation: r })} className="min-h-11 rounded-lg border border-[var(--color-academy-line)] px-3 text-xs text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
                             {r}
                         </button>
                     ))}
@@ -152,22 +164,23 @@ export default function GuardianPanel({
             </label>
             <label className="block">
                 <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">이름 (선택)</span>
-                <input type="text" value={form.name} maxLength={40} placeholder="비우면 관계로 표시" onChange={(e) => setForm({ ...form, name: e.target.value })} className={INPUT_CLASS} />
+                <input type="text" value={form.name} maxLength={40} placeholder="비우면 관계로 표시" onChange={(e) => setForm({ ...form, name: e.target.value })} className={`${INPUT_CLASS} min-h-11`} />
             </label>
             <label className="block">
                 <span className="mb-1 block text-xs font-bold text-[var(--color-academy-faint)]">전화번호 *</span>
-                <input type="tel" inputMode="tel" value={form.phone} placeholder="010-1234-5678" onChange={(e) => setForm({ ...form, phone: e.target.value })} className={INPUT_CLASS} />
+                <input type="tel" inputMode="tel" value={form.phone} placeholder="010-1234-5678" onChange={(e) => setForm({ ...form, phone: e.target.value })} className={`${INPUT_CLASS} min-h-11`} />
             </label>
             {editingId === "new" && guardians.length > 0 && (
-                <label className="flex items-center gap-2 text-[12px] text-[var(--color-academy-muted)]">
+                <label className="flex min-h-11 items-center gap-2 text-[13px] text-[var(--color-academy-muted)]">
                     <input type="checkbox" checked={form.makePrimary} onChange={(e) => setForm({ ...form, makePrimary: e.target.checked })} />
                     주 보호자로 지정
                 </label>
             )}
+            {error && <p role="alert" className="text-xs font-semibold text-[var(--color-academy-danger)]">{error}</p>}
             <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={closeForm} disabled={isPending} className={SMALL_BTN}>취소</button>
-                <button type="submit" disabled={isPending} className="inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-3 py-1 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50">
-                    <Icon name="save" size={13} /> {isPending ? "저장 중…" : "저장"}
+                <button type="button" onClick={closeForm} disabled={isPending} className="academy-button-secondary">닫기</button>
+                <button type="submit" disabled={isPending} className="academy-button-primary">
+                    <Icon name="save" size={15} /> {isPending ? "저장 중…" : "저장"}
                 </button>
             </div>
         </form>
@@ -175,91 +188,97 @@ export default function GuardianPanel({
 
     return (
         <div className={CARD_CLASS}>
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
                     <span className="text-[var(--color-academy-ink)]"><Icon name="family_restroom" size={17} /></span>
                     보호자
                     {loaded && <span className="text-xs font-bold text-[var(--color-academy-faint)]">{guardians.length}명</span>}
                 </h3>
-                {editingId === null && (
-                    <button type="button" onClick={openAdd} disabled={isPending || !canAdd} title={canAdd ? undefined : `최대 ${MAX_GUARDIANS_PER_STUDENT}명`} className={SMALL_BTN}>
-                        <Icon name="add" size={13} /> 보호자 추가
-                    </button>
-                )}
+                <button type="button" onClick={openAdd} disabled={isPending || !canAdd} title={canAdd ? undefined : `최대 ${MAX_GUARDIANS_PER_STUDENT}명`} className={`${SMALL_BTN} min-h-11 lg:min-h-8`}>
+                    <Icon name="add" size={13} /> 추가
+                </button>
             </div>
-
-            {/* 로그인 계정 전화 — 주 보호자와 다를 수 있어 혼동 방지용으로 읽기 전용 표시 */}
-            {/* 2026-11-09 정리: 회색 설명 상자 → 한 줄 작은 글씨. «여기서 안 바뀜» 안내는 ⓘ 아이콘에 마우스를 올리면 보인다 */}
-            <p className="mb-2 flex items-center gap-1 text-xs text-[var(--color-academy-muted)]">
-                로그인 계정 전화 <span className="font-bold">{accountPhone ? formatGuardianPhone(accountPhone) : "없음"}</span>
-                <span
-                    title="계정 전화는 여기서 바뀌지 않습니다 — «연락처 · 프로필»에서 수정"
-                    aria-label="계정 전화는 여기서 바뀌지 않습니다. 연락처 · 프로필에서 수정"
-                    role="img"
-                    className="inline-flex cursor-help text-[var(--color-academy-faint)]"
-                >
-                    <Icon name="info" size={14} />
-                </span>
-            </p>
 
             {!loaded ? (
                 <p className="py-3 text-center text-xs text-[var(--color-academy-faint)]">불러오는 중…</p>
-            ) : guardians.length === 0 && editingId !== "new" ? (
-                <div className="rounded-xl border border-dashed border-[var(--color-academy-line)] px-4 py-5 text-center text-sm text-[var(--color-academy-faint)]">
-                    등록된 보호자가 없습니다.
-                </div>
             ) : (
-                <ul className="space-y-2">
-                    {guardians.map((g) => (
-                        <li key={g.id}>
-                            {editingId === g.id ? formView : (
-                                // 2026-11-09 정리: 버튼 줄을 따로 두지 않고 두 줄에 합쳤다 —
-                                // 1줄: 관계·이름·주 보호자 배지 … [주 보호자로] / 2줄: 전화 … [수정][삭제]
-                                <div className="space-y-1.5 rounded-xl border border-[var(--color-academy-line)] px-3 py-2">
-                                    <div className="flex items-center justify-between gap-2">
-                                        <p className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px] font-bold text-[var(--color-academy-ink)]">
-                                            <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{g.relation}</span>
-                                            {g.name && g.name !== g.relation && <span>{g.name}</span>}
-                                            {g.isPrimary && (
-                                                <span className="rounded-full px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주 보호자</span>
-                                            )}
-                                        </p>
-                                        {editingId === null && !g.isPrimary && (
-                                            <button type="button" onClick={() => makePrimary(g)} disabled={isPending} title="주 보호자로 지정" className={`${SMALL_BTN} shrink-0`}>
-                                                <Icon name="star" size={13} /> 주 보호자로
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        {g.phone ? (
-                                            <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="min-w-0 truncate text-[13px] text-[var(--color-academy-ink)] hover:underline">
-                                                {formatGuardianPhone(g.phone)}
-                                            </a>
-                                        ) : (
-                                            <p className="text-[12px] text-[var(--color-academy-faint)]">전화번호 없음</p>
-                                        )}
-                                        {editingId === null && (
-                                            <div className="flex shrink-0 gap-1.5">
-                                                <button type="button" onClick={() => openEdit(g)} disabled={isPending} className={SMALL_BTN}>
-                                                    <Icon name="edit" size={13} /> 수정
-                                                </button>
-                                                <button type="button" onClick={() => remove(g)} disabled={isPending} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 py-1 text-xs font-bold text-[var(--color-academy-danger)] transition hover:bg-[var(--color-academy-danger-soft)] disabled:opacity-50">
-                                                    <Icon name="delete" size={13} /> 삭제
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+                <ul className="divide-y divide-[var(--color-academy-line)]">
+                    {guardians.map((g) => {
+                        const isAccount = accountDigits !== "" && digits(g.phone) === accountDigits;
+                        return (
+                            // 한 줄: [관계] 이름 (주)(로그인) … 전화 ⚡
+                            <li key={g.id} className="flex min-h-11 items-center gap-2 py-1">
+                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                    <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{g.relation}</span>
+                                    {g.name && g.name !== g.relation && <span className="truncate">{g.name}</span>}
+                                    {g.isPrimary && <span className="rounded px-1 text-xs font-bold text-[var(--color-academy-success)] ring-1 ring-[var(--color-academy-line)]">주</span>}
+                                    {isAccount && (
+                                        <span title="로그인 계정 전화와 같은 번호예요(로그인·알림톡 번호)" className="rounded px-1 text-xs font-bold text-[var(--color-academy-muted)] ring-1 ring-[var(--color-academy-line)]">로그인</span>
+                                    )}
+                                </p>
+                                {g.phone ? (
+                                    <a href={`tel:${g.phone.replace(/[^0-9]/g, "")}`} className="shrink-0 text-[13px] text-[var(--color-academy-ink)] hover:underline">
+                                        {formatGuardianPhone(g.phone)}
+                                    </a>
+                                ) : (
+                                    <span className="shrink-0 text-xs text-[var(--color-academy-faint)]">번호 없음</span>
+                                )}
+                                {/* 수정·주 보호자 지정·삭제는 ⚡ 메뉴(반 줄과 같은 부품 — 삭제는 맨 아래 구분선 밑) */}
+                                <AdminQuickActionMenu
+                                    label={`${g.relation} 보호자 작업`}
+                                    actions={[
+                                        { key: "edit", label: "수정", icon: "edit", disabled: isPending, onSelect: () => openEdit(g) },
+                                        ...(g.isPrimary ? [] : [{ key: "primary", label: "주 보호자로", icon: "star", disabled: isPending, onSelect: () => makePrimary(g) }]),
+                                        { key: "delete", label: "삭제", icon: "delete", tone: "danger" as const, disabled: isPending, onSelect: () => remove(g) },
+                                    ]}
+                                />
+                            </li>
+                        );
+                    })}
+                    {/* 로그인 계정 번호가 어느 보호자와도 다르면 한 줄로 따로 — 여기서는 안 바뀐다(«연락처 · 프로필» 연필에서 수정) */}
+                    {accountDigits !== "" && !accountMatchesGuardian && (
+                        <li className="flex min-h-11 items-center gap-2 py-1">
+                            <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">로그인 계정</span>
+                                {accountName && <span className="truncate">{accountName}</span>}
+                                <span
+                                    title="로그인 계정 전화는 여기서 바뀌지 않습니다 — «연락처 · 프로필»에서 수정"
+                                    aria-label="로그인 계정 전화는 여기서 바뀌지 않습니다. 연락처 · 프로필에서 수정"
+                                    role="img"
+                                    className="inline-flex cursor-help text-[var(--color-academy-faint)]"
+                                >
+                                    <Icon name="info" size={14} />
+                                </span>
+                            </p>
+                            <a href={`tel:${accountDigits}`} className="shrink-0 text-[13px] text-[var(--color-academy-ink)] hover:underline">
+                                {formatGuardianPhone(accountPhone ?? "")}
+                            </a>
                         </li>
-                    ))}
+                    )}
+                    {guardians.length === 0 && accountDigits === "" && (
+                        <li className="py-3 text-center text-sm text-[var(--color-academy-faint)]">등록된 보호자가 없습니다.</li>
+                    )}
                 </ul>
             )}
 
-            {editingId === "new" && <div className="mt-2">{formView}</div>}
-
-            {error && <p className="mt-2 text-xs font-semibold text-[var(--color-academy-danger)]">{error}</p>}
+            {/* 창 밖 결과 안내(창을 닫은 뒤 «추가했습니다» 등). 입력 오류는 창 안에 */}
+            {error && !editingId && <p className="mt-2 text-xs font-semibold text-[var(--color-academy-danger)]">{error}</p>}
             {message && !error && <p role="status" className="mt-2 text-xs font-medium text-[var(--color-academy-success)]">{message}</p>}
+
+            {/* 추가·수정 입력 창 */}
+            {editingId && (editingId === "new" || editingGuardian) && (
+                <AdminModal titleId="guardian-form-title" panelClassName="max-w-md" onClose={() => { if (!isPending) closeForm(); }} closeOnBackdrop={!isPending}>
+                    <div className="flex items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-5 py-3">
+                        <h2 id="guardian-form-title" className="text-base font-extrabold text-[var(--color-academy-ink)]">
+                            {editingId === "new" ? "보호자 추가" : `보호자 수정 — ${editingGuardian?.relation ?? ""}`}
+                        </h2>
+                        <button type="button" onClick={closeForm} disabled={isPending} aria-label="닫기" className="grid h-11 w-11 place-items-center rounded-xl text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                            <Icon name="close" size={20} />
+                        </button>
+                    </div>
+                    {formView}
+                </AdminModal>
+            )}
         </div>
     );
 }

@@ -400,6 +400,7 @@ export default function BundleCheckoutClient({
                                             </button>
                                         ))}
                                     </div>
+                                    {method === "CARD" && <p className="text-xs text-[var(--color-academy-muted)]">토스페이는 토스 앱이 있어야 열려요. 없으면 카드를 골라 주세요.</p>}
 
                                     {conflict ? (
                                         // 위험 확인: 계좌를 닫으면 그 계좌로는 입금할 수 없다 — 무엇이 일어나는지 먼저 알린다

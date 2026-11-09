@@ -451,7 +451,8 @@ export default function EnrollmentChangesClient({
                     placeholder="학부모에게 전할 말 (거절 시 함께 전달됩니다)"
                     className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3 text-sm"
                   />
-                  {(row.kind === "PAUSE" || row.kind === "WITHDRAW") && (
+                  {/* 복귀(RESUME)도 승인하면 복귀일에 휴원 → 수강 중으로 자동 반영된다(due-change-plan). */}
+                  {(row.kind === "PAUSE" || row.kind === "WITHDRAW" || row.kind === "RESUME") && (
                     <p className="text-xs text-[var(--color-academy-muted)]">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다. {sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.</p>
                   )}
                   <div className="grid grid-cols-2 gap-2">

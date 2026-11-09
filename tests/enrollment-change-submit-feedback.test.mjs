@@ -32,7 +32,7 @@ const load = (path, mocks = {}) => {
 const rules = load("src/lib/enrollment/changeRequestRules.ts");
 
 // 상태 이름 = useState 호출 순서. 순서가 바뀌면 아래 길이 검사가 먼저 깨진다.
-const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor"];
+const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom"];
 
 function harness() {
   let state = {};
@@ -141,4 +141,100 @@ test("신청을 취소하면 잠금이 풀려 다시 신청할 수 있다", asyn
   assert.equal(h.state.submittedFor, null);
   const button = findButton(flatten(h.render(initial(null))), "신청하기");
   assert.equal(button.props.disabled, false);
+});
+
+// ── 2026-11-09 원장 점검: «접수 후 복귀 신청도 떠야 해. 휴원 신청 취소도 필요하고» ─────────────
+const confirmOf = (list) => list.find((x) => x.el?.type?.name === "InlineConfirm")?.el;
+const allText = (list) => list.filter((x) => x.text).map((x) => x.text).join("");
+const pauseChild = (over = {}) => ({
+  effectiveFrom: "2026-12-01", minEffectiveFrom: "2026-11-10", maxEffectiveFrom: "2027-02-09",
+  minResumeFrom: "2026-11-09", maxResumeFrom: "2027-02-09", classes: [],
+  children: [{ studentId: "student-a", studentName: "합성", enrollmentId: "enrollment-a", currentClassId: "class-a", currentClassName: "합성 반", currentProgramName: "합성", enrollmentStatus: "PAUSED", scheduled: null, pending: null, ...over }],
+});
+
+test("검토 중인 휴원 신청에는 «휴원 신청 취소» 버튼이 그 상자 안에 바로 있다", () => {
+  const h = harness();
+  const list = flatten(h.render(initial({ id: "request-a", kind: "PAUSE", toClassName: null, effectiveFrom: "2026-12-01", resumeOn: null, waitlisted: false })));
+  const confirm = confirmOf(list);
+  assert.ok(confirm, "취소 확인 부품이 있어야 한다");
+  assert.equal(confirm.props.label, "휴원 신청 취소");
+  assert.equal(findButton(list, "신청하기"), undefined);
+});
+
+test("서버가 신청 id 를 돌려주면 새로고침을 기다리지 않고 바로 «검토 중 + 휴원 신청 취소»로 바뀐다", async () => {
+  const h = harness();
+  h.set({ kind: "PAUSE" });
+  globalThis.fetch = async () => ({ status: 200, ok: true, json: async () => ({ ok: true, id: "request-new", kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, toClassName: null, waitlisted: false }) });
+  findButton(flatten(h.render(initial())), "신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  // 서버 내역은 아직 비어 있다(새로고침 전)
+  const list = flatten(h.render(initial(null)));
+  assert.match(allText(list), /검토 중/);
+  assert.equal(findButton(list, "신청하기"), undefined);
+  assert.equal(findButton(list, "접수됨"), undefined, "취소 버튼이 바로 있으니 «불러오는 중» 잠금은 필요 없다");
+  const confirm = confirmOf(list);
+  assert.equal(confirm.props.label, "휴원 신청 취소");
+  assert.ok(list.some((x) => x.el?.props?.role === "status" && textOf(x.el.props.children).includes("접수되었습니다")));
+
+  // 그 자리에서 바로 취소 → 같은 id 로 취소 요청, 늦게 온 서버 내역(같은 id)도 다시 보이지 않는다
+  const bodies = [];
+  globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return { status: 200, ok: true, json: async () => ({ ok: true }) }; };
+  confirm.props.onConfirm();
+  await Promise.all(h.transitions);
+  assert.deepEqual(bodies[0], { action: "cancel", id: "request-new" });
+  const stale = flatten(h.render(initial({ id: "request-new", kind: "PAUSE", toClassName: null, effectiveFrom: "2026-12-01", resumeOn: null, waitlisted: false })));
+  assert.equal(confirmOf(stale), undefined);
+  assert.equal(findButton(stale, "신청하기").props.disabled, false);
+});
+
+test("휴원 중인 반에는 «복귀 신청»이 보이고 RESUME·복귀 희망일로 보낸다", async () => {
+  const h = harness();
+  const first = flatten(h.render(pauseChild()));
+  assert.match(allText(first), /휴원 중인 반/);
+  const button = findButton(first, "복귀 신청하기");
+  assert.ok(button);
+  assert.equal(button.props.disabled, true, "날짜를 고르기 전에는 누를 수 없다");
+  // 반 변경·휴원·퇴원 칩은 보이지 않는다
+  assert.equal(findButton(first, "반·요일 변경"), undefined);
+
+  const bodies = [];
+  globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return { status: 200, ok: true, json: async () => ({ ok: true, id: "request-r", kind: "RESUME", effectiveFrom: "2026-11-20", resumeOn: null, toClassName: null, waitlisted: false }) }; };
+  h.set({ resumeFrom: "2026-11-20" });
+  findButton(flatten(h.render(pauseChild())), "복귀 신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].kind, "RESUME");
+  assert.equal(bodies[0].effectiveFrom, "2026-11-20");
+  assert.equal(bodies[0].enrollmentId, "enrollment-a");
+  const after = flatten(h.render(pauseChild()));
+  assert.equal(confirmOf(after).props.label, "복귀 신청 취소");
+  assert.match(allText(after), /복귀 · 2026-11-20부터/);
+});
+
+test("복귀 희망일이 범위를 벗어나면(아이폰 min 무시) 보내지 않고 범위를 알려 준다", async () => {
+  for (const day of ["2026-11-08", "2027-02-10"]) {
+    const h = harness();
+    let fetched = 0;
+    globalThis.fetch = async () => { fetched++; return { status: 200, ok: true, json: async () => ({ ok: true }) }; };
+    h.set({ resumeFrom: day });
+    findButton(flatten(h.render(pauseChild())), "복귀 신청하기").props.onClick();
+    await Promise.all(h.transitions);
+    assert.equal(fetched, 0, day);
+    assert.match(h.state.error, /2026-11-09부터 2027-02-09 사이/);
+  }
+});
+
+test("승인됐지만 시작 전인 휴원은 «휴원 예정»과 학원 연락 안내를 보여 준다", () => {
+  const h = harness();
+  const data = initial(null);
+  data.children[0].scheduled = { kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: "2027-01-05" };
+  const text = allText(flatten(h.render(data)));
+  assert.match(text, /휴원 예정 · 2026-12-01부터/);
+  assert.match(text, /학원에 연락/);
+  assert.match(text, /2027-01-05 복귀 예정/);
+  // 휴원 중 반에 복귀가 이미 승인돼 기다리는 중이면 복귀 신청 양식은 숨긴다(중복 방지)
+  const h2 = harness();
+  const waiting = flatten(h2.render(pauseChild({ scheduled: { kind: "RESUME", effectiveFrom: "2026-11-20", resumeOn: null } })));
+  assert.equal(findButton(waiting, "복귀 신청하기"), undefined);
+  assert.match(allText(waiting), /복귀 예정 · 2026-11-20부터/);
 });

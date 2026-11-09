@@ -109,9 +109,25 @@ enum NavigationPolicy {
         if sandbox.isRequested { return URL(string: "about:blank")! }
         return URL(string: "https://www.stiz-dasan.kr/store-app")!
     }
-    enum Decision: Equatable { case website, external, blockedAuthentication, blocked }
+    // paymentStart: 토스 결제창 시작(이때부터 결제 중) · paymentPage: 결제 중 카드사 인증 화면
+    // paymentApp: 결제 중 카드사·간편결제 앱 호출 · blockedDriver: 기사님 운행 화면(Android 전용)
+    enum Decision: Equatable { case website, external, paymentStart, paymentPage, paymentApp, blockedAuthentication, blockedDriver, blocked }
 
-    static func decide(_ url: URL, userInitiated: Bool, configuration: SandboxConfiguration = sandbox) -> Decision {
+    // 토스 결제창 주소. 「tosspayments.com.evil.example」처럼 뒤에 붙인 가짜 주소는 끝부분 비교로 걸러진다.
+    static func isTossPayment(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443, let host = url.host?.lowercased() else { return false }
+        return ["tosspayments.com", "toss.im"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    // 결제 중 바깥 앱으로 넘길 수 있는 주소. 웹 실행·파일 주소는 앱 이름처럼 보여도 넘기지 않는다.
+    static func isPaymentAppScheme(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard !scheme.isEmpty, scheme.range(of: "^[a-z][a-z0-9+.-]*$", options: .regularExpression) != nil else { return false }
+        return !["http", "https", "about", "data", "javascript", "file", "blob", "ftp", "stiz-academy-dev"].contains(scheme)
+    }
+
+    static func decide(_ url: URL, userInitiated: Bool, paymentActive: Bool = false, configuration: SandboxConfiguration = sandbox) -> Decision {
         guard url.user == nil, url.password == nil else { return .blocked }
         let scheme = url.scheme?.lowercased() ?? ""
         if configuration.isRequested {
@@ -135,8 +151,21 @@ enum NavigationPolicy {
             // iOS는 학부모·선생님·관리자용이다. 운행 위치 공유는 Android 앱에서만 한다.
             if path == "/driver" || path.hasPrefix("/driver/") ||
                 path == "/staff/run" || path.hasPrefix("/staff/run/") ||
-                path == "/staff/shuttle" || path.hasPrefix("/staff/shuttle/") { return .blocked }
+                path == "/staff/shuttle" || path.hasPrefix("/staff/shuttle/") { return .blockedDriver }
             return .website
+        }
+        // 토스 결제창은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
+        if isTossPayment(url) { return .paymentStart }
+        if paymentActive {
+            if scheme == "https", let host = url.host?.lowercased() {
+                // 결제 중에도 로그인 화면은 기존처럼 막는다.
+                if host == "accounts.google.com" || host == "appleid.apple.com" || host.hasSuffix(".supabase.co") { return .blockedAuthentication }
+                // 카드 앱이 없을 때 결제창이 보내는 앱스토어 주소는 웹뷰가 아니라 앱스토어 앱으로 연다.
+                if host == "apps.apple.com" || host == "itunes.apple.com" { return .paymentApp }
+                // 원장 결정(2026-11-09): 결제 중엔 카드사 인증 화면 등 https 이동을 모두 허용한다.
+                return .paymentPage
+            }
+            if isPaymentAppScheme(url) { return .paymentApp }
         }
         guard userInitiated else { return .blocked }
         if ["tel", "mailto", "maps"].contains(scheme) { return .external }

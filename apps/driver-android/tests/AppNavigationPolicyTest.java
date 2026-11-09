@@ -52,6 +52,23 @@ public final class AppNavigationPolicyTest {
         check(!AppNavigationPolicy.needsAccountRunHandoff(origin, origin + "/staff/shuttle"));
         check(!AppNavigationPolicy.needsAccountRunHandoff(origin, origin + "/driver/current"));
         check(!AppNavigationPolicy.needsAccountRunHandoff(origin, "https://evil.invalid/staff/run"));
+        // 결제(원장 결정 2026-11-09): 토스 결제창 판별·결제 중 https 허용·카드사 앱 주소 판별
+        for (String url : new String[]{"https://api.tosspayments.com/v1/payments", "https://pay.toss.im/checkout", "https://tosspayments.com/", "https://api.tosspayments.com:443/x"}) {
+            check(AppNavigationPolicy.isTossPayment(url));
+        }
+        for (String url : new String[]{"https://tosspayments.com.evil.example/", "https://eviltosspayments.com/", "http://api.tosspayments.com/", "https://api.tosspayments.com:444/", "https://user:pass@api.tosspayments.com/", "ispmobile://TID=x", "javascript:alert(1)"}) {
+            check(!AppNavigationPolicy.isTossPayment(url));
+        }
+        check(AppNavigationPolicy.paymentPageAllowed("https://card-auth.example.invalid/acs"));
+        for (String url : new String[]{"http://card-auth.example.invalid/", "https://user@card-auth.example.invalid/", "https://card-auth.example.invalid:444/", "file:///x", "javascript:alert(1)", "https://accounts.google.com/", "https://appleid.apple.com/", "https://abc.supabase.co/auth/v1/authorize"}) {
+            check(!AppNavigationPolicy.paymentPageAllowed(url));
+        }
+        for (String url : new String[]{"ispmobile://TID=x", "kakaotalk://kakaopay/pg?url=x", "supertoss://pay", "kb-acp://pay", "shinhan-sr-ansimclick://pay", "intent://pay#Intent;scheme=ispmobile;package=kvp.jjy.MispAndroid320;end", "market://details?id=x"}) {
+            check(AppNavigationPolicy.isPaymentAppScheme(url));
+        }
+        for (String url : new String[]{"https://x.example/", "http://x.example/", "javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "file:///x", "blob:https://x", "content://x", "about:blank", "stiz-academy-android-dev://auth", "no-colon", ":x", "1abc://x", null}) {
+            check(!AppNavigationPolicy.isPaymentAppScheme(url));
+        }
         System.out.println("PASS " + checks + " unified navigation/run-state policy checks; no network/location calls");
     }
 }
