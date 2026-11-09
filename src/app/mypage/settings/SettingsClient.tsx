@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateMyName, changeMyPassword, saveMyPushPrefs } from "@/app/actions/parent-settings";
 import { createParentRequest } from "@/app/actions/admin";
-import { usePushSubscription } from "../usePushSubscription";
+import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import {
     FONT_SCALE_COOKIE,
     FONT_SCALES,

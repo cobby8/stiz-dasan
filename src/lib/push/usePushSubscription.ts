@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from "react";
 
-// 휴대폰 알림(웹푸시) 켜기·끄기 — 예전 홈 알림 칸의 togglePush 를 그대로 옮겨 설정 화면이 쓴다(2026-11-10).
-// 동작은 바꾸지 않았다: 켜기 = 브라우저 구독 → /api/push POST, 끄기 = 구독 해제 → /api/push DELETE.
+// 휴대폰 알림(웹푸시) 켜기·끄기 — 학부모 설정 화면과 직원(선생님·기사님) 머리줄이 함께 쓴다(2026-11-10).
+// 동작은 예전 홈 알림 칸의 togglePush 그대로: 켜기 = 브라우저 구독 → /api/push POST, 끄기 = 구독 해제 → /api/push DELETE.
+// /api/push 는 역할 제한이 없다(로그인 연결 계정으로 주인을 정한다).
+
+// 같은 화면에 이 훅을 쓰는 부품이 둘(머리줄 토글 + 기사님 안내 줄)이어도 한쪽에서 켜면 다른 쪽도 바로 바뀌게 알리는 신호
+const PUSH_CHANGED_EVENT = "stiz-push-changed";
+
 export function usePushSubscription() {
     const [pushSupported, setPushSupported] = useState(false);
     const [pushEnabled, setPushEnabled] = useState(false);
@@ -24,6 +29,10 @@ export function usePushSubscription() {
             navigator.serviceWorker.register("/sw.js").catch(() => {});
         }
         setChecked(true);
+        // 다른 부품이 켜고 끄면 같은 값으로 맞춘다
+        const onChanged = (e: Event) => setPushEnabled(Boolean((e as CustomEvent<boolean>).detail));
+        window.addEventListener(PUSH_CHANGED_EVENT, onChanged);
+        return () => window.removeEventListener(PUSH_CHANGED_EVENT, onChanged);
     }, []);
 
     // 푸시 알림 구독/해제 토글
@@ -41,6 +50,7 @@ export function usePushSubscription() {
                     body: JSON.stringify({ endpoint: existing.endpoint }),
                 });
                 setPushEnabled(false);
+                window.dispatchEvent(new CustomEvent(PUSH_CHANGED_EVENT, { detail: false }));
             } else {
                 // 구독 등록
                 const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -55,6 +65,7 @@ export function usePushSubscription() {
                     body: JSON.stringify({ subscription: sub.toJSON() }),
                 });
                 setPushEnabled(true);
+                window.dispatchEvent(new CustomEvent(PUSH_CHANGED_EVENT, { detail: true }));
             }
         } catch (e) {
             console.error("Push toggle error:", e);
