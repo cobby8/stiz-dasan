@@ -315,7 +315,7 @@ export async function createRentalRequest(
   }
 
   // 화면을 연 뒤 시간이 지났거나 다른 대관이 승인됐을 수 있다 — 서버가 다시 본다
-  // 영업 시간(평일 09:00~22:10·주말 10:00~22:00, 평일 20:40 이후 수업 무시)·수업·특강·승인 대관 겹침을 서버가 다시 본다
+  // 영업 시간(평일 09:00~22:10·주말 10:00~22:00)·수업·특강·승인 대관 겹침을 서버가 다시 본다
   const day = await loadRentalDay(db, rentalDate, nowMs);
   if (!isRentalRangeAvailable(day, startMinute, durationMinutes)) {
     return { ok: false, message: "선택한 시간에 수업이나 다른 대관이 있거나 이용 가능 시간이 아닙니다. 다른 시간을 골라 주세요." };

@@ -93,26 +93,24 @@ test("수업이 20:40 에 끝나면 20:40 부터 시작 가능, 그 전 시작�
   assert.equal(rules.isRentalRangeAvailable(day, 1240, 45), false); // 30분 단위 아님
 });
 
-test("평일 20:40~22:10 은 수업·특강과 상관없이 가능: 20:40 시작 90분 가능·100분/120분 불가, 20:40 이전 수업은 그대로 막는다", () => {
+test("평일 마감 22:10 — 수업과 겹치는 시간은 그대로 막는다(저녁 수업·특강 포함)", () => {
   const evening = [
-    { dayOfWeek: "Mon", startTime: "19:20", endTime: "20:55" }, // 20:40 을 넘는 수업 → 20:40 까지만 막는다
-    { dayOfWeek: "Mon", startTime: "20:40", endTime: "21:55" }, // 성인반 → 안 막는다
-    { dayOfWeek: "Mon", startTime: "20:50", endTime: "21:50" }, // 20:40 이후 시작 → 안 막는다
+    { dayOfWeek: "Mon", startTime: "19:20", endTime: "20:55" }, // 20:55 까지 막는다
   ];
-  const day = rules.buildRentalDay({ date: MON, classes: evening, busy: [{ startMinute: 1250, endMinute: 1320 }], nowMs: NOW }); // 특강 20:50~22:00 도 무시
-  assert.deepEqual(day.blocks.map((b) => [b.startMinute, b.endMinute, b.reason]), [[1160, 1240, "CLASS"]]);
-  assert.equal(at(day, "19:40").reason, "CLASS"); // 19:40~20:40 은 수업과 겹친다
-  assert.equal(at(day, "20:30").reason, "CLASS"); // 20:30~21:30 은 20:40 전 10분이 수업
-  assert.equal(at(day, "20:40").available, true);
-  assert.equal(at(day, "20:40").maxMinutes, 90);
-  assert.equal(rules.isRentalRangeAvailable(day, 1240, 90), true); // 20:40~22:10
-  assert.equal(rules.isRentalRangeAvailable(day, 1240, 100), false); // 30분 단위 아님 + 22:20
-  assert.equal(rules.isRentalRangeAvailable(day, 1240, 120), false); // 22:40 — 마감 넘김
-  assert.equal(at(day, "21:10").available, true); // 마지막 시작
-  assert.equal(at(day, "21:20"), undefined); // 21:20 은 후보가 아니다(1시간이면 22:20)
-  // 20:40 이전 수업 앞은 그대로 막힌다
-  assert.equal(at(day, "18:30").reason, "CLASS");
-  assert.equal(at(day, "18:20").maxMinutes, 60);
+  const day = rules.buildRentalDay({ date: MON, classes: evening, busy: [], nowMs: NOW });
+  assert.deepEqual(day.blocks.map((b) => [b.startMinute, b.endMinute, b.reason]), [[1160, 1255, "CLASS"]]);
+  assert.equal(at(day, "20:40").reason, "CLASS"); // 20:40~21:40 은 20:55 까지 수업과 겹친다
+  assert.equal(at(day, "21:00").available, true);
+  assert.equal(at(day, "21:00").maxMinutes, 60); // 21:00~22:00 (90분이면 22:30 — 마감 넘김)
+  assert.equal(at(day, "21:10").available, true); // 마지막 시작(22:10 종료)
+  assert.equal(at(day, "21:20"), undefined);
+  // 성인반 20:40~21:55 같은 저녁 수업이 있으면 저녁 대관 불가
+  const adult = rules.buildRentalDay({ date: MON, classes: [{ dayOfWeek: "Mon", startTime: "20:40", endTime: "21:55" }], busy: [], nowMs: NOW });
+  assert.ok(adult.starts.filter((s) => s.minute >= 19 * 60 + 50).every((s) => !s.available));
+  // 저녁 특강 회차도 막는다
+  const special = rules.buildRentalDay({ date: MON, classes: [], busy: [{ startMinute: 1250, endMinute: 1320 }], nowMs: NOW });
+  assert.equal(at(special, "20:40").reason, "CLASS");
+  assert.equal(rules.isRentalRangeAvailable(special, 1180, 60), true); // 19:40~20:40 은 가능
 });
 
 test("평일 저녁이라도 승인된 대관(BOOKED)은 막는다", () => {
