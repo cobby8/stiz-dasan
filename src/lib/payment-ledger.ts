@@ -4,6 +4,34 @@ import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
+import { childAccessSql } from "@/lib/account/child-access";
+import { notMergedStudent } from "@/lib/studentVisibility";
+import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
+// 학부모 «묶음 결제»(2026-11-09) — 순수 규칙 + DB 인자 연결부
+import {
+    BUNDLE_BLOCK_MESSAGE,
+    MAX_BUNDLE_ITEMS,
+    MAX_BUNDLE_TOTAL,
+    bundleCheckoutEligibility,
+    bundleConfirmBlock,
+    bundleItemBlock,
+    bundleTotals,
+    buildBundleItems,
+    buildBundleOrderName,
+    makeBundleOrderId,
+    sameBundleItems,
+    type BundleBlockCode,
+    type BundleCandidateRow,
+} from "@/lib/payments/checkoutBundle";
+import {
+    BUNDLE_LEDGER_CONFLICT,
+    TX_PAYMENT_STATUS_SQL,
+    finalizeBundleInTx,
+    hasBundleItems,
+    listBundleItems,
+    refundBundleInTx,
+    txCoversInvoiceSql,
+} from "@/lib/payments/bundleLedger";
 import {
     VA_EXPIRED_STATUS,
     VA_METHOD,
@@ -73,6 +101,8 @@ type ParentInvoiceRow = {
     orderId: string | null;
     transactionStatus: string | null;
     transactionReceiptUrl: string | null;
+    /** 랠리즈 청구서의 장부 사본인가 — 사이트 결제(단건·묶음) 막음(원장 결정 D4, 2026-11-09) */
+    rallyzMirror: boolean;
 };
 
 export type PaymentOwnerIdentity = {
@@ -949,7 +979,8 @@ export async function getInvoiceForParent(invoiceId: string, owner: PaymentOwner
             tx.id AS "transactionId",
             tx."orderId",
             tx.status AS "transactionStatus",
-            tx."receiptUrl" AS "transactionReceiptUrl"
+            tx."receiptUrl" AS "transactionReceiptUrl",
+            (NOT (${rallyzMirrorExclusionSql("p")})) AS "rallyzMirror"
         FROM "PaymentInvoice" i
         JOIN "Payment" p ON p.id = i."paymentId"
         JOIN "Student" s ON s.id = i."studentId"
@@ -1001,6 +1032,11 @@ export async function createCheckoutSession(input: {
 
     if (Number(invoice.amount) <= 0) {
         return { ok: false as const, error: "결제 금액이 없어 온라인 결제를 시작할 수 없습니다.", closed: true };
+    }
+
+    // 랠리즈 사본 청구는 랠리즈에서 결제한다 — 사이트에서도 받으면 이중 납부(원장 결정 D4, 2026-11-09)
+    if (invoice.rallyzMirror === true) {
+        return { ok: false as const, error: BUNDLE_BLOCK_MESSAGE.RALLYZ_MIRROR, closed: true, rallyzMirror: true as const };
     }
 
     const config = getPaymentProviderConfig();
@@ -1228,13 +1264,14 @@ export async function createCheckoutSession(input: {
  */
 export async function getVirtualAccountState(invoiceId: string, nowMs: number = Date.now()): Promise<PublicVirtualAccountView | null> {
     await ensurePaymentInfrastructure();
+    // 묶음 주문(PaymentTransactionItem)의 계좌도 본다 — 묶음 계좌 입금 대기 중에 같은 청구를 단건으로 또 결제하지 않게(이중 납부 방지)
     const rows = await prisma.$queryRawUnsafe<Array<{ status: string; issue: unknown }>>(
-        `SELECT status, "rawResponse"->'virtualAccountIssue' AS issue
-         FROM "PaymentTransaction"
-         WHERE "invoiceId" = $1
-           AND status IN ('${VA_WAITING_STATUS}', '${VA_EXPIRED_STATUS}')
-           AND "rawResponse"->'virtualAccountIssue' IS NOT NULL
-         ORDER BY "createdAt" DESC
+        `SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
+         FROM "PaymentTransaction" t
+         WHERE ${txCoversInvoiceSql("t", "$1")}
+           AND t.status IN ('${VA_WAITING_STATUS}', '${VA_EXPIRED_STATUS}')
+           AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
+         ORDER BY t."createdAt" DESC
          LIMIT 1`,
         invoiceId,
     );
@@ -1281,9 +1318,11 @@ async function releaseVirtualAccountTx(tx: PaymentTransactionRow, reason: string
  * 금액·면세·이중 납부 검사는 웹훅과 같은 규칙(decideVirtualAccountWebhook). 반영 못 하면 감사 기록 + 원장 알림.
  */
 async function payVerifiedVirtualAccount(tx: PaymentTransactionRow, verified: TossPaymentResult, depositedAt: string | null) {
+    // 묶음 주문이면 묶인 청구 중 하나라도 납부·환불된 상태를 본다(입금 전에 다른 방법으로 낸 청구 = 원장 확인)
     const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
-        `SELECT status FROM "Payment" WHERE id = $1`,
+        TX_PAYMENT_STATUS_SQL,
         tx.paymentId,
+        tx.id,
     );
     const decision = decideVirtualAccountWebhook({
         isDepositCallback: false,
@@ -1355,20 +1394,38 @@ async function closeOpenVirtualAccount(
     invoiceId: string,
     actor: VirtualAccountActor = { actorType: "PARENT" },
 ): Promise<"CLOSED" | "PAID" | "FAIL"> {
+    // 묶음 주문의 계좌도 닫는다(이 청구서가 항목으로 든 거래) — 열린 계좌 조회(getVirtualAccountState)와 같은 범위
     const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
-        `SELECT * FROM "PaymentTransaction"
-         WHERE "invoiceId" = $1 AND status = '${VA_WAITING_STATUS}'
-         ORDER BY "createdAt" DESC
+        `SELECT t.* FROM "PaymentTransaction" t
+         WHERE ${txCoversInvoiceSql("t", "$1")} AND t.status = '${VA_WAITING_STATUS}'
+         ORDER BY t."createdAt" DESC
          LIMIT 1`,
         invoiceId,
     );
     const tx = rows[0];
 
+    // 그사이 웹훅이 먼저 처리했으면(입금 또는 만료) 거래가 없다 → 아래 청구 상태 재확인이 판정한다.
+    const outcome: "CLOSED" | "PAID" | "FAIL" = tx ? await closeVirtualAccountTransaction(tx, actor) : "CLOSED";
+
+    // 마지막으로 청구 상태를 다시 본다 — 닫는 사이 다른 경로(웹훅·현장)로 납부됐으면 새 결제를 막는다.
+    const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT p.status FROM "PaymentInvoice" i JOIN "Payment" p ON p.id = i."paymentId" WHERE i.id = $1`,
+        invoiceId,
+    );
+    if (statusRows[0]?.status === "PAID") return "PAID";
+    return outcome;
+}
+
+/**
+ * 입금 대기 거래 1건을 토스에서 닫는다(취소 → 재조회로 닫힘 확인). 청구서 단위 닫기와 묶음 결제 시작이 같이 쓴다.
+ *  - CLOSED: 닫힘 확인 · PAID: 닫는 사이 입금이 먼저 들어와 납부 반영 · FAIL: 닫혔는지 확신 못 함
+ */
+async function closeVirtualAccountTransaction(
+    tx: PaymentTransactionRow,
+    actor: VirtualAccountActor,
+): Promise<"CLOSED" | "PAID" | "FAIL"> {
     let outcome: "CLOSED" | "PAID" | "FAIL" = "FAIL";
-    if (!tx) {
-        // 그사이 웹훅이 먼저 처리했다(입금 또는 만료). 아래 청구 상태 재확인이 판정한다.
-        outcome = "CLOSED";
-    } else if (tx.paymentKey) {
+    if (tx.paymentKey) {
         const first = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
         let verified = first.kind === "verified" ? first.payment : null;
         let step = first.kind === "retryable" ? "FAIL" : decideVirtualAccountClose(verified, tx);
@@ -1391,13 +1448,6 @@ async function closeOpenVirtualAccount(
             await reviewUnclosableVirtualAccount(tx, verified);
         }
     }
-
-    // 마지막으로 청구 상태를 다시 본다 — 닫는 사이 다른 경로(웹훅·현장)로 납부됐으면 새 결제를 막는다.
-    const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
-        `SELECT p.status FROM "PaymentInvoice" i JOIN "Payment" p ON p.id = i."paymentId" WHERE i.id = $1`,
-        invoiceId,
-    );
-    if (statusRows[0]?.status === "PAID") return "PAID";
     return outcome;
 }
 
@@ -1616,6 +1666,11 @@ async function finalizeVerifiedTossPayment(input: {
     const receiptUrl = readString(asRecord(input.payment.receipt).url)
         ?? readString(asRecord(input.payment.card).receiptUrl);
 
+    // 묶음 주문(항목 있음) — 묶인 청구 전부를 한 트랜잭션에서 잠그고 전부 아니면 전무로 반영한다.
+    if (await hasBundleItems(prisma, input.tx.id)) {
+        return finalizeVerifiedBundlePayment({ ...input, paymentKey, orderId: orderId!, receiptUrl });
+    }
+
     return prisma.$transaction(async (db) => {
         const locked = await db.$queryRawUnsafe<PaymentTransactionRow[]>(
             `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
@@ -1681,10 +1736,92 @@ async function finalizeVerifiedTossPayment(input: {
 }
 
 /**
+ * 묶음 주문의 납부 반영(finalizeVerifiedTossPayment 의 «항목 있음» 갈래). 검증(DONE·주문·금액)은 부른 쪽이 이미 했다.
+ * - 한 트랜잭션: 거래 + 묶인 청구·청구서 전부 FOR UPDATE → 판정 → 건마다 조건부 UPDATE(하나라도 0행이면 전부 되돌림).
+ * - 반영 못 한 경우:
+ *     무통장입금 → 오류 코드만 돌려준다. 부른 쪽(payVerifiedVirtualAccount)이 «확인 필요» 기록 + 원장 알림을 남긴다.
+ *     카드·계좌이체 → 토스에서는 이미 돈이 나갔다. 여기서 «묶음 결제 확인 필요» 기록 + 원장 알림(환불 판단).
+ */
+async function finalizeVerifiedBundlePayment(input: {
+    tx: PaymentTransactionRow;
+    payment: TossPaymentResult;
+    actorType: "PARENT" | "WEBHOOK";
+    actorId?: string | null;
+    paidAt?: Date | null;
+    paymentKey: string;
+    orderId: string;
+    receiptUrl: string | null;
+}): Promise<{ ok: true; alreadyConfirmed: boolean } | { ok: false; error: string }> {
+    const isVirtualAccount = input.tx.status === VA_WAITING_STATUS || input.tx.status === VA_EXPIRED_STATUS
+        || input.payment.method === VA_METHOD;
+    const paidAtIso = input.paidAt && !Number.isNaN(input.paidAt.getTime()) ? input.paidAt.toISOString() : null;
+    let result: { ok: true; alreadyConfirmed: boolean } | { ok: false; error: string };
+    try {
+        const done = await prisma.$transaction((db) => finalizeBundleInTx(db, {
+            transactionId: input.tx.id,
+            orderId: input.orderId,
+            paymentKey: input.paymentKey,
+            method: readString(input.payment.method),
+            receiptUrl: input.receiptUrl,
+            paidAtIso,
+            rawResponse: stripPaymentSecret(input.payment),
+            methodIsVirtualAccount: input.payment.method === VA_METHOD,
+            actorType: input.actorType,
+            actorId: input.actorId ?? null,
+        }));
+        result = done.ok ? { ok: true, alreadyConfirmed: done.alreadyConfirmed } : { ok: false, error: done.error };
+    } catch (error) {
+        // 조건부 UPDATE 0행 = 잠금 사이 청구가 바뀜 → 트랜잭션 전체가 이미 되돌아갔다
+        if (!(error instanceof Error) || !error.message.startsWith(BUNDLE_LEDGER_CONFLICT)) throw error;
+        result = { ok: false, error: isVirtualAccount ? "VIRTUAL_ACCOUNT_ALREADY_PAID" : "BUNDLE_ITEM_ALREADY_PAID" };
+    }
+    if (result.ok) {
+        revalidatePaymentCaches();
+    } else if (!isVirtualAccount) {
+        await recordBundlePaymentReview(input.tx, result.error);
+    }
+    return result;
+}
+
+/**
+ * 카드·계좌이체 묶음 결제가 토스에서는 완료됐는데 장부에 반영하지 못한 경우 — 감사 기록 + 원장 슬랙 DM.
+ * 같은 거래·같은 사유는 한 번만(성공 화면 새로고침·웹훅 재전송 대비).
+ */
+async function recordBundlePaymentReview(tx: PaymentTransactionRow, code: string) {
+    const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
+         SELECT gen_random_uuid()::text, $1, $2, $3, 'SYSTEM', NULL, 'PAYMENT_BUNDLE_REVIEW', $4, $5::jsonb, NOW()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM "PaymentAuditLog"
+           WHERE "transactionId" = $3 AND action = 'PAYMENT_BUNDLE_REVIEW' AND message = $4
+         )
+         RETURNING id`,
+        tx.paymentId, tx.invoiceId, tx.id, code,
+        JSON.stringify({ provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount) }),
+    );
+    if (inserted.length > 0) {
+        await alertVirtualAccountIssue(
+            `[묶음 결제 확인 필요] 토스 결제는 완료됐지만 묶은 청구 중 이미 납부·취소·금액 변경된 건이 있어 장부에 반영하지 않았습니다(${code}). 환불 여부를 확인해 주세요.\n주문 ${tx.orderId} · ${Number(tx.amount).toLocaleString("ko-KR")}원 · /admin/finance`,
+        );
+    }
+}
+
+/**
  * 토스에서 전액 취소된 결제를 장부에 반영한다(청구 → 환불, 청구서 → 취소, 거래 → 취소).
  * 토스 재조회로 전액 취소가 확인된 뒤에만 부른다. 이미 반영됐으면 아무것도 하지 않는다(멱등).
+ * 묶음 주문이면 묶인 청구 전부를 한 트랜잭션에서 환불 처리한다(refundBundleInTx).
  */
 async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; payment: TossPaymentResult }) {
+    if (await hasBundleItems(prisma, input.tx.id)) {
+        const applied = await prisma.$transaction((db) => refundBundleInTx(db, {
+            transactionId: input.tx.id,
+            rawResponse: stripPaymentSecret(input.payment),
+        }));
+        if (applied.ok && !applied.alreadyApplied) revalidatePaymentCaches();
+        return applied.ok
+            ? { ok: true as const, alreadyApplied: applied.alreadyApplied }
+            : { ok: false as const, error: applied.error };
+    }
     return prisma.$transaction(async (db) => {
         const locked = await db.$queryRawUnsafe<PaymentTransactionRow[]>(
             `SELECT tx.*, i.status AS "invoiceStatus", p.status AS "paymentStatus"
@@ -1784,6 +1921,18 @@ export async function confirmTossPayment(input: {
                 virtualAccount: toPublicVirtualAccountView(issue, tx.status, Date.now()),
             };
         }
+    }
+
+    // 승인(돈이 나가는 순간) «전에» 다시 확인한다 — 묶음이면 묶인 청구 전부가 아직 미납·금액 그대로인지,
+    // 단건·묶음 모두 랠리즈 사본이 아닌지(D4). 막으면 토스 승인을 부르지 않는다(결제창 인증은 자동 소멸 — 돈 안 나감).
+    const confirmBlock = await checkBeforeTossConfirm(tx);
+    if (confirmBlock) {
+        return {
+            ok: false as const,
+            error: BUNDLE_BLOCK_MESSAGE[confirmBlock],
+            ...(confirmBlock === "NOT_UNPAID" ? { alreadyPaid: true as const } : {}),
+            blocked: confirmBlock,
+        };
     }
 
     const { secretKey } = getPaymentProviderConfig();
@@ -1894,6 +2043,419 @@ export async function confirmTossPayment(input: {
 
     // 학부모에게 돌려주는 응답 — secret 칸은 지운다(가상계좌가 아니어도 같은 규칙).
     return { ok: true as const, payment: stripPaymentSecret(result) };
+}
+
+// ───────────────────────────── 학부모 «묶음 결제»(2026-11-09) ─────────────────────────────
+//
+// 토스 주문 1건(PaymentTransaction: 대표 청구 = 1번 항목, amount = 합계) + 청구 N건(PaymentTransactionItem).
+// 규칙은 src/lib/payments/checkoutBundle.ts, 장부 반영은 src/lib/payments/bundleLedger.ts.
+// 승인·웹훅·가상계좌 입금·매일 점검·전액 취소는 단건과 같은 함수(finalizeVerifiedTossPayment 등)를 지나며 «항목 있음» 갈래로 간다.
+
+/** 청구들 중 랠리즈 사본(D4) id 묶음 */
+async function rallyzMirrorPaymentIds(paymentIds: string[]): Promise<Set<string>> {
+    if (paymentIds.length === 0) return new Set();
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT p.id FROM "Payment" p
+          WHERE p.id = ANY($1::text[]) AND NOT (${rallyzMirrorExclusionSql("p")})`,
+        paymentIds,
+    );
+    return new Set(rows.map((row) => row.id));
+}
+
+/**
+ * 토스 승인 직전 재확인 — 막아야 하면 이유 코드, 괜찮으면 null.
+ * 묶음: 묶인 청구 전부 미납·금액 그대로·랠리즈 사본 아님. 단건: 랠리즈 사본 아님(나머지는 기존 검사가 한다).
+ */
+async function checkBeforeTossConfirm(tx: PaymentTransactionRow): Promise<BundleBlockCode | null> {
+    const items = await listBundleItems(prisma, tx.id, false);
+    if (items.length === 0) {
+        const mirrors = await rallyzMirrorPaymentIds([tx.paymentId]);
+        return mirrors.size > 0 ? "RALLYZ_MIRROR" : null;
+    }
+    const mirrors = await rallyzMirrorPaymentIds(items.map((item) => item.paymentId));
+    return bundleConfirmBlock(items.map((item) => ({ ...item, rallyzMirror: mirrors.has(item.paymentId) })));
+}
+
+/**
+ * 학부모가 볼 수 있는 자녀(childAccessSql)의 청구를 «서버 DB 값»으로 읽는다.
+ * paymentIds 가 있으면 그 id 만(남의 청구 id 는 결과에 안 나온다 → 규칙이 NOT_FOUND 로 막음),
+ * 없으면 미납 청구 전부(묶음 결제 후보 목록).
+ */
+async function loadBundleCandidateRows(parentUserId: string, paymentIds: string[] | null): Promise<BundleCandidateRow[]> {
+    const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+        `SELECT p.id AS "paymentId", i.id AS "invoiceId", s.id AS "studentId", s.name AS "studentName",
+                p.type, p.year, p.month,
+                COALESCE(i.title, p.description, p.type, '수강료') AS title,
+                p.status AS "paymentStatus", i.status AS "invoiceStatus",
+                p.amount, i.amount AS "invoiceAmount",
+                (s."parentId" = $1) AS "isPayer",
+                (NOT (${rallyzMirrorExclusionSql("p")})) AS "rallyzMirror"
+           FROM "Payment" p
+           JOIN "Student" s ON s.id = p."studentId"
+           LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+          WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+            AND ($2::text[] IS NULL OR p.id = ANY($2::text[]))
+            AND ($2::text[] IS NOT NULL OR p.status IN ('PENDING', 'OVERDUE'))
+          ORDER BY p."dueDate" ASC NULLS LAST, p.id
+          LIMIT 60`,
+        parentUserId,
+        paymentIds,
+    );
+    return rows.map((row) => ({
+        paymentId: String(row.paymentId),
+        invoiceId: row.invoiceId ? String(row.invoiceId) : null,
+        studentId: String(row.studentId),
+        studentName: String(row.studentName ?? ""),
+        type: row.type ? String(row.type) : null,
+        year: row.year == null ? null : Number(row.year),
+        month: row.month == null ? null : Number(row.month),
+        title: String(row.title ?? "수강료"),
+        paymentStatus: String(row.paymentStatus),
+        invoiceStatus: row.invoiceStatus ? String(row.invoiceStatus) : null,
+        amount: Number(row.amount ?? 0),
+        invoiceAmount: row.invoiceAmount == null ? null : Number(row.invoiceAmount),
+        isPayer: row.isPayer === true,
+        rallyzMirror: row.rallyzMirror === true,
+    }));
+}
+
+/** 청구서가 아직 없는(그 외엔 결제 가능한) 청구는 청구서를 먼저 만든다 — 트랜잭션 밖(월 단위 함수라 길다) */
+async function ensureInvoicesForBundleRows(rows: BundleCandidateRow[]): Promise<boolean> {
+    const missing = rows.filter((row) => bundleItemBlock(row) === "NO_INVOICE");
+    for (const row of missing) await ensureInvoiceForPayment(row.paymentId);
+    return missing.length > 0;
+}
+
+type OpenBundleVirtualAccount = {
+    tx: PaymentTransactionRow;
+    view: PublicVirtualAccountView;
+    items: { paymentId: string; amount: number }[];
+};
+
+/** 이 청구들 중 하나라도 품은 «기한 안의 입금 대기 계좌»(단건·묶음 모두) */
+async function findOpenVirtualAccountsForPayments(paymentIds: string[], nowMs: number): Promise<OpenBundleVirtualAccount[]> {
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT t.* FROM "PaymentTransaction" t
+          WHERE t.status = '${VA_WAITING_STATUS}'
+            AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
+            AND (t."paymentId" = ANY($1::text[]) OR EXISTS (
+                  SELECT 1 FROM "PaymentTransactionItem" it
+                   WHERE it."transactionId" = t.id AND it."paymentId" = ANY($1::text[])))
+          ORDER BY t."createdAt" DESC`,
+        paymentIds,
+    );
+    const open: OpenBundleVirtualAccount[] = [];
+    for (const tx of rows) {
+        const issue = readStoredIssue(asRecord(tx.rawResponse).virtualAccountIssue);
+        if (!issue) continue;
+        const view = toPublicVirtualAccountView(issue, tx.status, nowMs);
+        if (view.expired) continue;
+        const items = await listBundleItems(prisma, tx.id, false);
+        open.push({
+            tx,
+            view,
+            items: items.length > 0
+                ? items.map((item) => ({ paymentId: item.paymentId, amount: item.itemAmount }))
+                : [{ paymentId: tx.paymentId, amount: Number(tx.amount) }],
+        });
+    }
+    return open;
+}
+
+/** 묶음 결제 후보 1건(화면 갈래가 쓰는 모양) */
+export type BundleCheckoutCandidate = {
+    paymentId: string;
+    invoiceId: string | null;
+    studentId: string;
+    studentName: string;
+    title: string;
+    amount: number;
+    paymentStatus: string;
+    /** 묶음에 넣을 수 있나(D3: 화면은 selectable 인 것을 기본 전부 선택) */
+    selectable: boolean;
+    /** 못 넣는 이유(코드·문장). 넣을 수 있으면 null */
+    blockCode: BundleBlockCode | null;
+    blockReason: string | null;
+    /** 이 청구를 품은 입금 대기 계좌가 있나(있으면 새 결제 전에 «계좌 닫기» 확인이 필요) */
+    pendingDeposit: boolean;
+};
+
+/**
+ * 학부모 «묶음 결제» 후보 — 내 자녀(가족 연결 포함)의 미납 청구 전부와 선택 가능 여부.
+ * 결제는 대표 보호자만(NOT_PAYER), 랠리즈 사본은 막음(RALLYZ_MIRROR). 화면 표시용이고 결제 시작 때 서버가 다시 검사한다.
+ */
+export async function getBundleCheckoutCandidates(parentUserId: string) {
+    await ensurePaymentInfrastructure();
+    // 읽기 전용 — 청구서가 아직 없는 청구도 고를 수 있게 둔다(결제 시작 때 서버가 청구서를 만든 뒤 다시 검사한다)
+    const rows = await loadBundleCandidateRows(parentUserId, null);
+    const open = rows.length > 0 ? await findOpenVirtualAccountsForPayments(rows.map((row) => row.paymentId), Date.now()) : [];
+    const pending = new Set(open.flatMap((entry) => entry.items.map((item) => item.paymentId)));
+    const items: BundleCheckoutCandidate[] = rows.map((row) => {
+        const raw = bundleItemBlock(row);
+        const code = raw === "NO_INVOICE" ? null : raw;
+        return {
+            paymentId: row.paymentId,
+            invoiceId: row.invoiceId,
+            studentId: row.studentId,
+            studentName: row.studentName,
+            title: row.title,
+            amount: row.amount,
+            paymentStatus: row.paymentStatus,
+            selectable: code === null,
+            blockCode: code,
+            blockReason: code ? BUNDLE_BLOCK_MESSAGE[code] : null,
+            pendingDeposit: pending.has(row.paymentId),
+        };
+    });
+    return { items, maxItems: MAX_BUNDLE_ITEMS, maxTotal: MAX_BUNDLE_TOTAL };
+}
+
+/**
+ * 학부모 «묶음 결제» 시작 — 고른 청구 N건으로 토스 주문 1건을 만든다(결제창은 화면이 연다).
+ * 서버가 청구를 다시 읽어 확인: 내 자녀 + 대표 보호자 · 미납 · 금액 > 0 · 청구서 있음 · 랠리즈 사본 아님 · 10건/100만 원 이하.
+ * 이중 납부 방지: 고른 청구 중 하나라도 «입금 대기 계좌»(단건·묶음)에 들어 있으면
+ *   - 그 계좌가 «같은 청구 묶음»이고 무통장입금을 다시 고르면(또는 확인 없이 부르면) → 그 계좌를 돌려준다(단건과 같은 규칙).
+ *   - 아니면 closeOpenVirtualAccount=true(화면 확인)일 때만 그 계좌들을 토스에서 닫고 진행, 아니면 openVirtualAccountConflict.
+ * 같은 청구 묶음·같은 금액의 30분 안 READY 주문은 다시 쓴다(결제창을 닫았다 다시 연 경우).
+ */
+export async function createBundleCheckoutSession(input: {
+    /** requireVerifiedParent().appUserId (User.id) */
+    parentUserId: string;
+    /** 학부모가 고른 청구 id 목록(그대로 믿지 않고 서버가 다시 읽는다) */
+    paymentIds: unknown;
+    origin: string;
+    /** CARD · TRANSFER · VIRTUAL_ACCOUNT */
+    method?: string | null;
+    /** 열린 입금 계좌를 닫고 진행하겠다는 학부모 확인(화면 확인 단계를 거친 경우만 true) */
+    closeOpenVirtualAccount?: boolean;
+}) {
+    await ensurePaymentInfrastructure();
+    const ids = Array.isArray(input.paymentIds)
+        ? input.paymentIds.map((value) => (typeof value === "string" ? value.trim() : ""))
+        : [];
+    // 빈 목록·너무 많음·중복은 DB 를 읽기 전에 막는다(rows 가 비어도 이 세 가지가 먼저 걸린다)
+    const pre = bundleCheckoutEligibility(ids, []);
+    if (!pre.ok && ["EMPTY", "TOO_MANY", "DUPLICATE"].includes(pre.code)) {
+        return { ok: false as const, error: pre.reason, blocked: pre.code };
+    }
+
+    let rows = await loadBundleCandidateRows(input.parentUserId, ids);
+    if (await ensureInvoicesForBundleRows(rows)) rows = await loadBundleCandidateRows(input.parentUserId, ids);
+    const eligibility = bundleCheckoutEligibility(ids, rows);
+    if (!eligibility.ok) {
+        return {
+            ok: false as const,
+            error: eligibility.reason,
+            blocked: eligibility.code,
+            paymentId: eligibility.paymentId ?? null,
+            ...(eligibility.code === "NOT_UNPAID" ? { alreadyPaid: true as const } : {}),
+        };
+    }
+
+    const config = getPaymentProviderConfig();
+    if (config.provider !== "TOSS") {
+        // 본사 카페24 결제 방식에는 «여러 건 한 주문»이 없다 — 단건 결제로 안내
+        return { ok: false as const, error: "지금 결제 방식에서는 한 번에 결제할 수 없어요. 청구서마다 결제해 주세요.", providerReady: config.providerReady };
+    }
+    if (!config.providerReady) {
+        return {
+            ok: false as const,
+            error: "온라인 결제 설정이 아직 완료되지 않았습니다.",
+            providerReady: false,
+            configurationMissing: true,
+        };
+    }
+
+    let items = buildBundleItems(rows.filter((row) => ids.includes(row.paymentId)));
+
+    // ── 이중 납부 방지: 열린 입금 계좌(단건·묶음)
+    const open = await findOpenVirtualAccountsForPayments(items.map((item) => item.paymentId), Date.now());
+    if (open.length > 0) {
+        const wantsOtherMethod = input.method === "CARD" || input.method === "TRANSFER";
+        const sameSet = open.length === 1 && sameBundleItems(open[0].items, items);
+        if (sameSet && !(input.closeOpenVirtualAccount === true && wantsOtherMethod)) {
+            return {
+                ok: true as const,
+                provider: config.provider,
+                providerLabel: config.providerLabel,
+                providerReady: config.providerReady,
+                openVirtualAccount: open[0].view,
+                orderId: open[0].tx.orderId,
+            };
+        }
+        if (input.closeOpenVirtualAccount !== true) {
+            return {
+                ok: false as const,
+                error: "입금 대기 중인 계좌가 있는 청구가 들어 있어요. 그 계좌를 닫고 새로 결제할까요?",
+                openVirtualAccountConflict: true as const,
+                openVirtualAccounts: open.map((entry) => ({ ...entry.view, paymentIds: entry.items.map((item) => item.paymentId) })),
+            };
+        }
+        for (const entry of open) {
+            const closed = await closeVirtualAccountTransaction(entry.tx, { actorType: "PARENT", actorId: input.parentUserId });
+            if (closed === "PAID") {
+                // 닫는 사이 입금이 먼저 들어왔다 — 입금이 이긴다. 새 결제를 열지 않는다.
+                return { ok: false as const, error: "이미 납부가 완료된 청구가 있어요. 화면을 새로 고쳐 주세요.", alreadyPaid: true as const };
+            }
+            if (closed === "FAIL") {
+                return {
+                    ok: false as const,
+                    error: "입금 계좌를 닫지 못했습니다. 잠시 후 다시 시도해 주세요.",
+                    providerReady: config.providerReady,
+                    providerError: true as const,
+                    retryable: true,
+                };
+            }
+        }
+        // 닫는 사이 다른 경로로 납부됐을 수 있다 — 다시 읽어 확인
+        rows = await loadBundleCandidateRows(input.parentUserId, ids);
+        const again = bundleCheckoutEligibility(ids, rows);
+        if (!again.ok) {
+            return { ok: false as const, error: again.reason, blocked: again.code, ...(again.code === "NOT_UNPAID" ? { alreadyPaid: true as const } : {}) };
+        }
+        items = buildBundleItems(rows.filter((row) => ids.includes(row.paymentId)));
+    }
+
+    const totals = bundleTotals(items);
+    const rep = items[0];
+    const orderName = buildBundleOrderName(items);
+
+    // 같은 청구 묶음·같은 금액의 30분 안 READY 주문 재사용(단건과 같은 규칙)
+    const recent = await prisma.$queryRawUnsafe<CheckoutTransactionRow[]>(
+        `SELECT id, "orderId", "orderName", amount
+           FROM "PaymentTransaction"
+          WHERE "parentId" = $1 AND provider = 'TOSS' AND amount = $2
+            AND status IN ('READY', 'IN_PROGRESS')
+            AND "requestedAt" > NOW() - INTERVAL '30 minutes'
+            AND EXISTS (SELECT 1 FROM "PaymentTransactionItem" it WHERE it."transactionId" = "PaymentTransaction".id)
+          ORDER BY "createdAt" DESC
+          LIMIT 5`,
+        input.parentUserId,
+        totals.amount,
+    );
+    let existing: CheckoutTransactionRow | null = null;
+    for (const row of recent) {
+        const rowItems = await listBundleItems(prisma, row.id, false);
+        if (sameBundleItems(rowItems.map((item) => ({ paymentId: item.paymentId, amount: item.itemAmount })), items)) {
+            existing = row;
+            break;
+        }
+    }
+
+    const orderId = existing?.orderId ?? makeBundleOrderId(Date.now(), rep.paymentId);
+    if (!existing) {
+        // 거래 1줄 + 항목 N줄을 한 번에(항목 없는 묶음 거래가 남지 않게)
+        await prisma.$transaction(async (db) => {
+            const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
+                `INSERT INTO "PaymentTransaction" (
+                    id, "paymentId", "invoiceId", "studentId", "parentId", provider,
+                    "orderId", "orderName", amount, status, "requestedAt", "createdAt", "updatedAt"
+                 )
+                 VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'TOSS', $5, $6, $7, 'READY', NOW(), NOW(), NOW())
+                 RETURNING id`,
+                rep.paymentId, rep.invoiceId, rep.studentId, input.parentUserId, orderId, orderName, totals.amount,
+            );
+            const transactionId = inserted[0]?.id;
+            if (!transactionId) throw new Error("묶음 결제 주문을 만들지 못했습니다.");
+            for (const item of items) {
+                await db.$executeRawUnsafe(
+                    `INSERT INTO "PaymentTransactionItem" (id, "transactionId", "paymentId", "invoiceId", amount, "taxFreeAmount", position, "createdAt")
+                     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW())`,
+                    transactionId, item.paymentId, item.invoiceId, item.amount, item.taxFreeAmount, item.position,
+                );
+            }
+        });
+    }
+
+    await prisma.$executeRawUnsafe(
+        `UPDATE "Payment" SET "paymentRequestedAt" = NOW(), "updatedAt" = NOW() WHERE id = ANY($1::text[])`,
+        items.map((item) => item.paymentId),
+    );
+
+    const users = await prisma.$queryRawUnsafe<Array<{ name: string | null; email: string; phone: string | null }>>(
+        `SELECT name, email, phone FROM "User" WHERE id = $1 LIMIT 1`,
+        input.parentUserId,
+    );
+    const user = users[0];
+    const cleanOrigin = input.origin.replace(/\/$/, "");
+
+    return {
+        ok: true as const,
+        provider: config.provider,
+        providerLabel: config.providerLabel,
+        providerReady: config.providerReady,
+        clientKey: config.clientKey,
+        customerKey: makeTossCustomerKey({ parentId: input.parentUserId, parentEmail: user?.email ?? "" }),
+        orderId,
+        amount: totals.amount,
+        /** 토스 requestPayment 의 taxFreeAmount — 항목 면세의 합(꼭 같이 넘긴다: 복합과세 상점) */
+        taxFreeAmount: totals.taxFreeAmount,
+        orderName,
+        customerName: user?.name || rep.studentName || "STIZ 학부모",
+        customerEmail: user?.email ?? null,
+        customerMobilePhone: toTossMobilePhone(user?.phone ?? null),
+        // 설치 앱 범위(/mypage) 안에서 돌아온다 — 화면은 다음 갈래(/mypage/payments/done · checkout)
+        successUrl: new URL("/mypage/payments/done", cleanOrigin).toString(),
+        failUrl: new URL("/mypage/payments/checkout?result=fail", cleanOrigin).toString(),
+        items: items.map((item) => ({
+            paymentId: item.paymentId,
+            invoiceId: item.invoiceId,
+            studentName: item.studentName,
+            title: item.title,
+            amount: item.amount,
+            taxFreeAmount: item.taxFreeAmount,
+            position: item.position,
+        })),
+    };
+}
+
+/**
+ * 묶음 주문 1건(완료 화면용) — 주문 상태·합계·영수증·묶인 청구·무통장 계좌.
+ * 소유권: 주문을 만든 학부모(PaymentTransaction.parentId = 앱 계정)만. 남의 주문 번호면 null(IDOR 차단).
+ */
+export async function getBundleOrderForParent(orderId: string, parentUserId: string) {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT t.* FROM "PaymentTransaction" t
+          WHERE t."orderId" = $1 AND t."parentId" = $2
+            AND EXISTS (SELECT 1 FROM "PaymentTransactionItem" it WHERE it."transactionId" = t.id)
+          LIMIT 1`,
+        orderId,
+        parentUserId,
+    );
+    const tx = rows[0];
+    if (!tx) return null;
+    const items = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+        `SELECT it."paymentId", it."invoiceId", it.amount, it.position, p.status AS "paymentStatus",
+                s.name AS "studentName", COALESCE(i.title, p.description, p.type, '수강료') AS title
+           FROM "PaymentTransactionItem" it
+           JOIN "Payment" p ON p.id = it."paymentId"
+           JOIN "Student" s ON s.id = p."studentId"
+           LEFT JOIN "PaymentInvoice" i ON i.id = it."invoiceId"
+          WHERE it."transactionId" = $1
+          ORDER BY it.position`,
+        tx.id,
+    );
+    const issue = tx.status === VA_WAITING_STATUS || tx.status === VA_EXPIRED_STATUS
+        ? readStoredIssue(asRecord(tx.rawResponse).virtualAccountIssue)
+        : null;
+    return {
+        orderId: tx.orderId,
+        /** READY · IN_PROGRESS · WAITING_FOR_DEPOSIT · EXPIRED · DONE · CANCELED · FAILED */
+        status: tx.status,
+        amount: Number(tx.amount),
+        receiptUrl: readString((tx as PaymentTransactionRow & { receiptUrl?: unknown }).receiptUrl),
+        virtualAccount: issue ? toPublicVirtualAccountView(issue, tx.status, Date.now()) : null,
+        items: items.map((item) => ({
+            paymentId: String(item.paymentId),
+            invoiceId: String(item.invoiceId),
+            studentName: String(item.studentName ?? ""),
+            title: String(item.title ?? ""),
+            amount: Number(item.amount ?? 0),
+            position: Number(item.position ?? 0),
+            paymentStatus: String(item.paymentStatus),
+        })),
+    };
 }
 
 export async function recordTossWebhook(payload: unknown) {
@@ -2088,9 +2650,11 @@ async function applyVirtualAccountWebhook(input: {
     callbackStatus?: string | null;
 }): Promise<{ ok: true; processed: boolean; eventId: string | null; retryable?: boolean } | null> {
     const { tx, verified, eventRecordId } = input;
+    // 묶음 주문이면 묶인 청구 중 하나라도 납부·환불된 상태를 본다(입금 전에 다른 방법으로 낸 청구 = 원장 확인)
     const statusRows = await prisma.$queryRawUnsafe<Array<{ status: string }>>(
-        `SELECT status FROM "Payment" WHERE id = $1`,
+        TX_PAYMENT_STATUS_SQL,
         tx.paymentId,
+        tx.id,
     );
     const decision = decideVirtualAccountWebhook({
         isDepositCallback: input.depositCallback,
@@ -2152,6 +2716,11 @@ const VIRTUAL_ACCOUNT_ALERT_TEXT: Record<string, string> = {
     VIRTUAL_ACCOUNT_TX_CLOSED: "닫힌 거래에 가상계좌 입금이 들어왔습니다(확인 필요).",
     VIRTUAL_ACCOUNT_DEPOSIT_REVERSED: "납부 완료된 가상계좌 입금이 은행에서 취소됐습니다(장부 확인 필요).",
     VIRTUAL_ACCOUNT_PARTIAL_CANCELED: "가상계좌 입금 건이 토스에서 부분 취소돼 자동 처리하지 않았습니다(장부 확인 필요).",
+    // 묶음 결제(2026-11-09) — 묶인 청구 중 하나라도 반영할 수 없으면 전부 반영하지 않는다
+    BUNDLE_ITEM_NOT_PAYABLE: "묶음 입금 건 중 결제할 수 없는 상태의 청구가 있어 전부 납부 처리하지 않았습니다(확인 필요).",
+    BUNDLE_ITEM_AMOUNT_CHANGED: "묶음 입금 건 중 금액이 바뀐 청구가 있어 전부 납부 처리하지 않았습니다(확인 필요).",
+    BUNDLE_AMOUNT_MISMATCH: "묶음 입금 금액이 묶인 청구 합계와 달라 납부 처리하지 않았습니다(확인 필요).",
+    BUNDLE_ITEMS_MISSING: "묶음 주문의 청구 목록을 찾지 못해 납부 처리하지 않았습니다(확인 필요).",
 };
 
 /**

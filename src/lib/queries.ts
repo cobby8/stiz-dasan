@@ -11,6 +11,7 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
 import { parentVirtualAccountView } from "@/lib/payments/virtualAccount";
+import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
@@ -900,10 +901,11 @@ function getMonthDateRange(year: number, month: number) {
 
 // 학부모 마이페이지 두 곳(메인·전체 내역)이 같이 쓰는 «최근 가상계좌» 조인 — 한쪽만 고치지 않게 한 곳에 둔다.
 // 발급 정보(virtualAccountIssue)만 고른다. secret 해시(depositSecretHash)는 SELECT 하지 않는다.
+// 묶음 결제(2026-11-09) 계좌도 본다 — 이 청구가 항목으로 든 거래(txCoversPaymentSql). 결제 화면의 getVirtualAccountState 와 같은 범위.
 const PARENT_VIRTUAL_ACCOUNT_LATERAL = `LEFT JOIN LATERAL (
                         SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
                         FROM "PaymentTransaction" t
-                        WHERE t."paymentId" = p.id
+                        WHERE ${txCoversPaymentSql("t", "p.id")}
                           AND t.status IN ('WAITING_FOR_DEPOSIT', 'EXPIRED')
                           AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
                         ORDER BY t."createdAt" DESC
@@ -935,10 +937,11 @@ export const getPayments = cache(async (year?: number, month?: number) => {
              LEFT JOIN "Class" c ON p."classId" = c.id
              LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
              LEFT JOIN LATERAL (
-                SELECT status, provider
-                FROM "PaymentTransaction"
-                WHERE "paymentId" = p.id
-                ORDER BY "createdAt" DESC
+                -- 묶음 결제 주문(항목으로 든 거래)도 본다 — «입금 대기 · 가상계좌» 표시가 묶인 청구 모두에 뜨게
+                SELECT t.status, t.provider
+                FROM "PaymentTransaction" t
+                WHERE ${txCoversPaymentSql("t", "p.id")}
+                ORDER BY t."createdAt" DESC
                 LIMIT 1
              ) tx ON true
              ${where}

@@ -118,10 +118,28 @@
 💡 tester: 휴대폰 390px 홈 첫 화면(청구 있을 때/없을 때), 하위 화면에서 탭 켜짐, ⋯ 메뉴 «알림» → 홈 알림 펼침, 일정 탭 #mypage-shuttle 이동, 소식 공지 → /mypage/news/[id](설치 앱 주소창 안 뜸), 남의 반 공지 id 직접 입력 → 404.
 ⚠️ reviewer: 홈 청구 합계는 getMyPageData 자녀별 최근 5건 기준(청구 탭은 60건) · 공지 상세 반 판정은 getMyPageData 의 ACTIVE 수강 기준 · /payments/[invoiceId] formatDate(시간대 없는 toLocaleDateString) 는 결제 담당 영역이라 미수정.
 
+## 구현 기록 (developer) — 묶음 결제 갈래 A(서버·데이터, 2026-11-09)
+📝 학부모 청구 «묶음 결제» 서버: 순수 규칙·장부 연결부·결제 장부 갈래·API·묶음 입금 알림·마이그레이션 파일(적용 전). 화면은 다음 갈래.
+
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| src/lib/payments/checkoutBundle.ts | 자격·상한·정렬·면세 합·주문 이름/번호·확정/취소 판정 | 신규 |
+| src/lib/payments/bundleLedger.ts | db 인자 묶음 확정·환불, 항목 포함 SQL 조각 | 신규 |
+| src/lib/payment-ledger.ts | 확정/전액취소 묶음 갈래, 승인 전 재확인, 랠리즈 사본 차단, 열린 계좌 조회·닫기 항목 포함, 묶음 시작·후보·주문 요약 | 수정 |
+| src/lib/queries.ts | 마이페이지·관리자 수납 거래 lateral 항목 포함 | 수정 |
+| src/lib/payments/parent-payment-request.ts · api/mypage/payment-request | 묶음 «입금했어요»(submit-bundle) | 수정 |
+| src/app/api/mypage/payments/checkout · confirm | 화면 갈래용 API | 신규 |
+| prisma/migrations/20261109150000_payment_transaction_items · schema.prisma | 항목 표(추가만) | 신규/수정 |
+| tests/payment-bundle-checkout.test.mjs · toss-virtual-account(닫기 함수 분리 반영) · studentVisibility(2→3) | 테스트 | 신규/수정 |
+
+💡 tester: 가짜 prisma·fetch 실행 테스트 30건. 실결제는 마이그레이션 적용 후 소액(카드 2건·무통장 2건·전액 취소).
+⚠️ reviewer: finalizeVerifiedBundlePayment 의 무통장/카드 갈림, createBundleCheckoutSession 의 열린 계좌 처리(같은 묶음이면 계좌 반환·다르면 확인 후 닫기).
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(묶음 결제 갈래 A — 서버·데이터): PaymentTransactionItem(마이그레이션 20261109150000, 미적용)·checkoutBundle 규칙·bundleLedger(전부 아니면 전무·전액 취소 전부 환불)·확정/취소 묶음 갈래·승인 전 재확인·랠리즈 사본 차단(단건·묶음)·단건 열린 계좌 조회/닫기·마이페이지/관리자 lateral 이 항목까지 봄·API /api/mypage/payments/checkout·confirm·묶음 입금 알림. tsc 0·tests 3560-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
 | 11-09 | tester(8144e6c7+e2b02a6d): tsc 0·tests 3546-0·가드 통과, 모의 24 통과. 권장: 이동→삭제 시 NEEDS_CHECK 잔류 | 통과(권장 1) |
 | 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
