@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
         studentId: body.studentId,
         classId: body.classId,
         date: body.date,
+        // «보강 예약도 함께 취소돼요» 확인을 누른 경우에만 true(서버가 예약 여부를 다시 본다)
+        confirmMakeupCancel: body.confirmMakeupCancel === true,
       });
     } else {
       result = await reportRegularAbsence(parent.appUserId, {
@@ -70,9 +72,14 @@ export async function POST(request: NextRequest) {
       NOT_REPORTABLE_DATE: "미래의 수업 날짜만 신고할 수 있습니다.",
       ABSENCE_NOT_FOUND: "결석 신고를 찾을 수 없습니다.",
       ABSENCE_NOT_CANCELABLE: "이미 학원에서 확정된 신고라 취소할 수 없습니다.",
+      // 보강권(2026-11-10): 신고 취소 시 보강권 되돌리기에서 막힌 경우
+      MAKEUP_BOOKING_CONFIRM_REQUIRED: "이 결석의 보강권으로 보강이 예약돼 있어요. 보강 예약도 함께 취소돼요.",
+      MAKEUP_ALREADY_USED: "이 결석의 보강을 이미 들어서 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
+      MAKEUP_BOOKING_PAST: "예약한 보강 날짜가 지나 결석 신고를 취소할 수 없어요. 학원으로 문의해 주세요.",
     };
     const known = map[code];
     if (!known) console.error("[api/mypage/regular-absence] POST failed:", error);
-    return NextResponse.json({ error: known || "처리에 실패했습니다." }, { status: known ? 409 : 500 });
+    // code: 화면이 «보강 예약도 함께 취소» 확인을 다시 띄울지 판단할 때 쓴다(알려진 코드만 내보낸다)
+    return NextResponse.json({ error: known || "처리에 실패했습니다.", code: known ? code : undefined }, { status: known ? 409 : 500 });
   }
 }

@@ -263,3 +263,9 @@
 - **발견자**: developer
 - **내용**: 모든 웹푸시는 `src/lib/pushNotification.ts` 의 `sendPushToUser`/`sendPushToAllParents` 를 지나고 payload.tag = 알림 종류(Notification.type·eventType). 그래서 거르기는 거기 한 곳 — `pushCategoryOf(tag)`(src/lib/mypage/parentSettings.ts, ATTENDANCE*/PAYMENT*/NOTICE*/SHUTTLE*) → `ParentNotificationPreference`(학부모당 1줄, 줄 없으면 전부 받기). 끈 사람은 `NO_SUBSCRIPTION`+`PUSH_OPTED_OUT`(대기열은 SKIPPED). 표 조회 실패 = «보낸다»(운영 적용 전에도 알림 안 끊김). 종 목록(Notification)은 거르지 않는다 — 끄는 건 휴대폰 울림만. 새 알림 종류를 «끌 수 있게» 하려면 pushCategoryOf 만 고친다.
 - **참조횟수**: 0
+
+### [2026-11-10] 정규 보강권 = 출처 둘(결석 신고·출결) · 키 하나 `REGULAR:{classId}:{YYYY-MM-DD}`
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 신고 즉시 발급(`makeup/absence-report-credit.ts`, 호출부 tx 안)과 출결 발급(`credit-service.syncCreditForRegularSession`)이 같은 sourceKey 를 쓴다 — 세션 id 가 키에 없어 신고 시점에도 키가 정해지고 ("studentId","sourceKey") 유니크로 한 장. 두 INSERT 모두 `ON CONFLICT DO UPDATE … WHERE status='REVOKED' AND makeupSessionId IS NULL` 로 «회수된 같은 결석»만 되살린다. 신고 취소 = `decideCreditOnAbsenceCancel` 표(학부모: 미사용 회수·예약은 확인 후 예약 취소+회수·사용 완료/지난 예약은 막음 / 관리자: AVAILABLE 만 회수 / 출결 ABSENT 면 유지). 키 형식을 바꾸면 parent-timeline·parent-regular-absence 의 SQL 문자열 조립도 같이 바꿀 것.
+- **참조횟수**: 0

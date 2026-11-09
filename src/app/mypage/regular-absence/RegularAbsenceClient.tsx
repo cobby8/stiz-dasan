@@ -22,6 +22,19 @@ const REASONS: { value: string; label: string }[] = [
   { value: "ETC", label: "기타" },
 ];
 
+// 결석 신고의 보강권 상태 → 행에 붙는 짧은 글(2026-11-10: 신고 즉시 보강권 발급)
+const CREDIT_NOTE: Record<string, string> = {
+  AVAILABLE: "보강권 1장",
+  RESERVED: "보강 예약됨",
+  USED: "보강 완료",
+  NO_SHOW: "보강 불참",
+};
+
+// 이미 보강을 들었거나(무단 불참 포함) — 신고 취소를 막는 상태(서버도 같은 규칙으로 막는다)
+function creditBlocksCancel(d: UpcomingClassDate) {
+  return d.makeupCredit === "USED" || d.makeupCredit === "NO_SHOW";
+}
+
 // 다가오는 날짜 하나를 나타내는 카드용 키(자녀·반·날짜 조합).
 function dateKey(d: UpcomingClassDate) {
   return `${d.studentId}|${d.classId}|${d.date}`;
@@ -80,7 +93,8 @@ export default function RegularAbsenceClient({
         });
         const j = await res.json();
         if (!res.ok) throw new Error(j?.error || "신고에 실패했습니다.");
-        setMsg("결석을 신고했어요. 학원에서 확인합니다.");
+        // 신고 즉시 보강권이 나갔으면 그 사실을 한 줄로 알린다
+        setMsg(j?.makeupCreditIssued ? "결석을 신고했어요. 보강권 1장이 생겼어요." : "결석을 신고했어요. 학원에서 확인합니다.");
         setOpenKey("");
         await reload();
       } catch (e) {
@@ -108,11 +122,23 @@ export default function RegularAbsenceClient({
             studentId: d.studentId,
             classId: d.classId,
             date: d.date,
+            // 보강 예약이 있는 결석은 확인 문구(«보강 예약도 함께 취소돼요»)를 보고 누른 것이므로 함께 취소를 허락한다
+            confirmMakeupCancel: d.makeupCredit === "RESERVED",
           }),
         });
         const j = await res.json();
-        if (!res.ok) throw new Error(j?.error || "취소에 실패했습니다.");
-        setMsg("결석 신고를 취소했어요.");
+        if (!res.ok) {
+          // 화면을 연 뒤 보강 예약이 생긴 경우 — 최신 상태를 다시 읽어 «보강 예약도 함께 취소돼요» 확인 문구가 뜨게 한다
+          if (j?.code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") await reload();
+          throw new Error(j?.error || "취소에 실패했습니다.");
+        }
+        setMsg(
+          j?.makeupBookingCanceled
+            ? "결석 신고와 보강 예약을 취소했어요."
+            : j?.makeupCreditRevoked
+              ? "결석 신고를 취소했어요. 보강권도 함께 회수됐어요."
+              : "결석 신고를 취소했어요.",
+        );
         await reload();
       } catch (e) {
         setErr(customerMessage(e, "결석 신고를 취소하지 못했습니다. 잠시 후 다시 시도해 주세요."));
@@ -256,17 +282,24 @@ export default function RegularAbsenceClient({
                                       결석 신고됨
                                     </span>
                                     {d.reasonLabel && <span className="text-xs text-[var(--color-academy-muted)]">{d.reasonLabel}</span>}
+                                    {/* 신고 즉시 발급된 보강권 상태(짧게) */}
+                                    {d.makeupCredit && CREDIT_NOTE[d.makeupCredit] && (
+                                      <span className="text-xs font-bold text-[var(--color-academy-info)]">{CREDIT_NOTE[d.makeupCredit]}</span>
+                                    )}
                                   </p>
                                 ) : null}
                               </div>
                               <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{d.dateLabel}</span>
 
                               {/* 액션 — 기존과 같은 조건·같은 함수(신고 취소 / 결석 신고 폼 열기) */}
-                              {d.locked ? null : d.reported ? (
+                              {d.locked ? null : d.reported && creditBlocksCancel(d) ? (
+                                // 이미 그 결석의 보강을 들었다 — 신고 취소 불가(서버도 막는다)
+                                <span className="basis-full text-xs text-[var(--color-academy-muted)]">보강을 이미 들어 취소할 수 없어요 (학원 문의)</span>
+                              ) : d.reported ? (
                                 // 신고 취소 = 그 자리 확인(C-M1) 후 기존 cancel(d) 그대로
                                 <InlineConfirm
                                   label="신고 취소"
-                                  question="이 결석 신고를 취소할까요?"
+                                  question={d.makeupCredit === "RESERVED" ? "보강 예약도 함께 취소돼요. 이 결석 신고를 취소할까요?" : "이 결석 신고를 취소할까요?"}
                                   confirmLabel="신고 취소하기"
                                   onConfirm={() => cancel(d)}
                                   pending={busy}

@@ -46,9 +46,19 @@ export type ParentTimelineRow = {
   change?: { kind: string; effectiveFrom: string; applied: boolean };
   /** 취소 요청(d8) — 수강 변경에만 */
   cancelRequest?: CancelRequestInfo | null;
+  /** 정규 결석일 때만: 그 결석의 보강권 상태(AVAILABLE·RESERVED·USED·NO_SHOW 등, 없으면 null) — 2026-11-10 신고 즉시 발급 */
+  absenceCredit?: string | null;
   /** 원래 신청 화면(자세히·다른 처리) */
   openHref: string;
 };
+
+/** 결석 신고의 보강권 상태 → 상세 칸 한 줄(짧게). 보여줄 게 없으면 null */
+export function absenceCreditLine(status: string | null | undefined): string | null {
+  if (status === "AVAILABLE") return "보강권 1장이 생겼어요";
+  if (status === "RESERVED") return "보강권으로 보강 예약됨";
+  if (status === "USED" || status === "NO_SHOW") return "보강권 사용 완료";
+  return null;
+}
 
 /** 칩·배지에 쓰는 상태 이름·색 뜻 — catalog 그대로. 취소 요청 중이면 그 말을 앞세운다. */
 export function timelineStatus(row: Pick<ParentTimelineRow, "kind" | "rawStatus" | "cancelRequest">): { label: string; tone: StatusTone } {
@@ -94,8 +104,13 @@ export function timelineSteps(row: Pick<ParentTimelineRow, "kind" | "rawStatus" 
  * (서버가 다시 확인한다: 수강 변경 = PENDING 만, 결석 = REPORTED 만. 여기는 버튼을 보일지 정할 뿐)
  * 나머지 종류는 원래 신청 화면에서 취소한다(openHref).
  */
-export function canCancelNow(row: Pick<ParentTimelineRow, "kind" | "rawStatus">): boolean {
-  return (row.kind === "ENROLLMENT_CHANGE" && row.rawStatus === "PENDING") || (row.kind === "REGULAR_ABSENCE" && row.rawStatus === "REPORTED");
+export function canCancelNow(row: Pick<ParentTimelineRow, "kind" | "rawStatus" | "absenceCredit">): boolean {
+  if (row.kind === "REGULAR_ABSENCE") {
+    // 이미 그 결석의 보강을 들었다(무단 불참 포함) — 결석 신고 취소 불가(서버도 같은 규칙으로 막는다)
+    if (row.absenceCredit === "USED" || row.absenceCredit === "NO_SHOW") return false;
+    return row.rawStatus === "REPORTED";
+  }
+  return row.kind === "ENROLLMENT_CHANGE" && row.rawStatus === "PENDING";
 }
 
 /**

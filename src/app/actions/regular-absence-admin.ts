@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { assertAbsenceCompensationEditable, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { getRegularAbsences, type RegularAbsenceRow } from "@/lib/regular/admin-regular-absence";
+import { settleCreditOnAbsenceCancel } from "@/lib/makeup/absence-report-credit";
 import {
   bookMakeupSession,
   cancelMakeupSession,
@@ -87,14 +88,23 @@ export async function cancelRegularAbsenceByAdmin(input: { id: string }) {
   const affected = await prisma.$transaction(async tx => {
     await lockCompensation(tx);
     await assertAbsenceCompensationEditable(tx, id);
-    return tx.$executeRawUnsafe(
+    const rows = await tx.$queryRawUnsafe<Array<{ studentId: string; classId: string; date: string }>>(
     `UPDATE "RegularAbsence"
         SET status = 'CANCELLED',
             "resolvedByUserId" = $2,
             "updatedAt" = now()
-      WHERE id = $1 AND status <> 'CANCELLED'`,
+      WHERE id = $1 AND status <> 'CANCELLED'
+      RETURNING "studentId", "classId", to_char(date, 'YYYY-MM-DD') AS "date"`,
     id, admin.appUserId,
     );
+    // 보강권(2026-11-10 k4): 신고로 나간 보강권을 기존 회수 규칙과 같게 되돌린다 —
+    //   미사용(AVAILABLE)만 회수, 예약 중·사용 완료는 그대로, 출결이 결석이면 그대로(같은 트랜잭션).
+    if (rows[0]) {
+      await settleCreditOnAbsenceCancel(tx, {
+        actor: "ADMIN", studentId: rows[0].studentId, classId: rows[0].classId, absenceYmd: rows[0].date,
+      });
+    }
+    return rows.length;
   });
   if (Number(affected) === 0) throw new Error("취소할 수 없는 상태입니다.");
 

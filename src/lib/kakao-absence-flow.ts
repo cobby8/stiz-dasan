@@ -109,6 +109,9 @@ function absenceErrorMessage(error: unknown): string {
   if (code === "NOT_REPORTABLE_DATE") return "지난 날짜이거나 그 반 수업 요일이 아니에요.";
   if (code === "NOT_OWNER") return "지금 다니는 반의 수업이 아니에요.";
   if (code === "ABSENCE_NOT_CANCELABLE") return "원장님이 이미 확인(확정)한 결석이라 카톡으로는 바꿀 수 없어요.";
+  // 보강권(2026-11-10): 카톡 취소는 «보강 예약도 함께 취소» 확인 단계가 없다 — 앱 결석 화면으로 안내
+  if (code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") return "이 결석의 보강권으로 보강이 예약돼 있어 카톡으로는 취소할 수 없어요. 앱 결석 화면에서 취소하면 보강 예약도 함께 취소돼요.";
+  if (code === "MAKEUP_ALREADY_USED" || code === "MAKEUP_BOOKING_PAST") return "이 결석의 보강을 이미 들었거나 보강 날짜가 지나 취소할 수 없어요.";
   return "잠시 처리가 원활하지 않았어요.";
 }
 
@@ -246,16 +249,18 @@ async function confirmReport(flow: FlowRow<AbsenceState>): Promise<Reply> {
   if (!(await store.advance(flow.id, "CONFIRM", { ...state, step: "SAVING" }))) {
     return flowReply("이미 처리 중이거나 처리된 신청이에요.", ["결석 취소", "메뉴"]);
   }
+  let creditIssued = false;
   try {
     // ★ 서버 재검증: 소유권·ACTIVE 수강·미래·요일은 reportRegularAbsence 가 다시 본다(대화 상태를 믿지 않는다).
-    await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason });
+    const result = await reportRegularAbsence(state.parentUserId, { studentId: state.studentId, classId: chosen.classId, date: chosen.date, reason: state.reason });
+    creditIssued = Boolean(result?.makeupCreditIssued);
   } catch (error) {
     await store.close(flow.id, "CANCELED");
     return flowReply(`결석 신청을 못 했어요: ${absenceErrorMessage(error)} 「결석 신청」으로 다시 확인해 주세요.`, ["결석 신청", "메뉴"]);
   }
   await store.close(flow.id, "APPLIED", { ...state, step: "SAVING" });
   return flowReply(
-    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. 보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요.`,
+    `결석 신청 완료: ${state.studentName} 학생 ${chosen.label} (${REASON_LABEL[state.reason]})\n\n그날 셔틀은 자동으로 빠지고 원장님·코치님께 전달됐어요. ${creditIssued ? "보강권 1장이 생겼어요 — 「보강 신청」으로 바로 예약할 수 있어요." : "보강은 결석 처리 후 「보강 신청」으로 하실 수 있어요."}`,
     ["결석 취소", "메뉴"],
   );
 }
