@@ -13,7 +13,6 @@ import {
     MAX_BUNDLE_ITEMS,
     MAX_BUNDLE_TOTAL,
     bundleCheckoutEligibility,
-    bundleConfirmBlock,
     bundleItemBlock,
     bundleTotals,
     buildBundleItems,
@@ -26,7 +25,10 @@ import {
 import {
     BUNDLE_LEDGER_CONFLICT,
     TX_PAYMENT_STATUS_SQL,
+    claimTossConfirmInTx,
     finalizeBundleInTx,
+    findOpenDepositTxIds,
+    lockPaymentsForCheckout,
     hasBundleItems,
     listBundleItems,
     refundBundleInTx,
@@ -1095,28 +1097,32 @@ export async function createCheckoutSession(input: {
     const cafe24WebhookUrl = new URL("/api/payments/cafe24/webhook", cleanOrigin).toString();
     const provider = config.provider;
 
-    const recentRows = await prisma.$queryRawUnsafe<CheckoutTransactionRow[]>(
-        `SELECT id, "orderId", "orderName", amount, "rawResponse"
-         FROM "PaymentTransaction"
-         WHERE "invoiceId" = $1
-           AND amount = $2
-           AND provider = $3
-           AND status IN ('READY', 'IN_PROGRESS')
-           AND "requestedAt" > NOW() - INTERVAL '30 minutes'
-         ORDER BY "createdAt" DESC
-         LIMIT 1`,
-        input.invoiceId,
-        Number(invoice.amount),
-        provider,
-    );
-
     const orderName = String(invoice.title || "STIZ 수강료").slice(0, 80);
-    const existing = recentRows[0];
-    const orderId = existing?.orderId ?? `${provider === CAFE24_PAYMENT_PROVIDER ? "STIZ-C24" : "STIZ"}-${Date.now()}-${String(input.invoiceId).slice(0, 8)}`;
-    let transactionId = existing?.id ?? null;
-
-    if (!existing) {
-        const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    // 청구 잠금 안에서 «열린 입금 계좌 재확인 → 주문 재사용/생성»을 한 번에(두 탭 동시 시작 — 보안 리뷰 M2).
+    // 묶음 결제 시작·토스 승인 직전과 같은 잠금 키(청구 id)를 쓴다.
+    const reserved = await prisma.$transaction(async (db) => {
+        await lockPaymentsForCheckout(db, [invoice.paymentId]);
+        if (provider === "TOSS" && (await findOpenDepositTxIds(db, [invoice.paymentId], null, Date.now())).length > 0) {
+            return { openDeposit: true as const };
+        }
+        const recentRows = await db.$queryRawUnsafe<CheckoutTransactionRow[]>(
+            `SELECT id, "orderId", "orderName", amount, "rawResponse"
+             FROM "PaymentTransaction"
+             WHERE "invoiceId" = $1
+               AND amount = $2
+               AND provider = $3
+               AND status IN ('READY', 'IN_PROGRESS')
+               AND "requestedAt" > NOW() - INTERVAL '30 minutes'
+             ORDER BY "createdAt" DESC
+             LIMIT 1`,
+            input.invoiceId,
+            Number(invoice.amount),
+            provider,
+        );
+        const found = recentRows[0];
+        if (found) return { openDeposit: false as const, existing: found, transactionId: found.id, orderId: found.orderId };
+        const newOrderId = `${provider === CAFE24_PAYMENT_PROVIDER ? "STIZ-C24" : "STIZ"}-${Date.now()}-${String(input.invoiceId).slice(0, 8)}`;
+        const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
             `INSERT INTO "PaymentTransaction" (
                 id, "paymentId", "invoiceId", "studentId", "parentId", provider,
                 "orderId", "orderName", amount, status, "requestedAt", "createdAt", "updatedAt"
@@ -1131,12 +1137,29 @@ export async function createCheckoutSession(input: {
             invoice.studentId,
             invoice.parentId,
             provider,
-            orderId,
+            newOrderId,
             orderName,
             Number(invoice.amount),
         );
-        transactionId = inserted[0]?.id ?? null;
+        return { openDeposit: false as const, existing: undefined, transactionId: inserted[0]?.id ?? null, orderId: newOrderId };
+    });
+    if (reserved.openDeposit) {
+        // 잠금 사이 다른 탭이 입금 계좌를 받았다 — 새 주문 없이 그 계좌를 보여 준다
+        const vaState = await getVirtualAccountState(invoice.invoiceId);
+        if (vaState && !vaState.expired) {
+            return {
+                ok: true as const,
+                provider: config.provider,
+                providerLabel: config.providerLabel,
+                providerReady: config.providerReady,
+                openVirtualAccount: vaState,
+            };
+        }
+        return { ok: false as const, error: BUNDLE_BLOCK_MESSAGE.OPEN_DEPOSIT_EXISTS, blocked: "OPEN_DEPOSIT_EXISTS" as const };
     }
+    const existing = reserved.existing;
+    const orderId = reserved.orderId;
+    const transactionId = reserved.transactionId;
 
     await prisma.$executeRawUnsafe(
         `UPDATE "Payment"
@@ -1787,7 +1810,7 @@ async function finalizeVerifiedBundlePayment(input: {
  * 카드·계좌이체 묶음 결제가 토스에서는 완료됐는데 장부에 반영하지 못한 경우 — 감사 기록 + 원장 슬랙 DM.
  * 같은 거래·같은 사유는 한 번만(성공 화면 새로고침·웹훅 재전송 대비).
  */
-async function recordBundlePaymentReview(tx: PaymentTransactionRow, code: string) {
+async function recordBundlePaymentReview(tx: PaymentTransactionRow, code: string, headline?: string) {
     const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
         `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
          SELECT gen_random_uuid()::text, $1, $2, $3, 'SYSTEM', NULL, 'PAYMENT_BUNDLE_REVIEW', $4, $5::jsonb, NOW()
@@ -1800,8 +1823,10 @@ async function recordBundlePaymentReview(tx: PaymentTransactionRow, code: string
         JSON.stringify({ provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount) }),
     );
     if (inserted.length > 0) {
+        const text = headline
+            ?? `[묶음 결제 확인 필요] 토스 결제는 완료됐지만 묶은 청구 중 이미 납부·취소·금액 변경된 건이 있어 장부에 반영하지 않았습니다(${code}). 환불 여부를 확인해 주세요.`;
         await alertVirtualAccountIssue(
-            `[묶음 결제 확인 필요] 토스 결제는 완료됐지만 묶은 청구 중 이미 납부·취소·금액 변경된 건이 있어 장부에 반영하지 않았습니다(${code}). 환불 여부를 확인해 주세요.\n주문 ${tx.orderId} · ${Number(tx.amount).toLocaleString("ko-KR")}원 · /admin/finance`,
+            `${text}\n주문 ${tx.orderId} · ${Number(tx.amount).toLocaleString("ko-KR")}원 · /admin/finance`,
         );
     }
 }
@@ -1818,6 +1843,11 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
             rawResponse: stripPaymentSecret(input.payment),
         }));
         if (applied.ok && !applied.alreadyApplied) revalidatePaymentCaches();
+        if (applied.ok && applied.skipped.length > 0) {
+            // 이 주문으로 낸 게 아닌(다른 방법으로 다시 낸) 청구는 환불하지 않았다 — 원장 확인(보안 리뷰 L1)
+            await recordBundlePaymentReview(input.tx, "BUNDLE_REFUND_SKIPPED",
+                `[묶음 결제 확인 필요] 토스 전액 취소를 반영하면서 다른 방법으로 다시 낸 청구 ${applied.skipped.length}건은 환불 처리하지 않았습니다. 장부를 확인해 주세요.`);
+        }
         return applied.ok
             ? { ok: true as const, alreadyApplied: applied.alreadyApplied }
             : { ok: false as const, error: applied.error };
@@ -1923,9 +1953,20 @@ export async function confirmTossPayment(input: {
         }
     }
 
-    // 승인(돈이 나가는 순간) «전에» 다시 확인한다 — 묶음이면 묶인 청구 전부가 아직 미납·금액 그대로인지,
-    // 단건·묶음 모두 랠리즈 사본이 아닌지(D4). 막으면 토스 승인을 부르지 않는다(결제창 인증은 자동 소멸 — 돈 안 나감).
-    const confirmBlock = await checkBeforeTossConfirm(tx);
+    const { secretKey } = getPaymentProviderConfig();
+    if (!secretKey) {
+        return { ok: false as const, error: "Toss Payments 서버 키가 설정되어 있지 않습니다." };
+    }
+
+    // 승인(돈이 나가는 순간) «전에» 짧은 트랜잭션에서 묶인 청구를 id 순으로 잠그고 다시 확인한 뒤 «승인 진행 중»으로 표시한다
+    // (보안 리뷰 M1·M2 — 두 탭 동시 카드 승인·무통장 계좌 2개 방지). 단건·묶음 같은 함수.
+    // 확인: 전부 미납·금액 그대로 · 랠리즈 사본 아님(D4) · 겹치는 다른 주문이 승인 중(10분 안) 아님 · 다른 입금 대기 계좌 없음.
+    // 막으면 토스 승인을 부르지 않는다(결제창 인증은 자동 소멸 — 돈 안 나감). 토스 호출은 트랜잭션 밖이다.
+    const confirmBlock = await prisma.$transaction((db) => claimTossConfirmInTx(db, {
+        transactionId: tx.id,
+        repPaymentId: tx.paymentId,
+        nowMs: Date.now(),
+    }));
     if (confirmBlock) {
         return {
             ok: false as const,
@@ -1934,18 +1975,6 @@ export async function confirmTossPayment(input: {
             blocked: confirmBlock,
         };
     }
-
-    const { secretKey } = getPaymentProviderConfig();
-    if (!secretKey) {
-        return { ok: false as const, error: "Toss Payments 서버 키가 설정되어 있지 않습니다." };
-    }
-
-    await prisma.$executeRawUnsafe(
-        `UPDATE "PaymentTransaction"
-         SET status = 'IN_PROGRESS', "updatedAt" = NOW()
-         WHERE id = $1 AND status = 'READY'`,
-        tx.id,
-    );
 
     const response = await fetch("https://api.tosspayments.com/v1/payments/confirm", {
         method: "POST",
@@ -2050,31 +2079,6 @@ export async function confirmTossPayment(input: {
 // 토스 주문 1건(PaymentTransaction: 대표 청구 = 1번 항목, amount = 합계) + 청구 N건(PaymentTransactionItem).
 // 규칙은 src/lib/payments/checkoutBundle.ts, 장부 반영은 src/lib/payments/bundleLedger.ts.
 // 승인·웹훅·가상계좌 입금·매일 점검·전액 취소는 단건과 같은 함수(finalizeVerifiedTossPayment 등)를 지나며 «항목 있음» 갈래로 간다.
-
-/** 청구들 중 랠리즈 사본(D4) id 묶음 */
-async function rallyzMirrorPaymentIds(paymentIds: string[]): Promise<Set<string>> {
-    if (paymentIds.length === 0) return new Set();
-    const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT p.id FROM "Payment" p
-          WHERE p.id = ANY($1::text[]) AND NOT (${rallyzMirrorExclusionSql("p")})`,
-        paymentIds,
-    );
-    return new Set(rows.map((row) => row.id));
-}
-
-/**
- * 토스 승인 직전 재확인 — 막아야 하면 이유 코드, 괜찮으면 null.
- * 묶음: 묶인 청구 전부 미납·금액 그대로·랠리즈 사본 아님. 단건: 랠리즈 사본 아님(나머지는 기존 검사가 한다).
- */
-async function checkBeforeTossConfirm(tx: PaymentTransactionRow): Promise<BundleBlockCode | null> {
-    const items = await listBundleItems(prisma, tx.id, false);
-    if (items.length === 0) {
-        const mirrors = await rallyzMirrorPaymentIds([tx.paymentId]);
-        return mirrors.size > 0 ? "RALLYZ_MIRROR" : null;
-    }
-    const mirrors = await rallyzMirrorPaymentIds(items.map((item) => item.paymentId));
-    return bundleConfirmBlock(items.map((item) => ({ ...item, rallyzMirror: mirrors.has(item.paymentId) })));
-}
 
 /**
  * 학부모가 볼 수 있는 자녀(childAccessSql)의 청구를 «서버 DB 값»으로 읽는다.
@@ -2320,52 +2324,66 @@ export async function createBundleCheckoutSession(input: {
     const rep = items[0];
     const orderName = buildBundleOrderName(items);
 
-    // 같은 청구 묶음·같은 금액의 30분 안 READY 주문 재사용(단건과 같은 규칙)
-    const recent = await prisma.$queryRawUnsafe<CheckoutTransactionRow[]>(
-        `SELECT id, "orderId", "orderName", amount
-           FROM "PaymentTransaction"
-          WHERE "parentId" = $1 AND provider = 'TOSS' AND amount = $2
-            AND status IN ('READY', 'IN_PROGRESS')
-            AND "requestedAt" > NOW() - INTERVAL '30 minutes'
-            AND EXISTS (SELECT 1 FROM "PaymentTransactionItem" it WHERE it."transactionId" = "PaymentTransaction".id)
-          ORDER BY "createdAt" DESC
-          LIMIT 5`,
-        input.parentUserId,
-        totals.amount,
-    );
-    let existing: CheckoutTransactionRow | null = null;
-    for (const row of recent) {
-        const rowItems = await listBundleItems(prisma, row.id, false);
-        if (sameBundleItems(rowItems.map((item) => ({ paymentId: item.paymentId, amount: item.itemAmount })), items)) {
-            existing = row;
-            break;
+    // 청구 잠금 안에서 «열린 입금 계좌 재확인 → 같은 묶음 READY 주문 재사용 → 없으면 거래+항목 생성»(보안 리뷰 M2)
+    // 거래 1줄 + 항목 N줄이 같은 트랜잭션이라 항목 없는 묶음 거래가 남지 않는다.
+    const paymentIds = items.map((item) => item.paymentId);
+    const reserved = await prisma.$transaction(async (db) => {
+        await lockPaymentsForCheckout(db, paymentIds);
+        if ((await findOpenDepositTxIds(db, paymentIds, null, Date.now())).length > 0) {
+            return { openDeposit: true as const, orderId: null };
         }
-    }
-
-    const orderId = existing?.orderId ?? makeBundleOrderId(Date.now(), rep.paymentId);
-    if (!existing) {
-        // 거래 1줄 + 항목 N줄을 한 번에(항목 없는 묶음 거래가 남지 않게)
-        await prisma.$transaction(async (db) => {
-            const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
-                `INSERT INTO "PaymentTransaction" (
-                    id, "paymentId", "invoiceId", "studentId", "parentId", provider,
-                    "orderId", "orderName", amount, status, "requestedAt", "createdAt", "updatedAt"
-                 )
-                 VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'TOSS', $5, $6, $7, 'READY', NOW(), NOW(), NOW())
-                 RETURNING id`,
-                rep.paymentId, rep.invoiceId, rep.studentId, input.parentUserId, orderId, orderName, totals.amount,
-            );
-            const transactionId = inserted[0]?.id;
-            if (!transactionId) throw new Error("묶음 결제 주문을 만들지 못했습니다.");
-            for (const item of items) {
-                await db.$executeRawUnsafe(
-                    `INSERT INTO "PaymentTransactionItem" (id, "transactionId", "paymentId", "invoiceId", amount, "taxFreeAmount", position, "createdAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW())`,
-                    transactionId, item.paymentId, item.invoiceId, item.amount, item.taxFreeAmount, item.position,
-                );
+        // 같은 청구 묶음·같은 금액의 30분 안 READY 주문 재사용(단건과 같은 규칙)
+        const recent = await db.$queryRawUnsafe<CheckoutTransactionRow[]>(
+            `SELECT id, "orderId", "orderName", amount
+               FROM "PaymentTransaction"
+              WHERE "parentId" = $1 AND provider = 'TOSS' AND amount = $2
+                AND status IN ('READY', 'IN_PROGRESS')
+                AND "requestedAt" > NOW() - INTERVAL '30 minutes'
+                AND EXISTS (SELECT 1 FROM "PaymentTransactionItem" it WHERE it."transactionId" = "PaymentTransaction".id)
+              ORDER BY "createdAt" DESC
+              LIMIT 5`,
+            input.parentUserId,
+            totals.amount,
+        );
+        for (const row of recent) {
+            const rowItems = await listBundleItems(db, row.id, false);
+            if (sameBundleItems(rowItems.map((item) => ({ paymentId: item.paymentId, amount: item.itemAmount })), items)) {
+                return { openDeposit: false as const, orderId: row.orderId };
             }
-        });
+        }
+
+        const newOrderId = makeBundleOrderId(Date.now(), rep.paymentId);
+        const inserted = await db.$queryRawUnsafe<Array<{ id: string }>>(
+            `INSERT INTO "PaymentTransaction" (
+                id, "paymentId", "invoiceId", "studentId", "parentId", provider,
+                "orderId", "orderName", amount, status, "requestedAt", "createdAt", "updatedAt"
+             )
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'TOSS', $5, $6, $7, 'READY', NOW(), NOW(), NOW())
+             RETURNING id`,
+            rep.paymentId, rep.invoiceId, rep.studentId, input.parentUserId, newOrderId, orderName, totals.amount,
+        );
+        const transactionId = inserted[0]?.id;
+        if (!transactionId) throw new Error("묶음 결제 주문을 만들지 못했습니다.");
+        for (const item of items) {
+            await db.$executeRawUnsafe(
+                `INSERT INTO "PaymentTransactionItem" (id, "transactionId", "paymentId", "invoiceId", amount, "taxFreeAmount", position, "createdAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, NOW())`,
+                transactionId, item.paymentId, item.invoiceId, item.amount, item.taxFreeAmount, item.position,
+            );
+        }
+        return { openDeposit: false as const, orderId: newOrderId };
+    });
+    if (reserved.openDeposit) {
+        // 잠금 사이 다른 탭이 입금 계좌를 받았다 — 새 주문을 만들지 않는다(화면은 «계좌 닫기» 확인으로)
+        return {
+            ok: false as const,
+            error: BUNDLE_BLOCK_MESSAGE.OPEN_DEPOSIT_EXISTS,
+            blocked: "OPEN_DEPOSIT_EXISTS" as const,
+            openVirtualAccountConflict: true as const,
+            openVirtualAccounts: [] as Array<PublicVirtualAccountView & { paymentIds: string[] }>,
+        };
     }
+    const orderId = reserved.orderId;
 
     await prisma.$executeRawUnsafe(
         `UPDATE "Payment" SET "paymentRequestedAt" = NOW(), "updatedAt" = NOW() WHERE id = ANY($1::text[])`,

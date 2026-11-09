@@ -135,6 +135,11 @@
 💡 tester: 가짜 prisma·fetch 실행 테스트 30건. 실결제는 마이그레이션 적용 후 소액(카드 2건·무통장 2건·전액 취소).
 ⚠️ reviewer: finalizeVerifiedBundlePayment 의 무통장/카드 갈림, createBundleCheckoutSession 의 열린 계좌 처리(같은 묶음이면 계좌 반환·다르면 확인 후 닫기).
 
+#### 수정 이력
+| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
+|---|---|---|---|---|
+| 1차 | 11-09 | 토스 승인 직전 짧은 트랜잭션에서 청구 id 정렬순 advisory 잠금 → 재확인(미납·랠리즈·다른 주문 승인 중 10분·다른 입금 대기 계좌) → IN_PROGRESS 표시(claimTossConfirmInTx, 단건·묶음 공용) / 단건·묶음 결제 시작의 열린 계좌 재확인+주문 생성을 같은 잠금 안에 / 전액 취소는 그 주문(paidProvider TOSS+providerOrderId)으로 낸 청구만 환불, 나머지는 건너뛰고 원장 확인. 새 오류 코드 CONFIRM_IN_PROGRESS·OPEN_DEPOSIT_EXISTS. 마이그레이션 변경 없음 | bundleLedger.ts·checkoutBundle.ts·payment-ledger.ts·tests | 보안 리뷰 M1·M2·L1 |
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
