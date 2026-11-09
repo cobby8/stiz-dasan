@@ -87,6 +87,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
     statuses: {
       PENDING: act("검토 대기"),
       APPROVED: going("승인·적용일 대기"), // 승인은 «예약» — 적용일에 크론이 반영한다
+      // 파생: APPROVED + cancelRequestStatus='PENDING'(원장 결정 d8 학부모 «취소 요청») — 원장이 [취소 승인]/[요청 거절]을 눌러야 끝난다
+      CANCEL_REQUESTED: act("취소 요청 검토 중"),
       APPLIED: ok("적용됨"), // 파생: APPROVED + appliedAt
       REJECTED: no("거절"),
       CANCELED: off("취소"),
@@ -235,8 +237,22 @@ export function statusesOf(kind: RequestKind, bucket?: InboxBucket): string[] {
 
 // ── 파생 상태(표에 그대로 없는 상태) ─────────────────────────────────────────
 
-/** 수강 변경: 승인 + 반영 시각이 있으면 «적용됨» */
-export function deriveEnrollmentChangeStatus(status: string, appliedAt: Date | string | null | undefined): string {
+/** 수강 변경 «취소 요청 검토 중» 파생 상태 이름 — 신청함 SQL·학부모 타임라인이 같은 글자를 쓴다 */
+export const ENROLLMENT_CANCEL_REQUESTED = "CANCEL_REQUESTED";
+
+/**
+ * 수강 변경 파생 상태.
+ * - 승인 + 학부모 취소 요청 대기(cancelRequestStatus='PENDING') → «취소 요청 검토 중»(처리 필요).
+ *   반영이 이미 됐어도 먼저 본다 — 원장이 [요청 거절]로 닫아야 하는 일이 남아 있기 때문.
+ * - 승인 + 반영 시각 → «적용됨»
+ * cancelRequestStatus 를 안 주면(마이그레이션 전 조회) 예전과 똑같이 판정한다.
+ */
+export function deriveEnrollmentChangeStatus(
+  status: string,
+  appliedAt: Date | string | null | undefined,
+  cancelRequestStatus?: string | null,
+): string {
+  if (status === "APPROVED" && cancelRequestStatus === "PENDING") return ENROLLMENT_CANCEL_REQUESTED;
   return status === "APPROVED" && appliedAt ? "APPLIED" : status;
 }
 

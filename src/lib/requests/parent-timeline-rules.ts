@@ -6,7 +6,7 @@
  *
  * 날짜는 "YYYY-MM-DD" 문자열만. 오늘은 부르는 쪽이 todayKst() 로 넣는다.
  */
-import { kindLabel, statusEntry, type RequestKind } from "@/lib/requests/catalog";
+import { deriveEnrollmentChangeStatus, kindLabel, statusEntry, type RequestKind } from "@/lib/requests/catalog";
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import type { StatusTone } from "@/lib/ui/statusTones";
 
@@ -52,10 +52,11 @@ export type ParentTimelineRow = {
 
 /** 칩·배지에 쓰는 상태 이름·색 뜻 — catalog 그대로. 취소 요청 중이면 그 말을 앞세운다. */
 export function timelineStatus(row: Pick<ParentTimelineRow, "kind" | "rawStatus" | "cancelRequest">): { label: string; tone: StatusTone } {
-  if (row.cancelRequest?.status === "PENDING" && row.rawStatus === "APPROVED") {
-    return { label: "취소 요청 검토 중", tone: "warning" };
-  }
-  const entry = statusEntry(row.kind, row.rawStatus);
+  // 취소 요청 대기 = catalog 의 파생 상태(관리자 신청함과 같은 이름·색). rawStatus 는 단계·버튼 판정에 그대로 둔다.
+  const shown = row.kind === "ENROLLMENT_CHANGE"
+    ? deriveEnrollmentChangeStatus(row.rawStatus, null, row.cancelRequest?.status)
+    : row.rawStatus;
+  const entry = statusEntry(row.kind, shown);
   return { label: entry.label, tone: entry.tone };
 }
 

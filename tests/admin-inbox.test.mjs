@@ -90,3 +90,24 @@ test('컴팩트 UI — 필터는 버튼 하나+모달, 행은 한 줄(min-h-12),
   assert.match(client, /statusBadgeClassFor\(row\.kind, row\.rawStatus\)/);
   assert.doesNotMatch(client, /text-\[(9|10|11)px\]/);
 });
+
+test('수강 변경 «취소 요청 검토 중»(d8) — 신청함 목록·개수에 처리 필요로 들어오고, 상세 칸은 기존 취소 요청 action 을 쓴다', () => {
+  // SQL 파생 식이 catalog 와 같은 조건·같은 이름(상수)을 쓴다
+  assert.match(inbox, /x\.status = 'APPROVED' AND x\."cancelRequestStatus" = 'PENDING' THEN '\$\{ENROLLMENT_CANCEL_REQUESTED\}'/);
+  // 처리 버튼 = 학부모 수업 탭 작업의 관리자 action 재사용, 적용일 지난 건은 거절만
+  assert.match(client, /decideEnrollmentChangeCancelRequest\(\{ requestId: row\.id, approve: true, note \}\)/);
+  assert.match(client, /decideEnrollmentChangeCancelRequest\(\{ requestId: row\.id, approve: false, note \}\)/);
+  assert.match(client, /if \(row\.ref\?\.tooLate\) return \[reject\]/);
+  assert.match(client, /label: "취소 승인"/);
+  assert.match(client, /label: "요청 거절"/);
+});
+
+test('취소 요청 칸 마이그레이션(20261110130000) 적용 전에도 신청함·메뉴 숫자가 죽지 않는다 — 예전 식으로 다시 읽는다', () => {
+  // 수강 변경 어댑터에 예전 식(fallback)이 있고, 목록·개수 둘 다 실패하면 그 식으로 다시 읽는다
+  assert.match(inbox, /fallback: \{\s*createdAtExpr: `x\."createdAt"`,\s*rawExpr: `CASE WHEN x\.status = 'APPROVED' AND x\."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x\.status END`/);
+  const start = inbox.indexOf('fallback: {');
+  const fallbackBlock = inbox.slice(start, inbox.indexOf('format:', start));
+  assert.doesNotMatch(fallbackBlock, /cancelRequest/);
+  assert.match(inbox, /await read\(legacyOf\(adapter\)\)/);
+  assert.match(inbox, /buildInboxCountsSql\(true\)/);
+});

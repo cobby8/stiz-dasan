@@ -20,6 +20,7 @@ import { kstHm, kstLabel, todayKst, toKstYmd } from "@/lib/datetime/kst";
 import {
   BUCKET_LABEL,
   BULK_ACTION_KINDS,
+  ENROLLMENT_CANCEL_REQUESTED,
   INBOX_BUCKETS,
   REQUEST_KINDS,
   kindLabel,
@@ -29,7 +30,7 @@ import {
 } from "@/lib/requests/catalog";
 import type { InboxCounts, InboxRow } from "@/lib/requests/admin-inbox";
 // 처리 = 각 화면이 쓰던 server action 을 그대로 부른다(규칙·권한 검사·알림이 한 벌로 유지된다)
-import { decideEnrollmentChange } from "@/app/actions/enrollment-changes";
+import { decideEnrollmentChange, decideEnrollmentChangeCancelRequest } from "@/app/actions/enrollment-changes";
 import { confirmRegularAbsence } from "@/app/actions/regular-absence-admin";
 import { updateRequestStatus } from "@/app/actions/admin";
 import { decidePaymentRequest } from "@/app/actions/payment-requests";
@@ -81,6 +82,19 @@ function actionsFor(row: InboxRow): PanelAction[] {
   const who = row.studentName ?? row.title;
   switch (row.kind) {
     case "ENROLLMENT_CHANGE":
+      if (row.rawStatus === ENROLLMENT_CANCEL_REQUESTED) {
+        // 학부모 «취소 요청»(d8) — 수강 변경 화면과 같은 action. 적용일이 왔으면 서버가 취소를 막으니 거절만 보인다.
+        const reject: PanelAction = {
+          key: "cancel-reject", label: "요청 거절", look: row.ref?.tooLate ? "primary" : "danger",
+          run: (note) => decideEnrollmentChangeCancelRequest({ requestId: row.id, approve: false, note }),
+        };
+        if (row.ref?.tooLate) return [reject];
+        return [reject, {
+          key: "cancel-approve", label: "취소 승인", look: "primary",
+          confirm: { title: `${who} ${row.title} 승인`, description: "승인했던 신청이 «취소»로 바뀌어 적용일에 반영되지 않습니다. 결과는 보호자에게 앱 알림으로 갑니다.", confirmLabel: "취소 승인", tone: "primary" },
+          run: (note) => decideEnrollmentChangeCancelRequest({ requestId: row.id, approve: true, note }),
+        }];
+      }
       if (row.rawStatus !== "PENDING") return [];
       return [
         { key: "reject", label: "거절", look: "danger", run: (note) => decideEnrollmentChange({ requestId: row.id, approve: false, note }) },

@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
   bucketFor,
+  ENROLLMENT_CANCEL_REQUESTED,
   kindEntry,
   REQUEST_KINDS,
   statusLabel,
@@ -75,6 +76,11 @@ type Adapter = {
   targetDateExpr: string;
   /** json_build_object(...) 안에 들어갈 «'키', 식» 목록 */
   extra: string;
+  /**
+   * 운영 DB 에 아직 없는 칸을 읽는 어댑터의 «예전 식»(마이그레이션 적용 전 대비).
+   * 첫 조회가 실패하면 이 식으로 한 번 더 읽는다 — 새 칸 때문에 신청함·메뉴 숫자가 통째로 죽지 않게.
+   */
+  fallback?: Pick<Adapter, "rawExpr" | "createdAtExpr" | "extra">;
   format: (row: RawRow, extra: Record<string, unknown>) => { title: string; summary: string; facts: InboxFact[]; ref?: Record<string, string | null> };
 };
 
@@ -115,15 +121,38 @@ const ADAPTERS: Adapter[] = [
     kind: "ENROLLMENT_CHANGE",
     from: `"EnrollmentChangeRequest" x ${studentJoin("s", `x."studentId"`)}
            LEFT JOIN "Class" fc ON fc.id = x."fromClassId" LEFT JOIN "Class" tc ON tc.id = x."toClassId"`,
-    rawExpr: `CASE WHEN x.status = 'APPROVED' AND x."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x.status END`,
+    // 파생 상태 순서는 catalog.deriveEnrollmentChangeStatus 와 같다(취소 요청 대기 → 적용됨 → 원래 상태)
+    rawExpr: `CASE WHEN x.status = 'APPROVED' AND x."cancelRequestStatus" = 'PENDING' THEN '${ENROLLMENT_CANCEL_REQUESTED}'
+                   WHEN x.status = 'APPROVED' AND x."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x.status END`,
     studentNameExpr: "s.name",
-    createdAtExpr: `x."createdAt"`,
+    // 취소 요청 행은 «요청한 시각»으로 줄 세운다(«n일 전»·신청일 필터가 원래 신청일이 아니라 요청일을 보게)
+    createdAtExpr: `CASE WHEN x.status = 'APPROVED' AND x."cancelRequestStatus" = 'PENDING' THEN COALESCE(x."cancelRequestedAt", x."createdAt") ELSE x."createdAt" END`,
     targetDateExpr: `x."effectiveFrom"::text`,
     extra: `'changeKind', x.kind, 'fromClass', fc.name, 'toClass', tc.name, 'resumeOn', x."resumeOn"::text,
-            'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote"`,
+            'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote",
+            'cancelRequestedAt', ${kstYmd(`x."cancelRequestedAt"`)}, 'cancelReason', x."cancelRequestReason",
+            'tooLate', (x."appliedAt" IS NOT NULL OR x."effectiveFrom" <= (now() AT TIME ZONE 'Asia/Seoul')::date)`,
+    // 마이그레이션 20261110130000(취소 요청 칸) 적용 전: 취소 요청 없이 예전 그대로 읽는다
+    fallback: {
+      createdAtExpr: `x."createdAt"`,
+      rawExpr: `CASE WHEN x.status = 'APPROVED' AND x."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x.status END`,
+      extra: `'changeKind', x.kind, 'fromClass', fc.name, 'toClass', tc.name, 'resumeOn', x."resumeOn"::text,
+              'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote"`,
+    },
     format: (row, e) => {
       const kind = CHANGE_KIND[text(e.changeKind)] ?? "수강 변경";
       const classes = e.toClass ? `${text(e.fromClass) || "?"} → ${text(e.toClass)}` : text(e.fromClass);
+      if (row.raw === ENROLLMENT_CANCEL_REQUESTED) {
+        // 학부모 «취소 요청»(d8) — 승인된 휴원·퇴원을 되돌려 달라는 요청. 적용일이 왔으면 취소는 못 하고 거절만.
+        return {
+          title: `${kind} 취소 요청`,
+          summary: join(classes, row.targetDate ? `${row.targetDate}부터 예정` : "", e.tooLate ? "적용일 지남" : ""),
+          facts: [["종류", `${kind} 취소 요청`], ...fact("반", classes), ...fact("적용일", row.targetDate), ...fact("복귀 예정", e.resumeOn),
+            ...fact("취소 요청일", e.cancelRequestedAt), ...fact("취소 사유", e.cancelReason), ...fact("원래 신청 사유", e.reason),
+            ...(e.tooLate ? [["안내", "적용일이 이미 왔거나 반영돼 취소할 수 없습니다. 요청 거절로 닫아 주세요."] as InboxFact] : [])],
+          ref: { cancelRequest: "PENDING", tooLate: e.tooLate ? "1" : null },
+        };
+      }
       return {
         title: `${kind} 신청`,
         summary: join(classes, row.targetDate ? `${row.targetDate}부터` : "", e.waitlisted ? "희망 반 만석" : ""),
@@ -364,6 +393,11 @@ function sqlTextArray(values: string[]): string {
   return safe.length ? `ARRAY[${safe.map((v) => `'${v}'`).join(",")}]::text[]` : `ARRAY[]::text[]`;
 }
 
+/** 마이그레이션 전 대비용 — 예전 식으로 바꾼 어댑터(fallback 이 없으면 그대로) */
+function legacyOf(adapter: Adapter): Adapter {
+  return adapter.fallback ? { ...adapter, ...adapter.fallback } : adapter;
+}
+
 function selectSql(adapter: Adapter): string {
   return `SELECT x.id::text AS id, ${adapter.rawExpr} AS raw, ${adapter.studentNameExpr} AS "studentName",
                  ${adapter.createdAtExpr} AS "createdAt", ${adapter.targetDateExpr} AS "targetDate",
@@ -398,18 +432,26 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
   const parts = await Promise.all(ADAPTERS.filter((a) => wanted.has(a.kind)).map(async (adapter) => {
     const statuses = statusesOf(adapter.kind, query.bucket);
     if (!statuses.length) return [] as InboxRow[];
+    const read = (a: Adapter) => prisma.$queryRawUnsafe<RawRow[]>(
+      `SELECT * FROM (${selectSql(a)}) t
+        WHERE t.raw = ANY(${sqlTextArray(statuses)})
+          AND ($1::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date >= $1::date)
+          AND ($2::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date <= $2::date)
+        ORDER BY t."createdAt" ${query.bucket === "DONE" ? "DESC" : "ASC"}
+        LIMIT ${limit}`,
+      from, to,
+    );
     try {
-      const rows = await prisma.$queryRawUnsafe<RawRow[]>(
-        `SELECT * FROM (${selectSql(adapter)}) t
-          WHERE t.raw = ANY(${sqlTextArray(statuses)})
-            AND ($1::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date >= $1::date)
-            AND ($2::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date <= $2::date)
-          ORDER BY t."createdAt" ${query.bucket === "DONE" ? "DESC" : "ASC"}
-          LIMIT ${limit}`,
-        from, to,
-      );
+      const rows = await read(adapter);
       return rows.map((row) => toInboxRow(adapter, row));
     } catch (error) {
+      // 새 칸이 아직 없는 운영 DB(마이그레이션 전)면 예전 식으로 한 번 더 — 그래도 실패면 그 종류만 비운다
+      if (adapter.fallback) {
+        try {
+          const rows = await read(legacyOf(adapter));
+          return rows.map((row) => toInboxRow(adapter, row));
+        } catch { /* 아래에서 기록 */ }
+      }
       console.error(`[admin-inbox] ${adapter.kind} 조회 실패:`, error);
       failedKinds.push(adapter.kind);
       return [] as InboxRow[];
@@ -442,9 +484,13 @@ function toInboxRow(adapter: Adapter, row: RawRow): InboxRow {
   };
 }
 
-/** 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다 */
-export function buildInboxCountsSql(): string {
-  const pieces = ADAPTERS.map((adapter) => {
+/**
+ * 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다.
+ * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
+ */
+export function buildInboxCountsSql(legacy = false): string {
+  const pieces = ADAPTERS.map((original) => {
+    const adapter = legacy ? legacyOf(original) : original;
     const open = [...statusesOf(adapter.kind, "ACTION"), ...statusesOf(adapter.kind, "ONGOING")];
     return `SELECT '${adapter.kind}'::text AS kind, t.raw, COUNT(*)::int AS n
               FROM (SELECT ${adapter.rawExpr} AS raw FROM ${adapter.from} ${adapter.where ? `WHERE ${adapter.where}` : ""}) t
@@ -456,12 +502,17 @@ export function buildInboxCountsSql(): string {
 
 /** 메뉴 배지·«오늘 업무» 카드 숫자. 실패하면 null(화면은 숫자만 숨긴다 — 관리자 화면 전체를 죽이지 않는다) */
 export async function getInboxCounts(): Promise<InboxCounts | null> {
+  type CountRow = { kind: RequestKind; raw: string; n: number };
   try {
-    const rows = await prisma.$queryRawUnsafe<Array<{ kind: RequestKind; raw: string; n: number }>>(buildInboxCountsSql());
-    return summarizeCounts(rows);
+    return summarizeCounts(await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql()));
   } catch (error) {
-    console.error("[admin-inbox] 개수 조회 실패:", error);
-    return null;
+    // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
+    try {
+      return summarizeCounts(await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(true)));
+    } catch {
+      console.error("[admin-inbox] 개수 조회 실패:", error);
+      return null;
+    }
   }
 }
 

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import {
   REQUEST_KINDS, INBOX_BUCKETS, BUCKET_LABEL, PARENT_BUCKET_LABEL, BULK_ACTION_KINDS,
   bucketFor, statusLabel, statusTone, statusBadgeClassFor, statusesOf, kindLabel, isRequestKind,
-  deriveEnrollmentChangeStatus, deriveWithdrawalStatus, deriveShuttleDayStatus,
+  deriveEnrollmentChangeStatus, deriveWithdrawalStatus, deriveShuttleDayStatus, statusEntry, ENROLLMENT_CANCEL_REQUESTED,
 } from '../src/lib/requests/catalog.ts';
 import { STATUS_TONES, TONE_BADGE_CLASS } from '../src/lib/ui/statusTones.ts';
 
@@ -115,6 +115,19 @@ test('파생 상태 — 수강 변경 적용·탈퇴·셔틀 오늘만', () => {
   assert.equal(deriveWithdrawalStatus('2026-11-10T00:00:00Z'), 'WITHDRAWN');
   assert.equal(deriveShuttleDayStatus(null), 'ACTIVE');
   assert.equal(deriveShuttleDayStatus(new Date()), 'CANCELED');
+});
+
+test('수강 변경 «취소 요청 검토 중»(d8) — 승인+취소 요청 대기는 처리 필요, 적용됐어도 먼저 본다', () => {
+  assert.equal(ENROLLMENT_CANCEL_REQUESTED, 'CANCEL_REQUESTED');
+  assert.equal(deriveEnrollmentChangeStatus('APPROVED', null, 'PENDING'), 'CANCEL_REQUESTED');
+  assert.equal(deriveEnrollmentChangeStatus('APPROVED', new Date(), 'PENDING'), 'CANCEL_REQUESTED');
+  // 거절·승인된 취소 요청, 승인 아닌 신청은 예전 판정 그대로
+  assert.equal(deriveEnrollmentChangeStatus('APPROVED', null, 'REJECTED'), 'APPROVED');
+  assert.equal(deriveEnrollmentChangeStatus('APPROVED', new Date(), 'REJECTED'), 'APPLIED');
+  assert.equal(deriveEnrollmentChangeStatus('CANCELED', null, 'APPROVED'), 'CANCELED');
+  assert.equal(deriveEnrollmentChangeStatus('PENDING', null, 'PENDING'), 'PENDING');
+  assert.deepEqual(statusEntry('ENROLLMENT_CHANGE', 'CANCEL_REQUESTED'), { bucket: 'ACTION', label: '취소 요청 검토 중', tone: 'warning' });
+  assert.deepEqual(statusesOf('ENROLLMENT_CHANGE', 'ACTION'), ['PENDING', 'CANCEL_REQUESTED']);
 });
 
 test('일괄 처리는 결석 확정·문의 확인함 두 종류만(d4)', () => {
