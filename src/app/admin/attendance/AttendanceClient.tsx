@@ -103,7 +103,7 @@ function AttendanceErrorState({ onRetry }: { onRetry: () => void }) {
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-3 min-h-11 rounded-lg bg-[var(--color-academy-danger)] px-4 text-sm font-bold text-white"
+                className="mt-3 min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-4 text-sm font-bold"
             >
                 다시 불러오기
             </button>

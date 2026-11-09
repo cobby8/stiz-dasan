@@ -165,7 +165,9 @@ export default function AdminQuickActionMenu({
 
     return (
         <div className={`relative inline-flex justify-center ${className}`}>
-            {/* 겉모습은 36px 빨간 원(원장 결정 유지), 누르는 영역은 before 로 사방 4px 넓혀 44px */}
+            {/* 겉모습은 36px 원, 누르는 영역은 before 로 사방 4px 넓혀 44px.
+                2026-11-09 원장 «퀵버튼 빨강 보기 싫다» → 위험 작업이 아니므로 중립(흰 바탕 + 입력선 테두리 + 검정 아이콘).
+                올리면 옅은 면, 열린 동안(aria-expanded)은 고른 칩처럼 옅은 주 색 바탕 + 검정 테두리. */}
             <button
                 ref={buttonRef}
                 type="button"
@@ -176,7 +178,7 @@ export default function AdminQuickActionMenu({
                     if (!open) placeMenu();
                     setOpen((current) => !current);
                 }}
-                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-academy-danger)] text-white shadow-sm transition before:absolute before:-inset-1 before:content-[''] hover:brightness-90"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] transition before:absolute before:-inset-1 before:content-[''] hover:border-[var(--color-academy-primary)] hover:bg-[var(--color-academy-soft)] aria-expanded:border-[var(--color-academy-primary)] aria-expanded:bg-[var(--color-academy-primary-soft)]"
             >
                 <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
             </button>

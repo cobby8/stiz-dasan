@@ -439,8 +439,8 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                     <a
                                         href={`tel:${shuttleDriverContact.phone.replace(/[^0-9]/g, "")}`}
                                         aria-label={`셔틀 기사님 ${shuttleDriverContact.name}에게 전화하기`}
-                                        // 44×44 전화 버튼 — 테두리(보조). 키보드 초점 링 유지
-                                        className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-success)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)]"
+                                        // 44×44 전화 버튼 — 보조 버튼 모양(흰 바탕·입력선 테두리·검정 아이콘). 초록 아이콘은 화면마다 전화 색이 달라 통일(2026-11-09). 키보드 초점 링 유지
+                                        className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-academy-primary)]"
                                     >
                                         <SymbolIcon name="call" size={18} />
                                     </a>

@@ -156,7 +156,7 @@ export default function AddStaffModal({
                             <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">인증번호</label>
                             <div className="flex gap-2">
                                 <input type="text" value={verifyCode} onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6자리 숫자" maxLength={6} className="flex-1 px-4 py-2.5 border border-[var(--color-academy-line-input)] rounded-lg text-sm text-center tracking-[0.3em] font-mono focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)]" />
-                                <button type="button" onClick={handleVerifyCode} disabled={verifyCode.length < 6 || verifyLoading} className="px-4 py-2.5 text-sm font-medium text-white bg-[var(--color-academy-success)] rounded-lg hover:bg-[var(--color-academy-success)] transition-colors disabled:opacity-50 whitespace-nowrap">
+                                <button type="button" onClick={handleVerifyCode} disabled={verifyCode.length < 6 || verifyLoading} className="px-4 py-2.5 text-sm font-medium bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap">
                                     {verifyLoading ? "확인 중..." : "확인"}
                                 </button>
                             </div>

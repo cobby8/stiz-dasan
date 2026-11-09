@@ -81,6 +81,23 @@ import {
     type SkipReason,
 } from "@/lib/payments/bankTransferRecord";
 import { monthlyBillingDueDate } from "@/lib/billing-due-date";
+// 학생 상세 «청구/수납» 발행·수정 규칙(청구 월·중복·수정 가능 여부·작업대 차단) — 화면과 같은 순수 판정
+import {
+    DONE_TRANSACTION_BLOCK_MESSAGE,
+    findDuplicateCharges,
+    isBillingWorkbenchWritesEnabled,
+    isFinanceOwnerRole,
+    normalizeBillingDescription,
+    manualChargeBlockedByWorkbench,
+    normalizeDueYmd,
+    POS_LOCKING_REQUEST_STATUSES,
+    resolveBillingPeriod,
+    statusAfterDueDateEdit,
+    unpaidEditBlockReason,
+    validateUnpaidEdit,
+} from "@/lib/payments/studentBillingRules";
+// 학부모 결제(단건·묶음)와 같은 청구 잠금 — 수정 중 옛 금액 주문이 생기지 않게(검수 지적 2026-11-09)
+import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
 import { isMonthlyInvoiceNotificationEligible } from "@/lib/billing/notification-policy";
 import {
     BILLING_PARENT_SEND_LOCKED_MESSAGE,
@@ -1639,17 +1656,26 @@ export async function saveAttendance(classId: string, date: string, records: { s
 function revalidateFinanceCaches() {
     revalidatePath("/admin/finance");
     revalidatePath("/admin/stats");
+    // 학생 상세 «청구/수납» 탭도 같은 청구를 보여 준다(30초 ISR) — 어느 학생이든 다시 그리게 한다
+    revalidatePath("/admin/students/[id]", "page");
     revalidateTag("admin-finance", { expire: 0 });
     revalidateTag("admin-stats", { expire: 0 });
 }
 
 async function requireFinanceOwner() {
     const admin = await requireAdmin();
-    if (admin.appUserRole !== "ADMIN") {
+    // 화면(학생 상세 ⋯ 메뉴 표시)과 같은 기준 — studentBillingRules.isFinanceOwnerRole
+    if (!isFinanceOwnerRole(admin.appUserRole)) {
         throw new Error("수퍼관리자 권한이 필요합니다.");
     }
     return admin;
 }
+
+// createPayment 결과 — 같은 학생·반·월·유형에 살아 있는 청구가 있으면 발행하지 않고 목록을 돌려준다.
+// 화면이 «그래도 발행»을 확인받아 force: true 로 다시 부른다(서버는 force 없이 중복을 만들지 않는다).
+export type CreatePaymentResult =
+    | { ok: true; invoiceId: string }
+    | { ok: false; duplicates: Array<{ id: string; status: string; amount: number; description: string | null }> };
 
 export async function createPayment(data: {
     studentId: string;
@@ -1660,14 +1686,21 @@ export async function createPayment(data: {
     type?: string;        // 청구 유형: MONTHLY, SHUTTLE, UNIFORM, OTHER
     description?: string; // 설명: "4월 수강료" 등
     notifyParent?: boolean;
-}) {
+    /** 청구 월 "YYYY-MM"(학생 상세 발행). 없으면 납부기한 "YYYY-MM-DD" 의 앞부분 — 수납 관리 화면 호환 */
+    billingMonth?: string | null;
+    /** 중복 경고를 보고도 «그래도 발행»을 고른 경우에만 true */
+    force?: boolean;
+}): Promise<CreatePaymentResult> {
     const admin = await requireAdmin();
+    let result: CreatePaymentResult;
     try {
-        const dueDate = new Date(data.dueDate);
-        if (Number.isNaN(dueDate.getTime())) throw new Error("납부 기한이 올바르지 않습니다.");
+        // 납부기한은 "YYYY-MM-DD" 문자열로만 받는다 — Date 객체를 거치면 서버(UTC)에서 날짜가 밀릴 수 있다
+        const dueYmd = normalizeDueYmd(data.dueDate);
         if (!Number.isSafeInteger(data.amount) || data.amount <= 0) throw new Error("청구 금액은 1원 이상의 정수여야 합니다.");
-        const year = dueDate.getFullYear();
-        const month = dueDate.getMonth() + 1;
+        // 청구 월 = 화면이 보낸 청구 월, 없으면 납부기한 문자열의 연·월(예전엔 Date 의 월을 읽어 시간대에 따라 전달로 밀렸다)
+        const { year, month } = resolveBillingPeriod({ billingMonth: data.billingMonth, dueDate: dueYmd });
+        // 설명은 수정과 같은 규칙(앞뒤 공백 제거·200자 이내·비면 null)
+        const description = normalizeBillingDescription(data.description);
         const requestedStatus = data.status || "PENDING";
         const paymentType = data.type || "MONTHLY";
         if (!["PENDING", "PAID", "OVERDUE"].includes(requestedStatus)) {
@@ -1693,11 +1726,38 @@ export async function createPayment(data: {
         if (["MONTHLY", "SHUTTLE"].includes(paymentType) && !classId) {
             throw new Error("수강료와 셔틀 청구에는 연결할 수업을 선택해 주세요.");
         }
-        const invoice = await prisma.$transaction(async (tx) => {
+        const created = await prisma.$transaction(async (tx) => {
             if (["MONTHLY", "SHUTTLE"].includes(paymentType)) {
+                // 청구 준비(작업대)와 같은 잠금을 잡아 동시에 도는 작업대 발행과 순서를 맞춘다
                 await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))");
-                const installed = await tx.$queryRawUnsafe<Array<{ found: string | null }>>(`SELECT to_regclass('public."BillingWorkbenchDraft"')::text AS found`);
-                if (installed[0]?.found) throw new Error("수강료·셔틀비는 이번 달 청구 준비에서 검토해 주세요.");
+                // 작업대 «쓰기»가 켜져 있을 때만 그쪽으로 안내한다. 예전엔 «표가 있으면» 막아,
+                // 쓰기가 꺼진 지금은 신규생 수강료를 아무 데서도 발행할 수 없었다(2026-11-09).
+                if (manualChargeBlockedByWorkbench(paymentType, isBillingWorkbenchWritesEnabled(process.env))) {
+                    throw new Error("수강료·셔틀비는 이번 달 청구 준비에서 검토해 주세요.");
+                }
+            }
+            // 같은 학생의 수동 발행이 동시에 두 번 들어와도 중복 검사가 서로를 보게 학생 단위로 줄 세운다
+            await tx.$executeRawUnsafe(
+                `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+                `manual-charge:${data.studentId}`,
+            );
+            // 중복 검사: 같은 학생·청구 월·유형의 청구를 읽어 순수 판정(반·살아 있음)으로 거른다
+            const sameMonthRows = await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; classId: string | null; year: number; month: number; type: string; status: string; amount: number; description: string | null }>>(
+                `SELECT id, "studentId", "classId", year, month, COALESCE(type, 'MONTHLY') AS type, status, amount, description
+                   FROM "Payment"
+                  WHERE "studentId" = $1 AND year = $2 AND month = $3 AND COALESCE(type, 'MONTHLY') = $4`,
+                data.studentId, year, month, paymentType,
+            );
+            const duplicates = findDuplicateCharges(
+                sameMonthRows.map((row) => ({ ...row, amount: Number(row.amount), year: Number(row.year), month: Number(row.month) })),
+                { studentId: data.studentId, classId, year, month, type: paymentType },
+            );
+            if (duplicates.length > 0 && !data.force) {
+                // 아무것도 쓰지 않고 돌려준다(거래 안에서 쓴 것이 없으므로 그대로 끝난다)
+                return {
+                    kind: "duplicate" as const,
+                    duplicates: duplicates.map((row) => ({ id: row.id, status: row.status, amount: row.amount, description: row.description ?? null })),
+                };
             }
             if (classId) {
                 const enrollment = await tx.$queryRawUnsafe<{ id: string }[]>(
@@ -1715,8 +1775,8 @@ export async function createPayment(data: {
                 `INSERT INTO "Payment" (id, "studentId", "classId", amount, status, "dueDate", year, month, type, description, "createdAt", "updatedAt")
                  VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5::timestamp, $6, $7, $8, $9, NOW(), NOW())
                  RETURNING id`,
-                data.studentId, classId, data.amount, requestedStatus, data.dueDate,
-                year, month, paymentType, data.description || null,
+                data.studentId, classId, data.amount, requestedStatus, dueYmd,
+                year, month, paymentType, description,
             );
             const paymentId = rows[0]?.id;
             if (!paymentId) throw new Error("청구 기록을 생성하지 못했습니다.");
@@ -1733,10 +1793,22 @@ export async function createPayment(data: {
                  )`,
                 paymentId, invoiceRows[0].id, admin.appUserId,
                 "관리자 수동 청구 생성",
-                JSON.stringify({ classId, amount: data.amount, year, month, type: paymentType, notifyParent: Boolean(data.notifyParent) }),
+                // forcedDuplicateIds: 중복 경고를 보고도 «그래도 발행»한 경우 그때 있던 청구 id(나중에 확인용)
+                JSON.stringify({
+                    classId, amount: data.amount, year, month, type: paymentType, dueDate: dueYmd, description,
+                    notifyParent: Boolean(data.notifyParent),
+                    forcedDuplicateIds: duplicates.map((row) => row.id),
+                }),
             );
-            return invoiceRows[0];
+            return { kind: "created" as const, invoice: invoiceRows[0] };
         });
+
+        if (created.kind === "duplicate") {
+            // 중복이라 발행하지 않았다 — 캐시 무효화·알림 없이 바로 돌려준다
+            return { ok: false, duplicates: created.duplicates };
+        }
+        const invoice = created.invoice;
+        result = { ok: true, invoiceId: invoice.id };
 
         // 학부모 청구 안내는 랠리즈 전담(B안) — 사이트 발송 잠금이 풀린 경우에만 알린다.
         if (data.notifyParent && isBillingParentSendEnabled()) {
@@ -1755,6 +1827,7 @@ export async function createPayment(data: {
     }
     revalidateFinanceCaches();
     revalidatePath("/mypage");
+    return result;
 }
 
 export async function cancelUnpaidPayment(id: string, reason: string) {
@@ -2021,6 +2094,153 @@ export async function deletePayment(id: string) {
         throw new Error("수납 기록 삭제 실패");
     }
     revalidateFinanceCaches();
+}
+
+/**
+ * 미납 청구 수정(학생 상세 «청구/수납» · 2026-11-09 원장 지시) — 금액·설명·납부기한만 바꾼다.
+ * - 권한: 재무 권한(원장 ADMIN) — 청구서 삭제(cancelUnpaidPayment)와 같다.
+ * - IDOR: 화면이 보낸 학생 id 와 청구가 맞아야 한다. 학생·미납 상태를 UPDATE WHERE 에도 다시 건다.
+ * - 막는 경우: 미납·연체가 아님 · POS 요청에 묶임 · 학부모 결제(단건·묶음) 진행 중 · 청구서가 수정 불가 상태.
+ *   판정은 lib/payments/studentBillingRules 의 unpaidEditBlockReason(화면과 같은 함수).
+ * - 한 트랜잭션: 청구·청구서 잠금 → 판정 → Payment·PaymentInvoice 같이 갱신 → 감사 기록(이전 값·되돌릴 값).
+ * - 학부모에게 알리지 않는다.
+ */
+export async function updateUnpaidPayment(input: {
+    studentId: string;
+    paymentId: string;
+    amount: number;
+    description?: string | null;
+    dueDate: string;
+}) {
+    const admin = await requireFinanceOwner();
+    const studentId = input.studentId?.trim();
+    const paymentId = input.paymentId?.trim();
+    if (!studentId || !paymentId) throw new Error("수정할 청구를 선택해 주세요.");
+    // 화면 검사를 믿지 않고 서버가 다시 검사한다(금액 정수·기한 "YYYY-MM-DD")
+    const patch = validateUnpaidEdit(input);
+
+    try {
+        await ensurePaymentInfrastructure();
+        await prisma.$transaction(async (tx) => {
+            // 0) 학부모 결제 시작·승인 직전과 같은 잠금(stiz-payment-checkout:{청구 id}) — 이 잠금을 쥔 동안
+            //    결제 쪽은 기다렸다가 금액을 다시 읽어, 바뀌었으면 옛 금액 주문을 만들지 않고 멈춘다
+            await lockPaymentsForCheckout(tx, [paymentId]);
+            // 1) 그 학생의 청구인지 + 잠금(동시에 토스 웹훅·POS·납부 처리가 같은 청구를 못 바꾸게)
+            const paymentRows = await tx.$queryRawUnsafe<Array<{
+                status: string; amount: number; description: string | null; type: string | null;
+                due_ymd: string; payable_until: string | null; pos_locked: boolean;
+            }>>(
+                `SELECT p.status, p.amount, p.description, p.type,
+                        p."dueDate"::date::text AS due_ymd,
+                        p."payableUntil"::text AS payable_until,
+                        -- POS 요청 묶임: 수납 목록(getPaymentPosInfo)·영구 삭제(deletePayment)와 같은 기준
+                        EXISTS (
+                            SELECT 1 FROM "PosChargeRequest" r
+                             WHERE (r."paymentId" = p.id
+                                    OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" it WHERE it."requestId" = r.id AND it."paymentId" = p.id))
+                               AND (r.status = ANY($3::text[]) OR r."cancelState" IS NOT NULL)
+                        ) AS pos_locked
+                   FROM "Payment" p
+                  WHERE p.id = $1 AND p."studentId" = $2
+                  FOR UPDATE OF p`,
+                paymentId,
+                studentId,
+                [...POS_LOCKING_REQUEST_STATUSES],
+            );
+            const payment = paymentRows[0];
+            if (!payment) throw new Error("이 학생의 청구를 찾을 수 없습니다. 다시 조회해 주세요.");
+
+            // 2) 청구서도 잠그고 상태 확인(새로 만들지 않는다 — 취소와 같은 원칙)
+            const invoiceRows = await tx.$queryRawUnsafe<Array<{ id: string; status: string; sentAt: Date | null }>>(
+                `SELECT id, status, "sentAt" FROM "PaymentInvoice" WHERE "paymentId" = $1 FOR UPDATE`,
+                paymentId,
+            );
+            const invoice = invoiceRows[0];
+            const blocked = unpaidEditBlockReason({
+                status: payment.status,
+                invoiceStatus: invoice?.status ?? null,
+                posLocked: payment.pos_locked === true,
+                // 학부모 결제 진행(30분 안 결제창·기한 남은 입금 계좌) — 학생 상세 안내와 같은 함수
+                parentCheckoutActive: (await findParentCheckoutActivePaymentIds(tx, [paymentId], Date.now())).has(paymentId),
+            });
+            if (blocked) throw new Error(blocked);
+            if (!invoice) throw new Error("연결된 청구서를 찾을 수 없습니다.");
+            // 완료(DONE) 결제 거래가 있으면 수정하지 않는다 — cancelUnpaidPayment 와 같은 검사(환불 절차로)
+            const completedTransactions = await tx.$queryRawUnsafe<{ id: string }[]>(
+                `SELECT id FROM "PaymentTransaction" WHERE "paymentId" = $1 AND status = 'DONE' LIMIT 1`,
+                paymentId,
+            );
+            if (completedTransactions.length > 0) throw new Error(DONE_TRANSACTION_BLOCK_MESSAGE);
+
+            const before = {
+                amount: Number(payment.amount),
+                description: payment.description ?? null,
+                dueDate: payment.due_ymd,
+                status: payment.status,
+                invoiceStatus: invoice.status,
+                payableUntil: payment.payable_until,
+            };
+            if (before.amount === patch.amount && before.description === patch.description && before.dueDate === patch.dueDate) {
+                throw new Error("바뀐 내용이 없어요.");
+            }
+
+            // 3) 기한을 오늘(KST) 이후로 늘린 연체 청구는 미납으로 되돌린다(청구서는 보냈으면 SENT, 아니면 ISSUED)
+            const nextStatus = statusAfterDueDateEdit(payment.status, patch.dueDate, todayKst());
+            const nextInvoiceStatus = nextStatus === "PENDING" && invoice.status === "OVERDUE"
+                ? (invoice.sentAt ? "SENT" : "ISSUED")
+                : invoice.status;
+            // 청구서 제목 = 청구서를 처음 만들 때와 같은 규칙(설명 → 유형 → «수강료»)
+            const nextTitle = patch.description ?? payment.type ?? "수강료";
+
+            // Payment.dueDate 는 시간대 없는 timestamp → 그날 00:00. payableUntil·청구서 기한은 timestamptz →
+            // 같은 순간(그날 00:00 UTC)으로 넣어 기존 발행(ensureInvoicesForMonth)과 같은 값이 되게 한다.
+            const paymentUpdated = await tx.$executeRawUnsafe(
+                `UPDATE "Payment"
+                    SET amount = $3, description = $4, "dueDate" = $5::date::timestamp,
+                        "payableUntil" = ($5::date::timestamp AT TIME ZONE 'UTC'),
+                        status = $6, "updatedAt" = NOW()
+                  WHERE id = $1 AND "studentId" = $2 AND status IN ('PENDING', 'OVERDUE')`,
+                paymentId, studentId, patch.amount, patch.description, patch.dueDate, nextStatus,
+            );
+            const invoiceUpdated = await tx.$executeRawUnsafe(
+                `UPDATE "PaymentInvoice"
+                    SET amount = $3, title = $4, description = $5,
+                        "dueDate" = ($6::date::timestamp AT TIME ZONE 'UTC'),
+                        status = $7, "updatedAt" = NOW()
+                  WHERE id = $1 AND "paymentId" = $2 AND status IN ('ISSUED', 'SENT', 'OVERDUE')`,
+                invoice.id, paymentId, patch.amount, nextTitle, patch.description, patch.dueDate, nextInvoiceStatus,
+            );
+            if (Number(paymentUpdated) !== 1 || Number(invoiceUpdated) !== 1) {
+                throw new Error("현재 수납·청구 상태가 바뀌어 수정하지 않았습니다. 다시 조회해 주세요.");
+            }
+
+            // 4) 감사 기록 — 누가·무엇을 바꿨나 + 되돌릴 값(rollback)
+            await tx.$executeRawUnsafe(
+                `INSERT INTO "PaymentAuditLog" (
+                    id, "paymentId", "invoiceId", "actorType", "actorId", action, message, metadata, "createdAt"
+                 ) VALUES (
+                    gen_random_uuid()::text, $1, $2, 'ADMIN', $3, 'PAYMENT_UPDATE_UNPAID', $4, $5::jsonb, NOW()
+                 )`,
+                paymentId,
+                invoice.id,
+                admin.appUserId,
+                "관리자 미납 청구 수정",
+                JSON.stringify({
+                    studentId,
+                    before,
+                    after: { ...patch, status: nextStatus, invoiceStatus: nextInvoiceStatus },
+                    // 되돌리려면 이 값으로 같은 함수를 다시 부르면 된다(상태는 연체 판정이 다시 맞춘다)
+                    rollback: { amount: before.amount, description: before.description, dueDate: before.dueDate },
+                }),
+            );
+        });
+    } catch (e) {
+        console.error("Failed to update unpaid payment:", e);
+        throw new Error(e instanceof Error ? e.message : "미납 청구 수정 실패");
+    }
+    revalidateFinanceCaches();
+    revalidatePath("/mypage");
+    return { ok: true as const };
 }
 
 let _galleryInstagramColumnsEnsured = false;

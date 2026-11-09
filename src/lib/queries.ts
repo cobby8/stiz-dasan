@@ -11,7 +11,8 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
 import { parentVirtualAccountView } from "@/lib/payments/virtualAccount";
-import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { findParentCheckoutActivePaymentIds, txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { isPosRequestLocking } from "@/lib/payments/studentBillingRules";
 import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow } from "@/lib/datetime/kst";
@@ -1025,7 +1026,8 @@ async function getPaymentPosInfo(paymentIds: string[]) {
             const current = info.get(id) ?? { bundleCode: null, bundleId: null, bundleSize: null, locked: false };
             const status = String(row.status);
             const paidLike = status === "PAID" || row.cancel_state != null;
-            if (paidLike || ["PENDING", "SENT", "HELD"].includes(status)) current.locked = true;
+            // 묶임 기준(열림·납부·보류·취소 진행)은 studentBillingRules 한 곳 — 상세 «수정» 서버 판정과 같은 함수
+            if (isPosRequestLocking(status, row.cancel_state)) current.locked = true;
             // 최신 요청부터 보므로 처음 만난 «결제된 묶음»만 쓴다
             const count = Number(row.item_count ?? 0);
             if (!current.bundleCode && paidLike && count >= 2) {
@@ -2010,18 +2012,20 @@ export async function getStudentActivity(studentId: string) {
                  ORDER BY se.date DESC LIMIT 50`,
                 studentId
             ),
-            // 전체 수납 기록
+            // 전체 수납 기록 — 반·청구 월·학부모 결제 진행 여부도 함께(학생 상세 «청구/수납»의 수정·삭제 판단용)
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate", p."createdAt",
                         p.type, p.description, p.method, p."invoiceNo", p."issuedAt",
-                        p."payableUntil", p."receiptUrl",
+                        p."payableUntil", p."receiptUrl", p."classId", p.year, p.month,
+                        c.name AS class_name,
                         i.id AS invoice_id, i.status AS invoice_status, i."sentAt" AS invoice_sent_at,
                         i."checkoutUrl" AS invoice_checkout_url
                  FROM "Payment" p
                  LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+                 LEFT JOIN "Class" c ON c.id = p."classId"
                  WHERE p."studentId" = $1
                  ORDER BY p."dueDate" DESC`,
-                studentId
+                studentId,
             ),
             // 출석 통계
             prisma.$queryRawUnsafe<any[]>(
@@ -2096,6 +2100,11 @@ export async function getStudentActivity(studentId: string) {
         ]);
 
         const stats = attStats[0] || {};
+        // POS 요청 묶임(수납 목록과 같은 함수) — 실패하면 빈 정보라 화면은 그대로, 수정은 서버가 다시 막는다
+        const posInfo = await getPaymentPosInfo(payments.map((p: any) => String(p.id)));
+        // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 수정 서버와 같은 함수. 실패하면 빈 값(서버가 다시 막는다)
+        const checkoutActiveIds = await findParentCheckoutActivePaymentIds(prisma, payments.map((p: any) => String(p.id)), Date.now())
+            .catch((e) => { console.warn("[getStudentActivity] 결제 진행 조회 실패(화면은 그대로):", (e as Error).message); return new Set<string>(); });
         return {
             student: {
                 id: r.id,
@@ -2161,6 +2170,13 @@ export async function getStudentActivity(studentId: string) {
                 payableUntil: p.payableUntil ?? p.payableuntil ?? null,
                 receiptUrl: p.receiptUrl ?? p.receipturl ?? null,
                 createdAt: p.createdAt ?? p.createdat,
+                classId: p.classId ?? p.classid ?? null,
+                className: p.class_name ?? null,
+                year: p.year != null ? Number(p.year) : null,
+                month: p.month != null ? Number(p.month) : null,
+                // 수정 가능 여부 판단용(화면은 안내만, 최종 판단은 서버 updateUnpaidPayment)
+                posLocked: posInfo.get(String(p.id))?.locked ?? false,
+                checkoutActive: checkoutActiveIds.has(String(p.id)),
             })),
             attendanceStats: {
                 total: Number(stats.total ?? 0),

@@ -649,7 +649,8 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
     <div className="mt-3 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-[12.5px] font-black text-[var(--color-academy-warning)]">⚠ 좌표가 없어 배차하지 못한 학생 {sug.unassigned.length}명</div>
-        {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg bg-[var(--color-academy-warning)] px-3 py-1.5 text-xs font-black text-white">좌표 설정으로 이동</a>}
+        {/* 경고 띠 안의 «이동» 버튼 — 주황 채움 대신 옅은 주의 바탕 + 진한 주의 글자 + 테두리(2026-11-09) */}
+        {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3 py-1.5 text-xs font-black text-[var(--color-academy-warning)]">좌표 설정으로 이동</a>}
       </div>
       {rosterEditable ? (
         <div className="mt-1 text-[12px] text-[var(--color-academy-warning)]">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div>

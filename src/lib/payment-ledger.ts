@@ -19,6 +19,8 @@ import {
     buildBundleOrderName,
     makeBundleOrderId,
     sameBundleItems,
+    CHECKOUT_AMOUNT_CHANGED_MESSAGE,
+    checkoutAmountsStale,
     type BundleBlockCode,
     type BundleCandidateRow,
 } from "@/lib/payments/checkoutBundle";
@@ -29,6 +31,7 @@ import {
     finalizeBundleInTx,
     findOpenDepositTxIds,
     lockPaymentsForCheckout,
+    readCheckoutAmounts,
     hasBundleItems,
     listBundleItems,
     refundBundleInTx,
@@ -1105,6 +1108,12 @@ export async function createCheckoutSession(input: {
         if (provider === "TOSS" && (await findOpenDepositTxIds(db, [invoice.paymentId], null, Date.now())).length > 0) {
             return { openDeposit: true as const };
         }
+        // 금액은 잠금 «밖»에서 읽었다. 그 사이 관리자가 «청구서 수정»(같은 잠금)으로 금액을 바꿨으면
+        // 옛 금액으로 주문을 만들지 않고 멈춘다(금액이 같으면 예전 흐름 그대로)
+        const freshAmounts = await readCheckoutAmounts(db, [invoice.paymentId]);
+        if (checkoutAmountsStale([{ paymentId: invoice.paymentId, amount: Number(invoice.amount) }], freshAmounts)) {
+            return { amountChanged: true as const };
+        }
         const recentRows = await db.$queryRawUnsafe<CheckoutTransactionRow[]>(
             `SELECT id, "orderId", "orderName", amount, "rawResponse"
              FROM "PaymentTransaction"
@@ -1143,6 +1152,9 @@ export async function createCheckoutSession(input: {
         );
         return { openDeposit: false as const, existing: undefined, transactionId: inserted[0]?.id ?? null, orderId: newOrderId };
     });
+    if ("amountChanged" in reserved) {
+        return { ok: false as const, error: CHECKOUT_AMOUNT_CHANGED_MESSAGE, amountChanged: true as const };
+    }
     if (reserved.openDeposit) {
         // 잠금 사이 다른 탭이 입금 계좌를 받았다 — 새 주문 없이 그 계좌를 보여 준다
         const vaState = await getVirtualAccountState(invoice.invoiceId);
@@ -2464,6 +2476,11 @@ export async function createBundleCheckoutSession(input: {
         if ((await findOpenDepositTxIds(db, paymentIds, null, Date.now())).length > 0) {
             return { openDeposit: true as const, orderId: null };
         }
+        // 항목 금액은 잠금 «밖»에서 읽었다 — 관리자가 그 사이 금액을 고쳤으면 옛 금액 묶음을 만들지 않는다
+        const freshAmounts = await readCheckoutAmounts(db, paymentIds);
+        if (checkoutAmountsStale(items.map((item) => ({ paymentId: item.paymentId, amount: item.amount })), freshAmounts)) {
+            return { amountChanged: true as const };
+        }
         // 같은 청구 묶음·같은 금액의 30분 안 READY 주문 재사용(단건과 같은 규칙)
         const recent = await db.$queryRawUnsafe<CheckoutTransactionRow[]>(
             `SELECT id, "orderId", "orderName", amount
@@ -2505,6 +2522,9 @@ export async function createBundleCheckoutSession(input: {
         }
         return { openDeposit: false as const, orderId: newOrderId };
     });
+    if ("amountChanged" in reserved) {
+        return { ok: false as const, error: CHECKOUT_AMOUNT_CHANGED_MESSAGE, blocked: "AMOUNT_CHANGED" as const, amountChanged: true as const };
+    }
     if (reserved.openDeposit) {
         // 잠금 사이 다른 탭이 입금 계좌를 받았다 — 새 주문을 만들지 않는다(화면은 «계좌 닫기» 확인으로)
         return {

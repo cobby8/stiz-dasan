@@ -762,7 +762,7 @@ export default function ApplyAdminClient({
                         <button
                             type="button"
                             onClick={() => void loadSourceStats(sourceStatsRange)}
-                            className="ml-3 rounded-lg bg-[var(--color-academy-danger)] px-3 py-1.5 text-white"
+                            className="ml-3 rounded-lg border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)] px-3 py-1.5"
                         >
                             다시 시도
                         </button>

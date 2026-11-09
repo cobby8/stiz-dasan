@@ -74,6 +74,11 @@ const academyPairs = [
   // 입력선: 옛 #8a919c 는 연회색 바탕 위 2.96 이라 기준(3) 미달 → 11-09 마무리에서 #848b96(3.20)으로 진하게.
   ["입력칸·보조 버튼 테두리 / 화면 바탕", A("line-input"), A("canvas"), LINE],
   ["달력 오늘 테두리 / 카드", A("cal-today"), A("surface"), LINE],
+  // 2026-11-09 위험색 역할 나누기 — 꽉 찬 위험 버튼은 맑은 빨강(#dc2626), 글자는 진한 빨강(#b91c1c) 그대로
+  ["흰 글자 / 위험 채움 버튼(danger-fill)", A("on-primary"), A("danger-fill"), TEXT],
+  ["흰 글자 / 위험 채움 버튼 올림", A("on-primary"), A("danger-fill-hover"), TEXT],
+  ["확인 상자 왼쪽 위험 띠 / 카드", A("danger-fill"), A("surface"), LINE],
+  ["확인 상자 왼쪽 위험 띠 / 화면 바탕", A("danger-fill"), A("canvas"), LINE],
 ];
 for (const tone of ["success", "warning", "danger", "info", "neutral"]) {
   academyPairs.push(
@@ -125,6 +130,8 @@ test("원장 결정 값(2026-11-09)이 토큰에 그대로 있다 — 주 버튼
     ["success", "warning", "danger", "info", "neutral"].map((t) => [A(t), A(`${t}-soft`)]),
     [["#15803d", "#f0fdf4"], ["#b45309", "#fffbeb"], ["#b91c1c", "#fef2f2"], ["#1d4ed8", "#eff6ff"], ["#4b5563", "#f3f4f6"]],
   );
+  // 위험 채움·테두리(2026-11-09 2차): 맑은 빨강 채움 · 올림 진한 빨강 · 연한 빨강 장식선
+  assert.deepEqual([A("danger-fill"), A("danger-fill-hover"), A("danger-line")], ["#dc2626", "#b91c1c", "#fecaca"]);
 });
 
 test("대비 계산기 자체 확인 — 검정/흰 21:1, 같은 색 1:1, 교과서 값(#6b7280 4.8)", () => {

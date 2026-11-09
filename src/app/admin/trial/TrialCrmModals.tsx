@@ -920,7 +920,7 @@ function LostModal({
                     <button
                         onClick={() => onSubmit(reason)}
                         disabled={busy}
-                        className="flex-1 px-4 py-2.5 bg-[var(--color-academy-danger)] text-white rounded-lg hover:bg-[var(--color-academy-danger)] transition-colors text-sm font-medium disabled:opacity-50"
+                        className="flex-1 px-4 py-2.5 bg-[var(--color-academy-danger-fill)] text-white rounded-lg hover:bg-[var(--color-academy-danger-fill-hover)] transition-colors text-sm font-medium disabled:opacity-50"
                     >
                         {busy ? "처리 중..." : "이탈 처리"}
                     </button>

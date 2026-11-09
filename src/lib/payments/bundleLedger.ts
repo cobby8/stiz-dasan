@@ -13,6 +13,8 @@ import {
     BUNDLE_PAYABLE_PAYMENT_STATUSES,
     CONFIRM_LOCK_MINUTES,
     bundleConfirmBlock,
+    checkoutAmountsStale,
+    CHECKOUT_REUSE_MINUTES,
     decideBundleFinalize,
     decideBundleFullCancel,
     type BundleBlockCode,
@@ -91,6 +93,25 @@ export async function lockPaymentsForCheckout(db: BundleSqlClient, paymentIds: r
 }
 
 /**
+ * 잠금(lockPaymentsForCheckout)을 잡은 «뒤에» 청구·청구서 금액을 다시 읽는다 — 결제 시작·승인 직전이 같이 쓴다.
+ * 관리자 «청구서 수정»(updateUnpaidPayment)도 같은 잠금을 잡고 금액을 바꾸므로, 이 값과 처음 읽은 금액을
+ * checkoutAmountsStale 로 비교하면 «옛 금액 주문»이 생기지 않는다.
+ */
+export async function readCheckoutAmounts(
+    db: BundleSqlClient,
+    paymentIds: readonly string[],
+): Promise<Array<{ paymentId: string; paymentAmount: number; invoiceAmount: number | null }>> {
+    if (paymentIds.length === 0) return [];
+    return db.$queryRawUnsafe(
+        `SELECT p.id AS "paymentId", p.amount AS "paymentAmount", i.amount AS "invoiceAmount"
+           FROM "Payment" p
+           LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+          WHERE p.id = ANY($1::text[])`,
+        [...paymentIds],
+    );
+}
+
+/**
  * 이 청구들을 품은 «기한 안의 입금 대기 계좌» 거래 id(excludeTxId 는 뺀다). 발급 정보를 못 읽는 입금 대기 거래도
  * 열린 것으로 본다(안전한 쪽 — 매일 점검이 정리한다).
  */
@@ -111,11 +132,61 @@ export async function findOpenDepositTxIds(
         excludeTxId,
     );
     return rows
-        .filter((row) => {
-            const issue = readStoredIssue(row.issue);
-            return !issue || !toPublicVirtualAccountView(issue, row.status, nowMs).expired;
-        })
+        .filter((row) => isOpenDepositRow(row, nowMs))
         .map((row) => row.id);
+}
+
+/** 입금 대기 거래가 «기한 안»인가 — 발급 정보를 못 읽으면 열린 것으로 본다(안전한 쪽). findOpenDepositTxIds 와 공용 */
+function isOpenDepositRow(row: { status: string; issue: unknown }, nowMs: number): boolean {
+    const issue = readStoredIssue(row.issue);
+    return !issue || !toPublicVirtualAccountView(issue, row.status, nowMs).expired;
+}
+
+/**
+ * 학부모 결제가 «지금» 진행 중인 거래인가(관리자 «청구서 수정» 차단·학생 상세 안내용, 2026-11-09).
+ * - READY·IN_PROGRESS: 최근 CHECKOUT_REUSE_MINUTES(30분) 안에 움직인 것만. 결제창을 열고 닫은 오래된 주문은 막지 않는다
+ *   (만료 코드가 없어 남아 있다 — 30분이 지나면 결제 시작도 새 주문을 만든다).
+ * - WAITING_FOR_DEPOSIT: 기한이 남은 입금 계좌만(findOpenDepositTxIds 와 같은 기준).
+ */
+export function isParentCheckoutActive(
+    row: { status: string; updatedAt: Date | string | null; issue?: unknown },
+    nowMs: number,
+): boolean {
+    if (row.status === "READY" || row.status === "IN_PROGRESS") {
+        const updatedMs = row.updatedAt ? new Date(row.updatedAt).getTime() : NaN;
+        return Number.isFinite(updatedMs) && nowMs - updatedMs < CHECKOUT_REUSE_MINUTES * 60_000;
+    }
+    if (row.status === "WAITING_FOR_DEPOSIT") return isOpenDepositRow({ status: row.status, issue: row.issue }, nowMs);
+    return false;
+}
+
+/**
+ * 청구들 중 «학부모 결제 진행 중»인 청구 id — 대표 청구로든 묶음 항목으로든 거래에 든 것. 판정은 isParentCheckoutActive 한 곳.
+ * 관리자 수정 서버(updateUnpaidPayment)와 학생 상세 조회(getStudentActivity)가 같이 쓴다.
+ */
+export async function findParentCheckoutActivePaymentIds(
+    db: BundleSqlClient,
+    paymentIds: readonly string[],
+    nowMs: number,
+): Promise<Set<string>> {
+    const active = new Set<string>();
+    if (paymentIds.length === 0) return active;
+    const rows = await db.$queryRawUnsafe<Array<{ paymentId: string; status: string; updatedAt: Date | string | null; issue: unknown }>>(
+        `SELECT cover.payment_id AS "paymentId", t.status, t."updatedAt", t."rawResponse"->'virtualAccountIssue' AS issue
+           FROM "PaymentTransaction" t
+           JOIN LATERAL (
+                SELECT t."paymentId" AS payment_id
+                UNION
+                SELECT it."paymentId" FROM "PaymentTransactionItem" it WHERE it."transactionId" = t.id
+           ) cover ON true
+          WHERE cover.payment_id = ANY($1::text[])
+            AND t.status IN ('READY', 'IN_PROGRESS', 'WAITING_FOR_DEPOSIT')`,
+        [...paymentIds],
+    );
+    for (const row of rows) {
+        if (isParentCheckoutActive(row, nowMs)) active.add(String(row.paymentId));
+    }
+    return active;
 }
 
 /**
@@ -149,6 +220,16 @@ export async function claimTossConfirmInTx(
         if (mirrors.size > 0) return "RALLYZ_MIRROR";
         const rows = await db.$queryRawUnsafe<Array<{ status: string }>>(`SELECT status FROM "Payment" WHERE id = $1`, input.repPaymentId);
         if (!BUNDLE_PAYABLE_PAYMENT_STATUSES.includes(String(rows[0]?.status ?? ""))) return "NOT_UNPAID";
+        // 단건 주문 금액 = 주문을 만들 때의 청구 금액. 그 뒤 관리자가 금액을 고쳤으면 옛 금액으로 승인하지 않는다
+        // (묶음은 위 bundleConfirmBlock 이 항목 금액으로 같은 확인을 한다)
+        const txRows = await db.$queryRawUnsafe<Array<{ amount: number }>>(
+            `SELECT amount FROM "PaymentTransaction" WHERE id = $1`,
+            input.transactionId,
+        );
+        const fresh = await readCheckoutAmounts(db, [input.repPaymentId]);
+        if (!txRows[0] || checkoutAmountsStale([{ paymentId: input.repPaymentId, amount: Number(txRows[0].amount) }], fresh)) {
+            return "AMOUNT_CHANGED";
+        }
     }
 
     const busy = await db.$queryRawUnsafe<Array<{ id: string }>>(

@@ -22,7 +22,9 @@ const requestModal = await read("src/components/shuttle/DriverRequestModal.tsx")
 
 test("C-T1 공용 상태 버튼: 의미색 토큰·44px·눌림 표시·안 눌린 테두리", () => {
   for (const tone of ["success", "warning", "danger"]) {
-    assert.match(statusButton, new RegExp(`${tone}: "border-\\[var\\(--color-academy-${tone}\\)\\] bg-\\[var\\(--color-academy-${tone}\\)\\]`), `${tone} 채움`);
+    // 꽉 찬 위험색은 danger-fill(맑은 빨강, 2026-11-09 위험색 역할 분리) — 테두리 버튼 글자는 그대로 danger
+    const fill = tone === "danger" ? "danger-fill" : tone;
+    assert.match(statusButton, new RegExp(`${tone}: "border-\\[var\\(--color-academy-${fill}\\)\\] bg-\\[var\\(--color-academy-${fill}\\)\\]`), `${tone} 채움`);
     assert.match(statusButton, new RegExp(`${tone}: "border-\\[var\\(--color-academy-${tone}\\)\\] bg-\\[var\\(--color-academy-surface\\)\\]`), `${tone} 테두리`);
   }
   assert.match(statusButton, /aria-pressed=\{active\}/);

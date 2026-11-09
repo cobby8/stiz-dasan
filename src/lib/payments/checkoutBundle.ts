@@ -69,6 +69,12 @@ export type BundleBlockCode =
 /** 다른 주문의 «승인 진행 중» 표시가 막는 시간(분). 실패·끊김으로 표시가 남아도 이 시간이 지나면 풀린다. */
 export const CONFIRM_LOCK_MINUTES = 10;
 
+/**
+ * 결제 시작이 같은 청구·금액의 READY·IN_PROGRESS 주문을 «다시 쓰는» 시간(분) — payment-ledger 의 INTERVAL '30 minutes' 와 같은 값
+ * (테스트가 두 곳을 비교한다). 이 시간이 지난 주문은 학부모가 결제창을 닫고 떠난 것으로 보고 «진행 중»으로 치지 않는다.
+ */
+export const CHECKOUT_REUSE_MINUTES = 30;
+
 /** 학부모에게 보일 이유 문장(개발 용어 없이) */
 export const BUNDLE_BLOCK_MESSAGE: Record<BundleBlockCode, string> = {
     EMPTY: "결제할 청구를 선택해 주세요.",
@@ -85,6 +91,25 @@ export const BUNDLE_BLOCK_MESSAGE: Record<BundleBlockCode, string> = {
     CONFIRM_IN_PROGRESS: "같은 청구의 다른 결제가 진행 중이에요. 잠시 후 납부 내역을 확인해 주세요.",
     OPEN_DEPOSIT_EXISTS: "같은 청구에 입금을 기다리는 계좌가 이미 있어요. 그 계좌로 입금하거나 계좌를 닫고 다시 결제해 주세요.",
 };
+
+/** 결제 시작·승인 직전 «잠금 뒤 다시 읽은» 청구 금액이 처음 읽은 금액과 다를 때 학부모에게 보일 문장 */
+export const CHECKOUT_AMOUNT_CHANGED_MESSAGE = "청구 금액이 바뀌었어요. 화면을 새로 고쳐 다시 열어 주세요.";
+
+/**
+ * 관리자가 미납 청구 금액을 고치는 동안(같은 잠금 stiz-payment-checkout:{청구 id}) 학부모 결제가 옛 금액으로 주문을 만들지 않게,
+ * 잠금을 잡은 «뒤에» 다시 읽은 청구·청구서 금액(fresh)이 기대 금액(expected)과 모두 같은지 본다.
+ * 다시 읽은 줄이 없거나 청구·청구서 금액이 서로 다르면 «바뀜»으로 본다(안전한 쪽).
+ */
+export function checkoutAmountsStale(
+    expected: ReadonlyArray<{ paymentId: string; amount: number }>,
+    fresh: ReadonlyArray<{ paymentId: string; paymentAmount: number | string | null; invoiceAmount: number | string | null }>,
+): boolean {
+    return expected.some((want) => {
+        const row = fresh.find((candidate) => candidate.paymentId === want.paymentId);
+        if (!row || row.paymentAmount == null || row.invoiceAmount == null) return true;
+        return Number(row.paymentAmount) !== Number(want.amount) || Number(row.invoiceAmount) !== Number(want.amount);
+    });
+}
 
 /**
  * 청구 1건을 묶음에 넣을 수 있나. 못 넣으면 이유 코드(화면의 «선택 못 함» 표시와 서버 검사가 같은 함수).

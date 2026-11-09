@@ -67,8 +67,9 @@ function PersonCard({ person, onOpenBilling }: { person: StaffClassPerson; onOpe
   </article>;
 }
 
+// accent(학부모 전화) = 보조 버튼(흰 바탕·입력선 테두리·검정 글자) — 학생마다 반복되는 버튼이라 검정 채움을 걷었다. 전화 버튼은 어느 화면이든 같은 모양(2026-11-09)
 function ContactLink({ phone, icon, label, accent = false, sms = false }: { phone: string | null; icon: string; label: string; accent?: boolean; sms?: boolean }) {
   if (!phone) return <span className="flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-academy-soft)] px-1 text-center text-xs font-bold text-[var(--color-academy-faint)]">연락처 없음</span>;
-  return <a href={`${sms ? "sms" : "tel"}:${phoneHref(phone)}`} className={`flex min-h-11 flex-col items-center justify-center rounded-xl text-xs font-black ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border border-[var(--color-academy-line)]"}`}><span className="material-symbols-outlined text-xl">{icon}</span>{label}</a>;
+  return <a href={`${sms ? "sms" : "tel"}:${phoneHref(phone)}`} className={`flex min-h-11 flex-col items-center justify-center rounded-xl text-xs font-black ${accent ? "border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]" : "border border-[var(--color-academy-line)]"}`}><span className="material-symbols-outlined text-xl">{icon}</span>{label}</a>;
 }
 function SheetMessage({ icon, text, spin = false }: { icon: string; text: string; spin?: boolean }) { return <div className="py-12 text-center text-sm font-bold text-[var(--color-academy-muted)]"><span className={`material-symbols-outlined mb-2 block text-4xl ${spin ? "animate-spin" : ""}`}>{icon}</span>{text}</div>; }

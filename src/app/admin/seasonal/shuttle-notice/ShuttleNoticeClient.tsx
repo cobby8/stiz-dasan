@@ -105,7 +105,7 @@ export default function ShuttleNoticeClient() {
           <span className="flex items-center gap-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-2.5 py-1.5">
             <span className="text-[12.5px] font-black text-[var(--color-academy-danger)]">{targets.length}명에게 지금 보냅니다. 확실합니까?</span>
             <button type="button" onClick={() => void send()} disabled={sending}
-              className="rounded-lg bg-[var(--color-academy-danger)] px-3 py-1 text-[12.5px] font-black text-white disabled:opacity-50">
+              className="rounded-lg bg-[var(--color-academy-danger-fill)] px-3 py-1 text-[12.5px] font-black text-white disabled:opacity-50">
               {sending ? "발송 중…" : "네, 발송합니다"}
             </button>
             <button type="button" onClick={() => setConfirming(false)} disabled={sending}

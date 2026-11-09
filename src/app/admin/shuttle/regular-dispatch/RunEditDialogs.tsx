@@ -65,7 +65,7 @@ function Footer({ busy, onCancel, onSave, saveLabel, danger = false, disabled = 
     <div className="mt-4 flex items-center justify-between gap-3">
       <button type="button" onClick={onCancel} disabled={busy} className="min-h-11 px-2 text-sm font-bold text-[var(--color-academy-muted)]">그만</button>
       <button type="button" onClick={onSave} disabled={busy || disabled}
-        className={`min-h-11 rounded-lg px-5 text-sm font-black disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-ink)] text-[var(--color-academy-surface)]"}`}>
+        className={`min-h-11 rounded-lg px-5 text-sm font-black disabled:opacity-50 ${danger ? "bg-[var(--color-academy-danger-fill)] text-[var(--color-academy-on-primary)]" : "bg-[var(--color-academy-ink)] text-[var(--color-academy-surface)]"}`}>
         {busy ? "저장 중…" : saveLabel}
       </button>
     </div>

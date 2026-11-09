@@ -1118,7 +1118,7 @@ function RejectModal({
                         <button
                             onClick={() => onSubmit(reason)}
                             disabled={busy}
-                            className="flex items-center gap-1.5 px-5 py-2.5 bg-[var(--color-academy-danger)] text-white rounded-xl hover:bg-[var(--color-academy-danger)] transition font-medium text-sm disabled:opacity-40"
+                            className="flex items-center gap-1.5 px-5 py-2.5 bg-[var(--color-academy-danger-fill)] text-white rounded-xl hover:bg-[var(--color-academy-danger-fill-hover)] transition font-medium text-sm disabled:opacity-40"
                         >
                             {busy ? (
                                 <span className="material-symbols-outlined text-lg animate-spin">progress_activity</span>
@@ -1212,7 +1212,7 @@ function DetailModal({
                     <div className="mb-5 grid gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] p-3 sm:grid-cols-2">
                         <a
                             href={`/admin/students/${app.convertedStudentId}`}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--color-academy-success)] px-3 py-2 text-sm font-black text-white transition hover:bg-[var(--color-academy-success)]"
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 py-2 text-sm font-black transition hover:bg-[var(--color-academy-line)]"
                         >
                             <span className="material-symbols-outlined text-lg">person_search</span>
                             원생 상세 열기

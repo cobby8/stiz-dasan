@@ -314,6 +314,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
   // 학생 한 줄(관리자) — 보기 모드는 이름만(기사님 화면처럼). 편집 모드는 칩: 이름(누르면 셔틀 정보 창) · ×(명단에서 빼기).
   // 반 이동 표시는 배정 할 일이라 두 모드 모두 누를 수 있다.
+  // 색: «반 이동» 버튼은 주의 할 일로 이동하는 버튼 — 주황 채움 대신 옅은 주의 바탕 + 진한 주의 글자 + 테두리(2026-11-09)
   function renderRider(row: UnifiedRow, rider: UnifiedRider) {
     const links = reassignByRowId.get(rider.checkId) ?? [];
     // 편집 모드 = 한 줄 카드 안의 «칩»(이름 → 셔틀 정보 창 · × → 명단에서 빼기). 넓게 빈 학생 칸을 없앤다.
@@ -324,7 +325,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
             className="min-h-11 pl-2 pr-0.5 text-left text-[15px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
           {links.map((l) => (
             <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`} title="반 이동 · 재배정"
-              className="inline-flex min-h-11 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-1.5 text-[12px] font-black text-[var(--color-academy-on-primary)]">
+              className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-1.5 text-[12px] font-black text-[var(--color-academy-warning)]">
               <span aria-hidden="true" className="material-symbols-outlined text-[15px] leading-none">swap_horiz</span>반 이동
             </button>
           ))}
@@ -344,7 +345,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
               {rider.grade && <span className="text-[14px] text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {links.map((l) => (
                 <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
-                  className="inline-flex min-h-11 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-2 text-[13px] font-black text-[var(--color-academy-on-primary)]">
+                  className="inline-flex min-h-11 items-center gap-0.5 rounded-md border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-2 text-[13px] font-black text-[var(--color-academy-warning)]">
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">swap_horiz</span>반 이동 · 재배정
                 </button>
               ))}

@@ -283,12 +283,12 @@ export default function RoleRequestsClient({
             </button>
             {confirmPending ? (
               <button type="button" disabled={pendingAction} onClick={() => run(() => approveRoleRequest(confirmPending.id))}
-                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-success)] px-3 text-sm font-black text-white disabled:opacity-50">
+                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)] hover:bg-[var(--color-academy-primary-hover)] px-3 text-sm font-black disabled:opacity-50">
                 {pendingAction ? "처리 중..." : "승인 확정"}
               </button>
             ) : (
               <button type="button" disabled={pendingAction} onClick={() => run(() => revokeRoleGrant(confirmTarget.id))}
-                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-danger)] px-3 text-sm font-black text-white disabled:opacity-50">
+                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-[var(--color-academy-danger-fill)] hover:bg-[var(--color-academy-danger-fill-hover)] px-3 text-sm font-black text-white disabled:opacity-50">
                 {pendingAction ? "처리 중..." : "회수 확정"}
               </button>
             )}

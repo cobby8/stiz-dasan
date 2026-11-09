@@ -296,9 +296,10 @@ export default function UnifiedDriverClient({
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
               <span className={`break-all text-[19px] font-black ${view.dimmed ? "text-[var(--color-academy-muted)]" : "text-[var(--color-academy-ink)]"}`}>{rider.name}</span>
-              {/* 결석 뱃지 — 이름 바로 옆, 진한 바탕 + 흰 글자(14px)로 운전 중에도 한눈에. 흐린 행 안에서도 흐리지 않는다. */}
+              {/* 결석 뱃지 — 이름 바로 옆, 진한 바탕 + 흰 글자(14px)로 운전 중에도 한눈에. 흐린 행 안에서도 흐리지 않는다.
+                  실외 가독성 때문에 채움은 유지하고, 색만 꽉 찬 위험색 토큰(danger-fill)으로 통일(2026-11-09). */}
               {view.absentReported && (
-                <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[14px] font-black text-[var(--color-academy-on-primary)]">
+                <span className="inline-flex items-center gap-0.5 rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-[14px] font-black text-[var(--color-academy-on-primary)]">
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px] leading-none">event_busy</span>{rider.absentLabel || "결석"}
                 </span>
               )}
@@ -327,7 +328,7 @@ export default function UnifiedDriverClient({
                 <span className="rounded-md bg-[var(--color-academy-warning)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석예정</span>
               )}
               {/* 정규 결석 학생은 이름 옆 뱃지가 이미 «결석»이라 같은 말을 두 번 띄우지 않는다 */}
-              {!view.absentReported && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
+              {!view.absentReported && status === "NOSHOW" && <span className="rounded-md bg-[var(--color-academy-danger-fill)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">결석</span>}
               {status === "SELF" && <span className="rounded-md bg-[var(--color-driver-self)] px-2 py-0.5 text-[13px] font-black text-[var(--color-academy-on-primary)]">{selfLabel}</span>}
               {/* "오늘만" 셔틀 변경. 결석과 다른 색으로 둔다 — 아이는 수업에 오고,
                   기사님이 태우지 않거나 다른 곳으로 가야 한다는 뜻이다. */}

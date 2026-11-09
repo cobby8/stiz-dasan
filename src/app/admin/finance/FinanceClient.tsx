@@ -551,7 +551,19 @@ export default function FinanceClient({
         setBusy(true);
         try {
             const paymentStatus = canManageCriticalFinance ? status : "PENDING";
-            await createPayment({ studentId, classId: classId || undefined, amount, dueDate, status: paymentStatus, type: paymentType, description: description || undefined, notifyParent });
+            const request = { studentId, classId: classId || undefined, amount, dueDate, status: paymentStatus, type: paymentType, description: description || undefined, notifyParent };
+            const created = await createPayment(request);
+            if (!created.ok) {
+                // 같은 학생·반·월·유형에 살아 있는 청구가 있어 서버가 발행하지 않았다 — 확인받고 다시 부른다
+                const again = await askConfirm({
+                    title: "같은 달 같은 청구가 이미 있어요",
+                    description: `${created.duplicates.map((d) => `${d.description || TYPE_LABELS[paymentType] || "청구"} ${formatAmount(d.amount)}(${STATUS_LABELS[d.status]?.label ?? d.status})`).join(", ")} — 그래도 하나 더 발행할까요?`,
+                    confirmLabel: "그래도 발행",
+                    tone: "primary",
+                });
+                if (!again) return;
+                await createPayment({ ...request, force: true });
+            }
             setCreatePreviewOpen(false);
             setShowForm(false);
             setStudentId("");
@@ -1655,12 +1667,14 @@ export default function FinanceClient({
                         <span className="text-sm font-bold text-[var(--color-academy-ink)]">
                             {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(selectedTotal)}
                         </span>
-                        <div className="flex flex-wrap items-center justify-end gap-1">
+                        {/* contents: 버튼들이 막대 줄에 바로 놓인다 — 환불 확인을 펼치면(basis-full) 확인 줄만 아래로 내려가고
+                            «선택 해제»는 첫 줄 오른쪽(ml-auto)에 남아 확인 상자와 겹치거나 혼자 한 줄을 차지하지 않는다 */}
+                        <div className="contents">
                             <button
                                 type="button"
                                 onClick={() => setSelectedIds(new Set())}
                                 disabled={busy}
-                                className="min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                                className="ml-auto min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
                             >
                                 선택 해제
                             </button>
