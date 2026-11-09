@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
+import { findMarkedCancel, hasUnmarkedSameAmountCancel, judgePartialCancelOutcome, markedCancelTotal, partialCancelBlock, partialCancelMarker, partialCancelTaxFree } from "@/lib/payments/tossPartialCancel";
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -1909,6 +1910,140 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
     });
 }
 
+export type AdminTossPartialRefundResult =
+    | { ok: true; alreadyApplied: boolean }
+    /** uncertain = 취소 요청은 보냈는데 결과를 확인하지 못함(같은 표식으로 다시 시도하면 두 번 취소되지 않는다) */
+    | { ok: false; message: string; uncertain: boolean };
+
+/**
+ * 토스 온라인 결제 «부분 취소» — 휴원 수강료 환불(원장 결정 2026-11-10 m6)용. 전액 환불(refundTossPaymentByAdmin)과 같은 순서:
+ * ① 토스 재조회 — 이 표식(lineId)의 취소가 이미 있으면 끝(재시도·응답 끊김 대비) · 주문·금액·상태·남은 금액 확인(partialCancelBlock)
+ * ② 감사 기록 먼저 ③ 취소 API(cancelAmount + 면세 몫 taxFreeAmount, Idempotency-Key = 처리 줄 id 로 고정 → 같은 줄은 토스에서 한 번만)
+ * ④ 다시 조회해 cancels[] 에 우리 표식 취소가 «정확한 금액»으로 있을 때만 성공.
+ * 청구(Payment)는 납부완료 그대로 둔다(받은 돈 중 일부만 돌려준 것) — 얼마를 돌려줬는지는 휴원 처리 기록과 감사 기록에 남는다.
+ * 권한 확인·금액 재계산·이중 처리 잠금은 부르는 쪽(lib/enrollment/pause-settlement.ts)이 한다.
+ */
+export async function partialRefundTossPaymentByAdmin(input: {
+    transactionId: string;
+    paymentId: string;
+    amount: number;
+    /** 휴원 처리 줄 id — 취소 표식·멱등 키의 씨앗 */
+    lineId: string;
+    adminUserId: string;
+    /** 확실히 실패한 횟수 — 0 이면 처음 키, 실패 뒤 다시 시도는 새 키(토스가 실패 응답을 그대로 돌려주지 않게) */
+    attempt?: number;
+    /** 이 처리 줄을 만든 시각(ISO) — 그 뒤 생긴 «표식 없는 같은 금액 취소»가 있으면 멈춘다 */
+    notBefore?: string;
+}): Promise<AdminTossPartialRefundResult> {
+    await ensurePaymentInfrastructure();
+    const rows = await prisma.$queryRawUnsafe<PaymentTransactionRow[]>(
+        `SELECT * FROM "PaymentTransaction" WHERE id = $1 AND provider = 'TOSS' AND status = 'DONE' LIMIT 1`,
+        input.transactionId,
+    );
+    const tx = rows[0];
+    if (!tx || !tx.paymentKey) return { ok: false, message: "토스 결제 기록을 찾지 못했어요.", uncertain: false };
+
+    // 이 거래가 그 청구를 덮는지 + 그 청구 몫(묶음이면 항목 금액)보다 많이 돌려주지 않는지
+    const bundle = await hasBundleItems(prisma, tx.id);
+    const share = bundle
+        ? Number((await prisma.$queryRawUnsafe<Array<{ amount: number }>>(
+            `SELECT amount FROM "PaymentTransactionItem" WHERE "transactionId" = $1 AND "paymentId" = $2`,
+            tx.id, input.paymentId,
+        ))[0]?.amount ?? 0)
+        : (tx.paymentId === input.paymentId ? Number(tx.amount) : 0);
+    if (share <= 0) return { ok: false, message: "이 청구를 결제한 토스 거래가 아니에요.", uncertain: false };
+    if (!Number.isSafeInteger(input.amount) || input.amount <= 0 || input.amount > share) {
+        return { ok: false, message: "환불 금액이 그 청구의 결제 금액을 넘어요.", uncertain: false };
+    }
+
+    const marker = partialCancelMarker(input.lineId);
+    // ① 지금 토스 상태
+    const before = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+    if (before.kind !== "verified") return { ok: false, message: "토스에서 결제를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", uncertain: false };
+    const already = findMarkedCancel(before.payment, marker);
+    if (already) {
+        return already.amount === input.amount
+            ? { ok: true, alreadyApplied: true }
+            : { ok: false, message: "토스에 이 처리의 취소가 다른 금액으로 있어요. 토스 상점관리자에서 확인해 주세요.", uncertain: false };
+    }
+    // 이 줄을 만든 뒤 표식 없는 같은 금액 취소가 있으면(상점관리자 직접 취소 등) 다시 보내지 않는다 — 두 번 환불 방지
+    if (hasUnmarkedSameAmountCancel(before.payment, input.amount, input.notBefore)) {
+        return { ok: false, message: "토스에 같은 금액의 다른 취소가 있어요(상점관리자에서 직접 취소했을 수 있어요). 확인한 뒤 직접 처리했다면 «직접 처리함»을 눌러 주세요.", uncertain: false };
+    }
+    const block = partialCancelBlock(before.payment, tx, input.amount);
+    if (block) return { ok: false, message: block, uncertain: false };
+
+    // ② 감사 기록 먼저(요청이 나간 뒤 서버가 멈춰도 누가 얼마를 눌렀는지 남게)
+    await recordPaymentAudit({
+        paymentId: input.paymentId,
+        transactionId: tx.id,
+        actorType: "ADMIN",
+        actorId: input.adminUserId,
+        action: "PAYMENT_TOSS_PARTIAL_CANCEL_REQUESTED",
+        message: `휴원 수강료 토스 부분 취소 요청 ${input.amount}원`,
+        metadata: { provider: "TOSS", orderId: tx.orderId, amount: input.amount, lineId: input.lineId, bundle },
+    });
+
+    // ③ 토스 부분 취소 API
+    const { secretKey } = getPaymentProviderConfig();
+    if (!secretKey) return { ok: false, message: "토스 결제 키가 설정되어 있지 않아요.", uncertain: false };
+    let tossError: string | null = null;
+    // 취소 API 응답 코드(응답 없음 = null) — «확실한 거절»(isDefiniteTossRejection) 판정에만 쓴다
+    let httpStatus: number | null = null;
+    try {
+        const response = await fetch(`https://api.tosspayments.com/v1/payments/${encodeURIComponent(tx.paymentKey)}/cancel`, {
+            method: "POST",
+            headers: {
+                Authorization: `Basic ${encodeTossSecret(secretKey)}`,
+                "Content-Type": "application/json",
+                // 같은 처리 줄·같은 시도 번호는 같은 키 — 결과 모름 재확인에서 토스가 두 번째 취소를 만들지 않는다.
+                // 토스가 확실히 거절한 뒤의 다시 시도만 새 키(그 거절 응답을 그대로 돌려받지 않게). 두 번 취소는 위 표식 확인이 막는다.
+                "Idempotency-Key": makeUuidFromSeed(
+                    (input.attempt ?? 0) > 0 ? `stiz-pause-refund:${input.lineId}:${input.attempt}` : `stiz-pause-refund:${input.lineId}`,
+                ),
+            },
+            body: JSON.stringify({
+                cancelReason: `휴원 수강료 환불 ${marker}`,
+                cancelAmount: input.amount,
+                taxFreeAmount: partialCancelTaxFree(before.payment, input.amount),
+            }),
+            cache: "no-store",
+            signal: AbortSignal.timeout(TOSS_FETCH_TIMEOUT_MS),
+        });
+        httpStatus = response.status;
+        if (!response.ok) tossError = await readTossErrorMessage(response) ?? `토스 응답 ${response.status}`;
+    } catch {
+        tossError = "토스 응답이 없어요";
+    }
+
+    // ④ 응답과 상관없이 다시 조회해 판정(순수 judgePartialCancelOutcome 한 곳)
+    const after = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
+    const outcome = judgePartialCancelOutcome({
+        verified: after.kind === "verified" ? after.payment : null,
+        marker, amount: input.amount, httpStatus,
+    });
+    if (outcome === "DONE") {
+        {
+            await recordPaymentAudit({
+                paymentId: input.paymentId,
+                transactionId: tx.id,
+                actorType: "ADMIN",
+                actorId: input.adminUserId,
+                action: "PAYMENT_TOSS_PARTIAL_REFUNDED",
+                message: `휴원 수강료 토스 부분 취소 확인 ${input.amount}원`,
+                metadata: { provider: "TOSS", orderId: tx.orderId, amount: input.amount, lineId: input.lineId },
+            });
+            revalidatePaymentCaches();
+            return { ok: true, alreadyApplied: false };
+        }
+    }
+    if (outcome === "WRONG_AMOUNT") return { ok: false, message: "토스에 다른 금액으로 취소됐어요. 토스 상점관리자에서 확인해 주세요.", uncertain: false };
+    // 토스가 분명히 거절(4xx, 409·429 제외)했고 취소도 없다 = 실패 확정 → 다음 시도는 새 멱등 키
+    if (outcome === "FAILED") return { ok: false, message: `토스가 취소하지 않았어요(${tossError ?? `응답 ${httpStatus}`}).`, uncertain: false };
+    // 5xx·409·429·응답 없음·재조회 실패 = 결과 모름 → REQUESTED 유지, 같은 키로 확인만
+    return { ok: false, message: "취소 결과를 확인하지 못했어요. 잠시 후 «다시 시도»로 확인해 주세요.", uncertain: true };
+}
+
 /** 관리자 환불 취소 요청의 Idempotency-Key 시드 — 같은 10분 안 연타는 토스에서 한 번만, 10분 뒤 재시도는 새 시도 */
 function adminRefundIdempotencySeed(txId: string, paymentKey: string, nowMs: number): string {
     // 날짜 함수 없이 10분 칸 번호만 쓴다(시간대가 끼어들 일이 없게)
@@ -2777,6 +2912,14 @@ export async function recordTossWebhook(payload: unknown) {
         return { ok: true as const, processed: applied.ok, eventId: eventRecordId };
     }
     if (cancel.kind === "PARTIAL_CANCEL") {
+        // 취소 전부가 휴원 수강료 환불(표식 STIZ-PR:)이면 우리가 보낸 취소라 기록이 이미 있다 → «확인 필요» 경보를 남기지 않는다
+        if (verified && cancel.canceledAmount > 0 && markedCancelTotal(verified) === cancel.canceledAmount) {
+            await prisma.$executeRawUnsafe(
+                `UPDATE "PaymentWebhookEvent" SET processed = true, error = NULL, "processedAt" = NOW() WHERE id = $1`,
+                eventRecordId,
+            );
+            return { ok: true as const, processed: true, eventId: eventRecordId };
+        }
         // 부분 환불은 어느 항목을 돌려줬는지 장부가 알 수 없어 자동 반영하지 않는다. 기록만 남겨 원장이 처리한다.
         await prisma.$executeRawUnsafe(
             // 같은 거래·같은 취소 금액 기록이 이미 있으면 다시 쌓지 않는다(알림 재전송·반복 호출 대비).

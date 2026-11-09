@@ -81,7 +81,8 @@ export function buildClassStatusLine(input: ClassStatusInput): { text: string; t
 const NOTE_MAX = 80;
 
 // CANCEL_* = 승인된 휴원·퇴원에 학부모가 낸 «취소 요청»(d8)에 대한 원장 결정
-export type ChangeNoticeEvent = "APPROVED" | "REJECTED" | "APPLIED" | "CANCEL_APPROVED" | "CANCEL_REJECTED";
+// SETTLED = 승인 «뒤에» 따로 정한 휴원 수강료 처리(이월·환불) 안내(2026-11-10 m6)
+export type ChangeNoticeEvent = "APPROVED" | "REJECTED" | "APPLIED" | "CANCEL_APPROVED" | "CANCEL_REJECTED" | "SETTLED";
 
 /**
  * 원장 결정·적용 시 학부모 앱 알림 문구.
@@ -96,14 +97,20 @@ export function buildChangeDecisionNotice(input: {
   kind: string;
   effectiveFrom: string;
   decisionNote?: string | null;
+  /** 휴원 수강료 처리 한 줄(«수강료 ○원 환불 예정» 등 — pause-settlement-plan settlementNoticeLine). 승인·SETTLED 에만 붙는다. */
+  settlementLine?: string | null;
 }): { title: string; message: string } {
   const who = [input.studentName, input.className].filter(Boolean).join(" ");
   const name = parentKindName(input.kind);
   const from = shortMd(input.effectiveFrom);
   const when = from ? `(${from}부터)` : "";
+  const money = (input.settlementLine ?? "").trim();
 
   if (input.event === "APPROVED") {
-    return { title: "수강 변경 신청 승인", message: `${who} ${name} 신청이 승인됐어요${when}` };
+    return { title: "수강 변경 신청 승인", message: `${who} ${name} 신청이 승인됐어요${when}${money ? ` · ${money}` : ""}` };
+  }
+  if (input.event === "SETTLED") {
+    return { title: "휴원 수강료 안내", message: `${who} ${name}${when} ${money || "수강료 처리가 끝났어요"}` };
   }
   if (input.event === "CANCEL_APPROVED") {
     return { title: "수강 변경 취소 요청 결과", message: `${who} ${name} 예정${when}이 취소됐어요. 지금처럼 수업을 이어 가요` };

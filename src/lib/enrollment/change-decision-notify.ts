@@ -3,6 +3,7 @@ import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { deliverOperationalNotification } from "@/lib/operational-notification-delivery";
 import { buildChangeDecisionNotice, CHANGE_NOTICE_LINK, type ChangeNoticeEvent } from "@/lib/enrollment/parentChangeStatus";
+import { isSettlementMode, settlementNoticeLine } from "@/lib/enrollment/pause-settlement-plan";
 
 // ── 수강 변경 결정·적용 → 신청한 학부모에게 앱 알림 (2026-11-10 원장 결정 d6) ─────────
 //
@@ -61,6 +62,26 @@ export async function notifyParentOfEnrollmentChange(requestId: string, event: C
     );
     if (access.length !== 1) return "SKIPPED";
 
+    // 휴원 수강료 처리(2026-11-10 m6) — 승인·SETTLED 알림에 «○원 이월/환불 예정» 한 줄.
+    // 처리 표(마이그레이션 20261110180000)가 없으면 읽지 않는다(예전 알림 그대로).
+    let settlementLine: string | null = null;
+    if (event === "APPROVED" || event === "SETTLED") {
+      const ready = await prisma.$queryRawUnsafe<{ found: string | null }[]>(
+        `SELECT to_regclass('public."EnrollmentChangeSettlement"')::text AS found`,
+      );
+      if (ready[0]?.found) {
+        const settled = await prisma.$queryRawUnsafe<{ mode: string; paidAmount: number; unpaidAmount: number }[]>(
+          `SELECT mode, "paidAmount", "unpaidAmount" FROM "EnrollmentChangeSettlement" WHERE "requestId" = $1 LIMIT 1`,
+          requestId,
+        );
+        if (settled[0] && isSettlementMode(settled[0].mode)) {
+          settlementLine = settlementNoticeLine(settled[0].mode, Number(settled[0].paidAmount), Number(settled[0].unpaidAmount));
+        }
+      }
+      // 따로 보내는 처리 안내인데 전할 금액이 없으면(«없음») 보내지 않는다
+      if (event === "SETTLED" && !settlementLine) return "SKIPPED";
+    }
+
     const notice = buildChangeDecisionNotice({
       event,
       studentName: row.studentName,
@@ -68,6 +89,7 @@ export async function notifyParentOfEnrollmentChange(requestId: string, event: C
       kind: row.kind,
       effectiveFrom: row.effectiveFrom,
       decisionNote: event === "REJECTED" || event === "CANCEL_REJECTED" ? note : null,
+      settlementLine,
     });
     const result = await deliverOperationalNotification({
       stableEventKey: `enrollment-change:${requestId}:${event}`,

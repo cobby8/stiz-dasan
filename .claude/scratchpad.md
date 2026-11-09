@@ -115,6 +115,21 @@
 | apply/ApplyPageClient.tsx · api/chat/route.ts · mypage/ParentMoreMenu.tsx | /apply 세 번째 칸 · [ACTION:CONSULT] · ⋯ 메뉴 1줄 | 수정 |
 💡 tester: tests/consult-request.test.mjs(20). 주의 입력 = privacyConsent "true"(글자)·02 번호·하루 안 같은 번호+학생 중복.
 ⚠️ reviewer: InboxRow.kind 에 CONSULT 가 아직 없어 ConsultInboxRow = Omit<InboxRow,"kind">&{kind:"CONSULT"} — catalog 에 CONSULT 추가 시 그대로 맞음.
+## 구현 기록 (developer) — 휴원 시작일 자유 선택 + 승인 시 수강료 처리(11-10, 원장 k10·m7·m6)
+📝 학부모 휴원 시작일 고르기(오늘 그 반 수업 전이면 오늘, 아니면 내일 ~ 3개월) · 원장 승인 때 이월·환불·없음 + 자동 계산 + 실행
+| 파일 | 변경 |
+|---|---|
+| lib/enrollment/changeRequestRules.ts | earliestPauseStart(순수, today·nowHm 인자) · resolveEffectiveFrom PAUSE 자유(빈 값=옛 화면 다음 달 1일) · PAUSE_START_TOO_SOON |
+| lib/enrollment/parent-change-request.ts · mypage/enrollment-change/EnrollmentChangeClient.tsx | 반 요일·시작 시각 DB 로 서버 재판정, 자녀별 minPauseFrom, «언제부터 쉴까요?» 날짜 칸(state pauseFrom 끝에 추가) |
+| lib/enrollment/pause-settlement-plan.ts (신규·순수) | 금액 = 청구 금액 ÷ 그 수강월 수업 수 × 빠지는 수 · 경로(TOSS/TOSS_VA/TOSS_POS/RALLYZ/MANUAL/SITE) · 방식별 줄 · 알림 한 줄 · 할 일 문장 |
+| lib/enrollment/pause-settlement.ts (신규·db 인자) | 미리보기·실행(전역 잠금+신청 잠금+FOR UPDATE+지문 대조+조건부 감액)·토스 환불 실행·이월 차감·직접 처리·남은 일 수 |
+| lib/payments/tossPartialCancel.ts (신규·순수) · lib/payment-ledger.ts | partialRefundTossPaymentByAdmin: 재조회→감사→cancelAmount+taxFreeAmount+고정 멱등 키→재조회 표식 확인 |
+| lib/enrollment/admin-change-request.ts · actions/enrollment-changes.ts | decide 에 settlement?(같은 트랜잭션, 실패=승인도 되돌림) · settlePauseTuition·retry·직접 처리 4 액션 · 취소 요청(d8) 승인은 돈 움직인 휴원이면 막음 |
+| change-decision-notify.ts · parentChangeStatus.ts | 승인 알림에 «○원 이월/환불 예정» · 따로 처리 = SETTLED 알림 |
+| admin/enrollment-changes/* · api/cron/enrollment-changes | 상세 패널 미리보기·방식 고르기·확인창·처리 기록·남은 일 배너 · 크론이 남은 이월 차감 |
+| prisma/migrations/20261110180000_enrollment_pause_settlement · schema.prisma | 표 2개(운영 미적용) |
+💡 tester: tests/pause-settlement.test.mjs 20건(월말·연말·자정·4주·3회 달·부분 납부·가짜 DB 실행). 실DB·실토스 미검증 — 테스트 키로 부분 취소 1건 확인 필요.
+⚠️ reviewer: 토스 부분 취소(트랜잭션 밖·REQUESTED→재조회 확인) · 미납 감액 0원=CANCELED · 기능 이전 승인 휴원은 미리보기 숨김(PAUSE_SETTLEMENT_SINCE).
 
 ## 작업 로그 (최근 10건)
 
@@ -126,6 +141,7 @@
 | 11-10 | developer(상담 신청 신설): ConsultRequest 표+마이그레이션 20261110160000(운영 미적용) · /apply/consult(+/apply 세 번째 칸) · 챗봇 [ACTION:CONSULT] · 학부모 ⋯ 메뉴 «형제·자매 상담 신청»(/mypage/consult, 자동 채움) · 관리자 벨·웹푸시 · consult-inbox.ts(신청함 상담 탭) · 처리 액션(requireAdmin). tsc 0·tests 3841-0·studentVisibility 5-0 | 검수 대기(미푸시) |
 | 11-10 | developer(원장 k1~k4·m1~m3 신청함 재편): 맨 위 6탭(체험·수강·상담·대관·변경·기타, 배지=처리 필요) · catalog KIND_TAB/TAB_SUBS/tabActionCounts · 체험·수강(신청/대기)=ApplyAdminClient mode 끼우기 · 대관=RentalAdminClient embedded(처리할 것 먼저·완료 보기) · 변경·기타=공통 한 줄(처리 필요→진행 중, «완료 보기»), 필터=날짜만 · 진행 중 처리 버튼(보강 4종·결석 신고 취소) · 학부모 연결(CHILD_LINK) 추가 · 현장 수납 승인 기타 탭 유지(PM 정정) · 상담=CONSULT catalog+consult-inbox.ts 스텁(상담 브랜치 계약) · ⚙ 신청 설정(/admin/inbox/settings) · 메뉴 «신청·상담» 제거. tsc 0·전체 3831-0 | 완료(커밋, 미푸시) |
 | 11-10 | developer(현장 수납 승인 자동화, 원장 m1 «POS 확인되면 끝»): 번호 없는 POS 카드 결제 중 AUTO_CANDIDATE(메모 이름 1명 정확 일치+그 달 미납 1건 금액 일치)는 슬랙 버튼 없이 자동 납부(새 공용 핵심부 lib/pos/paymentNoticePay.ts — 버튼·자동이 같은 재확인 SQL 조각·markPaymentPaid 1곳, 자동은 SYSTEM·pos-notice-auto:id). 자동 전용 보류 조건 = 직원 현금·계좌 확인 대기·현장 결제 요청 PENDING/SENT/HELD/PAID·랠리즈 사본 → DM 버튼 그대로. 직원 현금·계좌 확인 요청(StaffPaymentConfirmationRequest)은 POS 근거가 없어 승인 유지(선택지 보고). 마이그레이션 없음. tsc 0·tests 3828-0·studentVisibility 5-0. **검수 후속**: 납부를 markPaymentsPaidTogether(1건, 미납+금액 그대로)로 → 0행이면 선점 해제+«이중 수납 확인 필요»(버튼 경로 공통) · 처음 DM 실패한 자동 납부는 결과 전용 DM(slackTs SENDING 선점, 스윕 재시도) · 납부 반영 뒤 POS 취소면 원장 DM+관리자 알림 벨 1회(advisory lock+감사 기록 POS_NOTICE_CANCELLED_WHILE_PAID, 청구 되돌리지 않음). tests 3837-0. **권장 3건**: CONFLICT=알림 닫힌 채(CONFIRMED·SYSTEM:conflict·error CONFLICT:)+감사 POS_NOTICE_PAID_ELSEWHERE+알림 벨(DM 없으면 결과 DM) · 취소 판정=CANCELLED_PAYMENT_STATES+PARTIAL_CANCEL(L)ED · 현장 결제 요청 묶인 주문·결제는 취소 경고 제외. tsc 종료 0·tests 3840-0 | 검수 대기(미푸시) |
+| 11-10 | developer(휴원 시작일 자유 + 승인 시 수강료 처리 m6): 시작일 오늘(수업 전)/내일~3개월 · 이월·환불·없음 자동 계산·실행(토스 부분 취소 신설·현금/랠리즈/POS=할 일·미납 감액·이월 다음 청구 차감) · 알림 «○원 예정». tsc 0·tests 3841-0·studentVisibility 5-0. ⚠️ 마이그레이션 20261110180000 운영 미적용 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |

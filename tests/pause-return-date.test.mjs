@@ -121,6 +121,8 @@ test("관리자 모바일 목록도 적용일 아래 복귀 예정일 또는 미
     "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/operations-sync/sheetRetirement": {},
     "@/lib/enrollment/sheetManualCheckRules": {},
+    // 휴원 수강료 처리 이름표(순수 모듈 그대로)
+    "@/lib/enrollment/pause-settlement-plan": load("src/lib/enrollment/pause-settlement-plan.ts"),
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: () => null },
     "@/components/admin/list/ListDetailPanel": { __esModule: true, default: () => null },
   }).default;
