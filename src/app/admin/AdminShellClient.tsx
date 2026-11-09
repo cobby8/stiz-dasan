@@ -33,16 +33,12 @@ function isShuttlePath(pathname: string): boolean {
     return pathname.startsWith("/admin/shuttle") || pathname.startsWith("/admin/seasonal/shuttle") || pathname.startsWith("/admin/seasonal/dispatch");
 }
 
-// 게슈탈트 A-11: 15개를 한 묶음에 쌓지 않고 «요청·신청함 / 수업 운영 / 돈·수납» 3묶음으로(주소·이름은 그대로)
+// 게슈탈트 A-11: 15개를 한 묶음에 쌓지 않고 «수업 운영 / 돈·수납 …» 묶음으로(주소·이름은 그대로)
+// 2026-11-10 신청함 통합(원장 결정 d2): 옛 «요청·신청함» 묶음(학부모 요청·수강 변경·탈퇴·직원 역할·카카오·대관)은
+// 메뉴에서 빼고 최상위 «신청함»(/admin/inbox) 하나로 모았다. 옛 주소는 그대로 살아 있다(신청함 상세 칸 «기존 화면에서 열기»).
+// 신청함을 거치는 옛 화면 목록 — 그 화면에 들어가 있으면 «신청함» 메뉴를 켜 둔다(길 잃지 않게)
+const INBOX_LEGACY_PATHS = ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests", "/admin/rental"] as const;
 const EXTRA_GROUPS = [
-    { label: "요청·신청함", icon: "move_to_inbox", items: [
-        ["/admin/requests", "학부모 요청", "📩"],
-        ["/admin/enrollment-changes", "수강 변경 신청", "🔁"],
-        ["/admin/withdrawals", "회원 탈퇴 신청", "🚪"],
-        ["/admin/role-requests", "직원 역할 신청", "🪪"],
-        ["/admin/kakao-requests", "카카오 접수함", "🗨️"],
-        ["/admin/rental", "체육관 대관", "🏟️"],
-    ] },
     { label: "수업 운영", icon: "event_note", items: [
         ["/admin/absence", "정규 결석 신고", "🙅"],
         ["/admin/makeup", "보강", "🔄"],
@@ -86,6 +82,7 @@ export default function AdminShellClient({
     initialUserEmail,
     sheetRetired = false,
     accountViews = [],
+    inboxCount = null,
 }: {
     children: React.ReactNode;
     initialUserName: string;
@@ -93,6 +90,8 @@ export default function AdminShellClient({
     // 구글 시트 원장 은퇴 여부 — 백업 버튼 묶음의 「시트 동기화」 표시 여부로만 쓴다
     sheetRetired?: boolean;
     accountViews?: AccountViewOption[];
+    /** 신청함 «처리 필요» 건수(getInboxCounts) — 읽지 못했으면 null(배지만 숨긴다) */
+    inboxCount?: number | null;
 }) {
     const pathname = usePathname() || "/admin";
     const userName = initialUserName;
@@ -141,6 +140,8 @@ export default function AdminShellClient({
                 </div>
                 <nav aria-label="관리자 업무 메뉴" className="min-h-0 p-3 space-y-1 flex-1 overflow-y-auto [@media(max-height:500px)]:p-2">
                     <NavItem href="/admin" active={pathname === "/admin"} icon="📊" label="오늘 업무" />
+                    {/* 신청함 — 14종류 신청을 한 곳에서. 배지 = 처리 필요 건수 */}
+                    <NavItem href="/admin/inbox" active={matchesNavPath(pathname, "/admin/inbox") || INBOX_LEGACY_PATHS.some((path) => matchesNavPath(pathname, path))} icon="📨" label="신청함" badge={inboxCount ?? undefined} />
                     <NavItem href="/admin/apply" active={matchesNavPath(pathname, "/admin/apply")} icon="📝" label="신청·상담" />
                     <NavItem href="/admin/students" active={matchesNavPath(pathname, "/admin/students")} icon="🧑‍🎓" label="원생" />
                     <NavItem href="/admin/attendance" active={matchesNavPath(pathname, "/admin/attendance") && !matchesNavPath(pathname, "/admin/attendance/report")} icon="✅" label="수업·출결" />
@@ -226,7 +227,7 @@ export default function AdminShellClient({
 }
 
 // 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium"};
+const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox"};
 
 function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
     return (

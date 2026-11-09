@@ -4,6 +4,7 @@ import { classifyAdminLayoutAuthFailure } from "@/lib/adminLayoutAuth";
 import AdminShellClient from "./AdminShellClient";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { getAccountViewAccess } from "@/lib/account-view-access";
+import { getInboxCounts } from "@/lib/requests/admin-inbox";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,14 @@ export default async function AdminLayout({
         throw error;
     }
 
-    const { views } = await getAccountViewAccess();
+    // 메뉴 «신청함 N» 배지 — SQL 한 번. 실패하면 null 이라 배지만 숨고 화면은 그대로 열린다.
+    const [{ views }, inboxCounts] = await Promise.all([getAccountViewAccess(), getInboxCounts()]);
     return (
         <AdminShellClient
             initialUserName={adminUser.appUserName || adminUser.user_metadata?.name || "관리자"}
             initialUserEmail={adminUser.email || ""}
             accountViews={views}
+            inboxCount={inboxCounts?.action ?? null}
             // 시트 원장 은퇴(2026-10~) 면 시스템 도구의 「시트 동기화」 버튼을 숨긴다("0" 이면 옛 화면)
             sheetRetired={isSheetSyncRetired(process.env)}
         >

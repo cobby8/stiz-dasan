@@ -23,6 +23,8 @@ function compile(file) {
     if (id === '@/components/academy/AcademyTheme') return { default: ({ children }) => children };
     if (id === '@/components/AccountViewSwitcher') return { default: () => React.createElement('span', null, '화면 전환') };
     if (id.startsWith('@/components/')) return { default: () => null };
+    // 대시보드 «처리할 신청» 종류 칩 이름(신청함 catalog) — 이 렌더 시험에선 종류 코드 그대로
+    if (id === '@/lib/requests/catalog') return { kindLabel: (kind) => kind };
     return require(id);
   }, loaded, loaded.exports);
   return loaded.exports.default;
@@ -41,11 +43,13 @@ const fixture = (count = 0) => ({
   todayClasses: [], recentStudents: [], todayLabel: '화요일',
 });
 
-test('주요 업무 여섯 개는 탭 전환 없이 렌더링되고 셔틀은 정규 배차로 연결된다', () => {
+test('주요 업무 일곱 개는 탭 전환 없이 렌더링되고 셔틀은 정규 배차로 연결된다', () => {
   const html = shell();
   const primary = mainLinks(html);
-  assert.equal((primary.match(/<a /g) ?? []).length, 6);
-  for (const label of ['오늘 업무', '신청·상담', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  // 2026-11-10 신청함 통합: «오늘 업무» 바로 아래 «신청함»이 최상위 메뉴로 들어왔다
+  assert.equal((primary.match(/<a /g) ?? []).length, 7);
+  for (const label of ['오늘 업무', '신청함', '신청·상담', '원생', '수업·출결', '청구·수납', '셔틀']) assert.ok(primary.includes(label));
+  assert.ok(primary.includes('href="/admin/inbox"'));
   assert.ok(primary.includes('href="/admin/shuttle/regular-dispatch"'));
   assert.ok(!html.includes('>사이트</button>'));
   assert.ok(!html.includes('href="/staff"'));
@@ -55,7 +59,8 @@ test('주요 업무 여섯 개는 탭 전환 없이 렌더링되고 셔틀은 �
 test('이전 보조 기능의 진입이 남고 실제 페이지 파일이 존재한다', () => {
   const html = shell();
   const paths = [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
-  for (const route of ['/admin/requests', '/admin/enrollment-changes', '/admin/kakao-requests', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/staff/quick-post', '/admin/seasonal', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/pos-plugin', '/admin/uniform', '/admin/settings', '/admin/coaches', '/admin/programs', '/admin/schedule', '/admin/notices', '/admin/gallery', '/admin/faq', '/admin/testimonials', '/admin/terms', '/admin/privacy', '/admin/notification-deliveries', '/admin/kakao-policy', '/admin/stats', '/admin/sms', '/admin/import', '/admin/staff', '/admin/media-revocations']) {
+  // 옛 «요청·신청함» 화면(학부모 요청·수강 변경·카카오 등)은 신청함 상세 칸에서 연다 — 아래 별도 시험
+  for (const route of ['/admin/inbox', '/admin/absence', '/admin/makeup', '/admin/attendance/report', '/staff/quick-post', '/admin/seasonal', '/admin/payment-requests', '/admin/payment-confirmations', '/admin/pos-reconcile', '/admin/pos-plugin', '/admin/uniform', '/admin/settings', '/admin/coaches', '/admin/programs', '/admin/schedule', '/admin/notices', '/admin/gallery', '/admin/faq', '/admin/testimonials', '/admin/terms', '/admin/privacy', '/admin/notification-deliveries', '/admin/kakao-policy', '/admin/stats', '/admin/sms', '/admin/import', '/admin/staff', '/admin/media-revocations']) {
     assert.ok(paths.includes(route), `${route} 진입 누락`);
   }
   for (const route of paths.filter((path) => path.startsWith('/admin') || path.startsWith('/staff'))) {
@@ -73,10 +78,21 @@ test('셔틀 하위 경로는 방학특강 메뉴와 중복 활성화되지 않�
 });
 
 test('보조 업무는 직접 진입해도 그룹이 열리며 원생과 신청 경로가 혼동되지 않는다', () => {
-  const html = shell('/admin/enrollment-changes');
+  const html = shell('/admin/absence');
   assert.match(html, /<details[^>]*open=""/);
-  assert.match(html, /href="\/admin\/enrollment-changes"[^>]*aria-current="page"/);
+  assert.match(html, /href="\/admin\/absence"[^>]*aria-current="page"/);
   assert.doesNotMatch(shell('/admin/students-extra'), /aria-current="page"/);
+});
+
+test('옛 신청 화면에 직접 들어와도 메뉴 «신청함»이 켜지고, 그 화면은 신청함 상세 칸에서 열린다(d2)', () => {
+  const catalog = readFileSync('src/lib/requests/catalog.ts', 'utf8');
+  for (const route of ['/admin/requests', '/admin/enrollment-changes', '/admin/withdrawals', '/admin/role-requests', '/admin/kakao-requests', '/admin/rental']) {
+    const active = [...shell(route).matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => m[0]);
+    assert.equal(active.length, 1, route);
+    assert.ok(active[0].includes('href="/admin/inbox"'), route);
+    assert.ok(catalog.includes(`adminHref: "${route}"`), `${route} — 신청함 «기존 화면에서 열기» 주소`);
+    assert.ok(existsSync(`src/app${route}/page.tsx`), `${route} 페이지(주소는 살린다)`);
+  }
 });
 
 test('요청이 없으면 수업 영역이 두 열의 반쪽 공간에 갇히지 않는다', () => {
