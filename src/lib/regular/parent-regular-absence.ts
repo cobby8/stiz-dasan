@@ -7,6 +7,7 @@ import {
   settleCreditOnAbsenceCancel,
 } from "@/lib/makeup/absence-report-credit";
 import { kstAt } from "@/lib/datetime/kst";
+import { lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { createHash } from "node:crypto";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -278,6 +279,8 @@ export async function reportRegularAbsence(
   // 결석 신고 저장 + 보강권 발급을 한 트랜잭션으로(2026-11-10 원장 결정 k4 — 신고 즉시 보강권).
   // 둘 중 하나만 남는 반쪽 상태(신고는 됐는데 보강권 없음 / 그 반대)를 만들지 않는다.
   const outcome = await prisma.$transaction(async (tx) => {
+    // 잠금 순서 통일(교착 방지): 작업대 잠금 → 결석 행. 관리자 취소(cancelRegularAbsenceByAdmin)와 같은 순서
+    await lockCompensation(tx);
     // INSERT ... ON CONFLICT — 학생·반·날짜당 1건. 관리자 확정(CONFIRMED)건은 학부모가 못 덮게.
     // (가드2: WHERE status<>'CONFIRMED')
     const saved = await tx.$queryRawUnsafe<{ id: string; eventVersion: string }[]>(
@@ -356,6 +359,8 @@ export async function cancelRegularAbsence(
   const access = await childAccessSql("s", "$1");
 
   const { canceled, creditAction } = await prisma.$transaction(async (tx) => {
+    // 잠금 순서 통일(교착 방지): 작업대 잠금 → 결석 행. 관리자 취소(cancelRegularAbsenceByAdmin)와 같은 순서
+    await lockCompensation(tx);
     let canceled: CanceledRow[];
     if (id) {
       // id 로 지목: 그 결석이 이 부모 자녀의 것이고 REPORTED 인 경우만 취소(IDOR 방어).

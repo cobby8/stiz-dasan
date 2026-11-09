@@ -344,3 +344,24 @@ test("신청 내역: 결석의 보강권을 같은 키 형식으로 읽어 한 �
   assert.equal(tl.canCancelNow({ kind: "REGULAR_ABSENCE", rawStatus: "REPORTED", absenceCredit: "USED" }), false);
   assert.equal(tl.canCancelNow({ kind: "ENROLLMENT_CHANGE", rawStatus: "PENDING" }), true);
 });
+
+test("잠금 순서 통일(교착 방지): 학부모 신고·취소·관리자 취소 모두 작업대 잠금 → 결석 행", () => {
+  const order = (body, label) => {
+    const tx = body.indexOf("$transaction(");
+    assert.notEqual(tx, -1, label);
+    const lock = body.indexOf("await lockCompensation(tx);", tx);
+    const row = body.search(/(INSERT INTO|UPDATE) "RegularAbsence"/);
+    assert.ok(lock > tx && row > lock, `${label}: 결석 행을 건드리기 전에 lockCompensation 을 먼저 잡아야 한다`);
+  };
+  order(fnBody(parentAbsence, "reportRegularAbsence"), "reportRegularAbsence");
+  order(fnBody(parentAbsence, "cancelRegularAbsence"), "cancelRegularAbsence");
+  order(fnBody(adminAbsence, "cancelRegularAbsenceByAdmin"), "cancelRegularAbsenceByAdmin");
+});
+
+test("취소가 «보강 예약 확인 필요»로 막히면 화면이 다시 읽어 확인 문구가 뜨게 한다", () => {
+  const client = readFileSync("src/app/mypage/regular-absence/RegularAbsenceClient.tsx", "utf8");
+  assert.match(client, /if \(j\?\.code === "MAKEUP_BOOKING_CONFIRM_REQUIRED"\) await reload\(\);/);
+  const tl = readFileSync("src/app/mypage/classes/RequestTimeline.tsx", "utf8");
+  assert.match(tl, /if \(code === "MAKEUP_BOOKING_CONFIRM_REQUIRED"\) router\.refresh\(\);/);
+  assert.match(tl, /onErrorCode\?\.\(data\.code\)/);
+});

@@ -36,11 +36,15 @@ function Step({ step }: { step: TimelineStep }) {
 }
 
 /** 취소·취소 요청 API — 기존 학부모 API 를 그대로 부른다(서버가 소유·상태를 다시 확인한다) */
-async function post(url: string, body: Record<string, unknown>): Promise<string | null> {
+async function post(url: string, body: Record<string, unknown>, onErrorCode?: (code: string) => void): Promise<string | null> {
   try {
     const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data?.ok === false) return customerMessage(data?.error ?? data?.message, "처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    if (!response.ok || data?.ok === false) {
+      // 서버가 알려 준 코드(예: 보강 예약 확인 필요)로 화면이 따로 대응할 수 있게 넘긴다
+      if (typeof data?.code === "string") onErrorCode?.(data.code);
+      return customerMessage(data?.error ?? data?.message, "처리하지 못했어요. 잠시 후 다시 시도해 주세요.");
+    }
     return null;
   } catch {
     return "결과를 확인하지 못했어요. 새로고침해서 처리 여부를 확인해 주세요.";
@@ -71,7 +75,12 @@ export default function RequestTimeline({ rows }: { rows: ParentTimelineView[] }
       () => r.kind === "ENROLLMENT_CHANGE"
         ? post("/api/mypage/enrollment-change", { action: "cancel", id: r.id })
         // 보강 예약이 있는 결석은 «보강 예약도 함께 취소돼요» 확인을 보고 누른 것 → 함께 취소 허락
-        : post("/api/mypage/regular-absence", { action: "cancel", id: r.id, confirmMakeupCancel: r.absenceCredit === "RESERVED" }),
+        : post(
+            "/api/mypage/regular-absence",
+            { action: "cancel", id: r.id, confirmMakeupCancel: r.absenceCredit === "RESERVED" },
+            // 내역을 연 뒤 보강 예약이 생긴 경우 — 다시 읽어 «보강 예약도 함께 취소돼요» 확인 문구가 뜨게 한다
+            (code) => { if (code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") router.refresh(); },
+          ),
       "취소했어요.",
     );
   // d8: 승인됐지만 적용 전인 휴원·퇴원 → 원장님께 «취소 요청»(원장님이 승인하면 취소된다)

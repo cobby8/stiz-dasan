@@ -127,7 +127,11 @@ export default function RegularAbsenceClient({
           }),
         });
         const j = await res.json();
-        if (!res.ok) throw new Error(j?.error || "취소에 실패했습니다.");
+        if (!res.ok) {
+          // 화면을 연 뒤 보강 예약이 생긴 경우 — 최신 상태를 다시 읽어 «보강 예약도 함께 취소돼요» 확인 문구가 뜨게 한다
+          if (j?.code === "MAKEUP_BOOKING_CONFIRM_REQUIRED") await reload();
+          throw new Error(j?.error || "취소에 실패했습니다.");
+        }
         setMsg(
           j?.makeupBookingCanceled
             ? "결석 신고와 보강 예약을 취소했어요."
