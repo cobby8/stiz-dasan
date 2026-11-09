@@ -2,10 +2,10 @@
   width: 100%;
   max-width: 1120px;
   color: var(--color-academy-ink);
-  /* 기사님 화면 전용 의미색(테마 파일은 건드리지 않고 이 화면 안에서만 정의).
-     자차 = 결석(빨강)과 구분되는 보라, 오늘만 변경 = 결석과 구분되는 파랑. */
-  --color-driver-self: #6b46c1;
-  --color-driver-note: #2557a7;
+  /* 기사님 화면 의미색 = 공용 상태색(2026-11-09 색상 정리 — 기사님 화면만 따로 쓰던 보라·파랑 제거).
+     자차 = 중립(회색, 결석 빨강과 구분), 오늘만 변경 = 정보(파랑). 이름은 그대로 두고 값만 토큰으로 잇는다. */
+  --color-driver-self: var(--color-academy-neutral);
+  --color-driver-note: var(--color-academy-info);
 }
 
 .runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 800; }
@@ -29,11 +29,12 @@
 
 .stopHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .stopHeading input[type="time"] { flex-basis: 100%; }
-.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 17px; font-weight: 900; }
+/* 주 색(검정)은 버튼 전용 — 순번·시각 글자는 본문 글자색(ink) */
+.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-ink); font-size: 17px; font-weight: 900; }
 .upcoming .sequence { background: var(--color-academy-primary); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
 .stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
 .timeNavigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; margin-inline-start: auto; }
-.time { color: var(--color-academy-primary); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.time { color: var(--color-academy-ink); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
 .upcoming .time { font-size: 28px; }
 .unknownTime { color: var(--color-academy-muted); font-size: 14px; font-weight: 700; }
 .navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 800; }

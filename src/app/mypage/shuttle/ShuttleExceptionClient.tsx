@@ -135,8 +135,8 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
   if (initial.children.length === 0) {
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">셔틀 당일 변경</h1>
-        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-gray-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">셔틀 당일 변경</h1>
+        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
           지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
         </p>
       </main>
@@ -146,30 +146,30 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">셔틀 당일 변경</h1>
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">셔틀 당일 변경</h1>
         {/* 결석과 헷갈리지 않게 선을 긋는다. 안 그러면 결석인데 여기에 적는다. */}
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
           수업은 오지만 <b>셔틀만</b> 바꿀 때 쓰세요. 변경은 운행 명단에 사용할 기록으로 저장됩니다.
           <br />
           수업 자체를 빠지시면 <b>결석 미리 알리기</b>에서 신고해 주세요.
         </p>
       </div>
 
-      {done && <p role="status" className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
-      {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
+      {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
+      {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
       {uncertain && <button type="button" disabled={pending} onClick={() => startTransition(async () => { await reconcile(uncertain); })} className="min-h-11 rounded-xl border px-3 text-sm font-bold">저장 결과 다시 확인</button>}
 
       {initial.upcoming.length > 0 && (
         <section className="space-y-2">
-          <h2 className="px-1 text-sm font-black text-gray-700 dark:text-gray-200">예정된 변경</h2>
+          <h2 className="px-1 text-sm font-black text-[var(--color-academy-muted)]">예정된 변경</h2>
           {/* 날짜 묶음(오늘/이번 주/다음 주/이후). 오늘은 서버가 KST 로 준 initial.today 를 쓴다 */}
           {groupByUpcomingDate(initial.upcoming, (item) => item.serviceDate, initial.today, DATE_GROUP_LABELS).map((group) => (
-            <div key={group.key} className="overflow-hidden rounded-2xl border border-blue-100 bg-white dark:border-blue-950 dark:bg-gray-800">
-              <h3 className="flex items-center justify-between bg-blue-50 px-3 py-1.5 text-sm font-bold text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+            <div key={group.key} className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
+              <h3 className="flex items-center justify-between bg-[var(--color-academy-soft)] px-3 py-1.5 text-sm font-bold text-[var(--color-academy-muted)]">
                 <span>{group.label}</span>
                 <span className="tabular-nums">{group.items.length}</span>
               </h3>
-              <ul className="divide-y divide-blue-100 dark:divide-blue-950">
+              <ul className="divide-y divide-[var(--color-academy-line)]">
                 {group.items.map((item) => (
                   <li key={item.id}>
                     {/* 행 탭 = 하단 시트(알림 결과·장소·한마디 전체). 긴 글은 행에서 자르지 않고 시트로 보낸다 */}
@@ -179,28 +179,28 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
                       aria-label={`${kstLabel(item.serviceDate)} ${item.studentName} 셔틀 변경 자세히 보기`}
                       onClick={() => setDetailId(item.id)}
                       onKeyDown={(event) => handleRowKeyDown(event, item.id)}
-                      className="flex min-h-14 cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-blue-50/60 dark:hover:bg-blue-950/20"
+                      className="flex min-h-14 cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)]"
                     >
                       <div className="min-w-0 flex-1">
                         {/* 1줄: 학생 · 방향 칩 · 변경 종류 칩 — «·»로 잇던 글을 요소로 나눔 */}
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-sm font-black text-blue-900 dark:text-blue-200">{item.studentName}</span>
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                          <span className="text-sm font-black text-[var(--color-academy-ink)]">{item.studentName}</span>
+                          <span className="rounded-full bg-[var(--color-academy-neutral-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-neutral)]">
                             {SHUTTLE_DIRECTION_LABEL[item.direction as ShuttleDirection] ?? "등원·하원 확인 필요"}
                           </span>
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                          <span className="rounded-full bg-[var(--color-academy-info-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-info)]">
                             {SHUTTLE_EXCEPTION_KIND_LABEL[item.kind as ShuttleExceptionKind] ?? "변경 내용 확인 필요"}
                           </span>
                         </div>
                         {/* 2줄: 저장 상태 · 바뀐 장소(줄바꿈 허용) */}
-                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-600 dark:text-gray-300">
+                        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-[var(--color-academy-muted)]">
                           <span>변경 저장 완료</span>
-                          {item.location && <span className="break-keep font-bold text-blue-800 dark:text-blue-300">{item.location}</span>}
+                          {item.location && <span className="break-keep font-bold text-[var(--color-academy-ink)]">{item.location}</span>}
                         </p>
                         {/* 기사 연결 경고는 놓치면 안 돼서 행에 그대로 둔다 */}
-                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-gray-600 dark:text-gray-300">담당 기사님 배정은 학원에서 확인 중</p>}
+                        {item.notificationStatus && !item.notificationStatus.driverLinked && <p className="text-xs text-[var(--color-academy-muted)]">담당 기사님 배정은 학원에서 확인 중</p>}
                       </div>
-                      <span className="shrink-0 text-right text-sm font-bold tabular-nums text-blue-900 dark:text-blue-200">{kstLabel(item.serviceDate)}</span>
+                      <span className="shrink-0 text-right text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{kstLabel(item.serviceDate)}</span>
                       {/* 취소 = 그 자리 확인(C-M1) 후 기존 cancel(item.id) 그대로. 행 탭(시트 열기)으로 번지지 않게 stopPropagation 유지 */}
                       <InlineConfirm
                         label="취소"
@@ -221,12 +221,12 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         </section>
       )}
 
-      <fieldset disabled={pending || Boolean(uncertain)} aria-label="셔틀 변경 내용" className="min-w-0 space-y-4 rounded-2xl border-0 bg-white p-5 shadow-sm dark:bg-gray-800">
+      <fieldset disabled={pending || Boolean(uncertain)} aria-label="셔틀 변경 내용" className="min-w-0 space-y-4 rounded-2xl border-0 bg-white p-5 shadow-sm">
         {initial.children.length > 1 && (
           <select
             value={studentId}
             onChange={(event) => setStudentId(event.target.value)}
-            className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+            className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
           >
             {initial.children.map((child) => (
               <option key={child.studentId} value={child.studentId}>{child.studentName}</option>
@@ -235,7 +235,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         )}
 
         <div>
-          <label htmlFor="service-date" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+          <label htmlFor="service-date" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
             어느 날인가요?
           </label>
           <input
@@ -245,12 +245,12 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
             min={initial.today}
             max={initial.maxDate}
             onChange={(event) => setServiceDate(event.target.value)}
-            className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+            className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
           />
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-bold text-gray-500 dark:text-gray-400">등원인가요, 하원인가요?</p>
+          <p className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">등원인가요, 하원인가요?</p>
           <div className="grid grid-cols-3 gap-1.5">
             {SHUTTLE_DIRECTIONS.map((value) => (
               <button
@@ -268,7 +268,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         </div>
 
         <div>
-          <p className="mb-1 text-xs font-bold text-gray-500 dark:text-gray-400">무엇을 바꾸시나요?</p>
+          <p className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">무엇을 바꾸시나요?</p>
           <div className="grid grid-cols-2 gap-1.5">
             {SHUTTLE_EXCEPTION_KINDS.map((value) => (
               <button
@@ -286,7 +286,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
 
         {kind === "LOCATION" && (
           <div>
-            <label htmlFor="shuttle-location" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+            <label htmlFor="shuttle-location" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
               어디에서 타나요?
             </label>
             {/* 기사님이 읽고 찾아갈 수 있게 적어야 한다. 좌표가 아니라 사람이 읽는 글이다. */}
@@ -296,13 +296,13 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
               onChange={(event) => setLocation(event.target.value)}
               maxLength={200}
               placeholder="예: 다산초 정문 앞"
-              className="min-h-11 w-full rounded-xl border border-gray-200 px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+              className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3 text-sm"
             />
           </div>
         )}
 
         <div>
-          <label htmlFor="shuttle-note" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
+          <label htmlFor="shuttle-note" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
             기사님께 한마디 (선택)
           </label>
           <textarea
@@ -311,7 +311,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
             onChange={(event) => setNote(event.target.value)}
             rows={2}
             maxLength={300}
-            className="w-full rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+            className="w-full rounded-xl border border-[var(--color-academy-line)] p-3 text-sm"
           />
         </div>
 
@@ -332,7 +332,7 @@ export default function ShuttleExceptionClient({ initial }: { initial: ShuttleEx
         return (
           <ListDetailPanel onClose={() => setDetailId(null)} titleId="shuttle-change-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="mb-3 flex items-center gap-2">
-              <h3 id="shuttle-change-detail-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)] dark:text-white">
+              <h3 id="shuttle-change-detail-title" className="min-w-0 break-keep text-lg font-black text-[var(--color-academy-ink)]">
                 {item.studentName}
               </h3>
               <span className="text-sm font-bold tabular-nums text-[var(--color-academy-muted)]">{kstLabel(item.serviceDate)}</span>

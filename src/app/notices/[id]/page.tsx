@@ -9,8 +9,17 @@ import { toNoticeHtml, isImageAttachment, isHtmlContent } from "@/lib/noticeCont
 import { sanitizeHtml } from "@/lib/sanitize";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { buildNoticeMetadata } from "@/lib/noticeMetadata";
+import type { Metadata } from "next";
 
 export const revalidate = 60;
+
+// 공지마다 제목·요약·canonical(/notices/[id])을 따로 단다 — 홈 메타를 물려받아 검색에서 중복 처리되던 문제.
+// getNoticeById 는 react cache 로 감싸져 있어 본문 렌더와 같은 요청에서 DB 를 두 번 읽지 않는다.
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+    const { id } = await params;
+    return buildNoticeMetadata(await getNoticeById(id));
+}
 
 export default async function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
@@ -42,7 +51,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 + 공지 제목/날짜 */}
-            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 text-white py-16 md:py-20">
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] text-white py-16 md:py-20">
                 <div className="max-w-4xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
                         {/* 목록으로 돌아가기 링크 */}
@@ -85,23 +94,23 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
             </section>
 
             {/* 공지 본문 + 첨부파일 */}
-            <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
+            <div className="bg-surface-section dark:bg-[var(--color-public-paper)] transition-colors duration-300">
                 <div className="max-w-4xl mx-auto px-4 py-12 md:py-16">
                     <AnimateOnScroll>
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 transition-colors duration-300 shadow-sm p-6 md:p-10">
+                        <div className="bg-white dark:bg-[var(--color-public-tint)] rounded-2xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] transition-colors duration-300 shadow-sm p-6 md:p-10">
                             {/* 본문 — 새 공지(리치 에디터 HTML)와 옛 공지(순수 텍스트)를 판별해 각기 안전하게 렌더 */}
                             {isHtmlContent(notice.content) ? (
                                 // 리치 에디터로 작성된 HTML 공지: XSS 제거(sanitizeHtml, jsdom 미사용) 후 .notice-content 서식 적용
                                 // ⚠️ 반드시 sanitizeHtml을 거친다 — 원문을 그대로 넣으면 XSS 위험. sanitize.ts는 sanitize-html(순수 JS)이라 500 안전.
                                 // .notice-content 는 line-height/font-size를 자체 지정하므로 글자색만 컨테이너에서 상속시킨다(라이트/다크 대응).
                                 <div
-                                    className="notice-content max-w-none text-gray-700 dark:text-gray-200 [overflow-wrap:anywhere]"
+                                    className="notice-content max-w-none text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] [overflow-wrap:anywhere]"
                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(notice.content, { linkifyTextUrls: true }) }}
                                 />
                             ) : (
                                 // 옛 순수 텍스트 공지(하위호환): 줄바꿈 유지 + URL 자동 링크(toNoticeHtml이 이미 이스케이프해 안전, sanitize 미경유 → 500 위험 없음)
                                 <div
-                                    className="max-w-none whitespace-pre-wrap text-gray-700 dark:text-gray-200 leading-loose text-[15px] md:text-base [overflow-wrap:anywhere]"
+                                    className="max-w-none whitespace-pre-wrap text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] leading-loose text-[15px] md:text-base [overflow-wrap:anywhere]"
                                     dangerouslySetInnerHTML={{ __html: toNoticeHtml(notice.content) }}
                                 />
                             )}
@@ -116,7 +125,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                                 src={a.url}
                                                 alt={a.filename || `공지 이미지 ${i + 1}`}
                                                 loading="lazy"
-                                                className="w-full rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm group-hover:shadow-md transition-shadow"
+                                                className="w-full rounded-2xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] shadow-sm group-hover:shadow-md transition-shadow"
                                             />
                                         </a>
                                     ))}
@@ -125,9 +134,9 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
                             {/* 이미지 외 첨부파일 — 다운로드 링크 */}
                             {fileAtts.length > 0 && (
-                                <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-800">
-                                    <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-4 flex items-center gap-2">
-                                        <FontFreeIcon name="attach_file" size={16} className="text-gray-400" />
+                                <div className="mt-10 pt-6 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]">
+                                    <h3 className="text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-4 flex items-center gap-2">
+                                        <FontFreeIcon name="attach_file" size={16} className="text-[var(--color-public-muted)]" />
                                         첨부파일 ({fileAtts.length}개)
                                     </h3>
                                     <div className="space-y-2">
@@ -137,14 +146,14 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                                 href={a.url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="flex items-center justify-between bg-gray-50 hover:bg-brand-orange-50 dark:bg-gray-900 dark:hover:bg-gray-800 rounded-xl px-4 py-3.5 transition-colors group"
+                                                className="flex items-center justify-between bg-[var(--color-public-tint)] hover:bg-[var(--color-public-tint)] dark:bg-[var(--color-public-paper)] dark:hover:bg-[var(--color-public-tint)] rounded-xl px-4 py-3.5 transition-colors group"
                                             >
-                                                <span className="text-sm text-gray-700 dark:text-gray-200 truncate group-hover:text-brand-orange-600 dark:group-hover:text-brand-neon-lime transition-colors">
+                                                <span className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] truncate group-hover:text-[var(--color-public-strong)] dark:group-hover:text-brand-neon-lime transition-colors">
                                                     {a.filename}
                                                 </span>
                                                 <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-                                                    <span className="text-xs text-gray-400">{formatSize(a.size)}</span>
-                                                    <FontFreeIcon name="download" size={16} className="text-gray-400 group-hover:text-brand-orange-500 dark:group-hover:text-brand-neon-lime transition-colors" />
+                                                    <span className="text-xs text-[var(--color-public-muted)]">{formatSize(a.size)}</span>
+                                                    <FontFreeIcon name="download" size={16} className="text-[var(--color-public-muted)] group-hover:text-[var(--color-public-accent)] dark:group-hover:text-brand-neon-lime transition-colors" />
                                                 </div>
                                             </a>
                                         ))}
@@ -158,7 +167,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                     <div className="mt-8 text-center">
                         <Link
                             href="/notices"
-                            className="inline-flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-brand-navy-900 text-sm font-medium transition-colors"
+                            className="inline-flex items-center gap-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] text-sm font-medium transition-colors"
                         >
                             <FontFreeIcon name="arrow_back" size={16} /> 목록으로 돌아가기
                         </Link>

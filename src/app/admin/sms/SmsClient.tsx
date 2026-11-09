@@ -4,8 +4,13 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { enqueueManualSmsBatch, getCoachPhones } from "@/app/actions/admin";
 import SmsTemplateClient from "./templates/SmsTemplateClient";
+import { PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 // 고객 안내 문자(대관 안내 등) — 미리보기 → 원장 승인 → 1건 발송 공용 부품
 import CustomerNoticeSender from "@/components/admin/CustomerNoticeSender";
+// 학부모 가입 안내 — 같은 미리보기·승인 절차, 발송은 기존 대량 발송 큐
+import ParentSignupGuideSender from "@/components/admin/ParentSignupGuideSender";
+// 학부모 공지(카톡 틀 3종·자유 공지) — 같은 미리보기·승인 절차, 받는 사람은 서버가 재원생 학부모로 계산
+import ParentNoticeSender from "@/components/admin/ParentNoticeSender";
 
 interface CoachPhone {
     id: string;
@@ -16,7 +21,8 @@ interface CoachPhone {
 
 type CenterTab = "automation" | "templates" | "history" | "manual";
 type Audience = "INTERNAL" | "EXTERNAL" | "SECURITY";
-type Channel = "ALIMTALK" | "SMS" | "LMS" | "RCS";
+// BMS = 카카오 브랜드 메시지(학부모 자유 공지, 2026-11-09) — 발송 이력에만 나온다
+type Channel = "ALIMTALK" | "SMS" | "LMS" | "RCS" | "BMS";
 
 interface AutomationRule {
     id: string;
@@ -76,9 +82,9 @@ const TABS: Array<{ id: CenterTab; label: string; icon: string }> = [
 ];
 
 const AUDIENCE_META: Record<Audience, { label: string; icon: string; className: string }> = {
-    INTERNAL: { label: "학원 내부", icon: "badge", className: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200" },
-    EXTERNAL: { label: "학원 외부", icon: "family_restroom", className: "bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-200" },
-    SECURITY: { label: "인증·보안", icon: "shield_lock", className: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-200" },
+    INTERNAL: { label: "학원 내부", icon: "badge", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
+    EXTERNAL: { label: "학원 외부", icon: "family_restroom", className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
+    SECURITY: { label: "인증·보안", icon: "shield_lock", className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" },
 };
 
 const CHANNEL_LABELS: Record<Channel, string> = {
@@ -86,6 +92,7 @@ const CHANNEL_LABELS: Record<Channel, string> = {
     SMS: "SMS",
     LMS: "LMS",
     RCS: "RCS",
+    BMS: "카카오 브랜드 메시지",
 };
 
 const SMS_ERROR_LABEL: Record<string, string> = {
@@ -104,12 +111,12 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
             <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                     {/* 영문 장식문구·설명문구 제거: 아래 4개 탭이 그대로 설명 역할 */}
-                    <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">메시지 관리</h1>
+                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">메시지 관리</h1>
                 </div>
                 <ChannelReadiness />
             </header>
 
-            <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:grid-cols-4" aria-label="메시지 관리 메뉴">
+            <nav className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-academy-line)] bg-white p-2 shadow-sm sm:grid-cols-4" aria-label="메시지 관리 메뉴">
                 {TABS.map(tab => (
                     <button
                         key={tab.id}
@@ -118,8 +125,8 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
                         aria-current={activeTab === tab.id ? "page" : undefined}
                         className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-bold transition ${
                             activeTab === tab.id
-                                ? "bg-brand-navy-900 text-white shadow-sm"
-                                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                                ? "bg-[var(--color-academy-primary-hover)] text-white shadow-sm"
+                                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                         }`}
                     >
                         <span className="material-symbols-outlined text-[19px]">{tab.icon}</span>
@@ -133,6 +140,10 @@ export default function SmsClient({ coaches: initialCoaches }: { coaches?: Coach
             {activeTab === "history" && <HistoryPanel />}
             {activeTab === "manual" && (
                 <>
+                    {/* 재원생 미가입 학부모에게 가입 안내(받는 사람은 서버가 계산) */}
+                    <ParentSignupGuidePanel />
+                    {/* 재원생 학부모 전체에게 공지(카톡 틀 = 알림톡, 자유 공지 = 브랜드 메시지 또는 문자) */}
+                    <ParentNoticePanel />
                     {/* 외부 고객용 정해진 안내(대관) — 직원 대량 발송과 분리해 위에 둔다 */}
                     <CustomerGuidePanel />
                     <ManualSendPanel initialCoaches={initialCoaches} />
@@ -163,10 +174,10 @@ function ChannelReadiness() {
     const badge = (label: string, ready: boolean) => (
         <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 ${
             ready
-                ? "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-200"
-                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+                : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
         }`}>
-            <span className={`size-2 rounded-full ${ready ? "bg-green-500" : "bg-gray-400"}`} />
+            <span className={`size-2 rounded-full ${ready ? "bg-[var(--color-academy-success)]" : "bg-[var(--color-academy-line-input)]"}`} />
             {label} {ready ? "연결됨" : "준비 필요"}
         </span>
     );
@@ -255,27 +266,27 @@ function AutomationPanel() {
                             onClick={() => setFilter(audience)}
                             className={`rounded-2xl border p-4 text-left transition ${
                                 filter === audience
-                                    ? "border-brand-orange-500 bg-white shadow-sm dark:border-brand-neon-lime dark:bg-gray-800"
-                                    : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800"
+                                    ? "border-[var(--color-academy-primary)] bg-white shadow-sm"
+                                    : "border-[var(--color-academy-line)] bg-white hover:border-[var(--color-academy-line-input)]"
                             }`}
                         >
                             <span className={`material-symbols-outlined rounded-xl p-2 ${meta.className}`}>{meta.icon}</span>
-                            <strong className="mt-3 block text-gray-900 dark:text-white">{meta.label}</strong>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">자동 발송 {count}개</span>
+                            <strong className="mt-3 block text-[var(--color-academy-ink)]">{meta.label}</strong>
+                            <span className="text-xs text-[var(--color-academy-muted)]">자동 발송 {count}개</span>
                         </button>
                     );
                 })}
             </div>
 
-            {notice && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">{notice}</p>}
+            {notice && <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">{notice}</p>}
 
             <div className="space-y-3">
-                {loading && <p className="rounded-2xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800">자동 발송 설정을 불러오는 중입니다.</p>}
+                {loading && <p className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center text-sm text-[var(--color-academy-muted)]">자동 발송 설정을 불러오는 중입니다.</p>}
                 {!loading && loadFailed && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-center dark:border-red-900 dark:bg-red-950/30">
-                        <span className="material-symbols-outlined text-3xl text-red-500">error</span>
-                        <p className="mt-2 text-sm font-bold text-red-700 dark:text-red-200">실제 설정을 확인할 수 없습니다.</p>
-                        <button type="button" onClick={loadRules} className="mt-3 min-h-11 rounded-xl bg-brand-navy-900 px-5 text-sm font-bold text-white">
+                    <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-5 text-center">
+                        <span className="material-symbols-outlined text-3xl text-[var(--color-academy-danger)]">error</span>
+                        <p className="mt-2 text-sm font-bold text-[var(--color-academy-danger)]">실제 설정을 확인할 수 없습니다.</p>
+                        <button type="button" onClick={loadRules} className="mt-3 min-h-11 rounded-xl bg-[var(--color-academy-primary-hover)] px-5 text-sm font-bold text-white">
                             다시 불러오기
                         </button>
                     </div>
@@ -291,26 +302,26 @@ function AutomationPanel() {
 function AutomationCard({ rule, disabled, onUpdate }: { rule: AutomationRule; disabled: boolean; onUpdate: (patch: Partial<AutomationRule>) => void }) {
     const meta = AUDIENCE_META[rule.audience];
     return (
-        <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <article className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${meta.className}`}>{meta.label}</span>
-                        {rule.locked && <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-200"><span className="material-symbols-outlined text-[14px]">lock</span>필수 발송</span>}
-                        {!rule.configured && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 dark:bg-amber-950/30 dark:text-amber-200">채널 연결 필요</span>}
+                        {rule.locked && <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-[14px]">lock</span>필수 발송</span>}
+                        {!rule.configured && <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-academy-warning)]">채널 연결 필요</span>}
                     </div>
-                    <h2 className="mt-2 font-extrabold text-gray-900 dark:text-white">{rule.name}</h2>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{rule.description}</p>
+                    <h2 className="mt-2 font-extrabold text-[var(--color-academy-ink)]">{rule.name}</h2>
+                    <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{rule.description}</p>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3 xl:w-[520px]">
-                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">
                         우선 채널
                         <select
                             value={rule.primaryChannel}
                             disabled={disabled || rule.locked}
                             onChange={event => onUpdate({ primaryChannel: event.target.value as Channel })}
-                            className="mt-1 block min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                            className="mt-1 block min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-semibold text-[var(--color-academy-ink)] disabled:opacity-60"
                         >
                             <option value="ALIMTALK">카카오 알림톡 · 13원</option>
                             <option value="SMS">SMS · 18원</option>
@@ -318,13 +329,13 @@ function AutomationCard({ rule, disabled, onUpdate }: { rule: AutomationRule; di
                             <option value="RCS">RCS · 13원~</option>
                         </select>
                     </label>
-                    <label className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                    <label className="text-xs font-bold text-[var(--color-academy-muted)]">
                         실패 시 대체
                         <select
                             value={rule.fallbackChannel}
                             disabled={disabled || rule.locked}
                             onChange={event => onUpdate({ fallbackChannel: event.target.value as AutomationRule["fallbackChannel"] })}
-                            className="mt-1 block min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-800 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                            className="mt-1 block min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-semibold text-[var(--color-academy-ink)] disabled:opacity-60"
                         >
                             <option value="NONE">대체 안 함</option>
                             <option value="SMS">SMS</option>
@@ -333,8 +344,8 @@ function AutomationCard({ rule, disabled, onUpdate }: { rule: AutomationRule; di
                     </label>
                     <div className="flex items-end justify-between gap-3">
                         <div className="pb-1">
-                            <span className="block text-xs font-bold text-gray-500 dark:text-gray-400">예상 단가</span>
-                            <strong className="text-base text-gray-900 dark:text-white">{rule.estimatedUnitCost}원~/건</strong>
+                            <span className="block text-xs font-bold text-[var(--color-academy-muted)]">예상 단가</span>
+                            <strong className="text-base text-[var(--color-academy-ink)]">{rule.estimatedUnitCost}원~/건</strong>
                         </div>
                         <button
                             type="button"
@@ -344,7 +355,7 @@ function AutomationCard({ rule, disabled, onUpdate }: { rule: AutomationRule; di
                             title={rule.locked ? "인증·보안 알림은 끌 수 없습니다." : undefined}
                             disabled={disabled || rule.locked}
                             onClick={() => onUpdate({ isActive: !rule.isActive })}
-                            className={`relative mb-1 h-7 w-12 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${rule.isActive ? "bg-brand-orange-500 dark:bg-brand-neon-lime" : "bg-gray-300 dark:bg-gray-600"}`}
+                            className={`relative mb-1 h-7 w-12 rounded-full transition disabled:cursor-not-allowed disabled:opacity-70 ${rule.isActive ? "bg-[var(--color-academy-primary)]" : "bg-[var(--color-academy-line-input)]"}`}
                         >
                             <span className={`absolute top-1 size-5 rounded-full bg-white shadow transition ${rule.isActive ? "left-6" : "left-1"}`} />
                         </button>
@@ -375,52 +386,52 @@ function HistoryPanel() {
     }, []);
 
     return (
-        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="border-b border-gray-200 p-5 dark:border-gray-700">
-                <h2 className="font-extrabold text-gray-900 dark:text-white">최근 발송 이력</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">전화번호는 개인정보 보호를 위해 일부만 표시합니다.</p>
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white shadow-sm">
+            <div className="border-b border-[var(--color-academy-line)] p-5">
+                <h2 className="font-extrabold text-[var(--color-academy-ink)]">최근 발송 이력</h2>
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">전화번호는 개인정보 보호를 위해 일부만 표시합니다.</p>
             </div>
             {!loaded && !loading ? (
                 <div className="p-12 text-center">
-                    <span className="material-symbols-outlined text-4xl text-gray-300">history</span>
-                    <p className="mt-2 font-bold text-gray-700 dark:text-gray-200">발송 이력은 필요할 때만 불러옵니다.</p>
-                    <button type="button" onClick={loadHistory} className="mt-4 min-h-11 rounded-xl bg-brand-navy-900 px-5 text-sm font-bold text-white">
+                    <span className="material-symbols-outlined text-4xl text-[var(--color-academy-faint)]">history</span>
+                    <p className="mt-2 font-bold text-[var(--color-academy-muted)]">발송 이력은 필요할 때만 불러옵니다.</p>
+                    <button type="button" onClick={loadHistory} className="mt-4 min-h-11 rounded-xl bg-[var(--color-academy-primary-hover)] px-5 text-sm font-bold text-white">
                         최근 50건 불러오기
                     </button>
                 </div>
             ) : loading ? (
-                <p className="p-10 text-center text-sm text-gray-500">발송 이력을 불러오는 중입니다.</p>
+                <p className="p-10 text-center text-sm text-[var(--color-academy-muted)]">발송 이력을 불러오는 중입니다.</p>
             ) : items.length === 0 ? (
                 <div className="p-12 text-center">
-                    <span className="material-symbols-outlined text-4xl text-gray-300">history</span>
-                    <p className="mt-2 font-bold text-gray-700 dark:text-gray-200">표시할 발송 이력이 없습니다.</p>
+                    <span className="material-symbols-outlined text-4xl text-[var(--color-academy-faint)]">history</span>
+                    <p className="mt-2 font-bold text-[var(--color-academy-muted)]">표시할 발송 이력이 없습니다.</p>
                     {/* 실제로는 조회가 정상 동작하고 단순히 0건인 상태이므로 사실에 맞게 표기 */}
-                    <p className="mt-1 text-sm text-gray-500">문자를 발송하면 성공·실패 결과가 여기에 표시됩니다.</p>
+                    <p className="mt-1 text-sm text-[var(--color-academy-muted)]">문자를 발송하면 성공·실패 결과가 여기에 표시됩니다.</p>
                 </div>
             ) : (
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[980px] text-left text-sm">
-                        <thead className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs text-[var(--color-academy-muted)]">
                             <tr><th className="px-5 py-3">발송 시각</th><th className="px-5 py-3">알림</th><th className="px-5 py-3">출처</th><th className="px-5 py-3">구분</th><th className="px-5 py-3">실제 채널</th><th className="px-5 py-3">수신자</th><th className="px-5 py-3">결과·사유</th></tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody className="divide-y divide-[var(--color-academy-line)]">
                             {items.map(item => (
                                 <tr key={item.id}>
-                                    <td className="px-5 py-4 text-gray-500">{item.sentAt}</td>
-                                    <td className="px-5 py-4 font-bold text-gray-900 dark:text-white">{item.name}</td>
+                                    <td className="px-5 py-4 text-[var(--color-academy-muted)]">{item.sentAt}</td>
+                                    <td className="px-5 py-4 font-bold text-[var(--color-academy-ink)]">{item.name}</td>
                                     <td className="px-5 py-4">{item.source === "MANUAL" ? "수동" : item.source === "SECURITY" ? "보안" : "자동"}</td>
                                     <td className="px-5 py-4">{AUDIENCE_META[item.audience]?.label ?? item.audience}</td>
                                     <td className="px-5 py-4">
                                         <span>{CHANNEL_LABELS[item.channel] ?? item.channel}</span>
                                         {item.requestedChannel && item.requestedChannel !== item.channel && (
-                                            <span className="mt-1 block text-xs text-gray-400">
+                                            <span className="mt-1 block text-xs text-[var(--color-academy-faint)]">
                                                 요청 {CHANNEL_LABELS[item.requestedChannel] ?? item.requestedChannel}
                                             </span>
                                         )}
-                                        {item.fallbackUsed && <span className="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">대체 발송</span>}
-                                        {item.provider && <span className="mt-1 block text-xs text-gray-400">{item.provider}</span>}
+                                        {item.fallbackUsed && <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1.5 py-0.5 text-[11px] font-bold text-[var(--color-academy-warning)]">대체 발송</span>}
+                                        {item.provider && <span className="mt-1 block text-xs text-[var(--color-academy-faint)]">{item.provider}</span>}
                                         {item.unitCost !== null && item.unitCost !== undefined && (
-                                            <span className="mt-1 block text-xs text-gray-400">
+                                            <span className="mt-1 block text-xs text-[var(--color-academy-faint)]">
                                                 {item.unitCost.toLocaleString("ko-KR")} {item.currency === "KRW" ? "원" : item.currency}
                                             </span>
                                         )}
@@ -428,7 +439,7 @@ function HistoryPanel() {
                                     <td className="px-5 py-4">{item.recipient}</td>
                                     <td className="px-5 py-4">
                                         <DeliveryBadge status={item.status} />
-                                        {item.errorCode && <span className="mt-1 block text-xs text-red-600">{SMS_ERROR_LABEL[item.errorCode] ?? "발송 오류 — 솔라피 이력 확인 필요"}</span>}
+                                        {item.errorCode && <span className="mt-1 block text-xs text-[var(--color-academy-danger)]">{SMS_ERROR_LABEL[item.errorCode] ?? "발송 오류 — 솔라피 이력 확인 필요"}</span>}
                                     </td>
                                 </tr>
                             ))}
@@ -443,12 +454,12 @@ function HistoryPanel() {
 function DeliveryBadge({ status }: { status: DeliveryHistory["status"] }) {
     const labels = { SENT: "발송 완료", FAILED: "실패", PENDING: "대기", SENDING: "발송 중", UNCERTAIN: "확인 필요", SKIPPED: "미발송" };
     const colors = {
-        SENT: "bg-green-50 text-green-700",
-        FAILED: "bg-red-50 text-red-700",
-        PENDING: "bg-blue-50 text-blue-700",
-        SENDING: "bg-amber-50 text-amber-700",
-        UNCERTAIN: "bg-amber-50 text-amber-700",
-        SKIPPED: "bg-gray-100 text-gray-600",
+        SENT: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]",
+        FAILED: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]",
+        PENDING: "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]",
+        SENDING: "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]",
+        UNCERTAIN: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
+        SKIPPED: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
     };
     return <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${colors[status]}`}>{labels[status]}</span>;
 }
@@ -477,7 +488,8 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
         if (mode === "select") return coaches.filter(coach => selectedIds.has(coach.id)).map(coach => coach.phone);
         return manualNumbers.split(/[,;\n]+/).map(value => value.trim().replace(/\D/g, "")).filter(value => value.length >= 10);
     }, [coaches, manualNumbers, mode, selectedIds]);
-    const bytes = new TextEncoder().encode(`[STIZ] ${message}`).length;
+    // 발송부(sendManualSms·enqueueManualSmsBatch)가 붙이는 머리말과 같은 글자로 길이를 잰다
+    const bytes = new TextEncoder().encode(`${PARENT_MESSAGE_PREFIX} ${message}`).length;
     const acceptedCount = batch?.accepted ?? batch?.recipients?.filter(item => item.providerStatus === "ACCEPTED").length ?? 0;
     const batchIsActive = batch?.status === "PENDING" || batch?.status === "PROCESSING" || Boolean(batch?.pending) || Boolean(batch?.processing) || acceptedCount > 0;
 
@@ -548,22 +560,22 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
 
     return (
         <section className="grid gap-5 lg:grid-cols-[1fr_1.15fr]">
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <h2 className="font-extrabold text-gray-900 dark:text-white">수신자 선택</h2>
+            <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+                <h2 className="font-extrabold text-[var(--color-academy-ink)]">수신자 선택</h2>
                 <div className="mt-4 grid grid-cols-3 gap-2">
                     {[
                         { id: "all" as const, label: "전체 직원" },
                         { id: "select" as const, label: "직원 선택" },
                         { id: "manual" as const, label: "직접 입력" },
                     ].map(option => (
-                        <button key={option.id} type="button" disabled={batchIsActive} onClick={() => { setMode(option.id); resetRequest(); }} className={`min-h-11 rounded-xl px-2 text-sm font-bold disabled:opacity-40 ${mode === option.id ? "bg-brand-navy-900 text-white" : "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-200"}`}>{option.label}</button>
+                        <button key={option.id} type="button" disabled={batchIsActive} onClick={() => { setMode(option.id); resetRequest(); }} className={`min-h-11 rounded-xl px-2 text-sm font-bold disabled:opacity-40 ${mode === option.id ? "bg-[var(--color-academy-primary-hover)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{option.label}</button>
                     ))}
                 </div>
-                {mode === "all" && <p className="mt-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">연락처가 등록된 직원 <strong>{coaches.length}명</strong>에게 발송합니다.</p>}
+                {mode === "all" && <p className="mt-4 rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm text-[var(--color-academy-muted)]">연락처가 등록된 직원 <strong>{coaches.length}명</strong>에게 발송합니다.</p>}
                 {mode === "select" && (
                     <div className="mt-4 max-h-72 space-y-1 overflow-auto">
                         {coaches.map(coach => (
-                            <label key={coach.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <label key={coach.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 hover:bg-[var(--color-academy-soft)]">
                                 <input
                                     type="checkbox"
                                     disabled={batchIsActive}
@@ -576,60 +588,87 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
                                     })}
                                     className="size-4"
                                 />
-                                <span className="font-bold text-gray-800 dark:text-gray-100">{coach.name}</span>
-                                <span className="ml-auto text-xs text-gray-500">{coach.role}</span>
+                                <span className="font-bold text-[var(--color-academy-ink)]">{coach.name}</span>
+                                <span className="ml-auto text-xs text-[var(--color-academy-muted)]">{coach.role}</span>
                             </label>
                         ))}
                     </div>
                 )}
-                {mode === "manual" && <textarea disabled={batchIsActive} value={manualNumbers} onChange={event => { setManualNumbers(event.target.value); resetRequest(); }} rows={7} placeholder={"010-1234-5678\n010-9876-5432"} className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />}
+                {mode === "manual" && <textarea disabled={batchIsActive} value={manualNumbers} onChange={event => { setManualNumbers(event.target.value); resetRequest(); }} rows={7} placeholder={"010-1234-5678\n010-9876-5432"} className="mt-4 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm disabled:opacity-60" />}
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <h2 className="font-extrabold text-gray-900 dark:text-white">메시지 작성</h2>
-                <textarea disabled={batchIsActive} value={message} onChange={event => { setMessage(event.target.value); resetRequest(); }} rows={9} maxLength={1000} placeholder="보낼 메시지를 입력하세요." className="mt-4 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
-                <div className="mt-2 flex justify-between text-xs text-gray-500">
-                    <span>발송할 때 [STIZ]가 자동으로 붙습니다.</span>
+            <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+                <h2 className="font-extrabold text-[var(--color-academy-ink)]">메시지 작성</h2>
+                <textarea disabled={batchIsActive} value={message} onChange={event => { setMessage(event.target.value); resetRequest(); }} rows={9} maxLength={1000} placeholder="보낼 메시지를 입력하세요." className="mt-4 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm disabled:opacity-60" />
+                <div className="mt-2 flex justify-between text-xs text-[var(--color-academy-muted)]">
+                    <span>발송할 때 {PARENT_MESSAGE_PREFIX}가 자동으로 붙습니다.</span>
                     <strong>{bytes}바이트 · {bytes > 90 ? "LMS" : "SMS"}</strong>
                 </div>
                 {batch && (
                     <div className="mt-4 space-y-3">
-                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30">
-                            <p className="text-sm font-bold text-blue-800 dark:text-blue-200">대량 발송 진행 상황</p>
+                        <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
+                            <p className="text-sm font-bold text-[var(--color-academy-ink)]">대량 발송 진행 상황</p>
                             <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs sm:grid-cols-7">
                                 {[["전체", batch.total], ["대기", batch.pending], ["전송 요청 중", batch.processing], ["솔라피 접수", acceptedCount], ["최종 성공", batch.success], ["실패", batch.failed], ["확인 필요", batch.uncertain]].map(([label, value]) => (
-                                    <span key={label} className="rounded-lg bg-white p-2 dark:bg-gray-900"><strong className="block text-base text-gray-900 dark:text-white">{value}</strong>{label}</span>
+                                    <span key={label} className="rounded-lg bg-white p-2"><strong className="block text-base text-[var(--color-academy-ink)]">{value}</strong>{label}</span>
                                 ))}
                             </div>
-                            {acceptedCount > 0 && <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">솔라피 접수는 솔라피가 요청을 받은 단계이며, 학부모 휴대폰의 최종 발송 성공과는 다릅니다. 최종 결과를 확인하고 있습니다.</p>}
-                            {batchIsActive && <p className="mt-2 text-xs font-bold text-blue-700 dark:text-blue-300">화면을 닫지 마세요. 2.5초마다 진행 상황을 확인하고 있습니다.</p>}
+                            {acceptedCount > 0 && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">솔라피 접수는 솔라피가 요청을 받은 단계이며, 학부모 휴대폰의 최종 발송 성공과는 다릅니다. 최종 결과를 확인하고 있습니다.</p>}
+                            {batchIsActive && <p className="mt-2 text-xs font-bold text-[var(--color-academy-muted)]">화면을 닫지 마세요. 2.5초마다 진행 상황을 확인하고 있습니다.</p>}
                         </div>
                         {batch.uncertain > 0 && (
-                            <p role="alert" className="flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                            <p role="alert" className="flex gap-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">
                                 <span className="material-symbols-outlined text-[19px]">warning</span>
                                 발송 여부를 확인할 수 없는 {batch.uncertain}건과 처리 중인 문자는 재발송할 수 없습니다. 발송 이력에서 먼저 확인해 주세요.
                             </p>
                         )}
                         {batch.recipients && batch.recipients.length > 0 && (
-                            <ul className="max-h-40 space-y-1 overflow-auto rounded-xl border border-gray-200 p-2 text-xs dark:border-gray-700">
+                            <ul className="max-h-40 space-y-1 overflow-auto rounded-xl border border-[var(--color-academy-line)] p-2 text-xs">
                                 {batch.recipients.map(item => (
                                     <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5">
-                                        <span className="text-gray-600 dark:text-gray-300">수신자 {item.recipient}</span>
-                                        <strong className={item.status === "FAILED" ? "text-red-600" : item.status === "UNCERTAIN" || item.status === "SENDING" ? "text-amber-700 dark:text-amber-300" : item.status === "SENT" ? "text-green-700 dark:text-green-300" : "text-blue-700 dark:text-blue-300"}>
+                                        <span className="text-[var(--color-academy-muted)]">수신자 {item.recipient}</span>
+                                        <strong className={item.status === "FAILED" ? "text-[var(--color-academy-danger)]" : item.status === "UNCERTAIN" || item.status === "SENDING" ? "text-[var(--color-academy-warning)]" : item.status === "SENT" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-muted)]"}>
                                             {item.status === "SENT" ? "최종 성공" : item.status === "FAILED" ? "실패" : item.status === "UNCERTAIN" ? "확인 필요" : item.providerStatus === "ACCEPTED" ? "솔라피 접수" : item.status === "SENDING" ? "전송 요청 중" : "대기"}
                                         </strong>
                                     </li>
                                 ))}
                             </ul>
                         )}
-                        {batch.failed > 0 && !batchIsActive && <p className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">실패 {batch.failed}건은 발송 이력에서 대상을 확인한 뒤 새 배치로만 재접수할 수 있습니다.</p>}
+                        {batch.failed > 0 && !batchIsActive && <p className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">실패 {batch.failed}건은 발송 이력에서 대상을 확인한 뒤 새 배치로만 재접수할 수 있습니다.</p>}
                     </div>
                 )}
-                {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-                <button type="button" onClick={() => send()} disabled={pending || batchIsActive || !recipients.length || !message.trim()} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-navy-900 font-bold text-white disabled:opacity-40">
+                {error && <p className="mt-4 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+                <button type="button" onClick={() => send()} disabled={pending || batchIsActive || !recipients.length || !message.trim()} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-academy-primary-hover)] font-bold text-white disabled:opacity-40">
                     <span className="material-symbols-outlined text-[19px]">send</span>
                     {pending ? "대량 발송 접수 중..." : batchIsActive ? "대량 발송 처리 중" : `${recipients.length}명 대량 발송 접수`}
                 </button>
+            </div>
+        </section>
+    );
+}
+
+/** 학부모 공지 보내기 — 카톡 틀(휴무·행사·월 안내)은 변수 칸만, 자유 공지는 본문만 쓴다 */
+function ParentNoticePanel() {
+    return (
+        <section className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+            <h2 className="font-extrabold text-[var(--color-academy-ink)]">학부모 공지 보내기</h2>
+            <div className="mt-3 max-w-2xl">
+                <ParentNoticeSender />
+            </div>
+        </section>
+    );
+}
+
+/**
+ * 학부모 가입 안내 보내기 — 재원생 학부모 중 계정이 없는 분께 가입 링크를 한 번에.
+ * 받는 사람은 서버가 계산하고, 미리보기(받는 사람 N명·처음 몇 명) → 원장 확인 뒤에만 접수된다.
+ */
+function ParentSignupGuidePanel() {
+    return (
+        <section className="mb-4 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+            <h2 className="font-extrabold text-[var(--color-academy-ink)]">학부모 가입 안내 보내기</h2>
+            <div className="mt-3 max-w-md">
+                <ParentSignupGuideSender />
             </div>
         </section>
     );
@@ -641,8 +680,8 @@ function ManualSendPanel({ initialCoaches }: { initialCoaches?: CoachPhone[] }) 
  */
 function CustomerGuidePanel() {
     return (
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <h2 className="font-extrabold text-gray-900 dark:text-white">대관 안내 보내기</h2>
+        <section className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+            <h2 className="font-extrabold text-[var(--color-academy-ink)]">대관 안내 보내기</h2>
             <div className="mt-3 max-w-md">
                 <CustomerNoticeSender
                     kind="RENTAL_GUIDE"

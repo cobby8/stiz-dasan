@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { CHART_COLORS } from "./chartColors";
 
 // 막대 그래프 컴포넌트 — 반별 정원, 코치 워크로드 등에 사용
 // 순수 SVG로 구현, 호버 시 값 표시
 interface BarChartProps {
     data: { label: string; value: number; max?: number }[];
-    color?: string;        // 막대 색상 (hex)
+    color?: string;        // 막대 색상 (CHART_COLORS 값)
     height?: number;       // SVG 높이 (px)
     unit?: string;         // 값 뒤 단위
     showMax?: boolean;     // max 값 표시 여부 (정원 대비 등)
@@ -14,7 +15,7 @@ interface BarChartProps {
 
 export default function BarChart({
     data,
-    color = "#3b82f6",    // 기본: blue-500
+    color = CHART_COLORS.bar, // 기본: 중간 회색(뜻 없는 계열)
     height = 200,
     unit = "",
     showMax = false,
@@ -22,7 +23,7 @@ export default function BarChart({
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
     if (data.length === 0) {
-        return <p className="text-sm text-gray-400 py-8 text-center">데이터가 없습니다</p>;
+        return <p className="text-sm text-[var(--color-academy-faint)] py-8 text-center">데이터가 없습니다</p>;
     }
 
     // SVG 레이아웃
@@ -55,7 +56,7 @@ export default function BarChart({
                         y1={y}
                         x2={width - padding.right}
                         y2={y}
-                        stroke="#e5e7eb"
+                        stroke={CHART_COLORS.grid}
                         strokeWidth="1"
                         strokeDasharray="4 4"
                     />
@@ -86,7 +87,7 @@ export default function BarChart({
                                 width={barWidth}
                                 height={maxH}
                                 rx={4}
-                                fill="#f3f4f6"
+                                fill={CHART_COLORS.track}
                             />
                         )}
 
@@ -111,7 +112,7 @@ export default function BarChart({
                                     width="60"
                                     height="20"
                                     rx="4"
-                                    fill="#1f2937"
+                                    fill={CHART_COLORS.tooltip}
                                     opacity="0.9"
                                 />
                                 <text
@@ -132,7 +133,7 @@ export default function BarChart({
                             x={x + barWidth / 2}
                             y={height - 6}
                             textAnchor="middle"
-                            fill="#9ca3af"
+                            fill={CHART_COLORS.axis}
                             fontSize="10"
                         >
                             {d.label}

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
+import { SHUTTLE_PLACE_NAME_MAX, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
 
 export const REGULAR_LOCATION_PURPOSE = "REGULAR_SHUTTLE_LOCATION" as const;
 const LOCATION_SOURCES = new Set(["MAP_PIN", "SEARCH", "CURRENT_LOCATION"]);
@@ -49,8 +50,11 @@ export function validateRegularLocation(value: unknown): RegularLocationInput {
   const longitude = numberInRange(raw.longitude, -180, 180, "경도");
   const address = text(raw.address, 300);
   const roadAddress = text(raw.roadAddress, 300);
-  const name = text(raw.name, 150) ?? roadAddress ?? address;
-  if (!address && !roadAddress && !name) throw new RegularLocationLinkError("위치 주소가 필요합니다.", 400, "ADDRESS_REQUIRED");
+  // 장소명 필수(2026-11-09 원장 지시) — 기사님 명단·배차 정류장 이름이 이 값이라 주소로 대신 채우지 않는다.
+  // 이미 저장된 옛 위치(이름 없음)는 읽기·표시만 그대로 되고, 다시 저장할 때 이름을 적어야 한다.
+  const name = text(raw.name, SHUTTLE_PLACE_NAME_MAX);
+  if (!name) throw new RegularLocationLinkError(SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE, 400, "PLACE_NAME_REQUIRED");
+  if (!address && !roadAddress) throw new RegularLocationLinkError("위치 주소가 필요합니다.", 400, "ADDRESS_REQUIRED");
   const source = text(raw.source, 30);
   if (!source || !LOCATION_SOURCES.has(source)) throw new RegularLocationLinkError("위치 선택 방식을 확인해 주세요.", 400, "INVALID_SOURCE");
   const accuracyMeters = raw.accuracyMeters == null ? null : numberInRange(raw.accuracyMeters, 0, 100_000, "위치 정확도");

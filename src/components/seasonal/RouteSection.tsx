@@ -623,13 +623,13 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         {canMove && (
           <select value="" onChange={(e) => { if (e.target.value !== "") moveStudent(vIdx, sIdx, i, Number(e.target.value)); }}
             aria-label={`${name} 학생만 다른 차량으로 이동`} title="이 학생만 다른 차량으로"
-            className="w-6 cursor-pointer appearance-none rounded border border-gray-200 bg-white text-center text-[10px] font-black text-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">
+            className="w-6 cursor-pointer appearance-none rounded border border-[var(--color-academy-line)] bg-white text-center text-[10px] font-black text-[var(--color-academy-muted)]">
             <option value="">⇄</option>
             {sug.vehicles.map((ov, oi) => oi === vIdx ? null : <option key={oi} value={oi}>{vehicleOptionLabel(ov)}</option>)}
           </select>
         )}
         <button type="button" draggable={false} onClick={() => removeStudent(vIdx, sIdx, i)} aria-label={`${name} 학생을 이 노선에서 빼기`} title="이 노선에서 빼기"
-          className="grid h-4 w-4 place-items-center rounded text-[11px] font-black leading-none text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30">×</button>
+          className="grid h-4 w-4 place-items-center rounded text-[11px] font-black leading-none text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-danger-soft)] hover:text-[var(--color-academy-danger)]">×</button>
       </span>
     );
   }
@@ -646,15 +646,15 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
 
   // 좌표 누락 학생 안내 — 방학특강은 기존 자리(지도 아래), 시간순 모드는 그 방향 저장 바 안에 둔다.
   const unassignedNode = sug.unassigned.length > 0 && (
-    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+    <div className="mt-3 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[12.5px] font-black text-amber-800 dark:text-amber-200">⚠ 좌표가 없어 배차하지 못한 학생 {sug.unassigned.length}명</div>
-        {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg bg-amber-700 px-3 py-1.5 text-xs font-black text-white">좌표 설정으로 이동</a>}
+        <div className="text-[12.5px] font-black text-[var(--color-academy-warning)]">⚠ 좌표가 없어 배차하지 못한 학생 {sug.unassigned.length}명</div>
+        {!rosterEditable && <a href="#regular-stop-coordinate-setup" className="rounded-lg bg-[var(--color-academy-warning)] px-3 py-1.5 text-xs font-black text-white">좌표 설정으로 이동</a>}
       </div>
       {rosterEditable ? (
-        <div className="mt-1 text-[12px] text-amber-700 dark:text-amber-200">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div>
+        <div className="mt-1 text-[12px] text-[var(--color-academy-warning)]">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div>
       ) : (
-        <details className="mt-2 text-[12px] text-amber-700 dark:text-amber-200"><summary className="cursor-pointer font-bold">누락 학생 확인</summary><div className="mt-1">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div></details>
+        <details className="mt-2 text-[12px] text-[var(--color-academy-warning)]"><summary className="cursor-pointer font-bold">누락 학생 확인</summary><div className="mt-1">{sug.unassigned.map((u) => `${u.name}(${u.label ?? "위치없음"})`).join(", ")}</div></details>
       )}
     </div>
   );
@@ -664,7 +664,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
   function wrapControls(node: ReactNode) {
     if (!timeOrdered) return node;
     return (
-      <div style={{ order: isPickup ? -2 : -1 }} className="w-full rounded-2xl border border-[var(--color-academy-line)] bg-white p-3 lg:w-[calc(50%-0.375rem)] dark:border-gray-700 dark:bg-gray-800">
+      <div style={{ order: isPickup ? -2 : -1 }} className="w-full rounded-2xl border border-[var(--color-academy-line)] bg-white p-3 lg:w-[calc(50%-0.375rem)]">
         {node}
         {unassignedNode}
       </div>
@@ -672,42 +672,42 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
   }
 
   return (
-    <section className={timeOrdered ? "contents" : "rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"}>
+    <section className={timeOrdered ? "contents" : "rounded-2xl border border-[var(--color-academy-line)] bg-white p-3"}>
       {wrapControls(<>
       {/* 섹션 헤더: 시간 · 방향 */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 dark:border-gray-700">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-academy-line)] pb-2">
         <div className="flex items-center gap-2">
-          <span className={`grid h-8 w-8 place-items-center rounded-xl text-lg ${isPickup ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200" : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"}`}>{isPickup ? "⬆" : "⬇"}</span>
+          <span className={`grid h-8 w-8 place-items-center rounded-xl text-lg ${isPickup ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" : "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"}`}>{isPickup ? "⬆" : "⬇"}</span>
           <div>
             {/* 시간순 모드: 회차 카드는 아래 시간순 목록에 있으므로 이 바는 «어느 방향을 저장하는지»만 분명히 한다 */}
             {timeOrdered
-              ? <p className="text-[15px] font-black text-gray-900 dark:text-white">{dirLabel} 노선 · 회차 {sug.vehicles.length}개</p>
-              : <p className="text-[15px] font-black text-gray-900 dark:text-white">{sectionTime ?? "-"} · {isPickup ? "등원" : "하원"}</p>}
-            <p className="text-[11.5px] font-bold text-gray-500">{sug.timeGroups && sug.timeGroups.length > 1 ? `${sug.timeGroups.length}개 수업시간` : `${sug.classStart ?? "-"}${sug.classEnd ? `~${sug.classEnd}` : ""} 수업`} · 탑승 {sug.totalRiders}명{rerouting ? " · 🔄 경로 재계산…" : ""}</p>
+              ? <p className="text-[15px] font-black text-[var(--color-academy-ink)]">{dirLabel} 노선 · 회차 {sug.vehicles.length}개</p>
+              : <p className="text-[15px] font-black text-[var(--color-academy-ink)]">{sectionTime ?? "-"} · {isPickup ? "등원" : "하원"}</p>}
+            <p className="text-[11.5px] font-bold text-[var(--color-academy-muted)]">{sug.timeGroups && sug.timeGroups.length > 1 ? `${sug.timeGroups.length}개 수업시간` : `${sug.classStart ?? "-"}${sug.classEnd ? `~${sug.classEnd}` : ""} 수업`} · 탑승 {sug.totalRiders}명{rerouting ? " · 🔄 경로 재계산…" : ""}</p>
           </div>
         </div>
         <div className={`flex items-center gap-1.5 print:hidden${timeOrdered ? " flex-wrap" : ""}`}>
-          {regularEditing && dirty && <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-black text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">● 저장 안 됨</span>}
+          {regularEditing && dirty && <span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-[11px] font-black text-[var(--color-academy-warning)]">● 저장 안 됨</span>}
           <button onClick={() => {
             // 정규 모드: 저장본을 보고 있거나 손편집이 있으면 덮어쓰기 전에 확인한다.
             if (regularEditing && (loadedFromSaved || dirty) && !window.confirm("손으로 고친 순서·시각·배정이 사라집니다. 계속할까요?")) return;
             setLoadedFromSaved(false); setSaveMsg(null); void generate(date);
-          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className={`rounded-lg bg-brand-navy-900 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900${tlBtn}`}>{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
+          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className={`rounded-lg bg-[var(--color-academy-primary-hover)] px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
           {/* 시간순 모드: 등원·하원 카드가 한 목록에 섞이므로 저장 버튼에 방향을 적어 «무엇을 저장하는지» 분명히 한다 */}
-          <button onClick={saveRoute} disabled={saving || saveBlocked || sug.vehicles.length === 0} className={`rounded-lg bg-brand-orange-500 px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{saving ? "저장 중…" : timeOrdered ? `💾 ${dirLabel} 저장` : "💾 저장"}</button>
-          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className={`rounded-lg border border-blue-300 px-2.5 py-1.5 text-[12px] font-black text-blue-700 disabled:opacity-50 dark:border-blue-500/40 dark:text-blue-300${tlBtn}`}>{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
-          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className={`rounded-lg border border-red-300 px-2.5 py-1.5 text-[12px] font-black text-red-600 disabled:opacity-50 dark:border-red-500/40 dark:text-red-300${tlBtn}`}>{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
+          <button onClick={saveRoute} disabled={saving || saveBlocked || sug.vehicles.length === 0} className={`rounded-lg bg-[var(--color-academy-primary)] px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{saving ? "저장 중…" : timeOrdered ? `💾 ${dirLabel} 저장` : "💾 저장"}</button>
+          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className={`rounded-lg border border-[var(--color-academy-line-input)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-muted)] disabled:opacity-50${tlBtn}`}>{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
+          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className={`rounded-lg border border-[var(--color-academy-danger)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-danger)] disabled:opacity-50${tlBtn}`}>{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
         </div>
       </div>
 
       {!routeReady && <button type="button" onClick={() => void switchTo(date)} disabled={loading} className="rounded-lg border px-3 py-2 text-sm font-bold">다시 불러오기</button>}
-      {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">⚠ {err}</p>}
-      {loadedFromSaved && <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-[11.5px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200">💾 저장된 노선{savedAt ? ` · ${fmtSaved(savedAt)} 저장` : ""}</p>}
-      {saveMsg && <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-[11.5px] font-bold text-green-700 dark:bg-green-900/30 dark:text-green-200">✓ {saveMsg}</p>}
+      {err && <p className="mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {err}</p>}
+      {loadedFromSaved && <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-[11.5px] font-bold text-[var(--color-academy-muted)]">💾 저장된 노선{savedAt ? ` · ${fmtSaved(savedAt)} 저장` : ""}</p>}
+      {saveMsg && <p className="mt-2 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-[11.5px] font-bold text-[var(--color-academy-success)]">✓ {saveMsg}</p>}
 
       {/* 위치 미세조정 자동 반영 안내 — 좌표가 바뀐 학생의 경로만 자동 갱신됐다. 배정·순서는 그대로. */}
       {relocatedCount > 0 && (
-        <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-[11.5px] font-bold text-blue-700 dark:bg-blue-900/30 dark:text-blue-200 print:hidden">
+        <p className="mt-2 rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-[11.5px] font-bold text-[var(--color-academy-muted)] print:hidden">
           📍 위치 변경 {relocatedCount}명 · 배정과 순서는 유지했습니다. 확인 후 <b>저장</b>해 주세요.
         </p>
       )}
@@ -715,29 +715,29 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       {/* 신규·복귀자 추천 배정 — 자동으로 끼워넣지 않고, 추천 차량을 보여주고 원장이 직접 배정한다.
           원장 전용 화면에서만 렌더링된다(기사님 화면은 이 컴포넌트를 쓰지 않는다). */}
       {(sug.added ?? []).length > 0 && (
-        <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 dark:border-amber-500/40 dark:bg-amber-500/10 print:hidden">
-          <p className="text-[12px] font-black text-amber-800 dark:text-amber-200">🙋 신규·복귀 {(sug.added ?? []).length}명 · 탑승 차량 선택</p>
+        <div className="mt-2 rounded-lg border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-3 py-2.5 print:hidden">
+          <p className="text-[12px] font-black text-[var(--color-academy-warning)]">🙋 신규·복귀 {(sug.added ?? []).length}명 · 탑승 차량 선택</p>
           <ul className="mt-1.5 space-y-1.5">
             {(sug.added ?? []).map((c) => {
               const rec = recommendVi(c);
               const chosen = assignVi[c.requestId] ?? rec;
               const noCoord = !c.isHub && (c.lat == null || c.lng == null);
               return (
-                <li key={c.requestId} className="flex flex-wrap items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 dark:bg-gray-900/50">
-                  <span className="text-[12.5px] font-black text-gray-900 dark:text-white">{c.name}</span>
-                  <span className="text-[11px] font-bold text-gray-500">{c.isHub ? "🆓 무료탑승" : (c.label || "위치")}</span>
+                <li key={c.requestId} className="flex flex-wrap items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5">
+                  <span className="text-[12.5px] font-black text-[var(--color-academy-ink)]">{c.name}</span>
+                  <span className="text-[11px] font-bold text-[var(--color-academy-muted)]">{c.isHub ? "🆓 무료탑승" : (c.label || "위치")}</span>
                   {noCoord
-                    ? <span className="ml-auto text-[11px] font-bold text-red-500">위치 미등록 · 무료탑승만 가능</span>
+                    ? <span className="ml-auto text-[11px] font-bold text-[var(--color-academy-danger)]">위치 미등록 · 무료탑승만 가능</span>
                     : (
                       <span className="ml-auto flex items-center gap-1">
                         {!c.isHub && sug.vehicles.length > 1 && (
                           <select value={chosen} onChange={(e) => setAssignVi((m) => ({ ...m, [c.requestId]: Number(e.target.value) }))}
-                            className="rounded-lg border border-gray-200 px-1.5 py-1 text-[11px] font-bold dark:border-gray-600 dark:bg-gray-900 dark:text-white">
+                            className="rounded-lg border border-[var(--color-academy-line)] px-1.5 py-1 text-[11px] font-bold">
                             {sug.vehicles.map((v, i) => <option key={i} value={i}>{v.vehicleName}{v.tripLabel ? ` ${v.tripLabel}` : ""}{i === rec ? " ★추천" : ""}</option>)}
                           </select>
                         )}
                         <button onClick={() => assignAdded(c, c.isHub ? rec : chosen)} disabled={hubBusy}
-                          className="rounded-lg bg-brand-orange-500 px-2.5 py-1 text-[11px] font-black text-white disabled:opacity-50">
+                          className="rounded-lg bg-[var(--color-academy-primary)] px-2.5 py-1 text-[11px] font-black text-white disabled:opacity-50">
                           {c.isHub ? "🆓 무료탑승 배정" : `${sug.vehicles[chosen]?.vehicleName ?? ""}에 배정`}
                         </button>
                       </span>
@@ -749,46 +749,46 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         </div>
       )}
 
-      {sug.vehicles.length === 0 && <div className="mt-3 rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-400">이 날짜에 배차할 {isPickup ? "등원" : "하원"} 셔틀 학생이 없습니다.</div>}
+      {sug.vehicles.length === 0 && <div className="mt-3 rounded-xl border border-dashed border-[var(--color-academy-line-input)] p-6 text-center text-sm text-[var(--color-academy-faint)]">이 날짜에 배차할 {isPickup ? "등원" : "하원"} 셔틀 학생이 없습니다.</div>}
       </>)}
 
       {/* 시간순 모드: 아래 두 겹 상자를 풀어(contents) 카드가 부모 목록의 직접 항목이 되게 한다 → CSS order 로 시간순 정렬 */}
       <div className={timeOrdered ? "contents" : "mt-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4"}>
         <div className={timeOrdered ? "contents" : "grid min-w-0 gap-3"}>
           {sug.vehicles.map((v, vIdx) => (
-            <div key={vIdx} style={timeOrdered ? { order: runTimelineOrder(v, isPickup, vIdx) } : undefined} className={`overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700${timeOrdered ? " w-full bg-white dark:bg-gray-800" : ""}`}>
-              <div className="flex items-center justify-between bg-brand-navy-900 px-4 py-2.5 text-white">
+            <div key={vIdx} style={timeOrdered ? { order: runTimelineOrder(v, isPickup, vIdx) } : undefined} className={`overflow-hidden rounded-2xl border border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}`}>
+              <div className="flex items-center justify-between bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-white">
                 <span className="font-black">
                   {/* 시간순 모드: 등원·하원 카드가 섞이므로 카드마다 방향 배지를 붙인다 */}
-                  {timeOrdered && <span className={`mr-1.5 rounded-full px-2 py-0.5 text-xs font-black ${isPickup ? "bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-100" : "bg-orange-100 text-orange-700 dark:bg-orange-900/60 dark:text-orange-100"}`}>{dirLabel}</span>}
+                  {timeOrdered && <span className={`mr-1.5 rounded-full px-2 py-0.5 text-xs font-black ${isPickup ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" : "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"}`}>{dirLabel}</span>}
                   🚐 {v.vehicleName}{v.tripLabel ? ` · ${v.tripLabel}` : ""}
                 </span>
                 <span className="flex items-center gap-2">
                   <button type="button" onClick={() => { setMapVehicle(vIdx); if (timeOrdered) mapRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }} className={`rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold hover:bg-white/25 print:hidden${tlBtn}`}>🗺 지도</button>
-                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${v.over ? "bg-red-500" : "bg-white/15"}`}>{v.passengers} / {v.capacity}명{regularEditing && v.over ? " · 정원 초과" : ""}</span>
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${v.over ? "bg-[var(--color-academy-danger)]" : "bg-white/15"}`}>{v.passengers} / {v.capacity}명{regularEditing && v.over ? " · 정원 초과" : ""}</span>
                 </span>
               </div>
-              <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[11px] font-bold dark:border-gray-700 dark:bg-gray-900/50">
+              <div className="flex items-center gap-2 border-b border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-1.5 text-[11px] font-bold">
                 {v.provider === "TMAP"
-                  ? <span className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200">T맵 실도로</span>
-                  : <span className="rounded bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-700 dark:text-gray-300">직선 추정</span>}
-                {v.tmapMinutes != null && <span className="text-gray-500">약 {v.tmapMinutes}분{v.tmapKm != null ? ` · ${v.tmapKm}km` : ""}</span>}
+                  ? <span className="rounded bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-[var(--color-academy-muted)]">T맵 실도로</span>
+                  : <span className="rounded bg-[var(--color-academy-line)] px-1.5 py-0.5 text-[var(--color-academy-muted)]">직선 추정</span>}
+                {v.tmapMinutes != null && <span className="text-[var(--color-academy-muted)]">약 {v.tmapMinutes}분{v.tmapKm != null ? ` · ${v.tmapKm}km` : ""}</span>}
                 {drivers && <label className="ml-auto flex items-center gap-1 print:hidden">담당 기사
-                  <select value={v.driverUserId ?? ""} onChange={(event) => setDriver(vIdx, event.target.value)} className="rounded-md border border-gray-200 bg-white px-1.5 py-1 text-[11px] font-bold text-gray-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100">
+                  <select value={v.driverUserId ?? ""} onChange={(event) => setDriver(vIdx, event.target.value)} className="rounded-md border border-[var(--color-academy-line)] bg-white px-1.5 py-1 text-[11px] font-bold text-[var(--color-academy-muted)]">
                     <option value="">미배정</option>
                     {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.name}</option>)}
                   </select>
                 </label>}
               </div>
-              <ol className="divide-y divide-gray-100 dark:divide-gray-700">
-                <li className="flex items-center gap-2.5 bg-gray-50/60 px-3 py-2 dark:bg-gray-900/40">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-gray-600 text-[11px] text-white">{isPickup ? "🚏" : "🏫"}</span>
-                  <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300">{isPickup ? (sug.depot ? `${sug.depot.name.replace(/^차고지 · /, "차고지 ")} 출발` : "출발") : `${sug.academy.name} 출발`}</span>
-                  <label className="ml-auto flex items-center gap-1 text-[11px] font-bold text-gray-500 print:hidden">
+              <ol className="divide-y divide-[var(--color-academy-line)]">
+                <li className="flex items-center gap-2.5 bg-[var(--color-academy-soft)]/60 px-3 py-2">
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--color-academy-primary)] text-[11px] text-white">{isPickup ? "🚏" : "🏫"}</span>
+                  <span className="text-[12px] font-bold text-[var(--color-academy-muted)]">{isPickup ? (sug.depot ? `${sug.depot.name.replace(/^차고지 · /, "차고지 ")} 출발` : "출발") : `${sug.academy.name} 출발`}</span>
+                  <label className="ml-auto flex items-center gap-1 text-[11px] font-bold text-[var(--color-academy-muted)] print:hidden">
                     출발
-                    <input type="time" value={v.departTime ?? ""} onChange={(e) => setDepartTime(vIdx, e.target.value)} className="rounded-lg border border-gray-200 px-1.5 py-0.5 text-[11.5px] font-black text-gray-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100" />
+                    <input type="time" value={v.departTime ?? ""} onChange={(e) => setDepartTime(vIdx, e.target.value)} className="rounded-lg border border-[var(--color-academy-line)] px-1.5 py-0.5 text-[11.5px] font-black text-[var(--color-academy-muted)]" />
                   </label>
-                  {v.departTime && <span className="hidden text-[11.5px] font-black text-gray-500 print:inline">{v.departTime} 출발</span>}
+                  {v.departTime && <span className="hidden text-[11.5px] font-black text-[var(--color-academy-muted)] print:inline">{v.departTime} 출발</span>}
                 </li>
                 {v.stops.map((s, sIdx) => (
                   <li key={sIdx}
@@ -799,32 +799,32 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
                       else if (stuDrag && s.isHub) moveStudentToHub(stuDrag.v, stuDrag.s, stuDrag.i);
                       setDrag(null); setStuDrag(null);
                     }}
-                    className={`flex items-start gap-2 px-3 py-2.5 ${s.isHub ? "bg-green-50/70 dark:bg-green-900/15" : ""} ${drag && drag.v === vIdx && drag.s === sIdx ? "opacity-40" : ""} ${stuDrag && s.isHub ? "ring-2 ring-inset ring-green-400" : ""}`}>
-                    <span draggable onDragStart={(e) => { setDrag({ v: vIdx, s: sIdx }); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setDrag(null)} title="드래그해서 순서 변경" className="mt-0.5 shrink-0 cursor-move select-none text-base leading-none text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 print:hidden">⠿</span>
-                    <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-black text-white ${s.isHub ? "bg-green-600" : "bg-brand-orange-500"}`}>{s.isHub ? "🆓" : sIdx + 1}</span>
+                    className={`flex items-start gap-2 px-3 py-2.5 ${s.isHub ? "bg-[var(--color-academy-success-soft)]/70" : ""} ${drag && drag.v === vIdx && drag.s === sIdx ? "opacity-40" : ""} ${stuDrag && s.isHub ? "ring-2 ring-inset ring-[var(--color-academy-success)]" : ""}`}>
+                    <span draggable onDragStart={(e) => { setDrag({ v: vIdx, s: sIdx }); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setDrag(null)} title="드래그해서 순서 변경" className="mt-0.5 shrink-0 cursor-move select-none text-base leading-none text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] print:hidden">⠿</span>
+                    <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-black text-white ${s.isHub ? "bg-[var(--color-academy-success)]" : "bg-[var(--color-academy-primary)]"}`}>{s.isHub ? "🆓" : sIdx + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] font-bold text-gray-900 dark:text-white">
+                      <div className="truncate text-[13px] font-bold text-[var(--color-academy-ink)]">
                         {s.label}
                         {s.isHub
                           ? <>
-                              <span className="ml-1 rounded bg-green-600 px-1.5 text-[10px] font-black text-white">무료 탑승 거점</span>
-                              {s.students.length > 0 && <span className="ml-1 rounded bg-lime-200 px-1.5 text-[10px] font-black text-brand-navy-900">{s.students.length}명</span>}
+                              <span className="ml-1 rounded bg-[var(--color-academy-success)] px-1.5 text-[10px] font-black text-white">무료 탑승 거점</span>
+                              {s.students.length > 0 && <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1.5 text-[10px] font-black text-[var(--color-academy-ink)]">{s.students.length}명</span>}
                             </>
-                          : <span className="ml-1 rounded bg-lime-200 px-1.5 text-[10px] font-black text-brand-navy-900">{s.students.length}명</span>}
-                        {s.approx && !s.isHub && <span className="ml-1 rounded bg-amber-100 px-1.5 text-[10px] font-black text-amber-700">추정</span>}
+                          : <span className="ml-1 rounded bg-[var(--color-academy-success-soft)] px-1.5 text-[10px] font-black text-[var(--color-academy-ink)]">{s.students.length}명</span>}
+                        {s.approx && !s.isHub && <span className="ml-1 rounded bg-[var(--color-academy-warning-soft)] px-1.5 text-[10px] font-black text-[var(--color-academy-warning)]">추정</span>}
                       </div>
-                      <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11.5px] text-gray-500">
+                      <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11.5px] text-[var(--color-academy-muted)]">
                         {s.isHub ? (
                           <>
-                            {s.students.map((st, i) => { const t = tel(st.parentPhone); const canOpen = rosterEditable && !!st.applicationId; return <span key={i} className="font-bold text-green-800 dark:text-green-200"><button type="button" onClick={() => canOpen && setOpenStu({ applicationId: st.applicationId!, rosterId: st.rosterId, requestId: st.requestId })} className={canOpen ? "underline decoration-dotted underline-offset-2 hover:text-green-600" : ""}>{st.name}{st.grade ? `·${st.grade}` : ""}</button>{t && <a href={t} draggable={false} className="ml-0.5 text-green-600">📞</a>}{regularEditing && renderStudentTools(vIdx, sIdx, i, s, st.name)}</span>; })}
-                            <span className="text-green-700 dark:text-green-300">학생을 여기로 끌어다 놓으면 무료 거점 {isPickup ? "탑승" : "하차"}으로 지정됩니다 · 워크인 정원 별도</span>
+                            {s.students.map((st, i) => { const t = tel(st.parentPhone); const canOpen = rosterEditable && !!st.applicationId; return <span key={i} className="font-bold text-[var(--color-academy-success)]"><button type="button" onClick={() => canOpen && setOpenStu({ applicationId: st.applicationId!, rosterId: st.rosterId, requestId: st.requestId })} className={canOpen ? "underline decoration-dotted underline-offset-2 hover:text-[var(--color-academy-success)]" : ""}>{st.name}{st.grade ? `·${st.grade}` : ""}</button>{t && <a href={t} draggable={false} className="ml-0.5 text-[var(--color-academy-success)]">📞</a>}{regularEditing && renderStudentTools(vIdx, sIdx, i, s, st.name)}</span>; })}
+                            <span className="text-[var(--color-academy-success)]">학생을 여기로 끌어다 놓으면 무료 거점 {isPickup ? "탑승" : "하차"}으로 지정됩니다 · 워크인 정원 별도</span>
                           </>
                         ) : (
                           s.students.map((st, i) => {
                             const t = tel(st.parentPhone);
                             const canOpen = rosterEditable && !!st.applicationId;
-                            return <span key={i} draggable={rosterEditable} onDragStart={(e) => { if (!rosterEditable) return; setStuDrag({ v: vIdx, s: sIdx, i }); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setStuDrag(null)} title={rosterEditable ? "드래그해서 무료 거점으로 이동 · 이름 클릭 시 상세" : undefined} className={rosterEditable ? "cursor-grab select-none rounded px-0.5 hover:bg-lime-100 dark:hover:bg-lime-900/30" : "select-none rounded px-0.5"}>
-                              <button type="button" draggable={false} onClick={() => canOpen && setOpenStu({ applicationId: st.applicationId!, rosterId: st.rosterId, requestId: st.requestId })} className={canOpen ? "font-bold underline decoration-dotted underline-offset-2 hover:text-brand-orange-600" : "font-bold"}>{st.name}{st.grade ? `·${st.grade}` : ""}</button>{t && <a href={t} draggable={false} className="ml-0.5 font-bold text-green-600">📞</a>}{regularEditing && renderStudentTools(vIdx, sIdx, i, s, st.name)}</span>;
+                            return <span key={i} draggable={rosterEditable} onDragStart={(e) => { if (!rosterEditable) return; setStuDrag({ v: vIdx, s: sIdx, i }); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => setStuDrag(null)} title={rosterEditable ? "드래그해서 무료 거점으로 이동 · 이름 클릭 시 상세" : undefined} className={rosterEditable ? "cursor-grab select-none rounded px-0.5 hover:bg-[var(--color-academy-success-soft)]" : "select-none rounded px-0.5"}>
+                              <button type="button" draggable={false} onClick={() => canOpen && setOpenStu({ applicationId: st.applicationId!, rosterId: st.rosterId, requestId: st.requestId })} className={canOpen ? "font-bold underline decoration-dotted underline-offset-2 hover:text-[var(--color-academy-ink)]" : "font-bold"}>{st.name}{st.grade ? `·${st.grade}` : ""}</button>{t && <a href={t} draggable={false} className="ml-0.5 font-bold text-[var(--color-academy-success)]">📞</a>}{regularEditing && renderStudentTools(vIdx, sIdx, i, s, st.name)}</span>;
                           })
                         )}
                       </div>
@@ -832,8 +832,8 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
                     {/* 정규 모드 · 휴대폰: 드래그가 불안정해 한 칸씩 확실히 옮기는 버튼(RegularRouteSection 과 같은 패턴). */}
                     {regularEditing && (
                       <div className="flex shrink-0 flex-col gap-1 sm:hidden print:hidden" aria-label={`${s.label} 정차 순서 변경`}>
-                        <button type="button" disabled={sIdx === 0} onClick={() => reorderStop(vIdx, sIdx, sIdx - 1)} aria-label={`${s.label} 위로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-gray-200 text-xs font-black disabled:opacity-30 dark:border-gray-600 dark:text-gray-200">↑</button>
-                        <button type="button" disabled={sIdx === v.stops.length - 1} onClick={() => reorderStop(vIdx, sIdx, sIdx + 1)} aria-label={`${s.label} 아래로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-gray-200 text-xs font-black disabled:opacity-30 dark:border-gray-600 dark:text-gray-200">↓</button>
+                        <button type="button" disabled={sIdx === 0} onClick={() => reorderStop(vIdx, sIdx, sIdx - 1)} aria-label={`${s.label} 위로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-[var(--color-academy-line)] text-xs font-black disabled:opacity-30">↑</button>
+                        <button type="button" disabled={sIdx === v.stops.length - 1} onClick={() => reorderStop(vIdx, sIdx, sIdx + 1)} aria-label={`${s.label} 아래로 이동`} className="grid h-7 w-7 place-items-center rounded-md border border-[var(--color-academy-line)] text-xs font-black disabled:opacity-30">↓</button>
                       </div>
                     )}
                     {/* 정차 시각 편집(T2): input으로 직접 확정. 수정 시 '확정(수정됨)' 뱃지 + [다시 계산] 리셋. */}
@@ -841,21 +841,21 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
                       <div className="flex items-center gap-1">
                         <input type="time" value={stopEtaHHMM(s)} onChange={(e) => setStopEta(vIdx, sIdx, e.target.value)}
                           title="정차 시각을 직접 확정합니다" draggable={false}
-                          className={`rounded-lg border px-1.5 py-0.5 text-[11.5px] font-black dark:bg-gray-900 ${s.etaManual != null ? "border-blue-400 text-blue-700 dark:border-blue-500 dark:text-blue-200" : "border-gray-200 text-blue-600 dark:border-gray-600 dark:text-blue-300"}`} />
-                        <span className="whitespace-nowrap text-[10px] font-black text-gray-400">{isPickup ? "승차" : "하차"}</span>
+                          className={`rounded-lg border px-1.5 py-0.5 text-[11.5px] font-black ${s.etaManual != null ? "border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"}`} />
+                        <span className="whitespace-nowrap text-[10px] font-black text-[var(--color-academy-faint)]">{isPickup ? "승차" : "하차"}</span>
                       </div>
                       {s.etaManual != null && (
                         <div className="flex items-center gap-1">
-                          <span className="rounded bg-blue-100 px-1 text-[9px] font-black text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">확정(수정됨)</span>
+                          <span className="rounded bg-[var(--color-academy-soft)] px-1 text-[9px] font-black text-[var(--color-academy-muted)]">확정(수정됨)</span>
                           <button type="button" onClick={() => resetStopEta(vIdx, sIdx)} title="자동 계산값으로 되돌립니다"
-                            className="text-[10px] font-black text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">↺ 다시 계산</button>
+                            className="text-[10px] font-black text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">↺ 다시 계산</button>
                         </div>
                       )}
                       {/* 정규 모드: 정차를 통째로 다른 차량(회차)으로 옮긴다. 같은 장소가 있으면 합쳐진다. */}
                       {regularEditing && sug.vehicles.length > 1 && (
                         <select value="" onChange={(e) => { if (e.target.value !== "") moveStop(vIdx, sIdx, Number(e.target.value)); }}
                           aria-label={`${s.label} 정차를 다른 차량으로 이동`}
-                          className="max-w-[9rem] rounded-lg border border-gray-200 bg-white px-1 py-0.5 text-[10.5px] font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200">
+                          className="max-w-[9rem] rounded-lg border border-[var(--color-academy-line)] bg-white px-1 py-0.5 text-[10.5px] font-bold text-[var(--color-academy-muted)]">
                           <option value="">→ 차량 이동</option>
                           {sug.vehicles.map((ov, oi) => oi === vIdx ? null : <option key={oi} value={oi}>{vehicleOptionLabel(ov)}</option>)}
                         </select>
@@ -864,11 +864,11 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
                     {s.etaLabel && <span className="hidden whitespace-nowrap text-[11.5px] font-black text-black print:inline">{s.etaLabel}</span>}
                   </li>
                 ))}
-                <li className="flex items-center gap-2.5 bg-gray-50 px-3 py-2.5 dark:bg-gray-900">
-                  <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-navy-900 text-[11px] text-white">{isPickup ? "🏫" : "🚏"}</span>
-                  <span className="text-[12.5px] font-bold text-gray-700 dark:text-gray-200">{isPickup ? `${sug.academy.name} 도착` : (sug.depot ? `${sug.depot.name.replace(/^차고지 · /, "차고지 ")} 복귀` : "복귀")}</span>
-                  {isPickup && v.arriveTime && <span className="ml-auto text-[11.5px] font-black text-gray-500">{v.arriveTime} 도착</span>}
-                  {!isPickup && v.depotTime && <span className="ml-auto text-[11.5px] font-black text-gray-500">{v.depotTime} 복귀</span>}
+                <li className="flex items-center gap-2.5 bg-[var(--color-academy-soft)] px-3 py-2.5">
+                  <span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--color-academy-primary-hover)] text-[11px] text-white">{isPickup ? "🏫" : "🚏"}</span>
+                  <span className="text-[12.5px] font-bold text-[var(--color-academy-muted)]">{isPickup ? `${sug.academy.name} 도착` : (sug.depot ? `${sug.depot.name.replace(/^차고지 · /, "차고지 ")} 복귀` : "복귀")}</span>
+                  {isPickup && v.arriveTime && <span className="ml-auto text-[11.5px] font-black text-[var(--color-academy-muted)]">{v.arriveTime} 도착</span>}
+                  {!isPickup && v.depotTime && <span className="ml-auto text-[11.5px] font-black text-[var(--color-academy-muted)]">{v.depotTime} 복귀</span>}
                 </li>
               </ol>
             </div>
@@ -878,8 +878,8 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
         {sug.vehicles.length > 0 && (
           // 시간순 모드: 지도는 모든 회차 카드 뒤(등원 지도 → 하원 지도, PC 에선 나란히)에 둔다.
           <aside ref={mapRef} style={timeOrdered ? { order: isPickup ? 10_000_000 : 10_000_001 } : undefined} className={timeOrdered ? "w-full scroll-mt-4 lg:w-[calc(50%-0.375rem)] print:hidden" : "mt-3 lg:mt-0 lg:sticky lg:top-4 print:hidden"}>
-            <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between gap-2 bg-brand-navy-900 px-3 py-2 text-white">
+            <div className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)]">
+              <div className="flex items-center justify-between gap-2 bg-[var(--color-academy-primary-hover)] px-3 py-2 text-white">
                 <span className="text-xs font-black">🗺 {isPickup ? "등원" : "하원"} 경로{rerouting ? " · 🔄" : ""}</span>
                 {sug.vehicles.length > 1 && (
                   <select value={activeMapIdx} onChange={(e) => setMapVehicle(Number(e.target.value))} className="rounded bg-white/15 px-2 py-1 text-[11px] font-bold text-white">

@@ -10,6 +10,7 @@
  *  2) 그래도 새는 경우는 DB EXCLUDE 제약(GymRentalRequest_no_overlap)이 막는다 → 23P01 오류.
  */
 import { addDaysKst, isKstYmd, kstAt, todayKst } from "@/lib/datetime/kst";
+import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
 import {
   RENTAL_HOLDING_STATUSES,
   RENTAL_START_STEP_MINUTES,
@@ -189,14 +190,14 @@ export async function listRentalMemberStudents(db: RawSqlClient, viewer: RentalM
   if (!viewer || viewer.role !== "PARENT") return [];
   // accessSql 은 코드가 만든 조각만 받는다(사용자 입력 아님 — childAccessSql 가 식별자를 검사한다)
   if (!/^\(?s\."parentId" = \$1/.test(viewer.accessSql)) return [];
+  // 재원생 = ACTIVE 수강이 있는 학생(승인일부터). 개시일 전이어도 재원생이다(2026-11-09 원장 기준, 공용 판정 currentEnrollmentSql)
   return db.$queryRawUnsafe<RentalMemberStudent[]>(
     `SELECT s.id, s.name FROM "Student" s
       WHERE s."mergedIntoStudentId" IS NULL
         AND ${viewer.accessSql}
         AND EXISTS (
           SELECT 1 FROM "Enrollment" e JOIN "Class" c ON c.id = e."classId"
-           WHERE e."studentId" = s.id AND e.status = 'ACTIVE' AND c.name NOT LIKE '[%'
-             AND (e."startsOn" IS NULL OR e."startsOn" <= (now() AT TIME ZONE 'Asia/Seoul')::date)
+           WHERE e."studentId" = s.id AND ${currentEnrollmentSql("e")} AND c.name NOT LIKE '[%'
         )
       ORDER BY s.name ASC
       LIMIT 20`,
@@ -315,7 +316,7 @@ export async function createRentalRequest(
   }
 
   // 화면을 연 뒤 시간이 지났거나 다른 대관이 승인됐을 수 있다 — 서버가 다시 본다
-  // 영업 시간(평일 09시·주말 10시 ~ 22시)·수업·특강·승인 대관 겹침을 서버가 다시 본다
+  // 영업 시간(평일 09:00~22:10·주말 10:00~22:00)·수업·특강·승인 대관 겹침을 서버가 다시 본다
   const day = await loadRentalDay(db, rentalDate, nowMs);
   if (!isRentalRangeAvailable(day, startMinute, durationMinutes)) {
     return { ok: false, message: "선택한 시간에 수업이나 다른 대관이 있거나 이용 가능 시간이 아닙니다. 다른 시간을 골라 주세요." };
@@ -402,7 +403,7 @@ export async function transitionRentalInTx(
 
   if (action === "approve") {
     // 같은 날 승인끼리 줄 세우기(트랜잭션이 끝나면 자동으로 풀린다)
-    // 날짜를 넘나드는 대관은 없으므로(최대 22시 종료) 날짜 하나로 줄 세우면 충분하다
+    // 날짜를 넘나드는 대관은 없으므로(최대 22:10 종료) 날짜 하나로 줄 세우면 충분하다
     await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `gym-rental:${row.rentalDate}`);
     const clash = await tx.$queryRawUnsafe<Array<{ id: string }>>(
       `SELECT o.id FROM "GymRentalRequest" o, "GymRentalRequest" me

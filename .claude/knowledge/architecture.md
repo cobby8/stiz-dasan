@@ -2,6 +2,12 @@
 <!-- 담당: planner-architect, developer | 최대 30항목 -->
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 
+### 2026-11-09 학부모 공지 = 대량 큐의 «받는 사람마다 다른 본문» 항목(알림톡·브랜드 메시지·문자)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 대량 발송 큐 `reserveManualMessageQueue` 에 선택 인자 `items`(사람별 body + kakao{ALIMTALK|BMS_FREE})·`requestedChannel` 을 더했다. items 가 있으면 payload 에 `perItem:true` 가 실려 크론 `manual-message-dispatch` 가 `sendPerMessageBulkDetailed`(솔라피 send-many 에 메시지별 type ATA/BMS_FREE/SMS)로 보낸다 — 없으면 예전 «공통 본문» 경로 그대로(BATCH_BODY_MISMATCH 검사 유지). 카카오가 명시 거절하면 같은 내용을 문자로 1회, 응답 불확실은 재시도 금지. 장부 channel 칸은 DB CHECK 때문에 BMS 를 못 넣어 SMS 로 두고 종류는 messageType=BMS. 공지 틀은 `NOTICE_ALIMTALK_TEMPLATES`(자동 트리거 9종과 분리), 순수 규칙 `src/lib/messaging/parent-notice.ts`, 서버 `src/app/actions/parent-notice.ts`(미리보기→승인 재계산, OperationsAuditLog PARENT_NOTICE_*).
+- **참조횟수**: 0
+
 ### 2026-10-08 카카오 학부모 인증·기존 빈 계정 활성화 흐름
 - **분류**: architecture
 - **발견자**: developer
@@ -163,4 +169,91 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: `gym-rental-rules.ts` 의 `RENTAL_APPLICANT_TEMPLATES`(#{변수} 틀) + `buildRentalApplicantMessage` 가 본문과 variables 를 같은 맵에서 만든다(알림톡은 등록 문구와 한 글자라도 다르면 실패). 발송은 `sendTrackedSms({ alimtalk })` → notification.ts 가 `sendMessageDetailed` 에 그대로 전달(장부 유지, 다른 호출은 alimtalk 없음 = 기존 문자). 템플릿 id 는 env `RENTAL_ALIMTALK_*`, 실제 알림톡 시도는 /admin/sms 규칙 채널이 알림톡 + 외부 알림톡 채널 켜짐 + SOLAPI_KAKAO_PF_ID 일 때만. 심사 문서 `docs/kakao-alimtalk-rental-templates.md` 는 테스트가 틀과 글자 대조. 재원생 무료 = 로그인한 PARENT 계정(getVerifiedParentState 통과)의 «내 자녀»(`childAccessSql("s","$1")` — 가족 공유·본인 연결 포함) 중 재원(병합 제외+시작된 ACTIVE 수강+끝난 반 제외) 학생만(`listRentalMemberStudents`). 이름·번호 대조는 쓰지 않는다(맞히기 공격). 공개 /rental 은 정적 유지, 로그인 여부는 액션 `getRentalMemberContext` 로 묻는다.
+### [2026-11-09] 학부모 알림톡 = 공용 금고 parent-alimtalk-templates.ts (대관 패턴 일반화)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 알림톡으로 바꾼 학부모 트리거는 `src/lib/messaging/parent-alimtalk-templates.ts` 의 `PARENT_ALIMTALK_TEMPLATES`(#{한글변수} 틀 + 호출부 키 연결 + 기본값)가 정본이다. 문자 본문 = 알림톡 본문. `notification.ts resolveParentMessage` 가 `sendParentSms`·`sendParentSmsWithResult`(체험·셔틀)와 `seasonal/notifications.ts`(특강, `dispatchReservedSmsDelivery({alimtalk})`)에서 금고 틀을 쓰고, 빈 변수면 옛 DB 문구로 «문자만» 보낸다. DB `SmsTemplate` 은 isActive 스위치 + 대체 문구 + 화면 표시용(/admin/sms 문구 화면은 금고 트리거 본문 수정 잠금). 템플릿 id = env `ALIMTALK_TPL_*`(alimtalk-config.ts). 가드 `tests/parent-alimtalk-templates.test.mjs`: 코드의 `*_PARENT`/`*_APPLICANT` 문자열은 금고 또는 `SMS_ONLY_PARENT_TRIGGERS` 에만 — 새 학부모 문자를 만들면 둘 중 하나에 넣어야 테스트가 통과한다. 머리말 상수 `PARENT_MESSAGE_PREFIX`(«[스티즈농구교실]»). 심사 문서 `docs/kakao-alimtalk-parent-templates.md` 는 테스트가 글자 대조.
+- **참조횟수**: 0
+### [2026-11-08] 정규 수업 기록 «같은 반·같은 날 = 하나» = regularSession.ts 한 곳 · 보강 온 아이 출석 = makeup-attendance.ts
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 정규 Session 자연키는 `regularSessionKey(반id, YYYY-MM-DD)` 하나. 관리자 출결(saveAttendance)·수업일지(saveSessionLog)·랠리즈 반영은 `findOrCreateRegularSession(tx, …)`, 코치 «수업 시작»·«예정 내용»은 `adoptRegularSessionKey(tx, …)`+`regularSessionKey`(모두 트랜잭션 안·키별 advisory 잠금). 키 없는 옛 기록은 «입양»(키를 붙임)해 둘로 갈라지지 않는다. Session 을 새로 만드는 경로를 추가하면 반드시 이 파일을 거친다(테스트 `regular-session-single-record` 가 admin.ts 의 키 없는 INSERT 를 막음). 보강: 코치 출석부 명단은 `makeupOnClassDateSql`(makeupDate timestamptz 에 시간대 한 번)로 이 반·이 날 BOOKED/ATTENDED 예약 아이를 «보강»으로 붙이고, 출결 저장도 같은 조건으로 판정 → `applyMakeupAttendanceInTx`(lockCompensation·FOR UPDATE·조건부 UPDATE) 뒤 기존 `syncCreditForMakeupSession`(ATTENDED→USED·BOOKED→RESERVED). 출석·지각=참석(같은 날 한 건만), 결석=보강권 안 씀·참석이었으면 되돌림. 보강 아이는 `syncCreditForRegularSession`(결석 보강권 발급)을 타지 않는다.
+### [2026-11-08] 청구 준비 제안값(주N회 요금·셔틀비·형제할인) = 순수 workbench-pricing + readWorkbench 사전 판정
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 청구 준비 행은 «학생×반»이라 주2회 학생은 행 2개다. `readWorkbench` 가 먼저 행마다 청구 대상(excluded)을 정하고(scopeOf), 청구 대상 반만 `src/lib/billing/workbench-pricing.ts` 에 넘긴다 — planWeeklyTuition(**11-09 원장 결정**: N = 학생 청구 대상 반 전체 주 횟수(프로그램 무관), 각 반 = 그 반 프로그램의 주N회 요금 ÷ N, 절사로 남는 원은 학생 첫 행, 그 프로그램 주N회 칸이 비면 그 반만 주1회 요금+경고 · 대회준비반(상수 `COMPETITION_PROGRAM_NAMES`)은 주말 대회준비반 반이 있으면 대회준비반 반 전부+일반 반 1개 = 300,000 고정(첫 대회준비반 행), 초과 일반 반은 일반 규칙+경고, 평일 대회준비반만이면 묶음 미적용+경고), planShuttleFee(그달 `RegularShuttleStop` 의 studentId 연결 행만, 셔틀 운행 평일 반 주 횟수 → 1만/1.5만/2만·직접입력 최대값·Sun-8 면제·**무료 거점**(상수 `FREE_SHUTTLE_HUB_STOPS`: 승차 1호점 앞 버스정류장/하차 새봄중학교 앞 버스정류장) — 명단 정류장이 전부 거점이면 0, 섞이면 제안+경고), siblingDiscountStudents(같은 parentId 청구 대상 자녀 2명↑, 상수 `REGULAR_SIBLING_DISCOUNT_TARGET` ALL/SECOND_AND_LATER)+siblingDiscountAmount(수강료 10% 절사, 셔틀 제외). 적용은 확정 월 장부 없는 행만, 저장 초안 payload 가 항상 이긴다. 셔틀비는 학생의 «첫 발행 대상 행» 1개에만, 다른 반 초안에 셔틀비 저장·이번 달 기존 청구가 있으면 제안 안 함. 셔틀 명단은 sourceVersion 해시에 포함. 셔틀비 규칙의 다른 사본: ProgramFormPanel/ProgramsAdminClient/programs/page 의 autoShuttle 표, studentBilling.ts 의 Sun-8 — 바꾸면 같이 바꾼다.
+### [2026-11-08] 셔틀 명단 점검·카카오 셔틀 신청 할 일 = 순수 판정 + 기존 표 상태값(새 표 없음, 자동 삭제 없음)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① 명단 수강 점검 `src/lib/shuttle/regularRosterEnrollmentCheckLogic.ts`(다니는 반 없음·수업 없는 요일·한쪽만) — 서버 `getRosterEnrollmentCheck` 는 그 달 명단 학생의 지금 Enrollment(ACTIVE/PAUSED)와 자동 생성 달 여부만 읽고 판정은 화면에서. 월 넘김 확인 = 수동 복사 전 confirm(`rosterCopyWarningText`) + 자동 생성 달 «확인했어요» = `ShuttleAuditLog` action `REGULAR_ROSTER_MONTH_REVIEWED`(자동 생성 기록 `REGULAR_ROSTER_AUTO_MONTH` 와 짝). ② 카카오 정규 셔틀 신청(START) 할 일 `src/lib/kakaoShuttleRosterTask.ts` — 완료 = `KakaoParentIntake.structuredJson.rosterTask.doneAt` + 결정 전 상태면 APPLIED(이관 APPROVED 는 유지) + 감사 `SHUTTLE_ROSTER_DONE`. 명단 추가는 기존 `/admin/shuttle/regular?month=&studentId=` 딥링크(«신청 학생 선택해 명단 추가») 재사용.
+- **참조횟수**: 0
+
+### [2026-11-09] 관리자 원생 등록 = 3단계 창 + 서버 액션 하나(트랜잭션 하나)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 목록 «원생 등록»·체험 ⚡«원생 등록»이 같은 `src/app/admin/students/StudentRegisterModal.tsx` → `src/app/actions/student-register.ts`(`registerStudent`·`previewStudentRegistration`·`getStudentRegisterOptions`). 입력 검증은 창·서버 공용 `src/lib/students/student-register-rules.ts`(반 필수/«반은 나중에 배정», 주 보호자 휴대폰 필수, 지점은 반 장소에서 자동·원본 문장 형식 저장, 개인정보 확인 → agreementsJSON.adminRegister). 신청서 승인과 공유: 정원 경고 `lib/enrollment/class-capacity.ts`, 셔틀 위치 저장 SQL `lib/students/student-shuttle-location-upsert.ts`(승인 동작은 tests/student-register.test.mjs 의 vm 실행으로 고정). 수강료 표시는 `lib/billing/regular-tuition-preview.ts`(청구 모듈과 무관, 프로그램 화면 2곳도 여기서 상수 사용). 인라인 폼은 «수정» 전용. 문자 발송 없음. **11-09 실사용 후**: 반 줄 대상 학년 = `ScheduleSlot.gradeRange → CustomClassSlot.gradeRange → Program.targetAge`(하위 질의, 스키마 변경 없음) · 셔틀 장소명 필수 규칙 한 곳 `src/lib/shuttle/placeNameRule.ts`(지도 창 `requirePlaceName` 옵션 — 원생 등록·학부모 링크 `/shuttle/location/[token]` 만 켬, 서버 `validateRegularLocation`·`validateStudentRegisterInput` 도 거부, 저장 SQL 의 주소 대체는 옛 데이터용 유지) · 유니폼은 입력 없음 — `UniformOrder.parentPhoneDigits ∈ 입력 보호자 번호` + `UniformOrderItem.studentName`(띄어쓰기 무시) 일치 주문을 `decideUniformFromOrders`(취소 제외, 업체 전송=«주문»/접수만=«신청») 로 등록 시점에만 채움(주문→학생 자동 갱신 연결은 없음) · 사진 동의 = 체크박스 하나, 방법 `REGISTER_MEDIA_CONSENT_METHOD`=IN_PERSON.
+- **참조횟수**: 0
+
+### [2026-11-09] 셔틀 운행 반 판정 = classRunsShuttle 한 곳(청구·배차 칸·신청 검토·진행 표시)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `src/lib/billing/workbench-pricing.ts` 의 `classRunsShuttle({dayOfWeek, runsShuttle})` = Program.runsShuttle=true + 평일(월~금). 청구 셔틀비(regularShuttlePlan)·신규 배차 남은 칸(`src/lib/shuttle/driverAssign.ts` loadStudents)·셔틀 신청 검토(`shuttle-review-query.ts` context)·배차 진행(`shuttle-progress-query.ts`)이 같이 쓴다. 수강 조회 SQL 에 `p."runsShuttle"` 를 꼭 같이 읽을 것(빠지면 미운행으로 봐 칸이 사라짐). 아직 안 쓰는 곳: 관리자 명단 «학생 추가» 칩(regularRosterEdit getRosterStudentContext)·명단 수강 점검(getRosterEnrollmentCheck). workbench-pricing 은 테스트가 data URL 로 읽어 import 를 둘 수 없다 — 판정을 다른 파일로 옮기지 말 것.
+- **참조횟수**: 0
+
+### [2026-11-09] 셔틀 «기존 정류장 추천» = stopNameMatch.pickNearbyStop 한 곳(장소명 출입구 일치 우선)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
+- **참조횟수**: 0
+
+### [2026-11-09] 수강 «상태»와 «개시일»의 역할 분리 — 공용 판정 commencement.ts 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 원장 기준(11-09) — Enrollment ACTIVE 면 승인(등록)일부터 «수강 중/재원생». 판정은 `src/lib/enrollment/commencement.ts` 의 `isCurrentEnrollment`(TS)·`currentEnrollmentSql(alias)`(SQL) 한 곳(학생 상태 queries.ts current_status·인원 집계 adminReadPayloads·대관 재원생 listRentalMemberStudents·관리자/학부모 화면). `enrollmentDisplayStatus` 는 이제 status 그대로(SCHEDULED 없음), 개시일 미래 안내는 `enrollmentStartsLater`/payload `startsLater` 로만. 개시일(startsOn)을 쓰는 곳은 ① 청구 시수(billing/workbench-service) ② 출석부 회차 명단(staff-session-queries·staff-class-people·staff-sessions·SessionLogModal `enrollmentHasStarted`) ③ 셔틀 월 배차(driverAssign·shuttle-progress-query) ④ 다음 수업 안내(mypage/summary computeNextClass) 뿐 — 상태·인원 판정에 다시 쓰지 말 것(가드: tests/enrollment-current-rule.test.mjs). 반 줄 편집(반 이동·잘못 등록 삭제)은 `lib/enrollment/admin-enrollment-edit.ts`(순수 판정+연결 기록 수)·`actions/enrollment-admin-edit.ts`.
+### [2026-11-09] 정규 셔틀 명단 편집 → 기사님 알림 · 반 이동 재배정 · 위치 반영 (통합 2단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 명단 쓰기 함수(`regularRosterEdit.ts` add/remove/move/editStop/reorder/editStudentRoster)는 트랜잭션 안에서 `notices` 에 담고 **커밋 뒤** `flushNotices` → `regularRosterNotify.notifyDriversOfRosterChange`(DRIVER 역할 전원·바꾼 본인 제외, `deliverOperationalNotification` 인앱+푸시, 실패는 삼킴). 문구·링크(`/staff/run?date=<그 달 다음 운행일>&focus=BOARD|ALIGHT`)·10분 묶음 키는 순수 `regularRosterNotifyLogic`. 옛 `notifyOperationalStaff includeDriver` 는 저장 노선에서 기사를 찾아 쓰지 않는다. 반 이동 판정은 순수 `regularReassignLogic.planStudentReassign`(옛 칸+새 칸 둘 다 있을 때만) → 보드 `driverAssignLogic.buildAssignBoard`(명단 학생 hasApplication=false 도 재배정만) → 저장 `reassign:true` → `addRosterStudentAs({replaceRowIds})` 한 트랜잭션(옛 행은 서버가 다시 계산). 학생 상세 위치 저장(`service.updateStudentShuttleLocation`)은 장소명 필수 + 같은 tx 에서 `applyLocationToRosterInTx`(이번 달부터, 300m 이름 일치 정류장 합류·아니면 새 위치, 행 id 유지 UPDATE).
+- **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 «하나의 운행표» — 명단 정본·관리자=기사님 같은 부품
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 운행 정본은 `RegularShuttleStop`(명단) 하나. 기사님(`regularDriverRoute.ts`)·관리자(`admin/shuttle/regular-dispatch/RegularRunEditor.tsx`)가 같은 순수 조립 `buildRegularRunRows`(lib/shuttle/regularRunRows.ts)와 같은 카드 틀 `RunBoard`(mode driver|admin)·같은 CSS(DriverWorkspace)를 쓴다. 저장 노선(`RegularDispatchRoute`)은 읽지 않음(테이블은 남김, 흡수 SQL 은 PM). 관리자 편집은 모두 `/api/admin/shuttle/regular-roster`(reorder 묶음별·editStop·editStudent·DELETE 범위), 반 이동 재배정은 배정 보드(`/api/staff/shuttle/assign` reassign:true). 바뀌면 서버가 기사님께 «노선 확인하기»(`/staff/run?date=&focus=BOARD|ALIGHT`) 알림. 관리자 화면에 자체 묶음·자동 제안을 다시 만들지 말 것(가드: tests/regular-roster-driver-view.test.mjs). **11-09 2차**: 화면 묶음(블록 머리 «16:00~17:00 수업 · 등원»)은 RunBoard 안에서 순수 `lib/shuttle/runBlocks.ts`(groupRunBlocks = 이어지는 같은 groupKey 만 자름·순서 불변, 끊기면 «이어서»)로 — 기사님·관리자 공통이고 정렬은 건드리지 않는다. 관리자 편집 카드는 한 줄(styles.stop 2칸 격자 안 씀)·끌기는 떠다니는 카드+삽입선(`data-drop-line`)+놓을 때 한 번 onDropOn+FLIP 애니메이션, PC(≥1024) 오른쪽 sticky 지도 = `RouteMapCanvas` 재사용(블록 머리로 묶음 선택, 마커 번호 = 카드 순번). 가드: tests/shuttle-run-blocks.test.mjs.
+- **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 정본 = 명단 — 저장 노선 읽기 지점 0 (통합 6단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 확정 시각(lib/shuttle/regularRosterEta)·안내 문자/배차 진행(enrollment/shuttle-progress: buildStudentRouteNotice·studentRosterFingerprint)·신청 검토 지문(routes=[] 고정)·결석/셔틀 기사 알림(operational-staff-notification: 그날 명단에 학생 있으면 기사 역할 전원)·월 복사·기사님 순서 저장 API 가 모두 RegularShuttleStop 만 읽는다. RegularDispatchRoute 는 /api/admin/regular/dispatch/saved(부르는 화면 없음)와 regularDispatchRoute.ts 저장 함수에만 남음(테이블 삭제는 별도 결정). 명단 달 고르기는 «그 달 이하 최신 달»(SQL max ≤ 월 = pickServiceMonthFor).
+- **참조횟수**: 0
+
+### [2026-11-09] 학부모 앱 = 탭 4개(홈·일정·청구·소식) 한 목록 + 앱 범위(/mypage) 안 상세
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 메뉴는 `src/app/mypage/MyPageBottomNav.tsx` 의 `PARENT_TABS` 하나(휴대폰 아래 탭·PC 헤더 `variant="top"` 공용), 소속 하위 화면은 `also`(일정 = regular-absence·makeup·seasonal·shuttle·enrollment-change, 소식 = news). 일정 = `/mypage/history`(11-09 개편: «확인하는 곳» — 한 달 달력(`?month=YYYY-MM`·`?child=`, 서버 렌더) + 행사·휴무 + 수강 반 + 셔틀 배정. 계산은 순수 `src/lib/mypage/parentSchedule.ts`, 수업일은 `getMonthlyClassDates`(/annual·청구와 같은 함수)를 앞·이번·다음 수강월로 불러 이 달만. **수납·신청 줄 없음** — 수납=청구 탭, 신청=홈 빠른 실행, 수강 변경 신청=«⋯» 메뉴. `HistoryClient` 삭제), 청구 = `/mypage/payments`, 소식 = `/mypage/reports`(공지는 3개월 이내·3개+«더보기», 리포트·피드백·사진, 칩은 같은 화면 앵커). 홈 = 납부 합계 한 줄(`PAYMENT_HOME_HREF` — 묶음 결제 때 이 주소만 교체) + 처리할 일 + 빠른 실행 4, 접힌 칸(details) 없음. 셔틀 배정 상세는 `ParentShuttleDetail`. 설치 앱 scope=/mypage 라 공지 상세는 `/mypage/news/[id]`(전체 공지·우리 아이 반 공지만, 아니면 404) — 공개 `/notices/[id]` 로 링크하지 말 것. 로그아웃은 `ParentMoreMenu`(⋯) 안.
+- **참조횟수**: 0
+
+### [2026-11-09] 학부모 «묶음 결제» = 토스 주문 1건(PaymentTransaction) + 항목 N건(PaymentTransactionItem)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 미납 청구 여러 건(형제 포함, 대표 보호자 s.parentId=본인만)을 토스 결제 한 번으로. 거래 칸은 그대로(대표 청구 = 1번 항목의 paymentId·invoiceId, amount = 합계), 묶인 청구는 `PaymentTransactionItem`(마이그레이션 20261109150000, **코드보다 먼저 적용** — 단건 경로도 이 표를 읽는다). 규칙 순수 `src/lib/payments/checkoutBundle.ts`(자격·10건/100만 원·정렬=POS sortChargeItems·주문 이름·STIZ-B- 번호·확정/취소 판정), 장부 `bundleLedger.ts`(prisma import 없음, db 인자 → 가짜 DB 실행 테스트). finalizeVerifiedTossPayment·applyVerifiedTossFullCancel 은 `hasBundleItems` 면 묶음 갈래(거래+청구·청구서 FOR UPDATE 청구 id 순 → 조건부 UPDATE, 0행이면 BUNDLE_LEDGER_CONFLICT 던져 전부 되돌림). 카드 묶음 반영 실패 = PAYMENT_BUNDLE_REVIEW+원장 DM(돈은 나감), 무통장은 기존 VIRTUAL_ACCOUNT_REVIEW 흐름. 이중 납부 연결점: 청구서/청구로 거래를 찾는 새 SQL 은 반드시 `txCoversInvoiceSql`·`txCoversPaymentSql`(getVirtualAccountState·closeOpenVirtualAccount·queries.ts 마이페이지/관리자 수납 lateral), 무통장 판정 청구 상태는 `TX_PAYMENT_STATUS_SQL`(묶인 청구 중 하나라도 PAID 면 PAID). 승인 직전 `checkBeforeTossConfirm`(묶음 전부 미납 + 랠리즈 사본 차단 D4 — 단건도). API `/api/mypage/payments/checkout`(GET 후보·POST 시작)·`/confirm`(POST 승인·GET 주문 요약), 묶음 입금 알림 = `/api/mypage/payment-request` action submit-bundle. 테스트 `tests/payment-bundle-checkout.test.mjs` 는 payment-ledger.ts 를 가짜 prisma·가짜 fetch 로 실제 실행한다(FAKE_MODULES 로더).
+- **참조횟수**: 0
+
+### [2026-11-09] 학부모 «한 번에 결제» 화면 = /mypage/payments/checkout·done(앱 범위 안), 홈·청구 탭 같은 목록
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 후보는 서버 페이지가 `getBundleCheckoutCandidates` 로 바로 읽고, 결제 시작·검사는 POST `/api/mypage/payments/checkout`(토스 창 인자, `taxFreeAmount` 는 서버 합계를 그대로). 완료는 `/mypage/payments/done` 이 `/api/mypage/payments/confirm` POST(토스 복귀)·GET(새로고침). 홈 «납부할 청구» 합계·계좌는 `getParentPaymentRequests`(청구 탭과 같은 목록, 행에 `virtualAccount`)로 센다 — `getMyPageData` 는 자녀별 최근 5건이라 쓰지 않는다. 묶음 계좌는 VA 금액 ≠ 청구 금액으로 알아본다. 공지 대상 반(`Notice.targetClassIds`)은 관리자=쉼표·선생님=JSON 배열 두 모양이라 `src/lib/noticeTargets.ts` 로만 읽는다.
+- **참조횟수**: 0
+
+### [2026-11-09] 관리자 «기간 결석» = 기간 행(RegularAbsencePeriod) + 날짜별 RegularAbsence(periodId)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 부상·질병은 휴원 대신 기간 결석. 수업일 계산은 순수 `src/lib/regular/absence-period-plan.ts`(연간 일정은 `getMonthlyClassDates` 를 함수 인자로 받음 — 그 파일이 queries 를 import 해서), SQL 은 db 인자 연결부 `absence-period-service.ts`(전역 잠금 `lockCompensation`), prisma·캐시는 `absence-period-runner.ts`. 기간 행 note 머리말 `기간 결석 · ` + reportedByUserId NULL 로 알림 재조정이 거른다(복귀·취소 때 기사·코치 «결석 취소» 알림 방지). 복귀 미정은 coveredUntil 을 KST 다음 달 말일까지, 매일 크론이 늘림. 연간 일정에 없는 달은 추측 안 하고 멈춤.
+- **참조횟수**: 0
+
+### [2026-11-09] 관리자 «선택 항목 환불» = 순수 판정(bulkRefund.ts) + 갈래별 기존 환불 함수
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 서버 액션 `src/app/actions/payment-bulk-refund.ts` 가 DB 로 다시 읽은 행을 `planBulkRefund` 에 넣어 갈래를 나눈다(막을 것 하나라도 있으면 전부 미실행). TOSS=`refundTossPaymentByAdmin`(payment-ledger: 재조회→감사→취소 API 전액→재조회 FULL 일 때만 applyVerifiedTossFullCancel, 가상계좌 DONE 은 환불 계좌 필요라 차단), TOSS_POS=`requestChargeCancelByAdmin`(비동기, 결과 REQUESTED), 그 밖(MANUAL)=`refundPaidPaymentInTx`, CAFE24_BRIDGE 차단. 묶음(토스 항목·POS 항목)은 전부 골라야 하고 부분 취소는 지원 안 함. ⚡ 한 건 «환불»도 같은 runRefund→refundSelectedPayments([id]) 로 통일(PM 결정), updatePaymentStatus·bulkUpdatePaymentStatus 는 REFUNDED 를 거부한다 — 새 환불 경로를 만들 때도 이 액션만 부른다.
 - **참조횟수**: 0

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import dynamic from "next/dynamic";
 import { createNotice, updateNotice, deleteNotice } from "@/app/actions/admin";
 import { isImageAttachment, isHtmlContent, plainToEditorHtml, stripHtmlForPreview } from "@/lib/noticeContent";
@@ -12,7 +13,7 @@ import { toKstYmd } from "@/lib/datetime/kst";
 const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
     ssr: false,
     loading: () => (
-        <div className="border border-gray-300 dark:border-gray-700 rounded-xl p-4 min-h-[180px] bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-sm text-gray-400">
+        <div className="border border-[var(--color-academy-line-input)] rounded-xl p-4 min-h-[180px] bg-[var(--color-academy-soft)] flex items-center justify-center text-sm text-[var(--color-academy-faint)]">
             에디터 로딩중...
         </div>
     ),
@@ -86,31 +87,31 @@ function NoticesLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-64 animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-40 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                    <div className="mt-2 h-4 w-64 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="h-11 w-28 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-700" />
+                <div className="h-11 w-28 animate-pulse rounded-xl bg-[var(--color-academy-line)]" />
             </div>
             <div className="space-y-3">
                 {Array.from({ length: 6 }).map((_, index) => (
                     <div
                         key={index}
-                        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                        className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm"
                     >
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex-1 space-y-3">
-                                <div className="h-5 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                                <div className="h-4 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                                <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-5 w-2/3 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                                <div className="h-4 w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                 <div className="flex gap-2">
-                                    <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-6 w-20 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                    <div className="h-6 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                    <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                                 </div>
                             </div>
                             <div className="hidden gap-2 sm:flex">
-                                <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                             </div>
                         </div>
                     </div>
@@ -122,8 +123,8 @@ function NoticesLoadingFallback() {
 
 function NoticesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">공지사항을 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">공지사항을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -241,7 +242,8 @@ export default function NoticesAdminClient({
         // 이미 HTML(리치 에디터로 쓴 공지)이면 그대로 초기값으로 로드한다.
         setContent(isHtmlContent(n.content) ? n.content : plainToEditorHtml(n.content));
         setTargetType(n.targetType);
-        setSelectedClassIds(n.targetClassIds ? n.targetClassIds.split(",").map(s => s.trim()) : []);
+        // 선생님 반 공지는 JSON 배열로 저장된다 — 두 모양 모두 읽는 공용 파서
+        setSelectedClassIds(parseNoticeTargetClassIds(n.targetClassIds));
         setIsPinned(n.isPinned);
         try { setAttachments(n.attachmentsJSON ? JSON.parse(n.attachmentsJSON) : []); } catch { setAttachments([]); }
         setShowForm(true);
@@ -326,7 +328,7 @@ export default function NoticesAdminClient({
     // 반별 공지의 대상 반 이름(이미 받아온 classes 에서 찾는다 — 새 조회 없음)
     function targetClassNames(n: NoticeData): string[] {
         if (n.targetType !== "CLASS" || !n.targetClassIds) return [];
-        return n.targetClassIds.split(",").map(s => s.trim()).filter(Boolean)
+        return parseNoticeTargetClassIds(n.targetClassIds)
             .map(id => classes.find(c => c.id === id)?.name ?? "삭제된 반");
     }
 
@@ -353,10 +355,10 @@ export default function NoticesAdminClient({
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">공지사항 관리</h1>
+                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">공지사항 관리</h1>
                 </div>
                 <button onClick={() => { resetForm(); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-orange-600 transition">
+                    className="flex items-center gap-2 bg-[var(--color-academy-primary)] text-white px-4 py-2.5 rounded-xl font-bold hover:bg-[var(--color-academy-primary-hover)] transition">
                     <SymbolIcon name="add" size={18} /> 새 공지
                 </button>
             </div>
@@ -364,19 +366,19 @@ export default function NoticesAdminClient({
             {/* Form Modal */}
             {showForm && (
                 <AdminModal onClose={resetForm} titleId="notice-form-modal-title" panelClassName="max-w-2xl">
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                        <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
                             <h2 id="notice-form-modal-title" className="text-lg font-bold">{editId ? "공지 수정" : "새 공지"}</h2>
-                            <button onClick={resetForm} className="p-1 hover:bg-gray-100 dark:bg-gray-800 rounded-lg"><SymbolIcon name="close" size={20} /></button>
+                            <button onClick={resetForm} className="p-1 hover:bg-[var(--color-academy-line)] rounded-lg"><SymbolIcon name="close" size={20} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">제목</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">제목</label>
                                 <input value={formTitle} onChange={e => setFormTitle(e.target.value)}
                                     placeholder="공지 제목을 입력하세요"
-                                    className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm" />
+                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">내용</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">내용</label>
                                 {/* 리치 에디터 — 굵게/색상/목록/링크/이미지/표/영상 등 서식 지원. 저장은 기존 content 컬럼(HTML)에 그대로 들어간다.
                                     본문에 넣은 이미지는 "notices" 폴더로 업로드된다(하단 첨부와 폴더 공유). */}
                                 <RichTextEditor
@@ -388,7 +390,7 @@ export default function NoticesAdminClient({
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">공지 대상</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">공지 대상</label>
                                 <div className="flex gap-3 mb-2">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input type="radio" checked={targetType === "ALL"} onChange={() => setTargetType("ALL")} />
@@ -406,8 +408,8 @@ export default function NoticesAdminClient({
                                                 onClick={() => toggleClassId(c.id)}
                                                 className={`text-xs px-3 py-1.5 rounded-full border transition ${
                                                     selectedClassIds.includes(c.id)
-                                                        ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white border-brand-orange-500 dark:border-brand-neon-lime"
-                                                        : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 hover:border-brand-orange-300 dark:border-brand-neon-lime"
+                                                        ? "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
+                                                        : "bg-white text-[var(--color-academy-muted)] border-[var(--color-academy-line)] hover:border-[var(--color-academy-primary)]"
                                                 }`}>
                                                 {c.name}
                                             </button>
@@ -416,25 +418,25 @@ export default function NoticesAdminClient({
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">첨부파일</label>
-                                <label className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-orange-500 dark:text-brand-neon-lime cursor-pointer transition">
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">첨부파일</label>
+                                <label className="inline-flex items-center gap-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] cursor-pointer transition">
                                     <SymbolIcon name="attach_file" size={16} /> {uploading ? "업로드 중..." : "이미지 첨부"}
                                     <input type="file" accept="image/*" className="hidden" multiple onChange={e => handleFileUpload(e.target.files)} disabled={uploading} />
                                 </label>
-                                <p className="text-xs text-gray-400 mt-1">JPG·PNG·WebP·GIF, 최대 5MB</p>
+                                <p className="text-xs text-[var(--color-academy-faint)] mt-1">JPG·PNG·WebP·GIF, 최대 5MB</p>
                                 {attachments.length > 0 && (
                                     <div className="mt-2 space-y-1">
                                         {attachments.map((a, i) => (
-                                            <div key={i} className="flex items-center justify-between gap-2 bg-gray-50 dark:bg-gray-900 rounded-lg px-3 py-2">
+                                            <div key={i} className="flex items-center justify-between gap-2 bg-[var(--color-academy-soft)] rounded-lg px-3 py-2">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     {isImageAttachment(a) && (
                                                         // eslint-disable-next-line @next/next/no-img-element
-                                                        <img src={a.url} alt="" className="w-9 h-9 rounded object-cover border border-gray-200 dark:border-gray-700 shrink-0" />
+                                                        <img src={a.url} alt="" className="w-9 h-9 rounded object-cover border border-[var(--color-academy-line)] shrink-0" />
                                                     )}
-                                                    <span className="text-xs text-gray-600 dark:text-gray-300 truncate">{a.filename}</span>
+                                                    <span className="text-xs text-[var(--color-academy-muted)] truncate">{a.filename}</span>
                                                 </div>
                                                 <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
-                                                    className="text-gray-400 hover:text-red-500 shrink-0">
+                                                    className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-danger)] shrink-0">
                                                     <SymbolIcon name="close" size={14} />
                                                 </button>
                                             </div>
@@ -444,13 +446,13 @@ export default function NoticesAdminClient({
                             </div>
                             <div className="flex items-center gap-2">
                                 <input type="checkbox" id="isPinned" checked={isPinned} onChange={e => setIsPinned(e.target.checked)} className="rounded" />
-                                <label htmlFor="isPinned" className="text-sm text-gray-700 dark:text-gray-200">상단 고정</label>
+                                <label htmlFor="isPinned" className="text-sm text-[var(--color-academy-muted)]">상단 고정</label>
                             </div>
                         </div>
-                        <div className="p-6 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
-                            <button onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 rounded-xl transition">취소</button>
+                        <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3">
+                            <button onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition">취소</button>
                             <button onClick={handleSubmit} disabled={isPending || uploading || editorUploading}
-                                className="px-6 py-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold rounded-xl hover:bg-orange-600 transition disabled:opacity-50">
+                                className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50">
                                 {isPending ? "저장 중..." : editorUploading ? "이미지 업로드 중..." : editId ? "수정" : "등록"}
                             </button>
                         </div>

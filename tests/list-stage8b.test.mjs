@@ -24,52 +24,106 @@ function compileModule(path, imports = {}) {
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
+// 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
+const statusTones = compileModule("src/lib/ui/statusTones.ts");
 const monthGroups = compileModule("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst });
 // 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
 // 오류 원문 대신 고객용 한국어를 고르는 공용 함수(개발 언어 제거) — 오류를 보여 주는 화면이 함께 불러온다
 const customerMessageModule = compileModule("src/components/parent/customerMessage.ts");
 
-test("출결 히스토리는 KST 날짜로 달별 묶음·오른쪽 날짜·상태 칩을 보이고 수납 탭은 손대지 않는다", () => {
-  const History = compileModule("src/app/mypage/history/HistoryClient.tsx", {
-    "next/link": { default: Link },
-    "@/components/admin/list/StatusCountChips": chips,
-    "@/lib/datetime/kst": kst,
-    "@/components/admin/list/monthDateGroups": monthGroups,
-    // 무통장입금 계좌 안내(수납 탭 전용) — 이 출결 검증과 무관해 빈 부품으로 둔다
-    "@/components/parent/VirtualAccountNotice": { default: () => null },
-  }).default;
-  const html = renderToStaticMarkup(React.createElement(History, { children: [{
-    id: "c1", name: "합성 학생",
-    attendance: { total: 3, present: 2, absent: 1, late: 0, rate: 67, records: [
-      // KST 10/1 00:00 = UTC 9/30 15:00 — toISOString 이면 9/30 으로 하루 밀린다
-      { status: "PRESENT", date: "2026-09-30T15:00:00.000Z", className: "초등 저학년반" },
-      { status: "ABSENT", date: "2026-09-29T15:00:00.000Z", className: "초등 저학년반" },
-      { status: "PRESENT", date: "2026-08-31T15:00:00.000Z", className: null },
-    ] },
-    payments: [],
-  }] }));
-  assert.match(html, /2026년 10월/);
-  assert.match(html, /2026년 9월/);
-  assert.match(html, /10\/1\(목\)/);
-  assert.match(html, /9\/30\(수\)/);
-  assert.match(html, /9\/1\(화\)/);
-  assert.doesNotMatch(html, /2026-09-30/, "옛 UTC 날짜 문자열이 남으면 안 된다");
-  assert.match(html, /출석률 <span class="tabular-nums">67%/);
-  assert.match(html, /aria-label="출결 상태별 건수"/);
-  assert.match(html, /aria-pressed="false"[^>]*>출석<span class="tabular-nums[^"]*">2<\/span>/);
+// 2026-11-09 원장 지시: «일정» 탭 = 연간일정·수업일·출결을 한 달 달력으로. 수납 기록·신청 줄은 뺐다.
+const classSchedule = compileModule("src/lib/classSchedule.ts");
+const parentSchedule = compileModule("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kst, "@/lib/classSchedule": classSchedule });
 
-  const source = read("src/app/mypage/history/HistoryClient.tsx");
+test("일정 탭 달력: 출결은 KST 날짜 칸에 찍히고, 수업일·휴무·행사가 한 달에 모이며 수납·신청 줄은 없다", () => {
+  const view = parentSchedule.buildParentMonth({
+    month: "2026-10",
+    todayYmd: "2026-10-15",
+    events: [
+      { title: "학원 휴무", date: "2026-10-09T00:00:00.000Z" }, // 한글날 — 종일 일정(UTC 자정)
+      { title: "가을 대회", date: "2026-10-24T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z" },
+      { title: "10월 2주차", date: "2026-10-05T00:00:00.000Z" }, // 운영용 주차 표시 — 목록에서 뺀다
+      { title: "가을 대회", date: "2026-10-24T00:00:00.000Z" }, // 같은 날짜+제목 = 한 번만
+      { title: "9월 행사", date: "2026-09-20T00:00:00.000Z" }, // 다른 달
+    ],
+    classDates: ["2026-10-01", "2026-10-08", "2026-10-09", "2026-10-15", "2026-11-05"],
+    attendance: [
+      // KST 10/1 00:00 = UTC 9/30 15:00 — toISOString 이면 9/30 으로 하루 밀린다
+      { status: "PRESENT", date: "2026-09-30T15:00:00.000Z" },
+      { status: "ABSENT", date: "2026-10-07T15:00:00.000Z" },
+      { status: "PRESENT", date: "2026-09-29T15:00:00.000Z" }, // KST 9/30 — 다른 달
+    ],
+  });
+  const cells = view.weeks.flat().filter(Boolean);
+  const day = (n) => cells.find((c) => c.day === n);
+  assert.equal(cells.length, 31);
+  assert.equal(view.weeks[0].findIndex(Boolean), 4, "2026-10-01 은 목요일(일요일 시작 5번째 칸)");
+  assert.equal(day(1).attendance, "PRESENT");
+  assert.equal(day(8).attendance, "ABSENT");
+  assert.equal(day(9).closed, true);
+  assert.equal(day(9).isClass, false, "휴무일에는 수업 표시가 없다");
+  assert.equal(day(15).isToday, true);
+  assert.equal(day(24).hasEvent && day(25).hasEvent, true, "여러 날 행사는 끝 날까지");
+  assert.deepEqual(JSON.parse(JSON.stringify(view.summary)), { classCount: 3, present: 1, late: 0, absent: 1 });
+  assert.deepEqual(JSON.parse(JSON.stringify(view.events.map((e) => e.title))), ["학원 휴무", "가을 대회"]);
+
+  const Hub = compileModule("src/app/mypage/history/ScheduleHub.tsx", {
+    "next/link": { default: Link },
+    "../ParentShuttleDetail": { default: () => null },
+    "@/lib/datetime/kst": kst,
+    "@/lib/mypage/parentSchedule": parentSchedule,
+  }).default;
+  const html = renderToStaticMarkup(React.createElement(Hub, {
+    childList: [{ id: "c1", name: "합성 학생", enrollments: [{ id: "e1", className: "초등 저학년반", dayOfWeek: "Thu", startTime: "16:00", endTime: "17:00" }] }],
+    selectedChildId: "c1", view, shuttleItems: [],
+  }));
+  assert.match(html, /2026년 10월/);
+  assert.match(html, /href="\/mypage\/history\?child=c1&amp;month=2026-09"[^>]*aria-label="이전 달"/);
+  assert.match(html, /href="\/mypage\/history\?child=c1&amp;month=2026-11"[^>]*aria-label="다음 달"/);
+  assert.match(html, /수업 <span class="tabular-nums">3<\/span>회/);
+  assert.match(html, /1일 출석/);
+  assert.match(html, /8일 결석/);
+  assert.match(html, /9일 휴무/);
+  // 2026-11-09 원장 «색상 구분이 잘 안 돼» — 색만이 아니라 모양으로도 갈린다(색약 대비)
+  assert.match(html, /15일 오늘/, "오늘도 낭독기에 읽힌다");
+  assert.match(html, /ring-\[var\(--color-academy-cal-today\)\]/, "오늘 = 굵은 테두리");
+  assert.match(html, /rounded-full bg-\[var\(--color-academy-cal-present\)\]/, "출석 = 채운 점");
+  assert.match(html, /border-2 border-\[var\(--color-academy-cal-late\)\]/, "지각 = 빈 고리(범례)");
+  assert.match(html, /text-\[var\(--color-academy-cal-absent\)\][^>]*>close</, "결석 = ×");
+  assert.match(html, /text-\[var\(--color-academy-cal-event\)\][^>]*>star</, "행사 = 별");
+  for (const token of ["present", "late", "absent", "event", "closed", "closed-soft", "class-soft", "class-line", "today"]) {
+    assert.match(read("src/app/academy-theme.css"), new RegExp(`--color-academy-cal-${token}:`), `토큰 ${token} 정의`);
+  }
+  assert.match(html, /10\/24\(토\)~10\/25\(일\)/);
+  assert.match(html, /id="schedule-records-heading"/, "옛 홈 «기록» 주소가 데려오는 자리");
+  assert.match(html, /id="mypage-enrollments"/);
+  // 수납·신청 줄은 이 화면에 없다(수납 = 청구 탭, 신청 = 홈 빠른 실행·«⋯» 메뉴)
+  assert.doesNotMatch(html, /href="\/payments\/|납부|수납/);
+  for (const href of ["/mypage/regular-absence", "/mypage/makeup", "/mypage/shuttle", "/mypage/enrollment-change", "/mypage/seasonal"]) {
+    assert.doesNotMatch(html, new RegExp(`href="${href}"`), href);
+  }
+  const source = read("src/app/mypage/history/ScheduleHub.tsx");
   assert.match(source, /min-h-11 items-center gap-2 px-3 py-2/);
-  assert.match(source, /shrink-0 text-right text-sm tabular-nums/);
-  // 수납(결제 심사 중) 부분은 그대로 — 납부·청구서·영수증 링크와 판정식 보존
-  assert.match(source, /const canPay = p\.canCheckout !== false && Boolean\(p\.invoiceId\) && \(p\.status === "PENDING" \|\| p\.status === "OVERDUE"\);/);
-  assert.match(source, /href=\{`\/payments\/\$\{p\.invoiceId\}`\}/);
-  assert.match(source, /<p className="text-xs text-gray-400">기한: \{toDateStr\(p\.dueDate\)\}<\/p>/);
+});
+
+test("일정 탭 달 계산: 잘못된 ?month 는 이번 달, 수강월이 달력 달과 어긋나도 이 달 날짜만, 개시일 전은 뺀다", () => {
+  assert.equal(parentSchedule.parseMonthParam("2026-13", "2026-11-09"), "2026-11");
+  assert.equal(parentSchedule.parseMonthParam(undefined, "2026-11-09"), "2026-11");
+  assert.equal(parentSchedule.parseMonthParam("2027-01", "2026-11-09"), "2027-01");
+  assert.equal(parentSchedule.shiftMonth("2026-12", 1), "2027-01");
+  assert.equal(parentSchedule.shiftMonth("2027-01", -1), "2026-12");
+  const plan = { "2026-10": ["2026-10-26"], "2026-11": ["2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23"], "2026-12": ["2026-11-30", "2026-12-07"] };
+  const dates = parentSchedule.classDatesForCalendarMonth("2026-11", "Mon", "2026-11-09", (ym) => plan[ym] ?? []);
+  assert.deepEqual(JSON.parse(JSON.stringify(dates)), ["2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30"]);
+  // 3개월 기준 — 말일 보정(5/31 의 3개월 전 = 2/28)
+  assert.equal(parentSchedule.monthsBeforeYmd("2027-05-31", 3), "2027-02-28");
+  assert.equal(parentSchedule.monthsBeforeYmd("2027-01-15", 3), "2026-10-15");
 });
 
 test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
   const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
@@ -158,8 +212,25 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
       // KST 10/1 00:00 = UTC 9/30 15:00 — 서버(UTC)의 toLocaleDateString 이면 9/30 으로 찍힌다
       { sessionId: "s1", date: "2026-09-30T15:00:00.000Z", topic: "드리블 기초", className: "초등 저학년반", dayOfWeek: "Thu", startTime: "16:00", endTime: "17:00", coachName: "합성 코치" },
       { sessionId: "s2", date: "2026-09-10T15:00:00.000Z", topic: null, className: "초등 저학년반", dayOfWeek: "Fri", startTime: "16:00", endTime: "17:00", coachName: null },
-    ] },
-    "@/lib/datetime/kst": kst,
+    ],
+      // 2026-11-09 «소식» 탭 — 공지·피드백·사진을 함께 읽는다(이 검증은 리포트 목록만 본다)
+      getMyPageData: async () => ({ children: [{ id: "c1", enrollments: [{ classId: "k1" }] }] }),
+      getNoticesByClassIds: async () => [
+        { id: "n1", title: "합성 공지", content: "<p>본문</p>", isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" },
+        { id: "n2", title: "둘째 공지", content: "", isPinned: false, createdAt: "2026-10-01T00:00:00.000Z" },
+        { id: "n3", title: "셋째 공지", content: "", isPinned: false, createdAt: "2026-09-01T00:00:00.000Z" },
+        { id: "n4", title: "넷째 공지", content: "", isPinned: false, createdAt: "2026-08-08T15:00:00.000Z" }, // KST 8/9 = 딱 3개월 전 → 보인다
+        { id: "old", title: "오래된 공지", content: "", isPinned: false, createdAt: "2026-08-08T14:00:00.000Z" }, // KST 8/8 → 숨김
+        { id: "pin", title: "고정 안내", content: "", isPinned: true, createdAt: "2026-03-02T00:00:00.000Z" }, // 고정 공지 = 오래돼도 보이고 맨 앞
+      ],
+      getChildrenFeedbacks: async () => [],
+      getGalleryByClassIds: async () => [],
+    },
+    "@/components/pwa/HideInInstalledApp": { default: ({ children }) => children },
+    "@/components/pwa/AppSafeLink": { default: Link },
+    // 오늘을 고정 — 3개월 지난 공지 숨김이 실행 날짜에 따라 달라지지 않게
+    "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
+    "@/lib/mypage/parentSchedule": parentSchedule,
     "@/components/admin/list/monthDateGroups": monthGroups,
   }).default;
   const html = renderToStaticMarkup(await Page());
@@ -172,6 +243,20 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.match(html, /담당: 합성 코치/);
   assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");
   assert.doesNotMatch(read("src/app/mypage/reports/page.tsx"), /\.toLocaleDateString\(/);
+  // «소식» 탭: 공지가 맨 위, 상세는 앱 안 주소, 날짜는 KST(UTC 10/30 15:05 = KST 10/31)
+  assert.match(html, /<h1[^>]*>소식<\/h1>/);
+  assert.match(html, /href="\/mypage\/news\/n1"/);
+  assert.match(html, /합성 공지/);
+  assert.match(html, /10\. 31\./);
+  assert.ok(html.indexOf("합성 공지") < html.indexOf("드리블 기초"), "공지가 리포트보다 위");
+  assert.doesNotMatch(html, /href="#news-feedback"|href="#news-photos"/, "건수 0 인 칸은 칩도 숨긴다");
+  // 공지: 3개월 넘은 것은 숨기고(고정 공지는 예외·맨 앞), 3개만 먼저 — 나머지는 «더보기» 안
+  assert.doesNotMatch(html, /오래된 공지/);
+  assert.ok(html.indexOf("고정 안내") > 0 && html.indexOf("고정 안내") < html.indexOf("합성 공지"), "고정 공지는 오래돼도 맨 앞");
+  assert.match(html, /href="#news-notices"[^>]*>공지<span class="tabular-nums[^"]*">5<\/span>/);
+  const more = html.indexOf("<details");
+  assert.ok(more > html.indexOf("둘째 공지") && more < html.indexOf("셋째 공지"), "고정 1 + 최근 2 = 3개, 셋째부터 더보기 안");
+  assert.match(html, /더보기 <span class="tabular-nums">2<\/span>/);
 });
 
 test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 시트, 행 안 «취소»는 번지지 않고 바로 취소한다", () => {
@@ -214,7 +299,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
     phoneKnown: true,
     absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],

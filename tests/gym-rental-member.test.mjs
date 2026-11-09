@@ -57,6 +57,15 @@ const WEEK = { Mon: "2026-11-16", Tue: "2026-11-17", Wed: "2026-11-18", Thu: "20
 const NOW = kst.kstAt("2026-11-08", "12:00");
 const toMin = (hm) => rules.hmToMinutes(hm);
 const OPEN = { Mon: 540, Tue: 540, Wed: 540, Thu: 540, Fri: 540, Sat: 600, Sun: 600 };
+// 2026-11-09 원장 규칙 — 평일 마감 22:10 · 주말 22:00 (수업과 겹치는 시간은 그대로 막는다)
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const CLOSE = { Mon: 1330, Tue: 1330, Wed: 1330, Thu: 1330, Fri: 1330, Sat: 1320, Sun: 1320 };
+/** 원장 규칙으로 직접 계산한 «그날 막히는 수업 구간» — 일요일 없음, 나머지는 수업 그대로 */
+function blockingClasses(code) {
+  if (code === "Sun") return [];
+  return REAL[code].map((r) => r.split("-").map(toMin))
+    .filter(([s, e]) => e > s);
+}
 
 /** 열린 시작 시각을 «09:00~15:00, 20:40~21:00» 처럼 이어진 구간으로 묶는다(10분 간격) */
 function openRanges(day) {
@@ -74,17 +83,18 @@ test("실제 시간표: 요일마다 수업과 겹치는 [시작, 시작+60)은 
   for (const [code, date] of Object.entries(WEEK)) {
     assert.equal(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][kst.kstDow(date)], code, date);
     const day = rules.buildRentalDay({ date, classes: CLASSES, busy: [], nowMs: NOW });
-    const classes = code === "Sun" ? [] : REAL[code].map((r) => r.split("-").map(toMin));
+    const classes = blockingClasses(code);
+    assert.equal(day.closeMinute, CLOSE[code], code);
     assert.equal(day.openMinute, OPEN[code], code);
     assert.equal(day.starts[0].minute, OPEN[code], code);
-    assert.equal(day.starts.at(-1).minute, 21 * 60, code); // 마지막 시작 21:00 (22:00 종료)
+    assert.equal(day.starts.at(-1).minute, CLOSE[code] - 60, code); // 마지막 시작 평일 21:10(22:10 마감) · 주말 21:00(22:00 마감)
     for (const option of day.starts) {
       const end = option.minute + 60;
       const clash = classes.some(([s, e]) => option.minute < e && s < end);
       assert.equal(option.available, !clash, `${code} ${option.label}`);
       if (option.available) {
-        // 이어 쓸 수 있는 최대 시간이 다음 수업 시작·22:00 을 넘지 않는다
-        const nextClass = Math.min(1320, ...classes.map(([s]) => s).filter((s) => s >= end));
+        // 이어 쓸 수 있는 최대 시간이 다음 수업 시작·마감(평일 22:10 · 주말 22:00)을 넘지 않는다
+        const nextClass = Math.min(CLOSE[code], ...classes.map(([s]) => s).filter((s) => s >= end));
         assert.ok(option.minute + option.maxMinutes <= nextClass, `${code} ${option.label} max ${option.maxMinutes}`);
         // 그리고 30분 단위로 그 한계까지 최대로 준다(덜 막지 않는다)
         assert.ok(option.minute + option.maxMinutes + 30 > Math.min(nextClass, option.minute + rules.RENTAL_MAX_MINUTES), `${code} ${option.label} 덜 열림`);
@@ -101,11 +111,12 @@ test("실제 시간표: 요일별 «열린 시작 구간» (원장 보고용 표
   const table = Object.fromEntries(Object.entries(WEEK).map(([code, date]) =>
     [code, openRanges(rules.buildRentalDay({ date, classes: CLASSES, busy: [], nowMs: NOW }))]));
   assert.deepEqual(table, {
-    Mon: "09:00~15:00, 20:40~21:00",
-    Tue: "09:00~14:00",
-    Wed: "09:00~14:00, 21:00",
-    Thu: "09:00~14:00",
-    Fri: "09:00~14:00, 20:40~21:00",
+    // 평일 저녁: 20:40 부터 수업과 상관없이 열리고 마지막 시작 21:10(22:10 마감)
+    Mon: "09:00~15:00, 20:40~21:10",
+    Tue: "09:00~14:00", // 성인반 20:40~21:55 → 21:55 이후 1시간은 22:10 을 넘는다
+    Wed: "09:00~14:00, 21:00~21:10", // 20:55 수업 종료 뒤 21:00·21:10 시작(22:10 마감)
+    Thu: "09:00~14:00", // 성인반·슈팅 21:55 종료 → 저녁 대관 불가
+    Fri: "09:00~14:00, 20:40~21:10",
     Sat: "14:20~16:10, 18:30~21:00",
     Sun: "10:00~21:00",
   });
@@ -241,12 +252,13 @@ test("신청: 로그인 학부모의 연결 재원생이면 2시간 0원·보증
   assert.equal(v[17], "student-1"); // memberStudentId
   assert.deepEqual([v[18], v[19], v[20]], [null, null, null]); // 보증금 0 → 환불 계좌 저장 안 함
   assert.equal(v[21], "parent-1"); // applicantUserId
-  // 학생 범위 = 마이페이지 «내 자녀»(childAccessSql 조각 그대로) + 재원(병합 제외·시작된 ACTIVE·끝난 반 제외)
+  // 학생 범위 = 마이페이지 «내 자녀»(childAccessSql 조각 그대로) + 재원(병합 제외·ACTIVE·끝난 반 제외)
   const sql = db.memberQuery.sql;
   assert.ok(sql.includes(FAMILY_ACCESS), "childAccessSql 조각을 그대로 쓴다(가족 연결 포함)");
   assert.match(sql, /"mergedIntoStudentId" IS NULL/);
   assert.match(sql, /e\.status = 'ACTIVE'/);
-  assert.match(sql, /"startsOn" IS NULL OR e\."startsOn" <= \(now\(\) AT TIME ZONE 'Asia\/Seoul'\)::date/);
+  // 2026-11-09 원장 기준: 승인(ACTIVE)일부터 재원생 — 개시일 전이어도 무료 대관 대상
+  assert.doesNotMatch(sql, /startsOn/);
   assert.match(sql, /c\.name NOT LIKE '\[%'/);
   assert.doesNotMatch(sql, /phone|regexp_replace/i, "이름·번호 대조는 쓰지 않는다");
   assert.deepEqual(db.memberQuery.values, ["parent-1"]);
@@ -514,7 +526,10 @@ test("시트 보조 함수: 가능한 시만, 이용 시간은 1시간~최대로
   const day = rules.buildRentalDay({ date: WEEK.Tue, classes: CLASSES, busy: [], nowMs: NOW });
   // RentalTimeSheet 는 React 의존이라 같은 계산을 규칙 결과로 확인한다
   const hours = [...new Set(day.starts.filter((s) => s.available).map((s) => Math.floor(s.minute / 60)))];
-  assert.deepEqual(hours, [9, 10, 11, 12, 13, 14]); // 화요일: 15시 수업 전까지만
+  assert.deepEqual(hours, [9, 10, 11, 12, 13, 14]); // 화요일: 15시 수업 전까지(저녁은 성인반 21:55 까지라 불가)
+  const mon = rules.buildRentalDay({ date: WEEK.Mon, classes: CLASSES, busy: [], nowMs: NOW });
+  const evening = mon.starts.filter((s) => s.available && s.minute >= 20 * 60).map((s) => [s.label, s.maxMinutes]);
+  assert.deepEqual(evening, [["20:40", 90], ["20:50", 60], ["21:00", 60], ["21:10", 60]]); // 월요일 20:35 수업 뒤 — 22:10 마감까지 30분 단위
   const at1400 = day.starts.find((s) => s.minute === 14 * 60);
   assert.equal(at1400.maxMinutes, 60);
 });
@@ -550,4 +565,22 @@ test("공개 화면: 페이지는 정적(ISR) 그대로, 로그인 여부는 서
   assert.match(client, /\{memberStudents\.length > 0 && \(/);
   assert.doesNotMatch(client, /studentName|학원에 등록된 학생 이름/);
   assert.match(client, /memberStudentId: memberFree \? memberStudentId : ""/);
+});
+
+test("신청 완료: 맨 위로 튀지 않고 접수증으로 스크롤, 계좌·금액 복사가 접수증 맨 위(원장 지시 2026-11-08)", () => {
+  const client = read("src/app/rental/RentalClient.tsx");
+  // 예전 원인 — 접수 직후 window.scrollTo(맨 위)로 히어로·요금 안내가 보이고 접수증은 아래로 밀렸다
+  assert.doesNotMatch(client, /window\.scrollTo\(\{ top: 0/);
+  assert.match(client, /receiptRef\.current\?\.scrollIntoView\(\{ behavior: reduceMotion \? "auto" : "smooth", block: "start" \}\)/);
+  assert.match(client, /prefers-reduced-motion: reduce/);
+  assert.match(client, /receiptTitleRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(client, /ref=\{receiptTitleRef\} tabIndex=\{-1\}/);
+  assert.match(client, /ref=\{receiptRef\} className="public-card scroll-mt-24/);
+  // 입금 계좌·복사 버튼이 접수 번호보다 위
+  const receiptStart = client.indexOf("ref={receiptRef}");
+  assert.ok(client.indexOf('"계좌 복사"', receiptStart) < client.indexOf("접수 번호", receiptStart));
+  assert.ok(client.indexOf('"금액 복사"', receiptStart) < client.indexOf("접수 번호", receiptStart));
+  // 복사값은 그대로 — 계좌는 서버가 만든 bankCopyText, 금액은 숫자만
+  assert.match(client, /copyText\("account", receipt\.bankCopyText\)/);
+  assert.match(client, /copyText\("amount", String\(receipt\.totalAmount\)\)/);
 });

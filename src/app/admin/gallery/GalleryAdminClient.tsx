@@ -83,43 +83,43 @@ function GalleryLoadingFallback() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="h-8 w-44 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-          <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+          <div className="h-8 w-44 animate-pulse rounded bg-[var(--color-academy-line)]" />
+          <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="h-10 w-32 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
-          <div className="h-10 w-28 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+          <div className="h-10 w-32 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+          <div className="h-10 w-28 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
         </div>
       </div>
-      <section className="rounded-lg border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">
-            <div className="h-5 w-36 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-            <div className="h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+            <div className="h-5 w-36 animate-pulse rounded bg-[var(--color-academy-line)]" />
+            <div className="h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
           </div>
-          <div className="h-9 w-32 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+          <div className="h-9 w-32 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
         </div>
       </section>
-      <section className="rounded-lg border border-orange-100 bg-orange-50/40 p-4 dark:border-gray-700 dark:bg-gray-800">
+      <section className="rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]/40 p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="space-y-2">
-            <div className="h-5 w-32 animate-pulse rounded bg-orange-100 dark:bg-gray-700" />
-            <div className="h-4 w-72 max-w-full animate-pulse rounded bg-orange-100/80 dark:bg-gray-700" />
+            <div className="h-5 w-32 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+            <div className="h-4 w-72 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]/80" />
           </div>
-          <div className="h-8 w-20 animate-pulse rounded-full bg-orange-100 dark:bg-gray-700" />
+          <div className="h-8 w-20 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
         </div>
       </section>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, index) => (
           <div
             key={index}
-            className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
+            className="overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-white shadow-sm"
           >
-            <div className="aspect-video animate-pulse bg-gray-100 dark:bg-gray-700" />
+            <div className="aspect-video animate-pulse bg-[var(--color-academy-soft)]" />
             <div className="space-y-3 p-4">
-              <div className="h-5 w-3/4 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-              <div className="h-4 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-              <div className="h-4 w-2/3 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+              <div className="h-5 w-3/4 animate-pulse rounded bg-[var(--color-academy-line)]" />
+              <div className="h-4 w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
+              <div className="h-4 w-2/3 animate-pulse rounded bg-[var(--color-academy-soft)]" />
             </div>
           </div>
         ))}
@@ -130,8 +130,8 @@ function GalleryLoadingFallback() {
 
 function GalleryErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-      <p className="text-sm font-bold text-red-700 dark:text-red-200">갤러리 데이터를 불러오지 못했습니다.</p>
+    <div className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+      <p className="text-sm font-bold text-[var(--color-academy-danger)]">갤러리 데이터를 불러오지 못했습니다.</p>
       <button
         type="button"
         onClick={onRetry}
@@ -348,13 +348,13 @@ export default function GalleryAdminClient({
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">사진/영상 갤러리</h1>
+          <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">사진/영상 갤러리</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href="/staff/quick-post"
             prefetch={false}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 transition hover:border-brand-orange-500 hover:text-brand-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
           >
             <FontFreeIcon name="upload" size={18} />
             선생님 업로드
@@ -364,7 +364,7 @@ export default function GalleryAdminClient({
               setEditingPost(null);
               setShowForm(true);
             }}
-            className="flex items-center gap-2 rounded-lg bg-brand-orange-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+            className="flex items-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
           >
             <FontFreeIcon name="add" size={18} /> 새 게시물
           </button>
@@ -375,8 +375,8 @@ export default function GalleryAdminClient({
         <div
           className={`flex items-start justify-between gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${
             pageMessage.ok
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-red-200 bg-red-50 text-red-700"
+              ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+              : "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
           }`}
         >
           <div className="flex items-center gap-2">
@@ -395,26 +395,26 @@ export default function GalleryAdminClient({
       )}
 
       {instagramStatus && (
-        <section className="rounded-lg border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">인스타그램 연결</h2>
+                <h2 className="text-sm font-bold text-[var(--color-academy-ink)]">인스타그램 연결</h2>
                 <span
                   className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                    instagramReady ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                    instagramReady ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
                   }`}
                 >
                   {instagramReady ? "준비 완료" : "설정 필요"}
                 </span>
                 {instagramStatus.autoPublishEnabled && (
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                  <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-[11px] font-bold text-[var(--color-academy-muted)]">
                     즉시 업로드 켜짐
                   </span>
                 )}
               </div>
               {syncResult && (
-                <p className={`mt-1 text-xs font-medium ${syncResult.ok ? "text-green-600" : "text-red-600"}`}>
+                <p className={`mt-1 text-xs font-medium ${syncResult.ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
                   {syncResult.ok ? syncResult.message : adminMessageText(syncResult.message, "인스타그램 게시물을 가져오지 못했습니다. 연결 설정을 확인해 주세요.")}
                 </p>
               )}
@@ -425,7 +425,7 @@ export default function GalleryAdminClient({
                   href={instagramProfileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 transition hover:border-brand-orange-500 hover:text-brand-orange-500 dark:border-gray-700 dark:text-gray-300"
+                  className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
                 >
                   프로필 열기
                 </a>
@@ -433,7 +433,7 @@ export default function GalleryAdminClient({
               <button
                 onClick={handleInstagramSync}
                 disabled={!instagramReady || isPending}
-                className="flex items-center gap-2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-gray-700 disabled:opacity-40"
+                className="flex items-center gap-2 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 py-2 text-xs font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-40"
               >
                 {isPending ? (
                   <FontFreeIcon name="sync" size={14} className="animate-spin" />
@@ -447,27 +447,27 @@ export default function GalleryAdminClient({
         </section>
       )}
 
-      <section className="rounded-lg border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-lg font-black text-gray-900 dark:text-white">선생님 업로드 대기</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">선생님 업로드 대기</h2>
+            <p className="text-sm text-[var(--color-academy-muted)]">
               문구를 직접 수정한 뒤 게시하면 홈페이지 갤러리와 인스타그램에 함께 반영됩니다.
             </p>
           </div>
-          <span className="w-fit rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">
+          <span className="w-fit rounded-full bg-[var(--color-academy-soft)] px-3 py-1 text-xs font-bold text-[var(--color-academy-muted)]">
             {drafts.length}개 대기
           </span>
         </div>
 
         {draftMessage && (
-          <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+          <div className="mt-3 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-muted)]">
             {draftMessage}
           </div>
         )}
 
         {drafts.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">
+          <div className="mt-4 rounded-lg border border-dashed border-[var(--color-academy-line-input)] p-8 text-center text-sm text-[var(--color-academy-faint)]">
             승인 대기 중인 초안이 없습니다.
           </div>
         ) : (
@@ -480,7 +480,7 @@ export default function GalleryAdminClient({
               const isRejectingDraft = isDraftBusy && draftBusy?.action === "reject";
               const isEditLocked = isDraftBusy || hasPublishingStatus;
               return (
-                <div key={draft.id} className="grid gap-4 rounded-lg border border-gray-200 p-3 md:grid-cols-[minmax(220px,320px)_1fr]">
+                <div key={draft.id} className="grid gap-4 rounded-lg border border-[var(--color-academy-line)] p-3 md:grid-cols-[minmax(220px,320px)_1fr]">
                   <InstagramFeedPreview
                     mediaItems={media}
                     caption={draft.caption || ""}
@@ -493,19 +493,19 @@ export default function GalleryAdminClient({
                   <div className="flex min-w-0 flex-col justify-between gap-3">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-bold text-orange-700">
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
                           {draft.lessonType || "수업"}
                         </span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold text-gray-600">
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
                           {draft.authorName || "선생님"}
                         </span>
                         {draft.status === "FAILED" && (
-                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-700">
+                          <span className="rounded-full bg-[var(--color-academy-danger-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-danger)]">
                             재시도 필요
                           </span>
                         )}
                         {hasPublishingStatus && (
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                          <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-muted)]">
                             게시 처리 중
                           </span>
                         )}
@@ -513,12 +513,12 @@ export default function GalleryAdminClient({
                       <input
                         value={draft.title || ""}
                         onChange={(event) => patchDraft(draft.id, { title: event.target.value })}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold outline-none focus:border-brand-orange-500"
+                        className="w-full rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold outline-none focus:border-[var(--color-academy-primary)]"
                         placeholder="게시물 제목"
                       />
-                      {draft.memo && <p className="text-xs leading-5 text-gray-500">메모: {draft.memo}</p>}
+                      {draft.memo && <p className="text-xs leading-5 text-[var(--color-academy-muted)]">메모: {draft.memo}</p>}
                       {draft.instagramPublishError && (
-                        <p className="rounded-lg bg-red-50 p-2 text-xs font-medium leading-5 text-red-700">
+                        <p className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-xs font-medium leading-5 text-[var(--color-academy-danger)]">
                           {draft.instagramPublishError}
                         </p>
                       )}
@@ -528,7 +528,7 @@ export default function GalleryAdminClient({
                         type="button"
                         onClick={() => handleDraftSave(draft)}
                         disabled={isEditLocked}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg border border-gray-200 px-2 text-xs font-black text-gray-700 disabled:opacity-50"
+                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg border border-[var(--color-academy-line)] px-2 text-xs font-black text-[var(--color-academy-muted)] disabled:opacity-50"
                       >
                         <FontFreeIcon name="save" size={15} />
                         저장
@@ -537,7 +537,7 @@ export default function GalleryAdminClient({
                         type="button"
                         onClick={() => handleDraftPublish(draft)}
                         disabled={isEditLocked}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-brand-orange-500 px-2 text-xs font-black text-white disabled:opacity-50"
+                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-[var(--color-academy-primary)] px-2 text-xs font-black text-white disabled:opacity-50"
                       >
                         {isPublishingDraft || hasPublishingStatus ? (
                           <FontFreeIcon name="sync" size={15} className="animate-spin" />
@@ -550,7 +550,7 @@ export default function GalleryAdminClient({
                         type="button"
                         onClick={() => handleDraftReject(draft)}
                         disabled={isRejectingDraft}
-                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-gray-100 px-2 text-xs font-black text-gray-600 disabled:opacity-50"
+                        className="flex min-h-10 items-center justify-center gap-1 rounded-lg bg-[var(--color-academy-soft)] px-2 text-xs font-black text-[var(--color-academy-muted)] disabled:opacity-50"
                       >
                         {isRejectingDraft ? (
                           <FontFreeIcon name="sync" size={15} className="animate-spin" />
@@ -582,8 +582,8 @@ export default function GalleryAdminClient({
       )}
 
       {posts.length === 0 ? (
-        <div className="rounded-lg border border-gray-100 bg-white p-12 text-center text-gray-400 dark:border-gray-700 dark:bg-gray-800">
-          <FontFreeIcon name="image" className="mx-auto mb-3 text-gray-300" size={48} />
+        <div className="rounded-lg border border-[var(--color-academy-line)] bg-white p-12 text-center text-[var(--color-academy-faint)]">
+          <FontFreeIcon name="image" className="mx-auto mb-3 text-[var(--color-academy-faint)]" size={48} />
           <p className="font-medium">아직 갤러리 게시물이 없습니다.</p>
         </div>
       ) : (
@@ -596,9 +596,9 @@ export default function GalleryAdminClient({
               return (
                 <div
                   key={post.id}
-                  className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
+                  className="overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-white shadow-sm transition hover:shadow-md"
                 >
-                  <div className="relative aspect-video bg-gray-100 dark:bg-gray-900">
+                  <div className="relative aspect-video bg-[var(--color-academy-soft)]">
                     {firstImage ? (
                       <img
                         src={firstImage.url}
@@ -608,17 +608,17 @@ export default function GalleryAdminClient({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-gray-300">
+                      <div className="flex h-full items-center justify-center text-[var(--color-academy-faint)]">
                         <FontFreeIcon name="image" size={48} />
                       </div>
                     )}
                     <div className="absolute right-2 top-2 flex gap-1">
                       {post.isPublic ? (
-                        <span className="flex items-center gap-1 rounded-full bg-green-500 px-2 py-0.5 text-xs text-white">
+                        <span className="flex items-center gap-1 rounded-full bg-[var(--color-academy-success)] px-2 py-0.5 text-xs text-white">
                           <FontFreeIcon name="visibility" size={10} /> 공개
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 rounded-full bg-gray-500 px-2 py-0.5 text-xs text-white">
+                        <span className="flex items-center gap-1 rounded-full bg-[var(--color-academy-primary)] px-2 py-0.5 text-xs text-white">
                           <FontFreeIcon name="visibility_off" size={10} /> 비공개
                         </span>
                       )}
@@ -630,33 +630,33 @@ export default function GalleryAdminClient({
                   <div className="p-3">
                     <div className="mb-2 flex items-start justify-between gap-2">
                       {/* 제목은 말줄임 없이 전부(길면 줄바꿈) */}
-                      <h3 className="min-w-0 break-keep break-words text-sm font-bold text-gray-900 dark:text-white">
+                      <h3 className="min-w-0 break-keep break-words text-sm font-bold text-[var(--color-academy-ink)]">
                         {post.title || "제목 없음"}
                       </h3>
                       {/* 작성일 — KST 달력 날짜, 자릿수 폭 고정 */}
-                      <span className="shrink-0 text-xs tabular-nums text-gray-400">
+                      <span className="shrink-0 text-xs tabular-nums text-[var(--color-academy-faint)]">
                         {toKstYmd(post.createdAt)}
                       </span>
                     </div>
                     {post.className && (
-                      <span className="mb-2 inline-block rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                      <span className="mb-2 inline-block rounded-full bg-[var(--color-academy-soft)] px-2 py-0.5 text-xs text-[var(--color-academy-muted)]">
                         {post.className}
                       </span>
                     )}
-                    {post.caption && <p className="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{post.caption}</p>}
-                    <div className="mt-2 flex gap-1 border-t border-gray-50 pt-1">
+                    {post.caption && <p className="line-clamp-2 text-xs text-[var(--color-academy-muted)]">{post.caption}</p>}
+                    <div className="mt-2 flex gap-1 border-t border-[var(--color-academy-line)] pt-1">
                       {/* 수정·삭제 — 함수·확인창 그대로, 터치 44px */}
                       <button
                         type="button"
                         onClick={() => startEdit(post)}
-                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-gray-500 transition hover:text-brand-orange-500"
+                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-[var(--color-academy-muted)] transition hover:text-[var(--color-academy-ink)]"
                       >
                         <FontFreeIcon name="edit" size={14} /> 수정
                       </button>
                       <button
                         type="button"
                         onClick={() => handleDelete(post.id)}
-                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-gray-500 transition hover:text-red-500"
+                        className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs text-[var(--color-academy-muted)] transition hover:text-[var(--color-academy-danger)]"
                       >
                         <FontFreeIcon name="delete" size={14} /> 삭제
                       </button>
@@ -672,7 +672,7 @@ export default function GalleryAdminClient({
                 type="button"
                 onClick={loadMorePosts}
                 disabled={loadingMore}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 transition hover:border-brand-orange-500 hover:text-brand-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className="rounded-lg border border-[var(--color-academy-line)] bg-white px-4 py-2.5 text-sm font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
               >
                 {loadingMore ? "불러오는 중..." : `더 보기 ${posts.length}/${pagination?.total ?? posts.length}`}
               </button>

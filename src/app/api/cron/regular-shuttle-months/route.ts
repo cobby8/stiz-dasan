@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
   const result = await ensureRegularRosterMonths();
   if (result.created.length > 0) {
-    console.log(`[cron/regular-shuttle-months] ${result.created.map((c) => `${c.sourceMonth}→${c.targetMonth}(${c.copied}행·노선 ${c.routesCopied})`).join(", ")}`);
+    console.log(`[cron/regular-shuttle-months] ${result.created.map((c) => `${c.sourceMonth}→${c.targetMonth}(${c.copied}행)`).join(", ")}`);
   }
   return NextResponse.json({ ok: true, ...result });
 }

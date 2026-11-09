@@ -34,15 +34,15 @@ export function DriverLightError({ title, sub }: { title: string; sub: string })
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         <div>
           <p className="text-5xl">🚌</p>
-          <h1 className="mt-3 text-xl font-black text-gray-900">{title}</h1>
-          <p className="mt-1 text-base text-gray-500">{sub}</p>
+          <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">{title}</h1>
+          <p className="mt-1 text-base text-[var(--color-academy-muted)]">{sub}</p>
         </div>
       </div>
     </AcademyTheme>
   );
 }
 
-export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false }: { token: string; searchDate?: string | null; rememberToken?: boolean }) {
+export default async function UnifiedDriverRunPage({ token, searchDate, rememberToken = false, focusDirection = null }: { token: string; searchDate?: string | null; rememberToken?: boolean; focusDirection?: "PICKUP" | "DROPOFF" | null }) {
   // 토큰 검증은 기존 함수 그대로(방학특강 resolveRunToken · 정규 isRegularRunToken).
   if (!(await isAnyDriverRunToken(token))) {
     return <DriverLightError title="유효하지 않은 링크입니다" sub="원장님께 새 링크를 요청해주세요." />;
@@ -70,6 +70,7 @@ export default async function UnifiedDriverRunPage({ token, searchDate, remember
         nextDate={nextDate}
         today={today}
         driverLabel={driverLabel}
+        focusDirection={focusDirection}
       />
       {/* 토큰 검증을 통과한 뒤에만 기억한다. 만료된 링크를 기억하면 홈 화면
           아이콘이 매번 "유효하지 않은 링크" 화면을 여는 꼴이 된다.

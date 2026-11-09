@@ -15,9 +15,9 @@ const FILTERS = [
   { value: "ALL", label: "전체" },
 ];
 
-// 상태 배지 색 — 확인 중(주의) / 처리 완료(성공) / 확인 안 됨(위험)
+// 상태 배지 색 — 확인 중(정보: «입금 확인 중» 규칙과 같게, PM 결정 11-09) / 처리 완료(성공) / 확인 안 됨(위험)
 function statusTone(status: string) {
-  if (status === "PENDING") return "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]";
+  if (status === "PENDING") return "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]";
   if (status === "DONE") return "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]";
   return "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]";
 }

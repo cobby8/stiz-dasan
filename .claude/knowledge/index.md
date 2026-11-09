@@ -4,7 +4,9 @@
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
 | architecture.md | 20 | 2026-11-08 |
-| errors.md | 9 | 2026-10-24 |
+| errors.md | 12 | 2026-11-09 |
+| architecture.md | 27 | 2026-11-09 |
+| errors.md | 10 | 2026-11-09 |
 | conventions.md | 29 | 2026-10-25 |
 | decisions.md | 20 | 2026-10-06 |
 | lessons.md | 6 | 2026-10-02 |

@@ -105,6 +105,9 @@ export async function decidePaymentParentRequest(input: {
         actorType: "ADMIN",
         actorId: input.adminUserId,
         method: row.method ?? "MANUAL",
+        // 학부모가 직접 입금한 건 = 사람 확인 납부. 예전 토스 결제(묶음 포함)가 환불된 뒤 다시 납부된 청구가
+        // 옛 TOSS 표시를 달고 남으면, 그 옛 토스 주문의 전액 취소 때 이 청구까지 환불될 수 있다(2026-11-09 결제 재검수)
+        provider: "MANUAL",
         paidAt: row.paidOn ?? null,
       });
     } catch (error) {

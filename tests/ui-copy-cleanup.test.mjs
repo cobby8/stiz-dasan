@@ -43,9 +43,12 @@ test('공통 특강 헤더는 부제가 없으면 빈 문단도 만들지 않고
   assert.match(explicit, /확인해야 할 안내/);
 });
 test('정규·특강 결석 안내는 자동 배차 제외를 약속하지 않고 전달 범위를 명확히 한다', () => {
-  const home = read('src/app/mypage/MyPageClient.tsx');
+  // 결석 신고 길 안내 줄은 2026-11-09 «일정» 탭에서도 뺐다(홈 빠른 실행이 신고 화면으로 바로 간다).
+  // 전달 범위 안내는 신고 화면 자체에 남는다.
+  const home = read('src/app/mypage/MyPageClient.tsx') + read('src/app/mypage/history/ScheduleHub.tsx');
   const absence = read('src/app/mypage/regular-absence/RegularAbsenceClient.tsx');
-  assert.equal((home.match(/신고한 결석은 선생님과 기사님에게 표시됩니다/g)||[]).length, 2);
+  assert.equal((home.match(/신고한 결석은 선생님과 기사님에게 표시됩니다/g)||[]).length, 0);
+  assert.doesNotMatch(home, /셔틀에서도 자동으로 빠집니다/, "메시지 폼 안내도 자동 제외를 약속하지 않는다");
   assert.match(absence, /신고한 결석은 선생님과 기사님에게 표시됩니다/);
   assert.doesNotMatch(home, /그날 셔틀 배차에서 자동 제외돼요|그날 셔틀에서도 자동으로 빠집니다/);
   assert.doesNotMatch(absence, /다음 단계에서 연동 예정|자동으로 제외되도록 준비 중/);

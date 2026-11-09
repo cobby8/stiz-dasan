@@ -174,7 +174,7 @@ export default async function AnnualPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — about/programs/schedule과 동일한 그라데이션 + 장식 도형 패턴 */}
-            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
                         <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">연간일정표</h1>
@@ -184,14 +184,14 @@ export default async function AnnualPage() {
             </section>
 
             {/* 범례(Legend) — 디자인 개선: pill 뱃지 스타일로 카테고리 표시 */}
-            <section className="py-5 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 transition-colors duration-300">
+            <section className="py-5 bg-white dark:bg-[var(--color-public-paper)] border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)] transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-4">
                     <div className="flex flex-wrap gap-2.5 items-center">
-                        <span className="text-sm font-bold text-gray-400 mr-1">구분</span>
+                        <span className="text-sm font-bold text-[var(--color-public-muted)] mr-1">구분</span>
                         {categories.map((cat) => (
-                            <div key={cat} className="inline-flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-full border border-gray-100 dark:border-gray-700 transition-colors">
+                            <div key={cat} className="inline-flex items-center gap-1.5 bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] px-3 py-1.5 rounded-full border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] transition-colors">
                                 <span className={`w-2.5 h-2.5 rounded-full ${CATEGORY_STYLES[cat].dot}`}></span>
-                                <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{cat}</span>
+                                <span className="text-xs font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{cat}</span>
                             </div>
                         ))}
                     </div>

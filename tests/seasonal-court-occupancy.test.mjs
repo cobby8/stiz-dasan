@@ -46,7 +46,8 @@ test("화면은 정원과 코트 인원을 비교하고 초과를 구분해 보�
   assert.match(client, /const court = courtOf\(d\);/);
   assert.match(client, /const over = court != null && court > cap;/);
   assert.match(client, /코트 전체/);
-  assert.match(client, /text-red-600 dark:text-red-400/);
+  // 초과 = 위험색 토큰(색상 6단계 — 하드코딩 빨강·dark: 대신)
+  assert.match(client, /over \? "text-\[var\(--color-academy-danger\)\]"/);
   // 이 반 인원도 계속 보여야 한다 — 달력 셀에 "이 반 · 코트전체/정원" 순으로 나란히 표시한다.
   assert.match(client, /\{d\.scheduled\}<\/span>[\s\S]{0,240}\{court\}\/\{cap\}/);
   // 명단 헤더는 두 기준을 구분해 설명한다

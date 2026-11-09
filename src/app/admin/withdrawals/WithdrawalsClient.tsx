@@ -65,7 +65,7 @@ export default function WithdrawalsClient({ rows }: { rows: WithdrawalRequestRow
     <div className="space-y-3">
       <div>
         <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-          <span className="material-symbols-outlined text-[var(--color-academy-primary)]" aria-hidden="true">
+          <span className="material-symbols-outlined text-[var(--color-academy-ink)]" aria-hidden="true">
             person_remove
           </span>
           회원 탈퇴 신청

@@ -23,7 +23,7 @@ interface ApplyPageClientProps {
 function ContentBlock({ html }: { html: string }) {
     return (
         <div
-            className="prose prose-gray max-w-none text-gray-700 dark:text-gray-200 leading-relaxed"
+            className="prose prose-gray max-w-none text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] leading-relaxed"
             dangerouslySetInnerHTML={{ __html: html }}
         />
     );
@@ -78,16 +78,16 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
     const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+        <div className="border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)] last:border-b-0">
             {/* 질문 버튼 — 클릭 시 답변 토글 */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between py-5 px-1 text-left hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
             >
-                <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
+                <span className="font-semibold text-[var(--color-public-ink)] dark:text-white pr-4">{question}</span>
                 {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}
                 <svg
-                    className={`w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                    className={`w-5 h-5 text-[var(--color-public-muted)] shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -98,7 +98,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
             {/* 답변 영역 — isOpen일 때만 표시 */}
             {isOpen && (
                 <div className="pb-5 px-1">
-                    <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed">{answer}</p>
+                    <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed">{answer}</p>
                 </div>
             )}
         </div>
@@ -141,7 +141,7 @@ export default function ApplyPageClient({
                                 {trialContentHtml ? (
                                     <ContentBlock html={trialContentHtml} />
                                 ) : (
-                                    <p className="text-gray-400 text-base italic">체험수업 안내 내용이 아직 등록되지 않았습니다.</p>
+                                    <p className="text-[var(--color-public-muted)] text-base italic">체험수업 안내 내용이 아직 등록되지 않았습니다.</p>
                                 )}
 
                                 <div className="mt-6">
@@ -155,11 +155,11 @@ export default function ApplyPageClient({
                                         체험수업 신청하기
                                     </Link>
                                     {/* 약관 안내 — 독립 이용약관 페이지로 링크 */}
-                                    <p className="mt-3 text-xs text-gray-400">
+                                    <p className="mt-3 text-xs text-[var(--color-public-muted)]">
                                         신청 시{" "}
                                         <a
                                             href="/terms"
-                                            className="underline underline-offset-2 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
+                                            className="underline underline-offset-2 hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors"
                                         >
                                             이용약관
                                         </a>
@@ -183,7 +183,7 @@ export default function ApplyPageClient({
                                 {enrollContentHtml ? (
                                     <ContentBlock html={enrollContentHtml} />
                                 ) : (
-                                    <p className="text-gray-400 text-base italic">수강신청 안내 내용이 아직 등록되지 않았습니다.</p>
+                                    <p className="text-[var(--color-public-muted)] text-base italic">수강신청 안내 내용이 아직 등록되지 않았습니다.</p>
                                 )}
 
                                 <div className="mt-6">

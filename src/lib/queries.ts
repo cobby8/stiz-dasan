@@ -1,4 +1,4 @@
-import { commencementYmd, enrollmentDisplayStatus } from "@/lib/enrollment/commencement";
+import { commencementYmd, currentEnrollmentSql, enrollmentDisplayStatus, enrollmentStartsLater } from "@/lib/enrollment/commencement";
 import { getEnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress-query";
 import { childAccessSql } from "@/lib/account/child-access";
 /**
@@ -11,11 +11,14 @@ import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensurePaymentInfrastructure } from "@/lib/payment-ledger";
 import { parentVirtualAccountView } from "@/lib/payments/virtualAccount";
+import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
 import { todayKst, kstDow } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
+import { absenceReportOf, type AbsenceReportState } from "@/lib/regular/attendance-absence-reason";
 
 // 값을 불리언으로 안전 변환 (TEXT 컬럼에서 'false' 문자열이 올 수 있음)
 const toBool = (v: any, fallback: boolean): boolean => {
@@ -413,7 +416,9 @@ export const getStudents = cache(async (limit?: number) => {
                             'className', c.name,
                             'status', e.status,
                             'startsOn', e."startsOn",
-                            'displayStatus', CASE WHEN e.status='ACTIVE' AND e."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date THEN 'SCHEDULED' ELSE e.status END,
+                            /* 2026-11-09 새 기준: ACTIVE 면 개시일이 미래여도 수강 중(displayStatus = status). 개시일 미래 여부는 안내 문구용 startsLater 로만 */
+                            'displayStatus', e.status,
+                            'startsLater', COALESCE(e."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date, false),
                             'dayOfWeek', c."dayOfWeek",
                             'startTime', c."startTime",
                             'slotKey', c."slotKey",
@@ -491,10 +496,7 @@ export const getStudents = cache(async (limit?: number) => {
                     s."createdAt", s."updatedAt",
                     u.name AS parent_name, u.phone AS parent_phone, u.email AS parent_email,
                     COALESCE(ej.enrollments, '[]'::json) AS enrollments,
-                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND (due."startsOn" IS NULL OR due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date)) THEN 'ACTIVE'
-                      WHEN EXISTS (SELECT 1 FROM "Enrollment" planned WHERE planned."studentId"=s.id AND planned.status='ACTIVE' AND planned."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date)
-                      AND NOT EXISTS (SELECT 1 FROM "Enrollment" started WHERE started."studentId"=s.id AND started.status='ACTIVE' AND (started."startsOn" IS NULL OR started."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date))
-                      THEN 'SCHEDULED'
+                    CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND ${currentEnrollmentSql("due")}) THEN 'ACTIVE'
                       WHEN EXISTS (SELECT 1 FROM "Enrollment" paused WHERE paused."studentId"=s.id AND paused.status='PAUSED') THEN 'PAUSED'
                       WHEN EXISTS (SELECT 1 FROM "Enrollment" withdrawn WHERE withdrawn."studentId"=s.id AND withdrawn.status='WITHDRAWN') THEN 'WITHDRAWN'
                       ELSE NULL END AS current_status
@@ -584,6 +586,8 @@ export const getStudentWithEnrollments = cache(async (id: string) => {
                 status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -823,8 +827,10 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
         }
 
         const sessions = await prisma.$queryRawUnsafe<any[]>(
+            // 같은 날 정규 기록이 (예전 데이터로) 둘이면 키 있는 기록(코치 앱·수업일지와 같은 정본)을 먼저 고른다.
             `SELECT id, "classId", date, notes FROM "Session"
-             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL LIMIT 1`,
+             WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL
+             ORDER BY ("sessionKey" IS NULL), "createdAt" LIMIT 1`,
             classId, date
         );
         const session = sessions[0] ?? null;
@@ -852,9 +858,22 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
             );
         }
 
+        // 그날 결석 신고(학부모 신고·출석부 «질병·부상» 표시) — 관리자 화면의 질병·부상 체크 초기값.
+        // 코치 출석부(staff-session-queries)와 같은 absenceReportOf 로 출처(SHEET/PARENT)를 가른다.
+        const absenceRows = await prisma.$queryRawUnsafe<any[]>(
+            `SELECT "studentId", reason, status, note, "reportedByUserId"
+               FROM "RegularAbsence"
+              WHERE "classId" = $1 AND date = $2::date AND status IN ('REPORTED','CONFIRMED')`,
+            classId, date
+        );
+        const absenceByStudent = new Map<string, AbsenceReportState>(
+            absenceRows.map((r: any) => [r.studentId, absenceReportOf(r)]),
+        );
+
         return {
             session,
             students: enrolled.map((e: any) => ({
+                absenceReport: absenceByStudent.get(e.studentId ?? e.studentid) ?? null,
                 studentId: e.studentId ?? e.studentid,
                 studentName: e.student_name,
                 status: attendances.find(
@@ -883,10 +902,11 @@ function getMonthDateRange(year: number, month: number) {
 
 // 학부모 마이페이지 두 곳(메인·전체 내역)이 같이 쓰는 «최근 가상계좌» 조인 — 한쪽만 고치지 않게 한 곳에 둔다.
 // 발급 정보(virtualAccountIssue)만 고른다. secret 해시(depositSecretHash)는 SELECT 하지 않는다.
+// 묶음 결제(2026-11-09) 계좌도 본다 — 이 청구가 항목으로 든 거래(txCoversPaymentSql). 결제 화면의 getVirtualAccountState 와 같은 범위.
 const PARENT_VIRTUAL_ACCOUNT_LATERAL = `LEFT JOIN LATERAL (
                         SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
                         FROM "PaymentTransaction" t
-                        WHERE t."paymentId" = p.id
+                        WHERE ${txCoversPaymentSql("t", "p.id")}
                           AND t.status IN ('WAITING_FOR_DEPOSIT', 'EXPIRED')
                           AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
                         ORDER BY t."createdAt" DESC
@@ -918,10 +938,11 @@ export const getPayments = cache(async (year?: number, month?: number) => {
              LEFT JOIN "Class" c ON p."classId" = c.id
              LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
              LEFT JOIN LATERAL (
-                SELECT status, provider
-                FROM "PaymentTransaction"
-                WHERE "paymentId" = p.id
-                ORDER BY "createdAt" DESC
+                -- 묶음 결제 주문(항목으로 든 거래)도 본다 — «입금 대기 · 가상계좌» 표시가 묶인 청구 모두에 뜨게
+                SELECT t.status, t.provider
+                FROM "PaymentTransaction" t
+                WHERE ${txCoversPaymentSql("t", "p.id")}
+                ORDER BY t."createdAt" DESC
                 LIMIT 1
              ) tx ON true
              ${where}
@@ -1216,6 +1237,8 @@ export async function getMyPageData(parentUserId: string) {
                         status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                         className: e.class_name,
                         dayOfWeek: e.dayOfWeek ?? e.dayofweek,
                         startTime: e.startTime ?? e.starttime,
@@ -1526,7 +1549,8 @@ export async function getNoticesByClassIds(classIds: string[], limit = 20) {
             .filter((r: any) => {
                 const type = r.targetType ?? r.targettype ?? "ALL";
                 if (type === "ALL") return true;
-                const ids = (r.targetClassIds ?? r.targetclassids ?? "").split(",").map((s: string) => s.trim());
+                // 관리자 공지 = 쉼표 문자열, 선생님 반 공지 = JSON 배열 — 둘 다 읽는다(선생님 반 공지가 안 보이던 버그)
+                const ids = parseNoticeTargetClassIds(r.targetClassIds ?? r.targetclassids);
                 return classIds.some(cid => ids.includes(cid));
             })
             .map((r: any) => ({
@@ -2104,6 +2128,8 @@ export async function getStudentActivity(studentId: string) {
                 status: e.status,
                 startsOn: commencementYmd(e.startsOn ?? e.startson),
                 displayStatus: enrollmentDisplayStatus(e.status, e.startsOn ?? e.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(e.startsOn ?? e.startson, todayKst()),
                 createdAt: e.createdAt ?? e.createdat,
                 className: e.class_name,
                 dayOfWeek: e.dayOfWeek ?? e.dayofweek,
@@ -2651,6 +2677,8 @@ export const getClassWithStudents = cache(async (classId: string) => {
                 enrollmentId: s.enrollment_id,
                 startsOn: commencementYmd(s.startsOn ?? s.startson),
                 displayStatus: enrollmentDisplayStatus(s.status, s.startsOn ?? s.startson, todayKst()),
+                // 개시일이 미래인지 — «11-13 개시» 안내 문구용(상태는 ACTIVE 그대로)
+                startsLater: enrollmentStartsLater(s.startsOn ?? s.startson, todayKst()),
                 status: s.status,
                 enrolledAt: s.enrolled_at,
                 studentId: s.student_id,

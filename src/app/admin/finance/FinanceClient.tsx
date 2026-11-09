@@ -2,7 +2,7 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 import { toKstYmd } from "@/lib/datetime/kst";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AdminModal from "@/components/admin/AdminModal";
@@ -31,6 +31,10 @@ import { chargeItemsSummary, posMethodLabel, sortChargeItems } from "@/lib/pos/c
 // «납부 처리» 창(2026-11-08) — 결제 방법(계좌이체·현장 결제)을 골라 근거를 남겨야만 납부완료가 된다
 import RecordPaymentModal from "./RecordPaymentModal";
 import VirtualAccountCloseDialog from "./VirtualAccountCloseDialog";
+// «선택 항목 환불»(2026-11-09) — 고른 납부완료 청구를 결제 길(토스·POS·현금)대로 환불. 판정은 순수 규칙 한 곳
+import { refundSelectedPayments } from "@/app/actions/payment-bulk-refund";
+import { bulkSelectionMode } from "@/lib/payments/bulkRefund";
+import InlineConfirm from "@/components/parent/InlineConfirm";
 
 type Payment = {
     id: string;
@@ -284,38 +288,38 @@ function FinanceLoadingFallback({ year, month }: { year: number; month: number }
         <div className="mx-auto max-w-6xl">
             <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
                 <div>
-                    <div className="h-8 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-64 rounded bg-gray-100 dark:bg-gray-800 animate-pulse mt-2" />
+                    <div className="h-8 w-32 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="h-4 w-64 rounded bg-[var(--color-academy-soft)] animate-pulse mt-2" />
                 </div>
                 <div className="flex gap-2">
-                    <div className="h-10 w-28 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                    <div className="h-10 w-28 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                    <div className="h-10 w-32 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                    <div className="h-10 w-28 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="h-10 w-28 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="h-10 w-32 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
             </div>
             <div className="flex items-center justify-center gap-4 mb-6">
-                <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                <div className="h-7 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" aria-label={`${year}년 ${month}월 수납 로딩 중`} />
-                <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                <div className="h-10 w-10 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                <div className="h-7 w-28 rounded bg-[var(--color-academy-soft)] animate-pulse" aria-label={`${year}년 ${month}월 수납 로딩 중`} />
+                <div className="h-10 w-10 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                 {Array.from({ length: 4 }).map((_, index) => (
                     <div
                         key={index}
-                        className="h-28 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
+                        className="h-28 rounded-xl border border-[var(--color-academy-line)] bg-white animate-pulse"
                     />
                 ))}
             </div>
-            <div className="overflow-hidden bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                <div className="h-12 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-700 animate-pulse" />
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="overflow-hidden bg-white rounded-xl border border-[var(--color-academy-line)]">
+                <div className="h-12 bg-[var(--color-academy-soft)] border-b border-[var(--color-academy-line)] animate-pulse" />
+                <div className="divide-y divide-[var(--color-academy-line)]">
                     {Array.from({ length: 6 }).map((_, index) => (
                         <div key={index} className="grid grid-cols-5 gap-4 px-4 py-4">
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                         </div>
                     ))}
                 </div>
@@ -326,13 +330,13 @@ function FinanceLoadingFallback({ year, month }: { year: number; month: number }
 
 function FinanceErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="mx-auto max-w-5xl rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">수납 데이터를 불러오지 못했습니다.</p>
+        <div className="mx-auto max-w-5xl rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">수납 데이터를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -454,6 +458,9 @@ export default function FinanceClient({
 
     // 일괄 체크박스 상태
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    // 선택 항목 환불 결과(막대 자리에 남긴다 — 선택이 풀려도 보이게). 이중 클릭은 ref 로 한 번 더 막는다
+    const [bulkRefundNotice, setBulkRefundNotice] = useState<{ tone: "success" | "danger"; lines: string[] } | null>(null);
+    const bulkRefundingRef = useRef(false);
 
     // 수동 생성 폼 상태
     const [studentId, setStudentId] = useState("");
@@ -769,6 +776,43 @@ export default function FinanceClient({
         setRecordTargets(targets);
     }
 
+    // 환불 실행 한 곳 — 막대 «선택 항목 환불»과 ⚡ 한 건 «환불»이 같이 쓴다(PM 결정 2026-11-09: 길이 갈리지 않게).
+    // 서버(refundSelectedPayments)가 권한·상태·묶음을 다시 확인하고 결제 길별로 기존 환불 함수를 부른다.
+    async function runRefund(ids: string[]) {
+        if (!canManageCriticalFinance || bulkRefundingRef.current) return;
+        if (ids.length === 0) return;
+        bulkRefundingRef.current = true;
+        setBusy(true);
+        setBulkRefundNotice(null);
+        try {
+            const result = await refundSelectedPayments(ids);
+            if (!result.ok) {
+                // 막힌 경우(묶음 일부 선택·미납 섞임 등)는 아무것도 처리되지 않았다 — 선택은 그대로 두고 고치게 한다
+                setBulkRefundNotice({ tone: "danger", lines: result.blocks?.length ? result.blocks.map((block) => block.message) : [result.message] });
+                return;
+            }
+            // 실패한 건은 «원생 이름: 사유» 한 줄씩
+            const nameOf = (id: string) => payments.find((payment) => payment.id === id)?.studentName ?? "청구";
+            const failures = result.outcomes
+                .filter((outcome) => outcome.result === "FAILED")
+                .map((outcome) => `${outcome.paymentIds.map(nameOf).join("·")}: ${outcome.message ?? "실패"}`);
+            setBulkRefundNotice({ tone: failures.length > 0 ? "danger" : "success", lines: [result.summary, ...failures] });
+            // 처리한 청구만 선택에서 뺀다(⚡ 한 건 환불이 다른 선택을 지우지 않게)
+            setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !ids.includes(id))));
+            await loadMonth(year, month);
+        } catch (err: unknown) {
+            setBulkRefundNotice({ tone: "danger", lines: [getErrorMessage(err, "선택 항목 환불 실패")] });
+        } finally {
+            bulkRefundingRef.current = false;
+            setBusy(false);
+        }
+    }
+
+    // 막대 «선택 항목 환불» = 고른 것 전부
+    function handleBulkRefund() {
+        return runRefund(Array.from(selectedIds));
+    }
+
     // 1단계: 상태를 뺀 조건(원생 지정·검색·반) — 상태 칩 건수는 이 목록에서 센다
     const baseFilteredPayments = payments.filter((payment) => {
         const needle = paymentSearch.trim().toLocaleLowerCase();
@@ -928,12 +972,17 @@ export default function FinanceClient({
                     tone: "danger" as const,
                     disabled: busy,
                     onSelect: async () => {
+                        // 돈이 어디로 돌아가는지 먼저 보여 준다: 토스 온라인 = 실제 결제 취소, 그 밖 = 장부만
+                        const how = p.paidProvider === "TOSS"
+                            ? "토스 결제 취소(카드 승인 취소)로 돌려줘요. 묶음으로 낸 결제면 함께 환불해야 해요."
+                            : "장부만 환불(돈은 직접 돌려주세요).";
                         if (await askConfirm({
                             title: `${p.studentName} 원생 ${formatAmount(p.amount)} 환불`,
-                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}을 환불 처리할까요?`,
+                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}을 환불 처리할까요? ${how}`,
                             confirmLabel: "환불 처리",
                         })) {
-                            void handleStatusChange(p.id, "REFUNDED");
+                            // 막대 «선택 항목 환불»과 같은 서버 액션(refundSelectedPayments)
+                            void runRefund([p.id]);
                         }
                     },
                 },
@@ -979,12 +1028,12 @@ export default function FinanceClient({
                             aria-label={`${p.studentName} 선택`}
                             checked={selectedIds.has(p.id)}
                             onChange={() => toggleSelect(p.id)}
-                            className="rounded border-gray-300"
+                            className="rounded border-[var(--color-academy-line-input)]"
                         />
                     </td>
                 )}
                 <td className="px-2 py-1.5">
-                    <span className="font-medium text-gray-900 dark:text-white">{p.studentName}</span>
+                    <span className="font-medium text-[var(--color-academy-ink)]">{p.studentName}</span>
                 </td>
                 {/* 반: 원생 이름 아래 두 줄로 쌓던 것을 칸으로 분리(모바일은 패널에서) */}
                 <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{p.className || "-"}</td>
@@ -1012,7 +1061,7 @@ export default function FinanceClient({
                             actions={rowActions}
                         />
                     ) : (
-                        <span className="text-xs font-bold text-gray-400">-</span>
+                        <span className="text-xs font-bold text-[var(--color-academy-faint)]">-</span>
                     )}
                 </td>
             </tr>
@@ -1161,24 +1210,24 @@ export default function FinanceClient({
 
             {/* 제목만 남은 머리 영역(월 선택은 표 바로 위 «상태 칩 · 월 · 보기 전환» 줄로 옮김 — 2026-11-08 원장 지시) */}
             <div className="mb-3">
-                <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">수납/결제 관리</h1>
-                <p className="mt-0.5 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                <h1 className="text-xl font-extrabold text-[var(--color-academy-ink)]">수납/결제 관리</h1>
+                <p className="mt-0.5 text-sm font-semibold text-[var(--color-academy-muted)]">
                     {year}년 {month}월 수납 현황
                 </p>
             </div>
 
             {financeNotice && (
-                <p role="status" className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-100">
+                <p role="status" className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-success)]">
                     {financeNotice}
                 </p>
             )}
 
-            <section className="mb-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <section className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
-                    <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-bold text-[var(--brand-accent-contrast)]">
+                    <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)]">
                         <span className="material-symbols-outlined" aria-hidden="true">receipt_long</span>이번 달 청구 준비
                     </Link>
-                    {!paymentProvider.providerReady && <span className="text-xs font-semibold text-gray-500">온라인 결제 준비 중</span>}
+                    {!paymentProvider.providerReady && <span className="text-xs font-semibold text-[var(--color-academy-muted)]">온라인 결제 준비 중</span>}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                         {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
                         {!sheetRetired && (
@@ -1186,7 +1235,7 @@ export default function FinanceClient({
                             type="button"
                             onClick={loadSheetPreview}
                             disabled={busy || sheetPreviewLoading || sheetApplying}
-                            className="inline-flex h-9 items-center gap-1 rounded-full bg-gray-900 px-3 text-xs font-black text-white transition hover:bg-gray-800 disabled:opacity-50 dark:bg-gray-800 dark:text-white"
+                            className="inline-flex h-9 items-center gap-1 rounded-full bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                         >
                             <span className="material-symbols-outlined text-[17px]">fact_check</span>
                             {sheetPreviewLoading ? "점검 중" : "시트 점검"}
@@ -1223,7 +1272,7 @@ export default function FinanceClient({
                         </div></details>
                         {/* 잠금 안내: 학부모 청구 안내(링크·미납 알림)는 랠리즈에서 보낸다 */}
                         {parentSendLocked && (
-                            <span className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                            <span className="text-xs font-bold text-[var(--color-academy-muted)]">
                                 학부모 청구 안내는 랠리즈에서 발송
                             </span>
                         )}
@@ -1236,7 +1285,7 @@ export default function FinanceClient({
                                     void loadStudents();
                                 }
                             }}
-                            className="inline-flex h-9 items-center gap-1 rounded-full bg-brand-orange-500 px-3 text-xs font-black text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                            className="inline-flex h-9 items-center gap-1 rounded-full bg-[var(--color-academy-primary)] px-3 text-xs font-black text-white transition hover:bg-[var(--color-academy-primary-hover)]"
                         >
                             <span className="material-symbols-outlined text-[17px]">add</span>
                             수납 추가
@@ -1244,8 +1293,8 @@ export default function FinanceClient({
                     </div>
                 </div>
 
-                <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-                    <summary className="cursor-pointer font-extrabold text-gray-800 dark:text-gray-100">결제 설정 보기</summary>
+                <details className="mt-2 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-muted)]">
+                    <summary className="cursor-pointer font-extrabold text-[var(--color-academy-ink)]">결제 설정 보기</summary>
                     <p className="mt-2">결제 모드: {paymentModeLabel}</p>
                     <div className="mt-2 grid gap-2 sm:grid-cols-3">
                         <p>온라인 결제 상태: {paymentProvider.providerReady ? `${paymentProvider.providerLabel} 온라인 결제를 사용할 수 있습니다.` : `준비 필요${paymentProviderMissing.length > 0 ? `: ${paymentProviderMissing.join(", ")}` : ""}`}</p>
@@ -1262,17 +1311,17 @@ export default function FinanceClient({
 
             {/* 시트 원장 기준 수납 점검 패널 — 시트 원장 은퇴면 숨김 */}
             {!sheetRetired && (sheetError || sheetPreview) && (
-                <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="mb-6 rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                            <h2 className="text-base font-extrabold text-gray-900 dark:text-white">시트 원장 기준 수납 점검</h2>
+                            <h2 className="text-base font-extrabold text-[var(--color-academy-ink)]">시트 원장 기준 수납 점검</h2>
                             {sheetPreview?.batch ? (
-                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                                     마지막 가져오기: {toDateStr(sheetPreview.batch.completedAt ?? sheetPreview.batch.createdAt)}
                                     {sheetPreview.batch.spreadsheetTitle ? ` · ${sheetPreview.batch.spreadsheetTitle}` : ""}
                                 </p>
                             ) : (
-                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">가져오기 기록 없음</p>
+                                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">가져오기 기록 없음</p>
                             )}
                         </div>
 
@@ -1281,7 +1330,7 @@ export default function FinanceClient({
                                 type="button"
                                 onClick={applySheetPreview}
                                 disabled={sheetApplying || sheetApplyCount === 0}
-                                className="rounded-lg bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                                className="rounded-lg bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {sheetApplying ? "적용 중..." : sheetApplyCount === 0 ? "적용할 변경 없음" : "변경 적용"}
                             </button>
@@ -1289,7 +1338,7 @@ export default function FinanceClient({
                     </div>
 
                     {sheetError && (
-                        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 dark:bg-red-950/30 dark:text-red-200">
+                        <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-danger)]">
                             {sheetError}
                         </p>
                     )}
@@ -1297,51 +1346,51 @@ export default function FinanceClient({
                     {sheetPreview && (
                         <>
                             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                                <div className="rounded-lg bg-green-50 p-3 dark:bg-green-950/30">
-                                    <p className="text-xs font-bold text-green-700 dark:text-green-200">생성</p>
-                                    <p className="mt-1 text-xl font-extrabold text-green-800 dark:text-green-100">{sheetPreview.summary.create}건</p>
-                                    <p className="text-xs text-green-600 dark:text-green-300">{formatAmount(sheetPreview.summary.createAmount)}</p>
+                                <div className="rounded-lg bg-[var(--color-academy-success-soft)] p-3">
+                                    <p className="text-xs font-bold text-[var(--color-academy-success)]">생성</p>
+                                    <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-success)]">{sheetPreview.summary.create}건</p>
+                                    <p className="text-xs text-[var(--color-academy-success)]">{formatAmount(sheetPreview.summary.createAmount)}</p>
                                 </div>
-                                <div className="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
-                                    <p className="text-xs font-bold text-blue-700 dark:text-blue-200">수정</p>
-                                    <p className="mt-1 text-xl font-extrabold text-blue-800 dark:text-blue-100">{sheetPreview.summary.update}건</p>
-                                    <p className="text-xs text-blue-600 dark:text-blue-300">{formatAmount(sheetPreview.summary.updateAmount)}</p>
+                                <div className="rounded-lg bg-[var(--color-academy-soft)] p-3">
+                                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">수정</p>
+                                    <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{sheetPreview.summary.update}건</p>
+                                    <p className="text-xs text-[var(--color-academy-muted)]">{formatAmount(sheetPreview.summary.updateAmount)}</p>
                                 </div>
-                                <div className="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/30">
-                                    <p className="text-xs font-bold text-amber-700 dark:text-amber-200">확인 필요</p>
-                                    <p className="mt-1 text-xl font-extrabold text-amber-800 dark:text-amber-100">{sheetPreview.summary.review}건</p>
-                                    <p className="text-xs text-amber-600 dark:text-amber-300">자동 변경 제외</p>
+                                <div className="rounded-lg bg-[var(--color-academy-warning-soft)] p-3">
+                                    <p className="text-xs font-bold text-[var(--color-academy-warning)]">확인 필요</p>
+                                    <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-warning)]">{sheetPreview.summary.review}건</p>
+                                    <p className="text-xs text-[var(--color-academy-warning)]">자동 변경 제외</p>
                                 </div>
-                                <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
-                                    <p className="text-xs font-bold text-gray-600 dark:text-gray-300">동일</p>
-                                    <p className="mt-1 text-xl font-extrabold text-gray-900 dark:text-white">{sheetPreview.summary.unchanged}건</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">변경 없음</p>
+                                <div className="rounded-lg bg-[var(--color-academy-soft)] p-3">
+                                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">동일</p>
+                                    <p className="mt-1 text-xl font-extrabold text-[var(--color-academy-ink)]">{sheetPreview.summary.unchanged}건</p>
+                                    <p className="text-xs text-[var(--color-academy-muted)]">변경 없음</p>
                                 </div>
                             </div>
 
-                            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                            <p className="mt-3 text-xs text-[var(--color-academy-muted)]">
                                 휴원, 퇴원, 추가수강, 이월처럼 자동 판단이 위험한 건은 확인 필요로 남깁니다.
                             </p>
 
                             {sheetPreview.samples.length > 0 && (
-                                <div className="mt-3 overflow-hidden rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-academy-line)]">
                                     {sheetPreview.samples.map((sample) => (
-                                        <div key={`${sample.action}-${sample.studentId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-2 text-sm last:border-b-0 dark:border-gray-700">
+                                        <div key={`${sample.action}-${sample.studentId}`} className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-academy-line)] px-3 py-2 text-sm last:border-b-0">
                                             <div>
-                                                <span className="font-bold text-gray-900 dark:text-white">{sample.studentName}</span>
-                                                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
+                                                <span className="font-bold text-[var(--color-academy-ink)]">{sample.studentName}</span>
+                                                <span className="ml-2 text-xs text-[var(--color-academy-muted)]">
                                                     {sample.paymentMethods?.join(", ") || "-"} · {sample.rowCount}행
                                                 </span>
                                                 {sample.reviewReason && (
-                                                    <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-200">{sample.reviewReason}</p>
+                                                    <p className="mt-0.5 text-xs text-[var(--color-academy-warning)]">{sample.reviewReason}</p>
                                                 )}
                                             </div>
                                             <div className="text-right">
-                                                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-bold text-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                                                <span className="rounded-full bg-[var(--color-academy-soft)] px-2 py-1 text-xs font-bold text-[var(--color-academy-muted)]">
                                                     {SHEET_RECONCILE_ACTION_LABELS[sample.action] ?? sample.action}
                                                 </span>
                                                 {sample.targetAmount != null && (
-                                                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                                                         {sample.existingAmount != null ? `${formatAmount(sample.existingAmount)} → ` : ""}
                                                         {formatAmount(sample.targetAmount)}
                                                     </p>
@@ -1356,32 +1405,32 @@ export default function FinanceClient({
                 </div>
             )}
 
-            <section className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-xs font-black shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                <span className="inline-flex h-8 items-center rounded-full bg-gray-100 px-3 text-gray-800 dark:bg-gray-800 dark:text-gray-100">
+            <section className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 text-xs font-black shadow-sm">
+                <span className="inline-flex h-8 items-center rounded-full bg-[var(--color-academy-soft)] px-3 text-[var(--color-academy-ink)]">
                     총 청구 {formatAmount(summary.totalAmount)} · {summary.totalCount}건
                 </span>
-                <span className="inline-flex h-8 items-center rounded-full bg-green-100 px-3 text-green-800 dark:bg-green-500/15 dark:text-green-100">
+                <span className="inline-flex h-8 items-center rounded-full bg-[var(--color-academy-success-soft)] px-3 text-[var(--color-academy-success)]">
                     납부완료 {formatAmount(summary.paidAmount)} · {summary.paidCount}건
                 </span>
-                <span className="inline-flex h-8 items-center rounded-full bg-yellow-100 px-3 text-yellow-900 dark:bg-yellow-500/15 dark:text-yellow-100">
+                <span className="inline-flex h-8 items-center rounded-full bg-[var(--color-academy-warning-soft)] px-3 text-[var(--color-academy-warning)]">
                     미납/연체 {formatAmount(summary.unpaidAmount)} · {summary.unpaidCount}건
                 </span>
-                <span className="inline-flex h-8 items-center gap-2 rounded-full bg-blue-100 px-3 text-blue-800 dark:bg-blue-500/15 dark:text-blue-100">
+                <span className="inline-flex h-8 items-center gap-2 rounded-full bg-[var(--color-academy-soft)] px-3 text-[var(--color-academy-ink)]">
                     수납률 {payRate}%
-                    <span className="h-1.5 w-16 overflow-hidden rounded-full bg-white/70 dark:bg-gray-950">
-                        <span className="block h-full rounded-full bg-blue-500 transition-all" style={{ width: `${payRate}%` }} />
+                    <span className="h-1.5 w-16 overflow-hidden rounded-full bg-white/70">
+                        <span className="block h-full rounded-full bg-[var(--color-academy-primary)] transition-all" style={{ width: `${payRate}%` }} />
                     </span>
                 </span>
             </section>
 
             {/* 수동 생성 폼 */}
             {showForm && (
-                <form onSubmit={handleCreate} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
-                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">새 수납 기록</h3>
-                    <p className="text-sm text-gray-500">월 수강료·셔틀비는 <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="font-bold underline">청구 준비에서 계산·발행</Link>해주세요.</p>
+                <form onSubmit={handleCreate} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 mb-6 shadow-sm space-y-4">
+                    <h3 className="font-bold text-lg text-[var(--color-academy-ink)]">새 수납 기록</h3>
+                    <p className="text-sm text-[var(--color-academy-muted)]">월 수강료·셔틀비는 <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="font-bold underline">청구 준비에서 계산·발행</Link>해주세요.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">원생 *</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">원생 *</label>
                             <select
                                 value={studentId}
                                 onChange={(e) => {
@@ -1394,7 +1443,7 @@ export default function FinanceClient({
                                 }}
                                 disabled={studentsLoading || Boolean(studentsError)}
                                 required
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime bg-white dark:bg-gray-800"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
                             >
                                 <option value="">
                                     {studentsLoading ? "학생 목록 로딩 중..." : "선택하세요"}
@@ -1404,25 +1453,25 @@ export default function FinanceClient({
                                 ))}
                             </select>
                             {studentsError && (
-                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
                                     <span>{studentsError}</span>
                                     <button
                                         type="button"
                                         onClick={() => void loadStudents()}
-                                        className="shrink-0 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/40"
+                                        className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
                                     >
                                         다시 시도
                                     </button>
                                 </div>
                             )}
                             {!studentsLoading && !studentsError && students.length === 0 && (
-                                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                                <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                     등록된 학생이 없습니다.
                                 </p>
                             )}
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">
                                 연결 수업 {classRequired ? "*" : "(선택)"}
                             </label>
                             <select
@@ -1430,7 +1479,7 @@ export default function FinanceClient({
                                 onChange={(e) => setClassId(e.target.value)}
                                 required={classRequired}
                                 disabled={!studentId || !selectedStudent?.classes.length}
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime bg-white dark:bg-gray-800"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
                             >
                                 <option value="">{selectedStudent?.classes.length ? "수업을 선택하세요" : "활성 수강 수업 없음"}</option>
                                 {selectedStudent?.classes.map((classOption) => (
@@ -1440,37 +1489,37 @@ export default function FinanceClient({
                                 ))}
                             </select>
                             {classRequired && !selectedStudent?.classes.length && studentId && (
-                                <p className="mt-1 text-xs text-red-600">현재 활성 수업이 없어 수강료 청구를 만들 수 없습니다.</p>
+                                <p className="mt-1 text-xs text-[var(--color-academy-danger)]">현재 활성 수업이 없어 수강료 청구를 만들 수 없습니다.</p>
                             )}
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">금액 (원) *</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">금액 (원) *</label>
                             <input
                                 type="number"
                                 value={amount || ""}
                                 onChange={(e) => setAmount(parseInt(e.target.value) || 0)}
                                 required
                                 placeholder="100000"
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white dark:bg-gray-800 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">납부 기한 *</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">납부 기한 *</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={dueDate}
                                 onChange={(e) => setDueDate(e.target.value)}
                                 required
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white dark:bg-gray-800 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">유형</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">유형</label>
                             <select
                                 value={paymentType}
                                 onChange={(e) => setPaymentType(e.target.value)}
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime bg-white dark:bg-gray-800"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
                             >
                                 <option value="UNIFORM">유니폼</option>
                                 <option value="OTHER">기타</option>
@@ -1478,14 +1527,14 @@ export default function FinanceClient({
                         </div>
                         {canManageCriticalFinance ? (
                             <div>
-                                <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">상태</label>
+                                <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">상태</label>
                                 <select
                                     value={status}
                                     onChange={(e) => {
                                         setStatus(e.target.value);
                                         if (e.target.value !== "PENDING") setNotifyParent(false);
                                     }}
-                                    className="w-full border border-gray-300 dark:border-gray-600 dark:text-white rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime bg-white dark:bg-gray-800"
+                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] bg-white"
                                 >
                                     <option value="PENDING">미납</option>
                                     <option value="PAID">납부완료</option>
@@ -1493,40 +1542,40 @@ export default function FinanceClient({
                                 </select>
                             </div>
                         ) : (
-                            <div className="rounded-lg bg-gray-50 p-3 text-sm font-bold text-gray-600 dark:bg-gray-900 dark:text-gray-300">
+                            <div className="rounded-lg bg-[var(--color-academy-soft)] p-3 text-sm font-bold text-[var(--color-academy-muted)]">
                                 신규 수납은 미납 상태로 등록됩니다.
                             </div>
                         )}
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">설명 (선택)</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
                             <input
                                 type="text"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 placeholder="예: 4월 수강료"
-                                className="w-full border border-gray-300 dark:border-gray-600 dark:text-white dark:bg-gray-800 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
-                        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                        <label className="flex items-center gap-2 text-sm text-[var(--color-academy-muted)]">
                             <input
                                 type="checkbox"
                                 checked={notifyParent}
                                 onChange={(e) => setNotifyParent(e.target.checked)}
                                 disabled={parentSendLocked || status !== "PENDING" || !selectedStudent?.hasParent}
-                                className="rounded border-gray-300"
+                                className="rounded border-[var(--color-academy-line-input)]"
                             />
                             생성 후 학부모 수납 안내 알림 보내기
                         </label>
                         {parentSendLocked && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400">학부모 청구 안내는 랠리즈에서 보냅니다(사이트 발송 잠금).</p>
+                            <p className="text-xs text-[var(--color-academy-muted)]">학부모 청구 안내는 랠리즈에서 보냅니다(사이트 발송 잠금).</p>
                         )}
                         {studentId && !selectedStudent?.hasParent && (
-                            <p className="text-xs text-amber-700 dark:text-amber-300">연결된 학부모가 없어 알림은 선택할 수 없습니다.</p>
+                            <p className="text-xs text-[var(--color-academy-warning)]">연결된 학부모가 없어 알림은 선택할 수 없습니다.</p>
                         )}
                     </div>
                     <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300">취소</button>
-                        <button type="submit" disabled={busy} className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600 transition disabled:opacity-50">
+                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-[var(--color-academy-muted)]">취소</button>
+                        <button type="submit" disabled={busy} className="bg-[var(--color-academy-primary)] text-white px-6 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50">
                             {busy ? "저장 중..." : "추가"}
                         </button>
                     </div>
@@ -1535,13 +1584,13 @@ export default function FinanceClient({
 
             {focusedStudentId && <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">선택한 원생의 수납만 표시 중<button type="button" className="min-h-11 px-3 underline" onClick={() => setFocusedStudentId("")}>전체 원생 보기</button></p>}
             <section aria-label="수납 검색과 필터" className="mb-3 flex flex-wrap items-center gap-2">
-                <label className="min-w-0 flex-1"><span className="sr-only">학생·반·내용 검색</span><input value={paymentSearch} onChange={(event) => { setPaymentSearch(event.target.value); setSelectedIds(new Set()); }} placeholder="학생·반·내용 검색" className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-base" /></label>
-                <details className="relative"><summary className="flex min-h-11 cursor-pointer items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span>필터{paymentStatusFilter || paymentClassFilter ? " · 적용 중" : ""}</summary><div className="absolute right-0 z-20 grid w-60 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border bg-white p-3 shadow-lg">
+                <label className="min-w-0 flex-1"><span className="sr-only">학생·반·내용 검색</span><input value={paymentSearch} onChange={(event) => { setPaymentSearch(event.target.value); setSelectedIds(new Set()); }} placeholder="학생·반·내용 검색" className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-base" /></label>
+                <details className="relative"><summary className="flex min-h-11 cursor-pointer items-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold"><span className="material-symbols-outlined" aria-hidden="true">filter_list</span>필터{paymentStatusFilter || paymentClassFilter ? " · 적용 중" : ""}</summary><div className="absolute right-0 z-20 grid w-60 max-w-[calc(100vw-2rem)] gap-3 rounded-xl border bg-white p-3 shadow-lg">
                     <label className="grid gap-1 text-sm">납부 상태<select aria-label="납부 상태 필터" value={paymentStatusFilter} onChange={(event) => applyPaymentStatusFilter(event.target.value)} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체</option><option value="UNPAID">미납·연체</option><option value="PENDING">미납</option><option value="OVERDUE">연체</option><option value="PAID">납부 완료</option><option value="REFUNDED">환불</option><option value="CANCELED">취소/이월</option></select></label>
                     <label className="grid gap-1 text-sm">반<select aria-label="반 필터" value={paymentClassFilter} onChange={(event) => { setPaymentClassFilter(event.target.value); setSelectedIds(new Set()); }} className="min-h-11 rounded-lg border px-2 text-base"><option value="">전체 반</option>{paymentClasses.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
                     <button type="button" className="min-h-11 text-sm font-bold" onClick={() => { setPaymentClassFilter(""); setPaymentStatusFilter(""); setSelectedIds(new Set()); }}>필터 초기화</button>
                 </div></details>
-                <span className="text-sm text-gray-500">{visiblePayments.length} / {payments.length}건</span>
+                <span className="text-sm text-[var(--color-academy-muted)]">{visiblePayments.length} / {payments.length}건</span>
             </section>
             {/* 상태 칩(누르면 그 상태만, 켜진 칩을 다시 누르면 전체) + 보기 전환(목록 | 상태별).
                 칩은 필터 모달의 «납부 상태»(paymentStatusFilter)와 같은 값을 공유한다. */}
@@ -1557,11 +1606,11 @@ export default function FinanceClient({
                     />
                 </div>
                 <div className="order-1 flex w-full justify-center lg:order-none lg:w-auto">
-                    <div className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white p-0.5 text-sm font-extrabold text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                    <div className="inline-flex items-center gap-1 rounded-full border border-[var(--color-academy-line)] bg-white p-0.5 text-sm font-extrabold text-[var(--color-academy-ink)] shadow-sm">
                         <button
                             type="button"
                             onClick={prevMonth}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             aria-label="이전 달"
                         >
                             <span className="material-symbols-outlined text-[20px]">chevron_left</span>
@@ -1570,7 +1619,7 @@ export default function FinanceClient({
                         <button
                             type="button"
                             onClick={nextMonth}
-                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
                             aria-label="다음 달"
                         >
                             <span className="material-symbols-outlined text-[20px]">chevron_right</span>
@@ -1587,42 +1636,94 @@ export default function FinanceClient({
                 </div>
             </div>
             {/* 일괄 처리 막대 — 고른 청구가 있을 때만, 표 바로 위(체크한 곳 가까이). 2026-11-08 원장 지시로 위치 이동 */}
-            {canManageCriticalFinance && selectedIds.size > 0 && (
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--brand-accent)] bg-white px-3 py-1.5 dark:bg-gray-900">
-                    <span className="text-sm font-bold text-gray-900 dark:text-white">
-                        {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(payments.filter((p) => selectedIds.has(p.id)).reduce((sum, p) => sum + Number(p.amount || 0), 0))}
-                    </span>
-                    <div className="flex items-center gap-1">
-                        <button
-                            type="button"
-                            onClick={() => setSelectedIds(new Set())}
-                            disabled={busy}
-                            className="min-h-11 rounded-lg px-3 text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-800"
-                        >
-                            선택 해제
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleBulkPaid}
-                            disabled={busy}
-                            className="min-h-11 rounded-lg bg-[var(--brand-accent)] px-4 text-sm font-bold text-[var(--brand-accent-contrast)] transition disabled:opacity-50"
-                        >
-                            선택 항목 납부 처리
-                        </button>
+            {canManageCriticalFinance && selectedIds.size > 0 && (() => {
+                // 고른 청구 상태로 버튼을 고른다: 전부 미납 → 납부 처리 · 전부 납부완료 → 환불 · 섞임 → 끔
+                const selectedPayments = payments.filter((p) => selectedIds.has(p.id));
+                const selectedTotal = selectedPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+                const selection = bulkSelectionMode(selectedPayments.map((p) => p.status));
+                // 확인 문장에 «돈이 어디로 돌아가는지» 갈래별 건수를 적는다
+                const tossCount = selectedPayments.filter((p) => p.paidProvider === "TOSS").length;
+                const posCount = selectedPayments.filter((p) => p.paidProvider === "TOSS_POS").length;
+                const manualCount = selectedPayments.length - tossCount - posCount;
+                const refundParts = [
+                    tossCount > 0 ? `온라인 결제 ${tossCount}건은 토스 결제 취소(카드 승인 취소)` : null,
+                    posCount > 0 ? `현장 결제 ${posCount}건은 POS로 취소 요청` : null,
+                    manualCount > 0 ? `현금·계좌이체 ${manualCount}건은 장부만 환불(돈은 직접 돌려주세요)` : null,
+                ].filter(Boolean).join(" · ");
+                return (
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-primary)] bg-[var(--color-academy-surface)] px-3 py-1.5">
+                        <span className="text-sm font-bold text-[var(--color-academy-ink)]">
+                            {selectedIds.size}건 선택{hiddenSelectedCount > 0 ? `(화면 밖 ${hiddenSelectedCount}건 포함)` : ""} · 합계 {formatAmount(selectedTotal)}
+                        </span>
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedIds(new Set())}
+                                disabled={busy}
+                                className="min-h-11 rounded-lg px-3 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50"
+                            >
+                                선택 해제
+                            </button>
+                            {selection.mode === "REFUND" ? (
+                                // 돈이 나가는 작업 — 위험색 + 그 자리 확인(InlineConfirm). 처리 중엔 두 버튼 모두 잠긴다
+                                <InlineConfirm
+                                    label="선택 항목 환불"
+                                    question={`${selectedIds.size}건 ${formatAmount(selectedTotal)}을 환불할까요? ${refundParts}`}
+                                    confirmLabel="환불하기"
+                                    keepLabel="그만두기"
+                                    pending={busy}
+                                    pendingLabel="환불 중…"
+                                    onConfirm={handleBulkRefund}
+                                    triggerClassName="min-h-11"
+                                    openClassName="basis-full"
+                                />
+                            ) : selection.mode === "MIXED" ? (
+                                <>
+                                    {/* 섞이면 버튼을 끄고 이유를 버튼 바로 옆에 */}
+                                    <span role="status" className="text-xs font-bold text-[var(--color-academy-danger)]">{selection.message}</span>
+                                    <button type="button" disabled className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] opacity-50">
+                                        선택 항목 처리
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handleBulkPaid}
+                                    disabled={busy}
+                                    className="min-h-11 rounded-lg bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)] transition disabled:opacity-50"
+                                >
+                                    선택 항목 납부 처리
+                                </button>
+                            )}
+                        </div>
                     </div>
+                );
+            })()}
+            {/* 선택 항목 환불 결과 — 막대 바로 아래(누른 자리 가까이). 성공하면 선택이 풀리므로 따로 남긴다 */}
+            {bulkRefundNotice && (
+                <div
+                    role={bulkRefundNotice.tone === "danger" ? "alert" : "status"}
+                    className={`mb-2 flex items-start justify-between gap-2 rounded-xl border px-3 py-1.5 text-sm font-bold ${bulkRefundNotice.tone === "danger" ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}
+                >
+                    <div className="grid gap-0.5">
+                        {bulkRefundNotice.lines.map((line, index) => <p key={index}>{line}</p>)}
+                    </div>
+                    <button type="button" onClick={() => setBulkRefundNotice(null)} aria-label="환불 결과 닫기" className="min-h-11 min-w-11 shrink-0 rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                        <span className="material-symbols-outlined text-base" aria-hidden="true">close</span>
+                    </button>
                 </div>
             )}
             {/* 수납 목록 테이블 */}
             {visiblePayments.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
+                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
                     {payments.length ? "검색 조건에 맞는 수납 기록이 없습니다." : `${year}년 ${month}월 수납 기록이 없습니다.`}
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         {/* admin-list-table: 글자 칸 왼쪽·금액/날짜 오른쪽(tabular)·한 줄(말줄임 없음, 좁으면 가로 스크롤) */}
                         <table className="admin-list-table w-full border-collapse text-sm">
-                            <thead className="bg-gray-50 text-xs font-black text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                            <thead className="bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]">
                                 <tr>
                                     {canManageCriticalFinance && (
                                         <th className="admin-cell-center px-2 py-2">
@@ -1631,7 +1732,7 @@ export default function FinanceClient({
                                                 aria-label="보이는 청구 모두 선택"
                                                 checked={visiblePayments.length > 0 && visiblePayments.every((payment) => selectedIds.has(payment.id))}
                                                 onChange={toggleSelectAll}
-                                                className="rounded border-gray-300"
+                                                className="rounded border-[var(--color-academy-line-input)]"
                                             />
                                         </th>
                                     )}
@@ -1700,7 +1801,7 @@ export default function FinanceClient({
                                 href={d.receiptUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex min-h-11 items-center font-bold text-[var(--color-academy-primary)] underline"
+                                className="inline-flex min-h-11 items-center font-bold text-[var(--color-academy-ink)] underline"
                             >
                                 영수증 열기
                             </a>
@@ -1762,15 +1863,15 @@ export default function FinanceClient({
                     onClose={() => { if (!busy) setCreatePreviewOpen(false); }}
                     closeOnBackdrop={!busy}
                 >
-                    <div className="space-y-4 text-sm text-gray-700 dark:text-gray-200">
-                        <h2 id="manual-payment-preview-title" className="text-lg font-black text-gray-900 dark:text-white">수동 청구 확인</h2>
+                    <div className="space-y-4 text-sm text-[var(--color-academy-muted)]">
+                        <h2 id="manual-payment-preview-title" className="text-lg font-black text-[var(--color-academy-ink)]">수동 청구 확인</h2>
                         <p>{selectedStudent?.name || "학생 미선택"} · {selectedStudent?.classes.find((item) => item.id === classId)?.name || "수업 연결 없음"}</p>
                         <p>{TYPE_LABELS[paymentType] || paymentType} · {formatAmount(amount)} · 납부 기한 {dueDate}</p>
                         <p>상태: {STATUS_LABELS[canManageCriticalFinance ? status : "PENDING"]?.label ?? status}</p>
-                        <p className={notifyParent ? "font-bold text-red-700 dark:text-red-300" : "font-bold"}>
+                        <p className={notifyParent ? "font-bold text-[var(--color-academy-danger)]" : "font-bold"}>
                             학부모 알림: {notifyParent ? `${selectedStudent?.parent.name || "연결된 학부모"}에게 사이트 알림 1건` : "보내지 않음"}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-300">청구 1건을 생성합니다. 알림을 선택한 경우에만 학부모 사이트 알림을 요청합니다.</p>
+                        <p className="text-xs text-[var(--color-academy-muted)]">청구 1건을 생성합니다. 알림을 선택한 경우에만 학부모 사이트 알림을 요청합니다.</p>
                         {/* 확인 창 버튼: 왼쪽 «돌아가기»(글자) · 오른쪽 끝 확정(주인공 하나), 둘 다 44px */}
                         <div className="flex items-center gap-3">
                             <button type="button" disabled={busy} onClick={() => setCreatePreviewOpen(false)} className="academy-button-text">돌아가기</button>
@@ -1787,13 +1888,13 @@ export default function FinanceClient({
                     closeOnBackdrop={!busy}
                 >
                     <div className="space-y-4">
-                        <h2 id="cancel-unpaid-title" className="text-lg font-black text-gray-900 dark:text-white">청구서 삭제</h2>
-                        <p className="text-sm text-gray-700 dark:text-gray-200">
+                        <h2 id="cancel-unpaid-title" className="text-lg font-black text-[var(--color-academy-ink)]">청구서 삭제</h2>
+                        <p className="text-sm text-[var(--color-academy-muted)]">
                             {cancelTarget.studentName} · {cancelTarget.year ?? year}년 {cancelTarget.month ?? month}월 · {cancelTarget.className || cancelTarget.description || "수업 연결 정보 없음"}
                         </p>
-                        <p className="font-bold text-gray-900 dark:text-white">{formatAmount(cancelTarget.amount)} · {STATUS_LABELS[cancelTarget.status]?.label ?? cancelTarget.status} → 취소</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-300">기록은 삭제하지 않고 취소 사유와 담당자를 감사 이력에 남깁니다. 학부모 알림은 보내지 않습니다.</p>
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                        <p className="font-bold text-[var(--color-academy-ink)]">{formatAmount(cancelTarget.amount)} · {STATUS_LABELS[cancelTarget.status]?.label ?? cancelTarget.status} → 취소</p>
+                        <p className="text-xs text-[var(--color-academy-muted)]">기록은 삭제하지 않고 취소 사유와 담당자를 감사 이력에 남깁니다. 학부모 알림은 보내지 않습니다.</p>
+                        <label className="block text-sm font-bold text-[var(--color-academy-muted)]">
                             취소 사유
                             <textarea
                                 value={cancelReason}
@@ -1801,10 +1902,10 @@ export default function FinanceClient({
                                 maxLength={300}
                                 rows={3}
                                 data-admin-modal-initial-focus="true"
-                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                                className="mt-1 w-full rounded-lg border border-[var(--color-academy-line-input)] bg-white p-3 text-[var(--color-academy-ink)]"
                             />
                         </label>
-                        {cancelError && <p role="alert" className="text-sm font-bold text-red-600">{cancelError}</p>}
+                        {cancelError && <p role="alert" className="text-sm font-bold text-[var(--color-academy-danger)]">{cancelError}</p>}
                         {/* 위험 확정(청구 취소)은 오른쪽 끝 꽉 찬 위험색, 닫기는 왼쪽 글자 버튼 — 둘 다 44px */}
                         <div className="flex items-center gap-3">
                             <button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="academy-button-text">닫기</button>

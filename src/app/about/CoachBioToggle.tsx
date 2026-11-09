@@ -16,13 +16,13 @@ export default function CoachBioToggle({ text }: { text: string }) {
     return (
         <div>
             <div className={isOpen ? '' : 'line-clamp-1'}>
-                <p className="text-base text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
+                <p className="text-base text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] leading-relaxed whitespace-pre-line">
                     {text}
                 </p>
             </div>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="text-sm text-brand-orange-500 dark:text-brand-neon-lime font-medium mt-1 hover:underline"
+                className="text-sm text-[var(--color-public-accent)] dark:text-brand-neon-lime font-medium mt-1 hover:underline"
             >
                 {isOpen ? '접기' : '더보기'}
             </button>

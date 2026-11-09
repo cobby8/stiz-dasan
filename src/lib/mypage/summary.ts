@@ -91,7 +91,7 @@ export function computeNextClass(enrollments: EnrollmentLite[], nowKst: KstNow, 
             if (firstDay < daysToStart) minutesUntil += Math.ceil((daysToStart - firstDay) / 7) * 7 * 1440;
             // 달력 날짜를 한국 날짜로 표시한다. 서버·기기의 현지 시간대에 기대지 않는다.
             serviceDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(today + Math.floor((nowKst.minutes + minutesUntil) / 1440) * 86_400_000));
-        } else if (e.displayStatus === "SCHEDULED") continue;
+        }
         if (best == null || minutesUntil < best.minutesUntil) {
             best = {
                 className: e.className,
@@ -134,4 +134,76 @@ export type ShuttleLite = {
 // 오늘(KST) 운행에 해당하는 셔틀 항목만 추린다. serviceDate 앞 10자리(YYYY-MM-DD)로 매칭.
 export function filterTodayShuttle<T extends ShuttleLite>(items: T[], todayStr: string): T[] {
     return items.filter((i) => i.serviceDate != null && i.serviceDate.slice(0, 10) === todayStr);
+}
+
+// ── 홈 «오늘 할 일» 판 집계 (2026-11-09 학부모 화면 재구성 안 A) ──────────────
+// 표시 전용 순수 함수. 홈이 이미 받은 데이터(자녀별 청구·보낸 메시지·공지)를 세기만 한다.
+
+export type PaymentLite = { id: string; amount: number; status: string; canCheckout?: boolean };
+
+export type PendingPaymentSummary = {
+    count: number;           // 납부할 청구 건수(형제 포함, 같은 청구는 한 번만)
+    total: number;           // 합계 금액(원)
+    canCheckoutAny: boolean; // 이 계정이 대표 보호자라 온라인 결제할 수 있는 청구가 하나라도 있는지
+};
+
+/** 미납(PENDING)·연체(OVERDUE) 청구를 자녀 전체에서 모아 건수·합계를 낸다. 금액 0 이하는 뺀다. */
+export function summarizePendingPayments(children: { payments: PaymentLite[] }[]): PendingPaymentSummary {
+    const seen = new Set<string>();
+    let total = 0;
+    let canCheckoutAny = false;
+    for (const child of children) {
+        for (const p of child.payments) {
+            if (p.status !== "PENDING" && p.status !== "OVERDUE") continue;
+            if (seen.has(p.id)) continue; // 같은 청구가 두 자녀 목록에 겹쳐 와도 한 번만 센다
+            const amount = Number(p.amount);
+            if (!Number.isFinite(amount) || amount <= 0) continue;
+            seen.add(p.id);
+            total += amount;
+            if (p.canCheckout !== false) canCheckoutAny = true;
+        }
+    }
+    return { count: seen.size, total, canCheckoutAny };
+}
+
+/** 최근 days 일 안에 «학원 답변»이 달린 보낸 메시지 수. 답변(adminNote)이 비어 있으면 세지 않는다. */
+export function countRecentAnswers(
+    requests: { adminNote: string | null; updatedAt: Date | string }[],
+    nowMs: number,
+    days = 7,
+): number {
+    const since = nowMs - days * 86_400_000;
+    return requests.filter((r) => {
+        if (!r.adminNote || !r.adminNote.trim()) return false;
+        const at = new Date(r.updatedAt).getTime();
+        return Number.isFinite(at) && at >= since;
+    }).length;
+}
+
+/** 최근 days 일 안에 올라온 공지 수(«새 공지 N건» 줄). */
+export function countRecentNotices(notices: { createdAt: Date | string }[], nowMs: number, days = 7): number {
+    const since = nowMs - days * 86_400_000;
+    return notices.filter((n) => {
+        const at = new Date(n.createdAt).getTime();
+        return Number.isFinite(at) && at >= since;
+    }).length;
+}
+
+/**
+ * 옛 홈 해시 → 새 탭 주소(2026-11-09 학부모 화면 구조 개편).
+ * 예전 홈 접힌 칸(셔틀·수강·기록·결석·피드백)은 «일정»·«소식» 탭으로 옮겼다.
+ * 문자·즐겨찾기로 남은 /mypage#mypage-shuttle 같은 주소가 빈 홈에 멈추지 않게 그 칸으로 넘긴다. 모르는 해시면 null.
+ */
+export function legacyHomeHashTarget(hash: string): string | null {
+    const id = String(hash ?? "").replace(/^#/, "");
+    const map: Record<string, string> = {
+        "mypage-enrollments": "/mypage/history#mypage-enrollments",
+        "mypage-shuttle": "/mypage/history#mypage-shuttle",
+        "parent-absence-hub": "/mypage/regular-absence",
+        "mypage-records": "/mypage/history#schedule-records-heading",
+        "mypage-feedback": "/mypage/reports#news-feedback",
+        "mypage-notices": "/mypage/reports#news-notices",
+        "mypage-gallery": "/mypage/reports#news-photos",
+    };
+    return Object.prototype.hasOwnProperty.call(map, id) ? map[id] : null;
 }

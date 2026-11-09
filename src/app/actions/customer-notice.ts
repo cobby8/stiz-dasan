@@ -19,27 +19,34 @@
 import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { getAcademySettings } from "@/lib/queries";
-import { sendSmsDetailed } from "@/lib/sms";
+import { getSmsMessageType, sendSmsDetailed } from "@/lib/sms";
 import {
   claimMessageDelivery,
   finalizeMessageDelivery,
   finalizeMessageDeliveryBatch,
   hashMessageBody,
   hashMessageRecipientPhone,
+  reserveManualMessageQueue,
   reserveMessageDelivery,
   reserveMessageDeliveryBatch,
 } from "@/lib/message-ledger";
+import { BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT } from "@/lib/manual-message-service";
 import {
   CUSTOMER_NOTICE_DUPLICATE_WINDOW_MINUTES,
   CUSTOMER_NOTICE_LABEL,
   CUSTOMER_NOTICE_PREVIEW_TTL_MINUTES,
+  PARENT_SIGNUP_PREVIEW_SAMPLE,
   buildIntakeResultMessage,
   buildKakaoChannelInviteMessage,
+  buildParentSignupGuideMessage,
   buildRentalGuideMessage,
+  describeSignupGuideRecipient,
   isIntakeResultStatus,
   maskPhone,
   normalizeMobilePhone,
+  selectParentSignupGuideRecipients,
   type CustomerNoticeKind,
+  type SignupGuideCandidate,
 } from "@/lib/customer-notice/templates";
 
 /** 무엇을 누구에게 보낼지 — 화면이 넘기는 값은 «대상 id» 뿐이다(번호는 대관 직접 입력만) */
@@ -344,4 +351,227 @@ export async function sendCustomerNotice(input: {
       : "문자를 보냈습니다. (발송 기록 저장만 실패했어요 — 다시 보내지 마세요)" };
   }
   return { ok: false, status: "FAILED", message: "문자 발송에 실패했습니다. 문자 발송 이력을 확인한 뒤, 필요하면 카카오채널로 직접 안내해 주세요." };
+}
+
+// ═════════════════════ 학부모 가입 안내 — 여러 명에게 한 번에(미리보기 → 원장 승인 → 대량 접수) ═════════════════════
+//
+// 왜 위 1건 발송과 따로 두나: 100여 명을 1건씩 차례로 보내면 화면이 수십 초 멈추고 중간에 끊길 수 있다.
+// 그래서 «승인 절차»(미리보기 기록·보내기 직전 재대조·중복 잠금)는 위와 똑같이 쓰고,
+// 실제 발송만 문자 화면의 «대량 발송 접수»와 같은 큐(reserveManualMessageQueue → 매분 크론이 솔라피 묶음 발송)에 넣는다.
+// 새 발송 엔진이 아니라 이미 운영 중인 길이고, 발송 장부(MessageDeliveryBatch / NotificationDelivery)에 그대로 남는다.
+
+/** 이 안내로 접수한 대량 발송 묶음의 요청 id 앞머리 — «이미 받은 번호»를 장부에서 찾는 열쇠 */
+const SIGNUP_GUIDE_REQUEST_PREFIX = "parent-signup-guide-";
+/** 장부의 stableEventKey 는 `manual:bulk:<관리자 id>:<요청 id>` 모양이다(message-ledger) */
+const SIGNUP_GUIDE_EVENT_KEY_LIKE = `manual:bulk:%:${SIGNUP_GUIDE_REQUEST_PREFIX}%`;
+
+export type ParentSignupGuidePreview = {
+  ok: true;
+  approvalId: string;
+  title: string;
+  /** 받는 사람 수(번호 기준, 중복 제거 뒤) */
+  recipientCount: number;
+  /** 이미 이 안내를 받은 번호 수(기본은 빠짐) */
+  alreadySentCount: number;
+  /** 휴대폰 번호가 없어 빠진 재원생 학부모 수 */
+  invalidPhoneCount: number;
+  /** 처음 몇 명 — 이름 가리고 번호 끝 4자리만 */
+  sample: string[];
+  message: string;
+  messageType: "SMS" | "LMS";
+  resend: boolean;
+  expiresAt: string;
+};
+
+export type ParentSignupGuideSendResult = {
+  ok: boolean;
+  status: "QUEUED" | "HELD";
+  message: string;
+  batchId?: string;
+};
+
+/** 재원생의 대표 학부모 → 받는 사람 목록을 서버에서 직접 계산한다(화면은 번호 목록을 보내지 않는다) */
+async function resolveSignupGuide(resend: boolean) {
+  // 재원생(수강 ACTIVE·병합되지 않은 학생)의 대표 학부모. 탈퇴한 계정은 뺀다.
+  const rows = await prisma.$queryRawUnsafe<Array<{ parentUserId: string; studentName: string; phone: string | null; hasAccount: boolean }>>(
+    `SELECT DISTINCT u.id AS "parentUserId", s.name AS "studentName", u.phone, (u."authUserId" IS NOT NULL) AS "hasAccount"
+       FROM "Enrollment" e
+       JOIN "Student" s ON s.id = e."studentId" AND s."mergedIntoStudentId" IS NULL
+       JOIN "User" u ON u.id = s."parentId" AND u."withdrawnAt" IS NULL
+      WHERE e.status = 'ACTIVE'`,
+  );
+  const candidates: SignupGuideCandidate[] = rows.map((row) => ({ ...row, hasAccount: row.hasAccount === true }));
+
+  // 이미 이 안내를 받은 번호 — 장부의 번호 지문(HMAC)으로 찾는다. 실패한(FAILED) 건은 «안 받음»으로 본다.
+  const phoneByHash = new Map<string, string>();
+  for (const row of candidates) {
+    const phone = normalizeMobilePhone(row.phone);
+    if (phone && !row.hasAccount) phoneByHash.set(hashMessageRecipientPhone(phone), phone);
+  }
+  const alreadySentPhones = new Set<string>();
+  if (phoneByHash.size > 0) {
+    const sent = await prisma.$queryRawUnsafe<Array<{ phoneHash: string }>>(
+      `SELECT DISTINCT d."recipientPhoneHash" AS "phoneHash"
+         FROM "NotificationDelivery" d
+        WHERE d.source = 'MANUAL' AND d."stableEventKey" LIKE $1
+          AND d.status NOT IN ('FAILED', 'SKIPPED')
+          AND d."recipientPhoneHash" = ANY($2::text[])`,
+      SIGNUP_GUIDE_EVENT_KEY_LIKE, [...phoneByHash.keys()],
+    );
+    for (const row of sent) {
+      const phone = phoneByHash.get(row.phoneHash);
+      if (phone) alreadySentPhones.add(phone);
+    }
+  }
+
+  const selected = selectParentSignupGuideRecipients(candidates, { alreadySentPhones, resend });
+  const body = buildParentSignupGuideMessage();
+  const binding = {
+    kind: "PARENT_SIGNUP_GUIDE" as const,
+    targetRef: "active-enrolled-parents-without-account",
+    resend,
+    recipientCount: selected.recipients.length,
+    // 받는 번호 묶음의 지문 — 미리보기 뒤에 한 명이라도 바뀌면 보내기를 멈춘다
+    recipientSetHash: hashMessageBody(selected.recipients.map((item) => hashMessageRecipientPhone(item.phone)).join(",")),
+    bodyHash: hashMessageBody(body),
+    channel: "SMS",
+  };
+  return { ...selected, body, binding };
+}
+
+/** 1) 미리보기만 만든다. 이 단계에서는 절대 보내지 않는다. */
+export async function prepareParentSignupGuide(input: { resend?: boolean }): Promise<ParentSignupGuidePreview | CustomerNoticeFailure> {
+  const admin = await requireAdmin();
+  try {
+    const resend = input?.resend === true;
+    const guide = await resolveSignupGuide(resend);
+    if (guide.recipients.length === 0) {
+      throw new NoticeProblem(guide.alreadySentCount > 0
+        ? `보낼 학부모가 없습니다. 이미 안내를 받은 ${guide.alreadySentCount}명은 «다시 보내기»를 골라야 포함됩니다.`
+        : "보낼 학부모가 없습니다. (재원생 학부모가 모두 가입했거나 휴대폰 번호가 없어요)");
+    }
+    if (guide.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
+      throw new NoticeProblem(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명까지만 보낼 수 있습니다.`);
+    }
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; expiresAt: string }>>(
+      `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+       VALUES (gen_random_uuid()::text, 'CUSTOMER_NOTICE_PREVIEW', 'ADMIN', $1, $2::jsonb)
+       RETURNING id, to_char((now() + make_interval(mins => $3::int)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "expiresAt"`,
+      admin.appUserId, JSON.stringify(guide.binding), CUSTOMER_NOTICE_PREVIEW_TTL_MINUTES,
+    );
+    return {
+      ok: true,
+      approvalId: rows[0].id,
+      title: CUSTOMER_NOTICE_LABEL.PARENT_SIGNUP_GUIDE,
+      recipientCount: guide.recipients.length,
+      alreadySentCount: guide.alreadySentCount,
+      invalidPhoneCount: guide.invalidPhoneCount,
+      // 전체 번호는 화면에 내보내지 않는다 — 처음 몇 명, 이름 가림 + 끝 4자리만
+      sample: guide.recipients.slice(0, PARENT_SIGNUP_PREVIEW_SAMPLE).map(describeSignupGuideRecipient),
+      message: guide.body,
+      messageType: getSmsMessageType(guide.body),
+      resend,
+      expiresAt: rows[0].expiresAt,
+    };
+  } catch (error) {
+    if (!(error instanceof NoticeProblem)) console.error("[customer-notice] 가입 안내 미리보기 실패", error);
+    return { ok: false, message: problemText(error, "미리보기를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.") };
+  }
+}
+
+/** 2) 원장이 승인한 미리보기 그대로 대량 발송 큐에 접수한다(실제 발송은 매분 크론). */
+export async function sendParentSignupGuide(input: {
+  approvalId: string;
+  resend: boolean;
+  approved: boolean;
+}): Promise<ParentSignupGuideSendResult> {
+  const admin = await requireAdmin();
+  if (input?.approved !== true) return { ok: false, status: "HELD", message: "미리보기를 확인하고 «보내기»를 눌러 주세요." };
+
+  let claimId: string | null = null;
+  let guide: Awaited<ReturnType<typeof resolveSignupGuide>>;
+  let approvalId: string;
+  try {
+    approvalId = idOf(input.approvalId);
+    // 내가 만든, 아직 유효한 «가입 안내» 미리보기만 인정한다.
+    const approvals = await prisma.$queryRawUnsafe<Array<{ detailsJson: Record<string, unknown> | null }>>(
+      `SELECT "detailsJson" FROM "OperationsAuditLog"
+        WHERE id = $1 AND action = 'CUSTOMER_NOTICE_PREVIEW' AND "actorUserId" = $2
+          AND "detailsJson"->>'kind' = 'PARENT_SIGNUP_GUIDE'
+          AND "createdAt" > now() - make_interval(mins => $3::int) LIMIT 1`,
+      approvalId, admin.appUserId, CUSTOMER_NOTICE_PREVIEW_TTL_MINUTES,
+    );
+    const approved = approvals[0]?.detailsJson;
+    if (!approved) throw new NoticeProblem("미리보기 시간이 지났습니다. 미리보기를 다시 열어 주세요.");
+    // 보내기 직전에 받는 사람·문구를 다시 계산한다 — 그새 누가 가입했거나 번호가 바뀌면 멈춘다.
+    guide = await resolveSignupGuide(input.resend === true);
+    const binding = guide.binding;
+    const same = (Object.keys(binding) as Array<keyof typeof binding>).every((key) => (approved[key] ?? null) === (binding[key] ?? null));
+    if (!same) throw new NoticeProblem("받는 사람이나 문구가 미리보기 때와 달라졌습니다. 미리보기를 다시 열어 주세요.");
+    if (guide.recipients.length === 0) throw new NoticeProblem("보낼 학부모가 없습니다.");
+
+    // 잠금을 걸고 «이 미리보기로 이미 보냈나 / 30분 안에 같은 안내를 접수했나»를 본다(두 번 눌러도, 두 사람이 눌러도 한 번만).
+    const claimed = await prisma.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, "customer-notice:PARENT_SIGNUP_GUIDE");
+      const recent = await tx.$queryRawUnsafe<Array<{ reason: string }>>(
+        `SELECT CASE WHEN "detailsJson"->>'approvalId' = $1 THEN 'SAME_APPROVAL' ELSE 'WINDOW' END AS reason
+           FROM "OperationsAuditLog"
+          WHERE action = 'CUSTOMER_NOTICE_CLAIMED'
+            AND ("detailsJson"->>'approvalId' = $1
+                 OR ("detailsJson"->>'kind' = 'PARENT_SIGNUP_GUIDE' AND "createdAt" > now() - make_interval(mins => $2::int)))
+          ORDER BY ("detailsJson"->>'approvalId' = $1) DESC
+          LIMIT 1`,
+        approvalId, CUSTOMER_NOTICE_DUPLICATE_WINDOW_MINUTES,
+      );
+      if (recent[0]) return recent[0].reason;
+      const inserted = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+         VALUES (gen_random_uuid()::text, 'CUSTOMER_NOTICE_CLAIMED', 'ADMIN', $1, $2::jsonb) RETURNING id`,
+        admin.appUserId, JSON.stringify({ ...binding, approvalId }),
+      );
+      claimId = inserted[0]?.id ?? null;
+      return "OK";
+    });
+    if (claimed === "SAME_APPROVAL") return { ok: false, status: "HELD", message: "이 미리보기는 이미 접수했습니다. 중복으로 보내지 않았습니다." };
+    if (claimed === "WINDOW") {
+      return { ok: false, status: "HELD", message: `${CUSTOMER_NOTICE_DUPLICATE_WINDOW_MINUTES}분 안에 가입 안내를 이미 접수했습니다. 발송 이력을 먼저 확인해 주세요.` };
+    }
+  } catch (error) {
+    if (!(error instanceof NoticeProblem)) console.error("[customer-notice] 가입 안내 접수 준비 실패", error);
+    return { ok: false, status: "HELD", message: problemText(error, "발송을 준비하지 못했습니다. 문자는 보내지 않았습니다.") };
+  }
+
+  // 여기부터 «대량 발송 접수»와 같은 큐에 넣는다. 번호는 큐 안에서 암호화돼 보관되고, 장부에는 지문·끝 4자리만 남는다.
+  try {
+    const queued = await reserveManualMessageQueue({
+      requestId: `${SIGNUP_GUIDE_REQUEST_PREFIX}${approvalId}`,
+      actorUserId: admin.appUserId,
+      actorName: admin.appUserName,
+      purpose: CUSTOMER_NOTICE_LABEL.PARENT_SIGNUP_GUIDE,
+      reason: "원장 미리보기 승인 후 재원생 미가입 학부모에게 대량 접수",
+      audienceScope: "EXTERNAL",
+      body: guide.body,
+      recipients: guide.recipients.map((item) => item.phone),
+    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+       VALUES (gen_random_uuid()::text, 'CUSTOMER_NOTICE_RESULT', 'ADMIN', $1, $2::jsonb)`,
+      admin.appUserId, JSON.stringify({ approvalId, kind: "PARENT_SIGNUP_GUIDE", batchId: queued.batchId, queued: guide.recipients.length }),
+    ).catch(() => undefined);
+    return {
+      ok: true,
+      status: "QUEUED",
+      batchId: queued.batchId,
+      message: `${guide.recipients.length}명에게 보내도록 접수했습니다. 1~2분 안에 차례로 나가고, 결과는 «발송 이력» 탭에서 볼 수 있어요.`,
+    };
+  } catch (error) {
+    console.error("[customer-notice] 가입 안내 큐 접수 실패", error);
+    // 큐에 못 넣었으니(아무것도 안 나감) 자리 잡기를 풀어 바로 다시 시도할 수 있게 한다
+    if (claimId) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "OperationsAuditLog" SET action = 'CUSTOMER_NOTICE_ABORTED' WHERE id = $1 AND action = 'CUSTOMER_NOTICE_CLAIMED'`, claimId,
+      ).catch(() => undefined);
+    }
+    return { ok: false, status: "HELD", message: "발송 접수를 하지 못해 문자를 보내지 않았습니다. 잠시 후 미리보기부터 다시 해 주세요." };
+  }
 }

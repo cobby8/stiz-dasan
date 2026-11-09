@@ -6,7 +6,8 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 // 2026-10-02 옛 노선 편성 화면(ShuttleRouteAdminClient) 삭제로 그 화면을 읽던 검사는 뺐다(서버·API 검사는 유지).
 const staffClient = read("../src/app/staff/shuttle/StaffShuttleDashboardClient.tsx");
-const myPage = read("../src/app/mypage/MyPageClient.tsx");
+// 학부모 셔틀 배정 상세 — 2026-11-09 홈(MyPageClient)에서 «일정» 탭 부품(ParentShuttleDetail)으로 옮겼다.
+const myPage = read("../src/app/mypage/ParentShuttleDetail.tsx");
 const enrollForm = read("../src/app/apply/enroll/EnrollApplicationLaterSteps.tsx");
 const service = read("../src/lib/shuttle/service.ts");
 
@@ -29,7 +30,8 @@ test("학부모 마이페이지 확정 시간은 한국시간으로 고정한다
 
 // 라벨 통일.
 test("확정/희망 라벨을 화면별로 통일한다", () => {
-    assert.match(myPage, /dark:text-gray-400">확정 시간<\/dt>/);
+    // 2026-11-09 색상 4단계: 학부모 화면은 밝은 화면 고정이라 dark: 클래스를 지웠다 — 라벨만 확인한다
+    assert.match(myPage, /">확정 시간<\/dt>/);
     assert.doesNotMatch(myPage, />예정 시간</);
     assert.match(enrollForm, /helper="참고용입니다\. 실제 탑승시간은 배차 확정 후 안내됩니다\."/);
 });

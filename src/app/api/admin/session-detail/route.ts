@@ -25,7 +25,8 @@ export async function GET(request: NextRequest) {
         // 세션 기본 정보 조회 ($queryRawUnsafe — PgBouncer 호환)
         const rows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT se.id, se."classId", se.date, se.topic, se.content, se.notes,
-                    se."photosJSON", se."coachId"
+                    se."photosJSON", se."coachId",
+                    (se."specialProgramSessionDateId" IS NOT NULL) AS "isSeasonal"
              FROM "Session" se
              WHERE se.id = $1`,
             sessionId
@@ -64,6 +65,8 @@ export async function GET(request: NextRequest) {
             content: r.content ?? "",
             coachId: r.coachId ?? r.coachid ?? "",
             photos,
+            // 방학특강 회차 기록이면 화면에서 정규반 출석 칸을 숨긴다(특강 출석은 좌석 기준이라 따로 관리)
+            isSeasonal: Boolean(r.isSeasonal ?? r.isseasonal),
             attendances: attRows.map((a: any) => ({
                 studentId: a.studentId ?? a.studentid,
                 status: a.status,

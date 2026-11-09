@@ -50,42 +50,25 @@ async function check(name, run, hash = '') {
   console.log(`${cases.at(-1).pass ? 'PASS' : 'FAIL'} ${name}`);
 }
 try {
-  await check('접기·펼치기는 서버 쓰기나 알림 읽음을 실행하지 않는다', async (page, requests) => {
-    for (const summary of await page.locator('summary').all()) await summary.click();
+  // 2026-11-09 학부모 화면 구조 개편: 홈 = «오늘 할 일» 판(접힌 칸 없음), 수강·셔틀은 «일정», 피드백은 «소식» 탭.
+  await check('홈을 열기만 해서는 서버 쓰기나 알림 읽음을 실행하지 않는다', async (page, requests) => {
+    assert.equal(await page.locator('details').count(), 0, '홈에는 접힌 칸이 없다');
     assert.equal(requests.length, 0);
   });
-  await check('선택 자녀에 맞춰 수업·청구·셔틀이 바뀐다', async page => {
-    assert.equal(await page.locator('a[href="/payments/invoice-child-a"]').first().isVisible(), true);
+  await check('청구 합계 줄은 «한 번에 결제»로, 자녀를 바꾸면 수업·셔틀이 바뀐다', async page => {
+    // 미납 1건(첫째 120,000원) — 1건이면 버튼 이름은 «결제하기», 목적지는 묶음 결제 화면
+    assert.equal(await page.locator('a[href="/mypage/payments/checkout"]').first().isVisible(), true);
+    assert.equal(await page.getByText('첫째 검증 셔틀', { exact: false }).first().isVisible(), true);
     await page.getByRole('button', { name: '검증 둘째', exact: true }).click();
     await page.getByRole('heading', { name: '검증 둘째 학생', exact: true }).waitFor();
-    assert.equal(await page.locator('a[href="/payments/invoice-child-a"]').count(), 0);
-    assert.equal(await page.getByText('심화 검증반', { exact: false }).first().isVisible(), true);
+    // 청구 줄은 자녀 전체 합계라 자녀를 바꿔도 남는다
+    assert.equal(await page.locator('a[href="/mypage/payments/checkout"]').count(), 1);
     assert.equal(await page.getByText('첫째 검증 셔틀', { exact: true }).count(), 0);
   });
-  await check('실제 신청·보강·청구·리포트 목적지를 보존한다', async page => {
-    for (const summary of await page.locator('summary').all()) await summary.click();
-    for (const href of ['/mypage/regular-absence', '/mypage/seasonal', '/mypage/makeup', '/mypage/shuttle', '/mypage/payments', '/mypage/enrollment-change', '/mypage/reports']) {
-      assert.equal(await page.locator(`a[href="${href}"]`).first().isVisible(), true, href);
+  await check('빠른 실행·처리할 일의 실제 목적지를 보존한다', async page => {
+    for (const href of ['/mypage/regular-absence', '/mypage/shuttle', '/mypage/reports#news-notices']) {
+      assert.equal(await page.locator(`a[href="${href}"]`).count() > 0, true, href);
     }
-    assert.equal(await page.locator('a[href="tel:00000000000"]').isVisible(), true);
-  });
-  for (const id of ['mypage-enrollments', 'mypage-shuttle', 'mypage-feedback', 'parent-absence-hub']) {
-    await check(`직접 해시 진입은 ${id}의 접힌 상위 영역을 연다`, async page => {
-      await page.locator(`#${id}`).waitFor({ state: 'visible' });
-      assert.equal(await page.locator(`#${id}`).evaluate(el => { for (let p = el.parentElement; p; p = p.parentElement) if (p.tagName === 'DETAILS' && !p.open) return false; return true; }), true);
-    }, `#${id}`);
-  }
-  await check('같은 화면의 해시 변경과 동일 링크 재클릭도 접힌 내용을 연다', async page => {
-    await page.evaluate(() => { window.location.hash = 'mypage-shuttle'; });
-    await page.waitForFunction(() => document.querySelector('#mypage-shuttle').open);
-    const absence = page.locator('#parent-absence-hub');
-    const link = page.locator('nav[aria-label="자주 하는 요청"] a[href="#parent-absence-hub"]');
-    await link.click();
-    await page.waitForFunction(() => document.querySelector('#parent-absence-hub').open);
-    await absence.locator('summary').click();
-    assert.equal(await absence.evaluate(el => el.open), false);
-    await link.click();
-    await page.waitForFunction(() => document.querySelector('#parent-absence-hub').open);
   });
   await check('가족 메시지를 확인하고 선택 자녀에게만 문의를 보낸다', async (page, requests) => {
     await page.getByRole('button', { name: /보낸 메시지/ }).click();
@@ -108,6 +91,28 @@ try {
     ]);
     assert.equal(requests.filter(req => req.path === '/test-action/read-all').length, 1);
   });
+  for (const [hash, target] of [['mypage-shuttle', '/mypage/history'], ['mypage-enrollments', '/mypage/history'], ['mypage-feedback', '/mypage/reports'], ['parent-absence-hub', '/mypage/history']]) {
+    const name = `옛 홈 해시 #${hash} 는 ${target} 로 넘어간다`;
+    const context = await browser.newContext({ viewport: { width: 390, height: 900 } });
+    try {
+      await context.addInitScript(value => { window.__testProps = value; delete window.PushManager; }, props);
+      const seen = [];
+      await context.route('**/*', async route => {
+        const url = new URL(route.request().url());
+        if (url.origin !== origin) return route.abort();
+        if (['/', '/bundle.js'].includes(url.pathname)) return route.continue();
+        seen.push(url.pathname);
+        return route.fulfill({ contentType: 'text/html', body: '<p>moved</p>' });
+      });
+      const page = await context.newPage(); page.setDefaultTimeout(5000);
+      await page.goto(`${harness.url}#${hash}`);
+      await page.waitForURL(url => new URL(url).pathname === target);
+      assert.ok(seen.includes(target));
+      cases.push({ name, pass: true });
+    } catch (error) { cases.push({ name, pass: false, error: error.message }); }
+    finally { await context.close(); }
+    console.log(`${cases.at(-1).pass ? 'PASS' : 'FAIL'} ${name}`);
+  }
 } finally { await browser.close(); await harness.close(); }
 await mkdir('.tmp/parent-ux-qa', { recursive: true });
 await writeFile('.tmp/parent-ux-qa/workspace-regression.json', JSON.stringify({ cases, passed: cases.filter(c => c.pass).length }, null, 2));

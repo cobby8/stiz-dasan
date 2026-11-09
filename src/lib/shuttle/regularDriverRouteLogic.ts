@@ -15,7 +15,11 @@
 import type { RegularShuttleStop } from "./regularSheet";
 
 // ── 기사님 화면이 소비하는 표시 계약(기사님 화면이 그대로 import 해서 쓴다) ──────────
-export type DriverRow = { rowId: string; name: string; parentPhone: string | null; studentPhone: string | null; absent?: boolean;
+export type DriverRow = { rowId: string; name: string; parentPhone: string | null; studentPhone: string | null;
+  /** 그날 결석 신고(학부모 신고·출석부 질병·부상). 명단에서 빼지 않고 «결석» 뱃지 + 흐린 행으로만 보인다. */
+  absent?: boolean;
+  /** 결석 뱃지 문구(항상 «결석» — 사유는 민감정보라 싣지 않는다). absent 일 때만 붙는다. */
+  absentLabel?: string | null;
   /** "오늘만" 셔틀 변경(안 탐·다른 곳에서 탐). 결석과 다르다 — 아이는 수업에 온다. */
   shuttleNote?: string | null };
 export type DriverStop = { label: string; arriveTime: string | null; lat: number | null; lng: number | null; direction: "BOARD" | "ALIGHT"; rows: DriverRow[] };
@@ -76,6 +80,27 @@ export function attachShuttleDayNotes(
   }));
 }
 
+
+/**
+ * 결석으로 표시된 행에 뱃지 문구(«결석»)를 덧붙인다. 🔒 결석 사유는 넣지 않는다(로그인 없는 기사님 화면).
+ *
+ * 왜 뒤에서 덧붙이나: attachShuttleDayNotes 와 같은 이유 — 명단을 만드는 경로가 저장 노선·폴백 두 갈래라
+ * 조립 안에 심으면 한쪽만 고쳐지기 쉽다. 결석 행은 **지우지 않는다**(원장 지시 2026-11-09) — 표시만 바꾼다.
+ * labelOf 가 null 을 주면(매칭 실패) 그냥 «결석».
+ */
+export function attachAbsenceLabels(
+  classes: DriverClass[],
+  labelOf: (row: { name: string | null; phone: string | null }) => string | null,
+): DriverClass[] {
+  const withLabels = (stops: DriverStop[]): DriverStop[] =>
+    stops.map((stop) => ({
+      ...stop,
+      rows: stop.rows.map((row) =>
+        row.absent ? { ...row, absentLabel: labelOf({ name: row.name, phone: row.parentPhone }) ?? "결석" } : row,
+      ),
+    }));
+  return classes.map((item) => ({ ...item, board: withLabels(item.board), alight: withLabels(item.alight) }));
+}
 
 // 저장 payload 는 JSON 이라 타입이 없다. 읽는 필드만 느슨하게 선언한다(없어도 안전하게 동작).
 type SavedStudent = { requestId?: unknown; name?: unknown; parentPhone?: unknown; childPhone?: unknown };

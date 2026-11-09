@@ -35,7 +35,7 @@ const WaitlistClient = dynamic(() => import("@/app/admin/waitlist/WaitlistClient
 
 const ApplySettingsTab = dynamic(() => import("./ApplySettingsTab"), {
     loading: () => (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+        <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-6 text-center text-sm text-[var(--color-academy-muted)]">
             신청 안내 설정을 불러오는 중...
         </div>
     ),
@@ -403,13 +403,13 @@ function ApplyLoadingFallback() {
 
 function ApplyErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">수강 신청 정보를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">수강 신청 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -722,16 +722,16 @@ export default function ApplyAdminClient({
 
         return (
             <div className="space-y-4">
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                         <div>
-                            <h2 className="text-lg font-black text-gray-900 dark:text-white">유입경로 통계</h2>
+                            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">유입경로 통계</h2>
                         </div>
                         <div className="flex items-center gap-2">
                             <select
                                 value={sourceStatsRange}
                                 onChange={(event) => setSourceStatsRange(event.target.value as SourceStatsRange)}
-                                className="min-h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-bold text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
+                                className="min-h-10 rounded-lg border border-[var(--color-academy-line)] bg-white px-3 text-sm font-bold text-[var(--color-academy-ink)]"
                             >
                                 {SOURCE_STATS_RANGES.map((range) => (
                                     <option key={range.value} value={range.value}>
@@ -743,7 +743,7 @@ export default function ApplyAdminClient({
                                 type="button"
                                 onClick={() => void loadSourceStats(sourceStatsRange)}
                                 disabled={sourceStatsLoading}
-                                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[var(--color-academy-line)] px-3 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-60"
                             >
                                 <span className="material-symbols-outlined text-base">refresh</span>
                                 새로고침
@@ -753,16 +753,16 @@ export default function ApplyAdminClient({
                 </div>
 
                 {sourceStatsLoading && !payload ? (
-                    <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm font-bold text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">
                         유입경로 통계를 불러오는 중입니다.
                     </div>
                 ) : sourceStatsError && !payload ? (
-                    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+                    <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center text-sm font-bold text-[var(--color-academy-danger)]">
                         통계를 불러오지 못했습니다.
                         <button
                             type="button"
                             onClick={() => void loadSourceStats(sourceStatsRange)}
-                            className="ml-3 rounded-lg bg-red-600 px-3 py-1.5 text-white"
+                            className="ml-3 rounded-lg bg-[var(--color-academy-danger)] px-3 py-1.5 text-white"
                         >
                             다시 시도
                         </button>
@@ -776,7 +776,7 @@ export default function ApplyAdminClient({
                             <SourceMetricCard label="등록 전환" value={`${totals?.conversionRate ?? 0}%`} icon="trending_up" />
                         </div>
 
-                        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                        <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
                             <table className="w-full min-w-[860px] table-fixed border-collapse text-left text-sm">
                                 <colgroup>
                                     <col className="w-[24%]" />
@@ -787,8 +787,8 @@ export default function ApplyAdminClient({
                                     <col className="w-[12%]" />
                                     <col className="w-[16%]" />
                                 </colgroup>
-                                <thead className="bg-gray-50 text-xs font-black uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                                    <tr className="divide-x divide-gray-200 dark:divide-gray-700">
+                                <thead className="bg-[var(--color-academy-soft)] text-xs font-black uppercase text-[var(--color-academy-muted)]">
+                                    <tr className="divide-x divide-[var(--color-academy-line)]">
                                         <th className="px-3 py-2">유입경로</th>
                                         <th className="px-3 py-2">전체</th>
                                         <th className="px-3 py-2">체험</th>
@@ -798,10 +798,10 @@ export default function ApplyAdminClient({
                                         <th className="px-3 py-2">최근 접수</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                <tbody className="divide-y divide-[var(--color-academy-line)]">
                                     {rows.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="px-3 py-8 text-center text-sm font-bold text-gray-500 dark:text-gray-400">
+                                            <td colSpan={7} className="px-3 py-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">
                                                 선택한 기간에 접수된 신청이 없습니다.
                                             </td>
                                         </tr>
@@ -809,30 +809,30 @@ export default function ApplyAdminClient({
                                         rows.map((row) => {
                                             const width = maxTotal > 0 ? Math.max(8, Math.round((row.total / maxTotal) * 100)) : 0;
                                             return (
-                                                <tr key={row.source} className="divide-x divide-gray-100 dark:divide-gray-700">
+                                                <tr key={row.source} className="divide-x divide-[var(--color-academy-line)]">
                                                     <td className="px-3 py-2 align-middle">
                                                         <div className="min-w-0">
                                                             <div className="flex items-center justify-between gap-3">
-                                                                <span className="truncate font-black text-gray-900 dark:text-white">{sourceLabel(row.source)}</span>
-                                                                <span className="shrink-0 text-xs font-bold text-gray-400">{row.source}</span>
+                                                                <span className="truncate font-black text-[var(--color-academy-ink)]">{sourceLabel(row.source)}</span>
+                                                                <span className="shrink-0 text-xs font-bold text-[var(--color-academy-faint)]">{row.source}</span>
                                                             </div>
-                                                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-900">
-                                                                <div className="h-full rounded-full bg-brand-orange-500 dark:bg-brand-neon-lime" style={{ width: `${width}%` }} />
+                                                            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
+                                                                <div className="h-full rounded-full bg-[var(--color-academy-primary)]" style={{ width: `${width}%` }} />
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-3 py-2 font-black text-gray-900 dark:text-white">{row.total}</td>
-                                                    <td className="px-3 py-2 text-gray-700 dark:text-gray-200">
+                                                    <td className="px-3 py-2 font-black text-[var(--color-academy-ink)]">{row.total}</td>
+                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">
                                                         <span className="font-black">{row.trialTotal}</span>
-                                                        <span className="ml-1 text-xs text-gray-400">완료 {row.trialAttended}</span>
+                                                        <span className="ml-1 text-xs text-[var(--color-academy-faint)]">완료 {row.trialAttended}</span>
                                                     </td>
-                                                    <td className="px-3 py-2 text-gray-700 dark:text-gray-200">
+                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">
                                                         <span className="font-black">{row.enrollTotal}</span>
-                                                        <span className="ml-1 text-xs text-gray-400">대기 {row.enrollPending}</span>
+                                                        <span className="ml-1 text-xs text-[var(--color-academy-faint)]">대기 {row.enrollPending}</span>
                                                     </td>
-                                                    <td className="px-3 py-2 text-gray-700 dark:text-gray-200">{row.trialConverted + row.enrollApproved}</td>
-                                                    <td className="px-3 py-2 font-black text-gray-900 dark:text-white">{row.conversionRate}%</td>
-                                                    <td className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400">{formatDate(row.latestAt)}</td>
+                                                    <td className="px-3 py-2 text-[var(--color-academy-muted)]">{row.trialConverted + row.enrollApproved}</td>
+                                                    <td className="px-3 py-2 font-black text-[var(--color-academy-ink)]">{row.conversionRate}%</td>
+                                                    <td className="px-3 py-2 text-xs font-bold text-[var(--color-academy-muted)]">{formatDate(row.latestAt)}</td>
                                                 </tr>
                                             );
                                         })
@@ -895,11 +895,11 @@ export default function ApplyAdminClient({
                         setShowDetailModal(app);
                     }
                 }}
-                className="cursor-pointer transition focus:bg-brand-orange-50 focus:outline-none dark:focus:bg-brand-neon-lime/10"
+                className="cursor-pointer transition focus:bg-[var(--color-academy-primary-soft)] focus:outline-none"
             >
                 {/* 상태 — 휴대폰에선 아이콘만, sm 이상에서 글자까지 */}
                 <td className="px-2 py-1.5">
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${cfg.color}`} title={cfg.label}>
+                    <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-bold ${cfg.color}`} title={cfg.label}>
                         <span className="material-symbols-outlined text-sm" aria-hidden="true">{cfg.icon}</span>
                         <span className="sr-only sm:not-sr-only">{cfg.label}</span>
                     </span>
@@ -907,7 +907,7 @@ export default function ApplyAdminClient({
                     {app.assignedClassId && <span className="ml-1 text-xs font-bold text-[var(--color-academy-muted)]">배정</span>}
                 </td>
                 <td className="px-2 py-1.5">
-                    <span className="font-black text-gray-900 dark:text-white">{app.childName}</span>
+                    <span className="font-black text-[var(--color-academy-ink)]">{app.childName}</span>
                     {trialSuggestion && (
                         <button
                             type="button"
@@ -926,21 +926,21 @@ export default function ApplyAdminClient({
                         </button>
                     )}
                 </td>
-                <td className="px-2 py-1.5 text-gray-800 dark:text-gray-100">
+                <td className="px-2 py-1.5 text-[var(--color-academy-ink)]">
                     {app.childGrade || "-"}
                     {age !== null && <span className="ml-1 text-xs tabular-nums text-[var(--color-academy-muted)]">만 {age}세</span>}
                 </td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">{app.childSchool || "-"}</td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 lg:table-cell">{app.parentName || "-"}</td>
-                <td className="hidden px-2 py-1.5 tabular-nums text-gray-700 dark:text-gray-200 md:table-cell">{app.parentPhone || "-"}</td>
-                <td className="admin-cell-num px-2 py-1.5 text-gray-700 dark:text-gray-200">{formatDate(app.createdAt)}</td>
-                <td className="px-2 py-1.5 font-bold text-gray-800 dark:text-gray-100">
-                    <span className="inline-block whitespace-nowrap">{preferredSlotShort ?? <span className="text-xs font-bold text-amber-700 dark:text-amber-300">확인 필요</span>}</span>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{app.childSchool || "-"}</td>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{app.parentName || "-"}</td>
+                <td className="hidden px-2 py-1.5 tabular-nums text-[var(--color-academy-muted)] md:table-cell">{app.parentPhone || "-"}</td>
+                <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatDate(app.createdAt)}</td>
+                <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">
+                    <span className="inline-block whitespace-nowrap">{preferredSlotShort ?? <span className="text-xs font-bold text-[var(--color-academy-warning)]">확인 필요</span>}</span>
                     <span className={`mt-1 block ${app.requestedStartOn ? "whitespace-nowrap" : ""} text-xs font-medium text-[var(--color-academy-muted)] lg:hidden`}><span className="sr-only">수강 개시일 </span>{formatEnrollmentStartOn(app.requestedStartOn)}</span>
                     {app.shuttleNeeded && <span className="mt-1 block md:hidden"><EnrollmentShuttleProgressView progress={app.shuttleProgress} /></span>}
                 </td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 lg:table-cell">{formatEnrollmentStartOn(app.requestedStartOn)}{!app.requestedStartOn && app.enrollmentMonths && <span className="mt-1 block text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)}</span>}</td>
-                <td className="hidden px-2 py-1.5 text-gray-700 dark:text-gray-200 md:table-cell">{app.shuttleNeeded ? <EnrollmentShuttleProgressView progress={app.shuttleProgress} /> : "미신청"}</td>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] lg:table-cell">{formatEnrollmentStartOn(app.requestedStartOn)}{!app.requestedStartOn && app.enrollmentMonths && <span className="mt-1 block text-xs text-[var(--color-academy-muted)]">기존 신청 월 {formatEnrollmentMonthsShort(app.enrollmentMonths)}</span>}</td>
+                <td className="hidden px-2 py-1.5 text-[var(--color-academy-muted)] md:table-cell">{app.shuttleNeeded ? <EnrollmentShuttleProgressView progress={app.shuttleProgress} /> : "미신청"}</td>
                 <td className="admin-cell-center px-2 py-1.5" onClick={(event) => event.stopPropagation()}>
                     {/* 공용 ⚡ 메뉴(게슈탈트 A-06) — 따로 만든 «⋯» 복사본 대신. 승인=주인공, 반려·취소=위험(구분선 아래) */}
                     <AdminQuickActionMenu label={`${app.childName} 빠른 처리`} actions={buildApplicationQuickActions(app, parentPhoneHref)} />
@@ -966,9 +966,9 @@ export default function ApplyAdminClient({
             : [];
 
         return (
-            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
                 <table className="admin-list-table w-full border-collapse text-sm">
-                    <thead className="sticky top-0 z-10 bg-gray-50 text-xs font-black uppercase text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                    <thead className="sticky top-0 z-10 bg-[var(--color-academy-soft)] text-xs font-black uppercase text-[var(--color-academy-muted)]">
                         <tr>
                             <th className="px-2 py-2">상태</th>
                             <th className="px-2 py-2">학생</th>
@@ -1014,11 +1014,11 @@ export default function ApplyAdminClient({
         <div className="min-w-0 space-y-4">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <h1 className="flex min-w-0 items-center gap-2 text-2xl font-bold text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-primary)]" aria-hidden="true">how_to_reg</span>
+                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">how_to_reg</span>
                     체험/수강신청 관리
                 </h1>
                 <div className="flex max-w-full flex-wrap items-center gap-2">
-                    <Link href="/admin/registration-readiness" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]" prefetch={false}>
+                    <Link href="/admin/registration-readiness" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-primary-soft)]" prefetch={false}>
                         <span className="material-symbols-outlined text-lg" aria-hidden="true">checklist</span>
                         입학 점검
                     </Link>
@@ -1044,7 +1044,7 @@ export default function ApplyAdminClient({
                             className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-sm font-bold transition ${
                                 active
                                     ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-white"
-                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-primary)]"
+                                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)] hover:text-[var(--color-academy-ink)]"
                             }`}
                         >
                             <span className="material-symbols-outlined text-lg" aria-hidden="true">{tab.icon}</span>
@@ -1063,8 +1063,8 @@ export default function ApplyAdminClient({
                 <div
                     className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
                         feedback.type === "success"
-                            ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-200"
-                            : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+                            ? "border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+                            : "border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     }`}
                     role="status"
                 >
@@ -1126,9 +1126,9 @@ export default function ApplyAdminClient({
 
                     {/* 신청서 목록 */}
                     {filteredApps.length === 0 ? (
-                        <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                            <span className="material-symbols-outlined text-5xl text-gray-300">inbox</span>
-                            <p className="text-gray-500 dark:text-gray-400 mt-3">
+                        <div className="text-center py-16 bg-white rounded-xl border border-[var(--color-academy-line)]">
+                            <span className="material-symbols-outlined text-5xl text-[var(--color-academy-faint)]">inbox</span>
+                            <p className="text-[var(--color-academy-muted)] mt-3">
                                 {searchQuery || workFilter !== "ALL"
                                     ? "조건에 맞는 수강신청이 없습니다"
                                     : filter === "ALL"
@@ -1140,7 +1140,7 @@ export default function ApplyAdminClient({
                                     type="button"
                                     onClick={handleShowMoreApps}
                                     disabled={loadingMore}
-                                    className="mt-4 rounded-lg border border-gray-200 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                    className="mt-4 rounded-lg border border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] disabled:opacity-60"
                                 >
                                     {loadingMore ? "불러오는 중..." : "다음 50건에서 더 찾아보기"}
                                 </button>
@@ -1149,7 +1149,7 @@ export default function ApplyAdminClient({
                     ) : (
                         <div className="grid gap-2.5">
                             {renderApplicationList()}
-                            {hasMoreApps && (<div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                            {hasMoreApps && (<div className="flex flex-col gap-3 rounded-xl border border-[var(--color-academy-line)] bg-white px-4 py-3 text-sm text-[var(--color-academy-muted)] sm:flex-row sm:items-center sm:justify-between">
                                 <span>
                                     {filteredApps.length}건 중 {visibleApps.length}건 표시
                                 </span>
@@ -1158,7 +1158,7 @@ export default function ApplyAdminClient({
                                         type="button"
                                         onClick={handleShowMoreApps}
                                         disabled={loadingMore}
-                                        className="rounded-lg border border-gray-200 px-4 py-2 font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-900"
+                                        className="rounded-lg border border-[var(--color-academy-line)] px-4 py-2 font-bold text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)]"
                                     >
                                         {loadingMore ? "불러오는 중..." : "50건 더 보기"}
                                     </button>
@@ -1230,13 +1230,13 @@ export default function ApplyAdminClient({
 
 function SourceMetricCard({ label, value, icon }: { label: string; value: string; icon: string }) {
     return (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <p className="text-xs font-bold text-gray-500 dark:text-gray-400">{label}</p>
-                    <p className="mt-1 text-2xl font-black text-gray-900 dark:text-white">{value}</p>
+                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">{label}</p>
+                    <p className="mt-1 text-2xl font-black text-[var(--color-academy-ink)]">{value}</p>
                 </div>
-                <span className="inline-flex size-10 items-center justify-center rounded-xl bg-brand-orange-50 text-brand-orange-600 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
+                <span className="inline-flex size-10 items-center justify-center rounded-xl bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]">
                     <span className="material-symbols-outlined">{icon}</span>
                 </span>
             </div>
@@ -1282,11 +1282,11 @@ function ApplicationContactModal({
                 onSubmit={handleSubmit}
                 className="w-full p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
             >
-                <h2 id="application-contact-modal-title" className="flex items-center gap-2 text-lg font-black text-gray-900 dark:text-white">
-                    <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">phone_callback</span>
+                <h2 id="application-contact-modal-title" className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-[var(--color-academy-ink)]">phone_callback</span>
                     후속 연락 기록
                 </h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
                     {app.childName} · {app.parentName} {app.parentPhone}
                 </p>
 
@@ -1298,8 +1298,8 @@ function ApplicationContactModal({
                             onClick={() => setAction(option)}
                             className={`rounded-xl border px-3 py-2 text-sm font-black transition ${
                                 action === option
-                                    ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-700 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime"
-                                    : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900"
+                                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                                    : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
                             {CONTACT_ACTION_LABELS[option]}
@@ -1308,29 +1308,29 @@ function ApplicationContactModal({
                 </div>
 
                 {action === "FOLLOW_UP" && (
-                    <label className="mt-4 block text-sm font-bold text-gray-700 dark:text-gray-200">
+                    <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
                         다음 연락 예정
                         <input
                             type="datetime-local"
                             value={nextFollowUpAt}
                             onChange={(event) => setNextFollowUpAt(event.target.value)}
-                            className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-neon-lime"
+                            className="mt-1 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
                         />
                     </label>
                 )}
 
-                <label className="mt-4 block text-sm font-bold text-gray-700 dark:text-gray-200">
+                <label className="mt-4 block text-sm font-bold text-[var(--color-academy-muted)]">
                     상담 메모
                     <textarea
                         value={note}
                         onChange={(event) => setNote(event.target.value)}
                         rows={4}
-                        className="mt-1 w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-orange-500 dark:border-gray-700 dark:bg-gray-900 dark:focus:border-brand-neon-lime"
+                        className="mt-1 w-full resize-none rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-academy-primary)]"
                     />
                 </label>
 
                 {formError && (
-                    <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:bg-red-950/40 dark:text-red-200">
+                    <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
                         {formError}
                     </p>
                 )}
@@ -1339,14 +1339,14 @@ function ApplicationContactModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-xl px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-900"
+                        className="rounded-xl px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
                     >
                         닫기
                     </button>
                     <button
                         type="submit"
                         disabled={busy}
-                        className="rounded-xl bg-brand-orange-500 px-5 py-2 text-sm font-black text-white transition hover:bg-brand-orange-600 disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+                        className="rounded-xl bg-[var(--color-academy-primary)] px-5 py-2 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50"
                     >
                         {busy ? "저장 중..." : "저장"}
                     </button>

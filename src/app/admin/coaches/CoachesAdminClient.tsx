@@ -84,29 +84,29 @@ function CoachesLoadingFallback() {
         <div className="space-y-8">
             <div className="flex items-start justify-between gap-4">
                 <div>
-                    <div className="h-8 w-44 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="mt-2 h-4 w-80 max-w-full rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                    <div className="h-8 w-44 rounded bg-[var(--color-academy-line)] animate-pulse" />
+                    <div className="mt-2 h-4 w-80 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
-                <div className="h-10 w-28 rounded-xl bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                <div className="h-10 w-28 rounded-xl bg-[var(--color-academy-line)] animate-pulse" />
             </div>
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-700">
-                    <div className="h-5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-36 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+            <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-6 py-4">
+                    <div className="h-5 w-32 rounded bg-[var(--color-academy-line)] animate-pulse" />
+                    <div className="h-4 w-36 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                <div className="divide-y divide-[var(--color-academy-line)]">
                     {Array.from({ length: 5 }).map((_, index) => (
                         <div key={index} className="flex items-center justify-between gap-4 px-6 py-4">
                             <div className="flex min-w-0 flex-1 items-center gap-4">
-                                <div className="h-14 w-14 rounded-full bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                <div className="h-14 w-14 rounded-full bg-[var(--color-academy-soft)] animate-pulse" />
                                 <div className="min-w-0 flex-1 space-y-2">
-                                    <div className="h-5 w-36 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                                    <div className="h-4 w-56 max-w-full rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                    <div className="h-5 w-36 rounded bg-[var(--color-academy-line)] animate-pulse" />
+                                    <div className="h-4 w-56 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                                 </div>
                             </div>
                             <div className="hidden gap-2 sm:flex">
-                                <div className="h-8 w-16 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                                <div className="h-8 w-16 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                <div className="h-8 w-16 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                                <div className="h-8 w-16 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                             </div>
                         </div>
                     ))}
@@ -118,13 +118,13 @@ function CoachesLoadingFallback() {
 
 function CoachesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">코치 목록을 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">코치 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -157,15 +157,15 @@ function ImageUploadField({
 
     return (
         <div>
-            <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+            <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                 프로필 사진
-                <span className="text-gray-400 font-normal ml-1">(직접 업로드)</span>
+                <span className="text-[var(--color-academy-faint)] font-normal ml-1">(직접 업로드)</span>
             </label>
             <div className="flex items-center gap-3">
                 {displayUrl ? (
-                    <img src={displayUrl} alt="코치 사진 미리보기" className="w-14 h-14 rounded-full object-cover border border-gray-200 dark:border-gray-700 shrink-0" />
+                    <img src={displayUrl} alt="코치 사진 미리보기" className="w-14 h-14 rounded-full object-cover border border-[var(--color-academy-line)] shrink-0" />
                 ) : (
-                    <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xs shrink-0">
+                    <div className="w-14 h-14 rounded-full bg-[var(--color-academy-soft)] border border-dashed border-[var(--color-academy-line-input)] flex items-center justify-center text-[var(--color-academy-faint)] text-xs shrink-0">
                         사진
                     </div>
                 )}
@@ -175,13 +175,13 @@ function ImageUploadField({
                         type="file"
                         accept="image/*"
                         onChange={handleFile}
-                        className="block w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 file:text-white hover:file:bg-orange-600 cursor-pointer"
+                        className="block w-full text-sm text-[var(--color-academy-muted)] file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-[var(--color-academy-primary)] file:text-white hover:file:bg-[var(--color-academy-primary-hover)] cursor-pointer"
                     />
                     {displayUrl && (
                         <button
                             type="button"
                             onClick={handleClear}
-                            className="text-xs text-red-500 hover:text-red-700"
+                            className="text-xs text-[var(--color-academy-danger)] hover:text-[var(--color-academy-danger)]"
                         >
                             사진 제거
                         </button>
@@ -366,7 +366,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
         setDragOver(null);
     }
 
-    const INPUT = "w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2.5 text-sm dark:text-white bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800 focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime transition";
+    const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] transition";
     const TEXTAREA = INPUT + " resize-none";
 
     // ⚡·상세 패널이 같이 쓰는 작업 — 예전 ⚡ 의 수정(인라인 폼 열기/닫기)·삭제(확인창) 그대로
@@ -430,19 +430,19 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
             {/* 강사 추가 모달 */}
             {showAddModal && (
                 <AdminModal onClose={() => setShowAddModal(false)} titleId="add-coach-modal-title" panelClassName="max-w-xl">
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
-                            <span id="add-coach-modal-title" className="font-bold text-gray-800 dark:text-gray-100 text-base">강사 추가</span>
-                            <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-300 text-xl leading-none">✕</button>
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-academy-line)]">
+                            <span id="add-coach-modal-title" className="font-bold text-[var(--color-academy-ink)] text-base">강사 추가</span>
+                            <button onClick={() => setShowAddModal(false)} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)] text-xl leading-none">✕</button>
                         </div>
                         <div className="p-6 space-y-4">
                             {addError && (
-                                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
+                                <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] text-sm rounded-lg p-3">
                                     {addError}
                                 </div>
                             )}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">이름 *</label>
+                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">이름 *</label>
                                     <input
                                         type="text"
                                         value={addForm.name}
@@ -452,7 +452,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">직책 *</label>
+                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">직책 *</label>
                                     <input
                                         type="text"
                                         value={addForm.role}
@@ -464,9 +464,9 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             </div>
                             {/* 전화번호 — SMS 수신용 (선택) */}
                             <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                                     전화번호
-                                    <span className="text-gray-400 font-normal ml-1">(SMS 수신용, 선택)</span>
+                                    <span className="text-[var(--color-academy-faint)] font-normal ml-1">(SMS 수신용, 선택)</span>
                                 </label>
                                 <input
                                     type="tel"
@@ -483,7 +483,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                                     약력 / 소개
                                 </label>
                                 <textarea
@@ -498,14 +498,14 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                             <div className="flex justify-end gap-2 pt-2">
                                 <button
                                     onClick={() => setShowAddModal(false)}
-                                    className="px-4 py-2.5 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition"
+                                    className="px-4 py-2.5 text-sm text-[var(--color-academy-muted)] border border-[var(--color-academy-line-input)] rounded-lg hover:bg-[var(--color-academy-soft)] transition"
                                 >
                                     취소
                                 </button>
                                 <button
                                     onClick={handleAdd}
                                     disabled={pending || !addForm.name.trim() || !addForm.role.trim()}
-                                    className="bg-brand-navy-900 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition disabled:opacity-40"
+                                    className="bg-[var(--color-academy-primary-hover)] text-white px-6 py-2.5 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
                                 >
                                     {pending ? "처리 중..." : "추가하기"}
                                 </button>
@@ -583,17 +583,17 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                         {editId === coach.id && (
                                             <tr>
                                                 <td colSpan={7} className="p-0">
-                                                    <div className="whitespace-normal border-t border-blue-200 bg-blue-50 px-6 py-5 text-left">
-                                                        <h3 className="text-sm font-bold text-blue-800 mb-4">코치 정보 수정</h3>
+                                                    <div className="whitespace-normal border-t border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-6 py-5 text-left">
+                                                        <h3 className="text-sm font-bold text-[var(--color-academy-ink)] mb-4">코치 정보 수정</h3>
                                                         {editError && (
-                                                            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
+                                                            <div className="bg-[var(--color-academy-danger-soft)] border border-[var(--color-academy-danger)] text-[var(--color-academy-danger)] text-sm rounded-lg p-3 mb-4">
                                                                 {editError}
                                                             </div>
                                                         )}
                                                         <div className="space-y-4">
                                                             <div className="grid grid-cols-2 gap-4">
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">이름 *</label>
+                                                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">이름 *</label>
                                                                     <input
                                                                         type="text"
                                                                         value={editForm.name}
@@ -602,7 +602,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">직책 *</label>
+                                                                    <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">직책 *</label>
                                                                     <input
                                                                         type="text"
                                                                         value={editForm.role}
@@ -614,9 +614,9 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
 
                                                             {/* 전화번호 — SMS 수신용 (선택) */}
                                                             <div>
-                                                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">
+                                                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">
                                                                     전화번호
-                                                                    <span className="text-gray-400 font-normal ml-1">(SMS 수신용, 선택)</span>
+                                                                    <span className="text-[var(--color-academy-faint)] font-normal ml-1">(SMS 수신용, 선택)</span>
                                                                 </label>
                                                                 <input
                                                                     type="tel"
@@ -635,7 +635,7 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                             </div>
 
                                                             <div>
-                                                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-200 mb-1">약력 / 소개</label>
+                                                                <label className="block text-xs font-bold text-[var(--color-academy-muted)] mb-1">약력 / 소개</label>
                                                                 <textarea
                                                                     value={editForm.description}
                                                                     onChange={(e) => patchEdit({ description: e.target.value })}
@@ -649,14 +649,14 @@ export default function CoachesAdminClient({ initialCoaches }: { initialCoaches?
                                                             <div className="flex justify-end gap-3 pt-2">
                                                                 <button
                                                                     onClick={cancelEdit}
-                                                                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 rounded-lg transition"
+                                                                    className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-lg transition"
                                                                 >
                                                                     취소
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleUpdate(coach.id)}
                                                                     disabled={pending || !editForm.name.trim() || !editForm.role.trim()}
-                                                                    className="px-5 py-2 text-sm font-bold bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white rounded-lg hover:bg-orange-600 transition disabled:opacity-40"
+                                                                    className="px-5 py-2 text-sm font-bold bg-[var(--color-academy-primary)] text-white rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
                                                                 >
                                                                     {pending ? "저장 중..." : "저장하기"}
                                                                 </button>

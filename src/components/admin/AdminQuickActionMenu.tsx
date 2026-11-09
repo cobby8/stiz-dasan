@@ -176,7 +176,7 @@ export default function AdminQuickActionMenu({
                     if (!open) placeMenu();
                     setOpen((current) => !current);
                 }}
-                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-white shadow-sm transition before:absolute before:-inset-1 before:content-[''] hover:bg-red-600 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:brightness-95"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-academy-danger)] text-white shadow-sm transition before:absolute before:-inset-1 before:content-[''] hover:brightness-90"
             >
                 <span className="material-symbols-outlined text-[20px]" aria-hidden="true">{icon}</span>
             </button>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import vm from "node:vm";
 import ts from "typescript";
@@ -81,6 +81,11 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/queries": { getMyPageData: async (id) => { calls.push(id); return { children: [] }; } },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "verified-app-fixture" }) },
     "@/lib/shuttle/parent": {},
+    // 홈 «처리할 일»(보강권·방학특강 회차) — 자녀가 없으면 부르지 않는다
+    "@/lib/makeup/parent-makeup": {},
+    "@/lib/seasonal/parent-absence": {},
+    // 홈 청구 합계(청구 탭과 같은 목록) — 자녀가 없으면 부르지 않는다
+    "@/lib/payments/parent-payment-request": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },
@@ -95,11 +100,14 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
 
 test("업무 스포츠 테마는 네 역할 공통 경계와 성공·경고·실패 상태색 및 조작 크기를 보존한다", () => {
   const css = readFileSync("src/app/academy-theme.css", "utf8");
-  assert.match(css, /--color-academy-primary: #b94118/);
-  assert.match(css, /--color-academy-ink: #15181c/);
-  assert.match(css, /--color-academy-success: #3f6754/);
-  assert.match(css, /--color-academy-warning: #80581d/);
-  assert.match(css, /--color-academy-danger: #a44052/);
+  // 2026-11-09 원장 결정 색상 정리: 주 버튼 검정 · 상태 다섯 갈래(정상·주의·위험·정보·중립)
+  assert.match(css, /--color-academy-primary: #15181c/);
+  assert.match(css, /--color-academy-ink: #111827/);
+  assert.match(css, /--color-academy-success: #15803d/);
+  assert.match(css, /--color-academy-warning: #b45309/);
+  assert.match(css, /--color-academy-danger: #b91c1c/);
+  assert.match(css, /--color-academy-info: #1d4ed8/);
+  assert.match(css, /--color-academy-neutral: #4b5563/);
   assert.match(css, /min-height: 44px/);
   assert.doesNotMatch(css, /#7444a3|#f7f4fb/);
 });
@@ -147,32 +155,10 @@ test("기존 설치 학부모 앱의 신규 신청은 앱 화면을 남기고 �
   assert.match(html, /신청 후에는 스티즈 앱 아이콘/);
 });
 
-test("추가 가족의 수납 히스토리는 금액·상태를 유지하고 대표 보호자의 결제·개인 영수증 링크를 숨긴다", () => {
-  const History = compile("src/app/mypage/history/HistoryClient.tsx", {
-    "next/link": { default: Link },
-    // 8단계 목록 개편으로 출결 탭이 공용 상태 칩·KST 날짜 모듈을 쓴다(수납 탭 검증과 무관한 의존성)
-    "@/components/admin/list/StatusCountChips": { default: compile("src/components/admin/list/StatusCountChips.tsx") },
-    "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts"),
-    "@/components/admin/list/monthDateGroups": compileModuleWith("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": compileModule("src/lib/datetime/kst.ts") }),
-    react: { ...React, useState: (initial) => React.useState(initial === "attendance" ? "payments" : initial) },
-    // 무통장입금 계좌 안내 — 픽스처 청구에 계좌가 없어 그려지지 않는다(빈 부품)
-    "@/components/parent/VirtualAccountNotice": { default: () => null },
-  });
-  const render = (canCheckout) => renderToStaticMarkup(React.createElement(History, { children: [{
-    id: "child-fixture", name: "합성 학생", attendance: { total: 0, present: 0, absent: 0, late: 0, rate: null, records: [] },
-    payments: ["PENDING", "PAID"].map((status, index) => ({ id: `payment-${index}`, status, amount: 120000, description: "합성 수강료", dueDate: "2026-10-27", paidDate: status === "PAID" ? "2026-10-26" : null, invoiceId: `invoice-${index}`, canCheckout, receiptUrl: "https://example.test/private-receipt" })),
-  }] }));
-  const secondary = render(false);
-  assert.match(secondary, /120,000원/);
-  assert.match(secondary, /미납/);
-  assert.match(secondary, /납부완료/);
-  assert.match(secondary, /온라인 결제는 대표 보호자 계정/);
-  assert.doesNotMatch(secondary, /href="\/payments\//);
-  assert.doesNotMatch(secondary, /href="https:\/\/example.test\/private-receipt"/);
-  for (const value of [true, undefined]) {
-    const primary = render(value);
-    assert.match(primary, /href="\/payments\/invoice-0"/);
-    assert.match(primary, /href="\/payments\/invoice-1"/);
-    assert.match(primary, /href="https:\/\/example.test\/private-receipt"/);
-  }
+test("일정 탭에는 수납 기록이 없다 — 청구·납부·영수증은 청구 탭에서만(2026-11-09 원장 지시)", () => {
+  // 예전 «출결·수납 히스토리»(HistoryClient)의 수납 탭은 청구 탭과 겹쳐 지웠다.
+  // 추가 가족에게 결제·영수증 링크를 숨기는 판정은 청구 탭 쪽에 그대로 있다.
+  assert.equal(existsSync("src/app/mypage/history/HistoryClient.tsx"), false);
+  const schedule = readFileSync("src/app/mypage/history/ScheduleHub.tsx", "utf8") + readFileSync("src/app/mypage/history/page.tsx", "utf8");
+  assert.doesNotMatch(schedule, /\/payments\/|receiptUrl|canCheckout|VirtualAccountNotice/);
 });

@@ -198,7 +198,7 @@ export default function PosChargeRequestModal({
             <div className="w-full p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-bold text-[var(--color-academy-primary)]">현장 결제 · 토스 POS</p>
+                        <p className="text-xs font-bold text-[var(--color-academy-ink)]">현장 결제 · 토스 POS</p>
                         {/* 묶음 제목은 길어질 수 있어 자르지 않고 줄을 바꾼다 */}
                         <h2 id="pos-charge-title" className={`mt-0.5 text-lg font-extrabold text-[var(--color-academy-ink)] ${isBundle ? "break-words" : "truncate"}`}>
                             {heading}

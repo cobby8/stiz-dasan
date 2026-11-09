@@ -56,15 +56,16 @@ type CheckoutResponse = {
     openVirtualAccount?: PublicVirtualAccountView;
 };
 
+// 결제 방식 — 한 줄 3칸에 들어가게 짧은 이름만 쓴다(설명 줄은 360px 에서 줄바꿈돼 뺐다).
+// 묶음 결제 화면(BundleCheckoutClient)과 같은 이름이다.
 const PAYMENT_METHODS: {
     value: TossPaymentMethod;
     label: string;
-    description: string;
     icon: string;
 }[] = [
-        { value: "CARD", label: "카드/간편결제", description: "카드, 토스페이 등", icon: "credit_card" },
-        { value: "TRANSFER", label: "계좌이체", description: "실시간 계좌이체", icon: "account_balance" },
-        { value: "VIRTUAL_ACCOUNT", label: "무통장입금(가상계좌)", description: "입금 전용 계좌를 받아 아무 은행에서 입금", icon: "savings" },
+        { value: "CARD", label: "카드·간편결제", icon: "credit_card" },
+        { value: "TRANSFER", label: "계좌이체", icon: "account_balance" },
+        { value: "VIRTUAL_ACCOUNT", label: "무통장입금", icon: "savings" },
     ];
 
 function loadTossScript() {
@@ -77,7 +78,7 @@ function loadTossScript() {
         const existing = document.querySelector<HTMLScriptElement>("script[data-toss-payments]");
         if (existing) {
             existing.addEventListener("load", () => resolve(), { once: true });
-            existing.addEventListener("error", () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했습니다.")), { once: true });
+            existing.addEventListener("error", () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했어요.")), { once: true });
             return;
         }
 
@@ -86,7 +87,7 @@ function loadTossScript() {
         script.async = true;
         script.dataset.tossPayments = "true";
         script.onload = () => resolve();
-        script.onerror = () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했습니다."));
+        script.onerror = () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했어요."));
         document.head.appendChild(script);
     });
 }
@@ -95,13 +96,13 @@ export default function PaymentCheckoutClient({
     invoiceId,
     providerReady,
     provider,
-    providerLabel,
     amount,
     virtualAccount = null,
 }: {
     invoiceId: string;
     providerReady: boolean;
     provider: PaymentProvider;
+    /** 제공자 이름 — 화면 버튼에는 더 쓰지 않는다(좁은 화면 줄바꿈). 서버 페이지가 넘기는 모양은 그대로 둔다. */
     providerLabel: string;
     amount: number;
     /** 이 청구서의 최근 가상계좌(입금 대기 또는 만료). 서버가 소유권 확인 후 넘긴다. */
@@ -122,7 +123,7 @@ export default function PaymentCheckoutClient({
     // closeAccount=true: 열린 입금 계좌를 서버가 토스에서 닫은 뒤 새 결제를 연다(확인 단계를 거친 경우만).
     async function startPayment(selected: TossPaymentMethod = method, closeAccount = false) {
         if (!providerReady) {
-            setError("온라인 결제 설정이 아직 완료되지 않았습니다. 학원으로 문의해 주세요.");
+            setError("지금은 온라인 결제를 쓸 수 없어요. 학원에 문의해 주세요.");
             return;
         }
 
@@ -138,7 +139,7 @@ export default function PaymentCheckoutClient({
             const data = (await response.json()) as CheckoutResponse;
 
             if (!response.ok || !data.ok) {
-                throw new Error(data.error || "결제 준비에 실패했습니다.");
+                throw new Error(data.error || "결제를 준비하지 못했어요.");
             }
             const responseProvider = data.provider || provider;
             // 이미 입금 대기 중인 계좌가 있다 → 새로 발급하지 않고 그 계좌를 보여 준다(이중 납부 방지).
@@ -148,24 +149,24 @@ export default function PaymentCheckoutClient({
                 return;
             }
             if (!data.providerReady || !data.orderId || !data.amount || !data.orderName || !data.successUrl || !data.failUrl) {
-                throw new Error("결제 정보가 부족합니다. 학원으로 문의해 주세요.");
+                throw new Error("결제 정보가 부족해요. 학원에 문의해 주세요.");
             }
 
             if (responseProvider === "CAFE24_BRIDGE") {
                 if (!data.checkoutUrl) {
-                    throw new Error("본사 카페24 결제 링크를 받지 못했습니다. 학원으로 문의해 주세요.");
+                    throw new Error("본사 카페24 결제 링크를 받지 못했어요. 학원에 문의해 주세요.");
                 }
                 window.location.assign(data.checkoutUrl);
                 return;
             }
 
             if (!data.clientKey || !data.customerKey) {
-                throw new Error("토스 결제 정보가 부족합니다. 학원으로 문의해 주세요.");
+                throw new Error("토스 결제 정보가 부족해요. 학원에 문의해 주세요.");
             }
 
             await loadTossScript();
             if (!window.TossPayments) {
-                throw new Error("결제창을 불러오지 못했습니다.");
+                throw new Error("결제창을 불러오지 못했어요.");
             }
 
             const tossPayments = window.TossPayments(data.clientKey);
@@ -195,7 +196,7 @@ export default function PaymentCheckoutClient({
                     : {}),
             });
         } catch (err) {
-            setError(err instanceof Error ? err.message : "결제 요청 중 오류가 발생했습니다.");
+            setError(err instanceof Error ? err.message : "결제를 요청하지 못했어요.");
             setLoading(false);
         }
     }
@@ -203,37 +204,38 @@ export default function PaymentCheckoutClient({
     // 입금 대기 중 — 새 결제 버튼 대신 받은 계좌만 보여 준다(같은 청구에 계좌 두 개를 만들지 않는다).
     if (openAccount) {
         return (
-            <div className="mt-6">
+            <div className="space-y-2">
                 <VirtualAccountNotice account={openAccount} />
                 {error && (
-                    <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+                    <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-bold text-[var(--color-academy-danger)]">
                         {error}
-                    </div>
+                    </p>
                 )}
                 {providerReady && provider === "TOSS" && !switching && (
                     <button
                         type="button"
                         onClick={() => setSwitching(true)}
-                        className="mt-3 min-h-11 w-full rounded-xl border border-gray-300 px-4 text-sm font-bold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+                        className="academy-button-secondary min-h-11 w-full text-sm"
                     >
                         다른 방법으로 결제(계좌가 닫혀요)
                     </button>
                 )}
                 {switching && (
                     // 위험 확인: 계좌를 닫으면 되돌릴 수 없으니 무엇이 일어나는지 먼저 알리고 수단을 고르게 한다.
-                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
-                        <p className="font-extrabold">지금 받은 입금 계좌를 닫을까요?</p>
-                        <p className="mt-1 text-xs">닫으면 그 계좌로는 입금할 수 없어요. 이미 입금했다면 닫지 말고 잠시 기다려 주세요.</p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div role="alertdialog" aria-labelledby="close-account-title" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm text-[var(--color-academy-ink)]">
+                        <p id="close-account-title" className="font-extrabold">지금 받은 입금 계좌를 닫을까요?</p>
+                        <p className="mt-0.5 text-xs">이미 입금했다면 닫지 말고 잠시 기다려 주세요.</p>
+                        {/* 버튼은 «닫고 + 수단 이름»만 — 2칸 버튼에서 줄바꿈되지 않게 짧게 */}
+                        <div className="mt-2 grid grid-cols-2 gap-2">
                             {PAYMENT_METHODS.filter((option) => option.value !== "VIRTUAL_ACCOUNT").map((option) => (
                                 <button
                                     key={option.value}
                                     type="button"
                                     disabled={loading}
                                     onClick={() => void startPayment(option.value, true)}
-                                    className="min-h-11 rounded-lg bg-red-600 px-3 text-sm font-bold text-white disabled:opacity-60"
+                                    className="academy-button-danger-solid min-h-11 whitespace-nowrap px-2 text-sm"
                                 >
-                                    {loading ? "계좌 닫는 중..." : `계좌 닫고 ${option.label}`}
+                                    {loading ? "닫는 중..." : `닫고 ${option.label}`}
                                 </button>
                             ))}
                         </div>
@@ -241,7 +243,7 @@ export default function PaymentCheckoutClient({
                             type="button"
                             disabled={loading}
                             onClick={() => setSwitching(false)}
-                            className="mt-2 min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-bold text-gray-700 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                            className="academy-button-secondary mt-2 min-h-11 w-full text-sm"
                         >
                             그대로 두기
                         </button>
@@ -252,85 +254,88 @@ export default function PaymentCheckoutClient({
     }
 
     return (
-        <div className="mt-6">
+        <div className="space-y-3">
             {expiredAccount && (
-                <div className="mb-4">
-                    <VirtualAccountNotice
-                        account={expiredAccount}
-                        onReissue={() => {
-                            setMethod("VIRTUAL_ACCOUNT");
-                            void startPayment("VIRTUAL_ACCOUNT");
-                        }}
-                        reissuing={loading}
-                    />
-                </div>
+                <VirtualAccountNotice
+                    account={expiredAccount}
+                    onReissue={() => {
+                        setMethod("VIRTUAL_ACCOUNT");
+                        void startPayment("VIRTUAL_ACCOUNT");
+                    }}
+                    reissuing={loading}
+                />
             )}
 
             {!providerReady && (
-                <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
-                    지금은 {providerLabel} 온라인 납부 준비 중입니다. 학원에서 계좌이체, 현장 결제, 수동 납부 확인으로 처리할 수 있습니다.
-                </div>
+                <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-sm text-[var(--color-academy-ink)]">
+                    지금은 온라인 결제를 쓸 수 없어요. 학원에 문의해 주세요.
+                </p>
             )}
 
+            {/* 결제 방식 — 한 줄 3칸(묶음 결제 화면과 같은 모양) */}
             {providerReady && provider === "TOSS" && (
-                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div role="radiogroup" aria-label="결제 방식" className="grid grid-cols-3 gap-1.5">
                     {PAYMENT_METHODS.map((option) => {
                         const active = method === option.value;
                         return (
                             <button
                                 key={option.value}
                                 type="button"
+                                role="radio"
+                                aria-checked={active}
                                 onClick={() => setMethod(option.value)}
                                 disabled={loading}
-                                // 무통장입금은 설명이 길어 모바일(2칸)에서는 한 줄을 다 쓴다
-                                className={`flex min-h-16 items-center gap-3 rounded-xl border px-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${option.value === "VIRTUAL_ACCOUNT" ? "col-span-2 sm:col-span-1" : ""} ${
+                                className={`flex min-h-12 flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-60 ${
                                     active
-                                        ? "border-brand-orange-500 bg-orange-50 text-brand-navy-900 dark:border-brand-neon-lime dark:bg-brand-neon-lime/15 dark:text-white"
-                                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                        ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
+                                        : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
                                 }`}
                             >
-                                <span className="material-symbols-outlined text-xl" aria-hidden="true">{option.icon}</span>
-                                <span>
-                                    <span className="block text-sm font-extrabold">{option.label}</span>
-                                    <span className="block text-xs font-bold text-gray-500 dark:text-gray-400">{option.description}</span>
-                                </span>
+                                <span className="material-symbols-outlined text-lg leading-none" aria-hidden="true">{option.icon}</span>
+                                {option.label}
                             </button>
                         );
                     })}
                 </div>
             )}
+            {providerReady && provider === "TOSS" && method === "CARD" && <p className="text-xs text-[var(--color-academy-muted)]">토스페이는 토스 앱이 있어야 열려요. 없으면 카드를 골라 주세요.</p>}
 
             {providerReady && provider === "CAFE24_BRIDGE" && (
-                <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                    <p className="font-extrabold">본사 카페24 결제창으로 이동합니다.</p>
-                    <p className="mt-1 text-xs font-bold text-gray-500 dark:text-gray-400">
-                        결제 완료 후 본사 확인 신호가 도착하면 납부 완료로 자동 반영됩니다.
-                    </p>
-                </div>
+                <p className="text-sm font-bold text-[var(--color-academy-ink)]">본사 카페24 결제창으로 이동합니다.</p>
             )}
 
             {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+                <p role="alert" className="rounded-lg bg-[var(--color-academy-danger-soft)] p-2 text-sm font-bold text-[var(--color-academy-danger)]">
                     {error}
-                </div>
+                </p>
             )}
 
+            {/* 주 버튼 하나 — 금액만 보여 준다(제공자 이름을 붙이면 좁은 화면에서 두 줄이 됐다) */}
             <button
                 type="button"
                 onClick={() => void startPayment()}
                 disabled={loading || amount <= 0 || !providerReady}
-                className="flex w-full items-center justify-center rounded-xl bg-brand-orange-500 px-5 py-4 text-base font-extrabold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="academy-button-primary min-h-12 w-full text-base font-black"
             >
                 {loading
                     ? "결제창 여는 중..."
                     : providerReady
-                        ? `${amount.toLocaleString("ko-KR")}원 ${providerLabel}로 납부하기`
-                        : "온라인 납부 준비 중"}
+                        ? `${amount.toLocaleString("ko-KR")}원 결제하기`
+                        : "온라인 결제 준비 중"}
             </button>
 
-            <p className="mt-3 text-center text-xs text-gray-500 dark:text-gray-400">
-                결제 완료 후 자동으로 납부 완료 처리됩니다.
-            </p>
+            {/* 부가 안내는 접어 둔다 — 첫 화면에는 «결제 안내» 한 줄만 */}
+            {providerReady && provider === "TOSS" && (
+                <details className="text-xs text-[var(--color-academy-muted)]">
+                    <summary className="flex min-h-11 cursor-pointer items-center justify-center font-bold">결제 안내</summary>
+                    <ul className="space-y-1 pb-1">
+                        <li>· 카드·계좌이체는 결제하면 바로 납부 완료돼요.</li>
+                        <li>· 무통장입금은 받은 계좌로 90일 안에 아무 은행에서 입금해요.</li>
+                        <li>· 현금영수증은 결제창에서 번호를 넣으면 발급돼요.</li>
+                        <li>· 영수증은 납부 후 이 화면과 청구 탭에서 볼 수 있어요.</li>
+                    </ul>
+                </details>
+            )}
         </div>
     );
 }

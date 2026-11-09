@@ -74,5 +74,6 @@ export function maskPhone(value: string | null): string {
 /** 승인 화면에 고정해서 보여줄 정규 차량 변동 문자 초안. 이 함수는 발송하지 않는다. */
 export function regularShuttleChangeMessage(change: RegularShuttleChange, serviceMonth: string): string | null {
   if (change.kind === "REMOVED" || !change.after) return null;
-  return `[STIZ 농구교실] ${change.studentName} 학생 ${serviceMonth} 차량 일정이 변경되었습니다.\n기존: ${change.before ?? "없음"}\n변경: ${change.after}\n확인 부탁드립니다.`;
+  // 머리말 [스티즈농구교실] 통일(2026-11-09) — 확정 일정 문구(regular-notice route)와 같은 머리말
+  return `[스티즈농구교실] ${change.studentName} 학생 ${serviceMonth} 차량 일정이 변경되었습니다.\n기존: ${change.before ?? "없음"}\n변경: ${change.after}\n확인 부탁드립니다.`;
 }

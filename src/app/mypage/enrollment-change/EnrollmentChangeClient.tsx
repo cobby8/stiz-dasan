@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   CHANGE_KIND_LABEL,
   CHANGE_STATUS_LABEL,
+  REQUEST_KIND_LABEL,
   earliestResumeOn,
   pauseResumeLabel,
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
-import type { EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import type { ChildChangeOption, EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 
@@ -22,6 +23,11 @@ const KIND_HELP: Record<ChangeKind, string> = {
   PAUSE: "잠시 쉬었다가 다시 나옵니다. 자리는 비워둡니다.",
   WITHDRAW: "그만둡니다. 자리가 다른 학생에게 넘어갑니다.",
 };
+
+type PendingRequest = NonNullable<ChildChangeOption["pending"]>;
+
+/** 종류 이름(복귀 포함). 모르는 값이면 «수강 변경». */
+const kindLabel = (kind: string) => REQUEST_KIND_LABEL[kind] ?? "수강 변경";
 
 export default function EnrollmentChangeClient({ initial }: { initial: EnrollmentChangeOptions }) {
   const router = useRouter();
@@ -38,16 +44,33 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   const sending = useRef(false);
   const [uncertainSource, setUncertainSource] = useState<EnrollmentChangeOptions | null>(null);
   const uncertain = uncertainSource !== null;
+  // 접수에 성공한 수강 등록. 새 내역(검토 중)이 화면에 올 때까지 같은 신청을 다시 못 누르게 잠근다.
+  // (router.refresh 는 끝날 때까지 기다려 주지 않아, 그 사이 «신청하기»가 다시 살아나
+  //  두 번째 누름이 «이미 검토 중인 신청» 오류가 됐다 — 2026-11-09 휴원 신청 신고)
+  const [submittedFor, setSubmittedFor] = useState<string | null>(null);
+  // 방금 접수한 신청(서버가 돌려준 id 포함). 새로고침을 기다리지 않고 «검토 중 + 취소 버튼»을 바로 보여 준다.
+  const [localPending, setLocalPending] = useState<{ enrollmentId: string; pending: PendingRequest } | null>(null);
+  // 방금 취소한 신청 id. 새로고침이 늦게 와도 취소한 신청을 다시 보여 주지 않는다(다시 누르면 «이미 처리됨» 오류).
+  const [canceledId, setCanceledId] = useState<string | null>(null);
+  // 휴원 중인 반의 복귀 희망일(= 다시 나오는 날)
+  const [resumeFrom, setResumeFrom] = useState("");
 
   const child = initial.children[childIdx];
+  // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
+  const serverPending = child?.pending && child.pending.id !== canceledId ? child.pending : null;
+  const shownPending: PendingRequest | null =
+    serverPending ?? (localPending && localPending.enrollmentId === child?.enrollmentId ? localPending.pending : null);
+  const awaitingReload = Boolean(child && !shownPending && submittedFor === child.enrollmentId);
+  const paused = child?.enrollmentStatus === "PAUSED";
   // 지금 다니는 반은 고를 수 없다. 골라봐야 아무것도 바뀌지 않는다.
   const selectable = useMemo(
     () => initial.classes.filter((item) => item.classId !== child?.currentClassId),
     [initial.classes, child?.currentClassId],
   );
 
-  async function send(body: Record<string, unknown>) {
-    if (sending.current || uncertain) return false;
+  /** 보내고 서버 응답(성공일 때만)을 돌려준다. 실패·불확실이면 null. */
+  async function send(body: Record<string, unknown>): Promise<Record<string, any> | null> {
+    if (sending.current || uncertain) return null;
     sending.current = true;
     setError("");
     setDone("");
@@ -62,23 +85,56 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
       const data = await response.json();
       if (!response.ok) {
         setError(customerMessage(data?.error, "요청을 처리할 수 없습니다. 입력 내용을 확인해 주세요."));
-        return false;
+        return null;
       }
       if (data?.ok !== true) throw new Error("결과 확인 필요");
-      return true;
+      return data;
     } catch {
       setUncertainSource(initial);
       setError("결과를 확인하지 못해 접수·취소 여부를 알 수 없습니다. 입력 내용은 유지했습니다. 다시 보내기 전에 현재 신청 내역을 확인해 주세요.");
-      return false;
+      return null;
     } finally {
       sending.current = false;
     }
   }
 
+  /** 접수 성공 뒤 공통 처리 — 서버가 신청 id 를 주면 그 자리에서 «검토 중» 상자로 바꾼다. */
+  function afterSubmitted(enrollmentId: string, data: Record<string, any>) {
+    setSubmittedFor(enrollmentId);
+    if (typeof data.id === "string" && data.id) {
+      setLocalPending({
+        enrollmentId,
+        pending: {
+          id: data.id,
+          kind: String(data.kind ?? ""),
+          toClassName: data.toClassName ?? null,
+          effectiveFrom: String(data.effectiveFrom ?? ""),
+          resumeOn: data.resumeOn ?? null,
+          waitlisted: Boolean(data.waitlisted),
+        },
+      });
+    }
+    setDone("신청이 접수되었습니다. 학원에서 확인 후 알려드립니다.");
+    setToClassId("");
+    setEffectiveFrom(initial.effectiveFrom);
+    setResumeOn("");
+    setResumeFrom("");
+    setReason("");
+    router.refresh();
+  }
+
   function submit() {
     if (!child) return;
+    // 아이폰 날짜 고르기는 min 을 무시해 휴원 시작일 이전 복귀일도 고를 수 있다. 보내기 전에 언제부터인지 알려 준다.
+    // 문자열 비교로 충분하다("YYYY-MM-DD" 는 글자 순서 = 날짜 순서).
+    const firstResume = earliestResumeOn(initial.effectiveFrom);
+    if (kind === "PAUSE" && resumeOn && firstResume && resumeOn < firstResume) {
+      setDone("");
+      setError(`휴원은 ${initial.effectiveFrom}부터라 복귀 예정일은 ${firstResume} 이후로 골라 주세요. 아직 모르면 비워 두셔도 됩니다.`);
+      return;
+    }
     startTransition(async () => {
-      const ok = await send({
+      const data = await send({
         enrollmentId: child.enrollmentId,
         kind,
         toClassId: kind === "CLASS_CHANGE" ? toClassId : undefined,
@@ -86,29 +142,85 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         resumeOn: kind === "PAUSE" ? resumeOn || undefined : undefined,
         reason,
       });
-      if (!ok) return;
-      setDone("신청이 접수되었습니다. 학원에서 확인 후 알려드립니다.");
-      setToClassId("");
-      setEffectiveFrom(initial.effectiveFrom);
-      setResumeOn("");
-      setReason("");
-      router.refresh();
+      if (!data) return;
+      afterSubmitted(child.enrollmentId, data);
+    });
+  }
+
+  /** 휴원 중인 반의 복귀 신청. 날짜 범위는 서버가 다시 검사하고, 여기서는 아이폰(min 무시)용으로 먼저 알려 준다. */
+  function submitResume() {
+    if (!child) return;
+    if (!resumeFrom) {
+      setDone("");
+      setError("복귀 희망일을 골라 주세요.");
+      return;
+    }
+    if ((initial.minResumeFrom && resumeFrom < initial.minResumeFrom) || (initial.maxResumeFrom && resumeFrom > initial.maxResumeFrom)) {
+      setDone("");
+      setError(`복귀 희망일은 ${initial.minResumeFrom}부터 ${initial.maxResumeFrom} 사이로 골라 주세요.`);
+      return;
+    }
+    startTransition(async () => {
+      const data = await send({ enrollmentId: child.enrollmentId, kind: "RESUME", effectiveFrom: resumeFrom, reason });
+      if (!data) return;
+      afterSubmitted(child.enrollmentId, data);
     });
   }
 
   function cancel(id: string) {
     startTransition(async () => {
       if (!(await send({ action: "cancel", id }))) return;
+      setSubmittedFor(null);
+      setLocalPending(null);
+      setCanceledId(id);
       setDone("신청을 취소했습니다.");
       router.refresh();
     });
   }
 
+  // 결과 문구는 방금 누른 버튼 바로 위에 둔다(2026-11-09 휴원 신청 «동작 안 함» 신고).
+  // 화면 맨 위에 두면 휴대폰에서 아래로 내려 «신청하기»를 누른 사람에게는
+  // 오류(예: 복귀일이 휴원 시작일 이전)도 접수 완료도 보이지 않아 «무반응»으로 느껴진다.
+  const notice = (
+    <>
+      {error && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
+      {uncertain && (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
+            {pending ? "확인 중..." : "접수 결과 다시 확인"}
+          </button>
+          {uncertainSource !== initial && (
+            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-bold disabled:opacity-50">
+              내역 확인했어요
+            </button>
+          )}
+        </div>
+      )}
+      {done && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{done}</p>}
+    </>
+  );
+
+  // 원장이 승인했지만 아직 적용 전인 신청(휴원 예정 등). 학부모가 직접 취소할 수 없어 연락 안내만 한다.
+  const scheduledBox = child?.scheduled ? (
+    <section className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
+      <p className="text-sm font-black text-[var(--color-academy-ink)]">
+        {kindLabel(child.scheduled.kind)} 예정 · {child.scheduled.effectiveFrom}부터
+        <span className="ml-1 text-xs font-bold text-[var(--color-academy-muted)]">(학원 승인 완료)</span>
+      </p>
+      {child.scheduled.kind === "PAUSE" && (
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{pauseResumeLabel(child.scheduled.resumeOn)}</p>
+      )}
+      <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+        취소하거나 날짜를 바꾸려면 학원에 연락해 주세요.
+      </p>
+    </section>
+  ) : null;
+
   if (initial.children.length === 0) {
     return (
       <main className="mx-auto max-w-lg px-4 py-6">
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">수강 변경 신청</h1>
-        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-gray-500 shadow-sm dark:bg-gray-800 dark:text-gray-300">
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
+        <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
           지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
         </p>
       </main>
@@ -118,215 +230,272 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
   return (
     <main className="mx-auto max-w-lg space-y-4 px-4 py-6">
       <div>
-        <h1 className="text-xl font-black text-brand-navy-900 dark:text-white">수강 변경 신청</h1>
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
         {/* 적용일을 먼저 알린다. 언제부터 바뀌는지 모르고 신청하면 그게 곧 문의가 된다. */}
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          휴원·퇴원은 <b className="text-brand-navy-900 dark:text-white">{initial.effectiveFrom}</b>부터 적용됩니다.
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
+          휴원·퇴원은 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 적용됩니다.
           반 변경은 원하시는 날짜를 고를 수 있어요.
         </p>
       </div>
-
-      {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}
-      {uncertain && (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={pending} onClick={() => startTransition(() => router.refresh())} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
-            {pending ? "확인 중..." : "접수 결과 다시 확인"}
-          </button>
-          {uncertainSource !== initial && (
-            <button type="button" disabled={pending} onClick={() => { setUncertainSource(null); setError(""); }} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm font-bold disabled:opacity-50">
-              내역 확인했어요
-            </button>
-          )}
-        </div>
-      )}
 
       {initial.children.length > 1 && (
         <select
           value={childIdx}
           onChange={(event) => setChildIdx(Number(event.target.value))}
-          className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-800"
+          className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
         >
           {initial.children.map((item, index) => (
             <option key={item.enrollmentId} value={index}>
-              {item.studentName} · {item.currentClassName}
+              {item.studentName} · {item.currentClassName}{item.enrollmentStatus === "PAUSED" ? " (휴원 중)" : ""}
             </option>
           ))}
         </select>
       )}
 
-      {child?.pending ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950/30">
-          <p className="text-sm font-black text-amber-900 dark:text-amber-200">
+      {shownPending ? (
+        <section className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-warning-soft)] p-5">
+          <p className="text-sm font-black text-[var(--color-academy-warning)]">
             {CHANGE_STATUS_LABEL.PENDING}인 신청이 있습니다
           </p>
-          <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">
-            {CHANGE_KIND_LABEL[child.pending.kind as ChangeKind] ?? "수강 변경"}
-            {child.pending.toClassName ? ` · ${child.pending.toClassName}` : ""} · {child.pending.effectiveFrom}부터
-            {child.pending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
+          <p className="mt-1 text-sm text-[var(--color-academy-warning)]">
+            {kindLabel(shownPending.kind)}
+            {shownPending.toClassName ? ` · ${shownPending.toClassName}` : ""} · {shownPending.effectiveFrom}부터
+            {shownPending.waitlisted ? " · 자리가 나면 배정됩니다" : ""}
           </p>
-          {child.pending.kind === "PAUSE" && (
-            <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-200">
-              {pauseResumeLabel(child.pending.resumeOn)}
+          {shownPending.kind === "PAUSE" && (
+            <p className="mt-1 text-sm font-bold text-[var(--color-academy-warning)]">
+              {pauseResumeLabel(shownPending.resumeOn)}
             </p>
           )}
-          {/* 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(child.pending.id) 그대로 */}
+          {(error || uncertain || done) && <div className="mt-3 space-y-2">{notice}</div>}
+          {/* 신청 취소 = 그 자리 확인(C-M1) 후 기존 cancel(id) 그대로. 문구는 종류를 붙여 «휴원 신청 취소»처럼 */}
           <InlineConfirm
-            label="신청 취소하기"
-            question="이 수강 변경 신청을 취소할까요?"
-            confirmLabel="신청 취소하기"
-            onConfirm={() => cancel(child.pending!.id)}
+            label={`${kindLabel(shownPending.kind)} 신청 취소`}
+            question={`이 ${kindLabel(shownPending.kind)} 신청을 취소할까요?`}
+            confirmLabel={`${kindLabel(shownPending.kind)} 신청 취소`}
+            onConfirm={() => cancel(shownPending.id)}
             disabled={uncertain}
             pending={pending}
             className="mt-3 flex"
             triggerClassName="w-full"
           />
         </section>
-      ) : (
-        <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm dark:bg-gray-800">
-          <div>
-            <p className="text-xs font-bold text-gray-500 dark:text-gray-400">지금 다니는 반</p>
-            <p className="font-black text-brand-navy-900 dark:text-white">
-              {child.currentClassName} <span className="text-sm font-bold text-gray-500">· {child.currentProgramName}</span>
-            </p>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.keys(CHANGE_KIND_LABEL) as ChangeKind[]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                // 고른 칩 = academy-choice(체크·연한 바탕). 꽉 찬 색은 맨 아래 제출 버튼만(C-M2)
-                aria-pressed={kind === value}
-                onClick={() => setKind(value)}
-                className="academy-choice break-keep px-1!"
-              >
-                {CHANGE_KIND_LABEL[value]}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{KIND_HELP[kind]}</p>
-
-          {kind === "CLASS_CHANGE" && (
+      ) : paused ? (
+        // 휴원 중인 반 = 복귀 신청만 받는다. 복귀가 이미 승인돼 기다리는 중이면 안내만 보여 준다.
+        scheduledBox ?? (
+          <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm">
             <div>
-              <label htmlFor="to-class" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
-                옮기고 싶은 반
-              </label>
-              <select
-                id="to-class"
-                value={toClassId}
-                onChange={(event) => setToClassId(event.target.value)}
-                className="min-h-11 w-full rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <option value="">반을 선택해 주세요</option>
-                {selectable.map((item) => (
-                  <option key={item.classId} value={item.classId}>
-                    {DAY_KO[item.dayOfWeek] ?? item.dayOfWeek} {item.startTime}~{item.endTime} · {item.programName}
-                    {item.full ? " (정원 마감 · 대기)" : ` (${item.capacity - item.enrolled}자리)`}
-                  </option>
-                ))}
-              </select>
-              {/* 만석이어도 신청은 받는다(원장 결정). 대신 기대를 정확히 만든다. */}
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
-              </p>
-
-              {/* 시작일을 학부모가 고른다. 달 중간이면 그달 수강료는 회차대로 다시 계산된다. */}
-              <label htmlFor="effective-from" className="mt-4 mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
-                언제부터 옮길까요?
-              </label>
-              <input
-                id="effective-from"
-                type="date"
-                value={effectiveFrom}
-                min={initial.minEffectiveFrom}
-                max={initial.maxEffectiveFrom}
-                onChange={(event) => setEffectiveFrom(event.target.value)}
-                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                달 중간부터 옮기면 그달 수강료를 수업 회차대로 다시 계산해 안내드립니다.
+              <p className="text-xs font-bold text-[var(--color-academy-muted)]">휴원 중인 반</p>
+              <p className="font-black text-[var(--color-academy-ink)]">
+                {child.currentClassName} <span className="text-sm font-bold text-[var(--color-academy-muted)]">· {child.currentProgramName}</span>
               </p>
             </div>
-          )}
 
-          {kind === "PAUSE" && (
             <div>
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <label htmlFor="resume-on" className="text-xs font-bold text-gray-500 dark:text-gray-400">
-                  복귀 예정일
-                </label>
-                {resumeOn && (
-                  <button
-                    type="button"
-                    disabled={pending || uncertain}
-                    onClick={() => setResumeOn("")}
-                    className="min-h-11 shrink-0 px-2 text-sm font-bold text-[var(--brand-accent)] disabled:opacity-50"
-                  >
-                    날짜 지우기
-                  </button>
-                )}
-              </div>
+              <label htmlFor="resume-from" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                언제부터 다시 나올까요?
+              </label>
               <input
-                id="resume-on"
+                id="resume-from"
                 type="date"
-                value={resumeOn}
-                min={earliestResumeOn(initial.effectiveFrom)}
-                aria-describedby="resume-on-help"
-                onChange={(event) => setResumeOn(event.target.value)}
-                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-gray-200 px-3 dark:border-gray-700 dark:bg-gray-900"
+                value={resumeFrom}
+                min={initial.minResumeFrom}
+                max={initial.maxResumeFrom}
+                onChange={(event) => setResumeFrom(event.target.value)}
+                className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
               />
-              <p id="resume-on-help" className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {resumeOn ? `${resumeOn} 복귀 예정` : "아직 정해지지 않았다면 비워두세요. ‘복귀일 미정’으로 접수됩니다."}
-                {" "}예정일에 자동으로 복귀 처리되지는 않습니다.
+              <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                학원에서 확인한 뒤 그날부터 다시 수업에 들어갑니다.
               </p>
             </div>
-          )}
 
-          <div>
-            <label htmlFor="change-reason" className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">
-              사유 (선택)
-            </label>
-            <textarea
-              id="change-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              rows={3}
-              maxLength={500}
-              placeholder="학원에서 참고할 내용을 적어주세요"
-              className="w-full rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700 dark:bg-gray-900"
-            />
-          </div>
+            <div>
+              <label htmlFor="resume-reason" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                전할 말 (선택)
+              </label>
+              <textarea
+                id="resume-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="학원에서 참고할 내용을 적어주세요"
+                className="w-full rounded-xl border border-[var(--color-academy-line)] p-3 text-sm"
+              />
+            </div>
 
-          {kind === "WITHDRAW" ? (
-            // 퇴원은 되돌리기 어렵다 → 위험색 버튼 + 한 번 더 확인(M-03). 확인 후 제출 함수·내용은 같다(submit)
-            <InlineConfirm
-              label="퇴원 신청하기"
-              question="정말 퇴원을 신청할까요? 자리가 다른 학생에게 넘어갑니다."
-              confirmLabel="퇴원 신청하기"
-              keepLabel="돌아가기"
-              onConfirm={submit}
-              disabled={uncertain}
-              pending={pending}
-              pendingLabel="접수 중..."
-              className="flex"
-              triggerClassName="w-full"
-            />
-          ) : (
+            {notice}
+
             <button
               type="button"
-              disabled={pending || uncertain || (kind === "CLASS_CHANGE" && !toClassId)}
-              onClick={submit}
+              disabled={pending || uncertain || awaitingReload || !resumeFrom}
+              onClick={submitResume}
               className="academy-button-primary w-full"
             >
-              {pending ? "접수 중..." : "신청하기"}
+              {awaitingReload ? "접수됨 · 신청 내역 불러오는 중..." : pending ? "접수 중..." : "복귀 신청하기"}
             </button>
-          )}
-        </section>
+            {awaitingReload && !pending && (
+              <button type="button" onClick={() => router.refresh()} className="academy-button-secondary w-full">
+                신청 내역 다시 불러오기
+              </button>
+            )}
+          </section>
+        )
+      ) : (
+        <>
+          {scheduledBox}
+          <section className="space-y-4 rounded-2xl bg-white p-5 shadow-sm">
+            <div>
+              <p className="text-xs font-bold text-[var(--color-academy-muted)]">지금 다니는 반</p>
+              <p className="font-black text-[var(--color-academy-ink)]">
+                {child.currentClassName} <span className="text-sm font-bold text-[var(--color-academy-muted)]">· {child.currentProgramName}</span>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(CHANGE_KIND_LABEL) as ChangeKind[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  // 고른 칩 = academy-choice(체크·연한 바탕). 꽉 찬 색은 맨 아래 제출 버튼만(C-M2)
+                  aria-pressed={kind === value}
+                  onClick={() => setKind(value)}
+                  className="academy-choice break-keep px-1!"
+                >
+                  {CHANGE_KIND_LABEL[value]}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[var(--color-academy-muted)]">{KIND_HELP[kind]}</p>
+
+            {kind === "CLASS_CHANGE" && (
+              <div>
+                <label htmlFor="to-class" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                  옮기고 싶은 반
+                </label>
+                <select
+                  id="to-class"
+                  value={toClassId}
+                  onChange={(event) => setToClassId(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
+                >
+                  <option value="">반을 선택해 주세요</option>
+                  {selectable.map((item) => (
+                    <option key={item.classId} value={item.classId}>
+                      {DAY_KO[item.dayOfWeek] ?? item.dayOfWeek} {item.startTime}~{item.endTime} · {item.programName}
+                      {item.full ? " (정원 마감 · 대기)" : ` (${item.capacity - item.enrolled}자리)`}
+                    </option>
+                  ))}
+                </select>
+                {/* 만석이어도 신청은 받는다(원장 결정). 대신 기대를 정확히 만든다. */}
+                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                  정원이 찬 반도 신청할 수 있어요. 자리가 나면 순서대로 배정됩니다.
+                </p>
+
+                {/* 시작일을 학부모가 고른다. 달 중간이면 그달 수강료는 회차대로 다시 계산된다. */}
+                <label htmlFor="effective-from" className="mt-4 mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                  언제부터 옮길까요?
+                </label>
+                <input
+                  id="effective-from"
+                  type="date"
+                  value={effectiveFrom}
+                  min={initial.minEffectiveFrom}
+                  max={initial.maxEffectiveFrom}
+                  onChange={(event) => setEffectiveFrom(event.target.value)}
+                  className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
+                />
+                <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                  달 중간부터 옮기면 그달 수강료를 수업 회차대로 다시 계산해 안내드립니다.
+                </p>
+              </div>
+            )}
+
+            {kind === "PAUSE" && (
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label htmlFor="resume-on" className="text-xs font-bold text-[var(--color-academy-muted)]">
+                    복귀 예정일
+                  </label>
+                  {resumeOn && (
+                    <button
+                      type="button"
+                      disabled={pending || uncertain}
+                      onClick={() => setResumeOn("")}
+                      className="min-h-11 shrink-0 px-2 text-sm font-bold text-[var(--brand-accent)] disabled:opacity-50"
+                    >
+                      날짜 지우기
+                    </button>
+                  )}
+                </div>
+                <input
+                  id="resume-on"
+                  type="date"
+                  value={resumeOn}
+                  min={earliestResumeOn(initial.effectiveFrom)}
+                  aria-describedby="resume-on-help"
+                  onChange={(event) => setResumeOn(event.target.value)}
+                  className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
+                />
+                <p id="resume-on-help" className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                  {resumeOn ? `${resumeOn} 복귀 예정` : "아직 정해지지 않았다면 비워두세요. ‘복귀일 미정’으로 접수됩니다."}
+                  {" "}예정일에 자동으로 복귀 처리되지는 않습니다. 휴원이 시작된 뒤 이 화면에서 «복귀 신청»을 해 주세요.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="change-reason" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                사유 (선택)
+              </label>
+              <textarea
+                id="change-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                rows={3}
+                maxLength={500}
+                placeholder="학원에서 참고할 내용을 적어주세요"
+                className="w-full rounded-xl border border-[var(--color-academy-line)] p-3 text-sm"
+              />
+            </div>
+
+            {notice}
+
+            {kind === "WITHDRAW" ? (
+              // 퇴원은 되돌리기 어렵다 → 위험색 버튼 + 한 번 더 확인(M-03). 확인 후 제출 함수·내용은 같다(submit)
+              <InlineConfirm
+                label="퇴원 신청하기"
+                question="정말 퇴원을 신청할까요? 자리가 다른 학생에게 넘어갑니다."
+                confirmLabel="퇴원 신청하기"
+                keepLabel="돌아가기"
+                onConfirm={submit}
+                disabled={uncertain || awaitingReload}
+                pending={pending}
+                pendingLabel="접수 중..."
+                className="flex"
+                triggerClassName="w-full"
+              />
+            ) : (
+              <button
+                type="button"
+                disabled={pending || uncertain || awaitingReload || (kind === "CLASS_CHANGE" && !toClassId)}
+                onClick={submit}
+                className="academy-button-primary w-full"
+              >
+                {awaitingReload ? "접수됨 · 신청 내역 불러오는 중..." : pending ? "접수 중..." : "신청하기"}
+              </button>
+            )}
+            {/* 새 내역이 끝내 안 오면(전파 지연·통신 끊김) 손으로 다시 불러온다. 다시 «신청»하게 두지 않는다. */}
+            {awaitingReload && !pending && (
+              <button type="button" onClick={() => router.refresh()} className="academy-button-secondary w-full">
+                신청 내역 다시 불러오기
+              </button>
+            )}
+          </section>
+        </>
       )}
 
-      {done && <p className="rounded-xl bg-green-50 p-3 text-sm font-bold text-green-800">{done}</p>}
-
-      <p className="text-center text-xs text-gray-400">
+      <p className="text-center text-xs text-[var(--color-academy-faint)]">
         요금이 달라지는 반으로 옮기면 학원에서 다시 안내드립니다.
       </p>
     </main>

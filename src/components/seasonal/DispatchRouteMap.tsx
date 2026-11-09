@@ -36,6 +36,8 @@ export function RouteMapCanvas({
     const { start: s, end: e, stops: st, path: p } = dataRef.current;
     overlaysRef.current.forEach((o) => { try { o.setMap(null); } catch { /* noop */ } });
     overlaysRef.current = [];
+    // 지도 선 색 = 정보 토큰의 실제 값(카카오 Polyline 은 SVG 속성이라 var() 를 못 읽는다). 상태 토큰은 :root 에 있다.
+    const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--color-academy-info").trim() || "rgb(29, 78, 216)";
     const nodes = [
       ...(s ? [{ ...s, badge: "출발", kind: "start" as const }] : []),
       ...st.map((x) => ({ ...x })),
@@ -44,19 +46,19 @@ export function RouteMapCanvas({
     if (nodes.length === 0) return;
     const lineCoords = (p && p.length ? p : nodes.map((n) => ({ lat: n.lat, lng: n.lng }))).map((c) => new maps.LatLng(c.lat, c.lng));
     overlaysRef.current.push(new maps.Polyline({
-      path: lineCoords, strokeWeight: 5, strokeColor: "#2563eb", strokeOpacity: 0.85,
+      path: lineCoords, strokeWeight: 5, strokeColor: lineColor, strokeOpacity: 0.85,
       strokeStyle: p && p.length ? "solid" : "shortdash", map,
     }));
     const bounds = new maps.LatLngBounds();
     for (const n of nodes) {
       const pos = new maps.LatLng(n.lat, n.lng);
       bounds.extend(pos);
-      const color = n.kind === "hub" ? "#16a34a" : n.kind === "start" || n.kind === "end" ? "#1e293b" : "#f97316";
+      const color = n.kind === "hub" ? "var(--color-academy-success)" : n.kind === "start" || n.kind === "end" ? "var(--color-academy-neutral)" : "var(--color-academy-primary)";
       const el = document.createElement("div");
       el.style.cssText = "transform:translateY(-50%);display:flex;align-items:center;gap:4px;";
       el.innerHTML =
-        `<span style="display:grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:${color};color:#fff;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)">${escapeHtml(n.badge)}</span>` +
-        `<span style="max-width:140px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:1px 5px;font-size:11px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,.15)">${escapeHtml(n.label)}</span>`;
+        `<span style="display:grid;place-items:center;min-width:22px;height:22px;padding:0 5px;border-radius:11px;background:${color};color:var(--color-academy-on-primary);font-size:11px;font-weight:800;border:2px solid var(--color-academy-surface);box-shadow:0 1px 3px rgba(0,0,0,.3)">${escapeHtml(n.badge)}</span>` +
+        `<span style="max-width:140px;background:var(--color-academy-surface);border:1px solid var(--color-academy-line);border-radius:6px;padding:1px 5px;font-size:11px;font-weight:700;color:var(--color-academy-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,.15)">${escapeHtml(n.label)}</span>`;
       const overlay = new maps.CustomOverlay({ position: pos, content: el, yAnchor: 0.5, xAnchor: 0, zIndex: 5 });
       overlay.setMap(map);
       overlaysRef.current.push(overlay);
@@ -91,19 +93,19 @@ export function RouteMapCanvas({
 
   return (
     <div>
-      <div className={`relative ${heightClass} w-full bg-gray-100 dark:bg-gray-900`}>
+      <div className={`relative ${heightClass} w-full bg-[var(--color-academy-soft)]`}>
         <div ref={mapElRef} className="absolute inset-0" aria-label="노선 지도" />
-        {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm font-bold text-gray-500">지도를 불러오는 중…</div>}
+        {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm font-bold text-[var(--color-academy-muted)]">지도를 불러오는 중…</div>}
         {status === "fallback" && (
-          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs font-bold text-gray-500">
+          <div className="absolute inset-0 grid place-items-center p-4 text-center text-xs font-bold text-[var(--color-academy-muted)]">
             지도를 표시할 수 없습니다. 카카오 지도 키를 확인해주세요.
           </div>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-200 px-3 py-2 text-[11px] font-bold text-gray-500 dark:border-gray-700">
-        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "#1e293b" }} />출발·도착</span>
-        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "#f97316" }} />정차 순서</span>
-        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "#16a34a" }} />무료 거점</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--color-academy-line)] px-3 py-2 text-[11px] font-bold text-[var(--color-academy-muted)]">
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-neutral)" }} />출발·도착</span>
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-primary)" }} />정차 순서</span>
+        <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: "var(--color-academy-success)" }} />무료 거점</span>
         <span className="ml-auto">{path && path.length ? "파란 선 = T맵 실도로" : "점선 = 현재 순서"}</span>
       </div>
     </div>

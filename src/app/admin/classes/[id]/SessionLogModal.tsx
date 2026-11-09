@@ -18,12 +18,14 @@ import { compressImageForUpload } from "@/lib/clientImageCompression";
 import AdminModal from "@/components/admin/AdminModal";
 import { enrollmentHasStarted } from "@/lib/enrollment/commencement";
 import { todayKst } from "@/lib/datetime/kst";
+import { ATTENDANCE_TONE, TONE_BADGE_CLASS, TONE_BORDER_CLASS } from "@/lib/ui/statusTones";
 
 // ── 출석 상태 옵션 (AttendanceClient와 동일 패턴) ──
+// 고른 출결 칸 색 = 공용 지도(statusTones): 출석 정상 · 결석 위험 · 지각 주의
 const STATUS_OPTIONS = [
-    { value: "PRESENT", label: "출석", color: "bg-green-100 text-green-700 border-green-300" },
-    { value: "ABSENT", label: "결석", color: "bg-red-100 text-red-700 border-red-300" },
-    { value: "LATE", label: "지각", color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
+    { value: "PRESENT", label: "출석", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.PRESENT]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.PRESENT]}` },
+    { value: "ABSENT", label: "결석", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.ABSENT]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.ABSENT]}` },
+    { value: "LATE", label: "지각", color: `${TONE_BADGE_CLASS[ATTENDANCE_TONE.LATE]} ${TONE_BORDER_CLASS[ATTENDANCE_TONE.LATE]}` },
 ] as const;
 
 // 오늘 날짜를 YYYY-MM-DD 형식으로 반환
@@ -41,6 +43,7 @@ export type SessionInitialData = {
     content: string;
     coachId: string;
     photos: string[];           // photosJSON을 파싱한 URL 배열
+    isSeasonal?: boolean;       // 방학특강 회차 기록이면 true(출석 칸 숨김)
     attendances: Array<{        // 기존 출석 데이터
         studentId: string;
         status: string;
@@ -248,8 +251,11 @@ export default function SessionLogModal({
                 // 사진 URL 배열을 JSON 문자열로 변환하여 전달
                 photosJSON: photoUrls.length > 0 ? JSON.stringify(photoUrls) : undefined,
                 coachId: coachId || undefined,
-                // 학생이 있을 때만 출석 데이터 전달
-                attendances: visibleAttendances.length > 0
+                // 수정 모드에서 날짜를 그대로 두면 그 기록(방학특강 회차일 수도 있음)을 id 로 고친다.
+                // 날짜를 바꾸면 그 날짜의 정규 기록으로 새로 저장한다(예전과 같은 동작).
+                sessionId: initialData && initialData.date === date ? initialData.id : undefined,
+                // 학생이 있을 때만 출석 데이터 전달(방학특강 회차 기록이면 보내지 않음 — 서버도 한 번 더 막는다)
+                attendances: !(initialData?.isSeasonal && initialData.date === date) && visibleAttendances.length > 0
                     ? visibleAttendances.map((a) => ({ studentId: a.studentId, status: a.status }))
                     : undefined,
             });
@@ -262,13 +268,15 @@ export default function SessionLogModal({
         } finally {
             setSaving(false);
         }
-    }, [classId, date, topic, content, photoUrls, coachId, visibleAttendances, onSaved, handleClose]);
+    }, [classId, date, topic, content, photoUrls, coachId, visibleAttendances, initialData, onSaved, handleClose]);
 
     // 모달이 닫혀있으면 렌더링하지 않음
     if (!isOpen) return null;
 
     // 수정 모드 여부 판별
     const isEditMode = !!initialData;
+    // 날짜를 그대로 둔 방학특강 회차 기록 수정 — 출석 칸을 숨긴다(날짜를 바꾸면 정규 기록으로 저장되므로 다시 보인다)
+    const seasonalEdit = !!initialData?.isSeasonal && initialData.date === date;
 
     return (
         // 모달 배경 오버레이 — ExcelUploadModal과 동일한 패턴
@@ -284,14 +292,14 @@ export default function SessionLogModal({
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* ── 헤더 ── */}
-                <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
-                    <h2 id="session-log-title" className="text-lg font-bold text-gray-900 dark:text-white">
+                <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between flex-shrink-0">
+                    <h2 id="session-log-title" className="text-lg font-bold text-[var(--color-academy-ink)]">
                         {isEditMode ? "수업 기록 수정" : "수업 기록 추가"}
                     </h2>
                     {/* 닫기 버튼 */}
                     <button
                         onClick={handleClose}
-                        className="p-2 hover:bg-gray-100 dark:bg-gray-800 rounded-lg transition text-gray-400 hover:text-gray-600 dark:text-gray-300"
+                        className="p-2 hover:bg-[var(--color-academy-soft)] rounded-lg transition text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]"
                     >
                         {/* X 아이콘 (인라인 SVG — lucide-react 대신) */}
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -308,7 +316,7 @@ export default function SessionLogModal({
                     <div className="grid grid-cols-2 gap-4">
                         {/* 수업 날짜 */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                 수업 날짜 *
                             </label>
                             <input
@@ -316,19 +324,19 @@ export default function SessionLogModal({
                                 min="2020-01-01" max="2030-12-31"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-transparent"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
                             />
                         </div>
 
                         {/* 코치 선택 */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                                 담당 코치
                             </label>
                             <select
                                 value={coachId}
                                 onChange={(e) => setCoachId(e.target.value)}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-transparent"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
                             >
                                 <option value="">선택 안 함</option>
                                 {coaches.map((c) => (
@@ -342,7 +350,7 @@ export default function SessionLogModal({
 
                     {/* 수업 주제 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                             수업 주제
                         </label>
                         <input
@@ -350,13 +358,13 @@ export default function SessionLogModal({
                             value={topic}
                             onChange={(e) => setTopic(e.target.value)}
                             placeholder="예: 드리블 기초, 슈팅 연습"
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-transparent"
+                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent"
                         />
                     </div>
 
                     {/* 수업 내용 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
                             수업 내용
                         </label>
                         <textarea
@@ -364,13 +372,13 @@ export default function SessionLogModal({
                             onChange={(e) => setContent(e.target.value)}
                             placeholder="오늘 수업에서 진행한 내용을 기록해주세요"
                             rows={3}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-transparent resize-none"
+                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-transparent resize-none"
                         />
                     </div>
 
                     {/* === 섹션 2: 사진 업로드 === */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">
                             수업 사진
                         </label>
 
@@ -382,13 +390,13 @@ export default function SessionLogModal({
                                         <img
                                             src={url}
                                             alt={`수업 사진 ${idx + 1}`}
-                                            className="w-full h-24 object-cover rounded-xl border border-gray-100 dark:border-gray-800"
+                                            className="w-full h-24 object-cover rounded-xl border border-[var(--color-academy-line)]"
                                         />
                                         {/* 삭제 버튼 — 호버 시 표시 */}
                                         <button
                                             type="button"
                                             onClick={() => removePhoto(idx)}
-                                            className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition"
+                                            className="absolute top-1 right-1 w-6 h-6 bg-[var(--color-academy-danger)] text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition"
                                         >
                                             {/* X 표시 */}
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
@@ -406,7 +414,7 @@ export default function SessionLogModal({
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             disabled={uploading}
-                            className="w-full border-2 border-dashed border-gray-200 rounded-xl p-4 text-sm text-gray-500 hover:border-brand-orange-300 dark:border-brand-neon-lime hover:text-brand-orange-500 dark:text-brand-neon-lime transition flex items-center justify-center gap-2 disabled:opacity-50"
+                            className="w-full border-2 border-dashed border-[var(--color-academy-line)] rounded-xl p-4 text-sm text-[var(--color-academy-muted)] hover:border-[var(--color-academy-line-input)] hover:text-[var(--color-academy-ink)] transition flex items-center justify-center gap-2 disabled:opacity-50"
                         >
                             {uploading ? (
                                 <>
@@ -441,9 +449,15 @@ export default function SessionLogModal({
                     </div>
 
                     {/* === 섹션 3: 출석 체크 === */}
+                    {/* 방학특강 회차 기록은 출석을 특강 좌석 명단으로 관리하므로 여기서 받지 않는다 */}
+                    {seasonalEdit ? (
+                    <p className="text-sm text-[var(--color-academy-muted)]">
+                        방학특강 회차 기록이에요. 출석은 «방학특강 › 출석 관리»에서 관리해요 — 여기서는 주제·내용·사진만 고쳐집니다.
+                    </p>
+                    ) : (
                     <div>
                         <div className="flex items-center justify-between mb-2">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)]">
                                 출석 체크
                             </label>
                             {/* 전체 일괄 변경 버튼 */}
@@ -452,14 +466,14 @@ export default function SessionLogModal({
                                     <button
                                         type="button"
                                         onClick={() => markAll("PRESENT")}
-                                        className="text-xs px-2 py-1 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 transition"
+                                        className="text-xs px-2 py-1 rounded-lg bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] hover:bg-[var(--color-academy-success-soft)] transition"
                                     >
                                         전체 출석
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => markAll("ABSENT")}
-                                        className="text-xs px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition"
+                                        className="text-xs px-2 py-1 rounded-lg bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)] transition"
                                     >
                                         전체 결석
                                     </button>
@@ -469,21 +483,21 @@ export default function SessionLogModal({
 
                         {visibleAttendances.length === 0 ? (
                             // 수강생이 없는 경우 안내 메시지
-                            <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 text-center text-sm text-gray-400">
+                            <div className="bg-[var(--color-academy-soft)] rounded-xl p-4 text-center text-sm text-[var(--color-academy-faint)]">
                                 수강생이 없습니다
                             </div>
                         ) : (
                             // 학생 목록 + 출석/결석/지각 토글 버튼
-                            <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden">
+                            <div className="border border-[var(--color-academy-line)] rounded-xl overflow-hidden">
                                 {visibleAttendances.map((att, idx) => (
                                     <div
                                         key={att.studentId}
                                         className={`flex items-center justify-between px-4 py-3 ${
-                                            idx < visibleAttendances.length - 1 ? "border-b border-gray-50" : ""
+                                            idx < visibleAttendances.length - 1 ? "border-b border-[var(--color-academy-line)]" : ""
                                         }`}
                                     >
                                         {/* 학생 이름 */}
-                                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                        <span className="text-sm font-medium text-[var(--color-academy-ink)]">
                                             {att.studentName}
                                         </span>
 
@@ -499,7 +513,7 @@ export default function SessionLogModal({
                                                         className={`text-xs px-3 py-1.5 rounded-lg border transition font-medium ${
                                                             isSelected
                                                                 ? opt.color
-                                                                : "bg-white dark:bg-gray-800 text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:bg-gray-900"
+                                                                : "bg-white text-[var(--color-academy-faint)] border-[var(--color-academy-line)] hover:bg-[var(--color-academy-soft)]"
                                                         }`}
                                                     >
                                                         {opt.label}
@@ -512,28 +526,29 @@ export default function SessionLogModal({
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* ── 에러 메시지 ── */}
                     {errorMsg && (
-                        <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl">
+                        <div className="bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] text-sm px-4 py-3 rounded-xl">
                             {errorMsg}
                         </div>
                     )}
                 </div>
 
                 {/* ── 푸터: 취소 + 저장 버튼 ── */}
-                <div className="p-6 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3 flex-shrink-0">
+                <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3 flex-shrink-0">
                     <button
                         onClick={handleClose}
                         disabled={saving}
-                        className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-xl hover:bg-gray-200 transition disabled:opacity-50"
+                        className="px-4 py-2 text-sm font-medium text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] rounded-xl hover:bg-[var(--color-academy-line)] transition disabled:opacity-50"
                     >
                         취소
                     </button>
                     <button
                         onClick={handleSave}
                         disabled={saving || uploading}
-                        className="px-6 py-2 text-sm font-bold text-white bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-xl hover:bg-orange-600 transition disabled:opacity-50 flex items-center gap-2"
+                        className="px-6 py-2 text-sm font-bold text-white bg-[var(--color-academy-primary)] rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50 flex items-center gap-2"
                     >
                         {saving ? (
                             <>

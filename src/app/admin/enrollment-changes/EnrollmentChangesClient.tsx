@@ -294,7 +294,7 @@ export default function EnrollmentChangesClient({
                 type="button"
                 onClick={() => setDetailId(null)}
                 aria-label="닫기"
-                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"
+                className="ml-auto inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
               >
                 <span className="material-symbols-outlined" aria-hidden="true">close</span>
               </button>
@@ -435,6 +435,10 @@ export default function EnrollmentChangesClient({
                 </div>
               )}
 
+              {/* 학생 상세 ⋯ «반 이동»으로 바로 적용한 건 — 차액 청구서는 여기서 따로 만들지 않는다 */}
+              {row.adminDirectMove && (
+                <p className="mt-2 text-xs font-bold text-[var(--color-academy-ink)]">관리자 즉시 이동 — 차액은 다음 달 청구 준비에서 반영</p>
+              )}
               {row.reason && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-ink)]">{row.reason}</p>}
               <p className="mt-2 text-xs text-[var(--color-academy-muted)]">신청 {row.createdAt}</p>
 
@@ -447,7 +451,8 @@ export default function EnrollmentChangesClient({
                     placeholder="학부모에게 전할 말 (거절 시 함께 전달됩니다)"
                     className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3 text-sm"
                   />
-                  {(row.kind === "PAUSE" || row.kind === "WITHDRAW") && (
+                  {/* 복귀(RESUME)도 승인하면 복귀일에 휴원 → 수강 중으로 자동 반영된다(due-change-plan). */}
+                  {(row.kind === "PAUSE" || row.kind === "WITHDRAW" || row.kind === "RESUME") && (
                     <p className="text-xs text-[var(--color-academy-muted)]">승인하면 적용일({row.effectiveFrom})에 사이트에 자동 반영됩니다. {sheetRetired ? "랠리즈는" : "랠리즈·시트는"} 직접 반영해 주세요.</p>
                   )}
                   <div className="grid grid-cols-2 gap-2">

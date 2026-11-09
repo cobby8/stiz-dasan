@@ -220,7 +220,7 @@ export default function StaffHomeClient({
       ) : focusClass ? (
         <>
           <section>
-            <p className="mb-2 text-sm font-black text-gray-500">{focusClass.sessionStatus === "IN_PROGRESS" ? "현재 수업" : "다음 수업"}</p>
+            <p className="mb-2 text-sm font-black text-[var(--color-academy-muted)]">{focusClass.sessionStatus === "IN_PROGRESS" ? "현재 수업" : "다음 수업"}</p>
             {/* 다음 수업을 짧게 읽고 바로 시작할 수 있도록 밝은 카드에 핵심을 모읍니다. */}
             {/* 게슈탈트 T-08: 진행 중 카드는 주황 테두리 2px 로 «지금 이것» 을 구분한다(별도 경고 상자 대신).
                 테마의 .academy-focus-class 가 테두리를 1px 로 덮어쓰므로 진행 중일 때만 style 로 지정한다. */}
@@ -231,7 +231,7 @@ export default function StaffHomeClient({
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-black text-[var(--brand-accent)]">{focusClass.startTime}–{focusClass.endTime}</p>
+                    <p className="text-base font-black text-[var(--color-academy-ink)]">{focusClass.startTime}–{focusClass.endTime}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                       <h2 className="text-xl font-black">{focusClass.name}</h2>
                       {isSeasonalLesson(focusClass) && <SeasonalBadge />}
@@ -274,8 +274,8 @@ export default function StaffHomeClient({
           {otherClasses.length > 0 && (
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-base font-black dark:text-white">남은 수업</h2>
-                <span className="text-sm font-bold tabular-nums text-gray-500">{otherClasses.length}개</span>
+                <h2 className="text-base font-black">남은 수업</h2>
+                <span className="text-sm font-bold tabular-nums text-[var(--color-academy-muted)]">{otherClasses.length}개</span>
               </div>
               {/* 한 수업 = 한 줄 행(시간 | 반 | 인원 | 시작). 빠른 메뉴는 행을 눌러 시트에서 */}
               <ul aria-label="남은 수업 목록" className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
@@ -287,7 +287,7 @@ export default function StaffHomeClient({
           )}
         </>
       ) : (
-        <p role="status" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-4 py-5 font-bold text-[var(--brand-accent)]">오늘 수업을 모두 마쳤습니다.</p>
+        <p role="status" className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-4 py-5 font-bold text-[var(--color-academy-ink)]">오늘 수업을 모두 마쳤습니다.</p>
       )}
 
       {completedClasses.length > 0 && (
@@ -322,11 +322,11 @@ export default function StaffHomeClient({
 
       {noticeTarget && (
         <Modal title="수업 공지 작성" subtitle={`${noticeTarget.name} 학부모에게만 발송합니다.`} onClose={() => setNoticeTarget(null)} labelledBy="notice-title">
-          <input disabled={noticeSaved || noticeUncertain || pending} value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="공지 제목" className="mt-4 min-h-12 w-full rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800" />
-          <textarea disabled={noticeSaved || noticeUncertain || pending} value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="mt-3 w-full rounded-xl border border-gray-200 bg-white p-3 leading-6 dark:border-gray-700 dark:bg-gray-800" />
+          <input disabled={noticeSaved || noticeUncertain || pending} value={noticeTitle} onChange={(event) => setNoticeTitle(event.target.value)} placeholder="공지 제목" className="mt-4 min-h-12 w-full rounded-xl border border-[var(--color-academy-line)] bg-white px-3" />
+          <textarea disabled={noticeSaved || noticeUncertain || pending} value={noticeContent} onChange={(event) => setNoticeContent(event.target.value)} rows={6} placeholder="공지 내용을 입력해 주세요." className="mt-3 w-full rounded-xl border border-[var(--color-academy-line)] bg-white p-3 leading-6" />
           {!noticeSaved && !noticeUncertain && !pending && <VoiceToTextButton onText={(text) => setNoticeContent((current) => current ? `${current}\n${text}` : text)} />}
           <ErrorMessage error={error} />
-          {noticeResult && <p role="status" className="mt-3 rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-800">{noticeResult}<br />알림이 전달돼도 학부모가 읽었다는 뜻은 아닙니다. 보내지 못했거나 다시 보낼 예정인 알림은 전달 건수에 넣지 않습니다.</p>}
+          {noticeResult && <p role="status" className="mt-3 rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm">{noticeResult}<br />알림이 전달돼도 학부모가 읽었다는 뜻은 아닙니다. 보내지 못했거나 다시 보낼 예정인 알림은 전달 건수에 넣지 않습니다.</p>}
           {(noticeSaved || noticeUncertain) && <button type="button" disabled={pending} onClick={() => startTransition(checkNotice)} className="mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">저장·전달 결과 다시 확인</button>}
           {noticeSaved && noticeResumeNeeded && <button type="button" disabled={pending} onClick={() => sendNotice(true)} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">빠진 알림 다시 보내기</button>}
           {noticeSaved && <button type="button" disabled={pending} onClick={() => { noticeOperation.current = null; try { sessionStorage.removeItem(`staff-notice-operation:${noticeTarget.id}`); } catch {} setNoticeSaved(false); setNoticeUncertain(false); setNoticeResult(""); setNoticeTitle(""); setNoticeContent(""); setError(null); }} className="ml-2 mt-3 min-h-11 rounded-xl border px-3 text-sm font-bold">새 공지 작성</button>}
@@ -336,7 +336,7 @@ export default function StaffHomeClient({
 
       {contentTarget && (
         <Modal title="수업 내용 미리 작성" subtitle={contentTarget.name} onClose={() => setContentTarget(null)} labelledBy="content-title">
-          <textarea value={plannedContent} onChange={(event) => setPlannedContent(event.target.value)} rows={7} placeholder="오늘 진행할 내용, 교재 페이지, 준비물 등을 입력하세요." className="mt-4 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--brand-accent)] dark:border-gray-700 dark:bg-gray-800" />
+          <textarea value={plannedContent} onChange={(event) => setPlannedContent(event.target.value)} rows={7} placeholder="오늘 진행할 내용, 교재 페이지, 준비물 등을 입력하세요." className="mt-4 w-full rounded-xl border border-[var(--color-academy-line)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--brand-accent)]" />
           <VoiceToTextButton onText={(text) => setPlannedContent((current) => current ? `${current}\n${text}` : text)} />
           <ErrorMessage error={error} />
           <ModalActions pending={pending} onCancel={() => setContentTarget(null)} onConfirm={saveContent} confirmLabel="저장" />
@@ -345,9 +345,9 @@ export default function StaffHomeClient({
 
       {startTarget && (
         <Modal title="수업을 시작하시겠습니까?" subtitle={startTarget.name} onClose={() => setStartTarget(null)} labelledBy="start-title">
-          <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm dark:bg-gray-800">
-            <p className="font-black dark:text-white">{startTarget.startTime}–{startTarget.endTime}</p>
-            <p className="mt-1 text-gray-500">학생 {startTarget.studentCount}명 · {startTarget.location || "장소 미정"}</p>
+          <div className="mt-4 rounded-xl bg-[var(--color-academy-soft)] p-4 text-sm">
+            <p className="font-black">{startTarget.startTime}–{startTarget.endTime}</p>
+            <p className="mt-1 text-[var(--color-academy-muted)]">학생 {startTarget.studentCount}명 · {startTarget.location || "장소 미정"}</p>
           </div>
           <ErrorMessage error={error} />
           <ModalActions pending={pending} onCancel={() => setStartTarget(null)} onConfirm={startLesson} confirmLabel={pending ? "시작 중…" : "수업 시작"} />
@@ -358,18 +358,18 @@ export default function StaffHomeClient({
 }
 
 function SummaryItem({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
-  return <p className={accent ? "font-bold text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)]"}>{label} <strong className="ml-1 font-black tabular-nums">{value}</strong></p>;
+  return <p className={accent ? "font-bold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}>{label} <strong className="ml-1 font-black tabular-nums">{value}</strong></p>;
 }
 
 function StatusBadge({ status, inverted = false }: { status: StaffTodayClass["sessionStatus"]; inverted?: boolean }) {
   const text = status === "COMPLETED" ? "완료" : status === "IN_PROGRESS" ? "수업 중" : "시작 전";
   // 게슈탈트 T-07: «수업 중»은 수업 진행 화면·기사님 «운행 중»과 같은 진행 알약(주황 채움 + 진행 점)
   if (status === "IN_PROGRESS") return <LiveStatusPill>{text}</LiveStatusPill>;
-  return <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${status === "IN_PROGRESS" ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : inverted ? "bg-white/10 text-gray-200" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"}`}>{text}</span>;
+  return <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${status === "IN_PROGRESS" ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : inverted ? "bg-white/10 text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>{text}</span>;
 }
 
 function SeasonalBadge({ inverted = false }: { inverted?: boolean }) {
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-black ${inverted ? "bg-sky-400/20 text-sky-100" : "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-200"}`}>특강</span>;
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-black ${inverted ? "bg-white/10 text-white" : "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]"}`}>특강</span>;
 }
 
 function SecondaryButton({ icon, label, onClick, disabled = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean }) {
@@ -392,7 +392,7 @@ function ClassRow({ lesson, startLocked, onOpen, onStart }: { lesson: StaffToday
     }}
     className="flex min-h-14 cursor-pointer items-center gap-2 border-b border-[var(--color-academy-line)] px-3 py-1.5 last:border-b-0 hover:bg-[var(--color-academy-soft)]"
   >
-    <span className="shrink-0 text-xs font-black tabular-nums text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</span>
+    <span className="shrink-0 text-xs font-black tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</span>
     {/* 반 이름은 자르지 않고 줄바꿈 허용(말줄임 금지) */}
     <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1"><span className="break-keep font-black text-[var(--color-academy-ink)]">{lesson.name}</span>{isSeasonalLesson(lesson) && <SeasonalBadge />}</span>
     <span className="shrink-0 text-right text-xs font-bold tabular-nums text-[var(--color-academy-muted)]">{lesson.studentCount}명</span>
@@ -420,7 +420,7 @@ function ClassDetailSheet({ lesson, startLocked, onClose, onAction }: { lesson: 
   return <ListDetailPanel onClose={onClose} titleId="staff-class-detail-title">
     <div className="flex items-start justify-between gap-3 border-b border-[var(--color-academy-line)] px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-black tabular-nums text-[var(--brand-accent)]">{lesson.startTime}–{lesson.endTime}</p>
+        <p className="text-sm font-black tabular-nums text-[var(--color-academy-ink)]">{lesson.startTime}–{lesson.endTime}</p>
         <div className="flex flex-wrap items-center gap-2"><h2 id="staff-class-detail-title" className="text-lg font-black text-[var(--color-academy-ink)]">{lesson.name}</h2>{isSeasonalLesson(lesson) && <SeasonalBadge />}<StatusBadge status={lesson.sessionStatus} /></div>
       </div>
       <button type="button" aria-label="닫기" onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-full"><span aria-hidden="true" className="material-symbols-outlined">close</span></button>
@@ -455,8 +455,8 @@ function Modal({ title, subtitle, onClose, labelledBy, children }: { title: stri
   }, [onClose]);
   const closeDialog = useCallback(() => onCloseRef.current(), []);
   useStaffDialog(true, dialogRef, closeDialog);
-  return <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}><div ref={dialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900"><div className="flex items-start justify-between gap-3"><div><h2 id={labelledBy} className="text-xl font-black dark:text-white">{title}</h2><p className="mt-1 text-sm text-gray-500">{subtitle}</p></div><button type="button" aria-label="닫기" data-dialog-initial-focus onClick={onClose} className="min-h-11 min-w-11 rounded-full p-2"><span className="material-symbols-outlined">close</span></button></div>{children}</div></div>;
+  return <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby={labelledBy}><div ref={dialogRef} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 id={labelledBy} className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-[var(--color-academy-muted)]">{subtitle}</p></div><button type="button" aria-label="닫기" data-dialog-initial-focus onClick={onClose} className="min-h-11 min-w-11 rounded-full p-2"><span className="material-symbols-outlined">close</span></button></div>{children}</div></div>;
 }
 
-function ModalActions({ pending, onCancel, onConfirm, confirmLabel, disabled = false }: { pending: boolean; onCancel: () => void; onConfirm: () => void; confirmLabel: string; disabled?: boolean }) { return <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" disabled={pending} onClick={onCancel} className="min-h-12 rounded-xl border border-gray-200 font-bold dark:border-gray-700">취소</button><button type="button" disabled={pending || disabled} onClick={onConfirm} className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">{confirmLabel}</button></div>; }
-function ErrorMessage({ error }: { error: string | null }) { return error ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null; }
+function ModalActions({ pending, onCancel, onConfirm, confirmLabel, disabled = false }: { pending: boolean; onCancel: () => void; onConfirm: () => void; confirmLabel: string; disabled?: boolean }) { return <div className="mt-5 grid grid-cols-2 gap-2"><button type="button" disabled={pending} onClick={onCancel} className="min-h-12 rounded-xl border border-[var(--color-academy-line)] font-bold">취소</button><button type="button" disabled={pending || disabled} onClick={onConfirm} className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">{confirmLabel}</button></div>; }
+function ErrorMessage({ error }: { error: string | null }) { return error ? <p role="alert" className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p> : null; }

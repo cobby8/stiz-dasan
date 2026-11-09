@@ -1,11 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
-import { getMyPageData, getGalleryByClassIds, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests, getChildrenFeedbacks } from "@/lib/queries";
+import { getMyPageData, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests } from "@/lib/queries";
+import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
+import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 import MyPageClient from "./MyPageClient";
 import EmptyParentState from "@/components/account/EmptyParentState";
 import Link from "next/link";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
 import { getPendingSeasonalChildren } from "@/lib/seasonal/parent-pending";
+import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +20,11 @@ export default async function MyPageDashboard() {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="text-5xl mb-4">🔒</div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">로그인이 필요합니다</h2>
-                <p className="text-gray-500 dark:text-gray-400 mb-6">마이페이지는 학부모 계정으로 로그인 후 이용할 수 있습니다.</p>
+                <h2 className="text-xl font-bold text-[var(--color-academy-ink)] mb-2">로그인이 필요합니다</h2>
+                <p className="text-[var(--color-academy-muted)] mb-6">마이페이지는 학부모 계정으로 로그인 후 이용할 수 있습니다.</p>
                 <Link
                     href="/login"
-                    className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold px-6 py-3 rounded-xl hover:bg-orange-600 transition"
+                    className="bg-[var(--color-academy-primary)] text-white font-bold px-6 py-3 rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition"
                 >
                     로그인하기
                 </Link>
@@ -45,18 +48,28 @@ export default async function MyPageDashboard() {
     const classIds = data.children.flatMap(c =>
         c.enrollments.map((e: { classId: string | null }) => e.classId).filter((id): id is string => typeof id === "string" && id.length > 0)
     );
-    // 갤러리/공지/알림/피드백 데이터 가져오기
-    const [gallery, notices, notifications, unreadCount, myRequests, feedbacks, shuttleOverview, driverContact] = await Promise.all([
-        getGalleryByClassIds(classIds, 10),
+    // 홈 «오늘 할 일» 판 데이터 (2026-11-09 안 A).
+    // 사진·학습 피드백은 «소식» 탭으로 옮겨 홈에서는 읽지 않는다. 공지는 «새 공지 N건» 줄을 세는 데만 쓴다.
+    // 보강권·방학특강 회차는 «처리할 일» 줄용 — 실패해도 홈이 깨지지 않게 빈 값으로 받는다.
+    // 납부할 청구 합계·입금 계좌는 «청구» 탭과 같은 목록(getParentPaymentRequests)으로 센다 —
+    // getMyPageData 의 자녀별 최근 5건으로 세면 오래된 미납이 빠져 탭과 숫자가 달라진다(2026-11-09). 실패하면 null → 예전 기준으로.
+    const [notices, notifications, unreadCount, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getNotifications(data.parent.id),
         getUnreadNotificationCount(data.parent.id),
         getMyRequests(data.parent.id),
-        getChildrenFeedbacks(studentIds),
         getParentShuttleOverview(parentAuth.appUserId),
         getShuttleDriverContact(),
+        getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
+        getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
+        getParentPaymentRequests(parentAuth.appUserId).catch(() => null),
     ]);
+    // 미납만 홈으로 넘긴다(필요한 칸만 — 요청 내역·영수증은 청구 탭이 본다)
+    const pendingPayments = paymentRows
+        ? paymentRows
+            .filter((row) => row.status === "PENDING" || row.status === "OVERDUE")
+            .map((row) => ({ id: row.paymentId, amount: row.amount, status: row.status, canCheckout: row.canCheckout, virtualAccount: row.virtualAccount }))
+        : null;
 
-
-    return <MyPageClient data={data} gallery={gallery} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} feedbacks={feedbacks} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} />;
+    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} />;
 }

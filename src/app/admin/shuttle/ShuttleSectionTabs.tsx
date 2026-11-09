@@ -34,12 +34,12 @@ export default function ShuttleSectionTabs() {
   const active = resolveActiveKey(pathname);
   return (
     <div className="mx-auto max-w-6xl px-4 pt-4">
-      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-1.5 dark:border-gray-700 dark:bg-gray-900" aria-label="셔틀 관리 메뉴">
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-white p-1.5" aria-label="셔틀 관리 메뉴">
         {ITEMS.map((it) => {
           const on = it.key === active;
           return (
             <Link key={it.key} href={it.href}
-              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${on ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"}`}>
+              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${on ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}>
               <span className="material-symbols-outlined text-xl">{it.icon}</span>
               {it.label}
             </Link>

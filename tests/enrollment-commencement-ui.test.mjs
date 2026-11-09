@@ -54,7 +54,7 @@ test('구형 신청은 월을 날짜로 추정하지 않고 기존 월을 모두
 test('승인 창은 별도로 확정 개시일을 받으며 legacy는 빈 값으로 남긴다',()=>{
  for(const requestedStartOn of [null,'2026-11-09']) {
   const html=render(React.createElement(Modals,{...modalProps,detailApp:null,approveApp:{...app,requestedStartOn}}));
-  assert.match(html,/확정 수강 개시일/); assert.match(html,/수강 예정/);
+  assert.match(html,/확정 수강 개시일/); assert.match(html,/바로 수강 중\(재원생\)으로 등록/); assert.doesNotMatch(html,/수강 예정/);
   assert.ok(html.includes(`value="${requestedStartOn||''}"`));
  }
 });

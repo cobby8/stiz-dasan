@@ -14,13 +14,13 @@ import type { AccountViewOption } from "@/lib/account-views";
 
 const LazyBackupButtons = dynamic(() => import("./AdminBackupButtons"), {
     ssr: false,
-    loading: () => <div className="px-8 py-3 text-xs text-gray-500">도구 준비 중...</div>,
+    loading: () => <div className="px-8 py-3 text-xs text-[var(--color-academy-muted)]">도구 준비 중...</div>,
 });
 
 const LazyNotificationBell = dynamic(() => import("./AdminNotificationBell"), {
     ssr: false,
     loading: () => (
-        <div className="h-10 w-10 rounded-lg bg-gray-100 dark:bg-gray-800" aria-hidden="true" />
+        <div className="h-10 w-10 rounded-lg bg-[var(--color-academy-soft)]" aria-hidden="true" />
     ),
 });
 
@@ -180,7 +180,7 @@ export default function AdminShellClient({
                         </div>
                         <div className="flex-1 min-w-0 [@media(max-height:500px)]:hidden">
                             <p className="text-sm font-medium text-[var(--color-academy-ink)] truncate">{userName}</p>
-                            <p className="text-xs text-gray-400 truncate">{userEmail}</p>
+                            <p className="text-xs text-[var(--color-academy-faint)] truncate">{userEmail}</p>
                         </div>
                         <form action={logout} className="flex-shrink-0">
                             {/* 누르는 영역 44px(A-12) */}
@@ -199,18 +199,18 @@ export default function AdminShellClient({
 
             {/* Main Content */}
             <main className="flex min-h-screen w-full min-w-0 flex-1 flex-col md:ml-64">
-                <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 dark:bg-gray-800 dark:border-gray-700 md:px-6">
+                <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-[var(--color-academy-line)] bg-white px-4 md:px-6">
                     <div className="flex min-w-0 items-center gap-3">
                         <button
                             type="button"
                             aria-label="관리자 메뉴 열기"
-                            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700 md:hidden"
+                            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--color-academy-line)] text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-line)] md:hidden"
                             onClick={() => setMobileMenuOpen(true)}
                         >
                             <FontFreeIcon name="menu" size={22} />
                         </button>
                         <AppBackButton fallbackHref="/admin" />
-                        <h2 className="truncate font-bold text-gray-700 dark:text-gray-200">학원 관리</h2>
+                        <h2 className="truncate font-bold text-[var(--color-academy-muted)]">학원 관리</h2>
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-2 md:gap-4">
                         {/* 알림 벨 — 읽지 않은 알림 수 배지 + 드롭다운 */}
@@ -243,7 +243,7 @@ function NavItem({ href, active, icon, label, badge, compact = false }: { href: 
             <span className="flex-1">{label}</span>
             {/* 배지 — 새 신청 건수 등 알림 표시 */}
             {badge != null && badge > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold bg-red-500 text-white">
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold bg-[var(--color-academy-danger)] text-white">
                     {badge}
                 </span>
             )}

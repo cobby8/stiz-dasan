@@ -222,6 +222,7 @@ model Student {
   shuttleLocations         StudentShuttleLocation[]
   teamRosterEntries        StudentTeamRosterEntry[]
   regularAbsences          RegularAbsence[] // 정규 수업 사전 결석 신고(back-relation)
+  regularAbsencePeriods    RegularAbsencePeriod[] // 관리자 «기간 결석»(부상·질병) 등록(back-relation)
   enrollmentChangeRequests EnrollmentChangeRequest[]
   paymentParentRequests    PaymentParentRequest[]
   shuttleDayExceptions     ShuttleDayException[]
@@ -831,6 +832,25 @@ model PaymentTransaction {
 
   @@index([invoiceId, status])
   @@index([paymentId, status])
+}
+
+/// 학부모 온라인 «묶음 결제» 항목 — 토스 주문 1건(PaymentTransaction)이 청구 N건을 묶는다
+/// (migration 20261109150000_payment_transaction_items 의 사본). 항목이 없는 거래 = 옛 단건 거래.
+/// 거래의 paymentId·invoiceId = 대표 청구(1번 항목), amount = 합계. ⚠️ DB 에는 FK(ON DELETE CASCADE)·CHECK·RLS 가 더 있다.
+model PaymentTransactionItem {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  transactionId String
+  paymentId     String
+  invoiceId     String
+  amount        Int
+  taxFreeAmount Int
+  position      Int
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([transactionId, paymentId], map: "PaymentTransactionItem_tx_payment_key")
+  @@unique([transactionId, position], map: "PaymentTransactionItem_tx_position_key")
+  @@index([paymentId])
+  @@index([invoiceId])
 }
 
 model PaymentWebhookEvent {
@@ -2784,12 +2804,40 @@ model RegularAbsence {
   resolvedByUserId String? // 처리한 관리자
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  // 관리자 «기간 결석»이 만든 행이면 그 기간 id(학부모 신고·출석부 표시 행은 NULL). 기간을 지워도 결석 행은 남는다.
+  periodId         String?
   student          Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   class            Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  period           RegularAbsencePeriod? @relation(fields: [periodId], references: [id], onDelete: SetNull)
 
   @@unique([studentId, classId, date]) // 학생·반·날짜당 신고 1건
   @@index([classId, date], map: "RegularAbsence_classId_date_idx") // 기사/관리자 날짜별 조회
   @@index([status], map: "RegularAbsence_status_idx")
+  @@index([periodId], map: "RegularAbsence_periodId_idx")
+}
+
+// 관리자 «기간 결석» — 부상·질병처럼 «11/6부터, 복귀 미정»을 한 번에 등록한다(2026-11-09 원장 결정).
+// 휴원(반 등록 상태 변경)과 달리 반 자리·셔틀 명단은 그대로 두고, 기간 안의 수업일만 날짜별 RegularAbsence(CONFIRMED)로 만든다.
+// 상세 근거는 prisma/migrations/20261109180000_add_regular_absence_period/migration.sql 참고.
+model RegularAbsencePeriod {
+  id              String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  studentId       String
+  reason          String // regularAbsenceRules VALID_REASONS (기본 ILLNESS_INJURY)
+  startDate       DateTime  @db.Date // 첫 결석일
+  returnDate      DateTime? @db.Date // 복귀 첫 수업일(이 날부터 다시 출석). NULL = 복귀 미정
+  note            String?
+  status          String    @default("ACTIVE") // ACTIVE | ENDED | CANCELLED
+  coveredUntil    DateTime  @db.Date // 결석 행을 만들어 둔 마지막 날(복귀 미정이면 매일 크론이 늘린다)
+  classIds        String[]  @default([]) // 대상 반. 빈 배열 = 그 학생의 수강 중(ACTIVE) 반 전부(나중에 생긴 반 포함)
+  createdByUserId String
+  endedByUserId   String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  absences        RegularAbsence[]
+
+  @@index([studentId, status], map: "RegularAbsencePeriod_studentId_status_idx")
+  @@index([status], map: "RegularAbsencePeriod_status_idx")
 }
 
 // 저장된 배차 노선 — 원장이 자동 제안을 손으로 조정한 뒤 저장한 결과(날짜×방향 1행).

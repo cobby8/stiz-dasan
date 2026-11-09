@@ -6,16 +6,12 @@
 - **분류**: convention
 - **발견자**: developer
 - **내용**: 학부모가 카카오톡·문자 링크를 누르면 **인앱 브라우저**로 열려 홈 화면 추가가 아예 불가능하다. 판별 로직은 `src/lib/pwa/installEnvironment.ts`(의존성 0, 순수 함수) 한 곳에만 두고 `/app`·`/staff/install` 두 화면이 공유한다 — 화면이 UA 정규식을 각자 들고 있으면 한쪽만 고쳐지는 사고가 난다(테스트가 `iphone|ipad|ipod` 재등장을 금지). 판별 원칙은 **확실한 표식만**(KAKAOTALK / NAVER(inapp / Instagram / FBAN·FBAV / Line/ / 안드로이드 `; wv)` / iOS인데 UA에 Safari 토큰 없음) — 오탐이 미탐보다 나쁘다. 함정: **라인 iOS UA에는 `Safari` 토큰이 있어** 인앱 판정을 먼저 하지 않으면 ios-safari 로 오판한다(`isIosSafari` 는 `inAppBrowser === null` 을 반드시 포함). 탈출 경로는 카카오톡만 스킴이 있다(`kakaotalk://web/openExternal?url=<encodeURIComponent>`), 나머지는 ⋯메뉴 안내 + **주소 복사**(clipboard 실패 시 주소를 화면에 노출해 길게 눌러 복사)를 최후 수단으로 항상 붙인다. UA 판별은 문자열 매칭 테스트로 못 잡으므로 `tests/pwa-install-environment.test.mjs` 처럼 **typescript.transpileModule 로 실제 실행**해 실제 UA 문자열로 단언한다.
+- **병합**: (안드로이드 탈출 intent://) 안드로이드에서 (1) 카카오톡 등 **인앱 브라우저**는 홈 화면 추가가 막히고, (2) **삼성 인터넷**으로 설치한 WebAPK 는 Google Play 프로텍트가 "안전하지 않은 앱"으로 차단한다(브라우저가 만드는 파일이라 우리가 못 고침). 둘 다 **크롬으로 열면 해결**된다 — 크롬은 구글 서버에서 WebAPK 를 받아온다. 형식: `intent://<host><path><search>#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=<encodeURIComponent(원래 https 주소)>;end`. **`S.browser_fallback_url` 은 필수** — 크롬이 없는 기기에서 인텐트가 실패하면 빈 화면이 된다. 생성 함수(`buildChromeIntentUrl`)는 순수 함수로 두고 **https 가 아니면 `null`** 을 반환해 잘못된 인텐트를 만들지 않는다(개발 http·`javascript:` 방어). **intent 스킴은 iOS 에서 동작하지 않으므로 버튼 자체를 렌더하지 않는다**(`shouldOfferChromeIntent(platform)` 로 게이트) — 눌러도 아무 일 없는 버튼이 더 나쁘다. iOS 는 기존 `kakaotalk://web/openExternal` 경로 유지. 인텐트가 막히는 기기가 있으므로 메뉴 안내·주소 복사는 **보조로 항상 남긴다**. 🚫 보안 경고를 "무시하고 설치하라"는 안내는 절대 넣지 않는다(진짜 악성 앱도 그렇게 설치하게 된다).
 - **참조횟수**: 0
 
 ### [2026-08-08] 브라우저가 "한 번만" 쏘는 이벤트는 useEffect로 못 잡는다 — head 인라인 스크립트로 선점
 - **분류**: convention
 - **내용**: `beforeinstallprompt`(PWA 설치)처럼 **페이지 로드 직후 한 번만 발생하고 재발화하지 않는** 이벤트는, React 하이드레이션 → `useEffect` 순서가 그보다 늦어 **조용히 유실**된다(설치 버튼이 영영 안 뜸). 해결 패턴: `src/app/layout.tsx` `<head>`에 인라인 스크립트를 넣어 React보다 먼저 리스너를 달고 `window.__stizInstallPrompt` 에 보관 + `stiz:installprompt` / `stiz:installed` 커스텀 이벤트로 알린다. 화면 컴포넌트는 마운트 시 **① 전역 보관값 먼저 확인 → ② 커스텀 이벤트 구독 → ③ 원본 이벤트 직접 구독(늦게 오는 경우 대비)** 3중으로 받는다. 스크립트는 `__stizInstallPromptReady` 가드로 중복 등록을 막고 전체를 try/catch로 감싼다(레이아웃은 사이트 전체에 영향). 이 프로젝트엔 CSP 가 없어 인라인 스크립트가 허용된다. 회귀 방지: 전역 변수명·이벤트명이 어긋나면 조용히 다시 버튼이 사라지므로, `tests/pwa-install-prompt-capture.test.mjs` 에서 layout.tsx 의 스크립트 원문을 정규식으로 추출해 **가짜 window(EventTarget)에 실제 실행**시켜 동작을 단언한다(문자열 매칭만으로는 동작을 못 잡는다).
-- **참조횟수**: 0
-
-### [2026-08-08] 기기 판별(UA)과 기능 가용성은 절대 같은 상태로 합치지 않는다
-- **분류**: convention
-- **내용**: 설치 화면이 `beforeinstallprompt` 를 받자마자 `setDeviceState("android")` 를 실행해, **PC 크롬에서도 안드로이드 안내가 나오고** 반대로 PC는 설치 버튼을 못 받는 버그가 있었다. 원인은 "기기가 무엇인가"(UA로 판별, 안내 문구용)와 "지금 설치할 수 있는가"(프롬프트 존재 여부, 버튼 노출용)를 한 변수에 욱여넣은 것. **두 상태를 분리하고 버튼은 `installPrompt` 만 보고, 문구는 `deviceState` 만 본다.** 또 브라우저는 **이미 설치돼 있으면 `beforeinstallprompt` 를 아예 쏘지 않으므로**, 프롬프트가 없는 안드로이드/PC 문구에는 "이미 설치돼 있으면 설치 버튼이 나타나지 않습니다" 한 줄을 붙여 "고장났다"는 오해를 막는다. iOS 는 프로그램적 설치 API 자체가 없어 공유→홈 화면에 추가 3단계 안내가 유일한 경로다(제거 금지).
 - **참조횟수**: 0
 
 ### [2026-08-05] 컴포넌트 파일 삭제 전에는 src/ 가 아니라 tests/ 를 grep 해야 한다
@@ -106,24 +102,14 @@
 - **분류**: convention
 - **발견자**: developer
 - **내용**: PWA 설치 안내처럼 사용자가 브라우저 메뉴를 직접 찾아야 하는 안내는, 비슷한 말로 바꾸면 그 항목을 못 찾고 그대로 이탈한다. 실측(2026-08-08): "브라우저 메뉴에서 '앱 설치'" 라고 안내했으나 갤럭시 기본 브라우저인 **삼성 인터넷의 실제 메뉴는 "우측 하단 ≡ → 현재 페이지 추가 → 홈 화면"** 이라 학부모가 포기했다. 안내 문구는 브라우저별로 갈라 **메뉴에 적힌 문자열 그대로** 쓴다. 또한 UA 판별은 **좁은 토큰을 먼저** 본다 — 삼성 인터넷 UA 에는 `SamsungBrowser` `Chrome` `Safari` 토큰이 전부 들어 있어(`... SamsungBrowser/21.0 Chrome/110... Mobile Safari/537.36`), Chrome 을 먼저 보면 크롬으로 오판한다. 판별과 문구 생성은 `src/lib/pwa/installEnvironment.ts` 같은 **의존성 없는 순수 모듈**에 두고 실제 UA 문자열로 실행 검증한다(소스 문자열 매칭으론 정규식 순서 오류를 못 잡는다). 화면(클라이언트 컴포넌트)이 메뉴 이름을 직접 들고 있으면 한쪽 화면만 고쳐지므로, 공용 컴포넌트로 빼고 "화면 소스에 메뉴 이름이 없어야 한다"를 테스트로 못박는다.
+- **병합**: (크롬 메뉴 이름) 실기기 확인(2026-08-08, 갤럭시 크롬): ⋮ 메뉴 항목이 **"설치 및 바로가기 만들기"** 였는데 안내는 "‘앱 설치’ 또는 ‘홈 화면에 추가’" 라서 학부모가 그 항목을 못 찾았다(삼성 인터넷 때와 동일한 유형의 사고, 2회째). 크롬 **버전 경계가 불확실**해 UA 로 갈라 문구를 고르면 오히려 틀린 안내가 나간다. 해결은 **두 표기를 나란히** 적는 것: `‘설치 및 바로가기 만들기’·‘앱 설치’`. 단계 라벨에는 길이 상한(24자) 테스트가 걸려 있으므로 "또는" 대신 가운뎃점(`·`)으로 붙여 길이를 줄인다. 문구 변경 시 `tests/pwa-install-environment.test.mjs` 에 두 이름이 모두 포함되는지 단언을 함께 추가한다.
 - **참조횟수**: 0
 
 ### [2026-08-08] 설치 안내 화면은 "설치 전용" — 앱 진입 버튼을 섞지 않는다, prompt() 자동 호출 금지
 - **분류**: convention
 - **발견자**: developer
 - **내용**: PWA 설치 안내 화면(`/app`·`/staff/install`)에 "마이페이지 열기"·"선생님 앱 열기" 같은 진입 버튼을 함께 두면, 사용자가 설치 대신 그 버튼을 눌러 버려 설치율이 오르지 않는다. 설치 화면의 주 행동은 **설치 버튼 하나뿐**이어야 하고 스크롤 없이 첫 화면에 보여야 한다(기능 소개 타일·가입 안내 카드 등 부가 섹션 제거). 다만 `설치하지 않아도 웹에서 바로 사용할 수 있습니다.` 한 줄은 설치 불가 사용자의 유일한 대안이라 반드시 남긴다. 또한 **`beforeinstallprompt` 의 `prompt()` 는 사용자 제스처(user activation) 안에서만 호출 가능**하다 — "클릭 없이 자동 설치"를 만들려고 로드 직후 호출하면 크롬·삼성 인터넷 모두 차단하고 그 프롬프트가 무효화돼 이후 버튼을 눌러도 설치가 안 된다. 목표는 "완전 자동"이 아니라 **"탭 한 번"** 으로 줄이는 것. 프롬프트가 없으면 기기별 수동 단계를 대신 보여준다.
-- **참조횟수**: 0
-
-### [2026-08-08] 안드로이드 탈출·설치는 intent:// 로 크롬을 지정한다 (iOS는 렌더 금지)
-- **분류**: convention
-- **발견자**: developer
-- **내용**: 안드로이드에서 (1) 카카오톡 등 **인앱 브라우저**는 홈 화면 추가가 막히고, (2) **삼성 인터넷**으로 설치한 WebAPK 는 Google Play 프로텍트가 "안전하지 않은 앱"으로 차단한다(브라우저가 만드는 파일이라 우리가 못 고침). 둘 다 **크롬으로 열면 해결**된다 — 크롬은 구글 서버에서 WebAPK 를 받아온다. 형식: `intent://<host><path><search>#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=<encodeURIComponent(원래 https 주소)>;end`. **`S.browser_fallback_url` 은 필수** — 크롬이 없는 기기에서 인텐트가 실패하면 빈 화면이 된다. 생성 함수(`buildChromeIntentUrl`)는 순수 함수로 두고 **https 가 아니면 `null`** 을 반환해 잘못된 인텐트를 만들지 않는다(개발 http·`javascript:` 방어). **intent 스킴은 iOS 에서 동작하지 않으므로 버튼 자체를 렌더하지 않는다**(`shouldOfferChromeIntent(platform)` 로 게이트) — 눌러도 아무 일 없는 버튼이 더 나쁘다. iOS 는 기존 `kakaotalk://web/openExternal` 경로 유지. 인텐트가 막히는 기기가 있으므로 메뉴 안내·주소 복사는 **보조로 항상 남긴다**. 🚫 보안 경고를 "무시하고 설치하라"는 안내는 절대 넣지 않는다(진짜 악성 앱도 그렇게 설치하게 된다).
-- **참조횟수**: 0
-
-### [2026-08-08] 크롬 메뉴 이름은 버전마다 다르다 — UA로 가르지 말고 두 이름을 나란히 적는다
-- **분류**: convention
-- **발견자**: developer
-- **내용**: 실기기 확인(2026-08-08, 갤럭시 크롬): ⋮ 메뉴 항목이 **"설치 및 바로가기 만들기"** 였는데 안내는 "‘앱 설치’ 또는 ‘홈 화면에 추가’" 라서 학부모가 그 항목을 못 찾았다(삼성 인터넷 때와 동일한 유형의 사고, 2회째). 크롬 **버전 경계가 불확실**해 UA 로 갈라 문구를 고르면 오히려 틀린 안내가 나간다. 해결은 **두 표기를 나란히** 적는 것: `‘설치 및 바로가기 만들기’·‘앱 설치’`. 단계 라벨에는 길이 상한(24자) 테스트가 걸려 있으므로 "또는" 대신 가운뎃점(`·`)으로 붙여 길이를 줄인다. 문구 변경 시 `tests/pwa-install-environment.test.mjs` 에 두 이름이 모두 포함되는지 단언을 함께 추가한다.
+- **병합**: (기기 판별 ≠ 설치 가능) 설치 화면이 `beforeinstallprompt` 를 받자마자 `setDeviceState("android")` 를 실행해, **PC 크롬에서도 안드로이드 안내가 나오고** 반대로 PC는 설치 버튼을 못 받는 버그가 있었다. 원인은 "기기가 무엇인가"(UA로 판별, 안내 문구용)와 "지금 설치할 수 있는가"(프롬프트 존재 여부, 버튼 노출용)를 한 변수에 욱여넣은 것. **두 상태를 분리하고 버튼은 `installPrompt` 만 보고, 문구는 `deviceState` 만 본다.** 또 브라우저는 **이미 설치돼 있으면 `beforeinstallprompt` 를 아예 쏘지 않으므로**, 프롬프트가 없는 안드로이드/PC 문구에는 "이미 설치돼 있으면 설치 버튼이 나타나지 않습니다" 한 줄을 붙여 "고장났다"는 오해를 막는다. iOS 는 프로그램적 설치 API 자체가 없어 공유→홈 화면에 추가 3단계 안내가 유일한 경로다(제거 금지).
 - **참조횟수**: 0
 
 ### [2026-08-09] 앱 아이콘에 글자를 넣지 않는다 — 색과 그림으로 구분한다
@@ -196,7 +182,7 @@
 ### [2026-10-03] 보호자(Guardian)는 학생 상세 「보호자」 카드로 편집 — 전화는 숫자만, 계정(User) 전화와 분리
 - **분류**: convention
 - **발견자**: developer
-- **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다.
+- **내용**: 편집 경로 = `src/app/actions/guardians.ts`(requireAdmin, 수정·삭제는 `id AND "studentId"` 두 조건) + 순수 로직 `src/lib/guardians/guardianLogic.ts`. Guardian.phone 은 숫자만 저장(계절학기 승인이 `COALESCE(phone,'') = 숫자` 로 글자 비교함). 주 보호자는 학생당 1명(지정은 `SET "isPrimary" = (id = $1)` 한 문장), 주 보호자를 바꿔도 Student.parentId→User.phone(로그인·알림톡)은 건드리지 않는다. ⚠️ 엑셀 업로드 덮어쓰기는 Guardian 을 전부 지우고 보호자2·3만 다시 넣는다 — 카드로 추가한 보호자가 사라질 수 있다. (11-09 2차) 학생 상세에서 **전화번호는 보호자 카드 한 곳**에만 보인다 — 한 사람 한 줄+⚡ 메뉴(수정·주 보호자·삭제), 추가·수정은 AdminModal 창. 계정 번호(User.phone)가 보호자 번호와 같으면 그 줄에 «로그인» 배지, 다르면 «로그인 계정» 줄을 따로(`accountName` prop). «연락처 · 프로필»에는 학부모 전화 줄을 다시 두지 않는다(테스트 student-guardians). 머리의 «전화» 버튼이 계정 번호로 건다.
 - **참조횟수**: 0
 
 ### [2026-10-30] 관리자 목록은 공용 부품 + admin-list-table 로 — 전역 표는 가운데 정렬 !important 라 opt-in 필요
@@ -205,3 +191,8 @@
 - **내용**: `globals.css` 의 `.admin-table-scope th,td { text-align:center !important }` 때문에 표 안에서 `text-left` 를 써도 안 먹는다. 목록 개편 화면은 `<table className="admin-list-table">` 로 opt-in(글자 왼쪽·`admin-cell-num` 오른쪽+tabular-nums·`admin-cell-center`·table-layout auto·nowrap — 말줄임 금지, 좁으면 가로 스크롤·`hidden md:table-cell` 로 칸 숨김). 행 클릭 상세 = `ListDetailPanel`(AdminModal `layout="side"` — 포커스·Esc 처리 공유, 기존 상세 모달은 껍데기만 교체), 상태 칩 = `StatusCountChips`(기존 상태 필터 state 를 그대로 넘김), 보기 전환 = `ListViewToggle`+`useRememberedListView`. 전부 `src/components/admin/list/`. 가드: `tests/admin-list-standard.test.mjs`.
 - **참조횟수**: 0
 
+### [2026-11-09] 색은 토큰·상태는 statusTones 한 곳 — 하드코딩 색은 가드가 막는다
+- **분류**: convention
+- **발견자**: developer
+- **내용**: 원장 결정(11-09): 주 버튼 검정 #15181c · 역할 공통 · 바탕 #f6f7f9 · STIZ 주황은 홈페이지 «체험 신청» 입구만(public-sport.css 의 주소 선택자) · 다크모드 나중. 색 값은 `academy-theme.css`(상태색은 `:root` — 홈페이지 배지도 씀)·`public-sport.css` 토큰만 고친다. 상태 뜻은 `src/lib/ui/statusTones.ts` 한 곳(출결·결제·셔틀·신청 → success/warning/danger/info/neutral, 모르는 상태는 neutral) — 화면은 `TONE_BADGE_CLASS`·`statusBadgeClass`·`StatusBadge` 를 쓰고 색 클래스를 직접 쓰지 않는다. 상태 «표시»는 모서리 4px(`rounded`), 누르는 칩·버튼은 둥글게. 함정: `.academy-app` 안에서는 Tailwind blue·sky·slate 가 회색(ink), purple·violet·pink 가 주황(rust)으로 바꿔 끼워져 있어 `bg-blue-100` 으로 «정보» 파랑을 내면 회색이 된다 → 반드시 `var(--color-academy-info)`. 이 바꿔 끼우기는 `academy-theme.css` 만이 아니라 `globals.css`(1103줄 부근 `.academy-app, .stiz-public-sport { --color-violet-*… }`)에도 있다 — 지울 때 두 곳 다 본다. 흐린 글자 faint #636a75(옅은 면 위 4.96)·입력선 line-input #848b96(바탕 위 3.20)은 11-09 마무리에서 진하게 바꿨다. node 테스트가 직접 import 하는 `src/lib/*.ts` 에서 statusTones 를 쓰면 `./ui/statusTones.ts` + `@ts-expect-error`(admin-delivery-status 참고), 컴포넌트를 import 맵으로 렌더하는 테스트는 `"@/lib/ui/statusTones"` 를 맵에 넣어야 한다. 가드: `tests/color-contrast.test.mjs`(글자 4.5·선 3), `tests/color-hardcode-guard.test.mjs`(파일별 기준선 — 늘면 실패, 줄였으면 `UPDATE_COLOR_BASELINE=1`), `tests/status-tones.test.mjs`. 함정(11-09 5단계): CSS 가 Tailwind 색 클래스 «이름»으로 예외를 거는 규칙(`:not(.bg-amber-50)` 등)이 있으면 토큰으로 바꾸는 순간 그 예외가 풀려 바탕이 덮어써진다 — 치환 전 `grep -rn "\.bg-[a-z]*-[0-9]" src/**/*.css` 로 확인. 등원·하원은 색이 아니라 글자·아이콘으로 구분, 주 색(검정)은 버튼 밖 글자에 쓰지 않는다(ink).
+- **참조횟수**: 0

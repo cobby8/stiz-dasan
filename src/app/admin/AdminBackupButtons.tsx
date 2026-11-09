@@ -127,7 +127,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 onClick={handleSyncSchedule}
                 disabled={busy}
                 className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-gray-300 hover:bg-white/10 hover:text-white"
+                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                 }`}
             >
                 <span className="text-xl">🔄</span>
@@ -136,14 +136,14 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             )}
             <a
                 href="/api/admin/backup"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
                 <span className="text-xl">💾</span>
                 <span>설정 백업 다운로드</span>
             </a>
             <label
                 className={`flex w-full cursor-pointer items-center gap-3 rounded-lg px-4 py-3 transition-colors ${
-                    busy ? "opacity-50" : "text-gray-300 hover:bg-white/10 hover:text-white"
+                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                 }`}
             >
                 <span className="text-xl">📂</span>
@@ -155,7 +155,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 onClick={handleCloudRestore}
                 disabled={busy}
                 className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-gray-300 hover:bg-white/10 hover:text-white"
+                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                 }`}
             >
                 <span className="text-xl">☁️</span>
@@ -166,7 +166,7 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
                 onClick={handleBackupNow}
                 disabled={busy}
                 className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors ${
-                    busy ? "opacity-50" : "text-gray-300 hover:bg-white/10 hover:text-white"
+                    busy ? "opacity-50" : "text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                 }`}
             >
                 <span className="text-xl">☁️</span>
@@ -175,13 +175,13 @@ export default function AdminBackupButtons({ sheetRetired = false }: { sheetReti
             <a
                 href="/api/admin/export-seed"
                 download="seed-data.ts"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-[var(--color-academy-faint)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
             >
                 <span className="text-xl">📦</span>
                 <span>seed 내보내기</span>
             </a>
-            <p className="px-4 text-xs text-gray-300">학원 설정·프로그램·코치·일부 차량 경로 백업 · 학생·출결·청구·월 장부 제외</p>
-            {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-green-400" : "text-yellow-400"}`}>{msg}</p>}
+            <p className="px-4 text-xs text-[var(--color-academy-faint)]">학원 설정·프로그램·코치·일부 차량 경로 백업 · 학생·출결·청구·월 장부 제외</p>
+            {msg && <p role="status" className={`break-all px-4 py-1 text-xs ${ok ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>{msg}</p>}
         </div>
     );
 }

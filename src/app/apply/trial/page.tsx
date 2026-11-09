@@ -27,7 +27,7 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
 
     return (
         <PublicPageLayout>
-            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 py-12 text-white md:py-16">
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] py-12 text-white md:py-16">
                 <div className="relative mx-auto max-w-3xl px-6">
                     <AnimateOnScroll>
                         <h1 className="mb-3 break-keep text-3xl font-black md:text-4xl">체험수업 신청</h1>
@@ -36,7 +36,7 @@ export default async function TrialApplyPage({ searchParams }: { searchParams: P
                 </div>
             </section>
 
-            <section className="public-content-section bg-gray-50 py-8 dark:bg-gray-900 md:py-12">
+            <section className="public-content-section bg-[var(--color-public-tint)] py-8 dark:bg-[var(--color-public-paper)] md:py-12">
                 <div className="mx-auto max-w-2xl px-4">
                     <TrialApplicationForm availableSlots={slots} contactPhone={phone} initialSource={initialSource} />
                 </div>

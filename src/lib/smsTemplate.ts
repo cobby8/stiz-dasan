@@ -10,6 +10,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { parentAlimtalkSmsTemplateBody, PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 
 // ── DDL ensure: SmsTemplate 테이블이 없으면 생성 ──────────────────────────────
 let _smsTemplateEnsured = false;
@@ -86,7 +87,7 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "TRIAL_CONFIRM_PARENT",
         "체험 신청 확인 (학부모)",
         "PARENT",
-        "[STIZ] {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}",
+        `${PARENT_MESSAGE_PREFIX} {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}`,
         "체험 신청 직후 학부모에게 접수 확인 발송",
         '["childName","parentName","academyPhone"]',
     ],
@@ -94,7 +95,7 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "TRIAL_SCHEDULED_PARENT",
         "체험 일정 확정 (학부모)",
         "PARENT",
-        "[STIZ] {{childName}} 체험수업 일정이 확정되었습니다.\n일시: {{scheduledDate}}\n반: {{className}}\n문의: {{academyPhone}}",
+        parentAlimtalkSmsTemplateBody("TRIAL_SCHEDULED_PARENT"), // 알림톡 금고 틀(코드가 정본)
         "관리자가 체험 일정을 SCHEDULED로 변경하면 학부모에게 발송",
         '["childName","scheduledDate","className","academyPhone"]',
     ],
@@ -106,38 +107,24 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "관리자가 체험 일정을 확정하면 담당 강사에게 확정 일시와 반을 안내",
         '["childName","childGrade","scheduledDate","className"]',
     ],
-    [
-        "TRIAL_ATTENDED_PARENT",
-        "체험 완료 감사 안내 (학부모)",
-        "PARENT",
-        "[STIZ] {{childName}} 학생의 체험수업 참여 감사합니다.\n정규 수강신청을 원하시면 아래 링크에서 신청해주세요.\n{{enrollLink}}\n문의: {{academyPhone}}",
-        "관리자가 체험 리드를 체험완료로 변경하면 학부모에게 자동 발송",
-        '["childName","parentName","academyPhone","enrollLink"]',
-    ],
+    // TRIAL_ATTENDED_PARENT(체험 완료 감사 안내) — 2026-11-09 원장 결정으로 제거(가입 유도 문구 · 발송 코드도 삭제)
     [
         "TRIAL_ENROLL_GUIDE_PARENT",
         "수강신청서 안내 (학부모)",
         "PARENT",
-        "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
-        "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·스포츠고글 제휴 안내 포함, 장문)",
+        parentAlimtalkSmsTemplateBody("TRIAL_ENROLL_GUIDE_PARENT"), // 알림톡 금고 틀 — 다비치 제휴 할인 문장은 광고라 뺐다
+        "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·안경 안내 포함)",
         '["childName","enrollLink","academyPhone"]',
     ],
     [
         "ENROLL_CONFIRM_PARENT",
         "수강 신청 확인 (학부모)",
         "PARENT",
-        "[STIZ] {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}",
+        `${PARENT_MESSAGE_PREFIX} {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}`,
         "수강 신청 직후 학부모에게 접수 확인 발송",
         '["childName","parentName","academyPhone"]',
     ],
-    [
-        "ENROLL_APPROVED_PARENT",
-        "수강 확정 (학부모)",
-        "PARENT",
-        "[STIZ] {{childName}} 수강이 확정되었습니다.\n배정 반: {{className}}\n상세 안내는 별도 연락드리겠습니다.",
-        "관리자가 수강 신청을 승인하면 학부모에게 발송",
-        '["childName","className","academyPhone"]',
-    ],
+    // ENROLL_APPROVED_PARENT(수강 확정)·INVOICE_PARENT(수납 안내) — 보내는 코드가 없어 2026-11-09 제거
     [
         "ENROLL_APPROVED_COACH",
         "수강 승인 (담당 강사)",
@@ -147,34 +134,27 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         '["childName","childGrade","className"]',
     ],
     [
-        "INVOICE_PARENT",
-        "수납 안내 (학부모)",
-        "PARENT",
-        "[STIZ] {{month}}월 수강료 안내\n{{childName}}: {{amount}}원\n납부기한: {{dueDate}}",
-        "월별 청구서 생성 시 학부모에게 발송",
-        '["childName","month","amount","dueDate"]',
-    ],
-    [
         "UNPAID_PARENT",
         "미납 알림 (학부모)",
         "PARENT",
-        "[STIZ] 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.",
+        `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
         "미납 알림 일괄 발송 시 학부모에게 발송",
         '["childName","unpaidCount","totalAmount"]',
     ],
-    ["SPECIAL_APPLICATION_RECEIVED_PARENT", "특강 신청 접수", "PARENT", "[STIZ] {{childName}} 학생의 {{seasonTitle}} 특강 신청이 접수되었습니다.\n신청: {{offeringTitle}}\n문의: {{academyPhone}}", "특강 신청 직후 접수 안내", '["childName","seasonTitle","offeringTitle","academyPhone"]'],
+    // 특강 접수·승인·대기·취소·결제 요청 = 알림톡 금고 틀(코드가 정본). 반려·가입 안내는 아직 문자 전용(2차)
+    ["SPECIAL_APPLICATION_RECEIVED_PARENT", "특강 신청 접수", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_APPLICATION_RECEIVED_PARENT"), "특강 신청 직후 접수 안내", '["childName","seasonTitle","offeringTitle","academyPhone"]'],
     ["SPECIAL_APPLICATION_NEW_ADMIN", "특강 최초 신청 접수 (관리자)", "ADMIN", "[STIZ] 새 특강 신청\n{{childName}} - {{parentName}}\n특강: {{seasonTitle}} / {{offeringTitle}}", "특강 최초 신청 시 관리자에게 한 번 알림", '["childName","seasonTitle","offeringTitle","parentName","parentPhone"]'],
-    ["SPECIAL_APPLICATION_APPROVED_PARENT", "특강 신청 승인", "PARENT", "[STIZ] {{childName}} 학생의 {{offeringTitle}} 특강 신청이 승인되었습니다.\n결제 및 계정 안내를 확인해 주세요.\n문의: {{academyPhone}}", "특강 신청 승인 안내", '["childName","seasonTitle","offeringTitle","academyPhone"]'],
-    ["SPECIAL_APPLICATION_WAITLISTED_PARENT", "특강 대기 접수", "PARENT", "[STIZ] {{childName}} 학생의 {{offeringTitle}} 특강은 대기 접수되었습니다.\n대기순번: {{waitlistOrder}}\n자리 발생 시 안내드리겠습니다.", "특강 대기 상태 안내", '["childName","offeringTitle","waitlistOrder","academyPhone"]'],
-    ["SPECIAL_APPLICATION_REJECTED_PARENT", "특강 신청 반려", "PARENT", "[STIZ] {{childName}} 학생의 {{offeringTitle}} 특강 신청이 승인되지 않았습니다.\n문의: {{academyPhone}}", "특강 신청 반려 안내", '["childName","offeringTitle","academyPhone"]'],
-    ["SPECIAL_APPLICATION_CANCELLED_PARENT", "특강 신청 취소", "PARENT", "[STIZ] {{childName}} 학생의 {{offeringTitle}} 특강 신청이 취소되었습니다.\n문의: {{academyPhone}}", "특강 신청 취소 안내", '["childName","offeringTitle","academyPhone"]'],
-    ["SPECIAL_ACCOUNT_ACTIVATION_PARENT", "특강 입학 가입 안내", "PARENT", "[STIZ] {{childName}} 학생의 특강 신청이 확정되었습니다.\n수강 확인과 결제를 위해 아래 링크에서 보호자 가입을 완료해 주세요.\n{{activationUrl}}\n링크는 본인만 사용해 주세요.", "신규 보호자 입학(가입) 안내 링크", '["childName","activationUrl"]'],
-    ["SPECIAL_PAYMENT_REQUEST_PARENT", "특강 결제 요청", "PARENT", "[STIZ] {{childName}} 학생의 {{offeringTitle}} 특강 결제를 확인해 주세요.\n금액: {{amount}}원\n납부기한: {{dueDate}}\n{{paymentUrl}}", "특강 청구서 결제 안내", '["childName","offeringTitle","amount","dueDate","paymentUrl"]'],
+    ["SPECIAL_APPLICATION_APPROVED_PARENT", "특강 신청 승인", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_APPLICATION_APPROVED_PARENT"), "특강 신청 승인 안내", '["childName","seasonTitle","offeringTitle","academyPhone"]'],
+    ["SPECIAL_APPLICATION_WAITLISTED_PARENT", "특강 대기 접수", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_APPLICATION_WAITLISTED_PARENT"), "특강 대기 상태 안내", '["childName","offeringTitle","waitlistOrder","academyPhone"]'],
+    ["SPECIAL_APPLICATION_REJECTED_PARENT", "특강 신청 반려", "PARENT", `${PARENT_MESSAGE_PREFIX} {{childName}} 학생의 {{offeringTitle}} 특강 신청이 승인되지 않았습니다.\n문의: {{academyPhone}}`, "특강 신청 반려 안내", '["childName","offeringTitle","academyPhone"]'],
+    ["SPECIAL_APPLICATION_CANCELLED_PARENT", "특강 신청 취소", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_APPLICATION_CANCELLED_PARENT"), "특강 신청 취소 안내", '["childName","offeringTitle","academyPhone"]'],
+    ["SPECIAL_ACCOUNT_ACTIVATION_PARENT", "특강 입학 가입 안내", "PARENT", `${PARENT_MESSAGE_PREFIX} {{childName}} 학생의 특강 신청이 확정되었습니다.\n수강 확인과 결제를 위해 아래 링크에서 보호자 가입을 완료해 주세요.\n{{activationUrl}}\n링크는 본인만 사용해 주세요.`, "신규 보호자 입학(가입) 안내 링크", '["childName","activationUrl"]'],
+    ["SPECIAL_PAYMENT_REQUEST_PARENT", "특강 결제 요청", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_PAYMENT_REQUEST_PARENT"), "특강 청구서 결제 안내", '["childName","offeringTitle","amount","dueDate","paymentUrl"]'],
     [
         "SHUTTLE_ROUTE_CONFIRMED_PARENT",
         "셔틀 노선 배정 확정 (학부모)",
         "PARENT",
-        "[STIZ] {{학생명}} 셔틀 {{운행방향}} 안내\n{{운행일}} {{예정시간}} / {{정류장}}",
+        parentAlimtalkSmsTemplateBody("SHUTTLE_ROUTE_CONFIRMED_PARENT"), // 알림톡 금고 틀
         "셔틀 노선 배정이 확정되거나 확정 정보가 변경되면 학부모에게 안내",
         '["학생명","운행방향","운행일","예정시간","정류장"]',
     ],
@@ -182,7 +162,7 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "SHUTTLE_NO_SHOW_PARENT",
         "셔틀 미탑승 안내 (학부모)",
         "PARENT",
-        "[STIZ] {{학생명}} 학생이 오늘 {{운행방향}} 셔틀에 미탑승 처리되었습니다. 확인 부탁드립니다.",
+        parentAlimtalkSmsTemplateBody("SHUTTLE_NO_SHOW_PARENT"), // 알림톡 금고 틀
         "기사가 학생을 미탑승 처리하면 학부모에게 즉시 안내",
         '["학생명","운행방향"]',
     ],
@@ -193,7 +173,6 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
 export const DEFAULT_DISABLED_SMS_TRIGGERS = new Set([
     "TRIAL_NEW_COACH",
     "TRIAL_CONFIRM_PARENT",
-    "TRIAL_ATTENDED_PARENT",
     "ENROLL_NEW_COACH",
     "ENROLL_CONFIRM_PARENT",
     "SPECIAL_APPLICATION_RECEIVED_PARENT",
@@ -221,8 +200,8 @@ export async function ensureSmsTemplates(): Promise<void> {
                 trigger, name, target, body, isActive, description, variables,
             );
         }
-        // 기존 DB에 남은 옛 기본 문구(장문·단문)만 2026-11-07 문구(준비물·스포츠고글 제휴 안내)로 교체한다.
-        // 관리자가 직접 수정한 문구는 덮어쓰지 않는다.
+        // 기존 DB에 남은 옛 기본 문구(단문·장문·2026-11-07 다비치 제휴 문구)만 알림톡 금고 문구로 교체한다.
+        // 관리자가 직접 수정한 문구는 덮어쓰지 않는다. (실제 발송은 이 DB 문구가 아니라 금고 틀을 쓴다 — 화면 표시용)
         await prisma.$executeRawUnsafe(
             `UPDATE "SmsTemplate"
                 SET name = $1,
@@ -231,13 +210,14 @@ export async function ensureSmsTemplates(): Promise<void> {
                     variables = $4,
                     "updatedAt" = NOW()
               WHERE trigger = 'TRIAL_ENROLL_GUIDE_PARENT'
-                AND body IN ($5, $6)`,
+                AND body IN ($5, $6, $7)`,
             "수강신청서 안내 (학부모)",
-            "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
-            "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·스포츠고글 제휴 안내 포함, 장문)",
+            parentAlimtalkSmsTemplateBody("TRIAL_ENROLL_GUIDE_PARENT"),
+            "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·안경 안내 포함)",
             '["childName","enrollLink","academyPhone"]',
             "스티즈 수강신청서\n링크에서 작성해주세요 :)\n{{enrollLink}}",
             "[STIZ] {{childName}} 학생 체험수업 상담 감사드립니다.\n정규 수강신청서는 아래 링크에서 작성해주세요.\n{{enrollLink}}\n작성 후 확인되는 대로 입학 안내를 도와드리겠습니다.\n문의: {{academyPhone}}",
+            "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
         );
         // 신규·복원 DB에서도 템플릿과 자동 발송 규칙이 같은 시점에 준비되게 한다.
         await prisma.$executeRawUnsafe(

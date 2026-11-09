@@ -45,6 +45,7 @@ function requestHarness() {
     "@/lib/account/child-access": { childAccessSql: async () => "s.parentId = $2" },
     "@/lib/prisma": { prisma },
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
+    "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/operational-staff-notification": { notifyOperationalStaff: async () => {} },
   });

@@ -16,6 +16,7 @@ import { VoiceToTextButton } from "@/components/staff/VoiceToTextButton";
 import { useStaffDialog } from "@/components/staff/useStaffDialog";
 import { StatusChoiceButton, StatusPill, type StatusTone } from "@/components/staff/StatusChoiceButton";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
+import { ATTENDANCE_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import { loadStaffSessionMonthlyFees } from "@/app/actions/staff-billing";
 import type { StaffMonthlyFeeSummary } from "@/lib/staff-monthly-fee-types";
 import { monthlyFeeLabel } from "@/components/staff/StaffMonthlyFeeSummary";
@@ -54,6 +55,14 @@ const STATUS_ICON: Record<AttendanceStatus, string> = {
   LATE: "schedule",
   ABSENT: "close",
 };
+
+// 출결 저장 결과의 결석 사유 부분(정규 수강생만 값이 온다. 방학특강·보강 저장 결과엔 없다).
+type AbsenceResultExtra = { absenceReport?: StaffSessionStudent["absenceReport"]; absenceMessage?: string | null };
+/** 서버가 결석 신고 상태를 돌려줬으면 그 값으로 덮어쓸 조각, 아니면 빈 조각 */
+function absenceReportPatch(result: object): Partial<Pick<StaffSessionStudent, "absenceReport">> {
+  const report = (result as AbsenceResultExtra).absenceReport;
+  return report === undefined ? {} : { absenceReport: report };
+}
 
 function formatElapsed(seconds: number) {
   const hours = Math.floor(seconds / 3600).toString().padStart(2, "0");
@@ -301,6 +310,9 @@ export default function SessionInProgressClient({
     };
   }, [session.startedAt]);
 
+  // 아직 안 찍은 보강 온 아이 수 — «전체 출석» 버튼에 함께 처리된다고 보여 준다.
+  const uncheckedMakeup = useMemo(() => students.filter((student) => student.makeup && !student.status).length, [students]);
+
   const counts = useMemo(
     () => ({
       PRESENT: students.filter((student) => student.status === "PRESENT").length,
@@ -313,13 +325,15 @@ export default function SessionInProgressClient({
 
   // studentId 파라미터명이지만 실제로는 로스터 행의 고유 id(정규=studentId / 방학특강=enrollmentDateId)다.
   // 서버에는 그 행의 attendanceKey(방학특강이면 좌석ID)를 넘겨 좌석 기준으로 저장한다.
-  function updateAttendance(rowId: string, status: AttendanceStatus) {
+  // absenceReason: "ILLNESS_INJURY"=질병·부상 표시 / null=표시 끄기 / 생략=그대로(출석·지각이면 서버가 출석부 사유를 지운다).
+  // 수업 중에는 언제든 다른 버튼을 눌러 출석↔지각↔결석을 고칠 수 있다(보강권도 서버가 따라 맞춘다).
+  function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
     setMessage("");
     const target = students.find((student) => student.id === rowId);
     if (!target) return;
     startTransition(async () => {
       try {
-        const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status });
+        const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status, absenceReason });
         if (!result.ok) {
           setMessage(result.message);
           return;
@@ -331,11 +345,16 @@ export default function SessionInProgressClient({
                   ...student,
                   status,
                   arrivedAt: status === "LATE" ? student.arrivedAt || new Date().toISOString() : null,
+                  // 서버가 돌려준 결석 신고 상태로 맞춘다(정규 수강생만 값이 온다).
+                  ...absenceReportPatch(result),
                 }
               : student,
           ),
         );
-        if (result.notificationWarning) {
+        const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
+        if (absenceMessage) {
+          setMessage(absenceMessage);
+        } else if (result.notificationWarning) {
           setMessage("출결은 저장됐지만 학부모 알림은 재전송이 필요합니다.");
         }
       } catch {
@@ -361,7 +380,9 @@ export default function SessionInProgressClient({
             return;
           }
           setStudents((current) => current.map((row) => (
-            row.id === student.id ? { ...row, status: "PRESENT" } : row
+            row.id === student.id
+              ? { ...row, status: "PRESENT", ...absenceReportPatch(result) }
+              : row
           )));
           setBulkAttendanceProgress(`${index + 1}/${unchecked.length} 처리 중`);
         }
@@ -456,10 +477,10 @@ export default function SessionInProgressClient({
       <main className="mx-auto max-w-lg space-y-4 px-4 py-5 pb-32">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-[var(--brand-accent)]">{session.className}</p>
-            <h1 className="text-2xl font-black text-brand-navy-900 dark:text-white">출석 확인</h1>
+            <p className="text-sm font-bold text-[var(--color-academy-muted)]">{session.className}</p>
+            <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">출석 확인</h1>
           </div>
-          <button type="button" onClick={() => setView("main")} className="min-h-11 break-keep rounded-xl border border-gray-200 bg-white px-4 text-sm font-black dark:border-gray-700 dark:bg-gray-900">
+          <button type="button" onClick={() => setView("main")} className="min-h-11 break-keep rounded-xl border border-[var(--color-academy-line)] bg-white px-4 text-sm font-black">
             수업으로 돌아가기
           </button>
         </div>
@@ -472,9 +493,11 @@ export default function SessionInProgressClient({
         </section>
 
         <button type="button" disabled={pending || counts.UNCHECKED === 0} aria-busy={pending && Boolean(bulkAttendanceProgress)} onClick={markAllPresent} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
-          {bulkAttendanceProgress || "미확인 학생 전체 출석"}
+          {/* 미확인이면 보강 온 아이도 함께 출석 처리된다(원장 2026-11-09 «보강도 전체 출석에서 체크»). */}
+          {bulkAttendanceProgress || (uncheckedMakeup > 0 ? `미확인 학생 전체 출석 (보강 ${uncheckedMakeup}명 포함)` : "미확인 학생 전체 출석")}
         </button>
-        {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{message}</p>}
+        <p className="text-xs font-bold text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
+        {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">{message}</p>}
 
         <div aria-live="polite" className="text-xs font-bold text-[var(--color-academy-muted)]">
           {feeLoading ? "수강료 조회 중 · 출석 확인은 바로 할 수 있습니다." : feeError ? <div role="alert" className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-3">
@@ -488,12 +511,19 @@ export default function SessionInProgressClient({
             const fee = feesByRoster.get(student.id);
             return <article key={student.id} className="border-b border-[var(--color-academy-line)] px-3 py-3 last:border-b-0">
               <div className="flex items-center justify-between">
-                <strong className="text-base dark:text-white">{student.name}</strong>
+                <span className="flex items-center gap-1.5">
+                  <strong className="text-base">{student.name}</strong>
+                  {/* 다른 반 아이가 보강 온 경우. 출석을 찍으면 보강권이 사용 처리되고, 결석이면 보강권은 그대로 남는다. */}
+                  {student.makeup && (
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-black ${TONE_BADGE_CLASS[ATTENDANCE_TONE.MAKEUP]}`}>보강</span>
+                  )}
+                </span>
                 {student.status
                   ? <StatusPill tone={STATUS_TONE[student.status]} icon={STATUS_ICON[student.status]}>{STATUS_LABEL[student.status]}</StatusPill>
                   : <StatusPill tone="neutral" icon="help">미확인</StatusPill>}
               </div>
-              <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
+              {/* 보강 온 아이는 이 반 수강생이 아니라 이 반 수강료를 보여주지 않는다. */}
+              {!student.makeup && <button type="button" aria-label={`${student.name} 수강료·청구 확인`} onClick={() => setAttendanceBillingTarget(student)} className="mt-1 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-lg bg-[var(--color-academy-primary-soft)] px-2 py-2 text-left">
                 <span className="text-xs font-bold text-[var(--color-academy-ink)]">
                   {feeLoading ? "수강료 조회 중…" : feeError ? "수강료 확인 필요" : <>
                     <span className="text-[var(--color-academy-muted)]">{feeData ? monthlyFeeLabel(feeData.month, fee?.period, fee?.sourceLabel) : "수강료"} </span>
@@ -504,11 +534,11 @@ export default function SessionInProgressClient({
                   {!feeLoading && !feeError && (fee?.statusLabel || "확인 필요")}
                   <span className="material-symbols-outlined text-base" aria-hidden="true">chevron_right</span>
                 </span>
-              </button>
+              </button>}
               {/* 학부모가 미리 넣은 결석 신고. 이게 안 보이면 선생님이 모르고 출석을 찍어
                   학부모가 미리 알린 의미가 사라진다. 확정건은 원장이 확인한 것이라 따로 표시한다. */}
-              {student.absenceReport && (
-                <p className="mt-2 inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-black text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+              {student.absenceReport?.source === "PARENT" && (
+                <p className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-warning)]">
                   <span className="material-symbols-outlined text-sm" aria-hidden="true">event_busy</span>
                   학부모 결석 알림
                   {ABSENCE_REASON_LABEL[student.absenceReport.reason]
@@ -524,6 +554,25 @@ export default function SessionInProgressClient({
                   </StatusChoiceButton>
                 ))}
               </div>
+              {/* 결석일 때만: 질병·부상 표시 → 청구 작업대 «이월 검토» 후보가 된다(이월 적용은 원장이 증빙 확인 후).
+                  정규 수강생만(보강 온 아이·방학특강은 대상 아님). 학부모가 이미 신고한 날은 그 사유를 따른다. */}
+              {student.status === "ABSENT" && !student.makeup && !session.sessionDateId && (() => {
+                const illness = student.absenceReport?.reason === "ILLNESS_INJURY";
+                const parentLocked = student.absenceReport?.source === "PARENT";
+                return <button
+                  type="button"
+                  aria-pressed={illness}
+                  disabled={pending || parentLocked}
+                  onClick={() => updateAttendance(student.id, "ABSENT", illness ? null : "ILLNESS_INJURY")}
+                  className={`mt-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-black disabled:opacity-60 ${illness
+                    ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                    : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}
+                >
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">{illness ? "check_box" : "check_box_outline_blank"}</span>
+                  질병·부상 결석
+                  {parentLocked && <span className="text-xs">(학부모 신고)</span>}
+                </button>;
+              })()}
             </article>;
           })}
         </section>
@@ -538,7 +587,7 @@ export default function SessionInProgressClient({
       <section className="sticky top-0 z-30 -mx-4 rounded-b-3xl border-b border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] text-[var(--color-academy-ink)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-[var(--brand-accent)]">{session.startTime}~{session.endTime}</p>
+            <p className="text-sm font-bold text-[var(--color-academy-ink)]">{session.startTime}~{session.endTime}</p>
             <h1 className="mt-0.5 text-xl font-black">{session.className}</h1>
             <p className="mt-1 text-xs text-[var(--color-academy-muted)]">{session.location || "장소 미정"} · 학생 {session.studentCount}명</p>
           </div>
@@ -551,7 +600,7 @@ export default function SessionInProgressClient({
       </section>
 
       {!online && (
-        <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800" role="status">
+        <div className="flex items-center gap-2 rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-sm font-bold text-[var(--color-academy-danger)]" role="status">
           <span className="material-symbols-outlined" aria-hidden="true">wifi_off</span>
           오프라인입니다. 작성한 메모는 연결이 복구되면 자동으로 다시 저장됩니다.
         </div>
@@ -578,11 +627,11 @@ export default function SessionInProgressClient({
         </summary>
         <div className="grid gap-1 border-t border-[var(--color-academy-line)] py-2">
           <button type="button" onClick={() => setShowPeople(true)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold">
-            <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">contacts</span>
+            <span className="material-symbols-outlined text-[var(--color-academy-muted)]" aria-hidden="true">contacts</span>
             학생 정보 <span className="ml-auto text-xs font-medium text-[var(--color-academy-muted)]">전화 · 문자</span>
           </button>
           <button type="button" onClick={() => setBillingStudent(null)} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold">
-            <span className="material-symbols-outlined text-[var(--brand-accent)]" aria-hidden="true">receipt_long</span>
+            <span className="material-symbols-outlined text-[var(--color-academy-muted)]" aria-hidden="true">receipt_long</span>
             청구 확인
           </button>
           <button type="button" disabled={pending || voiceBusy || memoStatus === "saving"} onClick={cancelStart} className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-bold text-[var(--color-academy-muted)] disabled:opacity-50">
@@ -593,16 +642,16 @@ export default function SessionInProgressClient({
         </div>
       </details>
 
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <section className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white">
         <button type="button" onClick={() => setShowPlan((current) => !current)} aria-expanded={showPlan} aria-controls="session-plan" className="flex min-h-14 w-full items-center justify-between px-5 text-left font-black">
-          <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[var(--brand-accent)]">description</span>오늘 수업 내용</span>
+          <span className="flex items-center gap-2"><span className="material-symbols-outlined text-[var(--color-academy-muted)]">description</span>오늘 수업 내용</span>
           <span className="material-symbols-outlined">{showPlan ? "expand_less" : "expand_more"}</span>
         </button>
-        {showPlan && <p id="session-plan" className="border-t border-gray-100 px-5 py-4 whitespace-pre-wrap text-sm leading-7 text-gray-600 dark:border-gray-800 dark:text-gray-300">{session.plannedContent || "미리 등록한 수업 내용이 없습니다."}</p>}
+        {showPlan && <p id="session-plan" className="border-t border-[var(--color-academy-line)] px-5 py-4 whitespace-pre-wrap text-sm leading-7 text-[var(--color-academy-muted)]">{session.plannedContent || "미리 등록한 수업 내용이 없습니다."}</p>}
       </section>
 
-      <section id="session-photos" className="scroll-mt-40 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
-        <h2 className="mb-3 flex items-center gap-2 font-black"><span className="material-symbols-outlined text-[var(--brand-accent)]">photo_camera</span>수업 사진</h2>
+      <section id="session-photos" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
+        <h2 className="mb-3 flex items-center gap-2 font-black"><span className="material-symbols-outlined text-[var(--color-academy-muted)]">photo_camera</span>수업 사진</h2>
         {/* 사진 태깅은 실제 Student(전환된 학생)만 대상으로 한다. 방학특강 미전환 신청자는 Student가 없어 제외. */}
         <SessionPhotoUploader
           sessionId={session.id}
@@ -612,9 +661,9 @@ export default function SessionInProgressClient({
         />
       </section>
 
-      <section id="session-memo" className="scroll-mt-40 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+      <section id="session-memo" className="scroll-mt-40 rounded-2xl border border-[var(--color-academy-line)] bg-white p-5">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-black"><span className="material-symbols-outlined text-[var(--brand-accent)]">mic</span>수업 중 특이사항</h2>
+          <h2 className="flex items-center gap-2 font-black"><span className="material-symbols-outlined text-[var(--color-academy-muted)]">mic</span>수업 중 특이사항</h2>
           <VoiceToTextButton
             onBusyChange={setVoiceBusy}
             onText={(text) => {
@@ -623,16 +672,16 @@ export default function SessionInProgressClient({
             }}
           />
         </div>
-        <textarea value={memo} onChange={(event) => { setMemoStatus("dirty"); setMemo(event.target.value); }} onBlur={() => void persistMemo(memoRef.current)} aria-label="수업 중 특이사항" rows={3} className="mt-4 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--brand-accent)] dark:border-gray-700 dark:bg-gray-800" />
+        <textarea value={memo} onChange={(event) => { setMemoStatus("dirty"); setMemo(event.target.value); }} onBlur={() => void persistMemo(memoRef.current)} aria-label="수업 중 특이사항" rows={3} className="mt-4 w-full rounded-xl border border-[var(--color-academy-line)] bg-white p-3 text-sm leading-6 outline-none focus:border-[var(--brand-accent)]" />
         <div className="mt-2 flex items-center justify-between gap-3 text-xs font-bold" aria-live="polite">
-          <span className={memoStatus === "error" ? "text-red-600" : "text-gray-500"}>
+          <span className={memoStatus === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]"}>
             {memoStatus === "saving" ? "저장 중…" : memoStatus === "dirty" ? "변경사항 자동 저장 대기 중" : memoStatus === "error" ? "저장 실패 · 다시 시도해 주세요" : "저장됨"}
           </span>
         </div>
         <button type="button" disabled={pending || memoStatus === "saving" || !online} onClick={saveMemo} className="academy-button-secondary mt-3 min-h-12 w-full rounded-xl px-4 text-sm font-black disabled:opacity-50">메모 지금 저장</button>
       </section>
 
-      {message && <p aria-live="polite" className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-700">{message}</p>}
+      {message && <p aria-live="polite" className="rounded-xl bg-[var(--color-academy-info-soft)] p-3 text-sm font-bold text-[var(--color-academy-info)]">{message}</p>}
 
       {showPeople && <ClassPeopleSheet open classId={session.classId} sessionId={session.id} className={session.className} onClose={() => setShowPeople(false)} onOpenBilling={(student) => { setShowPeople(false); setBillingStudent(student); }} />}
       {billingStudent !== undefined && <ClassBillingSheet key={`${session.classId}:${billingStudent?.id || "all"}`} open classId={session.classId} className={session.className} student={billingStudent} onClose={() => setBillingStudent(undefined)} />}
@@ -640,7 +689,7 @@ export default function SessionInProgressClient({
       {/* 수업 진행 화면에서는 하단 탭바(StaffBottomNav)가 숨겨지므로, 종료 바를 화면 최하단에 밀착시킨다.
           홈 인디케이터(safe-area)만큼만 아래 여백을 줘 겹침 없이 항상 접근 가능하게 한다. */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-lg px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <div className="rounded-2xl border border-gray-200 bg-white/95 p-2 shadow-lg backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white/95 p-2 shadow-lg backdrop-blur">
           <button type="button" disabled={pending || voiceBusy || memoStatus === "saving" || !online} onClick={() => { setFinishError(""); setShowEndConfirm(true); }} style={{ minHeight: 56, borderWidth: 2 }} className="academy-button-danger min-h-14 w-full rounded-xl border-2 px-4 font-black disabled:opacity-50"><span aria-hidden="true" className="material-symbols-outlined">stop_circle</span>수업 종료 확인</button>
           {(voiceBusy || memoStatus === "saving" || !online) && <p className="mt-1 text-center text-xs font-bold text-[var(--color-academy-warning)]">{voiceBusy ? "음성 메모 처리 후 종료할 수 있습니다." : memoStatus === "saving" ? "메모 저장 후 종료할 수 있습니다." : "온라인 연결 후 종료할 수 있습니다."}</p>}
         </div>
@@ -648,9 +697,9 @@ export default function SessionInProgressClient({
 
       {showEndConfirm && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="end-session-title">
-          <div ref={endDialogRef} className="max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
-            <h2 id="end-session-title" className="text-xl font-black dark:text-white">수업을 종료하시겠습니까?</h2>
-            <p className="mt-1 text-sm text-gray-500">종료하면 학부모에게 수업 종료 알림이 전송됩니다.</p>
+          <div ref={endDialogRef} className="max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+            <h2 id="end-session-title" className="text-xl font-black">수업을 종료하시겠습니까?</h2>
+            <p className="mt-1 text-sm text-[var(--color-academy-muted)]">종료하면 학부모에게 수업 종료 알림이 전송됩니다.</p>
             <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs font-bold">
               <div className="rounded-lg bg-[var(--color-academy-success-soft)] p-2 text-[var(--color-academy-success)]">출석 {counts.PRESENT}</div>
               <div className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-[var(--color-academy-warning)]">지각 {counts.LATE}</div>
@@ -658,7 +707,7 @@ export default function SessionInProgressClient({
               <div className="rounded-lg bg-[var(--color-academy-soft)] p-2 text-[var(--color-academy-muted)]">미확인 {counts.UNCHECKED}</div>
             </div>
             {counts.UNCHECKED > 0 && (
-              <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              <div className="mt-3 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm text-[var(--color-academy-warning)]">
                 <p className="font-black">출결 미확인 학생 {counts.UNCHECKED}명이 있어 아직 종료할 수 없습니다.</p>
                 <p className="mt-1 text-xs font-medium">출석부에서 출석·지각·결석 중 하나를 선택해 주세요.</p>
               </div>
@@ -668,8 +717,8 @@ export default function SessionInProgressClient({
                 리포트가 된다. */}
             {counts.UNCHECKED === 0 && (
               <div className="mt-4">
-                <label htmlFor="session-report" className="text-sm font-black text-gray-700 dark:text-gray-200">
-                  오늘 수업 한 줄 <span className="font-bold text-gray-400">(선택)</span>
+                <label htmlFor="session-report" className="text-sm font-black text-[var(--color-academy-ink)]">
+                  오늘 수업 한 줄 <span className="font-bold text-[var(--color-academy-faint)]">(선택)</span>
                 </label>
                 <textarea
                   id="session-report"
@@ -678,9 +727,9 @@ export default function SessionInProgressClient({
                   rows={2}
                   maxLength={2000}
                   placeholder="예: 드리블 기본기 연습했습니다. 다들 잘 따라왔어요."
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--color-academy-line)] p-3 text-sm"
                 />
-                <label className="mt-2 flex min-h-11 items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">
+                <label className="mt-2 flex min-h-11 items-center gap-2 text-sm font-bold text-[var(--color-academy-ink)]">
                   <input
                     type="checkbox"
                     checked={publishReport}
@@ -691,9 +740,9 @@ export default function SessionInProgressClient({
                 </label>
               </div>
             )}
-            {finishError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl bg-red-50 p-3 text-sm font-bold text-red-700">{finishError}</p>}
+            {finishError && <p role="alert" aria-live="assertive" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{finishError}</p>}
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <button type="button" disabled={pending} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="min-h-12 rounded-xl border border-gray-200 font-bold dark:border-gray-700">돌아가기</button>
+              <button type="button" disabled={pending} data-dialog-initial-focus onClick={() => setShowEndConfirm(false)} className="min-h-12 rounded-xl border border-[var(--color-academy-line)] font-bold">돌아가기</button>
               {counts.UNCHECKED > 0 ? (
                 <button type="button" disabled={pending} onClick={() => { setShowEndConfirm(false); setView("attendance"); }} className="min-h-12 rounded-xl bg-[var(--brand-accent)] px-3 font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">출석부 확인하기</button>
               ) : (

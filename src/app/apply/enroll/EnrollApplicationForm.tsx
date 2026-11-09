@@ -19,7 +19,7 @@ import { sanitizeLoadedPlaceName, shuttlePlaceNameError } from "@/lib/enrollment
 
 const EnrollApplicationLaterSteps = dynamic(() => import("./EnrollApplicationLaterSteps"), {
     loading: () => (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+        <div className="rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-6 text-center text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-muted)]">
             다음 단계를 불러오는 중...
         </div>
     ),
@@ -307,34 +307,34 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
 
     if (completed) {
         return (
-            <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-gray-800">
+            <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
                 <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
                     <FontFreeIcon name="check_circle" size={40} className="text-green-600" />
                 </div>
-                <h2 className="mb-3 text-2xl font-black text-gray-900 dark:text-white">
+                <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "수강신청서 수정 완료!" : completionMode === "existing" ? "이미 접수된 수강신청서가 있습니다" : "수강신청 완료!"}
                 </h2>
-                <p className="mb-2 text-gray-600 dark:text-gray-300">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
-                <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mb-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
+                <p className="mb-6 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     문의사항이 있으시면{" "}
-                    <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-brand-orange-500 dark:text-brand-neon-lime">{contactPhone}</a>
+                    <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{contactPhone}</a>
                     로 전화해주세요.
                 </p>
                 {accountHandoff && !accountHandoff.alreadyLinked && (
-                    <div className="mb-6 rounded-2xl border border-brand-orange-200 bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                        <h3 className="font-black text-brand-navy-900 dark:text-white">이어서 학부모 계정을 연결해주세요</h3>
-                        <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">계정을 연결하면 방금 제출한 신청서를 바로 확인할 수 있습니다. 가입하지 않아도 수강신청은 이미 정상 접수되었습니다.</p>
+                    <div className="mb-6 rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
+                        <h3 className="font-black text-[var(--color-public-ink)] dark:text-white">이어서 학부모 계정을 연결해주세요</h3>
+                        <p className="mt-1 text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">계정을 연결하면 방금 제출한 신청서를 바로 확인할 수 있습니다. 가입하지 않아도 수강신청은 이미 정상 접수되었습니다.</p>
                         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            <Link href={signupHref} className="flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 px-4 text-center font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">처음이에요 · 회원가입</Link>
-                            <Link href={loginHref} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-center font-bold text-brand-navy-900 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-white">계정이 있어요 · 로그인</Link>
+                            <Link href={signupHref} className="flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] px-4 text-center font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">처음이에요 · 회원가입</Link>
+                            <Link href={loginHref} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 bg-white px-4 text-center font-bold text-[var(--color-public-ink)] hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white">계정이 있어요 · 로그인</Link>
                         </div>
-                        <p className="mt-3 text-xs leading-5 text-gray-500 dark:text-gray-400">신청서의 보호자 이름과 전화번호가 가입 또는 인증 정보와 일치해야 자동으로 연결됩니다.</p>
+                        <p className="mt-3 text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">신청서의 보호자 이름과 전화번호가 가입 또는 인증 정보와 일치해야 자동으로 연결됩니다.</p>
                     </div>
                 )}
                 {accountHandoff?.alreadyLinked && (
-                    <div className="mb-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-200">현재 로그인한 학부모 계정에 신청서가 연결되었습니다.</div>
+                    <div className="mb-6 rounded-xl border border-green-200 bg-[var(--color-academy-success-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-academy-success)] dark:border-green-800 dark:bg-green-950/30 dark:text-green-200">현재 로그인한 학부모 계정에 신청서가 연결되었습니다.</div>
                 )}
-                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-brand-navy-900 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-navy-800">
+                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-6 py-3 font-medium text-white transition-colors hover:bg-[var(--color-public-dark)]">
                     <FontFreeIcon name="home" size={18} />
                     홈으로 돌아가기
                 </Link>
@@ -343,23 +343,23 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
     }
 
     return (
-        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-            <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-3 dark:border-gray-800 dark:bg-gray-900">
+        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
+            <div className="public-stepper border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 sm:px-6 py-3 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
                 <div className="mx-auto flex max-w-md items-center justify-between">
                     {Array.from({ length: TOTAL_STEPS }, (_, index) => index + 1).map((number) => (
                         <div key={number} className="flex items-center">
-                            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-brand-orange-500 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-gray-200 text-gray-400"}`}>
+                            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-[var(--color-public-line)] text-[var(--color-public-muted)]"}`}>
                                 {number < step ? <FontFreeIcon name="check" size={18} /> : number}
                             </div>
-                            <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>{STEP_LABELS[number - 1]}</span>
-                            {number < TOTAL_STEPS && <div className={`mx-1.5 h-0.5 w-6 sm:w-8 ${number < step ? "bg-green-500" : "bg-gray-200"}`} />}
+                            <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-[var(--color-public-ink)] dark:text-white" : "text-[var(--color-public-muted)]"}`}>{STEP_LABELS[number - 1]}</span>
+                            {number < TOTAL_STEPS && <div className={`mx-1.5 h-0.5 w-6 sm:w-8 ${number < step ? "bg-green-500" : "bg-[var(--color-public-line)]"}`} />}
                         </div>
                     ))}
                 </div>
             </div>
 
             {trialData && step === 1 && (
-                <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <div className="mx-6 mt-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm text-[var(--color-public-muted)]">
                     <FontFreeIcon name="auto_fix_high" size={18} />
                     체험수업 정보가 자동으로 입력되었습니다. 필요하면 수정할 수 있습니다.
                 </div>
@@ -373,7 +373,7 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
                     </div>
                 )}
                 {existingNotice && (
-                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
+                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm font-semibold text-[var(--color-public-ink)] dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
                         <FontFreeIcon name="edit" size={18} />
                         {existingNotice}
                     </div>
@@ -381,29 +381,29 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
 
                 {step === 1 && (
                     <div className="space-y-5">
-                        <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                            <FontFreeIcon name="child_care" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                            <FontFreeIcon name="child_care" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             아이 정보
                         </h2>
                         <Field label="아이 이름" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 이름" />
                         <Field label="생년월일" required type="date" value={form.childBirthDate} onChange={(value) => update("childBirthDate", value)} placeholder="연도-월-일" />
                         <div>
-                            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                                 성별 <span className="text-red-500">*</span>
                             </label>
                             <div className="flex gap-2">
                                 {["남", "여"].map((gender) => (
-                                    <button key={gender} type="button" onClick={() => update("childGender", gender)} className={`flex-1 rounded-xl border py-3 text-sm font-medium transition-colors ${form.childGender === gender ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}>
+                                    <button key={gender} type="button" onClick={() => update("childGender", gender)} className={`flex-1 rounded-xl border py-3 text-sm font-medium transition-colors ${form.childGender === gender ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] hover:border-gray-400 dark:text-[var(--color-public-muted)]"}`}>
                                         {gender}
                                     </button>
                                 ))}
                             </div>
                         </div>
                         <div>
-                            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                                 학년 <span className="text-red-500">*</span>
                             </label>
-                            <select value={form.childGrade} onChange={(event) => update("childGrade", event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+                            <select value={form.childGrade} onChange={(event) => update("childGrade", event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white">
                                 <option value="">선택해주세요</option>
                                 {GRADE_OPTIONS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}
                             </select>
@@ -417,19 +417,19 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
 
                 <div className="mt-8 flex justify-between">
                     {step > 1 ? (
-                        <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200">
+                        <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
                             <FontFreeIcon name="arrow_back" size={18} />
                             이전
                         </button>
                     ) : <div />}
 
                     {step < TOTAL_STEPS ? (
-                        <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-brand-orange-500 px-6 py-3 font-bold text-white transition-colors hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             다음
                             <FontFreeIcon name="arrow_forward" size={18} />
                         </button>
                     ) : (
-                        <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-brand-orange-500 px-6 py-3 font-bold text-white transition-colors hover:bg-brand-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             {isPending ? (
                                 <>
                                     <FontFreeIcon name="progress_activity" size={18} className="animate-spin" />
@@ -452,11 +452,11 @@ export default function EnrollApplicationForm({ availableSlots, contactPhone, tr
 function Field({ label, required, type = "text", value, onChange, placeholder, helper }: { label: string; required?: boolean; type?: string; value: string; onChange: (value: string) => void; placeholder: string; helper?: string }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                 {label} {required && <span className="text-red-500">*</span>}
             </label>
-            <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-            {helper && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helper}</p>}
+            <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white" />
+            {helper && <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{helper}</p>}
         </div>
     );
 }

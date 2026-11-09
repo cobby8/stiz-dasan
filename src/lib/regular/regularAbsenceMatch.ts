@@ -55,3 +55,8 @@ export function matchAbsentee(passenger: Passenger, absentees: AbsentPerson[]): 
 export function isPassengerAbsent(passenger: Passenger, absentees: AbsentPerson[]): boolean {
   return matchAbsentee(passenger, absentees) !== null;
 }
+
+// 기사님 화면 결석 뱃지 문구 — 항상 «결석» 하나뿐이다.
+// 🔒 사유(질병·부상 등)는 건강 민감정보라 로그인 없는 기사님 토큰 화면에 절대 싣지 않는다(검수 2026-11-09).
+//    기사님은 «오늘 이 아이는 안 태워도 된다»만 알면 충분하다.
+export const DRIVER_ABSENCE_LABEL = "결석";

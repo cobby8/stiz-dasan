@@ -38,6 +38,7 @@
 ## 진행 현황
 | 항목 | 상태 |
 |------|------|
+| 11-09 | developer(색상 통합·마무리): 6브랜치 합침(충돌 = 기준선 json·scratchpad·차트 3파일 — 차트 색은 chartColors 하나로), 노쇼 위험·결제요청 확인 중 정보·등록전환 정상, faint/line-input 대비 올림(+테스트 2쌍), 남은 관리자 5파일 103→0, 기준선 12,341→1,730. tsc 0·tests 3629-0·lib 164-0 | 완료 |
 | 관리자·선생님 UI 전수조사(6영역 병렬) | 완료 — 문구 140·기능 46·보존 144·확인필요 61 |
 | 선생님 화면 문구 정리 + 설치배너 제거 | 완료·커밋 |
 | 관리자 문구 106건 정리 | 완료·커밋 |
@@ -47,10 +48,6 @@
 | 보강 잔여석 실제 계산 + 정원 초과 차단 | 완료·커밋 |
 | 수업 리포트 사진 깨짐 수정 | 완료·커밋 |
 | UI 기능/UI 제거 46건 | 대기(원장 확인 필요 항목 다수) |
-| 셔틀 확정 명단 4~5단계(변동 감지·재발 방지 가드) | 대기 |
-| 4b 시즌 격리 / 4c 추가 확정 / 4d 변동 배지 | 대기 |
-| 정규반 형제할인 자동화 | 대기(시트 수동 10% 이중적용 위험 확인 필요) |
-| 미푸시 커밋 | **13개** |
 
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
@@ -64,16 +61,52 @@
 | P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
 | P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
 
-### 리뷰 결과 (reviewer · 11-08 POS 결제 취소 b7ef25d0)
-📊 종합 판정: 통과(머지 가능 · 차단 없음, 권장 P-1·P-2). 마이그레이션은 build 에 migrate deploy 가 없으므로 **배포 전 apply_migration 필수**(안 하면 플러그인 GET·CLAIM_PAY 가 칸 없음으로 실패 → 현장 결제 전체 정지).
-✅ 환불은 settleCancelForRow(토스 재조회 order)만 · report 는 기록만 · MARK_REFUND+refundPaidPaymentInTx 한 트랜잭션 조건부 · 일부/누락 결제는 PARTIAL(안전 방향) · 플러그인 ID 는 서버 DB 값·getPayment orderId 대조 · 마이그레이션 NULL 허용 칸만·CHECK 는 NULL 통과. 테스트 루트 3160-0(보고 3165와 5건 차이)·플러그인 65-0.
+
+- ⚠️ (11-08 POS 결제 취소 리뷰) 마이그레이션은 build 에 migrate deploy 가 없어 **배포 전 apply_migration 필수**(안 하면 현장 결제 전체 정지).
+
+### 수정 요청 (tester · 11-09 재검수 8144e6c7 + e2b02a6d — 결과는 작업 로그)
+| 요청자 | 파일 | 문제 | 상태 |
+|------|------|------|------|
+| tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
 ---
+
+## 구현 기록 (developer) — 색상 정리 1~3단계 (11-09 원장 결정: 주 버튼 검정·역할 공통·바탕 #f6f7f9·체험 신청만 주황·다크 나중)
+| 단계·커밋 | 파일 | 변경 |
+|---|---|---|
+| 1 629d3355 | academy-theme.css · globals.css · public-sport.css · DriverWorkspace.module.css · tests/parent-child-links-ui | 토큰 값만(이름 유지). 상태색 :root(info·neutral 신설), 글자 3단계·입력선 #8a919c·faint 신설, 차콜 단계=회색 토큰, 홈페이지 주 버튼 검정·«체험 신청» 입구 주황(주소 선택자), 기사님 보라·파랑→중립·정보 |
+| 2 a7ed1234 | tests/color-contrast · color-hardcode-guard · fixtures/color-hardcode-baseline.json | 대비(글자 4.5·선 3) + 하드코딩 색 파일별 기준선(늘면 실패, UPDATE_COLOR_BASELINE=1 로 낮춤) |
+| 3 | src/lib/ui/statusTones.ts(신규) · StatusBadge · ui/Badge · StatusChoiceButton · academy-theme.css(보조 버튼·칩 입력선, academy-status 4px, academy-input 신설) · 상태 지도 16파일 · tests 7 | 상태→뜻 지도 한 곳(출결·결제·셔틀·신청), 배지 모서리 4px, 화면별 색 지도 → statusTones |
+| 5 | staff/** 15 · driver 1 · components/shuttle 6(RunBoard·UnifiedDriverClient·DriverDateNav·RegularRouteSection·DriverRequestModal·UnifiedDriverRunPage) · components/staff 4 · DriverWorkspace.module.css · academy-theme.css · 기준선 | 선생님·기사님 하드코딩 색 630건 → 토큰·statusTones(dark: 삭제 포함). 등원·하원 색 구분 제거(글자·화살표), 순번·시각·제목 글자 주 색 → ink, 편집 중 정류장=정보, 보강·특강=정보, 기한 지난 미납=위험(리뷰 지적 1)·«미납 N건» 4px 배지(지적 2). academy-theme 의 `.academy-driver-stop:not(.bg-amber-50)…`·`.academy-driver-rider:not(.bg-red-50)` 덮어쓰기 삭제(결석 신고 승객 칸 연빨강이 원래 의도대로 보임). 관리자 전용 RegularStopGeocodePanel·ShuttleGeoEditor 는 미변경 |
+| 통합·마무리 | 6브랜치 merge(1~3→4→5→6A→6B→7) · statusTones(NO_SHOW danger) · 결제요청 확인 중 info · 통계 등록전환 success · faint #636a75·line-input #848b96 · 남은 관리자 5파일 | 차트 색 두 벌(chartColors·colorValues) → chartColors 하나. 기준선 = 실제 값 91파일 1,730(관리자·학부모 0). 전후 PNG = 세션 scratchpad color-final\ |
+
+💡 tester: tests 3629-0·tsc 0·studentVisibility 5-0. 전후 PNG = 세션 scratchpad color-before-after/before.png·after.png. 결제 화면은 상태 글자 색만(판정 무변경).
+⚠️ reviewer: 입력선 #8a919c 는 연회색 바탕 위 2.96(카드 위는 3.2) — 값은 결정대로 두고 테스트에 기록. .academy-app 안 blue→ink 바꿔 끼우기는 그대로(마지막 단계). @theme brand-orange(«절대 변경 금지» 주석)·다크모드 값 무수정.
+
+### 리뷰 결과 (reviewer · 색상 4~7·6A·6B·마무리, 99710062..4cde00e5)
+📊 종합 판정: 수정 필요(필수 1건 — 고치면 통과). tsc 0 · tests 3629-0 · 기준선 1,730 = 실제 1,730(높게 남은 파일 0)
+✅ 잘된 점: 색 외 변경 35파일 전부 의도된 것(차트 chartColors·OG/theme-color colorValues·지도 getComputedStyle(info 는 :root)·statusTones import·주석). 결제·청구·출결·셔틀·/programs 로직·금액·문구·URL 변경 0, payments/review 미변경. 공개 화면 dark: 개수 그대로, .academy-app 밖에 전용 토큰 새로 쓴 곳 0
+🔴 필수 수정:
+- components/seasonal/RouteSection.tsx:695·698·699·759 — 치환 때 `dark:…${tlBtn}` / `dark:…${timeOrdered ? …}` 의 `${` 까지 지워짐(813909ac). 695/698/699: 클래스 끝이 `disabled:opacity-50}` 가 되어 비활성 흐림·시간순 보기 min-h-11(터치 44px) 사라짐 → `disabled:opacity-50${tlBtn}` 로. 759: `${timeOrdered` 가 빠져 `? " w-full bg-white" : ""}` 가 글자 그대로 클래스가 됨(항상 w-full, 시간순 bg-white 없음) → `` border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}` `` 로. 같은 유형 다른 파일 0(파일별 `${` 개수 비교)
+🟡 권장: DispatchRouteMap.tsx:40 getComputedStyle 값이 빈 문자열일 때 대비 `|| "#1d4ed8"` 기본값 / RegularRouteSection 화살표 칸 `${"…"}` 은 상수 문자열로 단순화(동작 무관)
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | 학부모 복귀 신청(RESUME, 휴원 중 반)·«휴원 신청 취소» 문구·접수 직후 검토 중 상자 즉시·휴원 예정 안내. 승인 복귀는 due-change-plan 자동 적용(PAUSED→ACTIVE). developer 구현·tsc·전체 3683-0. 검수 대기 | 검수 대기 |
+| 11-09 | 수납 «선택 항목 환불»: 막대 모드(미납=납부·납부완료=환불·섞임=끔), 토스 온라인=취소API→재조회→applyVerifiedTossFullCancel, POS=requestChargeCancelByAdmin, 현금=refundPaidPaymentInTx, 묶음 일부 선택 차단. tsc·전체 3680-0. developer | 검수 대기 |
+| 11-09 | developer(학생 상세 2차, 원장 «설명 정리·중복 제거·상세는 모달·휴대폰 확인»): 머리 «N개 반» 칩·요약 «수강 중» 칸 삭제(수강 반 제목 옆 한 곳), 요약 «최근 장부 요약» 카드 삭제(요약 칸 «수납» → 창), 학부모 전화 3곳→보호자 카드 1곳(«로그인» 배지·계정 줄), 장부 수납 목록→월별 히스토리 바로가기(납부일 히스토리로), «원장 N줄» 삭제. 창 5개: 기본 정보·이번 달 요약(변동 전체)·셔틀 상세(주소·좌표·확정·신청서 희망)·유니폼 입력·변동 기록 모두 보기 + 보호자 추가/수정 창. 설명 3줄→ⓘ. 머리 [전화]. 휴대폰은 탭 본문 먼저·요약 3칸 한 줄. 메모 → 개요. 문서 높이 1366 1252→994·390 2948→1860. tsc 0·tests 3666-0 | 완료(검수 대기) |
+| 11-09 | developer(원장 «줄 표시 말고 카드가 실제로 밀리게»): RunBoard 끌기 삽입선→실시간 재배치(끄는 카드 transform 으로 따라옴·지나간 카드 180ms 밀림·놓으면 안착 후 flushSync 로 onDropOn 1회), 기사님 카드 끌기도 같은 엔진(HTML draggable·pointerenter 제거, 탑승 버튼 제외). 판정=끄는 방향 가장자리 vs 옆 카드 가운데. Esc/pointercancel 취소·움직임 줄이기·자동 스크롤·인라인 touch-action 유지. tsc 0·tests 3666-0·shuttle 159-0·브라우저 34항목 통과 | 완료(검수 대기) |
+| 11-09 | 기간 결석(f7aa34a8): RegularAbsencePeriod+periodId(운영 적용), 학생 상세 수강·출결 카드, 크론 /api/cron/absence-periods. developer 구현·reviewer 2회 통과·tester 전체 3648-0·임시 PG 흐름 통과. 크론 연장은 사람이 취소한 날 안 되살림 | 완료 |
+| 11-09 | developer(관리자 학생 상세 좌우 정리, 원장 «좌측 길다»): 좌측 = 연락처·보호자·셔틀·메모, 학부모 요청 링크는 개요 맨 아래로·개요 순서 수강 반→요약→유니폼. 보호자 계정 전화 회색 상자→한 줄+ⓘ, 보호자 버튼 줄 합침, 셔틀 승차/하차 한 줄 행·배지 삭제·«신청서 희망(9월) 15:45 · …» 한 줄, 요청 링크 설명 1줄, 메모 4→3줄. 9월 원인 = 기기 시계로 이번 달 찾고 없으면 최근 달을 «이번 달»로 표기 → todayKst+pickMonthSummary, 아니면 «최근 장부 요약/수납». 1366px 좌 1331→934·우 811→905. tsc 0·tests 3632-0 | 완료(검수 대기) |
+| 11-09 | debugger(원장 «휴원 신청하기 동작 안 함»): 서버·API·휴원 판정은 정상(코드상). 화면 원인 — 오류는 맨 위·접수 완료는 맨 아래라 휴대폰에서 안 보임(아이폰 날짜 min 무시 → 시작일 이전 복귀일 거절 문구가 화면 밖), 접수 직후 refresh 전 «신청하기» 재활성 → 두 번째 누름 «이미 검토 중» 400. EnrollmentChangeClient: 결과 문구 버튼 바로 위·접수 후 잠금(submittedFor)·복귀일 사전 확인. 신규 tests/enrollment-change-submit-feedback.test.mjs(옛 코드 4-fail 재현). tsc 0·tests 3633-0·studentVisibility 5-0·KST 가드 통과. errors.md 기록 | 완료(커밋, 미푸시) |
+| 11-09 | developer(원장 점검 «끌기 안 보임·수정 화면 공간 낭비·등원/하원 묶음 없어짐·PC 지도»): RunBoard 블록 머리(runBlocks.ts, 기사님·관리자 공통·순서 불변) · 관리자 편집 카드 한 줄(학생 칩·시각 칸 8.75rem) · 끌기 = 떠다니는 카드+삽입선+놓으면 FLIP 이동(▲▼ 포함), 손잡이 touch-action 인라인(테마 CSS 가 touch-none 을 이겨 휴대폰 끌기 취소되던 버그) · PC ≥1024 오른쪽 sticky 지도(RouteMapCanvas 재사용·블록 머리로 선택). 첫 화면 카드 3→6(관리자 1440). tsc 0·tests 3635-0·src/lib/shuttle 159-0·Edge 끌기 실측 11/11. PNG scratchpad\shuttle-blocks | 검수 대기 |
+| 11-09 | reviewer(운행표 묶음·한 줄 편집·끌기·PC 지도 fa19353c): 기사님 화면 탑승·순서·길안내·다음 정류장 무변경(블록 머리만), «이어서»·삽입선→onDropOn 변환·같은 묶음 제한 정확, 리스너 누수 없음, 지도 모바일 미생성. 필수: RegularRunEditor.tsx:326 편집 칩 «반 이동» min-h-9(36px)→min-h-11. 권장: FLIP 기억값 남음(▲ 맨 위 등 무변경 시)·지도 시각 입력마다 setBounds·좁은 화면 머리 버튼 무동작·손잡이 키보드 안내·특강 묶음 머리 수업시간 없음. tsc 0·tests 3635-0 | 수정 필요(필수 1·권장 5) |
+| 11-09 | reviewer(색상 4~7·마무리 99710062..4cde00e5, 스크립트로 색/비색 분류): 수정 필요 — RouteSection 4줄 `${` 유실(비활성 흐림·44px·시간순 칸 클래스 깨짐). 그 외 색 외 변경 전부 의도·로직 무변경·기준선 정확. tsc 0·tests 3629-0 | 수정 필요(필수 1·권장 2) |
+| 11-09 | developer(색상 4단계 학부모 화면): mypage·account·payments·components/parent 23파일 하드코딩 색 797→0(기준선 12341→11544), dark: 삭제, 장식 아이콘·알림 분류 중립·셔틀 변경 목록 파랑 남용 정리·셔틀 상태 statusTones 뜻(접수 warning·준비 info)·«중요» danger→warning·별점 ink·주 색 글자→ink. payments/review/* 는 academy-app 밖+토스 심사 중이라 제외. tsc 0·tests 3629-0 | 완료 |
+| 11-09 | developer(색상 정리 5단계 선생님·기사님): 하드코딩 색 630건 → 토큰·statusTones, dark: 삭제, 기준선 12,341→11,711, 리뷰 지적 2건(기한 지난 미납 위험·미납 배지 4px) 반영. tsc 0·tests 3629-0·shuttle 159-0 | 완료(커밋, 미푸시) |
+| 11-09 | developer(색상 정리 1~3단계, 원장 결정 5건): 토큰 값(주 버튼 검정·바탕 #f6f7f9·상태 다섯 갈래 info/neutral 신설·체험 신청만 주황·기사님 보라 제거) · 가드 2종(대비·하드코딩 기준선 12,612→12,341) · statusTones 한 곳+StatusBadge info·4px+ui/Badge 토큰+상태 지도 16파일. tsc 0·tests 3629-0·studentVisibility 5-0 | 완료(커밋 3, 미푸시) |
 | 11-09 | reviewer: 결제 허용 재검수 HEAD bd9cbb9f(아이폰+안드로이드) — iOS R-1 해결 확인. 수정 필요 1: K-4 로 결제 중 아무 https 본문이 «STIZ» 제목 입력창(prompt)을 띄울 수 있음(비번 피싱) → 남의 주소는 prompt 거부·제목에 호스트 표시. 안드로이드 운행 제한·로그인 인계 우회 없음 확인. 고려: intent:// 안쪽 대상이 우리 앱 자신(/driver/ 딥링크)인 경우 거부·browser_fallback_url·결제 중 구글/supabase 로그인 차단(iOS 와 맞춤) | 수정 필요 |
 | 11-09 | reviewer: 아이폰 토스 결제 허용(미커밋 3파일) 검수 — 수정 필요 1건: paymentActive 가 «이동 승인 시점»에 켜져, 토스 이동이 실패·취소되면 우리 사이트에 머문 채 결제 중 상태가 남음(그동안 탭 없는 https 이동·iframe 앱 호출 허용) → 페이지 확정 시점(didCommit/url 관찰)과 실패 시 다시 계산. 컴파일·테스트 기대값 이상 없음(추정, swiftc 없음). 고려: App Store 링크 바깥으로·iPad 데스크톱 모드 iframe 결제창·카드앱 복귀 스킴 | 수정 필요 |
 | 2026-11-08 | **아이폰 TestFlight 첫 업로드** — App Store Connect 앱 「스티즈 농구교실」(6832261596) 생성, 배포 프로파일 「STIZ iOS App Store」 생성·Codemagic 등록, 스토어 작업 키를 실제 등록된 **bdr-asc-key**(업턴랩스 팀 키, 원장 결정)로 맞춤 — 코덱스의 지문 고정·금지 목록·구성 검사(validate-project.py) 3곳 함께 갱신(1차 빌드는 프로파일 없음, 2차는 구성 검사로 실패). 빌드 #3(최신 main+수정) IPA·업로드·애플 처리 완료, 내부 그룹 「STIZ 내부」 초대. 외부 심사 제출 단계만 「테스트 정보」 미입력으로 실패(내부 테스트 영향 없음). 점검표 아티팩트 QwZ72QueCs2ioXKxrhCxax. 변경은 작업 브랜치만(main 은 모아서 배포) | 업로드 완료 |

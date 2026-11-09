@@ -9,9 +9,22 @@ import { prisma } from "@/lib/prisma";
 import { assertRegularMakeupAllowed, assertMakeupSessionAllowed, CompensationConflict, lockCompensation } from "@/lib/billing/absence-compensation-guard";
 import { isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { normalizeApprovalClassIds } from "@/lib/enrollment/approval-classes";
+// 정원 경고·셔틀 위치 저장 = 신청서 승인과 새 «원생 등록»이 같이 쓰는 한 곳
+import { findOverCapacityClasses } from "@/lib/enrollment/class-capacity";
+import { upsertStudentShuttleLocation } from "@/lib/students/student-shuttle-location-upsert";
+import { UNIFORM_STATUS_VALUES } from "@/lib/students/student-register-rules";
 import { approvalAuthFetch, isActiveApprovalAuthUser, listApprovalParentCandidates, ParentSelectionRequired, reopenEnrollmentForReview, resolveApprovalParent } from "@/lib/enrollment/approval-parent";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
+import {
+    canAdminEditParentAccount,
+    insertPrimaryGuardian,
+    linkParentAccountForNewStudent,
+    ParentAccountLinkError,
+    validatePrimaryGuardian,
+    type ParentLinkDb,
+    type PrimaryGuardian,
+} from "@/lib/students/parentAccountLink";
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
 import { requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
@@ -44,6 +57,12 @@ import { createTrialEnrollShortLink } from "@/lib/enroll-short-link";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { validateAcademyCoordinateInput } from "@/lib/shuttle/academyLocation";
 import { renderSmsTemplate } from "@/lib/smsTemplate";
+import {
+    PARENT_MESSAGE_PREFIX,
+    manualMessagePrefix,
+    isParentAlimtalkTrigger,
+    parentAlimtalkSmsTemplateBody,
+} from "@/lib/messaging/parent-alimtalk-templates";
 import {
     ensureInvoiceForPayment,
     ensureInvoicesForMonth,
@@ -83,7 +102,9 @@ import { normalizedTrialPreferencePatch } from "@/lib/trial-schedule-display";
 import { confirmTrialFeeWithAudit, type TrialFeeConfirmationResult } from "@/lib/trial-fee-confirmation";
 import { recordApplicationContactAtomically } from "@/lib/application-contact-transaction";
 import { sessionDateForKorea } from "@/lib/seasonal/session-bridge";
+import { absencePlanMessage, applyAttendanceAbsenceReasonInTx } from "@/lib/regular/attendance-absence-reason";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
+import { findOrCreateRegularSession, resolveSessionLogTarget } from "@/lib/regular/regularSession";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
@@ -987,7 +1008,8 @@ export async function createStudent(data: {
     gender?: string | null;
     parentName: string;
     parentPhone?: string | null;
-    parentEmail?: string | null;
+    // 주 보호자 관계(엄마·아빠 등) — Guardian.relation 으로 저장. 이메일은 받지 않는다(매칭에 쓰지 않음)
+    parentRelation?: string | null;
     // 새 필드: 엑셀 업로드 일괄 등록에서도 사용
     phone?: string | null;       // 학생 휴대폰번호
     school?: string | null;      // 학교명
@@ -995,56 +1017,72 @@ export async function createStudent(data: {
     address?: string | null;     // 주소
     enrollDate?: string | null;  // 입회일자
     memo?: string | null;        // 메모
-}) {
+}): Promise<AdminStudentCreateResult> {
     await requireAdmin();
+    const name = String(data.name ?? "").trim();
+    if (!name || !data.birthDate) return { ok: false, error: "학생 이름과 생년월일을 입력해 주세요." };
+    // 주 보호자(관계·이름·휴대폰) 필수 — 휴대폰이 학부모 계정을 찾는 열쇠다
+    const guardian = validatePrimaryGuardian({ relation: data.parentRelation, name: data.parentName, phone: data.parentPhone });
+    if (!guardian.ok) return { ok: false, error: guardian.error };
+
+    let result: AdminStudentCreateResult;
     try {
-        // 학부모 User 생성 또는 조회 (이메일 기준)
-        let parentId: string;
-        const email = data.parentEmail?.trim() || `parent_${Date.now()}@stiz.local`;
-
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "User" WHERE email = $1 LIMIT 1`, email
+        // 계정 확정·학생·주 보호자를 한 트랜잭션으로 — 중간에 실패하면 빈 계정도 남지 않는다
+        const created = await prisma.$transaction(
+            (tx) => insertAdminStudentWithGuardian(tx, { ...data, name }, guardian.value),
+            { timeout: 15_000 },
         );
-
-        if (existing.length > 0) {
-            parentId = existing[0].id;
-            // 이름/전화번호 업데이트
-            await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, "updatedAt" = NOW() WHERE id = $3`,
-                data.parentName, data.parentPhone || null, parentId,
-            );
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                 RETURNING id`,
-                email, data.parentName, data.parentPhone || null,
-            );
-            parentId = rows[0].id;
-        }
-
-        // 원생 생성: 새 필드(phone, school, grade, address, enrollDate, memo) 포함
-        await prisma.$executeRawUnsafe(
-            `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", phone, school, grade, address, "enrollDate", memo, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8, $9::timestamp, $10, NOW(), NOW())`,
-            data.name,
-            data.birthDate,
-            data.gender || null,
-            parentId,
-            data.phone || null,
-            data.school || null,
-            data.grade || null,
-            data.address || null,
-            data.enrollDate || null,
-            data.memo || null,
-        );
+        result = { ok: true, ...created };
     } catch (e) {
+        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
         console.error("Failed to create student:", e);
         throw new Error("원생 등록 실패");
     }
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();
+    return result;
+}
+
+/** 관리자 직접 등록(목록 «원생 등록»·체험 «정규 전환»)의 결과. 안내가 필요한 실패는 throw 대신 ok:false 로 돌려준다
+ *  (운영 빌드는 서버 액션이 던진 오류 문구를 화면에 그대로 보내지 않는다). */
+export type AdminStudentCreateResult =
+    | { ok: true; studentId: string; parentAccountCreated: boolean; staffAccount: boolean }
+    | { ok: false; error: string };
+
+/**
+ * [트랜잭션 안에서] 학부모 계정 확정 → Student INSERT → 주 보호자 Guardian INSERT.
+ * 계정 연결 규칙은 parentAccountLink 한 곳에 있다(이메일 매칭·기존 계정 덮어쓰기 없음).
+ */
+async function insertAdminStudentWithGuardian(
+    tx: ParentLinkDb,
+    student: {
+        name: string; birthDate: string; gender?: string | null;
+        phone?: string | null; school?: string | null; grade?: string | null;
+        address?: string | null; enrollDate?: string | null; memo?: string | null;
+    },
+    guardian: PrimaryGuardian,
+) {
+    const link = await linkParentAccountForNewStudent(tx, guardian);
+    const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", phone, school, grade, address, "enrollDate", memo, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, $7, $8, $9::timestamp, $10, NOW(), NOW())
+         RETURNING id`,
+        student.name,
+        student.birthDate,
+        student.gender || null,
+        link.parentId,
+        student.phone || null,
+        student.school || null,
+        student.grade || null,
+        student.address || null,
+        student.enrollDate || null,
+        student.memo || null,
+    );
+    const studentId = rows[0].id;
+    // 입력한 보호자 정보는 계정이 아니라 Guardian(주 보호자)에 남긴다 — 알림·본인인증 자녀 연결이 이 기록을 쓴다
+    await insertPrimaryGuardian(tx, studentId, guardian);
+    return { studentId, parentAccountCreated: link.created, staffAccount: link.staffAccount };
 }
 
 export async function updateStudentMemo(id: string, memo: string) {
@@ -1071,7 +1109,8 @@ export async function updateStudentUniform(id: string, data: {
     note?: string | null;
 }) {
     await requireAdmin();
-    const allowed = new Set(["보유", "미보유", "신청", "주문", "수령완료", "미수령", "확인보류", "해당없음", "미신청"]);
+    // 허용값은 새 «원생 등록» 창과 같은 목록 한 곳(student-register-rules)
+    const allowed = new Set<string>(UNIFORM_STATUS_VALUES);
     if (data.status && !allowed.has(data.status)) throw new Error("유니폼 상태값이 올바르지 않습니다.");
     try {
         await prisma.$executeRawUnsafe(
@@ -1098,7 +1137,7 @@ export async function updateStudent(id: string, data: {
     gender?: string | null;
     parentName: string;
     parentPhone?: string | null;
-    // 학부모 이메일(데이터계약 parent.email 대응). 인라인 편집에서 전달
+    // 학부모 이메일 — 예전 화면 호환용으로 받기만 하고 저장하지 않는다(로그인 이메일은 학부모가 가입 때 정한다)
     parentEmail?: string | null;
     // 새 필드: 학생 추가 정보
     phone?: string | null;
@@ -1106,8 +1145,11 @@ export async function updateStudent(id: string, data: {
     grade?: string | null;
     address?: string | null;
     enrollDate?: string | null;
-}) {
+}): Promise<{ parentAccountUpdated: boolean; parentPhoneConflict: boolean }> {
     await requireAdmin();
+    let parentAccountUpdated = false;
+    // 빈 계정 번호를 다른 계정과 같은 번호로 바꾸려다 번호를 유지했는지(화면 안내용)
+    let parentPhoneConflict = false;
     try {
         // 원생 정보 업데이트: 새 필드(phone, school, grade, address, enrollDate) 포함
         await prisma.$executeRawUnsafe(
@@ -1119,15 +1161,46 @@ export async function updateStudent(id: string, data: {
             data.phone || null, data.school || null, data.grade || null,
             data.address || null, data.enrollDate || null,
         );
-        // 학부모 정보도 업데이트
-        const student = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT "parentId" FROM "Student" WHERE id = $1`, id
+        // 학부모 계정(User)은 학원이 만든 «빈 계정»(PARENT·로그인 미연결·합성 이메일)일 때만 이름·번호를 고친다.
+        // 예전엔 이름·번호·이메일을 무조건 덮어써서 ① 이메일을 안 넘기는 목록 «수정»이 email=NULL(NOT NULL 위반)로 늘 실패했고
+        // ② 학생이 직원 계정에 붙어 있으면 직원 계정 정보가 바뀌었다. 이메일은 어떤 경우에도 고치지 않는다.
+        const parentRows = await prisma.$queryRawUnsafe<{ id: string; role: string; authUserId: string | null; email: string | null }[]>(
+            `SELECT u.id, u.role::text AS role, u."authUserId", u.email
+               FROM "Student" s JOIN "User" u ON u.id = s."parentId"
+              WHERE s.id = $1`,
+            id,
         );
-        if (student[0]) {
-            await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, email = $3, "updatedAt" = NOW() WHERE id = $4`,
-                data.parentName, data.parentPhone || null, data.parentEmail || null, student[0].parentId ?? student[0].parentid,
+        const parent = parentRows[0];
+        if (parent && canAdminEditParentAccount(parent)) {
+            const nextName = String(data.parentName ?? "").trim();
+            const nextPhone = parentPhoneDigits(data.parentPhone);
+            // 비운 값으로는 덮지 않는다 — 번호는 학부모가 가입할 때 이 계정을 찾는 열쇠라 쓸 수 있는 번호일 때만 바꾼다
+            let phoneToSave = isUsablePhoneKey(nextPhone) ? nextPhone : null;
+            // 다른 계정(학부모·직원)이 이미 쓰는 번호로 바꾸면 같은 번호 계정이 둘이 되어 학부모 가입이 «학원 문의»로 막힌다
+            // → 번호는 그대로 두고 화면에 안내한다(1차 검수 권장, 2026-11-09)
+            if (phoneToSave) {
+                const taken = await prisma.$queryRawUnsafe<{ id: string }[]>(
+                    `SELECT id FROM "User"
+                      WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+                        AND id <> $2 AND "withdrawnAt" IS NULL
+                      LIMIT 1`,
+                    phoneToSave, parent.id,
+                );
+                if (taken.length > 0) {
+                    phoneToSave = null;
+                    parentPhoneConflict = true;
+                }
+            }
+            const changed = await prisma.$executeRawUnsafe(
+                `UPDATE "User"
+                    SET name = COALESCE($1, name),
+                        phone = COALESCE($2, phone),
+                        "updatedAt" = NOW()
+                  WHERE id = $3 AND role = 'PARENT' AND "authUserId" IS NULL`,
+                nextName || null, phoneToSave, parent.id,
             );
+            // 실제로 바뀐 행이 있을 때만 «고쳤다»고 알린다(그 사이 로그인 연결돼 SQL 조건에 걸리면 0행)
+            parentAccountUpdated = changed > 0;
         }
     } catch (e) {
         console.error("Failed to update student:", e);
@@ -1136,6 +1209,8 @@ export async function updateStudent(id: string, data: {
     revalidatePath("/admin/students");
     revalidatePath("/admin");
     revalidateStudentAdminCaches();
+    // 화면이 «학부모 계정은 바꾸지 않았음»·«번호는 그대로 둠»을 안내할 수 있게 알려 준다
+    return { parentAccountUpdated, parentPhoneConflict };
 }
 
 export async function deleteStudent(id: string) {
@@ -1415,8 +1490,15 @@ async function syncAdminSeasonalMakeupCredit(sessionDateId: string, studentId: s
     await syncCreditForSeasonalSeat({ enrollmentDateId: seats[0].id, studentId, status });
 }
 
-export async function saveAttendance(classId: string, date: string, records: { studentId: string; status: string }[], options?: { sessionDateId?: string | null }) {
+// absenceReason(정규만): "ILLNESS_INJURY"=질병·부상 결석 표시 / null=표시 끄기 / 생략=그대로.
+// 관리자가 찍은 질병·부상은 바로 «확정(CONFIRMED)» — 청구 작업대 이월 후보가 된다(이월 적용은 증빙 확인 후).
+export async function saveAttendance(classId: string, date: string, records: { studentId: string; status: string; absenceReason?: "ILLNESS_INJURY" | null }[], options?: { sessionDateId?: string | null }) {
     const admin = await requireAdmin();
+    if (records.some((r) => r.absenceReason !== undefined && r.absenceReason !== null && r.absenceReason !== "ILLNESS_INJURY")) {
+        throw new Error("올바른 결석 사유가 아닙니다.");
+    }
+    // 화면에 띄울 결석 사유 안내(막힘·실패). 출결 저장 자체는 성공으로 둔다.
+    const absenceMessages: string[] = [];
     const sessionDateId = options?.sessionDateId?.trim() || null;
     if (sessionDateId) {
         try {
@@ -1481,7 +1563,7 @@ export async function saveAttendance(classId: string, date: string, records: { s
         revalidatePath("/admin/attendance");
         revalidatePath("/staff");
         revalidatePath("/mypage");
-        return;
+        return { ok: true as const, absenceMessages: [] as string[] };
     }
     try {
         const eligible = await prisma.$queryRawUnsafe<Array<{ studentId: string }>>(
@@ -1493,23 +1575,9 @@ export async function saveAttendance(classId: string, date: string, records: { s
         );
         const eligibleIds = new Set(eligible.map(row => row.studentId));
         if (records.some(row => !eligibleIds.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
-        // 세션 생성 또는 조회
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date AND "specialProgramSessionDateId" IS NULL LIMIT 1`,
-            classId, date
-        );
-        let sessionId: string;
-        if (existing.length > 0) {
-            sessionId = existing[0].id;
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Session" (id, "classId", date, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, NOW(), NOW())
-                 RETURNING id`,
-                classId, date
-            );
-            sessionId = rows[0].id;
-        }
+        // 세션 생성 또는 조회 — 코치 앱·랠리즈와 같은 판정 함수 하나를 쓴다(같은 반·같은 날 = 기록 하나).
+        // 예전엔 키 없이 새 기록을 만들어, 그 뒤 코치가 수업을 시작하면 기록이 둘로 갈라질 수 있었다.
+        const sessionId = await prisma.$transaction(tx => findOrCreateRegularSession(tx, { classId, dateYmd: date }));
 
         // 각 학생 출석 기록 upsert
         for (const rec of records) {
@@ -1531,6 +1599,22 @@ export async function saveAttendance(classId: string, date: string, records: { s
                 });
             }
         }
+        // 결석 사유(질병·부상) — 코치 출석부와 같은 함수·같은 저장 위치(RegularAbsence). 실패해도 출결은 유지.
+        if (isKstYmd(date)) {
+            for (const rec of records) {
+                try {
+                    const applied = await prisma.$transaction((tx) => applyAttendanceAbsenceReasonInTx(tx, {
+                        studentId: rec.studentId, classId, dateYmd: date, attendanceStatus: rec.status,
+                        intent: rec.absenceReason, confirmedByUserId: admin.appUserId, actorUserId: admin.appUserId,
+                    }));
+                    const msg = absencePlanMessage(applied.plan);
+                    if (msg) absenceMessages.push(msg);
+                } catch (error) {
+                    console.error("[saveAttendance] 결석 사유 저장 실패(출결은 저장됨)", { sessionId, studentId: rec.studentId, error });
+                    if (rec.absenceReason !== undefined) absenceMessages.push("일부 학생의 질병·부상 표시를 저장하지 못했습니다. 다시 저장해 주세요.");
+                }
+            }
+        }
         // 출결 완료 알림 → 학부모에게 전송
         const studentIds = records.map(r => r.studentId);
         const dateStr = new Date(date).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
@@ -1546,7 +1630,9 @@ export async function saveAttendance(classId: string, date: string, records: { s
         throw new Error("출결 저장 실패");
     }
     revalidatePath("/admin/attendance");
+    revalidatePath("/admin/absence");
     revalidatePath("/mypage");
+    return { ok: true as const, absenceMessages: [...new Set(absenceMessages)] };
 }
 
 // ── 수납 관리 ──────────────────────────────────────────────────────────────────
@@ -1750,11 +1836,15 @@ export async function cancelUnpaidPayment(id: string, reason: string) {
 // 계좌이체는 recordBankTransferPayment, 현장 결제는 토스 POS 확인, 온라인은 토스 웹훅이 각각
 // lib/payment-ledger 의 markPaymentPaid 를 직접 부른다 — 이 상태 변경 함수들은 PAID 를 받지 않는다.
 const DIRECT_PAID_BLOCKED_MESSAGE = "납부완료는 «납부 처리» 창에서 결제 방법을 골라 기록해 주세요.";
+// 환불도 상태 변경으로 만들지 않는다(PM 결정 2026-11-09) — 토스 온라인은 실제 결제 취소, POS 는 POS 취소,
+// 수기만 장부 환불로 갈라 주는 refundSelectedPayments(⚡ «환불»·«선택 항목 환불»)만 쓴다. 여기서 바꾸면 돈은 그대로 둔 채 장부만 환불된다.
+const DIRECT_REFUND_BLOCKED_MESSAGE = "환불은 수납 관리의 ⚡ «환불» 또는 «선택 항목 환불»로 해 주세요.";
 
 export async function updatePaymentStatus(id: string, status: string) {
     await requireFinanceOwner();
     // try 밖에서 막아야 안내 문구가 «수납 상태 변경 실패»로 뭉개지지 않는다
     if (status === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
+    if (status === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
     try {
         await ensurePaymentInfrastructure();
         const invoice = await ensureInvoiceForPayment(id);
@@ -2677,7 +2767,8 @@ function parseClassNameToSlotKey(className: string): string | null {
  * 6. className이 있으면: slotKey로 파싱 → Class 검색 → 자동 수강 등록
  *
  * PgBouncer 호환을 위해 $queryRawUnsafe / $executeRawUnsafe만 사용
- * 트랜잭션 사용 불가이므로, 건별 INSERT + 실패 목록 반환 방식
+ * 학생 1명 신규 분기(계정 확정·학생·보호자1~3)는 트랜잭션 하나(prisma.$transaction — 원시 SQL 이라 PgBouncer 에서도 동작).
+ * 엑셀 전체는 묶지 않는다 — 한 행이 실패해도 나머지는 등록하고 실패 목록으로 돌려준다.
  */
 export async function bulkCreateStudents(
     students: BulkStudentInput[],
@@ -2746,27 +2837,21 @@ export async function bulkCreateStudents(
                         existingStudentId,
                     );
 
+                    // 보호자1은 학부모 계정(User)을 덮어쓰지 않고 주 보호자 Guardian 으로 다시 넣는다(신규 분기와 같은 형식).
+                    // 예전엔 계정 이름을 «아버지»·«보호자» 같은 관계명으로 덮었다(로그인하는 학부모 계정 포함) — 2026-11-09 제거.
+                    if (student.guardian1Phone || student.guardian1Relation) {
+                        await prisma.$executeRawUnsafe(
+                            `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
+                             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, true, NOW(), NOW())`,
+                            existingStudentId,
+                            student.guardian1Relation || "보호자",
+                            student.guardian1Relation || "보호자",
+                            student.guardian1Phone || null,
+                        );
+                    }
+
                     // 보호자2,3 Guardian 테이블에 INSERT
                     await insertGuardians(existingStudentId, student);
-
-                    // 보호자1 정보도 업데이트 (User 테이블)
-                    if (student.guardian1Phone) {
-                        const parentRows = await prisma.$queryRawUnsafe<any[]>(
-                            `SELECT "parentId" FROM "Student" WHERE id = $1`,
-                            existingStudentId,
-                        );
-                        const parentId = parentRows[0]?.parentId ?? parentRows[0]?.parentid;
-                        if (parentId) {
-                            await prisma.$executeRawUnsafe(
-                                `UPDATE "User" SET
-                                    name = $1, phone = $2, "updatedAt" = NOW()
-                                 WHERE id = $3`,
-                                student.guardian1Relation || "보호자",
-                                student.guardian1Phone,
-                                parentId,
-                            );
-                        }
-                    }
 
                     result.updated++;
                     finalStudentId = existingStudentId;
@@ -2775,96 +2860,52 @@ export async function bulkCreateStudents(
 
             // 기존 학생이 처리된 경우 (skip 또는 overwrite) 신규 등록은 건너뜀
             if (!finalStudentId) {
-            // ── 3. 신규 학생: 보호자1 User 생성 또는 조회 ──
-            let parentId: string;
+            // ── 3. 신규 학생: 보호자1 번호로 학부모 계정 확정 — 목록·체험·등록 창과 같은 규칙(parentAccountLink) 한 곳 ──
+            // 보호자1 이름은 관계명(예: "아버지")을 사용, 없으면 "보호자" (엑셀에 보호자 이름 칸이 없다)
+            const guardian1Label = student.guardian1Relation || "보호자";
+            // 번호가 없거나 형식이 틀리면 계정을 찾을 열쇠가 없어 이 행은 실패로 남긴다(예전엔 번호 없는 빈 계정을 만들어
+            // 학부모가 영영 가입·연결을 못 했다). 안내 문구는 엑셀 실패 목록에 그대로 보인다.
+            const guardian1 = validatePrimaryGuardian({ relation: guardian1Label, name: guardian1Label, phone: student.guardian1Phone });
+            if (!guardian1.ok) throw new Error(`보호자1 휴대폰: ${guardian1.error}`);
 
-            // 보호자1 이름은 관계명(예: "아버지")을 사용, 없으면 "보호자"
-            const parentName = student.guardian1Relation || "보호자";
-            // 랠리즈 엑셀에 email이 없으므로 자동 생성 (기존 createStudent 패턴 동일)
-            const parentEmail = `parent_${Date.now()}_${student.rowNumber}@stiz.local`;
+            // 계정 확정·학생·보호자1~3 을 한 트랜잭션으로 — 중간에 실패하면 빈 계정도 남지 않는다
+            const newStudentId = await prisma.$transaction(async (tx) => {
+                // 같은 번호 PARENT 1명 → 그 계정 / 없으면 같은 번호 직원 1명 / 둘 다 없으면 빈 계정(parent_<번호>@stiz.local)
+                // 기존 계정의 이름·번호·이메일은 바꾸지 않는다. 같은 번호 계정이 여럿이면 오류 → 이 행만 실패
+                const link = await linkParentAccountForNewStudent(tx, guardian1.value);
 
-            if (student.guardian1Phone) {
-                // 전화번호로 기존 보호자 검색 (같은 전화번호 = 같은 보호자)
-                // 숫자만 남겨 비교한다 — 저장 형식이 '010-1234-5678'과 '01012345678'로 섞여 있어
-                // 글자 그대로 비교하면 같은 사람을 못 찾고 보호자·학생이 복제된다.
-                const existingParent = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT id FROM "User"
-                      WHERE role = 'PARENT'
-                        AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
-                      ORDER BY ("authUserId" IS NOT NULL) DESC, "createdAt" ASC
-                      LIMIT 1`,
-                    parentPhoneDigits(student.guardian1Phone),
-                );
+                // ── 4. Student INSERT ──
+                // 생년월일이 없으면 기본값(2000-01-01) 사용 — birthDate는 NOT NULL 컬럼
+                const birthDateValue = student.birthDate || "2000-01-01T00:00:00.000Z";
 
-                if (existingParent.length > 0) {
-                    parentId = existingParent[0].id;
-                } else {
-                    // 보호자1 신규 생성
-                    const rows = await prisma.$queryRawUnsafe<any[]>(
-                        `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                         VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                         RETURNING id`,
-                        parentEmail,
-                        parentName,
-                        student.guardian1Phone,
-                    );
-                    parentId = rows[0].id;
-                }
-            } else {
-                // 전화번호 없으면 무조건 새 User 생성
-                const rows = await prisma.$queryRawUnsafe<any[]>(
-                    `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
+                const studentRows = await tx.$queryRawUnsafe<any[]>(
+                    `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId",
+                        phone, school, grade, address, "enrollDate", memo,
+                        "createdAt", "updatedAt")
+                     VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4,
+                        $5, $6, $7, $8, $9::timestamp, $10,
+                        NOW(), NOW())
                      RETURNING id`,
-                    parentEmail,
-                    parentName,
-                    null,
+                    student.name,
+                    birthDateValue,
+                    student.gender || null,
+                    link.parentId,
+                    student.phone || null,
+                    student.school || null,
+                    student.grade || null,
+                    student.address || null,
+                    student.enrollDate || null,
+                    student.memo || null,
                 );
-                parentId = rows[0].id;
-            }
+                const createdId: string = studentRows[0].id;
 
-            // ── 4. Student INSERT ──
-            // 생년월일이 없으면 기본값(2000-01-01) 사용 — birthDate는 NOT NULL 컬럼
-            const birthDateValue = student.birthDate || "2000-01-01T00:00:00.000Z";
+                // ── 5. 보호자1 = 주 보호자 Guardian (입력값은 계정이 아니라 Guardian 에 남긴다) ──
+                await insertPrimaryGuardian(tx, createdId, guardian1.value);
 
-            const studentRows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId",
-                    phone, school, grade, address, "enrollDate", memo,
-                    "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4,
-                    $5, $6, $7, $8, $9::timestamp, $10,
-                    NOW(), NOW())
-                 RETURNING id`,
-                student.name,
-                birthDateValue,
-                student.gender || null,
-                parentId,
-                student.phone || null,
-                student.school || null,
-                student.grade || null,
-                student.address || null,
-                student.enrollDate || null,
-                student.memo || null,
-            );
-
-            const newStudentId = studentRows[0].id;
-
-            // ── 5. 보호자1도 Guardian 테이블에 기록 (isPrimary = true) ──
-            // 보호자1은 User에도 있고 Guardian에도 있음 (이중 저장)
-            // 이유: Guardian 테이블에서 모든 보호자를 일괄 조회할 수 있도록
-            if (student.guardian1Phone || student.guardian1Relation) {
-                await prisma.$executeRawUnsafe(
-                    `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
-                     VALUES (gen_random_uuid()::text, $1, $2, $3, $4, true, NOW(), NOW())`,
-                    newStudentId,
-                    student.guardian1Relation || "보호자",
-                    student.guardian1Relation || "보호자",
-                    student.guardian1Phone || null,
-                );
-            }
-
-            // ── 6. 보호자2,3 Guardian 테이블에 INSERT ──
-            await insertGuardians(newStudentId, student);
+                // ── 6. 보호자2,3 Guardian 테이블에 INSERT ──
+                await insertGuardians(createdId, student, tx);
+                return createdId;
+            }, { timeout: 15_000 });
 
             result.created++;
             finalStudentId = newStudentId;
@@ -2933,10 +2974,15 @@ export async function bulkCreateStudents(
  * - isPrimary = false (보호자2,3은 보조 보호자)
  * - 관계명 또는 전화번호가 하나라도 있으면 저장
  */
-async function insertGuardians(studentId: string, student: BulkStudentInput) {
+async function insertGuardians(
+    studentId: string,
+    student: BulkStudentInput,
+    // 신규 등록은 트랜잭션(tx) 안에서 부른다. 덮어쓰기 모드는 예전처럼 prisma 로 바로 쓴다
+    db: { $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number> } = prisma,
+) {
     // 보호자2
     if (student.guardian2Relation || student.guardian2Phone) {
-        await prisma.$executeRawUnsafe(
+        await db.$executeRawUnsafe(
             `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW(), NOW())`,
             studentId,
@@ -2948,7 +2994,7 @@ async function insertGuardians(studentId: string, student: BulkStudentInput) {
 
     // 보호자3
     if (student.guardian3Relation || student.guardian3Phone) {
-        await prisma.$executeRawUnsafe(
+        await db.$executeRawUnsafe(
             `INSERT INTO "Guardian" (id, "studentId", relation, name, phone, "isPrimary", "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, false, NOW(), NOW())`,
             studentId,
@@ -2976,6 +3022,7 @@ export async function saveSessionLog(data: {
     content?: string;       // 수업 상세 내용
     photosJSON?: string;    // 사진 URL 배열 JSON 문자열 (클라이언트에서 JSON.stringify 완료)
     coachId?: string;       // 담당 코치 ID
+    sessionId?: string;     // 수정 모드: 고칠 기록 id(방학특강 회차 기록일 수도 있다). 없으면 새로 작성
     attendances?: Array<{   // 출석 데이터 (선택)
         studentId: string;
         status: string;     // PRESENT, ABSENT, LATE
@@ -2994,18 +3041,17 @@ export async function saveSessionLog(data: {
             const ids = new Set(eligible.map(row => row.studentId));
             if (data.attendances.some(row => !ids.has(row.studentId))) throw new Error("수강 개시일 전이거나 이 수업 명단에 없는 학생입니다.");
         }
-        // ── 1. 해당 classId + date로 기존 Session 검색 ──
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "Session" WHERE "classId" = $1 AND date::date = $2::date LIMIT 1`,
-            data.classId, data.date
-        );
-
-        let sessionId: string;
-
-        if (existing.length > 0) {
-            // ── 2. 기존 Session이 있으면 UPDATE ──
-            sessionId = existing[0].id;
-            await prisma.$executeRawUnsafe(
+        // ── 1~3. 고칠 기록을 정하고 내용을 덮어쓴다 ──
+        // 수정: 화면이 고른 기록(이 반 것인지 확인) 그대로 — 방학특강 회차 기록을 고칠 때 정규 기록이 새로 생기지 않게.
+        // 새로 작성: 같은 반·같은 날 기록을 찾거나 만든다(코치 앱·출결 화면과 같은 판정 함수 findOrCreateRegularSession).
+        const { sessionId, isSeasonal } = await prisma.$transaction(async tx => {
+            const id = await resolveSessionLogTarget(tx, { classId: data.classId, dateYmd: data.date, sessionId: data.sessionId });
+            // 방학특강 회차 기록인지 — 맞으면 아래 4단계(정규반 출석 저장)를 건너뛴다.
+            const kind = await tx.$queryRawUnsafe<Array<{ seasonal: boolean }>>(
+                `SELECT ("specialProgramSessionDateId" IS NOT NULL) AS seasonal FROM "Session" WHERE id = $1`,
+                id,
+            );
+            await tx.$executeRawUnsafe(
                 `UPDATE "Session" SET
                     topic = $1, content = $2, "photosJSON" = $3, "coachId" = $4, "updatedAt" = NOW()
                  WHERE id = $5`,
@@ -3013,27 +3059,17 @@ export async function saveSessionLog(data: {
                 data.content || null,
                 data.photosJSON || null,
                 data.coachId || null,
-                sessionId,
+                id,
             );
-        } else {
-            // ── 3. 없으면 새 Session INSERT ──
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "Session" (id, "classId", date, topic, content, "photosJSON", "coachId", "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, $6, NOW(), NOW())
-                 RETURNING id`,
-                data.classId,
-                data.date,
-                data.topic || null,
-                data.content || null,
-                data.photosJSON || null,
-                data.coachId || null,
-            );
-            sessionId = rows[0].id;
-        }
+            return { sessionId: id, isSeasonal: kind[0]?.seasonal === true };
+        });
 
         // ── 4. 출석 데이터가 있으면 각 학생별 Attendance UPSERT ──
         // 기존 saveAttendance와 동일한 ON CONFLICT 패턴 사용
-        if (data.attendances && data.attendances.length > 0) {
+        // ⚠️ 방학특강 회차 기록에는 정규반 명단 출석을 넣지 않는다.
+        //    넣으면 특강을 신청하지 않은 정규반 아이들이 «출석»으로 남고,
+        //    출석이 생긴 회차는 특강 날짜를 지우거나 옮길 수 없게 막힌다(session-bridge).
+        if (!isSeasonal && data.attendances && data.attendances.length > 0) {
             for (const rec of data.attendances) {
                 await prisma.$executeRawUnsafe(
                     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, "createdAt", "updatedAt")
@@ -3825,6 +3861,7 @@ export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) 
     await requireFinanceOwner();
     // 일괄 납부완료도 방법·근거 없이는 만들지 않는다 — recordBankTransferPayment 를 쓴다
     if (newStatus === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
+    if (newStatus === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
     if (ids.length === 0) return;
 
     try {
@@ -4269,11 +4306,9 @@ export async function updateTrialLead(
         else entries.push(["scheduledDate", nextScheduledDate] as const);
     }
 
-    const shouldSendAttendedSms =
-        data.status === "ATTENDED"
-        && previousLead
-        && !(previousLead.attendedSmsSentAt ?? previousLead.attendedsmssentat);
-    let attendedSmsResult: { attempted: boolean; sent: boolean; message?: string } = {
+    // 체험 완료 감사 문자(TRIAL_ATTENDED_PARENT)는 2026-11-09 원장 결정으로 없앴다(가입 유도 문구 · 알림톡 심사 반려 위험).
+    // 화면·테스트가 쓰는 응답 모양은 그대로 두고 «보내지 않음»으로 고정한다.
+    const attendedSmsResult: { attempted: boolean; sent: boolean; message?: string } = {
         attempted: false,
         sent: false,
     };
@@ -4443,62 +4478,6 @@ export async function updateTrialLead(
                 scheduledSmsResult.errors.push("일정은 저장됐지만 문자 발송 준비 중 오류가 발생했습니다.");
             }
         }
-
-        if (shouldSendAttendedSms) {
-            attendedSmsResult = { attempted: true, sent: false };
-            const leads = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT "childName", "parentName", "parentPhone"
-                 FROM "TrialLead" WHERE id = $1 LIMIT 1`,
-                id,
-            );
-            const lead = leads[0];
-            const parentPhone = lead?.parentPhone ?? lead?.parentphone;
-
-            if (lead && parentPhone) {
-                const settings = await prisma.$queryRawUnsafe<any[]>(
-                    `SELECT "contactPhone" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`
-                );
-                const academyPhone = settings[0]?.contactPhone ?? settings[0]?.contactphone ?? "";
-                const childName = lead.childName ?? lead.childname ?? "";
-                const parentName = lead.parentName ?? lead.parentname ?? "";
-
-                const smsResult = await sendParentSmsWithResult(
-                    parentPhone,
-                    "TRIAL_ATTENDED_PARENT",
-                    {
-                        childName,
-                        parentName,
-                        academyPhone,
-                        enrollLink: buildEnrollLink(id),
-                    },
-                    {
-                        eventType: "TRIAL_ATTENDED",
-                        eventId: `trial:${id}:attended`,
-                    },
-                );
-                attendedSmsResult = {
-                    attempted: true,
-                    sent: smsResult.ok,
-                    // 장부 확정 실패처럼 자동 재시도하면 안 되는 경우를 UI가 정확히 안내하도록 원인부터 전달한다.
-                    message: smsResult.ok
-                        ? undefined
-                        : smsResult.reason || "체험 완료 문자는 발송되지 않아 다시 시도할 수 있습니다.",
-                };
-
-                // 실제 문자 성공(또는 장부상 기존 성공 확인)일 때만 완료 시각을 남긴다.
-                if (smsResult.ok) {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE "TrialLead"
-                         SET "attendedSmsSentAt" = COALESCE("attendedSmsSentAt", NOW()),
-                             "updatedAt" = NOW()
-                         WHERE id = $1`,
-                        id,
-                    );
-                }
-            } else {
-                attendedSmsResult.message = "학부모 전화번호가 없어 체험 완료 문자를 발송하지 못했습니다.";
-            }
-        }
     } catch (e) {
         console.error("Failed to update trial lead:", e);
         throw new Error("체험 리드 수정 실패");
@@ -4512,19 +4491,7 @@ export async function updateTrialLead(
     };
 }
 
-// 상태 변경과 분리된 체험 완료 문자 전용 재시도 액션이다.
-export async function resendTrialAttendedSms(id: string) {
-    const result = await updateTrialLead(id, { status: "ATTENDED" });
-    if (!result?.attendedSms.attempted) {
-        return { sent: true, message: "이미 발송 완료된 체험 완료 문자입니다." };
-    }
-    return {
-        sent: result.attendedSms.sent,
-        message: result.attendedSms.sent
-            ? "체험 완료 문자를 발송했습니다."
-            : result.attendedSms.message || "체험 완료 문자 발송에 실패했습니다. 문자 장부를 확인해주세요.",
-    };
-}
+// (2026-11-09) 체험 완료 문자 재시도 액션 resendTrialAttendedSms 는 문자 자체를 없애며 함께 지웠다.
 
 /**
  * 체험 리드 삭제
@@ -4559,59 +4526,46 @@ export async function convertTrialToStudent(
         gender?: string | null;
         parentName: string;
         parentPhone?: string | null;
+        // 주 보호자 관계 — 체험 전환 창엔 칸이 없어 비우면 «보호자»로 저장
+        parentRelation?: string | null;
+        // 예전 화면 호환용으로 받기만 하고 쓰지 않는다(이메일로 계정을 찾지 않는다)
         parentEmail?: string | null;
         memo?: string | null;
     }
-) {
+): Promise<AdminStudentCreateResult> {
     await requireAdmin();
     await ensureTrialLeadTable();
 
+    const name = String(studentData.name ?? "").trim();
+    if (!name || !studentData.birthDate) return { ok: false, error: "아이 이름과 생년월일을 입력해 주세요." };
+    // 학부모 계정은 목록 «원생 등록»과 같은 규칙(parentAccountLink) — 주 보호자 휴대폰 필수
+    const guardian = validatePrimaryGuardian({
+        relation: studentData.parentRelation?.trim() || "보호자",
+        name: studentData.parentName,
+        phone: studentData.parentPhone,
+    });
+    if (!guardian.ok) return { ok: false, error: guardian.error };
+
+    let result: AdminStudentCreateResult;
     try {
-        // 1. 학부모 User 생성 또는 조회 (createStudent와 동일한 패턴)
-        let parentId: string;
-        const email = studentData.parentEmail?.trim() || `parent_${Date.now()}@stiz.local`;
-
-        const existing = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM "User" WHERE email = $1 LIMIT 1`, email
-        );
-
-        if (existing.length > 0) {
-            parentId = existing[0].id;
-            await prisma.$executeRawUnsafe(
-                `UPDATE "User" SET name = $1, phone = $2, "updatedAt" = NOW() WHERE id = $3`,
-                studentData.parentName, studentData.parentPhone || null, parentId,
+        result = await prisma.$transaction(async (tx) => {
+            // 1. 학부모 계정 확정 + Student + 주 보호자 Guardian
+            const created = await insertAdminStudentWithGuardian(
+                tx,
+                { name, birthDate: studentData.birthDate, gender: studentData.gender, memo: studentData.memo },
+                guardian.value,
             );
-        } else {
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-                 VALUES (gen_random_uuid()::text, $1, $2, $3, 'PARENT', NOW(), NOW())
-                 RETURNING id`,
-                email, studentData.parentName, studentData.parentPhone || null,
+            // 2. TrialLead 전환 처리 (상태 + 전환일 + 연결 Student ID) — 같은 트랜잭션이라 학생만 생기고 전환이 빠지는 일이 없다
+            await tx.$executeRawUnsafe(
+                `UPDATE "TrialLead"
+                 SET status = 'CONVERTED', "convertedDate" = NOW(), "convertedStudentId" = $1, "updatedAt" = NOW()
+                 WHERE id = $2`,
+                created.studentId, leadId,
             );
-            parentId = rows[0].id;
-        }
-
-        // 2. Student 생성 (RETURNING id로 새 학생 ID 획득)
-        const studentRows = await prisma.$queryRawUnsafe<any[]>(
-            `INSERT INTO "Student" (id, name, "birthDate", gender, "parentId", memo, "createdAt", "updatedAt")
-             VALUES (gen_random_uuid()::text, $1, $2::timestamp, $3, $4, $5, NOW(), NOW())
-             RETURNING id`,
-            studentData.name,
-            studentData.birthDate,
-            studentData.gender || null,
-            parentId,
-            studentData.memo || null,
-        );
-        const newStudentId = studentRows[0].id;
-
-        // 3. TrialLead 전환 처리 (상태 + 전환일 + 연결 Student ID)
-        await prisma.$executeRawUnsafe(
-            `UPDATE "TrialLead"
-             SET status = 'CONVERTED', "convertedDate" = NOW(), "convertedStudentId" = $1, "updatedAt" = NOW()
-             WHERE id = $2`,
-            newStudentId, leadId,
-        );
+            return { ok: true as const, ...created };
+        }, { timeout: 15_000 });
     } catch (e) {
+        if (e instanceof ParentAccountLinkError) return { ok: false, error: e.message };
         console.error("Failed to convert trial to student:", e);
         throw new Error("정규 등록 전환 실패");
     }
@@ -4621,6 +4575,7 @@ export async function convertTrialToStudent(
     revalidatePath("/admin");
     revalidateTrialAdminCaches();
     revalidateStudentAdminCaches();
+    return result;
 }
 
 // ── 대기자(Waitlist) 관리 ─────────────────────────────────────────────────────
@@ -5089,26 +5044,8 @@ export async function approveEnrollApplication(
     //       그래서 '하드 차단'이 아니라 '경고 후 재확인(force)' 방식으로 처리한다.
     //       ★ 트랜잭션 진입 전에 '읽기만' 수행 → DB 변경 0(부작용 없이 되돌릴 수 있음).
     if (data.force !== true && Array.isArray(data.classIds) && data.classIds.length > 0) {
-        const overCapacity: { classId: string; name: string; current: number; capacity: number }[] = [];
-        for (const classId of data.classIds) {
-            // 각 반의 정원(capacity)과 '현재 ACTIVE 수강 인원' 조회(병합된 학생은 제외).
-            const rows = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT c.name AS name, c.capacity AS capacity,
-                        (SELECT COUNT(*) FROM "Enrollment" e
-                         JOIN "Student" s ON s.id = e."studentId"
-                         WHERE e."classId" = c.id AND e.status = 'ACTIVE' AND ${notMergedStudent("s")}
-                        )::int AS current
-                 FROM "Class" c WHERE c.id = $1 LIMIT 1`,
-                classId,
-            );
-            if (rows.length === 0) continue;
-            const capacity = Number(rows[0].capacity ?? rows[0].CAPACITY);
-            const current = Number(rows[0].current ?? rows[0].CURRENT);
-            // 이미 정원을 채운(current >= capacity) 반에 한 명 더 넣으면 초과 → 경고 대상.
-            if (Number.isFinite(capacity) && Number.isFinite(current) && current >= capacity) {
-                overCapacity.push({ classId, name: rows[0].name ?? "", current, capacity });
-            }
-        }
+        // 각 반의 정원과 '현재 ACTIVE 수강 인원(병합 제외)'을 비교한다 — 새 «원생 등록»과 같은 함수(class-capacity) 한 곳.
+        const overCapacity = await findOverCapacityClasses(prisma, data.classIds);
         // 초과 반이 하나라도 있으면 아무 것도 바꾸지 않고 경고만 반환 → UI가 재확인 후 force:true로 재호출.
         if (overCapacity.length > 0) {
             return { ok: false as const, code: "CAPACITY_WARNING" as const, classes: overCapacity };
@@ -5394,48 +5331,28 @@ export async function approveEnrollApplication(
 
         // 학부모가 지도에서 확인한 탑승·하차 위치는 함께 저장한다.
         if (shouldCopyShuttleLocations) {
+            // 저장 SQL(INSERT INTO "StudentShuttleLocation" … ON CONFLICT ("studentId", kind) DO UPDATE)은
+            // 새 «원생 등록»과 같은 함수(student-shuttle-location-upsert) 한 곳에 있다. 값은 신청서에서 그대로 읽는다.
             const upsertLocation = (
                 kind: "PICKUP" | "DROPOFF",
                 prefix: "shuttlePickup" | "shuttleDropoff",
-            ) => tx.$executeRawUnsafe(
-                `INSERT INTO "StudentShuttleLocation" (
-                    id, "studentId", kind, name, address, "roadAddress",
-                    latitude, longitude, "placeId", source, "accuracyMeters",
-                    "confirmedAt", "consentVersion", "createdAt", "updatedAt"
-                 ) VALUES (
-                    gen_random_uuid()::text, $1, $2, $12, $3, $4,
-                    $5, $6, $7, $8, $9, $10::timestamptz, $11, NOW(), NOW()
-                 )
-                 ON CONFLICT ("studentId", kind) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    address = EXCLUDED.address,
-                    "roadAddress" = EXCLUDED."roadAddress",
-                    latitude = EXCLUDED.latitude,
-                    longitude = EXCLUDED.longitude,
-                    "placeId" = EXCLUDED."placeId",
-                    source = EXCLUDED.source,
-                    "accuracyMeters" = EXCLUDED."accuracyMeters",
-                    "confirmedAt" = EXCLUDED."confirmedAt",
-                    "consentVersion" = EXCLUDED."consentVersion",
-                    "updatedAt" = NOW()`,
-                studentId,
+            ) => upsertStudentShuttleLocation(tx, {
+                studentId: studentId!,
                 kind,
-                readAppField(`${prefix}Address`),
-                readAppField(`${prefix}RoadAddress`),
-                readAppField(`${prefix}Latitude`),
-                readAppField(`${prefix}Longitude`),
-                readAppField(`${prefix}PlaceId`),
-                readAppField(`${prefix}Source`),
-                readAppField(`${prefix}AccuracyMeters`),
-                readAppField(`${prefix}ConfirmedAt`),
-                consentVersion,
-                // $12: 장소명(라벨) — G2에서 EnrollmentApplication.shuttlePickup/shuttleDropoff 라벨 컬럼에 저장된 값.
+                // 장소명(라벨) — G2에서 EnrollmentApplication.shuttlePickup/shuttleDropoff 라벨 컬럼에 저장된 값.
                 // prefix 자체가 라벨 컬럼명(접미사 없는 shuttlePickup/shuttleDropoff)이라 그대로 읽는다.
-                // 값이 없으면 도로명주소 -> 지번주소 순으로 폴백(관리자 수동확정 service.ts와 동일 철학, 단 name null 방지).
-                readAppField(prefix)
-                    ?? readAppField(`${prefix}RoadAddress`)
-                    ?? readAppField(`${prefix}Address`),
-            );
+                // 값이 없으면 공용 함수가 도로명주소 -> 지번주소 순으로 폴백한다(name null 방지).
+                name: readAppField(prefix),
+                address: readAppField(`${prefix}Address`),
+                roadAddress: readAppField(`${prefix}RoadAddress`),
+                latitude: readAppField(`${prefix}Latitude`),
+                longitude: readAppField(`${prefix}Longitude`),
+                placeId: readAppField(`${prefix}PlaceId`),
+                source: readAppField(`${prefix}Source`),
+                accuracyMeters: readAppField(`${prefix}AccuracyMeters`),
+                confirmedAt: readAppField(`${prefix}ConfirmedAt`),
+                consentVersion,
+            });
             await upsertLocation("PICKUP", "shuttlePickup");
             await upsertLocation("DROPOFF", "shuttleDropoff");
         }
@@ -6100,7 +6017,8 @@ export async function resendTrialApplicationSms(trialLeadId: string): Promise<Tr
             academyPhone,
         });
         const parentMessage = renderedParentMessage
-            || `[STIZ] ${childName} 체험수업 신청이 접수되었습니다.\n일정 확정 후 다시 안내드리겠습니다.\n문의: ${academyPhone}`;
+            // DB 틀이 없을 때의 대체 문구 — 기본 틀(TRIAL_CONFIRM_PARENT)과 글자를 맞췄다(머리말 통일·«확정 시»)
+            || `${PARENT_MESSAGE_PREFIX} ${childName} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: ${academyPhone}`;
         targetLabels.add("학부모");
         smsTasks.push(sendTrackedSms({
             eventType: "TRIAL_APPLICATION",
@@ -6377,7 +6295,8 @@ export async function enqueueManualSmsBatch(
     if (normalized.recipients.length > BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT) {
         throw new Error(`한 번에 ${BULK_MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 접수할 수 있습니다.`);
     }
-    const body = `[STIZ] ${message.trim()}`;
+    // 머리말(2026-11-09): 학부모(EXTERNAL) = [스티즈농구교실], 직원(INTERNAL) = 예전 [STIZ]
+    const body = `${manualMessagePrefix(options.audienceScope || "EXTERNAL")} ${message.trim()}`;
     const queued = await reserveManualMessageQueue({
         requestId,
         actorUserId: admin.appUserId,
@@ -6435,10 +6354,11 @@ export async function sendManualSms(
         throw new Error(`한 번에 ${MANUAL_MESSAGE_RECIPIENT_LIMIT}명 이하만 발송할 수 있습니다.`);
     }
 
-    const body = `[STIZ] ${message.trim()}`;
     const purpose = options?.purpose?.trim() || "관리자 수동 문자 발송";
     const reason = options?.reason?.trim() || "관리자 문자센터에서 직접 발송";
     const audienceScope = options?.audienceScope || "INTERNAL";
+    // 머리말(2026-11-09): 학부모(EXTERNAL) = [스티즈농구교실], 직원(INTERNAL) = 예전 [STIZ]
+    const body = `${manualMessagePrefix(audienceScope)} ${message.trim()}`;
     const requestId = validateManualMessageRequestId(options?.requestId);
     const requestFingerprint = createHash("sha256")
         .update(`${admin.appUserId}:${body}:${normalized.recipients.join(",")}`)
@@ -6588,6 +6508,9 @@ async function requireMessageSettingAuditInfrastructure() {
     }
 }
 
+// 알림톡으로 바뀐 학부모 문구의 본문 수정 거절 안내(화면이 그대로 보여 준다)
+const SMS_TEMPLATE_ALIMTALK_LOCKED = "카카오 알림톡에 등록한 문구라 여기서 고칠 수 없습니다. 바꾸려면 개발 요청 후 카카오 재심사가 필요합니다.";
+
 /**
  * updateSmsTemplate — 템플릿 본문/활성 상태 수정
  *
@@ -6634,6 +6557,10 @@ export async function updateSmsTemplate(
                 id,
             );
             if (!before) throw new Error("템플릿을 찾을 수 없습니다.");
+            // 알림톡 등록 문구(코드 금고가 정본)는 화면에서 본문을 바꿀 수 없다 — 켜기/끄기만 허용
+            if (data.body !== undefined && data.body !== before.body && isParentAlimtalkTrigger(before.trigger)) {
+                throw new Error(SMS_TEMPLATE_ALIMTALK_LOCKED);
+            }
             await tx.$executeRawUnsafe(
                 `UPDATE "SmsTemplate" SET ${sets.join(", ")} WHERE id = $${idx}`,
                 ...values,
@@ -6685,6 +6612,7 @@ export async function updateSmsTemplate(
     } catch (e) {
         console.error("[updateSmsTemplate] failed:", e);
         if ((e as Error).message === "문자 설정 DB 업데이트가 필요합니다.") throw e;
+        if ((e as Error).message === SMS_TEMPLATE_ALIMTALK_LOCKED) throw e;
         throw new Error("템플릿 수정 실패");
     }
 
@@ -6737,16 +6665,16 @@ export async function resetSmsTemplate(id: string) {
             ENROLL_NEW_ADMIN: "[STIZ] 새 수강 신청\n{{childName}} ({{childGrade}}) - {{parentName}}",
             ENROLL_NEW_COACH: "[STIZ] 새 수강 신청\n{{childName}} ({{childGrade}})",
             ENROLL_APPROVED_COACH: "[STIZ] 수강 신청이 승인되었습니다.\n학생: {{childName}} ({{childGrade}})\n배정 반: {{className}}",
-            TRIAL_CONFIRM_PARENT: "[STIZ] {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}",
-            TRIAL_SCHEDULED_PARENT: "[STIZ] {{childName}} 체험수업 일정이 확정되었습니다.\n일시: {{scheduledDate}}\n반: {{className}}\n문의: {{academyPhone}}",
-            TRIAL_ENROLL_GUIDE_PARENT: "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
-            ENROLL_CONFIRM_PARENT: "[STIZ] {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}",
-            ENROLL_APPROVED_PARENT: "[STIZ] {{childName}} 수강이 확정되었습니다.\n배정 반: {{className}}\n상세 안내는 별도 연락드리겠습니다.",
-            INVOICE_PARENT: "[STIZ] {{month}}월 수강료 안내\n{{childName}}: {{amount}}원\n납부기한: {{dueDate}}",
-            UNPAID_PARENT: "[STIZ] 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.",
+            // 학부모 문구 — 머리말 [스티즈농구교실] 통일(2026-11-09). 수강 확정·수납 안내는 보내는 코드가 없어 뺐다.
+            TRIAL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}`,
+            ENROLL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}`,
+            UNPAID_PARENT: `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
         };
 
-        const defaultBody = defaultBodies[trigger];
+        // 알림톡 금고 트리거는 금고 문구로 복원한다(체험 일정 확정·수강신청서 안내·셔틀·특강 5종)
+        const defaultBody = isParentAlimtalkTrigger(trigger)
+            ? parentAlimtalkSmsTemplateBody(trigger)
+            : defaultBodies[trigger];
         if (!defaultBody) throw new Error("기본 템플릿을 찾을 수 없습니다.");
 
         const [availability] = await prisma.$queryRawUnsafe<Array<{ automationAvailable: boolean }>>(
@@ -6764,12 +6692,15 @@ export async function resetSmsTemplate(id: string) {
                 id,
             );
             if (!before) throw new Error("템플릿을 찾을 수 없습니다.");
+            // 알림톡 금고 문구는 «문구만 맞추고» 켜짐/꺼짐은 그대로 둔다(꺼 둔 특강 접수·승인이 켜지지 않게)
+            const keepActive = isParentAlimtalkTrigger(trigger);
             await tx.$executeRawUnsafe(
-                `UPDATE "SmsTemplate" SET body = $1, "isActive" = true, "updatedAt" = NOW() WHERE id = $2`,
+                `UPDATE "SmsTemplate" SET body = $1, "isActive" = CASE WHEN $3::boolean THEN "isActive" ELSE true END, "updatedAt" = NOW() WHERE id = $2`,
                 defaultBody,
                 id,
+                keepActive,
             );
-            if (availability.automationAvailable) {
+            if (availability.automationAvailable && !keepActive) {
                 await tx.$executeRawUnsafe(
                     `UPDATE "MessageAutomationRule"
                         SET "isActive" = true, "updatedAt" = NOW()

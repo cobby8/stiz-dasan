@@ -17,8 +17,9 @@ test("관리자 기사님 화면 보기는 기사님 화면과 같은 순수 함
   assert.match(view, /buildFallbackClasses\(selectDriverDayRows\(stops, weekday\), NOT_ABSENT\)/);
   // 자체 정류장 묶음 함수를 새로 만들지 않는다(RegularRouteSection 의 groupStops 같은 사본 금지).
   assert.doesNotMatch(view, /function group\w*\(/);
-  // 기사님 화면 서버도 같은 요일 행 선택 함수를 쓴다.
-  assert.match(driverRoute, /selectDriverDayRows\(stops, weekday\)/);
+  // 기사님 화면 서버도 같은 요일 행 선택 함수를 쓴다(조립은 순수 함수 regularRunRows 로 옮겼다).
+  assert.match(driverRoute, /return buildRegularRunClasses\(\{/);
+  assert.match(read("src/lib/shuttle/regularRunRows.ts"), /selectDriverDayRows\(input\.stops, input\.weekday\)/);
   // 셔틀 명단 화면에 보기 전환이 붙어 있다.
   assert.match(client, /<DriverOrderView/);
   assert.match(client, /기사님 화면\(운행 순서\)/);
@@ -66,14 +67,35 @@ test("순서 저장 결과를 기사님 화면 함수로 다시 그리면 바뀐
   assert.equal(after.find((r) => r.id === "x").sortOrder, 2);
 });
 
-test("정규 배차: 기사님 화면이 바뀐다는 배너와 첫 저장 확인창(정규 모드 안에서만)", () => {
-  const dispatchClient = read("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx");
-  assert.match(dispatchClient, /저장한 노선은 선택한 월·요일·방향의 기사님 화면에 반영됩니다/);
-  assert.match(dispatchClient, /저장 전 변경은 기사님에게 보이지 않습니다/);
-  const routeSection = read("src/components/seasonal/RouteSection.tsx");
-  // 현재 노선과 저장 기준 시각이 모두 없을 때만 첫 저장 영향을 확인한다.
-  // 기존 저장본에서 자동 제안을 새로 만든 경우는 첫 저장으로 오인하지 않는다.
-  const saveBody = routeSection.slice(routeSection.indexOf("async function saveRoute()"), routeSection.indexOf("function setDriver("));
-  assert.match(saveBody, /if \(regularEditing\) \{[\s\S]*if \(!loadedFromSaved && !savedAt && !window\.confirm\("지금 기사님 화면은 「셔틀 명단」 순서로 운행 중입니다/);
-  assert.match(saveBody, /여기서 저장하면 이 요일·방향의 기사님 화면이 이 노선으로 바뀝니다/);
+// 2026-11-09 원장 결정: 관리자 배차 화면 = 기사님 화면과 똑같이 보이고 같은 화면에서 직접 수정.
+// → 같은 순수 조립(buildRegularRunRows)·같은 카드 틀(RunBoard)·같은 CSS(DriverWorkspace) — 자체 묶음·자동 제안 금지.
+test("정규 운행표(관리자): 기사님과 같은 조립 함수·카드 틀로 그리고, 고치기는 명단 편집 API 만 쓴다", () => {
+  const editor = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
+  const dialogs = read("src/app/admin/shuttle/regular-dispatch/RunEditDialogs.tsx");
+  const page = read("src/app/admin/shuttle/regular-dispatch/page.tsx");
+  assert.match(editor, /import RunBoard from "@\/components\/shuttle\/run\/RunBoard"/);
+  assert.match(editor, /import \{ buildRegularRunRows \} from "@\/lib\/shuttle\/regularRunRows"/);
+  assert.match(editor, /buildRegularRunRows\(\{ stops, weekday \}\)/);
+  assert.match(editor, /<RunBoard[\s\S]*mode="admin"[\s\S]*renderRider=\{renderRider\}/);
+  assert.match(editor, /styles\.workspace/);
+  // 자체 묶음 함수·옛 배차 부품·자동 제안 없음
+  assert.doesNotMatch(editor, /function group\w*\(|buildFallbackClasses|RouteSection|regular\/dispatch|computeRegularDispatch|\btmap\w*\(/);
+  assert.doesNotMatch(page, /getRegularDispatchForView|RegularDispatchClient|computeRegularDispatch/);
+  // 순서·시각 저장 = 묶음별 reorder, 학생 칸 = editStudent, 정류장 = editStop, 빼기 = DELETE(범위 포함)
+  assert.match(editor, /action: "reorder", serviceMonth, scope: orderScope, weekday, classTime: head\.classTime/);
+  assert.match(dialogs, /export const ROSTER_API = "\/api\/admin\/shuttle\/regular-roster";/);
+  assert.match(dialogs, /action: "editStudent", serviceMonth, scope, studentId/);
+  assert.match(dialogs, /action: "editStop", serviceMonth, scope, id:/);
+  assert.match(dialogs, /rosterCall\("DELETE", \{ serviceMonth, scope, ids \}\)/);
+  // 지도로 정류장을 정할 땐 장소명 필수(주소가 정류장 이름이 되지 않게)
+  assert.equal((dialogs.match(/<LocationPickerModal[\s\S]*?requirePlaceName/g) ?? []).length, 2);
+  // 탑승 체크 API 는 관리자 화면에서 부르지 않는다
+  assert.doesNotMatch(editor + dialogs, /\/api\/shuttle\/regular-boarding|\/api\/shuttle\/regular-order/);
+});
+
+test("정규 운행표(관리자) 순서 편집은 기사님 화면과 같은 규칙(같은 묶음 안에서만·옮기면 시각 칸도 함께)", () => {
+  const editor = read("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx");
+  assert.match(editor, /const same = ordered\.filter\(\(r\) => r\.groupKey === row\.groupKey && !r\.isTerminal\);/);
+  assert.match(editor, /if \(!from \|\| from\.groupKey !== target\.groupKey \|\| from\.isTerminal \|\| target\.isTerminal\) return;/);
+  assert.match(editor, /setTimeOverride\(\(t\) => \(\{ \.\.\.t, \[row\.key\]: otherTime \?\? "", \[other\.key\]: rowTime \?\? "" \}\)\);/);
 });

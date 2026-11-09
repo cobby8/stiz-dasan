@@ -2,9 +2,7 @@ import { NextResponse } from "next/server";
 import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import { prisma } from "@/lib/prisma";
 import { kstDow } from "@/lib/datetime/kst";
-import { DOW_NAMES } from "@/lib/regular/shuttleRosterLogic";
-import { getRegularShuttleRiders } from "@/lib/regular/shuttleRoster";
-import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder, type DriverOrderRoute } from "@/lib/shuttle/driverOrderPlan";
+import { DriverOrderError, parseDriverOrderUpdates, planDriverOrder } from "@/lib/shuttle/driverOrderPlan";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +14,9 @@ function validDate(value: unknown): string | null {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(date) === value ? value : null;
 }
 
-// 명단과 확정 노선을 같은 봉투에 넣듯 함께 저장하여 한쪽만 성공하는 상태를 막는다.
+// 기사님 화면 «순서·도착 시각 편집» 저장 — 셔틀 명단(RegularShuttleStop)만 고친다.
+// 6단계(2026-11-09): 기사님 화면은 명단만 읽으므로 저장 노선(RegularDispatchRoute)은 읽지도 쓰지도 않는다.
+// ⚠️ PgBouncer 트랜잭션 모드 → Prisma ORM 기본 메서드(updateMany·findMany) 대신 $queryRawUnsafe/$executeRawUnsafe 만 쓴다.
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null) as { token?: unknown; date?: unknown; updates?: unknown; baseline?: unknown } | null;
@@ -29,65 +29,36 @@ export async function POST(request: Request) {
     const baseline = parseDriverOrderUpdates(body.baseline);
     const serviceMonth = date.slice(0, 7);
     const weekday = kstDow(date);
-    const dayOfWeek = DOW_NAMES[weekday];
     const updated = await prisma.$transaction(async tx => {
       // 항상 같은 순서로 잠가 두 저장 요청이 중간 상태를 서로 덮어쓰지 않게 한다.
       const rows = await tx.$queryRawUnsafe<RegularShuttleStop[]>(
         `SELECT * FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "weekday"=$2
           AND "direction" IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName") <> ''
-          ORDER BY "sortOrder", "stopName", "id" FOR UPDATE`, serviceMonth, weekday,
+          ORDER BY "sortOrder" ASC, "id" COLLATE "C" ASC FOR UPDATE`, serviceMonth, weekday,
       );
-      // 확정 노선 테이블이 없는 이전 환경은 명단 경로를 유지한다. SQL 오류를 삼켜 트랜잭션을 망가뜨리지 않는다.
-      const table = await tx.$queryRawUnsafe<{ present: boolean }[]>(`SELECT to_regclass('"RegularDispatchRoute"') IS NOT NULL AS "present"`);
-      const hasDispatchTable = table[0]?.present === true;
-      const routes = hasDispatchTable ? await tx.$queryRawUnsafe<DriverOrderRoute[]>(
-        `SELECT "id","direction","payload" FROM "RegularDispatchRoute"
-          WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 ORDER BY "direction" FOR UPDATE`, serviceMonth, dayOfWeek,
-      ) : [];
-      const maps = { PICKUP: new Map<string, string[]>(), DROPOFF: new Map<string, string[]>() };
-      const order = new Map(rows.map((row, index) => [row.id, index]));
-      for (const direction of ["PICKUP", "DROPOFF"] as const) {
-        if (!routes.some(route => route.direction === direction)) continue;
-        const roster = await getRegularShuttleRiders({ direction, serviceMonth, dayOfWeek }, tx);
-        for (const rider of [...roster.riders, ...roster.unassigned]) {
-          if (!rider.stopRowId || !order.has(rider.stopRowId)) throw new DriverOrderError("학생 연결이 변경되었습니다. 새로고침 후 다시 저장해 주세요.");
-          const ids = maps[direction].get(rider.studentId) ?? [];
-          ids.push(rider.stopRowId); maps[direction].set(rider.studentId, ids);
-        }
-        for (const ids of maps[direction].values()) ids.sort((a, b) => order.get(a)! - order.get(b)!);
-      }
-      const plan = planDriverOrder({ rows, routes, updates, baseline, rowIdsByStudentId: maps });
+      // 기사님 화면과 같은 조립기(명단 순서 그대로)로 «연 화면 = 지금 DB» 인지·저장 뒤 순서가 맞는지 검사한다.
+      // 저장 노선이 없으므로 routes·학생↔행 연결은 빈 값이다(조립기가 명단 폴백으로만 묶는다).
+      planDriverOrder({ rows, routes: [], updates, baseline, rowIdsByStudentId: { PICKUP: new Map(), DROPOFF: new Map() } });
       let count = 0;
       for (const update of updates) {
-        const result = await tx.regularShuttleStop.updateMany({
-          where: { id: { in: update.rowIds }, serviceMonth, weekday, direction: { in: ["BOARD", "ALIGHT"] } },
-          data: { sortOrder: update.sortOrder, arriveTime: update.arriveTime },
-        });
-        if (result.count !== update.rowIds.length) throw new DriverOrderError("정차 명단이 변경되어 저장을 취소했습니다. 새로고침해 주세요.");
-        count += result.count;
-      }
-      for (const route of plan.routes) {
-        const result = await tx.$executeRawUnsafe(
-          `UPDATE "RegularDispatchRoute" SET "payload"=$1::jsonb,"updatedAt"=now()
-            WHERE "id"=$2 AND "serviceMonth"=$3 AND "dayOfWeek"=$4 AND "direction"=$5`,
-          JSON.stringify(route.payload), route.id, serviceMonth, dayOfWeek, route.direction,
-        );
-        if (result !== 1) throw new DriverOrderError("확정 노선이 변경되어 저장을 취소했습니다. 새로고침해 주세요.");
+        // 행 id·달·요일·방향을 모두 조건에 걸어 다른 달·요일 행을 실수로 고치지 않는다.
+        const changed = Number(await tx.$executeRawUnsafe(
+          `UPDATE "RegularShuttleStop" SET "sortOrder"=$1, "arriveTime"=$2
+            WHERE "id" = ANY($3::text[]) AND "serviceMonth"=$4 AND "weekday"=$5 AND "direction" IN ('BOARD','ALIGHT')`,
+          update.sortOrder, update.arriveTime, update.rowIds, serviceMonth, weekday,
+        )) || 0;
+        if (changed !== update.rowIds.length) throw new DriverOrderError("정차 명단이 변경되어 저장을 취소했습니다. 새로고침해 주세요.");
+        count += changed;
       }
       // 저장 성공 응답 전에 다시 읽어 실제 반영값을 확인한다. 실패하면 위 변경도 함께 취소된다.
-      const readback = await tx.regularShuttleStop.findMany({ where: { id: { in: updates.flatMap(update => update.rowIds) }, serviceMonth, weekday }, select: { id: true, sortOrder: true, arriveTime: true } });
-      const byId = new Map(readback.map(row => [row.id, row]));
+      const readback = await tx.$queryRawUnsafe<{ id: string; sortOrder: number; arriveTime: string | null }[]>(
+        `SELECT "id","sortOrder","arriveTime" FROM "RegularShuttleStop" WHERE "id" = ANY($1::text[]) AND "serviceMonth"=$2 AND "weekday"=$3`,
+        updates.flatMap(update => update.rowIds), serviceMonth, weekday,
+      );
+      const byId = new Map(readback.map(row => [String(row.id), row]));
       for (const update of updates) for (const id of update.rowIds) {
         const row = byId.get(id);
-        if (!row || row.sortOrder !== update.sortOrder || row.arriveTime !== update.arriveTime) throw new DriverOrderError("저장 결과를 확인하지 못했습니다. 다시 확인해 주세요.");
-      }
-      const saved = hasDispatchTable ? await tx.$queryRawUnsafe<DriverOrderRoute[]>(
-        `SELECT "id","direction","payload" FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1 AND "dayOfWeek"=$2 ORDER BY "direction"`, serviceMonth, dayOfWeek,
-      ) : [];
-      // JSON의 키 순서는 DB가 바꿀 수 있으므로 JSON 문자열 대신 실제 필드 값을 비교한다.
-      for (const route of plan.routes) {
-        const actual = saved.find(item => item.id === route.id);
-        if (!actual || !sameJson(actual.payload, route.payload)) throw new DriverOrderError("확정 노선 저장 결과를 확인하지 못했습니다.");
+        if (!row || Number(row.sortOrder) !== update.sortOrder || (row.arriveTime ?? null) !== update.arriveTime) throw new DriverOrderError("저장 결과를 확인하지 못했습니다. 다시 확인해 주세요.");
       }
       return count;
     }, { isolationLevel: "Serializable", timeout: 15000 });
@@ -97,14 +68,4 @@ export async function POST(request: Request) {
     // DB 오류 원문에는 식별 정보가 포함될 수 있어 응답과 로그 모두에 노출하지 않는다.
     return NextResponse.json({ error: "저장 중 명단이 변경되었거나 연결을 확인하지 못했습니다. 새로고침 후 다시 시도해 주세요." }, { status: 409 });
   }
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, index) => sameJson(item, right[index]));
-  if (left != null && right != null && typeof left === "object" && typeof right === "object") {
-    const a = left as Record<string, unknown>, b = right as Record<string, unknown>;
-    return Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => Object.hasOwn(b, key) && sameJson(a[key], b[key]));
-  }
-  return false;
 }

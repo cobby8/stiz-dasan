@@ -6,6 +6,10 @@ import {
   validatePaymentRequest,
   type PaymentRequestKind,
 } from "@/lib/payments/parentRequestRules";
+import { MAX_BUNDLE_ITEMS } from "@/lib/payments/checkoutBundle";
+import { todayKst } from "@/lib/datetime/kst";
+import { txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+import { parentVirtualAccountView, type PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 
 // ── 학부모의 청구서 요청(입금 확인·영수증) ──────────────────────────────────
 //
@@ -34,12 +38,32 @@ export type ParentPaymentRow = {
   dueDate: string | null;
   paidDate: string | null;
   invoiceNo: string | null;
+  /** 온라인 결제 화면(/payments/[invoiceId])으로 가는 청구서 id. 청구서가 아직 없으면 null */
+  invoiceId: string | null;
+  /** 결제 담당(대표) 보호자인가 — 마이페이지 홈과 같은 기준(학생의 parentId 가 본인). 연결 가족은 결제 버튼 대신 안내만 본다. */
+  canCheckout: boolean;
   receiptUrl: string | null;
+  /**
+   * 무통장입금 계좌(입금 대기·만료) — 대표 보호자에게만. 묶음 결제 계좌면 amount 가 이 청구 금액보다 크다(합계).
+   * 마이페이지 홈 «납부할 청구» 줄이 같은 기준(이 목록)으로 계좌를 보여 준다(2026-11-09).
+   */
+  virtualAccount: PublicVirtualAccountView | null;
   /** 진행 중인 요청(종류별로 최대 한 건씩) */
   pending: { id: string; kind: string; createdAt: string }[];
   /** 처리 완료된 최근 요청 — 학부모가 결과를 확인할 수 있게 */
   resolved: { id: string; kind: string; status: string; decisionNote: string | null; decidedAt: string | null }[];
 };
+
+// 최근 입금 계좌(단건·묶음) — queries.ts 의 PARENT_VIRTUAL_ACCOUNT_LATERAL 과 같은 범위. secret(depositSecretHash)은 고르지 않는다
+const PARENT_VA_LATERAL = `LEFT JOIN LATERAL (
+         SELECT t.status, t."rawResponse"->'virtualAccountIssue' AS issue
+           FROM "PaymentTransaction" t
+          WHERE ${txCoversPaymentSql("t", "p.id")}
+            AND t.status IN ('WAITING_FOR_DEPOSIT', 'EXPIRED')
+            AND t."rawResponse"->'virtualAccountIssue' IS NOT NULL
+          ORDER BY t."createdAt" DESC
+          LIMIT 1
+       ) va ON true`;
 
 export async function getParentPaymentRequests(parentUserId: string): Promise<ParentPaymentRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
@@ -47,10 +71,13 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
             p.description, p.amount, p.status, p."receiptUrl",
             to_char(p."dueDate",'YYYY-MM-DD') AS "dueDate",
             to_char(p."paidDate",'YYYY-MM-DD') AS "paidDate",
-            i."invoiceNo"
+            i."invoiceNo", i.id AS "invoiceId",
+            (s."parentId" = $1) AS "canCheckout",
+            va.status AS "vaStatus", va.issue AS "vaIssue"
        FROM "Payment" p
        JOIN "Student" s ON s.id = p."studentId"
        LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+       ${PARENT_VA_LATERAL}
       WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
         AND p.status <> 'CANCELED'
       ORDER BY p."dueDate" DESC NULLS LAST
@@ -80,7 +107,11 @@ export async function getParentPaymentRequests(parentUserId: string): Promise<Pa
     dueDate: row.dueDate ?? null,
     paidDate: row.paidDate ?? null,
     invoiceNo: row.invoiceNo ?? null,
+    invoiceId: row.invoiceId ?? null,
+    canCheckout: row.canCheckout === true,
     receiptUrl: row.receiptUrl ?? null,
+    // 계좌는 결제 담당(대표) 보호자에게만 — 연결 가족에게는 보이지 않는다(홈 getMyPageData 와 같은 규칙)
+    virtualAccount: row.canCheckout === true ? parentVirtualAccountView(row.status, row.vaStatus, row.vaIssue, Date.now()) : null,
     pending: requests
       .filter((item) => item.paymentId === row.paymentId && item.status === "PENDING")
       .map((item) => ({ id: item.id, kind: item.kind, createdAt: item.createdAt })),
@@ -165,6 +196,93 @@ export async function submitPaymentParentRequest(parentUserId: string, input: Su
   });
 
   return { ok: true as const };
+}
+
+export type SubmitBundlePaymentClaimInput = {
+  paymentIds?: unknown;
+  paidOn?: unknown;
+  method?: unknown;
+  depositorName?: unknown;
+  note?: unknown;
+};
+
+/**
+ * 묶음 «입금했어요» — 계좌로 직접 입금한 청구 여러 건을 한 번에 알린다(2026-11-09 묶음 결제).
+ * 서버는 건마다 PAYMENT_CLAIM 을 하나씩 만든다(원장 확인 화면·처리 흐름은 단건과 같다).
+ *
+ * ★ 단건과 같은 보안 가드:
+ *   1) IDOR — 고른 청구 전부가 내 자녀(childAccessSql) 청구인지 SQL 로 재검증. 하나라도 아니면 전부 거절.
+ *   2) 상태는 DB 에서 읽는다 — 하나라도 이미 납부면 전부 거절(validatePaymentRequest 한 벌).
+ *   3) 이미 확인 중인 청구는 건너뛰고 알려 준다(DB 부분 유니크가 최종 방어선 — 겹치면 트랜잭션 전체가 되돌아간다).
+ */
+export async function submitBundlePaymentClaim(parentUserId: string, input: SubmitBundlePaymentClaimInput) {
+  const rawIds = Array.isArray(input.paymentIds) ? input.paymentIds : [];
+  const ids = rawIds.map((value) => (typeof value === "string" ? value.trim() : ""));
+  if (ids.length === 0 || ids.some((id) => !id)) return { ok: false as const, message: "청구서를 다시 선택해 주세요." };
+  if (new Set(ids).size !== ids.length) return { ok: false as const, message: "같은 청구가 두 번 들어 있어요. 다시 선택해 주세요." };
+  if (ids.length > MAX_BUNDLE_ITEMS) {
+    return { ok: false as const, message: `한 번에 알릴 수 있는 청구는 ${MAX_BUNDLE_ITEMS}건까지예요.` };
+  }
+
+  // 가드1+2: 소유권과 **현재 상태**를 DB 에서 함께 읽는다.
+  const owned = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT p.id, p.status, p.amount, s.id AS "studentId", s.name AS "studentName", p.description
+       FROM "Payment" p
+       JOIN "Student" s ON s.id = p."studentId"
+      WHERE p.id = ANY($1::text[]) AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}`,
+    ids, parentUserId,
+  );
+  if (owned.length !== ids.length) return { ok: false as const, message: "본인 자녀의 청구서만 요청할 수 있습니다." };
+
+  const today = todayKst();
+  for (const row of owned) {
+    const checked = validatePaymentRequest({ ...input, kind: "PAYMENT_CLAIM" }, { paymentStatus: row.status, today });
+    if (!checked.ok) return { ok: false as const, message: PAYMENT_REQUEST_MESSAGE[checked.error] };
+  }
+
+  // 가드3: 이미 확인 중인 청구는 건너뛴다(원장이 같은 일을 두 번 하지 않게)
+  const pendingRows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "paymentId" FROM "PaymentParentRequest"
+      WHERE "paymentId" = ANY($1::text[]) AND kind = 'PAYMENT_CLAIM' AND status = 'PENDING'`,
+    ids,
+  );
+  const alreadyPending = new Set<string>(pendingRows.map((row) => String(row.paymentId)));
+  const targets = owned.filter((row) => !alreadyPending.has(String(row.id)));
+  if (targets.length === 0) {
+    return { ok: false as const, message: "이미 확인 중인 요청이 있습니다. 결과를 기다려 주세요." };
+  }
+
+  const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) || null : null;
+  const depositorName = typeof input.depositorName === "string" ? input.depositorName.trim().slice(0, 60) || null : null;
+  // 전부 아니면 전무 — 중간에 하나가 막히면(동시 요청) 아무것도 남기지 않는다
+  await prisma.$transaction(async (db) => {
+    for (const row of targets) {
+      await db.$executeRawUnsafe(
+        `INSERT INTO "PaymentParentRequest"
+            ("paymentId","studentId","requestedByUserId","kind","paidOn","method","depositorName",
+             "receiptType","receiptTarget","note")
+         VALUES ($1,$2,$3,'PAYMENT_CLAIM',$4::date,$5,$6,NULL,NULL,$7)`,
+        row.id, row.studentId, parentUserId, String(input.paidOn), String(input.method), depositorName, note,
+      );
+    }
+  });
+
+  // 원장 알림은 한 번만(건수·합계)
+  const total = targets.reduce((acc, row) => acc + Number(row.amount ?? 0), 0);
+  await notifyAdminsOfPaymentRequest({
+    kind: "PAYMENT_CLAIM",
+    studentName: targets[0].studentName,
+    description: targets.length > 1
+      ? `${targets[0].description || "청구"} 외 ${targets.length - 1}건 · 합계 ${total.toLocaleString("ko-KR")}원`
+      : targets[0].description,
+    amount: total,
+  });
+
+  return {
+    ok: true as const,
+    submitted: targets.map((row) => String(row.id)),
+    alreadyPending: [...alreadyPending],
+  };
 }
 
 export async function cancelPaymentParentRequest(parentUserId: string, requestId: string) {

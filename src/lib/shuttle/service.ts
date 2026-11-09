@@ -10,6 +10,8 @@ import { resolveAcademyShuttleLocation, type AcademyShuttleLocation } from "./ac
 import { chooseActiveShuttleAssignment } from "./assignment";
 import { optimizeWaypointOrderWithTmap, TmapApiError, type TmapWaypoint } from "./tmap";
 import { notifyShuttlePassengerNoShow, notifyShuttleRouteConfirmed } from "./notifications";
+import { applyLocationToRosterInTx, flushRosterNotices, lockRosterForLocationInTx } from "./regularRosterEdit";
+import { hasShuttlePlaceName, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "./placeNameRule";
 
 export class ShuttleServiceError extends Error {
   constructor(
@@ -1068,7 +1070,19 @@ export async function updateStudentShuttleLocation(actor: Actor, studentId: stri
   const nested = input.location && typeof input.location === "object" ? input.location as Record<string, unknown> : {};
   const address = text(input.address ?? nested.address, 300);
   const roadAddress = text(input.roadAddress ?? nested.roadAddress, 300);
-  const name = text(input.name ?? input.locationName ?? nested.name, 150) ?? roadAddress ?? address;
+  // 장소명 필수(2026-11-09 원장 결정 D3) — 이 이름이 그대로 셔틀 명단 정류장 이름이 된다(«다산동 4002-1»로 남지 않게).
+  // 예전처럼 도로명·지번으로 대신 채우지 않는다. 학부모 위치 링크·원생 등록과 같은 규칙(placeNameRule).
+  const rawName = input.name ?? input.locationName ?? nested.name;
+  if (!hasShuttlePlaceName(rawName)) {
+    throw new ShuttleServiceError(SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE, 400, "PLACE_NAME_REQUIRED");
+  }
+  const name = text(rawName, 150) as string;
+  // 리뷰 S-1(2026-11-09): 이름 칸에 주소가 그대로 오면(옛 화면이 roadAddress||address 를 보냄) 장소명이 아니다.
+  // 화면이 무엇을 보내든 서버가 막는다 — 안 막으면 명단 정류장 이름이 주소로 바뀌고 기사님 알림까지 간다.
+  const squash = (v: string | null | undefined) => (v ?? "").replace(/\s+/g, "").toLowerCase();
+  if ([address, roadAddress].some((a) => a && squash(a) === squash(name))) {
+    throw new ShuttleServiceError(SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE, 400, "PLACE_NAME_REQUIRED");
+  }
   const latitude = optionalCoordinate(input.latitude ?? input.lat ?? nested.latitude ?? nested.lat, "학생 위치", -90, 90);
   const longitude = optionalCoordinate(input.longitude ?? input.lng ?? nested.longitude ?? nested.lng, "학생 위치", -180, 180);
   if (latitude === null || longitude === null) {
@@ -1085,7 +1099,9 @@ export async function updateStudentShuttleLocation(actor: Actor, studentId: stri
     ? null
     : coordinate(accuracyValue, "학생 위치 정확도", 0, 100_000);
 
-  return prisma.$transaction(async (tx) => {
+  const saved = await prisma.$transaction(async (tx) => {
+    // 리뷰 S-2: 명단 잠금을 트랜잭션 첫 쿼리로 — 잠금을 기다리는 동안 커밋된 명단 행까지 보고 반영한다.
+    const lockedLaterMonths = await lockRosterForLocationInTx(tx);
     const student = await tx.student.findUnique({ where: { id: studentId }, select: { id: true, name: true } });
     if (!student) throw new ShuttleServiceError("학생을 찾을 수 없습니다.", 404, "STUDENT_NOT_FOUND");
     const [location] = await tx.$queryRaw<Array<Record<string, unknown>>>`
@@ -1115,8 +1131,19 @@ export async function updateStudentShuttleLocation(actor: Actor, studentId: stri
       RETURNING *
     `;
     await audit(tx, actor, "STUDENT_SHUTTLE_LOCATION_CONFIRMED", {}, undefined, { student, location });
-    return location;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    // 명단 반영(D3, 확인 창 없음) — 이번 달(KST)부터 그 학생의 해당 방향 칸 정류장을 같은 트랜잭션에서 맞춘다.
+    // 300m 안 이름 맞는 기존 정류장이면 그 정류장으로 합류, 아니면 새 위치 그대로. 행 id 유지(탑승 체크 보존).
+    const roster = await applyLocationToRosterInTx(tx, actor.appUserId, { studentId, kind, name, latitude, longitude }, undefined, lockedLaterMonths);
+    return { location, roster };
+    // ReadCommitted 인 이유(S-2): Serializable 은 첫 쿼리(=잠금) 시작 때 스냅샷을 잡아, 잠금 대기 중 커밋된 행을 끝까지 못 본다.
+    // ReadCommitted 는 잠금 뒤 쿼리마다 최신 커밋을 본다. 위치 저장은 ON CONFLICT 업서트라 이 수준에서도 한 행으로 안전하다.
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  // 기사님 알림은 커밋 뒤에(실패해도 저장은 그대로).
+  await flushRosterNotices(saved.roster.notices);
+  // 응답 모양은 예전과 같다(location 행) + 명단 반영 결과(rosterApplied) — 화면이 «명단 N칸 반영» 안내에 쓴다.
+  const { notices: _notices, ...rosterApplied } = saved.roster;
+  void _notices;
+  return Object.assign({}, saved.location, { rosterApplied });
 }
 
 export async function assignPassenger(actor: Actor, routeId: string, input: Record<string, unknown>) {

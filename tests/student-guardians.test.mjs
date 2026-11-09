@@ -128,8 +128,11 @@ test("주 보호자 지정이 로그인 계정(User) 전화를 바꾸지 않는�
 
 test("학생 상세에 보호자 카드가 붙어 있고, 계정 전화는 읽기 전용으로 보인다", () => {
   assert.match(detail, /import GuardianPanel from "\.\/GuardianPanel";/);
-  assert.match(detail, /<GuardianPanel studentId=\{student\.id\} accountPhone=\{student\.parent\.phone \?\? null\} \/>/);
+  // 2026-11-09 2차 정리: 계정 이름도 넘긴다(계정 번호가 어느 보호자와도 다를 때 «로그인 계정» 줄에 씀)
+  assert.match(detail, /<GuardianPanel studentId=\{student\.id\} accountPhone=\{student\.parent\.phone \?\? null\} accountName=\{student\.parent\.name \?\? null\} \/>/);
   assert.match(panel, /로그인 계정 전화/);
+  // 전화번호는 보호자 카드 한 곳에서만 — 학생 상세 «연락처 · 프로필»에 학부모 전화 줄을 다시 두지 않는다
+  assert.doesNotMatch(detail, /<a href=\{`tel:\$\{student\.parent\.phone\}`\}/);
   assert.match(panel, /href=\{`tel:/);
   assert.match(panel, /window\.confirm\(deleteConfirmMessage\(/);
 });

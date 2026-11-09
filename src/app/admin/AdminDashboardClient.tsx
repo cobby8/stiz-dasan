@@ -124,9 +124,9 @@ function DashboardPrimarySkeleton() {
         <div className="grid gap-4 lg:grid-cols-2" aria-label="오늘 업무 불러오는 중" role="status">
             {[0, 1].map((item) => (
                 <div key={item} className="academy-panel p-5 animate-pulse">
-                    <div className="mb-5 h-4 w-28 rounded bg-gray-200" />
-                    <div className="mb-3 h-4 w-3/4 rounded bg-gray-100" />
-                    <div className="h-4 w-1/2 rounded bg-gray-100" />
+                    <div className="mb-5 h-4 w-28 rounded bg-[var(--color-academy-line)]" />
+                    <div className="mb-3 h-4 w-3/4 rounded bg-[var(--color-academy-soft)]" />
+                    <div className="h-4 w-1/2 rounded bg-[var(--color-academy-soft)]" />
                 </div>
             ))}
         </div>
@@ -135,13 +135,13 @@ function DashboardPrimarySkeleton() {
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <SymbolIcon name="error" size={36} className="mx-auto mb-3 text-red-500" />
-            <p className="font-bold text-gray-900 dark:text-white">대시보드 데이터를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-white p-8 text-center shadow-sm">
+            <SymbolIcon name="error" size={36} className="mx-auto mb-3 text-[var(--color-academy-danger)]" />
+            <p className="font-bold text-[var(--color-academy-ink)]">대시보드 데이터를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold"
             >
                 다시 시도
             </button>
@@ -364,33 +364,33 @@ function DashboardContent({
             <h3 className="mb-2 mt-6 text-xs font-bold text-[var(--color-academy-muted)]">이번 달 매출·출석·미납</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">이번 달 매출</p>
-                    <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 매출</p>
+                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.thisMonthRevenue)}</h3>
                     {extendedStats.lastMonthRevenue > 0 && (
-                        <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${revDiff >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${revDiff >= 0 ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
                             <SymbolIcon name={revDiff > 0 ? "trending_up" : revDiff < 0 ? "trending_down" : "remove"} size={14} />
                             전월 대비 {revDiff > 0 ? "+" : ""}{revDiff}%
                         </div>
                     )}
                 </div>
                 <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">이번 달 출석률</p>
-                    <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{extendedStats.attendanceRate}%</h3>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 출석률</p>
+                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{extendedStats.attendanceRate}%</h3>
                 </div>
-                <Link href="/admin/finance" prefetch={false} className="academy-panel p-4 hover:border-red-200 transition">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">미납 현황</p>
-                    <h3 className={`text-2xl font-extrabold ${extendedStats.unpaidCount > 0 ? "text-red-600" : "text-gray-900 dark:text-white"}`}>
+                <Link href="/admin/finance" prefetch={false} className="academy-panel p-4 hover:border-[var(--color-academy-danger)] transition">
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">미납 현황</p>
+                    <h3 className={`text-2xl font-extrabold ${extendedStats.unpaidCount > 0 ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}>
                         {extendedStats.unpaidCount}건
                     </h3>
                     {extendedStats.unpaidAmount > 0 && (
-                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                        <p className="text-xs text-[var(--color-academy-danger)] mt-1 flex items-center gap-1">
                             <SymbolIcon name="warning" size={12} /> {formatKRW(extendedStats.unpaidAmount)}
                         </p>
                     )}
                 </Link>
                 <div className="academy-panel p-4">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">전월 매출</p>
-                    <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">전월 매출</p>
+                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{formatKRW(extendedStats.lastMonthRevenue)}</h3>
                 </div>
             </div>
 
@@ -444,40 +444,40 @@ function ChartsSection({ extendedStats, maxRevenue }: { extendedStats: ExtendedS
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="academy-panel p-5">
-                <h3 className="font-bold text-gray-900 dark:text-white mb-4">매출 추이 (최근 6개월)</h3>
+                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">매출 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyRevenue.map((m, i) => (
                         <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
                                 {m.amount > 0 ? formatKRW(m.amount) : ""}
                             </span>
-                            <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-t-lg relative" style={{ height: "120px" }}>
+                            <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
                                 <div
-                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] dark:bg-brand-neon-lime dark:text-brand-navy-900 rounded-t-lg transition-all duration-500"
+                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
                                     style={{ height: `${maxRevenue > 0 ? (m.amount / maxRevenue) * 100 : 0}%` }}
                                 />
                             </div>
-                            <span className="text-xs text-gray-400">{m.month}</span>
+                            <span className="text-xs text-[var(--color-academy-faint)]">{m.month}</span>
                         </div>
                     ))}
                 </div>
             </div>
 
             <div className="academy-panel p-5">
-                <h3 className="font-bold text-gray-900 dark:text-white mb-4">출석률 추이 (최근 6개월)</h3>
+                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">출석률 추이 (최근 6개월)</h3>
                 <div className="flex items-end gap-2 h-40">
                     {extendedStats.monthlyAttendance.map((m, i) => (
                         <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            <span className="text-xs text-[var(--color-academy-muted)] font-medium">
                                 {m.rate > 0 ? `${m.rate}%` : ""}
                             </span>
-                            <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-t-lg relative" style={{ height: "120px" }}>
+                            <div className="w-full bg-[var(--color-academy-soft)] rounded-t-lg relative" style={{ height: "120px" }}>
                                 <div
-                                    className="absolute bottom-0 left-0 right-0 bg-emerald-500 rounded-t-lg transition-all duration-500"
+                                    className="absolute bottom-0 left-0 right-0 bg-[var(--color-academy-primary)] rounded-t-lg transition-all duration-500"
                                     style={{ height: `${m.rate}%` }}
                                 />
                             </div>
-                            <span className="text-xs text-gray-400">{m.month}</span>
+                            <span className="text-xs text-[var(--color-academy-faint)]">{m.month}</span>
                         </div>
                     ))}
                 </div>
@@ -501,7 +501,7 @@ function TodayClassesCard({ todayClasses, todayLabel }: { todayClasses: TodayCla
                                 <p className="break-words text-sm font-bold text-[var(--color-academy-ink)]">{item.name}</p>
                                 <p className="mt-0.5 text-sm text-[var(--color-academy-muted)]">{item.startTime ?? "시간 미정"}{item.endTime ? `–${item.endTime}` : ""}{item.programName ? ` · ${item.programName}` : ""}</p>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.enrolled >= item.capacity ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{item.enrolled}/{item.capacity}명</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.enrolled >= item.capacity ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>{item.enrolled}/{item.capacity}명</span>
                         </div>
                     ))}
                 </div>
@@ -533,20 +533,20 @@ function ProgramStudentsCard({ programStudents }: { programStudents: { name: str
 
     return (
         <div className="academy-panel p-5">
-            <h3 className="font-bold text-gray-900 dark:text-white mb-4">프로그램별 원생 수</h3>
+            <h3 className="font-bold text-[var(--color-academy-ink)] mb-4">프로그램별 원생 수</h3>
             {programStudents.length === 0 ? (
-                <p className="text-sm text-gray-400">프로그램을 추가하세요</p>
+                <p className="text-sm text-[var(--color-academy-faint)]">프로그램을 추가하세요</p>
             ) : (
                 <div className="space-y-3">
                     {programStudents.map((program, index) => (
                         <div key={index}>
                             <div className="flex justify-between text-sm mb-1">
-                                <span className="text-gray-700 dark:text-gray-200 font-medium truncate">{program.name}</span>
-                                <span className="text-gray-500 dark:text-gray-400 font-bold">{program.count}명</span>
+                                <span className="text-[var(--color-academy-muted)] font-medium truncate">{program.name}</span>
+                                <span className="text-[var(--color-academy-muted)] font-bold">{program.count}명</span>
                             </div>
-                            <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2">
+                            <div className="w-full bg-[var(--color-academy-soft)] rounded-full h-2">
                                 <div
-                                    className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                                    className="bg-[var(--color-academy-primary)] h-2 rounded-full transition-all duration-500"
                                     style={{ width: `${(program.count / maxCnt) * 100}%` }}
                                 />
                             </div>
@@ -578,21 +578,21 @@ function SiteOpsBotCard({
             ? result.fixedCount > 0 ? "자동 조치 완료" : "정상"
             : result.criticalCount > 0 ? "긴급 확인" : "확인 필요";
     const statusClass = !result
-        ? "bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300"
+        ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
         : result.ok
-            ? "bg-green-100 text-green-700"
+            ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
             : result.criticalCount > 0
-                ? "bg-red-100 text-red-700"
-                : "bg-yellow-100 text-yellow-700";
+                ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
+                : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]";
 
     return (
         <div className="academy-panel p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                    <h3 className="font-bold text-gray-900 dark:text-white">사이트 점검 봇</h3>
+                    <h3 className="font-bold text-[var(--color-academy-ink)]">사이트 점검 봇</h3>
                     {/* 마지막 점검 시각은 실제 점검 결과가 있을 때만 표시한다 */}
                     {result && (
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
                             {new Date(result.checkedAt).toLocaleString("ko-KR")}
                         </p>
                     )}
@@ -606,20 +606,20 @@ function SiteOpsBotCard({
                 type="button"
                 onClick={onRun}
                 disabled={loading}
-                className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mb-3 inline-flex w-full items-center justify-center gap-2 rounded-xl academy-button-primary px-4 py-2 text-sm font-bold disabled:cursor-wait disabled:opacity-60"
             >
                 <SymbolIcon name={loading ? "sync" : "smart_toy"} size={18} />
                 {loading ? "점검 중" : "점검 실행"}
             </button>
 
             {error && (
-                <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                <p className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-medium text-[var(--color-academy-danger)]">
                     점검을 실행하지 못했습니다. 잠시 후 다시 시도해주세요.
                 </p>
             )}
 
             {!result && !error && (
-                <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                <p className="rounded-lg bg-[var(--color-academy-soft)] px-3 py-2 text-xs text-[var(--color-academy-muted)]">
                     사이트 운영 상태, 백업, 신청 링크, 인스타 게시 대기열을 확인합니다.
                 </p>
             )}
@@ -627,45 +627,45 @@ function SiteOpsBotCard({
             {result && (
                 <div className="space-y-2">
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="rounded-lg bg-gray-50 px-2 py-2 dark:bg-gray-900">
-                            <p className="font-bold text-gray-900 dark:text-white">{result.checks.length}</p>
-                            <p className="text-gray-500 dark:text-gray-400">점검</p>
+                        <div className="rounded-lg bg-[var(--color-academy-soft)] px-2 py-2">
+                            <p className="font-bold text-[var(--color-academy-ink)]">{result.checks.length}</p>
+                            <p className="text-[var(--color-academy-muted)]">점검</p>
                         </div>
-                        <div className="rounded-lg bg-green-50 px-2 py-2">
-                            <p className="font-bold text-green-700">{result.fixedCount}</p>
-                            <p className="text-green-700/70">자동조치</p>
+                        <div className="rounded-lg bg-[var(--color-academy-success-soft)] px-2 py-2">
+                            <p className="font-bold text-[var(--color-academy-success)]">{result.fixedCount}</p>
+                            <p className="text-[var(--color-academy-success)]/70">자동조치</p>
                         </div>
-                        <div className="rounded-lg bg-yellow-50 px-2 py-2">
-                            <p className="font-bold text-yellow-700">{result.manualActionCount}</p>
-                            <p className="text-yellow-700/70">확인</p>
+                        <div className="rounded-lg bg-[var(--color-academy-warning-soft)] px-2 py-2">
+                            <p className="font-bold text-[var(--color-academy-warning)]">{result.manualActionCount}</p>
+                            <p className="text-[var(--color-academy-warning)]/70">확인</p>
                         </div>
                     </div>
 
                     {previewItems.length === 0 ? (
-                        <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                        <p className="rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs text-[var(--color-academy-success)]">
                             현재 수동 조치가 필요한 항목은 없습니다.
                         </p>
                     ) : (
                         <div className="space-y-2">
                             {previewItems.map((item) => (
-                                <div key={item.id} className="rounded-lg border border-gray-100 px-3 py-2 dark:border-gray-700">
+                                <div key={item.id} className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2">
                                     <div className="flex items-start justify-between gap-2">
                                         <div>
-                                            <p className="text-xs font-bold text-gray-900 dark:text-white">{item.label}</p>
-                                            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{item.message}</p>
+                                            <p className="text-xs font-bold text-[var(--color-academy-ink)]">{item.label}</p>
+                                            <p className="mt-0.5 text-xs text-[var(--color-academy-muted)]">{item.message}</p>
                                         </div>
                                         <span className={`rounded-full px-1.5 py-0.5 text-xs font-bold ${
                                             item.status === "critical"
-                                                ? "bg-red-100 text-red-700"
+                                                ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                                                 : item.status === "fixed"
-                                                    ? "bg-green-100 text-green-700"
-                                                    : "bg-yellow-100 text-yellow-700"
+                                                    ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+                                                    : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"
                                         }`}>
                                             {item.status === "critical" ? "긴급" : item.status === "fixed" ? "완료" : "확인"}
                                         </span>
                                     </div>
                                     {item.actionHref && item.actionLabel && (
-                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-bold text-[var(--color-academy-primary)] dark:text-brand-neon-lime">
+                                        <Link href={item.actionHref} prefetch={false} className="mt-2 inline-flex text-xs font-bold text-[var(--color-academy-primary)]">
                                             {item.actionLabel} &rarr;
                                         </Link>
                                     )}
@@ -709,45 +709,45 @@ function SystemStatusCard({
     return (
         <div className="academy-panel p-4">
             <div className="mb-3 flex items-center justify-between">
-                <h3 className="font-bold text-gray-900 dark:text-white">시스템 상태</h3>
+                <h3 className="font-bold text-[var(--color-academy-ink)]">시스템 상태</h3>
                 <button
                     type="button"
                     onClick={onRetry}
                     disabled={systemLoading}
-                    className="text-xs font-bold text-[var(--color-academy-primary)] transition hover:text-orange-600 disabled:cursor-wait disabled:opacity-60 dark:text-brand-neon-lime"
+                    className="text-xs font-bold text-[var(--color-academy-primary)] transition hover:text-[var(--color-academy-warning)] disabled:cursor-wait disabled:opacity-60"
                 >
                     {systemLoading ? "확인 중" : systemError ? "다시 시도" : systemStatus ? "새로고침" : "확인"}
                 </button>
             </div>
             <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                        <SymbolIcon name="database" size={14} className="text-gray-400" />
+                    <div className="flex items-center gap-2 text-sm text-[var(--color-academy-muted)]">
+                        <SymbolIcon name="database" size={14} className="text-[var(--color-academy-faint)]" />
                         <span>자료 저장소</span>
                     </div>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        !systemStatus ? "bg-gray-100 text-gray-500" : systemStatus.dbOk ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        !systemStatus ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : systemStatus.dbOk ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     }`}>
                         {systemLoading ? "확인 중" : !systemStatus ? "미확인" : systemStatus.dbOk ? "정상" : "오류"}
                     </span>
                 </div>
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                        <SymbolIcon name={backupWarn ? "cloud_off" : "cloud_done"} size={14} className={!systemStatus ? "text-gray-400" : backupDanger ? "text-red-500" : backupWarn ? "text-yellow-500" : "text-blue-500"} />
+                    <div className="flex items-center gap-2 text-sm text-[var(--color-academy-muted)]">
+                        <SymbolIcon name={backupWarn ? "cloud_off" : "cloud_done"} size={14} className={!systemStatus ? "text-[var(--color-academy-faint)]" : backupDanger ? "text-[var(--color-academy-danger)]" : backupWarn ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"} />
                         <span>마지막 백업</span>
                     </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${!systemStatus ? "bg-gray-100 text-gray-500" : backupDanger ? "bg-red-100 text-red-700" : backupWarn ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${!systemStatus ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" : backupDanger ? "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]" : backupWarn ? "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" : "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"}`}>
                         {systemLoading ? "확인 중" : !systemStatus ? "미확인" : backupLabel()}
                     </span>
                 </div>
                 {backup && backup.backupCount > 0 && (
                     <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-500 dark:text-gray-400">저장된 백업</span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{backup.backupCount}개</span>
+                        <span className="text-sm text-[var(--color-academy-muted)]">저장된 백업</span>
+                        <span className="text-xs text-[var(--color-academy-muted)]">{backup.backupCount}개</span>
                     </div>
                 )}
                 {systemStatus && backupDanger && (
-                    <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                    <p className="text-xs text-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] rounded-lg px-3 py-2">
                         7일 이상 백업이 없습니다. 사이드바에서 즉시 저장하세요.
                     </p>
                 )}
@@ -763,13 +763,13 @@ function StatCard({ title, value, icon, href }: {
     href?: string;
 }) {
     const content = (
-        <div className={`academy-panel p-4 ${href ? "hover:border-[var(--color-academy-primary)] dark:border-brand-neon-lime transition-colors cursor-pointer" : ""}`}>
+        <div className={`academy-panel p-4 ${href ? "hover:border-[var(--color-academy-primary)] transition-colors cursor-pointer" : ""}`}>
             <div className="flex justify-between items-start">
                 <div>
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">{title}</p>
-                    <h3 className="text-2xl font-extrabold text-gray-900 dark:text-white">{value}</h3>
+                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">{title}</p>
+                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{value}</h3>
                 </div>
-                <div className="p-2.5 bg-gray-50 dark:bg-gray-900 rounded-xl">{icon}</div>
+                <div className="p-2.5 bg-[var(--color-academy-soft)] rounded-xl">{icon}</div>
             </div>
         </div>
     );

@@ -15,6 +15,7 @@ import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import { kstLabel } from "@/lib/datetime/kst";
+import { statusBadgeClass } from "@/lib/ui/statusTones";
 import {
   RENTAL_REJECT_REASONS,
   RENTAL_STATUSES,
@@ -42,14 +43,16 @@ const ACTION_ICON: Record<RentalAction, string> = {
 };
 
 // 상태 배지 색 — 뜻이 정해진 토큰만(처리할 일 = 경고, 확정 = 성공, 끝난 일 = 흐리게)
+// 대관 상태 → 공용 상태색(statusTones). 승인 대기 주의 · 입금 대기 정보(진행 중) · 확정 정상 · 거절 위험 ·
+// 사용 완료·환불·취소 중립(끝난 일). 예전엔 «사용 완료»가 «승인 대기»와 같은 노랑이라 처리할 일처럼 보였다.
 const STATUS_TONE: Record<RentalStatus, string> = {
-  REQUESTED: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
-  APPROVED: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]",
-  PAID: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]",
-  COMPLETED: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
-  REFUNDED: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
-  REJECTED: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
-  CANCELLED: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+  REQUESTED: statusBadgeClass("warning"),
+  APPROVED: statusBadgeClass("info"),
+  PAID: statusBadgeClass("success"),
+  COMPLETED: statusBadgeClass("neutral"),
+  REFUNDED: statusBadgeClass("neutral"),
+  REJECTED: statusBadgeClass("danger"),
+  CANCELLED: statusBadgeClass("neutral"),
 };
 
 // 확인 창 문구 — 무엇이 일어나는지 한두 줄
@@ -69,7 +72,7 @@ type SmsOn = Record<RentalApplicantKind, boolean>;
 
 function StatusBadge({ status }: { status: RentalStatus }) {
   return (
-    <span className={`inline-flex rounded-md px-1.5 py-0.5 text-xs font-bold ${STATUS_TONE[status] ?? ""}`}>
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-bold ${STATUS_TONE[status] ?? ""}`}>
       {RENTAL_STATUS_LABEL[status] ?? status}
     </span>
   );
@@ -79,7 +82,7 @@ function StatusBadge({ status }: { status: RentalStatus }) {
 function MemberBadge({ row }: { row: AdminRentalRow }) {
   if (!row.memberFree) return null;
   return (
-    <span className="inline-flex rounded-md bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">
+    <span className="inline-flex rounded bg-[var(--color-academy-success-soft)] px-1.5 py-0.5 text-xs font-bold text-[var(--color-academy-success)]">
       재원생 무료{row.memberStudentName ? `(${row.memberStudentName})` : ""}
     </span>
   );

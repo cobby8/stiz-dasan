@@ -1,32 +1,59 @@
-/* 공개 홈페이지와 같은 스포츠 색상. 상태색과 현장 조작 크기는 유지한다. */
+/* ── 색 토큰 정본 (2026-11-09 원장 결정 · 색상 정리 1단계) ─────────────────────────────
+   1) 주 버튼 = 검정 #15181c(올림 #2f343b)  2) 관리자·선생님·기사님·학부모 모두 같은 색
+   3) 바탕 = 맑은 연회색 #f6f7f9  4) STIZ 주황은 홈페이지 «체험 신청» 입구만(public-sport.css)  5) 다크모드는 나중
+   상태 뜻 다섯 갈래(진한 글자 / 연한 바탕) — 어느 화면이든 같은 뜻 = 같은 색. 상태 → 색 지도는 src/lib/ui/statusTones.ts 한 곳.
+     정상 success(출석·납부·탑승·승인) · 주의 warning(지각·미납·대기) · 위험 danger(결석·연체·미탑승·반려·삭제)
+     정보 info(보강·입금 확인 중·오늘만 변경) · 중립 neutral(휴무·취소·환불·자차)
+   상태색은 공개 홈페이지(.academy-app 밖)의 배지도 쓰도록 :root 에 둔다. 값의 대비는 tests/color-contrast.test.mjs 가 지킨다. */
+:root {
+  --color-academy-success: #15803d;
+  --color-academy-success-soft: #f0fdf4;
+  --color-academy-warning: #b45309;
+  --color-academy-warning-soft: #fffbeb;
+  --color-academy-danger: #b91c1c;
+  --color-academy-danger-soft: #fef2f2;
+  --color-academy-info: #1d4ed8;          /* 신설 — 보강·입금 확인 중·오늘만 변경 */
+  --color-academy-info-soft: #eff6ff;
+  --color-academy-neutral: #4b5563;       /* 신설 — 휴무·취소·환불·자차 */
+  --color-academy-neutral-soft: #f3f4f6;
+}
+
+/* 학원 앱(관리자·선생님·기사님·학부모) 공통 색. 이름은 그대로 두고 값만 위 결정으로 바꿨다. */
 .academy-app {
-  --color-academy-canvas: #f7f3ef;
-  --color-academy-surface: #ffffff;
-  --color-academy-ink: #15181c;
-  --color-academy-muted: #62676f;
-  --color-academy-line: #e3e4e6;
-  --color-academy-soft: #f7f3ef;
-  --color-academy-primary: #b94118;
-  --color-academy-primary-hover: #933111;
-  --color-academy-primary-soft: #faeee8;
+  --color-academy-canvas: #f6f7f9;        /* 화면 뒤 바탕 — 맑은 연회색 */
+  --color-academy-surface: #ffffff;       /* 카드·입력칸 면 */
+  --color-academy-ink: #111827;           /* 글자 1 — 본문·제목 */
+  --color-academy-muted: #4b5563;         /* 글자 2 — 보조 설명 */
+  --color-academy-faint: #636a75;         /* 글자 3 — 흐린 글자(작은 글자에 쓸 수 있는 가장 연한 색). 옛 #6b7280 은 옅은 면(soft) 위 4.39 라 한 단계 진하게(4.96) */
+  --color-academy-line: #e5e7eb;          /* 카드 테두리·구분선 */
+  --color-academy-line-input: #848b96;    /* 입력칸·보조 버튼·안 고른 칩 테두리(화면 바탕 #f6f7f9 위 3.2 · 카드 위 3.4). 옛 #8a919c 는 바탕 위 2.96 */
+  --color-academy-soft: #f3f4f6;          /* 옅은 면(올림·보조 영역) */
+  --color-academy-primary: #15181c;       /* 주 버튼 — 검정 */
+  --color-academy-primary-hover: #2f343b;
+  --color-academy-primary-soft: #e9ebee;  /* 행 안 작업(tonal)·고른 칩 바탕 */
   --color-academy-on-primary: #ffffff;
-  --color-academy-success: #3f6754;
-  --color-academy-success-soft: #edf5ef;
-  --color-academy-warning: #80581d;
-  --color-academy-warning-soft: #fff3df;
-  --color-academy-danger: #a44052;
-  --color-academy-danger-soft: #fff0f2;
-  --color-academy-art: #ded4ca;
-  --color-academy-band: #f7f3ef;
+  /* 학부모 일정 달력 출결·일정 표시색 — 상태 다섯 갈래를 그대로 따른다(같은 뜻 = 같은 색).
+     색만으로 구분하지 않고 모양도 다르다(출석 채운 점·지각 빈 고리·결석 ×·행사 별). */
+  --color-academy-cal-present: var(--color-academy-success);  /* 출석 */
+  --color-academy-cal-late: var(--color-academy-warning);     /* 지각 */
+  --color-academy-cal-absent: var(--color-academy-danger);    /* 결석 */
+  --color-academy-cal-event: var(--color-academy-info);       /* 행사 */
+  --color-academy-cal-closed: var(--color-academy-neutral);   /* 휴무 글자 */
+  --color-academy-cal-closed-soft: #eceef1; /* 휴무 칸 바탕 */
+  --color-academy-cal-class-soft: #e6edf7;  /* 수업 예정 칸 바탕 — 상태색과 겹치지 않는 연한 청회색 */
+  --color-academy-cal-class-line: #b9c7da;  /* 수업 칸 테두리(연한 바탕이 흰 화면에서 사라지지 않게) */
+  --color-academy-cal-today: #15181c;     /* 오늘 — 굵은 검정 테두리 */
+  --color-academy-art: #d1d5db;           /* 히어로 장식 선 */
+  --color-academy-band: #f6f7f9;
   --color-academy-band-end: #ffffff;
-  --color-academy-shadow: #15181c08;
+  --color-academy-shadow: #11182708;
   --brand-accent: var(--color-academy-primary);
   --brand-accent-hover: var(--color-academy-primary-hover);
   --brand-accent-soft: var(--color-academy-primary-soft);
   --brand-accent-contrast: var(--color-academy-on-primary);
   --font-body: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-heading: var(--font-body);
-  /* 기존 버튼도 같은 브랜드 색으로 이어지게 하되 오류·결석·납부 상태색은 유지한다. */
+  /* 옛 brand-orange 버튼·강조도 주 색(검정)으로 잇는다. 상태색(빨강·초록 등)은 따로 둔다. */
   --color-brand-orange-50: var(--color-academy-primary-soft);
   --color-brand-orange-400: var(--color-academy-primary);
   --color-brand-orange-500: var(--color-academy-primary);
@@ -37,15 +64,16 @@
   --color-brand-navy-900: var(--color-academy-ink);
   --color-surface-warm: var(--color-academy-canvas);
   --color-surface-section: var(--color-academy-soft);
-  --color-gray-50: #fcfaf8;
+  /* 회색 단계 — 글자로 쓰는 400 이상은 흰 바탕 4.5:1 이상(text-gray-400 도 «흐린 글자» 한도 #636a75). */
+  --color-gray-50: #f9fafb;
   --color-gray-100: var(--color-academy-soft);
   --color-gray-200: var(--color-academy-line);
-  --color-gray-300: #d0d2d5;
-  --color-gray-400: #858a92;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: var(--color-academy-faint);
   --color-gray-500: var(--color-academy-muted);
-  --color-gray-600: #555b64;
-  --color-gray-700: #414750;
-  --color-gray-800: #292e35;
+  --color-gray-600: #3c4350;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
   --color-gray-900: var(--color-academy-ink);
   color-scheme: light;
   color: var(--color-academy-ink);
@@ -133,8 +161,9 @@
   border-color: var(--color-academy-primary-hover);
 }
 
+/* 보조 버튼 테두리 = 입력선(흰 바탕 3:1 이상) — 옅은 카드 선(#e5e7eb)이면 버튼 경계가 안 보인다 */
 .academy-app .academy-button-secondary {
-  border: 1px solid var(--color-academy-line);
+  border: 1px solid var(--color-academy-line-input);
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
 }
@@ -193,7 +222,7 @@
   opacity: 0.5;
 }
 
-/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 주황 테두리 + 체크 */
+/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 굵은 주 색 테두리 + 체크. 안 고른 칩 테두리는 입력선(3:1). */
 .academy-app .academy-choice {
   display: inline-flex;
   align-items: center;
@@ -202,7 +231,7 @@
   min-height: 2.75rem;
   padding: 0.5rem 0.875rem;
   border-radius: 0.375rem;
-  border: 1px solid var(--color-academy-line);
+  border: 1px solid var(--color-academy-line-input);
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
   font-size: 0.875rem;
@@ -239,17 +268,39 @@
   background: var(--color-academy-soft);
 }
 
+/* 상태 표시 — 모서리 4px(누르는 칩·알약과 다른 모양, 교과서 6장). 뜻이 있는 상태는 StatusBadge·statusTones 를 쓴다. */
 .academy-app .academy-status {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.1875rem 0.5rem;
-  border-radius: 999px;
-  background: var(--color-academy-soft);
-  color: var(--color-academy-muted);
+  border-radius: 4px;
+  background: var(--color-academy-neutral-soft);
+  color: var(--color-academy-neutral);
   font-size: 0.75rem;
   line-height: 1.5;
   font-weight: 500;
+}
+
+/* 입력칸 공용 모양 — 흰 면 + 입력선(3:1) + 44px. 새 입력칸은 이 클래스를 쓴다(옛 입력칸은 화면을 고칠 때 옮긴다). */
+.academy-app .academy-input {
+  min-height: 2.75rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-academy-line-input);
+  border-radius: 0.375rem;
+  background: var(--color-academy-surface);
+  color: var(--color-academy-ink);
+  font-size: 0.875rem;
+}
+
+.academy-app .academy-input::placeholder {
+  color: var(--color-academy-faint);
+}
+
+.academy-app .academy-input:disabled {
+  background: var(--color-academy-soft);
+  color: var(--color-academy-muted);
 }
 
 .academy-app :is(button, a, input, textarea, select):focus-visible {
@@ -283,15 +334,8 @@
   color: var(--color-academy-ink);
 }
 
-.academy-app .academy-driver-stop:not(.bg-amber-50):not(.bg-green-50):not(.bg-blue-50) {
-  background: var(--color-academy-surface);
-  border-color: var(--color-academy-line);
-}
-
-.academy-app .academy-driver-rider:not(.bg-red-50) {
-  background: var(--color-academy-soft);
-  color: var(--color-academy-ink);
-}
+/* 2026-11-09 색상 정리 5단계: 정류장·승객 칸 바탕은 컴포넌트(RunBoard·UnifiedDriverClient)가 상태 토큰으로 직접 정한다.
+   예전엔 여기서 «.bg-amber-50 등이 아니면 흰/회색» 으로 덮어써, 토큰 클래스로 바꾼 경고·편집 중·결석 칸 바탕이 지워졌다. */
 
 @media (max-width: 420px) {
   .academy-app .academy-driver-rider-main { flex-wrap: wrap; }
@@ -312,8 +356,8 @@
 /* 공개 화면과 같이 옛 형광·중간 단계 브랜드 색도 학원 앱 색으로 잇는다(2026-10-29 디자인 통일). */
 .academy-app {
   --color-brand-orange-100: var(--color-academy-primary-soft);
-  --color-brand-orange-200: #edc0a9;
-  --color-brand-orange-300: #e29a77;
+  --color-brand-orange-200: #d1d5db;
+  --color-brand-orange-300: #9ca3af;
   --color-brand-neon-lime: var(--color-academy-primary);
   --color-brand-neon-cobalt: var(--color-academy-ink);
   --color-brand-neon-pink: var(--color-academy-primary);

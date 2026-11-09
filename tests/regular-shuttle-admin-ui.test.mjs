@@ -10,7 +10,8 @@ const dispatchPage = readFileSync("src/app/admin/shuttle/regular-dispatch/page.t
 const seasonalRouteSection = readFileSync("src/components/seasonal/RouteSection.tsx", "utf8");
 const regularDispatch = readFileSync("src/lib/regular/shuttle-dispatch.ts", "utf8");
 const regularPayload = readFileSync("src/lib/regular/regularDispatchPayload.ts", "utf8");
-const regularDispatchClient = readFileSync("src/app/admin/shuttle/regular-dispatch/RegularDispatchClient.tsx", "utf8");
+// 2026-11-09: 정규 배차 화면 = 기사님과 같은 운행표(RegularRunEditor) — 옛 RouteSection 배차 화면은 없앴다.
+const regularDispatchClient = readFileSync("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx", "utf8");
 const rosterRoute = readFileSync("src/app/api/admin/shuttle/regular-roster/route.ts", "utf8");
 const rosterLib = readFileSync("src/lib/shuttle/regularRosterEdit.ts", "utf8");
 
@@ -102,9 +103,9 @@ test("시간대별 실행은 순서 변경과 저장 후에도 자기 수업시�
 });
 
 test("등원과 하원 수업시간이 다르면 자동 수정하지 않고 관리자에게 표시한다", () => {
-  assert.match(dispatchPage, /classTimeMismatches/);
+  assert.match(regularDispatchClient, /const mismatches = useMemo\(/);
   assert.match(regularDispatchClient, /등원·하원 수업시간이 다른 학생/);
-  assert.match(regularDispatchClient, /자동으로 고치지 않았습니다/);
+  assert.match(regularDispatchClient, /자동으로 고치지 않는다/);
 });
 
 // 2026-11-05 원장 지시: 「등원·하원이 나뉘어 보이는데 시간대별로 보이게. 시간순 노선은 필요 없어」.
@@ -116,20 +117,20 @@ test("정규 배차 화면은 등원·하원 회차 카드를 한 목록에 시�
   assert.doesNotMatch(regularDispatchClient, /하루 운행 흐름/);
   assert.doesNotMatch(regularDispatchClient, /buildTimelineRows/);
   assert.doesNotMatch(regularDispatchClient, /방향별 세부 조정 열기/);
-  // 두 방향 모두 시간순 모드로 한 flex 목록 안에 놓는다(상태·저장은 방향별 그대로)
-  assert.equal((regularDispatchClient.match(/timeOrdered regularEditing onDirtyChange=/g) ?? []).length, 2);
-  assert.match(regularDispatchClient, /<div className="mt-2 flex flex-wrap gap-3">/);
-  // 공용 섹션: 시간순 모드에서만 겉 상자를 풀고 카드에 순서 값·방향 배지·방향이 적힌 저장 버튼
+  // 2026-11-09: 정규는 기사님과 같은 운행표(시각순 한 목록) — RouteSection 시간순 모드를 더 쓰지 않는다.
+  assert.doesNotMatch(regularDispatchClient, /timeOrdered|regularEditing/);
+  assert.match(regularDispatchClient, /<RunBoard/);
+  // 공용 섹션(방학특강·옛 정규 모드 코드는 그대로): 시간순 모드에서만 겉 상자를 풀고 카드에 순서 값·방향 배지·방향이 적힌 저장 버튼
   assert.match(seasonalRouteSection, /timeOrdered = false/);
   assert.match(seasonalRouteSection, /order: runTimelineOrder\(v, isPickup, vIdx\)/);
   assert.match(seasonalRouteSection, /`💾 \$\{dirLabel\} 저장`/);
   assert.match(seasonalRouteSection, /\{timeOrdered && <span[^>]*>\{dirLabel\}<\/span>\}/);
 });
 
-test("정규 배차는 차량별 담당 기사를 선택해 저장한다", () => {
-  assert.match(dispatchPage, /WHERE role='DRIVER'/);
-  assert.match(dispatchPage, /drivers=\{drivers\}/);
-  assert.match(regularDispatchClient, /drivers=\{drivers\}/);
+// 2026-11-09 원장 결정: 정규는 차량 개념을 없앴다(기사님 1명·모두 같은 운행표) — 차량별 담당 기사 선택은 방학특강만.
+test("정규 운행표는 차량·담당 기사를 고르지 않는다 · 방학특강 RouteSection 의 담당 기사는 그대로", () => {
+  assert.doesNotMatch(dispatchPage, /WHERE role='DRIVER'|drivers=\{drivers\}/);
+  assert.doesNotMatch(regularDispatchClient, /drivers=\{drivers\}|moveStopToVehicle|moveStudentToVehicle/);
   assert.match(seasonalRouteSection, /담당 기사/);
   assert.match(seasonalRouteSection, /driverUserId/);
 });

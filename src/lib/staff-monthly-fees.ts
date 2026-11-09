@@ -30,7 +30,9 @@ type SeatFee = { rosterId: string; tuition: number; discount: number; price: num
   shuttle: number; paymentId: string | null; studentId: string | null };
 
 async function readContext(sessionId: string) {
-  const { session, students } = await authorizedRoster(sessionId);
+  const { session, students: roster } = await authorizedRoster(sessionId);
+  // 보강 온 아이는 이 반 수강생이 아니다 — 다른 반 청구 자료가 이 반 코치 화면으로 내려가지 않게 수강료 확인에서 뺀다.
+  const students = roster.filter(s => !s.makeup);
   const month = staffFeeMonth();
   const [yearNumber, monthNumber] = month.split('-').map(Number);
   const seatIds = students.filter(s => s.id !== s.studentId).map(s => s.attendanceKey);

@@ -23,11 +23,11 @@ type AnnualPayload = {
 const CATEGORIES = ["일반", "대회", "방학", "특별행사", "정기행사"] as const;
 
 const CATEGORY_COLORS: Record<string, string> = {
-    "대회": "bg-orange-100 text-orange-700",
-    "방학": "bg-red-100 text-red-700",
-    "특별행사": "bg-purple-100 text-purple-700",
-    "정기행사": "bg-blue-100 text-blue-700",
-    "일반": "bg-green-100 text-green-700",
+    "대회": "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    "방학": "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    "특별행사": "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    "정기행사": "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    "일반": "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
 };
 
 function AnnualLoadingFallback() {
@@ -35,37 +35,37 @@ function AnnualLoadingFallback() {
         <div className="max-w-4xl mx-auto">
             <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-40 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="h-10 w-28 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                <div className="h-10 w-28 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
             </div>
-            <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="h-5 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                <div className="mt-3 h-4 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+            <div className="mb-6 rounded-xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+                <div className="h-5 w-40 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                <div className="mt-3 h-4 w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 <div className="mt-4 flex gap-2">
-                    <div className="h-10 flex-1 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                    <div className="h-10 w-20 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                    <div className="h-10 flex-1 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                    <div className="h-10 w-20 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
                 </div>
             </div>
             <div className="space-y-6">
                 {Array.from({ length: 2 }).map((_, yearIndex) => (
                     <section key={yearIndex}>
-                        <div className="mb-3 h-6 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                        <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                        <div className="mb-3 h-6 w-20 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                        <div className="rounded-xl border border-[var(--color-academy-line)] bg-white">
                             {Array.from({ length: 4 }).map((_, rowIndex) => (
-                                <div key={rowIndex} className="flex items-center justify-between gap-4 border-b border-gray-100 p-4 last:border-b-0 dark:border-gray-700">
+                                <div key={rowIndex} className="flex items-center justify-between gap-4 border-b border-[var(--color-academy-line)] p-4 last:border-b-0">
                                     <div className="flex min-w-0 flex-1 items-center gap-4">
-                                        <div className="h-4 w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                        <div className="h-4 w-24 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                         <div className="min-w-0 flex-1 space-y-2">
-                                            <div className="h-5 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                                            <div className="h-4 w-1/2 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                            <div className="h-5 w-2/3 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                                            <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                         </div>
                                     </div>
                                     <div className="hidden gap-2 sm:flex">
-                                        <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                        <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                                        <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                        <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                                     </div>
                                 </div>
                             ))}
@@ -79,8 +79,8 @@ function AnnualLoadingFallback() {
 
 function AnnualErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="mx-auto max-w-4xl rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">연간일정을 불러오지 못했습니다.</p>
+        <div className="mx-auto max-w-4xl rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">연간일정을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -249,20 +249,20 @@ export default function AnnualAdminClient({
         <div className="max-w-4xl mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <div>
-                    <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">연간일정 관리</h1>
+                    <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">연간일정 관리</h1>
                 </div>
                 <button
                     onClick={() => { resetForm(); setShowForm(true); }}
-                    className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition"
+                    className="bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition"
                 >
                     + 일정 추가
                 </button>
             </div>
 
             {/* ── 구글 캘린더 ICS URL 설정 ────────────────────────── */}
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 mb-6 shadow-sm">
-                <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100 mb-2">구글 캘린더 연동 (ICS)</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            <div className="bg-white border border-[var(--color-academy-line)] rounded-xl p-5 mb-6 shadow-sm">
+                <h3 className="font-bold text-sm text-[var(--color-academy-ink)] mb-2">구글 캘린더 연동 (ICS)</h3>
+                <p className="text-xs text-[var(--color-academy-muted)] mb-3">
                     구글 캘린더 → 설정 → 캘린더 통합 → &quot;iCal 형식의 공개 주소&quot;를 복사해 붙여넣으세요.
                     연동하면 공개 연간일정 페이지에 구글 캘린더 일정이 함께 표시됩니다.
                 </p>
@@ -272,19 +272,19 @@ export default function AnnualAdminClient({
                         value={icsUrl}
                         onChange={(e) => setIcsUrl(e.target.value)}
                         placeholder="https://calendar.google.com/calendar/ical/...@group.calendar.google.com/public/basic.ics"
-                        className="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800 focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime transition font-mono"
+                        className="flex-1 border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] transition font-mono"
                     />
                     <button
                         type="button"
                         onClick={handleSaveIcsUrl}
                         disabled={icsSaving}
-                        className="shrink-0 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2 rounded-lg font-bold hover:bg-orange-600 transition disabled:opacity-50 text-sm"
+                        className="shrink-0 bg-[var(--color-academy-primary)] text-white px-4 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50 text-sm"
                     >
                         {icsSaving ? "저장 중..." : "저장"}
                     </button>
                 </div>
                 {icsMsg && (
-                    <p className={`text-xs mt-2 ${icsMsg.startsWith("저장 실패") ? "text-red-600" : "text-green-600"}`}>
+                    <p className={`text-xs mt-2 ${icsMsg.startsWith("저장 실패") ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-success)]"}`}>
                         {icsMsg}
                     </p>
                 )}
@@ -292,47 +292,47 @@ export default function AnnualAdminClient({
 
             {/* Form */}
             {showForm && (
-                <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 mb-6 shadow-sm space-y-4">
-                    <h3 className="font-bold text-lg text-gray-900 dark:text-white">{editingId ? "일정 수정" : "새 일정 추가"}</h3>
+                <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-academy-line)] rounded-xl p-6 mb-6 shadow-sm space-y-4">
+                    <h3 className="font-bold text-lg text-[var(--color-academy-ink)]">{editingId ? "일정 수정" : "새 일정 추가"}</h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="sm:col-span-2">
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">제목 *</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">제목 *</label>
                             <input
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 required
                                 placeholder="예: 3월 개강"
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">시작일 *</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">시작일 *</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={date}
                                 onChange={(e) => setDate(e.target.value)}
                                 required
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">종료일 (선택)</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">종료일 (선택)</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={endDate}
                                 onChange={(e) => setEndDate(e.target.value)}
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">카테고리</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">카테고리</label>
                             <select
                                 value={category}
                                 onChange={(e) => setCategory(e.target.value)}
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             >
                                 {CATEGORIES.map((c) => (
                                     <option key={c} value={c}>{c}</option>
@@ -340,25 +340,25 @@ export default function AnnualAdminClient({
                             </select>
                         </div>
                         <div className="sm:col-span-2">
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">설명 (선택)</label>
+                            <label className="block text-sm font-bold text-[var(--color-academy-muted)] mb-1">설명 (선택)</label>
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
                                 rows={2}
                                 placeholder="일정에 대한 추가 설명"
-                                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg p-2.5 text-sm dark:bg-gray-800 dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line-input)] rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                     </div>
 
                     <div className="flex gap-2 justify-end">
-                        <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 dark:text-white dark:hover:text-white">
+                        <button type="button" onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]">
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600 transition disabled:opacity-50"
+                            className="bg-[var(--color-academy-primary)] text-white px-6 py-2 rounded-lg font-bold hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50"
                         >
                             {busy ? "저장 중..." : editingId ? "수정" : "추가"}
                         </button>
@@ -368,19 +368,19 @@ export default function AnnualAdminClient({
 
             {/* Event list */}
             {events.length === 0 ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center text-gray-400">
+                <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-12 text-center text-[var(--color-academy-faint)]">
                     등록된 일정이 없습니다. &quot;일정 추가&quot; 버튼으로 새 일정을 등록하세요.
                 </div>
             ) : (
                 <div className="space-y-6">
                     {years.map((year) => (
                         <div key={year}>
-                            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-3">{year}년</h2>
-                            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100">
+                            <h2 className="text-lg font-bold text-[var(--color-academy-ink)] mb-3">{year}년</h2>
+                            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] divide-y divide-[var(--color-academy-line)]">
                                 {eventsByYear[year].map((ev) => (
-                                    <div key={ev.id} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:bg-gray-900 transition-colors">
+                                    <div key={ev.id} className="flex items-center justify-between p-4 hover:bg-[var(--color-academy-soft)] transition-colors">
                                         <div className="flex items-center gap-4 min-w-0">
-                                            <div className="text-sm font-mono text-gray-500 dark:text-gray-400 shrink-0 w-24">
+                                            <div className="text-sm font-mono text-[var(--color-academy-muted)] shrink-0 w-24">
                                                 {toDateString(ev.date).slice(5)}
                                                 {ev.endDate && ` ~ ${toDateString(ev.endDate).slice(5)}`}
                                             </div>
@@ -388,9 +388,9 @@ export default function AnnualAdminClient({
                                                 {ev.category || "일반"}
                                             </span>
                                             <div className="min-w-0">
-                                                <p className="font-bold text-gray-900 dark:text-white truncate">{ev.title}</p>
+                                                <p className="font-bold text-[var(--color-academy-ink)] truncate">{ev.title}</p>
                                                 {ev.description && (
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{ev.description}</p>
+                                                    <p className="text-xs text-[var(--color-academy-muted)] truncate">{ev.description}</p>
                                                 )}
                                             </div>
                                         </div>

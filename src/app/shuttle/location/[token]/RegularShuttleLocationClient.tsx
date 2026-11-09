@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { hasShuttlePlaceName, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
 
 type LocationKind = "PICKUP" | "DROPOFF";
 type LinkData = {
@@ -84,6 +85,11 @@ export default function RegularShuttleLocationClient({ token }: { token: string 
   async function save() {
     const finalDropoff = sameAsPickup ? pickup : dropoff;
     if (!pickup || !finalDropoff) { setError("등원 탑승 위치와 하원 하차 위치를 모두 선택해 주세요."); return; }
+    // 장소명 필수(2026-11-09) — 예전에 이름 없이 저장된 위치는 «위치 수정»으로 이름을 적어야 저장된다(서버도 같은 기준)
+    if (!hasShuttlePlaceName(pickup.placeName) || !hasShuttlePlaceName(finalDropoff.placeName)) {
+      setError(`«위치 수정»을 눌러 ${SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}`);
+      return;
+    }
     if (!consent) { setError("셔틀 운행을 위한 위치정보 이용에 동의해 주세요."); return; }
     setSaving(true); setError(null);
     try {
@@ -143,7 +149,8 @@ export default function RegularShuttleLocationClient({ token }: { token: string 
         <button type="button" disabled={saving || !pickup || !(sameAsPickup ? pickup : dropoff) || !consent} onClick={() => void save()} className="mt-4 min-h-14 w-full rounded-2xl bg-[var(--brand-accent)] text-base font-black text-[var(--brand-accent-contrast)] disabled:opacity-40">{saving ? "저장 중…" : "두 위치 확인 · 저장"}</button>
       </div>
 
-      {picker && <LocationPickerModal title={picker === "PICKUP" ? "등원 탑승 위치" : "하원 하차 위치"} initialValue={(picker === "PICKUP" ? pickup : dropoff) ?? undefined} onClose={() => setPicker(null)} onConfirm={(value) => chooseLocation(picker, value)} />}
+      {/* 장소명 필수 — 기사님 명단에 이 이름이 나온다 */}
+      {picker && <LocationPickerModal title={picker === "PICKUP" ? "등원 탑승 위치" : "하원 하차 위치"} initialValue={(picker === "PICKUP" ? pickup : dropoff) ?? undefined} requirePlaceName onClose={() => setPicker(null)} onConfirm={(value) => chooseLocation(picker, value)} />}
     </main>
   );
 }

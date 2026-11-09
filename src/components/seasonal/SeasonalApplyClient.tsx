@@ -401,37 +401,37 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
   if (submitState === "done") return <DoneView slug={slug} result={result} offerings={offerings} message={message} />;
   const display = seasonalDisplayState(program);
   if (!display.canApply) return (
-    <section className="public-content-section bg-gray-50 px-4 py-8 dark:bg-gray-900">
+    <section className="public-content-section bg-[var(--color-public-tint)] px-4 py-8 dark:bg-[var(--color-public-paper)]">
       <div className="public-card mx-auto max-w-3xl space-y-4 p-5">
-        <p className="text-sm font-bold text-brand-orange-500">{display.label}</p>
+        <p className="text-sm font-bold text-[var(--color-public-accent)]">{display.label}</p>
         <h1 className="text-2xl font-black break-keep">{program.title}</h1>
         <p>{display.message}</p>
-        <p className="text-sm text-gray-500">운영 기간 · {formatSeasonalPeriod(program.operationStart, program.operationEnd)}</p>
+        <p className="text-sm text-[var(--color-public-muted)]">운영 기간 · {formatSeasonalPeriod(program.operationStart, program.operationEnd)}</p>
         <div className="public-actions"><Link href={`/seasonal/${slug}`} className="inline-flex items-center rounded-xl border border-gray-300 px-4 font-bold">특강 내용 보기</Link><Link href="/seasonal" className="inline-flex items-center rounded-xl border border-gray-300 px-4 font-bold">다른 특강 보기</Link></div>
       </div>
     </section>
   );
 
   return (
-    <form onSubmit={handleSubmit} className="public-seasonal-form bg-gray-50 px-4 py-8 pb-28 dark:bg-gray-900">
+    <form onSubmit={handleSubmit} className="public-seasonal-form bg-[var(--color-public-tint)] px-4 py-8 pb-28 dark:bg-[var(--color-public-paper)]">
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
-          <Link href={`/seasonal/${slug}`} className="text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
-          <p className="mt-5 text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime">방학특강 신청</p>
-          <h1 className="mt-2 text-3xl font-black text-gray-900 dark:text-white">{program.title}</h1>
-          {program.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">{program.summary}</p>}
+          <Link href={`/seasonal/${slug}`} className="text-sm font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime">특강 상세로 돌아가기</Link>
+          <p className="mt-5 text-sm font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime">방학특강 신청</p>
+          <h1 className="mt-2 text-3xl font-black text-[var(--color-public-ink)] dark:text-white">{program.title}</h1>
+          {program.summary && <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{program.summary}</p>}
         </header>
 
         {message && (
-          <p role={submitState === "error" ? "alert" : "status"} aria-live={submitState === "error" ? "assertive" : "polite"} className={`rounded-xl border px-4 py-3 text-sm font-bold ${submitState === "error" ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100" : "border-green-200 bg-green-50 text-green-800 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-100"}`}>
+          <p role={submitState === "error" ? "alert" : "status"} aria-live={submitState === "error" ? "assertive" : "polite"} className={`rounded-xl border px-4 py-3 text-sm font-bold ${submitState === "error" ? "border-red-200 bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100" : "border-green-200 bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-100"}`}>
             {message}
           </p>
         )}
 
         <section className="space-y-3">
           <div>
-            <h2 className="text-xl font-black text-gray-900 dark:text-white">수업 선택</h2>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">신청할 반을 선택한 뒤 실제 참여할 요일을 골라주세요.</p>
+            <h2 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">수업 선택</h2>
+            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">신청할 반을 선택한 뒤 실제 참여할 요일을 골라주세요.</p>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {offerings.map((item) => {
@@ -440,17 +440,17 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
               const priceItem = selected ? matchingOfferingForWeekdays(offerings, item, selectedWeekdays) ?? item : item;
               const shuttleAvailable = selected && priceItem.shuttleAvailable;
               return (
-                <article key={item.id} className={`rounded-2xl border bg-white p-5 shadow-sm dark:bg-gray-800 ${selected ? "border-brand-orange-500 ring-2 ring-brand-orange-100 dark:border-brand-neon-lime dark:ring-brand-neon-lime/20" : "border-gray-200 dark:border-gray-700"} ${disabled ? "opacity-60" : ""}`}>
+                <article key={item.id} className={`rounded-2xl border bg-white p-5 shadow-sm dark:bg-[var(--color-public-tint)] ${selected ? "border-[var(--color-public-accent)] ring-2 ring-[var(--color-public-tint)] dark:border-brand-neon-lime dark:ring-brand-neon-lime/20" : "border-[var(--color-public-line)] dark:border-[var(--color-public-line)]"} ${disabled ? "opacity-60" : ""}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-bold text-brand-orange-500 dark:text-brand-neon-lime">{item.dayLabel} {item.dateLabel}</p>
-                      <h3 className="mt-1 text-lg font-black text-gray-900 dark:text-white">{item.name}</h3>
+                      <p className="text-xs font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{item.dayLabel} {item.dateLabel}</p>
+                      <h3 className="mt-1 text-lg font-black text-[var(--color-public-ink)] dark:text-white">{item.name}</h3>
                     </div>
                     <button
                       type="button"
                       onClick={() => toggleOffering(item)}
                       disabled={disabled}
-                      className={`min-h-10 rounded-xl px-4 text-sm font-black transition ${selected ? "bg-brand-orange-500 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "border border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-200"} disabled:cursor-not-allowed`}
+                      className={`min-h-10 rounded-xl px-4 text-sm font-black transition ${selected ? "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "border border-gray-300 text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]"} disabled:cursor-not-allowed`}
                     >
                       {selected ? "선택됨" : disabled ? "마감" : "선택"}
                     </button>
@@ -462,18 +462,18 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                     <Pair label="수강료" value={formatWon(applicantPrice(priceItem, applicantType))} />
                   </dl>
                   {item.sessionDates.length > 0 && (
-                    <div className="mt-4 border-t border-gray-100 pt-4 dark:border-gray-700">
-                      <p className="text-sm font-black text-gray-900 dark:text-white">전체 수업 일정 · {item.sessionDates.length}회</p>
+                    <div className="mt-4 border-t border-[var(--color-public-line)] pt-4 dark:border-[var(--color-public-line)]">
+                      <p className="text-sm font-black text-[var(--color-public-ink)] dark:text-white">전체 수업 일정 · {item.sessionDates.length}회</p>
                       <ol className="mt-2 space-y-1.5">
-                        {item.sessionDates.map((session, index) => <li key={`${session.startsAt}-${index}`} className="text-xs text-gray-600 dark:text-gray-300"><span className="mr-2 font-bold text-brand-orange-500 dark:text-brand-neon-lime">{index + 1}회</span>{session.dateLabel} ({session.dayLabel}) {session.startTime}~{session.endTime}</li>)}
+                        {item.sessionDates.map((session, index) => <li key={`${session.startsAt}-${index}`} className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"><span className="mr-2 font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{index + 1}회</span>{session.dateLabel} ({session.dayLabel}) {session.startTime}~{session.endTime}</li>)}
                       </ol>
                     </div>
                   )}
                   {shuttleAvailable && (
-                    <div className="mt-4 rounded-xl bg-gray-50 p-3 dark:bg-gray-900">
-                      <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 text-sm font-black dark:border-gray-700 dark:bg-gray-800">
+                    <div className="mt-4 rounded-xl bg-[var(--color-public-tint)] p-3 dark:bg-[var(--color-public-paper)]">
+                      <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-[var(--color-public-line)] bg-white px-3 text-sm font-black dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
                         <span>셔틀 이용 신청</span>
-                        <span className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
+                        <span className="flex items-center gap-2 text-xs text-[var(--color-public-muted)] dark:text-blue-300">
                           {shuttle[item.id]?.useFreeHub ? "무료(거점)" : `${formatWon(priceItem.shuttleFee ?? 0)} 추가`}
                           <input
                             type="checkbox"
@@ -487,14 +487,14 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                         {/* 탑승 방식 선택 — 무료 거점이 설정돼 있을 때만 노출. */}
                         {program?.shuttleHub?.pickup && (
                           <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                            <button type="button" onClick={() => setHubMode(item.id, true)} className={`min-h-11 rounded-xl border px-3 text-sm font-black ${shuttle[item.id]?.useFreeHub ? "border-green-500 bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-200" : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}>🆓 무료 거점에서 탑승</button>
-                            <button type="button" onClick={() => setHubMode(item.id, false)} className={`min-h-11 rounded-xl border px-3 text-sm font-black ${!shuttle[item.id]?.useFreeHub ? "border-brand-orange-500 bg-orange-50 text-brand-orange-700 dark:bg-orange-950/30 dark:text-brand-orange-300" : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}>📍 집 앞에서 탑승</button>
+                            <button type="button" onClick={() => setHubMode(item.id, true)} className={`min-h-11 rounded-xl border px-3 text-sm font-black ${shuttle[item.id]?.useFreeHub ? "border-green-500 bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] dark:bg-green-950/40 dark:text-green-200" : "border-[var(--color-public-line)] text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]"}`}>🆓 무료 거점에서 탑승</button>
+                            <button type="button" onClick={() => setHubMode(item.id, false)} className={`min-h-11 rounded-xl border px-3 text-sm font-black ${!shuttle[item.id]?.useFreeHub ? "border-[var(--color-public-accent)] bg-orange-50 text-[var(--color-public-strong)] dark:bg-orange-950/30 dark:text-[var(--color-public-muted)]" : "border-[var(--color-public-line)] text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]"}`}>📍 집 앞에서 탑승</button>
                           </div>
                         )}
                         {shuttle[item.id]?.useFreeHub ? (
                           // 무료 거점 모드 — 탑승/하차 거점 위치를 안내하고, 셔틀비 무료를 표시한다.
-                          <div className="sm:col-span-2 rounded-xl border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950/30">
-                            <p className="text-sm font-black text-green-800 dark:text-green-200">🆓 무료 탑승 거점 이용 · 셔틀비 무료</p>
+                          <div className="sm:col-span-2 rounded-xl border border-green-200 bg-[var(--color-academy-success-soft)] p-3 dark:border-green-800 dark:bg-green-950/30">
+                            <p className="text-sm font-black text-[var(--color-academy-success)] dark:text-green-200">🆓 무료 탑승 거점 이용 · 셔틀비 무료</p>
                             <div className="mt-2 grid gap-2 sm:grid-cols-2">
                               {program?.shuttleHub?.pickup && <HubPointCard label="등원 탑승" point={program.shuttleHub.pickup} />}
                               {(program?.shuttleHub?.dropoff ?? program?.shuttleHub?.pickup) && <HubPointCard label="하원 하차" point={(program?.shuttleHub?.dropoff ?? program?.shuttleHub?.pickup)!} />}
@@ -506,16 +506,16 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                           <LocationField label="탑승(등원) 위치" value={shuttle[item.id]?.pickupLocation ?? ""} mapValue={shuttle[item.id]?.pickupLocationData} onChange={(value) => updateLocationText(item.id, "pickup", value)} onOpenMap={() => setLocationPicker({ offeringId: item.id, kind: "pickup" })} />
                           <TextInput label="희망 시간" value={shuttle[item.id]?.pickupTime ?? ""} onChange={(value) => updateShuttle(item.id, "pickupTime", value)} />
                           {/* 하원=등원 동일 토글 — 대부분 같으므로 기본 켜짐. 켜지면 하차 위치 입력을 숨긴다. */}
-                          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:col-span-2">
+                          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-3 py-2.5 text-sm font-bold text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)] sm:col-span-2">
                             <input type="checkbox" checked={shuttle[item.id]?.dropoffSameAsPickup ?? true} onChange={(e) => updateShuttle(item.id, "dropoffSameAsPickup", e.target.checked)} className="h-5 w-5 accent-brand-orange-500 dark:accent-brand-neon-lime" />
                             하원(하차)은 등원과 동일
-                            <span className="ml-auto text-xs font-medium text-gray-400">다르면 체크 해제</span>
+                            <span className="ml-auto text-xs font-medium text-[var(--color-public-muted)]">다르면 체크 해제</span>
                           </label>
                           {!(shuttle[item.id]?.dropoffSameAsPickup ?? true) && (
                             <LocationField label="하차(하원) 위치" value={shuttle[item.id]?.dropoffLocation ?? ""} mapValue={shuttle[item.id]?.dropoffLocationData} onChange={(value) => updateLocationText(item.id, "dropoff", value)} onOpenMap={() => setLocationPicker({ offeringId: item.id, kind: "dropoff" })} />
                           )}
                           <TextInput label="셔틀 메모" value={shuttle[item.id]?.note ?? ""} onChange={(value) => updateShuttle(item.id, "note", value)} />
-                          {!hasShuttleLocation(shuttle[item.id]) && <p role="alert" className="text-xs font-bold text-amber-700 dark:text-amber-300 sm:col-span-2">🚌 셔틀 신청 시 지도에서 등원 위치를 반드시 선택해 주세요. (텍스트 설명만으로는 신청되지 않습니다)</p>}
+                          {!hasShuttleLocation(shuttle[item.id]) && <p role="alert" className="text-xs font-bold text-[var(--color-academy-warning)] dark:text-amber-300 sm:col-span-2">🚌 셔틀 신청 시 지도에서 등원 위치를 반드시 선택해 주세요. (텍스트 설명만으로는 신청되지 않습니다)</p>}
                         </>}
                       </div>}
                     </div>
@@ -525,9 +525,9 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
             })}
           </div>
           {selectedOfferings.length > 0 && (
-            <fieldset className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-              <legend className="px-1 text-sm font-black text-gray-900 dark:text-white">참여 요일 *</legend>
-              <p className="mt-1 text-xs font-bold text-gray-500 dark:text-gray-400">선택한 요일 수에 맞춰 주2·주3·주5 수강료가 자동 적용됩니다.</p>
+            <fieldset className="rounded-2xl border border-[var(--color-public-line)] bg-white p-4 shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
+              <legend className="px-1 text-sm font-black text-[var(--color-public-ink)] dark:text-white">참여 요일 *</legend>
+              <p className="mt-1 text-xs font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">선택한 요일 수에 맞춰 주2·주3·주5 수강료가 자동 적용됩니다.</p>
               <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-7">
                 {WEEKDAY_OPTIONS.map((option) => {
                   const enabled = availableWeekdays.includes(option.value);
@@ -538,7 +538,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                       type="button"
                       disabled={!enabled}
                       onClick={() => toggleWeekday(option.value)}
-                      className={`min-h-11 rounded-xl border text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-35 ${checked ? "border-brand-orange-500 bg-brand-orange-500 text-white dark:border-brand-neon-lime dark:bg-brand-neon-lime dark:text-brand-navy-900" : "border-gray-300 text-gray-700 dark:border-gray-600 dark:text-gray-200"}`}
+                      className={`min-h-11 rounded-xl border text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-35 ${checked ? "border-[var(--color-public-accent)] bg-[var(--color-public-accent)] text-white dark:border-brand-neon-lime dark:bg-brand-neon-lime dark:text-brand-navy-900" : "border-gray-300 text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]"}`}
                       aria-pressed={checked}
                     >
                       {option.label}
@@ -547,7 +547,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                 })}
               </div>
               {!hasPricingMatch && selectedWeekdays.length > 0 && (
-                <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                <p role="alert" className="mt-3 rounded-xl border border-amber-200 bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)] dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                   선택한 {selectedWeekdays.length}개 요일에 맞는 수강료가 아직 설정되지 않았습니다.
                 </p>
               )}
@@ -556,11 +556,11 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-          <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <h2 className="text-xl font-black text-gray-900 dark:text-white">신청 정보</h2>
+          <div className="space-y-4 rounded-2xl border border-[var(--color-public-line)] bg-white p-5 shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
+            <h2 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">신청 정보</h2>
             <fieldset>
-              <legend className="text-sm font-black text-gray-700 dark:text-gray-200">회원 구분 *</legend>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">현재 학원에 등록된 학생인지 선택해 주세요. 회원별 수강료 확인에 사용됩니다.</p>
+              <legend className="text-sm font-black text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">회원 구분 *</legend>
+              <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">현재 학원에 등록된 학생인지 선택해 주세요. 회원별 수강료 확인에 사용됩니다.</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {([[
                   "EXISTING",
@@ -569,7 +569,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
                   "NEW",
                   "신규 회원",
                 ]] as const).map(([value, label]) => (
-                  <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-gray-300 px-3 text-sm font-bold text-gray-700 dark:border-gray-600 dark:text-gray-200">
+                  <label key={value} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-gray-300 px-3 text-sm font-bold text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
                     <input
                       type="radio"
                       name="applicantType"
@@ -595,53 +595,53 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
               <TextInput label="보호자 관계" value={form.parentRelation} onChange={(value) => update("parentRelation", value)} />
               <TextInput label="주소" value={form.address} onChange={(value) => update("address", value)} />
             </div>
-            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+            <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
               요청 사항
               <textarea
                 value={form.memo}
                 onChange={(event) => update("memo", event.target.value)}
                 rows={4}
-                className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime"
+                className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-[var(--color-public-ink)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:focus:ring-brand-neon-lime"
                 placeholder="상담 시 참고할 내용을 적어주세요"
               />
             </label>
           </div>
 
-          <aside className="space-y-4 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <h2 className="text-xl font-black text-gray-900 dark:text-white">신청 요약</h2>
+          <aside className="space-y-4 rounded-2xl border border-[var(--color-public-line)] bg-white p-5 shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
+            <h2 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">신청 요약</h2>
             <div className="space-y-2">
               {selectedOfferings.length === 0 ? (
-                <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500 dark:bg-gray-900 dark:text-gray-400">선택한 수업이 없습니다.</p>
+                <p className="rounded-xl bg-[var(--color-public-tint)] p-4 text-sm text-[var(--color-public-muted)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-muted)]">선택한 수업이 없습니다.</p>
               ) : selectionPlans.map((plan) => {
                 const item = plan.offering ?? plan.base;
                 return (
-                <div key={plan.base.id} className="rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-900">
-                  <p className="font-bold text-gray-900 dark:text-white">{plan.base.name}</p>
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{selectedWeekdays.map((weekday) => WEEKDAY_OPTIONS.find((option) => option.value === weekday)?.label).filter(Boolean).join("·") || "요일 미선택"} · {item.startTime}~{item.endTime}</p>
+                <div key={plan.base.id} className="rounded-xl bg-[var(--color-public-tint)] p-3 text-sm dark:bg-[var(--color-public-paper)]">
+                  <p className="font-bold text-[var(--color-public-ink)] dark:text-white">{plan.base.name}</p>
+                  <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{selectedWeekdays.map((weekday) => WEEKDAY_OPTIONS.find((option) => option.value === weekday)?.label).filter(Boolean).join("·") || "요일 미선택"} · {item.startTime}~{item.endTime}</p>
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold">
                     <span>수강료 {formatWon(applicantPrice(item, applicantType))}</span>
                     {hasShuttle(shuttle[plan.base.id]) && hasShuttleLocation(shuttle[plan.base.id]) && (
                       shuttle[plan.base.id]?.useFreeHub
-                        ? <span className="text-green-700 dark:text-green-300">셔틀비 무료(거점)</span>
-                        : <span className="text-blue-700 dark:text-blue-300">셔틀비 +{formatWon(shuttleFeeForDraft(item, shuttle[plan.base.id]))}</span>
+                        ? <span className="text-[var(--color-academy-success)] dark:text-green-300">셔틀비 무료(거점)</span>
+                        : <span className="text-[var(--color-public-muted)] dark:text-blue-300">셔틀비 +{formatWon(shuttleFeeForDraft(item, shuttle[plan.base.id]))}</span>
                     )}
                   </div>
-                  {item.sessionDates.length > 1 && <p className="mt-1 text-xs font-bold text-gray-600 dark:text-gray-300">총 {item.sessionDates.length}회 · {item.sessionDates.map((session) => `${session.dateLabel}(${session.dayLabel})`).join(", ")}</p>}
-                  {isFull(item) && <p className="mt-1 text-xs font-bold text-amber-600 dark:text-amber-300">대기 접수로 신청됩니다.</p>}
+                  {item.sessionDates.length > 1 && <p className="mt-1 text-xs font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">총 {item.sessionDates.length}회 · {item.sessionDates.map((session) => `${session.dateLabel}(${session.dayLabel})`).join(", ")}</p>}
+                  {isFull(item) && <p className="mt-1 text-xs font-bold text-[var(--color-academy-warning)] dark:text-amber-300">대기 접수로 신청됩니다.</p>}
                 </div>
                 );
               })}
             </div>
-            <div className="border-t border-gray-100 pt-4 dark:border-gray-700">
+            <div className="border-t border-[var(--color-public-line)] pt-4 dark:border-[var(--color-public-line)]">
               <dl className="space-y-2 text-sm">
-                <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">수강료</dt><dd className="font-bold">{formatWon(tuitionTotal)}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500 dark:text-gray-400">셔틀비</dt><dd className="font-bold text-blue-700 dark:text-blue-300">{shuttleTotal ? `+${formatWon(shuttleTotal)}` : formatWon(0)}</dd></div>
+                <div className="flex justify-between"><dt className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">수강료</dt><dd className="font-bold">{formatWon(tuitionTotal)}</dd></div>
+                <div className="flex justify-between"><dt className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">셔틀비</dt><dd className="font-bold text-[var(--color-public-muted)] dark:text-blue-300">{shuttleTotal ? `+${formatWon(shuttleTotal)}` : formatWon(0)}</dd></div>
               </dl>
-              <p className="mt-3 text-sm font-bold text-gray-700 dark:text-gray-200">최종 예상금액</p>
-              <p className="mt-1 text-2xl font-black text-brand-navy-900 dark:text-white">{formatWon(totalPrice)}</p>
+              <p className="mt-3 text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">최종 예상금액</p>
+              <p className="mt-1 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">{formatWon(totalPrice)}</p>
               {/* 형제 여부는 등록된 보호자 연락처로 서버가 확인한다. 화면에서 미리 단정하면 실제 청구액과 어긋나므로
                   여기서는 안내만 하고, 실제 할인 금액은 접수 완료 화면에서 서버가 확정한 값으로 보여준다. */}
-              <p className="mt-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+              <p className="mt-2 text-xs font-bold text-[var(--color-academy-success)] dark:text-emerald-300">
                 형제·자매가 함께 신청하면 수강료 10%가 자동 할인됩니다. (셔틀비 제외 · 접수 후 금액에 반영)
               </p>
             </div>
@@ -650,7 +650,7 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
             {hasMapSelection && (
               <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 dark:border-orange-500/30 dark:bg-orange-500/10">
                 <CheckBox label="셔틀 운행과 노선 편성을 위해 선택한 승하차 위치(주소·좌표)를 수집·이용하는 데 동의합니다." checked={locationConsent} onChange={setLocationConsent} />
-                <p className="mt-2 pl-6 text-xs leading-5 text-gray-600 dark:text-gray-300">위치 정보는 셔틀 배정과 운행 안내에 사용됩니다. 동의하지 않으면 지도 위치를 제거하고 텍스트로 위치를 적어주세요.</p>
+                <p className="mt-2 pl-6 text-xs leading-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">위치 정보는 셔틀 배정과 운행 안내에 사용됩니다. 동의하지 않으면 지도 위치를 제거하고 텍스트로 위치를 적어주세요.</p>
               </div>
             )}
           </aside>
@@ -658,19 +658,19 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
       </div>
 
       {/* 하단 고정 바 — 높이를 --public-bottom-bar 로 알려 플로팅 버튼이 바 위로 올라간다(게슈탈트 C-P3) */}
-      <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95">
+      <PublicBottomBar className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-public-line)] bg-white/95 p-3 backdrop-blur dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]/95">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 sm:flex-nowrap">
           <div className="hidden min-w-0 flex-1 sm:block">
-            <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{selectedOfferings.length}개 수업 선택 · {formatWon(totalPrice)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">제출 후 학원에서 확인 연락을 드립니다.</p>
+            <p className="truncate text-sm font-bold text-[var(--color-public-ink)] dark:text-white">{selectedOfferings.length}개 수업 선택 · {formatWon(totalPrice)}</p>
+            <p className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">제출 후 학원에서 확인 연락을 드립니다.</p>
           </div>
-          <Link href={`/seasonal/${slug}`} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 px-4 font-bold text-gray-700 dark:border-gray-600 dark:text-gray-200">취소</Link>
+          <Link href={`/seasonal/${slug}`} className="flex min-h-12 items-center justify-center rounded-xl border border-gray-300 px-4 font-bold text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">취소</Link>
           {incompleteItems.length > 0 && submitState !== "submitting" && <p id="seasonal-apply-incomplete" role="status" className="order-first w-full text-xs font-bold text-amber-700 sm:order-none sm:min-w-0 sm:flex-1">미완료: {incompleteItems.join(" · ")}</p>}
           <button
             type="submit"
             disabled={!canSubmit}
             aria-describedby={incompleteItems.length > 0 ? "seasonal-apply-incomplete" : undefined}
-            className="flex min-h-12 flex-1 items-center justify-center rounded-xl bg-brand-orange-500 px-5 font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 sm:flex-none"
+            className="flex min-h-12 flex-1 items-center justify-center rounded-xl bg-[var(--color-public-accent)] px-5 font-black text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 sm:flex-none"
           >
             {submitState === "submitting" ? "접수 중..." : "신청 접수"}
           </button>
@@ -692,23 +692,23 @@ export default function SeasonalApplyClient({ slug }: { slug: string }) {
 function DoneView({ slug, result, offerings, message }: { slug: string; result: SubmitResult | null; offerings: SeasonalClass[]; message: string }) {
   const byId = new Map(offerings.map((item) => [item.id, item]));
   return (
-    <main className="bg-gray-50 px-4 py-12 dark:bg-gray-900">
-      <section className="mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-sm font-black text-green-700 dark:bg-green-500/15 dark:text-green-200">완료</div>
-        <h1 className="mt-5 text-2xl font-black text-gray-900 dark:text-white">신청이 접수되었습니다</h1>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-300">{message}</p>
+    <main className="bg-[var(--color-public-tint)] px-4 py-12 dark:bg-[var(--color-public-paper)]">
+      <section className="mx-auto max-w-xl rounded-2xl border border-[var(--color-public-line)] bg-white p-8 text-center shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-academy-success-soft)] text-sm font-black text-[var(--color-academy-success)] dark:bg-green-500/15 dark:text-green-200">완료</div>
+        <h1 className="mt-5 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">신청이 접수되었습니다</h1>
+        <p className="mt-2 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{message}</p>
         {result?.items && result.items.length > 0 && (
           <div className="mt-6 space-y-2 text-left">
             {result.items.map((item) => (
-              <div key={item.offeringId} className="rounded-xl bg-gray-50 p-3 text-sm dark:bg-gray-900">
-                <p className="font-bold text-gray-900 dark:text-white">{byId.get(item.offeringId)?.name ?? "선택 수업"}</p>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <div key={item.offeringId} className="rounded-xl bg-[var(--color-public-tint)] p-3 text-sm dark:bg-[var(--color-public-paper)]">
+                <p className="font-bold text-[var(--color-public-ink)] dark:text-white">{byId.get(item.offeringId)?.name ?? "선택 수업"}</p>
+                <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                   {statusText(item.status)}{item.waitlistOrder ? ` · 대기 ${item.waitlistOrder}번` : ""}
                   {typeof item.priceSnapshot === "number" ? ` · ${formatWon(item.priceSnapshot)}` : ""}
                 </p>
                 {/* 서버가 확정한 형제할인 금액을 그대로 보여준다(화면에서 다시 계산하지 않는다). */}
                 {(item.siblingDiscountSnapshot ?? 0) > 0 && (
-                  <p className="mt-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                  <p className="mt-1 text-xs font-bold text-[var(--color-academy-success)] dark:text-emerald-300">
                     수강료 {formatWon(item.tuitionPriceSnapshot ?? 0)} · 형제할인 −{formatWon(item.siblingDiscountSnapshot ?? 0)}
                     {(item.shuttleFeeSnapshot ?? 0) > 0 ? ` · 셔틀비 +${formatWon(item.shuttleFeeSnapshot ?? 0)}` : ""}
                   </p>
@@ -718,8 +718,8 @@ function DoneView({ slug, result, offerings, message }: { slug: string; result: 
           </div>
         )}
         <div className="mt-6 flex justify-center gap-2">
-          <Link href={`/seasonal/${slug}`} className="inline-flex min-h-11 items-center rounded-xl border border-gray-300 px-5 font-bold text-gray-700 dark:border-gray-600 dark:text-gray-200">상세 보기</Link>
-          <Link href="/" className="inline-flex min-h-11 items-center rounded-xl bg-brand-orange-500 px-5 font-bold text-white dark:bg-brand-neon-lime dark:text-brand-navy-900">홈으로</Link>
+          <Link href={`/seasonal/${slug}`} className="inline-flex min-h-11 items-center rounded-xl border border-gray-300 px-5 font-bold text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">상세 보기</Link>
+          <Link href="/" className="inline-flex min-h-11 items-center rounded-xl bg-[var(--color-public-accent)] px-5 font-bold text-white dark:bg-brand-neon-lime dark:text-brand-navy-900">홈으로</Link>
         </div>
       </section>
     </main>
@@ -730,10 +730,10 @@ function DoneView({ slug, result, offerings, message }: { slug: string; result: 
 function HubPointCard({ label, point }: { label: string; point: { name: string; lat: number; lng: number } }) {
   const mapHref = `https://map.kakao.com/link/map/${encodeURIComponent(point.name)},${point.lat},${point.lng}`;
   return (
-    <div className="rounded-lg border border-green-200 bg-white p-2.5 dark:border-green-800 dark:bg-gray-900">
-      <p className="text-[11px] font-black text-green-700 dark:text-green-300">{label}</p>
-      <p className="mt-0.5 text-[13px] font-bold text-gray-900 dark:text-white">{point.name}</p>
-      <a href={mapHref} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[12px] font-bold text-brand-orange-600 hover:underline dark:text-brand-neon-lime">🗺 지도에서 위치 확인</a>
+    <div className="rounded-lg border border-green-200 bg-white p-2.5 dark:border-green-800 dark:bg-[var(--color-public-paper)]">
+      <p className="text-[11px] font-black text-[var(--color-academy-success)] dark:text-green-300">{label}</p>
+      <p className="mt-0.5 text-[13px] font-bold text-[var(--color-public-ink)] dark:text-white">{point.name}</p>
+      <a href={mapHref} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[12px] font-bold text-[var(--color-public-strong)] hover:underline dark:text-brand-neon-lime">🗺 지도에서 위치 확인</a>
     </div>
   );
 }
@@ -752,18 +752,18 @@ function LocationField({
   onOpenMap: () => void;
 }) {
   return (
-    <div className={`rounded-xl border p-3 ${mapValue ? "border-green-300 bg-green-50/50 dark:border-green-600/50 dark:bg-green-900/10" : "border-amber-300 bg-amber-50/40 dark:border-amber-500/40 dark:bg-amber-900/10"} dark:bg-gray-800`}>
-      <p className="text-sm font-bold text-gray-700 dark:text-gray-200">{label} <span className="text-red-500">*</span></p>
+    <div className={`rounded-xl border p-3 ${mapValue ? "border-green-300 bg-[var(--color-academy-success-soft)]/50 dark:border-green-600/50 dark:bg-green-900/10" : "border-amber-300 bg-[var(--color-academy-warning-soft)]/40 dark:border-amber-500/40 dark:bg-amber-900/10"} dark:bg-[var(--color-public-tint)]`}>
+      <p className="text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">{label} <span className="text-red-500">*</span></p>
       {/* 지도 핀이 실제 위치의 기준 — 버튼을 1순위로 노출한다 */}
-      <button type="button" onClick={onOpenMap} className={`mt-2 flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-3 text-sm font-black ${mapValue ? "border border-green-500 text-green-700 dark:border-green-500 dark:text-green-300" : "bg-brand-orange-500 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"}`}>
+      <button type="button" onClick={onOpenMap} className={`mt-2 flex min-h-11 w-full items-center justify-center gap-1 rounded-xl px-3 text-sm font-black ${mapValue ? "border border-green-500 text-[var(--color-academy-success)] dark:border-green-500 dark:text-green-300" : "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"}`}>
         <span className="material-symbols-outlined text-lg" aria-hidden="true">{mapValue ? "check_circle" : "map"}</span>
         {mapValue ? "지도 위치 지정됨 · 다시 선택" : "지도에서 위치 선택 (필수)"}
       </button>
-      {mapValue && <p className="mt-2 text-xs font-bold text-green-700 dark:text-green-300">📍 {mapValue.roadAddress ?? mapValue.address}</p>}
+      {mapValue && <p className="mt-2 text-xs font-bold text-[var(--color-academy-success)] dark:text-green-300">📍 {mapValue.roadAddress ?? mapValue.address}</p>}
       {/* 텍스트는 위치 설명(선택) — 지도 핀을 찍으면 주소가 자동 입력되며, 수정해 상세 설명을 남길 수 있다. 좌표를 대체하지 않는다 */}
-      <label className="mt-2 block text-xs font-medium text-gray-500 dark:text-gray-400">
+      <label className="mt-2 block text-xs font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
         위치 설명 (선택 · 지도 선택 시 자동 입력)
-        <input type="text" value={value} onChange={(event) => onChange(event.target.value)} placeholder="예: 아파트 정문, 2동 앞" className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+        <input type="text" value={value} onChange={(event) => onChange(event.target.value)} placeholder="예: 아파트 정문, 2동 앞" className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm text-[var(--color-public-ink)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white" />
       </label>
     </div>
   );
@@ -785,7 +785,7 @@ function TextInput({
   inputMode?: "text" | "tel";
 }) {
   return (
-    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+    <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
       {label}
       <input
         type="text"
@@ -794,7 +794,7 @@ function TextInput({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}
-        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime"
+        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-[var(--color-public-ink)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:focus:ring-brand-neon-lime"
       />
     </label>
   );
@@ -802,14 +802,14 @@ function TextInput({
 
 function DateInput({ label, value, onChange, required }: { label: string; value: string; onChange: (value: string) => void; required?: boolean }) {
   return (
-    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+    <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
       {label}
       <input
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         required={required}
-        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-gray-900 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-brand-neon-lime"
+        className="mt-1 w-full rounded-xl border border-gray-300 bg-white p-3 text-sm text-[var(--color-public-ink)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:focus:ring-brand-neon-lime"
       />
     </label>
   );
@@ -817,12 +817,12 @@ function DateInput({ label, value, onChange, required }: { label: string; value:
 
 function CheckBox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label className="flex items-start gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">
+    <label className="flex items-start gap-2 text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="mt-1 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:border-gray-600"
+        className="mt-1 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)]"
       />
       <span>{label}</span>
     </label>
@@ -830,15 +830,15 @@ function CheckBox({ label, checked, onChange }: { label: string; checked: boolea
 }
 
 function Pair({ label, value }: { label: string; value: string }) {
-  return <div><dt className="text-xs text-gray-500 dark:text-gray-400">{label}</dt><dd className="mt-0.5 font-bold text-gray-900 dark:text-white">{value}</dd></div>;
+  return <div><dt className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{label}</dt><dd className="mt-0.5 font-bold text-[var(--color-public-ink)] dark:text-white">{value}</dd></div>;
 }
 
 function StatusBox({ icon, text, retry }: { icon: string; text: string; retry?: boolean }) {
   return (
-    <div className="bg-gray-50 px-4 py-12 dark:bg-gray-900">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-10 text-center dark:border-gray-700 dark:bg-gray-800">
-        <span className="material-symbols-outlined text-4xl text-gray-400" aria-hidden="true">{icon}</span>
-        <p className="mt-3 text-gray-600 dark:text-gray-300">{text}</p>
+    <div className="bg-[var(--color-public-tint)] px-4 py-12 dark:bg-[var(--color-public-paper)]">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-[var(--color-public-line)] bg-white p-10 text-center dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)]">
+        <span className="material-symbols-outlined text-4xl text-[var(--color-public-muted)]" aria-hidden="true">{icon}</span>
+        <p className="mt-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{text}</p>
         {retry && <button type="button" onClick={() => location.reload()} className="mt-4 min-h-11 rounded-xl border border-gray-300 px-5 font-bold">다시 시도</button>}
       </div>
     </div>

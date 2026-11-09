@@ -62,7 +62,7 @@ const DAY_LABELS: Record<string, string> = {
 // 상태 라벨 + 색상(화면 토큰)
 const STATUS_CONFIG: Record<string, { label: string; tone: string }> = {
     WAITING: { label: "대기중", tone: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
-    OFFERED: { label: "제안됨", tone: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    OFFERED: { label: "제안됨", tone: "bg-[var(--color-academy-info-soft)] text-[var(--color-academy-info)]" },
     ENROLLED: { label: "등록완료", tone: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
     CANCELLED: { label: "취소", tone: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]" },
 };
@@ -78,28 +78,28 @@ function WaitlistLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div className="space-y-2">
-                    <div className="h-8 w-44 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-4 w-80 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                    <div className="h-8 w-44 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                    <div className="h-4 w-80 rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
-                <div className="h-11 w-28 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                <div className="h-11 w-28 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {Array.from({ length: 4 }).map((_, index) => (
                     <div
                         key={index}
-                        className="h-32 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
+                        className="h-32 rounded-xl border border-[var(--color-academy-line)] bg-white animate-pulse"
                     />
                 ))}
             </div>
             <div className="flex items-center gap-3">
-                <div className="h-10 w-44 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
-                <div className="h-5 w-32 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                <div className="h-10 w-44 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
+                <div className="h-5 w-32 rounded bg-[var(--color-academy-soft)] animate-pulse" />
             </div>
             <div className="space-y-4">
                 {Array.from({ length: 3 }).map((_, index) => (
                     <div
                         key={index}
-                        className="h-40 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 animate-pulse"
+                        className="h-40 rounded-xl border border-[var(--color-academy-line)] bg-white animate-pulse"
                     />
                 ))}
             </div>
@@ -109,13 +109,13 @@ function WaitlistLoadingFallback() {
 
 function WaitlistErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">대기자 정보를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">대기자 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -356,7 +356,7 @@ export default function WaitlistClient({
             {/* 페이지 헤더 */}
             <div className="flex items-center justify-between gap-2">
                 <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-academy-ink)]">
-                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-primary)]" aria-hidden="true">hourglass_top</span>
+                    <span className="material-symbols-outlined text-2xl text-[var(--color-academy-ink)]" aria-hidden="true">hourglass_top</span>
                     대기자 관리
                 </h1>
                 <button
@@ -490,7 +490,7 @@ export default function WaitlistClient({
                                             <td className="px-2 py-1.5">{statusBadge(w)}</td>
                                             <td className="admin-cell-num hidden px-2 py-1.5 text-[var(--color-academy-muted)] sm:table-cell">{kstLabel(w.createdAt) || "-"}</td>
                                             {/* 응답 기한은 제안됨(OFFERED)일 때만 */}
-                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-primary)]">{w.status === "OFFERED" && w.respondBy ? kstLabel(w.respondBy) : "-"}</td>
+                                            <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{w.status === "OFFERED" && w.respondBy ? kstLabel(w.respondBy) : "-"}</td>
                                             {/* 메모는 줄이 늘어나지 않게 아이콘만, 내용은 상세 패널 */}
                                             <td className="admin-cell-center hidden px-2 py-1.5 sm:table-cell">
                                                 {w.memo ? <span className="material-symbols-outlined text-base text-[var(--color-academy-muted)]" aria-label="메모 있음">sticky_note_2</span> : <span className="text-xs text-[var(--color-academy-muted)]">-</span>}
@@ -649,11 +649,11 @@ function AddWaitlistModal({
         >
             <div className="w-full p-6">
                 <div className="flex items-center justify-between mb-5">
-                    <h3 id="add-waitlist-title" className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime">person_add</span>
+                    <h3 id="add-waitlist-title" className="text-lg font-bold text-[var(--color-academy-ink)] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[var(--color-academy-ink)]">person_add</span>
                         대기 등록
                     </h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:text-gray-300">
+                    <button onClick={onClose} className="text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
@@ -661,20 +661,20 @@ function AddWaitlistModal({
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {/* 학생 선택 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">학생 *</label>
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">학생 *</label>
                         <input
                             type="text"
                             placeholder="이름 검색..."
                             value={studentSearch}
                             onChange={(e) => setStudentSearch(e.target.value)}
                             disabled={studentsLoading || Boolean(studentsError)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-1"
+                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm mb-1"
                         />
                         <select
                             value={studentId}
                             onChange={(e) => setStudentId(e.target.value)}
                             disabled={studentsLoading || Boolean(studentsError)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
                             size={5}
                         >
                             <option value="">
@@ -685,19 +685,19 @@ function AddWaitlistModal({
                             ))}
                         </select>
                         {studentsError && (
-                            <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+                            <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
                                 <span>{studentsError}</span>
                                 <button
                                     type="button"
                                     onClick={() => void onRetryLoadStudents()}
-                                    className="shrink-0 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/40"
+                                    className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
                                 >
                                     다시 시도
                                 </button>
                             </div>
                         )}
                         {!studentsLoading && !studentsError && students.length === 0 && (
-                            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                 등록된 학생이 없습니다.
                             </p>
                         )}
@@ -705,11 +705,11 @@ function AddWaitlistModal({
 
                     {/* 반 선택 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">반 *</label>
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">반 *</label>
                         <select
                             value={classId}
                             onChange={(e) => setClassId(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
                         >
                             <option value="">-- 반 선택 --</option>
                             {classes.map((c) => (
@@ -722,13 +722,13 @@ function AddWaitlistModal({
 
                     {/* 메모 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">메모 (선택)</label>
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">메모 (선택)</label>
                         <input
                             type="text"
                             value={memo}
                             onChange={(e) => setMemo(e.target.value)}
                             placeholder="대기 사유나 참고사항"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                            className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm"
                         />
                     </div>
 
@@ -737,14 +737,14 @@ function AddWaitlistModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-100"
+                            className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={busy}
-                            className="px-5 py-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white text-sm font-semibold rounded-lg hover:bg-brand-orange-600 dark:hover:bg-lime-400 disabled:opacity-50 transition-colors"
+                            className="px-5 py-2 bg-[var(--color-academy-primary)] text-white text-sm font-semibold rounded-lg hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-50 transition-colors"
                         >
                             {busy ? "등록 중..." : "대기 등록"}
                         </button>

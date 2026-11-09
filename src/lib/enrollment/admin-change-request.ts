@@ -6,6 +6,7 @@ import { computeClassChangeProration, describeProration, type ProrationResult } 
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -40,6 +41,8 @@ export type AdminChangeRequestRow = {
   /** 시트·랠리즈 반영 상태(PENDING/SUCCEEDED/FAILED). 자동 적용 건의 "확인 필요" 배지에 쓴다. */
   sheetStatus: string | null;
   rallyzStatus: string | null;
+  /** 관리자가 학생 상세에서 바로 옮긴 반 이동(신청자=결정자, 반 변경, 적용됨) — 학부모 신청 아님 */
+  adminDirectMove: boolean;
 };
 
 export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<AdminChangeRequestRow[]> {
@@ -50,6 +53,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
             to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
             r.reason, r.status, r.waitlisted, r."decisionNote", r."invoicedPaymentId",
+            (r.kind = 'CLASS_CHANGE' AND r.status = 'APPLIED' AND r."requestedByUserId" = r."decidedByUserId") AS "adminDirectMove",
             r."studentId", r."fromClassId", r."toClassId", fc."dayOfWeek" AS "fromDay", tc."dayOfWeek" AS "toDay",
             fp.price AS "fromFee", tp.price AS "toFee",
             to_char(r."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "createdAt",
@@ -70,6 +74,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
        -- LATERAL ... LIMIT 1 이라 원장이 여러 건이어도 신청 행이 늘어나지 않는다.
        LEFT JOIN LATERAL (SELECT c.id, c.status, c."holdReason" FROM "OperationsCommand" c
                            WHERE ${LINKED_COMMAND_SQL}
+                             AND ${notClosedByDeletedEnrollmentSql("c")}
                            ORDER BY c."createdAt" DESC LIMIT 1) oc ON true
       WHERE ($1 = 'ALL' OR r.status = $1
              OR ($1 = 'NEEDS_CHECK' AND r.status = 'APPLIED' AND ${NEEDS_CHECK_SQL}))
@@ -85,7 +90,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     id: row.id,
     studentName: row.studentName,
     kind: row.kind,
-    // 복귀(RESUME)는 관리자 직접 변경에서만 생긴다(학부모 신청 종류에는 없음).
+    // 복귀(RESUME)는 관리자 직접 변경 + 학부모 복귀 신청(휴원 중인 반, 2026-11-09~)에서 생긴다.
     kindLabel: CHANGE_KIND_LABEL[row.kind as ChangeKind] ?? (row.kind === "RESUME" ? "복귀" : row.kind),
     fromClassName: row.fromClassName ?? null,
     toClassName: row.toClassName ?? null,
@@ -106,6 +111,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     syncHoldReason: row.syncHoldReason ?? null,
     sheetStatus: row.sheetStatus ?? null,
     rallyzStatus: row.rallyzStatus ?? null,
+    adminDirectMove: Boolean(row.adminDirectMove),
   }));
 }
 
@@ -123,9 +129,12 @@ const LINKED_COMMAND_SQL = `(c."idempotencyKey" = 'enrollment-change:' || r.id
  * 보류(HELD)된 명령은 사람이 다른 경로로 정리해야 하므로 여기서도 "확인 필요"로 센다.
  * 시트 은퇴로 건너뛴 SHEET(SKIPPED)는 확인할 것이 없으므로 "확인 필요"가 아니다(SKIPPED 는 SHEET 칸만 인정).
  */
+// 잘못 등록 삭제로 닫은 명령(사유 DELETED_ENROLLMENT_CLOSE_REASON, 칸 SKIPPED)은 할 일이 없으므로 «확인 필요»가 아니다.
+// 화면 탭·건수(countEnrollmentChangesNeedingCheck → 일일 요약 포함)가 모두 이 조건 하나를 쓴다.
 const NEEDS_CHECK_SQL = `EXISTS (SELECT 1 FROM "OperationsCommand" c
     JOIN "OperationsSyncAttempt" a ON a."commandId" = c.id
    WHERE ${LINKED_COMMAND_SQL}
+     AND ${notClosedByDeletedEnrollmentSql("c")}
      AND ((a.target = 'SHEET' AND a.status NOT IN ('SUCCEEDED','SKIPPED'))
        OR (a.target = 'RALLYZ' AND a.status <> 'SUCCEEDED')))`;
 
@@ -344,7 +353,7 @@ async function insertAutoAppliedLedger(tx: RawTx, input: {
   actor: string;
   studentName: string | null;
   enrollment: { id: string; classId: string; status: string; className: string };
-  nextStatus: "PAUSED" | "WITHDRAWN";
+  nextStatus: "PAUSED" | "WITHDRAWN" | "ACTIVE"; // ACTIVE = 학부모 복귀 신청 승인분
 }) {
   const { key, row, actor, enrollment } = input;
   const requestId = crypto.randomUUID();

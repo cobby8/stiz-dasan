@@ -40,7 +40,26 @@ export function messagePhoneLast4(phone: string) {
   return normalizeMessagePhone(phone).slice(-4) || null;
 }
 
-type ManualQueuePayload = { recipient: string; body: string };
+/**
+ * 받는 사람마다 본문·카카오 옵션이 다른 대량 발송(학부모 공지, 2026-11-09)의 카카오 부분.
+ *  - ALIMTALK: 등록 템플릿 + 변수 + 버튼. 솔라피가 거절하면 크론이 smsBody 를 문자로 대신 보낸다.
+ *  - BMS_FREE: 브랜드 메시지 자유형(텍스트형). notAfter(광고 발송 마감 20:50 KST) 가 지나면 보내지 않는다.
+ */
+export type ManualQueueKakao =
+  | {
+    kind: "ALIMTALK";
+    templateId: string;
+    variables: Record<string, string>;
+    buttons?: Array<{ buttonName: string; buttonType: string; linkMo: string; linkPc?: string }>;
+    smsBody: string;
+  }
+  | { kind: "BMS_FREE"; notAfter: string };
+
+/** 받는 사람 한 명분(본문이 사람마다 다를 수 있다) */
+export type ManualQueueItem = { recipient: string; body: string; kakao?: ManualQueueKakao };
+
+// perItem=true 면 크론이 «공통 본문 묶음» 대신 한 통씩 다른 본문으로 보낸다(기존 묶음은 perItem 없음 = 예전 그대로)
+type ManualQueuePayload = { recipient: string; body: string; perItem?: true; kakao?: ManualQueueKakao };
 
 function queueEncryptionKey() {
   return createHash("sha256").update(privacySecret(), "utf8").digest();
@@ -65,8 +84,19 @@ function openManualQueuePayload(value: unknown): ManualQueuePayload {
 export async function reserveManualMessageQueue(input: {
   requestId: string; actorUserId: string; actorName?: string | null; purpose: string; reason: string;
   audienceScope: "INTERNAL" | "EXTERNAL"; body: string; recipients: string[];
+  /** 사람마다 본문·카카오 옵션이 다를 때(학부모 공지). 없으면 예전처럼 모두 같은 body 를 문자로 */
+  items?: ManualQueueItem[];
+  /** 장부에 남길 요청 채널(기본 SMS). 학부모 공지 = ALIMTALK / BMS */
+  requestedChannel?: "SMS" | "ALIMTALK" | "BMS";
 }) {
   const stableEventKey = `manual:bulk:${input.actorUserId}:${input.requestId}`;
+  if (input.items && (input.items.length !== input.recipients.length || input.items.some((item, index) => item.recipient !== input.recipients[index]))) {
+    throw new Error("발송 항목과 받는 사람 목록이 다릅니다.");
+  }
+  const items: Array<ManualQueueItem & { perItem?: true }> = input.items
+    ? input.items.map((item) => ({ ...item, perItem: true as const }))
+    : input.recipients.map((recipient) => ({ recipient, body: input.body }));
+  const requestedChannel = input.requestedChannel ?? "SMS";
   const recipientSetHash = createHash("sha256").update(input.recipients.join(","), "utf8").digest("hex");
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, stableEventKey);
@@ -81,17 +111,23 @@ export async function reserveManualMessageQueue(input: {
     }
     const batchId = randomUUID();
     await tx.$executeRawUnsafe(
-      `INSERT INTO "MessageDeliveryBatch" (id,source,"audienceScope",trigger,"actorUserId","actorName",purpose,reason,"bodyHash","stableEventKey","requestedChannel",status,"totalCount","successCount","failureCount","metadataJSON","createdAt","updatedAt") VALUES ($1,'MANUAL',$2,'MANUAL_MESSAGE',$3,$4,$5,$6,$7,$8,'SMS','PROCESSING',$9,0,0,$10::jsonb,NOW(),NOW())`,
+      `INSERT INTO "MessageDeliveryBatch" (id,source,"audienceScope",trigger,"actorUserId","actorName",purpose,reason,"bodyHash","stableEventKey","requestedChannel",status,"totalCount","successCount","failureCount","metadataJSON","createdAt","updatedAt") VALUES ($1,'MANUAL',$2,'MANUAL_MESSAGE',$3,$4,$5,$6,$7,$8,$11,'PROCESSING',$9,0,0,$10::jsonb,NOW(),NOW())`,
       batchId, input.audienceScope, input.actorUserId, input.actorName ?? null, input.purpose, input.reason,
-      hashMessageBody(input.body), stableEventKey, input.recipients.length, JSON.stringify({ recipientSetHash }),
+      hashMessageBody(input.body), stableEventKey, input.recipients.length, JSON.stringify({ recipientSetHash }), requestedChannel,
     );
-    for (const recipient of input.recipients) {
+    for (const item of items) {
+      const recipient = item.recipient;
       const phoneHash = hashMessageRecipientPhone(recipient);
+      // channel 칸은 DB CHECK(IN_APP/PUSH/SMS/LMS/ALIMTALK/KAKAO_ALIMTALK/RCS) 안의 값만 — 브랜드 메시지는 접수 단계에선 SMS 로 두고
+      // 종류는 messageType·requestedChannel(BMS) 로 남긴다(제약을 넓히는 마이그레이션 없이)
+      const channel = item.kakao?.kind === "ALIMTALK" ? "ALIMTALK" : "SMS";
+      const messageType = item.kakao?.kind === "ALIMTALK" ? "ALIMTALK" : item.kakao?.kind === "BMS_FREE" ? "BMS" : null;
       await tx.$executeRawUnsafe(
-        `INSERT INTO "NotificationDelivery" (id,"batchId",source,"stableEventKey","eventType",trigger,"audienceScope","recipientPhoneHash","recipientPhoneLast4","bodyHash",channel,"requestedChannel","dedupeKey",status,"attemptCount","payloadJSON","createdAt","updatedAt") VALUES ($1,$2,'MANUAL',$3,'MANUAL_MESSAGE','MANUAL_MESSAGE',$4,$5,$6,$7,'SMS','SMS',$8,'PENDING',0,$9::jsonb,NOW(),NOW())`,
+        `INSERT INTO "NotificationDelivery" (id,"batchId",source,"stableEventKey","eventType",trigger,"audienceScope","recipientPhoneHash","recipientPhoneLast4","bodyHash",channel,"requestedChannel","messageType","dedupeKey",status,"attemptCount","payloadJSON","createdAt","updatedAt") VALUES ($1,$2,'MANUAL',$3,'MANUAL_MESSAGE','MANUAL_MESSAGE',$4,$5,$6,$7,$10,$11,$12,$8,'PENDING',0,$9::jsonb,NOW(),NOW())`,
         randomUUID(), batchId, stableEventKey, input.audienceScope, phoneHash, messagePhoneLast4(recipient),
-        hashMessageBody(input.body), buildMessageDedupeKey({ source: "MANUAL", eventKey: stableEventKey, recipientPhoneHash: phoneHash }),
-        JSON.stringify(sealManualQueuePayload({ recipient, body: input.body })),
+        hashMessageBody(item.body), buildMessageDedupeKey({ source: "MANUAL", eventKey: stableEventKey, recipientPhoneHash: phoneHash }),
+        JSON.stringify(sealManualQueuePayload({ recipient, body: item.body, ...(item.perItem ? { perItem: true as const } : {}), ...(item.kakao ? { kakao: item.kakao } : {}) })),
+        channel, requestedChannel, messageType,
       );
     }
     return { batchId, created: true };
@@ -121,7 +157,7 @@ export async function claimManualMessageQueue(limit = 10) {
          FROM picked WHERE d.id=picked.id RETURNING d.id, d."batchId", d."payloadJSON"`,
       Math.max(1, Math.min(limit, 500)), token,
     );
-    const claimed: Array<{ id: string; batchId: string; recipient: string; body: string }> = [];
+    const claimed: Array<{ id: string; batchId: string } & ManualQueuePayload> = [];
     for (const row of rows) {
       try {
         claimed.push({ id: row.id, batchId: row.batchId, ...openManualQueuePayload(row.payloadJSON) });
@@ -145,14 +181,23 @@ export async function markManualMessageAccepted(input: {
   providerGroupId: string;
   providerMessageId?: string | null;
   messageType?: string | null;
+  /** 실제로 나간 채널(알림톡 거절 → 문자 대체면 SMS). DB CHECK 밖의 값은 무시한다 */
+  channel?: string | null;
+  /** 카카오 → 문자로 대신 보냈는지(학부모 공지, 2026-11-09) */
+  fallbackUsed?: boolean;
+  fallbackChannel?: string | null;
 }) {
+  const channel = input.channel && ALLOWED_DELIVERY_CHANNELS.has(input.channel) ? input.channel : null;
   await prisma.$executeRawUnsafe(
     `UPDATE "NotificationDelivery"
         SET status='SENDING', provider='SOLAPI', "providerGroupId"=$2, "providerMessageId"=$3,
             "providerStatus"='ACCEPTED', "messageType"=COALESCE($4,"messageType"),
+            channel=COALESCE($5, channel), "fallbackUsed"=COALESCE($6, "fallbackUsed"),
+            "fallbackChannel"=COALESCE($7, "fallbackChannel"),
             "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW()
       WHERE id=$1 AND source='MANUAL' AND trigger='MANUAL_MESSAGE' AND status='SENDING'`,
     input.deliveryId, input.providerGroupId, input.providerMessageId ?? null, input.messageType ?? null,
+    channel, input.fallbackUsed ?? null, input.fallbackChannel ?? null,
   );
 }
 
@@ -181,8 +226,8 @@ export async function getPendingManualSolapiGroups(limit = 20) {
 }
 
 export async function getPendingManualSolapiDeliveries(groupId: string) {
-  return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date }>>(
-    `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt" FROM "NotificationDelivery"
+  return prisma.$queryRawUnsafe<Array<{ id: string; providerMessageId: string | null; batchId: string; acceptedAt: Date; messageType: string | null }>>(
+    `SELECT id,"providerMessageId","batchId","updatedAt" AS "acceptedAt","messageType" FROM "NotificationDelivery"
       WHERE source='MANUAL' AND ((trigger='MANUAL_MESSAGE' AND status='SENDING')
         OR (trigger='REGULAR_SHUTTLE_CHANGE' AND status='SENT'))
         AND provider='SOLAPI' AND "providerStatus"='ACCEPTED' AND "providerGroupId"=$1`,

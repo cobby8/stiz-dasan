@@ -4,6 +4,7 @@ import { getInstagramRuntimeStatus } from "@/lib/instagram";
 import { getPaymentProviderPublicStatus } from "@/lib/payment-ledger";
 import { getScheduleSlotAdminData } from "@/lib/scheduleSlotPayload";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { currentEnrollmentSql } from "@/lib/enrollment/commencement";
 import {
     getAcademySettings,
     getAttendanceClassOptions,
@@ -535,7 +536,6 @@ async function getStudentSheetImportSummary() {
                 paused: number;
                 withdrawn: number;
                 noEnrollment: number;
-                scheduled: number;
             }[]>(
                 `WITH latest AS (
                     SELECT id
@@ -589,10 +589,9 @@ async function getStudentSheetImportSummary() {
                 student_status AS (
                     SELECT
                         s.id,
-                        CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND due.status='ACTIVE' AND due."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date) THEN 'ACTIVE'
-                      WHEN EXISTS (SELECT 1 FROM "Enrollment" planned WHERE planned."studentId"=s.id AND planned.status='ACTIVE' AND planned."startsOn" > (NOW() AT TIME ZONE 'Asia/Seoul')::date)
-                      AND NOT EXISTS (SELECT 1 FROM "Enrollment" started WHERE started."studentId"=s.id AND started.status='ACTIVE' AND (started."startsOn" IS NULL OR started."startsOn" <= (NOW() AT TIME ZONE 'Asia/Seoul')::date))
-                      THEN 'SCHEDULED' ELSE css.status END
+                        /* 원생 목록 current_status(queries.ts)와 같은 규칙: ACTIVE 수강이 있으면 개시일과 무관하게 활성 */
+                        CASE WHEN EXISTS (SELECT 1 FROM "Enrollment" due WHERE due."studentId"=s.id AND ${currentEnrollmentSql("due")}) THEN 'ACTIVE'
+                      ELSE css.status END
                         AS status
                     FROM "Student" s
                     LEFT JOIN current_student_status css ON css."studentId" = s.id
@@ -603,8 +602,7 @@ async function getStudentSheetImportSummary() {
                     COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active,
                     COUNT(*) FILTER (WHERE status = 'PAUSED')::int AS paused,
                     COUNT(*) FILTER (WHERE status = 'WITHDRAWN')::int AS withdrawn,
-                    COUNT(*) FILTER (WHERE status = 'SCHEDULED')::int AS scheduled,
-                    COUNT(*) FILTER (WHERE status IS NULL OR status NOT IN ('ACTIVE', 'PAUSED', 'WITHDRAWN', 'SCHEDULED'))::int AS "noEnrollment"
+                    COUNT(*) FILTER (WHERE status IS NULL OR status NOT IN ('ACTIVE', 'PAUSED', 'WITHDRAWN'))::int AS "noEnrollment"
                 FROM student_status`
             ),
         ]);
@@ -622,7 +620,6 @@ async function getStudentSheetImportSummary() {
                 paused: 0,
                 withdrawn: 0,
                 noEnrollment: 0,
-                scheduled: 0,
             },
             scheduleMismatchCount: scheduleMismatchRows[0]?.totalMismatchCount ?? 0,
             topScheduleMismatches: scheduleMismatchRows.map((row) => ({

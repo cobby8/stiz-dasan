@@ -17,10 +17,10 @@ function kakaoMapUrl(label: string | null, lat: number, lng: number): string {
 }
 
 function StatusDot({ sharing, secondsAgo }: { sharing: boolean; secondsAgo: number }) {
-  if (!sharing) return <span className="h-3 w-3 rounded-full bg-gray-400 shrink-0" title="공유 중단" />;
-  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-green-500 shrink-0" title="최근 위치 수신" />;
-  if (secondsAgo < 120) return <span className="h-3 w-3 rounded-full bg-yellow-500 shrink-0" title="지연" />;
-  return <span className="h-3 w-3 rounded-full bg-red-400 shrink-0" title="끊김" />;
+  if (!sharing) return <span className="h-3 w-3 rounded-full bg-[var(--color-academy-line-input)] shrink-0" title="공유 중단" />;
+  if (secondsAgo < 30) return <span className="h-3 w-3 rounded-full bg-[var(--color-academy-success)] shrink-0" title="최근 위치 수신" />;
+  if (secondsAgo < 120) return <span className="h-3 w-3 rounded-full bg-[var(--color-academy-warning)] shrink-0" title="지연" />;
+  return <span className="h-3 w-3 rounded-full bg-[var(--color-academy-danger)] shrink-0" title="끊김" />;
 }
 
 export default function DriverLocationPanel({ onClose }: { onClose: () => void }) {
@@ -63,22 +63,22 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-gray-900"
+        className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+        <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
           <div>
-            <h2 className="text-[17px] font-black text-gray-900 dark:text-white">
+            <h2 className="text-[17px] font-black text-[var(--color-academy-ink)]">
               🚌 차량 마지막 위치
             </h2>
             {lastRefresh && (
-              <p className="text-[12px] text-gray-400 mt-0.5">
+              <p className="text-[12px] text-[var(--color-academy-faint)] mt-0.5">
                 30초마다 자동 갱신 · 마지막: {lastRefresh.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </p>
             )}
           </div>
-          <button type="button" onClick={onClose} className="text-[22px] text-gray-400 hover:text-gray-700">✕</button>
+          <button type="button" onClick={onClose} className="text-[22px] text-[var(--color-academy-faint)] hover:text-[var(--color-academy-muted)]">✕</button>
         </div>
 
         {/* 본문 */}
@@ -88,30 +88,30 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
             <button type="button" onClick={() => void load()} className="ml-2 min-h-11 underline">다시 확인</button>
           </div>}
           {loading && (
-            <p className="py-8 text-center text-sm text-gray-400">불러오는 중…</p>
+            <p className="py-8 text-center text-sm text-[var(--color-academy-faint)]">불러오는 중…</p>
           )}
           {!loading && !error && locations.length === 0 && (
             <div className="py-8 text-center">
-              <p className="text-[15px] font-bold text-gray-500">현재 위치를 공유 중인 기사님이 없습니다</p>
-              <p className="mt-1 text-[13px] text-gray-400">기사님 화면에서 위치 공유를 켜면 여기에 표시됩니다</p>
+              <p className="text-[15px] font-bold text-[var(--color-academy-muted)]">현재 위치를 공유 중인 기사님이 없습니다</p>
+              <p className="mt-1 text-[13px] text-[var(--color-academy-faint)]">기사님 화면에서 위치 공유를 켜면 여기에 표시됩니다</p>
             </div>
           )}
           {visibleLocations.map((loc) => (
             <div
               key={loc.token}
               className={`rounded-xl border-2 p-4 ${
-                !loc.sharing ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50" :
-                loc.secondsAgo < 120 ? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950/20" :
-                "border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/20"
+                !loc.sharing ? "border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]" :
+                loc.secondsAgo < 120 ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)]" :
+                "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)]"
               }`}
             >
               <div className="flex items-start gap-3">
                 <StatusDot sharing={loc.sharing} secondsAgo={loc.secondsAgo} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[15px] font-black text-gray-900 dark:text-white">
+                  <p className="text-[15px] font-black text-[var(--color-academy-ink)]">
                     {loc.label ?? "기사님"}
                   </p>
-                  <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                  <p className="text-[13px] text-[var(--color-academy-muted)]">
                     {loc.sharing
                       ? `마지막 위치 수신 ${elapsedLabel(loc.secondsAgo)}${loc.accuracy != null ? ` · 정확도 ${Math.round(loc.accuracy)}m` : ""}${loc.secondsAgo >= 120 ? " · 위치 확인 필요" : ""}`
                       : "위치 공유 중단"}
@@ -122,7 +122,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
                     href={kakaoMapUrl(loc.label, loc.latitude, loc.longitude)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 text-[13px] font-black text-gray-900 hover:bg-yellow-300"
+                    className="shrink-0 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-[13px] font-black text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]"
                   >
                     지도↗
                   </a>
@@ -134,7 +134,7 @@ export default function DriverLocationPanel({ onClose }: { onClose: () => void }
 
         {/* 하단 요약 */}
         {!loading && locations.length > 0 && (
-          <div className="border-t border-gray-200 px-5 py-3 text-[13px] text-gray-500 dark:border-gray-700">
+          <div className="border-t border-[var(--color-academy-line)] px-5 py-3 text-[13px] text-[var(--color-academy-muted)]">
             최근 2분 내 접수 {activeCount}대 · 조회된 차량 {locations.length}대
           </div>
         )}

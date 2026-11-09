@@ -19,6 +19,7 @@ import {
     autoConvertSmsKeywords,
     resetSmsTemplate,
 } from "@/app/actions/admin";
+import { isParentAlimtalkTrigger, parentAlimtalkSmsTemplateBody } from "@/lib/messaging/parent-alimtalk-templates";
 
 // ── 타입 정의 ────────────────────────────────────────────────────────────────
 interface SmsTemplate {
@@ -53,9 +54,9 @@ const ALL_VARIABLES = [
 
 // 수신 대상 배지 색상 매핑
 const TARGET_COLORS: Record<string, string> = {
-    ADMIN: "bg-blue-100 text-blue-700",
-    COACH: "bg-green-100 text-green-700",
-    PARENT: "bg-orange-100 text-orange-700",
+    ADMIN: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    COACH: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
+    PARENT: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
 };
 const TARGET_LABELS: Record<string, string> = {
     ADMIN: "관리자",
@@ -68,41 +69,41 @@ function SmsTemplatesLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-48 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                    <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="h-10 w-24 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                <div className="h-10 w-24 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
             </div>
-            <div className="flex w-fit gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
-                <div className="h-9 w-36 animate-pulse rounded-md bg-white dark:bg-gray-700" />
-                <div className="h-9 w-28 animate-pulse rounded-md bg-gray-200 dark:bg-gray-700" />
+            <div className="flex w-fit gap-1 rounded-lg bg-[var(--color-academy-soft)] p-1">
+                <div className="h-9 w-36 animate-pulse rounded-md bg-white" />
+                <div className="h-9 w-28 animate-pulse rounded-md bg-[var(--color-academy-line)]" />
             </div>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                 {Array.from({ length: 6 }).map((_, index) => (
                     <div
                         key={index}
-                        className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                        className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm"
                     >
-                        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+                        <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-5 py-4">
                             <div className="flex min-w-0 items-center gap-2.5">
-                                <div className="h-5 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                                <div className="h-5 w-14 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-5 w-40 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                                <div className="h-5 w-14 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                             </div>
-                            <div className="h-6 w-11 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                            <div className="h-6 w-11 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                         </div>
                         <div className="px-5 pt-3">
-                            <div className="h-4 w-64 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                            <div className="h-4 w-64 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                         </div>
                         <div className="px-5 py-3">
-                            <div className="h-28 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                            <div className="h-28 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {Array.from({ length: 5 }).map((_, chipIndex) => (
-                                    <div key={chipIndex} className="h-7 w-20 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                    <div key={chipIndex} className="h-7 w-20 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                                 ))}
                             </div>
                             <div className="mt-4 flex justify-end gap-2">
-                                <div className="h-9 w-20 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                <div className="h-9 w-20 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+                                <div className="h-9 w-20 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                <div className="h-9 w-20 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
                             </div>
                         </div>
                     </div>
@@ -114,8 +115,8 @@ function SmsTemplatesLoadingFallback() {
 
 function SmsTemplatesErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">SMS 템플릿을 불러오지 못했습니다.</p>
+        <div className="rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">SMS 템플릿을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -173,13 +174,13 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
     return (
         <div className="space-y-6">
             {/* 탭 전환 */}
-            <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg w-fit">
+            <div className="flex gap-1 bg-[var(--color-academy-soft)] p-1 rounded-lg w-fit">
                 <button
                     onClick={() => setActiveTab("staff")}
                     className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
                         activeTab === "staff"
-                            ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
+                            ? "bg-white text-[var(--color-academy-ink)] shadow-sm"
+                            : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"
                     }`}
                 >
                     <span className="material-symbols-outlined text-[16px] align-middle mr-1">admin_panel_settings</span>
@@ -189,8 +190,8 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
                     onClick={() => setActiveTab("parent")}
                     className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
                         activeTab === "parent"
-                            ? "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
-                            : "text-gray-500 hover:text-gray-700 dark:text-gray-200"
+                            ? "bg-white text-[var(--color-academy-ink)] shadow-sm"
+                            : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-muted)]"
                     }`}
                 >
                     <span className="material-symbols-outlined text-[16px] align-middle mr-1">family_restroom</span>
@@ -206,7 +207,7 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
             </div>
 
             {filtered.length === 0 && (
-                <div className="text-center py-16 text-gray-400">
+                <div className="text-center py-16 text-[var(--color-academy-faint)]">
                     <span className="material-symbols-outlined text-5xl block mb-3">sms</span>
                     <p>등록된 템플릿이 없습니다</p>
                 </div>
@@ -217,6 +218,8 @@ export default function SmsTemplateClient({ templates }: { templates?: SmsTempla
 
 // ── 개별 템플릿 카드 컴포넌트 ──────────────────────────────────────────────────
 function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload: () => Promise<void> | void }) {
+    // 카카오 알림톡에 등록한 문구는 코드(금고)가 정본이라 여기서 고칠 수 없다 — 실제 발송 문구를 읽기 전용으로 보여 준다
+    const lockedBody = isParentAlimtalkTrigger(template.trigger) ? parentAlimtalkSmsTemplateBody(template.trigger) : null;
     const [body, setBody] = useState(template.body);
     const [isActive, setIsActive] = useState(template.isActive);
     const [preview, setPreview] = useState<string | null>(null);
@@ -292,7 +295,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
             return;
         }
         try {
-            const result = await previewSmsTemplate(body);
+            const result = await previewSmsTemplate(lockedBody ?? body);
             setPreview(result);
         } catch {
             setPreview("[미리보기 오류]");
@@ -327,16 +330,16 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
         }
     };
 
-    // 본문이 수정되었는지 확인
-    const isModified = body !== template.body || isActive !== template.isActive;
+    // 본문이 수정되었는지 확인(잠긴 문구는 본문 수정이 없다 — 켜기/끄기는 토글이 바로 저장)
+    const isModified = !lockedBody && (body !== template.body || isActive !== template.isActive);
 
     return (
-        <div className={`bg-white dark:bg-gray-800 rounded-xl border ${isActive ? "border-gray-200 dark:border-gray-700" : "border-gray-200 dark:border-gray-700 opacity-60"} shadow-sm overflow-hidden`}>
+        <div className={`bg-white rounded-xl border ${isActive ? "border-[var(--color-academy-line)]" : "border-[var(--color-academy-line)] opacity-60"} shadow-sm overflow-hidden`}>
             {/* 카드 상단: 이름 + 배지 + 토글 */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-academy-line)]">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">{template.name}</h3>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${TARGET_COLORS[template.target] || "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}>
+                    <h3 className="font-semibold text-[var(--color-academy-ink)] text-sm truncate">{template.name}</h3>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${TARGET_COLORS[template.target] || "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                         {TARGET_LABELS[template.target] || template.target}
                     </span>
                 </div>
@@ -345,12 +348,12 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     onClick={handleToggle}
                     disabled={isPending}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
-                        isActive ? "bg-green-500" : "bg-gray-300"
+                        isActive ? "bg-[var(--color-academy-success)]" : "bg-[var(--color-academy-line-input)]"
                     }`}
                     title={isActive ? "발송 중 (누르면 끄기)" : "발송 중지 (누르면 켜기)"}
                 >
                     <span
-                        className={`inline-block h-4 w-4 rounded-full bg-white dark:bg-gray-800 transition-transform shadow-sm ${
+                        className={`inline-block h-4 w-4 rounded-full bg-white transition-transform shadow-sm ${
                             isActive ? "translate-x-6" : "translate-x-1"
                         }`}
                     />
@@ -359,20 +362,32 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
 
             {/* 설명 */}
             {template.description && (
-                <p className="px-5 pt-3 text-xs text-gray-500 dark:text-gray-400">
+                <p className="px-5 pt-3 text-xs text-[var(--color-academy-muted)]">
                     <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">info</span>
                     {template.description}
                 </p>
             )}
 
+            {/* 알림톡 등록 문구 — 읽기 전용 안내 */}
+            {lockedBody && (
+                <div className="px-5 py-3">
+                    <p className="mb-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
+                        <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">lock</span>
+                        카카오 알림톡에 등록한 문구라 여기서 고칠 수 없어요. 바꾸려면 개발 요청 후 카카오 재심사가 필요합니다. 켜기/끄기는 그대로 쓸 수 있어요.
+                    </p>
+                    <pre className="w-full whitespace-pre-wrap rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2.5 font-mono text-sm leading-relaxed text-[var(--color-academy-muted)]">{lockedBody}</pre>
+                </div>
+            )}
+
             {/* 메시지 편집 textarea */}
+            {!lockedBody && (
             <div className="px-5 py-3">
                 <textarea
                     ref={textareaRef}
                     value={body}
                     onChange={e => { setBody(e.target.value); setPreview(null); }}
                     rows={4}
-                    className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 font-mono leading-relaxed"
+                    className="w-full px-3 py-2.5 text-sm border border-[var(--color-academy-line)] rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]/20 focus:border-[var(--color-academy-line-input)] font-mono leading-relaxed"
                     placeholder="메시지를 입력하세요..."
                 />
 
@@ -382,7 +397,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                         <button
                             key={v.key}
                             onClick={() => insertVariable(v.key)}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-md hover:bg-[var(--color-academy-line)] transition-colors"
                             title={`커서 위치에 {{${v.key}}} 삽입`}
                         >
                             <span className="material-symbols-outlined text-[12px]">add</span>
@@ -393,59 +408,63 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
 
                 {/* 자동 변환 메시지 */}
                 {convertMsg && (
-                    <p className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                    <p className="mt-2 text-xs text-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] px-2 py-1 rounded">
                         {convertMsg}
                     </p>
                 )}
             </div>
+            )}
 
             {/* 미리보기 영역 */}
             {preview !== null && (
-                <div className="mx-5 mb-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-                    <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                <div className="mx-5 mb-3 p-3 bg-[var(--color-academy-soft)] rounded-lg border border-[var(--color-academy-line)]">
+                    <p className="text-[11px] font-medium text-[var(--color-academy-muted)] mb-1.5">
                         <span className="material-symbols-outlined text-[12px] align-middle mr-0.5">visibility</span>
                         미리보기 (샘플 데이터)
                     </p>
-                    <p className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-line font-mono">{preview}</p>
+                    <p className="text-sm text-[var(--color-academy-ink)] whitespace-pre-line font-mono">{preview}</p>
                 </div>
             )}
 
             {/* 하단 버튼 바 */}
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between px-5 py-3 bg-[var(--color-academy-soft)] border-t border-[var(--color-academy-line)]">
                 <div className="flex gap-2">
                     <button
                         onClick={handlePreview}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-white border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-soft)] transition-colors"
                     >
                         <span className="material-symbols-outlined text-[14px]">visibility</span>
                         {preview !== null ? "닫기" : "미리보기"}
                     </button>
+                    {!lockedBody && (
                     <button
                         onClick={handleAutoConvert}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-[var(--color-academy-soft)] border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-line)] transition-colors"
                         title="한글 키워드를 자동으로 변수로 변환"
                     >
                         <span className="material-symbols-outlined text-[14px]">auto_fix_high</span>
                         자동 변환
                     </button>
+                    )}
                     <button
                         onClick={handleReset}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:bg-gray-900 transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-academy-muted)] bg-white border border-[var(--color-academy-line)] rounded-lg hover:bg-[var(--color-academy-soft)] transition-colors"
                         title="기본 템플릿으로 초기화"
                     >
                         <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                         초기화
                     </button>
                 </div>
+                {!lockedBody && (
                 <button
                     onClick={handleSave}
                     disabled={saving || !isModified}
                     className={`inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                         saved
-                            ? "bg-green-500 text-white"
+                            ? "bg-[var(--color-academy-success)] text-white"
                             : isModified
-                                ? "bg-blue-600 text-white hover:bg-blue-700"
-                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                ? "bg-[var(--color-academy-primary)] text-white hover:bg-[var(--color-academy-primary-hover)]"
+                                : "bg-[var(--color-academy-line)] text-[var(--color-academy-faint)] cursor-not-allowed"
                     }`}
                 >
                     <span className="material-symbols-outlined text-[14px]">
@@ -453,6 +472,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                     </span>
                     {saving ? "저장 중..." : saved ? "저장됨" : "저장"}
                 </button>
+                )}
             </div>
         </div>
     );

@@ -13,7 +13,7 @@ export default function ReportPhoto({ src, alt }: { src: string; alt: string }) 
             src={src}
             alt={alt}
             loading="lazy"
-            className="w-full h-40 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+            className="w-full h-40 object-cover rounded-lg border border-[var(--color-academy-line)]"
             onError={() => setFailed(true)}
         />
     );

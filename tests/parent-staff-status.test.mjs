@@ -26,8 +26,9 @@ function staffFixture(options = {}) {
       const row = { id: args[4], author: args[0], title: args[1], content: args[2], classes: args[3] }; notices.set(row.id, row); return [row];
     }
     if (sql.includes('FROM "Notice"')) {
-      assert.match(sql, /"authorUserId"=\$2/); assert.match(sql, /"targetClassIds"=\$3/);
-      const row = notices.get(args[0]); return row?.author === args[1] && row?.classes === args[2] ? [row] : [];
+      // 대상 반은 두 모양을 받는다 — $3 = 선생님이 쓴 JSON 배열, $4 = 관리자 화면이 다시 저장한 쉼표 문자열(한 반)
+      assert.match(sql, /"authorUserId"=\$2/); assert.match(sql, /"targetClassIds" IN \(\$3,\$4\)/);
+      const row = notices.get(args[0]); return row?.author === args[1] && (row?.classes === args[2] || row?.classes === args[3]) ? [row] : [];
     }
     if (sql.includes('FROM "NotificationDelivery"')) {
       if (options.ledgerFails) throw new Error('synthetic ledger failure');

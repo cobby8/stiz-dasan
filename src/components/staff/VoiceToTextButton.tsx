@@ -98,6 +98,6 @@ export function VoiceToTextButton({
       </span>
       {recording ? "녹음 종료" : transcribing ? "메모 변환 중" : "음성으로 기록"}
     </button>
-    {message && <span aria-live="polite" className="max-w-48 text-right text-xs font-bold text-gray-500">{message}</span>}
+    {message && <span aria-live="polite" className="max-w-48 text-right text-xs font-bold text-[var(--color-academy-muted)]">{message}</span>}
   </div>;
 }

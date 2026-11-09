@@ -148,6 +148,10 @@ async function sendSolapiAlimtalk(input: MessageDispatchInput): Promise<MessageD
                         pfId: process.env.SOLAPI_KAKAO_PF_ID,
                         templateId: input.alimtalk!.templateId,
                         variables: input.alimtalk?.variables,
+                        // 카카오 전달 실패(접수 뒤 — 카톡 미설치 등) 시 솔라피가 문자로 대체한다. 기본값이 false 지만
+                        // 실수로 꺼지지 않게 명시한다. 대체 조건: disableSms=false + from(등록 발신번호).
+                        // 근거: https://solapi.com/developers/api/messages-disablesms
+                        disableSms: false,
                     },
                 },
             }),

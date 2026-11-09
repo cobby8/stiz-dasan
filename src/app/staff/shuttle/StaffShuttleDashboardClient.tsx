@@ -172,7 +172,7 @@ export default function StaffShuttleDashboardClient({
         <SummaryItem label="미탑승" value={`${statusSummary.noShow}명`} tone={statusSummary.noShow ? "danger" : "neutral"} />
       </section>
       {refreshMessage && (
-        <p className={`mt-2 text-xs font-bold ${refreshMessage.tone === "error" ? "text-red-600 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`} role={refreshMessage.tone === "error" ? "alert" : "status"}>
+        <p className={`mt-2 text-xs font-bold ${refreshMessage.tone === "error" ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-success)]"}`} role={refreshMessage.tone === "error" ? "alert" : "status"}>
           {refreshMessage.text}
         </p>
       )}
@@ -181,10 +181,10 @@ export default function StaffShuttleDashboardClient({
         {todayRoutes.length ? todayRoutes.map((route) => (
           <RouteCard key={route.id} route={route} rideStatuses={rideStatuses} onStatusChange={handleStatusChange} onMutationStateChange={handleMutationStateChange} canCheckRideStatus />
         )) : (
-          <div className="rounded-3xl border border-dashed border-gray-300 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <span className="material-symbols-outlined text-4xl text-gray-400" aria-hidden="true">event_busy</span>
-            <h2 className="mt-3 font-black text-gray-900 dark:text-white">오늘 확정된 운행이 없습니다</h2>
-            <p className="mt-2 text-sm leading-6 text-gray-500 dark:text-gray-400">
+          <div className="rounded-3xl border border-dashed border-[var(--color-academy-line-input)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined text-4xl text-[var(--color-academy-faint)]" aria-hidden="true">event_busy</span>
+            <h2 className="mt-3 font-black text-[var(--color-academy-ink)]">오늘 확정된 운행이 없습니다</h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-academy-muted)]">
               관리자가 오늘 노선을 확정하면 여기에 표시됩니다.
             </p>
           </div>
@@ -212,7 +212,7 @@ export default function StaffShuttleDashboardClient({
         <section className="mt-5">
           <div>
             <h2 className="font-black text-[var(--color-academy-ink)]">일정 확인 필요</h2>
-            <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">운행 날짜가 지정되지 않아 탑승 상태를 처리할 수 없는 노선입니다.</p>
+            <p className="mt-0.5 text-xs text-[var(--color-academy-warning)]">운행 날짜가 지정되지 않아 탑승 상태를 처리할 수 없는 노선입니다.</p>
           </div>
           <ul className="mt-2 overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
             {needsReviewRoutes.map((route) => (
@@ -286,19 +286,19 @@ function RouteCard({
                 return (
                   <li key={stop.id} className="rounded-lg bg-[var(--color-academy-soft)] p-2">
                     <div className="flex items-start gap-3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gray-950 text-sm font-black text-white dark:bg-white dark:text-gray-950">{index + 1}</span>
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--color-academy-ink)] text-sm font-black text-white">{index + 1}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <h3 className="break-words text-sm font-black text-gray-900 dark:text-white">{stop.name}</h3>
-                            <p className={`mt-1 inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-black ${hasPlannedTime ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`}>
+                            <h3 className="break-words text-sm font-black text-[var(--color-academy-ink)]">{stop.name}</h3>
+                            <p className={`mt-1 inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-black ${hasPlannedTime ? "bg-white text-[var(--color-academy-ink)] shadow-sm" : "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
                               <span className="material-symbols-outlined text-sm" aria-hidden="true">schedule</span>
                               확정 시간 {plannedTime}
                             </p>
-                            <p className="mt-1 break-words text-xs leading-5 text-gray-500 dark:text-gray-400">{stop.roadAddress || stop.address}</p>
+                            <p className="mt-1 break-words text-xs leading-5 text-[var(--color-academy-muted)]">{stop.roadAddress || stop.address}</p>
                           </div>
                           {url && (
-                            <a href={url} target="_blank" rel="noreferrer" aria-label={`${stop.name} 지도에서 열기`} className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-gray-700 shadow-sm dark:bg-gray-800 dark:text-gray-200">
+                            <a href={url} target="_blank" rel="noreferrer" aria-label={`${stop.name} 지도에서 열기`} className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-[var(--color-academy-ink)] shadow-sm">
                               <span className="material-symbols-outlined" aria-hidden="true">map</span>
                             </a>
                           )}
@@ -307,9 +307,9 @@ function RouteCard({
                           {stop.passengers.map((passenger) => {
                             const rideStatus = rideStatuses[passenger.id] ?? normalizeRideStatus(passenger.rideStatus);
                             return (
-                              <div key={passenger.id} className="rounded-2xl bg-white p-2 dark:bg-gray-900">
+                              <div key={passenger.id} className="rounded-2xl bg-white p-2">
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="min-w-0 break-keep text-sm font-black text-gray-800 dark:text-gray-100">
+                                  <span className="min-w-0 break-keep text-sm font-black text-[var(--color-academy-ink)]">
                                     {passenger.studentNameSnapshot || "학생"}
                                   </span>
                                   <RideStatusPill status={rideStatus} />
@@ -442,7 +442,7 @@ function RouteSummaryRow({ route, onOpen, showDate = false }: { route: Route; on
 
 function DirectionBadge({ direction }: { direction: Direction }) {
   return (
-    <span className="shrink-0 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--brand-accent)]">
+    <span className="shrink-0 rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-black text-[var(--color-academy-ink)]">
       {direction === "PICKUP" ? "등원" : "하원"}
     </span>
   );

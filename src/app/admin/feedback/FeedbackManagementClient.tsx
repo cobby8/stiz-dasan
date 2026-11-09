@@ -10,7 +10,7 @@ import { toKstYmd } from "@/lib/datetime/kst";
 
 // 카테고리 정의: 피드백을 4가지 유형으로 분류(색은 화면 토큰)
 const CATEGORIES: Record<string, { label: string; color: string }> = {
-    SKILL: { label: "기술", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]" },
+    SKILL: { label: "기술", color: "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]" },
     ATTITUDE: { label: "태도", color: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" },
     PHYSICAL: { label: "체력", color: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]" },
     GENERAL: { label: "종합", color: "bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)]" },
@@ -60,31 +60,31 @@ function FeedbackLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-40 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                    <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="h-11 w-28 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-700" />
+                <div className="h-11 w-28 animate-pulse rounded-xl bg-[var(--color-academy-soft)]" />
             </div>
             <div className="space-y-3">
                 {Array.from({ length: 5 }).map((_, index) => (
                     <div
                         key={index}
-                        className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-800"
+                        className="overflow-hidden rounded-2xl border border-[var(--color-academy-line)] bg-white shadow-sm"
                     >
                         <div className="p-5">
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                                 <div className="min-w-0 flex-1 space-y-3">
                                     <div className="flex gap-2">
-                                        <div className="h-6 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
-                                        <div className="h-6 w-20 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                        <div className="h-6 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                        <div className="h-6 w-20 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                                     </div>
-                                    <div className="h-5 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                                    <div className="h-4 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-4 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                    <div className="h-5 w-2/3 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                    <div className="h-4 w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                    <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                 </div>
                                 <div className="hidden gap-2 sm:flex">
-                                    <div className="h-8 w-16 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-8 w-16 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                                    <div className="h-8 w-16 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                    <div className="h-8 w-16 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                                 </div>
                             </div>
                         </div>
@@ -97,8 +97,8 @@ function FeedbackLoadingFallback() {
 
 function FeedbackErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">피드백 목록을 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">피드백 목록을 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -343,14 +343,14 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                         type="button"
                         onClick={() => setForm({ ...form, rating: form.rating === star ? 0 : star })}
                         className={`text-2xl transition-colors ${
-                            star <= form.rating ? "text-yellow-400" : "text-gray-300"
-                        } hover:text-yellow-400`}
+                            star <= form.rating ? "text-[var(--color-academy-ink)]" : "text-[var(--color-academy-faint)]"
+                        } hover:text-[var(--color-academy-ink)]`}
                     >
                         {star <= form.rating ? "\u2605" : "\u2606"}
                     </button>
                 ))}
                 {form.rating > 0 && (
-                    <span className="text-sm text-gray-500 dark:text-gray-400 ml-2 self-center">{form.rating}점</span>
+                    <span className="text-sm text-[var(--color-academy-muted)] ml-2 self-center">{form.rating}점</span>
                 )}
             </div>
         );
@@ -389,7 +389,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                             void loadCoaches();
                         }
                     }}
-                    className="px-5 py-2.5 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white rounded-xl font-medium hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition-colors"
+                    className="px-5 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-xl font-medium hover:bg-[var(--color-academy-primary-hover)] transition-colors"
                 >
                     {showForm && !editingId ? "닫기" : "피드백 작성"}
                 </button>
@@ -399,9 +399,9 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
             {showForm && (
                 <form
                     onSubmit={handleSubmit}
-                    className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-6 space-y-4"
+                    className="bg-white rounded-2xl shadow-sm border border-[var(--color-academy-line)] p-6 space-y-4"
                 >
-                    <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+                    <h2 className="text-lg font-bold text-[var(--color-academy-ink)]">
                         {editingId ? "피드백 수정" : "새 피드백 작성"}
                     </h2>
 
@@ -409,14 +409,14 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* 학생 드롭다운 - 수정 시에는 변경 불가 */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                학생 <span className="text-red-500">*</span>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
+                                학생 <span className="text-[var(--color-academy-danger)]">*</span>
                             </label>
                             <select
                                 value={form.studentId}
                                 onChange={(e) => setForm({ ...form, studentId: e.target.value })}
                                 disabled={!!editingId || studentsLoading || Boolean(studentsError)}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime disabled:bg-gray-100 dark:bg-gray-800"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] disabled:bg-[var(--color-academy-soft)]"
                             >
                                 <option value="">
                                     {studentsLoading ? "학생 목록 로딩 중..." : "학생을 선택하세요"}
@@ -426,19 +426,19 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 ))}
                             </select>
                             {studentsError && (
-                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
                                     <span>{studentsError}</span>
                                     <button
                                         type="button"
                                         onClick={() => void loadStudents()}
-                                        className="shrink-0 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/40"
+                                        className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
                                     >
                                         다시 시도
                                     </button>
                                 </div>
                             )}
                             {!studentsLoading && !studentsError && students.length === 0 && (
-                                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                                <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                     등록된 학생이 없습니다.
                                 </p>
                             )}
@@ -446,14 +446,14 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
 
                         {/* 코치 드롭다운 - 수정 시에는 변경 불가 */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                코치 <span className="text-red-500">*</span>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
+                                코치 <span className="text-[var(--color-academy-danger)]">*</span>
                             </label>
                             <select
                                 value={form.coachId}
                                 onChange={(e) => setForm({ ...form, coachId: e.target.value })}
                                 disabled={!!editingId || coachesLoading || Boolean(coachesError)}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime disabled:bg-gray-100 dark:bg-gray-800"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] disabled:bg-[var(--color-academy-soft)]"
                             >
                                 <option value="">
                                     {coachesLoading ? "코치 목록 로딩 중..." : "코치를 선택하세요"}
@@ -463,19 +463,19 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 ))}
                             </select>
                             {coachesError && (
-                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-200">
+                                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm text-[var(--color-academy-danger)]">
                                     <span>{coachesError}</span>
                                     <button
                                         type="button"
                                         onClick={() => void loadCoaches()}
-                                        className="shrink-0 rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/40"
+                                        className="shrink-0 rounded-md border border-[var(--color-academy-line)] px-2 py-1 text-xs font-medium text-[var(--color-academy-danger)] hover:bg-[var(--color-academy-danger-soft)]"
                                     >
                                         다시 시도
                                     </button>
                                 </div>
                             )}
                             {!coachesLoading && !coachesError && coaches.length === 0 && (
-                                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                                <p className="mt-2 text-sm text-[var(--color-academy-muted)]">
                                     등록된 코치가 없습니다.
                                 </p>
                             )}
@@ -485,21 +485,21 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                     {/* 날짜 + 카테고리 (2열) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">수업 날짜</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">수업 날짜</label>
                             <input
                                 type="date"
                                 min="2020-01-01" max="2030-12-31"
                                 value={form.sessionDate}
                                 onChange={(e) => setForm({ ...form, sessionDate: e.target.value })}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">카테고리</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">카테고리</label>
                             <select
                                 value={form.category}
                                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                                className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                             >
                                 {Object.entries(CATEGORIES).map(([key, { label }]) => (
                                     <option key={key} value={key}>{label}</option>
@@ -510,34 +510,34 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
 
                     {/* 제목 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                            제목 <span className="text-red-500">*</span>
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
+                            제목 <span className="text-[var(--color-academy-danger)]">*</span>
                         </label>
                         <input
                             type="text"
                             value={form.title}
                             onChange={(e) => setForm({ ...form, title: e.target.value })}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)]"
                         />
                     </div>
 
                     {/* 내용 */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                            내용 <span className="text-red-500">*</span>
+                        <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">
+                            내용 <span className="text-[var(--color-academy-danger)]">*</span>
                         </label>
                         <textarea
                             value={form.content}
                             onChange={(e) => setForm({ ...form, content: e.target.value })}
                             rows={4}
-                            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime resize-none"
+                            className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-academy-primary)] resize-none"
                         />
                     </div>
 
                     {/* 평점 + 공개여부 */}
                     <div className="flex items-center justify-between flex-wrap gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">평점</label>
+                            <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">평점</label>
                             {renderStarInput()}
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -545,9 +545,9 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 type="checkbox"
                                 checked={form.isPublic}
                                 onChange={(e) => setForm({ ...form, isPublic: e.target.checked })}
-                                className="w-4 h-4 rounded border-gray-300 text-brand-orange-500 dark:text-brand-neon-lime focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime"
+                                className="w-4 h-4 rounded border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] focus:ring-[var(--color-academy-primary)]"
                             />
-                            <span className="text-sm text-gray-700 dark:text-gray-200">학부모에게 공개</span>
+                            <span className="text-sm text-[var(--color-academy-muted)]">학부모에게 공개</span>
                         </label>
                     </div>
 
@@ -556,7 +556,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                         <button
                             type="submit"
                             disabled={isPending}
-                            className="px-6 py-2.5 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white rounded-xl font-medium hover:bg-brand-orange-600 dark:hover:bg-lime-400 transition-colors disabled:opacity-50"
+                            className="px-6 py-2.5 bg-[var(--color-academy-primary)] text-white rounded-xl font-medium hover:bg-[var(--color-academy-primary-hover)] transition-colors disabled:opacity-50"
                         >
                             {isPending ? "저장 중..." : editingId ? "수정 완료" : "피드백 저장"}
                         </button>
@@ -566,7 +566,7 @@ export default function FeedbackManagementClient({ feedbacks: initialFeedbacks }
                                 setShowForm(false);
                                 resetForm();
                             }}
-                            className="px-6 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                            className="px-6 py-2.5 bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] rounded-xl font-medium hover:bg-[var(--color-academy-line)] transition-colors"
                         >
                             취소
                         </button>

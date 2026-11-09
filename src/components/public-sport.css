@@ -1,24 +1,31 @@
 /* 공개 홈페이지 전용. 역할별 업무 화면의 학원 앱 토큰에는 영향을 주지 않는다. */
+/* 2026-11-09 원장 결정: 주 버튼 = 검정(accent), STIZ 주황은 «체험 신청» 입구만(trial). 회색은 학원 앱 토큰과 같은 값. */
 .stiz-public-sport {
-  --color-public-ink: #15181c;
+  --color-public-ink: #111827;
   --color-public-paper: #ffffff;
-  --color-public-accent: #b94118;
-  --color-public-strong: #933111;
+  --color-public-accent: #15181c;
+  --color-public-strong: #2f343b;
+  --color-public-trial: #b94118;          /* «체험 신청» 입구 전용 STIZ 주황(흰 글자 5.5:1) */
+  --color-public-trial-hover: #933111;
   --color-public-orange: #f4753a;
-  --color-public-muted: #62676f;
-  --color-public-tint: #f7f3ef;
-  --color-public-line: #e3e4e6;
+  --color-public-muted: #4b5563;
+  --color-public-tint: #f6f7f9;
+  --color-public-line: #e5e7eb;
   --color-public-dark: #15181c;
   --color-public-white: #ffffff;
   --color-public-dark-muted: #c0c5ca;
   --color-public-dark-line: #383c42;
   --color-public-focus: #c6471c;
   --color-public-radius: 4px;
+  /* 홈 첫 화면 사진 위 글자·가림막(public-home.css 에서 옮김 — 색 값은 이 파일 한 곳) */
+  --color-public-hero-ink: #fff;
+  --color-public-hero-scrim: rgba(12, 14, 17, .78);
+  --color-public-hero-clear: rgba(12, 14, 17, .16);
   --color-brand-orange-50: var(--color-public-tint);
   --color-brand-orange-100: var(--color-public-tint);
   --color-brand-orange-200: var(--color-public-line);
-  --color-brand-orange-300: var(--color-public-orange);
-  --color-brand-orange-400: var(--color-public-orange);
+  --color-brand-orange-300: var(--color-public-muted);
+  --color-brand-orange-400: var(--color-public-accent);
   --color-brand-orange-500: var(--color-public-accent);
   --color-brand-orange-600: var(--color-public-strong);
   --color-brand-orange-700: var(--color-public-strong);
@@ -46,6 +53,9 @@
   --color-public-accent: #f4753a;
   --color-public-strong: #fd925c;
   --color-public-focus: #fd925c;
+  /* 다크모드는 나중에 정한다(원장 결정 5) — 체험 신청 입구도 지금 모양(밝은 주황 + 어두운 글자) 그대로 */
+  --color-public-trial: #f4753a;
+  --color-public-trial-hover: #fd925c;
 }
 .stiz-public-sport :is(button, a, input, select, textarea):focus-visible {
   outline: 3px solid var(--color-public-focus);
@@ -81,7 +91,7 @@
 .stiz-public-sport .public-desktop-accounts > .hidden { display: inline-flex; }
 .stiz-public-sport .public-header-actions > a[href="/apply"],
 .stiz-public-sport .public-mobile-menu a[href="/apply"] {
-  background: var(--color-public-accent);
+  background: var(--color-public-trial);
   color: var(--color-public-white);
   border-radius: var(--color-public-radius);
   min-height: 44px;
@@ -164,6 +174,18 @@
 .stiz-public-sport .public-btn-primary:hover { background: var(--color-public-strong); border-color: var(--color-public-strong); }
 /* 다크 모드의 주황 바탕에는 어두운 글자가 더 잘 읽힌다(헤더 신청 버튼과 같은 약속). */
 .dark .stiz-public-sport .public-btn-primary { color: var(--color-public-dark); }
+/* «체험 신청» 입구만 STIZ 주황(2026-11-09 원장 결정 4) — 헤더 신청 버튼·체험 신청 주 버튼·홈 히어로/하단 띠의 첫 버튼.
+ * 나머지 주 버튼은 검정(--color-public-accent). 주소로 고르므로 화면 파일은 고치지 않는다. */
+.stiz-public-sport :is(.public-btn-primary[href="/apply"], .public-btn-primary[href^="/apply/trial"], .public-home-hero__actions > a[href="/apply"], .public-cta__actions > a[href="/apply"], .public-cta__actions > a[href^="/apply/trial"]) {
+  background: var(--color-public-trial);
+  border-color: var(--color-public-trial);
+  color: var(--color-public-white);
+}
+.stiz-public-sport :is(.public-btn-primary[href="/apply"], .public-btn-primary[href^="/apply/trial"], .public-home-hero__actions > a[href="/apply"], .public-cta__actions > a[href="/apply"], .public-cta__actions > a[href^="/apply/trial"]):hover {
+  background: var(--color-public-trial-hover);
+  border-color: var(--color-public-trial-hover);
+}
+.dark .stiz-public-sport :is(.public-btn-primary[href="/apply"], .public-btn-primary[href^="/apply/trial"], .public-home-hero__actions > a[href="/apply"], .public-cta__actions > a[href="/apply"], .public-cta__actions > a[href^="/apply/trial"]) { color: var(--color-public-dark); }
 /* 보조(투명 + 테두리) */
 .stiz-public-sport .public-btn-secondary {
   padding: 10px 20px;

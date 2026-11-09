@@ -76,14 +76,14 @@ const DEFAULT_FAQ_DATA = [
 // --- FAQ 아코디언 아이템 --- 질문을 클릭하면 답변이 토글된다
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   return (
-    <details className="group border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+    <details className="group border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)] last:border-b-0">
       <summary
-        className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 py-4 px-1 text-left hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors cursor-pointer"
       >
-        <span className="font-semibold text-gray-900 dark:text-white pr-4">{question}</span>
+        <span className="font-semibold text-[var(--color-public-ink)] dark:text-white pr-4">{question}</span>
         {/* 화살표 아이콘 — 열림/닫힘 상태에 따라 회전 */}
         <svg
-          className="w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200 group-open:rotate-180"
+          className="w-5 h-5 text-[var(--color-public-muted)] shrink-0 transition-transform duration-200 group-open:rotate-180"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -97,7 +97,7 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         </svg>
       </summary>
       <div className="pb-5 px-1">
-        <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed">{answer}</p>
+        <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed">{answer}</p>
       </div>
     </details>
   );
@@ -110,7 +110,7 @@ export default function FaqClient({ faqData }: FaqClientProps) {
 
   return (
     // SectionLayout 대신 단순 section+div로 교체 — 독립 페이지에서는 섹션 래퍼 불필요
-    <section className="public-content-section py-6 md:py-8 bg-white dark:bg-gray-950 transition-colors duration-300">
+    <section className="public-content-section py-6 md:py-8 bg-white dark:bg-[var(--color-public-paper)] transition-colors duration-300">
       <div className="max-w-6xl mx-auto px-6 md:px-4">
         <AnimateOnScroll>
           <Card variant="default" className="public-card !p-0 max-w-3xl mx-auto">

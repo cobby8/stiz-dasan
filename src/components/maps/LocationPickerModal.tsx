@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { hasShuttlePlaceName, SHUTTLE_PLACE_NAME_MAX, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
 
 export type MapLocationData = {
   address: string;
@@ -81,12 +82,18 @@ export default function LocationPickerModal({
   title,
   initialValue,
   confirmPending = false,
+  requirePlaceName = false,
   onConfirm,
   onClose,
 }: {
   title: string;
   initialValue?: MapLocationData;
   confirmPending?: boolean;
+  /**
+   * 장소명 필수(2026-11-09 원장 지시) — 아이가 타는 곳(관리자 원생 등록·학부모 셔틀 위치 링크)에서 켠다.
+   * 켜면 이름이 빌 때 «위치 선택» 버튼이 꺼지고 안내가 보인다. 학원 위치·정류장 편집 등 다른 쓰임은 기본(꺼짐) 그대로.
+   */
+  requirePlaceName?: boolean;
   onConfirm: (location: MapLocationData) => void;
   onClose: () => void;
 }) {
@@ -306,8 +313,16 @@ export default function LocationPickerModal({
     }
     // 사용자가 입력/수정한 장소명을 우선 반영한다. 비어 있으면 검색으로 잡힌 placeName을 유지한다.
     const trimmedName = placeName.trim();
-    onConfirm({ ...location, placeName: trimmedName || location.placeName || undefined });
+    // 장소명 필수 모드: 칸이 비면 확정하지 않는다(검색 장소명으로 몰래 채우지 않는다 — 칸에 보이는 값이 저장값)
+    if (requirePlaceName && !trimmedName) {
+      setMessage(SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE);
+      return;
+    }
+    onConfirm({ ...location, placeName: trimmedName || (requirePlaceName ? undefined : location.placeName) || undefined });
   }
+
+  // 장소명 필수인데 비어 있으면 «위치 선택» 버튼을 끈다
+  const placeNameMissing = requirePlaceName && !hasShuttlePlaceName(placeName);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -333,9 +348,25 @@ export default function LocationPickerModal({
 
           {status !== "fallback" && (
             <div>
-              <label className="mb-1 block text-xs font-bold text-gray-600 dark:text-gray-300" htmlFor={`${titleId}-place-name`}>장소명 (선택)</label>
+              <label className="mb-1 block text-xs font-bold text-gray-600 dark:text-gray-300" htmlFor={`${titleId}-place-name`}>
+                {requirePlaceName ? <>장소명 <span className="text-red-600 dark:text-red-300">*</span></> : "장소명 (선택)"}
+              </label>
               {/* 검색으로 고른 장소의 이름이 자동 채워지고, 직접 수정할 수 있다. 확정 시 placeName으로 함께 저장된다. */}
-              <input id={`${titleId}-place-name`} value={placeName} onChange={(event) => setPlaceName(event.target.value)} placeholder="예: 롯데캐슬 정문" className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+              <input
+                id={`${titleId}-place-name`}
+                value={placeName}
+                onChange={(event) => setPlaceName(event.target.value)}
+                placeholder="예: 롯데캐슬 정문"
+                maxLength={SHUTTLE_PLACE_NAME_MAX}
+                required={requirePlaceName}
+                aria-invalid={placeNameMissing || undefined}
+                aria-describedby={placeNameMissing ? `${titleId}-place-name-hint` : undefined}
+                className="min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+              />
+              {/* 필수인데 비었을 때만 안내(기사님 명단에 이 이름이 나온다) */}
+              {placeNameMissing && (
+                <p id={`${titleId}-place-name-hint`} className="mt-1 text-xs font-bold text-red-600 dark:text-red-300">{SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE}</p>
+              )}
             </div>
           )}
 
@@ -370,7 +401,7 @@ export default function LocationPickerModal({
         {status !== "fallback" && (
           <footer className="flex gap-2 border-t border-gray-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-gray-700">
             <button type="button" onClick={onClose} disabled={confirmPending} className="min-h-12 rounded-xl border border-gray-300 px-5 font-bold text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200">취소</button>
-            <button type="button" disabled={confirmPending} aria-busy={confirmPending || isLocating} onClick={confirmSelection} className="min-h-12 flex-1 rounded-xl bg-brand-orange-500 px-5 font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">{confirmPending ? "저장 중..." : isLocating ? "현재 위치 확인 중..." : location ? "이 위치로 선택" : "위치 선택 필요"}</button>
+            <button type="button" disabled={confirmPending || placeNameMissing} aria-busy={confirmPending || isLocating} onClick={confirmSelection} className="min-h-12 flex-1 rounded-xl bg-brand-orange-500 px-5 font-black text-white disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">{confirmPending ? "저장 중..." : isLocating ? "현재 위치 확인 중..." : placeNameMissing ? "장소명을 적어 주세요" : location ? "이 위치로 선택" : "위치 선택 필요"}</button>
           </footer>
         )}
       </section>

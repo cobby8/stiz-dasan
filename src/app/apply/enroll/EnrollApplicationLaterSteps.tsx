@@ -100,8 +100,8 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
         <>
             {step === 2 && (
                 <div className="space-y-5">
-                    <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                        <FontFreeIcon name="person" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                    <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                        <FontFreeIcon name="person" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         보호자 정보
                     </h2>
                     <TextInput label="보호자 이름" required value={form.parentName} onChange={(value) => update("parentName", value)} placeholder="보호자 성함" />
@@ -112,13 +112,13 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
 
             {step === 3 && (
                 <div className="space-y-5">
-                    <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                        <FontFreeIcon name="sports_basketball" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                    <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                        <FontFreeIcon name="sports_basketball" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         수강 정보
                     </h2>
 
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                             수강 개시일 <span className="text-red-500">*</span>
                         </label>
                         <input aria-label="수강 개시일" type="date" required value={form.requestedStartOn} onChange={(event) => update("requestedStartOn", event.target.value)} className="box-border min-h-11 w-full min-w-0 max-w-full rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-2 text-[17px] text-[var(--color-academy-ink)]" />
@@ -126,14 +126,14 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                     </div>
 
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                            희망 수업 <span className="text-xs font-normal text-gray-400">(복수 선택 가능)</span>
+                        <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
+                            희망 수업 <span className="text-xs font-normal text-[var(--color-public-muted)]">(복수 선택 가능)</span>
                         </label>
                         {Object.keys(slotsByDay).length > 0 ? (
                             <div className="space-y-3">
                                 {DAY_ORDER.filter((day) => slotsByDay[day]).map((day) => (
                                     <div key={day}>
-                                        <p className="mb-1.5 text-xs font-bold uppercase text-gray-500 dark:text-gray-400">{DAY_LABELS[day]}요일</p>
+                                        <p className="mb-1.5 text-xs font-bold uppercase text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{DAY_LABELS[day]}요일</p>
                                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                                             {slotsByDay[day]!.map((slot) => {
                                                 const isFull = slot.available <= 0;
@@ -144,11 +144,11 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                                         type="button"
                                                         disabled={isFull}
                                                         onClick={() => toggleSlot(slot.slotKey)}
-                                                        className={`rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors ${isFull ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 dark:border-gray-700 dark:bg-gray-900" : isSelected ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 ring-2 ring-brand-orange-500 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "cursor-pointer border-gray-300 text-gray-700 hover:border-brand-navy-400 dark:text-gray-200"}`}
+                                                        className={`rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors ${isFull ? "cursor-not-allowed border-[var(--color-public-line)] bg-[var(--color-public-tint)] text-[var(--color-public-dark-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]" : isSelected ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] ring-2 ring-[var(--color-public-accent)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "cursor-pointer border-gray-300 text-[var(--color-public-muted)] hover:border-[var(--color-public-dark)] dark:text-[var(--color-public-ink)]"}`}
                                                     >
                                                         <span className="block text-sm font-semibold">{slot.startTime}~{slot.endTime}</span>
                                                         <span className="mt-0.5 block truncate">{slot.className}</span>
-                                                        <span className={`mt-1 block ${isFull ? "text-gray-300" : slot.available <= 3 ? "text-red-500" : "text-green-600"}`}>
+                                                        <span className={`mt-1 block ${isFull ? "text-[var(--color-public-dark-muted)]" : slot.available <= 3 ? "text-red-500" : "text-green-600"}`}>
                                                             {isFull ? "마감" : `잔여 ${slot.available}명`}
                                                         </span>
                                                     </button>
@@ -159,17 +159,17 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                 ))}
                             </div>
                         ) : (
-                            <p className="py-4 text-center text-sm text-gray-400">현재 조회 가능한 시간표가 없습니다. 신청 후 담당자가 안내드립니다.</p>
+                            <p className="py-4 text-center text-sm text-[var(--color-public-muted)]">현재 조회 가능한 시간표가 없습니다. 신청 후 담당자가 안내드립니다.</p>
                         )}
                     </div>
 
                     <TextArea label="농구 경험" value={form.basketballExp} onChange={(value) => update("basketballExp", value)} placeholder="농구를 해본 경험이 얼마나 있는지 간단하게 적어주세요." labelSuffix="(선택)" />
 
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                             셔틀 탑승 여부 <span className="text-red-500">*</span>
                         </label>
-                        <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">주 1회 10,000원 / 2회 15,000원 / 3회 20,000원</p>
+                        <p className="mb-2 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">주 1회 10,000원 / 2회 15,000원 / 3회 20,000원</p>
                         <div className="grid grid-cols-2 gap-2">
                             {["탑승", "미탑승"].map((choice) => (
                                 <button
@@ -188,7 +188,7 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                             update("shuttleNoticeConfirmed", false);
                                         }
                                     }}
-                                    className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${form.shuttleChoice === choice ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}
+                                    className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${form.shuttleChoice === choice ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] hover:border-gray-400 dark:text-[var(--color-public-muted)]"}`}
                                 >
                                     {choice}
                                 </button>
@@ -197,7 +197,7 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                     </div>
 
                     {form.shuttleChoice === "탑승" && (
-                        <div className="ml-2 space-y-4 border-l-2 border-brand-orange-200 pl-2">
+                        <div className="ml-2 space-y-4 border-l-2 border-[var(--color-public-line)] pl-2">
                             {/* 이름 칸만 고쳐도 좌표는 그대로 둔다 — 위치는 지도에서만 바뀐다 */}
                             <ShuttleLocationField
                                 label="셔틀 탑승 장소"
@@ -216,22 +216,22 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
                                 onOpenMap={() => setLocationPicker("dropoff")}
                             />
                             <TextInput label="셔틀 희망 시간" required value={form.shuttleTime} onChange={(value) => update("shuttleTime", value)} placeholder="예: 수업 시작 20분 전, 16:30 전후" helper="참고용입니다. 실제 탑승시간은 배차 확정 후 안내됩니다." />
-                            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                                <input type="checkbox" checked={form.shuttleLocationConsent} onChange={(event) => update("shuttleLocationConsent", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime" />
+                            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-3 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
+                                <input type="checkbox" checked={form.shuttleLocationConsent} onChange={(event) => update("shuttleLocationConsent", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                                 <span>셔틀 배차와 노선 계산을 위해 탑승·하차 위치 좌표를 저장하는 데 동의합니다.</span>
                             </label>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                                <input type="checkbox" checked={form.shuttleNoticeConfirmed} onChange={(event) => update("shuttleNoticeConfirmed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime" />
+                            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-3 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
+                                <input type="checkbox" checked={form.shuttleNoticeConfirmed} onChange={(event) => update("shuttleNoticeConfirmed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                                 <span>셔틀 운행 시간은 노선 확정 후 조정될 수 있음을 확인했습니다.</span>
                             </label>
                         </div>
                     )}
 
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                             가입경로 <span className="text-red-500">*</span>
                         </label>
-                        <select value={form.referralSource} onChange={(event) => update("referralSource", event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+                        <select value={form.referralSource} onChange={(event) => update("referralSource", event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white">
                             <option value="">선택해주세요</option>
                             {SOURCE_OPTIONS.map((option) => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -245,11 +245,11 @@ export default function EnrollApplicationLaterSteps({ step, form, availableSlots
 
             {step === 4 && (
                 <div className="space-y-5">
-                    <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                        <FontFreeIcon name="check_circle" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                    <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                        <FontFreeIcon name="check_circle" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                         확인 및 동의
                     </h2>
-                    <div className="space-y-4 rounded-xl bg-gray-50 p-4 text-sm dark:bg-gray-900">
+                    <div className="space-y-4 rounded-xl bg-[var(--color-public-tint)] p-4 text-sm dark:bg-[var(--color-public-paper)]">
                         <SummarySection title="아이 정보" icon="child_care">
                             <SummaryRow label="이름" value={form.childName} strong />
                             <SummaryRow label="생년월일" value={form.childBirthDate} />
@@ -318,7 +318,7 @@ function ShuttleLocationField({ label, nameLabel, value, location, onChange, onO
     const shownAddress = location ? (location.roadAddress || location.address) : "";
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                 {label} <span className="text-red-500">*</span>
             </label>
             {!location ? (
@@ -362,11 +362,11 @@ function ShuttleLocationField({ label, nameLabel, value, location, onChange, onO
 function TextInput({ label, labelSuffix, required, type = "text", value, onChange, placeholder, helper }: { label: string; labelSuffix?: string; required?: boolean; type?: string; value: string; onChange: (value: string) => void; placeholder: string; helper?: string }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                {label} {required && <span className="text-red-500">*</span>} {labelSuffix && <span className="text-xs font-normal text-gray-400">{labelSuffix}</span>}
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
+                {label} {required && <span className="text-red-500">*</span>} {labelSuffix && <span className="text-xs font-normal text-[var(--color-public-muted)]">{labelSuffix}</span>}
             </label>
-            <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
-            {helper && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{helper}</p>}
+            <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white" />
+            {helper && <p className="mt-1 text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{helper}</p>}
         </div>
     );
 }
@@ -374,10 +374,10 @@ function TextInput({ label, labelSuffix, required, type = "text", value, onChang
 function TextArea({ label, labelSuffix, value, onChange, placeholder }: { label: string; labelSuffix?: string; value: string; onChange: (value: string) => void; placeholder: string }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
-                {label} {labelSuffix && <span className="text-xs font-normal text-gray-400">{labelSuffix}</span>}
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
+                {label} {labelSuffix && <span className="text-xs font-normal text-[var(--color-public-muted)]">{labelSuffix}</span>}
             </label>
-            <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+            <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} className="w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white" />
         </div>
     );
 }
@@ -385,8 +385,8 @@ function TextArea({ label, labelSuffix, value, onChange, placeholder }: { label:
 function SummarySection({ title, icon, children }: { title: string; icon: FontFreeIconName; children: ReactNode }) {
     return (
         <div>
-            <h3 className="mb-1.5 flex items-center gap-1 font-semibold text-gray-900 dark:text-white">
-                <FontFreeIcon name={icon} size={14} className="text-gray-500 dark:text-gray-400" />
+            <h3 className="mb-1.5 flex items-center gap-1 font-semibold text-[var(--color-public-ink)] dark:text-white">
+                <FontFreeIcon name={icon} size={14} className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" />
                 {title}
             </h3>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-5">{children}</div>
@@ -397,8 +397,8 @@ function SummarySection({ title, icon, children }: { title: string; icon: FontFr
 function SummaryRow({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
     return (
         <>
-            <span className="text-gray-500 dark:text-gray-400">{label}</span>
-            <span className={`text-gray-900 dark:text-white ${strong ? "font-medium" : ""}`}>{value || "-"}</span>
+            <span className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{label}</span>
+            <span className={`text-[var(--color-public-ink)] dark:text-white ${strong ? "font-medium" : ""}`}>{value || "-"}</span>
         </>
     );
 }
@@ -406,17 +406,17 @@ function SummaryRow({ label, value, strong }: { label: string; value: string; st
 function TermsAccordion({ title, required, checked, onCheck, children }: { title: string; required?: boolean; checked: boolean; onCheck: (value: boolean) => void; children: ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
     return (
-        <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-            <div className="flex items-center bg-gray-50 px-4 py-3 dark:bg-gray-900">
+        <div className="overflow-hidden rounded-xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)]">
+            <div className="flex items-center bg-[var(--color-public-tint)] px-4 py-3 dark:bg-[var(--color-public-paper)]">
                 <label className="flex flex-1 cursor-pointer items-center gap-2">
-                    <input type="checkbox" checked={checked} onChange={(event) => onCheck(event.target.checked)} className="h-5 w-5 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime dark:focus:ring-brand-neon-lime/50" />
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">{title} {required && <span className="text-red-500">*</span>}</span>
+                    <input type="checkbox" checked={checked} onChange={(event) => onCheck(event.target.checked)} className="h-5 w-5 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime dark:focus:ring-brand-neon-lime/50" />
+                    <span className="text-sm font-medium text-[var(--color-public-ink)] dark:text-white">{title} {required && <span className="text-red-500">*</span>}</span>
                 </label>
-                <button type="button" onClick={() => setIsOpen(!isOpen)} className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-300">
+                <button type="button" onClick={() => setIsOpen(!isOpen)} className="p-1 text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     <FontFreeIcon name="expand_more" size={18} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
                 </button>
             </div>
-            {isOpen && <div className="max-h-48 overflow-y-auto border-t border-gray-100 px-4 py-3 text-xs leading-relaxed text-gray-600 dark:border-gray-800 dark:text-gray-300">{children}</div>}
+            {isOpen && <div className="max-h-48 overflow-y-auto border-t border-[var(--color-public-line)] px-4 py-3 text-xs leading-relaxed text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]">{children}</div>}
         </div>
     );
 }
@@ -424,7 +424,7 @@ function TermsAccordion({ title, required, checked, onCheck, children }: { title
 function EnrollTermsContent() {
     return (
         <div className="space-y-2">
-            <p className="font-semibold text-gray-800 dark:text-gray-100">STIZ 농구교실 수강 이용약관</p>
+            <p className="font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">STIZ 농구교실 수강 이용약관</p>
             <p>1. 수강료는 수강 시작 전 안내에 따라 납부합니다.</p>
             <p>2. 개인 사정으로 인한 결석은 이월 또는 환불 대상이 아닙니다.</p>
             <p>3. 질병이나 부상 등 증빙이 가능한 경우에는 확인 후 이월 또는 환불을 안내합니다.</p>
@@ -437,7 +437,7 @@ function EnrollTermsContent() {
 function EnrollPrivacyContent() {
     return (
         <div className="space-y-2">
-            <p className="font-semibold text-gray-800 dark:text-gray-100">개인정보 수집/이용 동의</p>
+            <p className="font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">개인정보 수집/이용 동의</p>
             <p><strong>수집 항목:</strong> 수강생 이름, 생년월일, 성별, 학교명, 연락처, 보호자 이름, 보호자 연락처, 주소</p>
             <p><strong>수집 목적:</strong> 수강 신청 접수, 반 배정, 수강료 안내, 셔틀 운행, 수업 운영</p>
             <p><strong>보유 기간:</strong> 수강 종료 후 1년, 미등록 시 6개월</p>

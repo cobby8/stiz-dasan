@@ -4,6 +4,7 @@ import { cancelShuttleException, submitShuttleException } from "@/lib/shuttle/pa
 import { MAX_DAYS_AHEAD, SHUTTLE_DIRECTION_LABEL, type ShuttleDirection, type ShuttleExceptionKind } from "@/lib/shuttle/dayExceptionRules";
 import { DAY_INDEX, DAY_KO } from "@/lib/regular/regularAbsenceRules";
 import { notifyAdminsOfKakaoIntake } from "@/lib/kakao-intake-admin-alert";
+import { shuttleRosterTaskHref } from "@/lib/kakaoShuttleRosterTask";
 import { addDaysKst, kstDow, kstLabel, todayKst } from "@/lib/datetime/kst";
 import {
   answerOf, createFlowStore, FLOW_MENU_TEXT, flowReply, MAIN_MENU, numberQuickReplies,
@@ -397,9 +398,11 @@ async function confirmRegular(flow: FlowRow<ShuttleState>, today: string): Promi
   if (outcome === "ALREADY") return flowReply("이미 접수된 요청이에요.", ["셔틀", "메뉴"]);
   await notifyAdminsOfKakaoIntake({
     intakeId: flow.id,
-    kindLabel: ACTION_LABEL[state.action!],
+    // 신청(START)은 원장 할 일 «셔틀 명단에 넣어 주세요» — 알림을 누르면 그 달 셔틀 명단(신청 학생 추가)으로 바로 간다.
+    kindLabel: state.action === "START" ? `${ACTION_LABEL.START} — 셔틀 명단에 넣어 주세요` : ACTION_LABEL[state.action!],
     studentName: state.studentName,
     sourceText: String(structured.details),
+    ...(state.action === "START" ? { linkUrl: shuttleRosterTaskHref(studentId, structured) } : {}),
   }).catch(() => undefined);
   return flowReply(`${ACTION_LABEL[state.action!]} 요청을 접수했어요. 원장님이 노선·자리를 확인한 뒤 카카오톡이나 전화로 알려 드릴게요.`, ["메뉴"]);
 }

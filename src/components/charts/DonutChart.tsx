@@ -1,5 +1,7 @@
 "use client";
 
+import { CHART_COLORS } from "./chartColors";
+
 // 도넛 차트 컴포넌트 — 전환율, 수납률 등 비율 표시에 사용
 // 순수 SVG로 구현, 중앙에 퍼센트 값 표시
 interface DonutChartProps {
@@ -15,7 +17,7 @@ export default function DonutChart({
     value,
     max,
     label = "",
-    color = "var(--brand-accent)",
+    color = CHART_COLORS.series,
     size = 140,
     strokeWidth = 14,
 }: DonutChartProps) {
@@ -40,7 +42,7 @@ export default function DonutChart({
                     cy={center}
                     r={radius}
                     fill="none"
-                    stroke="#f3f4f6"
+                    stroke={CHART_COLORS.track}
                     strokeWidth={strokeWidth}
                 />
 
@@ -65,7 +67,7 @@ export default function DonutChart({
                     y={center - 4}
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    fill="#111827"
+                    fill={CHART_COLORS.value}
                     fontSize={size * 0.2}
                     fontWeight="800"
                 >
@@ -78,7 +80,7 @@ export default function DonutChart({
                     y={center + size * 0.14}
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    fill="#9ca3af"
+                    fill={CHART_COLORS.axis}
                     fontSize={size * 0.09}
                 >
                     {value}/{max}
@@ -87,7 +89,7 @@ export default function DonutChart({
 
             {/* 라벨 */}
             {label && (
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
+                <span className="text-xs font-medium text-[var(--color-academy-muted)]">{label}</span>
             )}
         </div>
     );

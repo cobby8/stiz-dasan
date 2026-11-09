@@ -71,7 +71,7 @@ export default function RentalPage() {
                 <li>· 건물 주차가 어려워요. 인근 주민센터 주차장을 이용해 주세요.</li>
                 <li>· 최대 {RENTAL_FEE.baseHeadcount}명 기준, 넘으면 인원 추가 요금</li>
                 <li>· 사용 후 정리정돈, 냉난방은 끄고 퇴실</li>
-                <li>· 평일 09:00~22:00 · 토 10:00~22:00 (수업 시간 제외) · 일 10:00~22:00</li>
+                <li>· 평일 09:00~22:10 · 토 10:00~22:00 (수업 시간 제외) · 일 10:00~22:00</li>
               </ul>
             </div>
             <div className="public-card p-4 text-sm break-keep text-[var(--color-public-muted)]">

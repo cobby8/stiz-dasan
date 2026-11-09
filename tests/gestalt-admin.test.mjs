@@ -100,12 +100,16 @@ test("A-10 패널 버튼 줄은 공용 부품 하나로", () => {
   }
 });
 
-test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 같은 handleStatusChange", () => {
+test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 «선택 항목 환불»과 같은 runRefund(2026-11-09 PM 결정)", () => {
   const finance = read("../src/app/admin/finance/FinanceClient.tsx");
   const block = finance.slice(finance.indexOf('key: "refund"'), finance.indexOf('key: "delete"'));
   assert.match(block, /tone: "danger" as const/);
   assert.match(block, /원생 \$\{formatAmount\(p\.amount\)\}을 환불 처리할까요\?/);
-  assert.ok(block.indexOf("await askConfirm(") < block.indexOf('void handleStatusChange(p.id, "REFUNDED")'));
+  // 확인 창이 먼저, 실행은 결제 길별 서버 액션(refundSelectedPayments)을 부르는 runRefund 하나
+  assert.ok(block.indexOf("await askConfirm(") >= 0);
+  assert.ok(block.indexOf("await askConfirm(") < block.indexOf("void runRefund([p.id])"));
+  // 상태 변경으로 환불하던 옛 길(장부만 바뀜)은 다시 쓰지 않는다
+  assert.doesNotMatch(finance, /handleStatusChange\([^)]*"REFUNDED"\)/);
   // 확인 모달 버튼 44px·학원 변수색
   assert.match(finance, /className="academy-button-danger-solid ml-auto">\{busy \? "처리 중…" : "청구서 삭제"\}/);
   assert.match(finance, /className="academy-button-primary ml-auto">\{busy \? "처리 중…" : "청구 생성"\}/);
@@ -133,10 +137,14 @@ test("A-06 신청·체험: 따로 만든 메뉴 대신 공용 ⚡ 메뉴, 형광
 });
 
 test("C-A3 상태 배지: 공용 색(학원 변수)으로 통일, 안전한 «다시 불러오기»는 빨강 아님", () => {
-  const badge = read("../src/components/admin/StatusBadge.tsx");
-  for (const tone of ["warning", "success", "danger"]) {
-    assert.ok(badge.includes(`bg-[var(--color-academy-${tone}-soft)] text-[var(--color-academy-${tone})]`), tone);
+  // 2026-11-09 색상 정리: 상태색 지도는 src/lib/ui/statusTones.ts 한 곳, StatusBadge 는 그걸 쓴다(info 추가·모서리 4px)
+  const tones = read("../src/lib/ui/statusTones.ts");
+  for (const tone of ["warning", "success", "danger", "info", "neutral"]) {
+    assert.ok(tones.includes(`bg-[var(--color-academy-${tone}-soft)] text-[var(--color-academy-${tone})]`), tone);
   }
+  const badge = read("../src/components/admin/StatusBadge.tsx");
+  assert.match(badge, /TONE_BADGE_CLASS\[tone\]/);
+  assert.match(badge, /inline-flex items-center gap-1 rounded px-2/, "상태 표시는 모서리 4px(누르는 칩 알약과 구분)");
   const finance = read("../src/app/admin/finance/FinanceClient.tsx");
   assert.match(finance, /PENDING: \{ label: "미납", color: statusToneClass\("warning"\) \}/);
   assert.match(finance, /OVERDUE: \{ label: "연체", color: statusToneClass\("danger"\) \}/);

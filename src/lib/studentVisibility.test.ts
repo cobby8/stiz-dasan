@@ -49,7 +49,10 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     "lib/uniform-free-grant.ts": { count: 3, reason: "무료 유니폼 링크 — 링크에 묶인 학생 한 명 조회(화면·잠금·저장 번호)" },
 
     // 청구·수납 — 흡수된 쪽에 청구가 남았을 때 화면에서 숨기면 미납이 사라진다.
-    "lib/payment-ledger.ts": { count: 2, reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험" },
+    "lib/payment-ledger.ts": {
+        count: 3,
+        reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험 + 묶음 결제 주문 1건(내 주문 번호 지정)의 묶인 청구 학생 이름(2026-11-09)",
+    },
     "lib/staff-class-billing.ts": { count: 1, reason: "교사앱 청구 목록" },
     "lib/staff-portal-queries.ts": { count: 1, reason: "교사앱 청구 목록(getStaffBilling)" },
     "app/admin/payment-confirmations/page.tsx": { count: 1, reason: "교사 납부확인 요청 처리" },
@@ -70,6 +73,7 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
         reason: "POS 대조용 결제 조회. mergedIntoStudentId 를 SELECT 해서 직접 판정한다(FROM 앞이라 가드가 못 봄)",
     },
     "lib/pos/paymentNoticeService.ts": { count: 1, reason: "id 지정 POS 결제 알림 1건의 학생 이름(LEFT JOIN)" },
+    "lib/rental/gym-rental-service.ts": { count: 1, reason: "관리자 대관 목록에서 신청 당시 저장한 memberStudentId 1건의 학생 이름(id 지정 조회 — 병합돼도 이름 표시만)" },
 
     // 기록 테이블 (2026-10-02 정리)
     // 병합 엔진(tables.ts)이 이제 보강권·결석·셔틀 예외·반 변경 신청까지 대표 학생에게 옮긴다.

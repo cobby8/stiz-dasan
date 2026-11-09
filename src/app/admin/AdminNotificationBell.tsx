@@ -133,27 +133,27 @@ export default function AdminNotificationBell() {
             <button
                 type="button"
                 onClick={handleToggle}
-                className="relative rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className="relative rounded-lg p-2 text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-muted)]"
                 title="알림"
             >
                 <FontFreeIcon name="notifications" size={22} />
                 {unreadCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    <span className="absolute -right-0.5 -top-0.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1 text-[10px] font-bold text-white">
                         {unreadCount > 99 ? "99+" : unreadCount}
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800 sm:w-96">
-                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-800">
-                        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">알림</h3>
+                <div className="absolute right-0 top-full z-50 mt-2 w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white shadow-xl sm:w-96">
+                    <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-3">
+                        <h3 className="text-sm font-bold text-[var(--color-academy-ink)]">알림</h3>
                         {unreadCount > 0 && (
                             <button
                                 type="button"
                                 onClick={handleMarkAllRead}
                                 disabled={loading}
-                                className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                className="text-xs font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)] disabled:opacity-50"
                             >
                                 모두 읽음
                             </button>
@@ -162,7 +162,7 @@ export default function AdminNotificationBell() {
 
                     <div className="max-h-[400px] overflow-y-auto">
                         {items.length === 0 ? (
-                            <div className="py-12 text-center text-sm text-gray-400">
+                            <div className="py-12 text-center text-sm text-[var(--color-academy-faint)]">
                                 <FontFreeIcon name="notifications_off" size={40} className="mx-auto mb-2" />
                                 알림이 없습니다
                             </div>
@@ -172,15 +172,15 @@ export default function AdminNotificationBell() {
                                     key={item.id}
                                     type="button"
                                     onClick={() => void handleClick(item)}
-                                    className={`flex w-full gap-3 border-b border-gray-50 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:bg-gray-900 ${
-                                        !item.isRead ? "bg-blue-50/50" : ""
+                                    className={`flex w-full gap-3 border-b border-[var(--color-academy-line)] px-4 py-3 text-left transition-colors hover:bg-[var(--color-academy-soft)] ${
+                                        !item.isRead ? "bg-[var(--color-academy-soft)]/50" : ""
                                     }`}
                                 >
                                     <div
                                         className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${
                                             !item.isRead
-                                                ? "bg-blue-100 text-blue-600"
-                                                : "bg-gray-100 text-gray-400 dark:bg-gray-800"
+                                                ? "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"
+                                                : "bg-[var(--color-academy-soft)] text-[var(--color-academy-faint)]"
                                         }`}
                                     >
                                         <FontFreeIcon name={typeIcon(item.type)} size={18} />
@@ -189,18 +189,18 @@ export default function AdminNotificationBell() {
                                         <p
                                             className={`truncate text-sm ${
                                                 !item.isRead
-                                                    ? "font-semibold text-gray-900 dark:text-white"
-                                                    : "text-gray-600 dark:text-gray-300"
+                                                    ? "font-semibold text-[var(--color-academy-ink)]"
+                                                    : "text-[var(--color-academy-muted)]"
                                             }`}
                                         >
                                             {item.title}
                                         </p>
-                                        <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                                        <p className="mt-0.5 truncate text-xs text-[var(--color-academy-muted)]">
                                             {item.message}
                                         </p>
-                                        <p className="mt-1 text-xs text-gray-400">{timeAgo(item.createdAt)}</p>
+                                        <p className="mt-1 text-xs text-[var(--color-academy-faint)]">{timeAgo(item.createdAt)}</p>
                                     </div>
-                                    {!item.isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />}
+                                    {!item.isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[var(--color-academy-primary)]" />}
                                 </button>
                             ))
                         )}
