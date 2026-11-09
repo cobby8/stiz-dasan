@@ -102,8 +102,8 @@ export default function AdminModal({
                 tabIndex={-1}
                 className={layout === "side"
                     // 시트 높이는 화면의 85%까지, 패널은 화면 전체 높이 · 폭 420px
-                    ? `flex max-h-[85dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none dark:bg-gray-800 md:h-dvh md:max-h-none md:w-[420px] md:rounded-none md:rounded-l-2xl md:pb-0 ${panelClassName}`
-                    : `flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl outline-none dark:bg-gray-800 sm:max-h-[calc(100dvh-2rem)] ${panelClassName}`}
+                    ? `flex max-h-[85dvh] w-full flex-col overflow-y-auto overscroll-contain rounded-t-2xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl outline-none md:h-dvh md:max-h-none md:w-[420px] md:rounded-none md:rounded-l-2xl md:pb-0 ${panelClassName}`
+                    : `flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-y-auto overscroll-contain rounded-2xl bg-white shadow-2xl outline-none sm:max-h-[calc(100dvh-2rem)] ${panelClassName}`}
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 {children}
