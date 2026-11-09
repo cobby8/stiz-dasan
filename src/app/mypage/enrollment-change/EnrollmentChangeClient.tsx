@@ -10,7 +10,8 @@ import {
   pauseResumeLabel,
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
-import type { ChildChangeOption, EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import type { ChangeHistoryRow, ChildChangeOption, EnrollmentChangeOptions } from "@/lib/enrollment/parent-change-request";
+import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 
@@ -223,6 +224,8 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         <p className="mt-3 rounded-2xl bg-white p-5 text-sm text-[var(--color-academy-muted)] shadow-sm">
           지금 다니고 있는 반이 없습니다. 학원으로 문의해 주세요.
         </p>
+        {/* 퇴원한 뒤에도 지난 결과(거절 사유 등)는 볼 수 있게 */}
+        <div className="mt-4"><ChangeHistoryList rows={initial.history ?? []} /></div>
       </main>
     );
   }
@@ -495,9 +498,62 @@ export default function EnrollmentChangeClient({ initial }: { initial: Enrollmen
         </>
       )}
 
+      <ChangeHistoryList rows={initial.history ?? []} />
+
       <p className="text-center text-xs text-[var(--color-academy-faint)]">
         요금이 달라지는 반으로 옮기면 학원에서 다시 안내드립니다.
       </p>
     </main>
+  );
+}
+
+/** 결과 이름 — 승인됐지만 반영까지 끝난 건은 «반영 완료». */
+function historyStatusLabel(row: ChangeHistoryRow): string {
+  if (row.status === "APPROVED" && row.applied) return CHANGE_STATUS_LABEL.APPLIED;
+  return CHANGE_STATUS_LABEL[row.status] ?? row.status;
+}
+
+/** 결과 글자 색 — 거절만 눈에 띄게(위험색), 나머지는 차분하게. */
+function historyStatusClass(status: string): string {
+  if (status === "REJECTED") return "text-[var(--color-academy-danger)]";
+  if (status === "CANCELED") return "text-[var(--color-academy-faint)]";
+  return "text-[var(--color-academy-ink)]";
+}
+
+/**
+ * «지난 결과» — 최근 3개월 승인·반영·거절·취소를 한 줄씩(2026-11-10).
+ * 예전엔 결정이 나면 화면에서 사라져, 거절됐는지·왜 거절됐는지 학부모가 알 길이 없었다.
+ * 거절 건은 원장 사유를 바로 아래 작은 글씨로 보여 준다.
+ */
+function ChangeHistoryList({ rows }: { rows: ChangeHistoryRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section aria-labelledby="change-history-heading" className="overflow-hidden rounded-2xl bg-white shadow-sm">
+      <h2 id="change-history-heading" className="border-b border-[var(--color-academy-line)] px-4 py-2 text-sm font-bold text-[var(--color-academy-ink)]">
+        지난 결과 <span className="text-xs font-medium text-[var(--color-academy-muted)]">최근 3개월</span>
+      </h2>
+      <ul className="divide-y divide-[var(--color-academy-line)]">
+        {rows.map((row) => (
+          <li key={row.id} className="px-4 py-2">
+            <div className="flex min-h-7 items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 break-keep text-[var(--color-academy-ink)]">
+                {row.studentName} · {row.fromClassName ?? "반"} {parentKindName(row.kind)}
+                {row.kind === "CLASS_CHANGE" && row.toClassName ? ` → ${row.toClassName}` : ""}
+                {shortMd(row.effectiveFrom) && (
+                  <span className="ml-1 text-xs text-[var(--color-academy-muted)]">({shortMd(row.effectiveFrom)}부터)</span>
+                )}
+              </span>
+              <span className="shrink-0 text-right">
+                <span className={`block text-sm font-bold ${historyStatusClass(row.status)}`}>{historyStatusLabel(row)}</span>
+                <span className="block text-xs tabular-nums text-[var(--color-academy-muted)]">{shortMd(row.decidedOn)}</span>
+              </span>
+            </div>
+            {row.status === "REJECTED" && row.decisionNote && (
+              <p className="mt-0.5 break-keep text-xs text-[var(--color-academy-muted)]">학원 답변: {row.decisionNote}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

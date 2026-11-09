@@ -20,6 +20,7 @@ const load = (path, mocks = {}) => {
   return module.exports;
 };
 const rules = load("src/lib/enrollment/changeRequestRules.ts");
+const changeStatus = load("src/lib/enrollment/parentChangeStatus.ts");
 
 function requestHarness() {
   let saved = null;
@@ -47,6 +48,7 @@ function requestHarness() {
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
     "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
     "@/lib/enrollment/changeRequestRules": rules,
+    "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/operational-staff-notification": { notifyOperationalStaff: async () => {} },
   });
   return { api, writes };
@@ -96,6 +98,7 @@ test("재조회한 휴원 날짜·미정은 실제 학부모 신청 내역에 �
   const Client = load("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx", {
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/enrollment/changeRequestRules": rules,
+    "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/components/parent/InlineConfirm": { __esModule: true, default: () => null },
     "@/components/parent/customerMessage": { customerMessage: (_, fallback) => fallback },
   }).default;
@@ -115,6 +118,7 @@ test("관리자 모바일 목록도 적용일 아래 복귀 예정일 또는 미
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/app/actions/enrollment-changes": {},
     "@/lib/enrollment/changeRequestRules": rules,
+    "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/operations-sync/sheetRetirement": {},
     "@/lib/enrollment/sheetManualCheckRules": {},
     "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: () => null },

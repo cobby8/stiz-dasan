@@ -134,12 +134,21 @@ test("크론이 매일 돌고 아무나 부를 수 없다", () => {
   assert.equal(job.schedule, "10 15 * * *"); // KST 00:10
 });
 
-test("신청은 담당자에게 전달하고 결정 알림은 발송 승인 대기다", () => {
+test("신청은 담당자에게 전달하고 결정·적용은 신청 학부모에게 앱 알림만 보낸다(2026-11-10 d6)", () => {
   assert.match(parentLib, /notifyOperationalStaff\(/);
+  // 학부모 전체(문자 포함 경로)에게 뿌리지 않는다 — 신청자 한 명에게 앱 알림만.
   assert.doesNotMatch(adminLib, /notifyParentsOfStudents\(/);
   // 알림 실패가 신청·승인을 되돌리면 안 된다.
   assert.match(parentLib, /console\.error\("\[parent-change-request\] 원장 알림 실패/);
-  assert.match(adminLib, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
+  // 결정 알림은 더 이상 보류(HELD)하지 않는다
+  assert.doesNotMatch(adminLib, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
+  // 결정은 트랜잭션이 끝난 뒤 알린다(트랜잭션 블록 안에서 부르지 않는다)
+  const decide = adminLib.slice(adminLib.indexOf("export async function decideEnrollmentChangeRequest"), adminLib.indexOf("export type DueEnrollmentChangeSummary"));
+  const txEnd = decide.indexOf("  });\n  if (!rows[0])");
+  assert.ok(txEnd > 0, "결정 트랜잭션 끝을 찾지 못했습니다");
+  assert.ok(decide.indexOf('notifyParentOfEnrollmentChange(input.requestId') > txEnd, "알림은 결정 트랜잭션 뒤에서 보낸다");
+  // 적용일에 실제로 반영된 건만 «시작됐어요» 알림
+  assert.match(adminLib, /outcome === "APPLIED"[\s\S]{0,300}notifyParentOfEnrollmentChange\(candidate\.id, "APPLIED"\)/);
 });
 
 // ── 학부모가 반 변경 시작일을 고를 수 있게 한 뒤 추가된 계약 ──────────────

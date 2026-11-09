@@ -7,6 +7,7 @@ import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/mon
 import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/due-change-plan";
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
+import { notifyParentOfEnrollmentChange } from "@/lib/enrollment/change-decision-notify";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -186,7 +187,7 @@ export async function decideEnrollmentChangeRequest(input: {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
   const rows = await prisma.$transaction(async (tx) => {
   const decided = await tx.$queryRawUnsafe<any[]>(
-    // 결정과 발송 보류 기록은 함께 저장한다.
+    // 결정과 결정 기록(감사 로그)은 함께 저장한다.
     `UPDATE "EnrollmentChangeRequest"
         SET status = $2, "decidedByUserId" = $3, "decidedAt" = now(),
             "decisionNote" = $4, "updatedAt" = now()
@@ -194,24 +195,30 @@ export async function decideEnrollmentChangeRequest(input: {
       RETURNING id, "studentId", kind, to_char("effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom"`,
     input.requestId, input.approve ? "APPROVED" : "REJECTED", input.adminUserId, note,
   );
+  // 2026-11-10 원장 결정 d6: 결정 알림을 더는 보류(HELD)하지 않는다 — 신청한 학부모에게 앱 알림(인앱+웹푸시)만 보낸다.
+  // 문자·알림톡은 보내지 않는다. 발송은 트랜잭션이 끝난 뒤(아래) — 알림 실패가 결정을 되돌리면 안 된다.
   if (decided[0]) await tx.operationsAuditLog.create({ data: {
-    action: "ENROLLMENT_CHANGE_NOTIFICATION_HELD", actorType: "ADMIN", actorUserId: input.adminUserId,
+    action: "ENROLLMENT_CHANGE_DECIDED", actorType: "ADMIN", actorUserId: input.adminUserId,
     detailsJson: { requestId: input.requestId, studentId: decided[0].studentId,
       kind: decided[0].kind, approved: input.approve, effectiveFrom: decided[0].effectiveFrom,
-      notificationStatus: "HELD", reason: "정확한 수신자와 문구 미리보기 승인 필요" },
+      notificationChannel: "APP_ONLY" },
   }});
   return decided;
   });
   if (!rows[0]) return { ok: false as const, message: "이미 처리된 신청입니다." };
 
+  // 학부모 앱 알림 — 신청자가 지금도 그 학생 보호자일 때만(관리자 직접 변경은 건너뜀). 중복 키로 한 번만.
+  const notificationStatus = await notifyParentOfEnrollmentChange(input.requestId, input.approve ? "APPROVED" : "REJECTED");
+
   // 적용일이 이미 지났으면(예: 늦게 승인) 바로 반영한다. 크론과 겹쳐도 신청 행 잠금으로 한 번만 적용된다.
+  // (반영되면 그 안에서 «휴원이 시작됐어요» 알림이 따로 나간다.)
   const summary = input.approve ? await applyDueEnrollmentChangesWithSummary() : null;
   return {
     ok: true as const,
     appliedNow: Boolean(summary?.appliedIds.includes(input.requestId)),
     // 이번 처리에서 사이트에 적용된 전체 건수(밀린 다른 신청 포함). 캐시를 비울지 판단하는 데 쓴다.
     appliedCount: summary?.applied ?? 0,
-    notificationStatus: "HELD" as const,
+    notificationStatus,
   };
 }
 
@@ -319,6 +326,8 @@ export async function applyDueEnrollmentChangesWithSummary(): Promise<DueEnrollm
     if (outcome === "APPLIED") {
       summary.applied += 1;
       summary.appliedIds.push(candidate.id);
+      // 적용일에 실제로 바뀐 순간 학부모에게 «휴원이 시작됐어요» 앱 알림. 실패는 안에서 삼킨다(적용은 이미 끝났다).
+      await notifyParentOfEnrollmentChange(candidate.id, "APPLIED");
     } else if (outcome === "HELD") summary.held += 1;
     } catch {
       // 한 건이 실패해도 나머지는 계속한다. 실패한 건은 그대로 APPROVED 라 다음 크론에서 다시 시도된다.

@@ -26,7 +26,13 @@ export async function deliverOperationalNotification(input: {
   title: string;
   message: string;
   linkUrl: string;
+  /**
+   * 장부의 받는 쪽 구분. 기본 INTERNAL(운영진). 학부모에게 보내는 앱 알림은 EXTERNAL 로 남긴다
+   * — 관리자 «운영 알림 전달» 화면(INTERNAL 만 집계)에 학부모 알림이 섞이지 않게.
+   */
+  audienceScope?: "INTERNAL" | "EXTERNAL";
 }): Promise<OperationalNotificationDeliveryResult> {
+  const audienceScope = input.audienceScope === "EXTERNAL" ? "EXTERNAL" : "INTERNAL";
   const baseDedupeKey = `${input.stableEventKey}:${input.recipientUserId}`;
   const claimed = await prisma.$queryRawUnsafe<{ inAppDeliveryId: string | null; pushDeliveryId: string | null }[]>(
     `WITH in_app_delivery AS (
@@ -35,7 +41,7 @@ export async function deliverOperationalNotification(input: {
          "studentId", "recipientUserId", channel, "requestedChannel", "dedupeKey",
          status, "attemptCount", "sentAt", "createdAt", "updatedAt"
        ) VALUES (
-         gen_random_uuid()::text, 'AUTO', $1, $2, $3, 'INTERNAL',
+         gen_random_uuid()::text, 'AUTO', $1, $2, $3, $12,
          $4, $5, 'IN_APP', 'IN_APP', $6, 'SENT', 1, NOW(), NOW(), NOW()
        ) ON CONFLICT ("dedupeKey") DO NOTHING
        RETURNING id
@@ -49,7 +55,7 @@ export async function deliverOperationalNotification(input: {
          "studentId", "recipientUserId", channel, "requestedChannel", "dedupeKey",
          status, "attemptCount", "payloadJSON", "nextAttemptAt", "createdAt", "updatedAt"
        ) VALUES (
-         gen_random_uuid()::text, 'AUTO', $1, $2, $3, 'INTERNAL',
+         gen_random_uuid()::text, 'AUTO', $1, $2, $3, $12,
          $4, $5, 'PUSH', 'PUSH', $10, 'PENDING', 0, $11::jsonb, NOW(), NOW(), NOW()
        ) ON CONFLICT ("dedupeKey") DO NOTHING
        RETURNING id
@@ -67,6 +73,7 @@ export async function deliverOperationalNotification(input: {
     input.linkUrl,
     `${baseDedupeKey}:push`,
     JSON.stringify({ title: input.title, body: input.message, url: input.linkUrl, tag: input.eventType }),
+    audienceScope,
   );
   const inAppCreated = Boolean(claimed[0]?.inAppDeliveryId);
   const pushDeliveryId = claimed[0]?.pushDeliveryId ?? null;

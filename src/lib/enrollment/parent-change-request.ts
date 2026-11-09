@@ -15,6 +15,7 @@ import {
   validateChangeRequest,
   type ChangeKind,
 } from "@/lib/enrollment/changeRequestRules";
+import { buildClassStatusLine, type ClassStatusTone } from "@/lib/enrollment/parentChangeStatus";
 
 // ── 학부모 수강 변경 신청(반 변경·휴원·퇴원) ────────────────────────────────
 //
@@ -79,6 +80,25 @@ export type EnrollmentChangeOptions = {
   maxResumeFrom: string;
   children: ChildChangeOption[];
   classes: ChangeableClass[];
+  /** 최근 3개월 결과(승인·반영·거절·취소). 거절이면 원장 사유(decisionNote)가 함께 온다. */
+  history: ChangeHistoryRow[];
+};
+
+export type ChangeHistoryRow = {
+  id: string;
+  studentName: string;
+  kind: string;
+  /** APPROVED | APPLIED | REJECTED | CANCELED */
+  status: string;
+  /** APPROVED 인데 반영까지 끝난 건(반 변경 마무리 등) — «반영 완료»로 보인다 */
+  applied: boolean;
+  fromClassName: string | null;
+  toClassName: string | null;
+  effectiveFrom: string;
+  /** 결정(또는 마지막 변경)일 KST "YYYY-MM-DD" */
+  decidedOn: string;
+  /** 거절 사유 — 거절 건에만 채운다(승인 메모는 내부용일 수 있어 내보내지 않는다) */
+  decisionNote: string | null;
 };
 
 /** 방학특강 반(dayOfWeek='Seasonal')은 별도 신청 흐름이라 여기서 제외한다. */
@@ -134,7 +154,10 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       ORDER BY c."dayOfWeek", c."startTime"`,
   );
 
+  const history = await getEnrollmentChangeHistory(parentUserId);
+
   return {
+    history,
     effectiveFrom,
     // 내일 = 공용 달력 더하기(말일이면 다음 달 1일).
     minEffectiveFrom: addDaysKst(today, 1),
@@ -179,6 +202,106 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       full: Number(row.enrolled ?? 0) >= Number(row.capacity ?? 0),
     })),
   };
+}
+
+/**
+ * 최근 3개월 수강 변경 결과(한 줄씩 보여 줄 것). 학부모가 거절 사유를 볼 수 있는 유일한 곳이다.
+ * ★ 가드: childAccessSql(그 부모의 자녀만) + notMergedStudent(병합된 옛 학생 제외).
+ */
+export async function getEnrollmentChangeHistory(parentUserId: string): Promise<ChangeHistoryRow[]> {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT r.id, s.name AS "studentName", r.kind, r.status, (r."appliedAt" IS NOT NULL) AS applied,
+            fc.name AS "fromClassName", tc.name AS "toClassName",
+            to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
+            -- decidedAt·updatedAt 은 timestamptz 라 AT TIME ZONE 한 번이면 KST 날짜다.
+            to_char(COALESCE(r."decidedAt", r."updatedAt") AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "decidedOn",
+            CASE WHEN r.status = 'REJECTED' THEN r."decisionNote" ELSE NULL END AS "decisionNote"
+       FROM "EnrollmentChangeRequest" r
+       JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
+       LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
+       LEFT JOIN "Class" tc ON tc.id = r."toClassId"
+      WHERE ${await childAccessSql("s", "$1")}
+        AND r.status IN ('APPROVED','APPLIED','REJECTED','CANCELED')
+        AND r."updatedAt" >= now() - interval '3 months'
+      ORDER BY r."updatedAt" DESC
+      LIMIT 30`,
+    parentUserId,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    studentName: row.studentName,
+    kind: row.kind,
+    status: row.status,
+    applied: Boolean(row.applied),
+    fromClassName: row.fromClassName ?? null,
+    toClassName: row.toClassName ?? null,
+    effectiveFrom: row.effectiveFrom,
+    decidedOn: row.decidedOn,
+    decisionNote: row.decisionNote ?? null,
+  }));
+}
+
+export type ParentClassStatusLine = {
+  studentId: string;
+  enrollmentId: string;
+  className: string;
+  text: string;
+  tone: ClassStatusTone;
+};
+
+/**
+ * 학부모 홈 «반 상태 한 줄» — 휴원 예정·검토 중·휴원 중인 반만 돌려준다(그냥 다니는 반은 빠진다).
+ * getMyPageData(수강 중 = ACTIVE 만)를 바꾸지 않으려고 따로 조회한다 — 휴원 중(PAUSED) 반도 여기서 보인다.
+ * ★ 가드: childAccessSql + notMergedStudent. 다음 단계 «수업» 탭 반 카드 상태 칩도 이 함수/규칙을 쓴다.
+ */
+export async function getParentClassStatusLines(parentUserId: string): Promise<ParentClassStatusLine[]> {
+  const today = todayKst();
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT s.id AS "studentId", e.id AS "enrollmentId", e.status AS "enrollmentStatus", c.name AS "className",
+            sc.kind AS "scheduledKind", to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledFrom",
+            to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn",
+            pr.kind AS "pendingKind", to_char(pr."effectiveFrom",'YYYY-MM-DD') AS "pendingFrom",
+            to_char(pz."resumeOn",'YYYY-MM-DD') AS "pausedResumeOn"
+       FROM "Student" s
+       JOIN "Enrollment" e ON e."studentId" = s.id AND e.status IN ('ACTIVE','PAUSED') AND ${notMergedStudent("s")}
+       JOIN "Class" c ON c.id = e."classId" AND ${REGULAR_CLASS_FILTER}
+       -- 승인됐지만 아직 반영 전인 신청 중 가장 이른 1건
+       LEFT JOIN LATERAL (
+         SELECT x.kind, x."effectiveFrom", x."resumeOn" FROM "EnrollmentChangeRequest" x
+          WHERE x."enrollmentId" = e.id AND x.status = 'APPROVED' AND x."appliedAt" IS NULL
+          ORDER BY x."effectiveFrom" LIMIT 1
+       ) sc ON true
+       -- 검토 중 신청(수강 등록당 1건 — DB 부분 유니크)
+       LEFT JOIN LATERAL (
+         SELECT x.kind, x."effectiveFrom" FROM "EnrollmentChangeRequest" x
+          WHERE x."enrollmentId" = e.id AND x.status = 'PENDING'
+          ORDER BY x."createdAt" DESC LIMIT 1
+       ) pr ON true
+       -- 휴원 중이면 마지막으로 반영된 휴원 신청의 복귀 예정일
+       LEFT JOIN LATERAL (
+         SELECT x."resumeOn" FROM "EnrollmentChangeRequest" x
+          WHERE e.status = 'PAUSED' AND x."enrollmentId" = e.id AND x.kind = 'PAUSE' AND x.status = 'APPLIED'
+          ORDER BY x."appliedAt" DESC NULLS LAST LIMIT 1
+       ) pz ON true
+      WHERE ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+        AND (e.status = 'PAUSED' OR sc.kind IS NOT NULL OR pr.kind IS NOT NULL)
+      ORDER BY s.name, c."dayOfWeek", c."startTime"`,
+    parentUserId,
+  );
+  const lines: ParentClassStatusLine[] = [];
+  for (const row of rows) {
+    const line = buildClassStatusLine({
+      enrollmentStatus: row.enrollmentStatus,
+      scheduled: row.scheduledKind
+        ? { kind: row.scheduledKind, effectiveFrom: row.scheduledFrom, resumeOn: row.scheduledResumeOn ?? null }
+        : null,
+      pending: row.pendingKind ? { kind: row.pendingKind, effectiveFrom: row.pendingFrom } : null,
+      pausedResumeOn: row.pausedResumeOn ?? null,
+      today,
+    });
+    if (line) lines.push({ studentId: row.studentId, enrollmentId: row.enrollmentId, className: row.className, ...line });
+  }
+  return lines;
 }
 
 export type SubmitChangeInput = {

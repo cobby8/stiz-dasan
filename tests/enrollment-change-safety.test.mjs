@@ -37,9 +37,11 @@ test('due PAUSE/WITHDRAW are applied to website with guarded update; others stay
   assert.doesNotMatch(due, /SET "classId"|"classId"\s*=\s*\$/);
 });
 
-test('decision does not send parent notifications', () => {
-  assert.doesNotMatch(source, /notifyParentsOfStudents|notifyParentOfDecision/);
-  assert.match(source, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
+// 2026-11-10 원장 결정 d6: 결정 알림 보류(HELD)를 풀고 신청 학부모 한 명에게 앱 알림(인앱+웹푸시)만 보낸다.
+test('decision notifies only the requesting parent through the app (no SMS, no broadcast)', () => {
+  assert.doesNotMatch(source, /notifyParentsOfStudents|notifyParentOfDecision|sendTrackedSms|sendParentSms/);
+  assert.doesNotMatch(source, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
+  assert.match(source, /notifyParentOfEnrollmentChange\(input\.requestId, input\.approve \? "APPROVED" : "REJECTED"\)/);
 });
 
 test('proration locks request and atomically creates and links payment', () => {

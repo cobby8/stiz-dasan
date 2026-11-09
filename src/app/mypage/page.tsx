@@ -9,6 +9,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
 import { getPendingSeasonalChildren } from "@/lib/seasonal/parent-pending";
 import { getParentPaymentRequests } from "@/lib/payments/parent-payment-request";
+import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-request";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,8 @@ export default async function MyPageDashboard() {
     // 보강권·방학특강 회차는 «처리할 일» 줄용 — 실패해도 홈이 깨지지 않게 빈 값으로 받는다.
     // 납부할 청구 합계·입금 계좌는 «청구» 탭과 같은 목록(getParentPaymentRequests)으로 센다 —
     // getMyPageData 의 자녀별 최근 5건으로 세면 오래된 미납이 빠져 탭과 숫자가 달라진다(2026-11-09). 실패하면 null → 예전 기준으로.
-    const [notices, notifications, unreadCount, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows] = await Promise.all([
+    // 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 실패해도 홈은 그대로 보이게 빈 목록으로.
+    const [notices, notifications, unreadCount, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getNotifications(data.parent.id),
         getUnreadNotificationCount(data.parent.id),
@@ -63,6 +65,7 @@ export default async function MyPageDashboard() {
         getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
         getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
         getParentPaymentRequests(parentAuth.appUserId).catch(() => null),
+        getParentClassStatusLines(parentAuth.appUserId).catch(() => []),
     ]);
     // 미납만 홈으로 넘긴다(필요한 칸만 — 요청 내역·영수증은 청구 탭이 본다)
     const pendingPayments = paymentRows
@@ -71,5 +74,5 @@ export default async function MyPageDashboard() {
             .map((row) => ({ id: row.paymentId, amount: row.amount, status: row.status, canCheckout: row.canCheckout, virtualAccount: row.virtualAccount }))
         : null;
 
-    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} />;
+    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
 }

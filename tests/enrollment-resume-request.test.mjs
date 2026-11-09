@@ -23,6 +23,7 @@ const load = (path, mocks = {}) => {
   return module.exports;
 };
 const rules = load("src/lib/enrollment/changeRequestRules.ts");
+const changeStatus = load("src/lib/enrollment/parentChangeStatus.ts");
 const kst = load("src/lib/datetime/kst.ts");
 
 /**
@@ -64,6 +65,7 @@ function harness({ today = "2026-11-09", enrollments = [{ id: "enr-paused", pare
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
     "@/lib/datetime/kst": { ...kst, todayKst: () => today },
     "@/lib/enrollment/changeRequestRules": rules,
+    "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/lib/operational-staff-notification": { notifyOperationalStaff: async (input) => { notices.push(input); } },
   });
   return { api, writes, queries, notices };
@@ -202,6 +204,7 @@ test("학부모 화면 조회는 휴원 중 반과 «승인됐지만 시작 전�
     "@/lib/studentVisibility": { notMergedStudent: () => "TRUE" },
     "@/lib/datetime/kst": { ...kst, todayKst: () => "2026-11-09" },
     "@/lib/enrollment/changeRequestRules": rules,
+    "@/lib/enrollment/parentChangeStatus": changeStatus,
   });
   const data = await api.getEnrollmentChangeOptions("parent-a");
   assert.match(seen[0], /e\.status IN \('ACTIVE','PAUSED'\)/);

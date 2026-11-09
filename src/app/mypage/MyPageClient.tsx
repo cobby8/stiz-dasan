@@ -16,6 +16,7 @@ import {
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
 import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
+import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-request";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 학부모 홈 = «오늘 할 일» 판 (2026-11-09 원장 결정 D1 안 A)
@@ -174,7 +175,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 아이콘·제목, 오른쪽 숫자/설명, 끝에 화살표. 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null }: {
+export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [] }: {
     data: MyPageData;
     notices?: NoticeItem[];
     notifications?: NotificationItem[];
@@ -190,6 +191,8 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     seasonalUpcoming?: number;
     /** 청구 탭과 같은 기준의 미납 청구(자녀 전체). 없으면(조회 실패) 자녀별 최근 내역으로 센다 */
     pendingPayments?: PendingPaymentLite[] | null;
+    /** 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 그냥 다니는 반은 없다 */
+    classStatusLines?: ParentClassStatusLine[];
 }) {
     const [selectedIdx, setSelectedIdx] = useState(0);
     const [showNotifications, setShowNotifications] = useState(false);
@@ -286,7 +289,9 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     const startsLaterEnrollment = child.enrollments.find((enrollment) => enrollment.startsLater && enrollment.startsOn);
     const nextClass = computeNextClass(child.enrollments, kstNow, todayStr);
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
-    const hasSummary = Boolean(nextClass) || todayShuttles.length > 0;
+    // 고른 아이의 반 상태 한 줄(휴원 예정 · 12/1부터 등). 눌러서 수강 변경 화면(결과·사유)으로.
+    const childStatusLines = classStatusLines.filter((line) => line.studentId === child.id);
+    const hasSummary = Boolean(nextClass) || todayShuttles.length > 0 || childStatusLines.length > 0;
     // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
     const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
     const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
@@ -416,6 +421,25 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                 </span>
                             </Link>
                         )}
+
+                        {/* 1-2) 반 상태 한 줄 — 휴원 예정·검토 중·휴원 중(원장 승인 결과가 홈에서 바로 보이게, 2026-11-10) */}
+                        {childStatusLines.map((line) => (
+                            <Link
+                                key={line.enrollmentId}
+                                href="/mypage/enrollment-change"
+                                className="flex w-full items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
+                            >
+                                <span className="flex min-w-0 items-center gap-2">
+                                    <SymbolIcon
+                                        name={line.tone === "warning" ? "hourglass_top" : line.tone === "info" ? "event_upcoming" : "pause_circle"}
+                                        size={18}
+                                        className={line.tone === "warning" ? "shrink-0 text-[var(--color-academy-warning)]" : "shrink-0 text-[var(--color-academy-muted)]"}
+                                    />
+                                    <span className="break-keep text-sm font-medium text-[var(--color-academy-muted)]">{line.className}</span>
+                                </span>
+                                <span className="break-keep text-right text-sm font-bold text-[var(--color-academy-ink)]">{line.text}</span>
+                            </Link>
+                        ))}
 
                         {/* 2) 오늘 셔틀 → 일정 탭의 셔틀 배정. 기사님 전화는 같은 줄 끝(예전엔 접힌 칸 안에 숨어 있었다) */}
                         {todayShuttles.length > 0 && (

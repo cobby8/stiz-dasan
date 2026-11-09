@@ -1201,9 +1201,8 @@ export async function getMyPageData(parentUserId: string) {
                     studentId
                 );
 
-                // 이번 달 출결
-                const now = new Date();
-                const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+                // 이번 달 출결 — «이번 달»은 KST 달력 기준(서버는 UTC 라 getFullYear/getMonth 를 쓰면 매달 1일 00~09시에 지난달이 된다)
+                const monthStart = `${todayKst().slice(0, 7)}-01`;
                 const attendances = await prisma.$queryRawUnsafe<any[]>(
                     `SELECT a.status, se.date
                      FROM "Attendance" a
