@@ -8,6 +8,10 @@ import { todayKst } from "@/lib/datetime/kst";
 import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
 import AdminModal from "@/components/admin/AdminModal";
+import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
+import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
+import EnrollmentMoveModal, { type EnrollmentMoveSource } from "./EnrollmentMoveModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
@@ -57,10 +61,11 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
     WITHDRAWN: { label: "퇴원", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
     NONE: { label: "미배정", color: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700" },
 };
+// 반 줄 토글 — «퇴원»은 학생 단위 말이라 반 단위는 «수강 종료»(그 반만 그만둠, 효력일=종료일 기록). 값(WITHDRAWN)은 그대로
 const ENROLLMENT_STATUS_OPTIONS = [
     { value: "ACTIVE", label: "수강 중" },
     { value: "PAUSED", label: "휴원" },
-    { value: "WITHDRAWN", label: "퇴원" },
+    { value: "WITHDRAWN", label: "수강 종료" },
 ] as const;
 
 // 상태변경 세그먼트 버튼: 선택된 상태를 의미색(성공/경고/위험)으로 채워 시각적으로 구분한다
@@ -229,6 +234,12 @@ type StudentActivityData = {
 
 function getEnrollmentStatusInfo(status: string | null) {
     return ENROLLMENT_STATUS[status ?? "NONE"] ?? ENROLLMENT_STATUS.NONE;
+}
+
+// 반 한 줄(수강 하나)의 상태 이름 — 학생 대표 상태(퇴원)와 달리 반 단위는 «수강 종료»
+function getClassEnrollmentStatusInfo(status: string | null) {
+    const info = getEnrollmentStatusInfo(status);
+    return status === "WITHDRAWN" ? { ...info, label: "수강 종료" } : info;
 }
 
 function getInvoiceStatusInfo(status: string | null | undefined) {
@@ -457,6 +468,9 @@ export default function StudentDetailClient({
         reason: string;
     } | null>(null);
     const [statusFormError, setStatusFormError] = useState<string | null>(null);
+    // 반 줄 ⋯ 메뉴: 반 이동 창 대상 / 삭제 확인 창(빨간 확인 — 공용 부품)
+    const [moveSource, setMoveSource] = useState<EnrollmentMoveSource | null>(null);
+    const { confirm: confirmDanger, confirmDialog: dangerConfirmDialog } = useAdminConfirm();
     // ── 반 추가 상태 (E3) ───────────────────────────────────
     // showClassPicker: 반 선택 UI 펼침 / enrollingClassId: 등록 처리 중(disabled)
     // enrollError: 수강 반 추가/상태 변경 실패 사유
@@ -875,9 +889,36 @@ export default function StudentDetailClient({
         }
     }
 
-    // 수강 반 한 줄 카드 — 반명/상태칩 + 세그먼트 상태변경 버튼(수강중/휴원/퇴원)
+    // 잘못 등록한 수강 삭제 — 빨간 확인 창(대상 반·학생 이름) → 서버가 출석·청구·보강 연결을 다시 세고 없을 때만 지운다
+    async function deleteEnrollmentRow(enrollment: StudentActivityData["enrollments"][number]) {
+        if (statusUpdatingId) return;
+        const ok = await confirmDanger({
+            title: `"${student.name}" 학생의 «${enrollment.className}» 수강 삭제`,
+            description: "잘못 등록한 수강 기록을 없앱니다.\n출석·청구·보강 기록이 하나라도 있으면 삭제되지 않아요 — 그만두는 반이면 «수강 종료»를 쓰세요.",
+            confirmLabel: "삭제",
+            tone: "danger",
+        });
+        if (!ok) return;
+        setStatusUpdatingId(enrollment.id);
+        try {
+            const result = await removeMistakenEnrollment(enrollment.id);
+            if (result.ok) {
+                await loadData();
+                setStatusFeedback({ type: "success", message: `«${enrollment.className}» 수강 기록을 삭제했습니다.` });
+                window.setTimeout(() => setStatusFeedback(null), 2500);
+            } else {
+                setStatusFeedback({ type: "error", message: result.message });
+            }
+        } catch {
+            setStatusFeedback({ type: "error", message: "수강 삭제에 실패했어요. 잠시 후 다시 해 주세요." });
+        } finally {
+            setStatusUpdatingId(null);
+        }
+    }
+
+    // 수강 반 한 줄 카드 — 반명/상태칩 + 세그먼트 상태변경 버튼(수강중/휴원/수강 종료) + ⋯ 메뉴(반 이동·삭제)
     function renderEnrollmentRow(enrollment: StudentActivityData["enrollments"][number]) {
-        const info = getEnrollmentStatusInfo(enrollment.displayStatus ?? enrollment.status);
+        const info = getClassEnrollmentStatusInfo(enrollment.displayStatus ?? enrollment.status);
         const isUpdating = statusUpdatingId === enrollment.id;
 
         return (
@@ -919,6 +960,20 @@ export default function StudentDetailClient({
                         );
                     })}
                 </div>
+                {/* ⋯ 메뉴: 반 이동(수강 중인 반만) · 삭제(위험 — 메뉴 맨 아래 구분선 밑) */}
+                <AdminQuickActionMenu
+                    label={`${enrollment.className} 수강 작업`}
+                    actions={[
+                        {
+                            key: "move",
+                            label: "반 이동",
+                            icon: "swap_horiz",
+                            disabled: Boolean(statusUpdatingId) || enrollment.status !== "ACTIVE",
+                            onSelect: () => setMoveSource({ enrollmentId: enrollment.id, classId: enrollment.classId, className: enrollment.className, dayOfWeek: enrollment.dayOfWeek }),
+                        },
+                        { key: "delete", label: "삭제(잘못 등록)", icon: "delete", tone: "danger", disabled: Boolean(statusUpdatingId), onSelect: () => deleteEnrollmentRow(enrollment) },
+                    ]}
+                />
                 </div>
             </div>
         );
@@ -1784,7 +1839,7 @@ export default function StudentDetailClient({
                             수강 상태 변경
                         </h2>
                         <p className="text-sm text-gray-600 dark:text-gray-300">
-                            {statusChange.className} · {getEnrollmentStatusInfo(statusChange.currentStatus).label} → {getEnrollmentStatusInfo(statusChange.nextStatus).label}
+                            {statusChange.className} · {getClassEnrollmentStatusInfo(statusChange.currentStatus).label} → {getClassEnrollmentStatusInfo(statusChange.nextStatus).label}
                         </p>
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
                             효력일
@@ -1819,6 +1874,22 @@ export default function StudentDetailClient({
                     </form>
                 </AdminModal>
             )}
+
+            {/* 반 이동 창 · 삭제 빨간 확인 창 */}
+            {moveSource && (
+                <EnrollmentMoveModal
+                    studentName={student.name}
+                    source={moveSource}
+                    onClose={() => setMoveSource(null)}
+                    onMoved={(message) => {
+                        setMoveSource(null);
+                        void loadData();
+                        setStatusFeedback({ type: "success", message });
+                        window.setTimeout(() => setStatusFeedback(null), 3000);
+                    }}
+                />
+            )}
+            {dangerConfirmDialog}
 
             {/* 배차용 셔틀 위치 지도 선택 모달 — 핀(좌표) 확정 시에만 저장(서버가 좌표 필수 검증) */}
             {pickerKind && (

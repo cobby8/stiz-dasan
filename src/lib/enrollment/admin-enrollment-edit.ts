@@ -1,0 +1,119 @@
+/**
+ * 학생 상세 «수강 반» 줄의 관리자 편집 — 반 이동 · 잘못 등록한 수강 삭제 (2026-11-09 원장 지시)
+ *
+ * 원장: «토요일 2교시는 잘못 신청해서 지우려고 하는데 퇴원이라는 표현이 이상하다. 반이동도 있어야 하고 삭제도 있어야 한다.»
+ * - 반 이동 = 기존 수강은 적용일로 «수강 종료»(WITHDRAWN) + 새 반 수강을 같은 조건(ACTIVE·개시일)으로 생성.
+ * - 삭제   = 연결된 출석·청구·보강 기록이 하나도 없을 때만. 있으면 막고 «수강 종료»를 쓰게 한다.
+ *
+ * 판정은 DB 를 읽지 않는 순수 함수로 두고(테스트가 실제로 실행), DB 읽기는 db 를 인자로 받는 함수 한 곳에 둔다.
+ */
+import { isKstYmd } from "@/lib/datetime/kst";
+import { commencementYmd } from "@/lib/enrollment/commencement";
+
+type RawDb = { $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T> };
+
+// ── 반 이동 ───────────────────────────────────────────────────────────────
+
+export type MoveSource = { status: string; classId: string; startsOn: unknown };
+export type MoveTarget = { id: string; capacity: number; activeCount: number; deleted: boolean; seasonal: boolean } | null;
+export type MovePlan =
+  | { ok: true; newStartsOn: string }
+  | { ok: false; code: "INVALID" | "OVER_CAPACITY"; message: string };
+
+export function planEnrollmentMove(input: {
+  from: MoveSource;
+  target: MoveTarget;
+  /** 학생이 이미 그 반에 가진 수강 상태(없으면 null) */
+  targetExistingStatus: string | null;
+  effectiveDate: string;
+  today: string;
+  allowOverCapacity?: boolean;
+}): MovePlan {
+  const bad = (message: string): MovePlan => ({ ok: false, code: "INVALID", message });
+  if (input.from.status !== "ACTIVE") return bad("수강 중인 반만 옮길 수 있어요. 휴원·종료된 반은 상태를 먼저 바꿔 주세요.");
+  if (!isKstYmd(input.effectiveDate)) return bad("이동 적용일을 정확히 선택해 주세요.");
+  // 미래 날짜로 옮기면 그날 전까지 기존 반 출석부에서 빠져 버린다 — 상태 변경(updateEnrollmentStatus)과 같은 규칙
+  if (input.effectiveDate > input.today) return bad("미래 날짜 이동은 «수강 변경 신청»(예약)으로 해 주세요.");
+  const t = input.target;
+  if (!t || t.deleted || t.seasonal) return bad("옮길 반을 찾을 수 없어요. 반을 다시 골라 주세요.");
+  if (t.id === input.from.classId) return bad("지금 반과 다른 반을 골라 주세요.");
+  if (input.targetExistingStatus === "ACTIVE") return bad("이미 그 반에 수강 중이에요.");
+  if (input.targetExistingStatus === "PAUSED") return bad("그 반은 휴원 중인 수강 기록이 있어요. 그 반을 «수강 중»으로 바꿔 주세요.");
+  if (t.activeCount >= t.capacity && !input.allowOverCapacity) {
+    return { ok: false, code: "OVER_CAPACITY", message: `옮길 반이 정원(${t.activeCount}/${t.capacity})이에요.` };
+  }
+  // 새 반 개시일 = 이동 적용일. 단 원래 수강이 아직 시작 전이면 원래 개시일을 그대로 이어받는다(청구 시수·출석부 기준 보존)
+  const oldStart = commencementYmd(input.from.startsOn);
+  const newStartsOn = oldStart && oldStart > input.effectiveDate ? oldStart : input.effectiveDate;
+  return { ok: true, newStartsOn };
+}
+
+// ── 잘못 등록한 수강 삭제 ─────────────────────────────────────────────────
+
+export type EnrollmentLinkCounts = {
+  attendance: number;
+  payments: number;
+  billingDrafts: number;
+  makeups: number;
+  makeupCredits: number;
+  seasonalItems: number;
+  /** 아직 처리 안 된(대기·승인) 수강 변경 신청 */
+  openChangeRequests: number;
+};
+
+const LINK_LABELS: Array<[keyof EnrollmentLinkCounts, string]> = [
+  ["attendance", "출석"],
+  ["payments", "청구·수납"],
+  ["billingDrafts", "청구 준비"],
+  ["makeups", "보강"],
+  ["makeupCredits", "보강권"],
+  ["seasonalItems", "특강 신청 연결"],
+  ["openChangeRequests", "처리 중인 수강 변경 신청"],
+];
+
+/** 삭제를 막는 연결 기록 이름들. 빈 배열이면 삭제해도 된다 */
+export function enrollmentDeleteBlockers(counts: EnrollmentLinkCounts): string[] {
+  return LINK_LABELS.filter(([key]) => Number(counts[key] ?? 0) > 0).map(([key, label]) => `${label} ${counts[key]}건`);
+}
+
+export function enrollmentDeleteBlockedMessage(blockers: string[]): string {
+  return `이 수강에 ${blockers.join(" · ")} 기록이 있어 삭제할 수 없어요. 그만두는 반이면 «수강 종료»를 써 주세요.`;
+}
+
+/**
+ * 그 수강(학생+반)에 연결된 기록 수 — 삭제 직전에 서버가 트랜잭션 안에서 다시 센다.
+ * 청구 준비 표(BillingWorkbenchDraft)는 운영 DB 에 아직 없을 수 있어 있을 때만 센다.
+ */
+export async function readEnrollmentLinkCounts(db: RawDb, input: { enrollmentId: string; studentId: string; classId: string }): Promise<EnrollmentLinkCounts> {
+  const [row] = await db.$queryRawUnsafe<Array<Omit<EnrollmentLinkCounts, "billingDrafts"> & { hasDrafts: boolean }>>(
+    `SELECT
+       (SELECT COUNT(*) FROM "Attendance" a JOIN "Session" se ON se.id = a."sessionId"
+         WHERE a."studentId" = $2 AND se."classId" = $3)::int AS attendance,
+       (SELECT COUNT(*) FROM "Payment" p WHERE p."studentId" = $2 AND p."classId" = $3)::int AS payments,
+       (SELECT COUNT(*) FROM "MakeupSession" m
+         WHERE m."studentId" = $2 AND (m."originalClassId" = $3 OR m."makeupClassId" = $3))::int AS makeups,
+       (SELECT COUNT(*) FROM "MakeupCredit" mc WHERE mc."studentId" = $2 AND mc."originClassId" = $3)::int AS "makeupCredits",
+       (SELECT COUNT(*) FROM "SpecialProgramApplicationItem" i WHERE i."enrollmentId" = $1)::int AS "seasonalItems",
+       (SELECT COUNT(*) FROM "EnrollmentChangeRequest" r
+         WHERE r."enrollmentId" = $1 AND r.status IN ('PENDING', 'APPROVED') AND r."appliedAt" IS NULL)::int AS "openChangeRequests",
+       (to_regclass('public."BillingWorkbenchDraft"') IS NOT NULL) AS "hasDrafts"`,
+    input.enrollmentId, input.studentId, input.classId,
+  );
+  let billingDrafts = 0;
+  if (row?.hasDrafts) {
+    const [draft] = await db.$queryRawUnsafe<Array<{ count: number }>>(
+      `SELECT COUNT(*)::int AS count FROM "BillingWorkbenchDraft" WHERE "studentId" = $1 AND "classId" = $2`,
+      input.studentId, input.classId,
+    );
+    billingDrafts = Number(draft?.count ?? 0);
+  }
+  return {
+    attendance: Number(row?.attendance ?? 0),
+    payments: Number(row?.payments ?? 0),
+    billingDrafts,
+    makeups: Number(row?.makeups ?? 0),
+    makeupCredits: Number(row?.makeupCredits ?? 0),
+    seasonalItems: Number(row?.seasonalItems ?? 0),
+    openChangeRequests: Number(row?.openChangeRequests ?? 0),
+  };
+}

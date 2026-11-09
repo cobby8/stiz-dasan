@@ -41,6 +41,10 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
     "@/components/admin/adminDisplayText": {}, "next/link": link, "@/app/actions/admin": {},
     "@/lib/datetime/kst": { todayKst: () => "2026-11-03" },
     "@/lib/enrollment/commencement": commencement,
+    // 반 줄 ⋯ 메뉴(반 이동·삭제) — 메뉴 항목 글자만 그려 확인한다
+    "@/components/admin/AdminQuickActionMenu": { __esModule: true, default: ({ actions }) => React.createElement("div", {}, actions.map((a) => a.label).join("|")) },
+    "@/components/admin/AdminConfirmDialog": { useAdminConfirm: () => ({ confirm: async () => false, confirmDialog: null }) },
+    "@/app/actions/enrollment-admin-edit": {}, "./EnrollmentMoveModal": nullComponent,
     "@/components/maps/LocationPickerModal": nullComponent, "@/components/admin/AdminModal": nullComponent,
     "@/components/admin/StatusBadge": { statusToneClass: () => "" },
     "./ParentRequestLinkPanel": nullComponent, "./GuardianPanel": nullComponent,
@@ -56,6 +60,9 @@ test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 �
   assert.match(html, /월요일 5교시/);
   assert.doesNotMatch(html, /수강 중인 반이 없습니다/);
   assert.doesNotMatch(html, /value="SCHEDULED"/);
+  // 반 단위 토글은 «수강 종료»(퇴원 아님) + ⋯ 메뉴에 반 이동·삭제
+  assert.match(html, /수강 종료/);
+  assert.match(html, /반 이동\|삭제\(잘못 등록\)/);
 });
 
 test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미래인 ACTIVE 학생을 수강 중으로 센다", () => {

@@ -205,3 +205,9 @@
 - **발견자**: developer
 - **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
 - **참조횟수**: 0
+
+### [2026-11-09] 수강 «상태»와 «개시일»의 역할 분리 — 공용 판정 commencement.ts 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 원장 기준(11-09) — Enrollment ACTIVE 면 승인(등록)일부터 «수강 중/재원생». 판정은 `src/lib/enrollment/commencement.ts` 의 `isCurrentEnrollment`(TS)·`currentEnrollmentSql(alias)`(SQL) 한 곳(학생 상태 queries.ts current_status·인원 집계 adminReadPayloads·대관 재원생 listRentalMemberStudents·관리자/학부모 화면). `enrollmentDisplayStatus` 는 이제 status 그대로(SCHEDULED 없음), 개시일 미래 안내는 `enrollmentStartsLater`/payload `startsLater` 로만. 개시일(startsOn)을 쓰는 곳은 ① 청구 시수(billing/workbench-service) ② 출석부 회차 명단(staff-session-queries·staff-class-people·staff-sessions·SessionLogModal `enrollmentHasStarted`) ③ 셔틀 월 배차(driverAssign·shuttle-progress-query) ④ 다음 수업 안내(mypage/summary computeNextClass) 뿐 — 상태·인원 판정에 다시 쓰지 말 것(가드: tests/enrollment-current-rule.test.mjs). 반 줄 편집(반 이동·잘못 등록 삭제)은 `lib/enrollment/admin-enrollment-edit.ts`(순수 판정+연결 기록 수)·`actions/enrollment-admin-edit.ts`.
+- **참조횟수**: 0
