@@ -1,6 +1,6 @@
 // 학부모 화면 구조 개편(2026-11-09 원장 결정 D1 안 A · D6 · D7 · D8) — 실제로 그려서 확인한다.
 //  ① 메뉴 4개(홈·수업·청구·소식 — 2026-11-10 d5), 하위 화면에서도 소속 탭이 켜진다, 방학특강 탭 없음
-//  ② 로그아웃은 «⋯» 메뉴 안
+//  ② 머리줄 = [로고 · 학부모] … [🔔] [⚙] — 로그아웃은 ⚙ 설정 화면 안(2026-11-10 k7, «⋯» 메뉴 없앰)
 //  ③ 홈 = 납부 합계 한 줄(꽉 찬 버튼 1개) + 처리할 일 + 빠른 실행 4개, 접힌 칸 없음
 //  ④ 일정 탭 = 한 달 달력(연간일정·수업일·출결) + 수강 반 + 셔틀 배정 — 수납·신청 줄 없음(2026-11-09 원장 지시)
 //  ⑤ 앱 안 공지 상세는 우리 아이 반 공지·전체 공지만(남의 반 공지는 404)
@@ -56,18 +56,28 @@ test("① 메뉴 4개 — 하위 화면에서도 소속 탭이 켜지고 방학�
   assert.equal((top.match(/min-h-11/g) || []).length, 4, "PC 메뉴도 누르는 높이 44px");
 });
 
-test("② 로그아웃은 헤더 «⋯» 메뉴 안(휴대폰·PC 둘 다), 메뉴 버튼은 44×44", () => {
+test("② 머리줄 🔔·⚙(휴대폰·PC 둘 다), 둘 다 44×44 — 로그아웃은 설정 화면 안, «⋯» 메뉴는 없다", () => {
   const layout = read("src/app/mypage/layout.tsx");
-  assert.equal((layout.match(/<ParentMoreMenu>\s*<form action=\{logout\}>/g) || []).length, 2);
-  assert.doesNotMatch(layout.replace(/<ParentMoreMenu>[\s\S]*?<\/ParentMoreMenu>/g, ""), />\s*로그아웃\s*</, "메뉴 밖 로그아웃 버튼 없음");
-  const menu = read("src/app/mypage/ParentMoreMenu.tsx");
-  assert.match(menu, /aria-label="더보기 메뉴"/);
-  assert.match(menu, /inline-flex size-11/);
-  assert.match(menu, /useEffect\(\(\) => \{ setOpen\(false\); \}, \[pathname\]\)/, "화면을 옮기면 닫힌다");
+  assert.doesNotMatch(layout, /ParentMoreMenu/, "«⋯» 메뉴는 없앴다");
+  assert.doesNotMatch(layout, />\s*로그아웃\s*</, "머리줄에 로그아웃 버튼 없음");
+  assert.equal((layout.match(/<ParentNotificationBell notifications=\{bellItems\} unreadCount=\{unreadCount\} \/>/g) || []).length, 2);
+  assert.equal((layout.match(/\{settingsLink\}/g) || []).length, 2);
+  assert.match(layout, /href="\/mypage\/settings"\s*aria-label="설정"\s*className="inline-flex size-11/);
+  // 휴대폰: «학부모» 글자는 로고 오른쪽 → 그 뒤 종·설정
+  const mobile = layout.slice(layout.indexOf("md:hidden"), layout.indexOf("데스크탑 헤더"));
+  const order = ['<Link href="/mypage"', ">학부모</span>", "<ParentNotificationBell", "{settingsLink}"].map((t) => mobile.indexOf(t));
+  assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), "로고 → 학부모 → 🔔 → ⚙");
+  const bell = read("src/app/mypage/ParentNotificationBell.tsx");
+  assert.match(bell, /inline-flex size-11/);
+  assert.match(bell, /useEffect\(\(\) => \{ setOpen\(false\); \}, \[pathname\]\)/, "화면을 옮기면 닫힌다");
+  assert.match(read("src/app/mypage/settings/page.tsx"), /<form action=\{logout\}>/);
 });
 
 function renderHome(props) {
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
+    "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
+    "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },
     "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/app/actions/admin": {}, "@/lib/mypage/summary": summary, "@/lib/datetime/kst": kst,
@@ -97,7 +107,7 @@ test("③ 홈: 납부할 청구 합계 한 줄(형제 합산) + 꽉 찬 버튼 1
   assert.match(html, /계좌 000-111/, "무통장입금 계좌는 홈에서 계속 보인다");
   assert.ok(html.indexOf("납부할 청구") < html.indexOf("합성 첫째 학생"), "돈 낼 게 있으면 맨 위");
   assert.match(html, /보강권 <span class="tabular-nums">2<\/span>장/);
-  assert.match(html, /안 읽은 알림 <span[^>]*>3<\/span>건/);
+  assert.doesNotMatch(html, /안 읽은 알림/, "알림은 머리줄 🔔 로 옮겼다(2026-11-10)");
   assert.doesNotMatch(html, /방학특강 결석·보강/, "방학 기간이 아니면 방학특강 줄 없음");
   assert.match(html, /href="\/mypage\/regular-absence"[^>]*>[\s\S]*?결석 알리기/);
   assert.match(html, /보강 예약/);
@@ -144,7 +154,7 @@ test("③ 홈: 청구가 없으면 청구 줄이 없고, 방학특강만 다니�
   assert.match(html, /방학특강 결석·보강/);
   assert.match(html, /남은 <span class="tabular-nums">4<\/span>회/);
   assert.match(html, /href="\/mypage\/seasonal"[^>]*>[\s\S]{0,400}결석 알리기/);
-  assert.match(html, /새 알림 없음/);
+  assert.doesNotMatch(html, /새 알림 없음/);
 });
 
 test("④ 일정 달력: 달력·수강 반·셔틀 배정만, 신청 줄은 없고 «수강 변경 신청»은 수업 탭 반 카드로 옮겼다", () => {
@@ -179,7 +189,7 @@ test("④ 일정 달력: 달력·수강 반·셔틀 배정만, 신청 줄은 없
   assert.doesNotMatch(empty, /id="mypage-shuttle"/);
   assert.match(empty, /이 달 수업일은 연간일정 확정 후 보여요/);
   // «수강 변경 신청»은 «⋯» 메뉴에서 빠지고(2026-11-10 d5) 수업 탭 반 카드의 [반 변경·휴원 ▾]가 길이다
-  assert.doesNotMatch(read("src/app/mypage/ParentMoreMenu.tsx"), /href: "\/mypage\/enrollment-change"/);
+  assert.doesNotMatch(read("src/app/mypage/settings/page.tsx"), /\/mypage\/enrollment-change/);
   assert.match(read("src/lib/parent/classCards.ts"), /presetHref\("\/mypage\/enrollment-change"/);
 });
 

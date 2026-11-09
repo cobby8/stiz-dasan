@@ -3,6 +3,7 @@ import { getMyPageHistory, getMyPageData } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
 import ScheduleHub from "./ScheduleHub";
+import { RememberChildSync } from "../useRememberedChild";
 import { getParentShuttleOverview, getShuttleDriverContact } from "@/lib/shuttle/parent";
 import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
 import { buildParentMonth, classDatesForCalendarMonth, parseMonthParam } from "@/lib/mypage/parentSchedule";
@@ -76,6 +77,9 @@ export default async function MyPageHistoryPage({
     const view = buildParentMonth({ month, todayYmd, events: planEvents, classDates, attendance });
 
     return (
+        <>
+        {/* 마지막으로 고른 아이 유지 — 주소에 child 가 없으면 기기 기억(내 자녀일 때만)으로 다시 연다 */}
+        <RememberChildSync childIds={childList.map((c) => c.id)} selectedId={selectedId} />
         <ScheduleHub
             childList={childList}
             selectedChildId={selectedId}
@@ -84,5 +88,6 @@ export default async function MyPageHistoryPage({
             shuttleItems={shuttleItems}
             driverContact={driverContact}
         />
+        </>
     );
 }

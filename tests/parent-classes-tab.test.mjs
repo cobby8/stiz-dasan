@@ -79,9 +79,9 @@ test("④ 셔틀: 이 아이·이 반 정규 셔틀만, 오늘 이후 가장 가
   assert.deepEqual(eta, [{ direction: "PICKUP", text: "등원 · 정문 · 08:53" }]);
 });
 
-test("⑤ 버튼: 다니는 중 = 결석·보강·셔틀 변경·반 변경·휴원 ▾ / 휴원 중 = 복귀 신청", () => {
+test("⑤ 버튼: 다니는 중 = [결석][보강][셔틀][변경 ▾](반 변경·휴원·퇴원) / 휴원 중 = 복귀 신청", () => {
   const active = cards.classCardActions({ studentId: "s1", enrollmentId: "e1", paused: false });
-  assert.deepEqual(active.map((a) => a.label), ["결석", "보강", "셔틀 변경", "반 변경·휴원"]);
+  assert.deepEqual(active.map((a) => a.label), ["결석", "보강", "셔틀", "변경"], "375px 한 줄에 들어가는 짧은 이름(2026-11-10)");
   assert.equal(active[0].href, "/mypage/regular-absence?studentId=s1&enrollmentId=e1");
   assert.equal(active[1].href, "/mypage/makeup?studentId=s1");
   assert.equal(active[2].href, "/mypage/shuttle?studentId=s1");
@@ -137,10 +137,18 @@ function card(over = {}) {
     ...over,
   };
 }
+const parentSchedule = load("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kst, "@/lib/classSchedule": load("src/lib/classSchedule.ts") });
+const scheduleHub = load("src/app/mypage/history/ScheduleHub.tsx", {
+  "next/link": link, "@/lib/datetime/kst": kst, "@/lib/mypage/parentSchedule": parentSchedule,
+  "../ParentShuttleDetail": { __esModule: true, default: () => null },
+});
 function renderClasses(props, timelineMock) {
   const Client = load("src/app/mypage/classes/ClassesClient.tsx", {
     "next/link": link, "@/lib/datetime/kst": kst, "@/lib/ui/statusTones": statusTones, "@/lib/parent/classCards": classCardsCjs,
-    "./RequestTimeline": timelineMock ?? { __esModule: true, default: () => null },
+    "./RequestTimeline": timelineMock ?? { __esModule: true, default: () => React.createElement("p", null, "신청내역자리") },
+    "../history/ScheduleHub": scheduleHub, "@/lib/mypage/parentSchedule": parentSchedule,
+    // 아이 기억(주소·localStorage)은 브라우저에서만 — 서버 그리기는 서버가 고른 아이(initialChildId) 그대로
+    "../useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
   }).default;
   return renderToStaticMarkup(React.createElement(Client, props));
 }
@@ -150,7 +158,7 @@ test("화면: 아이 한 명이면 칩 없음 · 반 카드 = 이름·상태·�
     actions: classCardsCjs.classCardActions({ studentId: "a", enrollmentId: "e2", paused: true }) });
   const html = renderClasses({ overview: { today: "2026-11-10", children: [{ id: "a", name: "합성 첫째", classes: [card(), paused] }] }, initialChildId: "a" });
   assert.doesNotMatch(html, /aria-label="자녀 선택"/);
-  assert.match(html, /href="\/mypage\/history\?child=a"/, "달력 ▸ 은 일정 달력(주소 유지)으로");
+  assert.doesNotMatch(html, /href="\/mypage\/history/, "«달력 ▸» 이동 대신 같은 화면에 달력(2026-11-10)");
   assert.match(html, /초등 저학년반/);
   assert.match(html, /월 16:00~17:00 · 정규 · 김코치 코치 · 다산2호점/);
   assert.match(html, /bg-\[var\(--color-academy-success-soft\)\][^"]*">수강 중</, "상태 칩 색은 statusTones 토큰");
@@ -158,10 +166,12 @@ test("화면: 아이 한 명이면 칩 없음 · 반 카드 = 이름·상태·�
   assert.match(html, /11\/2<\/span><span class="sr-only">출석/);
   assert.match(html, /등원 · 정문 · 15:40/);
   assert.match(html, /href="\/mypage\/regular-absence\?studentId=a&amp;enrollmentId=e1"/);
-  assert.match(html, /aria-haspopup="menu"/, "반 변경·휴원 ▾ 는 펼침 메뉴");
+  assert.match(html, /aria-haspopup="menu"/, "변경 ▾ 는 펼침 메뉴");
+  assert.match(html, /grid-cols-4/, "버튼 4개 한 줄");
+  assert.match(html, /<span class="whitespace-nowrap">셔틀<\/span>/, "버튼 글자는 줄바꿈 없이");
   // 휴원 중인 반 = 복귀 신청 하나(주 버튼)
   assert.match(html, /휴원 중 · 복귀 예정 1\/5/);
-  assert.match(html, /href="\/mypage\/enrollment-change\?studentId=a&amp;enrollmentId=e2" class="academy-button-primary[^"]*"><span class="break-keep">복귀 신청/);
+  assert.match(html, /href="\/mypage\/enrollment-change\?studentId=a&amp;enrollmentId=e2" class="academy-button-primary[^"]*"><span class="whitespace-nowrap">복귀 신청/);
   // 터치 44px: 버튼은 academy-button-*(min-height 2.75rem) · 글자 12px 미만 클래스 없음
   assert.doesNotMatch(html, /text-\[(?:10|11)px\]/);
 });
@@ -187,4 +197,43 @@ test("⑦ 조회 가드: 수업 탭 조회는 childAccessSql + notMergedStudent 
   // 휴원 중 반도 읽는다(복귀 신청) — 홈 getMyPageData 의 ACTIVE 기준은 건드리지 않았다
   assert.match(src, /e\.status IN \('ACTIVE','PAUSED'\)/);
   assert.match(read("src/lib/queries.ts"), /WHERE e\."studentId" = \$1 AND e\.status = 'ACTIVE'`/);
+});
+
+test("화면: 반 카드 → 한 달 달력 → 신청 내역 순서, 달 이동은 수업 탭 주소(아이 유지)", () => {
+  const view = parentSchedule.buildParentMonth({ month: "2026-11", todayYmd: "2026-11-10", events: [], classDates: ["2026-11-16"], attendance: [{ status: "PRESENT", date: "2026-11-09T07:00:00.000Z" }] });
+  const html = renderClasses({
+    overview: { today: "2026-11-10", children: [{ id: "a", name: "합성 첫째", classes: [card()] }, { id: "b", name: "합성 둘째", classes: [] }] },
+    initialChildId: "a",
+    calendar: { month: "2026-11", byChild: { a: { view, planReady: true, hasEnrollments: true } } },
+  });
+  const cardAt = html.indexOf("초등 저학년반");
+  const calAt = html.indexOf('id="schedule-records-heading"');
+  const timelineAt = html.indexOf("신청내역자리");
+  assert.ok(cardAt > 0 && calAt > cardAt && timelineAt > calAt, "반 카드 → 달력 → 신청 내역");
+  assert.match(html, /2026년 11월/);
+  assert.match(html, /href="\/mypage\/classes\?child=a&amp;month=2026-10"[^>]*aria-label="이전 달"/);
+  assert.match(html, /href="\/mypage\/classes\?child=a&amp;month=2026-12"[^>]*aria-label="다음 달"/);
+  assert.match(html, /16일 수업/);
+  assert.match(html, /9일 출석/);
+  // 고른 아이의 달력이 없으면(조회 실패·다른 아이) 달력 칸만 빠진다
+  const none = renderClasses({ overview: { today: "2026-11-10", children: [{ id: "a", name: "합성 첫째", classes: [card()] }] }, initialChildId: "a", calendar: null });
+  assert.doesNotMatch(none, /schedule-records-heading/);
+  assert.match(none, /초등 저학년반/);
+});
+
+test("아이 선택 기억: 주소 > 기기 기억 > 기본값, 내 자녀 목록 밖 id 는 무시 · 수업/홈/일정이 같은 칸을 쓴다", () => {
+  const nav = load("src/lib/mypage/parentNav.ts");
+  assert.equal(nav.pickChildId(["a", "b"], "b", "a", "a"), "b", "주소가 먼저");
+  assert.equal(nav.pickChildId(["a", "b"], null, "b", "a"), "b", "주소가 없으면 기기 기억");
+  assert.equal(nav.pickChildId(["a", "b"], "남의아이", "남의아이2", "a"), "a", "목록 밖 id 는 무시");
+  assert.equal(nav.pickChildId(["a", "b"], null, null, "zzz"), "a");
+  const hook = read("src/app/mypage/useRememberedChild.ts");
+  assert.match(hook, /try \{\s*return window\.localStorage\.getItem/, "localStorage 는 try/catch 안에서");
+  assert.match(hook, /window\.history\.replaceState/, "주소 ?child= 를 기록을 쌓지 않고 고친다(뒤로 가기가 그 아이로)");
+  assert.match(read("src/app/mypage/classes/ClassesClient.tsx"), /useRememberedChild\(/);
+  assert.match(read("src/app/mypage/MyPageClient.tsx"), /useRememberedChild\(/);
+  assert.match(read("src/app/mypage/history/page.tsx"), /<RememberChildSync /);
+  // 서버는 주소의 child 를 «내 자녀 목록 안에서만» 고른다(classes 는 childAccessSql 을 거친 overview)
+  assert.match(read("src/app/mypage/classes/page.tsx"), /overview\.children\.find\(\(c\) => c\.id === child\)/);
+  assert.match(read("src/app/mypage/page.tsx"), /data\.children\.find\(\(c\) => c\.id === childParam\)/);
 });

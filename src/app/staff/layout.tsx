@@ -8,6 +8,7 @@ import AppBackButton from "@/components/AppBackButton";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import { getAccountViewAccess } from "@/lib/account-view-access";
 import { shuttleScope } from "@/lib/account/roles";
+import { StaffPushBanner, StaffPushToggle } from "@/components/push/StaffPushControls";
 
 export const metadata: Metadata = {
   title: "스티즈 선생님",
@@ -42,9 +43,15 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             <AppBackButton fallbackHref="/staff" scopeHref="/staff" />
             <StaffHomeLink isDriver={isDriverOnly} />
           </div>
-          <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} accountViews={views} />
+          <div className="flex shrink-0 items-center gap-1">
+            {/* 휴대폰 알림 켜기·켜짐(선생님·기사님 공통) — 예전엔 켜는 버튼이 학부모 화면에만 있어 직원 구독이 0건이었다 */}
+            <StaffPushToggle />
+            <StaffProfileMenu staffName={staff.appUserName} staffRole={staff.appUserRole} accountViews={views} />
+          </div>
         </div>
       </header>
+      {/* 기사님: 알림이 꺼져 있으면 상단 한 줄(켜면 사라짐) — 명단 변경을 놓치지 않게 */}
+      {staff.roles.driver && <StaffPushBanner />}
       {children}
       <StaffBottomNav canTeach={staff.roles.teacher} canShuttle={canShuttle} />
     </AcademyTheme>

@@ -170,7 +170,8 @@ test("고른 칩은 academy-choice(aria-pressed), 뒤로가기는 44×44, 로그
   for (const path of ["src/app/mypage/makeup/MakeupClient.tsx", "src/app/mypage/regular-absence/RegularAbsenceClient.tsx", "src/app/mypage/withdraw/WithdrawClient.tsx", "src/app/mypage/roles/RolesClient.tsx", "src/app/mypage/login-methods/page.tsx", "src/app/mypage/reports/[sessionId]/page.tsx"]) {
     assert.match(read(path), /className="academy-back-link/, path);
   }
-  assert.match(read("src/app/mypage/layout.tsx"), /className="inline-flex min-h-11[^"]*"\s*>\s*로그아웃/);
+  // 로그아웃은 2026-11-10 머리줄 «⋯» 에서 설정 화면으로 옮겼다 — 높이 48px(min-h-12)
+  assert.match(read("src/app/mypage/settings/page.tsx"), /className="inline-flex min-h-12[^"]*"\s*>\s*로그아웃/);
 });
 
 test("결석·보강 행의 «여는» 버튼은 보조, 꽉 찬 색은 폼 안 최종 제출만, «닫기»는 글자 버튼 (M-08)", () => {
@@ -195,10 +196,9 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   assert.match(hero, /오늘 셔틀/);
   assert.match(hero, /aria-label="자녀 선택"[\s\S]*?className="academy-choice"/);
   assert.doesNotMatch(home, /mypage-summary-heading/, "따로 떨어진 요약 칸은 히어로로 합쳤다");
-  // 2026-11-09 안 A: 알림은 «처리할 일» 판의 마지막 줄(늘 보임) — 안 읽은 수가 있으면 그 줄에 숫자
-  assert.match(home, /<li id="mypage-notifications"/);
-  assert.match(home, /unreadCount > 0 \? <>안 읽은 알림/);
-  assert.match(home, /if \(id === "mypage-notifications"\) setShowNotifications\(true\)/, "«⋯» 메뉴의 알림 링크로 오면 펼친다");
+  // 2026-11-10 k7: 알림은 홈 «처리할 일» 줄에서 머리줄 🔔(ParentNotificationBell)으로 옮겼다
+  assert.doesNotMatch(home, /id="mypage-notifications"/);
+  assert.doesNotMatch(home, /togglePush/, "휴대폰 알림 켜기는 설정 화면으로");
   // 꽉 찬 색이던 보조 동작 → 테두리
   assert.match(home, /href="\/mypage\/seasonal"\s*\/\/[^\n]*\n\s*className="academy-button-secondary mt-2"/);
   // 기사님 전화(셔틀 배정 칸은 일정 탭으로 옮겼다) — 보조 버튼·초점 링 유지
@@ -206,13 +206,15 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   // 메시지 폼은 빠른 실행 «문의»로 연다 — 폼 안 최종 제출만 꽉 찬 색
   assert.match(home, /onClick=\{openRequestForm\}/);
   assert.match(home, /className="academy-button-primary w-full"\s*>\s*\{isPending \? "보내는 중\.\.\." : "메시지 보내기"\}/);
-  // 알림: 읽음 44×44 · 모두 읽음 44px · 푸시 토글은 목록 아래 설정 줄
-  assert.match(home, /inline-flex size-11[^"]*"\s*title="읽음 처리"/);
-  assert.match(home, /className="academy-button-text text-\[var\(--color-academy-primary\)\]"\s*>\s*<SymbolIcon name="done_all"/);
-  const list = home.indexOf('notifications.map(n =>');
-  const push = home.indexOf("onClick={togglePush}");
-  assert.ok(list > 0 && push > list, "푸시 설정은 알림 목록 뒤(떨어진 설정 줄)");
-  assert.match(home, /inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold transition/);
+  // 알림(머리줄 🔔): 줄 전체가 버튼(44px↑ — 누르면 읽음 + 내부 주소로 이동) · 모두 읽음 · 목록 아래 «알림 설정» 줄
+  const bell = read("src/app/mypage/ParentNotificationBell.tsx");
+  assert.match(bell, /onClick=\{\(\) => openNotification\(n\.id, n\.isRead, href\)\}[\s\S]{0,200}className=\{`flex w-full min-h-11 /);
+  assert.match(bell, /className="academy-button-text text-\[var\(--color-academy-primary\)\]"/);
+  const list = bell.indexOf("notifications.map((n) =>");
+  const settings = bell.indexOf("href={SETTINGS_NOTIFICATION_HREF}");
+  assert.ok(list > 0 && settings > list, "알림 설정 줄은 알림 목록 뒤(구분선으로 뗀 줄)");
+  // 휴대폰 알림 켜기(togglePush)는 설정 화면 «알림 설정» 묶음 — 동작은 예전 그대로(usePushSubscription)
+  assert.match(read("src/app/mypage/settings/SettingsClient.tsx"), /onToggle=\{togglePush\}/);
 });
 
 // 옛 «결제 심사 중 — 홈 수납 블록 손대지 않음(보류)» 검사는 카드사 심사가 끝나(2026-11-07 국내 9개사 승인)

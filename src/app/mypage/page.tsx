@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getMyPageData, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests } from "@/lib/queries";
+import { getMyPageData, getNoticesByClassIds, getMyRequests } from "@/lib/queries";
 import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
 import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 import MyPageClient from "./MyPageClient";
@@ -13,7 +13,12 @@ import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-reques
 
 export const dynamic = "force-dynamic";
 
-export default async function MyPageDashboard() {
+export default async function MyPageDashboard({
+    searchParams,
+}: {
+    // ?child=<studentId> — 마지막으로 고른 아이(내 자녀일 때만 쓴다, 아니면 첫째)
+    searchParams?: Promise<{ child?: string }>;
+} = {}) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -55,10 +60,9 @@ export default async function MyPageDashboard() {
     // 납부할 청구 합계·입금 계좌는 «청구» 탭과 같은 목록(getParentPaymentRequests)으로 센다 —
     // getMyPageData 의 자녀별 최근 5건으로 세면 오래된 미납이 빠져 탭과 숫자가 달라진다(2026-11-09). 실패하면 null → 예전 기준으로.
     // 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 실패해도 홈은 그대로 보이게 빈 목록으로.
-    const [notices, notifications, unreadCount, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines] = await Promise.all([
+    // 알림 목록·안 읽은 수는 머리줄 🔔(layout)이 읽는다(2026-11-10) — 홈에서는 읽지 않는다
+    const [notices, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
-        getNotifications(data.parent.id),
-        getUnreadNotificationCount(data.parent.id),
         getMyRequests(data.parent.id),
         getParentShuttleOverview(parentAuth.appUserId),
         getShuttleDriverContact(),
@@ -74,5 +78,8 @@ export default async function MyPageDashboard() {
             .map((row) => ({ id: row.paymentId, amount: row.amount, status: row.status, canCheckout: row.canCheckout, virtualAccount: row.virtualAccount }))
         : null;
 
-    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
+    const childParam = (await searchParams)?.child;
+    const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
+
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
 }

@@ -8,6 +8,10 @@ import { kstLabel } from "@/lib/datetime/kst";
 import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import type { ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
 import RequestTimeline from "./RequestTimeline";
+import { MonthCalendar } from "../history/ScheduleHub";
+import { shiftMonth } from "@/lib/mypage/parentSchedule";
+import type { ChildMonthView } from "@/lib/mypage/parentMonthViews";
+import { useRememberedChild } from "../useRememberedChild";
 
 // 학부모 «수업» 탭 화면 (2026-11-10 설계 B). 계산은 lib/parent/classCards.ts, 여기는 그리기만.
 // 컴팩트 규칙: 카드 안쪽 여백 작게·정보는 적은 줄로·터치 44px·글자 12px 이상·색은 토큰만.
@@ -26,7 +30,7 @@ function AttendanceMark({ status }: { status: AttendanceCell["status"] }) {
   return <span aria-hidden="true" className="inline-block size-2.5 shrink-0 rounded-full border border-[var(--color-academy-line-input)]" />;
 }
 
-/** «반 변경·휴원 ▾» 펼침 메뉴 — 바깥 누름·Esc 로 닫힌다(학부모 «⋯» 메뉴와 같은 방식) */
+/** «변경 ▾» 펼침 메뉴(반 변경·휴원·퇴원) — 바깥 누름·Esc 로 닫힌다(학부모 «⋯» 메뉴와 같은 방식) */
 function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "change" }> }) {
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -50,9 +54,9 @@ function ChangeMenu({ action }: { action: Extract<ClassCardAction, { key: "chang
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="academy-button-secondary w-full !px-1 text-xs leading-tight md:text-sm"
+        className="academy-button-secondary w-full !gap-0.5 !px-1 text-sm leading-tight"
       >
-        <span className="break-keep">{action.label}</span>
+        <span className="whitespace-nowrap">{action.label}</span>
         <Icon name="expand_more" size={16} />
       </button>
       {open && (
@@ -127,7 +131,7 @@ function ClassCard({ card }: { card: ParentClassCard }) {
         </p>
       )}
 
-      {/* 신청 버튼 — 기존 신청 화면으로(그 아이·그 반을 미리 고른 채). 휴원 중이면 [복귀 신청] 하나 */}
+      {/* 신청 버튼 한 줄 [결석][보강][셔틀][변경 ▾] — 기존 신청 화면으로(그 아이·그 반을 미리 고른 채). 휴원 중이면 [복귀 신청] 하나 */}
       <div className={`mt-2 grid gap-1.5 ${card.actions.length > 1 ? "grid-cols-4" : "grid-cols-1"}`}>
         {card.actions.map((action) =>
           action.key === "change" ? (
@@ -136,9 +140,9 @@ function ClassCard({ card }: { card: ParentClassCard }) {
             <Link
               key={action.key}
               href={action.href}
-              className={`${action.key === "resume" ? "academy-button-primary" : "academy-button-secondary"} !px-1 text-xs leading-tight md:text-sm`}
+              className={`${action.key === "resume" ? "academy-button-primary" : "academy-button-secondary"} !px-1 text-sm leading-tight`}
             >
-              <span className="break-keep">{action.label}</span>
+              <span className="whitespace-nowrap">{action.label}</span>
             </Link>
           ),
         )}
@@ -151,13 +155,17 @@ export default function ClassesClient({
   overview,
   initialChildId,
   timeline = [],
+  calendar = null,
 }: {
   overview: ParentClassesOverview;
   initialChildId: string;
   /** 신청 내역(최근 3개월, 모든 자녀) — 고른 아이 것만 보인다 */
   timeline?: ParentTimelineView[];
+  /** 한 달 달력(자녀마다) — 조회 실패면 null(달력 칸만 빠진다) */
+  calendar?: { month: string; byChild: Record<string, ChildMonthView> } | null;
 }) {
-  const [childId, setChildId] = useState(initialChildId);
+  // 아이 선택 — 주소(?child=)·기기 기억으로 마지막 선택 유지(신청 화면 갔다 뒤로 와도 그 아이)
+  const [childId, setChildId] = useRememberedChild(overview.children.map((c) => c.id), initialChildId);
   const child = overview.children.find((c) => c.id === childId) ?? overview.children[0];
 
   if (!child) {
@@ -169,20 +177,13 @@ export default function ClassesClient({
     );
   }
 
+  const calendarView = calendar?.byChild[child.id] ?? null;
+  const monthHref = (month: string) => `/mypage/classes?child=${encodeURIComponent(child.id)}&month=${month}`;
+
   return (
     <div className="space-y-3">
-      {/* 제목 + 달력 바로가기 한 줄(설명 문구 없음) */}
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">수업</h1>
-        <Link
-          href={`/mypage/history?child=${encodeURIComponent(child.id)}`}
-          className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"
-        >
-          <Icon name="calendar_month" size={18} />
-          달력
-          <Icon name="chevron_right" size={18} />
-        </Link>
-      </div>
+      {/* 제목(설명 문구 없음) — 달력은 아래 같은 화면에 붙는다 */}
+      <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">수업</h1>
 
       {/* 아이 칩 — 둘 이상일 때만 */}
       {overview.children.length > 1 && (
@@ -207,6 +208,16 @@ export default function ClassesClient({
           </div>
         )}
       </section>
+
+      {/* 한 달 달력 — 일정 탭과 같은 부품. 달 이동은 주소(?child=&month=)로 서버가 다시 그린다 */}
+      {calendarView && calendar && (
+        <MonthCalendar
+          view={calendarView.view}
+          planReady={calendarView.planReady}
+          hasEnrollments={calendarView.hasEnrollments}
+          monthNav={{ prevHref: monthHref(shiftMonth(calendar.month, -1)), nextHref: monthHref(shiftMonth(calendar.month, 1)) }}
+        />
+      )}
 
       {/* 신청 내역 타임라인 — 고른 아이 것만(최근 3개월, 한 줄 행 → 하단 시트) */}
       <RequestTimeline rows={timeline.filter((r) => r.studentId === child.id)} />

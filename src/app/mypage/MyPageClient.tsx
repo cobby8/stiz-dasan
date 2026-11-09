@@ -6,7 +6,8 @@ import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
 import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
-import { markNotificationRead, markAllNotificationsRead, createParentRequest } from "@/app/actions/admin";
+import { createParentRequest } from "@/app/actions/admin";
+import { useRememberedChild } from "./useRememberedChild";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
@@ -21,7 +22,7 @@ import type { ParentClassStatusLine } from "@/lib/enrollment/parent-change-reque
 // ─────────────────────────────────────────────────────────────────────────────
 // 학부모 홈 = «오늘 할 일» 판 (2026-11-09 원장 결정 D1 안 A)
 //  위에서부터: ① 납부할 청구 한 줄(꽉 찬 버튼은 이것 하나) ② 아이 이름 + 다음 수업 + 오늘 셔틀
-//            ③ 처리할 일 줄들(보강권·학원 답변·방학특강·새 공지·알림) ④ 빠른 실행 4개(결석·보강·셔틀 변경·문의)
+//            ③ 처리할 일 줄들(보강권·학원 답변·방학특강·새 공지 — 알림은 머리줄 🔔) ④ 빠른 실행 4개(결석·보강·셔틀 변경·문의)
 //  예전 홈에 있던 접힌 칸 5개(셔틀 배정·수강/출결/수납 기록·결석·보강 신청·학습 피드백·알림)는
 //  «일정»·«소식» 탭과 «처리할 일» 줄로 옮겼다. 홈 타일을 누르면 맨 아래로 뛰던 동작도 없앴다.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,17 +119,6 @@ type NoticeItem = {
     attachmentsJSON: string | null;
 };
 
-type NotificationItem = {
-    id: string;
-    userId: string;
-    type: string;
-    title: string;
-    message: string;
-    linkUrl: string | null;
-    isRead: boolean;
-    createdAt: Date | string;
-};
-
 type RequestItem = {
     id: string;
     userId: string;
@@ -175,11 +165,9 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 아이콘·제목, 오른쪽 숫자/설명, 끝에 화살표. 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [] }: {
+export default function MyPageClient({ data, notices = [], myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId }: {
     data: MyPageData;
     notices?: NoticeItem[];
-    notifications?: NotificationItem[];
-    unreadCount?: number;
     myRequests?: RequestItem[];
     parentShuttleOverview?: ParentShuttleOverviewItem[];
     shuttleDriverContact?: { name: string; phone: string } | null;
@@ -193,70 +181,20 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     pendingPayments?: PendingPaymentLite[] | null;
     /** 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 그냥 다니는 반은 없다 */
     classStatusLines?: ParentClassStatusLine[];
+    /** 주소 ?child= 로 서버가 고른 아이(내 자녀일 때만). 없으면 첫째 */
+    initialChildId?: string;
 }) {
-    const [selectedIdx, setSelectedIdx] = useState(0);
-    const [showNotifications, setShowNotifications] = useState(false);
+    // 아이 선택 — 주소(?child=)·기기 기억으로 마지막 선택 유지(다른 화면 갔다 뒤로 와도 그 아이)
+    const childIds = data.children.map((c) => c.id);
+    const [selectedChildId, selectChild] = useRememberedChild(childIds, initialChildId ?? childIds[0] ?? "");
+    const selectedIdx = Math.max(0, childIds.indexOf(selectedChildId));
+    const setSelectedIdx = (i: number) => { const id = childIds[i]; if (id) selectChild(id); };
     const [showRequestForm, setShowRequestForm] = useState(false);
     const [showRequests, setShowRequests] = useState(false);
     const [isPending, startTransition] = useTransition();
     // 요청 폼 상태
     const [reqContent, setReqContent] = useState("");
     const [reqDate, setReqDate] = useState("");
-    // 푸시 알림 상태
-    const [pushSupported, setPushSupported] = useState(false);
-    const [pushEnabled, setPushEnabled] = useState(false);
-    const [pushLoading, setPushLoading] = useState(false);
-
-    // 브라우저 푸시 지원 여부 및 현재 구독 상태 확인
-    useEffect(() => {
-        if ("serviceWorker" in navigator && "PushManager" in window) {
-            setPushSupported(true);
-            navigator.serviceWorker.ready.then(reg => {
-                reg.pushManager.getSubscription().then(sub => {
-                    setPushEnabled(!!sub);
-                });
-            });
-            // Service Worker 등록
-            navigator.serviceWorker.register("/sw.js").catch(() => {});
-        }
-    }, []);
-
-    // 푸시 알림 구독/해제 토글
-    async function togglePush() {
-        setPushLoading(true);
-        try {
-            const reg = await navigator.serviceWorker.ready;
-            const existing = await reg.pushManager.getSubscription();
-
-            if (existing) {
-                // 구독 해제
-                await existing.unsubscribe();
-                await fetch("/api/push", {
-                    method: "DELETE",
-                    body: JSON.stringify({ endpoint: existing.endpoint }),
-                });
-                setPushEnabled(false);
-            } else {
-                // 구독 등록
-                const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-                if (!vapidKey) throw new Error("VAPID 키 없음");
-                const sub = await reg.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: urlBase64ToUint8Array(vapidKey) as BufferSource,
-                });
-                await fetch("/api/push", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ subscription: sub.toJSON() }),
-                });
-                setPushEnabled(true);
-            }
-        } catch (e) {
-            console.error("Push toggle error:", e);
-            alert("알림 설정에 실패했습니다. 브라우저 알림 권한을 확인해주세요.");
-        }
-        setPushLoading(false);
-    }
     const child = data.children[selectedIdx];
     const childShuttleOverview = parentShuttleOverview.filter((item) => item.studentId === child.id);
 
@@ -303,12 +241,15 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     const answerCount = countRecentAnswers(myRequests, now.getTime());
     const pendingRequestCount = myRequests.filter(r => r.status === "PENDING").length;
     const newNoticeCount = countRecentNotices(notices, now.getTime());
+    // 알림 줄이 머리줄 🔔 로 옮겨 가(2026-11-10) 처리할 일이 하나도 없을 수 있다 → 빈 칸 대신 한 줄 안내
+    const hasTodo = makeupAvailable > 0 || seasonalUpcoming > 0 || answerCount > 0 || pendingRequestCount > 0 || newNoticeCount > 0;
 
     // ── ④ 빠른 실행 «결석 알리기» — 정규 반이 없고 방학특강만 다니면 바로 방학특강 결석으로 ──
     const hasRegularClass = data.children.some((c) => c.enrollments.length > 0);
     const absenceHref = !hasRegularClass && seasonalUpcoming > 0 ? "/mypage/seasonal" : "/mypage/regular-absence";
 
-    // 주소에 #mypage-notifications 가 붙어 오면(«⋯» 메뉴 «알림») 알림 칸을 펼치고 그 자리로 간다.
+    // 주소에 #칸 이름이 붙어 오면 그 자리로 간다(옛 홈 칸 주소는 옮겨 간 탭으로).
+    // «#mypage-notifications»(옛 알림 칸)는 머리줄 종(ParentNotificationBell)이 받아 알림 패널을 연다(2026-11-10).
     useEffect(() => {
         const revealHash = () => {
             const id = window.location.hash.slice(1);
@@ -319,7 +260,6 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                 window.location.replace(moved);
                 return;
             }
-            if (id === "mypage-notifications") setShowNotifications(true);
             requestAnimationFrame(() => scrollToSection(id));
         };
         revealHash();
@@ -475,7 +415,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                 )}
             </section>
 
-            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림 줄은 늘 맨 끝(설정도 이 안에서) */}
+            {/* ③ 처리할 일 — 해야 할 일이 있는 줄만 보인다. 알림은 머리줄 🔔(설정은 ⚙)로 옮겼다 */}
             <section aria-labelledby="parent-todo-heading" className="academy-panel overflow-hidden">
                 <h2 id="parent-todo-heading" className="border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold text-[var(--color-academy-ink)]">처리할 일</h2>
                 <ul className="divide-y divide-[var(--color-academy-line)]">
@@ -521,111 +461,9 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                             </Link>
                         </li>
                     )}
-                    {/* 알림 — 누르면 이 자리에서 목록을 펼친다(id = «⋯» 메뉴 «알림»이 데려오는 자리) */}
-                    <li id="mypage-notifications" className="scroll-mt-20">
-                        <button
-                            type="button"
-                            aria-expanded={showNotifications}
-                            onClick={() => setShowNotifications(!showNotifications)}
-                            className={TODO_ROW}
-                        >
-                            <SymbolIcon name="notifications" size={18} className="shrink-0 text-[var(--color-academy-ink)]" />
-                            <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">알림</span>
-                            <span className="shrink-0 text-[var(--color-academy-muted)]">
-                                {unreadCount > 0 ? <>안 읽은 알림 <span className="tabular-nums font-bold text-[var(--color-academy-danger)]">{unreadCount}</span>건</> : "새 알림 없음"}
-                            </span>
-                            <SymbolIcon name={showNotifications ? "expand_less" : "expand_more"} size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
-                        </button>
-
-                        {showNotifications && (
-                            <div className="border-t border-[var(--color-academy-line)]">
-                                {/* 상단 바: 전체 읽음만(44px). 푸시 설정은 목록과 떨어진 맨 아래 설정 줄(M-11) */}
-                                {unreadCount > 0 && (
-                                    <div className="px-4 py-1 border-b border-[var(--color-academy-line)] flex items-center justify-end">
-                                        <button
-                                            onClick={() => startTransition(() => markAllNotificationsRead(data.parent.id))}
-                                            disabled={isPending}
-                                            className="academy-button-text text-[var(--color-academy-primary)]"
-                                        >
-                                            <SymbolIcon name="done_all" size={16} /> 모두 읽음
-                                        </button>
-                                    </div>
-                                )}
-
-                                {notifications.length === 0 ? (
-                                    <div className="px-4 py-3 text-center text-[var(--color-academy-faint)] text-sm">
-                                        알림이 없습니다
-                                    </div>
-                                ) : (
-                                    <div className="divide-y divide-[var(--color-academy-line)] max-h-80 overflow-y-auto">
-                                        {notifications.map(n => (
-                                            <div
-                                                key={n.id}
-                                                className={`px-4 py-3 flex items-start gap-3 ${!n.isRead ? "bg-[var(--color-academy-info-soft)]" : ""}`}
-                                            >
-                                                {/* 알림 타입 아이콘 */}
-                                                <div className={`mt-0.5 p-1.5 rounded-full flex-shrink-0 ${
-                                                    n.type === "ATTENDANCE" ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" :
-                                                    n.type === "PAYMENT" ? "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]" :
-                                                    "bg-[var(--color-academy-neutral-soft)] text-[var(--color-academy-neutral)]"
-                                                }`}>
-                                                    <SymbolIcon
-                                                        name={n.type === "ATTENDANCE" ? "event_available" : n.type === "PAYMENT" ? "credit_card" : "notifications"}
-                                                        size={14}
-                                                    />
-                                                </div>
-
-                                                <div className="flex-1 min-w-0">
-                                                    <p className={`text-sm ${!n.isRead ? "font-bold text-[var(--color-academy-ink)]" : "text-[var(--color-academy-muted)]"}`}>
-                                                        {n.title}
-                                                    </p>
-                                                    <p className="text-xs text-[var(--color-academy-muted)] mt-0.5">{n.message}</p>
-                                                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                                                        {formatAlertTime(n.createdAt)}
-                                                    </p>
-                                                </div>
-
-                                                {/* 읽음 처리 버튼 */}
-                                                {!n.isRead && (
-                                                    <button
-                                                        onClick={() => startTransition(() => markNotificationRead(n.id))}
-                                                        disabled={isPending}
-                                                        // 누르는 영역 44×44 — 알림 글 옆 작은 체크라 잘못 누르기 쉬웠다(M-11)
-                                                        className="-my-2 -mr-2 inline-flex size-11 flex-shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
-                                                        title="읽음 처리"
-                                                        aria-label="읽음 처리"
-                                                    >
-                                                        <SymbolIcon name="check" size={18} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                                {/* 설정 줄 — 알림 목록과 구분선으로 떼어 «읽음»과 헷갈리지 않게(M-11). 동작(togglePush)은 그대로 */}
-                                {pushSupported && (
-                                    <div className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] px-4 py-1.5">
-                                        <span className="text-sm font-bold text-[var(--color-academy-muted)]">휴대폰 알림</span>
-                                        <button
-                                            onClick={togglePush}
-                                            disabled={pushLoading}
-                                            className={`inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold transition ${
-                                                pushEnabled
-                                                    ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
-                                                    : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-primary-soft)] hover:text-[var(--color-academy-primary)]"
-                                            }`}
-                                        >
-                                            {pushLoading ? "..." : pushEnabled ? (
-                                                <><SymbolIcon name="notifications_active" size={13} /> 알림 켜짐</>
-                                            ) : (
-                                                <><SymbolIcon name="notifications_off" size={13} /> 알림 꺼짐</>
-                                            )}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </li>
+                    {!hasTodo && (
+                        <li className="flex min-h-11 items-center px-3 text-sm text-[var(--color-academy-muted)]">지금 처리할 일이 없어요</li>
+                    )}
                 </ul>
             </section>
 
@@ -843,16 +681,4 @@ function scrollToSection(id: string) {
     const target = document.getElementById(id);
     if (!target) return;
     requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "start" }));
-}
-
-// VAPID 공개키를 Uint8Array로 변환 (Web Push API에 필요)
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
 }

@@ -1,5 +1,7 @@
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
+// 학부모가 «종류별 받기»에서 끈 종류(출결·청구·공지·셔틀)는 여기 한 곳에서 거른다 — 발송 경로가 여럿이라도 모두 이 두 함수를 지난다
+import { isPushAllowed, optedOutUserIds } from "@/lib/parent-notification-preferences";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
@@ -27,6 +29,7 @@ export type PushDeliveryResult = {
 
 type PushSubscriptionRow = {
   id: string;
+  userId?: string;
   endpoint: string;
   p256dh: string;
   auth: string;
@@ -62,6 +65,19 @@ export async function sendPushToUser(
       failedCount: 0,
       removedCount: 0,
       errorCode: "VAPID_NOT_CONFIGURED",
+    };
+  }
+
+  // 받는 사람이 이 종류를 껐으면 보내지 않는다(종 목록 알림은 이미 저장됨 — 휴대폰 울림만 끈다).
+  // 대기열(push-outbox)은 NO_SUBSCRIPTION 을 «건너뜀(SKIPPED)»으로 기록하고 다시 보내지 않는다.
+  if (payload.tag && !(await isPushAllowed(userId, payload.tag))) {
+    return {
+      status: "NO_SUBSCRIPTION",
+      subscriptionCount: 0,
+      sentCount: 0,
+      failedCount: 0,
+      removedCount: 0,
+      errorCode: "PUSH_OPTED_OUT",
     };
   }
 
@@ -161,12 +177,15 @@ export async function sendPushToAllParents(payload: PushPayload): Promise<PushDe
   }
 
   try {
-    const subscriptions = await prisma.$queryRawUnsafe<PushSubscriptionRow[]>(
-      `SELECT ps.id, ps.endpoint, ps.p256dh, ps.auth
+    const allSubscriptions = await prisma.$queryRawUnsafe<PushSubscriptionRow[]>(
+      `SELECT ps.id, ps."userId", ps.endpoint, ps.p256dh, ps.auth
        FROM "PushSubscription" ps
        JOIN "User" u ON u.id = ps."userId"
        WHERE u.role = 'PARENT'`,
     );
+    // 이 종류(예: 공지)를 끈 학부모의 기기는 뺀다
+    const optedOut = await optedOutUserIds(payload.tag);
+    const subscriptions = allSubscriptions.filter((s) => !s.userId || !optedOut.has(s.userId));
     if (subscriptions.length === 0) {
       return {
         status: "NO_SUBSCRIPTION",

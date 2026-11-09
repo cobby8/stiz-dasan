@@ -155,7 +155,9 @@ export function presetHref(path: string, params: { studentId: string; enrollment
 }
 
 /**
- * 반 카드 버튼. 다니는 중 = [결석][보강][셔틀 변경][반 변경·휴원 ▾], 휴원 중 = [복귀 신청] 하나.
+ * 반 카드 버튼. 다니는 중 = [결석][보강][셔틀][변경 ▾](반 변경·휴원·퇴원), 휴원 중 = [복귀 신청] 하나.
+ * 2026-11-10 원장 점검: 휴대폰 375px 에서 한 줄에 들어가게 짧은 이름으로(«셔틀 변경»→«셔틀», «반 변경·휴원»→«변경»).
+ * 휴원 중인 반은 신청 화면이 «복귀»만 받으므로(반 변경·퇴원·결석 불가) 복귀 버튼 하나를 유지한다.
  * 버튼은 «새 신청 화면»이 아니라 기존 신청 화면으로 간다(원장 결정 d7 — 같은 화면을 두 벌 만들지 않는다).
  */
 export function classCardActions(card: { studentId: string; enrollmentId: string; paused: boolean }): ClassCardAction[] {
@@ -166,10 +168,10 @@ export function classCardActions(card: { studentId: string; enrollmentId: string
   return [
     { key: "absence", label: "결석", href: presetHref("/mypage/regular-absence", base) },
     { key: "makeup", label: "보강", href: presetHref("/mypage/makeup", { studentId: card.studentId }) },
-    { key: "shuttle", label: "셔틀 변경", href: presetHref("/mypage/shuttle", { studentId: card.studentId }) },
+    { key: "shuttle", label: "셔틀", href: presetHref("/mypage/shuttle", { studentId: card.studentId }) },
     {
       key: "change",
-      label: "반 변경·휴원",
+      label: "변경",
       items: [
         { key: "CLASS_CHANGE", label: "반 변경", href: presetHref("/mypage/enrollment-change", { ...base, kind: "CLASS_CHANGE" }) },
         { key: "PAUSE", label: "휴원", href: presetHref("/mypage/enrollment-change", { ...base, kind: "PAUSE" }) },

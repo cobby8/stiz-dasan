@@ -108,6 +108,25 @@ async function getAppUserRole(email: string): Promise<AppUserRoleRow | null> {
 // 각 Action 함수 내부에서도 인증을 확인해야 한다.
 
 /**
+ * 로그인(Supabase Auth id)에 «직접» 연결된 앱 계정(User.id)을 찾는다 — 역할 무관(학부모·선생님·기사님·관리자).
+ * getVerifiedParentState 와 같은 연결 규칙: authUserId 가 같거나, 옛 계정(authUserId 없음)은 id 가 같을 때만.
+ * 탈퇴 완료 계정은 제외. 이메일로 찾지 않는다 — 간편로그인 계정은 이메일이 달라 못 찾고,
+ * 이메일이 겹치면 남의 계정을 잡는다(2026-11-10 보안 검수: 웹푸시 구독이 남의 userId 로 저장될 수 있었다).
+ */
+export async function findLinkedAppUserId(authUserId: string): Promise<string | null> {
+  if (!authUserId) return null;
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM "User"
+      WHERE ("authUserId" = $1 OR ("authUserId" IS NULL AND id = $1))
+        AND "withdrawnAt" IS NULL
+      LIMIT 2`,
+    authUserId,
+  );
+  // 두 줄이 걸리면 어느 쪽인지 단정하지 않는다(추측 연결 금지)
+  return rows.length === 1 ? rows[0].id : null;
+}
+
+/**
  * requireAuth: 로그인 여부만 확인
  * - 미인증이면 에러를 던진다
  * - 로그인된 사용자의 Supabase user 객체를 반환
