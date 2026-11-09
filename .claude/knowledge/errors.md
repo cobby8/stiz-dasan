@@ -111,3 +111,9 @@
 - **발견자**: tester
 - **내용**: 워크트리엔 node_modules 가 없어(정션 금지) 메인 저장소 react 19 를 절대 경로로 끌어오는데, Temp 아래 가짜 모듈(next/link 대역 등)에 남은 `import "react"` 는 위로 올라가 `C:\Users\cobby\node_modules\react`(옛 버전)를 집는다. 두 버전 요소가 섞여 렌더가 깨진다. 렌더 검증용 파일은 «가짜 모듈까지» 같은 변환기로 bare import 를 메인 저장소 경로(createRequire(메인 package.json).resolve)로 바꿔 쓸 것. 기준 구현: 테스트 scratchpad 의 render/build.mjs.
 - **참조횟수**: 0
+
+### [2026-11-09] iOS 앱(WKWebView)에서 토스 결제창이 «이 주소는 앱에서 열 수 없습니다. 기사님 운행은 Android 기사님 앱…» 안내로 막힌다
+- **분류**: error
+- **발견자**: debugger
+- **내용**: 웹 코드 문제가 아니라 앱 껍데기의 주소 허용 목록 문제다. `apps/stiz-ios/STIZ/NavigationPolicy.swift` 의 `decide()` 는 운영에서 `www.stiz-dasan.kr`·지도·tel/mailto 외 주소를 전부 `.blocked` 로 보내고, `WebViewController.swift` 가 그때 «기사님 운행은 Android…» 문구 하나를 띄운다(차단 이유와 무관한 문구라 원인을 헷갈리게 한다). 토스 SDK `requestPayment` 는 휴대폰에서 tosspayments 주소로 화면을 옮기고 카드사 앱은 `ispmobile://`·`kakaotalk://` 같은 앱 주소로 부르므로, 앱 안에서는 단건·묶음 결제 모두 막힌다. 응답 정책(`decidePolicyFor navigationResponse`)도 `.website` 만 통과시켜 두 곳을 같이 고쳐야 한다. 앱 수정은 Codemagic 재빌드·TestFlight 를 거쳐야 반영되고, 고치기 전엔 사파리(브라우저) 결제를 안내한다. 새 외부 서비스(결제·본인인증·지도)를 웹에 붙일 땐 **iOS·Android 앱의 주소 허용 목록**도 같은 작업에서 확인할 것.
+- **참조횟수**: 0
