@@ -389,7 +389,8 @@ test("결제 준비: 확인을 거친 카드·계좌이체만 계좌를 닫고, 
 });
 
 test("계좌 닫기: 토스 취소 API 뒤 재조회로 닫힘을 확인하고, 여전히 입금 대기면 실패, 마지막에 청구 상태를 다시 본다", () => {
-    const body = fnBody(ledger, "async function closeOpenVirtualAccount(");
+    // 닫기 본문은 거래 1건 닫기(closeVirtualAccountTransaction — 묶음 결제 시작도 같이 씀)로 나뉘어 있다 → 두 함수를 같이 본다
+    const body = fnBody(ledger, "async function closeOpenVirtualAccount(") + fnBody(ledger, "async function closeVirtualAccountTransaction(");
     const cancel = body.indexOf("requestTossVirtualAccountCancel(tx, actor.actorType)");
     const relookup = body.indexOf("getVerifiedTossPayment(tx.paymentKey, tx.orderId)", cancel);
     assert.ok(cancel > 0 && relookup > cancel, "취소 뒤 재조회");
@@ -547,7 +548,9 @@ test("부분 취소(PARTIAL_CANCELED): 닫기·점검은 FAIL + 원장 확인, �
     // 만료·취소는 그대로 해제
     assert.equal(va.decideVirtualAccountWebhook({ ...base, tx: waitingTx, verified: { ...partial, status: "EXPIRED" } }).action, "RELEASE");
     // 연결부: 닫기·점검 둘 다 FAIL 에서 원장 확인 기록을 부른다(알림 문구 등록)
-    assert.match(fnBody(ledger, "async function closeOpenVirtualAccount("), /step === "FAIL"\) \{[\s\S]*?reviewUnclosableVirtualAccount\(tx, verified\)/);
+    assert.match(fnBody(ledger, "async function closeVirtualAccountTransaction("), /step === "FAIL"\) \{[\s\S]*?reviewUnclosableVirtualAccount\(tx, verified\)/);
+    // 청구서 단위 닫기는 반드시 그 거래 닫기 함수를 지난다
+    assert.match(fnBody(ledger, "async function closeOpenVirtualAccount("), /closeVirtualAccountTransaction\(tx, actor\)/);
     assert.match(fnBody(ledger, "export async function sweepWaitingVirtualAccounts("), /if \(step === "FAIL"\) await reviewUnclosableVirtualAccount\(tx, verified\)/);
     assert.match(fnBody(ledger, "async function reviewUnclosableVirtualAccount("), /recordVirtualAccountReview\(tx, code, true\)/);
     assert.match(ledger, /VIRTUAL_ACCOUNT_PARTIAL_CANCELED: "/);

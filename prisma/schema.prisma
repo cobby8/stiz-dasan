@@ -833,6 +833,25 @@ model PaymentTransaction {
   @@index([paymentId, status])
 }
 
+/// 학부모 온라인 «묶음 결제» 항목 — 토스 주문 1건(PaymentTransaction)이 청구 N건을 묶는다
+/// (migration 20261109150000_payment_transaction_items 의 사본). 항목이 없는 거래 = 옛 단건 거래.
+/// 거래의 paymentId·invoiceId = 대표 청구(1번 항목), amount = 합계. ⚠️ DB 에는 FK(ON DELETE CASCADE)·CHECK·RLS 가 더 있다.
+model PaymentTransactionItem {
+  id            String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  transactionId String
+  paymentId     String
+  invoiceId     String
+  amount        Int
+  taxFreeAmount Int
+  position      Int
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([transactionId, paymentId], map: "PaymentTransactionItem_tx_payment_key")
+  @@unique([transactionId, position], map: "PaymentTransactionItem_tx_position_key")
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
 model PaymentWebhookEvent {
   id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
   provider    String    @default("TOSS")

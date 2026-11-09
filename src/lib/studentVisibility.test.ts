@@ -49,7 +49,10 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     "lib/uniform-free-grant.ts": { count: 3, reason: "무료 유니폼 링크 — 링크에 묶인 학생 한 명 조회(화면·잠금·저장 번호)" },
 
     // 청구·수납 — 흡수된 쪽에 청구가 남았을 때 화면에서 숨기면 미납이 사라진다.
-    "lib/payment-ledger.ts": { count: 2, reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험" },
+    "lib/payment-ledger.ts": {
+        count: 3,
+        reason: "청구/청구서 목록 — 돈을 숨기는 쪽이 더 위험 + 묶음 결제 주문 1건(내 주문 번호 지정)의 묶인 청구 학생 이름(2026-11-09)",
+    },
     "lib/staff-class-billing.ts": { count: 1, reason: "교사앱 청구 목록" },
     "lib/staff-portal-queries.ts": { count: 1, reason: "교사앱 청구 목록(getStaffBilling)" },
     "app/admin/payment-confirmations/page.tsx": { count: 1, reason: "교사 납부확인 요청 처리" },

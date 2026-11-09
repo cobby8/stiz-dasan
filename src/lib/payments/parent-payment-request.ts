@@ -6,6 +6,8 @@ import {
   validatePaymentRequest,
   type PaymentRequestKind,
 } from "@/lib/payments/parentRequestRules";
+import { MAX_BUNDLE_ITEMS } from "@/lib/payments/checkoutBundle";
+import { todayKst } from "@/lib/datetime/kst";
 
 // ── 학부모의 청구서 요청(입금 확인·영수증) ──────────────────────────────────
 //
@@ -172,6 +174,93 @@ export async function submitPaymentParentRequest(parentUserId: string, input: Su
   });
 
   return { ok: true as const };
+}
+
+export type SubmitBundlePaymentClaimInput = {
+  paymentIds?: unknown;
+  paidOn?: unknown;
+  method?: unknown;
+  depositorName?: unknown;
+  note?: unknown;
+};
+
+/**
+ * 묶음 «입금했어요» — 계좌로 직접 입금한 청구 여러 건을 한 번에 알린다(2026-11-09 묶음 결제).
+ * 서버는 건마다 PAYMENT_CLAIM 을 하나씩 만든다(원장 확인 화면·처리 흐름은 단건과 같다).
+ *
+ * ★ 단건과 같은 보안 가드:
+ *   1) IDOR — 고른 청구 전부가 내 자녀(childAccessSql) 청구인지 SQL 로 재검증. 하나라도 아니면 전부 거절.
+ *   2) 상태는 DB 에서 읽는다 — 하나라도 이미 납부면 전부 거절(validatePaymentRequest 한 벌).
+ *   3) 이미 확인 중인 청구는 건너뛰고 알려 준다(DB 부분 유니크가 최종 방어선 — 겹치면 트랜잭션 전체가 되돌아간다).
+ */
+export async function submitBundlePaymentClaim(parentUserId: string, input: SubmitBundlePaymentClaimInput) {
+  const rawIds = Array.isArray(input.paymentIds) ? input.paymentIds : [];
+  const ids = rawIds.map((value) => (typeof value === "string" ? value.trim() : ""));
+  if (ids.length === 0 || ids.some((id) => !id)) return { ok: false as const, message: "청구서를 다시 선택해 주세요." };
+  if (new Set(ids).size !== ids.length) return { ok: false as const, message: "같은 청구가 두 번 들어 있어요. 다시 선택해 주세요." };
+  if (ids.length > MAX_BUNDLE_ITEMS) {
+    return { ok: false as const, message: `한 번에 알릴 수 있는 청구는 ${MAX_BUNDLE_ITEMS}건까지예요.` };
+  }
+
+  // 가드1+2: 소유권과 **현재 상태**를 DB 에서 함께 읽는다.
+  const owned = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT p.id, p.status, p.amount, s.id AS "studentId", s.name AS "studentName", p.description
+       FROM "Payment" p
+       JOIN "Student" s ON s.id = p."studentId"
+      WHERE p.id = ANY($1::text[]) AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}`,
+    ids, parentUserId,
+  );
+  if (owned.length !== ids.length) return { ok: false as const, message: "본인 자녀의 청구서만 요청할 수 있습니다." };
+
+  const today = todayKst();
+  for (const row of owned) {
+    const checked = validatePaymentRequest({ ...input, kind: "PAYMENT_CLAIM" }, { paymentStatus: row.status, today });
+    if (!checked.ok) return { ok: false as const, message: PAYMENT_REQUEST_MESSAGE[checked.error] };
+  }
+
+  // 가드3: 이미 확인 중인 청구는 건너뛴다(원장이 같은 일을 두 번 하지 않게)
+  const pendingRows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT "paymentId" FROM "PaymentParentRequest"
+      WHERE "paymentId" = ANY($1::text[]) AND kind = 'PAYMENT_CLAIM' AND status = 'PENDING'`,
+    ids,
+  );
+  const alreadyPending = new Set<string>(pendingRows.map((row) => String(row.paymentId)));
+  const targets = owned.filter((row) => !alreadyPending.has(String(row.id)));
+  if (targets.length === 0) {
+    return { ok: false as const, message: "이미 확인 중인 요청이 있습니다. 결과를 기다려 주세요." };
+  }
+
+  const note = typeof input.note === "string" ? input.note.trim().slice(0, 500) || null : null;
+  const depositorName = typeof input.depositorName === "string" ? input.depositorName.trim().slice(0, 60) || null : null;
+  // 전부 아니면 전무 — 중간에 하나가 막히면(동시 요청) 아무것도 남기지 않는다
+  await prisma.$transaction(async (db) => {
+    for (const row of targets) {
+      await db.$executeRawUnsafe(
+        `INSERT INTO "PaymentParentRequest"
+            ("paymentId","studentId","requestedByUserId","kind","paidOn","method","depositorName",
+             "receiptType","receiptTarget","note")
+         VALUES ($1,$2,$3,'PAYMENT_CLAIM',$4::date,$5,$6,NULL,NULL,$7)`,
+        row.id, row.studentId, parentUserId, String(input.paidOn), String(input.method), depositorName, note,
+      );
+    }
+  });
+
+  // 원장 알림은 한 번만(건수·합계)
+  const total = targets.reduce((acc, row) => acc + Number(row.amount ?? 0), 0);
+  await notifyAdminsOfPaymentRequest({
+    kind: "PAYMENT_CLAIM",
+    studentName: targets[0].studentName,
+    description: targets.length > 1
+      ? `${targets[0].description || "청구"} 외 ${targets.length - 1}건 · 합계 ${total.toLocaleString("ko-KR")}원`
+      : targets[0].description,
+    amount: total,
+  });
+
+  return {
+    ok: true as const,
+    submitted: targets.map((row) => String(row.id)),
+    alreadyPending: [...alreadyPending],
+  };
 }
 
 export async function cancelPaymentParentRequest(parentUserId: string, requestId: string) {

@@ -205,3 +205,9 @@
 - **발견자**: developer
 - **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
 - **참조횟수**: 0
+
+### [2026-11-09] 학부모 «묶음 결제» = 토스 주문 1건(PaymentTransaction) + 항목 N건(PaymentTransactionItem)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 미납 청구 여러 건(형제 포함, 대표 보호자 s.parentId=본인만)을 토스 결제 한 번으로. 거래 칸은 그대로(대표 청구 = 1번 항목의 paymentId·invoiceId, amount = 합계), 묶인 청구는 `PaymentTransactionItem`(마이그레이션 20261109150000, **코드보다 먼저 적용** — 단건 경로도 이 표를 읽는다). 규칙 순수 `src/lib/payments/checkoutBundle.ts`(자격·10건/100만 원·정렬=POS sortChargeItems·주문 이름·STIZ-B- 번호·확정/취소 판정), 장부 `bundleLedger.ts`(prisma import 없음, db 인자 → 가짜 DB 실행 테스트). finalizeVerifiedTossPayment·applyVerifiedTossFullCancel 은 `hasBundleItems` 면 묶음 갈래(거래+청구·청구서 FOR UPDATE 청구 id 순 → 조건부 UPDATE, 0행이면 BUNDLE_LEDGER_CONFLICT 던져 전부 되돌림). 카드 묶음 반영 실패 = PAYMENT_BUNDLE_REVIEW+원장 DM(돈은 나감), 무통장은 기존 VIRTUAL_ACCOUNT_REVIEW 흐름. 이중 납부 연결점: 청구서/청구로 거래를 찾는 새 SQL 은 반드시 `txCoversInvoiceSql`·`txCoversPaymentSql`(getVirtualAccountState·closeOpenVirtualAccount·queries.ts 마이페이지/관리자 수납 lateral), 무통장 판정 청구 상태는 `TX_PAYMENT_STATUS_SQL`(묶인 청구 중 하나라도 PAID 면 PAID). 승인 직전 `checkBeforeTossConfirm`(묶음 전부 미납 + 랠리즈 사본 차단 D4 — 단건도). API `/api/mypage/payments/checkout`(GET 후보·POST 시작)·`/confirm`(POST 승인·GET 주문 요약), 묶음 입금 알림 = `/api/mypage/payment-request` action submit-bundle. 테스트 `tests/payment-bundle-checkout.test.mjs` 는 payment-ledger.ts 를 가짜 prisma·가짜 fetch 로 실제 실행한다(FAKE_MODULES 로더).
+- **참조횟수**: 0
