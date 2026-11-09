@@ -123,7 +123,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
   },
   {
     kind: "PARENT_REQUEST", label: "문의", icon: "chat", adminHref: "/admin/requests", parentFacing: true,
-    statuses: { PENDING: act("새 문의"), CONFIRMED: going("확인함"), COMPLETED: ok("답변 완료") },
+    // REJECTED 는 기존 updateRequestStatus 가 허용하는 «반려»(2026-11-10 추가 — 빠지면 SQL 이 그 행을 못 읽는다)
+    statuses: { PENDING: act("새 문의"), CONFIRMED: going("확인함"), COMPLETED: ok("답변 완료"), REJECTED: no("반려") },
   },
   {
     kind: "PAYMENT_REQUEST", label: "입금·영수증", icon: "payments", adminHref: "/admin/payment-requests", parentFacing: true,

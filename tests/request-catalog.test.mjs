@@ -101,7 +101,7 @@ test('배지 클래스는 statusTones 의 클래스 그대로다(색 직접 지�
 
 test('statusesOf — SQL status IN 목록', () => {
   assert.deepEqual(statusesOf('REGULAR_ABSENCE', 'ACTION'), ['REPORTED']);
-  assert.deepEqual(statusesOf('PARENT_REQUEST'), ['PENDING', 'CONFIRMED', 'COMPLETED']);
+  assert.deepEqual(statusesOf('PARENT_REQUEST'), ['PENDING', 'CONFIRMED', 'COMPLETED', 'REJECTED']);
   assert.deepEqual(statusesOf('STAFF_PAYMENT', 'ONGOING'), []);
   // SQL 에 그대로 들어가므로 영문 대문자·밑줄만 허용(따옴표 주입 차단)
   for (const k of REQUEST_KINDS) for (const s of statusesOf(k.kind)) assert.match(s, /^[A-Z_]+$/);
