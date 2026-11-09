@@ -86,6 +86,7 @@ export type EnrollmentChangeOptions = {
 
 export type ChangeHistoryRow = {
   id: string;
+  studentId: string;
   studentName: string;
   kind: string;
   /** APPROVED | APPLIED | REJECTED | CANCELED */
@@ -99,6 +100,12 @@ export type ChangeHistoryRow = {
   decidedOn: string;
   /** 거절 사유 — 거절 건에만 채운다(승인 메모는 내부용일 수 있어 내보내지 않는다) */
   decisionNote: string | null;
+  /** 휴원 복귀 예정일 */
+  resumeOn: string | null;
+  /** 신청일 KST "YYYY-MM-DD" */
+  createdOn: string;
+  /** 신청 정렬용(ISO 시각) */
+  createdAt: string;
 };
 
 /** 방학특강 반(dayOfWeek='Seasonal')은 별도 신청 흐름이라 여기서 제외한다. */
@@ -208,9 +215,20 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
  * 최근 3개월 수강 변경 결과(한 줄씩 보여 줄 것). 학부모가 거절 사유를 볼 수 있는 유일한 곳이다.
  * ★ 가드: childAccessSql(그 부모의 자녀만) + notMergedStudent(병합된 옛 학생 제외).
  */
-export async function getEnrollmentChangeHistory(parentUserId: string): Promise<ChangeHistoryRow[]> {
+export async function getEnrollmentChangeHistory(
+  parentUserId: string,
+  // includeOpen: 검토 중(PENDING)·적용 전 승인 건도 함께 — «수업» 탭 신청 내역 타임라인용(2026-11-10).
+  //              기본값(false)은 예전 «지난 결과» 그대로.
+  options: { includeOpen?: boolean } = {},
+): Promise<ChangeHistoryRow[]> {
+  const statuses = options.includeOpen
+    ? `('PENDING','APPROVED','APPLIED','REJECTED','CANCELED')`
+    : `('APPROVED','APPLIED','REJECTED','CANCELED')`;
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT r.id, s.name AS "studentName", r.kind, r.status, (r."appliedAt" IS NOT NULL) AS applied,
+    `SELECT r.id, r."studentId", s.name AS "studentName", r.kind, r.status, (r."appliedAt" IS NOT NULL) AS applied,
+            to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
+            to_char(r."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdOn",
+            r."createdAt",
             fc.name AS "fromClassName", tc.name AS "toClassName",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
             -- decidedAt·updatedAt 은 timestamptz 라 AT TIME ZONE 한 번이면 KST 날짜다.
@@ -221,14 +239,17 @@ export async function getEnrollmentChangeHistory(parentUserId: string): Promise<
        LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
        LEFT JOIN "Class" tc ON tc.id = r."toClassId"
       WHERE ${await childAccessSql("s", "$1")}
-        AND r.status IN ('APPROVED','APPLIED','REJECTED','CANCELED')
-        AND r."updatedAt" >= now() - interval '3 months'
+        AND r.status IN ${statuses}
+        -- 최근 3개월 + (타임라인이면) 아직 끝나지 않은 건은 오래돼도 보인다
+        AND (r."updatedAt" >= now() - interval '3 months'
+             OR ($2::boolean AND (r.status = 'PENDING' OR (r.status = 'APPROVED' AND r."appliedAt" IS NULL))))
       ORDER BY r."updatedAt" DESC
       LIMIT 30`,
-    parentUserId,
+    parentUserId, Boolean(options.includeOpen),
   );
   return rows.map((row) => ({
     id: row.id,
+    studentId: row.studentId,
     studentName: row.studentName,
     kind: row.kind,
     status: row.status,
@@ -238,6 +259,9 @@ export async function getEnrollmentChangeHistory(parentUserId: string): Promise<
     effectiveFrom: row.effectiveFrom,
     decidedOn: row.decidedOn,
     decisionNote: row.decisionNote ?? null,
+    resumeOn: row.resumeOn ?? null,
+    createdOn: row.createdOn,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
   }));
 }
 

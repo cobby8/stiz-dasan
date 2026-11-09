@@ -6,6 +6,8 @@ import type { ParentClassCard, ParentClassesOverview } from "@/lib/parent/classe
 import { ATTENDANCE_CELL_LABEL, dayKo, type AttendanceCell, type ClassCardAction } from "@/lib/parent/classCards";
 import { kstLabel } from "@/lib/datetime/kst";
 import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
+import type { ParentTimelineView } from "@/lib/requests/parent-timeline-rules";
+import RequestTimeline from "./RequestTimeline";
 
 // 학부모 «수업» 탭 화면 (2026-11-10 설계 B). 계산은 lib/parent/classCards.ts, 여기는 그리기만.
 // 컴팩트 규칙: 카드 안쪽 여백 작게·정보는 적은 줄로·터치 44px·글자 12px 이상·색은 토큰만.
@@ -148,9 +150,12 @@ function ClassCard({ card }: { card: ParentClassCard }) {
 export default function ClassesClient({
   overview,
   initialChildId,
+  timeline = [],
 }: {
   overview: ParentClassesOverview;
   initialChildId: string;
+  /** 신청 내역(최근 3개월, 모든 자녀) — 고른 아이 것만 보인다 */
+  timeline?: ParentTimelineView[];
 }) {
   const [childId, setChildId] = useState(initialChildId);
   const child = overview.children.find((c) => c.id === childId) ?? overview.children[0];
@@ -202,6 +207,9 @@ export default function ClassesClient({
           </div>
         )}
       </section>
+
+      {/* 신청 내역 타임라인 — 고른 아이 것만(최근 3개월, 한 줄 행 → 하단 시트) */}
+      <RequestTimeline rows={timeline.filter((r) => r.studentId === child.id)} />
     </div>
   );
 }
