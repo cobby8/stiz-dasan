@@ -126,3 +126,7 @@
 | 11-08 | developer(claude/pos-auto-charge): POS 즉시 결제창 — ① charge.ts 금액 검사: addLineItem 반환값 대신 다시 읽기(최대 3번·0.3초), 기준=항목 1개·항목가×수량=금액·면세·메모 번호, 합계는 >0 이고 다를 때만 불일치, 보고 reason 에 실제 값(S-704715 대응) ② 롱폴링 `?wait=20&known=` (src/lib/pos/plugin-long-poll.mjs 순수 루프·1초 EXISTS·maxDuration 30·abort) + 워커 25초 제한·연속 조기응답 0→14초 완화(정상 30분 90번·최악 133번) ③ 자동 경로 silent(alert 없음)·다음 대기 먼저 예약·자동 1건 ④ 창 문구 «보통 몇 초 안에». 사이트 tsc 0·test 3114-0, 플러그인 tsc 0·test 53-0, zip 재생성 | 검수 대기 |
 | 11-08 | developer(claude/pos-auto-charge-site): «현장 결제» 창 단순화 — 플러그인 자동 결제창 전제로 큰 결제 번호·메모 입력 안내·30분·새로고침 제거, «POS로 결제 보내기»→«POS로 보냈어요 · 결제 기다리는 중»(3초 자동 읽기, 탭 숨김·창 닫힘 시 멈춤)·«요청 취소». 서버 매칭·shortCode 그대로(보류·지난 요청 줄 작은 글씨만). tests/pos-charge-modal.test.mjs 3건 신설. tsc 0·npm test 3104-0 | 검수 대기 |
 | 11-08 | developer(claude/payment-method-record): 수납 «납부 처리» 창 — 계좌이체(입금일 필수·미래 금지·입금자명 1~40자·메모 200자, 한 트랜잭션·미납/연체만·PaymentAuditLog)·현장 결제(MONTHLY/SHUTTLE 1건만→기존 POS 창). 일괄도 같은 창. updatePaymentStatus/bulk 는 PAID 거부. «단말기» 메뉴·markTerminalPaymentPaid·recordTerminalPayment 제거(TOSS_TERMINAL 표시 유지). 8d433c0d·372a72f0·1bfc648e. tsc 0·npm test 3116-0 | 검수 대기 |
+
+### 보안 리뷰 결과 (security-reviewer) — 96a4ab1b
+📊 판정: 통과 (CRITICAL 0 / HIGH 0). tsc 0 · tests 3764/0 fail · studentVisibility 5/0 fail
+검토 범위: src/app/actions/admin.ts, src/app/admin/finance/FinanceClient.tsx, src/lib/payments/paidStatusGuard.ts, tests/paid-status-guard.test.mjs
