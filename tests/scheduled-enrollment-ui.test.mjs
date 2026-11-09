@@ -104,6 +104,9 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
 test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고 수업 시작일을 안내한다", () => {
   const summary = load("src/lib/mypage/summary.ts", {});
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
+    "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
+    "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },
     "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/components/pwa/HideInInstalledApp": { __esModule: true, default: ({ children }) => children },

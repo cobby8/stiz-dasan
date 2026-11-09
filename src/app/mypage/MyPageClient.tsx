@@ -4,9 +4,14 @@ import ChildConnectionNotice from "@/components/account/ChildConnectionNotice";
 
 import { useState, useTransition, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
-import { markNotificationRead, markAllNotificationsRead, createParentRequest } from "@/app/actions/admin";
+import { createParentRequest } from "@/app/actions/admin";
+// 알림 읽음은 학부모 전용 동작(로그인 사용자 본인 알림만) — 관리자용(requireAdmin)을 부르면 학부모는 실패한다
+import { markMyNotificationRead, markAllMyNotificationsRead } from "@/app/actions/parent-notifications";
+import { safeInternalHref } from "@/lib/mypage/parentNav";
+import { useRememberedChild } from "./useRememberedChild";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import type { PendingSeasonalChild } from "@/lib/seasonal/pendingSeasonalChildren";
 // "오늘/이번주 우리 아이" 요약 + «오늘 할 일» 집계용 순수 로직(표시 전용, 기존 데이터 재조합).
@@ -175,7 +180,7 @@ export function formatShortDate(value: Date | string): string {
 // «처리할 일» 한 줄 — 왼쪽 아이콘·제목, 오른쪽 숫자/설명, 끝에 화살표. 터치 44px.
 const TODO_ROW = "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[var(--color-academy-soft)]";
 
-export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [] }: {
+export default function MyPageClient({ data, notices = [], notifications = [], unreadCount = 0, myRequests = [], parentShuttleOverview = [], shuttleDriverContact = null, pendingSeasonalChildren = [], makeupAvailable = 0, seasonalUpcoming = 0, pendingPayments = null, classStatusLines = [], initialChildId }: {
     data: MyPageData;
     notices?: NoticeItem[];
     notifications?: NotificationItem[];
@@ -193,8 +198,22 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     pendingPayments?: PendingPaymentLite[] | null;
     /** 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 그냥 다니는 반은 없다 */
     classStatusLines?: ParentClassStatusLine[];
+    /** 주소 ?child= 로 서버가 고른 아이(내 자녀일 때만). 없으면 첫째 */
+    initialChildId?: string;
 }) {
-    const [selectedIdx, setSelectedIdx] = useState(0);
+    // 아이 선택 — 주소(?child=)·기기 기억으로 마지막 선택 유지(다른 화면 갔다 뒤로 와도 그 아이)
+    const childIds = data.children.map((c) => c.id);
+    const [selectedChildId, selectChild] = useRememberedChild(childIds, initialChildId ?? childIds[0] ?? "");
+    const selectedIdx = Math.max(0, childIds.indexOf(selectedChildId));
+    const setSelectedIdx = (i: number) => { const id = childIds[i]; if (id) selectChild(id); };
+    const router = useRouter();
+    // 알림 열기 — 안 읽었으면 읽음 처리 후, 내부 주소가 있으면 그 화면으로 간다
+    function openNotification(id: string, isRead: boolean, href: string | null) {
+        startTransition(async () => {
+            if (!isRead) await markMyNotificationRead(id);
+            if (href) router.push(href);
+        });
+    }
     const [showNotifications, setShowNotifications] = useState(false);
     const [showRequestForm, setShowRequestForm] = useState(false);
     const [showRequests, setShowRequests] = useState(false);
@@ -543,7 +562,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                 {unreadCount > 0 && (
                                     <div className="px-4 py-1 border-b border-[var(--color-academy-line)] flex items-center justify-end">
                                         <button
-                                            onClick={() => startTransition(() => markAllNotificationsRead(data.parent.id))}
+                                            onClick={() => startTransition(async () => { await markAllMyNotificationsRead(); })}
                                             disabled={isPending}
                                             className="academy-button-text text-[var(--color-academy-primary)]"
                                         >
@@ -558,10 +577,16 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                     </div>
                                 ) : (
                                     <div className="divide-y divide-[var(--color-academy-line)] max-h-80 overflow-y-auto">
-                                        {notifications.map(n => (
-                                            <div
+                                        {notifications.map(n => {
+                                            // 알림 줄 전체가 버튼 — 누르면 읽음 + 내부 주소면 그 화면으로(바깥 주소·빈 값은 읽음만)
+                                            const href = safeInternalHref(n.linkUrl);
+                                            return (
+                                            <button
                                                 key={n.id}
-                                                className={`px-4 py-3 flex items-start gap-3 ${!n.isRead ? "bg-[var(--color-academy-info-soft)]" : ""}`}
+                                                type="button"
+                                                onClick={() => openNotification(n.id, n.isRead, href)}
+                                                disabled={isPending}
+                                                className={`flex w-full min-h-11 items-start gap-3 px-4 py-3 text-left hover:bg-[var(--color-academy-soft)] ${!n.isRead ? "bg-[var(--color-academy-info-soft)]" : ""}`}
                                             >
                                                 {/* 알림 타입 아이콘 */}
                                                 <div className={`mt-0.5 p-1.5 rounded-full flex-shrink-0 ${
@@ -585,21 +610,15 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                                     </p>
                                                 </div>
 
-                                                {/* 읽음 처리 버튼 */}
-                                                {!n.isRead && (
-                                                    <button
-                                                        onClick={() => startTransition(() => markNotificationRead(n.id))}
-                                                        disabled={isPending}
-                                                        // 누르는 영역 44×44 — 알림 글 옆 작은 체크라 잘못 누르기 쉬웠다(M-11)
-                                                        className="-my-2 -mr-2 inline-flex size-11 flex-shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
-                                                        title="읽음 처리"
-                                                        aria-label="읽음 처리"
-                                                    >
-                                                        <SymbolIcon name="check" size={18} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
+                                                {/* 끝 표시 — 이동할 화면이 있으면 화살표, 없고 안 읽었으면 체크(누르면 읽음) */}
+                                                {href ? (
+                                                    <SymbolIcon name="chevron_right" size={18} className="mt-0.5 flex-shrink-0 text-[var(--color-academy-muted)]" />
+                                                ) : !n.isRead ? (
+                                                    <SymbolIcon name="check" size={18} className="mt-0.5 flex-shrink-0 text-[var(--color-academy-muted)]" />
+                                                ) : null}
+                                            </button>
+                                            );
+                                        })}
                                     </div>
                                 )}
                                 {/* 설정 줄 — 알림 목록과 구분선으로 떼어 «읽음»과 헷갈리지 않게(M-11). 동작(togglePush)은 그대로 */}

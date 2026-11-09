@@ -13,7 +13,12 @@ import { getParentClassStatusLines } from "@/lib/enrollment/parent-change-reques
 
 export const dynamic = "force-dynamic";
 
-export default async function MyPageDashboard() {
+export default async function MyPageDashboard({
+    searchParams,
+}: {
+    // ?child=<studentId> — 마지막으로 고른 아이(내 자녀일 때만 쓴다, 아니면 첫째)
+    searchParams?: Promise<{ child?: string }>;
+} = {}) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -74,5 +79,8 @@ export default async function MyPageDashboard() {
             .map((row) => ({ id: row.paymentId, amount: row.amount, status: row.status, canCheckout: row.canCheckout, virtualAccount: row.virtualAccount }))
         : null;
 
-    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
+    const childParam = (await searchParams)?.child;
+    const initialChildId = data.children.find((c) => c.id === childParam)?.id ?? data.children[0].id;
+
+    return <MyPageClient initialChildId={initialChildId} data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} pendingPayments={pendingPayments} classStatusLines={classStatusLines} />;
 }

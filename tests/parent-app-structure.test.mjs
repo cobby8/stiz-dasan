@@ -68,6 +68,9 @@ test("② 로그아웃은 헤더 «⋯» 메뉴 안(휴대폰·PC 둘 다), 메�
 
 function renderHome(props) {
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    "next/navigation": { useRouter: () => ({ push() {}, replace() {}, refresh() {} }) },
+    "@/app/actions/parent-notifications": {}, "./useRememberedChild": { useRememberedChild: (_ids, init) => [init, () => {}] },
+    "@/lib/mypage/parentNav": { safeInternalHref: (v) => (typeof v === "string" && v.startsWith("/") && !v.startsWith("//") ? v : null) },
     "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/app/actions/admin": {}, "@/lib/mypage/summary": summary, "@/lib/datetime/kst": kst,

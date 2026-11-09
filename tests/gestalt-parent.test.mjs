@@ -206,8 +206,8 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   // 메시지 폼은 빠른 실행 «문의»로 연다 — 폼 안 최종 제출만 꽉 찬 색
   assert.match(home, /onClick=\{openRequestForm\}/);
   assert.match(home, /className="academy-button-primary w-full"\s*>\s*\{isPending \? "보내는 중\.\.\." : "메시지 보내기"\}/);
-  // 알림: 읽음 44×44 · 모두 읽음 44px · 푸시 토글은 목록 아래 설정 줄
-  assert.match(home, /inline-flex size-11[^"]*"\s*title="읽음 처리"/);
+  // 알림: 줄 전체가 버튼(44px↑ — 누르면 읽음 + 내부 주소로 이동, 2026-11-10) · 모두 읽음 44px · 푸시 토글은 목록 아래 설정 줄
+  assert.match(home, /onClick=\{\(\) => openNotification\(n\.id, n\.isRead, href\)\}[\s\S]{0,200}className=\{`flex w-full min-h-11 /);
   assert.match(home, /className="academy-button-text text-\[var\(--color-academy-primary\)\]"\s*>\s*<SymbolIcon name="done_all"/);
   const list = home.indexOf('notifications.map(n =>');
   const push = home.indexOf("onClick={togglePush}");

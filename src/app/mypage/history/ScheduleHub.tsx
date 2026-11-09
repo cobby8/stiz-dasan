@@ -114,6 +114,78 @@ function LegendItem({ children, label }: { children: ReactNode; label: string })
     return <span className="inline-flex items-center gap-1 whitespace-nowrap">{children}{label}</span>;
 }
 
+/**
+ * 한 달 달력 칸(일정 탭·수업 탭이 같이 쓴다 — 2026-11-10 수업 탭에 붙임).
+ * monthNav 를 주면 제목 줄에 달 이동(‹ 2026년 11월 ›)을 함께 둔다(수업 탭). 일정 탭은 화면 제목 줄에 이미 있다.
+ */
+export function MonthCalendar({
+    view,
+    planReady = true,
+    hasEnrollments,
+    monthNav,
+}: {
+    view: ParentMonthView;
+    planReady?: boolean;
+    hasEnrollments: boolean;
+    monthNav?: { prevHref: string; nextHref: string };
+}) {
+    const { summary } = view;
+    const summaryLine = (
+        <>
+            <span className="font-bold text-[var(--color-academy-ink)]">수업 <span className="tabular-nums">{summary.classCount}</span>회</span>
+            <span className="whitespace-nowrap text-[var(--color-academy-muted)]">
+                출석 <span className="tabular-nums">{summary.present}</span>
+                {summary.late > 0 && <> · 지각 <span className="tabular-nums">{summary.late}</span></>}
+                {" · "}결석 <span className="tabular-nums">{summary.absent}</span>
+            </span>
+        </>
+    );
+    return (
+            <section aria-labelledby="schedule-records-heading" className="academy-panel scroll-mt-24 overflow-hidden">
+                {monthNav ? (
+                    // 달 이동 + 이 달 요약을 한 줄로(수업 탭)
+                    <div className="flex flex-wrap items-center justify-between gap-x-2 border-b border-[var(--color-academy-line)] pr-3">
+                        <nav aria-label="달 이동" className="flex items-center">
+                            <Link href={monthNav.prevHref} scroll={false} aria-label="이전 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                                <Icon name="chevron_left" size={22} />
+                            </Link>
+                            <span className="whitespace-nowrap text-sm font-bold tabular-nums text-[var(--color-academy-ink)]">{monthTitle(view.month)}</span>
+                            <Link href={monthNav.nextHref} scroll={false} aria-label="다음 달" className="inline-flex size-11 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+                                <Icon name="chevron_right" size={22} />
+                            </Link>
+                        </nav>
+                        <h2 id="schedule-records-heading" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">{summaryLine}</h2>
+                    </div>
+                ) : (
+                    <h2 id="schedule-records-heading" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-academy-line)] px-3 py-2 text-sm">
+                        {summaryLine}
+                    </h2>
+                )}
+                <div className="px-2 pb-2 pt-1">
+                    <div className="grid grid-cols-7 text-center text-xs text-[var(--color-academy-muted)]" aria-hidden="true">
+                        {WEEK_HEAD.map((d) => <span key={d} className="py-1">{d}</span>)}
+                    </div>
+                    <div className="grid grid-cols-7 gap-y-1">
+                        {view.weeks.flat().map((cell, i) => (cell ? <DayCell key={cell.ymd} cell={cell} /> : <span key={`blank-${i}`} aria-hidden="true" />))}
+                    </div>
+                    {/* 범례 한 줄 — 달력 칸과 같은 부품·같은 토큰 */}
+                    <p className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-xs text-[var(--color-academy-muted)]">
+                        <LegendItem label="수업"><span aria-hidden="true" className="inline-block size-3.5 rounded border border-[var(--color-academy-cal-class-line)] bg-[var(--color-academy-cal-class-soft)]" /></LegendItem>
+                        <LegendItem label="출석"><Mark kind="PRESENT" /></LegendItem>
+                        <LegendItem label="지각"><Mark kind="LATE" /></LegendItem>
+                        <LegendItem label="결석"><Mark kind="ABSENT" /></LegendItem>
+                        <LegendItem label="행사"><Mark kind="EVENT" /></LegendItem>
+                        <LegendItem label="휴무"><span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded bg-[var(--color-academy-cal-closed-soft)] text-xs font-bold leading-none text-[var(--color-academy-cal-closed)]">휴</span></LegendItem>
+                        <LegendItem label="오늘"><span aria-hidden="true" className="inline-block size-3.5 rounded ring-2 ring-inset ring-[var(--color-academy-cal-today)]" /></LegendItem>
+                    </p>
+                    {!planReady && hasEnrollments && (
+                        <p className="mt-1 px-1 text-xs text-[var(--color-academy-muted)]">이 달 수업일은 연간일정 확정 후 보여요.</p>
+                    )}
+                </div>
+            </section>
+    );
+}
+
 export default function ScheduleHub({
     childList,
     selectedChildId,
@@ -138,7 +210,6 @@ export default function ScheduleHub({
     // 달 이동·자녀 바꾸기 주소 — 서버가 다시 그린다
     const hrefFor = (month: string, childId = child?.id ?? "") =>
         `/mypage/history?${childId ? `child=${encodeURIComponent(childId)}&` : ""}month=${month}`;
-    const { summary } = view;
 
     return (
         <div className="space-y-3">
@@ -168,37 +239,7 @@ export default function ScheduleHub({
             )}
 
             {/* 한 달 달력 — 수업일(연한 칸) · 출결(점·고리·×) · 행사(별) · 휴무(회색 «휴») · 오늘(굵은 테두리) */}
-            <section aria-labelledby="schedule-records-heading" className="academy-panel scroll-mt-24 overflow-hidden">
-                <h2 id="schedule-records-heading" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--color-academy-line)] px-3 py-2 text-sm">
-                    <span className="font-bold text-[var(--color-academy-ink)]">수업 <span className="tabular-nums">{summary.classCount}</span>회</span>
-                    <span className="whitespace-nowrap text-[var(--color-academy-muted)]">
-                        출석 <span className="tabular-nums">{summary.present}</span>
-                        {summary.late > 0 && <> · 지각 <span className="tabular-nums">{summary.late}</span></>}
-                        {" · "}결석 <span className="tabular-nums">{summary.absent}</span>
-                    </span>
-                </h2>
-                <div className="px-2 pb-2 pt-1">
-                    <div className="grid grid-cols-7 text-center text-xs text-[var(--color-academy-muted)]" aria-hidden="true">
-                        {WEEK_HEAD.map((d) => <span key={d} className="py-1">{d}</span>)}
-                    </div>
-                    <div className="grid grid-cols-7 gap-y-1">
-                        {view.weeks.flat().map((cell, i) => (cell ? <DayCell key={cell.ymd} cell={cell} /> : <span key={`blank-${i}`} aria-hidden="true" />))}
-                    </div>
-                    {/* 범례 한 줄 — 달력 칸과 같은 부품·같은 토큰 */}
-                    <p className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-1 text-xs text-[var(--color-academy-muted)]">
-                        <LegendItem label="수업"><span aria-hidden="true" className="inline-block size-3.5 rounded border border-[var(--color-academy-cal-class-line)] bg-[var(--color-academy-cal-class-soft)]" /></LegendItem>
-                        <LegendItem label="출석"><Mark kind="PRESENT" /></LegendItem>
-                        <LegendItem label="지각"><Mark kind="LATE" /></LegendItem>
-                        <LegendItem label="결석"><Mark kind="ABSENT" /></LegendItem>
-                        <LegendItem label="행사"><Mark kind="EVENT" /></LegendItem>
-                        <LegendItem label="휴무"><span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded bg-[var(--color-academy-cal-closed-soft)] text-xs font-bold leading-none text-[var(--color-academy-cal-closed)]">휴</span></LegendItem>
-                        <LegendItem label="오늘"><span aria-hidden="true" className="inline-block size-3.5 rounded ring-2 ring-inset ring-[var(--color-academy-cal-today)]" /></LegendItem>
-                    </p>
-                    {!planReady && enrollments.length > 0 && (
-                        <p className="mt-1 px-1 text-xs text-[var(--color-academy-muted)]">이 달 수업일은 연간일정 확정 후 보여요.</p>
-                    )}
-                </div>
-            </section>
+            <MonthCalendar view={view} planReady={planReady} hasEnrollments={enrollments.length > 0} />
 
             {/* 이 달 행사·휴무 — 한 줄 행(날짜 · 제목) */}
             <section aria-labelledby="schedule-events-heading" className="academy-panel overflow-hidden">
