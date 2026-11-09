@@ -24,7 +24,7 @@ export default async function ImportPage() {
         <div
           role="note"
           data-testid="sheet-retired-import-notice"
-          className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          className="mb-4 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-4 py-3 text-sm text-[var(--color-academy-warning)]"
         >
           <p className="font-bold">시트 원장 종료(2026-10) — 과거 자료 조회용</p>
           <p className="mt-1">

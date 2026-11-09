@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 const RichTextEditor = dynamic(() => import("@/components/RichTextEditor"), {
     ssr: false,
     loading: () => (
-        <div className="border border-gray-300 rounded-md p-4 min-h-[150px] bg-gray-50 dark:bg-gray-900 flex items-center justify-center text-sm text-gray-400">
+        <div className="border border-[var(--color-academy-line-input)] rounded-md p-4 min-h-[150px] bg-[var(--color-academy-soft)] flex items-center justify-center text-sm text-[var(--color-academy-faint)]">
             에디터 로딩중...
         </div>
     ),
@@ -56,10 +56,10 @@ export default function LazyRichTextEditor({
                 <button
                     type="button"
                     onClick={() => setShouldLoad(true)}
-                    className="w-full border border-gray-300 rounded-md p-4 min-h-[150px] bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-300 hover:border-brand-orange-500 dark:hover:border-brand-neon-lime transition"
+                    className="w-full border border-[var(--color-academy-line-input)] rounded-md p-4 min-h-[150px] bg-[var(--color-academy-soft)] flex flex-col items-center justify-center gap-2 text-sm text-[var(--color-academy-muted)] hover:border-[var(--color-academy-primary)] transition"
                 >
                     {/* 지연 로딩(성능 최적화)은 그대로 두고, 사용자에게는 "내용 편집"으로만 보이게 한다 */}
-                    <span className="font-bold text-gray-700 dark:text-gray-100">내용 편집</span>
+                    <span className="font-bold text-[var(--color-academy-muted)]">내용 편집</span>
                 </button>
             )}
         </div>

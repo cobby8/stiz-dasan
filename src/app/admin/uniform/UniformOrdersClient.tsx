@@ -21,37 +21,37 @@ const SYNC_STATUS: Record<string, SyncTone> = {
   PENDING: {
     label: "전송 대기",
     icon: "schedule",
-    className: "bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-200 dark:ring-blue-800",
+    className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   },
   SENDING: {
     label: "전송 중",
     icon: "progress_activity",
-    className: "bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-950/40 dark:text-blue-200 dark:ring-blue-800",
+    className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   },
   SENT: {
     label: "본사 접수",
     icon: "check_circle",
-    className: "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-800",
+    className: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-success)]",
   },
   DUPLICATE: {
     label: "중복 확인",
     icon: "task_alt",
-    className: "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-800",
+    className: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)] ring-[var(--color-academy-success)]",
   },
   RETRY_WAIT: {
     label: "재시도 대기",
     icon: "restart_alt",
-    className: "bg-amber-50 text-amber-800 ring-amber-100 dark:bg-amber-950/40 dark:text-amber-100 dark:ring-amber-800",
+    className: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)] ring-[var(--color-academy-warning)]",
   },
   NEEDS_REVIEW: {
     label: "확인 필요",
     icon: "error",
-    className: "bg-red-50 text-red-700 ring-red-100 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-800",
+    className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-[var(--color-academy-danger)]",
   },
   SETUP_REQUIRED: {
     label: "키 설정 필요",
     icon: "vpn_key",
-    className: "bg-red-50 text-red-700 ring-red-100 dark:bg-red-950/40 dark:text-red-200 dark:ring-red-800",
+    className: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)] ring-[var(--color-academy-danger)]",
   },
 };
 
@@ -71,7 +71,7 @@ function getSyncStatus(status: string) {
   return SYNC_STATUS[status] || {
     label: status,
     icon: "help",
-    className: "bg-gray-100 text-gray-700 ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700",
+    className: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] ring-[var(--color-academy-line)]",
   };
 }
 

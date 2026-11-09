@@ -35,25 +35,25 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-6">
       <div>
-        <Link href="/admin/staff" className="text-sm font-bold text-gray-500">← 직원 관리</Link>
+        <Link href="/admin/staff" className="text-sm font-bold text-[var(--color-academy-muted)]">← 직원 관리</Link>
         <h1 className="mt-3 text-2xl font-black">중단된 초대 복구</h1>
-        <p className="mt-2 text-sm text-gray-500">원장 계정만 실행할 수 있습니다. 10분 이상 중단된 가입 또는 복구 필요 상태만 초기화됩니다.</p>
+        <p className="mt-2 text-sm text-[var(--color-academy-muted)]">원장 계정만 실행할 수 있습니다. 10분 이상 중단된 가입 또는 복구 필요 상태만 초기화됩니다.</p>
       </div>
-      {message && <p className="rounded-xl bg-gray-100 p-3 text-sm font-bold">{message}</p>}
+      {message && <p className="rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm font-bold">{message}</p>}
       <div className="space-y-3">
         {items.map((item) => (
-          <article key={item.id} className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
+          <article key={item.id} className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-black">{item.name}</p>
-                <p className="mt-1 text-sm text-gray-500">{item.status} · {item.processingStartedAt ? new Date(item.processingStartedAt).toLocaleString("ko-KR") : "시작 시각 없음"}</p>
-                {item.recoveryError && <p className="mt-2 text-sm text-red-600">{item.recoveryError}</p>}
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{item.status} · {item.processingStartedAt ? new Date(item.processingStartedAt).toLocaleString("ko-KR") : "시작 시각 없음"}</p>
+                {item.recoveryError && <p className="mt-2 text-sm text-[var(--color-academy-danger)]">{item.recoveryError}</p>}
               </div>
-              <button type="button" disabled={pending} onClick={() => recover(item)} className="min-h-11 rounded-xl bg-red-600 px-4 font-bold text-white disabled:opacity-50">안전 복구</button>
+              <button type="button" disabled={pending} onClick={() => recover(item)} className="min-h-11 rounded-xl bg-[var(--color-academy-danger)] px-4 font-bold text-white disabled:opacity-50">안전 복구</button>
             </div>
           </article>
         ))}
-        {items.length === 0 && <p className="rounded-2xl border border-dashed p-8 text-center text-gray-500">복구가 필요한 초대가 없습니다.</p>}
+        {items.length === 0 && <p className="rounded-2xl border border-dashed p-8 text-center text-[var(--color-academy-muted)]">복구가 필요한 초대가 없습니다.</p>}
       </div>
     </main>
   );
