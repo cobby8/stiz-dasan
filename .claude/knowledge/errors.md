@@ -111,3 +111,9 @@
 - **발견자**: tester
 - **내용**: 워크트리엔 node_modules 가 없어(정션 금지) 메인 저장소 react 19 를 절대 경로로 끌어오는데, Temp 아래 가짜 모듈(next/link 대역 등)에 남은 `import "react"` 는 위로 올라가 `C:\Users\cobby\node_modules\react`(옛 버전)를 집는다. 두 버전 요소가 섞여 렌더가 깨진다. 렌더 검증용 파일은 «가짜 모듈까지» 같은 변환기로 bare import 를 메인 저장소 경로(createRequire(메인 package.json).resolve)로 바꿔 쓸 것. 기준 구현: 테스트 scratchpad 의 render/build.mjs.
 - **참조횟수**: 0
+
+### [2026-11-09] 신청 화면에서 결과 문구가 버튼과 멀면 «눌러도 반응 없음», refresh 전에 버튼이 살아나면 두 번째 누름이 오류
+- **분류**: error
+- **발견자**: debugger
+- **내용**: 학부모 수강 변경(휴원) «신청하기»가 «동작 안 함»으로 신고됨. ① 오류(role=alert)는 화면 맨 위·접수 완료는 맨 아래라, 휴대폰에서 내려 버튼을 누른 사람에게 둘 다 안 보였다. 아이폰 날짜 고르기는 `min` 을 무시해 휴원 시작일 이전 복귀일이 골라지고, 그 거절 문구가 화면 밖에 떴다. ② `startTransition(async)` 안에서 `await` 뒤 부른 `router.refresh()` 는 끝날 때까지 기다려 주지 않아 pending 이 먼저 풀리고 «신청하기»가 다시 살아난다 → 다시 누르면 «이미 검토 중인 신청» 400. 해결: 결과 문구를 누른 버튼 바로 위로(notice 묶음), 접수 성공한 수강 등록은 새 내역이 올 때까지 잠금(`submittedFor`)+«신청 내역 다시 불러오기», 휴원 복귀일은 보내기 전에 시작일과 비교. 검사: `tests/enrollment-change-submit-feedback.test.mjs`(가짜 react 훅으로 컴포넌트 함수를 직접 불러 onClick 을 누른다 — react-dom 없이 상호작용 검사). 셔틀·결석·보강 신청 화면도 오류가 맨 위에 있어 같은 신고가 날 수 있다.
+- **참조횟수**: 0
