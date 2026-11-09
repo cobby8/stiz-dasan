@@ -111,7 +111,9 @@ test("서버 조회가 결석 사유를 읽지 않는다(민감정보) — 결�
   assert.ok(body.length > 100, "함수 본문을 찾아야 한다");
   assert.doesNotMatch(body, /reason/, "기사님 경로 조회에 사유 컬럼이 없어야 한다");
   assert.match(body, /ra\."status" IN \('REPORTED','CONFIRMED'\)/);
-  const route = await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8");
+  // 2026-11-09: 결석 뱃지 덧붙이기는 순수 조립 함수(regularRunRows.ts)로 옮겼다 → 두 파일을 함께 본다.
+  const route = (await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8"))
+    + "\n" + (await readFile("src/lib/shuttle/regularRunRows.ts", "utf8"));
   assert.match(route, /attachAbsenceLabels\(classes, absentLabelOf\)/);
   assert.match(route, /DRIVER_ABSENCE_LABEL/);
   assert.doesNotMatch(route, /reason/);

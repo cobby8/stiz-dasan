@@ -9,14 +9,13 @@ import { pickServiceMonthFor } from "@/lib/regular/serviceMonth";
 import { kstDow } from "@/lib/datetime/kst";
 import { DRIVER_ABSENCE_LABEL, matchAbsentee } from "@/lib/regular/regularAbsenceMatch";
 import {
-  assembleRegularDriverClasses,
-  attachAbsenceLabels,
-  attachShuttleDayNotes,
   pickRegularRouteSource,
   selectDriverDayRows,
   type DriverClass,
   type RouteDirection,
 } from "./regularDriverRouteLogic";
+// 운행표 조립(묶음·결석 뱃지·«오늘만» 변경)은 관리자 운행표와 같은 순수 함수 한 곳에서 한다.
+import { buildRegularRunClasses } from "./regularRunRows";
 import type { RegularShuttleStop } from "./regularSheet";
 
 /**
@@ -108,20 +107,20 @@ export async function getRegularDriverClasses(viewDate: string): Promise<DriverC
     ),
   );
 
-  const classes = assembleRegularDriverClasses({
-    dayRows,
+  // 조립은 순수 함수(buildRegularRunClasses)에 맡긴다 — 종전과 같은 순서:
+  // 묶음(저장 노선 우선) → 결석 뱃지 → "오늘만" 셔틀 변경. 관리자 운행표도 같은 함수를 쓴다.
+  // "오늘만" 변경은 결석과 같은 이름·전화 매칭을 쓴다(명단 행에는 학생 id 가 없을 수 있다).
+  return buildRegularRunClasses({
+    stops,
+    weekday,
     isAbsent,
+    absentLabelOf,
     saved,
     rowIdsByStudentId: { PICKUP: mapPickup, DROPOFF: mapDropoff },
+    dayNotes: {
+      exceptions: shuttleExceptions,
+      matches: (row, entry) => matchAbsentee(row, [{ name: entry.name, phone: entry.phone }]) !== null,
+      describe: describeException,
+    },
   });
-
-  // "오늘만" 셔틀 변경은 명단을 다 만든 뒤 덧붙인다. 저장 노선·폴백 두 경로 모두에
-  // 똑같이 적용되어야 하는데, 조립 안에 심으면 한쪽만 고쳐지기 쉽다.
-  // 결석과 같은 이름·전화 매칭을 쓴다(명단 행에는 학생 id 가 없을 수 있다).
-  return attachShuttleDayNotes(
-    attachAbsenceLabels(classes, absentLabelOf),
-    shuttleExceptions,
-    (row, entry) => matchAbsentee(row, [{ name: entry.name, phone: entry.phone }]) !== null,
-    describeException,
-  );
 }
