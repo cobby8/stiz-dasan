@@ -15,7 +15,7 @@ import { findParentCheckoutActivePaymentIds, txCoversPaymentSql } from "@/lib/pa
 import { isPosRequestLocking } from "@/lib/payments/studentBillingRules";
 import { parseNoticeTargetClassIds } from "@/lib/noticeTargets";
 import { notMergedStudent, notMergedStudentOptional } from "@/lib/studentVisibility";
-import { todayKst, kstDow } from "@/lib/datetime/kst";
+import { todayKst, kstDow, addMonthsYm } from "@/lib/datetime/kst";
 // 보강 잔여석 계산은 화면·조회·저장 검증이 같은 식을 쓰도록 공용 모듈로 분리해 둔다.
 import { activeMakeupSql, computeRemainingSeats } from "@/lib/makeup/capacity";
 import type { SheetClassSlot } from "@/lib/googleSheetsSchedule";
@@ -893,10 +893,10 @@ export const getAttendanceByDateAndClass = cache(async (date: string, classId: s
 
 /** 수납: 월별 수납 내역 조회 */
 function getMonthDateRange(year: number, month: number) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 1);
-    const startStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-01`;
-    const endStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-01`;
+    // 달력 숫자만 센다(공용 KST 모듈) — month 가 0·13 처럼 넘쳐도 예전 new Date(year, month - 1, 1) 과 같은 달이 된다.
+    const startYm = addMonthsYm(`${year}-01`, month - 1);
+    const startStr = `${startYm}-01`;
+    const endStr = `${addMonthsYm(startYm, 1)}-01`;
 
     return { startStr, endStr };
 }
@@ -1572,20 +1572,17 @@ export async function getNoticesByClassIds(classIds: string[], limit = 20) {
 // ── 경영 대시보드 통계 ──────────────────────────────────────────────────────
 export const getDashboardExtendedStats = cache(async () => {
     try {
-        const now = new Date();
+        // «이번 달»은 KST 달력 기준(서버는 UTC 라 getFullYear/getMonth 를 쓰면 매달 1일 00~09시에 지난달이 된다)
+        const thisMonthKey = todayKst().slice(0, 7);
 
         // 6개월 전 1일을 시작점으로 계산 (이번 달 포함 6개월치)
-        const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-        const sixMonthsAgoStr = `${sixMonthsAgo.getFullYear()}-${String(sixMonthsAgo.getMonth() + 1).padStart(2, "0")}-01`;
+        const sixMonthsAgoStr = `${addMonthsYm(thisMonthKey, -5)}-01`;
 
         // 이번 달 다음 달 1일 (상한 경계)
-        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-        const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, "0")}-01`;
+        const nextMonthStr = `${addMonthsYm(thisMonthKey, 1)}-01`;
 
-        // 이번 달 / 지난 달 키 (월별 매출 맵에서 꺼내기 위해)
-        const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+        // 지난 달 키 (월별 매출 맵에서 꺼내기 위해)
+        const lastMonthKey = addMonthsYm(thisMonthKey, -1);
 
         // 4개 쿼리를 Promise.all로 병렬 실행 (순차 → 병렬: 응답 시간 단축)
         const [revenueByMonth, attendanceByMonth, unpaidRows, programStudents] = await Promise.all([
@@ -1644,10 +1641,9 @@ export const getDashboardExtendedStats = cache(async () => {
         // 6개월 매출 추이 배열 구성 (과거→현재 순서)
         const monthlyRevenue: { month: string; amount: number }[] = [];
         for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            const key = addMonthsYm(thisMonthKey, -i);
             monthlyRevenue.push({
-                month: `${d.getMonth() + 1}월`,
+                month: `${Number(key.slice(5))}월`,
                 amount: revenueMap.get(key) ?? 0,
             });
         }
@@ -1670,11 +1666,10 @@ export const getDashboardExtendedStats = cache(async () => {
         // 6개월 출석률 추이 배열 구성 (과거→현재 순서)
         const monthlyAttendance: { month: string; rate: number }[] = [];
         for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+            const key = addMonthsYm(thisMonthKey, -i);
             const att = attendanceMap.get(key);
             monthlyAttendance.push({
-                month: `${d.getMonth() + 1}월`,
+                month: `${Number(key.slice(5))}월`,
                 rate: att && att.total > 0 ? Math.round((att.present / att.total) * 100) : 0,
             });
         }

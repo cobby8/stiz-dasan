@@ -142,6 +142,21 @@ export function formatKstDate(
   return new Intl.DateTimeFormat("ko-KR", { ...options, timeZone: KST }).format(date);
 }
 
+/**
+ * "YYYY-MM" 에 달 더하기/빼기 — 달력 숫자만 센다(시간대 개입 없음). 잘못된 입력은 "".
+ * 예) addMonthsYm("2026-01", -1) → "2025-12", addMonthsYm("2026-11", 2) → "2027-01"
+ * 🚫 `new Date(now.getFullYear(), now.getMonth() + n, 1)` 로 만들지 말 것 — 서버(UTC)에서는
+ *    매달 1일 00~09시(KST)에 «지난달»이 기준이 된다.
+ */
+export function addMonthsYm(ym: string, delta: number): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym ?? ""));
+  if (!m || !Number.isInteger(delta)) return "";
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return "";
+  const index = Number(m[1]) * 12 + (month - 1) + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
 /** 한국 현재 월부터 이어지는 월 선택 표시. 해외 기기의 전월·전년도 노출을 막는다. */
 export function kstMonthLabels(nowMs: number = Date.now(), count = 2): string[] {
   const ymd = todayKst(nowMs);

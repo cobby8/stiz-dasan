@@ -89,6 +89,34 @@ test("표시 문구", () => {
   assert.equal(kstLabel("깨진값"), "");
 });
 
+test("달 더하기(addMonthsYm)는 달력 숫자만 센다 — 연말·연초·잘못된 입력", async () => {
+  const { addMonthsYm, todayKst: today } = await loadTsModule("src/lib/datetime/kst.ts");
+  assert.equal(addMonthsYm("2026-11", 1), "2026-12");
+  assert.equal(addMonthsYm("2026-12", 1), "2027-01");
+  assert.equal(addMonthsYm("2026-01", -1), "2025-12");
+  assert.equal(addMonthsYm("2026-11", -5), "2026-06");
+  assert.equal(addMonthsYm("2026-03", -14), "2025-01");
+  assert.equal(addMonthsYm("2026-13", 1), "");
+  assert.equal(addMonthsYm("2026-1", 1), "");
+  // 매달 1일 KST 새벽(UTC 로는 아직 전달 말일)에도 «이번 달»은 KST 달
+  const firstDawn = new Date("2026-12-01T03:00:00+09:00").getTime();
+  assert.equal(today(firstDawn).slice(0, 7), "2026-12");
+  assert.equal(addMonthsYm(today(firstDawn).slice(0, 7), -1), "2026-11");
+});
+
+test("queries.ts 수납 월 범위·경영 대시보드는 서버 시계 대신 KST 달(2026-11-10 정리)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile("src/lib/queries.ts", "utf8");
+  const range = src.slice(src.indexOf("function getMonthDateRange"), src.indexOf("function getMonthDateRange") + 500);
+  const dash = src.slice(src.indexOf("export const getDashboardExtendedStats"), src.indexOf("export const getDashboardExtendedStats") + 5000);
+  for (const [name, body] of [["getMonthDateRange", range], ["getDashboardExtendedStats", dash]]) {
+    const code = body.replace(/\/\/.*$/gm, "");
+    assert.doesNotMatch(code, /getFullYear\(\)|getMonth\(\)/, name);
+    assert.match(code, /addMonthsYm\(/, name);
+  }
+  assert.match(dash, /const thisMonthKey = todayKst\(\)\.slice\(0, 7\);/);
+});
+
 test("시간대 상수는 한 곳에서만 정한다", () => {
   assert.equal(KST, "Asia/Seoul");
 });
