@@ -41,7 +41,7 @@
 - 기존 `DriverLocation`의 토큰별 최신 좌표 한 행을 재사용한다. 새 이동 경로 이력은 수집하지 않는다. 앱 세션이 소유한 링크는 세션 만료까지 웹의 지연 전송도 차단한다.
 - 관리자 패널은 ‘마지막 서버 접수’라고 표시한다. 조회가 실패해도 경과 시간이 계속 증가하고 실패 경고를 보여준다. 오래된 좌표를 계속 실시간으로 보이게 하지 않는다.
 
-SQL 준비 파일: `scripts/sql/driver-mobile-tracking-session.sql`. 공개 Data API 역할 권한을 제거하고 RLS를 켠다. **준비만 했으며 운영 DB에 적용하지 않았다.** 세션 만료는 기록 삭제가 아니다. 운영 활성화 전 세션 기록 보관·정리 기준을 확정해야 한다.
+SQL 준비 파일: `scripts/sql/driver-mobile-tracking-session.sql`. 공개 Data API 역할 권한을 제거하고 RLS를 켠다. **2026-11-10 운영 DB 적용·`DRIVER_MOBILE_TRACKING_ENABLED=true` 활성화(원장 결정).** 보관 기준: 만료 30일 지난 세션은 매일 `/api/cron/data-retention` 이 삭제한다(`src/lib/dataRetention.ts`).
 
 ## 검증 증거
 
