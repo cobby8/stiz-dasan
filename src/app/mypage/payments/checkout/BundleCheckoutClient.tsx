@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
@@ -58,13 +58,13 @@ function loadTossScript(): Promise<TossFactory> {
         const ready = () => {
             const factory = read();
             if (factory) resolve(factory);
-            else reject(new Error("결제창을 불러오지 못했습니다."));
+            else reject(new Error("결제창을 불러오지 못했어요."));
         };
         if (read()) return ready();
         const existing = document.querySelector<HTMLScriptElement>("script[data-toss-payments]");
         if (existing) {
             existing.addEventListener("load", ready, { once: true });
-            existing.addEventListener("error", () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했습니다.")), { once: true });
+            existing.addEventListener("error", () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했어요.")), { once: true });
             return;
         }
         const script = document.createElement("script");
@@ -72,10 +72,12 @@ function loadTossScript(): Promise<TossFactory> {
         script.async = true;
         script.dataset.tossPayments = "true";
         script.onload = ready;
-        script.onerror = () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했습니다."));
+        script.onerror = () => reject(new Error("토스페이먼츠 결제창을 불러오지 못했어요."));
         document.head.appendChild(script);
     });
 }
+
+const AMOUNT_CHANGED_MESSAGE = "금액이 바뀌었어요. 다시 확인해 주세요.";
 
 const won = (value: number) => `${value.toLocaleString("ko-KR")}원`;
 
@@ -119,6 +121,17 @@ export default function BundleCheckoutClient({
     const [copied, setCopied] = useState<"" | "ok" | "fail">("");
     const sending = useRef(false);
 
+    // 토스 결제창에서 브라우저 «뒤로»로 돌아오면 페이지가 캐시(bfcache)에서 그대로 살아나 «결제창 여는 중»에 멈춘다 → 풀어 준다
+    useEffect(() => {
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (!event.persisted) return;
+            sending.current = false;
+            setLoading(false);
+        };
+        window.addEventListener("pageshow", onPageShow);
+        return () => window.removeEventListener("pageshow", onPageShow);
+    }, []);
+
     const selectableCount = items.filter((item) => item.selectable).length;
     const picked = useMemo(() => items.filter((item) => item.selectable && selected.has(item.paymentId)), [items, selected]);
     const total = picked.reduce((sum, item) => sum + item.amount, 0);
@@ -160,7 +173,7 @@ export default function BundleCheckoutClient({
                 setConflictMessage(data.error ?? "");
                 return;
             }
-            if (!response.ok || !data.ok) throw new Error(data.error || "결제 준비에 실패했습니다.");
+            if (!response.ok || !data.ok) throw new Error(data.error || "결제를 준비하지 못했어요.");
             // 같은 묶음의 입금 대기 계좌가 이미 있다 → 새로 만들지 않고 그 계좌를 보여 준다
             if (data.openVirtualAccount) {
                 setConflict(null);
@@ -168,12 +181,20 @@ export default function BundleCheckoutClient({
                 return;
             }
             if (!data.clientKey || !data.customerKey || !data.orderId || !data.amount || !data.orderName || !data.successUrl || !data.failUrl) {
-                throw new Error("결제 정보가 부족합니다. 학원으로 문의해 주세요.");
+                throw new Error("결제 정보가 부족해요. 학원으로 문의해 주세요.");
+            }
+            // 서버가 다시 계산한 금액이 화면 합계와 다르면(그 사이 청구가 바뀜) 결제창을 열지 않고 목록을 새로 받는다
+            if (data.amount !== total) {
+                setError(AMOUNT_CHANGED_MESSAGE);
+                router.refresh();
+                return;
             }
             // 면세 금액은 서버가 항목별로 더한 값을 그대로 넘긴다(빠지면 복합과세로 부가세가 잡힌다 — 그러면 결제하지 않는다)
             if (typeof data.taxFreeAmount !== "number" || !Number.isFinite(data.taxFreeAmount)) {
-                throw new Error("면세 금액 정보가 없어 결제를 열 수 없습니다. 학원으로 문의해 주세요.");
+                throw new Error("결제 금액을 확인하지 못했어요. 학원으로 문의해 주세요.");
             }
+            // 이제 결제창을 연다 — 계좌 닫기 확인 창은 할 일을 마쳤으니 닫는다
+            setConflict(null);
 
             const TossPayments = await loadTossScript();
             await TossPayments(data.clientKey).payment({ customerKey: data.customerKey }).requestPayment({
@@ -193,7 +214,7 @@ export default function BundleCheckoutClient({
                     : {}),
             });
         } catch (err) {
-            setError(err instanceof Error ? err.message : "결제 요청 중 오류가 발생했습니다.");
+            setError(err instanceof Error ? err.message : "결제를 요청하지 못했어요.");
         } finally {
             sending.current = false;
             setLoading(false);
@@ -201,7 +222,7 @@ export default function BundleCheckoutClient({
     }
 
     async function submitClaim() {
-        if (sending.current || picked.length === 0 || !paidOn) return;
+        if (sending.current || picked.length === 0 || !paidOn || overLimit) return;
         sending.current = true;
         setLoading(true);
         setError("");
@@ -219,15 +240,15 @@ export default function BundleCheckoutClient({
                 }),
             });
             // 서버가 처리한 뒤 응답만 잃었을 수 있다 — 곧바로 다시 보내지 말고 청구 탭에서 확인하게 한다
-            if (response.status >= 500) throw new Error("응답을 확인하지 못했습니다. 다시 보내기 전에 청구 탭에서 «확인 중» 표시를 확인해 주세요.");
+            if (response.status >= 500) throw new Error("응답을 확인하지 못했어요. 다시 보내기 전에 청구 탭에서 «확인 중» 표시를 확인해 주세요.");
             const data = await response.json().catch(() => ({}));
-            if (!response.ok || data?.ok !== true) throw new Error(typeof data?.error === "string" ? data.error : "요청을 처리할 수 없습니다.");
+            if (!response.ok || data?.ok !== true) throw new Error(typeof data?.error === "string" ? data.error : "요청을 처리하지 못했어요.");
             const skipped = Array.isArray(data.alreadyPending) ? data.alreadyPending.length : 0;
             setClaimDone(`입금 확인 요청을 보냈어요(${Array.isArray(data.submitted) ? data.submitted.length : picked.length}건). 학원에서 확인 후 알려드려요.${skipped > 0 ? ` 이미 확인 중인 ${skipped}건은 빼고 보냈어요.` : ""}`);
             setClaimOpen(false);
             router.refresh();
         } catch (err) {
-            setError(err instanceof Error ? err.message : "요청을 보내지 못했습니다.");
+            setError(err instanceof Error ? err.message : "요청을 보내지 못했어요.");
         } finally {
             sending.current = false;
             setLoading(false);
@@ -254,7 +275,7 @@ export default function BundleCheckoutClient({
 
             {failed && (
                 <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
-                    결제가 완료되지 않았어요{failMessage ? ` — ${failMessage}` : ""}. 돈은 빠져나가지 않았어요. 다시 시도해 주세요.
+                    {failMessage || "결제가 완료되지 않았어요. 다시 시도해 주세요."} 돈은 빠져나가지 않았어요.
                 </p>
             )}
             {claimDone && <p role="status" className="rounded-xl bg-[var(--color-academy-success-soft)] p-3 text-sm font-bold text-[var(--color-academy-success)]">{claimDone}</p>}
@@ -433,7 +454,7 @@ export default function BundleCheckoutClient({
                                 {!claimOpen ? (
                                     <button
                                         type="button"
-                                        disabled={picked.length === 0}
+                                        disabled={picked.length === 0 || overLimit}
                                         onClick={() => setClaimOpen(true)}
                                         className={`${onlineReady ? "academy-button-secondary" : "academy-button-primary"} min-h-11 w-full text-sm`}
                                     >
@@ -454,7 +475,7 @@ export default function BundleCheckoutClient({
                                         <p className="text-xs text-[var(--color-academy-muted)]">고른 {picked.length}건 · 합계 {won(total)}을 입금했다고 학원에 알려요.</p>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button type="button" disabled={loading} onClick={() => setClaimOpen(false)} className="academy-button-secondary min-h-11 text-sm">닫기</button>
-                                            <button type="button" disabled={loading || !paidOn || picked.length === 0} onClick={() => void submitClaim()} className="academy-button-primary min-h-11 text-sm">
+                                            <button type="button" disabled={loading || !paidOn || picked.length === 0 || overLimit} onClick={() => void submitClaim()} className="academy-button-primary min-h-11 text-sm">
                                                 {loading ? "보내는 중..." : "확인 요청 보내기"}
                                             </button>
                                         </div>

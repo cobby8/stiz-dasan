@@ -105,9 +105,9 @@ test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고
   assert.match(html, /수강 중인 반 1개/);
   assert.doesNotMatch(html, /수강 예정|수강 시작을 기다리고 있어요/);
   // 수강 반 목록은 «일정» 탭(ScheduleHub)으로 옮겨졌다 — 개시일 안내도 그 목록 행에서 확인한다
-  const Hub = load("src/app/mypage/history/ScheduleHub.tsx", { "next/link": link, "../ParentShuttleDetail": nullComponent }).default;
+  const Hub = load("src/app/mypage/history/ScheduleHub.tsx", { "next/link": link, "../ParentShuttleDetail": nullComponent, "@/lib/datetime/kst": kstModule }).default;
   const hubHtml = renderToStaticMarkup(React.createElement(Hub, { childList: [{ id: "student-a", name: "합성 학생", enrollments: [enrollment] }], shuttleItems: [], seasonalUpcoming: 0 }));
   assert.match(hubHtml, /월요일 5교시/);
-  assert.match(hubHtml, /2099-12-01부터 수업 시작/);
+  assert.match(hubHtml, /12월 1일부터 수업 시작/, "개시일은 같은 화면 날짜 표기(12월 1일)로");
   assert.doesNotMatch(hubHtml, /수강 예정/);
 });

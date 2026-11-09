@@ -146,7 +146,7 @@ test("③ 홈: 청구가 없으면 청구 줄이 없고, 방학특강만 다니�
 
 test("④ 일정 탭: 신청 줄·수강 반·셔틀 배정, 방학특강 줄은 남은 회차가 있을 때만", () => {
   const Hub = load("src/app/mypage/history/ScheduleHub.tsx", {
-    "next/link": link,
+    "next/link": link, "@/lib/datetime/kst": kst,
     "../ParentShuttleDetail": load("src/app/mypage/ParentShuttleDetail.tsx", { "next/link": link, "@/lib/datetime/kst": kst }),
   }).default;
   const children = [
@@ -160,7 +160,7 @@ test("④ 일정 탭: 신청 줄·수강 반·셔틀 배정, 방학특강 줄은
   assert.match(off, /보강권 1장/);
   assert.match(off, /id="mypage-enrollments"/);
   assert.match(off, /합성 둘째<\/span>중등반/, "자녀가 둘이면 이름을 붙인다");
-  assert.match(off, /2026-12-05부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
+  assert.match(off, /12월 5일부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
   assert.doesNotMatch(off, /수강 예정/);
   assert.match(off, /id="mypage-shuttle"/);
   assert.match(off, /2026년 11월 14일 토/);

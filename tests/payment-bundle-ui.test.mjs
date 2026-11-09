@@ -78,8 +78,8 @@ test("① 고를 수 있는 청구가 없거나 온라인 결제가 꺼져 있�
   assert.match(offline, /지금은 온라인 결제를 쓸 수 없어요/);
   assert.doesNotMatch(offline, /radiogroup/);
   assert.match(offline, /class="academy-button-primary[^"]*"[^>]*>이미 계좌로 입금했어요/, "온라인이 꺼지면 입금 알림이 주 버튼");
-  const failed = render({ items: [item("p1")], failed: true, failMessage: "사용자가 결제를 취소했습니다" });
-  assert.match(failed, /결제가 완료되지 않았어요 — 사용자가 결제를 취소했습니다/);
+  const failed = render({ items: [item("p1")], failed: true, failMessage: "결제를 취소했어요." });
+  assert.match(failed, /결제를 취소했어요\. 돈은 빠져나가지 않았어요\./);
   assert.match(render({ items: [] }), /납부할 청구가 없어요/);
 });
 
@@ -191,4 +191,47 @@ test("④ 학부모 «납부 신청» 승인은 MANUAL 로 표시 — 옛 토스
   assert.match(read("src/lib/payments/bundleLedger.ts"), /status = 'PAID' AND "paidProvider" = 'TOSS' AND "providerOrderId" = \$2/);
   // markPaymentPaid 는 provider 를 paidProvider 에 그대로 쓴다(COALESCE 라 넘기지 않으면 옛 TOSS 가 남는다)
   assert.match(read("src/lib/payment-ledger.ts"), /"paidProvider" = COALESCE\(\$3, "paidProvider"\)/);
+});
+
+// ── 2026-11-09 리뷰 권장 반영 ──
+test("⑤ 결제창 전 금액 재확인·상한이면 입금 알림도 막음·뒤로 복귀 시 로딩 해제·확인 창 닫기·말투 «~요»", () => {
+  const src = read("src/app/mypage/payments/checkout/BundleCheckoutClient.tsx");
+  const start = src.slice(src.indexOf("async function startPayment"), src.indexOf("async function submitClaim"));
+  assert.match(start, /if \(data\.amount !== total\) \{\s*setError\(AMOUNT_CHANGED_MESSAGE\);\s*router\.refresh\(\);\s*return;/);
+  assert.ok(start.indexOf("data.amount !== total") < start.indexOf("requestPayment("), "금액 확인은 결제창보다 먼저");
+  assert.ok(start.lastIndexOf("setConflict(null);") < start.indexOf("requestPayment("), "결제창 열기 전에 확인 창을 닫는다");
+  assert.match(src, /const AMOUNT_CHANGED_MESSAGE = "금액이 바뀌었어요\. 다시 확인해 주세요\.";/);
+  assert.match(src, /결제 금액을 확인하지 못했어요\. 학원으로 문의해 주세요\./);
+  assert.match(src, /if \(sending\.current \|\| picked\.length === 0 \|\| !paidOn \|\| overLimit\) return;/);
+  assert.match(src, /addEventListener\("pageshow", onPageShow\)/);
+  assert.match(src, /if \(!event\.persisted\) return;\s*sending\.current = false;\s*setLoading\(false\);/);
+  assert.doesNotMatch(src.replace(/\/\/.*$/gm, ""), /습니다/, "학부모 화면 말투는 «~해요»");
+  // 상한을 넘으면 «이미 계좌로 입금했어요»도 눌리지 않는다
+  const over = render({ items: [item("p1", { amount: 600000 }), item("p2", { amount: 500000 })] });
+  assert.match(over, /<button[^>]*disabled=""[^>]*>이미 계좌로 입금했어요/);
+});
+
+test("⑤ 토스 실패 안내는 코드별 정해진 문장만(주소 글은 그대로 비추지 않는다)", () => {
+  const { tossFailMessage, TOSS_FAIL_DEFAULT_MESSAGE } = load("src/lib/payments/tossFailMessage.ts");
+  assert.equal(tossFailMessage("PAY_PROCESS_CANCELED"), "결제를 취소했어요.");
+  assert.match(tossFailMessage("REJECT_CARD_COMPANY"), /카드사에서 결제를 거절했어요/);
+  assert.equal(tossFailMessage("<script>"), TOSS_FAIL_DEFAULT_MESSAGE);
+  assert.equal(tossFailMessage(""), TOSS_FAIL_DEFAULT_MESSAGE);
+  assert.equal(tossFailMessage("constructor"), TOSS_FAIL_DEFAULT_MESSAGE);
+  const page = read("src/app/mypage/payments/checkout/page.tsx");
+  assert.match(page, /tossFailMessage\(pick\("code"\)\)/);
+  assert.doesNotMatch(page, /pick\("message"\)/, "주소의 message 는 쓰지 않는다");
+});
+
+test("⑤ 홈 버튼 이름은 대표 보호자로 결제할 수 있는 건 수 기준(합계는 전체)", () => {
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /const payableCount = summarizePendingPayments\(\[\{ payments: payList\.filter\(\(p\) => p\.canCheckout !== false\) \}\]\)\.count;/);
+  assert.match(home, /payableCount > 1 \? "한 번에 결제" : "결제하기"/);
+});
+
+test("⑤ 선생님 공지 재발송 확인은 대상 반 두 모양(JSON 배열·쉼표 한 반)을 모두 찾는다", () => {
+  const src = read("src/app/actions/staff-notices.ts");
+  const fn = src.slice(src.indexOf("async function findOwnedNotice"), src.indexOf("async function readNoticeDeliveryStatus"));
+  assert.match(fn, /"targetClassIds" IN \(\$3,\$4\)/);
+  assert.match(fn, /JSON\.stringify\(\[classId\]\), classId,/);
 });

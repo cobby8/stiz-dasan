@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
 import ParentShuttleDetail from "../ParentShuttleDetail";
+import { formatKstDate } from "@/lib/datetime/kst";
 
 // «일정» 탭 윗부분 (2026-11-09 원장 결정 D1 안 A).
 // 결석·보강·셔틀·수강 변경 신청과 수강 반·셔틀 배정을 한 화면에 모은다. 아래에는 기존 출결·수납 기록이 이어진다.
@@ -105,7 +106,7 @@ export default function ScheduleHub({
                                         {e.className}
                                     </p>
                                     {/* 2026-11-09 새 기준: 승인된 반은 개시일 전에도 수강 중 — 첫 수업 전이면 개시일만 안내 */}
-                                    {e.startsLater && <p className="text-xs font-bold text-[var(--color-academy-primary)]">{e.startsOn}부터 수업 시작</p>}
+                                    {e.startsLater && <p className="text-xs font-bold text-[var(--color-academy-primary)]">{formatKstDate(e.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</p>}
                                 </div>
                                 <span className="shrink-0 text-right text-sm tabular-nums text-[var(--color-academy-muted)]">
                                     {DAY_LABELS[e.dayOfWeek] || e.dayOfWeek} {e.startTime}~{e.endTime}

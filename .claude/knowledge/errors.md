@@ -105,3 +105,9 @@
 - **발견자**: developer
 - **내용**: 통신사 문자는 EUC-KR 완성형 글자만 온전히 간다. 🏀 같은 이모지와 « » 는 완성형에 없어 «?»로 깨지거나 거절된다(▶ · ※ ■ ‘ ’ 《 》 는 된다). 원장 승인 문구라도 문자로 나가면 바꿔야 한다 — 학부모 가입 안내에서 🏀 삭제·«» → ‘’. 검사: `tests/parent-signup-guide.test.mjs` 가 `TextDecoder("euc-kr")` 로 2바이트 글자표를 만들어 본문 글자를 대조한다(새 문자 문구도 같은 방식으로 검사할 것). 알림톡·화면 글은 해당 없음.
 - **참조횟수**: 0
+
+### [2026-11-09] 워크트리·Temp 폴더에서 TSX 를 직접 렌더하면 «Objects are not valid as a React child» — react 사본 두 개
+- **분류**: error
+- **발견자**: tester
+- **내용**: 워크트리엔 node_modules 가 없어(정션 금지) 메인 저장소 react 19 를 절대 경로로 끌어오는데, Temp 아래 가짜 모듈(next/link 대역 등)에 남은 `import "react"` 는 위로 올라가 `C:\Users\cobby\node_modules\react`(옛 버전)를 집는다. 두 버전 요소가 섞여 렌더가 깨진다. 렌더 검증용 파일은 «가짜 모듈까지» 같은 변환기로 bare import 를 메인 저장소 경로(createRequire(메인 package.json).resolve)로 바꿔 쓸 것. 기준 구현: 테스트 scratchpad 의 render/build.mjs.
+- **참조횟수**: 0

@@ -83,10 +83,12 @@ export async function createStaffClassNotice(input: { classId: string; title: st
   }
 }
 
+// 대상 반 칸은 두 모양 — 선생님이 쓴 JSON 배열 '["반"]' 과, 관리자 화면에서 다시 저장한 쉼표 문자열 "반"(한 반).
+// 관리자 편집 뒤에도 선생님 재발송 확인이 그 공지를 찾게 둘 다 받는다(읽기는 lib/noticeTargets 와 같은 규칙).
 async function findOwnedNotice(noticeId: string, classId: string, authorUserId: string) {
   const rows = await prisma.$queryRawUnsafe<{ id: string; title: string; content: string }[]>(
     `SELECT id,title,content FROM "Notice" WHERE id=$1 AND "authorUserId"=$2 AND "targetType"='CLASS'
-     AND "targetClassIds"=$3 LIMIT 1`, noticeId, authorUserId, JSON.stringify([classId]),
+     AND "targetClassIds" IN ($3,$4) LIMIT 1`, noticeId, authorUserId, JSON.stringify([classId]), classId,
   );
   return rows[0] ?? null;
 }

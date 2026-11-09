@@ -64,38 +64,38 @@
 | P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
 | P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
 
+| N-1 | actions/staff-notices.ts:86-90 findOwnedNotice | 권장 | 관리자가 선생님 반 공지를 편집·저장하면 대상 반이 JSON→쉼표로 바뀌어 `"targetClassIds"=JSON` 정확 비교가 실패 → 응답 유실 후 같은 작업 재확인 시 NOT_FOUND→재제출→«내용이 다릅니다» 반복(중복 공지는 안 생김). 수정: `AND "targetClassIds" IN ($3,$4)`($4=classId) |
+| C-1 | mypage/payments/checkout/BundleCheckoutClient.tsx:170-178·436 | 권장 | ① 서버 data.amount≠화면 total 이면 창 열지 말고 «금액이 바뀌었어요»+router.refresh() ② «이미 계좌로 입금했어요» 버튼이 10건 상한(overCount)을 안 막음 → 서버 거절 전 같은 안내 ③ 175줄 «면세 금액» 등 학부모에게 낯선 말·«~습니다» 말투 섞임 → «결제 금액을 확인하지 못했어요. 학원으로 문의해 주세요» |
+
 ### 리뷰 결과 (reviewer · 11-08 POS 결제 취소 b7ef25d0)
 📊 종합 판정: 통과(머지 가능 · 차단 없음, 권장 P-1·P-2). 마이그레이션은 build 에 migrate deploy 가 없으므로 **배포 전 apply_migration 필수**(안 하면 플러그인 GET·CLAIM_PAY 가 칸 없음으로 실패 → 현장 결제 전체 정지).
 ✅ 환불은 settleCancelForRow(토스 재조회 order)만 · report 는 기록만 · MARK_REFUND+refundPaidPaymentInTx 한 트랜잭션 조건부 · 일부/누락 결제는 PARTIAL(안전 방향) · 플러그인 ID 는 서버 DB 값·getPayment orderId 대조 · 마이그레이션 NULL 허용 칸만·CHECK 는 NULL 통과. 테스트 루트 3160-0(보고 3165와 5건 차이)·플러그인 65-0.
 
-### 테스트 결과 (tester · 11-09 수강 새 기준 3c4d4cc4 + 반 이동·삭제 d559228c)
+### 테스트 결과 (tester · 11-09 묶음 결제 전체 b6fa4781~a5fe8e6c)
 | 테스트 항목 | 결과 | 비고 |
 |-----------|------|------|
-| tsc · 전체 tests · studentVisibility · KST 가드 | ✅ 통과 | 0 · 3540-0 · 5-0 · 16-0 |
-| planEnrollmentMove 경계(같은 반·종료/휴원·미래 적용일·개시일 승계 월말/연말·WITHDRAWN 되살리기·정원 9/10·10/10) | ✅ 통과 | 7건 |
-| moveEnrollmentToClass 가짜 tx(순서·실패 시 쓰기 0·UPDATE 0행/DB 오류 롤백·원장 WITHDRAW+CLASS_ADD/RESUME) | ✅ 통과 | 14건 |
-| removeMistakenEnrollment 가짜 tx(연결 7종 각 1건 차단·DELETE 0행 롤백·감사) | ✅ 통과 | 12건 |
-| 개시일 미래 ACTIVE = 수강 중·대관 무료 대상 / 청구 시수 개시일 기준(11-28·11-29·11-30·10-31·11-08) / 자정 경계 | ✅ 통과 | 9건 |
-| [권장] 삭제 시 운영 원장 «수강 등록» 대기 건 미확인·미정리 | ⚠️ 관찰 | enrollment-admin-edit.ts removeMistakenEnrollment |
-📊 종합: 59개 중 59개 통과 / 0개 실패 (권장 1). 스크립트: Temp/.../scratchpad/mock-enroll-edit.test.mjs·billing-edge.test.mjs
+| tsc · 전체 tests · studentVisibility · KST 가드 | ✅ 통과 | 0 · 3606-0 · 5-0 · 포함 |
+| checkout 정적 렌더 8종(기본·11건·100만 초과·선택 불가만·온라인 꺼짐·?result=fail·빈 목록·로드 실패) | ✅ 통과 | 기본 체크 2·막힌 1 disabled |
+| checkout 상호작용(가짜 훅): 해제→합계·POST 본문·토스 인자 서버값·taxFreeAmount 없음 차단/0 전달·무통장 옵션·409 확인창(목록/빈 목록)·닫고 결제 close:true·열린 계좌→다른 방법 CARD·submit-bundle·5xx 안내·상한 막힘/풀림·모두 선택/해제 | ✅ 통과 | 31건 |
+| done 상호작용: POST/GET·재시도 4회(총 5회)·재시도 후 성공·입금 대기·CONFIRM_IN_PROGRESS/OPEN_DEPOSIT_EXISTS/NOT_UNPAID 공용 문구+«다시 결제» 숨김·일반 실패·네트워크 끊김·주문 번호 없음 + decideDoneState 9경우 | ✅ 통과 | |
+| 홈 정적 렌더: 2건+ 한 번에 결제·1건 결제하기·연결 가족 청구 보기·합계=pendingPayments·묶음 계좌 1회·null 폴백·청구 없음 | ✅ 통과 | 7건 |
+| 서버(기존 가짜 DB·가짜 fetch 실행 테스트 재확인) + MANUAL/TOSS_POS 경로 확인(L1 오환불 방지 성립) | ✅ 통과 | |
+| 공지 파서 8·옛 해시 5·formatKstDate 경계 6·탭 활성 판정 | ✅ 통과 | |
+| [관찰] 상한 초과(11건)에도 «이미 계좌로 입금했어요(11건)» 버튼 눌림(서버가 10건 거절) | ⚠️ 권장 | reviewer C-1 ②와 같음 |
+| [관찰] «계좌 닫고 결제» 성공 뒤 확인 창이 남음(토스가 페이지 이동해 보통 안 보임) | ⚠️ 경미 | |
+| [관찰] 대표+연결 섞인 계정은 결제 가능 1건이어도 홈 버튼이 «한 번에 결제» / 개시일 안내가 «2026-12-05부터»(다른 곳은 «12월 5일») | ⚠️ 경미 | |
+📊 종합: 실패 0 (권장·경미 관찰 3). 스크립트: Temp/.../scratchpad/render/(ssr·interact·home-ssr·nav).mjs·pure.test.mjs
 
-### 테스트 결과 (tester · 11-09 재검수 8144e6c7 + e2b02a6d)
-| 테스트 항목 | 결과 | 비고 |
-|-----------|------|------|
-| tsc · 전체 tests · studentVisibility · KST 가드+대상 테스트 | ✅ 통과 | 0 · 3546-0 · 5-0 · 18-0 |
-| 이동: 처리 중 신청 1건이면 차단(쓰기 0·롤백), 출석·결석·셔틀 연결은 이동 안 막음 | ✅ 통과 | 집계 인자 (enr, stu, class) |
-| moveEffectiveMinYmd 11경계(과거/미래 개시·등록일·무효·윤년·연말) + 화면 toKstYmd(KST 자정)=서버 이중 AT TIME ZONE | ✅ 통과 | 개시 전 수강 → 오늘 허용+원래 개시일 승계 |
-| 삭제 차단 결석(CANCELLED 제외)·셔틀 승객(그 반 Session) | ✅ 통과 | 각 1건 차단, 원장/삭제 쓰기 없음 |
-| 원장 닫기: CLASS_ADD/RESUME × PENDING·PARTIAL·HELD 만, SYNCED·WITHDRAW·다른 수강 손대지 않음, SUCCEEDED 칸 보존·알림, 삭제보다 먼저, 감사 | ✅ 통과 | 단계별 DB 오류 8곳·DELETE 0행 → 전부 롤백 |
-| scheduled 집계 제거 — 남은 사용처 없음, 칩은 active/paused/withdrawn/noEnrollment | ✅ 통과 | |
-| [권장] 이동→삭제 시 이동 신청이 «확인 필요»에서 안 빠짐 | ⚠️ 관찰 | 아래 수정 요청 |
-📊 종합: 24(모의)+전체 중 실패 0 (권장 1). 스크립트: Temp/.../scratchpad/mock-enroll-edit2.test.mjs
-
+### 수정 요청 (tester · 11-09 재검수 8144e6c7 + e2b02a6d — 결과는 작업 로그)
 | 요청자 | 파일 | 문제 | 상태 |
 |------|------|------|------|
 | tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
 
 ---
+
+### 리뷰 결과 (reviewer · 11-09 묶음 결제 화면 a5fe8e6c + d90f40b2 + b6fa4781 충돌부)
+📊 종합 판정: 통과(차단 없음 · 권장 N-1·C-1). 관련 테스트 4파일 33-0.
+✅ 금액·건수는 서버 후보값·토스 창은 서버 amount/taxFreeAmount 그대로 · sending ref 로 이중 클릭 차단 · 실패=failUrl ?result=fail 배너, 완료 새로고침=같은 주문 재승인(서버 멱등)·CONFIRM_IN_PROGRESS 등은 «다시 결제» 대신 청구 목록 · 홈 합계=청구 탭 같은 목록(null 이면 옛 기준 폴백)·묶음 계좌 1회 · 연결 가족 [청구 보기] · 단건 결제·청구 탭 기능 보존 · KST(formatKstDate·todayKst·NOW() AT TIME ZONE 1회) · 경로 전부 /mypage 안 · 44px·12px·토큰 색 · 충돌부 startsLater 반영(홈·ScheduleHub) 정상.
 
 ## 구현 기록 (developer) — 묶음 결제 화면 갈래 C + B 리뷰 반영 (11-09)
 📝 갈래 B·A(구현 기록은 작업 로그 줄로 요약)를 main 위에 합치고 «한 번에 결제» 화면을 붙였다.
@@ -121,6 +121,9 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
+| 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
+| 11-09 | developer 수정 1차(갈래 C 리뷰 권장 6건): 선생님 공지 재발송 확인 대상 반 두 모양(IN $3,$4)·결제창 전 금액 재확인(다르면 안내+새로고침)·상한이면 입금 알림도 막음·면세 문구·말투 «~요»·확인 창 닫기·bfcache 복귀 로딩 해제·홈 버튼 이름=결제 가능 건수·개시일 «12월 5일부터»·토스 실패 코드별 문구(tossFailMessage). tests 3610-0 | 완료(검수 대기) |
 | 11-09 | developer(묶음 결제 화면 갈래 C + B 리뷰 반영): B·A·보안수정 cherry-pick 후 main 수강 기준(startsLater) 충돌 해결, /mypage/payments/checkout·done, 홈 청구 줄=청구 탭 기준·[한 번에 결제], 단건 KST·묶음 계좌 안내, 공지 대상 반 공용 파서·상세 ALL/CLASS만, 옛 해시→탭, 납부 신청 승인 MANUAL. tsc 0·tests 3606-0·studentVisibility·KST 가드 통과 | 완료(검수 대기) |
 | 11-09 | developer(묶음 결제 갈래 A — 서버·데이터): PaymentTransactionItem(마이그레이션 20261109150000, 미적용)·checkoutBundle 규칙·bundleLedger(전부 아니면 전무·전액 취소 전부 환불)·확정/취소 묶음 갈래·승인 전 재확인·랠리즈 사본 차단(단건·묶음)·단건 열린 계좌 조회/닫기·마이페이지/관리자 lateral 이 항목까지 봄·API /api/mypage/payments/checkout·confirm·묶음 입금 알림. tsc 0·tests 3560-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
@@ -128,7 +131,3 @@
 | 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |
 | 11-09 | tester(3c4d4cc4+d559228c): 전체 3540-0·tsc 0·가드 통과, 모의 실행 37+청구 경계 5 통과. 권장: 잘못 등록 수강 삭제 시 운영 원장 대기 «수강 등록» 처리 | 통과(권장 1) |
-| 11-09 | developer(수강 상태 새 기준+반 줄 편집, 원장 허재원·토 2교시 사례): ① 공용 판정 commencement.ts isCurrentEnrollment/currentEnrollmentSql — ACTIVE면 승인일부터 수강 중·재원생(학생 상태·원생 목록 활성·인원 집계·대관 재원생·학부모 홈), SCHEDULED(수강 예정) 분류 제거, 개시일은 startsLater 안내 문구로만. 청구 시수·출석부 회차·셔틀 월 배차는 개시일 유지 ② 반 줄 «퇴원»→«수강 종료», ⋯ 메뉴 반 이동(actions/enrollment-admin-edit moveEnrollmentToClass — ECR CLASS_CHANGE APPLIED+원장 2건)·삭제(연결 기록 0건일 때만, 서버 재확인). tsc 0·tests 3540-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
-| 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | developer(원생 등록 3차, 원장 실사용 4건): ① 반 줄 대상 학년(슬롯 gradeRange→직접 슬롯→Program.targetAge) ② 셔틀 장소명 필수 — lib/shuttle/placeNameRule.ts·지도 창 requirePlaceName(등록 창·학부모 /shuttle/location/[token]만)·서버 validateRegularLocation·등록 규칙 거부 ③ 유니폼 선택칸 삭제 → 보호자 번호+학생 이름 일치 UniformOrder 로 등록 시 자동(주문/신청)·요약 표시 ④ 사진 동의 체크박스(IN_PERSON 기본, 범위 3칸 기본 켬). tsc 0·tests 3526-0·studentVisibility 5-0 | 검수 대기 |

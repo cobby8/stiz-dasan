@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { getBundleCheckoutCandidates, getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { academyBankAccount } from "@/lib/payments/academy-bank-account";
+import { tossFailMessage } from "@/lib/payments/tossFailMessage";
 import BundleCheckoutClient from "./BundleCheckoutClient";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,10 @@ export default async function BundleCheckoutPage({
         const value = params[key];
         return typeof value === "string" ? value : Array.isArray(value) ? value[0] ?? "" : "";
     };
-    // 토스 결제창에서 실패·취소하면 failUrl(?result=fail)에 code·message 를 붙여 돌아온다
+    // 토스 결제창에서 실패·취소하면 failUrl(?result=fail)에 code·message 를 붙여 돌아온다.
+    // 주소의 message 는 그대로 비추지 않고(누구나 바꿔 보낼 수 있다) 코드별로 정해 둔 문장만 쓴다
     const failed = pick("result") === "fail";
-    const failMessage = failed ? pick("message").slice(0, 200) : "";
+    const failMessage = failed ? tossFailMessage(pick("code")) : "";
 
     const candidates = await getBundleCheckoutCandidates(parent.appUserId).catch((error) => {
         console.error("[mypage/payments/checkout] candidates failed:", error);

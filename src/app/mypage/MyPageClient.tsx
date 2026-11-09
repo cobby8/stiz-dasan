@@ -259,6 +259,8 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     // 2026-11-09: 청구 탭과 같은 목록으로 센다(getMyPageData 는 자녀별 최근 5건이라 오래된 미납이 빠졌다)
     const payList: PendingPaymentLite[] = pendingPayments ?? data.children.flatMap((c) => c.payments);
     const paySummary = summarizePendingPayments([{ payments: payList }]);
+    // 버튼 이름(«한 번에 결제»/«결제하기»)은 내가 대표 보호자로 결제할 수 있는 건 수로 정한다(합계 표시는 전체 그대로)
+    const payableCount = summarizePendingPayments([{ payments: payList.filter((p) => p.canCheckout !== false) }]).count;
     // 무통장입금 계좌를 받아 둔 미납 청구 — 계좌번호를 홈에서 바로 볼 수 있게 남긴다.
     // 묶음 결제 계좌는 여러 청구가 같은 계좌를 품는다 → 계좌 하나에 한 번만 보이고, 묶인 청구 수를 적는다.
     const waitingAccounts: { key: string; account: PublicVirtualAccountView; count: number }[] = [];
@@ -341,7 +343,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                         </p>
                         {/* 결제 담당 보호자 = «한 번에 결제» 화면으로(1건이면 «결제하기»). 연결 가족은 결제 대신 청구 목록 */}
                         <Link href={paySummary.canCheckoutAny ? PAYMENT_HOME_HREF : PAYMENT_LIST_HREF} className="academy-button-primary shrink-0">
-                            {!paySummary.canCheckoutAny ? "청구 보기" : paySummary.count > 1 ? "한 번에 결제" : "결제하기"}
+                            {!paySummary.canCheckoutAny ? "청구 보기" : payableCount > 1 ? "한 번에 결제" : "결제하기"}
                         </Link>
                     </div>
                     {!paySummary.canCheckoutAny && (
@@ -367,7 +369,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                         <p className="mt-1 text-sm leading-relaxed text-[var(--color-academy-muted)]">
                             {currentEnrollments.length > 0 ? `수강 중인 반 ${currentEnrollments.length}개` : "수강 중인 반이 없습니다"}
                             {/* 첫 수업 전인 반이 있으면 개시일만 덧붙인다(상태는 수강 중) */}
-                            {startsLaterEnrollment && <span className="ml-2">{startsLaterEnrollment.startsOn}부터 수업 시작</span>}
+                            {startsLaterEnrollment && <span className="ml-2">{formatKstDate(startsLaterEnrollment.startsOn, { month: "long", day: "numeric" })}부터 수업 시작</span>}
                         </p>
                     </div>
                 </div>
