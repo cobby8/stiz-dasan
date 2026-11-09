@@ -7,7 +7,7 @@ import Link from "next/link";
 import type { PublicVirtualAccountView } from "@/lib/payments/virtualAccount";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
 import StatusCountChips from "@/components/admin/list/StatusCountChips";
-import { kstLabel } from "@/lib/datetime/kst";
+import { kstLabel, toKstYmd } from "@/lib/datetime/kst";
 // 출결 기록 달별 묶음 — KST 날짜로 바꿔 묶는 공용 함수(toISOString 은 하루 밀린다)
 import { groupByKstMonth } from "@/components/admin/list/monthDateGroups";
 
@@ -39,10 +39,10 @@ const TYPE_LABELS: Record<string, string> = {
     OTHER: "기타",
 };
 
+// 기한·납부일 "YYYY-MM-DD" — KST 달력 날짜(예전 toISOString 은 UTC 라 한국 자정~09시 값이 하루 전으로 나왔다)
 function toDateStr(d: Date | string | null): string {
     if (!d) return "-";
-    const date = typeof d === "string" ? new Date(d) : d;
-    return date.toISOString().split("T")[0];
+    return toKstYmd(d) || "-";
 }
 
 function formatAmount(n: number): string {
@@ -83,9 +83,12 @@ type Tab = "attendance" | "payments";
 export default function HistoryClient({
     children,
     initialChildId,
+    embedded = false,
 }: {
     children: HistoryChild[];
     initialChildId?: string;
+    /** «일정» 탭 안에 들어갈 때 — 큰 제목·«← 마이페이지» 대신 작은 소제목만(제목은 일정 탭이 단다) */
+    embedded?: boolean;
 }) {
     // 진입 시 ?child= 로 넘어온 자녀를 우선 선택, 없으면 첫 번째 자녀
     const initialIdx = Math.max(
@@ -112,7 +115,10 @@ export default function HistoryClient({
 
     return (
         <div>
-            {/* 뒤로가기 + 제목 (리포트 화면과 동일한 헤더 톤) */}
+            {embedded ? (
+                <h2 id="schedule-records-heading" className="mb-3 scroll-mt-24 text-base font-bold text-[var(--color-academy-ink)]">출결·수납 기록</h2>
+            ) : (
+            // 뒤로가기 + 제목 (리포트 화면과 동일한 헤더 톤)
             <div className="mb-6">
                 <Link
                     href="/mypage"
@@ -124,6 +130,7 @@ export default function HistoryClient({
                 <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">출결·수납 히스토리</h1>
                 <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">자녀의 전체 출결·수납 기록을 확인하세요.</p>
             </div>
+            )}
 
             {/* 자녀 선택 — 자녀가 2명 이상일 때만 노출 */}
             {children.length > 1 && (

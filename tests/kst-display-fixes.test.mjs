@@ -79,12 +79,14 @@ test("1. 마이페이지 — 알림·요청 시각, 공지·피드백 날짜, �
   }
 
   // 셔틀 운행일(날짜만 문자열·UTC 자정·KST 자정 timestamp 모두 같은 KST 날짜)
+  // 2026-11-09 셔틀 배정 칸이 홈에서 «일정» 탭으로 옮겨 가며 함수도 ParentShuttleDetail 로 옮겼다.
+  const s = loadTsx("src/app/mypage/ParentShuttleDetail.tsx");
   for (const v of ["2026-10-31", "2026-10-31T00:00:00.000Z", "2026-10-30T15:00:00.000Z"]) {
-    assert.equal(m.formatShuttleDate(v), "2026년 10월 31일 토", v);
-    assert.equal(m.formatShuttleDate(v), kstRef("2026-10-31T00:00:00+09:00", { year: "numeric", month: "long", day: "numeric", weekday: "short" }));
+    assert.equal(s.formatShuttleDate(v), "2026년 10월 31일 토", v);
+    assert.equal(s.formatShuttleDate(v), kstRef("2026-10-31T00:00:00+09:00", { year: "numeric", month: "long", day: "numeric", weekday: "short" }));
   }
-  assert.equal(m.formatShuttleDate(null), "운행일 확인 중");
-  assert.equal(m.formatShuttleDate("엉뚱한 값"), "엉뚱한 값", "읽을 수 없는 값은 예전처럼 원문 그대로");
+  assert.equal(s.formatShuttleDate(null), "운행일 확인 중");
+  assert.equal(s.formatShuttleDate("엉뚱한 값"), "엉뚱한 값", "읽을 수 없는 값은 예전처럼 원문 그대로");
 });
 
 test("2. 리포트 상세 — 서버(UTC)가 그려도 수업 날짜가 KST 달력으로 나온다", async () => {

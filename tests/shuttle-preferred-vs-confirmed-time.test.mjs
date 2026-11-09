@@ -6,7 +6,8 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 // 2026-10-02 옛 노선 편성 화면(ShuttleRouteAdminClient) 삭제로 그 화면을 읽던 검사는 뺐다(서버·API 검사는 유지).
 const staffClient = read("../src/app/staff/shuttle/StaffShuttleDashboardClient.tsx");
-const myPage = read("../src/app/mypage/MyPageClient.tsx");
+// 학부모 셔틀 배정 상세 — 2026-11-09 홈(MyPageClient)에서 «일정» 탭 부품(ParentShuttleDetail)으로 옮겼다.
+const myPage = read("../src/app/mypage/ParentShuttleDetail.tsx");
 const enrollForm = read("../src/app/apply/enroll/EnrollApplicationLaterSteps.tsx");
 const service = read("../src/lib/shuttle/service.ts");
 

@@ -81,6 +81,9 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "@/lib/queries": { getMyPageData: async (id) => { calls.push(id); return { children: [] }; } },
     "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "verified-app-fixture" }) },
     "@/lib/shuttle/parent": {},
+    // 홈 «처리할 일»(보강권·방학특강 회차) — 자녀가 없으면 부르지 않는다
+    "@/lib/makeup/parent-makeup": {},
+    "@/lib/seasonal/parent-absence": {},
     "@/lib/seasonal/parent-pending": { getPendingSeasonalChildren: async (id, students) => { calls.push([id, students]); return []; } },
     "@/components/account/EmptyParentState": { default: Empty },
     "./MyPageClient": { default: () => null },

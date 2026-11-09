@@ -158,7 +158,15 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
       // KST 10/1 00:00 = UTC 9/30 15:00 — 서버(UTC)의 toLocaleDateString 이면 9/30 으로 찍힌다
       { sessionId: "s1", date: "2026-09-30T15:00:00.000Z", topic: "드리블 기초", className: "초등 저학년반", dayOfWeek: "Thu", startTime: "16:00", endTime: "17:00", coachName: "합성 코치" },
       { sessionId: "s2", date: "2026-09-10T15:00:00.000Z", topic: null, className: "초등 저학년반", dayOfWeek: "Fri", startTime: "16:00", endTime: "17:00", coachName: null },
-    ] },
+    ],
+      // 2026-11-09 «소식» 탭 — 공지·피드백·사진을 함께 읽는다(이 검증은 리포트 목록만 본다)
+      getMyPageData: async () => ({ children: [{ id: "c1", enrollments: [{ classId: "k1" }] }] }),
+      getNoticesByClassIds: async () => [{ id: "n1", title: "합성 공지", content: "<p>본문</p>", isPinned: false, createdAt: "2026-10-30T15:05:00.000Z" }],
+      getChildrenFeedbacks: async () => [],
+      getGalleryByClassIds: async () => [],
+    },
+    "@/components/pwa/HideInInstalledApp": { default: ({ children }) => children },
+    "@/components/pwa/AppSafeLink": { default: Link },
     "@/lib/datetime/kst": kst,
     "@/components/admin/list/monthDateGroups": monthGroups,
   }).default;
@@ -172,6 +180,13 @@ test("수업 리포트 목록은 KST 달별 묶음·한 줄 행(주제·날짜 �
   assert.match(html, /담당: 합성 코치/);
   assert.doesNotMatch(html, / \| 초등/,"«날짜 | 반 (요일 시간)» 이어 붙인 글은 요소로 나눴다");
   assert.doesNotMatch(read("src/app/mypage/reports/page.tsx"), /\.toLocaleDateString\(/);
+  // «소식» 탭: 공지가 맨 위, 상세는 앱 안 주소, 날짜는 KST(UTC 10/30 15:05 = KST 10/31)
+  assert.match(html, /<h1[^>]*>소식<\/h1>/);
+  assert.match(html, /href="\/mypage\/news\/n1"/);
+  assert.match(html, /합성 공지/);
+  assert.match(html, /10\. 31\./);
+  assert.ok(html.indexOf("합성 공지") < html.indexOf("드리블 기초"), "공지가 리포트보다 위");
+  assert.doesNotMatch(html, /href="#news-feedback"|href="#news-photos"/, "건수 0 인 칸은 칩도 숨긴다");
 });
 
 test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 시트, 행 안 «취소»는 번지지 않고 바로 취소한다", () => {

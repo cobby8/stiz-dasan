@@ -211,3 +211,9 @@
 - **발견자**: developer
 - **내용**: 원장 기준(11-09) — Enrollment ACTIVE 면 승인(등록)일부터 «수강 중/재원생». 판정은 `src/lib/enrollment/commencement.ts` 의 `isCurrentEnrollment`(TS)·`currentEnrollmentSql(alias)`(SQL) 한 곳(학생 상태 queries.ts current_status·인원 집계 adminReadPayloads·대관 재원생 listRentalMemberStudents·관리자/학부모 화면). `enrollmentDisplayStatus` 는 이제 status 그대로(SCHEDULED 없음), 개시일 미래 안내는 `enrollmentStartsLater`/payload `startsLater` 로만. 개시일(startsOn)을 쓰는 곳은 ① 청구 시수(billing/workbench-service) ② 출석부 회차 명단(staff-session-queries·staff-class-people·staff-sessions·SessionLogModal `enrollmentHasStarted`) ③ 셔틀 월 배차(driverAssign·shuttle-progress-query) ④ 다음 수업 안내(mypage/summary computeNextClass) 뿐 — 상태·인원 판정에 다시 쓰지 말 것(가드: tests/enrollment-current-rule.test.mjs). 반 줄 편집(반 이동·잘못 등록 삭제)은 `lib/enrollment/admin-enrollment-edit.ts`(순수 판정+연결 기록 수)·`actions/enrollment-admin-edit.ts`.
 - **참조횟수**: 0
+
+### [2026-11-09] 학부모 앱 = 탭 4개(홈·일정·청구·소식) 한 목록 + 앱 범위(/mypage) 안 상세
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 메뉴는 `src/app/mypage/MyPageBottomNav.tsx` 의 `PARENT_TABS` 하나(휴대폰 아래 탭·PC 헤더 `variant="top"` 공용), 소속 하위 화면은 `also`(일정 = regular-absence·makeup·seasonal·shuttle·enrollment-change, 소식 = news). 일정 = `/mypage/history`(위 `ScheduleHub` + 아래 `HistoryClient embedded`), 청구 = `/mypage/payments`, 소식 = `/mypage/reports`(공지·리포트·피드백·사진, 칩은 같은 화면 앵커). 홈 = 납부 합계 한 줄(`PAYMENT_HOME_HREF` — 묶음 결제 때 이 주소만 교체) + 처리할 일 + 빠른 실행 4, 접힌 칸(details) 없음. 셔틀 배정 상세는 `ParentShuttleDetail`. 설치 앱 scope=/mypage 라 공지 상세는 `/mypage/news/[id]`(전체 공지·우리 아이 반 공지만, 아니면 404) — 공개 `/notices/[id]` 로 링크하지 말 것. 로그아웃은 `ParentMoreMenu`(⋯) 안.
+- **참조횟수**: 0

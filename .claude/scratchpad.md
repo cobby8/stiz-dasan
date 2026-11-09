@@ -97,10 +97,32 @@
 
 ---
 
+## 구현 기록 (developer) — 학부모 화면 구조 갈래 B (11-09)
+
+📝 원장 결정 D1 안 A·D6·D7·D8. 기존 주소 전부 유지(문자 링크 보호). 결제 서버(payment-ledger·lib/payments·app/payments·결제 API) 무수정.
+
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| src/app/mypage/MyPageBottomNav.tsx | PARENT_TABS 4개·isParentTabActive(하위 화면 소속 탭)·variant top(PC) | 수정 |
+| src/app/mypage/ParentMoreMenu.tsx | «⋯» 메뉴(알림·자녀 연결·간편로그인·로그아웃) | 신규 |
+| src/app/mypage/layout.tsx | 로그아웃 → ⋯ 메뉴, PC 4탭 메뉴, «홈으로»→«홈페이지» | 수정 |
+| src/app/mypage/MyPageClient.tsx | 홈=납부 합계 한 줄(PAYMENT_HOME_HREF)+히어로+처리할 일+빠른 실행 4, 접힌 칸·공지·사진·피드백·기록 제거 | 수정 |
+| src/app/mypage/page.tsx | 사진·피드백 조회 제거, 보강권·방학특강 회차 조회 추가 | 수정 |
+| src/app/mypage/ParentShuttleDetail.tsx | 셔틀 배정 상세(홈 접힌 칸에서 이동) | 신규 |
+| src/app/mypage/history/ScheduleHub.tsx · page.tsx · HistoryClient.tsx | 일정 탭 윗부분, embedded, toDateStr KST | 신규/수정 |
+| src/app/mypage/reports/page.tsx | 소식 탭(공지·리포트·피드백·사진, 칩 앵커) | 수정 |
+| src/app/mypage/news/[id]/page.tsx | 앱 안 공지 상세(전체·우리 반 공지만, sanitize) | 신규 |
+| src/lib/mypage/summary.ts | summarizePendingPayments·countRecentAnswers·countRecentNotices | 수정 |
+| tests/parent-app-structure·mypage-home-todo (신규) + 기존 9개 위치 갱신 · kst 가드 R1 21→19 | | |
+
+💡 tester: 휴대폰 390px 홈 첫 화면(청구 있을 때/없을 때), 하위 화면에서 탭 켜짐, ⋯ 메뉴 «알림» → 홈 알림 펼침, 일정 탭 #mypage-shuttle 이동, 소식 공지 → /mypage/news/[id](설치 앱 주소창 안 뜸), 남의 반 공지 id 직접 입력 → 404.
+⚠️ reviewer: 홈 청구 합계는 getMyPageData 자녀별 최근 5건 기준(청구 탭은 60건) · 공지 상세 반 판정은 getMyPageData 의 ACTIVE 수강 기준 · /payments/[invoiceId] formatDate(시간대 없는 toLocaleDateString) 는 결제 담당 영역이라 미수정.
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
 | 11-09 | tester(8144e6c7+e2b02a6d): tsc 0·tests 3546-0·가드 통과, 모의 24 통과. 권장: 이동→삭제 시 NEEDS_CHECK 잔류 | 통과(권장 1) |
 | 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |

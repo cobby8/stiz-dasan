@@ -195,12 +195,17 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   assert.match(hero, /오늘 셔틀/);
   assert.match(hero, /aria-label="자녀 선택"[\s\S]*?className="academy-choice"/);
   assert.doesNotMatch(home, /mypage-summary-heading/, "따로 떨어진 요약 칸은 히어로로 합쳤다");
-  assert.match(home, /\{unreadCount > 0 && \([\s\S]{0,300}scrollToSection\("mypage-notifications"\)[\s\S]{0,600}안 읽은 알림/);
-  assert.match(home, /<div id="mypage-notifications"/);
+  // 2026-11-09 안 A: 알림은 «처리할 일» 판의 마지막 줄(늘 보임) — 안 읽은 수가 있으면 그 줄에 숫자
+  assert.match(home, /<li id="mypage-notifications"/);
+  assert.match(home, /unreadCount > 0 \? <>안 읽은 알림/);
+  assert.match(home, /if \(id === "mypage-notifications"\) setShowNotifications\(true\)/, "«⋯» 메뉴의 알림 링크로 오면 펼친다");
   // 꽉 찬 색이던 보조 동작 → 테두리
-  assert.match(home, /href="\/mypage\/seasonal"\s*\/\/[^\n]*\n\s*className="academy-button-secondary mt-3"/);
-  assert.match(home, /className="academy-button-secondary focus-visible:outline-none focus-visible:ring-2/);
-  assert.match(home, /className="academy-button-secondary flex-1 basis-44 whitespace-nowrap"/);
+  assert.match(home, /href="\/mypage\/seasonal"\s*\/\/[^\n]*\n\s*className="academy-button-secondary mt-2"/);
+  // 기사님 전화(셔틀 배정 칸은 일정 탭으로 옮겼다) — 보조 버튼·초점 링 유지
+  assert.match(read("src/app/mypage/ParentShuttleDetail.tsx"), /className="academy-button-secondary focus-visible:outline-none focus-visible:ring-2/);
+  // 메시지 폼은 빠른 실행 «문의»로 연다 — 폼 안 최종 제출만 꽉 찬 색
+  assert.match(home, /onClick=\{openRequestForm\}/);
+  assert.match(home, /className="academy-button-primary w-full"\s*>\s*\{isPending \? "보내는 중\.\.\." : "메시지 보내기"\}/);
   // 알림: 읽음 44×44 · 모두 읽음 44px · 푸시 토글은 목록 아래 설정 줄
   assert.match(home, /inline-flex size-11[^"]*"\s*title="읽음 처리"/);
   assert.match(home, /className="academy-button-text text-\[var\(--color-academy-primary\)\]"\s*>\s*<SymbolIcon name="done_all"/);
@@ -210,12 +215,23 @@ test("홈: 히어로 한 덩어리(이름·다음 수업·오늘 셔틀) + «할
   assert.match(home, /inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-bold transition/);
 });
 
-test("결제 심사 중 — 홈 수납·청구·납부 블록은 손대지 않았다 (보류)", () => {
+// 옛 «결제 심사 중 — 홈 수납 블록 손대지 않음(보류)» 검사는 카드사 심사가 끝나(2026-11-07 국내 9개사 승인)
+// 보류가 풀렸고, 원장 결정(2026-11-09 D1 안 A)으로 건별 빨간 카드를 «합계 한 줄»로 바꿔 아래 검사로 대신한다.
+test("홈 맨 위 = «납부할 청구 N건 · 합계» 한 줄, 꽉 찬 버튼은 그 하나(→ 청구 탭), 건별 카드·접힌 기록 칸은 없다", () => {
   const home = read("src/app/mypage/MyPageClient.tsx");
-  assert.match(home, /href=\{`\/payments\/\$\{p\.invoiceId\}`\}\s*className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 text-sm font-black text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"\s*>\s*청구서 확인하고 납부하기/);
-  assert.match(home, /<p className="mt-1 text-\[11px\] font-bold text-gray-500 dark:text-gray-300">\s*청구서 \{p\.invoiceNo\}/);
-  assert.match(home, /className="rounded-full bg-brand-orange-500 px-3 py-1\.5 text-xs font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"\s*>\s*납부하기/);
-  assert.match(home, /\{ href: "\/mypage\/payments", icon: "receipt_long", label: "청구·수납" \}/);
+  assert.match(home, /const PAYMENT_HOME_HREF = "\/mypage\/payments";/, "묶음 결제 갈래에서 이 주소만 바꾼다");
+  assert.match(home, /납부할 청구 <span className="tabular-nums">\{paySummary\.count\}<\/span>건/);
+  assert.match(home, /<Link href=\{PAYMENT_HOME_HREF\} className="academy-button-primary shrink-0">청구 보기<\/Link>/);
+  // 홈에서 꽉 찬 버튼은 청구 보기 + 폼 안 최종 «메시지 보내기» 두 곳뿐(폼은 «문의»를 눌러야 보인다)
+  assert.equal((home.match(/academy-button-primary/g) || []).length, 2);
+  assert.doesNotMatch(home, /청구서 확인하고 납부하기/);
+  assert.doesNotMatch(home, /<details/, "접힌 칸(details)은 일정·소식 탭으로 옮겼다");
+  assert.doesNotMatch(home, /#parent-absence-hub/, "«결석·보강»을 누르면 맨 아래로 뛰던 동작 제거");
+  // 무통장입금 계좌는 홈에 계속 보인다(청구 목록 화면엔 계좌 칸이 없다)
+  assert.match(home, /<VirtualAccountNotice compact account=\{p\.virtualAccount\} \/>/);
+  // 빠른 실행 4개
+  const quick = home.slice(home.indexOf('aria-label="빠른 실행"'), home.indexOf("</nav>", home.indexOf('aria-label="빠른 실행"')));
+  for (const label of ["결석 알리기", "보강 예약", "셔틀 변경", "문의"]) assert.ok(quick.includes(label), label);
 });
 
 test("리포트 상세는 «우리 아이 수업 현황»이 헤더 바로 아래 (M-12)", () => {

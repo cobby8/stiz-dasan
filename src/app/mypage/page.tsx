@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { getMyPageData, getGalleryByClassIds, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests, getChildrenFeedbacks } from "@/lib/queries";
+import { getMyPageData, getNoticesByClassIds, getNotifications, getUnreadNotificationCount, getMyRequests } from "@/lib/queries";
+import { getMakeupOverviewForParent } from "@/lib/makeup/parent-makeup";
+import { getUpcomingSeasonalSeats } from "@/lib/seasonal/parent-absence";
 import MyPageClient from "./MyPageClient";
 import EmptyParentState from "@/components/account/EmptyParentState";
 import Link from "next/link";
@@ -45,18 +47,19 @@ export default async function MyPageDashboard() {
     const classIds = data.children.flatMap(c =>
         c.enrollments.map((e: { classId: string | null }) => e.classId).filter((id): id is string => typeof id === "string" && id.length > 0)
     );
-    // 갤러리/공지/알림/피드백 데이터 가져오기
-    const [gallery, notices, notifications, unreadCount, myRequests, feedbacks, shuttleOverview, driverContact] = await Promise.all([
-        getGalleryByClassIds(classIds, 10),
+    // 홈 «오늘 할 일» 판 데이터 (2026-11-09 안 A).
+    // 사진·학습 피드백은 «소식» 탭으로 옮겨 홈에서는 읽지 않는다. 공지는 «새 공지 N건» 줄을 세는 데만 쓴다.
+    // 보강권·방학특강 회차는 «처리할 일» 줄용 — 실패해도 홈이 깨지지 않게 빈 값으로 받는다.
+    const [notices, notifications, unreadCount, myRequests, shuttleOverview, driverContact, makeup, seasonal] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getNotifications(data.parent.id),
         getUnreadNotificationCount(data.parent.id),
         getMyRequests(data.parent.id),
-        getChildrenFeedbacks(studentIds),
         getParentShuttleOverview(parentAuth.appUserId),
         getShuttleDriverContact(),
+        getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
+        getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
     ]);
 
-
-    return <MyPageClient data={data} gallery={gallery} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} feedbacks={feedbacks} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} />;
+    return <MyPageClient data={data} notices={notices} notifications={notifications} unreadCount={unreadCount} myRequests={myRequests} parentShuttleOverview={shuttleOverview} shuttleDriverContact={driverContact} pendingSeasonalChildren={pendingSeasonalChildren} makeupAvailable={makeup?.counts.available ?? 0} seasonalUpcoming={seasonal?.seats.length ?? 0} />;
 }

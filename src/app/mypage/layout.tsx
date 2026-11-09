@@ -7,6 +7,7 @@ import { requireVerifiedParent } from "@/lib/auth-guard";
 import AppBackButton from "@/components/AppBackButton";
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
 import MyPageBottomNav from "./MyPageBottomNav";
+import ParentMoreMenu from "./ParentMoreMenu";
 import AcademyTheme from "@/components/academy/AcademyTheme";
 import AccountLinks from "@/components/account/AccountLinks";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
@@ -55,15 +56,18 @@ export default async function MyPageLayout({
                     <Image src="/stiz-logo.png" alt="STIZ" width={120} height={52} className="h-10 w-20 shrink-0 object-contain" />
                 </Link>
                 {views.length > 1 ? <AccountViewSwitcher views={views} /> : <span className="text-center font-bold text-[var(--color-academy-ink)] text-sm">학부모</span>}
-                <form action={logout}>
-                    <button
-                        type="submit"
-                        // 휴대폰 헤더 로그아웃 — 누르는 높이 44px(min-h-11), 색은 토큰
-                        className="inline-flex min-h-11 items-center rounded-lg border border-[var(--color-academy-line)] px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
-                    >
-                        로그아웃
-                    </button>
-                </form>
+                {/* 로그아웃은 «⋯» 메뉴 안으로(원장 결정 D8 — 자주 안 쓰는 버튼을 일등석에서 뺌) */}
+                <ParentMoreMenu>
+                    <form action={logout}>
+                        <button
+                            type="submit"
+                            // 메뉴 안 로그아웃 — 누르는 높이 44px(min-h-11), 색은 토큰
+                            className="inline-flex min-h-11 w-full items-center rounded-lg px-1 text-sm font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
+                        >
+                            로그아웃
+                        </button>
+                    </form>
+                </ParentMoreMenu>
             </header>
 
             {/* 데스크탑 헤더 — 기존 구조 유지, 호버 트랜지션 통일 */}
@@ -77,23 +81,27 @@ export default async function MyPageLayout({
                         </span>
                     </Link>
                 </div>
-                <nav className="flex shrink-0 items-center gap-4 text-sm font-bold text-[var(--color-academy-muted)]">
+                {/* PC 메뉴 — 휴대폰 아래 탭과 같은 4개(홈·일정·청구·소식). 예전엔 PC 에 메뉴가 없어
+                    하위 화면 사이를 «뒤로 → 홈 → 타일»로만 오갔다. */}
+                <MyPageBottomNav variant="top" />
+                <div className="flex shrink-0 items-center gap-3 text-sm font-bold text-[var(--color-academy-muted)]">
                     <AccountViewSwitcher views={views} />
-                    <Link href="/mypage" className="text-[var(--color-academy-primary)] transition-colors">마이페이지</Link>
                     {/* 브라우저로 들어온 학부모에게는 홈페이지로 가는 길이 필요하지만,
                         설치된 앱에서는 나가면 돌아올 길이 없어 감춘다. */}
                     <HideInInstalledApp>
-                        <Link href="/" className="hover:text-[var(--color-academy-primary)] transition-colors">홈으로</Link>
+                        <Link href="/" className="hover:text-[var(--color-academy-primary)] transition-colors">홈페이지</Link>
                     </HideInInstalledApp>
-                    <form action={logout}>
-                        <button
-                            type="submit"
-                            className="font-bold text-gray-600 transition-colors hover:text-brand-orange-500 dark:text-gray-300 dark:hover:text-brand-neon-lime"
-                        >
-                            로그아웃
-                        </button>
-                    </form>
-                </nav>
+                    <ParentMoreMenu>
+                        <form action={logout}>
+                            <button
+                                type="submit"
+                                className="inline-flex min-h-11 w-full items-center rounded-lg px-1 text-sm font-bold text-[var(--color-academy-muted)] transition-colors hover:bg-[var(--color-academy-soft)]"
+                            >
+                                로그아웃
+                            </button>
+                        </form>
+                    </ParentMoreMenu>
+                </div>
             </header>
 
             {/* 메인 콘텐츠 영역 */}
@@ -102,7 +110,7 @@ export default async function MyPageLayout({
                 <AccountLinks />
             </main>
 
-            {/* 모바일 하단 네비게이션 — 자녀 핵심 기능(리포트·스킬·방학특강) 중심으로 재구성.
+            {/* 모바일 하단 탭 — 홈·일정·청구·소식(2026-11-09 안 A).
                 활성 경로 하이라이트를 위해 클라이언트 컴포넌트(MyPageBottomNav)로 분리. */}
             <MyPageBottomNav />
         </AcademyTheme>
