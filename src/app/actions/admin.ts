@@ -98,6 +98,8 @@ import {
 } from "@/lib/payments/studentBillingRules";
 // 학부모 결제(단건·묶음)와 같은 청구 잠금 — 수정 중 옛 금액 주문이 생기지 않게(검수 지적 2026-11-09)
 import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
+// 납부완료(PAID) 청구의 상태 변경 규칙 — 실제 결제는 잠금, 수기는 «대기로 되돌리기»만(화면과 같은 함수 · 2026-11-10)
+import { judgePaymentStatusChange, type PaymentStatusDecision } from "@/lib/payments/paidStatusGuard";
 import { isMonthlyInvoiceNotificationEligible } from "@/lib/billing/notification-policy";
 import {
     BILLING_PARENT_SEND_LOCKED_MESSAGE,
@@ -1913,39 +1915,110 @@ const DIRECT_PAID_BLOCKED_MESSAGE = "납부완료는 «납부 처리» 창에서
 // 수기만 장부 환불로 갈라 주는 refundSelectedPayments(⚡ «환불»·«선택 항목 환불»)만 쓴다. 여기서 바꾸면 돈은 그대로 둔 채 장부만 환불된다.
 const DIRECT_REFUND_BLOCKED_MESSAGE = "환불은 수납 관리의 ⚡ «환불» 또는 «선택 항목 환불»로 해 주세요.";
 
+// 납부완료 상태 변경 거절 — 안내 문구를 그대로 화면에 보여 주려고 일반 실패(«수납 상태 변경 실패»)와 구분한다
+class PaymentStatusGuardError extends Error {}
+// 판정 사이에 다른 경로(토스 웹훅·POS·납부 처리 창)가 상태를 바꿨을 때
+const PAYMENT_STATUS_RACE_MESSAGE = "처리 중 청구 상태가 바뀌어 변경하지 않았어요. 다시 조회해 주세요.";
+
+// 상태 변경 판정용으로 DB 에서 다시 읽는 값(화면이 보낸 현재 상태는 믿지 않는다)
+type PaymentStatusGuardRow = {
+    id: string;
+    status: string;
+    paidProvider: string | null;
+    method: string | null;
+    paidDate: Date | string | null;
+    hasDoneTransaction: boolean;
+};
+const PAYMENT_STATUS_GUARD_SELECT = `
+    SELECT p.id, p.status, p."paidProvider", p.method, p."paidDate",
+           EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE t."paymentId" = p.id AND t.status = 'DONE') AS "hasDoneTransaction"
+      FROM "Payment" p
+     WHERE p.id = ANY($1::text[])`;
+// 수기 납부완료 되돌리기의 조건부 UPDATE 조건 — 판정 함수(isManualPaidProvider)와 같은 기준을 SQL 로 한 번 더 건다
+const PAYMENT_REVERT_WHERE = `status = 'PAID'
+       AND COALESCE(NULLIF(UPPER(TRIM("paidProvider")), ''), 'MANUAL') = 'MANUAL'
+       AND NOT EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE t."paymentId" = "Payment".id AND t.status = 'DONE')`;
+// 수기 납부완료를 대기로 되돌릴 때 비우는 값: 납부일·결제 수단·결제 경로(«받지 않은 돈»의 기록). 이전 값은 감사 기록에 남긴다.
+const PAYMENT_REVERT_SET = `status = 'PENDING', "paidDate" = NULL, method = NULL, "paidProvider" = NULL, "updatedAt" = NOW()`;
+// 청구서도 «받음»을 지운다 — 보낸 적 있으면 SENT, 아니면 ISSUED(청구서 수정과 같은 규칙)
+const INVOICE_REVERT_SET = `status = CASE WHEN "sentAt" IS NOT NULL THEN 'SENT' ELSE 'ISSUED' END, "paidAt" = NULL, "updatedAt" = NOW()`;
+
 export async function updatePaymentStatus(id: string, status: string) {
-    await requireFinanceOwner();
+    const admin = await requireFinanceOwner();
     // try 밖에서 막아야 안내 문구가 «수납 상태 변경 실패»로 뭉개지지 않는다
     if (status === "PAID") throw new Error(DIRECT_PAID_BLOCKED_MESSAGE);
     if (status === "REFUNDED") throw new Error(DIRECT_REFUND_BLOCKED_MESSAGE);
     try {
         await ensurePaymentInfrastructure();
-        const invoice = await ensureInvoiceForPayment(id);
-        const invoiceStatus = status === "OVERDUE"
-            ? "OVERDUE"
-            : ["REFUNDED", "CANCELED"].includes(status)
-                ? "CANCELED"
-                : "ISSUED";
+        // 1) DB 에서 지금 상태·결제 경로를 다시 읽어 판정(2026-11-10 원장 지시 — 납부완료를 대기·취소로 바꾸는 구멍)
+        const rows = await prisma.$queryRawUnsafe<PaymentStatusGuardRow[]>(PAYMENT_STATUS_GUARD_SELECT, [id]);
+        const current = rows[0];
+        if (!current) throw new PaymentStatusGuardError("수납 기록을 찾을 수 없습니다.");
+        const decision: PaymentStatusDecision = judgePaymentStatusChange(current, status);
+        if (!decision.ok) throw new PaymentStatusGuardError(decision.message);
 
-        await prisma.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $2`,
-            status, id,
-        );
-        if (invoice?.id) {
-            await prisma.$executeRawUnsafe(
-                `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE id = $2`,
-                invoiceStatus,
-                invoice.id,
+        const invoice = await ensureInvoiceForPayment(id);
+
+        if (decision.kind === "REVERT_PAID") {
+            // 2-a) 수기 납부완료 → 대기(납부 기록 정정). 조건부 UPDATE — 그 사이 바뀌었으면 0건 → 거절
+            const updated = await prisma.$executeRawUnsafe(
+                `UPDATE "Payment" SET ${PAYMENT_REVERT_SET} WHERE id = $1 AND ${PAYMENT_REVERT_WHERE}`,
+                id,
             );
+            if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+            if (invoice?.id) {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "PaymentInvoice" SET ${INVOICE_REVERT_SET} WHERE id = $1`,
+                    invoice.id,
+                );
+            }
+            // 감사 기록: 누가·언제·무엇을 지웠는지(되돌릴 때 필요한 이전 값까지)
+            await recordPaymentAudit({
+                paymentId: id,
+                invoiceId: invoice?.id ?? null,
+                actorType: "ADMIN",
+                actorId: admin.appUserId,
+                action: "PAYMENT_PAID_REVERTED",
+                message: "납부 기록 정정: 납부완료 → 대기",
+                metadata: {
+                    previousStatus: current.status,
+                    nextStatus: "PENDING",
+                    previousPaidProvider: current.paidProvider,
+                    previousMethod: current.method,
+                    previousPaidDate: current.paidDate,
+                },
+            });
+        } else {
+            // 2-b) 납부완료가 아닌 청구(예전 그대로). 그 사이 납부완료가 됐으면 덮지 않는다(조건부 UPDATE)
+            const invoiceStatus = status === "OVERDUE"
+                ? "OVERDUE"
+                : ["REFUNDED", "CANCELED"].includes(status)
+                    ? "CANCELED"
+                    : "ISSUED";
+
+            const updated = await prisma.$executeRawUnsafe(
+                `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $2 AND status <> 'PAID'`,
+                status, id,
+            );
+            if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+            if (invoice?.id) {
+                await prisma.$executeRawUnsafe(
+                    `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE id = $2`,
+                    invoiceStatus,
+                    invoice.id,
+                );
+            }
+            await recordPaymentAudit({
+                paymentId: id,
+                invoiceId: invoice?.id ?? null,
+                actorType: "ADMIN",
+                action: "PAYMENT_STATUS_UPDATE",
+                message: `Payment status changed to ${status}`,
+            });
         }
-        await recordPaymentAudit({
-            paymentId: id,
-            invoiceId: invoice?.id ?? null,
-            actorType: "ADMIN",
-            action: "PAYMENT_STATUS_UPDATE",
-            message: `Payment status changed to ${status}`,
-        });
     } catch (e) {
+        // 규칙 거절은 안내 문구 그대로, 그 밖은 일반 실패
+        if (e instanceof PaymentStatusGuardError) throw new Error(e.message);
         console.error("Failed to update payment:", e);
         throw new Error("수납 상태 변경 실패");
     }
@@ -4086,12 +4159,31 @@ export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) 
 
     try {
         await ensurePaymentInfrastructure();
+        // 납부완료가 섞여 있으면 학생 상세와 같은 규칙으로 판정(DB 에서 다시 읽음 · 2026-11-10).
+        // 하나라도 막히면 아무것도 바꾸지 않는다(전부 아니면 전무). 수기 납부완료를 «대기로» 일괄 정정하는 것은
+        // 화면에 없는 길이라(수납 목록은 이 함수를 부르지 않는다) 여기서도 열지 않는다 — 한 건씩 확인받는 학생 상세에서만.
+        const uniqueIds = Array.from(new Set(ids));
+        const rows = await prisma.$queryRawUnsafe<PaymentStatusGuardRow[]>(PAYMENT_STATUS_GUARD_SELECT, uniqueIds);
+        if (rows.length !== uniqueIds.length) throw new PaymentStatusGuardError("수납 기록을 찾을 수 없습니다. 다시 조회해 주세요.");
+        for (const row of rows) {
+            const decision = judgePaymentStatusChange(row, newStatus);
+            if (!decision.ok) throw new PaymentStatusGuardError(decision.message);
+            if (decision.kind === "REVERT_PAID") {
+                throw new PaymentStatusGuardError("납부완료를 대기로 되돌리는 것은 학생 상세에서 한 건씩 해 주세요.");
+            }
+        }
+
         const placeholders = ids.map((_, i) => `$${i + 2}`).join(",");
-        await prisma.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders})`,
+        // 조건부 UPDATE — 판정 뒤 그 사이 납부완료가 된 청구는 덮지 않는다
+        const updated = await prisma.$executeRawUnsafe(
+            `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders}) AND status <> 'PAID'`,
             newStatus,
             ...ids,
         );
+        if (Number(updated) !== uniqueIds.length) {
+            // 일부만 바뀌었다 — 청구서까지 어긋나지 않게 여기서 멈추고 알린다(바뀐 건은 다시 조회하면 보인다)
+            throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+        }
         const invoiceStatus = newStatus === "OVERDUE"
             ? "OVERDUE"
             : ["REFUNDED", "CANCELED"].includes(newStatus)
@@ -4110,6 +4202,8 @@ export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) 
             metadata: { paymentIds: ids },
         });
     } catch (e) {
+        // 규칙 거절은 안내 문구 그대로
+        if (e instanceof PaymentStatusGuardError) throw new Error(e.message);
         console.error("Failed to bulk update payment status:", e);
         throw new Error("일괄 상태 변경 실패");
     }

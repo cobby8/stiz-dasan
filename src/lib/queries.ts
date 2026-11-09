@@ -2016,7 +2016,7 @@ export async function getStudentActivity(studentId: string) {
             prisma.$queryRawUnsafe<any[]>(
                 `SELECT p.id, p.amount, p.status, p."dueDate", p."paidDate", p."createdAt",
                         p.type, p.description, p.method, p."invoiceNo", p."issuedAt",
-                        p."payableUntil", p."receiptUrl", p."classId", p.year, p.month,
+                        p."payableUntil", p."receiptUrl", p."classId", p.year, p.month, p."paidProvider",
                         c.name AS class_name,
                         i.id AS invoice_id, i.status AS invoice_status, i."sentAt" AS invoice_sent_at,
                         i."checkoutUrl" AS invoice_checkout_url
@@ -2161,6 +2161,8 @@ export async function getStudentActivity(studentId: string) {
                 type: p.type ?? "MONTHLY",
                 description: p.description ?? null,
                 method: p.method ?? null,
+                // 결제 경로(TOSS·TOSS_POS·CAFE24_BRIDGE·MANUAL) — 납부완료 상태 버튼 잠금 판단용(최종 판단은 서버 updatePaymentStatus)
+                paidProvider: p.paidProvider ?? p.paidprovider ?? null,
                 invoiceId: p.invoice_id ?? null,
                 invoiceNo: p.invoiceNo ?? p.invoiceno ?? null,
                 invoiceStatus: p.invoice_status ?? null,

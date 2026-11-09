@@ -8,6 +8,10 @@ import { todayKst, toKstYmd } from "@/lib/datetime/kst";
 // 청구/수납 탭 — 청구서 발행·수정·삭제 창과, 서버와 같은 «수정 가능» 판정(2026-11-09)
 import { CancelInvoiceModal, EditInvoiceModal, IssueInvoiceModal, type CancelablePayment, type EditablePayment } from "./StudentBillingModals";
 import { unpaidEditBlockReason } from "@/lib/payments/studentBillingRules";
+// 납부완료 상태 버튼 규칙 — 실제 결제는 잠금, 수기는 «대기로 되돌리기»만(서버 updatePaymentStatus 와 같은 함수 · 2026-11-10)
+import { paidStatusLock } from "@/lib/payments/paidStatusGuard";
+// 납부완료 상태 버튼 아래 한 줄(실제 결제 안내 · 수기 «대기로 되돌리기» 확인)
+import PaidStatusNotice from "./PaidStatusNotice";
 import { pickMonthSummary, toHhmm } from "@/lib/studentDetailFormat";
 import { isCurrentEnrollment } from "@/lib/enrollment/commencement";
 import LocationPickerModal, { type MapLocationData } from "@/components/maps/LocationPickerModal";
@@ -198,6 +202,8 @@ type StudentActivityData = {
         type?: string | null;
         description?: string | null;
         method?: string | null;
+        // 결제 경로(TOSS·TOSS_POS·CAFE24_BRIDGE·MANUAL·null) — 납부완료 상태 버튼 잠금 판단용
+        paidProvider?: string | null;
         invoiceId?: string | null;
         invoiceNo?: string | null;
         invoiceStatus?: string | null;
@@ -943,6 +949,8 @@ export default function StudentDetailClient({
     // 서버 updatePaymentStatus 는 requireFinanceOwner() 권한이라 재무 권한 없으면 throw → 에러 문구로 표면화(조용한 실패 금지)
     async function changePaymentStatus(paymentId: string, currentStatus: string, nextStatus: string) {
         if (currentStatus === nextStatus || payUpdatingId) return;
+        // 납부완료는 «대기로 되돌리기»만(화면 버튼도 그것만 보이지만, 한 번 더 막는다 · 서버도 DB 로 다시 판정)
+        if (currentStatus === "PAID" && nextStatus !== "PENDING") return;
 
         const nextInfo = PAY_STATUS[nextStatus] || PAY_STATUS.PENDING;
         // 되돌리기 힘든 변경(취소)만 확인창
@@ -1629,6 +1637,8 @@ export default function StudentDetailClient({
                                             const updating = payUpdatingId === p.id;    // 이 건 처리 중(disabled)
                                             const changed = payChangedId === p.id;      // 방금 변경 성공("변경됨")
                                             const rowError = payError?.id === p.id ? payError.message : null;
+                                            // 납부완료 잠금: REAL_LOCKED=실제 결제(버튼 잠금) · MANUAL_REVERT=수기(대기로 되돌리기만) · NONE=예전 그대로
+                                            const paidLock = paidStatusLock(p.status, p.paidProvider);
                                             // 미납·연체 건만 수정·삭제 메뉴를 단다. 수정 가능 여부는 서버와 같은 판정(최종 판단은 서버)
                                             const unpaidRow = p.status === "PENDING" || p.status === "OVERDUE";
                                             const editBlocked = unpaidRow
@@ -1673,10 +1683,11 @@ export default function StudentDetailClient({
                                                                 type="button"
                                                                 onClick={() => { setPayError(null); setPayEditingId(editing ? null : p.id); }}
                                                                 disabled={updating}
-                                                                aria-label="결제 상태 변경"
+                                                                aria-label={paidLock === "REAL_LOCKED" ? "결제 상태 변경 잠김" : "결제 상태 변경"}
                                                                 className="grid h-6 w-6 place-items-center rounded-md border border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)] transition hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)] disabled:opacity-40"
                                                             >
-                                                                <SymbolIcon name={editing ? "close" : "edit"} size={13} />
+                                                                {/* 실제 결제로 받은 납부완료는 자물쇠(눌러도 안내만 펼친다) */}
+                                                                <SymbolIcon name={editing ? "close" : paidLock === "REAL_LOCKED" ? "lock" : "edit"} size={13} />
                                                             </button>
                                                             {/* ⋯ 메뉴: 청구서 수정 · 청구서 삭제(위험 — 맨 아래 구분선 밑, 사유 입력 창에서 확정) */}
                                                             {unpaidRow && canManageFinance && (
@@ -1722,7 +1733,8 @@ export default function StudentDetailClient({
                                                                         key={option.value}
                                                                         type="button"
                                                                         onClick={() => void changePaymentStatus(p.id, p.status, option.value)}
-                                                                        disabled={updating || selected}
+                                                                        // 납부완료는 묶음 버튼으로 바꾸지 않는다(2026-11-10) — 실제 결제는 수납 관리, 수기는 아래 «대기로 되돌리기»
+                                                                        disabled={updating || selected || paidLock !== "NONE"}
                                                                         className={`px-2.5 py-1 text-xs font-bold transition disabled:cursor-default ${
                                                                             selected
                                                                                 ? PAY_SEG_SELECTED[option.value]
@@ -1740,6 +1752,12 @@ export default function StudentDetailClient({
                                                                 완납은 <Link href="/admin/finance" prefetch={false} className="font-bold text-[var(--color-academy-ink)] underline">수납 관리</Link> «납부 처리»에서 기록해요.
                                                             </p>
                                                         )}
+                                                        {/* 납부완료: 실제 결제=수납 관리 ⚡ 안내 · 직접 기록=«대기로 되돌리기»(그 자리 확인) */}
+                                                        <PaidStatusNotice
+                                                            lock={paidLock}
+                                                            updating={updating}
+                                                            onRevert={() => changePaymentStatus(p.id, p.status, "PENDING")}
+                                                        />
                                                     </div>
                                                   )}
                                                   {/* 수정할 수 없는 미납 건은 이유를 한 줄로(POS 요청·학부모 결제 진행 등) */}
