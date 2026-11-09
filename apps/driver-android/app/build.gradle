@@ -75,6 +75,22 @@ android {
         buildConfigField 'boolean', 'STIZ_UNIFIED_APP', unifiedApp.toString()
         resValue 'string', 'app_name', unifiedApp ? 'STIZ 농구교실' : 'STIZ 기사님'
     }
+    // 스토어 업로드 키(업턴랩스): 저장소 밖 파일에서만 읽는다(키·비밀번호를 git 에 넣지 않는다).
+    // 파일이 없는 PC·CI 에서는 기존처럼 서명 없는 release 를 만든다.
+    def uploadPropsFile = new File(providers.gradleProperty('stizUploadProperties')
+        .getOrElse(System.getProperty('user.home') + '/.stiz-android/upload.properties'))
+    if (uploadPropsFile.exists()) {
+        def uploadProps = new Properties()
+        uploadPropsFile.withInputStream { uploadProps.load(it) }
+        signingConfigs {
+            upload {
+                storeFile new File(uploadProps.getProperty('storeFile'))
+                storePassword uploadProps.getProperty('storePassword')
+                keyAlias uploadProps.getProperty('keyAlias')
+                keyPassword uploadProps.getProperty('keyPassword')
+            }
+        }
+    }
     buildTypes {
         debug {
             buildConfigField 'boolean', 'STIZ_SANDBOX', sandbox.toString()
@@ -84,7 +100,7 @@ android {
             else if (unifiedApp) applicationIdSuffix '.unified'
             buildConfigField 'String', 'STIZ_ORIGIN', '"' + configuredOrigin + '"'
         }
-        release { minifyEnabled false; buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false'; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
+        release { minifyEnabled false; if (uploadPropsFile.exists()) signingConfig signingConfigs.upload;buildConfigField 'boolean', 'STIZ_SANDBOX', 'false'; buildConfigField 'boolean', 'STIZ_NATIVE_AUTH', 'false'; buildConfigField 'String', 'STIZ_ORIGIN', '"https://www.stiz-dasan.kr"' }
     }
     if (localTlsDirectory != null) {
         sourceSets {
