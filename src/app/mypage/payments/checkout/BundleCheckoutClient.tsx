@@ -139,7 +139,6 @@ export default function BundleCheckoutClient({
     const overCount = picked.length > maxItems;
     const overTotal = total > maxTotal;
     const overLimit = overCount || overTotal;
-    const pickedHasPendingDeposit = picked.some((item) => item.pendingDeposit);
 
     function toggle(paymentId: string) {
         setSelected((prev) => {
@@ -343,13 +342,14 @@ export default function BundleCheckoutClient({
                     {selectableCount === 0 ? (
                         // 고를 수 있는 청구가 없다(대표 보호자 아님·랠리즈 청구 등) — 이유는 각 줄에 있다
                         <p className="academy-panel p-3 text-sm text-[var(--color-academy-muted)]">
-                            지금 이 화면에서 결제할 수 있는 청구가 없어요. 각 청구의 안내를 확인해 주세요.
+                            결제할 수 있는 청구가 없어요.
                         </p>
                     ) : account ? (
                         // 같은 묶음으로 이미 받은 입금 계좌 — 그 계좌로 입금하면 자동으로 납부 완료된다
                         <section className="space-y-2">
                             <VirtualAccountNotice account={account} />
-                            <p className="text-xs text-[var(--color-academy-muted)]">고른 청구 {picked.length}건을 묶은 계좌예요. 합계 {won(account.amount)}을 한 번에 입금해 주세요.</p>
+                            {/* 합계 금액은 위 계좌 안내에 이미 있다 — 묶음이라는 사실만 한 줄로 */}
+                            <p className="text-xs text-[var(--color-academy-muted)]">청구 {picked.length}건을 묶은 계좌예요. 합계를 한 번에 입금해 주세요.</p>
                             {!account.expired && (
                                 // 카드 등으로 바꾸려면 이 계좌를 닫아야 한다 — 바로 닫지 않고 확인 창으로 넘긴다
                                 <button
@@ -374,7 +374,7 @@ export default function BundleCheckoutClient({
                             </p>
                             {overLimit && (
                                 <p role="alert" className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-ink)]">
-                                    한 번에 {maxItems}건·{won(maxTotal)}까지 결제할 수 있어요. 체크를 줄여 나눠서 결제해 주세요.
+                                    한 번에 {maxItems}건·{won(maxTotal)}까지 결제할 수 있어요. 나눠서 결제해 주세요.
                                 </p>
                             )}
 
@@ -389,7 +389,7 @@ export default function BundleCheckoutClient({
                                                 aria-checked={method === option.value}
                                                 disabled={loading}
                                                 onClick={() => { setMethod(option.value); setConflict(null); }}
-                                                className={`flex min-h-12 flex-col items-center justify-center rounded-lg border px-1 text-xs font-bold ${
+                                                className={`flex min-h-12 flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 text-xs font-bold ${
                                                     method === option.value
                                                         ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
                                                         : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
@@ -431,22 +431,21 @@ export default function BundleCheckoutClient({
                                             {loading ? "결제창 여는 중..." : picked.length === 0 ? "결제할 청구를 선택해 주세요" : `${won(total)} 결제하기`}
                                         </button>
                                     )}
-                                    {pickedHasPendingDeposit && !conflict && (
-                                        <p className="text-xs text-[var(--color-academy-muted)]">입금 대기 계좌가 있는 청구는 그 계좌로 입금해도 돼요.</p>
-                                    )}
+                                    {/* «입금 대기 계좌가 있어요»는 그 청구 줄에 이미 적혀 있어 여기서는 다시 말하지 않는다 */}
                                 </>
                             ) : (
-                                <p className="text-xs text-[var(--color-academy-muted)]">지금은 온라인 결제를 쓸 수 없어요. 아래 학원 계좌로 입금하신 뒤 «입금했어요»로 알려 주세요.</p>
+                                <p className="text-xs text-[var(--color-academy-muted)]">지금은 온라인 결제를 쓸 수 없어요. 아래 계좌로 입금한 뒤 알려 주세요.</p>
                             )}
 
                             {/* 계좌로 직접 입금한 경우 — 고른 청구 전부를 한 번에 알린다(보조 버튼) */}
                             <div className="border-t border-[var(--color-academy-line)] pt-3">
                                 {bankAccount && (
+                                    // 계좌 글과 복사 버튼을 한 줄에 — 버튼은 «복사»로 짧게, 계좌 글은 남은 폭에서 단어 단위로 접힌다
                                     <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-                                        <span className="min-w-0 break-all font-bold tabular-nums text-[var(--color-academy-ink)]">{bankAccount}</span>
-                                        <button type="button" onClick={copyBankAccount} className="academy-button-secondary min-h-11 px-3 text-xs">
+                                        <span className="min-w-0 flex-1 break-keep font-bold tabular-nums text-[var(--color-academy-ink)]">{bankAccount}</span>
+                                        <button type="button" onClick={copyBankAccount} aria-label="계좌번호 복사" className="academy-button-secondary min-h-11 shrink-0 whitespace-nowrap px-3 text-xs">
                                             <span className="material-symbols-outlined text-base leading-none" aria-hidden="true">content_copy</span>
-                                            {copied === "ok" ? "복사됨" : "계좌번호 복사"}
+                                            {copied === "ok" ? "복사됨" : "복사"}
                                         </button>
                                         {copied === "fail" && <span role="status" className="w-full text-xs text-[var(--color-academy-muted)]">복사가 안 됐어요. 계좌번호를 길게 눌러 복사해 주세요.</span>}
                                     </div>
@@ -472,7 +471,7 @@ export default function BundleCheckoutClient({
                                                 <input value={depositorName} maxLength={60} onChange={(event) => setDepositorName(event.target.value)} placeholder="자녀 이름과 다르면" className="mt-1 min-h-11 w-full rounded-lg border border-[var(--color-academy-line)] px-2 text-sm text-[var(--color-academy-ink)]" />
                                             </label>
                                         </div>
-                                        <p className="text-xs text-[var(--color-academy-muted)]">고른 {picked.length}건 · 합계 {won(total)}을 입금했다고 학원에 알려요.</p>
+                                        <p className="text-xs text-[var(--color-academy-muted)]">{picked.length}건 · {won(total)} 입금을 학원에 알려요.</p>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button type="button" disabled={loading} onClick={() => setClaimOpen(false)} className="academy-button-secondary min-h-11 text-sm">닫기</button>
                                             <button type="button" disabled={loading || !paidOn || picked.length === 0 || overLimit} onClick={() => void submitClaim()} className="academy-button-primary min-h-11 text-sm">
