@@ -104,11 +104,50 @@ export function addMonths(ymd: string, months: number): string {
   return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+const DOW_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** "YYYY-MM-DD" 의 다음 날. 달력 숫자만 센다(시간대 개입 없음 — 이 파일은 import 없이 단독 실행된다). */
+function nextDayYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * 휴원 시작일로 고를 수 있는 가장 이른 날(원장 결정 2026-11-10 m7·k10).
+ * «오늘부터 — 오늘 그 반 수업 시작 전이면 오늘 포함, 이미 시작했으면 내일부터».
+ * - 오늘이 그 반 요일이 아니면 오늘(오늘 빠지는 수업이 없다).
+ * - 오늘이 그 반 요일이고 지금(KST "HH:MM")이 수업 시작 전이면 오늘.
+ * - 그 밖(이미 시작·반 요일/시각을 모름)은 내일 — 모르면 안전한 쪽(이미 들은 수업을 휴원으로 빼지 않게).
+ * today·nowHm 은 부르는 쪽이 공용 KST 모듈(todayKst·kstHm)로 구해 넘긴다.
+ */
+export function earliestPauseStart(input: {
+  today: string;
+  nowHm: string;
+  classDayOfWeek?: string | null;
+  classStartTime?: string | null;
+}): string {
+  if (!isYmd(input.today)) throw new Error("INVALID_DATE");
+  const tomorrow = nextDayYmd(input.today);
+  const classDow = DOW_INDEX[String(input.classDayOfWeek ?? "")];
+  if (classDow === undefined) return tomorrow;
+  const [y, m, d] = input.today.split("-").map(Number);
+  const todayDow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  if (classDow !== todayDow) return input.today;
+  const start = /^(\d{1,2}):(\d{2})/.exec(String(input.classStartTime ?? ""));
+  const now = /^(\d{1,2}):(\d{2})/.exec(String(input.nowHm ?? ""));
+  if (!start || !now) return tomorrow;
+  const startMin = Number(start[1]) * 60 + Number(start[2]);
+  const nowMin = Number(now[1]) * 60 + Number(now[2]);
+  return nowMin < startMin ? input.today : tomorrow;
+}
+
 /**
  * 적용 시작일을 정한다.
  *
- * 반 변경만 학부모가 날짜를 고를 수 있다(원장 지시). 휴원·퇴원은 다음 달 1일로 고정한다 —
- * 달 중간에 멈추면 그달 요금을 어디까지 받을지 매번 판단해야 한다.
+ * 반 변경·휴원은 학부모가 날짜를 고를 수 있다(반 변경 = 원장 지시, 휴원 = 2026-11-10 원장 결정 k10·m7
+ * «갑작스러운 휴원도 있으니 언제든 신청 — 오늘부터(오늘 수업 전이면 오늘 포함)»).
+ * 퇴원은 다음 달 1일로 고정한다. 휴원 날짜를 보내지 않은 옛 화면은 예전처럼 다음 달 1일.
  * 고른 날짜가 규칙을 벗어나면 조용히 바꾸지 않고 거절한다. 조용히 바꾸면 학부모가
  * 신청한 날과 실제 적용일이 달라진다.
  */
@@ -116,7 +155,19 @@ export function resolveEffectiveFrom(input: {
   kind: ChangeKind;
   requestedFrom?: unknown;
   today: string;
+  /** 휴원일 때 고를 수 있는 가장 이른 날(earliestPauseStart). 없으면 내일. */
+  earliestPauseFrom?: string | null;
 }): { ok: true; effectiveFrom: string } | { ok: false; error: ChangeRequestError } {
+  if (input.kind === "PAUSE") {
+    const requested = typeof input.requestedFrom === "string" ? input.requestedFrom.trim() : "";
+    if (!requested) return { ok: true, effectiveFrom: nextMonthStart(input.today) };
+    if (!isYmd(requested)) return { ok: false, error: "INVALID_EFFECTIVE_DATE" };
+    const earliest = input.earliestPauseFrom && isYmd(input.earliestPauseFrom) ? input.earliestPauseFrom : nextDayYmd(input.today);
+    // "YYYY-MM-DD" 는 글자 순서 = 날짜 순서
+    if (requested < earliest) return { ok: false, error: "PAUSE_START_TOO_SOON" };
+    if (requested > addMonths(input.today, MAX_EFFECTIVE_MONTHS_AHEAD)) return { ok: false, error: "EFFECTIVE_DATE_TOO_FAR" };
+    return { ok: true, effectiveFrom: requested };
+  }
   if (input.kind !== "CLASS_CHANGE") return { ok: true, effectiveFrom: nextMonthStart(input.today) };
 
   const requested = typeof input.requestedFrom === "string" ? input.requestedFrom.trim() : "";
@@ -151,7 +202,8 @@ export type ChangeRequestError =
   | "EFFECTIVE_DATE_TOO_FAR"
   | "RESUME_DATE_REQUIRED"
   | "RESUME_DATE_PAST"
-  | "RESUME_DATE_TOO_FAR";
+  | "RESUME_DATE_TOO_FAR"
+  | "PAUSE_START_TOO_SOON";
 
 /**
  * 신청 내용이 종류에 맞는지 본다. 소유권·정원은 여기서 보지 않는다(DB 를 봐야 한다).
@@ -202,6 +254,7 @@ export const CHANGE_REQUEST_MESSAGE: Record<ChangeRequestError, string> = {
   RESUME_DATE_REQUIRED: "복귀 희망일을 골라 주세요.",
   RESUME_DATE_PAST: "복귀 희망일은 오늘 이후로 골라 주세요.",
   RESUME_DATE_TOO_FAR: "복귀 희망일은 3개월 이내로 골라 주세요.",
+  PAUSE_START_TOO_SOON: "휴원 시작일을 다시 골라 주세요. 오늘 수업이 이미 시작됐으면 내일부터 고를 수 있어요.",
 };
 
 /**

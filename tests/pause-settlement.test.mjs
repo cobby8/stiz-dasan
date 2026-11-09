@@ -1,0 +1,484 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import Module, { createRequire } from "node:module";
+import { resolve } from "node:path";
+import test from "node:test";
+import ts from "typescript";
+
+// 2026-11-10 원장 결정 — k10·m7: 휴원은 언제든(오늘 수업 전이면 오늘부터) · m6: 승인 때 이월·환불·없음 + 자동 계산.
+// 돈이 움직이는 기능이라 계산·판정·실행 순서를 «실제로 실행»해서 못박는다(월말·연말·자정 경계·4주 단위·부분 납부).
+
+const nodeRequire = createRequire(import.meta.url);
+const load = (path, mocks = {}) => {
+  const absolute = resolve(path);
+  const compiled = ts.transpileModule(readFileSync(absolute, "utf8"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    fileName: absolute,
+  }).outputText;
+  const module = new Module(absolute);
+  module.filename = absolute;
+  module.paths = Module._nodeModulePaths(resolve("."));
+  module.require = (name) => (name in mocks ? mocks[name] : nodeRequire(name));
+  module._compile(compiled, absolute);
+  return module.exports;
+};
+
+const rules = load("src/lib/enrollment/changeRequestRules.ts");
+const plan = load("src/lib/enrollment/pause-settlement-plan.ts");
+const partial = load("src/lib/payments/tossPartialCancel.ts");
+const guard = load("src/lib/billing/parentSendGuard.ts");
+const service = load("src/lib/enrollment/pause-settlement.ts", {
+  "@/lib/billing/parentSendGuard": guard,
+  "@/lib/enrollment/pause-settlement-plan": plan,
+});
+
+// ── 1) 휴원 시작일 규칙(KST 날짜·시각 문자열만) ─────────────────────────────
+test("휴원 시작일: 오늘 그 반 수업 전이면 오늘, 이미 시작했으면 내일, 오늘 수업이 없으면 오늘", () => {
+  // 2026-11-10 = 화요일(Tue)
+  const tue = { today: "2026-11-10", classDayOfWeek: "Tue", classStartTime: "16:00" };
+  assert.equal(rules.earliestPauseStart({ ...tue, nowHm: "15:59" }), "2026-11-10");
+  assert.equal(rules.earliestPauseStart({ ...tue, nowHm: "16:00" }), "2026-11-11", "시작 시각 정각 = 이미 시작");
+  assert.equal(rules.earliestPauseStart({ ...tue, nowHm: "18:30" }), "2026-11-11");
+  // 자정 경계: KST 00:00 은 그날 수업 전
+  assert.equal(rules.earliestPauseStart({ ...tue, nowHm: "00:00" }), "2026-11-10");
+  assert.equal(rules.earliestPauseStart({ ...tue, nowHm: "23:59" }), "2026-11-11");
+  // 다른 요일 반 = 오늘 빠지는 수업이 없다
+  assert.equal(rules.earliestPauseStart({ today: "2026-11-10", nowHm: "20:00", classDayOfWeek: "Mon", classStartTime: "16:00" }), "2026-11-10");
+  // 반 정보를 모르면 안전하게 내일
+  assert.equal(rules.earliestPauseStart({ today: "2026-11-10", nowHm: "09:00", classDayOfWeek: null, classStartTime: null }), "2026-11-11");
+  assert.equal(rules.earliestPauseStart({ today: "2026-11-10", nowHm: "", classDayOfWeek: "Tue", classStartTime: "16:00" }), "2026-11-11");
+  // 월말·연말·윤년 다음 날
+  assert.equal(rules.earliestPauseStart({ today: "2026-11-30", nowHm: "20:00", classDayOfWeek: "Mon", classStartTime: "16:00" }), "2026-12-01");
+  assert.equal(rules.earliestPauseStart({ today: "2026-12-31", nowHm: "20:00", classDayOfWeek: "Thu", classStartTime: "16:00" }), "2027-01-01");
+  assert.equal(rules.earliestPauseStart({ today: "2028-02-28", nowHm: "20:00", classDayOfWeek: "Mon", classStartTime: "16:00" }), "2028-02-29");
+});
+
+test("휴원 시작일 서버 판정: 가장 이른 날 이전·3개월 밖·형식 오류는 조용히 바꾸지 않고 거절", () => {
+  const base = { kind: "PAUSE", today: "2026-11-10" };
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2026-11-10", earliestPauseFrom: "2026-11-10" }).effectiveFrom, "2026-11-10");
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2026-11-10", earliestPauseFrom: "2026-11-11" }).error, "PAUSE_START_TOO_SOON");
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2026-11-09", earliestPauseFrom: "2026-11-10" }).error, "PAUSE_START_TOO_SOON");
+  // 최소값을 못 받으면 내일부터(오늘은 막는다)
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2026-11-10" }).error, "PAUSE_START_TOO_SOON");
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2027-02-10" }).effectiveFrom, "2027-02-10");
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2027-02-11" }).error, "EFFECTIVE_DATE_TOO_FAR");
+  assert.equal(rules.resolveEffectiveFrom({ ...base, requestedFrom: "2026-11-31" }).error, "INVALID_EFFECTIVE_DATE");
+  assert.ok(rules.CHANGE_REQUEST_MESSAGE.PAUSE_START_TOO_SOON.includes("내일"));
+});
+
+test("학부모 접수·화면: 반 요일·시작 시각은 DB 값으로 서버가 다시 판정하고, 화면은 그 반 최소값을 쓴다", () => {
+  const lib = readFileSync("src/lib/enrollment/parent-change-request.ts", "utf8");
+  assert.match(lib, /c\."dayOfWeek" AS "classDayOfWeek", c\."startTime" AS "classStartTime"/);
+  assert.match(lib, /earliestPauseFrom: earliestPauseStart\(\{\s*today, nowHm: kstHm\(Date\.now\(\)\)/);
+  assert.match(lib, /minPauseFrom: earliestPauseStart\(/);
+  const ui = readFileSync("src/app/mypage/enrollment-change/EnrollmentChangeClient.tsx", "utf8");
+  assert.match(ui, /id="pause-from"/);
+  assert.match(ui, /min=\{minPauseFrom\}/);
+  assert.match(ui, /kind === "PAUSE" \? pauseStart/);
+  assert.match(ui, /earliestResumeOn\(pauseStart\)/, "복귀일 최소값은 고른 휴원 시작일 다음 날");
+});
+
+// ── 2) 금액 계산(순수) ─────────────────────────────────────────────────────
+const pay = (over) => ({
+  paymentId: "p1", year: 2026, month: 11, amount: 140000, status: "PAID", paidProvider: "MANUAL", method: "CASH",
+  rallyzMirror: false, tossTx: null, busy: false, classDates: [], settledDates: [], priorReduction: 0, ...over,
+});
+// 화요일 반 11월 수강월 4회(4주 단위)
+const NOV4 = ["2026-11-03", "2026-11-10", "2026-11-17", "2026-11-24"];
+
+test("4주 단위: 청구 금액 ÷ 그 수강월 수업 수 × 빠지는 수업 수", () => {
+  const p = plan.planPauseSettlement({ pauseFrom: "2026-11-17", resumeOn: null, payments: [pay({ classDates: NOV4 })] });
+  assert.equal(p.lines.length, 1);
+  assert.deepEqual(p.lines[0].missedDates, ["2026-11-17", "2026-11-24"]);
+  assert.equal(p.lines[0].amount, 70000);
+  assert.equal(p.paidTotal, 70000);
+  assert.equal(p.unpaidTotal, 0);
+  // 휴원 시작일 당일 수업도 빠진다(오늘 수업 전 휴원)
+  assert.equal(plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ classDates: NOV4 })] }).paidTotal, 105000);
+  // 복귀일 당일 수업은 듣는다(빠지지 않는다)
+  const back = plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: "2026-11-24", payments: [pay({ classDates: NOV4 })] });
+  assert.deepEqual(back.lines[0].missedDates, ["2026-11-10", "2026-11-17"]);
+  assert.equal(back.paidTotal, 70000);
+});
+
+test("3회 달(청구 = 정가×3/4)·5회 달·반올림·전부 빠짐", () => {
+  const three = ["2027-02-02", "2027-02-09", "2027-02-23"];
+  // 3회 달 청구 105,000(=140,000×3/4) → 1회 = 35,000 = 정가÷4 (proration.ts 회당 단가와 같다)
+  assert.equal(plan.planPauseSettlement({ pauseFrom: "2027-02-20", resumeOn: null, payments: [pay({ year: 2027, month: 2, amount: 105000, classDates: three })] }).paidTotal, 35000);
+  // 전부 빠지면 1원 오차 없이 청구 금액 그대로
+  assert.equal(plan.planPauseSettlement({ pauseFrom: "2027-02-01", resumeOn: null, payments: [pay({ year: 2027, month: 2, amount: 100000, classDates: three })] }).paidTotal, 100000);
+  // 반올림은 청구 한 건마다 한 번: 100,000 × 1/3 = 33,333.3 → 33,333
+  assert.equal(plan.pauseLineAmount(100000, 1, 3), 33333);
+  assert.equal(plan.pauseLineAmount(100000, 2, 3), 66667);
+  // 5회 달: 140,000 ÷ 5 = 28,000
+  const five = ["2026-12-01", "2026-12-08", "2026-12-15", "2026-12-22", "2026-12-29"];
+  assert.equal(plan.planPauseSettlement({ pauseFrom: "2026-12-29", resumeOn: null, payments: [pay({ year: 2026, month: 12, classDates: five })] }).paidTotal, 28000);
+  assert.equal(plan.pauseLineAmount(0, 1, 4), 0);
+  assert.equal(plan.pauseLineAmount(140000, 0, 4), 0);
+  assert.equal(plan.pauseLineAmount(140000, 1, 0), 0);
+});
+
+test("월말·연말: 복귀일 미정이면 이미 낸 다음 달 청구까지 전부, 수강월이 달력 달을 넘어도 수업일 기준", () => {
+  // 12월 수강월 수업이 1월 초까지 이어지는 일정(계획표가 정한 수강월 기준)
+  const dec = ["2026-12-08", "2026-12-15", "2026-12-22", "2027-01-05"];
+  const jan = ["2027-01-12", "2027-01-19", "2027-01-26", "2027-02-02"];
+  const p = plan.planPauseSettlement({
+    pauseFrom: "2026-12-31", resumeOn: null,
+    payments: [pay({ paymentId: "dec", year: 2026, month: 12, classDates: dec }), pay({ paymentId: "jan", year: 2027, month: 1, classDates: jan })],
+  });
+  assert.deepEqual(p.lines.map((l) => [l.paymentId, l.amount]), [["dec", 35000], ["jan", 140000]]);
+  assert.equal(p.carryAfterYm, "2027-01", "이월은 마지막으로 빠진 수강월 «뒤» 청구에서");
+  // 휴원 시작 전 수강월 청구는 일정이 없어도 문제 삼지 않는다
+  const prior = plan.planPauseSettlement({ pauseFrom: "2026-12-31", resumeOn: null, payments: [pay({ paymentId: "nov", year: 2026, month: 11, classDates: [] })] });
+  assert.deepEqual(prior.problems, []);
+  // 휴원이 닿는 수강월 일정이 없으면 계산하지 않는다(추측 금지)
+  const missing = plan.planPauseSettlement({ pauseFrom: "2026-12-31", resumeOn: null, payments: [pay({ paymentId: "jan", year: 2027, month: 1, classDates: [] })] });
+  assert.equal(missing.lines.length, 0);
+  assert.match(missing.problems[0], /2027-01 수강월 수업일이 연간 일정에 없어/);
+});
+
+test("부분 납부·이미 처리된 날: 다른 휴원 처리가 뺀 날은 다시 빼지 않고, 줄인 미납 청구는 원래 금액으로 단가 계산", () => {
+  // 같은 청구에서 11/17 은 이전 휴원 처리가 이미 뺐다 → 11/24 만
+  const again = plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ classDates: NOV4, settledDates: ["2026-11-10", "2026-11-17"] })] });
+  assert.deepEqual(again.lines[0].missedDates, ["2026-11-24"]);
+  assert.equal(again.paidTotal, 35000);
+  // 미납 청구가 이미 35,000 줄어 105,000 남음 → 단가는 원래 140,000 기준(1회 35,000), 남은 금액보다 많이 빼지 않는다
+  const unpaid = plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ status: "PENDING", amount: 105000, priorReduction: 35000, classDates: NOV4, settledDates: ["2026-11-03"] })] });
+  assert.equal(unpaid.lines[0].billAmount, 140000);
+  assert.equal(unpaid.unpaidTotal, 105000);
+  assert.equal(unpaid.lines[0].channel, "SITE");
+  // 취소·환불된 청구는 빠질 돈이 없다
+  assert.equal(plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ status: "REFUNDED", classDates: NOV4 }), pay({ paymentId: "c", status: "CANCELED", classDates: NOV4 })] }).lines.length, 0);
+});
+
+test("결제 경로: 토스 온라인·무통장·POS·랠리즈·현금 구분, 결제 진행 중인 미납 청구는 실행을 막는다", () => {
+  const ch = (over) => plan.paidChannel({ paidProvider: null, method: null, rallyzMirror: false, tossTx: null, ...over });
+  assert.equal(ch({ paidProvider: "TOSS", tossTx: { transactionId: "t", method: "카드" } }), "TOSS");
+  assert.equal(ch({ paidProvider: "TOSS", tossTx: { transactionId: "t", method: "가상계좌" } }), "TOSS_VA");
+  assert.equal(ch({ paidProvider: "TOSS", tossTx: null }), "MANUAL", "거래 기록을 못 찾으면 자동으로 돈을 움직이지 않는다");
+  assert.equal(ch({ paidProvider: "TOSS_POS" }), "TOSS_POS");
+  assert.equal(ch({ rallyzMirror: true }), "RALLYZ");
+  assert.equal(ch({ method: "RALLYZ" }), "RALLYZ");
+  assert.equal(ch({ paidProvider: "MANUAL", method: "CASH" }), "MANUAL");
+  assert.equal(ch({ paidProvider: "CAFE24_BRIDGE" }), "MANUAL");
+  const busy = plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ status: "PENDING", busy: true, classDates: NOV4 })] });
+  assert.equal(busy.lines.length, 0);
+  assert.match(busy.problems[0], /결제가 진행 중/);
+  const rallyz = plan.planPauseSettlement({ pauseFrom: "2026-11-10", resumeOn: null, payments: [pay({ status: "OVERDUE", rallyzMirror: true, classDates: NOV4 })] });
+  assert.equal(rallyz.lines[0].channel, "RALLYZ");
+});
+
+test("처리 방식별 기록 줄: 환불(토스=요청·그 밖=할 일) · 이월(적립) · 없음(기록만, 미납도 그대로)", () => {
+  const p = plan.planPauseSettlement({
+    pauseFrom: "2026-11-17", resumeOn: null,
+    payments: [
+      pay({ paymentId: "toss", paidProvider: "TOSS", tossTx: { transactionId: "t1", method: "카드" }, classDates: NOV4 }),
+      pay({ paymentId: "cash", classDates: NOV4 }),
+      pay({ paymentId: "unpaid", status: "PENDING", year: 2026, month: 12, classDates: ["2026-12-01", "2026-12-08", "2026-12-15", "2026-12-22"] }),
+      pay({ paymentId: "rz", status: "PENDING", rallyzMirror: true, year: 2027, month: 1, classDates: ["2027-01-05", "2027-01-12", "2027-01-19", "2027-01-26"] }),
+    ],
+  });
+  const kinds = (mode) => plan.settlementLineDrafts(p, mode).lines.map((l) => `${l.paymentId}:${l.kind}:${l.status}`);
+  assert.deepEqual(kinds("REFUND"), ["cash:REFUND:TODO", "toss:REFUND:REQUESTED", "unpaid:UNPAID_REDUCE:DONE", "rz:UNPAID_REDUCE:TODO"]);
+  assert.deepEqual(kinds("CARRY"), ["cash:CARRY_CREDIT:DONE", "toss:CARRY_CREDIT:DONE", "unpaid:UNPAID_REDUCE:DONE", "rz:UNPAID_REDUCE:TODO"]);
+  assert.deepEqual(kinds("NONE"), ["cash:NONE:DONE", "toss:NONE:DONE", "unpaid:NONE:DONE", "rz:NONE:DONE"]);
+  assert.equal(plan.settlementLineDrafts(p, "CARRY").carryTotal, 140000);
+  assert.equal(plan.settlementLineDrafts(p, "REFUND").carryTotal, 0);
+  // 학부모 알림 한 줄(«○원 이월/환불 예정»)
+  assert.equal(plan.settlementNoticeLine("REFUND", 140000, 280000), "수강료 140,000원 환불 예정 · 미납 청구 280,000원 감액");
+  assert.equal(plan.settlementNoticeLine("CARRY", 70000, 0), "수강료 70,000원 이월 예정(다음 청구에서 차감)");
+  assert.equal(plan.settlementNoticeLine("NONE", 70000, 140000), null);
+  assert.doesNotMatch(plan.settlementNoticeLine("REFUND", 1, 1), /[«»]/, "문자로도 나갈 수 있어 꺾쇠 따옴표 금지");
+  // 사람 할 일 문장
+  assert.match(plan.settlementTodoText({ kind: "REFUND", channel: "TOSS_POS", amount: 35000, status: "TODO" }), /POS 단말기에서 35,000원 부분 취소/);
+  assert.match(plan.settlementTodoText({ kind: "REFUND", channel: "MANUAL", amount: 35000, status: "TODO" }), /직접 환불/);
+  assert.match(plan.settlementTodoText({ kind: "UNPAID_REDUCE", channel: "RALLYZ", amount: 35000, status: "TODO" }), /랠리즈 청구에서 35,000원 감액/);
+  assert.equal(plan.settlementTodoText({ kind: "REFUND", channel: "TOSS", amount: 1, status: "DONE" }), null);
+  // 지문은 금액이 바뀌면 달라진다
+  const changed = plan.planPauseSettlement({ pauseFrom: "2026-11-24", resumeOn: null, payments: [pay({ classDates: NOV4 })] });
+  assert.notEqual(plan.planFingerprint("r", p), plan.planFingerprint("r", changed));
+});
+
+// ── 3) 토스 부분 취소 판정 ────────────────────────────────────────────────
+test("토스 부분 취소: 남은 금액·주문·무통장 확인, 표식으로 재시도 시 두 번 취소하지 않음, 면세 몫", () => {
+  const tx = { orderId: "o1", amount: 280000, method: "카드" };
+  const v = { status: "DONE", orderId: "o1", paymentKey: "pk", totalAmount: 280000, balanceAmount: 280000, taxFreeAmount: 280000, method: "카드", cancels: null };
+  assert.equal(partial.partialCancelBlock(v, tx, 70000), null);
+  assert.match(partial.partialCancelBlock({ ...v, balanceAmount: 50000 }, tx, 70000), /남은 금액/);
+  assert.match(partial.partialCancelBlock({ ...v, orderId: "x" }, tx, 70000), /장부와 달라/);
+  assert.match(partial.partialCancelBlock({ ...v, totalAmount: 1 }, tx, 70000), /금액이 장부와 달라/);
+  assert.match(partial.partialCancelBlock({ ...v, method: "가상계좌" }, tx, 70000), /환불 계좌/);
+  assert.match(partial.partialCancelBlock({ ...v, status: "CANCELED", balanceAmount: 0 }, tx, 70000), /완료 상태가 아닌/);
+  assert.equal(partial.partialCancelBlock({ ...v, status: "PARTIAL_CANCELED", balanceAmount: 210000 }, tx, 70000), null);
+  assert.match(partial.partialCancelBlock(v, tx, 0), /금액이 올바르지/);
+  assert.match(partial.partialCancelBlock(v, tx, 1.5), /금액이 올바르지/);
+  assert.match(partial.partialCancelBlock(null, tx, 1), /확인하지 못했/);
+  const marker = partial.partialCancelMarker("line-1");
+  assert.equal(partial.findMarkedCancel(v, marker), null);
+  const after = { ...v, status: "PARTIAL_CANCELED", balanceAmount: 210000, cancels: [{ cancelAmount: 70000, cancelReason: `휴원 수강료 환불 ${marker}`, taxFreeAmount: 70000, cancelStatus: "DONE" }] };
+  assert.deepEqual(partial.findMarkedCancel(after, marker), { amount: 70000 });
+  assert.equal(partial.findMarkedCancel(after, partial.partialCancelMarker("line-2")), null);
+  assert.equal(partial.findMarkedCancel({ ...after, cancels: [{ ...after.cancels[0], cancelStatus: "IN_PROGRESS" }] }, marker), null);
+  // 면세: 전액 면세 결제 → 취소액만큼, 앞선 취소가 면세를 써 버렸으면 남은 만큼만
+  assert.equal(partial.partialCancelTaxFree(v, 70000), 70000);
+  assert.equal(partial.partialCancelTaxFree({ ...v, taxFreeAmount: 100000, cancels: [{ taxFreeAmount: 70000 }] }, 70000), 30000);
+  assert.equal(partial.partialCancelTaxFree({ ...v, taxFreeAmount: 0 }, 70000), 0);
+});
+
+test("토스 부분 취소 함수 계약: 재조회 → 감사 → cancelAmount+면세+고정 멱등 키 → 재조회 표식 확인, 장부(Payment)는 건드리지 않음", () => {
+  const src = readFileSync("src/lib/payment-ledger.ts", "utf8");
+  const body = src.slice(src.indexOf("export async function partialRefundTossPaymentByAdmin"), src.indexOf("/** 관리자 환불 취소 요청의 Idempotency-Key 시드"));
+  assert.ok(body.length > 100);
+  const order = ["getVerifiedTossPayment(", "findMarkedCancel(before", "partialCancelBlock(", "PAYMENT_TOSS_PARTIAL_CANCEL_REQUESTED", "cancelAmount: input.amount", "getVerifiedTossPayment(", "findMarkedCancel(after"];
+  let at = 0;
+  for (const mark of order) {
+    const found = body.indexOf(mark, at);
+    assert.ok(found >= 0, `${mark} 순서`);
+    at = found + 1;
+  }
+  assert.match(body, /taxFreeAmount: partialCancelTaxFree\(before\.payment, input\.amount\)/);
+  assert.match(body, /"Idempotency-Key": makeUuidFromSeed\(`stiz-pause-refund:\$\{input\.lineId\}`\)/);
+  assert.match(body, /input\.amount > share/, "그 청구 몫보다 많이 돌려주지 않는다");
+  assert.doesNotMatch(body, /UPDATE "Payment"/);
+});
+
+// ── 4) 실행부(가짜 DB 로 실제 실행) ───────────────────────────────────────
+function fakeDb({ payments, request, existing = false, txStatus = "DONE" }) {
+  const state = {
+    locks: [], settlements: [], lines: [], paymentUpdates: [], invoiceUpdates: [], audits: [], opsAudits: [],
+    payments: payments.map((p) => ({ ...p })),
+  };
+  const db = {
+    state,
+    async $executeRawUnsafe(sql, ...v) {
+      if (sql.includes("pg_advisory_xact_lock")) { state.locks.push(v[0] ?? "workbench"); return 1; }
+      if (sql.includes('INSERT INTO "EnrollmentChangeSettlement"')) {
+        state.settlements.push({ id: v[0], requestId: v[1], studentId: v[2], mode: v[3], paidAmount: v[4], unpaidAmount: v[5], carryRemaining: v[6], carryAfterYm: v[7], previewKey: v[8] });
+        return 1;
+      }
+      if (sql.includes('INSERT INTO "EnrollmentChangeSettlementLine"')) {
+        if (sql.includes("'CARRY_APPLY'")) state.lines.push({ id: v[0], settlementId: v[1], paymentId: v[2], kind: "CARRY_APPLY", amount: v[3], status: "DONE" });
+        else state.lines.push({ id: v[0], settlementId: v[1], paymentId: v[2], kind: v[3], channel: v[4], amount: v[5], status: v[6], transactionId: v[8] });
+        return 1;
+      }
+      if (sql.includes('UPDATE "Payment" SET amount')) {
+        const p = state.payments.find((x) => x.id === v[0]);
+        if (!p || !["PENDING", "OVERDUE"].includes(p.status) || p.amount !== v[2]) return 0;
+        p.amount = v[1];
+        if (v[1] === 0) p.status = "CANCELED";
+        state.paymentUpdates.push({ id: v[0], to: v[1], from: v[2] });
+        return 1;
+      }
+      if (sql.includes('UPDATE "PaymentInvoice"')) { state.invoiceUpdates.push({ id: v[0], to: v[1] }); return 1; }
+      if (sql.includes('INSERT INTO "PaymentAuditLog"')) { state.audits.push({ paymentId: v[0], action: v[2] }); return 1; }
+      if (sql.includes('INSERT INTO "OperationsAuditLog"')) { state.opsAudits.push(JSON.parse(v[2])); return 1; }
+      if (sql.includes('UPDATE "EnrollmentChangeSettlement" s')) return 1; // 상태 갱신
+      if (sql.includes('UPDATE "EnrollmentChangeSettlement" SET "carryRemaining"')) {
+        const s = state.settlements.find((x) => x.id === v[0]);
+        if (s.carryRemaining !== v[2]) return 0;
+        s.carryRemaining = v[1];
+        return 1;
+      }
+      if (sql.includes('UPDATE "EnrollmentChangeSettlementLine"')) {
+        const line = state.lines.find((x) => x.id === v[0]);
+        if (!line || !["REQUESTED", "FAILED"].includes(line.status)) return 0;
+        line.status = sql.includes("SET status = 'DONE'") ? "DONE" : sql.includes("SET status = 'FAILED'") ? "FAILED" : v[1];
+        line.message = sql.includes("SET status = 'DONE'") || sql.includes("SET status = 'FAILED'") ? v[1] : v[2];
+        return 1;
+      }
+      throw new Error(`예상 못한 쓰기: ${sql.slice(0, 80)}`);
+    },
+    async $queryRawUnsafe(sql, ...v) {
+      if (sql.includes("to_regclass")) return [{ a: "x", b: "y" }];
+      if (sql.includes('FROM "EnrollmentChangeRequest" r')) return request ? [request] : [];
+      if (sql.includes('SELECT id FROM "EnrollmentChangeSettlement" WHERE "requestId"')) return existing || state.settlements.length ? [{ id: "s0" }] : [];
+      if (sql.includes('FROM "Payment" p') && sql.includes("LEFT JOIN LATERAL")) {
+        assert.match(sql, /FOR UPDATE OF p|ORDER BY p\.year, p\.month, p\.id$/m);
+        return state.payments.filter((p) => p.year * 100 + p.month >= v[2]);
+      }
+      if (sql.includes('FROM "EnrollmentChangeSettlementLine" l') && sql.includes("JOIN")) return [];
+      if (sql.includes("kind = 'REFUND' AND channel = 'TOSS'")) {
+        return state.lines.filter((l) => l.settlementId === v[0] && l.kind === "REFUND" && l.channel === "TOSS" && ["REQUESTED", "FAILED"].includes(l.status));
+      }
+      if (sql.includes('FROM "EnrollmentChangeSettlement"') && sql.includes('"carryRemaining" > 0') && sql.includes("FOR UPDATE")) {
+        return state.settlements.filter((s) => s.carryRemaining > 0);
+      }
+      if (sql.includes('SELECT p.id, p.amount, p.year, p.month FROM "Payment" p')) {
+        return state.payments.filter((p) => ["PENDING", "OVERDUE"].includes(p.status) && p.amount > 0 && p.year * 100 + p.month > v[1] && !p.rallyzMirror);
+      }
+      throw new Error(`예상 못한 읽기: ${sql.slice(0, 80)}`);
+    },
+    async $transaction(fn) { return fn(db); },
+  };
+  return db;
+}
+
+const REQ = { id: "req-1", kind: "PAUSE", status: "APPROVED", studentId: "stu-1", fromClassId: "cls-1", pauseFrom: "2026-11-17", resumeOn: null, dayOfWeek: "Tue" };
+const DEC4 = ["2026-12-01", "2026-12-08", "2026-12-15", "2026-12-22"];
+const classDatesFor = (ym) => (ym === "2026-11" ? NOV4 : ym === "2026-12" ? DEC4 : ym === "2027-01" ? ["2027-01-05", "2027-01-12", "2027-01-19", "2027-01-26"] : []);
+const ROWS = () => [
+  { id: "nov", year: 2026, month: 11, amount: 140000, status: "PAID", paidProvider: "TOSS", method: "카드", rallyzMirror: false, tossTxId: "tx-nov", tossTxMethod: "카드", busy: false },
+  { id: "dec", year: 2026, month: 12, amount: 140000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+];
+
+async function previewKey(db) {
+  const preview = await service.previewPauseSettlement(db, "req-1", classDatesFor);
+  return preview.previewKey;
+}
+
+test("실행: 잠금 → 재계산 지문 대조 → 기록 + 미납 감액(조건부) → 토스 환불은 커밋 뒤 작업으로", async () => {
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const key = await previewKey(db);
+  const result = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "admin", mode: "REFUND", expectedPreviewKey: key, classDatesFor });
+  assert.equal(result.ok, true);
+  assert.deepEqual(db.state.locks, ["workbench", "pause-settlement:req-1"]);
+  assert.equal(result.paidTotal, 70000);
+  assert.equal(result.unpaidTotal, 140000);
+  assert.deepEqual(result.refundJobs.map((j) => [j.paymentId, j.transactionId, j.amount]), [["nov", "tx-nov", 70000]]);
+  // 12월 미납 청구 전부 휴원 → 0원 = 취소
+  assert.deepEqual(db.state.paymentUpdates, [{ id: "dec", to: 0, from: 140000 }]);
+  assert.equal(db.state.payments.find((p) => p.id === "dec").status, "CANCELED");
+  assert.equal(db.state.payments.find((p) => p.id === "nov").status, "PAID", "납부완료는 건드리지 않는다");
+  assert.deepEqual(db.state.lines.map((l) => `${l.paymentId}:${l.kind}:${l.status}`), ["nov:REFUND:REQUESTED", "dec:UNPAID_REDUCE:DONE"]);
+  assert.equal(db.state.settlements[0].mode, "REFUND");
+  assert.equal(result.noticeLine, "수강료 70,000원 환불 예정 · 미납 청구 140,000원 감액");
+  assert.equal(db.state.opsAudits[0].requestId, "req-1");
+});
+
+test("실행 거절: 미리보기 뒤 금액이 바뀜 · 이미 처리 · 방식 없음 · 승인 전 · 휴원 아님", async () => {
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const key = await previewKey(db);
+  db.state.payments[0].amount = 150000; // 미리보기 뒤 청구 금액이 바뀌었다
+  const changed = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: key, classDatesFor });
+  assert.equal(changed.ok, false);
+  assert.match(changed.message, /바뀌었어요/);
+  assert.equal(db.state.settlements.length, 0);
+
+  const dup = fakeDb({ payments: ROWS(), request: REQ, existing: true });
+  assert.match((await service.executePauseSettlementInTx(dup, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(dup), classDatesFor })).message, /이미/);
+  assert.match((await service.executePauseSettlementInTx(fakeDb({ payments: ROWS(), request: REQ }), { requestId: "req-1", adminUserId: "a", mode: "BOTH", expectedPreviewKey: key, classDatesFor })).message, /골라/);
+  assert.match((await service.executePauseSettlementInTx(fakeDb({ payments: ROWS(), request: { ...REQ, status: "PENDING" } }), { requestId: "req-1", adminUserId: "a", mode: "NONE", expectedPreviewKey: key, classDatesFor })).message, /승인된 휴원만/);
+  assert.match((await service.executePauseSettlementInTx(fakeDb({ payments: ROWS(), request: { ...REQ, kind: "WITHDRAW" } }), { requestId: "req-1", adminUserId: "a", mode: "NONE", expectedPreviewKey: key, classDatesFor })).message, /휴원 신청만/);
+});
+
+test("미납 감액 중 다른 곳에서 청구가 바뀌면(조건부 UPDATE 0행) 오류로 트랜잭션 전체를 되돌린다", async () => {
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const key = await previewKey(db);
+  const original = db.$executeRawUnsafe;
+  db.$executeRawUnsafe = async (sql, ...v) => (sql.includes('UPDATE "Payment" SET amount') ? 0 : original(sql, ...v));
+  await assert.rejects(
+    service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "CARRY", expectedPreviewKey: key, classDatesFor }),
+    /PAUSE_SETTLEMENT_PAYMENT_CONFLICT/,
+  );
+});
+
+test("토스 환불 실행: 성공=DONE · 확실한 실패=FAILED · 결과 모름=REQUESTED(다시 시도는 같은 줄로)", async () => {
+  for (const [answer, expected] of [
+    [{ ok: true, alreadyApplied: false }, "DONE"],
+    [{ ok: false, message: "토스가 취소하지 않았어요", uncertain: false }, "FAILED"],
+    [{ ok: false, message: "확인 못 함", uncertain: true }, "REQUESTED"],
+  ]) {
+    const db = fakeDb({ payments: ROWS(), request: REQ });
+    const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
+    const calls = [];
+    const summary = await service.runSettlementTossRefunds(db, {
+      settlementId: done.settlementId, adminUserId: "a",
+      refundToss: async (input) => { calls.push(input); return answer; },
+    });
+    assert.equal(calls.length, 1);
+    assert.deepEqual({ tx: calls[0].transactionId, pay: calls[0].paymentId, amount: calls[0].amount, line: calls[0].lineId }, { tx: "tx-nov", pay: "nov", amount: 70000, line: done.refundJobs[0].lineId });
+    assert.equal(db.state.lines.find((l) => l.kind === "REFUND").status, expected);
+    assert.equal(summary.done + summary.failed + summary.uncertain, 1);
+  }
+  // 토스 함수가 던져도 결과 모름(REQUESTED)으로 남기고 멈추지 않는다
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
+  const summary = await service.runSettlementTossRefunds(db, { settlementId: done.settlementId, adminUserId: "a", refundToss: async () => { throw new Error("network"); } });
+  assert.equal(summary.uncertain, 1);
+  assert.equal(db.state.lines.find((l) => l.kind === "REFUND").status, "REQUESTED");
+});
+
+test("이월: 적립 뒤 휴원 수강월 «뒤»의 미납 청구에서 차감, 모자라면 남은 이월은 다음 청구로", async () => {
+  const rows = [
+    { id: "nov", year: 2026, month: 11, amount: 140000, status: "PAID", paidProvider: "MANUAL", method: "CASH", rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+    { id: "dec", year: 2026, month: 12, amount: 140000, status: "PAID", paidProvider: "MANUAL", method: "CASH", rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+    // 복귀 후 첫 청구(1월) 50,000 — 이월 210,000 중 50,000 만 차감되고 160,000 이 남는다
+    { id: "jan", year: 2027, month: 1, amount: 50000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false },
+  ];
+  const db = fakeDb({ payments: rows, request: { ...REQ, resumeOn: "2027-01-01" } });
+  const key = (await service.previewPauseSettlement(db, "req-1", classDatesFor)).previewKey;
+  const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "CARRY", expectedPreviewKey: key, classDatesFor });
+  assert.equal(done.ok, true);
+  assert.equal(done.paidTotal, 70000 + 140000);
+  assert.equal(db.state.settlements[0].carryRemaining, 210000);
+  assert.equal(db.state.settlements[0].carryAfterYm, "2026-12");
+  const applied = await service.applyOpenPauseCarries(db, { studentId: "stu-1" });
+  assert.deepEqual(applied, { applied: 1, amount: 50000 });
+  assert.equal(db.state.payments.find((p) => p.id === "jan").status, "CANCELED", "전액 차감된 청구는 0원 미납으로 남기지 않는다");
+  assert.equal(db.state.settlements[0].carryRemaining, 160000);
+  assert.ok(db.state.lines.some((l) => l.kind === "CARRY_APPLY" && l.paymentId === "jan" && l.amount === 50000));
+  // 다시 돌려도(크론) 더 뺄 청구가 없으면 그대로
+  assert.deepEqual(await service.applyOpenPauseCarries(db, { studentId: "stu-1" }), { applied: 0, amount: 0 });
+});
+
+// ── 5) 연결 계약(승인·알림·취소 요청·화면) ─────────────────────────────────
+test("승인과 수강료 처리는 한 트랜잭션, 실패하면 승인도 되돌리고, 토스·이월은 커밋 뒤·알림 앞", () => {
+  const src = readFileSync("src/lib/enrollment/admin-change-request.ts", "utf8");
+  const decide = src.slice(src.indexOf("export async function decideEnrollmentChangeRequest"), src.indexOf("export type DueEnrollmentChangeSummary"));
+  assert.match(decide, /executePauseSettlementInTx\(tx as any/);
+  assert.match(decide, /if \(!result\.ok\) throw new SettlementRejected/);
+  const txEnd = decide.indexOf("  if (!rows[0]) return");
+  const finish = decide.indexOf("finishSettlement(holder.settled");
+  const notify = decide.indexOf('notifyParentOfEnrollmentChange(input.requestId, input.approve ? "APPROVED" : "REJECTED")');
+  assert.ok(txEnd > 0 && finish > txEnd && notify > finish, "트랜잭션 → 토스·이월 → 알림 순서");
+  // 신청함 등 settlement 없이 부르는 예전 호출도 그대로 동작(선택 칸)
+  assert.match(decide, /settlement\?: PauseSettlementChoice \| null/);
+  // 취소 요청(d8) 승인은 돈이 움직인 휴원이면 막는다
+  const cancel = src.slice(src.indexOf("export async function decideEnrollmentCancelRequest"));
+  assert.match(cancel, /input\.approve && await hasMovedMoneySettlement\(prisma, input\.requestId\)/);
+  // 알림 문구는 처리 기록에서 읽고, 따로 정한 처리면 SETTLED 한 번
+  const notifySrc = readFileSync("src/lib/enrollment/change-decision-notify.ts", "utf8");
+  assert.match(notifySrc, /event === "APPROVED" \|\| event === "SETTLED"/);
+  assert.match(notifySrc, /to_regclass\('public\."EnrollmentChangeSettlement"'\)/);
+  assert.match(src, /notifyParentOfEnrollmentChange\(input\.requestId, "SETTLED"\)/);
+  // 매일 크론이 남은 이월을 다음 청구에서 뺀다
+  assert.match(readFileSync("src/app/api/cron/enrollment-changes/route.ts", "utf8"), /applyOpenPauseCarries\(prisma as any\)/);
+});
+
+test("학부모 알림 문구: 승인에 «○원 환불/이월 예정» 한 줄, 처리 안내(SETTLED)", () => {
+  const status = load("src/lib/enrollment/parentChangeStatus.ts");
+  const approved = status.buildChangeDecisionNotice({ event: "APPROVED", studentName: "김루빈", className: "화 4교시", kind: "PAUSE", effectiveFrom: "2026-11-17", settlementLine: "수강료 70,000원 환불 예정" });
+  assert.equal(approved.message, "김루빈 화 4교시 휴원 신청이 승인됐어요(11/17부터) · 수강료 70,000원 환불 예정");
+  const plain = status.buildChangeDecisionNotice({ event: "APPROVED", studentName: "김루빈", className: null, kind: "PAUSE", effectiveFrom: "2026-11-17" });
+  assert.equal(plain.message, "김루빈 휴원 신청이 승인됐어요(11/17부터)");
+  const settled = status.buildChangeDecisionNotice({ event: "SETTLED", studentName: "김루빈", className: null, kind: "PAUSE", effectiveFrom: "2026-11-17", settlementLine: "수강료 70,000원 이월 예정(다음 청구에서 차감)" });
+  assert.equal(settled.message, "김루빈 휴원(11/17부터) 수강료 70,000원 이월 예정(다음 청구에서 차감)");
+});
+
+test("마이그레이션: 신청당 1행·줄 유일·청구 삭제를 막지 않음·RLS·공개 키 차단", () => {
+  const sql = readFileSync("prisma/migrations/20261110180000_enrollment_pause_settlement/migration.sql", "utf8");
+  assert.match(sql, /CONSTRAINT "EnrollmentChangeSettlement_requestId_key" UNIQUE \("requestId"\)/);
+  assert.match(sql, /UNIQUE \("settlementId", "paymentId", kind\)/);
+  assert.match(sql, /"paymentId" TEXT REFERENCES "Payment"\(id\) ON DELETE SET NULL/);
+  assert.match(sql, /CHECK \(mode IN \('CARRY', 'REFUND', 'NONE'\)\)/);
+  assert.match(sql, /"carryRemaining" <= "paidAmount"/);
+  assert.equal((sql.match(/ENABLE ROW LEVEL SECURITY/g) ?? []).length, 2);
+  assert.match(sql, /REVOKE ALL ON "EnrollmentChangeSettlement", "EnrollmentChangeSettlementLine" FROM PUBLIC/);
+  // 코드가 쓰는 종류·경로·상태 값 = 제약 값(같은 규칙의 두 곳을 같은 커밋에서)
+  for (const value of ["REFUND", "CARRY_CREDIT", "UNPAID_REDUCE", "NONE", "CARRY_APPLY", "CARRY_MANUAL", "TOSS_VA", "TOSS_POS", "RALLYZ", "SITE", "DONE_MANUAL", "REQUESTED"]) {
+    assert.ok(sql.includes(`'${value}'`), value);
+  }
+});
+
+test("관리자 화면: 방식 고르기 → 확인창(금액·토스 즉시 취소 안내) → 서버 액션에 { mode, expectedPreviewKey }", () => {
+  const ui = readFileSync("src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx", "utf8");
+  assert.match(ui, /role="radiogroup" aria-label="휴원 수강료 처리 방식"/);
+  assert.match(ui, /토스 온라인 결제분은 확인을 누르면 바로 부분 취소됩니다/);
+  assert.match(ui, /window\.confirm\(`\$\{settlementConfirmText\(row, mode\)\}\\n\\n승인할까요\?`\)/);
+  assert.match(ui, /\{ mode, expectedPreviewKey: row\.settlementPreview!\.previewKey \}/);
+  assert.match(ui, /needsSettlementChoice\(row\) && \(!modes\[row\.id\] \|\| !row\.settlementPreview\?\.ready\)/, "방식을 안 고르면 승인 버튼이 잠긴다");
+  const actions = readFileSync("src/app/actions/enrollment-changes.ts", "utf8");
+  for (const name of ["settlePauseTuition", "retryPauseTuitionRefund", "markPauseTuitionLineDone", "markPauseCarryHandled"]) {
+    assert.match(actions, new RegExp(`export async function ${name}[\\s\\S]{0,200}await requireAdmin\\(\\)`), name);
+  }
+});

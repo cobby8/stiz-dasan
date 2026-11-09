@@ -9,6 +9,20 @@ import { DEFAULT_HOLD_REASON, planDueEnrollmentChange } from "@/lib/enrollment/d
 import { initialSyncAttempt, isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
 import { notifyParentOfEnrollmentChange } from "@/lib/enrollment/change-decision-notify";
+import {
+  applyOpenPauseCarries,
+  countOpenSettlementWork,
+  executePauseSettlementInTx,
+  hasMovedMoneySettlement,
+  previewPauseSettlement,
+  readSettlements,
+  runSettlementTossRefunds,
+  type ClassDatesFor,
+  type PauseSettlementPreview,
+  type RefundRunSummary,
+  type SettlementView,
+} from "@/lib/enrollment/pause-settlement";
+import type { SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
 
 // ── 원장의 수강 변경 승인/거절 + 적용일이 된 건 반영 ────────────────────────
 //
@@ -45,6 +59,18 @@ export type AdminChangeRequestRow = {
   rallyzStatus: string | null;
   /** 관리자가 학생 상세에서 바로 옮긴 반 이동(신청자=결정자, 반 변경, 적용됨) — 학부모 신청 아님 */
   adminDirectMove: boolean;
+  /** 휴원 수강료 처리 미리보기(아직 처리 전인 휴원만 — 2026-11-10 원장 결정 m6). 계산 근거·금액·지문. */
+  settlementPreview: AdminSettlementPreview | null;
+  /** 이미 실행한 휴원 수강료 처리(무엇을·얼마·언제·누가 + 남은 일) */
+  settlement: SettlementView | null;
+};
+
+export type AdminSettlementPreview = Omit<PauseSettlementPreview, "plan"> & {
+  paidTotal: number;
+  unpaidTotal: number;
+  problems: string[];
+  /** 낸 돈이 돌아갈 길(TOSS·TOSS_POS·RALLYZ·MANUAL…) — 환불 확인창 문구에 쓴다 */
+  channels: string[];
 };
 
 export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<AdminChangeRequestRow[]> {
@@ -60,6 +86,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
             fp.price AS "fromFee", tp.price AS "toFee",
             to_char(r."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "createdAt",
             to_char(r."appliedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "appliedAt",
+            to_char(r."decidedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "decidedOn",
             CASE WHEN tc.id IS NULL THEN false ELSE
               (SELECT count(*) FROM "Enrollment" x WHERE x."classId" = tc.id AND x.status = 'ACTIVE') >= tc.capacity
             END AS "toClassFull",
@@ -85,8 +112,29 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     status,
   );
   // 계획표(구글 캘린더)는 한 번만 읽어 모든 건에 재사용한다.
-  const needsPlan = rows.some((row) => row.kind === "CLASS_CHANGE" && row.toDay && row.fromDay);
+  const needsPlan = rows.some((row) => (row.kind === "CLASS_CHANGE" && row.toDay && row.fromDay) || row.kind === "PAUSE");
   const planEvents = needsPlan ? await loadAnnualPlanEvents().catch(() => []) : [];
+
+  // 휴원 수강료 처리 — 이미 처리한 기록 + 아직이면 미리보기(검토 중·승인·반영된 휴원만)
+  const pauseIds = rows.filter((row) => row.kind === "PAUSE").map((row) => String(row.id));
+  const settlements = await readSettlements(prisma, pauseIds).catch((error) => {
+    console.error("[admin-change-request] 휴원 수강료 처리 기록 조회 실패", error instanceof Error ? error.name : "");
+    return new Map<string, SettlementView>();
+  });
+  const classDatesFor: ClassDatesFor = (ym, dow) => getMonthlyClassDates(planEvents, ym, dow);
+  const previews = new Map<string, AdminSettlementPreview>();
+  for (const row of rows) {
+    if (row.kind !== "PAUSE" || settlements.has(row.id) || !["PENDING", "APPROVED", "APPLIED"].includes(row.status)) continue;
+    // 이 기능 이전에 승인된 휴원은 수강료를 이미 사람이(랠리즈 등) 정리했다 — 처리 버튼을 다시 띄우지 않는다
+    if (row.status !== "PENDING" && !(row.decidedOn && row.decidedOn >= PAUSE_SETTLEMENT_SINCE)) continue;
+    const preview = await previewPauseSettlement(prisma, row.id, classDatesFor).catch(() => null);
+    if (!preview) continue;
+    const { plan, ...rest } = preview;
+    previews.set(row.id, {
+      ...rest, paidTotal: plan.paidTotal, unpaidTotal: plan.unpaidTotal, problems: plan.problems,
+      channels: [...new Set(plan.lines.filter((l) => l.paid).map((l) => l.channel))],
+    });
+  }
 
   return rows.map((row) => ({
     id: row.id,
@@ -114,7 +162,17 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     sheetStatus: row.sheetStatus ?? null,
     rallyzStatus: row.rallyzStatus ?? null,
     adminDirectMove: Boolean(row.adminDirectMove),
+    settlementPreview: previews.get(row.id) ?? null,
+    settlement: settlements.get(row.id) ?? null,
   }));
+}
+
+/** 휴원 수강료 처리 기능 시작일(KST) — 이보다 먼저 승인된 휴원에는 «수강료 처리» 미리보기·버튼을 띄우지 않는다 */
+const PAUSE_SETTLEMENT_SINCE = "2026-11-10";
+
+/** 수강료 처리 남은 일 건수(화면 상단 알림) — 표가 없거나 실패하면 0 */
+export async function countOpenPauseSettlements(): Promise<number> {
+  return countOpenSettlementWork(prisma).catch(() => 0);
 }
 
 /**
@@ -179,14 +237,33 @@ function buildProration(row: any, planEvents: any[]): (ProrationResult & { lines
   };
 }
 
+/** 휴원 승인과 함께(또는 승인 뒤) 고르는 수강료 처리. expectedPreviewKey = 원장이 본 미리보기 지문. */
+export type PauseSettlementChoice = { mode: SettlementMode; expectedPreviewKey: string };
+
+/** 처리 실패로 승인까지 되돌릴 때 쓰는 표식 오류(문구는 원장에게 그대로 보인다) */
+class SettlementRejected extends Error {
+  constructor(readonly userMessage: string) { super("PAUSE_SETTLEMENT_REJECTED"); }
+}
+
+type ExecutedSettlement = Extract<Awaited<ReturnType<typeof executePauseSettlementInTx>>, { ok: true }>;
+
 export async function decideEnrollmentChangeRequest(input: {
   adminUserId: string;
   requestId: string;
   approve: boolean;
   note?: string | null;
+  /** 휴원 승인 때만. 없으면 예전처럼 승인만 하고, 수강료 처리는 나중에 settleApprovedPause 로 한다. */
+  settlement?: PauseSettlementChoice | null;
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
-  const rows = await prisma.$transaction(async (tx) => {
+  const settlementChoice = input.approve && input.settlement ? input.settlement : null;
+  // 연간 일정(네트워크)은 트랜잭션 «밖»에서 한 번 읽는다 — 잠금을 잡고 기다리지 않게
+  const classDatesFor = settlementChoice ? await loadClassDatesFor() : null;
+  // 콜백 안에서 채우므로 객체로 둔다(let 이면 TS 가 콜백 밖에서 null 로만 본다)
+  const holder: { settled: ExecutedSettlement | null } = { settled: null };
+  let rows: any[];
+  try {
+  rows = await prisma.$transaction(async (tx) => {
   const decided = await tx.$queryRawUnsafe<any[]>(
     // 결정과 결정 기록(감사 로그)은 함께 저장한다.
     `UPDATE "EnrollmentChangeRequest"
@@ -204,9 +281,27 @@ export async function decideEnrollmentChangeRequest(input: {
       kind: decided[0].kind, approved: input.approve, effectiveFrom: decided[0].effectiveFrom,
       notificationChannel: "APP_ONLY" },
   }});
+  // 휴원 수강료 처리(2026-11-10 m6) — 승인과 «같은 트랜잭션». 처리가 막히면 승인도 되돌린다(원장이 확인한 뒤 다시 승인).
+  if (decided[0] && settlementChoice && classDatesFor) {
+    if (decided[0].kind !== "PAUSE") throw new SettlementRejected("수강료 처리는 휴원 신청에만 고를 수 있어요.");
+    const result = await executePauseSettlementInTx(tx as any, {
+      requestId: input.requestId, adminUserId: input.adminUserId,
+      mode: settlementChoice.mode, expectedPreviewKey: settlementChoice.expectedPreviewKey, classDatesFor,
+    });
+    if (!result.ok) throw new SettlementRejected(result.message);
+    holder.settled = result;
+  }
   return decided;
-  });
+  }, { timeout: 30_000 });
+  } catch (error) {
+    const rejected = settlementErrorMessage(error);
+    if (rejected) return { ok: false as const, message: rejected };
+    throw error;
+  }
   if (!rows[0]) return { ok: false as const, message: "이미 처리된 신청입니다." };
+
+  // 커밋 뒤: 토스 부분 취소 실행 → 이월 차감. 알림 문구가 처리 기록(이월·환불 예정)을 읽으므로 알림보다 먼저.
+  const settlementResult = holder.settled ? await finishSettlement(holder.settled, input.adminUserId) : null;
 
   // 학부모 앱 알림 — 신청자가 지금도 그 학생 보호자일 때만(관리자 직접 변경은 건너뜀). 중복 키로 한 번만.
   const notificationStatus = await notifyParentOfEnrollmentChange(input.requestId, input.approve ? "APPROVED" : "REJECTED");
@@ -220,7 +315,83 @@ export async function decideEnrollmentChangeRequest(input: {
     // 이번 처리에서 사이트에 적용된 전체 건수(밀린 다른 신청 포함). 캐시를 비울지 판단하는 데 쓴다.
     appliedCount: summary?.applied ?? 0,
     notificationStatus,
+    settlement: settlementResult,
   };
+}
+
+/** 처리 막힘(문구 그대로 보여 줄 것)·청구 경합이면 원장용 문구, 그 밖의 오류면 null(그대로 던진다) */
+function settlementErrorMessage(error: unknown): string | null {
+  if (error instanceof SettlementRejected) return error.userMessage;
+  if (error instanceof Error && error.message === "PAUSE_SETTLEMENT_PAYMENT_CONFLICT") {
+    return "그 사이 청구가 바뀌었어요. 새로고침해 금액을 다시 확인해 주세요.";
+  }
+  return null;
+}
+
+/** 연간 일정을 읽어 «반 요일·수강월 → 수업일» 함수로(청구·/annual 과 같은 getMonthlyClassDates) */
+async function loadClassDatesFor(): Promise<ClassDatesFor> {
+  const planEvents = await loadAnnualPlanEvents().catch(() => []);
+  return (ym, dow) => getMonthlyClassDates(planEvents, ym, dow);
+}
+
+export type SettlementOutcome = {
+  mode: SettlementMode;
+  paidTotal: number;
+  unpaidTotal: number;
+  refund: RefundRunSummary | null;
+  carryApplied: number;
+};
+
+/** 커밋 뒤 이어지는 동작: 토스 부분 취소(트랜잭션 밖) → 이월 차감(다음 미납 청구) */
+async function finishSettlement(settled: ExecutedSettlement, adminUserId: string): Promise<SettlementOutcome> {
+  let refund: RefundRunSummary | null = null;
+  if (settled.refundJobs.length > 0) {
+    const { partialRefundTossPaymentByAdmin } = await import("@/lib/payment-ledger");
+    refund = await runSettlementTossRefunds(prisma, { settlementId: settled.settlementId, adminUserId, refundToss: partialRefundTossPaymentByAdmin });
+  }
+  let carryApplied = 0;
+  if (settled.mode === "CARRY" && settled.paidTotal > 0) {
+    carryApplied = (await applyOpenPauseCarries(prisma as any, { studentId: settled.studentId }).catch((error) => {
+      console.error("[admin-change-request] 이월 차감 실패(다음 크론에서 다시)", error instanceof Error ? error.name : "");
+      return { applied: 0, amount: 0 };
+    })).amount;
+  }
+  return { mode: settled.mode, paidTotal: settled.paidTotal, unpaidTotal: settled.unpaidTotal, refund, carryApplied };
+}
+
+/**
+ * 이미 승인된 휴원의 수강료 처리(승인 때 고르지 않았거나 신청함에서 승인만 한 건). 원장 화면 «수강료 처리» 버튼.
+ * 처리 실행·잠금·재계산은 승인 때와 같은 executePauseSettlementInTx. 학부모에게는 «SETTLED» 앱 알림 한 번.
+ */
+export async function settleApprovedPause(input: { adminUserId: string; requestId: string; settlement: PauseSettlementChoice }) {
+  const classDatesFor = await loadClassDatesFor();
+  let settled: ExecutedSettlement;
+  try {
+    settled = await prisma.$transaction(async (tx) => {
+      const result = await executePauseSettlementInTx(tx as any, {
+        requestId: input.requestId, adminUserId: input.adminUserId,
+        mode: input.settlement?.mode, expectedPreviewKey: input.settlement?.expectedPreviewKey, classDatesFor,
+      });
+      // 처리 실패면 트랜잭션 전체를 되돌린다(감액 일부만 남지 않게)
+      if (!result.ok) throw new SettlementRejected(result.message);
+      return result;
+    }, { timeout: 30_000 });
+  } catch (error) {
+    const rejected = settlementErrorMessage(error);
+    if (rejected) return { ok: false as const, message: rejected };
+    throw error;
+  }
+  const outcome = await finishSettlement(settled, input.adminUserId);
+  // 승인 알림은 이미 나갔다 → 처리 결과만 따로(«없음»이면 보낼 말이 없어 안에서 건너뛴다)
+  const notificationStatus = await notifyParentOfEnrollmentChange(input.requestId, "SETTLED");
+  return { ok: true as const, settlement: outcome, notificationStatus };
+}
+
+/** 토스 부분 취소 다시 시도(결과 확인 중·실패 줄). 같은 줄은 같은 표식·멱등 키라 두 번 취소되지 않는다. */
+export async function retryPauseSettlementRefunds(input: { adminUserId: string; settlementId: string }) {
+  const { partialRefundTossPaymentByAdmin } = await import("@/lib/payment-ledger");
+  const refund = await runSettlementTossRefunds(prisma, { settlementId: input.settlementId, adminUserId: input.adminUserId, refundToss: partialRefundTossPaymentByAdmin });
+  return { ok: true as const, refund };
 }
 
 /**
@@ -555,6 +726,10 @@ export async function decideEnrollmentCancelRequest(input: {
   note?: string | null;
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
+  // 휴원 수강료 처리(환불·이월·감액)가 이미 실행된 휴원은 «취소 승인»으로 되돌리지 않는다 — 돈이 이미 움직였다.
+  if (input.approve && await hasMovedMoneySettlement(prisma, input.requestId)) {
+    return { ok: false as const, message: "이 휴원은 수강료 처리(환불·이월·감액)가 이미 실행돼 여기서 취소할 수 없어요. 수강료를 먼저 정리한 뒤 학원에서 직접 처리해 주세요." };
+  }
   const rows = await prisma.$transaction(async (tx) => {
     const decided = input.approve
       // 승인 = 대상 신청 취소. 적용 전·적용일 > KST 오늘·아직 운영 원장(적용 명령)이 없을 때만.

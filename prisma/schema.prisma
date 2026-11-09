@@ -500,6 +500,51 @@ model EnrollmentChangeRequest {
   @@index([studentId])
 }
 
+/// 휴원 수강료 처리(이월·환불·없음) — 휴원 신청 1건당 1행 (migration 20261110180000_enrollment_pause_settlement 의 사본).
+/// ⚠️ DB 에는 FK(requestId CASCADE)·CHECK(mode·status·금액)·RLS 가 더 있다. 코드는 $queryRawUnsafe 로만 읽고 쓴다.
+model EnrollmentChangeSettlement {
+  id              String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  requestId       String   @unique(map: "EnrollmentChangeSettlement_requestId_key")
+  studentId       String
+  /// CARRY | REFUND | NONE
+  mode            String
+  paidAmount      Int
+  unpaidAmount    Int
+  carryRemaining  Int      @default(0)
+  carryAfterYm    String?
+  /// OPEN | DONE
+  status          String   @default("OPEN")
+  previewKey      String
+  basis           Json
+  decidedByUserId String
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// 휴원 수강료 처리 줄(청구별) — 같은 마이그레이션의 사본. paymentId 는 FK ON DELETE SET NULL.
+model EnrollmentChangeSettlementLine {
+  id            String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  settlementId  String
+  paymentId     String?
+  /// REFUND | CARRY_CREDIT | UNPAID_REDUCE | NONE | CARRY_APPLY | CARRY_MANUAL
+  kind          String
+  /// TOSS | TOSS_VA | TOSS_POS | RALLYZ | MANUAL | SITE
+  channel       String
+  amount        Int
+  /// DONE | TODO | REQUESTED | FAILED | DONE_MANUAL
+  status        String
+  missedDates   Json      @default("[]")
+  transactionId String?
+  message       String?
+  doneByUserId  String?
+  doneAt        DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@unique([settlementId, paymentId, kind], map: "EnrollmentChangeSettlementLine_unique_key")
+  @@index([paymentId], map: "EnrollmentChangeSettlementLine_paymentId_idx")
+}
+
 model Session {
   id                          String                     @id @default(uuid())
   classId                     String

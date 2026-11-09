@@ -1,11 +1,12 @@
 import { childAccessSql } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
-import { addDaysKst, todayKst } from "@/lib/datetime/kst";
+import { addDaysKst, kstHm, todayKst } from "@/lib/datetime/kst";
 import {
   CHANGE_REQUEST_MESSAGE,
   MAX_EFFECTIVE_MONTHS_AHEAD,
   addMonths,
+  earliestPauseStart,
   isChangeKind,
   nextMonthStart,
   REQUEST_KIND_LABEL,
@@ -50,6 +51,11 @@ export type ChildChangeOption = {
   currentProgramName: string;
   /** ACTIVE = 다니는 중(반 변경·휴원·퇴원 신청) · PAUSED = 휴원 중(복귀 신청만) */
   enrollmentStatus: "ACTIVE" | "PAUSED";
+  /**
+   * 휴원 시작일로 고를 수 있는 가장 이른 날(2026-11-10 원장 결정 m7) — 오늘 그 반 수업 전이면 오늘, 아니면 내일.
+   * 서버 접수도 같은 함수(earliestPauseStart)로 다시 판정한다. 옛 데이터·테스트에서 없을 수 있어 선택 칸.
+   */
+  minPauseFrom?: string;
   /**
    * 원장이 승인했지만 아직 적용일 전인 신청(예: 휴원 예정). 학부모가 직접 취소할 수는 없어 안내만 한다.
    * 적용일이 지난 승인 건은 넣지 않는다 — 사람 확인으로 보류된 건이 화면을 영영 막으면 안 된다.
@@ -127,6 +133,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             to_char(r."resumeOn",'YYYY-MM-DD') AS "pendingResumeOn",
             r.waitlisted AS "pendingWaitlisted",
             e.status AS "enrollmentStatus",
+            c."dayOfWeek" AS "classDayOfWeek", c."startTime" AS "classStartTime",
             sc.kind AS "scheduledKind",
             to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledEffectiveFrom",
             to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn"
@@ -164,6 +171,8 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
   );
 
   const history = await getEnrollmentChangeHistory(parentUserId);
+  // 휴원 시작일 최소값은 반마다 다르다(그 반 수업이 오늘 이미 시작했는지). 지금 KST 시각 한 번만 읽는다.
+  const nowHm = kstHm(Date.now());
 
   return {
     history,
@@ -181,6 +190,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
       currentClassName: row.currentClassName,
       currentProgramName: row.currentProgramName,
       enrollmentStatus: row.enrollmentStatus === "PAUSED" ? ("PAUSED" as const) : ("ACTIVE" as const),
+      minPauseFrom: earliestPauseStart({ today, nowHm, classDayOfWeek: row.classDayOfWeek, classStartTime: row.classStartTime }),
       scheduled: row.scheduledKind
         ? {
             kind: row.scheduledKind,
@@ -342,7 +352,7 @@ export async function getParentClassStatusLines(parentUserId: string): Promise<P
 export type SubmitChangeInput = {
   enrollmentId?: string;
   kind?: unknown;
-  /** 반 변경일 때만. 학부모가 고른 시작일(내일 이후·3개월 이내). 비우면 다음 달 1일. */
+  /** 반 변경: 학부모가 고른 시작일(내일 이후·3개월 이내) · 휴원: 오늘(수업 전)/내일 이후·3개월 이내. 비우면 다음 달 1일. */
   effectiveFrom?: unknown;
   toClassId?: unknown;
   resumeOn?: unknown;
@@ -358,7 +368,8 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
 
   // 가드1: 이 수강 등록이 그 부모의 자녀 것이고 지금 다니는(ACTIVE) 반인지 재검증.
   const owned = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT e.id, e."classId", s.id AS "studentId", s.name AS "studentName", c.name AS "className"
+    `SELECT e.id, e."classId", s.id AS "studentId", s.name AS "studentName", c.name AS "className",
+            c."dayOfWeek" AS "classDayOfWeek", c."startTime" AS "classStartTime"
        FROM "Enrollment" e
        JOIN "Student" s ON s.id = e."studentId"
        JOIN "Class" c ON c.id = e."classId"
@@ -368,15 +379,21 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
   );
   if (!owned[0]) return { ok: false as const, message: "본인 자녀의 수강만 변경 신청할 수 있습니다." };
 
-  // 가드2: 적용일은 서버가 정한다. 학부모가 고른 날짜도 규칙(내일 이후·3개월 이내)을
-  // 통과해야 하고, 벗어나면 조용히 바꾸지 않고 거절한다.
+  // 가드2: 적용일은 서버가 정한다. 학부모가 고른 날짜도 규칙(반 변경 = 내일 이후 · 휴원 = 오늘 수업 전이면 오늘,
+  // 아니면 내일 이후 · 둘 다 3개월 이내)을 통과해야 하고, 벗어나면 조용히 바꾸지 않고 거절한다.
   if (!isChangeKind(input.kind)) {
     return { ok: false as const, message: CHANGE_REQUEST_MESSAGE.INVALID_KIND };
   }
+  const today = todayKst();
   const resolved = resolveEffectiveFrom({
     kind: input.kind,
     requestedFrom: input.effectiveFrom,
-    today: todayKst(),
+    today,
+    // 그 반 요일·시작 시각은 DB 값으로만 판정한다(화면이 보낸 최소값을 믿지 않는다)
+    earliestPauseFrom: earliestPauseStart({
+      today, nowHm: kstHm(Date.now()),
+      classDayOfWeek: owned[0].classDayOfWeek, classStartTime: owned[0].classStartTime,
+    }),
   });
   if (!resolved.ok) return { ok: false as const, message: CHANGE_REQUEST_MESSAGE[resolved.error] };
   const effectiveFrom = resolved.effectiveFrom;

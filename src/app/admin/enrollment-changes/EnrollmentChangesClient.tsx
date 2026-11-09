@@ -11,12 +11,17 @@ import {
   decideEnrollmentChange,
   decideEnrollmentChangeCancelRequest,
   issueEnrollmentChangeInvoice,
+  markPauseCarryHandled,
+  markPauseTuitionLineDone,
   releaseEnrollmentChangeHoldSheetRetired,
+  retryPauseTuitionRefund,
+  settlePauseTuition,
   type EnrollmentSyncActionResult,
 } from "@/app/actions/enrollment-changes";
 import { CHANGE_STATUS_LABEL, pauseResumeLabel, syncCheckBadge } from "@/lib/enrollment/changeRequestRules";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
 import type { AdminCancelRequestRow, AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
+import { SETTLEMENT_MODES, SETTLEMENT_MODE_LABEL, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
@@ -36,8 +41,11 @@ export default function EnrollmentChangesClient({
   needsCheckCount = 0,
   sheetRetired = false,
   cancelRequests = [],
+  openSettlementCount = 0,
 }: {
   rows: AdminChangeRequestRow[];
+  /** 휴원 수강료 처리 중 남은 일(사람 환불·랠리즈 반영·토스 확인 중·남은 이월)이 있는 건수 */
+  openSettlementCount?: number;
   /** 승인된 휴원·퇴원에 학부모가 낸 «취소 요청»(d8) — 탭과 무관하게 맨 위에 보인다 */
   cancelRequests?: AdminCancelRequestRow[];
   status: string;
@@ -138,14 +146,108 @@ export default function EnrollmentChangesClient({
     });
   }
 
+  // 휴원 수강료 처리 방식(신청 id → 이월·환불·없음). 고르기 전엔 비어 있다.
+  const [modes, setModes] = useState<Record<string, SettlementMode>>({});
+
+  /** 이 휴원에 처리할 금액이 있는가(낸 돈 또는 미납 청구) — 있으면 승인 전에 방식을 골라야 한다 */
+  function needsSettlementChoice(row: AdminChangeRequestRow) {
+    const p = row.settlementPreview;
+    return Boolean(p && !row.settlement && p.problems.length === 0 && (p.paidTotal > 0 || p.unpaidTotal > 0));
+  }
+
+  /** 돈이 움직이는 처리라 확인창에 금액·길을 그대로 적는다(서버가 실행 순간 다시 계산해 같을 때만 실행) */
+  function settlementConfirmText(row: AdminChangeRequestRow, mode: SettlementMode): string {
+    const p = row.settlementPreview!;
+    const won = (n: number) => `${n.toLocaleString()}원`;
+    const lines = [`${row.studentName} · ${row.fromClassName ?? "-"} · 휴원 ${row.effectiveFrom}부터`, `수강료 처리: ${SETTLEMENT_MODE_LABEL[mode]}`];
+    if (mode === "REFUND" && p.paidTotal > 0) {
+      lines.push(`환불 ${won(p.paidTotal)}`);
+      if (p.channels.includes("TOSS")) lines.push("· 토스 온라인 결제분은 확인을 누르면 바로 부분 취소됩니다(되돌릴 수 없음).");
+      if (p.channels.some((c) => c !== "TOSS")) lines.push("· 현금·랠리즈·POS 등은 «환불 할 일»로 남습니다.");
+    }
+    if (mode === "CARRY" && p.paidTotal > 0) lines.push(`이월 ${won(p.paidTotal)} — 다음 청구에서 차감`);
+    if (mode !== "NONE" && p.unpaidTotal > 0) lines.push(`미납 청구 ${won(p.unpaidTotal)} 감액`);
+    if (mode === "NONE") lines.push("돈은 움직이지 않고 기록만 남깁니다.");
+    return lines.join("\n");
+  }
+
   function decide(requestId: string, approve: boolean) {
-    setError("");
-    startTransition(async () => {
-      const result = await decideEnrollmentChange({ requestId, approve, note: notes[requestId] });
-      if (!result.ok) {
-        setError(result.message);
+    const row = rows.find((item) => item.id === requestId);
+    const mode = modes[requestId];
+    // 처리할 금액이 있는 휴원은 방식을 골라야 승인된다(⚡ 승인은 패널을 열어 고르게 한다)
+    if (approve && row && needsSettlementChoice(row)) {
+      if (!mode) {
+        setDetailId(requestId);
+        setError("휴원 수강료 처리(이월·환불·없음)를 먼저 골라 주세요.");
         return;
       }
+      if (!window.confirm(`${settlementConfirmText(row, mode)}\n\n승인할까요?`)) return;
+    }
+    setError("");
+    startTransition(async () => {
+      const settlement = approve && row && needsSettlementChoice(row) && mode
+        ? { mode, expectedPreviewKey: row.settlementPreview!.previewKey }
+        : null;
+      const result = await decideEnrollmentChange({ requestId, approve, note: notes[requestId], settlement });
+      if (!result.ok) {
+        setError(result.message);
+        router.refresh();
+        return;
+      }
+      // 토스 부분 취소가 확인되지 않았으면 승인은 됐지만 남은 일이 있다고 알린다
+      const refund = result.settlement?.refund;
+      if (refund && (refund.failed > 0 || refund.uncertain > 0)) {
+        setError(`승인됐어요. 다만 토스 환불 ${refund.failed + refund.uncertain}건을 확인하지 못했어요: ${refund.messages[0] ?? ""} — 상세에서 «다시 시도»해 주세요.`);
+      }
+      router.refresh();
+    });
+  }
+
+  /** 이미 승인된 휴원의 수강료 처리 실행 */
+  function settleLater(row: AdminChangeRequestRow) {
+    const mode = modes[row.id];
+    if (!mode || !row.settlementPreview) {
+      setError("수강료 처리(이월·환불·없음)를 골라 주세요.");
+      return;
+    }
+    if (!window.confirm(`${settlementConfirmText(row, mode)}\n\n실행할까요?`)) return;
+    setError("");
+    startTransition(async () => {
+      const result = await settlePauseTuition({ requestId: row.id, settlement: { mode, expectedPreviewKey: row.settlementPreview!.previewKey } });
+      if (!result.ok) setError(result.message);
+      else if (result.settlement.refund && (result.settlement.refund.failed > 0 || result.settlement.refund.uncertain > 0)) {
+        setError(`토스 환불 ${result.settlement.refund.failed + result.settlement.refund.uncertain}건을 확인하지 못했어요: ${result.settlement.refund.messages[0] ?? ""}`);
+      }
+      router.refresh();
+    });
+  }
+
+  function retryRefund(settlementId: string) {
+    if (!window.confirm("토스 부분 취소를 다시 확인·시도할까요?\n이미 취소된 건은 다시 취소되지 않고 확인만 합니다.")) return;
+    setError("");
+    startTransition(async () => {
+      const result = await retryPauseTuitionRefund(settlementId);
+      if (result.refund.failed > 0 || result.refund.uncertain > 0) setError(result.refund.messages[0] ?? "토스 환불을 확인하지 못했어요.");
+      router.refresh();
+    });
+  }
+
+  function markLineDone(lineId: string, todo: string) {
+    if (!window.confirm(`${todo}\n\n직접 처리를 마쳤나요? 확인을 누르면 «직접 처리함»으로 기록됩니다.`)) return;
+    setError("");
+    startTransition(async () => {
+      const result = await markPauseTuitionLineDone({ lineId });
+      if (!result.ok) setError(result.message);
+      router.refresh();
+    });
+  }
+
+  function markCarryDone(settlementId: string, amount: number) {
+    if (!window.confirm(`남은 이월 ${amount.toLocaleString()}원을 다음 청구(랠리즈 등)에서 직접 차감했나요?\n확인을 누르면 이월이 끝난 것으로 기록됩니다.`)) return;
+    setError("");
+    startTransition(async () => {
+      const result = await markPauseCarryHandled({ settlementId });
+      if (!result.ok) setError(result.message);
       router.refresh();
     });
   }
@@ -168,6 +270,13 @@ export default function EnrollmentChangesClient({
   function buildActions(row: AdminChangeRequestRow): AdminQuickAction[] {
     if (row.status !== "PENDING") return [];
     const id = row.id; // 대상 값을 미리 붙잡아 둔다
+    // 처리할 수강료가 있는 휴원은 금액을 보고 이월·환불·없음을 골라야 해서 패널을 연다
+    if (needsSettlementChoice(row)) {
+      return [
+        { key: "approve", label: "승인…(수강료 처리)", icon: "check", tone: "primary", disabled: pending, onSelect: () => setDetailId(id) },
+        { key: "reject", label: "거절…", icon: "block", disabled: pending, onSelect: () => setDetailId(id) },
+      ];
+    }
     return [
       { key: "approve", label: "승인", icon: "check", tone: "primary", disabled: pending, onSelect: () => decide(id, true) },
       // 거절은 사유·전할 말을 보고 하도록 패널을 연다
@@ -207,6 +316,17 @@ export default function EnrollmentChangesClient({
           className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-bold text-[var(--color-academy-warning)]"
         >
           사이트에만 반영되고 {externalLabel} 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.
+        </button>
+      )}
+
+      {/* 휴원 수강료 처리 남은 일(현금·랠리즈 환불, 토스 확인 중, 남은 이월) — 관리자 할 일 */}
+      {openSettlementCount > 0 && status !== "ALL" && (
+        <button
+          type="button"
+          onClick={() => { setDetailId(null); router.push("/admin/enrollment-changes?status=ALL"); }}
+          className="block min-h-11 w-full rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-left text-sm font-bold text-[var(--color-academy-warning)]"
+        >
+          휴원 수강료 처리에 남은 일이 {openSettlementCount}건 있습니다(환불·감액·이월). 눌러서 확인하세요.
         </button>
       )}
 
@@ -497,6 +617,75 @@ export default function EnrollmentChangesClient({
               {row.adminDirectMove && (
                 <p className="mt-2 text-xs font-bold text-[var(--color-academy-ink)]">관리자 즉시 이동 — 차액은 다음 달 청구 준비에서 반영</p>
               )}
+              {/* 휴원 수강료 처리(2026-11-10 원장 결정 m6) — 이미 한 처리 기록 또는 미리보기·방식 고르기 */}
+              {row.kind === "PAUSE" && row.settlement && (
+                <SettlementRecord
+                  settlement={row.settlement}
+                  pending={pending}
+                  onRetry={() => retryRefund(row.settlement!.id)}
+                  onLineDone={markLineDone}
+                  onCarryDone={() => markCarryDone(row.settlement!.id, row.settlement!.carryRemaining)}
+                />
+              )}
+              {row.kind === "PAUSE" && !row.settlement && row.settlementPreview && (
+                <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
+                  <p className="text-xs font-black text-[var(--color-academy-ink)]">이번 휴원 수강료 처리</p>
+                  {row.settlementPreview.lines.length === 0 && row.settlementPreview.problems.length === 0 && (
+                    <p className="mt-1 text-xs text-[var(--color-academy-muted)]">휴원 기간에 걸친 수강료 청구가 없어 처리할 금액이 없습니다.</p>
+                  )}
+                  {row.settlementPreview.lines.map((line) => (
+                    <p key={line} className="mt-1 text-xs tabular-nums text-[var(--color-academy-ink)]">{line}</p>
+                  ))}
+                  {(row.settlementPreview.paidTotal > 0 || row.settlementPreview.unpaidTotal > 0) && (
+                    <p className="mt-2 text-sm font-black tabular-nums text-[var(--color-academy-ink)]">
+                      {row.settlementPreview.paidTotal > 0 ? `낸 수강료에서 ${row.settlementPreview.paidTotal.toLocaleString()}원` : ""}
+                      {row.settlementPreview.paidTotal > 0 && row.settlementPreview.unpaidTotal > 0 ? " · " : ""}
+                      {row.settlementPreview.unpaidTotal > 0 ? `미납 청구 ${row.settlementPreview.unpaidTotal.toLocaleString()}원 감액` : ""}
+                    </p>
+                  )}
+                  {row.settlementPreview.problems.map((problem) => (
+                    <p key={problem} className="mt-1 text-xs font-bold text-[var(--color-academy-danger)]">{problem}</p>
+                  ))}
+                  {!row.settlementPreview.tablesReady && (
+                    <p className="mt-1 text-xs font-bold text-[var(--color-academy-warning)]">수강료 처리 기록 준비 전이라 지금은 금액 미리보기만 됩니다.</p>
+                  )}
+                  {needsSettlementChoice(row) && (
+                    <>
+                      <div role="radiogroup" aria-label="휴원 수강료 처리 방식" className="mt-2 grid grid-cols-3 gap-2">
+                        {SETTLEMENT_MODES.map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            role="radio"
+                            aria-checked={modes[row.id] === mode}
+                            onClick={() => setModes((prev) => ({ ...prev, [row.id]: mode }))}
+                            className={`min-h-11 rounded-xl border text-sm font-bold ${modes[row.id] === mode
+                              ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                              : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}
+                          >
+                            {SETTLEMENT_MODE_LABEL[mode]}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-xs text-[var(--color-academy-muted)]">
+                        이월 = 다음 청구에서 차감 · 환불 = 토스 온라인 결제는 바로 부분 취소, 그 밖은 환불 할 일로 남김 · 없음 = 기록만(미납 청구도 그대로)
+                      </p>
+                      {/* 이미 승인된 휴원 = 여기서 처리만 실행. 검토 중이면 아래 «승인»이 처리까지 함께 한다 */}
+                      {row.status !== "PENDING" && (
+                        <button
+                          type="button"
+                          disabled={pending || !modes[row.id] || !row.settlementPreview.ready}
+                          onClick={() => settleLater(row)}
+                          className="mt-2 min-h-11 w-full rounded-xl bg-[var(--color-academy-primary)] text-sm font-black text-[var(--color-academy-on-primary)] disabled:opacity-50"
+                        >
+                          수강료 처리 실행
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
               {row.reason && <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-academy-ink)]">{row.reason}</p>}
               <p className="mt-2 text-xs text-[var(--color-academy-muted)]">신청 {row.createdAt}</p>
 
@@ -524,11 +713,12 @@ export default function EnrollmentChangesClient({
                     </button>
                     <button
                       type="button"
-                      disabled={pending}
+                      // 처리할 수강료가 있으면 방식을 고르고 표가 준비돼야 승인(처리까지 한 번에)
+                      disabled={pending || (needsSettlementChoice(row) && (!modes[row.id] || !row.settlementPreview?.ready))}
                       onClick={() => decide(row.id, true)}
                       className="min-h-12 rounded-xl bg-[var(--color-academy-primary)] font-black text-[var(--color-academy-on-primary)] disabled:opacity-50"
                     >
-                      승인
+                      {needsSettlementChoice(row) && modes[row.id] ? `승인 · ${SETTLEMENT_MODE_LABEL[modes[row.id]]}` : "승인"}
                     </button>
                   </div>
                 </div>
@@ -543,5 +733,98 @@ export default function EnrollmentChangesClient({
         );
       })()}
     </main>
+  );
+}
+
+type SettlementViewProp = NonNullable<AdminChangeRequestRow["settlement"]>;
+
+const LINE_KIND_LABEL: Record<string, string> = {
+  REFUND: "환불",
+  CARRY_CREDIT: "이월 적립",
+  UNPAID_REDUCE: "미납 감액",
+  NONE: "기록만",
+  CARRY_APPLY: "이월 차감",
+  CARRY_MANUAL: "이월 직접 차감",
+};
+const LINE_STATUS_LABEL: Record<string, string> = {
+  DONE: "완료",
+  DONE_MANUAL: "직접 처리함",
+  TODO: "할 일",
+  REQUESTED: "확인 중",
+  FAILED: "실패",
+};
+
+/**
+ * 이미 실행한 휴원 수강료 처리 — 무엇을(방식)·얼마·언제·누가 + 줄별 결과·남은 일.
+ * 남은 일: 사람 환불·랠리즈 감액 → «직접 처리함» · 토스 확인 중·실패 → «다시 시도» · 남은 이월 → «직접 차감함».
+ */
+function SettlementRecord({ settlement, pending, onRetry, onLineDone, onCarryDone }: {
+  settlement: SettlementViewProp;
+  pending: boolean;
+  onRetry: () => void;
+  onLineDone: (lineId: string, todo: string) => void;
+  onCarryDone: () => void;
+}) {
+  const hasTossRetry = settlement.lines.some((line) => line.channel === "TOSS" && line.kind === "REFUND" && (line.status === "REQUESTED" || line.status === "FAILED"));
+  return (
+    <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3">
+      <p className="text-xs font-black text-[var(--color-academy-ink)]">
+        휴원 수강료 처리 · {SETTLEMENT_MODE_LABEL[settlement.mode]}
+        <span className={`ml-2 ${settlement.status === "DONE" ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-warning)]"}`}>
+          {settlement.status === "DONE" ? "끝남" : "남은 일 있음"}
+        </span>
+      </p>
+      <p className="mt-1 text-xs tabular-nums text-[var(--color-academy-muted)]">
+        {settlement.createdAt} · {settlement.decidedByName ?? "관리자"} · 낸 수강료 {settlement.paidAmount.toLocaleString()}원
+        {settlement.unpaidAmount > 0 ? ` · 미납 감액 ${settlement.unpaidAmount.toLocaleString()}원` : ""}
+      </p>
+      <ul className="mt-2 space-y-1">
+        {settlement.lines.map((line) => (
+          <li key={line.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-academy-ink)]">
+            <span className="tabular-nums">{line.ym ?? "-"}</span>
+            <span>{LINE_KIND_LABEL[line.kind] ?? line.kind}</span>
+            <span className="font-bold tabular-nums">{line.amount.toLocaleString()}원</span>
+            <span className={line.status === "FAILED" ? "font-bold text-[var(--color-academy-danger)]" : line.todo ? "font-bold text-[var(--color-academy-warning)]" : "text-[var(--color-academy-muted)]"}>
+              {LINE_STATUS_LABEL[line.status] ?? line.status}
+            </span>
+            {line.todo && <span className="basis-full text-[var(--color-academy-warning)]">{line.todo}</span>}
+            {!line.todo && line.message && <span className="text-[var(--color-academy-muted)]">{line.message}</span>}
+            {(line.status === "TODO" || line.status === "FAILED") && line.todo && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => onLineDone(line.id, line.todo!)}
+                className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
+              >
+                직접 처리함
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {settlement.carryRemaining > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--color-academy-warning)]">
+          <span>남은 이월 {settlement.carryRemaining.toLocaleString()}원 — 사이트에 다음 미납 수강료 청구가 생기면 자동 차감(매일)</span>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCarryDone}
+            className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 font-bold text-[var(--color-academy-ink)] disabled:opacity-50"
+          >
+            직접 차감함
+          </button>
+        </div>
+      )}
+      {hasTossRetry && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onRetry}
+          className="mt-2 min-h-11 w-full rounded-xl border border-[var(--color-academy-primary)] text-sm font-black text-[var(--color-academy-ink)] disabled:opacity-50"
+        >
+          토스 부분 취소 다시 시도·확인
+        </button>
+      )}
+    </div>
   );
 }

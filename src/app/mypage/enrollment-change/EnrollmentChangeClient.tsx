@@ -60,6 +60,8 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   const [canceledId, setCanceledId] = useState<string | null>(null);
   // 휴원 중인 반의 복귀 희망일(= 다시 나오는 날)
   const [resumeFrom, setResumeFrom] = useState("");
+  // 휴원 시작일(2026-11-10 원장 결정 m7). 비어 있으면 그 반의 가장 이른 날(오늘 수업 전이면 오늘, 아니면 내일).
+  const [pauseFrom, setPauseFrom] = useState("");
 
   const child = initial.children[childIdx];
   // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
@@ -68,6 +70,9 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     serverPending ?? (localPending && localPending.enrollmentId === child?.enrollmentId ? localPending.pending : null);
   const awaitingReload = Boolean(child && !shownPending && submittedFor === child.enrollmentId);
   const paused = child?.enrollmentStatus === "PAUSED";
+  // 휴원 시작일 = 고른 날 → 없으면 그 반의 가장 이른 날 → (옛 데이터) 다음 달 1일
+  const minPauseFrom = child?.minPauseFrom || initial.effectiveFrom;
+  const pauseStart = pauseFrom || minPauseFrom;
   // 지금 다니는 반은 고를 수 없다. 골라봐야 아무것도 바뀌지 않는다.
   const selectable = useMemo(
     () => initial.classes.filter((item) => item.classId !== child?.currentClassId),
@@ -125,6 +130,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     setEffectiveFrom(initial.effectiveFrom);
     setResumeOn("");
     setResumeFrom("");
+    setPauseFrom("");
     setReason("");
     router.refresh();
   }
@@ -133,10 +139,16 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     if (!child) return;
     // 아이폰 날짜 고르기는 min 을 무시해 휴원 시작일 이전 복귀일도 고를 수 있다. 보내기 전에 언제부터인지 알려 준다.
     // 문자열 비교로 충분하다("YYYY-MM-DD" 는 글자 순서 = 날짜 순서).
-    const firstResume = earliestResumeOn(initial.effectiveFrom);
+    // 아이폰은 휴원 시작일 min·max 도 무시한다 — 범위를 벗어나면 보내기 전에 알려 준다(서버도 같은 규칙으로 다시 본다).
+    if (kind === "PAUSE" && (pauseStart < minPauseFrom || (initial.maxEffectiveFrom && pauseStart > initial.maxEffectiveFrom))) {
+      setDone("");
+      setError(`휴원 시작일은 ${minPauseFrom}부터 ${initial.maxEffectiveFrom} 사이로 골라 주세요.`);
+      return;
+    }
+    const firstResume = earliestResumeOn(pauseStart);
     if (kind === "PAUSE" && resumeOn && firstResume && resumeOn < firstResume) {
       setDone("");
-      setError(`휴원은 ${initial.effectiveFrom}부터라 복귀 예정일은 ${firstResume} 이후로 골라 주세요. 아직 모르면 비워 두셔도 됩니다.`);
+      setError(`휴원은 ${pauseStart}부터라 복귀 예정일은 ${firstResume} 이후로 골라 주세요. 아직 모르면 비워 두셔도 됩니다.`);
       return;
     }
     startTransition(async () => {
@@ -144,7 +156,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
         enrollmentId: child.enrollmentId,
         kind,
         toClassId: kind === "CLASS_CHANGE" ? toClassId : undefined,
-        effectiveFrom: kind === "CLASS_CHANGE" ? effectiveFrom : undefined,
+        effectiveFrom: kind === "CLASS_CHANGE" ? effectiveFrom : kind === "PAUSE" ? pauseStart : undefined,
         resumeOn: kind === "PAUSE" ? resumeOn || undefined : undefined,
         reason,
       });
@@ -241,8 +253,8 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
         <h1 className="text-xl font-black text-[var(--color-academy-ink)]">수강 변경 신청</h1>
         {/* 적용일을 먼저 알린다. 언제부터 바뀌는지 모르고 신청하면 그게 곧 문의가 된다. */}
         <p className="mt-1 text-sm text-[var(--color-academy-muted)]">
-          휴원·퇴원은 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 적용됩니다.
-          반 변경은 원하시는 날짜를 고를 수 있어요.
+          퇴원은 <b className="text-[var(--color-academy-ink)]">{initial.effectiveFrom}</b>부터 적용됩니다.
+          반 변경·휴원은 원하시는 날짜를 고를 수 있어요.
         </p>
       </div>
 
@@ -421,6 +433,22 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
 
             {kind === "PAUSE" && (
               <div>
+                {/* 갑작스러운 휴원도 받는다(원장 결정 k10) — 오늘 수업 전이면 오늘부터, 아니면 내일부터 */}
+                <label htmlFor="pause-from" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
+                  언제부터 쉴까요?
+                </label>
+                <input
+                  id="pause-from"
+                  type="date"
+                  value={pauseStart}
+                  min={minPauseFrom}
+                  max={initial.maxEffectiveFrom}
+                  onChange={(event) => setPauseFrom(event.target.value)}
+                  className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"
+                />
+                <p className="mt-1 mb-4 text-xs text-[var(--color-academy-muted)]">
+                  이미 낸 수강료는 학원이 승인할 때 빠지는 수업만큼 이월·환불로 안내드립니다.
+                </p>
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <label htmlFor="resume-on" className="text-xs font-bold text-[var(--color-academy-muted)]">
                     복귀 예정일
@@ -440,7 +468,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
                   id="resume-on"
                   type="date"
                   value={resumeOn}
-                  min={earliestResumeOn(initial.effectiveFrom)}
+                  min={earliestResumeOn(pauseStart)}
                   aria-describedby="resume-on-help"
                   onChange={(event) => setResumeOn(event.target.value)}
                   className="box-border min-h-11 w-full min-w-0 max-w-full appearance-none rounded-xl border border-[var(--color-academy-line)] px-3"

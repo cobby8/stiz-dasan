@@ -89,10 +89,27 @@
 💡 tester: 실DB 미검증(쓰기 금지) — 마이그레이션 적용 후 신청함 «처리 필요»에 취소 요청 행·메뉴 숫자 포함 확인. 적용 전 DB 면 수강 변경은 예전 그대로 보여야 정상.
 ⚠️ reviewer: fallback 은 «아무 오류»에 한 번 재시도(칸 없음 오류만 고르지 않음) — 진짜 SQL 오류면 두 번 실패 후 기존처럼 failedKinds/null.
 
+## 구현 기록 (developer) — 휴원 시작일 자유 선택 + 승인 시 수강료 처리(11-10, 원장 k10·m7·m6)
+📝 학부모 휴원 시작일 고르기(오늘 그 반 수업 전이면 오늘, 아니면 내일 ~ 3개월) · 원장 승인 때 이월·환불·없음 + 자동 계산 + 실행
+| 파일 | 변경 |
+|---|---|
+| lib/enrollment/changeRequestRules.ts | earliestPauseStart(순수, today·nowHm 인자) · resolveEffectiveFrom PAUSE 자유(빈 값=옛 화면 다음 달 1일) · PAUSE_START_TOO_SOON |
+| lib/enrollment/parent-change-request.ts · mypage/enrollment-change/EnrollmentChangeClient.tsx | 반 요일·시작 시각 DB 로 서버 재판정, 자녀별 minPauseFrom, «언제부터 쉴까요?» 날짜 칸(state pauseFrom 끝에 추가) |
+| lib/enrollment/pause-settlement-plan.ts (신규·순수) | 금액 = 청구 금액 ÷ 그 수강월 수업 수 × 빠지는 수 · 경로(TOSS/TOSS_VA/TOSS_POS/RALLYZ/MANUAL/SITE) · 방식별 줄 · 알림 한 줄 · 할 일 문장 |
+| lib/enrollment/pause-settlement.ts (신규·db 인자) | 미리보기·실행(전역 잠금+신청 잠금+FOR UPDATE+지문 대조+조건부 감액)·토스 환불 실행·이월 차감·직접 처리·남은 일 수 |
+| lib/payments/tossPartialCancel.ts (신규·순수) · lib/payment-ledger.ts | partialRefundTossPaymentByAdmin: 재조회→감사→cancelAmount+taxFreeAmount+고정 멱등 키→재조회 표식 확인 |
+| lib/enrollment/admin-change-request.ts · actions/enrollment-changes.ts | decide 에 settlement?(같은 트랜잭션, 실패=승인도 되돌림) · settlePauseTuition·retry·직접 처리 4 액션 · 취소 요청(d8) 승인은 돈 움직인 휴원이면 막음 |
+| change-decision-notify.ts · parentChangeStatus.ts | 승인 알림에 «○원 이월/환불 예정» · 따로 처리 = SETTLED 알림 |
+| admin/enrollment-changes/* · api/cron/enrollment-changes | 상세 패널 미리보기·방식 고르기·확인창·처리 기록·남은 일 배너 · 크론이 남은 이월 차감 |
+| prisma/migrations/20261110180000_enrollment_pause_settlement · schema.prisma | 표 2개(운영 미적용) |
+💡 tester: tests/pause-settlement.test.mjs 20건(월말·연말·자정·4주·3회 달·부분 납부·가짜 DB 실행). 실DB·실토스 미검증 — 테스트 키로 부분 취소 1건 확인 필요.
+⚠️ reviewer: 토스 부분 취소(트랜잭션 밖·REQUESTED→재조회 확인) · 미납 감액 0원=CANCELED · 기능 이전 승인 휴원은 미리보기 숨김(PAUSE_SETTLEMENT_SINCE).
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(휴원 시작일 자유 + 승인 시 수강료 처리 m6): 시작일 오늘(수업 전)/내일~3개월 · 이월·환불·없음 자동 계산·실행(토스 부분 취소 신설·현금/랠리즈/POS=할 일·미납 감액·이월 다음 청구 차감) · 알림 «○원 예정». tsc 0·tests 3841-0·studentVisibility 5-0. ⚠️ 마이그레이션 20261110180000 운영 미적용 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
@@ -102,4 +119,3 @@
 | 11-09 | developer(PM 결정 3건, 색상 3차 후속): 셔틀 명단 «확정하기»=주 버튼(검정) · 상태 버튼 위험 채움(StatusChoiceButton·TONE_SOLID_CLASS)=danger-fill+hover · 선생님 학생 시트·반 학생 시트 «학부모 전화»=보조 버튼. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «색 더 정리» 3차): 묶음 버튼 고른 칸=옅은 상태 바탕+진한 글자+안쪽 링(statusTones TONE_SELECTED_CLASS 신설, 학생 상세 수강 상태·결제 상태) · 전화 버튼 보조로 통일(학생 상세 머리·셔틀 명단 펼침·셔틀 학생 상세창·학부모 기사님 전화) · 명단 «확정하기»·«좌표 설정으로 이동»·«반 이동» 주황 채움→warning-soft+테두리 · «안전 복구»=인증 계정 삭제라 danger-fill 유지 · 기사님 결석 꼬리표 danger-fill. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «빨강 애매·퀵버튼 보기 싫다» 색상 2차): 위험색 역할 분리(danger-fill #dc2626·hover #b91c1c·line #fecaca, 글자 #b91c1c 유지) · ⚡ 버튼 중립(흰+입력선+검정 아이콘, 열림=옅은 주 색) · InlineConfirm 흰 바탕+왼쪽 위험 띠 한 줄 · 수납 환불 막대 «선택 해제» 첫 줄 고정 · 위험 아닌 빨강·초록 채움 12곳 정리+위험 확정 6곳 새 채움 · account-deletion 색 토큰화(가드 실패 해소). tsc 0·전체 3734-0. PNG scratchpad/color-fix2 | 완료 |
-| 11-09 | 학생 상세 청구/수납(발행·수정·삭제): studentBillingRules 공용 판정, updateUnpaidPayment(원장), 작업대 차단=쓰기 스위치 기준, 결제·수정 경합 잠금+금액 재확인, 결제 진행 중=30분 내·기한 남은 가상계좌. reviewer 3회·security 1회, 전체 3701-0 | 완료 |

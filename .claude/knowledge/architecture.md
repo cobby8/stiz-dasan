@@ -257,3 +257,9 @@
 - **발견자**: developer
 - **내용**: 서버 액션 `src/app/actions/payment-bulk-refund.ts` 가 DB 로 다시 읽은 행을 `planBulkRefund` 에 넣어 갈래를 나눈다(막을 것 하나라도 있으면 전부 미실행). TOSS=`refundTossPaymentByAdmin`(payment-ledger: 재조회→감사→취소 API 전액→재조회 FULL 일 때만 applyVerifiedTossFullCancel, 가상계좌 DONE 은 환불 계좌 필요라 차단), TOSS_POS=`requestChargeCancelByAdmin`(비동기, 결과 REQUESTED), 그 밖(MANUAL)=`refundPaidPaymentInTx`, CAFE24_BRIDGE 차단. 묶음(토스 항목·POS 항목)은 전부 골라야 하고 부분 취소는 지원 안 함. ⚡ 한 건 «환불»도 같은 runRefund→refundSelectedPayments([id]) 로 통일(PM 결정), updatePaymentStatus·bulkUpdatePaymentStatus 는 REFUNDED 를 거부한다 — 새 환불 경로를 만들 때도 이 액션만 부른다.
 - **참조횟수**: 0
+
+### [2026-11-10] 휴원 수강료 처리(이월·환불·없음) = 순수 계산(pause-settlement-plan) + db 인자 실행부(pause-settlement) + 표 2개
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 금액 = 그 청구 금액 ÷ 그 수강월 그 반 수업 수(getMonthlyClassDates) × 빠지는 수업(휴원 시작 ≤ d < 복귀일), 청구마다 한 번 반올림 — 결석 이월(workbench-absence)과 같은 기준. 승인(`decideEnrollmentChangeRequest` settlement?)과 처리는 한 트랜잭션(전역 STIZ_BILLING_WORKBENCH 잠금 + 신청별 advisory + 신청·청구 FOR UPDATE + 미리보기 지문 대조), 미납 감액은 조건부 UPDATE(0원=CANCELED). 토스 온라인 환불은 커밋 뒤 `partialRefundTossPaymentByAdmin`(줄 REQUESTED → 재조회 cancels[] 표식 `STIZ-PR:<줄 id>`·고정 멱등 키로만 DONE), POS·무통장·랠리즈·현금은 사람 할 일(TODO → «직접 처리함»). 이월은 `carryRemaining` 을 매일 크론(/api/cron/enrollment-changes)이 carryAfterYm 뒤 미납 청구에서 차감. 기록 = `EnrollmentChangeSettlement`(신청당 1행)·`…Line`(마이그레이션 20261110180000). 학부모 알림 한 줄은 notify 가 처리 기록을 읽어 붙인다. 휴원 시작일 최소값 = `earliestPauseStart`(changeRequestRules, import 없음 — today·nowHm 인자).
+- **참조횟수**: 0

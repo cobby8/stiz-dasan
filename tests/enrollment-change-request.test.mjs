@@ -144,7 +144,8 @@ test("신청은 담당자에게 전달하고 결정·적용은 신청 학부모�
   assert.doesNotMatch(adminLib, /ENROLLMENT_CHANGE_NOTIFICATION_HELD/);
   // 결정은 트랜잭션이 끝난 뒤 알린다(트랜잭션 블록 안에서 부르지 않는다)
   const decide = adminLib.slice(adminLib.indexOf("export async function decideEnrollmentChangeRequest"), adminLib.indexOf("export type DueEnrollmentChangeSummary"));
-  const txEnd = decide.indexOf("  });\n  if (!rows[0])");
+  // (2026-11-10 m6: 휴원 수강료 처리가 같은 트랜잭션에 들어가며 try/catch 로 감쌌다 — 트랜잭션 뒤 첫 문장으로 찾는다)
+  const txEnd = decide.indexOf("  if (!rows[0]) return");
   assert.ok(txEnd > 0, "결정 트랜잭션 끝을 찾지 못했습니다");
   assert.ok(decide.indexOf('notifyParentOfEnrollmentChange(input.requestId') > txEnd, "알림은 결정 트랜잭션 뒤에서 보낸다");
   // 적용일에 실제로 반영된 건만 «시작됐어요» 알림
@@ -161,10 +162,17 @@ const rulesModule = await import(
 );
 const { resolveEffectiveFrom, addMonths } = rulesModule;
 
-test("반 변경만 학부모가 시작일을 고를 수 있다", () => {
-  // 휴원·퇴원은 달 중간에 멈추면 그달 요금을 매번 판단해야 해서 1일로 고정한다.
+test("반 변경·휴원은 학부모가 시작일을 고르고, 퇴원은 다음 달 1일 고정", () => {
+  // 2026-11-10 원장 결정 k10·m7: 휴원은 갑작스러운 경우가 있어 언제든 — 고른 날 그대로(수강료는 승인 때 이월·환불로 정리).
   assert.equal(
     resolveEffectiveFrom({ kind: "PAUSE", requestedFrom: "2026-08-20", today: "2026-08-09" }).effectiveFrom,
+    "2026-08-20",
+  );
+  // 휴원 날짜를 안 보낸 옛 화면은 예전처럼 다음 달 1일
+  assert.equal(resolveEffectiveFrom({ kind: "PAUSE", today: "2026-08-09" }).effectiveFrom, "2026-09-01");
+  // 퇴원은 여전히 다음 달 1일(보낸 날짜는 무시)
+  assert.equal(
+    resolveEffectiveFrom({ kind: "WITHDRAW", requestedFrom: "2026-08-20", today: "2026-08-09" }).effectiveFrom,
     "2026-09-01",
   );
   assert.equal(
