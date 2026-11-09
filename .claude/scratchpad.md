@@ -38,6 +38,7 @@
 ## 진행 현황
 | 항목 | 상태 |
 |------|------|
+| 11-09 | developer(색상 통합·마무리): 6브랜치 합침(충돌 = 기준선 json·scratchpad·차트 3파일 — 차트 색은 chartColors 하나로), 노쇼 위험·결제요청 확인 중 정보·등록전환 정상, faint/line-input 대비 올림(+테스트 2쌍), 남은 관리자 5파일 103→0, 기준선 12,341→1,730. tsc 0·tests 3629-0·lib 164-0 | 완료 |
 | 관리자·선생님 UI 전수조사(6영역 병렬) | 완료 — 문구 140·기능 46·보존 144·확인필요 61 |
 | 선생님 화면 문구 정리 + 설치배너 제거 | 완료·커밋 |
 | 관리자 문구 106건 정리 | 완료·커밋 |
@@ -47,10 +48,6 @@
 | 보강 잔여석 실제 계산 + 정원 초과 차단 | 완료·커밋 |
 | 수업 리포트 사진 깨짐 수정 | 완료·커밋 |
 | UI 기능/UI 제거 46건 | 대기(원장 확인 필요 항목 다수) |
-| 셔틀 확정 명단 4~5단계(변동 감지·재발 방지 가드) | 대기 |
-| 4b 시즌 격리 / 4c 추가 확정 / 4d 변동 배지 | 대기 |
-| 정규반 형제할인 자동화 | 대기(시트 수동 10% 이중적용 위험 확인 필요) |
-| 미푸시 커밋 | **13개** |
 
 ## 미해결 리뷰 수정 사항 (이월)
 | 번호 | 파일 | 심각도 | 내용 |
@@ -81,6 +78,7 @@
 | 2 a7ed1234 | tests/color-contrast · color-hardcode-guard · fixtures/color-hardcode-baseline.json | 대비(글자 4.5·선 3) + 하드코딩 색 파일별 기준선(늘면 실패, UPDATE_COLOR_BASELINE=1 로 낮춤) |
 | 3 | src/lib/ui/statusTones.ts(신규) · StatusBadge · ui/Badge · StatusChoiceButton · academy-theme.css(보조 버튼·칩 입력선, academy-status 4px, academy-input 신설) · 상태 지도 16파일 · tests 7 | 상태→뜻 지도 한 곳(출결·결제·셔틀·신청), 배지 모서리 4px, 화면별 색 지도 → statusTones |
 | 5 | staff/** 15 · driver 1 · components/shuttle 6(RunBoard·UnifiedDriverClient·DriverDateNav·RegularRouteSection·DriverRequestModal·UnifiedDriverRunPage) · components/staff 4 · DriverWorkspace.module.css · academy-theme.css · 기준선 | 선생님·기사님 하드코딩 색 630건 → 토큰·statusTones(dark: 삭제 포함). 등원·하원 색 구분 제거(글자·화살표), 순번·시각·제목 글자 주 색 → ink, 편집 중 정류장=정보, 보강·특강=정보, 기한 지난 미납=위험(리뷰 지적 1)·«미납 N건» 4px 배지(지적 2). academy-theme 의 `.academy-driver-stop:not(.bg-amber-50)…`·`.academy-driver-rider:not(.bg-red-50)` 덮어쓰기 삭제(결석 신고 승객 칸 연빨강이 원래 의도대로 보임). 관리자 전용 RegularStopGeocodePanel·ShuttleGeoEditor 는 미변경 |
+| 통합·마무리 | 6브랜치 merge(1~3→4→5→6A→6B→7) · statusTones(NO_SHOW danger) · 결제요청 확인 중 info · 통계 등록전환 success · faint #636a75·line-input #848b96 · 남은 관리자 5파일 | 차트 색 두 벌(chartColors·colorValues) → chartColors 하나. 기준선 = 실제 값 91파일 1,730(관리자·학부모 0). 전후 PNG = 세션 scratchpad color-final\ |
 
 💡 tester: tests 3629-0·tsc 0·studentVisibility 5-0. 전후 PNG = 세션 scratchpad color-before-after/before.png·after.png. 결제 화면은 상태 글자 색만(판정 무변경).
 ⚠️ reviewer: 입력선 #8a919c 는 연회색 바탕 위 2.96(카드 위는 3.2) — 값은 결정대로 두고 테스트에 기록. .academy-app 안 blue→ink 바꿔 끼우기는 그대로(마지막 단계). @theme brand-orange(«절대 변경 금지» 주석)·다크모드 값 무수정.
