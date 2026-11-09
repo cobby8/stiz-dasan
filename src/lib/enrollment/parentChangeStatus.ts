@@ -80,7 +80,8 @@ export function buildClassStatusLine(input: ClassStatusInput): { text: string; t
 /** 알림 사유 한 줄 길이 상한 — 휴대폰 알림 칸에서 잘리지 않을 만큼. */
 const NOTE_MAX = 80;
 
-export type ChangeNoticeEvent = "APPROVED" | "REJECTED" | "APPLIED";
+// CANCEL_* = 승인된 휴원·퇴원에 학부모가 낸 «취소 요청»(d8)에 대한 원장 결정
+export type ChangeNoticeEvent = "APPROVED" | "REJECTED" | "APPLIED" | "CANCEL_APPROVED" | "CANCEL_REJECTED";
 
 /**
  * 원장 결정·적용 시 학부모 앱 알림 문구.
@@ -103,6 +104,14 @@ export function buildChangeDecisionNotice(input: {
 
   if (input.event === "APPROVED") {
     return { title: "수강 변경 신청 승인", message: `${who} ${name} 신청이 승인됐어요${when}` };
+  }
+  if (input.event === "CANCEL_APPROVED") {
+    return { title: "수강 변경 취소 요청 결과", message: `${who} ${name} 예정${when}이 취소됐어요. 지금처럼 수업을 이어 가요` };
+  }
+  if (input.event === "CANCEL_REJECTED") {
+    const note = (input.decisionNote ?? "").replace(/\s+/g, " ").trim();
+    const shortNote = note.length > NOTE_MAX ? `${note.slice(0, NOTE_MAX)}…` : note;
+    return { title: "수강 변경 취소 요청 결과", message: `${who} ${name} 취소 요청이 받아들여지지 않았어요${shortNote ? `: ${shortNote}` : ""}` };
   }
   if (input.event === "REJECTED") {
     const note = (input.decisionNote ?? "").replace(/\s+/g, " ").trim();

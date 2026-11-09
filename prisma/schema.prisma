@@ -481,6 +481,13 @@ model EnrollmentChangeRequest {
   /// 실제로 반이 옮겨진 시각. 승인은 "예약"이고 적용일이 되어야 크론이 반영한다.
   /// 참고: "적용할 것"을 찾는 DB 인덱스는 부분 인덱스라 여기에 적지 않는다.
   appliedAt         DateTime? @db.Timestamptz(6)
+  /// 승인된 휴원·퇴원의 학부모 «취소 요청»(2026-11-10 d8) — NULL | PENDING | APPROVED | REJECTED (DB CHECK)
+  cancelRequestStatus     String?
+  cancelRequestedAt       DateTime? @db.Timestamptz(6)
+  cancelRequestedByUserId String?
+  cancelRequestReason     String?
+  /// 취소 요청에 대한 원장 답(거절 사유 등 — 학부모에게 보인다)
+  cancelDecisionNote      String?
   createdAt         DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 

@@ -4,6 +4,7 @@ import {
   getEnrollmentChangeOptions,
   submitEnrollmentChangeRequest,
   cancelEnrollmentChangeRequest,
+  requestScheduledChangeCancel,
 } from "@/lib/enrollment/parent-change-request";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET() {
   }
 }
 
-// 신청(submit) / 신청 취소(cancel) — body.action 으로 분기
+// 신청(submit) / 신청 취소(cancel) / 승인된 휴원·퇴원 취소 요청(cancel-request, d8) — body.action 으로 분기
 export async function POST(request: NextRequest) {
   let parent;
   try {
@@ -45,7 +46,9 @@ export async function POST(request: NextRequest) {
     const result =
       body?.action === "cancel"
         ? await cancelEnrollmentChangeRequest(parent.appUserId, String(body?.id ?? ""))
-        : await submitEnrollmentChangeRequest(parent.appUserId, body ?? {});
+        : body?.action === "cancel-request"
+          ? await requestScheduledChangeCancel(parent.appUserId, String(body?.id ?? ""), body?.reason)
+          : await submitEnrollmentChangeRequest(parent.appUserId, body ?? {});
     if (!result.ok) return NextResponse.json({ error: result.message }, { status: 400 });
     return NextResponse.json(result);
   } catch (error) {

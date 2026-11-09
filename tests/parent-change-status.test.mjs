@@ -79,15 +79,17 @@ test("결정·적용 알림 문구", () => {
 
 test("알림은 신청 학부모 한 명·앱만·중복 키·EXTERNAL 장부", () => {
   assert.match(notify, /stableEventKey: `enrollment-change:\$\{requestId\}:\$\{event\}`/);
-  assert.match(notify, /recipientUserId: row\.requestedByUserId/);
+  // 받는 사람 = 신청자(취소 요청 결과 CANCEL_* 만 취소를 요청한 보호자 — 2026-11-10 d8)
+  assert.match(notify, /let recipientUserId = row\.requestedByUserId;/);
+  assert.match(notify, /^\s+recipientUserId,$/m);
   assert.match(notify, /audienceScope: "EXTERNAL"/);
   // 관리자 직접 변경(신청자 = 결정자)은 건너뛰고, 지금도 보호자인지 childAccessSql 로 다시 본다
-  assert.match(notify, /row\.requestedByUserId === row\.decidedByUserId\) return "SKIPPED"/);
+  assert.match(notify, /row\.requestedByUserId === row\.decidedByUserId\) \{[\s\S]{0,120}return "SKIPPED"/);
   assert.match(notify, /childAccessSql\("s", "\$2"\)/);
   // 문자·알림톡 경로를 쓰지 않는다
   assert.doesNotMatch(notify, /sendTrackedSms|sendParentSms|alimtalk/i);
   // 사유는 거절 알림에만
-  assert.match(notify, /decisionNote: event === "REJECTED" \? row\.decisionNote : null/);
+  assert.match(notify, /decisionNote: event === "REJECTED" \|\| event === "CANCEL_REJECTED" \? note : null/);
   // 장부 기본값은 운영진(INTERNAL) 그대로
   assert.match(delivery, /input\.audienceScope === "EXTERNAL" \? "EXTERNAL" : "INTERNAL"/);
 });

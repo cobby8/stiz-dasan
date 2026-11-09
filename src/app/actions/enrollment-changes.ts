@@ -3,7 +3,7 @@
 import { userFacingError } from "@/lib/user-facing-error";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
-import { decideEnrollmentChangeRequest, issueProrationInvoice } from "@/lib/enrollment/admin-change-request";
+import { decideEnrollmentCancelRequest, decideEnrollmentChangeRequest, issueProrationInvoice } from "@/lib/enrollment/admin-change-request";
 import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache";
 import { applyOperationsSheet, recordOperationsExternalCheck, recordOperationsSheetManualCheck } from "@/app/actions/operations-sync";
 
@@ -30,6 +30,24 @@ export async function decideEnrollmentChange(input: {
   // 승인 직후 처리에서 이 신청이든 다른 밀린 신청이든 한 건이라도 사이트에 적용됐으면
   // 관리자 즉시 변경과 같은 범위의 캐시를 비운다.
   if (result.ok && result.appliedCount > 0) revalidateEnrollmentStatusCaches();
+  return result;
+}
+
+/**
+ * 승인된 휴원·퇴원의 학부모 «취소 요청» 승인/거절(2026-11-10 원장 결정 d8). 원장·부원장만.
+ * 승인 = 그 신청을 취소(적용 전에만 — 서버가 한 문장 UPDATE 로 다시 확인), 거절 = 원래 승인 그대로.
+ * 결과는 취소를 요청한 보호자에게 앱 알림(인앱+웹푸시)만.
+ */
+export async function decideEnrollmentChangeCancelRequest(input: { requestId: string; approve: boolean; note?: string }) {
+  const admin = await requireAdmin();
+  const result = await decideEnrollmentCancelRequest({
+    adminUserId: admin.appUserId,
+    requestId: input.requestId,
+    approve: input.approve,
+    note: input.note ?? null,
+  });
+  revalidatePath("/admin/enrollment-changes");
+  revalidatePath("/mypage/classes");
   return result;
 }
 

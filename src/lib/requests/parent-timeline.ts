@@ -42,7 +42,10 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
 
   const [changes, absences, makeups, shuttles, seasonalAbsences, seasonalMakeups, inquiries] = await Promise.all([
     // 수강 변경 — 기존 «지난 결과» 조회를 그대로 쓰되 검토 중·적용 전 승인 건도 함께
-    safe("ENROLLMENT_CHANGE", () => getEnrollmentChangeHistory(parentUserId, { includeOpen: true })),
+    // (취소 요청 칸까지 읽다가 실패하면 — 마이그레이션 전 — 칸 없이 다시 읽는다)
+    safe("ENROLLMENT_CHANGE", () =>
+      getEnrollmentChangeHistory(parentUserId, { includeOpen: true, withCancelRequest: true })
+        .catch(() => getEnrollmentChangeHistory(parentUserId, { includeOpen: true }))),
     // 정규 결석(학부모가 신고한 것만 — 관리자 기간 결석·출석부 표시 행은 신청이 아니다)
     safe("REGULAR_ABSENCE", () => prisma.$queryRawUnsafe<any[]>(
       `SELECT ra.id, s.id AS "studentId", s.name AS "studentName", c.name AS "className",
@@ -135,7 +138,7 @@ export async function getParentRequestTimeline(parentUserId: string): Promise<Pa
       // 거절 사유만(승인 메모는 내부용일 수 있어 조회에서 이미 뺐다)
       answer: r.decisionNote,
       change: { kind: r.kind, effectiveFrom: r.effectiveFrom, applied: r.applied },
-      cancelRequest: null,
+      cancelRequest: r.cancelRequest ?? null,
       openHref: "/mypage/enrollment-change",
     });
   }

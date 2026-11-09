@@ -1,5 +1,6 @@
 import { childAccessSql, childConnectionsAvailable } from "@/lib/account/child-access";
 import { prisma } from "@/lib/prisma";
+import { notMergedStudent } from "@/lib/studentVisibility";
 import { createHash } from "node:crypto";
 import { CHANGE_KIND_LABEL, type ChangeKind } from "@/lib/enrollment/changeRequestRules";
 import { computeClassChangeProration, describeProration, type ProrationResult } from "@/lib/enrollment/proration";
@@ -491,4 +492,106 @@ export async function issueProrationInvoice(input: { adminUserId: string; reques
   return { ok: true as const, paymentId: created[0].id, amount: proration.diff,
     invoiceId: invoice.id, invoiceStatus: "ISSUED" as const, notificationStatus: "HELD" as const };
   });
+}
+
+// ── 승인된 휴원·퇴원의 학부모 «취소 요청» 처리 (2026-11-10 원장 결정 d8) ─────────────────────
+//
+// 학부모가 수업 탭 타임라인에서 [취소 요청]을 누르면 대상 신청의 cancelRequestStatus 가 PENDING 이 된다
+// (새 행이 아니라 대상 신청의 칸 — 적용일 크론·목록·유일 제약이 아무것도 몰라도 되게).
+// 원장 승인 = 대상 신청 APPROVED → CANCELED (적용 전·적용일 > KST 오늘에만, 한 문장 UPDATE 의 WHERE 로).
+//   적용일 크론은 status='APPROVED' 행만 잠가 반영하므로, 여기서 먼저 CANCELED 가 되면 크론은 건너뛴다.
+// 원장 거절 = 취소 요청만 REJECTED, 원래 승인은 그대로 간다.
+// 결과는 1단계 알림 경로(앱 알림)로 취소를 요청한 보호자에게.
+
+export type AdminCancelRequestRow = {
+  id: string;
+  studentName: string;
+  kind: string;
+  kindLabel: string;
+  fromClassName: string | null;
+  effectiveFrom: string;
+  resumeOn: string | null;
+  requestedAt: string | null;
+  reason: string | null;
+  /** 적용일이 이미 왔거나 반영됐다 — 승인(취소)은 못 하고 거절만 할 수 있다 */
+  tooLate: boolean;
+};
+
+/** 처리할 취소 요청 목록. 마이그레이션 전이면(칸 없음) 부르는 쪽이 빈 목록으로 받는다. */
+export async function getEnrollmentCancelRequests(): Promise<AdminCancelRequestRow[]> {
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT r.id, s.name AS "studentName", r.kind, fc.name AS "fromClassName",
+            to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
+            to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
+            to_char(r."cancelRequestedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD HH24:MI') AS "requestedAt",
+            r."cancelRequestReason" AS reason,
+            (r.status <> 'APPROVED' OR r."appliedAt" IS NOT NULL
+              OR r."effectiveFrom" <= (now() AT TIME ZONE 'Asia/Seoul')::date) AS "tooLate"
+       FROM "EnrollmentChangeRequest" r
+       JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
+       LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
+      WHERE r."cancelRequestStatus" = 'PENDING'
+      ORDER BY r."effectiveFrom", r."cancelRequestedAt"
+      LIMIT 100`,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    studentName: row.studentName,
+    kind: row.kind,
+    kindLabel: CHANGE_KIND_LABEL[row.kind as ChangeKind] ?? row.kind,
+    fromClassName: row.fromClassName ?? null,
+    effectiveFrom: row.effectiveFrom,
+    resumeOn: row.resumeOn ?? null,
+    requestedAt: row.requestedAt ?? null,
+    reason: row.reason ?? null,
+    tooLate: Boolean(row.tooLate),
+  }));
+}
+
+export async function decideEnrollmentCancelRequest(input: {
+  adminUserId: string;
+  requestId: string;
+  approve: boolean;
+  note?: string | null;
+}) {
+  const note = (input.note ?? "").trim().slice(0, 500) || null;
+  const rows = await prisma.$transaction(async (tx) => {
+    const decided = input.approve
+      // 승인 = 대상 신청 취소. 적용 전·적용일 > KST 오늘·아직 운영 원장(적용 명령)이 없을 때만.
+      ? await tx.$queryRawUnsafe<any[]>(
+          `UPDATE "EnrollmentChangeRequest" r
+              SET status = 'CANCELED', "cancelRequestStatus" = 'APPROVED', "cancelDecisionNote" = $3, "updatedAt" = now()
+            WHERE r.id = $1 AND r."cancelRequestStatus" = 'PENDING'
+              AND r.status = 'APPROVED' AND r."appliedAt" IS NULL
+              AND r.kind IN ('PAUSE','WITHDRAW')
+              AND r."effectiveFrom" > (now() AT TIME ZONE 'Asia/Seoul')::date
+              AND NOT EXISTS (SELECT 1 FROM "OperationsCommand" c WHERE c."idempotencyKey" = 'enrollment-change:' || r.id)
+            RETURNING r.id, r."studentId", r.kind, to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom", $2::text AS "adminUserId"`,
+          input.requestId, input.adminUserId, note,
+        )
+      // 거절 = 취소 요청만 닫는다(원래 승인 그대로)
+      : await tx.$queryRawUnsafe<any[]>(
+          `UPDATE "EnrollmentChangeRequest" r
+              SET "cancelRequestStatus" = 'REJECTED', "cancelDecisionNote" = $3, "updatedAt" = now()
+            WHERE r.id = $1 AND r."cancelRequestStatus" = 'PENDING'
+            RETURNING r.id, r."studentId", r.kind, to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom", $2::text AS "adminUserId"`,
+          input.requestId, input.adminUserId, note,
+        );
+    if (decided[0]) await tx.operationsAuditLog.create({ data: {
+      action: "ENROLLMENT_CHANGE_CANCEL_DECIDED", actorType: "ADMIN", actorUserId: input.adminUserId,
+      detailsJson: { requestId: input.requestId, studentId: decided[0].studentId, kind: decided[0].kind,
+        approved: input.approve, effectiveFrom: decided[0].effectiveFrom, notificationChannel: "APP_ONLY" },
+    }});
+    return decided;
+  });
+  if (!rows[0]) {
+    return {
+      ok: false as const,
+      message: input.approve
+        ? "취소할 수 없습니다. 적용일이 이미 왔거나 반영됐거나, 이미 처리된 요청입니다."
+        : "이미 처리된 요청입니다.",
+    };
+  }
+  const notificationStatus = await notifyParentOfEnrollmentChange(input.requestId, input.approve ? "CANCEL_APPROVED" : "CANCEL_REJECTED");
+  return { ok: true as const, notificationStatus };
 }

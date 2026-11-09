@@ -1,4 +1,4 @@
-import { countEnrollmentChangesNeedingCheck, getEnrollmentChangeRequests } from "@/lib/enrollment/admin-change-request";
+import { countEnrollmentChangesNeedingCheck, getEnrollmentCancelRequests, getEnrollmentChangeRequests } from "@/lib/enrollment/admin-change-request";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import EnrollmentChangesClient from "./EnrollmentChangesClient";
 
@@ -15,10 +15,15 @@ export default async function EnrollmentChangesPage({
     || params?.status === "NEEDS_CHECK"
     ? params.status
     : "PENDING";
-  const [rows, needsCheckCount] = await Promise.all([
+  const [rows, needsCheckCount, cancelRequests] = await Promise.all([
     getEnrollmentChangeRequests(status),
     countEnrollmentChangesNeedingCheck(),
+    // 학부모 «취소 요청»(d8). 마이그레이션 전(칸 없음)이면 빈 목록 — 화면은 그대로 열린다.
+    getEnrollmentCancelRequests().catch((error) => {
+      console.error("[admin/enrollment-changes] 취소 요청 조회 실패", error instanceof Error ? error.name : "");
+      return [];
+    }),
   ]);
   // 시트 원장 은퇴 여부는 서버 환경변수로만 정해진다 → 화면에 그대로 넘겨 문구·버튼을 맞춘다.
-  return <EnrollmentChangesClient rows={rows} status={status} needsCheckCount={needsCheckCount} sheetRetired={isSheetSyncRetired(process.env)} />;
+  return <EnrollmentChangesClient rows={rows} status={status} needsCheckCount={needsCheckCount} sheetRetired={isSheetSyncRetired(process.env)} cancelRequests={cancelRequests} />;
 }

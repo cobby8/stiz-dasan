@@ -106,6 +106,8 @@ export type ChangeHistoryRow = {
   createdOn: string;
   /** 신청 정렬용(ISO 시각) */
   createdAt: string;
+  /** 승인된 휴원·퇴원의 학부모 취소 요청(d8) — withCancelRequest 로 읽을 때만 채운다 */
+  cancelRequest?: { status: "PENDING" | "APPROVED" | "REJECTED"; requestedOn: string | null; decisionNote: string | null } | null;
 };
 
 /** 방학특강 반(dayOfWeek='Seasonal')은 별도 신청 흐름이라 여기서 제외한다. */
@@ -219,8 +221,14 @@ export async function getEnrollmentChangeHistory(
   parentUserId: string,
   // includeOpen: 검토 중(PENDING)·적용 전 승인 건도 함께 — «수업» 탭 신청 내역 타임라인용(2026-11-10).
   //              기본값(false)은 예전 «지난 결과» 그대로.
-  options: { includeOpen?: boolean } = {},
+  // withCancelRequest: 취소 요청(d8) 칸도 읽는다 — 마이그레이션 20261110130000 이후에만 켠다.
+  options: { includeOpen?: boolean; withCancelRequest?: boolean } = {},
 ): Promise<ChangeHistoryRow[]> {
+  const cancelCols = options.withCancelRequest
+    ? `, r."cancelRequestStatus",
+            to_char(r."cancelRequestedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "cancelRequestedOn",
+            r."cancelDecisionNote"`
+    : "";
   const statuses = options.includeOpen
     ? `('PENDING','APPROVED','APPLIED','REJECTED','CANCELED')`
     : `('APPROVED','APPLIED','REJECTED','CANCELED')`;
@@ -228,7 +236,7 @@ export async function getEnrollmentChangeHistory(
     `SELECT r.id, r."studentId", s.name AS "studentName", r.kind, r.status, (r."appliedAt" IS NOT NULL) AS applied,
             to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
             to_char(r."createdAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "createdOn",
-            r."createdAt",
+            r."createdAt"${cancelCols},
             fc.name AS "fromClassName", tc.name AS "toClassName",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
             -- decidedAt·updatedAt 은 timestamptz 라 AT TIME ZONE 한 번이면 KST 날짜다.
@@ -262,6 +270,9 @@ export async function getEnrollmentChangeHistory(
     resumeOn: row.resumeOn ?? null,
     createdOn: row.createdOn,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
+    cancelRequest: options.withCancelRequest && ["PENDING", "APPROVED", "REJECTED"].includes(row.cancelRequestStatus)
+      ? { status: row.cancelRequestStatus, requestedOn: row.cancelRequestedOn ?? null, decisionNote: row.cancelDecisionNote ?? null }
+      : null,
   }));
 }
 
@@ -509,6 +520,57 @@ export async function cancelEnrollmentChangeRequest(parentUserId: string, reques
     ),
   );
   if (canceled === 0) return { ok: false as const, message: "이미 처리된 신청은 취소할 수 없습니다." };
+  return { ok: true as const };
+}
+
+/**
+ * 승인된 휴원·퇴원 «취소 요청»(2026-11-10 원장 결정 d8).
+ * 원장이 승인했지만 아직 적용 전(적용일 > KST 오늘)인 휴원·퇴원에 학부모가 «취소해 주세요»를 보낸다.
+ * 학부모가 직접 되돌리지는 않는다 — 원장이 /admin/enrollment-changes 에서 승인해야 CANCELED 가 된다.
+ *
+ * ★ 가드(한 문장 UPDATE 의 WHERE 로 전부 건다 — 확인과 쓰기 사이 틈이 없다):
+ *   그 부모의 자녀(childAccessSql)·병합 안 된 학생 · APPROVED · 미적용 · PAUSE/WITHDRAW · 적용일 > KST 오늘 ·
+ *   아직 취소 요청 없음(거절된 요청은 다시 못 낸다 — 학원과 직접 이야기).
+ */
+export async function requestScheduledChangeCancel(parentUserId: string, requestId: string, reason?: unknown) {
+  const id = typeof requestId === "string" ? requestId.trim() : "";
+  if (!id) return { ok: false as const, message: "취소 요청할 신청을 찾을 수 없습니다." };
+  const note = typeof reason === "string" ? reason.trim().slice(0, 300) || null : null;
+  const rows = await prisma.$queryRawUnsafe<Array<{ studentName: string; className: string | null; classId: string | null; kind: string; effectiveFrom: string }>>(
+    `UPDATE "EnrollmentChangeRequest" r
+        SET "cancelRequestStatus" = 'PENDING', "cancelRequestedAt" = now(),
+            "cancelRequestedByUserId" = $1, "cancelRequestReason" = $3, "updatedAt" = now()
+       FROM "Student" s
+      WHERE r."studentId" = s.id
+        AND ${await childAccessSql("s", "$1")} AND ${notMergedStudent("s")}
+        AND r.id = $2
+        AND r.status = 'APPROVED' AND r."appliedAt" IS NULL
+        AND r.kind IN ('PAUSE','WITHDRAW')
+        AND r."effectiveFrom" > (now() AT TIME ZONE 'Asia/Seoul')::date
+        AND r."cancelRequestStatus" IS NULL
+      RETURNING s.name AS "studentName", r."fromClassId" AS "classId",
+                (SELECT c.name FROM "Class" c WHERE c.id = r."fromClassId") AS "className",
+                r.kind, to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom"`,
+    parentUserId, id, note,
+  );
+  if (!rows[0]) {
+    return { ok: false as const, message: "취소 요청을 보낼 수 없는 신청입니다. 이미 적용됐거나 요청을 보냈을 수 있어요." };
+  }
+  // 원장 알림 — 신청 알림과 같은 경로(실패해도 요청은 남는다)
+  try {
+    const { notifyOperationalStaff } = await import("@/lib/operational-staff-notification");
+    await notifyOperationalStaff({
+      type: "ENROLLMENT_CHANGE",
+      title: "수강 변경 취소 요청",
+      message: `${rows[0].studentName} 학생 ${REQUEST_KIND_LABEL[rows[0].kind] ?? "수강 변경"} 승인 건(${rows[0].className ?? "반"}, ${rows[0].effectiveFrom}부터) 취소 요청 · 적용일 전에 승인·거절해 주세요.`,
+      linkUrl: "/admin/enrollment-changes",
+      staffLinkUrl: "/staff",
+      classId: rows[0].classId ?? undefined,
+      includeCoach: false,
+    });
+  } catch (error) {
+    console.error("[parent-change-request] 취소 요청 원장 알림 실패:", error instanceof Error ? error.name : "");
+  }
   return { ok: true as const };
 }
 

@@ -9,13 +9,14 @@ import {
   confirmEnrollmentChangeRallyz,
   confirmEnrollmentChangeSheetManually,
   decideEnrollmentChange,
+  decideEnrollmentChangeCancelRequest,
   issueEnrollmentChangeInvoice,
   releaseEnrollmentChangeHoldSheetRetired,
   type EnrollmentSyncActionResult,
 } from "@/app/actions/enrollment-changes";
 import { CHANGE_STATUS_LABEL, pauseResumeLabel, syncCheckBadge } from "@/lib/enrollment/changeRequestRules";
 import { isSheetTargetDone } from "@/lib/operations-sync/sheetRetirement";
-import type { AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
+import type { AdminCancelRequestRow, AdminChangeRequestRow } from "@/lib/enrollment/admin-change-request";
 import { RESUME_ADAPTER_HOLD_REASON, sheetHoldDisplayReason } from "@/lib/enrollment/sheetManualCheckRules";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
@@ -34,8 +35,11 @@ export default function EnrollmentChangesClient({
   status,
   needsCheckCount = 0,
   sheetRetired = false,
+  cancelRequests = [],
 }: {
   rows: AdminChangeRequestRow[];
+  /** 승인된 휴원·퇴원에 학부모가 낸 «취소 요청»(d8) — 탭과 무관하게 맨 위에 보인다 */
+  cancelRequests?: AdminCancelRequestRow[];
   status: string;
   needsCheckCount?: number;
   /** 시트 원장 은퇴(2026-10~) 여부 — 서버(page.tsx)가 환경변수로 판정해 넘긴다. true 면 안내에서 "시트"를 뺀다. */
@@ -117,6 +121,23 @@ export default function EnrollmentChangesClient({
     });
   }
 
+  // 학부모 취소 요청(d8) 승인·거절. 승인 = 그 휴원·퇴원 신청을 취소(적용 전에만 — 서버가 다시 확인)
+  function decideCancel(row: AdminCancelRequestRow, approve: boolean) {
+    const question = approve
+      ? `${row.studentName} · ${row.fromClassName ?? "-"} · ${row.kindLabel}(${row.effectiveFrom}부터)\n승인된 ${row.kindLabel}을 취소할까요? 학부모에게 앱 알림이 갑니다.`
+      : `${row.studentName} · ${row.kindLabel} 취소 요청을 거절할까요? 원래 승인(${row.effectiveFrom}부터)은 그대로 진행됩니다.`;
+    if (!window.confirm(question)) return;
+    setError("");
+    startTransition(async () => {
+      const result = await decideEnrollmentChangeCancelRequest({ requestId: row.id, approve, note: notes[`cancel:${row.id}`] });
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   function decide(requestId: string, approve: boolean) {
     setError("");
     startTransition(async () => {
@@ -187,6 +208,43 @@ export default function EnrollmentChangesClient({
         >
           사이트에만 반영되고 {externalLabel} 확인이 남은 건이 {needsCheckCount}건 있습니다. 눌러서 확인하세요.
         </button>
+      )}
+
+      {/* 학부모 «취소 요청»(d8) — 승인됐지만 적용 전인 휴원·퇴원. 적용일 전에 처리해야 하므로 탭과 무관하게 맨 위 */}
+      {cancelRequests.length > 0 && (
+        <section aria-labelledby="cancel-requests-heading" className="rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-surface)]">
+          <h2 id="cancel-requests-heading" className="border-b border-[var(--color-academy-line)] px-3 py-2 text-sm font-black text-[var(--color-academy-warning)]">
+            학부모 취소 요청 {cancelRequests.length}건 · 적용일 전에 처리해 주세요
+          </h2>
+          <ul className="divide-y divide-[var(--color-academy-line)]">
+            {cancelRequests.map((row) => (
+              <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm">
+                <span className="font-black text-[var(--color-academy-ink)]">{row.studentName}</span>
+                <span className="text-[var(--color-academy-ink)]">{row.kindLabel} · {row.fromClassName ?? "-"}</span>
+                <span className="tabular-nums text-[var(--color-academy-muted)]">{row.effectiveFrom}부터{row.kind === "PAUSE" ? ` · ${pauseResumeLabel(row.resumeOn)}` : ""}</span>
+                {row.requestedAt && <span className="tabular-nums text-xs text-[var(--color-academy-muted)]">요청 {row.requestedAt}</span>}
+                {row.reason && <span className="basis-full break-keep text-xs text-[var(--color-academy-ink)]">사유: {row.reason}</span>}
+                {row.tooLate && <span className="basis-full text-xs font-bold text-[var(--color-academy-danger)]">적용일이 지났거나 이미 반영돼 취소할 수 없습니다 — 거절로 닫아 주세요.</span>}
+                <input
+                  value={notes[`cancel:${row.id}`] ?? ""}
+                  onChange={(event) => setNotes((prev) => ({ ...prev, [`cancel:${row.id}`]: event.target.value }))}
+                  maxLength={500}
+                  placeholder="학부모에게 전할 말(거절 시 함께 전달)"
+                  aria-label={`${row.studentName} 취소 요청 답변`}
+                  className="min-h-11 min-w-0 flex-1 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm"
+                />
+                <span className="flex shrink-0 gap-2">
+                  <button type="button" disabled={pending} onClick={() => decideCancel(row, false)} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-3 font-bold text-[var(--color-academy-ink)] disabled:opacity-50">
+                    요청 거절
+                  </button>
+                  <button type="button" disabled={pending || row.tooLate} onClick={() => decideCancel(row, true)} className="min-h-11 rounded-xl bg-[var(--color-academy-primary)] px-3 font-black text-[var(--color-academy-on-primary)] disabled:opacity-50">
+                    취소 승인
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* 상태 필터 — 서버가 상태별로 읽어 주므로(다른 상태 건수는 모름) 건수 칩 대신 예전 버튼을 유지 */}

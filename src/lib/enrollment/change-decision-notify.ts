@@ -9,6 +9,7 @@ import { buildChangeDecisionNotice, CHANGE_NOTICE_LINK, type ChangeNoticeEvent }
 // 왜: 예전엔 결정 알림을 «보류(HELD)»로만 남겨, 학부모는 승인·거절을 «⋯» 메뉴 안 화면에 들어가야만 알았다.
 // 무엇: 인앱 알림 + 웹푸시만(운영 알림 전달 장부 = deliverOperationalNotification). 문자·알림톡은 보내지 않는다.
 // 누구에게: 신청자(requestedByUserId) 한 명 — 그 사람이 지금도 그 학생의 보호자일 때만.
+//   취소 요청(d8) 결과(CANCEL_*)는 취소를 요청한 보호자(cancelRequestedByUserId)에게.
 //   관리자가 직접 만든 변경(신청자 = 관리자)·연결이 끊긴 보호자에게는 보내지 않는다.
 // 중복: 키 = `enrollment-change:<신청 id>:<APPROVED|REJECTED|APPLIED>` + 받는 사람 → 같은 결정은 한 번만.
 // ⚠️ 결정·적용 트랜잭션이 끝난 뒤에 부른다. 알림 실패는 결정을 되돌리지 않는다(기록만 남기고 삼킨다).
@@ -33,14 +34,30 @@ export async function notifyParentOfEnrollmentChange(requestId: string, event: C
       requestId,
     );
     const row = rows[0];
-    // 관리자가 직접 만든 변경(신청자 = 결정자)은 학부모 신청이 아니다.
-    if (!row || row.requestedByUserId === row.decidedByUserId) return "SKIPPED";
+    if (!row) return "SKIPPED";
+    // 취소 요청(d8) 결과는 «취소를 요청한 보호자»에게, 사유는 취소 요청에 단 원장 답으로.
+    // (이 칸은 마이그레이션 20261110130000 의 것이라 취소 이벤트일 때만 읽는다)
+    const cancelEvent = event === "CANCEL_APPROVED" || event === "CANCEL_REJECTED";
+    let recipientUserId = row.requestedByUserId;
+    let note = row.decisionNote;
+    if (cancelEvent) {
+      const extra = await prisma.$queryRawUnsafe<{ cancelRequestedByUserId: string | null; cancelDecisionNote: string | null }[]>(
+        `SELECT "cancelRequestedByUserId", "cancelDecisionNote" FROM "EnrollmentChangeRequest" WHERE id = $1 LIMIT 1`,
+        requestId,
+      );
+      if (!extra[0]?.cancelRequestedByUserId) return "SKIPPED";
+      recipientUserId = extra[0].cancelRequestedByUserId;
+      note = extra[0].cancelDecisionNote;
+    } else if (row.requestedByUserId === row.decidedByUserId) {
+      // 관리자가 직접 만든 변경(신청자 = 결정자)은 학부모 신청이 아니다.
+      return "SKIPPED";
+    }
     // 신청자가 «지금도» 이 학생의 보호자인지 다시 확인한다(학부모 화면과 같은 기준: childAccessSql + 병합 학생 제외).
     const access = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT s.id FROM "Student" s
         WHERE s.id = $1 AND ${await childAccessSql("s", "$2")} AND ${notMergedStudent("s")}
         LIMIT 1`,
-      row.studentId, row.requestedByUserId,
+      row.studentId, recipientUserId,
     );
     if (access.length !== 1) return "SKIPPED";
 
@@ -50,14 +67,14 @@ export async function notifyParentOfEnrollmentChange(requestId: string, event: C
       className: row.className,
       kind: row.kind,
       effectiveFrom: row.effectiveFrom,
-      decisionNote: event === "REJECTED" ? row.decisionNote : null,
+      decisionNote: event === "REJECTED" || event === "CANCEL_REJECTED" ? note : null,
     });
     const result = await deliverOperationalNotification({
       stableEventKey: `enrollment-change:${requestId}:${event}`,
       eventType: "ENROLLMENT_CHANGE",
       trigger: `ENROLLMENT_CHANGE_${event}`,
       studentId: row.studentId,
-      recipientUserId: row.requestedByUserId,
+      recipientUserId,
       title: notice.title,
       message: notice.message,
       linkUrl: CHANGE_NOTICE_LINK,
