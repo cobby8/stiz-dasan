@@ -14,6 +14,9 @@ import { WEEKDAY_LABELS, type RosterDirection } from "./regularRosterEditLogic.t
 import { normalizeStopName } from "./regularDriverRouteLogic.ts";
 // @ts-expect-error -- TypeScript runtime test compatibility
 import { distanceMeters } from "../seasonal/stopMerge.ts";
+// 반경 안 추천(장소명 출입구 일치 우선)은 공용 한 곳 것을 쓴다.
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { pickNearbyStop } from "./stopNameMatch.ts";
 import type { RegularShuttleStop } from "./regularSheet";
 
 /** 「기존 정류장에 태우기」 후보로 보여 줄 최대 거리(미터). 합류 추천 반경(300m)보다 넓게 — 기사님이 고를 여지. */
@@ -74,6 +77,8 @@ export type AssignJoinOption = {
   /** 다른 요일 정류장을 넣을 자리(0 = 첫 정차 앞, route.length = 맨 뒤). 그 칸 정차는 null. */
   position: number | null;
   label: string; distanceMeters: number | null; riders: number; recommended: boolean;
+  /** 추천 이유(추천 후보만) — «이름 일치: 후문» / «가장 가까움 88m» / «이름 같음». 화면 추천 배지 옆에 짧게. */
+  recommendReason: string | null;
 };
 
 /** 기사님 화면 선택 — 관리자와 같은 JOIN/INSERT + 「다른 요일 정류장」(OTHER). */
@@ -250,14 +255,15 @@ export function planLeg(student: AssignStudentInput, leg: OpenLeg, stops: readon
   if (point) {
     for (const o of otherDayStops(stops, cell)) cands.push({ stopIndex: null, other: o, d: distanceMeters(point.lat, point.lng, o.lat, o.lng) });
   }
-  // 추천: 이름이 같은 그 칸 정차(관리자 추천 ①)는 그대로 둔다. 아니면 합류 반경(300m, 기존 값) 안 후보 중 가장 가까운 곳.
+  // 추천: 이름이 같은 그 칸 정차(관리자 추천 ①)는 그대로 둔다. 아니면 합류 반경(300m, 기존 값) 안 후보 중
+  //   장소명 출입구 일치(같은 단지 «후문» 등, 2026-11-09) → 없으면 가장 가까운 곳. 규칙은 stopNameMatch 한 곳.
   const sameName = sugJoin >= 0 && !!placeName && normalizeStopName(cell[sugJoin].label) === normalizeStopName(placeName);
   let rec: Cand | null = sugJoin >= 0 ? cands[sugJoin] : null;
+  let recReason: string | null = sameName ? "이름 같음" : null;
   if (!sameName && point) {
-    for (const c of cands) {
-      if (c.d == null || c.d > JOIN_RADIUS_METERS) continue;
-      if (!rec || rec.d == null || c.d < rec.d - 1e-6) rec = c;
-    }
+    const labelOf = (c: Cand) => (c.other ? c.other.name : cell[c.stopIndex as number].label);
+    const pick = pickNearbyStop(placeName, cands.map((c) => ({ label: labelOf(c), distanceMeters: c.d })), JOIN_RADIUS_METERS);
+    if (pick) { rec = cands[pick.index]; recReason = pick.reason; }
   }
   if (point) {
     cands = cands.filter((c) => c === rec || (c.d != null && c.d <= JOIN_OPTION_RADIUS_METERS))
@@ -272,11 +278,13 @@ export function planLeg(student: AssignStudentInput, leg: OpenLeg, stops: readon
       // 자리 = 관리자 추천 ③(운행 거리가 가장 적게 늘어나는 자리) — 합류 반경을 꺼서 그 칸 정차 합류로 바뀌지 않게.
       position: otherStopPosition(cell, leg.direction, c.other, academy, depot),
       label: c.other.name, distanceMeters: c.d == null ? null : Math.round(c.d), riders: 0, recommended: c === rec,
+      recommendReason: c === rec ? recReason : null,
     }
     : {
       stopIndex: c.stopIndex, key: null, otherDay: false, position: null,
       label: cell[c.stopIndex as number].label, distanceMeters: c.d == null ? null : Math.round(c.d),
       riders: cell[c.stopIndex as number].rows.length, recommended: c === rec,
+      recommendReason: c === rec ? recReason : null,
     });
 
   // 새 정류장 처음 자리 = 추천 끼울 자리, 추천이 합류면 그 정류장 바로 뒤.

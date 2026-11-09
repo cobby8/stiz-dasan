@@ -199,3 +199,9 @@
 - **발견자**: developer
 - **내용**: `src/lib/billing/workbench-pricing.ts` 의 `classRunsShuttle({dayOfWeek, runsShuttle})` = Program.runsShuttle=true + 평일(월~금). 청구 셔틀비(regularShuttlePlan)·신규 배차 남은 칸(`src/lib/shuttle/driverAssign.ts` loadStudents)·셔틀 신청 검토(`shuttle-review-query.ts` context)·배차 진행(`shuttle-progress-query.ts`)이 같이 쓴다. 수강 조회 SQL 에 `p."runsShuttle"` 를 꼭 같이 읽을 것(빠지면 미운행으로 봐 칸이 사라짐). 아직 안 쓰는 곳: 관리자 명단 «학생 추가» 칩(regularRosterEdit getRosterStudentContext)·명단 수강 점검(getRosterEnrollmentCheck). workbench-pricing 은 테스트가 data URL 로 읽어 import 를 둘 수 없다 — 판정을 다른 파일로 옮기지 말 것.
 - **참조횟수**: 0
+
+### [2026-11-09] 셔틀 «기존 정류장 추천» = stopNameMatch.pickNearbyStop 한 곳(장소명 출입구 일치 우선)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
+- **참조횟수**: 0

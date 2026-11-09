@@ -74,6 +74,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(원생 등록 3차, 원장 실사용 4건): ① 반 줄 대상 학년(슬롯 gradeRange→직접 슬롯→Program.targetAge) ② 셔틀 장소명 필수 — lib/shuttle/placeNameRule.ts·지도 창 requirePlaceName(등록 창·학부모 /shuttle/location/[token]만)·서버 validateRegularLocation·등록 규칙 거부 ③ 유니폼 선택칸 삭제 → 보호자 번호+학생 이름 일치 UniformOrder 로 등록 시 자동(주문/신청)·요약 표시 ④ 사진 동의 체크박스(IN_PERSON 기본, 범위 3칸 기본 켬). tsc 0·tests 3526-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | tester(claude/rental-evening): 평일 20:40~22:10 수업 무시·평일 마감 22:10 규칙 — 대관 테스트 3파일 기대값을 원장 규칙에서 직접 계산해 수정(7건)+새 테스트 3개(평일 저녁 90분 가능·100/120분 불가, 저녁 승인대관 막힘, 토 21:10 불가·22:00 마감). 대관 69-0·전체 3520-0·tsc 0 | 통과 |

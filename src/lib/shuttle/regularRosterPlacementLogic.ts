@@ -18,6 +18,9 @@ import { classTimeKey, rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterDire
 // 거리 계산은 정차 병합의 단일 기준 모듈 것을 그대로 쓴다(새 거리 함수를 만들지 않는다).
 // @ts-expect-error -- TypeScript runtime test compatibility
 import { distanceMeters } from "../seasonal/stopMerge.ts";
+// 반경 안 추천(장소명 출입구 일치 우선)은 공용 한 곳 것을 쓴다.
+// @ts-expect-error -- TypeScript runtime test compatibility
+import { pickNearbyStop } from "./stopNameMatch.ts";
 import type { RegularShuttleStop } from "./regularSheet";
 
 /** 이 거리(미터) 안에 기존 정차가 있으면 새 정차를 만들지 않고 합류를 추천한다. */
@@ -240,16 +243,18 @@ export function suggestPlacement(input: {
   }
   if (!student) return end("학생 위치 좌표가 없어 맨 뒤를 기본으로 둡니다. 지도에서 위치를 지정하면 가까운 자리를 추천합니다.");
 
-  // ② 가까운 정차 합류
-  let near = -1, nearD = Infinity;
-  stops.forEach((s, i) => {
+  // ② 반경 안 정차 합류 — 장소명 출입구 일치(같은 단지 «후문» 등) 우선, 없으면 가장 가까운 곳(2026-11-09, stopNameMatch 한 곳).
+  const pick = pickNearbyStop(input.stopName, stops.map((s) => {
     const p = pointOf(s);
-    if (!p) return;
-    const d = dist(p, student);
-    if (d <= radius && d < nearD) { near = i; nearD = d; }
-  });
-  if (near >= 0) {
-    return { choice: { kind: "JOIN", stopIndex: near }, arriveTime: stops[near].arriveTime, reason: `「${stops[near].label}」 정류장과 직선 ${Math.round(nearD)}m 거리라 합류를 추천합니다.`, skippedNoCoord };
+    return { label: s.label, distanceMeters: p ? dist(p, student) : null };
+  }), radius);
+  if (pick) {
+    const near = pick.index;
+    const m = Math.round(pick.distanceMeters);
+    const reason = pick.by === "NAME"
+      ? `「${stops[near].label}」 정류장이 장소명과 출입구까지 같아 합류를 추천합니다(${pick.reason} · 직선 ${m}m).`
+      : `「${stops[near].label}」 정류장과 직선 ${m}m 거리라 합류를 추천합니다.`;
+    return { choice: { kind: "JOIN", stopIndex: near }, arriveTime: stops[near].arriveTime, reason, skippedNoCoord };
   }
 
   // ③ 추가 거리 최소 자리 — 좌표 있는 정차만 잇는다.

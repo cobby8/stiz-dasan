@@ -158,7 +158,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
                   <Dot active={active} />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="break-words text-sm font-bold">{o.label}
-                      {o.recommended && <span className="ml-1 rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-px text-xs font-medium text-[var(--color-academy-primary)]">추천</span>}
+                      {o.recommended && <span className="ml-1 rounded bg-[var(--color-academy-primary-soft)] px-1.5 py-px text-xs font-medium text-[var(--color-academy-primary)]">추천{o.recommendReason ? ` · ${o.recommendReason}` : ""}</span>}
                     </span>
                     <span className="text-xs text-[var(--color-academy-muted)]">
                       {o.otherDay ? "다른 요일 정류장" : "지금 서는 정류장"}{o.distanceMeters != null ? ` · 학생 위치에서 약 ${o.distanceMeters}m` : ""}{o.otherDay ? "" : ` · 이미 ${o.riders}명`}
