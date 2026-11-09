@@ -58,7 +58,7 @@ test('정상 응답만 완료 표시하고 전체 DB라고 표시하지 않는�
   const f = fixture({ ok: true, body: { success: true, filename: 'backup.json' } });
   await f.click();
   assert.match(text(f.message()), /설정 백업 저장 완료/);
-  assert.match(f.message().props.className, /text-green/);
+  assert.match(f.message().props.className, /color-academy-success/); // 2026-11-09 색 토큰화 — 완료 = success
   assert.equal(f.calls.fetch, 1);
 });
 
@@ -72,7 +72,7 @@ for (const [body, pattern] of [
     const f = fixture({ body }); await f.click();
     assert.match(text(f.message()), pattern);
     assert.doesNotMatch(text(f.message()), /synthetic secret/);
-    assert.match(f.message().props.className, /text-yellow/);
+    assert.match(f.message().props.className, /color-academy-warning/); // 완료 아님 = warning
     assert.equal(f.calls.fetch, 1);
   });
 }

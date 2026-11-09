@@ -19,7 +19,7 @@ const DAY_OPTIONS = [
 const WEEKEND = WEEKEND_DAYS;
 const FREQ_TIERS = REGULAR_FREQ_TIERS;
 
-const INPUT = "w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm dark:text-white focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800";
+const INPUT = "w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-[var(--color-academy-soft)] focus:bg-white";
 
 interface Program {
     id: string;
@@ -162,9 +162,9 @@ function DaySelector({ selected, onChange }: { selected: string[]; onChange: (d:
                         className={`w-9 h-9 rounded-full text-sm font-bold transition border-2 ${
                             active
                                 ? isWknd
-                                    ? "bg-orange-500 text-white border-orange-500"
-                                    : "bg-brand-navy-900 text-white border-brand-navy-900"
-                                : "bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 hover:border-gray-400"
+                                    ? "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
+                                    : "bg-[var(--color-academy-primary)] text-white border-[var(--color-academy-primary)]"
+                                : "bg-white text-[var(--color-academy-muted)] border-[var(--color-academy-line-input)] hover:border-[var(--color-academy-line-input)]"
                         }`}
                     >
                         {d.label}
@@ -200,7 +200,7 @@ function ProgramFormFields({
         <div className="space-y-5">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">프로그램명 *</label>
+                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">프로그램명 *</label>
                     <input
                         type="text"
                         value={form.name}
@@ -210,7 +210,7 @@ function ProgramFormFields({
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">대상 연령</label>
+                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">대상 연령</label>
                     <input
                         type="text"
                         value={form.targetAge}
@@ -222,40 +222,40 @@ function ProgramFormFields({
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">
                     수업 요일
                 </label>
                 <DaySelector selected={form.days} onChange={(days) => p({ days })} />
                 {weekend && (
-                    <p className="mt-2 text-xs text-orange-600 font-medium">
+                    <p className="mt-2 text-xs text-[var(--color-academy-warning)] font-medium">
                         🚌 주말 수업 — 셔틀버스 운행 없음
                     </p>
                 )}
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">
                     수강료 (수업 빈도별)
-                    <span className="text-gray-400 font-normal ml-2 text-xs">(해당하는 빈도에만 입력)</span>
+                    <span className="text-[var(--color-academy-faint)] font-normal ml-2 text-xs">(해당하는 빈도에만 입력)</span>
                 </label>
-                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                <div className="overflow-x-auto rounded-xl border border-[var(--color-academy-line)]">
                     <table className="w-full min-w-[560px] text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                        <thead className="bg-[var(--color-academy-soft)] border-b border-[var(--color-academy-line)]">
                             <tr>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-700 dark:text-gray-200 w-28">수업 빈도</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-gray-700 dark:text-gray-200">월 수강료</th>
+                                <th className="px-4 py-2.5 text-left font-semibold text-[var(--color-academy-muted)] w-28">수업 빈도</th>
+                                <th className="px-4 py-2.5 text-left font-semibold text-[var(--color-academy-muted)]">월 수강료</th>
                                 {shuttleOn && (
-                                    <th className="px-4 py-2.5 text-left font-semibold text-gray-700 dark:text-gray-200 w-36">셔틀비 (자동)</th>
+                                    <th className="px-4 py-2.5 text-left font-semibold text-[var(--color-academy-muted)] w-36">셔틀비 (자동)</th>
                                 )}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-[var(--color-academy-line)]">
                             {FREQ_TIERS.map((tier) => {
                                 const val = form[tier.key];
                                 return (
-                                    <tr key={tier.key} className={val ? "bg-blue-50/40" : ""}>
+                                    <tr key={tier.key} className={val ? "bg-[var(--color-academy-soft)]/40" : ""}>
                                         <td className="px-4 py-2.5">
-                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${val ? "bg-brand-navy-900 text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"}`}>
+                                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${val ? "bg-[var(--color-academy-primary)] text-white" : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]"}`}>
                                                 {tier.label}
                                             </span>
                                         </td>
@@ -267,22 +267,22 @@ function ProgramFormFields({
                                                     value={val}
                                                     onChange={(e) => p({ [tier.key]: e.target.value } as Partial<ProgramForm>)}
                                                     placeholder="미제공"
-                                                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm pr-7 bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800 focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime placeholder:text-gray-300"
+                                                    className="w-full border border-[var(--color-academy-line-input)] rounded-lg px-3 py-1.5 text-sm pr-7 bg-[var(--color-academy-soft)] focus:bg-white focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] placeholder:text-[var(--color-academy-faint)]"
                                                 />
-                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">원</span>
+                                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-academy-faint)]">원</span>
                                             </div>
                                             {val && !isNaN(Number(val)) && (
-                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 pl-1">{Number(val).toLocaleString()}원</p>
+                                                <p className="text-[11px] text-[var(--color-academy-muted)] mt-0.5 pl-1">{Number(val).toLocaleString()}원</p>
                                             )}
                                         </td>
                                         {shuttleOn && (
                                             <td className="px-4 py-2.5">
                                                 {form.shuttleFeeMode === "auto" ? (
-                                                    <span className="text-xs text-blue-600 font-medium">
+                                                    <span className="text-xs text-[var(--color-academy-muted)] font-medium">
                                                         {tier.autoShuttle.toLocaleString()}원
                                                     </span>
                                                 ) : (
-                                                    <span className="text-xs text-gray-400">-</span>
+                                                    <span className="text-xs text-[var(--color-academy-faint)]">-</span>
                                                 )}
                                             </td>
                                         )}
@@ -296,16 +296,16 @@ function ProgramFormFields({
 
             {/* 셔틀 운행 여부 — 셔틀을 운행하지 않는 반도 있으므로 프로그램마다 직접 결정 */}
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">
                     셔틀버스
                 </label>
-                <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50 dark:bg-gray-900">
+                <div className="border border-[var(--color-academy-line)] rounded-xl p-4 bg-[var(--color-academy-soft)]">
                     <label className={`flex items-center justify-between gap-3 ${weekend ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}>
-                        <span className="text-sm text-gray-700 dark:text-gray-200">
+                        <span className="text-sm text-[var(--color-academy-muted)]">
                             <strong>셔틀 운행</strong>
                             {/* 주말이라 토글이 잠기는 경우에만 이유를 안내한다 */}
                             {weekend && (
-                                <span className="text-gray-400 ml-2 text-xs">
+                                <span className="text-[var(--color-academy-faint)] ml-2 text-xs">
                                     주말 수업은 셔틀을 운행하지 않습니다
                                 </span>
                             )}
@@ -318,12 +318,12 @@ function ProgramFormFields({
                                 disabled={weekend}
                                 onChange={(e) => p({ runsShuttle: e.target.checked })}
                             />
-                            <span className="h-6 w-11 rounded-full bg-gray-300 dark:bg-gray-600 peer-checked:bg-brand-orange-500 dark:peer-checked:bg-brand-neon-lime transition-colors" />
+                            <span className="h-6 w-11 rounded-full bg-[var(--color-academy-line-input)] peer-checked:bg-[var(--color-academy-primary)] transition-colors" />
                             <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
                         </span>
                     </label>
                     {!shuttleOn && (
-                        <p className="mt-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <p className="mt-3 text-xs font-medium text-[var(--color-academy-muted)]">
                             🚫 셔틀 미운행 — 이 프로그램은 셔틀비가 부과되지 않고, 셔틀 노선에도 포함되지 않습니다.
                         </p>
                     )}
@@ -332,21 +332,21 @@ function ProgramFormFields({
 
             {shuttleOn && (
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-2">
                         셔틀비 설정
                     </label>
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50 dark:bg-gray-900 space-y-3">
+                    <div className="border border-[var(--color-academy-line)] rounded-xl p-4 bg-[var(--color-academy-soft)] space-y-3">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input
                                 type="radio"
                                 name={`shuttle-mode-${form.name}`}
                                 checked={form.shuttleFeeMode === "auto"}
                                 onChange={() => p({ shuttleFeeMode: "auto" })}
-                                className="text-brand-orange-500 dark:text-brand-neon-lime"
+                                className="text-[var(--color-academy-ink)]"
                             />
-                            <span className="text-sm text-gray-700 dark:text-gray-200">
+                            <span className="text-sm text-[var(--color-academy-muted)]">
                                 <strong>자동 계산</strong>
-                                <span className="text-gray-400 ml-1">(주1회 10,000원 / 주2회 15,000원 / 주3회이상 20,000원)</span>
+                                <span className="text-[var(--color-academy-faint)] ml-1">(주1회 10,000원 / 주2회 15,000원 / 주3회이상 20,000원)</span>
                             </span>
                         </label>
                         <label className="flex items-start gap-2 cursor-pointer">
@@ -355,10 +355,10 @@ function ProgramFormFields({
                                 name={`shuttle-mode-${form.name}`}
                                 checked={form.shuttleFeeMode === "manual"}
                                 onChange={() => p({ shuttleFeeMode: "manual" })}
-                                className="text-brand-orange-500 dark:text-brand-neon-lime mt-1"
+                                className="text-[var(--color-academy-ink)] mt-1"
                             />
                             <div className="flex-1">
-                                <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">직접 입력</span>
+                                <span className="text-sm text-[var(--color-academy-muted)] font-medium">직접 입력</span>
                                 {form.shuttleFeeMode === "manual" && (
                                     <div className="relative max-w-[200px] mt-2">
                                         <input
@@ -369,7 +369,7 @@ function ProgramFormFields({
                                             placeholder="예: 12000"
                                             className={INPUT + " pr-7"}
                                         />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">원</span>
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--color-academy-faint)]">원</span>
                                     </div>
                                 )}
                             </div>
@@ -379,7 +379,7 @@ function ProgramFormFields({
             )}
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">프로그램 설명</label>
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">프로그램 설명</label>
                 <textarea
                     value={form.description}
                     onChange={(e) => p({ description: e.target.value })}
@@ -390,7 +390,7 @@ function ProgramFormFields({
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">프로그램 이미지 URL</label>
+                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">프로그램 이미지 URL</label>
                 <input
                     type="url"
                     value={form.imageUrl}
@@ -403,7 +403,7 @@ function ProgramFormFields({
             <div className="flex justify-end gap-2 pt-2">
                 {onCancel && (
                     <button type="button" onClick={onCancel}
-                        className="border border-gray-300 text-gray-600 dark:text-gray-300 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 transition">
+                        className="border border-[var(--color-academy-line-input)] text-[var(--color-academy-muted)] text-sm font-medium px-4 py-2 rounded-lg hover:bg-[var(--color-academy-soft)] transition">
                         취소
                     </button>
                 )}
@@ -411,7 +411,7 @@ function ProgramFormFields({
                     type="button"
                     onClick={onSubmit}
                     disabled={pending || !form.name.trim() || !hasAnyPrice}
-                    className="bg-brand-navy-900 text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-gray-800 transition disabled:opacity-40 shadow-sm"
+                    className="bg-[var(--color-academy-primary)] text-white text-sm font-bold px-5 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40 shadow-sm"
                 >
                     {pending ? "저장 중..." : submitLabel}
                 </button>
