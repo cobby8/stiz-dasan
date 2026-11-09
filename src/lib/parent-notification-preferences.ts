@@ -53,14 +53,22 @@ export async function writePushPrefs(userId: string, prefs: PushPrefs): Promise<
     );
 }
 
-/** 이 사람에게 이 종류(tag) 휴대폰 알림을 보내도 되나. 끌 수 없는 종류·조회 실패는 보낸다. */
+/**
+ * 이 사람에게 이 종류(tag) 휴대폰 알림을 보내도 되나. 끌 수 없는 종류·조회 실패는 보낸다.
+ * ★ 받는 사람이 학부모(role=PARENT)일 때만 적용한다 — 자녀가 있는 직원 계정이 학부모 화면에서 꺼도
+ *   업무 알림(셔틀 변경 등 같은 SHUTTLE_ 종류)이 끊기면 안 된다. 역할은 같은 SQL 의 JOIN 으로 봐서 조회는 한 번.
+ */
 export async function isPushAllowed(userId: string, tag: string | null | undefined): Promise<boolean> {
     const category = pushCategoryOf(tag);
     if (!category) return true;
     const column = PUSH_CATEGORIES.find((c) => c.key === category)!.column;
     try {
         const rows = await prisma.$queryRawUnsafe<{ on: boolean | null }[]>(
-            `SELECT "${column}" AS "on" FROM "ParentNotificationPreference" WHERE "userId" = $1 LIMIT 1`,
+            `SELECT p."${column}" AS "on"
+               FROM "ParentNotificationPreference" p
+               JOIN "User" u ON u.id = p."userId"
+              WHERE p."userId" = $1 AND u.role = 'PARENT'
+              LIMIT 1`,
             userId,
         );
         return rows[0]?.on !== false;
@@ -69,14 +77,17 @@ export async function isPushAllowed(userId: string, tag: string | null | undefin
     }
 }
 
-/** 이 종류(tag)를 끈 사람 목록(전체 학부모 발송에서 뺄 사람). 끌 수 없는 종류·조회 실패는 빈 목록. */
+/** 이 종류(tag)를 끈 학부모 목록(전체 학부모 발송에서 뺄 사람). 끌 수 없는 종류·조회 실패는 빈 목록. 학부모 역할만(위와 같은 이유) */
 export async function optedOutUserIds(tag: string | null | undefined): Promise<Set<string>> {
     const category = pushCategoryOf(tag);
     if (!category) return new Set();
     const column = PUSH_CATEGORIES.find((c) => c.key === category)!.column;
     try {
         const rows = await prisma.$queryRawUnsafe<{ userId: string }[]>(
-            `SELECT "userId" FROM "ParentNotificationPreference" WHERE "${column}" = false`,
+            `SELECT p."userId"
+               FROM "ParentNotificationPreference" p
+               JOIN "User" u ON u.id = p."userId"
+              WHERE p."${column}" = false AND u.role = 'PARENT'`,
         );
         return new Set(rows.map((r) => r.userId));
     } catch {

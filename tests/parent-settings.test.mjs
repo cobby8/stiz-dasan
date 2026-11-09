@@ -151,13 +151,15 @@ test("③ 설정 표 조회 실패(운영 적용 전) = 보낸다 · 끈 종류�
   assert.deepEqual(await missing.readPushPrefs("u1"), { prefs: settings.DEFAULT_PUSH_PREFS, available: false });
 
   const seen = [];
-  const prefs = make(async (q, ...params) => { seen.push(q); return q.includes("WHERE \"userId\" = $1") ? [{ on: false }] : [{ userId: "u-off" }]; });
+  const prefs = make(async (q, ...params) => { seen.push(q); return q.includes('p."userId" = $1') ? [{ on: false }] : [{ userId: "u-off" }]; });
   assert.equal(await prefs.isPushAllowed("u1", "NOTICE"), false);
-  assert.match(seen[0], /SELECT "pushNotice" AS "on"/);
+  assert.match(seen[0], /SELECT p\."pushNotice" AS "on"/);
+  // 학부모 역할만 — 자녀 있는 직원 계정의 업무 알림(SHUTTLE_ 등)은 끄지 못한다(같은 SQL 의 JOIN, 조회 한 번)
+  assert.match(seen[0], /JOIN "User" u ON u\.id = p\."userId"\s+WHERE p\."userId" = \$1 AND u\.role = 'PARENT'/);
   assert.equal(await prefs.isPushAllowed("u1", "REQUEST"), true, "끌 수 없는 종류는 조회 없이 보낸다");
   assert.equal(seen.length, 1);
   assert.deepEqual([...(await prefs.optedOutUserIds("SHUTTLE_ROSTER_CHANGED"))], ["u-off"]);
-  assert.match(seen[1], /WHERE "pushShuttle" = false/);
+  assert.match(seen[1], /WHERE p\."pushShuttle" = false AND u\.role = 'PARENT'/);
 });
 
 test("③ sendPushToUser: 끈 종류는 구독 조회 없이 건너뜀(대기열은 SKIPPED) · sendPushToAllParents 는 끈 학부모 기기를 뺀다", async () => {
@@ -236,6 +238,8 @@ test("④ 설정 화면: 원장 목록 항목 + 예전 ⋯ 메뉴 항목이 전�
   assert.match(page, /SHOW_THEME_SETTING \?/, "테마 자리는 스위치 뒤에 숨김");
   // 문제 신고는 홈 «문의»와 같은 경로(자유 메시지 OTHER) — 서버 유형 목록은 그대로
   assert.match(client, /createParentRequest\(\{ userId: "", studentId: child\.id, type: "OTHER"/);
+  // 종류별 스위치는 학부모 계정에만 보인다(발송 쪽 PARENT 한정과 같은 기준)
+  assert.match(page, /prefsAvailable=\{pushPrefs\.available && me\?\.role === "PARENT"\}/);
   // 설정 화면 조회는 로그인 사용자 기준(남의 정보 화면 없음)
   assert.match(page, /WHERE id = \$1 LIMIT 1`,\s*parent\.appUserId/);
 });

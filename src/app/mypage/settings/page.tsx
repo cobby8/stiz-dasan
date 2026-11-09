@@ -59,8 +59,8 @@ export default async function ParentSettingsPage() {
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
     const [userRows, authResult, childRows, pushPrefs, cookieStore] = await Promise.all([
-        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null }[]>(
-            `SELECT name, phone, username FROM "User" WHERE id = $1 LIMIT 1`,
+        prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
+            `SELECT name, phone, username, role::text AS role FROM "User" WHERE id = $1 LIMIT 1`,
             parent.appUserId,
         ),
         supabase.auth.getUser(),
@@ -124,7 +124,8 @@ export default async function ParentSettingsPage() {
 
             {/* 종 패널의 «알림 설정»이 이 자리로 데려온다 */}
             <Section id="settings-notifications" title="알림 설정">
-                <NotificationRows initialPrefs={pushPrefs.prefs} prefsAvailable={pushPrefs.available} />
+                {/* 종류별 받기는 학부모 계정만 — 자녀가 있는 직원 계정은 업무 알림이 같은 종류라 끄지 못하게(발송 쪽도 PARENT 만 거른다) */}
+                <NotificationRows initialPrefs={pushPrefs.prefs} prefsAvailable={pushPrefs.available && me?.role === "PARENT"} />
             </Section>
 
             <Section title="화면">
