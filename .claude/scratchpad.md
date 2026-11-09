@@ -85,6 +85,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer 수정 2차(수강 삭제 운영 원장 정리): removeMistakenEnrollment 가 같은 트랜잭션에서 그 수강(afterJson.enrollmentId)의 열린 CLASS_ADD·RESUME 명령(PENDING·HELD·PARTIAL)을 닫음 — CHECK 에 취소 값이 없어 명령 SYNCED·확인 칸 SKIPPED+사유·감사 기록, 이미 랠리즈 반영된 칸은 «직접 정리» 안내. adminReadPayloads 항상 0 scheduled 집계 제거. tsc 0·tests 3546-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer 수정 1차(반 이동·삭제 검수 4건): ① 이동도 처리 중 수강 변경 신청 있으면 차단(readEnrollmentLinkCounts 재사용) ② 적용일 하한 moveEffectiveMinYmd(개시일→없으면 등록일 KST, 개시 전 수강은 오늘로) 화면 min·서버 공용 ③ 삭제 차단에 RegularAbsence(취소 제외)·ShuttleRoutePassenger(그 반 Session) 추가+확인 창 «시트·랠리즈 직접 정리» ④ 수강 변경 신청 화면 adminDirectMove 안내 + summary.ts 죽은 SCHEDULED 분기 제거. tsc 0·tests 3542-0·studentVisibility 5-0·KST 6-0 | 완료(커밋, 미푸시) |
 | 11-09 | tester(3c4d4cc4+d559228c): 전체 3540-0·tsc 0·가드 통과, 모의 실행 37+청구 경계 5 통과. 권장: 잘못 등록 수강 삭제 시 운영 원장 대기 «수강 등록» 처리 | 통과(권장 1) |
 | 11-09 | developer(수강 상태 새 기준+반 줄 편집, 원장 허재원·토 2교시 사례): ① 공용 판정 commencement.ts isCurrentEnrollment/currentEnrollmentSql — ACTIVE면 승인일부터 수강 중·재원생(학생 상태·원생 목록 활성·인원 집계·대관 재원생·학부모 홈), SCHEDULED(수강 예정) 분류 제거, 개시일은 startsLater 안내 문구로만. 청구 시수·출석부 회차·셔틀 월 배차는 개시일 유지 ② 반 줄 «퇴원»→«수강 종료», ⋯ 메뉴 반 이동(actions/enrollment-admin-edit moveEnrollmentToClass — ECR CLASS_CHANGE APPLIED+원장 2건)·삭제(연결 기록 0건일 때만, 서버 재확인). tsc 0·tests 3540-0·studentVisibility 5-0 | 완료(커밋, 미푸시) |
@@ -94,4 +95,3 @@
 | 11-09 | tester(claude/rental-evening): 평일 20:40~22:10 수업 무시·평일 마감 22:10 규칙 — 대관 테스트 3파일 기대값을 원장 규칙에서 직접 계산해 수정(7건)+새 테스트 3개(평일 저녁 90분 가능·100/120분 불가, 저녁 승인대관 막힘, 토 21:10 불가·22:00 마감). 대관 69-0·전체 3520-0·tsc 0 | 통과 |
 | 11-09 | developer: 기사님 셔틀 결석 아이 «빼지 말고 뱃지» — 정규 결석(학부모 신고·출석부 질병 모두) 행 유지·«결석·질병» 뱃지·흐린 행·기본 결석(탑승 누르면 체크)·정차 «결석 N명·정차 안 해도 됨». 판정 riderBoardingView/stopAbsenceSummary. tests 3507-0·guards 5-0 | 검수대기 |
 | 11-09 | pm(main 2f385fd6): 원장 2차 답 반영 — 여러 프로그램 합산·대회준비반 30만 묶음·1호점 무료 거점 셔틀비 0, 출석 질병·부상 결석(RegularAbsence)·보강 아이 종료 필수·출석 알림, 학부모 가입 안내 보내기(미리보기→원장 직접 발송), 입금 계좌 안내, 특강 회차 수업일지 출석 차단. 데이터: 셔틀 명단 18행 삭제(감사기록), 미납 POS 5건 43만 납부완료. tests 3449-0·guards 5-0. 3차 결정표 Bf1CPJqw76JGK5yp1Z7LmG 대기 | 배포 |
-| 11-09 | developer 수정 1차(학부모 공지 검수 5건): ① 브랜드 메시지 disableSms:true·크론 문자 재발송에서 BMS 제외·못 받은 건 BMS_NOT_DELIVERED: 사유로 실패 기록 → 화면 «카톡 친구가 아니어서 못 받은 학부모 N명» + «정보성 문자로 다시 보내기»(별도 미리보기·승인, 광고 표시 없는 [스티즈농구교실] 문자, 기존 대량 큐, 묶음당 1회, 결과 확인 끝난 뒤만) ② markManualMessageAccepted 에 channel·fallbackUsed·fallbackChannel ③ 30분 중복 지문 = 종류+입력값+버튼 경로(contentHash) ④ 이름 빈 번호 noNameCount 표시 ⑤ 카톡 틀 묶음 지문 본문에 입력값 포함. tsc 0·tests 3501-0 | 완료(재검수 대기) |

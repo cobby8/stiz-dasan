@@ -98,7 +98,6 @@ type SheetImportSummary = {
     studentStatusCounts?: {
         total: number;
         active: number;
-        scheduled?: number;
         paused: number;
         withdrawn: number;
         noEnrollment: number;

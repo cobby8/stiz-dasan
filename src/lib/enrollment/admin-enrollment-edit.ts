@@ -146,3 +146,75 @@ export async function readEnrollmentLinkCounts(db: RawDb, input: { enrollmentId:
     openChangeRequests: Number(row?.openChangeRequests ?? 0),
   };
 }
+
+// ── 삭제한 수강을 가리키는 «등록» 운영 원장 정리 ─────────────────────────────
+//
+// 수강 등록(enrollStudent·승인·반 이동)은 운영 원장(OperationsCommand)에 «시트·랠리즈에 이 반 추가» 확인 칸을 만든다.
+// 잘못 등록한 수강을 지우면 그 칸은 할 일이 아니므로 직원 확인 목록에서 빼야 한다.
+// DB 제약상 명령 상태는 PENDING·HELD·PARTIAL·SYNCED 뿐이고 «취소» 값이 없다(마이그레이션 20260827190000 CHECK).
+// 그래서 가장 가까운 종료 상태(명령 SYNCED · 확인 칸 SKIPPED)로 닫고, 사유를 holdReason·error·감사 기록에 남긴다.
+
+/** 운영 원장 명령 상태 — DB CHECK 제약과 같은 집합(테스트가 마이그레이션과 비교) */
+export const OPERATIONS_COMMAND_STATUSES = ["PENDING", "HELD", "PARTIAL", "SYNCED"] as const;
+/** 아직 끝나지 않은(직원 확인이 남은) 명령 상태 */
+export const OPEN_COMMAND_STATUSES = ["PENDING", "HELD", "PARTIAL"] as const;
+/** 삭제 시 닫을 명령 종류 — «반 추가»(새 등록) · «복귀»(그만둔 반을 되살린 등록) */
+export const ADD_COMMAND_KINDS = ["CLASS_ADD", "RESUME"] as const;
+export const DELETED_ENROLLMENT_CLOSE_REASON = "취소: 잘못 등록한 수강을 삭제함(시트·랠리즈 반영 불필요)";
+
+type RawTx = RawDb & { $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number> };
+
+export type ClosedAddCommands = {
+  commandIds: string[];
+  /** 이미 시트·랠리즈에 반영됐다고 확인된 칸 — 그쪽은 직원이 직접 정리해야 한다 */
+  alreadySynced: Array<{ commandId: string; target: string }>;
+};
+
+/** 그 수강(enrollmentId)을 가리키는 열린 «등록» 명령을 닫는다. 같은 트랜잭션(tx)에서 부른다 */
+export async function closeAddCommandsForDeletedEnrollment(tx: RawTx, input: { enrollmentId: string; actorUserId: string }): Promise<ClosedAddCommands> {
+  const commands = await tx.$queryRawUnsafe<Array<{ id: string; requestId: string; kind: string; status: string }>>(
+    `SELECT c.id, c."requestId", c.kind, c.status FROM "OperationsCommand" c
+      WHERE c.kind = ANY($2::text[]) AND c.status = ANY($3::text[]) AND c."afterJson"->>'enrollmentId' = $1
+      FOR UPDATE`,
+    input.enrollmentId, [...ADD_COMMAND_KINDS], [...OPEN_COMMAND_STATUSES],
+  );
+  if (commands.length === 0) return { commandIds: [], alreadySynced: [] };
+  const ids = commands.map((c) => c.id);
+  const attempts = await tx.$queryRawUnsafe<Array<{ commandId: string; target: string; status: string }>>(
+    `SELECT "commandId", target, status FROM "OperationsSyncAttempt" WHERE "commandId" = ANY($1::text[]) FOR UPDATE`,
+    ids,
+  );
+  // 홈페이지(WEBSITE)는 등록 때 이미 완료 — 시트·랠리즈 중 이미 반영 확인된 칸만 따로 알린다
+  const alreadySynced = attempts
+    .filter((a) => a.target !== "WEBSITE" && a.status === "SUCCEEDED")
+    .map((a) => ({ commandId: a.commandId, target: a.target }));
+  // 남은 확인 칸(대기·실패)은 «건너뜀»으로 — 직원 확인 목록(NEEDS_CHECK)에서 빠진다
+  await tx.$executeRawUnsafe(
+    `UPDATE "OperationsSyncAttempt" SET status = 'SKIPPED', error = $2, "processingToken" = NULL, "processingStartedAt" = NULL, "updatedAt" = now()
+      WHERE "commandId" = ANY($1::text[]) AND status IN ('PENDING', 'FAILED')`,
+    ids, DELETED_ENROLLMENT_CLOSE_REASON,
+  );
+  await tx.$executeRawUnsafe(
+    `UPDATE "OperationsCommand" SET status = 'SYNCED', "holdReason" = $2, "updatedAt" = now() WHERE id = ANY($1::text[])`,
+    ids, DELETED_ENROLLMENT_CLOSE_REASON,
+  );
+  // 요청 안의 명령이 모두 닫혔으면 요청도 닫는다
+  const requestIds = [...new Set(commands.map((c) => c.requestId))];
+  await tx.$executeRawUnsafe(
+    `UPDATE "OperationsRequest" r SET status = 'SYNCED', "updatedAt" = now()
+      WHERE r.id = ANY($1::text[]) AND NOT EXISTS (SELECT 1 FROM "OperationsCommand" c WHERE c."requestId" = r.id AND c.status <> 'SYNCED')`,
+    requestIds,
+  );
+  for (const command of commands) {
+    await tx.$executeRawUnsafe(
+      `INSERT INTO "OperationsAuditLog" (id, "requestId", action, "actorType", "actorUserId", "detailsJson")
+       VALUES (gen_random_uuid()::text, $1, 'ENROLLMENT_ADD_COMMAND_CANCELLED', 'ADMIN', $2, $3::jsonb)`,
+      command.requestId, input.actorUserId,
+      JSON.stringify({
+        commandId: command.id, enrollmentId: input.enrollmentId, from: command.status, to: "SYNCED", reason: DELETED_ENROLLMENT_CLOSE_REASON,
+        alreadySynced: alreadySynced.filter((a) => a.commandId === command.id).map((a) => a.target),
+      }),
+    );
+  }
+  return { commandIds: ids, alreadySynced };
+}

@@ -133,3 +133,63 @@ test("수강 변경 신청 화면: 관리자 즉시 이동 건 안내 한 줄", 
   assert.match(query, /r\.kind = 'CLASS_CHANGE' AND r\.status = 'APPLIED' AND r\."requestedByUserId" = r\."decidedByUserId"\) AS "adminDirectMove"/);
   assert.match(client, /row\.adminDirectMove && [\s\S]*관리자 즉시 이동 — 차액은 다음 달 청구 준비에서 반영/);
 });
+
+test("삭제: 그 수강을 가리키는 열린 «등록» 운영 원장을 닫는다(취소 값이 없어 SYNCED·SKIPPED + 사유)", async () => {
+  const calls = [];
+  const tx = {
+    async $queryRawUnsafe(sql, ...values) {
+      calls.push({ kind: "q", sql, values });
+      if (sql.includes('FROM "OperationsCommand" c')) return [{ id: "cmd-1", requestId: "req-1", kind: "CLASS_ADD", status: "PENDING" }];
+      if (sql.includes('FROM "OperationsSyncAttempt"')) return [
+        { commandId: "cmd-1", target: "WEBSITE", status: "SUCCEEDED" },
+        { commandId: "cmd-1", target: "RALLYZ", status: "SUCCEEDED" },
+        { commandId: "cmd-1", target: "SHEET", status: "SKIPPED" },
+      ];
+      return [];
+    },
+    async $executeRawUnsafe(sql, ...values) { calls.push({ kind: "x", sql, values }); return 1; },
+  };
+  const result = await edit.closeAddCommandsForDeletedEnrollment(tx, { enrollmentId: "enr-1", actorUserId: "admin-1" });
+  assert.deepEqual(result.commandIds, ["cmd-1"]);
+  assert.deepEqual(result.alreadySynced, [{ commandId: "cmd-1", target: "RALLYZ" }], "이미 랠리즈 반영된 칸은 «직접 정리» 안내용으로 돌려준다");
+  const find = calls[0];
+  assert.match(find.sql, /"afterJson"->>'enrollmentId' = \$1/);
+  assert.match(find.sql, /FOR UPDATE/);
+  assert.deepEqual(find.values, ["enr-1", ["CLASS_ADD", "RESUME"], ["PENDING", "HELD", "PARTIAL"]]);
+  const writes = calls.filter((c) => c.kind === "x");
+  assert.match(writes[0].sql, /UPDATE "OperationsSyncAttempt" SET status = 'SKIPPED'[\s\S]*status IN \('PENDING', 'FAILED'\)/);
+  assert.match(writes[1].sql, /UPDATE "OperationsCommand" SET status = 'SYNCED', "holdReason" = \$2/);
+  assert.equal(writes[1].values[1], edit.DELETED_ENROLLMENT_CLOSE_REASON);
+  assert.match(writes[2].sql, /UPDATE "OperationsRequest" r SET status = 'SYNCED'[\s\S]*NOT EXISTS/);
+  assert.match(writes[3].sql, /ENROLLMENT_ADD_COMMAND_CANCELLED/);
+
+  // 열린 명령이 없으면(이미 처리 완료) 아무것도 쓰지 않는다 — 삭제는 그대로 허용
+  const quiet = { async $queryRawUnsafe() { return []; }, async $executeRawUnsafe() { throw new Error("쓰면 안 됨"); } };
+  assert.deepEqual(await edit.closeAddCommandsForDeletedEnrollment(quiet, { enrollmentId: "enr-2", actorUserId: "a" }), { commandIds: [], alreadySynced: [] });
+});
+
+test("운영 원장 명령 상태 상수 = DB CHECK 제약과 같은 집합(«취소» 값 없음)", () => {
+  const migration = readFileSync("prisma/migrations/20260827190000_add_parent_operations_request_links/migration.sql", "utf8");
+  const table = migration.slice(migration.indexOf('CREATE TABLE IF NOT EXISTS "OperationsCommand"'));
+  const check = table.match(/status TEXT NOT NULL DEFAULT 'PENDING' CHECK \(status IN \(([^)]*)\)\)/);
+  assert.ok(check, "OperationsCommand status CHECK 를 찾는다");
+  const values = check[1].split(",").map((v) => v.trim().replace(/'/g, "")).sort();
+  assert.deepEqual(values, [...edit.OPERATIONS_COMMAND_STATUSES].sort());
+  for (const s of edit.OPEN_COMMAND_STATUSES) assert.ok(values.includes(s));
+});
+
+test("삭제 서버 동작: 원장 닫기는 같은 트랜잭션에서 DELETE 전에, 결과로 이미 반영된 칸을 돌려준다", () => {
+  const remove = actions.slice(actions.indexOf("export async function removeMistakenEnrollment"));
+  const close = remove.indexOf("closeAddCommandsForDeletedEnrollment(tx");
+  assert.ok(close > remove.indexOf("prisma.$transaction") && close < remove.indexOf('DELETE FROM "Enrollment"'));
+  assert.match(remove, /alreadySyncedTargets: \[\.\.\.new Set\(alreadySyncedTargets\)\]/);
+  assert.match(detail, /에는 이미 등록돼 있어 직접 정리해 주세요/);
+});
+
+test("원생 상태 집계에 항상 0이던 scheduled 칸이 없다", () => {
+  const payloads = readFileSync("src/lib/adminReadPayloads.ts", "utf8");
+  // trial_scheduled(체험 예약 수)는 다른 값이라 제외 — 단어 경계로 원생 상태 칸만 본다
+  assert.doesNotMatch(payloads, /AS scheduled,|(?<![\w])scheduled: (number|0)/);
+  assert.doesNotMatch(payloads, /status = 'SCHEDULED'\)::int AS scheduled/);
+  assert.doesNotMatch(readFileSync("src/app/admin/students/StudentManagementClient.tsx", "utf8"), /scheduled\?: number/);
+});

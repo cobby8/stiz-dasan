@@ -536,7 +536,6 @@ async function getStudentSheetImportSummary() {
                 paused: number;
                 withdrawn: number;
                 noEnrollment: number;
-                scheduled: number;
             }[]>(
                 `WITH latest AS (
                     SELECT id
@@ -603,8 +602,7 @@ async function getStudentSheetImportSummary() {
                     COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active,
                     COUNT(*) FILTER (WHERE status = 'PAUSED')::int AS paused,
                     COUNT(*) FILTER (WHERE status = 'WITHDRAWN')::int AS withdrawn,
-                    COUNT(*) FILTER (WHERE status = 'SCHEDULED')::int AS scheduled,
-                    COUNT(*) FILTER (WHERE status IS NULL OR status NOT IN ('ACTIVE', 'PAUSED', 'WITHDRAWN', 'SCHEDULED'))::int AS "noEnrollment"
+                    COUNT(*) FILTER (WHERE status IS NULL OR status NOT IN ('ACTIVE', 'PAUSED', 'WITHDRAWN'))::int AS "noEnrollment"
                 FROM student_status`
             ),
         ]);
@@ -622,7 +620,6 @@ async function getStudentSheetImportSummary() {
                 paused: 0,
                 withdrawn: 0,
                 noEnrollment: 0,
-                scheduled: 0,
             },
             scheduleMismatchCount: scheduleMismatchRows[0]?.totalMismatchCount ?? 0,
             topScheduleMismatches: scheduleMismatchRows.map((row) => ({

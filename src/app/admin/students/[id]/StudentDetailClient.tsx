@@ -904,8 +904,12 @@ export default function StudentDetailClient({
             const result = await removeMistakenEnrollment(enrollment.id);
             if (result.ok) {
                 await loadData();
-                setStatusFeedback({ type: "success", message: `«${enrollment.className}» 수강 기록을 삭제했습니다.` });
-                window.setTimeout(() => setStatusFeedback(null), 2500);
+                // 이미 랠리즈(시트)에 반영 확인된 등록이었다면 그쪽은 직접 지워야 한다 — 안내를 닫지 않고 남긴다
+                const synced = result.alreadySyncedTargets.map((t) => (t === "RALLYZ" ? "랠리즈" : t === "SHEET" ? "시트" : t));
+                setStatusFeedback({ type: "success", message: synced.length > 0
+                    ? `«${enrollment.className}» 수강 기록을 삭제했습니다. ${synced.join("·")}에는 이미 등록돼 있어 직접 정리해 주세요.`
+                    : `«${enrollment.className}» 수강 기록을 삭제했습니다.` });
+                if (synced.length === 0) window.setTimeout(() => setStatusFeedback(null), 2500);
             } else {
                 setStatusFeedback({ type: "error", message: result.message });
             }

@@ -17,6 +17,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { buildEnrollmentOperationsEvent } from "@/lib/operations-events/admin-hooks";
 import { enqueueWebsiteOperationsEventInTransaction } from "@/lib/operations-events";
 import {
+  closeAddCommandsForDeletedEnrollment,
   enrollmentDeleteBlockedMessage,
   enrollmentDeleteBlockers,
   planEnrollmentMove,
@@ -152,13 +153,15 @@ export async function moveEnrollmentToClass(input: {
   }
 }
 
-export type RemoveEnrollmentResult = { ok: true } | { ok: false; message: string };
+export type RemoveEnrollmentResult = { ok: true; alreadySyncedTargets: string[] } | { ok: false; message: string };
 
 /** 잘못 등록한 수강 삭제 — 출석·청구·보강 연결이 하나도 없을 때만 */
 export async function removeMistakenEnrollment(enrollmentId: string): Promise<RemoveEnrollmentResult> {
   const admin = await requireAdmin();
   let studentId: string | null = null;
   let classId: string | null = null;
+  let closedCommandIds: string[] = [];
+  let alreadySyncedTargets: string[] = [];
   try {
     await prisma.$transaction(async (tx) => {
       const [row] = await tx.$queryRawUnsafe<Array<{ studentId: string; classId: string; status: string; studentName: string; className: string }>>(
@@ -175,6 +178,10 @@ export async function removeMistakenEnrollment(enrollmentId: string): Promise<Re
       if (blockers.length > 0) throw new EnrollmentEditError(enrollmentDeleteBlockedMessage(blockers));
       // 끝난(적용·반려·취소) 수강 변경 이력은 반 스냅샷(fromClassId)을 남긴 채 연결만 끊는다 — 이력은 지우지 않는다
       await tx.$executeRawUnsafe(`UPDATE "EnrollmentChangeRequest" SET "enrollmentId" = NULL, "updatedAt" = NOW() WHERE "enrollmentId" = $1`, enrollmentId);
+      // 그 수강을 가리키는 열린 «등록» 운영 원장(시트·랠리즈 추가 확인 칸)을 닫아 직원 확인 목록에서 뺀다(같은 트랜잭션)
+      const closed = await closeAddCommandsForDeletedEnrollment(tx, { enrollmentId, actorUserId: admin.appUserId });
+      closedCommandIds = closed.commandIds;
+      alreadySyncedTargets = closed.alreadySynced.map((a) => a.target);
       const deleted = await tx.$executeRawUnsafe(`DELETE FROM "Enrollment" WHERE id = $1`, enrollmentId);
       if (deleted !== 1) throw new EnrollmentEditError("그 사이 수강 정보가 바뀌었어요. 새로고침 후 다시 해 주세요.");
       // 누가 무엇을 지웠는지 감사 기록(되살릴 때 근거)
@@ -182,11 +189,14 @@ export async function removeMistakenEnrollment(enrollmentId: string): Promise<Re
         `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
          VALUES (gen_random_uuid()::text, 'ENROLLMENT_DELETED_MISTAKE', 'ADMIN', $1, $2::jsonb)`,
         admin.appUserId,
-        JSON.stringify({ enrollmentId, studentId: row.studentId, studentName: row.studentName, classId: row.classId, className: row.className, status: row.status }),
+        JSON.stringify({ enrollmentId, studentId: row.studentId, studentName: row.studentName, classId: row.classId, className: row.className, status: row.status,
+          closedCommandIds, alreadySyncedTargets }),
       );
     });
     revalidateEnrollmentViews(studentId, classId ? [classId] : []);
-    return { ok: true };
+    revalidatePath("/admin/enrollment-changes");
+    // 이미 시트·랠리즈에 반영된 칸이 있었으면 화면이 «직접 정리» 안내를 띄운다
+    return { ok: true, alreadySyncedTargets: [...new Set(alreadySyncedTargets)] };
   } catch (e) {
     if (e instanceof EnrollmentEditError) return { ok: false, message: e.message };
     console.error("Failed to remove enrollment:", e);
