@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { kindLabel, type RequestKind } from "@/lib/requests/catalog";
+import type { InboxCounts } from "@/lib/requests/admin-inbox";
 
 type DashboardStats = {
     studentCount: number;
@@ -152,9 +154,12 @@ function ErrorState({ onRetry }: { onRetry: () => void }) {
 export default function AdminDashboardClient({
     initialData,
     hydrateFullData = false,
+    inboxCounts = null,
 }: {
     initialData?: DashboardData;
     hydrateFullData?: boolean;
+    /** 신청함 개수(getInboxCounts) — 없으면 옛 숫자(문의 대기)로 */
+    inboxCounts?: InboxCounts | null;
 }) {
     const hasInitialData = initialData !== undefined;
     const [data, setData] = useState<DashboardData | null>(initialData ?? null);
@@ -253,6 +258,7 @@ export default function AdminDashboardClient({
             {data && (
                 <DashboardContent
                     data={data}
+                    inboxCounts={inboxCounts}
                     systemStatus={systemStatus}
                     systemLoading={systemLoading}
                     systemError={systemError}
@@ -273,6 +279,7 @@ export default function AdminDashboardClient({
 
 function DashboardContent({
     data,
+    inboxCounts,
     systemStatus,
     systemLoading,
     systemError,
@@ -287,6 +294,7 @@ function DashboardContent({
     onRunSiteOpsBot,
 }: {
     data: DashboardData;
+    inboxCounts: InboxCounts | null;
     systemStatus: SystemStatusData | null;
     systemLoading: boolean;
     systemError: boolean;
@@ -300,7 +308,12 @@ function DashboardContent({
     onRetrySystem: () => void;
     onRunSiteOpsBot: () => void;
 }) {
-    const { stats, pendingRequests, pendingCount, enrollStats, extendedStats, todayClasses, recentStudents } = data;
+    const { stats, pendingRequests, enrollStats, extendedStats, todayClasses, recentStudents } = data;
+    // «처리할 신청» 숫자 = 신청함 «처리 필요»와 같은 숫자(메뉴 배지와 일치). 못 읽었으면 옛 숫자(문의 대기)
+    const pendingCount = inboxCounts ? inboxCounts.action : data.pendingCount;
+    const inboxKinds = inboxCounts
+        ? (Object.entries(inboxCounts.byKind) as Array<[RequestKind, { action: number }]>).filter(([, n]) => n.action > 0)
+        : [];
     const revDiff = extendedStats.lastMonthRevenue > 0
         ? Math.round(((extendedStats.thisMonthRevenue - extendedStats.lastMonthRevenue) / extendedStats.lastMonthRevenue) * 100)
         : extendedStats.thisMonthRevenue > 0 ? 100 : 0;
@@ -314,13 +327,23 @@ function DashboardContent({
             <div className={`grid items-start gap-3 ${pendingCount > 0 || enrollStats.PENDING > 0 ? "xl:grid-cols-2" : ""}`}>
             <section className="academy-panel overflow-hidden">
                 <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${pendingCount > 0 ? "border-b border-[var(--color-academy-line)]" : ""}`}>
-                    <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 요청 <span className="academy-status">{pendingCount}건</span></h2>
-                    <Link href="/admin/requests" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
+                    <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 신청 <span className="academy-status">{pendingCount}건</span></h2>
+                    <Link href="/admin/inbox" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
                 </div>
+                {/* 종류별 건수 한 줄 — 누르면 신청함이 그 종류로 걸러져 열린다 */}
+                {inboxKinds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 border-b border-[var(--color-academy-line)] px-4 py-2">
+                        {inboxKinds.map(([kind, n]) => (
+                            <Link key={kind} href={`/admin/inbox?kind=${kind}`} prefetch={false} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
+                                {kindLabel(kind)} <span className="tabular-nums">{n.action}</span>
+                            </Link>
+                        ))}
+                    </div>
+                )}
                 {detailsLoaded && pendingRequests.length > 0 ? (
                     <div className="divide-y divide-[var(--color-academy-line)]">
                         {pendingRequests.map((request) => (
-                            <Link key={request.id} href="/admin/requests" prefetch={false} className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--color-academy-soft)]">
+                            <Link key={request.id} href="/admin/inbox?kind=PARENT_REQUEST" prefetch={false} className="flex items-center gap-3 px-5 py-4 transition hover:bg-[var(--color-academy-soft)]">
                                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[var(--color-academy-primary-soft)] font-bold text-[var(--color-academy-primary)]">{(request.studentName ?? request.parentName ?? "요청").slice(0, 1)}</span>
                                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-[var(--color-academy-ink)]">{request.studentName ?? request.parentName ?? "학부모 요청"}</p><p className="mt-0.5 break-words text-sm text-[var(--color-academy-muted)]">{request.title}</p></div>
                                 <span className="shrink-0 text-xs font-bold text-[var(--color-academy-warning)]">미처리</span>

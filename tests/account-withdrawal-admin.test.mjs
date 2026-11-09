@@ -15,11 +15,10 @@ test("관리자 메뉴에서 탈퇴 신청 화면에 도달할 수 있다", () =
   // 화면·액션·권한을 다 만들고 메뉴만 빠지면 URL 을 직접 치지 않는 한 아무도 못 쓴다.
   // 빌드·tsc·테스트가 모두 통과해 아무 신호가 없다 — 이 프로젝트에서 2회 실측된 사고다.
   // 🚫 이 단언을 "화면 파일이 존재한다"로 바꾸지 말 것. 사라지는 것은 언제나 링크 쪽이다.
-  assert.match(shell, /\["\/admin\/withdrawals", "회원 탈퇴 신청"/);
-  // 학부모 요청 계열과 같은 묶음에 있어야 원장이 찾는다.
-  // 사이드바 묶음 개편(게슈탈트 A-11): «업무별 상세 메뉴» → «요청·신청함» 묶음
-  const group = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
-  assert.match(group, /\/admin\/withdrawals/, "학부모 요청 묶음 안에 있어야 한다");
+  // 2026-11-10 신청함 통합(d2): 메뉴 «신청함»(/admin/inbox) → 상세 칸 «기존 화면에서 열기»(catalog adminHref)로 간다.
+  assert.match(shell, /href="\/admin\/inbox"[^\n]*label="신청함"/);
+  assert.match(fs.readFileSync("src/lib/requests/catalog.ts", "utf8"), /kind: "WITHDRAWAL",[^\n]*adminHref: "\/admin\/withdrawals"/);
+  assert.match(shell, /INBOX_LEGACY_PATHS = \[[^\]]*"\/admin\/withdrawals"/, "옛 화면에 있어도 신청함 메뉴가 켜져 있어야 길을 잃지 않는다");
 });
 
 test("목록·처리·반려가 모두 관리자 권한을 거친다", () => {

@@ -239,10 +239,12 @@ test("차액 청구서는 반에 묶지 않는다", () => {
 test("관리자 메뉴에서 도달할 수 있다", async () => {
   // 만들어도 메뉴에 없으면 아무도 못 쓴다(이 프로젝트에서 실제로 있었던 문제).
   const { renderAdminNavigation } = await import('./helpers/admin-navigation-render.mjs');
+  // 2026-11-10 신청함 통합(d2): 메뉴는 «신청함» 하나 — 수강 변경 화면에 있어도 «신청함»이 켜져 있어야 한다.
   const shell = renderAdminNavigation('/admin/enrollment-changes');
-  assert.match(shell, /href="\/admin\/enrollment-changes"/);
   assert.ok(
-    /href="\/admin\/enrollment-changes"[^>]*aria-current="page"/.test(shell),
-    "현재 수강 변경 업무가 실제 메뉴에서 활성화되어야 합니다.",
+    /href="\/admin\/inbox"[^>]*aria-current="page"/.test(shell),
+    "수강 변경 화면에서 실제 메뉴 «신청함»이 활성화되어야 합니다.",
   );
+  const catalog = await readFile("src/lib/requests/catalog.ts", "utf8");
+  assert.match(catalog, /kind: "ENROLLMENT_CHANGE",[^\n]*adminHref: "\/admin\/enrollment-changes"/);
 });

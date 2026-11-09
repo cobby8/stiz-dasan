@@ -329,11 +329,12 @@ test("상태 전이: 맞지 않는 상태·잘못된 환불 금액은 거절", a
 });
 
 // ── 연결(메뉴·권한·스위치) ─────────────────────────────────────────────────
-test("관리자 메뉴 «요청·신청함»에서 체육관 대관 화면에 도달할 수 있다", () => {
+test("관리자 메뉴 «신청함»에서 체육관 대관 화면에 도달할 수 있다", () => {
+  // 2026-11-10 신청함 통합(d2): 메뉴 «신청함» → 대관 상세 칸 «기존 화면에서 열기»(catalog adminHref)
   const shell = read("src/app/admin/AdminShellClient.tsx");
-  const requests = shell.slice(shell.indexOf('label: "요청·신청함"'), shell.indexOf('label: "수업 운영"'));
-  assert.match(requests, /\["\/admin\/rental", "체육관 대관", "🏟️"\]/);
-  assert.match(shell, /"🏟️": "stadium"/);
+  assert.match(shell, /href="\/admin\/inbox"[^\n]*label="신청함"/);
+  assert.match(read("src/lib/requests/catalog.ts"), /kind: "RENTAL",[^\n]*adminHref: "\/admin\/rental"/);
+  assert.match(shell, /INBOX_LEGACY_PATHS = \[[^\]]*"\/admin\/rental"/);
 });
 
 // 손님 브라우저 번들에 들어가는 파일 = 클라이언트 컴포넌트에서 import 를 따라간 모듈 전부.
