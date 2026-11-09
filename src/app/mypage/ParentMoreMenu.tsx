@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 const MENU_LINKS = [
     { href: "/mypage#mypage-notifications", icon: "notifications", label: "알림·휴대폰 알림 설정" },
     { href: "/mypage/children", icon: "family_restroom", label: "자녀·가족 연결" },
+    { href: "/mypage/consult", icon: "support_agent", label: "형제·자매 상담 신청" }, // 2026-11-10 상담 신청 신설(원장 k1·m4)
     // «수강 변경 신청»은 2026-11-10 «수업» 탭 반 카드의 [반 변경·휴원 ▾]로 옮겼다(원장 결정 d5) — 여기서 뺐다.
     { href: "/mypage/login-methods", icon: "key", label: "간편로그인 연결" },
 ] as const;

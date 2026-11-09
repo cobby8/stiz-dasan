@@ -89,10 +89,25 @@
 💡 tester: 실DB 미검증(쓰기 금지) — 마이그레이션 적용 후 신청함 «처리 필요»에 취소 요청 행·메뉴 숫자 포함 확인. 적용 전 DB 면 수강 변경은 예전 그대로 보여야 정상.
 ⚠️ reviewer: fallback 은 «아무 오류»에 한 번 재시도(칸 없음 오류만 고르지 않음) — 진짜 SQL 오류면 두 번 실패 후 기존처럼 failedKinds/null.
 
+## 구현 기록 (developer) — 상담 신청 신설 (11-10 원장 k1·m4)
+
+📝 학생 인적 사항·희망 수업·요청사항 접수 → 관리자 벨·웹푸시 → 신청함 «상담» 탭에서 연락함/완료/취소+메모.
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| prisma/migrations/20261110160000_consult_request/migration.sql · schema.prisma | ConsultRequest 표(상태·경로 CHECK·앱 신청 계정 필수 CHECK·RLS) — 운영 미적용(PM apply_migration) | 신규/수정 |
+| src/lib/consult/consult-rules.ts · consult-service.ts | 순수 규칙(검증·상태 지도·전이·한도) / db 인자 연결부(저장·처리·목록·InboxRow 변환) | 신규 |
+| src/lib/requests/consult-inbox.ts | listConsultInboxRows·countConsultAction(실패 시 []/0) | 신규 |
+| src/app/actions/consult.ts | 공개·학부모(requireVerifiedParent)·관리자(requireAdmin) 액션 | 신규 |
+| src/components/consult/ConsultForm.tsx · apply/consult/page.tsx · mypage/consult/page.tsx | 공용 폼(공개/앱 색 묶음) · 화면 2개 | 신규 |
+| apply/ApplyPageClient.tsx · api/chat/route.ts · mypage/ParentMoreMenu.tsx | /apply 세 번째 칸 · [ACTION:CONSULT] · ⋯ 메뉴 1줄 | 수정 |
+💡 tester: tests/consult-request.test.mjs(20). 주의 입력 = privacyConsent "true"(글자)·02 번호·하루 안 같은 번호+학생 중복.
+⚠️ reviewer: InboxRow.kind 에 CONSULT 가 아직 없어 ConsultInboxRow = Omit<InboxRow,"kind">&{kind:"CONSULT"} — catalog 에 CONSULT 추가 시 그대로 맞음.
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(상담 신청 신설): ConsultRequest 표+마이그레이션 20261110160000(운영 미적용) · /apply/consult(+/apply 세 번째 칸) · 챗봇 [ACTION:CONSULT] · 학부모 ⋯ 메뉴 «형제·자매 상담 신청»(/mypage/consult, 자동 채움) · 관리자 벨·웹푸시 · consult-inbox.ts(신청함 상담 탭) · 처리 액션(requireAdmin). tsc 0·tests 3841-0·studentVisibility 5-0 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |
@@ -102,4 +117,3 @@
 | 11-09 | developer(PM 결정 3건, 색상 3차 후속): 셔틀 명단 «확정하기»=주 버튼(검정) · 상태 버튼 위험 채움(StatusChoiceButton·TONE_SOLID_CLASS)=danger-fill+hover · 선생님 학생 시트·반 학생 시트 «학부모 전화»=보조 버튼. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «색 더 정리» 3차): 묶음 버튼 고른 칸=옅은 상태 바탕+진한 글자+안쪽 링(statusTones TONE_SELECTED_CLASS 신설, 학생 상세 수강 상태·결제 상태) · 전화 버튼 보조로 통일(학생 상세 머리·셔틀 명단 펼침·셔틀 학생 상세창·학부모 기사님 전화) · 명단 «확정하기»·«좌표 설정으로 이동»·«반 이동» 주황 채움→warning-soft+테두리 · «안전 복구»=인증 계정 삭제라 danger-fill 유지 · 기사님 결석 꼬리표 danger-fill. tsc 0·tests 3734-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(원장 «빨강 애매·퀵버튼 보기 싫다» 색상 2차): 위험색 역할 분리(danger-fill #dc2626·hover #b91c1c·line #fecaca, 글자 #b91c1c 유지) · ⚡ 버튼 중립(흰+입력선+검정 아이콘, 열림=옅은 주 색) · InlineConfirm 흰 바탕+왼쪽 위험 띠 한 줄 · 수납 환불 막대 «선택 해제» 첫 줄 고정 · 위험 아닌 빨강·초록 채움 12곳 정리+위험 확정 6곳 새 채움 · account-deletion 색 토큰화(가드 실패 해소). tsc 0·전체 3734-0. PNG scratchpad/color-fix2 | 완료 |
-| 11-09 | 학생 상세 청구/수납(발행·수정·삭제): studentBillingRules 공용 판정, updateUnpaidPayment(원장), 작업대 차단=쓰기 스위치 기준, 결제·수정 경합 잠금+금액 재확인, 결제 진행 중=30분 내·기한 남은 가상계좌. reviewer 3회·security 1회, 전체 3701-0 | 완료 |

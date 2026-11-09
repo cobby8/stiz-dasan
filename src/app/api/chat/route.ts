@@ -812,6 +812,7 @@ B. 정보 조회 (수강료, 시간표, 코치, 셔틀, 환불, 시설 등) → 
    - "셔틀", "노선", "정류장", "버스" 키워드 → 반드시 아래 "셔틀" 섹션의 노선 상세 데이터를 활용하여 안내.
    - "환불", "이용약관", "규정", "취소", "수업규칙", "환불 규정" 키워드 → 이것은 수강료 질문이 아닙니다! 반드시 아래 "이용약관" 섹션을 찾아서 그 내용을 안내하세요. 수강료 목록을 보여주면 안 됩니다.
 C. 체험수업/수강신청 → 체험수업 안내 + [ACTION:TRIAL]. 수강신청이면 [ACTION:ENROLL].
+   - "상담", "어떤 반이 맞을지", "전화로 상담", "형제도 다니고 싶어요"처럼 사람과 직접 상담을 원하면 → 상담 신청 안내 + [ACTION:CONSULT].
 D. 학원 일반 (위치, 주차, 운영시간, 교육철학) → 보유 데이터(settings, FAQ)에서 답변.
 E. 농구 관련 일반 (규칙, 기술, 훈련법) → 간단히 답변 후 "저희 학원에서 직접 배워보시면 더 좋습니다" 식으로 체험수업 자연스럽게 연결.
 F. 학원과 무관한 질문 (날씨, 맛집, 숙제, 정치 등) → "저는 STIZ 농구교실 상담 전문 AI입니다. 학원 관련 궁금한 점을 물어봐주세요!" 로 부드럽게 전환.
@@ -861,6 +862,7 @@ ${settings.enrollContent ? `- 수강신청 안내: ${settings.enrollContent}` : 
 - 체험수업 신청 안내 시: 응답 맨 끝에 [ACTION:TRIAL] 태그를 반드시 포함하세요.
 - 수강신청 안내 시: 응답 맨 끝에 [ACTION:ENROLL] 태그를 반드시 포함하세요.
 - 체험수업과 수강신청 둘 다 안내 시: [ACTION:BOTH] 태그를 포함하세요.
+- 상담 신청(아이 정보·희망 수업을 남기면 학원이 확인 후 전화) 안내 시: 응답 맨 끝에 [ACTION:CONSULT] 태그를 포함하세요. 상담 신청은 다른 태그와 함께 쓰지 말고 하나만 붙이세요.
 - 이 태그는 시스템이 자동으로 버튼으로 변환합니다. 사용자에게 태그가 보이지 않습니다.
 
 ## 셔틀
@@ -1015,13 +1017,15 @@ export async function POST(request: NextRequest) {
     const result = await chat.sendMessage(lastMessage);
     const reply = result.response.text();
 
-    // --- 액션 태그 후처리: [ACTION:TRIAL/ENROLL/BOTH] 감지 → actions 배열로 변환 ---
+    // --- 액션 태그 후처리: [ACTION:TRIAL/ENROLL/BOTH/CONSULT] 감지 → actions 배열로 변환 ---
     let actions: Array<{ label: string; url: string }> | undefined;
     let cleanReply = reply;
 
     // 신청은 항상 자체 폼을 쓰므로 ACTION 버튼 URL도 자체 신청 페이지로 고정
     const trialUrl = "/apply/trial";
     const enrollUrl = "/apply/enroll";
+    // 상담 신청 — ?from=chatbot 으로 열어 접수 경로가 «챗봇»으로 남게 한다(2026-11-10 상담 신청 신설)
+    const consultUrl = "/apply/consult?from=chatbot";
 
     if (reply.includes("[ACTION:BOTH]")) {
       // 체험수업 + 수강신청 둘 다 안내하는 경우
@@ -1038,7 +1042,13 @@ export async function POST(request: NextRequest) {
       // 수강신청만 안내하는 경우
       cleanReply = reply.replace("[ACTION:ENROLL]", "").trim();
       actions = [{ label: "수강신청하기", url: enrollUrl }];
+    } else if (reply.includes("[ACTION:CONSULT]")) {
+      // 상담 신청만 안내하는 경우
+      cleanReply = reply.replace("[ACTION:CONSULT]", "").trim();
+      actions = [{ label: "상담 신청하기", url: consultUrl }];
     }
+    // 다른 태그와 같이 붙어 와도 화면에 태그 글자가 남지 않게 지운다
+    cleanReply = cleanReply.replace("[ACTION:CONSULT]", "").trim();
 
     // actions가 있으면 응답에 포함, 없으면 기존과 동일한 형식
     return NextResponse.json({ reply: cleanReply, ...(actions && { actions }) });

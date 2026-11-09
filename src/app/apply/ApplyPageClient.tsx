@@ -198,6 +198,18 @@ export default function ApplyPageClient({
                             </div>
                         </Card>
                     </AnimateOnScroll>
+
+                    {/* 상담 신청 칸 (2026-11-10 원장 승인 k1·m4) — 두 신청 카드 아래 한 줄 칸.
+                        주인공은 위 두 신청 버튼이라 여기는 보조 버튼(public-btn-secondary). 앵커 id="consult" */}
+                    <div id="consult" className="public-card flex flex-wrap items-center gap-3 px-6 py-4 md:col-span-2">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-[var(--color-public-accent)]">상담 신청</p>
+                            <p className="font-bold break-keep text-[var(--color-public-ink)]">어떤 반이 맞을지 고민되세요? 아이 정보를 남겨 주시면 전화로 안내해 드려요.</p>
+                        </div>
+                        <Link href="/apply/consult" className="public-btn-secondary shrink-0 px-5 text-base">
+                            상담 신청하기
+                        </Link>
+                    </div>
                 </div>
             </SectionLayout>
 
