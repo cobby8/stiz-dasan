@@ -97,9 +97,9 @@ import {
     validateUnpaidEdit,
 } from "@/lib/payments/studentBillingRules";
 // 학부모 결제(단건·묶음)와 같은 청구 잠금 — 수정 중 옛 금액 주문이 생기지 않게(검수 지적 2026-11-09)
-import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout } from "@/lib/payments/bundleLedger";
-// 납부완료(PAID) 청구의 상태 변경 규칙 — 실제 결제는 잠금, 수기는 «대기로 되돌리기»만(화면과 같은 함수 · 2026-11-10)
-import { judgePaymentStatusChange, type PaymentStatusDecision } from "@/lib/payments/paidStatusGuard";
+import { findParentCheckoutActivePaymentIds, lockPaymentsForCheckout, txCoversPaymentSql } from "@/lib/payments/bundleLedger";
+// 납부완료(PAID) 청구의 상태 변경·영구 삭제 규칙 — 실제 결제는 잠금, 수기는 «대기로 되돌리기»만(화면과 같은 함수 · 2026-11-10)
+import { judgePaymentStatusChange, paymentDeleteBlockReason, type PaymentStatusDecision } from "@/lib/payments/paidStatusGuard";
 import { isMonthlyInvoiceNotificationEligible } from "@/lib/billing/notification-policy";
 import {
     BILLING_PARENT_SEND_LOCKED_MESSAGE,
@@ -1234,6 +1234,25 @@ export async function updateStudent(id: string, data: {
 
 export async function deleteStudent(id: string) {
     await requireAdmin();
+    // 원생 삭제는 그 원생의 청구(Payment)도 함께 지운다 — 실제 결제로 받은 청구·완료 거래가 붙은 청구가 있으면
+    // 돈은 그대로인데 기록만 사라지므로 거절한다(수납 기록 영구 삭제와 같은 판정 · 2026-11-10 원장 승인).
+    // 확인을 못 하면(조회 실패) 지우지 않는다(안전한 쪽).
+    let deleteBlock: string | null = null;
+    try {
+        await ensurePaymentInfrastructure();
+        const paymentIds = await prisma.$queryRawUnsafe<{ id: string }[]>(`SELECT id FROM "Payment" WHERE "studentId" = $1`, id);
+        if (paymentIds.length > 0) {
+            const rows = await prisma.$queryRawUnsafe<PaymentStatusGuardRow[]>(PAYMENT_STATUS_GUARD_SELECT, paymentIds.map((r) => r.id));
+            for (const row of rows) {
+                const reason = paymentDeleteBlockReason(row);
+                if (reason) { deleteBlock = reason; break; }
+            }
+        }
+    } catch (e) {
+        console.error("Failed to check payments before student delete:", e);
+        throw new Error("원생 삭제 실패");
+    }
+    if (deleteBlock) throw new Error("실제 결제로 받은 청구가 있어 원생을 삭제할 수 없어요. 결제 취소·환불을 먼저 해 주세요(그만둔 원생은 «퇴원»으로 두세요).");
     try {
         // FK 제약 순서: Student를 참조하는 모든 테이블을 먼저 삭제해야 함
         await prisma.$executeRawUnsafe(`DELETE FROM "Guardian" WHERE "studentId" = $1`, id);
@@ -1928,10 +1947,16 @@ type PaymentStatusGuardRow = {
     method: string | null;
     paidDate: Date | string | null;
     hasDoneTransaction: boolean;
+    hasManualDoneTransaction: boolean;
 };
+// 완료 거래는 둘로 나눠 읽는다 — 토스 등 실제 결제(hasDoneTransaction) / 교사 수납 확인(provider MANUAL · hasManualDoneTransaction).
+// 묶음 결제(한 거래에 청구 여러 건)도 잡도록 거래 항목 표까지 본다(txCoversPaymentSql).
 const PAYMENT_STATUS_GUARD_SELECT = `
     SELECT p.id, p.status, p."paidProvider", p.method, p."paidDate",
-           EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE t."paymentId" = p.id AND t.status = 'DONE') AS "hasDoneTransaction"
+           EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE ${txCoversPaymentSql("t", "p.id")} AND t.status = 'DONE'
+                     AND COALESCE(UPPER(t.provider), '') <> 'MANUAL') AS "hasDoneTransaction",
+           EXISTS (SELECT 1 FROM "PaymentTransaction" t WHERE ${txCoversPaymentSql("t", "p.id")} AND t.status = 'DONE'
+                     AND UPPER(t.provider) = 'MANUAL') AS "hasManualDoneTransaction"
       FROM "Payment" p
      WHERE p.id = ANY($1::text[])`;
 // 수기 납부완료 되돌리기의 조건부 UPDATE 조건 — 판정 함수(isManualPaidProvider)와 같은 기준을 SQL 로 한 번 더 건다
@@ -1960,18 +1985,21 @@ export async function updatePaymentStatus(id: string, status: string) {
         const invoice = await ensureInvoiceForPayment(id);
 
         if (decision.kind === "REVERT_PAID") {
-            // 2-a) 수기 납부완료 → 대기(납부 기록 정정). 조건부 UPDATE — 그 사이 바뀌었으면 0건 → 거절
-            const updated = await prisma.$executeRawUnsafe(
-                `UPDATE "Payment" SET ${PAYMENT_REVERT_SET} WHERE id = $1 AND ${PAYMENT_REVERT_WHERE}`,
-                id,
-            );
-            if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
-            if (invoice?.id) {
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "PaymentInvoice" SET ${INVOICE_REVERT_SET} WHERE id = $1`,
-                    invoice.id,
+            // 2-a) 수기 납부완료 → 대기(납부 기록 정정). Payment·청구서를 한 트랜잭션으로 — 하나라도 실패하면 둘 다 되돌린다.
+            // 조건부 UPDATE — 그 사이 바뀌었으면 0건 → 거절(롤백)
+            await prisma.$transaction(async (tx) => {
+                const updated = await tx.$executeRawUnsafe(
+                    `UPDATE "Payment" SET ${PAYMENT_REVERT_SET} WHERE id = $1 AND ${PAYMENT_REVERT_WHERE}`,
+                    id,
                 );
-            }
+                if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+                if (invoice?.id) {
+                    await tx.$executeRawUnsafe(
+                        `UPDATE "PaymentInvoice" SET ${INVOICE_REVERT_SET} WHERE id = $1`,
+                        invoice.id,
+                    );
+                }
+            });
             // 감사 기록: 누가·언제·무엇을 지웠는지(되돌릴 때 필요한 이전 값까지)
             await recordPaymentAudit({
                 paymentId: id,
@@ -1996,18 +2024,21 @@ export async function updatePaymentStatus(id: string, status: string) {
                     ? "CANCELED"
                     : "ISSUED";
 
-            const updated = await prisma.$executeRawUnsafe(
-                `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $2 AND status <> 'PAID'`,
-                status, id,
-            );
-            if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
-            if (invoice?.id) {
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE id = $2`,
-                    invoiceStatus,
-                    invoice.id,
+            // Payment·청구서를 한 트랜잭션으로(0건이면 롤백)
+            await prisma.$transaction(async (tx) => {
+                const updated = await tx.$executeRawUnsafe(
+                    `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $2 AND status <> 'PAID'`,
+                    status, id,
                 );
-            }
+                if (Number(updated) !== 1) throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+                if (invoice?.id) {
+                    await tx.$executeRawUnsafe(
+                        `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE id = $2`,
+                        invoiceStatus,
+                        invoice.id,
+                    );
+                }
+            });
             await recordPaymentAudit({
                 paymentId: id,
                 invoiceId: invoice?.id ?? null,
@@ -2159,10 +2190,21 @@ export async function deletePayment(id: string) {
     }
     if (blocked) throw new Error(PAYMENT_DELETE_BLOCKED_MESSAGE);
     try {
-        await prisma.$executeRawUnsafe(`DELETE FROM "PaymentTransaction" WHERE "paymentId" = $1`, id);
-        await prisma.$executeRawUnsafe(`DELETE FROM "PaymentInvoice" WHERE "paymentId" = $1`, id);
-        await prisma.$executeRawUnsafe(`DELETE FROM "Payment" WHERE id = $1`, id);
+        // 한 트랜잭션: 청구 잠금 → 실제 결제·완료 거래 재판정(2026-11-10 원장 승인) → 지우기.
+        // 잠근 뒤 판정하므로 그 사이 토스 웹훅이 납부완료로 바꾼 청구도 지우지 않는다. 하나라도 실패하면 전부 되돌린다.
+        await prisma.$transaction(async (tx) => {
+            const locked = await tx.$queryRawUnsafe<{ id: string }[]>(`SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE`, id);
+            if (locked.length === 0) throw new PaymentStatusGuardError("수납 기록을 찾을 수 없습니다. 다시 조회해 주세요.");
+            const rows = await tx.$queryRawUnsafe<PaymentStatusGuardRow[]>(PAYMENT_STATUS_GUARD_SELECT, [id]);
+            const reason = rows[0] ? paymentDeleteBlockReason(rows[0]) : null;
+            if (reason) throw new PaymentStatusGuardError(reason);
+            await tx.$executeRawUnsafe(`DELETE FROM "PaymentTransaction" WHERE "paymentId" = $1`, id);
+            await tx.$executeRawUnsafe(`DELETE FROM "PaymentInvoice" WHERE "paymentId" = $1`, id);
+            await tx.$executeRawUnsafe(`DELETE FROM "Payment" WHERE id = $1`, id);
+        });
     } catch (e) {
+        // 규칙 거절은 안내 문구 그대로
+        if (e instanceof PaymentStatusGuardError) throw new Error(e.message);
         console.error("Failed to delete payment:", e);
         throw new Error("수납 기록 삭제 실패");
     }
@@ -4174,27 +4216,29 @@ export async function bulkUpdatePaymentStatus(ids: string[], newStatus: string) 
         }
 
         const placeholders = ids.map((_, i) => `$${i + 2}`).join(",");
-        // 조건부 UPDATE — 판정 뒤 그 사이 납부완료가 된 청구는 덮지 않는다
-        const updated = await prisma.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders}) AND status <> 'PAID'`,
-            newStatus,
-            ...ids,
-        );
-        if (Number(updated) !== uniqueIds.length) {
-            // 일부만 바뀌었다 — 청구서까지 어긋나지 않게 여기서 멈추고 알린다(바뀐 건은 다시 조회하면 보인다)
-            throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
-        }
         const invoiceStatus = newStatus === "OVERDUE"
             ? "OVERDUE"
             : ["REFUNDED", "CANCELED"].includes(newStatus)
                 ? "CANCELED"
                 : "ISSUED";
-        const invoicePlaceholders = ids.map((_, i) => `$${i + 2}`).join(",");
-        await prisma.$executeRawUnsafe(
-            `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE "paymentId" IN (${invoicePlaceholders})`,
-            invoiceStatus,
-            ...ids,
-        );
+        // Payment·청구서를 한 트랜잭션으로 — 건수가 맞지 않으면(그 사이 납부완료가 된 청구) 전체를 되돌린다
+        await prisma.$transaction(async (tx) => {
+            // 조건부 UPDATE — 판정 뒤 그 사이 납부완료가 된 청구는 덮지 않는다
+            const updated = await tx.$executeRawUnsafe(
+                `UPDATE "Payment" SET status = $1, "paidDate" = NULL, "updatedAt" = NOW() WHERE id IN (${placeholders}) AND status <> 'PAID'`,
+                newStatus,
+                ...ids,
+            );
+            if (Number(updated) !== uniqueIds.length) {
+                // 일부만 바뀌었다 — 던져서 트랜잭션 전체를 롤백(하나도 바뀌지 않음)
+                throw new PaymentStatusGuardError(PAYMENT_STATUS_RACE_MESSAGE);
+            }
+            await tx.$executeRawUnsafe(
+                `UPDATE "PaymentInvoice" SET status = $1, "updatedAt" = NOW() WHERE "paymentId" IN (${placeholders})`,
+                invoiceStatus,
+                ...ids,
+            );
+        });
         await recordPaymentAudit({
             actorType: "ADMIN",
             action: "PAYMENT_BULK_STATUS_UPDATE",

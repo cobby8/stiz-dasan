@@ -14,6 +14,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { loadTsModule } from "./_ts-module.mjs";
 
 const rules = await loadTsModule("src/lib/payments/paidStatusGuard.ts");
+// 묶음 결제 거래 판정 SQL 조각 — 서버와 같은 함수(순수 함수만 잘라 실행. bundleLedger.ts 는 prisma 를 불러 통째로 못 읽는다)
+const bundleSrc = readFileSync("src/lib/payments/bundleLedger.ts", "utf8");
+const bundlePart = bundleSrc.slice(
+    bundleSrc.indexOf("export function txCoversPaymentSql"),
+    bundleSrc.indexOf("\n}\n", bundleSrc.indexOf("function assertSqlIdent")) + 3,
+).replace(/export /g, "");
+const bundle = { txCoversPaymentSql: new Function(`${ts.transpile(bundlePart, { target: ts.ScriptTarget.ES2022 })}\nreturn txCoversPaymentSql;`)() };
 const actions = readFileSync("src/app/actions/admin.ts", "utf8");
 const detail = readFileSync("src/app/admin/students/[id]/StudentDetailClient.tsx", "utf8");
 const queries = readFileSync("src/lib/queries.ts", "utf8");
@@ -67,63 +74,112 @@ const bulkSource = actions.slice(
     actions.indexOf("export async function bulkUpdatePaymentStatus"),
     actions.indexOf("// Phase 2: 일일 수업 리포트"),
 );
+const deletePaymentSource = actions.slice(
+    actions.indexOf("// 현장 결제(POS)로 받은 청구는 삭제하면"),
+    actions.indexOf("/**\n * 미납 청구 수정"),
+);
+const deleteStudentSource = actions.slice(
+    actions.indexOf("export async function deleteStudent"),
+    actions.indexOf("// ── 수강 등록 관리"),
+);
 assert.ok(guardSource.includes("export async function updatePaymentStatus"), "updatePaymentStatus 를 잘라 왔어야 한다");
 assert.ok(bulkSource.length > 100, "bulkUpdatePaymentStatus 를 잘라 왔어야 한다");
+assert.ok(deletePaymentSource.includes("export async function deletePayment"), "deletePayment 를 잘라 왔어야 한다");
+assert.ok(deleteStudentSource.includes('DELETE FROM "Payment" WHERE "studentId"'), "deleteStudent 를 잘라 왔어야 한다");
 
 /**
  * 가짜 DB — Payment 행 상태를 들고, 조건부 UPDATE 의 WHERE 를 JS 로 흉내 낸다.
+ * $transaction 은 실패하면 행을 되돌리고(롤백) 그 안의 청구서 UPDATE·DELETE 도 반영하지 않는다.
  * raceTo: 판정용 SELECT 직후 다른 경로가 상태를 바꾼 상황(예: 토스 웹훅이 납부완료로)
  */
-function loadActions(initialRows, { raceTo = null } = {}) {
-    const db = new Map(initialRows.map((r) => [r.id, { paidProvider: null, method: null, paidDate: null, hasDoneTransaction: false, ...r }]));
-    const calls = { updates: [], invoiceUpdates: [], audits: [], revalidated: 0 };
+function loadActions(initialRows, { raceTo = null, raceIds = null, posBlocked = false } = {}) {
+    const fresh = (r) => ({ studentId: "s1", paidProvider: null, method: null, paidDate: null, hasDoneTransaction: false, hasManualDoneTransaction: false, ...r });
+    let db = new Map(initialRows.map((r) => [r.id, fresh(r)]));
+    const calls = { updates: [], invoiceUpdates: [], deletes: [], audits: [], revalidated: 0, transactions: 0, rollbacks: 0 };
+    function makeClient(sink) {
+        return {
+            $queryRawUnsafe: async (sql, ...args) => {
+                if (sql.includes('"PosChargeRequest"')) return [{ blocked: posBlocked }];
+                if (sql.includes("FOR UPDATE")) return db.has(args[0]) ? [{ id: args[0] }] : [];
+                if (sql.includes('WHERE "studentId" = $1')) return [...db.entries()].filter(([, r]) => r.studentId === args[0]).map(([id]) => ({ id }));
+                const ids = args[0];
+                assert.match(sql, /FROM "Payment" p/);
+                assert.match(sql, /"PaymentTransaction"/, "완료 거래 여부도 DB 에서 읽는다");
+                assert.match(sql, /"PaymentTransactionItem"/, "묶음 거래 항목까지 본다");
+                assert.match(sql, /UPPER\(t\.provider\) = 'MANUAL'/, "교사 수납 확인 거래를 따로 읽는다");
+                const rows = ids.filter((id) => db.has(id)).map((id) => ({ id, ...db.get(id) }));
+                // raceIds 가 있으면 그 청구만 경합(일괄 변경의 «일부만 바뀜» 상황)
+                if (raceTo) for (const id of raceIds ?? ids) if (db.has(id)) db.get(id).status = raceTo;
+                return rows;
+            },
+            $executeRawUnsafe: async (sql, ...values) => {
+                if (sql.startsWith("DELETE")) { sink.deletes.push({ sql, values }); return 1; }
+                if (sql.includes('UPDATE "PaymentInvoice"')) { sink.invoiceUpdates.push({ sql, values }); return 1; }
+                assert.match(sql, /UPDATE "Payment"/);
+                sink.updates.push({ sql, values });
+                if (sql.includes("status = 'PENDING', \"paidDate\" = NULL, method = NULL")) {
+                    // 수기 되돌리기: WHERE status='PAID' AND 수기 AND 완료 거래 없음
+                    const row = db.get(values[0]);
+                    const manual = row && (row.paidProvider == null || ["", "MANUAL"].includes(String(row.paidProvider).trim().toUpperCase()));
+                    if (!row || row.status !== "PAID" || !manual || row.hasDoneTransaction || row.hasManualDoneTransaction) return 0;
+                    Object.assign(row, { status: "PENDING", paidDate: null, method: null, paidProvider: null });
+                    return 1;
+                }
+                // 일반 변경: WHERE ... AND status <> 'PAID'
+                assert.match(sql, /status <> 'PAID'/, "납부완료를 덮지 않는 조건부 UPDATE 여야 한다");
+                const [status, ...ids] = values;
+                let n = 0;
+                for (const id of new Set(ids)) {
+                    const row = db.get(id);
+                    if (row && row.status !== "PAID") { row.status = status; n++; }
+                }
+                return n;
+            },
+        };
+    }
+    const outside = makeClient(calls);
     const prisma = {
-        $queryRawUnsafe: async (sql, ids) => {
-            assert.match(sql, /FROM "Payment" p/);
-            assert.match(sql, /"PaymentTransaction"/, "완료 거래 여부도 DB 에서 읽는다");
-            const rows = ids.filter((id) => db.has(id)).map((id) => ({ id, ...db.get(id) }));
-            if (raceTo) for (const id of ids) if (db.has(id)) db.get(id).status = raceTo;
-            return rows;
-        },
-        $executeRawUnsafe: async (sql, ...values) => {
-            if (sql.includes('UPDATE "PaymentInvoice"')) { calls.invoiceUpdates.push({ sql, values }); return 1; }
-            assert.match(sql, /UPDATE "Payment"/);
-            calls.updates.push({ sql, values });
-            if (sql.includes("status = 'PENDING', \"paidDate\" = NULL, method = NULL")) {
-                // 수기 되돌리기: WHERE status='PAID' AND 수기 AND 완료 거래 없음
-                const row = db.get(values[0]);
-                const manual = row && (row.paidProvider == null || ["", "MANUAL"].includes(String(row.paidProvider).trim().toUpperCase()));
-                if (!row || row.status !== "PAID" || !manual || row.hasDoneTransaction) return 0;
-                Object.assign(row, { status: "PENDING", paidDate: null, method: null, paidProvider: null });
-                return 1;
+        ...outside,
+        // 트랜잭션: 끝까지 성공해야 반영. 던지면 행 상태를 되돌리고 그 안의 쓰기 기록도 버린다
+        $transaction: async (work) => {
+            calls.transactions++;
+            const snapshot = new Map([...db.entries()].map(([k, v]) => [k, { ...v }]));
+            const sink = { updates: [], invoiceUpdates: [], deletes: [] };
+            try {
+                const result = await work(makeClient(sink));
+                calls.updates.push(...sink.updates);
+                calls.invoiceUpdates.push(...sink.invoiceUpdates);
+                calls.deletes.push(...sink.deletes);
+                for (const d of sink.deletes) if (/DELETE FROM "Payment" WHERE id/.test(d.sql)) db.delete(d.values[0]);
+                return result;
+            } catch (e) {
+                calls.rollbacks++;
+                db = snapshot;
+                throw e;
             }
-            // 일반 변경: WHERE ... AND status <> 'PAID'
-            assert.match(sql, /status <> 'PAID'/, "납부완료를 덮지 않는 조건부 UPDATE 여야 한다");
-            const [status, ...ids] = values;
-            let n = 0;
-            for (const id of new Set(ids)) {
-                const row = db.get(id);
-                if (row && row.status !== "PAID") { row.status = status; n++; }
-            }
-            return n;
         },
     };
     const deps = {
         prisma,
         requireFinanceOwner: async () => ({ appUserId: "admin-1", appUserRole: "ADMIN" }),
+        requireAdmin: async () => ({ appUserId: "admin-1", appUserRole: "ADMIN" }),
         DIRECT_PAID_BLOCKED_MESSAGE: "납부완료는 «납부 처리» 창에서 결제 방법을 골라 기록해 주세요.",
         DIRECT_REFUND_BLOCKED_MESSAGE: "환불은 수납 관리의 ⚡ «환불» 또는 «선택 항목 환불»로 해 주세요.",
         judgePaymentStatusChange: rules.judgePaymentStatusChange,
+        paymentDeleteBlockReason: rules.paymentDeleteBlockReason,
+        txCoversPaymentSql: bundle.txCoversPaymentSql,
         ensurePaymentInfrastructure: async () => {},
         ensureInvoiceForPayment: async (id) => ({ id: `inv-${id}` }),
         recordPaymentAudit: async (input) => { calls.audits.push(input); },
         revalidateFinanceCaches: () => { calls.revalidated++; },
+        revalidatePath: () => {},
+        revalidateStudentAdminCaches: () => {},
         console: { error() {} },
     };
-    const compiled = ts.transpile(`${guardSource}\n${bulkSource}`, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
+    const compiled = ts.transpile(`${guardSource}\n${bulkSource}\n${deletePaymentSource}\n${deleteStudentSource}`, { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 });
     const loaded = { exports: {} };
     new Function("module", "exports", ...Object.keys(deps), compiled)(loaded, loaded.exports, ...Object.values(deps));
-    return { ...loaded.exports, db, calls };
+    return { ...loaded.exports, get db() { return db; }, calls };
 }
 
 test("서버: 토스 온라인·POS·카페24 납부완료는 대기·연체·취소 전부 거절하고 아무것도 쓰지 않는다", async () => {
@@ -327,4 +383,139 @@ test("다른 화면: 수납 관리는 납부완료에 상태 변경을 걸지 �
     assert.match(finance, /canManageCriticalFinance && p\.status === "PENDING" \? \[\s*\{\s*key: "overdue"/);
     assert.equal((finance.match(/handleStatusChange\(/g) ?? []).length, 2, "정의 1 + 연체처리 1 외에 부르는 곳이 없다");
     assert.doesNotMatch(finance, /bulkUpdatePaymentStatus/);
+});
+
+// ───────────── ④ 영구 삭제 금지 · 교사 수납 문구 · 트랜잭션 (2026-11-10 원장 승인·보안 리뷰 참고) ─────────────
+
+test("규칙(삭제): 실제 결제 납부완료·완료 거래가 붙은 청구는 삭제 금지, 수기·미납·환불 끝난 건은 허용", () => {
+    for (const provider of ["TOSS", "TOSS_POS", "CAFE24_BRIDGE", "TOSS_TERMINAL", "SOMETHING_NEW"]) {
+        assert.match(rules.paymentDeleteBlockReason({ status: "PAID", paidProvider: provider }), /결제 취소·환불을 먼저 해 주세요/, provider);
+    }
+    assert.match(rules.paymentDeleteBlockReason({ status: "REFUNDED", paidProvider: "TOSS", hasDoneTransaction: true }), /결제 취소·환불을 먼저/);
+    assert.match(rules.paymentDeleteBlockReason({ status: "PAID", paidProvider: "MANUAL", hasManualDoneTransaction: true }), /선생님 수납 확인/);
+    for (const row of [
+        { status: "PAID", paidProvider: "MANUAL" },
+        { status: "PAID", paidProvider: null },
+        { status: "PENDING", paidProvider: null },
+        { status: "CANCELED", paidProvider: "TOSS" },
+        { status: "REFUNDED", paidProvider: "TOSS" },
+    ]) assert.equal(rules.paymentDeleteBlockReason(row), null, JSON.stringify(row));
+});
+
+test("규칙(문구): 교사 수납 확인(MANUAL 완료 거래) 기록은 되돌리기 거절이되 «온라인 결제»라고 하지 않는다", () => {
+    const d = rules.judgePaymentStatusChange({ status: "PAID", paidProvider: "MANUAL", hasManualDoneTransaction: true }, "PENDING");
+    assert.equal(d.ok, false);
+    assert.equal(d.code, "STAFF_CONFIRMED");
+    assert.equal(d.message, "선생님 수납 확인으로 받은 기록이에요. 수납 관리에서 확인해 주세요.");
+    assert.doesNotMatch(d.message, /온라인/);
+    // 토스 완료 거래가 함께 있으면 온라인 문구가 우선
+    assert.equal(rules.judgePaymentStatusChange({ status: "PAID", paidProvider: "MANUAL", hasDoneTransaction: true, hasManualDoneTransaction: true }, "PENDING").code, "HAS_DONE_TX");
+});
+
+test("서버: 교사 수납 확인 납부완료 되돌리기 → 정확한 문구로 거절, 아무것도 쓰지 않음", async () => {
+    const f = loadActions([{ id: "p1", status: "PAID", paidProvider: "MANUAL", hasManualDoneTransaction: true }]);
+    await assert.rejects(f.updatePaymentStatus("p1", "PENDING"), /선생님 수납 확인으로 받은 기록이에요/);
+    assert.equal(f.calls.updates.length, 0);
+    assert.equal(f.db.get("p1").status, "PAID");
+});
+
+test("서버 트랜잭션: 단건 변경·되돌리기는 Payment·청구서를 한 트랜잭션으로, 0건이면 롤백(청구서도 안 바뀜)", async () => {
+    const ok = loadActions([{ id: "p1", status: "PAID", paidProvider: "MANUAL" }]);
+    await ok.updatePaymentStatus("p1", "PENDING");
+    assert.equal(ok.calls.transactions, 1);
+    assert.equal(ok.calls.invoiceUpdates.length, 1);
+
+    const race = loadActions([{ id: "p1", status: "PENDING" }], { raceTo: "PAID" });
+    await assert.rejects(race.updatePaymentStatus("p1", "CANCELED"), /상태가 바뀌어/);
+    assert.equal(race.calls.rollbacks, 1);
+    assert.equal(race.calls.invoiceUpdates.length, 0, "롤백되면 청구서 UPDATE 도 반영되지 않는다");
+    assert.equal(race.calls.audits.length, 0);
+});
+
+test("서버 트랜잭션(일괄): 일부만 바뀌면(건수 불일치) 전체 롤백 — 먼저 바뀐 청구도 원래대로, 청구서·감사 기록 없음", async () => {
+    // b 만 판정 직후 납부완료가 됨 → Payment UPDATE 1건 ≠ 2건 → 전체 롤백
+    const f = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "OVERDUE" }], { raceTo: "PAID", raceIds: ["b"] });
+    await assert.rejects(f.bulkUpdatePaymentStatus(["a", "b"], "CANCELED"), /상태가 바뀌어/);
+    assert.equal(f.calls.rollbacks, 1);
+    assert.equal(f.db.get("a").status, "PENDING", "a 도 되돌아간다");
+    assert.equal(f.db.get("b").status, "PAID");
+    assert.equal(f.calls.invoiceUpdates.length, 0);
+    assert.equal(f.calls.audits.length, 0);
+
+    const ok = loadActions([{ id: "a", status: "PENDING" }, { id: "b", status: "OVERDUE" }]);
+    await ok.bulkUpdatePaymentStatus(["a", "b"], "CANCELED");
+    assert.equal(ok.calls.transactions, 1);
+    assert.equal(ok.calls.invoiceUpdates.length, 1);
+});
+
+test("서버(영구 삭제): 실제 결제 납부완료·완료 거래·교사 수납 확인 청구는 거절하고 하나도 지우지 않는다", async () => {
+    const cases = [
+        [{ status: "PAID", paidProvider: "TOSS" }, /실제 결제로 받은 청구는 삭제할 수 없어요\. 결제 취소·환불을 먼저 해 주세요\./],
+        [{ status: "PAID", paidProvider: "CAFE24_BRIDGE" }, /결제 취소·환불을 먼저/],
+        [{ status: "PAID", paidProvider: "TOSS_TERMINAL" }, /결제 취소·환불을 먼저/],
+        [{ status: "REFUNDED", paidProvider: "TOSS", hasDoneTransaction: true }, /결제 취소·환불을 먼저/],
+        [{ status: "PAID", paidProvider: "MANUAL", hasManualDoneTransaction: true }, /선생님 수납 확인/],
+    ];
+    for (const [row, message] of cases) {
+        const f = loadActions([{ id: "p1", ...row }]);
+        await assert.rejects(f.deletePayment("p1"), message, JSON.stringify(row));
+        assert.equal(f.calls.deletes.length, 0);
+        assert.ok(f.db.has("p1"));
+        assert.equal(f.calls.revalidated, 0);
+    }
+    // POS 묶음 막기는 예전 그대로
+    const pos = loadActions([{ id: "p1", status: "PENDING" }], { posBlocked: true });
+    await assert.rejects(pos.deletePayment("p1"), /현장 결제\(POS\)/);
+    assert.equal(pos.calls.transactions, 0);
+});
+
+test("서버(영구 삭제): 수기 납부완료·미납은 예전처럼 한 트랜잭션으로 지운다(거래·청구서·청구 순서)", async () => {
+    for (const row of [{ status: "PAID", paidProvider: "MANUAL" }, { status: "PENDING" }, { status: "CANCELED", paidProvider: "TOSS" }]) {
+        const f = loadActions([{ id: "p1", ...row }]);
+        await f.deletePayment("p1");
+        assert.equal(f.calls.transactions, 1);
+        assert.deepEqual(f.calls.deletes.map((d) => d.sql.match(/DELETE FROM "(\w+)"/)[1]), ["PaymentTransaction", "PaymentInvoice", "Payment"]);
+        assert.ok(!f.db.has("p1"));
+        assert.equal(f.calls.revalidated, 1);
+    }
+});
+
+test("서버(영구 삭제): 잠근 뒤 다시 판정 — 판정 직전 토스로 납부완료가 된 청구는 지우지 않는다", async () => {
+    // 첫 POS 확인은 미납으로 통과, 트랜잭션 안 재판정 SELECT 직전에 토스 납부완료로 바뀐 상황
+    const f = loadActions([{ id: "p1", status: "PENDING" }]);
+    const row = f.db.get("p1");
+    Object.assign(row, { status: "PAID", paidProvider: "TOSS" });
+    await assert.rejects(f.deletePayment("p1"), /결제 취소·환불을 먼저/);
+    assert.equal(f.calls.rollbacks, 1);
+    assert.ok(f.db.has("p1"));
+});
+
+test("서버(원생 삭제): 그 원생에게 실제 결제 청구가 있으면 원생 삭제도 거절(청구가 함께 지워지므로)", async () => {
+    const blocked = loadActions([{ id: "p1", status: "PENDING" }, { id: "p2", status: "PAID", paidProvider: "TOSS_POS" }]);
+    await assert.rejects(blocked.deleteStudent("s1"), /실제 결제로 받은 청구가 있어 원생을 삭제할 수 없어요/);
+    assert.equal(blocked.calls.deletes.length, 0);
+
+    // 수기 납부만 있으면 예전처럼 지운다
+    const ok = loadActions([{ id: "p1", status: "PAID", paidProvider: "MANUAL" }]);
+    await ok.deleteStudent("s1");
+    assert.ok(ok.calls.deletes.some((d) => /DELETE FROM "Student"/.test(d.sql)));
+    // 다른 원생의 실제 결제 청구는 상관없다
+    const other = loadActions([{ id: "p9", status: "PAID", paidProvider: "TOSS", studentId: "s2" }]);
+    await other.deleteStudent("s1");
+    assert.ok(other.calls.deletes.some((d) => /DELETE FROM "Student"/.test(d.sql)));
+});
+
+test("화면(수납 관리 ⚡): 실제 결제 청구는 «기록 영구 삭제» 대신 잠긴 «삭제 불가(환불 먼저)» — 같은 규칙 함수", () => {
+    const finance = readFileSync("src/app/admin/finance/FinanceClient.tsx", "utf8");
+    assert.match(finance, /import \{ paymentDeleteBlockReason \} from "@\/lib\/payments\/paidStatusGuard"/);
+    assert.match(finance, /const deleteBlock = paymentDeleteBlockReason\(\{\s*status: p\.status,\s*paidProvider: p\.paidProvider \?\? null,\s*hasDoneTransaction: p\.transactionStatus === "DONE",\s*\}\)/);
+    assert.match(finance, /canManageCriticalFinance && deleteBlock \? \[\s*\{\s*key: "delete-blocked",[\s\S]{0,200}label: "삭제 불가\(환불 먼저\)",\s*icon: "block",\s*disabled: true,/);
+    assert.match(finance, /canManageCriticalFinance && !deleteBlock && p\.paidProvider !== "TOSS_POS"/, "막힌 청구엔 진짜 삭제 항목이 없다");
+});
+
+test("화면(수납 관리 ⚡): 잠긴 항목을 실제 메뉴로 그리면 비활성 버튼이고 눌러도 아무 일 없음", async () => {
+    // AdminQuickActionMenu 를 열린 상태로 그리기 어렵다 — 메뉴 항목 하나를 그리는 renderAction 과 같은 규칙(disabled 면 onSelect 를 부르지 않음)을 소스로 확인
+    const menu = readFileSync("src/components/admin/AdminQuickActionMenu.tsx", "utf8");
+    assert.match(menu, /disabled=\{action\.disabled\}/);
+    assert.match(menu, /if \(action\.disabled\) return;/);
 });

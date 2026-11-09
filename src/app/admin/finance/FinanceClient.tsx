@@ -35,6 +35,8 @@ import VirtualAccountCloseDialog from "./VirtualAccountCloseDialog";
 import { refundSelectedPayments } from "@/app/actions/payment-bulk-refund";
 import { bulkSelectionMode } from "@/lib/payments/bulkRefund";
 import InlineConfirm from "@/components/parent/InlineConfirm";
+// 실제 결제로 받은 청구는 «기록 영구 삭제» 금지(서버 deletePayment 와 같은 판정 · 2026-11-10 원장 승인)
+import { paymentDeleteBlockReason } from "@/lib/payments/paidStatusGuard";
 
 type Payment = {
     id: string;
@@ -883,6 +885,12 @@ export default function FinanceClient({
         const invoiceHref = getInvoiceHref(p);
         // 지금 목록(이 달)에서 같은 학생의 미납·연체 전부 — «이 학생 미납 모두 현장 결제» 메뉴용
         const studentUnpaid = payments.filter((x) => x.studentId === p.studentId && ["PENDING", "OVERDUE"].includes(x.status));
+        // 영구 삭제를 막을 이유 — 실제 결제 납부완료·완료 거래(목록은 최근 거래 상태만 알아 안내용, 최종 판단은 서버)
+        const deleteBlock = paymentDeleteBlockReason({
+            status: p.status,
+            paidProvider: p.paidProvider ?? null,
+            hasDoneTransaction: p.transactionStatus === "DONE",
+        });
         return [
             ...(invoiceHref ? [
                 {
@@ -1001,7 +1009,18 @@ export default function FinanceClient({
             ] : []),
             // 기록 영구 삭제: 토스 POS 결제·POS 요청에 묶인 청구는 숨긴다(현장 결제 기록이 같이 사라지므로 결제 취소로만). 계좌이체 등 다른 납부완료는 예전처럼 지울 수 있다.
             // 서버 deletePayment 가 DB 로 같은 조건을 한 번 더 확인한다.
-            ...(canManageCriticalFinance && p.paidProvider !== "TOSS_POS" && !p.posLocked && !p.posBundleCode ? [
+            // 실제 결제로 받은 청구: «기록 영구 삭제» 대신 잠긴 안내 항목(돈은 그대로인데 기록만 사라지는 것을 막는다)
+            ...(canManageCriticalFinance && deleteBlock ? [
+                {
+                    key: "delete-blocked",
+                    // 메뉴 폭 200px — 잘리지 않게 짧게(«환불을 먼저 해 주세요»의 줄임)
+                    label: "삭제 불가(환불 먼저)",
+                    icon: "block",
+                    disabled: true,
+                    onSelect: () => {},
+                },
+            ] : []),
+            ...(canManageCriticalFinance && !deleteBlock && p.paidProvider !== "TOSS_POS" && !p.posLocked && !p.posBundleCode ? [
                 {
                     key: "delete",
                     // «청구서 삭제»(취소 처리)와 헷갈리지 않게 «영구»를 붙인다
