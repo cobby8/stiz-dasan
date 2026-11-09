@@ -240,7 +240,7 @@ test("토스 부분 취소 함수 계약: 재조회 → 감사 → cancelAmount+
   const src = readFileSync("src/lib/payment-ledger.ts", "utf8");
   const body = src.slice(src.indexOf("export async function partialRefundTossPaymentByAdmin"), src.indexOf("/** 관리자 환불 취소 요청의 Idempotency-Key 시드"));
   assert.ok(body.length > 100);
-  const order = ["getVerifiedTossPayment(", "findMarkedCancel(before", "partialCancelBlock(", "PAYMENT_TOSS_PARTIAL_CANCEL_REQUESTED", "cancelAmount: input.amount", "getVerifiedTossPayment(", "findMarkedCancel(after"];
+  const order = ["getVerifiedTossPayment(", "findMarkedCancel(before", "partialCancelBlock(", "PAYMENT_TOSS_PARTIAL_CANCEL_REQUESTED", "cancelAmount: input.amount", "getVerifiedTossPayment(", "judgePartialCancelOutcome("];
   let at = 0;
   for (const mark of order) {
     const found = body.indexOf(mark, at);
@@ -309,6 +309,7 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
     },
     async $queryRawUnsafe(sql, ...v) {
       if (sql.includes("to_regclass")) return [{ a: "x", b: "y" }];
+      if (sql.includes(`SELECT DISTINCT "studentId"`)) return [...new Set(state.settlements.filter((s) => s.carryRemaining > 0).map((s) => s.studentId))].sort().map((studentId) => ({ studentId }));
       if (sql.includes('FROM "EnrollmentChangeRequest" r')) return request ? [request] : [];
       if (sql.includes('SELECT id FROM "EnrollmentChangeSettlement" WHERE "requestId"')) return existing || state.settlements.length ? [{ id: "s0" }] : [];
       // 잠금 없이 읽는 후보 id(휴원 범위 / 이월 차감 범위)
@@ -320,7 +321,7 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
       }
       if (sql.includes('FROM "Payment" p') && sql.includes("LEFT JOIN LATERAL")) {
         if (sql.includes("FOR UPDATE OF p")) {
-          state.events.push("rows-for-update");
+          state.events.push("rows-for-update"); if (state.afterRowLock) state.afterRowLock(state);
           assert.match(sql, /p\.id = ANY\(\$4::text\[\]\)/, "잠근 id 만 행 잠금");
         }
         return state.payments.filter((p) => p.year * 100 + p.month >= v[2] && (!v[3] || v[3].includes(p.id)))
@@ -663,4 +664,106 @@ test("[권장4·5·6] 전액 면세 · 표식 없는 같은 금액 취소 감지
   assert.equal(db.state.lines.find((l) => l.kind === "REFUND").status, "DONE");
   // FAILED 안내는 직접 취소했다면 «직접 처리함»을 누르라고 말한다
   assert.match(plan.settlementTodoText({ kind: "REFUND", channel: "TOSS", amount: 70000, status: "FAILED" }), /직접 취소했다면 «직접 처리함»을 눌러/);
+});
+
+// ── 7) 재검수(11-10): 확실한 실패 범위·크론 학생별·잠금 뒤 목록 재확인 ─────────────────
+test("[필수] 확실한 거절 = 4xx 중 409·429 제외. 5xx·409·429·응답 없음·재조회 실패 = 결과 모름", () => {
+  for (const s of [400, 403, 404, 422, 499]) assert.equal(partial.isDefiniteTossRejection(s), true, String(s));
+  for (const s of [409, 429, 500, 502, 503, 200, null, undefined]) assert.equal(partial.isDefiniteTossRejection(s), false, String(s));
+  const marker = partial.partialCancelMarker("line-1");
+  const none = { cancels: [] };
+  const judge = (verified, httpStatus) => partial.judgePartialCancelOutcome({ verified, marker, amount: 70000, httpStatus });
+  assert.equal(judge(none, 400), "FAILED");
+  assert.equal(judge(none, 409), "UNCERTAIN");
+  assert.equal(judge(none, 429), "UNCERTAIN");
+  assert.equal(judge(none, 503), "UNCERTAIN");
+  assert.equal(judge(none, null), "UNCERTAIN", "응답 없음");
+  assert.equal(judge(null, 400), "UNCERTAIN", "재조회를 못 하면 거절 응답이어도 확정하지 않는다");
+  assert.equal(judge({ cancels: [{ cancelAmount: 70000, cancelReason: `x ${marker}` }] }, 500), "DONE", "응답이 5xx 여도 재조회에 취소가 있으면 완료");
+  assert.equal(judge({ cancels: [{ cancelAmount: 1, cancelReason: `x ${marker}` }] }, 200), "WRONG_AMOUNT");
+  // 장부 함수가 응답 코드를 판정에 넘기고, 결과 모름은 uncertain:true
+  const ledger = readFileSync("src/lib/payment-ledger.ts", "utf8");
+  const fn = ledger.slice(ledger.indexOf("export async function partialRefundTossPaymentByAdmin"), ledger.indexOf("/** 관리자 환불 취소 요청의 Idempotency-Key 시드"));
+  assert.match(fn, /httpStatus = response\.status;/);
+  assert.match(fn, /judgePartialCancelOutcome\(\{[\s\S]*?marker, amount: input\.amount, httpStatus,/);
+  assert.match(fn, /if \(outcome === "FAILED"\) return \{[^\n]*uncertain: false \}/);
+  assert.match(fn, /«다시 시도»로 확인해 주세요\.", uncertain: true \};\n\}/);
+});
+
+test("[필수] 409·5xx 응답 → REQUESTED 유지·같은 키(시도 번호 그대로), 400 → FAILED·다음 시도는 새 키", async () => {
+  // 응답 코드 → 장부 함수 결과(판정 함수 그대로) → 실행부 줄 상태·시도 번호
+  const toResult = (httpStatus) => {
+    const outcome = partial.judgePartialCancelOutcome({ verified: { cancels: [] }, marker: "m", amount: 70000, httpStatus });
+    return outcome === "FAILED" ? { ok: false, message: "거절", uncertain: false } : { ok: false, message: "모름", uncertain: true };
+  };
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
+  const attempts = [];
+  const run = (httpStatus) => service.runSettlementTossRefunds(db, { settlementId: done.settlementId, adminUserId: "a", refundToss: async (input) => { attempts.push(input.attempt); return toResult(httpStatus); } });
+  const line = () => db.state.lines.find((l) => l.kind === "REFUND");
+  await run(409);
+  assert.equal(line().status, "REQUESTED");
+  await run(503);
+  assert.equal(line().status, "REQUESTED");
+  assert.equal(line().failedAttempts, 0);
+  await run(400);
+  assert.equal(line().status, "FAILED");
+  assert.equal(line().failedAttempts, 1);
+  await run(500);
+  assert.deepEqual(attempts, [0, 0, 0, 1], "결과 모름은 같은 키, 확실한 거절 뒤에만 다음 키");
+  assert.equal(line().status, "REQUESTED");
+});
+
+test("[권장3] 결제 잠금·행 잠금 뒤 다시 읽은 청구 목록이 처음과 다르면 «다시 시도»로 거절(감액 없음)", async () => {
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const key = await previewKey(db);
+  // 잠금을 잡는 사이 새 1월 청구가 생겼다
+  db.state.afterRowLock = (state) => {
+    state.payments.push({ id: "jan", year: 2027, month: 1, amount: 140000, status: "PENDING", paidProvider: null, method: null, rallyzMirror: false, tossTxId: null, tossTxMethod: null, busy: false });
+    state.afterRowLock = null;
+  };
+  const result = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: key, classDatesFor });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /청구 목록이 바뀌었어요.*다시 시도/);
+  assert.equal(db.state.paymentUpdates.length, 0);
+  assert.equal(db.state.settlements.length, 0);
+  assert.equal(db.state.events.filter((e) => e === "candidates").length, 2, "실행 = 잠금 전 목록 + 잠금 뒤 재확인(미리보기는 후보 목록을 읽지 않는다)");
+});
+
+test("[권장2] 크론(학생 지정 없음)은 학생마다 트랜잭션 — 한 학생 실패가 다른 학생 차감을 되돌리지 않는다", async () => {
+  const transactions = [];
+  const db = {
+    async $queryRawUnsafe(sql) {
+      if (sql.includes("to_regclass")) return [{ a: "x", b: "y" }];
+      if (sql.includes(`SELECT DISTINCT "studentId"`)) return [{ studentId: "a-stu" }, { studentId: "b-stu" }];
+      throw new Error("unexpected");
+    },
+    async $executeRawUnsafe() { return 1; },
+    async $transaction(fn) {
+      const studentHolder = { id: null };
+      const tx = {
+        async $executeRawUnsafe() { return 1; },
+        async $queryRawUnsafe(sql, ...v) {
+          if (sql.includes('FROM "EnrollmentChangeSettlement"') && sql.includes("FOR UPDATE")) {
+            studentHolder.id = v[0];
+            if (v[0] === "a-stu") throw new Error("학생 a 실패");
+            return [];
+          }
+          throw new Error("unexpected tx");
+        },
+      };
+      try { const r = await fn(tx); transactions.push([studentHolder.id, "commit"]); return r; }
+      catch (e) { transactions.push([studentHolder.id, "rollback"]); throw e; }
+    },
+  };
+  const original = console.error;
+  console.error = () => {};
+  try {
+    assert.deepEqual(await service.applyOpenPauseCarries(db), { applied: 0, amount: 0 });
+  } finally { console.error = original; }
+  assert.deepEqual(transactions, [["a-stu", "rollback"], ["b-stu", "commit"]], "학생 id 순서로 따로따로");
+  const src = readFileSync("src/lib/enrollment/pause-settlement.ts", "utf8");
+  assert.match(src, /ADD COLUMN IF NOT EXISTS "failedAttempts"|failedAttempts/);
+  assert.match(readFileSync("prisma/migrations/20261110180000_enrollment_pause_settlement/migration.sql", "utf8"),
+    /ALTER TABLE "EnrollmentChangeSettlementLine" ADD COLUMN IF NOT EXISTS "failedAttempts" INTEGER NOT NULL DEFAULT 0;/);
 });

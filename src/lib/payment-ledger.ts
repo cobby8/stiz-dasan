@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { PUBLIC_SITE_URL } from "@/lib/publicMetadata";
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
-import { findMarkedCancel, hasUnmarkedSameAmountCancel, markedCancelTotal, partialCancelBlock, partialCancelMarker, partialCancelTaxFree } from "@/lib/payments/tossPartialCancel";
+import { findMarkedCancel, hasUnmarkedSameAmountCancel, judgePartialCancelOutcome, markedCancelTotal, partialCancelBlock, partialCancelMarker, partialCancelTaxFree } from "@/lib/payments/tossPartialCancel";
 import { describeTaxFreeMismatch } from "@/lib/payments/taxFree";
 import { childAccessSql } from "@/lib/account/child-access";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -1988,9 +1988,9 @@ export async function partialRefundTossPaymentByAdmin(input: {
     const { secretKey } = getPaymentProviderConfig();
     if (!secretKey) return { ok: false, message: "토스 결제 키가 설정되어 있지 않아요.", uncertain: false };
     let tossError: string | null = null;
-    let sent = false;
+    // 취소 API 응답 코드(응답 없음 = null) — «확실한 거절»(isDefiniteTossRejection) 판정에만 쓴다
+    let httpStatus: number | null = null;
     try {
-        sent = true;
         const response = await fetch(`https://api.tosspayments.com/v1/payments/${encodeURIComponent(tx.paymentKey)}/cancel`, {
             method: "POST",
             headers: {
@@ -2010,16 +2010,20 @@ export async function partialRefundTossPaymentByAdmin(input: {
             cache: "no-store",
             signal: AbortSignal.timeout(TOSS_FETCH_TIMEOUT_MS),
         });
+        httpStatus = response.status;
         if (!response.ok) tossError = await readTossErrorMessage(response) ?? `토스 응답 ${response.status}`;
     } catch {
         tossError = "토스 응답이 없어요";
     }
 
-    // ④ 응답과 상관없이 다시 조회해 판정
+    // ④ 응답과 상관없이 다시 조회해 판정(순수 judgePartialCancelOutcome 한 곳)
     const after = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
-    if (after.kind === "verified") {
-        const done = findMarkedCancel(after.payment, marker);
-        if (done && done.amount === input.amount) {
+    const outcome = judgePartialCancelOutcome({
+        verified: after.kind === "verified" ? after.payment : null,
+        marker, amount: input.amount, httpStatus,
+    });
+    if (outcome === "DONE") {
+        {
             await recordPaymentAudit({
                 paymentId: input.paymentId,
                 transactionId: tx.id,
@@ -2032,11 +2036,12 @@ export async function partialRefundTossPaymentByAdmin(input: {
             revalidatePaymentCaches();
             return { ok: true, alreadyApplied: false };
         }
-        if (done) return { ok: false, message: "토스에 다른 금액으로 취소됐어요. 토스 상점관리자에서 확인해 주세요.", uncertain: false };
-        // 토스가 분명히 거절했고(응답 있음) 취소도 없다 = 실패 확정
-        if (tossError && tossError !== "토스 응답이 없어요") return { ok: false, message: `토스가 취소하지 않았어요(${tossError}).`, uncertain: false };
     }
-    return { ok: false, message: "취소 결과를 확인하지 못했어요. 잠시 후 «다시 시도»로 확인해 주세요.", uncertain: sent };
+    if (outcome === "WRONG_AMOUNT") return { ok: false, message: "토스에 다른 금액으로 취소됐어요. 토스 상점관리자에서 확인해 주세요.", uncertain: false };
+    // 토스가 분명히 거절(4xx, 409·429 제외)했고 취소도 없다 = 실패 확정 → 다음 시도는 새 멱등 키
+    if (outcome === "FAILED") return { ok: false, message: `토스가 취소하지 않았어요(${tossError ?? `응답 ${httpStatus}`}).`, uncertain: false };
+    // 5xx·409·429·응답 없음·재조회 실패 = 결과 모름 → REQUESTED 유지, 같은 키로 확인만
+    return { ok: false, message: "취소 결과를 확인하지 못했어요. 잠시 후 «다시 시도»로 확인해 주세요.", uncertain: true };
 }
 
 /** 관리자 환불 취소 요청의 Idempotency-Key 시드 — 같은 10분 안 연타는 토스에서 한 번만, 10분 뒤 재시도는 새 시도 */

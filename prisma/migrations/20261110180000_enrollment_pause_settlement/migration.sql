@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS "EnrollmentChangeSettlementLine" (
   CONSTRAINT "EnrollmentChangeSettlementLine_unique_key" UNIQUE ("settlementId", "paymentId", kind)
 );
 
+-- 이 파일을 «failedAttempts 칸 추가 전» 판으로 이미 적용한 DB 에서도 칸이 생기게(여러 번 실행해도 같은 결과)
+ALTER TABLE "EnrollmentChangeSettlementLine" ADD COLUMN IF NOT EXISTS "failedAttempts" INTEGER NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS "EnrollmentChangeSettlementLine_paymentId_idx" ON "EnrollmentChangeSettlementLine" ("paymentId");
 -- 관리자 «수강료 처리 남은 일»(사람 할 일·결과 확인 중·실패) — 대부분 DONE 이라 작다
 CREATE INDEX IF NOT EXISTS "EnrollmentChangeSettlementLine_open_idx"

@@ -94,6 +94,9 @@ const PAUSE_PAYMENT_SCOPE = `p."studentId" = $1 AND p."classId" = $2 AND COALESC
         AND p.status IN ('PAID','PENDING','OVERDUE') AND p.year IS NOT NULL AND p.month IS NOT NULL
         AND (p.year * 100 + p.month) >= $3`;
 
+/** 결제 잠금 뒤 다시 읽은 청구 목록이 처음과 다를 때(실행부가 «다시 시도» 문구로 바꾼다) */
+const SCOPE_CHANGED = "PAUSE_SETTLEMENT_SCOPE_CHANGED";
+
 /** 현장 결제(POS) 요청에 묶인 청구 — 별칭 p */
 const POS_BUSY_P = `(EXISTS (SELECT 1 FROM "PosChargeRequestItem" pi WHERE pi."paymentId" = p.id AND pi."open")
              OR EXISTS (SELECT 1 FROM "PosChargeRequest" pr WHERE pr."paymentId" = p.id AND pr.status IN ('PENDING','SENT')))`;
@@ -130,6 +133,14 @@ async function loadPausePayments(db: SettlementSql, req: PauseRequestRow, tables
       ORDER BY p.year, p.month, p.id${lock ? " FOR UPDATE OF p" : ""}`,
     ...scopeArgs, ...(lockedIds ? [lockedIds] : []),
   );
+  if (lockedIds) {
+    // 잠금을 다 잡은 뒤 범위 조건으로 다시 읽어 처음 목록과 같은지 본다 — 그 사이 새 청구가 생기거나 빠졌으면
+    // 잠그지 않은 청구를 계산에 넣거나 빼게 되므로 실행하지 않는다(원장이 다시 누르면 새 목록으로 잠근다)
+    const again = (await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT p.id FROM "Payment" p WHERE ${PAUSE_PAYMENT_SCOPE} ORDER BY p.id`, ...scopeArgs,
+    )).map((row) => String(row.id));
+    if (again.length !== lockedIds.length || again.some((id, i) => id !== lockedIds![i])) throw new Error(SCOPE_CHANGED);
+  }
   const ids = rows.map((row) => String(row.id));
   // 학부모 결제 진행 중(30분 안 결제창·기한 남은 입금 계좌) — 관리자 청구서 수정과 같은 판정 함수
   const checkoutActive = await findParentCheckoutActivePaymentIds(db, ids, nowMs);
@@ -248,7 +259,15 @@ export async function executePauseSettlementInTx(tx: SettlementSql, input: {
   if (existing.length > 0) return { ok: false, message: "이미 수강료를 처리한 휴원이에요." };
 
   // 잠근 뒤 DB 로 다시 계산 → 원장이 본 금액과 다르면 실행하지 않는다
-  const payments = await loadPausePayments(tx, req, true, true, input.classDatesFor);
+  let payments: PausePaymentInput[];
+  try {
+    payments = await loadPausePayments(tx, req, true, true, input.classDatesFor);
+  } catch (error) {
+    if (error instanceof Error && error.message === SCOPE_CHANGED) {
+      return { ok: false, message: "처리하는 사이 청구 목록이 바뀌었어요. 새로고침한 뒤 다시 시도해 주세요." };
+    }
+    throw error;
+  }
   const plan = planPauseSettlement({ pauseFrom: req.pauseFrom, resumeOn: req.resumeOn, payments });
   if (!req.dayOfWeek) plan.problems.push("반 요일을 알 수 없어 금액을 계산할 수 없어요.");
   if (previewKeyOf(req.id, plan) !== input.expectedPreviewKey) {
@@ -424,15 +443,37 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
  */
 export async function applyOpenPauseCarries(db: SettlementDb, input: { studentId?: string | null } = {}): Promise<{ applied: number; amount: number }> {
   if (!(await settlementTablesReady(db))) return { applied: 0, amount: 0 };
+  // 승인 직후 = 그 학생 하나
+  if (input.studentId) return applyCarriesForStudent(db, input.studentId);
+  // 매일 크론 = 학생마다 트랜잭션을 나눈다(학생 id 정렬순). 한 학생이 실패해도 다른 학생 차감은 되돌리지 않는다.
+  const students = await db.$queryRawUnsafe<Array<{ studentId: string }>>(
+    `SELECT DISTINCT "studentId" FROM "EnrollmentChangeSettlement" WHERE "carryRemaining" > 0 ORDER BY "studentId" LIMIT 200`,
+  );
+  const sum = { applied: 0, amount: 0 };
+  for (const { studentId } of students) {
+    try {
+      const one = await applyCarriesForStudent(db, String(studentId));
+      sum.applied += one.applied;
+      sum.amount += one.amount;
+    } catch (error) {
+      // 남은 이월은 그대로라 다음 크론에서 다시 시도된다(개인정보 없이 오류 이름만)
+      console.error("[pause-settlement] 학생 이월 차감 실패", error instanceof Error ? error.name : "");
+    }
+  }
+  return sum;
+}
+
+/** 한 학생의 남은 이월을 한 트랜잭션에서 차감한다(전역 잠금 → 처리 행 → 결제 잠금 → 청구 행) */
+async function applyCarriesForStudent(db: SettlementDb, studentId: string): Promise<{ applied: number; amount: number }> {
   return db.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(WORKBENCH_LOCK_SQL);
     const open = await tx.$queryRawUnsafe<Array<{ id: string; studentId: string; requestId: string; carryRemaining: number; carryAfterYm: string | null }>>(
       `SELECT id, "studentId", "requestId", "carryRemaining", "carryAfterYm" FROM "EnrollmentChangeSettlement"
-        WHERE "carryRemaining" > 0 AND ($1::text IS NULL OR "studentId" = $1)
+        WHERE "carryRemaining" > 0 AND "studentId" = $1
         ORDER BY "createdAt", id
         LIMIT 200
         FOR UPDATE`,
-      input.studentId ?? null,
+      studentId,
     );
     let applied = 0;
     let total = 0;

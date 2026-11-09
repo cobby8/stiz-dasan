@@ -44,6 +44,35 @@ export function findMarkedCancel(verified: VerifiedTossForPartial | null | undef
     return null;
 }
 
+/**
+ * 토스 취소 응답 코드가 «확실한 거절»인가 — 4xx 중 409(같은 멱등 키 처리 중 등)·429(요청 과다)는 빼고.
+ * 5xx·409·429·응답 없음(null)은 «결과 모름»이다: 줄을 REQUESTED 로 두고 같은 멱등 키로 확인만 한다(시도 번호를 올리지 않는다).
+ */
+export function isDefiniteTossRejection(httpStatus: number | null | undefined): boolean {
+    if (typeof httpStatus !== "number") return false;
+    return httpStatus >= 400 && httpStatus <= 499 && httpStatus !== 409 && httpStatus !== 429;
+}
+
+export type PartialCancelOutcome = "DONE" | "WRONG_AMOUNT" | "FAILED" | "UNCERTAIN";
+
+/**
+ * 취소 요청 뒤 판정. verified = 다시 조회한 결제(못 읽었으면 null), httpStatus = 취소 API 응답 코드(응답 없음 = null).
+ * - 우리 표식 취소가 정확한 금액으로 있음 → DONE · 다른 금액 → WRONG_AMOUNT
+ * - 재조회 성공 + 표식 취소 없음 + 확실한 거절 응답 → FAILED(다음 시도는 새 키)
+ * - 그 밖(재조회 실패·결과 모름 응답) → UNCERTAIN
+ */
+export function judgePartialCancelOutcome(input: {
+    verified: VerifiedTossForPartial | null;
+    marker: string;
+    amount: number;
+    httpStatus: number | null;
+}): PartialCancelOutcome {
+    if (!input.verified) return "UNCERTAIN";
+    const done = findMarkedCancel(input.verified, input.marker);
+    if (done) return done.amount === input.amount ? "DONE" : "WRONG_AMOUNT";
+    return isDefiniteTossRejection(input.httpStatus) ? "FAILED" : "UNCERTAIN";
+}
+
 /** 모든 휴원 환불 표식(STIZ-PR:) 접두사 */
 export const PARTIAL_CANCEL_MARKER_PREFIX = "STIZ-PR:";
 
