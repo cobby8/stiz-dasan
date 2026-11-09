@@ -100,11 +100,14 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
 
 test("업무 스포츠 테마는 네 역할 공통 경계와 성공·경고·실패 상태색 및 조작 크기를 보존한다", () => {
   const css = readFileSync("src/app/academy-theme.css", "utf8");
-  assert.match(css, /--color-academy-primary: #b94118/);
-  assert.match(css, /--color-academy-ink: #15181c/);
-  assert.match(css, /--color-academy-success: #3f6754/);
-  assert.match(css, /--color-academy-warning: #80581d/);
-  assert.match(css, /--color-academy-danger: #a44052/);
+  // 2026-11-09 원장 결정 색상 정리: 주 버튼 검정 · 상태 다섯 갈래(정상·주의·위험·정보·중립)
+  assert.match(css, /--color-academy-primary: #15181c/);
+  assert.match(css, /--color-academy-ink: #111827/);
+  assert.match(css, /--color-academy-success: #15803d/);
+  assert.match(css, /--color-academy-warning: #b45309/);
+  assert.match(css, /--color-academy-danger: #b91c1c/);
+  assert.match(css, /--color-academy-info: #1d4ed8/);
+  assert.match(css, /--color-academy-neutral: #4b5563/);
   assert.match(css, /min-height: 44px/);
   assert.doesNotMatch(css, /#7444a3|#f7f4fb/);
 });
