@@ -205,3 +205,9 @@
 - **발견자**: developer
 - **내용**: 반경(300m) 안 기존 정류장 추천은 `src/lib/shuttle/stopNameMatch.ts` 의 `pickNearbyStop` 하나로 정한다 — ① 장소명에 출입구 단어(정문·후문·맘스테이션…)가 있으면 같은 단지(앞부분 이름 유사)+같은 출입구 정류장을 거리 무관 1순위 ② 아니면 가장 가까운 곳. 쓰는 곳: `regularRosterPlacementLogic.suggestPlacement` ②(관리자 학생 추가) · `driverAssignLogic.planLeg`(기사님 새 학생 배정 + 관리자 정규 배차 신규 배차 칸, 다른 요일 정류장 포함). 정확히 같은 이름 합류(①)는 기존 normalizeStopName 그대로 먼저. 셔틀 신청 검토(shuttle-review)는 정류장 추천이 없다.
 - **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 명단 편집 → 기사님 알림 · 반 이동 재배정 · 위치 반영 (통합 2단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 명단 쓰기 함수(`regularRosterEdit.ts` add/remove/move/editStop/reorder/editStudentRoster)는 트랜잭션 안에서 `notices` 에 담고 **커밋 뒤** `flushNotices` → `regularRosterNotify.notifyDriversOfRosterChange`(DRIVER 역할 전원·바꾼 본인 제외, `deliverOperationalNotification` 인앱+푸시, 실패는 삼킴). 문구·링크(`/staff/run?date=<그 달 다음 운행일>&focus=BOARD|ALIGHT`)·10분 묶음 키는 순수 `regularRosterNotifyLogic`. 옛 `notifyOperationalStaff includeDriver` 는 저장 노선에서 기사를 찾아 쓰지 않는다. 반 이동 판정은 순수 `regularReassignLogic.planStudentReassign`(옛 칸+새 칸 둘 다 있을 때만) → 보드 `driverAssignLogic.buildAssignBoard`(명단 학생 hasApplication=false 도 재배정만) → 저장 `reassign:true` → `addRosterStudentAs({replaceRowIds})` 한 트랜잭션(옛 행은 서버가 다시 계산). 학생 상세 위치 저장(`service.updateStudentShuttleLocation`)은 장소명 필수 + 같은 tx 에서 `applyLocationToRosterInTx`(이번 달부터, 300m 이름 일치 정류장 합류·아니면 새 위치, 행 id 유지 UPDATE).
+- **참조횟수**: 0

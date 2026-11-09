@@ -64,6 +64,14 @@ function fixture() {
         // 실제 SQL 의 조건(APPROVED + shuttleNeeded + 학생 지정)을 그대로 흉내 낸다 — 아래 테스트가 SQL 에 그 조건이 있는지도 본다.
         return state.apps.filter((a) => a.status === "APPROVED" && a.shuttleNeeded && (args[1] == null || a.studentId === args[1]));
       }
+      // 보드 확장(2026-11-09): 그 달 명단에 행이 있는 학생(신청서 없음 포함) — 명단 행의 학생 id 로 흉내 낸다.
+      if (sql.includes(`FROM "RegularShuttleStop" r WHERE r."serviceMonth"=$1`)) {
+        const ids = [...new Set(state.stops.filter((s) => s.serviceMonth === args[0] && s.studentId).map((s) => s.studentId))];
+        return ids.filter((id) => args[1] == null || id === args[1]).map((id) => {
+          const s = state.stops.find((x) => x.studentId === id);
+          return { studentId: id, name: s.studentName, grade: null, parentPhone: s.parentPhone };
+        });
+      }
       if (sql.includes(`FROM "Enrollment" e`)) return state.classes.filter((c) => args[0].includes(c.studentId));
       if (sql.includes(`FROM "StudentShuttleLocation"`)) return state.places.filter((p) => args[0].includes(p.studentId));
       if (sql.includes(`DISTINCT "serviceMonth"`)) return [{ m: "2026-12" }];
@@ -84,7 +92,7 @@ function fixture() {
       async addRosterStudentAs(actorId, input, opts) {
         // 실제 함수처럼 잠금 안 마지막 확인(guard)을 그 달 행으로 부른다.
         opts.guard?.(state.stops.filter((s) => s.serviceMonth === input.serviceMonth));
-        state.adds.push({ actorId, input, via: opts.via });
+        state.adds.push({ actorId, input, via: opts.via, replaceRowIds: opts.replaceRowIds });
         return { added: 1, appliedMonths: ["2026-11", "2026-12"], skippedMonths: [] };
       },
     },
@@ -136,7 +144,8 @@ test("저장 재검사: 권한 없음 403 · 남의 학생 404 · 셔틀 미신�
   assert.match(appSql, /a\."status"='APPROVED' AND a\."shuttleNeeded"=true/);
   assert.match(appSql, /mergedIntoStudentId" IS NULL/);
   const classSql = state.sql.find((s) => s.includes(`FROM "Enrollment" e`));
-  assert.match(classSql, /e\."status"='ACTIVE'/);
+  // 휴원도 읽는다(재배정 판정용, 2026-11-09) — 칸 만들기·저장 재검사는 다니는 수업만(순수 로직이 거른다).
+  assert.match(classSql, /e\."status" IN \('ACTIVE','PAUSED'\)/);
   assert.match(classSql, /e\."startsOn" IS NULL OR to_char\(e\."startsOn",'YYYY-MM'\) <= \$2/);
 });
 
@@ -225,4 +234,68 @@ test("셔틀 미운행 반(토요일 주말경기반·성인반)은 남은 칸�
   state.classes = state.classes.filter((c) => c.dayOfWeek === "Sat");
   const onlySat = await mod.getDriverAssignBoard({ appUserId: "driver" }, "2026-11");
   assert.equal(onlySat.students.length, 0);
+});
+
+// 2026-11-09 원장 결정 D4: 반 이동(옛 요일 칸이 사라지고 새 요일 칸이 생김) → 신규 배차 보드에 «재배정».
+test("반 이동 재배정: 신청서 없는 명단 학생도 보드에 뜨고, 넣기는 새 칸 + 옛 칸 삭제(replaceRowIds, 서버 계산) · 신규 경로로는 거절", async () => {
+  const { state, mod } = fixture();
+  // 명단에서 월 A 정류장으로 타던 a1(신청서 없음)이 수요일 반으로 옮김.
+  state.classes.push({ studentId: "a1", dayOfWeek: "Wed", startTime: "17:00", endTime: "17:55", className: "수반", programName: "정규", runsShuttle: true });
+  const board = JSON.parse(JSON.stringify(await mod.getDriverAssignBoard({ appUserId: "driver" }, "2026-11")));
+  assert.deepEqual(board.students.map((s) => s.studentId), ["new1", "a1"]); // 신청서 학생 먼저
+  const a1 = board.students[1];
+  assert.deepEqual(a1.legs.map((l) => l.label), ["수 등원"]);
+  assert.equal(a1.legs[0].reassign.label, "월→수 등원 (반 이동)");
+  assert.doesNotMatch(JSON.stringify(board), /010-/); // 전화는 내려가지 않는다
+  const leg = a1.legs[0];
+  const body = { month: "2026-11", studentId: "a1", weekday: 3, direction: "BOARD", choice: leg.defaultChoice, routeVersion: leg.routeVersion, includeNextMonth: true };
+
+  // 신규 경로(reassign 없음)로는 신청서 없는 학생을 넣지 못한다.
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, body)), "404:NOT_ELIGIBLE");
+  // 화면이 지울 행을 보내도 쓰지 않는다 — 서버가 다시 계산한 옛 칸(r1)만 지운다.
+  const out = await mod.assignDriverCell({ appUserId: "driver" }, { ...body, reassign: true, replaceRowIds: ["r2"] });
+  assert.equal(out.replaced, 1);
+  assert.equal(state.adds.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.adds[0].replaceRowIds)), ["r1"]);
+  assert.equal(state.adds[0].via, "DRIVER_ASSIGN_REASSIGN");
+  assert.deepEqual(JSON.parse(JSON.stringify(state.adds[0].input.slots)), [{ weekday: 3, classTime: "17:00~18:00" }]);
+  assert.equal(state.adds[0].input.board.stopName, "A"); // 옛 칸 정류장이 기본값
+  // 재배정 칸이 아닌 요일·방향은 409
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, { ...body, reassign: true, direction: "ALIGHT" })), "409:NOT_REASSIGN");
+});
+
+test("명단 쓰기: 재배정은 같은 트랜잭션에서 옛 칸 삭제(이 달 + 이후 달 대응 행) · 명단 변경은 커밋 뒤 기사님 알림", () => {
+  const edit = read("src/lib/shuttle/regularRosterEdit.ts");
+  assert.match(edit, /const replaced = replaceIds\.length > 0 \? await deleteRowsExact\(tx, input\.serviceMonth, replaceIds\) : \[\];/);
+  assert.match(edit, /findCounterpartRows\(identityOf\(d\), laterRows\)/);
+  // 알림은 트랜잭션 밖(커밋 뒤) — 함수마다 flushNotices
+  for (const fn of ["addRosterStudentAs", "removeRosterRows", "moveRosterRows", "editRosterStop", "editStudentRoster", "reorderRosterStops"]) {
+    const body = edit.slice(edit.indexOf(`export async function ${fn}(`));
+    const end = body.indexOf("\nexport ", 10);
+    assert.match(end > 0 ? body.slice(0, end) : body, /\}\);\s*await flushNotices\(notices\);\s*return result;/, `${fn} 알림 누락`);
+  }
+  const notify = read("src/lib/shuttle/regularRosterNotify.ts");
+  assert.match(notify, /deliverOperationalNotification\(/);
+  assert.match(notify, /u\."withdrawnAt" IS NULL/);
+  assert.match(notify, /g\.role='DRIVER' AND g\.status='ACTIVE'/);
+  assert.match(notify, /u\.id <> \$1/); // 바꾼 기사님 본인에게는 보내지 않는다
+  assert.doesNotMatch(notify, /toISOString\(\)\.slice\(0, ?10\)|getDay\(\)|getHours\(\)/);
+});
+
+test("학생 상세 위치 저장: 장소명 필수(도로명 대체 없음) · 명단 반영은 같은 트랜잭션 · 알림은 커밋 뒤", () => {
+  const service = read("src/lib/shuttle/service.ts");
+  const fn = service.slice(service.indexOf("export async function updateStudentShuttleLocation"), service.indexOf("export async function assignPassenger"));
+  assert.match(fn, /if \(!hasShuttlePlaceName\(rawName\)\)/);
+  assert.match(fn, /SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE, 400, "PLACE_NAME_REQUIRED"/);
+  assert.doesNotMatch(fn, /\?\? roadAddress \?\? address;/); // 예전 대체 규칙 제거
+  // 위치 저장(INSERT … ON CONFLICT)과 명단 반영이 한 $transaction 안, 알림은 그 밖
+  const tx = fn.slice(fn.indexOf("prisma.$transaction"), fn.indexOf("Serializable"));
+  assert.match(tx, /INSERT INTO "StudentShuttleLocation"[\s\S]*applyLocationToRosterInTx\(tx, actor\.appUserId,/);
+  assert.match(fn, /Serializable \}\);\s*\/\/[^\n]*\n\s*await flushRosterNotices\(saved\.roster\.notices\);/);
+  // 명단 반영은 행 id 유지 UPDATE(지우고 다시 넣지 않음), 이번 달부터
+  const edit = read("src/lib/shuttle/regularRosterEdit.ts");
+  const apply = edit.slice(edit.indexOf("export async function applyLocationToRosterInTx"), edit.indexOf("export async function flushRosterNotices"));
+  assert.match(apply, /UPDATE "RegularShuttleStop" SET "stopName"=\$1,"latitude"=\$2,"longitude"=\$3/);
+  assert.doesNotMatch(apply, /DELETE FROM|INSERT INTO "RegularShuttleStop"/);
+  assert.match(apply, /lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\)/);
 });

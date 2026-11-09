@@ -46,10 +46,11 @@ test("월 복사는 저장 노선도 대상 달에 없을 때만 복사하고 �
 
 test("편집 5종은 적용 범위(기본 이후 달까지)를 받고 결과에 반영 달을 돌려준다", () => {
   // 2026-10-02: 기사님 화면 순서·시각 편집(reorderRosterStops) 추가로 4종 → 5종.
-  for (const fn of ["addRosterStudent", "removeRosterRows", "moveRosterRows", "editRosterStop", "reorderRosterStops"]) {
+  // 2026-11-09: 학생 셔틀 정보 창(editStudentRoster) 추가로 5종 → 6종.
+  for (const fn of ["addRosterStudent", "removeRosterRows", "moveRosterRows", "editRosterStop", "reorderRosterStops", "editStudentRoster"]) {
     assert.match(lib, new RegExp(`export async function ${fn}\\(raw: unknown\\): Promise<\\{ \\w+: number \\} & RosterScopeResult>`));
   }
-  assert.equal((lib.match(/await lockForEdit\(tx, input\.serviceMonth, input\.scope\)/g) ?? []).length, 5);
+  assert.equal((lib.match(/await lockForEdit\(tx, input\.serviceMonth, input\.scope\)/g) ?? []).length, 6);
   // 화면: 모달마다 범위 선택, 기본값 FROM_THIS_MONTH, 결과 문구에 반영 달
   assert.match(client, /이 달부터 계속 적용\(기본\)/);
   assert.match(client, /"이 달만"|label: "이 달만"/);

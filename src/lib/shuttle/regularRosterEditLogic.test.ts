@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { buildAddRows, buildCounterpartReorderUpdates, buildMoveUpdates, buildReorderUpdates, reassignSortSlots, validateReorderInput, catchUpDateRange, findCounterpartRows, idPairArrays, formatRosterMonths, groupRosterDay, isSameRosterStudent, nextServiceMonth, normalizeRosterScope, planEnsureMonths, remapStopRowIds, rosterStudentKeyResolver, nextSortOrder, normalizeArriveTime, normalizeClassTime, normalizeCoords, rosterRowIdsForStudent, RosterInputError, validateAddInput, validateCopyInput, validateMoveInput, validateRemoveInput, validateStopEditInput, type RosterExistingRow } from "./regularRosterEditLogic.ts";
+import { buildAddRows, buildCounterpartReorderUpdates, buildMoveUpdates, buildReorderUpdates, reassignSortSlots, validateReorderInput, catchUpDateRange, findCounterpartRows, idPairArrays, formatRosterMonths, groupRosterDay, isSameRosterStudent, nextServiceMonth, normalizeRosterScope, planEnsureMonths, remapStopRowIds, rosterStudentKeyResolver, nextSortOrder, normalizeArriveTime, normalizeClassTime, normalizeCoords, rosterRowIdsForStudent, RosterInputError, validateAddInput, validateCopyInput, validateMoveInput, validateRemoveInput, validateStopEditInput, validateStudentRosterEditInput, pickStudentRows, type RosterExistingRow } from "./regularRosterEditLogic.ts";
 
 // 기존 행 한 줄
 function row(over: Partial<RosterExistingRow> = {}): RosterExistingRow {
@@ -334,4 +334,31 @@ test("이후 달 순서 반영: 대응 행끼리만 같은 순서·시각, 그 �
     { id: "L1", sortOrder: 11, arriveTime: "16:40" },
   ]);
   assert.deepEqual(buildCounterpartReorderUpdates(source, [later[2]]), []); // 대응 행이 없으면 건너뜀
+});
+
+// ── 학생 셔틀 정보 수정(editStudentRoster, 2026-11-09) ──────────────────
+
+test("학생 칸 수정 입력: 칸마다 정류장 이름 필수·시각 HH:MM·좌표 쌍, 같은 칸 두 번·빈 목록 거부, 범위 기본 이번 달부터", () => {
+  const ok = validateStudentRosterEditInput({ serviceMonth: "2026-11", studentId: "s1", changes: [{ rowId: "r1", ...stop, arriveTime: "9:05" }] });
+  assert.deepEqual(ok, { serviceMonth: "2026-11", scope: "FROM_THIS_MONTH", studentId: "s1", changes: [{ rowId: "r1", stopName: "다산자이 정문", arriveTime: "09:05", latitude: 37.6, longitude: 127.15 }] });
+  assert.equal(validateStudentRosterEditInput({ serviceMonth: "2026-11", scope: "THIS_MONTH", changes: [{ rowId: "r1", stopName: "A" }] }).scope, "THIS_MONTH");
+  assert.throws(() => validateStudentRosterEditInput({ serviceMonth: "2026-11", changes: [] }), RosterInputError);
+  assert.throws(() => validateStudentRosterEditInput({ serviceMonth: "2026-11", changes: [{ rowId: "r1", stopName: "" }] }), /정류장 이름/);
+  assert.throws(() => validateStudentRosterEditInput({ serviceMonth: "2026-11", changes: [{ rowId: "r1", stopName: "A" }, { rowId: "r1", stopName: "B" }] }), /두 번/);
+  assert.throws(() => validateStudentRosterEditInput({ serviceMonth: "2026-11", changes: [{ rowId: "r1", stopName: "A", latitude: 37.6 }] }), /좌표/);
+});
+
+test("학생 칸 수정 대상: 한 학생의 등·하원 행만 — 남의 행·운영 정차·없는 행·다른 studentId 거부", () => {
+  const rows = [
+    row({ id: "a", studentId: "s1" }),
+    row({ id: "b", studentId: null, studentName: "김민준", direction: "ALIGHT", parentPhone: "010-1111-2222" }),
+    row({ id: "c", studentId: "s1", parentPhone: "010-1111-2222", weekday: 3 }),
+    row({ id: "x", studentId: "s2", studentName: "남" }),
+    row({ id: "p", studentId: null, studentName: null, direction: "PIVOT" }),
+  ];
+  assert.deepEqual(pickStudentRows(rows, ["a", "b", "c"], "s1").map((r) => r.id), ["a", "b", "c"]); // id 없는 행도 이름+전화로 같은 학생
+  assert.throws(() => pickStudentRows(rows, ["a", "x"], null), /한 학생/);
+  assert.throws(() => pickStudentRows(rows, ["p"], null), /찾지 못했습니다/);
+  assert.throws(() => pickStudentRows(rows, ["zz"], null), /찾지 못했습니다/);
+  assert.throws(() => pickStudentRows(rows, ["x"], "s1"), /다른 학생/);
 });

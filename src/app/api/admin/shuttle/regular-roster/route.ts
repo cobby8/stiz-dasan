@@ -4,6 +4,7 @@ import {
   addRosterStudent,
   copyRosterMonth,
   editRosterStop,
+  editStudentRoster,
   getRegularRouteStatus,
   getRosterEnrollmentCheck,
   getRosterStudentContext,
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic";
 //   GET    ?context=1&studentId=          → 학생 추가: 등록 수업·상세 위치·학원/차고지 좌표(조회 전용)
 //   GET    ?enrollmentCheck=1&month=      → 수강 점검 자료(휴원·퇴원·반 변경 뒤 남은 학생 판정용, 조회 전용)
 //   POST   { action: "add" | "copyMonth" | "monthReviewed" } → 학생 추가 / 다음 달 명단 만들기 / 월 넘김 점검 확인 기록
-//   PATCH  { action: "move" | "editStop" | "reorder" } → 반이동 / 정류장 수정 / 기사님 화면 순서·시각
+//   PATCH  { action: "move" | "editStop" | "reorder" | "editStudent" } → 반이동 / 정류장 수정 / 기사님 화면 순서·시각 / 학생 칸별 정류장·시각(학생 셔틀 정보 창)
 //   DELETE { serviceMonth, ids }          → 빼기
 
 function fail(e: unknown, tag: string) {
@@ -82,6 +83,8 @@ export async function PATCH(request: Request) {
     if (b.action === "move") return NextResponse.json({ ok: true, ...(await moveRosterRows(b)) });
     if (b.action === "editStop") return NextResponse.json({ ok: true, ...(await editRosterStop(b)) });
     if (b.action === "reorder") return NextResponse.json({ ok: true, ...(await reorderRosterStops(b)) });
+    // 학생 이름을 눌러 여는 «학생 셔틀 정보» 창 — 요일×등/하원 칸의 정류장·시각을 한 번에(적용 범위 포함).
+    if (b.action === "editStudent") return NextResponse.json({ ok: true, ...(await editStudentRoster(b)) });
     throw new RosterInputError("알 수 없는 요청입니다.");
   } catch (e) { return fail(e, "PATCH"); }
 }
