@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { getStudentReports, getMyPageData, getNoticesByClassIds, getChildrenFeedbacks, getGalleryByClassIds } from "@/lib/queries";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import Link from "next/link";
-import { kstLabel, formatKstDate } from "@/lib/datetime/kst";
+import { kstLabel, formatKstDate, todayKst } from "@/lib/datetime/kst";
+// 공지 3개월 기준 — 일정 탭과 같은 순수 함수 모듈(KST 달력 날짜로 비교)
+import { recentNotices } from "@/lib/mypage/parentSchedule";
 // 설치된 학부모 앱은 /mypage 밖으로 나가면 돌아올 길이 없다 — 공개 홈페이지 길잡이는 감추고(HideInInstalledApp),
 // 사진처럼 링크가 곧 내용인 자리는 이동만 막는다(AppSafeLink).
 import HideInInstalledApp from "@/components/pwa/HideInInstalledApp";
@@ -70,11 +72,14 @@ export default async function ParentReportsPage() {
         c.enrollments.map((e: { classId: string | null }) => e.classId).filter((v): v is string => typeof v === "string" && v.length > 0),
     );
     const studentIds = childList.map((c) => c.id);
-    const [notices, feedbacks, gallery] = await Promise.all([
+    const [allNotices, feedbacks, gallery] = await Promise.all([
         getNoticesByClassIds(classIds, 10),
         getChildrenFeedbacks(studentIds),
         getGalleryByClassIds(classIds, 12),
     ]);
+    // 공지(2026-11-09 원장 지시): 3개월 넘은 공지는 숨기고, 처음엔 3개만 — 나머지는 «더보기»로 펼친다
+    const notices = recentNotices(allNotices, todayKst());
+    const NOTICE_FIRST = 3;
     // 사진 묶음마다 첫 장만 타일로(홈에서 쓰던 방식 그대로)
     const photos = gallery.flatMap((g: { id: string; title: string | null; mediaJSON: string }) => {
         let media: { url: string; type: string }[] = [];
@@ -83,22 +88,40 @@ export default async function ParentReportsPage() {
     });
 
     // 맨 위 칩 = 같은 화면 안의 칸으로 이동(접힌 칸 없음). 건수가 0 인 칸은 칩도 칸도 숨긴다.
+    // 칩 이름은 짧게 — 좁은 휴대폰(360px)에서도 칩 4개가 한 줄에 들어가게(칸 제목은 그대로)
     const sections = [
         { id: "news-notices", label: "공지", count: notices.length },
-        { id: "news-reports", label: "수업 리포트", count: reports.length },
-        { id: "news-feedback", label: "학습 피드백", count: feedbacks.length },
-        { id: "news-photos", label: "수업 사진", count: photos.length },
+        { id: "news-reports", label: "리포트", count: reports.length },
+        { id: "news-feedback", label: "피드백", count: feedbacks.length },
+        { id: "news-photos", label: "사진", count: photos.length },
     ].filter((s) => s.count > 0 || s.id === "news-reports");
+
+    // 공지 한 줄 행 — 처음 3개와 «더보기» 안의 나머지가 같은 모양
+    const noticeRow = (n: (typeof notices)[number]) => (
+        <li key={n.id}>
+            <Link href={`/mypage/news/${n.id}`} className="flex min-h-14 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)] dark:hover:bg-gray-700/40">
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                        <p className="min-w-0 flex-1 break-keep text-sm font-bold text-gray-900 dark:text-white">
+                            {n.isPinned && <span className="mr-1 text-[var(--color-academy-danger)]">중요</span>}
+                            {n.title}
+                        </p>
+                        <span className="shrink-0 text-right text-sm tabular-nums text-gray-700 dark:text-gray-200">{formatKstDate(n.createdAt, { month: "numeric", day: "numeric" })}</span>
+                    </div>
+                </div>
+                <span className="material-symbols-outlined shrink-0 text-gray-300" aria-hidden="true">chevron_right</span>
+            </Link>
+        </li>
+    );
 
     return (
         <div className="space-y-4">
             <div>
                 <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">소식</h1>
-                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">학원 공지와 코치가 남긴 수업 리포트·피드백·사진을 확인하세요.</p>
-                <nav aria-label="소식 종류" className="mt-3 flex flex-wrap gap-2">
+                <nav aria-label="소식 종류" className="mt-2 flex flex-wrap gap-1.5">
                     {sections.map((s) => (
                         <a key={s.id} href={`#${s.id}`}
-                            className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]">
+                            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2.5 text-sm font-bold text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]">
                             {s.label}<span className="tabular-nums text-[var(--color-academy-muted)]">{s.count}</span>
                         </a>
                     ))}
@@ -115,23 +138,20 @@ export default async function ParentReportsPage() {
                         </HideInInstalledApp>
                     </h2>
                     <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700">
-                        {notices.map((n) => (
-                            <li key={n.id}>
-                                <Link href={`/mypage/news/${n.id}`} className="flex min-h-14 items-center gap-2 px-3 py-2 hover:bg-[var(--color-academy-soft)] dark:hover:bg-gray-700/40">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-start gap-2">
-                                            <p className="min-w-0 flex-1 break-keep text-sm font-bold text-gray-900 dark:text-white">
-                                                {n.isPinned && <span className="mr-1 text-[var(--color-academy-danger)]">중요</span>}
-                                                {n.title}
-                                            </p>
-                                            <span className="shrink-0 text-right text-sm tabular-nums text-gray-700 dark:text-gray-200">{formatKstDate(n.createdAt, { month: "numeric", day: "numeric" })}</span>
-                                        </div>
-                                    </div>
-                                    <span className="material-symbols-outlined shrink-0 text-gray-300" aria-hidden="true">chevron_right</span>
-                                </Link>
-                            </li>
-                        ))}
+                        {notices.slice(0, NOTICE_FIRST).map((n) => noticeRow(n))}
                     </ul>
+                    {/* 나머지 공지 — «더보기»를 누르면 같은 자리에서 펼친다(서버 화면이라 details 사용) */}
+                    {notices.length > NOTICE_FIRST && (
+                        <details className="group border-t border-[var(--color-academy-line)] dark:border-gray-700">
+                            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 text-sm font-bold text-[var(--color-academy-primary)] group-open:hidden">
+                                더보기 <span className="tabular-nums">{notices.length - NOTICE_FIRST}</span>
+                                <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">expand_more</span>
+                            </summary>
+                            <ul className="divide-y divide-[var(--color-academy-line)] dark:divide-gray-700">
+                                {notices.slice(NOTICE_FIRST).map((n) => noticeRow(n))}
+                            </ul>
+                        </details>
+                    )}
                 </section>
             )}
 

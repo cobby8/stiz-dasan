@@ -117,10 +117,25 @@
 💡 tester: 390px 에서 /mypage/payments/checkout(형제 2명·랠리즈 1건·입금 대기 1건), 상한 초과, ?result=fail, /mypage/payments/done?orderId= 새로고침. 실결제 금지 — 토스 테스트 키로만.
 ⚠️ reviewer: 브라우저 스크립트(test-parent-workspace-browser.mjs)는 실행 못 함(playwright·크롬 필요). 관리자 공지 편집이 선생님 JSON 공지를 쉼표로 다시 저장할 수 있음(표시는 정상).
 
+## 구현 기록 (developer) — 일정 탭 달력·소식 공지 3개월·홈 문구/줄바꿈 (11-09 원장 지시)
+| 파일 | 변경 | 신규/수정 |
+|---|---|---|
+| src/lib/mypage/parentSchedule.ts | 순수: 한 달 달력(일요일 시작)·수업일(앞·이번·다음 수강월→이 달만, 개시일 전 제외)·휴무/행사(주차 표시 제외·중복 제거)·출결 KST·?month 파싱·3개월 공지 필터 | 신규 |
+| src/app/mypage/history/page.tsx · ScheduleHub.tsx | 일정 탭 = 제목+‹달›·자녀 칩(주소 ?child·?month)·달력+범례·행사·휴무 행·수강 반·셔틀 배정. 수납·신청 줄 제거. 연간일정 = loadAnnualPlanEvents+getMonthlyClassDates(/annual·청구와 같은 함수) | 수정 |
+| src/app/mypage/history/HistoryClient.tsx | 삭제(수납 탭은 청구 탭과 중복, 출결은 달력으로) | 삭제 |
+| src/app/mypage/ParentMoreMenu.tsx | «⋯»에 «수강 변경 신청» 추가(홈에 없던 유일한 신청) | 수정 |
+| src/app/mypage/reports/page.tsx | 공지 3개월 이내·3개 + «더보기»(details), 칩 이름 짧게·설명 문구 삭제 | 수정 |
+| src/app/mypage/MyPageClient.tsx | 다음 수업/오늘 셔틀 줄 한 줄 고정(반 이름·하원은 아래 줄), 방학특강 줄 «방학특강 결석·보강», 메시지 폼 안내 1문장(«셔틀 자동 제외» 약속 삭제), 군더더기 설명 삭제 | 수정 |
+| tests: list-stage8b·parent-app-structure·parent-child-links-ui·scheduled-enrollment-ui·ui-copy-cleanup·no-dev-jargon-parent | 새 화면 기준으로 갱신(공지 테스트는 오늘 고정) | 수정 |
+
+💡 tester: 360·390px 에서 /mypage/history(이번 달·‹›·?month=2026-13 → 이번 달·자녀 2명 칩), 휴무일 «휴»·출석/결석 점, 연간일정에 그 달 개강/주차가 없으면 «확정 후 보여요» 한 줄. /mypage/reports 공지 4개 이상이면 «더보기». 홈 «⋯» → 수강 변경 신청.
+⚠️ reviewer: 수업일 계산은 기존 getMonthlyClassDates(휴무일은 UTC 날짜 집합 — 기존 /annual 과 같은 동작) 그대로. getMyPageHistory 는 수납도 읽지만 화면에서 안 씀(공용 쿼리 무수정). 홈 «납부할 청구 · 합계» 줄은 결제 작업 중이라 손대지 않음.
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(일정 탭 개편·소식 공지·홈 문구, 원장 지시): 일정 = 한 달 달력(연간일정 행사·휴무 + 우리 아이 수업일 + 출결)·수강 반·셔틀 배정, 수납 기록·신청 줄 제거(수강 변경 신청 → «⋯» 메뉴), HistoryClient 삭제. 소식 공지 3개월·3개+더보기. 홈 줄바꿈 2줄·문구 정리. tsc 0·tests 3612-0·studentVisibility 5-0·KST 가드 통과 | 완료(커밋, 미푸시) |
 | 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
 | 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
 | 11-09 | developer 수정 1차(갈래 C 리뷰 권장 6건): 선생님 공지 재발송 확인 대상 반 두 모양(IN $3,$4)·결제창 전 금액 재확인(다르면 안내+새로고침)·상한이면 입금 알림도 막음·면세 문구·말투 «~요»·확인 창 닫기·bfcache 복귀 로딩 해제·홈 버튼 이름=결제 가능 건수·개시일 «12월 5일부터»·토스 실패 코드별 문구(tossFailMessage). tests 3610-0 | 완료(검수 대기) |

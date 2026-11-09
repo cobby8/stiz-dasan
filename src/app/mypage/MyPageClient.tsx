@@ -285,6 +285,10 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
     const nextClass = computeNextClass(child.enrollments, kstNow, todayStr);
     const todayShuttles = filterTodayShuttle(childShuttleOverview, todayStr);
     const hasSummary = Boolean(nextClass) || todayShuttles.length > 0;
+    // 오늘 셔틀 줄의 «등원 08:40»·«하원 17:30» — 확정 시각이 있는 것만
+    const todayPickup = todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean);
+    const todayDropoff = todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean);
+    const todayShuttleLines = [todayPickup ? `등원 ${todayPickup}` : null, todayDropoff ? `하원 ${todayDropoff}` : null].filter((v): v is string => Boolean(v));
     // 다음 수업·오늘 셔틀을 누르면 «일정» 탭의 그 칸으로(홈 아래 접힌 칸으로 뛰지 않는다)
     const scheduleHref = `/mypage/history?child=${encodeURIComponent(child.id)}`;
 
@@ -396,15 +400,17 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                         {nextClass && (
                             <Link
                                 href={`${scheduleHref}#mypage-enrollments`}
-                                className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-2 text-left transition hover:bg-[var(--color-academy-soft)]"
+                                // 좁은 휴대폰(360px)에서 «요일 시간 · 반 이름»이 줄을 넘던 문제 — 라벨·시간은 한 줄 고정,
+                                // 반 이름은 시간 아래 작은 글씨로 내린다(말줄임 없음)
+                                className="flex w-full items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                             >
-                                <span className="flex items-center gap-2.5">
+                                <span className="flex shrink-0 items-center gap-2">
                                     <SymbolIcon name="event" size={18} className="text-brand-navy-900 dark:text-gray-200" />
-                                    <span className="text-sm font-medium text-gray-500 dark:text-gray-400">다음 수업</span>
+                                    <span className="whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">다음 수업</span>
                                 </span>
-                                <span className="min-w-0 text-right text-sm font-bold text-gray-900 dark:text-white">
-                                    {nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}
-                                    <span className="ml-1 break-words font-normal text-gray-500 dark:text-gray-400">· {nextClass.className}</span>
+                                <span className="min-w-0 text-right">
+                                    <span className="block whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">{nextClassWhenLabel(nextClass, kstNow)} {nextClass.startTime}</span>
+                                    <span className="block break-keep text-xs text-gray-500 dark:text-gray-400">{nextClass.className}</span>
                                 </span>
                             </Link>
                         )}
@@ -414,22 +420,17 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                             <div className="flex items-stretch gap-1.5">
                                 <Link
                                     href={`${scheduleHref}#mypage-shuttle`}
-                                    className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-2 text-left transition hover:bg-[var(--color-academy-soft)]"
+                                    className="flex min-w-0 flex-1 items-center justify-between gap-2 min-h-11 rounded-xl bg-[var(--color-academy-surface)] px-3 py-1.5 text-left transition hover:bg-[var(--color-academy-soft)]"
                                 >
-                                    <span className="flex items-center gap-2.5">
+                                    <span className="flex shrink-0 items-center gap-2">
                                         <SymbolIcon name="airport_shuttle" size={18} className="text-blue-600 dark:text-blue-300" />
-                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">오늘 셔틀</span>
+                                        <span className="whitespace-nowrap text-sm font-medium text-gray-500 dark:text-gray-400">오늘 셔틀</span>
                                     </span>
-                                    <span className="text-right text-sm font-bold text-gray-900 dark:text-white">
-                                        {/* 확정 승·하차 시각이 있으면 요약, 없으면 방향/상태만 */}
-                                        {[
-                                            todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean)
-                                                ? `등원 ${todayShuttles.map((s) => s.pickupEtaLabel).find(Boolean)}`
-                                                : null,
-                                            todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean)
-                                                ? `하원 ${todayShuttles.map((s) => s.dropoffEtaLabel).find(Boolean)}`
-                                                : null,
-                                        ].filter(Boolean).join(" · ") || `운행 ${todayShuttles.length}건`}
+                                    <span className="text-right text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+                                        {/* 확정 승·하차 시각이 있으면 한 줄씩(한 줄에 둘이면 좁은 폭에서 전화 버튼 옆으로 넘친다), 없으면 운행 건수 */}
+                                        {todayShuttleLines.length === 0
+                                            ? `운행 ${todayShuttles.length}건`
+                                            : todayShuttleLines.map((line) => <span key={line} className="block whitespace-nowrap">{line}</span>)}
                                     </span>
                                 </Link>
                                 {shuttleDriverContact?.phone && (
@@ -466,7 +467,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                         <li>
                             <Link href="/mypage/seasonal" className={TODO_ROW}>
                                 <SymbolIcon name="sports_basketball" size={18} className="shrink-0 text-[var(--color-academy-primary)]" />
-                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">방학특강 결석 신고 · 보강</span>
+                                <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">방학특강 결석·보강</span>
                                 <span className="shrink-0 text-[var(--color-academy-muted)]">남은 <span className="tabular-nums">{seasonalUpcoming}</span>회</span>
                                 <SymbolIcon name="chevron_right" size={18} className="shrink-0 text-[var(--color-academy-muted)]" />
                             </Link>
@@ -526,7 +527,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                 )}
 
                                 {notifications.length === 0 ? (
-                                    <div className="p-6 text-center text-gray-400 text-sm">
+                                    <div className="px-4 py-3 text-center text-gray-400 text-sm">
                                         알림이 없습니다
                                     </div>
                                 ) : (
@@ -609,10 +610,10 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     <div className="mb-3">
                         <div className="flex items-center gap-2">
                             <SymbolIcon name="hourglass_top" size={20} className="text-amber-600 dark:text-amber-300" />
-                            <h2 id="pending-seasonal-heading" className="font-bold text-gray-900 dark:text-white">방학특강 신청 자녀 (전환 대기중)</h2>
+                            <h2 id="pending-seasonal-heading" className="font-bold text-gray-900 dark:text-white">방학특강 신청 자녀</h2>
                         </div>
                         <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                            정규 수강·수납 정보는 학생 등록(전환) 후 표시됩니다.
+                            학생 등록 후 정규 수업·청구가 보여요.
                         </p>
                     </div>
                     <div className="space-y-2">
@@ -642,7 +643,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                     // 보조 버튼(테두리) — 홈의 꽉 찬 색은 납부 몫(M-07)
                                     className="academy-button-secondary mt-2"
                                 >
-                                    방학특강 결석 신고 / 보강
+                                    방학특강 결석·보강
                                     <SymbolIcon name="arrow_forward" size={16} />
                                 </Link>
                             </div>
@@ -698,13 +699,9 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                         기능이 있는 것은 그 기능으로 보내고, 나머지는 자유 메시지 하나로 받는다. */}
                     <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
                         결석은 여기 적지 마시고{" "}
-                        <Link href="/mypage/regular-absence" className="font-bold underline">결석 미리 알리기</Link>
-                        에서 신고해 주세요. <b>셔틀에서도 자동으로 빠집니다.</b>
-                        <br />
-                        방학특강 결석은{" "}
-                        <Link href="/mypage/seasonal" className="font-bold underline">방학특강 결석 신고</Link>
-                        에서, 셔틀만 바꿀 때는{" "}
-                        <Link href="/mypage/shuttle" className="font-bold underline">셔틀 당일 변경</Link>
+                        <Link href="/mypage/regular-absence" className="font-bold underline">결석 신고</Link>·
+                        <Link href="/mypage/seasonal" className="font-bold underline">방학특강 결석</Link>·
+                        <Link href="/mypage/shuttle" className="font-bold underline">셔틀 변경</Link>
                         에서 신청해 주세요.
                     </div>
 
@@ -769,7 +766,6 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                     >
                         {isPending ? "보내는 중..." : "메시지 보내기"}
                     </button>
-                    <p className="text-xs text-[var(--color-academy-muted)]">보낸 메시지와 처리 상태는 자녀 전체 기준입니다.</p>
                 </div>
             )}
 

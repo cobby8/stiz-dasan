@@ -231,7 +231,7 @@
 ### [2026-11-09] 학부모 앱 = 탭 4개(홈·일정·청구·소식) 한 목록 + 앱 범위(/mypage) 안 상세
 - **분류**: architecture
 - **발견자**: developer
-- **내용**: 메뉴는 `src/app/mypage/MyPageBottomNav.tsx` 의 `PARENT_TABS` 하나(휴대폰 아래 탭·PC 헤더 `variant="top"` 공용), 소속 하위 화면은 `also`(일정 = regular-absence·makeup·seasonal·shuttle·enrollment-change, 소식 = news). 일정 = `/mypage/history`(위 `ScheduleHub` + 아래 `HistoryClient embedded`), 청구 = `/mypage/payments`, 소식 = `/mypage/reports`(공지·리포트·피드백·사진, 칩은 같은 화면 앵커). 홈 = 납부 합계 한 줄(`PAYMENT_HOME_HREF` — 묶음 결제 때 이 주소만 교체) + 처리할 일 + 빠른 실행 4, 접힌 칸(details) 없음. 셔틀 배정 상세는 `ParentShuttleDetail`. 설치 앱 scope=/mypage 라 공지 상세는 `/mypage/news/[id]`(전체 공지·우리 아이 반 공지만, 아니면 404) — 공개 `/notices/[id]` 로 링크하지 말 것. 로그아웃은 `ParentMoreMenu`(⋯) 안.
+- **내용**: 메뉴는 `src/app/mypage/MyPageBottomNav.tsx` 의 `PARENT_TABS` 하나(휴대폰 아래 탭·PC 헤더 `variant="top"` 공용), 소속 하위 화면은 `also`(일정 = regular-absence·makeup·seasonal·shuttle·enrollment-change, 소식 = news). 일정 = `/mypage/history`(11-09 개편: «확인하는 곳» — 한 달 달력(`?month=YYYY-MM`·`?child=`, 서버 렌더) + 행사·휴무 + 수강 반 + 셔틀 배정. 계산은 순수 `src/lib/mypage/parentSchedule.ts`, 수업일은 `getMonthlyClassDates`(/annual·청구와 같은 함수)를 앞·이번·다음 수강월로 불러 이 달만. **수납·신청 줄 없음** — 수납=청구 탭, 신청=홈 빠른 실행, 수강 변경 신청=«⋯» 메뉴. `HistoryClient` 삭제), 청구 = `/mypage/payments`, 소식 = `/mypage/reports`(공지는 3개월 이내·3개+«더보기», 리포트·피드백·사진, 칩은 같은 화면 앵커). 홈 = 납부 합계 한 줄(`PAYMENT_HOME_HREF` — 묶음 결제 때 이 주소만 교체) + 처리할 일 + 빠른 실행 4, 접힌 칸(details) 없음. 셔틀 배정 상세는 `ParentShuttleDetail`. 설치 앱 scope=/mypage 라 공지 상세는 `/mypage/news/[id]`(전체 공지·우리 아이 반 공지만, 아니면 404) — 공개 `/notices/[id]` 로 링크하지 말 것. 로그아웃은 `ParentMoreMenu`(⋯) 안.
 - **참조횟수**: 0
 
 ### [2026-11-09] 학부모 «묶음 결제» = 토스 주문 1건(PaymentTransaction) + 항목 N건(PaymentTransactionItem)

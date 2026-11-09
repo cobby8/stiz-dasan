@@ -28,7 +28,6 @@ const EXCLUDED = new Set([
   "src/app/mypage/reports/[sessionId]/page.tsx",
   "src/app/mypage/payments/PaymentRequestClient.tsx",
   "src/app/mypage/payments/page.tsx",
-  "src/app/mypage/history/HistoryClient.tsx", // 수납 탭(결제 구역) 포함
 ]);
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {

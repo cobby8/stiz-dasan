@@ -10,6 +10,8 @@ import { usePathname } from "next/navigation";
 const MENU_LINKS = [
     { href: "/mypage#mypage-notifications", icon: "notifications", label: "알림·휴대폰 알림 설정" },
     { href: "/mypage/children", icon: "family_restroom", label: "자녀·가족 연결" },
+    // 2026-11-09 일정 탭에서 신청 줄을 빼면서 옮겼다 — 홈 빠른 실행에 없는 유일한 신청(반 변경·휴원·퇴원)
+    { href: "/mypage/enrollment-change", icon: "swap_horiz", label: "수강 변경 신청" },
     { href: "/mypage/login-methods", icon: "key", label: "간편로그인 연결" },
 ] as const;
 

@@ -2,7 +2,7 @@
 //  ① 메뉴 4개(홈·일정·청구·소식), 하위 화면에서도 소속 탭이 켜진다, 방학특강 탭 없음
 //  ② 로그아웃은 «⋯» 메뉴 안
 //  ③ 홈 = 납부 합계 한 줄(꽉 찬 버튼 1개) + 처리할 일 + 빠른 실행 4개, 접힌 칸 없음
-//  ④ 일정 탭 = 결석·보강·셔틀·수강 변경 + 수강 반 + 셔틀 배정, 방학특강 줄은 방학 기간에만
+//  ④ 일정 탭 = 한 달 달력(연간일정·수업일·출결) + 수강 반 + 셔틀 배정 — 수납·신청 줄 없음(2026-11-09 원장 지시)
 //  ⑤ 앱 안 공지 상세는 우리 아이 반 공지·전체 공지만(남의 반 공지는 404)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -95,7 +95,7 @@ test("③ 홈: 납부할 청구 합계 한 줄(형제 합산) + 꽉 찬 버튼 1
   assert.ok(html.indexOf("납부할 청구") < html.indexOf("합성 첫째 학생"), "돈 낼 게 있으면 맨 위");
   assert.match(html, /보강권 <span class="tabular-nums">2<\/span>장/);
   assert.match(html, /안 읽은 알림 <span[^>]*>3<\/span>건/);
-  assert.doesNotMatch(html, /방학특강 결석 신고 · 보강/, "방학 기간이 아니면 방학특강 줄 없음");
+  assert.doesNotMatch(html, /방학특강 결석·보강/, "방학 기간이 아니면 방학특강 줄 없음");
   assert.match(html, /href="\/mypage\/regular-absence"[^>]*>[\s\S]*?결석 알리기/);
   assert.match(html, /보강 예약/);
   assert.match(html, /셔틀 변경/);
@@ -138,38 +138,45 @@ test("③ 홈: 청구가 없으면 청구 줄이 없고, 방학특강만 다니�
   });
   assert.doesNotMatch(html, /납부할 청구/);
   assert.doesNotMatch(html, /academy-button-primary/);
-  assert.match(html, /방학특강 결석 신고 · 보강/);
+  assert.match(html, /방학특강 결석·보강/);
   assert.match(html, /남은 <span class="tabular-nums">4<\/span>회/);
   assert.match(html, /href="\/mypage\/seasonal"[^>]*>[\s\S]{0,400}결석 알리기/);
   assert.match(html, /새 알림 없음/);
 });
 
-test("④ 일정 탭: 신청 줄·수강 반·셔틀 배정, 방학특강 줄은 남은 회차가 있을 때만", () => {
+test("④ 일정 탭: 달력·수강 반·셔틀 배정만, 신청 줄은 없고 «수강 변경 신청»은 «⋯» 메뉴로 옮겼다", () => {
+  const parentSchedule = load("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kst, "@/lib/classSchedule": load("src/lib/classSchedule.ts") });
   const Hub = load("src/app/mypage/history/ScheduleHub.tsx", {
-    "next/link": link, "@/lib/datetime/kst": kst,
+    "next/link": link, "@/lib/datetime/kst": kst, "@/lib/mypage/parentSchedule": parentSchedule,
     "../ParentShuttleDetail": load("src/app/mypage/ParentShuttleDetail.tsx", { "next/link": link, "@/lib/datetime/kst": kst }),
   }).default;
   const children = [
     { id: "a", name: "합성 첫째", enrollments: [{ id: "e1", className: "초등 저학년반", dayOfWeek: "Mon", startTime: "16:00", endTime: "17:00" }] },
     { id: "b", name: "합성 둘째", enrollments: [{ id: "e2", className: "중등반", dayOfWeek: "Sat", startTime: "10:00", endTime: "11:30", displayStatus: "ACTIVE", startsLater: true, startsOn: "2026-12-05" }] },
   ];
+  const view = parentSchedule.buildParentMonth({ month: "2026-11", todayYmd: "2026-11-09", events: [], classDates: ["2026-11-14"], attendance: [] });
   const shuttle = [{ id: "s1", studentId: "b", sourceType: "REGULAR_CLASS", direction: "PICKUP", status: "CONFIRMED", label: "정규", title: "토요 등원", serviceDate: "2026-11-14", routeName: "A노선", stopName: "정문", stopAddress: null, plannedAt: "2026-11-14T00:40:00.000Z", vehicleName: "1호차", rideStatus: null }];
-  const off = renderToStaticMarkup(React.createElement(Hub, { childList: children, shuttleItems: shuttle, driverContact: { name: "합성 기사", phone: "010-0000-1111" }, makeupAvailable: 1, seasonalUpcoming: 0 }));
-  for (const href of ["/mypage/regular-absence", "/mypage/makeup", "/mypage/shuttle", "/mypage/enrollment-change"]) assert.match(off, new RegExp(`href="${href}"`));
-  assert.doesNotMatch(off, /href="\/mypage\/seasonal"/);
-  assert.match(off, /보강권 1장/);
-  assert.match(off, /id="mypage-enrollments"/);
-  assert.match(off, /합성 둘째<\/span>중등반/, "자녀가 둘이면 이름을 붙인다");
-  assert.match(off, /12월 5일부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
-  assert.doesNotMatch(off, /수강 예정/);
-  assert.match(off, /id="mypage-shuttle"/);
-  assert.match(off, /2026년 11월 14일 토/);
-  assert.match(off, /dateTime="2026-11-14T00:40:00.000Z">[^<]*09:40</, "확정 시간은 KST(UTC 00:40 = 09:40)");
-  assert.match(off, /href="tel:01000001111"/);
-  const on = renderToStaticMarkup(React.createElement(Hub, { childList: children, shuttleItems: [], seasonalUpcoming: 3 }));
-  assert.match(on, /href="\/mypage\/seasonal"/);
-  assert.match(on, /남은 3회/);
-  assert.doesNotMatch(on, /id="mypage-shuttle"/);
+  const html = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "b", view, shuttleItems: shuttle, driverContact: { name: "합성 기사", phone: "010-0000-1111" } }));
+  for (const href of ["/mypage/regular-absence", "/mypage/makeup", "/mypage/enrollment-change", "/mypage/seasonal"]) assert.doesNotMatch(html, new RegExp(`href="${href}"`), href);
+  assert.match(html, /href="\/mypage\/history\?child=a&amp;month=2026-11" class="academy-choice"/, "자녀를 바꿔도 같은 달");
+  assert.match(html, /href="\/mypage\/history\?child=b&amp;month=2026-11" aria-current="page" class="academy-choice is-selected"/);
+  assert.match(html, /id="mypage-enrollments"/);
+  assert.match(html, /중등반/);
+  assert.doesNotMatch(html, /초등 저학년반/, "수강 반은 고른 자녀 것만(달력과 같은 기준)");
+  assert.match(html, /12월 5일부터 수업 시작/, "승인된 반은 개시일 전에도 수강 중 — 개시일만 안내");
+  assert.doesNotMatch(html, /수강 예정/);
+  assert.match(html, /14일 수업/);
+  assert.match(html, /이 달 행사·휴무 없음/);
+  // 셔틀 배정은 남는다(홈 «오늘 셔틀»이 데려오는 자리) — 셔틀 변경 화면 링크는 배정 칸 안에만
+  assert.match(html, /id="mypage-shuttle"/);
+  assert.match(html, /2026년 11월 14일 토/);
+  assert.match(html, /dateTime="2026-11-14T00:40:00.000Z">[^<]*09:40</, "확정 시간은 KST(UTC 00:40 = 09:40)");
+  assert.match(html, /href="tel:01000001111"/);
+  const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, planReady: false, shuttleItems: [] }));
+  assert.doesNotMatch(empty, /id="mypage-shuttle"/);
+  assert.match(empty, /이 달 수업일은 연간일정 확정 후 보여요/);
+  // 홈 빠른 실행에 없는 «수강 변경 신청»은 «⋯» 메뉴로 옮겨 길을 남긴다
+  assert.match(read("src/app/mypage/ParentMoreMenu.tsx"), /\{ href: "\/mypage\/enrollment-change", icon: "swap_horiz", label: "수강 변경 신청" \}/);
 });
 
 test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보이고 남의 반 공지는 404, 본문은 sanitize 를 거친다", async () => {
