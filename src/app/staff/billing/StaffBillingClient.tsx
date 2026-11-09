@@ -84,13 +84,13 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-5">
       <header>
-        <p className="text-sm font-bold text-[var(--brand-accent)]">담당 수업 전용</p>
+        <p className="text-sm font-bold text-[var(--color-academy-muted)]">담당 수업 전용</p>
         <h1 className="mt-1 text-2xl font-black">청구 확인</h1>
-        <p className="mt-1 text-sm text-gray-500">현금·계좌이체 수납은 관리자 승인 후 납부 완료됩니다.</p>
+        <p className="mt-1 text-sm text-[var(--color-academy-muted)]">현금·계좌이체 수납은 관리자 승인 후 납부 완료됩니다.</p>
       </header>
       {/* 미납/전체 탭 대신 상태 건수 칩 — 같은 filter 상태를 쓰고, 다시 누르면 기본(미납)으로 */}
       <StatusCountChips items={chipItems} selected={filter} onSelect={(value) => setFilter(value as BillFilter)} allValue="OPEN" ariaLabel="청구 상태" />
-      {message && <p role="status" className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-200">{message}</p>}
+      {message && <p role="status" className="rounded-xl bg-[var(--color-academy-info-soft)] p-3 text-sm font-bold text-[var(--color-academy-info)]">{message}</p>}
       {visible.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-5 text-center font-bold">표시할 담당 수업 청구가 없습니다.</p>
       ) : (
@@ -149,22 +149,22 @@ export default function StaffBillingClient({ bills }: { bills: StaffBillingListI
             <dt className="text-[var(--color-academy-muted)]">납부 기한</dt><dd className="tabular-nums">{formatKstDate(detail.dueDate, undefined, "-")}</dd>
           </dl>
           <div className="space-y-2 px-4 pb-4">
-            {detail.amountMismatch && <p className="text-xs font-bold text-amber-700 dark:text-amber-300">청구서에는 {detail.invoiceAmount.toLocaleString("ko-KR")}원으로 되어 있습니다.</p>}
+            {detail.amountMismatch && <p className="text-xs font-bold text-[var(--color-academy-warning)]">청구서에는 {detail.invoiceAmount.toLocaleString("ko-KR")}원으로 되어 있습니다.</p>}
             {/* 문제가 있는 청구도 목록에서는 보여 주고, 수납 확인 버튼만 사유와 함께 막습니다. */}
-            {detail.confirmationStatus === "PENDING" ? <p className="rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-200">관리자 확인 대기 중</p> : OPEN_STATUSES.includes(detail.status) && (detail.confirmable ? <button type="button" onClick={() => openRequest(detail)} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)]">납부 확인 요청</button> : <p className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-200"><span className="material-symbols-outlined shrink-0 text-lg" aria-hidden="true">warning</span>{detail.blockReason}</p>)}
+            {detail.confirmationStatus === "PENDING" ? <p className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">관리자 확인 대기 중</p> : OPEN_STATUSES.includes(detail.status) && (detail.confirmable ? <button type="button" onClick={() => openRequest(detail)} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)]">납부 확인 요청</button> : <p className="flex items-start gap-2 rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]"><span className="material-symbols-outlined shrink-0 text-lg" aria-hidden="true">warning</span>{detail.blockReason}</p>)}
           </div>
         </ListDetailPanel>
       )}
       {target && (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-4 sm:items-center" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setTarget(null); }}>
-          <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" aria-describedby="payment-dialog-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
+          <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" aria-describedby="payment-dialog-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <h2 id="payment-dialog-title" className="text-xl font-black">납부 확인 요청</h2>
-            <p id="payment-dialog-description" className="mt-1 text-sm text-gray-500">{target.studentName} · {target.amount.toLocaleString("ko-KR")}원</p>
+            <p id="payment-dialog-description" className="mt-1 text-sm text-[var(--color-academy-muted)]">{target.studentName} · {target.amount.toLocaleString("ko-KR")}원</p>
             <label className="mt-4 block text-sm font-bold" htmlFor="payment-method">납부 방법</label>
-            <select id="payment-method" value={method} onChange={(event) => setMethod(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"><option value="BANK_TRANSFER">계좌이체</option><option value="CASH">현금</option></select>
+            <select id="payment-method" value={method} onChange={(event) => setMethod(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-3"><option value="BANK_TRANSFER">계좌이체</option><option value="CASH">현금</option></select>
             <label className="mt-3 block text-sm font-bold" htmlFor="payment-note">수납 메모</label>
-            <textarea id="payment-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={3} placeholder="필요한 내용을 남겨 주세요" className="mt-2 w-full rounded-xl border border-gray-300 bg-white p-3 dark:border-gray-700 dark:bg-gray-800" />
-            <div className="mt-4 grid grid-cols-2 gap-2 pb-[env(safe-area-inset-bottom)]"><button data-dialog-initial-focus type="button" disabled={pending} onClick={closeDialog} className="min-h-12 rounded-xl border border-gray-300 font-bold disabled:opacity-50 dark:border-gray-700">취소</button><button type="button" disabled={pending} onClick={submit} className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">{pending ? "요청 중…" : "확인 요청"}</button></div>
+            <textarea id="payment-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={3} placeholder="필요한 내용을 남겨 주세요" className="mt-2 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white p-3" />
+            <div className="mt-4 grid grid-cols-2 gap-2 pb-[env(safe-area-inset-bottom)]"><button data-dialog-initial-focus type="button" disabled={pending} onClick={closeDialog} className="min-h-12 rounded-xl border border-[var(--color-academy-line-input)] font-bold disabled:opacity-50">취소</button><button type="button" disabled={pending} onClick={submit} className="min-h-12 rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">{pending ? "요청 중…" : "확인 요청"}</button></div>
           </div>
         </div>
       )}

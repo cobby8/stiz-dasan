@@ -60,14 +60,14 @@ export default function DriverRequestModal({
         onClick={(e) => e.stopPropagation()}>
 
         {done ? (
-          <p className="py-6 text-center text-[18px] font-black text-green-700">✅ 요청이 전송되었습니다</p>
+          <p className="py-6 text-center text-[18px] font-black text-[var(--color-academy-success)]">✅ 요청이 전송되었습니다</p>
         ) : (
           <>
             <div className="mb-4 flex items-center justify-between">
-              <p className="text-[18px] font-black text-gray-900">
+              <p className="text-[18px] font-black text-[var(--color-academy-ink)]">
                 관리자에게 요청{targetName ? ` — ${targetName}` : ""}
               </p>
-              <button type="button" onClick={onClose} className="text-[22px] text-gray-400">✕</button>
+              <button type="button" onClick={onClose} className="text-[22px] text-[var(--color-academy-faint)]">✕</button>
             </div>
 
             {/* 요청 종류 선택 */}
@@ -76,8 +76,8 @@ export default function DriverRequestModal({
                 <button key={t} type="button" onClick={() => setType(t)}
                   className={`rounded-xl border-2 py-3 text-[15px] font-black transition-colors ${
                     type === t
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-gray-200 text-gray-600"
+                      ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                      : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"
                   }`}>
                   {TYPE_META[t].label}
                   <span className="block text-xs font-semibold text-[var(--color-academy-muted)] mt-0.5">{TYPE_META[t].desc}</span>
@@ -89,12 +89,12 @@ export default function DriverRequestModal({
             <textarea
               value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="추가로 전달할 내용을 입력해주세요 (선택)"
-              className="mb-4 w-full rounded-xl border-2 border-gray-200 p-3 text-[15px] font-semibold text-gray-800 placeholder-gray-300 focus:border-blue-400 focus:outline-none"
+              className="mb-4 w-full rounded-xl border-2 border-[var(--color-academy-line)] p-3 text-[15px] font-semibold text-[var(--color-academy-ink)] placeholder:text-[var(--color-academy-faint)] focus:border-[var(--color-academy-primary)] focus:outline-none"
               rows={3}
             />
 
             <button type="button" disabled={busy} onClick={submit}
-              className="h-14 w-full rounded-2xl bg-blue-600 text-[17px] font-black text-white disabled:opacity-60 active:bg-blue-700">
+              className="h-14 w-full rounded-2xl bg-[var(--color-academy-primary)] text-[17px] font-black text-white disabled:opacity-60 active:bg-[var(--color-academy-primary-hover)]">
               {busy ? "전송 중…" : "📨 요청 보내기"}
             </button>
           </>

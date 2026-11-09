@@ -25,9 +25,9 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
 
   return (
     <main className="mx-auto max-w-lg space-y-3 px-4 py-5">
-      <header><h1 className="text-2xl font-black text-brand-navy-900 dark:text-white">학생·학부모 연락</h1><p className="mt-1 text-sm text-gray-500">내가 맡은 수업의 재원생만 표시됩니다.</p></header>
-      <label className="flex min-h-12 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 focus-within:ring-2 focus-within:ring-[var(--brand-accent)] dark:border-gray-800 dark:bg-gray-900"><span aria-hidden="true" className="material-symbols-outlined text-gray-400">search</span><span className="sr-only">학생 검색</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 학부모, 수업명, 전화번호 검색" className="w-full bg-transparent text-sm outline-none" /></label>
-      <p aria-live="polite" className="text-sm font-bold text-gray-500">총 <span className="tabular-nums">{filtered.length}</span>명</p>
+      <header><h1 className="text-2xl font-black text-[var(--color-academy-ink)]">학생·학부모 연락</h1><p className="mt-1 text-sm text-[var(--color-academy-muted)]">내가 맡은 수업의 재원생만 표시됩니다.</p></header>
+      <label className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--color-academy-line)] bg-white px-4 focus-within:ring-2 focus-within:ring-[var(--brand-accent)]"><span aria-hidden="true" className="material-symbols-outlined text-[var(--color-academy-faint)]">search</span><span className="sr-only">학생 검색</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 학부모, 수업명, 전화번호 검색" className="w-full bg-transparent text-sm outline-none" /></label>
+      <p aria-live="polite" className="text-sm font-bold text-[var(--color-academy-muted)]">총 <span className="tabular-nums">{filtered.length}</span>명</p>
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-5 text-center">
           <p className="font-bold">{students.length === 0 ? "아직 담당 수업에 등록된 학생이 없습니다." : "검색 결과가 없습니다."}</p>
@@ -93,13 +93,13 @@ export default function StaffStudentsClient({ students }: { students: StaffStude
 }
 
 function ContactActions({ label, name, phone, accent = false }: { label: string; name: string; phone: string | null; accent?: boolean }) {
-  if (!phone) return <div className="mt-3 flex min-h-12 items-center justify-between rounded-xl bg-gray-100 px-3 text-sm text-gray-400 dark:bg-gray-800"><span>{label} {name}</span><span>번호 없음</span></div>;
+  if (!phone) return <div className="mt-3 flex min-h-12 items-center justify-between rounded-xl bg-[var(--color-academy-soft)] px-3 text-sm text-[var(--color-academy-faint)]"><span>{label} {name}</span><span>번호 없음</span></div>;
   return (
-    <div className="mt-3 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+    <div className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><p className="min-w-0 break-keep text-sm font-bold">{label} {name}</p><a href={`tel:${phone}`} aria-label={`${name}에게 전화 ${phone}`} className="shrink-0 whitespace-nowrap text-sm font-bold text-[var(--brand-accent)] underline underline-offset-2">{phone}</a></div>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border border-gray-200 dark:border-gray-700"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
-        <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-gray-200 font-bold dark:border-gray-700"><span aria-hidden="true" className="material-symbols-outlined text-xl">sms</span>문자</a>
+        <a href={`tel:${phone}`} className={`flex min-h-12 items-center justify-center gap-1 rounded-xl font-bold ${accent ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border border-[var(--color-academy-line)]"}`}><span aria-hidden="true" className="material-symbols-outlined text-xl">call</span>전화</a>
+        <a href={`sms:${phone}`} className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-[var(--color-academy-line)] font-bold"><span aria-hidden="true" className="material-symbols-outlined text-xl">sms</span>문자</a>
       </div>
     </div>
   );

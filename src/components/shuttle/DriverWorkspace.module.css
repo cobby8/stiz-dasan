@@ -29,11 +29,12 @@
 
 .stopHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .stopHeading input[type="time"] { flex-basis: 100%; }
-.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 17px; font-weight: 900; }
+/* 주 색(검정)은 버튼 전용 — 순번·시각 글자는 본문 글자색(ink) */
+.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-ink); font-size: 17px; font-weight: 900; }
 .upcoming .sequence { background: var(--color-academy-primary); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
 .stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
 .timeNavigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; margin-inline-start: auto; }
-.time { color: var(--color-academy-primary); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.time { color: var(--color-academy-ink); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
 .upcoming .time { font-size: 28px; }
 .unknownTime { color: var(--color-academy-muted); font-size: 14px; font-weight: 700; }
 .navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 800; }

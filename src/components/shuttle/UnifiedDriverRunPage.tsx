@@ -34,8 +34,8 @@ export function DriverLightError({ title, sub }: { title: string; sub: string })
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         <div>
           <p className="text-5xl">🚌</p>
-          <h1 className="mt-3 text-xl font-black text-gray-900">{title}</h1>
-          <p className="mt-1 text-base text-gray-500">{sub}</p>
+          <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">{title}</h1>
+          <p className="mt-1 text-base text-[var(--color-academy-muted)]">{sub}</p>
         </div>
       </div>
     </AcademyTheme>

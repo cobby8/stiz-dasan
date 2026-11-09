@@ -28,24 +28,24 @@ export default function DriverDateNav({
     <div className="mx-auto -mt-1 mb-3 flex max-w-lg items-center justify-between gap-2 px-3">
       {/* 이전: prevDate 있을 때만 이동 가능 */}
       {prevDate ? (
-        <Link href={`?date=${prevDate}`} className={`${btn} bg-gray-100 text-gray-800 active:bg-gray-200`}>‹ 이전</Link>
+        <Link href={`?date=${prevDate}`} className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>‹ 이전</Link>
       ) : (
-        <span className={`${btn} bg-gray-50 text-gray-300`}>‹ 이전</span>
+        <span className={`${btn} bg-transparent text-[var(--color-academy-faint)]`}>‹ 이전</span>
       )}
 
       {/* 가운데: 현재 날짜 + (오늘이 아니면) 오늘로 바로가기 */}
       <div className="flex flex-col items-center leading-tight">
-        <span className="text-[17px] font-black text-gray-900">{fmtDate(date)}</span>
+        <span className="text-[17px] font-black text-[var(--color-academy-ink)]">{fmtDate(date)}</span>
         {date !== today && (
-          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-[13px] font-black text-blue-600 active:text-blue-700">오늘로</Link>
+          <Link href={`?date=${today}`} className="mt-0.5 inline-flex min-h-11 items-center justify-center px-2 text-[13px] font-black text-[var(--color-academy-ink)] underline underline-offset-2">오늘로</Link>
         )}
       </div>
 
       {/* 다음: nextDate 있을 때만 이동 가능 */}
       {nextDate ? (
-        <Link href={`?date=${nextDate}`} className={`${btn} bg-gray-100 text-gray-800 active:bg-gray-200`}>다음 ›</Link>
+        <Link href={`?date=${nextDate}`} className={`${btn} bg-[var(--color-academy-soft)] text-[var(--color-academy-ink)] active:bg-[var(--color-academy-line)]`}>다음 ›</Link>
       ) : (
-        <span className={`${btn} bg-gray-50 text-gray-300`}>다음 ›</span>
+        <span className={`${btn} bg-transparent text-[var(--color-academy-faint)]`}>다음 ›</span>
       )}
     </div>
   );

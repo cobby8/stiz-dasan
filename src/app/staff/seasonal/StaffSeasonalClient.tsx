@@ -76,7 +76,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
 
   return (
     <div className="mx-auto max-w-lg p-4">
-      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-black dark:text-white">
+      <h1 className="mb-3 flex items-center gap-1.5 text-lg font-black">
         <span className="material-symbols-outlined text-xl text-[var(--brand-accent)]" aria-hidden="true">sports_basketball</span>
         특강 수업
       </h1>
@@ -92,7 +92,7 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
         </button>
       </div>
 
-      {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:bg-red-950 dark:text-red-300">{err}</div>}
+      {err && <div className="mb-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">{err}</div>}
 
       {dates.length === 0 ? (
         <p className="rounded-xl border border-dashed border-[var(--color-academy-line)] p-5 text-center text-sm text-[var(--color-academy-muted)]">
@@ -165,7 +165,7 @@ function StatusBadge({ status }: { status: SeasonalClass["sessionStatus"] }) {
     status === "IN_PROGRESS"
       ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
       : status === "COMPLETED"
-        ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
-        : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300";
+        ? "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]"
+        : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]";
   return <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${tone}`}>{text}</span>;
 }

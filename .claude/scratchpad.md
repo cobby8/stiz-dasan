@@ -80,6 +80,7 @@
 | 1 629d3355 | academy-theme.css · globals.css · public-sport.css · DriverWorkspace.module.css · tests/parent-child-links-ui | 토큰 값만(이름 유지). 상태색 :root(info·neutral 신설), 글자 3단계·입력선 #8a919c·faint 신설, 차콜 단계=회색 토큰, 홈페이지 주 버튼 검정·«체험 신청» 입구 주황(주소 선택자), 기사님 보라·파랑→중립·정보 |
 | 2 a7ed1234 | tests/color-contrast · color-hardcode-guard · fixtures/color-hardcode-baseline.json | 대비(글자 4.5·선 3) + 하드코딩 색 파일별 기준선(늘면 실패, UPDATE_COLOR_BASELINE=1 로 낮춤) |
 | 3 | src/lib/ui/statusTones.ts(신규) · StatusBadge · ui/Badge · StatusChoiceButton · academy-theme.css(보조 버튼·칩 입력선, academy-status 4px, academy-input 신설) · 상태 지도 16파일 · tests 7 | 상태→뜻 지도 한 곳(출결·결제·셔틀·신청), 배지 모서리 4px, 화면별 색 지도 → statusTones |
+| 5 | staff/** 15 · driver 1 · components/shuttle 6(RunBoard·UnifiedDriverClient·DriverDateNav·RegularRouteSection·DriverRequestModal·UnifiedDriverRunPage) · components/staff 4 · DriverWorkspace.module.css · academy-theme.css · 기준선 | 선생님·기사님 하드코딩 색 630건 → 토큰·statusTones(dark: 삭제 포함). 등원·하원 색 구분 제거(글자·화살표), 순번·시각·제목 글자 주 색 → ink, 편집 중 정류장=정보, 보강·특강=정보, 기한 지난 미납=위험(리뷰 지적 1)·«미납 N건» 4px 배지(지적 2). academy-theme 의 `.academy-driver-stop:not(.bg-amber-50)…`·`.academy-driver-rider:not(.bg-red-50)` 덮어쓰기 삭제(결석 신고 승객 칸 연빨강이 원래 의도대로 보임). 관리자 전용 RegularStopGeocodePanel·ShuttleGeoEditor 는 미변경 |
 
 💡 tester: tests 3629-0·tsc 0·studentVisibility 5-0. 전후 PNG = 세션 scratchpad color-before-after/before.png·after.png. 결제 화면은 상태 글자 색만(판정 무변경).
 ⚠️ reviewer: 입력선 #8a919c 는 연회색 바탕 위 2.96(카드 위는 3.2) — 값은 결정대로 두고 테스트에 기록. .academy-app 안 blue→ink 바꿔 끼우기는 그대로(마지막 단계). @theme brand-orange(«절대 변경 금지» 주석)·다크모드 값 무수정.
@@ -88,6 +89,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(색상 정리 5단계 선생님·기사님): 하드코딩 색 630건 → 토큰·statusTones, dark: 삭제, 기준선 12,341→11,711, 리뷰 지적 2건(기한 지난 미납 위험·미납 배지 4px) 반영. tsc 0·tests 3629-0·shuttle 159-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(색상 정리 1~3단계, 원장 결정 5건): 토큰 값(주 버튼 검정·바탕 #f6f7f9·상태 다섯 갈래 info/neutral 신설·체험 신청만 주황·기사님 보라 제거) · 가드 2종(대비·하드코딩 기준선 12,612→12,341) · statusTones 한 곳+StatusBadge info·4px+ui/Badge 토큰+상태 지도 16파일. tsc 0·tests 3629-0·studentVisibility 5-0 | 완료(커밋 3, 미푸시) |
 | 11-09 | developer(일정 달력 색 구분, 원장 «수업·출석·지각 색 구분 안 돼»): 출석 초록 채운 점·지각 주황 빈 고리·결석 빨강 ×·행사 파랑 별·수업 연청회 칸·휴무 회색 칸 «휴»·오늘 검정 굵은 테두리, 범례 같은 부품. 토큰 --color-academy-cal-* (academy-theme.css) 신설. tsc 0·tests 3617-0 | 완료 |
 | 11-09 | reviewer(결제 화면 정리 3922555d): 통과 — 조건 분기·API·금액·토스 호출 무변경 확인, tsc 0·tests 3611-0. 권장: 복사 버튼 aria-label 고정이라 «복사됨» 못 읽음(3곳)·«결제하면 바로 납부 완료» 무통장과 충돌·카페24 반영 안내 사라짐·청구 탭 머리말 «알려 주면 빨라요» 빠짐·커밋 메시지 «면세» 안내 없음 | 통과(권장 5) |
@@ -97,4 +99,3 @@
 | 11-09 | developer(결제 화면 정리, 원장 «내부창 복잡·설명 많음·줄바꿈»): 단건 /payments/[id] 남색 배너·4칸 중복·하단 돌아가기 제거→청구 정보 한 덩어리(항목·상태/아이·납기/금액/번호·발행 작게), 수단 한 줄 3칸(설명 줄 삭제, 이름 «카드·간편결제/계좌이체/무통장입금»), 주 버튼 «N원 결제하기», 부가 안내 «결제 안내» 접기. 계좌 안내 부품=계좌+«복사» 한 줄·토큰색. 묶음·완료·청구 탭 반복 문구 삭제·«~요»·복사 버튼 짧게·취소 버튼 44px·회색/호박색→토큰. 로직·API·금액·토스 호출 무변경. 테스트 1줄(무통장 이름 고정) 갱신. tsc 0·tests 3611-0·studentVisibility 5-0·KST 32-0 | 완료(커밋, 미푸시) |
 | 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
 | 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
-| 11-09 | developer 수정 1차(갈래 C 리뷰 권장 6건): 선생님 공지 재발송 확인 대상 반 두 모양(IN $3,$4)·결제창 전 금액 재확인(다르면 안내+새로고침)·상한이면 입금 알림도 막음·면세 문구·말투 «~요»·확인 창 닫기·bfcache 복귀 로딩 해제·홈 버튼 이름=결제 가능 건수·개시일 «12월 5일부터»·토스 실패 코드별 문구(tossFailMessage). tests 3610-0 | 완료(검수 대기) |

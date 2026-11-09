@@ -334,15 +334,8 @@
   color: var(--color-academy-ink);
 }
 
-.academy-app .academy-driver-stop:not(.bg-amber-50):not(.bg-green-50):not(.bg-blue-50) {
-  background: var(--color-academy-surface);
-  border-color: var(--color-academy-line);
-}
-
-.academy-app .academy-driver-rider:not(.bg-red-50) {
-  background: var(--color-academy-soft);
-  color: var(--color-academy-ink);
-}
+/* 2026-11-09 색상 정리 5단계: 정류장·승객 칸 바탕은 컴포넌트(RunBoard·UnifiedDriverClient)가 상태 토큰으로 직접 정한다.
+   예전엔 여기서 «.bg-amber-50 등이 아니면 흰/회색» 으로 덮어써, 토큰 클래스로 바꾼 경고·편집 중·결석 칸 바탕이 지워졌다. */
 
 @media (max-width: 420px) {
   .academy-app .academy-driver-rider-main { flex-wrap: wrap; }
