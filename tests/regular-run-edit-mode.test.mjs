@@ -70,15 +70,15 @@ test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲�
 test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속, 끌기 끝·화면 떠나면 정지", async () => {
   const board = await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8");
   assert.match(board, /scrollFrame\.current = requestAnimationFrame\(autoScrollStep\)/);
-  // 2026-11-09 2차: 놓을 때 삽입선 자리로 옮기려고 손가락 정보를 먼저 꺼내 둔다(그다음 바로 정지).
-  assert.match(board, /function endHandleDrag\(\) \{\s*const at = pointerAt\.current;\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
-  assert.match(board, /function cancelHandleDrag\(\) \{\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
-  assert.match(board, /useEffect\(\(\) => stopAutoScroll, \[\]\)/);
-  // 스크롤로 손가락 아래 카드가 바뀌면 그 프레임에 다시 맞춘다
-  assert.match(board, /window\.scrollBy\(0, dy\);\s*placeUnderFinger\(\);/);
+  // 2026-11-09 3차(실시간 재배치): 놓기·취소(finishDrag) 첫머리에서 바로 정지 + 창 감시(Esc·스크롤) 해제.
+  assert.match(board, /s\.settling = true;\s*stopAutoScroll\(\);\s*s\.detach\(\);/);
+  // 화면을 떠나면 스크롤 루프·창 감시 정지
+  assert.match(board, /useEffect\(\(\) => \(\) => \{\s*stopAutoScroll\(\);\s*session\.current\?\.detach\(\);/);
+  // 스크롤로 카드 위치가 바뀌면 그 프레임에 끄는 카드·밀린 카드를 다시 맞춘다
+  assert.match(board, /window\.scrollBy\(0, dy\);\s*updateDrag\(\);/);
 });
 
-test("기사님 모드는 이번 변경과 무관 — 손잡이·data-run-key 없이 옛 방식(카드 전체 끌기·넓은 시각 칸) 그대로", () => {
+test("기사님 모드: 보기 화면은 그대로, 편집 때 카드 전체 끌기(실시간 재배치 · 손잡이 없음 · 넓은 시각 칸)", () => {
   const view = render({ mode: "driver", editing: false });
   // 2026-11-09 2차: 기사님 화면에도 묶음 머리(글자만, 버튼 아님)가 붙는다 — 카드 안 마크업·탑승 버튼은 그대로.
   assert.match(view, /<h3[^>]*>[\s\S]*16:30 수업 · 등원[\s\S]*정류장 2곳 · 학생 2명 · 16:10<\/span><\/h3>/);
@@ -86,10 +86,12 @@ test("기사님 모드는 이번 변경과 무관 — 손잡이·data-run-key �
   assert.match(view, /길안내/);
   assert.doesNotMatch(view, /drag_indicator|data-run-key/);
   const edit = render({ mode: "driver", editing: true });
-  assert.match(edit, /draggable="true"/);
+  // 2026-11-09 3차: 브라우저 기본 끌기(draggable) 대신 관리자와 같은 포인터 끌기 — 묶음 계산용 data-run-key/group 이 붙는다.
+  assert.doesNotMatch(edit, /draggable="true"/);
   assert.match(edit, /<li[^>]*touch-none cursor-grab/);
+  assert.equal((edit.match(/<li[^>]*data-run-key="[^"]+" data-run-group="g1"[^>]*style="touch-action:none"/g) ?? []).length, 2);
   assert.match(edit, /col-span-3 mt-2 h-12 w-full/);
-  assert.doesNotMatch(edit, /drag_indicator|data-run-key/);
+  assert.doesNotMatch(edit, /drag_indicator/);
 });
 
 test("관리자 화면 배선: [수정] 하나 → 편집 모드, 정류장 수정·×·학생 창은 편집 모드에서만, 창 열기 전 순서 먼저 저장", async () => {
