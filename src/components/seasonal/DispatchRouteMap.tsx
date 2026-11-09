@@ -37,7 +37,7 @@ export function RouteMapCanvas({
     overlaysRef.current.forEach((o) => { try { o.setMap(null); } catch { /* noop */ } });
     overlaysRef.current = [];
     // 지도 선 색 = 정보 토큰의 실제 값(카카오 Polyline 은 SVG 속성이라 var() 를 못 읽는다). 상태 토큰은 :root 에 있다.
-    const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--color-academy-info").trim();
+    const lineColor = getComputedStyle(document.documentElement).getPropertyValue("--color-academy-info").trim() || "rgb(29, 78, 216)";
     const nodes = [
       ...(s ? [{ ...s, badge: "출발", kind: "start" as const }] : []),
       ...st.map((x) => ({ ...x })),

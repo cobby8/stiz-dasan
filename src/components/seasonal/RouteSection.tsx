@@ -692,11 +692,11 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
             // 정규 모드: 저장본을 보고 있거나 손편집이 있으면 덮어쓰기 전에 확인한다.
             if (regularEditing && (loadedFromSaved || dirty) && !window.confirm("손으로 고친 순서·시각·배정이 사라집니다. 계속할까요?")) return;
             setLoadedFromSaved(false); setSaveMsg(null); void generate(date);
-          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className={`rounded-lg bg-[var(--color-academy-primary-hover)] px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50}`}>{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
+          }} disabled={loading || saving || rerouting || recalcing || pendingReroute} className={`rounded-lg bg-[var(--color-academy-primary-hover)] px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{loading ? "계산 중…" : "⚡ 자동 제안"}</button>
           {/* 시간순 모드: 등원·하원 카드가 한 목록에 섞이므로 저장 버튼에 방향을 적어 «무엇을 저장하는지» 분명히 한다 */}
           <button onClick={saveRoute} disabled={saving || saveBlocked || sug.vehicles.length === 0} className={`rounded-lg bg-[var(--color-academy-primary)] px-2.5 py-1.5 text-[12px] font-black text-white disabled:opacity-50${tlBtn}`}>{saving ? "저장 중…" : timeOrdered ? `💾 ${dirLabel} 저장` : "💾 저장"}</button>
-          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className={`rounded-lg border border-[var(--color-academy-line-input)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-muted)] disabled:opacity-50}`}>{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
-          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className={`rounded-lg border border-[var(--color-academy-danger)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-danger)] disabled:opacity-50}`}>{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
+          {loadedFromSaved && <button onClick={() => void recalcPaths()} disabled={loading || rerouting || recalcing} className={`rounded-lg border border-[var(--color-academy-line-input)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-muted)] disabled:opacity-50${tlBtn}`}>{recalcing ? "계산 중…" : "🗺 경로 재계산"}</button>}
+          {loadedFromSaved && <button onClick={deleteRoute} disabled={saving || saveBlocked} className={`rounded-lg border border-[var(--color-academy-danger)] px-2.5 py-1.5 text-[12px] font-black text-[var(--color-academy-danger)] disabled:opacity-50${tlBtn}`}>{regularEditing ? "↺ 자동 제안으로 초기화" : "🗑 노선 삭제"}</button>}
         </div>
       </div>
 
@@ -756,7 +756,7 @@ export default function RouteSection({ initial, date, refreshKey, apiBase = "/ap
       <div className={timeOrdered ? "contents" : "mt-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4"}>
         <div className={timeOrdered ? "contents" : "grid min-w-0 gap-3"}>
           {sug.vehicles.map((v, vIdx) => (
-            <div key={vIdx} style={timeOrdered ? { order: runTimelineOrder(v, isPickup, vIdx) } : undefined} className={`overflow-hidden rounded-2xl border border-[var(--color-academy-line)] ? " w-full bg-white" : ""}`}>
+            <div key={vIdx} style={timeOrdered ? { order: runTimelineOrder(v, isPickup, vIdx) } : undefined} className={`overflow-hidden rounded-2xl border border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}`}>
               <div className="flex items-center justify-between bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-white">
                 <span className="font-black">
                   {/* 시간순 모드: 등원·하원 카드가 섞이므로 카드마다 방향 배지를 붙인다 */}

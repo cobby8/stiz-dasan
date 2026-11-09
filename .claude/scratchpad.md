@@ -83,10 +83,18 @@
 💡 tester: tests 3629-0·tsc 0·studentVisibility 5-0. 전후 PNG = 세션 scratchpad color-before-after/before.png·after.png. 결제 화면은 상태 글자 색만(판정 무변경).
 ⚠️ reviewer: 입력선 #8a919c 는 연회색 바탕 위 2.96(카드 위는 3.2) — 값은 결정대로 두고 테스트에 기록. .academy-app 안 blue→ink 바꿔 끼우기는 그대로(마지막 단계). @theme brand-orange(«절대 변경 금지» 주석)·다크모드 값 무수정.
 
+### 리뷰 결과 (reviewer · 색상 4~7·6A·6B·마무리, 99710062..4cde00e5)
+📊 종합 판정: 수정 필요(필수 1건 — 고치면 통과). tsc 0 · tests 3629-0 · 기준선 1,730 = 실제 1,730(높게 남은 파일 0)
+✅ 잘된 점: 색 외 변경 35파일 전부 의도된 것(차트 chartColors·OG/theme-color colorValues·지도 getComputedStyle(info 는 :root)·statusTones import·주석). 결제·청구·출결·셔틀·/programs 로직·금액·문구·URL 변경 0, payments/review 미변경. 공개 화면 dark: 개수 그대로, .academy-app 밖에 전용 토큰 새로 쓴 곳 0
+🔴 필수 수정:
+- components/seasonal/RouteSection.tsx:695·698·699·759 — 치환 때 `dark:…${tlBtn}` / `dark:…${timeOrdered ? …}` 의 `${` 까지 지워짐(813909ac). 695/698/699: 클래스 끝이 `disabled:opacity-50}` 가 되어 비활성 흐림·시간순 보기 min-h-11(터치 44px) 사라짐 → `disabled:opacity-50${tlBtn}` 로. 759: `${timeOrdered` 가 빠져 `? " w-full bg-white" : ""}` 가 글자 그대로 클래스가 됨(항상 w-full, 시간순 bg-white 없음) → `` border-[var(--color-academy-line)]${timeOrdered ? " w-full bg-white" : ""}` `` 로. 같은 유형 다른 파일 0(파일별 `${` 개수 비교)
+🟡 권장: DispatchRouteMap.tsx:40 getComputedStyle 값이 빈 문자열일 때 대비 `|| "#1d4ed8"` 기본값 / RegularRouteSection 화살표 칸 `${"…"}` 은 상수 문자열로 단순화(동작 무관)
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | reviewer(색상 4~7·마무리 99710062..4cde00e5, 스크립트로 색/비색 분류): 수정 필요 — RouteSection 4줄 `${` 유실(비활성 흐림·44px·시간순 칸 클래스 깨짐). 그 외 색 외 변경 전부 의도·로직 무변경·기준선 정확. tsc 0·tests 3629-0 | 수정 필요(필수 1·권장 2) |
 | 11-09 | developer(색상 4단계 학부모 화면): mypage·account·payments·components/parent 23파일 하드코딩 색 797→0(기준선 12341→11544), dark: 삭제, 장식 아이콘·알림 분류 중립·셔틀 변경 목록 파랑 남용 정리·셔틀 상태 statusTones 뜻(접수 warning·준비 info)·«중요» danger→warning·별점 ink·주 색 글자→ink. payments/review/* 는 academy-app 밖+토스 심사 중이라 제외. tsc 0·tests 3629-0 | 완료 |
 | 11-09 | developer(색상 정리 5단계 선생님·기사님): 하드코딩 색 630건 → 토큰·statusTones, dark: 삭제, 기준선 12,341→11,711, 리뷰 지적 2건(기한 지난 미납 위험·미납 배지 4px) 반영. tsc 0·tests 3629-0·shuttle 159-0 | 완료(커밋, 미푸시) |
 | 11-09 | developer(색상 정리 1~3단계, 원장 결정 5건): 토큰 값(주 버튼 검정·바탕 #f6f7f9·상태 다섯 갈래 info/neutral 신설·체험 신청만 주황·기사님 보라 제거) · 가드 2종(대비·하드코딩 기준선 12,612→12,341) · statusTones 한 곳+StatusBadge info·4px+ui/Badge 토큰+상태 지도 16파일. tsc 0·tests 3629-0·studentVisibility 5-0 | 완료(커밋 3, 미푸시) |
@@ -97,4 +105,3 @@
 | 11-09 | developer(원장 점검 «시간 수정 없음·드래그로 이동»): 관리자 정규 운행표 = 평소 보기만, 화면 위 [수정] → 편집 모드(카드마다 시각 칸·손잡이 ⠿ 끌기(터치=elementFromPoint, 손잡이만 touch-none)·▲▼ 보조·정류장 수정·×·학생 창), 편집 중 고정 줄(적용 범위 select·저장 안 됨·취소/저장). 바꾼 순서 있으면 창 열기 전 먼저 저장(편집 유지). RunBoard admin 편집 분기만 추가 — driver HTML 수정 전과 동일(일회 비교 4경우). 신규 tests/regular-run-edit-mode.test.mjs. tests 3615-0·shuttle 159-0·tsc 0·KST 가드 통과. 서버 변경 없음 · 리뷰 반영 B-1 고정 줄 top-14·z-10 / B-2 적용 범위 «N월~M월 명단에 반영» / B-3 가장자리 자동 스크롤 rAF 루프 | 완료 |
 | 11-09 | developer(결제 화면 정리, 원장 «내부창 복잡·설명 많음·줄바꿈»): 단건 /payments/[id] 남색 배너·4칸 중복·하단 돌아가기 제거→청구 정보 한 덩어리(항목·상태/아이·납기/금액/번호·발행 작게), 수단 한 줄 3칸(설명 줄 삭제, 이름 «카드·간편결제/계좌이체/무통장입금»), 주 버튼 «N원 결제하기», 부가 안내 «결제 안내» 접기. 계좌 안내 부품=계좌+«복사» 한 줄·토큰색. 묶음·완료·청구 탭 반복 문구 삭제·«~요»·복사 버튼 짧게·취소 버튼 44px·회색/호박색→토큰. 로직·API·금액·토스 호출 무변경. 테스트 1줄(무통장 이름 고정) 갱신. tsc 0·tests 3611-0·studentVisibility 5-0·KST 32-0 | 완료(커밋, 미푸시) |
 | 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
-| 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
