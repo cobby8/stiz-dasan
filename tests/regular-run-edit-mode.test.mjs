@@ -95,24 +95,52 @@ test("기사님 모드: 보기 화면은 그대로, 편집 때 카드 전체 끌
   assert.doesNotMatch(edit, /drag_indicator/);
 });
 
-test("관리자 화면 배선: [수정] 하나 → 편집 모드, 정류장 수정·×·학생 창은 편집 모드에서만, 창 열기 전 순서 먼저 저장", async () => {
+test("관리자 묶음 편집(2026-11-10): 머리마다 작은 연필 · 고른 묶음만 편집 카드 · 그 머리 줄에 [취소][저장]·아래 적용 범위", () => {
+  const TWO = [...ROWS, { ...ROWS[0], key: "R:17:a:0", groupKey: "g2", groupLabel: "🕒 17:00~18:00 수업", label: "C마을", time: "16:40", minutes: 1000, seq: 2,
+    riders: [{ checkId: "row-3", key: "R:row-3", name: "박마바", grade: null }] }];
+  const base = { rows: TWO, mode: "admin", onEditBlock() {}, renderEditActions: () => React.createElement("button", { type: "button" }, "저장"),
+    renderEditBar: () => React.createElement("div", { "data-edit-bar": "" }, "적용 범위") };
+  // 보기 = 묶음마다 연필(이름표 «16:30 등원 묶음 수정»), 원 36px 시각·누르는 자리 44px · 편집 카드·[저장] 없음
+  const view = render({ ...base, editing: false, editingGroupKey: null });
+  assert.equal((view.match(/묶음 수정"/g) ?? []).length, 2);
+  assert.match(view, /aria-label="16:30 등원 묶음 수정"/);
+  assert.match(view, /aria-label="17:00 등원 묶음 수정"/);
+  assert.match(view, /class="group grid h-11 w-11[^"]*"[\s\S]{0,40}<span class="grid h-9 w-9[^"]*bg-white text-\[var\(--color-academy-ink\)\]/);
+  assert.doesNotMatch(view, /drag_indicator|type="time"|data-edit-bar|>저장</);
+  // g1 편집 = g1 카드 2장만 손잡이·시각 칸, g1 머리에는 연필 대신 [저장]·아래 줄, g2 는 연필 그대로
+  const edit = render({ ...base, editing: true, editingGroupKey: "g1" });
+  assert.equal((edit.match(/drag_indicator/g) ?? []).length, 2);
+  assert.equal((edit.match(/type="time"/g) ?? []).length, 2);
+  assert.equal((edit.match(/data-run-group="g2"/g) ?? []).length, 0);
+  assert.equal((edit.match(/묶음 수정"/g) ?? []).length, 1);
+  assert.match(edit, /aria-label="17:00 등원 묶음 수정"/);
+  assert.equal((edit.match(/>저장</g) ?? []).length, 1);
+  assert.equal((edit.match(/data-edit-bar/g) ?? []).length, 1);
+  // 편집 중 머리는 관리자 머리 아래에 붙어 따라온다
+  assert.match(edit, /class="sticky top-14 z-10[^"]*"/);
+  // 기사님 화면(연필·묶음 편집 props 없음)에는 연필이 없다
+  assert.doesNotMatch(render({ rows: TWO, mode: "driver", editing: true }), /묶음 수정/);
+});
+
+test("관리자 화면 배선: 묶음 연필 → 그 묶음만 편집 모드, 정류장 수정·×·학생 창은 편집 묶음에서만, 창 열기 전 순서 먼저 저장", async () => {
   const editor = await readFile("src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx", "utf8");
-  // 화면 위 [수정] 하나(옛 «↕ 순서·시간 수정» 버튼 없음) · 편집 중 고정 줄에 취소/저장
-  assert.match(editor, /onClick=\{startEditing\}[\s\S]{0,300}>edit<\/span>수정/);
+  // 화면 위 [수정] 버튼 없음(옛 «↕ 순서·시간 수정»도 없음) — 묶음 머리 연필(onEditBlock)로 들어간다
+  assert.doesNotMatch(editor, /onClick=\{startEditing\}|>edit<\/span>수정/);
   assert.doesNotMatch(editor, /↕ 순서·시간 수정|기사님 화면과 같음/);
-  // 고정 줄은 관리자 머리(AdminShellClient sticky top-0 z-20 h-14) 아래에 붙고 덮지 않는다
-  assert.match(editor, /sticky top-14 z-10/);
+  assert.match(editor, /editingGroupKey=\{editingGroup\}\s*onEditBlock=\{startEditing\}\s*renderEditActions=\{renderEditActions\}\s*renderEditBar=\{renderEditBar\}/);
+  // 다른 묶음으로 옮길 때 저장 안 한 변경이 있으면 확인
+  assert.match(editor, /if \(orderDirty && !window\.confirm\("저장하지 않은 순서·시각 수정이 있습니다\. 버리고 이 묶음을 수정할까요\?"\)\) return;/);
   assert.doesNotMatch(editor, /sticky top-0/);
   // 적용 범위 옆에 어느 달 명단에 반영되는지 짧게
   assert.match(editor, /formatRosterMonths\(\[serviceMonth, \.\.\.laterMonths\]\)\} 명단에 반영/);
   assert.match(editor, /<span className="text-\[12px\]">\{scopeHint\}<\/span>/);
-  // 보기 모드에는 편집 버튼이 없다
-  assert.match(editor, /\{editing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
+  // 보기 묶음에는 편집 버튼이 없다
+  assert.match(editor, /\{rowEditing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
   // 2026-11-09 2차: 편집 모드 학생 = 한 줄 카드 안 칩(이름 → 셔틀 정보 창 · × → 빼기). 보기 모드 학생 줄엔 둘 다 없다.
   const riderFn = editor.slice(editor.indexOf("function renderRider("), editor.indexOf("  return (\n    <div className=\"mx-auto max-w-6xl"));
   const [chip, viewRider] = riderFn.split(/\n    \}\n    return \(/);
-  assert.ok(viewRider, "편집 칩(if (editing) { … })과 보기 줄이 나뉘어 있어야 한다");
-  assert.match(chip, /if \(editing\) \{\s*return \(\s*<span key=/);
+  assert.ok(viewRider, "편집 칩(if (editingGroup === row.groupKey) { … })과 보기 줄이 나뉘어 있어야 한다");
+  assert.match(chip, /if \(editingGroup === row\.groupKey\) \{\s*return \(\s*<span key=/);
   assert.match(chip, /openDialog\(\{ kind: "student", rowId: rider\.checkId \}\)[\s\S]*openDialog\(\{ kind: "remove", rowId: rider\.checkId \}\)/);
   assert.doesNotMatch(viewRider, /kind: "remove"|kind: "student"/);
   // 바꾼 순서·시각이 있으면 창을 열기 전에 먼저 저장(편집 모드 유지)

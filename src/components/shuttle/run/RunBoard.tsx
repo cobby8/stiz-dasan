@@ -24,6 +24,10 @@ import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLog
 //   · 관리자 끌기 피드백 — 끄는 카드가 손가락/마우스를 따라 떠다니고(그림자), 제자리는 흐린 자리표시,
 //     놓일 자리에 삽입선, 놓으면 짧게 미끄러지는 이동 애니메이션. 기사님 끌기(카드 전체)는 예전 그대로.
 //   · (3차) 삽입선 → «실시간 재배치»: 끄는 카드가 따라오고 다른 카드들이 밀려 빈 자리가 생긴다. 기사님 카드 끌기도 같은 동작.
+// 2026-11-10 원장 점검: «수정 버튼이 섹션마다 있는 게 자연스러움, 연필 모양 아이콘 버튼만 작게».
+//   · (관리자) 화면 위 [수정] 하나 → 묶음 머리 오른쪽 작은 연필. 누른 묶음만 편집 모드(editingGroupKey),
+//     그 머리 줄에 [취소][저장](renderEditActions)·아래 한 줄에 적용 범위(renderEditBar). 다른 묶음은 보기 그대로.
+//   · 기사님 화면은 editingGroupKey 를 안 넘긴다 → 예전처럼 editing 하나로 전체 편집(변경 없음).
 
 export type RunBoardMode = "driver" | "admin";
 
@@ -61,7 +65,7 @@ function reducedMotion() {
 
 export default function RunBoard({
   rows, mode, editing, dragKey, onDragKeyChange, onDropOn, onMove, displayTime, onTimeChange, upcoming, renderStopMeta, renderRider, focusKey,
-  selectedGroupKey, onSelectBlock,
+  selectedGroupKey, onSelectBlock, editingGroupKey, onEditBlock, renderEditActions, renderEditBar,
 }: {
   /** 이미 화면 순서로 정렬된 카드 목록(정렬은 바깥이 한다 — 편집 중 덮어쓰기 포함). */
   rows: UnifiedRow[];
@@ -94,7 +98,22 @@ export default function RunBoard({
   selectedGroupKey?: string | null;
   /** (관리자) 블록 머리를 누르면 그 묶음을 지도에 띄운다. 없으면 머리는 글자만(기사님). */
   onSelectBlock?: (groupKey: string) => void;
+  /**
+   * (관리자) 지금 편집 중인 묶음 하나 — 이 묶음 카드만 편집 카드(손잡이·시각 칸)로 그린다.
+   * 안 넘기면(undefined, 기사님) editing 하나로 모든 카드가 편집 카드다(예전 그대로).
+   */
+  editingGroupKey?: string | null;
+  /** (관리자) 묶음 머리 오른쪽 연필을 누르면 그 묶음을 편집한다. 없으면 연필을 안 그린다(기사님). */
+  onEditBlock?: (groupKey: string) => void;
+  /** (관리자) 편집 중인 묶음 머리 줄 오른쪽에 끼울 것([취소][저장]) — 연필 자리에 놓인다. */
+  renderEditActions?: (block: RunBlock) => ReactNode;
+  /** (관리자) 편집 중인 묶음 머리 바로 아래 한 줄(끌기 안내·적용 범위). */
+  renderEditBar?: (block: RunBlock) => ReactNode;
 }) {
+  // 이 카드(묶음)가 편집 중인가 — 관리자는 고른 묶음 하나만, 기사님은 editing 하나로 전체.
+  function inEditGroup(groupKey: string) {
+    return editing && (editingGroupKey === undefined || editingGroupKey === groupKey);
+  }
   // ── 끌기 = «실시간 재배치(live reorder)» (관리자 손잡이 ⠿ · 기사님 카드 전체 공통) ──
   // 2026-11-09 원장 점검(3차): «줄 표시보다는 위치할 자리로 옮겨가고 다른 카드들이 실제로 밀리는 동작».
   //   · 끄는 카드 자체가 손가락/마우스를 따라 떠서 움직인다(그림자·살짝 확대).
@@ -291,7 +310,7 @@ export default function RunBoard({
 
   // 기사님 카드 끌기 시작 — 정규 카드·편집 중에만. 버튼(탑승 체크 포함)·입력칸·링크를 누른 건 끌기가 아니다.
   function startCardDrag(event: PointerEvent<HTMLLIElement>, row: UnifiedRow) {
-    if (!editing || row.kind !== "REGULAR" || row.isTerminal) return;
+    if (!inEditGroup(row.groupKey) || row.kind !== "REGULAR" || row.isTerminal) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest("button,input,a")) return;
     pressDrag(event, row, event.currentTarget);
@@ -351,7 +370,7 @@ export default function RunBoard({
     const isPickup = row.direction === "PICKUP";
     // 길안내(T맵)는 운전하는 기사님 화면에만 둔다.
     const url = mode === "driver" ? tmapNavigationCoordinateUrl({ latitude: row.lat, longitude: row.lng, name: row.label }) : null;
-    const editable = editing && row.kind === "REGULAR";
+    const editable = inEditGroup(row.groupKey) && row.kind === "REGULAR";
     const isUpcoming = mode === "driver" && !editing && upcoming != null && upcoming.nextKey === row.key;
     // 관리자 편집 카드 = 한 줄(손잡이 · 순번 · 정류장 · 시각 · 학생들 · 정류장 수정 · ▲▼). 좁은 화면에서는 줄바꿈된다.
     if (mode === "admin" && editable) {
@@ -419,7 +438,7 @@ export default function RunBoard({
         data-upcoming={isUpcoming || undefined}
         aria-current={isUpcoming ? "step" : undefined}
         className={`${styles.stop} ${isUpcoming ? styles.upcoming : ""} academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "shadow-2xl ring-2 ring-[var(--color-academy-info)]" : ""} ${
-        editing ? "border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)]" : row.warn ? "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)]" : row.isHub ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)]" : "border-[var(--color-academy-line)] bg-white"
+        inEditGroup(row.groupKey) ? "border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)]" : row.warn ? "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)]" : row.isHub ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)]" : "border-[var(--color-academy-line)] bg-white"
       }`}>
         <div className={styles.stopHeading}>
           {editable ? (
@@ -496,13 +515,36 @@ export default function RunBoard({
         </span>}
       </>
     );
-    return onSelectBlock ? (
+    const head = onSelectBlock ? (
       <button type="button" onClick={() => onSelectBlock(block.groupKey)} aria-pressed={selected}
         className="flex min-h-11 w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-xl px-2 text-left">
         {content}
       </button>
     ) : (
       <h3 className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-0.5 px-1">{content}</h3>
+    );
+    // 기사님 화면(연필 없음·묶음 편집 없음)은 머리 그대로 — 마크업을 바꾸지 않는다.
+    if (!onEditBlock && editingGroupKey === undefined) return head;
+    const blockEditing = editing && editingGroupKey != null && editingGroupKey === block.groupKey;
+    return (
+      // 편집 중인 묶음 머리는 긴 묶음을 내려도 [저장]이 보이게 붙어 따라온다(sticky — 관리자 머리 h-14 아래, 블록 안에서만).
+      <div className={blockEditing ? "sticky top-14 z-10 rounded-xl border border-[var(--color-academy-info)] bg-[var(--color-academy-surface)] shadow-sm" : ""}>
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">{head}</div>
+          {blockEditing
+            ? <span className="flex shrink-0 items-center gap-1 pr-1">{renderEditActions?.(block)}</span>
+            : onEditBlock && block.kind === "REGULAR" && (
+              // 연필 = 눈에 보이는 원은 36px, 누르는 자리는 44px(휴대폰 터치). 중립색 — 흰 바탕·회색 테두리·검정 아이콘.
+              <button type="button" onClick={() => onEditBlock(block.groupKey)} aria-label={`${blockEditName(block)} 묶음 수정`}
+                title="이 묶음 수정(순서·시각·정류장·학생)" className="group grid h-11 w-11 shrink-0 place-items-center rounded-full">
+                <span className="grid h-9 w-9 place-items-center rounded-full border border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-ink)] group-hover:bg-[var(--color-academy-soft)]">
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">edit</span>
+                </span>
+              </button>
+            )}
+        </div>
+        {blockEditing && renderEditBar?.(block)}
+      </div>
     );
   }
 
@@ -513,11 +555,17 @@ export default function RunBoard({
         <section key={block.key} aria-label={block.label} data-run-block={block.groupKey}
           className={`rounded-2xl ${selectedGroupKey != null && selectedGroupKey === block.groupKey ? "bg-[var(--color-academy-info-soft)] p-1.5 ring-2 ring-[var(--color-academy-info)]" : ""}`}>
           {renderBlockHead(block)}
-          <ol className={mode === "admin" && editing ? "mt-1 space-y-2" : "mt-1 space-y-2.5"}>
+          <ol className={mode === "admin" && inEditGroup(block.groupKey) ? "mt-1 space-y-2" : "mt-1 space-y-2.5"}>
             {block.rows.map(renderRow)}
           </ol>
         </section>
       ))}
     </div>
   );
+}
+
+// 연필 이름표 글자 — «16:00~17:00 수업 · 등원» → «16:00 등원»(화면 읽기 프로그램이 짧게 읽도록). 시각이 없으면 머리 글자 그대로.
+function blockEditName(block: RunBlock): string {
+  const start = block.label.match(/\d{1,2}:\d{2}/)?.[0];
+  return start ? `${start} ${block.direction === "PICKUP" ? "등원" : "하원"}` : block.label;
 }
