@@ -10,11 +10,13 @@
  * - 날짜는 KST: timestamptz 는 AT TIME ZONE 한 번, date 컬럼은 ::text(이미 달력 값). 서버 시계를 믿지 않는다.
  * - 상태 목록은 catalog 의 영문 대문자 상수뿐이라(테스트가 /^[A-Z_]+$/ 확인) SQL 배열 글자로 넣어도 안전하다.
  */
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
   bucketFor,
   ENROLLMENT_CANCEL_REQUESTED,
+  RENTAL_COMPLETED_NO_DEPOSIT,
   kindEntry,
   REQUEST_KINDS,
   statusLabel,
@@ -316,7 +318,8 @@ const ADAPTERS: Adapter[] = [
   {
     kind: "RENTAL",
     from: `"GymRentalRequest" x`,
-    rawExpr: "x.status",
+    // 파생 순서는 catalog.deriveRentalStatus 와 같다(사용 완료 + 보증금 0원 → 완료)
+    rawExpr: `CASE WHEN x.status = 'COMPLETED' AND x.deposit = 0 THEN '${RENTAL_COMPLETED_NO_DEPOSIT}' ELSE x.status END`,
     studentNameExpr: "NULL::text",
     createdAtExpr: `x."createdAt"`,
     targetDateExpr: `x."rentalDate"`,
@@ -563,8 +566,13 @@ async function readConsultCount(): Promise<number> {
   }
 }
 
-/** 메뉴 배지·«오늘 업무» 카드 숫자. 실패하면 null(화면은 숫자만 숨긴다 — 관리자 화면 전체를 죽이지 않는다) */
-export async function getInboxCounts(): Promise<InboxCounts | null> {
+/**
+ * 메뉴 배지·«오늘 업무» 카드 숫자. 실패하면 null(화면은 숫자만 숨긴다 — 관리자 화면 전체를 죽이지 않는다)
+ * react.cache — 같은 요청 안에서 layout(메뉴 배지)·page(탭 배지)가 같이 불러도 DB 는 한 번만 읽는다.
+ */
+export const getInboxCounts = cache(readInboxCounts);
+
+async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {

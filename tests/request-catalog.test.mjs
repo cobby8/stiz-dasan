@@ -7,6 +7,7 @@ import {
   REQUEST_KINDS, INBOX_BUCKETS, BUCKET_LABEL, PARENT_BUCKET_LABEL, BULK_ACTION_KINDS,
   bucketFor, statusLabel, statusTone, statusBadgeClassFor, statusesOf, kindLabel, isRequestKind,
   deriveEnrollmentChangeStatus, deriveWithdrawalStatus, deriveShuttleDayStatus, statusEntry, ENROLLMENT_CANCEL_REQUESTED,
+  deriveRentalStatus, RENTAL_COMPLETED_NO_DEPOSIT,
   INBOX_TABS, KIND_TAB, TAB_SUBS, isInboxTab, kindsOfTab, subOf, tabOfKind, tabLabel, tabActionCounts,
 } from '../src/lib/requests/catalog.ts';
 import { STATUS_TONES, TONE_BADGE_CLASS } from '../src/lib/ui/statusTones.ts';
@@ -95,7 +96,8 @@ test('대관 상태는 대관 규칙 모듈의 상태 목록과 같은 집합이
   const src = fs.readFileSync('src/lib/rental/gym-rental-rules.ts', 'utf8');
   const block = src.match(/export const RENTAL_STATUSES = \[([\s\S]*?)\] as const/)[1];
   const rental = [...block.matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(statusesOf('RENTAL').sort(), rental);
+  // 파생 상태(사용 완료 + 보증금 0원)는 규칙 모듈에 없는 신청함 전용 이름이라 빼고 비교한다
+  assert.deepEqual(statusesOf('RENTAL').filter((s) => s !== RENTAL_COMPLETED_NO_DEPOSIT).sort(), rental);
 });
 
 test('모르는 상태·모르는 종류는 «상태 확인 필요»·중립색으로 진행 중 칸에 둔다(완료로 숨기지 않음)', () => {
@@ -196,4 +198,19 @@ test('탭 배지 = catalog 종류의 처리 필요 합 + 체험·수강·상담 
   );
   assert.deepEqual(byTab, { TRIAL: 5, ENROLL: 6, CONSULT: 0, RENTAL: 3, CHANGE: 3, OTHER: 5 });
   assert.deepEqual(tabActionCounts({}), { TRIAL: 0, ENROLL: 0, CONSULT: 0, RENTAL: 0, CHANGE: 0, OTHER: 0 });
+});
+
+test('대관 «사용 완료» — 보증금 0원(재원생 무료)은 완료, 보증금 있으면 «보증금 환불 대기»(진행 중)', () => {
+  assert.equal(RENTAL_COMPLETED_NO_DEPOSIT, 'COMPLETED_NO_DEPOSIT');
+  assert.equal(deriveRentalStatus('COMPLETED', 0), 'COMPLETED_NO_DEPOSIT');
+  assert.equal(deriveRentalStatus('COMPLETED', '0'), 'COMPLETED_NO_DEPOSIT');
+  assert.equal(bucketFor('RENTAL', deriveRentalStatus('COMPLETED', 0)), 'DONE');
+  assert.equal(statusLabel('RENTAL', deriveRentalStatus('COMPLETED', 0)), '사용 완료');
+  assert.equal(deriveRentalStatus('COMPLETED', 20000), 'COMPLETED');
+  assert.equal(bucketFor('RENTAL', deriveRentalStatus('COMPLETED', 20000)), 'ONGOING');
+  assert.equal(statusLabel('RENTAL', 'COMPLETED'), '보증금 환불 대기');
+  // 보증금을 모르면 예전 판정 그대로, 다른 상태는 보증금과 무관
+  assert.equal(deriveRentalStatus('COMPLETED', null), 'COMPLETED');
+  assert.equal(deriveRentalStatus('PAID', 0), 'PAID');
+  assert.equal(deriveRentalStatus('REQUESTED', 0), 'REQUESTED');
 });

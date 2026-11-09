@@ -61,6 +61,8 @@ export type InboxTabData =
 type Props = {
   tab: InboxTab;
   sub: string | null;
+  /** «?kind=» 탭 안 한 종류만 보기(옛 주소·오늘 업무 문의 목록) — 없으면 null */
+  kind: RequestKind | null;
   showDone: boolean;
   from: string | null;
   to: string | null;
@@ -250,7 +252,7 @@ function GroupHead({ label, count }: { label: string; count: number }) {
   );
 }
 
-export default function InboxClient({ tab, sub, showDone, from, to, counts, data }: Props) {
+export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data }: Props) {
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
@@ -262,14 +264,18 @@ export default function InboxClient({ tab, sub, showDone, from, to, counts, data
   const [pending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useAdminConfirm();
 
+  // 체험·수강 화면은 목록을 스스로 고친다 — 처리가 끝나면 서버 화면만 다시 그려 탭 배지·메뉴 숫자를 맞춘다
+  const refreshCounts = () => router.refresh();
   const rowsData = data.type === "ROWS" ? data : null;
   const openRows = useMemo(() => rowsData?.open ?? [], [rowsData]);
   const doneRows = useMemo(() => rowsData?.done ?? [], [rowsData]);
 
   // 주소(탭·분류·완료 보기·날짜) 바꾸기 — 서버가 새로 읽는다
-  const go = (next: Partial<{ tab: InboxTab; sub: string | null; done: boolean; from: string | null; to: string | null }>) => {
+  const go = (next: Partial<{ tab: InboxTab; sub: string | null; kind: string | null; done: boolean; from: string | null; to: string | null }>) => {
     const params = new URLSearchParams();
     const t = next.tab ?? tab;
+    // 한 종류 보기는 탭·분류를 바꾸면 풀린다(완료 보기·날짜는 유지)
+    const k = (next.tab && next.tab !== tab) || next.sub !== undefined ? null : next.kind === undefined ? kind : next.kind;
     // 탭을 바꾸면 분류·완료 보기는 처음으로
     const s = next.tab && next.tab !== tab ? null : next.sub === undefined ? sub : next.sub;
     const d = next.tab && next.tab !== tab ? false : next.done ?? showDone;
@@ -277,6 +283,7 @@ export default function InboxClient({ tab, sub, showDone, from, to, counts, data
     const e = next.to === undefined ? to : next.to;
     params.set("tab", t);
     if (s) params.set("sub", s);
+    if (k) params.set("kind", k);
     if (d) params.set("done", "1");
     if (f) params.set("from", f);
     if (e) params.set("to", e);
@@ -478,6 +485,15 @@ export default function InboxClient({ tab, sub, showDone, from, to, counts, data
         </div>
       )}
 
+      {/* 한 종류만 보는 중(옛 «?kind=» 주소) — 누르면 탭 전체 */}
+      {isRowsTab && kind && (
+        <button type="button" onClick={() => go({ kind: null, sub: null })} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-ink)]">
+          {kindLabel(kind)}만 보기
+          <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+          <span className="sr-only">— 눌러서 {tabLabel(tab)} 전체 보기</span>
+        </button>
+      )}
+
       {/* 적용 중인 날짜 필터 한 줄 요약 */}
       {isRowsTab && filterCount > 0 && (
         <p className="text-sm text-[var(--color-academy-muted)]">
@@ -494,11 +510,12 @@ export default function InboxClient({ tab, sub, showDone, from, to, counts, data
           initialTrialStats={data.trial.stats}
           initialTrialClasses={data.trial.classes}
           initialTrialPagination={data.trial.pagination}
+          onChanged={refreshCounts}
         />
       )}
       {data.type === "ENROLL" && (
-        // 분류가 바뀌면 화면을 새로 만든다(신청 ↔ 대기 화면의 상태가 섞이지 않게)
-        <ApplyAdminClient key={sub ?? "APPLY"} mode={sub === "WAITLIST" ? "waitlist" : "applications"} />
+        // 분류가 바뀌면 화면을 새로 만든다(신청 ↔ 대기 화면의 상태가 섞이지 않게). 처리 후 배지·메뉴 숫자 갱신
+        <ApplyAdminClient key={sub ?? "APPLY"} mode={sub === "WAITLIST" ? "waitlist" : "applications"} onChanged={refreshCounts} />
       )}
       {data.type === "RENTAL" && <RentalAdminClient embedded rows={data.rows} bankAccount={data.bankAccount} smsOn={data.smsOn} />}
 

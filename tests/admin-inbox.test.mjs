@@ -159,7 +159,7 @@ test('체험·수강·대관 탭은 기존 화면 컴포넌트를 그대로 끼�
   assert.match(applyClient, /const embedded = mode === "trial" \|\| mode === "applications" \|\| mode === "waitlist";/);
   assert.match(applyClient, /\{!embedded && \(/);
   // 대관: 처리할 것 먼저, 완료는 맨 아래 «완료 보기»(catalog 같은 칸 판정)
-  assert.match(rentalClient, /bucketFor\("RENTAL", row\.status\)/);
+  assert.match(rentalClient, /bucketFor\("RENTAL", deriveRentalStatus\(row\.status, row\.deposit\)\)/);
   assert.match(rentalClient, /완료 보기 \$\{doneRows\.length\}/);
 });
 
@@ -196,4 +196,42 @@ test('신청 설정(⚙, k4) — 유입 통계·안내 설정·입학 점검, �
 test('현장 수납 승인은 신청함 «기타» 탭에 남는다(POS 근거 없는 현금·계좌 수납 — 승인 필요)', () => {
   assert.match(inbox, /kind: "STAFF_PAYMENT",/);
   assert.match(client, /reviewStaffPaymentConfirmation\(\{ requestId: row\.id, decision: "APPROVED", note \}\)/);
+});
+
+// ── 2026-11-10 검수 후속(PM) ──
+const trialClient = fs.readFileSync('src/app/admin/trial/TrialCrmClient.tsx', 'utf8');
+
+test('오늘 업무 칩 = 신청함 6탭 배지(칩 합 = 처리할 신청 숫자), 누르면 그 탭', () => {
+  assert.match(dashboard, /INBOX_TABS\.filter\(\(entry\) => inboxCounts\.byTab\[entry\.tab\] > 0\)/);
+  assert.match(dashboard, /href=\{`\/admin\/inbox\?tab=\$\{entry\.tab\}`\}/);
+  assert.doesNotMatch(dashboard, /inboxCounts\.byKind/);
+});
+
+test('«?kind=» 주소 — 그 종류의 탭을 열고 그 종류만, «…만 보기 ×» 칩으로 탭 전체', () => {
+  assert.match(page, /const explicitTab = isInboxTab\(params\.tab\) \? params\.tab : kindParam \? KIND_TAB\[kindParam\] : null;/);
+  assert.match(page, /const kinds = kind \? \[kind\] : kindsOfTab\(tab, sub\);/);
+  assert.match(client, /if \(k\) params\.set\("kind", k\);/);
+  assert.match(client, /\{kindLabel\(kind\)\}만 보기/);
+  assert.match(client, /onClick=\{\(\) => go\(\{ kind: null, sub: null \}\)\}/);
+});
+
+test('체험·수강 탭 처리 후 배지·메뉴 숫자 갱신 — onChanged(선택 콜백) → router.refresh, 옛 /admin/apply 는 그대로', () => {
+  assert.match(client, /const refreshCounts = \(\) => router\.refresh\(\);/);
+  assert.equal((client.match(/onChanged=\{refreshCounts\}/g) ?? []).length, 2);
+  assert.match(applyClient, /onChanged\?: \(\) => void;/);
+  assert.match(applyClient, /if \(type === "success"\) onChangedRef\.current\?\.\(\);/);
+  assert.match(applyClient, /onChanged=\{onChanged\}/); // 체험 화면에도 넘긴다
+  assert.match(trialClient, /if \(type === "success"\) onChangedRef\.current\?\.\(\);/);
+  const applyPage = fs.readFileSync('src/app/admin/apply/page.tsx', 'utf8');
+  assert.doesNotMatch(applyPage, /onChanged/);
+});
+
+test('개수는 요청당 한 번(react.cache), 탭이 주소에 있으면 개수·탭 데이터 동시 조회', () => {
+  assert.match(inbox, /import \{ cache \} from "react";/);
+  assert.match(inbox, /export const getInboxCounts = cache\(readInboxCounts\);/);
+  assert.match(page, /\[counts, data\] = await Promise\.all\(\[getInboxCounts\(\), loadTabData\(/);
+});
+
+test('대관 사용 완료 + 보증금 0원 = 완료 — 신청함 SQL 이 catalog 와 같은 이름(상수)을 쓴다', () => {
+  assert.match(inbox, /CASE WHEN x\.status = 'COMPLETED' AND x\.deposit = 0 THEN '\$\{RENTAL_COMPLETED_NO_DEPOSIT\}' ELSE x\.status END/);
 });

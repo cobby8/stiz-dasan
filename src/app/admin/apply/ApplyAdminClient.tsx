@@ -6,7 +6,7 @@ import { formatEnrollmentMonthsShort, formatEnrollmentStartOn, formatPreferredSl
 import type { EnrollmentShuttleProgress } from "@/lib/enrollment/shuttle-progress";
 import EnrollmentShuttleProgressView from "./EnrollmentShuttleProgressView";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { getEnrollTrialLinkSuggestions, linkEnrollApplicationToTrialLead, recordApplicationContact, sendManualSms } from "@/app/actions/admin";
@@ -194,6 +194,11 @@ interface ApplyAdminClientProps {
      * 목록·상세·처리 로직은 모드와 상관없이 같은 코드다.
      */
     mode?: ApplyAdminMode;
+    /**
+     * 처리(저장·승인·문자 등)가 성공할 때마다 부르는 선택 콜백 — 신청함에 끼울 때 탭 배지·메뉴 숫자를 다시 읽게 한다.
+     * 옛 /admin/apply 는 넘기지 않는다(동작 그대로).
+     */
+    onChanged?: () => void;
 }
 
 export type ApplyAdminMode = "full" | "trial" | "applications" | "waitlist" | "settings";
@@ -443,7 +448,11 @@ export default function ApplyAdminClient({
     initialTrialClasses,
     initialTrialPagination,
     mode = "full",
+    onChanged,
 }: ApplyAdminClientProps) {
+    // 콜백은 ref 로 붙잡는다 — 부모가 매번 새 함수를 넘겨도 아래 useCallback 들이 다시 만들어지지 않게
+    const onChangedRef = useRef(onChanged);
+    onChangedRef.current = onChanged;
     // 끼워 쓰기 모드면 제목·업무 탭 줄을 숨기고 그 한 화면만 보인다(신청함이 탭을 맡는다)
     const embedded = mode === "trial" || mode === "applications" || mode === "waitlist";
     const hasInitialApplyData = Boolean(initialApplications && initialClasses);
@@ -569,6 +578,8 @@ export default function ApplyAdminClient({
     const showFeedback = useCallback((type: "success" | "error", message: string) => {
         setFeedback({ type, message });
         window.setTimeout(() => setFeedback(null), 3500);
+        // 성공 = 무언가 바뀌었다 → 신청함이면 배지·메뉴 숫자 갱신
+        if (type === "success") onChangedRef.current?.();
     }, []);
     const handleRecordContact = useCallback(async (
         app: EnrollApplication,
@@ -1102,6 +1113,7 @@ export default function ApplyAdminClient({
                     initialStats={initialTrialStats}
                     initialClasses={initialTrialClasses}
                     initialPagination={initialTrialPagination}
+                    onChanged={onChanged}
                 />
             ) : activeTab === "applications" ? (
                 !applyLoaded ? (

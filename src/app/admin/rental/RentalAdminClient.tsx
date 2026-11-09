@@ -33,7 +33,7 @@ import {
 } from "@/lib/rental/gym-rental-rules";
 import { updateRentalStatus, type AdminRentalRow } from "@/app/actions/rental";
 // 신청함 «대관» 탭에 끼울 때 «처리할 것 / 완료»를 나누는 기준 — 신청함과 같은 칸 판정(catalog 한 곳)
-import { bucketFor } from "@/lib/requests/catalog";
+import { bucketFor, deriveRentalStatus } from "@/lib/requests/catalog";
 
 const ACTION_ICON: Record<RentalAction, string> = {
   approve: "check_circle",
@@ -122,7 +122,8 @@ export default function RentalAdminClient({ rows, bankAccount, smsOn, embedded =
   }, [rows]);
   const chips = RENTAL_STATUSES.map((status) => ({ value: status, label: RENTAL_STATUS_LABEL[status], count: counts.get(status) ?? 0 }));
   // 끼운 모양: 처리 필요(승인 대기) → 진행 중(입금 대기·확정·환불 대기) 순, 같은 칸 안은 원래 순서 유지. 완료는 펼쳤을 때만 맨 아래
-  const rank = (row: AdminRentalRow) => ({ ACTION: 0, ONGOING: 1, DONE: 2 })[bucketFor("RENTAL", row.status)];
+  // 보증금 0원(재원생 무료) 대관의 «사용 완료»는 끝난 일(deriveRentalStatus)
+  const rank = (row: AdminRentalRow) => ({ ACTION: 0, ONGOING: 1, DONE: 2 })[bucketFor("RENTAL", deriveRentalStatus(row.status, row.deposit))];
   const openRows = embedded ? rows.filter((row) => rank(row) < 2).sort((a, b) => rank(a) - rank(b)) : [];
   const doneRows = embedded ? rows.filter((row) => rank(row) === 2) : [];
   const visible = embedded

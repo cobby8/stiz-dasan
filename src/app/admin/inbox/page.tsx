@@ -23,35 +23,50 @@ type SearchParams = { tab?: string; sub?: string; done?: string; from?: string; 
 
 const ymd = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
 
-/** 옛 주소 «?kind=종류»(오늘 업무 카드·북마크) → 그 종류가 사는 탭·작은 분류 */
-function legacyKindTarget(kind: RequestKind): { tab: InboxTab; sub: string | null } {
-  const tab = KIND_TAB[kind];
-  const sub = TAB_SUBS[tab]?.find((entry) => entry.kinds?.includes(kind))?.key ?? null;
-  return { tab, sub };
+/** «?kind=종류»(옛 오늘 업무 카드·북마크) → 그 종류가 사는 작은 분류(변경 탭이면 결석·보강/셔틀/수강) */
+function subOfKind(tab: InboxTab, kind: RequestKind): string | null {
+  return TAB_SUBS[tab]?.find((entry) => entry.kinds?.includes(kind))?.key ?? null;
 }
 
 export default async function AdminInboxPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
   await requireAdmin();
   const params = (await searchParams) ?? {};
   // 주소 값은 그대로 믿지 않는다 — 알려진 탭·분류·종류·날짜 모양만 통과
-  const legacy = isRequestKind(params.kind) ? legacyKindTarget(params.kind) : null;
+  const kindParam = isRequestKind(params.kind) ? params.kind : null;
+  const explicitTab = isInboxTab(params.tab) ? params.tab : kindParam ? KIND_TAB[kindParam] : null;
   const from = ymd(params.from);
   const to = ymd(params.to);
   const showDone = params.done === "1";
 
-  const counts = await getInboxCounts();
-  // 탭을 안 골랐으면 처리할 게 있는 첫 탭부터(없으면 체험)
-  const tab: InboxTab = isInboxTab(params.tab)
-    ? params.tab
-    : legacy?.tab ?? INBOX_TABS.find((entry) => (counts?.byTab[entry.tab] ?? 0) > 0)?.tab ?? "TRIAL";
-  const sub = subOf(tab, params.sub ?? (legacy?.tab === tab ? legacy.sub : null))?.key ?? null;
+  // «?kind=종류» = 그 종류만 걸러 보기(탭 안 필터). 그 탭의 종류이고, 탭에 종류가 여럿일 때만 의미가 있다
+  const scope = (tab: InboxTab) => {
+    const kind = kindParam && KIND_TAB[kindParam] === tab && kindsOfTab(tab).length > 1 ? kindParam : null;
+    const sub = kind ? subOfKind(tab, kind) : subOf(tab, params.sub)?.key ?? null;
+    return { kind, sub };
+  };
 
-  const data = await loadTabData(tab, sub, { from, to, showDone });
+  let counts: Awaited<ReturnType<typeof getInboxCounts>>;
+  let tab: InboxTab;
+  let data: InboxTabData;
+  if (explicitTab) {
+    // 탭이 주소에 있으면 개수와 탭 데이터를 동시에 읽는다(서로 기다릴 이유가 없다)
+    tab = explicitTab;
+    const { kind, sub } = scope(tab);
+    [counts, data] = await Promise.all([getInboxCounts(), loadTabData(tab, sub, kind, { from, to, showDone })]);
+  } else {
+    // 탭을 안 골랐으면 처리할 게 있는 첫 탭부터(없으면 체험) — 개수를 먼저 봐야 한다
+    counts = await getInboxCounts();
+    tab = INBOX_TABS.find((entry) => (counts?.byTab[entry.tab] ?? 0) > 0)?.tab ?? "TRIAL";
+    const { kind, sub } = scope(tab);
+    data = await loadTabData(tab, sub, kind, { from, to, showDone });
+  }
+  const { kind, sub } = scope(tab);
 
   return (
     <InboxClient
       tab={tab}
       sub={sub}
+      kind={kind}
       showDone={showDone}
       from={from}
       to={to}
@@ -65,6 +80,7 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
 async function loadTabData(
   tab: InboxTab,
   sub: string | null,
+  kind: RequestKind | null,
   { from, to, showDone }: { from: string | null; to: string | null; showDone: boolean },
 ): Promise<InboxTabData> {
   if (tab === "TRIAL") {
@@ -97,7 +113,8 @@ async function loadTabData(
     }
   }
   // 변경·기타 = catalog 어댑터 공통 한 줄. 처리 필요 → 진행 중 순서, 완료는 «완료 보기»를 눌렀을 때만 읽는다
-  const kinds = kindsOfTab(tab, sub);
+  // «?kind=» 로 한 종류만 고른 경우 그 종류만
+  const kinds = kind ? [kind] : kindsOfTab(tab, sub);
   const [action, ongoing, done] = await Promise.all([
     getInboxRows({ bucket: "ACTION", kinds, from, to }),
     getInboxRows({ bucket: "ONGOING", kinds, from, to }),

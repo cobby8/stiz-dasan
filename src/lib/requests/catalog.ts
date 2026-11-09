@@ -158,6 +158,8 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
       APPROVED: going("입금 대기"),
       PAID: going("확정"),
       COMPLETED: going("보증금 환불 대기"),
+      // 파생: 사용 완료 + 보증금 0원(재원생 무료) — 돌려줄 보증금이 없어 사용 완료가 마지막 단계다
+      COMPLETED_NO_DEPOSIT: ok("사용 완료"),
       REFUNDED: ok("환불 완료"),
       REJECTED: no("거절"),
       CANCELLED: off("취소"),
@@ -278,6 +280,18 @@ export function deriveEnrollmentChangeStatus(
 ): string {
   if (status === "APPROVED" && cancelRequestStatus === "PENDING") return ENROLLMENT_CANCEL_REQUESTED;
   return status === "APPROVED" && appliedAt ? "APPLIED" : status;
+}
+
+/** 대관 «사용 완료 + 보증금 0원» 파생 상태 이름 — 신청함 SQL·대관 화면 «완료 보기»가 같은 글자를 쓴다 */
+export const RENTAL_COMPLETED_NO_DEPOSIT = "COMPLETED_NO_DEPOSIT";
+
+/**
+ * 대관 파생 상태. 사용 완료(COMPLETED)인데 보증금이 0원(재원생 무료)이면 환불할 게 없어 «완료».
+ * 보증금이 있으면 기존대로 «보증금 환불 대기»(진행 중). 보증금 값을 모르면(null) 예전 판정 그대로.
+ */
+export function deriveRentalStatus(status: string, deposit: number | string | null | undefined): string {
+  if (status === "COMPLETED" && deposit != null && deposit !== "" && Number(deposit) === 0) return RENTAL_COMPLETED_NO_DEPOSIT;
+  return status;
 }
 
 /** 탈퇴: 탈퇴 완료 시각이 있으면 완료, 아니면 신청 */

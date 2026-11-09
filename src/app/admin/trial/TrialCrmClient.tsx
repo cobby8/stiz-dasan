@@ -620,12 +620,17 @@ export default function TrialCrmClient({
     initialStats,
     initialClasses,
     initialPagination,
+    onChanged,
 }: {
     initialLeads?: TrialLead[];
     initialStats?: TrialStats;
     initialClasses?: ClassInfo[];
     initialPagination?: ListPagination;
+    /** 처리 성공 때마다 부르는 선택 콜백(신청함 «체험» 탭이 배지·메뉴 숫자를 다시 읽는다). 없으면 예전 그대로 */
+    onChanged?: () => void;
 }) {
+    const onChangedRef = useRef(onChanged);
+    onChangedRef.current = onChanged;
     const hasInitialData = Boolean(initialLeads && initialStats);
     const [leads, setLeads] = useState<TrialLead[]>(initialLeads ?? []);
     const [stats, setStats] = useState<TrialStats>(initialStats ?? EMPTY_STATS);
@@ -720,6 +725,8 @@ export default function TrialCrmClient({
         if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
         setFeedback({ type, message });
         feedbackTimerRef.current = window.setTimeout(() => setFeedback(null), type === "info" ? 8000 : 4200);
+        // 성공 = 무언가 바뀌었다 → 신청함이면 배지·메뉴 숫자 갱신
+        if (type === "success") onChangedRef.current?.();
     }, []);
     const handleRecordContact = useCallback(async (
         lead: TrialLead,

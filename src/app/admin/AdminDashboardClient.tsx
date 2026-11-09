@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { kindLabel, type RequestKind } from "@/lib/requests/catalog";
+import { INBOX_TABS } from "@/lib/requests/catalog";
 import type { InboxCounts } from "@/lib/requests/admin-inbox";
 
 type DashboardStats = {
@@ -311,9 +311,8 @@ function DashboardContent({
     const { stats, pendingRequests, enrollStats, extendedStats, todayClasses, recentStudents } = data;
     // «처리할 신청» 숫자 = 신청함 «처리 필요»와 같은 숫자(메뉴 배지와 일치). 못 읽었으면 옛 숫자(문의 대기)
     const pendingCount = inboxCounts ? inboxCounts.action : data.pendingCount;
-    const inboxKinds = inboxCounts
-        ? (Object.entries(inboxCounts.byKind) as Array<[RequestKind, { action: number }]>).filter(([, n]) => n.action > 0)
-        : [];
+    // 칩 = 신청함 6탭 배지 그대로(칩 합 = «처리할 신청» 숫자). 누르면 그 탭이 열린다
+    const inboxTabs = inboxCounts ? INBOX_TABS.filter((entry) => inboxCounts.byTab[entry.tab] > 0) : [];
     const revDiff = extendedStats.lastMonthRevenue > 0
         ? Math.round(((extendedStats.thisMonthRevenue - extendedStats.lastMonthRevenue) / extendedStats.lastMonthRevenue) * 100)
         : extendedStats.thisMonthRevenue > 0 ? 100 : 0;
@@ -330,12 +329,12 @@ function DashboardContent({
                     <h2 className="academy-section-title flex items-center gap-2"><SymbolIcon name="inbox" />처리할 신청 <span className="academy-status">{pendingCount}건</span></h2>
                     <Link href="/admin/inbox" prefetch={false} className="text-sm font-bold text-[var(--color-academy-primary)]">전체 보기 →</Link>
                 </div>
-                {/* 종류별 건수 한 줄 — 누르면 신청함이 그 종류로 걸러져 열린다 */}
-                {inboxKinds.length > 0 && (
+                {/* 탭별 건수 한 줄 — 누르면 신청함이 그 탭으로 열린다 */}
+                {inboxTabs.length > 0 && (
                     <div className="flex flex-wrap gap-2 border-b border-[var(--color-academy-line)] px-4 py-2">
-                        {inboxKinds.map(([kind, n]) => (
-                            <Link key={kind} href={`/admin/inbox?kind=${kind}`} prefetch={false} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
-                                {kindLabel(kind)} <span className="tabular-nums">{n.action}</span>
+                        {inboxTabs.map((entry) => (
+                            <Link key={entry.tab} href={`/admin/inbox?tab=${entry.tab}`} prefetch={false} className="inline-flex min-h-11 items-center gap-1 rounded-full border border-[var(--color-academy-line-input)] px-3 text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
+                                {entry.label} <span className="tabular-nums">{inboxCounts?.byTab[entry.tab]}</span>
                             </Link>
                         ))}
                     </div>
@@ -351,7 +350,7 @@ function DashboardContent({
                             </Link>
                         ))}
                     </div>
-                ) : pendingCount > 0 && inboxKinds.length === 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
+                ) : pendingCount > 0 && inboxTabs.length === 0 ? <p className="px-4 py-3 text-sm text-[var(--color-academy-muted)]">요청 목록에서 처리할 내용을 확인하세요.</p> : null}
                 {enrollStats.PENDING > 0 && <Link href="/admin/inbox?tab=ENROLL" prefetch={false} className="flex items-center justify-between gap-3 border-t border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] px-5 py-3 text-sm font-bold text-[var(--color-academy-primary)]"><span>수강 신청 대기 {enrollStats.PENDING}건</span><span>확인하기 →</span></Link>}
             </section>
                 <TodayClassesCard todayClasses={todayClasses} todayLabel={todayLabel} />
