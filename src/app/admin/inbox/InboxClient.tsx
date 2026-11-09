@@ -259,14 +259,16 @@ export default function InboxClient({ bucket, kinds, from, to, rows, counts, fai
       {/* 머리 한 줄: 제목 + 검색 + 필터 버튼(컴팩트 — 히어로 없음) */}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-auto text-xl font-black text-[var(--color-academy-ink)]">신청함</h1>
-        <label className="relative min-w-0 flex-1 sm:max-w-xs">
+        {/* 검색 칸 — 신청·상담 화면과 같은 모양(돋보기는 칸 안 왼쪽, 글자와 겹치지 않게 flex 로 나란히) */}
+        <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 sm:max-w-xs">
           <span className="sr-only">원생·제목 검색</span>
-          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
+          <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
           <input
+            type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="원생 이름 검색"
-            className="academy-input min-h-11 w-full pl-10"
+            className="min-w-0 flex-1 bg-transparent py-2 text-base text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none"
           />
         </label>
         <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary" aria-haspopup="dialog">
@@ -327,13 +329,15 @@ export default function InboxClient({ bucket, kinds, from, to, rows, counts, fai
       {/* 목록 — 한 줄 행(높이 ≈48px). 행 전체가 상세 열기 버튼 */}
       <section className="overflow-hidden rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]" aria-label={`${BUCKET_LABEL[bucket]} 신청 목록`}>
         {bulkRows.length > 0 && (
-          <label className="flex min-h-11 items-center gap-3 border-b border-[var(--color-academy-line)] px-3 text-sm text-[var(--color-academy-muted)]">
-            <input
-              type="checkbox"
-              className="h-5 w-5"
-              checked={selectedRows.length === bulkRows.length}
-              onChange={(event) => setSelected(event.target.checked ? new Set(bulkRows.map(keyOf)) : new Set())}
-            />
+          <label className="flex min-h-11 items-center border-b border-[var(--color-academy-line)] pr-3 text-sm text-[var(--color-academy-muted)]">
+            <span className="flex w-12 shrink-0 justify-center">
+              <input
+                type="checkbox"
+                className="h-5 w-5"
+                checked={selectedRows.length === bulkRows.length}
+                onChange={(event) => setSelected(event.target.checked ? new Set(bulkRows.map(keyOf)) : new Set())}
+              />
+            </span>
             결석 신고·새 문의 {bulkRows.length}건 모두 고르기
           </label>
         )}
@@ -346,10 +350,13 @@ export default function InboxClient({ bucket, kinds, from, to, rows, counts, fai
             {visible.map((row) => {
               const key = keyOf(row);
               const bulk = bucket === "ACTION" && isBulkable(row);
+              // 고르기 칸이 하나라도 있으면 모든 줄에 같은 폭(48px) 자리를 둔다 — 종류·이름 열이 들쭉날쭉하지 않게
+              const gutter = bulkRows.length > 0;
               return (
                 <li key={key} className="flex min-h-12 items-center">
+                  {gutter && !bulk && <span className="w-12 shrink-0" aria-hidden="true" />}
                   {bulk && (
-                    <label className="flex min-h-12 min-w-11 items-center justify-center pl-1">
+                    <label className="flex min-h-12 w-12 shrink-0 items-center justify-center">
                       <span className="sr-only">{row.studentName ?? row.title} 고르기</span>
                       <input
                         type="checkbox"
@@ -366,7 +373,7 @@ export default function InboxClient({ bucket, kinds, from, to, rows, counts, fai
                   <button
                     type="button"
                     onClick={() => { setOpenId(key); setNote(""); setMessage(null); }}
-                    className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${bulk ? "pl-1" : "pl-3"}`}
+                    className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
                   >
                     <span className="hidden w-24 shrink-0 truncate text-xs font-bold text-[var(--color-academy-muted)] sm:block">{kindLabel(row.kind)}</span>
                     <span className="min-w-0 flex-1 truncate text-sm">
