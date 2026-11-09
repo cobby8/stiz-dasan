@@ -100,12 +100,16 @@ test("A-10 패널 버튼 줄은 공용 부품 하나로", () => {
   }
 });
 
-test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 같은 handleStatusChange", () => {
+test("A-01 환불은 위험색 + 대상·금액 확인 창 뒤에 «선택 항목 환불»과 같은 runRefund(2026-11-09 PM 결정)", () => {
   const finance = read("../src/app/admin/finance/FinanceClient.tsx");
   const block = finance.slice(finance.indexOf('key: "refund"'), finance.indexOf('key: "delete"'));
   assert.match(block, /tone: "danger" as const/);
   assert.match(block, /원생 \$\{formatAmount\(p\.amount\)\}을 환불 처리할까요\?/);
-  assert.ok(block.indexOf("await askConfirm(") < block.indexOf('void handleStatusChange(p.id, "REFUNDED")'));
+  // 확인 창이 먼저, 실행은 결제 길별 서버 액션(refundSelectedPayments)을 부르는 runRefund 하나
+  assert.ok(block.indexOf("await askConfirm(") >= 0);
+  assert.ok(block.indexOf("await askConfirm(") < block.indexOf("void runRefund([p.id])"));
+  // 상태 변경으로 환불하던 옛 길(장부만 바뀜)은 다시 쓰지 않는다
+  assert.doesNotMatch(finance, /handleStatusChange\([^)]*"REFUNDED"\)/);
   // 확인 모달 버튼 44px·학원 변수색
   assert.match(finance, /className="academy-button-danger-solid ml-auto">\{busy \? "처리 중…" : "청구서 삭제"\}/);
   assert.match(finance, /className="academy-button-primary ml-auto">\{busy \? "처리 중…" : "청구 생성"\}/);

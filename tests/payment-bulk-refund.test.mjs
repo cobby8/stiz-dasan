@@ -315,6 +315,27 @@ test("계약: 토스 취소 반영은 웹훅과 같은 applyVerifiedTossFullCanc
     assert.doesNotMatch(body, /cancelAmount\s*:/, "부분 취소 금액을 보내지 않는다");
 });
 
+test("계약: ⚡ 한 건 «환불»도 같은 runRefund → refundSelectedPayments(길이 갈리지 않게) · 확인 문구가 결제 길을 구분", () => {
+    const block = financeSrc.slice(financeSrc.indexOf('key: "refund"'), financeSrc.indexOf('key: "delete"'));
+    assert.match(block, /void runRefund\(\[p\.id\]\)/);
+    assert.match(block, /p\.paidProvider === "TOSS"/);
+    assert.match(block, /토스 결제 취소\(카드 승인 취소\)/);
+    assert.match(block, /장부만 환불\(돈은 직접 돌려주세요\)/);
+    // runRefund 한 곳만 서버 액션을 부른다(막대도 runRefund 경유)
+    assert.equal((financeSrc.match(/refundSelectedPayments\(/g) ?? []).length, 1);
+    assert.match(financeSrc, /function handleBulkRefund\(\) \{\s*return runRefund\(Array\.from\(selectedIds\)\);/);
+    assert.match(financeSrc, /온라인 결제 \$\{tossCount\}건은 토스 결제 취소\(카드 승인 취소\)/);
+});
+
+test("계약: 서버 상태 변경 함수는 REFUNDED 를 받지 않는다(돈은 그대로 장부만 환불되는 옛 길 차단)", () => {
+    const adminSrc = readFileSync(new URL("../src/app/actions/admin.ts", import.meta.url), "utf8");
+    for (const header of ["export async function updatePaymentStatus(", "export async function bulkUpdatePaymentStatus("]) {
+        const start = adminSrc.indexOf(header);
+        const body = adminSrc.slice(start, adminSrc.indexOf("try {", start));
+        assert.match(body, /=== "REFUNDED"\) throw new Error\(DIRECT_REFUND_BLOCKED_MESSAGE\)/, header);
+    }
+});
+
 test("계약: 화면 — 막대 버튼 모드는 규칙 함수, 환불은 그 자리 확인 + 이중 클릭 막기", () => {
     assert.match(financeSrc, /bulkSelectionMode\(/);
     assert.match(financeSrc, /<InlineConfirm[\s\S]*?label="선택 항목 환불"/);

@@ -776,10 +776,10 @@ export default function FinanceClient({
         setRecordTargets(targets);
     }
 
-    // 선택 항목 환불 — 서버가 권한·상태·묶음을 다시 확인하고 갈래별로 기존 환불 함수를 부른다
-    async function handleBulkRefund() {
+    // 환불 실행 한 곳 — 막대 «선택 항목 환불»과 ⚡ 한 건 «환불»이 같이 쓴다(PM 결정 2026-11-09: 길이 갈리지 않게).
+    // 서버(refundSelectedPayments)가 권한·상태·묶음을 다시 확인하고 결제 길별로 기존 환불 함수를 부른다.
+    async function runRefund(ids: string[]) {
         if (!canManageCriticalFinance || bulkRefundingRef.current) return;
-        const ids = Array.from(selectedIds);
         if (ids.length === 0) return;
         bulkRefundingRef.current = true;
         setBusy(true);
@@ -797,7 +797,8 @@ export default function FinanceClient({
                 .filter((outcome) => outcome.result === "FAILED")
                 .map((outcome) => `${outcome.paymentIds.map(nameOf).join("·")}: ${outcome.message ?? "실패"}`);
             setBulkRefundNotice({ tone: failures.length > 0 ? "danger" : "success", lines: [result.summary, ...failures] });
-            setSelectedIds(new Set());
+            // 처리한 청구만 선택에서 뺀다(⚡ 한 건 환불이 다른 선택을 지우지 않게)
+            setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !ids.includes(id))));
             await loadMonth(year, month);
         } catch (err: unknown) {
             setBulkRefundNotice({ tone: "danger", lines: [getErrorMessage(err, "선택 항목 환불 실패")] });
@@ -805,6 +806,11 @@ export default function FinanceClient({
             bulkRefundingRef.current = false;
             setBusy(false);
         }
+    }
+
+    // 막대 «선택 항목 환불» = 고른 것 전부
+    function handleBulkRefund() {
+        return runRefund(Array.from(selectedIds));
     }
 
     // 1단계: 상태를 뺀 조건(원생 지정·검색·반) — 상태 칩 건수는 이 목록에서 센다
@@ -966,12 +972,17 @@ export default function FinanceClient({
                     tone: "danger" as const,
                     disabled: busy,
                     onSelect: async () => {
+                        // 돈이 어디로 돌아가는지 먼저 보여 준다: 토스 온라인 = 실제 결제 취소, 그 밖 = 장부만
+                        const how = p.paidProvider === "TOSS"
+                            ? "토스 결제 취소(카드 승인 취소)로 돌려줘요. 묶음으로 낸 결제면 함께 환불해야 해요."
+                            : "장부만 환불(돈은 직접 돌려주세요).";
                         if (await askConfirm({
                             title: `${p.studentName} 원생 ${formatAmount(p.amount)} 환불`,
-                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}을 환불 처리할까요?`,
+                            description: `${p.studentName} 원생 ${formatAmount(p.amount)}을 환불 처리할까요? ${how}`,
                             confirmLabel: "환불 처리",
                         })) {
-                            void handleStatusChange(p.id, "REFUNDED");
+                            // 막대 «선택 항목 환불»과 같은 서버 액션(refundSelectedPayments)
+                            void runRefund([p.id]);
                         }
                     },
                 },
@@ -1635,7 +1646,7 @@ export default function FinanceClient({
                 const posCount = selectedPayments.filter((p) => p.paidProvider === "TOSS_POS").length;
                 const manualCount = selectedPayments.length - tossCount - posCount;
                 const refundParts = [
-                    tossCount > 0 ? `온라인 결제 ${tossCount}건은 토스 결제 취소` : null,
+                    tossCount > 0 ? `온라인 결제 ${tossCount}건은 토스 결제 취소(카드 승인 취소)` : null,
                     posCount > 0 ? `현장 결제 ${posCount}건은 POS로 취소 요청` : null,
                     manualCount > 0 ? `현금·계좌이체 ${manualCount}건은 장부만 환불(돈은 직접 돌려주세요)` : null,
                 ].filter(Boolean).join(" · ");
