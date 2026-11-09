@@ -83,6 +83,16 @@ test("일정 탭 달력: 출결은 KST 날짜 칸에 찍히고, 수업일·휴�
   assert.match(html, /1일 출석/);
   assert.match(html, /8일 결석/);
   assert.match(html, /9일 휴무/);
+  // 2026-11-09 원장 «색상 구분이 잘 안 돼» — 색만이 아니라 모양으로도 갈린다(색약 대비)
+  assert.match(html, /15일 오늘/, "오늘도 낭독기에 읽힌다");
+  assert.match(html, /ring-\[var\(--color-academy-cal-today\)\]/, "오늘 = 굵은 테두리");
+  assert.match(html, /rounded-full bg-\[var\(--color-academy-cal-present\)\]/, "출석 = 채운 점");
+  assert.match(html, /border-2 border-\[var\(--color-academy-cal-late\)\]/, "지각 = 빈 고리(범례)");
+  assert.match(html, /text-\[var\(--color-academy-cal-absent\)\][^>]*>close</, "결석 = ×");
+  assert.match(html, /text-\[var\(--color-academy-cal-event\)\][^>]*>star</, "행사 = 별");
+  for (const token of ["present", "late", "absent", "event", "closed", "closed-soft", "class-soft", "class-line", "today"]) {
+    assert.match(read("src/app/academy-theme.css"), new RegExp(`--color-academy-cal-${token}:`), `토큰 ${token} 정의`);
+  }
   assert.match(html, /10\/24\(토\)~10\/25\(일\)/);
   assert.match(html, /id="schedule-records-heading"/, "옛 홈 «기록» 주소가 데려오는 자리");
   assert.match(html, /id="mypage-enrollments"/);

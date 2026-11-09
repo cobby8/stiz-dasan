@@ -16,6 +16,18 @@
   --color-academy-warning-soft: #fff3df;
   --color-academy-danger: #a44052;
   --color-academy-danger-soft: #fff0f2;
+  /* 학부모 일정 달력 전용 출결·일정 표시색 (2026-11-09 원장 «색상 구분이 잘 안 돼»).
+     기존 success/warning/danger 는 채도가 낮고 명도가 비슷해 작은 점에서 구분이 안 됐다 → 새 이름으로 따로 둔다(다른 화면 영향 없음).
+     값 = 디자인 교과서 8장 «상태 다섯 갈래». 색만으로 구분하지 않고 모양도 다르다(출석 채운 점·지각 빈 고리·결석 ×·행사 별). */
+  --color-academy-cal-present: #15803d;   /* 출석 — 초록(흰 바탕 5.0:1) */
+  --color-academy-cal-late: #c2410c;      /* 지각 — 주황(빨강·초록과 명도·색상 모두 떨어지게) */
+  --color-academy-cal-absent: #b91c1c;    /* 결석 — 빨강 */
+  --color-academy-cal-event: #1d4ed8;     /* 행사 — 파랑 */
+  --color-academy-cal-closed: #4b5563;    /* 휴무 글자 — 회색 */
+  --color-academy-cal-closed-soft: #eceef1; /* 휴무 칸 바탕 */
+  --color-academy-cal-class-soft: #e6edf7;  /* 수업 예정 칸 바탕 — 상태색과 겹치지 않는 연한 청회색 */
+  --color-academy-cal-class-line: #b9c7da;  /* 수업 칸 테두리(연한 바탕이 흰 화면에서 사라지지 않게) */
+  --color-academy-cal-today: #15181c;     /* 오늘 — 굵은 검정 테두리 */
   --color-academy-art: #ded4ca;
   --color-academy-band: #f7f3ef;
   --color-academy-band-end: #ffffff;
