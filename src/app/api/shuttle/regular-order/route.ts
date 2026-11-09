@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       const rows = await tx.$queryRawUnsafe<RegularShuttleStop[]>(
         `SELECT * FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND "weekday"=$2
           AND "direction" IN ('BOARD','ALIGHT') AND "studentName" IS NOT NULL AND btrim("studentName") <> ''
-          ORDER BY "sortOrder", "stopName", "id" FOR UPDATE`, serviceMonth, weekday,
+          ORDER BY "sortOrder" ASC, "id" COLLATE "C" ASC FOR UPDATE`, serviceMonth, weekday,
       );
       // 기사님 화면과 같은 조립기(명단 순서 그대로)로 «연 화면 = 지금 DB» 인지·저장 뒤 순서가 맞는지 검사한다.
       // 저장 노선이 없으므로 routes·학생↔행 연결은 빈 값이다(조립기가 명단 폴백으로만 묶는다).
