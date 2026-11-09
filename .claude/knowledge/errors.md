@@ -111,3 +111,9 @@
 - **발견자**: tester
 - **내용**: 워크트리엔 node_modules 가 없어(정션 금지) 메인 저장소 react 19 를 절대 경로로 끌어오는데, Temp 아래 가짜 모듈(next/link 대역 등)에 남은 `import "react"` 는 위로 올라가 `C:\Users\cobby\node_modules\react`(옛 버전)를 집는다. 두 버전 요소가 섞여 렌더가 깨진다. 렌더 검증용 파일은 «가짜 모듈까지» 같은 변환기로 bare import 를 메인 저장소 경로(createRequire(메인 package.json).resolve)로 바꿔 쓸 것. 기준 구현: 테스트 scratchpad 의 render/build.mjs.
 - **참조횟수**: 0
+
+### [2026-11-09] 사파리 결제창에서 «토스페이»를 누르면 «주소가 유효하지 않음» — 우리 코드가 아니라 토스 앱 미설치
+- **분류**: error
+- **발견자**: debugger
+- **내용**: 토스 결제창(v2 standard)의 토스페이는 `supertoss://` 앱 주소로 토스 앱을 연다(토스 문서 «웹뷰 연동» 앱스킴 목록). 토스 앱이 없는 아이폰 사파리는 이 주소를 못 열어 iOS 기본 경고 «주소가 유효하지 않기 때문에 Safari가 페이지를 열 수 없습니다»를 띄운다. successUrl/failUrl 은 인증 «뒤»에만 쓰여서 원인이 될 수 없고, 모바일 결제창은 늘 페이지 이동이라 windowTarget·appScheme(앱 웹뷰 전용) 설정과도 무관. 앱(WKWebView) 안에서는 이 경고가 아니라 앱이 직접 띄우는 «결제 앱이 설치되어 있지 않습니다»가 나온다(bd9cbb9f) — 문구로 웹/앱을 구분할 것. 대응 = 토스 앱 설치 또는 «카드» 선택 안내.
+- **참조횟수**: 0
