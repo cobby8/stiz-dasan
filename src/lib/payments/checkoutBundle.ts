@@ -61,7 +61,13 @@ export type BundleBlockCode =
     | "NO_INVOICE"
     | "AMOUNT_INVALID"
     | "AMOUNT_CHANGED"
-    | "TOO_MUCH";
+    | "TOO_MUCH"
+    // 승인 직전 잠금 안 확인(보안 리뷰 M1·M2, 2026-11-09)
+    | "CONFIRM_IN_PROGRESS"
+    | "OPEN_DEPOSIT_EXISTS";
+
+/** 다른 주문의 «승인 진행 중» 표시가 막는 시간(분). 실패·끊김으로 표시가 남아도 이 시간이 지나면 풀린다. */
+export const CONFIRM_LOCK_MINUTES = 10;
 
 /** 학부모에게 보일 이유 문장(개발 용어 없이) */
 export const BUNDLE_BLOCK_MESSAGE: Record<BundleBlockCode, string> = {
@@ -76,6 +82,8 @@ export const BUNDLE_BLOCK_MESSAGE: Record<BundleBlockCode, string> = {
     AMOUNT_INVALID: "결제 금액이 없는 청구가 있어요.",
     AMOUNT_CHANGED: "청구 금액이 바뀌는 중인 청구가 있어요. 화면을 새로 고쳐 주세요.",
     TOO_MUCH: `한 번에 결제할 수 있는 금액은 ${MAX_BUNDLE_TOTAL.toLocaleString("ko-KR")}원까지예요. 나눠서 결제해 주세요.`,
+    CONFIRM_IN_PROGRESS: "같은 청구의 다른 결제가 진행 중이에요. 잠시 후 납부 내역을 확인해 주세요.",
+    OPEN_DEPOSIT_EXISTS: "같은 청구에 입금을 기다리는 계좌가 이미 있어요. 그 계좌로 입금하거나 계좌를 닫고 다시 결제해 주세요.",
 };
 
 /**
@@ -287,7 +295,8 @@ export function decideBundleFullCancel(input: {
     const items = input.items ?? [];
     if (items.length === 0) return { action: "REJECT", code: "BUNDLE_ITEMS_MISSING" };
     const paid = items.filter((item) => item.paymentStatus === "PAID").map((item) => item.paymentId);
-    if (input.txStatus === "CANCELED" && paid.length === 0) return { action: "ALREADY_APPLIED" };
+    // 거래 CANCELED 는 이 환불 처리만 남긴다 → 다시 와도 한 번만(다른 방법으로 다시 낸 청구가 PAID 로 남아 있어도)
+    if (input.txStatus === "CANCELED") return { action: "ALREADY_APPLIED" };
     if (input.txStatus !== "DONE") return { action: "REJECT", code: "PAYMENT_NOT_PAID" };
     return { action: "APPLY", refundPaymentIds: paid };
 }

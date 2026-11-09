@@ -10,10 +10,16 @@
 // 테스트: tests/payment-bundle-checkout.test.mjs (가짜 db 로 «한 건 이미 납부 → 전부 되돌림» 등을 실행)
 
 import {
+    BUNDLE_PAYABLE_PAYMENT_STATUSES,
+    CONFIRM_LOCK_MINUTES,
+    bundleConfirmBlock,
     decideBundleFinalize,
     decideBundleFullCancel,
+    type BundleBlockCode,
     type BundleLockedItem,
 } from "./checkoutBundle";
+import { rallyzMirrorExclusionSql } from "@/lib/billing/parentSendGuard";
+import { readStoredIssue, toPublicVirtualAccountView } from "./virtualAccount";
 
 /** raw SQL 두 개만 쓴다(prisma 본체 또는 $transaction 의 db) */
 export type BundleSqlClient = {
@@ -64,6 +70,109 @@ export const TX_PAYMENT_STATUS_SQL = `SELECT CASE
                       WHERE it."transactionId" = $2 AND ip.status = 'CANCELED') THEN 'CANCELED'
         ELSE p.status END AS status
      FROM "Payment" p WHERE p.id = $1`;
+
+/** 거래(t)가 청구 목록($n::text[]) 중 하나라도 대표로든 항목으로든 품나 — SQL 조각 */
+function txCoversAnyPaymentSql(param: string): string {
+    if (!/^\$[1-9]\d*$/.test(param)) throw new Error("INVALID_BUNDLE_SQL_EXPRESSION");
+    return `(t."paymentId" = ANY(${param}::text[]) OR EXISTS (
+        SELECT 1 FROM "PaymentTransactionItem" tx_item
+         WHERE tx_item."transactionId" = t.id AND tx_item."paymentId" = ANY(${param}::text[])))`;
+}
+
+/**
+ * 청구 id 정렬순으로 advisory 잠금(트랜잭션이 끝나면 풀림). 결제 시작·토스 승인 직전이 같은 키를 쓴다 —
+ * 겹치는 청구를 가진 두 주문(묶음↔묶음, 묶음↔단건)이 동시에 지나가지 못하게(보안 리뷰 M1·M2).
+ * 정렬순이라 서로 다른 순서로 잠그다 교착되지 않는다.
+ */
+export async function lockPaymentsForCheckout(db: BundleSqlClient, paymentIds: readonly string[]): Promise<void> {
+    for (const id of [...new Set(paymentIds)].sort()) {
+        await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `stiz-payment-checkout:${id}`);
+    }
+}
+
+/**
+ * 이 청구들을 품은 «기한 안의 입금 대기 계좌» 거래 id(excludeTxId 는 뺀다). 발급 정보를 못 읽는 입금 대기 거래도
+ * 열린 것으로 본다(안전한 쪽 — 매일 점검이 정리한다).
+ */
+export async function findOpenDepositTxIds(
+    db: BundleSqlClient,
+    paymentIds: readonly string[],
+    excludeTxId: string | null,
+    nowMs: number,
+): Promise<string[]> {
+    if (paymentIds.length === 0) return [];
+    const rows = await db.$queryRawUnsafe<Array<{ id: string; status: string; issue: unknown }>>(
+        `SELECT t.id, t.status, t."rawResponse"->'virtualAccountIssue' AS issue
+           FROM "PaymentTransaction" t
+          WHERE t.status = 'WAITING_FOR_DEPOSIT'
+            AND ($2::text IS NULL OR t.id <> $2)
+            AND ${txCoversAnyPaymentSql("$1")}`,
+        [...paymentIds],
+        excludeTxId,
+    );
+    return rows
+        .filter((row) => {
+            const issue = readStoredIssue(row.issue);
+            return !issue || !toPublicVirtualAccountView(issue, row.status, nowMs).expired;
+        })
+        .map((row) => row.id);
+}
+
+/**
+ * 토스 승인(confirm) 직전 — 반드시 호출한 쪽의 짧은 트랜잭션(db) 안에서. 토스 호출은 트랜잭션 «밖»에서 한다.
+ *  1) 이 주문이 덮는 청구를 id 정렬순으로 잠근다.
+ *  2) 잠근 뒤 다시 읽어 확인: 전부 미납·금액 그대로·랠리즈 사본 아님 / 다른 주문이 «승인 진행 중»(10분 안) 아님 /
+ *     다른 입금 대기 계좌 없음(두 탭 무통장 → 계좌 2개 방지).
+ *  3) 통과하면 이 주문을 «승인 진행 중»(IN_PROGRESS + updatedAt 지금)으로 표시 — 기존 칸·상태값만 쓴다.
+ *     승인이 실패·끊겨 표시가 남아도 CONFIRM_LOCK_MINUTES 뒤엔 다른 주문을 막지 않는다.
+ * 막아야 하면 이유 코드, 통과면 null.
+ */
+export async function claimTossConfirmInTx(
+    db: BundleSqlClient,
+    input: { transactionId: string; repPaymentId: string; nowMs: number },
+): Promise<BundleBlockCode | null> {
+    const before = await listBundleItems(db, input.transactionId, false);
+    const paymentIds = before.length > 0 ? before.map((item) => item.paymentId) : [input.repPaymentId];
+    await lockPaymentsForCheckout(db, paymentIds);
+
+    const mirrorRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT p.id FROM "Payment" p WHERE p.id = ANY($1::text[]) AND NOT (${rallyzMirrorExclusionSql("p")})`,
+        paymentIds,
+    );
+    const mirrors = new Set(mirrorRows.map((row) => row.id));
+    if (before.length > 0) {
+        // 잠근 뒤 다시 읽은 «지금» 상태로 판정
+        const fresh = await listBundleItems(db, input.transactionId, false);
+        const block = bundleConfirmBlock(fresh.map((item) => ({ ...item, rallyzMirror: mirrors.has(item.paymentId) })));
+        if (block) return block;
+    } else {
+        if (mirrors.size > 0) return "RALLYZ_MIRROR";
+        const rows = await db.$queryRawUnsafe<Array<{ status: string }>>(`SELECT status FROM "Payment" WHERE id = $1`, input.repPaymentId);
+        if (!BUNDLE_PAYABLE_PAYMENT_STATUSES.includes(String(rows[0]?.status ?? ""))) return "NOT_UNPAID";
+    }
+
+    const busy = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT t.id FROM "PaymentTransaction" t
+          WHERE t.id <> $1 AND t.provider = 'TOSS' AND t.status = 'IN_PROGRESS'
+            AND t."updatedAt" > NOW() - ($3::int * INTERVAL '1 minute')
+            AND ${txCoversAnyPaymentSql("$2")}
+          LIMIT 1`,
+        input.transactionId,
+        paymentIds,
+        CONFIRM_LOCK_MINUTES,
+    );
+    if (busy.length > 0) return "CONFIRM_IN_PROGRESS";
+
+    const open = await findOpenDepositTxIds(db, paymentIds, input.transactionId, input.nowMs);
+    if (open.length > 0) return "OPEN_DEPOSIT_EXISTS";
+
+    await db.$executeRawUnsafe(
+        `UPDATE "PaymentTransaction" SET status = 'IN_PROGRESS', "updatedAt" = NOW()
+          WHERE id = $1 AND status IN ('READY', 'IN_PROGRESS', 'FAILED')`,
+        input.transactionId,
+    );
+    return null;
+}
 
 /** 거래에 항목이 있나(= 묶음 주문인가). 항목은 주문을 만들 때 한 번 쓰고 바꾸지 않는다. */
 export async function hasBundleItems(db: BundleSqlClient, transactionId: string): Promise<boolean> {
@@ -189,7 +298,8 @@ export async function finalizeBundleInTx(db: BundleSqlClient, input: BundleFinal
 }
 
 export type BundleCancelResult =
-    | { ok: true; alreadyApplied: boolean; refunded: number }
+    /** skipped = PAID 지만 이 주문으로 낸 게 아닌(다른 방법으로 다시 낸) 청구 — 환불하지 않고 원장 확인 */
+    | { ok: true; alreadyApplied: boolean; refunded: number; skipped: string[] }
     | { ok: false; error: string };
 
 /**
@@ -208,18 +318,24 @@ export async function refundBundleInTx(
     if (!tx) return { ok: false, error: "TRANSACTION_NOT_FOUND" };
     const items = await listBundleItems(db, tx.id, true);
     const decision = decideBundleFullCancel({ txStatus: tx.status, items });
-    if (decision.action === "ALREADY_APPLIED") return { ok: true, alreadyApplied: true, refunded: 0 };
+    if (decision.action === "ALREADY_APPLIED") return { ok: true, alreadyApplied: true, refunded: 0, skipped: [] };
     if (decision.action === "REJECT") return { ok: false, error: decision.code };
 
     const refundSet = new Set(decision.refundPaymentIds);
     let refunded = 0;
+    const skipped: string[] = [];
     for (const item of items) {
         if (!refundSet.has(item.paymentId)) continue;
+        // 이 주문(providerOrderId)으로 낸 청구만 환불한다 — 관리자 환불 뒤 현장·계좌이체로 다시 낸 청구는 건드리지 않는다(보안 리뷰 L1)
         const changed = await db.$executeRawUnsafe(
-            `UPDATE "Payment" SET status = 'REFUNDED', "paidDate" = NULL, "updatedAt" = NOW() WHERE id = $1 AND status = 'PAID'`,
-            item.paymentId,
+            `UPDATE "Payment" SET status = 'REFUNDED', "paidDate" = NULL, "updatedAt" = NOW()
+              WHERE id = $1 AND status = 'PAID' AND "paidProvider" = 'TOSS' AND "providerOrderId" = $2`,
+            item.paymentId, tx.orderId,
         );
-        if (Number(changed) !== 1) continue; // 잠근 뒤라 일어나지 않지만, 바뀌지 않은 건은 기록도 남기지 않는다
+        if (Number(changed) !== 1) {
+            skipped.push(item.paymentId);
+            continue;
+        }
         refunded += 1;
         await db.$executeRawUnsafe(
             `UPDATE "PaymentInvoice" SET status = 'CANCELED', "canceledAt" = COALESCE("canceledAt", NOW()), "updatedAt" = NOW()
@@ -243,5 +359,5 @@ export async function refundBundleInTx(
           WHERE id = $1 AND status = 'DONE'`,
         tx.id, JSON.stringify(input.rawResponse ?? null),
     );
-    return { ok: true, alreadyApplied: false, refunded };
+    return { ok: true, alreadyApplied: false, refunded, skipped };
 }

@@ -205,8 +205,9 @@ function memoryDb(state) {
                 return 1;
             }
             if (/^UPDATE "Payment" SET status = 'REFUNDED'/.test(s)) {
+                assert.match(s, /"paidProvider" = 'TOSS' AND "providerOrderId" = \$2/, "그 주문으로 낸 청구만 환불(L1)");
                 const p = state.payments[args[0]];
-                if (p.status !== "PAID") return 0;
+                if (p.status !== "PAID" || (p.providerOrderId ?? state.tx.orderId) !== args[1]) return 0;
                 p.status = "REFUNDED";
                 return 1;
             }
@@ -312,7 +313,7 @@ test("가짜 DB: 토스 전액 취소 → 묶인 청구 전부 환불·청구서
     for (const i of Object.values(state.invoices)) i.status = "PAID";
     const mem = memoryDb(state);
     const result = await mem.inTx((db) => ledgerDb.refundBundleInTx(db, { transactionId: "tx-b", rawResponse: { status: "CANCELED" } }));
-    assert.deepEqual(result, { ok: true, alreadyApplied: false, refunded: 2 });
+    assert.deepEqual(result, { ok: true, alreadyApplied: false, refunded: 2, skipped: [] });
     assert.equal(state.payments["pay-1"].status, "REFUNDED");
     assert.equal(state.payments["pay-2"].status, "REFUNDED");
     assert.equal(state.invoices["inv-1"].status, "CANCELED");
@@ -321,8 +322,165 @@ test("가짜 DB: 토스 전액 취소 → 묶인 청구 전부 환불·청구서
     assert.equal(mem.audits.length, 2);
     for (const audit of mem.audits) assert.match(audit.sql, /'PAYMENT_REFUNDED'/);
     const again = await mem.inTx((db) => ledgerDb.refundBundleInTx(db, { transactionId: "tx-b", rawResponse: {} }));
-    assert.deepEqual(again, { ok: true, alreadyApplied: true, refunded: 0 });
+    assert.deepEqual(again, { ok: true, alreadyApplied: true, refunded: 0, skipped: [] });
     assert.equal(mem.audits.length, 2);
+});
+
+test("가짜 DB(L1): 관리자 환불 뒤 다른 방법으로 다시 낸 청구는 토스 전액 취소가 와도 환불하지 않고 건너뜀으로 알린다", async () => {
+    const state = bundleState({ tx: { id: "tx-b", status: "DONE", amount: 230000, orderId: "STIZ-B-1-pay1" } });
+    for (const p of Object.values(state.payments)) p.status = "PAID";
+    for (const i of Object.values(state.invoices)) i.status = "PAID";
+    state.payments["pay-2"].providerOrderId = "POS-onsite"; // 현장 결제로 다시 냄
+    const mem = memoryDb(state);
+    const result = await mem.inTx((db) => ledgerDb.refundBundleInTx(db, { transactionId: "tx-b", rawResponse: {} }));
+    assert.deepEqual(result, { ok: true, alreadyApplied: false, refunded: 1, skipped: ["pay-2"] });
+    assert.equal(state.payments["pay-1"].status, "REFUNDED");
+    assert.equal(state.payments["pay-2"].status, "PAID", "다시 낸 청구는 그대로");
+    assert.equal(state.invoices["inv-2"].status, "PAID");
+    assert.equal(mem.audits.length, 1);
+    // 다시 와도(거래 CANCELED) 한 번만 — PAID 로 남은 청구가 있어도
+    const again = await mem.inTx((db) => ledgerDb.refundBundleInTx(db, { transactionId: "tx-b", rawResponse: {} }));
+    assert.equal(again.alreadyApplied, true);
+});
+
+// ───────────────────────────── 2-1. 동시 승인·동시 발급(보안 리뷰 M1·M2) ─────────────────────────────
+
+/**
+ * 승인 직전 확인(claimTossConfirmInTx)의 SQL 만 흉내 내는 가짜 DB. advisory 잠금은 «트랜잭션이 끝날 때까지» 진짜로 기다리게 한다
+ * — 두 탭을 Promise.all 로 동시에 돌려 «잠금이 없으면 둘 다 통과»할 상황을 만든다.
+ */
+function claimDb(state) {
+    const locks = new Map();
+    const lockOrder = [];
+    const covers = (t, ids) => ids.includes(t.paymentId) || (state.items[t.id] ?? []).some((it) => ids.includes(it.paymentId));
+    function open() {
+        const held = [];
+        const db = {
+            async $executeRawUnsafe(sql, ...args) {
+                if (/pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/.test(sql)) {
+                    const key = args[0];
+                    lockOrder.push(key);
+                    while (locks.has(key)) await locks.get(key).promise;
+                    let release;
+                    const promise = new Promise((resolve) => { release = resolve; });
+                    locks.set(key, { promise, release });
+                    held.push(key);
+                    await new Promise((resolve) => setTimeout(resolve, 2)); // 다른 탭이 끼어들 틈
+                    return 1;
+                }
+                if (/UPDATE "PaymentTransaction" SET status = 'IN_PROGRESS'/.test(sql)) {
+                    const t = state.txs[args[0]];
+                    if (!["READY", "IN_PROGRESS", "FAILED"].includes(t.status)) return 0;
+                    t.status = "IN_PROGRESS";
+                    t.updatedAtMs = Date.now();
+                    return 1;
+                }
+                throw new Error(`모르는 쓰기: ${sql.slice(0, 60)}`);
+            },
+            async $queryRawUnsafe(sql, ...args) {
+                if (/FROM "PaymentTransactionItem" it/.test(sql)) {
+                    return (state.items[args[0]] ?? []).map((it) => ({
+                        paymentId: it.paymentId, invoiceId: it.paymentId.replace("pay", "inv"), itemAmount: it.amount, taxFreeAmount: it.amount,
+                        position: it.position, paymentAmount: state.payments[it.paymentId].amount, paymentStatus: state.payments[it.paymentId].status, invoiceStatus: "SENT",
+                    }));
+                }
+                if (/mirror_log/.test(sql)) return [];
+                if (/SELECT status FROM "Payment" WHERE id = \$1/.test(sql)) return [{ status: state.payments[args[0]].status }];
+                if (/t\.status = 'IN_PROGRESS'/.test(sql)) {
+                    return Object.values(state.txs)
+                        .filter((t) => t.id !== args[0] && t.provider === "TOSS" && t.status === "IN_PROGRESS"
+                            && Date.now() - t.updatedAtMs < args[2] * 60_000 && covers(t, args[1]))
+                        .map((t) => ({ id: t.id }));
+                }
+                if (/t\.status = 'WAITING_FOR_DEPOSIT'/.test(sql)) {
+                    return Object.values(state.txs)
+                        .filter((t) => t.status === "WAITING_FOR_DEPOSIT" && t.id !== args[1] && covers(t, args[0]))
+                        .map((t) => ({ id: t.id, status: t.status, issue: t.issue ?? null }));
+                }
+                throw new Error(`모르는 조회: ${sql.slice(0, 60)}`);
+            },
+        };
+        return { db, release() { for (const key of held) { locks.get(key).release(); locks.delete(key); } } };
+    }
+    return {
+        lockOrder,
+        async inTx(fn) {
+            const t = open();
+            try { return await fn(t.db); } finally { t.release(); }
+        },
+    };
+}
+
+function claimState() {
+    return {
+        txs: {
+            "tx-a": { id: "tx-a", provider: "TOSS", status: "READY", paymentId: "pay-1", updatedAtMs: 0 }, // 묶음(pay-1·pay-2)
+            "tx-b": { id: "tx-b", provider: "TOSS", status: "READY", paymentId: "pay-2", updatedAtMs: 0 }, // 단건(pay-2) — 다른 탭
+            "tx-c": { id: "tx-c", provider: "TOSS", status: "READY", paymentId: "pay-3", updatedAtMs: 0 }, // 묶음(pay-2·pay-3)
+        },
+        items: {
+            "tx-a": [{ paymentId: "pay-1", amount: 180000, position: 1 }, { paymentId: "pay-2", amount: 50000, position: 2 }],
+            "tx-c": [{ paymentId: "pay-3", amount: 30000, position: 1 }, { paymentId: "pay-2", amount: 50000, position: 2 }],
+        },
+        payments: { "pay-1": { status: "PENDING", amount: 180000 }, "pay-2": { status: "PENDING", amount: 50000 }, "pay-3": { status: "OVERDUE", amount: 30000 } },
+    };
+}
+const claim = (fake, transactionId, repPaymentId) =>
+    fake.inTx((db) => ledgerDb.claimTossConfirmInTx(db, { transactionId, repPaymentId, nowMs: Date.now() }));
+
+test("동시(M1): 겹치는 청구의 묶음↔단건을 두 탭에서 동시에 승인 → 하나만 통과, 다른 하나는 «진행 중»으로 토스 승인 안 함", async () => {
+    const state = claimState();
+    const fake = claimDb(state);
+    const [a, b] = await Promise.all([claim(fake, "tx-a", "pay-1"), claim(fake, "tx-b", "pay-2")]);
+    assert.deepEqual([a, b].filter((r) => r === null).length, 1);
+    assert.ok([a, b].includes("CONFIRM_IN_PROGRESS"));
+    const passed = a === null ? "tx-a" : "tx-b";
+    assert.equal(state.txs[passed].status, "IN_PROGRESS", "통과한 주문은 «승인 진행 중» 표시");
+    assert.equal(state.txs[passed === "tx-a" ? "tx-b" : "tx-a"].status, "READY", "막힌 주문은 표시하지 않는다");
+
+});
+
+test("동시(M1): 묶음↔묶음(pay-2 겹침)도 하나만 · 잠금은 청구 id 정렬순(교착 방지)", async () => {
+    const state = claimState();
+    const fake = claimDb(state);
+    const [a, c] = await Promise.all([claim(fake, "tx-a", "pay-1"), claim(fake, "tx-c", "pay-3")]);
+    assert.equal([a, c].filter((r) => r === null).length, 1);
+    assert.ok([a, c].includes("CONFIRM_IN_PROGRESS"));
+    // tx-c 의 항목 순서는 pay-3 → pay-2 지만 잠금은 pay-2 → pay-3 순
+    const cKeys = fake.lockOrder.filter((k) => /pay-[23]$/.test(k));
+    assert.ok(cKeys.indexOf("stiz-payment-checkout:pay-2") < cKeys.indexOf("stiz-payment-checkout:pay-3"));
+});
+
+test("동시(M1): 같은 주문의 재시도는 막지 않고, 다른 주문의 «진행 중» 표시는 10분 뒤 풀린다", async () => {
+    const state = claimState();
+    const fake = claimDb(state);
+    assert.equal(await claim(fake, "tx-a", "pay-1"), null);
+    assert.equal(await claim(fake, "tx-a", "pay-1"), null, "같은 주문 다시 승인(새로고침)은 통과");
+    assert.equal(await claim(fake, "tx-b", "pay-2"), "CONFIRM_IN_PROGRESS");
+    state.txs["tx-a"].updatedAtMs = Date.now() - 11 * 60_000; // 승인 응답이 끊겨 표시만 남은 경우
+    assert.equal(await claim(fake, "tx-b", "pay-2"), null, "만료 뒤엔 영구히 막지 않는다");
+    assert.equal(rules.CONFIRM_LOCK_MINUTES, 10);
+});
+
+test("동시(M2): 같은 청구에 다른 주문의 입금 대기 계좌가 있으면 승인을 막는다 — 두 탭 무통장 → 계좌 2개 발급 방지", async () => {
+    const state = claimState();
+    state.txs["tx-b"].status = "WAITING_FOR_DEPOSIT";
+    state.txs["tx-b"].issue = { accountNumber: "X1", dueDate: "2099-12-31T23:59:00+09:00", amount: 50000, bankName: "우리은행" };
+    const fake = claimDb(state);
+    assert.equal(await claim(fake, "tx-a", "pay-1"), "OPEN_DEPOSIT_EXISTS");
+    assert.equal(state.txs["tx-a"].status, "READY");
+    // 기한이 지난 계좌는 막지 않는다
+    state.txs["tx-b"].issue.dueDate = "2020-01-01T00:00:00+09:00";
+    assert.equal(await claim(fake, "tx-a", "pay-1"), null);
+});
+
+test("동시(M1): 잠근 뒤 다시 읽어 판정 — 그 사이 납부된 청구가 있으면 승인 안 함(단건·묶음)", async () => {
+    const state = claimState();
+    state.payments["pay-2"].status = "PAID";
+    const fake = claimDb(state);
+    assert.equal(await claim(fake, "tx-a", "pay-1"), "NOT_UNPAID");
+    assert.equal(await claim(fake, "tx-b", "pay-2"), "NOT_UNPAID");
+    assert.equal(await claim(fake, "tx-c", "pay-3"), "NOT_UNPAID");
 });
 
 test("SQL 조각: 거래가 청구서·청구를 «대표로든 항목으로든» 품는지 — 식별자 외 입력은 거부", () => {
@@ -625,9 +783,47 @@ test("계약(이중 납부): 단건 경로의 열린 계좌 조회·닫기·마�
 
 test("계약: 토스 승인 직전 재확인이 confirm 호출보다 먼저 있다", () => {
     const confirm = fnBody(ledgerSrc, "export async function confirmTossPayment(");
-    const check = confirm.indexOf("await checkBeforeTossConfirm(tx)");
+    const check = confirm.indexOf("prisma.$transaction((db) => claimTossConfirmInTx(db,");
     const call = confirm.indexOf('fetch("https://api.tosspayments.com/v1/payments/confirm"');
     assert.ok(check > 0 && call > check);
+    // 옛 «잠금 없는 READY→IN_PROGRESS» 표시는 없어졌다(표시는 잠금 안에서만)
+    assert.doesNotMatch(confirm, /SET status = 'IN_PROGRESS', "updatedAt" = NOW\(\)\s+WHERE id = \$1 AND status = 'READY'/);
+});
+
+test("계약(M2): 단건·묶음 결제 시작은 청구 잠금 안에서 열린 계좌를 다시 보고 주문을 만든다", () => {
+    const single = fnBody(ledgerSrc, "export async function createCheckoutSession(");
+    assert.match(single, /prisma\.\$transaction\(async \(db\) => \{\s*await lockPaymentsForCheckout\(db, \[invoice\.paymentId\]\);[\s\S]*?findOpenDepositTxIds\(db,[\s\S]*?INSERT INTO "PaymentTransaction"/);
+    const bundle = fnBody(ledgerSrc, "export async function createBundleCheckoutSession(");
+    assert.match(bundle, /prisma\.\$transaction\(async \(db\) => \{\s*await lockPaymentsForCheckout\(db, paymentIds\);[\s\S]*?findOpenDepositTxIds\(db, paymentIds[\s\S]*?INSERT INTO "PaymentTransactionItem"/);
+    assert.match(fnBody(ledgerSrc, "async function applyVerifiedTossFullCancel("), /applied\.skipped\.length > 0[\s\S]*?BUNDLE_REFUND_SKIPPED/);
+});
+
+test("실행(M2): 단건 결제 시작 중 다른 탭이 계좌를 받으면(잠금 안 재확인) 새 주문 없이 그 계좌를 보여 준다", async () => {
+    let vaLookups = 0;
+    const calls = fakePrisma((sql) => {
+        if (/FROM "PaymentInvoice" i/.test(sql) && /"rallyzMirror"/.test(sql)) {
+            return [{ invoiceId: "inv-2", paymentId: "pay-2", studentId: "stu-2", parentId: "u1", invoiceStatus: "SENT",
+                amount: 50000, title: "11월 셔틀비", paymentStatus: "PENDING", studentName: "김서윤", parentEmail: "p@x", rallyzMirror: false }];
+        }
+        if (/virtualAccountIssue' AS issue/.test(sql) && /t\.status IN/.test(sql)) {
+            vaLookups += 1;
+            return vaLookups === 1 ? [] : [{ status: "WAITING_FOR_DEPOSIT", issue: { ...OPEN_ISSUE, amount: 50000 } }];
+        }
+        if (/t\.status = 'WAITING_FOR_DEPOSIT'/.test(sql)) {
+            // 잠금 안 재확인 — 그 사이 다른 탭이 받은 계좌
+            return [{ id: "tx-other", status: "WAITING_FOR_DEPOSIT", issue: { ...OPEN_ISSUE, amount: 50000 } }];
+        }
+    });
+    await withToss(null, async () => {
+        const result = await ledger.createCheckoutSession({ invoiceId: "inv-2", owner, origin: "https://stiz.example", method: "VIRTUAL_ACCOUNT" });
+        assert.equal(result.ok, true);
+        assert.equal(result.openVirtualAccount?.amount, 50000);
+        assert.equal(calls.some(isInsertTx), false);
+        const lockAt = calls.findIndex((c) => /pg_advisory_xact_lock/.test(c.sql));
+        const recheckAt = calls.findIndex((c) => /t\.status = 'WAITING_FOR_DEPOSIT'/.test(c.sql));
+        assert.ok(lockAt >= 0 && recheckAt > lockAt, "잠근 뒤에 다시 본다");
+        assert.equal(calls[lockAt].args[0], "stiz-payment-checkout:pay-2");
+    });
 });
 
 test("계약: 묶음 결제 시작 — 서버가 다시 읽고(가족 범위·대표 보호자·랠리즈), 계좌 확인 뒤에, 거래+항목을 한 트랜잭션에", () => {
