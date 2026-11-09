@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 // 현황판을 주간 달력으로 배치하는 계산은 순수 모듈로 분리해 테스트로 잠가 뒀다.
 import { buildAttendanceCalendar, calendarCellDateLabel } from "@/lib/seasonal/attendanceCalendar";
+import { ATTENDANCE_TONE, TONE_BADGE_CLASS, TONE_SOLID_CLASS, TONE_TEXT_CLASS } from "@/lib/ui/statusTones";
 
 type Offering = {
   id: string; seasonId: string; title: string; capacity: number | null;
@@ -31,10 +32,11 @@ type RosterRow = {
   offeringTitle?: string | null; isThisOffering?: boolean; sessionDateId?: string;
 };
 
+// 출결 버튼·표시 색 = 공용 지도(statusTones): 출석 정상 · 지각 주의 · 결석 위험
 const ATT = [
-  { key: "PRESENT", label: "출석", cls: "bg-green-600 text-white", soft: "text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-950" },
-  { key: "LATE", label: "지각", cls: "bg-amber-500 text-white", soft: "text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950" },
-  { key: "ABSENT", label: "결석", cls: "bg-red-600 text-white", soft: "text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-950" },
+  { key: "PRESENT", label: "출석", cls: TONE_SOLID_CLASS[ATTENDANCE_TONE.PRESENT], soft: TONE_BADGE_CLASS[ATTENDANCE_TONE.PRESENT] },
+  { key: "LATE", label: "지각", cls: TONE_SOLID_CLASS[ATTENDANCE_TONE.LATE], soft: TONE_BADGE_CLASS[ATTENDANCE_TONE.LATE] },
+  { key: "ABSENT", label: "결석", cls: TONE_SOLID_CLASS[ATTENDANCE_TONE.ABSENT], soft: TONE_BADGE_CLASS[ATTENDANCE_TONE.ABSENT] },
 ];
 
 async function getJSON(url: string) {
@@ -239,10 +241,10 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
                 ? <Kpi n={`${selCourt}/${selCourtCap}`} l={selCourtOver ? "이 날 코트 인원 · 정원 초과" : "이 날 코트 인원 · 정원"}
                     c={selCourtOver ? "text-red-600 dark:text-red-400" : ""} sub={`이 반 ${selBoard.scheduled}명`} />
                 : <Kpi n={`${selBoard.scheduled}${selBoard.capacity ? "/" + selBoard.capacity : ""}`} l="이 날짜 인원" />}
-              <Kpi n={selBoard.present} l="출석" c="text-green-600" />
-              <Kpi n={selBoard.late} l="지각" c="text-amber-600" />
-              <Kpi n={selBoard.absent} l="결석" c="text-red-600" />
-              <Kpi n={selBoard.makeup} l="보강생" c="text-blue-600" />
+              <Kpi n={selBoard.present} l="출석" c={TONE_TEXT_CLASS.success} />
+              <Kpi n={selBoard.late} l="지각" c={TONE_TEXT_CLASS.warning} />
+              <Kpi n={selBoard.absent} l="결석" c={TONE_TEXT_CLASS.danger} />
+              <Kpi n={selBoard.makeup} l="보강생" c={TONE_TEXT_CLASS.info} />
             </div>
           )}
 
@@ -303,7 +305,7 @@ export default function SeasonalAttendanceClient({ initial }: { initial: { seaso
                     return (
                       <tr key={r.enrollmentDateId} className={`border-t border-gray-100 dark:border-gray-700 ${r.kind === "MAKEUP" ? "bg-violet-50 dark:bg-violet-950/40" : r.attendanceStatus === "ABSENT" ? "bg-red-50 dark:bg-red-950/40" : ""}`}>
                         <td className="p-2 text-center font-bold">
-                          {r.childName}{r.kind === "MAKEUP" && <span className="ml-1 rounded bg-violet-100 px-1 text-[10px] font-black text-violet-700 dark:bg-violet-900 dark:text-violet-200">보강생</span>}
+                          {r.childName}{r.kind === "MAKEUP" && <span className={`ml-1 rounded px-1 text-[11px] font-black ${TONE_BADGE_CLASS.info}`}>보강생</span>}
                           {/* 반(offering) 뱃지 — 코트 합산 명단이라 형제 반이 섞이므로 각 학생의 반을 표시한다 */}
                           {r.offeringTitle && (
                             <div className="mt-0.5">
@@ -375,9 +377,9 @@ function MakeupTab({ makeups, onDecide }: { makeups: any; onDecide: (id: string,
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        <Kpi n={makeups.pending?.length ?? 0} l="승인 대기" c="text-red-600" />
-        <Kpi n={makeups.stats?.scheduled ?? 0} l="보강 예정" c="text-blue-600" />
-        <Kpi n={makeups.stats?.attended ?? 0} l="보강 완료" c="text-green-600" />
+        <Kpi n={makeups.pending?.length ?? 0} l="승인 대기" c={TONE_TEXT_CLASS.warning} />
+        <Kpi n={makeups.stats?.scheduled ?? 0} l="보강 예정" c={TONE_TEXT_CLASS.info} />
+        <Kpi n={makeups.stats?.attended ?? 0} l="보강 완료" c={TONE_TEXT_CLASS.success} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">

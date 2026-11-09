@@ -8,6 +8,7 @@ import Link from "next/link";
 import ReportPhoto from "@/components/parent/ReportPhoto";
 import { toSessionReportPhotoViews } from "@/lib/sessionPhotoEntries";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { ATTENDANCE_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
 // 학부모 리포트 상세는 실시간 데이터 필요 (보안 체크)
 export const dynamic = "force-dynamic";
@@ -18,10 +19,11 @@ const DAY_LABELS: Record<string, string> = {
 };
 
 // 출석 상태 라벨/색상
+// 출결 상태색 = 공용 지도(statusTones): 출석 정상 · 지각 주의 · 결석 위험
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-    PRESENT: { label: "출석", color: "bg-green-100 text-green-700" },
-    ABSENT: { label: "결석", color: "bg-red-100 text-red-700" },
-    LATE: { label: "지각", color: "bg-yellow-100 text-yellow-700" },
+    PRESENT: { label: "출석", color: statusBadgeClass(ATTENDANCE_TONE.PRESENT) },
+    ABSENT: { label: "결석", color: statusBadgeClass(ATTENDANCE_TONE.ABSENT) },
+    LATE: { label: "지각", color: statusBadgeClass(ATTENDANCE_TONE.LATE) },
 };
 
 export default async function ParentReportDetailPage({
@@ -152,7 +154,7 @@ export default async function ParentReportDetailPage({
                 <div className="divide-y divide-gray-100">
                     {myAttendances.map((a: any) => {
                         const studentId = a.studentId ?? a.studentid;
-                        const statusInfo = STATUS_MAP[a.status] || { label: "확인 중", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400" };
+                        const statusInfo = STATUS_MAP[a.status] || { label: "확인 중", color: statusBadgeClass("neutral") };
                         const noteData = noteMap.get(studentId);
                         const rating = noteData?.rating != null ? Number(noteData.rating) : null;
 
@@ -161,7 +163,7 @@ export default async function ParentReportDetailPage({
                                 {/* 학생 이름 + 출석 상태 */}
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="font-bold text-gray-900 dark:text-white">{a.student_name}</span>
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${statusInfo.color}`}>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${statusInfo.color}`}>
                                         {statusInfo.label}
                                     </span>
                                 </div>

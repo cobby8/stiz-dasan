@@ -27,6 +27,7 @@ function load(path, mocks = {}) {
   return module.exports;
 }
 const nullComponent = { __esModule: true, default: () => null };
+const statusTones = load("src/lib/ui/statusTones.ts"); // 상태색 공용 지도(학부모 홈 요청 배지)
 const link = { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
 const kst = load("src/lib/datetime/kst.ts");
 const summary = load("src/lib/mypage/summary.ts");
@@ -66,6 +67,7 @@ test("② 로그아웃은 헤더 «⋯» 메뉴 안(휴대폰·PC 둘 다), 메�
 
 function renderHome(props) {
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/app/actions/admin": {}, "@/lib/mypage/summary": summary, "@/lib/datetime/kst": kst,
     "@/components/parent/VirtualAccountNotice": { __esModule: true, default: ({ account }) => React.createElement("p", null, `계좌 ${account.accountNumber}`) },

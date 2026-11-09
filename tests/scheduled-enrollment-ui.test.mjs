@@ -23,6 +23,7 @@ const nullComponent = { __esModule: true, default: () => null };
 const link = { __esModule: true, default: ({ children, href }) => React.createElement("a", { href }, children) };
 // 2026-11-09 원장 기준: 승인돼 ACTIVE 면 개시일(미래)과 무관하게 수강 중. 서버는 displayStatus=ACTIVE·startsLater=true 를 준다
 const kstModule = load("src/lib/datetime/kst.ts", {});
+const statusTones = load("src/lib/ui/statusTones.ts", {}); // 상태색 공용 지도(2026-11-09 색상 정리)
 const commencement = load("src/lib/enrollment/commencement.ts", { "@/lib/datetime/kst": kstModule });
 const enrollment = { id: "enrollment-a", classId: "class-a", status: "ACTIVE", displayStatus: "ACTIVE", startsLater: true, startsOn: "2099-12-01", className: "월요일 5교시", dayOfWeek: "Mon", startTime: "17:00", endTime: "17:55", programName: "합성반", createdAt: "2026-11-03" };
 
@@ -38,6 +39,7 @@ test("첫 다음 수업은 개시일 이전 주차를 건너뛴다", () => {
 
 test("관리자 원생 상세는 개시일이 미래인 ACTIVE 반을 «수강 중»으로 세고 개시일을 안내한다", () => {
   const Client = load("src/app/admin/students/[id]/StudentDetailClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "@/components/admin/adminDisplayText": {}, "next/link": link, "@/app/actions/admin": {},
     "@/lib/datetime/kst": { todayKst: () => "2026-11-03" },
     "@/lib/enrollment/commencement": commencement,
@@ -92,6 +94,7 @@ test("관리자 원생 목록 «활성» 필터·반별 인원은 개시일 미�
 test("학부모 홈은 개시일 미래인 ACTIVE 반을 수강 중으로 세고 수업 시작일을 안내한다", () => {
   const summary = load("src/lib/mypage/summary.ts", {});
   const Client = load("src/app/mypage/MyPageClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/components/pwa/HideInInstalledApp": { __esModule: true, default: ({ children }) => children },
     "@/components/pwa/AppSafeLink": link, "@/app/actions/admin": {},

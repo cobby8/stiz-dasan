@@ -27,6 +27,7 @@ function load(path, mocks = {}) {
 }
 const link = { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
 const kst = load("src/lib/datetime/kst.ts");
+const statusTones = load("src/lib/ui/statusTones.ts"); // 상태색 공용 지도(청구 탭 상태 글자)
 const taxFree = load("src/lib/payments/taxFree.ts");
 const virtualAccount = load("src/lib/payments/virtualAccount.ts", { "@/lib/payments/taxFree": taxFree, "@/lib/datetime/kst": kst });
 const vaNotice = { __esModule: true, default: ({ account }) => React.createElement("p", null, `계좌 ${account.accountNumber} ${account.amount}`) };
@@ -127,6 +128,7 @@ test("③ 완료 화면 상태: 장부가 정본(DONE=성공), 입금 대기 계
 
 test("④ 청구 탭: 대표 보호자 미납이 있으면 «한 번에 결제» 진입, 묶음 계좌면 합계 안내", () => {
   const Client = load("src/app/mypage/payments/PaymentRequestClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "next/link": link, "next/navigation": { useRouter: () => ({ refresh() {} }) },
     "@/lib/payments/parentRequestRules": load("src/lib/payments/parentRequestRules.ts"),
     "@/components/parent/VirtualAccountNotice": vaNotice,

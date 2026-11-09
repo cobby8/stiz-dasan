@@ -16,6 +16,7 @@ import {
 } from "@/lib/payments/parentRequestRules";
 import type { ParentPaymentRow } from "@/lib/payments/parent-payment-request";
 import VirtualAccountNotice from "@/components/parent/VirtualAccountNotice";
+import { PAYMENT_TONE, TONE_TEXT_CLASS, toneFor } from "@/lib/ui/statusTones";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "미납", OVERDUE: "연체", PAID: "납부 완료", REFUNDED: "환불",
@@ -177,7 +178,8 @@ export default function PaymentRequestClient({
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="font-black tabular-nums text-[var(--color-academy-ink)]">{row.amount.toLocaleString()}원</p>
-                    <p className={`text-xs font-bold ${unpaid ? "text-[var(--color-academy-warning)]" : "text-[var(--color-academy-success)]"}`}>
+                    {/* 색만 공용 지도(statusTones): 미납 주의 · 연체 위험 · 납부 정상 · 환불 중립. unpaid 판정은 그대로 */}
+                    <p className={`text-xs font-bold ${TONE_TEXT_CLASS[toneFor(PAYMENT_TONE, row.status, unpaid ? "warning" : "success")]}`}>
                       {STATUS_LABEL[row.status] ?? row.status}
                     </p>
                   </div>

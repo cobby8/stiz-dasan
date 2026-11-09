@@ -15,6 +15,7 @@ import {
     summarizePendingPayments, countRecentAnswers, countRecentNotices, legacyHomeHashTarget,
 } from "@/lib/mypage/summary";
 import { formatKstDate } from "@/lib/datetime/kst";
+import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 학부모 홈 = «오늘 할 일» 판 (2026-11-09 원장 결정 D1 안 A)
@@ -153,10 +154,11 @@ type MyPageData = {
 // 서버는 type 을 계속 받으므로(다른 경로 호환) 여기서는 항상 "OTHER" 로 보낸다.
 
 const REQUEST_STATUS: Record<string, { label: string; color: string; iconName: string }> = {
-    PENDING: { label: "대기중", color: "bg-yellow-100 text-yellow-700", iconName: "schedule" },
-    CONFIRMED: { label: "확인됨", color: "bg-blue-100 text-blue-700", iconName: "check_circle" },
-    COMPLETED: { label: "상담 종결", color: "bg-green-100 text-green-700", iconName: "check_circle" },
-    REJECTED: { label: "반려", color: "bg-red-100 text-red-700", iconName: "cancel" },
+    // 색 = 공용 지도(statusTones): 대기 주의 · 확인됨(진행 중) 정보 · 종결 정상 · 반려 위험
+    PENDING: { label: "대기중", color: TONE_BADGE_CLASS[REQUEST_TONE.PENDING], iconName: "schedule" },
+    CONFIRMED: { label: "확인됨", color: TONE_BADGE_CLASS[REQUEST_TONE.CONFIRMED], iconName: "check_circle" },
+    COMPLETED: { label: "상담 종결", color: TONE_BADGE_CLASS[REQUEST_TONE.COMPLETED], iconName: "check_circle" },
+    REJECTED: { label: "반려", color: TONE_BADGE_CLASS[REQUEST_TONE.REJECTED], iconName: "cancel" },
 };
 
 /** 알림·요청 시각 "10월 31일 AM 12:05" — 예전 모양 그대로, KST 기준. */
@@ -786,7 +788,7 @@ export default function MyPageClient({ data, notices = [], notifications = [], u
                                     <div key={r.id} className="px-4 py-3">
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-sm font-bold text-gray-900 dark:text-white">{r.title}</span>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${st.color}`}>
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1 ${st.color}`}>
                                                 <SymbolIcon name={st.iconName} size={12} /> {st.label}
                                             </span>
                                         </div>

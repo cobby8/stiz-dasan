@@ -17,6 +17,7 @@ import {
 } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
+import { REQUEST_TONE, statusBadgeClass } from "@/lib/ui/statusTones";
 
 interface EnrollApplication {
     id: string;
@@ -90,11 +91,12 @@ interface ApplyAdminModalsProps {
     onFeedback: (type: "success" | "error", message: string) => void;
 }
 
+// 신청 상태색 = 공용 지도(statusTones) — 목록(ApplyAdminClient)과 같은 색: 대기 주의 · 승인 정상 · 반려 위험 · 취소 중립
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-    PENDING: { label: "대기중", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-200", icon: "hourglass_top" },
-    APPROVED: { label: "승인완료", color: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-200", icon: "check_circle" },
-    REJECTED: { label: "반려", color: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-200", icon: "cancel" },
-    CANCELLED: { label: "취소", color: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400", icon: "block" },
+    PENDING: { label: "대기중", color: statusBadgeClass(REQUEST_TONE.PENDING), icon: "hourglass_top" },
+    APPROVED: { label: "승인완료", color: statusBadgeClass(REQUEST_TONE.APPROVED), icon: "check_circle" },
+    REJECTED: { label: "반려", color: statusBadgeClass(REQUEST_TONE.REJECTED), icon: "cancel" },
+    CANCELLED: { label: "취소", color: statusBadgeClass(REQUEST_TONE.CANCELLED), icon: "block" },
 };
 
 const CONTACT_ACTION_LABELS: Record<string, string> = {
@@ -1164,7 +1166,7 @@ function DetailModal({
                         수강 신청 상세
                     </h2>
                     <div className="flex items-center gap-1">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.color}`}>
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${cfg.color}`}>
                             <span className="material-symbols-outlined text-sm">{cfg.icon}</span>
                             {cfg.label}
                         </span>

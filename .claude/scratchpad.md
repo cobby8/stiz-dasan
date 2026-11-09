@@ -74,29 +74,21 @@
 
 ---
 
-## 구현 기록 (developer) — 일정 탭 달력·소식 공지 3개월·홈 문구/줄바꿈 (11-09 원장 지시)
-| 파일 | 변경 | 신규/수정 |
+## 구현 기록 (developer) — 색상 정리 1~3단계 (11-09 원장 결정: 주 버튼 검정·역할 공통·바탕 #f6f7f9·체험 신청만 주황·다크 나중)
+| 단계·커밋 | 파일 | 변경 |
 |---|---|---|
-| src/lib/mypage/parentSchedule.ts | 순수: 한 달 달력(일요일 시작)·수업일(앞·이번·다음 수강월→이 달만, 개시일 전 제외)·휴무/행사(주차 표시 제외·중복 제거)·출결 KST·?month 파싱·3개월 공지 필터 | 신규 |
-| src/app/mypage/history/page.tsx · ScheduleHub.tsx | 일정 탭 = 제목+‹달›·자녀 칩(주소 ?child·?month)·달력+범례·행사·휴무 행·수강 반·셔틀 배정. 수납·신청 줄 제거. 연간일정 = loadAnnualPlanEvents+getMonthlyClassDates(/annual·청구와 같은 함수) | 수정 |
-| src/app/mypage/history/HistoryClient.tsx | 삭제(수납 탭은 청구 탭과 중복, 출결은 달력으로) | 삭제 |
-| src/app/mypage/ParentMoreMenu.tsx | «⋯»에 «수강 변경 신청» 추가(홈에 없던 유일한 신청) | 수정 |
-| src/app/mypage/reports/page.tsx | 공지 3개월 이내·3개 + «더보기»(details), 칩 이름 짧게·설명 문구 삭제 | 수정 |
-| src/app/mypage/MyPageClient.tsx | 다음 수업/오늘 셔틀 줄 한 줄 고정(반 이름·하원은 아래 줄), 방학특강 줄 «방학특강 결석·보강», 메시지 폼 안내 1문장(«셔틀 자동 제외» 약속 삭제), 군더더기 설명 삭제 | 수정 |
-| tests: list-stage8b·parent-app-structure·parent-child-links-ui·scheduled-enrollment-ui·ui-copy-cleanup·no-dev-jargon-parent | 새 화면 기준으로 갱신(공지 테스트는 오늘 고정) | 수정 |
+| 1 629d3355 | academy-theme.css · globals.css · public-sport.css · DriverWorkspace.module.css · tests/parent-child-links-ui | 토큰 값만(이름 유지). 상태색 :root(info·neutral 신설), 글자 3단계·입력선 #8a919c·faint 신설, 차콜 단계=회색 토큰, 홈페이지 주 버튼 검정·«체험 신청» 입구 주황(주소 선택자), 기사님 보라·파랑→중립·정보 |
+| 2 a7ed1234 | tests/color-contrast · color-hardcode-guard · fixtures/color-hardcode-baseline.json | 대비(글자 4.5·선 3) + 하드코딩 색 파일별 기준선(늘면 실패, UPDATE_COLOR_BASELINE=1 로 낮춤) |
+| 3 | src/lib/ui/statusTones.ts(신규) · StatusBadge · ui/Badge · StatusChoiceButton · academy-theme.css(보조 버튼·칩 입력선, academy-status 4px, academy-input 신설) · 상태 지도 16파일 · tests 7 | 상태→뜻 지도 한 곳(출결·결제·셔틀·신청), 배지 모서리 4px, 화면별 색 지도 → statusTones |
 
-💡 tester: 360·390px 에서 /mypage/history(이번 달·‹›·?month=2026-13 → 이번 달·자녀 2명 칩), 휴무일 «휴»·출석/결석 점, 연간일정에 그 달 개강/주차가 없으면 «확정 후 보여요» 한 줄. /mypage/reports 공지 4개 이상이면 «더보기». 홈 «⋯» → 수강 변경 신청.
-⚠️ reviewer: 수업일 계산은 기존 getMonthlyClassDates(휴무일은 UTC 날짜 집합 — 기존 /annual 과 같은 동작) 그대로. getMyPageHistory 는 수납도 읽지만 화면에서 안 씀(공용 쿼리 무수정). 홈 «납부할 청구 · 합계» 줄은 결제 작업 중이라 손대지 않음.
-
-#### 수정 이력
-| 회차 | 날짜 | 수정 내용 | 수정 파일 | 사유 |
-|------|------|----------|----------|------|
-| 1차 | 11-09 | 옛 해시 #parent-absence-hub → /mypage/regular-absence · 고정 공지는 3개월 지나도 보이고 맨 앞(3개 상한 안) | lib/mypage/summary.ts · lib/mypage/parentSchedule.ts · tests/payment-bundle-ui·list-stage8b | reviewer 요청 A-1·A-2 |
+💡 tester: tests 3629-0·tsc 0·studentVisibility 5-0. 전후 PNG = 세션 scratchpad color-before-after/before.png·after.png. 결제 화면은 상태 글자 색만(판정 무변경).
+⚠️ reviewer: 입력선 #8a919c 는 연회색 바탕 위 2.96(카드 위는 3.2) — 값은 결정대로 두고 테스트에 기록. .academy-app 안 blue→ink 바꿔 끼우기는 그대로(마지막 단계). @theme brand-orange(«절대 변경 금지» 주석)·다크모드 값 무수정.
 
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer(색상 정리 1~3단계, 원장 결정 5건): 토큰 값(주 버튼 검정·바탕 #f6f7f9·상태 다섯 갈래 info/neutral 신설·체험 신청만 주황·기사님 보라 제거) · 가드 2종(대비·하드코딩 기준선 12,612→12,341) · statusTones 한 곳+StatusBadge info·4px+ui/Badge 토큰+상태 지도 16파일. tsc 0·tests 3629-0·studentVisibility 5-0 | 완료(커밋 3, 미푸시) |
 | 11-09 | developer(일정 달력 색 구분, 원장 «수업·출석·지각 색 구분 안 돼»): 출석 초록 채운 점·지각 주황 빈 고리·결석 빨강 ×·행사 파랑 별·수업 연청회 칸·휴무 회색 칸 «휴»·오늘 검정 굵은 테두리, 범례 같은 부품. 토큰 --color-academy-cal-* (academy-theme.css) 신설. tsc 0·tests 3617-0 | 완료 |
 | 11-09 | reviewer(결제 화면 정리 3922555d): 통과 — 조건 분기·API·금액·토스 호출 무변경 확인, tsc 0·tests 3611-0. 권장: 복사 버튼 aria-label 고정이라 «복사됨» 못 읽음(3곳)·«결제하면 바로 납부 완료» 무통장과 충돌·카페24 반영 안내 사라짐·청구 탭 머리말 «알려 주면 빨라요» 빠짐·커밋 메시지 «면세» 안내 없음 | 통과(권장 5) |
 | 11-09 | developer 수정 1차(일정 탭 리뷰 A-1·A-2): 옛 해시 #parent-absence-hub → /mypage/regular-absence, 소식 공지 고정(isPinned)은 3개월 지나도 보이고 3개 안에서 맨 앞 + 테스트. scratchpad 정리(끝난 검수 섹션·해결된 N-1/C-1 삭제, 로그 10건) | 완료(커밋, 미푸시) |
@@ -106,10 +98,3 @@
 | 11-09 | tester(묶음 결제 전체 b6fa4781~a5fe8e6c): tsc 0·tests 3606-0·가드 통과, 화면 렌더+상호작용 45·홈 7·순수 함수 통과. 관찰: 입금 알림 상한·확인창 잔류·홈 버튼 문구 | 통과(관찰 3) |
 | 11-09 | reviewer(묶음 결제 화면 a5fe8e6c·d90f40b2·b6fa4781 충돌부): 통과, 권장 N-1(관리자 편집 후 선생님 공지 재확인 실패)·C-1(금액 재대조·입금 알림 상한·문구) | 통과(권장 2) |
 | 11-09 | developer 수정 1차(갈래 C 리뷰 권장 6건): 선생님 공지 재발송 확인 대상 반 두 모양(IN $3,$4)·결제창 전 금액 재확인(다르면 안내+새로고침)·상한이면 입금 알림도 막음·면세 문구·말투 «~요»·확인 창 닫기·bfcache 복귀 로딩 해제·홈 버튼 이름=결제 가능 건수·개시일 «12월 5일부터»·토스 실패 코드별 문구(tossFailMessage). tests 3610-0 | 완료(검수 대기) |
-| 11-09 | developer(묶음 결제 화면 갈래 C + B 리뷰 반영): B·A·보안수정 cherry-pick 후 main 수강 기준(startsLater) 충돌 해결, /mypage/payments/checkout·done, 홈 청구 줄=청구 탭 기준·[한 번에 결제], 단건 KST·묶음 계좌 안내, 공지 대상 반 공용 파서·상세 ALL/CLASS만, 옛 해시→탭, 납부 신청 승인 MANUAL. tsc 0·tests 3606-0·studentVisibility·KST 가드 통과 | 완료(검수 대기) |
-| 11-09 | developer(묶음 결제 갈래 A — 서버·데이터): PaymentTransactionItem(마이그레이션 20261109150000, 미적용)·checkoutBundle 규칙·bundleLedger(전부 아니면 전무·전액 취소 전부 환불)·확정/취소 묶음 갈래·승인 전 재확인·랠리즈 사본 차단(단건·묶음)·단건 열린 계좌 조회/닫기·마이페이지/관리자 lateral 이 항목까지 봄·API /api/mypage/payments/checkout·confirm·묶음 입금 알림. tsc 0·tests 3560-0·studentVisibility 5-0 | 검수 대기 |
-| 11-09 | developer(학부모 화면 구조 갈래 B, 원장 D1 안 A·D6·D7·D8): 아래 탭/PC 메뉴 홈·일정·청구·소식(방학특강 탭 제거), 로그아웃 «⋯» 메뉴, 홈=납부 합계 한 줄+처리할 일+빠른 실행 4(접힌 칸 5개 제거), 일정=/mypage/history 확장(ScheduleHub), 소식=/mypage/reports 확장(공지·리포트·피드백·사진), 앱 안 공지 상세 /mypage/news/[id], KST toDateStr 2곳. 결제 서버 파일 무수정. tsc 0·tests 3540-0 | 검수 대기 |
-| 11-09 | developer(정규 셔틀 통합 6단계 — 저장 노선 읽기 전부 명단으로): 학부모 확정 시각=명단 arriveTime(regularRosterEta+Logic, 그 달 이하 최신 명단 달) · 등원시간 안내 문자=명단 시각·정류장(저장 노선 필수 조건 제거, 지문=학생 명단 칸) · 배차 진행=명단 반영이면 배차 완료, 명단 지문과 같은 안내 전달 시 안내 완료 · 신청 검토 지문 routes=[] 고정(기존 지문 유지) · 결석·셔틀 기사 알림=그날 명단에 학생 있으면 기사 역할 전원(명단 변경 알림과 같은 조건) · 월 복사 명단만 · /api/shuttle/regular-order 명단만+ORM 제거(QA 11월 목 «다른 화면에서 변경» 해소 재현 확인). 남은 저장 노선 접근=/api/admin/regular/dispatch/saved(부르는 화면 없음). tsc 0·tests 3548-0·ts 195-0·KST 6-0 | 검수 대기 |
-| 11-09 | developer(정규 셔틀 통합 4·5단계, 원장 «관리자 화면=기사님 화면·직접 수정»): /admin/shuttle/regular-dispatch 를 RegularRunEditor(RunBoard mode=admin + buildRegularRunRows, 월·요일 탭, ▲▼·끌기·시각 → 묶음별 reorder, 카드 «정류장 수정»=editStop, 학생 이름 → 셔틀 정보 창=editStudent, × → 이 칸/이 요일/전체 × 범위 DELETE, 카드 «반 이동·재배정» 표시) + RunEditDialogs 로 교체. 옛 RegularDispatchClient(자동 제안·T맵·차량 이동) 삭제·page 의 T맵/기사 조회 제거. 배정 필요 패널(신규·반 이동 칸 수, onBoard·openRequest) · AssignLegView 재배정 reassign:true+옛 칸 안내. 학생 상세 위치 placeName+requirePlaceName+명단 반영 안내. /staff/run?focus=BOARD|ALIGHT 스크롤(RunBoard focusKey). 5단계: regularRunRows·regularDriverRoute 저장 노선 입력·조회 제거(명단만, pending 끔), routeStatus API 항상 false. 흡수 비교(읽기 전용): 목 등원만 차이(노선 전용 학생 2명 사라짐·자이 후문 2정차 합쳐짐), 그 밖 요일 동일. tsc 0·tests 3553-0·가드 5-0·KST 6-0·shuttle 154-0 | 검수 대기 |
-| 11-09 | developer(정규 셔틀 통합 6단계): 저장 노선 읽기 지점 전부 셔틀 명단 기준으로 교체(학부모 확정 시각·안내 문자·배차 진행·기사 알림·regular-order). tsc 0·tests 3548-0 | 검수 대기 |
-| 11-09 | developer(정규 셔틀 통합 4·5단계): /admin/shuttle/regular-dispatch = RegularRunEditor(RunBoard mode=admin)+RunEditDialogs, 옛 자동 제안 화면 삭제, 운행표는 명단만. tsc 0·tests 3553-0 | 검수 대기 |

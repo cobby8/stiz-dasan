@@ -24,6 +24,8 @@ function compileModule(path, imports = {}) {
 const Link = ({ children, ...props }) => React.createElement("a", props, children);
 const kst = compileModule("src/lib/datetime/kst.ts");
 const chips = compileModule("src/components/admin/list/StatusCountChips.tsx");
+// 상태색 공용 지도(2026-11-09 색상 정리) — 학부모 보강·방학특강 배지가 쓴다
+const statusTones = compileModule("src/lib/ui/statusTones.ts");
 const monthGroups = compileModule("src/components/admin/list/monthDateGroups.ts", { "@/lib/datetime/kst": kst });
 // 취소·거절의 «그 자리 확인» 공용 부품(게슈탈트 C-M1) — 취소 버튼을 쓰는 화면이 함께 불러온다
 const inlineConfirm = compileModule("src/components/parent/InlineConfirm.tsx");
@@ -121,6 +123,7 @@ test("일정 탭 달 계산: 잘못된 ?month 는 이번 달, 수강월이 달�
 
 test("보강 예약은 4칸 집계판 대신 상태 칩(서버 집계와 같은 판정)과 한 목록의 행으로 보이고 예약·취소 흐름은 그대로다", () => {
   const Makeup = compileModule("src/app/mypage/makeup/MakeupClient.tsx", {
+    "@/lib/ui/statusTones": statusTones,
     "@/components/parent/customerMessage": customerMessageModule, 
     "next/link": { default: Link },
     "next/navigation": { useRouter: () => ({ refresh() {} }) },
@@ -296,7 +299,7 @@ test("셔틀 예정 변경은 날짜 묶음의 한 줄 행이고 행 탭=하단 
 });
 
 test("방학특강 결석·보강은 세 목록이 한 목록의 행이고 배지·사유·날짜를 요소로 나누며 신청·신고 흐름은 그대로다", () => {
-  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
+  const Seasonal = compileModule("src/app/mypage/seasonal/SeasonalMakeupClient.tsx", { "@/lib/ui/statusTones": statusTones, "@/components/parent/customerMessage": customerMessageModule, "@/components/parent/InlineConfirm": inlineConfirm }).default;
   const html = renderToStaticMarkup(React.createElement(Seasonal, { initial: {
     phoneKnown: true,
     absences: [{ enrollmentDateId: "e1", childName: "합성", offeringTitle: "겨울 방학특강 저학년", absentLabel: "1/5(월)", seasonalCandidates: [], regularCandidates: [] }],

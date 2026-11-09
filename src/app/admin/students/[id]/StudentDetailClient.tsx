@@ -13,6 +13,7 @@ import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import { removeMistakenEnrollment } from "@/app/actions/enrollment-admin-edit";
 import EnrollmentMoveModal, { type EnrollmentMoveSource } from "./EnrollmentMoveModal";
 import { statusToneClass } from "@/components/admin/StatusBadge";
+import { PAYMENT_TONE, TONE_SOLID_CLASS } from "@/lib/ui/statusTones";
 import ParentRequestLinkPanel from "./ParentRequestLinkPanel";
 import GuardianPanel from "./GuardianPanel";
 // 학부모에게 카카오채널 링크 안내 문자 — 미리보기 후 원장이 «보내기»를 눌러야만 발송
@@ -48,18 +49,20 @@ const PAY_STATUS: Record<string, { label: string; color: string }> = {
     OVERDUE: { label: "연체", color: statusToneClass("danger") },
     CANCELED: { label: "취소/이월", color: statusToneClass("neutral") },
 };
+// 청구서 상태 — 발행·발송(아직 안 냄) 주의 · 연체 위험 · 납부 정상 · 취소 중립 (공용 지도 statusTones)
 const INVOICE_STATUS: Record<string, { label: string; color: string }> = {
-    ISSUED: { label: "발행", color: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-300/10 dark:text-sky-100 dark:ring-sky-300/20" },
-    SENT: { label: "발송", color: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-300/10 dark:text-indigo-100 dark:ring-indigo-300/20" },
-    OVERDUE: { label: "연체", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
-    PAID: { label: "납부", color: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20" },
-    CANCELED: { label: "취소", color: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700" },
+    ISSUED: { label: "발행", color: statusToneClass(PAYMENT_TONE.ISSUED) },
+    SENT: { label: "발송", color: statusToneClass(PAYMENT_TONE.SENT) },
+    OVERDUE: { label: "연체", color: statusToneClass(PAYMENT_TONE.OVERDUE) },
+    PAID: { label: "납부", color: statusToneClass(PAYMENT_TONE.PAID) },
+    CANCELED: { label: "취소", color: statusToneClass(PAYMENT_TONE.CANCELED) },
 };
+// 수강 상태 — 수강 중 정상 · 휴원 주의 · 퇴원 위험 · 미배정 중립 (뜻은 예전 그대로, 색만 공용 토큰)
 const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
-    ACTIVE: { label: "수강 중", color: "bg-lime-100 text-lime-800 ring-1 ring-lime-200 dark:bg-lime-300/15 dark:text-lime-100 dark:ring-lime-300/25" },
-    PAUSED: { label: "휴원", color: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-300/10 dark:text-amber-100 dark:ring-amber-300/20" },
-    WITHDRAWN: { label: "퇴원", color: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20" },
-    NONE: { label: "미배정", color: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700" },
+    ACTIVE: { label: "수강 중", color: statusToneClass("success") },
+    PAUSED: { label: "휴원", color: statusToneClass("warning") },
+    WITHDRAWN: { label: "퇴원", color: statusToneClass("danger") },
+    NONE: { label: "미배정", color: statusToneClass("neutral") },
 };
 // 반 줄 토글 — «퇴원»은 학생 단위 말이라 반 단위는 «수강 종료»(그 반만 그만둠, 효력일=종료일 기록). 값(WITHDRAWN)은 그대로
 const ENROLLMENT_STATUS_OPTIONS = [
@@ -70,9 +73,9 @@ const ENROLLMENT_STATUS_OPTIONS = [
 
 // 상태변경 세그먼트 버튼: 선택된 상태를 의미색(성공/경고/위험)으로 채워 시각적으로 구분한다
 const ENROLLMENT_SEG_SELECTED: Record<string, string> = {
-    ACTIVE: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white",
-    PAUSED: "bg-amber-500 text-white dark:bg-amber-500 dark:text-white",
-    WITHDRAWN: "bg-red-600 text-white dark:bg-red-500 dark:text-white",
+    ACTIVE: TONE_SOLID_CLASS.success,
+    PAUSED: TONE_SOLID_CLASS.warning,
+    WITHDRAWN: TONE_SOLID_CLASS.danger,
 };
 
 // 결제 상태 변경 옵션(완납/대기/연체/취소). 완납(PAID)은 이미 완납인 건의 «현재 상태» 표시용으로만 남는다 —
@@ -289,20 +292,20 @@ function getMonthlyPaymentInfo(history: StudentActivityData["monthlyHistory"][nu
     if (hasUnpaidMethod || hasTuitionGap) {
         return {
             label: "미납 확인",
-            className: "bg-red-50 text-red-700 ring-1 ring-red-200 dark:bg-red-300/10 dark:text-red-100 dark:ring-red-300/20",
+            className: statusToneClass(PAYMENT_TONE.PENDING),
         };
     }
 
     if (history.paymentAmount > 0) {
         return {
             label: "납부 완료",
-            className: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-300/10 dark:text-emerald-100 dark:ring-emerald-300/20",
+            className: statusToneClass(PAYMENT_TONE.PAID),
         };
     }
 
     return {
         label: "수납 정보 없음",
-        className: "bg-gray-50 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700",
+        className: statusToneClass("neutral"),
     };
 }
 
@@ -942,7 +945,7 @@ export default function StudentDetailClient({
                 <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-extrabold text-gray-900 dark:text-white">
                         {enrollment.className}
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
+                        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                     </p>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {DAY_LABELS[enrollment.dayOfWeek] || enrollment.dayOfWeek} {enrollment.startTime}~{enrollment.endTime} · {enrollment.programName}
@@ -1039,7 +1042,7 @@ export default function StudentDetailClient({
                             {student.name}
                             <span className="ml-1.5 text-lg font-normal text-gray-400">학생</span>
                         </h1>
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${representativeStatusInfo.color}`}>
+                        <span className={`rounded px-2.5 py-0.5 text-xs font-bold ${representativeStatusInfo.color}`}>
                             {representativeStatusInfo.label}
                         </span>
                         {activeEnrollments.length > 0 && (
@@ -1161,7 +1164,7 @@ export default function StudentDetailClient({
                         {currentMonthHistory ? (
                             <>
                                 <p className="flex items-center gap-1.5 text-lg font-extrabold text-gray-900 dark:text-white">
-                                    <span className={`rounded-full px-2 py-0.5 text-xs ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
+                                    <span className={`rounded px-2 py-0.5 text-xs ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
                                         {currentMonthPaymentInfo?.label ?? "정보 없음"}
                                     </span>
                                 </p>
@@ -1503,7 +1506,7 @@ export default function StudentDetailClient({
                                             <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-gray-400">수납</p>
                                             <p className="flex items-center gap-1.5 text-lg font-extrabold text-gray-900 dark:text-white">
                                                 {formatKRW(currentMonthHistory.paymentAmount)}
-                                                <span className={`rounded-full px-2 py-0.5 text-xs ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
+                                                <span className={`rounded px-2 py-0.5 text-xs ${currentMonthPaymentInfo?.className ?? PAY_STATUS.PENDING.color}`}>
                                                     {currentMonthPaymentInfo?.label ?? "정보 없음"}
                                                 </span>
                                             </p>
@@ -1582,7 +1585,7 @@ export default function StudentDetailClient({
                                                 <div key={a.id} className="flex items-center gap-3 py-2.5">
                                                     <span className="w-16 shrink-0 text-xs font-bold text-gray-500 dark:text-gray-400">{toDateStr(a.date)}</span>
                                                     <span className="min-w-0 flex-1 truncate text-sm text-gray-800 dark:text-gray-100">{a.className}</span>
-                                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
+                                                    <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                                                 </div>
                                             );
                                         })}
@@ -1622,7 +1625,7 @@ export default function StudentDetailClient({
                                                             {p.description || "수강료"}
                                                             {p.invoiceNo && <span className="text-xs font-bold text-gray-500 dark:text-gray-400">· {p.invoiceNo}</span>}
                                                             {invoiceInfo && (
-                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${invoiceInfo.color}`}>{invoiceInfo.label}</span>
+                                                                <span className={`rounded px-2 py-0.5 text-xs font-bold ${invoiceInfo.color}`}>{invoiceInfo.label}</span>
                                                             )}
                                                         </p>
                                                         <p className="mt-0.5 text-xs text-gray-400">
@@ -1645,7 +1648,7 @@ export default function StudentDetailClient({
                                                         {/* 상태 칩 + 상태변경 연필 버튼(+ 변경됨 표시) */}
                                                         <div className="mt-1 flex items-center justify-end gap-1.5">
                                                             {changed && <span className="text-xs font-bold text-emerald-600 dark:text-lime-200">변경됨</span>}
-                                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
+                                                            <span className={`inline-flex rounded px-2 py-0.5 text-xs font-bold ${info.color}`}>{info.label}</span>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => { setPayError(null); setPayEditingId(editing ? null : p.id); }}
@@ -1758,7 +1761,7 @@ export default function StudentDetailClient({
                                                 <summary className="flex cursor-pointer list-none items-center gap-3 p-3.5 [&::-webkit-details-marker]:hidden">
                                                     <span className="w-20 shrink-0 text-sm font-extrabold text-gray-900 dark:text-white">{formatMonthLabel(history)}</span>
                                                     <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                                                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
+                                                        <span className={`rounded px-2 py-0.5 text-xs font-bold ${statusInfo.color}`}>{statusInfo.label}</span>
                                                         {/* 반 뱃지 전체 노출 (기존 +N 숨김 개선) */}
                                                         {history.classes.map((c) => (
                                                             <span key={c.slotKey} className="rounded-full bg-[var(--color-academy-primary-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-primary)] dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime">
@@ -1782,7 +1785,7 @@ export default function StudentDetailClient({
                                                             <p className="text-xs font-bold uppercase tracking-wide text-gray-400">수납</p>
                                                             <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-200">
                                                                 납부 {formatKRW(history.paymentAmount)} / 청구 {formatKRW(history.tuitionAmount)}
-                                                                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${paymentInfo.className}`}>{paymentInfo.label}</span>
+                                                                <span className={`rounded px-2 py-0.5 text-xs font-bold ${paymentInfo.className}`}>{paymentInfo.label}</span>
                                                             </p>
                                                             <p className="mt-0.5 text-xs text-gray-400">
                                                                 {history.paymentMethods.length > 0 ? history.paymentMethods.join(" · ") : "결제수단 없음"}

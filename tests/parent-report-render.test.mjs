@@ -47,6 +47,7 @@ if (!process.execArgv.includes("--conditions=react-server")) {
         const queries = [];
         const responses = [published ? [{ id: "session-fixture", date: "2026-10-19", class_name: "합성 반", topic: "합성 리포트", photosJSON: media }] : [], children, attendances, []];
         const Page = compile("src/app/mypage/reports/[sessionId]/page.tsx", {
+            "@/lib/ui/statusTones": compile("src/lib/ui/statusTones.ts"), // 출결 배지 색 공용 지도(의존성 없음)
             "@/lib/account/child-access": loadChildAccess(),
             "@/lib/supabase/server": { createClient: async () => ({ auth: { getUser: async () => ({ data: { user: user ? { id: "auth-fixture" } : null } }) } }) },
             "@/lib/prisma": { prisma: { $queryRawUnsafe: async (...args) => { queries.push(args); return responses.shift(); } } },
