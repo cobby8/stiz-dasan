@@ -57,6 +57,17 @@ const WEEK = { Mon: "2026-11-16", Tue: "2026-11-17", Wed: "2026-11-18", Thu: "20
 const NOW = kst.kstAt("2026-11-08", "12:00");
 const toMin = (hm) => rules.hmToMinutes(hm);
 const OPEN = { Mon: 540, Tue: 540, Wed: 540, Thu: 540, Fri: 540, Sat: 600, Sun: 600 };
+// 2026-11-09 원장 규칙 — 평일 마감 22:10 · 주말 22:00, 평일 20:40 이후는 수업과 상관없이 대관 가능
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const CLOSE = { Mon: 1330, Tue: 1330, Wed: 1330, Thu: 1330, Fri: 1330, Sat: 1320, Sun: 1320 };
+const EVENING = 20 * 60 + 40;
+/** 원장 규칙으로 직접 계산한 «그날 막히는 수업 구간» — 일요일 없음, 평일은 20:40 에서 자르고 남는 게 없으면 뺀다 */
+function blockingClasses(code) {
+  if (code === "Sun") return [];
+  return REAL[code].map((r) => r.split("-").map(toMin))
+    .map(([s, e]) => (WEEKDAYS.includes(code) ? [s, Math.min(e, EVENING)] : [s, e]))
+    .filter(([s, e]) => e > s);
+}
 
 /** 열린 시작 시각을 «09:00~15:00, 20:40~21:00» 처럼 이어진 구간으로 묶는다(10분 간격) */
 function openRanges(day) {
@@ -74,17 +85,18 @@ test("실제 시간표: 요일마다 수업과 겹치는 [시작, 시작+60)은 
   for (const [code, date] of Object.entries(WEEK)) {
     assert.equal(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][kst.kstDow(date)], code, date);
     const day = rules.buildRentalDay({ date, classes: CLASSES, busy: [], nowMs: NOW });
-    const classes = code === "Sun" ? [] : REAL[code].map((r) => r.split("-").map(toMin));
+    const classes = blockingClasses(code);
+    assert.equal(day.closeMinute, CLOSE[code], code);
     assert.equal(day.openMinute, OPEN[code], code);
     assert.equal(day.starts[0].minute, OPEN[code], code);
-    assert.equal(day.starts.at(-1).minute, 21 * 60, code); // 마지막 시작 21:00 (22:00 종료)
+    assert.equal(day.starts.at(-1).minute, CLOSE[code] - 60, code); // 마지막 시작 평일 21:10(22:10 마감) · 주말 21:00(22:00 마감)
     for (const option of day.starts) {
       const end = option.minute + 60;
       const clash = classes.some(([s, e]) => option.minute < e && s < end);
       assert.equal(option.available, !clash, `${code} ${option.label}`);
       if (option.available) {
-        // 이어 쓸 수 있는 최대 시간이 다음 수업 시작·22:00 을 넘지 않는다
-        const nextClass = Math.min(1320, ...classes.map(([s]) => s).filter((s) => s >= end));
+        // 이어 쓸 수 있는 최대 시간이 다음 수업 시작·마감(평일 22:10 · 주말 22:00)을 넘지 않는다
+        const nextClass = Math.min(CLOSE[code], ...classes.map(([s]) => s).filter((s) => s >= end));
         assert.ok(option.minute + option.maxMinutes <= nextClass, `${code} ${option.label} max ${option.maxMinutes}`);
         // 그리고 30분 단위로 그 한계까지 최대로 준다(덜 막지 않는다)
         assert.ok(option.minute + option.maxMinutes + 30 > Math.min(nextClass, option.minute + rules.RENTAL_MAX_MINUTES), `${code} ${option.label} 덜 열림`);
@@ -101,11 +113,12 @@ test("실제 시간표: 요일별 «열린 시작 구간» (원장 보고용 표
   const table = Object.fromEntries(Object.entries(WEEK).map(([code, date]) =>
     [code, openRanges(rules.buildRentalDay({ date, classes: CLASSES, busy: [], nowMs: NOW }))]));
   assert.deepEqual(table, {
-    Mon: "09:00~15:00, 20:40~21:00",
-    Tue: "09:00~14:00",
-    Wed: "09:00~14:00, 21:00",
-    Thu: "09:00~14:00",
-    Fri: "09:00~14:00, 20:40~21:00",
+    // 평일 저녁: 20:40 부터 수업과 상관없이 열리고 마지막 시작 21:10(22:10 마감)
+    Mon: "09:00~15:00, 20:40~21:10",
+    Tue: "09:00~14:00, 20:40~21:10", // 성인반 20:40~21:55 는 안 막는다
+    Wed: "09:00~14:00, 20:40~21:10", // 19:20~20:55 수업은 20:40 까지만 막는다
+    Thu: "09:00~14:00, 20:40~21:10", // 20:40~21:55 · 20:50~21:50 둘 다 안 막는다
+    Fri: "09:00~14:00, 20:40~21:10",
     Sat: "14:20~16:10, 18:30~21:00",
     Sun: "10:00~21:00",
   });
@@ -514,7 +527,9 @@ test("시트 보조 함수: 가능한 시만, 이용 시간은 1시간~최대로
   const day = rules.buildRentalDay({ date: WEEK.Tue, classes: CLASSES, busy: [], nowMs: NOW });
   // RentalTimeSheet 는 React 의존이라 같은 계산을 규칙 결과로 확인한다
   const hours = [...new Set(day.starts.filter((s) => s.available).map((s) => Math.floor(s.minute / 60)))];
-  assert.deepEqual(hours, [9, 10, 11, 12, 13, 14]); // 화요일: 15시 수업 전까지만
+  assert.deepEqual(hours, [9, 10, 11, 12, 13, 14, 20, 21]); // 화요일: 15시 수업 전까지 + 저녁 20:40~21:10(수업과 상관없이)
+  const evening = day.starts.filter((s) => s.available && s.minute >= 20 * 60).map((s) => [s.label, s.maxMinutes]);
+  assert.deepEqual(evening, [["20:40", 90], ["20:50", 60], ["21:00", 60], ["21:10", 60]]); // 22:10 마감까지 30분 단위
   const at1400 = day.starts.find((s) => s.minute === 14 * 60);
   assert.equal(at1400.maxMinutes, 60);
 });

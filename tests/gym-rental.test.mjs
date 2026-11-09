@@ -52,7 +52,7 @@ test("가능 시간: 그 요일 수업과 겹치는 시작만 막고, 끝나는 
   assert.equal(kst.kstDow(MON), 1);
   const day = rules.buildRentalDay({ date: MON, classes: CLASSES, busy: [], nowMs: kst.kstAt("2026-11-01", "00:00") });
   assert.equal(day.starts[0].label, "09:00"); // 평일 09시부터
-  assert.equal(day.starts.at(-1).label, "21:00"); // 22시까지 최소 1시간 → 마지막 시작 21:00
+  assert.equal(day.starts.at(-1).label, "21:10"); // 평일 22:10 마감까지 최소 1시간 → 마지막 시작 21:10
   assert.equal(reasonAt(day, "09:00"), "OPEN"); // 화요일 수업은 무관
   assert.equal(reasonAt(day, "15:00"), "OPEN"); // 15:00~16:00 은 16:00 수업 직전까지
   assert.equal(maxAt(day, "15:00"), 60);
@@ -62,7 +62,7 @@ test("가능 시간: 그 요일 수업과 겹치는 시작만 막고, 끝나는 
   assert.equal(reasonAt(day, "19:00"), "CLASS");
   assert.equal(reasonAt(day, "20:30"), "CLASS"); // 20:35 종료
   assert.equal(reasonAt(day, "20:40"), "OPEN"); // 끝나고 바로
-  assert.equal(maxAt(day, "20:40"), 60); // 20:40~21:40, 22:00 넘김(1시간 30분)은 불가
+  assert.equal(maxAt(day, "20:40"), 90); // 20:40~22:10 (평일 마감), 2시간(22:40)은 불가
 });
 
 test("가능 시간: 지난 시각·승인된 대관·특강 회차는 막힌다", () => {

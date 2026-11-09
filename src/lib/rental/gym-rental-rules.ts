@@ -41,6 +41,15 @@ export const RENTAL_WEEKEND_OPEN_HOUR = 10;
 /** 모든 요일 종료 시각 — 22:00 까지 */
 export const RENTAL_CLOSE_HOUR = 22;
 export const RENTAL_CLOSE_MINUTE = RENTAL_CLOSE_HOUR * 60;
+/** 평일(월~금) 저녁 대관 구간 — 20:40~22:10 은 수업과 상관없이 대관 가능, 평일 마감은 22:10 (2026-11-09 원장 지시) */
+export const RENTAL_WEEKDAY_EVENING_START_MINUTE = 20 * 60 + 40;
+export const RENTAL_WEEKDAY_CLOSE_MINUTE = 22 * 60 + 10;
+
+/** 그날 대관이 끝나야 하는 분 — 평일 22:10, 주말 22:00 */
+export function rentalCloseMinute(date: string): number {
+  const dow = kstDow(date);
+  return dow >= 1 && dow <= 5 ? RENTAL_WEEKDAY_CLOSE_MINUTE : RENTAL_CLOSE_MINUTE;
+}
 /** 시작 시각 간격(분) — 수업이 20:40 에 끝나면 20:40 부터 시작할 수 있게 10분 단위 */
 export const RENTAL_START_STEP_MINUTES = 10;
 /** 이용 시간 간격(분) — 30분 단위 */
@@ -263,7 +272,7 @@ export type RentalStartOption = {
 export type RentalDay = {
   date: string;
   openMinute: number; // 평일 540(09:00) · 주말 600(10:00)
-  closeMinute: number; // 1320(22:00)
+  closeMinute: number; // 평일 1330(22:10) · 주말 1320(22:00)
   blocks: RentalBlock[]; // 막힌 구간(수업·특강 = CLASS, 승인된 대관 = BOOKED)
   starts: RentalStartOption[];
 };
@@ -292,7 +301,7 @@ function maxMinutesFrom(blocks: RentalBlock[], start: number, closeMinute: numbe
 
 /**
  * 하루치 시작 후보(10분 간격). 정규 수업(요일 반)·특강 회차·이미 승인된 대관과 겹치면 막고,
- * 이미 지난 시각도 막는다. 시작 후보는 «영업 시작 ~ 22:00 - 1시간» 범위다.
+ * 이미 지난 시각도 막는다. 시작 후보는 «영업 시작 ~ 마감(평일 22:10·주말 22:00) - 1시간» 범위다. 평일 20:40 이후는 수업을 막지 않는다.
  * - 정규 수업은 요일만 본다(dayOfWeek 가 Mon~Sun 인 반만 — Archived·Seasonal 은 제외).
  * - 연간일정 휴무일에도 정규 수업 시간은 막아 둔다(보수적 — 원장 판단으로 바꿀 수 있게 보고).
  * - 일요일은 정규 수업·특강 회차를 무시하고 승인된 대관만 막는다(스포라운드 수업 — 원장 2026-11-08).
@@ -310,21 +319,28 @@ export function buildRentalDay(input: {
   // 일요일은 스포라운드 수업이라 학원 정규 수업·특강 회차를 막지 않는다(2026-11-08 원장 지시).
   // 승인된 대관(BOOKED)만 막는다. 서버 검증도 이 함수를 쓰므로 함께 바뀐다.
   const ignoreSchedule = dow === 0;
+  // 평일 20:40~22:10 은 수업(성인반·대회준비반 등)과 상관없이 대관 가능 — 수업·특강 구간을 20:40 에서 잘라낸다.
+  // 승인된 대관(BOOKED)은 자르지 않는다(겹치면 안 됨).
+  const weekday = dow >= 1 && dow <= 5;
+  const clipEvening = (r: RentalBusyRange): RentalBusyRange => weekday
+    ? { startMinute: r.startMinute, endMinute: Math.min(r.endMinute, RENTAL_WEEKDAY_EVENING_START_MINUTE) }
+    : r;
   const valid = (r: RentalBusyRange) => Number.isFinite(r.startMinute) && Number.isFinite(r.endMinute) && r.endMinute > r.startMinute;
   const classBlocks: RentalBlock[] = (ignoreSchedule ? [] : input.classes)
     .filter((row) => row.dayOfWeek === dowCode)
-    .map((row) => ({ startMinute: hmToMinutes(row.startTime), endMinute: hmToMinutes(row.endTime), reason: "CLASS" as const }))
+    .map((row) => ({ ...clipEvening({ startMinute: hmToMinutes(row.startTime), endMinute: hmToMinutes(row.endTime) }), reason: "CLASS" as const }))
     .filter(valid);
   const bookedBlocks: RentalBlock[] = (input.bookedBusy ?? []).filter(valid).map((r) => ({ ...r, reason: "BOOKED" as const }));
   // busy 는 특강 회차 — 예약 목록과 똑같은 구간이면 예약으로 본다(사유 표시만 다르다)
   const otherBlocks: RentalBlock[] = (ignoreSchedule ? [] : input.busy)
     .filter(valid)
     .filter((r) => !bookedBlocks.some((b) => b.startMinute === r.startMinute && b.endMinute === r.endMinute))
-    .map((r) => ({ ...r, reason: "CLASS" as const }));
+    .map((r) => ({ ...clipEvening(r), reason: "CLASS" as const }))
+    .filter(valid);
   const blocks = [...classBlocks, ...otherBlocks, ...bookedBlocks].sort((a, b) => a.startMinute - b.startMinute);
 
   const openMinute = rentalOpenMinute(input.date);
-  const closeMinute = RENTAL_CLOSE_MINUTE;
+  const closeMinute = rentalCloseMinute(input.date);
   const dayStartMs = kstAt(input.date); // 그날 KST 0시
   const starts: RentalStartOption[] = [];
   for (let minute = openMinute; minute + RENTAL_MIN_MINUTES <= closeMinute; minute += RENTAL_START_STEP_MINUTES) {
