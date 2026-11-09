@@ -10,7 +10,7 @@ export default async function StaffPage() {
     return (
         <>
         <div className="mx-auto flex max-w-7xl justify-end px-6 pt-4">
-            <Link href="/admin/staff/recovery" className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold dark:border-gray-700">중단된 초대 복구</Link>
+            <Link href="/admin/staff/recovery" className="rounded-lg border border-[var(--color-academy-line)] px-3 py-2 text-sm font-bold">중단된 초대 복구</Link>
         </div>
         <StaffClient
             staffUsers={staffUsers}

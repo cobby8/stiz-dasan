@@ -107,44 +107,44 @@ function StaffLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-40 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="mt-2 h-4 w-96 max-w-full rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                    <div className="h-8 w-40 rounded bg-[var(--color-academy-line)] animate-pulse" />
+                    <div className="mt-2 h-4 w-96 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
                 <div className="flex gap-2">
-                    <div className="h-10 w-32 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                    <div className="h-10 w-24 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                    <div className="h-10 w-32 rounded-lg bg-[var(--color-academy-line)] animate-pulse" />
+                    <div className="h-10 w-24 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                 </div>
             </div>
 
-            <div className="rounded-xl border border-yellow-200 bg-white shadow-sm dark:border-yellow-900/50 dark:bg-gray-800">
-                <div className="border-b border-yellow-100 bg-yellow-50 px-6 py-4 dark:border-yellow-900/50 dark:bg-yellow-900/20">
-                    <div className="h-5 w-40 rounded bg-yellow-100 dark:bg-yellow-900/50 animate-pulse" />
+            <div className="rounded-xl border border-[var(--color-academy-warning)] bg-white shadow-sm">
+                <div className="border-b border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] px-6 py-4">
+                    <div className="h-5 w-40 rounded bg-[var(--color-academy-warning-soft)] animate-pulse" />
                 </div>
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                <div className="divide-y divide-[var(--color-academy-line)]">
                     {Array.from({ length: 2 }).map((_, index) => (
                         <div key={index} className="flex items-center gap-4 px-6 py-4">
-                            <div className="h-10 w-10 rounded-full bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                            <div className="h-10 w-10 rounded-full bg-[var(--color-academy-soft)] animate-pulse" />
                             <div className="min-w-0 flex-1">
-                                <div className="h-4 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
-                                <div className="mt-2 h-3 w-48 max-w-full rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                                <div className="h-4 w-32 rounded bg-[var(--color-academy-line)] animate-pulse" />
+                                <div className="mt-2 h-3 w-48 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
                             </div>
-                            <div className="h-8 w-24 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                            <div className="h-8 w-24 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                         </div>
                     ))}
                 </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-                <div className="border-b border-gray-100 px-6 py-4 dark:border-gray-700">
-                    <div className="h-5 w-32 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+            <div className="rounded-xl border border-[var(--color-academy-line)] bg-white shadow-sm">
+                <div className="border-b border-[var(--color-academy-line)] px-6 py-4">
+                    <div className="h-5 w-32 rounded bg-[var(--color-academy-line)] animate-pulse" />
                 </div>
                 <div className="overflow-hidden">
                     {Array.from({ length: 6 }).map((_, index) => (
-                        <div key={index} className="grid grid-cols-4 gap-4 border-b border-gray-50 px-6 py-4 last:border-0 dark:border-gray-700">
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-4 rounded bg-gray-100 dark:bg-gray-700 animate-pulse" />
-                            <div className="h-8 rounded-lg bg-gray-100 dark:bg-gray-700 animate-pulse" />
+                        <div key={index} className="grid grid-cols-4 gap-4 border-b border-[var(--color-academy-line)] px-6 py-4 last:border-0">
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-4 rounded bg-[var(--color-academy-soft)] animate-pulse" />
+                            <div className="h-8 rounded-lg bg-[var(--color-academy-soft)] animate-pulse" />
                         </div>
                     ))}
                 </div>
@@ -155,13 +155,13 @@ function StaffLoadingFallback() {
 
 function StaffErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-100 bg-white p-8 text-center shadow-sm dark:border-red-900/40 dark:bg-gray-800">
-            <span className="material-symbols-outlined mb-3 text-4xl text-red-500">error</span>
-            <p className="font-bold text-gray-900 dark:text-white">스태프 정보를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-white p-8 text-center shadow-sm">
+            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
+            <p className="font-bold text-[var(--color-academy-ink)]">스태프 정보를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
-                className="mt-4 rounded-xl bg-brand-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
             >
                 다시 시도
             </button>
@@ -654,51 +654,51 @@ export default function StaffClient({
             )}
 
             {/* 역할별 권한 안내 카드 */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-                <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
+            <div className="bg-white rounded-xl border border-[var(--color-academy-line)] p-6">
+                <h3 className="font-semibold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
                     <span className="material-symbols-outlined text-[20px]">info</span>
                     역할별 권한 안내
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="p-4 bg-red-50 rounded-lg border border-red-100">
+                    <div className="p-4 bg-[var(--color-academy-danger-soft)] rounded-lg border border-[var(--color-academy-danger)]">
                         <div className="flex items-center gap-2 mb-2">
-                            <span className="inline-block w-3 h-3 rounded-full bg-red-500" />
-                            <span className="font-semibold text-red-800">원장</span>
+                            <span className="inline-block w-3 h-3 rounded-full bg-[var(--color-academy-danger)]" />
+                            <span className="font-semibold text-[var(--color-academy-danger)]">원장</span>
                         </div>
-                        <ul className="text-xs text-red-700 space-y-1">
+                        <ul className="text-xs text-[var(--color-academy-danger)] space-y-1">
                             <li>- 모든 관리 기능 사용 가능</li>
                             <li>- 스태프 추가/역할 변경 가능</li>
                             <li>- 시스템 설정 변경 가능</li>
                         </ul>
                     </div>
-                    <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                    <div className="p-4 bg-[var(--color-academy-soft)] rounded-lg border border-[var(--color-academy-line)]">
                         <div className="flex items-center gap-2 mb-2">
-                            <span className="inline-block w-3 h-3 rounded-full bg-orange-500" />
-                            <span className="font-semibold text-orange-800">부원장</span>
+                            <span className="inline-block w-3 h-3 rounded-full bg-[var(--color-academy-primary)]" />
+                            <span className="font-semibold text-[var(--color-academy-ink)]">부원장</span>
                         </div>
-                        <ul className="text-xs text-orange-700 space-y-1">
+                        <ul className="text-xs text-[var(--color-academy-muted)] space-y-1">
                             <li>- 원장과 동일한 관리 권한</li>
                             <li>- 스태프 관리 불가 (역할 변경 등)</li>
                             <li>- 관리자 알림 수신</li>
                         </ul>
                     </div>
-                    <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="p-4 bg-[var(--color-academy-soft)] rounded-lg border border-[var(--color-academy-line)]">
                         <div className="flex items-center gap-2 mb-2">
-                            <span className="inline-block w-3 h-3 rounded-full bg-blue-500" />
-                            <span className="font-semibold text-blue-800">코치/강사</span>
+                            <span className="inline-block w-3 h-3 rounded-full bg-[var(--color-academy-primary)]" />
+                            <span className="font-semibold text-[var(--color-academy-ink)]">코치/강사</span>
                         </div>
-                        <ul className="text-xs text-blue-700 space-y-1">
+                        <ul className="text-xs text-[var(--color-academy-muted)] space-y-1">
                             <li>- 출결/리포트 작성 가능</li>
                             <li>- 코치 프로필과 연결 시 시간표 배정</li>
                             <li>- 담당 반 SMS 수신</li>
                         </ul>
                     </div>
-                    <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-100">
+                    <div className="p-4 bg-[var(--color-academy-success-soft)] rounded-lg border border-[var(--color-academy-success)]">
                         <div className="flex items-center gap-2 mb-2">
-                            <span className="inline-block w-3 h-3 rounded-full bg-emerald-500" />
-                            <span className="font-semibold text-emerald-800">셔틀 기사</span>
+                            <span className="inline-block w-3 h-3 rounded-full bg-[var(--color-academy-success)]" />
+                            <span className="font-semibold text-[var(--color-academy-success)]">셔틀 기사</span>
                         </div>
-                        <ul className="text-xs text-emerald-700 space-y-1">
+                        <ul className="text-xs text-[var(--color-academy-success)] space-y-1">
                             <li>- 셔틀 운행 화면 접근</li>
                             <li>- 오늘 운행 노선 확인</li>
                         </ul>

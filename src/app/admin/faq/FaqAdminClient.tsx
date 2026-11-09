@@ -63,33 +63,33 @@ function FaqLoadingFallback() {
         <div className="space-y-6">
             <div className="flex items-center justify-between gap-4">
                 <div>
-                    <div className="h-8 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                    <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-8 w-32 animate-pulse rounded bg-[var(--color-academy-line)]" />
+                    <div className="mt-2 h-4 w-80 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
                 </div>
-                <div className="h-11 w-28 animate-pulse rounded-xl bg-gray-200 dark:bg-gray-700" />
+                <div className="h-11 w-28 animate-pulse rounded-xl bg-[var(--color-academy-line)]" />
             </div>
             <div className="space-y-3">
                 {Array.from({ length: 5 }).map((_, index) => (
                     <div
                         key={index}
-                        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                        className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm"
                     >
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0 flex-1 space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="h-5 w-5 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-5 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                    <div className="h-5 w-5 animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                    <div className="h-5 w-2/3 animate-pulse rounded bg-[var(--color-academy-line)]" />
                                 </div>
-                                <div className="ml-7 h-4 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
-                                <div className="ml-7 h-4 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-700" />
+                                <div className="ml-7 h-4 w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
+                                <div className="ml-7 h-4 w-3/4 animate-pulse rounded bg-[var(--color-academy-soft)]" />
                                 <div className="ml-7 flex gap-2">
-                                    <div className="h-5 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
-                                    <div className="h-5 w-16 animate-pulse rounded-full bg-gray-100 dark:bg-gray-700" />
+                                    <div className="h-5 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
+                                    <div className="h-5 w-16 animate-pulse rounded-full bg-[var(--color-academy-soft)]" />
                                 </div>
                             </div>
                             <div className="hidden gap-1 sm:flex">
-                                <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-                                <div className="h-8 w-8 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+                                <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+                                <div className="h-8 w-8 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
                             </div>
                         </div>
                     </div>
@@ -101,8 +101,8 @@ function FaqLoadingFallback() {
 
 function FaqErrorState({ onRetry }: { onRetry: () => void }) {
     return (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center dark:border-red-800 dark:bg-red-950/30">
-            <p className="text-sm font-bold text-red-700 dark:text-red-200">FAQ를 불러오지 못했습니다.</p>
+        <div className="rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-6 text-center">
+            <p className="text-sm font-bold text-[var(--color-academy-danger)]">FAQ를 불러오지 못했습니다.</p>
             <button
                 type="button"
                 onClick={onRetry}
@@ -234,11 +234,11 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
             {/* 페이지 헤더 */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">FAQ 관리</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">체험신청 페이지에 표시</p>
+                    <h1 className="text-2xl font-bold text-[var(--color-academy-ink)]">FAQ 관리</h1>
+                    <p className="text-sm text-[var(--color-academy-muted)] mt-1">체험신청 페이지에 표시</p>
                 </div>
                 <button onClick={() => { resetForm(); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-orange-600 transition">
+                    className="flex items-center gap-2 bg-[var(--color-academy-primary)] text-white px-4 py-2.5 rounded-xl font-bold hover:bg-[var(--color-academy-primary-hover)] transition">
                     <SymbolIcon name="add" size={18} /> 새 FAQ
                 </button>
             </div>
@@ -246,46 +246,46 @@ export default function FaqAdminClient({ faqs: initialFaqs }: { faqs?: FaqData[]
             {/* 생성/수정 모달 */}
             {showForm && (
                 <AdminModal onClose={resetForm} titleId="faq-form-modal-title" panelClassName="max-w-2xl">
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                        <div className="p-6 border-b border-[var(--color-academy-line)] flex items-center justify-between">
                             <h2 id="faq-form-modal-title" className="text-lg font-bold">{editId ? "FAQ 수정" : "새 FAQ"}</h2>
-                            <button onClick={resetForm} className="p-1 hover:bg-gray-100 dark:bg-gray-800 rounded-lg">
+                            <button onClick={resetForm} className="p-1 hover:bg-[var(--color-academy-line)] rounded-lg">
                                 <SymbolIcon name="close" size={20} />
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
                             {/* 질문 입력 */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">질문</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">질문</label>
                                 <input value={question} onChange={e => setQuestion(e.target.value)}
                                     placeholder="자주 묻는 질문을 입력하세요"
-                                    className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm" />
+                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
                             </div>
                             {/* 답변 입력 */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">답변</label>
+                                <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">답변</label>
                                 <textarea value={answer} onChange={e => setAnswer(e.target.value)}
                                     rows={4} placeholder="답변을 입력하세요"
-                                    className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm" />
+                                    className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
                             </div>
                             {/* 순서와 공개여부 — 가로 배치 */}
                             <div className="flex gap-4">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">표시 순서</label>
+                                    <label className="block text-sm font-medium text-[var(--color-academy-muted)] mb-1">표시 순서</label>
                                     <input type="number" value={order} onChange={e => setOrder(Number(e.target.value))}
-                                        className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2.5 text-sm" />
-                                    <p className="text-xs text-gray-400 mt-1">숫자가 작을수록 위에 표시됩니다</p>
+                                        className="w-full border border-[var(--color-academy-line)] rounded-xl px-4 py-2.5 text-sm" />
+                                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">숫자가 작을수록 위에 표시됩니다</p>
                                 </div>
                                 <div className="flex items-center gap-2 pt-6">
                                     <input type="checkbox" id="isPublic" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} className="rounded" />
-                                    <label htmlFor="isPublic" className="text-sm text-gray-700 dark:text-gray-200">공개</label>
+                                    <label htmlFor="isPublic" className="text-sm text-[var(--color-academy-muted)]">공개</label>
                                 </div>
                             </div>
                         </div>
                         {/* 모달 하단 버튼 */}
-                        <div className="p-6 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3">
-                            <button onClick={resetForm} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 rounded-xl transition">취소</button>
+                        <div className="p-6 border-t border-[var(--color-academy-line)] flex justify-end gap-3">
+                            <button onClick={resetForm} className="px-4 py-2 text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)] rounded-xl transition">취소</button>
                             <button onClick={handleSubmit} disabled={isPending}
-                                className="px-6 py-2 bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white font-bold rounded-xl hover:bg-orange-600 transition disabled:opacity-50">
+                                className="px-6 py-2 bg-[var(--color-academy-primary)] text-white font-bold rounded-xl hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-50">
                                 {isPending ? "저장 중..." : editId ? "수정" : "등록"}
                             </button>
                         </div>

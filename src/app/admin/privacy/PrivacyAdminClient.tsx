@@ -9,15 +9,15 @@ function PolicyEditorLoadingFallback() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="h-8 w-56 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" />
+        <div className="h-8 w-56 animate-pulse rounded bg-[var(--color-academy-line)]" />
+        <div className="mt-2 h-4 w-96 max-w-full animate-pulse rounded bg-[var(--color-academy-soft)]" />
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-        <div className="h-5 w-32 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-        <div className="mt-4 h-[520px] animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
+      <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm">
+        <div className="h-5 w-32 animate-pulse rounded bg-[var(--color-academy-line)]" />
+        <div className="mt-4 h-[520px] animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
         <div className="mt-4 flex justify-end gap-2">
-          <div className="h-10 w-24 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-700" />
-          <div className="h-10 w-24 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+          <div className="h-10 w-24 animate-pulse rounded-lg bg-[var(--color-academy-soft)]" />
+          <div className="h-10 w-24 animate-pulse rounded-lg bg-[var(--color-academy-line)]" />
         </div>
       </div>
     </div>
@@ -95,25 +95,25 @@ export default function PrivacyAdminClient({
       {saveError && <p role="alert">{saveError}</p>}
 
       <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+        <h1 className="text-2xl font-bold text-[var(--color-academy-ink)] mb-2">
           개인정보처리방침 관리
         </h1>
-        <p className="text-gray-500 dark:text-gray-400">
+        <p className="text-[var(--color-academy-muted)]">
           공개 페이지(/privacy)에 표시되는 개인정보 처리방침을 관리합니다.
         </p>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-[var(--color-academy-line)]">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+          <h2 className="text-lg font-bold text-[var(--color-academy-ink)]">
             개인정보 처리방침 내용
           </h2>
           <div className="flex items-center gap-3">
-            {saved && <span className="text-xs text-green-600 font-medium">저장됨</span>}
+            {saved && <span className="text-xs text-[var(--color-academy-success)] font-medium">저장됨</span>}
             <button
               onClick={savePrivacyPolicy}
               disabled={pending || loading || !!loadError || !loaded}
-              className="bg-brand-navy-900 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-gray-800 transition disabled:opacity-40"
+              className="bg-[var(--color-academy-primary-hover)] text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-[var(--color-academy-primary-hover)] transition disabled:opacity-40"
             >
               {pending ? "저장 중..." : "저장"}
             </button>
@@ -128,9 +128,9 @@ export default function PrivacyAdminClient({
           }}
           rows={22}
           placeholder={"제1조 (개인정보의 처리 목적)\n..."}
-          className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-brand-orange-500 dark:focus:ring-brand-neon-lime focus:border-brand-orange-500 dark:border-brand-neon-lime bg-gray-50 focus:bg-white dark:focus:bg-gray-700 dark:bg-gray-800 resize-y font-mono leading-relaxed"
+          className="w-full border border-[var(--color-academy-line-input)] rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[var(--color-academy-primary)] focus:border-[var(--color-academy-primary)] bg-[var(--color-academy-soft)] focus:bg-white resize-y font-mono leading-relaxed"
         />
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="text-xs text-[var(--color-academy-faint)] mt-2">
           &quot;제1조 (...)&quot;처럼 조항 제목을 줄 시작에 쓰면 공개 페이지에서 카드 단위로 나뉘어 표시됩니다.
         </p>
       </div>
