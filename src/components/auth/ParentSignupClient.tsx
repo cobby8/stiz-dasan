@@ -32,7 +32,7 @@ class ApiError extends Error {
 }
 
 const inputClass =
-  "min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-gray-900 outline-none transition focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500/20 dark:border-gray-600 dark:bg-gray-950 dark:text-white";
+  "min-h-12 w-full rounded-xl border border-gray-300 bg-white px-4 text-[var(--color-public-ink)] outline-none transition focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)]/20 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white";
 
 function friendlyError(value: unknown) {
   if (value instanceof Error && value.message) return value.message;
@@ -192,7 +192,7 @@ export default function ParentSignupClient() {
       {step !== "done" && (
         <div aria-label={`가입 ${progress}/3단계`} className="flex gap-2">
           {[1, 2, 3].map((number) => (
-            <span key={number} className={`h-1.5 flex-1 rounded-full ${number <= progress ? "bg-brand-orange-500 dark:bg-brand-neon-lime" : "bg-gray-200 dark:bg-gray-700"}`} />
+            <span key={number} className={`h-1.5 flex-1 rounded-full ${number <= progress ? "bg-brand-orange-500 dark:bg-brand-neon-lime" : "bg-[var(--color-public-line)] dark:bg-[var(--color-public-line)]"}`} />
           ))}
         </div>
       )}
@@ -200,18 +200,18 @@ export default function ParentSignupClient() {
       {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {/* 간편가입 세션이 끊긴 경우(카카오톡 안 브라우저에서 잦다) — 휴대폰 인증 방식으로 바로 이어 간다 */}
       {socialSignup && socialSessionMissing && (
-        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-brand-orange-500 px-4 text-sm font-bold text-brand-orange-500">
+        <a href={parentAuthEntryHref("signup", searchParams, { existing: true })} className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-accent)]">
           아이디·휴대폰 인증으로 계속
         </a>
       )}
       {socialSignup && phoneRegistered && <IdentityLinkButton />}
-      {notice && <p role="status" className="rounded-xl bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">{notice}</p>}
+      {notice && <p role="status" className="rounded-xl bg-[var(--color-public-tint)] px-3 py-2 text-xs leading-5 text-[var(--color-public-ink)]">{notice}</p>}
 
       {step === "method" && (
         <>
           <div>
-            <h2 className="text-xl font-bold text-brand-navy-900 dark:text-white">회원가입</h2>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">어떤 일로 이용하시나요? 여러 개 고를 수 있어요.</p>
+            <h2 className="text-xl font-bold text-[var(--color-public-ink)] dark:text-white">회원가입</h2>
+            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">어떤 일로 이용하시나요? 여러 개 고를 수 있어요.</p>
           </div>
           <div className="grid grid-cols-3 gap-2" role="group" aria-label="이용 역할">
             {[
@@ -224,7 +224,7 @@ export default function ParentSignupClient() {
                 type="button"
                 aria-pressed={option.on}
                 onClick={option.toggle}
-                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-sm font-bold transition ${option.on ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300"}`}
+                className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl border text-sm font-bold transition ${option.on ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)]"}`}
               >
                 <span className="material-symbols-outlined text-xl" aria-hidden="true">{option.icon}</span>
                 {option.label}
@@ -232,24 +232,24 @@ export default function ParentSignupClient() {
             ))}
           </div>
           {staffRoles.length > 0 && (
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            <p className="rounded-xl bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
               선생님·기사님 화면은 학생 정보를 보게 되어 <b>원장님 확인 후</b> 열립니다. 가입을 마치면 신청 화면으로 이어집니다.
             </p>
           )}
-          <button type="button" onClick={() => setStep("phone")} disabled={noRoleChosen} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-orange-500 px-4 font-bold text-white hover:bg-brand-orange-600 disabled:opacity-40 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+          <button type="button" onClick={() => setStep("phone")} disabled={noRoleChosen} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--color-public-accent)] px-4 font-bold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-40 dark:bg-brand-neon-lime dark:text-brand-navy-900">
             아이디로 가입하기
           </button>
           {/* Supabase 에서 켜진 간편가입만 보인다 — 꺼진 버튼은 누르면 Supabase 오류 화면이 떴다(2026-10-25). */}
           {visibleSignupOptions.length > 0 && !noRoleChosen && (
             <>
-              <div className="flex items-center gap-3 text-xs text-gray-400"><span className="h-px flex-1 bg-gray-200" />간편가입<span className="h-px flex-1 bg-gray-200" /></div>
+              <div className="flex items-center gap-3 text-xs text-[var(--color-public-muted)]"><span className="h-px flex-1 bg-[var(--color-public-line)]" />간편가입<span className="h-px flex-1 bg-[var(--color-public-line)]" /></div>
               <div className="grid gap-3">
                 {/* <Link> 금지 — 미리 불러오기가 로그인 열쇠(PKCE)를 덮어써 간편가입이 「만료」로 실패한다(login/page.tsx 와 같음). */}
                 {visibleSignupOptions.map((option) => (
                   <a
                     key={option.provider}
                     href={`/auth/oauth/${option.provider}?intent=parent-signup&${continueParams.toString()}`}
-                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white font-semibold text-gray-800"
+                    className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white font-semibold text-[var(--color-public-ink)]"
                   >
                     {/* 흰색 테두리 버튼은 애플 가이드라인의 「White Outline」 스타일과 맞는다 */}
                     {option.provider === "apple" && <AppleLogo />}
@@ -257,7 +257,7 @@ export default function ParentSignupClient() {
                   </a>
                 ))}
               </div>
-              <p className="text-center text-xs leading-5 text-gray-500">간편가입도 처음 한 번은 안전한 계정 연결을 위해 휴대폰 인증이 필요합니다.</p>
+              <p className="text-center text-xs leading-5 text-[var(--color-public-muted)]">간편가입도 처음 한 번은 안전한 계정 연결을 위해 휴대폰 인증이 필요합니다.</p>
             </>
           )}
         </>
@@ -266,15 +266,15 @@ export default function ParentSignupClient() {
       {step === "phone" && !challengeToken && (
         <form onSubmit={startPhoneVerification} className="space-y-4">
           {existingMode ? (
-            <div><h2 className="text-xl font-bold">기존 학부모 계정 활성화</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">학원에 알려 주신 보호자 휴대폰 번호를 입력해 주세요. 문자 인증이 끝나면 등록된 계정을 바로 쓸 수 있게 이어 드려요.</p></div>
+            <div><h2 className="text-xl font-bold">기존 학부모 계정 활성화</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">학원에 알려 주신 보호자 휴대폰 번호를 입력해 주세요. 문자 인증이 끝나면 등록된 계정을 바로 쓸 수 있게 이어 드려요.</p></div>
           ) : (
-            <div><h2 className="text-xl font-bold">휴대폰 인증</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">본인 명의로 사용하는 번호를 입력해 주세요.</p></div>
+            <div><h2 className="text-xl font-bold">휴대폰 인증</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">본인 명의로 사용하는 번호를 입력해 주세요.</p></div>
           )}
           {/* 어떤 번호든 같은 문구 — 등록 여부는 문자 인증을 통과한 뒤에만 알려 준다 */}
-          <p className="text-xs leading-5 text-gray-500">이미 학원에 다니는 학부모님도 학원에 알려 준 번호로 인증하면 기존 정보가 그대로 연결돼요.</p>
+          <p className="text-xs leading-5 text-[var(--color-public-muted)]">이미 학원에 다니는 학부모님도 학원에 알려 준 번호로 인증하면 기존 정보가 그대로 연결돼요.</p>
           <label className="block text-sm font-semibold">휴대폰 번호<input className={`${inputClass} mt-2`} type="tel" value={phone} onChange={(event) => setPhone(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" autoComplete="tel" placeholder="01012345678" minLength={10} maxLength={11} required /></label>
           {initialPhone && (
-            <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
+            <p className="rounded-xl bg-[var(--color-public-tint)] px-3 py-2 text-xs leading-5 text-[var(--color-public-ink)]">
               수강신청서의 보호자 번호를 불러왔습니다. 이 번호로 본인 인증해야 신청서가 계정에 연결됩니다.
             </p>
           )}
@@ -284,21 +284,21 @@ export default function ParentSignupClient() {
 
       {step === "phone" && challengeToken && (
         <form onSubmit={verifyPhone} className="space-y-4">
-          <div><h2 className="text-xl font-bold">인증번호 입력</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{phone}로 보낸 6자리 번호를 입력해 주세요.</p></div>
+          <div><h2 className="text-xl font-bold">인증번호 입력</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{phone}로 보낸 6자리 번호를 입력해 주세요.</p></div>
           <label className="block text-sm font-semibold">인증번호<input className={`${inputClass} mt-2 text-center text-xl tracking-[0.4em]`} value={otp} onChange={(event) => setOtp(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required /></label>
           <button disabled={loading || otp.length !== 6} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white disabled:opacity-50">{loading ? "확인 중..." : "인증 완료"}</button>
-          <button type="button" onClick={() => { setChallengeToken(""); setOtp(""); setError(null); }} className="w-full text-sm text-gray-600 underline">번호 다시 입력하기</button>
+          <button type="button" onClick={() => { setChallengeToken(""); setOtp(""); setError(null); }} className="w-full text-sm text-[var(--color-public-muted)] underline">번호 다시 입력하기</button>
         </form>
       )}
 
       {step === "account" && (
         <form onSubmit={completeSignup} className="space-y-4">
-          <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-gray-600 dark:text-gray-300">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
+          <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
           <label className="block text-sm font-semibold">이름<input name="name" defaultValue={initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
           <label className="block text-sm font-semibold">로그인 아이디<input name="username" className={`${inputClass} mt-2`} autoComplete="username" minLength={4} maxLength={20} pattern="[A-Za-z][A-Za-z0-9_]{3,19}" placeholder="영문으로 시작, 영문·숫자·밑줄" required /></label>
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상" required /></label>}
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호 확인<input name="passwordConfirm" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} required /></label>}
-          <div className="space-y-2 rounded-xl bg-gray-50 p-4 text-sm dark:bg-gray-900">
+          <div className="space-y-2 rounded-xl bg-[var(--color-public-tint)] p-4 text-sm dark:bg-[var(--color-public-paper)]">
             <label className="flex gap-2"><input name="terms" type="checkbox" required /> <span><Link href="/terms" target="_blank" className="underline">이용약관</Link> 동의 (필수)</span></label>
             <label className="flex gap-2"><input name="privacy" type="checkbox" required /> <span><Link href="/privacy" target="_blank" className="underline">개인정보 수집·이용</Link> 동의 (필수)</span></label>
             <label className="flex gap-2"><input name="age" type="checkbox" required /> <span>만 14세 이상입니다 (필수)</span></label>
@@ -309,21 +309,21 @@ export default function ParentSignupClient() {
 
       {step === "existing" && (
         <div className="space-y-4 py-2 text-center">
-          <span className="material-symbols-outlined text-5xl text-brand-orange-500" aria-hidden="true">how_to_reg</span>
+          <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">how_to_reg</span>
           <h2 className="text-xl font-bold">이미 학원에 등록된 보호자입니다</h2>
-          <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">문자 인증이 끝났어요. 로그인에 쓸 이메일과 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
+          <p className="text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">문자 인증이 끝났어요. 로그인에 쓸 이메일과 비밀번호만 정하면 바로 쓸 수 있어요. 자녀 정보는 학원에 등록된 그대로 연결됩니다.</p>
           <button type="button" onClick={() => window.location.assign(activationUrl)} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white">
             비밀번호 정하러 가기
           </button>
-          <p className="text-xs leading-5 text-gray-500">10분 안에 마쳐 주세요. 시간이 지나면 휴대폰 인증부터 다시 하면 됩니다.</p>
+          <p className="text-xs leading-5 text-[var(--color-public-muted)]">10분 안에 마쳐 주세요. 시간이 지나면 휴대폰 인증부터 다시 하면 됩니다.</p>
         </div>
       )}
 
       {step === "done" && (
         <div className="py-6 text-center">
-          <span className="material-symbols-outlined text-5xl text-brand-orange-500" aria-hidden="true">check_circle</span>
+          <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">check_circle</span>
           <h2 className="mt-3 text-xl font-bold">가입이 완료됐습니다</h2>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-[var(--color-public-muted)]">
             {enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다. 로그인해서 확인해주세요." : "이제 만든 아이디로 로그인해 주세요."}
           </p>
           <Link href={`/login?${new URLSearchParams({ redirect: next }).toString()}`} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 font-bold text-white">로그인하기</Link>

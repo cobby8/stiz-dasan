@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHART_COLORS } from "@/lib/ui/colorValues";
 
 // 막대 그래프 컴포넌트 — 반별 정원, 코치 워크로드 등에 사용
 // 순수 SVG로 구현, 호버 시 값 표시
@@ -14,7 +15,7 @@ interface BarChartProps {
 
 export default function BarChart({
     data,
-    color = "#3b82f6",    // 기본: blue-500
+    color = CHART_COLORS.bar,    // 기본: blue-500
     height = 200,
     unit = "",
     showMax = false,
@@ -55,7 +56,7 @@ export default function BarChart({
                         y1={y}
                         x2={width - padding.right}
                         y2={y}
-                        stroke="#e5e7eb"
+                        stroke={CHART_COLORS.grid}
                         strokeWidth="1"
                         strokeDasharray="4 4"
                     />
@@ -86,7 +87,7 @@ export default function BarChart({
                                 width={barWidth}
                                 height={maxH}
                                 rx={4}
-                                fill="#f3f4f6"
+                                fill={CHART_COLORS.track}
                             />
                         )}
 
@@ -111,7 +112,7 @@ export default function BarChart({
                                     width="60"
                                     height="20"
                                     rx="4"
-                                    fill="#1f2937"
+                                    fill={CHART_COLORS.label}
                                     opacity="0.9"
                                 />
                                 <text
@@ -132,7 +133,7 @@ export default function BarChart({
                             x={x + barWidth / 2}
                             y={height - 6}
                             textAnchor="middle"
-                            fill="#9ca3af"
+                            fill={CHART_COLORS.axis}
                             fontSize="10"
                         >
                             {d.label}

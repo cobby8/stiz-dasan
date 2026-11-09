@@ -4,9 +4,10 @@ import { useEffect } from "react";
 import { useTheme } from "next-themes";
 import { usePathname } from "next/navigation";
 import { ACADEMY_THEME_COLOR, isAcademyPath } from "@/lib/academyTheme";
+import { THEME_COLORS } from "@/lib/ui/colorValues";
 
-const LIGHT_THEME_COLOR = "#ffffff"; // 공개 홈페이지 흰 바탕(스포츠 스타일)
-const DARK_THEME_COLOR = "#15181c"; // 다크 차콜
+const LIGHT_THEME_COLOR = THEME_COLORS.publicLight; // 공개 홈페이지 흰 바탕(스포츠 스타일)
+const DARK_THEME_COLOR = THEME_COLORS.publicDark; // 다크 차콜
 
 export default function ThemeColorUpdater() {
   const { resolvedTheme } = useTheme();

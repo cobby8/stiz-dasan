@@ -1,3 +1,5 @@
+import { THEME_COLORS } from "@/lib/ui/colorValues";
+
 /** 학원 업무 화면만 선택해 공개 홈페이지의 테마 설정을 보존한다. */
 export function isAcademyPath(pathname: string | null | undefined): boolean {
   const path = pathname ?? "";
@@ -9,4 +11,4 @@ export function isAcademyPath(pathname: string | null | undefined): boolean {
     || /^\/payments\/(?!review(?:\/|$))/.test(path);
 }
 
-export const ACADEMY_THEME_COLOR = "#b94118";
+export const ACADEMY_THEME_COLOR = THEME_COLORS.academy;

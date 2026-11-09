@@ -17,6 +17,10 @@
   --color-public-dark-line: #383c42;
   --color-public-focus: #c6471c;
   --color-public-radius: 4px;
+  /* 홈 첫 화면 사진 위 글자·가림막(public-home.css 에서 옮김 — 색 값은 이 파일 한 곳) */
+  --color-public-hero-ink: #fff;
+  --color-public-hero-scrim: rgba(12, 14, 17, .78);
+  --color-public-hero-clear: rgba(12, 14, 17, .16);
   --color-brand-orange-50: var(--color-public-tint);
   --color-brand-orange-100: var(--color-public-tint);
   --color-brand-orange-200: var(--color-public-line);

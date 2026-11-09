@@ -35,7 +35,7 @@ export default async function FreeUniformApplyPage({ params }: { params: Promise
 
   return (
     <PublicPageLayout>
-      <section className="public-content-section bg-gray-50 py-6 dark:bg-gray-900 md:py-10">
+      <section className="public-content-section bg-[var(--color-public-tint)] py-6 dark:bg-[var(--color-public-paper)] md:py-10">
         <div className="mx-auto max-w-xl px-4">
           {view.state === "USABLE" ? (
             <FreeUniformForm
@@ -47,16 +47,16 @@ export default async function FreeUniformApplyPage({ params }: { params: Promise
             />
           ) : (
             // 쓸 수 없는 링크: 이유 한 줄 + 학원 연락처
-            <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-gray-800">
-              <FontFreeIcon name="error" size={32} className="mx-auto text-brand-orange-500 dark:text-brand-neon-lime" />
-              <h1 className="mt-3 break-keep text-lg font-black text-gray-900 dark:text-white">{view.message}</h1>
-              <p className="mt-2 break-keep text-sm text-gray-600 dark:text-gray-300">
+            <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
+              <FontFreeIcon name="error" size={32} className="mx-auto text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
+              <h1 className="mt-3 break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{view.message}</h1>
+              <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                 궁금한 점은 학원으로 연락해 주세요.
               </p>
               {contactPhone && (
                 <a
                   href={`tel:${contactPhone.replace(/[^0-9+]/g, "")}`}
-                  className="mt-4 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-5 text-base font-bold text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  className="mt-4 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-[var(--color-public-line)] bg-white px-5 text-base font-bold text-[var(--color-public-ink)] hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]"
                 >
                   <FontFreeIcon name="call" size={18} />
                   {contactPhone}

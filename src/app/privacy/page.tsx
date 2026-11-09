@@ -36,7 +36,7 @@ export default async function PrivacyPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 — terms 페이지와 동일한 스타일 */}
-      <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+      <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
           <AnimateOnScroll>
             <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">
@@ -54,11 +54,11 @@ export default async function PrivacyPage() {
         <div className="max-w-4xl mx-auto space-y-6">
           {privacySections.map((section, idx) => (
             <AnimateOnScroll key={`${section.title}-${idx}`}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 md:p-8 shadow-sm">
-                <h2 className="text-lg font-bold text-brand-navy-900 dark:text-white mb-4">
+              <div className="bg-white dark:bg-[var(--color-public-tint)] rounded-xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] p-6 md:p-8 shadow-sm">
+                <h2 className="text-lg font-bold text-[var(--color-public-ink)] dark:text-white mb-4">
                   {section.title}
                 </h2>
-                <div className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-line">
+                <div className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] leading-relaxed whitespace-pre-line">
                   {section.content}
                 </div>
               </div>
@@ -66,7 +66,7 @@ export default async function PrivacyPage() {
           ))}
 
           <AnimateOnScroll>
-            <p className="text-center text-sm text-gray-400 mt-8">
+            <p className="text-center text-sm text-[var(--color-public-muted)] mt-8">
               개인정보 처리방침 변경 사항은 홈페이지를 통해 안내됩니다.
             </p>
           </AnimateOnScroll>

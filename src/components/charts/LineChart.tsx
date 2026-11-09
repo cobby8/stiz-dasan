@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CHART_COLORS } from "@/lib/ui/colorValues";
 
 // 선 그래프 컴포넌트 — 매출 추이, 출석률 추이 등에 사용
 // 순수 SVG로 구현하여 외부 라이브러리 의존 없음
@@ -73,7 +74,7 @@ export default function LineChart({
                         y1={y}
                         x2={width - padding.right}
                         y2={y}
-                        stroke="#e5e7eb"
+                        stroke={CHART_COLORS.grid}
                         strokeWidth="1"
                         strokeDasharray="4 4"
                     />
@@ -132,7 +133,7 @@ export default function LineChart({
                         width="80"
                         height="22"
                         rx="4"
-                        fill="#1f2937"
+                        fill={CHART_COLORS.label}
                         opacity="0.9"
                     />
                     <text
@@ -155,7 +156,7 @@ export default function LineChart({
                     x={p.x}
                     y={height - 6}
                     textAnchor="middle"
-                    fill="#9ca3af"
+                    fill={CHART_COLORS.axis}
                     fontSize="11"
                 >
                     {p.label}

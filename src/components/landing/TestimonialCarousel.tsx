@@ -49,7 +49,7 @@ export default function TestimonialCarousel({
     return Array.from({ length: 5 }, (_, i) => (
       <span
         key={i}
-        className={i < rating ? 'text-yellow-400' : 'text-gray-200 dark:text-gray-600'}
+        className={i < rating ? 'text-yellow-400' : 'text-[var(--color-public-dark-muted)] dark:text-gray-600'}
       >
         &#9733;
       </span>
@@ -66,7 +66,7 @@ export default function TestimonialCarousel({
     >
       {/* 후기가 없으면 안내 메시지 */}
       {testimonials.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 dark:text-gray-400">
+        <div className="text-center py-12 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
           <FontFreeIcon name="rate_review" size={48} className="mx-auto mb-3" />
           <p className="font-medium">아직 등록된 후기가 없습니다</p>
         </div>
@@ -76,10 +76,10 @@ export default function TestimonialCarousel({
             {/* 좌측 스크롤 버튼 */}
             <button
               onClick={() => scroll('left')}
-              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-10 w-10 h-10 bg-white dark:bg-gray-800 rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-gray-700 dark:border dark:border-gray-700 transition-all cursor-pointer hidden md:flex"
+              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-10 w-10 h-10 bg-white dark:bg-[var(--color-public-tint)] rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-[var(--color-public-line)] dark:border dark:border-[var(--color-public-line)] transition-all cursor-pointer hidden md:flex"
               aria-label="이전 후기"
             >
-              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
@@ -97,20 +97,20 @@ export default function TestimonialCarousel({
               {testimonials.map((item, index) => (
                 <div
                   key={index}
-                  className="flex-shrink-0 w-[280px] md:w-[320px] snap-start bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 transition-colors"
+                  className="flex-shrink-0 w-[280px] md:w-[320px] snap-start bg-white dark:bg-[var(--color-public-tint)] rounded-2xl p-6 shadow-sm border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] transition-colors"
                 >
                   {/* 별점 — 별점이 없는 후기(rating 0, 예: 네이버 방문자 리뷰)는 별을 지어내지 않고 숨긴다 */}
                   {item.rating > 0 && <div className="text-lg mb-3">{renderStars(item.rating)}</div>}
 
                   {/* 후기 내용 — 따옴표로 감싸서 후기 느낌 강조 */}
-                  <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-4 min-h-[80px]">
+                  <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed mb-4 min-h-[80px]">
                     &ldquo;{item.text}&rdquo;
                   </p>
 
                   {/* 학부모 정보 */}
-                  <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
-                    <p className="font-bold text-gray-900 dark:text-white text-base">{item.name}</p>
-                    <p className="text-sm text-gray-400 dark:text-gray-400">{item.info}</p>
+                  <div className="border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)] pt-3">
+                    <p className="font-bold text-[var(--color-public-ink)] dark:text-white text-base">{item.name}</p>
+                    <p className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{item.info}</p>
                   </div>
                 </div>
               ))}
@@ -119,10 +119,10 @@ export default function TestimonialCarousel({
             {/* 우측 스크롤 버튼 */}
             <button
               onClick={() => scroll('right')}
-              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-10 w-10 h-10 bg-white dark:bg-gray-800 rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-gray-700 dark:border dark:border-gray-700 transition-all cursor-pointer hidden md:flex"
+              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-10 w-10 h-10 bg-white dark:bg-[var(--color-public-tint)] rounded-full shadow-md flex items-center justify-center hover:shadow-lg dark:hover:bg-[var(--color-public-line)] dark:border dark:border-[var(--color-public-line)] transition-all cursor-pointer hidden md:flex"
               aria-label="다음 후기"
             >
-              <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -132,7 +132,7 @@ export default function TestimonialCarousel({
 
       {/* 모바일 스크롤 안내 — 후기가 있을 때만 표시 */}
       {testimonials.length > 0 && (
-        <p className="text-center text-sm text-gray-400 mt-4 md:hidden">
+        <p className="text-center text-sm text-[var(--color-public-muted)] mt-4 md:hidden">
           좌우로 밀어서 더 많은 후기를 확인하세요
         </p>
       )}

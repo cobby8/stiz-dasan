@@ -34,21 +34,21 @@ function Notice({ title, message, href = "/programs", linkLabel = "프로그램 
 }) {
     return (
         <PublicPageLayout>
-            <section className="public-content-section bg-gray-50 px-4 py-16 dark:bg-gray-950">
-                <div className="mx-auto max-w-lg rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                    <h1 className="text-xl font-black text-gray-900 dark:text-white">{title}</h1>
-                    <p className="mt-4 break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{message}</p>
+            <section className="public-content-section bg-[var(--color-public-tint)] px-4 py-16 dark:bg-[var(--color-public-paper)]">
+                <div className="mx-auto max-w-lg rounded-2xl border border-[var(--color-public-line)] bg-white p-8 text-center shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
+                    <h1 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">{title}</h1>
+                    <p className="mt-4 break-keep text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{message}</p>
                     <div className="mt-6 flex flex-wrap justify-center gap-2">
                         <Link
                             href={href}
-                            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-orange-500 px-5 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
+                            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[var(--color-public-accent)] px-5 text-sm font-black text-white dark:bg-brand-neon-lime dark:text-brand-navy-900"
                         >
                             {linkLabel}
                         </Link>
                         {href !== "/programs" && (
                             <Link
                                 href="/programs"
-                                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-5 text-sm font-bold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+                                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-5 text-sm font-bold text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]"
                             >
                                 프로그램 안내
                             </Link>
@@ -113,40 +113,40 @@ export default async function ProgramOrderPage({
 
     return (
         <PublicPageLayout>
-            <section className="public-content-section bg-gray-50 px-4 py-10 dark:bg-gray-950 md:py-14">
+            <section className="public-content-section bg-[var(--color-public-tint)] px-4 py-10 dark:bg-[var(--color-public-paper)] md:py-14">
                 <div className="mx-auto w-full max-w-2xl">
-                    <Link href="/programs" className="text-sm font-bold text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">
+                    <Link href="/programs" className="text-sm font-bold text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)] dark:hover:text-white">
                         ← 프로그램 안내
                     </Link>
-                    <h1 className="mt-3 text-2xl font-black text-gray-900 dark:text-white">주문서</h1>
+                    <h1 className="mt-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">주문서</h1>
 
                     {/* 상품 정보 */}
-                    <div className="mt-6 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                    <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--color-public-line)] bg-white shadow-sm dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
                         <div className="relative aspect-[3/1] w-full overflow-hidden">
                             {program.imageUrl ? (
                                 <Image src={program.imageUrl} alt={program.name} fill className="object-cover" sizes="(max-width: 768px) 100vw, 672px" />
                             ) : (
                                 // 이미지가 없으면 이름 첫 글자를 브랜드 그라데이션 위에 보여준다
-                                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-orange-500 dark:from-black dark:via-gray-900 dark:to-brand-neon-cobalt">
+                                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-accent)] dark:from-black dark:via-gray-900 dark:to-brand-neon-cobalt">
                                     <span className="text-5xl font-black text-white">{program.name.trim().charAt(0)}</span>
                                 </div>
                             )}
                         </div>
                         <div className="p-5">
-                            <h2 className="break-keep text-xl font-black text-gray-900 dark:text-white">{program.name}</h2>
+                            <h2 className="break-keep text-xl font-black text-[var(--color-public-ink)] dark:text-white">{program.name}</h2>
                             {program.targetAge && (
-                                <p className="mt-1 text-sm font-semibold text-gray-600 dark:text-gray-300">대상: {program.targetAge}</p>
+                                <p className="mt-1 text-sm font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">대상: {program.targetAge}</p>
                             )}
                             {program.description && (
-                                <p className="mt-3 whitespace-pre-line break-keep text-sm leading-6 text-gray-600 dark:text-gray-300">{program.description}</p>
+                                <p className="mt-3 whitespace-pre-line break-keep text-sm leading-6 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{program.description}</p>
                             )}
-                            <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm leading-6 text-gray-700 break-keep dark:bg-gray-800 dark:text-gray-300">
+                            <div className="mt-4 rounded-xl bg-[var(--color-public-tint)] p-4 text-sm leading-6 text-[var(--color-public-muted)] break-keep dark:bg-[var(--color-public-tint)] dark:text-[var(--color-public-muted)]">
                                 <p>
-                                    <strong className="text-gray-900 dark:text-white">서비스 제공기간</strong> 결제한 달의 수업 4주(1개월) · 셔틀비 별도
+                                    <strong className="text-[var(--color-public-ink)] dark:text-white">서비스 제공기간</strong> 결제한 달의 수업 4주(1개월) · 셔틀비 별도
                                 </p>
                                 <p className="mt-1">
-                                    <strong className="text-gray-900 dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
-                                    <a href="/terms" className="font-bold text-brand-orange-500 underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
+                                    <strong className="text-[var(--color-public-ink)] dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
+                                    <a href="/terms" className="font-bold text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
                                 </p>
                             </div>
                         </div>

@@ -92,12 +92,12 @@ export default function PublicFooter({
   ].filter((link) => link.href);
 
   return (
-    <footer className="public-site-footer bg-gray-50 dark:bg-black text-gray-600 dark:text-gray-300 pt-12 pb-8 border-t-4 border-brand-orange-500 dark:border-brand-neon-lime">
+    <footer className="public-site-footer bg-[var(--color-public-dark)] dark:bg-black text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] pt-12 pb-8 border-t-4 border-[var(--color-public-accent)] dark:border-brand-neon-lime">
       <div className="max-w-6xl mx-auto px-4">
         <div className="public-footer-grid grid md:grid-cols-3 gap-8 mb-8">
           {/* 학원 로고 + 소개 */}
           <div>
-            <div className="bg-white dark:bg-gray-900 px-4 py-2.5 rounded-lg inline-flex items-center justify-center mb-4">
+            <div className="bg-white dark:bg-[var(--color-public-paper)] px-4 py-2.5 rounded-lg inline-flex items-center justify-center mb-4">
               <Image
                 src="/stiz-logo.png"
                 alt="STIZ"
@@ -106,7 +106,7 @@ export default function PublicFooter({
                 className="h-9 w-auto object-contain dark:brightness-0 dark:invert"
               />
             </div>
-            <p className="text-sm text-gray-400 leading-relaxed">
+            <p className="text-sm text-[var(--color-public-dark-muted)] leading-relaxed">
               {footerDescriptionLines.map((line, idx) => (
                 <span key={`${line}-${idx}`}>
                   {line}
@@ -118,19 +118,19 @@ export default function PublicFooter({
 
           {/* 학원 정보 — 주소, 전화번호, 운영시간 */}
           <div>
-            <h4 className="text-gray-900 dark:text-white font-bold mb-4">학원 정보</h4>
-            <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <h4 className="text-[var(--color-public-ink)] dark:text-white font-bold mb-4">학원 정보</h4>
+            <ul className="space-y-2 text-sm text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)]">
               {address && (
                 <li className="flex items-start gap-2">
-                  <FontFreeIcon name="location_on" size={16} className="mt-0.5 shrink-0 text-gray-500 dark:text-gray-400" />
+                  <FontFreeIcon name="location_on" size={16} className="mt-0.5 shrink-0 text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)]" />
                   <span>{address}</span>
                 </li>
               )}
               <li className="flex items-center gap-2">
-                <FontFreeIcon name="call" size={16} className="shrink-0 text-gray-500 dark:text-gray-400" />
+                <FontFreeIcon name="call" size={16} className="shrink-0 text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)]" />
                 <span>{phone}</span>
               </li>
-              <li className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <li className="text-xs text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] mt-1">
                 {displayOperatingHours}
               </li>
             </ul>
@@ -144,7 +144,7 @@ export default function PublicFooter({
                     href={link.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-bold text-gray-600 dark:text-gray-300 hover:border-brand-orange-500 hover:text-brand-orange-500 dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime transition"
+                    className="rounded-full border border-[var(--color-public-dark-line)] dark:border-[var(--color-public-line)] px-3 py-1 text-xs font-bold text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] hover:border-[var(--color-public-accent)] hover:text-[var(--color-public-accent)] dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime transition"
                   >
                     {link.label}
                   </a>
@@ -155,13 +155,13 @@ export default function PublicFooter({
 
           {/* 퀵 링크 */}
           <div>
-            <h4 className="text-gray-900 dark:text-white font-bold mb-4">바로가기</h4>
-            <ul className="public-footer-links space-y-2 text-sm text-gray-600 dark:text-gray-400">
+            <h4 className="text-[var(--color-public-ink)] dark:text-white font-bold mb-4">바로가기</h4>
+            <ul className="public-footer-links space-y-2 text-sm text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)]">
               {QUICK_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="hover:text-brand-orange-500 dark:text-brand-neon-lime dark:hover:text-white transition-colors"
+                    className="hover:text-[var(--color-public-accent)] dark:text-brand-neon-lime dark:hover:text-white transition-colors"
                   >
                     {link.label}
                   </Link>
@@ -172,7 +172,7 @@ export default function PublicFooter({
         </div>
 
         {/* 저작권 표시 + 이용약관 링크 */}
-        <div className="border-t border-gray-200 dark:border-gray-800 pt-6 text-center text-xs text-gray-500 dark:text-gray-400">
+        <div className="border-t border-[var(--color-public-dark-line)] dark:border-[var(--color-public-line)] pt-6 text-center text-xs text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)]">
           {/* 사업자 정보 — 전자상거래법 표시 의무 + 토스페이먼츠 가맹 심사 필수 항목.
               사업자등록증(650-96-02048) 그대로 적는다. 관리자 설정값이 아니라 고정값인 이유:
               설정에서 지워지면 결제 심사·법적 표시가 조용히 깨진다. */}
@@ -187,14 +187,14 @@ export default function PublicFooter({
           <div className="flex items-center justify-center gap-3 mt-2">
             <Link
               href="/terms"
-              className="text-gray-500 hover:text-gray-900 dark:text-white dark:hover:text-white transition-colors underline underline-offset-2"
+              className="text-[var(--color-public-dark-muted)] hover:text-[var(--color-public-ink)] dark:text-white dark:hover:text-white transition-colors underline underline-offset-2"
             >
               이용약관
             </Link>
-            <span className="text-gray-300 dark:text-gray-600">|</span>
+            <span className="text-[var(--color-public-dark-muted)] dark:text-gray-600">|</span>
             <Link
               href="/privacy"
-              className="text-gray-500 hover:text-gray-900 dark:text-white dark:hover:text-white transition-colors underline underline-offset-2"
+              className="text-[var(--color-public-dark-muted)] hover:text-[var(--color-public-ink)] dark:text-white dark:hover:text-white transition-colors underline underline-offset-2"
             >
               개인정보 처리방침
             </Link>

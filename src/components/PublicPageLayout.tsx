@@ -39,7 +39,7 @@ export default async function PublicPageLayout({
   const kakaoChannelUrl = (settings as any).kakaoChannelUrl || "";
 
   return (
-    <PublicSiteTheme className="min-h-screen bg-white dark:bg-black text-gray-900 dark:text-gray-100 flex flex-col transition-colors duration-300">
+    <PublicSiteTheme className="min-h-screen bg-white dark:bg-black text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] flex flex-col transition-colors duration-300">
       {/* 통합 헤더 — Client Component (모바일 햄버거 메뉴 때문) */}
       <PublicHeader
         phone={phone}

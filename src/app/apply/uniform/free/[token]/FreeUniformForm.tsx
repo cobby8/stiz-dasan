@@ -24,7 +24,7 @@ type Props = {
 };
 
 const INPUT_CLASS =
-  "mt-1.5 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-base text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white";
+  "mt-1.5 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-base text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white";
 
 export default function FreeUniformForm({ token, studentName, initialParentName, parentPhoneMask, contactPhone }: Props) {
   const [form, setForm] = useState({
@@ -79,43 +79,43 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
 
   if (done) {
     return (
-      <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-gray-800">
-        <FontFreeIcon name="check_circle" size={36} className="mx-auto text-green-600 dark:text-brand-neon-lime" />
-        <h1 className="mt-3 break-keep text-lg font-black text-gray-900 dark:text-white">{done.title}</h1>
-        <p className="mt-2 break-keep text-sm text-gray-600 dark:text-gray-300">{done.body}</p>
-        {contactPhone && <p className="mt-3 text-sm font-bold text-gray-700 dark:text-gray-200">학원 {contactPhone}</p>}
+      <div className="public-card rounded-2xl bg-white p-6 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
+        <FontFreeIcon name="check_circle" size={36} className="mx-auto text-[var(--color-academy-success)] dark:text-brand-neon-lime" />
+        <h1 className="mt-3 break-keep text-lg font-black text-[var(--color-public-ink)] dark:text-white">{done.title}</h1>
+        <p className="mt-2 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{done.body}</p>
+        {contactPhone && <p className="mt-3 text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">학원 {contactPhone}</p>}
       </div>
     );
   }
 
   return (
-    <div className="public-form-card public-card overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
+    <div className="public-form-card public-card overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
       {/* 머리: 아이 이름 + 감사 한 줄(컴팩트) */}
-      <div className="border-b border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900">
-        <h1 className="flex items-center gap-2 text-lg font-black text-gray-900 dark:text-white">
-          <FontFreeIcon name="checkroom" size={22} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+      <div className="border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
+        <h1 className="flex items-center gap-2 text-lg font-black text-[var(--color-public-ink)] dark:text-white">
+          <FontFreeIcon name="checkroom" size={22} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
           {studentName} 유니폼 무료 신청
         </h1>
-        <p className="mt-1 break-keep text-sm text-gray-600 dark:text-gray-300">
+        <p className="mt-1 break-keep text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
           3년 이상 함께해 준 감사의 마음으로 유니폼을 무료로 드립니다.
         </p>
       </div>
 
       <div className="space-y-4 p-4">
         {error && (
-          <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+          <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-[var(--color-academy-danger-soft)] px-3 py-2.5 text-sm font-bold text-[var(--color-academy-danger)] dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
             <FontFreeIcon name="error" size={18} />
             {error}
           </div>
         )}
 
         <section className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="col-span-2 block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             아이 이름
             {/* 링크의 학생으로 고정 — 다른 아이 이름으로 바꿔 신청하지 못하게 읽기 전용 */}
-            <input value={studentName} readOnly aria-readonly="true" className={`${INPUT_CLASS} bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300`} />
+            <input value={studentName} readOnly aria-readonly="true" className={`${INPUT_CLASS} bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-muted)]`} />
           </label>
-          <label className="col-span-2 block text-sm font-bold text-gray-700 dark:text-gray-200 sm:col-span-1">
+          <label className="col-span-2 block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] sm:col-span-1">
             디자인 <span className="text-red-500">*</span>
             <select value={form.design} onChange={(e) => update("design", e.target.value)} className={INPUT_CLASS}>
               {DESIGN_OPTIONS.map((option) => (
@@ -123,11 +123,11 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
               ))}
             </select>
           </label>
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             이니셜 <span className="text-red-500">*</span>
             <input value={form.initials} onChange={(e) => update("initials", e.target.value.slice(0, 20))} placeholder="예: GENO" className={INPUT_CLASS} />
           </label>
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             등번호
             <input
               value={form.backNumber}
@@ -137,13 +137,13 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
               className={INPUT_CLASS}
             />
           </label>
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             상의 사이즈
             <select value={form.topSize} onChange={(e) => update("topSize", e.target.value)} className={INPUT_CLASS}>
               {SIZE_OPTIONS.map((size) => <option key={size || "none"} value={size}>{size || "선택 안 함"}</option>)}
             </select>
           </label>
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             하의 사이즈
             <select value={form.bottomSize} onChange={(e) => update("bottomSize", e.target.value)} className={INPUT_CLASS}>
               {SIZE_OPTIONS.map((size) => <option key={size || "none"} value={size}>{size || "선택 안 함"}</option>)}
@@ -151,12 +151,12 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
           </label>
         </section>
 
-        <section className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 dark:border-gray-700">
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+        <section className="grid grid-cols-2 gap-3 border-t border-[var(--color-public-line)] pt-4 dark:border-[var(--color-public-line)]">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             학부모 이름 <span className="text-red-500">*</span>
             <input value={form.parentName} onChange={(e) => update("parentName", e.target.value)} autoComplete="name" className={INPUT_CLASS} />
           </label>
-          <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             휴대폰 <span className="text-red-500">*</span>
             <input
               type="tel"
@@ -166,20 +166,20 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
               autoComplete="tel"
               className={INPUT_CLASS}
             />
-            {parentPhoneMask && <span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">비워 두면 등록된 번호({parentPhoneMask})로 받습니다</span>}
+            {parentPhoneMask && <span className="mt-1 block text-xs font-normal text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">비워 두면 등록된 번호({parentPhoneMask})로 받습니다</span>}
           </label>
-          <label className="col-span-2 block text-sm font-bold text-gray-700 dark:text-gray-200">
+          <label className="col-span-2 block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
             요청사항
             <input value={form.memo} onChange={(e) => update("memo", e.target.value.slice(0, 300))} placeholder="선택" className={INPUT_CLASS} />
           </label>
         </section>
 
-        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-3 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
           <input
             type="checkbox"
             checked={form.agreedPrivacy}
             onChange={(e) => update("agreedPrivacy", e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500"
+            className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)]"
           />
           <span className="break-keep">유니폼 제작을 위해 학부모 연락처와 아이의 주문 정보를 STIZ 본사에 전달하는 데 동의합니다.</span>
         </label>
@@ -188,7 +188,7 @@ export default function FreeUniformForm({ token, studentName, initialParentName,
           type="button"
           onClick={handleSubmit}
           disabled={isPending}
-          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand-orange-500 px-6 text-base font-black text-white transition hover:bg-brand-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-black text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900"
         >
           <FontFreeIcon name={isPending ? "progress_activity" : "send"} size={20} className={isPending ? "animate-spin" : ""} />
           {isPending ? "접수 중..." : "무료 유니폼 신청하기"}
