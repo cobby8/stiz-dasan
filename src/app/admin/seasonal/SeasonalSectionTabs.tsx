@@ -25,7 +25,7 @@ function resolveActiveKey(pathname: string, view: string | null): string {
 function TabsView({ active, makeupPending = 0 }: { active: string; makeupPending?: number }) {
   return (
     <div className="mx-auto max-w-6xl px-4 pt-4">
-      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-gray-200 bg-white p-1.5 dark:border-gray-700 dark:bg-gray-900" aria-label="방학특강 메뉴">
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-white p-1.5" aria-label="방학특강 메뉴">
         {ITEMS.map((it) => {
           const on = it.key === active;
           // "보강 관리" 탭에만, 대기 건수가 1건 이상일 때만 빨간 뱃지를 붙인다.
@@ -35,17 +35,17 @@ function TabsView({ active, makeupPending = 0 }: { active: string; makeupPending
             <Link
               key={it.key}
               href={it.href}
-              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${on ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800"}`}
+              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-bold ${on ? "bg-[var(--brand-accent-soft)] text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}
             >
               <span className="material-symbols-outlined text-xl">{it.icon}</span>
               {it.label}
               {badge > 0 && (
-                // 빨간 뱃지 — bg-red-600 + 흰 글자는 라이트/다크 모두에서 대비가 충분하다.
+                // 빨간 뱃지 — bg-[var(--color-academy-danger)] + 흰 글자는 라이트/다크 모두에서 대비가 충분하다.
                 // aria-label로 스크린리더에도 "승인 대기 N건"이 읽히게 한다.
                 <span
                   aria-label={`승인 대기 ${badge}건`}
                   title={`승인 대기 ${badge}건`}
-                  className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-black leading-none text-white"
+                  className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--color-academy-danger)] px-1.5 py-0.5 text-[11px] font-black leading-none text-white"
                 >
                   {badge > 99 ? "99+" : badge}
                 </span>

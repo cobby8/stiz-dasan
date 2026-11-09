@@ -140,15 +140,15 @@ function ContactCell({ row }: { row: ShuttleRosterRow }) {
     <div className="relative">
       <div className="flex gap-1.5">
         <button type="button" disabled={!parent} onClick={() => setOpen(open === "parent" ? null : "parent")}
-          className={`${btn} ${parent ? "border-blue-200 text-blue-700 dark:border-blue-500/40 dark:text-blue-300" : "border-gray-200 text-gray-300"}`}>📞 학부모</button>
+          className={`${btn} ${parent ? "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-faint)]"}`}>📞 학부모</button>
         {child && <button type="button" onClick={() => setOpen(open === "child" ? null : "child")}
-          className={`${btn} border-green-200 text-green-700 dark:border-green-500/40 dark:text-green-300`}>📞 학생</button>}
+          className={`${btn} border-[var(--color-academy-success)] text-[var(--color-academy-success)]`}>📞 학생</button>}
       </div>
       {open && cur && (
-        <div className="absolute right-0 z-20 mt-1 flex gap-1.5 rounded-xl border border-gray-200 bg-white p-1.5 shadow-lg dark:border-gray-600 dark:bg-gray-900">
-          <a href={`tel:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-green-600`}>전화</a>
-          <a href={`sms:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-blue-600`}>문자</a>
-          <button onClick={() => setOpen(null)} className="rounded-lg px-2 text-xs font-bold text-gray-400">닫기</button>
+        <div className="absolute right-0 z-20 mt-1 flex gap-1.5 rounded-xl border border-[var(--color-academy-line)] bg-white p-1.5 shadow-lg">
+          <a href={`tel:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-[var(--color-academy-success)]`}>전화</a>
+          <a href={`sms:${cur}`} onClick={() => setOpen(null)} className={`${act} bg-[var(--color-academy-primary)]`}>문자</a>
+          <button onClick={() => setOpen(null)} className="rounded-lg px-2 text-xs font-bold text-[var(--color-academy-faint)]">닫기</button>
         </div>
       )}
     </div>
@@ -347,27 +347,27 @@ export default function ShuttleRosterClient({
     URL.revokeObjectURL(url);
   }
 
-  const cell = "w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[12.5px] font-semibold hover:border-gray-200 focus:border-[var(--brand-accent)] focus:bg-white focus:outline-none dark:text-white dark:hover:border-gray-600 dark:focus:bg-gray-900";
-  const dot = (pinned: boolean, approx: boolean) => `h-2.5 w-2.5 shrink-0 rounded-full ${pinned ? "bg-green-500" : approx ? "bg-amber-400" : "bg-gray-300"}`;
-  const pinBtn = (pinned: boolean) => `grid h-7 w-7 shrink-0 place-items-center rounded-lg border text-sm ${pinned ? "border-green-300 text-green-600" : "border-gray-200 text-gray-500 dark:border-gray-600"}`;
+  const cell = "w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[12.5px] font-semibold hover:border-[var(--color-academy-line)] focus:border-[var(--brand-accent)] focus:bg-white focus:outline-none";
+  const dot = (pinned: boolean, approx: boolean) => `h-2.5 w-2.5 shrink-0 rounded-full ${pinned ? "bg-[var(--color-academy-success)]" : approx ? "bg-[var(--color-academy-warning)]" : "bg-[var(--color-academy-line-input)]"}`;
+  const pinBtn = (pinned: boolean) => `grid h-7 w-7 shrink-0 place-items-center rounded-lg border text-sm ${pinned ? "border-[var(--color-academy-success)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)]"}`;
   const colCount = confirmed ? 6 : 5;
 
   // 한 학생 행. 일반 명단과 1호점 폴더 안에서 똑같이 쓴다(두 벌로 갈리면 유지보수 사고).
   const renderRow = (r: ShuttleRosterRow) => (
-    <tr key={r.requestId} className="border-t border-gray-100 align-middle hover:bg-gray-50/50 dark:border-gray-700 dark:hover:bg-gray-900/40">
+    <tr key={r.requestId} className="border-t border-[var(--color-academy-line)] align-middle hover:bg-[var(--color-academy-soft)]/50">
       <td className="p-2">
         <button type="button" onClick={() => setDetailAppId(r.applicationId)} className="group text-left">
-          <div className="font-bold text-gray-900 underline-offset-2 group-hover:text-brand-orange-600 group-hover:underline dark:text-white">
-            {r.childName}{!r.ride && <span className="ml-1 rounded bg-gray-100 px-1 text-xs font-black text-gray-500 dark:bg-gray-700">미탑승</span>}
+          <div className="font-bold text-[var(--color-academy-ink)] underline-offset-2 group-hover:text-[var(--color-academy-ink)] group-hover:underline">
+            {r.childName}{!r.ride && <span className="ml-1 rounded bg-[var(--color-academy-soft)] px-1 text-xs font-black text-[var(--color-academy-muted)]">미탑승</span>}
             {/* 좌표 없음 = 자동 배차에서 빠지는 학생. 원장이 바로 알아채도록 위험(빨강) 뱃지로 표시한다. */}
-            {missingCoord(r) && <span className="ml-1 rounded bg-red-100 px-1 text-xs font-black text-red-700 dark:bg-red-900/40 dark:text-red-300">좌표 없음 · 배차 불가</span>}
+            {missingCoord(r) && <span className="ml-1 rounded bg-[var(--color-academy-danger-soft)] px-1 text-xs font-black text-[var(--color-academy-danger)]">좌표 없음 · 배차 불가</span>}
           </div>
-          <div className="text-xs text-gray-400">{[r.childGrade, r.childGender].filter(Boolean).join(" · ")}</div>
+          <div className="text-xs text-[var(--color-academy-faint)]">{[r.childGrade, r.childGender].filter(Boolean).join(" · ")}</div>
         </button>
       </td>
-      <td className="p-2 text-[12.5px] font-semibold text-gray-700 dark:text-gray-200">
+      <td className="p-2 text-[12.5px] font-semibold text-[var(--color-academy-muted)]">
         {r.offeringTitle ?? "-"}
-        {r.weekdayLabel && <div className="text-gray-400">{r.weekdayLabel}</div>}
+        {r.weekdayLabel && <div className="text-[var(--color-academy-faint)]">{r.weekdayLabel}</div>}
       </td>
       <td className="p-2">
         <div className="flex items-center gap-1.5" style={{ minWidth: 190 }}>
@@ -381,7 +381,7 @@ export default function ShuttleRosterClient({
         </div>
       </td>
       <td className="p-2 text-center">
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] font-bold text-gray-600 dark:text-gray-300">
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] font-bold text-[var(--color-academy-muted)]">
           <input type="checkbox" checked={r.dropoffSameAsPickup}
             onChange={(e) => save(r, { dropoffSameAsPickup: e.target.checked }, { dropoffSameAsPickup: e.target.checked, dropoffLocation: e.target.checked ? r.pickupLocation : r.dropoffLocation })}
             className="h-4 w-4 accent-[var(--brand-accent)]" />
@@ -404,7 +404,7 @@ export default function ShuttleRosterClient({
       {confirmed && (
         <td className="p-2">
           <button type="button" disabled={!r.rosterId} onClick={() => removeRow(r)}
-            className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-black text-red-600 disabled:opacity-40 dark:border-red-500/40 dark:text-red-300">
+            className="rounded-lg border border-[var(--color-academy-danger)] px-2.5 py-1.5 text-xs font-black text-[var(--color-academy-danger)] disabled:opacity-40">
             명단에서 빼기
           </button>
         </td>
@@ -414,31 +414,31 @@ export default function ShuttleRosterClient({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
         <div>
           {/* 조작 설명은 뺐다. 탑승 인원수는 대조용 숫자라 그대로 남긴다. */}
-          <h3 className="text-base font-black text-gray-900 dark:text-white">셔틀 통합 명단</h3>
-          <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">탑승 {rideCount}명</p>
+          <h3 className="text-base font-black text-[var(--color-academy-ink)]">셔틀 통합 명단</h3>
+          <p className="mt-0.5 text-[12.5px] text-[var(--color-academy-muted)]">탑승 {rideCount}명</p>
         </div>
 
         {/* 확정 배너 — 이 명단이 "아직 따라 움직이는 중"인지 "고정된 명단"인지 한 줄로 알려준다. */}
         {confirmed ? (
-          <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-3 dark:border-green-500/40 dark:bg-green-900/20">
-            <p className="text-[13px] font-black text-green-800 dark:text-green-200">
+          <div className="mt-3 rounded-xl border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-3">
+            <p className="text-[13px] font-black text-[var(--color-academy-success)]">
               ✓ 확정됨 · 탑승 {rideCount}명{confirmedAtLabel ? ` · ${confirmedAtLabel} 확정` : ""}
             </p>
-            <p className="mt-0.5 text-[11.5px] font-semibold text-green-700 dark:text-green-300">
+            <p className="mt-0.5 text-[11.5px] font-semibold text-[var(--color-academy-success)]">
               확정본 {confirmedCount}건(미탑승 포함) · 새 신청이 들어와도 이 명단에는 자동으로 추가되지 않습니다. 여기서 고친 값이 그대로 기사님 명단이 됩니다.
             </p>
           </div>
         ) : (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-900/20">
-            <p className="text-[12.5px] font-bold text-amber-800 dark:text-amber-200">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
+            <p className="text-[12.5px] font-bold text-[var(--color-academy-warning)]">
               이 명단은 아직 확정 전입니다. 신청이 바뀌면 명단도 함께 바뀝니다.
             </p>
             {/* 확정은 되돌리기 어려운 행동이라 확인창을 한 번 거친다. */}
             <button type="button" onClick={confirmRoster} disabled={confirming || rideCount === 0}
-              className="rounded-xl bg-amber-600 px-3.5 py-2 text-[13px] font-black text-white disabled:opacity-50">
+              className="rounded-xl bg-[var(--color-academy-warning)] px-3.5 py-2 text-[13px] font-black text-white disabled:opacity-50">
               {confirming ? "확정하는 중..." : `${rideCount}명 확정하기`}
             </button>
           </div>
@@ -447,11 +447,11 @@ export default function ShuttleRosterClient({
         {/* 좌표 없는 탑승자 요약 — 자동 배차는 좌표 기준이라, 좌표가 없으면 그 학생은 조용히 배차에서 빠진다.
             원장이 명단 단계에서 미리 알아채고 위치를 지정하도록 눈에 띄는 경고로 노출한다(표시 전용). */}
         {missingCoordCount > 0 && (
-          <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 dark:border-red-500/40 dark:bg-red-900/20">
-            <p className="text-[12.5px] font-black text-red-700 dark:text-red-300">
+          <div className="mt-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-3 py-2">
+            <p className="text-[12.5px] font-black text-[var(--color-academy-danger)]">
               ⚠ 좌표 없는 탑승자 {missingCoordCount}명 — 자동 배차에서 제외됩니다.
             </p>
-            <p className="mt-0.5 text-[11.5px] font-semibold text-red-600/90 dark:text-red-300/80">
+            <p className="mt-0.5 text-[11.5px] font-semibold text-[var(--color-academy-danger)]/90">
               해당 학생의 승·하차 위치를 지도 핀(📍)으로 지정하면 자동 배차에 포함됩니다.
             </p>
           </div>
@@ -459,39 +459,39 @@ export default function ShuttleRosterClient({
 
         {/* 방금 뺀 행 되돌리기 — 제외된 행은 목록에서 사라지므로 여기서만 되돌릴 수 있다. */}
         {lastRemoved && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-600 dark:bg-gray-900">
-            <span className="text-[12.5px] font-bold text-gray-600 dark:text-gray-300">{lastRemoved.name} 학생을 확정 명단에서 뺐습니다.</span>
-            <button type="button" onClick={restoreRow} className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-[11.5px] font-black text-gray-700 dark:border-gray-500 dark:text-gray-200">되돌리기</button>
-            <button type="button" onClick={() => setLastRemoved(null)} className="px-1 text-[11.5px] font-bold text-gray-400">닫기</button>
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2">
+            <span className="text-[12.5px] font-bold text-[var(--color-academy-muted)]">{lastRemoved.name} 학생을 확정 명단에서 뺐습니다.</span>
+            <button type="button" onClick={restoreRow} className="rounded-lg border border-[var(--color-academy-line-input)] px-2.5 py-1.5 text-[11.5px] font-black text-[var(--color-academy-muted)]">되돌리기</button>
+            <button type="button" onClick={() => setLastRemoved(null)} className="px-1 text-[11.5px] font-bold text-[var(--color-academy-faint)]">닫기</button>
           </div>
         )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="flex min-w-[180px] flex-1 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-900">
+          <div className="flex min-w-[180px] flex-1 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2">
             <span aria-hidden>🔍</span>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="학생·학부모·아파트 검색" className="w-full bg-transparent text-sm font-semibold outline-none dark:text-white" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="학생·학부모·아파트 검색" className="w-full bg-transparent text-sm font-semibold outline-none" />
           </div>
-          {savedAt && !error && !converting && <span className="rounded-full bg-green-50 px-2.5 py-1 text-[11.5px] font-black text-green-700 dark:bg-green-900/30 dark:text-green-300">✓ 저장됨</span>}
-          {error && <span className="rounded-full bg-red-50 px-2.5 py-1 text-[11.5px] font-black text-red-600">⚠ {error}</span>}
-          {convertMsg && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11.5px] font-black text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">{convertMsg}</span>}
+          {savedAt && !error && !converting && <span className="rounded-full bg-[var(--color-academy-success-soft)] px-2.5 py-1 text-[11.5px] font-black text-[var(--color-academy-success)]">✓ 저장됨</span>}
+          {error && <span className="rounded-full bg-[var(--color-academy-danger-soft)] px-2.5 py-1 text-[11.5px] font-black text-[var(--color-academy-danger)]">⚠ {error}</span>}
+          {convertMsg && <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[11.5px] font-black text-[var(--color-academy-muted)]">{convertMsg}</span>}
           {nonRiderCount > 0 && (
             <button type="button" onClick={() => setShowNonRiders((v) => !v)}
-              className={`rounded-xl border px-3 py-2 text-[13px] font-bold ${showNonRiders ? "border-[var(--brand-accent)] text-[var(--brand-accent)]" : "border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300"}`}>
+              className={`rounded-xl border px-3 py-2 text-[13px] font-bold ${showNonRiders ? "border-[var(--brand-accent)] text-[var(--brand-accent)]" : "border-[var(--color-academy-line)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}>
               {showNonRiders ? <>미탑승 {nonRiderCount}명 숨기기</> : <>미탑승 {nonRiderCount}명 보기</>}
             </button>
           )}
           <button onClick={convertAddressesToBuildingNames} disabled={converting}
             title="저장된 좌표로 아파트·건물명을 되찾아 승·하차 위치 이름을 일괄로 바꿉니다(건물명이 없는 곳은 주소 유지)."
-            className="rounded-xl border border-gray-200 px-3 py-2 text-[13px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200">
+            className="rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] disabled:opacity-50">
             {converting ? "변환 중…" : "🏢 주소→건물명 변환"}
           </button>
-          <button onClick={exportCsv} className="rounded-xl border border-gray-200 px-3 py-2 text-[13px] font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200">⬇ 기사님용 내보내기 ({exportRows.length}명)</button>
+          <button onClick={exportCsv} className="rounded-xl border border-[var(--color-academy-line)] px-3 py-2 text-[13px] font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">⬇ 기사님용 내보내기 ({exportRows.length}명)</button>
         </div>
 
-        <div className="mt-3 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+        <div className="mt-3 overflow-x-auto rounded-xl border border-[var(--color-academy-line)]">
           <table className="w-full min-w-[820px] border-collapse text-[13px]">
             <thead>
-              <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+              <tr className="bg-[var(--color-academy-soft)] text-left text-xs uppercase tracking-wide text-[var(--color-academy-muted)]">
                 <th className="p-2.5">학생</th><th className="p-2.5">수업</th>
                 <th className="p-2.5">승차 위치</th><th className="p-2.5">하차 위치</th><th className="p-2.5">연락</th>
                 {confirmed && <th className="p-2.5">관리</th>}
@@ -503,15 +503,15 @@ export default function ShuttleRosterClient({
               {/* 1호점(무료탑승) 폴더 — 무료 거점에서 타는 학생들을 접었다 펼 수 있는 하위 그룹으로 묶는다. */}
               {hubRows.length > 0 && (
                 <>
-                  <tr className="border-t border-gray-100 dark:border-gray-700">
-                    <td colSpan={colCount} className="bg-green-50/70 p-0 dark:bg-green-900/15">
+                  <tr className="border-t border-[var(--color-academy-line)]">
+                    <td colSpan={colCount} className="bg-[var(--color-academy-success-soft)]/70 p-0">
                       <button type="button" onClick={() => setHubOpen((v) => !v)}
                         className="flex w-full items-center gap-2 px-3 py-2 text-left">
-                        <span className="text-[12px] text-green-700 dark:text-green-300">{hubOpen ? "▼" : "▶"}</span>
-                        <span className="grid h-5 w-5 place-items-center rounded bg-green-600 text-xs text-white">🆓</span>
-                        <span className="text-[13px] font-black text-green-800 dark:text-green-200">1호점(무료탑승)</span>
-                        <span className="rounded-full bg-green-600 px-2 py-0.5 text-xs font-black text-white">{hubRows.length}명</span>
-                        <span className="text-xs font-semibold text-green-700/80 dark:text-green-300/80">1호점 거점에서 무료로 탑승하는 학생</span>
+                        <span className="text-[12px] text-[var(--color-academy-success)]">{hubOpen ? "▼" : "▶"}</span>
+                        <span className="grid h-5 w-5 place-items-center rounded bg-[var(--color-academy-success)] text-xs text-white">🆓</span>
+                        <span className="text-[13px] font-black text-[var(--color-academy-success)]">1호점(무료탑승)</span>
+                        <span className="rounded-full bg-[var(--color-academy-success)] px-2 py-0.5 text-xs font-black text-white">{hubRows.length}명</span>
+                        <span className="text-xs font-semibold text-[var(--color-academy-success)]/80">1호점 거점에서 무료로 탑승하는 학생</span>
                       </button>
                     </td>
                   </tr>
@@ -520,15 +520,15 @@ export default function ShuttleRosterClient({
               )}
 
               {visible.length === 0 && (
-                <tr><td colSpan={colCount} className="p-8 text-center text-sm text-gray-400">표시할 셔틀 명단이 없습니다.</td></tr>
+                <tr><td colSpan={colCount} className="p-8 text-center text-sm text-[var(--color-academy-faint)]">표시할 셔틀 명단이 없습니다.</td></tr>
               )}
             </tbody>
           </table>
         </div>
         {/* 색 범례는 색만 보고는 뜻을 알 수 없으므로 반드시 남긴다. 뒤의 조작 설명(중복)만 제거. */}
-        <p className="mt-2 text-xs text-gray-400">● 초록=정밀 핀 · ● 노랑=자동추정(재확인 권장)</p>
+        <p className="mt-2 text-xs text-[var(--color-academy-faint)]">● 초록=정밀 핀 · ● 노랑=자동추정(재확인 권장)</p>
         {confirmed && (
-          <p className="mt-1 text-xs text-gray-400">확정 후 이 표에서 고친 값(위치 이름·지도 핀·하차 설정)은 확정 명단에만 저장되고, 학부모가 낸 원본 신청서는 그대로 유지됩니다.</p>
+          <p className="mt-1 text-xs text-[var(--color-academy-faint)]">확정 후 이 표에서 고친 값(위치 이름·지도 핀·하차 설정)은 확정 명단에만 저장되고, 학부모가 낸 원본 신청서는 그대로 유지됩니다.</p>
         )}
       </div>
 

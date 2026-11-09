@@ -289,17 +289,17 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   function renderRider(row: UnifiedRow, rider: UnifiedRider) {
     const links = reassignByRowId.get(rider.checkId) ?? [];
     return (
-      <div key={`${row.key}:${rider.checkId}`} className={`${styles.rider} rounded-xl bg-gray-50`}>
+      <div key={`${row.key}:${rider.checkId}`} className={`${styles.rider} rounded-xl bg-[var(--color-academy-soft)]`}>
         <div className={styles.riderMain}>
           <div className={styles.riderInfo}>
             <div className={styles.identity}>
               {editing ? (
                 <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "student", rowId: rider.checkId })} aria-label={`${rider.name} 셔틀 정보 수정`}
-                  className="min-h-11 break-all text-left text-[19px] font-black text-gray-900 underline decoration-dotted underline-offset-4">{rider.name}</button>
+                  className="min-h-11 break-all text-left text-[19px] font-black text-[var(--color-academy-ink)] underline decoration-dotted underline-offset-4">{rider.name}</button>
               ) : (
-                <span className="break-all text-[19px] font-black text-gray-900">{rider.name}</span>
+                <span className="break-all text-[19px] font-black text-[var(--color-academy-ink)]">{rider.name}</span>
               )}
-              {rider.grade && <span className="text-[14px] text-gray-500">{rider.grade}</span>}
+              {rider.grade && <span className="text-[14px] text-[var(--color-academy-muted)]">{rider.grade}</span>}
               {links.map((l) => (
                 <button key={l.legKey} type="button" disabled={savingOrder} onClick={() => openReassign(l)} aria-label={`${rider.name} ${l.label} 재배정`}
                   className="inline-flex min-h-11 items-center gap-0.5 rounded-md bg-[var(--color-academy-warning)] px-2 text-[13px] font-black text-[var(--color-academy-on-primary)]">
@@ -375,7 +375,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       <AcademyTheme role="driver" className={`${styles.workspace} mx-auto mt-2`}>
         {editing ? (
           // 편집 중 고정 줄 — 긴 목록을 내려도 [저장]이 늘 보이게(sticky). 좁은 화면은 두 줄로 접힌다.
-          <div className="sticky top-14 z-10 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2">
+          <div className="sticky top-14 z-10 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] px-3 py-2">
             <p className="mr-auto text-[14px] font-black text-[var(--color-academy-ink)]">
               수정 중{orderDirty && <span className="ml-1 text-[13px] font-bold text-[var(--color-academy-warning)]">· 저장 안 됨</span>}
               <span className="ml-1 text-[12px] font-bold text-[var(--color-academy-muted)]">⠿ 끌어서 순서 변경</span>
@@ -390,14 +390,14 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
               <span className="text-[12px]">{scopeHint}</span>
             </label>
             <div className="flex gap-2">
-              <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600">취소</button>
+              <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="min-h-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-3 text-[13px] font-bold text-[var(--color-academy-muted)]">취소</button>
               <button type="button" onClick={() => void saveOrder()} disabled={savingOrder} className="min-h-11 rounded-lg bg-[var(--color-academy-ink)] px-4 text-[13px] font-black text-[var(--color-academy-surface)]">{savingOrder ? "저장 중…" : "저장"}</button>
             </div>
           </div>
         ) : stopRows.length > 0 && (
           <p className={`${styles.runSummary} mb-2`}>{WEEKDAY_LABELS[weekday]}요일 운행 순서 · {stopRows.length}곳 <span>학생 {riderCount}명</span></p>
         )}
-        {stopRows.length === 0 && <p className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-[16px] font-bold text-gray-400">{WEEKDAY_LABELS[weekday]}요일에는 운행이 없습니다.</p>}
+        {stopRows.length === 0 && <p className="rounded-2xl bg-[var(--color-academy-soft)] px-4 py-6 text-center text-[16px] font-bold text-[var(--color-academy-faint)]">{WEEKDAY_LABELS[weekday]}요일에는 운행이 없습니다.</p>}
         <RunBoard
           rows={ordered}
           mode="admin"

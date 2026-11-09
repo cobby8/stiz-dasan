@@ -89,22 +89,22 @@ export default function VehicleManagerClient({ initialVehicles }: { initialVehic
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-4">
-      <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h3 className="text-base font-black text-gray-900 dark:text-white">차량 관리</h3>
+            <h3 className="text-base font-black text-[var(--color-academy-ink)]">차량 관리</h3>
             {/* 2번째 문장 제거 — 존재하지 않는 「자동 배차」 탭을 가리키던 스테일 안내(실제 탭은 「방학특강 배차」·「정규 배차」) */}
-            <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">여기 등록한 활성 차량을 <b>자동 배차</b>가 정원에 맞춰 사용합니다.</p>
+            <p className="mt-0.5 text-[12.5px] text-[var(--color-academy-muted)]">여기 등록한 활성 차량을 <b>자동 배차</b>가 정원에 맞춰 사용합니다.</p>
           </div>
-          <button onClick={() => setModal("new")} className="rounded-xl bg-brand-orange-500 px-4 py-2.5 text-sm font-black text-white">＋ 차량 등록</button>
+          <button onClick={() => setModal("new")} className="rounded-xl bg-[var(--color-academy-primary)] px-4 py-2.5 text-sm font-black text-white">＋ 차량 등록</button>
         </div>
 
-        {err && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-600">⚠ {err}</p>}
-        {notice && <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-xs font-bold text-green-700 dark:bg-green-900/30 dark:text-green-200">✓ {notice}</p>}
+        {err && <p className="mt-3 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-danger)]">⚠ {err}</p>}
+        {notice && <p className="mt-3 rounded-lg bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-success)]">✓ {notice}</p>}
 
-        <p className="mt-3 text-[12px] font-bold text-gray-500">활성 차량 {active.length}대 · 전체 {vehicles.length}대</p>
+        <p className="mt-3 text-[12px] font-bold text-[var(--color-academy-muted)]">활성 차량 {active.length}대 · 전체 {vehicles.length}대</p>
 
-        {vehicles.length === 0 && <div className="mt-2 rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400">등록된 차량이 없습니다. 「차량 등록」으로 추가하세요.</div>}
+        {vehicles.length === 0 && <div className="mt-2 rounded-xl border border-dashed border-[var(--color-academy-line-input)] p-8 text-center text-sm text-[var(--color-academy-faint)]">등록된 차량이 없습니다. 「차량 등록」으로 추가하세요.</div>}
         {/* 차량 한 줄 행: 차량명 | 차량번호 | 정원 | 상태 | 관리(⚡). 메모는 상세 패널에서 전부 */}
         {vehicles.length > 0 && (
           <div className="mt-2 overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)]">
@@ -189,24 +189,24 @@ export default function VehicleManagerClient({ initialVehicles }: { initialVehic
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl dark:bg-gray-800 sm:rounded-3xl">
-            <h2 className="text-lg font-black text-gray-900 dark:text-white">{editing ? "차량 수정" : "차량 등록"}</h2>
+          <div className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+            <h2 className="text-lg font-black text-[var(--color-academy-ink)]">{editing ? "차량 수정" : "차량 등록"}</h2>
             <form onSubmit={save} className="mt-4 space-y-3">
-              <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">차량명
-                <input name="name" required autoFocus defaultValue={editing?.name ?? ""} placeholder="예: 스타리아 1호차" className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+              <label className="block text-sm font-bold text-[var(--color-academy-muted)]">차량명
+                <input name="name" required autoFocus defaultValue={editing?.name ?? ""} placeholder="예: 스타리아 1호차" className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm" />
               </label>
-              <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">차량번호
-                <input name="plateNumber" defaultValue={editing?.plateNumber ?? ""} placeholder="예: 12가 3456" className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+              <label className="block text-sm font-bold text-[var(--color-academy-muted)]">차량번호
+                <input name="plateNumber" defaultValue={editing?.plateNumber ?? ""} placeholder="예: 12가 3456" className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm" />
               </label>
-              <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">승차 정원
-                <input name="capacity" type="number" min="1" required defaultValue={editing?.capacity ?? ""} placeholder="예: 15" className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+              <label className="block text-sm font-bold text-[var(--color-academy-muted)]">승차 정원
+                <input name="capacity" type="number" min="1" required defaultValue={editing?.capacity ?? ""} placeholder="예: 15" className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm" />
               </label>
-              <label className="block text-sm font-bold text-gray-600 dark:text-gray-300">메모
-                <input name="notes" defaultValue={editing?.notes ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+              <label className="block text-sm font-bold text-[var(--color-academy-muted)]">메모
+                <input name="notes" defaultValue={editing?.notes ?? ""} className="mt-1 min-h-11 w-full rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm" />
               </label>
               <div className="flex gap-2 pt-1">
-                <button type="button" onClick={() => setModal(null)} disabled={pending} className="min-h-11 rounded-xl border border-gray-300 px-5 font-bold text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200">취소</button>
-                <button type="submit" disabled={pending} className="min-h-11 flex-1 rounded-xl bg-brand-orange-500 px-5 font-black text-white disabled:opacity-50">{pending ? "저장 중…" : editing ? "수정" : "등록"}</button>
+                <button type="button" onClick={() => setModal(null)} disabled={pending} className="min-h-11 rounded-xl border border-[var(--color-academy-line-input)] px-5 font-bold text-[var(--color-academy-muted)] disabled:opacity-50">취소</button>
+                <button type="submit" disabled={pending} className="min-h-11 flex-1 rounded-xl bg-[var(--color-academy-primary)] px-5 font-black text-white disabled:opacity-50">{pending ? "저장 중…" : editing ? "수정" : "등록"}</button>
               </div>
             </form>
           </div>
