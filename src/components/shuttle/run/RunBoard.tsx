@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, type PointerEvent, type ReactNode } from "react";
 import { tmapNavigationCoordinateUrl } from "@/lib/maps/coordinate-links";
 import styles from "../DriverWorkspace.module.css";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
@@ -62,26 +62,58 @@ export default function RunBoard({
   // 카드 전체가 아니라 손잡이만 끌기용(touch-none)이라, 카드 위에서는 화면 스크롤이 그대로 된다.
   // 기사님 화면(mode="driver")은 아래 원래 방식 그대로 — 이 손잡이 코드를 쓰지 않는다.
   const lastOverKey = useRef<string | null>(null);
+  // 가장자리 자동 스크롤 — 손가락이 멈춰 있어도 계속 내려가게 requestAnimationFrame 으로 돈다.
+  // 마지막 손가락 위치·끌던 카드를 ref 에 두고, 매 프레임 그 자리 카드와 다시 맞춰 본다(스크롤로 아래 카드가 바뀌므로).
+  const pointerAt = useRef<{ x: number; y: number; row: UnifiedRow } | null>(null);
+  const scrollFrame = useRef<number | null>(null);
+  // 매 프레임에서 최신 rows·onDropOn 을 쓰도록 ref 로 들고 있는다(옛 클로저 방지).
+  const latest = useRef({ rows, onDropOn });
+  latest.current = { rows, onDropOn };
+  function placeUnderFinger() {
+    const at = pointerAt.current;
+    if (!at) return;
+    const over = document.elementFromPoint(at.x, at.y)?.closest("[data-run-key]")?.getAttribute("data-run-key") ?? null;
+    // 같은 카드 위에서는 한 번만 옮긴다(옮긴 뒤 카드가 흔들리며 왕복하지 않게).
+    if (!over || over === lastOverKey.current) return;
+    lastOverKey.current = over;
+    if (over === at.row.key) return;
+    const target = latest.current.rows.find((r) => r.key === over);
+    if (target) latest.current.onDropOn(target);
+  }
+  function stopAutoScroll() {
+    if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = null;
+  }
+  function autoScrollStep() {
+    const at = pointerAt.current;
+    if (!at) { scrollFrame.current = null; return; }
+    // 위·아래 70px 안쪽이면 가장자리에 가까울수록 빠르게(최대 프레임당 16px).
+    const edge = 70;
+    const dy = at.y < edge ? -Math.ceil(((edge - at.y) / edge) * 16) : at.y > window.innerHeight - edge ? Math.ceil(((at.y - (window.innerHeight - edge)) / edge) * 16) : 0;
+    if (dy === 0) { scrollFrame.current = null; return; }
+    window.scrollBy(0, dy);
+    placeUnderFinger();
+    scrollFrame.current = requestAnimationFrame(autoScrollStep);
+  }
+  // 화면을 떠나면(언마운트) 돌던 스크롤을 멈춘다.
+  useEffect(() => stopAutoScroll, []);
   function startHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     lastOverKey.current = row.key;
+    pointerAt.current = { x: event.clientX, y: event.clientY, row };
     onDragKeyChange(row.key);
   }
   function moveHandleDrag(event: PointerEvent<HTMLButtonElement>, row: UnifiedRow) {
-    if (dragKey !== row.key) return;
-    // 화면 위·아래 끝 가까이 끌면 조금씩 스크롤(긴 목록에서 멀리 옮길 때).
-    if (event.clientY < 70) window.scrollBy(0, -14);
-    else if (event.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
-    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-run-key]")?.getAttribute("data-run-key") ?? null;
-    // 같은 카드 위에서는 한 번만 옮긴다(옮긴 뒤 카드가 흔들리며 왕복하지 않게).
-    if (!over || over === lastOverKey.current) return;
-    lastOverKey.current = over;
-    if (over === row.key) return;
-    const target = rows.find((r) => r.key === over);
-    if (target) onDropOn(target);
+    if (dragKey !== row.key || !pointerAt.current) return;
+    pointerAt.current = { x: event.clientX, y: event.clientY, row };
+    placeUnderFinger();
+    // 가장자리에 들어오면 루프 시작(이미 돌고 있으면 그대로).
+    if (scrollFrame.current == null) autoScrollStep();
   }
   function endHandleDrag() {
+    pointerAt.current = null;
+    stopAutoScroll();
     lastOverKey.current = null;
     onDragKeyChange(null);
   }

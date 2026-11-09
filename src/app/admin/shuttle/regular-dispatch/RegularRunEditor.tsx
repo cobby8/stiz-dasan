@@ -14,7 +14,7 @@ import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
 import { buildRegularRunRows } from "@/lib/shuttle/regularRunRows";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
-import { rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
+import { formatRosterMonths, rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { monthNote, RemoveRiderDialog, rosterCall, StopEditDialog, StudentShuttleDialog, type ReassignLink } from "./RunEditDialogs";
 
@@ -263,6 +263,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   const stopRows = ordered.filter((r) => !r.isTerminal);
   // 적용 범위 고르기 글자(예: «11월부터 계속» / «11월만»).
   const monthLabel = `${Number(serviceMonth.slice(5, 7))}월`;
+  // 고른 범위가 어느 달 명단에 들어가는지(예: «11월~12월 명단에 반영»). 다음 달 명단이 아직 없으면 복사 안내.
+  const scopeHint = orderScope === "THIS_MONTH"
+    ? `${formatRosterMonths([serviceMonth])} 명단만`
+    : laterMonths.length > 0 ? `${formatRosterMonths([serviceMonth, ...laterMonths])} 명단에 반영` : "다음 달은 이 달을 복사해 만들어요";
   const riderCount = new Set(stopRows.flatMap((r) => r.riders.map((x) => x.checkId))).size;
 
   // 카드 머리 보조 줄(관리자) — 학생 수 + (편집 모드) «정류장 수정».
@@ -371,7 +375,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       <AcademyTheme role="driver" className={`${styles.workspace} mx-auto mt-2`}>
         {editing ? (
           // 편집 중 고정 줄 — 긴 목록을 내려도 [저장]이 늘 보이게(sticky). 좁은 화면은 두 줄로 접힌다.
-          <div className="sticky top-0 z-20 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2">
+          <div className="sticky top-14 z-10 mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-orange-300 bg-orange-50 px-3 py-2">
             <p className="mr-auto text-[14px] font-black text-[var(--color-academy-ink)]">
               수정 중{orderDirty && <span className="ml-1 text-[13px] font-bold text-[var(--color-academy-warning)]">· 저장 안 됨</span>}
               <span className="ml-1 text-[12px] font-bold text-[var(--color-academy-muted)]">⠿ 끌어서 순서 변경</span>
@@ -383,6 +387,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
                 <option value="FROM_THIS_MONTH">{monthLabel}부터 계속</option>
                 <option value="THIS_MONTH">{monthLabel}만</option>
               </select>
+              <span className="text-[12px]">{scopeHint}</span>
             </label>
             <div className="flex gap-2">
               <button type="button" onClick={() => { if (confirmLeave()) cancelEditing(); }} disabled={savingOrder} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-600">취소</button>

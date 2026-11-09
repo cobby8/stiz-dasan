@@ -62,6 +62,15 @@ test("관리자 편집 모드: 카드마다 시각 칸 + 끌기 손잡이 + ▲�
   assert.doesNotMatch(html, /<li[^>]*touch-none/);
 });
 
+test("가장자리 자동 스크롤: 손가락이 멈춰도 rAF 루프로 계속, 끌기 끝·화면 떠나면 정지", async () => {
+  const board = await readFile("src/components/shuttle/run/RunBoard.tsx", "utf8");
+  assert.match(board, /scrollFrame\.current = requestAnimationFrame\(autoScrollStep\)/);
+  assert.match(board, /function endHandleDrag\(\) \{\s*pointerAt\.current = null;\s*stopAutoScroll\(\);/);
+  assert.match(board, /useEffect\(\(\) => stopAutoScroll, \[\]\)/);
+  // 스크롤로 손가락 아래 카드가 바뀌면 그 프레임에 다시 맞춘다
+  assert.match(board, /window\.scrollBy\(0, dy\);\s*placeUnderFinger\(\);/);
+});
+
 test("기사님 모드는 이번 변경과 무관 — 손잡이·data-run-key 없이 옛 방식(카드 전체 끌기·넓은 시각 칸) 그대로", () => {
   const view = render({ mode: "driver", editing: false });
   assert.match(view, /길안내/);
@@ -78,7 +87,12 @@ test("관리자 화면 배선: [수정] 하나 → 편집 모드, 정류장 수�
   // 화면 위 [수정] 하나(옛 «↕ 순서·시간 수정» 버튼 없음) · 편집 중 고정 줄에 취소/저장
   assert.match(editor, /onClick=\{startEditing\}[\s\S]{0,300}>edit<\/span>수정/);
   assert.doesNotMatch(editor, /↕ 순서·시간 수정|기사님 화면과 같음/);
-  assert.match(editor, /sticky top-0/);
+  // 고정 줄은 관리자 머리(AdminShellClient sticky top-0 z-20 h-14) 아래에 붙고 덮지 않는다
+  assert.match(editor, /sticky top-14 z-10/);
+  assert.doesNotMatch(editor, /sticky top-0/);
+  // 적용 범위 옆에 어느 달 명단에 반영되는지 짧게
+  assert.match(editor, /formatRosterMonths\(\[serviceMonth, \.\.\.laterMonths\]\)\} 명단에 반영/);
+  assert.match(editor, /<span className="text-\[12px\]">\{scopeHint\}<\/span>/);
   // 보기 모드에는 편집 버튼이 없다
   assert.match(editor, /\{editing && row\.kind === "REGULAR" && row\.riders\.length > 0 && \(/);
   assert.match(editor, /\{editing && \(\s*<div className=\{styles\.boardingActions\}>/);
