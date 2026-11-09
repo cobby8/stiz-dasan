@@ -289,13 +289,18 @@ test("학생 상세 위치 저장: 장소명 필수(도로명 대체 없음) · 
   assert.match(fn, /SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE, 400, "PLACE_NAME_REQUIRED"/);
   assert.doesNotMatch(fn, /\?\? roadAddress \?\? address;/); // 예전 대체 규칙 제거
   // 위치 저장(INSERT … ON CONFLICT)과 명단 반영이 한 $transaction 안, 알림은 그 밖
-  const tx = fn.slice(fn.indexOf("prisma.$transaction"), fn.indexOf("Serializable"));
-  assert.match(tx, /INSERT INTO "StudentShuttleLocation"[\s\S]*applyLocationToRosterInTx\(tx, actor\.appUserId,/);
-  assert.match(fn, /Serializable \}\);\s*\/\/[^\n]*\n\s*await flushRosterNotices\(saved\.roster\.notices\);/);
+  const tx = fn.slice(fn.indexOf("prisma.$transaction"), fn.indexOf("isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted"));
+  assert.match(tx, /INSERT INTO "StudentShuttleLocation"[\s\S]*applyLocationToRosterInTx\(tx, actor\.appUserId,[^\n]*lockedLaterMonths\)/);
+  // 리뷰 S-2: 명단 잠금이 트랜잭션 첫 쿼리(학생 조회·위치 INSERT 보다 앞) + 잠금 뒤 최신 커밋을 보는 ReadCommitted
+  assert.match(tx, /async \(tx\) => \{\s*(\/\/[^\n]*\n\s*)*const lockedLaterMonths = await lockRosterForLocationInTx\(tx\);\s*const student =/);
+  assert.match(fn, /ReadCommitted \}\);\s*\/\/[^\n]*\n\s*await flushRosterNotices\(saved\.roster\.notices\);/);
+  // 리뷰 S-1: 이름 칸 = 주소(공백·대소문자 무시)면 장소명 아님 → 거부
+  assert.match(fn, /\[address, roadAddress\]\.some\(\(a\) => a && squash\(a\) === squash\(name\)\)/);
   // 명단 반영은 행 id 유지 UPDATE(지우고 다시 넣지 않음), 이번 달부터
   const edit = read("src/lib/shuttle/regularRosterEdit.ts");
   const apply = edit.slice(edit.indexOf("export async function applyLocationToRosterInTx"), edit.indexOf("export async function flushRosterNotices"));
   assert.match(apply, /UPDATE "RegularShuttleStop" SET "stopName"=\$1,"latitude"=\$2,"longitude"=\$3/);
   assert.doesNotMatch(apply, /DELETE FROM|INSERT INTO "RegularShuttleStop"/);
-  assert.match(apply, /lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\)/);
+  assert.match(apply, /lockedLaterMonths \? \[\.\.\.lockedLaterMonths\] : await lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\)/);
+  assert.match(edit, /export async function lockRosterForLocationInTx\(tx: Tx, currentMonth: string = koreaServiceMonth\(\)\): Promise<string\[\]> \{\s*return lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\);/);
 });

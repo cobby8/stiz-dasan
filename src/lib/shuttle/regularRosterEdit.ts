@@ -725,11 +725,22 @@ export type LocationRosterApplyResult = {
  * ⚠️ 권한 확인을 하지 않는다 — 부르는 쪽(관리자 API → requireAdmin)이 책임진다.
  * 기사님 알림은 커밋 뒤 보내야 하므로 notices 에 담아 돌려준다(flushRosterNotices 로 보낸다).
  */
+/**
+ * 위치 저장 트랜잭션의 «맨 처음»에 부르는 명단 잠금(리뷰 S-2, 2026-11-09).
+ * 왜: 잠금을 위치 INSERT 뒤에 잡으면, 잠금을 기다리는 동안 다른 편집이 커밋한 명단 행을 놓칠 수 있다.
+ * 이 달(KST)부터 이후 달까지 잠그고, 함께 고칠 이후 달 목록을 돌려준다(applyLocationToRosterInTx 에 그대로 넘긴다).
+ */
+export async function lockRosterForLocationInTx(tx: Tx, currentMonth: string = koreaServiceMonth()): Promise<string[]> {
+  return lockForEdit(tx, currentMonth, "FROM_THIS_MONTH");
+}
+
 export async function applyLocationToRosterInTx(
   tx: Tx,
   actorId: string | null,
   args: { studentId: string; kind: LocationKind; name: string; latitude: number; longitude: number },
   currentMonth: string = koreaServiceMonth(),
+  /** lockRosterForLocationInTx 로 이미 잠갔으면 그 결과(이후 달 목록). 없으면 여기서 잠근다. */
+  lockedLaterMonths?: readonly string[],
 ): Promise<LocationRosterApplyResult & { notices: RosterChangeEvent[] }> {
   const found = await tx.$queryRawUnsafe<{ name: string; parentPhone: string | null }[]>(
     `SELECT s."name",
@@ -741,7 +752,7 @@ export async function applyLocationToRosterInTx(
   const empty = { appliedMonths: [], updated: 0, months: [], notices: [] };
   if (!found[0]) return empty;
   const student = { id: args.studentId, name: String(found[0].name ?? ""), parentPhone: found[0].parentPhone ?? null };
-  const later = await lockForEdit(tx, currentMonth, "FROM_THIS_MONTH");
+  const later = lockedLaterMonths ? [...lockedLaterMonths] : await lockForEdit(tx, currentMonth, "FROM_THIS_MONTH");
   const out: LocationRosterApplyResult = { appliedMonths: [], updated: 0, months: [] };
   const notices: RosterChangeEvent[] = [];
   for (const m of [currentMonth, ...later]) {

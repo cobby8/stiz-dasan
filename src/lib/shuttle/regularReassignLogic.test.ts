@@ -94,3 +94,17 @@ test("한 요일 두 반: 등원은 이른 반, 하원은 늦은 반 칸으로 �
 test("reassignLabel 문구", () => {
   assert.equal(reassignLabel({ weekday: 1, classTime: "17:00~18:00", direction: "ALIGHT" }, { weekday: 3, classTime: "17:00~18:00" }), "월→수 하원 (반 이동)");
 });
+
+test("리뷰 S-3: 시트 이관 칸 글자가 수업 시작과 몇 분 어긋나도(시간대 겹침) 반 이동이 아니다", () => {
+  // 명단 칸 '16:00~17:00' · 실제 수업 16:05~16:55 → 같은 반(예전엔 «화 16:00→16:05 반 이동»으로 오탐)
+  const stops = [r({ id: "b1", classTime: "16:00~17:00" }), r({ id: "a1", classTime: "16:00~17:00", direction: "ALIGHT" })];
+  assert.deepEqual(plain(planStudentReassign(student([cls(2, "16:05", "16:55")]), stops)), { pairs: [], removeOnly: [] });
+  // 공백 섞인 칸 글자도 같다
+  assert.deepEqual(plain(planStudentReassign(student([cls(2, "15:50", "16:50")]), [r({ id: "b2", classTime: "16:00 ~ 17:00" })])).pairs, []);
+});
+
+test("리뷰 S-3: 끝과 시작이 맞닿기만 한 반(17~18시 → 18~19시)은 겹침이 아니라 반 이동", () => {
+  const plan = plain(planStudentReassign(student([cls(2, "18:00", "19:00")]), [r({ id: "b1", classTime: "17:00~18:00" })]));
+  assert.equal(plan.pairs.length, 1);
+  assert.equal(plan.pairs[0].label, "화 17:00→18:00 등원 (반 이동)");
+});

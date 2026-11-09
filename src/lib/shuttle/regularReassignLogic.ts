@@ -66,20 +66,28 @@ export type ReassignPlan = {
 const DIR_KO: Record<RosterDirection, string> = { BOARD: "등원", ALIGHT: "하원" };
 const rank = (w: number) => (w === 0 ? 7 : w); // 월 → 일 순서
 
-/** 수업시간 글자의 시작(분). '17:00~18:00' → 1020. 형식이 아니면 null. */
-function startMinute(classTime: string | null | undefined): number | null {
-  return parseClassTimeRange(classTime)?.start ?? null;
-}
-
 /** 'HH:MM' 시작 시각 → 분. */
 function hhmmMinute(v: string): number | null {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(v ?? "").trim());
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
-/** 그 요일에 이 시작 시각(분)의 수업(다님·휴원)이 있는가. */
-function hasClassAt(enrolled: readonly EnrolledClass[], weekday: number, start: number): boolean {
-  return enrolled.some((c) => c.weekday === weekday && hhmmMinute(c.startTime) === start);
+/**
+ * 그 요일에 이 명단 칸(수업시간 범위)의 수업(다님·휴원)이 있는가.
+ * 리뷰 S-3(2026-11-09): 예전엔 «칸 시작 = 수업 시작» 정확 일치만 봐서, 시트 이관 칸 글자('16:00~17:00')가
+ * 실제 수업('16:05~16:55')과 시작이 몇 분 어긋나면 반을 안 바꾼 학생이 «반 이동»으로 떴다.
+ * 이제 ① 시작 같음(enrolledClassSlots·rosterClassTimeFor 가 칸을 고르는 기준) 또는 ② 시간대가 겹침이면 그 반의 칸으로 본다.
+ * 끝과 시작이 맞닿기만 한 반(17:00~18:00 → 18:00~19:00)은 겹침이 아니라 반 이동이다.
+ */
+function hasClassAt(enrolled: readonly EnrolledClass[], weekday: number, range: { start: number; end: number }): boolean {
+  return enrolled.some((c) => {
+    if (c.weekday !== weekday) return false;
+    const s = hhmmMinute(c.startTime);
+    if (s == null) return false;
+    if (s === range.start) return true;
+    const e = hhmmMinute(c.endTime);
+    return e != null && s < range.end && range.start < e;
+  });
 }
 
 /**
@@ -97,8 +105,8 @@ export function planStudentReassign(student: ReassignStudent, stops: readonly Re
   const keptCells = new Set<string>(); // 옛 칸이 아닌 행이 있는 (요일|방향)
   for (const r of rows) {
     const direction = r.direction as RosterDirection;
-    const start = startMinute(r.classTime);
-    const stale = start != null && !hasClassAt(enrolled, r.weekday, start);
+    const range = parseClassTimeRange(r.classTime);
+    const stale = range != null && !hasClassAt(enrolled, r.weekday, range);
     // 휴원만 있는 학생(다니는 반 0, 휴원 1+)은 모든 칸을 그대로 둔다.
     const pausedOnly = active.length === 0 && enrolled.length > 0;
     if (!stale || pausedOnly) { keptCells.add(`${r.weekday}|${direction}`); continue; }
