@@ -24,6 +24,7 @@ import { taxFreeAmountFor, describeTaxFreeMismatch } from "@/lib/payments/taxFre
 import { classifyTossCancel } from "@/lib/payments/tossCancel";
 import {
     VA_METHOD,
+    decideVirtualAccountClose,
     extractVirtualAccountIssue,
     isDepositCallbackPayload,
     readStoredIssue,
@@ -305,6 +306,9 @@ async function finalizePaid(row: LinkedPaymentRow, payment: TossResult): Promise
         } catch (error) {
             console.error("[trial-fee] 체험 안내 발송 실패:", error instanceof Error ? error.message : error);
         }
+    } else if (result.kind === "CANCELED_ORDER") {
+        // 우리가 취소로 닫은 주문에 토스 «결제 완료»가 왔다 — 돈이 들어온 것이라 조용히 넘기지 않는다
+        await alertOwner(`[체험비] 취소로 닫힌 주문에 결제(입금)가 확인됐어요(주문 ${row.orderId}). 토스 상점관리자에서 확인 후 환불 또는 확정해 주세요.`);
     } else if (result.kind === "DUPLICATE") {
         revalidateTrialCaches();
         await alertOwner(`[체험비] 같은 체험 신청에 결제가 두 번 들어왔어요(주문 ${row.orderId}). 관리자 체험 목록에서 «체험비 환불»로 돌려주세요.`);
@@ -352,7 +356,21 @@ export async function confirmTrialFeeOnlinePayment(input: {
     const { secretKey } = getPaymentProviderConfig();
     if (!secretKey) return { ok: false, error: TRIAL_CHECKOUT_BLOCK_MESSAGE.PAYMENT_OFF };
 
-    const response = await fetch("https://api.tosspayments.com/v1/payments/confirm", {
+    // «다시 확인»(같은 결제키로 이미 승인을 시작함): 승인을 또 부르기 전에 토스 재조회부터.
+    // 이미 결제됐거나 계좌가 발급됐으면 그 결과로 바로 반영하고, 아직 승인 전이면 아래에서 같은 멱등키로 다시 승인한다.
+    let recheckedResult: TossResult | null = null;
+    if (decision.kind === "RECHECK") {
+        const lookup = await getVerifiedTossPayment(input.paymentKey, row.orderId);
+        if (lookup.kind === "retryable") {
+            return { ok: false, retryable: true, error: "결제 상태를 확인하는 중이에요. 잠시 후 다시 확인해 주세요." };
+        }
+        if (lookup.kind === "verified"
+            && classifyTrialTossResult(lookup.payment, { orderId: row.orderId, amount: Number(row.amount) }, input.paymentKey) !== "MISMATCH") {
+            recheckedResult = lookup.payment as TossResult;
+        }
+    }
+
+    const response = recheckedResult ? null : await fetch("https://api.tosspayments.com/v1/payments/confirm", {
         method: "POST",
         headers: {
             Authorization: `Basic ${encodeTossSecret(secretKey)}`,
@@ -363,12 +381,14 @@ export async function confirmTrialFeeOnlinePayment(input: {
         body: JSON.stringify({ paymentKey: input.paymentKey, orderId: row.orderId, amount: Number(row.amount) }),
         cache: "no-store",
     });
-    const result = asRecord(await response.json().catch(() => ({ code: `TOSS_HTTP_${response.status}` })));
+    const result = response
+        ? asRecord(await response.json().catch(() => ({ code: `TOSS_HTTP_${response.status}` })))
+        : (recheckedResult as TossResult);
 
     // 응답이 실패여도 실제 상태는 재조회로 판정한다(승인됐는데 응답만 끊긴 경우)
-    let verified: TossResult | null = response.ok ? result : null;
+    let verified: TossResult | null = !response || response.ok ? result : null;
     let lookupRetryable = false;
-    if (!response.ok) {
+    if (response && !response.ok) {
         const lookup = await getVerifiedTossPayment(input.paymentKey, row.orderId);
         if (lookup.kind === "verified") verified = lookup.payment as TossResult;
         lookupRetryable = lookup.kind === "retryable";
@@ -398,13 +418,16 @@ export async function confirmTrialFeeOnlinePayment(input: {
         if (finalized.kind === "DUPLICATE") {
             return { ok: false, duplicate: true, error: "이미 체험수업비가 확인된 신청이라 이번 결제는 학원에서 환불해 드릴게요." };
         }
+        if (finalized.kind === "CANCELED_ORDER") {
+            return { ok: false, error: "결제가 확인됐지만 닫힌 주문이라 학원에서 확인 후 안내드릴게요." };
+        }
         return { ok: false, error: "결제는 됐지만 신청 반영이 늦어지고 있어요. 학원에 문의해 주세요." };
     }
 
-    const retryable = response.status === 429 || response.status >= 500 || lookupRetryable;
+    const retryable = response ? (response.status === 429 || response.status >= 500 || lookupRetryable) : false;
     await markTrialFeeFailed(prisma, {
         paymentRowId: row.id,
-        code: readString(result.code) ?? (response.ok ? "TRIAL_CONFIRM_VERIFICATION_FAILED" : "TRIAL_CONFIRM_FAILED"),
+        code: readString(result.code) ?? (!response || response.ok ? "TRIAL_CONFIRM_VERIFICATION_FAILED" : "TRIAL_CONFIRM_FAILED"),
         message: readString(result.message) ?? "체험비 결제 승인 실패",
         retryable,
     });
@@ -483,6 +506,7 @@ export async function recordTrialFeeTossWebhook(payload: unknown): Promise<{ ok:
     const kind = classifyTrialTossResult(verified, { orderId: row.orderId, amount: Number(row.amount) }, row.paymentKey);
     if (kind === "DONE" && verified) {
         const finalized = await finalizePaid(row, verified);
+        if (finalized.kind === "CANCELED_ORDER") return finish(false, "TRIAL_CANCELED_ORDER_PAID");
         return finish(finalized.kind !== "NOT_FOUND", finalized.kind === "NOT_FOUND" ? "TRIAL_LEAD_NOT_FOUND" : null);
     }
     if (kind === "WAITING") return finish(true, null);
@@ -607,4 +631,68 @@ export async function refundTrialFeeByAdmin(input: {
         if (cancel.kind === "PARTIAL_CANCEL") return { ok: false, message: "토스에서 일부만 취소됐어요. 토스 상점관리자에서 확인해 주세요." };
     }
     return { ok: false, message: tossError ? `토스가 취소하지 않았어요(${tossError}).` : "취소가 확인되지 않았어요. 잠시 후 다시 확인해 주세요." };
+}
+
+// ───────────────────────────── ⑥ 매일 점검(무통장입금 기한 지난 계좌) ─────────────────────────────
+
+export type TrialSweepResult = { checked: number; paid: number; released: number; waiting: number; failed: number; deferred: number };
+
+/**
+ * 체험비 무통장입금 «입금 대기» 중 기한이 지난 계좌를 토스에 다시 물어 실제 상태로 정리한다(매일 가상계좌 점검 크론이 부른다).
+ * 판정은 청구 점검과 같은 decideVirtualAccountClose — 입금됨(DONE) = 확정 반영, 만료·취소 = «입금 대기» 해제,
+ * 토스가 아직 입금 대기면 그대로(다음 날 다시), 부분 취소 등 애매하면 원장 알림. 장부는 재조회 결과로만 바꾼다(멱등).
+ */
+export async function sweepTrialVirtualAccounts(limit = 50, budgetMs = 10_000): Promise<TrialSweepResult> {
+    const startedAt = Date.now();
+    const result: TrialSweepResult = { checked: 0, paid: 0, released: 0, waiting: 0, failed: 0, deferred: 0 };
+    const rows = await prisma.$queryRawUnsafe<TrialFeePaymentRow[]>(
+        `SELECT * FROM "TrialFeePayment"
+         WHERE status = 'WAITING_FOR_DEPOSIT' AND "paymentKey" IS NOT NULL AND "trialLeadId" IS NOT NULL
+         ORDER BY "createdAt" ASC LIMIT $1`,
+        limit,
+    );
+    // 기한(발급 정보의 dueDate)이 지난 계좌만 — 기한 안의 계좌는 입금 알림을 기다린다
+    const nowMs = Date.now();
+    const due = rows.filter((row) => virtualAccountViewOf(row, nowMs)?.expired !== false);
+    for (const found of due) {
+        if (Date.now() - startedAt > budgetMs) {
+            result.deferred = due.length - result.checked;
+            break;
+        }
+        result.checked += 1;
+        try {
+            const row: LinkedPaymentRow = { ...found, trialLeadId: found.trialLeadId as string };
+            const lookup = await getVerifiedTossPayment(row.paymentKey, row.orderId);
+            if (lookup.kind !== "verified") {
+                result.failed += 1;
+                continue;
+            }
+            const verified = lookup.payment as TossResult;
+            const step = decideVirtualAccountClose(verified, { orderId: row.orderId, paymentKey: row.paymentKey });
+            if (step === "PAID" && classifyTrialTossResult(verified, { orderId: row.orderId, amount: Number(row.amount) }, row.paymentKey) === "DONE") {
+                const finalized = await finalizePaid(row, verified);
+                if (finalized.kind === "PAID" || finalized.kind === "DUPLICATE") result.paid += 1;
+            } else if (step === "RELEASED") {
+                const released = await prisma.$transaction((tx) => releaseTrialVirtualAccountInTx(tx, {
+                    paymentRowId: row.id,
+                    trialLeadId: row.trialLeadId,
+                    status: verified.status === "EXPIRED" ? "EXPIRED" : "CANCELED",
+                }));
+                if (released) {
+                    result.released += 1;
+                    revalidateTrialCaches();
+                }
+            } else if (step === "CANCEL") {
+                // 토스는 아직 입금 대기 — 기한이 지나면 은행이 입금을 받지 않는다. 다음 점검에서 다시 본다.
+                result.waiting += 1;
+            } else {
+                result.failed += 1;
+                await alertOwner(`[체험비] 입금 대기 계좌의 토스 상태를 확인할 수 없어요(주문 ${row.orderId}, 토스 상태 ${String(verified.status ?? "없음")}). 토스 상점관리자에서 확인해 주세요.`);
+            }
+        } catch (error) {
+            result.failed += 1;
+            console.error("[trial-fee] 입금 대기 점검 실패:", error instanceof Error ? error.message : error);
+        }
+    }
+    return result;
 }

@@ -165,11 +165,22 @@ export async function claimTrialFeeConfirmInTx(
     );
     const row = rows[0];
     if (!row || !leads[0]) return { kind: "REJECT", reason: "ORDER_CLOSED" };
+    // 같은 신청의 다른 주문이 진행 중인가 — 입금 대기 계좌, 또는 10분 안에 승인을 시작한 주문(동시 두 결제 방지)
+    const others = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "TrialFeePayment"
+         WHERE "trialLeadId" = $1 AND id <> $2
+           AND (status = 'WAITING_FOR_DEPOSIT'
+                OR (status = 'READY' AND "confirmStartedAt" > NOW() - INTERVAL '10 minutes'))
+         LIMIT 1`,
+        input.trialLeadId,
+        input.paymentRowId,
+    );
     const startedMs = row.confirmStartedAt ? new Date(row.confirmStartedAt).getTime() : null;
     const decision = decideTrialFeeConfirm({
         stored: { amount: Number(row.amount), status: row.status, paymentKey: row.paymentKey, confirmStartedAtMs: startedMs },
         request: { paymentKey: input.paymentKey, amount: input.amount },
         leadAlreadyPaid: Boolean(leads[0].trialFeeConfirmed) || leads[0].trialFeePaymentStatus === "PAID",
+        otherOrderInProgress: others.length > 0,
         nowMs: input.nowMs,
     });
     if (decision.kind === "PROCEED") {
@@ -186,6 +197,7 @@ export type FinalizeResult =
     | { kind: "PAID" } // 이번에 확정됨(체험 안내 대상)
     | { kind: "ALREADY" } // 같은 결제가 이미 반영됨(새로고침·웹훅 중복)
     | { kind: "DUPLICATE" } // 신청이 다른 결제로 이미 확정됨 → 이번 결제 NEEDS_REFUND(원장 환불)
+    | { kind: "CANCELED_ORDER" } // 우리가 취소로 닫은 주문인데 토스는 결제 완료 — 자동 반영하지 않고 원장 확인
     | { kind: "NOT_FOUND" };
 
 /** 토스로 «결제 완료»가 확인된 주문을 장부에 반영한다(트랜잭션 안). 확인은 부르는 쪽이 토스 응답·재조회로 끝낸 뒤. */
@@ -215,6 +227,7 @@ export async function finalizeTrialFeePaidInTx(
     const row = rows[0];
     if (!row) return { kind: "NOT_FOUND" };
     if (row.status === "DONE" || row.status === "NEEDS_REFUND") return { kind: "ALREADY" };
+    if (row.status === "CANCELED") return { kind: "CANCELED_ORDER" };
 
     const otherDone = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT id FROM "TrialFeePayment" WHERE "trialLeadId" = $1 AND status = 'DONE' AND id <> $2 LIMIT 1`,
@@ -228,7 +241,7 @@ export async function finalizeTrialFeePaidInTx(
          SET status = $2, "paymentKey" = $3, method = COALESCE($4, method), "receiptUrl" = COALESCE($5, "receiptUrl"),
              "approvedAt" = COALESCE($6::timestamptz, NOW()), "rawResponse" = $7::jsonb,
              "failureCode" = NULL, "failureMessage" = NULL, "updatedAt" = NOW()
-         WHERE id = $1 AND status IN ('READY', 'WAITING_FOR_DEPOSIT', 'FAILED')
+         WHERE id = $1 AND status IN ('READY', 'WAITING_FOR_DEPOSIT', 'FAILED', 'EXPIRED')
          RETURNING id`,
         row.id,
         nextStatus,

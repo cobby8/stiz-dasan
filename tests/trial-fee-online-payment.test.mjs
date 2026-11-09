@@ -150,6 +150,11 @@ function fakeDb({ lead = {}, payments = [] } = {}) {
       if (/SELECT id FROM "TrialFeePayment" WHERE "trialLeadId" = \$1 AND status = 'DONE' AND id <> \$2/.test(sql)) {
         return state.payments.filter((p) => p.trialLeadId === v[0] && p.status === "DONE" && p.id !== v[1]).map((p) => ({ id: p.id }));
       }
+      if (/SELECT id FROM "TrialFeePayment"\s+WHERE "trialLeadId" = \$1 AND id <> \$2\s+AND \(status = 'WAITING_FOR_DEPOSIT'/.test(sql)) {
+        // 가짜 DB 의 «10분 안»: confirmStartedAt 이 찍힌 READY 주문(테스트가 시각을 정한다)
+        return state.payments.filter((p) => p.trialLeadId === v[0] && p.id !== v[1]
+          && (p.status === "WAITING_FOR_DEPOSIT" || (p.status === "READY" && p.confirmStartedAt))).map((p) => ({ id: p.id }));
+      }
       if (/SELECT \* FROM "TrialFeePayment" WHERE "orderId" = \$1 AND "trialLeadId" = \$2/.test(sql)) {
         return state.payments.filter((p) => p.orderId === v[0] && p.trialLeadId === v[1]);
       }
@@ -158,7 +163,7 @@ function fakeDb({ lead = {}, payments = [] } = {}) {
       }
       if (/UPDATE "TrialFeePayment"\s+SET status = \$2/.test(sql)) {
         const p = pay(v[0]);
-        if (!p || !["READY", "WAITING_FOR_DEPOSIT", "FAILED"].includes(p.status)) return [];
+        if (!p || !["READY", "WAITING_FOR_DEPOSIT", "FAILED", "EXPIRED"].includes(p.status)) return [];
         // DB 부분 유일 인덱스: 신청당 DONE 1건
         if (v[1] === "DONE" && state.payments.some((o) => o.id !== p.id && o.trialLeadId === p.trialLeadId && o.status === "DONE")) {
           throw new Error('duplicate key value violates unique constraint "TrialFeePayment_one_done_per_lead"');
@@ -427,4 +432,70 @@ test("[안내] 등록 안내: 랠리즈→STIZ 앱, 카카오채널 반 변경·
 test("[안내] 새 학부모 문자 트리거는 «문자 전용 허용목록»에 이유와 함께 등록돼 있다", () => {
   assert.ok(vault.SMS_ONLY_PARENT_TRIGGERS[guides.TRIAL_GUIDE_TRIGGER]);
   assert.ok(vault.SMS_ONLY_PARENT_TRIGGERS[guides.ENROLL_GUIDE_TRIGGER]);
+});
+
+// ───────────────────────────── 5) 정확성 검수 권장(2026-11-10) ─────────────────────────────
+
+test("[권장1] 기한 지나 EXPIRED 로 닫은 주문에 입금(DONE) 확인 → 확정 반영(이미 확정된 신청이면 NEEDS_REFUND)", async () => {
+  const db = fakeDb({ payments: [{ status: "EXPIRED", paymentKey: "pk1" }] });
+  assert.deepEqual(await ledger.finalizeTrialFeePaidInTx(db, paidInput()), { kind: "PAID" });
+  assert.equal(db.state.payments[0].status, "DONE");
+  assert.equal(db.state.lead.trialFeePaymentStatus, "PAID");
+  const confirmed = fakeDb({ lead: { trialFeeConfirmed: true }, payments: [{ status: "EXPIRED", paymentKey: "pk1" }] });
+  assert.deepEqual(await ledger.finalizeTrialFeePaidInTx(confirmed, paidInput()), { kind: "DUPLICATE" });
+  assert.equal(confirmed.state.payments[0].status, "NEEDS_REFUND");
+});
+
+test("[권장1] 취소(CANCELED)로 닫은 주문에 토스 DONE → 조용히 넘기지 않고 CANCELED_ORDER(원장 알림·웹훅 미처리 기록)", async () => {
+  const db = fakeDb({ payments: [{ status: "CANCELED", paymentKey: "pk1" }] });
+  assert.deepEqual(await ledger.finalizeTrialFeePaidInTx(db, paidInput()), { kind: "CANCELED_ORDER" });
+  assert.equal(db.state.lead.trialFeeConfirmed, false);
+  const src = read("src/lib/trial-fee/trialFeePaymentService.ts");
+  assert.match(src, /result\.kind === "CANCELED_ORDER"\) \{[\s\S]*?alertOwner\(/);
+  assert.match(src, /if \(finalized\.kind === "CANCELED_ORDER"\) return finish\(false, "TRIAL_CANCELED_ORDER_PAID"\);/);
+});
+
+test("[권장2] 같은 신청의 다른 주문이 입금 대기·승인 중이면 토스 승인 전에 거부(«이미 진행 중인 결제가 있어요»)", async () => {
+  const waiting = fakeDb({ payments: [{ id: "pay-1" }, { id: "pay-2", orderId: "TRIAL-xyz789", status: "WAITING_FOR_DEPOSIT", paymentKey: "pkV" }] });
+  assert.deepEqual(await ledger.claimTrialFeeConfirmInTx(waiting, { paymentRowId: "pay-1", trialLeadId: "lead-1", paymentKey: "pk1", amount: 10000, nowMs: 1_800_000_000_000 }),
+    { kind: "REJECT", reason: "OTHER_IN_PROGRESS" });
+  assert.equal(waiting.state.payments[0].confirmStartedAt, null);
+  assert.match(rules.TRIAL_CONFIRM_REJECT_MESSAGE.OTHER_IN_PROGRESS, /이미 진행 중인 결제가 있어요/);
+
+  // 동시 승인: 두 탭이 서로 다른 주문으로 거의 동시에 → 먼저 잡은 쪽만 PROCEED
+  const db = fakeDb({ payments: [{ id: "pay-1" }, { id: "pay-2", orderId: "TRIAL-xyz789" }] });
+  const a = await ledger.claimTrialFeeConfirmInTx(db, { paymentRowId: "pay-1", trialLeadId: "lead-1", paymentKey: "pkA", amount: 10000, nowMs: 1_800_000_000_000 });
+  const b = await ledger.claimTrialFeeConfirmInTx(db, { paymentRowId: "pay-2", trialLeadId: "lead-1", paymentKey: "pkB", amount: 10000, nowMs: 1_800_000_000_000 });
+  assert.deepEqual([a.kind, b.kind], ["PROCEED", "REJECT"]);
+  assert.equal(b.reason, "OTHER_IN_PROGRESS");
+  assert.equal(db.state.payments[1].confirmStartedAt, null, "두 번째 주문은 승인 표시도 안 남는다");
+});
+
+test("[권장4] 같은 결제키 «다시 확인»은 기다리지 않고 재조회(RECHECK), 다른 결제키는 여전히 거부", async () => {
+  const now = 1_800_000_000_000;
+  const stored = { amount: 10000, status: "READY", paymentKey: "pk1", confirmStartedAtMs: now - 30_000 };
+  assert.deepEqual(rules.decideTrialFeeConfirm({ stored, request: { paymentKey: "pk1", amount: 10000 }, leadAlreadyPaid: false, nowMs: now }), { kind: "RECHECK" });
+  assert.deepEqual(rules.decideTrialFeeConfirm({ stored, request: { paymentKey: "pk2", amount: 10000 }, leadAlreadyPaid: false, nowMs: now }), { kind: "REJECT", reason: "IN_PROGRESS" });
+  assert.deepEqual(rules.decideTrialFeeConfirm({ stored, request: { paymentKey: "pk1", amount: 999 }, leadAlreadyPaid: false, nowMs: now }), { kind: "REJECT", reason: "AMOUNT_MISMATCH" }, "재조회도 금액 대조가 먼저");
+  // 실행부: RECHECK 면 승인 API 보다 재조회가 먼저, 결과가 맞으면 승인을 다시 부르지 않는다
+  const src = read("src/lib/trial-fee/trialFeePaymentService.ts");
+  const fn = src.slice(src.indexOf("export async function confirmTrialFeeOnlinePayment"), src.indexOf("// ───────────────────────────── ④ 웹훅"));
+  assert.ok(fn.indexOf('decision.kind === "RECHECK"') < fn.indexOf("/v1/payments/confirm"));
+  assert.match(fn, /const response = recheckedResult \? null : await fetch\(/);
+  assert.match(fn, /"Idempotency-Key": makeUuidFromSeed\(`stiz-trial-confirm:\$\{row\.id\}:\$\{row\.orderId\}`\)/, "다시 승인해도 같은 멱등키(토스가 한 번만 처리)");
+});
+
+test("[권장3] 매일 가상계좌 점검 크론이 체험비 입금 대기(기한 지남)를 토스 재조회로 정리", () => {
+  const route = read("src/app/api/cron/virtual-account-sweep/route.ts");
+  assert.match(route, /sweepWaitingVirtualAccounts\(\)/, "기존 청구 점검 그대로");
+  assert.match(route, /sweepTrialVirtualAccounts\(50, trialBudgetMs\)/);
+  assert.match(route, /Math\.min\(10_000, 48_000 - \(Date\.now\(\) - startedAt\)\)/, "cron 60초 안에서 남은 시간만");
+  const src = read("src/lib/trial-fee/trialFeePaymentService.ts");
+  const fn = src.slice(src.indexOf("export async function sweepTrialVirtualAccounts"));
+  assert.match(fn, /status = 'WAITING_FOR_DEPOSIT' AND "paymentKey" IS NOT NULL/);
+  assert.match(fn, /virtualAccountViewOf\(row, nowMs\)\?\.expired !== false/, "기한 지난 계좌만");
+  assert.match(fn, /decideVirtualAccountClose\(verified/);
+  assert.match(fn, /step === "PAID"[\s\S]*?finalizePaid\(row, verified\)/);
+  assert.match(fn, /step === "RELEASED"[\s\S]*?releaseTrialVirtualAccountInTx/);
+  assert.match(fn, /\} catch \(error\) \{\s*result\.failed \+= 1;/, "건별 실패가 전체를 멈추지 않는다");
 });

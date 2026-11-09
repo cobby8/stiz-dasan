@@ -119,7 +119,9 @@ export type TrialConfirmDecision =
     | { kind: "PROCEED" }
     | { kind: "ALREADY_DONE" } // 같은 결제키로 이미 확정(새로고침) — 토스를 다시 부르지 않는다
     | { kind: "WAITING_DEPOSIT" } // 같은 결제키로 계좌 발급됨(새로고침)
-    | { kind: "REJECT"; reason: "AMOUNT_MISMATCH" | "ORDER_CLOSED" | "LEAD_ALREADY_PAID" | "IN_PROGRESS" };
+    // 같은 결제키로 승인을 이미 시작했다(«다시 확인»·재시도 가능 실패 뒤) — 승인을 또 부르기 전에 토스 재조회부터
+    | { kind: "RECHECK" }
+    | { kind: "REJECT"; reason: "AMOUNT_MISMATCH" | "ORDER_CLOSED" | "LEAD_ALREADY_PAID" | "IN_PROGRESS" | "OTHER_IN_PROGRESS" };
 
 /**
  * 토스 결제창에서 돌아온 값(paymentKey·orderId·amount)을 저장된 주문과 비교한다 — 승인(돈이 나가는 순간) 전에.
@@ -130,6 +132,8 @@ export function decideTrialFeeConfirm(input: {
     stored: { amount: number; status: string; paymentKey: string | null; confirmStartedAtMs: number | null };
     request: { paymentKey: string; amount: number };
     leadAlreadyPaid: boolean;
+    /** 같은 신청의 «다른» 주문이 입금 대기(무통장 계좌)거나 10분 안에 승인을 시작했다 */
+    otherOrderInProgress?: boolean;
     nowMs: number;
 }): TrialConfirmDecision {
     const { stored, request } = input;
@@ -138,9 +142,12 @@ export function decideTrialFeeConfirm(input: {
     if (stored.status === "WAITING_FOR_DEPOSIT" && stored.paymentKey === request.paymentKey) return { kind: "WAITING_DEPOSIT" };
     if (input.leadAlreadyPaid) return { kind: "REJECT", reason: "LEAD_ALREADY_PAID" };
     if (stored.status !== "READY") return { kind: "REJECT", reason: "ORDER_CLOSED" };
-    // 다른 탭이 10분 안에 승인을 시작했다 — 두 번 승인하지 않는다
+    // 같은 신청의 다른 주문이 진행 중(입금 대기 계좌·다른 탭 승인) — 두 번째 결제를 승인하지 않는다
+    if (input.otherOrderInProgress) return { kind: "REJECT", reason: "OTHER_IN_PROGRESS" };
     if (stored.confirmStartedAtMs != null && input.nowMs - stored.confirmStartedAtMs < 10 * 60_000) {
-        return { kind: "REJECT", reason: "IN_PROGRESS" };
+        // 같은 결제키 = 같은 결제의 «다시 확인» → 재조회부터(돈 안전: 승인 결과를 먼저 확인)
+        // 다른 결제키 = 다른 탭의 두 번째 결제 → 두 번 승인하지 않는다
+        return stored.paymentKey === request.paymentKey ? { kind: "RECHECK" } : { kind: "REJECT", reason: "IN_PROGRESS" };
     }
     return { kind: "PROCEED" };
 }
@@ -150,6 +157,7 @@ export const TRIAL_CONFIRM_REJECT_MESSAGE: Record<Extract<TrialConfirmDecision, 
     ORDER_CLOSED: "결제 주문이 이미 끝났어요. 결제 화면에서 다시 시도해 주세요.",
     LEAD_ALREADY_PAID: "체험수업비 결제가 이미 완료됐어요. 이번 결제는 진행되지 않았어요.",
     IN_PROGRESS: "결제를 확인하는 중이에요. 잠시 후 다시 확인해 주세요.",
+    OTHER_IN_PROGRESS: "이미 진행 중인 결제가 있어요. 이번 결제는 진행되지 않았어요. 결제 화면에서 상태를 확인해 주세요.",
 };
 
 /**
