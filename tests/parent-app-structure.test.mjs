@@ -1,5 +1,5 @@
 // 학부모 화면 구조 개편(2026-11-09 원장 결정 D1 안 A · D6 · D7 · D8) — 실제로 그려서 확인한다.
-//  ① 메뉴 4개(홈·일정·청구·소식), 하위 화면에서도 소속 탭이 켜진다, 방학특강 탭 없음
+//  ① 메뉴 4개(홈·수업·청구·소식 — 2026-11-10 d5), 하위 화면에서도 소속 탭이 켜진다, 방학특강 탭 없음
 //  ② 로그아웃은 «⋯» 메뉴 안
 //  ③ 홈 = 납부 합계 한 줄(꽉 찬 버튼 1개) + 처리할 일 + 빠른 실행 4개, 접힌 칸 없음
 //  ④ 일정 탭 = 한 달 달력(연간일정·수업일·출결) + 수강 반 + 셔틀 배정 — 수납·신청 줄 없음(2026-11-09 원장 지시)
@@ -34,12 +34,13 @@ const summary = load("src/lib/mypage/summary.ts");
 
 test("① 메뉴 4개 — 하위 화면에서도 소속 탭이 켜지고 방학특강 탭은 없다", () => {
   const nav = load("src/app/mypage/MyPageBottomNav.tsx", { "next/link": link, "next/navigation": { usePathname: () => "/mypage" } });
-  assert.deepEqual(nav.PARENT_TABS.map((t) => t.label), ["홈", "일정", "청구", "소식"]);
-  assert.deepEqual(nav.PARENT_TABS.map((t) => t.href), ["/mypage", "/mypage/history", "/mypage/payments", "/mypage/reports"]);
+  assert.deepEqual(nav.PARENT_TABS.map((t) => t.label), ["홈", "수업", "청구", "소식"]);
+  assert.deepEqual(nav.PARENT_TABS.map((t) => t.href), ["/mypage", "/mypage/classes", "/mypage/payments", "/mypage/reports"]);
   const activeAt = (path) => nav.PARENT_TABS.filter((t) => nav.isParentTabActive(t, path)).map((t) => t.label);
   assert.deepEqual(activeAt("/mypage"), ["홈"]);
-  for (const p of ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"]) {
-    assert.deepEqual(activeAt(p), ["일정"], p);
+  // 달력(/mypage/history)은 주소를 유지한 채 수업 탭 안으로 들어갔다 — 결석·보강·셔틀·수강 변경 화면도 «수업»
+  for (const p of ["/mypage/classes", "/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"]) {
+    assert.deepEqual(activeAt(p), ["수업"], p);
   }
   assert.deepEqual(activeAt("/mypage/payments"), ["청구"]);
   assert.deepEqual(activeAt("/mypage/reports/s1"), ["소식"]);
@@ -146,7 +147,7 @@ test("③ 홈: 청구가 없으면 청구 줄이 없고, 방학특강만 다니�
   assert.match(html, /새 알림 없음/);
 });
 
-test("④ 일정 탭: 달력·수강 반·셔틀 배정만, 신청 줄은 없고 «수강 변경 신청»은 «⋯» 메뉴로 옮겼다", () => {
+test("④ 일정 달력: 달력·수강 반·셔틀 배정만, 신청 줄은 없고 «수강 변경 신청»은 수업 탭 반 카드로 옮겼다", () => {
   const parentSchedule = load("src/lib/mypage/parentSchedule.ts", { "@/lib/datetime/kst": kst, "@/lib/classSchedule": load("src/lib/classSchedule.ts") });
   const Hub = load("src/app/mypage/history/ScheduleHub.tsx", {
     "next/link": link, "@/lib/datetime/kst": kst, "@/lib/mypage/parentSchedule": parentSchedule,
@@ -177,8 +178,9 @@ test("④ 일정 탭: 달력·수강 반·셔틀 배정만, 신청 줄은 없고
   const empty = renderToStaticMarkup(React.createElement(Hub, { childList: children, selectedChildId: "a", view, planReady: false, shuttleItems: [] }));
   assert.doesNotMatch(empty, /id="mypage-shuttle"/);
   assert.match(empty, /이 달 수업일은 연간일정 확정 후 보여요/);
-  // 홈 빠른 실행에 없는 «수강 변경 신청»은 «⋯» 메뉴로 옮겨 길을 남긴다
-  assert.match(read("src/app/mypage/ParentMoreMenu.tsx"), /\{ href: "\/mypage\/enrollment-change", icon: "swap_horiz", label: "수강 변경 신청" \}/);
+  // «수강 변경 신청»은 «⋯» 메뉴에서 빠지고(2026-11-10 d5) 수업 탭 반 카드의 [반 변경·휴원 ▾]가 길이다
+  assert.doesNotMatch(read("src/app/mypage/ParentMoreMenu.tsx"), /href: "\/mypage\/enrollment-change"/);
+  assert.match(read("src/lib/parent/classCards.ts"), /presetHref\("\/mypage\/enrollment-change"/);
 });
 
 test("⑤ 앱 안 공지 상세: 전체 공지·우리 아이 반 공지만 보이고 남의 반 공지는 404, 본문은 sanitize 를 거친다", async () => {

@@ -14,6 +14,7 @@ import type { ChangeHistoryRow, ChildChangeOption, EnrollmentChangeOptions } fro
 import { parentKindName, shortMd } from "@/lib/enrollment/parentChangeStatus";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { presetIndex, type RequestPreset } from "@/lib/mypage/requestPreset";
 
 const DAY_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -30,11 +31,15 @@ type PendingRequest = NonNullable<ChildChangeOption["pending"]>;
 /** 종류 이름(복귀 포함). 모르는 값이면 «수강 변경». */
 const kindLabel = (kind: string) => REQUEST_KIND_LABEL[kind] ?? "수강 변경";
 
-export default function EnrollmentChangeClient({ initial }: { initial: EnrollmentChangeOptions }) {
+export default function EnrollmentChangeClient({ initial, preset }: { initial: EnrollmentChangeOptions; preset?: RequestPreset }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [childIdx, setChildIdx] = useState(0);
-  const [kind, setKind] = useState<ChangeKind>("CLASS_CHANGE");
+  // 수업 탭 반 카드에서 왔으면 그 반을 먼저 고른다(없으면 첫 반 — 예전 그대로)
+  const [childIdx, setChildIdx] = useState(preset ? presetIndex(initial.children, preset, (c) => c) : 0);
+  // 반 카드 [반 변경·휴원 ▾]에서 고른 종류(반 변경·휴원·퇴원만 받는다. 복귀는 휴원 중인 반이면 화면이 알아서 바꾼다)
+  const presetKind: ChangeKind =
+    preset?.kind === "PAUSE" || preset?.kind === "WITHDRAW" || preset?.kind === "CLASS_CHANGE" ? preset.kind : "CLASS_CHANGE";
+  const [kind, setKind] = useState<ChangeKind>(presetKind);
   const [toClassId, setToClassId] = useState("");
   // 반 변경만 시작일을 고를 수 있다(원장 지시). 기본값은 다음 달 1일.
   const [effectiveFrom, setEffectiveFrom] = useState(initial.effectiveFrom);

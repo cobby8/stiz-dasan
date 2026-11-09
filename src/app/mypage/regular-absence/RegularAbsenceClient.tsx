@@ -8,6 +8,7 @@ import { groupByUpcomingDate } from "@/components/admin/list/upcomingDateGroups"
 import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { presetFirst } from "@/lib/mypage/requestPreset";
 
 // 날짜 묶음 이름 — 가까운 수업일이 먼저 보이게(오늘 → 이번 주 → 다음 주 → 이후)
 const DATE_GROUP_LABELS = { today: "오늘", thisWeek: "이번 주", nextWeek: "다음 주", later: "이후", past: "지난 수업" };
@@ -29,9 +30,12 @@ function dateKey(d: UpcomingClassDate) {
 export default function RegularAbsenceClient({
   initial,
   makeups = [],
+  presetStudentId = null,
 }: {
   initial: UpcomingChild[];
   makeups?: RegularMakeupRow[];
+  /** 수업 탭 반 카드에서 온 아이 — 그 아이 날짜를 맨 위에(나머지 순서는 그대로) */
+  presetStudentId?: string | null;
 }) {
   const [children, setChildren] = useState<UpcomingChild[]>(initial);
   const [openKey, setOpenKey] = useState<string>(""); // 신고 폼이 열린 날짜 키
@@ -128,14 +132,14 @@ export default function RegularAbsenceClient({
   // 오늘은 KST 모듈로만 구한다.
   const childGroups = useMemo(() => {
     const today = todayKst();
-    return children
+    return presetFirst(children, presetStudentId, (child) => child.studentId)
       .map((child) => ({
         studentId: child.studentId,
         studentName: child.studentName,
         groups: groupByUpcomingDate(child.classes.flatMap((cl) => cl.dates), (d) => d.date, today, DATE_GROUP_LABELS),
       }))
       .filter((child) => child.groups.length > 0);
-  }, [children]);
+  }, [children, presetStudentId]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6">

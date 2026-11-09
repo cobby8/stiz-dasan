@@ -2,17 +2,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// 학부모 앱 메뉴 4개 — 홈 · 일정 · 청구 · 소식 (2026-11-09 원장 결정 D1 안 A).
+// 학부모 앱 메뉴 4개 — 홈 · 수업 · 청구 · 소식 (2026-11-10 원장 결정 d5, 11-09 안 A 의 «일정» 자리를 «수업»으로).
 // 휴대폰은 아래 탭, PC 는 헤더 가로 메뉴로 같은 4개를 쓴다(한 목록만 두어 둘이 어긋나지 않게).
-// 방학특강 탭은 없앴다(D6) — 방학 기간에만 홈 «처리할 일»과 일정 탭에 나온다.
+// 방학특강 탭은 없앴다(D6) — 방학 기간에만 홈 «처리할 일»과 신청 화면에 나온다.
+// 일정 달력(/mypage/history)은 주소를 그대로 두고 «수업» 탭 안 «달력 ▸»로 들어간다 — 그래서 수업 탭에 속한다.
 // also = 이 탭에 속하는 하위 화면. 그 화면에 있을 때도 탭이 켜져 «지금 어디 있는지» 알 수 있다.
 export const PARENT_TABS = [
     { href: "/mypage", label: "홈", icon: "home", also: [] as string[] },
     {
-        href: "/mypage/history",
-        label: "일정",
-        icon: "calendar_month",
-        also: ["/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"],
+        href: "/mypage/classes",
+        label: "수업",
+        icon: "sports_basketball",
+        also: ["/mypage/history", "/mypage/regular-absence", "/mypage/makeup", "/mypage/seasonal", "/mypage/shuttle", "/mypage/enrollment-change"],
     },
     { href: "/mypage/payments", label: "청구", icon: "receipt_long", also: [] as string[] },
     { href: "/mypage/reports", label: "소식", icon: "campaign", also: ["/mypage/news"] },

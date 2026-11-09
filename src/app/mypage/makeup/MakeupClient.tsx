@@ -10,6 +10,7 @@ import { todayKst } from "@/lib/datetime/kst";
 import InlineConfirm from "@/components/parent/InlineConfirm";
 import { customerMessage } from "@/components/parent/customerMessage";
 import { REQUEST_TONE, TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
+import { presetFirst } from "@/lib/mypage/requestPreset";
 
 const DOW_KO: Record<string, string> = {
   Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
@@ -45,7 +46,8 @@ const CREDIT_GROUPS: { value: CreditGroup; label: string }[] = [
   { value: "expired", label: "만료" },
 ];
 
-export default function MakeupClient({ initial }: { initial: ParentMakeupOverview }) {
+// presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이 보강권을 맨 위에(나머지 순서는 그대로)
+export default function MakeupClient({ initial, presetStudentId = null }: { initial: ParentMakeupOverview; presetStudentId?: string | null }) {
   const router = useRouter();
   const [openId, setOpenId] = useState("");            // 반 선택이 열린 보강권
   const [options, setOptions] = useState<MakeupOption[]>([]);
@@ -103,7 +105,7 @@ export default function MakeupClient({ initial }: { initial: ParentMakeupOvervie
     }
   }, [router]);
 
-  const { credits } = initial;
+  const credits = presetFirst(initial.credits, presetStudentId, (c) => c.studentId);
   const creditChips = CREDIT_GROUPS.map((g) => ({
     value: g.value,
     label: g.label,

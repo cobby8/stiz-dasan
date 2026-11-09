@@ -57,7 +57,7 @@ function harness() {
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/components/parent/InlineConfirm": { __esModule: true, default: function InlineConfirm() { return null; } },
-    "@/components/parent/customerMessage": { customerMessage: (raw, fallback) => (typeof raw === "string" && raw) || fallback },
+    "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": { customerMessage: (raw, fallback) => (typeof raw === "string" && raw) || fallback },
   }).default;
   const render = (initial) => {
     calls = 0;

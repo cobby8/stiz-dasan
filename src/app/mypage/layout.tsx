@@ -81,7 +81,7 @@ export default async function MyPageLayout({
                         </span>
                     </Link>
                 </div>
-                {/* PC 메뉴 — 휴대폰 아래 탭과 같은 4개(홈·일정·청구·소식). 예전엔 PC 에 메뉴가 없어
+                {/* PC 메뉴 — 휴대폰 아래 탭과 같은 4개(홈·수업·청구·소식). 예전엔 PC 에 메뉴가 없어
                     하위 화면 사이를 «뒤로 → 홈 → 타일»로만 오갔다. */}
                 <MyPageBottomNav variant="top" />
                 <div className="flex shrink-0 items-center gap-3 text-sm font-bold text-[var(--color-academy-muted)]">
@@ -110,7 +110,7 @@ export default async function MyPageLayout({
                 <AccountLinks />
             </main>
 
-            {/* 모바일 하단 탭 — 홈·일정·청구·소식(2026-11-09 안 A).
+            {/* 모바일 하단 탭 — 홈·수업·청구·소식(2026-11-10 원장 결정 d5).
                 활성 경로 하이라이트를 위해 클라이언트 컴포넌트(MyPageBottomNav)로 분리. */}
             <MyPageBottomNav />
         </AcademyTheme>

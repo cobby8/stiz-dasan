@@ -100,7 +100,7 @@ test("재조회한 휴원 날짜·미정은 실제 학부모 신청 내역에 �
     "@/lib/enrollment/changeRequestRules": rules,
     "@/lib/enrollment/parentChangeStatus": changeStatus,
     "@/components/parent/InlineConfirm": { __esModule: true, default: () => null },
-    "@/components/parent/customerMessage": { customerMessage: (_, fallback) => fallback },
+    "@/lib/mypage/requestPreset": { presetIndex: () => 0, presetFirst: (list) => [...list] }, "@/components/parent/customerMessage": { customerMessage: (_, fallback) => fallback },
   }).default;
   for (const resumeOn of ["2027-01-03", null]) {
     const html = renderToStaticMarkup(React.createElement(Client, { initial: {

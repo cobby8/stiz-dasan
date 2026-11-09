@@ -39,10 +39,13 @@ function parentDeliveryText(summary: DeliveryStatusSummary | null | undefined): 
   ].filter(Boolean).join(" · ");
 }
 
-export default function ShuttleExceptionClient({ initial }: { initial: ShuttleExceptionOptions }) {
+// presetStudentId = 수업 탭 반 카드에서 온 아이 — 그 아이를 미리 고른다(내 자녀 목록에 있을 때만)
+export default function ShuttleExceptionClient({ initial, presetStudentId = null }: { initial: ShuttleExceptionOptions; presetStudentId?: string | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [studentId, setStudentId] = useState(initial.children[0]?.studentId ?? "");
+  const [studentId, setStudentId] = useState(
+    initial.children.find((c) => c.studentId === presetStudentId)?.studentId ?? initial.children[0]?.studentId ?? "",
+  );
   const [serviceDate, setServiceDate] = useState(initial.today);
   const [direction, setDirection] = useState<ShuttleDirection>("PICKUP");
   const [kind, setKind] = useState<ShuttleExceptionKind>("SKIP");

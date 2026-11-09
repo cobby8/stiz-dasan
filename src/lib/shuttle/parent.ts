@@ -13,6 +13,8 @@ export type ParentShuttleOverviewItem = {
   id: string;
   studentId: string;
   sourceType: "REGULAR_CLASS" | "SPECIAL_PROGRAM";
+  /** 정규 셔틀이면 그 수업의 반 id — 학부모 «수업» 탭 반 카드가 자기 반 셔틀만 고르는 데 쓴다(특강은 없음) */
+  classId?: string | null;
   direction: "PICKUP" | "DROPOFF" | null;
   status: "REQUESTED" | "PREPARING" | "CONFIRMED" | "COMPLETED";
   label: string;
@@ -210,6 +212,7 @@ export async function getParentShuttleOverview(appUserId: string): Promise<Paren
       id: passenger.id,
       studentId: passenger.studentId!,
       sourceType: "REGULAR_CLASS",
+      classId: passenger.session?.classId ?? null,
       direction: passenger.routePlan.direction,
       status: overviewStatus(passenger.routePlan.status as RouteStatus),
       label: studentNames.get(passenger.studentId!) ?? "자녀",
