@@ -29,7 +29,7 @@ export default function StaffBottomNav({ canTeach, canShuttle }: { canTeach: boo
   return <nav aria-label="교사용 주요 메뉴" className="academy-staff-nav fixed inset-x-0 bottom-0 z-30 border-t px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl">
     <div className={`mx-auto grid max-w-lg ${gridClass} gap-2`}>{items.map((item) => {
       const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-      return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-xs font-bold transition-colors ${active ? "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)] text-[var(--brand-accent)]" : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-900"}`}><span className={`material-symbols-outlined text-[1.45rem] ${active ? "[font-variation-settings:'FILL'_1]" : ""}`} aria-hidden="true">{item.icon}</span>{item.label}<span className="sr-only">{active ? "현재 메뉴" : "메뉴로 이동"}</span></Link>;
+      return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-2xl text-xs font-bold transition-colors ${active ? "bg-[color-mix(in_srgb,var(--brand-accent)_12%,transparent)] text-[var(--brand-accent)]" : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"}`}><span className={`material-symbols-outlined text-[1.45rem] ${active ? "[font-variation-settings:'FILL'_1]" : ""}`} aria-hidden="true">{item.icon}</span>{item.label}<span className="sr-only">{active ? "현재 메뉴" : "메뉴로 이동"}</span></Link>;
     })}</div>
   </nav>;
 }

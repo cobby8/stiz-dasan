@@ -153,17 +153,17 @@ export function SessionPhotoUploader({
       {photos.length > 0 && (
         <div className="grid grid-cols-2 gap-3" aria-label="등록한 수업 사진">
           {photos.map((photo) => (
-            <article key={photo.id} className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+            <article key={photo.id} className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-white">
               {/* 인증된 비공개 API 주소라서 공개 URL을 만들지 않고도 미리보기가 가능합니다. */}
               <div className="relative aspect-square w-full">
                 <Image src={photo.url} alt="등록한 수업 사진" fill unoptimized sizes="(max-width: 640px) 50vw, 240px" className="object-cover" />
               </div>
               <div className="space-y-2 p-2">
-                <p className="line-clamp-2 text-xs text-gray-600 dark:text-gray-300">
+                <p className="line-clamp-2 text-xs text-[var(--color-academy-muted)]">
                   {photo.subjectStudentIds.map((id) => students.find((student) => student.id === id)?.name).filter(Boolean).join(", ") || "대상 학생 미지정"}
                 </p>
                 {photo.requiresDeletionQueue ? (
-                  <p className="rounded-lg bg-amber-50 p-2 text-xs font-bold text-amber-800">공개된 사진 · 관리자 회수 필요</p>
+                  <p className="rounded-lg bg-[var(--color-academy-warning-soft)] p-2 text-xs font-bold text-[var(--color-academy-warning)]">공개된 사진 · 관리자 회수 필요</p>
                 ) : (
                   // 게슈탈트 T-10: «학생 수정»과 «삭제»가 나란히 붙어 있으면 잘못 누르기 쉽다.
                   // 삭제는 오른쪽 끝 휴지통 아이콘으로 떼어 두고(간격 12px), 확인 창(deletePhoto)은 그대로 둔다.
@@ -175,11 +175,11 @@ export function SessionPhotoUploader({
                   </div>
                 )}
                 {editingPhotoId === photo.id && photo.canManage && (
-                  <div className="space-y-2 border-t border-gray-100 pt-2 dark:border-gray-700">
+                  <div className="space-y-2 border-t border-[var(--color-academy-line)] pt-2">
                     <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
                       {students.map((student) => {
                         const selected = photo.subjectStudentIds.includes(student.id);
-                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className={`min-h-11 rounded-full border px-3 text-xs font-bold ${selected ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-gray-200 dark:border-gray-600"}`}>{student.name}</button>;
+                        return <button key={student.id} type="button" aria-pressed={selected} onClick={() => togglePhotoSubject(photo.id, student.id)} className={`min-h-11 rounded-full border px-3 text-xs font-bold ${selected ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "border-[var(--color-academy-line)]"}`}>{student.name}</button>;
                       })}
                     </div>
                     <button type="button" disabled={busy || photo.subjectStudentIds.length === 0} onClick={() => void updatePhotoSubjects(photo)} className="academy-button-secondary min-h-11 w-full rounded-lg text-xs font-black disabled:opacity-50">변경 저장</button>
@@ -191,13 +191,13 @@ export function SessionPhotoUploader({
         </div>
       )}
       <fieldset disabled={busy}>
-        <legend className="text-sm font-bold text-gray-700 dark:text-gray-200">
-          사진에 나온 학생 <span className="text-red-600">(필수)</span>
+        <legend className="text-sm font-bold text-[var(--color-academy-ink)]">
+          사진에 나온 학생 <span className="text-[var(--color-academy-danger)]">(필수)</span>
         </legend>
-        <p className="mt-1 text-xs leading-5 text-gray-500">
+        <p className="mt-1 text-xs leading-5 text-[var(--color-academy-muted)]">
           선택한 학생의 보호자 동의가 확인된 사진만 관리자가 갤러리나 인스타그램에 게시할 수 있습니다.
         </p>
-        <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+        <div className="mt-2 flex max-h-40 flex-wrap gap-2 overflow-y-auto rounded-xl border border-[var(--color-academy-line)] p-3">
           {students.map((student) => {
             const selected = subjectStudentIds.includes(student.id);
             return (
@@ -209,7 +209,7 @@ export function SessionPhotoUploader({
                 className={`min-h-11 rounded-full border px-3 text-sm font-bold ${
                   selected
                     ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]"
-                    : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    : "border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)]"
                 }`}
               >
                 {selected ? "✓ " : ""}{student.name}
@@ -225,15 +225,15 @@ export function SessionPhotoUploader({
         <button type="button" disabled={busy} onClick={() => cameraRef.current?.click()} className="min-h-12 rounded-xl bg-[var(--brand-accent)] px-3 font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
           사진 촬영
         </button>
-        <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="min-h-12 rounded-xl border border-gray-200 bg-white px-3 font-black disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800">
+        <button type="button" disabled={busy} onClick={() => galleryRef.current?.click()} className="min-h-12 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 font-black disabled:opacity-50">
           갤러리 선택
         </button>
       </div>
       {message && (
-        <div className="flex items-center justify-between gap-3 rounded-xl bg-gray-100 p-3 dark:bg-gray-800">
-          <p aria-live="polite" className="text-sm font-bold text-gray-600 dark:text-gray-300">{message}</p>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--color-academy-soft)] p-3">
+          <p aria-live="polite" className="text-sm font-bold text-[var(--color-academy-muted)]">{message}</p>
           {retryAction && (
-            <button type="button" disabled={busy} onClick={() => void retryAction()} className="min-h-11 shrink-0 rounded-xl border border-gray-300 px-3 text-sm font-black dark:border-gray-600">
+            <button type="button" disabled={busy} onClick={() => void retryAction()} className="min-h-11 shrink-0 rounded-xl border border-[var(--color-academy-line-input)] px-3 text-sm font-black">
               다시 시도
             </button>
           )}

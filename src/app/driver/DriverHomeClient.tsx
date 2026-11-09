@@ -36,10 +36,10 @@ export default function DriverHomeClient() {
 
   // 기사님 화면은 밝은 차 안에서 본다. 다른 운행 화면과 같이 밝은 테마로 고정한다.
   return (
-    <div className="min-h-screen bg-white text-gray-900" style={{ colorScheme: "light" }}>
+    <div className="min-h-screen bg-white text-[var(--color-academy-ink)]" style={{ colorScheme: "light" }}>
       <div className="mx-auto grid min-h-[80dvh] max-w-md place-items-center px-6 text-center">
         {checking ? (
-          <p className="text-base text-gray-500" aria-live="polite">
+          <p className="text-base text-[var(--color-academy-muted)]" aria-live="polite">
             운행 명단을 여는 중...
           </p>
         ) : (
@@ -47,17 +47,17 @@ export default function DriverHomeClient() {
             <p className="text-5xl" aria-hidden="true">
               🚌
             </p>
-            <h1 className="mt-3 text-xl font-black text-gray-900">
+            <h1 className="mt-3 text-xl font-black text-[var(--color-academy-ink)]">
               받으신 운행 링크를 한 번 열어주세요
             </h1>
-            <p className="mt-2 text-base leading-7 text-gray-500">
+            <p className="mt-2 text-base leading-7 text-[var(--color-academy-muted)]">
               원장님께 받은 링크를 한 번만 열면, 다음부터는 이 아이콘만 눌러도
               그날 운행이 바로 열립니다.
             </p>
             {/* 링크를 받지 못했거나 잃어버린 기사님 — 원장님이 기사님 역할을 준 계정이 있으면 로그인만으로 연다. */}
             <a
               href={`/login?${new URLSearchParams({ redirect: "/staff/run" }).toString()}`}
-              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-gray-300 px-5 text-base font-bold text-gray-700"
+              className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-bold text-[var(--color-academy-ink)]"
             >
               학원 계정으로 로그인해서 열기
             </a>

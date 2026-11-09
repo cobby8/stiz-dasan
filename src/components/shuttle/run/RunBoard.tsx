@@ -127,10 +127,10 @@ export default function RunBoard({
         // 차고지 출발·학원 도착 같은 안내 줄 — 얇은 회색 한 줄(탑승 체크 없음).
         if (row.isTerminal) {
           return (
-            <li key={row.key} className="flex items-center gap-2 rounded-xl bg-gray-100 px-4 py-2.5 text-[15px] font-bold text-gray-700">
-              <span className="shrink-0 text-[15px] font-black text-gray-500">{row.time}</span>
+            <li key={row.key} className="flex items-center gap-2 rounded-xl bg-[var(--color-academy-soft)] px-4 py-2.5 text-[15px] font-bold text-[var(--color-academy-ink)]">
+              <span className="shrink-0 text-[15px] font-black text-[var(--color-academy-muted)]">{row.time}</span>
               <span className="min-w-0 flex-1">{row.label}</span>
-              {row.subLabel && <span className="shrink-0 text-[13px] font-semibold text-gray-400">{row.subLabel}</span>}
+              {row.subLabel && <span className="shrink-0 text-[13px] font-semibold text-[var(--color-academy-faint)]">{row.subLabel}</span>}
             </li>
           );
         }
@@ -144,14 +144,14 @@ export default function RunBoard({
         if (mode === "admin" && editable) {
           return (
             <li key={row.key} data-run-key={row.key}
-              className={`${styles.stop} academy-driver-stop rounded-2xl border border-orange-300 bg-orange-50 p-3 ${dragKey === row.key ? "opacity-60 ring-2 ring-[var(--color-academy-primary)]" : ""}`}>
+              className={`${styles.stop} academy-driver-stop rounded-2xl border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] p-3 ${dragKey === row.key ? "opacity-60 ring-2 ring-[var(--color-academy-primary)]" : ""}`}>
               <div className={styles.stopHeading}>
                 <button type="button" aria-label={`${row.label} 끌어서 순서 옮기기`} title="끌어서 순서 옮기기"
                   onPointerDown={(event) => startHandleDrag(event, row)}
                   onPointerMove={(event) => moveHandleDrag(event, row)}
                   onPointerUp={endHandleDrag}
                   onPointerCancel={endHandleDrag}
-                  className="grid h-11 w-11 shrink-0 touch-none cursor-grab place-items-center rounded-lg border border-gray-300 bg-white text-gray-500 active:cursor-grabbing">
+                  className="grid h-11 w-11 shrink-0 touch-none cursor-grab place-items-center rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[var(--color-academy-muted)] active:cursor-grabbing">
                   <span aria-hidden="true" className="material-symbols-outlined text-[24px]">drag_indicator</span>
                 </button>
                 <div className={`${styles.stopName} ${row.label.length > 18 ? styles.longStopName : ""} ${/\s/.test(row.label) ? styles.spacedStopName : ""}`}><span>{row.label}</span></div>
@@ -160,17 +160,17 @@ export default function RunBoard({
                   value={displayTime(row) ?? ""}
                   onChange={(event) => onTimeChange(row, event.target.value)}
                   style={{ flexBasis: "auto" }}
-                  className="ml-auto h-11 w-[8.5rem] shrink-0 rounded-xl border-2 border-blue-200 bg-white px-2 text-[19px] font-black text-blue-700"
+                  className="ml-auto h-11 w-[8.5rem] shrink-0 rounded-xl border-2 border-[var(--color-academy-line-input)] bg-white px-2 text-[19px] font-black text-[var(--color-academy-ink)]"
                   aria-label={`${row.label} 정차 시간`}
                 />
                 <div className={styles.stopMeta}>
-                  <span className="font-bold text-[var(--color-academy-primary)]">정규 · {isPickup ? "등원" : "하원"}</span>
+                  <span className="font-bold text-[var(--color-academy-ink)]">정규 · {isPickup ? "등원" : "하원"}</span>
                   {row.groupLabel && <span>{row.groupLabel}</span>}
                   {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
                   {renderStopMeta?.(row)}
                   <span className="ml-auto flex gap-1">
-                    <button type="button" onClick={() => onMove(row, -1)} aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-gray-300 bg-white text-[15px] font-black text-gray-600">▲</button>
-                    <button type="button" onClick={() => onMove(row, 1)} aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-gray-300 bg-white text-[15px] font-black text-gray-600">▼</button>
+                    <button type="button" onClick={() => onMove(row, -1)} aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-black text-[var(--color-academy-muted)]">▲</button>
+                    <button type="button" onClick={() => onMove(row, 1)} aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] bg-white text-[15px] font-black text-[var(--color-academy-muted)]">▼</button>
                   </span>
                 </div>
               </div>
@@ -200,15 +200,15 @@ export default function RunBoard({
             data-upcoming={isUpcoming || undefined}
             aria-current={isUpcoming ? "step" : undefined}
             className={`${styles.stop} ${isUpcoming ? styles.upcoming : ""} academy-driver-stop rounded-2xl border p-3 ${editable ? "touch-none cursor-grab active:cursor-grabbing" : ""} ${dragKey === row.key ? "opacity-60" : ""} ${
-            editing ? "border-orange-300 bg-orange-50" : row.warn ? "border-amber-300 bg-amber-50" : row.isHub ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"
+            editing ? "border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)]" : row.warn ? "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)]" : row.isHub ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)]" : "border-[var(--color-academy-line)] bg-white"
           }`}>
             <div className={styles.stopHeading}>
               {editable ? (
                 <div className="flex shrink-0 flex-col gap-0.5" aria-label="순서 변경">
                   <button type="button" onClick={() => onMove(row, -1)}
-                    aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▲</button>
+                    aria-label={`${row.label} 순서 위로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-[16px] font-black text-[var(--color-academy-muted)]">▲</button>
                   <button type="button" onClick={() => onMove(row, 1)}
-                    aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-gray-300 text-[16px] font-black text-gray-600">▼</button>
+                    aria-label={`${row.label} 순서 아래로`} className="h-11 w-11 rounded-lg border border-[var(--color-academy-line-input)] text-[16px] font-black text-[var(--color-academy-muted)]">▼</button>
                 </div>
               ) : (
                 <span className={styles.sequence}>
@@ -221,7 +221,7 @@ export default function RunBoard({
                   type="time"
                   value={displayTime(row) ?? ""}
                   onChange={(event) => onTimeChange(row, event.target.value)}
-                  className="col-span-3 mt-2 h-12 w-full min-w-0 rounded-xl border-2 border-blue-200 bg-white px-3 text-[22px] font-black text-blue-700"
+                  className="col-span-3 mt-2 h-12 w-full min-w-0 rounded-xl border-2 border-[var(--color-academy-line-input)] bg-white px-3 text-[22px] font-black text-[var(--color-academy-ink)]"
                   aria-label={`${row.label} 정차 시간`}
                 />
               ) : (
@@ -235,18 +235,18 @@ export default function RunBoard({
                 </div>
               )}
               <div className={styles.stopMeta}>
-                <span className="font-bold text-[var(--color-academy-primary)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
+                <span className="font-bold text-[var(--color-academy-ink)]">{row.kind === "SEASONAL" ? "특강" : "정규"} · {isPickup ? "등원" : "하원"}</span>
                 {row.groupLabel && <span>{row.groupLabel}</span>}
                 {row.subLabel && row.subLabel !== row.groupLabel && <span>{row.subLabel}</span>}
                 {renderStopMeta?.(row)}
-                {row.isHub && <span className="font-bold text-green-700">무료 거점</span>}
-                {row.pending && <span className="font-bold text-amber-700">순서 확인 필요</span>}
-                {row.warn && <span className="font-bold text-amber-700">노선 밖 승객 · 정차 확인 필요</span>}
+                {row.isHub && <span className="font-bold text-[var(--color-academy-success)]">무료 거점</span>}
+                {row.pending && <span className="font-bold text-[var(--color-academy-warning)]">순서 확인 필요</span>}
+                {row.warn && <span className="font-bold text-[var(--color-academy-warning)]">노선 밖 승객 · 정차 확인 필요</span>}
                 {isUpcoming && upcoming && <span className={styles.upcomingBadge}>{upcoming.remainingMinutes != null && upcoming.remainingMinutes <= 5 ? upcoming.remainingMinutes === 0 ? "곧 도착 · 예정 시각" : `곧 도착 · ${upcoming.remainingMinutes}분 후` : `다음 정류장 · ${upcoming.remainingMinutes}분 후`}</span>}
               </div>
             </div>
 
-            {row.isHub && row.riders.length === 0 && <p className="mt-1.5 text-[15px] font-bold text-green-700">무료 거점(워크인, 정원 별도)</p>}
+            {row.isHub && row.riders.length === 0 && <p className="mt-1.5 text-[15px] font-bold text-[var(--color-academy-success)]">무료 거점(워크인, 정원 별도)</p>}
 
             {row.riders.length > 0 && (
               <div className={`${styles.riders} space-y-1`}>

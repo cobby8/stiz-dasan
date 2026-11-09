@@ -237,19 +237,19 @@ export default function QuickPostClient({
   }
 
   return (
-    <main className="min-h-screen bg-surface-warm px-4 py-5 dark:bg-gray-950 dark:text-gray-100">
+    <main className="min-h-screen bg-surface-warm px-4 py-5">
       <div className="mx-auto max-w-md space-y-4">
         <header className="flex items-center justify-between">
           <div>
-            {roleLabel && <p className="text-xs font-bold tracking-wide text-brand-orange-600 dark:text-brand-neon-lime">{roleLabel}</p>}
-            <h1 className="text-2xl font-black text-brand-navy-900 dark:text-white">사진 올리기</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">{currentUser.name} 선생님</p>
+            {roleLabel && <p className="text-xs font-bold tracking-wide text-[var(--color-academy-muted)]">{roleLabel}</p>}
+            <h1 className="text-2xl font-black text-[var(--color-academy-ink)]">사진 올리기</h1>
+            <p className="text-sm text-[var(--color-academy-muted)]">{currentUser.name} 선생님</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={goBack}
-              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-600 transition hover:border-brand-orange-500 hover:text-brand-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime"
+              className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]"
             >
               <SymbolIcon name="arrow_back" size={15} />
               이전
@@ -257,14 +257,14 @@ export default function QuickPostClient({
             {/* 선생님 앱의 "홈"은 /staff 다. 공개 홈페이지로 보내면 설치된 앱이 제 범위를
                 벗어나 주소표시줄이 뜨고 돌아올 길이 없다(프로필 메뉴에서 공개 링크를
                 모두 뺀 것과 같은 이유). */}
-            <Link href="/staff" className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-bold text-gray-600 transition hover:border-brand-orange-500 hover:text-brand-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime">
+            <Link href="/staff" className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-white px-2.5 text-xs font-bold text-[var(--color-academy-muted)] transition hover:border-[var(--color-academy-ink)] hover:text-[var(--color-academy-ink)]">
               <SymbolIcon name="home" size={15} />
               홈
             </Link>
           </div>
         </header>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <section className="rounded-lg border border-[var(--color-academy-line)] bg-white p-4 shadow-sm">
           <div className="grid grid-cols-2 gap-2">
             {LESSON_TYPES.map((type) => (
               <button
@@ -273,8 +273,8 @@ export default function QuickPostClient({
                 onClick={() => setLessonType(type)}
                 className={`min-h-10 rounded-lg border px-3 text-sm font-bold transition ${
                   lessonType === type
-                    ? "border-brand-orange-500 bg-orange-50 text-brand-orange-700 dark:border-brand-neon-lime dark:bg-brand-neon-lime dark:text-brand-navy-900"
-                    : "border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                    ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-ink)]"
+                    : "border-[var(--color-academy-line)] bg-white text-[var(--color-academy-muted)]"
                 }`}
               >
                 {type}
@@ -286,7 +286,7 @@ export default function QuickPostClient({
             value={memo}
             onChange={(event) => setMemo(event.target.value)}
             rows={3}
-            className="mt-3 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm leading-6 text-gray-900 outline-none placeholder:text-gray-400 focus:border-brand-orange-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+            className="mt-3 w-full resize-none rounded-lg border border-[var(--color-academy-line)] bg-white px-3 py-2 text-sm leading-6 text-[var(--color-academy-ink)] outline-none placeholder:text-[var(--color-academy-faint)] focus:border-[var(--color-academy-primary)]"
             placeholder="오늘 수업 포인트를 짧게 적어주세요"
           />
 
@@ -303,7 +303,7 @@ export default function QuickPostClient({
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={busy}
-            className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-brand-orange-500 px-4 py-3 text-sm font-black text-white transition hover:bg-brand-orange-600 disabled:opacity-60 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+            className="mt-3 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary)] px-4 py-3 text-sm font-black text-white transition hover:bg-[var(--color-academy-primary-hover)] disabled:opacity-60"
           >
             <SymbolIcon name={busy ? "progress_activity" : "photo_camera"} size={20} className={busy ? "animate-spin" : ""} />
             사진 선택하고 AI 초안 만들기
@@ -311,21 +311,21 @@ export default function QuickPostClient({
         </section>
 
         {message && (
-          <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-bold text-green-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-success)]">
             <SymbolIcon name="check_circle" size={17} />
             {message}
           </div>
         )}
 
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          <div className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-danger)]">
             {error}
           </div>
         )}
 
         {draft && (
           <section className="space-y-3">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+            <div className="rounded-lg border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-4 text-[var(--color-academy-success)]">
               <div className="flex items-center gap-2 text-sm font-black">
                 <SymbolIcon name="check_circle" size={18} />
                 {isPublished
@@ -334,7 +334,7 @@ export default function QuickPostClient({
                     ? "홈페이지 게시 완료"
                     : "AI 초안 준비 완료"}
               </div>
-              <p className="mt-2 text-xs leading-5 text-green-700 dark:text-emerald-300">
+              <p className="mt-2 text-xs leading-5 text-[var(--color-academy-success)]">
                 {isPublished
                   ? "홈페이지 갤러리와 인스타그램 게시가 완료됐습니다."
                   : hasPublishingStatus
@@ -346,7 +346,7 @@ export default function QuickPostClient({
               {canApprove && (
                 <Link
                   href="/admin/gallery"
-                  className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-green-700 px-3 text-sm font-black text-white"
+                  className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-success)] px-3 text-sm font-black text-white"
                 >
                   관리자 갤러리 보기
                   <SymbolIcon name="arrow_forward" size={17} />
@@ -358,7 +358,7 @@ export default function QuickPostClient({
                   <HideInInstalledApp>
                   <Link
                     href="/gallery"
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-green-200 bg-white px-3 text-sm font-black text-green-700 dark:border-emerald-500/30 dark:bg-gray-900 dark:text-emerald-300"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--color-academy-success)] bg-white px-3 text-sm font-black text-[var(--color-academy-success)]"
                   >
                     홈페이지 갤러리 보기
                     <SymbolIcon name="arrow_forward" size={17} />
@@ -369,7 +369,7 @@ export default function QuickPostClient({
                       href={draft.instagramPermalink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-green-700 px-3 text-sm font-black text-white"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-success)] px-3 text-sm font-black text-white"
                     >
                       인스타그램 게시물 보기
                       <SymbolIcon name="arrow_forward" size={17} />
@@ -431,15 +431,15 @@ export default function QuickPostClient({
         )}
 
         {hasPublishingStatus && !busy && (
-          <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm font-bold text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300">
+          <div className="flex items-start gap-3 rounded-lg border border-[var(--color-academy-info)] bg-[var(--color-academy-info-soft)] p-4 text-sm font-bold text-[var(--color-academy-info)]">
             <SymbolIcon name="progress_activity" size={18} className="mt-0.5 shrink-0 animate-spin" />
             <p>인스타그램 게시를 처리 중입니다.</p>
           </div>
         )}
 
         {busy && (
-          <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-4 text-sm font-bold text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <SymbolIcon name="auto_awesome" size={18} className="mt-0.5 shrink-0 text-brand-orange-500 dark:text-brand-neon-lime" />
+          <div className="flex items-start gap-3 rounded-lg border border-[var(--color-academy-line)] bg-white p-4 text-sm font-bold text-[var(--color-academy-muted)]">
+            <SymbolIcon name="auto_awesome" size={18} className="mt-0.5 shrink-0 text-[var(--color-academy-muted)]" />
             <div className="min-w-0 flex-1">
               <p>{progressText || "처리 중입니다."}</p>
               {uploadProgress && uploadProgress.total > 0 && (
@@ -450,9 +450,9 @@ export default function QuickPostClient({
                       {uploadProgress.done}/{uploadProgress.total}
                     </span>
                   </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
                     <div
-                      className="h-full rounded-full bg-brand-orange-500 transition-all dark:bg-brand-neon-lime"
+                      className="h-full rounded-full bg-[var(--color-academy-info)] transition-all"
                       style={{ width: `${Math.round((uploadProgress.done / uploadProgress.total) * 100)}%` }}
                     />
                   </div>
