@@ -238,3 +238,36 @@ test("승인됐지만 시작 전인 휴원은 «휴원 예정»과 학원 연락
   assert.equal(findButton(waiting, "복귀 신청하기"), undefined);
   assert.match(allText(waiting), /복귀 예정 · 2026-11-20부터/);
 });
+
+// ── 2026-11-10 원장 재점검: 김루빈(한 학생·월/수 두 반·둘 다 다니는 중) 휴원 → «복귀 버튼 안 보여» ─────────
+// 운영 데이터 모양 그대로: 같은 학생이 반 2개로 두 줄 나온다. 두 번째 반(수요일)을 골라 휴원을 보낸다.
+const twoClasses = (pendingB = null) => ({
+  effectiveFrom: "2026-12-01", minEffectiveFrom: "2026-11-11", maxEffectiveFrom: "2027-02-10",
+  minResumeFrom: "2026-11-10", maxResumeFrom: "2027-02-10", classes: [],
+  children: [
+    { studentId: "student-r", studentName: "합성", enrollmentId: "enrollment-mon", currentClassId: "class-mon", currentClassName: "월요일 4교시", currentProgramName: "합성", enrollmentStatus: "ACTIVE", scheduled: null, pending: null },
+    { studentId: "student-r", studentName: "합성", enrollmentId: "enrollment-wed", currentClassId: "class-wed", currentClassName: "수요일 4교시", currentProgramName: "합성", enrollmentStatus: "ACTIVE", scheduled: null, pending: pendingB },
+  ],
+});
+
+test("한 학생이 두 반이면 고른 반(두 번째)으로 휴원을 보내고, 접수 뒤엔 «휴원 신청 취소»만 — 복귀는 휴원이 시작돼야 생긴다", async () => {
+  const h = harness();
+  h.set({ childIdx: 1, kind: "PAUSE" });
+  const before = flatten(h.render(twoClasses()));
+  assert.ok(before.some((x) => x.el?.type === "select"), "반이 둘이면 반 고르기가 보여야 한다");
+  const bodies = [];
+  globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return { status: 200, ok: true, json: async () => ({ ok: true, id: "request-w", kind: "PAUSE", effectiveFrom: "2026-12-01", resumeOn: null, toClassName: null, waitlisted: false }) }; };
+  findButton(before, "신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  assert.equal(bodies.length, 1);
+  assert.deepEqual({ enrollmentId: bodies[0].enrollmentId, kind: bodies[0].kind }, { enrollmentId: "enrollment-wed", kind: "PAUSE" });
+
+  const after = flatten(h.render(twoClasses()));
+  assert.equal(confirmOf(after).props.label, "휴원 신청 취소");
+  assert.equal(findButton(after, "복귀 신청하기"), undefined, "검토 중(아직 다니는 중)인 반에는 복귀 신청이 없다 — 설계");
+
+  // 다른 반(월요일)으로 바꾸면 그 반은 아무 신청이 없어 다시 신청할 수 있다(잠금이 반마다 따로)
+  h.set({ childIdx: 0 });
+  const other = flatten(h.render(twoClasses()));
+  assert.equal(findButton(other, "신청하기").props.disabled, false);
+});
