@@ -167,6 +167,20 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
   }));
 }
 
+/**
+ * 휴원 1건의 수강료 처리 미리보기(다른 화면 — 예: 신청함 상세 칸 — 이 승인 전에 금액·지문을 받을 때).
+ * 휴원이 아니면 null. 결과의 previewKey 를 decideEnrollmentChange({ settlement: { mode, expectedPreviewKey } }) 에 그대로 넘긴다.
+ */
+export async function getPauseSettlementPreview(requestId: string): Promise<AdminSettlementPreview | null> {
+  const preview = await previewPauseSettlement(prisma, requestId, await loadClassDatesFor());
+  if (!preview) return null;
+  const { plan, ...rest } = preview;
+  return {
+    ...rest, paidTotal: plan.paidTotal, unpaidTotal: plan.unpaidTotal, problems: plan.problems,
+    channels: [...new Set(plan.lines.filter((l) => l.paid).map((l) => l.channel))],
+  };
+}
+
 /** 휴원 수강료 처리 기능 시작일(KST) — 이보다 먼저 승인된 휴원에는 «수강료 처리» 미리보기·버튼을 띄우지 않는다 */
 const PAUSE_SETTLEMENT_SINCE = "2026-11-10";
 
