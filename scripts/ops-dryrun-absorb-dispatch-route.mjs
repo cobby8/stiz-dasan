@@ -17,7 +17,8 @@
 //
 // 사용법 (worktree 에 node_modules 가 없으면 pg 를 찾도록 cwd 를 본 저장소로 두고 실행)
 //   node scripts/ops-dryrun-absorb-dispatch-route.mjs [--month 2026-11] [--day Thu] [--direction PICKUP]
-//        [--also-month 2026-12] [--env <.env 경로>] [--out <결과 폴더>] [--stamp 20261109]
+//        [--also-month 2026-12] [--keep-roster-stop 홍유희] [--env <.env 경로>] [--out <결과 폴더>] [--stamp 20261109]
+//   --keep-roster-stop: 쉼표로 학생 이름/행 id — 정류장 이름·좌표는 명단 값 유지, 순서·시각만 노선 값
 //   --also-month: 그 달 명단이 흡수 전 복사본이면 같은 변경을 거울 적용(짝 행 1개 + 값 동일할 때만)
 //   결과: <out>/absorb-dryrun.json (차이 목록·전후 화면 스냅샷) · <out>/absorb-apply.sql · <out>/absorb-rollback.sql
 
@@ -128,6 +129,12 @@ function compareScreens(before, after) {
  * 흡수 계획: 저장 노선 순서대로 명단 행에 sortOrder·arriveTime·stopName·좌표를 정한다.
  * sortOrder 는 «그 수업시간 칸이 이미 쓰던 번호만» 돌려 쓴다(요일 전체 한 줄의 다른 행 번호는 그대로).
  */
+// --keep-roster-stop 홍유희,<행id> — 정류장(이름·좌표)은 명단 값 유지, 순서·시각만 노선 값. 이름은 공백 무시 비교.
+const KEEP_ROSTER_STOP = new Set(
+  (arg("keep-roster-stop") ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    .flatMap((s) => [s, normalizeStopName(s)]),
+);
+
 function planAbsorb({ route, dayRows, allDayStops, rowIdsByStudentId }) {
   const stopDir = route.direction === "PICKUP" ? "BOARD" : "ALIGHT";
   const { sections, leftoverRows } = buildSavedDriverSections({
@@ -179,12 +186,15 @@ function planAbsorb({ route, dayRows, allDayStops, rowIdsByStudentId }) {
     vehiclesPerClass[ct] = [...new Set(list.map((o) => o.vehicle))];
     list.forEach((o, i) => {
       const cur = rowById.get(o.rowId);
+      // 원장이 «명단 정류장이 맞다»고 확인한 학생(--keep-roster-stop)은 정류장 이름·좌표를 명단 값 그대로 두고
+      // 순서·시각만 노선 값으로 옮긴다(2026-11-09 홍유희: 신청서대로 유승한내들센트럴 정문 맘스테이션).
+      const keepStop = KEEP_ROSTER_STOP.has(cur.id) || KEEP_ROSTER_STOP.has(normalizeStopName(cur.studentName));
       const next = {
         sortOrder: slots[i],
         arriveTime: o.time ?? cur.arriveTime,
-        stopName: o.label,
-        latitude: coord(o.lat, cur.latitude),
-        longitude: coord(o.lng, cur.longitude),
+        stopName: keepStop ? cur.stopName : o.label,
+        latitude: keepStop ? cur.latitude : coord(o.lat, cur.latitude),
+        longitude: keepStop ? cur.longitude : coord(o.lng, cur.longitude),
       };
       const changed = Object.keys(next).filter((k) => (k === "stopName" ? next[k] !== cur[k] : String(next[k] ?? "") !== String(cur[k] ?? "")));
       updates.push({

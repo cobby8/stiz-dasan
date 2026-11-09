@@ -74,6 +74,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-09 | developer 수정 1차(흡수 드라이런, 원장 확인 반영): --keep-roster-stop 옵션 — 홍유희 정류장·좌표는 명단(유승한내들센트럴 정문 맘스테이션) 유지·순서·시각만 노선 → 19:00 한 카드 합쳐짐 없음. 김태현·박한별 제외 확정. 12월 거울 포함. apply/rollback/select SQL 재생성(30행, 정류장 변경 0). 흡수 후 11·12월 목 등원 = 정차 11·학생 15(전 12·17) | 원장 확인 반영·적용 대기 |
 | 11-09 | developer(셔틀 통합 3단계 저장 노선 흡수 드라이런, 읽기 전용): scripts/ops-dryrun-absorb-dispatch-route.mjs(BEGIN READ ONLY·기사님 화면 함수 buildSavedDriverSections/assemble 그대로 사용·전후 화면 스냅샷 비교·--also-month 거울) + scripts/sql/absorb-dispatch-route-dryrun-select.sql(MCP용 SELECT) + -20261109-apply.sql/-rollback.sql(초안·미실행·백업표·사전/사후 검증 DO). 결과: 11월 목 등원 노선 17명 중 15행 변경(순서·시각, 홍유희 정류장명 1건, 이성빈 sortOrder 23 중복→24), 노선에만 있는 2명(김태현 목6교시 퇴원·박한별 휴원 — 명단 행 없음, 흡수 후 화면에서 빠짐), 홍유희·이성빈 19:00/19:02 두 카드→19:00 한 카드. 12월 목 등원 = 11월 흡수 전 복사본·12월 노선 없음 → 거울 15행 포함(흡수달과 화면 동일). 원장 확인 대기 | 원장 확인 대기 |
 | 11-09 | developer(셔틀 기존 정류장 추천 장소명 일치 우선, 원장 승인 허재원 후문 사례): 공용 순수 함수 lib/shuttle/stopNameMatch.ts(pickNearbyStop — 정규화·출입구 단어·같은 단지·300m) → 관리자 학생 추가 suggestPlacement ②·기사님/관리자 새 학생 배정 planLeg 추천이 같은 함수, 추천 배지 옆 이유(«이름 일치: 후문»/«가장 가까움 88m»). 테스트 8개. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |
 | 11-09 | developer(셔틀 미운행 반 칸 제외, 원장 발견 허재원 토 등원/하원): 공용 판정 classRunsShuttle(workbench-pricing, 평일+runsShuttle) → 배정 보드(driverAssign)·신청 검토(shuttle-review-query)·배차 진행(shuttle-progress-query)·청구 셔틀비 같은 함수. 테스트 4개 추가. tsc 0·tests 3530-0·studentVisibility 5-0 | 검수 대기 |

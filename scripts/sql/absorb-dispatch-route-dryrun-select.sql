@@ -36,7 +36,10 @@ route_students AS (
 SELECT rs.vi, rs.si, rs.ti, rs.route_name, rs.label AS route_stop, rs.route_time,
        rss."id" AS row_id, rss."classTime", rss."sortOrder" AS cur_sort,
        rss."arriveTime" AS cur_time, rss."stopName" AS cur_stop,
-       CASE WHEN rss."id" IS NULL THEN '명단 행 없음(흡수 후 화면에서 사라짐)'
+       -- 원장 확인(11-09): 홍유희 정류장은 명단 값 유지(순서·시각만 노선). 김태현·박한별은 명단 추가 없이 빠짐.
+       CASE WHEN rss."id" IS NULL THEN '명단 행 없음(흡수 후 화면에서 사라짐 — 원장 확정)'
+            WHEN regexp_replace(rss."studentName", '\s', '', 'g') = '홍유희'
+             AND regexp_replace(rss."stopName", '\s', '', 'g') <> regexp_replace(rs.label, '\s', '', 'g') THEN '정류장 명단 값 유지(원장 확인) · 시각만'
             WHEN regexp_replace(rss."stopName", '\s', '', 'g') <> regexp_replace(rs.label, '\s', '', 'g') THEN '정류장 이름 다름'
             WHEN rss."arriveTime" IS DISTINCT FROM rs.route_time THEN '시각 다름'
             ELSE '' END AS note
