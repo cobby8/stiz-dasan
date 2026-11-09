@@ -40,7 +40,9 @@ async function context(db: Db, app: App, month: string, lock = false) {
   const locations = await db.$queryRawUnsafe<Location[]>(`SELECT kind,COALESCE(name,'') AS name,address,latitude,longitude,"confirmedAt"::text,"consentVersion","updatedAt"::text AS "locationVersion" FROM "StudentShuttleLocation" WHERE "studentId"=$1 ORDER BY kind${lock ? ' FOR SHARE' : ''}`, app.convertedStudentId);
   const weekdays = [...new Set(classes.map(c => ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(c.dayOfWeek)))];
   const roster = await db.$queryRawUnsafe<unknown[]>(`SELECT id,weekday,direction,"studentId","classTime","arriveTime","stopName",latitude,longitude,"sortOrder","importedAt"::text FROM "RegularShuttleStop" WHERE "serviceMonth"=$1 AND weekday=ANY($2::int[]) ORDER BY id${lock ? ' FOR SHARE' : ''}`, month, weekdays);
-  const routes = await db.$queryRawUnsafe<unknown[]>(`SELECT id,"dayOfWeek",direction,payload,"updatedAt"::text FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1 AND "dayOfWeek"=ANY($2::text[]) ORDER BY id${lock ? ' FOR SHARE' : ''}`, month, classes.map(c => c.dayOfWeek));
+  // 6단계(2026-11-09): 저장 노선(RegularDispatchRoute)은 더 읽지 않는다 — 명단(위 roster)이 정본.
+  // 지문 모양은 그대로 두려고 routes 칸은 빈 배열로 고정한다(저장 노선이 없던 요일의 기존 검토 요청 지문이 그대로 맞는다).
+  const routes: unknown[] = [];
   const fingerprint = reviewFingerprint({ applicationId: app.id, studentId: app.convertedStudentId, studentName: app.studentName, grade: app.grade, month, requestedStartOn: app.requestedStartOn, requestedTime: app.shuttleTime, applicationVersion: app.applicationVersion, classes, locations, roster, routes });
   return { classes, locations, fingerprint };
 }

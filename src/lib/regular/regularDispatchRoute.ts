@@ -3,11 +3,7 @@ import { requireAdmin } from "@/lib/auth-guard";
 // reconcile/diff 는 의존성 없는 순수 공용 모듈이다(방학특강과 100% 공유).
 // 유효 라이더 집합만 정규 명단(getRegularShuttleRiders)으로 바꿔 넘기면 그대로 동작한다.
 import { reconcileSavedVehicles, diffSavedRoute } from "@/lib/seasonal/dispatchReconcile";
-import type { SavedRouteChange, ConfirmedDispatchEta } from "@/lib/seasonal/dispatchRoute";
-// 저장 payload에서 정차별 확정 라벨(승차/하차)을 뽑는 순수 로직 — 방학특강과 100% 공유(중복 0).
-// 정규는 매칭키가 studentId 지만, 정규 payload도 학생 식별키로 studentId 를 requestId 자리에 넣어 저장하므로
-// extractEtaByRequestId 를 그대로 재사용할 수 있다(Phase 1 에서 requestId←studentId 로 어댑트됨).
-import { extractEtaByRequestId } from "@/lib/seasonal/dispatchEtaLookup";
+import type { SavedRouteChange } from "@/lib/seasonal/dispatchRoute";
 import type { DispatchSuggestion } from "@/lib/seasonal/shuttle-optimize";
 import { getRegularShuttleRiders } from "./shuttleRoster";
 import { computeRegularDispatch } from "./shuttle-dispatch";
@@ -139,82 +135,8 @@ export async function getSavedRegularDispatchRoute(
   }
 }
 
-/**
- * 정규 셔틀의 "확정 승/하차 시각"을 저장된 배차 노선(RegularDispatchRoute)에서 찾아 돌려준다(학부모 마이페이지 Phase 3).
- *
- * 방학특강 getConfirmedDispatchEtas 의 정규판이다. 차이점은 두 가지뿐:
- *   1) 저장 단위가 (날짜 × 방향)이 아니라 **(요일 × 방향)** 이다 → 자녀 반의 요일로 조회한다.
- *   2) 학생 식별키가 shuttleRequestId 가 아니라 **studentId** 다(정규 payload가 studentId 로 저장됨).
- *      단, extractEtaByRequestId 는 "정차 students[].requestId" 문자열을 매칭하는데 정규는 그 자리에 studentId 를
- *      넣어 저장하므로(Phase 1 어댑트), 매칭키를 studentId 로 넘기면 그대로 동작한다(순수 로직 재사용).
- *
- * 입력: 본인 자녀 각각의 {studentId, 반 요일} 쌍. 반환 맵의 키 = `${studentId}::${dayOfWeek}`.
- *   (같은 자녀가 요일이 다른 두 반을 다니면 요일별로 확정시각이 다를 수 있어 요일까지 키에 넣는다.)
- *
- * 권한: 조회 함수는 인증하지 않는다(게이트웨이 원칙). 호출부(parent.ts)가 본인 자녀 studentId 만 넘기므로
- *   여기서 다시 필터하지 않는다(IDOR 안전). 미배차/미저장 요일은 자연히 빈 값(null)으로 남는다.
- */
-export function regularEtaKey(studentId: string, dayOfWeek: string, serviceMonth?: string): string {
-  return `${studentId}::${dayOfWeek}${serviceMonth ? `::${serviceMonth}` : ""}`;
-}
-
-export async function getConfirmedRegularDispatchEtas(
-  pairs: { studentId: string; dayOfWeek: string }[],
-  serviceMonth: string = koreaServiceMonth(),
-): Promise<Map<string, ConfirmedDispatchEta>> {
-  const result = new Map<string, ConfirmedDispatchEta>();
-  if (!isServiceMonth(serviceMonth)) return result;
-  // 유효한 (studentId, 요일) 쌍만 추린다. 요일은 화이트리스트(normDow)로 걸러 SQL 주입·오타를 막는다.
-  const clean = (pairs ?? [])
-    .map((p) => ({ studentId: typeof p.studentId === "string" ? p.studentId : "", dow: normDow(p.dayOfWeek) }))
-    .filter((p): p is { studentId: string; dow: string } => p.studentId !== "" && p.dow != null);
-  if (clean.length === 0) return result;
-
-  // 미리 모든 쌍을 빈 값으로 채워 둔다(조회 실패/미저장이어도 안전하게 null 로 응답).
-  for (const p of clean) result.set(regularEtaKey(p.studentId, p.dow, serviceMonth), { pickupEtaLabel: null, dropoffEtaLabel: null });
-
-  // 필요한 요일만 조회한다(전체 요일 × 2방향은 최대 14행이라 매우 가볍다).
-  const dows = [...new Set(clean.map((p) => p.dow))];
-  // studentId → 그 학생이 필요로 하는 요일 집합. 아래서 "이 학생의 요일과 일치하는 노선"만 반영한다.
-  const dowsByStudent = new Map<string, Set<string>>();
-  for (const p of clean) {
-    const set = dowsByStudent.get(p.studentId) ?? new Set<string>();
-    set.add(p.dow);
-    dowsByStudent.set(p.studentId, set);
-  }
-  const wantStudents = new Set(clean.map((p) => p.studentId));
-
-  try {
-    const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      `SELECT "dayOfWeek", "direction", "payload"
-         FROM "RegularDispatchRoute"
-        WHERE "dayOfWeek" = ANY($1::text[])
-          AND "serviceMonth"=$2`,
-      dows, serviceMonth,
-    );
-    for (const r of rows) {
-      const dow = normDow(r.dayOfWeek);
-      const dir = normDir(r.direction);
-      if (!dow || !dir) continue;
-      const payload = r.payload as { vehicles?: unknown } | null;
-      // 매칭키 = studentId(정규 payload 저장 규칙). 정차 라벨 맵을 만든다.
-      const byStudent = extractEtaByRequestId(payload?.vehicles, dir);
-      if (byStudent.size === 0) continue;
-      for (const studentId of wantStudents) {
-        // 이 노선의 요일을 실제로 다니는 자녀만 반영한다(요일 불일치 오염 방지).
-        if (!dowsByStudent.get(studentId)?.has(dow)) continue;
-        const label = byStudent.get(studentId);
-        if (!label) continue;
-        const cur = result.get(regularEtaKey(studentId, dow, serviceMonth))!;
-        if (dir === "PICKUP" && cur.pickupEtaLabel == null) cur.pickupEtaLabel = label;
-        if (dir === "DROPOFF" && cur.dropoffEtaLabel == null) cur.dropoffEtaLabel = label;
-      }
-    }
-  } catch {
-    // 테이블이 아직 없는 구버전 DB 등 → 시각 없음으로 둔다(학부모 화면은 종전과 동일).
-  }
-  return result;
-}
+// 학부모 «확정 승/하차 시각»은 6단계(2026-11-09)부터 셔틀 명단에서 읽는다 → src/lib/shuttle/regularRosterEta.ts
+// (이 파일의 저장 노선 판본 getConfirmedRegularDispatchEtas 는 지웠다 — 명단을 고쳐도 옛 시각이 보이던 원인).
 
 /** 조정된 정규 노선을 저장(덮어쓰기). 원장/관리자만. */
 export async function saveRegularDispatchRoute(input: {

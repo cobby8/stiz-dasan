@@ -221,3 +221,9 @@
 - **발견자**: developer
 - **내용**: 운행 정본은 `RegularShuttleStop`(명단) 하나. 기사님(`regularDriverRoute.ts`)·관리자(`admin/shuttle/regular-dispatch/RegularRunEditor.tsx`)가 같은 순수 조립 `buildRegularRunRows`(lib/shuttle/regularRunRows.ts)와 같은 카드 틀 `RunBoard`(mode driver|admin)·같은 CSS(DriverWorkspace)를 쓴다. 저장 노선(`RegularDispatchRoute`)은 읽지 않음(테이블은 남김, 흡수 SQL 은 PM). 관리자 편집은 모두 `/api/admin/shuttle/regular-roster`(reorder 묶음별·editStop·editStudent·DELETE 범위), 반 이동 재배정은 배정 보드(`/api/staff/shuttle/assign` reassign:true). 바뀌면 서버가 기사님께 «노선 확인하기»(`/staff/run?date=&focus=BOARD|ALIGHT`) 알림. 관리자 화면에 자체 묶음·자동 제안을 다시 만들지 말 것(가드: tests/regular-roster-driver-view.test.mjs).
 - **참조횟수**: 0
+
+### [2026-11-09] 정규 셔틀 정본 = 명단 — 저장 노선 읽기 지점 0 (통합 6단계)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 확정 시각(lib/shuttle/regularRosterEta)·안내 문자/배차 진행(enrollment/shuttle-progress: buildStudentRouteNotice·studentRosterFingerprint)·신청 검토 지문(routes=[] 고정)·결석/셔틀 기사 알림(operational-staff-notification: 그날 명단에 학생 있으면 기사 역할 전원)·월 복사·기사님 순서 저장 API 가 모두 RegularShuttleStop 만 읽는다. RegularDispatchRoute 는 /api/admin/regular/dispatch/saved(부르는 화면 없음)와 regularDispatchRoute.ts 저장 함수에만 남음(테이블 삭제는 별도 결정). 명단 달 고르기는 «그 달 이하 최신 달»(SQL max ≤ 월 = pickServiceMonthFor).
+- **참조횟수**: 0

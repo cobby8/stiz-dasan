@@ -3,9 +3,6 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth-guard";
 import { koreaServiceMonth } from "@/lib/regular/serviceMonth";
-import { getSavedRegularDispatchRoute } from "@/lib/regular/regularDispatchRoute";
-import { DOW_NAMES } from "@/lib/regular/shuttleRosterLogic";
-import { pickRegularRouteSource } from "./regularDriverRouteLogic";
 import { getSettings } from "@/lib/seasonal/shuttle-optimize";
 import { isKoreanCoordinate } from "./academyLocation";
 import { dowToWeekday, type EnrolledClass, type GeoPoint } from "./regularRosterPlacementLogic";
@@ -26,7 +23,6 @@ import {
   findCounterpartRows,
   idPairArrays,
   planEnsureMonths,
-  remapStopRowIds,
   RosterInputError,
   validateAddInput,
   validateCopyInput,
@@ -865,24 +861,6 @@ export async function reorderRosterStops(raw: unknown): Promise<{ updated: numbe
   return result;
 }
 
-// ── 정규 배차 저장 노선 사용 여부(조회 전용) ───────────────────────
-
-/**
- * 그 달·요일의 기사님 화면이 방향별로 무엇을 쓰는지 — 정규 배차 저장 노선(true) / 셔틀 명단 순서(false).
- * 기사님 화면과 같은 판정(getSavedRegularDispatchRoute + pickRegularRouteSource)을 그대로 쓴다. 쓰기 없음.
- */
-export async function getRegularRouteStatus(rawMonth: unknown, rawWeekday: unknown): Promise<{ PICKUP: boolean; DROPOFF: boolean }> {
-  await requireAdmin();
-  const month = normalizeRosterMonth(rawMonth);
-  const weekday = normalizeWeekday(rawWeekday);
-  const dow = DOW_NAMES[weekday];
-  const [pickup, dropoff] = await Promise.all([
-    getSavedRegularDispatchRoute(dow, "PICKUP", month),
-    getSavedRegularDispatchRoute(dow, "DROPOFF", month),
-  ]);
-  return { PICKUP: pickRegularRouteSource(pickup) === "SAVED", DROPOFF: pickRegularRouteSource(dropoff) === "SAVED" };
-}
-
 // ── 월 복사(수동 「직전 달 복사」 · 자동 생성 공용) ──────────────────
 
 async function monthRowCount(tx: Tx, month: string): Promise<number> {
@@ -893,15 +871,13 @@ async function monthRowCount(tx: Tx, month: string): Promise<number> {
 }
 
 /**
- * 원본 달 명단을 대상 달로 복사하고, 원본 달의 저장 노선(RegularDispatchRoute)도 대상 달에 없으면 함께 복사한다.
- * - 기사님 화면이 새 달에 저장 노선(순서·시각·담당 기사)을 잃지 않게 하려는 것.
- * - 노선 안 학생 식별값은 studentId 라 그대로 쓰되, 학생 계정 없는 이름만 등록 행의 'stop:<행id>' 는
- *   새 행 id 로 바꿔 넣는다(안 바꾸면 새 달에서 그 학생이 노선에서 빠진다).
+ * 원본 달 명단을 대상 달로 복사한다.
+ * 6단계(2026-11-09): 명단만 복사한다 — 저장 노선(RegularDispatchRoute)은 아무도 읽지 않으므로 새 달로 옮기지 않는다.
  * 호출부가 잠금과 「대상 달이 비었는지」 확인을 책임진다.
  */
 async function copyMonthInTx(
   tx: Tx, sourceMonth: string, targetMonth: string, currentMonth: string,
-): Promise<{ copied: number; routesCopied: number; boardingsMoved: number; driverRequestsMoved: number }> {
+): Promise<{ copied: number; boardingsMoved: number; driverRequestsMoved: number }> {
   // 새 행 id 를 미리 만들어 (옛 id → 새 id) 짝을 얻는다. src 는 두 번 참조되므로 한 번만 계산(materialize)된다.
   const pairs = await tx.$queryRawUnsafe<{ oldId: string; newId: string }[]>(
     `WITH src AS (
@@ -916,24 +892,7 @@ async function copyMonthInTx(
      SELECT src."id" AS "oldId", src."newId" AS "newId" FROM src JOIN ins ON ins."id"=src."newId"`,
     targetMonth, sourceMonth,
   );
-  if (pairs.length === 0) return { copied: 0, routesCopied: 0, boardingsMoved: 0, driverRequestsMoved: 0 };
-  const idMap = new Map(pairs.map((p) => [String(p.oldId), String(p.newId)]));
-
-  const routes = await tx.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT "dayOfWeek","direction","payload","classStart","classEnd","savedByUserId" FROM "RegularDispatchRoute" WHERE "serviceMonth"=$1`,
-    sourceMonth,
-  );
-  let routesCopied = 0;
-  for (const r of routes) {
-    // 대상 달에 이미 저장 노선이 있으면 덮어쓰지 않는다(그 달에서 따로 저장한 노선 보존).
-    routesCopied += Number(await tx.$executeRawUnsafe(
-      `INSERT INTO "RegularDispatchRoute" ("serviceMonth","dayOfWeek","direction","payload","classStart","classEnd","savedByUserId")
-       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7)
-       ON CONFLICT ("serviceMonth","dayOfWeek","direction") DO NOTHING`,
-      targetMonth, r.dayOfWeek, r.direction, JSON.stringify(remapStopRowIds(r.payload, idMap)),
-      r.classStart ?? null, r.classEnd ?? null, r.savedByUserId ?? null,
-    )) || 0;
-  }
+  if (pairs.length === 0) return { copied: 0, boardingsMoved: 0, driverRequestsMoved: 0 };
 
   // 따라잡기 생성(대상 달 <= 이번 달)이면, 그 달 날짜에 옛 행 id 로 남은 탑승체크·제외 요청을 새 id 로 옮긴다.
   // (새 달이 생기는 순간 기사님 화면이 새 행 id 를 쓰므로, 안 옮기면 이미 찍은 체크가 미체크로 보이고 중복 기록이 생긴다.)
@@ -959,7 +918,7 @@ async function copyMonthInTx(
       oldIds, newIds, range.from, range.to,
     )) || 0;
   }
-  return { copied: pairs.length, routesCopied, boardingsMoved, driverRequestsMoved };
+  return { copied: pairs.length, boardingsMoved, driverRequestsMoved };
 }
 
 /** 두 달 잠금 — 전체 잠금 먼저, 달 잠금은 오름차순(교착 방지). */
@@ -986,7 +945,7 @@ export async function copyRosterMonth(raw: unknown): Promise<{ copied: number; t
 
 export type EnsureRosterMonthsResult = {
   currentMonth: string;
-  created: { sourceMonth: string; targetMonth: string; copied: number; routesCopied: number; boardingsMoved: number; driverRequestsMoved: number }[];
+  created: { sourceMonth: string; targetMonth: string; copied: number; boardingsMoved: number; driverRequestsMoved: number }[];
 };
 
 /**
