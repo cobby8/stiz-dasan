@@ -21,7 +21,7 @@ export default async function TermsPage() {
   return (
     <PublicPageLayout>
       {/* 페이지 히어로 */}
-      <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+      <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
         <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
           <AnimateOnScroll>
             <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">이용약관</h1>
@@ -37,7 +37,7 @@ export default async function TermsPage() {
             <ProgramAccordionTerms termsText={termsOfService} hideHeader />
           </AnimateOnScroll>
         ) : (
-          <div className="text-center py-20 text-gray-400">
+          <div className="text-center py-20 text-[var(--color-public-muted)]">
             <p className="text-lg font-medium">이용약관이 아직 등록되지 않았습니다.</p>
           </div>
         )}

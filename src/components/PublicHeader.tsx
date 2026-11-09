@@ -24,8 +24,8 @@ import { useHeaderMenuFit } from "./useHeaderMenuFit";
 import { usePublicOverlayOpen } from "./public-floating";
 
 const MOBILE_ACCOUNT_FALLBACK_ACTION_CLASS = [
-  "flex min-h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-sm font-bold",
-  "text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200",
+  "flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold",
+  "text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]",
 ].join(" ");
 
 const DesktopAccountControls = dynamic<{ initialRole?: AppRole | null }>(
@@ -91,9 +91,9 @@ function DesktopAccountFallback() {
     <Link
       href="/login"
       className={[
-        "hidden md:inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold",
-        "text-gray-700 transition-colors hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-600",
-        "dark:border-gray-700 dark:text-gray-200 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime",
+        "hidden md:inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
+        "text-[var(--color-public-muted)] transition-colors hover:border-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-strong)]",
+        "dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)] dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime",
       ].join(" ")}
     >
       로그인
@@ -106,7 +106,7 @@ function MobileAccountFallback() {
     <div className="grid grid-cols-2 gap-2 mb-3">
       <Link
         href="/login"
-        className="flex min-h-11 items-center justify-center rounded-xl border border-brand-orange-200 bg-white text-sm font-bold text-brand-orange-600 transition-colors hover:bg-brand-orange-50 dark:border-brand-neon-lime/30 dark:bg-gray-900 dark:text-brand-neon-lime"
+        className="flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold text-[var(--color-public-strong)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-brand-neon-lime/30 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime"
       >
         로그인
       </Link>
@@ -224,9 +224,9 @@ export default function PublicHeader({
   return (
     <>
       {/* 유틸리티 바 — 운영시간 + 전화번호 (데스크탑만 표시) */}
-      <div className="public-utility-bar bg-brand-navy-900 dark:bg-black text-white text-xs py-2 hidden md:block border-b border-white/10 dark:border-white/5">
+      <div className="public-utility-bar bg-[var(--color-public-dark)] dark:bg-black text-white text-xs py-2 hidden md:block border-b border-white/10 dark:border-white/5">
         <div className="max-w-6xl mx-auto px-4 flex justify-between items-center">
-          <span className="text-gray-300">{displayOperatingHours}</span>
+          <span className="text-[var(--color-public-dark-muted)]">{displayOperatingHours}</span>
           <div className="flex items-center gap-3">
             <span>상담문의: {phone}</span>
             {/* 큰글씨 모드 토글 — 학부모 편의를 위한 글씨 크기 변경 버튼 */}
@@ -235,8 +235,8 @@ export default function PublicHeader({
               className={[
                 "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold transition-colors",
                 isLargeFont
-                  ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
-                  : "bg-gray-700 text-gray-300 hover:bg-gray-600",
+                  ? "bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
+                  : "bg-gray-700 text-[var(--color-public-dark-muted)] hover:bg-gray-600",
               ].join(" ")}
               aria-label={isLargeFont ? "기본 글씨 크기로 변경" : "큰 글씨 모드로 변경"}
               title={isLargeFont ? "기본 글씨" : "큰 글씨"}
@@ -254,8 +254,8 @@ export default function PublicHeader({
         className={[
           "public-site-header sticky top-0 z-50 transition-all duration-300",
           isScrolled
-            ? "bg-white/95 dark:bg-gray-900/95 backdrop-blur-md shadow-md border-b border-gray-100 dark:border-gray-800"
-            : "bg-white dark:bg-gray-900 shadow-sm border-b border-gray-100 dark:border-gray-800",
+            ? "bg-white/95 dark:bg-[var(--color-public-paper)]/95 backdrop-blur-md shadow-md border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)]"
+            : "bg-white dark:bg-[var(--color-public-paper)] shadow-sm border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)]",
         ].join(" ")}
       >
         <div ref={rowRef} className="public-header-row max-w-6xl mx-auto px-4 py-3 md:py-4 flex items-center justify-between">
@@ -271,7 +271,7 @@ export default function PublicHeader({
                 className="h-10 sm:h-12 w-auto object-contain dark:brightness-0 dark:invert"
                 priority
               />
-              <span className="hidden font-extrabold text-lg text-brand-navy-900 dark:text-white sm:inline sm:text-xl">
+              <span className="hidden font-extrabold text-lg text-[var(--color-public-ink)] dark:text-white sm:inline sm:text-xl">
                 다산2호점
               </span>
             </Link>
@@ -279,12 +279,12 @@ export default function PublicHeader({
 
           {/* ===== 데스크탑 네비게이션 ===== */}
           {/* 순서: 학원 소개 | 수업 안내 v | 소식/안내 v | SHOP | 수업찾기 | [신청하기] */}
-          <nav ref={navRef} inert={collapsed} aria-hidden={collapsed} aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-gray-700 dark:text-gray-300">
+          <nav ref={navRef} inert={collapsed} aria-hidden={collapsed} aria-label="주요 메뉴" className="public-desktop-nav hidden md:flex items-center gap-1 font-bold text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
             {/* 학원 소개 — 독립 링크, 맨 앞 배치 */}
             <Link
               href="/about"
               data-tour-target="nav-about"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               학원 소개
             </Link>
@@ -294,7 +294,7 @@ export default function PublicHeader({
               <div key={group.label} className="public-nav-group relative group">
                 {/* 카테고리 라벨 버튼 — hover 시 드롭다운이 열린다 */}
                 <button
-                  className="flex items-center gap-1 px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+                  className="flex items-center gap-1 px-3 py-2 rounded-lg hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
                 >
                   {group.label}
                   {/* 화살표 — hover 시 회전 */}
@@ -303,14 +303,14 @@ export default function PublicHeader({
 
                 {/* 드롭다운 패널 — group-hover로 보이기/숨기기 */}
                 <div className="public-nav-panel absolute top-full left-0 pt-1 invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 transition-all duration-200">
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 py-2 min-w-[180px]">
+                  <div className="bg-white dark:bg-[var(--color-public-tint)] rounded-lg shadow-lg border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] py-2 min-w-[180px]">
                     {group.items.map((item) => (
                       <Link
                         key={item.href}
                         href={item.href}
                         // data-tour-target: href에서 슬래시 제거 + 해시는 하이픈으로 변환
                         data-tour-target={`nav-${item.href.slice(1).replace("#", "-")}`}
-                        className="block px-4 py-2.5 text-gray-600 dark:text-gray-300 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-gray-700 transition-colors text-sm font-medium"
+                        className="block px-4 py-2.5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-line)] transition-colors text-sm font-medium"
                       >
                         {item.label}
                       </Link>
@@ -323,7 +323,7 @@ export default function PublicHeader({
             <Link
               href="/shop"
               data-tour-target="nav-shop"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               SHOP
             </Link>
@@ -332,13 +332,13 @@ export default function PublicHeader({
             <Link
               href="/simulator"
               data-tour-target="nav-simulator"
-              className="relative px-3 py-2 rounded-lg hover:text-brand-orange-500 dark:hover:text-brand-neon-lime hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
+              className="relative px-3 py-2 rounded-lg hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10  dark:hover:bg-brand-neon-lime/10 transition-colors"
             >
               수업찾기
             </Link>
           </nav>
 
-          <div ref={actionsRef} className="public-header-actions flex items-center gap-1 sm:gap-2 text-gray-700 dark:text-gray-300">
+          <div ref={actionsRef} className="public-header-actions flex items-center gap-1 sm:gap-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
             <ThemeToggle />
             {/* 큰글씨 모드 토글 (모바일 전용) — 유틸리티 바가 안 보이는 모바일에서도 접근 가능 */}
             <button
@@ -347,8 +347,8 @@ export default function PublicHeader({
                 // 게슈탈트 P-13: 터치 영역 44px(h-11 w-11)
                 "public-mobile-font md:hidden flex h-11 w-11 items-center justify-center rounded-lg text-xs font-bold transition-colors",
                 isLargeFont
-                  ? "bg-brand-orange-500 dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700",
+                  ? "bg-[var(--color-public-accent)] dark:bg-brand-neon-lime dark:text-brand-navy-900 text-white"
+                  : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:bg-[var(--color-public-line)] dark:hover:bg-[var(--color-public-line)]",
               ].join(" ")}
               aria-label={isLargeFont ? "기본 글씨 크기로 변경" : "큰 글씨 모드로 변경"}
             >
@@ -363,7 +363,7 @@ export default function PublicHeader({
             <Link
               href="/apply"
               className={[
-                "bg-brand-orange-500 dark:bg-brand-neon-lime hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white dark:text-brand-navy-900 font-bold",
+                "bg-[var(--color-public-accent)] dark:bg-brand-neon-lime hover:bg-[var(--color-public-strong)] dark:hover:bg-lime-400 text-white dark:text-brand-navy-900 font-bold",
                 "px-4 py-2 rounded-xl text-sm transition-all duration-200",
                 "hover:scale-[1.02] hover:shadow-lg dark:shadow-brand-neon-lime/20 active:scale-[0.98]",
                 "hidden sm:inline-flex items-center",
@@ -377,7 +377,7 @@ export default function PublicHeader({
               ref={mobileMenuTriggerRef}
               data-tour-target="hamburger"
               onClick={() => setIsMobileMenuOpen(true)}
-              className="public-menu-trigger md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
+              className="public-menu-trigger md:hidden p-2 rounded-lg hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] transition-colors text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"
               aria-label="메뉴 열기"
               aria-expanded={isMobileMenuOpen}
             >
@@ -406,18 +406,18 @@ export default function PublicHeader({
         aria-hidden={!isMobileMenuOpen}
         inert={!isMobileMenuOpen}
         className={[
-          "public-mobile-menu fixed top-0 right-0 z-[70] flex h-full w-72 flex-col bg-white dark:bg-gray-900 shadow-2xl",
+          "public-mobile-menu fixed top-0 right-0 z-[70] flex h-full w-72 flex-col bg-white dark:bg-[var(--color-public-paper)] shadow-2xl",
           "transform transition-transform duration-300 ease-in-out",
           isMobileMenuOpen ? "translate-x-0" : "translate-x-full",
         ].join(" ")}
       >
         {/* 사이드바 상단 — 닫기 버튼 */}
-        <div className="flex shrink-0 items-center justify-between p-4 border-b border-gray-100 dark:border-gray-800">
-          <span className="font-bold text-brand-navy-900 dark:text-white">메뉴</span>
+        <div className="flex shrink-0 items-center justify-between p-4 border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)]">
+          <span className="font-bold text-[var(--color-public-ink)] dark:text-white">메뉴</span>
           <button
             ref={mobileMenuCloseRef}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300"
+            className="p-2 rounded-lg hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)] transition-colors text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"
             aria-label="메뉴 닫기"
           >
             <FontFreeIcon name="close" size={22} />
@@ -431,19 +431,19 @@ export default function PublicHeader({
             href="/about"
             data-tour-target="mobile-nav-about"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-semibold hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10 hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors"
           >
             학원 소개
           </Link>
 
-          <div className="mx-4 my-2 border-t border-gray-100 dark:border-gray-800" />
+          <div className="mx-4 my-2 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" />
 
           {/* 카테고리 그룹들 */}
           {NAV_GROUPS.map((group, groupIdx) => (
             <div key={group.label}>
               {/* 카테고리 라벨 — 작은 회색 텍스트로 그룹 구분 */}
               <div className="px-6 pt-4 pb-1">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                <span className="text-xs font-bold text-[var(--color-public-muted)] uppercase tracking-wider">
                   {group.label}
                 </span>
               </div>
@@ -454,42 +454,42 @@ export default function PublicHeader({
                   href={item.href}
                   data-tour-target={`mobile-nav-${item.href.slice(1).replace("#", "-")}`}
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-6 py-2.5 text-gray-700 dark:text-gray-300 font-medium hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
+                  className="block px-6 py-2.5 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-medium hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10 hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors"
                 >
                   {item.label}
                 </Link>
               ))}
               {/* 그룹 사이 구분선 */}
               {groupIdx < NAV_GROUPS.length - 1 && (
-                <div className="mx-4 my-2 border-t border-gray-100 dark:border-gray-800" />
+                <div className="mx-4 my-2 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" />
               )}
             </div>
           ))}
 
-          <div className="mx-4 my-2 border-t border-gray-100 dark:border-gray-800" />
+          <div className="mx-4 my-2 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" />
           <Link
             href="/shop"
             data-tour-target="mobile-nav-shop"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-semibold hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10 hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors"
           >
             SHOP
           </Link>
 
           {/* 수업찾기 — 독립 링크, 맨 뒤 배치 */}
-          <div className="mx-4 my-2 border-t border-gray-100 dark:border-gray-800" />
+          <div className="mx-4 my-2 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" />
           <Link
             href="/simulator"
             data-tour-target="mobile-nav-simulator"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block px-6 py-3 text-gray-700 dark:text-gray-300 font-semibold hover:bg-brand-orange-50 dark:hover:bg-brand-neon-lime/10 hover:text-brand-orange-500 dark:hover:text-brand-neon-lime transition-colors"
+            className="block px-6 py-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] font-semibold hover:bg-[var(--color-public-tint)] dark:hover:bg-brand-neon-lime/10 hover:text-[var(--color-public-accent)] dark:hover:text-brand-neon-lime transition-colors"
           >
             수업찾기
           </Link>
         </nav>
 
         {/* 사이드바 하단 — 연락처 + CTA. flex 세로라서 로그아웃(order-last)이 맨 아래로 간다(게슈탈트 P-10) */}
-        <div className="shrink-0 flex flex-col p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950">
+        <div className="shrink-0 flex flex-col p-4 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)] bg-[var(--color-public-tint)] dark:bg-[var(--color-public-paper)]">
           <MobileAccountControls
             initialRole={accountRole}
             onNavigate={() => setIsMobileMenuOpen(false)}
@@ -497,13 +497,13 @@ export default function PublicHeader({
           <Link
             href="/apply"
             onClick={() => setIsMobileMenuOpen(false)}
-            className="block w-full bg-brand-orange-500 dark:bg-brand-neon-lime hover:bg-brand-orange-600 dark:hover:bg-lime-400 text-white dark:text-brand-navy-900 font-bold py-3 rounded-xl text-center transition-colors mb-3"
+            className="block w-full bg-[var(--color-public-accent)] dark:bg-brand-neon-lime hover:bg-[var(--color-public-strong)] dark:hover:bg-lime-400 text-white dark:text-brand-navy-900 font-bold py-3 rounded-xl text-center transition-colors mb-3"
           >
             신청하기
           </Link>
           <a
             href={`tel:${phone.replace(/-/g, "")}`}
-            className="block text-center text-sm text-gray-500 dark:text-gray-400 hover:text-brand-navy-900 dark:hover:text-white transition-colors"
+            className="block text-center text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] dark:hover:text-white transition-colors"
           >
             상담전화: {phone}
           </a>
@@ -513,8 +513,8 @@ export default function PublicHeader({
             className={[
               "w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-colors",
               isLargeFont
-                ? "bg-brand-orange-100 dark:bg-brand-neon-lime/20 text-brand-orange-600 dark:text-brand-neon-lime border border-brand-orange-200 dark:border-brand-neon-lime/30"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700",
+                ? "bg-[var(--color-public-tint)] dark:bg-brand-neon-lime/20 text-[var(--color-public-strong)] dark:text-brand-neon-lime border border-[var(--color-public-line)] dark:border-brand-neon-lime/30"
+                : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] border border-[var(--color-public-line)] dark:border-[var(--color-public-line)]",
             ].join(" ")}
           >
             <span className="text-base font-black">가</span>

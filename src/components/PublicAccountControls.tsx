@@ -10,26 +10,26 @@ import AccountViewSwitcher from "./AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
 
 const DESKTOP_ACCOUNT_CLASS = [
-  "hidden md:inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold",
-  "text-gray-700 transition-colors hover:border-brand-orange-300 hover:bg-brand-orange-50 hover:text-brand-orange-600",
-  "dark:border-gray-700 dark:text-gray-200 dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime",
+  "hidden md:inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
+  "text-[var(--color-public-muted)] transition-colors hover:border-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-strong)]",
+  "dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)] dark:hover:border-brand-neon-lime/40 dark:hover:bg-brand-neon-lime/10 dark:hover:text-brand-neon-lime",
 ].join(" ");
 
 const DESKTOP_LOGOUT_CLASS = [
-  "inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold",
-  "text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900",
-  "dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white",
+  "inline-flex items-center rounded-xl border border-[var(--color-public-line)] px-3 py-2 text-sm font-bold",
+  "text-[var(--color-public-muted)] transition-colors hover:border-gray-300 hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-ink)]",
+  "dark:border-[var(--color-public-line)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-tint)] dark:hover:text-white",
 ].join(" ");
 
 const MOBILE_SECONDARY_ACTION_CLASS = [
-  "flex min-h-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-sm font-bold",
-  "text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200",
+  "flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold",
+  "text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]",
 ].join(" ");
 
 const HEADER_ICON_ACTION_CLASS = [
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200",
-  "bg-white text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900",
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white",
+  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-public-line)]",
+  "bg-white text-[var(--color-public-muted)] transition-colors hover:border-gray-300 hover:bg-[var(--color-public-tint)] hover:text-[var(--color-public-ink)]",
+  "dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)] dark:hover:bg-[var(--color-public-tint)] dark:hover:text-white",
 ].join(" ");
 
 type AccountControlsProps = {
@@ -164,7 +164,7 @@ export function MobileAccountControls({
       ) : <Link
         href={accountHref}
         onClick={onNavigate}
-        className={`flex min-h-11 items-center justify-center rounded-xl border border-brand-orange-200 bg-white text-sm font-bold text-brand-orange-600 transition-colors hover:bg-brand-orange-50 dark:border-brand-neon-lime/30 dark:bg-gray-900 dark:text-brand-neon-lime${accountSpan}`}
+        className={`flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white text-sm font-bold text-[var(--color-public-strong)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-brand-neon-lime/30 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime${accountSpan}`}
         aria-label={isStaffPrimary ? "선생님 앱" : undefined}
         title={isStaffPrimary ? "선생님 앱" : undefined}
       >
@@ -206,8 +206,8 @@ export function MobileAccountControls({
 
       {/* 로그아웃 — 부모(모바일 메뉴 하단, flex 세로)에서 order-last 로 맨 아래에 놓이고, 위와 16px 이상 띄운다 */}
       {isLoggedIn && (
-        <form action={logout} className="order-last mt-4 border-t border-gray-200 pt-2 text-center dark:border-gray-800" data-account-logout="mobile">
-          <button type="submit" className="inline-flex min-h-11 items-center px-3 text-sm text-gray-500 underline-offset-2 transition-colors hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-200">
+        <form action={logout} className="order-last mt-4 border-t border-[var(--color-public-line)] pt-2 text-center dark:border-[var(--color-public-line)]" data-account-logout="mobile">
+          <button type="submit" className="inline-flex min-h-11 items-center px-3 text-sm text-[var(--color-public-muted)] underline-offset-2 transition-colors hover:text-[var(--color-public-ink)] hover:underline dark:text-[var(--color-public-muted)] dark:hover:text-[var(--color-public-ink)]">
             로그아웃
           </button>
         </form>

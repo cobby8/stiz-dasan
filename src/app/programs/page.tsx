@@ -70,14 +70,14 @@ function getShuttleFeeDisplay(
 
 // 대상 연령에 따른 색상 매핑 — 한눈에 구분되게
 function getAgeColor(targetAge: string | null): { bg: string; text: string; border: string } {
-    if (!targetAge) return { bg: "bg-gray-50 dark:bg-gray-900", text: "text-gray-600 dark:text-gray-300", border: "border-gray-200 dark:border-gray-700" };
+    if (!targetAge) return { bg: "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-paper)]", text: "text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]", border: "border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" };
     const age = targetAge.toLowerCase();
-    if (age.includes("유아") || age.includes("미취학")) return { bg: "bg-emerald-50 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-700" };
+    if (age.includes("유아") || age.includes("미취학")) return { bg: "bg-[var(--color-academy-success-soft)] dark:bg-emerald-900/30", text: "text-[var(--color-academy-success)] dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-700" };
     if (age.includes("초등") && (age.includes("저") || age.includes("1") || age.includes("2") || age.includes("3")))
-        return { bg: "bg-blue-50 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-400", border: "border-blue-200 dark:border-blue-700" };
-    if (age.includes("초등")) return { bg: "bg-sky-50 dark:bg-sky-900/30", text: "text-sky-700 dark:text-sky-400", border: "border-sky-200 dark:border-sky-700" };
+        return { bg: "bg-[var(--color-public-tint)] dark:bg-blue-900/30", text: "text-[var(--color-public-muted)] dark:text-blue-400", border: "border-[var(--color-public-line)] dark:border-blue-700" };
+    if (age.includes("초등")) return { bg: "bg-[var(--color-public-tint)] dark:bg-sky-900/30", text: "text-[var(--color-public-muted)] dark:text-sky-400", border: "border-[var(--color-public-line)] dark:border-sky-700" };
     if (age.includes("중등") || age.includes("중학")) return { bg: "bg-purple-50 dark:bg-purple-900/30", text: "text-purple-700 dark:text-purple-400", border: "border-purple-200 dark:border-purple-700" };
-    return { bg: "bg-gray-50 dark:bg-gray-900", text: "text-gray-600 dark:text-gray-300", border: "border-gray-200 dark:border-gray-700" };
+    return { bg: "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-paper)]", text: "text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]", border: "border-[var(--color-public-line)] dark:border-[var(--color-public-line)]" };
 }
 
 export default async function ProgramsPage() {
@@ -94,14 +94,14 @@ export default async function ProgramsPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 */}
-            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="absolute inset-0 pointer-events-none">
                     <div className="absolute right-0 top-0 w-72 h-72 border-[20px] border-white/5 dark:border-brand-neon-cobalt/10 rounded-full translate-x-1/3 -translate-y-1/3 transition-colors duration-300" />
-                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-brand-orange-500/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
+                    <div className="absolute left-0 bottom-0 w-48 h-48 border-[15px] border-[var(--color-public-accent)]/10 dark:border-brand-neon-lime/10 rounded-full -translate-x-1/4 translate-y-1/4 transition-colors duration-300" />
                 </div>
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
-                        <p className="text-brand-orange-500 dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">PROGRAMS</p>
+                        <p className="text-[var(--color-public-accent)] dark:text-brand-neon-lime text-sm font-bold uppercase tracking-widest mb-3">PROGRAMS</p>
                         <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">프로그램 안내</h1>
                         <p className="text-blue-200 text-lg max-w-xl">수준과 연령에 맞는 최적의 프로그램을 찾아보세요.</p>
                     </AnimateOnScroll>
@@ -111,7 +111,7 @@ export default async function ProgramsPage() {
             {/* 프로그램 목록 — 세로 카드(이미지 상단 + 정보 하단) 구조 */}
             <SectionLayout className="public-content-section" bgColor="white">
                 {programs.length === 0 ? (
-                    <div className="text-center py-20 text-gray-400">
+                    <div className="text-center py-20 text-[var(--color-public-muted)]">
                         <div className="text-5xl mb-4">🏀</div>
                         <p className="text-lg font-medium">준비 중입니다.</p>
                         <p className="text-sm mt-2">문의: {phone}</p>
@@ -119,14 +119,14 @@ export default async function ProgramsPage() {
                 ) : (
                     <>
                     {/* 판매정책 표시 — 결제사 심사 필수(서비스 제공기간이 상품 화면에 명확히 보여야 함) */}
-                    <div className="mb-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm leading-6 text-gray-700 break-keep dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                    <div className="mb-6 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-sm leading-6 text-[var(--color-public-muted)] break-keep dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-muted)]">
                         <p>
-                            <strong className="text-gray-900 dark:text-white">수강 기간</strong> 월 수강료는 <strong>4주(1개월) 단위</strong>로 결제하며,
+                            <strong className="text-[var(--color-public-ink)] dark:text-white">수강 기간</strong> 월 수강료는 <strong>4주(1개월) 단위</strong>로 결제하며,
                             서비스 제공기간은 결제한 달의 수업 4주입니다. 셔틀비는 별도입니다.
                         </p>
                         <p className="mt-1">
-                            <strong className="text-gray-900 dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
-                            <a href="/terms" className="font-bold text-brand-orange-500 underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
+                            <strong className="text-[var(--color-public-ink)] dark:text-white">환불</strong> 「학원법 시행령」 교습비 반환기준에 따릅니다 —{" "}
+                            <a href="/terms" className="font-bold text-[var(--color-public-accent)] underline underline-offset-2 dark:text-brand-neon-lime">환불 규정 보기</a>
                         </p>
                     </div>
                     <div data-tour-target="program-cards" className="grid min-w-0 md:grid-cols-2 gap-4 md:gap-5">
@@ -144,7 +144,7 @@ export default async function ProgramsPage() {
                                     <Card variant="default" className={`public-card public-program-card min-w-0 overflow-hidden !p-0 border-t-4 ${ageColor.border}`}>
                                         {/* 프로그램 이미지 */}
                                         {program.imageUrl && (
-                                            <div className="relative aspect-[3/1] bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                            <div className="relative aspect-[3/1] bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] overflow-hidden">
                                                 <Image
                                                     src={program.imageUrl}
                                                     alt={program.name}
@@ -158,7 +158,7 @@ export default async function ProgramsPage() {
                                         {/* 프로그램 헤더 — 이름 + 뱃지들 */}
                                         <div className="px-5 pt-5 pb-3">
                                             <div className="flex flex-wrap items-center gap-2 mb-2">
-                                                <h3 className="text-xl font-bold text-gray-900 dark:text-white">{program.name}</h3>
+                                                <h3 className="text-xl font-bold text-[var(--color-public-ink)] dark:text-white">{program.name}</h3>
                                             </div>
                                             <div className="flex flex-wrap gap-2">
                                                 {/* 대상 연령 뱃지 */}
@@ -176,7 +176,7 @@ export default async function ProgramsPage() {
                                                 ))}
                                                 {/* 수업 요일 뱃지 */}
                                                 {days.map((d) => (
-                                                    <span key={d} className={`text-xs font-bold px-2.5 py-1 rounded-full ${WEEKEND.has(d) ? "bg-orange-100 text-orange-700" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"}`}>
+                                                    <span key={d} className={`text-xs font-bold px-2.5 py-1 rounded-full ${WEEKEND.has(d) ? "bg-orange-100 text-orange-700" : "bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]"}`}>
                                                         {DAY_OPTIONS[d]}
                                                     </span>
                                                 ))}
@@ -186,33 +186,33 @@ export default async function ProgramsPage() {
                                         {/* 프로그램 설명 */}
                                         {program.description && (
                                             <div className="px-5 pb-3">
-                                                <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed whitespace-pre-line">{program.description}</p>
+                                                <p className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed whitespace-pre-line">{program.description}</p>
                                             </div>
                                         )}
 
                                         {/* 수강료 — 다단 가격표 또는 단일 가격 */}
                                         <div className="px-5 pb-5">
                                             {tiers.length > 0 ? (
-                                                <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
+                                                <div className="overflow-hidden rounded-xl border border-[var(--color-public-line)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
                                                     <table className="public-table public-fee-table w-full table-fixed text-sm">
-                                                        <thead className="bg-brand-navy-900 text-white">
+                                                        <thead className="bg-[var(--color-public-dark)] text-white">
                                                             <tr>
                                                                 <th className="px-2 sm:px-4 py-2.5 text-left font-bold">수업 빈도</th>
                                                                 <th className="px-2 sm:px-4 py-2.5 text-right font-bold">월 수강료</th>
                                                                 <th className="px-2 sm:px-4 py-2.5 text-right font-bold">셔틀비</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                                        <tbody className="divide-y divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
                                                             {tiers.map((t) => {
                                                                 const fee = getShuttleFeeDisplay(program.shuttleFeeOverride, t.key, weekend);
                                                                 return (
-                                                                    <tr key={t.key} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                                                                        <td className="px-2 sm:px-4 py-3 font-semibold text-gray-800 dark:text-gray-100">{t.label}</td>
-                                                                        <td className="px-2 sm:px-4 py-3 text-right font-bold text-brand-navy-900 dark:text-white">
+                                                                    <tr key={t.key} className="hover:bg-[var(--color-public-tint)] dark:hover:bg-[var(--color-public-tint)]">
+                                                                        <td className="px-2 sm:px-4 py-3 font-semibold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)]">{t.label}</td>
+                                                                        <td className="px-2 sm:px-4 py-3 text-right font-bold text-[var(--color-public-ink)] dark:text-white">
                                                                             {Number(program[t.key]).toLocaleString()}원
                                                                         </td>
-                                                                        <td className="px-2 sm:px-4 py-3 text-right text-blue-600 dark:text-blue-400 font-medium">
-                                                                            {fee ? fee : <span className="text-gray-400 font-normal">운행 없음</span>}
+                                                                        <td className="px-2 sm:px-4 py-3 text-right text-[var(--color-public-muted)] dark:text-blue-400 font-medium">
+                                                                            {fee ? fee : <span className="text-[var(--color-public-muted)] font-normal">운행 없음</span>}
                                                                         </td>
                                                                     </tr>
                                                                 );
@@ -223,18 +223,18 @@ export default async function ProgramsPage() {
                                             ) : (
                                                 <div className="flex flex-wrap items-center gap-6">
                                                     <div>
-                                                        <p className="text-sm text-gray-400 mb-0.5">월 수강료</p>
-                                                        <p className="text-3xl font-black text-brand-navy-900 dark:text-white">
+                                                        <p className="text-sm text-[var(--color-public-muted)] mb-0.5">월 수강료</p>
+                                                        <p className="text-3xl font-black text-[var(--color-public-ink)] dark:text-white">
                                                             {program.price.toLocaleString()}
-                                                            <span className="text-base font-normal text-gray-500 dark:text-gray-400">원</span>
+                                                            <span className="text-base font-normal text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">원</span>
                                                         </p>
                                                     </div>
                                                     {weekend ? (
                                                         <p className="text-sm text-orange-600 dark:text-orange-400 font-medium">셔틀 운행 없음</p>
                                                     ) : program.shuttleFeeOverride === 0 ? (
-                                                        <p className="text-sm text-gray-400">셔틀 없음</p>
+                                                        <p className="text-sm text-[var(--color-public-muted)]">셔틀 없음</p>
                                                     ) : program.shuttleFeeOverride != null && program.shuttleFeeOverride > 0 ? (
-                                                        <p className="text-sm text-blue-600 font-medium">
+                                                        <p className="text-sm text-[var(--color-public-muted)] font-medium">
                                                             셔틀비 {program.shuttleFeeOverride.toLocaleString()}원
                                                         </p>
                                                     ) : null}
@@ -244,7 +244,7 @@ export default async function ProgramsPage() {
                                             {/* 시간표 보기 링크 */}
                                             <div className="flex justify-end mt-4">
                                                 <a href={`/schedule?program=${program.id}`}
-                                                    className="text-sm font-bold text-brand-orange-500 dark:text-brand-neon-lime hover:text-orange-600 border border-brand-orange-500 dark:border-brand-neon-lime/50 hover:border-brand-orange-500 dark:border-brand-neon-lime px-4 py-2 rounded-xl transition-all duration-200 hover:scale-[1.02]">
+                                                    className="text-sm font-bold text-[var(--color-public-accent)] dark:text-brand-neon-lime hover:text-orange-600 border border-[var(--color-public-accent)] dark:border-brand-neon-lime/50 hover:border-[var(--color-public-accent)] dark:border-brand-neon-lime px-4 py-2 rounded-xl transition-all duration-200 hover:scale-[1.02]">
                                                     시간표 보기 →
                                                 </a>
                                             </div>

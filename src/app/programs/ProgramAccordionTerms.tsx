@@ -50,8 +50,8 @@ export default function ProgramAccordionTerms({
     <Card variant="default" className="!p-0 overflow-hidden [&>div]:p-0">
       {/* 헤더 — hideHeader가 false일 때만 표시 */}
       {!hideHeader && (
-        <div className="py-5 px-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-          <h3 className="font-bold text-gray-900 dark:text-white text-xl">이용약관</h3>
+        <div className="py-5 px-6 border-b border-[var(--color-public-line)] dark:border-[var(--color-public-line)] flex items-center gap-3">
+          <h3 className="font-bold text-[var(--color-public-ink)] dark:text-white text-xl">이용약관</h3>
         </div>
       )}
 
@@ -73,7 +73,7 @@ export default function ProgramAccordionTerms({
               return (
                 <div
                   key={i}
-                  className="flex items-start gap-2 bg-amber-50 dark:bg-brand-neon-lime/10 border-l-4 border-amber-400 dark:border-brand-neon-lime rounded-r-lg px-4 py-2.5 -mx-1 transition-colors"
+                  className="flex items-start gap-2 bg-[var(--color-academy-warning-soft)] dark:bg-brand-neon-lime/10 border-l-4 border-amber-400 dark:border-brand-neon-lime rounded-r-lg px-4 py-2.5 -mx-1 transition-colors"
                 >
                   <span
                     aria-hidden="true"
@@ -81,7 +81,7 @@ export default function ProgramAccordionTerms({
                   >
                     !
                   </span>
-                  <p className="text-gray-800 dark:text-gray-100 text-base leading-relaxed font-medium">
+                  <p className="text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] text-base leading-relaxed font-medium">
                     {trimmed}
                   </p>
                 </div>
@@ -92,7 +92,7 @@ export default function ProgramAccordionTerms({
             return (
               <p
                 key={i}
-                className="text-gray-600 dark:text-gray-300 text-base leading-relaxed pl-1"
+                className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] text-base leading-relaxed pl-1"
               >
                 {trimmed}
               </p>

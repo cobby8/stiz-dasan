@@ -288,39 +288,39 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
 
     if (completed) {
         return (
-            <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-gray-800">
+            <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
                 <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
                     <FontFreeIcon name="check_circle" size={40} className="text-green-600" />
                 </div>
-                <h2 className="mb-3 text-2xl font-black text-gray-900 dark:text-white">
+                <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
                     {completionMode === "updated" ? "체험수업 신청서 수정 완료!" : "체험수업 신청 완료!"}
                 </h2>
-                <p className="mb-2 text-gray-600 dark:text-gray-300">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
-                <p className="mb-6 text-sm text-gray-500 dark:text-gray-400">
+                <p className="mb-2 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">담당자가 빠른 시간 안에 연락드리겠습니다.</p>
+                <p className="mb-6 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                     문의사항이 있으시면{" "}
-                    <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-brand-orange-500 dark:text-brand-neon-lime">{contactPhone}</a>
+                    <a href={`tel:${contactPhone.replace(/-/g, "")}`} className="font-semibold text-[var(--color-public-accent)] dark:text-brand-neon-lime">{contactPhone}</a>
                     로 전화해주세요.
                 </p>
-                <div className="mb-6 rounded-2xl border border-brand-orange-200 bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                    <h3 className="text-xl font-black text-gray-950 dark:text-white">체험수업비 입금 안내</h3>
-                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
-                    <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-gray-900">
+                <div className="mb-6 rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 text-left dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
+                    <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
+                    <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
+                    <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
                         <InfoRow label="금액" value={TRIAL_FEE_PAYMENT_INFO.amountLabel} />
                         <InfoRow label="은행" value={TRIAL_FEE_PAYMENT_INFO.bankName} />
                         <InfoRow label="계좌" value={TRIAL_FEE_PAYMENT_INFO.accountNumber} />
                         <InfoRow label="예금주" value={TRIAL_FEE_PAYMENT_INFO.accountHolder} />
                     </div>
                     <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        <button type="button" onClick={copyTrialFeeAccount} className="rounded-xl border border-brand-orange-200 bg-white px-4 py-3 text-sm font-bold text-brand-orange-600 hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-gray-950 dark:text-brand-neon-lime">
+                        <button type="button" onClick={copyTrialFeeAccount} className="rounded-xl border border-[var(--color-public-line)] bg-white px-4 py-3 text-sm font-bold text-[var(--color-public-strong)] hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime">
                             계좌번호 복사하기
                         </button>
-                        <button type="button" onClick={handleTrialFeeTransfer} className="rounded-xl bg-brand-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={handleTrialFeeTransfer} className="rounded-xl bg-[var(--color-public-accent)] px-4 py-3 text-sm font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             입금 정보 공유하기
                         </button>
                     </div>
-                    {paymentNotice && <p className="mt-3 text-xs font-semibold text-brand-orange-600 dark:text-brand-neon-lime">{paymentNotice}</p>}
+                    {paymentNotice && <p className="mt-3 text-xs font-semibold text-[var(--color-public-strong)] dark:text-brand-neon-lime">{paymentNotice}</p>}
                 </div>
-                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-brand-navy-900 px-6 py-3 font-medium text-white transition-colors hover:bg-brand-navy-800">
+                <Link href="/" className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-dark)] px-6 py-3 font-medium text-white transition-colors hover:bg-[var(--color-public-dark)]">
                     <FontFreeIcon name="home" size={18} />
                     홈으로 돌아가기
                 </Link>
@@ -329,18 +329,18 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
     }
 
     return (
-        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-            <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-3 dark:border-gray-800 dark:bg-gray-900">
+        <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
+            <div className="public-stepper border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 sm:px-6 py-3 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
                 <div className="mx-auto flex max-w-sm items-center justify-between">
                     {[1, 2, 3].map((number) => (
                         <div key={number} className="flex items-center">
-                            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-brand-orange-500 text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-gray-200 text-gray-400"}`}>
+                            <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition-colors ${number < step ? "bg-green-500 text-white" : number === step ? "bg-[var(--color-public-accent)] text-white dark:bg-brand-neon-lime dark:text-brand-navy-900" : "bg-[var(--color-public-line)] text-[var(--color-public-muted)]"}`}>
                                 {number < step ? <FontFreeIcon name="check" size={18} /> : number}
                             </div>
-                            <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>
+                            <span className={`ml-1.5 hidden text-xs font-medium sm:inline ${number === step ? "text-[var(--color-public-ink)] dark:text-white" : "text-[var(--color-public-muted)]"}`}>
                                 {number === 1 ? "체험 일정" : number === 2 ? "신청 정보" : "비용 확인"}
                             </span>
-                            {number < 3 && <div className={`mx-1.5 h-0.5 w-8 ${number < step ? "bg-green-500" : "bg-gray-200"}`} />}
+                            {number < 3 && <div className={`mx-1.5 h-0.5 w-8 ${number < step ? "bg-green-500" : "bg-[var(--color-public-line)]"}`} />}
                         </div>
                     ))}
                 </div>
@@ -354,7 +354,7 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                     </div>
                 )}
                 {existingNotice && (
-                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
+                    <div className="mb-4 flex items-center gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm font-semibold text-[var(--color-public-ink)] dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
                         <FontFreeIcon name="edit" size={18} />
                         {existingNotice}
                     </div>
@@ -362,21 +362,21 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
 
                 {step === 1 && (
                     <div className="space-y-5">
-                        <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                            <FontFreeIcon name="calendar_today" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                            <FontFreeIcon name="calendar_today" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             체험 일정
                         </h2>
                         <Field label="체험수업 희망일" required type="date" min={todayKst()} value={form.trialDate} onChange={selectTrialDate} placeholder="연도-월-일" />
-                        {dateDay ? <ButtonGroup label="희망 요일" required options={dayOptions} value={form.trialDay} onChange={selectTrialDay} /> : <p className="text-sm text-gray-500">날짜를 선택하면 요일이 자동으로 정해집니다.</p>}
+                        {dateDay ? <ButtonGroup label="희망 요일" required options={dayOptions} value={form.trialDay} onChange={selectTrialDay} /> : <p className="text-sm text-[var(--color-public-muted)]">날짜를 선택하면 요일이 자동으로 정해집니다.</p>}
                         <div>
-                            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+                            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                                 희망 교시 <span className="text-red-500">*</span>
                             </label>
                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                                 {periodOptions.map(({ period, slot }) => {
                                     const isFull = Boolean(slot && slot.available <= 0);
                                     return (
-                                        <button key={period} type="button" disabled={isFull} onClick={() => update("trialPeriod", period)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${isFull ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-300 dark:border-gray-700 dark:bg-gray-900" : form.trialPeriod === period ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}>
+                                        <button key={period} type="button" disabled={isFull} onClick={() => update("trialPeriod", period)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${isFull ? "cursor-not-allowed border-[var(--color-public-line)] bg-[var(--color-public-tint)] text-[var(--color-public-dark-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]" : form.trialPeriod === period ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] hover:border-gray-400 dark:text-[var(--color-public-muted)]"}`}>
                                             <span className="block">{period}교시</span>
                                             {/* 학부모가 교시 번호만으로는 몇 시 수업인지 몰라 시간도 함께 보여 준다 */}
                                             {slot?.startTime && <span className="mt-0.5 block text-xs font-semibold">{slot.startTime}~{slot.endTime}</span>}
@@ -385,15 +385,15 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
                                     );
                                 })}
                             </div>
-                            {dateDay && periodOptions.length === 0 && <p className="mt-2 text-sm text-gray-500">{availableSlots.length === 0 ? "시간표 정보를 확인할 수 없습니다. 학원으로 문의해주세요." : "선택한 날짜의 요일에는 등록된 수업이 없습니다. 다른 날짜를 선택해주세요."}</p>}
+                            {dateDay && periodOptions.length === 0 && <p className="mt-2 text-sm text-[var(--color-public-muted)]">{availableSlots.length === 0 ? "시간표 정보를 확인할 수 없습니다. 학원으로 문의해주세요." : "선택한 날짜의 요일에는 등록된 수업이 없습니다. 다른 날짜를 선택해주세요."}</p>}
                         </div>
                     </div>
                 )}
 
                 {step === 2 && (
                     <div className="space-y-5">
-                        <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                            <FontFreeIcon name="child_care" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                            <FontFreeIcon name="child_care" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             아이 정보 / 연락처
                         </h2>
                         <Field label="아이 이름" required value={form.childName} onChange={(value) => update("childName", value)} placeholder="아이 이름" />
@@ -407,31 +407,31 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
 
                 {step === 3 && (
                     <div className="space-y-5">
-                        <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
-                            <FontFreeIcon name="payments" size={20} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--color-public-ink)] dark:text-white">
+                            <FontFreeIcon name="payments" size={20} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             비용 확인
                         </h2>
-                        <div className="rounded-2xl border border-brand-orange-200 bg-orange-50 p-5 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
-                            <h3 className="text-xl font-black text-gray-950 dark:text-white">체험수업비 입금 안내</h3>
-                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
-                            <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-gray-900">
+                        <div className="rounded-2xl border border-[var(--color-public-line)] bg-orange-50 p-5 dark:border-brand-neon-lime/30 dark:bg-brand-neon-lime/10">
+                            <h3 className="text-xl font-black text-[var(--color-public-ink)] dark:text-white">체험수업비 입금 안내</h3>
+                            <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">입금 확인 후 체험수업 일정 안내가 진행됩니다.</p>
+                            <div className="mt-4 grid gap-3 rounded-xl bg-white p-4 text-sm dark:bg-[var(--color-public-paper)]">
                                 <InfoRow label="금액" value={TRIAL_FEE_PAYMENT_INFO.amountLabel} />
                                 <InfoRow label="은행" value={TRIAL_FEE_PAYMENT_INFO.bankName} />
                                 <InfoRow label="계좌" value={TRIAL_FEE_PAYMENT_INFO.accountNumber} />
                                 <InfoRow label="예금주" value={TRIAL_FEE_PAYMENT_INFO.accountHolder} />
                             </div>
                             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                                <button type="button" onClick={copyTrialFeeAccount} className="rounded-xl border border-brand-orange-200 bg-white px-4 py-3 text-sm font-bold text-brand-orange-600 hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-gray-950 dark:text-brand-neon-lime">
+                                <button type="button" onClick={copyTrialFeeAccount} className="rounded-xl border border-[var(--color-public-line)] bg-white px-4 py-3 text-sm font-bold text-[var(--color-public-strong)] hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime">
                                     계좌번호 복사하기
                                 </button>
-                                <button type="button" onClick={handleTrialFeeTransfer} className="rounded-xl bg-brand-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                                <button type="button" onClick={handleTrialFeeTransfer} className="rounded-xl bg-[var(--color-public-accent)] px-4 py-3 text-sm font-bold text-white hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                                     입금 정보 공유하기
                                 </button>
                             </div>
-                            {paymentNotice && <p className="mt-3 text-xs font-semibold text-brand-orange-600 dark:text-brand-neon-lime">{paymentNotice}</p>}
+                            {paymentNotice && <p className="mt-3 text-xs font-semibold text-[var(--color-public-strong)] dark:text-brand-neon-lime">{paymentNotice}</p>}
                         </div>
-                        <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                            <input type="checkbox" checked={form.trialFeeNoticeAgreed} onChange={(event) => update("trialFeeNoticeAgreed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime" />
+                        <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
+                            <input type="checkbox" checked={form.trialFeeNoticeAgreed} onChange={(event) => update("trialFeeNoticeAgreed", event.target.checked)} className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime" />
                             <span>체험수업 비용과 입금 계좌를 확인했습니다.</span>
                         </label>
                         <input type="text" value={form.honeypot} onChange={(event) => update("honeypot", event.target.value)} className="hidden" tabIndex={-1} autoComplete="off" />
@@ -440,19 +440,19 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
 
                 <div className="mt-8 flex justify-between">
                     {step > 1 ? (
-                        <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200">
+                        <button type="button" onClick={goBack} className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 font-medium text-[var(--color-public-muted)] transition-colors hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:text-[var(--color-public-ink)]">
                             <FontFreeIcon name="arrow_back" size={18} />
                             이전
                         </button>
                     ) : <div />}
 
                     {step < 3 ? (
-                        <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-brand-orange-500 px-6 py-3 font-bold text-white transition-colors hover:bg-brand-orange-600 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={goNext} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             다음
                             <FontFreeIcon name="arrow_forward" size={18} />
                         </button>
                     ) : (
-                        <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-brand-orange-500 px-6 py-3 font-bold text-white transition-colors hover:bg-brand-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+                        <button type="button" onClick={handleSubmit} disabled={isPending} className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 py-3 font-bold text-white transition-colors hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900">
                             {isPending ? (
                                 <>
                                     <FontFreeIcon name="progress_activity" size={18} className="animate-spin" />
@@ -475,10 +475,10 @@ export default function TrialApplicationForm({ availableSlots, contactPhone, ini
 function Field({ label, required, type = "text", min, value, onChange, placeholder }: { label: string; required?: boolean; type?: string; min?: string; value: string; onChange: (value: string) => void; placeholder: string }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                 {label} {required && <span className="text-red-500">*</span>}
             </label>
-            <input type={type} min={min} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+            <input type={type} min={min} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white" />
         </div>
     );
 }
@@ -486,12 +486,12 @@ function Field({ label, required, type = "text", min, value, onChange, placehold
 function ButtonGroup({ label, required, options, value, onChange }: { label: string; required?: boolean; options: string[]; value: string; onChange: (value: string) => void }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                 {label} {required && <span className="text-red-500">*</span>}
             </label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {options.map((option) => (
-                    <button key={option} type="button" onClick={() => onChange(option)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${value === option ? "border-brand-orange-500 bg-brand-orange-50 text-brand-orange-600 dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-gray-600 hover:border-gray-400 dark:text-gray-300"}`}>
+                    <button key={option} type="button" onClick={() => onChange(option)} className={`rounded-xl border px-3 py-3 text-sm font-medium transition-colors ${value === option ? "border-[var(--color-public-accent)] bg-[var(--color-public-tint)] text-[var(--color-public-strong)] dark:border-brand-neon-lime dark:bg-brand-neon-lime/10 dark:text-brand-neon-lime" : "border-gray-300 text-[var(--color-public-muted)] hover:border-gray-400 dark:text-[var(--color-public-muted)]"}`}>
                         {option}
                     </button>
                 ))}
@@ -503,10 +503,10 @@ function ButtonGroup({ label, required, options, value, onChange }: { label: str
 function SelectField({ label, required, value, onChange, options, valueMap }: { label: string; required?: boolean; value: string; onChange: (value: string) => void; options: string[]; valueMap?: { value: string; label: string }[] }) {
     return (
         <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">
+            <label className="mb-2 block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                 {label} {required && <span className="text-red-500">*</span>}
             </label>
-            <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+            <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white">
                 <option value="">선택해주세요</option>
                 {valueMap
                     ? valueMap.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)
@@ -519,8 +519,8 @@ function SelectField({ label, required, value, onChange, options, valueMap }: { 
 function InfoRow({ label, value }: { label: string; value: string }) {
     return (
         <div className="flex items-center justify-between gap-4">
-            <span className="text-gray-500 dark:text-gray-400">{label}</span>
-            <span className="font-bold text-gray-900 dark:text-white">{value}</span>
+            <span className="text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">{label}</span>
+            <span className="font-bold text-[var(--color-public-ink)] dark:text-white">{value}</span>
         </div>
     );
 }

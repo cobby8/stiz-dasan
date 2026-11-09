@@ -161,29 +161,29 @@ export default function UniformApplicationForm() {
   if (result) {
     const acceptedByStiz = result.syncStatus === "SENT" || result.syncStatus === "DUPLICATE";
     return (
-      <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-gray-800">
-        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-green-100 dark:bg-brand-neon-lime/15">
-          <FontFreeIcon name="check_circle" size={40} className="text-green-600 dark:text-brand-neon-lime" />
+      <div className="rounded-2xl bg-white p-8 text-center shadow-lg dark:bg-[var(--color-public-tint)]">
+        <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[var(--color-academy-success-soft)] dark:bg-brand-neon-lime/15">
+          <FontFreeIcon name="check_circle" size={40} className="text-[var(--color-academy-success)] dark:text-brand-neon-lime" />
         </div>
-        <h2 className="mb-3 text-2xl font-black text-gray-900 dark:text-white">
+        <h2 className="mb-3 text-2xl font-black text-[var(--color-public-ink)] dark:text-white">
           {result.mode === "existing" ? "이미 접수된 유니폼 신청이 있습니다" : "유니폼 신청 완료!"}
         </h2>
-        <p className="mx-auto max-w-xl text-gray-600 dark:text-gray-300">
+        <p className="mx-auto max-w-xl text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
           {acceptedByStiz
             ? "본사 주문 시스템에 접수되었습니다. 학부모 휴대폰으로 접수 안내가 발송됩니다."
             : "신청서는 정상 접수되었습니다. 담당자가 본사 접수 상태를 확인한 뒤 안내드리겠습니다."}
         </p>
         {result.orderNumber && (
-          <div className="mx-auto mt-5 max-w-sm rounded-2xl border border-gray-200 bg-gray-50 p-4 text-left dark:border-gray-700 dark:bg-gray-900">
-            <p className="text-xs font-bold text-gray-500 dark:text-gray-400">본사 접수번호</p>
-            <p className="mt-1 text-lg font-black text-gray-950 dark:text-white">{result.orderNumber}</p>
+          <div className="mx-auto mt-5 max-w-sm rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-left dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
+            <p className="text-xs font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">본사 접수번호</p>
+            <p className="mt-1 text-lg font-black text-[var(--color-public-ink)] dark:text-white">{result.orderNumber}</p>
           </div>
         )}
         <div className="mt-7 flex flex-wrap justify-center gap-2">
-          <Link href="/apply" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-gray-200 bg-white px-5 text-sm font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
+          <Link href="/apply" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--color-public-line)] bg-white px-5 text-sm font-bold text-[var(--color-public-muted)] hover:bg-[var(--color-public-tint)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
             신청 페이지로 돌아가기
           </Link>
-          <Link href="/" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-brand-navy-900 px-5 text-sm font-bold text-white hover:bg-brand-navy-800 dark:bg-brand-neon-lime dark:text-brand-navy-900">
+          <Link href="/" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-[var(--color-public-dark)] px-5 text-sm font-bold text-white hover:bg-[var(--color-public-dark)] dark:bg-brand-neon-lime dark:text-brand-navy-900">
             홈으로 돌아가기
           </Link>
         </div>
@@ -192,26 +192,26 @@ export default function UniformApplicationForm() {
   }
 
   return (
-    <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-gray-800">
-      <div className="public-stepper border-b border-gray-100 bg-gray-50 px-4 sm:px-6 py-4 dark:border-gray-700 dark:bg-gray-900">
-        <h2 className="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-          <FontFreeIcon name="checkroom" size={22} className="text-brand-orange-500 dark:text-brand-neon-lime" />
+    <div className="public-form-card public-card min-w-0 overflow-hidden rounded-2xl bg-white shadow-lg dark:bg-[var(--color-public-tint)]">
+      <div className="public-stepper border-b border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 sm:px-6 py-4 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
+        <h2 className="flex items-center gap-2 text-xl font-black text-[var(--color-public-ink)] dark:text-white">
+          <FontFreeIcon name="checkroom" size={22} className="text-[var(--color-public-accent)] dark:text-brand-neon-lime" />
           유니폼 추가주문 정보
         </h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
           금액은 접수 후 STIZ 본사 기준으로 안내됩니다. 결제는 이 화면에서 진행하지 않습니다.
         </p>
       </div>
 
       <div className="space-y-5 p-4 sm:p-6">
         {error && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
+          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm font-bold text-[var(--color-academy-danger)] dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
             <FontFreeIcon name="error" size={18} />
             {error}
           </div>
         )}
         {notice && (
-          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
+          <div className="rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] px-4 py-3 text-sm font-bold text-[var(--color-public-ink)] dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-100">
             {notice}
           </div>
         )}
@@ -237,13 +237,13 @@ export default function UniformApplicationForm() {
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-black text-gray-900 dark:text-white">학생 목록</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400">형제·자매는 한 신청서에 함께 입력해주세요.</p>
+              <h3 className="text-base font-black text-[var(--color-public-ink)] dark:text-white">학생 목록</h3>
+              <p className="text-xs text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">형제·자매는 한 신청서에 함께 입력해주세요.</p>
             </div>
             <button
               type="button"
               onClick={addStudent}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-brand-orange-200 bg-white px-3 text-sm font-bold text-brand-orange-600 hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-gray-950 dark:text-brand-neon-lime"
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[var(--color-public-line)] bg-white px-3 text-sm font-bold text-[var(--color-public-strong)] hover:bg-orange-50 dark:border-brand-neon-lime/40 dark:bg-[var(--color-public-paper)] dark:text-brand-neon-lime"
             >
               <FontFreeIcon name="add" size={18} />
               학생 추가
@@ -251,13 +251,13 @@ export default function UniformApplicationForm() {
           </div>
 
           {form.students.map((student, index) => (
-            <div key={index} className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900">
+            <div key={index} className="rounded-2xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)]">
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-black text-gray-900 dark:text-white">학생 {index + 1}</p>
+                <p className="text-sm font-black text-[var(--color-public-ink)] dark:text-white">학생 {index + 1}</p>
                 <button
                   type="button"
                   onClick={() => removeStudent(index)}
-                  className="rounded-lg px-2 py-1 text-xs font-bold text-gray-500 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+                  className="rounded-lg px-2 py-1 text-xs font-bold text-[var(--color-public-muted)] hover:bg-[var(--color-public-line)] hover:text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)] dark:hover:bg-[var(--color-public-tint)]"
                 >
                   삭제
                 </button>
@@ -308,23 +308,23 @@ export default function UniformApplicationForm() {
           ))}
         </section>
 
-        <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+        <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
           요청사항 메모
           <textarea
             value={form.memo}
             onChange={(event) => update("memo", event.target.value)}
             rows={4}
-            className="mt-2 w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="mt-2 w-full resize-none rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white"
             placeholder="예: 사이즈 상담이 필요해요"
           />
         </label>
 
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-public-line)] bg-[var(--color-public-tint)] p-4 text-sm text-[var(--color-public-muted)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-[var(--color-public-ink)]">
           <input
             type="checkbox"
             checked={form.agreedPrivacy}
             onChange={(event) => update("agreedPrivacy", event.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-gray-300 text-brand-orange-500 focus:ring-brand-orange-500 dark:text-brand-neon-lime"
+            className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--color-public-accent)] focus:ring-[var(--color-public-accent)] dark:text-brand-neon-lime"
           />
           <span>
             유니폼 주문 접수를 위해 학부모 연락처와 학생 주문 정보를 STIZ 본사에 전달하는 데 동의합니다.
@@ -339,15 +339,15 @@ export default function UniformApplicationForm() {
           autoComplete="off"
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5 dark:border-gray-700">
-          <p className="text-sm font-bold text-gray-500 dark:text-gray-400">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-public-line)] pt-5 dark:border-[var(--color-public-line)]">
+          <p className="text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
             접수 대상 {studentCount}명
           </p>
           <button
             type="button"
             onClick={handleSubmit}
             disabled={isPending}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-orange-500 px-6 text-base font-black text-white transition hover:bg-brand-orange-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--color-public-accent)] px-6 text-base font-black text-white transition hover:bg-[var(--color-public-strong)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-brand-neon-lime dark:text-brand-navy-900 dark:hover:bg-lime-400"
           >
             <FontFreeIcon name={isPending ? "progress_activity" : "send"} size={20} className={isPending ? "animate-spin" : ""} />
             {isPending ? "접수 중..." : "유니폼 신청하기"}
@@ -374,14 +374,14 @@ function Field({
   placeholder: string;
 }) {
   return (
-    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+    <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
       {label} {required && <span className="text-red-500">*</span>}
       <input
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+        className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white"
       />
     </label>
   );
@@ -403,12 +403,12 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+    <label className="block text-sm font-bold text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
       {label} {required && <span className="text-red-500">*</span>}
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition-colors focus:border-brand-orange-500 focus:ring-2 focus:ring-brand-orange-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+        className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 text-[var(--color-public-ink)] outline-none transition-colors focus:border-[var(--color-public-accent)] focus:ring-2 focus:ring-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-white"
       >
         {options.map((size) => (
           <option key={size || "none"} value={size}>

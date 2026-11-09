@@ -27,8 +27,8 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
     // 빈 갤러리 — 아이콘 + 안내 메시지 표시
     if (items.length === 0) {
         return (
-            <div className="text-center py-20 text-gray-400">
-                <FontFreeIcon name="image" size={64} className="mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-20 text-[var(--color-public-muted)]">
+                <FontFreeIcon name="image" size={64} className="mx-auto mb-4 text-[var(--color-public-dark-muted)]" />
                 <p className="text-lg font-medium">아직 갤러리가 비어있습니다</p>
                 <p className="text-sm mt-1">곧 수업 사진이 업로드됩니다.</p>
             </div>
@@ -44,7 +44,7 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                         key={`${item.postId}-${item.mediaIdx}`}
                         type="button"
                         data-gallery-index={index}
-                        className="aspect-square rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 cursor-pointer relative group shadow-sm hover:shadow-lg transition-all duration-300 text-left"
+                        className="aspect-square rounded-2xl overflow-hidden bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] cursor-pointer relative group shadow-sm hover:shadow-lg transition-all duration-300 text-left"
                         aria-label={`${item.title || "갤러리 이미지"} 크게 보기`}
                     >
                         {/* 미디어 — 이미지 또는 동영상 */}
@@ -98,7 +98,7 @@ export default function GalleryPublicClient({ posts }: { posts: GalleryPost[] })
                     <button
                         type="button"
                         onClick={() => setVisibleCount((current) => Math.min(current + VISIBLE_ITEM_INCREMENT, items.length))}
-                        className="min-h-11 rounded-full border border-brand-orange-200 bg-white px-6 text-sm font-black text-brand-orange-600 shadow-sm transition hover:border-brand-orange-500 hover:bg-orange-50 dark:border-gray-700 dark:bg-gray-800 dark:text-brand-neon-lime"
+                        className="min-h-11 rounded-full border border-[var(--color-public-line)] bg-white px-6 text-sm font-black text-[var(--color-public-strong)] shadow-sm transition hover:border-[var(--color-public-accent)] hover:bg-orange-50 dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-tint)] dark:text-brand-neon-lime"
                     >
                         더 보기
                     </button>

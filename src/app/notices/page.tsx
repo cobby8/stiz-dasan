@@ -28,7 +28,7 @@ export default async function NoticesPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 + 장식 도형 (about/programs와 동일 패턴) */}
-            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
                         <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">공지사항</h1>
@@ -39,11 +39,11 @@ export default async function NoticesPage() {
 
             {/* 공지사항 리스트 — 게슈탈트 P-09: 홈 공지와 같은 한 줄 행(약 52px: [중요] 제목 … 날짜).
                 본문 미리보기·썸네일은 빼고 상세 화면에서 본다. 날짜는 KST 공용 모듈로만 만든다. */}
-            <div className="bg-surface-section dark:bg-gray-900 transition-colors duration-300">
+            <div className="bg-surface-section dark:bg-[var(--color-public-paper)] transition-colors duration-300">
                 <div className="public-content-section max-w-4xl mx-auto px-4 py-16 md:py-24">
                     {publicNotices.length === 0 ? (
                         /* 게슈탈트 P-12 빈 상태: 한 줄 문구 + 전화 링크 */
-                        <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        <p className="py-6 text-center text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                             <span className="font-bold">아직 공지사항이 없습니다.</span>{" "}
                             <a href={`tel:${phone.replace(/-/g, "")}`} className="inline-flex min-h-11 items-center font-bold text-[var(--color-public-accent)] underline underline-offset-2">문의 {phone}</a>
                         </p>

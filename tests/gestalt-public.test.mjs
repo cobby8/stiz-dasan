@@ -179,7 +179,8 @@ test("P-10 모바일 메뉴 로그아웃은 맨 아래 회색 글자 링크, 위
   const controls = read("src/components/PublicAccountControls.tsx");
   const mobile = controls.slice(controls.indexOf("export function MobileAccountControls"));
   assert.match(mobile, /<form action=\{logout\} className="order-last mt-4 [^"]*" data-account-logout="mobile">/);
-  assert.match(mobile, /className="inline-flex min-h-11 items-center px-3 text-sm text-gray-500/);
+  // 회색 글자 = 공개 토큰 muted(색상 7단계에서 text-gray-500 → 토큰)
+  assert.match(mobile, /className="inline-flex min-h-11 items-center px-3 text-sm text-\[var\(--color-public-muted\)\]/);
   assert.doesNotMatch(mobile, /MOBILE_SECONDARY_ACTION_CLASS\} w-full`\}>\s*로그아웃/);
   // 부모(모바일 메뉴 하단)는 flex 세로여야 order-last 가 먹는다
   assert.match(read("src/components/PublicHeader.tsx"), /<div className="shrink-0 flex flex-col p-4 border-t/);

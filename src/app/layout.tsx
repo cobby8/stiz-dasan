@@ -8,6 +8,7 @@ import MetaPixel from "@/components/MetaPixel";
 import DeferredFontStyles from "@/components/DeferredFontStyles";
 import PwaUpdater from "@/components/PwaUpdater";
 import ThemeColorUpdater from "@/components/ThemeColorUpdater";
+import { THEME_COLORS } from "@/lib/ui/colorValues";
 import { buildPublicMetadata } from "@/lib/publicMetadata";
 import StandaloneBackButton from "@/components/StandaloneBackButton";
 
@@ -51,7 +52,7 @@ export default async function RootLayout({
         >
             <head>
                 {/* PWA 테마 색상은 ThemeColorUpdater가 현재 테마에 맞게 갱신합니다. */}
-                <meta name="theme-color" content="#ffffff" />
+                <meta name="theme-color" content={THEME_COLORS.publicLight} />
                 {/* 파일명을 버전 처리해 브라우저에 남은 이전 탭 아이콘 캐시를 교체합니다. */}
                 <link rel="icon" href="/favicon-v2.ico" sizes="any" />
                 <link rel="shortcut icon" href="/favicon-v2.ico" />

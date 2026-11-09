@@ -30,7 +30,7 @@ const PHILOSOPHY_CARDS = [
         icon: "🎯",
         title: "전문성",
         description: "체계적인 커리큘럼과 전문 코치진이 아이의 실력을 단계별로 끌어올립니다",
-        color: "bg-blue-50 text-blue-600",
+        color: "bg-[var(--color-public-tint)] text-[var(--color-public-muted)]",
     },
     {
         icon: "🛡️",
@@ -79,7 +79,7 @@ export default async function AboutPage() {
     return (
         <PublicPageLayout>
             {/* 페이지 히어로 — 그라데이션 배경 + 장식 요소 (Phase 0 패턴 적용) */}
-            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-brand-navy-900 via-brand-navy-800 to-brand-navy-900 dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
+            <section className="public-page-hero public-page-hero--compact relative overflow-hidden bg-gradient-to-br from-[var(--color-public-dark)] via-[var(--color-public-dark)] to-[var(--color-public-dark)] dark:from-black dark:via-gray-900 dark:to-black text-white py-12 md:py-14 transition-colors duration-300">
                 <div className="max-w-6xl mx-auto px-6 md:px-4 relative">
                     <AnimateOnScroll>
                         <h1 className="text-4xl md:text-5xl font-black mb-4 break-keep">학원/멤버소개</h1>
@@ -112,7 +112,7 @@ export default async function AboutPage() {
                                 {headCoach?.imageUrl && (
                                     <AnimateOnScroll delay={200}>
                                         <div className="flex flex-col items-center mx-auto md:mx-0">
-                                            <div className="w-40 h-40 md:w-48 md:h-48 rounded-2xl overflow-hidden bg-gray-100 dark:bg-gray-800 shadow-md">
+                                            <div className="w-40 h-40 md:w-48 md:h-48 rounded-2xl overflow-hidden bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] shadow-md">
                                                 <Image
                                                     src={headCoach.imageUrl}
                                                     alt={headCoach.name}
@@ -121,7 +121,7 @@ export default async function AboutPage() {
                                                     className="w-full h-full object-cover"
                                                 />
                                             </div>
-                                            <p className="mt-3 font-bold text-gray-900 dark:text-gray-100 transition-colors">{headCoach.name}</p>
+                                            <p className="mt-3 font-bold text-[var(--color-public-ink)] dark:text-[var(--color-public-ink)] transition-colors">{headCoach.name}</p>
                                             <Badge variant="default" size="sm">대표원장</Badge>
                                         </div>
                                     </AnimateOnScroll>
@@ -146,11 +146,11 @@ export default async function AboutPage() {
                     </AnimateOnScroll>
                     <AnimateOnScroll delay={200}>
                         <Card variant="default" className="!p-0">
-                            <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-700">
+                            <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
                                 {PHILOSOPHY_CARDS.map((card, i) => (
                                     <div key={i} className="flex flex-col items-center text-center gap-1.5 py-5 px-3 md:py-6 md:px-4">
-                                        <h4 className="text-lg md:text-xl font-black text-brand-navy-900 dark:text-white tracking-tight">{card.title}</h4>
-                                        <p className="text-sm md:text-base text-gray-500 dark:text-gray-400 leading-relaxed">{card.description}</p>
+                                        <h4 className="text-lg md:text-xl font-black text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
+                                        <p className="text-sm md:text-base text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] leading-relaxed">{card.description}</p>
                                     </div>
                                 ))}
                             </div>
@@ -161,11 +161,11 @@ export default async function AboutPage() {
                 <SectionLayout className="public-content-section" title="교육 이념" description="STIZ 농구교실이 추구하는 가치" bgColor="section">
                     <AnimateOnScroll>
                         <Card variant="default" className="!p-0">
-                            <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-gray-100 dark:divide-gray-700">
+                            <div className="grid grid-cols-2 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[var(--color-public-line)] dark:divide-[var(--color-public-line)]">
                                 {PHILOSOPHY_CARDS.map((card, i) => (
                                     <div key={i} className="flex flex-col items-center text-center gap-1.5 py-5 px-3 md:py-6 md:px-4">
-                                        <h4 className="text-lg md:text-xl font-black text-brand-navy-900 dark:text-white tracking-tight">{card.title}</h4>
-                                        <p className="text-sm md:text-base text-gray-500 dark:text-gray-400 leading-relaxed">{card.description}</p>
+                                        <h4 className="text-lg md:text-xl font-black text-[var(--color-public-ink)] dark:text-white tracking-tight">{card.title}</h4>
+                                        <p className="text-sm md:text-base text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] leading-relaxed">{card.description}</p>
                                     </div>
                                 ))}
                             </div>
@@ -182,7 +182,7 @@ export default async function AboutPage() {
                             <AnimateOnScroll key={coach.id} delay={i * 100}>
                                 <Card variant="default" className="overflow-hidden !p-0">
                                     {/* 코치 사진 영역 — 정방형 (1:1) */}
-                                    <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                    <div className="relative aspect-square bg-[var(--color-public-tint)] dark:bg-[var(--color-public-tint)] overflow-hidden">
                                         {coach.imageUrl ? (
                                             <Image
                                                 src={coach.imageUrl}
@@ -201,7 +201,7 @@ export default async function AboutPage() {
                                     {/* 코치 정보 영역 */}
                                     <div className="p-5">
                                         <div className="flex items-center gap-3 mb-2">
-                                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">{coach.name}</h3>
+                                            <h3 className="text-lg font-bold text-[var(--color-public-ink)] dark:text-white">{coach.name}</h3>
                                             <Badge variant="default" size="sm">{coach.role}</Badge>
                                         </div>
 
@@ -235,7 +235,7 @@ export default async function AboutPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             {facilityImages.map((url, i) => (
                                 <AnimateOnScroll key={i} delay={i * 100}>
-                                    <div className="aspect-[4/3] relative rounded-2xl overflow-hidden bg-gray-200 group">
+                                    <div className="aspect-[4/3] relative rounded-2xl overflow-hidden bg-[var(--color-public-line)] group">
                                         <Image
                                             src={url}
                                             alt={`시설 사진 ${i + 1}`}
@@ -269,13 +269,13 @@ export default async function AboutPage() {
                                 />
                             </div>
                             {/* 주소 텍스트 — 아이콘 + 클립보드 복사 없이 심플하게 */}
-                            <div className="flex items-start gap-3 text-gray-700 dark:text-gray-200">
-                                <span className="material-symbols-outlined text-brand-orange-500 dark:text-brand-neon-lime text-2xl mt-0.5 shrink-0">location_on</span>
+                            <div className="flex items-start gap-3 text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
+                                <span className="material-symbols-outlined text-[var(--color-public-accent)] dark:text-brand-neon-lime text-2xl mt-0.5 shrink-0">location_on</span>
                                 <div>
-                                    <p className="font-bold text-lg text-gray-900 dark:text-white">{settings.address}</p>
+                                    <p className="font-bold text-lg text-[var(--color-public-ink)] dark:text-white">{settings.address}</p>
                                     {phone && (
-                                        <p className="mt-1 text-gray-500 dark:text-gray-400">
-                                            상담문의: <a href={`tel:${phone.replace(/-/g, "")}`} className="text-brand-navy-900 dark:text-brand-neon-lime font-semibold hover:underline">{phone}</a>
+                                        <p className="mt-1 text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
+                                            상담문의: <a href={`tel:${phone.replace(/-/g, "")}`} className="text-[var(--color-public-ink)] dark:text-brand-neon-lime font-semibold hover:underline">{phone}</a>
                                         </p>
                                     )}
                                 </div>
