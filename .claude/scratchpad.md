@@ -56,7 +56,7 @@
 ### 수정 요청 (tester · 11-09 재검수 8144e6c7 + e2b02a6d — 결과는 작업 로그)
 | 요청자 | 파일 | 문제 | 상태 |
 |------|------|------|------|
-| tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | 대기(권장) |
+| tester | lib/enrollment/admin-change-request.ts NEEDS_CHECK_SQL | 반 이동 뒤 새 반 수강을 삭제하면 그 CLASS_ADD(이동 신청에 afterJson.enrollmentChangeRequestId 로 연결)의 RALLYZ 칸이 SKIPPED 가 되는데, NEEDS_CHECK 는 RALLYZ 를 `<> 'SUCCEEDED'` 로 세어 이동 신청이 «확인 필요»에 영구히 남음. 직원이 지우려면 «랠리즈 반영 확인»을 거짓으로 눌러야 함. 삭제 사유로 닫힌 명령(holdReason=DELETED_ENROLLMENT_CLOSE_REASON) 제외 등 | ✅ 해소(fc83e6d1, 11-09 — notClosedByDeletedEnrollmentSql) |
 
 ---
 
@@ -93,6 +93,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(원장 «셔틀 배정 ② 몇 번째로 태울까요에서 이동이 안 돼»): 다른 요일 정류장(OTHER)을 고르면 [한 칸 위로/아래로]가 꺼져 있고 서버도 추천 자리만 썼음 → OTHER 에 position(선택) 추가: 화면은 추천 자리에서 시작해 위·아래 이동, 서버 parseAssignRequest 정수 0..500 검사·addInputForLeg 는 position ?? 추천 자리(0..n 밖 409). 기사님 화면·관리자 정규배차 모달 공용(AssignLegView). 테스트 1건 추가. tsc 0·tests 3821-1(kst-display-fixes «AM/오전» = 이 컨테이너 ICU 차이, 무관) | 완료(브랜치 푸시, main 미배포) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(신청함 1단계 급한 불): 홈 반 상태 한 줄(휴원 예정·검토 중·휴원 중, getParentClassStatusLines) · 수강 변경 화면 «지난 결과» 3개월(거절 사유) · 결정/적용 시 신청 학부모 앱 알림(HELD 해제, change-decision-notify·EXTERNAL 장부·중복 키) · getMyPageData 이번 달 KST. 새 순수 모듈 parentChangeStatus.ts(다음 단계 수업 탭 재사용) | 구현·검증 완료(검수 대기) |

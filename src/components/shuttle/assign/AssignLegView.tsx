@@ -25,10 +25,11 @@ const KNOWN: Record<string, string> = {
   MONTH_OUT_OF_RANGE: "이번 달·다음 달 운행표에만 넣을 수 있어요.",
 };
 
-// OTHER = 같은 달 다른 요일·반 정류장(그 칸엔 없음) — 그 이름·좌표로 새 정차가 정해진 자리에 들어간다.
-type Choice = { kind: "JOIN"; stopIndex: number } | { kind: "INSERT"; position: number } | { kind: "OTHER"; key: string };
+// OTHER = 같은 달 다른 요일·반 정류장(그 칸엔 없음) — 그 이름·좌표로 새 정차가 들어간다.
+// 자리는 서버가 추천한 자리(거리가 가장 적게 늘어나는 곳)에서 시작하고, 위·아래로 옮길 수 있다(position).
+type Choice = { kind: "JOIN"; stopIndex: number } | { kind: "INSERT"; position: number } | { kind: "OTHER"; key: string; position?: number };
 type JoinOption = AssignLegPlan["joinOptions"][number];
-const optionChoice = (o: JoinOption): Choice => (o.otherDay ? { kind: "OTHER", key: o.key ?? "" } : { kind: "JOIN", stopIndex: o.stopIndex ?? 0 });
+const optionChoice = (o: JoinOption): Choice => (o.otherDay ? { kind: "OTHER", key: o.key ?? "", ...(o.position != null ? { position: o.position } : {}) } : { kind: "JOIN", stopIndex: o.stopIndex ?? 0 });
 const sameOption = (c: Choice | null, o: JoinOption) => (o.otherDay ? c?.kind === "OTHER" && c.key === o.key : c?.kind === "JOIN" && c.stopIndex === o.stopIndex);
 
 export function monthLabel(m: string) { return `${Number(m.slice(5, 7))}월`; }
@@ -64,6 +65,7 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
 
   const n = leg.route.length;
   const isNew = choice?.kind === "INSERT";
+  const isOther = choice?.kind === "OTHER";
   const place = leg.direction === "BOARD" ? student.pickup ?? student.dropoff : student.dropoff ?? student.pickup;
   const months = [month, ...board.laterMonths].map(monthLabel).join("·");
 
@@ -101,7 +103,14 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
 
   // ② 순서 목록 — 새로 넣을 자리(+)를 끼워 보여 준다. 합류면 그 정류장 바로 뒤, 다른 요일 정류장이면 서버가 정한 자리, 새 정류장이면 고른 자리.
   const otherOpt = choice?.kind === "OTHER" ? leg.joinOptions.find((o) => sameOption(choice, o)) ?? null : null;
-  const plusAt = choice?.kind === "JOIN" ? choice.stopIndex + 1 : otherOpt ? otherOpt.position ?? n : position;
+  const plusAt = choice?.kind === "JOIN" ? choice.stopIndex + 1 : choice?.kind === "OTHER" ? choice.position ?? otherOpt?.position ?? n : position;
+  // 위·아래로 옮길 수 있는 자리(새 정류장·다른 요일 정류장). 기존 정류장 합류는 그 정류장 순서를 따른다.
+  const movable = isNew || (isOther && otherOpt != null);
+  function move(delta: number) {
+    const p = Math.min(n, Math.max(0, plusAt + delta));
+    if (choice?.kind === "OTHER") { setChoice({ kind: "OTHER", key: choice.key, position: p }); return; }
+    setPosition(p); setChoice({ kind: "INSERT", position: p });
+  }
   const joinedStop = choice?.kind === "JOIN" ? leg.route[choice.stopIndex] : null;
   const rows: { no: string; stop: string; riders: string; mine?: boolean }[] = [];
   leg.route.forEach((s, i) => {
@@ -202,13 +211,13 @@ export default function AssignLegView({ month, board, student, leg, notice, warn
           </ol>
           {n === 0 && <p className="text-xs text-[var(--color-academy-muted)]">이 수업·방향에 아직 정차가 없어 첫 정차로 들어가요.</p>}
           <div className="flex gap-2">
-            <button type="button" disabled={!isNew || saving || position <= 0} onClick={() => { const p = Math.max(0, position - 1); setPosition(p); setChoice({ kind: "INSERT", position: p }); }}
+            <button type="button" disabled={!movable || saving || plusAt <= 0} onClick={() => move(-1)}
               className="min-h-11 flex-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-sm disabled:opacity-40">한 칸 위로</button>
-            <button type="button" disabled={!isNew || saving || position >= n} onClick={() => { const p = Math.min(n, position + 1); setPosition(p); setChoice({ kind: "INSERT", position: p }); }}
+            <button type="button" disabled={!movable || saving || plusAt >= n} onClick={() => move(1)}
               className="min-h-11 flex-1 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-sm disabled:opacity-40">한 칸 아래로</button>
           </div>
           {choice?.kind === "JOIN" && <p className="text-xs text-[var(--color-academy-muted)]">기존 정류장에 함께 타면 그 정류장 순서를 따라요. 순서를 바꾸려면 새 정류장을 고르세요.</p>}
-          {choice?.kind === "OTHER" && <p className="text-xs text-[var(--color-academy-muted)]">다른 요일 정류장은 운행 거리가 가장 적게 늘어나는 자리에 들어가요.</p>}
+          {choice?.kind === "OTHER" && <p className="text-xs text-[var(--color-academy-muted)]">처음엔 운행 거리가 가장 적게 늘어나는 자리에 놓여요. 한 칸 위·아래로 옮길 수 있어요.</p>}
         </section>
 
         {board.laterMonths.length > 0 && (
