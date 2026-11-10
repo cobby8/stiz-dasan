@@ -44,11 +44,11 @@
 | R-1 | api/admin/trial-count/route.ts | 필수 | 인증 가드 추가 |
 | R-2 | actions/public.ts | 권장 | source/referralSource 서버 화이트리스트 검증 |
 | R-3 | actions/public.ts:353 | 권장 | shuttleNeeded: `\|\|` → `??` 변경 |
-| R-7② | lib/seasonal/shuttleRoster.ts:166~176 | 권장 | 다음 시즌 신청자가 목록·확정 버튼에서 사라짐(시즌 스코프 전체 합산) |
+| R-7② | lib/seasonal/shuttleRoster.ts:166~176 | 권장 | 다음 시즌 신청자가 목록·확정 버튼에서 사라짐(시즌 스코프 전체 합산) ✅ 해소(11-10 — 시즌별 판정, 확정 시즌만 다시 채우지 않음) |
 | R-8② | admin/seasonal/shuttle/ShuttleRosterClient.tsx | 권장 | 제외 되돌리기가 세션 한정(새로고침 시 복구 UI 소멸) |
 | M-1 | actions/admin.ts `bookMakeupSession` | 참고 | 정원 검증이 "조회 후 INSERT"라 극단적 동시 요청에선 이론상 1건 초과 가능(DB 제약 아님) |
-| P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater |
-| P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 |
+| P-1 | lib/pos/chargeRequestService.ts writeLedgerPaid·settleCancelForRow | 권장 | 납부 기록(markPaymentPaid 무조건 UPDATE) 직전에 POS 취소 웹훅이 끼면 요청 DONE·청구 PENDING→뒤이어 PAID 로 덮임(사이트 납부완료·실제는 취소). 기록 뒤 cancelState 재확인 → DONE 이면 refundPaidPaymentInTx, 또는 settle 에서 refunded=false·청구 미납이면 retryLater ✅ 코드 반영 확인(refundIfCancelledDuringLedger) |
+| P-2 | admin/finance/FinanceClient.tsx:955 «환불» | 권장 | TOSS_POS 건에도 그대로 → POS 는 안 취소되고 사이트만 REFUNDED. TOSS_POS 면 숨기거나 확인창에 «POS 결제는 취소되지 않음, 결제 취소를 쓰세요» 경고 ✅ 코드 반영 확인(refundSelectedPayments — 결제 길별 환불) |
 
 
 - ⚠️ (11-08 POS 결제 취소 리뷰) 마이그레이션은 build 에 migrate deploy 가 없어 **배포 전 apply_migration 필수**(안 하면 현장 결제 전체 정지).
@@ -93,6 +93,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-10 | developer(R-7② 방학특강 셔틀 확정 명단 시즌별 판정, PM 결정 «코드 수정»): 게이트웨이 getConfirmedShuttleRoster 가 «보관 안 된 시즌 중 하나라도 확정본» → 전체 확정본만 읽던 것을 시즌마다 판정(confirmedSeasonIds: 확정 시즌=확정본, 확정 전 시즌=폴백·확정 시즌 제외, 합칠 때 ROSTER_ORDER 정렬). 확정하기는 이미 확정한 시즌을 다시 채우지 않음(NOT EXISTS). 셔틀 관리 화면: 확정 배너 탑승 수=확정 시즌만, 확정 전 새 시즌이 있으면 «새 시즌 N명 확정하기». 운영 상태: 2026 여름(PUBLISHED) 확정본 18행·킬 스위치 ON → 겨울 시즌을 만들면 바로 터질 상태였음. 테스트: per-season 실행 테스트 5건 신규·confirm 테스트 3건 시즌별 규칙으로 갱신. tsc 0·tests 3827-1(kst ICU 무관) | 완료(브랜치 푸시, main 미배포) |
 | 11-10 | developer(원장 «셔틀 배정 ② 몇 번째로 태울까요에서 이동이 안 돼»): 다른 요일 정류장(OTHER)을 고르면 [한 칸 위로/아래로]가 꺼져 있고 서버도 추천 자리만 썼음 → OTHER 에 position(선택) 추가: 화면은 추천 자리에서 시작해 위·아래 이동, 서버 parseAssignRequest 정수 0..500 검사·addInputForLeg 는 position ?? 추천 자리(0..n 밖 409). 기사님 화면·관리자 정규배차 모달 공용(AssignLegView). 테스트 1건 추가. tsc 0·tests 3821-1(kst-display-fixes «AM/오전» = 이 컨테이너 ICU 차이, 무관) | 완료(브랜치 푸시, main 미배포) |
 | 11-10 | developer(신청함 통합): 수업 탭→신청함 브랜치 merge(충돌 scratchpad 1곳) · catalog «취소 요청 검토 중»(CANCEL_REQUESTED, 처리 필요) · 타임라인 상태명 catalog 로 · 신청함 어댑터·getInboxCounts 에 취소 요청 행 + 마이그레이션 전 fallback · 상세 칸 [취소 승인]/[요청 거절](기존 action). tsc 0·tests 3821-0·studentVisibility 5-0. ⚠️ 20261110130000 운영 적용 필요 | 검수 대기(미푸시) |
 | 11-10 | developer(신청함 5·6단계 수업 탭): 탭 홈·수업·청구·소식 · 반 카드(상태 칩=buildClassStatusLine·다음 수업·출결 4칸·셔틀·버튼 프리셋) · 신청 내역 타임라인 7종류+하단 시트 · d8 취소 요청(대상 신청 칸 5개, 마이그레이션 20261110130000 운영 미적용) · queries.ts KST 2곳. tsc 0·전체 fail 0 | 구현·검증 완료(검수 대기, 미푸시) |

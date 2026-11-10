@@ -198,6 +198,9 @@ export default function ShuttleRosterClient({
   }, [rows, q]);
 
   const rideCount = rows.filter((r) => r.ride).length;
+  // 확정한 시즌과 확정 전 시즌(다음 방학)이 함께 보일 때(R-7②) — 확정 전 시즌 행은 origin=FALLBACK 으로 온다.
+  const pendingRideCount = confirmed ? rows.filter((r) => r.origin !== "CONFIRMED" && r.ride).length : 0;
+  const confirmedRideCount = rideCount - pendingRideCount;
   const nonRiderCount = rows.length - rideCount;
   // 좌표가 없어 자동 배차에서 빠지는 탑승자 수(표시 전용 경고). 검색 결과가 아니라 전체 기준으로 센다.
   const missingCoordCount = rows.filter(missingCoord).length;
@@ -242,8 +245,10 @@ export default function ShuttleRosterClient({
   // 확정하기 — 원장이 눈으로 확인한 명단을 값으로 복제해 고정한다.
   async function confirmRoster() {
     if (confirming) return;
+    // 이미 확정한 시즌이 있으면 확정 전 시즌만 저장된다(서버가 확정한 시즌은 다시 채우지 않는다).
+    const target = confirmed ? pendingRideCount : rideCount;
     const ok = window.confirm(
-      `지금 탑승 ${rideCount}명을 확정 명단으로 저장합니다.\n\n` +
+      `${confirmed ? "새 시즌 " : "지금 "}탑승 ${target}명을 확정 명단으로 저장합니다.\n\n` +
       `확정하면\n· 새 신청이 들어와도 이 명단에 자동으로 추가되지 않습니다.\n` +
       `· 여기서 고친 값이 그대로 기사님 명단이 됩니다.\n\n진행할까요?`,
     );
@@ -426,13 +431,26 @@ export default function ShuttleRosterClient({
         {confirmed ? (
           <div className="mt-3 rounded-xl border border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] p-3">
             <p className="text-[13px] font-black text-[var(--color-academy-success)]">
-              ✓ 확정됨 · 탑승 {rideCount}명{confirmedAtLabel ? ` · ${confirmedAtLabel} 확정` : ""}
+              ✓ 확정됨 · 탑승 {confirmedRideCount}명{confirmedAtLabel ? ` · ${confirmedAtLabel} 확정` : ""}
             </p>
             <p className="mt-0.5 text-[11.5px] font-semibold text-[var(--color-academy-success)]">
               확정본 {confirmedCount}건(미탑승 포함) · 새 신청이 들어와도 이 명단에는 자동으로 추가되지 않습니다. 여기서 고친 값이 그대로 기사님 명단이 됩니다.
             </p>
           </div>
-        ) : (
+        ) : null}
+        {/* 확정한 시즌 + 확정 전 새 시즌(R-7②) — 새 시즌 신청자는 확정 전처럼 신청을 따라 움직이고, 이 시즌만 따로 확정한다. */}
+        {confirmed && pendingRideCount > 0 && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
+            <p className="text-[12.5px] font-bold text-[var(--color-academy-warning)]">
+              새 시즌 탑승 {pendingRideCount}명은 아직 확정 전입니다. 신청이 바뀌면 함께 바뀝니다.
+            </p>
+            <button type="button" onClick={confirmRoster} disabled={confirming}
+              className="academy-button-primary">
+              {confirming ? "확정하는 중..." : `새 시즌 ${pendingRideCount}명 확정하기`}
+            </button>
+          </div>
+        )}
+        {!confirmed && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-3">
             <p className="text-[12.5px] font-bold text-[var(--color-academy-warning)]">
               이 명단은 아직 확정 전입니다. 신청이 바뀌면 명단도 함께 바뀝니다.

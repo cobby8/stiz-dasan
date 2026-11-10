@@ -321,25 +321,68 @@ export async function getConfirmedShuttleRoster(seasonId?: string | null): Promi
   //   보이는 행으로 판정하면, 원장이 명단에서 전원을 빼는 순간 확정본이 비어 보여 폴백이 되살아나고
   //   **일부러 뺀 학생이 기사님 CSV에 다시 나타난다.** 게다가 확정 버튼을 다시 눌러도
   //   ON CONFLICT DO NOTHING이라 아무 일도 안 일어나 빠져나갈 방법이 없다.
-  if (await confirmedModeEnabled() && await confirmedRosterExists(seasonId)) {
-    const scope = seasonScope({ roster: "sr", season: "s" }, seasonId);
+  // ★ 판정은 «시즌마다» 한다(R-7②, 2026-11-10). 예전엔 보관 안 된 시즌 중 하나라도 확정본이 있으면
+  //   전체를 확정본으로만 읽어, 다음 시즌(확정 전) 신청자가 기사님 명단·학부모 화면·안내에서 통째로 빠졌다.
+  //   확정한 시즌 = 확정본만, 확정 전 시즌 = 원본 폴백. 한 시즌 안에서는 여전히 둘을 섞지 않는다.
+  if (!(await confirmedModeEnabled())) return fallbackSeasonRoster(seasonId);
+  const confirmedSeasons = await confirmedSeasonIds(seasonId);
+  if (confirmedSeasons.length === 0) return fallbackSeasonRoster(seasonId);
+  const confirmedRows = await confirmedSeasonRoster(confirmedSeasons);
+  // 시즌을 지정했으면 그 시즌은 확정본이 정본이다(결과가 빈 목록이어도 그대로 — "아무도 안 태운다"가 원장의 결정).
+  if (seasonId) return confirmedRows;
+  const pendingRows = await fallbackSeasonRoster(null, confirmedSeasons);
+  if (pendingRows.length === 0) return confirmedRows;
+  return sortRosterEntries([...confirmedRows, ...pendingRows]);
+}
+
+/** 확정본 행 — 지정한 시즌들만(그 시즌들에 확정본이 있다는 것은 호출한 쪽이 이미 확인했다). */
+async function confirmedSeasonRoster(seasonIds: string[]): Promise<ShuttleRosterEntry[]> {
+  const rows = await prisma.$queryRawUnsafe<RawRow[]>(
+    `SELECT ${CONFIRMED_COLUMNS}
+       FROM "SeasonalShuttleRoster" sr
+       JOIN "SpecialProgramSeason" s ON s.id = sr."seasonId"
+       LEFT JOIN "SpecialProgramShuttleRequest" req ON req.id = sr."shuttleRequestId"
+       LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"
+      WHERE sr."removedAt" IS NULL
+        AND (ai.id IS NULL OR ai.status NOT IN ('CANCELLED', 'REJECTED'))
+        AND sr."seasonId" = ANY($1::text[])
+      ${ROSTER_ORDER}`,
+    seasonIds,
+  );
+  return rows.map((r) => toEntry(r, "CONFIRMED"));
+}
+
+/** 두 시즌 결과를 합칠 때만 쓰는 정렬 — SQL 의 ROSTER_ORDER(탑승 먼저·수업 시작·이름)와 같은 순서. */
+function sortRosterEntries(entries: ShuttleRosterEntry[]): ShuttleRosterEntry[] {
+  return entries.sort((a, b) => {
+    if (a.ride !== b.ride) return a.ride ? -1 : 1;
+    if (a.classStart !== b.classStart) {
+      if (a.classStart == null) return 1;
+      if (b.classStart == null) return -1;
+      return a.classStart < b.classStart ? -1 : 1;
+    }
+    return a.studentName.localeCompare(b.studentName, "ko");
+  });
+}
+
+/**
+ * 범위 안에서 확정본이 있는 시즌 id 목록(제외된 행 포함 — 전원 제외가 폴백 부활로 이어지면 안 된다).
+ * 테이블이 없는 구버전 DB 면 빈 목록(= 폴백).
+ */
+async function confirmedSeasonIds(seasonId?: string | null): Promise<string[]> {
+  const scope = seasonScope({ roster: "sr", season: "s" }, seasonId);
+  try {
     const rows = await prisma.$queryRawUnsafe<RawRow[]>(
-      `SELECT ${CONFIRMED_COLUMNS}
+      `SELECT DISTINCT sr."seasonId" AS "seasonId"
          FROM "SeasonalShuttleRoster" sr
          JOIN "SpecialProgramSeason" s ON s.id = sr."seasonId"
-         LEFT JOIN "SpecialProgramShuttleRequest" req ON req.id = sr."shuttleRequestId"
-         LEFT JOIN "SpecialProgramApplicationItem" ai ON ai.id = sr."applicationItemId"
-        WHERE sr."removedAt" IS NULL
-          AND (ai.id IS NULL OR ai.status NOT IN ('CANCELLED', 'REJECTED'))
-          AND ${scope.where}
-        ${ROSTER_ORDER}`,
+        WHERE ${scope.where}`,
       ...scope.params,
     );
-    // 확정본이 정본이다. 원본을 섞지 않고(섞으면 확정의 의미가 사라진다),
-    // 결과가 빈 목록이어도 그대로 돌려준다(= "아무도 안 태운다"가 원장의 결정이다).
-    return rows.map((r) => toEntry(r, "CONFIRMED"));
+    return rows.map((r) => String(r.seasonId));
+  } catch {
+    return [];
   }
-  return fallbackSeasonRoster(seasonId);
 }
 
 /**
@@ -369,8 +412,10 @@ async function confirmedRosterExists(seasonId?: string | null): Promise<boolean>
  * 전환 이전 화면과 **완전히 같은 결과**를 내는 것이 이 함수의 유일한 목표다.
  * 셔틀 상태(r.status)는 SQL에서 거르지 않고 ride 값으로만 표시한다.
  */
-async function fallbackSeasonRoster(seasonId?: string | null): Promise<ShuttleRosterEntry[]> {
+async function fallbackSeasonRoster(seasonId?: string | null, excludeSeasonIds: string[] = []): Promise<ShuttleRosterEntry[]> {
   const scope = seasonScope({ application: "a", season: "s" }, seasonId);
+  // 확정본이 있는 시즌은 빼고 읽는다(그 시즌은 확정본이 정본 — 한 시즌 안에서 원본을 섞지 않는다).
+  const exclude = excludeSeasonIds.length > 0 ? ` AND NOT (a."seasonId" = ANY($${scope.params.length + 1}::text[]))` : "";
   const rows = await prisma.$queryRawUnsafe<RawRow[]>(
     `SELECT * FROM (
        SELECT ${FALLBACK_COLUMNS},
@@ -380,11 +425,12 @@ async function fallbackSeasonRoster(seasonId?: string | null): Promise<ShuttleRo
          JOIN "SpecialProgramSeason" s ON s.id = a."seasonId"
          LEFT JOIN "SpecialProgramApplicationItem" it ON it.id = r."applicationItemId"
          LEFT JOIN "SpecialProgramOffering" o ON o.id = it."offeringId"
-        WHERE ${scope.where}
+        WHERE ${scope.where}${exclude}
           AND ${seasonalShuttleEligibilitySql({ application: "a", item: "it", offering: "o" })}
      ) t
      ${ROSTER_ORDER}`,
     ...scope.params,
+    ...(excludeSeasonIds.length > 0 ? [excludeSeasonIds] : []),
   );
   return rows.map((r) => toEntry({ ...r, ride: isRidingShuttleStatus(r.requestStatus) }, "FALLBACK"));
 }
@@ -631,6 +677,9 @@ export async function confirmSeasonalShuttleRoster(seasonId?: string | null): Pr
        JOIN "SpecialProgramApplicationItem" it ON it.id = r."applicationItemId"
        JOIN "SpecialProgramOffering" o ON o.id = it."offeringId"
       WHERE ${scope.where}
+        -- 이미 확정한 시즌은 다시 채우지 않는다(R-7②): 확정 후 새 신청이 그 시즌 명단에 슬며시 들어가면
+        -- «확정하면 새 신청이 자동으로 추가되지 않는다»는 약속이 깨진다. 확정 전 시즌(다음 방학)만 확정한다.
+        AND NOT EXISTS (SELECT 1 FROM "SeasonalShuttleRoster" done WHERE done."seasonId" = a."seasonId")
         AND ${seasonalShuttleEligibilitySql({ application: "a", item: "it", offering: "o" })}
      ON CONFLICT ("seasonId", "shuttleRequestId") DO NOTHING`,
     ...scope.params,
