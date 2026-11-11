@@ -174,7 +174,7 @@ export const REQUEST_KINDS: readonly KindEntry[] = [
   },
   {
     kind: "ROLE_GRANT", label: "직원 역할", icon: "badge", adminHref: "/admin/role-requests", parentFacing: false,
-    statuses: { PENDING: act("승인 대기"), ACTIVE: ok("승인"), REJECTED: no("반려"), REVOKED: off("회수") },
+    statuses: { PENDING: act("승인 대기"), COACH_LINK_REQUIRED: act("코치 연결 필요"), ACTIVE: ok("승인"), REJECTED: no("반려"), REVOKED: off("회수") },
   },
   {
     kind: "MEDIA_REVOCATION", label: "사진 공개 회수", icon: "hide_image", adminHref: "/admin/media-revocations", parentFacing: false,

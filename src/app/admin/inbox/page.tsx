@@ -31,7 +31,7 @@ function subOfKind(tab: InboxTab, kind: RequestKind): string | null {
 }
 
 export default async function AdminInboxPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const params = (await searchParams) ?? {};
   // 주소 값은 그대로 믿지 않는다 — 알려진 탭·분류·종류·날짜 모양만 통과
   const kindParam = isRequestKind(params.kind) ? params.kind : null;
@@ -75,6 +75,7 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
       to={to}
       counts={counts}
       data={data}
+      canDecideStaffRoles={admin.appUserRole === "ADMIN"}
     />
   );
 }

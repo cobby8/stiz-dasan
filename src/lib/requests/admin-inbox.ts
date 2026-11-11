@@ -389,17 +389,19 @@ const ADAPTERS: Adapter[] = [
   },
   {
     kind: "ROLE_GRANT",
-    from: `"UserRoleGrant" x LEFT JOIN "User" u ON u.id = x."userId"`,
-    rawExpr: "x.status",
-    where: `(x.source = 'REQUEST' OR x.status = 'PENDING')`, // 원장이 직접 준 역할은 «신청»이 아니다
+    from: `"UserRoleGrant" x JOIN "User" u ON u.id = x."userId" LEFT JOIN "Coach" c ON c."userId" = u.id`,
+    rawExpr: `CASE WHEN x.status = 'ACTIVE' AND x.role = 'INSTRUCTOR' AND c.id IS NULL THEN 'COACH_LINK_REQUIRED' ELSE x.status END`,
+    where: `u."withdrawnAt" IS NULL AND (x.source = 'REQUEST' OR x.status = 'PENDING'
+      OR (x.status = 'ACTIVE' AND x.role = 'INSTRUCTOR'))`,
     studentNameExpr: "NULL::text",
     createdAtExpr: `x."requestedAt"`,
     targetDateExpr: "NULL::text",
-    extra: `'userName', u.name, 'role', x.role, 'note', x.note`,
+    extra: `'userName', u.name, 'role', x.role, 'note', x.note, 'coachName', c.name`,
     format: (_row, e) => ({
       title: `직원 역할 · ${text(e.userName)}`,
       summary: `${ROLE_LABEL[text(e.role)] ?? text(e.role)} 역할 신청`,
-      facts: [...fact("신청자", e.userName), ...fact("역할", ROLE_LABEL[text(e.role)] ?? e.role), ...fact("메모", e.note)],
+      facts: [...fact("신청자", e.userName), ...fact("역할", ROLE_LABEL[text(e.role)] ?? e.role), ...fact("코치 프로필", e.coachName), ...fact("메모", e.note)],
+      ref: { role: text(e.role) },
     }),
   },
   {

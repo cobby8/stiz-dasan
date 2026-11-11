@@ -48,6 +48,7 @@ const ApplyAdminClient = dynamic(() => import("@/app/admin/apply/ApplyAdminClien
 const RentalAdminClient = dynamic(() => import("@/app/admin/rental/RentalAdminClient"), { loading: () => <TabLoading /> });
 const EnrollmentChangeInboxDetail = dynamic(() => import("@/app/admin/enrollment-changes/EnrollmentChangeInboxDetail"), { loading: () => <TabLoading /> });
 const InboxSpecializedActions = dynamic(() => import("./InboxSpecializedActions"), { loading: () => <TabLoading /> });
+const RoleRequestCoachLink = dynamic(() => import("./RoleRequestCoachLink"), { loading: () => <TabLoading /> });
 const SPECIALIZED_KINDS = new Set<RequestKind>(["SEASONAL_ABSENCE", "SEASONAL_MAKEUP", "KAKAO", "WITHDRAWAL", "MEDIA_REVOCATION"]);
 
 type TrialPayload = Awaited<ReturnType<typeof getCachedAdminTrialPayload>>;
@@ -73,6 +74,7 @@ type Props = {
   to: string | null;
   counts: InboxCounts | null;
   data: InboxTabData;
+  canDecideStaffRoles?: boolean;
 };
 
 type PanelAction = {
@@ -171,21 +173,25 @@ export function actionsFor(row: InboxRow): PanelAction[] {
         },
       ];
     }
-    case "ROLE_GRANT":
-      if (row.rawStatus === "ACTIVE") return [{
+    case "ROLE_GRANT": {
+      if (row.rawStatus === "ACTIVE" || row.rawStatus === "COACH_LINK_REQUIRED") return [{
         key: "revoke", label: "역할 회수", look: "danger",
         confirm: { title: `${row.title} 역할 회수`, description: "회수하면 이 사람의 해당 직원 화면 접근이 즉시 종료됩니다.", confirmLabel: "회수", tone: "danger" },
         run: () => revokeRoleGrant(row.id),
       }];
       if (row.rawStatus !== "PENDING") return [];
-      return [
+      const actions: PanelAction[] = [
         { key: "reject", label: "반려", look: "danger", run: (note) => rejectRoleRequest(row.id, note) },
-        {
+      ];
+      if (row.ref?.role !== "INSTRUCTOR") {
+        actions.push({
           key: "approve", label: "승인", look: "primary",
           confirm: { title: `${row.title} 승인`, description: "이 순간부터 이 사람에게 선생님·기사님 화면이 열립니다.", confirmLabel: "승인", tone: "primary" },
           run: () => approveRoleRequest(row.id),
-        },
-      ];
+        });
+      }
+      return actions;
+    }
     case "STAFF_PAYMENT":
       if (row.rawStatus !== "PENDING") return [];
       return [
@@ -227,7 +233,7 @@ export function actionsFor(row: InboxRow): PanelAction[] {
 /** 메모 칸이 필요한 처리(거절 사유·답변·원장 메모) */
 function wantsNote(row: InboxRow, actions: PanelAction[]): boolean {
   return actions.length > 0 && row.kind !== "REGULAR_ABSENCE" && row.kind !== "MAKEUP"
-    && !(row.kind === "ROLE_GRANT" && row.rawStatus === "ACTIVE");
+    && !(row.kind === "ROLE_GRANT" && row.rawStatus !== "PENDING");
 }
 
 /** 일괄 처리는 결석 신고와 새 문의에서만 가능하다. */
@@ -258,7 +264,7 @@ function GroupHead({ label, count }: { label: string; count: number }) {
   );
 }
 
-export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data }: Props) {
+export default function InboxClient({ tab, sub, kind, showDone, from, to, counts, data, canDecideStaffRoles = false }: Props) {
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
@@ -314,7 +320,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   const open = freshOpen ?? (openSelection && (
     openSelection.kind === "ENROLLMENT_CHANGE" || SPECIALIZED_KINDS.has(openSelection.kind)
   ) ? openSelection : null);
-  const openActions = open ? actionsFor(open) : [];
+  const openActions = open && (open.kind !== "ROLE_GRANT" || canDecideStaffRoles) ? actionsFor(open) : [];
   const filterCount = from || to ? 1 : 0;
   const bulkRows = actionRows.filter(isBulkable);
   const selectedRows = bulkRows.filter((row) => selected.has(keyOf(row)));
@@ -658,6 +664,21 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             </label>
           )}
           {message?.tone === "error" && <p role="alert" className="mt-3 text-sm font-bold text-[var(--color-academy-danger)]">{message.text}</p>}
+          {canDecideStaffRoles && open.kind === "ROLE_GRANT" && open.ref?.role === "INSTRUCTOR"
+            && (open.rawStatus === "PENDING" || open.rawStatus === "COACH_LINK_REQUIRED") && (
+              <RoleRequestCoachLink
+                key={keyOf(open) + ":" + open.rawStatus}
+                grantId={open.id}
+                status={open.rawStatus === "PENDING" ? "PENDING" : "ACTIVE"}
+                disabled={pending}
+                onConnected={(text) => {
+                  setMessage({ tone: "ok", text });
+                  setOpenSelection(null);
+                  setNote("");
+                  router.refresh();
+                }}
+              />
+          )}
           {/* 처리 버튼 — 위험(취소·거절)은 왼쪽, 주 버튼은 오른쪽 끝(근접성 — 헷갈려 누르지 않게) */}
           {openActions.length > 0 && (
             <div className="mt-4 flex flex-wrap justify-end gap-2">

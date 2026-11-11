@@ -1,9 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { requireAdmin, requireOwner } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { createNotificationRecord } from "@/lib/notification";
+import { isUsablePhoneKey, parentPhoneDigits } from "@/lib/enrollment/parentIdentity";
 import { ROLE_LABELS, type GrantableRole } from "@/lib/account/roles";
 
 // 직원 역할(선생님·기사님) 신청 — 원장 확인·처리 (다중 역할 4단계, 2026-10-25).
@@ -84,8 +86,15 @@ async function transition(
     return { error: from === "PENDING" ? "이미 처리된 신청입니다. 목록을 새로고침해 주세요." : "이미 회수된 역할입니다." };
   }
 
+  await announceRoleTransition(changed[0], to);
+  return { ok: true };
+}
+
+async function announceRoleTransition(
+  { userId, role }: { userId: string; role: GrantableRole },
+  to: "ACTIVE" | "REJECTED" | "REVOKED",
+) {
   // 신청자에게 결과를 알린다(앱 알림 + 푸시, 문자 없음). 실패해도 처리는 이미 끝났다 — createNotificationRecord 가 오류를 삼킨다.
-  const { userId, role } = changed[0];
   const label = ROLE_LABELS[role];
   const notice =
     to === "ACTIVE"
@@ -96,8 +105,8 @@ async function transition(
   await createNotificationRecord({ userId, type: "ROLE_REQUEST", ...notice });
 
   revalidatePath("/admin/role-requests");
+  revalidatePath("/admin/inbox");
   revalidatePath("/admin");
-  return { ok: true };
 }
 
 /** 신청을 승인한다 — 이 순간부터 그 사람에게 선생님·기사님 화면이 열린다. */
@@ -117,4 +126,89 @@ export async function rejectRoleRequest(grantId: unknown, reason?: unknown) {
  */
 export async function revokeRoleGrant(grantId: unknown) {
   return transition(grantId, "ACTIVE", "REVOKED", "원장 회수");
+}
+
+/** 신청 상세를 열 때 연결 가능한 코치를 조회한다. 연락처는 끝 네 자리만 돌려준다. */
+export async function getRoleRequestCoachOptions(grantId: string) {
+  const admin = await requireAdmin();
+  const grant = await prisma.userRoleGrant.findFirst({
+    where: { id: grantId, role: "INSTRUCTOR", status: { in: ["PENDING", "ACTIVE"] }, user: { withdrawnAt: null } },
+    select: { userId: true, user: { select: { name: true, phone: true } } },
+  });
+  if (!grant) return { error: "처리할 수 없는 선생님 신청입니다." };
+
+  const linked = await prisma.coach.findUnique({ where: { userId: grant.userId }, select: { id: true, name: true, role: true } });
+  const canConnect = admin.appUserRole === "ADMIN";
+  const coaches = canConnect && !linked
+    ? await prisma.coach.findMany({
+        where: { userId: null },
+        select: { id: true, name: true, role: true, phone: true },
+        orderBy: [{ order: "asc" }, { name: "asc" }],
+      })
+    : [];
+  const digits = parentPhoneDigits(grant.user.phone);
+  const options = coaches.map(({ id, name, role, phone }) => {
+    const coachDigits = parentPhoneDigits(phone);
+    return {
+      id, name, role,
+      phoneLast4: coachDigits.slice(-4),
+      matches: name.trim() === grant.user.name?.trim() && isUsablePhoneKey(digits) && coachDigits === digits,
+    };
+  });
+  options.sort((a, b) => Number(b.matches) - Number(a.matches));
+  return { linked, options, canConnect, phoneLast4: digits.slice(-4) };
+}
+
+/** 승인과 연결을 같은 트랜잭션에서 처리한다. 기존 연결은 다른 계정으로 옮기지 않는다. */
+export async function connectRoleRequestCoach(grantId: string, coachId: string, expectedStatus: "PENDING" | "ACTIVE") {
+  const owner = await requireOwner();
+  if (!grantId || !coachId || !["PENDING", "ACTIVE"].includes(expectedStatus)) {
+    return { error: "연결할 코치와 신청을 확인해 주세요." };
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const [grant] = await tx.$queryRaw<Array<{ userId: string }>>(
+      Prisma.sql`SELECT g."userId"
+        FROM "UserRoleGrant" g JOIN "User" u ON u.id = g."userId"
+        WHERE g.id = ${grantId} AND g.role = 'INSTRUCTOR' AND g.status = ${expectedStatus}
+          AND u."withdrawnAt" IS NULL
+        FOR UPDATE OF g, u`,
+    );
+    if (!grant) return { error: "신청 상태가 바뀌었습니다. 신청함을 새로고침해 주세요." };
+
+    const linked = await tx.coach.findUnique({ where: { userId: grant.userId }, select: { id: true } });
+    if (linked && linked.id !== coachId) {
+      return { error: "이미 다른 코치가 연결된 계정입니다. 기존 연결을 확인해 주세요." };
+    }
+    if (!linked) {
+      const changed = await tx.coach.updateMany({
+        where: { id: coachId, userId: null },
+        data: { userId: grant.userId },
+      });
+      if (changed.count !== 1) return { error: "이 코치는 연결할 수 없습니다. 다른 계정에 연결됐는지 확인해 주세요." };
+    }
+    if (expectedStatus === "PENDING") {
+      await tx.userRoleGrant.update({
+        where: { id: grantId },
+        data: { status: "ACTIVE", decidedAt: new Date(), decidedBy: owner.appUserId, note: "원장 승인 및 코치 연결" },
+      });
+    }
+    return { userId: grant.userId };
+  }).catch((error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return { error: "계정에 이미 코치가 연결돼 있습니다. 새로고침 후 확인해 주세요." };
+    }
+    throw error;
+  });
+
+  if ("error" in result) return { error: result.error };
+  if (expectedStatus === "PENDING") {
+    await announceRoleTransition({ userId: result.userId, role: "INSTRUCTOR" }, "ACTIVE");
+  } else {
+    revalidatePath("/admin/inbox");
+  }
+  revalidateTag("admin-staff", { expire: 0 });
+  revalidateTag("admin-coaches", { expire: 0 });
+  revalidatePath("/admin/staff");
+  return { ok: true };
 }

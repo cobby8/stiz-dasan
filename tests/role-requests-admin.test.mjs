@@ -20,11 +20,11 @@ const requestAction = fs.readFileSync("src/app/actions/role-requests.ts", "utf8"
 
 test("관리자 메뉴에서 직원 역할 신청 화면에 도달할 수 있다", () => {
   // 화면만 있고 메뉴가 없으면 아무도 못 쓴다(이 프로젝트 2회 실측). 학부모 요청 계열 묶음 안에.
-  // 2026-11-10 신청함 통합(d2): 메뉴 «신청함» → 상세 칸 «기존 화면에서 열기»(catalog adminHref)
+  // 기존 역할 관리 주소와 신청함의 새 신청 알림 진입점을 함께 유지한다.
   assert.match(shell, /href="\/admin\/inbox"[^\n]*label="신청함"/);
   assert.match(fs.readFileSync("src/lib/requests/catalog.ts", "utf8"), /kind: "ROLE_GRANT",[^\n]*adminHref: "\/admin\/role-requests"/);
-  // 3단계 신청 알림이 이 화면을 가리킨다 — 둘이 어긋나면 알림을 눌러도 길을 잃는다.
-  assert.match(requestAction, /"\/admin\/role-requests"/);
+  // 새 신청 알림에서 직원 역할만 보이는 신청함으로 바로 간다.
+  assert.match(requestAction, /"\/admin\/inbox\?tab=OTHER&kind=ROLE_GRANT"/);
 });
 
 test("승인·반려·회수는 원장만, 목록은 원장·부원장", () => {

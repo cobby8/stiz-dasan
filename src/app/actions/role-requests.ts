@@ -101,7 +101,7 @@ export async function requestStaffRoles(requested: unknown) {
         "ROLE_REQUEST",
         "직원 역할 신청",
         `${user.name}님이 ${created.map((role) => ROLE_LABELS[role]).join("·")} 역할을 신청했습니다. 확인 후 승인해 주세요.`,
-        "/admin/role-requests",
+        "/admin/inbox?tab=OTHER&kind=ROLE_GRANT",
         { notifyCoaches: false, eventId: `role-request:${parent.appUserId}:${created.join(",")}` },
       );
     } catch (error) {
