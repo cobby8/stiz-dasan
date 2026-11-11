@@ -33,7 +33,7 @@ export function settlementChoiceRequired(p: { problems: readonly string[]; paidT
 export const SETTLEMENT_CHOICE_REQUIRED_MESSAGE = "수강료 처리 방식을 골라 주세요(금액이 바뀌었어요).";
 
 /** problems 가 있을 때 승인 버튼 위 안내(수강 변경 화면·신청함 같은 문구) */
-export const SETTLEMENT_PROBLEM_APPROVE_NOTE = "승인하면 수강료 처리 없이 승인만 돼요. 처리는 수강 변경 화면에서 하세요.";
+export const SETTLEMENT_PROBLEM_APPROVE_NOTE = "승인 전에 수강료 계산에 필요한 정보를 확인해 주세요. 지금 승인하면 수강료 처리는 대기로 남습니다.";
 
 export function isSettlementMode(value: unknown): value is SettlementMode {
   return typeof value === "string" && (SETTLEMENT_MODES as readonly string[]).includes(value);

@@ -14,6 +14,9 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { isKstYmd } from "@/lib/datetime/kst";
+import { notClosedByDeletedEnrollmentSql } from "@/lib/enrollment/admin-enrollment-edit";
+import { settlementTablesReady } from "@/lib/enrollment/pause-settlement";
+import { groupEnrollmentChangeInboxSql, PAUSE_GROUP_KEY_SQL } from "@/lib/requests/inbox-enrollment-change-group";
 import {
   bucketFor,
   ENROLLMENT_CANCEL_REQUESTED,
@@ -32,6 +35,14 @@ import type { StatusTone } from "@/lib/ui/statusTones";
 import { countConsultAction } from "@/lib/requests/consult-inbox";
 
 export type InboxFact = [label: string, value: string];
+export type InboxEnrollmentChangeMember = {
+  id: string;
+  className: string;
+  rawStatus: string;
+  statusLabel: string;
+  enrollmentStatus?: string;
+  holdReason?: string;
+};
 
 /** 신청함 한 줄 — 종류가 달라도 모양은 같다 */
 export type InboxRow = {
@@ -52,6 +63,8 @@ export type InboxRow = {
   detailHref: string;
   /** 상세 칸에 보일 사실들 */
   facts: InboxFact[];
+  /** 신청 건의 대상 반. 묶음은 id 와 별개로 실제 처리할 반별 신청 id를 가진다. */
+  members?: InboxEnrollmentChangeMember[];
   /** 처리 버튼이 쓰는 추가 값(학부모 계정 id·청구 종류 등) */
   ref?: Record<string, string | null>;
   /** 색 뜻 — 보통 비워 둔다(catalog 가 정한다). 넣으면 그 색 뜻이 이긴다 */
@@ -129,6 +142,15 @@ const CHANNEL_LABEL: Record<string, string> = { GALLERY: "갤러리", INSTAGRAM:
 /** 학생 이름 LEFT JOIN — 병합 학생 제외 조건을 ON 에 건다(행은 살리고 이름만 비운다) */
 const studentJoin = (alias: string, onExpr: string) => `LEFT JOIN "Student" ${alias} ON ${alias}.id = ${onExpr} AND ${notMergedStudent(alias)}`;
 const kstYmd = (expr: string) => `to_char((${expr}) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD')`;
+const enrollmentChangeExtra = `
+  'enrollmentId', x."enrollmentId", 'fromClassId', x."fromClassId", 'enrollmentStatus', en.status,
+  'pauseGroupKey', ${PAUSE_GROUP_KEY_SQL}, 'operationStatus', oc.status,
+  'holdReason', CASE WHEN oc.status = 'HELD' THEN oc."holdReason" END,
+  'syncPending', EXISTS (
+    SELECT 1 FROM "OperationsSyncAttempt" a WHERE a."commandId" = oc.id
+     AND ((a.target = 'SHEET' AND a.status NOT IN ('SUCCEEDED','SKIPPED'))
+       OR (a.target = 'RALLYZ' AND a.status <> 'SUCCEEDED'))
+  )`;
 
 // ── 종류별 어댑터 ──────────────────────────────────────────────────────────
 
@@ -136,7 +158,14 @@ const ADAPTERS: Adapter[] = [
   {
     kind: "ENROLLMENT_CHANGE",
     from: `"EnrollmentChangeRequest" x ${studentJoin("s", `x."studentId"`)}
-           LEFT JOIN "Class" fc ON fc.id = x."fromClassId" LEFT JOIN "Class" tc ON tc.id = x."toClassId"`,
+           LEFT JOIN "Class" fc ON fc.id = x."fromClassId" LEFT JOIN "Class" tc ON tc.id = x."toClassId"
+           LEFT JOIN "Enrollment" en ON en.id = x."enrollmentId" AND en."studentId" = x."studentId"
+           LEFT JOIN LATERAL (
+             SELECT c.id, c.status, c."holdReason" FROM "OperationsCommand" c
+              WHERE (c."idempotencyKey" = 'enrollment-change:' || x.id OR c."afterJson"->>'enrollmentChangeRequestId' = x.id)
+                AND ${notClosedByDeletedEnrollmentSql("c")}
+              ORDER BY c."createdAt" DESC, c.id DESC LIMIT 1
+           ) oc ON true`,
     // 파생 상태 순서는 catalog.deriveEnrollmentChangeStatus 와 같다(취소 요청 대기 → 적용됨 → 원래 상태)
     rawExpr: `CASE WHEN x.status = 'APPROVED' AND x."cancelRequestStatus" = 'PENDING' THEN '${ENROLLMENT_CANCEL_REQUESTED}'
                    WHEN x.status = 'APPROVED' AND x."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x.status END`,
@@ -147,13 +176,15 @@ const ADAPTERS: Adapter[] = [
     extra: `'changeKind', x.kind, 'fromClass', fc.name, 'toClass', tc.name, 'resumeOn', x."resumeOn"::text,
             'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote",
             'cancelRequestedAt', ${kstYmd(`x."cancelRequestedAt"`)}, 'cancelReason', x."cancelRequestReason",
-            'tooLate', (x."appliedAt" IS NOT NULL OR x."effectiveFrom" <= (now() AT TIME ZONE 'Asia/Seoul')::date)`,
+            'tooLate', (x."appliedAt" IS NOT NULL OR x."effectiveFrom" <= (now() AT TIME ZONE 'Asia/Seoul')::date),
+            ${enrollmentChangeExtra}`,
     // 마이그레이션 20261110130000(취소 요청 칸) 적용 전: 취소 요청 없이 예전 그대로 읽는다
     fallback: {
       createdAtExpr: `x."createdAt"`,
       rawExpr: `CASE WHEN x.status = 'APPROVED' AND x."appliedAt" IS NOT NULL THEN 'APPLIED' ELSE x.status END`,
       extra: `'changeKind', x.kind, 'fromClass', fc.name, 'toClass', tc.name, 'resumeOn', x."resumeOn"::text,
-              'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote"`,
+              'reason', x.reason, 'waitlisted', x.waitlisted, 'decisionNote', x."decisionNote",
+              ${enrollmentChangeExtra}`,
     },
     format: (row, e) => {
       const kind = CHANGE_KIND[text(e.changeKind)] ?? "수강 변경";
@@ -448,6 +479,20 @@ function selectSql(adapter: Adapter): string {
            ${adapter.where ? `WHERE ${adapter.where}` : ""}`;
 }
 
+/** 개수 조회와 목록이 같은 신청을 세도록 수강 변경은 같은 SQL을 사용한다. */
+function inboxRowsSql(adapter: Adapter, settlementTableReady: boolean): string {
+  const rows = selectSql(adapter);
+  if (adapter.kind !== "ENROLLMENT_CHANGE") return rows;
+  return groupEnrollmentChangeInboxSql(
+    rows,
+    sqlTextArray(statusesOf(adapter.kind, "ACTION")),
+    sqlTextArray(statusesOf(adapter.kind, "ONGOING")),
+    settlementTableReady,
+  );
+}
+
+const inboxSettlementTableReady = cache(() => settlementTablesReady(prisma).catch(() => false));
+
 export type InboxQuery = {
   bucket: InboxBucket;
   kinds?: RequestKind[];
@@ -470,21 +515,22 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
   const from = isKstYmd(query.from) ? query.from : null;
   const to = isKstYmd(query.to) ? query.to : null;
   const failedKinds: RequestKind[] = [];
+  const settlementTableReady = wanted.has("ENROLLMENT_CHANGE") && await inboxSettlementTableReady();
 
   const parts = await Promise.all(ADAPTERS.filter((a) => wanted.has(a.kind)).map(async (adapter) => {
     const statuses = statusesOf(adapter.kind, query.bucket);
     if (!statuses.length) return [] as InboxRow[];
-    const read = (a: Adapter) => prisma.$queryRawUnsafe<RawRow[]>(
-      `SELECT * FROM (${selectSql(a)}) t
+    const read = (a: Adapter, settlements = false) => prisma.$queryRawUnsafe<RawRow[]>(
+      `SELECT * FROM (${inboxRowsSql(a, settlements)}) t
         WHERE t.raw = ANY(${sqlTextArray(statuses)})
           AND ($1::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date >= $1::date)
           AND ($2::date IS NULL OR (t."createdAt" AT TIME ZONE 'Asia/Seoul')::date <= $2::date)
-        ORDER BY t."createdAt" ${query.bucket === "DONE" ? "DESC" : "ASC"}
+        ORDER BY t."createdAt" ${query.bucket === "DONE" ? "DESC" : "ASC"}, t.id
         LIMIT ${limit}`,
       from, to,
     );
     try {
-      const rows = await read(adapter);
+      const rows = await read(adapter, settlementTableReady);
       return rows.map((row) => toInboxRow(adapter, row));
     } catch (error) {
       // 새 칸이 아직 없는 운영 DB(마이그레이션 전)면 예전 식으로 한 번 더 — 그래도 실패면 그 종류만 비운다
@@ -507,7 +553,10 @@ export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[
 
 function toInboxRow(adapter: Adapter, row: RawRow): InboxRow {
   const extra = (typeof row.extra === "string" ? JSON.parse(row.extra) : row.extra) ?? {};
-  const formatted = adapter.format(row, extra);
+  const members = adapter.kind === "ENROLLMENT_CHANGE" ? enrollmentChangeMembers(row, extra) : undefined;
+  const formatted = adapter.format(row, members && members.length > 1
+    ? { ...extra, fromClass: members.map((member) => member.className).join(" · ") }
+    : extra);
   const createdAt = row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date(row.createdAt).toISOString();
   return {
     kind: adapter.kind,
@@ -522,20 +571,42 @@ function toInboxRow(adapter: Adapter, row: RawRow): InboxRow {
     targetDate: row.targetDate ?? null,
     detailHref: kindEntry(adapter.kind).adminHref,
     facts: formatted.facts,
+    ...(members ? { members } : {}),
     ref: formatted.ref,
   };
+}
+
+function enrollmentChangeMembers(row: RawRow, extra: Record<string, unknown>): InboxEnrollmentChangeMember[] {
+  const source: Record<string, unknown>[] = Array.isArray(extra.members) ? extra.members : [{
+    id: row.id, className: extra.fromClass, rawStatus: row.raw,
+    enrollmentStatus: extra.enrollmentStatus, holdReason: extra.holdReason,
+  }];
+  return source.map((member) => {
+    const rawStatus = text(member.rawStatus);
+    return {
+      id: text(member.id),
+      className: text(member.className) || "반 정보 없음",
+      rawStatus,
+      statusLabel: statusLabel("ENROLLMENT_CHANGE", rawStatus),
+      enrollmentStatus: text(member.enrollmentStatus) || undefined,
+      holdReason: text(member.holdReason) || undefined,
+    };
+  });
 }
 
 /**
  * 처리 필요·진행 중 개수를 세는 SQL — 종류별 조각을 UNION ALL 로 붙여 «한 번»에 센다.
  * legacy=true 면 마이그레이션 전 식(fallback)으로 만든다.
  */
-export function buildInboxCountsSql(legacy = false): string {
+export function buildInboxCountsSql(legacy = false, settlementTableReady = false): string {
   const pieces = ADAPTERS.filter((original) => !original.skipCount).map((original) => {
     const adapter = legacy ? legacyOf(original) : original;
     const open = [...statusesOf(adapter.kind, "ACTION"), ...statusesOf(adapter.kind, "ONGOING")];
+    const rows = adapter.kind === "ENROLLMENT_CHANGE"
+      ? inboxRowsSql(adapter, settlementTableReady)
+      : `SELECT ${adapter.rawExpr} AS raw FROM ${adapter.from} ${adapter.where ? `WHERE ${adapter.where}` : ""}`;
     return `SELECT '${adapter.kind}'::text AS kind, t.raw, COUNT(*)::int AS n
-              FROM (SELECT ${adapter.rawExpr} AS raw FROM ${adapter.from} ${adapter.where ? `WHERE ${adapter.where}` : ""}) t
+              FROM (${rows}) t
              WHERE t.raw = ANY(${sqlTextArray(open)})
              GROUP BY t.raw`;
   });
@@ -578,7 +649,7 @@ async function readInboxCounts(): Promise<InboxCounts | null> {
   type CountRow = { kind: RequestKind; raw: string; n: number };
   const readCatalog = async (): Promise<CountRow[] | null> => {
     try {
-      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql());
+      return await prisma.$queryRawUnsafe<CountRow[]>(buildInboxCountsSql(false, await inboxSettlementTableReady()));
     } catch (error) {
       // 취소 요청 칸(마이그레이션 20261110130000) 적용 전이면 예전 식으로 다시 센다
       try {

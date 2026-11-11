@@ -28,7 +28,7 @@ export async function confirmInstagramMediaRemoved(formData: FormData) {
        WHERE id = $1 AND channel = 'INSTAGRAM' AND status = 'MANUAL_REQUIRED'
     `, safeId);
     if (!jobs[0]) return 0;
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, jobs[0].studentId);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, jobs[0].studentId);
     const locked = await tx.$queryRawUnsafe<Array<{ id: string }>>(`
       SELECT id FROM "MediaRevocationJob"
        WHERE id = $1 AND channel = 'INSTAGRAM' AND status = 'MANUAL_REQUIRED' FOR UPDATE

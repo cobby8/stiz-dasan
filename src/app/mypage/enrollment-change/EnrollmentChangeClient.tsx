@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   CHANGE_KIND_LABEL,
   CHANGE_STATUS_LABEL,
+  MAX_PAUSE_CLASSES_PER_REQUEST,
   REQUEST_KIND_LABEL,
   earliestResumeOn,
   pauseResumeLabel,
@@ -62,6 +63,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   const [resumeFrom, setResumeFrom] = useState("");
   // 휴원 시작일(2026-11-10 원장 결정 m7). 비어 있으면 그 반의 가장 이른 날(오늘 수업 전이면 오늘, 아니면 내일).
   const [pauseFrom, setPauseFrom] = useState("");
+  const [additionalPauseIds, setAdditionalPauseIds] = useState<string[]>([]);
 
   const child = initial.children[childIdx];
   // 화면에 보일 «검토 중» 신청 = 서버 내역(방금 취소한 건 제외) → 없으면 방금 접수한 건
@@ -71,7 +73,15 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
   const awaitingReload = Boolean(child && !shownPending && submittedFor === child.enrollmentId);
   const paused = child?.enrollmentStatus === "PAUSED";
   // 휴원 시작일 = 고른 날 → 없으면 그 반의 가장 이른 날 → (옛 데이터) 다음 달 1일
-  const minPauseFrom = child?.minPauseFrom || initial.effectiveFrom;
+  const otherPauseOptions = initial.canGroupPause && child ? initial.children.filter((item) =>
+    item.studentId === child.studentId && item.currentClassId !== child.currentClassId
+      && item.enrollmentStatus === "ACTIVE" && !item.pending && !item.scheduled,
+  ) : [];
+  const additionalPauseClasses = otherPauseOptions.filter((item) => additionalPauseIds.includes(item.enrollmentId));
+  const minPauseFrom = additionalPauseClasses.reduce(
+    (latest, item) => item.minPauseFrom && item.minPauseFrom > latest ? item.minPauseFrom : latest,
+    child?.minPauseFrom || initial.effectiveFrom,
+  );
   const pauseStart = pauseFrom || minPauseFrom;
   // 지금 다니는 반은 고를 수 없다. 골라봐야 아무것도 바뀌지 않는다.
   const selectable = useMemo(
@@ -131,6 +141,7 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     setResumeOn("");
     setResumeFrom("");
     setPauseFrom("");
+    setAdditionalPauseIds([]);
     setReason("");
     router.refresh();
   }
@@ -154,6 +165,9 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
     startTransition(async () => {
       const data = await send({
         enrollmentId: child.enrollmentId,
+        ...(kind === "PAUSE" && additionalPauseClasses.length ? {
+          enrollmentIds: [child.enrollmentId, ...additionalPauseClasses.map((item) => item.enrollmentId)],
+        } : {}),
         kind,
         toClassId: kind === "CLASS_CHANGE" ? toClassId : undefined,
         effectiveFrom: kind === "CLASS_CHANGE" ? effectiveFrom : kind === "PAUSE" ? pauseStart : undefined,
@@ -261,7 +275,10 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
       {initial.children.length > 1 && (
         <select
           value={childIdx}
-          onChange={(event) => setChildIdx(Number(event.target.value))}
+          onChange={(event) => {
+            setChildIdx(Number(event.target.value));
+            setAdditionalPauseIds([]);
+          }}
           className="min-h-11 w-full rounded-xl border border-[var(--color-academy-line)] px-3"
         >
           {initial.children.map((item, index) => (
@@ -433,6 +450,28 @@ export default function EnrollmentChangeClient({ initial, preset }: { initial: E
 
             {kind === "PAUSE" && (
               <div>
+                {otherPauseOptions.length > 0 && (
+                  <fieldset className="mb-3" disabled={pending || uncertain}>
+                    <legend className="text-xs font-bold text-[var(--color-academy-muted)]">같이 휴원할 반</legend>
+                    {otherPauseOptions.map((item) => (
+                      <label key={item.enrollmentId} className="flex min-h-11 items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={additionalPauseIds.includes(item.enrollmentId)}
+                          disabled={!additionalPauseIds.includes(item.enrollmentId)
+                            && additionalPauseClasses.length >= MAX_PAUSE_CLASSES_PER_REQUEST - 1}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setAdditionalPauseIds((ids) => checked
+                              ? [...ids, item.enrollmentId]
+                              : ids.filter((id) => id !== item.enrollmentId));
+                          }}
+                        />
+                        {item.currentClassName}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
                 {/* 갑작스러운 휴원도 받는다(원장 결정 k10) — 오늘 수업 전이면 오늘부터, 아니면 내일부터 */}
                 <label htmlFor="pause-from" className="mb-1 block text-xs font-bold text-[var(--color-academy-muted)]">
                   언제부터 쉴까요?

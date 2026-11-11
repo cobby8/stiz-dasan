@@ -5,6 +5,7 @@ import { addDaysKst, kstHm, todayKst } from "@/lib/datetime/kst";
 import {
   CHANGE_REQUEST_MESSAGE,
   MAX_EFFECTIVE_MONTHS_AHEAD,
+  MAX_PAUSE_CLASSES_PER_REQUEST,
   addMonths,
   earliestPauseStart,
   isChangeKind,
@@ -86,6 +87,7 @@ export type EnrollmentChangeOptions = {
   maxResumeFrom: string;
   children: ChildChangeOption[];
   classes: ChangeableClass[];
+  canGroupPause?: boolean;
   /** 최근 3개월 결과(승인·반영·거절·취소). 거절이면 원장 사유(decisionNote)가 함께 온다. */
   history: ChangeHistoryRow[];
 };
@@ -118,6 +120,11 @@ export type ChangeHistoryRow = {
 
 /** 방학특강 반(dayOfWeek='Seasonal')은 별도 신청 흐름이라 여기서 제외한다. */
 const REGULAR_CLASS_FILTER = `c."dayOfWeek" <> 'Seasonal'`;
+const PAUSE_GROUP_AVAILABLE_SQL = `EXISTS (
+  SELECT 1 FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'EnrollmentChangeRequest'
+     AND column_name = 'submissionGroupId'
+)`;
 
 export async function getEnrollmentChangeOptions(parentUserId: string): Promise<EnrollmentChangeOptions> {
   const today = todayKst();
@@ -134,6 +141,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
             r.waitlisted AS "pendingWaitlisted",
             e.status AS "enrollmentStatus",
             c."dayOfWeek" AS "classDayOfWeek", c."startTime" AS "classStartTime",
+            ${PAUSE_GROUP_AVAILABLE_SQL} AS "canGroupPause",
             sc.kind AS "scheduledKind",
             to_char(sc."effectiveFrom",'YYYY-MM-DD') AS "scheduledEffectiveFrom",
             to_char(sc."resumeOn",'YYYY-MM-DD') AS "scheduledResumeOn"
@@ -176,6 +184,7 @@ export async function getEnrollmentChangeOptions(parentUserId: string): Promise<
 
   return {
     history,
+    canGroupPause: children[0]?.canGroupPause === true,
     effectiveFrom,
     // 내일 = 공용 달력 더하기(말일이면 다음 달 1일).
     minEffectiveFrom: addDaysKst(today, 1),
@@ -351,6 +360,7 @@ export async function getParentClassStatusLines(parentUserId: string): Promise<P
 
 export type SubmitChangeInput = {
   enrollmentId?: string;
+  enrollmentIds?: unknown;
   kind?: unknown;
   /** 반 변경: 학부모가 고른 시작일(내일 이후·3개월 이내) · 휴원: 오늘(수업 전)/내일 이후·3개월 이내. 비우면 다음 달 1일. */
   effectiveFrom?: unknown;
@@ -362,6 +372,18 @@ export type SubmitChangeInput = {
 export async function submitEnrollmentChangeRequest(parentUserId: string, input: SubmitChangeInput) {
   const enrollmentId = typeof input.enrollmentId === "string" ? input.enrollmentId.trim() : "";
   if (!enrollmentId) return { ok: false as const, message: "수강 정보를 다시 선택해 주세요." };
+  if (input.enrollmentIds !== undefined) {
+    const ids = Array.isArray(input.enrollmentIds)
+      ? input.enrollmentIds.map((id) => typeof id === "string" ? id.trim() : "")
+      : [];
+    if (input.kind !== "PAUSE" || !ids.includes(enrollmentId) || ids.includes("") || new Set(ids).size !== ids.length) {
+      return { ok: false as const, message: "휴원할 반을 다시 선택해 주세요." };
+    }
+    if (ids.length > MAX_PAUSE_CLASSES_PER_REQUEST) {
+      return { ok: false as const, message: `한 번에 ${MAX_PAUSE_CLASSES_PER_REQUEST}개 반까지 선택해 주세요.` };
+    }
+    if (ids.length > 1) return submitMultiClassPause(parentUserId, enrollmentId, ids, input);
+  }
 
   // 복귀 신청은 출발 상태(PAUSED)가 달라 따로 처리한다. 가드는 아래와 같은 세 가지다.
   if (input.kind === RESUME_KIND) return submitResumeRequest(parentUserId, enrollmentId, input);
@@ -456,6 +478,94 @@ export async function submitEnrollmentChangeRequest(parentUserId: string, input:
   });
 
   return { ok: true as const, id: requestId, kind, effectiveFrom, resumeOn, toClassName, waitlisted };
+}
+
+type PauseEnrollment = {
+  id: string;
+  studentId: string;
+  studentName: string;
+  classId: string;
+  className: string;
+  classDayOfWeek: string | null;
+  classStartTime: string | null;
+};
+
+/** 한 번에 선택한 모든 반을 함께 저장한다. 한 반이라도 조건이 맞지 않으면 접수하지 않는다. */
+async function submitMultiClassPause(parentUserId: string, enrollmentId: string, ids: string[], input: SubmitChangeInput) {
+  const access = await childAccessSql("s", "$2");
+  const submissionGroupId = crypto.randomUUID();
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const [schema] = await tx.$queryRawUnsafe<{ ready: boolean }[]>(`SELECT ${PAUSE_GROUP_AVAILABLE_SQL} AS ready`);
+      if (!schema?.ready) return { ok: false as const, message: "여러 반 휴원 신청을 아직 사용할 수 없습니다." };
+
+      const enrollments = await tx.$queryRawUnsafe<PauseEnrollment[]>(
+        `SELECT e.id, s.id AS "studentId", s.name AS "studentName",
+                c.id AS "classId", c.name AS "className",
+                c."dayOfWeek" AS "classDayOfWeek", c."startTime" AS "classStartTime"
+           FROM "Enrollment" e JOIN "Student" s ON s.id = e."studentId"
+           JOIN "Class" c ON c.id = e."classId"
+          WHERE e.id = ANY($1::text[]) AND e.status = 'ACTIVE'
+            AND ${access} AND ${notMergedStudent("s")} AND ${REGULAR_CLASS_FILTER}
+          ORDER BY e.id FOR UPDATE OF e`,
+        ids, parentUserId,
+      );
+      const anchor = enrollments.find((row) => row.id === enrollmentId);
+      if (!anchor || enrollments.length !== ids.length || enrollments.some((row) => row.studentId !== anchor.studentId)
+        || new Set(enrollments.map((row) => row.classId)).size !== ids.length) {
+        return { ok: false as const, message: "같은 자녀가 다니는 반만 함께 휴원 신청할 수 있습니다." };
+      }
+
+      const today = todayKst();
+      const nowHm = kstHm(Date.now());
+      const earliest = enrollments.map((row) => earliestPauseStart({ today, nowHm, ...row })).sort().at(-1);
+      const resolved = resolveEffectiveFrom({ kind: "PAUSE", requestedFrom: input.effectiveFrom, today, earliestPauseFrom: earliest });
+      if (!resolved.ok) return { ok: false as const, message: CHANGE_REQUEST_MESSAGE[resolved.error] };
+      const effectiveFrom = resolved.effectiveFrom;
+      const checked = validateChangeRequest(input, { currentClassId: anchor.classId, effectiveFrom });
+      if (!checked.ok) return { ok: false as const, message: CHANGE_REQUEST_MESSAGE[checked.error] };
+
+      const existing = await tx.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT id FROM "EnrollmentChangeRequest" WHERE "enrollmentId" = ANY($1::text[])
+          AND (status = 'PENDING' OR (status = 'APPROVED' AND "appliedAt" IS NULL AND "effectiveFrom" > $2::date))
+          LIMIT 1`,
+        ids, today,
+      );
+      if (existing.length) return { ok: false as const, message: "선택한 반에 이미 진행 중인 신청이 있습니다." };
+
+      const resumeOn = input.resumeOn ? String(input.resumeOn) : null;
+      const reason = typeof input.reason === "string" ? input.reason.trim() || null : null;
+      const created = await tx.$queryRawUnsafe<{ id: string; enrollmentId: string }[]>(
+        `INSERT INTO "EnrollmentChangeRequest"
+          ("studentId","enrollmentId","fromClassId","kind","effectiveFrom","resumeOn","reason","requestedByUserId","submissionGroupId")
+          SELECT e."studentId", e.id, e."classId", 'PAUSE', $2::date, $3::date, $4, $5, $6::uuid
+            FROM "Enrollment" e WHERE e.id = ANY($1::text[]) ORDER BY e.id
+          RETURNING id, "enrollmentId"`,
+        ids, effectiveFrom, resumeOn, reason, parentUserId, submissionGroupId,
+      );
+      const id = created.find((row) => row.enrollmentId === enrollmentId)?.id;
+      if (!id || created.length !== ids.length) throw new Error("PAUSE_SUBMISSION_INCOMPLETE");
+      return { ok: true as const, id, effectiveFrom, resumeOn, anchor, enrollments };
+    });
+    if (!result.ok) return result;
+    await notifyAdminsOfChangeRequest({
+      studentName: result.anchor.studentName,
+      fromClassName: result.enrollments.map((row) => row.className).join(" · "),
+      fromClassId: result.anchor.classId,
+      classIds: result.enrollments.map((row) => row.classId),
+      kind: "PAUSE", effectiveFrom: result.effectiveFrom, toClassName: null, waitlisted: false,
+    });
+    return {
+      ok: true as const, id: result.id, kind: "PAUSE", effectiveFrom: result.effectiveFrom,
+      resumeOn: result.resumeOn, toClassName: null, waitlisted: false, submissionGroupId,
+    };
+  } catch (error) {
+    const conflict = error as { code?: string; meta?: { code?: string } };
+    if (conflict?.code === "P2002" || conflict?.meta?.code === "23505") {
+      return { ok: false as const, message: "선택한 반에 이미 진행 중인 신청이 있습니다." };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -599,6 +709,7 @@ async function notifyAdminsOfChangeRequest(input: {
   studentName: string;
   fromClassName: string;
   fromClassId: string;
+  classIds?: string[];
   toClassName: string | null;
   kind: ChangeKind | typeof RESUME_KIND;
   effectiveFrom: string;
@@ -617,9 +728,10 @@ async function notifyAdminsOfChangeRequest(input: {
       type: "ENROLLMENT_CHANGE",
       title: "수강 변경 신청",
       message: `${message} · 관리자 승인 전에는 수업·차량표를 변경하지 마세요.`,
-      linkUrl: "/admin/enrollment-changes",
+      linkUrl: "/admin/inbox?tab=CHANGE&sub=ENROLLMENT",
       staffLinkUrl: "/staff",
       classId: input.fromClassId,
+      classIds: input.classIds,
       includeCoach: true,
     });
   } catch (error) {

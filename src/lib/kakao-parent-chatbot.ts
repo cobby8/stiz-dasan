@@ -107,7 +107,7 @@ function classSnapshot(row: ReconfirmationCandidate, side: "from" | "to"): Kakao
 export async function issuePendingReconfirmationLink(identity: IdentityRow, intakeId: string | null = null, preparedByAdminId: string | null = null) {
   if (!identity.parentUserId || identity.status !== "ACTIVE") return null;
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `kakao-reconfirm:${identity.id}`);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, `kakao-reconfirm:${identity.id}`);
     const rows = await tx.$queryRawUnsafe<ReconfirmationCandidate[]>(
       `SELECT i.id AS "intakeId",r.id AS "requestId",c.id AS "commandId",c."studentId",s.name AS "studentName",
               c.kind,c."afterJson",r."requestedByUserId" AS "createdByUserId",

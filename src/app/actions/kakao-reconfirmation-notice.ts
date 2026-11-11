@@ -84,7 +84,7 @@ export async function sendKakaoReconfirmationNotice(input: { approvalId: string;
     action: "KAKAO_RECONFIRMATION_SMS_APPROVED", detailsJson: { ...current.binding, approvalId: approval.id } } });
   const reserved = await prisma.$transaction(async tx => {
     // 링크 재발급과 전달 예약이 같은 학부모 잠금을 공유한다.
-    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `kakao-reconfirm:${current.binding.identityId}`);
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, `kakao-reconfirm:${current.binding.identityId}`);
     return reserveFailClosedSmsDelivery(tx, { eventType: "KAKAO_RECONFIRMATION", eventId: current.binding.linkId,
     recipientPhone: current.phone, recipientUserId: current.binding.parentId, recipientRole: "PARENT",
     requestedChannel: "SMS", audienceScope: "EXTERNAL", source: "MANUAL", forceSms: true });

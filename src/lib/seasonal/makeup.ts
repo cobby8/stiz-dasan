@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { loadSeasonalMakeupRooms } from "@/lib/seasonal/makeup-capacity";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -197,6 +198,7 @@ async function assertTargetDateFree(applicationItemId: string, target: { session
 // 보강 생성 (관리자 직접=SCHEDULED / 학부모 신청=REQUESTED)
 export async function createMakeup(input: {
   enrollmentDateId: string;
+  sourceAbsenceId?: string;
   targetType: "SEASONAL" | "REGULAR";
   targetSessionDateId?: string | null;
   targetClassId?: string | null;
@@ -217,12 +219,16 @@ export async function createMakeup(input: {
   const abs = absRows[0];
   if (!abs) throw new Error("ABSENCE_NOT_FOUND");
 
-  const dup = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT id FROM "SpecialProgramMakeup"
-      WHERE "applicationItemId" = $1 AND "absentSessionDateId" = $2 AND status NOT IN ('CANCELLED','REJECTED') LIMIT 1`,
-    abs.applicationItemId, abs.absentSessionDateId,
-  );
-  if (dup[0]) throw new Error("MAKEUP_ALREADY_EXISTS");
+  const assertNotAssigned = async (db: Prisma.TransactionClient) => {
+    const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "SpecialProgramMakeup"
+        WHERE "applicationItemId" = $1 AND "absentSessionDateId" = $2 AND status NOT IN ('CANCELLED','REJECTED') LIMIT 1`,
+      abs.applicationItemId, abs.absentSessionDateId,
+    );
+    if (existing.length) throw new Error("MAKEUP_ALREADY_EXISTS");
+  };
+  const sourceAbsenceId = input.sourceAbsenceId;
+  if (!sourceAbsenceId) await assertNotAssigned(prisma);
 
   const requestedBy = input.requestedBy ?? "ADMIN";
   const status = requestedBy === "ADMIN" ? "SCHEDULED" : "REQUESTED";
@@ -255,7 +261,7 @@ export async function createMakeup(input: {
     await assertTargetDateFree(abs.applicationItemId, { ymd: String(input.targetDate).slice(0, 10) });
   }
 
-  await prisma.$executeRawUnsafe(
+  const insertMakeup = (db: Prisma.TransactionClient) => db.$executeRawUnsafe(
     `INSERT INTO "SpecialProgramMakeup"
        ("id","applicationItemId","studentId","offeringId","absentSessionDateId","targetType",
         "targetSessionDateId","targetClassId","targetDate","status","requestedBy","requestedByUserId","approvedByUserId","decidedAt","note")
@@ -267,6 +273,23 @@ export async function createMakeup(input: {
     input.note ?? null,
   );
 
+  if (sourceAbsenceId) {
+    await prisma.$transaction(async (tx) => {
+      const [source] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "SpecialProgramAbsence"
+          WHERE id = $1 AND "enrollmentDateId" = $2 AND status = 'CONFIRMED' AND resolution = 'MAKEUP'
+          FOR UPDATE`,
+        sourceAbsenceId, input.enrollmentDateId,
+      );
+      if (!source) throw new Error("MAKEUP_SOURCE_CONFLICT");
+      await assertNotAssigned(tx);
+      await insertMakeup(tx);
+      if (status === "SCHEDULED" && input.targetType === "SEASONAL") await ensureSeasonalMakeupSlot(id, tx);
+    });
+    return { id, status };
+  }
+
+  await insertMakeup(prisma);
   if (status === "SCHEDULED" && input.targetType === "SEASONAL") {
     try {
       await ensureSeasonalMakeupSlot(id);
@@ -290,15 +313,15 @@ export async function createMakeup(input: {
  * - 출결이 찍힌 행(attendanceStatus IS NOT NULL)도 제외 → 출결 기록은 어떤 자동 로직도 건드리지 않는다.
  * 조건에 걸려 아무 행도 바뀌지 않으면 조용히 넘어가지 않고 에러를 던져 호출부가 되돌리게 한다.
  */
-async function ensureSeasonalMakeupSlot(makeupId: string) {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
+async function ensureSeasonalMakeupSlot(makeupId: string, db: Prisma.TransactionClient = prisma) {
+  const rows = await db.$queryRawUnsafe<any[]>(
     `SELECT m.id, m."applicationItemId", m."studentId", m."offeringId", m."targetSessionDateId"
        FROM "SpecialProgramMakeup" m WHERE m.id = $1 AND m."targetType"='SEASONAL' AND m."targetSessionDateId" IS NOT NULL LIMIT 1`,
     makeupId,
   );
   const m = rows[0];
   if (!m) return;
-  const affected = await prisma.$executeRawUnsafe(
+  const affected = await db.$executeRawUnsafe(
     `INSERT INTO "SpecialProgramEnrollmentDate"
        ("applicationItemId","offeringId","sessionDateId","studentId","kind","status","makeupId")
      VALUES ($1,$2,$3,$4,'MAKEUP','SCHEDULED',$5)
@@ -316,51 +339,50 @@ async function ensureSeasonalMakeupSlot(makeupId: string) {
   }
 }
 
-// 보강 승인/거절/취소/출결확정
-export async function decideMakeup(makeupId: string, action: "APPROVE" | "REJECT" | "CANCEL" | "ATTENDED" | "NO_SHOW", userId?: string | null) {
-  const rows = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, status, "targetType" FROM "SpecialProgramMakeup" WHERE id = $1 LIMIT 1`, makeupId,
-  );
-  const m = rows[0];
-  if (!m) throw new Error("MAKEUP_NOT_FOUND");
+// The locked row keeps a decision and its linked seat consistent.
+type MakeupDecision = "APPROVE" | "REJECT" | "CANCEL" | "ATTENDED" | "NO_SHOW";
 
-  if (action === "APPROVE") {
-    await prisma.$executeRawUnsafe(
-      `UPDATE "SpecialProgramMakeup" SET status='SCHEDULED', "approvedByUserId"=$2, "decidedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      makeupId, userId ?? null,
+export async function decideMakeup(
+  makeupId: string,
+  action: MakeupDecision,
+  userId?: string | null,
+  expectedStatus?: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const [makeup] = await tx.$queryRawUnsafe<Array<{ status: string; targetType: string }>>(
+      `SELECT status, "targetType" FROM "SpecialProgramMakeup" WHERE id = $1 FOR UPDATE`,
+      makeupId,
     );
-    if (m.targetType === "SEASONAL") {
-      try {
-        await ensureSeasonalMakeupSlot(makeupId);
-      } catch (error) {
-        // 좌석 생성이 막히면 승인도 되돌린다(원래 상태로 복구). 하드 삭제는 하지 않는다.
-        await prisma.$executeRawUnsafe(
-          `UPDATE "SpecialProgramMakeup" SET status=$2, "approvedByUserId"=NULL, "decidedAt"=NULL, "updatedAt"=now() WHERE id=$1`,
-          makeupId, m.status,
-        );
-        throw error;
-      }
+    if (!makeup) throw new Error("MAKEUP_NOT_FOUND");
+    if (expectedStatus && makeup.status !== expectedStatus) throw new Error("MAKEUP_STATUS_CONFLICT");
+
+    if (action === "APPROVE") {
+      await tx.$executeRawUnsafe(
+        `UPDATE "SpecialProgramMakeup" SET status='SCHEDULED', "approvedByUserId"=$2, "decidedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+        makeupId, userId ?? null,
+      );
+      if (makeup.targetType === "SEASONAL") await ensureSeasonalMakeupSlot(makeupId, tx);
+      return { ok: true, status: "SCHEDULED" };
     }
-    return { ok: true, status: "SCHEDULED" };
-  }
-  if (action === "REJECT" || action === "CANCEL") {
-    const next = action === "REJECT" ? "REJECTED" : "CANCELLED";
-    await prisma.$executeRawUnsafe(
-      `UPDATE "SpecialProgramMakeup" SET status=$2, "approvedByUserId"=$3, "decidedAt"=now(), "updatedAt"=now() WHERE id=$1`,
-      makeupId, next, userId ?? null,
+    if (action === "REJECT" || action === "CANCEL") {
+      const status = action === "REJECT" ? "REJECTED" : "CANCELLED";
+      await tx.$executeRawUnsafe(
+        `UPDATE "SpecialProgramMakeup" SET status=$2, "approvedByUserId"=$3, "decidedAt"=now(), "updatedAt"=now() WHERE id=$1`,
+        makeupId, status, userId ?? null,
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE "SpecialProgramEnrollmentDate" SET status='CANCELLED', "updatedAt"=now()
+          WHERE "makeupId"=$1 AND kind='MAKEUP' AND "attendanceStatus" IS NULL`,
+        makeupId,
+      );
+      return { ok: true, status };
+    }
+    await tx.$executeRawUnsafe(
+      `UPDATE "SpecialProgramMakeup" SET status=$2, "updatedAt"=now() WHERE id=$1`,
+      makeupId, action,
     );
-    // 보강 취소로 지울 수 있는 건 "보강으로 만들어졌고 아직 출결이 안 찍힌 좌석"뿐이다.
-    // kind='MAKEUP' 한정이 없으면 예전에 보강이 덮어쓴 정규 수강일까지 같이 취소된다.
-    await prisma.$executeRawUnsafe(
-      `UPDATE "SpecialProgramEnrollmentDate" SET status='CANCELLED', "updatedAt"=now()
-        WHERE "makeupId"=$1 AND kind='MAKEUP' AND "attendanceStatus" IS NULL`, makeupId,
-    );
-    return { ok: true, status: next };
-  }
-  await prisma.$executeRawUnsafe(
-    `UPDATE "SpecialProgramMakeup" SET status=$2, "updatedAt"=now() WHERE id=$1`, makeupId, action,
-  );
-  return { ok: true, status: action };
+    return { ok: true, status: action };
+  });
 }
 
 // 보강 목록 (승인 대기 + 배정됨)

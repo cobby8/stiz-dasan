@@ -124,7 +124,7 @@ test("화면: 확인 창(useAdminConfirm) 뒤에만 보내고, 자동 열기는 
 test("카카오 접수함: 처리를 마친 접수에 결과 안내 부품을 붙인다", () => {
   assert.match(kakaoUi, /<CustomerNoticeSender key=\{`\$\{row\.id\}:\$\{row\.status\}`\} kind="KAKAO_INTAKE_RESULT"/);
   assert.match(kakaoUi, /isIntakeResultStatus\(row\.status\) && identityOk/);
-  assert.match(kakaoUi, /setJustDecidedId\(id\);\r?\n\s*router\.refresh\(\)/);
+  assert.match(kakaoUi, /setJustDecidedId\(id\);\r?\n\s*refresh\(\)/);
 });
 
 test("학생 상세: 학부모 번호가 있을 때 카카오채널 링크 보내기(학생 id 로만)", () => {

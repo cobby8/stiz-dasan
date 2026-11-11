@@ -81,7 +81,7 @@ test('대표 상태의 칸 — 처리 필요/진행 중/완료', () => {
 });
 
 test('카카오 칸은 기존 접수함의 «처리·후속 필요/종결» 묶음과 같은 집합이다', () => {
-  const page = fs.readFileSync('src/app/admin/kakao-requests/page.tsx', 'utf8');
+  const page = fs.readFileSync('src/app/admin/kakao-requests/kakaoRequestData.ts', 'utf8');
   const listOf = (key) => {
     const m = page.match(new RegExp(`\\$1='${key}' AND r\\.status IN \\(([^)]*)\\)`));
     return m[1].split(',').map((s) => s.trim().replace(/'/g, '')).sort();
@@ -141,7 +141,7 @@ test('수강 변경 «취소 요청 검토 중»(d8) — 승인+취소 요청 �
   assert.equal(deriveEnrollmentChangeStatus('CANCELED', null, 'APPROVED'), 'CANCELED');
   assert.equal(deriveEnrollmentChangeStatus('PENDING', null, 'PENDING'), 'PENDING');
   assert.deepEqual(statusEntry('ENROLLMENT_CHANGE', 'CANCEL_REQUESTED'), { bucket: 'ACTION', label: '취소 요청 검토 중', tone: 'warning' });
-  assert.deepEqual(statusesOf('ENROLLMENT_CHANGE', 'ACTION'), ['PENDING', 'CANCEL_REQUESTED']);
+  assert.deepEqual(statusesOf('ENROLLMENT_CHANGE', 'ACTION'), ['PENDING', 'CANCEL_REQUESTED', 'APPLY_HELD', 'SYNC_CHECK', 'SETTLEMENT_CHECK']);
 });
 
 test('일괄 처리는 결석 확정·문의 확인함 두 종류만(d4)', () => {

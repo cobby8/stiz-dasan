@@ -7,6 +7,7 @@ import { REQUEST_KINDS, BULK_ACTION_KINDS, SEPARATE_LIST_KINDS } from '../src/li
 
 const inbox = fs.readFileSync('src/lib/requests/admin-inbox.ts', 'utf8');
 const client = fs.readFileSync('src/app/admin/inbox/InboxClient.tsx', 'utf8');
+const enrollmentChanges = fs.readFileSync('src/app/admin/enrollment-changes/EnrollmentChangesClient.tsx', 'utf8');
 const page = fs.readFileSync('src/app/admin/inbox/page.tsx', 'utf8');
 const layout = fs.readFileSync('src/app/admin/layout.tsx', 'utf8');
 const dashboardPage = fs.readFileSync('src/app/admin/page.tsx', 'utf8');
@@ -55,23 +56,20 @@ test('화면은 관리자 권한을 거치고, 주소 값(칸·종류·날짜)�
 
 test('처리 버튼은 각 화면의 기존 server action 을 그대로 쓴다(d3)', () => {
   for (const [name, from] of [
-    ['decideEnrollmentChange', '@/app/actions/enrollment-changes'],
     ['confirmRegularAbsence', '@/app/actions/regular-absence-admin'],
     ['cancelRegularAbsenceByAdmin', '@/app/actions/regular-absence-admin'],
     ['updateRequestStatus', '@/app/actions/admin'],
     ['updateMakeupStatus', '@/app/actions/admin'],
     ['cancelMakeupSession', '@/app/actions/admin'],
     ['decidePaymentRequest', '@/app/actions/payment-requests'],
-    ['rejectWithdrawalRequest', '@/app/actions/account-withdrawal-admin'],
     ['reviewStaffPaymentConfirmation', '@/app/actions/staff-billing'],
   ]) {
     assert.match(client, new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from "${from.replace(/\//g, '\\/')}"`), name);
   }
-  assert.match(client, /import \{ approveRoleRequest, rejectRoleRequest \} from "@\/app\/actions\/role-requests-admin"/);
-  // 탈퇴 «처리»(되돌릴 수 없음)는 기존 화면에서만 — 신청함에서 부르지 않는다
-  assert.doesNotMatch(client, /approveWithdrawalRequest/);
-  // 복잡한 건 기존 화면으로
-  assert.match(client, /기존 화면에서 열기/);
+  assert.match(client, /import \{ approveRoleRequest, rejectRoleRequest, revokeRoleGrant \} from "@\/app\/actions\/role-requests-admin"/);
+  assert.match(client, /<EnrollmentChangeInboxDetail\b/);
+  assert.match(client, /<InboxSpecializedActions\b/);
+  assert.doesNotMatch(client, /기존 화면에서 열기/);
 });
 
 test('일괄 처리(d4)는 결석 확정·문의 «확인함» 두 가지뿐', () => {
@@ -114,11 +112,11 @@ test('수강 변경 «취소 요청 검토 중»(d8) — 신청함 목록·개�
   // SQL 파생 식이 catalog 와 같은 조건·같은 이름(상수)을 쓴다
   assert.match(inbox, /x\.status = 'APPROVED' AND x\."cancelRequestStatus" = 'PENDING' THEN '\$\{ENROLLMENT_CANCEL_REQUESTED\}'/);
   // 처리 버튼 = 학부모 수업 탭 작업의 관리자 action 재사용, 적용일 지난 건은 거절만
-  assert.match(client, /decideEnrollmentChangeCancelRequest\(\{ requestId: row\.id, approve: true, note \}\)/);
-  assert.match(client, /decideEnrollmentChangeCancelRequest\(\{ requestId: row\.id, approve: false, note \}\)/);
-  assert.match(client, /if \(row\.ref\?\.tooLate\) return \[reject\]/);
-  assert.match(client, /label: "취소 승인"/);
-  assert.match(client, /label: "요청 거절"/);
+  assert.match(client, /<EnrollmentChangeInboxDetail\b/);
+  assert.match(enrollmentChanges, /decideEnrollmentChangeCancelRequest\(\{ requestId: row\.id, approve, note:/);
+  assert.match(enrollmentChanges, /disabled=\{pending \|\| row\.tooLate\}/);
+  assert.match(enrollmentChanges, /취소 승인/);
+  assert.match(enrollmentChanges, /요청 거절/);
 });
 
 test('취소 요청 칸 마이그레이션(20261110130000) 적용 전에도 신청함·메뉴 숫자가 죽지 않는다 — 예전 식으로 다시 읽는다', () => {
@@ -221,7 +219,7 @@ test('«?kind=» 주소 — 그 종류의 탭을 열고 그 종류만, «…만 
 
 test('체험·수강 탭 처리 후 배지·메뉴 숫자 갱신 — onChanged(선택 콜백) → router.refresh, 옛 /admin/apply 는 그대로', () => {
   assert.match(client, /const refreshCounts = \(\) => router\.refresh\(\);/);
-  assert.equal((client.match(/onChanged=\{refreshCounts\}/g) ?? []).length, 2);
+  assert.equal((client.match(/<ApplyAdminClient[\s\S]*?onChanged=\{refreshCounts\}/g) ?? []).length, 2);
   assert.match(applyClient, /onChanged\?: \(\) => void;/);
   assert.match(applyClient, /if \(type === "success"\) onChangedRef\.current\?\.\(\);/);
   assert.match(applyClient, /onChanged=\{onChanged\}/); // 체험 화면에도 넘긴다

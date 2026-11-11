@@ -3,7 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const action = fs.readFileSync("src/app/actions/kakao-parent-intake-admin.ts", "utf8");
-const page = fs.readFileSync("src/app/admin/kakao-requests/page.tsx", "utf8");
+const page = fs.readFileSync("src/app/admin/kakao-requests/kakaoRequestData.ts", "utf8");
 const client = fs.readFileSync("src/app/admin/kakao-requests/KakaoRequestsClient.tsx", "utf8");
 const migration = fs.readFileSync("prisma/migrations/20260903160000_add_kakao_intake_admin_review/migration.sql", "utf8");
 

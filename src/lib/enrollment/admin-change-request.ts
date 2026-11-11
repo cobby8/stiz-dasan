@@ -46,6 +46,8 @@ export type AdminChangeRequestRow = {
   toClassFull: boolean;
   createdAt: string;
   appliedAt: string | null;
+  enrollmentStatus: string | null;
+  effectiveDateReached: boolean;
   decisionNote: string | null;
   /** 반 변경일 때만. 계획표 기준 일할 계산 결과와 근거 문장. */
   proration: (ProrationResult & { lines: string[] }) | null;
@@ -63,6 +65,7 @@ export type AdminChangeRequestRow = {
   adminDirectMove: boolean;
   /** 휴원 수강료 처리 미리보기(아직 처리 전인 휴원만 — 2026-11-10 원장 결정 m6). 계산 근거·금액·지문. */
   settlementPreview: AdminSettlementPreview | null;
+  settlementReadFailed: boolean;
   /** 이미 실행한 휴원 수강료 처리(무엇을·얼마·언제·누가 + 남은 일) */
   settlement: SettlementView | null;
 };
@@ -75,7 +78,7 @@ export type AdminSettlementPreview = Omit<PauseSettlementPreview, "plan"> & {
   channels: string[];
 };
 
-export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<AdminChangeRequestRow[]> {
+export async function getEnrollmentChangeRequests(status = "PENDING", requestIds: string[] | null = null): Promise<AdminChangeRequestRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     // 정원은 신청 당시가 아니라 **지금** 기준으로 다시 센다. 그 사이 자리가 났을 수 있다.
     `SELECT r.id, s.name AS "studentName", s."parentId", r.kind,
@@ -83,6 +86,8 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
             to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
             r.reason, r.status, r.waitlisted, r."decisionNote", r."invoicedPaymentId",
+            e.status AS "enrollmentStatus",
+            (r."effectiveFrom" <= (now() AT TIME ZONE 'Asia/Seoul')::date) AS "effectiveDateReached",
             (r.kind = 'CLASS_CHANGE' AND r.status = 'APPLIED' AND r."requestedByUserId" = r."decidedByUserId") AS "adminDirectMove",
             r."studentId", r."fromClassId", r."toClassId", fc."dayOfWeek" AS "fromDay", tc."dayOfWeek" AS "toDay",
             fp.price AS "fromFee", tp.price AS "toFee",
@@ -97,6 +102,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
             (SELECT a.status FROM "OperationsSyncAttempt" a WHERE a."commandId" = oc.id AND a.target = 'RALLYZ' LIMIT 1) AS "rallyzStatus"
        FROM "EnrollmentChangeRequest" r
        JOIN "Student" s ON s.id = r."studentId"
+       LEFT JOIN "Enrollment" e ON e.id = r."enrollmentId" AND e."studentId" = r."studentId"
        LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
        LEFT JOIN "Class" tc ON tc.id = r."toClassId"
        LEFT JOIN "Program" fp ON fp.id = fc."programId"
@@ -109,9 +115,11 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
                            ORDER BY c."createdAt" DESC LIMIT 1) oc ON true
       WHERE ($1 = 'ALL' OR r.status = $1
              OR ($1 = 'NEEDS_CHECK' AND r.status = 'APPLIED' AND ${NEEDS_CHECK_SQL}))
+        AND ($2::text[] IS NULL OR r.id = ANY($2::text[]))
       ORDER BY r."createdAt" DESC
       LIMIT 200`,
     status,
+    requestIds,
   );
   // 계획표(구글 캘린더)는 한 번만 읽어 모든 건에 재사용한다.
   const needsPlan = rows.some((row) => (row.kind === "CLASS_CHANGE" && row.toDay && row.fromDay) || row.kind === "PAUSE");
@@ -120,16 +128,19 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
   // 휴원 수강료 처리 — 이미 처리한 기록 + 아직이면 미리보기(검토 중·승인·반영된 휴원만)
   const pauseIds = rows.filter((row) => row.kind === "PAUSE").map((row) => String(row.id));
   const settlements = await readSettlements(prisma, pauseIds).catch((error) => {
+    if (requestIds) throw error;
     console.error("[admin-change-request] 휴원 수강료 처리 기록 조회 실패", error instanceof Error ? error.name : "");
     return new Map<string, SettlementView>();
   });
   const classDatesFor: ClassDatesFor = (ym, dow) => getMonthlyClassDates(planEvents, ym, dow);
   const previews = new Map<string, AdminSettlementPreview>();
+  const failedPreviews = new Set<string>();
   for (const row of rows) {
     if (row.kind !== "PAUSE" || settlements.has(row.id) || !["PENDING", "APPROVED", "APPLIED"].includes(row.status)) continue;
     // 이 기능 이전에 승인된 휴원은 수강료를 이미 사람이(랠리즈 등) 정리했다 — 처리 버튼을 다시 띄우지 않는다
     if (row.status !== "PENDING" && !(row.decidedOn && row.decidedOn >= PAUSE_SETTLEMENT_SINCE)) continue;
     const preview = await previewPauseSettlement(prisma, row.id, classDatesFor).catch(() => null);
+    if (!preview && requestIds) failedPreviews.add(row.id);
     if (!preview) continue;
     const { plan, ...rest } = preview;
     previews.set(row.id, {
@@ -154,6 +165,8 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     toClassFull: Boolean(row.toClassFull),
     createdAt: row.createdAt,
     appliedAt: row.appliedAt ?? null,
+    enrollmentStatus: row.enrollmentStatus ?? null,
+    effectiveDateReached: Boolean(row.effectiveDateReached),
     decisionNote: row.decisionNote ?? null,
     invoicedPaymentId: row.invoicedPaymentId ?? null,
     invoicePreviewKey: invoicePreviewKey(row, buildProration(row, planEvents)),
@@ -165,6 +178,7 @@ export async function getEnrollmentChangeRequests(status = "PENDING"): Promise<A
     rallyzStatus: row.rallyzStatus ?? null,
     adminDirectMove: Boolean(row.adminDirectMove),
     settlementPreview: previews.get(row.id) ?? null,
+    settlementReadFailed: failedPreviews.has(row.id),
     settlement: settlements.get(row.id) ?? null,
   }));
 }
@@ -721,7 +735,7 @@ export type AdminCancelRequestRow = {
 };
 
 /** 처리할 취소 요청 목록. 마이그레이션 전이면(칸 없음) 부르는 쪽이 빈 목록으로 받는다. */
-export async function getEnrollmentCancelRequests(): Promise<AdminCancelRequestRow[]> {
+export async function getEnrollmentCancelRequests(requestIds: string[] | null = null): Promise<AdminCancelRequestRow[]> {
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT r.id, s.name AS "studentName", r.kind, fc.name AS "fromClassName",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "effectiveFrom",
@@ -734,8 +748,10 @@ export async function getEnrollmentCancelRequests(): Promise<AdminCancelRequestR
        JOIN "Student" s ON s.id = r."studentId" AND ${notMergedStudent("s")}
        LEFT JOIN "Class" fc ON fc.id = r."fromClassId"
       WHERE r."cancelRequestStatus" = 'PENDING'
+        AND ($1::text[] IS NULL OR r.id = ANY($1::text[]))
       ORDER BY r."effectiveFrom", r."cancelRequestedAt"
       LIMIT 100`,
+    requestIds,
   );
   return rows.map((row) => ({
     id: row.id,

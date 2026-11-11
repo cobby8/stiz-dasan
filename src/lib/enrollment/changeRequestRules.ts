@@ -7,6 +7,7 @@
 
 export const CHANGE_KINDS = ["CLASS_CHANGE", "PAUSE", "WITHDRAW"] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number];
+export const MAX_PAUSE_CLASSES_PER_REQUEST = 20;
 
 export const CHANGE_KIND_LABEL: Record<ChangeKind, string> = {
   CLASS_CHANGE: "반·요일 변경",

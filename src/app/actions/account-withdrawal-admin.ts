@@ -33,7 +33,7 @@ export type WithdrawalRequestRow = {
  * 처리 대기 중인 탈퇴 신청.
  * 신청했고 아직 처리되지 않은 계정만 — 부분 인덱스(User_withdraw_pending_idx)가 이 조건을 탄다.
  */
-export async function getPendingWithdrawalRequests(): Promise<WithdrawalRequestRow[]> {
+export async function getPendingWithdrawalRequests(userId: string | null = null): Promise<WithdrawalRequestRow[]> {
   await requireAdmin();
 
   const rows = await prisma.$queryRawUnsafe<WithdrawalRequestRow[]>(
@@ -52,7 +52,9 @@ export async function getPendingWithdrawalRequests(): Promise<WithdrawalRequestR
        FROM "User" u
       WHERE u."withdrawRequestedAt" IS NOT NULL
         AND u."withdrawnAt" IS NULL
+        AND ($1::text IS NULL OR u.id = $1)
       ORDER BY u."withdrawRequestedAt" ASC`,
+    userId,
   );
   return Promise.all(rows.map(async (row) => {
     const context = await readWithdrawalRecord(row.userId);

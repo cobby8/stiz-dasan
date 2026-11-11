@@ -89,8 +89,16 @@ function readableDetails(value: Record<string, unknown> | null, classes: KakaoCl
   return items;
 }
 
-export default function KakaoRequestsClient({ rows, classes, status, schemaReady }: { rows: KakaoRequestAdminRow[]; classes: KakaoClassOption[]; status: string; schemaReady: boolean }) {
+export default function KakaoRequestsClient({ rows, classes, status, schemaReady, inlineId, onChanged }: {
+  rows: KakaoRequestAdminRow[];
+  classes: KakaoClassOption[];
+  status: string;
+  schemaReady: boolean;
+  inlineId?: string;
+  onChanged?: () => void;
+}) {
   const router = useRouter();
+  const refresh = onChanged ?? (() => router.refresh());
   const [pending, startTransition] = useTransition();
   const [notes, setNotes] = useState<Record<string,string>>({});
   const [reviewDetails, setReviewDetails] = useState<Record<string,ReviewDetails>>({});
@@ -101,7 +109,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
   }
   function reloadRows() {
     if (Object.keys(editRevisions).length && !window.confirm("입력 중인 검토 내용을 버리고 최신 목록을 불러올까요?")) return;
-    setNotes({}); setReviewDetails({}); setEditRevisions({}); setError(""); router.refresh();
+    setNotes({}); setReviewDetails({}); setEditRevisions({}); setError(""); refresh();
   }
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Awaited<ReturnType<typeof prepareKakaoReconfirmationNotice>> | null>(null);
@@ -111,7 +119,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
     startTransition(async () => {
       try {
         const result = await sendKakaoReconfirmationNotice({ approvalId: notice.approvalId, intakeId: notice.intakeId, url: notice.url, channel: "SMS", approved: true });
-        setNoticeResult(result.message); setNotice(null); router.refresh();
+        setNoticeResult(result.message); setNotice(null); refresh();
       } catch { setError("발송 결과를 확인하지 못했습니다. 발송 장부를 확인하고 중복 전송하지 마세요."); setNotice(null); }
     });
   }
@@ -139,7 +147,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         setReviewDetails(current => { const next = { ...current }; delete next[id]; return next; });
         setEditRevisions(current => { const next = { ...current }; delete next[id]; return next; });
         setJustDecidedId(id);
-        router.refresh();
+        refresh();
       } catch (caught) { setError(adminErrorText(caught, "처리 중 오류가 발생했습니다.")); }
     });
   }
@@ -151,14 +159,14 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       try {
         const result = await completeKakaoShuttleRosterTask({ intakeId: id });
         if (!result.ok) return setError(result.message);
-        router.refresh();
+        refresh();
       } catch (caught) { setError(adminErrorText(caught, "처리 표시를 남기지 못했습니다.")); }
     });
   }
   // 행 클릭 상세 패널 대상 — 예전 카드 본문(원문·검토 입력·결정 버튼)을 그대로 패널에서 연다.
   // 입력 중인 검토값(notes·reviewDetails)은 행 id 로 저장돼 있어 패널을 닫았다 열어도 남는다.
   const [openId, setOpenId] = useState("");
-  const openRow = openId ? rows.find(item => item.id === openId) ?? null : null;
+  const openRow = rows.find(item => item.id === (inlineId ?? openId)) ?? null;
   // 행 키보드(Enter·Space) = 상세 패널. 안쪽 요소에서 누른 키는 가로채지 않는다.
   function handleRowKeyDown(event: React.KeyboardEvent<HTMLElement>, id: string) {
     if (event.target !== event.currentTarget) return;
@@ -167,8 +175,9 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       setOpenId(id);
     }
   }
-  return <main className="mx-auto max-w-4xl space-y-3 p-4">
-    <header><p className="text-xs font-bold text-[var(--color-academy-warning)]">학부모 채널</p><h1 className="text-2xl font-black text-[var(--color-academy-ink)]">카카오 접수함</h1><p className="mt-1 text-xs text-[var(--color-academy-muted)]">검증된 요청은 운영 승인 대기로 이관하며, 관리자 보완값은 학부모 재확인 전 시트·랠리즈·사이트에 반영하거나 알림을 보내지 않습니다.</p></header>
+  const Wrapper = inlineId ? "section" : "main";
+  return <Wrapper className={inlineId ? "mt-4 space-y-3" : "mx-auto max-w-4xl space-y-3 p-4"}>
+    {!inlineId && <><header><p className="text-xs font-bold text-[var(--color-academy-warning)]">학부모 채널</p><h1 className="text-2xl font-black text-[var(--color-academy-ink)]">카카오 접수함</h1><p className="mt-1 text-xs text-[var(--color-academy-muted)]">검증된 요청은 운영 승인 대기로 이관하며, 관리자 보완값은 학부모 재확인 전 시트·랠리즈·사이트에 반영하거나 알림을 보내지 않습니다.</p></header>
     {!schemaReady && <section role="alert" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-4 text-[var(--color-academy-ink)]"><b>접수함을 준비 중입니다.</b><p className="mt-2 text-sm">준비가 끝나면 접수 목록을 확인하고 처리할 수 있습니다.</p></section>}
     {/* 상태 필터는 서버 조회 주소(?status=)를 바꾸는 기존 방식 그대로 — 한 줄 가로 스크롤 */}
     <nav className="flex gap-2 overflow-x-auto" aria-label="접수 상태 필터">{FILTERS.map(([value,label]) => <button key={value} type="button" aria-pressed={status===value} onClick={() => router.push(`/admin/kakao-requests?status=${value}`)} className={`min-h-11 shrink-0 rounded-full border px-3 text-sm font-bold ${status===value ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]" : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}>{label}</button>)}</nav>
@@ -178,6 +187,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
     </div>
     <p className="text-xs text-[var(--color-academy-muted)]">상담 전환·운영 원장 이관은 업무 완료가 아닙니다. 접수 종결도 청구·알림 발송 완료를 뜻하지 않습니다.</p>
     {/* 오류는 패널이 열려 있으면 패널 안에 보인다(같은 글 두 번 금지) */}
+    </>}
     {error && !openRow && <p role="alert" className="rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
     {noticeResult && <p role="status">{noticeResult}</p>}
     {notice && <section aria-label="재확인 안내 미리보기" className="rounded-xl border p-4 space-y-2">
@@ -189,7 +199,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       <button type="button" disabled={pending} onClick={sendNotice} className="min-h-11 rounded border px-3 disabled:opacity-40">위 미리보기 승인 후 SMS 1건 발송</button>
       <button type="button" onClick={() => setNotice(null)} className="min-h-11 underline">미리보기 닫기</button>
     </section>}
-    {!schemaReady || rows.length===0 ? <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">{schemaReady ? "해당 요청이 없습니다." : "접수함 준비 후 표시됩니다."}</p> : (
+    {!inlineId && (!schemaReady || rows.length===0 ? <p className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-4 text-center text-sm text-[var(--color-academy-muted)]">{schemaReady ? "해당 요청이 없습니다." : "접수함 준비 후 표시됩니다."}</p> : (
       <div className="overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-sm">
         <div className="overflow-x-auto">
           {/* 한 줄 행: 접수일 | 시각 | 상태 | 종류 | 학생 | 학년 | 보호자 | 확인 필요. 원문·검토·처리는 상세 패널(서버 정렬 그대로: 처리 필요 우선 → 최신순) */}
@@ -242,7 +252,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
           </table>
         </div>
       </div>
-    )}
+    ))}
     {/* 행 클릭 상세 패널 — 예전 카드 본문을 그대로 옮겼다(원문·후속 안내·인증 확인·세부 정보·검토 입력·결정 버튼).
         결정·저장 함수(decide)와 인자는 그대로. 재확인 안내 «준비»는 패널을 닫고 기존 미리보기를 연다(발송은 미리보기에서 확인창 후에만) */}
     {openRow && (() => {
@@ -256,8 +266,8 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
       };
       const currentClasses = classes.filter(option => row.currentClassIds.includes(option.id));
       const followup = kakaoFollowupSummary(row.status, row.commands);
-      return <ListDetailPanel onClose={() => setOpenId("")} titleId="kakao-request-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span><span className="text-xs font-bold text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div><button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button></div>
+      const body = <>
+        <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-1 text-xs font-black text-[var(--color-academy-ink)]">{statusLabel(row)}</span><span className="text-xs font-bold text-[var(--color-academy-muted)]">{KIND_LABEL[row.kind] ?? "기타 문의"}</span></div><h2 id="kakao-request-detail-panel-title" className="mt-2 break-keep text-xl font-black text-[var(--color-academy-ink)]">{row.studentName ?? "학생 확인 필요"}</h2><p className="mt-1 text-xs text-[var(--color-academy-muted)]">{row.studentGrade ?? "학년 미확인"} · 보호자 {row.parentName ?? "확인 필요"}</p>{row.linkedStudents.length > 1 && <p className="mt-2 rounded-lg bg-[var(--color-academy-primary-soft)] px-3 py-2 text-xs text-[var(--color-academy-ink)]"><b>연결 자녀</b> · {row.linkedStudents.map(student => `${student.name}${student.grade ? ` (${student.grade})` : ""}`).join(" · ")}</p>}</div>{!inlineId && <button type="button" onClick={() => setOpenId("")} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]"><span className="material-symbols-outlined" aria-hidden="true">close</span></button>}</div>
         <time className="mt-1 block text-xs tabular-nums text-[var(--color-academy-muted)]">{formatDate(row.createdAt)}</time>
         {error && <p role="alert" className="mt-3 rounded-xl bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">{error}</p>}
         <p className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-[var(--color-academy-soft)] p-3 text-sm">{row.sourceText}</p>
@@ -267,7 +277,7 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
           <b>셔틀 명단에 넣어 주세요</b>
           {shuttleRosterTaskSummary(row.structuredJson) && <p className="mt-1 text-xs">{shuttleRosterTaskSummary(row.structuredJson)}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
-            <Link href={shuttleRosterTaskHref(row.studentId, row.structuredJson)} prefetch={false} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">셔틀 명단 열기</Link>
+            <Link href={shuttleRosterTaskHref(row.studentId, row.structuredJson)} prefetch={false} target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">셔틀 명단 열기</Link>
             <button type="button" disabled={pending} onClick={() => completeRosterTask(rowId, row.studentName)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold disabled:opacity-40">셔틀 명단 반영 완료</button>
           </div>
         </section>}
@@ -275,14 +285,14 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
         {isKakaoFollowupOverdue(row.status, row.createdAt, checkedAt) && <p className="mt-2 text-xs font-bold">접수 후 24시간 경과 · 후속 진행 여부 확인</p>}
         <section className="mt-3 rounded-xl border p-3 text-xs"><b>보호자·요청 내용 확인</b><p className={identityOk ? "mt-2 text-[var(--color-academy-success)]" : "mt-2 text-[var(--color-academy-danger)]"}>{identityOk ? `보호자 인증 완료 · 원생 연결 · 보호자 ${row.parentName ?? "확인"}` : "보호자 인증 또는 원생 연결 확인 필요"}</p><details className="mt-2"><summary className="min-h-11 cursor-pointer py-2">접수 세부 정보 보기</summary>{(() => { const items = readableDetails(row.structuredJson, classes); return items.length ? <dl className="mt-2 space-y-1">{items.map(([label, value]) => <div key={label} className="flex gap-2"><dt className="shrink-0 font-bold">{label}</dt><dd className="min-w-0 whitespace-pre-wrap break-words">{value}</dd></div>)}</dl> : <p className="mt-2">세부 정보 없음</p>; })()}</details></section>
         <p className="mt-3 rounded-xl bg-[var(--color-academy-primary-soft)] p-3 text-xs text-[var(--color-academy-ink)]"><b>이관 후:</b> 변경 요청은 승인 대기 상태입니다. 외부 서비스 반영과 알림 발송은 별도 승인 전까지 보류됩니다.</p>
-        {row.operationsRequestId && <Link href="/admin/operations-sync" className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">생성된 운영 원장 확인</Link>}
+        {row.operationsRequestId && <Link href="/admin/operations-sync" target={inlineId ? "_blank" : undefined} rel={inlineId ? "noopener noreferrer" : undefined} className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)] underline">생성된 운영 원장 확인</Link>}
         {row.decidedAt && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{row.decidedByName ?? "관리자"} · {formatDate(row.decidedAt)} · {row.decisionNote ?? "메모 없음"}</p>}
         {isIntakeResultStatus(row.status) && identityOk && <section aria-label="학부모 결과 안내" className="mt-3 rounded-xl border border-[var(--color-academy-line)] p-3">
           <b className="text-sm text-[var(--color-academy-ink)]">학부모께 처리 결과 안내</b>
           {/* key 에 상태를 넣어, 상태가 바뀌면 새 문구로 미리보기를 다시 만든다 */}
           <div className="mt-2"><CustomerNoticeSender key={`${row.id}:${row.status}`} kind="KAKAO_INTAKE_RESULT" intakeId={row.id} autoOpen={justDecidedId === row.id} hint="문자 문구를 먼저 보여 드려요. «이대로 보내기»를 눌러야만 1건 발송됩니다. 같은 결과는 한 번만 보낼 수 있어요." /></div>
         </section>}
-        {row.status === "APPROVED" && row.commands.some(command => command.parentReconfirmationRequired && !command.parentConfirmed) && <button type="button" disabled={pending || !identityOk} onClick={() => { setOpenId(""); prepareNotice(rowId); }} className="mt-3 min-h-11 rounded-xl border px-3 disabled:opacity-40">재확인 링크·안내 준비 (미발송)</button>}
+        {row.status === "APPROVED" && row.commands.some(command => command.parentReconfirmationRequired && !command.parentConfirmed) && <button type="button" disabled={pending || !identityOk} onClick={() => { if (!inlineId) setOpenId(""); prepareNotice(rowId); }} className="mt-3 min-h-11 rounded-xl border px-3 disabled:opacity-40">재확인 링크·안내 준비 (미발송)</button>}
         {REVIEWABLE.has(row.status) && <div className="mt-4 space-y-3">
           {TRANSFERABLE.has(row.kind) && <section className="space-y-3 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-primary-soft)] p-3">
             <div><b className="text-sm text-[var(--color-academy-ink)]">관리자 검토 정보</b><p className="mt-1 text-xs text-[var(--color-academy-muted)]">여기서 저장한 내용은 운영 원장 검토안에만 들어갑니다. 시트·랠리즈·사이트 변경이나 알림 발송은 실행되지 않습니다.</p></div>
@@ -298,7 +308,12 @@ export default function KakaoRequestsClient({ rows, classes, status, schemaReady
           <div className="grid grid-cols-2 gap-2">{[["NEEDS_DETAILS","추가 확인"],["CONSULTATION","상담 전환"]].map(([decision,label]) => <button key={decision} disabled={pending} onClick={() => decide(row.id, decision as KakaoIntakeDecision)} className="min-h-11 rounded-xl border font-bold disabled:opacity-40">{label}</button>)}<button disabled={pending || !identityOk || !TRANSFERABLE.has(row.kind)} onClick={() => decide(row.id,"TRANSFER")} className="col-span-2 min-h-11 rounded-xl bg-[var(--brand-accent)] px-2 font-black text-[var(--brand-accent-contrast)] disabled:opacity-40">검토 정보 저장 및 운영 원장 이관</button></div>
           <div className="flex justify-end border-t border-[var(--color-academy-line)] pt-3"><button type="button" disabled={pending} onClick={() => decide(row.id, "REJECT")} className="academy-button-danger">접수 반려</button></div>
         </div>}
-      </ListDetailPanel>;
+      </>;
+      return inlineId ? body : (
+        <ListDetailPanel onClose={() => setOpenId("")} titleId="kakao-request-detail-panel-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          {body}
+        </ListDetailPanel>
+      );
     })()}
-  </main>;
+  </Wrapper>;
 }

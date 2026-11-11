@@ -32,7 +32,7 @@ test("24시간 경과는 후속 대상만 표시한다", () => {
   assert.equal(isKakaoFollowupOverdue("APPLIED", created, now), false);
 });
 test("접수 종결 필터에 이관·상담 상태가 들어가지 않는다", () => {
-  const page = readFileSync("src/app/admin/kakao-requests/page.tsx", "utf8");
+  const page = readFileSync("src/app/admin/kakao-requests/kakaoRequestData.ts", "utf8");
   const done = page.split("OR ($1='DONE'")[1].split("\n")[0];
   assert.doesNotMatch(done, /'APPROVED'|'CONSULTATION'/);
   assert.match(done, /'CONSULTATION_CLOSED'/);

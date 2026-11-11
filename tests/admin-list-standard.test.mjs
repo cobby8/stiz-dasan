@@ -423,7 +423,7 @@ test("카카오 접수함: 큰 카드 → 한 줄 행(접수일·시각 오른�
   for (const decision of ['"NEEDS_DETAILS"', '"CONSULTATION"', '"REJECT"', '"TRANSFER"', '"CLOSE_CONSULTATION"']) assert.ok(kakaoClient.includes(decision), `결정 ${decision}`);
   assert.match(kakaoClient, /router\.push\(`\/admin\/kakao-requests\?status=\$\{value\}`\)/);
   // 재확인 안내는 «준비»만 패널에서(패널을 닫고 기존 미리보기), SMS 발송은 미리보기의 확인창 뒤에만
-  assert.match(kakaoClient, /onClick=\{\(\) => \{ setOpenId\(""\); prepareNotice\(rowId\); \}\}/);
+  assert.match(kakaoClient, /onClick=\{\(\) => \{ if \(!inlineId\) setOpenId\(""\); prepareNotice\(rowId\); \}\}/);
   assert.match(kakaoClient, /window\.confirm\(`SMS 문자 1건/);
   assert.equal((kakaoClient.match(/sendKakaoReconfirmationNotice\(/g) ?? []).length, 1);
   // 오류 안내는 패널이 열려 있으면 패널 안에만

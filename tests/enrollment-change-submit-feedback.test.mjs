@@ -33,7 +33,7 @@ const rules = load("src/lib/enrollment/changeRequestRules.ts");
 const changeStatus = load("src/lib/enrollment/parentChangeStatus.ts");
 
 // 상태 이름 = useState 호출 순서. 순서가 바뀌면 아래 길이 검사가 먼저 깨진다.
-const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom"];
+const STATE_NAMES = ["childIdx", "kind", "toClassId", "effectiveFrom", "resumeOn", "reason", "error", "done", "uncertainSource", "submittedFor", "localPending", "canceledId", "resumeFrom", "pauseFrom", "additionalPauseIds"];
 
 function harness() {
   let state = {};
@@ -85,6 +85,37 @@ function flatten(node, out = []) {
 const textOf = (node) => flatten(node).filter((x) => x.text).map((x) => x.text).join("");
 const findButton = (list, label) => list.find((x) => x.el?.type === "button" && textOf(x.el.props.children).includes(label))?.el;
 const indexOf = (list, pred) => list.findIndex(pred);
+
+test("같은 자녀가 다니는 여러 반을 고르면 공통 휴원일과 함께 한 요청으로 보낸다", async () => {
+  const h = harness();
+  h.set({ kind: "PAUSE" });
+  const data = initial();
+  const primary = { ...data.children[0], enrollmentStatus: "ACTIVE", minPauseFrom: "2026-11-11" };
+  const additional = { ...primary, enrollmentId: "enrollment-b", currentClassId: "class-b", currentClassName: "수요일 반", minPauseFrom: "2026-11-12" };
+  const sibling = { ...additional, enrollmentId: "enrollment-sibling", studentId: "student-b", currentClassName: "형제 반" };
+  const paused = { ...additional, enrollmentId: "enrollment-paused", currentClassId: "class-c", enrollmentStatus: "PAUSED" };
+  const children = [primary, additional, sibling, paused];
+  const available = { ...data, canGroupPause: true, children };
+  const checks = (tree) => flatten(tree).filter((x) => x.el?.type === "input" && x.el.props.type === "checkbox");
+  assert.equal(checks(h.render({ ...data, children })).length, 0, "DB 변경 전에는 기존 단일 반 신청");
+  const choices = checks(h.render(available));
+  assert.equal(choices.length, 1);
+  choices[0].el.props.onChange({ target: { checked: true } });
+  const list = flatten(h.render(available));
+  const date = list.find((x) => x.el?.props?.id === "pause-from").el;
+  assert.equal(date.props.min, "2026-11-12");
+  assert.equal(date.props.value, "2026-11-12");
+  const sent = [];
+  globalThis.fetch = async (_url, request) => {
+    sent.push(JSON.parse(request.body));
+    return { status: 200, ok: true, json: async () => ({ ok: true, id: "request-a", kind: "PAUSE", effectiveFrom: "2026-11-12" }) };
+  };
+  findButton(list, "신청하기").props.onClick();
+  await Promise.all(h.transitions);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].enrollmentIds, ["enrollment-a", "enrollment-b"]);
+  assert.equal(sent[0].effectiveFrom, "2026-11-12");
+});
 
 test("휴원 신청 오류 문구는 «신청하기» 버튼 바로 위에 보인다(맨 위에 두면 휴대폰에서 안 보인다)", () => {
   const h = harness();

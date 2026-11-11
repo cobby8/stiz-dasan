@@ -73,8 +73,9 @@ test("Vercel 빌드와 접수함이 카카오 DB 미준비를 안전하게 처�
   const page = readFileSync(new URL("../src/app/admin/kakao-requests/page.tsx", import.meta.url), "utf8");
   assert.match(packageJson.scripts["build:vercel"], /kakao-parent-db-preflight\.mjs/);
   assert.match(releaseSource, /카카오 학부모 접수 DB 준비 상태/);
-  assert.match(page, /42P01/);
-  assert.match(page, /42703/);
+  const data = readFileSync(new URL("../src/app/admin/kakao-requests/kakaoRequestData.ts", import.meta.url), "utf8");
+  assert.match(data, /42P01/);
+  assert.match(data, /42703/);
   assert.match(page, /카카오 접수함 DB 준비가 필요합니다/);
-  assert.match(page, /if \(!isKakaoSchemaNotReady\(error\)\) throw error/);
+  assert.match(data, /if \(!isKakaoSchemaNotReady\(error\)\) throw error/);
 });

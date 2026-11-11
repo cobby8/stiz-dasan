@@ -251,7 +251,7 @@ export async function sendCustomerNotice(input: {
 
     // 같은 번호·같은 안내는 잠금을 걸고 한 번에 한 명만 검사·기록한다(두 번 눌러도 한 번만).
     const claimed = await prisma.$transaction(async (tx) => {
-      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `customer-notice:${binding.kind}:${binding.phoneHash}`);
+      await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))::text`, `customer-notice:${binding.kind}:${binding.phoneHash}`);
       const recent = await tx.$queryRawUnsafe<Array<{ reason: string }>>(
         `SELECT CASE WHEN "detailsJson"->>'approvalId' = $1 THEN 'SAME_APPROVAL'
                      WHEN $4::text IS NOT NULL AND "detailsJson"->>'onceKey' = $4 THEN 'ONCE'

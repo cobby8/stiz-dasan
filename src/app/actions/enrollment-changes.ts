@@ -6,6 +6,8 @@ import { requireAdmin } from "@/lib/auth-guard";
 import {
   decideEnrollmentCancelRequest,
   decideEnrollmentChangeRequest,
+  getEnrollmentCancelRequests,
+  getEnrollmentChangeRequests,
   getPauseSettlementPreview,
   issueProrationInvoice,
   retryPauseSettlementRefunds,
@@ -16,6 +18,30 @@ import { markCarryHandledManually, markSettlementLineDone } from "@/lib/enrollme
 import { prisma } from "@/lib/prisma";
 import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache";
 import { applyOperationsSheet, recordOperationsExternalCheck, recordOperationsSheetManualCheck } from "@/app/actions/operations-sync";
+import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+
+/** 신청함에서 열어 본 반만 조회한다. 기존 수강 변경 화면과 같은 금액·처리 상태를 사용한다. */
+export async function readEnrollmentChangesForInbox(requestIds: string[]) {
+  await requireAdmin();
+  if (!Array.isArray(requestIds) || requestIds.length === 0 || requestIds.length > 100
+      || requestIds.some((id) => typeof id !== "string" || !id.trim() || id.length > 128)) {
+    throw new Error("신청을 다시 선택해 주세요.");
+  }
+  const ids = [...new Set(requestIds)];
+  const [rows, cancelRequests] = await Promise.all([
+    getEnrollmentChangeRequests("ALL", ids),
+    getEnrollmentCancelRequests(ids).catch((error: { code?: string; meta?: { code?: string } } | null) => {
+      // 취소 요청 칸을 아직 적용하지 않은 환경에서도 기존 수강 신청은 열 수 있다.
+      if (error?.code === "P2010" && error.meta?.code === "42703") return [];
+      throw error;
+    }),
+  ]);
+  return {
+    rows,
+    cancelRequests,
+    sheetRetired: isSheetSyncRetired(process.env),
+  };
+}
 
 /**
  * 수강 변경 신청 승인/거절. 원장·부원장만.

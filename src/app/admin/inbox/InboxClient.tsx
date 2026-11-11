@@ -14,7 +14,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import AdminModal from "@/components/admin/AdminModal";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
@@ -24,7 +24,6 @@ import { TONE_BADGE_CLASS } from "@/lib/ui/statusTones";
 import {
   BUCKET_LABEL,
   BULK_ACTION_KINDS,
-  ENROLLMENT_CANCEL_REQUESTED,
   INBOX_TABS,
   TAB_SUBS,
   kindLabel,
@@ -37,21 +36,19 @@ import type { InboxCounts, InboxRow } from "@/lib/requests/admin-inbox";
 import type { AdminRentalRow } from "@/app/actions/rental";
 import type { getCachedAdminTrialPayload } from "@/lib/adminReadPayloads";
 // 처리 = 각 화면이 쓰던 server action 을 그대로 부른다(규칙·권한 검사·알림이 한 벌로 유지된다)
-import { decideEnrollmentChange, decideEnrollmentChangeCancelRequest, getPauseTuitionPreview } from "@/app/actions/enrollment-changes";
 import { updateConsultRequest } from "@/app/actions/consult";
 import { cancelRegularAbsenceByAdmin, confirmRegularAbsence } from "@/app/actions/regular-absence-admin";
-import { cancelMakeupSession, updateMakeupStatus, updateRequestStatus } from "@/app/actions/admin";
+import { cancelMakeupSession, deleteParentRequest, updateMakeupStatus, updateRequestStatus } from "@/app/actions/admin";
 import { decidePaymentRequest } from "@/app/actions/payment-requests";
-import { rejectWithdrawalRequest } from "@/app/actions/account-withdrawal-admin";
-import { approveRoleRequest, rejectRoleRequest } from "@/app/actions/role-requests-admin";
+import { approveRoleRequest, rejectRoleRequest, revokeRoleGrant } from "@/app/actions/role-requests-admin";
 import { reviewStaffPaymentConfirmation } from "@/app/actions/staff-billing";
-// 휴원 승인 전 수강료 처리(이월·환불·없음) — 수강 변경 화면과 같은 규칙·문구(통합 11-10)
-import PauseSettlementBox, { pauseNeedsSettlementChoice, pauseSettlementConfirmText, type PausePreviewState } from "./PauseSettlementBox";
-import { SETTLEMENT_MODE_LABEL, type SettlementMode } from "@/lib/enrollment/pause-settlement-plan";
 
 // 체험·수강·대관 탭은 기존 화면 컴포넌트를 그 탭을 열 때만 내려받는다(다른 탭 첫 화면을 무겁게 하지 않게)
 const ApplyAdminClient = dynamic(() => import("@/app/admin/apply/ApplyAdminClient"), { loading: () => <TabLoading /> });
 const RentalAdminClient = dynamic(() => import("@/app/admin/rental/RentalAdminClient"), { loading: () => <TabLoading /> });
+const EnrollmentChangeInboxDetail = dynamic(() => import("@/app/admin/enrollment-changes/EnrollmentChangeInboxDetail"), { loading: () => <TabLoading /> });
+const InboxSpecializedActions = dynamic(() => import("./InboxSpecializedActions"), { loading: () => <TabLoading /> });
+const SPECIALIZED_KINDS = new Set<RequestKind>(["SEASONAL_ABSENCE", "SEASONAL_MAKEUP", "KAKAO", "WITHDRAWAL", "MEDIA_REVOCATION"]);
 
 type TrialPayload = Awaited<ReturnType<typeof getCachedAdminTrialPayload>>;
 
@@ -86,10 +83,6 @@ type PanelAction = {
   /** 누르기 전에 확인 창(되돌리기 어려운 처리) */
   confirm?: AdminConfirmOptions;
   run: (note: string) => Promise<unknown>;
-  /** 누를 수 없음(휴원 수강료 방식을 아직 안 골랐거나 미리보기 계산 중) */
-  disabled?: boolean;
-  /** 성공했지만 남은 문제(토스 환불 확인 실패 등)가 있으면 그 문구 — 처리 완료 대신 경고로 보인다 */
-  warnOf?: (result: unknown) => string | null;
 };
 
 const BUTTON_CLASS: Record<PanelAction["look"], string> = {
@@ -112,37 +105,13 @@ export function actionFailure(result: unknown): string | null {
 }
 
 /**
- * 이 행에서 상세 칸에 바로 보일 처리 버튼(없으면 «기존 화면에서 열기»만).
+ * 상세에서 기존 서버 동작을 호출하는 공통 처리 버튼.
  * 진행 중 건도 여기서 처리한다(k3) — 각 화면 ⚡ 메뉴와 같은 action·같은 인자. 취소처럼 되돌리기 어려운 건 확인 한 번.
  */
 // 테스트가 버튼 목록·인자를 직접 확인할 수 있게 내보낸다(tests/inbox-consult-pause-wiring.test.mjs)
 export function actionsFor(row: InboxRow): PanelAction[] {
   const who = row.studentName ?? row.title;
   switch (row.kind) {
-    case "ENROLLMENT_CHANGE":
-      if (row.rawStatus === ENROLLMENT_CANCEL_REQUESTED) {
-        // 학부모 «취소 요청»(d8) — 수강 변경 화면과 같은 action. 적용일이 왔으면 서버가 취소를 막으니 거절만 보인다.
-        const reject: PanelAction = {
-          key: "cancel-reject", label: "요청 거절", look: row.ref?.tooLate ? "primary" : "danger",
-          run: (note) => decideEnrollmentChangeCancelRequest({ requestId: row.id, approve: false, note }),
-        };
-        if (row.ref?.tooLate) return [reject];
-        return [reject, {
-          key: "cancel-approve", label: "취소 승인", look: "primary",
-          confirm: { title: `${who} ${row.title} 승인`, description: "승인했던 신청이 «취소»로 바뀌어 적용일에 반영되지 않습니다. 결과는 보호자에게 앱 알림으로 갑니다.", confirmLabel: "취소 승인", tone: "primary" },
-          run: (note) => decideEnrollmentChangeCancelRequest({ requestId: row.id, approve: true, note }),
-        }];
-      }
-      // 승인·적용일 대기(APPROVED)는 관리자 «적용 전 취소» action 이 없다 — 수강 변경 화면에서 시트·청구를 이어서 본다
-      if (row.rawStatus !== "PENDING") return [];
-      return [
-        { key: "reject", label: "거절", look: "danger", run: (note) => decideEnrollmentChange({ requestId: row.id, approve: false, note }) },
-        {
-          key: "approve", label: "승인", look: "primary",
-          confirm: { title: `${who} ${row.title} 승인`, description: "적용일이 되면 사이트에 반영됩니다. 시트·랠리즈 확인과 차액 청구는 수강 변경 화면에서 이어서 합니다.", confirmLabel: "승인", tone: "primary" },
-          run: (note) => decideEnrollmentChange({ requestId: row.id, approve: true, note }),
-        },
-      ];
     case "REGULAR_ABSENCE":
       if (row.rawStatus !== "REPORTED") return [];
       // 정규 결석 화면 ⚡ «확정»·«신고 취소»와 같은 action
@@ -172,12 +141,23 @@ export function actionsFor(row: InboxRow): PanelAction[] {
         { key: "attended", label: "출석 처리", look: "primary", run: () => updateMakeupStatus(row.id, "ATTENDED") },
       ];
     case "PARENT_REQUEST": {
-      // 답변 칸을 비워 두면 기존 답변을 그대로 둔다(updateRequestStatus 의 undefined 규칙)
-      const complete: PanelAction = { key: "complete", label: "답변 완료", look: "primary", run: (note) => updateRequestStatus(row.id, "COMPLETED", note.trim() ? note.trim() : undefined) };
-      if (row.rawStatus === "PENDING") {
-        return [{ key: "seen", label: "확인함", look: "secondary", run: (note) => updateRequestStatus(row.id, "CONFIRMED", note.trim() ? note.trim() : undefined) }, complete];
-      }
-      return row.rawStatus === "CONFIRMED" ? [complete] : [];
+      const statuses = [
+        { key: "reject", label: "반려", status: "REJECTED", look: "danger" },
+        { key: "reopen", label: "대기로 변경", status: "PENDING", look: "secondary" },
+        { key: "seen", label: "확인함", status: "CONFIRMED", look: "secondary" },
+        { key: "complete", label: "답변 완료", status: "COMPLETED", look: "primary" },
+      ] as const;
+      return [
+        {
+          key: "delete", label: "문의 삭제", look: "danger",
+          confirm: { title: `${who} 문의 삭제`, description: "문의와 답변 기록을 삭제합니다. 삭제하면 복구할 수 없습니다.", confirmLabel: "삭제", tone: "danger" },
+          run: () => deleteParentRequest(row.id),
+        },
+        ...statuses.filter(({ status }) => status !== row.rawStatus).map(({ key, label, status, look }): PanelAction => ({
+          key, label, look,
+          run: (note) => updateRequestStatus(row.id, status, note === (row.ref?.adminNote ?? "") ? undefined : note.trim()),
+        })),
+      ];
     }
     case "PAYMENT_REQUEST": {
       if (row.rawStatus !== "PENDING") return [];
@@ -191,15 +171,12 @@ export function actionsFor(row: InboxRow): PanelAction[] {
         },
       ];
     }
-    case "WITHDRAWAL":
-      // 탈퇴 «처리»는 되돌릴 수 없고 업무·권한 이관 확인이 필요해 기존 화면에서만 한다. 반려만 여기서.
-      if (row.rawStatus !== "REQUESTED") return [];
-      return [{
-        key: "reject", label: "신청 반려(계속 이용)", look: "secondary",
-        confirm: { title: `${row.title} 반려`, description: "계정은 그대로 남고 탈퇴 신청 표시만 지웁니다.", confirmLabel: "반려", tone: "primary" },
-        run: () => rejectWithdrawalRequest(row.id),
-      }];
     case "ROLE_GRANT":
+      if (row.rawStatus === "ACTIVE") return [{
+        key: "revoke", label: "역할 회수", look: "danger",
+        confirm: { title: `${row.title} 역할 회수`, description: "회수하면 이 사람의 해당 직원 화면 접근이 즉시 종료됩니다.", confirmLabel: "회수", tone: "danger" },
+        run: () => revokeRoleGrant(row.id),
+      }];
       if (row.rawStatus !== "PENDING") return [];
       return [
         { key: "reject", label: "반려", look: "danger", run: (note) => rejectRoleRequest(row.id, note) },
@@ -243,35 +220,22 @@ export function actionsFor(row: InboxRow): PanelAction[] {
       return list;
     }
     default:
-      // 셔틀 오늘만(알림)·특강 결석/보강(처리방식 지정 필요)·카카오(미리보기 발송)·사진 회수·학부모 연결(보호자가 승인)·상담 = 기존 화면에서
       return [];
   }
 }
 
 /** 메모 칸이 필요한 처리(거절 사유·답변·원장 메모) */
 function wantsNote(row: InboxRow, actions: PanelAction[]): boolean {
-  return actions.length > 0 && row.kind !== "REGULAR_ABSENCE" && row.kind !== "WITHDRAWAL" && row.kind !== "MAKEUP";
+  return actions.length > 0 && row.kind !== "REGULAR_ABSENCE" && row.kind !== "MAKEUP"
+    && !(row.kind === "ROLE_GRANT" && row.rawStatus === "ACTIVE");
 }
 
-/** 검토 중인 휴원 신청 — 승인 전에 수강료 처리 미리보기를 띄운다(통합 11-10, 원장 결정 m6) */
-function isPendingPause(row: InboxRow): boolean {
-  return row.kind === "ENROLLMENT_CHANGE" && row.rawStatus === "PENDING" && row.ref?.changeKind === "PAUSE";
-}
-
-/** 휴원 승인 결과에 토스 부분 취소 확인 실패가 있으면 경고 문구(수강 변경 화면과 같은 뜻) */
-function pauseRefundWarning(result: unknown): string | null {
-  const refund = (result as { settlement?: { refund?: { failed: number; uncertain: number; messages: string[] } | null } } | null)?.settlement?.refund;
-  if (!refund || (refund.failed <= 0 && refund.uncertain <= 0)) return null;
-  return `승인됐어요. 다만 토스 환불 ${refund.failed + refund.uncertain}건을 확인하지 못했어요: ${refund.messages[0] ?? ""} — 수강 변경 화면에서 «다시 시도»해 주세요.`;
-}
-
-/** 일괄 처리(d4) 대상 — 처리 필요 칸의 결석 신고·새 문의만 */
+/** 일괄 처리는 결석 신고와 새 문의에서만 가능하다. */
 function isBulkable(row: InboxRow): boolean {
   return (BULK_ACTION_KINDS as readonly string[]).includes(row.kind)
     && ((row.kind === "REGULAR_ABSENCE" && row.rawStatus === "REPORTED") || (row.kind === "PARENT_REQUEST" && row.rawStatus === "PENDING"));
 }
 
-/** 상태 배지 색 — catalog 종류는 catalog 가, 상담 행은 행이 직접 준 색 뜻으로 */
 function badgeClass(row: InboxRow): string {
   return row.tone ? TONE_BADGE_CLASS[row.tone] : statusBadgeClassFor(row.kind, row.rawStatus);
 }
@@ -298,19 +262,13 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   const router = useRouter();
   const pathname = usePathname() || "/admin/inbox";
   const [query, setQuery] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openSelection, setOpenSelection] = useState<InboxRow | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const { confirm, confirmDialog } = useAdminConfirm();
-  // 휴원 수강료 미리보기(열린 칸 key 별) · 고른 처리 방식
-  const [pausePreview, setPausePreview] = useState<{ key: string; state: PausePreviewState } | null>(null);
-  const [pauseMode, setPauseMode] = useState<SettlementMode | null>(null);
-  // 휴원 승인이 거절되면(방식 필요·금액 바뀜·지문 불일치) 미리보기를 다시 불러오는 신호
-  const [pauseReload, setPauseReload] = useState(0);
-
   // 체험·수강 화면은 목록을 스스로 고친다 — 처리가 끝나면 서버 화면만 다시 그려 탭 배지·메뉴 숫자를 맞춘다
   const refreshCounts = () => router.refresh();
   const rowsData = data.type === "ROWS" ? data : null;
@@ -335,7 +293,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
     if (f) params.set("from", f);
     if (e) params.set("to", e);
     setSelected(new Set());
-    setOpenId(null);
+    setOpenSelection(null);
     setMessage(null);
     router.push(`${pathname}?${params}`);
   };
@@ -349,65 +307,14 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   const ongoingRows = visibleOpen.filter((row) => row.bucket !== "ACTION");
 
   const keyOf = (row: InboxRow) => `${row.kind}:${row.id}`;
-  const open = [...openRows, ...doneRows].find((row) => keyOf(row) === openId) ?? null;
-  // 휴원 승인 전 수강료 처리 — 칸을 열면 미리보기를 받아 오고(행에는 없다), 방식을 고르기 전엔 승인을 잠근다
-  const pauseKey = open && isPendingPause(open) ? `${keyOf(open)}:${pauseReload}` : null;
-  const pauseState: PausePreviewState | null = pauseKey
-    ? (pausePreview?.key === pauseKey ? pausePreview.state : { status: "loading" })
-    : null;
-  const pauseRequestId = pauseKey ? open?.id ?? null : null;
-  function refreshPausePreview() {
-    setPauseMode(null);
-    setPauseReload((n) => n + 1);
-  }
-  useEffect(() => {
-    // 휴원 칸을 열 때마다 새로 계산(그 사이 결제·청구가 바뀌었을 수 있다). 다른 칸으로 바뀌면 늦게 온 결과는 버린다.
-    if (!pauseKey || !pauseRequestId) return;
-    let alive = true;
-    getPauseTuitionPreview(pauseRequestId)
-      .then((result) => {
-        if (!alive) return;
-        setPausePreview({ key: pauseKey, state: result.ok ? { status: "ready", preview: result.preview } : { status: "error", message: result.message } });
-      })
-      .catch((error) => {
-        if (!alive) return;
-        setPausePreview({ key: pauseKey, state: { status: "error", message: adminErrorText(error, "휴원 수강료 미리보기를 읽지 못했습니다. 수강 변경 화면에서 처리해 주세요.") } });
-      });
-    return () => { alive = false; };
-  }, [pauseKey, pauseRequestId, pauseReload]);
-  const openActions = open ? withPauseSettlement(open, actionsFor(open)) : [];
-
-  /** 휴원 «승인» 버튼만 수강료 처리와 묶는다(수강 변경 화면과 같은 규칙: 금액 있고 문제 없으면 방식 필수) */
-  function withPauseSettlement(row: InboxRow, actions: PanelAction[]): PanelAction[] {
-    if (!pauseState) return actions;
-    return actions.map((action) => {
-      if (action.key !== "approve") return action;
-      // 금액을 모른 채 승인하지 않는다(계산 중·읽기 실패)
-      if (pauseState.status !== "ready") return { ...action, disabled: true };
-      const preview = pauseState.preview;
-      // 처리할 금액 없음 · 계산 문제(problems) · 휴원 미리보기 대상 아님 → 예전처럼 승인만
-      if (!preview || !pauseNeedsSettlementChoice(preview)) return action;
-      if (!pauseMode || !preview.ready) return { ...action, disabled: true };
-      const mode = pauseMode;
-      const classes = row.facts.find(([label]) => label === "반")?.[1] ?? "-";
-      const head = `${row.studentName ?? row.title} · ${classes} · 휴원 ${row.targetDate ?? ""}부터`;
-      return {
-        ...action,
-        label: `승인 · ${SETTLEMENT_MODE_LABEL[mode]}`,
-        confirm: {
-          title: `${row.studentName ?? row.title} ${row.title} 승인`,
-          description: `${pauseSettlementConfirmText(head, preview, mode)}
-
-승인할까요?`,
-          confirmLabel: "승인",
-          tone: "primary",
-        },
-        // 서버가 실행 순간 다시 계산해 지문(previewKey)이 다르면 거절하고 승인도 하지 않는다
-        run: (note) => decideEnrollmentChange({ requestId: row.id, approve: true, note, settlement: { mode, expectedPreviewKey: preview.previewKey } }),
-        warnOf: pauseRefundWarning,
-      };
-    });
-  }
+  const freshOpen = openSelection
+    ? [...openRows, ...doneRows].find((row) => keyOf(row) === keyOf(openSelection))
+    : undefined;
+  // 상세가 자체 조회하는 작업은 완료 목록으로 옮겨진 뒤에도 후속 처리를 이어갈 수 있다.
+  const open = freshOpen ?? (openSelection && (
+    openSelection.kind === "ENROLLMENT_CHANGE" || SPECIALIZED_KINDS.has(openSelection.kind)
+  ) ? openSelection : null);
+  const openActions = open ? actionsFor(open) : [];
   const filterCount = from || to ? 1 : 0;
   const bulkRows = actionRows.filter(isBulkable);
   const selectedRows = bulkRows.filter((row) => selected.has(keyOf(row)));
@@ -422,20 +329,13 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         const failure = actionFailure(result);
         if (failure) {
           setMessage({ tone: "error", text: failure });
-          // 휴원 승인 거절(서버 «방식을 골라 주세요»·금액 바뀜) → 새 미리보기로 방식 선택을 다시 띄운다
-          if (action.key === "approve" && isPendingPause(row)) refreshPausePreview();
           return;
         }
-        // 처리는 됐지만 남은 문제(토스 환불 확인 실패 등)가 있으면 경고로 알린다
-        const warning = action.warnOf?.(result) ?? null;
-        setMessage(warning
-          ? { tone: "error", text: warning }
-          : { tone: "ok", text: `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
-        setOpenId(null);
+        setMessage({ tone: "ok", text: `${row.studentName ?? row.title} · ${action.label} 처리했습니다.` });
+        setOpenSelection(null);
         setNote("");
         router.refresh();
       } catch (error) {
-        if (action.key === "approve" && isPendingPause(row)) refreshPausePreview();
         setMessage({ tone: "error", text: adminErrorText(error, "처리하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.") });
       }
     });
@@ -499,11 +399,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         )}
         <button
           type="button"
-          // 상담은 메모 칸에 저장된 원장 메모(ref.adminNote)를 채워 연다 — 고쳐서 저장하거나 비워서 지운다
+          // 저장된 메모를 채워 열고, 사용자가 수정했을 때만 새 값을 저장한다.
           onClick={() => {
-            setOpenId(key);
-            if (isPendingPause(row)) refreshPausePreview();
-            setNote(row.kind === "CONSULT" ? row.ref?.adminNote ?? "" : "");
+            setOpenSelection(row);
+            setNote(row.kind === "CONSULT" || row.kind === "PARENT_REQUEST" ? row.ref?.adminNote ?? "" : "");
             setMessage(null);
           }}
           className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
@@ -648,15 +547,11 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
             </p>
           )}
 
-          {/* «변경» 탭 — 휴원 수강료 처리에 남은 일(환불·감액·이월). 처리 버튼은 수강 변경 화면에 있다 */}
+          {/* 정산은 해당 휴원 신청의 상세에서 이어서 처리한다. */}
           {tab === "CHANGE" && (rowsData.openSettlementCount ?? 0) > 0 && (
-            <Link
-              href="/admin/enrollment-changes?status=ALL"
-              prefetch={false}
-              className="block min-h-11 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]"
-            >
-              휴원 수강료 처리에 남은 일이 {rowsData.openSettlementCount}건 있습니다(환불·감액·이월). 눌러서 수강 변경 화면에서 확인하세요.
-            </Link>
+            <p className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+              휴원 수강료 처리 대기 {rowsData.openSettlementCount}건 · 신청 상세에서 확인하세요.
+            </p>
           )}
 
           {/* 일괄 처리 줄 — 고른 게 있을 때만 */}
@@ -717,27 +612,38 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
 
       {/* 상세 칸 — PC 오른쪽 패널 · 휴대폰 아래 시트(ListDetailPanel) */}
       {open && (
-        <ListDetailPanel onClose={() => setOpenId(null)} titleId="inbox-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <ListDetailPanel onClose={() => setOpenSelection(null)} titleId="inbox-detail-title" panelClassName="p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="mb-3 flex items-start gap-2">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-[var(--color-academy-muted)]">{kindLabel(open.kind)} · {whenLabel(open.createdAt)} 신청</p>
               <h2 id="inbox-detail-title" className="mt-1 break-keep text-lg font-black text-[var(--color-academy-ink)]">
                 {open.studentName ? `${open.studentName} · ${open.title}` : open.title}
               </h2>
-              <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${badgeClass(open)}`}>{open.statusLabel}</span>
+              {freshOpen && <span className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${badgeClass(open)}`}>{open.statusLabel}</span>}
             </div>
-            <button type="button" onClick={() => setOpenId(null)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
+            <button type="button" onClick={() => setOpenSelection(null)} aria-label="닫기" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
               <span className="material-symbols-outlined" aria-hidden="true">close</span>
             </button>
           </div>
-          <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-            {open.facts.map(([label, value]) => (
-              <div key={label} className="contents">
-                <dt className="font-bold text-[var(--color-academy-muted)]">{label}</dt>
-                <dd className="whitespace-pre-wrap break-words text-[var(--color-academy-ink)]">{value}</dd>
-              </div>
-            ))}
-          </dl>
+          {open.kind === "ENROLLMENT_CHANGE" ? (
+            <EnrollmentChangeInboxDetail key={keyOf(open)} requestIds={open.members?.map(({ id }) => id) ?? [open.id]} />
+          ) : (
+            <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+              {open.facts.map(([label, value]) => (
+                <div key={label} className="contents">
+                  <dt className="font-bold text-[var(--color-academy-muted)]">{label}</dt>
+                  <dd className="whitespace-pre-wrap break-words text-[var(--color-academy-ink)]">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {SPECIALIZED_KINDS.has(open.kind) && <InboxSpecializedActions key={keyOf(open)} row={open} onChanged={refreshCounts} />}
+          {open.kind === "CHILD_LINK" && open.rawStatus === "PENDING" && (
+            <p className="mt-3 text-sm text-[var(--color-academy-muted)]">먼저 연결된 보호자가 학부모 화면에서 승인합니다.</p>
+          )}
+          {open.kind === "SHUTTLE_DAY" && open.rawStatus === "ACTIVE" && (
+            <p className="mt-3 text-sm text-[var(--color-academy-muted)]">당일 운행 명단에 자동으로 반영됩니다.</p>
+          )}
           {/* 상담 — 보호자에게 바로 전화(휴대폰에서 누르면 전화 앱) */}
           {open.kind === "CONSULT" && open.ref?.phone && (
             <a href={`tel:${open.ref.phone}`} className="academy-button-secondary mt-3 inline-flex min-h-11 items-center gap-1">
@@ -745,14 +651,10 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
               전화 걸기
             </a>
           )}
-          {/* 휴원 승인 전 — 수강료 처리 미리보기·방식 고르기(금액이 있으면 골라야 승인 버튼이 열린다) */}
-          {pauseState && (
-            <PauseSettlementBox state={pauseState} mode={pauseMode} onMode={setPauseMode} disabled={pending} />
-          )}
           {wantsNote(open, openActions) && (
             <label className="mt-4 block text-sm font-bold text-[var(--color-academy-ink)]">
               {open.kind === "PARENT_REQUEST" ? "답변(학부모에게 보임)" : open.kind === "CONSULT" ? "원장 메모(학부모에게 안 보임)" : "메모·거절 사유(선택)"}
-              <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} maxLength={open.kind === "CONSULT" ? 1000 : 500} className="academy-input mt-1 w-full" />
+              <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={2} maxLength={open.kind === "PARENT_REQUEST" ? 2000 : open.kind === "CONSULT" ? 1000 : 500} className="academy-input mt-1 w-full" />
             </label>
           )}
           {message?.tone === "error" && <p role="alert" className="mt-3 text-sm font-bold text-[var(--color-academy-danger)]">{message.text}</p>}
@@ -760,17 +662,11 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
           {openActions.length > 0 && (
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               {openActions.map((action) => (
-                <button key={action.key} type="button" disabled={pending || action.disabled} onClick={() => void runAction(open, action)} className={BUTTON_CLASS[action.look]}>
+                <button key={action.key} type="button" disabled={pending} onClick={() => void runAction(open, action)} className={BUTTON_CLASS[action.look]}>
                   {action.label}
                 </button>
               ))}
             </div>
-          )}
-          {open.kind !== "CONSULT" && (
-            <Link href={open.detailHref} prefetch={false} className="mt-3 inline-flex min-h-11 items-center gap-1 text-xs font-bold text-[var(--color-academy-muted)] underline">
-              기존 화면에서 열기
-              <span className="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
-            </Link>
           )}
         </ListDetailPanel>
       )}

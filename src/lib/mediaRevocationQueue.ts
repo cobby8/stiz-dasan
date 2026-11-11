@@ -120,13 +120,14 @@ export async function reconcileMediaRevocationJobs() {
   `);
 }
 
-async function claimJob() {
+async function claimJob(jobId: string | null) {
   const rows = await prisma.$queryRawUnsafe<MediaRevocationJob[]>(`
     WITH candidate AS (
       SELECT id FROM "MediaRevocationJob"
        WHERE ((status IN ('PENDING', 'FAILED') AND "nextAttemptAt" <= NOW())
           OR (status = 'PROCESSING' AND "lockedAt" < NOW() - INTERVAL '5 minutes'))
          AND attempts < $1
+         AND ($2::text IS NULL OR id = $2)
          AND COALESCE((
            SELECT c."revokedAt" IS NOT NULL FROM "StudentMediaConsent" c
             WHERE c."studentId" = "MediaRevocationJob"."studentId"
@@ -138,15 +139,15 @@ async function claimJob() {
     UPDATE "MediaRevocationJob" j
        SET status = 'PROCESSING', attempts = attempts + 1, "lockedAt" = date_trunc('milliseconds', NOW()), "updatedAt" = NOW()
       FROM candidate c WHERE j.id = c.id RETURNING j.*
-  `, MEDIA_REVOCATION_MAX_ATTEMPTS);
+  `, MEDIA_REVOCATION_MAX_ATTEMPTS, jobId);
   return rows[0] ?? null;
 }
 
-export async function processMediaRevocationQueue(limit = 10) {
-  await reconcileMediaRevocationJobs();
+export async function processMediaRevocationQueue(limit = 10, jobId: string | null = null) {
+  if (jobId === null) await reconcileMediaRevocationJobs();
   const result = { processed: 0, removed: 0, manualRequired: 0, failed: 0 };
   for (let index = 0; index < Math.max(1, Math.min(limit, 50)); index += 1) {
-    const job = await claimJob();
+    const job = await claimJob(jobId);
     if (!job) break;
     result.processed += 1;
     try {
@@ -160,7 +161,7 @@ export async function processMediaRevocationQueue(limit = 10) {
         continue;
       }
       const removed = await prisma.$transaction(async (tx) => {
-        await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, job.studentId);
+        await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))::text`, job.studentId);
         const latest = await tx.$queryRawUnsafe<Array<{ revoked: boolean }>>(`
           SELECT ("revokedAt" IS NOT NULL) AS revoked FROM "StudentMediaConsent"
            WHERE "studentId" = $1 ORDER BY "recordedAt" DESC, id DESC LIMIT 1
@@ -206,7 +207,7 @@ export async function processMediaRevocationQueue(limit = 10) {
       result.failed += 1;
     }
   }
-  await processStorageDeletionQueue(limit);
+  if (jobId === null) await processStorageDeletionQueue(limit);
   return result;
 }
 

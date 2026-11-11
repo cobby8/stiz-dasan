@@ -473,6 +473,8 @@ model EnrollmentChangeRequest {
   /// 신청 당시 희망 반이 만석이었는지. 원장이 대기 건을 알아볼 수 있게 남긴다.
   waitlisted        Boolean   @default(false)
   requestedByUserId String
+  /// 한 번에 접수한 여러 반의 휴원 신청을 연결한다.
+  submissionGroupId String?   @db.Uuid
   decidedByUserId   String?
   decidedAt         DateTime? @db.Timestamptz(6)
   decisionNote      String?

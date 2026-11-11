@@ -85,7 +85,7 @@ test("휴원 중인 본인 자녀 반의 복귀 신청은 RESUME·복귀일로 �
   // 원장 알림 = 휴원 신청과 같은 경로(notifyOperationalStaff · 수강 변경 신청 화면 링크)
   assert.equal(h.notices.length, 1);
   assert.equal(h.notices[0].type, "ENROLLMENT_CHANGE");
-  assert.equal(h.notices[0].linkUrl, "/admin/enrollment-changes");
+  assert.equal(h.notices[0].linkUrl, "/admin/inbox?tab=CHANGE&sub=ENROLLMENT");
   assert.match(h.notices[0].message, /합성 학생 학생 복귀 신청 \(합성 반, 2026-11-20부터\)/);
 });
 

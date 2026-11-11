@@ -16,29 +16,29 @@ export type OperationalRecipientSummary = {
 type Recipient = { id: string; role: string };
 type DriverContext = { studentId: string; serviceDate: string; direction?: "PICKUP" | "DROPOFF" | "BOTH" };
 
-async function resolveRecipients(input: { classId?: string; includeCoach: boolean }) {
+async function resolveRecipients(input: { classIds: string[]; includeCoach: boolean }) {
   return prisma.$queryRawUnsafe<Recipient[]>(
     `WITH recipients AS (
        SELECT u.id, u.role::text AS role FROM "User" u WHERE u.role IN ('ADMIN','VICE_ADMIN')
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
          JOIN "User" u ON u.id=c."instructorId" AND u.role='INSTRUCTOR'
-        WHERE $1::boolean AND c.id=$2
+        WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
          JOIN "ScheduleSlot" ss ON ss."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=ss."coachId"
          JOIN "User" u ON u.id=co."userId" AND u.role='INSTRUCTOR'
-        WHERE $1::boolean AND c.id=$2
+        WHERE $1::boolean AND c.id=ANY($2::text[])
        UNION
        SELECT u.id, u.role::text AS role FROM "Class" c
          JOIN "ClassSlotOverride" o ON o."slotKey"=c."slotKey"
          JOIN "Coach" co ON co.id=o."coachId"
          JOIN "User" u ON u.id=co."userId" AND u.role='INSTRUCTOR'
-        WHERE $1::boolean AND c.id=$2
+        WHERE $1::boolean AND c.id=ANY($2::text[])
      ) SELECT DISTINCT id, role FROM recipients`,
     input.includeCoach,
-    input.classId ?? null,
+    input.classIds,
   );
 }
 
@@ -79,6 +79,7 @@ export async function notifyOperationalStaff(input: {
   linkUrl: string;
   staffLinkUrl?: string;
   classId?: string;
+  classIds?: string[];
   includeCoach?: boolean;
   includeDriver?: boolean;
   driverContext?: DriverContext;
@@ -88,7 +89,9 @@ export async function notifyOperationalStaff(input: {
 }): Promise<OperationalRecipientSummary> {
   const includeCoach = input.includeCoach === true;
   const includeDriver = input.includeDriver === true;
-  const recipients = await resolveRecipients({ classId: input.classId, includeCoach });
+  const recipients = await resolveRecipients({
+    classIds: input.classIds ?? (input.classId ? [input.classId] : []), includeCoach,
+  });
   const driverResolution = includeDriver && input.driverContext
     ? await resolveAssignedDrivers(input.driverContext)
     : { recipients: [] as Recipient[], needsConfirmation: includeDriver };
