@@ -91,7 +91,7 @@ export function enrollmentShuttleProgress(input: { application: ShuttleApplicati
     else if (mine.length !== 1 || mine.some(r => !Number.isFinite(r.latitude) || !Number.isFinite(r.longitude))) { status = "RECONFIRM_REQUIRED"; detail = "중복 명단 또는 정류장 좌표를 확인해 주세요."; }
     // 학부모 위치와 명단 정류장 좌표 차이는 더 이상 보지 않는다 — 기사님은 공용 정류장(아파트 정문 등)을 쓰므로 원래 다르다.
     else if (!rosterStart || !startTimes.includes(rosterStart)) { status = "RECONFIRM_REQUIRED"; detail = "배정 반의 현재 수업시간과 셔틀 명단을 대조해 주세요."; }
-    // 명단 자체가 기사님 화면이다 → 명단에 정상으로 들어갔으면 배차 완료. 시각은 명단 arriveTime.
+    else if (!rosterTime(mine[0].arriveTime)) { status = "DISPATCH_PENDING"; detail = "셔틀 명단에 등록됐습니다. 운행표에서 등·하원 시각을 입력해 주세요."; }
     else { status = "ASSIGNED"; detail = "기사님 운행표에 반영됐습니다."; eta = rosterTime(mine[0].arriveTime); }
     legs.push({ dayOfWeek, direction, status, label: `${DAY_LABELS[DOW.indexOf(dayOfWeek)]} ${direction === "PICKUP" ? "등원" : "하원"} · ${SHUTTLE_PROGRESS_LABELS[status]}`, detail, timeLabel: eta });
   }

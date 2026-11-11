@@ -29,8 +29,8 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     getRegularStopsWithoutCoords(serviceMonth), // 좌표 없는 정류장(1회용 좌표 채우기 패널)
   ]);
   // 처음 보여 줄 요일 = 신청 학생이 타는 요일 → 없으면 학생이 있는 첫 요일(월→토→일) → 월.
-  const exactStop = requested.stopId && initialStudentId
-    ? stops.find((s) => s.id === requested.stopId && s.studentId === initialStudentId && (s.direction === "BOARD" || s.direction === "ALIGHT"))
+  const exactStop = requested.stopId
+    ? stops.find((s) => s.id === requested.stopId && (!initialStudentId || s.studentId === initialStudentId) && (s.direction === "BOARD" || s.direction === "ALIGHT"))
     : undefined;
   const target = exactStop ?? (initialStudentId ? stops.find((s) => s.studentId === initialStudentId) : null);
   const firstDay = [1, 2, 3, 4, 5, 6, 0].find((w) => stops.some((s) => s.weekday === w && s.studentName && (s.direction === "BOARD" || s.direction === "ALIGHT")));

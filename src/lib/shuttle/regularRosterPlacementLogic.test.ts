@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
-import { classTimeWarning, dowToWeekday, enrolledClassSlots, estimateInsertTime, findRouteCell, matchRosterClassTime, placementToRequest, resolveCellPlacement, resolveStudentPoint, defaultStopFromRiding, rosterClassTimeFor, studentRosterRows, suggestPlacement } from "./regularRosterPlacementLogic.ts";
+import { classTimeWarning, dowToWeekday, enrolledClassSlots, estimateInsertTime, findRouteCell, matchRosterClassTime, placementToRequest, recommendExistingStopTime, resolveCellPlacement, resolveStudentPoint, defaultStopFromRiding, rosterClassTimeFor, studentRosterRows, suggestPlacement } from "./regularRosterPlacementLogic.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
 import { buildAddRows, mapPlacementsToMonth, planRosterInsert, validateAddInput, RosterInputError } from "./regularRosterEditLogic.ts";
 // @ts-expect-error -- Node's type-stripping runner needs the runtime extension.
@@ -22,6 +22,15 @@ function r(over: Record<string, unknown> = {}): any {
 // 위도 0.001 ≈ 111m. 학원(37.600,127.100) ← C(37.610) ← B(37.620) ← A(37.630) 순으로 학원에 가까워지는 등원 노선.
 const ACADEMY = { lat: 37.6, lng: 127.1 };
 const DEPOT = { lat: 37.64, lng: 127.1 };
+
+test("첫 정차 미입력 시각을 다음 구간으로 계산하되 수업 종료 이전 하원은 추천하지 않는다", () => {
+  const first = r({ stopName: "첫 정류장", latitude: 37.63, longitude: 127.1, arriveTime: null });
+  const next = r({ stopName: "둘째 정류장", latitude: 37.62, longitude: 127.1, arriveTime: "16:45" });
+  const last = r({ stopName: "셋째 정류장", latitude: 37.61, longitude: 127.1, arriveTime: "16:50" });
+  assert.equal(recommendExistingStopTime([first, next, last], first), "16:40");
+  const dropoff = [{ ...first, direction: "ALIGHT" }, { ...next, direction: "ALIGHT", arriveTime: "18:00" }, { ...last, direction: "ALIGHT", arriveTime: "18:05" }];
+  assert.equal(recommendExistingStopTime(dropoff, dropoff[0]), null);
+});
 
 /** 삽입 계획을 메모리 명단에 적용(서버 SQL 과 같은 규칙: ① spread 행 번호 바꾸기 ② 요일 전체 sortOrder ≥ shiftFrom +1, 그다음 새 행). */
 function applySteps(rows: any[], plan: any, who = { studentName: "신입", studentId: "new" }) {

@@ -32,6 +32,14 @@ test("정렬 번호·좌표·다른 학생 행 변경은 이 학생 안내 완�
 test("학부모 위치와 명단 공용 정류장 좌표가 달라도 재확인 사유가 아니다",()=>{const f=fixture();f.locations[0].latitude=37.8;assert.equal(p.enrollmentShuttleProgress(f).status,"ASSIGNED");});
 test("배정 반의 실제 수업시간이 바뀌면 명단·노선을 재확인한다",()=>{const f=fixture();f.classes[0].startTime="17:10";assert.equal(p.enrollmentShuttleProgress(f).status,"RECONFIRM_REQUIRED");});
 test("안내 전이면 배차 완료, 안내문은 명단 시각·정류장으로 만든다",()=>{const f=fixture();assert.equal(p.enrollmentShuttleProgress(f).status,"ASSIGNED");const n=p.buildStudentRouteNotice("student-1",f.serviceMonth,f.roster);assert.equal(n.text,"월 등원 16:40 합성 정류장 / 월 하원 18:15 합성 정류장");assert.equal(n.eventKey,p.shuttleNoticeEventKey(f.serviceMonth,"student-1",p.studentRosterFingerprint("student-1",f.serviceMonth,f.roster)));f.roster[0].arriveTime="8:05";assert.match(p.buildStudentRouteNotice("student-1",f.serviceMonth,f.roster).text,/월 등원 08:05/);});
+test("명단에 있어도 하원 시각이 없으면 배차 완료에서 제외", () => {
+  const f = fixture();
+  f.roster[1].arriveTime = null;
+  const result = p.enrollmentShuttleProgress(f);
+  assert.equal(result.status, "DISPATCH_PENDING");
+  assert.equal(result.confirmedCount, 1);
+  assert.match(result.legs[1].detail, /시각을 입력/);
+});
 test("공급자 ACCEPTED는 안내 완료가 아닌 전달 미확인",()=>{const f=fixture();notice(f);assert.equal(p.enrollmentShuttleProgress(f).status,"NOTICE_ACCEPTED");});
 test("현재 배차·문안·수신자가 일치하는 최종 성공만 안내 완료",()=>{const f=fixture();notice(f,"DELIVERED");assert.equal(p.enrollmentShuttleProgress(f).status,"COMPLETE");assert.equal(p.enrollmentShuttleProgress(f).confirmedCount,2);});
 test("실패·불확실·진행 중을 안내 완료로 승격하지 않는다",()=>{for(const status of ["FAILED","UNCERTAIN","PENDING","SENDING"]){const f=fixture();notice(f,"DELIVERED");f.deliveries[0].status=status;assert.notEqual(p.enrollmentShuttleProgress(f).status,"COMPLETE");}});

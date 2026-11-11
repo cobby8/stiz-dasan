@@ -52,6 +52,10 @@ function toMin(v: string | null | undefined): number | null {
   return t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3)) : null;
 }
 
+export function hasRosterArrivalTime(value: string | null | undefined): boolean {
+  return hhmm(value) !== null;
+}
+
 function minToHhmm(min: number): string {
   const v = ((Math.round(min) % 1440) + 1440) % 1440;
   return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
@@ -211,6 +215,39 @@ export function estimateInsertTime(stops: readonly RouteStop[], position: number
     if (d1 + d2 > 0) ratio = d1 / (d1 + d2);
   }
   return minToHhmm(t1 + (t2 - t1) * ratio);
+}
+
+/** 기존 정차의 명단 순서를 기준으로, 같은 정류장 또는 앞뒤 정차에서 시각을 추천한다. */
+export function recommendExistingStopTime(stops: readonly RegularShuttleStop[], target: RegularShuttleStop): string | null {
+  if (!target.id || !target.classTime || (target.direction !== "BOARD" && target.direction !== "ALIGHT")) return null;
+  const cell = findRouteCell(stops, target.weekday, target.classTime, target.direction);
+  const position = cell.findIndex((stop) => stop.rows.some((row) => row.rowId === target.id));
+  if (position < 0) return null;
+  const current = cell[position];
+  const before = cell.slice(0, position).filter((stop) => toMin(stop.arriveTime) != null);
+  const after = cell.slice(position + 1).filter((stop) => toMin(stop.arriveTime) != null);
+  let time = hhmm(current.arriveTime);
+  if (!time && before.length && after.length) {
+    if (toMin(before[before.length - 1].arriveTime)! >= toMin(after[0].arriveTime)!) return null;
+    time = estimateInsertTime([before[before.length - 1], after[0]], 1, pointOf(current));
+  }
+  if (!time) {
+    const first = before.length === 0;
+    const side = first ? after : before.slice().reverse();
+    const anchor = side[0], sample = side[1];
+    const a = pointOf(anchor), b = pointOf(sample), point = pointOf(current);
+    const aTime = toMin(anchor?.arriveTime ?? null), bTime = toMin(sample?.arriveTime ?? null);
+    if (a && b && point && aTime != null && bTime != null) {
+      const segmentDistance = dist(a, b);
+      const elapsed = first ? bTime - aTime : aTime - bTime;
+      if (segmentDistance > 0 && elapsed > 0) {
+        const minutes = Math.max(1, Math.round(dist(a, point) * elapsed / segmentDistance));
+        const estimated = aTime + (first ? -minutes : minutes);
+        if (estimated >= 0 && estimated < 1440) time = minToHhmm(estimated);
+      }
+    }
+  }
+  return time && !classTimeWarning(target.direction, target.classTime, time) ? time : null;
 }
 
 /**

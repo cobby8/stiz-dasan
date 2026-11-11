@@ -17,6 +17,7 @@ import { buildRegularRunRows } from "@/lib/shuttle/regularRunRows";
 import { runBlockLabel } from "@/lib/shuttle/runBlocks";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
+import { hasRosterArrivalTime, recommendExistingStopTime } from "@/lib/shuttle/regularRosterPlacementLogic";
 import { formatRosterMonths, rosterStudentKeyResolver, WEEKDAY_LABELS, type RosterScope } from "@/lib/shuttle/regularRosterEditLogic";
 import type { UnifiedRider, UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { monthNote, RemoveRiderDialog, rosterCall, StopEditDialog, StudentShuttleDialog, type ReassignLink } from "./RunEditDialogs";
@@ -71,6 +72,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   const rows = useMemo(() => buildRegularRunRows({ stops, weekday }), [stops, weekday]);
   const targetGroup = rows.find((row) => row.riders.some((rider) => rider.checkId === initialStopId))?.groupKey ?? null;
   const stopsById = useMemo(() => new Map(stops.filter((s) => s.id).map((s) => [s.id!, s])), [stops]);
+  const missingTimes = useMemo(() => stops.filter((stop) =>
+    stop.id && stop.studentName && (stop.direction === "BOARD" || stop.direction === "ALIGHT") &&
+    !hasRosterArrivalTime(stop.arriveTime)
+  ), [stops]);
 
   // ── 순서·시각 편집(기사님 화면 UnifiedDriverClient 와 같은 규칙: 같은 묶음 안에서만, 옮기면 시각 칸도 함께) ──
   // 편집 중인 묶음(수업시간 × 등/하원의 groupKey) 하나 — null 이면 보기 모드. 동시에 한 묶음만 편집한다.
@@ -159,7 +164,11 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
     };
     const after = groupPayload(ordered, displayTime);
     const before = groupPayload(sourceRows, (r) => r.time);
-    return [...after.entries()].filter(([key, list]) => JSON.stringify(list) !== JSON.stringify(before.get(key)));
+    return [...after.entries()].filter(([key, list]) =>
+      JSON.stringify(list) !== JSON.stringify(before.get(key)) ||
+      ordered.some((row) => row.groupKey === key && hasRosterArrivalTime(timeOverride[row.key]) &&
+        row.riders.some((rider) => !hasRosterArrivalTime(stopsById.get(rider.checkId)?.arriveTime)))
+    );
   })();
   const orderDirty = changedGroups.length > 0;
 
@@ -320,9 +329,19 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   // 편집 중인 묶음의 카드만 편집용으로 그린다(다른 묶음 카드는 보기 그대로).
   function renderStopMeta(row: UnifiedRow) {
     const rowEditing = editingGroup === row.groupKey;
+    const missing = rowEditing && row.riders.map((rider) => stopsById.get(rider.checkId))
+      .find((stop) => stop && !hasRosterArrivalTime(stop.arriveTime));
+    const recommendation = missing ? recommendExistingStopTime(stops, missing) : null;
     return (
       <>
         {!rowEditing && <span>{row.riders.length}명</span>}
+        {recommendation && (
+          <button type="button" disabled={savingOrder} onClick={() => setTimeOverride((values) => ({ ...values, [row.key]: recommendation }))}
+            className="min-h-11 px-1 text-xs font-bold text-[var(--color-academy-primary)] underline">
+            추천 {recommendation} 적용
+          </button>
+        )}
+        {missing && !recommendation && <span className="text-xs text-[var(--color-academy-warning)]">정차 순서와 시각 확인 필요</span>}
         {rowEditing && row.kind === "REGULAR" && row.riders.length > 0 && (
           <button type="button" disabled={savingOrder} onClick={() => openDialog({ kind: "stop", rowIds: row.riders.map((x) => x.checkId) })}
             aria-label={`${row.label} 정류장 수정`} title="정류장 수정(이름·위치·시각)"
@@ -450,6 +469,21 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {/* 배정 필요(신규 + 반 이동) — 한 줄 요약, 누르면 펼침. 넣으면 운행표를 다시 읽는다. */}
       <NewStudentDispatchPanel key={serviceMonth} month={serviceMonth} selectedWeekday={weekday}
         onAssigned={() => { setMessage(null); router.refresh(); }} onBoard={setBoard} openRequest={openRequest} />
+      {missingTimes.length > 0 && (
+        <details className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm">
+          <summary className="cursor-pointer font-bold text-[var(--color-academy-warning)]">배차 필요 · 시각 미입력 {missingTimes.length}건</summary>
+          <ul className="mt-2 space-y-1">
+            {missingTimes.map((stop) => (
+              <li key={stop.id}>
+                <button type="button" className="min-h-10 text-left underline" onClick={() => {
+                  if (!confirmLeave()) return;
+                  router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
+                }}>{stop.studentName} · {WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"} · {stop.classTime ?? "수업시간 미입력"}</button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {mismatches.length > 0 && (
         <p className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-warning)]">
