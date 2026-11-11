@@ -5,6 +5,7 @@ import { getStudentTenure } from "@/lib/student-tenure-query";
 import { isBillingParentSendEnabled } from "@/lib/billing/parentSendGuard";
 import { requireAdmin } from "@/lib/auth-guard";
 import { isFinanceOwnerRole } from "@/lib/payments/studentBillingRules";
+import StudentShuttleAssignment from "./StudentShuttleAssignment";
 
 // 참고: 아래 requireAdmin() 이 로그인 쿠키를 읽으므로 이 페이지는 사실상 요청마다 새로 그린다(동적).
 // 30초 캐시 값은 예전 설정 그대로 남겨 둔 것이고, 청구 변경 뒤 화면 갱신은 클라이언트 loadData(no-store)가 맡는다.
@@ -28,5 +29,5 @@ export default async function StudentDetailPage({ params }: { params: Promise<{ 
 
     // 사진 사용 동의 링크는 클라이언트 헤더 우측 액션으로 이동함
     // 청구서 발행 창의 «학부모 알림» 칸 — 사이트 발송 잠금(서버 환경변수)이면 끈 채로 잠근다
-    return <StudentDetailClient studentId={id} data={data} classes={classes} shuttleLocations={shuttleLocations} tenure={tenure} billingParentSendEnabled={isBillingParentSendEnabled()} canManageFinance={isFinanceOwnerRole(adminUser.appUserRole)} />;
+    return <StudentDetailClient studentId={id} data={data} classes={classes} shuttleLocations={shuttleLocations} shuttleAssignment={<StudentShuttleAssignment studentId={id} />} tenure={tenure} billingParentSendEnabled={isBillingParentSendEnabled()} canManageFinance={isFinanceOwnerRole(adminUser.appUserRole)} />;
 }

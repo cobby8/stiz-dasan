@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // 셔틀 명단(RegularShuttleStop)이 유일한 정본이다. 예전 «자동 제안(T맵)·저장 노선·차량 이동»은 없앴다
 // (저장 노선 테이블은 지우지 않는다 — 기사님 화면이 더 읽지 않을 뿐).
 // 주소는 그대로(/admin/shuttle/regular-dispatch) — 메뉴·탭·배차 진행 링크·카카오 딥링크(?month=&studentId=)를 보존한다.
-export default async function RegularDispatchPage({ searchParams }: { searchParams: Promise<{ month?: string; studentId?: string }> }) {
+export default async function RegularDispatchPage({ searchParams }: { searchParams: Promise<{ month?: string; studentId?: string; stopId?: string }> }) {
   // 이번 달·다음 달 명단이 없으면 직전 달을 복사해 만든다. 실패해도 화면은 뜬다.
   try { await ensureRegularRosterMonths(); } catch (e) { console.error("[admin/shuttle/regular-dispatch] 명단 월 자동 생성 실패", e); }
   const months = await getRegularShuttleMonths();
@@ -29,7 +29,10 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
     getRegularStopsWithoutCoords(serviceMonth), // 좌표 없는 정류장(1회용 좌표 채우기 패널)
   ]);
   // 처음 보여 줄 요일 = 신청 학생이 타는 요일 → 없으면 학생이 있는 첫 요일(월→토→일) → 월.
-  const target = initialStudentId ? stops.find((s) => s.studentId === initialStudentId) : null;
+  const exactStop = requested.stopId && initialStudentId
+    ? stops.find((s) => s.id === requested.stopId && s.studentId === initialStudentId && (s.direction === "BOARD" || s.direction === "ALIGHT"))
+    : undefined;
+  const target = exactStop ?? (initialStudentId ? stops.find((s) => s.studentId === initialStudentId) : null);
   const firstDay = [1, 2, 3, 4, 5, 6, 0].find((w) => stops.some((s) => s.weekday === w && s.studentName && (s.direction === "BOARD" || s.direction === "ALIGHT")));
   const initialWeekday = target?.weekday ?? firstDay ?? 1;
   const totalStopCount = new Set(stops.map((s) => s.stopName).filter(Boolean)).size;
@@ -39,13 +42,14 @@ export default async function RegularDispatchPage({ searchParams }: { searchPara
       <SeasonalHeader eyebrow="SHUTTLE" title="셔틀 관리" />
       <ShuttleSectionTabs />
       <RegularRunEditor
-        key={serviceMonth}
+        key={`${serviceMonth}:${exactStop?.id ?? initialStudentId ?? ""}`}
         stops={JSON.parse(JSON.stringify(stops))}
         serviceMonth={serviceMonth}
         months={[...new Set([...months, serviceMonth])].sort().reverse()}
         currentMonth={currentMonth}
         initialWeekday={initialWeekday}
         initialStudentId={initialStudentId}
+        initialStopId={exactStop?.id}
       />
       <RegularStopGeocodePanel
         stopNames={missingStops}

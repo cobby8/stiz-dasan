@@ -504,6 +504,7 @@ export default function StudentDetailClient({
     studentId,
     classes = [],
     shuttleLocations = [],
+    shuttleAssignment,
     tenure = null,
     billingParentSendEnabled = false,
     canManageFinance = false,
@@ -514,6 +515,7 @@ export default function StudentDetailClient({
     classes?: ClassOption[];
     // 배차용 실제 셔틀 위치 — page.tsx가 getStudentShuttleLocations로 전달(신규 prop)
     shuttleLocations?: ShuttleLocationRow[];
+    shuttleAssignment?: React.ReactNode;
     // 총 재원기간 — page.tsx 가 getStudentTenure 로 전달(자료 없으면 null → 표시 안 함)
     tenure?: StudentTenure | null;
     // 학부모 청구 안내 사이트 발송 잠금이 풀렸나 — page.tsx 가 서버 환경변수로 판정해 전달(기본 잠금)
@@ -1407,6 +1409,7 @@ export default function StudentDetailClient({
                         )}
                     </div>
 
+                    {shuttleAssignment}
                 </aside>
 
                 {/* ---- 우측 본문 (탭) ---- */}

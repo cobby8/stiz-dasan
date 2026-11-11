@@ -42,7 +42,7 @@ type Dialog =
 
 const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
-export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId }: {
+export default function RegularRunEditor({ stops, serviceMonth, months, currentMonth, initialWeekday, initialStudentId, initialStopId }: {
   /** 그 달 셔틀 명단 전체(서버가 읽어 준다 — 저장 뒤 router.refresh 로 다시 받는다). */
   stops: RegularShuttleStop[];
   serviceMonth: string;
@@ -52,6 +52,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   initialWeekday: number;
   /** 신청 학생 바로 보기(?studentId=) — 그 학생 셔틀 정보 창을 바로 연다. */
   initialStudentId?: string;
+  initialStopId?: string;
 }) {
   const router = useRouter();
   const laterMonths = useMemo(() => months.filter((m) => m > serviceMonth).sort(), [months, serviceMonth]);
@@ -68,11 +69,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
   // 운행표 카드 = 기사님 화면과 같은 함수(결석·오늘만 변경은 날마다 달라 «월+요일» 기본형에선 끈다).
   const rows = useMemo(() => buildRegularRunRows({ stops, weekday }), [stops, weekday]);
+  const targetGroup = rows.find((row) => row.riders.some((rider) => rider.checkId === initialStopId))?.groupKey ?? null;
   const stopsById = useMemo(() => new Map(stops.filter((s) => s.id).map((s) => [s.id!, s])), [stops]);
 
   // ── 순서·시각 편집(기사님 화면 UnifiedDriverClient 와 같은 규칙: 같은 묶음 안에서만, 옮기면 시각 칸도 함께) ──
   // 편집 중인 묶음(수업시간 × 등/하원의 groupKey) 하나 — null 이면 보기 모드. 동시에 한 묶음만 편집한다.
-  const [editingGroup, setEditingGroup] = useState<string | null>(null); // EDIT_GROUP
+  const [editingGroup, setEditingGroup] = useState<string | null>(targetGroup); // EDIT_GROUP
   const editing = editingGroup != null;
   const [sourceRows, setSourceRows] = useState<UnifiedRow[]>(rows);
   const [sortOverride, setSortOverride] = useState<Record<string, SortKey>>({});
@@ -242,7 +244,7 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
   // ── 편집 창 ──
   const [dialog, setDialog] = useState<Dialog | null>(() => {
-    if (!initialStudentId) return null;
+    if (!initialStudentId || initialStopId) return null;
     const hit = stops.find((s) => s.studentId === initialStudentId && s.id && (s.direction === "BOARD" || s.direction === "ALIGHT"));
     return hit ? { kind: "student", rowId: hit.id! } : null;
   });
@@ -288,7 +290,12 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   // ── PC 오른쪽 노선 지도(≥1024px) ──
   // 블록 머리를 누르면 그 묶음(수업시간 × 등/하원)을 지도에 띄운다. 고른 게 없거나 요일이 바뀌어 사라지면 첫 묶음.
   // 마커 번호 = 카드 순번(화면에 보이는 숫자 그대로) — 순서·시각을 바꾸면 지도도 바로 따라간다.
-  const [pickedGroup, setPickedGroup] = useState<string | null>(null);
+  const [pickedGroup, setPickedGroup] = useState<string | null>(targetGroup);
+  useEffect(() => {
+    if (!initialStopId || !targetGroup) return;
+    const blocks = document.querySelectorAll<HTMLElement>("[data-run-block]");
+    [...blocks].find((block) => block.dataset.runBlock === targetGroup)?.scrollIntoView({ block: "center" });
+  }, [initialStopId, targetGroup]);
   const mapGroupKey = stopRows.some((r) => r.groupKey === pickedGroup) ? pickedGroup : stopRows[0]?.groupKey ?? null;
   const mapRows = stopRows.filter((r) => r.groupKey === mapGroupKey);
   const mapStopsNow: RouteMapStop[] = stopRows
@@ -411,6 +418,11 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
           className="min-h-11 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
           {months.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
+        <button type="button" onClick={() => {
+          if (confirmLeave()) router.push(`/admin/shuttle/regular?${new URLSearchParams({ month: serviceMonth, weekday: String(weekday), add: "1" })}`);
+        }} className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 text-sm font-bold text-white">
+          <span aria-hidden="true" className="material-symbols-outlined text-lg">person_add</span>학생 추가
+        </button>
         <button type="button" onClick={() => setShowLocations(true)} className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold">
           <span aria-hidden="true" className="material-symbols-outlined text-lg">map</span>실시간 위치
         </button>

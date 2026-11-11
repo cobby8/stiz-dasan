@@ -151,12 +151,14 @@ function EnrollmentFlagBadges({ flags }: { flags: RosterEnrollmentFlag[] }) {
   );
 }
 
-export default function RegularShuttleClient({ initialStops, initialMonth, months, currentMonth, initialStudentId }: {
+export default function RegularShuttleClient({ initialStops, initialMonth, months, currentMonth, initialStudentId, initialWeekday, initialAdd }: {
   initialStops: RegularShuttleStop[];
   initialMonth: string;
   months: string[];
   currentMonth: string;
   initialStudentId?: string;
+  initialWeekday?: number;
+  initialAdd?: boolean;
 }) {
   const [stops, setStops] = useState<RegularShuttleStop[]>(initialStops);
   const [serviceMonth, setServiceMonth] = useState(initialMonth);
@@ -211,7 +213,7 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
   const weekdays = useMemo(() => WD_ORDER
     .map((w) => ({ weekday: w, count: groupRosterDay(stops, w).reduce((n, g) => n + g.students.length, 0) }))
     .filter((w) => w.weekday !== 0 || w.count > 0), [stops]);
-  const [active, setActive] = useState<number>(() => initialStops.find(row => row.studentId === initialStudentId)?.weekday ?? weekdays.find((w) => w.count > 0)?.weekday ?? 1);
+  const [active, setActive] = useState<number>(() => initialWeekday ?? initialStops.find(row => row.studentId === initialStudentId)?.weekday ?? weekdays.find((w) => w.count > 0)?.weekday ?? 1);
   const groups = useMemo(() => groupRosterDay(stops, active), [stops, active]);
   // 상세 패널 대상 — 지금 요일 묶음에서 다시 찾는다(요일을 바꾸거나 학생이 빠지면 패널이 저절로 닫힌다)
   const detailEntry = detail ? groups.find((g) => g.classTime === detail.classTime)?.students.find((e) => e.key === detail.key) ?? null : null;
@@ -358,6 +360,14 @@ export default function RegularShuttleClient({ initialStops, initialMonth, month
     // 학생을 고르기 전에도 추천 거리 계산에 쓸 학원·차고지 좌표는 받아 둔다(이름만 입력하는 경우).
     void loadAddContext(null);
   }
+  const openedAdd = useRef(false);
+  useEffect(() => {
+    if (!initialAdd || openedAdd.current) return;
+    openedAdd.current = true;
+    openAdd();
+    // 진입 시 한 번만 열고, 사용자가 닫은 뒤에는 다시 열지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAdd]);
   async function openRequestedStudent() {
     if (!initialStudentId) return;
     setErr(null);
