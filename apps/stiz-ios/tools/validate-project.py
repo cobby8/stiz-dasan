@@ -34,7 +34,7 @@ assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
 assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.0;" in release_settings
-assert info["CFBundleDisplayName"] == "STIZ 농구교실"
+assert info["CFBundleDisplayName"] == "스티즈농구교실"
 # 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
 assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"
 icon = json.loads((root / "STIZ/Assets.xcassets/AppIcon.appiconset/Contents.json").read_text(encoding="utf-8"))
