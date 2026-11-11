@@ -14,7 +14,7 @@ import styles from "@/components/shuttle/DriverWorkspace.module.css";
 import NewStudentDispatchPanel from "@/components/shuttle/assign/NewStudentDispatchPanel";
 import type { DriverAssignBoard } from "@/lib/shuttle/driverAssign";
 import { buildRegularRunRows } from "@/lib/shuttle/regularRunRows";
-import { runBlockLabel } from "@/lib/shuttle/runBlocks";
+import { placeUntimedRegularStops, runBlockLabel } from "@/lib/shuttle/runBlocks";
 import type { RegularShuttleStop } from "@/lib/shuttle/regularSheet";
 import { parseDriverScheduleTime } from "@/lib/shuttle/driverUpcoming";
 import { hasRosterArrivalTime, recommendExistingStopTime } from "@/lib/shuttle/regularRosterPlacementLogic";
@@ -70,7 +70,9 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
 
   // 운행표 카드 = 기사님 화면과 같은 함수(결석·오늘만 변경은 날마다 달라 «월+요일» 기본형에선 끈다).
   const rows = useMemo(() => buildRegularRunRows({ stops, weekday }), [stops, weekday]);
-  const targetGroup = rows.find((row) => row.riders.some((rider) => rider.checkId === initialStopId))?.groupKey ?? null;
+  const targetRow = rows.find((row) => row.riders.some((rider) => rider.checkId === initialStopId));
+  const targetGroup = targetRow?.groupKey ?? null;
+  const targetRowKey = targetRow?.key;
   const stopsById = useMemo(() => new Map(stops.filter((s) => s.id).map((s) => [s.id!, s])), [stops]);
   const missingTimes = useMemo(() => stops.filter((stop) =>
     stop.id && stop.studentName && (stop.direction === "BOARD" || stop.direction === "ALIGHT") &&
@@ -99,13 +101,14 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       const k = (editing ? sortOverride[r.key] : undefined) ?? { minutes: r.minutes, seq: r.seq };
       return editing && timeOverride[r.key] !== undefined ? { ...k, minutes: parseDriverScheduleTime(timeOverride[r.key]) } : k;
     };
-    return [...base].sort((a, b) => {
+    const sorted = [...base].sort((a, b) => {
       const ka = keyOf(a), kb = keyOf(b);
       if (ka.minutes == null && kb.minutes == null) return ka.seq - kb.seq;
-      if (ka.minutes == null) return 1; // 시간 미정은 맨 끝
+      if (ka.minutes == null) return 1;
       if (kb.minutes == null) return -1;
       return ka.minutes === kb.minutes ? ka.seq - kb.seq : ka.minutes - kb.minutes;
     });
+    return placeUntimedRegularStops(sorted, (row) => keyOf(row).minutes != null);
   }, [rows, sourceRows, editing, sortOverride, timeOverride]);
 
   function moveRow(row: UnifiedRow, dir: -1 | 1) {
@@ -301,10 +304,10 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
   // 마커 번호 = 카드 순번(화면에 보이는 숫자 그대로) — 순서·시각을 바꾸면 지도도 바로 따라간다.
   const [pickedGroup, setPickedGroup] = useState<string | null>(targetGroup);
   useEffect(() => {
-    if (!initialStopId || !targetGroup) return;
-    const blocks = document.querySelectorAll<HTMLElement>("[data-run-block]");
-    [...blocks].find((block) => block.dataset.runBlock === targetGroup)?.scrollIntoView({ block: "center" });
-  }, [initialStopId, targetGroup]);
+    if (!initialStopId || !targetRowKey) return;
+    const cards = document.querySelectorAll<HTMLElement>("[data-run-key]");
+    [...cards].find((card) => card.dataset.runKey === targetRowKey)?.scrollIntoView({ block: "center" });
+  }, [initialStopId, targetRowKey]);
   const mapGroupKey = stopRows.some((r) => r.groupKey === pickedGroup) ? pickedGroup : stopRows[0]?.groupKey ?? null;
   const mapRows = stopRows.filter((r) => r.groupKey === mapGroupKey);
   const mapStopsNow: RouteMapStop[] = stopRows
@@ -472,13 +475,17 @@ export default function RegularRunEditor({ stops, serviceMonth, months, currentM
       {missingTimes.length > 0 && (
         <details className="mt-2 rounded-lg bg-[var(--color-academy-warning-soft)] p-3 text-sm">
           <summary className="cursor-pointer font-bold text-[var(--color-academy-warning)]">배차 필요 · 시각 미입력 {missingTimes.length}건</summary>
-          <ul className="mt-2 space-y-1">
+          <ul className="mt-2 flex flex-wrap gap-2">
             {missingTimes.map((stop) => (
               <li key={stop.id}>
-                <button type="button" className="min-h-10 text-left underline" onClick={() => {
+                <button type="button" className="inline-flex min-h-10 max-w-full flex-wrap items-center gap-x-2 rounded-full border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 py-1 text-left text-xs text-[var(--color-academy-ink)] hover:border-[var(--color-academy-warning)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-warning)]" onClick={() => {
                   if (!confirmLeave()) return;
                   router.push(`/admin/shuttle/regular-dispatch?${new URLSearchParams({ month: serviceMonth, studentId: stop.studentId ?? "", stopId: stop.id! })}`);
-                }}>{stop.studentName} · {WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"} · {stop.classTime ?? "수업시간 미입력"}</button>
+                }}>
+                  <span className="font-bold">{stop.studentName}</span>
+                  <span>{WEEKDAY_LABELS[stop.weekday]}요일 {stop.direction === "BOARD" ? "등원" : "하원"}</span>
+                  <span className="text-[var(--color-academy-muted)]">{stop.classTime ?? "수업시간 미입력"}</span>
+                </button>
               </li>
             ))}
           </ul>

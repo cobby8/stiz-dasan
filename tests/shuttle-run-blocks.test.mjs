@@ -57,6 +57,24 @@ test("묶음 머리 글자: 그림문자를 떼고 방향을 붙인다(이미 �
   assert.equal(blocks.runBlockLabel({ kind: "SEASONAL", direction: "DROPOFF", groupLabel: null }), "특강 · 하원");
 });
 
+test("관리자 시각 미입력 정류장은 해당 수업의 등원·하원 블록에 각각 붙는다", () => {
+  const pickup = row("R:17:00~18:00:board", 0);
+  const dropoff = row("R:17:00~18:00:alight", 1);
+  const later = row("R:19:20~20:40:alight", 2);
+  const untimed = { time: null, minutes: null };
+  const missingPickup = row(pickup.groupKey, 3, untimed);
+  const missingDropoff = row(dropoff.groupKey, 4, untimed);
+  const standalone = row("R:20:40~21:30:alight", 5, untimed);
+  const original = [pickup, dropoff, later, missingPickup, missingDropoff, standalone];
+  const adminRows = blocks.placeUntimedRegularStops(original, (r) => r.minutes != null);
+  const admin = blocks.groupRunBlocks(adminRows);
+
+  assert.deepEqual(admin.map((b) => b.rows), [[pickup, missingPickup], [dropoff, missingDropoff], [later], [standalone]]);
+  assert.ok(admin.every((b) => !b.continued));
+  assert.deepEqual(blocks.groupRunBlocks(original).flatMap((b) => b.rows), original);
+  assert.deepEqual(adminRows.filter((r) => r.minutes != null), [pickup, dropoff, later]);
+});
+
 const ROWS = [row("R:16:00~17:00:board", 0), row("R:16:00~17:00:board", 1), row("R:17:00~18:00:board", 2)];
 const render = (props) => renderToStaticMarkup(React.createElement(RunBoard, {
   rows: ROWS, dragKey: null, onDragKeyChange() {}, onDropOn() {}, onMove() {}, displayTime: (r) => r.time, onTimeChange() {},

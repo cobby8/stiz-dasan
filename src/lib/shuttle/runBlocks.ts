@@ -54,3 +54,28 @@ export function groupRunBlocks(rows: readonly UnifiedRow[]): RunBlock[] {
   }
   return blocks;
 }
+
+/** 관리자 편집용: 시각 미정 정차를 같은 수업·방향의 마지막 블록에 붙인다. */
+export function placeUntimedRegularStops(
+  rows: readonly UnifiedRow[],
+  hasTime: (row: UnifiedRow) => boolean,
+): UnifiedRow[] {
+  const lastTimedStop = new Map<string, UnifiedRow>();
+  const untimedStops = new Map<string, UnifiedRow[]>();
+  for (const row of rows) {
+    if (row.kind !== "REGULAR" || row.isTerminal) continue;
+    if (hasTime(row)) {
+      lastTimedStop.set(row.groupKey, row);
+    } else {
+      const group = untimedStops.get(row.groupKey) ?? [];
+      group.push(row);
+      untimedStops.set(row.groupKey, group);
+    }
+  }
+  return rows.flatMap((row) => {
+    const anchor = lastTimedStop.get(row.groupKey);
+    if (row === anchor) return [row, ...(untimedStops.get(row.groupKey) ?? [])];
+    if (anchor && row.kind === "REGULAR" && !row.isTerminal && !hasTime(row)) return [];
+    return [row];
+  });
+}
