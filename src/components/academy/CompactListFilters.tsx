@@ -11,17 +11,18 @@ type CompactListFiltersProps = {
   resultCount?: string | number;
   label?: string;
   search?: ReactNode;
+  compactSearch?: boolean;
   actions?: ReactNode;
 };
 
 /** 조건 값과 조회 방식은 부모가 유지하고, 조작 영역만 한 곳에 모읍니다. */
-export default function CompactListFilters({ activeCount, summary, onReset, children, className = "", resultCount, label = "필터", search, actions }: CompactListFiltersProps) {
+export default function CompactListFilters({ activeCount, summary, onReset, children, className = "", resultCount, label = "필터", search, compactSearch = false, actions }: CompactListFiltersProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   return (
     <section aria-label="목록 검색과 필터" className={`min-w-0 space-y-2 [&_select]:h-11 ${className}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {search && <div className="min-w-0 flex-1 basis-32">{search}</div>}
+        {search && <div className={`min-w-0 flex-1 ${compactSearch ? "basis-24 sm:basis-32" : "basis-32"}`}>{search}</div>}
         <button type="button" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}
           className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3 text-sm font-bold text-[var(--color-academy-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-academy-primary)]">
           <span className="material-symbols-outlined text-lg" aria-hidden="true">tune</span>

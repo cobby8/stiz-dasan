@@ -52,14 +52,18 @@ test("보기 전환은 aria-pressed 2칸 버튼이고 선택을 localStorage 에
   assert.match(toggle, /window\.localStorage\.setItem\(storageKey, next\)/);
 });
 
-test("수강신청·체험 목록은 공통 부품을 쓰고 칩은 기존 상태 필터(filter)와 같은 값을 공유한다", () => {
+test("수강신청·체험 목록은 공통 보기 전환을 사용하고 체험 조건과 보기 방식은 필터 안에 모은다", () => {
   for (const source of [applyClient, trialClient]) {
     assert.match(source, /<table className="admin-list-table/);
-    assert.match(source, /<StatusCountChips[\s\S]*?selected=\{filter\}[\s\S]*?onSelect=\{setFilter\}/);
     assert.match(source, /<ListViewToggle/);
     assert.match(source, /useRememberedListView\(/);
     assert.match(source, /scope="rowgroup"/);
   }
+  assert.match(applyClient, /<StatusCountChips[\s\S]*?selected=\{filter\}[\s\S]*?onSelect=\{setFilter\}/);
+  const trialFilters = trialClient.match(/<CompactListFilters[\s\S]*?<\/CompactListFilters>/)?.[0] ?? "";
+  assert.match(trialFilters, /<select aria-label="체험 신청 상태" value=\{filter\}/);
+  assert.match(trialFilters, /<ListViewToggle value=\{trialView\}/);
+  assert.doesNotMatch(trialClient, /<StatusCountChips/);
   // 상세는 패널로 연다(내용·기능은 기존 상세 모달 그대로)
   assert.match(applyModals, /<ListDetailPanel onClose=\{onClose\} titleId="application-detail-title"/);
   assert.match(trialClient, /<ListDetailPanel onClose=\{onClose\} titleId="trial-detail-modal-title"/);

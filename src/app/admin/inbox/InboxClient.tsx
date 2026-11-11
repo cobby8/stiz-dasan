@@ -523,63 +523,60 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   };
 
   return (
-    <div className="space-y-3">
-      {/* 머리 한 줄: 제목 + (공통 목록 탭이면) 검색·필터 + ⚙ 신청 설정 — 컴팩트(히어로 없음) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto text-xl font-black text-[var(--color-academy-ink)]">신청함</h1>
-        {isRowsTab && (
-          <>
-            {/* 검색 칸 — 돋보기는 칸 안 왼쪽, 글자와 겹치지 않게 flex 로 나란히 */}
-            <label className="order-last flex min-h-11 w-full min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 sm:order-none sm:w-auto sm:max-w-xs sm:flex-1">
-              <span className="sr-only">원생 이름 검색</span>
-              <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="원생 이름 검색"
-                className="min-w-0 flex-1 bg-transparent py-2 text-base text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none"
-              />
-            </label>
-            <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary" aria-haspopup="dialog">
-              <span className="material-symbols-outlined text-lg" aria-hidden="true">tune</span>
-              필터{filterCount > 0 && <span className="tabular-nums"> {filterCount}</span>}
-            </button>
-          </>
-        )}
-        <Link href="/admin/inbox/settings" prefetch={false} className="academy-button-secondary" aria-label="신청 설정(유입 통계·안내 설정·입학 점검)">
+    <div className="space-y-2">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 md:grid-cols-[auto_minmax(0,1fr)_auto]">
+        <h1 className="text-xl font-black text-[var(--color-academy-ink)]">신청함</h1>
+        <nav className="col-span-2 col-start-1 row-start-2 flex min-w-0 gap-1 overflow-x-auto p-0.5 md:col-span-1 md:col-start-2 md:row-start-1" aria-label="신청 종류">
+          {INBOX_TABS.map((entry) => {
+            const n = counts?.byTab[entry.tab] ?? 0;
+            const active = entry.tab === tab;
+            return (
+              <button
+                key={entry.tab}
+                type="button"
+                aria-pressed={active}
+                onClick={() => go({ tab: entry.tab })}
+                className={`relative inline-flex min-h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-bold ${active
+                  ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
+                  : "text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"}`}
+              >
+                {entry.label}
+                {n > 0 && (
+                  <span className={`rounded-full px-1.5 text-xs tabular-nums ${active
+                    ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"
+                    : "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"}`}>
+                    <span className="sr-only">처리 필요 </span>{n}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+        <Link href="/admin/inbox/settings" prefetch={false} className="academy-button-secondary col-start-2 row-start-1 whitespace-nowrap md:col-start-3" aria-label="신청 설정(유입 통계·안내 설정·입학 점검)">
           <span className="material-symbols-outlined text-lg" aria-hidden="true">settings</span>
           <span className="hidden sm:inline">신청 설정</span>
         </Link>
-      </div>
+      </header>
 
-      {/* 일의 종류 6탭 — 휴대폰은 가로 스크롤 한 줄. 숫자 = 처리 필요 건수(k1) */}
-      <nav className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1" aria-label="신청 종류">
-        {INBOX_TABS.map((entry) => {
-          const n = counts?.byTab[entry.tab] ?? 0;
-          const active = entry.tab === tab;
-          return (
-            <button
-              key={entry.tab}
-              type="button"
-              aria-pressed={active}
-              onClick={() => go({ tab: entry.tab })}
-              className={`inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full border px-4 text-sm font-bold ${active
-                ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"}`}
-            >
-              {entry.label}
-              {n > 0 && (
-                <span className={`rounded-full px-1.5 text-xs tabular-nums ${active
-                  ? "bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)]"
-                  : "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"}`}>
-                  <span className="sr-only">처리 필요 </span>{n}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+      {isRowsTab && (
+        <div className="flex min-w-0 items-center gap-2">
+          <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--color-academy-line-input)] bg-[var(--color-academy-surface)] px-3 sm:max-w-xs">
+            <span className="sr-only">원생 이름 검색</span>
+            <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="원생 이름 검색"
+              className="min-w-0 flex-1 bg-transparent py-2 text-base text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none"
+            />
+          </label>
+          <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary shrink-0" aria-haspopup="dialog">
+            <span className="material-symbols-outlined text-lg" aria-hidden="true">tune</span>
+            필터{filterCount > 0 && <span className="tabular-nums"> {filterCount}</span>}
+          </button>
+        </div>
+      )}
 
       {/* 탭 안 작은 분류(변경: 결석·보강/셔틀/수강 · 수강: 신청/대기) — 글자 버튼 한 줄 */}
       {subs.length > 0 && (

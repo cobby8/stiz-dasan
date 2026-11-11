@@ -106,7 +106,7 @@ test('컴팩트 UI — 필터는 버튼 하나+모달, 행은 한 줄(min-h-12),
   assert.match(client, /flex min-h-12 min-w-0 flex-1 items-center/);
   assert.match(client, /statusBadgeClassFor\(row\.kind, row\.rawStatus\)/);
   // 휴대폰: 탭 6개가 가로 스크롤 한 줄
-  assert.match(client, /<nav className="-mx-1 flex gap-1\.5 overflow-x-auto px-1 pb-1" aria-label="신청 종류">/);
+  assert.match(client, /<nav\b[^>]*\boverflow-x-auto\b[^>]*aria-label="신청 종류">/);
   assert.doesNotMatch(client, /text-\[(9|10|11)px\]/);
 });
 

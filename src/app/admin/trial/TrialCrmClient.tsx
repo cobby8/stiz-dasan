@@ -7,7 +7,6 @@ import AdminModal from "@/components/admin/AdminModal";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import CompactListFilters from "@/components/academy/CompactListFilters";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
-import StatusCountChips from "@/components/admin/list/StatusCountChips";
 import ListViewToggle, { useRememberedListView } from "@/components/admin/list/ListViewToggle";
 import ManualSmsModal from "@/app/admin/apply/ManualSmsModal";
 import { trialFeeStatusLabel } from "@/lib/trial-fee-confirmation";
@@ -1214,7 +1213,7 @@ export default function TrialCrmClient({
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-2">
             {feedback && (
                 <div
                     className={`fixed bottom-4 left-4 right-4 z-[120] flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold shadow-2xl sm:bottom-auto sm:left-auto sm:right-6 sm:top-6 sm:w-[380px] ${
@@ -1234,14 +1233,15 @@ export default function TrialCrmClient({
             )}
 
             <CompactListFilters
+                compactSearch
                 activeCount={Number(filter !== "ALL") + Number(dateFilter !== "ALL") + Number(workFilter !== "ALL")}
-                summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, dateFilter !== "ALL" ? TRIAL_DATE_FILTERS.find(item => item.value === dateFilter)?.label : null, workFilter !== "ALL" ? TRIAL_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || `전체 조건 · 전환율 ${stats.conversionRate}%`}
+                summary={[filter !== "ALL" ? STATUS_CONFIG[filter]?.label : null, dateFilter !== "ALL" ? TRIAL_DATE_FILTERS.find(item => item.value === dateFilter)?.label : null, workFilter !== "ALL" ? TRIAL_WORK_FILTERS.find(item => item.value === workFilter)?.label : null].filter(Boolean).join(" · ") || `전환율 ${stats.conversionRate}%`}
                 resultCount={`${filteredLeads.length}건`}
                 onReset={() => { setFilter("ALL"); setDateFilter("ALL"); setWorkFilter("ALL"); }}
-                search={<label className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-3">
+                search={<label className="flex min-h-11 min-w-0 items-center gap-1 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] px-2 sm:gap-2 sm:px-3">
                     <span className="material-symbols-outlined text-lg text-[var(--color-academy-muted)]" aria-hidden="true">search</span>
-                    <input type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="학생, 보호자, 전화번호, 학교, 메모로 검색" className="min-w-0 flex-1 bg-transparent py-2 text-[17px] text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
-                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)]"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
+                    <input type="search" aria-label="학생, 보호자, 전화번호, 학교, 메모로 검색" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="신청 검색" className="min-w-0 flex-1 bg-transparent py-2 text-base text-[var(--color-academy-ink)] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
+                    {searchQuery && <button type="button" onClick={() => setSearchQuery("")} title="검색어 지우기" className="-mr-2 inline-flex min-h-11 w-11 shrink-0 items-center justify-center text-[var(--color-academy-muted)] sm:-mr-3"><span className="material-symbols-outlined text-lg" aria-hidden="true">close</span></button>}
                 </label>}
                 actions={<button type="button" onClick={() => setShowAddModal(true)} aria-label="체험 신청 등록" title="체험 신청 등록" className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-academy-primary)] px-2 text-sm font-bold text-[var(--color-academy-on-primary)] sm:px-3"><span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span><span className="hidden sm:inline">체험 신청 등록</span></button>}
             >
@@ -1261,19 +1261,11 @@ export default function TrialCrmClient({
                         {TRIAL_WORK_FILTERS.map(item => <option key={item.value} value={item.value}>{item.label} {workFilterCounts[item.value]}</option>)}
                     </select>
                 </label>
+                <div className="min-w-0 space-y-1">
+                    <p className="text-xs font-bold text-[var(--color-academy-muted)]">보기 방식</p>
+                    <ListViewToggle value={trialView} options={TRIAL_VIEW_OPTIONS} onChange={setTrialView} ariaLabel="체험 문의 보기 방식" />
+                </div>
             </CompactListFilters>
-
-            {/* 상태별 건수 칩(누르면 그 상태만, 다시 누르면 해제) + 목록|상태별 전환.
-                칩은 필터 모달의 «신청 상태»(filter)와 같은 값을 공유한다. */}
-            <div className="-mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <StatusCountChips
-                    ariaLabel="체험 문의 상태별 건수"
-                    items={STATUS_ORDER.map((status) => ({ value: status, label: STATUS_CONFIG[status].label, count: stats[status] }))}
-                    selected={filter}
-                    onSelect={setFilter}
-                />
-                <ListViewToggle value={trialView} options={TRIAL_VIEW_OPTIONS} onChange={setTrialView} ariaLabel="체험 문의 보기 방식" />
-            </div>
 
             {/* ── 리드 목록 ── */}
             {filteredLeads.length === 0 ? (
