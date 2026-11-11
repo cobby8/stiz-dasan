@@ -42,10 +42,16 @@ export type TossPartialRefund = (input: {
   transactionId: string; paymentId: string; amount: number; lineId: string; adminUserId: string;
   /** 확실히 실패한 횟수(멱등 키에 섞는다) */ attempt?: number;
   /** 이 줄을 만든 시각(ISO) */ notBefore?: string;
-}) => Promise<{ ok: true; alreadyApplied: boolean } | { ok: false; message: string; uncertain: boolean }>;
+}) => Promise<{ ok: true; alreadyApplied: boolean } | { ok: false; message: string; uncertain: boolean; retryWithNewKey?: boolean }>;
 
 const WORKBENCH_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtext('STIZ_BILLING_WORKBENCH'))";
 const SETTLEMENT_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))";
+
+/** 승인과 별도 수강료 처리가 신청 행을 잡기 전에 같은 순서로 잠근다. */
+export async function lockPauseSettlement(tx: SettlementSql, requestId: string): Promise<void> {
+  await tx.$executeRawUnsafe(WORKBENCH_LOCK_SQL);
+  await tx.$executeRawUnsafe(SETTLEMENT_LOCK_SQL, `pause-settlement:${requestId}`);
+}
 
 /** 표가 있는가(마이그레이션 20261110180000 적용 전이면 미리보기만, 실행은 막는다) */
 export async function settlementTablesReady(db: SettlementSql): Promise<boolean> {
@@ -68,6 +74,7 @@ const TX_COVERS_P = `(t."paymentId" = p.id OR EXISTS (SELECT 1 FROM "PaymentTran
 
 type PauseRequestRow = {
   id: string; kind: string; status: string; studentId: string; fromClassId: string | null;
+  enrollmentId: string | null; cancelRequestStatus: string | null;
   pauseFrom: string; resumeOn: string | null; dayOfWeek: string | null;
   /** 원장이 결정한 날(KST "YYYY-MM-DD") — 기능 시작 전 승인 건을 거르려고 */
   decidedOn?: string | null;
@@ -75,7 +82,8 @@ type PauseRequestRow = {
 
 async function loadPauseRequest(db: SettlementSql, requestId: string, lock: boolean): Promise<PauseRequestRow | null> {
   const rows = await db.$queryRawUnsafe<PauseRequestRow[]>(
-    `SELECT r.id, r.kind, r.status, r."studentId", r."fromClassId",
+    `SELECT r.id, r.kind, r.status, r."studentId", r."fromClassId", r."enrollmentId",
+            to_jsonb(r)->>'cancelRequestStatus' AS "cancelRequestStatus",
             to_char(r."effectiveFrom",'YYYY-MM-DD') AS "pauseFrom", to_char(r."resumeOn",'YYYY-MM-DD') AS "resumeOn",
             c."dayOfWeek",
             to_char(r."decidedAt" AT TIME ZONE 'Asia/Seoul','YYYY-MM-DD') AS "decidedOn"
@@ -86,6 +94,21 @@ async function loadPauseRequest(db: SettlementSql, requestId: string, lock: bool
     requestId,
   );
   return rows[0] ?? null;
+}
+
+const PAUSE_ENROLLMENT_CHANGED = "신청 이후 수강 상태가 바뀌었어요. 현재 반과 상태를 확인한 뒤 수강료를 처리해 주세요.";
+const PAUSE_CANCEL_PENDING = "휴원 취소 요청을 먼저 처리해 주세요.";
+
+async function pauseSettlementEligibilityProblem(db: SettlementSql, req: PauseRequestRow, lock: boolean): Promise<string | null> {
+  if (req.cancelRequestStatus === "PENDING") return PAUSE_CANCEL_PENDING;
+  // 이미 실제 반영된 휴원은 이후에 복귀했어도 지난 기간의 처리 근거가 남아 있다.
+  if (req.status === "APPLIED") return null;
+  const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT e.id FROM "Enrollment" e WHERE e.id = $1 AND e."studentId" = $2
+       AND e."classId" = $3 AND e.status = 'ACTIVE'${lock ? " FOR UPDATE OF e" : ""}`,
+    req.enrollmentId, req.studentId, req.fromClassId,
+  );
+  return rows.length === 1 ? null : PAUSE_ENROLLMENT_CHANGED;
 }
 
 /** 휴원한 반의 수강료 청구(휴원 시작 수강월 한 달 앞부터) + 결제 경로·진행 중 여부 + 이미 처리된 날 */
@@ -204,13 +227,15 @@ export function previewKeyOf(requestId: string, plan: PausePlan): string {
 }
 
 /** 미리보기(읽기만). 휴원 신청이 아니면 null. */
-export async function previewPauseSettlement(db: SettlementSql, requestId: string, classDatesFor: ClassDatesFor): Promise<PauseSettlementPreview | null> {
-  const req = await loadPauseRequest(db, requestId, false);
+export async function previewPauseSettlement(db: SettlementSql, requestId: string, classDatesFor: ClassDatesFor, lock = false): Promise<PauseSettlementPreview | null> {
+  const req = await loadPauseRequest(db, requestId, lock);
   if (!req || req.kind !== "PAUSE" || !req.fromClassId) return null;
+  const eligibilityProblem = await pauseSettlementEligibilityProblem(db, req, lock);
   const tablesReady = await settlementTablesReady(db);
-  const payments = await loadPausePayments(db, req, tablesReady, false, classDatesFor);
+  const payments = await loadPausePayments(db, req, tablesReady, lock && tablesReady, classDatesFor);
   const plan = planPauseSettlement({ pauseFrom: req.pauseFrom, resumeOn: req.resumeOn, payments });
   if (!req.dayOfWeek) plan.problems.push("반 요일을 알 수 없어 금액을 계산할 수 없어요.");
+  if (eligibilityProblem) plan.problems.push(eligibilityProblem);
   return {
     requestId, plan, previewKey: previewKeyOf(requestId, plan), lines: describePausePlan(plan),
     ready: tablesReady && plan.problems.length === 0, tablesReady,
@@ -241,8 +266,7 @@ export async function executePauseSettlementInTx(tx: SettlementSql, input: {
     return { ok: false, message: "수강료 미리보기를 다시 불러온 뒤 처리해 주세요." };
   }
   // 청구 작업대·수동 청구와 같은 전역 잠금 → 신청별 잠금(같은 신청 두 번 누름은 여기서 줄 선다)
-  await tx.$executeRawUnsafe(WORKBENCH_LOCK_SQL);
-  await tx.$executeRawUnsafe(SETTLEMENT_LOCK_SQL, `pause-settlement:${input.requestId}`);
+  await lockPauseSettlement(tx, input.requestId);
   if (!(await settlementTablesReady(tx))) {
     // (운영 표 준비 = 마이그레이션 20261110180000 적용 전)
     return { ok: false, message: "수강료 처리 기록이 아직 준비되지 않았어요. 준비가 끝난 뒤 다시 해 주세요." };
@@ -253,6 +277,8 @@ export async function executePauseSettlementInTx(tx: SettlementSql, input: {
   if (input.decidedSince && !(req.decidedOn && req.decidedOn >= input.decidedSince)) {
     return { ok: false, message: "이 기능 전에 승인된 휴원이에요. 수강료는 직접 정리해 주세요." };
   }
+  const eligibilityProblem = await pauseSettlementEligibilityProblem(tx, req, true);
+  if (eligibilityProblem) return { ok: false, message: eligibilityProblem };
   const existing = await tx.$queryRawUnsafe<Array<{ id: string }>>(
     `SELECT id FROM "EnrollmentChangeSettlement" WHERE "requestId" = $1 LIMIT 1`, req.id,
   );
@@ -422,12 +448,15 @@ export async function runSettlementTossRefunds(db: SettlementSql, input: {
       summary.done += 1;
     } else {
       // 결과를 모르면 REQUESTED 로 남긴다(다시 시도 = 같은 표식으로 확인부터) · 확실한 실패만 FAILED
-      await db.$executeRawUnsafe(
+      const updated = await db.$executeRawUnsafe(
         `UPDATE "EnrollmentChangeSettlementLine"
             SET status = $2, message = $3, "failedAttempts" = "failedAttempts" + $4, "updatedAt" = now()
-          WHERE id = $1 AND status IN ('REQUESTED','FAILED')`,
-        line.id, result.uncertain ? "REQUESTED" : "FAILED", result.message.slice(0, 300), result.uncertain ? 0 : 1,
+          WHERE id = $1 AND status IN ('REQUESTED','FAILED') AND "failedAttempts" = $5`,
+        line.id, result.uncertain ? "REQUESTED" : "FAILED", result.message.slice(0, 300),
+        !result.uncertain && result.retryWithNewKey ? 1 : 0, Number(line.failedAttempts ?? 0),
       );
+      // 같은 시도에 대한 늦은 응답은 이미 기록된 새 시도를 덮을 수 없다.
+      if (updated === 0) continue;
       if (result.uncertain) summary.uncertain += 1; else summary.failed += 1;
       summary.messages.push(result.message);
     }

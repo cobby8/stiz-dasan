@@ -1,5 +1,8 @@
 # Errors And Traps
 
+## 2026-11-11 학부모 홈 페이지 인자와 운영 빌드
+- 일반 TypeScript 검사에서 통과해도 Next.js가 빌드 중 생성한 페이지 타입에서 기본 인자 `= {}`가 있는 구조 분해 인자가 `undefined`를 포함해 실패할 수 있다. `src/app/mypage/page.tsx`에서 인자를 받도록 고쳤고 렌더 테스트도 프레임워크와 같은 인자를 전달한다.
+
 ## 2026-11-03 Prisma raw query의 void 반환
 - `pg_advisory_xact_lock`을 그대로 SELECT하면 Prisma P2010이 발생한다. 결과만 text로 변환하고 잠금과 트랜잭션은 유지한다. 승인된 운영 검토 요청은 최초 실패 후 0건으로 확인했다. 격리 DB에 실제 PrismaClient를 연결하여 원래 오류와 보완 성공을 함께 검증한다.
 

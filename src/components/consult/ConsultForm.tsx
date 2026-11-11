@@ -85,7 +85,7 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
   const [privacy, setPrivacy] = useState(false);
   const [honeypot, setHoneypot] = useState(""); // 스팸 방지 숨김 칸(공개 화면만)
   const [error, setError] = useState("");
-  const [done, setDone] = useState<null | { duplicate: boolean }>(null);
+  const [done, setDone] = useState(false);
   const [pending, startTransition] = useTransition();
   const errorRef = useRef<HTMLDivElement>(null);
   const doneRef = useRef<HTMLHeadingElement>(null);
@@ -111,7 +111,7 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
           ? await submitParentConsultRequest(input)
           : await submitConsultRequest({ ...input, honeypot, source });
         if (!result.ok) { setError(result.message); return; }
-        setDone({ duplicate: result.duplicate });
+        setDone(true);
       } catch {
         setError("신청을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
@@ -125,7 +125,7 @@ export default function ConsultForm({ mode, source = "PUBLIC_WEB", initialGuardi
         <div className="flex items-center gap-2">
           <FontFreeIcon name="check_circle" size={28} className={s.done} />
           <h2 ref={doneRef} tabIndex={-1} className={`text-xl font-black outline-none ${s.ink}`}>
-            {done.duplicate ? "이미 접수된 상담 신청이에요" : "상담 신청이 접수됐어요"}
+            상담 신청이 접수됐어요
           </h2>
         </div>
         <p className={`mt-2 text-sm break-keep ${s.muted}`}>

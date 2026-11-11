@@ -18,7 +18,7 @@ export default async function MyPageDashboard({
 }: {
     // ?child=<studentId> — 마지막으로 고른 아이(내 자녀일 때만 쓴다, 아니면 첫째)
     searchParams?: Promise<{ child?: string }>;
-} = {}) {
+}) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

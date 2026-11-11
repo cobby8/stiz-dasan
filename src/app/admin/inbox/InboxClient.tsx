@@ -341,29 +341,29 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
   };
 
   // 검색은 이미 받은 줄 안에서(원생 이름·제목·요약)
-  const match = (row: InboxRow) => {
-    const q = query.trim();
-    return !q || `${row.studentName ?? ""} ${row.title} ${row.summary}`.includes(q);
-  };
-  const visibleOpen = useMemo(() => openRows.filter(match), [openRows, query]); // eslint-disable-line react-hooks/exhaustive-deps
-  const visibleDone = useMemo(() => doneRows.filter(match), [doneRows, query]); // eslint-disable-line react-hooks/exhaustive-deps
+  const search = query.trim();
+  const match = (row: InboxRow) => !search || `${row.studentName ?? ""} ${row.title} ${row.summary}`.includes(search);
+  const visibleOpen = openRows.filter(match);
+  const visibleDone = doneRows.filter(match);
   const actionRows = visibleOpen.filter((row) => row.bucket === "ACTION");
   const ongoingRows = visibleOpen.filter((row) => row.bucket !== "ACTION");
 
   const keyOf = (row: InboxRow) => `${row.kind}:${row.id}`;
   const open = [...openRows, ...doneRows].find((row) => keyOf(row) === openId) ?? null;
   // 휴원 승인 전 수강료 처리 — 칸을 열면 미리보기를 받아 오고(행에는 없다), 방식을 고르기 전엔 승인을 잠근다
-  const pauseKey = open && isPendingPause(open) ? keyOf(open) : null;
+  const pauseKey = open && isPendingPause(open) ? `${keyOf(open)}:${pauseReload}` : null;
   const pauseState: PausePreviewState | null = pauseKey
     ? (pausePreview?.key === pauseKey ? pausePreview.state : { status: "loading" })
     : null;
   const pauseRequestId = pauseKey ? open?.id ?? null : null;
+  function refreshPausePreview() {
+    setPauseMode(null);
+    setPauseReload((n) => n + 1);
+  }
   useEffect(() => {
     // 휴원 칸을 열 때마다 새로 계산(그 사이 결제·청구가 바뀌었을 수 있다). 다른 칸으로 바뀌면 늦게 온 결과는 버린다.
     if (!pauseKey || !pauseRequestId) return;
     let alive = true;
-    setPauseMode(null);
-    setPausePreview({ key: pauseKey, state: { status: "loading" } });
     getPauseTuitionPreview(pauseRequestId)
       .then((result) => {
         if (!alive) return;
@@ -423,7 +423,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         if (failure) {
           setMessage({ tone: "error", text: failure });
           // 휴원 승인 거절(서버 «방식을 골라 주세요»·금액 바뀜) → 새 미리보기로 방식 선택을 다시 띄운다
-          if (action.key === "approve" && isPendingPause(row)) setPauseReload((n) => n + 1);
+          if (action.key === "approve" && isPendingPause(row)) refreshPausePreview();
           return;
         }
         // 처리는 됐지만 남은 문제(토스 환불 확인 실패 등)가 있으면 경고로 알린다
@@ -435,6 +435,7 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         setNote("");
         router.refresh();
       } catch (error) {
+        if (action.key === "approve" && isPendingPause(row)) refreshPausePreview();
         setMessage({ tone: "error", text: adminErrorText(error, "처리하지 못했습니다. 목록을 새로고침한 뒤 다시 확인해 주세요.") });
       }
     });
@@ -499,7 +500,12 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
         <button
           type="button"
           // 상담은 메모 칸에 저장된 원장 메모(ref.adminNote)를 채워 연다 — 고쳐서 저장하거나 비워서 지운다
-          onClick={() => { setOpenId(key); setNote(row.kind === "CONSULT" ? row.ref?.adminNote ?? "" : ""); setMessage(null); }}
+          onClick={() => {
+            setOpenId(key);
+            if (isPendingPause(row)) refreshPausePreview();
+            setNote(row.kind === "CONSULT" ? row.ref?.adminNote ?? "" : "");
+            setMessage(null);
+          }}
           className={`flex min-h-12 min-w-0 flex-1 items-center gap-2 py-1.5 pr-3 text-left hover:bg-[var(--color-academy-soft)] ${gutter ? "pl-0" : "pl-3"}`}
         >
           <span className="hidden w-24 shrink-0 truncate text-xs font-bold text-[var(--color-academy-muted)] sm:block">{kindLabel(row.kind)}</span>
@@ -763,11 +769,12 @@ export default function InboxClient({ tab, sub, kind, showDone, from, to, counts
               ))}
             </div>
           )}
-          {/* 기존 화면은 작은 링크로만(k3) */}
-          <Link href={open.detailHref} prefetch={false} className="mt-3 inline-flex min-h-11 items-center gap-1 text-xs font-bold text-[var(--color-academy-muted)] underline">
-            기존 화면에서 열기
-            <span className="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
-          </Link>
+          {open.kind !== "CONSULT" && (
+            <Link href={open.detailHref} prefetch={false} className="mt-3 inline-flex min-h-11 items-center gap-1 text-xs font-bold text-[var(--color-academy-muted)] underline">
+              기존 화면에서 열기
+              <span className="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
+            </Link>
+          )}
         </ListDetailPanel>
       )}
 
@@ -793,6 +800,7 @@ function FilterModal({ from, to, onClose, onApply }: {
 }) {
   const [fromValue, setFromValue] = useState(from ?? "");
   const [toValue, setToValue] = useState(to ?? "");
+  const reversed = Boolean(fromValue && toValue && fromValue > toValue);
   return (
     <AdminModal onClose={onClose} titleId="inbox-filter-title" panelClassName="max-w-lg p-5">
       <h2 id="inbox-filter-title" className="text-lg font-black text-[var(--color-academy-ink)]">필터</h2>
@@ -804,10 +812,11 @@ function FilterModal({ from, to, onClose, onApply }: {
           <input type="date" value={toValue} onChange={(event) => setToValue(event.target.value)} className="academy-input min-h-11 min-w-0 flex-1" aria-label="신청일 끝" />
         </div>
       </fieldset>
+      {reversed && <p role="alert" className="mt-2 text-sm text-[var(--color-academy-danger)]">종료일은 시작일과 같거나 이후여야 합니다.</p>}
       <div className="mt-5 flex items-center gap-2">
         <button type="button" onClick={() => { setFromValue(""); setToValue(""); }} className="academy-button-text">초기화</button>
         <button type="button" onClick={onClose} className="academy-button-secondary ml-auto">닫기</button>
-        <button type="button" onClick={() => onApply({ from: fromValue || null, to: toValue || null })} className="academy-button-primary">적용</button>
+        <button type="button" disabled={reversed} onClick={() => onApply({ from: fromValue || null, to: toValue || null })} className="academy-button-primary">적용</button>
       </div>
     </AdminModal>
   );

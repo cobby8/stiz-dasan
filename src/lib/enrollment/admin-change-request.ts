@@ -14,6 +14,7 @@ import {
   countOpenSettlementWork,
   executePauseSettlementInTx,
   hasMovedMoneySettlement,
+  lockPauseSettlement,
   previewPauseSettlement,
   readSettlements,
   runSettlementTossRefunds,
@@ -267,24 +268,31 @@ export async function decideEnrollmentChangeRequest(input: {
   requestId: string;
   approve: boolean;
   note?: string | null;
-  /** 휴원 승인 때만. 없으면 예전처럼 승인만 하고, 수강료 처리는 나중에 settleApprovedPause 로 한다. */
+  /** 휴원 승인 때만. 처리할 금액이 있으면 승인과 함께 선택해야 한다. */
   settlement?: PauseSettlementChoice | null;
 }) {
   const note = (input.note ?? "").trim().slice(0, 500) || null;
   const settlementChoice = input.approve && input.settlement ? input.settlement : null;
-  // 서버 강제(검수 권장 11-10): 휴원 승인인데 처리 방식이 없으면, 지금 금액을 다시 계산해
-  // 처리할 금액이 있고 계산 문제가 없으면 거절한다 — 화면이 옛 미리보기(금액 0)를 들고 있었거나 다른 경로로 불러도
-  // 돈 처리 없이 승인되지 않게. 화면은 needsSettlementChoice 를 보고 미리보기를 다시 불러와 방식 선택을 띄운다.
-  if (input.approve && !settlementChoice && (await pauseApprovalNeedsChoice(input.requestId))) {
-    return { ok: false as const, message: SETTLEMENT_CHOICE_REQUIRED_MESSAGE, needsSettlementChoice: true as const };
-  }
-  // 연간 일정(네트워크)은 트랜잭션 «밖»에서 한 번 읽는다 — 잠금을 잡고 기다리지 않게
-  const classDatesFor = settlementChoice ? await loadClassDatesFor() : null;
+  const pendingKind = input.approve && !settlementChoice && todayKst() >= PAUSE_SETTLEMENT_SINCE
+    ? (await prisma.$queryRawUnsafe<Array<{ kind: string }>>(
+      `SELECT kind FROM "EnrollmentChangeRequest" WHERE id = $1 AND status = 'PENDING'`, input.requestId,
+    ))[0]?.kind
+    : null;
+  const mustCheckChoice = pendingKind === "PAUSE";
+  // 일정은 잠금을 잡기 전에 읽고, 청구는 거래 안에서 잠근 뒤 다시 읽는다.
+  const classDatesFor = settlementChoice || mustCheckChoice ? await loadClassDatesFor() : null;
   // 콜백 안에서 채우므로 객체로 둔다(let 이면 TS 가 콜백 밖에서 null 로만 본다)
   const holder: { settled: ExecutedSettlement | null } = { settled: null };
   let rows: any[];
   try {
   rows = await prisma.$transaction(async (tx) => {
+  if (classDatesFor) await lockPauseSettlement(tx, input.requestId);
+  if (mustCheckChoice && classDatesFor) {
+    const preview = await previewPauseSettlement(tx, input.requestId, classDatesFor, true);
+    if (preview?.tablesReady && settlementChoiceRequired(preview.plan)) {
+      throw new SettlementRejected(SETTLEMENT_CHOICE_REQUIRED_MESSAGE);
+    }
+  }
   const decided = await tx.$queryRawUnsafe<any[]>(
     // 결정과 결정 기록(감사 로그)은 함께 저장한다.
     `UPDATE "EnrollmentChangeRequest"
@@ -316,6 +324,9 @@ export async function decideEnrollmentChangeRequest(input: {
   }, { timeout: 30_000 });
   } catch (error) {
     const rejected = settlementErrorMessage(error);
+    if (rejected === SETTLEMENT_CHOICE_REQUIRED_MESSAGE) {
+      return { ok: false as const, message: rejected, needsSettlementChoice: true as const };
+    }
     if (rejected) return { ok: false as const, message: rejected };
     throw error;
   }
@@ -340,27 +351,10 @@ export async function decideEnrollmentChangeRequest(input: {
   };
 }
 
-/**
- * 검토 중인 휴원 승인에 수강료 처리 방식이 «반드시» 필요한가(서버 강제).
- * - 휴원(PAUSE)·검토 중(PENDING)만 본다 — 다른 종류는 연간 일정(네트워크)도 읽지 않는다
- * - 기능 시작일(PAUSE_SETTLEMENT_SINCE) 이후 결정분만 대상(지금 승인 = 오늘 결정)
- * - 처리 기록 표가 준비 안 됐으면(마이그레이션 전) 처리 자체가 불가능하니 강제하지 않는다
- */
-async function pauseApprovalNeedsChoice(requestId: string): Promise<boolean> {
-  const rows = await prisma.$queryRawUnsafe<Array<{ kind: string }>>(
-    `SELECT kind FROM "EnrollmentChangeRequest" WHERE id = $1 AND status = 'PENDING'`,
-    requestId,
-  );
-  if (rows[0]?.kind !== "PAUSE") return false;
-  if (todayKst() < PAUSE_SETTLEMENT_SINCE) return false;
-  const preview = await getPauseSettlementPreview(requestId);
-  return Boolean(preview && preview.tablesReady && settlementChoiceRequired(preview));
-}
-
 /** 처리 막힘(문구 그대로 보여 줄 것)·청구 경합이면 원장용 문구, 그 밖의 오류면 null(그대로 던진다) */
 function settlementErrorMessage(error: unknown): string | null {
   if (error instanceof SettlementRejected) return error.userMessage;
-  if (error instanceof Error && error.message === "PAUSE_SETTLEMENT_PAYMENT_CONFLICT") {
+  if (error instanceof Error && ["PAUSE_SETTLEMENT_PAYMENT_CONFLICT", "PAUSE_SETTLEMENT_SCOPE_CHANGED"].includes(error.message)) {
     return "그 사이 청구가 바뀌었어요. 새로고침해 금액을 다시 확인해 주세요.";
   }
   return null;

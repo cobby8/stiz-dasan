@@ -8,8 +8,7 @@
  * 상태 → 칸 지도(catalog 에 CONSULT 를 넣을 때 그대로 옮길 값)는 src/lib/consult/consult-rules.ts 의 CONSULT_STATUS_MAP:
  *   NEW = 처리 필요 «새 상담» · CONTACTED = 진행 중 «연락함» · DONE = 완료 «상담 완료» · CANCELED = 완료 «취소»
  *
- * ⚠️ 표(ConsultRequest)가 아직 없는 운영 DB(마이그레이션 20261110160000 적용 전)여도 신청함 전체가 죽지 않게
- *    조회 실패는 빈 목록 / 0 으로 돌려준다(로그는 남긴다).
+ * 목록 오류는 신청함의 상담 탭에서 처리한다. 메뉴 건수는 실패 시 0으로 표시한다.
  */
 import { prisma } from "@/lib/prisma";
 import { consultStatusesOf } from "@/lib/consult/consult-rules";
@@ -27,19 +26,14 @@ export type { ConsultInboxRow } from "@/lib/consult/consult-service";
 export async function listConsultInboxRows(
   query: Pick<InboxQuery, "bucket" | "from" | "to" | "limitPerKind">,
 ): Promise<ConsultInboxRow[]> {
-  try {
-    const records = await listConsultRequests(prisma, {
-      statuses: consultStatusesOf(query.bucket),
-      from: query.from ?? null,
-      to: query.to ?? null,
-      limit: query.limitPerKind,
-      newestFirst: query.bucket === "DONE",
-    });
-    return records.map(toConsultInboxRow);
-  } catch (error) {
-    console.error("[consult-inbox] 상담 목록 조회 실패:", error);
-    return [];
-  }
+  const records = await listConsultRequests(prisma, {
+    statuses: consultStatusesOf(query.bucket),
+    from: query.from ?? null,
+    to: query.to ?? null,
+    limit: query.limitPerKind,
+    newestFirst: query.bucket === "DONE",
+  });
+  return records.map(toConsultInboxRow);
 }
 
 /** «새 상담»(NEW) 건수 — 실패하면 0(메뉴 숫자만 비고 화면은 열린다) */

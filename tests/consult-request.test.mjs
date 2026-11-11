@@ -1,13 +1,29 @@
 // 상담 신청(2026-11-10 원장 승인 k1·m4) — 입력 검증·상태 전이·신청함 행·DB 제약 일치·권한 게이트를 실제로 돌려 확인한다.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import Module, { createRequire } from "node:module";
+import { resolve } from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import { loadTsModule } from "./_ts-module.mjs";
 
 const rules = await loadTsModule("src/lib/consult/consult-rules.ts");
 const service = await loadTsModule("src/lib/consult/consult-service.ts");
 const read = (p) => readFileSync(p, "utf8");
 const MIGRATION = read("prisma/migrations/20261110160000_consult_request/migration.sql");
+
+function loadWithMocks(file, mocks) {
+  const filename = resolve(file);
+  const compiled = ts.transpileModule(read(filename), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    fileName: filename,
+  }).outputText;
+  const mod = new Module(filename);
+  const require = createRequire(import.meta.url);
+  mod.require = (name) => Object.hasOwn(mocks, name) ? mocks[name] : require(name);
+  mod._compile(compiled, filename);
+  return mod.exports;
+}
 
 const GOOD = {
   studentName: "  김 동생 ",
@@ -133,7 +149,7 @@ test("저장: 줄 세우기(advisory lock) 후 INSERT · 경로/계정/접속 �
   assert.equal(insert.values[3], "01012345678");
 });
 
-test("저장: 이상한 접속 지문은 버리고, 하루 안 같은 번호·같은 학생의 새 상담은 새로 만들지 않는다", async () => {
+test("저장: 이상한 접속 지문은 버리고, 하루 안 내용과 신청 계정이 같은 새 상담만 재사용한다", async () => {
   const odd = fakeDb();
   await service.createConsultRequest(odd, GOOD, { source: "PUBLIC_WEB", clientIpHash: "1.2.3.4" });
   assert.equal(odd.calls.find((c) => c.sql.startsWith("INSERT")).values[9], null);
@@ -144,7 +160,31 @@ test("저장: 이상한 접속 지문은 버리고, 하루 안 같은 번호·�
   assert.equal(dup.calls.some((c) => c.sql.startsWith("INSERT")), false);
 });
 
-test("저장 순서: 잠금 → 한도 확인 → 중복 확인 → 저장 (중복 응답으로 신청 여부를 무제한 떠보지 못하게)", async () => {
+test("같은 학생이 희망 시간이나 요청사항을 바꾸면 새 상담으로 접수한다", async () => {
+  const db = fakeDb();
+  const original = rules.validateConsultInput(GOOD).value;
+  const candidates = [];
+  const query = db.$queryRawUnsafe;
+  db.$queryRawUnsafe = async (sql, ...values) => {
+    if (sql.includes('LOWER("studentName")')) {
+      candidates.push(values);
+      assert.match(sql, /"preferredTimes" IS NOT DISTINCT FROM \$6::text/);
+      assert.match(sql, /message IS NOT DISTINCT FROM \$7::text/);
+      assert.match(sql, /"requestedByUserId" IS NOT DISTINCT FROM \$8::text/);
+      return values[5] === original.preferredTimes && values[6] === original.message && values[7] === null
+        ? [{ id: "prior-id" }] : [];
+    }
+    return query(sql, ...values);
+  };
+  const retry = await service.createConsultRequest(db, GOOD, { source: "PUBLIC_WEB" });
+  const reschedule = await service.createConsultRequest(db, { ...GOOD, preferredTimes: ["주말 오전"] }, { source: "PUBLIC_WEB" });
+  const message = await service.createConsultRequest(db, { ...GOOD, message: "주말 수업 문의" }, { source: "PUBLIC_WEB" });
+  const differentAccount = await service.createConsultRequest(db, GOOD, { source: "PARENT_APP", requestedByUserId: "parent" });
+  assert.deepEqual([retry.duplicate, reschedule.duplicate, message.duplicate, differentAccount.duplicate], [true, false, false, false]);
+  assert.equal(candidates.length, 4);
+});
+
+test("저장 순서: 잠금 → 한도 확인 → 중복 확인 → 저장", async () => {
   const db = fakeDb();
   await service.createConsultRequest(db, GOOD, { source: "PUBLIC_WEB", clientIpHash: IP });
   const step = (re) => db.calls.findIndex((c) => re.test(c.sql));
@@ -157,6 +197,55 @@ test("저장 순서: 잠금 → 한도 확인 → 중복 확인 → 저장 (중�
   const r = await service.createConsultRequest(probe, GOOD, { source: "PUBLIC_WEB", clientIpHash: IP });
   assert.equal(r.ok, false);
   assert.equal(probe.calls.some((c) => /LOWER\("studentName"\)/.test(c.sql)), false);
+});
+
+test("상담 접수 응답은 기존 신청 여부를 내보내지 않고, 새 접수만 알림을 예약한다", async () => {
+  const callbacks = [];
+  let duplicate = false;
+  const { submitConsultRequest, submitParentConsultRequest } = loadWithMocks("src/app/actions/consult.ts", {
+    "next/server": { after: (callback) => callbacks.push(callback) },
+    "next/headers": { headers: async () => new Headers() },
+    "next/cache": { revalidatePath: () => {} },
+    "@/lib/prisma": { prisma: { $transaction: (work) => work({}) } },
+    "@/lib/auth-guard": { requireVerifiedParent: async () => ({ appUserId: "parent" }) },
+    "@/lib/notification": { notifyAdmins: () => assert.fail("실제 알림을 실행하면 안 됨") },
+    "@/lib/consult/consult-rules": rules,
+    "@/lib/consult/consult-service": {
+      ...service,
+      createConsultRequest: async () => ({ ok: true, duplicate, id: "synthetic", value: {} }),
+    },
+  });
+  assert.deepEqual(await submitConsultRequest(GOOD), { ok: true });
+  duplicate = true;
+  assert.deepEqual(await submitConsultRequest(GOOD), { ok: true });
+  assert.deepEqual(await submitParentConsultRequest(GOOD), { ok: true });
+  assert.equal(callbacks.length, 1);
+});
+
+test("신청함 상담 조회 실패는 빈 목록으로 표시하지 않는다", async () => {
+  let fail = false;
+  const problem = new Error("synthetic consultation query failure");
+  const { listConsultInboxRows } = loadWithMocks("src/lib/requests/consult-inbox.ts", {
+    "@/lib/prisma": { prisma: {} },
+    "@/lib/consult/consult-rules": rules,
+    "@/lib/consult/consult-service": {
+      ...service,
+      listConsultRequests: async () => {
+        if (fail) throw problem;
+        return [];
+      },
+    },
+  });
+  assert.deepEqual(await listConsultInboxRows({ bucket: "ACTION" }), []);
+  fail = true;
+  await assert.rejects(listConsultInboxRows({ bucket: "ACTION" }), problem);
+});
+
+test("상담 날짜 필터는 존재하는 KST 달력 날짜만 SQL에 전달한다", async () => {
+  const db = fakeDb();
+  await service.listConsultRequests(db, { statuses: ["NEW"], from: "2026-02-30", to: "2026-11-11", limit: 12.5 });
+  assert.deepEqual(db.calls[0].values, [["NEW"], null, "2026-11-11"]);
+  assert.match(db.calls[0].sql, /LIMIT 12$/);
 });
 
 test("저장: 한도(번호 10분 3건·하루 6건·접속 주소·전체 10분 30건)를 넘으면 거절", async () => {

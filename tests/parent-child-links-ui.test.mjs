@@ -93,7 +93,7 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
     "./MyPageClient": { default: () => null },
     "next/link": { default: Link },
   });
-  const html = renderToStaticMarkup(await Dashboard());
+  const html = renderToStaticMarkup(await Dashboard({ searchParams: Promise.resolve({}) }));
   assert.equal(calls[0], "verified-app-fixture");
   assert.equal(calls[1][0], "verified-app-fixture");
   assert.equal(calls[1][1].length, 0);

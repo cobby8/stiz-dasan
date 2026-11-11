@@ -13,6 +13,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { isKstYmd } from "@/lib/datetime/kst";
 import {
   bucketFor,
   ENROLLMENT_CANCEL_REQUESTED,
@@ -457,8 +458,6 @@ export type InboxQuery = {
   limitPerKind?: number;
 };
 
-const YMD = /^\d{4}-\d{2}-\d{2}$/;
-
 /**
  * 신청함 목록 — 종류마다 따로 읽어(한 종류의 표가 아직 없어도 나머지는 보이게) 코드에서 합쳐 정렬한다.
  * 정렬: 처리 필요·진행 중은 오래된 것부터(밀린 일 먼저), 완료는 최신부터.
@@ -466,9 +465,10 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 export async function getInboxRows(query: InboxQuery): Promise<{ rows: InboxRow[]; failedKinds: RequestKind[] }> {
   // 종류를 안 주면 전부, 빈 배열이면 아무것도(체험·수강처럼 catalog 종류가 없는 탭)
   const wanted = new Set(query.kinds ?? REQUEST_KINDS.map((k) => k.kind));
-  const limit = Math.min(Math.max(Number(query.limitPerKind ?? 150), 1), 500);
-  const from = query.from && YMD.test(query.from) ? query.from : null;
-  const to = query.to && YMD.test(query.to) ? query.to : null;
+  const requestedLimit = query.limitPerKind ?? 150;
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 500) : 150;
+  const from = isKstYmd(query.from) ? query.from : null;
+  const to = isKstYmd(query.to) ? query.to : null;
   const failedKinds: RequestKind[] = [];
 
   const parts = await Promise.all(ADAPTERS.filter((a) => wanted.has(a.kind)).map(async (adapter) => {

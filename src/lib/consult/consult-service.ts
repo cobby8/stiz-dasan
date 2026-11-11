@@ -7,7 +7,7 @@
  * SQL 은 $queryRawUnsafe/$executeRawUnsafe 만 쓴다(PgBouncer 트랜잭션 모드 — ORM 기본 메서드 금지).
  */
 import type { InboxFact, InboxRow } from "@/lib/requests/admin-inbox";
-import { toKstYmd } from "@/lib/datetime/kst";
+import { isKstYmd, toKstYmd } from "@/lib/datetime/kst";
 import {
   CONSULT_SOURCE_LABEL,
   CONSULT_STATUS_MAP,
@@ -71,8 +71,8 @@ export type CreateConsultResult =
 /**
  * 상담 신청 1건 저장.
  * ⚠️ 트랜잭션의 tx 로 부른다 — 한도 확인과 저장 사이에 다른 신청이 끼지 않게 advisory lock 으로 줄 세운다.
- * 순서: 잠금 → 한도 확인 → 중복 확인 → 저장. 같은 연락처·같은 학생의 «새 상담»이 하루 안에 있으면
- * 새로 만들지 않고 그 건을 돌려준다(두 번 누름 방지). 한도를 넘으면 중복이어도 한도 거절이 먼저다.
+ * 순서: 잠금 → 한도 확인 → 중복 확인 → 저장. 하루 안에 같은 내용으로 접수한 «새 상담»을 재사용한다.
+ * 한도를 넘으면 중복이어도 한도 거절이 먼저다.
  */
 export async function createConsultRequest(db: ConsultSqlClient, input: ConsultInput, options: CreateConsultOptions): Promise<CreateConsultResult> {
   const checked = validateConsultInput(input);
@@ -97,13 +97,19 @@ export async function createConsultRequest(db: ConsultSqlClient, input: ConsultI
   );
   if (isConsultRateLimited(counts[0])) return { ok: false, message: "신청이 너무 많이 접수되었습니다. 잠시 후 다시 시도해 주세요." };
 
-  // 한도 확인 «뒤»에 중복 확인 — 앞에 두면 «이미 접수» 응답으로 남의 번호·학생 신청 여부를 무제한 떠볼 수 있다(보안 검수 11-10)
+  // 학생·연락처가 같아도 희망 수업이나 요청사항이 바뀌었으면 새 요청으로 접수한다.
   const existing = await db.$queryRawUnsafe<Array<{ id: string }>>(
     `SELECT id FROM "ConsultRequest"
       WHERE "guardianPhone" = $1 AND LOWER("studentName") = LOWER($2) AND status = 'NEW'
+        AND grade = $3
+        AND "guardianName" IS NOT DISTINCT FROM $4::text
+        AND "preferredDays" IS NOT DISTINCT FROM $5::text
+        AND "preferredTimes" IS NOT DISTINCT FROM $6::text
+        AND message IS NOT DISTINCT FROM $7::text
+        AND "requestedByUserId" IS NOT DISTINCT FROM $8::text
         AND "createdAt" > now() - interval '1 day'
       ORDER BY "createdAt" DESC LIMIT 1`,
-    v.guardianPhone, v.studentName,
+    v.guardianPhone, v.studentName, v.grade, v.guardianName, v.preferredDays, v.preferredTimes, v.message, requestedByUserId,
   );
   if (existing[0]) return { ok: true, duplicate: true, id: existing[0].id, value: v };
 
@@ -170,14 +176,13 @@ export type ConsultListQuery = {
   newestFirst?: boolean;
 };
 
-const YMD = /^\d{4}-\d{2}-\d{2}$/;
-
 /** 목록 — 상태·신청일(KST) 범위로 거른다 */
 export async function listConsultRequests(db: ConsultSqlClient, query: ConsultListQuery): Promise<ConsultRecord[]> {
   if (!query.statuses.length) return [];
-  const limit = Math.min(Math.max(Number(query.limit ?? 150) || 150, 1), 500);
-  const from = query.from && YMD.test(query.from) ? query.from : null;
-  const to = query.to && YMD.test(query.to) ? query.to : null;
+  const requestedLimit = query.limit ?? 150;
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 500) : 150;
+  const from = isKstYmd(query.from) ? query.from : null;
+  const to = isKstYmd(query.to) ? query.to : null;
   return db.$queryRawUnsafe<ConsultRecord[]>(
     `SELECT ${COLUMNS} FROM ${FROM}
       WHERE x.status = ANY($1::text[])

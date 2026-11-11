@@ -30,7 +30,7 @@ import {
   type CreateConsultResult,
 } from "@/lib/consult/consult-service";
 
-export type ConsultSubmitResult = { ok: true; duplicate: boolean } | { ok: false; message: string };
+export type ConsultSubmitResult = { ok: true } | { ok: false; message: string };
 
 const SAVE_FAILED = "신청을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
@@ -64,7 +64,8 @@ async function saveAndNotify(input: ConsultInput, source: ConsultSource, request
     revalidatePath("/admin/inbox");
     revalidatePath("/admin");
   }
-  return { ok: true, duplicate: result.duplicate };
+  // 기존 신청 여부는 접수 응답에 포함하지 않는다.
+  return { ok: true };
 }
 
 /** 공개 상담 신청 — 경로는 PUBLIC_WEB/CHATBOT 만(앱 신청인 척 못 한다). 계정 id 는 받지 않는다 */

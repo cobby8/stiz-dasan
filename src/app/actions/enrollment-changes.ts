@@ -29,7 +29,7 @@ export async function decideEnrollmentChange(input: {
   approve: boolean;
   note?: string;
   /**
-   * 휴원 승인 때 고르는 수강료 처리(2026-11-10 원장 결정 m6) — 선택. 없으면 예전처럼 승인만.
+   * 휴원 승인 때 고르는 수강료 처리. 처리할 금액이 있고 계산이 가능하면 서버가 방식을 요구한다.
    * mode = "CARRY"(이월) | "REFUND"(환불) | "NONE"(없음) · expectedPreviewKey = 화면이 받은 미리보기 지문
    * (getEnrollmentChangeRequests 의 row.settlementPreview.previewKey). 서버가 다시 계산해 다르면 거절하고 승인도 하지 않는다.
    */

@@ -295,6 +295,7 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
       if (sql.includes('UPDATE "EnrollmentChangeSettlementLine"')) {
         const line = state.lines.find((x) => x.id === v[0]);
         if (!line || !["REQUESTED", "FAILED"].includes(line.status)) return 0;
+        if (sql.includes('"failedAttempts" = $5') && line.failedAttempts !== v[4]) return 0;
         if (sql.includes("SET status = 'DONE'") || sql.includes("SET status = 'FAILED'")) {
           line.status = sql.includes("SET status = 'DONE'") ? "DONE" : "FAILED";
           line.message = v[1];
@@ -311,6 +312,7 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
       if (sql.includes("to_regclass")) return [{ a: "x", b: "y" }];
       if (sql.includes(`SELECT DISTINCT "studentId"`)) return [...new Set(state.settlements.filter((s) => s.carryRemaining > 0).map((s) => s.studentId))].sort().map((studentId) => ({ studentId }));
       if (sql.includes('FROM "EnrollmentChangeRequest" r')) return request ? [request] : [];
+      if (sql.includes('FROM "Enrollment" e')) return request?.activeEnrollment === false ? [] : [{ id: "enr-1" }];
       if (sql.includes('SELECT id FROM "EnrollmentChangeSettlement" WHERE "requestId"')) return existing || state.settlements.length ? [{ id: "s0" }] : [];
       // 잠금 없이 읽는 후보 id(휴원 범위 / 이월 차감 범위)
       if (sql.startsWith('SELECT p.id FROM "Payment" p WHERE')) {
@@ -329,7 +331,7 @@ function fakeDb({ payments, request, existing = false, active = [], priorLines =
       }
       if (sql.includes('FROM "EnrollmentChangeSettlementLine" l') && sql.includes("JOIN")) return priorLines;
       if (sql.includes("kind = 'REFUND' AND channel = 'TOSS'")) {
-        return state.lines.filter((l) => l.settlementId === v[0] && l.kind === "REFUND" && l.channel === "TOSS" && ["REQUESTED", "FAILED"].includes(l.status));
+        return state.lines.filter((l) => l.settlementId === v[0] && l.kind === "REFUND" && l.channel === "TOSS" && ["REQUESTED", "FAILED"].includes(l.status)).map((l) => ({ ...l }));
       }
       if (sql.includes('FROM "EnrollmentChangeSettlement"') && sql.includes('"carryRemaining" > 0') && sql.includes("FOR UPDATE")) {
         return state.settlements.filter((s) => s.carryRemaining > 0);
@@ -655,11 +657,17 @@ test("[권장4·5·6] 전액 면세 · 표식 없는 같은 금액 취소 감지
   const db = fakeDb({ payments: ROWS(), request: REQ });
   const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
   const seen = [];
-  const answers = [{ ok: false, message: "거절", uncertain: false }, { ok: false, message: "모름", uncertain: true }, { ok: true, alreadyApplied: false }];
+  const answers = [
+    { ok: false, message: "거절", uncertain: false, retryWithNewKey: true },
+    { ok: false, message: "모름", uncertain: true },
+    { ok: false, message: "재조회 실패", uncertain: true },
+    { ok: false, message: "자동 처리 불가", uncertain: false },
+    { ok: true, alreadyApplied: false },
+  ];
   for (const answer of answers) {
     await service.runSettlementTossRefunds(db, { settlementId: done.settlementId, adminUserId: "a", refundToss: async (input) => { seen.push([input.attempt, input.notBefore]); return answer; } });
   }
-  assert.deepEqual(seen.map((s) => s[0]), [0, 1, 1]);
+  assert.deepEqual(seen.map((s) => s[0]), [0, 1, 1, 1, 1]);
   assert.equal(seen[0][1], "2026-11-10T01:00:00.000Z");
   assert.equal(db.state.lines.find((l) => l.kind === "REFUND").status, "DONE");
   // FAILED 안내는 직접 취소했다면 «직접 처리함»을 누르라고 말한다
@@ -686,7 +694,8 @@ test("[필수] 확실한 거절 = 4xx 중 409·429 제외. 5xx·409·429·응답
   const fn = ledger.slice(ledger.indexOf("export async function partialRefundTossPaymentByAdmin"), ledger.indexOf("/** 관리자 환불 취소 요청의 Idempotency-Key 시드"));
   assert.match(fn, /httpStatus = response\.status;/);
   assert.match(fn, /judgePartialCancelOutcome\(\{[\s\S]*?marker, amount: input\.amount, httpStatus,/);
-  assert.match(fn, /if \(outcome === "FAILED"\) return \{[^\n]*uncertain: false \}/);
+  assert.match(fn, /if \(outcome === "FAILED"\) return \{[^\n]*uncertain: false, retryWithNewKey: true \}/);
+  assert.match(fn, /if \(before\.kind !== "verified"\) return \{[^\n]*uncertain: true \}/);
   assert.match(fn, /«다시 시도»로 확인해 주세요\.", uncertain: true \};\n\}/);
 });
 
@@ -694,7 +703,7 @@ test("[필수] 409·5xx 응답 → REQUESTED 유지·같은 키(시도 번호 �
   // 응답 코드 → 장부 함수 결과(판정 함수 그대로) → 실행부 줄 상태·시도 번호
   const toResult = (httpStatus) => {
     const outcome = partial.judgePartialCancelOutcome({ verified: { cancels: [] }, marker: "m", amount: 70000, httpStatus });
-    return outcome === "FAILED" ? { ok: false, message: "거절", uncertain: false } : { ok: false, message: "모름", uncertain: true };
+    return outcome === "FAILED" ? { ok: false, message: "거절", uncertain: false, retryWithNewKey: true } : { ok: false, message: "모름", uncertain: true };
   };
   const db = fakeDb({ payments: ROWS(), request: REQ });
   const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
@@ -712,6 +721,50 @@ test("[필수] 409·5xx 응답 → REQUESTED 유지·같은 키(시도 번호 �
   await run(500);
   assert.deepEqual(attempts, [0, 0, 0, 1], "결과 모름은 같은 키, 확실한 거절 뒤에만 다음 키");
   assert.equal(line().status, "REQUESTED");
+});
+
+test("확정 전 수강 변경 또는 취소 검토가 생기면 기존 미리보기로 수강료를 처리하지 않는다", async () => {
+  for (const changed of [{ activeEnrollment: false }, { cancelRequestStatus: "PENDING" }]) {
+    const request = { ...REQ, enrollmentId: "enr-1" };
+    const db = fakeDb({ payments: ROWS(), request });
+    const key = await previewKey(db);
+    Object.assign(request, changed);
+    const result = await service.executePauseSettlementInTx(db, {
+      requestId: request.id, adminUserId: "a", mode: "REFUND", expectedPreviewKey: key, classDatesFor,
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /수강 상태가 바뀌었어요|휴원 취소 요청을 먼저/);
+    assert.equal(db.state.settlements.length, 0);
+    assert.equal(db.state.paymentUpdates.length, 0);
+  }
+});
+
+test("같은 환불 시도의 늦은 응답은 확정 실패 상태와 새 시도 번호를 덮지 않는다", async () => {
+  const db = fakeDb({ payments: ROWS(), request: REQ });
+  const done = await service.executePauseSettlementInTx(db, { requestId: "req-1", adminUserId: "a", mode: "REFUND", expectedPreviewKey: await previewKey(db), classDatesFor });
+  const input = { settlementId: done.settlementId, adminUserId: "a" };
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  let release;
+  const delayed = new Promise((resolve) => { release = resolve; });
+  const first = service.runSettlementTossRefunds(db, {
+    ...input,
+    refundToss: async ({ attempt }) => { assert.equal(attempt, 0); entered(); return delayed; },
+  });
+  await started;
+  await service.runSettlementTossRefunds(db, {
+    ...input,
+    refundToss: async ({ attempt }) => {
+      assert.equal(attempt, 0);
+      return { ok: false, message: "거절", uncertain: false, retryWithNewKey: true };
+    },
+  });
+  release({ ok: false, message: "결과 모름", uncertain: true });
+  await first;
+  const line = db.state.lines.find((item) => item.kind === "REFUND");
+  assert.equal(line.failedAttempts, 1);
+  assert.equal(line.status, "FAILED");
+  assert.equal(line.message, "거절");
 });
 
 test("[권장3] 결제 잠금·행 잠금 뒤 다시 읽은 청구 목록이 처음과 다르면 «다시 시도»로 거절(감액 없음)", async () => {

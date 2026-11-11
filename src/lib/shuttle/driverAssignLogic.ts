@@ -90,7 +90,8 @@ export type AssignJoinOption = {
 };
 
 /** 기사님 화면 선택 — 관리자와 같은 JOIN/INSERT + 「다른 요일 정류장」(OTHER). */
-export type AssignChoice = PlacementChoice | { kind: "OTHER"; key: string };
+/** OTHER.position = 화면에서 위·아래로 옮긴 자리(없으면 서버가 정한 «거리가 가장 적게 늘어나는 자리»). */
+export type AssignChoice = PlacementChoice | { kind: "OTHER"; key: string; position?: number };
 
 /** 다른 요일·반 정류장(그 칸에 없는 이름) — 저장할 때 이름·좌표를 그대로 쓴다. */
 type OtherStop = { key: string; name: string; lat: number; lng: number };
@@ -408,7 +409,10 @@ export function parseAssignRequest(raw: unknown): AssignRequest {
   const isIndex = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 500;
   let choice: AssignChoice;
   if (c && c.kind === "JOIN" && isIndex(c.stopIndex)) choice = { kind: "JOIN", stopIndex: c.stopIndex as number };
-  else if (c && c.kind === "OTHER" && typeof c.key === "string" && c.key.length > 0 && c.key.length <= 300) choice = { kind: "OTHER", key: c.key };
+  else if (c && c.kind === "OTHER" && typeof c.key === "string" && c.key.length > 0 && c.key.length <= 300) {
+    if (c.position !== undefined && !isIndex(c.position)) throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
+    choice = c.position === undefined ? { kind: "OTHER", key: c.key } : { kind: "OTHER", key: c.key, position: c.position as number };
+  }
   else if (c && c.kind === "INSERT" && isIndex(c.position)) choice = { kind: "INSERT", position: c.position as number };
   else throw new DriverAssignError(BAD_REQUEST, 400, "BAD_REQUEST");
   const routeVersion = typeof o.routeVersion === "string" ? o.routeVersion.slice(0, 64) : "";
@@ -451,9 +455,11 @@ function addInputForLeg(req: AssignRequest, student: AssignStudentInput, leg: Op
   // 다른 요일 정류장 = 화면에 보여 준 후보 중 같은 key 만(그사이 명단이 바뀌어 없으면 다시 불러오기).
   const other = asked.kind === "OTHER" ? plan.joinOptions.find((o) => o.otherDay && o.key === asked.key) : undefined;
   const otherStop = other ? otherDayStops(stops, plan.route).find((o) => o.key === other.key) ?? null : null;
-  if (asked.kind === "OTHER" && (!other || !otherStop || other.position == null || other.position > n)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
-  // 다른 요일 정류장은 관리자와 같은 「새 정차(INSERT)」로 넣는다 — 자리는 화면에 보여 준 그 자리.
-  const choice: PlacementChoice = asked.kind === "OTHER" ? { kind: "INSERT", position: other!.position as number } : asked;
+  // 자리 = 화면에서 옮긴 자리(있으면) · 아니면 서버가 정한 자리. 둘 다 0..n 안이어야 한다.
+  const otherPosition = asked.kind === "OTHER" ? asked.position ?? other?.position ?? null : null;
+  if (asked.kind === "OTHER" && (!other || !otherStop || otherPosition == null || otherPosition > n)) throw new DriverAssignError(ROUTE_CHANGED, 409, "ROUTE_CHANGED");
+  // 다른 요일 정류장은 관리자와 같은 「새 정차(INSERT)」로 넣는다 — 자리는 화면에서 고른(또는 추천된) 그 자리.
+  const choice: PlacementChoice = asked.kind === "OTHER" ? { kind: "INSERT", position: otherPosition as number } : asked;
 
   const place = newStopPlace(student, req.direction);
   const res = resolveCellPlacement({

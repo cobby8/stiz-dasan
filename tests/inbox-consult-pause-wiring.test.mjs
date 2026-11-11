@@ -179,17 +179,24 @@ test("권장2 상담 메모: 상태 버튼은 메모가 처음 값과 같으면 
 /** 서버 승인 함수를 가짜 DB·미리보기로 실행 */
 function serverHarness({ kind = "PAUSE", preview }) {
   const sqls = [];
+  const tx = { async $queryRawUnsafe(sql) { sqls.push(sql); return []; } };
   const prisma = {
     async $queryRawUnsafe(sql) { sqls.push(sql); return sql.includes('SELECT kind FROM "EnrollmentChangeRequest"') ? [{ kind }] : []; },
-    async $transaction() { sqls.push("TX"); return []; }, // 승인 UPDATE 까지 왔다는 표시(행 없음 → «이미 처리된 신청»)
+    async $transaction(run) { sqls.push("TX"); return run(tx); },
   };
   const mod = loadLoose("src/lib/enrollment/admin-change-request.ts", {
     "@/lib/prisma": { prisma },
     "@/lib/enrollment/pause-settlement-plan": plan,
-    "@/lib/datetime/kst": load("src/lib/datetime/kst.ts"),
+    "@/lib/datetime/kst": { ...load("src/lib/datetime/kst.ts"), todayKst: () => "2026-11-11" },
     "@/lib/enrollment/pause-settlement": {
-      previewPauseSettlement: async () => preview && { requestId: "r1", previewKey: "k", lines: [], ready: true, tablesReady: preview.tablesReady ?? true,
-        plan: { paidTotal: preview.paidTotal ?? 0, unpaidTotal: preview.unpaidTotal ?? 0, problems: preview.problems ?? [], lines: [] } },
+      lockPauseSettlement: async (db) => { assert.equal(db, tx); sqls.push("LOCK"); },
+      previewPauseSettlement: async (db, _id, _dates, lock) => {
+        assert.equal(db, tx);
+        assert.equal(lock, true);
+        sqls.push("PREVIEW");
+        return preview && { requestId: "r1", previewKey: "k", lines: [], ready: true, tablesReady: preview.tablesReady ?? true,
+          plan: { paidTotal: preview.paidTotal ?? 0, unpaidTotal: preview.unpaidTotal ?? 0, problems: preview.problems ?? [], lines: [] } };
+      },
     },
     "@/lib/enrollment/monthlyClassDates": { loadAnnualPlanEvents: async () => [], getMonthlyClassDates: () => [] },
   });
@@ -201,10 +208,17 @@ test("권장1 서버 강제: 휴원 승인에 방식이 없고 처리할 금액�
   const result = await mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true, settlement: null });
   assert.deepEqual(result, { ok: false, message: plan.SETTLEMENT_CHOICE_REQUIRED_MESSAGE, needsSettlementChoice: true });
   assert.equal(plan.SETTLEMENT_CHOICE_REQUIRED_MESSAGE, "수강료 처리 방식을 골라 주세요(금액이 바뀌었어요).");
-  assert.ok(!sqls.includes("TX"), "거절이면 승인 트랜잭션에 들어가지 않는다");
+  assert.deepEqual(sqls.slice(1), ["TX", "LOCK", "PREVIEW"], "거래 안에서 잠근 뒤 재계산하고 승인 UPDATE는 하지 않는다");
   // 미납 청구만 있어도 강제
   const unpaid = serverHarness({ preview: { unpaidTotal: 30000 } });
   assert.equal((await unpaid.mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true })).needsSettlementChoice, true);
+});
+
+test("수강료 방식이 있는 승인도 청구 잠금을 신청 행 UPDATE보다 먼저 잡는다", async () => {
+  const { mod, sqls } = serverHarness({});
+  await mod.decideEnrollmentChangeRequest({ adminUserId: "a", requestId: "r1", approve: true, settlement: { mode: "REFUND", expectedPreviewKey: "k" } });
+  assert.deepEqual(sqls.slice(0, 2), ["TX", "LOCK"]);
+  assert.match(sqls[2], /UPDATE "EnrollmentChangeRequest"/);
 });
 
 test("권장1 서버 강제 예외: 금액 없음·계산 문제·표 준비 전·휴원 아님·거절은 예전처럼 진행", async () => {
@@ -226,7 +240,10 @@ test("권장1 서버 강제 예외: 금액 없음·계산 문제·표 준비 전
 });
 
 test("권장1 화면: 서버 거절을 받으면 미리보기 다시 불러오기(신청함)·상세 칸 열기(수강 변경 화면)", () => {
-  assert.match(client, /if \(action\.key === "approve" && isPendingPause\(row\)\) setPauseReload\(\(n\) => n \+ 1\)/);
+  assert.match(client, /if \(action\.key === "approve" && isPendingPause\(row\)\) refreshPausePreview\(\)/);
+  assert.match(client, /catch \(error\) \{\s*if \(action\.key === "approve" && isPendingPause\(row\)\) refreshPausePreview\(\)/);
+  assert.match(client, /if \(isPendingPause\(row\)\) refreshPausePreview\(\)/);
+  assert.ok(client.includes('${keyOf(open)}:${pauseReload}'));
   assert.match(client, /\}, \[pauseKey, pauseRequestId, pauseReload\]\);/);
   assert.match(changes, /"needsSettlementChoice" in result && result\.needsSettlementChoice\) setDetailId\(requestId\)/);
 });

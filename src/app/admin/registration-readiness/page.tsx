@@ -30,7 +30,7 @@ export default async function RegistrationReadinessPage() {
     <h1 className="text-2xl font-bold">입학 완료 확인</h1>
     <p>최근 승인 신청 100건까지 점검합니다. 승인만으로 등록이 완료되지는 않으며, ‘확인 필요’는 실패를 뜻하지 않습니다.</p>
     <p>실제 수강 시작일과 외부 등록 기록을 확인하세요. 승인일은 수강 시작일이 아닙니다. 이 화면에서는 발송·청구·장부를 변경하지 않습니다.</p>
-    <Link className="underline" href="/admin/apply">신청 관리로 이동</Link>
+    <Link className="underline" href="/admin/inbox?tab=ENROLL">수강 신청함으로 이동</Link>
     {applications.length === 0 && <p>승인된 신청이 없습니다.</p>}
     {applications.map((app) => {
       const result = registrationReadiness({ applicationId: app.id, studentId: app.convertedStudentId,

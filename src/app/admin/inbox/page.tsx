@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth-guard";
+import { isKstYmd } from "@/lib/datetime/kst";
 import { getInboxCounts, getInboxRows, type InboxRow } from "@/lib/requests/admin-inbox";
 import { listConsultInboxRows } from "@/lib/requests/consult-inbox";
 import {
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 type SearchParams = { tab?: string; sub?: string; done?: string; from?: string; to?: string; kind?: string };
 
-const ymd = (value?: string) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null);
+const ymd = (value?: string) => (value && isKstYmd(value) ? value : null);
 
 /** «?kind=종류»(옛 오늘 업무 카드·북마크) → 그 종류가 사는 작은 분류(변경 탭이면 결석·보강/셔틀/수강) */
 function subOfKind(tab: InboxTab, kind: RequestKind): string | null {
@@ -36,7 +37,8 @@ export default async function AdminInboxPage({ searchParams }: { searchParams?: 
   const kindParam = isRequestKind(params.kind) ? params.kind : null;
   const explicitTab = isInboxTab(params.tab) ? params.tab : kindParam ? KIND_TAB[kindParam] : null;
   const from = ymd(params.from);
-  const to = ymd(params.to);
+  const end = ymd(params.to);
+  const to = from && end && from > end ? null : end;
   const showDone = params.done === "1";
 
   // «?kind=종류» = 그 종류만 걸러 보기(탭 안 필터). 그 탭의 종류이고, 탭에 종류가 여럿일 때만 의미가 있다

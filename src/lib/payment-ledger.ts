@@ -1913,7 +1913,7 @@ async function applyVerifiedTossFullCancel(input: { tx: PaymentTransactionRow; p
 export type AdminTossPartialRefundResult =
     | { ok: true; alreadyApplied: boolean }
     /** uncertain = 취소 요청은 보냈는데 결과를 확인하지 못함(같은 표식으로 다시 시도하면 두 번 취소되지 않는다) */
-    | { ok: false; message: string; uncertain: boolean };
+    | { ok: false; message: string; uncertain: boolean; retryWithNewKey?: boolean };
 
 /**
  * 토스 온라인 결제 «부분 취소» — 휴원 수강료 환불(원장 결정 2026-11-10 m6)용. 전액 환불(refundTossPaymentByAdmin)과 같은 순서:
@@ -1959,7 +1959,7 @@ export async function partialRefundTossPaymentByAdmin(input: {
     const marker = partialCancelMarker(input.lineId);
     // ① 지금 토스 상태
     const before = await getVerifiedTossPayment(tx.paymentKey, tx.orderId);
-    if (before.kind !== "verified") return { ok: false, message: "토스에서 결제를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", uncertain: false };
+    if (before.kind !== "verified") return { ok: false, message: "토스에서 결제를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.", uncertain: true };
     const already = findMarkedCancel(before.payment, marker);
     if (already) {
         return already.amount === input.amount
@@ -2039,7 +2039,7 @@ export async function partialRefundTossPaymentByAdmin(input: {
     }
     if (outcome === "WRONG_AMOUNT") return { ok: false, message: "토스에 다른 금액으로 취소됐어요. 토스 상점관리자에서 확인해 주세요.", uncertain: false };
     // 토스가 분명히 거절(4xx, 409·429 제외)했고 취소도 없다 = 실패 확정 → 다음 시도는 새 멱등 키
-    if (outcome === "FAILED") return { ok: false, message: `토스가 취소하지 않았어요(${tossError ?? `응답 ${httpStatus}`}).`, uncertain: false };
+    if (outcome === "FAILED") return { ok: false, message: `토스가 취소하지 않았어요(${tossError ?? `응답 ${httpStatus}`}).`, uncertain: false, retryWithNewKey: true };
     // 5xx·409·429·응답 없음·재조회 실패 = 결과 모름 → REQUESTED 유지, 같은 키로 확인만
     return { ok: false, message: "취소 결과를 확인하지 못했어요. 잠시 후 «다시 시도»로 확인해 주세요.", uncertain: true };
 }

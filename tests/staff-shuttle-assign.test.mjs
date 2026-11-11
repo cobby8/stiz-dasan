@@ -304,3 +304,27 @@ test("학생 상세 위치 저장: 장소명 필수(도로명 대체 없음) · 
   assert.match(apply, /lockedLaterMonths \? \[\.\.\.lockedLaterMonths\] : await lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\)/);
   assert.match(edit, /export async function lockRosterForLocationInTx\(tx: Tx, currentMonth: string = koreaServiceMonth\(\)\): Promise<string\[\]> \{\s*return lockForEdit\(tx, currentMonth, "FROM_THIS_MONTH"\);/);
 });
+
+test("다른 요일 정류장: 위·아래로 옮긴 자리(position)로 넣는다 · 없으면 추천 자리 · 범위 밖은 거절", async () => {
+  const { state, mod } = fixture();
+  // 같은 달 수요일에만 서는 정류장 C — 월요일 칸엔 없으니 «다른 요일 정류장» 후보가 된다.
+  state.stops.push({ id: "w1", serviceMonth: "2026-11", weekday: 3, classTime: "17:00~18:00", arriveTime: "16:35", stopName: "C", direction: "BOARD", studentName: "다", studentId: "c1", studentPhone: null, parentPhone: "010-1000-0003", note: null, sortOrder: 1, latitude: 37.625, longitude: 127.1 });
+  const board = await mod.getDriverAssignBoard({ appUserId: "driver" }, "2026-11");
+  const leg = board.students.find((s) => s.studentId === "new1").legs.find((l) => l.weekday === 1 && l.direction === "BOARD");
+  const other = leg.joinOptions.find((o) => o.otherDay);
+  assert.ok(other, "다른 요일 정류장 후보가 있어야 한다");
+  const base = { month: "2026-11", studentId: "new1", weekday: 1, direction: "BOARD", routeVersion: leg.routeVersion, includeNextMonth: false };
+
+  // 맨 앞(0)으로 옮긴 자리 = 첫 정차(r1) 앞에 넣기
+  await mod.assignDriverCell({ appUserId: "driver" }, { ...base, choice: { kind: "OTHER", key: other.key, position: 0 } });
+  assert.equal(state.adds.length, 1);
+  assert.equal(state.adds[0].input.placements[0].mode, "BEFORE");
+  assert.equal(state.adds[0].input.placements[0].rowId, "r1");
+  assert.equal(state.adds[0].input.board.stopName, "C");
+
+  // 범위 밖 자리 → 다시 불러오기(409) · 음수/소수 → 400, 명단에 쓰지 않는다
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, { ...base, choice: { kind: "OTHER", key: other.key, position: 9 } })), "409:ROUTE_CHANGED");
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, { ...base, choice: { kind: "OTHER", key: other.key, position: -1 } })), "400:BAD_REQUEST");
+  assert.equal(await status(mod.assignDriverCell({ appUserId: "driver" }, { ...base, choice: { kind: "OTHER", key: other.key, position: 1.5 } })), "400:BAD_REQUEST");
+  assert.equal(state.adds.length, 1);
+});

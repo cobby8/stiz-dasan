@@ -95,17 +95,26 @@ test("명단 한 줄에 origin과 rosterId가 실려 온다", () => {
 
 test("★R-7① 전원을 명단에서 빼도 폴백이 되살아나지 않는다", () => {
     // 되살아나면 일부러 뺀 학생이 기사님 CSV에 다시 나타나고, 재확정도 ON CONFLICT라 빠져나갈 수 없다.
-    const fn = block(gateway, "export async function getConfirmedShuttleRoster(", "async function confirmedRosterExists");
+    const fn = block(gateway, "export async function getConfirmedShuttleRoster(", "async function confirmedSeasonRoster");
     assert.doesNotMatch(fn, /if \(rows\.length > 0\)/, "보이는 행 수로 확정 여부를 판정하고 있다");
-    assert.match(fn, /confirmedRosterExists\(seasonId\)/);
-    // 확정 경로에 들어오면 결과가 비어도 그대로 돌려준다 — 확정본 return이 폴백보다 먼저,
-    // 그리고 폴백 호출은 함수 맨 끝 한 번뿐이어야 한다(중간에 폴백으로 새는 길이 없다).
-    const confirmedReturn = fn.indexOf('return rows.map((r) => toEntry(r, "CONFIRMED"))');
-    const fallbackReturn = fn.indexOf("return fallbackSeasonRoster(");
-    assert.notEqual(confirmedReturn, -1, "확정본을 그대로 돌려주는 return이 없다");
-    assert.notEqual(fallbackReturn, -1, "폴백 return이 없다");
-    assert.ok(confirmedReturn < fallbackReturn, "확정본 return이 폴백보다 뒤에 있다");
-    assert.equal((fn.match(/fallbackSeasonRoster\(/g) ?? []).length, 1, "폴백으로 새는 길이 하나 더 있다");
+    // 확정 여부는 «확정본이 있는 시즌 목록»(제외 행 포함)으로 판정한다 — 보이는 행이 아니다.
+    assert.match(fn, /confirmedSeasonIds\(seasonId\)/);
+    // 시즌을 지정하면 그 시즌 확정본을 그대로 돌려준다(비어도 폴백으로 새지 않는다).
+    assert.match(fn, /if \(seasonId\) return confirmedRows;/);
+    // 확정한 시즌은 폴백에서 뺀다 — 한 시즌 안에서 확정본과 원본을 섞지 않는다.
+    assert.match(fn, /fallbackSeasonRoster\(null, confirmedSeasons\)/);
+});
+
+test("★R-7② 확정 전 시즌(다음 방학) 신청자는 다른 시즌이 확정돼도 사라지지 않는다", () => {
+    const fallback = block(gateway, "async function fallbackSeasonRoster", "// ────");
+    assert.match(fallback, /excludeSeasonIds: string\[\] = \[\]/);
+    assert.match(fallback, /NOT \(a\."seasonId" = ANY\(/, "확정한 시즌만 빼야 한다(전체를 빼면 다음 시즌이 사라진다)");
+    const ids = block(gateway, "async function confirmedSeasonIds", "async function confirmedRosterExists");
+    assert.match(ids, /FROM "SeasonalShuttleRoster"/);
+    assert.doesNotMatch(ids, /"removedAt" IS NULL/, "제외된 행을 빼고 세면 전원 제외 시 폴백이 되살아난다");
+    // 확정하기는 이미 확정한 시즌을 다시 채우지 않는다(확정 후 새 신청이 슬며시 들어가면 안 된다).
+    const confirm = block(gateway, "export async function confirmSeasonalShuttleRoster", "export async function updateConfirmedShuttleRosterRow");
+    assert.match(confirm, /NOT EXISTS \(SELECT 1 FROM "SeasonalShuttleRoster" done WHERE done\."seasonId" = a\."seasonId"\)/);
 });
 
 test("★R-7① 존재 확인은 제외된 행도 센다", () => {
@@ -138,13 +147,18 @@ test("확정일시는 지어낸 컬럼이 아니라 DDL에 있는 confirmedAt이
 // ── (c) 확정 후에는 확정 버튼이 없다 ────────────────────────────────
 
 test("확정 버튼은 확정 전에만 그린다", () => {
-    const banner = block(client, "{confirmed ? (", "{lastRemoved && (");
-    const [afterConfirm, beforeConfirm] = banner.split(") : (");
-    assert.ok(beforeConfirm, "확정 전 배너 블록을 찾지 못했다");
+    // 확정 배너(확정한 시즌)에는 확정 버튼이 없다.
+    const afterConfirm = block(client, "{confirmed ? (", ") : null}");
     assert.doesNotMatch(afterConfirm, /confirmRoster/);
     assert.doesNotMatch(afterConfirm, /확정하기/);
+    // 처음 확정 전 배너
+    const beforeConfirm = block(client, "{!confirmed && (", "{lastRemoved && (");
     assert.match(beforeConfirm, /onClick=\{confirmRoster\}/);
     assert.match(beforeConfirm, /확정하기/);
+    // R-7② 확정한 시즌 + 확정 전 새 시즌 — 새 시즌만 따로 확정하는 버튼(새 시즌 탑승자가 있을 때만)
+    const pending = block(client, "{confirmed && pendingRideCount > 0 && (", "{!confirmed && (");
+    assert.match(pending, /onClick=\{confirmRoster\}/);
+    assert.match(pending, /새 시즌 \$\{pendingRideCount\}명 확정하기/);
 });
 
 test("확정 전 배너는 '명단이 함께 바뀐다'고 알려준다", () => {
@@ -152,7 +166,7 @@ test("확정 전 배너는 '명단이 함께 바뀐다'고 알려준다", () => 
 });
 
 test("확정 후 배너는 건수와 확정일시를 보여준다", () => {
-    assert.match(client, /확정됨 · 탑승 \{rideCount\}명/);
+    assert.match(client, /확정됨 · 탑승 \{confirmedRideCount\}명/);
     assert.match(client, /confirmedAtLabel/);
     assert.match(client, /확정본 \{confirmedCount\}건/);
 });

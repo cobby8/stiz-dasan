@@ -476,7 +476,7 @@ export default function ApplyAdminClient({
     const [sourceStatsRange, setSourceStatsRange] = useState<SourceStatsRange>("30D");
     const [sourceStatsData, setSourceStatsData] = useState<SourceStatsPayload | null>(null);
     const [sourceStatsLoading, setSourceStatsLoading] = useState(false);
-    const [sourceStatsError, setSourceStatsError] = useState<string | null>(null);
+    const [sourceStatsErrorRange, setSourceStatsErrorRange] = useState<SourceStatsRange | null>(null);
 
     // 모달 상태
     const [showApproveModal, setShowApproveModal] = useState<EnrollApplication | null>(null);
@@ -528,24 +528,25 @@ export default function ApplyAdminClient({
 
     const loadSourceStats = useCallback(async (range: SourceStatsRange) => {
         setSourceStatsLoading(true);
-        setSourceStatsError(null);
+        setSourceStatsErrorRange(null);
 
         try {
             const response = await fetch(`/api/admin/apply/source-stats?range=${range}`, { cache: "no-store" });
             if (!response.ok) throw new Error("request failed");
             const data = (await response.json()) as SourceStatsPayload;
+            if (data.range !== range) throw new Error("range mismatch");
             setSourceStatsData(data);
         } catch {
-            setSourceStatsError("failed");
+            setSourceStatsErrorRange(range);
         } finally {
             setSourceStatsLoading(false);
         }
     }, []);
 
     useEffect(() => {
-        if (activeTab !== "applications" || applyLoaded || loading) return;
+        if (activeTab !== "applications" || applyLoaded || loading || loadError) return;
         void loadApplyData();
-    }, [activeTab, applyLoaded, loading, loadApplyData]);
+    }, [activeTab, applyLoaded, loading, loadError, loadApplyData]);
 
     // 체험 기록 후보는 목록 표시를 막지 않도록 신청 목록을 받은 뒤 따로 읽는다(실패하면 후보만 안 보인다).
     const loadTrialSuggestions = useCallback(async () => {
@@ -564,9 +565,9 @@ export default function ApplyAdminClient({
     useEffect(() => {
         if (activeTab !== "sources") return;
         if (sourceStatsData?.range === sourceStatsRange) return;
-        if (sourceStatsLoading) return;
+        if (sourceStatsLoading || sourceStatsErrorRange === sourceStatsRange) return;
         void loadSourceStats(sourceStatsRange);
-    }, [activeTab, loadSourceStats, sourceStatsData?.range, sourceStatsLoading, sourceStatsRange]);
+    }, [activeTab, loadSourceStats, sourceStatsData?.range, sourceStatsErrorRange, sourceStatsLoading, sourceStatsRange]);
 
     const classesBySlotKey = useMemo(() => {
         const map = new Map<string, ClassInfo>();
@@ -781,7 +782,7 @@ export default function ApplyAdminClient({
                     <div className="rounded-xl border border-[var(--color-academy-line)] bg-white p-8 text-center text-sm font-bold text-[var(--color-academy-muted)]">
                         유입경로 통계를 불러오는 중입니다.
                     </div>
-                ) : sourceStatsError && !payload ? (
+                ) : sourceStatsErrorRange === sourceStatsRange ? (
                     <div className="rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-danger-soft)] p-6 text-center text-sm font-bold text-[var(--color-academy-danger)]">
                         통계를 불러오지 못했습니다.
                         <button

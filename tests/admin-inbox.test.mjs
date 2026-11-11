@@ -49,7 +49,8 @@ test('화면은 관리자 권한을 거치고, 주소 값(칸·종류·날짜)�
   assert.match(page, /isRequestKind\(params\.kind\)/); // 옛 «?kind=» 주소 → 탭
   assert.match(page, /isInboxTab\(params\.tab\)/);
   assert.match(page, /subOf\(tab, /);
-  assert.match(page, /\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//);
+  assert.match(page, /isKstYmd\(value\)/);
+  assert.match(client, /disabled=\{reversed\}/);
 });
 
 test('처리 버튼은 각 화면의 기존 server action 을 그대로 쓴다(d3)', () => {
@@ -143,12 +144,13 @@ test('상담 탭 자리 — consult-inbox.ts 두 함수(목록·개수)만 부�
   assert.match(page, /import \{ listConsultInboxRows \} from "@\/lib\/requests\/consult-inbox"/);
   // 통합(11-10): 스텁 대신 상담 작업의 실제 구현 — 신청함 InboxQuery 의 같은 칸(bucket·from·to·limitPerKind)을 받는다
   assert.match(consult, /query: Pick<InboxQuery, "bucket" \| "from" \| "to" \| "limitPerKind">,\s*\): Promise<ConsultInboxRow\[\]>/);
-  // 조회 실패해도 빈 목록 — 신청함 전체가 죽지 않게
-  assert.match(consult, /catch \(error\) \{[\s\S]*?return \[\];/);
+  // 조회 오류를 빈 목록으로 바꾸지 않고, 상담 탭이 자체 오류 메시지를 표시한다.
+  assert.doesNotMatch(consult.slice(consult.indexOf('export async function listConsultInboxRows'), consult.indexOf('export async function countConsultAction')), /catch/);
   assert.match(page, /listConsultInboxRows\(\{ bucket: "ACTION", from, to \}\)/);
   assert.match(inbox, /import \{ countConsultAction \} from "@\/lib\/requests\/consult-inbox"/);
   // 상담 목록 실패가 다른 탭을 죽이지 않는다
   assert.match(page, /consultFailed: true/);
+  assert.match(client, /rowsData.failedKinds.length > 0 \|\| rowsData.consultFailed/);
 });
 
 test('체험·수강·대관 탭은 기존 화면 컴포넌트를 그대로 끼운다(처리 로직 두 벌 금지)', () => {
