@@ -20,6 +20,7 @@ export type RecentCharge = { id: string; shortCode: string; amount: number; at: 
 
 export type StartResult =
   | "started"
+  | "unconfirmed" // POS 응답만으로 결제창 상태를 확인할 수 없음
   | "busy" // 이미 다른 결제를 준비 중(중복 클릭)
   | "draft_not_empty" // 결제 화면에 다른 상품이 담겨 있어 덮어쓰지 않음
   | "claim_failed" // 서버 선점 실패(이미 가져감·만료·네트워크)
@@ -98,7 +99,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
 
   /**
    * startPayment 가 오류를 냈을 때 결제가 실제로는 진행됐는지.
-   * paid = 이 번호의 결제 완료 신호를 받음 · left_draft = 결제 화면(장바구니)에 우리 항목이 없음 · stuck = 우리 항목이 그대로(진짜 실패)
+   * 결제 완료 신호와 장바구니 상태를 확인한다. 결제창이 열려 있어도 항목은 남을 수 있다.
    * 결제 신호가 조금 늦게 올 수 있어 짧게(최대 약 0.9초) 기다리며 다시 본다.
    */
   async function paymentProceeded(shortCode: string): Promise<"paid" | "left_draft" | "stuck"> {
@@ -213,7 +214,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       //    아래 판정이 장바구니 확인(left_draft → 확인 안내)으로만 간다. 안전한 쪽이라 그대로 둔다.
       try {
         await sdk.draftOrder.startPayment();
-      } catch (e) {
+      } catch {
         // 2026-11-08 실측(S-092770·S-290064·S-754720): 토스 POS 는 결제가 «끝난 뒤» startPayment 를 오류로 돌려줄 때가 있다
         // (서버에는 PAID 다음에 START_FAILED pos_error 가 찍힘). 그대로 «다시 시도해 주세요»를 띄우면 이중 결제를 부를 수 있어,
         // 결제가 진행됐는지 먼저 본다.
@@ -224,7 +225,9 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
           sdk.toast.warn({ message: `${claimed.shortCode} 결제 화면 상태를 확인해 주세요. 결제가 끝났다면 사이트에 자동 반영돼요.` });
           return "started";
         }
-        throw e; // 우리 항목이 그대로 남아 있음 = 정말 못 연 것 → 아래 오류 안내
+        if (dismissRequested.has(claimed.id)) return "dismissed";
+        sdk.toast.warn({ message: `${claimed.shortCode} POS에 열린 결제 화면을 확인해 주세요.` });
+        return "unconfirmed";
       }
       return "started";
     } catch (e) {

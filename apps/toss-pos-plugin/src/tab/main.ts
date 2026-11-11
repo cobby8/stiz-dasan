@@ -71,6 +71,7 @@ function emptyEl(text: string): HTMLLIElement {
 
 const START_MSG: Record<StartResult, string> = {
   started: "결제 화면으로 넘어갔어요. 카드를 받아 주세요.",
+  unconfirmed: "POS에 열린 결제 화면을 확인해 주세요.",
   busy: "결제를 준비하고 있어요.",
   draft_not_empty: "결제 화면에 다른 상품이 담겨 있어 멈췄어요.",
   claim_failed: "요청을 가져오지 못했어요.",

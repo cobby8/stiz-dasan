@@ -270,11 +270,22 @@ test("중복 클릭: 준비 중 두 번째 클릭은 무시(선점 1번만)", as
   assert.equal(flow.isBusy(), false);
 });
 
-test("POS 오류: 토스트로 안내하고 잠금 풀림", async () => {
+test("결제 화면 호출 후 임시 주문이 남아도 실패로 보고하지 않음", async () => {
   const { sdk, log } = fakeSdk();
   sdk.draftOrder.startPayment = async () => {
     throw new Error("boom");
   };
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "unconfirmed");
+  assert.ok(!log.some((l) => l.startsWith("toast.error:")));
+  assert.ok(!calls.includes("report:req-1:start_failed"));
+  assert.equal(flow.isBusy(), false);
+});
+
+test("결제 화면 호출 전 POS 오류는 실패 보고하고 잠금 해제", async () => {
+  const { sdk, log } = fakeSdk();
+  sdk.draftOrder.addLineItem = async () => { throw new Error("add failed"); };
   const { api, calls } = fakeApi();
   const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
   assert.equal(await flow.startCharge(REQ), "error");

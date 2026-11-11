@@ -65,6 +65,21 @@ test("미결제 주문을 목록에서 찾고 취소 상태를 재조회, 재시
   assert.deepEqual(h.log, ["order.cancel:order-1"]);
 });
 
+test("저장된 주문이 없으면 요청 번호와 금액이 일치하는 임시 주문만 비움", async () => {
+  const draft = { lineItems: [line], price: { orderPriceValue: recent.amount } };
+  const input = { job, now, recent, stoppedBeforeCheckout: false };
+  const h = harness(draft, []);
+  assert.deepEqual(await dismissUnpaidOrder({ ...input, sdk: h.sdk }), {
+    outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_DRAFT_CLEARED_CHECK_SCREEN",
+  });
+  assert.deepEqual(h.log, ["draft.clear"]);
+  const changed = harness({ ...draft, price: { orderPriceValue: 1 } }, []);
+  assert.deepEqual(await dismissUnpaidOrder({ ...input, sdk: changed.sdk }), {
+    outcome: "NEEDS_LOCAL_CANCEL", reason: "POS_ORDER_NOT_IDENTIFIED",
+  });
+  assert.deepEqual(changed.log, []);
+});
+
 test("카드 승인·중복 주문·다른 주문 섞임·주문 식별 불가: POS 확인 요청으로 남기고 아무것도 지우지 않음", async () => {
   for (const orders of [
     [{ ...exact, paymentState: "PAID", payments: [{ id: "p" }], paymentPrice: { paymentPaidValue: 1 } }],

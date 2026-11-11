@@ -74,7 +74,21 @@ export async function dismissUnpaidOrder(input: {
     targetId = matches.keys().next().value;
   }
 
-  if (!targetId) return local("POS_ORDER_NOT_IDENTIFIED");
+  if (!targetId) {
+    // 결제 수단 선택 화면에서도 POS가 아직 저장되지 않은 임시 주문을 유지할 수 있다.
+    // 현재 주문을 다시 확인해 번호와 합계가 모두 일치할 때만 비운다.
+    if (!sdk.order.getOrders || firstDraft.id || !ownsDraft(firstDraft)
+      || firstDraft.price?.orderPriceValue !== recent.amount) return local("POS_ORDER_NOT_IDENTIFIED");
+    const current = await sdk.draftOrder.get();
+    if (current.id || !ownsDraft(current) || current.price?.orderPriceValue !== recent.amount) {
+      return local("POS_DRAFT_CHANGED");
+    }
+    await sdk.draftOrder.clear();
+    const after = await sdk.draftOrder.get();
+    return local(after.lineItems.some((line) => belongsTo(line, marker))
+      ? "POS_DRAFT_STILL_PRESENT"
+      : "POS_DRAFT_CLEARED_CHECK_SCREEN");
+  }
   const order = await sdk.order.getOrder(targetId);
   if (order.id !== targetId || !ownsOrder(order)) return local("POS_ORDER_NOT_IDENTIFIED");
   if (hasPayment(order)) return local("POS_PAYMENT_PRESENT_OR_UNVERIFIED");

@@ -314,7 +314,11 @@ export default function PosChargeRequestModal({
                         ) : isDismissing ? (
                             <p role="status" className="text-sm font-semibold text-[var(--color-academy-ink)]">POS 취소 확인을 기다리는 중입니다. 오래 걸리면 POS가 켜져 있고 STIZ가 연결돼 있는지 확인해 주세요.</p>
                         ) : needsPosCheck ? (
-                            <p role="alert" className="text-sm font-semibold text-[var(--color-academy-danger)]">POS에서 주문과 결제창이 닫혔는지 확인해 주세요. 카드 승인 내역도 확인해 주세요.</p>
+                            <p role="alert" className="text-sm font-semibold text-[var(--color-academy-danger)]">
+                                {request?.dismissReportMessage === "POS_DRAFT_CLEARED_CHECK_SCREEN"
+                                    ? "POS에서 임시 주문을 비웠습니다. 결제창이 닫혔는지 현장에서 확인해 주세요."
+                                    : "POS에서 주문과 결제창이 닫혔는지 확인해 주세요. 카드 승인 내역도 확인해 주세요."}
+                            </p>
                         ) : request?.dismissState === "DONE" ? (
                             <p role="status" className="text-sm font-semibold text-[var(--color-academy-success)]">POS에서도 미결제 요청이 취소됐습니다.</p>
                         ) : request?.dismissState === "ACKNOWLEDGED" ? (
