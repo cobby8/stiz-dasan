@@ -139,7 +139,7 @@ test("중복 방지: 같은 요청이 롱폴링에 다시 실려 와도 처리 �
 });
 
 test("계약: 롱폴링은 cancels=1 을 보내고, 응답 cancels[] 를 읽는다(없으면 빈 목록 = 옛 서버)", () => {
-  assert.match(API_PATHS.chargeRequestsWait(20, ["a"]), /\?wait=20&cancels=1&known=a$/);
+  assert.match(API_PATHS.chargeRequestsWait(20, ["a"]), /\?wait=20&cancels=1&dismiss=1&known=a$/);
   assert.equal(API_PATHS.cancelClaim("r/1"), "/api/pos-plugin/charge-requests/r%2F1/cancel/claim");
   assert.equal(API_PATHS.cancelReport("r1"), "/api/pos-plugin/charge-requests/r1/cancel/report");
   const w = parseWaitList({ ok: true, requests: [], waitSec: 20, cancels: [{ id: "r1", shortCode: "S-1", amount: 1000, studentName: "홍*동", itemName: "x" }, { id: "" }] });

@@ -157,9 +157,11 @@ test("라우트: wait·known 을 순수 모듈로 읽고, 인증(handlePluginReq
   assert.match(code, /export const maxDuration = 30;/);
   assert.match(code, /signal: req\.signal/);
   // 결제 취소(2026-11-08): 응답에 cancels 칸이 늘 붙고(옛 플러그인은 무시), cancels=1 을 보낸 새 플러그인만 취소 요청으로 깨운다
-  assert.match(code, /waitSec > 0 \? \{ requests: rows, cancels, waitSec \} : \{ requests: rows, cancels \}/);
+  assert.match(code, /pluginOk\(\{ requests: rows, cancels, dismissals, \.\.\.\(waitSec > 0 \? \{ waitSec \} : \{\}\) \}\)/);
   assert.match(code, /const wakeOnCancel = req\.nextUrl\.searchParams\.get\("cancels"\) === "1"/);
   assert.match(code, /wakeOnCancel && \(await hasUnknownCancelJob\(ids\)\)/);
+  assert.match(code, /supportsDismissal && \(await hasUnknownChargeDismissal\(auth\.tokenId, ids\)\)/);
+  assert.match(code, /supportsDismissal \? listChargeDismissalsForPlugin\(auth\.tokenId\)/);
   // 대기 중 확인은 가벼운 EXISTS(만료 UPDATE·JOIN 없음)
   const svc = await readFile("src/lib/pos/chargeRequestService.ts", "utf8");
   const fn = /export async function hasUnknownPendingChargeRequest[\s\S]*?\n\}/.exec(svc)?.[0] ?? "";

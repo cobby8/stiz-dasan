@@ -55,8 +55,8 @@ test("기다리는 동안만 3초마다 자동으로 다시 읽고, 탭이 숨�
   const code = await readFile(MODAL, "utf8");
   assert.match(code, /const POS_CHARGE_POLL_MS = 3000;/);
   assert.match(code, /setInterval\(\(\) => void refresh\(\), POS_CHARGE_POLL_MS\)/);
-  // 대기 상태에서만 켠다
-  assert.match(code, /if \(!isWaiting\) return;/);
+  assert.match(code, /const shouldPoll = isWaiting \|\| isDismissing;/);
+  assert.match(code, /if \(!shouldPoll\) return;/);
   // 탭 숨김 감지
   assert.match(code, /document\.visibilityState === "visible"/);
   assert.match(code, /addEventListener\("visibilitychange"/);
@@ -69,7 +69,16 @@ test("POS 가 90초 넘게 안 받아 가면(PENDING) 확인 안내 · 요청은
   const code = await readFile(MODAL, "utf8");
   assert.match(code, /request\.status === "PENDING" && request\.pickupLate/);
   assert.match(code, /POS가 응답이 없어요\. POS가 켜져 있고 STIZ 탭이 연결돼 있는지 확인해 주세요\./);
-  // 보내기·요청 취소 둘 다 finally 에서 busy 를 푼다
-  assert.equal((code.match(/finally \{\s*if \(mountedRef\.current\) setBusy\(false\);/g) ?? []).length, 2);
+  // 보내기·취소·현장 확인이 finally 에서 busy 를 푼다
+  assert.equal((code.match(/finally \{\s*if \(mountedRef\.current\) setBusy\(false\);/g) ?? []).length, 3);
   assert.doesNotMatch(code, /pickupLate[^\n]*cancelPosChargeRequest/, "무응답이어도 요청을 자동 취소하지 않는다");
+});
+
+test("POS 취소 결과를 기다리는 동안 중복 요청을 막고 현장 확인과 POS 성공을 구분한다", async () => {
+  const code = await readFile(MODAL, "utf8");
+  assert.match(code, /dismissState === "REQUESTED"/);
+  assert.match(code, /disabled=\{busy \|\| isDismissing \|\| needsPosCheck\}/);
+  assert.match(code, /POS에서도 미결제 요청이 취소됐습니다/);
+  assert.match(code, /현장에서 POS 취소를 확인했습니다/);
+  assert.match(code, /카드 승인 내역이 없음을 확인한 경우에만/);
 });

@@ -34,6 +34,7 @@ export type DraftLineItemInput = {
 };
 
 export type DraftOrderLike = {
+  id?: string;
   lineItems: Array<{
     key: string;
     memo?: string;
@@ -51,6 +52,12 @@ export type OrderLike = {
   id: string;
   memo?: string;
   lineItems?: Array<{ memo?: string; item?: { code?: string; title?: string } }>;
+  createdAt?: string;
+  orderState?: string;
+  paymentState?: string;
+  paymentPrice?: { paymentPaidValue: number };
+  chargePrice?: { chargePriceValue: number };
+  payments?: readonly unknown[];
 };
 
 export type PaymentLike = {
@@ -71,7 +78,11 @@ export type PosSdkLike = {
     addLineItem(item: DraftLineItemInput): Promise<DraftOrderLike>;
     startPayment(): Promise<void>;
   };
-  order: { getOrder(orderId: string): Promise<OrderLike> };
+  order: {
+    getOrder(orderId: string): Promise<OrderLike>;
+    getOrders?(options: { start: string; end: string; page: number; size: number }): Promise<OrderLike[]>;
+    cancel?(orderId: string): Promise<void>;
+  };
   payment: {
     getPayment(paymentId: string): Promise<PaymentLike>;
     /**

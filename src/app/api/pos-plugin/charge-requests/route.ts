@@ -3,8 +3,10 @@ import { pluginOk, preflight } from "@/lib/pos/pluginAuth";
 import { handlePluginRequest } from "@/lib/pos/pluginHttp";
 import {
     hasUnknownCancelJob,
+    hasUnknownChargeDismissal,
     hasUnknownPendingChargeRequest,
     listCancelJobsForPlugin,
+    listChargeDismissalsForPlugin,
     listOpenChargeRequestsForPlugin,
 } from "@/lib/pos/chargeRequestService";
 import { parseKnownIds, parseWaitSeconds, waitForChargeRequests } from "@/lib/pos/plugin-long-poll.mjs";
@@ -28,21 +30,26 @@ export const maxDuration = 30;
  *   (옛 플러그인을 깨우면 그 일을 못 하면서 1초마다 다시 묻게 된다). known 에 이미 본 취소 요청 id 도 넣는다.
  */
 export async function GET(req: NextRequest) {
-    return handlePluginRequest(req, async () => {
+    return handlePluginRequest(req, async (auth) => {
         const waitSec = parseWaitSeconds(req.nextUrl.searchParams.get("wait"));
         const known = parseKnownIds(req.nextUrl.searchParams.get("known"));
         const wakeOnCancel = req.nextUrl.searchParams.get("cancels") === "1";
+        const supportsDismissal = req.nextUrl.searchParams.get("dismiss") === "1";
         const { rows } = await waitForChargeRequests({
             waitSec,
             known,
             listNow: () => listOpenChargeRequestsForPlugin(),
             hasNew: async (ids: string[]) =>
-                (await hasUnknownPendingChargeRequest(ids)) || (wakeOnCancel && (await hasUnknownCancelJob(ids))),
+                (supportsDismissal && (await hasUnknownChargeDismissal(auth.tokenId, ids)))
+                || (await hasUnknownPendingChargeRequest(ids)) || (wakeOnCancel && (await hasUnknownCancelJob(ids))),
             // 플러그인이 끊으면(시간 초과·POS 종료) 더 기다리지 않는다
             signal: req.signal,
         });
-        const cancels = await listCancelJobsForPlugin();
-        return pluginOk(waitSec > 0 ? { requests: rows, cancels, waitSec } : { requests: rows, cancels });
+        const [cancels, dismissals] = await Promise.all([
+            listCancelJobsForPlugin(),
+            supportsDismissal ? listChargeDismissalsForPlugin(auth.tokenId) : Promise.resolve([]),
+        ]);
+        return pluginOk({ requests: rows, cancels, dismissals, ...(waitSec > 0 ? { waitSec } : {}) });
     });
 }
 

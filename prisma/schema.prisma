@@ -3312,6 +3312,9 @@ model PosChargeRequest {
   pluginReportedEvents String[] @default([])
   cancelledAt         DateTime? @db.Timestamptz(6)
   cancelledBy         String?
+  dismissState        String? // REQUESTED | DONE | FAILED | NEEDS_LOCAL_CANCEL | ACKNOWLEDGED
+  dismissReportedAt   DateTime? @db.Timestamptz(6)
+  dismissReportMessage String?
   slackNotifiedAt     DateTime? @db.Timestamptz(6)
   cancelNotifiedAt    DateTime? @db.Timestamptz(6)
   // 결제 취소(사이트 → POS)·환불 확정 — migration 20261108120000_pos_charge_cancel 의 사본

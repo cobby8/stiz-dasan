@@ -86,6 +86,10 @@ const sortItems = sortChargeItems as <T>(payments: T[]) => T[];
 /** POS 가 취소 완료를 보고한 뒤 토스 확인을 기다리는 «정상» 시간(분). 넘으면 관리자 창에 늦어진다는 안내 */
 const CANCEL_CONFIRM_LATE_MIN = 3;
 
+const DISMISS_OUTCOMES = ["DONE", "FAILED", "NEEDS_LOCAL_CANCEL"] as const;
+type DismissOutcome = (typeof DISMISS_OUTCOMES)[number];
+type DismissState = DismissOutcome | "REQUESTED" | "ACKNOWLEDGED";
+
 // ───────────────────────────── 타입 ─────────────────────────────
 
 /** 승인 결제 1건(payment-notice.mjs 의 extractChargePayments 결과 중 쓰는 칸 — 결제 방식 무관) */
@@ -127,6 +131,10 @@ type ViewRow = {
     tossPaymentId: string | null;
     cancelState: string | null;
     cancelReportMessage?: string | null;
+    dismissState: DismissState | null;
+    dismissReportMessage: string | null;
+    pluginReportedEvent: string | null;
+    pluginReportMessage: string | null;
     refundedKst?: string | null;
     /** 취소 요청 뒤 CANCEL_PICKUP_TIMEOUT_SEC 가 지나도 플러그인이 안 가져감 */
     cancelPickupLate?: boolean;
@@ -162,6 +170,10 @@ export type AdminChargeRequestView = {
     items: { paymentId: string; itemLabel: string; amount: number }[];
     /** POS 로 보낸 지 CHARGE_PICKUP_TIMEOUT_SEC 가 지나도 아직 PENDING(POS 가 안 받아 감) → «POS 가 응답이 없어요» 안내(DB 시계) */
     pickupLate: boolean;
+    dismissState: DismissState | null;
+    dismissReportMessage: string | null;
+    pluginReportedEvent: string | null;
+    pluginReportMessage: string | null;
 };
 
 /** 플러그인 API 응답용(이름 가림) — docs/toss-pos-plugin-plan.md «API 계약»과 같은 모양 */
@@ -235,6 +247,7 @@ const VIEW_SQL = `SELECT r.id, r."shortCode", r."paymentId", r.status, r.amount,
         (r.status = 'PAID' AND COALESCE(r."paidRecordedAt", r."paidAt") > now() - interval '2 minutes') AS "justPaid",
         r.note, r."createdVia",
         r."tossOrderId", r."tossPaymentId", r."cancelState", r."cancelReportMessage",
+        r."dismissState", r."dismissReportMessage", r."pluginReportedEvent", r."pluginReportMessage",
         to_char(r."refundedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS "refundedKst",
         (r."cancelState" = 'REQUESTED' AND r."cancelRequestedAt" < now() - interval '${CANCEL_PICKUP_TIMEOUT_SEC} seconds') AS "cancelPickupLate",
         (r.status = 'PENDING' AND r."createdAt" < now() - interval '${CHARGE_PICKUP_TIMEOUT_SEC} seconds') AS "chargePickupLate",
@@ -456,6 +469,10 @@ function toAdminView(row: ViewRow, items: ChargeItemRow[] = [fallbackItem(row)])
         })),
         // 원장부 대기(ledgerPending)면 상태를 SENT 로 보이므로 무응답 안내도 끈다
         pickupLate: !ledgerPending && row.status === "PENDING" && Boolean(row.chargePickupLate),
+        dismissState: row.dismissState,
+        dismissReportMessage: row.dismissReportMessage,
+        pluginReportedEvent: row.pluginReportedEvent,
+        pluginReportMessage: row.pluginReportMessage,
     };
 }
 
@@ -547,7 +564,7 @@ async function loadPayments(paymentIds: string[]): Promise<PaymentRow[]> {
 /** 이 청구들 중 하나라도 묶고 있는 열린 요청 */
 async function openRequestsFor(paymentIds: string[]): Promise<ViewRow[]> {
     return loadView(
-        `WHERE r.status IN ('PENDING', 'SENT')
+        `WHERE (r.status IN ('PENDING', 'SENT') OR r."dismissState" IN ('REQUESTED', 'FAILED', 'NEEDS_LOCAL_CANCEL'))
            AND (r."paymentId" = ANY($1::text[])
                 OR EXISTS (SELECT 1 FROM "PosChargeRequestItem" ih WHERE ih."requestId" = r.id AND ih."paymentId" = ANY($1::text[])))
          ORDER BY r."createdAt" DESC
@@ -566,6 +583,10 @@ const sameSet = (a: string[], b: string[]) => a.length === b.length && [...a].so
 async function existingOpenFor(paymentIds: string[]): Promise<ViewRow | null> {
     const open = await openRequestsFor(paymentIds);
     if (open.length === 0) return null;
+    const waitingDismissal = open.find((r) => r.status === "CANCELLED");
+    if (waitingDismissal) {
+        throw new ChargeRequestError("ALREADY_OPEN", `이전 요청(${waitingDismissal.shortCode})의 POS 취소를 먼저 확인해 주세요.`);
+    }
     const items = await itemsByRequest(open);
     const same = open.find((r) => sameSet((items.get(r.id) ?? []).map((it) => it.paymentId), paymentIds));
     if (same && open.length === 1) return same;
@@ -718,12 +739,14 @@ export async function getChargeRequestForPayments(paymentIds: string[]): Promise
     return row ? toAdminView(row, items.get(row.id)) : null;
 }
 
-/** 관리자 취소 — 열린 요청만. 돈은 건드리지 않는다. */
+/** 관리자 취소 — 미결제 요청을 닫고, 선점한 POS가 있으면 그 기기의 주문 정리를 요청한다. */
 export async function cancelChargeRequestByAdmin(input: { requestId: string; adminUserId: string }) {
     const rows = await prisma.$queryRawUnsafe<{ id: string; paymentId: string; shortCode: string }[]>(
         `UPDATE "PosChargeRequest"
-            SET status = 'CANCELLED', "cancelledAt" = now(), "cancelledBy" = $2, "updatedAt" = now()
+            SET status = 'CANCELLED', "cancelledAt" = now(), "cancelledBy" = $2, "updatedAt" = now(),
+                "dismissState" = CASE WHEN status = 'SENT' AND "claimedByTokenId" IS NOT NULL THEN 'REQUESTED' ELSE NULL END
           WHERE id = $1 AND status IN ('PENDING', 'SENT')
+            AND "paidAt" IS NULL AND "tossPaymentId" IS NULL
           RETURNING id, "paymentId", "shortCode"`,
         input.requestId,
         input.adminUserId,
@@ -747,6 +770,86 @@ export async function cancelChargeRequestByAdmin(input: { requestId: string; adm
             metadata: { requestId: rows[0].id, ...(paymentIds.length > 1 ? { bundleSize: paymentIds.length } : {}) },
         }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
     }
+}
+
+/** POS에서 수동으로 주문을 정리한 뒤 관리자가 확인한다. 청구·환불은 처리하지 않는다. */
+export async function acknowledgeChargeDismissalByAdmin(input: { requestId: string; adminUserId: string }) {
+    const rows = await prisma.$queryRawUnsafe<{ id: string; paymentId: string; shortCode: string }[]>(
+        `UPDATE "PosChargeRequest"
+            SET "dismissState" = 'ACKNOWLEDGED', "dismissReportedAt" = now(), "updatedAt" = now()
+          WHERE id = $1 AND status = 'CANCELLED' AND "paidAt" IS NULL AND "tossPaymentId" IS NULL
+            AND "dismissState" IN ('FAILED', 'NEEDS_LOCAL_CANCEL')
+          RETURNING id, "paymentId", "shortCode"`,
+        input.requestId,
+    );
+    if (!rows[0]) throw new ChargeRequestError("NOT_CLAIMABLE", "POS 취소 확인이 필요한 요청을 찾지 못했습니다.");
+    await recordPaymentAudit({
+        paymentId: rows[0].paymentId,
+        actorType: "ADMIN",
+        actorId: input.adminUserId,
+        action: "POS_CHARGE_DISMISSAL_ACKNOWLEDGED",
+        message: `현장 결제 요청 ${rows[0].shortCode}의 POS 수동 취소를 확인했습니다.`,
+        metadata: { requestId: rows[0].id },
+    }).catch((e) => console.error("[pos-charge] 감사기록 실패:", String((e as Error).message).slice(0, 200)));
+}
+
+/** 원래 주문을 선점한 POS만 그 주문의 미결제 취소를 받는다. */
+export async function listChargeDismissalsForPlugin(tokenId: string) {
+    return prisma.$queryRawUnsafe<{ id: string; shortCode: string }[]>(
+        `SELECT id, "shortCode" FROM "PosChargeRequest"
+          WHERE "claimedByTokenId" = $1 AND status = 'CANCELLED' AND "dismissState" = 'REQUESTED'
+            AND "paidAt" IS NULL AND "tossPaymentId" IS NULL
+          ORDER BY "cancelledAt" ASC LIMIT 20`, tokenId,
+    );
+}
+
+export async function hasUnknownChargeDismissal(tokenId: string, knownIds: string[]): Promise<boolean> {
+    const [row] = await prisma.$queryRawUnsafe<{ found: boolean }[]>(
+        `SELECT EXISTS (SELECT 1 FROM "PosChargeRequest"
+          WHERE "claimedByTokenId" = $1 AND status = 'CANCELLED' AND "dismissState" = 'REQUESTED'
+            AND "paidAt" IS NULL AND "tossPaymentId" IS NULL
+            AND "cancelledAt" > now() - interval '90 seconds'
+            AND NOT (id = ANY($2::text[]))) AS found`, tokenId, knownIds,
+    );
+    return Boolean(row?.found);
+}
+
+export function normalizePluginDismissOutcome(value: unknown): DismissOutcome | null {
+    return DISMISS_OUTCOMES.find((outcome) => outcome === value) ?? null;
+}
+
+/** POS에서 장바구니 확인을 마친 뒤 결제창 열기 직전에 요청 상태를 다시 읽는다. */
+export async function assertChargeRequestMayStartForPlugin(requestId: string, tokenId: string): Promise<void> {
+    const [row] = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `SELECT r.id FROM "PosChargeRequest" r
+          WHERE r.id = $1 AND r."claimedByTokenId" = $2 AND r.status = 'SENT' AND r."expiresAt" > now()
+            AND r."dismissState" IS NULL AND r."paidAt" IS NULL AND r."tossPaymentId" IS NULL
+            AND ${ALL_ITEMS_UNPAID_SQL}`, requestId, tokenId,
+    );
+    if (!row) throw new ChargeRequestError("NOT_CLAIMABLE", "취소됐거나 상태가 달라진 결제 요청입니다.");
+}
+
+/** 이 보고는 POS 주문의 UI 상태만 기록한다. 승인·환불 상태는 토스가 확인한 값만 쓴다. */
+export async function reportChargeDismissalFromPlugin(input: {
+    requestId: string;
+    tokenId: string;
+    outcome: DismissOutcome;
+    reason?: string | null;
+}): Promise<{ dismissState: DismissState; duplicate: boolean }> {
+    const [updated] = await prisma.$queryRawUnsafe<{ dismissState: DismissState }[]>(
+        `UPDATE "PosChargeRequest"
+            SET "dismissState" = $3, "dismissReportMessage" = $4, "dismissReportedAt" = now(), "updatedAt" = now()
+          WHERE id = $1 AND "claimedByTokenId" = $2 AND status = 'CANCELLED' AND "dismissState" = 'REQUESTED'
+            AND "paidAt" IS NULL AND "tossPaymentId" IS NULL
+          RETURNING "dismissState"`, input.requestId, input.tokenId, input.outcome, input.reason?.trim().slice(0, 120) || null,
+    );
+    if (updated) return { dismissState: updated.dismissState, duplicate: false };
+    const [previous] = await prisma.$queryRawUnsafe<{ dismissState: DismissState | null }[]>(
+        `SELECT "dismissState" FROM "PosChargeRequest" WHERE id = $1 AND "claimedByTokenId" = $2 AND status = 'CANCELLED'`,
+        input.requestId, input.tokenId,
+    );
+    if (!previous?.dismissState) throw new ChargeRequestError("NOT_FOUND", "이 POS에서 처리할 취소 요청을 찾지 못했습니다.");
+    return { dismissState: previous.dismissState, duplicate: true };
 }
 
 // ───────────────────────────── 플러그인 API ─────────────────────────────

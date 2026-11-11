@@ -74,6 +74,7 @@ const START_MSG: Record<StartResult, string> = {
   busy: "결제를 준비하고 있어요.",
   draft_not_empty: "결제 화면에 다른 상품이 담겨 있어 멈췄어요.",
   claim_failed: "요청을 가져오지 못했어요.",
+  dismissed: "사이트에서 이 요청을 취소했어요.",
   invalid: "요청 정보가 맞지 않아 멈췄어요.",
   error: "결제 화면을 여는 중 문제가 생겼어요.",
 };

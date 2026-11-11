@@ -7,7 +7,8 @@
 //   N 은 서버·플러그인 모두 최대 10(MAX_ITEMS)이라 묶음 1건도 최대 24번 — 롱폴링(60초 3번)과 합쳐 60초 100번 안이다.
 import type { ServerApi, ApiResult } from "./api.ts";
 import { kindMessage } from "./api.ts";
-import type { ChargeRequest } from "./contract.ts";
+import type { ChargeRequest, DismissJob, DismissReport } from "./contract.ts";
+import { dismissUnpaidOrder } from "./dismiss.ts";
 import { buildLineItems, checkDraftAfterAdd, findShortCodeInOrder, formatWon, parseMemo, validateForPos } from "./order.ts";
 import type { PosSdkLike } from "./pos-types.ts";
 
@@ -22,6 +23,7 @@ export type StartResult =
   | "busy" // 이미 다른 결제를 준비 중(중복 클릭)
   | "draft_not_empty" // 결제 화면에 다른 상품이 담겨 있어 덮어쓰지 않음
   | "claim_failed" // 서버 선점 실패(이미 가져감·만료·네트워크)
+  | "dismissed" // 사이트 취소를 받아 결제창을 열기 전에 중단
   | "invalid" // 금액·면세·만료 검사 실패
   | "error"; // POS 조작 중 오류
 
@@ -67,6 +69,11 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   // 중복 클릭 잠금: 결제 준비 중에는 두 번째 [결제하기] 를 무시한다
   let busy = false;
+  let preparing = false;
+  let dismissBusy = false;
+  const dismissRequested = new Set<string>();
+  const stoppedBeforeCheckout = new Set<string>();
+  const dismissReports = new Map<string, DismissReport>();
   // 같은 결제 신호를 두 번 보고하지 않게(paid 는 분할결제마다 한 번씩 온다)
   const reported = new Set<string>();
   // 결제 완료 신호를 받은 요청 번호(startPayment 가 결제 뒤 오류를 내도 «실패»로 안내하지 않으려고)
@@ -126,12 +133,13 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       if (!silent) sdk.alert.open({ message });
       else if (blocking) sdk.toast.warn({ message });
     };
-    if (busy) {
+    if (busy || dismissBusy) {
       // 자동 경로에선 워커가 [결제하기] 토스트를 따로 남기므로 안내를 겹치지 않는다
       if (!silent) sdk.toast.warn({ message: "결제를 준비하고 있어요. 잠시만 기다려 주세요." });
       return "busy";
     }
     busy = true;
+    preparing = true;
     let claimed: ChargeRequest | null = null;
     try {
       // 1) 서버를 건드리기 전에 먼저 확인: 다른 주문이 담겨 있으면 덮어쓰지 않는다
@@ -146,6 +154,10 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         return "claim_failed";
       }
       claimed = res.data;
+      if (dismissRequested.has(claimed.id)) {
+        stoppedBeforeCheckout.add(claimed.id);
+        return "dismissed";
+      }
       // 3) 금액·면세·만료 검사
       const v = validateForPos(claimed, now());
       if (!v.ok) {
@@ -182,6 +194,18 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         return "invalid";
       }
       await remember(claimed);
+      const allowed = await api.startCheck(claimed.id);
+      if (dismissRequested.has(claimed.id)) {
+        stoppedBeforeCheckout.add(claimed.id);
+        return "dismissed";
+      }
+      if (!allowed.ok) {
+        await dismissUnpaidOrder({ sdk, job: claimed, now: now(), stoppedBeforeCheckout: true });
+        await reportStartFailed(claimed, `start_check_${allowed.kind}`);
+        notice("사이트에서 이 결제 요청을 다시 확인해 주세요.", true);
+        return "claim_failed";
+      }
+      preparing = false;
       // 같은 번호가 이 화면에서 다시 나와도 예전 결제 신호로 오인하지 않게(검수 권장 2026-11-08)
       paidCodes.delete(claimed.shortCode);
       // 7) 결제 화면으로 전환 — 카드 꽂기·서명은 사람이 한다
@@ -208,6 +232,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
       sdk.toast.error({ message: `결제 화면을 여는 중 문제가 생겼어요. 다시 시도해 주세요.${errText(e)}` });
       return "error";
     } finally {
+      preparing = false;
       busy = false;
     }
   }
@@ -220,6 +245,42 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
   /** 미납 목록에서 [결제하기] — 서버가 요청 생성 + 선점을 한 번에 */
   function startChargeForUnpaid(paymentId: string): Promise<StartResult> {
     return start(() => api.chargeUnpaid(paymentId));
+  }
+
+  function noteDismissal(job: DismissJob): void {
+    dismissRequested.add(job.id);
+  }
+
+  async function dismissUnpaid(job: DismissJob): Promise<void> {
+    noteDismissal(job);
+    // 장바구니를 쓰는 동안에는 다음 폴링에 다시 받는다. 결제 화면을 기다리는 동안에는 취소를 처리할 수 있다.
+    if (preparing || dismissBusy) return;
+    dismissBusy = true;
+    try {
+      let result = dismissReports.get(job.id);
+      if (!result) {
+        try {
+          const recent = parseRecent(await sdk.storage.get(RECENT_KEY)).find((item) => item.id === job.id && item.shortCode === job.shortCode);
+          result = await dismissUnpaidOrder({ sdk, job, recent, now: now(), stoppedBeforeCheckout: stoppedBeforeCheckout.has(job.id) });
+        } catch {
+          result = { outcome: "FAILED", reason: "POS_DISMISS_SDK_ERROR" };
+        }
+        dismissReports.set(job.id, result);
+      }
+      const acknowledged = await api.dismissReport(job.id, result);
+      if (!acknowledged.ok && acknowledged.kind !== "conflict" && acknowledged.kind !== "not_found") return;
+      dismissReports.delete(job.id);
+      dismissRequested.delete(job.id);
+      stoppedBeforeCheckout.delete(job.id);
+      if (!acknowledged.ok) return;
+      if (result.outcome === "DONE") {
+        sdk.toast.success({ message: `${job.shortCode} 미결제 요청이 취소됐어요. 결제 화면이 남아 있으면 화면을 닫아 주세요.` });
+      } else {
+        sdk.toast.warn({ message: `${job.shortCode} 사이트에서 요청을 취소했어요. 이 POS에서 해당 결제 화면과 주문 상태를 확인해 주세요.` });
+      }
+    } finally {
+      dismissBusy = false;
+    }
   }
 
   /** 결제/취소 신호 → 우리 주문이면 서버에 참고 보고 */
@@ -267,7 +328,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     return "reported";
   }
 
-  return { startCharge, startChargeForUnpaid, handlePaymentEvent, isBusy: () => busy };
+  return { startCharge, startChargeForUnpaid, handlePaymentEvent, noteDismissal, dismissUnpaid, isBusy: () => busy || dismissBusy };
 }
 
 function errText(e: unknown): string {

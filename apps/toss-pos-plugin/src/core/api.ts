@@ -8,10 +8,11 @@ import {
   parseChargeRequestList,
   parseClaimResponse,
   parseReportStatus,
+  parseStartAllowed,
   parseUnpaidList,
   parseWaitList,
 } from "./contract.ts";
-import type { CancelClaim, CancelReportBody, ChargeRequest, ReportBody, UnpaidItem, WaitListResult } from "./contract.ts";
+import type { CancelClaim, CancelReportBody, ChargeRequest, DismissReport, ReportBody, UnpaidItem, WaitListResult } from "./contract.ts";
 import type { HttpLike, HttpResponseLike } from "./pos-types.ts";
 
 /** 실패 종류 — 화면 안내와 백오프가 이 값으로 갈린다 */
@@ -160,6 +161,7 @@ export function createServerApi(deps: ApiDeps) {
     waitRequests: (opts: { waitSec: number; known?: string[] }): Promise<ApiResult<WaitListResult>> =>
       call("GET", API_PATHS.chargeRequestsWait(opts.waitSec, opts.known), null, parseWaitList, longPollTimeoutMs(opts.waitSec)),
     claim: (id: string): Promise<ApiResult<ChargeRequest>> => call("POST", API_PATHS.claim(id), {}, parseClaimResponse),
+    startCheck: (id: string): Promise<ApiResult<true>> => call("POST", API_PATHS.startCheck(id), {}, parseStartAllowed),
     report: (id: string, body: ReportBody): Promise<ApiResult<string>> =>
       call("POST", API_PATHS.report(id), body, parseReportStatus),
     searchUnpaid: (q: string): Promise<ApiResult<UnpaidItem[]>> =>
@@ -171,6 +173,8 @@ export function createServerApi(deps: ApiDeps) {
     /** 취소 결과 참고 보고(환불 확정은 서버가 토스 웹훅으로) */
     cancelReport: (id: string, body: CancelReportBody): Promise<ApiResult<string>> =>
       call("POST", API_PATHS.cancelReport(id), body, parseCancelReport),
+    dismissReport: (id: string, body: DismissReport): Promise<ApiResult<boolean>> =>
+      call("POST", API_PATHS.dismissReport(id), body, () => true),
   };
 }
 

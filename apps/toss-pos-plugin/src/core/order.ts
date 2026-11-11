@@ -186,8 +186,8 @@ export type DraftCheck = { ok: boolean; settled: boolean; detail: string };
  *   - 주문 합계(orderPriceValue)는 «0보다 크고 금액과 다를 때만» 불일치로 본다(예: 매장 자동 할인이 붙음)
  * detail 은 서버 보고용 실제 값 요약(예: «n=1 item=1000x1 unit=1 total=0 taxFree=true memo=ok»). 개인정보 없음.
  *
- * 묶음(항목 N개, 2026-11-08): 같은 기준을 «항목마다» 적용한다 — 담긴 항목 수 = N, 항목마다 메모 번호·금액·면세 일치,
- * 그리고 주문 합계(계산돼 있으면) = 요청 합계. 항목은 key(stiz-번호, stiz-번호-2 …)로 찾고, key 가 없으면 담은 순서로 본다.
+ * 묶음: POS 가 같은 가격·면세의 청구를 수량으로 합칠 수 있다. 단가·면세별 수량, 모든 줄의 요청 번호,
+ * 그리고 계산된 주문 합계를 확인한다.
  * 단건(항목 1개)은 아래 예전 판단을 그대로 쓴다(detail 모양도 같다).
  */
 export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req: ChargeRequest): DraftCheck {
@@ -221,47 +221,45 @@ export function checkDraftAfterAdd(draft: DraftOrderLike | null | undefined, req
   return { ok, settled: typeof total === "number" && total > 0, detail };
 }
 
-/** 묶음(항목 N개) 담긴 결과 확인 — checkDraftAfterAdd 의 항목별 일반화 */
+/** 같은 단가와 면세의 청구는 POS 가 한 줄로 합쳐도 수량까지 정확히 같아야 한다. */
 function checkBundleDraft(draft: DraftOrderLike | null | undefined, req: ChargeRequest, expected: ChargeItem[]): DraftCheck {
   const lines = draft?.lineItems ?? [];
   const total = draft?.price?.orderPriceValue;
   const parts: string[] = [];
   const taxFlags: string[] = [];
-  let ok = lines.length === expected.length;
-  let allMemo = true;
-  let priceUnknown = false;
-  const used = new Set<number>();
-  expected.forEach((want, i) => {
-    // key 로 찾고(같은 줄을 두 번 쓰지 않게), 없으면 담은 순서
-    const byKey = lines.findIndex((l, j) => !used.has(j) && l.key === lineKey(req.shortCode, i));
-    const j = byKey >= 0 ? byKey : used.has(i) ? -1 : i;
-    const li = j >= 0 ? lines[j] : undefined;
-    if (j >= 0) used.add(j);
-    const price = li?.itemPrice?.priceValue;
-    const qty = li?.quantity;
-    const taxFree = li?.itemPrice?.isTaxFree;
-    const memoOk = !!li && (parseMemo(li.memo) === req.shortCode || parseMemo(li.item?.code) === req.shortCode);
+  let ok = lines.length > 0
+    && !(draft && "discounts" in draft && Array.isArray(draft.discounts) && draft.discounts.length > 0);
+  let allMemo = lines.length > 0;
+  const outstanding = new Map<string, number>();
+  for (const item of expected) {
+    const key = `${item.amount}:${item.taxFreeAmount === item.amount}`;
+    outstanding.set(key, (outstanding.get(key) ?? 0) + 1);
+  }
+  for (const line of lines) {
+    const price = line.itemPrice?.priceValue;
+    const qty = line.quantity;
+    const taxFree = line.itemPrice?.isTaxFree;
+    const codes = [parseMemo(line.memo), parseMemo(line.item?.code)].filter(Boolean);
+    const memoOk = codes.length > 0 && codes.every((code) => code === req.shortCode);
     parts.push(`${fmt(price)}x${fmt(qty)}`);
     taxFlags.push(fmt(taxFree));
-    if (!memoOk) {
-      allMemo = false;
+    allMemo &&= memoOk;
+    const key = `${price}:${taxFree}`;
+    const remaining = outstanding.get(key) ?? 0;
+    const hasDiscount = "discount" in line && Array.isArray(line.discount) && line.discount.length > 0;
+    if (hasDiscount || !Number.isSafeInteger(qty) || qty <= 0 || qty > remaining) {
       ok = false;
-    } else if (typeof price === "number" && typeof qty === "number") {
-      // 항목 금액이 보이면 그것이 기준(청구 1건 금액)
-      if (price * qty !== want.amount) ok = false;
-    } else {
-      priceUnknown = true;
+      continue;
     }
-    if (typeof taxFree === "boolean" && taxFree !== (want.taxFreeAmount === want.amount)) ok = false;
-  });
-  // 항목 금액을 하나라도 못 읽으면 주문 합계로만 확인할 수 있다(합계도 없으면 확인 불가 → 멈춤)
-  if (ok && priceUnknown) ok = typeof total === "number" && total === req.amount;
-  // 합계가 계산돼 있고(0보다 큼) 요청 합계와 다르면 할인·봉사료 등이 붙은 것
-  if (ok && typeof total === "number" && total > 0 && total !== req.amount) ok = false;
+    outstanding.set(key, remaining - qty);
+  }
+  const settled = typeof total === "number" && total > 0;
+  ok = ok && allMemo && [...outstanding.values()].every((remaining) => remaining === 0)
+    && (total == null || total === 0 || total === req.amount);
   const detail =
     `n=${lines.length}/${expected.length} items=${parts.join(",")} total=${fmt(total)} ` +
     `taxFree=${taxFlags.join(",")} memo=${allMemo ? "ok" : "no"}`;
-  return { ok, settled: typeof total === "number" && total > 0, detail: detail.slice(0, 250) };
+  return { ok, settled, detail: detail.slice(0, 250) };
 }
 
 function fmt(v: unknown): string {

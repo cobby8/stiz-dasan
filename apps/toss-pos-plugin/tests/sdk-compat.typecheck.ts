@@ -13,6 +13,8 @@ export async function compatCheck(): Promise<void> {
   const d: DraftOrderLike = await posPluginSdk.draftOrder.addLineItem(buildLineItem(req));
   const d2: DraftOrderLike = await posPluginSdk.draftOrder.get();
   const o: OrderLike = await posPluginSdk.order.getOrder("x");
+  const recentOrders: OrderLike[] = await posPluginSdk.order.getOrders({ start: "2026-11-11", end: "2026-11-11", page: 1, size: 50 });
+  const cancelOrder: NonNullable<PosSdkLike["order"]["cancel"]> = posPluginSdk.order.cancel;
   const p: PaymentLike = await posPluginSdk.payment.getPayment("x");
   // 결제 취소(2026-11-08): payment.cancel({ id: orderId }, { id: paymentId }): Promise<void>
   const cancelFn: PosSdkLike["payment"]["cancel"] = posPluginSdk.payment.cancel;
@@ -24,5 +26,5 @@ export async function compatCheck(): Promise<void> {
   const h: HttpLike = posPluginSdk.http;
   const r = await posPluginSdk.http.get("https://www.stiz-dasan.kr/x", [["A", "b"]], { timeoutMs: 25_000 });
   const code: number = r.code;
-  void [d, d2, o, p, s, h, code, cancelFn];
+  void [d, d2, o, recentOrders, cancelOrder, p, s, h, code, cancelFn];
 }

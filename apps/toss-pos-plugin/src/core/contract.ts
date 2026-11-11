@@ -17,12 +17,13 @@ export const API_PATHS = {
    *   known 에는 이미 받은 취소 요청 id 도 넣는다(같은 id 공간).
    */
   chargeRequestsWait: (waitSec: number, known: string[] = []) => {
-    const q = `wait=${Math.max(0, Math.floor(waitSec))}&cancels=1`;
+    const q = `wait=${Math.max(0, Math.floor(waitSec))}&cancels=1&dismiss=1`;
     const ids = known.slice(0, 20).map(encodeURIComponent).join(",");
     return `/api/pos-plugin/charge-requests?${q}${ids ? `&known=${ids}` : ""}`;
   },
   /** 요청 선점(PENDING → SENT). 응답으로 금액·면세·메모 문구를 받는다 */
   claim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/claim`,
+  startCheck: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/start-check`,
   /** «결제 시도됨» 참고 보고. 납부 처리는 서버가 웹훅+재조회로만 한다 */
   report: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/report`,
   /** 미납 청구서 검색(이름 일부) */
@@ -36,7 +37,11 @@ export const API_PATHS = {
   cancelClaim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/claim`,
   /** 결제 취소 결과 참고 보고 { result: done|failed, message }. 환불은 서버가 토스 웹훅+재조회로만 한다 */
   cancelReport: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/cancel/report`,
+  dismissReport: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/dismiss/report`,
 } as const;
+
+export type DismissJob = { id: string; shortCode: string };
+export type DismissReport = { outcome: "DONE" | "FAILED" | "NEEDS_LOCAL_CANCEL"; reason?: string };
 
 /** 사이트에서 «결제 취소»를 누른 요청 1건(롱폴링 응답 cancels[]) — 결제 ID 는 선점 응답에서만 온다 */
 export type CancelJob = {
@@ -214,16 +219,27 @@ export function parseCancelJob(raw: unknown): CancelJob | null {
  * 롱폴링 응답: 목록 + 서버가 실제로 기다려 준 초(waitSec) + 취소할 일(cancels).
  * waitSec 이 없으면 wait 를 모르는 옛 서버다. cancels 가 없으면(옛 서버) 빈 목록.
  */
-export type WaitListResult = { requests: ChargeRequest[]; longPoll: boolean; cancels: CancelJob[] };
+export type WaitListResult = { requests: ChargeRequest[]; longPoll: boolean; cancels: CancelJob[]; dismissals: DismissJob[] };
 
 export function parseWaitList(body: unknown): WaitListResult {
   const b = unwrap(body);
   const w = isObj(b) ? num(pick(b, "waitSec")) : NaN;
   const cancels = listOf(body, "cancels").map(parseCancelJob).filter((c): c is CancelJob => c !== null);
-  return { requests: parseChargeRequestList(body), longPoll: Number.isFinite(w) && w > 0, cancels };
+  const dismissals = listOf(body, "dismissals").flatMap((raw) => {
+    if (!isObj(raw)) return [];
+    const id = str(pick(raw, "id"));
+    const shortCode = str(pick(raw, "shortCode"));
+    return id && /^S-\d{4,6}$/.test(shortCode) ? [{ id, shortCode }] : [];
+  });
+  return { requests: parseChargeRequestList(body), longPoll: Number.isFinite(w) && w > 0, cancels, dismissals };
 }
 
 /** 취소 선점 응답 {cancel: {...}} 해석. 주문 ID·결제 ID 가 하나도 없으면 null(취소하지 않는다) */
+export function parseStartAllowed(body: unknown): true | null {
+  const raw = unwrap(body);
+  return isObj(raw) && raw.allowed === true ? true : null;
+}
+
 export function parseCancelClaim(body: unknown): CancelClaim | null {
   const b = unwrap(body);
   const raw = isObj(b) && isObj(b.cancel) ? b.cancel : b;

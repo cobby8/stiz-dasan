@@ -817,13 +817,15 @@ async function walk(dir, out = []) {
   return out;
 }
 
-test("플러그인 API: 4개 경로가 있고 전부 토큰 인증(handlePluginRequest)을 거치며, 납부 처리 경로가 없다", async () => {
+test("플러그인 API: 모든 경로가 토큰 인증을 거치며 납부 처리 경로가 없다", async () => {
   const files = (await walk(PLUGIN_API_DIR)).map((f) => f.split(path.sep).join("/")).sort();
   assert.deepEqual(files, [
     "src/app/api/pos-plugin/charge-requests/[id]/cancel/claim/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/cancel/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/dismiss/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/report/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/start-check/route.ts",
     "src/app/api/pos-plugin/charge-requests/route.ts",
     "src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts",
     "src/app/api/pos-plugin/unpaid/route.ts",
@@ -841,6 +843,29 @@ test("플러그인 API: 4개 경로가 있고 전부 토큰 인증(handlePluginR
     assert.doesNotMatch(await readFile(f, "utf8"), /readJsonBody|req\.json/, `${f} 는 본문(금액)을 받지 않는다`);
   }
   assert.match(await readFile("src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts", "utf8"), /createAndClaimForPlugin\(paymentId, auth\.tokenId\)/);
+});
+
+test("미결제 주문 취소는 원래 POS로만 전달하고 현장 확인까지 같은 청구의 결제를 막는다", async () => {
+  const src = await readFile(SERVICE, "utf8");
+  const migration = await readFile("prisma/migrations/20261111190000_pos_unpaid_dismissal/migration.sql", "utf8");
+  const admin = src.slice(src.indexOf("export async function cancelChargeRequestByAdmin"), src.indexOf("export async function acknowledgeChargeDismissalByAdmin"));
+  assert.match(admin, /CASE WHEN status = 'SENT' AND "claimedByTokenId" IS NOT NULL THEN 'REQUESTED' ELSE NULL END/);
+  assert.match(admin, /status IN \('PENDING', 'SENT'\)\s+AND "paidAt" IS NULL AND "tossPaymentId" IS NULL/);
+  for (const name of ["listChargeDismissalsForPlugin", "hasUnknownChargeDismissal", "reportChargeDismissalFromPlugin"]) {
+    const fn = src.slice(src.indexOf(`export async function ${name}`)).split(/\nexport /)[0];
+    assert.match(fn, /"claimedByTokenId" = \$[12] AND status = 'CANCELLED' AND "dismissState" = 'REQUESTED'/);
+    assert.match(fn, /"paidAt" IS NULL AND "tossPaymentId" IS NULL/);
+    assert.doesNotMatch(fn, /markPaymentPaid|refundPaidPaymentInTx|UPDATE\s+"Payment"/);
+  }
+  assert.match(migration, /NOT IN \('REQUESTED', 'FAILED', 'NEEDS_LOCAL_CANCEL'\)/);
+  assert.match(migration, /AFTER UPDATE OF status, "dismissState"/);
+  const ack = src.slice(src.indexOf("export async function acknowledgeChargeDismissalByAdmin"), src.indexOf("export async function listChargeDismissalsForPlugin"));
+  assert.match(ack, /"dismissState" = 'ACKNOWLEDGED'/);
+  assert.match(ack, /AND "dismissState" IN \('FAILED', 'NEEDS_LOCAL_CANCEL'\)/);
+  const guard = src.slice(src.indexOf("export async function assertChargeRequestMayStartForPlugin"), src.indexOf("export async function reportChargeDismissalFromPlugin"));
+  assert.match(guard, /r\."claimedByTokenId" = \$2 AND r.status = 'SENT' AND r\."expiresAt" > now\(\)/);
+  assert.match(guard, /AND \$\{ALL_ITEMS_UNPAID_SQL\}/);
+  assert.doesNotMatch(guard, /UPDATE|markPaymentPaid/);
 });
 
 test("돈 쓰기: chargeRequestService 의 markPaymentPaid 는 한 곳, 선점(CLAIM_PAY_SQL) 1행 확인 뒤에만", async () => {
@@ -891,7 +916,8 @@ test("관리자 동작: 원장(ADMIN)만 + 오류는 문구로 돌려준다, ⚡
   const actions = await readFile(ACTIONS, "utf8");
   assert.match(actions, /^"use server";/);
   const exported = [...actions.matchAll(/export async function (\w+)/g)].map((m) => m[1]);
-  assert.equal(exported.length, 8);
+  assert.equal(exported.length, 9);
+  assert.ok(exported.includes("acknowledgePosChargeDismissal"));
   for (const name of exported) {
     const body = actions.slice(actions.indexOf(`export async function ${name}`));
     const head = body.slice(0, body.indexOf("\n}\n"));

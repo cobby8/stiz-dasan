@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
 import {
     ChargeRequestError,
+    acknowledgeChargeDismissalByAdmin,
     cancelChargeRequestByAdmin,
     createChargeRequestByAdmin,
     getChargeCancelForPayment,
@@ -96,6 +97,16 @@ export async function cancelPosChargeRequest(requestId: string): Promise<ActionR
         return { ok: true };
     } catch (error) {
         return failure(error, "현장 결제 요청을 취소하지 못했습니다.");
+    }
+}
+
+export async function acknowledgePosChargeDismissal(requestId: string): Promise<ActionResult<object>> {
+    try {
+        const admin = await requireFinanceOwner();
+        await acknowledgeChargeDismissalByAdmin({ requestId: String(requestId ?? ""), adminUserId: admin.appUserId });
+        return { ok: true };
+    } catch (error) {
+        return failure(error, "POS에서 직접 확인한 결과를 저장하지 못했습니다.");
     }
 }
 

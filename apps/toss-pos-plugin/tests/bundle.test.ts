@@ -26,6 +26,12 @@ const BUNDLE: ChargeRequest = {
   ],
 };
 const SINGLE: ChargeRequest = { ...BUNDLE, id: "req-s", title: "2026년 11월 수강료(홍*동)", amount: 180000, taxFreeAmount: 180000, items: undefined };
+const EQUAL_PRICES: ChargeRequest = {
+  ...BUNDLE,
+  amount: 260000,
+  taxFreeAmount: 260000,
+  items: [80000, 80000, 100000].map((amount, i) => ({ title: `수강료 ${i + 1}`, amount, taxFreeAmount: amount })),
+};
 
 /** 담긴 결과(항목들)를 그대로 다시 읽은 주문 모양 */
 function draftOf(lines: DraftLineItemInput[], total?: number): DraftOrderLike {
@@ -124,15 +130,38 @@ test("담은 뒤 확인(묶음): 항목 N개 각각 금액·면세·메모 + 합
   const noKey = draftOf(lines);
   noKey.lineItems.forEach((l) => (l.key = ""));
   assert.equal(checkDraftAfterAdd(noKey, BUNDLE).ok, true);
-  // 순서가 바뀌어도 key 로 찾는다
+  // 순서가 바뀌어도 단가·면세·수량으로 확인한다
   const swapped = draftOf([lines[1], lines[0]]);
   assert.equal(checkDraftAfterAdd(swapped, BUNDLE).ok, true);
-  // 항목 금액을 못 읽으면 합계로만(합계 = 요청 합계일 때만 통과)
+  // 합계가 같아도 항목의 단가·면세를 확인하지 못하면 멈춘다.
   const unknown = draftOf(lines);
   unknown.lineItems.forEach((l) => delete l.itemPrice);
-  assert.equal(checkDraftAfterAdd(unknown, BUNDLE).ok, true);
+  assert.equal(checkDraftAfterAdd(unknown, BUNDLE).ok, false);
   unknown.price!.orderPriceValue = 0;
   assert.equal(checkDraftAfterAdd(unknown, BUNDLE).ok, false);
+});
+
+test("POS가 80,000원 두 줄을 한 줄로 합쳐도 요청 번호·단가·면세·수량이 일치하면 통과", () => {
+  const [first, , third] = buildLineItems(EQUAL_PRICES);
+  const merged = () => draftOf([{ ...first, quantity: 2 }, third]);
+  assert.deepEqual(checkDraftAfterAdd(merged(), EQUAL_PRICES), {
+    ok: true,
+    settled: true,
+    detail: "n=2/3 items=80000x2,100000x1 total=260000 taxFree=true,true memo=ok",
+  });
+
+  const foreign = merged();
+  foreign.lineItems[0].item = { code: "STIZ:S-482194" };
+  assert.equal(checkDraftAfterAdd(foreign, EQUAL_PRICES).ok, false);
+  const missingTax = merged();
+  delete missingTax.lineItems[0].itemPrice!.isTaxFree;
+  assert.equal(checkDraftAfterAdd(missingTax, EQUAL_PRICES).ok, false);
+  const wrongQuantity = merged();
+  wrongQuantity.lineItems[0].quantity = 1;
+  wrongQuantity.lineItems[0].itemPrice!.priceValue = 160000;
+  assert.equal(checkDraftAfterAdd(wrongQuantity, EQUAL_PRICES).ok, false);
+  const discount = { ...merged(), discounts: [{ id: "auto" }] };
+  assert.equal(checkDraftAfterAdd(discount, EQUAL_PRICES).ok, false);
 });
 
 test("담은 뒤 확인(단건 회귀): detail 모양·판단이 예전과 같다", () => {
@@ -184,6 +213,7 @@ function api(claimed: ChargeRequest) {
   const a = {
     async claim() { return { ok: true, data: claimed } as ApiResult<ChargeRequest>; },
     async chargeUnpaid() { return { ok: true, data: claimed } as ApiResult<ChargeRequest>; },
+    async startCheck() { return { ok: true as const, data: true as const }; },
     async report(id: string, body: ReportBody) { reports.push({ id, body }); return { ok: true as const, data: "SENT" }; },
   } as unknown as ServerApi;
   return { api: a, reports };
@@ -199,6 +229,15 @@ test("결제 흐름(묶음): 항목 2개를 차례로 담고, 다시 읽어 확�
     "draft.add:stiz-S-482193:140000", "draft.add:stiz-S-482193-2:30000",
     "draft.get", "draft.startPayment",
   ]);
+  assert.equal(reports.length, 0);
+});
+
+test("결제 흐름(묶음): POS가 같은 단가를 합쳐도 실제 결제 시작 호출까지 진행", async () => {
+  const { sdk, log } = fakePos(([first, , third]) => draftOf([{ ...first, quantity: 2 }, third]));
+  const { api: a, reports } = api(EQUAL_PRICES);
+  const flow = createChargeFlow({ sdk, api: a, now: () => NOW, sleep: async () => undefined });
+  assert.equal(await flow.startCharge(EQUAL_PRICES), "started");
+  assert.equal(log.filter((line) => line === "draft.startPayment").length, 1);
   assert.equal(reports.length, 0);
 });
 

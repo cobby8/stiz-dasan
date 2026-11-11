@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RECENT_KEY, addRecent, createChargeFlow, parseRecent } from "../src/core/charge.ts";
 import type { ServerApi, ApiResult } from "../src/core/api.ts";
-import type { ChargeRequest, ReportBody } from "../src/core/contract.ts";
+import type { ChargeRequest, DismissReport, ReportBody } from "../src/core/contract.ts";
 import type { DraftLineItemInput, DraftOrderLike, OrderLike, PosSdkLike } from "../src/core/pos-types.ts";
 import { pickNotifications } from "../src/core/notify.ts";
 import type { NotifyLog } from "../src/core/notify.ts";
@@ -134,12 +134,83 @@ function fakeApi(claimResult: ApiResult<ChargeRequest> = { ok: true, data: REQ }
       reports.push({ id, body });
       return { ok: true as const, data: reportStatus };
     },
+    async startCheck() {
+      return { ok: true as const, data: true as const };
+    },
     async searchUnpaid() {
       return { ok: true as const, data: [] };
     },
   } as unknown as ServerApi;
   return { api, calls, reports };
 }
+
+test("장바구니 준비 중 사이트 취소를 받으면 결제창을 열지 않고 POS 확인 후 결과를 한 번 보고", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api } = fakeApi();
+  const receipts: DismissReport[] = [];
+  api.dismissReport = async (_id, body) => { receipts.push(body); return { ok: true, data: true }; };
+  let entered!: () => void;
+  let proceed!: () => void;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  const pause = new Promise<void>((resolve) => { proceed = resolve; });
+  const originalAdd = sdk.draftOrder.addLineItem;
+  sdk.draftOrder.addLineItem = async (item) => { entered(); await pause; return originalAdd(item); };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  const started = flow.startCharge(REQ);
+  await waiting;
+  await flow.dismissUnpaid(REQ);
+  assert.deepEqual(receipts, []);
+  proceed();
+  assert.equal(await started, "dismissed");
+  await flow.dismissUnpaid(REQ);
+  assert.deepEqual(receipts, [{ outcome: "DONE", reason: "CHECKOUT_NOT_STARTED" }]);
+  assert.equal(log.filter((entry) => entry === "draft.clear").length, 2);
+  assert.ok(!log.includes("draft.startPayment"));
+});
+
+test("시작 직전 서버 확인이 거절되면 결제창을 열지 않고 해당 장바구니를 비움", async () => {
+  const { sdk, log } = fakeSdk();
+  const { api, reports } = fakeApi();
+  api.startCheck = async () => ({ ok: false, kind: "conflict", code: 409, message: "취소된 요청" });
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  assert.equal(await flow.startCharge(REQ), "claim_failed");
+  assert.ok(!log.includes("draft.startPayment"));
+  assert.deepEqual((await sdk.draftOrder.get()).lineItems, []);
+  assert.equal(reports[0].body.reason, "start_check_conflict");
+});
+
+test("POS 결제창 응답을 기다리는 동안 미결제 주문 취소와 결과 보고를 처리하고, 보고만 재시도", async () => {
+  const { sdk } = fakeSdk();
+  const { api } = fakeApi();
+  let entered!: () => void;
+  let proceed!: () => void;
+  const waiting = new Promise<void>((resolve) => { entered = resolve; });
+  const pause = new Promise<void>((resolve) => { proceed = resolve; });
+  let cancelCalls = 0;
+  let order: OrderLike = {
+    id: "order-1", orderState: "OPENED", paymentState: "OPENED", createdAt: new Date(NOW).toISOString(),
+    payments: [], paymentPrice: { paymentPaidValue: 0 }, chargePrice: { chargePriceValue: REQ.amount },
+    lineItems: [{ memo: `STIZ:${REQ.shortCode}` }],
+  };
+  sdk.order.getOrders = async () => [order];
+  sdk.order.getOrder = async () => order;
+  sdk.order.cancel = async () => { cancelCalls++; order = { ...order, orderState: "CANCELLED" }; };
+  sdk.draftOrder.startPayment = async () => { entered(); await pause; };
+  const receipts: DismissReport[] = [];
+  api.dismissReport = async (_id, body) => {
+    receipts.push(body);
+    return receipts.length === 1 ? { ok: false, kind: "network", code: 0, message: "네트워크" } : { ok: true, data: true };
+  };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW });
+  const started = flow.startCharge(REQ);
+  await waiting;
+  await flow.dismissUnpaid(REQ);
+  await flow.dismissUnpaid(REQ);
+  assert.equal(cancelCalls, 1);
+  assert.deepEqual(receipts.map((r) => r.outcome), ["DONE", "DONE"]);
+  proceed();
+  assert.equal(await started, "started");
+});
 
 test("정상: 선점 → 비우기 → 면세 항목 추가 → 결제 시작, 최근 목록에 기록", async () => {
   const { sdk, log, store } = fakeSdk();
