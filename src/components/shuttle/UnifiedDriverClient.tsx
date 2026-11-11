@@ -34,9 +34,9 @@ type SortKey = { minutes: number | null; seq: number };
 function digits(p: string | null): string | null { if (!p) return null; const d = p.replace(/[^0-9]/g, ""); return d.length >= 9 ? d : null; }
 
 export default function UnifiedDriverClient({
-  token, date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null,
+  token = "", date, rows, initialBoarding, initialBoardingReliable = true, prevDate, nextDate, today, driverLabel, focusDirection = null,
 }: {
-  token: string;
+  token?: string;
   date: string;
   rows: UnifiedRow[];
   initialBoarding: Record<string, Status>;
@@ -49,6 +49,7 @@ export default function UnifiedDriverClient({
   focusDirection?: "PICKUP" | "DROPOFF" | null;
 }) {
   const router = useRouter();
+  const accountRun = !token;
   const [boarding, setBoarding] = useState<Record<string, Status>>(initialBoarding);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [saveStates, setSaveStates] = useState<Record<string, { state: "saving" | "saved" | "failed" | "unknown"; message: string }>>({});
@@ -76,9 +77,9 @@ export default function UnifiedDriverClient({
 
   const { state: gpsState, transmission, lastSentAt, accuracy, mode: gpsMode = "web", nativeRunning = false, nativeMessage, start: gpsStart, stop: gpsStop } = useGpsShare(token, driverLabel);
   useEffect(() => {
-    if (gpsMode !== "native") return;
+    if (accountRun || gpsMode !== "native") return;
     setRunState(nativeRunning || gpsState === "requesting" || transmission === "stopping" ? "running" : transmission === "stopped" || transmission === "stop-unknown" ? "ended" : "idle");
-  }, [gpsMode, nativeRunning, gpsState, transmission]);
+  }, [accountRun, gpsMode, nativeRunning, gpsState, transmission]);
   function handleRunStart() { if (gpsMode === "web") setRunState("running"); gpsStart(); }
   async function handleRunEnd() { await gpsStop(); if (gpsMode === "web") setRunState("ended"); }
   // 운행 중이 아니게 되면(앱이 먼저 종료 등) 열려 있던 종료 확인은 닫는다.
@@ -88,6 +89,7 @@ export default function UnifiedDriverClient({
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   useEffect(() => {
+    if (accountRun) return;
     const handler = (e: Event) => {
       e.preventDefault();
       deferredPromptRef.current = e as BeforeInstallPromptEvent;
@@ -95,7 +97,7 @@ export default function UnifiedDriverClient({
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [accountRun]);
   async function installPwa() {
     if (!deferredPromptRef.current) return;
     await deferredPromptRef.current.prompt();
@@ -207,7 +209,7 @@ export default function UnifiedDriverClient({
   // next = null 이면 «대기로 되돌리기»(저장 API 에 status: null — 예전 «같은 버튼 다시 누르기»와 같은 값).
   async function setStatus(rider: UnifiedRider, next: Status | null, verifyOnly = false) {
     const key = rider.key;
-    if (!initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
+    if ((accountRun && rider.kind !== "REGULAR") || !initialBoardingReliable || locks.current.has(key) || (!verifyOnly && saveStates[key]?.state === "unknown")) return;
     const cur = boarding[key] ?? null;
     // 게슈탈트 T-04: 이미 그 상태인 버튼을 다시 눌러도 아무 일 없게(운전 중 두 번 눌림으로 체크가 풀리던 문제).
     // 되돌리기는 아래 별도 «대기로 되돌리기» 글자 버튼만 한다.
@@ -218,8 +220,10 @@ export default function UnifiedDriverClient({
     setSaveStates((states) => ({ ...states, [key]: { state: "saving", message: verifyOnly ? "저장 상태 확인 중…" : "저장 중…" } }));
     try {
       // 🚨 저장 경로는 종류별로 예전 그대로. 파라미터 이름·저장 키를 바꾸면 과거 기록과 끊긴다.
-      const url = rider.kind === "SEASONAL" ? "/api/shuttle/boarding" : "/api/shuttle/regular-boarding";
-      const body = rider.kind === "SEASONAL"
+      const url = accountRun ? "/api/staff/shuttle/regular-boarding"
+        : rider.kind === "SEASONAL" ? "/api/shuttle/boarding" : "/api/shuttle/regular-boarding";
+      const body = accountRun ? { rowId: rider.checkId, status: target, date }
+        : rider.kind === "SEASONAL"
         ? { token, direction: rider.direction, shuttleRequestId: rider.checkId, status: target, studentName: rider.name, date }
         : { token, rowId: rider.checkId, status: target, studentName: rider.name, date };
       const read = () => readBoardingResult(url, token, date, rider.checkId, rider.kind === "SEASONAL" ? rider.direction : undefined);
@@ -248,7 +252,7 @@ export default function UnifiedDriverClient({
   }
   const summary = checkSummary(rows.filter((row) => !row.isTerminal).flatMap((row) => row.riders));
   const stopRows = ordered.filter((r) => !r.isTerminal);
-  const orderControls = stopRows.length > 0 && (!editing ? (
+  const orderControls = !accountRun && stopRows.length > 0 && (!editing ? (
     <button type="button" onClick={() => { setOrderSourceRows(rows); setSortOverride({}); setTimeOverride({}); setEditing(true); }}
       className="min-h-11 shrink-0 rounded-lg border border-[var(--color-academy-line-input)] bg-white px-2 py-1 text-[13px] font-bold text-[var(--color-academy-muted)] active:bg-[var(--color-academy-soft)]">
       ↕ 순서·시간 수정
@@ -356,12 +360,12 @@ export default function UnifiedDriverClient({
   return (
     <AcademyTheme role="driver" className={`${styles.workspace} mx-auto px-3 pb-8`}>
       {/* 운행 동작은 헤더 한 곳에 두고, 날짜는 아래 날짜 탐색에만 표시합니다. */}
-      <header className="academy-staff-header sticky top-0 z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2">
+      <header className={(accountRun ? "" : "sticky top-0 ") + "academy-staff-header z-10 -mx-3 mb-2 flex items-center justify-between gap-2 border-b px-3 py-2"}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2"><Image src="/stiz-logo.png" alt="스티즈 농구교실" width={96} height={42} className="h-[42px] w-24 shrink-0 object-contain" /><h1 className="text-[17px] font-extrabold text-[var(--color-academy-ink)]">셔틀 운행</h1>{runState === "running" && <LiveStatusPill>운행 중</LiveStatusPill>}</div>
           {runState === "ended" && <p className="text-[13px] font-bold text-[var(--color-academy-muted)]">{transmission === "stop-unknown" ? "위치 공유를 멈췄습니다 · 운행 종료가 저장됐는지 확인해 주세요" : "운행이 종료되었습니다"}</p>}
         </div>
-        <div className={styles.headerActions}>
+        {!accountRun && <div className={styles.headerActions}>
         {(runState === "running" || runState === "ended" || (gpsMode === "native" && runState === "idle" && (gpsState === "denied" || gpsState === "error"))) && (
           <DriverGpsIndicator gpsState={gpsState} transmission={transmission} lastSentAt={lastSentAt} accuracy={accuracy} onRetry={runState !== "ended" ? gpsStart : undefined} mode={gpsMode} nativeMessage={nativeMessage} />
         )}
@@ -378,7 +382,7 @@ export default function UnifiedDriverClient({
           </button>
         )}
         {runState === "running" && <button type="button" disabled={transmission === "stopping" || confirmEnd} onClick={() => setConfirmEnd(true)} aria-expanded={confirmEnd} className="academy-button-danger h-11 shrink-0 rounded-xl px-3 text-[14px] font-bold">{transmission === "stopping" ? "종료 확인 중" : "운행 종료"}</button>}
-        </div>
+        </div>}
       </header>
 
       {/* 운행 종료 확인 — 기본 초점은 안전한 «계속 운행». 종료 버튼은 12px 떼어 오른쪽에. */}

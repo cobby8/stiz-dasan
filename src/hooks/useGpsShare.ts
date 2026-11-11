@@ -17,6 +17,7 @@ export function useGpsShare(token: string, label?: string) {
   const [nativeStatus, setNativeStatus] = useState<{ token: string; running: boolean; message: string | null } | null>(null);
   const controller = useRef<ReturnType<typeof createDriverGpsController> | null>(null);
   useEffect(() => {
+    if (!token) return;
     const transport = nativeGpsTransport(window);
     if (transport) {
       controller.current = createNativeDriverGps({ target: window, transport, credentials: () => credentials.current,

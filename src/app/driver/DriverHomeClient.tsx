@@ -56,7 +56,7 @@ export default function DriverHomeClient() {
             </p>
             {/* 링크를 받지 못했거나 잃어버린 기사님 — 원장님이 기사님 역할을 준 계정이 있으면 로그인만으로 연다. */}
             <a
-              href={`/login?${new URLSearchParams({ redirect: "/staff/run" }).toString()}`}
+              href={`/login?${new URLSearchParams({ redirect: "/staff/shuttle" }).toString()}`}
               className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl border border-[var(--color-academy-line-input)] px-5 text-base font-bold text-[var(--color-academy-ink)]"
             >
               학원 계정으로 로그인해서 열기

@@ -2,43 +2,72 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth-guard";
 import { shuttleScope } from "@/lib/account/roles";
+import { addDaysKst, isKstYmd, todayKst } from "@/lib/datetime/kst";
 import { getStaffShuttleDashboard } from "@/lib/shuttle/service";
+import { authorizeAssign, DriverAssignError } from "@/lib/shuttle/driverAssign";
+import { getRegularDriverClasses } from "@/lib/shuttle/regularDriverRoute";
+import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
+import { buildUnifiedRun } from "@/lib/shuttle/unifiedDriverRunLogic";
+import UnifiedDriverClient from "@/components/shuttle/UnifiedDriverClient";
 import StaffShuttleDashboardClient from "./StaffShuttleDashboardClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function StaffShuttlePage() {
+export default async function StaffShuttlePage({ searchParams }: {
+  searchParams: Promise<{ date?: string; focus?: string; view?: string }>;
+}) {
   const staff = await requireStaff();
-  // 관리자 또는 기사님(승인된 추가 역할 포함). 선생님만인 사람은 들어오지 못한다.
-  const canUseShuttle = shuttleScope(staff.roles) !== "NONE";
+  if (shuttleScope(staff.roles) === "NONE") redirect("/staff");
+  try {
+    await authorizeAssign(staff);
+  } catch (error) {
+    if (error instanceof DriverAssignError && error.status === 403) {
+      return <p role="alert" className="mx-auto max-w-lg p-4 text-sm font-bold">셔틀 운행을 볼 수 있는 권한이 없습니다.</p>;
+    }
+    throw error;
+  }
 
-  if (!canUseShuttle) redirect("/staff");
+  const params = await searchParams;
+  if (params.view === "routes") {
+    const dashboard = await getStaffShuttleDashboard(staff);
+    return (
+      <>
+        <div className="mx-auto max-w-lg px-4 pt-3">
+          <Link href="/staff/shuttle" className="academy-button-secondary inline-flex min-h-11 items-center">정규 운행표</Link>
+        </div>
+        <StaffShuttleDashboardClient dashboard={dashboard} canManageShuttle={staff.roles.admin} />
+      </>
+    );
+  }
 
-  const dashboard = await getStaffShuttleDashboard(staff);
-  const canManageShuttle = staff.roles.admin;
+  const today = todayKst();
+  const date = params.date && isKstYmd(params.date) ? params.date : today;
+  const focusDirection = params.focus === "BOARD" ? "PICKUP" : params.focus === "ALIGHT" ? "DROPOFF" : null;
+  const [classes, boarding] = await Promise.all([
+    getRegularDriverClasses(date),
+    readDriverBoarding(date, "REGULAR").catch(() => null),
+  ]);
+  const initialBoarding = Object.fromEntries(Object.entries(boarding?.boarding ?? {}).map(([id, status]) => ["R:" + id, status]));
 
   return (
     <>
-      {/* 학원 공용 운행표(정규·방학특강 시각순) — 문자 링크 없이 로그인만으로 연다(다중 역할 5단계). */}
-      <div className="mx-auto max-w-lg px-4 pt-3">
-        <Link
-          href="/staff/run"
-          className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--brand-accent)] px-4 text-sm font-bold text-white"
-        >
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">directions_bus</span>
-          오늘 운행표 열기
-        </Link>
-        <Link href="/staff/shuttle/intake" className="mt-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">person_add</span>
-          새 학생 셔틀 검토
-        </Link>
-        {/* 셔틀 신청이 승인됐는데 아직 운행표에 없는 칸을 기사님이 바로 넣는 화면 */}
-        <Link href="/staff/shuttle/assign" className="mt-2 flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--color-academy-line)] px-4 text-sm font-bold">
-          <span className="material-symbols-outlined text-lg" aria-hidden="true">playlist_add</span>
-          새 학생 배정
-        </Link>
+      <div className="mx-auto flex max-w-lg flex-wrap gap-x-4 gap-y-1 px-4 py-2">
+        <Link href="/staff/shuttle/intake" className="academy-button-text inline-flex min-h-11 items-center">신규 셔틀 검토</Link>
+        <Link href="/staff/shuttle/assign" className="academy-button-text inline-flex min-h-11 items-center">새 학생 배정</Link>
+        <Link href="?view=routes" className="academy-button-text inline-flex min-h-11 items-center">별도 확정 노선</Link>
       </div>
-      <StaffShuttleDashboardClient dashboard={dashboard} canManageShuttle={canManageShuttle} />
+      <UnifiedDriverClient
+        key={date}
+        date={date}
+        rows={buildUnifiedRun({ regular: classes })}
+        initialBoarding={initialBoarding}
+        initialBoardingReliable={boarding !== null}
+        prevDate={addDaysKst(date, -1)}
+        nextDate={addDaysKst(date, 1)}
+        today={today}
+        driverLabel="정규 셔틀 기사님"
+        focusDirection={focusDirection}
+      />
     </>
   );
 }

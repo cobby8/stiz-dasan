@@ -297,7 +297,7 @@ test("기사님 카드의 시간·길안내와 이름 옆 연락처 배치를 �
 
 test("운행 시작은 헤더 오른쪽에만 두고 순서·시간 수정은 목록 제목 옆에 둔다", async () => {
   const src = await readFile("src/components/shuttle/UnifiedDriverClient.tsx", "utf8");
-  assert.match(src, /const orderControls = stopRows\.length > 0/);
+  assert.match(src, /const orderControls = !accountRun && stopRows\.length > 0/);
   assert.match(src, /min-h-11[^\n]*[\s\S]*↕ 순서·시간 수정/);
   assert.match(src, /<header[\s\S]*runState === "idle"[\s\S]*운행 시작/);
   assert.doesNotMatch(src, /운행을 시작하면 위치가 관리자에게 공유됩니다/);
