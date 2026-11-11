@@ -1,7 +1,7 @@
 "use server";
 
 // 체험비 온라인 결제·안내 미리보기 — 관리자 서버 액션.
-// ⚠️ 안내 자동 발송 스위치(trialGuideAutoSend·enrollGuideAutoSend)는 여기서 바꾸지 않는다 — 원장 문구 승인 전(미리보기만).
+// 미리보기는 안내 자동 발송 설정을 변경하지 않는다.
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
@@ -9,10 +9,11 @@ import { prisma } from "@/lib/prisma";
 import { getPaymentProviderConfig } from "@/lib/payment-ledger";
 import { getTrialFeeSettings } from "@/lib/trial-fee/trialFeeSettings";
 import { refundTrialFeeByAdmin, type TrialFeeRefundResult } from "@/lib/trial-fee/trialFeePaymentService";
-import { previewEnrollGuideForStudent, previewEnrollGuideForTrialLead, previewTrialGuide, type GuidePreview } from "@/lib/trial-fee/guideSender";
+import { previewEnrollGuideForStudent, previewTrialGuide, type GuidePreview } from "@/lib/trial-fee/guideSender";
 import { MAX_TRIAL_FEE_AMOUNT, MIN_TRIAL_FEE_AMOUNT, formatTrialFeeAmount } from "@/lib/trial-fee/trialFeeRules";
 import { toKstYmd } from "@/lib/datetime/kst";
 import { notMergedStudent } from "@/lib/studentVisibility";
+import { ENROLL_GUIDE_TRIGGER, TRIAL_GUIDE_TRIGGER } from "@/lib/trial-fee/guideMessages";
 
 /** 환불·결제 설정은 원장(ADMIN)만 — 수납 «선택 항목 환불»과 같은 재무 권한 */
 async function requireFinanceOwner() {
@@ -29,6 +30,7 @@ export type TrialFeeAdminState = {
     providerReady: boolean;
     trialGuideAutoSend: boolean;
     enrollGuideAutoSend: boolean;
+    canChangeGuideAutomation: boolean;
     /** 미리보기 대상 고르기용 최근 체험 신청 20건 */
     recentLeads: Array<{ id: string; label: string }>;
     /** 미리보기 대상 고르기용 최근 등록 원생 20명 */
@@ -36,7 +38,7 @@ export type TrialFeeAdminState = {
 };
 
 export async function getTrialFeeAdminState(): Promise<TrialFeeAdminState> {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const settings = await getTrialFeeSettings();
     const config = getPaymentProviderConfig();
     const leads = await prisma.$queryRawUnsafe<Array<{ id: string; childName: string; status: string; createdAt: Date }>>(
@@ -47,13 +49,19 @@ export async function getTrialFeeAdminState(): Promise<TrialFeeAdminState> {
           WHERE ${notMergedStudent("s")}
           ORDER BY s."createdAt" DESC LIMIT 20`,
     );
+    const activeGuideRules = await prisma.messageAutomationRule.findMany({
+        where: { trigger: { in: [TRIAL_GUIDE_TRIGGER, ENROLL_GUIDE_TRIGGER] }, isActive: true },
+        select: { trigger: true },
+    });
+    const activeTriggers = new Set(activeGuideRules.map((rule) => rule.trigger));
     return {
         amount: settings.amount,
         amountLabel: formatTrialFeeAmount(settings.amount),
         onlinePaymentEnabled: settings.onlinePaymentEnabled,
         providerReady: config.keyPairReady && config.provider === "TOSS",
-        trialGuideAutoSend: settings.trialGuideAutoSend,
-        enrollGuideAutoSend: settings.enrollGuideAutoSend,
+        trialGuideAutoSend: settings.trialGuideAutoSend && activeTriggers.has(TRIAL_GUIDE_TRIGGER),
+        enrollGuideAutoSend: settings.enrollGuideAutoSend && activeTriggers.has(ENROLL_GUIDE_TRIGGER),
+        canChangeGuideAutomation: admin.appUserRole === "ADMIN",
         recentLeads: leads.map((lead) => ({ id: lead.id, label: `${lead.childName} · ${toKstYmd(lead.createdAt).slice(5)} 신청 · ${lead.status}` })),
         recentStudents: students.map((student) => ({ id: student.id, label: `${student.name} · ${toKstYmd(student.createdAt).slice(5)} 등록` })),
     };
@@ -77,9 +85,31 @@ export async function updateTrialFeePaymentSettings(input: { amount: number; onl
     return { ok: true as const };
 }
 
+/** 설정과 문자 규칙을 함께 저장한다. 기존 신청을 다시 발송하지 않는다. */
+export async function updateTrialGuideAutomation(input: { trial: boolean; enroll: boolean }) {
+    await requireFinanceOwner();
+    if (typeof input.trial !== "boolean" || typeof input.enroll !== "boolean") {
+        throw new Error("두 안내의 자동 발송 상태를 확인해 주세요.");
+    }
+    await prisma.$transaction(async (tx) => {
+        const updated = await tx.$executeRawUnsafe(
+            `UPDATE "AcademySettings"
+                SET "trialGuideAutoSend" = $1, "enrollGuideAutoSend" = $2, "updatedAt" = NOW()
+              WHERE id = 'singleton'`,
+            input.trial,
+            input.enroll,
+        );
+        if (updated !== 1) throw new Error("학원 설정을 찾지 못했습니다.");
+        await tx.messageAutomationRule.update({ where: { trigger: TRIAL_GUIDE_TRIGGER }, data: { isActive: input.trial } });
+        await tx.messageAutomationRule.update({ where: { trigger: ENROLL_GUIDE_TRIGGER }, data: { isActive: input.enroll } });
+    });
+    revalidatePath("/admin/apply");
+    revalidatePath("/admin/sms");
+    return { trial: input.trial, enroll: input.enroll };
+}
+
 export type GuidePreviewSet = {
     trial: GuidePreview | null;
-    enrollFromTrial: GuidePreview | null;
     enrollFromStudent: GuidePreview | null;
 };
 
@@ -92,7 +122,6 @@ export async function previewTrialGuides(input: { trialLeadId?: string | null; s
     const studentId = input.studentId?.trim() || null;
     return {
         trial: trialLeadId ? strip(await previewTrialGuide(trialLeadId)) : null,
-        enrollFromTrial: trialLeadId ? strip(await previewEnrollGuideForTrialLead(trialLeadId)) : null,
         enrollFromStudent: studentId ? strip(await previewEnrollGuideForStudent(studentId)) : null,
     };
 }

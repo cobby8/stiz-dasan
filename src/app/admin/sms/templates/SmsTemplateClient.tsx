@@ -43,6 +43,7 @@ const ALL_VARIABLES = [
     { key: "parentPhone", label: "학부모연락처" },
     { key: "className", label: "반이름" },
     { key: "scheduledDate", label: "체험일시" },
+    { key: "enrollLink", label: "개인 수강신청 링크" },
     { key: "amount", label: "금액" },
     { key: "month", label: "월" },
     { key: "dueDate", label: "납부기한" },
@@ -373,7 +374,7 @@ function TemplateCard({ template, onReload }: { template: SmsTemplate; onReload:
                 <div className="px-5 py-3">
                     <p className="mb-2 rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-xs text-[var(--color-academy-warning)]">
                         <span className="material-symbols-outlined text-[14px] align-middle mr-0.5">lock</span>
-                        카카오 알림톡에 등록한 문구라 여기서 고칠 수 없어요. 바꾸려면 개발 요청 후 카카오 재심사가 필요합니다. 켜기/끄기는 그대로 쓸 수 있어요.
+                        문자와 카카오 알림톡이 같은 문구를 쓰므로 여기서 고칠 수 없어요. 알림톡에는 카카오 심사를 마친 문구를 사용합니다. 켜기/끄기는 그대로 쓸 수 있어요.
                     </p>
                     <pre className="w-full whitespace-pre-wrap rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] px-3 py-2.5 font-mono text-sm leading-relaxed text-[var(--color-academy-muted)]">{lockedBody}</pre>
                 </div>

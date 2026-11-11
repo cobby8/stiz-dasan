@@ -200,8 +200,14 @@ export async function ensureSmsTemplates(): Promise<void> {
                 trigger, name, target, body, isActive, description, variables,
             );
         }
-        // 기존 DB에 남은 옛 기본 문구(단문·장문·2026-11-07 다비치 제휴 문구)만 알림톡 금고 문구로 교체한다.
+        // 기존 DB에 남은 옛 기본 문구만 알림톡 금고 문구로 교체한다.
         // 관리자가 직접 수정한 문구는 덮어쓰지 않는다. (실제 발송은 이 DB 문구가 아니라 금고 틀을 쓴다 — 화면 표시용)
+        await prisma.$executeRawUnsafe(
+            `UPDATE "SmsTemplate" SET body = $1, "updatedAt" = NOW()
+              WHERE trigger = 'TRIAL_SCHEDULED_PARENT' AND body = $2`,
+            parentAlimtalkSmsTemplateBody("TRIAL_SCHEDULED_PARENT"),
+            `${PARENT_MESSAGE_PREFIX} {{childName}} 체험수업 일정이 확정되었습니다.\n일시: {{scheduledDate}}\n반: {{className}}\n문의: {{academyPhone}}`,
+        );
         await prisma.$executeRawUnsafe(
             `UPDATE "SmsTemplate"
                 SET name = $1,
@@ -210,7 +216,7 @@ export async function ensureSmsTemplates(): Promise<void> {
                     variables = $4,
                     "updatedAt" = NOW()
               WHERE trigger = 'TRIAL_ENROLL_GUIDE_PARENT'
-                AND body IN ($5, $6, $7)`,
+                AND body IN ($5, $6, $7, $8)`,
             "수강신청서 안내 (학부모)",
             parentAlimtalkSmsTemplateBody("TRIAL_ENROLL_GUIDE_PARENT"),
             "체험완료 후 관리자가 등록전환하면 학부모에게 자동 발송 (준비물·안경 안내 포함)",
@@ -218,6 +224,7 @@ export async function ensureSmsTemplates(): Promise<void> {
             "스티즈 수강신청서\n링크에서 작성해주세요 :)\n{{enrollLink}}",
             "[STIZ] {{childName}} 학생 체험수업 상담 감사드립니다.\n정규 수강신청서는 아래 링크에서 작성해주세요.\n{{enrollLink}}\n작성 후 확인되는 대로 입학 안내를 도와드리겠습니다.\n문의: {{academyPhone}}",
             "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
+            `${PARENT_MESSAGE_PREFIX} {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n\n문의: {{academyPhone}}`,
         );
         // 신규·복원 DB에서도 템플릿과 자동 발송 규칙이 같은 시점에 준비되게 한다.
         await prisma.$executeRawUnsafe(
@@ -360,7 +367,8 @@ export const SAMPLE_VARIABLES: Record<string, string> = {
     parentName: "김철수",
     parentPhone: "010-1234-5678",
     className: "초등 A반",
-    scheduledDate: "2026-04-05 (토) 14:00",
+    scheduledDate: "2026년 11월 12일 (목) 16:00",
+    enrollLink: "https://www.stiz-dasan.kr/e/example",
     amount: "150,000",
     month: "4",
     dueDate: "4월 10일",

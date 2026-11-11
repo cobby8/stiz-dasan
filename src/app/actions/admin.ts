@@ -1,6 +1,7 @@
 "use server";
 
 import { commencementYmd, requireCommencement } from "@/lib/enrollment/commencement";
+import { sendEnrollGuideIfEnabled } from "@/lib/trial-fee/guideSender";
 import { childAccessWhere } from "@/lib/account/child-access";
 
 import { createHash, createHmac, timingSafeEqual } from "crypto";
@@ -5419,8 +5420,9 @@ export async function approveEnrollApplication(
         errors: [] as string[],
     };
 
+    let registrationGuide: { studentId: string; usesShuttle: boolean } | null;
     try {
-        await prisma.$transaction(async (tx) => {
+        registrationGuide = await prisma.$transaction(async (tx) => {
         // 저장 직전에도 반·프로그램을 잠가 사전 조회 이후 폐강된 반을 차단한다.
         const lockedClasses = await tx.$queryRawUnsafe<{ id: string }[]>(
             `SELECT c.id FROM "Class" c JOIN "Program" p ON p.id=c."programId"
@@ -5643,6 +5645,7 @@ export async function approveEnrollApplication(
 
         // 5. 각 반에 Enrollment를 등록하거나 비활성 수강을 다시 활성화하고,
         //    실제 상태가 바뀐 경우에만 세 시스템 동기화 원장을 같은 트랜잭션에 남긴다.
+        let enrollmentChanged = false;
         for (const classId of data.classIds) {
             const [classContext] = await tx.$queryRawUnsafe<Array<{ className: string }>>(
                 `SELECT name AS "className" FROM "Class" WHERE id = $1 LIMIT 1`,
@@ -5662,6 +5665,7 @@ export async function approveEnrollApplication(
             );
             // 이미 활성인 수강은 DB와 원장을 모두 건드리지 않는 완전한 no-op입니다.
             if (existingEnrollment?.status === "ACTIVE") continue;
+            enrollmentChanged = true;
 
             const [enrollment] = await tx.$queryRawUnsafe<Array<{ id: string; updatedAt: Date }>>(
                 `INSERT INTO "Enrollment" (id, "studentId", "classId", status, "startsOn", "createdAt", "updatedAt")
@@ -5748,6 +5752,7 @@ export async function approveEnrollApplication(
                 studentId, trialLeadId,
             );
         }
+        return enrollmentChanged ? { studentId, usesShuttle: shuttleNeeded } : null;
         }, { timeout: 15_000 });
     } catch (e) {
         // 학생 모호(STUDENT_AMBIGUOUS) 등 '중단 신호'는 에러가 아니라 정상 반환값으로 돌려준다(트랜잭션은 롤백됨).
@@ -5768,8 +5773,16 @@ export async function approveEnrollApplication(
     revalidateApplyAdminCaches();
     revalidateStudentAdminCaches();
 
-    // 외부 알림은 이 승인 액션에서 실행하지 않습니다. 정확한 수신자·문구 미리보기와
-    // 별도 승인 원장을 갖춘 전용 발송 액션에서만 처리해야 합니다.
+    // 등록이 확정된 뒤에만 별도 자동 발송 설정을 적용한다.
+    if (registrationGuide) {
+        try {
+            const guide = await sendEnrollGuideIfEnabled(registrationGuide.studentId, { usesShuttle: registrationGuide.usesShuttle });
+            smsResult.parentSent = guide.sent;
+            smsResult.parentFailed = !guide.sent && guide.reason !== "OFF";
+        } catch {
+            smsResult.parentFailed = true;
+        }
+    }
     return { approved: true, sms: smsResult };
 }
 

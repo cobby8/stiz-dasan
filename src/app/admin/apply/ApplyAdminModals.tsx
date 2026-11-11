@@ -286,7 +286,7 @@ export default function ApplyAdminModals({
                 parentUserId,
                 startOn,
             })) as
-                | { approved: true; sms: { parentFailed: boolean; adminFailed: number; coachFailed: number; errors: string[] } }
+                | { approved: true; sms: { parentSent: boolean; parentFailed: boolean; adminFailed: number; coachFailed: number; errors: string[] } }
                 | { ok: false; code: "INVALID_CLASSES" | "INVALID_START_DATE"; message: string }
                 | { ok: false; code: "PARENT_SELECTION_REQUIRED"; message: string }
                 | { ok: false; code: "CAPACITY_WARNING"; classes: { classId: string; name: string; current: number; capacity: number }[] }
@@ -335,7 +335,12 @@ export default function ApplyAdminModals({
 
             onCloseApprove();
             await onSaved();
-            onFeedback("success", `${approveApp.childName} 수강신청을 승인했습니다. 안내 알림은 발송하지 않았습니다.`);
+            const guideStatus = result.sms.parentSent
+                ? "등록 완료 안내 문자를 보냈습니다."
+                : result.sms.parentFailed
+                    ? "등록 완료 안내 문자 상태를 발송 이력에서 확인해 주세요."
+                    : "안내 알림은 발송하지 않았습니다.";
+            onFeedback("success", `${approveApp.childName} 수강신청을 승인했습니다. ${guideStatus}`);
         } catch (error) {
             setApprovalError(adminErrorText(error, "승인 처리 중 문제가 생겼습니다. 선택 내용을 확인하고 다시 시도해 주세요."));
             onFeedback("error", "승인 처리 중 문제가 생겼습니다. 잠시 후 다시 시도해주세요.");

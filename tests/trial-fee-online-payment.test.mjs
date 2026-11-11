@@ -378,55 +378,57 @@ test("[마이그레이션] 신청당 결제 완료 1건·입금 대기 1건(DB �
   }
 });
 
-test("[계약] 안내 자동 발송 스위치는 관리자 화면에서 바꿀 수 없다(원장 문구 승인 전 — 미리보기만)", () => {
+test("[계약] 원장만 안내 설정과 문자 규칙을 함께 저장하고, 미리보기는 발송하지 않는다", () => {
   const action = read("src/app/actions/trial-fee.ts");
-  assert.doesNotMatch(action, /SET[^`]*"trialGuideAutoSend"|SET[^`]*"enrollGuideAutoSend"/);
+  const update = action.slice(action.indexOf("export async function updateTrialGuideAutomation"), action.indexOf("export type GuidePreviewSet"));
+  assert.match(update, /await requireFinanceOwner\(\)/);
+  assert.match(update, /\$transaction/);
+  assert.match(update, /SET "trialGuideAutoSend" = \$1, "enrollGuideAutoSend" = \$2/);
+  assert.match(update, /trigger: TRIAL_GUIDE_TRIGGER[\s\S]*isActive: input\.trial/);
+  assert.match(update, /trigger: ENROLL_GUIDE_TRIGGER[\s\S]*isActive: input\.enroll/);
   const ui = read("src/app/admin/apply/TrialFeeGuideSettings.tsx");
   assert.doesNotMatch(ui, /sendTrialGuide|sendEnrollGuide|sendTrackedSms/);
   const sender = read("src/lib/trial-fee/guideSender.ts");
-  // 발송 함수는 스위치가 꺼져 있으면 아무것도 하지 않는다
+  assert.match(sender, /WHERE "trialLeadId" = l\.id AND status = 'DONE'/);
+  assert.match(sender, /previewTrialGuide\(trialLeadId, \{ requirePaid: true \}\)/);
   for (const name of ["sendTrialGuideIfEnabled", "sendEnrollGuideIfEnabled"]) {
     const fn = sender.slice(sender.indexOf(`export async function ${name}`));
-    assert.match(fn.slice(0, 300), /if \(!settings\.(trialGuideAutoSend|enrollGuideAutoSend)\) return \{ sent: false, reason: "OFF" \}/);
+    assert.match(fn.slice(0, 340), /if \(!settings\.(trialGuideAutoSend|enrollGuideAutoSend)\) return \{ sent: false, reason: "OFF" \}/);
   }
 });
 
-// ───────────────────────────── 4) 안내문 초안 ─────────────────────────────
-
-test("[안내] 체험 확정 안내: 위치·체험비·준비물(실내용 운동화/운동복장/물)·확정, 계좌번호·과장 문구 없음", () => {
-  const body = guides.buildTrialGuideMessage({ childName: "홍길동", feeLabel: "10,000원", preferredSchedule: "11월 12일(수) 4교시 16:00~17:00", academyPhone: "07088245712" });
-  assert.ok(body.startsWith(`${vault.PARENT_MESSAGE_PREFIX} 홍길동 체험수업 신청이 확정되었습니다.`));
+test("[안내] 체험비 결제 확인은 결제 금액과 별도 일정 안내를 표시한다", () => {
+  const body = guides.buildTrialGuideMessage({ childName: "홍길동", feeLabel: "10,000원", academyPhone: "07088245712" });
   assert.equal(guides.GUIDE_MESSAGE_PREFIX, vault.PARENT_MESSAGE_PREFIX);
-  assert.match(body, /남양주시 다산중앙로20번길 10-32, 1층/);
-  assert.match(body, /실내용 운동화, 운동복장, 물/);
-  assert.match(body, /10,000원 결제가 확인되었습니다/);
-  assert.match(body, /희망 일정: 11월 12일\(수\) 4교시/);
-  assert.match(body, /문의: 070-8824-5712/);
-  assert.doesNotMatch(body, /계좌|3333-05|입금자 성함|등록률|%|최고|1위/);
-  const noSchedule = guides.buildTrialGuideMessage({ childName: "홍길동", feeLabel: "10,000원", preferredSchedule: "" });
-  assert.doesNotMatch(noSchedule, /희망 일정/);
+  assert.equal(body, [
+    "[스티즈농구교실] 홍길동 학생의 체험수업비 10,000원 결제가 확인되었습니다.",
+    "체험 일시와 반은 확정되는 대로 별도 문자로 안내드리겠습니다. 일정 확정 문자를 받으신 뒤 방문해 주세요.",
+    "문의 070-8824-5712",
+  ].join("\n"));
 });
 
-test("[안내] 등록 안내: 랠리즈→STIZ 앱, 카카오채널 반 변경·보강→앱 안 신청, 코치·기사님 연락처 자동, 셔틀 안 타면 기사님 줄 없음", () => {
+test("[안내] 등록 완료 안내: 본사 유니폼 주문 링크, 수업과 담당 코치, 셔틀 이용 정보", () => {
   const coaches = [{ name: "김영웅", title: "코치", phone: "01088242170" }];
   const drivers = [{ name: "김영중", title: "기사님", phone: "010-3207-2139" }];
   const withShuttle = guides.buildEnrollGuideMessage({ childName: "홍길동", classLabels: ["월 16:00~17:00 초등 A반"], coaches, drivers, usesShuttle: true });
-  assert.match(withShuttle, /담당 코치: 김영웅 코치 010-8824-2170/);
-  assert.match(withShuttle, /셔틀 기사님: 김영중 기사님 010-3207-2139/);
-  assert.match(withShuttle, /수업: 월 16:00~17:00 초등 A반/);
-  assert.match(withShuttle, /STIZ 앱\(학부모 화면\): www\.stiz-dasan\.kr\/mypage — 학원 공지, 출결, 수강료 결제, 반 변경·보강 신청/);
-  assert.doesNotMatch(withShuttle, /랠리즈|카카오채널|pf\.kakao\.com|구글|forms\.gle/);
-  assert.match(withShuttle, /김수빈 원장 010-9167-8117/);
+  assert.match(withShuttle, /홍길동 학생의 정규 수업 등록이 완료되었습니다/);
+  assert.match(withShuttle, /담당 코치 김영웅 코치 010-8824-2170/);
+  assert.match(withShuttle, /셔틀 김영중 기사님 010-3207-2139/);
+  assert.match(withShuttle, /수업 월 16:00~17:00 초등 A반/);
+  assert.match(withShuttle, /https:\/\/stiz\.kr\/product\/detail\.html\?product_no=4095&from=dasan/);
+  assert.match(withShuttle, /https:\/\/www\.stiz-dasan\.kr\/mypage/);
+  assert.match(withShuttle, /https:\/\/www\.stiz-dasan\.kr\/annual/);
+  assert.doesNotMatch(withShuttle, /랠리즈|카카오채널|www\.stiz-dasan\.kr\/apply/);
   assert.match(withShuttle, /070-8824-5712/);
   assert.doesNotMatch(withShuttle, /[\u{1F300}-\u{1FAFF}]/u, "문자(LMS)에서 깨지는 이모지 금지");
   const noShuttle = guides.buildEnrollGuideMessage({ childName: "홍길동", classLabels: [], coaches: [], drivers, usesShuttle: false });
-  assert.doesNotMatch(noShuttle, /기사님/);
-  assert.match(noShuttle, /담당 코치: 수업 첫날 안내드립니다/);
+  assert.doesNotMatch(noShuttle, /셔틀/);
+  assert.match(noShuttle, /담당 코치는 수업 첫날 안내드립니다/);
   const shuttleNoDriver = guides.buildEnrollGuideMessage({ childName: "홍길동", classLabels: [], coaches, drivers: [], usesShuttle: true });
-  assert.match(shuttleNoDriver, /셔틀 기사님: 노선 확정 후 안내드립니다/);
+  assert.match(shuttleNoDriver, /셔틀 배차 확정 후 안내드립니다/);
   assert.equal(guides.coachGuideTitle("원장"), "원장");
   assert.equal(guides.coachGuideTitle("Head Coach"), "코치");
-  assert.equal(guides.formatContactLine({ name: "권혜미", title: "원장", phone: "" }), "권혜미 원장", "번호 없으면 빈 칸을 만들지 않는다");
+  assert.equal(guides.formatContactLine({ name: "권혜미", title: "원장", phone: "" }), "권혜미 원장");
 });
 
 test("[안내] 새 학부모 문자 트리거는 «문자 전용 허용목록»에 이유와 함께 등록돼 있다", () => {

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import { loadTsModule } from "./_ts-module.mjs";
 
 const reg = await loadTsModule("src/lib/messaging/parent-alimtalk-templates.ts");
@@ -12,7 +13,7 @@ const TRIGGERS = Object.keys(reg.PARENT_ALIMTALK_TEMPLATES);
 
 // 호출부가 실제로 넘기는 키 이름 그대로의 샘플 값
 const SAMPLE = {
-  childName: "홍길동", parentName: "김철수", scheduledDate: "2026년 11월 12일(수) 16:00", className: "초등 A반",
+  childName: "홍길동", parentName: "김철수", scheduledDate: "2026년 11월 12일(목) 16:00", className: "초등 A반",
   academyPhone: "031-000-0000", enrollLink: "https://www.stiz-dasan.kr/e/abc123",
   학생명: "박윤우", 운행방향: "등원", 운행일: "2026년 11월 12일 (수)", 예정시간: "15:40", 정류장: "다산자이 정문",
   offeringTitle: "겨울특강 슈팅반", seasonTitle: "2027 겨울방학 특강", amount: "150000", dueDate: "2026. 12. 20.",
@@ -48,13 +49,13 @@ test("머리말은 전부 [스티즈농구교실], 수강신청서 안내에 제
   }
   const guide = reg.PARENT_ALIMTALK_TEMPLATES.TRIAL_ENROLL_GUIDE_PARENT.body;
   assert.doesNotMatch(guide, /다비치|할인|35,000|notices\//);
-  assert.match(guide, /■ 수업 준비물: 실내용 운동화, 물 담은 텀블러/);
+  assert.match(guide, /수업 준비물은 실내용 운동화와 물을 담은 텀블러입니다/);
 });
 
 test("빈 변수: 기본값(반·학원전화)은 채우고, 기본값 없는 값이 비면 오류(→ 발송부가 문자로 대체)", () => {
   const trial = reg.buildParentAlimtalkMessage("TRIAL_SCHEDULED_PARENT", { ...SAMPLE, className: "", academyPhone: "" });
-  assert.match(trial.body, /반: 추후 안내/);
-  assert.match(trial.body, new RegExp(`문의: ${reg.DEFAULT_ACADEMY_PHONE}`));
+  assert.match(trial.body, /· 수업 반 추후 안내/);
+  assert.match(trial.body, new RegExp(`일정 변경이 필요하시면 ${reg.DEFAULT_ACADEMY_PHONE}로 연락해 주세요`));
   // 특강 문자 버그①: 학원전화 미전달 → 빈칸 «문의: » 가 생기지 않는다
   const cancelled = reg.buildParentAlimtalkMessage("SPECIAL_APPLICATION_CANCELLED_PARENT", { childName: "홍길동", offeringTitle: "슈팅반" });
   assert.doesNotMatch(cancelled.body, /문의: $/m);
@@ -125,14 +126,41 @@ test("심사 문서: 등록 문구가 코드 틀과 글자까지 같고 환경�
   assert.match(doc, /https:\/\/solapi\.com\/developers\/api\/messages-disablesms/);
 });
 
-test("운영 동기화 마이그레이션이 금고 문구를 그대로 담는다", () => {
+test("기존 마이그레이션과 개정 안내 동기화가 관리자 설정을 보존한다", async () => {
   const sql = read("prisma/migrations/20261109121000_sync_parent_alimtalk_template_bodies/migration.sql");
   const e = (s) => "E'" + s.replace(/\\/g, "\\\\").replace(/'/g, "''").replace(/\n/g, "\\n") + "'";
-  for (const trigger of TRIGGERS) {
+  const revised = ["TRIAL_SCHEDULED_PARENT", "TRIAL_ENROLL_GUIDE_PARENT"];
+  for (const trigger of TRIGGERS.filter((item) => !revised.includes(item))) {
     assert.ok(sql.includes(`body = ${e(reg.parentAlimtalkSmsTemplateBody(trigger))}`), trigger);
     assert.ok(sql.includes(`WHERE trigger = '${trigger}'`), trigger);
   }
   assert.doesNotMatch(sql, /DELETE|DROP|TRUNCATE/);
+
+  const writes = [];
+  const sms = { exports: {} };
+  const source = ts.transpileModule(read("src/lib/smsTemplate.ts"), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  new Function("require", "exports", source)((id) => id === "@/lib/prisma"
+    ? { prisma: { $executeRawUnsafe: async (query, ...args) => { writes.push({ query, args }); } } }
+    : reg, sms.exports);
+  await sms.exports.ensureSmsTemplates();
+  for (const trigger of revised) {
+    const old = sql.split("\n").find((line) => line.includes(`WHERE trigger = '${trigger}'`));
+    const write = writes.find(({ query }) => query.includes(`WHERE trigger = '${trigger}'`));
+    const body = reg.parentAlimtalkSmsTemplateBody(trigger);
+    assert.ok(write.args.includes(body), trigger);
+    assert.ok(write.args.some((arg) => typeof arg === "string" && old.includes(`body = ${e(arg)}`)), trigger);
+    assert.doesNotMatch(write.query, /isActive|requestedChannel/);
+    assert.match(reg.PARENT_ALIMTALK_TEMPLATES[trigger].envKey, /_REVISED$/);
+    const preview = sms.exports.renderTemplate(body, sms.exports.SAMPLE_VARIABLES);
+    assert.equal(preview, reg.buildParentAlimtalkMessage(trigger, sms.exports.SAMPLE_VARIABLES).body);
+    if (trigger === "TRIAL_SCHEDULED_PARENT") {
+      assert.match(preview, /다산중앙로20번길 10-32, 1층\n· 준비물 실내용 운동화, 운동하기 편한 복장, 물/);
+    } else {
+      assert.match(preview, /https:\/\/www\.stiz-dasan\.kr\/e\/example/);
+    }
+  }
 });
 
 test("규칙 정리 마이그레이션: 코드 없는 규칙·체험 완료 문자만 지우고 되돌림 SQL 이 있다", () => {
@@ -217,5 +245,5 @@ test("연결: 특강·셔틀·체험 경로가 금고 틀과 알림톡을 넘긴
   const admin = read("src/app/actions/admin.ts");
   assert.match(admin, /isParentAlimtalkTrigger\(before\.trigger\)\) \{\s*throw new Error\(SMS_TEMPLATE_ALIMTALK_LOCKED\)/);
   const client = read("src/app/admin/sms/templates/SmsTemplateClient.tsx");
-  assert.match(client, /카카오 알림톡에 등록한 문구라 여기서 고칠 수 없어요/);
+  assert.match(client, /문자와 카카오 알림톡이 같은 문구를 쓰므로 여기서 고칠 수 없어요/);
 });

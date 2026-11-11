@@ -18,7 +18,7 @@ const harness = await startStatusBrowserHarness({
       'updateEnrollApplication', 'updateTrialLead',
     ]) + '\nexport async function getEnrollTrialLinkSuggestions() { return {}; }',
     '@/app/actions/trial-fee': blockedActions([
-      'getTrialFeeAdminState', 'previewTrialGuides', 'refundTrialFee', 'updateTrialFeePaymentSettings',
+      'getTrialFeeAdminState', 'previewTrialGuides', 'refundTrialFee', 'updateTrialFeePaymentSettings', 'updateTrialGuideAutomation',
     ]),
     '@/app/actions/student-register': blockedActions([
       'getStudentRegisterOptions', 'previewStudentRegistration', 'registerStudent',

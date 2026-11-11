@@ -12,8 +12,9 @@ const commencement = await import(url((await readFile("src/lib/enrollment/commen
 const ast = ts.createSourceFile("admin.ts",source,ts.ScriptTarget.Latest,true);
 const fn = ast.statements.find(node => ts.isFunctionDeclaration(node)&&node.name?.text==="approveEnrollApplication");
 const javascript = ts.transpileModule(fn.getText(ast).replace("export async function", "async function"),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-function approvalHarness({requestedStartOn="2026-12-01",existingStatus=null}={}) {
- const writes=[],events=[];
+function approvalHarness({requestedStartOn="2026-12-01",existingStatus=null,guideFails=false}={}) {
+ const writes=[],events=[],guideCalls=[];
+ let committed=false;
  const app={id:"application-a",status:"PENDING",childName:"합성",childBirthDate:"2018-01-01",parentName:"합성부모",parentPhone:"01000000000",requestedStartOn,shuttleNeeded:false};
  const tx={async $queryRawUnsafe(sql,...args){
   if(sql.includes('FROM "Class" c JOIN "Program"')) return [{id:"class-a"}];
@@ -26,9 +27,9 @@ function approvalHarness({requestedStartOn="2026-12-01",existingStatus=null}={})
   throw Error(`unexpected query: ${sql}`);
  },async $executeRawUnsafe(sql,...args){writes.push({sql,args});return 1;}};
  const ctx=vm.createContext({console,Date,Set,Number,String,Boolean,Error,Array,Object,requireAdmin:async()=>({appUserId:"admin-a"}),normalizeApprovalClassIds:ids=>ids,
-  prisma:{...tx,$transaction:async fn=>fn(tx)},...commencement,ApprovalAbort:class extends Error{},ParentSelectionRequired:class extends Error{},parentPhoneDigits:()=>"01000000000",resolveApprovalParent:async()=>"parent-a",verifyEnrollmentParentAuth:()=>{},notMergedStudent:()=>"true",SHUTTLE_LOCATION_CONSENT_VERSION:"test",buildEnrollmentOperationsEvent,enqueueWebsiteOperationsEventInTransaction:async(_tx,event)=>events.push(event),revalidatePath(){},revalidateApplyAdminCaches(){},revalidateStudentAdminCaches(){}});
+  prisma:{...tx,$transaction:async fn=>{const result=await fn(tx);committed=true;return result;}},...commencement,ApprovalAbort:class extends Error{},ParentSelectionRequired:class extends Error{},parentPhoneDigits:()=>"01000000000",resolveApprovalParent:async()=>"parent-a",verifyEnrollmentParentAuth:()=>{},notMergedStudent:()=>"true",SHUTTLE_LOCATION_CONSENT_VERSION:"test",buildEnrollmentOperationsEvent,enqueueWebsiteOperationsEventInTransaction:async(_tx,event)=>events.push(event),revalidatePath(){},revalidateApplyAdminCaches(){},revalidateStudentAdminCaches(){},sendEnrollGuideIfEnabled:async id=>{guideCalls.push({id,committed});return {sent:!guideFails,reason:guideFails?"FAILED":"SENT"};}});
  const approve=vm.runInContext(`${javascript};approveEnrollApplication`,ctx);
- return {writes,events,app,approve:(data={})=>approve("application-a",{classIds:["class-a"],force:true,...data})};
+ return {writes,events,guideCalls,app,approve:(data={})=>approve("application-a",{classIds:["class-a"],force:true,...data})};
 }
 test("실제 승인 액션은 미래 개시일을 반 수강·신청서·운영 원장에 같은 날짜로 기록",async()=>{
  const h=approvalHarness();assert.equal((await h.approve()).approved,true);
@@ -37,7 +38,12 @@ test("실제 승인 액션은 미래 개시일을 반 수강·신청서·운영 
  assert.equal(h.events[0].effectiveDate,"2026-12-01");assert.equal(h.events[0].after.effectiveDate,"2026-12-01");
 });
 test("과거 월 정보만 있는 신청은 승인일·1일로 추정하지 않고 모든 쓰기 전에 중단",async()=>{
- const h=approvalHarness({requestedStartOn:null});await assert.rejects(h.approve(),/수강 개시일/);assert.equal(h.writes.length,0);assert.equal(h.events.length,0);
+ const h=approvalHarness({requestedStartOn:null});await assert.rejects(h.approve(),/수강 개시일/);assert.equal(h.writes.length,0);assert.equal(h.events.length,0);assert.equal(h.guideCalls.length,0);
+});
+test("등록 완료 안내는 승인 저장 이후에만 요청하고, 문자 실패는 저장 결과와 구분한다",async()=>{
+ const h=approvalHarness({guideFails:true});const result=await h.approve();
+ assert.deepEqual(h.guideCalls,[{id:"student-a",committed:true}]);
+ assert.equal(result.approved,true);assert.equal(result.sms.parentFailed,true);
 });
 test("관리자가 확인한 시작일이 있으면 요청 날짜와 실제 반 수강을 함께 갱신",async()=>{
  const h=approvalHarness();await h.approve({startOn:"2026-11-16"});assert.equal(h.writes.find(w=>w.sql.includes('INSERT INTO "Enrollment"')).args[2],"2026-11-16");assert.equal(h.events[0].effectiveDate,"2026-11-16");

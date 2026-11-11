@@ -2,13 +2,14 @@
 
 // 신청 안내 설정 탭 안의 «체험비 결제 · 자동 안내» 카드(2026-11-10).
 // - 체험비 금액·온라인 결제 켜기: 원장만 저장(서버가 다시 확인)
-// - 체험 확정 안내·등록 안내: 원장 문구 승인 전이라 자동 발송은 «꺼짐» 표시만, 실제 데이터로 «미리보기»만 된다(발송 버튼 없음)
+// - 실제 신청·원생 데이터로 발송 문구를 미리 본다.
 
 import { useEffect, useState } from "react";
 import {
     getTrialFeeAdminState,
     previewTrialGuides,
     updateTrialFeePaymentSettings,
+    updateTrialGuideAutomation,
     type GuidePreviewSet,
     type TrialFeeAdminState,
 } from "@/app/actions/trial-fee";
@@ -27,6 +28,9 @@ export default function TrialFeeGuideSettings() {
     const [studentId, setStudentId] = useState("");
     const [preview, setPreview] = useState<GuidePreviewSet | null>(null);
     const [previewing, setPreviewing] = useState(false);
+    const [automation, setAutomation] = useState({ trial: false, enroll: false });
+    const [savingAutomation, setSavingAutomation] = useState(false);
+    const [automationMessage, setAutomationMessage] = useState<string | null>(null);
 
     useEffect(() => {
         getTrialFeeAdminState()
@@ -34,6 +38,7 @@ export default function TrialFeeGuideSettings() {
                 setState(next);
                 setAmount(String(next.amount));
                 setOnline(next.onlinePaymentEnabled);
+                setAutomation({ trial: next.trialGuideAutoSend, enroll: next.enrollGuideAutoSend });
                 setLeadId(next.recentLeads[0]?.id ?? "");
                 setStudentId(next.recentStudents[0]?.id ?? "");
             })
@@ -61,6 +66,23 @@ export default function TrialFeeGuideSettings() {
             setMessage(adminErrorText(error, "미리보기를 만들지 못했습니다."));
         } finally {
             setPreviewing(false);
+        }
+    }
+
+    async function saveAutomation() {
+        if (savingAutomation) return;
+        const summary = `체험비 결제 확인 ${automation.trial ? "켜기" : "끄기"}\n등록 완료 안내 ${automation.enroll ? "켜기" : "끄기"}`;
+        if (!window.confirm(`자동 발송 설정을 저장할까요?\n\n${summary}\n\n저장 후 발생하는 결제와 신규 등록부터 적용됩니다.`)) return;
+        setSavingAutomation(true);
+        setAutomationMessage(null);
+        try {
+            const saved = await updateTrialGuideAutomation(automation);
+            setState((current) => current ? { ...current, trialGuideAutoSend: saved.trial, enrollGuideAutoSend: saved.enroll } : current);
+            setAutomationMessage("자동 발송 설정을 저장했습니다.");
+        } catch (error) {
+            setAutomationMessage(adminErrorText(error, "자동 발송 설정을 저장하지 못했습니다."));
+        } finally {
+            setSavingAutomation(false);
         }
     }
 
@@ -97,13 +119,31 @@ export default function TrialFeeGuideSettings() {
                     </button>
                 </div>
 
-                {/* ② 자동 안내 — 원장 문구 승인 전: 꺼짐 표시 + 미리보기만 */}
+                {/* 자동 발송 상태와 발송 문구 미리보기 */}
                 <div className="space-y-3 border-t border-[var(--color-academy-line)] pt-5">
                     <div className="flex flex-wrap gap-2 text-xs font-bold">
-                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">체험 확정 안내 자동 발송: {state.trialGuideAutoSend ? "켜짐" : "꺼짐"}</span>
-                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">등록 안내 자동 발송: {state.enrollGuideAutoSend ? "켜짐" : "꺼짐"}</span>
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">체험비 결제 확인 자동 발송: {state.trialGuideAutoSend ? "켜짐" : "꺼짐"}</span>
+                        <span className="rounded-full bg-[var(--color-academy-soft)] px-2.5 py-1 text-[var(--color-academy-muted)]">등록 완료 안내 자동 발송: {state.enrollGuideAutoSend ? "켜짐" : "꺼짐"}</span>
                     </div>
-                    <p className="text-xs text-[var(--color-academy-muted)]">원장님 문구 확인 전이라 보내지 않아요. 실제 신청·원생 데이터로 문구만 미리 볼 수 있어요(코치·기사님 연락처 자동).</p>
+                    {state.canChangeGuideAutomation && (
+                        <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                                <label className="flex min-h-11 items-center gap-2">
+                                    <input type="checkbox" checked={automation.trial} disabled={savingAutomation} onChange={(event) => setAutomation({ ...automation, trial: event.target.checked })} />
+                                    체험비 결제 확인 자동 발송
+                                </label>
+                                <label className="flex min-h-11 items-center gap-2">
+                                    <input type="checkbox" checked={automation.enroll} disabled={savingAutomation} onChange={(event) => setAutomation({ ...automation, enroll: event.target.checked })} />
+                                    등록 완료 안내 자동 발송
+                                </label>
+                                <button type="button" onClick={() => void saveAutomation()} disabled={savingAutomation || (automation.trial === state.trialGuideAutoSend && automation.enroll === state.enrollGuideAutoSend)} className="min-h-11 rounded-xl border border-[var(--color-academy-line)] px-3 text-sm font-bold disabled:opacity-40">
+                                    {savingAutomation ? "저장 중..." : "자동 발송 설정 저장"}
+                                </button>
+                            </div>
+                            {automationMessage && <p role="status" className="text-sm">{automationMessage}</p>}
+                        </div>
+                    )}
+                    <p className="text-xs text-[var(--color-academy-muted)]">실제 신청·원생 데이터로 보호자에게 보낼 문구를 확인합니다.</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                         <select value={leadId} onChange={(event) => setLeadId(event.target.value)} aria-label="미리보기 체험 신청" className={INPUT}>
                             <option value="">체험 신청 선택 안 함</option>
@@ -118,10 +158,9 @@ export default function TrialFeeGuideSettings() {
                         {previewing ? "만드는 중..." : "안내 미리보기"}
                     </button>
                     {preview && (
-                        <div className="grid gap-3 lg:grid-cols-3">
-                            <PreviewBox title="(a) 체험 확정 안내 — 결제 완료 시" preview={preview.trial} />
-                            <PreviewBox title="(b) 등록 안내 — 체험 완료 후" preview={preview.enrollFromTrial} />
-                            <PreviewBox title="(b) 등록 안내 — 수강 등록 시" preview={preview.enrollFromStudent} />
+                        <div className="grid gap-3 lg:grid-cols-2">
+                            <PreviewBox title="체험비 결제 확인" preview={preview.trial} />
+                            <PreviewBox title="등록 완료 안내" preview={preview.enrollFromStudent} />
                         </div>
                     )}
                 </div>
