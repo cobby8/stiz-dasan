@@ -66,7 +66,7 @@ export function rosterChangeLink(date: string | null, direction: RosterChangeDir
   const q: string[] = [];
   if (date) q.push(`date=${date}`);
   if (direction) q.push(`focus=${direction}`);
-  return q.length ? `/staff/run?${q.join("&")}` : "/staff/run";
+  return q.length ? `/staff/shuttle?${q.join("&")}` : "/staff/shuttle";
 }
 
 export type RosterChangeNotice = { title: string; message: string; linkUrl: string; stableEventKey: string };

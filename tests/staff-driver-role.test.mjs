@@ -39,9 +39,10 @@ test("staff mobile navigation is role-aware", () => {
 
 test("driver shuttle page does not open instructor-only staff screens", () => {
   // 관리자 또는 기사님(승인된 추가 역할 포함)만. 선생님만인 사람은 /staff 로 돌려보낸다.
-  assert.match(staffShuttleSource, /const canUseShuttle = shuttleScope\(staff\.roles\) !== "NONE"/);
+  assert.match(staffShuttleSource, /if \(shuttleScope\(staff\.roles\) === "NONE"\) redirect/);
   assert.match(staffShuttleSource, /redirect\("\/staff"\)/);
-  assert.match(staffShuttleSource, /const canManageShuttle = staff\.roles\.admin/);
+  assert.match(staffShuttleSource, /canManageShuttle=\{staff\.roles\.admin\}/);
+  assert.match(staffShuttleSource, /await authorizeAssign\(staff\)/);
   // API 도 같은 판정을 쓴다 — 화면만 막고 API 가 열려 있으면 소용없다.
   assert.match(shuttleApiSource, /if \(shuttleScope\(staff\.roles\) === "NONE"\)/);
   // 예전 방식(역할 하나 비교)이 남아 있으면 「선생님 + 기사님」이 다시 막힌다.

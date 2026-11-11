@@ -29,8 +29,8 @@ test("칸 정리·문구·링크", () => {
   const cells = normalizeChangeCells([{ weekday: 3, direction: "ALIGHT" }, { weekday: 1, direction: "BOARD" }, { weekday: 3, direction: "ALIGHT" }, { weekday: 2, direction: "PIVOT" }, { weekday: 0, direction: "BOARD" }]);
   assert.deepEqual(cells, [{ weekday: 1, direction: "BOARD" }, { weekday: 3, direction: "ALIGHT" }, { weekday: 0, direction: "BOARD" }]);
   assert.equal(changeCellsLabel(cells), "월 등원·수 하원·일 등원");
-  assert.equal(rosterChangeLink("2026-11-12", "BOARD"), "/staff/run?date=2026-11-12&focus=BOARD");
-  assert.equal(rosterChangeLink(null, null), "/staff/run");
+  assert.equal(rosterChangeLink("2026-11-12", "BOARD"), "/staff/shuttle?date=2026-11-12&focus=BOARD");
+  assert.equal(rosterChangeLink(null, null), "/staff/shuttle");
 });
 
 test("알림: 가장 빠른 다음 운행일 칸으로 링크, 같은 칸 10분 안 변경은 같은 키(묶음), 칸이 없으면 null", () => {
@@ -39,7 +39,7 @@ test("알림: 가장 빠른 다음 운행일 칸으로 링크, 같은 칸 10분 
   assert.ok(n);
   assert.equal(n.title, "셔틀 명단 변경 · 화 하원·목 등원");
   assert.match(n.message, /^11월 화 하원·목 등원 — 허재원 학생 정류장 변경\./);
-  assert.equal(n.linkUrl, "/staff/run?date=2026-11-10&focus=ALIGHT"); // 화 11/10 이 목 11/12 보다 먼저
+  assert.equal(n.linkUrl, "/staff/shuttle?date=2026-11-10&focus=ALIGHT"); // 화 11/10 이 목 11/12 보다 먼저
   const same = buildRosterChangeNotice({ month: "2026-11", cells: [{ weekday: 2, direction: "ALIGHT" }, { weekday: 4, direction: "BOARD" }], summary: "다른 변경", todayYmd: "2026-11-09", nowMs: now + 60_000 });
   assert.equal(same!.stableEventKey, n.stableEventKey);
   const later = buildRosterChangeNotice({ month: "2026-11", cells: [{ weekday: 2, direction: "ALIGHT" }, { weekday: 4, direction: "BOARD" }], summary: "x", todayYmd: "2026-11-09", nowMs: now + ROSTER_NOTICE_BUNDLE_MS });

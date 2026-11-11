@@ -76,7 +76,10 @@ test("경로 판정: 기사님은 운행표를 열고, 선생님만인 사람은
 
 test("운행표로 가는 길이 두 곳에 있다", () => {
   // 셔틀 화면 맨 위 — 로그인한 기사님·관리자.
-  assert.match(shuttlePage, /href="\/staff\/run"/);
+  assert.match(shuttlePage, /await authorizeAssign\(staff\)/);
+  assert.match(shuttlePage, /getRegularDriverClasses\(date\)/);
+  assert.match(shuttlePage, /<UnifiedDriverClient/);
+  assert.doesNotMatch(shuttlePage, /href="\/staff\/run"|findRollingDriverRunToken/);
   // 기사님 앱 첫 화면(링크를 기억 못 한 경우) — 로그인 후 운행표로 돌아오게.
-  assert.match(driverHome, /redirect: "\/staff\/run"/);
+  assert.match(driverHome, /redirect: "\/staff\/shuttle"/);
 });
