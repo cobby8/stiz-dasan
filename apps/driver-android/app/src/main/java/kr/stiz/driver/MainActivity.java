@@ -9,6 +9,10 @@ import android.os.*;
 import android.view.View;
 import android.webkit.*;
 import android.widget.*;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
@@ -16,6 +20,7 @@ import java.util.Collections;
 import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
+    private FrameLayout contentRoot;
     private WebView web;
     private WebFileChooser fileChooser;
     private NativeAuthController nativeAuth;
@@ -73,16 +78,17 @@ public final class MainActivity extends Activity {
     }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        initializeContentRoot();
         if (BuildConfig.STIZ_SANDBOX && (!BuildConfig.DEBUG || !AppNavigationPolicy.sandboxOrigin(BuildConfig.STIZ_ORIGIN)
             || !WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
             || !WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST))) {
-            TextView message = new TextView(this); message.setText("격리시험 주소 또는 Android System WebView의 안전한 연결 기능을 확인해 주세요."); setContentView(message); return;
+            TextView message = new TextView(this); message.setText("격리시험 주소 또는 Android System WebView의 안전한 연결 기능을 확인해 주세요."); showContent(message); return;
         }
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            TextView message = new TextView(this); message.setText("Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
+            TextView message = new TextView(this); message.setText("Android System WebView를 업데이트한 뒤 다시 열어 주세요."); showContent(message); return;
         }
         if (BuildConfig.STIZ_UNIFIED_APP && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
+            TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); showContent(message); return;
         }
         web = new WebView(this); web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         if (BuildConfig.STIZ_SANDBOX) {
@@ -198,20 +204,13 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
         });
-        setContentView(web);
+        showContent(web);
         if (Build.VERSION.SDK_INT >= 33) {
             android.window.OnBackInvokedCallback callback = this::handleBack;
             backCallback = callback;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
             backRegistered = true;
         }
-        web.setOnApplyWindowInsetsListener((view, insets) -> {
-            if (Build.VERSION.SDK_INT >= 30) {
-                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            } else view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
-            return insets;
-        });
         androidx.core.content.ContextCompat.registerReceiver(this, receiver, new IntentFilter(DriverLocationService.EVENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         Uri incoming = getIntent().getData();
         worker.execute(() -> {
@@ -230,12 +229,38 @@ public final class MainActivity extends Activity {
             }
         });
     }
+    private void initializeContentRoot() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView()).setAppearanceLightStatusBars(true);
+        WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView()).setAppearanceLightNavigationBars(true);
+        contentRoot = new FrameLayout(this);
+        ViewCompat.setOnApplyWindowInsetsListener(contentRoot, (view, insets) -> {
+            int systemEdges = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+            Insets occupied = insets.getInsets(systemEdges);
+            view.setPadding(occupied.left, occupied.top, occupied.right, occupied.bottom);
+            // 앱 틀에서 확보한 여백은 웹에서 중복 적용하지 않고 키보드 정보는 전달한다.
+            return new WindowInsetsCompat.Builder(insets)
+                .setInsets(systemEdges, Insets.NONE)
+                .setDisplayCutout(null)
+                .build();
+        });
+        setContentView(contentRoot);
+    }
+
+    private void showContent(View view) {
+        if (view.getParent() == contentRoot) return;
+        contentRoot.removeAllViews();
+        contentRoot.addView(view, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        ViewCompat.requestApplyInsets(contentRoot);
+    }
+
     private void loadPageUnchecked(Uri uri) {
         if (web == null || isFinishing() || isDestroyed()) return;
         if (!trustedAppPage(uri) || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) return;
         if (needsAccountRunHandoff(uri.toString())) { showAccountRunPending(); return; }
         pendingStart.cancel();
-        setContentView(web);
+        showContent(web);
         web.loadUrl(uri.toString());
     }
     // 결제는 통합 앱의 운영 화면에서, 운행 중이 아닐 때만 연다(시험 앱·기사님 전용 앱 제외).
@@ -363,7 +388,7 @@ public final class MainActivity extends Activity {
         EditText input = new EditText(this); input.setHint("https://www.stiz-dasan.kr/driver/…"); input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI); layout.addView(input);
         Button button = new Button(this); button.setText("운행 화면 열기"); layout.addView(button);
         button.setOnClickListener(view -> { Uri uri = Uri.parse(input.getText().toString().trim()); if (trusted(uri)) { navigateSafely(uri); } else input.setError("공식 STIZ 운행 링크를 입력해 주세요."); });
-        setContentView(layout);
+        showContent(layout);
     }
     private String pageToken() {
         Uri uri = Uri.parse(web == null || web.getUrl() == null ? "" : web.getUrl());
