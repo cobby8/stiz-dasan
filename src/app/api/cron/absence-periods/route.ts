@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extendOpenAbsencePeriods } from "@/lib/regular/absence-period-runner";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * 연간 일정에 아직 없는 달은 건너뛰었다가 일정이 들어온 다음 날 채운다. 하루에 여러 번 돌아도 안전하다(이미 만든 날은 다시 안 만든다).
  * 학부모·코치·기사 알림은 보내지 않는다.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (
     process.env.NODE_ENV !== "development" &&
@@ -25,3 +26,6 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({ ok: true, ...result });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("absence-periods", handleGet);

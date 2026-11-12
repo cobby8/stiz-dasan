@@ -13,10 +13,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { syncSheetSlots } from "@/lib/syncSheetSlots";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     // Cron 인증 필수화 — CRON_SECRET 없으면 무조건 거부 (개발환경 예외)
     const cronSecret = process.env.CRON_SECRET;
     if (process.env.NODE_ENV !== "development") {
@@ -43,3 +44,6 @@ export async function GET(req: NextRequest) {
     console.log(`[cron/sync-schedule] 완료: ${result.synced}개 슬롯, ${result.syncedAt}`);
     return NextResponse.json({ success: true, ...result });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("sync-schedule", handleGet);

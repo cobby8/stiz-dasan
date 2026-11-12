@@ -105,12 +105,14 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                 // .notice-content 는 line-height/font-size를 자체 지정하므로 글자색만 컨테이너에서 상속시킨다(라이트/다크 대응).
                                 <div
                                     className="notice-content max-w-none text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] [overflow-wrap:anywhere]"
+                                    data-outside-links
                                     dangerouslySetInnerHTML={{ __html: sanitizeHtml(notice.content, { linkifyTextUrls: true }) }}
                                 />
                             ) : (
                                 // 옛 순수 텍스트 공지(하위호환): 줄바꿈 유지 + URL 자동 링크(toNoticeHtml이 이미 이스케이프해 안전, sanitize 미경유 → 500 위험 없음)
                                 <div
                                     className="max-w-none whitespace-pre-wrap text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] leading-loose text-[15px] md:text-base [overflow-wrap:anywhere]"
+                                    data-outside-links
                                     dangerouslySetInnerHTML={{ __html: toNoticeHtml(notice.content) }}
                                 />
                             )}
@@ -119,7 +121,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                             {imageAtts.length > 0 && (
                                 <div className="mt-8 space-y-4">
                                     {imageAtts.map((a, i) => (
-                                        <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="block group">
+                                        <a key={i} href={a.url} data-outside-link target="_blank" rel="noopener noreferrer" className="block group">
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             <img
                                                 src={a.url}
@@ -143,7 +145,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
                                         {fileAtts.map((a, i) => (
                                             <a
                                                 key={i}
-                                                href={a.url}
+                                                href={a.url} data-outside-link
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="flex items-center justify-between bg-[var(--color-public-tint)] hover:bg-[var(--color-public-tint)] dark:bg-[var(--color-public-paper)] dark:hover:bg-[var(--color-public-tint)] rounded-xl px-4 py-3.5 transition-colors group"

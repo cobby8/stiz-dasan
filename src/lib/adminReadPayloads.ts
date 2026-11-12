@@ -50,6 +50,20 @@ import {
 } from "@/lib/queries";
 import { prisma } from "@/lib/prisma";
 import { readPendingSocialPostDrafts } from "@/lib/socialDrafts";
+import { requireAdmin } from "@/lib/auth-guard";
+
+/**
+ * 관리자 읽기 함수의 문지기(d3, 2026-11-13).
+ * 이 파일의 모든 export 는 학생·학부모 개인정보를 돌려준다. 지금은 부르는 쪽(관리자 화면·/api/admin)이
+ * 각자 requireAdmin 을 하지만, 누가 새 경로에서 그냥 불러도 새지 않게 **진입점에서 한 번 더** 확인한다.
+ * ⚠️ requireAdmin 은 쿠키를 읽으므로 unstable_cache 안쪽에 넣을 수 없다 — 캐시 «바깥»을 감싼다.
+ */
+function adminOnly<A extends unknown[], R>(load: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+    return async (...args: A) => {
+        await requireAdmin();
+        return load(...args);
+    };
+}
 
 const DASHBOARD_MONTHS = 6;
 const ADMIN_LIST_PAGE_SIZE = 50;
@@ -398,7 +412,7 @@ export function getCachedAdminStudentsPayload(limit?: number) {
             ? Math.min(Math.floor(limit), 500)
             : undefined;
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [students, classes] = await Promise.all([
                 getStudents(normalizedLimit),
@@ -409,10 +423,10 @@ export function getCachedAdminStudentsPayload(limit?: number) {
         },
         [`admin-students-v3-${normalizedLimit ?? "all"}`],
         { revalidate: 60, tags: ["admin-students", "admin-classes"] },
-    )();
+    ))();
 }
 
-export const getCachedAdminStudentImportSummaryPayload = unstable_cache(
+export const getCachedAdminStudentImportSummaryPayload = adminOnly(unstable_cache(
     async () => {
         const sheetImportSummary = await getStudentSheetImportSummary();
 
@@ -420,7 +434,7 @@ export const getCachedAdminStudentImportSummaryPayload = unstable_cache(
     },
     ["admin-students-import-summary-v1"],
     { revalidate: 60, tags: ["admin-student-imports"] },
-);
+));
 
 async function getStudentSheetImportSummary() {
     try {
@@ -636,19 +650,19 @@ async function getStudentSheetImportSummary() {
     }
 }
 
-export const getCachedAdminDashboardPrimaryPayload = unstable_cache(
+export const getCachedAdminDashboardPrimaryPayload = adminOnly(unstable_cache(
     loadDashboardPrimaryPayload,
     ["admin-dashboard-primary-v2"],
     { revalidate: 60, tags: ["admin-dashboard"] },
-);
+));
 
-export const getCachedAdminDashboardPayload = unstable_cache(
+export const getCachedAdminDashboardPayload = adminOnly(unstable_cache(
     loadDashboardPayload,
     ["admin-dashboard-data-v2"],
     { revalidate: 300, tags: ["admin-dashboard"] },
-);
+));
 
-export const getCachedAdminClassesPayload = unstable_cache(
+export const getCachedAdminClassesPayload = adminOnly(unstable_cache(
     async () => {
         const [programs, classes] = await Promise.all([
             getPrograms(),
@@ -659,9 +673,9 @@ export const getCachedAdminClassesPayload = unstable_cache(
     },
     ["admin-classes-v1"],
     { revalidate: 60, tags: ["admin-classes", "admin-programs"] },
-);
+));
 
-export const getCachedAdminProgramsPayload = unstable_cache(
+export const getCachedAdminProgramsPayload = adminOnly(unstable_cache(
     async () => {
         const programs = await getPrograms();
 
@@ -669,9 +683,9 @@ export const getCachedAdminProgramsPayload = unstable_cache(
     },
     ["admin-programs-page-v1"],
     { revalidate: 60, tags: ["admin-programs"] },
-);
+));
 
-export const getCachedAdminCoachesPayload = unstable_cache(
+export const getCachedAdminCoachesPayload = adminOnly(unstable_cache(
     async () => {
         const coaches = await getCoaches();
 
@@ -679,9 +693,9 @@ export const getCachedAdminCoachesPayload = unstable_cache(
     },
     ["admin-coaches-page-v1"],
     { revalidate: 60, tags: ["admin-coaches"] },
-);
+));
 
-export const getCachedAdminTestimonialsPayload = unstable_cache(
+export const getCachedAdminTestimonialsPayload = adminOnly(unstable_cache(
     async () => {
         const [testimonials, settings] = await Promise.all([
             getAllTestimonials(),
@@ -695,9 +709,9 @@ export const getCachedAdminTestimonialsPayload = unstable_cache(
     },
     ["admin-testimonials-page-v1"],
     { revalidate: 60, tags: ["admin-testimonials", "academy-settings"] },
-);
+));
 
-export const getCachedAdminBillingPayload = unstable_cache(
+export const getCachedAdminBillingPayload = adminOnly(unstable_cache(
     async () => {
         const [templates, programs] = await Promise.all([
             getBillingTemplates(),
@@ -708,9 +722,9 @@ export const getCachedAdminBillingPayload = unstable_cache(
     },
     ["admin-finance-billing-page-v1"],
     { revalidate: 60, tags: ["admin-finance-billing", "admin-programs"] },
-);
+));
 
-export const getCachedAdminSmsTemplatesPayload = unstable_cache(
+export const getCachedAdminSmsTemplatesPayload = adminOnly(unstable_cache(
     async () => {
         const templates = await getSmsTemplates();
 
@@ -718,7 +732,7 @@ export const getCachedAdminSmsTemplatesPayload = unstable_cache(
     },
     ["admin-sms-templates-page-v1"],
     { revalidate: 60, tags: ["admin-sms-templates"] },
-);
+));
 
 async function getAdminGalleryPostCount() {
     try {
@@ -738,7 +752,7 @@ export function getCachedAdminGalleryPostsPagePayload(options?: AdminListPayload
         offset: options?.offset,
     });
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [posts, total] = await Promise.all([
                 getGalleryPosts({ limit, offset }),
@@ -758,7 +772,7 @@ export function getCachedAdminGalleryPostsPagePayload(options?: AdminListPayload
         },
         ["admin-gallery-posts", String(limit), String(offset)],
         { revalidate: 30, tags: ["admin-gallery"] },
-    )();
+    ))();
 }
 
 export function getCachedAdminGalleryPayload(options?: AdminListPayloadOptions) {
@@ -767,7 +781,7 @@ export function getCachedAdminGalleryPayload(options?: AdminListPayloadOptions) 
         offset: options?.offset,
     });
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [posts, classes, settings, socialDrafts, total] = await Promise.all([
                 getGalleryPosts({ limit, offset }),
@@ -800,7 +814,7 @@ export function getCachedAdminGalleryPayload(options?: AdminListPayloadOptions) 
         },
         ["admin-gallery-page-v2", String(limit), String(offset)],
         { revalidate: 60, tags: ["admin-gallery", "admin-classes", "academy-settings"] },
-    )();
+    ))();
 }
 
 async function getAdminNoticeCount() {
@@ -816,7 +830,7 @@ async function getAdminNoticeCount() {
 }
 
 export function getCachedAdminFinancePayload(year: number, month: number) {
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [payments, summary] = await Promise.all([
                 getPayments(year, month),
@@ -827,7 +841,7 @@ export function getCachedAdminFinancePayload(year: number, month: number) {
         },
         ["admin-finance", String(year), String(month)],
         { revalidate: 30, tags: ["admin-finance", "admin-stats"] },
-    )();
+    ))();
 }
 
 export function getCachedAdminNoticesPagePayload(options?: AdminListPayloadOptions) {
@@ -836,7 +850,7 @@ export function getCachedAdminNoticesPagePayload(options?: AdminListPayloadOptio
         offset: options?.offset,
     });
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [notices, total] = await Promise.all([
                 getNotices({ limit, offset }),
@@ -856,7 +870,7 @@ export function getCachedAdminNoticesPagePayload(options?: AdminListPayloadOptio
         },
         ["admin-notices-items", String(limit), String(offset)],
         { revalidate: 30, tags: ["admin-notices"] },
-    )();
+    ))();
 }
 
 export function getCachedAdminNoticesPayload(options?: AdminListPayloadOptions) {
@@ -865,7 +879,7 @@ export function getCachedAdminNoticesPayload(options?: AdminListPayloadOptions) 
         offset: options?.offset,
     });
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [notices, classes, total] = await Promise.all([
                 getNotices({ limit, offset }),
@@ -887,7 +901,7 @@ export function getCachedAdminNoticesPayload(options?: AdminListPayloadOptions) 
         },
         ["admin-notices-page-v2", String(limit), String(offset)],
         { revalidate: 60, tags: ["admin-notices", "admin-classes"] },
-    )();
+    ))();
 }
 
 function attendancePayloadDateKey(date?: string | null) {
@@ -902,7 +916,7 @@ function attendancePayloadDateKey(date?: string | null) {
 
 export function getCachedAdminAttendancePayload(date?: string | null) {
     const dateKey = attendancePayloadDateKey(date);
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const classes = await getAttendanceClassOptions(dateKey);
 
@@ -910,10 +924,10 @@ export function getCachedAdminAttendancePayload(date?: string | null) {
         },
         ["admin-attendance-page-v2", dateKey],
         { revalidate: 30, tags: ["admin-classes", "admin-seasonal"] },
-    )();
+    ))();
 }
 
-export const getCachedAdminApplySummaryPayload = unstable_cache(
+export const getCachedAdminApplySummaryPayload = adminOnly(unstable_cache(
     async () => {
         const stats = await getEnrollApplicationStats();
 
@@ -921,7 +935,7 @@ export const getCachedAdminApplySummaryPayload = unstable_cache(
     },
     ["admin-apply-summary-v1"],
     { revalidate: 30, tags: ["admin-apply"] },
-);
+));
 
 type AdminApplySourceStatsRange = "ALL" | "30D" | "THIS_MONTH";
 
@@ -953,7 +967,7 @@ export function getCachedAdminApplySourceStatsPayload(range: AdminApplySourceSta
     const normalizedRange: AdminApplySourceStatsRange = ["ALL", "30D", "THIS_MONTH"].includes(range) ? range : "30D";
     const startIso = sourceStatsStartIso(normalizedRange);
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const whereClause = startIso ? `WHERE "createdAt" >= $1::timestamptz` : "";
             const params = startIso ? [startIso] : [];
@@ -1068,13 +1082,13 @@ export function getCachedAdminApplySourceStatsPayload(range: AdminApplySourceSta
         },
         ["admin-apply-source-stats-v1", normalizedRange, startIso ?? "all"],
         { revalidate: 60, tags: ["admin-apply", "admin-trial"] },
-    )();
+    ))();
 }
 
 export function getCachedAdminApplyPayload(options?: AdminListPayloadOptions) {
     const page = normalizeAdminListPayloadOptions(options);
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [applicationRows, stats, classes] = await Promise.all([
                 getEnrollApplications({ limit: page.limit + 1, offset: page.offset }),
@@ -1099,10 +1113,10 @@ export function getCachedAdminApplyPayload(options?: AdminListPayloadOptions) {
         },
         ["admin-apply-v2", String(page.limit), String(page.offset)],
         { revalidate: 30, tags: ["admin-apply", "admin-classes"] },
-    )();
+    ))();
 }
 
-export const getCachedAdminWaitlistPayload = unstable_cache(
+export const getCachedAdminWaitlistPayload = adminOnly(unstable_cache(
     async () => {
         const [waitlist, capacityInfo, classes] = await Promise.all([
             getWaitlistAll(),
@@ -1114,9 +1128,9 @@ export const getCachedAdminWaitlistPayload = unstable_cache(
     },
     ["admin-waitlist-v1"],
     { revalidate: 30, tags: ["admin-waitlist", "admin-classes", "admin-students"] },
-);
+));
 
-export const getCachedAdminMakeupPayload = unstable_cache(
+export const getCachedAdminMakeupPayload = adminOnly(unstable_cache(
     async () => {
         const [sessions, classes] = await Promise.all([
             getMakeupSessions(),
@@ -1127,9 +1141,9 @@ export const getCachedAdminMakeupPayload = unstable_cache(
     },
     ["admin-makeup-v1"],
     { revalidate: 30, tags: ["admin-makeup", "admin-classes"] },
-);
+));
 
-export const getCachedAdminStatsPayload = unstable_cache(
+export const getCachedAdminStatsPayload = adminOnly(unstable_cache(
     async () => {
         const [
             monthlyRevenue,
@@ -1161,9 +1175,9 @@ export const getCachedAdminStatsPayload = unstable_cache(
     },
     ["admin-stats-v1"],
     { revalidate: 60, tags: ["admin-stats"] },
-);
+));
 
-export const getCachedAdminStaffPayload = unstable_cache(
+export const getCachedAdminStaffPayload = adminOnly(unstable_cache(
     async () => {
         // 2026-11-12: 추가 역할 직원(보기 전용 줄)·초대 문자 마지막 발송·담당 반을 같이 싣는다(기존 표만 읽음)
         // 로그인 차단 실패 건수(퇴사 처리 뒤 «다시 시도» 메뉴용)도 함께
@@ -1181,7 +1195,7 @@ export const getCachedAdminStaffPayload = unstable_cache(
     },
     ["admin-staff-v3"],
     { revalidate: 60, tags: ["admin-staff", "admin-coaches"] },
-);
+));
 
 async function getAdminRequestStatusCounts() {
     const emptyCounts = {
@@ -1221,7 +1235,7 @@ export function getCachedAdminRequestsPayload(options?: AdminRequestsPayloadOpti
         ? options?.statusFilter
         : undefined;
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [requests, counts] = await Promise.all([
                 getAllRequests({ statusFilter, limit, offset }),
@@ -1244,10 +1258,10 @@ export function getCachedAdminRequestsPayload(options?: AdminRequestsPayloadOpti
         },
         ["admin-requests-page-v2", statusFilter ?? "ALL", String(limit), String(offset)],
         { revalidate: 30, tags: ["admin-requests"] },
-    )();
+    ))();
 }
 
-export const getCachedAdminSettingsPayload = unstable_cache(
+export const getCachedAdminSettingsPayload = adminOnly(unstable_cache(
     async () => {
         try {
             const settings = await getAcademySettings();
@@ -1259,9 +1273,9 @@ export const getCachedAdminSettingsPayload = unstable_cache(
     },
     ["admin-settings-page-v1"],
     { revalidate: 60, tags: ["academy-settings"] },
-);
+));
 
-export const getCachedAdminAnnualPayload = unstable_cache(
+export const getCachedAdminAnnualPayload = adminOnly(unstable_cache(
     async () => {
         const [events, settings] = await Promise.all([
             getAnnualEvents(),
@@ -1275,9 +1289,9 @@ export const getCachedAdminAnnualPayload = unstable_cache(
     },
     ["admin-annual-v1"],
     { revalidate: 60, tags: ["admin-annual", "academy-settings"] },
-);
+));
 
-export const getCachedAdminFaqPayload = unstable_cache(
+export const getCachedAdminFaqPayload = adminOnly(unstable_cache(
     async () => {
         const faqs = await getAllFaqs();
 
@@ -1285,9 +1299,9 @@ export const getCachedAdminFaqPayload = unstable_cache(
     },
     ["admin-faq-v1"],
     { revalidate: 60, tags: ["admin-faq"] },
-);
+));
 
-export const getCachedAdminFeedbackPayload = unstable_cache(
+export const getCachedAdminFeedbackPayload = adminOnly(unstable_cache(
     async () => {
         const feedbacks = await getAllFeedbacks();
 
@@ -1295,10 +1309,10 @@ export const getCachedAdminFeedbackPayload = unstable_cache(
     },
     ["admin-feedback-page-v1"],
     { revalidate: 60, tags: ["admin-feedback"] },
-);
+));
 
 export function getCachedAdminReportListPayload(limit: number) {
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const sessions = await getSessionsForReportList(limit);
 
@@ -1306,10 +1320,10 @@ export function getCachedAdminReportListPayload(limit: number) {
         },
         ["admin-attendance-report-list", String(limit)],
         { revalidate: 30, tags: ["admin-attendance-report", "admin-classes"] },
-    )();
+    ))();
 }
 
-export const getCachedAdminSmsPayload = unstable_cache(
+export const getCachedAdminSmsPayload = adminOnly(unstable_cache(
     async () => {
         const coaches = await getSmsCoachPhones();
 
@@ -1317,9 +1331,9 @@ export const getCachedAdminSmsPayload = unstable_cache(
     },
     ["admin-sms-page-v1"],
     { revalidate: 60, tags: ["admin-coaches"] },
-);
+));
 
-export const getCachedAdminSchedulePayload = unstable_cache(
+export const getCachedAdminSchedulePayload = adminOnly(unstable_cache(
     async () => {
         const [dbScheduleData, coaches, programs] = await Promise.all([
             getScheduleSlotAdminData(),
@@ -1358,12 +1372,12 @@ export const getCachedAdminSchedulePayload = unstable_cache(
     },
     ["admin-schedule-page-v1"],
     { revalidate: 60, tags: ["admin-schedule", "admin-programs"] },
-);
+));
 
 export function getCachedAdminTrialPayload(options?: AdminListPayloadOptions) {
     const page = normalizeAdminListPayloadOptions(options);
 
-    return unstable_cache(
+    return adminOnly(unstable_cache(
         async () => {
             const [leadRows, stats, classes] = await Promise.all([
                 getTrialLeads({ limit: page.limit + 1, offset: page.offset }),
@@ -1388,5 +1402,5 @@ export function getCachedAdminTrialPayload(options?: AdminListPayloadOptions) {
         },
         ["admin-trial-v4", String(page.limit), String(page.offset)],
         { revalidate: 30, tags: ["admin-trial", "admin-classes"] },
-    )();
+    ))();
 }

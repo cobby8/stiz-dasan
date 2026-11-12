@@ -49,7 +49,9 @@ test("상태 전이는 «지금 상태»를 조건에 걸어 한 줄만 바꾼�
   assert.match(action, /return transition\(grantId, "ACTIVE", "REVOKED", "원장 회수"\)/);
   // 누가 처리했는지 남긴다(DB CHECK 가 decidedAt 을 강제한다).
   assert.match(action, /"decidedAt" = NOW\(\), "decidedBy" = \$3/);
-  assert.match(authGuard, /export async function requireOwner[\s\S]*?appUserId: appUser\.id/);
+  // 2026-11-13: requireOwner 는 React cache() 로 감싼 내보내기 — 본문은 requireOwnerUncached
+  assert.match(authGuard, /async function requireOwnerUncached[\s\S]*?appUserId: appUser\.id/);
+  assert.match(authGuard, /export const requireOwner\b[^\n]*= cache\(requireOwnerUncached\);/);
 });
 
 test("목록은 살아 있는 건만, 탈퇴한 계정은 빼고, 판단 근거를 함께 보여준다", () => {

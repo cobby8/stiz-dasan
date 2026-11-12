@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { syncInstagramGalleryPostsToDb } from "@/lib/instagramGallerySync";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ async function getInstagramBusinessAccountId() {
   return rows[0]?.instagramBusinessAccountId ?? null;
 }
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (process.env.NODE_ENV !== "development") {
     if (!cronSecret || req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
@@ -48,3 +49,6 @@ export async function GET(req: NextRequest) {
     { status: result.ok ? 200 : 400 },
   );
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("instagram-gallery", handleGet);

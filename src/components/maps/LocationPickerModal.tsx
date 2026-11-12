@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import { hasShuttlePlaceName, SHUTTLE_PLACE_NAME_MAX, SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE } from "@/lib/shuttle/placeNameRule";
 
 export type MapLocationData = {
@@ -116,6 +117,8 @@ export default function LocationPickerModal({
   const [placeName, setPlaceName] = useState(initialValue?.placeName ?? "");
   const [location, setLocation] = useState<MapLocationData | undefined>(initialValue);
   const [isLocating, setIsLocating] = useState(false);
+  // 스토어 앱(현재 버전)은 현재 위치를 못 읽는다 → «현재 위치» 버튼을 숨긴다(검색·지도 이동은 그대로). 판정은 @/lib/storeApp 한 곳(d2)
+  const appLacksGeolocation = useStoreAppLacks("geolocation");
   const [message, setMessage] = useState("지도를 움직여 핀을 실제 탑승 위치에 맞춰주세요.");
   const apiKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY?.trim();
 
@@ -382,9 +385,9 @@ export default function LocationPickerModal({
                 <div ref={mapElementRef} className="absolute inset-0" aria-label="승하차 위치 지도" />
                 {status === "loading" && <div className="absolute inset-0 grid place-items-center text-sm font-bold text-gray-500">지도를 불러오는 중...</div>}
                 <span className="material-symbols-outlined pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full text-5xl text-brand-orange-500 drop-shadow" aria-hidden="true">location_on</span>
-                <button type="button" onClick={useCurrentLocation} disabled={confirmPending || isLocating} className="absolute bottom-3 right-3 z-10 flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-black text-gray-800 shadow-lg disabled:opacity-60 dark:bg-gray-800 dark:text-white">
+                {!appLacksGeolocation && <button type="button" onClick={useCurrentLocation} disabled={confirmPending || isLocating} className="absolute bottom-3 right-3 z-10 flex min-h-11 items-center gap-1 rounded-xl bg-white px-3 text-sm font-black text-gray-800 shadow-lg disabled:opacity-60 dark:bg-gray-800 dark:text-white">
                   <span className="material-symbols-outlined text-lg" aria-hidden="true">my_location</span>{isLocating ? "확인 중" : "현재 위치"}
-                </button>
+                </button>}
               </div>
               <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-900">
                 <p className="text-xs text-gray-500 dark:text-gray-400">{message}</p>

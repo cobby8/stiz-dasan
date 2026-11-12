@@ -4,12 +4,13 @@ import { getSolapiBatchResults } from "@/lib/sms";
 // (이 크론은 실행 검사 테스트가 import 를 제한해 상수만 복사한다. tests/parent-notice.test.mjs 가 두 값이 같은지 본다)
 const BMS_NOT_DELIVERED_PREFIX = "BMS_NOT_DELIVERED:";
 import { finalizeManualSolapiResult, finalizeMessageDeliveryBatch, getPendingManualSolapiDeliveries, getPendingManualSolapiGroups, markManualMessageUncertain } from "@/lib/message-ledger";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 const MAX_GROUPS_PER_RUN = 5;
 const MISSING_RESULT_GRACE_MS = 10 * 60 * 1000;
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const groups = await getPendingManualSolapiGroups(MAX_GROUPS_PER_RUN);
@@ -51,3 +52,6 @@ export async function GET(request: NextRequest) {
   }
   return NextResponse.json({ success: failed === 0 && uncertain === 0, groups: groups.length, sent, failed, pending, uncertain });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("manual-message-reconcile", handleGet);

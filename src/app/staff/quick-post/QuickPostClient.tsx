@@ -366,7 +366,7 @@ export default function QuickPostClient({
                   </HideInInstalledApp>
                   {draft?.instagramPermalink && (
                     <a
-                      href={draft.instagramPermalink}
+                      href={draft.instagramPermalink} data-outside-link
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] px-3 text-sm font-black"

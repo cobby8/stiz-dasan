@@ -95,5 +95,6 @@ test("④ 알림 이동 주소: 내부 경로만, 바깥 주소는 null(읽음�
   }
   const home = read("src/app/mypage/ParentNotificationBell.tsx");
   assert.match(home, /const href = safeInternalHref\(n\.linkUrl\)/);
-  assert.match(home, /if \(!isRead\) await markMyNotificationRead\(id\);\s*if \(href\) \{\s*setOpen\(false\);\s*router\.push\(href\);/, "읽음 처리 후 내부 주소로 이동");
+  // 2026-11-13(d1): 읽음 처리 통신이 실패해도 화면 전체가 오류로 바뀌지 않게 try/catch — 순서(읽음 → 이동)는 그대로
+  assert.match(home, /if \(!isRead\) \{\s*try \{\s*await markMyNotificationRead\(id\);[\s\S]*?\}\s*\}\s*if \(href\) \{\s*setOpen\(false\);\s*router\.push\(href\);/, "읽음 처리 후 내부 주소로 이동");
 });

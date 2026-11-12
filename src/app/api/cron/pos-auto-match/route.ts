@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPosAutoMatchCron } from "@/lib/pos/paymentNoticeService";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * 여러 번 돌아도 안전하다: 토스 결제 ID 잠금 + 이미 반영 확인 + 조건부 UPDATE(부분 반영 없음).
  * 보류된 결제에는 DM 을 다시 보내지 않는다.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
     if (
         process.env.NODE_ENV !== "development" &&
@@ -24,3 +25,6 @@ export async function GET(req: NextRequest) {
     const result = await runPosAutoMatchCron();
     return NextResponse.json({ ok: true, ...result });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("pos-auto-match", handleGet);

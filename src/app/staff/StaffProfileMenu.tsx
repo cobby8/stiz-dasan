@@ -7,6 +7,7 @@ import { logoutStaff } from "@/app/actions/auth";
 import { prepareStaffNavigation } from "./staffNavigation";
 import AccountViewSwitcher from "@/components/AccountViewSwitcher";
 import type { AccountViewOption } from "@/lib/account-views";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 
 // 공개 홈페이지 링크(홈·공지·프로그램·시간표·갤러리)는 두지 않는다.
 // 선생님 앱은 manifest scope 가 /staff 라, 홈페이지로 나가면 설치된 앱을 벗어나
@@ -18,6 +19,8 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
   const pathname = usePathname();
   const isSessionInProgress = pathname.startsWith("/staff/sessions/");
   const [isOpen, setIsOpen] = useState(false);
+  // 스토어 앱 안이면 «설치 안내»가 필요 없다(이미 앱) — 판정은 @/lib/storeApp 한 곳(d2)
+  const hideInstallGuide = useStoreAppLacks("install");
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState("");
@@ -145,10 +148,10 @@ export default function StaffProfileMenu({ staffName, staffRole, accountViews = 
             <Link href="/account" onClick={event=>requestPublicNavigation(event,"/account")} className="mb-3 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[var(--color-academy-soft)] text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]">
               <span className="material-symbols-outlined" aria-hidden="true">manage_accounts</span>내 계정
             </Link>
-            <div className="grid grid-cols-2 gap-2">
-              <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[var(--color-academy-soft)] text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]">
+            <div className={`grid gap-2 ${hideInstallGuide ? "grid-cols-1" : "grid-cols-2"}`}>
+              {!hideInstallGuide && <Link href="/staff/install" onClick={(event) => requestPublicNavigation(event, "/staff/install")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[var(--color-academy-soft)] text-sm font-bold text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-line)]">
                 <span className="material-symbols-outlined" aria-hidden="true">install_mobile</span>설치 안내
-              </Link>
+              </Link>}
               {isSessionInProgress ? (
                 <button type="button" disabled title="수업 종료 후 로그아웃할 수 있습니다" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-academy-soft)] text-sm font-bold text-[var(--color-academy-faint)] disabled:cursor-not-allowed">
                   <span className="material-symbols-outlined" aria-hidden="true">lock_clock</span>수업 종료 후 로그아웃

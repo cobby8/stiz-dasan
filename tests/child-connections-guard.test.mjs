@@ -8,6 +8,8 @@ function load(file, dependencies={}) {
   const exports={};
   new Function("require","exports",compiled)(name=>{
     if(name in dependencies)return dependencies[name];
+    // auth-guard 의 React cache()(요청 단위 기억, 2026-11-13)는 테스트에서는 그대로 통과시킨다
+    if(name==="react")return {cache:(fn)=>fn};
     throw new Error(`Unexpected dependency ${name}`);
   },exports);
   return exports;

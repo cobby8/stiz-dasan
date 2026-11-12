@@ -51,3 +51,55 @@ export function isStoreApp(): boolean {
   }
   return false;
 }
+
+/**
+ * 스토어 앱(현재 버전)이 아직 못 하는 일 — 출시 전 점검 d2(2026-11-13).
+ *   push        앱 알림(웹푸시)
+ *   links       바깥 주소(카카오채널·인스타·블로그·쇼핑몰·첨부파일 등) 열기
+ *   geolocation 현재 위치 읽기
+ *   voice       음성 입력(받아쓰기)
+ *   install     «앱 설치» 안내(이미 앱이라 필요 없다)
+ *   sms         문자 앱 열기(sms: 주소)
+ *
+ * 왜 «한 곳의 판정»인가: 앱 새 버전이 이 기능들을 지원하게 되면, 시작 주소에 `/store-app?caps=push,links`
+ * 처럼 «할 수 있는 것»을 실어 보내기만 하면 화면 곳곳의 우회(버튼 숨김·주소 복사)가 자동으로 꺼진다.
+ * 화면마다 따로 판정하면 앱이 바뀐 뒤에도 한쪽에만 우회가 남는다.
+ */
+export type StoreAppCapability = "push" | "links" | "geolocation" | "voice" | "install" | "sms";
+
+export const STORE_APP_CAPS_KEY = "stiz-store-app-caps";
+
+/** 앱이 시작 주소로 보낸 «할 수 있는 것» 목록을 기억한다(표식과 같은 sessionStorage — 이유는 맨 위 설명). */
+export function recordStoreAppCapabilities(raw: string | null | undefined) {
+  try {
+    const caps = parseStoreAppCapabilities(raw);
+    if (caps.length > 0) window.sessionStorage.setItem(STORE_APP_CAPS_KEY, caps.join(","));
+  } catch {
+    // 저장 실패 = 신호 없음 → 우회가 켜진 채로 남는다(안 되는 버튼이 보이는 것보다 낫다)
+  }
+}
+
+/** "push, links ,foo" → ["push","links"] (모르는 값은 버린다) */
+export function parseStoreAppCapabilities(raw: string | null | undefined): StoreAppCapability[] {
+  const known: StoreAppCapability[] = ["push", "links", "geolocation", "voice", "install", "sms"];
+  return String(raw ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is StoreAppCapability => (known as string[]).includes(s));
+}
+
+/**
+ * 판정 함수(유일): 지금 스토어 앱 안이고, 그 앱이 cap 을 못 한다고 봐야 하나.
+ * - 브라우저·기존 설치 앱이면 항상 false(아무것도 숨기지 않는다)
+ * - 스토어 앱인데 앱이 cap 을 할 수 있다고 알려 왔으면 false
+ * ⚠️ 브라우저 전용(window). 화면에서는 useStoreAppLacks 훅으로 쓴다(첫 그림은 «브라우저»).
+ */
+export function storeAppLacks(cap: StoreAppCapability): boolean {
+  if (!isStoreApp()) return false;
+  try {
+    const caps = parseStoreAppCapabilities(window.sessionStorage.getItem(STORE_APP_CAPS_KEY));
+    return !caps.includes(cap);
+  } catch {
+    return true;
+  }
+}

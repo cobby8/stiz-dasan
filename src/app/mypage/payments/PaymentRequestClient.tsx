@@ -300,7 +300,7 @@ export default function PaymentRequestClient({
                         )}
                         {contact.kakaoChannelUrl && (
                           <a
-                            href={contact.kakaoChannelUrl}
+                            href={contact.kakaoChannelUrl} data-outside-link
                             target="_blank"
                             rel="noopener noreferrer"
                             className="academy-button-secondary min-h-11 whitespace-nowrap px-3 text-xs"

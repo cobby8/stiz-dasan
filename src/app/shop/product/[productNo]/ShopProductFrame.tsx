@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import FontFreeIcon from "@/components/ui/FontFreeIcon";
 import HqSellerNotice from "@/components/HqSellerNotice";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
+import { copyInsteadOfOpening } from "@/lib/outsideLink";
 
 type ClubShopProduct = {
   productNo: number;
@@ -42,6 +44,8 @@ function getTrustedProductUrl(rawUrl: string) {
 export default function ShopProductFrame({ productNo }: { productNo: string }) {
   const [state, setState] = useState<ProductState>({ status: "loading" });
   const [frameLoading, setFrameLoading] = useState(true);
+  // 스토어 앱이 바깥 주소를 못 열면 true — 판정은 @/lib/storeApp 한 곳(앱 새 버전이 caps=links 를 보내면 자동 해제)
+  const appCannotOpen = useStoreAppLacks("links");
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +121,7 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
 
         {state.status === "ready" && (
           <a
-            href={state.sourceUrl}
+            href={state.sourceUrl} data-outside-link
             target="_blank"
             rel="noreferrer"
             title="외부 브라우저에서 열기"
@@ -153,7 +157,26 @@ export default function ShopProductFrame({ productNo }: { productNo: string }) {
           </div>
         )}
 
-        {state.status === "ready" && (
+        {/* 스토어 앱(현재 버전)은 본사 쇼핑몰 구매 화면(바깥 주소)을 열지 못한다 → 주소 복사 안내로 바꾼다(d2) */}
+        {state.status === "ready" && appCannotOpen && (
+          <div className="flex h-full items-center justify-center p-6">
+            <div className="max-w-sm text-center">
+              <h2 className="text-lg font-black text-[var(--color-academy-ink)]">구매는 휴대폰 브라우저에서 해 주세요</h2>
+              <p className="mt-2 break-keep text-sm leading-6 text-[var(--color-academy-muted)]">
+                앱에서는 본사 쇼핑몰 구매 화면을 열 수 없어요. 주소를 복사해 휴대폰 브라우저에 붙여 넣어 주세요.
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyInsteadOfOpening(state.sourceUrl)}
+                className="academy-button-primary mt-5 min-h-11 px-5"
+              >
+                구매 주소 복사
+              </button>
+            </div>
+          </div>
+        )}
+
+        {state.status === "ready" && !appCannotOpen && (
           <>
             {frameLoading && <ProductLoading />}
             <iframe

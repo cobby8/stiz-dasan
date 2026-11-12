@@ -141,7 +141,7 @@ export default function PublicFooter({
                 {socialLinks.map((link) => (
                   <a
                     key={link.label}
-                    href={link.href}
+                    href={link.href} data-outside-link
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rounded-full border border-[var(--color-public-dark-line)] dark:border-[var(--color-public-line)] px-3 py-1 text-xs font-bold text-[var(--color-public-dark-muted)] dark:text-[var(--color-public-muted)] hover:border-[var(--color-public-accent)] hover:text-[var(--color-public-accent)] dark:hover:border-brand-neon-lime dark:hover:text-brand-neon-lime transition"
@@ -160,7 +160,7 @@ export default function PublicFooter({
               {QUICK_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
-                    href={link.href}
+                    href={link.href} data-outside-link
                     className="hover:text-[var(--color-public-accent)] dark:text-brand-neon-lime dark:hover:text-white transition-colors"
                   >
                     {link.label}

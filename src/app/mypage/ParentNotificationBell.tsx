@@ -29,6 +29,8 @@ const SETTINGS_NOTIFICATION_HREF = "/mypage/settings#settings-notifications";
 export default function ParentNotificationBell({ notifications, unreadCount }: { notifications: BellNotification[]; unreadCount: number }) {
     const [open, setOpen] = useState(false);
     const [isPending, startTransition] = useTransition();
+    // 통신 실패 안내 한 줄(d1) — 실패해도 화면 전체가 오류로 바뀌지 않게 그 자리에서 알린다
+    const [bellError, setBellError] = useState("");
     const boxRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const pathname = usePathname();
@@ -62,8 +64,16 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
 
     // 알림 열기 — 안 읽었으면 읽음 처리 후, 내부 주소가 있으면 그 화면으로 간다
     function openNotification(id: string, isRead: boolean, href: string | null) {
+        setBellError("");
         startTransition(async () => {
-            if (!isRead) await markMyNotificationRead(id);
+            // 읽음 표시가 실패해도 알림 화면으로는 간다(읽음은 다음에 다시 표시하면 된다)
+            if (!isRead) {
+                try {
+                    await markMyNotificationRead(id);
+                } catch {
+                    if (!href) setBellError("보내지 못했습니다. 다시 시도해 주세요.");
+                }
+            }
             if (href) {
                 setOpen(false);
                 router.push(href);
@@ -109,7 +119,16 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                             {unreadCount > 0 && (
                                 <button
                                     type="button"
-                                    onClick={() => startTransition(async () => { await markAllMyNotificationsRead(); })}
+                                    onClick={() => {
+                                        setBellError("");
+                                        startTransition(async () => {
+                                            try {
+                                                await markAllMyNotificationsRead();
+                                            } catch {
+                                                setBellError("보내지 못했습니다. 다시 시도해 주세요.");
+                                            }
+                                        });
+                                    }}
                                     disabled={isPending}
                                     className="academy-button-text text-[var(--color-academy-primary)]"
                                 >
@@ -125,6 +144,10 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                                 <span className="material-symbols-outlined leading-none" style={{ fontSize: "20px" }} aria-hidden="true">close</span>
                             </button>
                         </div>
+
+                        {bellError && (
+                            <p role="alert" className="border-b border-[var(--color-academy-line)] px-4 py-2 text-xs font-bold text-[var(--color-academy-danger)]">{bellError}</p>
+                        )}
 
                         {/* 목록 */}
                         <div className="min-h-0 flex-1 overflow-y-auto">

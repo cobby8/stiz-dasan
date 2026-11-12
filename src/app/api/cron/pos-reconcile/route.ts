@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentMonthKst, runPosReconcile } from "@/lib/pos/reconcileService";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * 이 크론은 **조회 + 기록 한 줄**만 한다. 결제·청구서는 건드리지 않는다.
  * 여러 번 돌아도 기록이 한 줄씩 늘 뿐 데이터가 망가지지 않는다.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
     if (
         process.env.NODE_ENV !== "development" &&
@@ -29,3 +30,6 @@ export async function GET(req: NextRequest) {
     const { runId, summary } = await runPosReconcile({ month, source: "CRON" });
     return NextResponse.json({ ok: summary.status === "OK", runId, summary });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("pos-reconcile", handleGet);

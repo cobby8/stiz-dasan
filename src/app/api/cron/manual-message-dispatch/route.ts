@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSmsMessageType, getSmsProviderName, sendPerMessageBulkDetailed, sendSmsBulkDetailed, type PerMessageBulkItem, type SmsBulkSendResult } from "@/lib/sms";
 import { BMS_NOT_DELIVERED_PREFIX } from "@/lib/messaging/parent-notice";
 import { claimManualMessageQueue, finalizeMessageDelivery, finalizeMessageDeliveryBatch, markManualMessageAccepted, markManualMessageUncertain } from "@/lib/message-ledger";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 const MAX_DISPATCH_PER_RUN = 500;
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const claim = await claimManualMessageQueue(MAX_DISPATCH_PER_RUN);
@@ -185,3 +186,6 @@ async function dispatchPerItemNotice(claimed: ClaimedItem[]) {
   }
   return { accepted, sent, failed, uncertain };
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("manual-message-dispatch", handleGet);

@@ -1,6 +1,10 @@
 "use client";
 
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
+
+// 스토어 앱(현재 버전)은 앱 알림을 못 받는다(d2) — 안 되는 켜기 버튼 대신 안내. 판정은 @/lib/storeApp 한 곳
+const STORE_APP_PUSH_NOTE = "앱 알림은 준비 중이에요. 중요한 안내는 문자·카카오톡으로 보내드려요";
 
 // 직원(선생님·기사님) 화면의 휴대폰 알림 켜기 (2026-11-10).
 // 기사님·코치 웹푸시 구독이 0건이었던 원인 = 켜는 버튼이 학부모 설정 화면에만 있었다.
@@ -9,7 +13,8 @@ import { usePushSubscription } from "@/lib/push/usePushSubscription";
 /** 머리줄 🔔 토글 — 켜짐/꺼짐 한눈에, 누르는 영역 44×44. 이 기기가 웹푸시를 못 받으면 아무것도 안 그린다 */
 export function StaffPushToggle() {
     const { pushSupported, pushEnabled, pushLoading, checked, togglePush } = usePushSubscription();
-    if (!checked || !pushSupported) return null;
+    const appLacksPush = useStoreAppLacks("push");
+    if (appLacksPush || !checked || !pushSupported) return null;
     return (
         <button
             type="button"
@@ -33,8 +38,19 @@ export function StaffPushToggle() {
  */
 export function StaffPushBanner() {
     const { pushSupported, pushEnabled, pushLoading, checked, togglePush } = usePushSubscription();
-    if (!checked || pushEnabled) return null;
+    const appLacksPush = useStoreAppLacks("push");
     const row = "mx-auto flex min-h-11 max-w-lg items-center gap-2 px-4 text-sm";
+    if (appLacksPush) {
+        return (
+            <div role="note" className="border-b border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)]">
+                <p className={`${row} text-[var(--color-academy-ink)]`}>
+                    <span className="material-symbols-outlined shrink-0 leading-none text-[var(--color-academy-info)]" style={{ fontSize: "18px" }} aria-hidden="true">sms</span>
+                    {STORE_APP_PUSH_NOTE}
+                </p>
+            </div>
+        );
+    }
+    if (!checked || pushEnabled) return null;
     if (!pushSupported) {
         return (
             <div role="note" className="border-b border-[var(--color-academy-line)] bg-[var(--color-academy-info-soft)]">

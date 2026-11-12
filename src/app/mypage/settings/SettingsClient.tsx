@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateMyName, changeMyPassword, saveMyPushPrefs } from "@/app/actions/parent-settings";
 import { createParentRequest } from "@/app/actions/admin";
 import { usePushSubscription } from "@/lib/push/usePushSubscription";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import {
     FONT_SCALE_COOKIE,
     FONT_SCALES,
@@ -47,7 +48,8 @@ export function NameRow({ name }: { name: string }) {
 
     function save() {
         startTransition(async () => {
-            const res = await updateMyName(value);
+            // 통신이 끊겨도 화면 전체가 오류로 바뀌지 않게 그 자리 안내(d1) — 입력값은 그대로
+            const res = await updateMyName(value).catch(() => ({ ok: false as const, error: "보내지 못했습니다. 다시 시도해 주세요." }));
             if (res.ok) {
                 setEditing(false);
                 setMsg({ text: "저장했어요.", tone: "ok" });
@@ -99,7 +101,8 @@ export function PasswordRow() {
 
     function submit() {
         startTransition(async () => {
-            const res = await changeMyPassword(current, next, confirm);
+            // 통신 실패 시 그 자리 안내(d1) — 입력한 비밀번호 칸은 지우지 않는다
+            const res = await changeMyPassword(current, next, confirm).catch(() => ({ ok: false as const, error: "보내지 못했습니다. 다시 시도해 주세요." }));
             if (res.ok) {
                 setCurrent(""); setNext(""); setConfirm("");
                 setOpen(false);
@@ -133,6 +136,8 @@ export function PasswordRow() {
 // ── 알림 설정: 휴대폰 알림 켜기 + 종류별 받기 ───────────────────────────────
 export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPrefs: PushPrefs; prefsAvailable: boolean }) {
     const { pushSupported, pushEnabled, pushLoading, checked, togglePush } = usePushSubscription();
+    // 판정은 @/lib/storeApp 한 곳 — 앱 새 버전이 caps=push 를 보내면 자동으로 원래 스위치가 돌아온다
+    const appLacksPush = useStoreAppLacks("push");
     const [prefs, setPrefs] = useState<PushPrefs>(initialPrefs);
     const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
     const [isPending, startTransition] = useTransition();
@@ -144,7 +149,8 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
         setPrefs(after);
         setMsg({ text: "", tone: "ok" });
         startTransition(async () => {
-            const res = await saveMyPushPrefs(after);
+            // 통신 실패도 «저장 실패»와 같이 되돌리고 안내(d1)
+            const res = await saveMyPushPrefs(after).catch(() => ({ ok: false as const, error: "보내지 못했습니다. 다시 시도해 주세요." }));
             if (!res.ok) {
                 setPrefs(before);
                 setMsg({ text: res.error, tone: "error" });
@@ -158,16 +164,21 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
                 <div className={ROW}>
                     <RowIcon name={pushEnabled ? "notifications_active" : "notifications_off"} />
                     <span className="flex-1 font-bold text-[var(--color-academy-ink)]">휴대폰 알림</span>
-                    {!checked ? null : pushSupported ? (
+                    {appLacksPush ? null : !checked ? null : pushSupported ? (
                         <Switch on={pushEnabled} busy={pushLoading} label="휴대폰 알림" onToggle={togglePush} />
                     ) : (
                         // 이 브라우저는 웹푸시를 못 받는다(아이폰 사파리에서 홈 화면 추가 전 등)
                         <span className="shrink-0 text-xs text-[var(--color-academy-muted)]">앱에서 켤 수 있어요</span>
                     )}
                 </div>
+                {/* 스토어 앱(현재 버전)은 앱 알림을 못 받는다 — 안 되는 켜기 버튼 대신 안내(d2) */}
+                {appLacksPush && (
+                    <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">앱 알림은 준비 중이에요. 중요한 안내는 문자·카카오톡으로 보내드려요.</p>
+                )}
             </li>
             {/* 종류별 받기 — 저장 표가 준비된 뒤에만 보인다. 끄는 건 휴대폰 울림만(종 목록에는 그대로 쌓임) */}
-            {prefsAvailable && PUSH_CATEGORIES.map((c) => (
+            {/* 앱 알림을 못 받는 스토어 앱에서는 종류별 스위치도 숨긴다(d2) */}
+            {prefsAvailable && !appLacksPush && PUSH_CATEGORIES.map((c) => (
                 <li key={c.key}>
                     <div className={`${ROW} pl-12`}>
                         <span className="flex-1 text-[var(--color-academy-ink)]">{c.label} 알림</span>

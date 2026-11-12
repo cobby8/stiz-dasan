@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireOverdueCredits } from "@/lib/makeup/credit-service";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
  * 이 크론이 하루 늦게 돌아도 학부모가 만료된 보강권을 쓸 수는 없다.
  * 여기서 하는 일은 상태를 실제 데이터에 확정 짓는 것이다.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (
     process.env.NODE_ENV !== "development" &&
@@ -23,3 +24,6 @@ export async function GET(req: NextRequest) {
   if (expired > 0) console.log(`[cron/makeup-credits] 보강권 ${expired}장 소멸`);
   return NextResponse.json({ ok: true, expired });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("makeup-credits", handleGet);

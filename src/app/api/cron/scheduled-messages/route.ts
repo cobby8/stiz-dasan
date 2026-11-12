@@ -6,6 +6,7 @@ import {
   reserveMessageDeliveryBatch, reserveMessageDelivery,
   claimMessageDelivery, finalizeMessageDelivery,
 } from "@/lib/message-ledger";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 //   · claimDue가 PENDING → SENDING 으로 선점하므로, 크론이 겹쳐 돌아도 한 번만 나간다.
 //   · 발송 장부(MessageDelivery)에도 남겨 즉시 발송분과 같은 중복 방지·이력을 공유한다.
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret || req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -88,3 +89,6 @@ export async function GET(req: NextRequest) {
   console.log(`[cron/scheduled-messages] due=${due.length} sent=${sent} skipped=${skipped} failed=${failed}`);
   return NextResponse.json({ success: failed === 0, processed: due.length, sent, skipped, failed });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("scheduled-messages", handleGet);

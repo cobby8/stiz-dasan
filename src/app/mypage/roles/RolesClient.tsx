@@ -40,7 +40,12 @@ export default function RolesClient({
     setError("");
     setNotice("");
     startTransition(async () => {
-      const result = await requestStaffRoles(selected);
+      // 통신 실패는 그 자리 안내(d1) — 고른 역할은 그대로 둔다
+      const result = await requestStaffRoles(selected).catch(() => ({ error: "NETWORK" as const }));
+      if ("error" in result && result.error === "NETWORK") {
+        setError("보내지 못했습니다. 다시 시도해 주세요.");
+        return;
+      }
       if ("error" in result && result.error) {
         setError(customerMessage(result.error, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;
@@ -58,7 +63,11 @@ export default function RolesClient({
     setError("");
     setNotice("");
     startTransition(async () => {
-      const result = await cancelStaffRoleRequest(role);
+      const result = await cancelStaffRoleRequest(role).catch(() => ({ error: "NETWORK" as const }));
+      if ("error" in result && result.error === "NETWORK") {
+        setError("보내지 못했습니다. 다시 시도해 주세요.");
+        return;
+      }
       if ("error" in result && result.error) {
         setError(customerMessage(result.error, "신청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."));
         return;

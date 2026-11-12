@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth-guard";
 import RegularShuttleClient from "./RegularShuttleClient";
 import ShuttleSectionTabs from "../ShuttleSectionTabs";
 import SeasonalHeader from "../../seasonal/SeasonalHeader";
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 
 // 셔틀 명단 — 사이트가 정규 셔틀 명단의 원장이다(구글 시트 가져오기 대신 여기서 추가·빼기·반이동).
 export default async function RegularShuttlePage({ searchParams }: { searchParams: Promise<{ month?: string; studentId?: string; weekday?: string; add?: string }> }) {
+  // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
+  await requireAdmin();
   // 이번 달·다음 달 명단이 없으면 직전 달을 복사해 바로 만든다(크론과 같은 함수, 이미 있으면 아무것도 안 함).
   // 실패해도 화면은 떠야 하므로 오류는 기록만 한다.
   try { await ensureRegularRosterMonths(); } catch (e) { console.error("[admin/shuttle/regular] 명단 월 자동 생성 실패", e); }

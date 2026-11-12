@@ -57,7 +57,8 @@ export function toNoticeHtml(text: string | null | undefined): string {
         }
         const href = url.startsWith("www.") ? `https://${url}` : url;
         out +=
-            `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" ` +
+            // data-outside-link: 스토어 앱에서는 바깥 주소를 «복사 + 안내»로 바꾼다(d2, @/lib/outsideLink)
+            `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" data-outside-link ` +
             `class="text-brand-orange-600 dark:text-brand-neon-lime underline underline-offset-2 break-all hover:opacity-80">` +
             `${escapeHtml(url)}</a>`;
         out += escapeHtml(trail);
