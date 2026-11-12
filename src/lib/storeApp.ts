@@ -35,6 +35,14 @@ export function looksLikeStoreApp(input: { userAgent?: string | null; referrer?:
     || String(input.referrer ?? "").startsWith("android-app://");
 }
 
+function hasStoreAppUserAgentMark(): boolean {
+  try {
+    return window.navigator.userAgent.includes(STORE_APP_USER_AGENT_MARK);
+  } catch {
+    return false;
+  }
+}
+
 export function isStoreApp(): boolean {
   try {
     if (window.sessionStorage.getItem(STORE_APP_FLAG_KEY) === "1") return true;
@@ -96,6 +104,8 @@ export function parseStoreAppCapabilities(raw: string | null | undefined): Store
  */
 export function storeAppLacks(cap: StoreAppCapability): boolean {
   if (!isStoreApp()) return false;
+  // 앱 1.0.1+ (사용자 에이전트 표식) 은 바깥 링크·문자를 직접 연다 — 시작 주소를 안 거친 화면(문자 링크로 바로 열림)에서도
+  if ((cap === "links" || cap === "sms") && hasStoreAppUserAgentMark()) return false;
   try {
     const caps = parseStoreAppCapabilities(window.sessionStorage.getItem(STORE_APP_CAPS_KEY));
     return !caps.includes(cap);
