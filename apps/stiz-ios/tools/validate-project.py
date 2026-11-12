@@ -41,8 +41,10 @@ assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
 assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.1;" in release_settings
 assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
-# 유니버설 링크·비밀번호 자동완성 권한은 출시 빌드에만(개발·격리 시험 프로파일에는 이 기능이 없다).
-assert "CODE_SIGN_ENTITLEMENTS = STIZ/STIZ.entitlements;" in release_settings and project.count("CODE_SIGN_ENTITLEMENTS") == 1
+# 유니버설 링크 권한 파일은 준비만 해 두고 1.0.1 에서는 연결하지 않는다(2026-11-13 검수 결정).
+# 애플 포털에서 Associated Domains 를 켜고 프로파일을 다시 받은 뒤 Release 에 한 줄 복원 → 이 검사도 그때 «연결됨»으로 바꾼다.
+# 절차: docs/store-release.md «iOS 유니버설 링크 다시 켜기».
+assert "CODE_SIGN_ENTITLEMENTS" not in project, "프로파일 준비 전에는 권한 파일을 서명에 붙이지 않는다"
 with (root / "STIZ/STIZ.entitlements").open("rb") as handle:
     entitlements = plistlib.load(handle)
 assert entitlements == {"com.apple.developer.associated-domains": ["applinks:www.stiz-dasan.kr", "webcredentials:www.stiz-dasan.kr"]}

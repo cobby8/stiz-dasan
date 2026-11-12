@@ -10,7 +10,9 @@
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.attachments" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/attachment_paths" />
         </provider>
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
+        <!-- adjustResize: 화면 끝까지 그리지 않는 폰(Android 14 이하)은 키보드만큼 창이 줄어들고, 이때 앱이 받는 키보드 여백은 0 이라
+             MainActivity 의 키보드 여백과 겹치지 않는다. 화면 끝까지 그리는 폰(15 이상)은 창이 안 줄어 앱이 키보드 여백을 직접 준다. -->
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <!-- 앱 링크(2026-11-13 원장 승인): 문자·카카오톡 속 www.stiz-dasan.kr 링크를 누르면 브라우저 대신 이 앱이 바로 열린다.
                  autoVerify=true 는 사이트의 /.well-known/assetlinks.json(src/app/api/assetlinks/route.ts)으로 주인 확인을 받는다.

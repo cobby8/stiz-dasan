@@ -64,6 +64,9 @@ struct NavigationPolicyTests {
             guard let url = URL(string: address) else { fatalError("Invalid fixture") }
             precondition(NavigationPolicy.decide(url, userInitiated: initiated) == expected, "Navigation case failed: \(address)")
         }
+        // 앱 시작 주소는 우리 사이트이며 지원 기능(바깥 링크·문자)만 알린다.
+        precondition(NavigationPolicy.entry.absoluteString == "https://www.stiz-dasan.kr/store-app?caps=links,sms")
+        precondition(NavigationPolicy.decide(NavigationPolicy.entry, userInitiated: false) == .website)
         // 결제(원장 결정 2026-11-09): 토스 결제창은 탭 없이도 열고, 결제 중에만 카드사 화면·앱을 허용한다.
         let payments: [(String, Bool, NavigationPolicy.Decision)] = [
             ("https://api.tosspayments.com/v1/payments", false, .paymentStart),

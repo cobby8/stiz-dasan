@@ -107,7 +107,9 @@ enum NavigationPolicy {
     static var entry: URL {
         if let origin = sandbox.origin { return origin.appendingPathComponent("store-app") }
         if sandbox.isRequested { return URL(string: "about:blank")! }
-        return URL(string: "https://www.stiz-dasan.kr/store-app")!
+        // caps = 이 앱이 직접 처리하는 기능(바깥 링크·문자). 웹은 이걸 보고 «링크 복사»·«번호 복사» 같은 우회 안내를 끈다.
+        // 푸시·위치·음성·설치는 이 앱이 아직 못 하므로 넣지 않는다.
+        return URL(string: "https://www.stiz-dasan.kr/store-app?caps=links,sms")!
     }
     // paymentStart: 토스 결제창·포트원 본인인증 시작(이때부터 «결제·인증 중») · paymentPage: 그 중의 카드사·통신사 인증 화면
     // paymentApp: 결제·인증 중 카드사·간편결제·인증 앱 호출 · blockedDriver: 기사님 운행 위치 화면(Android 전용)

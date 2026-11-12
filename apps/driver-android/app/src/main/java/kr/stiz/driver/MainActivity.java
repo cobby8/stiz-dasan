@@ -180,8 +180,10 @@ public final class MainActivity extends Activity {
                 if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(url)) return false;
                 // 그 밖의 바깥 이동은 사용자가 직접 누른 것만 앱 밖으로 넘긴다(자동 이동은 막는다).
                 if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(url, request.hasGesture())) {
-                    // 전화·문자·지도 앱
-                    try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                    // 전화·문자·지도 앱. 지도 앱 호출은 크롬처럼 BROWSABLE 로 표시해, 웹 링크로 열려도 되는 화면만 열리게 한다.
+                    Intent action = new Intent(Intent.ACTION_VIEW, uri);
+                    if (!"tel".equals(uri.getScheme()) && !"sms".equals(uri.getScheme())) action.addCategory(Intent.CATEGORY_BROWSABLE);
+                    try { startActivity(action); }
                     catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·문자·지도 앱을 설치해 주세요."); }
                 } else if (unfinishedRun && AppNavigationPolicy.isExternalFlowStart(url)) {
                     showAppMessage("운행 중에는 결제·본인인증 화면을 열 수 없습니다. 운행을 마친 뒤 다시 시도해 주세요.");
@@ -276,7 +278,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     if (trustedAppPage(incoming)) navigateSafely(incoming);
                     else if (!activeRunToken.isEmpty() && (unfinishedRun || !BuildConfig.STIZ_UNIFIED_APP)) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/driver/" + activeRunToken));
-                    else if (BuildConfig.STIZ_UNIFIED_APP) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app"));
+                    else if (BuildConfig.STIZ_UNIFIED_APP) loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + AppNavigationPolicy.ENTRY_PATH));
                     else showEntry();
                 });
             } catch (Exception failure) {
@@ -321,8 +323,10 @@ public final class MainActivity extends Activity {
             showAppMessage("결제 앱이 설치되어 있지 않습니다. 설치한 뒤 다시 시도하거나 다른 결제수단을 골라 주세요.");
         } catch (Exception failure) { showAppMessage("결제 앱을 열지 못했습니다. 다른 결제수단을 골라 주세요."); }
     }
-    private void navigateSafely(Uri uri) { navigateSafely(uri, false); }
-    private void navigateSafely(Uri uri, boolean back) {
+    private void navigateSafely(Uri uri) { navigateSafely(uri, 0); }
+    private void navigateSafely(Uri uri, boolean back) { navigateSafely(uri, back ? -1 : 0); }
+    // historySteps < 0 이면 새로 열지 않고 방문 기록 안에서 그만큼 뒤로 이동한다(운행 중 확인 mayNavigate 는 똑같이 거친다).
+    private void navigateSafely(Uri uri, int historySteps) {
         if (web == null || isFinishing() || isDestroyed() || worker.isShutdown()) return;
         if (!trustedAppPage(uri)) return;
         if (needsAccountRunHandoff(uri.toString())) { showAccountRunPending(); return; }
@@ -335,7 +339,7 @@ public final class MainActivity extends Activity {
                 unfinishedRun = savedUnfinished || DriverLocationService.instance != null;
                 runOnUiThread(() -> {
                     if (AppNavigationPolicy.mayNavigate(BuildConfig.STIZ_ORIGIN, uri.toString(), unfinishedRun, activeRunToken)) {
-                        if (back && web.canGoBack()) web.goBack(); else loadPageUnchecked(uri);
+                        if (historySteps < 0 && web.canGoBackOrForward(historySteps)) web.goBackOrForward(historySteps); else loadPageUnchecked(uri);
                     }
                     else confirmNavigation(uri);
                 });
@@ -407,19 +411,19 @@ public final class MainActivity extends Activity {
         if (webRoot.getParent() == null && lastAppUrl != null) { retryAfterError(); return; }
         WebBackForwardList history = web.copyBackForwardList();
         int current = history.getCurrentIndex();
-        // 바로 앞이 우리 사이트면 평소처럼 한 칸 뒤로.
-        if (current >= 1 && trustedAppPage(Uri.parse(history.getItemAtIndex(current - 1).getUrl()))) {
-            navigateSafely(Uri.parse(history.getItemAtIndex(current - 1).getUrl()), true);
+        String[] urls = new String[history.getSize()];
+        for (int index = 0; index < urls.length; index++) urls[index] = history.getItemAtIndex(index).getUrl();
+        // 가장 가까운 앞쪽 우리 사이트 화면까지 몇 칸인지. 결제·본인인증의 바깥 화면은 건너뛴다.
+        // 새로 열지(loadUrl) 않고 기록 안에서 이동해야 «완료 → 뒤로 → 결제 화면 → 뒤로 → 완료…» 왕복 고리가 생기지 않는다.
+        int steps = AppNavigationPolicy.backSteps(BuildConfig.STIZ_ORIGIN, urls, current, BuildConfig.STIZ_UNIFIED_APP);
+        if (steps < 0) {
+            if (steps < -1) paymentActive = false;
+            navigateSafely(Uri.parse(urls[current + steps]), steps);
             return;
         }
-        // 지금이 결제·본인인증 화면(바깥 주소)이거나 바로 앞이 그런 화면이면, 그 화면들을 건너뛰고
-        // 가장 가까운 우리 사이트 화면(보통 청구서·결제 화면)을 새로 연다. 예전엔 바깥 주소로는 이동하지 않아 뒤로가 무반응이었다.
-        for (int index = current - 1; index >= 0; index--) {
-            Uri candidate = Uri.parse(history.getItemAtIndex(index).getUrl());
-            if (trustedAppPage(candidate)) { paymentActive = false; navigateSafely(candidate); return; }
-        }
+        // 앞쪽에 우리 화면이 없는데 지금이 바깥 화면이면 앱 첫 화면으로.
         String now = web.getUrl();
-        if (now != null && !trustedAppPage(Uri.parse(now))) { paymentActive = false; navigateSafely(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app")); return; }
+        if (now != null && !trustedAppPage(Uri.parse(now))) { paymentActive = false; navigateSafely(Uri.parse(BuildConfig.STIZ_ORIGIN + AppNavigationPolicy.ENTRY_PATH)); return; }
         moveTaskToBack(true);
     }
     // 당겨서 새로고침: 우리 사이트 화면만 다시 불러온다. 결제·본인인증 중(카드사 화면 등)에는 다시 보내지 않는다.
@@ -467,9 +471,9 @@ public final class MainActivity extends Activity {
     }
     private void retryAfterError() {
         paymentActive = false;
-        Uri target = Uri.parse(lastAppUrl != null ? lastAppUrl : BuildConfig.STIZ_ORIGIN + "/store-app");
+        Uri target = Uri.parse(lastAppUrl != null ? lastAppUrl : BuildConfig.STIZ_ORIGIN + AppNavigationPolicy.ENTRY_PATH);
         if (trustedAppPage(target)) navigateSafely(target);
-        else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app"));
+        else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + AppNavigationPolicy.ENTRY_PATH));
     }
     // 바깥 사이트를 휴대폰 기본 브라우저로 연다.
     private void openInBrowser(Uri uri) {
@@ -486,13 +490,17 @@ public final class MainActivity extends Activity {
             return;
         }
         try {
-            String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+            // 한글 파일명은 filename*=UTF-8''... 로 오므로 그것을 먼저 읽는다(기본 추측은 한글이 깨진다).
+            String encoded = AppNavigationPolicy.encodedFileName(contentDisposition);
+            String fileName = encoded != null ? encoded : URLUtil.guessFileName(url, contentDisposition, mimeType);
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url))
                 .setTitle(fileName)
                 .setMimeType(mimeType)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             if (userAgent != null) request.addRequestHeader("User-Agent", userAgent);
             // 로그인 쿠키는 우리 사이트 주소에만 붙인다(바깥 서버로 새지 않게).
+            // ⚠️ 그래서 우리 사이트의 파일 받기 주소는 바깥 주소로 리다이렉트하면 안 된다 — 다운로드 관리자는 리다이렉트를
+            //    따라가며 이 Cookie 헤더를 그대로 다시 보낸다(로그인 쿠키 유출). 바깥 파일은 바깥 주소를 직접 링크할 것.
             if (AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, url)) {
                 String cookies = CookieManager.getInstance().getCookie(url);
                 if (cookies != null) request.addRequestHeader("Cookie", cookies);

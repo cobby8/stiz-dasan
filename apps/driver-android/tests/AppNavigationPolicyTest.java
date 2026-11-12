@@ -96,6 +96,27 @@ public final class AppNavigationPolicyTest {
         for (String url : new String[]{"blob:https://www.stiz-dasan.kr/x", "data:text/csv,a", "https://evil.invalid/a.pdf", "http://www.stiz-dasan.kr/a.pdf", "https://abc.supabase.co/storage/v1/object/sign/a.pdf"}) {
             check(!AppNavigationPolicy.downloadAllowed(origin, url));
         }
+        // 뒤로가기: 바깥 결제·인증 화면을 건너뛰고 «기록 안에서» 가장 가까운 우리 화면까지 몇 칸인지
+        String[] paid = {origin + "/mypage", origin + "/mypage/payments/checkout", "https://pay.toss.im/x", "https://card-auth.example.invalid/acs", origin + "/mypage/payments/done?paymentKey=x"};
+        check(AppNavigationPolicy.backSteps(origin, paid, 4, true) == -3);      // 완료 화면 → 결제 화면(바깥 2칸 건너뜀)
+        check(AppNavigationPolicy.backSteps(origin, paid, 3, true) == -2);      // 카드사 화면 → 결제 화면
+        check(AppNavigationPolicy.backSteps(origin, paid, 1, true) == -1);      // 평소 한 칸
+        check(AppNavigationPolicy.backSteps(origin, paid, 0, true) == 0);       // 더 갈 곳 없음
+        check(AppNavigationPolicy.backSteps(origin, new String[]{"https://pay.toss.im/x", "https://card.example/acs"}, 1, true) == 0);
+        check(AppNavigationPolicy.backSteps(origin, null, 3, true) == 0);
+        check(AppNavigationPolicy.backSteps(origin, paid, 9, true) == 0);       // 범위 밖 현재 위치는 이동하지 않음
+        // 기사님 전용 앱은 운행 화면만 «우리 화면»
+        check(AppNavigationPolicy.backSteps(origin, new String[]{origin + "/driver/a", origin + "/mypage", "https://x.example/"}, 2, false) == -2);
+        // 시작 주소는 우리 화면이며 지원 기능은 바깥 링크·문자뿐
+        check(AppNavigationPolicy.isAppPage(origin, origin + AppNavigationPolicy.ENTRY_PATH, true));
+        check(AppNavigationPolicy.ENTRY_PATH.equals("/store-app?caps=links,sms"));
+        // 한글 파일명(RFC 5987) 해석
+        check("수강료 내역.xlsx".equals(AppNavigationPolicy.encodedFileName("attachment; filename=\"a.xlsx\"; filename*=UTF-8''%EC%88%98%EA%B0%95%EB%A3%8C%20%EB%82%B4%EC%97%AD.xlsx")));
+        check("a+b.pdf".equals(AppNavigationPolicy.encodedFileName("attachment; filename*=utf-8''a+b.pdf")));
+        check("_etc_passwd".equals(AppNavigationPolicy.encodedFileName("attachment; filename*=UTF-8''%2Fetc%2Fpasswd")));
+        check(AppNavigationPolicy.encodedFileName("attachment; filename=\"a.pdf\"") == null);
+        check(AppNavigationPolicy.encodedFileName("attachment; filename*=UTF-8''..") == null);
+        check(AppNavigationPolicy.encodedFileName(null) == null);
         System.out.println("PASS " + checks + " unified navigation/run-state policy checks; no network/location calls");
     }
 }

@@ -163,6 +163,36 @@ final class AppNavigationPolicy {
             return true;
         } catch (Exception failure) { return false; }
     }
+    // 통합 앱 시작 주소. caps = 이 앱이 직접 처리하는 기능(바깥 링크·문자) — 웹은 이걸 보고 «링크 복사»·«번호 복사» 우회 안내를 끈다.
+    // 푸시·위치·음성·설치는 아직 못 하므로 넣지 않는다.
+    static final String ENTRY_PATH = "/store-app?caps=links,sms";
+    /**
+     * 뒤로가기 목적지: 방문 기록에서 지금 위치보다 앞쪽의 «가장 가까운 우리 사이트 화면»까지 몇 칸 돌아갈지(음수).
+     * 결제·본인인증의 바깥 화면은 건너뛴다. 기록을 새로 쌓지 않고 기록 안에서 이동해야
+     * «완료 화면 → 뒤로 → 결제 화면 → 뒤로 → 완료 화면…» 같은 왕복 고리가 생기지 않는다. 우리 화면이 없으면 0.
+     */
+    static int backSteps(String origin, String[] history, int current, boolean unified) {
+        if (history == null || current < 0 || current >= history.length) return 0;
+        for (int index = current - 1; index >= 0; index--) {
+            if (history[index] != null && isAppPage(origin, history[index], unified)) return index - current;
+        }
+        return 0;
+    }
+    /**
+     * Content-Disposition 의 filename*=UTF-8''... (한글 파일명) 을 먼저 해석한다. 없거나 잘못되면 null(→ 기본 추측 사용).
+     * 경로 문자·제어 문자는 지운다(다른 폴더에 쓰지 못하게).
+     */
+    static String encodedFileName(String contentDisposition) {
+        if (contentDisposition == null) return null;
+        java.util.regex.Matcher match = java.util.regex.Pattern.compile("(?i)filename\\*\\s*=\\s*UTF-8''([^;\\s]+)").matcher(contentDisposition);
+        if (!match.find()) return null;
+        try {
+            String name = java.net.URLDecoder.decode(match.group(1).replace("+", "%2B"), "UTF-8");
+            name = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+            if (name.isEmpty() || name.equals(".") || name.equals("..") || name.length() > 120) return null;
+            return name;
+        } catch (Exception failure) { return null; }
+    }
     // 앱 안에서 내려받기를 허용하는 파일 주소: 우리 사이트(로그인 쿠키 필요)와 Supabase 공개 파일만.
     static boolean downloadAllowed(String origin, String url) {
         return sameOrigin(origin, url) || isSupabasePublicFile(url);
