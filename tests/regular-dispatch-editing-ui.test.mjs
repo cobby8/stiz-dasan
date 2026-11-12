@@ -21,7 +21,11 @@ test("방학특강 화면은 정규 손편집·시간순 모드를 켜지 않는
 // 2026-11-09: 자동 제안(T맵)·차량 이동·⇄ 제거 — 정규 화면은 RouteSection 을 쓰지 않고, 접는 영역 없이 운행표를 늘 펼친다.
 test("정규 배차는 RouteSection(자동 제안·차량 이동) 없이 운행표를 늘 펼치고 이탈 확인은 유지한다", () => {
   assert.doesNotMatch(regularClient, /RouteSection|regularEditing|timeOrdered/);
-  assert.doesNotMatch(regularClient, /<details/);
+  // 2026-11-12: f9265bc5 가 «배차 필요 · 시각 미입력» 경고 목록만 접는 칸으로 붙였다(운행표 아님).
+  // 그 경고 한 덩어리만 빼고 보면 여전히 접는 영역이 없어야 하고, 그 덩어리 안에 운행표가 들어가면 안 된다.
+  const missingTimeWarning = regularClient.match(/<details[^>]*>\s*<summary[^>]*>배차 필요 · 시각 미입력[\s\S]*?<\/details>/)?.[0] ?? "";
+  assert.doesNotMatch(missingTimeWarning, /운행표|lg:grid/);
+  assert.doesNotMatch(regularClient.replace(missingTimeWarning, ""), /<details/);
   assert.match(regularClient, /confirmLeave\(\)/);
 });
 

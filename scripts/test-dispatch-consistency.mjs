@@ -80,7 +80,8 @@ for (const kind of ['regular','seasonal']) {
 {
  const page=readFileSync('src/app/admin/shuttle/regular-dispatch/page.tsx','utf8');
  const editor=readFileSync('src/app/admin/shuttle/regular-dispatch/RegularRunEditor.tsx','utf8');
- check(/<RegularRunEditor\s+key=\{serviceMonth\}/.test(page),'month switch remounts the run editor');
+ // 2026-11-12: 76b979ac 가 학생 상세에서 들어올 때 그 정류장으로 다시 그리도록 key 에 정류장·학생을 덧붙였다 — 달이 key 안에 있으면 월 전환 재마운트는 그대로다.
+ check(/<RegularRunEditor\s+key=\{(?:serviceMonth|`\$\{serviceMonth\}[^`]*`)\}/.test(page),'month switch remounts the run editor');
  check(/const firstDay = \[1, 2, 3, 4, 5, 6, 0\]\.find\(/.test(page)&&/const initialWeekday = target\?\.weekday \?\? firstDay \?\? 1;/.test(page),'initial weekday falls back to first weekday with riders');
  check(/const \[weekday, setWeekday\] = useState\(initialWeekday\);/.test(editor),'editor starts from the server-chosen weekday');
 }
