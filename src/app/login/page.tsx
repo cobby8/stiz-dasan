@@ -11,6 +11,7 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 import AppleLogo from "@/components/auth/AppleLogo";
 import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
+import { useStoreApp, STORE_APP_PASSWORD_LOGIN_NOTICE } from "@/hooks/useStoreApp";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -34,6 +35,8 @@ function LoginContent() {
   // 표에 있어도 Supabase 에서 켜진 것만 보인다. 꺼진 버튼을 누르면 Supabase 의 JSON 오류 화면이
   // 그대로 떴다(2026-10-25 운영: 구글·카카오). 모르는 동안(null)은 아무것도 그리지 않는다.
   const enabledProviders = useEnabledOAuthProviders();
+  // 스토어 앱에서는 간편로그인을 숨긴다(앱 밖 브라우저로 나가 로그인 결과가 돌아오지 않는다, a1). null = 아직 모름
+  const storeApp = useStoreApp();
   const visibleSocialLoginOptions = parentSocialLoginOptions.filter((option) =>
     enabledProviders?.includes(option.provider as (typeof enabledProviders)[number]),
   );
@@ -105,7 +108,7 @@ function LoginContent() {
           </h1>
           <p className="text-[var(--color-public-ink)] dark:text-[var(--color-public-muted)] mt-1">
             {isStaffMode
-              ? "관리자·선생님 계정 이메일로 로그인해 주세요."
+              ? "가입한 휴대폰 번호(또는 이메일)로 로그인해 주세요."
               : "계정 권한에 맞는 화면으로 이동합니다"}
           </p>
         </div>
@@ -193,7 +196,7 @@ function LoginContent() {
                     required
                     autoComplete="off"
                     placeholder="홍길동"
-                    className="w-full px-4 py-2.5 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
+                    className="min-h-11 w-full px-4 py-2.5 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
                   />
                 </div>
               </>
@@ -204,16 +207,17 @@ function LoginContent() {
                 htmlFor="email"
                 className="block text-sm font-medium text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)] mb-1"
               >
-                {isStaffMode ? "관리자/선생님 이메일" : "로그인 아이디 또는 기존 이메일"}
+                {isStaffMode ? "휴대폰 번호 또는 이메일" : "로그인 아이디 또는 기존 이메일"}
               </label>
               <input
                 id="email"
                 name={isStaffMode ? "email" : "username"}
-                type={isStaffMode ? "email" : "text"}
+                // 직원은 휴대폰 번호(숫자)만 넣어도 된다 — 서버가 «번호@staff.stiz.kr» 로 바꾼다(b3). 그래서 email 형식 검사를 하지 않는다.
+                type="text"
                 required
-                autoComplete={isStaffMode ? "email" : "username"}
-                placeholder={isStaffMode ? "admin@stiz.kr" : "로그인 아이디"}
-                className="w-full px-4 py-2.5 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
+                autoComplete="username"
+                placeholder={isStaffMode ? "01012345678" : "로그인 아이디"}
+                className="min-h-11 w-full px-4 py-2.5 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
               />
             </div>
 
@@ -233,14 +237,16 @@ function LoginContent() {
                   required
                   minLength={6}
                   autoComplete={mode === "login" ? "current-password" : "off"}
-                  placeholder="6자 이상"
-                  className="w-full px-4 py-2.5 pr-10 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
+                  // 실제 규칙: 학부모 아이디 가입 8자 이상, 선생님·관리자(초대 가입) 10자 이상
+                  placeholder={isStaffMode ? "비밀번호 (10자 이상)" : "비밀번호 (8자 이상)"}
+                  className="min-h-11 w-full px-4 py-2.5 pr-12 border border-gray-300 bg-white text-[var(--color-public-ink)] placeholder:text-gray-400 rounded-lg focus:ring-2 focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime focus:border-[var(--color-public-accent)] dark:border-[var(--color-public-line)] dark:bg-[var(--color-public-paper)] dark:text-white dark:placeholder:text-[var(--color-public-muted)] outline-none transition-colors"
                 />
                 {/* 비밀번호 보기/숨기기 토글 버튼 — 눈 아이콘 인라인 SVG */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] transition-colors"
+                  // 누르는 영역 44×44 — 입력칸 오른쪽 끝에 붙인다
+                  className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-[var(--color-public-muted)] hover:text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)] transition-colors"
                   tabIndex={-1}
                   aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
                 >
@@ -266,12 +272,12 @@ function LoginContent() {
             {/* 회원가입 모드에서만 개인정보 동의 체크박스 표시 (개인정보보호법 준수) */}
             {mode === "signup" && (
               <div className="space-y-3 pt-2 pb-1">
-                <label className="flex items-start gap-2 cursor-pointer">
+                <label className="flex min-h-11 items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={agreePrivacy}
                     onChange={(e) => setAgreePrivacy(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[var(--color-public-accent)] dark:text-brand-neon-lime focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime"
+                    className="h-5 w-5 shrink-0 rounded border-gray-300 text-[var(--color-public-accent)] dark:text-brand-neon-lime focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime"
                   />
                   <span className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                     <a
@@ -285,12 +291,12 @@ function LoginContent() {
                     에 동의합니다 <span className="text-red-500">(필수)</span>
                   </span>
                 </label>
-                <label className="flex items-start gap-2 cursor-pointer">
+                <label className="flex min-h-11 items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={agreeTerms}
                     onChange={(e) => setAgreeTerms(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[var(--color-public-accent)] dark:text-brand-neon-lime focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime"
+                    className="h-5 w-5 shrink-0 rounded border-gray-300 text-[var(--color-public-accent)] dark:text-brand-neon-lime focus:ring-[var(--color-public-accent)] dark:focus:ring-brand-neon-lime"
                   />
                   <span className="text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-ink)]">
                     <a
@@ -354,7 +360,11 @@ function LoginContent() {
             )}
           </form>
 
-          {!isStaffMode && mode === "login" && visibleSocialLoginOptions.length > 0 && (
+          {/* 스토어 앱: 간편로그인 대신 한 줄 안내 */}
+          {!isStaffMode && mode === "login" && storeApp === true && (
+            <p className="mt-6 text-center text-xs leading-5 text-[var(--color-public-muted)]">{STORE_APP_PASSWORD_LOGIN_NOTICE}</p>
+          )}
+          {!isStaffMode && mode === "login" && storeApp === false && visibleSocialLoginOptions.length > 0 && (
             <div className="mt-6 space-y-4">
               <div className="flex items-center gap-3 text-xs font-semibold text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">
                 <span className="h-px flex-1 bg-[var(--color-public-line)] dark:bg-[var(--color-public-line)]" />

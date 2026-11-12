@@ -9,6 +9,9 @@ import AppleLogo from "@/components/auth/AppleLogo";
 import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
 import { publicErrorText } from "@/components/ui/public-error-text";
 import { safeInternalRedirect } from "@/lib/parent-oauth";
+import { useStoreApp, STORE_APP_PASSWORD_LOGIN_NOTICE } from "@/hooks/useStoreApp";
+import ParentConsentChecks, { type ParentPolicyTextsProp } from "@/components/auth/ParentConsentChecks";
+import { PARENT_PASSWORD_MIN, parentPasswordWarning } from "@/lib/parent-password-rules";
 
 // existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
 type Step = "method" | "phone" | "account" | "existing" | "done";
@@ -23,6 +26,8 @@ type ApiData = {
   socialSessionMissing?: boolean;
   phoneRegistered?: boolean;
   registeredPhone?: boolean;
+  // 가입 완료 직후 서버가 로그인까지 해 두었는가(아이디 가입, 2026-11-13 a7)
+  sessionEstablished?: boolean;
 };
 
 /** 실패 응답의 추가 정보(간편가입 세션 끊김 등)를 화면이 알 수 있게 담아 던진다. */
@@ -61,8 +66,14 @@ const SIGNUP_SOCIAL_OPTIONS = [
   { provider: "apple", label: "Apple로 계속" },
 ] as const;
 
-export default function ParentSignupClient() {
+export default function ParentSignupClient({ policies }: { policies: ParentPolicyTextsProp }) {
   const searchParams = useSearchParams();
+  // 스토어 앱에서는 간편가입을 숨긴다 — 앱 밖 브라우저로 나갔다가 돌아오지 못한다(a1). null = 아직 모름(그리지 않음)
+  const storeApp = useStoreApp();
+  // 비밀번호 입력 중 사전 경고(같은 숫자 반복·연속 숫자·qwer 류·전화번호) — 직원 초대 화면과 같은 규칙
+  const [passwordDraft, setPasswordDraft] = useState("");
+  // 경고는 입력 중이 아니라 입력칸을 벗어날 때·제출할 때 보인다(치는 도중 빨간 글씨가 깜빡이지 않게)
+  const [passwordChecked, setPasswordChecked] = useState(false);
   // 훅이라 조건·조기 반환보다 앞에 둔다. 모르는 동안(null)은 간편가입 구역을 그리지 않는다.
   const enabledProviders = useEnabledOAuthProviders();
   const visibleSignupOptions = SIGNUP_SOCIAL_OPTIONS.filter((option) => enabledProviders?.includes(option.provider));
@@ -102,6 +113,7 @@ export default function ParentSignupClient() {
     ? `/mypage/roles?request=${staffRoles.join(",")}`
     : requestedNext;
   const noRoleChosen = !wantsParent && staffRoles.length === 0;
+  const weakWarning = parentPasswordWarning(passwordDraft, { phone, minLength: PARENT_PASSWORD_MIN });
   function toggleStaffRole(role: "INSTRUCTOR" | "DRIVER") {
     setStaffRoles((current) => (current.includes(role) ? current.filter((value) => value !== role) : [...current, role]));
   }
@@ -162,6 +174,11 @@ export default function ParentSignupClient() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") || "");
+    if (!socialSignup && weakWarning) {
+      setPasswordChecked(true);
+      setError(weakWarning);
+      return;
+    }
     if (password !== String(form.get("passwordConfirm") || "")) {
       setError("비밀번호가 서로 다릅니다.");
       return;
@@ -169,7 +186,7 @@ export default function ParentSignupClient() {
     setLoading(true);
     setError(null);
     try {
-      await postJson("/api/auth/parent-signup/complete", {
+      const data = await postJson("/api/auth/parent-signup/complete", {
         challengeToken,
         proof,
         enrollmentHandoff: enrollmentHandoff || undefined,
@@ -183,6 +200,12 @@ export default function ParentSignupClient() {
           age: form.get("age") === "on",
         },
       });
+      // 서버가 바로 로그인까지 해 두었으면 «로그인하기» 없이 가려던 화면(마이페이지 등)으로 간다.
+      // 로그인을 못 했으면 지금처럼 완료 화면에서 로그인 안내(폴백).
+      if (data.sessionEstablished) {
+        window.location.assign(safeInternalRedirect(next));
+        return;
+      }
       setStep("done");
     } catch (reason) {
       setError(friendlyError(reason));
@@ -255,7 +278,11 @@ export default function ParentSignupClient() {
             아이디로 가입하기
           </button>
           {/* Supabase 에서 켜진 간편가입만 보인다 — 꺼진 버튼은 누르면 Supabase 오류 화면이 떴다(2026-10-25). */}
-          {visibleSignupOptions.length > 0 && !noRoleChosen && (
+          {/* 스토어 앱: 간편가입 대신 한 줄 안내(앱 밖으로 나가 돌아오지 못한다) */}
+          {storeApp === true && !noRoleChosen && (
+            <p className="text-center text-xs leading-5 text-[var(--color-public-muted)]">{STORE_APP_PASSWORD_LOGIN_NOTICE}</p>
+          )}
+          {storeApp === false && visibleSignupOptions.length > 0 && !noRoleChosen && (
             <>
               <div className="flex items-center gap-3 text-xs text-[var(--color-public-muted)]"><span className="h-px flex-1 bg-[var(--color-public-line)]" />간편가입<span className="h-px flex-1 bg-[var(--color-public-line)]" /></div>
               <div className="grid gap-3">
@@ -311,13 +338,12 @@ export default function ParentSignupClient() {
           <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
           <label className="block text-sm font-semibold">이름<input name="name" defaultValue={initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
           <label className="block text-sm font-semibold">로그인 아이디<input name="username" className={`${inputClass} mt-2`} autoComplete="username" minLength={4} maxLength={20} pattern="[A-Za-z][A-Za-z0-9_]{3,19}" placeholder="영문으로 시작, 영문·숫자·밑줄" required /></label>
-          {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상" required /></label>}
+          {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => { setPasswordDraft(event.target.value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>}
+          {/* 옅은 바탕 + 진한 글자 — 다크 모드에서도 대비가 유지된다 */}
+          {!socialSignup && passwordChecked && weakWarning && <p role="alert" className="-mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호 확인<input name="passwordConfirm" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} required /></label>}
-          <div className="space-y-2 rounded-xl bg-[var(--color-public-tint)] p-4 text-sm dark:bg-[var(--color-public-paper)]">
-            <label className="flex gap-2"><input name="terms" type="checkbox" required /> <span><Link href="/terms" target="_blank" className="underline">이용약관</Link> 동의 (필수)</span></label>
-            <label className="flex gap-2"><input name="privacy" type="checkbox" required /> <span><Link href="/privacy" target="_blank" className="underline">개인정보 수집·이용</Link> 동의 (필수)</span></label>
-            <label className="flex gap-2"><input name="age" type="checkbox" required /> <span>만 14세 이상입니다 (필수)</span></label>
-          </div>
+          {/* 필수 동의 3개 — 약관은 새 탭이 아니라 같은 화면 안의 창으로 본다(앱에서 밖으로 나가지 않게, a5) */}
+          <ParentConsentChecks policies={policies} />
           <button disabled={loading} className="min-h-12 w-full rounded-xl bg-brand-orange-500 font-bold text-white disabled:opacity-50">{loading ? "가입하는 중..." : "가입 완료"}</button>
         </form>
       )}

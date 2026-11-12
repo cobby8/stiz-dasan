@@ -61,6 +61,11 @@ async function load(db) {
   const authRoutes = toDataUrl(await transpile("src/lib/auth-routes.ts"));
   const syntheticEmail = toDataUrl(await transpile("src/lib/parent-synthetic-email.ts"));
   const publicErrors = toDataUrl(await transpile("src/lib/user-facing-error.ts"));
+  // 동의 버전·약한 비밀번호 판정(순수 모듈, 2026-11-13) — 원본 그대로 엮는다
+  const consent = toDataUrl(await transpile("src/lib/parent-consent.ts"));
+  const inviteAuthFailure = toDataUrl(await transpile("src/lib/staff/inviteAuthFailure.ts"));
+  const passwordRules = toDataUrl((await transpile("src/lib/parent-password-rules.ts"))
+    .split('"@/lib/staff/inviteAuthFailure"').join(`"${inviteAuthFailure}"`));
   const swap = (code) => code
     .split('"@/lib/user-facing-error"').join(`"${publicErrors}"`)
     .split('"@/lib/parent-synthetic-email"').join(`"${syntheticEmail}"`)
@@ -68,7 +73,9 @@ async function load(db) {
     .split('"@/lib/message-dispatch"').join(`"${noop}"`)
     .split('"@/lib/supabase/admin"').join(`"${noop}"`)
     .split('"@/lib/enrollment-account-handoff"').join(`"${noop}"`)
-    .split('"@/lib/auth-routes"').join(`"${authRoutes}"`);
+    .split('"@/lib/auth-routes"').join(`"${authRoutes}"`)
+    .split('"@/lib/parent-consent"').join(`"${consent}"`)
+    .split('"@/lib/parent-password-rules"').join(`"${passwordRules}"`);
   const claimUrl = toDataUrl(swap(await transpile("src/lib/parent-account-claim.ts")));
   const signup = swap(await transpile("src/lib/parent-signup-verification.ts"))
     .split('"@/lib/parent-account-claim"').join(`"${claimUrl}"`);

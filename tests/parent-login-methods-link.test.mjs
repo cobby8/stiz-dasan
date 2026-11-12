@@ -7,7 +7,9 @@ import test from "node:test";
 
 const start = fs.readFileSync("src/app/auth/oauth/[provider]/route.ts", "utf8");
 const callback = fs.readFileSync("src/app/auth/callback/route.ts", "utf8");
-const page = fs.readFileSync("src/app/mypage/login-methods/page.tsx", "utf8");
+// «연결하기» 링크는 스토어 앱에서 숨기려고 클라이언트 부품(LinkProviderButton)으로 옮겼다(2026-11-13) — 둘을 합쳐 본다
+const page = fs.readFileSync("src/app/mypage/login-methods/page.tsx", "utf8")
+  + fs.readFileSync("src/app/mypage/login-methods/LinkProviderButton.tsx", "utf8");
 const accountLayout = fs.readFileSync("src/app/mypage/layout.tsx", "utf8");
 const mypage = fs.readFileSync("src/components/account/AccountLinks.tsx", "utf8");
 

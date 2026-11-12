@@ -11,6 +11,7 @@ import {
 } from "@/lib/parent-oauth";
 import { createClient } from "@/lib/supabase/server";
 import { customerMessage } from "@/components/parent/customerMessage";
+import LinkProviderButton, { StoreAppLinkNotice } from "./LinkProviderButton";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,8 @@ export default async function LoginMethodsPage({
         연결해 두면 다음부터 아이디·비밀번호 없이 그 방법으로 같은 계정에 로그인됩니다. 자녀 정보는 그대로입니다.
       </p>
 
+      {/* 스토어 앱에서는 «연결하기»를 숨기고 한 줄 안내(앱 밖으로 나가 돌아오지 못한다) */}
+      <StoreAppLinkNotice />
       {justLinked && (
         <p role="status" className="mb-3 rounded-xl bg-[var(--color-academy-success-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-academy-success)]">
           {PARENT_OAUTH_LABELS[justLinked]} 연결을 마쳤습니다.
@@ -96,13 +99,8 @@ export default async function LoginMethodsPage({
                   연결됨
                 </span>
               ) : (
-                // <Link> 금지 — 미리 불러오기가 시작 주소를 열면 로그인 열쇠(PKCE)가 덮어써진다(2026-10-26 사고).
-                <a
-                  href={`/auth/oauth/${provider}?intent=link`}
-                  className="inline-flex min-h-11 items-center rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-white"
-                >
-                  연결하기
-                </a>
+                // 일반 링크(<a>)는 LinkProviderButton 안에 있다 — 스토어 앱에서는 숨긴다
+                <LinkProviderButton provider={provider} />
               )}
             </div>
           ))}

@@ -148,7 +148,8 @@ export function staffAuthFailureMessage(kind: AuthFailureKind): string {
 
 // ── 제출 전 사전 경고(화면) ─────────────────────────────────────────
 // Supabase 는 유출된 비밀번호 목록으로 거절한다 — 그대로 따라 할 순 없으니, 거의 확실히 거절될 모양만 미리 막는다.
-const COMMON_WORDS = ["password", "qwerty", "asdf", "zxcv", "iloveyou", "admin", "welcome", "letmein", "stiz", "basketball", "abc123"];
+// (2026-11-13) 학부모 화면도 같은 규칙을 쓰며 «qwer1234»·«1q2w3e4r» 같은 자판 배열을 더했다.
+const COMMON_WORDS = ["password", "qwerty", "qwer", "1q2w3e", "asdf", "zxcv", "iloveyou", "admin", "welcome", "letmein", "stiz", "basketball", "abc123"];
 
 function isSequential(text: string): boolean {
   // 0123456789 / 9876543210 / abcdef… 처럼 한 칸씩 오르거나 내리는 문자열

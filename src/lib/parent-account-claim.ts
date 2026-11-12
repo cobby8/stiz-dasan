@@ -7,6 +7,8 @@ import { sendAuthenticationSms } from "@/lib/message-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveRedirectForRole } from "@/lib/auth-routes";
 import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
+import { PARENT_CONSENT_REQUIRED_MESSAGE, PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, hasAllParentConsents, type ParentConsents } from "@/lib/parent-consent";
+import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
 
 const CLAIM_TTL_HOURS = 72;
 const OTP_TTL_MINUTES = 5;
@@ -410,7 +412,15 @@ export async function verifyParentClaimOtp(rawToken: string, code: string) {
   });
 }
 
-export async function consumeParentAccountClaim(rawToken: string, proof: string, emailInput: string, password: string) {
+export async function consumeParentAccountClaim(
+  rawToken: string,
+  proof: string,
+  emailInput: string,
+  password: string,
+  // 필수 동의 3개(2026-11-13 a3) — 신규 가입과 같은 기준. 없으면 계정을 만들지 않는다.
+  consents?: Partial<ParentConsents> | null,
+) {
+  if (!hasAllParentConsents(consents)) return { error: PARENT_CONSENT_REQUIRED_MESSAGE };
   const email = emailInput.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.endsWith(".local")) return { error: "실제로 사용하는 이메일을 입력해 주세요." };
   if (password.length < 10) return { error: "비밀번호는 10자 이상이어야 합니다." };
@@ -448,11 +458,18 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
         `SELECT "authUserId" FROM "User" WHERE id = $1 FOR UPDATE`, current.parentId,
       );
       if (authLinks[0]?.authUserId) throw new Error("이미 로그인 계정과 연결된 보호자입니다.");
+      // 처리 시작과 함께 동의 시각·버전을 남긴다 — 신규 가입(ParentSignupVerification)과 같은 칸 이름·형식.
+      // ⚠️ 칸은 20261113120000_parent_account_claim_consents 마이그레이션이 만든다(배포 전에 먼저 적용).
       const claimed = await tx.$executeRawUnsafe(
-        `UPDATE "ParentAccountClaim" SET status = 'PROCESSING', "processingAt" = NOW(), "processingAttemptId" = $2, "updatedAt" = NOW()
+        `UPDATE "ParentAccountClaim" SET status = 'PROCESSING', "processingAt" = NOW(), "processingAttemptId" = $2,
+                "termsAgreedAt" = NOW(), "termsVersion" = $3,
+                "privacyAgreedAt" = NOW(), "privacyVersion" = $4, "ageConfirmedAt" = NOW(),
+                "updatedAt" = NOW()
           WHERE id = $1 AND (status = 'VERIFIED' OR (status = 'PROCESSING' AND "processingAt" <= NOW() - INTERVAL '${PROCESSING_LEASE_MINUTES} minutes'))`,
         current.id,
         processingAttemptId,
+        PARENT_TERMS_VERSION,
+        PARENT_PRIVACY_VERSION,
       );
       if (claimed !== 1) throw new Error("계정 활성화가 이미 처리 중입니다.");
       return current;
@@ -488,6 +505,9 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
         user_metadata: { role: "PARENT", parentAccountClaimId: claim.id, parentAccountClaimAttemptId: processingAttemptId },
       });
       if (recovered.error) throw new Error("중단된 계정 활성화를 복구하지 못했습니다.");
+    } else if (isWeakPasswordRejection(created.error)) {
+      // 약한 비밀번호 거절 — 계정은 만들어지지 않았다. 이유를 알려 주고 같은 인증으로 다시 정하게 한다.
+      throw new Error(PARENT_WEAK_PASSWORD_MESSAGE);
     } else {
       throw new Error("로그인 계정을 만들지 못했습니다.");
     }
@@ -499,7 +519,8 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
 
     await prisma.$transaction(async (tx) => {
       const updated = await tx.$executeRawUnsafe(
-        `UPDATE "User" SET email = $1, "authUserId" = $4, "updatedAt" = NOW()
+        // 문자 인증을 통과해 활성화했으므로 번호 인증 시각도 남긴다(이미 있으면 그대로 — 처음 인증 시각 보존, a4)
+        `UPDATE "User" SET email = $1, "authUserId" = $4, "phoneVerifiedAt" = COALESCE("phoneVerifiedAt", NOW()), "updatedAt" = NOW()
           WHERE id = $2 AND role = 'PARENT' AND email = $3 AND "authUserId" IS NULL`,
         email,
         claim!.parentId,
@@ -540,6 +561,22 @@ export async function consumeParentAccountClaim(rawToken: string, proof: string,
         processingAttemptId,
       ).catch(() => undefined);
     }
+    // 동의 칸 마이그레이션(20261113120000)보다 코드가 먼저 배포된 경우(칸 없음 42703) — 학부모에게는 «잠시 후 다시»,
+    // 원인은 서버 로그에 남긴다. 이때는 처리 시작 UPDATE 자체가 실패해 활성화 링크·인증 상태는 그대로다.
+    if (isMissingColumnError(error)) {
+      console.error("[consumeParentAccountClaim] DB 칸 없음(42703) — 마이그레이션 적용 확인 필요:", error instanceof Error ? error.message.slice(0, 300) : "UNKNOWN");
+      return { error: ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE };
+    }
     return { error: userFacingError(error, "계정을 활성화하지 못했습니다.") };
   }
+}
+
+export const ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE = "지금은 계정 활성화를 처리할 수 없어요. 잠시 후 다시 시도해 주세요.";
+
+/** PostgreSQL «칸 없음»(42703) 오류인가 — Prisma raw 오류는 meta.code 또는 메시지에 담겨 온다 */
+export function isMissingColumnError(error: unknown): boolean {
+  const meta = (error as { meta?: { code?: unknown } } | null)?.meta;
+  if (meta && String(meta.code) === "42703") return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /\b42703\b/.test(message) || /column "[^"]+" (?:of relation "[^"]+" )?does not exist/i.test(message);
 }

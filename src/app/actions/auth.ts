@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth-routes";
 import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { getParentViewAccessForAuthUser } from "@/lib/account-view-access";
+import { staffLoginEmail } from "@/lib/staff-login-id";
 
 async function getRoleForAuthUser(user?: { id?: string | null; email?: string | null }): Promise<AppRole | null> {
   if (!user?.id && !user?.email) return null;
@@ -38,11 +39,14 @@ export async function login(formData: FormData) {
   const enrollmentHandoff = String(formData.get("enrollmentHandoff") || "");
 
   if (!identifier || !password) {
-    return { error: "이메일과 비밀번호를 입력해주세요." };
+    return { error: "아이디(또는 이메일)와 비밀번호를 입력해 주세요." };
   }
 
   let authEmail = identifier;
-  if (loginContext !== "staff" && !identifier.includes("@")) {
+  if (loginContext === "staff") {
+    // 직원은 휴대폰 번호만 넣어도 된다 — 초대 가입 로그인 메일이 «번호@staff.stiz.kr» 라서(b3). 이메일은 그대로.
+    authEmail = staffLoginEmail(identifier);
+  } else if (!identifier.includes("@")) {
     const rows = await prisma.$queryRawUnsafe<Array<{ email: string }>>(
       `SELECT email FROM "User" WHERE LOWER(username) = LOWER($1) AND role = 'PARENT' LIMIT 1`,
       identifier,
@@ -60,7 +64,7 @@ export async function login(formData: FormData) {
       // 학부모는 아이디로 로그인한다 — 틀렸을 때 «아이디·비밀번호 찾기»로 안내한다.
       return {
         error: loginContext === "staff"
-          ? "이메일 또는 비밀번호가 올바르지 않습니다."
+          ? "휴대폰 번호(또는 이메일) 또는 비밀번호가 올바르지 않습니다."
           : "아이디 또는 비밀번호가 올바르지 않습니다. 기억나지 않으면 아래 «아이디·비밀번호 찾기»를 이용해 주세요.",
       };
     }

@@ -28,7 +28,9 @@ test("시작: 남용 제한(번호 60초·하루 5회, IP 시간당 5회) 뒤에
   const fn = slice(src, "export async function startParentPasswordReset", "export async function verifyParentPasswordResetOtp");
   assert.match(fn, /INTERVAL '60 seconds'/);
   assert.match(fn, /daily\) >= 5/);
-  assert.match(fn, /hourlyRequest\) >= 5/);
+  // 같은 IP 한도는 회원가입 인증과 같은 상수(시간당 40·하루 200, 2026-11-13 a6)
+  assert.match(fn, /hourlyRequest\) >= SIGNUP_OTP_IP_HOURLY_LIMIT/);
+  assert.match(fn, /dailyRequest\) >= SIGNUP_OTP_IP_DAILY_LIMIT/);
   assert.match(fn, /NO_PARENT_ACCOUNT_MESSAGE/);
   assert.ok(fn.indexOf("quota") < fn.indexOf("sendAuthenticationSms"), "한도 확인이 발송보다 먼저");
   assert.match(fn, /status='CANCELLED'/, "같은 번호의 이전 요청은 닫는다");
@@ -57,9 +59,14 @@ test("완료: 증표 확인 → 고른 계정이 그 번호의 학부모인지 �
   assert.match(fn, /parentAccountsForPhone\(tx, row\.phone\)\)\.find\(\(account\) => account\.id === input\.accountId\)/);
   assert.match(fn, /status='PROCESSING'[\s\S]*WHERE id=\$1 AND status='VERIFIED'/, "같은 증표로 두 번 바꾸지 못한다");
   assert.ok(fn.indexOf("status='PROCESSING'") < fn.indexOf("updateUserById"));
-  assert.match(fn, /updateUserById\(target\.authUserId, \{ password \}\)/);
+  // 간편로그인 전용 계정은 로그인 메일이 없으면 아이디 주소를 함께 붙인다(planSocialPasswordLogin)
+  assert.match(fn, /updateUserById\(\s*target\.authUserId,\s*setAuthEmail \? \{ password, email: setAuthEmail, email_confirm: true \} : \{ password \},?\s*\)/);
   assert.match(fn, /status='CONSUMED'/);
-  assert.match(fn, /if \(!hasPassword\)/, "간편로그인 전용 계정에는 비밀번호를 만들지 않는다");
+  // 간편로그인 전용 계정도 비밀번호를 만든다(2026-11-13 a1) — 단 무엇으로 로그인하는지 정해지는 계정만
+  // 먼저 «인증된 번호 + 직원 추가 역할 없음»을 서버에서 다시 확인한다(보안 검수 HIGH)
+  assert.match(fn, /if \(!hasPassword\) \{[\s\S]*?socialPasswordCreationAllowed\([\s\S]*?const plan = planSocialPasswordLogin\(/);
+  assert.match(fn, /if \(!plan\) throw new ResetUserError\(/);
+  assert.ok(fn.indexOf("parentAccountsForPhone(tx, row.phone)") < fn.indexOf("planSocialPasswordLogin"), "문자 인증·번호의 계정 확인을 통과한 뒤에만");
   assert.doesNotMatch(fn, /createUser|INSERT INTO "User"/);
 });
 

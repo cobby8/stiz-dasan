@@ -32,8 +32,9 @@ test("미인증 admin 요청은 관리자/선생님 로그인 모드로 보내�
   assert.match(middlewareSource, /if \(isAdminPath\) \{\s*url\.searchParams\.set\(["']mode["'], ["']staff["']\)/s);
   assert.match(middlewareSource, /isStaffModeLogin/);
   assert.match(loginSource, /STIZ 관리자\/선생님 로그인/);
-  assert.match(loginSource, /관리자\/선생님 이메일/);
-  assert.match(loginSource, /admin@stiz\.kr/);
+  // 직원 아이디 = 휴대폰 번호(초대 가입 로그인 메일이 «번호@staff.stiz.kr»), 이메일도 그대로 된다(2026-11-13 b3)
+  assert.match(loginSource, /휴대폰 번호 또는 이메일/);
+  assert.match(loginSource, /가입한 휴대폰 번호\(또는 이메일\)로 로그인해 주세요\./);
 });
 
 test("보호 경로의 검색 조건을 로그인 후에도 보존하고 로그인 URL에는 중복하지 않는다", () => {

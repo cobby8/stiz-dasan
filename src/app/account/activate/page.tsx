@@ -4,6 +4,7 @@ import { getParentAccountClaim } from "@/app/actions/parent-account";
 import { parentClaimProofCookieName } from "@/lib/parent-account-claim";
 import ParentAccountActivateClient from "./ParentAccountActivateClient";
 import { customerMessage } from "@/components/parent/customerMessage";
+import { getParentPolicyTexts } from "@/lib/policy-texts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { referrer: "no-referrer" };
@@ -52,6 +53,9 @@ export default async function ParentAccountActivatePage({
     );
   }
 
+  // 약관 «보기» 창 본문 — /terms·/privacy 와 같은 원천(학원 설정)
+  const policies = await getParentPolicyTexts();
+
   return (
     <ParentAccountActivateClient
       token={token}
@@ -60,6 +64,7 @@ export default async function ParentAccountActivatePage({
       redirectPath={claim.redirectPath}
       initialStep={alreadyVerified ? "ACCOUNT" : "PHONE"}
       selfService={Boolean(claim.selfService)}
+      policies={policies}
     />
   );
 }

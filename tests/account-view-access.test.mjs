@@ -102,6 +102,8 @@ test('로그인과 계속 화면은 같은 직접 자녀 연결 결과로 목적
 });
 
 const loginSource = await readFile('src/app/actions/auth.ts', 'utf8');
+// 직원 휴대폰 번호 → 로그인 메일 변환(순수 모듈, 2026-11-13) — 원본 그대로 싣는다
+const staffLoginId = load(await readFile('src/lib/staff-login-id.ts', 'utf8'), {});
 const continueSource = await readFile('src/app/auth/continue/page.tsx', 'utf8');
 function authFlowFixture(role, hasOwnChildren) {
   let childChecks = 0;
@@ -113,6 +115,7 @@ function authFlowFixture(role, hasOwnChildren) {
     'next/link': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     '@/lib/auth-routes': routes,
+    '@/lib/staff-login-id': staffLoginId,
     '@/lib/prisma': { prisma: { $queryRawUnsafe: async () => [{ role, username: null, phoneVerifiedAt: null }] } },
     '@/lib/supabase/server': { createClient: async () => ({ auth: {
       signInWithPassword: async () => ({ data: { user }, error: null }),

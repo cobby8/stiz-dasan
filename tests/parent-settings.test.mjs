@@ -27,6 +27,8 @@ function load(path, mocks = {}) {
 }
 
 const settings = load("src/lib/mypage/parentSettings.ts");
+// 약한 비밀번호 판정(순수 모듈, 2026-11-13) — 원본 그대로 싣는다
+const passwordRules = load("src/lib/parent-password-rules.ts", { "@/lib/staff/inviteAuthFailure": load("src/lib/staff/inviteAuthFailure.ts") });
 
 test("① 알림 종류 분류 — 출결·청구·공지·셔틀만 끌 수 있고, 나머지(문의 답변·수강 변경 결과 등)는 늘 보낸다", () => {
   assert.equal(settings.pushCategoryOf("ATTENDANCE"), "attendance");
@@ -76,6 +78,7 @@ function loadSettingsActions({ loggedIn = true, identities = [{ provider: "email
     "@/lib/prisma": { prisma: { $executeRawUnsafe: async (q, ...params) => { sql.push({ q, params }); return 1; } } },
     "@/lib/parent-notification-preferences": { writePushPrefs: async (userId, prefs) => { sql.push({ q: "PREFS", params: [userId, prefs] }); } },
     "@/lib/mypage/parentSettings": settings,
+    "@/lib/parent-password-rules": passwordRules,
     "@/lib/supabase/server": {
       createClient: async () => ({
         auth: {

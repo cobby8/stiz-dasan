@@ -66,7 +66,10 @@ test("스토어 앱 표식은 sessionStorage 에만 둔다 — 크롬·기존 �
   const code = storeApp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   assert.doesNotMatch(code, /localStorage/, "표식을 localStorage 에 두면 같은 휴대폰의 크롬·설치 앱에서도 영역 제한이 풀린다");
   // 저장소를 못 쓰면 기존 설치 앱처럼(제한 유지) — 새는 쪽으로 실패하지 않는다.
-  assert.match(storeApp, /catch \{\s*return false;\s*\}/);
+  // (2026-11-13) 표식이 없으면 앱 전용 사용자 에이전트(« STIZApp/»)·android-app:// referrer 로만 앱으로 본다 —
+  // 오류가 나면 어느 catch 도 «앱»(true)으로 판정하지 않고 끝에서 false(브라우저)로 떨어진다.
+  assert.doesNotMatch(code, /catch \{[^}]*return true/);
+  assert.match(code, /return false;\s*\}\s*$/);
 });
 
 test("스토어 앱에서는 기존 PWA 의 영역 제한을 끈다", () => {

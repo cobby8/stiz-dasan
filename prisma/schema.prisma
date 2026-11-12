@@ -152,6 +152,12 @@ model ParentAccountClaim {
   processingAttemptId String?
   redirectPath        String    @default("/mypage")
   lastError           String?
+  // 필수 동의 기록(2026-11-13) — 신규 가입(ParentSignupVerification)과 같은 칸
+  termsAgreedAt       DateTime? @db.Timestamptz(6)
+  termsVersion        String?
+  privacyAgreedAt     DateTime? @db.Timestamptz(6)
+  privacyVersion      String?
+  ageConfirmedAt      DateTime? @db.Timestamptz(6)
   createdAt           DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
