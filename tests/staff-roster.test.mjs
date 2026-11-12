@@ -136,7 +136,8 @@ test("중단된 초대 복구 뒤 스태프 화면 캐시 태그도 비운다", 
 test("스태프 화면: 원장만 바꾸기 — 페이지가 역할을 확인해 넘기고, 부원장에겐 선택칸·초대 버튼이 없다", async () => {
   const page = await readFile(new URL("../src/app/admin/staff/page.tsx", import.meta.url), "utf8");
   const client = await readFile(new URL("../src/app/admin/staff/StaffClient.tsx", import.meta.url), "utf8");
-  assert.match(page, /canManage=\{admin\.appUserRole === "ADMIN"\}/);
+  assert.match(page, /const canManage = admin\.appUserRole === "ADMIN";/);
+  assert.match(page, /canManage=\{canManage\}/);
   assert.match(client, /\{canManage \? roleChangeButton\(user\) : roleChip\(user\.role\)\}/);
   assert.match(client, /\{canManage && roleTargetUser && \(/); // 역할 변경 창도 원장만
   assert.match(client, /\{canManage && \(\s*<button[\s\S]*?새 스태프 초대/);

@@ -89,10 +89,10 @@ async function reblockRetiredLogin(input: { authId: string; userId: string; invi
   }
 }
 /**
- * 원장·부원장 로그인 연결 알림(2026-11-12) — 본인을 뺀 다른 원장·부원장의 관리자 알림 벨에 한 줄.
- * 가입은 이미 끝났으므로 알림 실패는 기록만 남기고 가입 결과를 바꾸지 않는다.
+ * 원장·부원장 계정 변화 알림(2026-11-12) — 로그인 연결(linked)·비밀번호 재설정(reset)이 끝나면
+ * 본인을 뺀 다른 원장·부원장의 관리자 알림 벨에 한 줄. 가입·재설정은 이미 끝났으므로 알림 실패는 기록만 남긴다.
  */
-async function notifyAdminLoginLinked(input: { userId: string; name: string; role: string }) {
+async function notifyOwnerAccountChange(input: { userId: string; name: string; role: string; kind: "linked" | "reset" }) {
   try {
     const admins = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
       `SELECT id FROM "User" WHERE role IN ('ADMIN', 'VICE_ADMIN') AND "withdrawnAt" IS NULL AND id <> $1`,
@@ -102,14 +102,16 @@ async function notifyAdminLoginLinked(input: { userId: string; name: string; rol
     for (const admin of admins) {
       await createNotificationRecord({
         userId: admin.id,
-        type: "STAFF_LOGIN_LINKED",
-        title: "스태프 로그인 연결",
-        message: `${input.name} ${roleLabel} 계정 로그인이 연결됐어요`,
+        type: input.kind === "reset" ? "STAFF_PASSWORD_RESET" : "STAFF_LOGIN_LINKED",
+        title: input.kind === "reset" ? "스태프 비밀번호 재설정" : "스태프 로그인 연결",
+        message: input.kind === "reset"
+          ? `${input.name} ${roleLabel} 계정 비밀번호가 재설정됐어요`
+          : `${input.name} ${roleLabel} 계정 로그인이 연결됐어요`,
         linkUrl: "/admin/staff",
       });
     }
   } catch (error) {
-    console.error("[acceptInvitation] admin login-linked notice failed:", error instanceof Error ? error.message : String(error));
+    console.error("[acceptInvitation] owner account notice failed:", error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -415,7 +417,8 @@ export async function acceptInvitation(token: string, password: string) {
        WHERE token = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
          -- 받는 역할: 코치/강사·셔틀 기사, 또는 «그 사람 기록을 향한 가입 초대»의 원장·부원장(invitationRoleAccepted 와 같은 기준)
          AND (role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role")
-              OR (role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") AND "targetUserId" IS NOT NULL AND COALESCE(purpose, 'SIGNUP') = 'SIGNUP'))
+              OR (role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") AND "targetUserId" IS NOT NULL
+                  AND COALESCE(purpose, 'SIGNUP') IN ('SIGNUP', 'PASSWORD_RESET')))
          AND "otpExpiresAt" > NOW() AND "otpVerifiedAt" IS NOT NULL AND "otpConsumedAt" IS NULL
          AND ("lockedAt" IS NULL OR "lockedAt" <= NOW() - INTERVAL '15 minutes')
        RETURNING id, name, phone, role, status, "expiresAt", purpose, "targetUserId"`,
@@ -458,6 +461,11 @@ export async function acceptInvitation(token: string, password: string) {
       );
       const target = targets[0];
       if (!target) throw new Error("재설정할 직원 계정을 찾지 못했습니다. 원장에게 문의해주세요.");
+      // 원장·부원장 재설정(2026-11-12)은 직원 전용 로그인(@staff.stiz.kr, authUserId 있음)일 때만 — 역할은 그대로(위 role = $2)
+      const ownerReset = isLoginLinkRole(invitation.role);
+      if (ownerReset && (!target.authUserId || staffLoginKind(target) !== "staffLogin")) {
+        throw new Error("재설정할 직원 계정을 찾지 못했습니다. 원장에게 문의해주세요.");
+      }
       const { error: updateError } = await createAdminClient().auth.admin.updateUserById(target.authUserId ?? target.id, { password });
       if (updateError) {
         // 약한 비밀번호 등 4xx 거절이면 같은 화면에서 다른 비밀번호로 바로 다시 하게 한다(계정은 그대로)
@@ -479,7 +487,18 @@ export async function acceptInvitation(token: string, password: string) {
           `UPDATE "StaffInvitationAuthAttempt" SET status = 'COMPLETED', "updatedAt" = NOW() WHERE id = $1`,
           attemptId,
         );
+        if (ownerReset) {
+          // 원장·부원장 비밀번호 재설정 감사 기록(비밀번호·인증번호는 남기지 않는다)
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+             VALUES (gen_random_uuid()::text, 'STAFF_PASSWORD_RESET_DONE', 'ADMIN', $1, $2::jsonb)`,
+            target.id,
+            JSON.stringify({ targetUserId: target.id, targetName: invitation.name, role: invitation.role, invitationId: invitation.id }),
+          );
+        }
       });
+      // 다른 원장·부원장 알림 벨(본인 제외) — 거래가 끝난 뒤에만
+      if (ownerReset) await notifyOwnerAccountChange({ userId: target.id, name: invitation.name, role: invitation.role, kind: "reset" });
       return { ok: true, email: target.email ?? `${invitation.phone}@staff.stiz.kr`, passwordReset: true };
     }
 
@@ -663,7 +682,7 @@ export async function acceptInvitation(token: string, password: string) {
         attemptId,
       );
     });
-    if (linkedAdminNotice.value) await notifyAdminLoginLinked(linkedAdminNotice.value);
+    if (linkedAdminNotice.value) await notifyOwnerAccountChange({ ...linkedAdminNotice.value, kind: "linked" });
     return { ok: true, email: staffEmail };
   } catch (error) {
     let authDeleteError: string | null = null;

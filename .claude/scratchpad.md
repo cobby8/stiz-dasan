@@ -98,6 +98,7 @@
 | 1차 | 11-12 | 역할 변경·퇴사 시 대상 초대(PENDING·PROCESSING) 취소 + 가입 거래가 직원 기록→초대 순서로 잠그고 PROCESSING·역할 재확인 · 재입사 거래 실패 시 로그인 다시 차단 · 퇴사자 재초대 이름 일치만 연결(직원 전용 로그인+이름 다름=거절, 그 밖=안내) · 직접 추가 재초대 시 [초대로 전환] 안내 · 로그인 차단 실패 다시 시도(⋯ 더보기) · createStaffUser·AddStaffModal 삭제 | admin.ts · invite.ts · staffAccountLink.ts · staffPanelData.ts · adminReadPayloads.ts · StaffClient.tsx · InviteStaffModal.tsx · page.tsx · 테스트 4개 | 정확성 검수: 필수1·권장2~5·사소 |
 | 2차 | 11-12 | 복구가 대상 초대(targetUserId)를 대기로 되돌리지 않고 취소로 끝냄(감사 STAFF_INVITE_RECOVERY_CANCELLED, 목록 «정리 후 취소») · 전환 가입은 지금도 코치/기사일 때만·역할 변경 없음(CASE 제거) · 로그인 없던 퇴사자는 재초대 자동 연결 안 함 · 처리 중 취소된 대상 초대도 계정 정리 필요 시 RECOVERY_REQUIRED 로 올림 | staff-invite-recovery.ts · invite.ts · staffAccountLink.ts · StaffInviteRecoveryClient.tsx · 테스트 | 재검수 HIGH·메모 |
 | 3차 | 11-12 | 원장·부원장 «로그인 연결»(linkOwnerStaffLogin 원장 전용·24h·자동 발송 없음, 가입은 초대 역할=대상 지금 역할일 때만·감사 STAFF_LOGIN_LINKED·다른 원장·부원장 알림) · 역할 선택칸 → [역할 변경] 버튼+RoleChangeModal(«바뀌는 것» 미리보기) | admin.ts · invite.ts · inviteAuthFailure.ts · staffAccountLink.ts · roleChange.ts(신규) · RoleChangeModal.tsx(신규) · StaffClient.tsx · 테스트 4개(1 신규) | 원장 지시(권혜미 대표원장) |
+| 4차 | 11-13 | 부원장 화면 데이터에서 원장·부원장 초대 토큰 제거(page·API) · 받을 번호 끝 4자리 표시 · 만료 시각 · 역할 미리보기를 서버 조건과 일치(선생님 추가 역할·코치 연결·재설정 링크) · 원장·부원장 비밀번호 재설정(sendStaffPasswordReset userId 경로, 24h·자동 문자 없음·감사·알림) · 마우스 올림 테두리 | admin.ts · invite.ts · inviteAuthFailure.ts · roleChange.ts · staffRoster.ts · queries.ts · page.tsx · api/admin/staff · StaffClient · RoleChangeModal · 테스트 3개 | 보안·정확성 검수 |
 
 ## 작업 로그 (최근 10건)
 

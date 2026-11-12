@@ -18,8 +18,9 @@ export default function RoleChangeModal({
     onClose,
     onConfirm,
 }: {
-    user: { id: string; name: string; role: string; coachName: string | null };
-    /** 이 사람을 향한 대기 가입 링크(초대로 전환·로그인 연결)가 있는가 — 역할을 바꾸면 서버가 취소한다 */
+    /** hasInstructorGrant: 승인된 선생님 추가 역할 — 있으면 서버가 코치 연결을 풀지 않는다 */
+    user: { id: string; name: string; role: string; coachName: string | null; hasInstructorGrant?: boolean };
+    /** 이 사람을 향한 대기 링크(초대로 전환·로그인 연결·비밀번호 재설정)가 있는가 — 역할을 바꾸면 서버가 취소한다 */
     hasPendingLink: boolean;
     pending: boolean;
     onClose: () => void;
@@ -28,7 +29,13 @@ export default function RoleChangeModal({
     // 고른 역할(아직 안 바꿈). 지금 역할은 고를 수 없다.
     const [selected, setSelected] = useState<RoleChangeValue | null>(null);
     const preview = selected
-        ? roleChangePreview({ currentRole: user.role, nextRole: selected, coachName: user.coachName, hasPendingLink })
+        ? roleChangePreview({
+            currentRole: user.role,
+            nextRole: selected,
+            coachName: user.coachName,
+            hasInstructorGrant: user.hasInstructorGrant,
+            hasPendingLink,
+        })
         : null;
 
     return (
@@ -65,7 +72,8 @@ export default function RoleChangeModal({
                                     ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary-soft)]"
                                     : isCurrent
                                         ? "cursor-default border-[var(--color-academy-line)] bg-[var(--color-academy-soft)]"
-                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-primary)]"
+                                        // 마우스 올림은 선택(주 색 테두리)과 다르게 — 회색 선 + 옅은 바탕(교과서 6장 «마우스 올림 ≠ 선택됨»)
+                                        : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] hover:border-[var(--color-academy-line-input)] hover:bg-[var(--color-academy-soft)]"
                             }`}
                         >
                             <span

@@ -3944,7 +3944,11 @@ export const getStaffUsers = cache(async () => {
         const rows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT u.id, u.email, u.name, u.phone, u.role::text AS role, u."createdAt",
                     c.id AS "coachId", c.name AS "coachName",
-                    (u."authUserId" IS NULL AND u.email LIKE '%@staff.local') AS "directAdded"
+                    (u."authUserId" IS NULL AND u.email LIKE '%@staff.local') AS "directAdded",
+                    EXISTS (
+                      SELECT 1 FROM "UserRoleGrant" g
+                       WHERE g."userId" = u.id AND g.role = 'INSTRUCTOR' AND g.status = 'ACTIVE'
+                    ) AS "hasInstructorGrant"
              FROM "User" u
              LEFT JOIN "Coach" c ON c."userId" = u.id
              WHERE u.role::text IN ('ADMIN', 'VICE_ADMIN', 'INSTRUCTOR', 'DRIVER')
@@ -3968,6 +3972,8 @@ export const getStaffUsers = cache(async () => {
             coachName: r.coachName ?? r.coachname ?? null,
             // «직접 추가»로 만든 직원 기록(전화번호@staff.local, 로그인 계정 없음) — 앱을 쓸 수 없어 «초대로 전환» 대상
             directAdded: Boolean(r.directAdded ?? r.directadded),
+            // 승인된 선생님 추가 역할 — 있으면 역할을 바꿔도 서버가 코치 연결을 풀지 않는다(역할 변경 창 미리보기용)
+            hasInstructorGrant: Boolean(r.hasInstructorGrant ?? r.hasinstructorgrant),
         }));
     } catch (e) {
         console.error("[getStaffUsers] failed:", e);
@@ -4000,6 +4006,7 @@ export const getStaffUsers = cache(async () => {
             coachId: null,
             coachName: null,
             directAdded: Boolean(r.directAdded ?? r.directadded),
+            hasInstructorGrant: false,
         }));
     } catch (fallbackError) {
         console.error("[getStaffUsers:fallback] failed:", fallbackError);

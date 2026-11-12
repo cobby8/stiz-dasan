@@ -152,7 +152,8 @@ test("부원장은 보기 전용 — 패널 작업은 canManage 일 때만, 자�
   assert.match(client, /function buildUserPanelActions[\s\S]*?if \(!canManage\) return \[\];/);
   assert.match(client, /if \(user\.id !== currentUserId\)/);
   assert.match(page, /currentUserId=\{admin\.appUserId\}/);
-  assert.match(page, /canManage=\{admin\.appUserRole === "ADMIN"\}/);
+  assert.match(page, /const canManage = admin\.appUserRole === "ADMIN";/);
+  assert.match(page, /canManage=\{canManage\}/);
 });
 
 // ── 화면 ──────────────────────────────────────────────────
@@ -164,7 +165,7 @@ test("s4 역할 변경은 [역할 변경] 버튼 → 역할 고르기 창(«바�
   assert.doesNotMatch(fn, /\bconfirm\(`/);
   assert.match(client, /\{confirmDialog\}/);
   const roleChange = await read("src/lib/staff/roleChange.ts");
-  assert.match(roleChange, /학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요\./);
+  assert.match(roleChange, /학부모로 바꾸면 스태프 목록에서 빠져요\./);
   const modal = await read("src/app/admin/staff/RoleChangeModal.tsx");
   assert.match(modal, /<AdminModal /); // 공용 창 부품(휴대폰은 아래 시트)
   assert.match(modal, /role="radiogroup"/);

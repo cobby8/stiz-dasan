@@ -21,6 +21,7 @@ import {
     resendInvitation,
     convertDirectStaffToInvite,
     linkOwnerStaffLogin,
+    sendStaffPasswordReset,
     retireStaffMember,
     retryRetiredLoginBlocks,
 } from "@/app/actions/admin";
@@ -35,6 +36,8 @@ import {
     classesForStaff,
     inviteSendStatusLabel,
     invitationDaysLeft,
+    isOwnerAccountInvite,
+    maskedPhoneLast4,
     type RosterClassAssignment,
     type RosterGrantUser,
     type RosterRow,
@@ -63,6 +66,8 @@ interface StaffUser {
     coachName: string | null;
     /** «직접 추가» 기록(로그인 계정 없음) — 상세 패널에 [초대로 전환] */
     directAdded?: boolean;
+    /** 승인된 선생님 추가 역할 — 역할을 바꿔도 서버가 코치 연결을 풀지 않는다(역할 변경 창 미리보기) */
+    hasInstructorGrant?: boolean;
 }
 
 interface CoachItem {
@@ -385,11 +390,40 @@ export default function StaffClient({
                     setMessage({ text: result.error, ok: false });
                     return;
                 }
-                setMessage({ text: `${user.name}님의 로그인 연결 링크를 만들었습니다(24시간 유효).`, ok: true });
+                // 받을 번호 끝 4자리를 같이 — 원장이 «그 사람 번호가 맞는지» 확인(보안 검수 ③)
+                setMessage({ text: `${user.name}님의 로그인 연결 링크를 만들었습니다(24시간 유효). ${result.phoneMasked} 로 인증번호가 가요.`, ok: true });
                 await loadStaffData();
                 setDetail({ kind: "user", id: user.id }); // 링크 버튼이 보이게 패널을 다시 연다
             } catch (error: unknown) {
                 setMessage({ text: errorMessage(error, "로그인 연결 링크를 만들지 못했습니다."), ok: false });
+            }
+        });
+    }
+
+    // ── 원장·부원장 비밀번호 재설정(원장, 검수 정확 4) ─────────────────────
+    // 직원 전용 로그인이 있는 원장·부원장에게 24시간 재설정 링크. 문자는 자동으로 보내지 않는다 —
+    // 링크는 목록의 «재설정 대기» 줄 ⚡(링크 복사·재발송)로 원장이 전한다.
+    async function handleOwnerPasswordReset(user: StaffUser) {
+        setDetail(null);
+        const ok = await askConfirm({
+            title: `"${user.name}" 비밀번호 재설정 링크`,
+            description: `${maskedPhoneLast4(user.phone)} 로 인증번호가 가요.\n본인이 문자 인증 후 새 비밀번호를 정해요(24시간 유효).`,
+            confirmLabel: "링크 만들기",
+            tone: "primary",
+        });
+        if (!ok) return;
+        startTransition(async () => {
+            try {
+                const result = await sendStaffPasswordReset({ phone: user.phone ?? "", userId: user.id });
+                if (result.rejected) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                const masked = "phoneMasked" in result && result.phoneMasked ? result.phoneMasked : maskedPhoneLast4(user.phone);
+                setMessage({ text: `${user.name}님의 비밀번호 재설정 링크를 만들었습니다(24시간 유효). ${masked} 로 인증번호가 가요. 목록의 «재설정 대기» 줄 ⚡에서 링크를 전해 주세요.`, ok: true });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "재설정 링크를 만들지 못했습니다."), ok: false });
             }
         });
     }
@@ -530,6 +564,8 @@ export default function StaffClient({
             { key: "resend", label: "재발송", icon: "refresh", disabled: isPending, onSelect: () => handleResendInvitation(inv.id, inv.name) },
             { key: "cancel", label: "취소", icon: "close", tone: "danger", disabled: isPending, onSelect: () => handleCancelInvitation(inv.id, inv.name) },
         ];
+        // 원장·부원장 계정 초대는 부원장 화면 데이터에 링크 토큰이 없다(보안 검수 ①) — 복사도 없다
+        if (!inv.token) return [];
         return canManage ? actions : actions.filter((action) => action.key === "copy");
     }
 
@@ -584,11 +620,12 @@ export default function StaffClient({
         ? (rows.find((row) => row.kind === "user" && row.user.id === detailUser.id) as Extract<Row, { kind: "user" }> | undefined)?.conversion ?? null
         : null;
     const detailClasses = detailUser ? classesForStaff(detailUser, classAssignments) : [];
-    // 역할 변경 창 대상 + 그 사람을 향한 대기 링크(바꾸면 서버가 취소한다 — 창 미리보기에 한 줄)
+    // 역할 변경 창 대상 + 그 사람을 향한 대기 링크(바꾸면 서버가 취소한다 — 창 미리보기에 한 줄).
+    // 서버 updateUserRole 은 targetUserId 대기 초대를 목적과 상관없이 취소하므로 재설정 링크도 센다(검수 정확 3).
     const roleTargetUser = roleTargetId ? staffUsers.find((user) => user.id === roleTargetId) ?? null : null;
-    const roleTargetConversion = roleTargetUser
-        ? (rows.find((row) => row.kind === "user" && row.user.id === roleTargetUser.id) as Extract<Row, { kind: "user" }> | undefined)?.conversion ?? null
-        : null;
+    const roleTargetHasPendingLink = roleTargetUser
+        ? pendingInvitations.some((inv) => inv.targetUserId === roleTargetUser.id)
+        : false;
 
     // 상세 패널 작업 — 초대로 전환 / 링크 복사·문자 보내기 / 퇴사 처리(원장만, 자기 자신 제외)
     function buildUserPanelActions(user: StaffUser, conversion: Invitation | null): AdminQuickAction[] {
@@ -600,6 +637,12 @@ export default function StaffClient({
         // 로그인 없는 원장·부원장 — 그 사람 전용 로그인 연결 링크(역할은 그대로)
         if (user.directAdded && !conversion && isLoginLinkRole(user.role)) {
             actions.push({ key: "link-login", label: "로그인 연결", icon: "key", tone: "primary", disabled: isPending, onSelect: () => handleLinkOwnerLogin(user) });
+        }
+        // 전화번호 아이디로 로그인하는 원장·부원장 — 비밀번호 재설정 링크(본인 제외, 대기 재설정 링크가 없을 때)
+        const staffLogin = (user.email || "").toLowerCase().endsWith(STAFF_LOGIN_EMAIL_SUFFIX);
+        const pendingReset = pendingInvitations.some((inv) => inv.targetUserId === user.id && inv.purpose === "PASSWORD_RESET");
+        if (!user.directAdded && staffLogin && isLoginLinkRole(user.role) && user.id !== currentUserId && !pendingReset) {
+            actions.push({ key: "owner-reset", label: "비밀번호 재설정", icon: "lock_reset", disabled: isPending, onSelect: () => void handleOwnerPasswordReset(user) });
         }
         if (conversion) {
             actions.push({ key: "copy", label: "링크 복사", icon: "content_copy", onSelect: () => void handleCopyInvitationLink(conversion.token, conversion.name) });
@@ -1033,7 +1076,19 @@ export default function StaffClient({
                                 <dt className="font-bold text-[var(--color-academy-muted)]">앱 계정</dt>
                                 <dd className="flex flex-col gap-0.5">
                                     {detailConversion
-                                        ? <><span className={CHIP_WAIT}>가입 대기 · {kstLabel(detailConversion.expiresAt)}까지</span>{lastSendLine(detailConversion.id)}</>
+                                        ? (
+                                            <>
+                                                {/* 24시간 링크도 있어 시각까지 — «11/14(토) 15:00까지» */}
+                                                <span className={CHIP_WAIT}>가입 대기 · {kstLabel(detailConversion.expiresAt)} {kstHm(detailConversion.expiresAt)}까지</span>
+                                                {/* 원장·부원장 로그인 연결 — 인증번호가 갈 번호를 크게(원장이 그 사람 번호인지 확인) */}
+                                                {isOwnerAccountInvite(detailConversion) && (
+                                                    <span className="text-base font-black tabular-nums text-[var(--color-academy-ink)]">
+                                                        {maskedPhoneLast4(detailConversion.phone)} 로 인증번호가 가요
+                                                    </span>
+                                                )}
+                                                {lastSendLine(detailConversion.id)}
+                                            </>
+                                        )
                                         : <span className={CHIP_MUTED}>로그인 없음</span>}
                                 </dd>
                             </>
@@ -1103,7 +1158,7 @@ export default function StaffClient({
             {canManage && roleTargetUser && (
                 <RoleChangeModal
                     user={roleTargetUser}
-                    hasPendingLink={Boolean(roleTargetConversion)}
+                    hasPendingLink={roleTargetHasPendingLink}
                     pending={isPending}
                     onClose={() => setRoleTargetId(null)}
                     onConfirm={(nextRole) => handleRoleChange(roleTargetUser.id, nextRole)}

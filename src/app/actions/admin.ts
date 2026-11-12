@@ -38,6 +38,7 @@ import {
     staffAuthId,
     staffLoginKind,
 } from "@/lib/staff/staffAccountLink";
+import { maskedPhoneLast4 } from "@/lib/staff/staffRoster";
 import {
     createNotificationRecord,
     notifyAdmins,
@@ -7734,14 +7735,100 @@ export async function inviteStaff(data: {
 }
 
 /**
+ * 원장·부원장 비밀번호 재설정 링크(2026-11-12 검수 정확 4) — sendStaffPasswordReset({ userId }) 에서만 부른다(원장 확인 뒤).
+ * 대상 = 직원 전용 로그인(@staff.stiz.kr, authUserId 있음)이 있는 원장·부원장 기록, 본인 제외.
+ * PASSWORD_RESET + targetUserId · 24시간 · 문자 자동 발송 없음([링크 복사]·[문자 보내기]) · 감사 기록.
+ * 가입 처리(acceptInvitation)가 대상의 지금 역할 = 초대 역할·번호 일치를 다시 보고 비밀번호만 바꾼다(역할은 그대로).
+ */
+async function createOwnerPasswordReset(owner: { id: string; appUserId: string }, targetId: string) {
+    if (!targetId) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+    if (targetId === owner.appUserId) {
+        return inviteStaffRejected("본인 계정은 여기서 재설정할 수 없어요. 다른 원장에게 요청해 주세요.");
+    }
+    const targets = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; phone: string | null; role: string; email: string | null; authUserId: string | null }>>(
+        `SELECT id, name, phone, role::text AS role, email, "authUserId"
+           FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+        targetId,
+    );
+    const target = targets[0];
+    if (!target) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+    if (!isLoginLinkRole(target.role)) {
+        return inviteStaffRejected("여기서는 원장·부원장 계정만 재설정합니다. 코치·기사는 [새 스태프 초대]에서 번호로 재설정해 주세요.");
+    }
+    if (!target.authUserId || staffLoginKind(target) !== "staffLogin") {
+        return inviteStaffRejected("전화번호 아이디로 로그인하는 계정만 재설정할 수 있어요. 로그인이 없으면 [로그인 연결]을 써 주세요.");
+    }
+    const cleanPhone = String(target.phone ?? "").replace(/\D/g, "");
+    if (!/^010\d{8}$/.test(cleanPhone)) {
+        return inviteStaffRejected("저장된 휴대전화 번호가 올바르지 않습니다. 번호를 고친 뒤 다시 시도해 주세요.");
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+        // 같은 번호의 초대 만들기를 줄 세운다(두 번 눌러도 링크 하나)
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `staff-invite-phone:${cleanPhone}`);
+        const pending = await tx.$queryRawUnsafe<Array<{ id: string; token: string; targetUserId: string | null; purpose: string | null; role: string }>>(
+            `SELECT id, token, "targetUserId", purpose, role::text AS role FROM "StaffInvitation"
+              WHERE phone = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
+              ORDER BY "createdAt" DESC LIMIT 1`,
+            cleanPhone,
+        );
+        if (pending[0]) {
+            if (pending[0].targetUserId === target.id && pending[0].purpose === "PASSWORD_RESET" && pending[0].role === target.role) {
+                return { id: pending[0].id, token: pending[0].token, reused: true };
+            }
+            return null;
+        }
+        const rows = await tx.$queryRawUnsafe<Array<{ id: string; token: string }>>(
+            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "createdBy", "createdAt", "updatedAt")
+             VALUES ((gen_random_uuid())::text, (gen_random_uuid())::text, $1, $2, $3::"Role", 'PENDING',
+                     NOW() + INTERVAL '1 day', 'PASSWORD_RESET', $4, $5, NOW(), NOW())
+             RETURNING id, token`,
+            target.name,
+            cleanPhone,
+            target.role,
+            target.id,
+            owner.id,
+        );
+        if (!rows[0]) throw new Error("재설정 링크 생성 실패");
+        // 감사 기록 — 누가 누구의 재설정 링크를 만들었는가(토큰은 남기지 않는다)
+        await tx.$executeRawUnsafe(
+            `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+             VALUES (gen_random_uuid()::text, 'STAFF_PASSWORD_RESET_LINK_CREATED', 'ADMIN', $1, $2::jsonb)`,
+            owner.appUserId,
+            JSON.stringify({ targetUserId: target.id, targetName: target.name, role: target.role, invitationId: rows[0].id }),
+        );
+        return { id: rows[0].id, token: rows[0].token, reused: false };
+    });
+    if (!created) {
+        return inviteStaffRejected("이 번호로 대기 중인 다른 초대가 있습니다. 그 초대를 취소한 뒤 다시 눌러 주세요.");
+    }
+    revalidateStaffAdminCaches();
+    revalidatePath("/admin/staff");
+    return {
+        rejected: false as const,
+        name: target.name,
+        loginId: target.email,
+        inviteUrl: getStaffInvitationUrl(created.token),
+        smsSent: false, // 자동 발송 없음 — 원장이 초대 줄 ⚡ [재발송] 또는 링크 복사로 전한다
+        smsError: undefined,
+        reused: created.reused,
+        // 인증번호가 갈 번호(끝 4자리만) — 원장이 «그 사람 번호가 맞는지» 확인하게
+        phoneMasked: maskedPhoneLast4(cleanPhone),
+    };
+}
+
+/**
  * sendStaffPasswordReset — 이미 가입된 선생님·기사의 비밀번호 재설정 링크 (requireOwner: 원장만, 2026-11-12)
  * 직원 아이디는 가짜 메일(전화번호@staff.stiz.kr)이라 메일로는 재설정할 수 없다.
  * 초대와 같은 절차(개인 링크 → 등록 번호 문자 인증 → 비밀번호 설정)를 쓰되, 새 계정을 만들지 않고
  * 이 직원 계정의 로그인 비밀번호만 바꾼다(acceptInvitation 의 PASSWORD_RESET 분기).
+ * 2026-11-12 검수 정확 4: userId 를 주면 원장·부원장 계정 재설정(스태프 화면 패널에서 그 사람을 콕 집어) — createOwnerPasswordReset.
  */
-export async function sendStaffPasswordReset(data: { phone: string }) {
+export async function sendStaffPasswordReset(data: { phone: string; userId?: string }) {
     const user = await requireOwner();
     await ensureStaffInvitationTable();
+    // 원장·부원장은 번호로 고르지 않고 그 기록(userId)으로만 — 문자 자동 발송 없음
+    if (data.userId) return createOwnerPasswordReset(user, String(data.userId).trim());
     const cleanPhone = String(data.phone ?? "").replace(/\D/g, "");
     if (!/^010\d{8}$/.test(cleanPhone)) {
         return inviteStaffRejected("휴대전화 번호는 010으로 시작하는 11자리 숫자로 입력해 주세요.");
@@ -8084,6 +8171,8 @@ export async function linkOwnerStaffLogin(userId: string) {
         token: created.token,
         inviteUrl: getStaffInvitationUrl(created.token),
         reused: created.reused,
+        // 인증번호가 갈 번호(끝 4자리만) — 원장이 «그 사람 번호가 맞는지» 확인하게(보안 검수 ③)
+        phoneMasked: maskedPhoneLast4(cleanPhone),
     };
 }
 

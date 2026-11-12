@@ -17,14 +17,15 @@ export const INVITE_LOGIN_LINK_ROLES = ["ADMIN", "VICE_ADMIN"] as const;
 
 /**
  * 초대 링크가 받는 역할인가 — 초대 화면·문자 인증·가입 시작(처리 시작 실패 설명)이 같은 판정을 쓴다.
- * 코치/강사·셔틀 기사는 예전 그대로. 원장·부원장은 «특정 직원 기록(targetUserId)을 향한 가입(SIGNUP) 초대»일 때만
- * — 일반 초대·비밀번호 재설정으로 원장 계정이 새로 생기거나 바뀌는 길은 없다.
+ * 코치/강사·셔틀 기사는 예전 그대로. 원장·부원장은 «특정 직원 기록(targetUserId)을 향한» 로그인 연결(SIGNUP)·
+ * 비밀번호 재설정(PASSWORD_RESET)일 때만 — 대상 없는 원장 초대로 원장 계정이 새로 생기는 길은 없다.
+ * (대상의 지금 역할 = 초대 역할인지는 가입 처리가 DB 에서 다시 본다: SIGNUP=targetedSignupAllowed · 재설정=role = $2)
  */
 export function invitationRoleAccepted(input: { role: string; targetUserId?: string | null; purpose?: string | null }): boolean {
   if ((INVITE_STAFF_ROLES as readonly string[]).includes(input.role)) return true;
   return (INVITE_LOGIN_LINK_ROLES as readonly string[]).includes(input.role)
     && Boolean(input.targetUserId)
-    && (input.purpose ?? "SIGNUP") === "SIGNUP";
+    && ["SIGNUP", "PASSWORD_RESET"].includes(input.purpose ?? "SIGNUP");
 }
 
 /** Supabase AuthError 에서 판정에 쓰는 칸만 (status·code·name·message) */

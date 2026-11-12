@@ -207,3 +207,27 @@ export function inviteSendStatusLabel(status: string): { label: string; ok: bool
     if (status === "SKIPPED") return { label: "보내지 않음", ok: false };
     return { label: "보내는 중", ok: null };
 }
+
+/** 원장·부원장 계정을 향한 초대(로그인 연결·비밀번호 재설정)인가 — 링크를 손에 쥐면 원장 계정에 닿는다. */
+export function isOwnerAccountInvite(invite: { role: string; targetUserId?: string | null }): boolean {
+    return Boolean(invite.targetUserId) && (invite.role === "ADMIN" || invite.role === "VICE_ADMIN");
+}
+
+/**
+ * 보는 사람이 원장이 아니면(부원장 보기 전용) 원장·부원장 계정 초대의 링크 토큰을 비운다(2026-11-12 보안 검수 ①).
+ * 스태프 화면 데이터는 원장·부원장이 같은 캐시를 쓰므로, 캐시에서 꺼낸 뒤 «보는 사람 기준»으로 여기서 거른다
+ * (페이지·/api/admin/staff 둘 다). 코치·기사 초대 링크 복사는 예전처럼 부원장도 쓴다.
+ */
+export function redactOwnerInviteTokens<I extends { role: string; targetUserId?: string | null; token: string }>(
+    invitations: I[],
+    canManage: boolean,
+): I[] {
+    if (canManage) return invitations;
+    return invitations.map((invite) => (isOwnerAccountInvite(invite) ? { ...invite, token: "" } : invite));
+}
+
+/** 인증번호가 갈 번호를 끝 4자리만 — «010-****-2571». 숫자가 모자라면 «***». */
+export function maskedPhoneLast4(phone: string | null | undefined): string {
+    const digits = String(phone ?? "").replace(/\D/g, "");
+    return digits.length >= 7 ? `${digits.slice(0, 3)}-****-${digits.slice(-4)}` : "***";
+}
