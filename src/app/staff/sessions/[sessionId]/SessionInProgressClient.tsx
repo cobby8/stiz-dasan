@@ -42,6 +42,8 @@ const ClassBillingSheet = dynamic(
 );
 
 type View = "main" | "attendance";
+/** 출석부 줄 안내의 종류 — 저장 실패(error)와 건너뜀·참고(notice)를 다른 색으로 보인다. */
+type RowNoticeTone = "error" | "notice";
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -96,7 +98,7 @@ export default function SessionInProgressClient({
   // 저장 중인 줄만 잠근다(b5) — 예전엔 한 아이를 누르면 출석부 전체 버튼이 잠겨 다음 아이를 못 눌렀다.
   const [savingRows, setSavingRows] = useState<Record<string, true>>({});
   // 줄마다의 저장 실패·주의 문구 — 맨 위 한 칸에 띄우면 어느 아이 얘기인지 몰랐다.
-  const [rowNotices, setRowNotices] = useState<Record<string, string>>({});
+  const [rowNotices, setRowNotices] = useState<Record<string, { text: string; tone: RowNoticeTone }>>({});
   // 로그인이 풀리면 «다시 로그인» 버튼을 보인다(b5).
   const [needsLogin, setNeedsLogin] = useState(false);
   const [finishError, setFinishError] = useState("");
@@ -340,12 +342,18 @@ export default function SessionInProgressClient({
   // 서버에는 그 행의 attendanceKey(방학특강이면 좌석ID)를 넘겨 좌석 기준으로 저장한다.
   // absenceReason: "ILLNESS_INJURY"=질병·부상 표시 / null=표시 끄기 / 생략=그대로(출석·지각이면 서버가 출석부 사유를 지운다).
   // 수업 중에는 언제든 다른 버튼을 눌러 출석↔지각↔결석을 고칠 수 있다(보강권도 서버가 따라 맞춘다).
-  function setRowNotice(rowId: string, text: string) {
+  // tone: "error"=저장 실패(빨강·다시 눌러야 함) / "notice"=건너뜀·참고 안내(주의색·정보 아이콘, 검수 4)
+  function setRowNotice(rowId: string, text: string, tone: RowNoticeTone = "error") {
     setRowNotices((current) => {
       const next = { ...current };
-      if (text) next[rowId] = text; else delete next[rowId];
+      if (text) next[rowId] = { text, tone }; else delete next[rowId];
       return next;
     });
+  }
+
+  /** 특강 좌석은 저장됐지만 정규 출석 기록이 실패했다는 표시(검수 2) — 그 줄에 «다시 눌러 주세요». */
+  function recordWarningOf(result: object): string | null {
+    return "recordWarning" in result ? String((result as { recordWarning?: string }).recordWarning || "") || null : null;
   }
 
   // 한 줄 저장 — 그 줄만 잠그고(다른 아이는 계속 누를 수 있다), 실패 문구는 그 줄 아래에 보인다(b5).
@@ -363,7 +371,7 @@ export default function SessionInProgressClient({
       }
       // 일괄 요청이 아니면 건너뛰지 않지만, 형태상 올 수 있어 그대로 안내한다.
       if ("skipped" in result) {
-        setRowNotice(rowId, result.message);
+        setRowNotice(rowId, result.message ?? "", "notice");
         return;
       }
       setStudents((current) =>
@@ -379,8 +387,10 @@ export default function SessionInProgressClient({
             : student,
         ),
       );
+      const recordWarning = recordWarningOf(result);
       const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
-      if (absenceMessage) setRowNotice(rowId, absenceMessage);
+      if (recordWarning) setRowNotice(rowId, recordWarning, "error");
+      else if (absenceMessage) setRowNotice(rowId, absenceMessage, "notice");
     } catch {
       setRowNotice(rowId, "저장하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.");
     } finally {
@@ -418,21 +428,23 @@ export default function SessionInProgressClient({
             return;
           }
           if ("skipped" in result) {
-            // 화면을 연 뒤에 결석 신고가 들어온 아이 — 그 줄에 «직접 확인» 안내를 남긴다.
+            // 화면을 연 뒤에 결석 신고가 들어왔거나 다른 기기에서 이미 찍힌 아이 — 그 줄에 이유를 남기고 건너뜀으로 센다.
             skipped += 1;
-            setRowNotice(student.id, result.message);
+            setRowNotice(student.id, result.message ?? "", "notice");
           } else {
             setStudents((current) => current.map((row) => (
               row.id === student.id
                 ? { ...row, status: "PRESENT", ...absenceReportPatch(result) }
                 : row
             )));
+            const recordWarning = recordWarningOf(result);
+            if (recordWarning) setRowNotice(student.id, recordWarning, "error");
           }
           setBulkAttendanceProgress(`${index + 1}/${targets.length} 처리 중`);
         }
         if (targets.length > 0) {
           setMessage(skipped > 0
-            ? `전체 출석을 저장했습니다. 결석 신고가 새로 확인된 ${skipped}명은 건너뛰었어요 — 직접 확인해 주세요.`
+            ? `전체 출석을 저장했습니다. ${skipped}명은 건너뛰었어요(결석 신고·이미 기록됨) — 그 줄의 안내를 확인해 주세요.`
             : "전체 출석을 저장했습니다.");
         }
       } catch {
@@ -553,8 +565,8 @@ export default function SessionInProgressClient({
         </button>
         {/* 결석 신고 아이는 전체 출석에서 빠진다(b1). 실제로 왔으면 그 줄의 «출석»을 직접 누르면 된다. */}
         {bulkSplit.reported.length > 0 && (
-          <p role="status" className="flex items-center gap-1 text-xs font-black text-[var(--color-academy-warning)]">
-            <span className="material-symbols-outlined text-sm" aria-hidden="true">event_busy</span>
+          <p role="status" className="flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
             {bulkReportedNotice(bulkSplit.reported.length)} 실제로 왔으면 그 줄의 «출석»을 눌러 주세요.
           </p>
         )}
@@ -637,12 +649,18 @@ export default function SessionInProgressClient({
               })()}
               {/* 이 아이 줄의 저장 상태·실패 문구(b5) — 어느 아이 얘기인지 바로 보이게 그 줄 아래에 둔다. */}
               {savingRows[student.id] && <p aria-live="polite" className="mt-1 text-xs font-bold text-[var(--color-academy-muted)]">저장 중…</p>}
-              {rowNotices[student.id] && (
+              {/* 저장 실패=빨강·error 아이콘, 건너뜀·참고 안내=주의색·info 아이콘(검수 4 — 결석 신고 안내를 오류처럼 보이지 않게) */}
+              {rowNotices[student.id] && (rowNotices[student.id].tone === "error" ? (
                 <p role="alert" className="mt-1 flex items-center gap-1 text-xs font-black text-[var(--color-academy-danger)]">
                   <span className="material-symbols-outlined text-sm" aria-hidden="true">error</span>
-                  {rowNotices[student.id]}
+                  {rowNotices[student.id].text}
                 </p>
-              )}
+              ) : (
+                <p role="status" className="mt-1 flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
+                  {rowNotices[student.id].text}
+                </p>
+              ))}
             </article>;
           })}
         </section>

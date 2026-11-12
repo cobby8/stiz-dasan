@@ -8,7 +8,9 @@ import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } f
 import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { todayKst } from "@/lib/datetime/kst";
 import {
+  BULK_ALREADY_RECORDED_MESSAGE,
   BULK_SKIPPED_MESSAGE,
+  SEAT_RECORD_WARNING_MESSAGE,
   STALE_DATE_MESSAGE,
   activeSessionNotice,
   shouldNotifyParentsForSession,
@@ -45,6 +47,16 @@ async function trySessionAccess(sessionId: string) {
     if (failure) return failure;
     throw error;
   }
+}
+
+/**
+ * 특강 회차의 담당 강사(Coach id) — 원장·부원장이 특강 기록을 처음 만들 때 coachId 를 채우는 데 쓴다(검수 H1).
+ * 회차 ID 가 NULL(정규 수업)이면 NULL 이 나온다. 권한 판정(requireStaffSeasonalSessionAccess)의 instructorId 와 같은 값.
+ */
+function seasonalInstructorSql(sessionDateParam: string) {
+  return `(SELECT o."instructorId" FROM "SpecialProgramSessionDate" sd
+            JOIN "SpecialProgramOffering" o ON o.id = sd."offeringId"
+           WHERE sd.id = ${sessionDateParam} LIMIT 1)`;
 }
 
 /** 응답을 돌려준 뒤에 학부모 알림을 보낸다(Next after) — 알림이 느려도 선생님 화면이 기다리지 않게. */
@@ -118,6 +130,8 @@ async function saveSeasonalSeatAttendance(input: {
   status: AttendanceStatus;
   note: string | null;
   checkedByUserId: string | null;
+  /** «전체 출석» 요청 — 이미 찍힌 좌석은 덮어쓰지 않는다(검수 3). */
+  bulk?: boolean;
 }) {
   // 알림 전송 여부 판정용 이전 좌석 상태(변경 없으면 알림 생략).
   const prev = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
@@ -156,10 +170,23 @@ async function saveSeasonalSeatAttendance(input: {
         AND e."applicationItemId" = i.id
         AND e."sessionDateId" = sd.id
         AND e.status = 'SCHEDULED'
+        AND ($6::boolean = false OR e."attendanceStatus" IS NULL)
       RETURNING e.id, e."studentId"`,
-    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId,
+    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId, Boolean(input.bulk),
   );
   if (updated.length === 0) {
+    // 전체 출석인데 이미 찍힌 좌석이면(다른 기기) 덮어쓰지 않고 건너뜀으로 돌려준다(검수 3).
+    // 조건을 UPDATE 안에 넣어 두 기기가 동시에 눌러도 먼저 찍힌 값이 남는다.
+    if (input.bulk) {
+      // 방금 다른 기기가 찍었을 수도 있어 저장 직후 상태를 다시 읽어 판정한다.
+      const now = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
+        `SELECT "attendanceStatus" FROM "SpecialProgramEnrollmentDate" WHERE id = $1 LIMIT 1`,
+        input.enrollmentDateId,
+      );
+      if (now[0]?.attendanceStatus) {
+        return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+      }
+    }
     return { ok: false as const, message: "이 수업의 확정 명단에 없는 좌석입니다." };
   }
 
@@ -226,13 +253,15 @@ async function saveSeasonalSeatAttendance(input: {
       });
     }
   } catch (error) {
-    console.error("[saveSeasonalSeatAttendance] 정규 Attendance/알림 실패(좌석 저장은 유지)", {
+    // 좌석(정본)은 저장됐고 정규 Attendance 기록만 실패한 경우 — 화면이 그 줄 아래에 «다시 눌러 주세요»를 보인다(검수 2).
+    // 다시 누르면 같은 좌석·같은 Attendance 를 다시 쓰므로(UPSERT) 중복 기록은 생기지 않는다.
+    console.error("[saveSeasonalSeatAttendance] 정규 Attendance 기록 실패(좌석 저장은 유지)", {
       sessionId: input.session.id,
       enrollmentDateId: input.enrollmentDateId,
       studentId,
       error,
     });
-    return { ok: true as const, attendanceId, changed, notificationWarning: true as const };
+    return { ok: true as const, attendanceId, changed, recordWarning: SEAT_RECORD_WARNING_MESSAGE };
   }
   return { ok: true as const, attendanceId, changed };
 }
@@ -311,6 +340,9 @@ export async function savePlannedClassContent(input: {
 
   // 정규 수업 키는 관리자 출결·랠리즈와 같은 함수(regularSessionKey)로 만든다.
   const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : regularSessionKey(input.classId, input.date);
+  // coachId: 원장·부원장은 코치가 없어 access.coachId 가 NULL 이다. 그대로 넣으면 특강 기록의 coachId 가 비고,
+  // 특강 권한·목록은 «기록이 있으면 기록의 coachId» 를 보므로 담당 강사 홈에서 수업이 사라지고 시작도 막힌다(검수 H1).
+  // → 특강이면 그 회차 상품의 담당 강사(instructorId)로 채운다(관리자 출결 저장 admin.ts 와 같은 원칙). 정규는 NULL 그대로.
   const rows = await prisma.$transaction(async (tx) => {
     // 관리자가 먼저 출결을 저장해 «키 없는» 기록이 있으면 그 기록에 키를 붙여 같은 기록을 쓴다(기록 갈라짐 방지).
     if (!sessionDateId) await adoptRegularSessionKey(tx, input.classId, input.date);
@@ -318,7 +350,7 @@ export async function savePlannedClassContent(input: {
     `INSERT INTO "Session" (
        id, "classId", date, "sessionKey", status, "plannedContent", "coachId", "specialProgramSessionDateId", "createdAt", "updatedAt"
      ) VALUES (
-       gen_random_uuid()::text, $1, $2::date, $3, 'PLANNED', $4, $5, $6, NOW(), NOW()
+       gen_random_uuid()::text, $1, $2::date, $3, 'PLANNED', $4, COALESCE($5::text, ${seasonalInstructorSql("$6::text")}), $6, NOW(), NOW()
      )
      ON CONFLICT ("sessionKey") DO UPDATE SET
        "plannedContent" = EXCLUDED."plannedContent",
@@ -388,6 +420,7 @@ export async function saveStaffAttendance(input: {
       status: input.status,
       note: input.note?.trim() || null,
       checkedByUserId: access.staff.appUserId,
+      bulk: input.bulk,
     });
   }
 
@@ -399,26 +432,32 @@ export async function saveStaffAttendance(input: {
   const isMakeup = !enrolled && (await findMakeupBookings(prisma, { studentId, classId: session.classId, dateYmd: sessionYmd })).length > 0;
   if (!enrolled && !isMakeup) return { ok: false as const, message: "이 수업의 확정 명단에 없는 학생입니다." };
 
-  // «전체 출석»으로 들어온 요청이면 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이는 저장하지 않고 건너뛴다(b1).
+  const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
+    `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
+  );
+  const changed = previous[0]?.status !== input.status;
+
+  // «전체 출석»으로 들어온 요청은 미확인 아이만 대상이다.
+  //  ① 이미 출결이 있는 아이(다른 기기에서 먼저 찍음)는 덮어쓰지 않고 건너뛴다(검수 3) — «결석»이 «출석»으로 바뀌면 보강권·알림이 틀어진다.
+  //  ② 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이도 건너뛴다(b1).
   // 화면도 이 아이들을 빼고 보내지만, 화면이 낡았거나(신고가 방금 들어옴) 다른 경로로 와도 서버가 한 번 더 막는다.
   // 선생님이 그 줄의 «출석»을 직접 누른 요청(bulk 없음)은 아이가 실제로 온 것이므로 그대로 받는다.
+  if (input.bulk && previous[0]) {
+    return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+  }
   if (input.bulk && input.status === "PRESENT" && !isMakeup) {
     const reported = await prisma.$queryRawUnsafe<{ id: string }[]>(
       `SELECT ra.id FROM "RegularAbsence" ra
         WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date AND ra.status IN ('REPORTED','CONFIRMED')
-          AND NOT EXISTS (SELECT 1 FROM "Attendance" a WHERE a."sessionId" = $4 AND a."studentId" = $1)
         LIMIT 1`,
-      studentId, session.classId, sessionYmd, input.sessionId,
+      studentId, session.classId, sessionYmd,
     );
     if (reported[0]) {
       return { ok: true as const, skipped: true as const, message: BULK_SKIPPED_MESSAGE };
     }
   }
 
-  const previous = await prisma.$queryRawUnsafe<{ status: string }[]>(
-    `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
-  );
-  const changed = previous[0]?.status !== input.status;
+  // 일괄($6=true)이면 «비어 있을 때만» 쓴다 — 확인과 저장 사이에 다른 기기가 찍어도 덮어쓰지 않는다(DO UPDATE 가 0행 → RETURNING 없음).
   const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, note, "checkedAt", "arrivedAt", "checkedByUserId", "createdAt", "updatedAt")
      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), CASE WHEN $3 = 'LATE' THEN NOW() ELSE NULL END, $5, NOW(), NOW())
@@ -427,9 +466,13 @@ export async function saveStaffAttendance(input: {
        "checkedAt" = COALESCE("Attendance"."checkedAt", NOW()),
        "arrivedAt" = CASE WHEN EXCLUDED.status = 'LATE' THEN COALESCE("Attendance"."arrivedAt", NOW()) ELSE NULL END,
        "checkedByUserId" = EXCLUDED."checkedByUserId", "updatedAt" = NOW()
+     WHERE $6::boolean = false
      RETURNING id`,
-    input.sessionId, studentId, input.status, input.note?.trim() || null, access.staff.appUserId,
+    input.sessionId, studentId, input.status, input.note?.trim() || null, access.staff.appUserId, Boolean(input.bulk),
   );
+  if (!saved[0]) {
+    return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+  }
 
   if (isMakeup) {
     // 보강 온 아이 — 이 반 결석으로 보강권을 새로 주면 안 된다(syncCreditForRegularSession 을 타지 않는다).
@@ -878,13 +921,16 @@ export async function startClassSession(input: {
       }
 
       // 첫 요청만 새 Session을 만듭니다. 같은 키의 재요청은 아무것도 생성하지 않습니다.
+      // coachId: 원장·부원장이 특강을 바로 시작해도 담당 강사가 계속 보고 이어 쓸 수 있게
+      // 특강이면 회차 담당 강사로 채운다(검수 H1, 미리 작성과 같은 원칙). 정규는 기존대로.
       const inserted = await tx.$queryRawUnsafe<SessionStartRow[]>(
       `INSERT INTO "Session" (
          id, "classId", date, "sessionKey", status, "coachId",
          "startedAt", "startedByUserId", "specialProgramSessionDateId", "createdAt", "updatedAt"
        )
        VALUES (
-         gen_random_uuid()::text, $1, $2::date, $3, 'IN_PROGRESS', $4,
+         gen_random_uuid()::text, $1, $2::date, $3, 'IN_PROGRESS',
+         COALESCE($4::text, ${seasonalInstructorSql("$6::text")}),
          NOW(), $5, $6, NOW(), NOW()
        )
        ON CONFLICT ("sessionKey") DO NOTHING
