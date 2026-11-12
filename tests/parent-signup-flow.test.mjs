@@ -8,6 +8,9 @@ const verifyRoute = readFileSync("src/app/api/auth/parent-signup/verify-otp/rout
 const completeRoute = readFileSync("src/app/api/auth/parent-signup/complete/route.ts", "utf8");
 const verification = readFileSync("src/lib/parent-signup-verification.ts", "utf8");
 const authActions = readFileSync("src/app/actions/auth.ts", "utf8");
+// 동의 버전(가입·계정 활성화 공용, 2026-11-13)과 동의 체크칸 부품(약관 «보기» 창 포함)
+const consentLib = readFileSync("src/lib/parent-consent.ts", "utf8");
+const consentUi = readFileSync("src/components/auth/ParentConsentChecks.tsx", "utf8");
 const oauthCallback = readFileSync("src/app/auth/callback/route.ts", "utf8");
 const authContinue = readFileSync("src/app/auth/continue/page.tsx", "utf8");
 const authGuard = readFileSync("src/lib/auth-guard.ts", "utf8");
@@ -56,8 +59,11 @@ test("phone OTP uses keyed hashes and enforces expiry, attempts, resend, and dai
   assert.match(verification, /INTERVAL '60 seconds'/);
   assert.match(verification, />=\s*10/);
   assert.match(verification, /otpExpiresAt\s*<=\s*new Date\(\)/);
-  assert.match(verification, /hourlyRequest\)\s*>=\s*5/);
-  assert.match(verification, /dailyRequest\)\s*>=\s*20/);
+  // 같은 IP 한도는 시간당 40·하루 200(2026-11-13 a6 완화). 번호당 하루 10·전체 5000·오답 잠금은 그대로.
+  assert.match(verification, /hourlyRequest\)\s*>=\s*SIGNUP_OTP_IP_HOURLY_LIMIT/);
+  assert.match(verification, /dailyRequest\)\s*>=\s*SIGNUP_OTP_IP_DAILY_LIMIT/);
+  assert.match(verification, /SIGNUP_OTP_IP_HOURLY_LIMIT = 40;/);
+  assert.match(verification, /SIGNUP_OTP_IP_DAILY_LIMIT = 200;/);
   assert.match(verification, /dailyGlobal\)\s*>=\s*5000/);
   assert.match(verification, /DELETE FROM "ParentSignupVerification"[^`]*INTERVAL '7 days'/s);
   assert.match(signupMigration, /CREATE TABLE IF NOT EXISTS "ParentSignupOtpSend"[\s\S]*?"requestHash" TEXT/);
@@ -84,8 +90,10 @@ test("seven-day cleanup deletes unfinished rows but preserves completed consent 
   );
   assert.match(verification, /"termsAgreedAt"=NOW\(\), "termsVersion"=\$5/);
   assert.match(verification, /"privacyAgreedAt"=NOW\(\), "privacyVersion"=\$6/);
-  assert.match(verification, /const TERMS_VERSION = "\d{4}-\d{2}-\d{2}"/);
-  assert.match(verification, /const PRIVACY_VERSION = "\d{4}-\d{2}-\d{2}"/);
+  assert.match(verification, /const TERMS_VERSION = PARENT_TERMS_VERSION;/);
+  assert.match(verification, /const PRIVACY_VERSION = PARENT_PRIVACY_VERSION;/);
+  assert.match(consentLib, /PARENT_TERMS_VERSION = "\d{4}-\d{2}-\d{2}"/);
+  assert.match(consentLib, /PARENT_PRIVACY_VERSION = "\d{4}-\d{2}-\d{2}"/);
   assert.match(signupMigration, /"termsVersion" TEXT/);
   assert.match(signupMigration, /"privacyVersion" TEXT/);
 });
@@ -104,7 +112,8 @@ test("application parent membership is created only after verified proof", () =>
 
 test("username login is added without removing staff email login", () => {
   assert.match(authActions, /formData\.get\("email"\)\s*\|\|\s*formData\.get\("username"\)/);
-  assert.match(authActions, /loginContext\s*!==\s*"staff"\s*&&\s*!identifier\.includes\("@"\)/);
+  // 직원은 번호만 넣어도 «번호@staff.stiz.kr» 로 바뀌고(2026-11-13 b3), 학부모 아이디 조회는 직원 아닐 때만
+  assert.match(authActions, /if \(loginContext === "staff"\) \{\s*[^}]*authEmail = staffLoginEmail\(identifier\);\s*\} else if \(!identifier\.includes\("@"\)\)/);
   assert.match(authActions, /LOWER\(username\).*role = 'PARENT'/s);
   assert.match(authActions, /signInWithPassword\(\{\s*email:\s*authEmail/s);
 });
@@ -137,7 +146,8 @@ test("the shared verified-parent guard protects mypage and payment entry points"
 
 test("consent values come from the checked form controls", () => {
   for (const consent of ["terms", "privacy", "age"]) {
-    assert.match(signupUi, new RegExp(`name=["']${consent}["']`));
+    // 체크칸은 공용 부품(ParentConsentChecks)이 그린다 — 이름 목록에 세 가지가 있어야 한다
+    assert.match(consentUi, new RegExp(`name: ["']${consent}["']`));
     assert.match(signupUi, new RegExp(`form\\.get\\(["']${consent}["']\\) === ["']on["']`));
   }
 });

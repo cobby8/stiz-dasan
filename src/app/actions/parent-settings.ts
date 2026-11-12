@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { writePushPrefs } from "@/lib/parent-notification-preferences";
 import { cleanDisplayName, newPasswordProblem, normalizePushPrefs } from "@/lib/mypage/parentSettings";
+import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
 
 // 학부모 설정 화면(/mypage/settings) 서버 동작 (2026-11-10 원장 결정 k7).
 //
@@ -70,6 +71,8 @@ export async function changeMyPassword(current: string, next: string, confirm: s
     const updated = await supabase.auth.updateUser({ password: next });
     if (updated.error) {
         console.error("[changeMyPassword] update failed:", updated.error.message);
+        // 약한 비밀번호 거절은 이유를 알려 준다(가입·활성화·비밀번호 찾기와 같은 판정·문장)
+        if (isWeakPasswordRejection(updated.error)) return { ok: false, error: PARENT_WEAK_PASSWORD_MESSAGE };
         return { ok: false, error: "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." };
     }
     return { ok: true };

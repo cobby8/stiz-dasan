@@ -10,11 +10,18 @@ import { linkEnrollmentAccount } from "@/lib/enrollment-account-handoff";
 import { issueVerifiedSelfParentClaim, SelfClaimUserError } from "@/lib/parent-account-claim";
 import { isSyntheticParentEmail } from "@/lib/parent-synthetic-email";
 import { resolveRedirectForRole } from "@/lib/auth-routes";
+import { PARENT_PRIVACY_VERSION, PARENT_TERMS_VERSION, PARENT_CONSENT_REQUIRED_MESSAGE, hasAllParentConsents } from "@/lib/parent-consent";
+import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection } from "@/lib/parent-password-rules";
 
 const OTP_TTL_MINUTES = 5;
 const MAX_ATTEMPTS = 5;
-const TERMS_VERSION = "2026-07-23";
-const PRIVACY_VERSION = "2026-07-23";
+// 동의 버전은 기존 계정 활성화와 같은 값을 쓴다(@/lib/parent-consent 한 곳)
+const TERMS_VERSION = PARENT_TERMS_VERSION;
+const PRIVACY_VERSION = PARENT_PRIVACY_VERSION;
+// 같은 요청 IP 의 인증번호 한도(2026-11-13 완화 a6) — 학원·아파트 공용 와이파이에서 여러 학부모가 몰려 막히던 것.
+// 번호당(하루 10회)·전체(하루 5000)·오답 잠금(5회 15분)은 그대로다.
+export const SIGNUP_OTP_IP_HOURLY_LIMIT = 40;
+export const SIGNUP_OTP_IP_DAILY_LIMIT = 200;
 const USERNAME_PATTERN = /^[a-z][a-z0-9_]{3,19}$/;
 // DB CHECK(ParentSignupVerification_signupMethod_check)와 같은 목록이어야 한다 — 테스트가 마이그레이션과 대조한다.
 export const PARENT_SIGNUP_METHODS = ["PASSWORD", "GOOGLE", "KAKAO", "NAVER", "APPLE"] as const;
@@ -275,7 +282,7 @@ export async function sendParentSignupOtp(token: string, requestKey = "unknown")
       );
       if (Number(quota[0]?.recent) > 0) throw new Error("인증번호는 60초 후 다시 요청할 수 있습니다.");
       if (Number(quota[0]?.daily) >= 10) throw new Error("오늘 인증번호 요청 횟수를 초과했습니다.");
-      if (Number(quota[0]?.hourlyRequest) >= 5 || Number(quota[0]?.dailyRequest) >= 20) throw new Error("인증 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+      if (Number(quota[0]?.hourlyRequest) >= SIGNUP_OTP_IP_HOURLY_LIMIT || Number(quota[0]?.dailyRequest) >= SIGNUP_OTP_IP_DAILY_LIMIT) throw new Error("인증 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
       if (Number(quota[0]?.dailyGlobal) >= 5000) throw new Error("현재 인증 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
       reserved = keyed(`otp:${hash(token)}:${current.phone}:${code}`);
       await tx.$executeRawUnsafe(
@@ -336,7 +343,7 @@ export async function completeParentSignup(input: {
   const name = input.name.trim();
   if (!USERNAME_PATTERN.test(username)) return { error: "아이디는 영문 소문자로 시작하고 영문·숫자·밑줄 조합의 4~20자로 입력해 주세요." };
   if (name.length < 2 || name.length > 40) return { error: "이름은 2~40자로 입력해 주세요." };
-  if (!input.consents.terms || !input.consents.privacy || !input.consents.age) return { error: "필수 약관과 만 14세 이상 확인에 모두 동의해 주세요." };
+  if (!hasAllParentConsents(input.consents)) return { error: PARENT_CONSENT_REQUIRED_MESSAGE };
   const attemptId = randomUUID(); let row: Row | null = null; let authUserId: string | null = null; let createdAuth = false;
   try {
     row = await prisma.$transaction(async (tx) => {
@@ -374,6 +381,8 @@ export async function completeParentSignup(input: {
     const admin = createAdminClient();
     if (row.signupMethod === "PASSWORD") {
       const created = await admin.auth.admin.createUser({ email: parentUsernameAuthEmail(row.username!), password: input.password!, email_confirm: true, app_metadata: { role: "PARENT" }, user_metadata: { name: row.name!, username: row.username! } });
+      // 약한 비밀번호 거절은 이유를 알려 준다(예전엔 «로그인 계정을 만들지 못했습니다»만 떠서 무엇을 고칠지 몰랐다)
+      if (created.error && isWeakPasswordRejection(created.error)) throw new Error(PARENT_WEAK_PASSWORD_MESSAGE);
       if (created.error || !created.data.user) throw new Error(created.error?.message?.toLowerCase().includes("already") ? "이미 사용 중인 로그인 아이디입니다." : "로그인 계정을 만들지 못했습니다.");
       authUserId = created.data.user.id; createdAuth = true;
     } else {

@@ -36,7 +36,8 @@ test("parent login screen exposes social login without showing it in staff mode"
   assert.match(loginPage, /네이버로 로그인/);
   assert.match(loginPage, /socialLoginParams\.set\("intent", "login"\)/);
   // 직원 모드에서는 여전히 숨긴다. 켜진 간편로그인이 하나도 없으면 구역 자체를 숨긴다(2026-10-25).
-  assert.match(loginPage, /!isStaffMode && mode === "login" && visibleSocialLoginOptions\.length > 0/);
+  // 스토어 앱에서는 숨긴다(2026-11-13 a1) — 브라우저로 확인된 때(storeApp === false)만 간편로그인을 그린다
+  assert.match(loginPage, /!isStaffMode && mode === "login" && storeApp === false && visibleSocialLoginOptions\.length > 0/);
 });
 
 test("OAuth errors return to the flow that started the provider handoff", () => {

@@ -53,6 +53,8 @@ export async function acceptParentAccountClaim(
   token: string,
   email: string,
   password: string,
+  // 필수 동의 3개(이용약관·개인정보·만 14세) — 서버(consumeParentAccountClaim)가 다시 확인하고 기록한다
+  consents?: { terms?: boolean; privacy?: boolean; age?: boolean } | null,
 ) {
   const normalizedToken = token.trim();
   const cookieStore = await cookies();
@@ -63,6 +65,11 @@ export async function acceptParentAccountClaim(
     proof,
     email,
     password,
+    {
+      terms: consents?.terms === true,
+      privacy: consents?.privacy === true,
+      age: consents?.age === true,
+    },
   );
   if (!("ok" in result) || !result.ok) return result;
 

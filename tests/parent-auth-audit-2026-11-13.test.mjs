@@ -54,5 +54,6 @@ test("가입: 인증번호 재요청 라우트도 요청 IP 로 한도를 센다
 test("로그인: 학부모가 틀리면 아이디·비밀번호 찾기로 안내", async () => {
   const src = await readFile("src/app/actions/auth.ts", "utf8");
   assert.match(src, /아이디 또는 비밀번호가 올바르지 않습니다\. 기억나지 않으면/);
-  assert.match(src, /loginContext === "staff"\n\s*\? "이메일 또는 비밀번호가 올바르지 않습니다\."/);
+  // 직원은 휴대폰 번호로도 로그인한다(2026-11-13 b3) — 틀렸을 때 안내도 번호를 함께 말한다
+  assert.match(src, /loginContext === "staff"\n\s*\? "휴대폰 번호\(또는 이메일\) 또는 비밀번호가 올바르지 않습니다\."/);
 });
