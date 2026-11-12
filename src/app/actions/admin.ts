@@ -33,6 +33,7 @@ import {
     RETIRED_LOGIN_BAN_DURATION,
     decideRetiredReinvite,
     isConvertibleStaffRole,
+    isLoginLinkRole,
     shouldBlockLoginOnRetire,
     staffAuthId,
     staffLoginKind,
@@ -7847,7 +7848,7 @@ export async function resendInvitation(invitationId: string) {
     try {
         // 초대 정보 조회
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT token, name, phone, "expiresAt", purpose, "targetUserId"
+            `SELECT token, name, phone, role::text AS role, "expiresAt", purpose, "targetUserId"
              FROM "StaffInvitation"
              WHERE id = $1 AND status = 'PENDING'
              LIMIT 1`,
@@ -7864,11 +7865,12 @@ export async function resendInvitation(invitationId: string) {
         }
         const expiresAt = new Date(inv.expiresAt ?? inv.expiresat);
 
-        // 만료되었으면 7일 연장
+        // 만료되었으면 7일 연장 — 원장·부원장 로그인 연결 초대는 24시간만(2026-11-12 안전장치)
         if (expiresAt < new Date()) {
             await prisma.$executeRawUnsafe(
                 `UPDATE "StaffInvitation"
-                 SET "expiresAt" = NOW() + INTERVAL '7 days', "updatedAt" = NOW()
+                 SET "expiresAt" = NOW() + CASE WHEN role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") THEN INTERVAL '1 day' ELSE INTERVAL '7 days' END,
+                     "updatedAt" = NOW()
                  WHERE id = $1`,
                 invitationId,
             );
@@ -7889,6 +7891,11 @@ export async function resendInvitation(invitationId: string) {
                 body: inv.purpose === "PASSWORD_RESET"
                     ? `[STIZ 농구교실] ${inv.name}님, 비밀번호 재설정 링크를 다시 보냅니다.
 아래 링크에서 문자 인증 후 새 비밀번호를 정해 주세요:
+${inviteUrl}`
+                    : inv.targetUserId && isLoginLinkRole(String(inv.role ?? ""))
+                        // 원장·부원장 로그인 연결 — 원장이 [문자 보내기]를 눌렀을 때만(자동 발송 없음)
+                        ? `[STIZ 농구교실] ${inv.name}님, 관리자 로그인 연결 링크입니다(24시간 유효).
+아래 링크에서 문자 인증 후 비밀번호를 정해 주세요:
 ${inviteUrl}`
                     : inv.targetUserId
                         // 직접 추가 직원의 앱 계정 전환 — 첫 발송도 원장이 [문자 보내기]로 보낸다(자동 발송 없음)
@@ -7978,6 +7985,91 @@ export async function convertDirectStaffToInvite(userId: string) {
             owner.id,
         );
         if (!rows[0]) throw new Error("초대 생성 실패");
+        return { id: rows[0].id, token: rows[0].token, reused: false };
+    });
+    if (!created) {
+        return inviteStaffRejected("이 번호로 대기 중인 다른 초대가 있습니다. 그 초대를 취소한 뒤 다시 눌러 주세요.");
+    }
+
+    revalidateStaffAdminCaches();
+    revalidatePath("/admin/staff");
+    return {
+        rejected: false as const,
+        invitationId: created.id,
+        token: created.token,
+        inviteUrl: getStaffInvitationUrl(created.token),
+        reused: created.reused,
+    };
+}
+
+/**
+ * linkOwnerStaffLogin — 원장·부원장 «로그인 연결» 링크 만들기 (requireOwner: 원장만, 2026-11-12 원장 지시 — 권혜미 대표원장)
+ *
+ * 직접 추가된 원장·부원장 기록(@staff.local, 로그인 없음)은 로그인을 못 한다. [초대로 전환]은 코치·기사만 받으므로,
+ * 이 경우만 그 기록을 향한 전용 초대(SIGNUP + targetUserId, 역할 = 대상의 지금 역할 그대로)를 만든다.
+ * 안전장치: 유효 24시간 · 초대에 적힌 그 사람 번호 문자 인증(기존 흐름) · 가입 거래에서 대상 역할·로그인 없음을 다시 확인 ·
+ * 연결되면 다른 원장·부원장 알림 + 감사 기록(acceptInvitation). 비밀번호는 본인이 가입 화면에서 정한다.
+ * 문자는 보내지 않는다 — 원장이 [링크 복사]·[문자 보내기]로 전한다. 같은 사람의 대기 링크가 있으면 그것을 돌려준다.
+ */
+export async function linkOwnerStaffLogin(userId: string) {
+    const owner = await requireOwner();
+    await ensureStaffInvitationTable();
+    const targetId = String(userId ?? "").trim();
+    if (!targetId) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+    if (targetId === owner.appUserId) return inviteStaffRejected("이미 로그인한 본인 계정입니다.");
+
+    const targets = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; phone: string | null; role: string; email: string | null; authUserId: string | null }>>(
+        `SELECT id, name, phone, role::text AS role, email, "authUserId"
+           FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+        targetId,
+    );
+    const target = targets[0];
+    if (!target) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+    if (staffLoginKind(target) !== "none") return inviteStaffRejected("이미 로그인 계정이 있는 직원입니다.");
+    // 원장·부원장만 — 코치·기사는 기존 [초대로 전환](7일 링크)을 쓴다
+    if (!isLoginLinkRole(target.role)) {
+        return inviteStaffRejected("원장·부원장 기록만 로그인 연결을 할 수 있습니다. 코치·기사는 [초대로 전환]을 써 주세요.");
+    }
+    const cleanPhone = String(target.phone ?? "").replace(/\D/g, "");
+    if (!/^010\d{8}$/.test(cleanPhone)) {
+        return inviteStaffRejected("저장된 휴대전화 번호가 올바르지 않습니다. 번호를 고친 뒤 다시 시도해 주세요.");
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+        // 같은 번호의 초대 만들기를 줄 세운다(두 번 눌러도 링크 하나) — 초대로 전환과 같은 잠금 열쇠
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `staff-invite-phone:${cleanPhone}`);
+        const pending = await tx.$queryRawUnsafe<Array<{ id: string; token: string; targetUserId: string | null; purpose: string | null; role: string }>>(
+            `SELECT id, token, "targetUserId", purpose, role::text AS role FROM "StaffInvitation"
+              WHERE phone = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
+              ORDER BY "createdAt" DESC LIMIT 1`,
+            cleanPhone,
+        );
+        if (pending[0]) {
+            // 같은 사람·같은 역할의 로그인 연결 링크면 그대로 돌려준다(유효기간은 처음 만든 때부터 24시간)
+            if (pending[0].targetUserId === target.id && pending[0].purpose !== "PASSWORD_RESET" && pending[0].role === target.role) {
+                return { id: pending[0].id, token: pending[0].token, reused: true };
+            }
+            return null;
+        }
+        const rows = await tx.$queryRawUnsafe<Array<{ id: string; token: string }>>(
+            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "createdBy", "createdAt", "updatedAt")
+             VALUES ((gen_random_uuid())::text, (gen_random_uuid())::text, $1, $2, $3::"Role", 'PENDING',
+                     NOW() + INTERVAL '1 day', 'SIGNUP', $4, $5, NOW(), NOW())
+             RETURNING id, token`,
+            target.name,
+            cleanPhone,
+            target.role,
+            target.id,
+            owner.id,
+        );
+        if (!rows[0]) throw new Error("로그인 연결 링크 생성 실패");
+        // 감사 기록 — 누가 누구의 로그인 연결 링크를 만들었는가(링크 주소·토큰은 남기지 않는다)
+        await tx.$executeRawUnsafe(
+            `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+             VALUES (gen_random_uuid()::text, 'STAFF_LOGIN_LINK_CREATED', 'ADMIN', $1, $2::jsonb)`,
+            owner.appUserId,
+            JSON.stringify({ targetUserId: target.id, targetName: target.name, role: target.role, invitationId: rows[0].id }),
+        );
         return { id: rows[0].id, token: rows[0].token, reused: false };
     });
     if (!created) {

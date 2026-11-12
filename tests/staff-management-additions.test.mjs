@@ -157,12 +157,22 @@ test("부원장은 보기 전용 — 패널 작업은 canManage 일 때만, 자�
 
 // ── 화면 ──────────────────────────────────────────────────
 
-test("s4 역할 변경은 공용 확인 창 + 학부모 안내, 브라우저 confirm 을 쓰지 않는다", () => {
-  const fn = client.slice(client.indexOf("async function handleRoleChange"), client.indexOf("// ── 코치 연결 핸들러"));
-  assert.match(fn, /await askConfirm\(/);
-  assert.match(fn, /학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요\./);
+test("s4 역할 변경은 [역할 변경] 버튼 → 역할 고르기 창(«바뀌는 것» 미리보기 + 변경하기), 브라우저 confirm 을 쓰지 않는다", async () => {
+  // 2026-11-12 원장 지시: 선택칸 대신 버튼 + 창. 학부모 안내 문구는 창 미리보기(roleChange.ts)로 옮겼다.
+  const fn = client.slice(client.indexOf("function openRoleChange"), client.indexOf("// ── 코치 연결 핸들러"));
+  assert.match(fn, /await updateUserRole\(userId, newRole\)/);
   assert.doesNotMatch(fn, /\bconfirm\(`/);
   assert.match(client, /\{confirmDialog\}/);
+  const roleChange = await read("src/lib/staff/roleChange.ts");
+  assert.match(roleChange, /학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요\./);
+  const modal = await read("src/app/admin/staff/RoleChangeModal.tsx");
+  assert.match(modal, /<AdminModal /); // 공용 창 부품(휴대폰은 아래 시트)
+  assert.match(modal, /role="radiogroup"/);
+  assert.match(modal, /disabled=\{isCurrent \|\| pending\}/); // 지금 역할은 못 고른다
+  assert.match(modal, /바뀌는 것/);
+  assert.match(modal, /변경하기/);
+  assert.doesNotMatch(modal, /<select/);
+  assert.doesNotMatch(modal, /\b(bg|text|border)-(red|green|amber|gray|blue)-\d/);
 });
 
 test("s3 확인 창은 할 일을 나열하고 체크해야 확정", () => {
@@ -211,7 +221,7 @@ test("[필수1] 가입 거래는 직원 기록 → 초대 순서로 잠그고 �
   // 전환: 역할이 처음 읽은 그대로가 아니면 멈춘다(CASE 가 강등을 되올리지 못하게) — 붙이기 UPDATE 보다 먼저
   const conversion = invite.slice(invite.indexOf("if (conversionTargetId) {"));
   assert.ok(conversion.indexOf("lockTargetAndAssertInvitation(tx") < conversion.indexOf(`SET "authUserId" = $1, email = $2`));
-  assert.match(conversion, /if \(!isConvertibleStaffRole\(lockedRole\) \|\| lockedRole !== conversionTargetRole\) \{/);
+  assert.match(conversion, /if \(!targetedSignupAllowed\(\{ inviteRole: invitation\.role, targetRole: lockedRole \}\) \|\| lockedRole !== conversionTargetRole\) \{/);
   // 재입사: 잠근 역할이 학부모일 때만
   assert.match(invite, /if \(lockedRole !== "PARENT"\) throw/);
 });
@@ -251,10 +261,12 @@ test("[재검수 HIGH] 강등 → 복구 → 옛 링크 가입해도 역할이 �
   assert.match(recovery, /deleteUser\(authUserId\)/); // 정리는 그대로
   // ② 전환 가입: 지금 학부모면 거절(거래 밖 첫 확인 + 거래 안 재확인), 역할은 절대 바꾸지 않는다
   const conversion = invite.slice(invite.indexOf("if (kind !== \"none\") throw"), invite.indexOf("const supabaseAdmin = createAdminClient();"));
-  assert.match(conversion, /if \(!isConvertibleStaffRole\(target\.role\) \|\| !isConvertibleStaffRole\(invitation\.role\)\)/);
+  assert.match(conversion, /if \(!targetedSignupAllowed\(\{ inviteRole: invitation\.role, targetRole: target\.role \}\)\)/);
   const attach = invite.slice(invite.indexOf("if (conversionTargetId) {"), invite.indexOf("} else {", invite.indexOf("if (conversionTargetId) {")));
-  assert.doesNotMatch(attach, /role = CASE|SET role|role = \$/);
-  assert.match(attach, /AND role IN \('INSTRUCTOR'::"Role", 'DRIVER'::"Role"\)/);
+  // 역할을 «바꾸는» 줄이 없다(SET 목록의 role 대입). WHERE 의 «role = $4»(잠근 역할 그대로인지 확인)는 대입이 아니다.
+  assert.doesNotMatch(attach, /role = CASE|SET role|,\s*role = \$/);
+  // 붙이기는 «잠근 시점의 역할 그대로»일 때만(원장·부원장 로그인 연결도 같은 줄, 2026-11-12)
+  assert.match(attach, /AND role IN \('INSTRUCTOR'::"Role", 'DRIVER'::"Role", 'ADMIN'::"Role", 'VICE_ADMIN'::"Role"\)\s*AND role = \$4::"Role"`/);
   // ③ 처리 중 취소된 대상 초대도 남은 계정 정리가 필요하면 복구 화면에 오른다(메모)
   assert.match(invite, /OR \(status = 'CANCELLED' AND "processingAttemptId" = \$4 AND "targetUserId" IS NOT NULL\)/);
   // 복구 화면이 결과를 미리 알린다

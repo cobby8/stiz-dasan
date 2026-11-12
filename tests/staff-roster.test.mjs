@@ -137,7 +137,8 @@ test("스태프 화면: 원장만 바꾸기 — 페이지가 역할을 확인해
   const page = await readFile(new URL("../src/app/admin/staff/page.tsx", import.meta.url), "utf8");
   const client = await readFile(new URL("../src/app/admin/staff/StaffClient.tsx", import.meta.url), "utf8");
   assert.match(page, /canManage=\{admin\.appUserRole === "ADMIN"\}/);
-  assert.match(client, /\{canManage \? roleSelect\(user\) : roleChip\(user\.role\)\}/);
+  assert.match(client, /\{canManage \? roleChangeButton\(user\) : roleChip\(user\.role\)\}/);
+  assert.match(client, /\{canManage && roleTargetUser && \(/); // 역할 변경 창도 원장만
   assert.match(client, /\{canManage && \(\s*<button[\s\S]*?새 스태프 초대/);
   assert.match(client, /return canManage \? actions : actions\.filter\(\(action\) => action\.key === "copy"\)/);
   // 머리줄 보조 버튼은 ⋯ 더보기 하나로(설치 링크·중단된 초대 복구). «직접 추가»는 2026-11-12 원장 결정으로 없앴다.

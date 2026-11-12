@@ -135,9 +135,10 @@ test("스태프 관리: 한 사람 = 한 줄 표(초대 대기·계정·코치 �
   assert.match(source, /label: "가입 링크 복사"[^\n]*handleCopyInvitationLink\(inv\.token, inv\.name\)/);
   assert.match(source, /label: "재발송"[^\n]*handleResendInvitation\(inv\.id, inv\.name\)/);
   assert.match(source, /label: "취소"[^\n]*handleCancelInvitation\(inv\.id, inv\.name\)/);
-  // 행 안의 선택칸은 그대로(누르면 패널이 같이 열리지 않게 칸에서 전파 차단) — 같은 함수
-  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*\{canManage \? roleSelect\(user\) : roleChip\(user\.role\)\}/);
-  assert.match(source, /<select\s+value=\{user\.role\}\s+onChange=\{\(e\) => handleRoleChange\(user\.id, e\.target\.value\)\}/);
+  // 2026-11-12 원장 지시: 역할 선택칸 → 칩 + [역할 변경] 버튼(누르면 패널이 같이 열리지 않게 칸에서 전파 차단) → 역할 고르기 창
+  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*\{canManage \? roleChangeButton\(user\) : roleChip\(user\.role\)\}/);
+  assert.doesNotMatch(source, /<select\s+value=\{user\.role\}/);
+  assert.match(source, /onConfirm=\{\(nextRole\) => handleRoleChange\(roleTargetUser\.id, nextRole\)\}/);
   // 휴대폰은 표 대신 한 줄 카드(같은 줄 목록)
   assert.match(source, /<ul className="[^"]*sm:hidden">/);
   // 패널은 표에 없는 이메일·가입일까지

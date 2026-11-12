@@ -53,6 +53,28 @@ export function isConvertibleStaffRole(role: string): role is (typeof CONVERTIBL
     return (CONVERTIBLE_STAFF_ROLES as readonly string[]).includes(role);
 }
 
+/**
+ * 원장 권한 직원의 «로그인 연결» 대상 역할(2026-11-12 원장 지시 — 권혜미 대표원장).
+ * 직접 추가된 원장·부원장 기록(로그인 없음)에 그 사람 전용 초대로 로그인을 붙인다. 역할은 바꾸지 않는다.
+ */
+export const LOGIN_LINK_ROLES = ["ADMIN", "VICE_ADMIN"] as const;
+
+export function isLoginLinkRole(role: string): role is (typeof LOGIN_LINK_ROLES)[number] {
+    return (LOGIN_LINK_ROLES as readonly string[]).includes(role);
+}
+
+// 초대 링크가 받는 역할 판정(invitationRoleAccepted)은 inviteAuthFailure.ts 에 있다(의존성 0 모듈 유지).
+
+/**
+ * 기존 직원 기록에 로그인을 붙이는 가입이 허용되는가(대상의 «지금» 역할 기준).
+ * - 코치/강사·셔틀 기사: 초대·대상 모두 그 집합이면(예전 규칙 그대로)
+ * - 원장·부원장: 초대 역할과 대상의 지금 역할이 «정확히 같을 때만» — 가입 경로가 역할을 올리는 길이 되지 않게
+ */
+export function targetedSignupAllowed(input: { inviteRole: string; targetRole: string }): boolean {
+    if (isConvertibleStaffRole(input.inviteRole) && isConvertibleStaffRole(input.targetRole)) return true;
+    return isLoginLinkRole(input.inviteRole) && input.inviteRole === input.targetRole;
+}
+
 /** 퇴사 처리 때 로그인을 막아도 되는가 — 직원 전용 로그인이고, 자기 자녀(학부모 화면)가 없을 때만. */
 export function shouldBlockLoginOnRetire(input: { kind: StaffLoginKind; hasOwnChildren: boolean }): boolean {
     return input.kind === "staffLogin" && !input.hasOwnChildren;

@@ -7,6 +7,25 @@
 // 판정 기준: Supabase 가 «응답을 돌려주며 4xx 로 거절»했다면 계정은 만들어지지 않았다(확실한 거절).
 // 네트워크 끊김(status 0/없음)·시간 초과(408)·서버 오류(5xx)는 서버에서 만들어졌는지 알 수 없다(결과 모름).
 // ⚠️ 의존성 0 인 순수 모듈 — tests/staff-invite-auth-failure.test.mjs 가 실제로 실행해 검증한다.
+//    (테스트 실행기가 확장자 없는 상대 import 를 못 읽어 다른 파일을 가져오지 않는다. 역할 집합은
+//     staffAccountLink 의 CONVERTIBLE_STAFF_ROLES·LOGIN_LINK_ROLES 와 같아야 한다 — 테스트가 비교한다)
+
+/** 초대 가입이 받는 직원 역할(코치/강사·셔틀 기사) */
+export const INVITE_STAFF_ROLES = ["INSTRUCTOR", "DRIVER"] as const;
+/** 특정 직원 기록을 향한 가입 초대로만 받는 역할(원장·부원장 «로그인 연결», 2026-11-12) */
+export const INVITE_LOGIN_LINK_ROLES = ["ADMIN", "VICE_ADMIN"] as const;
+
+/**
+ * 초대 링크가 받는 역할인가 — 초대 화면·문자 인증·가입 시작(처리 시작 실패 설명)이 같은 판정을 쓴다.
+ * 코치/강사·셔틀 기사는 예전 그대로. 원장·부원장은 «특정 직원 기록(targetUserId)을 향한 가입(SIGNUP) 초대»일 때만
+ * — 일반 초대·비밀번호 재설정으로 원장 계정이 새로 생기거나 바뀌는 길은 없다.
+ */
+export function invitationRoleAccepted(input: { role: string; targetUserId?: string | null; purpose?: string | null }): boolean {
+  if ((INVITE_STAFF_ROLES as readonly string[]).includes(input.role)) return true;
+  return (INVITE_LOGIN_LINK_ROLES as readonly string[]).includes(input.role)
+    && Boolean(input.targetUserId)
+    && (input.purpose ?? "SIGNUP") === "SIGNUP";
+}
 
 /** Supabase AuthError 에서 판정에 쓰는 칸만 (status·code·name·message) */
 export type AuthFailureLike = {
@@ -67,6 +86,8 @@ export type InviteClaimState = {
   otpExpired: boolean;     // 인증번호 유효시간(5분)이 지났는가(없으면 true)
   otpConsumed: boolean;    // 이번 인증을 이미 한 번 썼는가
   locked: boolean;         // 인증 시도 5회 실패로 15분 잠김
+  targetUserId?: string | null; // 특정 직원 기록을 향한 초대(원장·부원장 로그인 연결은 이것이 있어야 받는다)
+  purpose?: string | null;      // SIGNUP · PASSWORD_RESET
 };
 
 /**
@@ -75,7 +96,8 @@ export type InviteClaimState = {
  */
 export function explainClaimFailure(state: InviteClaimState | null | undefined): { error: string; needsVerification?: true } {
   if (!state) return { error: "존재하지 않는 초대입니다." };
-  if (state.role !== "INSTRUCTOR" && state.role !== "DRIVER") return { error: "스태프 전용 초대가 아닙니다." };
+  // 받는 역할 판정은 초대 화면·인증과 같은 함수(원장·부원장은 특정 직원 기록을 향한 가입 초대만)
+  if (!invitationRoleAccepted(state)) return { error: "스태프 전용 초대가 아닙니다." };
   if (state.status === "PROCESSING" || state.status === "RECOVERING") return { error: STAFF_PROCESSING_MESSAGE };
   if (state.status === "RECOVERY_REQUIRED") return { error: "가입 처리 상태를 확인 중입니다. 관리자에게 문의해주세요." };
   if (state.status === "ACCEPTED") return { error: "이미 처리가 끝난 링크예요. 로그인 페이지에서 로그인해 주세요." };

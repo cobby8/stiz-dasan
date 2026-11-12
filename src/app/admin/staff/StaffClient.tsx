@@ -4,9 +4,9 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
 /**
  * 스태프 관리 클라이언트 컴포넌트
  * - 한 사람 = 한 줄 목록(초대 대기 · 스태프 계정 · 계정 없는 코치 프로필을 한 표로 합침, 2026-11-12)
- * - 역할 변경 + 코치 연결(원장만), 대기 초대 ⚡(가입 링크 복사·재발송·취소)
+ * - [역할 변경] 버튼 → 역할 고르기 창(원장만, 2026-11-12) + 코치 연결(원장만), 대기 초대 ⚡(가입 링크 복사·재발송·취소)
  * - 머리줄: 제목 + 주 버튼 «새 스태프 초대» + ⋯ 더보기(앱 설치 링크·중단된 초대 복구·로그인 차단 다시 시도)
- * - 상세 패널(원장): 초대로 전환(로그인 없는 직원) · 링크 복사·문자 보내기 · 퇴사 처리 · 담당 반(보기)
+ * - 상세 패널(원장): 초대로 전환(로그인 없는 코치·기사) · 로그인 연결(로그인 없는 원장·부원장) · 링크 복사·문자 보내기 · 퇴사 처리 · 담당 반(보기)
  * - 추가 역할 직원(학부모 계정)은 보기 전용 줄, 회수는 신청함
  */
 
@@ -20,6 +20,7 @@ import {
     cancelInvitation,
     resendInvitation,
     convertDirectStaffToInvite,
+    linkOwnerStaffLogin,
     retireStaffMember,
     retryRetiredLoginBlocks,
 } from "@/app/actions/admin";
@@ -38,10 +39,15 @@ import {
     type RosterGrantUser,
     type RosterRow,
 } from "@/lib/staff/staffRoster";
-import { STAFF_LOGIN_EMAIL_SUFFIX, isConvertibleStaffRole } from "@/lib/staff/staffAccountLink";
+import { STAFF_LOGIN_EMAIL_SUFFIX, isConvertibleStaffRole, isLoginLinkRole } from "@/lib/staff/staffAccountLink";
+import type { RoleChangeValue } from "@/lib/staff/roleChange";
 
 // «직접 추가» 메뉴는 2026-11-12 원장 결정으로 없앴다(로그인 계정이 없어 앱을 못 쓰는 기록만 생겼다) — 초대로만 추가한다.
 const InviteStaffModal = dynamic(() => import("./InviteStaffModal"), {
+    loading: () => null,
+});
+// 역할 변경 창 — 누를 때만 불러온다
+const RoleChangeModal = dynamic(() => import("./RoleChangeModal"), {
     loading: () => null,
 });
 
@@ -235,6 +241,8 @@ export default function StaffClient({
     const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
     // 서버 액션 pending 상태
     const [isPending, startTransition] = useTransition();
+    // 역할 변경 창의 대상 직원 id(원장만 열 수 있다)
+    const [roleTargetId, setRoleTargetId] = useState<string | null>(null);
     // 행 클릭 상세 패널 대상 — 스태프 행 / 대기 중 초대 행
     const [detail, setDetail] = useState<{ kind: "user" | "invite"; id: string } | null>(null);
 
@@ -278,29 +286,23 @@ export default function StaffClient({
     const unlinkedCoachCount = rows.filter((row) => row.kind === "coach" && !row.linkedElsewhere).length;
 
     // ── 역할 변경 핸들러 ─────────────────────────────────────────────
-    // 2026-11-12: 브라우저 confirm → 공용 확인 창. 학부모·기사로 바꾸면 무엇이 풀리는지 미리 알린다
-    // (서버 updateUserRole 이 코치 연결을 같은 거래에서 푼다). 패널 위에 창이 겹치지 않게 패널은 먼저 닫는다.
-    async function handleRoleChange(userId: string, newRole: string) {
-        const target = staffUsers.find((user) => user.id === userId);
-        const nextLabel = ROLE_CONFIG[newRole]?.label || newRole;
-        const currentLabel = target ? (ROLE_CONFIG[target.role]?.label || target.role) : "";
-        const dropsCoach = Boolean(target?.coachId) && !isCoachLinkable(newRole);
-        setDetail(null);
-        const ok = await askConfirm({
-            title: `"${target?.name ?? ""}" 역할 변경`,
-            description: newRole === "PARENT"
-                ? "학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요."
-                : `${currentLabel} → ${nextLabel}${dropsCoach ? "\n코치 연결이 풀려요." : ""}`,
-            confirmLabel: "바꾸기",
-            tone: newRole === "PARENT" || dropsCoach ? "danger" : "primary",
-        });
-        if (!ok) return;
+    // 2026-11-12 원장 지시: 표 안 선택칸 → [역할 변경] 버튼 + 역할 고르기 창(RoleChangeModal).
+    // 창 안에서 역할을 고르면 «바뀌는 것»(학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요 등)을 보여 주고
+    // [변경하기]로 확정한다 — 한 번 더 묻는 확인 창은 없다. 서버 updateUserRole 이 코치 연결·대기 링크를 같은 거래에서 정리한다.
+    function openRoleChange(userId: string) {
+        setDetail(null); // 패널 위에 창이 겹치지 않게 패널은 먼저 닫는다
+        setRoleTargetId(userId);
+    }
+
+    function handleRoleChange(userId: string, newRole: RoleChangeValue) {
         startTransition(async () => {
             try {
-                await updateUserRole(userId, newRole as "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" | "PARENT");
+                await updateUserRole(userId, newRole);
+                setRoleTargetId(null);
                 setMessage({ text: "역할이 변경되었습니다.", ok: true });
                 await loadStaffData();
             } catch (error: unknown) {
+                setRoleTargetId(null);
                 setMessage({ text: errorMessage(error, "역할 변경 실패"), ok: false });
             }
         });
@@ -368,6 +370,26 @@ export default function StaffClient({
                 setDetail({ kind: "user", id: user.id }); // 링크 버튼이 보이게 패널을 다시 연다
             } catch (error: unknown) {
                 setMessage({ text: errorMessage(error, "가입 링크를 만들지 못했습니다."), ok: false });
+            }
+        });
+    }
+
+    // ── 원장·부원장 로그인 연결(원장, 2026-11-12) ─────────────────────────
+    // 로그인 없는 원장·부원장 기록에 24시간짜리 전용 링크를 만든다. 문자는 자동으로 보내지 않는다 —
+    // 만든 뒤 패널의 [링크 복사]·[문자 보내기]로 원장이 전한다(본인이 그 번호로 문자 인증 후 비밀번호를 정한다).
+    function handleLinkOwnerLogin(user: StaffUser) {
+        startTransition(async () => {
+            try {
+                const result = await linkOwnerStaffLogin(user.id);
+                if (result.rejected) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                setMessage({ text: `${user.name}님의 로그인 연결 링크를 만들었습니다(24시간 유효).`, ok: true });
+                await loadStaffData();
+                setDetail({ kind: "user", id: user.id }); // 링크 버튼이 보이게 패널을 다시 연다
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "로그인 연결 링크를 만들지 못했습니다."), ok: false });
             }
         });
     }
@@ -562,6 +584,11 @@ export default function StaffClient({
         ? (rows.find((row) => row.kind === "user" && row.user.id === detailUser.id) as Extract<Row, { kind: "user" }> | undefined)?.conversion ?? null
         : null;
     const detailClasses = detailUser ? classesForStaff(detailUser, classAssignments) : [];
+    // 역할 변경 창 대상 + 그 사람을 향한 대기 링크(바꾸면 서버가 취소한다 — 창 미리보기에 한 줄)
+    const roleTargetUser = roleTargetId ? staffUsers.find((user) => user.id === roleTargetId) ?? null : null;
+    const roleTargetConversion = roleTargetUser
+        ? (rows.find((row) => row.kind === "user" && row.user.id === roleTargetUser.id) as Extract<Row, { kind: "user" }> | undefined)?.conversion ?? null
+        : null;
 
     // 상세 패널 작업 — 초대로 전환 / 링크 복사·문자 보내기 / 퇴사 처리(원장만, 자기 자신 제외)
     function buildUserPanelActions(user: StaffUser, conversion: Invitation | null): AdminQuickAction[] {
@@ -569,6 +596,10 @@ export default function StaffClient({
         const actions: AdminQuickAction[] = [];
         if (user.directAdded && !conversion && isConvertibleStaffRole(user.role)) {
             actions.push({ key: "convert", label: "초대로 전환", icon: "send", tone: "primary", disabled: isPending, onSelect: () => handleConvertToInvite(user) });
+        }
+        // 로그인 없는 원장·부원장 — 그 사람 전용 로그인 연결 링크(역할은 그대로)
+        if (user.directAdded && !conversion && isLoginLinkRole(user.role)) {
+            actions.push({ key: "link-login", label: "로그인 연결", icon: "key", tone: "primary", disabled: isPending, onSelect: () => handleLinkOwnerLogin(user) });
         }
         if (conversion) {
             actions.push({ key: "copy", label: "링크 복사", icon: "content_copy", onSelect: () => void handleCopyInvitationLink(conversion.token, conversion.name) });
@@ -615,23 +646,23 @@ export default function StaffClient({
         return <span className={`${CHIP} ${rc.color}`}>{rc.label}</span>;
     }
 
-    // 역할 선택칸(원장만) — 예전 행 안 선택칸과 같은 함수·같은 확인창
-    function roleSelect(user: StaffUser) {
-        const rc = ROLE_CONFIG[user.role] || ROLE_CONFIG.PARENT;
+    // 역할 칸(원장만) — 역할 칩 + 작은 [역할 변경] 버튼 → 역할 고르기 창. 자기 자신은 칩만(서버도 막는다)
+    function roleChangeButton(user: StaffUser) {
+        if (user.id === currentUserId) return roleChip(user.role);
         return (
-            <select
-                value={user.role}
-                onChange={(e) => handleRoleChange(user.id, e.target.value)}
-                disabled={isPending}
-                aria-label={`${user.name} 역할`}
-                className={`min-h-11 cursor-pointer rounded-full border-0 px-3 text-xs font-bold ${rc.color} focus:ring-2 focus:ring-[var(--color-academy-primary)]`}
-            >
-                <option value="ADMIN">원장</option>
-                <option value="VICE_ADMIN">부원장</option>
-                <option value="INSTRUCTOR">코치/강사</option>
-                <option value="DRIVER">셔틀 기사</option>
-                <option value="PARENT">학부모</option>
-            </select>
+            <span className="inline-flex items-center gap-1">
+                {roleChip(user.role)}
+                <button
+                    type="button"
+                    onClick={() => openRoleChange(user.id)}
+                    disabled={isPending}
+                    aria-label={`${user.name} 역할 변경`}
+                    className="inline-flex min-h-11 items-center gap-0.5 whitespace-nowrap rounded-lg px-2 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)] disabled:opacity-50"
+                >
+                    <span className="material-symbols-outlined text-[16px]" aria-hidden="true">swap_horiz</span>
+                    역할 변경
+                </button>
+            </span>
         );
     }
 
@@ -820,9 +851,9 @@ export default function StaffClient({
                                             <tr key={row.key} tabIndex={0} aria-label={`${user.name} 스태프 상세 보기`} onClick={() => openRow(row)} onKeyDown={(event) => handleRowKeyDown(event, { kind: "user", id: user.id })} className={rowClass}>
                                                 {/* 이름은 말줄임 없이 전체 */}
                                                 <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{user.name}</td>
-                                                {/* 선택칸을 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
+                                                {/* [역할 변경]을 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
                                                 <td className="px-3 py-1" onClick={(event) => event.stopPropagation()}>
-                                                    {canManage ? roleSelect(user) : roleChip(user.role)}
+                                                    {canManage ? roleChangeButton(user) : roleChip(user.role)}
                                                 </td>
                                                 <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
                                                 {/* 남는 폭을 받는 칸이라 선택칸 둘레만 전파 차단(빈 곳을 누르면 패널이 열린다) */}
@@ -991,12 +1022,12 @@ export default function StaffClient({
                             {detailUser.phone ? <a href={`tel:${detailUser.phone.replace(/\D/g, "")}`} className="underline-offset-2 hover:underline">{formatPhone(detailUser.phone)}</a> : "-"}
                         </dd>
                         <dt className="font-bold text-[var(--color-academy-muted)]">역할</dt>
-                        <dd>{canManage ? roleSelect(detailUser) : roleChip(detailUser.role)}</dd>
+                        <dd>{canManage ? roleChangeButton(detailUser) : roleChip(detailUser.role)}</dd>
                         <dt className="font-bold text-[var(--color-academy-muted)]">코치 연결</dt>
                         <dd className="text-[var(--color-academy-ink)]">{userLinkCell(detailUser)}</dd>
                         <dt className="font-bold text-[var(--color-academy-muted)]">가입일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailUser.createdAt) || "-"}</dd>
-                        {/* 직접 추가 기록 — 로그인 없음 / 가입 대기(마지막 문자 발송) */}
+                        {/* 직접 추가 기록 — 로그인 없음 / 가입 대기(마지막 문자 발송). 원장·부원장은 [로그인 연결]로 붙인다 */}
                         {detailUser.directAdded && (
                             <>
                                 <dt className="font-bold text-[var(--color-academy-muted)]">앱 계정</dt>
@@ -1068,7 +1099,18 @@ export default function StaffClient({
                 />
             )}
 
-            {/* 공용 확인 창 — 역할 변경·퇴사 처리·가입 링크 문자 */}
+            {/* 역할 변경 창(원장만) — 고르면 같은 창 안에 «바뀌는 것» + [변경하기] */}
+            {canManage && roleTargetUser && (
+                <RoleChangeModal
+                    user={roleTargetUser}
+                    hasPendingLink={Boolean(roleTargetConversion)}
+                    pending={isPending}
+                    onClose={() => setRoleTargetId(null)}
+                    onConfirm={(nextRole) => handleRoleChange(roleTargetUser.id, nextRole)}
+                />
+            )}
+
+            {/* 공용 확인 창 — 퇴사 처리·가입 링크 문자 */}
             {confirmDialog}
         </div>
     );

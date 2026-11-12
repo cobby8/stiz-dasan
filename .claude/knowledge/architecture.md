@@ -7,6 +7,7 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 직원 기록(User)과 로그인(Supabase Auth)의 연결 판정은 `src/lib/staff/staffAccountLink.ts` 한 곳(none=직접 추가 `@staff.local`·로그인 없음 / staffLogin=초대 가입 `@staff.stiz.kr`, 로그인 id=authUserId ?? User.id / other=학부모 등 일반 로그인). «이미 있는 직원 기록에 붙는 초대» = `StaffInvitation` SIGNUP + `targetUserId`(새 칸·마이그레이션 없음): 수락 시 새 User 를 만들지 않고 직접 추가 기록에 authUserId·email 을 붙이거나(코치 연결 승계), 퇴사로 학부모가 된 직원 전용 계정의 로그인을 다시 연다(ban 해제+역할 복구). 퇴사 처리(`retireStaffMember`)=한 거래(역할→PARENT·Coach 해제·UserRoleGrant 회수·대기 초대 취소·OperationsAuditLog STAFF_RETIRED) 뒤 직원 전용 로그인+자녀 없음이면 Supabase ban. 권한 판정 캐시(auth-guard getAppUserRole 5분)는 적중 때도 역할을 다시 읽어 다른 서버에서도 즉시 반영. 스태프 화면 덧붙임 조회는 `src/lib/staff/staffPanelData.ts`(추가 역할 직원·초대 문자 마지막 발송=NotificationDelivery eventType STAFF_INVITATION·담당 반=staff-class-access 와 같은 세 배정 표).
+  - **[2026-11-12] 원장·부원장 로그인 연결**: 로그인 없는 ADMIN/VICE_ADMIN 기록은 `linkOwnerStaffLogin`(원장 전용·24시간·문자 자동 발송 없음)으로 같은 SIGNUP+targetUserId 초대를 만든다. 받는 역할 판정 = `inviteAuthFailure.invitationRoleAccepted`(의존성 0 모듈이라 역할 집합 복사본, 테스트가 staffAccountLink 와 비교) · 붙이기 허용 = `staffAccountLink.targetedSignupAllowed`(원장·부원장은 초대 역할 = 대상 지금 역할일 때만). 연결 성공 → OperationsAuditLog STAFF_LOGIN_LINKED + 본인 뺀 원장·부원장 알림 벨. 원장·부원장은 `effectiveRoles` 에서 teacher=true·전 반 접근이라 «선생님 역할» 추가 부여가 필요 없다. 역할 변경 UI = `RoleChangeModal`(선택칸 대신 버튼+창, 문구·목록은 `lib/staff/roleChange.ts`). 테스트 `tests/staff-owner-login-link.test.mjs`(서버 액션을 가짜 DB 로 실행).
 - **참조횟수**: 0
 
 ### [2026-11-10] 알림 시스템 — 알림 구조·학부모 앱 알림 종류별 받기

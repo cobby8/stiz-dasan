@@ -13,12 +13,21 @@ import {
   decideInviteFailureOutcome,
   explainClaimFailure,
   failureNeedsVerification,
+  invitationRoleAccepted,
   staffAuthFailureMessage,
   type AuthFailureKind,
   type InviteClaimState,
 } from "@/lib/staff/inviteAuthFailure";
 
-import { RETIRED_LOGIN_BAN_DURATION, isConvertibleStaffRole, staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
+import {
+  RETIRED_LOGIN_BAN_DURATION,
+  isConvertibleStaffRole,
+  isLoginLinkRole,
+  staffAuthId,
+  staffLoginKind,
+  targetedSignupAllowed,
+} from "@/lib/staff/staffAccountLink";
+import { createNotificationRecord } from "@/lib/notification";
 
 const MAX_OTP_ATTEMPTS = 5;
 
@@ -79,6 +88,31 @@ async function reblockRetiredLogin(input: { authId: string; userId: string; invi
     });
   }
 }
+/**
+ * 원장·부원장 로그인 연결 알림(2026-11-12) — 본인을 뺀 다른 원장·부원장의 관리자 알림 벨에 한 줄.
+ * 가입은 이미 끝났으므로 알림 실패는 기록만 남기고 가입 결과를 바꾸지 않는다.
+ */
+async function notifyAdminLoginLinked(input: { userId: string; name: string; role: string }) {
+  try {
+    const admins = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "User" WHERE role IN ('ADMIN', 'VICE_ADMIN') AND "withdrawnAt" IS NULL AND id <> $1`,
+      input.userId,
+    );
+    const roleLabel = input.role === "VICE_ADMIN" ? "부원장" : "원장";
+    for (const admin of admins) {
+      await createNotificationRecord({
+        userId: admin.id,
+        type: "STAFF_LOGIN_LINKED",
+        title: "스태프 로그인 연결",
+        message: `${input.name} ${roleLabel} 계정 로그인이 연결됐어요`,
+        linkUrl: "/admin/staff",
+      });
+    }
+  } catch (error) {
+    console.error("[acceptInvitation] admin login-linked notice failed:", error instanceof Error ? error.message : String(error));
+  }
+}
+
 const SMS_TIMEOUT_MS = 10_000;
 
 type InvitationRow = {
@@ -131,7 +165,8 @@ function hashesMatch(expected: string, actual: string) {
 
 function invitationStateError(invitation?: InvitationRow) {
   if (!invitation) return "존재하지 않는 초대입니다.";
-  if (invitation.role !== "INSTRUCTOR" && invitation.role !== "DRIVER") return "스태프 전용 초대가 아닙니다.";
+  // 2026-11-12: 원장·부원장은 «그 사람 기록을 향한 로그인 연결 초대»만 받는다(가입 시작·실패 설명과 같은 판정)
+  if (!invitationRoleAccepted(invitation)) return "스태프 전용 초대가 아닙니다.";
   if (invitation.status === "ACCEPTED") return "이미 수락된 초대입니다.";
   if (invitation.status === "CANCELLED") return "취소된 초대입니다.";
   if (invitation.status === "PROCESSING" || invitation.status === "RECOVERY_REQUIRED") {
@@ -162,7 +197,7 @@ async function sendSmsWithTimeout(phone: string, body: string) {
 export async function getInvitation(token: string) {
   try {
     const rows = await prisma.$queryRawUnsafe<InvitationRow[]>(
-      `SELECT id, token, name, phone, role, status, "expiresAt", "createdAt",
+      `SELECT id, token, name, phone, role, status, "expiresAt", "createdAt", purpose, "targetUserId",
               ("expiresAt" <= NOW()) AS "isExpired"
        FROM "StaffInvitation" WHERE token = $1 LIMIT 1`,
       token,
@@ -199,7 +234,7 @@ export async function sendInviteVerification(token: string) {
     const code = generateCode();
     const invitation = await prisma.$transaction(async (tx) => {
       const initialRows = await tx.$queryRawUnsafe<InvitationRow[]>(
-        `SELECT id, phone, role, status, "expiresAt", purpose, ("expiresAt" <= NOW()) AS "isExpired"
+        `SELECT id, phone, role, status, "expiresAt", purpose, "targetUserId", ("expiresAt" <= NOW()) AS "isExpired"
          FROM "StaffInvitation" WHERE token = $1 LIMIT 1`,
         token,
       );
@@ -212,7 +247,7 @@ export async function sendInviteVerification(token: string) {
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, requestHash);
 
       const rows = await tx.$queryRawUnsafe<InvitationRow[]>(
-        `SELECT id, token, name, phone, role, status, "expiresAt", purpose, "otpSentAt", "lockedAt",
+        `SELECT id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "otpSentAt", "lockedAt",
                 ("expiresAt" <= NOW()) AS "isExpired",
                 GREATEST(0, CEIL(EXTRACT(EPOCH FROM ("lockedAt" + INTERVAL '15 minutes' - NOW()))))::int
                   AS "lockRemainingSeconds",
@@ -314,7 +349,7 @@ export async function verifyInviteCode(token: string, code: string) {
   try {
     return await prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRawUnsafe<InvitationRow[]>(
-        `SELECT id, phone, role, status, "expiresAt", "otpHash", "otpExpiresAt", "otpAttempts",
+        `SELECT id, phone, role, status, "expiresAt", purpose, "targetUserId", "otpHash", "otpExpiresAt", "otpAttempts",
                 "otpVerifiedAt", "lockedAt", ("expiresAt" <= NOW()) AS "isExpired",
                 GREATEST(0, CEIL(EXTRACT(EPOCH FROM ("lockedAt" + INTERVAL '15 minutes' - NOW()))))::int
                   AS "lockRemainingSeconds"
@@ -377,7 +412,10 @@ export async function acceptInvitation(token: string, password: string) {
       `UPDATE "StaffInvitation"
        SET status = 'PROCESSING', "processingAttemptId" = $2, "processingStartedAt" = NOW(),
            "otpConsumedAt" = NOW(), "recoveryAuthUserId" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
-       WHERE token = $1 AND role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role") AND status = 'PENDING' AND "expiresAt" > NOW()
+       WHERE token = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
+         -- 받는 역할: 코치/강사·셔틀 기사, 또는 «그 사람 기록을 향한 가입 초대»의 원장·부원장(invitationRoleAccepted 와 같은 기준)
+         AND (role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role")
+              OR (role IN ('ADMIN'::"Role", 'VICE_ADMIN'::"Role") AND "targetUserId" IS NOT NULL AND COALESCE(purpose, 'SIGNUP') = 'SIGNUP'))
          AND "otpExpiresAt" > NOW() AND "otpVerifiedAt" IS NOT NULL AND "otpConsumedAt" IS NULL
          AND ("lockedAt" IS NULL OR "lockedAt" <= NOW() - INTERVAL '15 minutes')
        RETURNING id, name, phone, role, status, "expiresAt", purpose, "targetUserId"`,
@@ -389,7 +427,7 @@ export async function acceptInvitation(token: string, password: string) {
       // 처리를 시작하지 못했다 — 왜인지 지금 상태를 읽어 나눈다(중복 클릭·복구 필요·가입 완료를 «인증 만료»로 말하지 않게).
       // 진짜 인증 만료일 때만 needsVerification → 화면이 본인 인증 단계로 돌아간다.
       const states = await prisma.$queryRawUnsafe<InviteClaimState[]>(
-        `SELECT role::text AS role, status, ("expiresAt" <= NOW()) AS "isExpired",
+        `SELECT role::text AS role, status, "targetUserId", purpose, ("expiresAt" <= NOW()) AS "isExpired",
                 ("otpVerifiedAt" IS NOT NULL) AS "otpVerified",
                 ("otpExpiresAt" IS NULL OR "otpExpiresAt" <= NOW()) AS "otpExpired",
                 ("otpConsumedAt" IS NOT NULL) AS "otpConsumed",
@@ -464,6 +502,8 @@ export async function acceptInvitation(token: string, password: string) {
       if (!target) throw new Error("가입할 직원 기록을 찾지 못했습니다. 원장에게 문의해주세요.");
       const kind = staffLoginKind(target);
       if (kind === "staffLogin" && target.role === "PARENT") {
+        // 재입사(다시 열기)는 코치/강사·셔틀 기사 초대만 — 원장·부원장 초대로 학부모를 원장으로 올리는 길이 없게
+        if (!isConvertibleStaffRole(invitation.role)) throw new Error("이 초대는 더 이상 쓸 수 없습니다. 원장에게 새 초대를 요청해주세요.");
         const authId = staffAuthId(target);
         if (!authId) throw new Error("가입할 직원 기록을 찾지 못했습니다. 원장에게 문의해주세요.");
         const { error: reopenError } = await createAdminClient().auth.admin.updateUserById(authId, { password, ban_duration: "none" });
@@ -512,7 +552,8 @@ export async function acceptInvitation(token: string, password: string) {
       // 2026-11-12 재검수: 전환 가입은 «지금도 직원(코치/강사·셔틀 기사)인 기록»에만. 역할을 절대 올리지 않는다.
       // 초대를 만들 때 대상은 이미 직원이었다(convertDirectStaffToInvite 가 그 역할로 만든다 — invitation.role).
       // 지금 학부모라면 강등·퇴사된 것이므로 옛 링크로는 가입시키지 않는다(재입사는 위 다시 열기 경로·새 초대).
-      if (!isConvertibleStaffRole(target.role) || !isConvertibleStaffRole(invitation.role)) {
+      // 2026-11-12 원장 로그인 연결: 원장·부원장은 «초대 역할 = 대상의 지금 역할»일 때만(targetedSignupAllowed).
+      if (!targetedSignupAllowed({ inviteRole: invitation.role, targetRole: target.role })) {
         throw new Error("이 초대는 더 이상 쓸 수 없습니다. 원장에게 새 초대를 요청해주세요.");
       }
       conversionTargetId = target.id;
@@ -555,12 +596,14 @@ export async function acceptInvitation(token: string, password: string) {
     if (invitationRecorded !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
 
     const createdStaffUserId = authUserId;
+    // 원장·부원장 로그인 연결이 끝나면 다른 원장·부원장에게 알림(거래가 성공한 뒤에만)
+    const linkedAdminNotice: { value: { userId: string; name: string; role: string } | null } = { value: null };
     await prisma.$transaction(async (tx) => {
       if (conversionTargetId) {
         // 직원 기록 → 초대 순서로 잠그고, 초대가 아직 이 시도의 «처리 중»인지·대상이 지금도 직원인지 다시 본다.
         // 학부모(강등·퇴사)면 멈춘다. 역할은 바꾸지 않는다 — 로그인만 붙인다(역할을 올리는 길이 없게).
         const lockedRole = await lockTargetAndAssertInvitation(tx, { userId: conversionTargetId, invitationId: invitation.id, attemptId });
-        if (!isConvertibleStaffRole(lockedRole) || lockedRole !== conversionTargetRole) {
+        if (!targetedSignupAllowed({ inviteRole: invitation.role, targetRole: lockedRole }) || lockedRole !== conversionTargetRole) {
           throw new Error("이 초대는 더 이상 쓸 수 없습니다. 원장에게 새 초대를 요청해주세요.");
         }
         // 직접 추가 기록에 로그인을 붙인다 — 그 사이 다른 길로 로그인이 붙었거나 학부모가 됐으면(0건) 전부 되돌린다
@@ -568,14 +611,26 @@ export async function acceptInvitation(token: string, password: string) {
           `UPDATE "User"
               SET "authUserId" = $1, email = $2, "updatedAt" = NOW()
             WHERE id = $3 AND "authUserId" IS NULL AND "withdrawnAt" IS NULL AND lower(email) LIKE '%@staff.local'
-              AND role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role")`,
+              AND role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role", 'ADMIN'::"Role", 'VICE_ADMIN'::"Role")
+              AND role = $4::"Role"`,
           authUserId,
           staffEmail,
           conversionTargetId,
+          conversionTargetRole,
         );
         if (attached !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
         // 이미 연결된 코치 프로필은 그대로(승계), 없을 때만 자동 연결
         await linkCoachProfileIfNone(tx, { userId: conversionTargetId, name: invitation.name, phone: invitation.phone, role: invitation.role });
+        if (isLoginLinkRole(lockedRole)) {
+          // 원장·부원장 로그인 연결 감사 기록 — 누가(본인)·언제·어느 초대로. 비밀번호·인증번호는 남기지 않는다.
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+             VALUES (gen_random_uuid()::text, 'STAFF_LOGIN_LINKED', 'ADMIN', $1, $2::jsonb)`,
+            conversionTargetId,
+            JSON.stringify({ targetUserId: conversionTargetId, targetName: invitation.name, role: lockedRole, invitationId: invitation.id, loginEmail: staffEmail }),
+          );
+          linkedAdminNotice.value = { userId: conversionTargetId, name: invitation.name, role: lockedRole };
+        }
       } else {
         await tx.$executeRawUnsafe(
           `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
@@ -608,6 +663,7 @@ export async function acceptInvitation(token: string, password: string) {
         attemptId,
       );
     });
+    if (linkedAdminNotice.value) await notifyAdminLoginLinked(linkedAdminNotice.value);
     return { ok: true, email: staffEmail };
   } catch (error) {
     let authDeleteError: string | null = null;
