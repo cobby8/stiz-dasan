@@ -134,3 +134,9 @@
 - **발견자**: developer
 - **내용**: 학부모 홈 알림 «읽음»·«모두 읽음»이 `markNotificationRead`/`markAllNotificationsRead`(admin.ts, `requireAdmin()`)를 불러 운영에서 학부모 전원 실패. tsc·빌드는 통과해 신호가 없다. 학부모 쓰기는 별도 파일(`actions/parent-*.ts`)에 `requireVerifiedParent()` + **대상 사용자 id 는 세션 값(appUserId)** 으로 만든다(화면이 userId 를 넘기지 않게). 수정: `actions/parent-notifications.ts`, 가드 `tests/parent-notifications-action.test.mjs`(홈이 admin 읽음 함수를 import 하면 실패).
 - **참조횟수**: 0
+
+### [2026-11-12] 역할을 바꿔도 코치 프로필 연결(Coach.userId)이 남아 «해제할 길 없는 연결»이 됨
+- **분류**: error
+- **발견자**: developer
+- **내용**: `updateUserRole` 이 User.role 만 바꿔서, 코치/강사 → 셔틀 기사·학부모로 바꾸면 Coach.userId 가 그대로 남았다. 기사 줄엔 코치 연결 칸이 없고 학부모는 스태프 목록에서 빠져 화면에서 못 풀고, 그 코치 프로필은 다른 사람 선택칸에서 [연결됨]으로 막혔다. 수정: 같은 거래에서 코치 연결을 쓰지 않는 역할이면 연결 해제(승인된 선생님 추가역할 ACTIVE 면 유지) + 화면은 연결이 남은 사람에게 선택칸을 보여 해제 가능. **교훈**: 상태(역할)를 바꾸는 작업은 «그 상태에 매달린 연결»도 같은 거래에서 정리할지 본다. 가드 `tests/staff-roster.test.mjs`.
+- **참조횟수**: 0

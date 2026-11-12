@@ -7260,6 +7260,11 @@ export async function createStaffUser(data: {
     revalidatePath("/admin/staff");
 }
 
+// 스태프 화면 역할 선택칸의 값 전부 / 코치 프로필을 연결해 쓰는 역할(화면 canLinkCoach 와 같은 집합)
+type StaffRoleValue = "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" | "PARENT";
+const STAFF_ROLE_VALUES: readonly StaffRoleValue[] = ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER", "PARENT"];
+const COACH_LINKABLE_ROLES: readonly StaffRoleValue[] = ["ADMIN", "VICE_ADMIN", "INSTRUCTOR"];
+
 /**
  * updateUserRole — 사용자 역할 변경 (requireOwner: ADMIN만)
  * ADMIN은 다른 사용자의 역할을 변경할 수 있지만, 자기 자신을 변경할 수 없음
@@ -7268,21 +7273,51 @@ export async function updateUserRole(userId: string, newRole: "ADMIN" | "VICE_AD
     const user = await requireOwner();
     await ensureStaffColumns();
 
+    // 화면 선택칸 밖에서 들어온 값은 막는다(DB 형변환 오류 대신 알아듣는 안내).
+    if (!STAFF_ROLE_VALUES.includes(newRole)) {
+        throw new Error("바꿀 수 없는 역할입니다.");
+    }
+
     try {
         // 자기 자신의 역할 변경 방지 (실수로 ADMIN 권한을 잃는 것 방지)
+        // 2026-11-12: 이메일 글자 비교만으로는 대소문자가 다르면 빠져나가 앱 사용자 ID 로도 확인한다.
+        if (userId === user.appUserId) {
+            throw new Error("자기 자신의 역할은 변경할 수 없습니다.");
+        }
         const targetRows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT email FROM "User" WHERE id = $1 LIMIT 1`,
             userId,
         );
-        if (targetRows.length > 0 && targetRows[0].email === user.email) {
+        if (targetRows.length === 0) {
+            throw new Error("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+        }
+        if (String(targetRows[0].email || "").toLowerCase() === String(user.email || "").toLowerCase()) {
             throw new Error("자기 자신의 역할은 변경할 수 없습니다.");
         }
 
-        await prisma.$executeRawUnsafe(
-            `UPDATE "User" SET role = $1::"Role", "updatedAt" = NOW() WHERE id = $2`,
-            newRole,
-            userId,
-        );
+        await prisma.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe(
+                `UPDATE "User" SET role = $1::"Role", "updatedAt" = NOW() WHERE id = $2`,
+                newRole,
+                userId,
+            );
+            // 2026-11-12 고장 수정: 코치/강사 → 셔틀 기사·학부모로 바꾸면 코치 프로필 연결(Coach.userId)이 남았다.
+            // 기사 줄에는 코치 연결 칸이 없고 학부모는 목록에서 빠져서 «해제할 길이 없는 연결»이 되고,
+            // 그 코치 프로필은 다른 사람에게도 연결할 수 없었다(선택칸에서 [연결됨]으로 막힘).
+            // → 코치 연결을 쓰는 역할(원장·부원장·코치)이 아니면 같은 거래 안에서 연결을 푼다.
+            //   단, 승인된 «선생님» 추가 역할(UserRoleGrant ACTIVE)이 있으면 그 역할로 코치 일을 하므로 그대로 둔다.
+            if (!COACH_LINKABLE_ROLES.includes(newRole)) {
+                await tx.$executeRawUnsafe(
+                    `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW()
+                      WHERE "userId" = $1
+                        AND NOT EXISTS (
+                          SELECT 1 FROM "UserRoleGrant"
+                           WHERE "userId" = $1 AND role = 'INSTRUCTOR' AND status = 'ACTIVE'
+                        )`,
+                    userId,
+                );
+            }
+        });
     } catch (e) {
         console.error("[updateUserRole] failed:", e);
         throw new Error((e as Error).message || "역할 변경 실패");
@@ -7301,36 +7336,52 @@ export async function linkCoachToUser(userId: string, coachId: string | null) {
     await ensureStaffColumns();
 
     try {
-        if (coachId) {
-            // 해당 코치가 이미 다른 유저에게 연결되어 있는지 확인
-            const linked = await prisma.$queryRawUnsafe<any[]>(
-                `SELECT "userId" FROM "Coach" WHERE id = $1 AND "userId" IS NOT NULL AND "userId" != $2 LIMIT 1`,
-                coachId,
-                userId,
-            );
-            if (linked.length > 0) {
-                throw new Error("이 코치는 이미 다른 사용자에게 연결되어 있습니다.");
+        // 2026-11-12 고장 수정: 예전에는 «기존 연결 해제 → 새 연결»이 따로따로 실행돼서,
+        // 그 사이 다른 사람이 같은 코치를 잡거나 코치가 지워졌으면 기존 연결만 풀리고 새 연결은 0건으로 조용히 끝났다.
+        // → 한 거래로 묶고, 새 연결이 정확히 1건 바뀌었는지 확인한다(아니면 전부 되돌린다).
+        await prisma.$transaction(async (tx) => {
+            if (coachId) {
+                // 코치 연결은 원장·부원장·코치(또는 승인된 선생님 역할)에게만 — 화면 선택칸과 같은 기준
+                const targets = await tx.$queryRawUnsafe<Array<{ role: string; hasInstructorGrant: boolean }>>(
+                    `SELECT u.role::text AS role,
+                            EXISTS (
+                              SELECT 1 FROM "UserRoleGrant" g
+                               WHERE g."userId" = u.id AND g.role = 'INSTRUCTOR' AND g.status = 'ACTIVE'
+                            ) AS "hasInstructorGrant"
+                       FROM "User" u WHERE u.id = $1 LIMIT 1`,
+                    userId,
+                );
+                const target = targets[0];
+                if (!target) throw new Error("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+                if (!COACH_LINKABLE_ROLES.includes(target.role as StaffRoleValue) && !target.hasInstructorGrant) {
+                    throw new Error("코치 프로필은 원장·부원장·코치/강사 계정에만 연결할 수 있습니다.");
+                }
+
+                // 기존에 이 유저에게 연결된 코치가 있으면 해제
+                await tx.$executeRawUnsafe(
+                    `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1 AND id <> $2`,
+                    userId,
+                    coachId,
+                );
+
+                // 새 코치 연결 — 비어 있거나 이미 이 사람에게 연결된 코치만(다른 사람 연결은 빼앗지 않는다)
+                const linked = await tx.$executeRawUnsafe(
+                    `UPDATE "Coach" SET "userId" = $1, "updatedAt" = NOW()
+                      WHERE id = $2 AND ("userId" IS NULL OR "userId" = $1)`,
+                    userId,
+                    coachId,
+                );
+                if (linked !== 1) {
+                    throw new Error("이 코치는 이미 다른 사용자에게 연결되어 있거나 삭제되었습니다.");
+                }
+            } else {
+                // 연결 해제
+                await tx.$executeRawUnsafe(
+                    `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1`,
+                    userId,
+                );
             }
-
-            // 기존에 이 유저에게 연결된 코치가 있으면 해제
-            await prisma.$executeRawUnsafe(
-                `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1`,
-                userId,
-            );
-
-            // 새 코치 연결
-            await prisma.$executeRawUnsafe(
-                `UPDATE "Coach" SET "userId" = $1, "updatedAt" = NOW() WHERE id = $2`,
-                userId,
-                coachId,
-            );
-        } else {
-            // 연결 해제
-            await prisma.$executeRawUnsafe(
-                `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1`,
-                userId,
-            );
-        }
+        });
     } catch (e) {
         console.error("[linkCoachToUser] failed:", e);
         throw new Error((e as Error).message || "코치 연결 실패");

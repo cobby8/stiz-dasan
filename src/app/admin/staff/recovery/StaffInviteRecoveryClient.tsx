@@ -3,6 +3,14 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { recoverStaffInvitation } from "@/app/actions/staff-invite-recovery";
+import { kstHm, kstLabel } from "@/lib/datetime/kst";
+
+// 영문 상태값 대신 한국어(2026-11-12 점검 — 화면에 «RECOVERY_REQUIRED»가 그대로 보였다)
+const STATUS_LABEL: Record<string, string> = {
+  PROCESSING: "가입 처리 중 멈춤",
+  RECOVERY_REQUIRED: "복구 필요",
+  RECOVERING: "복구 중 멈춤",
+};
 
 type RecoveryItem = {
   id: string;
@@ -35,7 +43,7 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
   return (
     <main className="mx-auto max-w-4xl space-y-5 p-6">
       <div>
-        <Link href="/admin/staff" className="text-sm font-bold text-[var(--color-academy-muted)]">← 직원 관리</Link>
+        <Link href="/admin/staff" className="text-sm font-bold text-[var(--color-academy-muted)]">← 스태프 관리</Link>
         <h1 className="mt-3 text-2xl font-black">중단된 초대 복구</h1>
         <p className="mt-2 text-sm text-[var(--color-academy-muted)]">원장 계정만 실행할 수 있습니다. 10분 이상 중단된 가입 또는 복구 필요 상태만 초기화됩니다.</p>
       </div>
@@ -46,7 +54,7 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-black">{item.name}</p>
-                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{item.status} · {item.processingStartedAt ? new Date(item.processingStartedAt).toLocaleString("ko-KR") : "시작 시각 없음"}</p>
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{STATUS_LABEL[item.status] ?? item.status} · {item.processingStartedAt ? `${kstLabel(item.processingStartedAt)} ${kstHm(item.processingStartedAt)} 시작` : "시작 시각 없음"}</p>
                 {item.recoveryError && <p className="mt-2 text-sm text-[var(--color-academy-danger)]">{item.recoveryError}</p>}
               </div>
               {/* «안전 복구»는 중단된 가입의 로그인 계정(Supabase 인증)을 «삭제»하고 초대를 처음으로 되돌린다 — 되돌릴 수 없어

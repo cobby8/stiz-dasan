@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { requireOwner } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
@@ -181,6 +181,8 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
     return { ok: false as const, message: "인증 계정은 정리됐지만 초대 DB 복구에 실패했습니다. 관리자 로그를 확인해 주세요." };
   }
 
+  // 스태프 화면은 태그 캐시(admin-staff, 60초)로 읽는다 — 경로만 비우면 복구된 초대가 1분 가까이 옛 상태로 보였다.
+  revalidateTag("admin-staff", { expire: 0 });
   revalidatePath("/admin/staff");
   return { ok: true as const };
 }

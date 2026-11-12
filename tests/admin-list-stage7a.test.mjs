@@ -125,18 +125,21 @@ test("수강 변경 신청: 카드 → 한 줄 표, 확인 단계·일할 계산
   assert.doesNotMatch(panel, /brand-navy|brand-neon|bg-amber-|text-gray-|dark:/);
 });
 
-test("스태프 관리: 표 3개 모두 한 줄(말줄임 제거), 초대는 ⚡, 역할·코치 선택칸은 행 안에 그대로", () => {
+test("스태프 관리: 한 사람 = 한 줄 표(초대 대기·계정·코치 프로필 합침), 초대는 ⚡, 역할·코치 선택칸은 행 안에 그대로", () => {
   const source = read("../src/app/admin/staff/StaffClient.tsx");
   assertListStandard(source, "스태프");
-  // 대기 중 초대·코치 프로필·스태프 = 표 3개
-  assert.equal(source.match(/<table className="admin-list-table/g)?.length, 3);
+  // 2026-11-12: 예전 표 3개(대기 초대·코치 프로필·스태프)가 같은 사람을 두 번 보여 한 표로 합쳤다(buildStaffRoster)
+  assert.equal(source.match(/<table className="admin-list-table/g)?.length, 1);
+  assert.match(source, /buildStaffRoster\(\{/);
   // 초대 ⚡ 는 예전 버튼과 같은 함수·인자
   assert.match(source, /label: "가입 링크 복사"[^\n]*handleCopyInvitationLink\(inv\.token, inv\.name\)/);
   assert.match(source, /label: "재발송"[^\n]*handleResendInvitation\(inv\.id, inv\.name\)/);
   assert.match(source, /label: "취소"[^\n]*handleCancelInvitation\(inv\.id, inv\.name\)/);
-  // 행 안의 선택칸은 그대로(누르면 패널이 같이 열리지 않게 칸에서 전파 차단)
-  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*<select\s+value=\{user\.role\}/);
-  assert.match(source, /onChange=\{\(e\) => handleRoleChange\(user\.id, e\.target\.value\)\}/);
+  // 행 안의 선택칸은 그대로(누르면 패널이 같이 열리지 않게 칸에서 전파 차단) — 같은 함수
+  assert.match(source, /onClick=\{\(event\) => event\.stopPropagation\(\)\}>\s*\{canManage \? roleSelect\(user\) : roleChip\(user\.role\)\}/);
+  assert.match(source, /<select\s+value=\{user\.role\}\s+onChange=\{\(e\) => handleRoleChange\(user\.id, e\.target\.value\)\}/);
+  // 휴대폰은 표 대신 한 줄 카드(같은 줄 목록)
+  assert.match(source, /<ul className="[^"]*sm:hidden">/);
   // 패널은 표에 없는 이메일·가입일까지
   assert.match(source, /detailUser\.email/);
 });
