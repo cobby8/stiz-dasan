@@ -206,3 +206,73 @@ test("b3 로그인 화면 직원 모드: 번호 입력(이메일 형식 검사 �
   const auth = await read("src/app/actions/auth.ts");
   assert.match(auth, /authEmail = staffLoginEmail\(identifier\)/);
 });
+
+// ── 검수 반영(2026-11-13 2차) ───────────────────────────────────────────────
+test("보안: 간편로그인 전용 계정 비밀번호 만들기는 인증된 번호 + 직원 추가 역할 없음일 때만", () => {
+  assert.equal(rules.socialPasswordCreationAllowed({ phoneVerifiedAt: new Date(), hasStaffGrant: false }), true);
+  assert.equal(rules.socialPasswordCreationAllowed({ phoneVerifiedAt: null, hasStaffGrant: false }), false, "번호 인증 기록 없음");
+  assert.equal(rules.socialPasswordCreationAllowed({ phoneVerifiedAt: new Date(), hasStaffGrant: true }), false, "선생님·기사님 추가 역할");
+  assert.match(rules.SOCIAL_PASSWORD_CONTACT_MESSAGE, /학원에 문의해 주세요/);
+});
+
+test("보안: 화면 목록(describeAccounts)과 완료 단계(서버) 두 곳 모두 같은 판정을 쓴다", async () => {
+  const src = await read("src/lib/parent-password-reset.ts");
+  const query = src.slice(src.indexOf("async function parentAccountsForPhone"), src.indexOf("const SOCIAL_LABELS"));
+  assert.match(query, /"phoneVerifiedAt"/);
+  assert.match(query, /FROM "UserRoleGrant" g\s+WHERE g\."userId" = "User"\.id AND g\.status = 'ACTIVE' AND g\.role::text IN \('INSTRUCTOR','DRIVER'\)/);
+  const describe = src.slice(src.indexOf("async function describeAccounts"), src.indexOf("export async function startParentPasswordReset"));
+  assert.match(describe, /socialPasswordCreationAllowed\(\{ phoneVerifiedAt: row\.phoneVerifiedAt, hasStaffGrant: Boolean\(row\.hasStaffGrant\) \}\)/);
+  assert.match(describe, /hasPassword \|\| !allowed \? null : planSocialPasswordLogin/);
+  const complete = src.slice(src.indexOf("export async function completeParentPasswordReset"));
+  assert.match(complete, /if \(!socialPasswordCreationAllowed\(\{ phoneVerifiedAt: target\.phoneVerifiedAt, hasStaffGrant: Boolean\(target\.hasStaffGrant\) \}\)\) \{\s*throw new ResetUserError\(SOCIAL_PASSWORD_CONTACT_MESSAGE\)/);
+  assert.ok(complete.indexOf("socialPasswordCreationAllowed") < complete.indexOf("updateUserById"), "판정이 비밀번호 변경보다 먼저");
+});
+
+test("보안: 비밀번호를 바꾼 뒤 소진 기록만 실패해도 VERIFIED 로 되돌리지 않는다(증표 재사용 방지)", async () => {
+  const src = await read("src/lib/parent-password-reset.ts");
+  const complete = src.slice(src.indexOf("export async function completeParentPasswordReset"));
+  assert.ok(complete.indexOf("passwordChanged = true") > complete.indexOf("updateUserById"));
+  assert.ok(complete.indexOf("passwordChanged = true") < complete.indexOf("status='CONSUMED'"));
+  assert.match(complete, /if \(rowId && !passwordChanged\) \{[\s\S]*?status='VERIFIED'/);
+});
+
+test("스토어 앱 판정: 표식이 없어도 사용자 에이전트 « STIZApp/» 나 android-app:// referrer 로 알아본다", async () => {
+  const storeApp = await loadTsModule("src/lib/storeApp.ts");
+  assert.equal(storeApp.looksLikeStoreApp({ userAgent: "Mozilla/5.0 (Linux; Android 14) Chrome/130 Mobile Safari/537.36 STIZApp/1.0.1", referrer: "" }), true);
+  assert.equal(storeApp.looksLikeStoreApp({ userAgent: "Mozilla/5.0 Chrome/130", referrer: "android-app://kr.stiz.app/" }), true);
+  assert.equal(storeApp.looksLikeStoreApp({ userAgent: "Mozilla/5.0 Chrome/130", referrer: "https://www.google.com/" }), false);
+  assert.equal(storeApp.looksLikeStoreApp({}), false);
+  // 기존 내보내기는 그대로
+  for (const name of ["STORE_APP_FLAG_KEY", "markStoreApp", "isStoreApp"]) assert.ok(name in storeApp, name);
+  const src = await read("src/lib/storeApp.ts");
+  assert.match(src, /looksLikeStoreApp\(\{ userAgent: window\.navigator\.userAgent, referrer: document\.referrer \}\)\) \{\s*markStoreApp\(\);/);
+});
+
+test("약관 창: 안전 영역·dvh·포커스 복귀·Tab 순환·앱에서 새 탭 링크 숨김", async () => {
+  const sheet = await read("src/components/auth/ParentConsentChecks.tsx");
+  assert.match(sheet, /max-h-\[85dvh\]/);
+  assert.doesNotMatch(sheet, /85vh/);
+  assert.match(sheet, /env\(safe-area-inset-bottom\)/);
+  assert.match(sheet, /opener\?\.focus\(\)/);
+  assert.match(sheet, /event\.key !== "Tab"/);
+  assert.match(sheet, /\{storeApp === false && \(\s*<a href=\{fullHref\} target="_blank"/);
+});
+
+test("비밀번호 경고: 입력칸을 벗어날 때·제출할 때 보이고, 문장은 서버 거절과 하나", async () => {
+  assert.equal(rules.parentPasswordWarning("11111111"), `${rules.PARENT_WEAK_PASSWORD_MESSAGE} (숫자·영문 섞어 8자 이상)`);
+  assert.equal(rules.parentPasswordWarning("aaaaaaaaaa", { minLength: 10 }), `${rules.PARENT_WEAK_PASSWORD_MESSAGE} (숫자·영문 섞어 10자 이상)`);
+  for (const file of ["src/components/auth/ParentSignupClient.tsx", "src/app/account/activate/ParentAccountActivateClient.tsx", "src/components/auth/ParentPasswordResetClient.tsx"]) {
+    const ui = await read(file);
+    assert.match(ui, /onBlur=\{\(\) => setPasswordChecked\(true\)\}/, `${file} 칸을 벗어날 때`);
+    assert.match(ui, /passwordChecked && weakWarning && <p role="alert"/, `${file} 확인 뒤에만 표시`);
+    // 다크 모드에서도 대비 — 옅은 위험 바탕 + 진한 위험 글자(토큰)
+    assert.match(ui, /bg-\[var\(--color-academy-danger-soft\)\][^"]*text-\[var\(--color-academy-danger\)\]/, `${file} 경고 대비`);
+  }
+});
+
+test("활성화: 동의 칸이 없는 DB(42703)면 일반 오류 대신 «잠시 후 다시» + 서버 로그", async () => {
+  const claim = await read("src/lib/parent-account-claim.ts");
+  assert.match(claim, /if \(isMissingColumnError\(error\)\) \{\s*console\.error\([\s\S]*?return \{ error: ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE \}/);
+  assert.match(claim, /String\(meta\.code\) === "42703"/);
+  assert.match(claim, /ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE = "[^"]*잠시 후 다시 시도해 주세요\."/);
+});

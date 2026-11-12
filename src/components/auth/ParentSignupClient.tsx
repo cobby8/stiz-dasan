@@ -72,6 +72,8 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
   const storeApp = useStoreApp();
   // 비밀번호 입력 중 사전 경고(같은 숫자 반복·연속 숫자·qwer 류·전화번호) — 직원 초대 화면과 같은 규칙
   const [passwordDraft, setPasswordDraft] = useState("");
+  // 경고는 입력 중이 아니라 입력칸을 벗어날 때·제출할 때 보인다(치는 도중 빨간 글씨가 깜빡이지 않게)
+  const [passwordChecked, setPasswordChecked] = useState(false);
   // 훅이라 조건·조기 반환보다 앞에 둔다. 모르는 동안(null)은 간편가입 구역을 그리지 않는다.
   const enabledProviders = useEnabledOAuthProviders();
   const visibleSignupOptions = SIGNUP_SOCIAL_OPTIONS.filter((option) => enabledProviders?.includes(option.provider));
@@ -173,6 +175,7 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") || "");
     if (!socialSignup && weakWarning) {
+      setPasswordChecked(true);
       setError(weakWarning);
       return;
     }
@@ -335,8 +338,9 @@ export default function ParentSignupClient({ policies }: { policies: ParentPolic
           <div><h2 className="text-xl font-bold">계정 정보</h2><p className="mt-1 text-sm text-[var(--color-public-muted)] dark:text-[var(--color-public-muted)]">로그인에 사용할 정보만 입력하면 끝입니다.</p></div>
           <label className="block text-sm font-semibold">이름<input name="name" defaultValue={initialName} className={`${inputClass} mt-2`} autoComplete="name" required /></label>
           <label className="block text-sm font-semibold">로그인 아이디<input name="username" className={`${inputClass} mt-2`} autoComplete="username" minLength={4} maxLength={20} pattern="[A-Za-z][A-Za-z0-9_]{3,19}" placeholder="영문으로 시작, 영문·숫자·밑줄" required /></label>
-          {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => setPasswordDraft(event.target.value)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>}
-          {!socialSignup && weakWarning && <p className="-mt-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
+          {!socialSignup && <label className="block text-sm font-semibold">비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => { setPasswordDraft(event.target.value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>}
+          {/* 옅은 바탕 + 진한 글자 — 다크 모드에서도 대비가 유지된다 */}
+          {!socialSignup && passwordChecked && weakWarning && <p role="alert" className="-mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
           {!socialSignup && <label className="block text-sm font-semibold">비밀번호 확인<input name="passwordConfirm" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} required /></label>}
           {/* 필수 동의 3개 — 약관은 새 탭이 아니라 같은 화면 안의 창으로 본다(앱에서 밖으로 나가지 않게, a5) */}
           <ParentConsentChecks policies={policies} />

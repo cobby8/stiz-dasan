@@ -42,6 +42,8 @@ export default function ParentPasswordResetClient() {
   const [error, setError] = useState<string | null>(null);
 
   const [passwordDraft, setPasswordDraft] = useState("");
+  // 경고는 입력칸을 벗어날 때·제출할 때 보인다
+  const [passwordChecked, setPasswordChecked] = useState(false);
   // 새 비밀번호를 정할 수 있는 계정 — 비밀번호 계정 + 간편로그인 전용이어도 로그인 아이디/메일이 있는 계정(2026-11-13 a1:
   // 스토어 앱에서는 간편로그인 버튼이 없어 아이디·비밀번호가 필요하다)
   const passwordAccounts = accounts.filter((account) => account.kind === "PASSWORD" || account.canSetPassword);
@@ -87,6 +89,7 @@ export default function ParentPasswordResetClient() {
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") || "");
     if (weakWarning) {
+      setPasswordChecked(true);
       setError(weakWarning);
       return;
     }
@@ -165,7 +168,7 @@ export default function ParentPasswordResetClient() {
                 ) : (
                   <span>
                     로그인 아이디 <strong className="break-all">{account.loginId}</strong>
-                    <span className="mt-1 block text-xs text-[var(--color-public-muted)]">{account.socialLabels.join("·") || "간편로그인"}으로 가입한 계정인데 로그인 아이디가 없어 비밀번호를 만들 수 없어요. 브라우저에서 {account.socialLabels[0] || "간편로그인"} 버튼으로 로그인하거나 학원에 문의해 주세요.</span>
+                    <span className="mt-1 block text-xs text-[var(--color-public-muted)]">{account.socialLabels.join("·") || "간편로그인"}으로 가입한 계정이에요. 이 계정은 여기서 비밀번호를 만들 수 없어요. 브라우저에서 {account.socialLabels[0] || "간편로그인"} 버튼으로 로그인하거나 학원에 문의해 주세요.</span>
                   </span>
                 )}
               </li>
@@ -173,8 +176,9 @@ export default function ParentPasswordResetClient() {
           </ul>
           {passwordAccounts.length > 0 ? (
             <form onSubmit={savePassword} className="space-y-4">
-              <label className="block text-sm font-semibold">새 비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => setPasswordDraft(event.target.value)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} maxLength={72} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>
-              {weakWarning && <p className="-mt-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
+              <label className="block text-sm font-semibold">새 비밀번호<input name="password" type="password" value={passwordDraft} onChange={(event) => { setPasswordDraft(event.target.value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} maxLength={72} placeholder="8자 이상, 숫자·영문 섞어서" required /></label>
+              {/* 옅은 바탕 + 진한 글자 — 다크 모드에서도 대비가 유지된다 */}
+              {passwordChecked && weakWarning && <p role="alert" className="-mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
               <label className="block text-sm font-semibold">새 비밀번호 확인<input name="passwordConfirm" type="password" className={`${inputClass} mt-2`} autoComplete="new-password" minLength={8} maxLength={72} required /></label>
               <button disabled={loading || !selectedId} className="min-h-12 w-full rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)] disabled:opacity-50">{loading ? "저장하는 중..." : "새 비밀번호 저장"}</button>
               <p className="text-xs leading-5 text-[var(--color-public-muted)]">10분 안에 마쳐 주세요. 시간이 지나면 처음부터 다시 인증하면 됩니다.</p>

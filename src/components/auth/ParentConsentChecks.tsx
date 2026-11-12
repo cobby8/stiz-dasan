@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useStoreApp } from "@/hooks/useStoreApp";
 
 // 학부모 필수 동의 3개(이용약관·개인정보·만 14세) + 약관 «보기» 창 — 신규 가입과 기존 계정 활성화가 같이 쓴다(2026-11-13 a3·a5).
 //
@@ -97,28 +98,45 @@ function PolicySheet({
 }) {
   const t = TONE[tone];
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // 스토어 앱에서는 «전체 페이지로 보기»(새 탭)를 숨긴다 — 앱 밖 브라우저로 나가 돌아오기 어렵다
+  const storeApp = useStoreApp();
 
   useEffect(() => {
+    // 창을 연 «보기» 버튼 — 닫을 때 그 자리로 포커스를 돌려준다(키보드·화면읽기 사용자가 길을 잃지 않게)
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
-    // Esc 로 닫기 + 뒤 화면 스크롤 잠금(창 안만 스크롤)
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { onClose(); return; }
+      // Tab 을 창 안에서만 돈다(뒤 화면으로 빠지지 않게)
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusables = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    // 뒤 화면 스크롤 잠금(창 안만 스크롤)
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
+      opener?.focus();
     };
   }, [onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="parent-policy-title"
         onClick={(event) => event.stopPropagation()}
-        className={`flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl shadow-xl sm:rounded-2xl ${t.sheet}`}
+        className={`flex max-h-[85dvh] w-full max-w-lg flex-col rounded-t-2xl shadow-xl sm:rounded-2xl ${t.sheet}`}
       >
         <div className={`flex items-center justify-between border-b px-4 py-2 ${t.line}`}>
           <h2 id="parent-policy-title" className="text-base font-bold">{title}</h2>
@@ -129,11 +147,14 @@ function PolicySheet({
         <div className="overflow-y-auto px-4 py-3 text-sm leading-6 whitespace-pre-line">
           {text || <p className={t.muted}>등록된 내용이 아직 없어요. 학원에 문의해 주세요.</p>}
         </div>
-        <div className={`flex items-center gap-2 border-t px-4 py-2 ${t.line}`}>
-          {/* 전체 페이지는 보조 — 앱에서는 밖으로 나갈 수 있어 창 안 본문을 먼저 보여 준다 */}
-          <a href={fullHref} target="_blank" rel="noopener noreferrer" className={`min-h-11 flex-1 content-center text-xs underline ${t.muted}`}>
-            전체 페이지로 보기
-          </a>
+        {/* 아래 버튼 줄은 휴대폰 홈 표시줄(안전 영역)만큼 띄운다 */}
+        <div className={`flex items-center justify-end gap-2 border-t px-4 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] ${t.line}`}>
+          {/* 전체 페이지는 보조 — 브라우저에서만(스토어 앱·판정 전에는 숨김) */}
+          {storeApp === false && (
+            <a href={fullHref} target="_blank" rel="noopener noreferrer" className={`min-h-11 flex-1 content-center text-xs underline ${t.muted}`}>
+              전체 페이지로 보기
+            </a>
+          )}
           <button type="button" onClick={onClose} className={`min-h-11 rounded-xl px-5 text-sm font-bold ${t.button}`}>
             확인
           </button>

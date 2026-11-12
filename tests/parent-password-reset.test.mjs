@@ -63,7 +63,8 @@ test("완료: 증표 확인 → 고른 계정이 그 번호의 학부모인지 �
   assert.match(fn, /updateUserById\(\s*target\.authUserId,\s*setAuthEmail \? \{ password, email: setAuthEmail, email_confirm: true \} : \{ password \},?\s*\)/);
   assert.match(fn, /status='CONSUMED'/);
   // 간편로그인 전용 계정도 비밀번호를 만든다(2026-11-13 a1) — 단 무엇으로 로그인하는지 정해지는 계정만
-  assert.match(fn, /if \(!hasPassword\) \{\s*const plan = planSocialPasswordLogin\(/);
+  // 먼저 «인증된 번호 + 직원 추가 역할 없음»을 서버에서 다시 확인한다(보안 검수 HIGH)
+  assert.match(fn, /if \(!hasPassword\) \{[\s\S]*?socialPasswordCreationAllowed\([\s\S]*?const plan = planSocialPasswordLogin\(/);
   assert.match(fn, /if \(!plan\) throw new ResetUserError\(/);
   assert.ok(fn.indexOf("parentAccountsForPhone(tx, row.phone)") < fn.indexOf("planSocialPasswordLogin"), "문자 인증·번호의 계정 확인을 통과한 뒤에만");
   assert.doesNotMatch(fn, /createUser|INSERT INTO "User"/);

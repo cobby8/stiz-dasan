@@ -51,6 +51,8 @@ export default function ParentAccountActivateClient({
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // 경고는 입력칸을 벗어날 때·제출할 때 보인다
+  const [passwordChecked, setPasswordChecked] = useState(false);
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -127,6 +129,7 @@ export default function ParentAccountActivateClient({
       return;
     }
     if (weakWarning) {
+      setPasswordChecked(true);
       setMessage({ kind: "error", text: weakWarning });
       return;
     }
@@ -196,8 +199,8 @@ export default function ParentAccountActivateClient({
           {step === "ACCOUNT" && (
             <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); activateAccount(event.currentTarget); }}>
               <Field id="parent-email" label="로그인 이메일" type="email" value={email} onChange={setEmail} autoComplete="email" placeholder="name@example.com" />
-              <Field id="parent-password" label="비밀번호" type="password" value={password} onChange={setPassword} autoComplete="new-password" placeholder="10자 이상, 숫자·영문 섞어서" />
-              {weakWarning && <p className="-mt-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
+              <Field id="parent-password" label="비밀번호" type="password" value={password} onChange={(value) => { setPassword(value); setPasswordChecked(false); }} onBlur={() => setPasswordChecked(true)} autoComplete="new-password" placeholder="10자 이상, 숫자·영문 섞어서" />
+              {passwordChecked && weakWarning && <p role="alert" className="-mt-2 rounded-lg bg-[var(--color-academy-danger-soft)] px-3 py-2 text-xs font-semibold text-[var(--color-academy-danger)]">{weakWarning}</p>}
               <Field id="parent-password-confirm" label="비밀번호 확인" type="password" value={passwordConfirm} onChange={setPasswordConfirm} autoComplete="new-password" placeholder="비밀번호 다시 입력" />
               {/* 신규 가입과 같은 필수 동의 3개 + 약관 «보기» 창(같은 화면 안) */}
               <ParentConsentChecks policies={policies} tone="academy" />
@@ -217,8 +220,8 @@ function ProgressStep({ active, step, label }: { active: boolean; step: string; 
   return <li className={active ? "text-[var(--color-academy-ink)]" : "text-[var(--color-academy-faint)]"}><span className={`mx-auto mb-1 flex size-7 items-center justify-center rounded-full ${active ? "bg-[var(--brand-accent)] text-[var(--brand-accent-contrast)]" : "bg-[var(--color-academy-soft)]"}`}>{step}</span>{label}</li>;
 }
 
-function Field({ id, label, type, value, onChange, autoComplete, placeholder }: { id: string; label: string; type: string; value: string; onChange: (value: string) => void; autoComplete: string; placeholder: string }) {
-  return <div><label htmlFor={id} className="text-sm font-bold text-[var(--color-academy-ink)]">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 outline-none focus:border-[var(--brand-accent)]" /></div>;
+function Field({ id, label, type, value, onChange, onBlur, autoComplete, placeholder }: { id: string; label: string; type: string; value: string; onChange: (value: string) => void; onBlur?: () => void; autoComplete: string; placeholder: string }) {
+  return <div><label htmlFor={id} className="text-sm font-bold text-[var(--color-academy-ink)]">{label}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} autoComplete={autoComplete} placeholder={placeholder} required className="mt-2 min-h-12 w-full rounded-xl border border-[var(--color-academy-line-input)] bg-white px-4 outline-none focus:border-[var(--brand-accent)]" /></div>;
 }
 
 function PrimaryButton({ pending, disabled = false, onClick, label, pendingLabel, submit = false }: { pending: boolean; disabled?: boolean; onClick: () => void; label: string; pendingLabel: string; submit?: boolean }) {

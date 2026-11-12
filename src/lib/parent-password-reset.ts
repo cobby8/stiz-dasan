@@ -8,7 +8,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizeParentPhone } from "@/lib/parent-signup-verification";
 import { oauthProviderMethod } from "@/lib/parent-signup-verification";
 import { SIGNUP_OTP_IP_DAILY_LIMIT, SIGNUP_OTP_IP_HOURLY_LIMIT } from "@/lib/parent-signup-verification";
-import { PARENT_WEAK_PASSWORD_MESSAGE, isWeakPasswordRejection, planSocialPasswordLogin } from "@/lib/parent-password-rules";
+import {
+  PARENT_WEAK_PASSWORD_MESSAGE,
+  SOCIAL_PASSWORD_CONTACT_MESSAGE,
+  isWeakPasswordRejection,
+  planSocialPasswordLogin,
+  socialPasswordCreationAllowed,
+} from "@/lib/parent-password-rules";
 
 /**
  * 학부모 아이디·비밀번호 찾기(2026-11-13).
@@ -92,8 +98,12 @@ async function findRow(token: string, tx: Prisma.TransactionClient | typeof pris
 
 /** 이 번호를 쓰는, 로그인 수단이 있는 학부모 계정(탈퇴 제외). 직원 역할은 고르지 않는다. */
 async function parentAccountsForPhone(tx: Prisma.TransactionClient | typeof prisma, phone: string) {
-  return tx.$queryRawUnsafe<Array<{ id: string; username: string | null; email: string; authUserId: string }>>(
-    `SELECT id, username, email, "authUserId" FROM "User"
+  // phoneVerifiedAt·hasStaffGrant 는 간편로그인 전용 계정의 비밀번호 만들기 허용 판정용(socialPasswordCreationAllowed)
+  return tx.$queryRawUnsafe<Array<{ id: string; username: string | null; email: string; authUserId: string; phoneVerifiedAt: Date | null; hasStaffGrant: boolean }>>(
+    `SELECT id, username, email, "authUserId", "phoneVerifiedAt",
+            EXISTS(SELECT 1 FROM "UserRoleGrant" g
+                    WHERE g."userId" = "User".id AND g.status = 'ACTIVE' AND g.role::text IN ('INSTRUCTOR','DRIVER')) AS "hasStaffGrant"
+       FROM "User"
       WHERE role = 'PARENT' AND "withdrawnAt" IS NULL AND "authUserId" IS NOT NULL
         AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
       ORDER BY "createdAt" ASC
@@ -122,7 +132,9 @@ async function describeAccounts(rows: Awaited<ReturnType<typeof parentAccountsFo
     if (error || !data.user) continue; // 로그인 계정이 지워진 행은 고를 수 없다
     const { hasPassword, socialLabels } = describeAuthIdentities(data.user.identities);
     // 간편로그인 전용 계정은 비밀번호를 만들면 무엇으로 로그인하게 되는지 미리 보여 준다
-    const plan = hasPassword ? null : planSocialPasswordLogin({ username: row.username, appEmail: row.email, authEmail: data.user.email });
+    // 인증된 번호가 아니거나 직원 추가 역할이 있으면 만들 수 없다(완료 단계에서 서버가 다시 확인한다)
+    const allowed = hasPassword || socialPasswordCreationAllowed({ phoneVerifiedAt: row.phoneVerifiedAt, hasStaffGrant: Boolean(row.hasStaffGrant) });
+    const plan = hasPassword || !allowed ? null : planSocialPasswordLogin({ username: row.username, appEmail: row.email, authEmail: data.user.email });
     accounts.push({
       id: row.id,
       loginId: plan?.loginId || row.username || row.email,
@@ -255,6 +267,7 @@ export async function completeParentPasswordReset(input: {
   if (password.length > 72) return { error: "비밀번호는 72자 이하로 입력해 주세요." };
   if (!TOKEN_PATTERN.test(input.proof || "")) return { error: "휴대폰 인증이 만료되었습니다. 처음부터 다시 시도해 주세요." };
   let rowId: string | null = null;
+  let passwordChanged = false;
   try {
     const target = await prisma.$transaction(async (tx) => {
       const row = await findRow(input.token, tx, true);
@@ -285,6 +298,10 @@ export async function completeParentPasswordReset(input: {
     let loginId = target.username || target.email;
     let setAuthEmail: string | null = null;
     if (!hasPassword) {
+      // 보안: 화면 판정을 믿지 않고 여기서 다시 본다 — 인증된 번호(phoneVerifiedAt)이고 직원 추가 역할이 없을 때만
+      if (!socialPasswordCreationAllowed({ phoneVerifiedAt: target.phoneVerifiedAt, hasStaffGrant: Boolean(target.hasStaffGrant) })) {
+        throw new ResetUserError(SOCIAL_PASSWORD_CONTACT_MESSAGE);
+      }
       const plan = planSocialPasswordLogin({ username: target.username, appEmail: target.email, authEmail: data.user.email });
       if (!plan) throw new ResetUserError("이 계정은 로그인 아이디가 없어 비밀번호를 만들 수 없어요. 학원에 문의해 주세요.");
       loginId = plan.loginId;
@@ -302,15 +319,23 @@ export async function completeParentPasswordReset(input: {
       }
       throw new Error("PASSWORD_UPDATE_FAILED");
     }
-    await prisma.$executeRawUnsafe(
-      `UPDATE "ParentPasswordReset" SET status='CONSUMED', "consumedAt"=NOW(), "proofHash"=NULL, "proofExpiresAt"=NULL, "updatedAt"=NOW()
-        WHERE id=$1 AND status='PROCESSING'`,
-      rowId,
-    );
+    // 여기부터는 비밀번호가 이미 바뀌었다 — 소진 기록이 실패해도 VERIFIED 로 되돌리지 않는다(같은 증표 재사용 방지).
+    // 행은 PROCESSING 으로 남아 완료 단계(VERIFIED 만 받음)에 다시 들어올 수 없다.
+    passwordChanged = true;
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE "ParentPasswordReset" SET status='CONSUMED', "consumedAt"=NOW(), "proofHash"=NULL, "proofExpiresAt"=NULL, "updatedAt"=NOW()
+          WHERE id=$1 AND status='PROCESSING'`,
+        rowId,
+      );
+    } catch (consumeError) {
+      console.error("[parent-password-reset] 소진 기록 실패(비밀번호는 바뀜, 행은 PROCESSING 유지)", consumeError instanceof Error ? consumeError.message.slice(0, 200) : "UNKNOWN");
+    }
     return { ok: true, loginId };
   } catch (error) {
     // 비밀번호를 못 바꿨으면 같은 인증으로 다시 시도할 수 있게 VERIFIED 로 되돌린다(증표 유효시간은 그대로).
-    if (rowId) {
+    // 비밀번호가 이미 바뀐 뒤의 오류라면 되돌리지 않는다.
+    if (rowId && !passwordChanged) {
       await prisma.$executeRawUnsafe(
         `UPDATE "ParentPasswordReset" SET status='VERIFIED', "targetUserId"=NULL, "updatedAt"=NOW() WHERE id=$1 AND status='PROCESSING'`,
         rowId,

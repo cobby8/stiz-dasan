@@ -561,6 +561,22 @@ export async function consumeParentAccountClaim(
         processingAttemptId,
       ).catch(() => undefined);
     }
+    // 동의 칸 마이그레이션(20261113120000)보다 코드가 먼저 배포된 경우(칸 없음 42703) — 학부모에게는 «잠시 후 다시»,
+    // 원인은 서버 로그에 남긴다. 이때는 처리 시작 UPDATE 자체가 실패해 활성화 링크·인증 상태는 그대로다.
+    if (isMissingColumnError(error)) {
+      console.error("[consumeParentAccountClaim] DB 칸 없음(42703) — 마이그레이션 적용 확인 필요:", error instanceof Error ? error.message.slice(0, 300) : "UNKNOWN");
+      return { error: ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE };
+    }
     return { error: userFacingError(error, "계정을 활성화하지 못했습니다.") };
   }
+}
+
+export const ACTIVATION_TEMPORARILY_UNAVAILABLE_MESSAGE = "지금은 계정 활성화를 처리할 수 없어요. 잠시 후 다시 시도해 주세요.";
+
+/** PostgreSQL «칸 없음»(42703) 오류인가 — Prisma raw 오류는 meta.code 또는 메시지에 담겨 온다 */
+export function isMissingColumnError(error: unknown): boolean {
+  const meta = (error as { meta?: { code?: unknown } } | null)?.meta;
+  if (meta && String(meta.code) === "42703") return true;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /\b42703\b/.test(message) || /column "[^"]+" (?:of relation "[^"]+" )?does not exist/i.test(message);
 }

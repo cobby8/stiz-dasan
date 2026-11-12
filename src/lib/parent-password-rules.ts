@@ -30,7 +30,7 @@ export function isWeakPasswordRejection(error: AuthFailureLike): boolean {
 }
 
 /**
- * 입력 중 사전 경고 — 같은 숫자 반복·연속 숫자·qwer 류·전화번호가 든 비밀번호는 보내기 전에 막는다.
+ * 사전 경고(입력칸을 벗어날 때·제출할 때 보인다) — 같은 숫자 반복·연속 숫자·qwer 류·전화번호가 든 비밀번호는 보내기 전에 막는다.
  * 최소 길이에 못 미치면 길이 안내가 먼저라 경고하지 않는다(null).
  */
 export function parentPasswordWarning(
@@ -39,8 +39,32 @@ export function parentPasswordWarning(
 ): string | null {
   const minLength = options.minLength ?? PARENT_PASSWORD_MIN;
   if (password.length < minLength) return null;
-  return commonPasswordWarning(password, { phone: options.phone, minLength });
+  // 판정은 직원 초대와 같은 규칙, 문장은 서버 거절과 하나로(뒤에 길이 안내만 덧붙인다)
+  return commonPasswordWarning(password, { phone: options.phone, minLength })
+    ? parentWeakPasswordHint(minLength)
+    : null;
 }
+
+/** 화면 경고 문장 — 서버 거절 문장(PARENT_WEAK_PASSWORD_MESSAGE) + «(숫자·영문 섞어 N자 이상)» */
+export function parentWeakPasswordHint(minLength: number): string {
+  return `${PARENT_WEAK_PASSWORD_MESSAGE} (숫자·영문 섞어 ${minLength}자 이상)`;
+}
+
+/**
+ * 간편로그인 전용 계정에 문자 인증만으로 비밀번호를 새로 만들어도 되는가(보안 검수 HIGH, 2026-11-13).
+ *
+ * 문자 인증은 «지금 이 번호를 쥔 사람»만 증명한다. 그래서
+ * - 그 번호가 계정에 «인증된 번호»로 묶여 있을 때만(phoneVerifiedAt 있음) — 학원이 넣은 번호·바뀐 번호로
+ *   남의 간편로그인 계정에 비밀번호를 심는 길을 막는다.
+ * - 선생님·기사님 추가 역할(UserRoleGrant ACTIVE)이 있는 계정은 제외 — 학생 개인정보가 열리는 계정은
+ *   문자 하나로 새 로그인 수단을 만들지 않는다(학원 문의).
+ * 비밀번호가 이미 있는 계정의 재설정은 예전 규칙 그대로다(이 판정은 간편로그인 전용 계정에만 쓴다).
+ */
+export function socialPasswordCreationAllowed(input: { phoneVerifiedAt: unknown; hasStaffGrant: boolean }): boolean {
+  return Boolean(input.phoneVerifiedAt) && !input.hasStaffGrant;
+}
+
+export const SOCIAL_PASSWORD_CONTACT_MESSAGE = "이 계정은 여기서 비밀번호를 만들 수 없어요. 학원에 문의해 주세요.";
 
 /**
  * 간편로그인만 쓰던 학부모가 문자 인증으로 비밀번호를 새로 만들 때, 무엇으로 로그인하게 되는지 정한다.
