@@ -65,6 +65,23 @@ export async function getStaffInviteLastSends(): Promise<StaffInviteLastSend[]> 
     }
 }
 
+/** 퇴사 처리 때 로그인 차단이 실패해 남은 건수 — ⋯ 더보기의 «다시 시도» 항목에 쓴다(retryRetiredLoginBlocks 와 같은 조건). */
+export async function getRetiredLoginBlockFailureCount(): Promise<number> {
+    try {
+        const rows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+            `SELECT COUNT(DISTINCT a."detailsJson"->>'targetUserId')::int AS count
+               FROM "OperationsAuditLog" a
+               JOIN "User" u ON u.id = a."detailsJson"->>'targetUserId'
+              WHERE a.action = 'STAFF_RETIRED' AND a."detailsJson"->>'loginBlocked' = 'failed'
+                AND u.role = 'PARENT' AND u."withdrawnAt" IS NULL`,
+        );
+        return Number(rows[0]?.count ?? 0);
+    } catch (error) {
+        console.error("[staffPanelData] 로그인 차단 실패 건수 조회 실패:", error instanceof Error ? error.message : String(error));
+        return 0;
+    }
+}
+
 export async function getStaffClassAssignments(): Promise<RosterClassAssignment[]> {
     try {
         return await prisma.$queryRawUnsafe<RosterClassAssignment[]>(

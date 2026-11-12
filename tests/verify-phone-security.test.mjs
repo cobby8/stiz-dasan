@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const route = readFileSync(
@@ -8,10 +8,6 @@ const route = readFileSync(
 );
 const action = readFileSync(
   new URL("../src/app/actions/admin.ts", import.meta.url),
-  "utf8",
-);
-const modal = readFileSync(
-  new URL("../src/app/admin/staff/AddStaffModal.tsx", import.meta.url),
   "utf8",
 );
 const migration = readFileSync(
@@ -76,15 +72,12 @@ test("성공한 OTP는 짧은 1회용 proof로 바뀐다", () => {
   assert.doesNotMatch(route, /otpMap|phoneRates|requesterRates/);
 });
 
-test("직원 생성은 owner·phone·proof를 잠그고 같은 거래에서 소비한다", () => {
-  assert.match(action, /verificationProof: string/);
-  assert.match(action, /"ownerId" = \$1 AND "phoneHash" = \$2/);
-  assert.match(action, /"proofExpiresAt" > NOW\(\)/);
-  assert.match(action, /"consumedAt" IS NULL/);
-  assert.match(action, /timingSafeEqual\(expected, supplied\)/);
-  assert.match(action, /status = 'CONSUMED', "consumedAt" = NOW\(\)/);
-  assert.match(modal, /setVerificationProof\(data\.proof \|\| ""\)/);
-  assert.match(modal, /verificationProof,/);
+// 2026-11-12: «직접 추가»(createStaffUser·AddStaffModal)는 원장 결정으로 없앴다 — 로그인 없는 직원 기록만 생겼다.
+// 직원은 초대로만 추가한다. 되살아나지 않게 못박는다(인증 API 자체는 위 검사로 그대로 지킨다).
+test("직접 추가(로그인 없는 직원 생성)는 없어졌다", () => {
+  assert.doesNotMatch(action, /export async function createStaffUser\(/);
+  assert.doesNotMatch(action, /verificationProof: string/);
+  assert.equal(existsSync(new URL("../src/app/admin/staff/AddStaffModal.tsx", import.meta.url)), false);
 });
 
 test("공개 스키마 테이블은 RLS와 직접 접근 차단을 강제한다", () => {

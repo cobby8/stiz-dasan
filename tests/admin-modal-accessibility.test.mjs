@@ -31,7 +31,6 @@ test("주요 관리자 운영 모달이 공통 컨테이너를 사용한다", ()
         "../src/app/admin/schedule/ScheduleAdminModals.tsx",
         "../src/app/admin/trial/TrialCrmModals.tsx",
         "../src/app/admin/students/StudentManagementClient.tsx",
-        "../src/app/admin/staff/AddStaffModal.tsx",
         "../src/app/admin/staff/InviteStaffModal.tsx",
         "../src/app/admin/apply/ApplyAdminClient.tsx",
         "../src/app/admin/trial/TrialCrmClient.tsx",

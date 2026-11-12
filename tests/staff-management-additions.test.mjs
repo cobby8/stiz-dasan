@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { buildStaffRoster, classesForStaff, classAssignmentLabel, inviteSendStatusLabel } from "../src/lib/staff/staffRoster.ts";
-import { shouldBlockLoginOnRetire, staffAuthId, staffLoginKind, isConvertibleStaffRole } from "../src/lib/staff/staffAccountLink.ts";
+import { decideRetiredReinvite, shouldBlockLoginOnRetire, staffAuthId, staffLoginKind, isConvertibleStaffRole } from "../src/lib/staff/staffAccountLink.ts";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 const admin = await read("src/app/actions/admin.ts");
@@ -134,7 +134,7 @@ test("s3 퇴사 처리: 원장만 · 자기 자신 금지 · 한 거래(역할·
   assert.match(body, /SET role = 'PARENT'::"Role"[^`]*WHERE id = \$1 AND role = \$2::"Role"/);
   assert.match(body, /UPDATE "Coach" SET "userId" = NULL/);
   assert.match(body, /UPDATE "UserRoleGrant"[\s\S]*?'REVOKED'[\s\S]*?status IN \('PENDING', 'ACTIVE'\)/);
-  assert.match(body, /UPDATE "StaffInvitation" SET status = 'CANCELLED'[\s\S]*?"targetUserId" = \$1 AND status = 'PENDING'/);
+  assert.match(body, /UPDATE "StaffInvitation" SET status = 'CANCELLED'[\s\S]*?"targetUserId" = \$1 AND status IN \('PENDING', 'PROCESSING'\)/);
   assert.match(body, /INSERT INTO "OperationsAuditLog"[\s\S]*?'STAFF_RETIRED'/);
   assert.match(body, /ban_duration: RETIRED_LOGIN_BAN_DURATION/);
   assert.match(body, /forgetAppUserRoleCache\(targetId\)/);
@@ -188,4 +188,73 @@ test("덧붙임 조회는 기존 표만 읽는다(새 표 없음) · 담당 반�
   assert.match(panelData, /"eventType" = 'STAFF_INVITATION'/);
   for (const table of ["ScheduleSlot", "ClassSlotOverride", "CustomClassSlot"]) assert.ok(panelData.includes(`FROM "${table}"`), table);
   assert.doesNotMatch(panelData, /CREATE TABLE|ALTER TABLE/);
+});
+
+// ── 2026-11-12 정확성 검수 반영 ─────────────────────────────
+
+test("[필수1] 역할이 바뀌면 이 사람을 향한 대기·처리 중 초대를 같은 거래에서 취소(직원 기록을 먼저 잠근다)", () => {
+  const body = fnBody(admin, "updateUserRole");
+  const lock = body.indexOf(`SELECT role::text AS role FROM "User" WHERE id = $1 FOR UPDATE`);
+  const cancel = body.indexOf(`UPDATE "StaffInvitation" SET status = 'CANCELLED'`);
+  assert.ok(lock > 0 && cancel > lock, "잠금 → 취소 순서");
+  assert.match(body, /WHERE "targetUserId" = \$1 AND status IN \('PENDING', 'PROCESSING'\)/);
+  assert.match(body, /before\[0\]\.role !== newRole/);
+  // 퇴사 처리도 처리 중 초대까지 취소
+  assert.match(fnBody(admin, "retireStaffMember"), /"targetUserId" = \$1 AND status IN \('PENDING', 'PROCESSING'\)/);
+});
+
+test("[필수1] 가입 거래는 직원 기록 → 초대 순서로 잠그고 초대가 이 시도의 PROCESSING 인지·역할이 그대로인지 다시 본다", () => {
+  const helper = invite.slice(invite.indexOf("async function lockTargetAndAssertInvitation"), invite.indexOf("async function reblockRetiredLogin"));
+  const userLock = helper.indexOf(`FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL FOR UPDATE`);
+  const inviteLock = helper.indexOf(`status = 'PROCESSING' AND "processingAttemptId" = $2 FOR UPDATE`);
+  assert.ok(userLock > 0 && inviteLock > userLock, "직원 기록 → 초대 순서");
+  // 전환: 역할이 처음 읽은 그대로가 아니면 멈춘다(CASE 가 강등을 되올리지 못하게) — 붙이기 UPDATE 보다 먼저
+  const conversion = invite.slice(invite.indexOf("if (conversionTargetId) {"));
+  assert.ok(conversion.indexOf("lockTargetAndAssertInvitation(tx") < conversion.indexOf(`SET "authUserId" = $1, email = $2`));
+  assert.match(conversion, /if \(lockedRole !== conversionTargetRole\) throw/);
+  // 재입사: 잠근 역할이 학부모일 때만
+  assert.match(invite, /if \(lockedRole !== "PARENT"\) throw/);
+});
+
+test("[권장3] 재입사 가입의 DB 거래가 실패하면 다시 연 로그인을 다시 막는다(자녀 없을 때만, 실패는 기록)", () => {
+  assert.match(invite, /catch \(reopenTxError\) \{[\s\S]*?await reblockRetiredLogin\([\s\S]*?throw reopenTxError;/);
+  const fn = invite.slice(invite.indexOf("async function reblockRetiredLogin"));
+  assert.match(fn, /"mergedIntoStudentId" IS NULL/);
+  assert.match(fn, /ban_duration: RETIRED_LOGIN_BAN_DURATION/);
+  assert.match(fn, /\[STAFF_INVITE_CRITICAL\] retired login re-block failed/);
+});
+
+test("[권장4] 퇴사자 재초대 자동 연결은 이름까지 같을 때만 — 다르면 연결하지 않고 안내(직원 전용 로그인은 가입이 막히므로 거절)", async () => {
+  const staffLogin = { id: "old", name: "홍길동", email: "01011112222@staff.stiz.kr" };
+  const noLogin = { id: "old", name: "홍길동", email: "01011112222@staff.local" };
+  assert.deepEqual(decideRetiredReinvite([], "홍길동"), { kind: "none" });
+  assert.deepEqual(decideRetiredReinvite([staffLogin], " 홍 길동 "), { kind: "attach", userId: "old" });
+  assert.deepEqual(decideRetiredReinvite([staffLogin], "김철수"), { kind: "reject", previousName: "홍길동" });
+  assert.deepEqual(decideRetiredReinvite([noLogin], "김철수"), { kind: "notice", previousName: "홍길동" });
+  assert.equal(decideRetiredReinvite([staffLogin, noLogin], "홍길동").kind, "notice");
+  const body = fnBody(admin, "inviteStaff");
+  assert.match(body, /const reinvite = decideRetiredReinvite\(retiredRecords, cleanName\)/);
+  assert.match(body, /같은 번호의 이전 직원 기록\(\$\{reinvite\.previousName\}\)이 있어요/);
+  assert.match(body, /previousRecordNotice,/);
+  assert.match(await read("src/app/admin/staff/InviteStaffModal.tsx"), /\{result\.previousRecordNotice\}/);
+});
+
+test("[권장5] 직접 추가 직원을 다시 초대하면 [초대로 전환]을 안내", () => {
+  const body = fnBody(admin, "inviteStaff");
+  assert.match(body, /if \(staffLoginKind\(found\) === "none"\)[\s\S]*?\[초대로 전환\]/);
+});
+
+test("[권장2] 로그인 차단 실패 다시 시도: 원장 전용·감사 기록 failed 대상·결과 덧붙임 · 화면 ⋯ 더보기 항목", () => {
+  const body = fnBody(admin, "retryRetiredLoginBlocks");
+  assert.match(body, /await requireOwner\(\)/);
+  assert.match(body, /a\.action = 'STAFF_RETIRED' AND a\."detailsJson"->>'loginBlocked' = 'failed'/);
+  assert.match(body, /u\.role = 'PARENT' AND u\."withdrawnAt" IS NULL/);
+  assert.match(body, /shouldBlockLoginOnRetire\(/);
+  assert.match(body, /"detailsJson" = "detailsJson" \|\| \$2::jsonb/);
+  assert.match(panelData, /export async function getRetiredLoginBlockFailureCount/);
+  assert.match(client, /로그인 차단 실패 \$\{loginBlockFailures\}건 다시 시도/);
+  assert.match(client, /⋯ 더보기 → «로그인 차단 실패 다시 시도»를 눌러 주세요/);
+  // 원장 전용 메뉴 묶음(canManage) 안에 있다
+  const more = client.slice(client.indexOf("const moreActions"), client.indexOf("// 행 키보드"));
+  assert.ok(more.indexOf("...(canManage") < more.indexOf("retry-login-block"));
 });

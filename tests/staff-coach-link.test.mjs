@@ -29,10 +29,12 @@ test("만료된 스태프 초대도 이력에서 재발송할 수 있다", () =>
   assert.match(staffClientSource, /handleResendInvitation\(inv\.id, inv\.name\)/);
 });
 
-test("스태프 가입과 직접 추가는 기존 코치 프로필을 자동 연결한다", () => {
+// 2026-11-12: 직접 추가는 없앴다 — 코치 자동 연결은 초대 가입(새 기록·전환·재입사) 경로에만 남는다
+test("스태프 가입(초대·전환·재입사)은 기존 코치 프로필을 자동 연결한다", () => {
   assert.match(linkSource, /input\.role !== "INSTRUCTOR"/);
   assert.match(linkSource, /regexp_replace\(COALESCE\(phone, ''\)/);
   assert.match(linkSource, /lower\(trim\(name\)\) = lower\(trim\(\$3\)\)/);
-  assert.match(adminActionSource, /linkMatchingCoachProfileToUser\(tx/);
   assert.match(inviteActionSource, /linkMatchingCoachProfileToUser\(tx/);
+  assert.match(inviteActionSource, /await linkCoachProfileIfNone\(tx,/);
+  assert.doesNotMatch(adminActionSource, /export async function createStaffUser\(/);
 });

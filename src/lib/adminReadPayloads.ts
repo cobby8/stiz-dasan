@@ -1,4 +1,4 @@
-import { getStaffClassAssignments, getStaffInviteLastSends, getStaffRoleGrantUsers } from "@/lib/staff/staffPanelData";
+import { getRetiredLoginBlockFailureCount, getStaffClassAssignments, getStaffInviteLastSends, getStaffRoleGrantUsers } from "@/lib/staff/staffPanelData";
 import { unstable_cache } from "next/cache";
 import { kstDow, todayKst } from "@/lib/datetime/kst";
 import { getInstagramRuntimeStatus } from "@/lib/instagram";
@@ -1166,18 +1166,20 @@ export const getCachedAdminStatsPayload = unstable_cache(
 export const getCachedAdminStaffPayload = unstable_cache(
     async () => {
         // 2026-11-12: 추가 역할 직원(보기 전용 줄)·초대 문자 마지막 발송·담당 반을 같이 싣는다(기존 표만 읽음)
-        const [staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments] = await Promise.all([
+        // 로그인 차단 실패 건수(퇴사 처리 뒤 «다시 시도» 메뉴용)도 함께
+        const [staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments, loginBlockFailures] = await Promise.all([
             getStaffUsers(),
             getAllCoaches(),
             getStaffInvitations(),
             getStaffRoleGrantUsers(),
             getStaffInviteLastSends(),
             getStaffClassAssignments(),
+            getRetiredLoginBlockFailureCount(),
         ]);
 
-        return { staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments };
+        return { staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments, loginBlockFailures };
     },
-    ["admin-staff-v2"],
+    ["admin-staff-v3"],
     { revalidate: 60, tags: ["admin-staff", "admin-coaches"] },
 );
 

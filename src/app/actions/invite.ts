@@ -18,7 +18,7 @@ import {
   type InviteClaimState,
 } from "@/lib/staff/inviteAuthFailure";
 
-import { staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
+import { RETIRED_LOGIN_BAN_DURATION, staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
 
 const MAX_OTP_ATTEMPTS = 5;
 
@@ -34,6 +34,50 @@ async function linkCoachProfileIfNone(
   const linked = await tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "Coach" WHERE "userId" = $1 LIMIT 1`, input.userId);
   if (linked.length > 0) return 0;
   return linkMatchingCoachProfileToUser(tx, input);
+}
+
+/**
+ * 기존 직원 기록에 붙는 가입의 거래 첫머리(2026-11-12 검수) — 직원 기록 → 초대 순서로 잠근다.
+ * 역할 변경(updateUserRole)·퇴사 처리(retireStaffMember)도 직원 기록을 먼저 잠그고 초대를 취소하므로 서로 기다린다.
+ * 초대가 이 시도의 PROCESSING 이 아니면(그 사이 취소됨) 멈춘다. 잠근 시점의 역할을 돌려준다.
+ */
+async function lockTargetAndAssertInvitation(
+  tx: CoachLinkTx,
+  input: { userId: string; invitationId: string; attemptId: string },
+): Promise<string> {
+  const users = await tx.$queryRawUnsafe<Array<{ role: string }>>(
+    `SELECT role::text AS role FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL FOR UPDATE`,
+    input.userId,
+  );
+  if (!users[0]) throw new Error("초대 처리 상태가 변경되었습니다.");
+  const live = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM "StaffInvitation"
+      WHERE id = $1 AND status = 'PROCESSING' AND "processingAttemptId" = $2 FOR UPDATE`,
+    input.invitationId,
+    input.attemptId,
+  );
+  if (!live[0]) throw new Error("초대가 취소되었습니다. 원장에게 문의해주세요.");
+  return users[0].role;
+}
+
+/** 재입사 가입이 DB 에서 실패했을 때 다시 연 로그인을 다시 막는다(자기 자녀가 없을 때만). 실패는 기록만. */
+async function reblockRetiredLogin(input: { authId: string; userId: string; invitationId: string; attemptId: string }) {
+  try {
+    const children = await prisma.$queryRawUnsafe<Array<{ one: number }>>(
+      `SELECT 1 AS one FROM "Student" s WHERE s."parentId" = $1 AND s."mergedIntoStudentId" IS NULL LIMIT 1`,
+      input.userId,
+    );
+    if (children.length > 0) return;
+    const { error } = await createAdminClient().auth.admin.updateUserById(input.authId, { ban_duration: RETIRED_LOGIN_BAN_DURATION });
+    if (error) throw new Error(error.message);
+  } catch (error) {
+    console.error("[STAFF_INVITE_CRITICAL] retired login re-block failed", {
+      invitationId: input.invitationId,
+      attemptId: input.attemptId,
+      userId: input.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 const SMS_TIMEOUT_MS = 10_000;
 
@@ -407,6 +451,7 @@ export async function acceptInvitation(token: string, password: string) {
     //   · «직접 추가» 기록(로그인 없음) → 아래에서 로그인 계정을 만들어 그 기록에 붙인다(역할·코치 연결·수업 기록 그대로)
     //   · 퇴사 처리로 학부모가 된 직원 전용 계정 → 그 로그인을 다시 열고(차단 해제·새 비밀번호) 역할을 되돌린다
     let conversionTargetId: string | null = null;
+    let conversionTargetRole: string | null = null;
     if (invitation.targetUserId) {
       const targets = await prisma.$queryRawUnsafe<Array<{ id: string; email: string | null; authUserId: string | null; role: string }>>(
         `SELECT id, email, "authUserId", role::text AS role FROM "User"
@@ -426,34 +471,46 @@ export async function acceptInvitation(token: string, password: string) {
           authFailure = classifyAuthFailure(reopenError);
           throw new Error(authFailure === "uncertain" ? "계정을 다시 열지 못했습니다. 잠시 후 다시 시도해 주세요." : staffAuthFailureMessage(authFailure));
         }
-        await prisma.$transaction(async (tx) => {
-          const reopened = await tx.$executeRawUnsafe(
-            `UPDATE "User" SET role = $2::"Role", "updatedAt" = NOW()
-              WHERE id = $1 AND role = 'PARENT' AND "withdrawnAt" IS NULL`,
-            target.id,
-            invitation.role,
-          );
-          if (reopened !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
-          await linkCoachProfileIfNone(tx, { userId: target.id, name: invitation.name, phone: invitation.phone, role: invitation.role });
-          const done = await tx.$executeRawUnsafe(
-            `UPDATE "StaffInvitation"
-             SET status = 'ACCEPTED', "acceptedAt" = NOW(), "acceptedUserId" = $1, "otpHash" = NULL,
-                 "processingAttemptId" = NULL, "processingStartedAt" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
-             WHERE id = $2 AND status = 'PROCESSING' AND "processingAttemptId" = $3`,
-            target.id,
-            invitation.id,
-            attemptId,
-          );
-          if (done !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
-          await tx.$executeRawUnsafe(
-            `UPDATE "StaffInvitationAuthAttempt" SET status = 'COMPLETED', "updatedAt" = NOW() WHERE id = $1`,
-            attemptId,
-          );
-        });
+        try {
+          await prisma.$transaction(async (tx) => {
+            // 직원 기록 → 초대 순서로 잠그고, 초대가 아직 «이 시도의 처리 중»인지 같은 거래에서 다시 본다
+            // (그 사이 원장이 역할을 바꾸거나 퇴사 처리했으면 초대가 취소돼 여기서 멈춘다)
+            const lockedRole = await lockTargetAndAssertInvitation(tx, { userId: target.id, invitationId: invitation.id, attemptId });
+            if (lockedRole !== "PARENT") throw new Error("초대 처리 상태가 변경되었습니다.");
+            const reopened = await tx.$executeRawUnsafe(
+              `UPDATE "User" SET role = $2::"Role", "updatedAt" = NOW()
+                WHERE id = $1 AND role = 'PARENT' AND "withdrawnAt" IS NULL`,
+              target.id,
+              invitation.role,
+            );
+            if (reopened !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+            await linkCoachProfileIfNone(tx, { userId: target.id, name: invitation.name, phone: invitation.phone, role: invitation.role });
+            const done = await tx.$executeRawUnsafe(
+              `UPDATE "StaffInvitation"
+               SET status = 'ACCEPTED', "acceptedAt" = NOW(), "acceptedUserId" = $1, "otpHash" = NULL,
+                   "processingAttemptId" = NULL, "processingStartedAt" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
+               WHERE id = $2 AND status = 'PROCESSING' AND "processingAttemptId" = $3`,
+              target.id,
+              invitation.id,
+              attemptId,
+            );
+            if (done !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+            await tx.$executeRawUnsafe(
+              `UPDATE "StaffInvitationAuthAttempt" SET status = 'COMPLETED', "updatedAt" = NOW() WHERE id = $1`,
+              attemptId,
+            );
+          });
+        } catch (reopenTxError) {
+          // 2026-11-12 검수: 로그인은 이미 다시 열었는데(차단 해제·새 비밀번호) DB 반영이 실패했다 → 다시 막는다.
+          // 자기 자녀가 있으면(학부모 화면을 써야 하면) 퇴사 때처럼 막지 않는다. 다시 막기도 실패하면 기록만 남긴다.
+          await reblockRetiredLogin({ authId, userId: target.id, invitationId: invitation.id, attemptId });
+          throw reopenTxError;
+        }
         return { ok: true, email: target.email ?? staffEmail };
       }
       if (kind !== "none") throw new Error("이미 로그인 계정이 있는 직원입니다. 원장에게 문의해주세요.");
       conversionTargetId = target.id;
+      conversionTargetRole = target.role;
     }
 
     const supabaseAdmin = createAdminClient();
@@ -494,6 +551,10 @@ export async function acceptInvitation(token: string, password: string) {
     const createdStaffUserId = authUserId;
     await prisma.$transaction(async (tx) => {
       if (conversionTargetId) {
+        // 직원 기록 → 초대 순서로 잠그고, 초대가 아직 이 시도의 «처리 중»인지·역할이 처음 읽은 그대로인지 다시 본다.
+        // 역할이 바뀌었거나(강등·퇴사 → 초대 취소) 다르면 멈춘다 — 아래 CASE 가 강등된 역할을 되올리지 못하게.
+        const lockedRole = await lockTargetAndAssertInvitation(tx, { userId: conversionTargetId, invitationId: invitation.id, attemptId });
+        if (lockedRole !== conversionTargetRole) throw new Error("초대 처리 상태가 변경되었습니다.");
         // 직접 추가 기록에 로그인을 붙인다 — 그 사이 다른 길로 로그인이 붙었으면(0건) 전부 되돌린다
         const attached = await tx.$executeRawUnsafe(
           `UPDATE "User"

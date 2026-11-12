@@ -16,7 +16,8 @@ function formatPhone(raw: string): string {
 //   링크 발송 — 새 직원 계정을 만들 사람에게 개인 가입 링크를 보냈다.
 //   기존 계정에 부여 — 이 번호의 학부모 계정이 이미 있어 그 계정에 역할을 붙였다(링크 없음).
 type InvitationResult =
-    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string }
+    // previousRecordNotice: 같은 번호의 이전 직원 기록이 있지만 이름이 달라 연결하지 않았다는 안내(2026-11-12)
+    | { grantedExisting: false; accountName: null; inviteUrl: string; smsSent: boolean; smsError?: string; previousRecordNotice?: string }
     | { grantedExisting: true; accountName: string; inviteUrl: null; smsSent: false; smsError?: string };
 
 function absoluteInviteUrl(inviteUrl: string): string {
@@ -151,6 +152,11 @@ export default function InviteStaffModal({
                             </p>
                             {!result.smsSent && result.smsError && <p className="mt-2 text-xs opacity-80">발송 사유: {result.smsError}</p>}
                         </div>
+                        {result.previousRecordNotice && (
+                            <p role="status" className="rounded-lg bg-[var(--color-academy-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-academy-warning)]">
+                                {result.previousRecordNotice}
+                            </p>
+                        )}
 
                         <div>
                             <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">{form.name.trim()}님 {resetMode ? "비밀번호 재설정 링크" : "개인 가입 링크"}</label>

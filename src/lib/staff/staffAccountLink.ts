@@ -58,5 +58,36 @@ export function shouldBlockLoginOnRetire(input: { kind: StaffLoginKind; hasOwnCh
     return input.kind === "staffLogin" && !input.hasOwnChildren;
 }
 
+/**
+ * 퇴사 뒤 같은 번호로 새 초대를 만들 때 옛 직원 기록을 어떻게 할지(2026-11-12 검수).
+ * - 옛 기록이 하나이고 이름까지 같으면 → attach(그 기록에 초대를 붙여 다시 연다)
+ * - 이름이 다르고 옛 기록이 직원 전용 로그인(@staff.stiz.kr)이면 → reject: 같은 아이디로 새 로그인을 만들 수 없어
+ *   가입이 반드시 막힌다. 같은 사람이면 이름을 맞춰 다시 초대하게 안내한다.
+ * - 그 밖(이름이 다른 로그인 없는 기록, 둘 이상) → notice: 연결하지 않고 새로 초대하되 «이전 직원 기록이 있어요» 안내
+ * 번호만 같은 다른 사람(번호 재사용)에게 옛 기록·권한이 붙지 않게 하는 것이 목적이다.
+ */
+export type RetiredReinviteDecision =
+    | { kind: "none" }
+    | { kind: "attach"; userId: string }
+    | { kind: "reject"; previousName: string }
+    | { kind: "notice"; previousName: string };
+
+function nameKey(value: string | null | undefined): string {
+    return (value || "").trim().replace(/\s+/g, "").toLowerCase();
+}
+
+export function decideRetiredReinvite(
+    records: Array<{ id: string; name: string; email: string | null }>,
+    inviteName: string,
+): RetiredReinviteDecision {
+    if (records.length === 0) return { kind: "none" };
+    const first = records[0];
+    if (records.length === 1 && nameKey(first.name) === nameKey(inviteName)) return { kind: "attach", userId: first.id };
+    if (records.length === 1 && lowerEmail(first.email).endsWith(STAFF_LOGIN_EMAIL_SUFFIX)) {
+        return { kind: "reject", previousName: first.name };
+    }
+    return { kind: "notice", previousName: first.name };
+}
+
 /** Supabase 로그인 차단 기간 — 사실상 영구(100년). 다시 초대 가입하면 풀린다(acceptInvitation). */
 export const RETIRED_LOGIN_BAN_DURATION = "876000h";

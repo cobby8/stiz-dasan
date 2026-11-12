@@ -5,7 +5,9 @@ import { adminErrorText } from "@/components/admin/adminDisplayText";
  * 스태프 관리 클라이언트 컴포넌트
  * - 한 사람 = 한 줄 목록(초대 대기 · 스태프 계정 · 계정 없는 코치 프로필을 한 표로 합침, 2026-11-12)
  * - 역할 변경 + 코치 연결(원장만), 대기 초대 ⚡(가입 링크 복사·재발송·취소)
- * - 머리줄: 제목 + 주 버튼 «새 스태프 초대» + ⋯ 더보기(앱 설치 링크·직접 추가·중단된 초대 복구)
+ * - 머리줄: 제목 + 주 버튼 «새 스태프 초대» + ⋯ 더보기(앱 설치 링크·중단된 초대 복구·로그인 차단 다시 시도)
+ * - 상세 패널(원장): 초대로 전환(로그인 없는 직원) · 링크 복사·문자 보내기 · 퇴사 처리 · 담당 반(보기)
+ * - 추가 역할 직원(학부모 계정)은 보기 전용 줄, 회수는 신청함
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -19,6 +21,7 @@ import {
     resendInvitation,
     convertDirectStaffToInvite,
     retireStaffMember,
+    retryRetiredLoginBlocks,
 } from "@/app/actions/admin";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
@@ -96,6 +99,7 @@ type StaffPayload = {
     grantUsers?: RosterGrantUser[];
     inviteLastSends?: InviteLastSend[];
     classAssignments?: RosterClassAssignment[];
+    loginBlockFailures?: number;
 };
 
 type Row = RosterRow<StaffUser, CoachItem, Invitation>;
@@ -192,6 +196,7 @@ export default function StaffClient({
     grantUsers: initialGrantUsers,
     inviteLastSends: initialInviteLastSends,
     classAssignments: initialClassAssignments,
+    loginBlockFailures: initialLoginBlockFailures,
     canManage = false,
     currentUserId = null,
 }: {
@@ -204,6 +209,8 @@ export default function StaffClient({
     inviteLastSends?: InviteLastSend[];
     /** 시간표 배정으로 묶인 담당 반 */
     classAssignments?: RosterClassAssignment[];
+    /** 퇴사 처리 때 로그인 차단이 실패해 남은 건수 */
+    loginBlockFailures?: number;
     /** 원장(ADMIN)인가 — 아니면 보기 전용(서버 작업도 requireOwner 로 막혀 있다) */
     canManage?: boolean;
     /** 보는 사람의 앱 계정 id — 자기 자신에게는 [퇴사 처리]를 보이지 않는다(서버도 막는다) */
@@ -217,6 +224,7 @@ export default function StaffClient({
     const [grantUsers, setGrantUsers] = useState<RosterGrantUser[]>(initialGrantUsers ?? []);
     const [inviteLastSends, setInviteLastSends] = useState<InviteLastSend[]>(initialInviteLastSends ?? []);
     const [classAssignments, setClassAssignments] = useState<RosterClassAssignment[]>(initialClassAssignments ?? []);
+    const [loginBlockFailures, setLoginBlockFailures] = useState<number>(initialLoginBlockFailures ?? 0);
     const [loading, setLoading] = useState(!hasInitialData);
     const [loadError, setLoadError] = useState<string | null>(null);
     // 모달 상태: "invite" = 초대 링크(직접 추가 모달은 없앴다)
@@ -246,6 +254,7 @@ export default function StaffClient({
             setGrantUsers(data.grantUsers ?? []);
             setInviteLastSends(data.inviteLastSends ?? []);
             setClassAssignments(data.classAssignments ?? []);
+            setLoginBlockFailures(data.loginBlockFailures ?? 0);
         } catch {
             setLoadError("failed");
         } finally {
@@ -422,13 +431,31 @@ export default function StaffClient({
                     text: result.alreadyDone
                         ? `${result.name}님은 이미 퇴사 처리되어 있습니다.`
                         : result.loginBlocked === "failed"
-                            ? `${result.name}님 퇴사 처리했습니다. 권한은 회수됐지만 로그인 차단은 실패했습니다.`
+                            ? `${result.name}님 퇴사 처리했습니다. 스태프 권한은 회수됐지만 로그인 차단은 실패했습니다. ⋯ 더보기 → «로그인 차단 실패 다시 시도»를 눌러 주세요.`
                             : `${result.name}님 퇴사 처리했습니다.`,
                     ok: result.loginBlocked !== "failed",
                 });
                 await loadStaffData();
             } catch (error: unknown) {
                 setMessage({ text: errorMessage(error, "퇴사 처리에 실패했습니다."), ok: false });
+            }
+        });
+    }
+
+    // 퇴사 처리 때 실패한 로그인 차단 다시 시도(원장) — 감사 기록 loginBlocked:"failed" 대상
+    function handleRetryLoginBlocks() {
+        startTransition(async () => {
+            try {
+                const result = await retryRetiredLoginBlocks();
+                setMessage({
+                    text: result.failed > 0
+                        ? `로그인 차단 ${result.done}건 완료, ${result.failed}건 실패. 잠시 뒤 다시 눌러 주세요.`
+                        : `로그인 차단 ${result.done}건을 마쳤습니다.`,
+                    ok: result.failed === 0,
+                });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "로그인 차단을 다시 시도하지 못했습니다."), ok: false });
             }
         });
     }
@@ -495,6 +522,16 @@ export default function StaffClient({
                     icon: "build",
                     onSelect: () => router.push("/admin/staff/recovery"),
                 },
+                // 퇴사 처리 때 로그인 차단이 실패한 사람이 있을 때만 보인다
+                ...(loginBlockFailures > 0
+                    ? [{
+                        key: "retry-login-block",
+                        label: `로그인 차단 실패 ${loginBlockFailures}건 다시 시도`,
+                        icon: "lock",
+                        disabled: isPending,
+                        onSelect: () => handleRetryLoginBlocks(),
+                    }]
+                    : []),
             ] satisfies AdminQuickAction[]
             : []),
     ];
