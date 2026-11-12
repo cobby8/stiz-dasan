@@ -23,7 +23,7 @@ function walkPages(dir, out = []) {
 // 예외 = 다른 담당 영역이라 이번에 파일을 못 고친 화면. 대신 «검사된 읽기 함수만 쓴다»를 아래에서 확인한다.
 // 갚아야 할 빚이다 — 늘리지 말 것. 그 담당이 파일을 고칠 때 requireAdmin 을 넣고 여기서 지운다.
 const ALLOW = new Map([
-  ["src/app/admin/finance/billing/page.tsx", "청구·결제 담당 영역 — 데이터는 adminOnly 로 감싼 getCachedAdminBillingPayload 로만 읽는다"],
+  // (2026-11-13 통합 때 finance/billing/page.tsx 에 requireAdmin 을 넣어 비웠다)
 ]);
 
 const rel = (p) => relative(ROOT, p).replace(/\\/g, "/");

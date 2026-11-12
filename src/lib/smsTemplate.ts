@@ -12,6 +12,16 @@
 import { prisma } from "@/lib/prisma";
 import { billingAlimtalkSmsTemplateBody, parentAlimtalkSmsTemplateBody, PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 
+// ── 미납 안내 문자 기본 문구(2026-11-13) ─────────────────────────────────────────
+// 결제 링크({{paymentLink}})를 넣었다 — 학부모가 문자에서 바로 청구서를 열어 결제할 수 있게.
+// 관리자가 문구에서 링크 변수를 지워도 발송부(ensureBillingLink)가 «청구서 확인하기: 링크» 줄을 붙인다.
+export const UNPAID_PARENT_DEFAULT_BODY =
+    `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.\n청구서 확인하기: {{paymentLink}}`;
+export const UNPAID_PARENT_VARIABLES = '["childName","unpaidCount","totalAmount","paymentLink"]';
+/** 링크가 없던 옛 기본 문구 — 관리자가 고치지 않은 행만 새 문구로 바꾼다 */
+const UNPAID_PARENT_LEGACY_BODY =
+    `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`;
+
 // ── DDL ensure: SmsTemplate 테이블이 없으면 생성 ──────────────────────────────
 let _smsTemplateEnsured = false;
 let _defaultSmsTemplatesEnsured = false;
@@ -137,9 +147,9 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         "UNPAID_PARENT",
         "미납 알림 (학부모)",
         "PARENT",
-        `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
-        "미납 알림 일괄 발송 시 학부모에게 발송",
-        '["childName","unpaidCount","totalAmount"]',
+        UNPAID_PARENT_DEFAULT_BODY,
+        "미납 알림 일괄 발송 시 학부모에게 발송(결제 링크 포함 · 마지막 안내 뒤 3일 지난 미납만)",
+        UNPAID_PARENT_VARIABLES,
     ],
     // 수강료 청구서 발행 안내(2026-11-12) — 자동 발송 규칙(채널·켜기/끄기)을 두려고 행을 만든다.
     // 실제 문구는 코드 틀(BILLING_ALIMTALK_TEMPLATES)이 만들고, 알림톡 id(ALIMTALK_TPL_BILLING_INVOICE)가 있을 때만 나간다.
@@ -235,6 +245,14 @@ export async function ensureSmsTemplates(): Promise<void> {
             "[STIZ] {{childName}} 학생 체험수업 상담 감사드립니다.\n정규 수강신청서는 아래 링크에서 작성해주세요.\n{{enrollLink}}\n작성 후 확인되는 대로 입학 안내를 도와드리겠습니다.\n문의: {{academyPhone}}",
             "[스티즈농구교실] {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n다비치안경 남양주다산점 제휴로 스포츠고글 35,000원,\n안경·고글 구매 시 10% 추가 할인을 받으실 수 있습니다.\n자세히 보기: https://www.stiz-dasan.kr/notices/1d704d88-6e4a-4e14-bced-b77a3ea3ed0a\n\n문의: {{academyPhone}}",
             `${PARENT_MESSAGE_PREFIX} {{childName}} 수강신청서\n아래 링크에서 작성해주세요 :)\n{{enrollLink}}\n\n■ 수업 준비물: 실내용 운동화, 물 담은 텀블러\n\n■ 안경 착용 안내\n안경은 부상 위험이 있어 스포츠고글 착용을 권장합니다.\n\n문의: {{academyPhone}}`,
+        );
+        // 미납 안내 옛 기본 문구(링크 없음) → 결제 링크 포함 문구. 관리자가 고친 문구는 그대로 둔다.
+        await prisma.$executeRawUnsafe(
+            `UPDATE "SmsTemplate" SET body = $1, variables = $2, "updatedAt" = NOW()
+              WHERE trigger = 'UNPAID_PARENT' AND body = $3`,
+            UNPAID_PARENT_DEFAULT_BODY,
+            UNPAID_PARENT_VARIABLES,
+            UNPAID_PARENT_LEGACY_BODY,
         );
         // 신규·복원 DB에서도 템플릿과 자동 발송 규칙이 같은 시점에 준비되게 한다.
         await prisma.$executeRawUnsafe(
@@ -386,4 +404,6 @@ export const SAMPLE_VARIABLES: Record<string, string> = {
     preferredSlot: "토 14:00",
     unpaidCount: "2",
     totalAmount: "300,000",
+    // 미납 안내 결제 링크(미리보기용 예시 · 실제는 청구서 한 장이면 그 청구서, 여러 장이면 마이페이지 결제)
+    paymentLink: "https://www.stiz-dasan.kr/mypage/payments",
 };

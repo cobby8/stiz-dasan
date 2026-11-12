@@ -14,11 +14,18 @@ test("업무용 학부모 문자는 기존 void 계약과 분리해 실제 결�
     assert.match(notification, /결과 장부 확정에 실패했습니다\. 자동 재전송하지 말고 공급자 내역을 확인/);
 });
 
+// 2026-11-13: 미납 안내도 대기열로 — 예약 때는 기록하지 않고, 대기열 결과가 SENT 인 건만 완료 시각·횟수를 올린다
+// (실행 검사: tests/billing-notice-queue.test.mjs). 중복 방지 열쇠에 한국 날짜가 들어간다.
 test("미납 알림은 성공한 결제만 완료 시각과 횟수를 갱신한다", () => {
-    assert.match(adminAction, /successfulPaymentIds\.push\(\.\.\.info\.paymentIds\)/);
-    assert.match(adminAction, /if \(successfulPaymentIds\.length > 0\)/);
-    assert.match(adminAction, /failed = unpaid\.length - successfulPaymentIds\.length/);
-    assert.match(adminAction, /eventId: `unpaid:\$\{info\.paymentIds/);
+    const queue = fs.readFileSync("src/lib/billing/noticeQueue.ts", "utf8");
+    const reminders = adminAction.slice(
+        adminAction.indexOf("export async function sendUnpaidReminders"),
+        adminAction.indexOf("export async function getBillingNoticeProgress"),
+    );
+    assert.doesNotMatch(reminders, /"reminderCount" = COALESCE\("reminderCount", 0\) \+ 1/, "예약 단계에서 횟수를 올리지 않는다");
+    assert.match(queue, /const sentRows = settled\.filter\(\(row\) => row\.kind === kind && row\.status === "SENT"\)/);
+    assert.match(queue, /"lastReminderAt" = NOW\(\), "reminderCount" = COALESCE\("reminderCount", 0\) \+ 1/);
+    assert.match(queue, /return `unpaid:\$\{kstYmd\}:\$\{\[\.\.\.paymentIds\]\.sort\(\)\.join\(","\)\}`/);
 });
 
 // 2026-11-09 원장 결정: 체험 완료 감사 문자(TRIAL_ATTENDED_PARENT)·재시도 버튼을 없앴다(가입 유도 문구).
