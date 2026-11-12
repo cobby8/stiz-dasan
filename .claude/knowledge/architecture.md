@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-13] 출시 전 안전장치 — 관리자 화면 가드·cron 실패 알림·스토어 앱 우회 한 곳
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: ① `src/app/admin/**/page.tsx` 는 화면마다 `await requireAdmin()`(레이아웃만 믿지 않음), `adminReadPayloads` export 는 `adminOnly(unstable_cache(...))`(쿠키라 캐시 «바깥»에서 확인) — 강제 `tests/admin-page-auth-guard.test.mjs`. ② cron 은 `async function handleGet` + `export const GET = withCronAlert("이름", handleGet)`(예외·5xx → 원장 슬랙, 같은 cron 1시간 1번: 메모리+데이터 캐시 키) — 강제 `tests/cron-alert.test.mjs`. 라우트 실행 테스트는 `@/lib/cron/withCronAlert` 를 `(_n,h)=>h` 로 가짜. ③ 스토어 앱이 못 하는 일은 `storeAppLacks(cap)`(@/lib/storeApp) 한 곳 · 화면은 `useStoreAppLacks` 훅 · 앱 새 버전이 `/store-app?caps=push,links,...` 로 보내면 자동 해제. 바깥 링크는 `<a data-outside-link>`(영역은 `data-outside-links`) + 루트의 `OutsideLinkListener` 가 «주소 복사 + 안내». 우리 사이트 주소는 통과(`outsideLinkRules`).
+- **참조횟수**: 0
+
 ### [2026-11-12] 스태프 계정 — 직원 기록·로그인 연결·초대로 전환·퇴사 처리
 - **분류**: architecture
 - **발견자**: developer

@@ -9,6 +9,7 @@
  */
 
 import { useState, useTransition } from "react";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 import {
     sendInviteVerification,
     verifyInviteCode,
@@ -48,6 +49,10 @@ export default function InviteAcceptForm({
     const isReset = purpose === "PASSWORD_RESET";
     // 현재 단계: 1=정보확인, 2=폰인증, 3=비밀번호설정, 4=완료
     const [step, setStep] = useState(1);
+    // 스토어 앱 안에서 가입을 마쳤으면 «앱 설치» 대신 바로 로그인으로(이미 앱이다) — 판정은 @/lib/storeApp 한 곳(d2)
+    const inStoreApp = useStoreAppLacks("install");
+    const isStaffRole = role === "INSTRUCTOR" || role === "DRIVER";
+    const showInstall = isStaffRole && !inStoreApp;
 
     // 인증 관련 상태
     const [verifyCode, setVerifyCode] = useState("");
@@ -366,10 +371,10 @@ export default function InviteAcceptForm({
                     </div>
 
                     <a
-                        href={role === "INSTRUCTOR" || role === "DRIVER" ? "/staff/install" : "/login"}
+                        href={showInstall ? "/staff/install" : isStaffRole ? "/login?mode=staff" : "/login"}
                         className="inline-block w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors text-center"
                     >
-                        {role === "INSTRUCTOR" || role === "DRIVER" ? "스태프 앱 설치하기" : "로그인하러 가기"}
+                        {showInstall ? "스태프 앱 설치하기" : "로그인하러 가기"}
                     </a>
                 </div>
             )}

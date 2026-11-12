@@ -59,12 +59,14 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                     // 리치 에디터 HTML 공지 — XSS 제거(sanitizeHtml) 후에만 넣는다. 원문 그대로 넣지 말 것.
                     <div
                         className="notice-content max-w-none text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
+                        data-outside-links
                         dangerouslySetInnerHTML={{ __html: sanitizeHtml(notice.content, { linkifyTextUrls: true }) }}
                     />
                 ) : (
                     // 옛 순수 텍스트 공지 — toNoticeHtml 이 이스케이프 + 줄바꿈 + 주소 링크
                     <div
                         className="max-w-none whitespace-pre-wrap text-[15px] leading-loose text-[var(--color-academy-muted)] [overflow-wrap:anywhere]"
+                        data-outside-links
                         dangerouslySetInnerHTML={{ __html: toNoticeHtml(notice.content) }}
                     />
                 )}
@@ -87,7 +89,7 @@ export default async function ParentNoticeDetailPage({ params }: { params: Promi
                         <ul className="space-y-1">
                             {fileAtts.map((a, i) => (
                                 <li key={i}>
-                                    <a href={a.url} target="_blank" rel="noopener noreferrer"
+                                    <a href={a.url} data-outside-link target="_blank" rel="noopener noreferrer"
                                         className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]">
                                         <span className="material-symbols-outlined text-base" aria-hidden="true">download</span>
                                         <span className="min-w-0 break-all">{a.filename}</span>

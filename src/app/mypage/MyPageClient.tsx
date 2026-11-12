@@ -195,6 +195,9 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
     // 요청 폼 상태
     const [reqContent, setReqContent] = useState("");
     const [reqDate, setReqDate] = useState("");
+    // 보내기 결과 안내 — 실패해도 화면 전체가 오류로 바뀌지 않고 그 자리에 한 줄 안내 + 쓴 글은 그대로 둔다(d1)
+    const [reqError, setReqError] = useState("");
+    const [reqSent, setReqSent] = useState(false);
     const child = data.children[selectedIdx];
     const childShuttleOverview = parentShuttleOverview.filter((item) => item.studentId === child.id);
 
@@ -275,6 +278,8 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
 
     function openRequestForm() {
         setShowRequestForm((v) => !v);
+        setReqSent(false);
+        setReqError("");
         requestAnimationFrame(() => scrollToSection("parent-request-form"));
     }
 
@@ -611,25 +616,44 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                         disabled={isPending || !reqContent.trim()}
                         onClick={() => {
                             const dateLabel = reqDate ? ` (${reqDate})` : "";
+                            setReqError("");
                             startTransition(async () => {
-                                await createParentRequest({
-                                    userId: data.parent.id,
-                                    studentId: child.id,
-                                    // 유형을 나누지 않는다. 전부 사람이 읽고 처리하는 자유 메시지다.
-                                    type: "OTHER",
-                                    title: `${child.name} 문의${dateLabel}`,
-                                    content: reqContent,
-                                    date: reqDate || null,
-                                });
+                                try {
+                                    await createParentRequest({
+                                        userId: data.parent.id,
+                                        studentId: child.id,
+                                        // 유형을 나누지 않는다. 전부 사람이 읽고 처리하는 자유 메시지다.
+                                        type: "OTHER",
+                                        title: `${child.name} 문의${dateLabel}`,
+                                        content: reqContent,
+                                        date: reqDate || null,
+                                    });
+                                } catch {
+                                    // 통신 끊김·서버 오류 — 쓴 글은 지우지 않고 그 자리에서 다시 누르게 한다
+                                    setReqError("보내지 못했습니다. 다시 시도해 주세요.");
+                                    return;
+                                }
                                 setReqContent("");
                                 setReqDate("");
                                 setShowRequestForm(false);
+                                setReqSent(true);
                             });
                         }}
                         className="academy-button-primary w-full"
                     >
                         {isPending ? "보내는 중..." : "메시지 보내기"}
                     </button>
+                    {reqError && (
+                        <p role="alert" className="text-xs font-bold text-[var(--color-academy-danger)]">{reqError}</p>
+                    )}
+                </div>
+            )}
+
+            {/* 보낸 뒤 안내 — 폼이 닫혀도 «보냈다»는 걸 알 수 있게 */}
+            {reqSent && !showRequestForm && (
+                <div role="status" className="flex items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-success-soft)] px-3 py-2 text-xs font-bold text-[var(--color-academy-success)]">
+                    <span className="flex items-center gap-1"><SymbolIcon name="check_circle" size={16} /> 학원에 메시지를 보냈어요. 답변은 «보낸 메시지»에서 볼 수 있어요.</span>
+                    <button type="button" onClick={() => setReqSent(false)} className="academy-button-text min-h-11" aria-label="안내 닫기">닫기</button>
                 </div>
             )}
 

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { markStoreApp } from "@/lib/storeApp";
+import { markStoreApp, recordStoreAppCapabilities } from "@/lib/storeApp";
 
 export default function StoreAppStart() {
   useEffect(() => {
     markStoreApp();
+    // 앱 새 버전이 «할 수 있는 것»(?caps=push,links …)을 보내면 기억해 화면 곳곳의 우회를 끈다(d2)
+    recordStoreAppCapabilities(new URLSearchParams(window.location.search).get("caps"));
     // replace: 뒤로 가기로 이 빈 화면에 다시 서지 않게.
     window.location.replace("/auth/continue");
   }, []);

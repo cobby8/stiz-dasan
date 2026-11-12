@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 
 export function VoiceToTextButton({
   onText,
@@ -17,6 +18,8 @@ export function VoiceToTextButton({
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [message, setMessage] = useState("");
+  // 스토어 앱(현재 버전)은 마이크 녹음을 못 한다 → 버튼을 숨긴다(글로 적으면 된다). 판정은 @/lib/storeApp 한 곳(d2)
+  const appLacksVoice = useStoreAppLacks("voice");
 
   useEffect(() => {
     return () => {
@@ -84,6 +87,7 @@ export function VoiceToTextButton({
     }
   }
 
+  if (appLacksVoice) return null;
   return <div className="flex flex-col items-end gap-1">
     <button
       type="button"

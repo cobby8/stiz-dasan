@@ -62,10 +62,11 @@ export default async function MyPageDashboard({
     // 반 상태 한 줄(휴원 예정·검토 중·휴원 중) — 실패해도 홈은 그대로 보이게 빈 목록으로.
     // 알림 목록·안 읽은 수는 머리줄 🔔(layout)이 읽는다(2026-11-10) — 홈에서는 읽지 않는다
     const [notices, myRequests, shuttleOverview, driverContact, makeup, seasonal, paymentRows, classStatusLines] = await Promise.all([
-        getNoticesByClassIds(classIds, 10),
-        getMyRequests(data.parent.id),
-        getParentShuttleOverview(parentAuth.appUserId),
-        getShuttleDriverContact(),
+        // 공지·보낸 메시지·셔틀·기사 연락처도 아래 4개처럼 실패하면 빈 값 — 한 칸 조회가 실패해도 홈 전체가 오류로 바뀌지 않게(d5)
+        getNoticesByClassIds(classIds, 10).catch(() => []),
+        getMyRequests(data.parent.id).catch(() => []),
+        getParentShuttleOverview(parentAuth.appUserId).catch(() => []),
+        getShuttleDriverContact().catch(() => null),
         getMakeupOverviewForParent(parentAuth.appUserId).catch(() => null),
         getUpcomingSeasonalSeats(parentAuth.appUserId).catch(() => null),
         getParentPaymentRequests(parentAuth.appUserId).catch(() => null),

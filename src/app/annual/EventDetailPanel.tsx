@@ -142,7 +142,7 @@ export default function EventDetailPanel({ event, onClose }: Props) {
                     {event.url && (
                         <div className="pt-1 border-t border-[var(--color-public-line)] dark:border-[var(--color-public-line)]">
                             <a
-                                href={event.url}
+                                href={event.url} data-outside-link
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-2 text-sm font-bold text-[var(--color-public-muted)] hover:text-[var(--color-public-ink)] hover:underline transition"

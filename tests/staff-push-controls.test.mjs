@@ -24,9 +24,11 @@ function load(path, mocks = {}) {
 }
 
 /** 훅 상태를 정해 두고 그려 본다 */
-function render(name, state) {
+function render(name, state, { storeAppLacksPush = false } = {}) {
   const mod = load("src/components/push/StaffPushControls.tsx", {
     "@/lib/push/usePushSubscription": { usePushSubscription: () => ({ pushLoading: false, checked: true, togglePush() {}, ...state }) },
+    // 스토어 앱 판정(d2) — 기본은 브라우저
+    "@/components/storeApp/useStoreAppLacks": { useStoreAppLacks: () => storeAppLacksPush },
   });
   return renderToStaticMarkup(React.createElement(mod[name]));
 }
@@ -63,4 +65,11 @@ test("직원 layout: 토글은 선생님·기사님 공통 머리줄, 상단 한
   assert.match(hook, /fetch\("\/api\/push", \{\s*method: "POST"/);
   assert.match(hook, /fetch\("\/api\/push", \{\s*method: "DELETE"/);
   assert.equal((hook.match(/window\.dispatchEvent\(new CustomEvent\(PUSH_CHANGED_EVENT/g) || []).length, 2);
+});
+
+test("스토어 앱(앱 알림 못 받음): 토글은 숨기고, 상단 한 줄은 «준비 중» 안내만(켜기 버튼 없음) — d2", () => {
+  assert.equal(render("StaffPushToggle", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true }), "");
+  const banner = render("StaffPushBanner", { pushSupported: true, pushEnabled: false }, { storeAppLacksPush: true });
+  assert.match(banner, /앱 알림은 준비 중이에요/);
+  assert.doesNotMatch(banner, /켜기/);
 });
