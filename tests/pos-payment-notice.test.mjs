@@ -265,6 +265,17 @@ const CHARGE_STUB = toDataUrl(`
   export async function expireStaleChargeRequests() { return 0; }
 `);
 
+// 자동 매칭(2026-11-12)은 자기 테스트(tests/pos-auto-match.test.mjs)가 있다. 여기서는 기본 «보류»로 두고
+// 웹훅 경계(성공이면 버튼 DM 대신 결과 DM)만 본다.
+const AUTO_MATCH_STUB = toDataUrl(`
+  export async function autoMatchPosPayment(input) {
+    globalThis.__autoMatch = (globalThis.__autoMatch ?? []).concat([input]);
+    if (globalThis.__state.autoMatchThrows) throw new Error("auto match failed");
+    return globalThis.__state.autoMatch ?? { outcome: "HELD", reason: "stub" };
+  }
+  export async function runPosAutoMatchSweep() { return { checked: 0, paid: 0, held: 0, skipped: 0, errors: 0, capped: false }; }
+`);
+
 let loaded = null;
 async function loadModules() {
   if (loaded) return loaded;
@@ -284,6 +295,7 @@ async function loadModules() {
     .split('"@/lib/slack/client"').join(`"${SLACK_STUB}"`)
     .split('"./tossplaceClient"').join(`"${TOSS_STUB}"`)
     .split('"./chargeRequestService"').join(`"${CHARGE_STUB}"`)
+    .split('"./autoMatchService"').join(`"${AUTO_MATCH_STUB}"`)
     .split('"./tossplace-match.mjs"').join(`"${fileUrl("src/lib/pos/tossplace-match.mjs")}"`)
     .split('"./payment-notice.mjs"').join(`"${fileUrl(NOTICE_MODULE)}"`);
   const svcUrl = toDataUrl(svc);
@@ -957,4 +969,86 @@ test("schema.prisma 의 PosPaymentNotice 가 마이그레이션 컬럼과 똑같
   // 분류 CHECK 가 순수 모듈의 목록과 같다
   const kindCheck = sql.slice(sql.indexOf('"PosPaymentNotice_kind_check"'), sql.indexOf('"PosPaymentNotice_pickedKind_check"'));
   for (const kind of Object.values(K)) assert.match(kindCheck, new RegExp(`'${kind}'`));
+});
+
+// ───────────────── 자동 매칭(2026-11-12) 웹훅 경계 ─────────────────
+
+const LUNA_ORDER = {
+  id: "o-9", memo: "", lineItems: [{ item: { title: "목요일 3교시" }, memo: "루나루희", quantity: 2 }],
+  payments: [{ id: "pay-9", sourceType: "CARD", state: "APPROVED", amount: 180000, approvedAt: "2026-11-12T05:56:19Z" }],
+};
+
+async function runWebhookAutoMatch(extra) {
+  const { service } = await loadModules();
+  globalThis.__state = {
+    events: [{ id: "ev9", eventType: "order.order.completed.v1", payload: { type: "order.order.completed.v1", data: { id: "o-9" } }, processedAt: null }],
+    order: LUNA_ORDER,
+    roster: [{ id: "s-luna", name: "김루나", classes: ["목요일 3교시"] }],
+    monthRows: [],
+    sendClaim: [],
+    notice: { ...baseNotice, id: "n1", tossPaymentId: "pay-9", kind: "NOT_IN_ROSTER", status: "CONFIRMED", siteMarkedPaid: true,
+              slackChannel: null, slackTs: null, decidedBySlackUser: "SYSTEM:auto", targetMonth: 11 },
+    ...extra,
+  };
+  globalThis.__calls = []; globalThis.__slack = []; globalThis.__toss = []; globalThis.__autoMatch = [];
+  const env = { TOSS_PLACE_ACCESS_KEY: "k", TOSS_PLACE_ACCESS_SECRET: "s", TOSS_PLACE_MERCHANT_ID: "324744", SLACK_OWNER_USER_ID: OWNER };
+  const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try {
+    return await service.processPosWebhookEvent("ev9");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v == null) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test("자동 매칭 경계: 단건 자동이 아닌 결제는 DM 전에 자동 매칭 → 성공이면 버튼 DM 없이 결과 DM 한 통", async () => {
+  const line = "✅ POS 결제 확인 — 사이트 11월 청구 자동 매칭 납부 반영: 김루나 목요일 3교시 ₩90,000 · 김루희 목요일 3교시 ₩90,000 (11-12 15:00)";
+  await runWebhookAutoMatch({ autoMatch: { outcome: "PAID", resultLine: line } });
+  assert.equal(globalThis.__autoMatch.length, 1);
+  assert.equal(globalThis.__autoMatch[0].tossPaymentId, "pay-9");
+  assert.equal(globalThis.__autoMatch[0].noticeId, "n1");
+  assert.equal(globalThis.__autoMatch[0].order, LUNA_ORDER, "토스 재조회 주문 원문을 넘긴다");
+  assert.ok(!globalThis.__calls.some((c) => /SET status = 'NOTIFIED'/.test(c.sql)), "버튼 DM(sendNotice) 선점을 하지 않는다");
+  const posts = globalThis.__slack.filter((s) => s.op === "post");
+  assert.equal(posts.length, 1);
+  const text = JSON.stringify(posts[0].blocks);
+  assert.ok(text.includes("김루희 목요일 3교시"), "결과 줄에 학생·반·금액");
+  assert.ok(!text.includes("pos_notice_confirm_pay"), "버튼 없음");
+});
+
+test("자동 매칭 경계: 보류면 지금처럼 버튼 DM(sendNotice)으로 간다", async () => {
+  await runWebhookAutoMatch({ autoMatch: { outcome: "HELD", reason: "묶음 둘 이상" } });
+  assert.equal(globalThis.__autoMatch.length, 1);
+  assert.ok(globalThis.__calls.some((c) => /SET status = 'NOTIFIED'/.test(c.sql)));
+});
+
+test("자동 매칭 경계: 자동 매칭이 터져도 버튼 DM 은 나간다(안전망)", async () => {
+  const { service } = await loadModules();
+  void service;
+  await runWebhookAutoMatch({ autoMatch: undefined, autoMatchThrows: true });
+  assert.ok(globalThis.__calls.some((c) => /SET status = 'NOTIFIED'/.test(c.sql)));
+});
+
+test("자동 매칭 경계: 단건 자동(AUTO_CANDIDATE)은 기존 경로 그대로 — 자동 매칭을 부르지 않는다", async () => {
+  const { service } = await loadModules();
+  globalThis.__state = {
+    events: [{ id: "ev1", eventType: "order.order.completed.v1", payload: { type: "order.order.completed.v1", data: { id: "o-1" } }, processedAt: null }],
+    order: {
+      id: "o-1", memo: "토4 이시윤 10월", lineItems: [{ item: { title: "토요일 4교시" } }],
+      payments: [{ id: "pay-card", sourceType: "CARD", state: "APPROVED", amount: 180000, approvedAt: "2026-09-28T05:20:00Z" }],
+    },
+    roster: [{ id: "s-lee", name: "이시윤", classes: ["토요일 4교시"] }],
+    monthRows: [{ id: "p-oct", studentId: "s-lee", amount: 180000, status: "PENDING", type: "MONTHLY", year: 2026, month: 10 }],
+    sendClaim: [],
+  };
+  globalThis.__calls = []; globalThis.__slack = []; globalThis.__toss = []; globalThis.__autoMatch = [];
+  const env = { TOSS_PLACE_ACCESS_KEY: "k", TOSS_PLACE_ACCESS_SECRET: "s", TOSS_PLACE_MERCHANT_ID: "324744" };
+  const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try {
+    await service.processPosWebhookEvent("ev1");
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v == null) delete process.env[k]; else process.env[k] = v; }
+  }
+  assert.equal(globalThis.__autoMatch.length, 0);
 });
