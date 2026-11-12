@@ -3,10 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-test("직원 권한: 이미 다른 로그인 계정에 묶인 앱 계정은 이메일이 같아도 인정하지 않는다", async () => {
+test("직원 권한: 이 로그인 계정에 묶인 앱 계정만 인정한다(이메일만 같으면 안 됨)", async () => {
   const src = await readFile("src/lib/auth-guard.ts", "utf8");
   assert.match(src, /async function getAppUserRole\(email: string, authUserId: string\)/);
-  assert.match(src, /AND \("authUserId" IS NULL OR "authUserId" = \$2\)/);
+  assert.match(src, /AND \("authUserId" = \$2 OR \("authUserId" IS NULL AND id = \$2\)\)/);
+  assert.doesNotMatch(src, /"authUserId" IS NULL OR "authUserId" = \$2/, "묶이지 않은 계정을 이메일만으로 인정하지 않는다");
   assert.match(src, /const cacheKey = `\$\{authUserId\}\|\$\{normalized\}`/, "캐시도 로그인 계정별로 나눈다");
   assert.doesNotMatch(src, /getAppUserRole\(email\)/);
   assert.equal(src.split("getAppUserRole(email, user.id)").length - 1, 3);

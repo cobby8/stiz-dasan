@@ -68,10 +68,11 @@ function userFromSupabaseUser(user: any): AuthUser {
 
 /**
  * 이메일로 찾은 앱 계정의 역할.
- * 2026-11-13: 앱 계정이 이미 다른 로그인 계정(authUserId)에 묶여 있으면 이메일이 같아도 인정하지 않는다.
+ * 2026-11-13: 이메일이 같아도 «이 로그인 계정에 묶인 앱 계정»만 인정한다 — authUserId 가 같거나,
+ * authUserId 가 비어 있으면 앱 계정 id 가 로그인 계정 id 와 같아야 한다(옛 초대 가입 방식).
  * 간편로그인(특히 Supabase 커스텀 제공자인 네이버)이 같은 이메일의 별도 로그인 계정을 만들면
- * 이메일만으로 원장·선생님 권한이 열릴 수 있었다. 아직 authUserId 가 비어 있는 옛 직원 계정은
- * 잠기지 않게 그대로 둔다(운영 원장 계정 1개가 이 상태 — 연결 후 엄격 판정으로 바꿀 것).
+ * 이메일만으로 원장·선생님 권한이 열릴 수 있었다. 운영 직원 계정은 모두 이 규칙을 만족하게 맞춰 두었다
+ * (원장 계정 1개의 authUserId 를 같은 날 채움).
  */
 async function getAppUserRole(email: string, authUserId: string): Promise<AppUserRoleRow | null> {
   const normalized = normalizeEmail(email);
@@ -95,7 +96,7 @@ async function getAppUserRole(email: string, authUserId: string): Promise<AppUse
   const rows = await prisma.$queryRawUnsafe<AppUserRoleRow[]>(
     `SELECT id, name, role FROM "User"
       WHERE email = $1 AND "withdrawnAt" IS NULL
-        AND ("authUserId" IS NULL OR "authUserId" = $2)
+        AND ("authUserId" = $2 OR ("authUserId" IS NULL AND id = $2))
       LIMIT 1`,
     email,
     authUserId,
