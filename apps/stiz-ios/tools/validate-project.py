@@ -19,21 +19,33 @@ for path in (root / "STIZ").rglob("*.json"):
     json.loads(path.read_text(encoding="utf-8"))
 with (root / "STIZ/Info.plist").open("rb") as handle:
     info = plistlib.load(handle)
+# 개발 흔적(로컬 네트워크 안내·개발 URL 스킴)은 Debug 전용 Info-Debug.plist 에만 둔다(2026-11-13 출시 정리).
+with (root / "STIZ/Info-Debug.plist").open("rb") as handle:
+    debug_info = plistlib.load(handle)
+dev_only = {"NSLocalNetworkUsageDescription", "CFBundleURLTypes"}
+assert not (dev_only & set(info)), "출시 Info.plist 에 개발용 키 금지"
+assert {k: v for k, v in debug_info.items() if k not in dev_only} == info, "Debug/출시 Info.plist 는 개발용 키 말고 같아야 함"
 assert not any("Location" in key for key in info), "iOS 위치 권한은 이 그룹 범위 아님"
 assert "NSAppTransportSecurity" not in info, "HTTP/TLS 예외 금지"
 assert info["STIZNativeAuthDevelopmentEnabled"] is False, "새 인증 기본 비활성"
 assert info["STIZSandboxOrigin"] == "$(STIZ_SANDBOX_ORIGIN)", "시험 주소는 명시 빌드 설정만 사용"
-assert info["NSLocalNetworkUsageDescription"], "개발용 로컬 서버 접근 안내"
+assert debug_info["NSLocalNetworkUsageDescription"], "개발용 로컬 서버 접근 안내(Debug 전용)"
 assert project.count('STIZ_SANDBOX_ORIGIN = "";') == 2, "Debug/Release 기본 시험 주소는 비어 있어야 함"
 assert info["NSCameraUsageDescription"] and info["NSPhotoLibraryUsageDescription"]
-assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
+assert debug_info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["stiz-academy-dev"]
 assert "UIInterfaceOrientationLandscapeLeft" in info["UISupportedInterfaceOrientations"]
 scheme = ET.parse(root / "STIZ.xcodeproj/xcshareddata/xcschemes/STIZ.xcscheme")
 assert all(ref.attrib["BlueprintIdentifier"] in references for ref in scheme.iter("BuildableReference"))
 assert "kr.stiz.academy.dev" in project and "DEVELOPMENT_TEAM" not in project
 # 스토어용 Release 는 정식 ID·1.x 버전, 개발 Debug 는 기존 개발 ID·0.1.0(격리 시험 도구 계약)을 유지한다.
 release_settings = re.search(r"A0000000000000000000000F = \{[^\n]*\}; name = Release;\};", project).group(0)
-assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.0;" in release_settings
+assert "PRODUCT_BUNDLE_IDENTIFIER = kr.co.upturnlabs.stizdasan;" in release_settings and "MARKETING_VERSION = 1.0.1;" in release_settings
+assert "INFOPLIST_FILE = STIZ/Info.plist;" in release_settings and 'INFOPLIST_FILE = "STIZ/Info-Debug.plist";' in project
+# 유니버설 링크·비밀번호 자동완성 권한은 출시 빌드에만(개발·격리 시험 프로파일에는 이 기능이 없다).
+assert "CODE_SIGN_ENTITLEMENTS = STIZ/STIZ.entitlements;" in release_settings and project.count("CODE_SIGN_ENTITLEMENTS") == 1
+with (root / "STIZ/STIZ.entitlements").open("rb") as handle:
+    entitlements = plistlib.load(handle)
+assert entitlements == {"com.apple.developer.associated-domains": ["applinks:www.stiz-dasan.kr", "webcredentials:www.stiz-dasan.kr"]}
 assert info["CFBundleDisplayName"] == "STIZ 농구교실"
 # 스토어 아이콘: 1024 한 장(투명 없음)과 빌드 설정. 개인정보 명세: 앱 리소스로 포함·추적 없음.
 assert project.count("ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;") == 2, "Debug/Release 모두 AppIcon 사용"

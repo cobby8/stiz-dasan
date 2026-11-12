@@ -31,6 +31,14 @@ public final class MainActivity extends Activity {
     private boolean backRegistered;
     private Object backCallback;
     private String lastErrorDetail, lastErrorToken;
+    // 웹뷰를 감싸는 화면 틀: 바깥 틀(안전 영역·키보드 여백) → 당겨서 새로고침 → 웹뷰.
+    private FrameLayout webRoot;
+    private androidx.swiperefreshlayout.widget.SwipeRefreshLayout refresher;
+    // 마지막으로 정상 표시된 우리 사이트 주소. 오류 화면의 «다시 시도»가 여기로 돌아온다.
+    private String lastAppUrl;
+    // 웹 화면 «문서 전체»가 맨 위에서 더 당겨진(넘침) 마지막 시각. 이때만 당겨서 새로고침을 허용한다.
+    private volatile long topOverscrollAt;
+    private boolean touchStarting;
     private final java.util.concurrent.ExecutorService worker = Executors.newSingleThreadExecutor();
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -84,7 +92,33 @@ public final class MainActivity extends Activity {
         if (BuildConfig.STIZ_UNIFIED_APP && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             TextView message = new TextView(this); message.setText("안전한 앱 화면 전환을 위해 Android System WebView를 업데이트한 뒤 다시 열어 주세요."); setContentView(message); return;
         }
-        web = new WebView(this); web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        web = new WebView(this) {
+            // 문서 전체가 맨 위에서 더 당겨질 때만 기록한다. 모달 안 목록·지도처럼 안쪽에서 스크롤·끌기가 처리되면
+            // 여기로 오지 않으므로, 그런 화면에서 아래로 끌어도 새로고침이 끼어들지 않는다(크롬의 당겨서 새로고침과 같은 기준).
+            @Override protected void onOverScrolled(int scrollX, int scrollY, boolean clampedX, boolean clampedY) {
+                if (clampedY && scrollY <= 0) topOverscrollAt = SystemClock.uptimeMillis();
+                super.onOverScrolled(scrollX, scrollY, clampedX, clampedY);
+            }
+        };
+        // 자동완성 허용(2026-11-13 원장 승인): 로그인 아이디·비밀번호를 휴대폰(구글 비밀번호 관리자 등)에 저장·채울 수 있게 한다.
+        // 예전에는 꺼 두어(NO_EXCLUDE_DESCENDANTS) 매번 비밀번호를 직접 입력해야 했다.
+        web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_AUTO);
+        // 화면 틀 만들기. 웹뷰는 한 부모에만 붙을 수 있으므로 이후 화면 전환은 web 이 아니라 webRoot 로 한다.
+        refresher = new androidx.swiperefreshlayout.widget.SwipeRefreshLayout(this) {
+            // 손가락을 처음 댈 때(DOWN)는 «문서가 맨 위인지»만 보고 시작점을 기록하게 한다(여기서 거절하면 그 손동작 내내 새로고침이 안 된다).
+            @Override public boolean onInterceptTouchEvent(android.view.MotionEvent event) {
+                if (event.getActionMasked() != android.view.MotionEvent.ACTION_DOWN) return super.onInterceptTouchEvent(event);
+                touchStarting = true;
+                try { return super.onInterceptTouchEvent(event); } finally { touchStarting = false; }
+            }
+        };
+        refresher.addView(web, new android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+        refresher.setOnRefreshListener(this::pullToRefresh);
+        // «아직 위로 스크롤할 수 있다»고 답하면 새로고침이 시작되지 않는다. 문서가 맨 위이고 방금 위로 넘쳐 당겨졌을 때만 false.
+        refresher.setOnChildScrollUpCallback((parent, child) -> web.getScrollY() > 0
+            || (!touchStarting && SystemClock.uptimeMillis() - topOverscrollAt > 300));
+        webRoot = new FrameLayout(this);
+        webRoot.addView(refresher, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         if (BuildConfig.STIZ_SANDBOX) {
             web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
             if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE)
@@ -103,6 +137,8 @@ public final class MainActivity extends Activity {
         web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.getSettings().setGeolocationEnabled(false); // Only native service may obtain and send locations.
         web.getSettings().setSupportMultipleWindows(false);
+        // 앱 버전 표시: 기존 브라우저 식별 문자열 끝에 « STIZApp/버전 (android)» 를 덧붙인다(기존 문자열은 그대로 둔다).
+        web.getSettings().setUserAgentString(web.getSettings().getUserAgentString() + " STIZApp/" + BuildConfig.VERSION_NAME + " (android)");
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebViewCompat.addWebMessageListener(web, "StizDriverGpsTransport", Collections.singleton(BuildConfig.STIZ_ORIGIN),
             (view, message, origin, mainFrame, reply) -> {
@@ -133,21 +169,25 @@ public final class MainActivity extends Activity {
                 // 결제 중 카드사·간편결제 앱 호출은 본문·iframe 어디서 와도 바깥 앱으로 넘긴다.
                 if (paymentActive && paymentAllowed() && AppNavigationPolicy.isPaymentAppScheme(url)) { openPaymentApp(uri); return true; }
                 if (!request.isForMainFrame()) {
-                    boolean paymentFrame = paymentAllowed() && (AppNavigationPolicy.isTossPayment(url)
+                    boolean paymentFrame = paymentAllowed() && (AppNavigationPolicy.isExternalFlowStart(url)
                         || (paymentActive && AppNavigationPolicy.paymentPageAllowed(url)));
                     return !(AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, url) || paymentFrame);
                 }
                 if (!unfinishedRun && nativeAuth.begin(uri, request.hasGesture())) return true;
                 if (trustedAppPage(uri)) { paymentActive = false; navigateSafely(uri); return true; }
-                // 토스 결제창은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
-                if (paymentAllowed() && AppNavigationPolicy.isTossPayment(url)) { paymentActive = true; return false; }
+                // 토스 결제창·본인인증 화면은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
+                if (paymentAllowed() && AppNavigationPolicy.isExternalFlowStart(url)) { paymentActive = true; return false; }
                 if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(url)) return false;
-                // 그 밖의 바깥 이동은 사용자가 누른 전화·지도만 연다.
+                // 그 밖의 바깥 이동은 사용자가 직접 누른 것만 앱 밖으로 넘긴다(자동 이동은 막는다).
                 if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.externalActionAllowed(url, request.hasGesture())) {
+                    // 전화·문자·지도 앱
                     try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
-                    catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·지도 앱을 설치해 주세요."); }
-                } else if (unfinishedRun && AppNavigationPolicy.isTossPayment(url)) {
-                    showAppMessage("운행 중에는 결제 화면을 열 수 없습니다. 운행을 마친 뒤 다시 시도해 주세요.");
+                    catch (ActivityNotFoundException failure) { showAppMessage("연결할 전화·문자·지도 앱을 설치해 주세요."); }
+                } else if (unfinishedRun && AppNavigationPolicy.isExternalFlowStart(url)) {
+                    showAppMessage("운행 중에는 결제·본인인증 화면을 열 수 없습니다. 운행을 마친 뒤 다시 시도해 주세요.");
+                } else if (!BuildConfig.STIZ_SANDBOX && AppNavigationPolicy.openInBrowserAllowed(BuildConfig.STIZ_ORIGIN, url, request.hasGesture())) {
+                    // 바깥 사이트·Supabase 공개 파일은 휴대폰 브라우저로 연다(예전엔 «열 수 없습니다»로 막혔다).
+                    openInBrowser(uri);
                 } else showAppMessage("이 주소는 앱에서 열 수 없습니다.");
                 return true;
             }
@@ -157,7 +197,7 @@ public final class MainActivity extends Activity {
                     String target = request.getUrl().toString();
                     // 우리 사이트로 돌아오면 결제 중 상태를 끝낸다. 결제창·카드사 화면은 결제 중에만 통과시킨다.
                     if (trustedAppPage(request.getUrl())) paymentActive = false;
-                    else if (paymentAllowed() && AppNavigationPolicy.isTossPayment(target)) { paymentActive = true; return super.shouldInterceptRequest(view, request); }
+                    else if (paymentAllowed() && AppNavigationPolicy.isExternalFlowStart(target)) { paymentActive = true; return super.shouldInterceptRequest(view, request); }
                     else if (paymentActive && paymentAllowed() && AppNavigationPolicy.paymentPageAllowed(target)) return super.shouldInterceptRequest(view, request);
                 }
                 boolean nativeConsume = request.isForMainFrame() && nativeAuth.takeConsumePermission(request.getUrl(), request.getMethod());
@@ -178,17 +218,26 @@ public final class MainActivity extends Activity {
                 nativeAuth.documentStarted(url);
                 if (!trusted(Uri.parse(url)) || !pageToken().equals(pendingStart.token())) pendingStart.cancel();
             }
-            @Override public void onPageFinished(WebView view, String url) { nativeAuth.documentFinished(url); checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot(); }
+            @Override public void onPageFinished(WebView view, String url) {
+                nativeAuth.documentFinished(url); checkObservedNavigation(url); if (trusted(Uri.parse(url))) snapshot();
+                if (refresher != null) refresher.setRefreshing(false);
+                if (url != null && trustedAppPage(Uri.parse(url))) lastAppUrl = url;
+            }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
                 if (request.isForMainFrame() && response.getStatusCode() >= 400) nativeAuth.consumeFailed(request.getUrl());
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) nativeAuth.consumeFailed(request.getUrl());
-                // 토스 화면을 불러오지 못하면 결제 중 상태를 풀어 우리 사이트를 다시 잠근다.
-                if (request.isForMainFrame() && AppNavigationPolicy.isTossPayment(request.getUrl().toString())) paymentActive = false;
+                // 토스·본인인증 화면을 불러오지 못하면 «진행 중» 상태를 풀어 우리 사이트를 다시 잠근다.
+                if (request.isForMainFrame() && AppNavigationPolicy.isExternalFlowStart(request.getUrl().toString())) paymentActive = false;
+                // 본문 화면이 인터넷 문제로 안 열리면, 주소가 드러나는 크롬 기본 오류 화면 대신 앱 안내 화면을 보인다.
+                if (request.isForMainFrame() && isConnectionError(error.getErrorCode())) showLoadError(request.getUrl().toString());
             }
             @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) { handler.cancel(); nativeAuth.consumeFailed(error.getUrl() == null ? null : Uri.parse(error.getUrl())); }
         });
+        // 파일 받기: 우리 사이트(로그인 필요한 엑셀·PDF 등)와 Supabase 공개 파일만 휴대폰 «다운로드» 기능으로 받는다.
+        // 예전엔 받기 처리기가 없어 파일 링크를 눌러도 아무 반응이 없었다. 저장 권한은 새로 요청하지 않는다.
+        web.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> startDownload(url, userAgent, contentDisposition, mimeType));
         web.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 return fileChooser.open(callback, params);
@@ -198,19 +247,24 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
         });
-        setContentView(web);
+        setContentView(webRoot);
         if (Build.VERSION.SDK_INT >= 33) {
             android.window.OnBackInvokedCallback callback = this::handleBack;
             backCallback = callback;
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
             backRegistered = true;
         }
-        web.setOnApplyWindowInsetsListener((view, insets) -> {
+        // 안전 영역 여백: 상태표시줄·내비게이션바·노치 + 키보드(IME). targetSdk 36 은 화면 끝까지 그려지므로(edge-to-edge)
+        // 키보드 높이를 직접 빼 주지 않으면 아래쪽 입력칸·버튼이 키보드에 가려진다. 여백은 바깥 틀에 주고 안쪽으로는 넘기지 않는다.
+        webRoot.setOnApplyWindowInsetsListener((view, insets) -> {
             if (Build.VERSION.SDK_INT >= 30) {
                 android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            } else view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
-            return insets;
+                android.graphics.Insets ime = insets.getInsets(android.view.WindowInsets.Type.ime());
+                view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+                return android.view.WindowInsets.CONSUMED;
+            }
+            view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets.consumeSystemWindowInsets();
         });
         androidx.core.content.ContextCompat.registerReceiver(this, receiver, new IntentFilter(DriverLocationService.EVENT), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
         Uri incoming = getIntent().getData();
@@ -235,7 +289,7 @@ public final class MainActivity extends Activity {
         if (!trustedAppPage(uri) || AppNavigationPolicy.needsNativeAuthHandoff(BuildConfig.STIZ_ORIGIN, uri.toString())) return;
         if (needsAccountRunHandoff(uri.toString())) { showAccountRunPending(); return; }
         pendingStart.cancel();
-        setContentView(web);
+        setContentView(webRoot);
         web.loadUrl(uri.toString());
     }
     // 결제는 통합 앱의 운영 화면에서, 운행 중이 아닐 때만 연다(시험 앱·기사님 전용 앱 제외).
@@ -348,10 +402,108 @@ public final class MainActivity extends Activity {
         });
     }
     private void handleBack() {
-        if (web == null || !web.canGoBack()) { moveTaskToBack(true); return; }
+        if (web == null) { moveTaskToBack(true); return; }
+        // 오류 안내 화면(웹뷰 틀이 화면에서 빠진 상태)에서 뒤로 → 마지막 우리 사이트 화면을 다시 연다.
+        if (webRoot.getParent() == null && lastAppUrl != null) { retryAfterError(); return; }
         WebBackForwardList history = web.copyBackForwardList();
-        int previous = history.getCurrentIndex() - 1;
-        if (previous >= 0) navigateSafely(Uri.parse(history.getItemAtIndex(previous).getUrl()), true);
+        int current = history.getCurrentIndex();
+        // 바로 앞이 우리 사이트면 평소처럼 한 칸 뒤로.
+        if (current >= 1 && trustedAppPage(Uri.parse(history.getItemAtIndex(current - 1).getUrl()))) {
+            navigateSafely(Uri.parse(history.getItemAtIndex(current - 1).getUrl()), true);
+            return;
+        }
+        // 지금이 결제·본인인증 화면(바깥 주소)이거나 바로 앞이 그런 화면이면, 그 화면들을 건너뛰고
+        // 가장 가까운 우리 사이트 화면(보통 청구서·결제 화면)을 새로 연다. 예전엔 바깥 주소로는 이동하지 않아 뒤로가 무반응이었다.
+        for (int index = current - 1; index >= 0; index--) {
+            Uri candidate = Uri.parse(history.getItemAtIndex(index).getUrl());
+            if (trustedAppPage(candidate)) { paymentActive = false; navigateSafely(candidate); return; }
+        }
+        String now = web.getUrl();
+        if (now != null && !trustedAppPage(Uri.parse(now))) { paymentActive = false; navigateSafely(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app")); return; }
+        moveTaskToBack(true);
+    }
+    // 당겨서 새로고침: 우리 사이트 화면만 다시 불러온다. 결제·본인인증 중(카드사 화면 등)에는 다시 보내지 않는다.
+    private void pullToRefresh() {
+        String now = web == null ? null : web.getUrl();
+        if (web == null || paymentActive || now == null || !trustedAppPage(Uri.parse(now))) { refresher.setRefreshing(false); return; }
+        web.reload();
+    }
+    // 인터넷 연결 문제로 보이는 오류만 안내 화면으로 바꾼다(주소 해석·연결·시간 초과·입출력·보안 연결 실패).
+    private static boolean isConnectionError(int code) {
+        return code == WebViewClient.ERROR_HOST_LOOKUP || code == WebViewClient.ERROR_CONNECT || code == WebViewClient.ERROR_TIMEOUT
+            || code == WebViewClient.ERROR_IO || code == WebViewClient.ERROR_FAILED_SSL_HANDSHAKE || code == WebViewClient.ERROR_PROXY_AUTHENTICATION;
+    }
+    // «연결할 수 없어요» 안내 화면(아이폰 앱과 같은 수준). 실패한 주소는 화면에 보이지 않는다.
+    private void showLoadError(String failedUrl) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || web == null) return;
+            if (refresher != null) refresher.setRefreshing(false);
+            if (failedUrl != null && trustedAppPage(Uri.parse(failedUrl))) lastAppUrl = failedUrl;
+            float density = getResources().getDisplayMetrics().density;
+            LinearLayout layout = new LinearLayout(this);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            layout.setGravity(android.view.Gravity.CENTER);
+            int pad = (int) (24 * density);
+            layout.setPadding(pad, pad, pad, pad);
+            TextView title = new TextView(this);
+            title.setText("연결할 수 없어요");
+            title.setTextSize(20);
+            title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            title.setGravity(android.view.Gravity.CENTER);
+            layout.addView(title);
+            TextView body = new TextView(this);
+            body.setText("인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
+            body.setTextSize(15);
+            body.setGravity(android.view.Gravity.CENTER);
+            body.setPadding(0, (int) (8 * density), 0, (int) (20 * density));
+            layout.addView(body);
+            Button retry = new Button(this);
+            retry.setText("다시 시도");
+            retry.setMinHeight((int) (48 * density));
+            retry.setOnClickListener(view -> retryAfterError());
+            layout.addView(retry);
+            setContentView(layout);
+        });
+    }
+    private void retryAfterError() {
+        paymentActive = false;
+        Uri target = Uri.parse(lastAppUrl != null ? lastAppUrl : BuildConfig.STIZ_ORIGIN + "/store-app");
+        if (trustedAppPage(target)) navigateSafely(target);
+        else loadPageUnchecked(Uri.parse(BuildConfig.STIZ_ORIGIN + "/store-app"));
+    }
+    // 바깥 사이트를 휴대폰 기본 브라우저로 연다.
+    private void openInBrowser(Uri uri) {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)); }
+        catch (ActivityNotFoundException failure) { showAppMessage("링크를 열 브라우저를 설치해 주세요."); }
+    }
+    // 파일 받기. 우리 사이트 파일은 로그인 쿠키를 붙여 휴대폰 다운로드 관리자로 받고, Supabase 공개 파일은 쿠키 없이 받는다.
+    // Android 10 이상은 «다운로드» 폴더(권한 불필요), 그 아래 버전은 앱 전용 폴더에 저장하고 알림을 눌러 열 수 있다.
+    private void startDownload(String url, String userAgent, String contentDisposition, String mimeType) {
+        if (BuildConfig.STIZ_SANDBOX) { showAppMessage("격리시험에서는 파일을 내려받지 않습니다."); return; }
+        if (url == null || !AppNavigationPolicy.downloadAllowed(BuildConfig.STIZ_ORIGIN, url)) {
+            // 화면에서 만든 파일(blob:)·바깥 주소는 다운로드 관리자가 받을 수 없다.
+            showAppMessage("이 파일은 앱에서 바로 받을 수 없습니다. 브라우저에서 사이트를 이용해 주세요.");
+            return;
+        }
+        try {
+            String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url))
+                .setTitle(fileName)
+                .setMimeType(mimeType)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            if (userAgent != null) request.addRequestHeader("User-Agent", userAgent);
+            // 로그인 쿠키는 우리 사이트 주소에만 붙인다(바깥 서버로 새지 않게).
+            if (AppNavigationPolicy.sameOrigin(BuildConfig.STIZ_ORIGIN, url)) {
+                String cookies = CookieManager.getInstance().getCookie(url);
+                if (cookies != null) request.addRequestHeader("Cookie", cookies);
+            }
+            if (Build.VERSION.SDK_INT >= 29) request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+            else request.setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, fileName);
+            DownloadManager manager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            if (manager == null) throw new IllegalStateException("download manager");
+            manager.enqueue(request);
+            Toast.makeText(this, "파일을 받는 중입니다. 완료되면 알림에서 열 수 있어요.", Toast.LENGTH_SHORT).show();
+        } catch (Exception failure) { showAppMessage("파일을 받지 못했습니다. 잠시 후 다시 시도해 주세요."); }
     }
     @SuppressWarnings("deprecation")
     @Override public void onBackPressed() { handleBack(); }

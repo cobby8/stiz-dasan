@@ -109,8 +109,9 @@ enum NavigationPolicy {
         if sandbox.isRequested { return URL(string: "about:blank")! }
         return URL(string: "https://www.stiz-dasan.kr/store-app")!
     }
-    // paymentStart: 토스 결제창 시작(이때부터 결제 중) · paymentPage: 결제 중 카드사 인증 화면
-    // paymentApp: 결제 중 카드사·간편결제 앱 호출 · blockedDriver: 기사님 운행 화면(Android 전용)
+    // paymentStart: 토스 결제창·포트원 본인인증 시작(이때부터 «결제·인증 중») · paymentPage: 그 중의 카드사·통신사 인증 화면
+    // paymentApp: 결제·인증 중 카드사·간편결제·인증 앱 호출 · blockedDriver: 기사님 운행 위치 화면(Android 전용)
+    // external: 사용자가 누른 바깥 링크·전화·문자·지도 — 앱 안이 아니라 Safari·시스템 앱으로 연다
     enum Decision: Equatable { case website, external, paymentStart, paymentPage, paymentApp, blockedAuthentication, blockedDriver, blocked }
 
     // 토스 결제창 주소. 「tosspayments.com.evil.example」처럼 뒤에 붙인 가짜 주소는 끝부분 비교로 걸러진다.
@@ -118,6 +119,24 @@ enum NavigationPolicy {
         guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443, let host = url.host?.lowercased() else { return false }
         return ["tosspayments.com", "toss.im"].contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    // 포트원(옛 아임포트)·KG이니시스 본인인증 화면. 자녀 연결·기존 계정 연결의 본인인증이 이 주소로 넘어간다.
+    // 여기서 시작하면 결제와 같은 «진행 중» 상태가 되어 통신사·인증 앱 화면을 잠시 허용하고, 우리 사이트로 돌아오면 다시 잠근다.
+    // ⚠️ 실제 경유 도메인은 실기기로 확인해야 한다(포트원 SDK 가 채널마다 다른 화면으로 보낸다).
+    static let identityHosts = ["portone.io", "iamport.kr", "iamport.co", "inicis.com"]
+    static func isIdentityVerification(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443, let host = url.host?.lowercased() else { return false }
+        return identityHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    // Supabase 저장소의 «공개 파일»(사진·첨부 PDF 등). 로그인 화면이 아니므로 사용자가 누르면 Safari 로 연다(Safari 가 보여 주거나 내려받는다).
+    static func isSupabasePublicFile(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443, let host = url.host?.lowercased(), host.hasSuffix(".supabase.co"),
+              let path = canonicalPath(url) else { return false }
+        return path.hasPrefix("/storage/v1/object/public/")
     }
 
     // 결제 중 바깥 앱으로 넘길 수 있는 주소. 웹 실행·파일 주소는 앱 이름처럼 보여도 넘기지 않는다.
@@ -148,14 +167,14 @@ enum NavigationPolicy {
             if path.hasPrefix("/api/auth/") || (path.hasPrefix("/auth/") && path != "/auth/continue") {
                 return .blockedAuthentication
             }
-            // iOS는 학부모·선생님·관리자용이다. 운행 위치 공유는 Android 앱에서만 한다.
+            // 운행 «위치 전송»(/driver·/staff/run)은 Android 앱에서만 한다. 아이폰은 백그라운드 위치 권한·심사 준비가 없어서다.
+            // 셔틀 조회·승하차 체크(/staff/shuttle)는 위치를 쓰지 않으므로 아이폰에서도 연다(기사님이 로그인 후 멈추던 문제).
             if path == "/driver" || path.hasPrefix("/driver/") ||
-                path == "/staff/run" || path.hasPrefix("/staff/run/") ||
-                path == "/staff/shuttle" || path.hasPrefix("/staff/shuttle/") { return .blockedDriver }
+                path == "/staff/run" || path.hasPrefix("/staff/run/") { return .blockedDriver }
             return .website
         }
-        // 토스 결제창은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
-        if isTossPayment(url) { return .paymentStart }
+        // 토스 결제창·본인인증 화면은 웹이 스스로 화면을 넘기므로(사용자 탭이 아님) 탭 여부와 관계없이 연다.
+        if isTossPayment(url) || isIdentityVerification(url) { return .paymentStart }
         if paymentActive {
             if scheme == "https", let host = url.host?.lowercased() {
                 // 결제 중에도 로그인 화면은 기존처럼 막는다.
@@ -167,16 +186,16 @@ enum NavigationPolicy {
             }
             if isPaymentAppScheme(url) { return .paymentApp }
         }
+        // 여기부터는 사용자가 직접 누른 링크만 다룬다. iframe·스크립트의 자동 이동은 지금처럼 막는다.
         guard userInitiated else { return .blocked }
-        if ["tel", "mailto", "maps"].contains(scheme) { return .external }
-        if scheme == "https", url.host != nil {
-            let host = url.host!.lowercased()
-            if host == "accounts.google.com" || host == "appleid.apple.com" ||
-                host.hasSuffix(".supabase.co") { return .blockedAuthentication }
-            if url.port == nil || url.port == 443,
-               ["maps.google.com", "maps.apple.com", "map.naver.com", "map.kakao.com", "naver.me", "kko.to"].contains(host) {
-                return .external
-            }
+        // 전화·메일·문자·지도 앱. nmap(네이버지도)·kakaomap(카카오맵)·tmap(티맵)은 길찾기 버튼이 쓴다.
+        if ["tel", "mailto", "sms", "maps", "nmap", "kakaomap", "tmap"].contains(scheme) { return .external }
+        if scheme == "https", let host = url.host?.lowercased(), url.port == nil || url.port == 443 {
+            // 로그인 화면은 Safari 로 넘겨도 앱 로그인이 되지 않으므로 기존처럼 안내한다.
+            if host == "accounts.google.com" || host == "appleid.apple.com" { return .blockedAuthentication }
+            if host.hasSuffix(".supabase.co") { return isSupabasePublicFile(url) ? .external : .blockedAuthentication }
+            // 그 밖의 바깥 사이트(블로그·카카오채널·지도·공지 첨부 등)는 막지 않고 Safari 로 연다(원장 승인 2026-11-13).
+            return .external
         }
         return .blocked
     }

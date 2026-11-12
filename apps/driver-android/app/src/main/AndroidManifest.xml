@@ -12,7 +12,25 @@
         </provider>
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
-            <intent-filter android:autoVerify="false"><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="https" android:host="www.stiz-dasan.kr" android:pathPrefix="/driver/" /></intent-filter>
+            <!-- 앱 링크(2026-11-13 원장 승인): 문자·카카오톡 속 www.stiz-dasan.kr 링크를 누르면 브라우저 대신 이 앱이 바로 열린다.
+                 autoVerify=true 는 사이트의 /.well-known/assetlinks.json(src/app/api/assetlinks/route.ts)으로 주인 확인을 받는다.
+                 확인 전·실패 시에는 그냥 브라우저로 열린다(앱이 깨지지 않음).
+                 ⚠️ 일부러 좁게 정한다. 토스가 결제 후 돌려보내는 주소(/payments/success·/payments/fail·/mypage/payments/done)까지
+                 잡으면 웹에서 결제하던 학부모의 결제 확인이 앱으로 튀어 끊길 수 있다. 그래서 청구서는 «번호(UUID, 하이픈 4개) 모양»만,
+                 마이페이지는 정확히 /mypage 와 /mypage/payments 만 받는다. 아이폰 목록은 src/lib/app-site-association.ts 와 같게 유지. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="www.stiz-dasan.kr" />
+                <data android:pathPrefix="/driver/" />
+                <data android:pathPattern="/payments/.*-.*-.*-.*-.*" />
+                <data android:path="/mypage" />
+                <data android:path="/mypage/payments" />
+                <data android:path="/login" />
+                <data android:path="/store-app" />
+            </intent-filter>
         </activity>
         <service android:name=".DriverLocationService" android:exported="false" android:foregroundServiceType="location" android:stopWithTask="false" />
     </application>

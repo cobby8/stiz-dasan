@@ -69,6 +69,33 @@ public final class AppNavigationPolicyTest {
         for (String url : new String[]{"https://x.example/", "http://x.example/", "javascript:alert(1)", "JavaScript:alert(1)", "data:text/html,x", "file:///x", "blob:https://x", "content://x", "about:blank", "stiz-academy-android-dev://auth", "no-colon", ":x", "1abc://x", null}) {
             check(!AppNavigationPolicy.isPaymentAppScheme(url));
         }
+        // 2026-11-13: 문자·지도 앱, 바깥 링크는 브라우저로, 본인인증 흐름, 파일 받기 허용 범위
+        for (String url : new String[]{"sms:01000000000", "sms:010-0000-0000?body=%EC%95%88%EB%85%95", "sms:?body=x", "nmap://route/car?dlat=37.6", "kakaomap://route?ep=37.6,127.1", "https://map.kakao.com/link/map/STIZ,37.6,127.1"}) {
+            check(AppNavigationPolicy.externalActionAllowed(url, true));
+        }
+        check(!AppNavigationPolicy.externalActionAllowed("sms:01000000000", false));
+        check(!AppNavigationPolicy.externalActionAllowed("sms:javascript:alert(1)", true));
+        for (String url : new String[]{"https://pf.kakao.com/_HhaQG", "https://blog.naver.com/x", "https://abc.supabase.co/storage/v1/object/public/notices/a.pdf"}) {
+            check(AppNavigationPolicy.openInBrowserAllowed(origin, url, true));
+            check(!AppNavigationPolicy.openInBrowserAllowed(origin, url, false));
+        }
+        for (String url : new String[]{origin + "/mypage", "http://example.invalid/", "https://user@example.invalid/", "https://example.invalid:444/", "https://accounts.google.com/", "https://appleid.apple.com/",
+            "https://abc.supabase.co/auth/v1/authorize", "https://abc.supabase.co/storage/v1/object/sign/x.pdf", "https://abc.supabase.co/storage/v1/object/public/../../auth/v1/authorize", "intent://x#Intent;end", "javascript:alert(1)", "file:///x"}) {
+            check(!AppNavigationPolicy.openInBrowserAllowed(origin, url, true));
+        }
+        for (String url : new String[]{"https://checkout-service.prod.iamport.co/identity", "https://service.iamport.kr/certifications", "https://portone.io/", "https://sa.inicis.com/auth"}) {
+            check(AppNavigationPolicy.isIdentityVerification(url));
+            check(AppNavigationPolicy.isExternalFlowStart(url));
+        }
+        for (String url : new String[]{"https://portone.io.evil.example/", "https://evilinicis.com/", "http://sa.inicis.com/", "https://sa.inicis.com:444/", "https://user@sa.inicis.com/"}) {
+            check(!AppNavigationPolicy.isIdentityVerification(url));
+        }
+        check(AppNavigationPolicy.isExternalFlowStart("https://api.tosspayments.com/v1/payments"));
+        check(AppNavigationPolicy.downloadAllowed(origin, origin + "/api/admin/export.csv"));
+        check(AppNavigationPolicy.downloadAllowed(origin, "https://abc.supabase.co/storage/v1/object/public/a.pdf"));
+        for (String url : new String[]{"blob:https://www.stiz-dasan.kr/x", "data:text/csv,a", "https://evil.invalid/a.pdf", "http://www.stiz-dasan.kr/a.pdf", "https://abc.supabase.co/storage/v1/object/sign/a.pdf"}) {
+            check(!AppNavigationPolicy.downloadAllowed(origin, url));
+        }
         System.out.println("PASS " + checks + " unified navigation/run-state policy checks; no network/location calls");
     }
 }

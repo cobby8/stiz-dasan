@@ -205,7 +205,8 @@ def build():
     root = Path(__file__).resolve().parents[3]
     output = root / "apps/stiz-ios/build/sandbox-device"
     output.mkdir(parents=True, exist_ok=False)
-    temporary_info = plistlib.loads((root / "apps/stiz-ios/STIZ/Info.plist").read_bytes())
+    # 개발용 키(로컬 네트워크 안내·개발 URL 스킴)는 Debug 전용 Info-Debug.plist 에만 있다(출시 Info.plist 에서 분리, 2026-11-13).
+    temporary_info = plistlib.loads((root / "apps/stiz-ios/STIZ/Info-Debug.plist").read_bytes())
     require("NSAppTransportSecurity" not in temporary_info, "원본 앱의 ATS 설정 변경 금지")
     temporary_info["CFBundleDisplayName"] = "STIZ 격리시험"
     # iOS 17 이상은 IP 주소도 명시해야 한다. HTTP·TLS·인증서 검증은 완화하지 않는다.

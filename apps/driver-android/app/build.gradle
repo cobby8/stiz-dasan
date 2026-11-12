@@ -68,7 +68,7 @@ android {
     compileSdk 36
     // 개발·시험 debug 는 기존 kr.stiz.driver(.unified/.sandbox/.devicetest)를 유지한다(시험 기기·격리 검사가 이 이름에 묶여 있다).
     // 스토어용 release 의 정식 ID 는 파일 끝 androidComponents 에서 정한다.
-    defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 2; versionName '1.0.0'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
+    defaultConfig { applicationId 'kr.stiz.driver'; minSdk 26; targetSdk 36; versionCode 3; versionName '1.0.1'; testInstrumentationRunner 'kr.stiz.driver.DriverSmokeInstrumentation' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
     defaultConfig {
@@ -112,7 +112,8 @@ android {
     }
 }
 if (generateLocalTls != null) tasks.configureEach { task -> if (task.name == 'preDebugBuild') task.dependsOn generateLocalTls }
-dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0' }
+// swiperefreshlayout: 화면을 아래로 당겨 새로고침(2026-11-13, 1.0.1)
+dependencies { implementation 'androidx.webkit:webkit:1.14.0'; implementation 'androidx.core:core:1.16.0'; implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0' }
 // 스토어에 올리는 release 만 iOS 와 같은 정식 ID 를 쓴다(2026-11-05 원장님 결정).
 // 기존 release(kr.stiz.driver)는 서명 없이 만들어져 어느 기기에도 설치된 적이 없으므로 바꿔도 기존 설치에 영향이 없다.
 androidComponents {
