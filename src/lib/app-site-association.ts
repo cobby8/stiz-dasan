@@ -13,8 +13,23 @@
 
 export const IOS_BUNDLE_ID = "kr.co.upturnlabs.stizdasan";
 
-/** 앱이 가로챌 https 주소. 아직 운영에서 쓰지 않는 앱 로그인 복귀 주소 하나로 좁혀 둔다(웹 화면을 앱이 빼앗지 않게). */
-export const IOS_UNIVERSAL_LINK_PATHS = ["/auth/native/return"] as const;
+/**
+ * 앱이 가로챌 https 주소(유니버설 링크). 앱이 설치된 휴대폰에서 문자·카카오톡의 이 링크를 누르면 Safari 대신 앱이 열린다.
+ * 2026-11-13 원장 승인 — 문자 속 청구서·마이페이지 링크가 앱으로 열리게.
+ *
+ * ⚠️ 일부러 «좁게» 정한다. `/*` 처럼 넓히면 학부모가 웹에서 결제할 때 토스가 돌려보내는 완료 주소
+ *    (/payments/success · /payments/fail · /mypage/payments/done)까지 앱이 빼앗아 결제 확인이 끊길 수 있다.
+ *    그래서 청구서는 «번호(UUID) 모양»만 받는다 — `?` 는 아무 글자 하나. success/fail 은 이 모양이 아니라 제외된다.
+ * 안드로이드 앱의 인텐트 필터(apps/driver-android/app/src/main/AndroidManifest.xml)와 같은 목록을 유지한다(기사님 /driver/ 는 안드로이드만).
+ */
+export const IOS_UNIVERSAL_LINK_PATHS = [
+  "/auth/native/return", // 앱 간편로그인 복귀(운영에서는 아직 꺼져 있음)
+  "/payments/????????-????-????-????-????????????", // 문자로 보내는 청구서 결제 링크 /payments/<청구서 번호>
+  "/mypage", // 학부모 홈
+  "/mypage/payments", // 납부 내역·묶음 결제 목록(완료·결제창 하위 주소는 제외)
+  "/login",
+  "/store-app", // 앱 첫 화면
+] as const;
 
 export function appleTeamId(raw: string | undefined): string | null {
   const value = String(raw ?? "").trim().toUpperCase();

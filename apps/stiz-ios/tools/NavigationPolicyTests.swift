@@ -17,7 +17,9 @@ struct NavigationPolicyTests {
             ("https://www.stiz-dasan.kr/driver", true, .blockedDriver),
             ("https://www.stiz-dasan.kr/driver/example", true, .blockedDriver),
             ("https://www.stiz-dasan.kr/staff/run", true, .blockedDriver),
-            ("https://www.stiz-dasan.kr/staff/shuttle", true, .blockedDriver),
+            // 셔틀 조회·승하차 체크는 아이폰에서도 연다. 위치 전송(/staff/run·/driver)만 Android 전용.
+            ("https://www.stiz-dasan.kr/staff/shuttle", true, .website),
+            ("https://www.stiz-dasan.kr/staff/shuttle/today", false, .website),
             ("https://www.stiz-dasan.kr/staff//run", true, .blockedDriver),
             ("https://www.stiz-dasan.kr/staff%2Frun", true, .blockedDriver),
             ("https://www.stiz-dasan.kr/driver%252Fexample", true, .blocked),
@@ -37,7 +39,22 @@ struct NavigationPolicyTests {
             ("mailto:test@example.invalid", true, .external),
             ("maps://?q=academy", true, .external),
             ("https://maps.google.com/", true, .external),
-            ("https://example.invalid/", true, .blocked),
+            // 사용자가 누른 바깥 링크는 막지 않고 Safari 로 넘긴다. 자동 이동은 여전히 막는다.
+            ("https://example.invalid/", true, .external),
+            ("https://example.invalid/", false, .blocked),
+            ("http://example.invalid/", true, .blocked),
+            ("https://pf.kakao.com/_HhaQG", true, .external),
+            ("https://map.kakao.com/link/map/STIZ,37.6,127.1", true, .external),
+            ("sms:01000000000", true, .external),
+            ("sms:01000000000?body=hello", true, .external),
+            ("sms:01000000000", false, .blocked),
+            ("nmap://route/car?dlat=37.6&dlng=127.1", true, .external),
+            ("kakaomap://route?ep=37.6,127.1", true, .external),
+            ("intent://example#Intent;scheme=https;end", true, .blocked),
+            ("https://example.supabase.co/storage/v1/object/public/notices/a.pdf", true, .external),
+            ("https://example.supabase.co/storage/v1/object/public/notices/a.pdf", false, .blocked),
+            ("https://example.supabase.co/storage/v1/object/sign/private/a.pdf", true, .blockedAuthentication),
+            ("https://example.supabase.co/storage/v1/object/public/../../auth/v1/authorize", true, .blockedAuthentication),
             ("https://maps.google.com:444/", true, .blocked),
             ("https://accounts.google.com/", true, .blockedAuthentication),
             ("https://appleid.apple.com/", true, .blockedAuthentication),
@@ -47,6 +64,9 @@ struct NavigationPolicyTests {
             guard let url = URL(string: address) else { fatalError("Invalid fixture") }
             precondition(NavigationPolicy.decide(url, userInitiated: initiated) == expected, "Navigation case failed: \(address)")
         }
+        // 앱 시작 주소는 우리 사이트이며 지원 기능(바깥 링크·문자)만 알린다.
+        precondition(NavigationPolicy.entry.absoluteString == "https://www.stiz-dasan.kr/store-app?caps=links,sms")
+        precondition(NavigationPolicy.decide(NavigationPolicy.entry, userInitiated: false) == .website)
         // 결제(원장 결정 2026-11-09): 토스 결제창은 탭 없이도 열고, 결제 중에만 카드사 화면·앱을 허용한다.
         let payments: [(String, Bool, NavigationPolicy.Decision)] = [
             ("https://api.tosspayments.com/v1/payments", false, .paymentStart),
@@ -54,13 +74,23 @@ struct NavigationPolicyTests {
             ("https://tosspayments.com/", false, .paymentStart),
             ("https://tosspayments.com.evil.example/", false, .blocked),
             ("https://eviltosspayments.com/", false, .blocked),
-            ("https://tosspayments.com.evil.example/", true, .blocked),
+            // 가짜 토스 주소는 결제로 인정하지 않는다. 사용자가 직접 누른 경우엔 일반 바깥 링크처럼 Safari 로 넘길 뿐이다.
+            ("https://tosspayments.com.evil.example/", true, .external),
             ("http://api.tosspayments.com/", false, .blocked),
             ("https://api.tosspayments.com:444/", false, .blocked),
             ("https://user:pass@api.tosspayments.com/", false, .blocked),
             ("https://card-auth.example.invalid/", false, .blocked),
             ("ispmobile://TID=example", false, .blocked),
-            ("kakaotalk://kakaopay/pg?url=example", false, .blocked)
+            ("kakaotalk://kakaopay/pg?url=example", false, .blocked),
+            // 포트원·KG이니시스 본인인증도 결제처럼 «진행 중» 상태를 시작한다.
+            ("https://checkout-service.prod.iamport.co/identity", false, .paymentStart),
+            ("https://service.iamport.kr/certifications", false, .paymentStart),
+            ("https://portone.io/", false, .paymentStart),
+            ("https://sa.inicis.com/auth", false, .paymentStart),
+            ("https://portone.io.evil.example/", false, .blocked),
+            ("https://evilinicis.com/", false, .blocked),
+            ("http://sa.inicis.com/auth", false, .blocked),
+            ("https://sa.inicis.com:444/auth", false, .blocked)
         ]
         for (address, initiated, expected) in payments {
             precondition(NavigationPolicy.decide(URL(string: address)!, userInitiated: initiated) == expected, "Payment case failed: \(address)")

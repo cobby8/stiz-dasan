@@ -91,6 +91,16 @@ Google 12명·14일 시험은 2023-11-13 이후 생성된 개인 계정 기준�
 
 순서: **격리 시험 환경 → 승인된 설치 빌드 → 인증·가족·기사 → 청구·결제·알림 → 네 역할 실기기 → 심사 자료**. 설치·Apple 서명·새 원격 빌드·외부 시험 배포·운영 활성화·TestFlight·공개 제출은 각각 버전과 영향을 제시하고 승인받는다. 이 문서 정정은 그 실행 승인이 아니다.
 
+## 7-1. iOS 유니버설 링크 다시 켜기 (1.0.1 은 꺼 둔 채 출시)
+
+2026-11-13: 문자 속 링크를 앱으로 여는 코드(`AppDelegate` → `openUniversalLink`)와 권한 파일 `apps/stiz-ios/STIZ/STIZ.entitlements`(applinks·webcredentials)는 준비돼 있지만, 애플 포털 준비 전이라 Release 서명에는 붙이지 않았다(붙이면 프로파일 불일치로 서명 실패).
+
+1. Apple Developer → Identifiers → `kr.co.upturnlabs.stizdasan` → **Associated Domains** 켜기
+2. App Store 배포 프로파일 새로 발급(Codemagic 이 새 프로파일을 받게)
+3. Vercel 에 `APPLE_TEAM_ID` 입력 → `https://www.stiz-dasan.kr/.well-known/apple-app-site-association` 200 확인
+4. `project.pbxproj` 의 Release(`A0000000000000000000000F`) 설정에 `CODE_SIGN_ENTITLEMENTS = STIZ/STIZ.entitlements;` 한 줄 복원 + `tools/validate-project.py` 의 «연결 안 함» 검사를 «Release 에만 연결» 검사로 바꾸기
+5. 빌드 번호 올려 TestFlight → 실기기에서 문자 속 청구서 링크 탭 확인
+
 ## 7. 2026-11-05 진행분
 
 - 앱 이름 **STIZ 농구교실**, ID `kr.co.upturnlabs.stizdasan`(iOS Release·Android release) 확정·반영.

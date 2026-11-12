@@ -106,15 +106,95 @@ final class AppNavigationPolicy {
         return !java.util.Arrays.asList("http", "https", "about", "data", "javascript", "file", "blob", "ftp", "content",
             "stiz-academy-dev", "stiz-academy-android-dev").contains(scheme);
     }
+    // 사용자가 누른 전화·문자·지도 앱 호출. 문자(sms)는 2026-11-13 원장 승인으로 추가(학부모·선생님 «문자 보내기» 버튼).
     static boolean externalActionAllowed(String url, boolean userGesture) {
         if (!userGesture) return false;
         try {
             URI uri = new URI(url);
             if (uri.getRawUserInfo() != null) return false;
             if ("tel".equals(uri.getScheme())) return uri.getRawSchemeSpecificPart().matches("[+0-9*#(). -]{3,32}");
-            if ("tmap".equals(uri.getScheme())) return true;
+            // sms:번호 또는 sms:번호?body=내용. 받는 번호 부분만 검사하고, 내용은 길이·제어문자만 막는다(문자 앱이 보여 주고 사용자가 보낸다).
+            if ("sms".equals(uri.getScheme())) {
+                String part = uri.getRawSchemeSpecificPart();
+                String number = part.indexOf('?') < 0 ? part : part.substring(0, part.indexOf('?'));
+                return part.length() <= 2000 && number.matches("[+0-9*#(). ,;-]{0,200}") && part.chars().noneMatch(c -> c < 32 || c == 127);
+            }
+            // 티맵·네이버지도·카카오맵 길찾기 앱
+            if ("tmap".equals(uri.getScheme()) || "nmap".equals(uri.getScheme()) || "kakaomap".equals(uri.getScheme())) return true;
             return "https".equals(uri.getScheme()) && (uri.getPort() == -1 || uri.getPort() == 443)
-                && ("apis.openapi.sk.com".equals(uri.getHost()) || "map.naver.com".equals(uri.getHost()));
+                && ("apis.openapi.sk.com".equals(uri.getHost()) || "map.naver.com".equals(uri.getHost()) || "map.kakao.com".equals(uri.getHost()));
         } catch (Exception failure) { return false; }
+    }
+    // 포트원(옛 아임포트)·KG이니시스 본인인증 화면. 자녀 연결·기존 계정 연결의 본인인증이 이 주소로 넘어간다.
+    // 결제처럼 «진행 중» 상태를 시작해 통신사·인증 앱 화면을 잠시 허용하고, 우리 사이트로 돌아오면 다시 잠근다.
+    // ⚠️ 실제 경유 도메인은 실기기로 확인해야 한다(포트원 SDK 가 채널마다 다른 화면으로 보낸다).
+    static boolean isIdentityVerification(String url) {
+        if (!paymentPageAllowed(url)) return false;
+        try {
+            String host = new URI(url).getHost().toLowerCase(java.util.Locale.ROOT);
+            for (String domain : new String[]{"portone.io", "iamport.kr", "iamport.co", "inicis.com"}) {
+                if (host.equals(domain) || host.endsWith("." + domain)) return true;
+            }
+            return false;
+        } catch (Exception failure) { return false; }
+    }
+    // 토스 결제창 또는 본인인증 화면 — 여기로 들어가면 «결제·인증 중» 상태가 된다.
+    static boolean isExternalFlowStart(String url) { return isTossPayment(url) || isIdentityVerification(url); }
+    // Supabase 저장소의 «공개 파일»(사진·첨부 PDF 등). 로그인 화면(*.supabase.co/auth)과 구분한다.
+    static boolean isSupabasePublicFile(String url) {
+        try {
+            URI uri = new URI(url);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);
+            return "https".equals(uri.getScheme()) && uri.getRawUserInfo() == null && (uri.getPort() == -1 || uri.getPort() == 443)
+                && host.endsWith(".supabase.co") && canonicalPath(uri) && uri.getPath().startsWith("/storage/v1/object/public/");
+        } catch (Exception failure) { return false; }
+    }
+    // 사용자가 누른 바깥 사이트 링크(블로그·카카오채널·공지 첨부 등)는 막지 않고 휴대폰 브라우저로 연다(원장 승인 2026-11-13).
+    // 우리 사이트·외부 로그인 화면은 제외한다(브라우저로 넘겨도 앱 로그인이 되지 않는다).
+    static boolean openInBrowserAllowed(String origin, String url, boolean userGesture) {
+        if (!userGesture) return false;
+        try {
+            URI uri = new URI(url), own = new URI(origin);
+            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getRawUserInfo() != null
+                || !(uri.getPort() == -1 || uri.getPort() == 443)) return false;
+            String host = uri.getHost().toLowerCase(java.util.Locale.ROOT);
+            if (host.equals(own.getHost()) || host.equals("accounts.google.com") || host.equals("appleid.apple.com")) return false;
+            if (host.endsWith(".supabase.co")) return isSupabasePublicFile(url);
+            return true;
+        } catch (Exception failure) { return false; }
+    }
+    // 통합 앱 시작 주소. caps = 이 앱이 직접 처리하는 기능(바깥 링크·문자) — 웹은 이걸 보고 «링크 복사»·«번호 복사» 우회 안내를 끈다.
+    // 푸시·위치·음성·설치는 아직 못 하므로 넣지 않는다.
+    static final String ENTRY_PATH = "/store-app?caps=links,sms";
+    /**
+     * 뒤로가기 목적지: 방문 기록에서 지금 위치보다 앞쪽의 «가장 가까운 우리 사이트 화면»까지 몇 칸 돌아갈지(음수).
+     * 결제·본인인증의 바깥 화면은 건너뛴다. 기록을 새로 쌓지 않고 기록 안에서 이동해야
+     * «완료 화면 → 뒤로 → 결제 화면 → 뒤로 → 완료 화면…» 같은 왕복 고리가 생기지 않는다. 우리 화면이 없으면 0.
+     */
+    static int backSteps(String origin, String[] history, int current, boolean unified) {
+        if (history == null || current < 0 || current >= history.length) return 0;
+        for (int index = current - 1; index >= 0; index--) {
+            if (history[index] != null && isAppPage(origin, history[index], unified)) return index - current;
+        }
+        return 0;
+    }
+    /**
+     * Content-Disposition 의 filename*=UTF-8''... (한글 파일명) 을 먼저 해석한다. 없거나 잘못되면 null(→ 기본 추측 사용).
+     * 경로 문자·제어 문자는 지운다(다른 폴더에 쓰지 못하게).
+     */
+    static String encodedFileName(String contentDisposition) {
+        if (contentDisposition == null) return null;
+        java.util.regex.Matcher match = java.util.regex.Pattern.compile("(?i)filename\\*\\s*=\\s*UTF-8''([^;\\s]+)").matcher(contentDisposition);
+        if (!match.find()) return null;
+        try {
+            String name = java.net.URLDecoder.decode(match.group(1).replace("+", "%2B"), "UTF-8");
+            name = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+            if (name.isEmpty() || name.equals(".") || name.equals("..") || name.length() > 120) return null;
+            return name;
+        } catch (Exception failure) { return null; }
+    }
+    // 앱 안에서 내려받기를 허용하는 파일 주소: 우리 사이트(로그인 쿠키 필요)와 Supabase 공개 파일만.
+    static boolean downloadAllowed(String origin, String url) {
+        return sameOrigin(origin, url) || isSupabasePublicFile(url);
     }
 }

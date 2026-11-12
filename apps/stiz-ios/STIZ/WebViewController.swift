@@ -16,8 +16,10 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private var fileDownloads: NativeFileDownloads!
     private var downloadLink: (page: URL, target: URL)?
     private var downloadConverted = false
-    // 토스 결제창에 들어간 뒤 우리 사이트(결제 완료·실패 화면)로 돌아올 때까지만 켜진다.
+    // 토스 결제창·포트원 본인인증에 들어간 뒤 우리 사이트(완료·실패 화면)로 돌아올 때까지만 켜진다.
     private var paymentActive = false
+    // 화면을 아래로 당겨 새로고침. 결제·인증 중에는 카드사 화면을 다시 보내지 않도록 동작하지 않는다.
+    private let refresher = UIRefreshControl()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -28,6 +30,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         // 시험 앱은 운영 로그인 쿠키·저장소를 공유하지 않는다.
         configuration.websiteDataStore = NavigationPolicy.sandbox.isRequested ? .nonPersistent() : .default()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // 앱 버전 표시: 기존 브라우저 식별 문자열(기본 «Mobile/15E148») 끝에 « STIZApp/버전 (ios)» 를 덧붙인다.
+        // 웹은 이 표시로 «앱에서 열렸는지·어느 버전인지» 알 수 있다. 기존 문자열은 지우지 않는다.
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let baseName = configuration.applicationNameForUserAgent.flatMap { $0.isEmpty ? nil : $0 } ?? "Mobile/15E148"
+        configuration.applicationNameForUserAgent = "\(baseName) STIZApp/\(appVersion) (ios)"
         webView = WKWebView(frame: .zero, configuration: configuration)
         if #available(iOS 16.4, *) {
             // 운영 화면은 검사 연결을 열지 않고, 유효한 격리 시험 주소에서만 허용한다.
@@ -44,6 +51,8 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             self.nativeAuth.cancelIfPageChanged(self.webView.url)
         }
         webView.allowsBackForwardNavigationGestures = true
+        refresher.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
+        webView.scrollView.refreshControl = refresher
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
         let topInset: CGFloat = NavigationPolicy.sandbox.isRequested ? 28 : 0
@@ -147,6 +156,29 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         webView.load(URLRequest(url: lastPage))
     }
 
+    // 당겨서 새로고침: 우리 사이트 화면일 때만 다시 불러온다. 결제·본인인증 중이거나 파일을 받는 중이면 그냥 멈춘다.
+    @objc private func pullToRefresh() {
+        guard sandboxProtectionReady, !paymentActive, fileDownloads?.isBusy != true,
+              let url = webView.url, NavigationPolicy.decide(url, userInitiated: false) == .website else {
+            refresher.endRefreshing()
+            return
+        }
+        webView.reload()
+    }
+
+    // 문자·카카오톡 속 우리 사이트 링크(유니버설 링크)를 눌러 앱이 열렸을 때 그 화면을 웹뷰로 연다.
+    // 앱이 열 수 있는 우리 사이트 주소만 받는다(로그인·운행 위치 화면 등은 무시하고 지금 화면을 유지).
+    @discardableResult
+    func openUniversalLink(_ url: URL) -> Bool {
+        guard !NavigationPolicy.sandbox.isRequested,
+              NavigationPolicy.decide(url, userInitiated: false) == .website else { return false }
+        paymentActive = false
+        fileDownloads?.cancelForPageExit()
+        lastPage = url
+        reloadPage()
+        return true
+    }
+
     private func alert(_ text: String) {
         guard presentedViewController == nil else { return }
         let dialog = UIAlertController(title: "안내", message: text, preferredStyle: .alert)
@@ -175,7 +207,13 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
                 self?.alert("결제 앱이 설치되어 있지 않습니다. 앱스토어에서 설치한 뒤 다시 시도하거나 다른 결제수단을 골라 주세요.")
             }
         case .external:
-            if action.sourceFrame.isMainFrame { UIApplication.shared.open(url) }
+            // 본문에서 사용자가 누른 링크만 Safari·전화·문자·지도 앱으로 넘긴다(iframe 안의 링크는 넘기지 않는다).
+            if action.sourceFrame.isMainFrame {
+                UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                    guard !opened else { return }
+                    self?.alert("이 링크를 열 앱을 찾지 못했습니다.")
+                }
+            }
         case .blockedAuthentication:
             if NavigationPolicy.sandbox.isRequested {
                 alert("시험 환경에서는 실제 로그인·발송·결제를 사용할 수 없습니다.")
@@ -208,7 +246,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
             }
             alert("앱의 간편로그인은 준비 중입니다. 이메일·비밀번호로 로그인해 주세요. 웹사이트에서는 기존 간편로그인을 사용할 수 있습니다.")
         case .blockedDriver:
-            alert("기사님 운행 화면은 아이폰 앱에서 열 수 없습니다. Android 앱을 이용해 주세요.")
+            alert("운행 위치 공유는 Android 앱에서만 할 수 있습니다. 셔틀 명단·승하차 체크는 이 앱에서 이용할 수 있습니다.")
         case .blocked:
             alert(NavigationPolicy.sandbox.isRequested ? "시험 앱에서는 시험 서버 안의 화면만 열 수 있습니다." : "이 주소는 앱에서 열 수 없습니다.")
         }
@@ -376,6 +414,7 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
         downloadLink = nil
         fileDownloads.pageDidChange(to: webView.url)
         progress.stopAnimating()
+        refresher.endRefreshing()
         if let url = webView.url, NavigationPolicy.decide(url, userInitiated: false) == .website { lastPage = url }
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { recover(error) }
@@ -420,10 +459,11 @@ final class WebViewController: UIViewController, WKNavigationDelegate, WKUIDeleg
     private func syncPaymentState() {
         guard let url = webView.url else { return }
         if NavigationPolicy.matchesWebsiteOrigin(url) { paymentActive = false }
-        else if NavigationPolicy.isTossPayment(url) && !NavigationPolicy.sandbox.isRequested { paymentActive = true }
+        else if (NavigationPolicy.isTossPayment(url) || NavigationPolicy.isIdentityVerification(url)) && !NavigationPolicy.sandbox.isRequested { paymentActive = true }
     }
 
     private func recover(_ error: Error?) {
+        refresher.endRefreshing()
         syncPaymentState()
         // 파일로 전환되며 중단된 웹 탐색은 기존 페이지를 오류 화면으로 바꾸지 않는다.
         if error != nil, downloadConverted || fileDownloads?.isBusy == true { progress.stopAnimating(); return }

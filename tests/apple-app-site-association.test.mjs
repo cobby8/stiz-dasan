@@ -26,10 +26,14 @@ test("팀 ID 가 없거나 형식이 틀리면 내보내지 않는다(404)", () 
   }
 });
 
-test("팀 ID 가 있으면 업턴랩스 정식 앱 하나와 앱 로그인 복귀 경로만 연결한다", () => {
+test("팀 ID 가 있으면 업턴랩스 정식 앱 하나와 정해진 좁은 경로만 연결한다", () => {
   const body = aasa.buildAppleAppSiteAssociation({ APPLE_TEAM_ID: " ab12cd34ef " });
   const appID = "AB12CD34EF.kr.co.upturnlabs.stizdasan";
-  assert.deepEqual(body.applinks.details, [{ appIDs: [appID], components: [{ "/": "/auth/native/return" }] }]);
+  const paths = ["/auth/native/return", "/payments/????????-????-????-????-????????????", "/mypage", "/mypage/payments", "/login", "/store-app"];
+  assert.deepEqual(body.applinks.details, [{ appIDs: [appID], components: paths.map((path) => ({ "/": path })) }]);
+  // 토스 결제 완료·실패 복귀 주소를 앱이 빼앗으면 웹 결제 확인이 끊긴다 — 와일드카드로 넓히지 않는다.
+  for (const path of paths) assert.ok(!path.includes("*"), path);
+  assert.ok(!paths.some((path) => /success|fail|done|checkout/.test(path)));
   assert.deepEqual(body.webcredentials, { apps: [appID] });
   // 웹 전체(/*)를 앱이 가로채면 학부모 웹·결제 화면이 앱으로 튄다 — 금지.
   assert.ok(!JSON.stringify(body).includes('"/*"'));
