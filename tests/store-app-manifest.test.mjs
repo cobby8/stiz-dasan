@@ -68,8 +68,11 @@ test("스토어 앱 표식은 sessionStorage 에만 둔다 — 크롬·기존 �
   // 저장소를 못 쓰면 기존 설치 앱처럼(제한 유지) — 새는 쪽으로 실패하지 않는다.
   // (2026-11-13) 표식이 없으면 앱 전용 사용자 에이전트(« STIZApp/»)·android-app:// referrer 로만 앱으로 본다 —
   // 오류가 나면 어느 catch 도 «앱»(true)으로 판정하지 않고 끝에서 false(브라우저)로 떨어진다.
-  assert.doesNotMatch(code, /catch \{[^}]*return true/);
-  assert.match(code, /return false;\s*\}\s*$/);
+  // 판정 함수(isStoreApp) 본문만 본다 — 같은 파일의 storeAppLacks 는 «못 한다»(true)로 보수적 실패가 맞다.
+  const isStoreAppBody = code.slice(code.indexOf("export function isStoreApp()"), code.indexOf("export type StoreAppCapability"));
+  assert.ok(isStoreAppBody.length > 0, "isStoreApp 본문을 찾지 못함");
+  assert.doesNotMatch(isStoreAppBody, /catch \{[^}]*return true/);
+  assert.match(isStoreAppBody, /return false;\s*\}\s*$/);
 });
 
 test("스토어 앱에서는 기존 PWA 의 영역 제한을 끈다", () => {
