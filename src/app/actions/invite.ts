@@ -18,7 +18,7 @@ import {
   type InviteClaimState,
 } from "@/lib/staff/inviteAuthFailure";
 
-import { RETIRED_LOGIN_BAN_DURATION, staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
+import { RETIRED_LOGIN_BAN_DURATION, isConvertibleStaffRole, staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
 
 const MAX_OTP_ATTEMPTS = 5;
 
@@ -509,6 +509,12 @@ export async function acceptInvitation(token: string, password: string) {
         return { ok: true, email: target.email ?? staffEmail };
       }
       if (kind !== "none") throw new Error("이미 로그인 계정이 있는 직원입니다. 원장에게 문의해주세요.");
+      // 2026-11-12 재검수: 전환 가입은 «지금도 직원(코치/강사·셔틀 기사)인 기록»에만. 역할을 절대 올리지 않는다.
+      // 초대를 만들 때 대상은 이미 직원이었다(convertDirectStaffToInvite 가 그 역할로 만든다 — invitation.role).
+      // 지금 학부모라면 강등·퇴사된 것이므로 옛 링크로는 가입시키지 않는다(재입사는 위 다시 열기 경로·새 초대).
+      if (!isConvertibleStaffRole(target.role) || !isConvertibleStaffRole(invitation.role)) {
+        throw new Error("이 초대는 더 이상 쓸 수 없습니다. 원장에게 새 초대를 요청해주세요.");
+      }
       conversionTargetId = target.id;
       conversionTargetRole = target.role;
     }
@@ -551,20 +557,21 @@ export async function acceptInvitation(token: string, password: string) {
     const createdStaffUserId = authUserId;
     await prisma.$transaction(async (tx) => {
       if (conversionTargetId) {
-        // 직원 기록 → 초대 순서로 잠그고, 초대가 아직 이 시도의 «처리 중»인지·역할이 처음 읽은 그대로인지 다시 본다.
-        // 역할이 바뀌었거나(강등·퇴사 → 초대 취소) 다르면 멈춘다 — 아래 CASE 가 강등된 역할을 되올리지 못하게.
+        // 직원 기록 → 초대 순서로 잠그고, 초대가 아직 이 시도의 «처리 중»인지·대상이 지금도 직원인지 다시 본다.
+        // 학부모(강등·퇴사)면 멈춘다. 역할은 바꾸지 않는다 — 로그인만 붙인다(역할을 올리는 길이 없게).
         const lockedRole = await lockTargetAndAssertInvitation(tx, { userId: conversionTargetId, invitationId: invitation.id, attemptId });
-        if (lockedRole !== conversionTargetRole) throw new Error("초대 처리 상태가 변경되었습니다.");
-        // 직접 추가 기록에 로그인을 붙인다 — 그 사이 다른 길로 로그인이 붙었으면(0건) 전부 되돌린다
+        if (!isConvertibleStaffRole(lockedRole) || lockedRole !== conversionTargetRole) {
+          throw new Error("이 초대는 더 이상 쓸 수 없습니다. 원장에게 새 초대를 요청해주세요.");
+        }
+        // 직접 추가 기록에 로그인을 붙인다 — 그 사이 다른 길로 로그인이 붙었거나 학부모가 됐으면(0건) 전부 되돌린다
         const attached = await tx.$executeRawUnsafe(
           `UPDATE "User"
-              SET "authUserId" = $1, email = $2,
-                  role = CASE WHEN role = 'PARENT' THEN $4::"Role" ELSE role END, "updatedAt" = NOW()
-            WHERE id = $3 AND "authUserId" IS NULL AND "withdrawnAt" IS NULL AND lower(email) LIKE '%@staff.local'`,
+              SET "authUserId" = $1, email = $2, "updatedAt" = NOW()
+            WHERE id = $3 AND "authUserId" IS NULL AND "withdrawnAt" IS NULL AND lower(email) LIKE '%@staff.local'
+              AND role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role")`,
           authUserId,
           staffEmail,
           conversionTargetId,
-          invitation.role,
         );
         if (attached !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
         // 이미 연결된 코치 프로필은 그대로(승계), 없을 때만 자동 연결
@@ -646,6 +653,9 @@ export async function acceptInvitation(token: string, password: string) {
            WHERE id = $3 AND (
              (status = 'PROCESSING' AND "processingAttemptId" = $4)
              OR (status = 'PENDING' AND "processingAttemptId" IS NULL)
+             -- 2026-11-12 재검수: 처리 중에 역할 변경·퇴사로 취소된(CANCELLED) 대상 초대도 남은 계정 정리가 필요하면
+             -- 복구 화면에 올린다. 복구가 끝나면 대상 초대는 다시 대기로 돌아가지 않고 취소로 끝난다(staff-invite-recovery).
+             OR (status = 'CANCELLED' AND "processingAttemptId" = $4 AND "targetUserId" IS NOT NULL)
            )`,
           authUserId,
           (authDeleteError || "Auth 계정 생성 결과를 확인해야 합니다.").slice(0, 1000),

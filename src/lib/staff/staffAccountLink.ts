@@ -60,7 +60,7 @@ export function shouldBlockLoginOnRetire(input: { kind: StaffLoginKind; hasOwnCh
 
 /**
  * 퇴사 뒤 같은 번호로 새 초대를 만들 때 옛 직원 기록을 어떻게 할지(2026-11-12 검수).
- * - 옛 기록이 하나이고 이름까지 같으면 → attach(그 기록에 초대를 붙여 다시 연다)
+ * - 옛 기록이 하나이고 직원 전용 로그인이 있었고 이름까지 같으면 → attach(그 로그인을 다시 연다)
  * - 이름이 다르고 옛 기록이 직원 전용 로그인(@staff.stiz.kr)이면 → reject: 같은 아이디로 새 로그인을 만들 수 없어
  *   가입이 반드시 막힌다. 같은 사람이면 이름을 맞춰 다시 초대하게 안내한다.
  * - 그 밖(이름이 다른 로그인 없는 기록, 둘 이상) → notice: 연결하지 않고 새로 초대하되 «이전 직원 기록이 있어요» 안내
@@ -82,8 +82,11 @@ export function decideRetiredReinvite(
 ): RetiredReinviteDecision {
     if (records.length === 0) return { kind: "none" };
     const first = records[0];
-    if (records.length === 1 && nameKey(first.name) === nameKey(inviteName)) return { kind: "attach", userId: first.id };
-    if (records.length === 1 && lowerEmail(first.email).endsWith(STAFF_LOGIN_EMAIL_SUFFIX)) {
+    const firstHasStaffLogin = lowerEmail(first.email).endsWith(STAFF_LOGIN_EMAIL_SUFFIX);
+    // 다시 여는 것은 직원 전용 로그인이 있던 기록만(재입사 경로). 로그인 없던 기록(직접 추가 후 퇴사)은
+    // 전환 경로로 붙이면 학부모→직원으로 역할을 올리는 길이 되므로 붙이지 않는다(2026-11-12 재검수).
+    if (records.length === 1 && firstHasStaffLogin && nameKey(first.name) === nameKey(inviteName)) return { kind: "attach", userId: first.id };
+    if (records.length === 1 && firstHasStaffLogin) {
         return { kind: "reject", previousName: first.name };
     }
     return { kind: "notice", previousName: first.name };

@@ -211,7 +211,7 @@ test("[필수1] 가입 거래는 직원 기록 → 초대 순서로 잠그고 �
   // 전환: 역할이 처음 읽은 그대로가 아니면 멈춘다(CASE 가 강등을 되올리지 못하게) — 붙이기 UPDATE 보다 먼저
   const conversion = invite.slice(invite.indexOf("if (conversionTargetId) {"));
   assert.ok(conversion.indexOf("lockTargetAndAssertInvitation(tx") < conversion.indexOf(`SET "authUserId" = $1, email = $2`));
-  assert.match(conversion, /if \(lockedRole !== conversionTargetRole\) throw/);
+  assert.match(conversion, /if \(!isConvertibleStaffRole\(lockedRole\) \|\| lockedRole !== conversionTargetRole\) \{/);
   // 재입사: 잠근 역할이 학부모일 때만
   assert.match(invite, /if \(lockedRole !== "PARENT"\) throw/);
 });
@@ -231,12 +231,34 @@ test("[권장4] 퇴사자 재초대 자동 연결은 이름까지 같을 때만 
   assert.deepEqual(decideRetiredReinvite([staffLogin], " 홍 길동 "), { kind: "attach", userId: "old" });
   assert.deepEqual(decideRetiredReinvite([staffLogin], "김철수"), { kind: "reject", previousName: "홍길동" });
   assert.deepEqual(decideRetiredReinvite([noLogin], "김철수"), { kind: "notice", previousName: "홍길동" });
+  // 로그인 없던 기록(직접 추가 후 퇴사)은 이름이 같아도 붙이지 않는다 — 전환 경로가 학부모를 직원으로 올리는 길이 되지 않게
+  assert.deepEqual(decideRetiredReinvite([noLogin], "홍길동"), { kind: "notice", previousName: "홍길동" });
   assert.equal(decideRetiredReinvite([staffLogin, noLogin], "홍길동").kind, "notice");
   const body = fnBody(admin, "inviteStaff");
   assert.match(body, /const reinvite = decideRetiredReinvite\(retiredRecords, cleanName\)/);
   assert.match(body, /같은 번호의 이전 직원 기록\(\$\{reinvite\.previousName\}\)이 있어요/);
   assert.match(body, /previousRecordNotice,/);
   assert.match(await read("src/app/admin/staff/InviteStaffModal.tsx"), /\{result\.previousRecordNotice\}/);
+});
+
+test("[재검수 HIGH] 강등 → 복구 → 옛 링크 가입해도 역할이 오르지 않는다", async () => {
+  const recovery = await read("src/app/actions/staff-invite-recovery.ts");
+  // ① 복구: 기존 직원 기록을 향한 초대는 대기(PENDING)로 되돌리지 않고 취소로 끝난다(계정 정리는 그대로)
+  assert.match(recovery, /invitation\."targetUserId"/);
+  assert.match(recovery, /const endsCancelled = Boolean\(invitation\.targetUserId\)/);
+  assert.match(recovery, /SET status = \$3,[\s\S]*?endsCancelled \? "CANCELLED" : "PENDING"/);
+  assert.match(recovery, /'STAFF_INVITE_RECOVERY_CANCELLED'/);
+  assert.match(recovery, /deleteUser\(authUserId\)/); // 정리는 그대로
+  // ② 전환 가입: 지금 학부모면 거절(거래 밖 첫 확인 + 거래 안 재확인), 역할은 절대 바꾸지 않는다
+  const conversion = invite.slice(invite.indexOf("if (kind !== \"none\") throw"), invite.indexOf("const supabaseAdmin = createAdminClient();"));
+  assert.match(conversion, /if \(!isConvertibleStaffRole\(target\.role\) \|\| !isConvertibleStaffRole\(invitation\.role\)\)/);
+  const attach = invite.slice(invite.indexOf("if (conversionTargetId) {"), invite.indexOf("} else {", invite.indexOf("if (conversionTargetId) {")));
+  assert.doesNotMatch(attach, /role = CASE|SET role|role = \$/);
+  assert.match(attach, /AND role IN \('INSTRUCTOR'::"Role", 'DRIVER'::"Role"\)/);
+  // ③ 처리 중 취소된 대상 초대도 남은 계정 정리가 필요하면 복구 화면에 오른다(메모)
+  assert.match(invite, /OR \(status = 'CANCELLED' AND "processingAttemptId" = \$4 AND "targetUserId" IS NOT NULL\)/);
+  // 복구 화면이 결과를 미리 알린다
+  assert.match(await read("src/app/admin/staff/recovery/StaffInviteRecoveryClient.tsx"), /정리 후 취소/);
 });
 
 test("[권장5] 직접 추가 직원을 다시 초대하면 [초대로 전환]을 안내", () => {

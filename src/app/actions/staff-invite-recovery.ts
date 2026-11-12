@@ -15,8 +15,9 @@ export async function listStaffInvitationRecoveries() {
     processingStartedAt: Date | null;
     recoveryAuthUserId: string | null;
     recoveryError: string | null;
+    targetUserId: string | null;
   }>>(
-    `SELECT id, name, status, "processingStartedAt", "recoveryAuthUserId", "recoveryError"
+    `SELECT id, name, status, "processingStartedAt", "recoveryAuthUserId", "recoveryError", "targetUserId"
      FROM "StaffInvitation"
      WHERE status IN ('PROCESSING', 'RECOVERY_REQUIRED', 'RECOVERING')
      ORDER BY "processingStartedAt" ASC NULLS FIRST`,
@@ -36,6 +37,7 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
     processingStartedAt: Date | null;
     recoveryAuthUserId: string | null;
     claimedAttemptId: string;
+    targetUserId: string | null;
   }>>(
     `WITH target AS (
        SELECT id, "processingAttemptId" AS "claimedAttemptId"
@@ -51,7 +53,7 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
      FROM target
      WHERE invitation.id = target.id
      RETURNING invitation.id, invitation.phone, invitation.status, invitation."processingStartedAt",
-               invitation."recoveryAuthUserId", target."claimedAttemptId"`,
+               invitation."recoveryAuthUserId", target."claimedAttemptId", invitation."targetUserId"`,
     invitationId,
     operationId,
   );
@@ -143,17 +145,22 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
     return { ok: false as const, message: "인증 계정 확인 또는 정리에 실패했습니다. 잠시 후 다시 시도해 주세요." };
   }
 
+  // 2026-11-12 재검수: 이미 있는 직원 기록을 향한 초대(targetUserId — 앱 계정 전환·재설정·재입사)는 대기로 되돌리지 않고
+  // 취소로 끝낸다. 그 사이 역할이 바뀌었을 수 있어(강등·퇴사) 옛 링크로 가입하면 권한이 되살아나는 길이 된다.
+  // 계정 정리(위 Auth 삭제)는 똑같이 하고, 원장이 필요하면 새로 초대한다.
+  const endsCancelled = Boolean(invitation.targetUserId);
   try {
     await prisma.$transaction(async (tx) => {
       const updated = await tx.$executeRawUnsafe(
         `UPDATE "StaffInvitation"
-         SET status = 'PENDING', "otpHash" = NULL, "otpExpiresAt" = NULL, "otpSentAt" = NULL,
+         SET status = $3, "otpHash" = NULL, "otpExpiresAt" = NULL, "otpSentAt" = NULL,
              "otpAttempts" = 0, "otpVerifiedAt" = NULL, "otpConsumedAt" = NULL, "lockedAt" = NULL,
              "processingAttemptId" = NULL, "processingStartedAt" = NULL, "recoveryOperationId" = NULL,
              "recoveryAuthUserId" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
          WHERE id = $1 AND status = 'RECOVERING' AND "recoveryOperationId" = $2`,
         invitationId,
         operationId,
+        endsCancelled ? "CANCELLED" : "PENDING",
       );
       if (updated !== 1) throw new Error("초대 복구 상태가 변경되었습니다.");
       await tx.$executeRawUnsafe(
@@ -163,12 +170,22 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
         invitation.claimedAttemptId,
         invitationId,
       );
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "StaffInvitationRecoveryLog" (id, "invitationId", "adminUserId", action, "createdAt")
-         VALUES (gen_random_uuid()::text, $1, $2, 'RESET_TO_PENDING', NOW())`,
-        invitationId,
-        admin.id,
-      );
+      if (endsCancelled) {
+        // 복구 기록 표는 action 이 RESET_TO_PENDING 하나뿐(DB CHECK) — 취소로 끝낸 복구는 운영 감사 기록에 남긴다
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+           VALUES (gen_random_uuid()::text, 'STAFF_INVITE_RECOVERY_CANCELLED', 'ADMIN', $1, $2::jsonb)`,
+          admin.appUserId,
+          JSON.stringify({ invitationId, targetUserId: invitation.targetUserId }),
+        );
+      } else {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "StaffInvitationRecoveryLog" (id, "invitationId", "adminUserId", action, "createdAt")
+           VALUES (gen_random_uuid()::text, $1, $2, 'RESET_TO_PENDING', NOW())`,
+          invitationId,
+          admin.id,
+        );
+      }
     });
   } catch (error) {
     console.error("[STAFF_INVITE_RECOVERY_CRITICAL] database recovery failed", {
@@ -184,5 +201,5 @@ export async function recoverStaffInvitation(input: { invitationId: string }) {
   // 스태프 화면은 태그 캐시(admin-staff, 60초)로 읽는다 — 경로만 비우면 복구된 초대가 1분 가까이 옛 상태로 보였다.
   revalidateTag("admin-staff", { expire: 0 });
   revalidatePath("/admin/staff");
-  return { ok: true as const };
+  return { ok: true as const, cancelled: endsCancelled };
 }

@@ -19,6 +19,8 @@ type RecoveryItem = {
   processingStartedAt: string | null;
   recoveryAuthUserId: string | null;
   recoveryError: string | null;
+  /** 기존 직원 기록을 향한 초대 — 정리 뒤 대기로 되돌리지 않고 취소로 끝난다 */
+  targetUserId?: string | null;
 };
 
 export default function StaffInviteRecoveryClient({ initialInvitations }: { initialInvitations: RecoveryItem[] }) {
@@ -36,7 +38,10 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
         return;
       }
       setItems((current) => current.filter((candidate) => candidate.id !== item.id));
-      setMessage("초대를 안전하게 초기화했습니다. 새 인증번호를 요청할 수 있습니다.");
+      // 기존 직원 기록을 향한 초대(전환·재설정·재입사)는 대기로 되돌리지 않고 취소로 끝난다
+      setMessage(result.cancelled
+        ? "가입 계정을 정리하고 이 초대는 취소했습니다. 필요하면 다시 초대해 주세요."
+        : "초대를 안전하게 초기화했습니다. 새 인증번호를 요청할 수 있습니다.");
     });
   }
 
@@ -54,7 +59,7 @@ export default function StaffInviteRecoveryClient({ initialInvitations }: { init
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-black">{item.name}</p>
-                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{STATUS_LABEL[item.status] ?? item.status} · {item.processingStartedAt ? `${kstLabel(item.processingStartedAt)} ${kstHm(item.processingStartedAt)} 시작` : "시작 시각 없음"}</p>
+                <p className="mt-1 text-sm text-[var(--color-academy-muted)]">{STATUS_LABEL[item.status] ?? item.status} · {item.processingStartedAt ? `${kstLabel(item.processingStartedAt)} ${kstHm(item.processingStartedAt)} 시작` : "시작 시각 없음"}{item.targetUserId ? " · 정리 후 취소" : ""}</p>
                 {item.recoveryError && <p className="mt-2 text-sm text-[var(--color-academy-danger)]">{item.recoveryError}</p>}
               </div>
               {/* «안전 복구»는 중단된 가입의 로그인 계정(Supabase 인증)을 «삭제»하고 초대를 처음으로 되돌린다 — 되돌릴 수 없어
