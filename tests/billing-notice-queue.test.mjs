@@ -133,11 +133,21 @@ test("규칙 조회: 잠금이면 DB 를 읽지 않는다 · 켜져 있으면 �
 function fakeStore() {
   const notices = []; // BillingNoticeDelivery
   const deliveries = new Map(); // NotificationDelivery id → status
+  const deliveryBatch = new Map(); // NotificationDelivery id → batchId(대기열에 실제로 들어간 행)
+  const flags = { failBatchUpdate: false };
+  // 가짜 대기열 예약 — 실제처럼 NotificationDelivery 행을 PENDING 으로 만든다
+  const enqueue = (items, batchId) => { for (const i of items) { deliveries.set(i.deliveryId, "PENDING"); deliveryBatch.set(i.deliveryId, batchId); } };
   const marked = []; // markNoticeTargetsDelivered 로 나간 UPDATE
   const active = new Set(q.BILLING_NOTICE_ACTIVE_STATUSES);
   const db = {
     async $queryRawUnsafe(sql, ...v) {
       if (sql.includes("pg_advisory_xact_lock")) return [];
+      if (sql.includes(`"paymentIds" && $1::text[]`)) {
+        // 미납 겹침 검사(잠금 안) — 같은 결제가 든 살아 있는 미납 안내
+        assert.ok(sql.includes(`n.status IN ('QUEUED', 'UNCERTAIN')`), "결과 확인 필요(UNCERTAIN)는 기간 없이 막는다");
+        return notices.filter((n) => n.kind === "UNPAID" && n.paymentIds.some((p) => v[0].includes(p))
+          && ["QUEUED", "UNCERTAIN", "SENT", "APP_ONLY"].includes(n.status)).map((n) => ({ id: n.id }));
+      }
       if (sql.includes(`INSERT INTO "BillingNoticeDelivery"`)) {
         assert.match(sql, /ON CONFLICT \("noticeKey"\) WHERE status IN \('QUEUED', 'SENT', 'UNCERTAIN', 'APP_ONLY'\) DO NOTHING/);
         const [id, kind, noticeKey, periodKey, studentId, studentName, invoiceIds, paymentIds, channel, status, deliveryId] = v;
@@ -151,7 +161,7 @@ function fakeStore() {
         for (const n of notices) {
           const d = deliveries.get(n.deliveryId);
           if (n.status !== "QUEUED" || !d || !["SENT", "FAILED", "SKIPPED", "UNCERTAIN"].includes(d)) continue;
-          if (batchId !== null && n.batchId !== batchId) continue;
+          if (batchId !== null && (deliveryBatch.get(n.deliveryId) ?? n.batchId) !== batchId) continue;
           n.status = d === "SENT" ? "SENT" : d === "UNCERTAIN" ? "UNCERTAIN" : "FAILED";
           out.push({ kind: n.kind, status: n.status, invoiceIds: n.invoiceIds, paymentIds: n.paymentIds });
         }
@@ -164,8 +174,13 @@ function fakeStore() {
         marked.push({ table: sql.includes(`"PaymentInvoice"`) ? "invoice" : "payment", reminder: sql.includes(`"reminderCount"`), ids: v[0] });
         return v[0].length;
       }
-      if (sql.includes(`SET "batchId" = $2`)) { for (const n of notices) if (v[0].includes(n.id)) n.batchId = v[1]; return 1; }
-      if (sql.includes(`'QUEUE_RESERVE_FAILED'`)) { for (const n of notices) if (v[0].includes(n.id) && n.status === "QUEUED") n.status = "FAILED"; return 1; }
+      if (sql.includes(`SET "batchId" = $2`)) { if (flags.failBatchUpdate) throw new Error("합성 연결 끊김"); for (const n of notices) if (v[0].includes(n.id)) n.batchId = v[1]; return 1; }
+      if (sql.includes(`'QUEUE_RESERVE_FAILED'`)) {
+        assert.ok(sql.includes(`NOT EXISTS (SELECT 1 FROM "NotificationDelivery" d WHERE d.id = "BillingNoticeDelivery"."deliveryId")`), "대기열에 들어간 행은 실패로 바꾸지 않는다");
+        let count = 0;
+        for (const n of notices) if (v[0].includes(n.id) && n.status === "QUEUED" && !deliveries.has(n.deliveryId)) { n.status = "FAILED"; count++; }
+        return count;
+      }
       if (sql.includes(`'QUEUE_NOT_RESERVED'`)) return 0;
       throw new Error(`예상 밖 쓰기: ${sql.slice(0, 60)}`);
     },
@@ -173,7 +188,7 @@ function fakeStore() {
   const tx = (fn) => fn(db);
   let seq = 0;
   const newId = () => `id-${++seq}`;
-  return { db, tx, notices, deliveries, marked, newId };
+  return { db, tx, notices, deliveries, marked, newId, enqueue, flags };
 }
 
 test("예약: 성공한 건만 «발송됨» — 끊긴 뒤 다시 누르면 못 보낸 건만 이어 보낸다(c1)", async () => {
@@ -367,4 +382,86 @@ test("결제 표 준비: 진행 중 Promise 공유 + 먼저 SELECT 한 번으로
   const ddl = ledger.slice(ledger.indexOf("async function runPaymentInfrastructureDdl"), ledger.indexOf("export async function recordPaymentAudit"));
   assert.match(ddl, /for \(const \[column, type\] of paymentColumns\)/);
   assert.match(ddl, /for \(const sql of PAYMENT_LEDGER_INDEX_SQL\)/);
+});
+
+// ── 10) 검수 반영(2026-11-13 2차) ───────────────────────────────────────────
+test("H1: 대기열 예약은 됐는데 묶음 번호 기록만 실패 → 실패로 보지 않고, 다시 눌러도 1통만", async () => {
+  const s = fakeStore();
+  const queueCalls = [];
+  const reserveQueue = async (input) => { queueCalls.push(input); s.enqueue(input.items, `batch-${queueCalls.length}`); return { batchId: `batch-${queueCalls.length}` }; };
+  const plan = q.planInvoiceNotices([invoiceRow()], { month: 12, academyPhone: "", templateId: "" });
+  s.flags.failBatchUpdate = true;
+  const first = await q.reserveBillingNotices({ db: s.db, tx: s.tx, kind: "INVOICE", periodKey: "2026-12", notices: plan.notices, actorUserId: "a", reserveQueue, label: "x", newId: s.newId });
+  assert.equal(first.queueFailed, false, "«다시 눌러 주세요»를 띄우지 않는다");
+  assert.equal(s.notices[0].status, "QUEUED");
+  // 원장이 그래도 다시 누름 → 살아 있는 행이 있어 새로 예약되지 않는다(두 번 발송 방지)
+  const second = await q.reserveBillingNotices({ db: s.db, tx: s.tx, kind: "INVOICE", periodKey: "2026-12", notices: plan.notices, actorUserId: "a", reserveQueue, label: "x", newId: s.newId });
+  assert.equal(second.queued.length, 0);
+  assert.equal(queueCalls.length, 1);
+  // 연결표 batchId 가 비어 있어도 대기열 행의 묶음 번호로 결과가 이어진다
+  s.deliveries.set(s.notices[0].deliveryId, "SENT");
+  const r = await q.applyBillingNoticeResults(s.db, s.tx, "batch-1");
+  assert.equal(r.sent, 1);
+});
+
+test("H1: 대기열에 들어간 뒤 응답만 잃음(예외) → 그 행은 QUEUED 유지·실패 아님 · 정말 못 넣은 행만 실패", async () => {
+  const s = fakeStore();
+  const plan = q.planInvoiceNotices([invoiceRow()], { month: 12, academyPhone: "", templateId: "" });
+  const lost = await q.reserveBillingNotices({
+    db: s.db, tx: s.tx, kind: "INVOICE", periodKey: "2026-12", notices: plan.notices, actorUserId: "a", label: "x", newId: s.newId,
+    reserveQueue: async (input) => { s.enqueue(input.items, "b1"); throw new Error("응답 끊김"); },
+  });
+  assert.equal(lost.queueFailed, false);
+  assert.equal(s.notices[0].status, "QUEUED");
+
+  const s2 = fakeStore();
+  const failed = await q.reserveBillingNotices({
+    db: s2.db, tx: s2.tx, kind: "INVOICE", periodKey: "2026-12", notices: plan.notices, actorUserId: "a", label: "x", newId: s2.newId,
+    reserveQueue: async () => { throw new Error("대기열 장애"); },
+  });
+  assert.equal(failed.queueFailed, true);
+  assert.equal(s2.notices[0].status, "FAILED");
+});
+
+test("검수 4번: 미납 — 열쇠가 달라도 같은 결제가 든 살아 있는 안내가 있으면 잠금 안에서 건너뛴다", async () => {
+  const s = fakeStore();
+  const reserveQueue = async (input) => { s.enqueue(input.items, "b"); return { batchId: "b" }; };
+  const morning = q.planUnpaidNotices(unpaidRows.slice(0, 2), { kstYmd: "2026-12-14", academyPhone: "", templateId: "", renderSms: render });
+  await q.reserveBillingNotices({ db: s.db, tx: s.tx, kind: "UNPAID", periodKey: "2026-12-14", notices: morning.notices, actorUserId: "a", reserveQueue, label: "x", newId: s.newId });
+  // 오후에 p1 이 빠지고 p2 만 남음 → 열쇠가 다르지만 p2 는 이미 예약돼 있다
+  const afternoon = q.planUnpaidNotices([unpaidRows[0]], { kstYmd: "2026-12-14", academyPhone: "", templateId: "", renderSms: render });
+  assert.notEqual(afternoon.notices[0].noticeKey, morning.notices[0].noticeKey);
+  const again = await q.reserveBillingNotices({ db: s.db, tx: s.tx, kind: "UNPAID", periodKey: "2026-12-14", notices: afternoon.notices, actorUserId: "a", reserveQueue, label: "x", newId: s.newId });
+  assert.equal(again.queued.length, 0);
+  assert.equal(again.skippedActive, 1);
+});
+
+test("H2·검수 1·3번: 미납 안내는 기한 지난(OVERDUE)만 · 연체 표시는 아직 PENDING 인 것만 · UNCERTAIN 은 기간 없이 제외", () => {
+  const admin = read("src/app/actions/admin.ts");
+  const reminders = admin.slice(admin.indexOf("export async function sendUnpaidReminders"), admin.indexOf("export async function getBillingNoticeProgress"));
+  assert.match(reminders, /WHERE p\.status = 'OVERDUE'/);
+  assert.doesNotMatch(reminders, /p\.status IN \('PENDING', 'OVERDUE'\)/);
+  assert.ok(reminders.indexOf("await markOverduePayments()") < reminders.indexOf("WHERE p.status = 'OVERDUE'"), "연체 표시를 먼저 한다");
+  assert.match(reminders, /unpaidBlockingNoticeSql\("n", "\$1"\)/);
+  const blocking = q.unpaidBlockingNoticeSql("n", "$1");
+  assert.ok(blocking.includes(`n.status IN ('QUEUED', 'UNCERTAIN')`));
+  assert.ok(blocking.includes(`n.status IN ('SENT', 'APP_ONLY') AND n."createdAt" > NOW() - make_interval(days => $1::int)`));
+  assert.match(admin, /loadBillingNoticeProgress\(prisma, "UNPAID", todayKst\(\), \{ includeAllUncertain: true \}\)/);
+  assert.match(read("src/app/admin/finance/FinanceClient.tsx"), /결과 확인 필요 \$\{p\.uncertain\}/);
+  const ledger = read("src/lib/payment-ledger.ts");
+  const mark = ledger.slice(ledger.indexOf("export async function markOverduePayments"), ledger.indexOf("export async function syncInvoiceStatusesForMonth"));
+  assert.match(mark, /WHERE id IN \(\$\{candidatePlaceholders\}\) AND status = 'PENDING'\s+RETURNING id/);
+  assert.match(mark, /const ids = updatedRows\.map/);
+});
+
+test("검수 2·5·6번: 규칙 조회는 SAVEPOINT 로 격리 · 단건 검토에 결제 번호 · 연결표 행 없으면 결과 반영 건너뜀", () => {
+  const ledger = read("src/lib/message-ledger.ts");
+  const claim = ledger.slice(ledger.indexOf("export async function claimManualMessageQueue"), ledger.indexOf("export async function markManualMessageAccepted"));
+  assert.match(claim, /SAVEPOINT billing_rule_check[\s\S]*?checkBillingSendRule\(tx, trigger\)[\s\S]*?ROLLBACK TO SAVEPOINT billing_rule_check/);
+  const finalize = ledger.slice(ledger.indexOf("export async function finalizeMessageDeliveryBatch"));
+  assert.ok(finalize.indexOf(`JOIN "BillingNoticeDelivery" n`) < finalize.indexOf(`await import("@/lib/billing/noticeQueue")`));
+  assert.match(finalize, /if \(!pending\[0\]\?\.found\) return;/);
+  const pay = read("src/lib/payment-ledger.ts");
+  const review = pay.slice(pay.indexOf("async function recordSinglePaymentReview("));
+  assert.match(review.slice(0, 1500), /paymentKey: paymentKey \?\? tx\.paymentKey \?\? null/);
 });

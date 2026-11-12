@@ -253,7 +253,8 @@ test("연결: 미납 알림 — 잠금 뒤 규칙 검사, 3일 간격·예약 �
   // notifiedAt IS NULL(한 번 보내면 끝) 대신 «마지막 미납 안내 뒤 3일»
   assert.doesNotMatch(reminders, /"notifiedAt" IS NULL/);
   assert.match(reminders, /p\."lastReminderAt" IS NULL OR p\."lastReminderAt" <= NOW\(\) - make_interval\(days => \$1::int\)/);
-  assert.match(reminders, /n\.status = 'QUEUED'/);
+  // 예약 중·결과 확인 필요·3일 안 안내 제외 조건은 noticeQueue.unpaidBlockingNoticeSql 한 곳(예약 잠금 안과 같은 조건)
+  assert.match(reminders, /unpaidBlockingNoticeSql\("n", "\$1"\)/);
   assert.match(reminders, /UNPAID_REMINDER_INTERVAL_DAYS/);
   assert.match(reminders, /planUnpaidNotices\(unpaid, \{/);
   assert.match(reminders, /renderSms: \(variables\) => renderTemplate\(smsTemplateBody, variables\)/);

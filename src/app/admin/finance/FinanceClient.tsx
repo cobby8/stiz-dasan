@@ -139,7 +139,7 @@ type NoticeProgressView = {
 function noticeProgressLine(label: string, p: NoticeProgressView): string | null {
     if (p.total === 0) return null;
     const parts = [`예약 ${p.queued}`, `발송 ${p.sent}`, `실패 ${p.failed}`];
-    if (p.uncertain > 0) parts.push(`확인 필요 ${p.uncertain}`);
+    if (p.uncertain > 0) parts.push(`결과 확인 필요 ${p.uncertain}`);
     if (p.appOnly > 0) parts.push(`앱 알림만 ${p.appOnly}`);
     const names = p.failedNames.length > 0 ? ` (${p.failedNames.slice(0, 5).join(", ")}${p.failedNames.length > 5 ? " 외" : ""})` : "";
     return `${label}: ${parts.join(" · ")}${names}`;

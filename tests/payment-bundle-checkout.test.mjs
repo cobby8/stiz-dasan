@@ -767,7 +767,7 @@ test("계약: 확정·전액 취소는 «항목 있음»이면 묶음 갈래로 
     assert.ok(branch > 0 && branch < finalize.indexOf("await prisma.$transaction(async (db) =>"), "단건 잠금보다 먼저 갈린다");
     assert.match(finalize, /finalizeVerifiedBundlePayment\(/);
     // 2026-11-13: 카드 단건도 반영 실패 = 원장 확인(묶음과 같은 검토 기록 + 슬랙). 가상계좌는 부른 쪽이 따로 남긴다
-    assert.match(finalize, /if \(!single\.ok && !isVirtualAccountPayment\) \{\s*await recordSinglePaymentReview\(input\.tx, single\.error\)/);
+    assert.match(finalize, /if \(!single\.ok && !isVirtualAccountPayment\) \{\s*await recordSinglePaymentReview\(input\.tx, single\.error, paymentKey\)/);
     assert.match(finalize, /PAYMENT_LEDGER_STATE_CONFLICT[\s\S]*?return \{ ok: false as const, error: "PAYMENT_LEDGER_STATE_CONFLICT" \}/);
     const singleReview = fnBody(ledgerSrc, "async function recordSinglePaymentReview(");
     assert.match(singleReview, /'PAYMENT_SINGLE_REVIEW'/);

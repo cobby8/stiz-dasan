@@ -87,6 +87,7 @@ import {
     planInvoiceNotices,
     planUnpaidNotices,
     reserveBillingNotices,
+    unpaidBlockingNoticeSql,
     type InvoiceNoticeRow,
     type NoticeTx,
     type ReserveQueueFn,
@@ -4176,8 +4177,10 @@ export async function sendUnpaidReminders() {
 
     try {
         const kstYmd = todayKst();
-        // 미납 대상: 미납(PENDING/OVERDUE)이고 마지막 미납 안내 뒤 3일이 지난 결제.
-        //  - 예약해 두고 아직 결과가 안 나온 안내, 최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
+        // 미납 대상: 납부기한이 지난(OVERDUE) 결제이고 마지막 미납 안내 뒤 3일이 지난 것.
+        //  - PENDING(기한 전·미리 만든 다음 달 청구)은 «미납»이 아니므로 보내지 않는다. 바로 위 markOverduePayments 가
+        //    한국 날짜로 기한이 지난 PENDING 을 OVERDUE 로 바꿔 두었다(검수 H2 · 2026-11-13)
+        //  - 예약 중·결과 확인 필요(UNCERTAIN)·최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
         //  - 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
         const unpaid = await prisma.$queryRawUnsafe<UnpaidNoticeRow[]>(
             `SELECT p.id AS "paymentId", i.id AS "invoiceId", p."studentId", s.name AS "studentName",
@@ -4187,21 +4190,20 @@ export async function sendUnpaidReminders() {
                LEFT JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
                LEFT JOIN "User" u ON u.id = s."parentId"
                LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
-              WHERE p.status IN ('PENDING', 'OVERDUE')
+              WHERE p.status = 'OVERDUE'
                 AND p.amount > 0
                 AND (p."lastReminderAt" IS NULL OR p."lastReminderAt" <= NOW() - make_interval(days => $1::int))
                 AND NOT EXISTS (
                   SELECT 1 FROM "BillingNoticeDelivery" n
                    WHERE n.kind = 'UNPAID' AND p.id = ANY(n."paymentIds")
-                     AND (n.status = 'QUEUED'
-                          OR (n.status IN ('SENT', 'UNCERTAIN', 'APP_ONLY') AND n."createdAt" > NOW() - make_interval(days => $1::int)))
+                     AND (${unpaidBlockingNoticeSql("n", "$1")})
                 )
                 AND ${rallyzMirrorExclusionSql("p")}`,
             UNPAID_REMINDER_INTERVAL_DAYS,
         );
 
         if (unpaid.length === 0) {
-            return { sent: 0, message: `보낼 미납 안내가 없습니다(마지막 안내 뒤 ${UNPAID_REMINDER_INTERVAL_DAYS}일이 지난 미납만 보냅니다).` };
+            return { sent: 0, message: `보낼 미납 안내가 없습니다(납부기한이 지났고, 마지막 안내 뒤 ${UNPAID_REMINDER_INTERVAL_DAYS}일이 지난 미납만 보냅니다).` };
         }
 
         // 알림톡 id(ALIMTALK_TPL_BILLING_UNPAID)가 있으면 미납 알림톡, 없으면 /admin/sms 미납 문자 틀 + 결제 링크
@@ -4282,7 +4284,8 @@ export async function getBillingNoticeProgress(year: number, month: number) {
         const periodKey = `${year}-${String(month).padStart(2, "0")}`;
         const [invoice, unpaid] = await Promise.all([
             loadBillingNoticeProgress(prisma, "INVOICE", periodKey),
-            loadBillingNoticeProgress(prisma, "UNPAID", todayKst()),
+            // 미납 «결과 확인 필요»(UNCERTAIN)는 날짜와 상관없이 보인다 — 기간 없이 다시 보내기를 막으므로 원장이 확인해야 한다
+            loadBillingNoticeProgress(prisma, "UNPAID", todayKst(), { includeAllUncertain: true }),
         ]);
         return { ok: true as const, invoice, unpaid };
     } catch (error) {

@@ -619,13 +619,20 @@ export async function markOverduePayments() {
 
     if (rows.length === 0) return { updated: 0 };
 
-    const ids = rows.map((row) => row.id);
-    const placeholders = ids.map((_, index) => `$${index + 1}`).join(",");
+    const candidateIds = rows.map((row) => row.id);
+    const candidatePlaceholders = candidateIds.map((_, index) => `$${index + 1}`).join(",");
 
-    await prisma.$executeRawUnsafe(
-        `UPDATE "Payment" SET status = 'OVERDUE', "updatedAt" = NOW() WHERE id IN (${placeholders})`,
-        ...ids,
+    // 조회와 UPDATE 사이에 결제된 건(PAID)을 연체로 덮어쓰지 않게 «아직 PENDING 인 것만» 바꾸고,
+    // 실제로 바뀐 건만 청구서·기록에 반영한다(검수 · 2026-11-13)
+    const updatedRows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+        `UPDATE "Payment" SET status = 'OVERDUE', "updatedAt" = NOW()
+          WHERE id IN (${candidatePlaceholders}) AND status = 'PENDING'
+          RETURNING id`,
+        ...candidateIds,
     );
+    if (updatedRows.length === 0) return { updated: 0 };
+    const ids = updatedRows.map((row) => row.id);
+    const placeholders = ids.map((_, index) => `$${index + 1}`).join(",");
 
     await prisma.$executeRawUnsafe(
         `UPDATE "PaymentInvoice" SET status = 'OVERDUE', "updatedAt" = NOW()
@@ -1847,7 +1854,7 @@ async function finalizeVerifiedTossPayment(input: {
     const isVirtualAccountPayment = input.tx.status === VA_WAITING_STATUS || input.tx.status === VA_EXPIRED_STATUS
         || input.payment.method === VA_METHOD;
     if (!single.ok && !isVirtualAccountPayment) {
-        await recordSinglePaymentReview(input.tx, single.error).catch((error) => {
+        await recordSinglePaymentReview(input.tx, single.error, paymentKey).catch((error) => {
             console.error("[payment-ledger] 단건 결제 검토 기록 실패:", error instanceof Error ? error.message : error);
         });
     }
@@ -1858,7 +1865,7 @@ async function finalizeVerifiedTossPayment(input: {
  * 카드·계좌이체 단건 결제가 토스에서는 완료됐는데 장부에 반영하지 못한 경우 — 감사 기록 + 원장 슬랙 DM.
  * 묶음(recordBundlePaymentReview)과 같은 방식. 같은 거래·같은 사유는 한 번만(성공 화면 새로고침·웹훅 재전송 대비).
  */
-async function recordSinglePaymentReview(tx: PaymentTransactionRow, code: string) {
+async function recordSinglePaymentReview(tx: PaymentTransactionRow, code: string, paymentKey: string | null) {
     const inserted = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
         `INSERT INTO "PaymentAuditLog" (id, "paymentId", "invoiceId", "transactionId", "actorType", "actorId", action, message, metadata, "createdAt")
          SELECT gen_random_uuid()::text, $1, $2, $3, 'SYSTEM', NULL, 'PAYMENT_SINGLE_REVIEW', $4, $5::jsonb, NOW()
@@ -1868,7 +1875,8 @@ async function recordSinglePaymentReview(tx: PaymentTransactionRow, code: string
          )
          RETURNING id`,
         tx.paymentId, tx.invoiceId, tx.id, code,
-        JSON.stringify({ provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount) }),
+        // paymentKey = 토스 결제 번호(환불할 때 이 번호로 취소한다 — 비밀키가 아니다)
+        JSON.stringify({ provider: "TOSS", orderId: tx.orderId, amount: Number(tx.amount), paymentKey: paymentKey ?? tx.paymentKey ?? null }),
     );
     if (inserted.length > 0) {
         await alertVirtualAccountIssue(

@@ -393,6 +393,18 @@ export async function checkBillingSendRule(
 const ACTIVE_STATUS_SQL = BILLING_NOTICE_ACTIVE_STATUSES.map((s) => `'${s}'`).join(", ");
 
 /**
+ * 미납 안내를 «다시 보내면 안 되는» 연결표 행 조건. 대상 조회(admin.ts)와 예약 잠금 안이 같은 조건을 쓴다.
+ *  - QUEUED: 아직 나가는 중
+ *  - UNCERTAIN: 갔는지 모름 → 기간 없이 막는다(청구서 안내와 같게 · 관리자 «결과 확인 필요»로 본다)
+ *  - SENT·APP_ONLY: 3일 안에 이미 안내함
+ * @param alias 연결표 별칭(예: "n")  @param daysParam 간격 날수 자리표(예: "$1")
+ */
+export function unpaidBlockingNoticeSql(alias: string, daysParam: string): string {
+    return `${alias}.status IN ('QUEUED', 'UNCERTAIN')
+         OR (${alias}.status IN ('SENT', 'APP_ONLY') AND ${alias}."createdAt" > NOW() - make_interval(days => ${daysParam}::int))`;
+}
+
+/**
  * 안내가 «실제로 전달된» 청구서·결제에 기록을 남긴다.
  *  - 청구서 안내: 청구서 sentAt(처음 한 번)·ISSUED→SENT, 결제 notifiedAt(처음 한 번)
  *  - 미납 안내: 위 + 결제·청구서 lastReminderAt·reminderCount+1 (3일 간격 판정의 기준)
@@ -454,6 +466,18 @@ export async function reserveBillingNotices(input: {
         await db.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `billing-notice:${input.kind}`);
         const queued: Array<PlannedNotice & { rowId: string; deliveryId: string | null }> = [];
         for (const notice of input.notices) {
+            // 미납: 같은 결제가 들어 있는 «살아 있는» 안내가 있으면 건너뛴다(잠금 안에서 다시 확인 — 대상 조회와
+            // 예약 사이에 다른 관리자가 예약했거나, 같은 날 묶음이 바뀌어 열쇠가 달라진 경우 · 검수 4번)
+            if (input.kind === "UNPAID" && notice.paymentIds.length > 0) {
+                const overlap = await db.$queryRawUnsafe<Array<{ id: string }>>(
+                    `SELECT n.id FROM "BillingNoticeDelivery" n
+                      WHERE n.kind = 'UNPAID' AND n."paymentIds" && $1::text[]
+                        AND (${unpaidBlockingNoticeSql("n", "$2")})
+                      LIMIT 1`,
+                    notice.paymentIds, UNPAID_REMINDER_INTERVAL_DAYS,
+                );
+                if (overlap.length > 0) continue;
+            }
             const rowId = newId();
             const deliveryId = notice.channel === "APP_ONLY" ? null : newId();
             const rows = await db.$queryRawUnsafe<Array<{ id: string }>>(
@@ -492,6 +516,7 @@ export async function reserveBillingNotices(input: {
         guard: trigger,
         ...(n.kakao ? { kakao: n.kakao } : {}),
     }));
+    let batchId: string;
     try {
         const queued = await input.reserveQueue({
             // 연결표 첫 행 id 로 요청 id 를 만든다 — 예약마다 다르고, 같은 예약을 두 번 넣지 않는다
@@ -502,19 +527,21 @@ export async function reserveBillingNotices(input: {
             recipients: items.map((item) => item.recipient),
             items,
         });
-        await input.db.$executeRawUnsafe(
-            `UPDATE "BillingNoticeDelivery" SET "batchId" = $2, "updatedAt" = NOW() WHERE id = ANY($1::text[])`,
-            toQueue.map((n) => n.rowId), queued.batchId,
-        );
-        return { queued: inserted, skippedActive, batchId: queued.batchId, queueFailed: false };
+        batchId = queued.batchId;
     } catch (error) {
         console.error("[billing-notice] 문자 대기열 예약 실패", error);
-        await input.db.$executeRawUnsafe(
+        // ⚠️ 이미 대기열(NotificationDelivery)에 들어간 행은 QUEUED 그대로 둔다 — cron 이 보낼 것이므로
+        // 여기서 FAILED 로 바꾸면 «다시 누르기»가 새 행을 만들어 두 통이 나간다(검수 H1 · 2026-11-13).
+        // 예약 응답만 잃은 경우(커밋은 됐는데 연결이 끊김)도 같은 이유로 대기열 행 존재로 판단한다.
+        const failedCount = await input.db.$executeRawUnsafe(
             `UPDATE "BillingNoticeDelivery"
                 SET status = 'FAILED', "errorCode" = 'QUEUE_RESERVE_FAILED', "finalizedAt" = NOW(), "updatedAt" = NOW()
-              WHERE id = ANY($1::text[]) AND status = 'QUEUED'`,
+              WHERE id = ANY($1::text[]) AND status = 'QUEUED'
+                AND NOT EXISTS (SELECT 1 FROM "NotificationDelivery" d WHERE d.id = "BillingNoticeDelivery"."deliveryId")`,
             toQueue.map((n) => n.rowId),
-        ).catch(() => undefined);
+        ).catch(() => null);
+        // 0행 = 전부 대기열에 들어가 있었다 → 실패가 아니다(결과 반영이 deliveryId 로 이어 붙인다)
+        if (failedCount === 0) return { queued: inserted, skippedActive, batchId: null, queueFailed: false };
         return {
             queued: inserted.filter((n) => n.channel === "APP_ONLY"),
             skippedActive,
@@ -522,6 +549,16 @@ export async function reserveBillingNotices(input: {
             queueFailed: true,
         };
     }
+    // 묶음 번호 기록은 «있으면 좋은 정보»일 뿐 — 실패해도 예약은 성공이다(결과 반영은 대기열 행의 batchId·deliveryId 로 찾는다)
+    try {
+        await input.db.$executeRawUnsafe(
+            `UPDATE "BillingNoticeDelivery" SET "batchId" = $2, "updatedAt" = NOW() WHERE id = ANY($1::text[])`,
+            toQueue.map((n) => n.rowId), batchId,
+        );
+    } catch (error) {
+        console.warn("[billing-notice] 묶음 번호 기록 실패(발송에는 영향 없음):", error instanceof Error ? error.message : error);
+    }
+    return { queued: inserted, skippedActive, batchId, queueFailed: false };
 }
 
 /**
@@ -543,7 +580,7 @@ export async function applyBillingNoticeResults(db: NoticeDb, tx: NoticeTx, batc
               WHERE d.id = n."deliveryId"
                 AND n.status = 'QUEUED'
                 AND d.status IN ('SENT', 'FAILED', 'SKIPPED', 'UNCERTAIN')
-                AND ($1::text IS NULL OR n."batchId" = $1)
+                AND ($1::text IS NULL OR d."batchId" = $1)  -- 대기열 행의 묶음 번호(연결표 batchId 기록이 실패해도 찾는다)
             RETURNING n.kind, n.status, n."invoiceIds", n."paymentIds"`,
             batchId,
         );
@@ -576,13 +613,19 @@ export async function applyBillingNoticeResults(db: NoticeDb, tx: NoticeTx, batc
 }
 
 /** 화면 진행 상황 — 같은 안내(noticeKey)는 가장 최근 행만 센다(실패 뒤 다시 보낸 건이 두 번 세지지 않게) */
-export async function loadBillingNoticeProgress(db: NoticeDb, kind: BillingNoticeKind, periodKey: string) {
+export async function loadBillingNoticeProgress(
+    db: NoticeDb,
+    kind: BillingNoticeKind,
+    periodKey: string,
+    /** true 면 이 기간 밖의 «결과 확인 필요»(UNCERTAIN)도 함께 센다(미납 — 기간 없이 다시 보내기를 막으므로) */
+    opts: { includeAllUncertain?: boolean } = {},
+) {
     const rows = await db.$queryRawUnsafe<Array<NoticeProgressRow & { studentName: string | null; errorCode: string | null }>>(
         `SELECT DISTINCT ON ("noticeKey") channel, status, "studentName", "errorCode"
            FROM "BillingNoticeDelivery"
-          WHERE kind = $1 AND "periodKey" = $2
+          WHERE kind = $1 AND ("periodKey" = $2 OR ($3::boolean AND status = 'UNCERTAIN'))
           ORDER BY "noticeKey", "createdAt" DESC`,
-        kind, periodKey,
+        kind, periodKey, opts.includeAllUncertain === true,
     );
     return {
         ...summarizeNoticeProgress(rows),

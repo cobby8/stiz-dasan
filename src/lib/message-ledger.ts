@@ -191,7 +191,18 @@ export async function claimManualMessageQueue(limit = 10) {
       for (const item of guarded) {
         const trigger = item.guard!;
         if (!decisions.has(trigger)) {
-          decisions.set(trigger, await checkBillingSendRule(tx, trigger).catch(() => ({ ok: false as const, code: "SMS_TEMPLATE_DISABLED" as const, message: "규칙 조회 실패" })));
+          // 규칙 조회를 SAVEPOINT 로 감싼다 — SQL 오류가 나도 이 트랜잭션(대기열 꺼내기 전체)이 중단되지 않게
+          // 되돌림 지점까지만 되돌리고, 그 안내는 «보내지 않음»(안전 쪽)으로 처리한다(검수 2번 · 2026-11-13)
+          await tx.$executeRawUnsafe(`SAVEPOINT billing_rule_check`);
+          let decision: Awaited<ReturnType<typeof checkBillingSendRule>>;
+          try {
+            decision = await checkBillingSendRule(tx, trigger);
+            await tx.$executeRawUnsafe(`RELEASE SAVEPOINT billing_rule_check`);
+          } catch {
+            await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT billing_rule_check`);
+            decision = { ok: false as const, code: "SMS_TEMPLATE_DISABLED" as const, message: "규칙 조회 실패" };
+          }
+          decisions.set(trigger, decision);
         }
         const decision = decisions.get(trigger)!;
         if (decision.ok) continue;
@@ -591,6 +602,16 @@ export async function finalizeMessageDeliveryBatch(batchId: string) {
   // 청구 안내 연결표 — 이 묶음에서 끝난 건(성공·실패·불확실)을 옮기고, 성공한 청구서만 «발송됨»으로 찍는다(2026-11-13).
   // 다른 묶음(가입 안내·공지)이면 바뀌는 행이 없다. 실패해도 문자 장부 정리는 이미 끝났으니 경고만 남긴다.
   try {
+    // 먼저 가볍게: 이 묶음에 아직 결과를 기다리는 청구 안내 행이 있나? 없으면(가입 안내·공지 등) 모듈 로딩·트랜잭션을 건너뛴다(검수 6번)
+    const pending = await prisma.$queryRawUnsafe<Array<{ found: boolean }>>(
+      `SELECT EXISTS (
+         SELECT 1 FROM "NotificationDelivery" d
+           JOIN "BillingNoticeDelivery" n ON n."deliveryId" = d.id
+          WHERE d."batchId" = $1 AND n.status = 'QUEUED'
+       ) AS found`,
+      batchId,
+    );
+    if (!pending[0]?.found) return;
     const { applyBillingNoticeResults } = await import("@/lib/billing/noticeQueue");
     await applyBillingNoticeResults(prisma, (fn) => prisma.$transaction((tx) => fn(tx)), batchId);
   } catch (error) {
