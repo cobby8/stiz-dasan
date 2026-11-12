@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth-guard";
 /**
  * 수강생 데이터 이관 페이지 — 서버 컴포넌트
  *
@@ -14,6 +15,8 @@ import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 export const revalidate = 30;
 
 export default async function ImportPage() {
+  // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
+  await requireAdmin();
   const { settings } = await getCachedAdminSettingsPayload();
   // 시트 원장 은퇴(2026-10~) 면 화면 맨 위에 "과거 자료 조회용" 안내만 붙인다.
   // 기능은 그대로 둔다(되돌리기·과거 자료 확인용). STIZ_SHEET_SYNC_RETIRED="0" 이면 안내도 없다.

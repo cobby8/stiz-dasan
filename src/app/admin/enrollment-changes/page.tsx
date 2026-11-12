@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth-guard";
 import { countEnrollmentChangesNeedingCheck, countOpenPauseSettlements, getEnrollmentCancelRequests, getEnrollmentChangeRequests } from "@/lib/enrollment/admin-change-request";
 import { isSheetSyncRetired } from "@/lib/operations-sync/sheetRetirement";
 import EnrollmentChangesClient from "./EnrollmentChangesClient";
@@ -9,6 +10,8 @@ export default async function EnrollmentChangesPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
+  await requireAdmin();
   const params = await searchParams;
   // NEEDS_CHECK = 사이트에는 자동 반영됐지만 시트·랠리즈 확인이 남은 건
   const status = params?.status === "ALL" || params?.status === "APPROVED" || params?.status === "REJECTED"

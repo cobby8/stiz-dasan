@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth-guard";
 import RegularRunEditor from "./RegularRunEditor";
 import ShuttleSectionTabs from "../ShuttleSectionTabs";
 import SeasonalHeader from "../../seasonal/SeasonalHeader";
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 // (저장 노선 테이블은 지우지 않는다 — 기사님 화면이 더 읽지 않을 뿐).
 // 주소는 그대로(/admin/shuttle/regular-dispatch) — 메뉴·탭·배차 진행 링크·카카오 딥링크(?month=&studentId=)를 보존한다.
 export default async function RegularDispatchPage({ searchParams }: { searchParams: Promise<{ month?: string; studentId?: string; stopId?: string }> }) {
+  // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
+  await requireAdmin();
   // 이번 달·다음 달 명단이 없으면 직전 달을 복사해 만든다. 실패해도 화면은 뜬다.
   try { await ensureRegularRosterMonths(); } catch (e) { console.error("[admin/shuttle/regular-dispatch] 명단 월 자동 생성 실패", e); }
   const months = await getRegularShuttleMonths();

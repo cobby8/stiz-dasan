@@ -13,6 +13,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { GEMINI_CHAT_MODEL, getGeminiClient } from "@/lib/gemini-client";
+import { clientIpKey, takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
+import { CHAT_RATE_LIMITS, chatRateLimitMessage, sanitizeChatMessages } from "@/lib/chat/chatRequestGuard";
 
 // --- Gemini 클라이언트 초기화 (모듈 레벨에서 1회만) ---
 // 카카오 정책 답변과 같은 공용 설정(@/lib/gemini-client)을 쓴다. 키가 없으면 null.
@@ -961,19 +963,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // IP 당 횟수 제한(분당 5·하루 50) — 로그인 없이 열린 유료(Gemini) 호출이라 반복 호출을 막는다.
+  // 기존 공개 신청과 같은 메모리 버킷 방식(takePublicRateLimit)을 재사용한다.
+  const ipKey = clientIpKey(request);
+  for (const rule of CHAT_RATE_LIMITS) {
+    const taken = takePublicRateLimit(`chat:${rule.scope}:${ipKey}`, { limit: rule.limit, windowMs: rule.windowMs });
+    if (!taken.allowed) {
+      return NextResponse.json(
+        { error: chatRateLimitMessage(rule.scope), code: "RATE_LIMITED" },
+        { status: 429, headers: { "Retry-After": String(taken.retryAfterSeconds) } }
+      );
+    }
+  }
+
   try {
     // 요청 본문 파싱
     const body = await request.json();
-    const messages: Array<{ role: string; content: string }> =
-      body.messages;
 
-    // messages 유효성 검사
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json(
-        { error: "messages 배열이 필요합니다." },
-        { status: 400 }
-      );
+    // messages 유효성 검사 + 길이 제한(이번 질문 1,000자, 앞 대화 최근 20개)
+    const sanitized = sanitizeChatMessages(body?.messages);
+    if (!sanitized.ok) {
+      return NextResponse.json({ error: sanitized.error }, { status: 400 });
     }
+    const messages = sanitized.messages;
 
     // 질문 의도에 맞는 DB 컨텍스트만 조회한다. 기본 설정은 신청 버튼 URL 때문에 항상 필요하다.
     const contextNeeds = inferChatContextNeeds(messages);

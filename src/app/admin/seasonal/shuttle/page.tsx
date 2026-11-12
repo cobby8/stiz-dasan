@@ -1,3 +1,4 @@
+import { requireAdmin } from "@/lib/auth-guard";
 import ShuttleRosterClient from "./ShuttleRosterClient";
 import ShuttleSectionTabs from "../../shuttle/ShuttleSectionTabs";
 import SeasonalHeader from "../SeasonalHeader";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 // 방학특강 셔틀 통합 명단(학생 단위 편집 뷰). 상단 공통 헤더·탭을 다른 방학특강 화면과 동일하게 사용한다.
 export default async function SeasonalShuttleRosterPage() {
+  // 레이아웃 검사만 믿지 않고 화면마다 관리자 확인(d3 — 레이아웃이 바뀌거나 우회돼도 데이터가 새지 않게)
+  await requireAdmin();
   const [roster, confirmation] = await Promise.all([
     getSeasonalShuttleRoster(),
     // 확정일시(배너 표기용). 명단 조회와 독립이라 같이 병렬로 읽는다.
