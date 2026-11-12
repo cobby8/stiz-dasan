@@ -38,10 +38,28 @@ export type StudentGuardian = {
 
 type Executor = Pick<typeof prisma, "$queryRawUnsafe" | "$executeRawUnsafe">;
 
+/**
+ * 화면에 그대로 보여 줄 거절 사유. 서버 액션에서 throw 하면 운영 빌드가 문구를 가려
+ * 「처리하지 못했습니다」만 보였다(2026-11-13). 그래서 아래 공개 함수들은 이 오류를 잡아 값으로 돌려준다.
+ */
+class GuardianUserError extends Error {}
+
+/** 변경 결과 — 성공이면 새 목록, 거절이면 사유 */
+export type GuardianMutationResult = { guardians: StudentGuardian[] } | { error: string };
+
+async function asResult(work: () => Promise<StudentGuardian[]>): Promise<GuardianMutationResult> {
+  try {
+    return { guardians: await work() };
+  } catch (error) {
+    if (error instanceof GuardianUserError) return { error: error.message };
+    throw error;
+  }
+}
+
 /** id 형식 최소 검사 — 빈 값·비정상 길이를 SQL 까지 보내지 않는다 */
 function assertId(value: unknown, label: string): string {
   const id = typeof value === "string" ? value.trim() : "";
-  if (!id || id.length > 64) throw new Error(`${label} 정보가 올바르지 않습니다.`);
+  if (!id || id.length > 64) throw new GuardianUserError(`${label} 정보가 올바르지 않습니다.`);
   return id;
 }
 
@@ -52,7 +70,7 @@ async function assertStudent(db: Executor, studentId: string, lock = false) {
     `SELECT id FROM "Student" WHERE id = $1 AND "mergedIntoStudentId" IS NULL LIMIT 1${lock ? " FOR UPDATE" : ""}`,
     studentId,
   );
-  if (!rows[0]) throw new Error("학생을 찾을 수 없습니다.");
+  if (!rows[0]) throw new GuardianUserError("학생을 찾을 수 없습니다.");
 }
 
 /** 한 학생의 보호자 목록(주 보호자 먼저 → 등록순) */
@@ -92,18 +110,19 @@ export async function listStudentGuardians(studentIdRaw: string): Promise<Studen
 export async function addStudentGuardian(
   studentIdRaw: string,
   input: GuardianInput & { makePrimary?: boolean },
-): Promise<StudentGuardian[]> {
+): Promise<GuardianMutationResult> {
   await requireAdmin();
+  return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
 
   await prisma.$transaction(async (tx) => {
     await assertStudent(tx, studentId, true);
     const existing = await loadGuardians(tx, studentId);
     if (!canAddGuardian(existing.length)) {
-      throw new Error(`보호자는 학생당 최대 ${MAX_GUARDIANS_PER_STUDENT}명까지 등록할 수 있습니다.`);
+      throw new GuardianUserError(`보호자는 학생당 최대 ${MAX_GUARDIANS_PER_STUDENT}명까지 등록할 수 있습니다.`);
     }
     const checked = validateGuardianInput(input, existing);
-    if (!checked.ok) throw new Error(checked.error);
+    if (!checked.ok) throw new GuardianUserError(checked.error);
 
     const primary = shouldBePrimaryOnAdd(existing.length, Boolean(input?.makePrimary));
     // 주 보호자는 학생당 1명 — 새 사람을 주 보호자로 넣기 전에 나머지를 먼저 내린다
@@ -126,6 +145,7 @@ export async function addStudentGuardian(
 
   revalidateStudent(studentId);
   return loadGuardians(prisma, studentId);
+  });
 }
 
 /** 보호자 수정(관계·이름·전화) — 주 보호자 여부는 setPrimaryGuardian 이 담당 */
@@ -133,8 +153,9 @@ export async function updateStudentGuardian(
   studentIdRaw: string,
   guardianIdRaw: string,
   input: GuardianInput,
-): Promise<StudentGuardian[]> {
+): Promise<GuardianMutationResult> {
   await requireAdmin();
+  return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
   const guardianId = assertId(guardianIdRaw, "보호자");
 
@@ -142,9 +163,9 @@ export async function updateStudentGuardian(
     await assertStudent(tx, studentId, true);
     const existing = await loadGuardians(tx, studentId);
     // 소속 검증: 이 학생의 보호자 목록에 없으면 거부(다른 학생 보호자 id 차단)
-    if (!existing.some((g) => g.id === guardianId)) throw new Error("이 학생의 보호자가 아닙니다.");
+    if (!existing.some((g) => g.id === guardianId)) throw new GuardianUserError("이 학생의 보호자가 아닙니다.");
     const checked = validateGuardianInput(input, existing, guardianId);
-    if (!checked.ok) throw new Error(checked.error);
+    if (!checked.ok) throw new GuardianUserError(checked.error);
 
     const count = await tx.$executeRawUnsafe(
       `UPDATE "Guardian" SET relation = $1, name = $2, phone = $3, "updatedAt" = NOW()
@@ -155,30 +176,32 @@ export async function updateStudentGuardian(
       guardianId,
       studentId,
     );
-    if (count !== 1) throw new Error("보호자 정보를 수정하지 못했습니다.");
+    if (count !== 1) throw new GuardianUserError("보호자 정보를 수정하지 못했습니다.");
   });
 
   revalidateStudent(studentId);
   return loadGuardians(prisma, studentId);
+  });
 }
 
 /** 보호자 삭제 — 마지막 1명도 허용(화면이 경고). 주 보호자를 지우면 가장 먼저 등록된 사람이 이어받는다 */
-export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw: string): Promise<StudentGuardian[]> {
+export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw: string): Promise<GuardianMutationResult> {
   await requireAdmin();
+  return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
   const guardianId = assertId(guardianIdRaw, "보호자");
 
   await prisma.$transaction(async (tx) => {
     await assertStudent(tx, studentId, true);
     const existing = await loadGuardians(tx, studentId);
-    if (!existing.some((g) => g.id === guardianId)) throw new Error("이 학생의 보호자가 아닙니다.");
+    if (!existing.some((g) => g.id === guardianId)) throw new GuardianUserError("이 학생의 보호자가 아닙니다.");
 
     const count = await tx.$executeRawUnsafe(
       `DELETE FROM "Guardian" WHERE id = $1 AND "studentId" = $2`,
       guardianId,
       studentId,
     );
-    if (count !== 1) throw new Error("보호자를 삭제하지 못했습니다.");
+    if (count !== 1) throw new GuardianUserError("보호자를 삭제하지 못했습니다.");
 
     const nextPrimaryId = nextPrimaryAfterDelete(existing, guardianId);
     if (nextPrimaryId) {
@@ -192,11 +215,13 @@ export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw:
 
   revalidateStudent(studentId);
   return loadGuardians(prisma, studentId);
+  });
 }
 
 /** 주 보호자 지정 — 이 사람만 true, 같은 학생의 나머지는 false (한 트랜잭션) */
-export async function setPrimaryGuardian(studentIdRaw: string, guardianIdRaw: string): Promise<StudentGuardian[]> {
+export async function setPrimaryGuardian(studentIdRaw: string, guardianIdRaw: string): Promise<GuardianMutationResult> {
   await requireAdmin();
+  return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
   const guardianId = assertId(guardianIdRaw, "보호자");
 
@@ -207,7 +232,7 @@ export async function setPrimaryGuardian(studentIdRaw: string, guardianIdRaw: st
       guardianId,
       studentId,
     );
-    if (!owned[0]) throw new Error("이 학생의 보호자가 아닙니다.");
+    if (!owned[0]) throw new GuardianUserError("이 학생의 보호자가 아닙니다.");
 
     // 한 문장으로 "이 사람만 true, 나머지 false" — 중간 상태(0명·2명)가 생기지 않는다
     await tx.$executeRawUnsafe(
@@ -220,4 +245,5 @@ export async function setPrimaryGuardian(studentIdRaw: string, guardianIdRaw: st
 
   revalidateStudent(studentId);
   return loadGuardians(prisma, studentId);
+  });
 }

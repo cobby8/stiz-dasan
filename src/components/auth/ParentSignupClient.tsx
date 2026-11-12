@@ -7,6 +7,8 @@ import { useSearchParams } from "next/navigation";
 import { parentAuthEntryHref } from "@/lib/auth-entry-navigation";
 import AppleLogo from "@/components/auth/AppleLogo";
 import { useEnabledOAuthProviders } from "@/hooks/useEnabledOAuthProviders";
+import { publicErrorText } from "@/components/ui/public-error-text";
+import { safeInternalRedirect } from "@/lib/parent-oauth";
 
 // existing: 문자 인증 결과 학원에 이미 등록된 보호자(빈 계정)로 확인된 단계
 type Step = "method" | "phone" | "account" | "existing" | "done";
@@ -20,6 +22,7 @@ type ApiData = {
   redirectPath?: string;
   socialSessionMissing?: boolean;
   phoneRegistered?: boolean;
+  registeredPhone?: boolean;
 };
 
 /** 실패 응답의 추가 정보(간편가입 세션 끊김 등)를 화면이 알 수 있게 담아 던진다. */
@@ -76,7 +79,13 @@ export default function ParentSignupClient() {
   const [challengeToken, setChallengeToken] = useState("");
   const [proof, setProof] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(searchParams.get("error"));
+  // 주소의 ?error= 는 누구나 만들 수 있다 — 한국어 안내만 보여 주는 publicErrorText 를 거친다.
+  const [error, setError] = useState<string | null>(() => {
+    const raw = searchParams.get("error");
+    return raw ? publicErrorText(new Error(raw), "간편로그인을 완료하지 못했습니다. 다시 시도해 주세요.") : null;
+  });
+  // 이미 가입된 번호 → 비밀번호를 잊었을 수 있으니 «아이디·비밀번호 찾기»를 함께 보여 준다.
+  const [registeredPhone, setRegisteredPhone] = useState(false);
   const [socialSessionMissing, setSocialSessionMissing] = useState(false);
   // 간편로그인 + 이미 가입된 번호 → 본인인증으로 기존 계정에 연결(2026-10-26). 모바일은 인증창에서 돌아올 때 주소에 결과가 붙는다.
   const [phoneRegistered, setPhoneRegistered] = useState(socialSignup && searchParams.has("identityVerificationId"));
@@ -110,6 +119,7 @@ export default function ParentSignupClient() {
       setError(friendlyError(reason));
       setSocialSessionMissing(reason instanceof ApiError && Boolean(reason.data.socialSessionMissing));
       setPhoneRegistered(socialSignup && reason instanceof ApiError && Boolean(reason.data.phoneRegistered));
+      setRegisteredPhone(reason instanceof ApiError && Boolean(reason.data.registeredPhone));
     } finally {
       setLoading(false);
     }
@@ -205,6 +215,11 @@ export default function ParentSignupClient() {
         </a>
       )}
       {socialSignup && phoneRegistered && <IdentityLinkButton />}
+      {registeredPhone && (
+        <Link href="/login/forgot" className="flex min-h-12 w-full items-center justify-center rounded-xl border border-[var(--color-public-accent)] px-4 text-sm font-bold text-[var(--color-public-accent)]">
+          아이디·비밀번호 찾기
+        </Link>
+      )}
       {notice && <p role="status" className="rounded-xl bg-[var(--color-public-tint)] px-3 py-2 text-xs leading-5 text-[var(--color-public-ink)]">{notice}</p>}
 
       {step === "method" && (
@@ -324,9 +339,16 @@ export default function ParentSignupClient() {
           <span className="material-symbols-outlined text-5xl text-[var(--color-public-accent)]" aria-hidden="true">check_circle</span>
           <h2 className="mt-3 text-xl font-bold">가입이 완료됐습니다</h2>
           <p className="mt-2 text-sm text-[var(--color-public-muted)]">
-            {enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다. 로그인해서 확인해주세요." : "이제 만든 아이디로 로그인해 주세요."}
+            {socialSignup
+              ? (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다." : "간편로그인으로 바로 이용할 수 있어요.")
+              : (enrollmentHandoff ? "수강신청서가 계정에 연결되었습니다. 로그인해서 확인해주세요." : "이제 만든 아이디로 로그인해 주세요.")}
           </p>
-          <Link href={`/login?${new URLSearchParams({ redirect: next }).toString()}`} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 font-bold text-white">로그인하기</Link>
+          {/* 간편가입은 이미 로그인된 상태이고 비밀번호가 없다 — 아이디 로그인 화면으로 보내지 않고 바로 이어 간다 */}
+          {socialSignup ? (
+            <a href={safeInternalRedirect(next)} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-[var(--color-public-accent)] font-bold text-white hover:bg-[var(--color-public-strong)]">시작하기</a>
+          ) : (
+            <Link href={`/login?${new URLSearchParams({ redirect: next }).toString()}`} className="mt-6 flex min-h-12 items-center justify-center rounded-xl bg-brand-orange-500 font-bold text-white">로그인하기</Link>
+          )}
         </div>
       )}
     </div>

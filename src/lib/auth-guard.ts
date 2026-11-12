@@ -66,9 +66,17 @@ function userFromSupabaseUser(user: any): AuthUser {
   };
 }
 
-async function getAppUserRole(email: string): Promise<AppUserRoleRow | null> {
-  const cacheKey = normalizeEmail(email);
-  if (!cacheKey) return null;
+/**
+ * 이메일로 찾은 앱 계정의 역할.
+ * 2026-11-13: 앱 계정이 이미 다른 로그인 계정(authUserId)에 묶여 있으면 이메일이 같아도 인정하지 않는다.
+ * 간편로그인(특히 Supabase 커스텀 제공자인 네이버)이 같은 이메일의 별도 로그인 계정을 만들면
+ * 이메일만으로 원장·선생님 권한이 열릴 수 있었다. 아직 authUserId 가 비어 있는 옛 직원 계정은
+ * 잠기지 않게 그대로 둔다(운영 원장 계정 1개가 이 상태 — 연결 후 엄격 판정으로 바꿀 것).
+ */
+async function getAppUserRole(email: string, authUserId: string): Promise<AppUserRoleRow | null> {
+  const normalized = normalizeEmail(email);
+  if (!normalized || !authUserId) return null;
+  const cacheKey = `${authUserId}|${normalized}`;
 
   const cached = roleCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
@@ -85,8 +93,12 @@ async function getAppUserRole(email: string): Promise<AppUserRoleRow | null> {
   }
 
   const rows = await prisma.$queryRawUnsafe<AppUserRoleRow[]>(
-    `SELECT id, name, role FROM "User" WHERE email = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+    `SELECT id, name, role FROM "User"
+      WHERE email = $1 AND "withdrawnAt" IS NULL
+        AND ("authUserId" IS NULL OR "authUserId" = $2)
+      LIMIT 1`,
     email,
+    authUserId,
   );
 
   const row = rows[0] ?? null;
@@ -276,7 +288,7 @@ export async function requireAdmin(): Promise<AdminAuthUser> {
   }
 
   // DB에서 실제 role을 조회한다 (토큰의 metadata는 조작 가능하므로 신뢰하지 않음)
-  const appUser = await getAppUserRole(email);
+  const appUser = await getAppUserRole(email, user.id);
 
   // ADMIN 또는 VICE_ADMIN만 통과
   if (!appUser || (appUser.role !== "ADMIN" && appUser.role !== "VICE_ADMIN")) {
@@ -332,7 +344,7 @@ export async function requireStaff(): Promise<StaffAuthUser> {
     throw new Error("Staff permission is required.");
   }
 
-  const appUser = await getAppUserRole(email);
+  const appUser = await getAppUserRole(email, user.id);
   if (!appUser) {
     throw new Error("Staff permission is required.");
   }
@@ -365,7 +377,7 @@ export async function requireOwner() {
     throw new Error("원장 권한이 필요합니다. (ADMIN만 가능)");
   }
 
-  const appUser = await getAppUserRole(email);
+  const appUser = await getAppUserRole(email, user.id);
 
   if (!appUser || appUser.role !== "ADMIN") {
     throw new Error("원장 권한이 필요합니다. (ADMIN만 가능)");

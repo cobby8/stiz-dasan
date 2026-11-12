@@ -22,8 +22,10 @@ export async function POST(request: Request) {
   });
   if ("error" in result) {
     // 간편로그인으로 왔는데 이미 가입된 번호 → 화면이 「본인인증으로 기존 계정에 연결」을 띄운다.
-    const phoneRegistered = method !== "PASSWORD" && result.error === REGISTERED_PHONE_MESSAGE;
-    return NextResponse.json({ ...result, ...(phoneRegistered ? { phoneRegistered: true } : {}) }, { status: 400 });
+    const registered = result.error === REGISTERED_PHONE_MESSAGE;
+    const phoneRegistered = method !== "PASSWORD" && registered;
+    // registeredPhone: 아이디 가입에서도 «아이디·비밀번호 찾기» 버튼을 띄운다(비밀번호를 잊은 학부모가 가입 화면에서 막히지 않게).
+    return NextResponse.json({ ...result, ...(phoneRegistered ? { phoneRegistered: true } : {}), ...(registered ? { registeredPhone: true } : {}) }, { status: 400 });
   }
   const forwarded = request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
   const requestKey = forwarded.split(",")[0]?.trim() || "unknown";

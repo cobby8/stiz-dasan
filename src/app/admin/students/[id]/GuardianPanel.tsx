@@ -19,6 +19,7 @@ import {
     listStudentGuardians,
     setPrimaryGuardian,
     updateStudentGuardian,
+    type GuardianMutationResult,
     type StudentGuardian,
 } from "@/app/actions/guardians";
 import {
@@ -101,13 +102,18 @@ export default function GuardianPanel({
     }
 
     // 서버 호출 공통 처리: 성공하면 응답 목록으로 교체, 실패하면 사유 표시
-    function run(action: () => Promise<StudentGuardian[]>, successMessage: string, afterSuccess?: () => void) {
+    function run(action: () => Promise<GuardianMutationResult>, successMessage: string, afterSuccess?: () => void) {
         setError(null);
         setMessage(null);
         startTransition(async () => {
             try {
-                const list = await action();
-                setGuardians(list);
+                const result = await action();
+                // 거절 사유는 값으로 온다(운영 빌드는 서버 액션의 throw 문구를 가린다).
+                if ("error" in result) {
+                    setError(result.error);
+                    return;
+                }
+                setGuardians(result.guardians);
                 setMessage(successMessage);
                 afterSuccess?.();
             } catch (e) {

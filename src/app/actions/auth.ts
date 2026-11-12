@@ -57,7 +57,12 @@ export async function login(formData: FormData) {
 
   if (error) {
     if (error.message === "Invalid login credentials") {
-      return { error: "이메일 또는 비밀번호가 올바르지 않습니다." };
+      // 학부모는 아이디로 로그인한다 — 틀렸을 때 «아이디·비밀번호 찾기»로 안내한다.
+      return {
+        error: loginContext === "staff"
+          ? "이메일 또는 비밀번호가 올바르지 않습니다."
+          : "아이디 또는 비밀번호가 올바르지 않습니다. 기억나지 않으면 아래 «아이디·비밀번호 찾기»를 이용해 주세요.",
+      };
     }
     if (error.message === "Email not confirmed") {
       return { error: "이메일 인증이 필요합니다. 받은 인증 메일을 확인해주세요." };

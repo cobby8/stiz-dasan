@@ -55,7 +55,7 @@ async function find(token: string, tx: Prisma.TransactionClient | typeof prisma,
 }
 
 // 화면은 문구가 아니라 phoneRegistered 표식으로 판단한다(start 라우트) — 문구를 바꿔도 버튼이 사라지지 않게.
-export const REGISTERED_PHONE_MESSAGE = "이미 가입된 휴대폰 번호입니다. 기존 아이디로 로그인한 뒤 마이페이지 → 간편로그인 연결에서 Apple·Google 을 연결해 주세요.";
+export const REGISTERED_PHONE_MESSAGE = "이미 가입된 휴대폰 번호입니다. 기존 아이디로 로그인해 주세요. 아이디·비밀번호가 기억나지 않으면 「아이디·비밀번호 찾기」를, 간편로그인은 로그인 뒤 마이페이지 → 간편로그인 연결을 이용해 주세요.";
 
 type PhoneOwnership =
   | { kind: "NONE" } // 처음 보는 번호 → 신규 가입
@@ -194,7 +194,7 @@ async function rejectExisting(tx: Prisma.TransactionClient, username: string, ph
     username, phone,
   );
   if (rows[0]?.usernameTaken) throw new Error("이미 사용 중인 로그인 아이디입니다.");
-  if (rows[0]?.phoneTaken) throw new Error("이미 가입된 휴대폰 번호입니다. 기존 아이디로 로그인한 뒤 마이페이지 → 간편로그인 연결에서 Apple·Google 을 연결해 주세요.");
+  if (rows[0]?.phoneTaken) throw new Error(REGISTERED_PHONE_MESSAGE);
 }
 
 export async function startParentSignup(input: {

@@ -344,6 +344,14 @@ function LoginContent() {
                     : "학부모 계정 만들기"}
               </span>
             </button>
+            {/* 학부모 아이디는 메일을 받을 수 없는 주소라, 가입 휴대폰 문자 인증으로 찾는다(2026-11-13) */}
+            {!isStaffMode && mode === "login" && (
+              <p className="text-center text-sm">
+                <Link href="/login/forgot" className="text-[var(--color-public-muted)] underline hover:text-[var(--color-public-accent)]">
+                  아이디·비밀번호 찾기
+                </Link>
+              </p>
+            )}
           </form>
 
           {!isStaffMode && mode === "login" && visibleSocialLoginOptions.length > 0 && (
