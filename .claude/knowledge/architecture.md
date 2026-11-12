@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-13] 청구서 안내·미납 안내 = 발송 대기열(예약 → 매분 cron → 성공한 건만 sentAt)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: `sendInvoiceLinksForMonth`·`sendUnpaidReminders`(admin.ts)는 직접 문자를 보내지 않는다. 규칙·계산은 `src/lib/billing/noticeQueue.ts`(prisma import 없음, db·tx 인자 → `tests/billing-notice-queue.test.mjs` 가 가짜 DB 로 실행). 흐름: 계획(planInvoiceNotices/planUnpaidNotices — 알림톡 id 없으면 같은 본문+링크를 문자, 번호 없음=APP_ONLY, 학부모 미연결=unlinked 이름 표시) → 연결표 `BillingNoticeDelivery`(마이그레이션 20261113140000, noticeKey 부분 유일 = QUEUED/SENT/UNCERTAIN/APP_ONLY · FAILED 는 막지 않아 다시 누르면 이어 보냄) + `reserveManualMessageQueue`(items 에 `deliveryId`·`guard` — 호출부 id 로 NotificationDelivery 행을 만들고 dedupeKey 도 id 로 나눈다: 형제 청구서가 같은 번호) → cron `manual-message-dispatch` 가 묶음 발송, `claimManualMessageQueue` 가 guard 있으면 `checkBillingSendRule`(잠금+SmsTemplate·MessageAutomationRule·채널) 재확인해 꺼졌으면 FAILED → `finalizeMessageDeliveryBatch` 끝의 `applyBillingNoticeResults` 가 SENT 인 건만 청구서 sentAt·결제 notifiedAt(미납은 lastReminderAt·reminderCount)을 찍는다. 미납 대상 = 미납 + 마지막 미납 안내 3일 경과 + 예약 중/3일 안 안내 제외, 열쇠 `unpaid:<KST날짜>:<정렬 id>`. 화면 진행 상황 `getBillingNoticeProgress`(같은 noticeKey 최신 행만). ⚠️ 마이그레이션 적용 전에는 발송·진행 조회가 실패한다(표 없음) — 코드보다 먼저 적용.
+- **참조횟수**: 0
+
 ### [2026-11-12] 스태프 계정 — 직원 기록·로그인 연결·초대로 전환·퇴사 처리
 - **분류**: architecture
 - **발견자**: developer

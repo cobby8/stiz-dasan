@@ -764,8 +764,15 @@ test("실행: 묶음 결제 시작 — 형제 2건으로 주문 1건 + 항목 2�
 test("계약: 확정·전액 취소는 «항목 있음»이면 묶음 갈래로 간다(승인·웹훅·가상계좌 입금·매일 점검이 모두 이 두 함수를 지난다)", () => {
     const finalize = fnBody(ledgerSrc, "async function finalizeVerifiedTossPayment(");
     const branch = finalize.indexOf("if (await hasBundleItems(prisma, input.tx.id))");
-    assert.ok(branch > 0 && branch < finalize.indexOf("return prisma.$transaction(async (db) =>"), "단건 잠금보다 먼저 갈린다");
+    assert.ok(branch > 0 && branch < finalize.indexOf("await prisma.$transaction(async (db) =>"), "단건 잠금보다 먼저 갈린다");
     assert.match(finalize, /finalizeVerifiedBundlePayment\(/);
+    // 2026-11-13: 카드 단건도 반영 실패 = 원장 확인(묶음과 같은 검토 기록 + 슬랙). 가상계좌는 부른 쪽이 따로 남긴다
+    assert.match(finalize, /if \(!single\.ok && !isVirtualAccountPayment\) \{\s*await recordSinglePaymentReview\(input\.tx, single\.error\)/);
+    assert.match(finalize, /PAYMENT_LEDGER_STATE_CONFLICT[\s\S]*?return \{ ok: false as const, error: "PAYMENT_LEDGER_STATE_CONFLICT" \}/);
+    const singleReview = fnBody(ledgerSrc, "async function recordSinglePaymentReview(");
+    assert.match(singleReview, /'PAYMENT_SINGLE_REVIEW'/);
+    assert.match(singleReview, /WHERE NOT EXISTS/);
+    assert.match(singleReview, /alertVirtualAccountIssue\(/);
     const bundle = fnBody(ledgerSrc, "async function finalizeVerifiedBundlePayment(");
     assert.match(bundle, /prisma\.\$transaction\(\(db\) => finalizeBundleInTx\(db,/);
     assert.match(bundle, /BUNDLE_LEDGER_CONFLICT/);

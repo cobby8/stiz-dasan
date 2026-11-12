@@ -6,10 +6,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
     try {
+        // 이메일 없는 계정(카카오·휴대폰 가입)도 결제할 수 있어야 한다 — 청구서 소유 확인은 authUserId 로 한다(2026-11-13)
         const user = await requireVerifiedParent();
-        if (!user.email) {
-            return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-        }
 
         const body = await req.json();
         const invoiceId = String(body?.invoiceId || "");

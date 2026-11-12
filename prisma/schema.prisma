@@ -1706,6 +1706,32 @@ model MessageDeliveryBatch {
   @@index([stableEventKey, createdAt])
 }
 
+// 청구서 안내·미납 안내 발송 대기열 연결표(2026-11-13, 마이그레이션 20261113140000_billing_notice_delivery).
+// 한 행 = 학부모에게 나가는 안내 한 통. 실제 성공(deliveryId 의 NotificationDelivery = SENT)한 건만 청구서 sentAt 을 찍는다.
+// ⚠️ 마이그레이션에만 있는 것: noticeKey 부분 유일 인덱스(status IN QUEUED/SENT/UNCERTAIN/APP_ONLY)·CHECK 제약·RLS.
+model BillingNoticeDelivery {
+  id          String    @id
+  kind        String // INVOICE, UNPAID
+  noticeKey   String
+  periodKey   String // INVOICE = "YYYY-MM", UNPAID = 예약한 날(KST "YYYY-MM-DD")
+  studentId   String?
+  studentName String?
+  invoiceIds  String[]  @default([])
+  paymentIds  String[]  @default([])
+  channel     String // ALIMTALK, SMS, APP_ONLY
+  status      String // QUEUED, SENT, FAILED, UNCERTAIN, APP_ONLY
+  deliveryId  String?   @unique
+  batchId     String?
+  errorCode   String?
+  actorUserId String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @db.Timestamptz(6)
+  finalizedAt DateTime? @db.Timestamptz(6)
+
+  @@index([batchId])
+  @@index([kind, periodKey, createdAt(sort: Desc)], map: "BillingNoticeDelivery_kind_period_idx")
+}
+
 // 문자 자동화·채널·템플릿 설정 변경의 관리자 감사 기록입니다.
 model MessageSettingAuditLog {
   id          String   @id @default(dbgenerated("(gen_random_uuid())::text"))

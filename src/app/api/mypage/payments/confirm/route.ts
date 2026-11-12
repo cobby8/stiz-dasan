@@ -33,8 +33,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    // 이메일 없는 계정(카카오·휴대폰 가입)도 묶음 결제를 승인할 수 있어야 한다 — 소유 확인은 authUserId 로 한다(2026-11-13)
     const parent = await verifiedParent();
-    if (!parent || !parent.email) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    if (!parent) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
     let body: any;
     try {

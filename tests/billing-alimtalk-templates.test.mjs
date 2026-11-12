@@ -225,36 +225,39 @@ test("가짜 발송자: text·buttons 를 안 넘긴 기존 호출은 예전 그
 const admin = read("src/app/actions/admin.ts");
 const sliceFn = (name, next) => admin.slice(admin.indexOf(name), admin.indexOf(next, admin.indexOf(name) + 1));
 
-test("연결: 청구서 링크 발송 — 잠금 뒤에서만, id 가 없으면 DB 조회·발송 없이 바로 돌아온다", () => {
-  const helper = sliceFn("async function sendBillingInvoiceAlimtalks", "function prepareUnpaidAlimtalk");
-  const early = helper.indexOf("if (!templateId || invoiceIds.length === 0) return result;");
-  assert.ok(early > 0);
-  assert.doesNotMatch(helper.slice(0, early), /prisma\.|sendParentSms/);
-  assert.match(helper, /alimtalkTemplateIdForEnv\(BILLING_ALIMTALK_TEMPLATES\.BILLING_INVOICE_PARENT\.envKey\)/);
-  assert.match(helper, /alimtalk: \{ templateId, variables: message\.variables, text: message\.body, buttons: \[message\.button\] \}/);
-  assert.match(helper, /body: message\.smsBody/);
-  assert.match(helper, /TO_CHAR\(i\."dueDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\)/);
+// 2026-11-13: 청구서 안내·미납 안내는 «발송 대기열»로 — 예약 → 매분 cron 묶음 발송 → 실제 성공한 건만 sentAt.
+// 실행 테스트는 tests/billing-notice-queue.test.mjs. 여기서는 연결(잠금 → 규칙 → 계획 → 예약 순서)만 본다.
+test("연결: 청구서 링크 발송 — 잠금 뒤 규칙 검사, 알림톡 id 가 있으면 알림톡·없으면 같은 본문+링크 문자로 «예약»", () => {
   const sendLinks = sliceFn("export async function sendInvoiceLinksForMonth", "export async function sendUnpaidReminders");
   const guard = sendLinks.indexOf("if (!isBillingParentSendEnabled())");
-  const call = sendLinks.indexOf("await sendBillingInvoiceAlimtalks(ids, month, Boolean(forceResend))");
-  assert.ok(guard > 0 && call > guard, "알림톡 발송은 잠금 검사 뒤");
-  // 청구서 «발송됨» 기록 뒤에 보낸다(알림톡 실패가 기존 기록을 막지 않게)
-  assert.ok(sendLinks.indexOf(`UPDATE "PaymentInvoice"`) < call);
+  const rule = sendLinks.indexOf("await checkBillingSendRule(prisma, BILLING_NOTICE_TRIGGER.INVOICE)");
+  const plan = sendLinks.indexOf("planInvoiceNotices(invoices, {");
+  const reserve = sendLinks.indexOf("await reserveBillingNotices({");
+  assert.ok(guard > 0 && rule > guard && plan > rule && reserve > plan, "잠금 → 규칙 → 계획 → 예약 순서");
+  assert.match(sendLinks, /alimtalkTemplateIdForEnv\(BILLING_ALIMTALK_TEMPLATES\.BILLING_INVOICE_PARENT\.envKey\)/);
+  assert.match(sendLinks, /TO_CHAR\(i\."dueDate" AT TIME ZONE 'Asia\/Seoul', 'YYYY-MM-DD'\) AS "dueYmd"/);
+  // 예전처럼 sentAt 을 먼저 찍지 않는다 — 성공한 건만 대기열 결과 반영(applyBillingNoticeResults)이 찍는다
+  assert.doesNotMatch(sendLinks, /SET "sentAt" = COALESCE/);
+  assert.doesNotMatch(sendLinks, /sendParentSmsWithResult/);
+  // 학부모 미연결 청구서도 읽어서 «대상 아님» 이름으로 보여 준다
+  assert.doesNotMatch(sendLinks, /AND i\."parentId" IS NOT NULL\s+-- 랠리즈/);
+  assert.match(sendLinks, /unlinked: plan\.unlinked\.map/);
 });
 
-test("연결: 미납 알림 — id 가 없으면 옛 DB 문자(prepared 없음), 있으면 미납 틀", () => {
-  const prepare = sliceFn("function prepareUnpaidAlimtalk", "export async function sendInvoiceLinksForMonth");
-  assert.match(prepare, /if \(!templateId\) return undefined;/);
-  assert.match(prepare, /catch \(error\) \{[\s\S]*?return undefined;/);
-  const reminders = sliceFn("export async function sendUnpaidReminders", "export async function bulkUpdatePaymentStatus");
+test("연결: 미납 알림 — 잠금 뒤 규칙 검사, 3일 간격·예약 중 제외, 대기열로 예약", () => {
+  const reminders = sliceFn("export async function sendUnpaidReminders", "export async function getBillingNoticeProgress");
   const guard = reminders.indexOf("if (!isBillingParentSendEnabled())");
+  const rule = reminders.indexOf("await checkBillingSendRule(prisma, BILLING_NOTICE_TRIGGER.UNPAID)");
   const tpl = reminders.indexOf("alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT.envKey)");
-  assert.ok(guard > 0 && tpl > guard);
-  assert.match(reminders, /if \(unpaidTemplateId\) \{[\s\S]*?FROM "PaymentInvoice"/);
-  assert.match(reminders, /"UNPAID_PARENT",[\s\S]*?prepareUnpaidAlimtalk\(unpaidTemplateId, \{/);
-  // 발송 결과형 함수: prepared 가 없으면 예전처럼 금고/DB 문구
-  const notification = read("src/lib/notification.ts");
-  assert.match(notification, /const resolved = prepared \?\? resolveParentMessage\(trigger, variables, msg\);/);
+  assert.ok(guard > 0 && rule > guard && tpl > rule);
+  // notifiedAt IS NULL(한 번 보내면 끝) 대신 «마지막 미납 안내 뒤 3일»
+  assert.doesNotMatch(reminders, /"notifiedAt" IS NULL/);
+  assert.match(reminders, /p\."lastReminderAt" IS NULL OR p\."lastReminderAt" <= NOW\(\) - make_interval\(days => \$1::int\)/);
+  assert.match(reminders, /n\.status = 'QUEUED'/);
+  assert.match(reminders, /UNPAID_REMINDER_INTERVAL_DAYS/);
+  assert.match(reminders, /planUnpaidNotices\(unpaid, \{/);
+  assert.match(reminders, /renderSms: \(variables\) => renderTemplate\(smsTemplateBody, variables\)/);
+  assert.match(reminders, /kind: "UNPAID",\s*periodKey: kstYmd/);
 });
 
 test("규칙 행: 청구서 안내는 자동 발송 규칙을 갖도록 기본 문자 틀에 있다(표시용 문구)", () => {

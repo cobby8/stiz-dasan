@@ -67,18 +67,31 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { createTrialEnrollShortLink } from "@/lib/enroll-short-link";
 import { SHUTTLE_LOCATION_CONSENT_VERSION } from "@/lib/seasonal/contracts";
 import { validateAcademyCoordinateInput } from "@/lib/shuttle/academyLocation";
-import { renderSmsTemplate } from "@/lib/smsTemplate";
+import { renderSmsTemplate, UNPAID_PARENT_DEFAULT_BODY } from "@/lib/smsTemplate";
 import {
     PARENT_MESSAGE_PREFIX,
     manualMessagePrefix,
     isParentAlimtalkTrigger,
     parentAlimtalkSmsTemplateBody,
     BILLING_ALIMTALK_TEMPLATES,
-    billingPathForInvoices,
-    buildBillingAlimtalkMessage,
-    formatBillingDueDate,
 } from "@/lib/messaging/parent-alimtalk-templates";
 import { alimtalkTemplateIdForEnv } from "@/lib/messaging/alimtalk-config";
+// 청구서 안내·미납 안내 발송 대기열(2026-11-13) — 순수 규칙 + DB 인자 연결부
+import {
+    BILLING_NOTICE_TRIGGER,
+    UNPAID_REMINDER_INTERVAL_DAYS,
+    applyBillingNoticeResults,
+    checkBillingSendRule,
+    describeReservation,
+    loadBillingNoticeProgress,
+    planInvoiceNotices,
+    planUnpaidNotices,
+    reserveBillingNotices,
+    type InvoiceNoticeRow,
+    type NoticeTx,
+    type ReserveQueueFn,
+    type UnpaidNoticeRow,
+} from "@/lib/billing/noticeQueue";
 import {
     ensureInvoiceForPayment,
     ensureInvoicesForMonth,
@@ -3930,7 +3943,11 @@ export async function refreshPaymentLedger(year: number, month: number) {
     };
 }
 
-// ── 수강료 청구 알림톡(2026-11-12) ──────────────────────────────────────────────
+// ── 수강료 청구 안내·미납 안내 = 발송 대기열(2026-11-13) ─────────────────────────────
+// 예전: sentAt 을 먼저 전부 찍고 문자를 한 통씩 → 60초 한도에 끊기면 뒷사람 유실(«발송됨»인데 못 받음).
+// 지금: «발송 예약 → 매분 cron 이 묶음 발송 → 실제 성공한 건만 sentAt» (규칙·계산은 src/lib/billing/noticeQueue.ts).
+// 잠금(BILLING_PARENT_SEND_ENABLED)과 /admin/sms 규칙은 예약할 때 여기서, 보낼 때 cron(claimManualMessageQueue)에서 두 번 본다.
+
 // 학원 대표 전화 — 청구 틀의 «문의: #{학원전화}». 조회 실패는 빈 값(금고 기본값이 대신 채운다)
 async function billingAcademyPhone(): Promise<string> {
     const rows = await prisma.$queryRawUnsafe<Array<{ contactPhone: string | null }>>(
@@ -3939,129 +3956,79 @@ async function billingAcademyPhone(): Promise<string> {
     return String(rows[0]?.contactPhone ?? "").trim();
 }
 
-// 청구서 발행 안내 알림톡 — 템플릿 id(ALIMTALK_TPL_BILLING_INVOICE)가 있을 때만 보낸다.
-// id 가 비어 있으면 아무것도 보내지 않는다(지금처럼 앱 알림만 — 이번 작업으로 문자가 늘지 않게).
-// 알림톡이 안 되면 같은 본문 + «청구서 확인하기: 링크» 를 문자로 대신 보낸다(발송부가 처리).
-// 실패해도 청구서 «발송됨» 기록·앱 알림은 이미 끝났으므로 throw 하지 않고 건수만 돌려준다.
-async function sendBillingInvoiceAlimtalks(invoiceIds: string[], month: number, forceResend: boolean) {
-    const result = { attempted: false, sent: 0, failed: 0 };
-    const templateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey);
-    if (!templateId || invoiceIds.length === 0) return result;
-    result.attempted = true;
-    try {
-        const placeholders = invoiceIds.map((_, index) => `$${index + 1}`).join(",");
-        const rows = await prisma.$queryRawUnsafe<Array<{
-            id: string;
-            studentName: string | null;
-            amount: number | null;
-            dueYmd: string | null;
-            phone: string | null;
-        }>>(
-            // dueDate 는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
-            `SELECT i.id, s.name AS "studentName", i.amount::int AS amount,
-                    TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
-                    u.phone
-               FROM "PaymentInvoice" i
-               JOIN "Student" s ON s.id = i."studentId"
-               JOIN "User" u ON u.id = i."parentId"
-              WHERE i.id IN (${placeholders})`,
-            ...invoiceIds,
-        );
-        const academyPhone = await billingAcademyPhone();
-        // 재발송(forceResend)은 장부의 중복 방지에 걸리지 않게 사건 번호를 새로 만든다
-        const runKey = forceResend ? `:resend:${Date.now()}` : "";
-        for (const row of rows) {
-            if (!row.phone) { result.failed += 1; continue; }
-            const callerVariables = {
-                childName: String(row.studentName ?? ""),
-                billingMonth: `${month}월`,
-                amount: Number(row.amount ?? 0).toLocaleString("ko-KR"),
-                dueDate: formatBillingDueDate(row.dueYmd),
-                academyPhone,
-            };
-            let message;
-            try {
-                message = buildBillingAlimtalkMessage("BILLING_INVOICE_PARENT", callerVariables, `payments/${row.id}`);
-            } catch (error) {
-                // 빈 값(학생명·납부기한 등)이 있으면 빈칸 문장을 만들지 않고 이 건만 건너뛴다
-                console.warn("[billing-alimtalk] 청구서 안내 틀을 채우지 못했습니다:", (error as Error).message);
-                result.failed += 1;
-                continue;
-            }
-            const sent = await sendParentSmsWithResult(
-                row.phone,
-                "BILLING_INVOICE_PARENT",
-                callerVariables,
-                { eventType: "BILLING_INVOICE_LINK", eventId: `invoice-link:${row.id}${runKey}` },
-                {
-                    body: message.smsBody,
-                    alimtalk: { templateId, variables: message.variables, text: message.body, buttons: [message.button] },
-                },
-            );
-            if (sent.ok) result.sent += 1;
-            else result.failed += 1;
-        }
-    } catch (error) {
-        console.error("[billing-alimtalk] 청구서 안내 알림톡 발송 실패:", error);
-        result.failed = Math.max(result.failed, invoiceIds.length - result.sent);
-    }
-    return result;
+// 연결부: 트랜잭션 실행기(규칙 모듈은 prisma 를 직접 import 하지 않는다)
+const billingNoticeTx: NoticeTx = (fn) => prisma.$transaction((tx) => fn(tx));
+
+// 연결부: 문자 대기열 예약 — 가입 안내·대량 발송과 같은 큐(매분 cron manual-message-dispatch 가 묶음으로 보낸다)
+function billingNoticeReserveQueue(actor: { appUserId: string; appUserName?: string | null }): ReserveQueueFn {
+    return (input) => reserveManualMessageQueue({
+        requestId: input.requestId,
+        actorUserId: actor.appUserId,
+        actorName: actor.appUserName ?? null,
+        purpose: input.purpose,
+        reason: input.reason,
+        audienceScope: "EXTERNAL",
+        body: input.body,
+        recipients: input.recipients,
+        items: input.items,
+        requestedChannel: input.items.some((item) => item.kakao) ? "ALIMTALK" : "SMS",
+    });
 }
 
-// 미납 안내 알림톡 본문 — 템플릿 id(ALIMTALK_TPL_BILLING_UNPAID)가 있을 때만 만든다.
-// 없거나 틀을 못 채우면 undefined → 지금처럼 옛 DB 문자(UNPAID_PARENT)가 나간다.
-function prepareUnpaidAlimtalk(
-    templateId: string,
-    input: { childName: string; unpaidCount: number; totalAmount: number; invoiceIds: Array<string | undefined>; academyPhone: string },
-) {
-    if (!templateId) return undefined;
-    try {
-        const message = buildBillingAlimtalkMessage(
-            "UNPAID_PARENT",
-            {
-                childName: input.childName,
-                unpaidCount: String(input.unpaidCount),
-                totalAmount: input.totalAmount.toLocaleString("ko-KR"),
-                academyPhone: input.academyPhone,
-            },
-            billingPathForInvoices(input.invoiceIds),
-        );
-        return {
-            body: message.smsBody,
-            alimtalk: { templateId, variables: message.variables, text: message.body, buttons: [message.button] },
-        };
-    } catch (error) {
-        console.warn("[billing-alimtalk] 미납 안내 틀을 채우지 못해 옛 문자로 보냅니다:", (error as Error).message);
-        return undefined;
-    }
+// 지난 발송 결과를 먼저 반영한다(끝난 건은 sentAt 이 찍혀 대상에서 빠지고, 실패한 건은 다시 대상이 된다)
+async function settleBillingNoticeResults() {
+    await applyBillingNoticeResults(prisma, billingNoticeTx, null).catch((error) => {
+        console.warn("[billing-notice] 지난 발송 결과 반영 실패:", error instanceof Error ? error.message : error);
+    });
 }
+
+const UNPAID_NOTICE_LABEL = "수강료 미납 안내";
+const INVOICE_NOTICE_LABEL = "수강료 청구서 안내";
 
 export async function sendInvoiceLinksForMonth(year: number, month: number, forceResend?: boolean) {
-    await requireAdmin();
+    const admin = await requireAdmin();
     // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 DB 를 건드리기 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
     }
+    // 예약 시점 규칙 검사(/admin/sms 문자 틀·자동 발송 규칙·채널). 꺼져 있으면 앱 알림·기록도 만들지 않는다
+    const rule = await checkBillingSendRule(prisma, BILLING_NOTICE_TRIGGER.INVOICE);
+    if (!rule.ok) return { sent: 0, ok: false, message: `${rule.message} 켠 뒤 다시 눌러 주세요. 아무것도 보내지 않았습니다.` };
+
     await ensurePaymentInfrastructure();
     await ensureInvoicesForMonth(year, month);
+    await settleBillingNoticeResults();
 
     const dueStart = `${year}-${String(month).padStart(2, "0")}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
     const dueEnd = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+    // 다시 누르면 «아직 못 받은 청구서»만(실패한 건은 sentAt 이 비어 있어 다시 대상이 된다)
     const sentFilter = forceResend ? "" : `AND i."sentAt" IS NULL`;
+    const periodKey = `${year}-${String(month).padStart(2, "0")}`;
 
     try {
-        const invoiceCandidates = await prisma.$queryRawUnsafe<{
+        const invoiceCandidates = await prisma.$queryRawUnsafe<Array<Omit<InvoiceNoticeRow, "amount"> & {
             id: string;
             amount: number;
             notificationHeld: boolean;
-        }[]>(
+        }>>(
             `
             SELECT
               i.id,
+              i.id AS "invoiceId",
+              i."paymentId",
+              i."studentId",
+              s.name AS "studentName",
+              i."parentId",
+              u.phone,
               p.amount::int AS amount,
+              -- dueDate(청구서)는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
+              TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
+              EXISTS (
+                SELECT 1 FROM "BillingNoticeDelivery" n WHERE n."noticeKey" = 'invoice:' || i.id
+              ) AS "hadPriorNotice",
               EXISTS (
                 SELECT 1
                 FROM "OperationsCommand" command
@@ -4072,9 +4039,11 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
               ) AS "notificationHeld"
             FROM "PaymentInvoice" i
             JOIN "Payment" p ON p.id = i."paymentId"
+            LEFT JOIN "Student" s ON s.id = i."studentId"
+            LEFT JOIN "User" u ON u.id = i."parentId"
             WHERE i.status NOT IN ('PAID', 'CANCELED')
               AND p.amount > 0
-              AND i."parentId" IS NOT NULL
+              -- 학부모 미연결(i."parentId" IS NULL) 청구서도 읽는다 — 조용히 빼지 않고 «대상 아님» 이름으로 보여 준다
               -- 랠리즈 청구서의 장부용 사본은 학부모에게 다시 보내지 않는다
               AND ${rallyzMirrorExclusionSql("p")}
               AND (
@@ -4096,83 +4065,91 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
             return { sent: 0, message: "발송할 청구서 링크가 없습니다." };
         }
 
-        const ids = invoices.map((invoice) => invoice.id);
-        const placeholders = ids.map((_, index) => `$${index + 1}`).join(",");
+        // 알림톡 틀 id 가 있으면 알림톡(거절되면 cron 이 같은 본문+링크를 문자로), 없으면 같은 본문+링크를 문자(LMS)로
+        const templateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey);
+        const plan = planInvoiceNotices(invoices, {
+            month,
+            academyPhone: await billingAcademyPhone(),
+            templateId,
+            resendYmd: forceResend ? todayKst() : null,
+        });
 
-        await prisma.$executeRawUnsafe(
-            `
-            INSERT INTO "Notification" (
-                id, "userId", type, title, message, "linkUrl", "isRead", "createdAt"
-            )
-            SELECT
-                gen_random_uuid()::text,
-                i."parentId",
-                'PAYMENT',
-                CONCAT($${ids.length + 1}::text, '월 수강료 청구서 안내'),
-                CONCAT(
-                    s.name,
-                    ' 학생 청구서가 발행되었습니다. 금액 ',
-                    TO_CHAR(i.amount, 'FM999,999,999'),
-                    '원, 납부기한 ',
-                    TO_CHAR(i."dueDate", 'YYYY-MM-DD'),
-                    '까지 확인해 주세요.'
-                ),
-                CONCAT('/payments/', i.id),
-                false,
-                NOW()
-            FROM "PaymentInvoice" i
-            JOIN "Student" s ON s.id = i."studentId"
-            WHERE i.id IN (${placeholders})
-              AND i."parentId" IS NOT NULL
-            `,
-            ...ids,
-            String(month),
-        );
+        const reserved = await reserveBillingNotices({
+            db: prisma,
+            tx: billingNoticeTx,
+            kind: "INVOICE",
+            periodKey,
+            notices: plan.notices,
+            actorUserId: admin.appUserId,
+            reserveQueue: billingNoticeReserveQueue(admin),
+            label: `${month}월 ${INVOICE_NOTICE_LABEL}`,
+        });
 
-        await prisma.$executeRawUnsafe(
-            `
-            UPDATE "PaymentInvoice"
-            SET "sentAt" = COALESCE("sentAt", NOW()),
-                status = CASE WHEN status = 'ISSUED' THEN 'SENT' ELSE status END,
-                "updatedAt" = NOW()
-            WHERE id IN (${placeholders})
-            `,
-            ...ids,
-        );
-
-        await prisma.$executeRawUnsafe(
-            `
-            UPDATE "Payment" p
-            SET "notifiedAt" = COALESCE(p."notifiedAt", NOW()),
-                "updatedAt" = NOW()
-            FROM "PaymentInvoice" i
-            WHERE i."paymentId" = p.id
-              AND i.id IN (${placeholders})
-            `,
-            ...ids,
-        );
+        // 앱 알림 — 이번에 새로 예약된 청구서만(실패 뒤 다시 보내는 건은 앱 알림을 또 만들지 않는다)
+        const appIds = reserved.queued
+            .filter((notice) => forceResend || !notice.hadPriorNotice)
+            .flatMap((notice) => notice.invoiceIds);
+        if (appIds.length > 0) {
+            const placeholders = appIds.map((_, index) => `$${index + 1}`).join(",");
+            await prisma.$executeRawUnsafe(
+                `
+                INSERT INTO "Notification" (
+                    id, "userId", type, title, message, "linkUrl", "isRead", "createdAt"
+                )
+                SELECT
+                    gen_random_uuid()::text,
+                    i."parentId",
+                    'PAYMENT',
+                    CONCAT($${appIds.length + 1}::text, '월 수강료 청구서 안내'),
+                    CONCAT(
+                        s.name,
+                        ' 학생 청구서가 발행되었습니다. 금액 ',
+                        TO_CHAR(i.amount, 'FM999,999,999'),
+                        '원, 납부기한 ',
+                        TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'),
+                        '까지 확인해 주세요.'
+                    ),
+                    CONCAT('/payments/', i.id),
+                    false,
+                    NOW()
+                FROM "PaymentInvoice" i
+                JOIN "Student" s ON s.id = i."studentId"
+                WHERE i.id IN (${placeholders})
+                  AND i."parentId" IS NOT NULL
+                `,
+                ...appIds,
+                String(month),
+            ).catch((error) => console.error("[billing-notice] 청구서 앱 알림 생성 실패:", error));
+        }
 
         await recordPaymentAudit({
             actorType: "ADMIN",
-            action: "INVOICE_LINKS_SENT",
-            message: `${ids.length} invoice links sent`,
-            metadata: { year, month, invoiceIds: ids },
-        });
+            actorId: admin.appUserId,
+            action: "INVOICE_LINKS_QUEUED",
+            message: `${reserved.queued.length} invoice notices queued`,
+            metadata: {
+                year, month, batchId: reserved.batchId, queueFailed: reserved.queueFailed,
+                invoiceIds: reserved.queued.flatMap((notice) => notice.invoiceIds),
+                unlinkedInvoiceIds: plan.unlinked.flatMap((item) => item.invoiceIds),
+            },
+        }).catch(() => undefined);
 
         revalidateFinanceCaches();
         revalidatePath("/mypage");
 
-        // 카카오 알림톡(실패 시 문자) — 템플릿 id 가 있을 때만. 없으면 지금처럼 앱 알림만
-        const alimtalk = await sendBillingInvoiceAlimtalks(ids, month, Boolean(forceResend));
-
+        const message = describeReservation({
+            label: `${month}월 청구서 안내`,
+            queued: reserved.queued,
+            skippedActive: reserved.skippedActive,
+            unlinked: plan.unlinked,
+        }) + (reserved.queueFailed ? " 문자 대기열 예약에 실패해 문자는 보내지 않았습니다. 잠시 후 다시 눌러 주세요." : "");
         return {
-            sent: ids.length,
-            alimtalkSent: alimtalk.sent,
-            alimtalkFailed: alimtalk.failed,
-            message: `${ids.length}건의 청구서 링크를 학부모 알림으로 발송했습니다.`
-                + (alimtalk.attempted
-                    ? ` 카카오 알림톡(실패 시 문자) ${alimtalk.sent}건 성공${alimtalk.failed > 0 ? `, ${alimtalk.failed}건 실패` : ""}.`
-                    : ""),
+            sent: reserved.queued.length,
+            ok: !reserved.queueFailed,
+            queued: reserved.queued.length,
+            unlinked: plan.unlinked.map((item) => item.studentName),
+            batchId: reserved.batchId,
+            message,
         };
     } catch (e) {
         console.error("Failed to send invoice links:", e);
@@ -4181,41 +4158,87 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
 }
 
 export async function sendUnpaidReminders() {
-    await requireAdmin();
+    const admin = await requireAdmin();
     // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 미납 상태 갱신·발송 전에 바로 돌려보낸다.
     // (throw 대신 결과로 돌려줘야 운영 빌드에서도 안내 문구가 가려지지 않는다)
     if (!isBillingParentSendEnabled()) {
         return { sent: 0, failed: 0, smsSent: 0, errors: [] as string[], ok: false, locked: true, message: BILLING_PARENT_SEND_LOCKED_MESSAGE };
     }
+    // 예약 시점 규칙 검사(/admin/sms 미납 문자 틀·자동 발송 규칙·채널)
+    const rule = await checkBillingSendRule(prisma, BILLING_NOTICE_TRIGGER.UNPAID);
+    if (!rule.ok) {
+        return { sent: 0, failed: 0, smsSent: 0, errors: [rule.message], ok: false, message: `${rule.message} 켠 뒤 다시 눌러 주세요. 아무것도 보내지 않았습니다.` };
+    }
     await ensurePaymentColumns();
     await ensurePaymentInfrastructure();
     await markOverduePayments();
+    await settleBillingNoticeResults();
 
     try {
-        // 미납 결제 건 조회 — 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
-        const condition = `WHERE p.status IN ('PENDING', 'OVERDUE') AND p."notifiedAt" IS NULL
-              AND ${rallyzMirrorExclusionSql("p")}`;
-
-        const unpaid = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT p.id, p."studentId", p.amount, p.description, p."dueDate", s."parentId"
-             FROM "Payment" p
-             -- 학부모 묶음용 parentId 만 붙인다. 병합 필터를 ON 절에 걸어 결제 행(문자 대상)은 숨기지 않는다
-             LEFT JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
-             ${condition}`
+        const kstYmd = todayKst();
+        // 미납 대상: 미납(PENDING/OVERDUE)이고 마지막 미납 안내 뒤 3일이 지난 결제.
+        //  - 예약해 두고 아직 결과가 안 나온 안내, 최근 3일 안에 나간 안내에 들어 있는 결제도 빼서 두 번 나가지 않게
+        //  - 랠리즈 청구서의 장부용 사본은 랠리즈가 이미 안내하므로 뺀다
+        const unpaid = await prisma.$queryRawUnsafe<UnpaidNoticeRow[]>(
+            `SELECT p.id AS "paymentId", i.id AS "invoiceId", p."studentId", s.name AS "studentName",
+                    s."parentId", u.phone, p.amount
+               FROM "Payment" p
+               -- 학부모 묶음용 parentId 만 붙인다. 병합 필터를 ON 절에 걸어 결제 행(안내 대상)은 숨기지 않는다
+               LEFT JOIN "Student" s ON s.id = p."studentId" AND ${notMergedStudent("s")}
+               LEFT JOIN "User" u ON u.id = s."parentId"
+               LEFT JOIN "PaymentInvoice" i ON i."paymentId" = p.id
+              WHERE p.status IN ('PENDING', 'OVERDUE')
+                AND p.amount > 0
+                AND (p."lastReminderAt" IS NULL OR p."lastReminderAt" <= NOW() - make_interval(days => $1::int))
+                AND NOT EXISTS (
+                  SELECT 1 FROM "BillingNoticeDelivery" n
+                   WHERE n.kind = 'UNPAID' AND p.id = ANY(n."paymentIds")
+                     AND (n.status = 'QUEUED'
+                          OR (n.status IN ('SENT', 'UNCERTAIN', 'APP_ONLY') AND n."createdAt" > NOW() - make_interval(days => $1::int)))
+                )
+                AND ${rallyzMirrorExclusionSql("p")}`,
+            UNPAID_REMINDER_INTERVAL_DAYS,
         );
 
         if (unpaid.length === 0) {
-            return { sent: 0, message: "발송할 미납 건이 없습니다." };
+            return { sent: 0, message: `보낼 미납 안내가 없습니다(마지막 안내 뒤 ${UNPAID_REMINDER_INTERVAL_DAYS}일이 지난 미납만 보냅니다).` };
         }
 
-        // 학부모별로 묶어 "그 학부모 자녀의 미납만" 건수·금액을 앱 알림으로 보낸다.
+        // 알림톡 id(ALIMTALK_TPL_BILLING_UNPAID)가 있으면 미납 알림톡, 없으면 /admin/sms 미납 문자 틀 + 결제 링크
+        const unpaidTemplateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT.envKey);
+        const smsTemplateBody = await renderSmsTemplate("UNPAID_PARENT", {
+            childName: "{{childName}}", unpaidCount: "{{unpaidCount}}", totalAmount: "{{totalAmount}}",
+            academyPhone: "{{academyPhone}}", paymentLink: "{{paymentLink}}",
+        });
+        if (!smsTemplateBody) {
+            return { sent: 0, failed: 0, smsSent: 0, errors: ["미납 문자 틀이 꺼져 있습니다."], ok: false, message: "/admin/sms 에서 미납 문자 틀이 꺼져 있습니다. 켠 뒤 다시 눌러 주세요." };
+        }
+        const plan = planUnpaidNotices(unpaid, {
+            kstYmd,
+            academyPhone: await billingAcademyPhone(),
+            templateId: unpaidTemplateId,
+            // DB 틀의 {{변수}} 를 이 학생 값으로(관리자가 고친 문구를 그대로 쓴다)
+            renderSms: (variables) => renderTemplate(smsTemplateBody, variables),
+        });
+
+        const reserved = await reserveBillingNotices({
+            db: prisma,
+            tx: billingNoticeTx,
+            kind: "UNPAID",
+            periodKey: kstYmd,
+            notices: plan.notices,
+            actorUserId: admin.appUserId,
+            reserveQueue: billingNoticeReserveQueue(admin),
+            label: UNPAID_NOTICE_LABEL,
+        });
+
+        // 학부모별로 묶어 "그 학부모 자녀의 미납만" 건수·금액을 앱 알림으로 보낸다(이번에 예약된 학생만).
         // (예전엔 학원 전체 합계를 모든 학부모에게 똑같이 보냈다)
+        const reservedStudents = new Set(reserved.queued.map((notice) => notice.studentId));
         const parentSummaries = summarizeUnpaidByParent(
-            unpaid.map((u: any) => ({
-                parentId: u.parentId ?? u.parentid ?? null,
-                studentId: u.studentId ?? u.studentid,
-                amount: u.amount,
-            })),
+            unpaid
+                .filter((row) => reservedStudents.has(row.studentId))
+                .map((row) => ({ parentId: row.parentId, studentId: row.studentId, amount: row.amount ?? 0 })),
         );
         for (const summary of parentSummaries) {
             await notifyParentsOfStudents(
@@ -4227,120 +4250,44 @@ export async function sendUnpaidReminders() {
             );
         }
 
-        // 한 학생의 미납 건을 문자 한 통으로 묶되, 성공한 문자에 포함된 결제만 발송 완료로 기록한다.
-        const studentUnpaid: Record<string, { count: number; total: number; paymentIds: string[] }> = {};
-        for (const u of unpaid) {
-            const sid = u.studentId ?? u.studentid;
-            if (!studentUnpaid[sid]) studentUnpaid[sid] = { count: 0, total: 0, paymentIds: [] };
-            studentUnpaid[sid].count++;
-            studentUnpaid[sid].total += Number(u.amount);
-            studentUnpaid[sid].paymentIds.push(u.id);
-        }
-
-        const sidList = Object.keys(studentUnpaid);
-        const phList = sidList.map((_: string, i: number) => `$${i + 1}`).join(",");
-        const stuParents = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT s.id, s.name, u.phone
-             FROM "Student" s JOIN "User" u ON s."parentId" = u.id
-             WHERE s.id IN (${phList}) AND u.phone IS NOT NULL AND u.phone != ''`,
-            ...sidList,
-        );
-        const parentByStudent = new Map(stuParents.map((row) => [row.id, row]));
-
-        // 카카오 알림톡(초안 틀) — 템플릿 id(ALIMTALK_TPL_BILLING_UNPAID)가 있을 때만 청구서 번호·학원 전화를 읽는다.
-        // id 가 비어 있으면 DB 를 더 읽지 않고, 아래 발송은 지금처럼 옛 DB 문자 그대로다.
-        const unpaidTemplateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT.envKey);
-        const invoiceByPayment = new Map<string, string>();
-        let unpaidAcademyPhone = "";
-        if (unpaidTemplateId) {
-            const paymentIds = unpaid.map((u: any) => String(u.id));
-            const invoiceRows = await prisma.$queryRawUnsafe<Array<{ id: string; paymentId: string }>>(
-                `SELECT id, "paymentId" FROM "PaymentInvoice"
-                  WHERE "paymentId" IN (${paymentIds.map((_: string, i: number) => `$${i + 1}`).join(",")})`,
-                ...paymentIds,
-            ).catch(() => [] as Array<{ id: string; paymentId: string }>);
-            for (const row of invoiceRows) invoiceByPayment.set(row.paymentId, row.id);
-            unpaidAcademyPhone = await billingAcademyPhone();
-        }
-
-        const successfulPaymentIds: string[] = [];
-        let successfulSms = 0;
-        const smsErrors: string[] = [];
-
-        for (const [studentId, info] of Object.entries(studentUnpaid)) {
-            const studentParent = parentByStudent.get(studentId);
-            if (!studentParent?.phone) {
-                smsErrors.push(`학생 ID ${studentId}의 학부모 전화번호가 없어 장부 생성 전 발송을 중단했습니다.`);
-                continue;
-            }
-
-            const result = await sendParentSmsWithResult(
-                studentParent.phone,
-                "UNPAID_PARENT",
-                {
-                    childName: studentParent.name,
-                    unpaidCount: String(info.count),
-                    totalAmount: info.total.toLocaleString("ko-KR"),
-                },
-                {
-                    eventType: "UNPAID_REMINDER",
-                    // 결제 ID 조합은 재호출해도 같은 사건 번호가 되어 성공 문자 중복을 막는다.
-                    eventId: `unpaid:${info.paymentIds.slice().sort().join(",")}`,
-                },
-                // 알림톡 id 가 있으면 미납 안내 틀(버튼: 청구서 한 장이면 그 청구서, 여러 장이면 마이페이지 결제)
-                prepareUnpaidAlimtalk(unpaidTemplateId, {
-                    childName: String(studentParent.name ?? ""),
-                    unpaidCount: info.count,
-                    totalAmount: info.total,
-                    invoiceIds: info.paymentIds.map((paymentId) => invoiceByPayment.get(paymentId)),
-                    academyPhone: unpaidAcademyPhone,
-                }),
-            );
-            if (result.ok) {
-                successfulSms += 1;
-                successfulPaymentIds.push(...info.paymentIds);
-            } else {
-                smsErrors.push(result.reason || `${studentParent.name} 학부모 문자 발송 실패`);
-            }
-        }
-
-        if (successfulPaymentIds.length > 0) {
-            const placeholders = successfulPaymentIds.map((_, i) => `$${i + 1}`).join(",");
-            await prisma.$executeRawUnsafe(
-                `UPDATE "Payment"
-                 SET "notifiedAt" = NOW(),
-                     "lastReminderAt" = NOW(),
-                     "reminderCount" = COALESCE("reminderCount", 0) + 1,
-                     "updatedAt" = NOW()
-                 WHERE id IN (${placeholders})`,
-                ...successfulPaymentIds,
-            );
-            await prisma.$executeRawUnsafe(
-                `UPDATE "PaymentInvoice"
-                 SET "sentAt" = COALESCE("sentAt", NOW()),
-                     "lastReminderAt" = NOW(),
-                     "reminderCount" = COALESCE("reminderCount", 0) + 1,
-                     status = CASE WHEN status = 'ISSUED' THEN 'SENT' ELSE status END,
-                     "updatedAt" = NOW()
-                 WHERE "paymentId" IN (${placeholders})`,
-                ...successfulPaymentIds,
-            );
-        }
-
         revalidateFinanceCaches();
-        const failed = unpaid.length - successfulPaymentIds.length;
+        const smsQueued = reserved.queued.filter((notice) => notice.channel !== "APP_ONLY").length;
+        const message = describeReservation({
+            label: UNPAID_NOTICE_LABEL,
+            queued: reserved.queued,
+            skippedActive: reserved.skippedActive,
+            unlinked: plan.unlinked,
+        }) + (reserved.queueFailed ? " 문자 대기열 예약에 실패해 문자는 보내지 않았습니다. 잠시 후 다시 눌러 주세요." : "");
         return {
-            sent: successfulPaymentIds.length,
-            failed,
-            smsSent: successfulSms,
-            errors: smsErrors,
-            message: failed > 0
-                ? `${successfulPaymentIds.length}건 발송 성공, ${failed}건 실패(재시도 가능) · ${smsErrors[0] || "학부모 전화번호가 없거나 문자 설정을 확인해주세요."}`
-                : `${successfulPaymentIds.length}건 알림 발송 완료`,
+            sent: reserved.queued.length,
+            failed: reserved.queueFailed ? smsQueued : 0,
+            smsSent: reserved.queueFailed ? 0 : smsQueued,
+            errors: [] as string[],
+            ok: !reserved.queueFailed,
+            unlinked: plan.unlinked.map((item) => item.studentName),
+            batchId: reserved.batchId,
+            message,
         };
     } catch (e) {
         console.error("Failed to send unpaid reminders:", e);
         throw new Error("미납 알림 발송 실패");
+    }
+}
+
+// 화면 진행 상황 — 이번 달 청구서 안내·오늘 미납 안내의 예약 N·발송 N·실패 N(지난 결과를 먼저 반영한다)
+export async function getBillingNoticeProgress(year: number, month: number) {
+    await requireAdmin();
+    try {
+        await settleBillingNoticeResults();
+        const periodKey = `${year}-${String(month).padStart(2, "0")}`;
+        const [invoice, unpaid] = await Promise.all([
+            loadBillingNoticeProgress(prisma, "INVOICE", periodKey),
+            loadBillingNoticeProgress(prisma, "UNPAID", todayKst()),
+        ]);
+        return { ok: true as const, invoice, unpaid };
+    } catch (error) {
+        console.error("[billing-notice] 진행 상황 조회 실패:", error);
+        return { ok: false as const, message: "발송 진행 상황을 불러오지 못했습니다." };
     }
 }
 
@@ -7192,7 +7139,8 @@ export async function resetSmsTemplate(id: string) {
             // 학부모 문구 — 머리말 [스티즈농구교실] 통일(2026-11-09). 수강 확정·수납 안내는 보내는 코드가 없어 뺐다.
             TRIAL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 체험수업 신청이 접수되었습니다.\n일정 확정 시 다시 안내드리겠습니다.\n문의: {{academyPhone}}`,
             ENROLL_CONFIRM_PARENT: `${PARENT_MESSAGE_PREFIX} {{childName}} 수강 신청이 접수되었습니다.\n승인 후 안내드리겠습니다.\n문의: {{academyPhone}}`,
-            UNPAID_PARENT: `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
+            // 미납 안내 = 결제 링크 포함 문구(smsTemplate.ts 기본값과 같은 상수 · 2026-11-13)
+            UNPAID_PARENT: UNPAID_PARENT_DEFAULT_BODY,
         };
 
         // 알림톡 금고 트리거는 금고 문구로 복원한다(체험 일정 확정·수강신청서 안내·셔틀·특강 5종)

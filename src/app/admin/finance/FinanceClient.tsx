@@ -22,6 +22,7 @@ import {
     refreshPaymentLedger,
     sendInvoiceLinksForMonth,
     sendUnpaidReminders,
+    getBillingNoticeProgress,
 } from "@/app/actions/admin";
 // 토스 POS «현장 결제» 번호 창(2026-11-07) — 납부완료는 토스 결제 확인으로만 바뀐다
 import PosChargeRequestModal from "./PosChargeRequestModal";
@@ -107,6 +108,8 @@ type PaymentProviderStatus = {
     secretKeyMode: "test" | "live" | "unknown";
     keyMode: "test" | "live" | "mixed" | "unknown";
     keyPairReady: boolean;
+    /** 운영(VERCEL_ENV=production)에 테스트 키 쌍 — 결제를 막는다(2026-11-13) */
+    productionTestKeyBlocked?: boolean;
     cafe24BridgeUrlConfigured: boolean;
     cafe24BridgeUrlValid: boolean;
     cafe24BridgeSecretConfigured: boolean;
@@ -118,6 +121,29 @@ type PaymentProviderStatus = {
     failUrlPreview: string | null;
     webhookUrl: string | null;
 };
+
+// 청구 안내 진행 상황 한 묶음(서버 loadBillingNoticeProgress 결과)
+type NoticeProgressView = {
+    total: number;
+    queued: number;
+    sent: number;
+    failed: number;
+    uncertain: number;
+    appOnly: number;
+    alimtalk: number;
+    sms: number;
+    failedNames: string[];
+};
+
+// 진행 상황 한 줄 — «예약 N · 발송 N · 실패 N(이름) · 앱 알림만 N». 기록이 없으면 null
+function noticeProgressLine(label: string, p: NoticeProgressView): string | null {
+    if (p.total === 0) return null;
+    const parts = [`예약 ${p.queued}`, `발송 ${p.sent}`, `실패 ${p.failed}`];
+    if (p.uncertain > 0) parts.push(`확인 필요 ${p.uncertain}`);
+    if (p.appOnly > 0) parts.push(`앱 알림만 ${p.appOnly}`);
+    const names = p.failedNames.length > 0 ? ` (${p.failedNames.slice(0, 5).join(", ")}${p.failedNames.length > 5 ? " 외" : ""})` : "";
+    return `${label}: ${parts.join(" · ")}${names}`;
+}
 
 type FinancePayload = {
     payments: Payment[];
@@ -420,6 +446,8 @@ export default function FinanceClient({
     const [sheetApplying, setSheetApplying] = useState(false);
     const [sheetError, setSheetError] = useState<string | null>(null);
     const [financeNotice, setFinanceNotice] = useState<string | null>(null);
+    // 청구 안내 발송 진행 상황(서버 대기열) — null 이면 표시 안 함
+    const [noticeProgress, setNoticeProgress] = useState<{ invoice: NoticeProgressView; unpaid: NoticeProgressView } | null>(null);
     // «납부 처리» 창 대상(1건 = 행 메뉴, 여러 건 = 체크박스 선택). null 이면 창 닫힘
     const [recordTargets, setRecordTargets] = useState<Payment[] | null>(null);
     // true 면 «납부 처리» 창이 «현장 결제» 확인 화면으로 바로 열린다(«이 학생 미납 모두 현장 결제» 메뉴)
@@ -516,6 +544,29 @@ export default function FinanceClient({
         if (hasInitialData) return;
         void loadMonth(initialYear ?? fallbackYear, initialMonth ?? fallbackMonth);
     }, [fallbackMonth, fallbackYear, hasInitialData, initialMonth, initialYear, loadMonth]);
+
+    // 청구서 안내·미납 안내 진행 상황(예약 N·발송 N·실패 N) — 발송은 매분 서버가 묶음으로 처리한다(2026-11-13).
+    // 발송 잠금이면 부르지 않는다. 아직 나가는 중(예약 > 0)이면 20초마다 다시 읽고, 다 끝나면 멈춘다.
+    const loadNoticeProgress = useCallback(async (y: number, m: number) => {
+        if (parentSendLocked) return;
+        try {
+            const result = await getBillingNoticeProgress(y, m);
+            setNoticeProgress(result.ok ? { invoice: result.invoice, unpaid: result.unpaid } : null);
+        } catch {
+            setNoticeProgress(null);
+        }
+    }, [parentSendLocked]);
+
+    useEffect(() => {
+        void loadNoticeProgress(year, month);
+    }, [loadNoticeProgress, year, month]);
+
+    const noticeStillQueued = (noticeProgress?.invoice.queued ?? 0) + (noticeProgress?.unpaid.queued ?? 0) > 0;
+    useEffect(() => {
+        if (!noticeStillQueued) return;
+        const timer = window.setInterval(() => void loadNoticeProgress(year, month), 20_000);
+        return () => window.clearInterval(timer);
+    }, [noticeStillQueued, loadNoticeProgress, year, month]);
 
     function prevMonth() {
         const m = month === 1 ? 12 : month - 1;
@@ -665,6 +716,8 @@ export default function FinanceClient({
             const result = await sendUnpaidReminders();
             await loadMonth(year, month);
             setFinanceNotice(result.message);
+            // 발송은 서버가 매분 묶음으로 — 진행 상황 줄을 바로 갱신(나가는 중이면 20초마다 다시 읽는다)
+            await loadNoticeProgress(year, month);
         } catch (err: unknown) {
             alert(getErrorMessage(err, "알림 발송 실패"));
         } finally {
@@ -692,6 +745,7 @@ export default function FinanceClient({
             const result = await sendInvoiceLinksForMonth(year, month);
             await loadMonth(year, month);
             setFinanceNotice(result.message);
+            await loadNoticeProgress(year, month);
         } catch (err: unknown) {
             alert(getErrorMessage(err, "청구서 링크 발송 실패"));
         } finally {
@@ -1147,6 +1201,7 @@ export default function FinanceClient({
         paymentProvider.provider === "CAFE24_BRIDGE" && paymentProvider.cafe24BridgeSecretConfigured && !paymentProvider.cafe24BridgeSecretValid
             ? "본사 연동 서명키 형식"
             : null,
+        paymentProvider.provider === "TOSS" && paymentProvider.productionTestKeyBlocked ? "운영 서버에 테스트 키(실거래 키로 교체 필요)" : null,
         paymentProvider.provider === "TOSS" && !paymentProvider.clientKeyConfigured ? "결제 클라이언트 키 미설정" : null,
         paymentProvider.provider === "TOSS" && !paymentProvider.secretKeyConfigured ? "결제 서버 키 미설정" : null,
         paymentProvider.provider === "TOSS" && paymentProvider.clientKeyConfigured && paymentProvider.secretKeyConfigured && !paymentProvider.keyPairReady
@@ -1253,12 +1308,30 @@ export default function FinanceClient({
                 </p>
             )}
 
+            {/* 청구 안내 발송 진행 상황 — 한 줄로(예약 N · 발송 N · 실패 N). 실패한 건은 같은 버튼을 다시 누르면 이어 보낸다 */}
+            {noticeProgress && (noticeProgress.invoice.total > 0 || noticeProgress.unpaid.total > 0) && (
+                <div role="status" className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-[var(--color-academy-line)] bg-white px-3 py-2 text-xs font-bold text-[var(--color-academy-ink)]">
+                    <span className="material-symbols-outlined text-[17px] text-[var(--color-academy-muted)]" aria-hidden="true">outgoing_mail</span>
+                    {[
+                        noticeProgressLine(`${month}월 청구서 안내`, noticeProgress.invoice),
+                        noticeProgressLine("오늘 미납 안내", noticeProgress.unpaid),
+                    ].filter(Boolean).map((line) => <span key={line}>{line}</span>)}
+                    {noticeStillQueued && <span className="text-[var(--color-academy-muted)]">보내는 중 — 자동으로 새로 고칩니다</span>}
+                    {!noticeStillQueued && (noticeProgress.invoice.failed + noticeProgress.unpaid.failed) > 0 && (
+                        <span className="text-[var(--color-academy-muted)]">실패한 건은 같은 버튼을 다시 누르면 그 건만 이어 보냅니다</span>
+                    )}
+                </div>
+            )}
+
             <section className="mb-4 rounded-xl border border-[var(--color-academy-line)] bg-white p-3 shadow-sm">
                 <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/admin/finance/prepare?month=${year}-${String(month).padStart(2, "0")}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-academy-primary)] px-4 text-sm font-bold text-[var(--color-academy-on-primary)]">
                         <span className="material-symbols-outlined" aria-hidden="true">receipt_long</span>이번 달 청구 준비
                     </Link>
-                    {!paymentProvider.providerReady && <span className="text-xs font-semibold text-[var(--color-academy-muted)]">온라인 결제 준비 중</span>}
+                    {/* 운영 서버에 테스트 키가 들어 있으면 결제를 막고 눈에 띄게 알린다(테스트 카드로 «납부 완료»가 되는 사고 방지) */}
+                    {paymentProvider.productionTestKeyBlocked
+                        ? <span role="alert" className="text-xs font-bold text-[var(--color-academy-danger)]">운영 서버에 테스트 결제 키가 들어 있어 온라인 결제를 막았습니다 — 실거래(live) 키로 바꿔 주세요</span>
+                        : !paymentProvider.providerReady && <span className="text-xs font-semibold text-[var(--color-academy-muted)]">온라인 결제 준비 중</span>}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
                         {/* 시트 원장 은퇴(2026-10~) 면 대조할 시트 자료가 없으므로 「시트 점검」 버튼을 숨긴다 */}
                         {!sheetRetired && (

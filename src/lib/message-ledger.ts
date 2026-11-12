@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+// 타입만 가져온다(실행 코드는 필요할 때 동적 import — 이 파일을 불러 쓰는 다른 검사가 의존성을 늘리지 않게)
+import type { BillingGuardTrigger } from "@/lib/billing/noticeQueue";
 
 export type MessageLedgerSource = "AUTO" | "MANUAL" | "SECURITY";
 
@@ -56,10 +58,18 @@ export type ManualQueueKakao =
   | { kind: "BMS_FREE"; notAfter: string };
 
 /** 받는 사람 한 명분(본문이 사람마다 다를 수 있다) */
-export type ManualQueueItem = { recipient: string; body: string; kakao?: ManualQueueKakao };
+export type ManualQueueItem = {
+  recipient: string;
+  body: string;
+  kakao?: ManualQueueKakao;
+  /** 호출부가 미리 정한 발송 행 id(청구 안내 연결표가 결과를 이 id 로 찾는다 · 2026-11-13). 없으면 새로 만든다 */
+  deliveryId?: string;
+  /** 보내기 직전에 다시 볼 청구 안내 규칙(잠금·/admin/sms 규칙). 꺼져 있으면 cron 이 보내지 않고 실패로 남긴다 */
+  guard?: BillingGuardTrigger;
+};
 
 // perItem=true 면 크론이 «공통 본문 묶음» 대신 한 통씩 다른 본문으로 보낸다(기존 묶음은 perItem 없음 = 예전 그대로)
-type ManualQueuePayload = { recipient: string; body: string; perItem?: true; kakao?: ManualQueueKakao };
+type ManualQueuePayload = { recipient: string; body: string; perItem?: true; kakao?: ManualQueueKakao; guard?: BillingGuardTrigger };
 
 function queueEncryptionKey() {
   return createHash("sha256").update(privacySecret(), "utf8").digest();
@@ -124,9 +134,11 @@ export async function reserveManualMessageQueue(input: {
       const messageType = item.kakao?.kind === "ALIMTALK" ? "ALIMTALK" : item.kakao?.kind === "BMS_FREE" ? "BMS" : null;
       await tx.$executeRawUnsafe(
         `INSERT INTO "NotificationDelivery" (id,"batchId",source,"stableEventKey","eventType",trigger,"audienceScope","recipientPhoneHash","recipientPhoneLast4","bodyHash",channel,"requestedChannel","messageType","dedupeKey",status,"attemptCount","payloadJSON","createdAt","updatedAt") VALUES ($1,$2,'MANUAL',$3,'MANUAL_MESSAGE','MANUAL_MESSAGE',$4,$5,$6,$7,$10,$11,$12,$8,'PENDING',0,$9::jsonb,NOW(),NOW())`,
-        randomUUID(), batchId, stableEventKey, input.audienceScope, phoneHash, messagePhoneLast4(recipient),
-        hashMessageBody(item.body), buildMessageDedupeKey({ source: "MANUAL", eventKey: stableEventKey, recipientPhoneHash: phoneHash }),
-        JSON.stringify(sealManualQueuePayload({ recipient, body: item.body, ...(item.perItem ? { perItem: true as const } : {}), ...(item.kakao ? { kakao: item.kakao } : {}) })),
+        item.deliveryId ?? randomUUID(), batchId, stableEventKey, input.audienceScope, phoneHash, messagePhoneLast4(recipient),
+        hashMessageBody(item.body),
+        // 같은 번호에 다른 안내(형제 청구서 2장)가 함께 나갈 수 있어, 호출부 id 가 있으면 그 id 로 중복 키를 나눈다
+        buildMessageDedupeKey({ source: "MANUAL", eventKey: item.deliveryId ? `${stableEventKey}:${item.deliveryId}` : stableEventKey, recipientPhoneHash: phoneHash }),
+        JSON.stringify(sealManualQueuePayload({ recipient, body: item.body, ...(item.perItem ? { perItem: true as const } : {}), ...(item.kakao ? { kakao: item.kakao } : {}), ...(item.guard ? { guard: item.guard } : {}) })),
         channel, requestedChannel, messageType,
       );
     }
@@ -168,6 +180,27 @@ export async function claimManualMessageQueue(limit = 10) {
           row.id,
         );
         finalizeBatchIds.add(row.batchId);
+      }
+    }
+    // 청구 안내(guard 있음)는 «실제로 보내기 직전»에 잠금·/admin/sms 규칙을 다시 본다(예약 뒤 원장이 끈 경우).
+    // 꺼져 있으면 보내지 않고 FAILED 로 남긴다 → 연결표도 실패가 되어, 다시 켠 뒤 누르면 이어 보낸다.
+    const guarded = claimed.filter((item) => item.guard);
+    if (guarded.length > 0) {
+      const { checkBillingSendRule } = await import("@/lib/billing/noticeQueue");
+      const decisions = new Map<string, Awaited<ReturnType<typeof checkBillingSendRule>>>();
+      for (const item of guarded) {
+        const trigger = item.guard!;
+        if (!decisions.has(trigger)) {
+          decisions.set(trigger, await checkBillingSendRule(tx, trigger).catch(() => ({ ok: false as const, code: "SMS_TEMPLATE_DISABLED" as const, message: "규칙 조회 실패" })));
+        }
+        const decision = decisions.get(trigger)!;
+        if (decision.ok) continue;
+        await tx.$executeRawUnsafe(
+          `UPDATE "NotificationDelivery" SET status='FAILED', "errorCode"=$2, "failedAt"=NOW(), "payloadJSON"=NULL, "lockedAt"=NULL, "lockToken"=NULL, "updatedAt"=NOW() WHERE id=$1`,
+          item.id, `BILLING_SEND_BLOCKED:${decision.code}`,
+        );
+        finalizeBatchIds.add(item.batchId);
+        claimed.splice(claimed.indexOf(item), 1);
       }
     }
     for (const row of claimed) finalizeBatchIds.add(row.batchId);
@@ -555,4 +588,12 @@ export async function finalizeMessageDeliveryBatch(batchId: string) {
       WHERE b.id = counts."batchId"`,
     batchId,
   );
+  // 청구 안내 연결표 — 이 묶음에서 끝난 건(성공·실패·불확실)을 옮기고, 성공한 청구서만 «발송됨»으로 찍는다(2026-11-13).
+  // 다른 묶음(가입 안내·공지)이면 바뀌는 행이 없다. 실패해도 문자 장부 정리는 이미 끝났으니 경고만 남긴다.
+  try {
+    const { applyBillingNoticeResults } = await import("@/lib/billing/noticeQueue");
+    await applyBillingNoticeResults(prisma, (fn) => prisma.$transaction((tx) => fn(tx)), batchId);
+  } catch (error) {
+    console.warn(`[ledger] 청구 안내 결과 반영 실패 batch=${batchId}`, error instanceof Error ? error.message : error);
+  }
 }
