@@ -24,6 +24,8 @@ export const API_PATHS = {
   /** 요청 선점(PENDING → SENT). 응답으로 금액·면세·메모 문구를 받는다 */
   claim: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/claim`,
   startCheck: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/start-check`,
+  /** 납부 상태 조회(읽기 전용) — startPayment 오류 뒤 웹훅이 이미 납부를 기록했는지 확인 */
+  paymentState: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/payment-state`,
   /** «결제 시도됨» 참고 보고. 납부 처리는 서버가 웹훅+재조회로만 한다 */
   report: (id: string) => `/api/pos-plugin/charge-requests/${encodeURIComponent(id)}/report`,
   /** 미납 청구서 검색(이름 일부) */
@@ -283,6 +285,16 @@ export function parseUnpaidList(body: unknown): UnpaidItem[] {
     });
   }
   return out;
+}
+
+/** 납부 상태 조회 응답 { status, paid } → paid 여부. 못 읽으면 null */
+export function parsePaymentState(body: unknown): { status: string; paid: boolean } | null {
+  const b = unwrap(body);
+  if (!isObj(b)) return null;
+  const status = str(pick(b, "status"));
+  const paid = b.paid === true || status === "PAID";
+  if (!status && b.paid === undefined) return null;
+  return { status, paid };
 }
 
 /** 보고 응답에서 요청 상태만 읽는다(PAID 면 «사이트 납부완료» 안내) */

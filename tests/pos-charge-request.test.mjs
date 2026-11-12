@@ -824,6 +824,7 @@ test("플러그인 API: 모든 경로가 토큰 인증을 거치며 납부 처�
     "src/app/api/pos-plugin/charge-requests/[id]/cancel/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/claim/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/dismiss/report/route.ts",
+    "src/app/api/pos-plugin/charge-requests/[id]/payment-state/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/report/route.ts",
     "src/app/api/pos-plugin/charge-requests/[id]/start-check/route.ts",
     "src/app/api/pos-plugin/charge-requests/route.ts",
@@ -843,6 +844,14 @@ test("플러그인 API: 모든 경로가 토큰 인증을 거치며 납부 처�
     assert.doesNotMatch(await readFile(f, "utf8"), /readJsonBody|req\.json/, `${f} 는 본문(금액)을 받지 않는다`);
   }
   assert.match(await readFile("src/app/api/pos-plugin/unpaid/[paymentId]/charge/route.ts", "utf8"), /createAndClaimForPlugin\(paymentId, auth\.tokenId\)/);
+  // 납부 상태 조회는 읽기 전용 + 이 POS 가 가져간 요청만
+  const stateRoute = await readFile("src/app/api/pos-plugin/charge-requests/[id]/payment-state/route.ts", "utf8");
+  assert.match(stateRoute, /getChargeRequestPaymentStateForPlugin\(id, auth\.tokenId\)/);
+  assert.doesNotMatch(stateRoute, /readJsonBody|req\.json/);
+  const svc = await readFile(SERVICE, "utf8");
+  const stateFn = svc.slice(svc.indexOf("export async function getChargeRequestPaymentStateForPlugin"), svc.indexOf("/** 이 보고는 POS 주문의 UI 상태만 기록한다"));
+  assert.match(stateFn, /r\."claimedByTokenId" = \$2/);
+  assert.doesNotMatch(stateFn, /UPDATE|INSERT|DELETE/);
 });
 
 test("미결제 주문 취소는 원래 POS로만 전달하고 현장 확인까지 같은 청구의 결제를 막는다", async () => {

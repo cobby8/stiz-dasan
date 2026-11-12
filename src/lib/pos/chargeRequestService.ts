@@ -829,6 +829,23 @@ export async function assertChargeRequestMayStartForPlugin(requestId: string, to
     if (!row) throw new ChargeRequestError("NOT_CLAIMABLE", "취소됐거나 상태가 달라진 결제 요청입니다.");
 }
 
+/**
+ * POS 가 startPayment 오류를 받았을 때 «정말 결제됐는지» 서버에 묻는다(읽기 전용, 2026-11-10 S-563655).
+ * 이 POS 가 가져간 요청만 본다. 납부 여부는 토스 웹훅이 기록한 값(status·paidAt·tossPaymentId)만 쓴다.
+ */
+export async function getChargeRequestPaymentStateForPlugin(requestId: string, tokenId: string): Promise<{ status: string; paid: boolean }> {
+    const id = String(requestId ?? "").trim();
+    if (!/^[0-9a-f-]{10,64}$/i.test(id)) throw new ChargeRequestError("NOT_FOUND", "요청을 찾지 못했습니다.");
+    const [row] = await prisma.$queryRawUnsafe<{ status: string; paid: boolean }[]>(
+        `SELECT r.status, (r.status = 'PAID' OR r."paidAt" IS NOT NULL OR r."tossPaymentId" IS NOT NULL) AS paid
+           FROM "PosChargeRequest" r WHERE r.id = $1 AND r."claimedByTokenId" = $2`,
+        id,
+        tokenId,
+    );
+    if (!row) throw new ChargeRequestError("NOT_FOUND", "요청을 찾지 못했습니다.");
+    return { status: row.status, paid: row.paid === true };
+}
+
 /** 이 보고는 POS 주문의 UI 상태만 기록한다. 승인·환불 상태는 토스가 확인한 값만 쓴다. */
 export async function reportChargeDismissalFromPlugin(input: {
     requestId: string;

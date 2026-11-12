@@ -1,7 +1,7 @@
 // 결제 흐름 테스트 — 가짜 SDK 로 «다른 주문 담김 · 중복 클릭 · 선점 실패 · 정상 · 결제 신호»를 확인
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RECENT_KEY, addRecent, createChargeFlow, parseRecent } from "../src/core/charge.ts";
+import { RECENT_KEY, SERVER_STATE_TRIES, addRecent, createChargeFlow, parseRecent } from "../src/core/charge.ts";
 import type { ServerApi, ApiResult } from "../src/core/api.ts";
 import type { ChargeRequest, DismissReport, ReportBody } from "../src/core/contract.ts";
 import type { DraftLineItemInput, DraftOrderLike, OrderLike, PosSdkLike } from "../src/core/pos-types.ts";
@@ -136,6 +136,10 @@ function fakeApi(claimResult: ApiResult<ChargeRequest> = { ok: true, data: REQ }
     },
     async startCheck() {
       return { ok: true as const, data: true as const };
+    },
+    async paymentState(id: string) {
+      calls.push(`paymentState:${id}`);
+      return { ok: true as const, data: { status: "SENT", paid: false } };
     },
     async searchUnpaid() {
       return { ok: true as const, data: [] };
@@ -281,6 +285,55 @@ test("결제 화면 호출 후 임시 주문이 남아도 실패로 보고하지
   assert.ok(!log.some((l) => l.startsWith("toast.error:")));
   assert.ok(!calls.includes("report:req-1:start_failed"));
   assert.equal(flow.isBusy(), false);
+});
+
+test("startPayment 오류·장바구니에 항목 남음·결제 신호 없음이어도 서버가 납부완료면 조용히 started(2026-11-10 S-563655)", async () => {
+  const { sdk, log } = fakeSdk();
+  sdk.draftOrder.startPayment = async () => {
+    throw new Error("pos_error");
+  };
+  const { api, calls } = fakeApi();
+  let asked = 0;
+  api.paymentState = async (id: string) => {
+    calls.push(`paymentState:${id}`);
+    asked++;
+    // 웹훅이 조금 늦게 와서 두 번째 조회부터 납부완료
+    return { ok: true, data: asked >= 2 ? { status: "PAID", paid: true } : { status: "SENT", paid: false } };
+  };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "started");
+  assert.equal(asked, 2);
+  assert.ok(!log.some((l) => l.startsWith("toast.error:")));
+  assert.ok(!log.some((l) => l.startsWith("toast.warn:")));
+  assert.ok(!calls.includes("report:req-1:start_failed"));
+});
+
+test("startPayment 오류 뒤 서버 조회가 계속 미납이면 정해진 횟수만 묻고 확인 안내(실패 보고 없음)", async () => {
+  const { sdk, log } = fakeSdk();
+  sdk.draftOrder.startPayment = async () => {
+    throw new Error("pos_error");
+  };
+  const { api, calls } = fakeApi();
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "unconfirmed");
+  assert.equal(calls.filter((c) => c === "paymentState:req-1").length, SERVER_STATE_TRIES);
+  assert.ok(log.some((l) => l.startsWith("toast.warn:S-4821 POS에 열린 결제 화면")));
+  assert.ok(!calls.includes("report:req-1:start_failed"));
+});
+
+test("서버 조회가 인증 오류면 더 묻지 않고 확인 안내로", async () => {
+  const { sdk } = fakeSdk();
+  sdk.draftOrder.startPayment = async () => {
+    throw new Error("pos_error");
+  };
+  const { api, calls } = fakeApi();
+  api.paymentState = async (id: string) => {
+    calls.push(`paymentState:${id}`);
+    return { ok: false, kind: "auth", code: 401, message: "x" };
+  };
+  const flow = createChargeFlow({ sdk, api, now: () => NOW, sleep: sleep0 });
+  assert.equal(await flow.startCharge(REQ), "unconfirmed");
+  assert.equal(calls.filter((c) => c === "paymentState:req-1").length, 1);
 });
 
 test("결제 화면 호출 전 POS 오류는 실패 보고하고 잠금 해제", async () => {

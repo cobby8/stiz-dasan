@@ -7,6 +7,7 @@ import {
   parseCancelReport,
   parseChargeRequestList,
   parseClaimResponse,
+  parsePaymentState,
   parseReportStatus,
   parseStartAllowed,
   parseUnpaidList,
@@ -162,6 +163,9 @@ export function createServerApi(deps: ApiDeps) {
       call("GET", API_PATHS.chargeRequestsWait(opts.waitSec, opts.known), null, parseWaitList, longPollTimeoutMs(opts.waitSec)),
     claim: (id: string): Promise<ApiResult<ChargeRequest>> => call("POST", API_PATHS.claim(id), {}, parseClaimResponse),
     startCheck: (id: string): Promise<ApiResult<true>> => call("POST", API_PATHS.startCheck(id), {}, parseStartAllowed),
+    /** 납부 상태 조회(읽기 전용) — 서버가 토스 웹훅으로 이미 납부를 기록했는지 */
+    paymentState: (id: string): Promise<ApiResult<{ status: string; paid: boolean }>> =>
+      call("POST", API_PATHS.paymentState(id), {}, parsePaymentState),
     report: (id: string, body: ReportBody): Promise<ApiResult<string>> =>
       call("POST", API_PATHS.report(id), body, parseReportStatus),
     searchUnpaid: (q: string): Promise<ApiResult<UnpaidItem[]>> =>

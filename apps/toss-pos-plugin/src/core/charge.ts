@@ -48,6 +48,10 @@ export type StartOptions = {
 export const DRAFT_RECHECK_TRIES = 3;
 export const DRAFT_RECHECK_GAP_MS = 300;
 
+/** startPayment 오류 뒤 서버 납부 상태를 묻는 횟수와 간격 — 토스 웹훅 도착(보통 1~2초)을 기다린다(최대 약 6초) */
+export const SERVER_STATE_TRIES = 4;
+export const SERVER_STATE_GAP_MS = 2000;
+
 /** 최근 선점 목록 읽기(망가진 값은 빈 목록) */
 export function parseRecent(raw: string | undefined): RecentCharge[] {
   if (!raw) return [];
@@ -102,11 +106,15 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
    * 결제 완료 신호와 장바구니 상태를 확인한다. 결제창이 열려 있어도 항목은 남을 수 있다.
    * 결제 신호가 조금 늦게 올 수 있어 짧게(최대 약 0.9초) 기다리며 다시 본다.
    */
-  async function paymentProceeded(shortCode: string): Promise<"paid" | "left_draft" | "stuck"> {
+  async function paymentProceeded(req: Pick<ChargeRequest, "id" | "shortCode">): Promise<"paid" | "left_draft" | "stuck"> {
+    const { shortCode } = req;
     for (let i = 0; i < DRAFT_RECHECK_TRIES; i++) {
       if (paidCodes.has(shortCode)) return "paid";
       if (i < DRAFT_RECHECK_TRIES - 1) await sleep(DRAFT_RECHECK_GAP_MS);
     }
+    // 결제 완료 신호는 워커에만 와서 탭 화면에서 시작한 결제는 paidCodes 가 비어 있을 수 있다(2026-11-10 S-563655:
+    // 결제·사이트 반영은 정상인데 18초 뒤 «다시 시도» 오류). 서버는 토스 웹훅으로 납부를 이미 알고 있으니 물어본다(읽기 전용).
+    if (await serverSaysPaid(req.id)) return "paid";
     try {
       const d = await sdk.draftOrder.get();
       const ours = (d.lineItems ?? []).some((li) => (parseMemo(li.memo) ?? parseMemo(li.item?.code)) === shortCode);
@@ -114,6 +122,21 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
     } catch {
       return "stuck"; // 확인이 안 되면 예전처럼 오류로 안내
     }
+  }
+
+  /** 서버가 이 요청을 납부완료로 기록했는지 — 웹훅이 1~2초 늦을 수 있어 몇 번 다시 묻는다. 확인 실패는 «모름»(false) */
+  async function serverSaysPaid(requestId: string): Promise<boolean> {
+    for (let i = 0; i < SERVER_STATE_TRIES; i++) {
+      try {
+        const r = await api.paymentState(requestId);
+        if (r.ok && r.data.paid) return true;
+        if (!r.ok && (r.kind === "auth" || r.kind === "not_found" || r.kind === "no_token")) return false;
+      } catch {
+        /* 조회 실패는 모름으로 둔다 */
+      }
+      if (i < SERVER_STATE_TRIES - 1) await sleep(SERVER_STATE_GAP_MS);
+    }
+    return false;
   }
 
   async function remember(req: ChargeRequest): Promise<void> {
@@ -218,7 +241,7 @@ export function createChargeFlow(deps: ChargeFlowDeps) {
         // 2026-11-08 실측(S-092770·S-290064·S-754720): 토스 POS 는 결제가 «끝난 뒤» startPayment 를 오류로 돌려줄 때가 있다
         // (서버에는 PAID 다음에 START_FAILED pos_error 가 찍힘). 그대로 «다시 시도해 주세요»를 띄우면 이중 결제를 부를 수 있어,
         // 결제가 진행됐는지 먼저 본다.
-        const after = await paymentProceeded(claimed.shortCode);
+        const after = await paymentProceeded(claimed);
         if (after === "paid") return "started"; // 결제 완료 신호를 이미 받음 — 조용히 끝(완료 토스트는 결제 신호 쪽이 띄움)
         if (after === "left_draft") {
           // 우리 항목이 결제 화면(장바구니)에서 빠졌다 = 결제 단계로 넘어갔다. 다시 결제하라고 하지 않는다.
