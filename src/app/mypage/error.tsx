@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useTransition } from "react";
 
 /**
  * 학부모 화면 오류 안내(d1, 2026-11-13).
@@ -17,6 +18,8 @@ export default function MyPageError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+  const [retrying, startTransition] = useTransition();
   useEffect(() => {
     console.error("[mypage] 화면을 불러오지 못했습니다.", error);
   }, [error]);
@@ -37,9 +40,15 @@ export default function MyPageError({
         인터넷 연결이 잠시 불안정했을 수 있어요. 다시 시도해 주세요.
       </p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
-        <button type="button" onClick={reset} className="academy-button-primary min-h-11 px-5">
+        {/* reset() 만 부르면 서버에서 실패한 화면은 같은 오류를 다시 그린다 → 서버 데이터를 새로 받고(refresh) 같이 다시 그린다 */}
+        <button
+          type="button"
+          disabled={retrying}
+          onClick={() => startTransition(() => { router.refresh(); reset(); })}
+          className="academy-button-primary min-h-11 px-5"
+        >
           <span className="material-symbols-outlined leading-none" style={{ fontSize: "18px" }} aria-hidden="true">refresh</span>
-          다시 시도
+          {retrying ? "다시 불러오는 중" : "다시 시도"}
         </button>
         <Link href="/mypage" className="academy-button-secondary min-h-11 px-5">
           홈으로

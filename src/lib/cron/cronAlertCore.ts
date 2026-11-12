@@ -58,9 +58,10 @@ export function createWithCronAlert(deps: CronAlertDeps) {
       const now = deps.now();
       const last = lastAlertAt.get(cronName);
       if (last !== undefined && now - last < CRON_ALERT_WINDOW_MS) return;
-      lastAlertAt.set(cronName, now);
       const windowKey = Math.floor(now / CRON_ALERT_WINDOW_MS);
       await deps.sendOncePerWindow(cronName, windowKey, buildCronAlertText(cronName, reason));
+      // 보낸 «뒤»에 표시한다 — 보내기가 실패하면 표시가 안 남아 다음 실패 때 다시 시도한다
+      lastAlertAt.set(cronName, now);
     } catch (error) {
       // 알림 실패는 cron 결과를 바꾸지 않는다 — 로그만 남긴다
       log(`[cron-alert] ${cronName} 알림 실패:`, shortReason(error));

@@ -88,3 +88,21 @@ test("모든 cron 경로가 withCronAlert 로 GET 을 내보낸다(payment-overd
   }
   assert.deepEqual(missing, []);
 });
+
+test("보내기가 실패하면 «보냄» 표시가 남지 않아 다음 실패 때 다시 시도한다", async () => {
+  let fail = true;
+  const sent = [];
+  const withCronAlert = createWithCronAlert({
+    now: () => 0,
+    async sendOncePerWindow(name) { if (fail) throw new Error("slack down"); sent.push(name); },
+    log: () => {},
+  });
+  const route = withCronAlert("x", async () => new Response("err", { status: 500 }));
+  await route();
+  assert.equal(sent.length, 0);
+  fail = false;
+  await route();
+  assert.equal(sent.length, 1);
+  await route();
+  assert.equal(sent.length, 1, "보낸 뒤에는 1시간 안에 다시 안 보낸다");
+});

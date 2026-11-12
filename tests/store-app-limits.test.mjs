@@ -123,3 +123,17 @@ test("마이페이지 통신 실패는 그 자리 안내(d1)·첫 화면 부분 
   assert.match(globalErr, /다시 시도/);
   assert.doesNotMatch(globalErr, /^import /m, "global-error 는 다른 모듈을 쓰지 않는다(레이아웃이 깨진 상황용)");
 });
+
+test("검수 권장 반영: 문의 2,000자 제한·남은 글자, 오류 화면 다시 시도 = refresh+reset, 관리자 확인 요청당 한 번", () => {
+  const home = read("src/app/mypage/MyPageClient.tsx");
+  assert.match(home, /maxLength=\{2000\}/);
+  assert.match(home, /\{reqContent\.length\.toLocaleString\("ko-KR"\)\} \/ 2,000자/);
+  const err = read("src/app/mypage/error.tsx");
+  assert.match(err, /startTransition\(\(\) => \{ router\.refresh\(\); reset\(\); \}\)/);
+  const guard = read("src/lib/auth-guard.ts");
+  assert.match(guard, /import \{ cache \} from "react";/);
+  assert.match(guard, /export const requireAdmin: \(\) => Promise<AdminAuthUser> = cache\(requireAdminUncached\);/);
+  assert.match(guard, /export const requireOwner\b[^\n]*= cache\(requireOwnerUncached\);/);
+  // 쿠키를 읽는 확인은 unstable_cache(여러 요청이 공유) 안에 두면 안 된다 — 주석 속 낱말은 빼고 본다
+  assert.doesNotMatch(guard.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""), /unstable_cache/);
+});

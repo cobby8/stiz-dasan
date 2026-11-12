@@ -13,8 +13,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { GEMINI_CHAT_MODEL, getGeminiClient } from "@/lib/gemini-client";
-import { clientIpKey, takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
-import { CHAT_RATE_LIMITS, chatRateLimitMessage, sanitizeChatMessages } from "@/lib/chat/chatRequestGuard";
+import { takePublicRateLimit } from "@/lib/seasonal/public-rate-limit";
+import { CHAT_RATE_LIMITS, chatClientIpKey, chatRateLimitMessage, sanitizeChatMessages } from "@/lib/chat/chatRequestGuard";
 
 // --- Gemini 클라이언트 초기화 (모듈 레벨에서 1회만) ---
 // 카카오 정책 답변과 같은 공용 설정(@/lib/gemini-client)을 쓴다. 키가 없으면 null.
@@ -965,7 +965,7 @@ export async function POST(request: NextRequest) {
 
   // IP 당 횟수 제한(분당 5·하루 50) — 로그인 없이 열린 유료(Gemini) 호출이라 반복 호출을 막는다.
   // 기존 공개 신청과 같은 메모리 버킷 방식(takePublicRateLimit)을 재사용한다.
-  const ipKey = clientIpKey(request);
+  const ipKey = chatClientIpKey(request.headers);
   for (const rule of CHAT_RATE_LIMITS) {
     const taken = takePublicRateLimit(`chat:${rule.scope}:${ipKey}`, { limit: rule.limit, windowMs: rule.windowMs });
     if (!taken.allowed) {

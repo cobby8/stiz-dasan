@@ -20,6 +20,8 @@ function loadSource(relativePath, dependencies, isolatedProcess) {
   });
   const exports = {};
   const allowedRequire = id => {
+    // auth-guard 의 React cache()(요청 단위 기억, 2026-11-13)는 테스트에서는 그대로 통과시킨다
+    if (id === "react" && !Object.hasOwn(dependencies, id)) return { cache: (fn) => fn };
     if (!Object.hasOwn(dependencies, id)) {
       throw new Error(`격리 API 테스트에서 허용하지 않은 의존성: ${id}`);
     }

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { childAccessSql, hasGrantedChildren } from "@/lib/account/child-access";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -294,7 +295,7 @@ export async function getVerifiedParentState(): Promise<VerifiedParentState> {
  * - DB에서 role을 조회하여 ADMIN/VICE_ADMIN이 아니면 에러
  * - $queryRawUnsafe 사용: PgBouncer 트랜잭션 모드 호환
  */
-export async function requireAdmin(): Promise<AdminAuthUser> {
+async function requireAdminUncached(): Promise<AdminAuthUser> {
   const user = await requireAuth();
   const email = normalizeEmail(user.email);
 
@@ -384,7 +385,7 @@ export async function requireStaff(): Promise<StaffAuthUser> {
  * - 스태프 관리, 역할 변경 등 최고 권한이 필요한 작업용
  * - VICE_ADMIN은 차단됨 — ADMIN만 통과
  */
-export async function requireOwner() {
+async function requireOwnerUncached() {
   const user = await requireAuth();
   const email = normalizeEmail(user.email);
 
@@ -406,3 +407,13 @@ export async function requireOwner() {
     appUserRole: "ADMIN" as const,
   });
 }
+
+/**
+ * 한 요청 안에서는 관리자·원장 확인을 한 번만 한다(2026-11-13 검수 권장).
+ * 관리자 화면은 레이아웃·화면·읽기 함수(adminOnly)가 각각 requireAdmin 을 불러, 감싸지 않으면
+ * 한 화면에 로그인 확인 + DB 역할 조회가 여러 번 나간다. React cache() 는 «요청 단위» 기억이라
+ * 다른 사람·다음 요청에는 섞이지 않는다(쿠키 읽기 허용 — unstable_cache 와 다르다).
+ * 서버 컴포넌트 렌더 밖(라우트 핸들러·서버 액션)에서는 기억하지 않고 매번 확인한다.
+ */
+export const requireAdmin: () => Promise<AdminAuthUser> = cache(requireAdminUncached);
+export const requireOwner: () => ReturnType<typeof requireOwnerUncached> = cache(requireOwnerUncached);

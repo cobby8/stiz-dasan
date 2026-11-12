@@ -4,7 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 function load(file, deps={}) {
   const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const exports={};new Function('require','exports',js)(name=>{if(name in deps)return deps[name];throw Error(`Unexpected ${name}`)},exports);return exports;
+  const exports={};new Function('require','exports',js)(name=>{if(name in deps)return deps[name];/* auth-guard 의 React cache() 는 통과(2026-11-13) */if(name==="react")return {cache:(fn)=>fn};throw Error(`Unexpected ${name}`)},exports);return exports;
 }
 const withdrawal=load('src/lib/account/withdrawal.ts');
 const policy=load('src/lib/account/account-withdrawal-policy.ts',{'./withdrawal':withdrawal});

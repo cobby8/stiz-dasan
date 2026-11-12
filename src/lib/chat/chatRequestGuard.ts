@@ -72,3 +72,15 @@ export function chatRateLimitMessage(scope: "minute" | "day"): string {
     ? "오늘 챗봇 질문 횟수를 모두 썼어요. 궁금한 점은 상담 신청이나 전화로 문의해 주세요."
     : "질문이 너무 빨라요. 1분 뒤에 다시 물어봐 주세요.";
 }
+
+/**
+ * 챗봇 횟수 제한용 IP(2026-11-13 검수 권장). Vercel 이 붙이는 x-forwarded-for 첫 값 → x-real-ip 순.
+ * cf-connecting-ip 는 믿지 않는다 — 우리 앞에 Cloudflare 가 없어 누구나 이 머리글을 지어 보내 IP 를 바꿔 가며
+ * 횟수 제한을 피할 수 있다. (공용 clientIpKey 는 다른 화면이 쓰므로 바꾸지 않고 챗봇 전용으로 둔다)
+ */
+export function chatClientIpKey(headers: { get(name: string): string | null }): string {
+  const raw = headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    || headers.get("x-real-ip")?.trim()
+    || "unknown";
+  return raw.slice(0, 100) || "unknown";
+}

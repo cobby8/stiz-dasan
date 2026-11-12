@@ -607,8 +607,11 @@ export default function MyPageClient({ data, notices = [], myRequests = [], pare
                             onChange={e => setReqContent(e.target.value)}
                             placeholder="문의하실 내용을 편하게 적어주세요"
                             rows={4}
+                            // 서버 한도(createParentRequest 2,000자)와 같게 — 넘겨 쓰고 보냈다가 거절되는 일이 없게
+                            maxLength={2000}
                             className="w-full border border-[var(--color-academy-line)] rounded-xl px-3 py-2 text-sm resize-none"
                         />
+                        <p className="mt-0.5 text-right text-xs tabular-nums text-[var(--color-academy-faint)]" aria-live="polite">{reqContent.length.toLocaleString("ko-KR")} / 2,000자</p>
                     </div>
 
                     {/* 제출 */}

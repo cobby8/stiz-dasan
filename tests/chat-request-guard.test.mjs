@@ -66,3 +66,14 @@ test("/api/chat 이 제한을 실제로 쓴다", () => {
   assert.match(src, /status: 429/);
   assert.match(src, /sanitizeChatMessages\(body\?\.messages\)/);
 });
+
+test("챗봇 IP: x-forwarded-for 첫 값 → x-real-ip, cf-connecting-ip 는 믿지 않는다", async () => {
+  const { chatClientIpKey } = await import("../src/lib/chat/chatRequestGuard.ts");
+  const h = (o) => ({ get: (k) => o[k] ?? null });
+  assert.equal(chatClientIpKey(h({ "x-forwarded-for": "1.1.1.1, 9.9.9.9", "x-real-ip": "2.2.2.2", "cf-connecting-ip": "3.3.3.3" })), "1.1.1.1");
+  assert.equal(chatClientIpKey(h({ "x-real-ip": "2.2.2.2", "cf-connecting-ip": "3.3.3.3" })), "2.2.2.2");
+  assert.equal(chatClientIpKey(h({ "cf-connecting-ip": "3.3.3.3" })), "unknown");
+  const src = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  assert.match(src, /chatClientIpKey\(request\.headers\)/);
+  assert.doesNotMatch(src, /clientIpKey\(request\)/);
+});
