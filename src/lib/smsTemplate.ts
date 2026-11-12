@@ -10,7 +10,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { parentAlimtalkSmsTemplateBody, PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
+import { billingAlimtalkSmsTemplateBody, parentAlimtalkSmsTemplateBody, PARENT_MESSAGE_PREFIX } from "@/lib/messaging/parent-alimtalk-templates";
 
 // ── DDL ensure: SmsTemplate 테이블이 없으면 생성 ──────────────────────────────
 let _smsTemplateEnsured = false;
@@ -140,6 +140,16 @@ const DEFAULT_TEMPLATES: [string, string, string, string, string, string][] = [
         `${PARENT_MESSAGE_PREFIX} 미납 수납 안내\n{{childName}}: {{unpaidCount}}건 ({{totalAmount}}원)\n확인 부탁드립니다.`,
         "미납 알림 일괄 발송 시 학부모에게 발송",
         '["childName","unpaidCount","totalAmount"]',
+    ],
+    // 수강료 청구서 발행 안내(2026-11-12) — 자동 발송 규칙(채널·켜기/끄기)을 두려고 행을 만든다.
+    // 실제 문구는 코드 틀(BILLING_ALIMTALK_TEMPLATES)이 만들고, 알림톡 id(ALIMTALK_TPL_BILLING_INVOICE)가 있을 때만 나간다.
+    [
+        "BILLING_INVOICE_PARENT",
+        "수강료 청구서 발행 안내 (학부모)",
+        "PARENT",
+        billingAlimtalkSmsTemplateBody("BILLING_INVOICE_PARENT"),
+        "청구서 링크 발송 시 학부모에게 카카오 알림톡(실패 시 문자). 문구는 카카오 등록 문구(코드)로 나가며 여기 문구는 표시용",
+        '["childName","billingMonth","amount","dueDate","academyPhone","invoiceLink"]',
     ],
     // 특강 접수·승인·대기·취소·결제 요청 = 알림톡 금고 틀(코드가 정본). 반려·가입 안내는 아직 문자 전용(2차)
     ["SPECIAL_APPLICATION_RECEIVED_PARENT", "특강 신청 접수", "PARENT", parentAlimtalkSmsTemplateBody("SPECIAL_APPLICATION_RECEIVED_PARENT"), "특강 신청 직후 접수 안내", '["childName","seasonTitle","offeringTitle","academyPhone"]'],

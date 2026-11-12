@@ -56,6 +56,8 @@
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: (묶음 — 아래 하위 항목이 원래 항목, 최신순)
+  - **[2026-11-12] 수강료 청구 알림톡 = 별도 금고 BILLING_ALIMTALK_TEMPLATES(버튼 있는 틀)**
+    청구서 발행(원장 승인)·미납(초안) 2종. 버튼 있는 틀은 `body`=알림톡 등록 문구, `smsBody`=본문+«청구서 확인하기: 링크». 발송부 `alimtalk.text`·`alimtalk.buttons`(선택)로 알림톡엔 text, 문자 대체엔 body 가 간다(`sendParentSmsWithResult` 5번째 인자 prepared). env id 가 비면 «지금 동작 그대로»(청구서=앱 알림만, 미납=옛 DB 문자) — 9종처럼 문자 본문을 바꾸지 않는다. 발송 잠금(BILLING_PARENT_SEND_ENABLED) 뒤. 테스트 tests/billing-alimtalk-templates.test.mjs(가짜 fetch 로 발송부 실행).
   - **[2026-11-09] 학부모 공지 = 대량 큐의 «받는 사람마다 다른 본문» 항목(알림톡·브랜드 메시지·문자)**
     대량 발송 큐 `reserveManualMessageQueue` 에 선택 인자 `items`(사람별 body + kakao{ALIMTALK|BMS_FREE})·`requestedChannel` 을 더했다. items 가 있으면 payload 에 `perItem:true` 가 실려 크론 `manual-message-dispatch` 가 `sendPerMessageBulkDetailed`(솔라피 send-many 에 메시지별 type ATA/BMS_FREE/SMS)로 보낸다 — 없으면 예전 «공통 본문» 경로 그대로(BATCH_BODY_MISMATCH 검사 유지). 카카오가 명시 거절하면 같은 내용을 문자로 1회, 응답 불확실은 재시도 금지. 장부 channel 칸은 DB CHECK 때문에 BMS 를 못 넣어 SMS 로 두고 종류는 messageType=BMS. 공지 틀은 `NOTICE_ALIMTALK_TEMPLATES`(자동 트리거 9종과 분리), 순수 규칙 `src/lib/messaging/parent-notice.ts`, 서버 `src/app/actions/parent-notice.ts`(미리보기→승인 재계산, OperationsAuditLog PARENT_NOTICE_*).
   - **[2026-11-09] 학부모 알림톡 = 공용 금고 parent-alimtalk-templates.ts (대관 패턴 일반화)**

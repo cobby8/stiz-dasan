@@ -183,7 +183,10 @@ function walk(dir) {
 const SRC_FILES = walk("src").map((p) => ({ path: p.replace(/\\/g, "/"), code: read(p) }));
 
 test("가드: 코드에 나오는 학부모 트리거(*_PARENT·*_APPLICANT)는 금고 또는 «문자 전용 허용목록»에만 있다", () => {
-  const allowed = new Set([...TRIGGERS, ...Object.keys(reg.SMS_ONLY_PARENT_TRIGGERS)]);
+  // 청구 알림톡 2종(BILLING_ALIMTALK_TEMPLATES, 2026-11-12)도 금고다
+  const allowed = new Set([
+    ...TRIGGERS, ...Object.keys(reg.SMS_ONLY_PARENT_TRIGGERS), ...Object.keys(reg.BILLING_ALIMTALK_TEMPLATES),
+  ]);
   // 문자 트리거가 아닌 같은 모양의 상수(예: 결석 반영 계획 종류 BLOCKED_PARENT)는 제외
   const NOT_MESSAGE_TRIGGERS = new Set(["BLOCKED_PARENT"]);
   const unknown = [];
