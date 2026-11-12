@@ -54,6 +54,11 @@ export default function InviteStaffModal({
                     phone: form.phone.trim(),
                     role: form.role,
                 });
+                // 예상된 거절(이미 가입된 계정·대기 중 초대 등)은 이유를 그대로 보여 준다
+                if ("rejected" in invitation) {
+                    onError(invitation.error);
+                    return;
+                }
                 setResult(invitation);
                 onSuccess();
             } catch (error) {

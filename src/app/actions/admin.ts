@@ -7411,6 +7411,16 @@ const SMS_SEND_FAILED = "문자 발송에 실패했습니다. 가입 링크를 �
  * 이름 + 전화번호 + 역할을 받아서 7일 유효한 초대를 생성
  * 생성 후 SMS로 초대 링크를 발송한다
  */
+const STAFF_ROLE_LABEL: Record<string, string> = { ADMIN: "원장", VICE_ADMIN: "부원장", INSTRUCTOR: "코치/강사", DRIVER: "셔틀 기사" };
+
+/**
+ * 초대 거절 사유 — throw 하면 운영 빌드에서 서버 액션 오류 문구가 가려져 화면엔 «만들지 못했습니다»만 보인다
+ * (2026-11-12 김영중 기사: 이미 가입된 계정인데 이유가 안 보임). 예상된 거절은 값으로 돌려준다.
+ */
+function inviteStaffRejected(error: string) {
+    return { rejected: true as const, error };
+}
+
 export async function inviteStaff(data: {
     name: string;
     phone: string;
@@ -7420,7 +7430,7 @@ export async function inviteStaff(data: {
     await ensureStaffInvitationTable();
 
     if (data.role !== "INSTRUCTOR" && data.role !== "DRIVER") {
-        throw new Error("초대는 선생님 또는 기사 역할만 선택할 수 있습니다.");
+        return inviteStaffRejected("초대는 선생님 또는 기사 역할만 선택할 수 있습니다.");
     }
     const staffRole = data.role;
     const staffRoleLabel = staffRole === "DRIVER" ? "셔틀 기사" : "코치/강사";
@@ -7428,10 +7438,10 @@ export async function inviteStaff(data: {
     const cleanName = data.name.trim();
     const cleanPhone = data.phone.replace(/\D/g, "");
     if (!cleanName) {
-        throw new Error("이름을 입력해 주세요.");
+        return inviteStaffRejected("이름을 입력해 주세요.");
     }
     if (!/^010\d{8}$/.test(cleanPhone)) {
-        throw new Error("휴대전화 번호는 010으로 시작하는 11자리 숫자로 입력해 주세요.");
+        return inviteStaffRejected("휴대전화 번호는 010으로 시작하는 11자리 숫자로 입력해 주세요.");
     }
 
     // 같은 번호로 PENDING 상태인 초대가 이미 있는지 확인
@@ -7442,16 +7452,25 @@ export async function inviteStaff(data: {
         cleanPhone,
     );
     if (existing.length > 0) {
-        throw new Error("이미 대기 중인 초대가 있습니다. 기존 초대를 취소 후 다시 시도해주세요.");
+        return inviteStaffRejected("이 번호로 대기 중인 초대가 이미 있습니다. 대기 중인 초대 목록에서 다시 보내거나 취소한 뒤 만들어 주세요.");
     }
 
     // 이미 가입된 스태프인지 확인
-    const existingUser = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM "User" WHERE phone = $1 AND role IN ('ADMIN','VICE_ADMIN','INSTRUCTOR','DRIVER') LIMIT 1`,
+    // 번호는 숫자만 비교한다(「010-1234-5678」과 「01012345678」을 같은 사람으로).
+    const existingUser = await prisma.$queryRawUnsafe<Array<{ name: string; role: string; createdAt: Date | null }>>(
+        `SELECT name, role::text AS role, "createdAt" FROM "User"
+          WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+            AND role IN ('ADMIN','VICE_ADMIN','INSTRUCTOR','DRIVER') AND "withdrawnAt" IS NULL
+          LIMIT 1`,
         cleanPhone,
     );
     if (existingUser.length > 0) {
-        throw new Error("이미 등록된 스태프입니다.");
+        const found = existingUser[0];
+        const roleLabel = STAFF_ROLE_LABEL[found.role] ?? "스태프";
+        const joined = found.createdAt ? ` ${new Date(found.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })} 가입` : "";
+        return inviteStaffRejected(
+            `이미 가입된 ${roleLabel} 계정이 있습니다(${found.name}${joined}). 새 초대 없이 전화번호(숫자만)와 비밀번호로 로그인하면 됩니다.`,
+        );
     }
 
     // 다중 역할(2026-10-25): 이 번호의 학부모 계정이 이미 있으면 새 계정을 만들지 않고
