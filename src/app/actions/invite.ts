@@ -7,6 +7,14 @@ import { isSmsProviderConfigured } from "@/lib/sms";
 import { sendAuthenticationSms } from "@/lib/message-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
+import {
+  STAFF_NEEDS_VERIFICATION_MESSAGE,
+  STAFF_PASSWORD_MIN,
+  classifyAuthFailure,
+  decideInviteFailureOutcome,
+  staffAuthFailureMessage,
+  type AuthFailureKind,
+} from "@/lib/staff/inviteAuthFailure";
 
 const MAX_OTP_ATTEMPTS = 5;
 const SMS_TIMEOUT_MS = 10_000;
@@ -294,12 +302,14 @@ export async function verifyInviteCode(token: string, code: string) {
 }
 
 export async function acceptInvitation(token: string, password: string) {
-  if (!password || password.length < 10) return { error: "비밀번호는 10자 이상이어야 합니다." };
+  if (!password || password.length < STAFF_PASSWORD_MIN) return { error: "비밀번호는 10자 이상이어야 합니다." };
 
   const attemptId = randomUUID();
   let authUserId: string | null = null;
   let invitationId: string | null = null;
-  let authCreationUncertain = false;
+  // createUser/updateUserById 실패 판정(2026-11-12 사고 뒤): 확실한 거절(4xx) vs 결과 모름(네트워크·5xx)
+  let authFailure: AuthFailureKind | null = null;
+  let authCreateStarted = false; // createUser 를 불렀는가(PASSWORD_RESET 은 부르지 않는다)
   try {
     const rows = await prisma.$queryRawUnsafe<InvitationRow[]>(
       `UPDATE "StaffInvitation"
@@ -313,7 +323,8 @@ export async function acceptInvitation(token: string, password: string) {
       attemptId,
     );
     const invitation = rows[0];
-    if (!invitation) return { error: "전화번호 인증이 필요하거나 이미 처리 중인 초대입니다." };
+    // needsVerification: 문자 인증 유효시간이 지났거나 아직 안 했다 → 화면이 본인 인증 단계로 돌아간다
+    if (!invitation) return { error: STAFF_NEEDS_VERIFICATION_MESSAGE, needsVerification: true };
     invitationId = invitation.id;
 
     await prisma.$executeRawUnsafe(
@@ -336,7 +347,11 @@ export async function acceptInvitation(token: string, password: string) {
       const target = targets[0];
       if (!target) throw new Error("재설정할 직원 계정을 찾지 못했습니다. 원장에게 문의해주세요.");
       const { error: updateError } = await createAdminClient().auth.admin.updateUserById(target.authUserId ?? target.id, { password });
-      if (updateError) throw new Error(`비밀번호를 바꾸지 못했습니다: ${updateError.message}`);
+      if (updateError) {
+        // 약한 비밀번호 등 4xx 거절이면 같은 화면에서 다른 비밀번호로 바로 다시 하게 한다(계정은 그대로)
+        authFailure = classifyAuthFailure(updateError);
+        throw new Error(authFailure === "uncertain" ? "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." : staffAuthFailureMessage(authFailure));
+      }
       await prisma.$transaction(async (tx) => {
         const done = await tx.$executeRawUnsafe(
           `UPDATE "StaffInvitation"
@@ -358,6 +373,7 @@ export async function acceptInvitation(token: string, password: string) {
 
     const staffEmail = `${invitation.phone}@staff.stiz.kr`;
     const supabaseAdmin = createAdminClient();
+    authCreateStarted = true; // 여기부터의 «결과 모름»은 계정이 남았을 수 있다
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: staffEmail,
       password,
@@ -365,9 +381,11 @@ export async function acceptInvitation(token: string, password: string) {
       user_metadata: { name: invitation.name, role: invitation.role, invitationAttemptId: attemptId },
     });
     if (authError || !authData.user) {
-      const alreadyExists = authError?.message?.toLowerCase().includes("already") ?? false;
-      authCreationUncertain = !alreadyExists;
-      throw new Error(alreadyExists ? "이미 가입된 계정입니다. 로그인 페이지에서 로그인해주세요." : `계정 생성 실패: ${authError?.message || "알 수 없는 오류"}`);
+      // 4xx 거절(약한 비밀번호·이미 있음·검증 실패)은 «안 만들어짐»이 확실하다 — 초대를 잠그지 않는다.
+      // 네트워크·5xx·시간 초과만 «결과 모름»으로 보고 RECOVERY_REQUIRED 로 관리자 확인을 받는다.
+      authFailure = classifyAuthFailure(authError);
+      console.error("[acceptInvitation] createUser failed:", { kind: authFailure, status: authError?.status, code: authError?.code, message: authError?.message });
+      throw new Error(authFailure === "uncertain" ? `계정 생성 실패: ${authError?.message || "알 수 없는 오류"}` : staffAuthFailureMessage(authFailure));
     }
     authUserId = authData.user.id;
     const ownershipRecorded = await prisma.$executeRawUnsafe(
@@ -440,8 +458,25 @@ export async function acceptInvitation(token: string, password: string) {
         authDeleteError?.slice(0, 1000) ?? null,
       ).catch(() => undefined);
     }
+    // 실패 뒤 초대 상태 판정(순수 함수 — tests/staff-invite-auth-failure.test.mjs 가 실행해 검증).
+    // PASSWORD_RESET 의 updateUserById «결과 모름»은 새 계정이 생기지 않으므로 잠그지 않는다(기존 동작 유지).
+    const outcome = decideInviteFailureOutcome({
+      createdAuthUserId: authUserId,
+      authDeleteFailed: Boolean(authDeleteError),
+      authFailure: authFailure === "uncertain" && !authCreateStarted ? null : authFailure,
+    });
+    if (invitationId && !authUserId && outcome !== "RECOVERY_REQUIRED") {
+      // 계정을 하나도 만들지 않은 시도는 닫는다. 시도 표의 CHECK 에 FAILED 가 없어
+      // «남은 Auth 계정 없음» 뜻의 DELETED 로 두고, error 칸에 거절 사유를 남긴다.
+      await prisma.$executeRawUnsafe(
+        `UPDATE "StaffInvitationAuthAttempt" SET status = 'DELETED', error = $2, "updatedAt" = NOW()
+         WHERE id = $1 AND status = 'CREATING'`,
+        attemptId,
+        `NOT_CREATED:${authFailure ?? "ERROR"}`,
+      ).catch(() => undefined);
+    }
     if (invitationId) {
-      if ((authUserId && authDeleteError) || authCreationUncertain) {
+      if (outcome === "RECOVERY_REQUIRED") {
         const recoveryRecorded = await prisma.$executeRawUnsafe(
           `UPDATE "StaffInvitation"
            SET status = 'RECOVERY_REQUIRED', "recoveryAuthUserId" = $1, "recoveryError" = $2,
@@ -462,6 +497,21 @@ export async function acceptInvitation(token: string, password: string) {
             authUserId,
             stage: "RECOVERY_REQUIRED_RECORD",
           });
+        }
+      } else if (outcome === "RETRY_KEEP_OTP") {
+        // 확실히 안 만들어짐 + 비밀번호 탓 → 문자 인증은 살려 두고 같은 링크·같은 화면에서 바로 다시 시도.
+        // (인증 유효시간이 지났으면 다음 시도에서 needsVerification 으로 본인 인증부터 다시 한다)
+        const retryRecorded = await prisma.$executeRawUnsafe(
+          `UPDATE "StaffInvitation"
+           SET status = 'PENDING', "otpConsumedAt" = NULL,
+               "processingAttemptId" = NULL, "processingStartedAt" = NULL,
+               "recoveryAuthUserId" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
+           WHERE id = $1 AND status = 'PROCESSING' AND "processingAttemptId" = $2`,
+          invitationId,
+          attemptId,
+        ).catch(() => 0);
+        if (retryRecorded !== 1) {
+          console.error("[STAFF_INVITE_CRITICAL] invitation retry reset failed", { invitationId, attemptId, stage: "PENDING_RETRY" });
         }
       } else {
         const resetRecorded = await prisma.$executeRawUnsafe(
@@ -485,6 +535,10 @@ export async function acceptInvitation(token: string, password: string) {
       }
     }
     console.error("[acceptInvitation] failed:", error);
-    return { error: authDeleteError || authCreationUncertain ? "계정 생성 상태 확인이 필요합니다. 관리자에게 문의해주세요." : error instanceof Error ? error.message : "가입 처리 실패" };
+    return {
+      error: outcome === "RECOVERY_REQUIRED" ? "계정 생성 상태 확인이 필요합니다. 관리자에게 문의해주세요." : error instanceof Error ? error.message : "가입 처리 실패",
+      // 문자 인증까지 지운 경우(RESET_PENDING)는 화면이 본인 인증 단계로 돌아간다
+      needsVerification: invitationId && outcome === "RESET_PENDING" ? true : undefined,
+    };
   }
 }

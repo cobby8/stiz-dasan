@@ -146,3 +146,9 @@
 - **발견자**: debugger
 - **내용**: 76b979ac 가 `<RegularRunEditor key={serviceMonth}>` 를 `` key={`${serviceMonth}:${정류장/학생}`} `` 로 바꿔 «월 전환 재마운트» 검사(정규식 `key=\{serviceMonth\}`)가 깨졌고, f9265bc5 가 «시각 미입력» 경고 목록을 `<details>` 로 붙여 «운행표 접는 영역 없음» 검사(`<details` 전면 금지)가 깨졌다. 둘 다 **동작은 그대로**(달이 key 안에 있음 / 운행표 자체는 펼침)라 테스트를 의도대로 넓혔다: key 는 serviceMonth 를 포함하면 통과, `<details>` 는 그 경고 덩어리만 빼고 금지 + 그 덩어리에 운행표(`운행표|lg:grid`)가 들어가면 실패. 판별법: 깨진 커밋 직전/직후로 checkout 해 테스트 2개만 돌려 커밋을 특정하고, «테스트가 지키던 동작»이 실제로 남아 있는지 코드로 확인. **예방**: 화면 파일을 고치면 그 파일명을 `readFileSync` 하는 테스트를 `grep -l` 로 찾아 같이 돌린다.
 - **참조횟수**: 0
+
+### [2026-11-12] 약한 비밀번호 거절(Supabase 422)을 «결과 모름»으로 보고 직원 초대를 RECOVERY_REQUIRED 로 잠금
+- **분류**: error
+- **발견자**: developer
+- **내용**: `acceptInvitation` 이 createUser 실패를 «메시지에 already 가 있으면 확실, 아니면 전부 결과 모름»으로 나눠, «Password is known to be weak…»(AuthWeakPasswordError·422) 같은 **명백한 거절**에도 초대를 RECOVERY_REQUIRED 로 잠갔다. 그 뒤 같은 링크는 «가입 처리 상태를 확인 중입니다»로 막혔고(실제 계정·User 행 없음), 시도 기록도 CREATING 으로 남았다. 수정: `src/lib/staff/inviteAuthFailure.ts` — **응답이 온 4xx(408 제외)만 «확실히 안 만들어짐»**, status 0/없음·408·5xx 는 «결과 모름». 약한 비밀번호·기타 4xx = 시도 DELETED(`NOT_CREATED:<사유>`, CHECK 에 FAILED 없음)+초대 PENDING(문자 인증 유지 → 같은 화면 재시도), 결과 모름만 RECOVERY_REQUIRED. 화면은 쉬운 문구·입력값 유지·흔한 비밀번호 사전 경고. **교훈**: 외부 API 실패를 «잠금»으로 처리할 땐 «서버가 보고 거절»인지 «결과 모름»인지 status 로 가른다 — 문구 포함 여부로 가르지 않는다. 가드 `tests/staff-invite-auth-failure.test.mjs`.
+- **참조횟수**: 0

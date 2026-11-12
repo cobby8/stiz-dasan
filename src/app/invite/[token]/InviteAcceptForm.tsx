@@ -15,6 +15,7 @@ import {
     acceptInvitation,
 } from "@/app/actions/invite";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { commonPasswordWarning, STAFF_PASSWORD_MIN } from "@/lib/staff/inviteAuthFailure";
 
 interface Props {
     token: string;
@@ -56,6 +57,8 @@ export default function InviteAcceptForm({
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [passwordError, setPasswordError] = useState("");
+    // 입력 중 사전 경고(10자 이상일 때만 — 짧을 땐 길이 안내가 먼저)
+    const weakWarning = password.length >= STAFF_PASSWORD_MIN ? commonPasswordWarning(password) : null;
 
     // 완료 후 표시할 이메일
     const [resultEmail, setResultEmail] = useState("");
@@ -110,8 +113,13 @@ export default function InviteAcceptForm({
     function handleAccept() {
         setPasswordError("");
 
-        if (password.length < 10) {
+        if (password.length < STAFF_PASSWORD_MIN) {
             setPasswordError("비밀번호는 10자 이상이어야 합니다.");
+            return;
+        }
+        // 숫자만·같은 글자 반복·123456 류는 서버(Supabase)가 거의 확실히 거절한다 → 보내기 전에 막는다
+        if (weakWarning) {
+            setPasswordError(weakWarning);
             return;
         }
         if (password !== confirmPassword) {
@@ -121,7 +129,15 @@ export default function InviteAcceptForm({
 
         startTransition(async () => {
             const result = await acceptInvitation(token, password);
+            if (result.error && "needsVerification" in result && result.needsVerification) {
+                // 문자 인증이 만료됐거나 다시 해야 한다 → 본인 인증 단계로(입력한 비밀번호는 그대로 둔다)
+                setVerifyMsg({ text: "본인 인증 시간이 지났어요. 인증번호를 다시 받아 주세요.", ok: false });
+                setVerifyCode("");
+                setStep(1);
+                return;
+            }
             if (result.error) {
+                // 약한 비밀번호 거절 등 — 같은 화면에서 비밀번호만 바꿔 바로 다시 할 수 있다(입력값 유지)
                 setPasswordError(userErrorMessage(result.error, isReset ? "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." : "가입을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."));
             } else {
                 setResultEmail(result.email || "");
@@ -287,6 +303,10 @@ export default function InviteAcceptForm({
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-navy-500 focus:border-brand-navy-500"
                                 autoFocus
                             />
+                            {/* 흔한 비밀번호 사전 경고 — 제출 전에 미리 알려 준다 */}
+                            {weakWarning && (
+                                <p className="mt-1 text-xs text-[var(--color-academy-warning)]">{weakWarning}</p>
+                            )}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">비밀번호 확인</label>
