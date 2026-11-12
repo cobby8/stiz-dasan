@@ -28,7 +28,14 @@ import {
 } from "@/lib/students/parentAccountLink";
 import { autoLinkApplicationsForTrialLead, getTrialLinkSuggestions, linkTrialLeadToApplication } from "@/lib/enrollment/trialLeadLinkService";
 import type { TrialLinkSuggestion } from "@/lib/enrollment/trialLeadMatch";
-import { requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
+import { forgetAppUserRoleCache, requireAdmin, requireOwner, requireVerifiedParent } from "@/lib/auth-guard";
+import {
+    RETIRED_LOGIN_BAN_DURATION,
+    isConvertibleStaffRole,
+    shouldBlockLoginOnRetire,
+    staffAuthId,
+    staffLoginKind,
+} from "@/lib/staff/staffAccountLink";
 import {
     createNotificationRecord,
     notifyAdmins,
@@ -7573,22 +7580,38 @@ export async function inviteStaff(data: {
         };
     }
 
+    // 2026-11-12 퇴사 처리 뒤 다시 일하게 된 경우: 그 사람의 옛 직원 기록(학부모로 내려간 직원 전용 계정)에
+    // 새 초대를 붙인다(targetUserId). 가입하면 새 계정을 만들지 않고 그 기록을 다시 연다 — 같은 아이디로
+    // 새 로그인을 만들려다 «이미 있는 계정»으로 막히던 길을 없앤다(acceptInvitation 의 targetUserId 분기).
+    const retiredRecords = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "User"
+          WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+            AND role = 'PARENT' AND "withdrawnAt" IS NULL
+            AND lower(email) IN ($2, $3)
+          LIMIT 2`,
+        cleanPhone,
+        `${cleanPhone}@staff.stiz.kr`,
+        `${cleanPhone}@staff.local`,
+    );
+    const retiredTargetUserId = retiredRecords.length === 1 ? retiredRecords[0].id : null;
+
     try {
         // 초대 레코드 생성 — 만료: 7일 후
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", "createdBy", "createdAt", "updatedAt")
+            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", "targetUserId", "createdBy", "createdAt", "updatedAt")
              VALUES (
                (gen_random_uuid())::text,
                (gen_random_uuid())::text,
                $1, $2, $3::"Role", 'PENDING',
                NOW() + INTERVAL '7 days',
-               $4, NOW(), NOW()
+               $5, $4, NOW(), NOW()
              )
              RETURNING id, token`,
             cleanName,
             cleanPhone,
             staffRole,
             user.id,
+            retiredTargetUserId,
         );
 
         const invitationId = rows[0]?.id;
@@ -7750,7 +7773,7 @@ export async function resendInvitation(invitationId: string) {
     try {
         // 초대 정보 조회
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT token, name, phone, "expiresAt", purpose
+            `SELECT token, name, phone, "expiresAt", purpose, "targetUserId"
              FROM "StaffInvitation"
              WHERE id = $1 AND status = 'PENDING'
              LIMIT 1`,
@@ -7793,7 +7816,10 @@ export async function resendInvitation(invitationId: string) {
                     ? `[STIZ 농구교실] ${inv.name}님, 비밀번호 재설정 링크를 다시 보냅니다.
 아래 링크에서 문자 인증 후 새 비밀번호를 정해 주세요:
 ${inviteUrl}`
-                    : `[STIZ 농구교실] ${inv.name}님, 스태프 초대 링크를 재발송합니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
+                    : inv.targetUserId
+                        // 직접 추가 직원의 앱 계정 전환 — 첫 발송도 원장이 [문자 보내기]로 보낸다(자동 발송 없음)
+                        ? `[STIZ 농구교실] ${inv.name}님, 스태프 앱 가입 링크입니다.\n아래 링크에서 문자 인증 후 비밀번호를 정해 주세요:\n${inviteUrl}`
+                        : `[STIZ 농구교실] ${inv.name}님, 스태프 초대 링크를 재발송합니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
             })
             : { ok: false, reason: SMS_SITE_URL_MISSING };
 
@@ -7818,4 +7844,230 @@ ${inviteUrl}`
         console.error("[resendInvitation] failed:", e);
         throw new Error((e as Error).message || "초대 재발송 실패");
     }
+}
+
+/**
+ * convertDirectStaffToInvite — «직접 추가» 직원 기록을 앱 계정으로 바꾸는 초대 만들기 (requireOwner: 원장만, 2026-11-12)
+ *
+ * 직접 추가 기록(전화번호@staff.local)은 로그인 계정이 없어 앱을 못 쓴다. 같은 번호 초대는 «이미 등록된 스태프»로
+ * 막히므로, 이 경우만 그 기록을 대상으로 한 초대(SIGNUP + targetUserId)를 만든다. 가입하면 새 직원 기록을 만들지 않고
+ * 이 기록에 로그인을 붙인다 — 직원 id 가 그대로라 역할·코치 연결·수업 기록이 모두 이어진다(acceptInvitation).
+ * 문자는 보내지 않는다 — 원장이 [링크 복사]·[문자 보내기]로 전한다.
+ * 같은 사람의 대기 초대가 이미 있으면 그것을 돌려준다(두 번 눌러도 하나).
+ */
+export async function convertDirectStaffToInvite(userId: string) {
+    const owner = await requireOwner();
+    await ensureStaffInvitationTable();
+    const targetId = String(userId ?? "").trim();
+    if (!targetId) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+
+    const targets = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; phone: string | null; role: string; email: string | null; authUserId: string | null }>>(
+        `SELECT id, name, phone, role::text AS role, email, "authUserId"
+           FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+        targetId,
+    );
+    const target = targets[0];
+    if (!target) return inviteStaffRejected("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+    if (staffLoginKind(target) !== "none") return inviteStaffRejected("이미 로그인 계정이 있는 직원입니다.");
+    if (!isConvertibleStaffRole(target.role)) {
+        return inviteStaffRejected("코치/강사·셔틀 기사 역할만 초대로 전환할 수 있습니다.");
+    }
+    const cleanPhone = String(target.phone ?? "").replace(/\D/g, "");
+    if (!/^010\d{8}$/.test(cleanPhone)) {
+        return inviteStaffRejected("저장된 휴대전화 번호가 올바르지 않습니다. 번호를 고친 뒤 다시 시도해 주세요.");
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+        // 같은 번호의 초대 만들기를 줄 세운다(두 번 눌러도 초대 하나)
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, `staff-invite-phone:${cleanPhone}`);
+        const pending = await tx.$queryRawUnsafe<Array<{ id: string; token: string; targetUserId: string | null; purpose: string | null }>>(
+            `SELECT id, token, "targetUserId", purpose FROM "StaffInvitation"
+              WHERE phone = $1 AND status = 'PENDING' AND "expiresAt" > NOW()
+              ORDER BY "createdAt" DESC LIMIT 1`,
+            cleanPhone,
+        );
+        if (pending[0]) {
+            if (pending[0].targetUserId === target.id && pending[0].purpose !== "PASSWORD_RESET") {
+                return { id: pending[0].id, token: pending[0].token, reused: true };
+            }
+            return null;
+        }
+        const rows = await tx.$queryRawUnsafe<Array<{ id: string; token: string }>>(
+            `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "createdBy", "createdAt", "updatedAt")
+             VALUES ((gen_random_uuid())::text, (gen_random_uuid())::text, $1, $2, $3::"Role", 'PENDING',
+                     NOW() + INTERVAL '7 days', 'SIGNUP', $4, $5, NOW(), NOW())
+             RETURNING id, token`,
+            target.name,
+            cleanPhone,
+            target.role,
+            target.id,
+            owner.id,
+        );
+        if (!rows[0]) throw new Error("초대 생성 실패");
+        return { id: rows[0].id, token: rows[0].token, reused: false };
+    });
+    if (!created) {
+        return inviteStaffRejected("이 번호로 대기 중인 다른 초대가 있습니다. 그 초대를 취소한 뒤 다시 눌러 주세요.");
+    }
+
+    revalidateStaffAdminCaches();
+    revalidatePath("/admin/staff");
+    return {
+        rejected: false as const,
+        invitationId: created.id,
+        token: created.token,
+        inviteUrl: getStaffInvitationUrl(created.token),
+        reused: created.reused,
+    };
+}
+
+/**
+ * retireStaffMember — 퇴사 처리 (requireOwner: 원장만, 2026-11-12)
+ *
+ * 한 거래 안에서: 주 역할 → 학부모(스태프 목록에서 빠짐, 기존 «학부모로 바꾸기»와 같은 관례) · 코치 프로필 연결 해제 ·
+ * 추가 역할 회수(ACTIVE → REVOKED, 신청 중 → REJECTED) · 이 사람을 향한 대기 초대(전환·재설정) 취소 · 감사 기록.
+ * 거래 뒤: 직원 전용 로그인(초대 가입 계정)이고 자기 자녀가 없으면 Supabase 로그인을 막는다(새로 로그인·토큰 갱신 불가).
+ * 이미 로그인한 화면도 다음 요청부터 권한이 없다 — 권한 판정이 매번 DB 역할을 다시 읽는다(auth-guard 캐시 확인).
+ * 다시 눌러도 안전하다(바꿀 것이 없으면 «이미 처리됨», 로그인 차단만 다시 시도).
+ */
+export async function retireStaffMember(userId: string) {
+    const owner = await requireOwner();
+    await ensureStaffColumns();
+    const targetId = String(userId ?? "").trim();
+    if (!targetId) return { ok: false as const, error: "대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요." };
+    if (targetId === owner.appUserId) return { ok: false as const, error: "자기 자신은 퇴사 처리할 수 없습니다." };
+
+    let outcome: {
+        name: string;
+        email: string | null;
+        authUserId: string | null;
+        changed: boolean;
+        coachNames: string[];
+        revokedRoles: string[];
+        hasOwnChildren: boolean;
+        auditId: string | null;
+    };
+    try {
+        outcome = await prisma.$transaction(async (tx) => {
+            // 대상 줄을 잠그고 시작 — 같은 사람에게 역할 변경·퇴사가 동시에 들어와도 한 번에 하나만
+            const rows = await tx.$queryRawUnsafe<Array<{ id: string; name: string; email: string | null; authUserId: string | null; role: string }>>(
+                `SELECT id, name, email, "authUserId", role::text AS role
+                   FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL FOR UPDATE`,
+                targetId,
+            );
+            const target = rows[0];
+            if (!target) throw new Error("대상 직원을 찾을 수 없습니다. 목록을 새로고침해 주세요.");
+            if (String(target.email || "").toLowerCase() === String(owner.email || "").toLowerCase()) {
+                throw new Error("자기 자신은 퇴사 처리할 수 없습니다.");
+            }
+            const wasStaff = ["ADMIN", "VICE_ADMIN", "INSTRUCTOR", "DRIVER"].includes(target.role);
+            if (!wasStaff && target.role !== "PARENT") throw new Error("퇴사 처리할 수 없는 계정입니다.");
+
+            // 1) 주 역할 → 학부모(지금 역할이 그대로일 때만 — 그 사이 바뀌었으면 되돌린다)
+            const roleChanged = wasStaff
+                ? await tx.$executeRawUnsafe(
+                    `UPDATE "User" SET role = 'PARENT'::"Role", "updatedAt" = NOW() WHERE id = $1 AND role = $2::"Role"`,
+                    targetId,
+                    target.role,
+                )
+                : 0;
+            if (wasStaff && roleChanged !== 1) throw new Error("직원 상태가 바뀌었습니다. 목록을 새로고침해 주세요.");
+            // 2) 코치 프로필 연결 해제 — 시간표 배정은 코치 프로필에 남아 다른 사람에게 다시 연결할 수 있다
+            const coaches = await tx.$queryRawUnsafe<Array<{ name: string }>>(
+                `UPDATE "Coach" SET "userId" = NULL, "updatedAt" = NOW() WHERE "userId" = $1 RETURNING name`,
+                targetId,
+            );
+            // 3) 추가 역할 회수(승인됨 → 회수, 신청 중 → 반려)
+            const grants = await tx.$queryRawUnsafe<Array<{ role: string }>>(
+                `UPDATE "UserRoleGrant"
+                    SET status = CASE WHEN status = 'ACTIVE' THEN 'REVOKED' ELSE 'REJECTED' END,
+                        "decidedAt" = NOW(), "decidedBy" = $2, note = '퇴사 처리', "updatedAt" = NOW()
+                  WHERE "userId" = $1 AND status IN ('PENDING', 'ACTIVE')
+                  RETURNING role`,
+                targetId,
+                owner.appUserId,
+            );
+            // 4) 이 사람을 향한 대기 초대(앱 계정 전환·비밀번호 재설정) 취소 — 링크로 다시 들어오지 못하게
+            const invites = await tx.$executeRawUnsafe(
+                `UPDATE "StaffInvitation" SET status = 'CANCELLED', "updatedAt" = NOW()
+                  WHERE "targetUserId" = $1 AND status = 'PENDING'`,
+                targetId,
+            );
+            // 자기 자녀가 있으면(학부모 화면을 계속 써야 하면) 로그인은 막지 않는다
+            const children = await tx.$queryRawUnsafe<Array<{ one: number }>>(
+                `SELECT 1 AS one FROM "Student" s WHERE s."parentId" = $1 AND ${notMergedStudent("s")} LIMIT 1`,
+                targetId,
+            );
+            const changed = roleChanged > 0 || coaches.length > 0 || grants.length > 0 || invites > 0;
+            let auditId: string | null = null;
+            if (changed) {
+                // 5) 감사 기록 — 누가·언제·무엇을(되돌릴 때 근거)
+                const audit = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+                    `INSERT INTO "OperationsAuditLog" (id, action, "actorType", "actorUserId", "detailsJson")
+                     VALUES (gen_random_uuid()::text, 'STAFF_RETIRED', 'ADMIN', $1, $2::jsonb)
+                     RETURNING id`,
+                    owner.appUserId,
+                    JSON.stringify({
+                        targetUserId: targetId,
+                        targetName: target.name,
+                        previousRole: target.role,
+                        coachNames: coaches.map((coach) => coach.name),
+                        revokedRoles: grants.map((grant) => grant.role),
+                        cancelledInvites: invites,
+                    }),
+                );
+                auditId = audit[0]?.id ?? null;
+            }
+            return {
+                name: target.name,
+                email: target.email,
+                authUserId: target.authUserId,
+                changed,
+                coachNames: coaches.map((coach) => coach.name),
+                revokedRoles: grants.map((grant) => grant.role),
+                hasOwnChildren: children.length > 0,
+                auditId,
+            };
+        });
+    } catch (e) {
+        console.error("[retireStaffMember] failed:", e);
+        return { ok: false as const, error: (e as Error).message || "퇴사 처리에 실패했습니다." };
+    }
+
+    // 6) 로그인 차단 — 거래 밖(외부 서비스). 실패해도 권한은 이미 회수됐고, 다시 누르면 이것만 다시 시도한다.
+    const account = { id: targetId, email: outcome.email, authUserId: outcome.authUserId };
+    const kind = staffLoginKind(account);
+    const authId = staffAuthId(account);
+    let loginBlocked: "blocked" | "kept" | "none" | "failed" = kind === "none" ? "none" : "kept";
+    if (authId && shouldBlockLoginOnRetire({ kind, hasOwnChildren: outcome.hasOwnChildren })) {
+        try {
+            const { error } = await createAdminClient().auth.admin.updateUserById(authId, { ban_duration: RETIRED_LOGIN_BAN_DURATION });
+            loginBlocked = error ? "failed" : "blocked";
+            if (error) console.error("[retireStaffMember] login block failed:", { status: error.status, code: error.code, message: error.message });
+        } catch (error) {
+            loginBlocked = "failed";
+            console.error("[retireStaffMember] login block failed:", error instanceof Error ? error.message : String(error));
+        }
+    }
+    if (outcome.auditId) {
+        await prisma.$executeRawUnsafe(
+            `UPDATE "OperationsAuditLog" SET "detailsJson" = "detailsJson" || $2::jsonb WHERE id = $1`,
+            outcome.auditId,
+            JSON.stringify({ loginBlocked }),
+        ).catch(() => undefined);
+    }
+
+    // 7) 이 서버의 역할 캐시도 바로 비운다(다른 서버는 캐시 확인 때 역할을 다시 읽는다)
+    forgetAppUserRoleCache(targetId);
+    revalidateStaffAdminCaches();
+    revalidatePath("/admin/staff");
+    revalidatePath("/admin/role-requests");
+    return {
+        ok: true as const,
+        alreadyDone: !outcome.changed,
+        name: outcome.name,
+        coachNames: outcome.coachNames,
+        revokedRoles: outcome.revokedRoles,
+        loginBlocked,
+    };
 }

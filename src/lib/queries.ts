@@ -3943,7 +3943,8 @@ export const getStaffUsers = cache(async () => {
         // User 테이블에서 ADMIN/VICE_ADMIN/INSTRUCTOR/DRIVER 조회 + Coach 연결 (LEFT JOIN)
         const rows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT u.id, u.email, u.name, u.phone, u.role::text AS role, u."createdAt",
-                    c.id AS "coachId", c.name AS "coachName"
+                    c.id AS "coachId", c.name AS "coachName",
+                    (u."authUserId" IS NULL AND u.email LIKE '%@staff.local') AS "directAdded"
              FROM "User" u
              LEFT JOIN "Coach" c ON c."userId" = u.id
              WHERE u.role::text IN ('ADMIN', 'VICE_ADMIN', 'INSTRUCTOR', 'DRIVER')
@@ -3965,6 +3966,8 @@ export const getStaffUsers = cache(async () => {
             createdAt: r.createdAt ?? r.createdat,
             coachId: r.coachId ?? r.coachid ?? null,
             coachName: r.coachName ?? r.coachname ?? null,
+            // «직접 추가»로 만든 직원 기록(전화번호@staff.local, 로그인 계정 없음) — 앱을 쓸 수 없어 «초대로 전환» 대상
+            directAdded: Boolean(r.directAdded ?? r.directadded),
         }));
     } catch (e) {
         console.error("[getStaffUsers] failed:", e);
@@ -3973,7 +3976,8 @@ export const getStaffUsers = cache(async () => {
     try {
         // 오래된 DB에서 Coach.userId 컬럼이 아직 없으면 연결 정보 없이 스태프만 표시한다.
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT u.id, u.email, u.name, u.phone, u.role::text AS role, u."createdAt"
+            `SELECT u.id, u.email, u.name, u.phone, u.role::text AS role, u."createdAt",
+                    (u."authUserId" IS NULL AND u.email LIKE '%@staff.local') AS "directAdded"
              FROM "User" u
              WHERE u.role::text IN ('ADMIN', 'VICE_ADMIN', 'INSTRUCTOR', 'DRIVER')
              ORDER BY
@@ -3995,6 +3999,7 @@ export const getStaffUsers = cache(async () => {
             createdAt: r.createdAt ?? r.createdat,
             coachId: null,
             coachName: null,
+            directAdded: Boolean(r.directAdded ?? r.directadded),
         }));
     } catch (fallbackError) {
         console.error("[getStaffUsers:fallback] failed:", fallbackError);
@@ -4049,7 +4054,7 @@ export const getStaffInvitations = cache(async () => {
         const rows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT id, token, name, phone, role, status,
                     "expiresAt", "acceptedAt", "acceptedUserId",
-                    "createdBy", "createdAt", COALESCE(purpose, 'SIGNUP') AS purpose
+                    "createdBy", "createdAt", COALESCE(purpose, 'SIGNUP') AS purpose, "targetUserId"
              FROM "StaffInvitation"
              ORDER BY "createdAt" DESC
              LIMIT 100`
@@ -4067,6 +4072,8 @@ export const getStaffInvitations = cache(async () => {
             createdBy: r.createdBy ?? r.createdby,
             createdAt: r.createdAt ?? r.createdat,
             purpose: (r.purpose === "PASSWORD_RESET" ? "PASSWORD_RESET" : "SIGNUP") as "SIGNUP" | "PASSWORD_RESET",
+            // SIGNUP + targetUserId = «직접 추가» 직원의 앱 계정 전환 초대(가입하면 그 직원 기록에 로그인이 붙는다)
+            targetUserId: (r.targetUserId ?? r.targetuserid ?? null) as string | null,
         }));
     } catch (e) {
         console.error("[getStaffInvitations] failed:", e);

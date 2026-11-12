@@ -140,9 +140,11 @@ test("스태프 화면: 원장만 바꾸기 — 페이지가 역할을 확인해
   assert.match(client, /\{canManage \? roleSelect\(user\) : roleChip\(user\.role\)\}/);
   assert.match(client, /\{canManage && \(\s*<button[\s\S]*?새 스태프 초대/);
   assert.match(client, /return canManage \? actions : actions\.filter\(\(action\) => action\.key === "copy"\)/);
-  // 머리줄 보조 버튼은 ⋯ 더보기 하나로(설치 링크·직접 추가·중단된 초대 복구)
+  // 머리줄 보조 버튼은 ⋯ 더보기 하나로(설치 링크·중단된 초대 복구). «직접 추가»는 2026-11-12 원장 결정으로 없앴다.
   assert.match(client, /<AdminQuickActionMenu label="스태프 관리 더보기" icon="more_horiz"/);
-  for (const label of ["스태프용 앱 설치 링크 복사", "직접 추가", "중단된 초대 복구"]) assert.ok(client.includes(label), label);
+  for (const label of ["스태프용 앱 설치 링크 복사", "중단된 초대 복구"]) assert.ok(client.includes(label), label);
+  assert.doesNotMatch(client, /label: "직접 추가"/);
+  assert.doesNotMatch(client, /<AddStaffModal/);
   assert.doesNotMatch(page, /<Link href="\/admin\/staff\/recovery"/);
 });
 

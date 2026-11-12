@@ -82,15 +82,19 @@ async function getAppUserRole(email: string, authUserId: string): Promise<AppUse
   const cached = roleCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     // 다른 서버에서 탈퇴를 마쳐도 이 서버의 옛 역할 캐시가 계정을 다시 열면 안 된다.
-    const active = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
+    // 2026-11-12 퇴사 처리: 역할도 함께 다시 읽는다 — 원장이 역할을 회수하면 다른 서버의 캐시(5분)가
+    // 옛 역할(코치·원장)로 계속 통과시키던 틈을 없앤다. 어차피 하던 확인 조회라 조회 수는 그대로다.
+    const active = await prisma.$queryRawUnsafe<AppUserRoleRow[]>(
+      `SELECT id, name, role FROM "User" WHERE id = $1 AND "withdrawnAt" IS NULL LIMIT 1`,
       cached.id,
     );
     if (!active[0]) {
       roleCache.delete(cacheKey);
       return null;
     }
-    return cached;
+    const fresh = { ...active[0], expiresAt: cached.expiresAt };
+    roleCache.set(cacheKey, fresh);
+    return fresh;
   }
 
   const rows = await prisma.$queryRawUnsafe<AppUserRoleRow[]>(
@@ -113,6 +117,16 @@ async function getAppUserRole(email: string, authUserId: string): Promise<AppUse
   }
 
   return row;
+}
+
+/**
+ * 이 서버의 역할 캐시에서 한 앱 계정을 지운다(퇴사 처리 직후 같은 서버에서 바로 반영).
+ * 다른 서버의 캐시는 위 «캐시가 있어도 역할을 다시 읽는» 확인으로 다음 요청부터 막힌다.
+ */
+export function forgetAppUserRoleCache(appUserId: string): void {
+  for (const [key, value] of roleCache) {
+    if (value.id === appUserId) roleCache.delete(key);
+  }
 }
 
 // ── Server Action 인증 가드 ──────────────────────────────────────

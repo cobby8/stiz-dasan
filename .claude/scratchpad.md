@@ -75,10 +75,28 @@
 💡 tester: 신청함 상담 탭 → 새 상담 열기 → 메모 칸에 기존 메모·[취소][메모 저장][연락함][상담 완료]·전화 걸기 / 변경 탭 휴원(PENDING) 열기 → «계산하는 중» → 금액 있으면 방식 고르기 전 [승인] 잠김 → 고르면 «승인 · 환불» + 확인창 금액. 실토스 부분 취소는 테스트 키로 1건 확인 필요(⑥). 체험비 결제는 설정 «온라인 결제» 켜기+토스 키 있어야 보임(⑦).
 ⚠️ reviewer: 미리보기 지문 불일치로 승인 거절되면 칸을 닫았다 다시 열어야 재계산(자동 재조회 없음) · 신청함 휴원 규칙·문구는 수강 변경 화면과 두 벌(문구 비교 테스트로 묶음) · ②출결 «되살림» 동작 변경 · ⑦이미 확정된 신청에 온 결제 = NEEDS_REFUND.
 
+## 구현 기록 (developer) — 11-12 스태프 관리 추가 기능 s1~s6 (원장 «추천대로 해»)
+📝 직접 추가 메뉴 제거·초대로 전환 / 추가 역할 줄 / 퇴사 처리 / 역할 변경 확인창 / 초대 마지막 문자 / 담당 반. 마이그레이션 없음(전환 초대 = 기존 칸 SIGNUP+targetUserId).
+
+| 파일 | 변경 | 신규/수정 |
+|------|------|----------|
+| src/lib/staff/staffAccountLink.ts | 로그인 종류 판정(none/staffLogin/other)·로그인 id·퇴사 시 차단 여부 | 신규 |
+| src/lib/staff/staffPanelData.ts | 추가 역할 직원·초대 문자 마지막 발송(NotificationDelivery)·담당 반 조회 | 신규 |
+| src/lib/staff/staffRoster.ts | grant 줄·전환 초대는 직원 줄에 붙임·targetUserId 초대 코치 짝짓기 제외·classesForStaff | 수정 |
+| src/app/actions/admin.ts | convertDirectStaffToInvite·retireStaffMember(requireOwner) · inviteStaff 퇴사자 재초대 targetUserId · 전환 문자 문구 | 수정 |
+| src/app/actions/invite.ts | targetUserId 초대 수락: 직접 추가 기록에 로그인 붙임 / 퇴사 직원 로그인 다시 열기(ban 해제)+역할 복구 | 수정 |
+| src/lib/auth-guard.ts | 역할 캐시 적중 때도 역할을 다시 읽음 + forgetAppUserRoleCache | 수정 |
+| src/app/admin/staff/StaffClient.tsx · page.tsx · lib/queries.ts · lib/adminReadPayloads.ts | 화면·데이터 연결 | 수정 |
+| tests/staff-management-additions.test.mjs · staff-roster.test.mjs | 16건 신규 · 직접 추가 제거 반영 | 신규/수정 |
+
+💡 tester: 원장 로그인 → 직접 추가 직원 줄(«로그인 없음») → 패널 [초대로 전환] → «가입 대기» + [링크 복사][문자 보내기] → 링크로 가입하면 같은 직원 기록(코치 연결 유지)으로 로그인. [퇴사 처리] → 확인창 나열·체크 → 목록에서 빠짐·로그인 차단. 부원장은 패널 버튼 없음.
+⚠️ reviewer: auth-guard 캐시 변경(모든 권한 판정 경로) · Supabase ban(876000h) 사용 · 퇴사 후 Class.instructorId(슬롯 없는 반 담당자)는 그대로 둠.
+
 ## 작업 로그 (최근 10건)
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-12 | developer(스태프 관리 s1~s6): 직접 추가 메뉴 제거·[초대로 전환](SIGNUP+targetUserId, 가입 시 기존 기록에 로그인 붙임·코치 승계, 문자는 원장이 누름) · 추가 역할 보기 전용 줄(신청함 링크) · [퇴사 처리](한 거래: 학부모·코치 해제·추가 역할 회수·대기 초대 취소·감사 STAFF_RETIRED, 직원 전용 로그인 ban, 역할 캐시 즉시) · 퇴사자 재초대=로그인 다시 열기 · 역할 변경 공용 확인창 · 초대 마지막 문자 · 담당 반. 마이그레이션 없음. tsc 0·tests 4093-0·studentVisibility 5-0 | 커밋(미푸시) |
 | 11-12 | developer(직원 초대 약한 비밀번호 잠김 사고): createUser 실패를 lib/staff/inviteAuthFailure 로 판정 — 응답 4xx(408 제외)=확실히 안 만들어짐 → 시도 DELETED(NOT_CREATED:사유)+초대 PENDING(문자 인증 유지, 같은 화면 재시도), 0/408/5xx=결과 모름 → RECOVERY_REQUIRED 유지 · 직원 재설정 updateUserById 도 같은 판정 · 화면 쉬운 문구·입력값 유지·흔한 비밀번호 사전 경고·인증 만료면 1단계로 · 학부모 가입/활성화/설정은 잠김 없음 확인(문구만 일반적 — 제안) · 테스트 staff-invite-auth-failure 5건, 전체 4071 pass | 완료(push 전) |
 | 11-12 | debugger(main 테스트 2건 실패): 76b979ac(운행표 key 에 정류장·학생 추가)·f9265bc5(시각 미입력 경고 `<details>`)가 소스 고정 검사를 깨뜨림 — 동작은 유지돼 테스트를 의도대로 넓힘(scripts/test-dispatch-consistency.mjs·tests/regular-dispatch-editing-ui.test.mjs). tsc 0·전체 4052 통과 | 완료 |
 | 11-12 | developer(스태프 관리 점검·정리): 고장 4 수정(역할을 기사·학부모로 바꾸면 코치 연결 고아→같은 거래에서 해제·선생님 추가역할 있으면 유지 / linkCoachToUser 거래+1건 확인 / 가입 멈춤 초대가 이력에 «대기 중»으로 보임 / 복구 뒤 admin-staff 태그 미무효화) · 부원장 보기 전용(canManage) · UI 한 표 합침(lib/staff/staffRoster.ts — 초대 대기↔코치 프로필 같은 사람 1줄)·머리줄 1줄(주 버튼+⋯)·권한 안내 접힘·375px 한 줄 카드 · tests/staff-roster 16건 · 검수 권장 3건(가입 멈춤 휴대폰 숫자만·연결 예정 코치 이름(끝4자리)+«이름 일치»·bg-white 토큰) + main 455fb2c2(비밀번호 재설정 초대) 위로 rebase·재설정 초대는 코치 짝짓기 제외. tsc 0·tests 4050 pass/2 fail(셔틀 기존 실패) | 커밋(미푸시) |
@@ -88,4 +106,3 @@
 | 11-10 | developer(원장 점검 k5·k6 학부모 보완): 알림 읽음=학부모 전용 actions/parent-notifications.ts(requireVerifiedParent·WHERE "userId"=로그인 사용자, 관리자 함수는 유지) · 알림 줄 전체 누름=읽음+내부 linkUrl 이동(safeInternalHref) · 수업 탭 반 카드→한 달 달력(ScheduleHub MonthCalendar 공용·getParentMonthViews)→신청 내역, «달력 ▸» 제거 · 버튼 [결석][보강][셔틀][변경 ▾] 한 줄(휴원 중=복귀 신청 유지) · 아이 선택 기억(?child=+localStorage, useRememberedChild/RememberChildSync — 홈·수업·일정) · tests 3827 pass | 커밋(미푸시) |
 | 11-10 | developer(결석 신고 즉시 보강권 k4): 신고 순간 발급(키=기존 REGULAR:{반}:{날짜} 그대로라 출결·랠리즈와 1장) · 학부모 취소 = 미사용 회수/예약은 확인 후 예약 취소+회수/사용 완료·지난 예약은 막음 · 관리자 취소 = 기존 회수 규칙 · 출결 결석 확정이면 유지 · 출결 경로 REVOKED 되살림 · 문구 «보강권 1장이 생겼어요»(신고 직후·신청 내역·카톡). 마이그레이션 없음, 채움 SQL 선택(prisma/sql). tsc 0·tests 3843-0·studentVisibility 5-0 | 구현·검증 완료(검수 대기, 미푸시) |
 | 11-10 | developer(상담 신청 신설): ConsultRequest 표+마이그레이션 20261110160000(운영 미적용) · /apply/consult(+/apply 세 번째 칸) · 챗봇 [ACTION:CONSULT] · 학부모 ⋯ 메뉴 «형제·자매 상담 신청»(/mypage/consult, 자동 채움) · 관리자 벨·웹푸시 · consult-inbox.ts(신청함 상담 탭) · 처리 액션(requireAdmin). tsc 0·tests 3841-0·studentVisibility 5-0 | 검수 대기(미푸시) |
-| 11-10 | developer(원장 k1~k4·m1~m3 신청함 재편): 맨 위 6탭(체험·수강·상담·대관·변경·기타, 배지=처리 필요) · catalog KIND_TAB/TAB_SUBS/tabActionCounts · 체험·수강(신청/대기)=ApplyAdminClient mode 끼우기 · 대관=RentalAdminClient embedded(처리할 것 먼저·완료 보기) · 변경·기타=공통 한 줄(처리 필요→진행 중, «완료 보기»), 필터=날짜만 · 진행 중 처리 버튼(보강 4종·결석 신고 취소) · 학부모 연결(CHILD_LINK) 추가 · 현장 수납 승인 기타 탭 유지(PM 정정) · 상담=CONSULT catalog+consult-inbox.ts 스텁(상담 브랜치 계약) · ⚙ 신청 설정(/admin/inbox/settings) · 메뉴 «신청·상담» 제거. tsc 0·전체 3831-0 | 완료(커밋, 미푸시) |

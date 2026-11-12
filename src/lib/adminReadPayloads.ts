@@ -1,3 +1,4 @@
+import { getStaffClassAssignments, getStaffInviteLastSends, getStaffRoleGrantUsers } from "@/lib/staff/staffPanelData";
 import { unstable_cache } from "next/cache";
 import { kstDow, todayKst } from "@/lib/datetime/kst";
 import { getInstagramRuntimeStatus } from "@/lib/instagram";
@@ -1164,15 +1165,19 @@ export const getCachedAdminStatsPayload = unstable_cache(
 
 export const getCachedAdminStaffPayload = unstable_cache(
     async () => {
-        const [staffUsers, coaches, invitations] = await Promise.all([
+        // 2026-11-12: 추가 역할 직원(보기 전용 줄)·초대 문자 마지막 발송·담당 반을 같이 싣는다(기존 표만 읽음)
+        const [staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments] = await Promise.all([
             getStaffUsers(),
             getAllCoaches(),
             getStaffInvitations(),
+            getStaffRoleGrantUsers(),
+            getStaffInviteLastSends(),
+            getStaffClassAssignments(),
         ]);
 
-        return { staffUsers, coaches, invitations };
+        return { staffUsers, coaches, invitations, grantUsers, inviteLastSends, classAssignments };
     },
-    ["admin-staff-v1"],
+    ["admin-staff-v2"],
     { revalidate: 60, tags: ["admin-staff", "admin-coaches"] },
 );
 

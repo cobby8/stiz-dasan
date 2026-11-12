@@ -18,7 +18,23 @@ import {
   type InviteClaimState,
 } from "@/lib/staff/inviteAuthFailure";
 
+import { staffAuthId, staffLoginKind } from "@/lib/staff/staffAccountLink";
+
 const MAX_OTP_ATTEMPTS = 5;
+
+type CoachLinkTx = Parameters<typeof linkMatchingCoachProfileToUser>[0] & {
+  $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => PromiseLike<T>;
+};
+
+/** 이미 있는 직원 기록에 붙는 가입 — 연결된 코치 프로필이 있으면 그대로 두고(승계), 없을 때만 자동 연결. */
+async function linkCoachProfileIfNone(
+  tx: CoachLinkTx,
+  input: { userId: string; name: string; phone: string; role: string },
+) {
+  const linked = await tx.$queryRawUnsafe<Array<{ id: string }>>(`SELECT id FROM "Coach" WHERE "userId" = $1 LIMIT 1`, input.userId);
+  if (linked.length > 0) return 0;
+  return linkMatchingCoachProfileToUser(tx, input);
+}
 const SMS_TIMEOUT_MS = 10_000;
 
 type InvitationRow = {
@@ -386,6 +402,60 @@ export async function acceptInvitation(token: string, password: string) {
     }
 
     const staffEmail = `${invitation.phone}@staff.stiz.kr`;
+
+    // 2026-11-12: 이미 있는 직원 기록에 붙는 초대(SIGNUP + targetUserId) — 새 직원 기록을 만들지 않는다.
+    //   · «직접 추가» 기록(로그인 없음) → 아래에서 로그인 계정을 만들어 그 기록에 붙인다(역할·코치 연결·수업 기록 그대로)
+    //   · 퇴사 처리로 학부모가 된 직원 전용 계정 → 그 로그인을 다시 열고(차단 해제·새 비밀번호) 역할을 되돌린다
+    let conversionTargetId: string | null = null;
+    if (invitation.targetUserId) {
+      const targets = await prisma.$queryRawUnsafe<Array<{ id: string; email: string | null; authUserId: string | null; role: string }>>(
+        `SELECT id, email, "authUserId", role::text AS role FROM "User"
+          WHERE id = $1 AND "withdrawnAt" IS NULL
+            AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = regexp_replace($2, '[^0-9]', '', 'g')`,
+        invitation.targetUserId,
+        invitation.phone,
+      );
+      const target = targets[0];
+      if (!target) throw new Error("가입할 직원 기록을 찾지 못했습니다. 원장에게 문의해주세요.");
+      const kind = staffLoginKind(target);
+      if (kind === "staffLogin" && target.role === "PARENT") {
+        const authId = staffAuthId(target);
+        if (!authId) throw new Error("가입할 직원 기록을 찾지 못했습니다. 원장에게 문의해주세요.");
+        const { error: reopenError } = await createAdminClient().auth.admin.updateUserById(authId, { password, ban_duration: "none" });
+        if (reopenError) {
+          authFailure = classifyAuthFailure(reopenError);
+          throw new Error(authFailure === "uncertain" ? "계정을 다시 열지 못했습니다. 잠시 후 다시 시도해 주세요." : staffAuthFailureMessage(authFailure));
+        }
+        await prisma.$transaction(async (tx) => {
+          const reopened = await tx.$executeRawUnsafe(
+            `UPDATE "User" SET role = $2::"Role", "updatedAt" = NOW()
+              WHERE id = $1 AND role = 'PARENT' AND "withdrawnAt" IS NULL`,
+            target.id,
+            invitation.role,
+          );
+          if (reopened !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+          await linkCoachProfileIfNone(tx, { userId: target.id, name: invitation.name, phone: invitation.phone, role: invitation.role });
+          const done = await tx.$executeRawUnsafe(
+            `UPDATE "StaffInvitation"
+             SET status = 'ACCEPTED', "acceptedAt" = NOW(), "acceptedUserId" = $1, "otpHash" = NULL,
+                 "processingAttemptId" = NULL, "processingStartedAt" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
+             WHERE id = $2 AND status = 'PROCESSING' AND "processingAttemptId" = $3`,
+            target.id,
+            invitation.id,
+            attemptId,
+          );
+          if (done !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+          await tx.$executeRawUnsafe(
+            `UPDATE "StaffInvitationAuthAttempt" SET status = 'COMPLETED', "updatedAt" = NOW() WHERE id = $1`,
+            attemptId,
+          );
+        });
+        return { ok: true, email: target.email ?? staffEmail };
+      }
+      if (kind !== "none") throw new Error("이미 로그인 계정이 있는 직원입니다. 원장에게 문의해주세요.");
+      conversionTargetId = target.id;
+    }
+
     const supabaseAdmin = createAdminClient();
     authCreateStarted = true; // 여기부터의 «결과 모름»은 계정이 남았을 수 있다
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -423,21 +493,38 @@ export async function acceptInvitation(token: string, password: string) {
 
     const createdStaffUserId = authUserId;
     await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5::"Role", NOW(), NOW())`,
-        authUserId,
-        staffEmail,
-        invitation.name,
-        invitation.phone,
-        invitation.role,
-      );
-      await linkMatchingCoachProfileToUser(tx, {
-        userId: createdStaffUserId,
-        name: invitation.name,
-        phone: invitation.phone,
-        role: invitation.role,
-      });
+      if (conversionTargetId) {
+        // 직접 추가 기록에 로그인을 붙인다 — 그 사이 다른 길로 로그인이 붙었으면(0건) 전부 되돌린다
+        const attached = await tx.$executeRawUnsafe(
+          `UPDATE "User"
+              SET "authUserId" = $1, email = $2,
+                  role = CASE WHEN role = 'PARENT' THEN $4::"Role" ELSE role END, "updatedAt" = NOW()
+            WHERE id = $3 AND "authUserId" IS NULL AND "withdrawnAt" IS NULL AND lower(email) LIKE '%@staff.local'`,
+          authUserId,
+          staffEmail,
+          conversionTargetId,
+          invitation.role,
+        );
+        if (attached !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+        // 이미 연결된 코치 프로필은 그대로(승계), 없을 때만 자동 연결
+        await linkCoachProfileIfNone(tx, { userId: conversionTargetId, name: invitation.name, phone: invitation.phone, role: invitation.role });
+      } else {
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "User" (id, email, name, phone, role, "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5::"Role", NOW(), NOW())`,
+          authUserId,
+          staffEmail,
+          invitation.name,
+          invitation.phone,
+          invitation.role,
+        );
+        await linkMatchingCoachProfileToUser(tx, {
+          userId: createdStaffUserId,
+          name: invitation.name,
+          phone: invitation.phone,
+          role: invitation.role,
+        });
+      }
       const accepted = await tx.$executeRawUnsafe(
         `UPDATE "StaffInvitation"
          SET status = 'ACCEPTED', "acceptedAt" = NOW(), "acceptedUserId" = $1, "otpHash" = NULL,

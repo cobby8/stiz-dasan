@@ -3,6 +3,12 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-12] 스태프 계정 — 직원 기록·로그인 연결·초대로 전환·퇴사 처리
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 직원 기록(User)과 로그인(Supabase Auth)의 연결 판정은 `src/lib/staff/staffAccountLink.ts` 한 곳(none=직접 추가 `@staff.local`·로그인 없음 / staffLogin=초대 가입 `@staff.stiz.kr`, 로그인 id=authUserId ?? User.id / other=학부모 등 일반 로그인). «이미 있는 직원 기록에 붙는 초대» = `StaffInvitation` SIGNUP + `targetUserId`(새 칸·마이그레이션 없음): 수락 시 새 User 를 만들지 않고 직접 추가 기록에 authUserId·email 을 붙이거나(코치 연결 승계), 퇴사로 학부모가 된 직원 전용 계정의 로그인을 다시 연다(ban 해제+역할 복구). 퇴사 처리(`retireStaffMember`)=한 거래(역할→PARENT·Coach 해제·UserRoleGrant 회수·대기 초대 취소·OperationsAuditLog STAFF_RETIRED) 뒤 직원 전용 로그인+자녀 없음이면 Supabase ban. 권한 판정 캐시(auth-guard getAppUserRole 5분)는 적중 때도 역할을 다시 읽어 다른 서버에서도 즉시 반영. 스태프 화면 덧붙임 조회는 `src/lib/staff/staffPanelData.ts`(추가 역할 직원·초대 문자 마지막 발송=NotificationDelivery eventType STAFF_INVITATION·담당 반=staff-class-access 와 같은 세 배정 표).
+- **참조횟수**: 0
+
 ### [2026-11-10] 알림 시스템 — 알림 구조·학부모 앱 알림 종류별 받기
 - **분류**: architecture
 - **발견자**: developer

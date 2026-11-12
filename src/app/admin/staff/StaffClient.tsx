@@ -17,17 +17,27 @@ import {
     linkCoachToUser,
     cancelInvitation,
     resendInvitation,
+    convertDirectStaffToInvite,
+    retireStaffMember,
 } from "@/app/actions/admin";
 import AdminQuickActionMenu, { type AdminQuickAction } from "@/components/admin/AdminQuickActionMenu";
 import AdminPanelActions from "@/components/admin/AdminPanelActions";
+import { useAdminConfirm } from "@/components/admin/AdminConfirmDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
-import { kstLabel } from "@/lib/datetime/kst";
-import { buildStaffRoster, type RosterRow } from "@/lib/staff/staffRoster";
+import { kstHm, kstLabel } from "@/lib/datetime/kst";
+import {
+    buildStaffRoster,
+    classAssignmentLabel,
+    classesForStaff,
+    inviteSendStatusLabel,
+    invitationDaysLeft,
+    type RosterClassAssignment,
+    type RosterGrantUser,
+    type RosterRow,
+} from "@/lib/staff/staffRoster";
+import { STAFF_LOGIN_EMAIL_SUFFIX, isConvertibleStaffRole } from "@/lib/staff/staffAccountLink";
 
-const AddStaffModal = dynamic(() => import("./AddStaffModal"), {
-    loading: () => null,
-});
-
+// «직접 추가» 메뉴는 2026-11-12 원장 결정으로 없앴다(로그인 계정이 없어 앱을 못 쓰는 기록만 생겼다) — 초대로만 추가한다.
 const InviteStaffModal = dynamic(() => import("./InviteStaffModal"), {
     loading: () => null,
 });
@@ -42,6 +52,8 @@ interface StaffUser {
     createdAt: string;
     coachId: string | null;
     coachName: string | null;
+    /** «직접 추가» 기록(로그인 계정 없음) — 상세 패널에 [초대로 전환] */
+    directAdded?: boolean;
 }
 
 interface CoachItem {
@@ -66,12 +78,24 @@ interface Invitation {
     createdAt: string;
     /** SIGNUP = 새 직원 가입 · PASSWORD_RESET = 가입된 직원 비밀번호 재설정 */
     purpose?: "SIGNUP" | "PASSWORD_RESET";
+    /** 이미 있는 직원 기록에 붙는 초대(직접 추가 전환·재설정·퇴사 후 재초대) */
+    targetUserId?: string | null;
+}
+
+/** 초대 문자 마지막 발송(NotificationDelivery) */
+interface InviteLastSend {
+    invitationId: string;
+    status: string;
+    at: string;
 }
 
 type StaffPayload = {
     staffUsers: StaffUser[];
     coaches: CoachItem[];
     invitations: Invitation[];
+    grantUsers?: RosterGrantUser[];
+    inviteLastSends?: InviteLastSend[];
+    classAssignments?: RosterClassAssignment[];
 };
 
 type Row = RosterRow<StaffUser, CoachItem, Invitation>;
@@ -165,23 +189,40 @@ export default function StaffClient({
     staffUsers: initialStaffUsers,
     coaches: initialCoaches,
     invitations: initialInvitations,
+    grantUsers: initialGrantUsers,
+    inviteLastSends: initialInviteLastSends,
+    classAssignments: initialClassAssignments,
     canManage = false,
+    currentUserId = null,
 }: {
     staffUsers?: StaffUser[];
     coaches?: CoachItem[];
     invitations?: Invitation[];
+    /** 학부모 계정 + 승인된 추가 역할 직원(보기 전용 줄) */
+    grantUsers?: RosterGrantUser[];
+    /** 초대 문자 마지막 발송 기록 */
+    inviteLastSends?: InviteLastSend[];
+    /** 시간표 배정으로 묶인 담당 반 */
+    classAssignments?: RosterClassAssignment[];
     /** 원장(ADMIN)인가 — 아니면 보기 전용(서버 작업도 requireOwner 로 막혀 있다) */
     canManage?: boolean;
+    /** 보는 사람의 앱 계정 id — 자기 자신에게는 [퇴사 처리]를 보이지 않는다(서버도 막는다) */
+    currentUserId?: string | null;
 }) {
     const router = useRouter();
     const hasInitialData = Boolean(initialStaffUsers && initialCoaches && initialInvitations);
     const [staffUsers, setStaffUsers] = useState<StaffUser[]>(initialStaffUsers ?? []);
     const [coaches, setCoaches] = useState<CoachItem[]>(initialCoaches ?? []);
     const [invitations, setInvitations] = useState<Invitation[]>(initialInvitations ?? []);
+    const [grantUsers, setGrantUsers] = useState<RosterGrantUser[]>(initialGrantUsers ?? []);
+    const [inviteLastSends, setInviteLastSends] = useState<InviteLastSend[]>(initialInviteLastSends ?? []);
+    const [classAssignments, setClassAssignments] = useState<RosterClassAssignment[]>(initialClassAssignments ?? []);
     const [loading, setLoading] = useState(!hasInitialData);
     const [loadError, setLoadError] = useState<string | null>(null);
-    // 모달 상태: "add" = 직접 추가, "invite" = 초대 링크
-    const [showModal, setShowModal] = useState<"add" | "invite" | null>(null);
+    // 모달 상태: "invite" = 초대 링크(직접 추가 모달은 없앴다)
+    const [showModal, setShowModal] = useState<"invite" | null>(null);
+    // 공용 확인 창(브라우저 confirm 대신) — 역할 변경·퇴사 처리·전환 문자
+    const { confirm: askConfirm, confirmDialog } = useAdminConfirm();
     // 에러/성공 메시지
     const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
     // 서버 액션 pending 상태
@@ -202,6 +243,9 @@ export default function StaffClient({
             setStaffUsers(data.staffUsers);
             setCoaches(data.coaches);
             setInvitations(data.invitations);
+            setGrantUsers(data.grantUsers ?? []);
+            setInviteLastSends(data.inviteLastSends ?? []);
+            setClassAssignments(data.classAssignments ?? []);
         } catch {
             setLoadError("failed");
         } finally {
@@ -219,13 +263,29 @@ export default function StaffClient({
         staffUsers,
         coaches,
         invitations,
+        grantUsers,
         nowMs: Date.now(),
     });
     const unlinkedCoachCount = rows.filter((row) => row.kind === "coach" && !row.linkedElsewhere).length;
 
     // ── 역할 변경 핸들러 ─────────────────────────────────────────────
-    function handleRoleChange(userId: string, newRole: string) {
-        if (!confirm(`역할을 "${ROLE_CONFIG[newRole]?.label || newRole}"(으)로 변경하시겠습니까?`)) return;
+    // 2026-11-12: 브라우저 confirm → 공용 확인 창. 학부모·기사로 바꾸면 무엇이 풀리는지 미리 알린다
+    // (서버 updateUserRole 이 코치 연결을 같은 거래에서 푼다). 패널 위에 창이 겹치지 않게 패널은 먼저 닫는다.
+    async function handleRoleChange(userId: string, newRole: string) {
+        const target = staffUsers.find((user) => user.id === userId);
+        const nextLabel = ROLE_CONFIG[newRole]?.label || newRole;
+        const currentLabel = target ? (ROLE_CONFIG[target.role]?.label || target.role) : "";
+        const dropsCoach = Boolean(target?.coachId) && !isCoachLinkable(newRole);
+        setDetail(null);
+        const ok = await askConfirm({
+            title: `"${target?.name ?? ""}" 역할 변경`,
+            description: newRole === "PARENT"
+                ? "학부모로 바꾸면 목록에서 빠지고 코치 연결이 풀려요."
+                : `${currentLabel} → ${nextLabel}${dropsCoach ? "\n코치 연결이 풀려요." : ""}`,
+            confirmLabel: "바꾸기",
+            tone: newRole === "PARENT" || dropsCoach ? "danger" : "primary",
+        });
+        if (!ok) return;
         startTransition(async () => {
             try {
                 await updateUserRole(userId, newRole as "ADMIN" | "VICE_ADMIN" | "INSTRUCTOR" | "DRIVER" | "PARENT");
@@ -284,6 +344,108 @@ export default function StaffClient({
         });
     }
 
+    // ── 직접 추가 → 초대로 전환(원장) ─────────────────────────────────
+    // 문자는 자동으로 보내지 않는다 — 만든 뒤 패널의 [링크 복사]·[문자 보내기]로 원장이 전한다.
+    function handleConvertToInvite(user: StaffUser) {
+        startTransition(async () => {
+            try {
+                const result = await convertDirectStaffToInvite(user.id);
+                if (result.rejected) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                setMessage({ text: `${user.name}님의 가입 링크를 만들었습니다.`, ok: true });
+                await loadStaffData();
+                setDetail({ kind: "user", id: user.id }); // 링크 버튼이 보이게 패널을 다시 연다
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "가입 링크를 만들지 못했습니다."), ok: false });
+            }
+        });
+    }
+
+    // 전환 초대 문자 — 원장이 누를 때만(공용 확인 창)
+    async function handleSendConversionSms(inv: Invitation) {
+        setDetail(null);
+        const ok = await askConfirm({
+            title: `"${inv.name}" 가입 링크 문자`,
+            description: `${formatPhone(inv.phone)} 로 보냅니다.`,
+            confirmLabel: "보내기",
+            tone: "primary",
+        });
+        if (!ok) return;
+        startTransition(async () => {
+            try {
+                const result = await resendInvitation(inv.id);
+                setMessage({
+                    text: result.smsSent ? "가입 링크 문자를 보냈습니다." : "문자를 보내지 못했습니다. [링크 복사]로 전해 주세요.",
+                    ok: result.smsSent,
+                });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "문자를 보내지 못했습니다."), ok: false });
+            }
+        });
+    }
+
+    // ── 퇴사 처리(원장) — 무엇이 일어나는지 나열하고, 체크해야 확정 ─────────────
+    async function handleRetire(user: StaffUser, conversion: Invitation | null) {
+        const roleLabel = ROLE_CONFIG[user.role]?.label || user.role;
+        const staffLogin = (user.email || "").toLowerCase().endsWith(STAFF_LOGIN_EMAIL_SUFFIX);
+        const lines = [
+            `역할 ${roleLabel} → 학부모 (스태프 목록에서 빠져요)`,
+            user.coachName ? `코치 프로필 «${user.coachName}» 연결 해제` : null,
+            "추가 역할(선생님·기사님) 회수",
+            user.directAdded
+                ? null
+                : staffLogin
+                    ? "스태프 앱 로그인 차단 · 열린 화면도 바로 권한 없음"
+                    : "스태프 화면 바로 차단 (학부모 로그인은 그대로)",
+            conversion ? "대기 중인 가입 링크 취소" : null,
+        ].filter(Boolean);
+        setDetail(null);
+        const ok = await askConfirm({
+            title: `"${user.name}" 퇴사 처리`,
+            description: lines.map((line) => `· ${line}`).join("\n"),
+            confirmLabel: "퇴사 처리",
+            tone: "danger",
+            acknowledgeLabel: "다시 일하면 새 스태프 초대로 다시 열어야 해요",
+        });
+        if (!ok) return;
+        startTransition(async () => {
+            try {
+                const result = await retireStaffMember(user.id);
+                if (!result.ok) {
+                    setMessage({ text: result.error, ok: false });
+                    return;
+                }
+                setMessage({
+                    text: result.alreadyDone
+                        ? `${result.name}님은 이미 퇴사 처리되어 있습니다.`
+                        : result.loginBlocked === "failed"
+                            ? `${result.name}님 퇴사 처리했습니다. 권한은 회수됐지만 로그인 차단은 실패했습니다.`
+                            : `${result.name}님 퇴사 처리했습니다.`,
+                    ok: result.loginBlocked !== "failed",
+                });
+                await loadStaffData();
+            } catch (error: unknown) {
+                setMessage({ text: errorMessage(error, "퇴사 처리에 실패했습니다."), ok: false });
+            }
+        });
+    }
+
+    // 초대 문자 마지막 발송 한 줄 — «11/12(목) 14:03 · 발송 성공» (발송 기록 원장 NotificationDelivery)
+    function lastSendLine(invitationId: string) {
+        const last = inviteLastSends.find((row) => row.invitationId === invitationId);
+        if (!last || !last.at) return <span className="text-[var(--color-academy-muted)]">문자 기록 없음</span>;
+        const { label, ok } = inviteSendStatusLabel(last.status);
+        const tone = ok === true ? "text-[var(--color-academy-success)]" : ok === false ? "text-[var(--color-academy-danger)]" : "text-[var(--color-academy-muted)]";
+        return (
+            <span className="tabular-nums text-[var(--color-academy-ink)]">
+                {kstLabel(last.at)} {kstHm(last.at)} · <span className={`font-bold ${tone}`}>{label}</span>
+            </span>
+        );
+    }
+
     async function handleCopyStaffInstallLink() {
         const installUrl = new URL("/staff/install", window.location.origin).toString();
 
@@ -322,12 +484,11 @@ export default function StaffClient({
         return canManage ? actions : actions.filter((action) => action.key === "copy");
     }
 
-    // 머리줄 ⋯ 더보기 — 예전 머리줄 보조 버튼 3개(앱 설치 링크·직접 추가·중단된 초대 복구)를 한 메뉴로
+    // 머리줄 ⋯ 더보기 — 앱 설치 링크·중단된 초대 복구(«직접 추가»는 2026-11-12 없앰: 초대로만 추가)
     const moreActions: AdminQuickAction[] = [
         { key: "install", label: "스태프용 앱 설치 링크 복사", icon: "content_copy", onSelect: () => void handleCopyStaffInstallLink() },
         ...(canManage
             ? [
-                { key: "add", label: "직접 추가", icon: "person_add", onSelect: () => setShowModal("add") },
                 {
                     key: "recovery",
                     label: recoveryCount > 0 ? `중단된 초대 복구 (${recoveryCount})` : "중단된 초대 복구",
@@ -359,6 +520,56 @@ export default function StaffClient({
         "cursor-pointer transition-colors hover:bg-[var(--color-academy-soft)] focus:bg-[var(--color-academy-primary-soft)] focus:outline-none";
     const headClass = "bg-[var(--color-academy-soft)] text-xs font-black text-[var(--color-academy-muted)]";
     const detailUser = detail?.kind === "user" ? staffUsers.find((user) => user.id === detail.id) ?? null : null;
+    // 상세 패널 대상의 «앱 계정 전환» 대기 초대(같은 사람이라 표에는 따로 줄이 없다)
+    const detailConversion = detailUser
+        ? (rows.find((row) => row.kind === "user" && row.user.id === detailUser.id) as Extract<Row, { kind: "user" }> | undefined)?.conversion ?? null
+        : null;
+    const detailClasses = detailUser ? classesForStaff(detailUser, classAssignments) : [];
+
+    // 상세 패널 작업 — 초대로 전환 / 링크 복사·문자 보내기 / 퇴사 처리(원장만, 자기 자신 제외)
+    function buildUserPanelActions(user: StaffUser, conversion: Invitation | null): AdminQuickAction[] {
+        if (!canManage) return [];
+        const actions: AdminQuickAction[] = [];
+        if (user.directAdded && !conversion && isConvertibleStaffRole(user.role)) {
+            actions.push({ key: "convert", label: "초대로 전환", icon: "send", tone: "primary", disabled: isPending, onSelect: () => handleConvertToInvite(user) });
+        }
+        if (conversion) {
+            actions.push({ key: "copy", label: "링크 복사", icon: "content_copy", onSelect: () => void handleCopyInvitationLink(conversion.token, conversion.name) });
+            actions.push({ key: "sms", label: "문자 보내기", icon: "sms", disabled: isPending, onSelect: () => void handleSendConversionSms(conversion) });
+        }
+        if (user.id !== currentUserId) {
+            actions.push({ key: "retire", label: "퇴사 처리", icon: "person_remove", tone: "danger", disabled: isPending, onSelect: () => void handleRetire(user, conversion) });
+        }
+        return actions;
+    }
+
+    // 추가 역할 줄의 역할 칩(학부모 계정 + 승인된 선생님·기사님)
+    function grantChips(grantUser: RosterGrantUser) {
+        return (
+            <span className="flex items-center gap-1">
+                {grantUser.roles.map((role) => <span key={role}>{roleChip(role)}</span>)}
+                <span className={CHIP_MUTED}>추가 역할</span>
+            </span>
+        );
+    }
+
+    // 회수는 신청함(직원 역할 신청)에서 — 여기서는 보기만
+    function grantRevokeLink(grantUser: RosterGrantUser) {
+        return (
+            <Link
+                href="/admin/role-requests"
+                aria-label={`${grantUser.name} 추가 역할 회수는 신청함에서`}
+                className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-xs font-bold text-[var(--color-academy-primary)] hover:bg-[var(--color-academy-primary-soft)]"
+            >
+                신청함
+                <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_forward</span>
+            </Link>
+        );
+    }
+
+    function grantCoachName(grantUser: RosterGrantUser): string | null {
+        return grantUser.coachId ? coaches.find((coach) => coach.id === grantUser.coachId)?.name ?? null : null;
+    }
     const detailInvite = detail?.kind === "invite" ? pendingInvitations.find((inv) => inv.id === detail.id) ?? null : null;
 
     // ── 칸 부품 — 표(PC)와 한 줄 카드(휴대폰)가 같은 부품을 쓴다 ──────────────
@@ -451,15 +662,25 @@ export default function StaffClient({
             : <span className={CHIP_WAIT}>앱 미연결</span>;
     }
 
+    // 직접 추가 기록(로그인 없음) 표시 — 전환 초대가 있으면 «가입 대기 · N일»
+    function loginChip(row: Extract<Row, { kind: "user" }>) {
+        if (!row.user.directAdded) return null;
+        return row.conversion
+            ? <span className={CHIP_WAIT}>가입 대기 · {invitationDaysLeft(row.conversion.expiresAt, Date.now())}일 남음</span>
+            : <span className={CHIP_MUTED}>로그인 없음</span>;
+    }
+
     function rowName(row: Row): string {
         if (row.kind === "invite") return row.invite.name;
         if (row.kind === "user") return row.user.name;
+        if (row.kind === "grant") return row.grantUser.name;
         return row.coach.name;
     }
 
     function rowPhone(row: Row): string {
         if (row.kind === "invite") return formatPhone(row.invite.phone);
         if (row.kind === "user") return row.user.phone ? formatPhone(row.user.phone) : "-";
+        if (row.kind === "grant") return row.grantUser.phone ? formatPhone(row.grantUser.phone) : "-";
         return row.coach.phone ? formatPhone(row.coach.phone) : "-";
     }
 
@@ -569,8 +790,29 @@ export default function StaffClient({
                                                 <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
                                                 {/* 남는 폭을 받는 칸이라 선택칸 둘레만 전파 차단(빈 곳을 누르면 패널이 열린다) */}
                                                 <td className="px-3 py-1">
-                                                    <span className="inline-flex" onClick={(event) => event.stopPropagation()}>
-                                                        {userLinkCell(user)}
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="inline-flex" onClick={(event) => event.stopPropagation()}>
+                                                            {userLinkCell(user)}
+                                                        </span>
+                                                        {loginChip(row)}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    }
+                                    if (row.kind === "grant") {
+                                        // 학부모 계정 + 승인된 추가 역할 — 보기 전용(회수는 신청함)
+                                        const grantUser = row.grantUser;
+                                        const coachName = grantCoachName(grantUser);
+                                        return (
+                                            <tr key={row.key}>
+                                                <td className="px-3 py-1.5 font-bold text-[var(--color-academy-ink)]">{grantUser.name}</td>
+                                                <td className="px-3 py-1.5">{grantChips(grantUser)}</td>
+                                                <td className="admin-cell-num px-3 py-1.5 text-[var(--color-academy-muted)]">{rowPhone(row)}</td>
+                                                <td className="px-3 py-1">
+                                                    <span className="flex items-center gap-2">
+                                                        {coachName && <span className="text-xs text-[var(--color-academy-muted)]">코치 프로필 {coachName}</span>}
+                                                        {grantRevokeLink(grantUser)}
                                                     </span>
                                                 </td>
                                             </tr>
@@ -593,7 +835,7 @@ export default function StaffClient({
                     {/* 휴대폰(375px): 표 대신 한 줄 카드 — 이름 · 역할 · 상태 · 전화(· ⚡). 역할·코치 연결은 줄을 눌러 패널에서. */}
                     <ul className="divide-y divide-[var(--color-academy-line)] overflow-hidden rounded-xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] sm:hidden">
                         {rows.map((row) => {
-                            const clickable = row.kind !== "coach";
+                            const clickable = row.kind === "invite" || row.kind === "user";
                             return (
                                 <li
                                     key={row.key}
@@ -613,7 +855,8 @@ export default function StaffClient({
                                 >
                                     <span className="font-bold text-[var(--color-academy-ink)]">{rowName(row)}</span>
                                     {row.kind === "invite" && <>{roleChip(row.invite.role)}{resetChip(row.invite)}{inviteStatusChip(row)}{inviteCoachNote(row)}</>}
-                                    {row.kind === "user" && <>{roleChip(row.user.role)}{row.user.coachName && <span className="text-xs text-[var(--color-academy-muted)]">코치 {row.user.coachName}</span>}</>}
+                                    {row.kind === "user" && <>{roleChip(row.user.role)}{row.user.coachName && <span className="text-xs text-[var(--color-academy-muted)]">코치 {row.user.coachName}</span>}{loginChip(row)}</>}
+                                    {row.kind === "grant" && grantChips(row.grantUser)}
                                     {row.kind === "coach" && <><span className="text-xs text-[var(--color-academy-muted)]">{row.coach.role}</span>{coachStatusChip(row)}</>}
                                     <span className="ml-auto text-xs tabular-nums text-[var(--color-academy-muted)]">{rowPhone(row)}</span>
                                     {row.kind === "invite" && (
@@ -621,6 +864,7 @@ export default function StaffClient({
                                             <AdminQuickActionMenu label={`${row.invite.name} 초대 빠른 작업`} actions={buildInvitationActions(row.invite)} />
                                         </span>
                                     )}
+                                    {row.kind === "grant" && grantRevokeLink(row.grantUser)}
                                 </li>
                             );
                         })}
@@ -715,7 +959,34 @@ export default function StaffClient({
                         <dd className="text-[var(--color-academy-ink)]">{userLinkCell(detailUser)}</dd>
                         <dt className="font-bold text-[var(--color-academy-muted)]">가입일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailUser.createdAt) || "-"}</dd>
+                        {/* 직접 추가 기록 — 로그인 없음 / 가입 대기(마지막 문자 발송) */}
+                        {detailUser.directAdded && (
+                            <>
+                                <dt className="font-bold text-[var(--color-academy-muted)]">앱 계정</dt>
+                                <dd className="flex flex-col gap-0.5">
+                                    {detailConversion
+                                        ? <><span className={CHIP_WAIT}>가입 대기 · {kstLabel(detailConversion.expiresAt)}까지</span>{lastSendLine(detailConversion.id)}</>
+                                        : <span className={CHIP_MUTED}>로그인 없음</span>}
+                                </dd>
+                            </>
+                        )}
+                        {/* 담당 반(보기만) — 시간표 배정·반 담당자 기준(선생님 앱의 담당 수업과 같다) */}
+                        {(detailUser.coachId || detailClasses.length > 0) && (
+                            <>
+                                <dt className="self-start font-bold text-[var(--color-academy-muted)]">담당 반</dt>
+                                <dd className="text-[var(--color-academy-ink)]">
+                                    {detailClasses.length === 0
+                                        ? "-"
+                                        : (
+                                            <ul className="space-y-0.5 tabular-nums">
+                                                {detailClasses.map((item) => <li key={item.classId}>{classAssignmentLabel(item)}</li>)}
+                                            </ul>
+                                        )}
+                                </dd>
+                            </>
+                        )}
                     </dl>
+                    <AdminPanelActions actions={buildUserPanelActions(detailUser, detailConversion)} onBeforeSelect={() => setDetail(null)} />
                     {!canManage && <p className="mt-4 text-xs text-[var(--color-academy-muted)]">역할·코치 연결은 원장만 바꿀 수 있습니다.</p>}
                 </ListDetailPanel>
             )}
@@ -739,6 +1010,9 @@ export default function StaffClient({
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.createdAt) || "-"}</dd>
                         <dt className="font-bold text-[var(--color-academy-muted)]">만료일</dt>
                         <dd className="tabular-nums text-[var(--color-academy-ink)]">{kstLabel(detailInvite.expiresAt) || "-"}</dd>
+                        {/* 마지막 초대 문자 — 발송 시각·성공/실패(기존 발송 기록) */}
+                        <dt className="font-bold text-[var(--color-academy-muted)]">문자</dt>
+                        <dd>{lastSendLine(detailInvite.id)}</dd>
                     </dl>
                     {/* 공용 패널 버튼 줄 — ⚡ 와 같은 목록·같은 함수, 위험 작업은 오른쪽 끝으로 떨어진다 */}
                     <AdminPanelActions actions={buildInvitationActions(detailInvite)} onBeforeSelect={() => setDetail(null)} />
@@ -757,18 +1031,8 @@ export default function StaffClient({
                 />
             )}
 
-            {/* 모달: 직접 추가 (기존) */}
-            {showModal === "add" && (
-                <AddStaffModal
-                    onClose={() => setShowModal(null)}
-                    onSuccess={() => {
-                        setShowModal(null);
-                        setMessage({ text: "스태프가 추가되었습니다.", ok: true });
-                        void loadStaffData();
-                    }}
-                    onError={(msg) => setMessage({ text: msg, ok: false })}
-                />
-            )}
+            {/* 공용 확인 창 — 역할 변경·퇴사 처리·가입 링크 문자 */}
+            {confirmDialog}
         </div>
     );
 }
