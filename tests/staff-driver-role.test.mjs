@@ -18,10 +18,12 @@ const schemaSource = await readFile("prisma/schema.prisma", "utf8");
 
 test("DRIVER role lands on the shuttle mobile workspace", () => {
   assert.match(schemaSource, /enum Role \{[\s\S]*?DRIVER[\s\S]*?\}/);
-  assert.match(authRoutesSource, /if \(role === "DRIVER"\) return "\/staff\/shuttle"/);
+  // 2026-11-13 b7: 기사님 첫 화면은 /staff/driver — 위치 전송이 되는 운행 화면으로 넘기거나 아이폰 스토어 앱이면 안내.
+  assert.match(authRoutesSource, /if \(role === "DRIVER"\) return "\/staff\/driver"/);
   assert.match(authRoutesSource, /target === "\/staff\/shuttle"/);
-  // 선생님 화면이 없는 사람(기사님만)은 셔틀 화면으로. 「선생님 + 기사님」은 수업 화면에 머문다.
-  assert.match(staffHomeSource, /if \(!staff\.roles\.teacher\) redirect\("\/staff\/shuttle"\)/);
+  assert.match(authRoutesSource, /target === "\/staff\/driver"/);
+  // 선생님 화면이 없는 사람(기사님만)은 기사님 첫 화면으로. 「선생님 + 기사님」은 수업 화면에 머문다.
+  assert.match(staffHomeSource, /if \(!staff\.roles\.teacher\) redirect\(DRIVER_ENTRY_PATH\)/);
   // 사진 빠른 업로드도 선생님 화면이 있는 사람만.
   assert.match(quickPostSource, /if \(!staff\.roles\.teacher\)/);
 });

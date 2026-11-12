@@ -131,7 +131,7 @@ function authFlowFixture(role, hasOwnChildren) {
 for (const [role, children, expected] of [
   ['ADMIN', true, '/mypage'], ['ADMIN', false, '/admin'],
   ['VICE_ADMIN', true, '/mypage'], ['INSTRUCTOR', true, '/mypage'],
-  ['INSTRUCTOR', false, '/staff'], ['PARENT', false, '/mypage'], ['DRIVER', false, '/staff/shuttle'],
+  ['INSTRUCTOR', false, '/staff'], ['PARENT', false, '/mypage'], ['DRIVER', false, '/staff/driver'],
 ]) {
   test(`${role} 실제 로그인·계속 함수 목적지 일치 (자녀 ${children})`, async () => {
     const fixture = authFlowFixture(role, children);

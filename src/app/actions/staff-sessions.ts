@@ -1,10 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncCreditForRegularSession, syncCreditForSeasonalSeat } from "@/lib/makeup/credit-service";
 import { applyMakeupAttendanceInTx, findMakeupBookings, makeupOnClassDateSql } from "@/lib/makeup/makeup-attendance";
-import { requireStaffClassAccess, requireStaffSeasonalSessionAccess } from "@/lib/staff-class-access";
+import { requireStaffClassAccess, requireStaffSeasonalSessionAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
+import { todayKst } from "@/lib/datetime/kst";
+import {
+  BULK_ALREADY_RECORDED_MESSAGE,
+  BULK_SKIPPED_MESSAGE,
+  SEAT_RECORD_WARNING_MESSAGE,
+  STALE_DATE_MESSAGE,
+  activeSessionNotice,
+  shouldNotifyParentsForSession,
+  staffAccessFailure,
+} from "@/lib/staff-session-rules";
 import { deliverParentNotification, getClassParentRecipients, getStudentParentRecipients } from "@/lib/staff-notifications";
 import type { ParentRecipient } from "@/lib/staff-notifications";
 import { notMergedStudent } from "@/lib/studentVisibility";
@@ -18,17 +29,46 @@ import {
 
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
+// 권한 검사는 사진 API 와 같은 함수(requireStaffSessionAccess)를 쓴다 — 특강 담당도 같은 기준으로 통과.
 async function requireSessionAccess(sessionId: string) {
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; classId: string; status: string; className: string; sessionDateId: string | null; date: Date | string }>>(
-    `SELECT s.id, s."classId", s.date::date::text AS date, s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
-     FROM "Session" s JOIN "Class" c ON c.id = s."classId" WHERE s.id = $1 LIMIT 1`,
-    sessionId,
-  );
-  if (!rows[0]) throw new Error("수업 기록을 찾을 수 없습니다.");
-  const access = rows[0].sessionDateId
-    ? (await requireStaffSeasonalSessionAccess(rows[0].sessionDateId)).access
-    : await requireStaffClassAccess(rows[0].classId);
-  return { session: rows[0], access };
+  return requireStaffSessionAccess(sessionId);
+}
+
+/**
+ * 권한 검사를 «던지지 않고» 결과로 돌려준다(2026-11-13 b5).
+ * 로그인이 풀리거나 권한이 없을 때 예외를 던지면 화면이 «연결이 끊겼다»로 오해하고 오류 화면으로 넘어간다.
+ * → { ok:false, message, needsLogin? } 로 돌려 화면이 «다시 로그인» 버튼을 띄우게 한다. 그 밖의 오류는 그대로 던진다.
+ */
+async function trySessionAccess(sessionId: string) {
+  try {
+    return { ok: true as const, ...(await requireSessionAccess(sessionId)) };
+  } catch (error) {
+    const failure = staffAccessFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
+}
+
+/**
+ * 특강 회차의 담당 강사(Coach id) — 원장·부원장이 특강 기록을 처음 만들 때 coachId 를 채우는 데 쓴다(검수 H1).
+ * 회차 ID 가 NULL(정규 수업)이면 NULL 이 나온다. 권한 판정(requireStaffSeasonalSessionAccess)의 instructorId 와 같은 값.
+ */
+function seasonalInstructorSql(sessionDateParam: string) {
+  return `(SELECT o."instructorId" FROM "SpecialProgramSessionDate" sd
+            JOIN "SpecialProgramOffering" o ON o.id = sd."offeringId"
+           WHERE sd.id = ${sessionDateParam} LIMIT 1)`;
+}
+
+/** 응답을 돌려준 뒤에 학부모 알림을 보낸다(Next after) — 알림이 느려도 선생님 화면이 기다리지 않게. */
+function runAfterResponse(label: string, work: () => Promise<unknown>) {
+  after(async () => {
+    try {
+      await work();
+    } catch (error) {
+      // 알림 장부(NotificationDelivery)에 먼저 기록되므로 실패분은 push-outbox 크론이 다시 보낸다.
+      console.error(`[${label}] 응답 뒤 알림 처리 실패`, error);
+    }
+  });
 }
 
 async function isSessionRosterStudent(classId: string, sessionDateId: string | null, studentId: string, sessionDate: Date | string) {
@@ -75,7 +115,7 @@ async function isSessionRosterStudent(classId: string, sessionDateId: string | n
   return Boolean(rows[0]);
 }
 
-type SessionRow = { id: string; classId: string; status: string; className: string; sessionDateId: string | null };
+type SessionRow = { id: string; classId: string; status: string; className: string; sessionDateId: string | null; date?: Date | string };
 
 // 방학특강 출결 저장 — 좌석(SpecialProgramEnrollmentDate)이 정본이다.
 // 입력 키 = enrollmentDateId(그 좌석). 미전환 신청자도 좌석이 있어 여기서 저장된다.
@@ -90,6 +130,8 @@ async function saveSeasonalSeatAttendance(input: {
   status: AttendanceStatus;
   note: string | null;
   checkedByUserId: string | null;
+  /** «전체 출석» 요청 — 이미 찍힌 좌석은 덮어쓰지 않는다(검수 3). */
+  bulk?: boolean;
 }) {
   // 알림 전송 여부 판정용 이전 좌석 상태(변경 없으면 알림 생략).
   const prev = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
@@ -128,10 +170,23 @@ async function saveSeasonalSeatAttendance(input: {
         AND e."applicationItemId" = i.id
         AND e."sessionDateId" = sd.id
         AND e.status = 'SCHEDULED'
+        AND ($6::boolean = false OR e."attendanceStatus" IS NULL)
       RETURNING e.id, e."studentId"`,
-    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId,
+    input.session.id, input.enrollmentDateId, input.status, input.note, input.checkedByUserId, Boolean(input.bulk),
   );
   if (updated.length === 0) {
+    // 전체 출석인데 이미 찍힌 좌석이면(다른 기기) 덮어쓰지 않고 건너뜀으로 돌려준다(검수 3).
+    // 조건을 UPDATE 안에 넣어 두 기기가 동시에 눌러도 먼저 찍힌 값이 남는다.
+    if (input.bulk) {
+      // 방금 다른 기기가 찍었을 수도 있어 저장 직후 상태를 다시 읽어 판정한다.
+      const now = await prisma.$queryRawUnsafe<{ attendanceStatus: string | null }[]>(
+        `SELECT "attendanceStatus" FROM "SpecialProgramEnrollmentDate" WHERE id = $1 LIMIT 1`,
+        input.enrollmentDateId,
+      );
+      if (now[0]?.attendanceStatus) {
+        return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+      }
+    }
     return { ok: false as const, message: "이 수업의 확정 명단에 없는 좌석입니다." };
   }
 
@@ -176,32 +231,37 @@ async function saveSeasonalSeatAttendance(input: {
     );
     if (saved[0]) attendanceId = saved[0].id;
 
-    if (changed && (input.status === "PRESENT" || input.status === "LATE")) {
-      const [recipient] = await getSessionParentRecipients(input.session, [studentId]);
-      if (recipient) {
-        const delivery = await deliverParentNotification({
-          eventType: input.status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
-          dedupeKey: `attendance:${attendanceId}:status:${input.status}:user:${recipient.userId}`,
+    // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 선생님이 다음 아이를 바로 찍을 수 있게.
+    // 지난 날짜 수업을 뒤늦게 정리하는 경우엔 «방금 출석» 알림을 보내지 않는다(b6).
+    const sessionYmd = input.session.date ? String(input.session.date).slice(0, 10) : todayKst();
+    if (changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+      const status = input.status;
+      const notifyAttendanceId = attendanceId;
+      runAfterResponse("saveSeasonalSeatAttendance", async () => {
+        const [recipient] = await getSessionParentRecipients(input.session, [studentId]);
+        if (!recipient) return;
+        await deliverParentNotification({
+          eventType: status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
+          dedupeKey: `attendance:${notifyAttendanceId}:status:${status}:user:${recipient.userId}`,
           recipient,
           title: `${input.session.className} 출석 안내`,
-          message: `${recipient.studentName} 학생이 ${input.status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
+          message: `${recipient.studentName} 학생이 ${status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
           linkUrl: "/parent/attendance",
           sessionId: input.session.id,
-          attendanceId,
+          attendanceId: notifyAttendanceId,
         });
-        if (!delivery.duplicate && delivery.push?.status === "FAILED") {
-          return { ok: true as const, attendanceId, changed, notificationWarning: true as const };
-        }
-      }
+      });
     }
   } catch (error) {
-    console.error("[saveSeasonalSeatAttendance] 정규 Attendance/알림 실패(좌석 저장은 유지)", {
+    // 좌석(정본)은 저장됐고 정규 Attendance 기록만 실패한 경우 — 화면이 그 줄 아래에 «다시 눌러 주세요»를 보인다(검수 2).
+    // 다시 누르면 같은 좌석·같은 Attendance 를 다시 쓰므로(UPSERT) 중복 기록은 생기지 않는다.
+    console.error("[saveSeasonalSeatAttendance] 정규 Attendance 기록 실패(좌석 저장은 유지)", {
       sessionId: input.session.id,
       enrollmentDateId: input.enrollmentDateId,
       studentId,
       error,
     });
-    return { ok: true as const, attendanceId, changed, notificationWarning: true as const };
+    return { ok: true as const, attendanceId, changed, recordWarning: SEAT_RECORD_WARNING_MESSAGE };
   }
   return { ok: true as const, attendanceId, changed };
 }
@@ -248,17 +308,41 @@ export async function savePlannedClassContent(input: {
   sessionDateId?: string;
 }) {
   const sessionDateId = input.sessionDateId?.trim() || null;
-  const seasonal = sessionDateId ? await requireStaffSeasonalSessionAccess(sessionDateId) : null;
-  const access = seasonal?.access ?? await requireStaffClassAccess(input.classId);
+  // 권한·로그인 실패는 던지지 않고 결과로 돌려준다(b5).
+  let seasonal: Awaited<ReturnType<typeof requireStaffSeasonalSessionAccess>> | null;
+  let access: Awaited<ReturnType<typeof requireStaffClassAccess>>;
+  try {
+    seasonal = sessionDateId ? await requireStaffSeasonalSessionAccess(sessionDateId) : null;
+    access = seasonal?.access ?? await requireStaffClassAccess(input.classId);
+  } catch (error) {
+    const failure = staffAccessFailure(error);
+    if (failure) return failure;
+    throw error;
+  }
   if (seasonal && seasonal.seasonal.linkedClassId !== input.classId) {
     return { ok: false as const, message: "특강과 연결된 수업 정보가 일치하지 않습니다." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) {
     return { ok: false as const, message: "수업 날짜를 다시 확인해 주세요." };
   }
+  if (sessionDateId) {
+    // 특강은 회차(sessionDateId)의 실제 날짜(KST)와 화면 날짜가 같아야 한다 — 수업 시작과 같은 확인.
+    const validDate = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "SpecialProgramSessionDate"
+       WHERE id = $1 AND ("startsAt" AT TIME ZONE 'Asia/Seoul')::date = $2::date LIMIT 1`,
+      sessionDateId, input.date,
+    );
+    if (!validDate[0]) return { ok: false as const, message: STALE_DATE_MESSAGE };
+  } else if (input.date !== todayKst()) {
+    // 정규 수업 홈 화면은 «오늘» 수업만 보여 준다. 밤새 열어 둔 화면에서 어제 날짜로 저장되지 않게 막는다(b2).
+    return { ok: false as const, message: STALE_DATE_MESSAGE };
+  }
 
   // 정규 수업 키는 관리자 출결·랠리즈와 같은 함수(regularSessionKey)로 만든다.
   const sessionKey = sessionDateId ? `seasonal:${sessionDateId}` : regularSessionKey(input.classId, input.date);
+  // coachId: 원장·부원장은 코치가 없어 access.coachId 가 NULL 이다. 그대로 넣으면 특강 기록의 coachId 가 비고,
+  // 특강 권한·목록은 «기록이 있으면 기록의 coachId» 를 보므로 담당 강사 홈에서 수업이 사라지고 시작도 막힌다(검수 H1).
+  // → 특강이면 그 회차 상품의 담당 강사(instructorId)로 채운다(관리자 출결 저장 admin.ts 와 같은 원칙). 정규는 NULL 그대로.
   const rows = await prisma.$transaction(async (tx) => {
     // 관리자가 먼저 출결을 저장해 «키 없는» 기록이 있으면 그 기록에 키를 붙여 같은 기록을 쓴다(기록 갈라짐 방지).
     if (!sessionDateId) await adoptRegularSessionKey(tx, input.classId, input.date);
@@ -266,7 +350,7 @@ export async function savePlannedClassContent(input: {
     `INSERT INTO "Session" (
        id, "classId", date, "sessionKey", status, "plannedContent", "coachId", "specialProgramSessionDateId", "createdAt", "updatedAt"
      ) VALUES (
-       gen_random_uuid()::text, $1, $2::date, $3, 'PLANNED', $4, $5, $6, NOW(), NOW()
+       gen_random_uuid()::text, $1, $2::date, $3, 'PLANNED', $4, COALESCE($5::text, ${seasonalInstructorSql("$6::text")}), $6, NOW(), NOW()
      )
      ON CONFLICT ("sessionKey") DO UPDATE SET
        "plannedContent" = EXCLUDED."plannedContent",
@@ -291,7 +375,9 @@ export async function savePlannedClassContent(input: {
 }
 
 export async function saveSessionMemo(input: { sessionId: string; notes: string }) {
-  const { session } = await requireSessionAccess(input.sessionId);
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session } = gate;
   if (session.status !== "IN_PROGRESS") {
     return { ok: false as const, message: "진행 중인 수업에서만 메모할 수 있습니다." };
   }
@@ -312,8 +398,12 @@ export async function saveStaffAttendance(input: {
   note?: string;
   /** 결석 사유 — "ILLNESS_INJURY"=질병·부상 표시, null=표시 끄기, 생략=그대로(출석·지각이면 출석부 사유는 지워짐). 정규 수강생만. */
   absenceReason?: AbsenceReasonIntent;
+  /** «전체 출석» 버튼에서 온 요청 — 결석 신고가 있는 아이는 건너뛴다(b1). */
+  bulk?: boolean;
 }) {
-  const { session, access } = await requireSessionAccess(input.sessionId);
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session, access } = gate;
   if (session.status !== "IN_PROGRESS") return { ok: false as const, message: "진행 중인 수업에서만 출결을 기록할 수 있습니다." };
   if (!["PRESENT", "LATE", "ABSENT"].includes(input.status)) return { ok: false as const, message: "올바른 출결 상태가 아닙니다." };
   if (input.absenceReason !== undefined && input.absenceReason !== null && input.absenceReason !== "ILLNESS_INJURY") {
@@ -330,6 +420,7 @@ export async function saveStaffAttendance(input: {
       status: input.status,
       note: input.note?.trim() || null,
       checkedByUserId: access.staff.appUserId,
+      bulk: input.bulk,
     });
   }
 
@@ -345,6 +436,28 @@ export async function saveStaffAttendance(input: {
     `SELECT status FROM "Attendance" WHERE "sessionId" = $1 AND "studentId" = $2 LIMIT 1`, input.sessionId, studentId,
   );
   const changed = previous[0]?.status !== input.status;
+
+  // «전체 출석»으로 들어온 요청은 미확인 아이만 대상이다.
+  //  ① 이미 출결이 있는 아이(다른 기기에서 먼저 찍음)는 덮어쓰지 않고 건너뛴다(검수 3) — «결석»이 «출석»으로 바뀌면 보강권·알림이 틀어진다.
+  //  ② 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이도 건너뛴다(b1).
+  // 화면도 이 아이들을 빼고 보내지만, 화면이 낡았거나(신고가 방금 들어옴) 다른 경로로 와도 서버가 한 번 더 막는다.
+  // 선생님이 그 줄의 «출석»을 직접 누른 요청(bulk 없음)은 아이가 실제로 온 것이므로 그대로 받는다.
+  if (input.bulk && previous[0]) {
+    return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+  }
+  if (input.bulk && input.status === "PRESENT" && !isMakeup) {
+    const reported = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT ra.id FROM "RegularAbsence" ra
+        WHERE ra."studentId" = $1 AND ra."classId" = $2 AND ra.date = $3::date AND ra.status IN ('REPORTED','CONFIRMED')
+        LIMIT 1`,
+      studentId, session.classId, sessionYmd,
+    );
+    if (reported[0]) {
+      return { ok: true as const, skipped: true as const, message: BULK_SKIPPED_MESSAGE };
+    }
+  }
+
+  // 일괄($6=true)이면 «비어 있을 때만» 쓴다 — 확인과 저장 사이에 다른 기기가 찍어도 덮어쓰지 않는다(DO UPDATE 가 0행 → RETURNING 없음).
   const saved = await prisma.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "Attendance" (id, "sessionId", "studentId", status, note, "checkedAt", "arrivedAt", "checkedByUserId", "createdAt", "updatedAt")
      VALUES (gen_random_uuid()::text, $1, $2, $3, $4, NOW(), CASE WHEN $3 = 'LATE' THEN NOW() ELSE NULL END, $5, NOW(), NOW())
@@ -353,9 +466,13 @@ export async function saveStaffAttendance(input: {
        "checkedAt" = COALESCE("Attendance"."checkedAt", NOW()),
        "arrivedAt" = CASE WHEN EXCLUDED.status = 'LATE' THEN COALESCE("Attendance"."arrivedAt", NOW()) ELSE NULL END,
        "checkedByUserId" = EXCLUDED."checkedByUserId", "updatedAt" = NOW()
+     WHERE $6::boolean = false
      RETURNING id`,
-    input.sessionId, studentId, input.status, input.note?.trim() || null, access.staff.appUserId,
+    input.sessionId, studentId, input.status, input.note?.trim() || null, access.staff.appUserId, Boolean(input.bulk),
   );
+  if (!saved[0]) {
+    return { ok: true as const, skipped: true as const, message: BULK_ALREADY_RECORDED_MESSAGE };
+  }
 
   if (isMakeup) {
     // 보강 온 아이 — 이 반 결석으로 보강권을 새로 주면 안 된다(syncCreditForRegularSession 을 타지 않는다).
@@ -402,35 +519,28 @@ export async function saveStaffAttendance(input: {
   }
   const extra = { absenceReport, ...(absenceMessage ? { absenceMessage } : {}) };
 
-  if (changed && (input.status === "PRESENT" || input.status === "LATE")) {
-    try {
+  // 출석 알림은 응답 뒤에 보낸다(2026-11-13 b5) — 알림이 느려도 선생님이 다음 아이를 바로 찍을 수 있게.
+  // 알림 장부에 먼저 기록되고 실패분은 push-outbox 크론이 다시 보낸다. 지난 날짜 수업이면 보내지 않는다(b6).
+  if (changed && (input.status === "PRESENT" || input.status === "LATE") && shouldNotifyParentsForSession(sessionYmd)) {
+    const status = input.status;
+    const attendanceId = saved[0].id;
+    runAfterResponse("saveStaffAttendance", async () => {
       // 보강 온 아이는 이 반 수강생이 아니라 반 기준 조회로는 학부모가 안 잡힌다 → 학생으로 바로 찾는다.
       const [recipient] = isMakeup
         ? await getStudentParentRecipients([studentId])
         : await getSessionParentRecipients(session, [studentId]);
-      if (recipient) {
-        const delivery = await deliverParentNotification({
-          eventType: input.status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
-          dedupeKey: `attendance:${saved[0].id}:status:${input.status}:user:${recipient.userId}`,
-          recipient,
-          title: `${session.className} 출석 안내`,
-          message: `${recipient.studentName} 학생이 ${input.status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
-          linkUrl: "/parent/attendance",
-          sessionId: input.sessionId,
-          attendanceId: saved[0].id,
-        });
-        if (!delivery.duplicate && delivery.push?.status === "FAILED") {
-          return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const, ...extra };
-        }
-      }
-    } catch (error) {
-      console.error("[saveStaffAttendance] Parent notification failed", {
+      if (!recipient) return;
+      await deliverParentNotification({
+        eventType: status === "LATE" ? "ATTENDANCE_LATE" : "ATTENDANCE_PRESENT",
+        dedupeKey: `attendance:${attendanceId}:status:${status}:user:${recipient.userId}`,
+        recipient,
+        title: `${session.className} 출석 안내`,
+        message: `${recipient.studentName} 학생이 ${status === "LATE" ? "지각 출석" : "출석"}했습니다.`,
+        linkUrl: "/parent/attendance",
         sessionId: input.sessionId,
-        studentId,
-        error,
+        attendanceId,
       });
-      return { ok: true as const, attendanceId: saved[0].id, changed, notificationWarning: true as const, ...extra };
-    }
+    });
   }
   return { ok: true as const, attendanceId: saved[0].id, changed, ...extra };
 }
@@ -466,7 +576,9 @@ export async function completeClassSession(input: {
   /** 학부모에게 바로 보낼지. 화면에서 기본 켬. */
   publishReport?: boolean;
 }) {
-  const { session, access } = await requireSessionAccess(input.sessionId);
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session, access } = gate;
   if (session.status === "COMPLETED") return { ok: true as const, completed: true, resumed: true };
   if (session.status !== "IN_PROGRESS") return { ok: false as const, message: "시작한 수업만 종료할 수 있습니다." };
 
@@ -544,13 +656,13 @@ export async function completeClassSession(input: {
   // 수업 종료 저장은 학부모 알림보다 우선입니다. 알림 장애가 이미 끝난 수업을 실패로 되돌리지 않게 격리합니다.
   // ★ 알림 발송은 NotificationDelivery 큐에 먼저 기록되고 push-outbox 크론(매분)이 재발송을 보장하므로,
   //   여기서 발송 완료를 끝까지 기다리지 않는다. 발송이 느리면(푸시·SMS 지연) 응답이 막혀 화면이 "종료 처리 중"에서
-  //   멈추던 문제가 있었다 → 짧은 예산(budget) 안에서만 즉시 시도하고, 초과분은 크론이 처리한다.
-  let notificationWarning:
-    | { code: "PARENT_NOTIFICATION_FAILED"; failedCount: number }
-    | undefined;
-  const NOTIFY_BUDGET_MS = 3500;
-  try {
-    const notifyWork = (async () => {
+  //   멈추던 문제가 있었다.
+  // ★ 2026-11-13 G9: 예전엔 3.5초만 기다리고 응답했는데, 서버리스는 응답을 보내면 남은 작업을 끊을 수 있어
+  //   학부모가 많은 반은 «장부 기록 전»에 끊긴 알림이 통째로 빠질 수 있었다(크론도 장부에 없는 건 못 보낸다).
+  //   → Next after() 로 «응답 뒤에도 끝까지» 돌게 보장한다. 화면은 기다리지 않는다.
+  // ★ b6: 지난 날짜 수업(어제 못 끝낸 수업)을 오늘 정리하면 «수업이 종료되었습니다» 알림은 보내지 않는다.
+  if (shouldNotifyParentsForSession(String(session.date).slice(0, 10))) {
+    runAfterResponse("completeClassSession", async () => {
       const regularRecipients = await getSessionParentRecipients(session);
       // 보강 온 아이 학부모에게도 같은 안내(2026-11-09 원장 승인) — 반 수강생이 아니라 위 조회로는 안 잡힌다.
       // 같은 키 규칙(session:…:student:…:user:…)이라 정규·보강에 겹친 아이가 있어도 두 번 나가지 않는다.
@@ -574,28 +686,17 @@ export async function completeClassSession(input: {
         return count + (result.value.push.failedCount || (result.value.push.status === "FAILED" ? 1 : 0));
       }, 0);
       if (failedCount > 0) {
-        notificationWarning = { code: "PARENT_NOTIFICATION_FAILED", failedCount };
+        // 실패분은 장부에 남아 push-outbox 크론이 다시 보낸다. 관리자 발송 현황에서도 보인다.
         console.error("[completeClassSession] Parent notification delivery failed", {
           sessionId: input.sessionId, classId: session.classId, failedCount, recipientCount: recipients.length,
         });
       }
-    })();
-    // 예산 시간 안에 끝나면 결과(경고)를 반영하고, 초과하면 응답을 먼저 돌려준다(큐+크론이 마저 발송).
-    await Promise.race([
-      notifyWork.catch((error) => {
-        notificationWarning = { code: "PARENT_NOTIFICATION_FAILED", failedCount: 1 };
-        console.error("[completeClassSession] Parent notification lookup failed", { sessionId: input.sessionId, classId: session.classId, error });
-      }),
-      new Promise<void>((resolve) => setTimeout(resolve, NOTIFY_BUDGET_MS)),
-    ]);
-  } catch (error) {
-    console.error("[completeClassSession] Parent notification dispatch error", { sessionId: input.sessionId, error });
+    });
   }
   return {
     ok: true as const,
     completed: true,
     resumed: false,
-    ...(notificationWarning ? { notificationWarning } : {}),
   };
 }
 
@@ -608,7 +709,9 @@ export async function completeClassSession(input: {
  */
 export async function cancelClassSession(input: { sessionId: string }) {
   // 종료/출결과 동일한 권한 게이트로 담당 수업(또는 특강)인지 다시 검사합니다.
-  const { session } = await requireSessionAccess(input.sessionId);
+  const gate = await trySessionAccess(input.sessionId);
+  if (!gate.ok) return gate;
+  const { session } = gate;
 
   // 진행 중(IN_PROGRESS)인 수업만 시작을 취소할 수 있습니다. 그 외 상태는 되돌릴 대상이 아닙니다.
   if (session.status !== "IN_PROGRESS") {
@@ -650,9 +753,14 @@ export type StartClassSessionResult =
     }
   | {
       ok: false;
-      code: "INVALID_INPUT" | "FORBIDDEN" | "COMPLETED" | "ACTIVE_SESSION" | "DB_NOT_READY" | "UNKNOWN";
+      code: "INVALID_INPUT" | "FORBIDDEN" | "COMPLETED" | "ACTIVE_SESSION" | "DB_NOT_READY" | "STALE_DATE" | "UNKNOWN";
       message: string;
       activeSessionId?: string;
+      /** ACTIVE_SESSION 일 때 — 화면이 «○○반(○월 ○일) 수업이 아직 진행 중» 안내를 보이는 데 쓴다(b6). */
+      activeClassName?: string;
+      activeDate?: string;
+      /** 로그인이 풀려 다시 로그인해야 할 때(b5). */
+      needsLogin?: true;
     };
 
 function isValidDateKey(value: string) {
@@ -702,6 +810,12 @@ export async function startClassSession(input: {
       code: "INVALID_INPUT",
       message: "수업과 날짜 정보를 다시 확인해 주세요.",
     };
+  }
+
+  // 정규 수업은 «오늘» 수업만 시작한다. 밤새 열어 둔 홈 화면의 어제 날짜로 시작되면 어제 출석부가 열린다(b2).
+  // 특강(sessionDateId)은 날짜를 넘겨 보는 화면이라, 아래에서 «회차의 실제 날짜 = 요청 날짜»를 확인하는 기존 규칙을 따른다.
+  if (!input.sessionDateId?.trim() && date !== todayKst()) {
+    return { ok: false, code: "STALE_DATE", message: STALE_DATE_MESSAGE };
   }
 
   try {
@@ -756,12 +870,14 @@ export async function startClassSession(input: {
         return { ok: false as const, code: "COMPLETED" as const, message: "이미 종료된 수업입니다." };
       }
 
-      const active = await tx.$queryRawUnsafe<SessionStartRow[]>(
-        `SELECT id, "classId", status, "startedAt"
-         FROM "Session"
-         WHERE status = 'IN_PROGRESS'
-           AND "startedByUserId" = $1
-         ORDER BY "startedAt" DESC
+      // 반 이름·수업 날짜도 함께 읽는다 — 어제 끝내지 못한 수업이면 «○○반(○월 ○일)»로 알려 주기 위해(b6).
+      const active = await tx.$queryRawUnsafe<Array<SessionStartRow & { className: string; date: string }>>(
+        `SELECT s.id, s."classId", s.status, s."startedAt", c.name AS "className", s.date::date::text AS date
+         FROM "Session" s
+         JOIN "Class" c ON c.id = s."classId"
+         WHERE s.status = 'IN_PROGRESS'
+           AND s."startedByUserId" = $1
+         ORDER BY s."startedAt" DESC
          LIMIT 1`,
         access.staff.appUserId,
       );
@@ -770,8 +886,10 @@ export async function startClassSession(input: {
         return {
           ok: false as const,
           code: "ACTIVE_SESSION" as const,
-          message: "진행 중인 수업을 먼저 종료해 주세요.",
+          message: activeSessionNotice(active[0].className, active[0].date),
           activeSessionId: active[0].id,
+          activeClassName: active[0].className,
+          activeDate: active[0].date,
         };
       }
 
@@ -803,13 +921,16 @@ export async function startClassSession(input: {
       }
 
       // 첫 요청만 새 Session을 만듭니다. 같은 키의 재요청은 아무것도 생성하지 않습니다.
+      // coachId: 원장·부원장이 특강을 바로 시작해도 담당 강사가 계속 보고 이어 쓸 수 있게
+      // 특강이면 회차 담당 강사로 채운다(검수 H1, 미리 작성과 같은 원칙). 정규는 기존대로.
       const inserted = await tx.$queryRawUnsafe<SessionStartRow[]>(
       `INSERT INTO "Session" (
          id, "classId", date, "sessionKey", status, "coachId",
          "startedAt", "startedByUserId", "specialProgramSessionDateId", "createdAt", "updatedAt"
        )
        VALUES (
-         gen_random_uuid()::text, $1, $2::date, $3, 'IN_PROGRESS', $4,
+         gen_random_uuid()::text, $1, $2::date, $3, 'IN_PROGRESS',
+         COALESCE($4::text, ${seasonalInstructorSql("$6::text")}),
          NOW(), $5, $6, NOW(), NOW()
        )
        ON CONFLICT ("sessionKey") DO NOTHING
@@ -845,6 +966,12 @@ export async function startClassSession(input: {
         code: "DB_NOT_READY",
         message: "수업 시작 기능을 준비 중입니다. 관리자에게 문의해 주세요.",
       };
+    }
+
+    // 로그인이 풀린 경우는 «권한 없음»과 구분해 화면이 «다시 로그인» 버튼을 띄우게 한다(b5).
+    const accessFailure = staffAccessFailure(error);
+    if (accessFailure?.needsLogin) {
+      return { ok: false, code: "FORBIDDEN", message: accessFailure.message, needsLogin: true };
     }
 
     const message = error instanceof Error ? error.message : "수업 시작 권한을 확인하지 못했습니다.";

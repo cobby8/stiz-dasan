@@ -51,6 +51,13 @@ export default async function StaffShuttlePage({ searchParams }: {
 
   return (
     <>
+      {/* 이 운행표(계정용)에는 위치 전송이 없다. 학부모에게 위치를 보내려면 운행 화면(/staff/run)에서 «운행 시작»을 누른다(2026-11-13 b7). */}
+      <div className="mx-auto max-w-lg px-4 pt-3">
+        <Link href="/staff/run" className="academy-button-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-base font-black">
+          <span className="material-symbols-outlined" aria-hidden="true">near_me</span>
+          운행 시작 (위치 전송)
+        </Link>
+      </div>
       <div className="mx-auto flex max-w-lg flex-wrap gap-x-4 gap-y-1 px-4 py-2">
         <Link href="/staff/shuttle/intake" className="academy-button-text inline-flex min-h-11 items-center">신규 셔틀 검토</Link>
         <Link href="/staff/shuttle/assign" className="academy-button-text inline-flex min-h-11 items-center">새 학생 배정</Link>

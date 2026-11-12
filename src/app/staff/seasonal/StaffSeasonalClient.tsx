@@ -63,7 +63,13 @@ export default function StaffSeasonalClient({ initial }: { initial: { ymd: strin
       });
       if (!result.ok) {
         if (result.code === "ACTIVE_SESSION" && result.activeSessionId) {
-          router.push(`/staff/sessions/${result.activeSessionId}`);
+          // 어제 끝내지 못한 수업일 수 있다(2026-11-13 b6) — «○○반(○월 ○일) 수업이 아직 진행 중» 을 먼저 보이고 이동.
+          if (window.confirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`)) {
+            router.push(`/staff/sessions/${result.activeSessionId}`);
+          } else {
+            setErr(result.message);
+            setStartingId(null);
+          }
           return;
         }
         setErr(result.message);

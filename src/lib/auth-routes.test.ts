@@ -15,14 +15,14 @@ test("roles land on their primary workspace", () => {
   assert.equal(defaultPathForRole("ADMIN"), "/admin");
   assert.equal(defaultPathForRole("VICE_ADMIN"), "/admin");
   assert.equal(defaultPathForRole("INSTRUCTOR"), "/staff");
-  assert.equal(defaultPathForRole("DRIVER"), "/staff/shuttle");
+  assert.equal(defaultPathForRole("DRIVER"), "/staff/driver");
   assert.equal(defaultPathForRole("PARENT"), "/mypage");
 });
 
 test("staff-login context sends every role to its own primary workspace", () => {
   assert.equal(resolveRedirectForRole("ADMIN", "/staff", { preferRoleHome: true }), "/admin");
   assert.equal(resolveRedirectForRole("INSTRUCTOR", "/staff", { preferRoleHome: true }), "/staff");
-  assert.equal(resolveRedirectForRole("DRIVER", "/staff", { preferRoleHome: true }), "/staff/shuttle");
+  assert.equal(resolveRedirectForRole("DRIVER", "/staff", { preferRoleHome: true }), "/staff/driver");
   assert.equal(resolveRedirectForRole("PARENT", "/staff", { preferRoleHome: true }), "/mypage");
 });
 

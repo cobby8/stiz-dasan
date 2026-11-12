@@ -14,7 +14,8 @@ export function normalizeAppRole(value: unknown): AppRole {
 export function defaultPathForRole(role: AppRole) {
   if (role === "ADMIN" || role === "VICE_ADMIN") return "/admin";
   if (role === "INSTRUCTOR") return "/staff";
-  if (role === "DRIVER") return "/staff/shuttle";
+  // 기사님 첫 화면(2026-11-13 b7) — 위치 전송이 되는 운행 화면(/staff/run)으로 넘기거나, 아이폰 스토어 앱이면 안내를 보인다.
+  if (role === "DRIVER") return "/staff/driver";
   return "/mypage";
 }
 
@@ -55,10 +56,11 @@ export function canRoleAccessPath(
     return roles ? roles.admin : role === "ADMIN" || role === "VICE_ADMIN";
   }
   if (target === "/staff" || target.startsWith("/staff/")) {
-    // 셔틀 화면과 오늘 운행표(/staff/run, 2026-10-25)는 관리자·기사님 것이다.
+    // 셔틀 화면·오늘 운행표(/staff/run, 2026-10-25)·기사님 첫 화면(/staff/driver, 2026-11-13)은 관리자·기사님 것이다.
     if (
       target === "/staff/shuttle" || target.startsWith("/staff/shuttle/")
       || target === "/staff/run" || target.startsWith("/staff/run/")
+      || target === "/staff/driver" || target.startsWith("/staff/driver/")
     ) {
       return roles ? roles.admin || roles.driver : role === "ADMIN" || role === "VICE_ADMIN" || role === "DRIVER";
     }
@@ -99,8 +101,8 @@ export function resolveRedirectForRole(
     if (isStaffScopePath(roleHome)) return roleHome;
     // 관리자는 /admin 이 기본이지만 앱 안에서는 /staff 로 연다.
     if (canRoleAccessPath(role, "/staff", access)) return "/staff";
-    // 학부모로 가입한 뒤 기사님 승인을 받은 사람은 셔틀 화면으로(앱 영역 /staff 안).
-    if (canRoleAccessPath(role, "/staff/shuttle", access)) return "/staff/shuttle";
+    // 학부모로 가입한 뒤 기사님 승인을 받은 사람은 기사님 첫 화면으로(앱 영역 /staff 안).
+    if (canRoleAccessPath(role, "/staff/driver", access)) return "/staff/driver";
     // 학부모가 선생님 앱으로 로그인한 경우처럼 /staff 를 못 쓰면 제 화면으로 보낸다.
     return roleHome;
   }

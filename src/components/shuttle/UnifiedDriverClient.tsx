@@ -17,6 +17,7 @@ import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import { readBoardingResult, saveAndVerifyBoarding } from "@/lib/shuttle/driverStatusClient";
 import { riderBoardingView, riderDefaultStatus, stopAbsenceSummary, type UnifiedRider, type UnifiedRow } from "@/lib/shuttle/unifiedDriverRunLogic";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { todayKst } from "@/lib/datetime/kst";
 
 // 기사님 통합 운행 화면 — 그날 방학특강·정규를 **가리지 않고 출발 시각 순서대로 한 줄씩** 나열한다.
 // 기사님은 위에서부터 순서대로 다니면 된다.
@@ -84,6 +85,22 @@ export default function UnifiedDriverClient({
   async function handleRunEnd() { await gpsStop(); if (gpsMode === "web") setRunState("ended"); }
   // 운행 중이 아니게 되면(앱이 먼저 종료 등) 열려 있던 종료 확인은 닫는다.
   useEffect(() => { if (runState !== "running") setConfirmEnd(false); }, [runState]);
+
+  // 날이 바뀐 화면(2026-11-13 b2) — 어제 열어 둔 운행표를 오늘 다시 보면 어제 명단이 그대로 보였다.
+  // 화면으로 돌아올 때 오늘(KST)이 화면의 «오늘»과 다르면 새로 불러온다.
+  // 단, 운행 중(위치 전송)이거나 순서 편집 중이면 건드리지 않는다 — 새로 불러오면 위치 전송·편집이 끊길 수 있다.
+  useEffect(() => {
+    const refreshIfNewDay = () => {
+      if (document.visibilityState !== "visible" || runState === "running" || editing) return;
+      if (todayKst() !== today) router.refresh();
+    };
+    document.addEventListener("visibilitychange", refreshIfNewDay);
+    window.addEventListener("focus", refreshIfNewDay);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfNewDay);
+      window.removeEventListener("focus", refreshIfNewDay);
+    };
+  }, [today, runState, editing, router]);
 
   // PWA 설치 배너
   const deferredPromptRef = useRef<BeforeInstallPromptEvent | null>(null);

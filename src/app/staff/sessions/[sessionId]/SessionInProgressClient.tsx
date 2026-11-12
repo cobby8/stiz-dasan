@@ -25,6 +25,12 @@ import type {
   StaffSessionStudent,
 } from "@/lib/staff-session-queries";
 import { userErrorMessage } from "@/components/staff/userErrorMessage";
+import { bulkReportedNotice, splitBulkPresent, staffReloginHref } from "@/lib/staff-session-rules";
+
+/** 서버 기능이 «로그인이 풀렸다»고 돌려줬는가(b5) — 던지지 않고 { ok:false, needsLogin:true } 로 온다. */
+function isLoginFailure(result: object): boolean {
+  return "needsLogin" in result && (result as { needsLogin?: boolean }).needsLogin === true;
+}
 
 const ClassPeopleSheet = dynamic(
   () => import("@/components/staff/ClassPeopleSheet").then((module) => module.ClassPeopleSheet),
@@ -36,6 +42,8 @@ const ClassBillingSheet = dynamic(
 );
 
 type View = "main" | "attendance";
+/** 출석부 줄 안내의 종류 — 저장 실패(error)와 건너뜀·참고(notice)를 다른 색으로 보인다. */
+type RowNoticeTone = "error" | "notice";
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -87,6 +95,12 @@ export default function SessionInProgressClient({
   const [memo, setMemo] = useState(session.notes || "");
   const [message, setMessage] = useState("");
   const [bulkAttendanceProgress, setBulkAttendanceProgress] = useState("");
+  // 저장 중인 줄만 잠근다(b5) — 예전엔 한 아이를 누르면 출석부 전체 버튼이 잠겨 다음 아이를 못 눌렀다.
+  const [savingRows, setSavingRows] = useState<Record<string, true>>({});
+  // 줄마다의 저장 실패·주의 문구 — 맨 위 한 칸에 띄우면 어느 아이 얘기인지 몰랐다.
+  const [rowNotices, setRowNotices] = useState<Record<string, { text: string; tone: RowNoticeTone }>>({});
+  // 로그인이 풀리면 «다시 로그인» 버튼을 보인다(b5).
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [finishError, setFinishError] = useState("");
   const [memoStatus, setMemoStatus] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -166,6 +180,7 @@ export default function SessionInProgressClient({
         if (!result.ok) {
           setMemoStatus("error");
           setMessage(result.message);
+          if (isLoginFailure(result)) setNeedsLogin(true);
           return false;
         }
         lastSavedMemoRef.current = notes;
@@ -327,67 +342,110 @@ export default function SessionInProgressClient({
   // 서버에는 그 행의 attendanceKey(방학특강이면 좌석ID)를 넘겨 좌석 기준으로 저장한다.
   // absenceReason: "ILLNESS_INJURY"=질병·부상 표시 / null=표시 끄기 / 생략=그대로(출석·지각이면 서버가 출석부 사유를 지운다).
   // 수업 중에는 언제든 다른 버튼을 눌러 출석↔지각↔결석을 고칠 수 있다(보강권도 서버가 따라 맞춘다).
-  function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
-    setMessage("");
-    const target = students.find((student) => student.id === rowId);
-    if (!target) return;
-    startTransition(async () => {
-      try {
-        const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status, absenceReason });
-        if (!result.ok) {
-          setMessage(result.message);
-          return;
-        }
-        setStudents((current) =>
-          current.map((student) =>
-            student.id === rowId
-              ? {
-                  ...student,
-                  status,
-                  arrivedAt: status === "LATE" ? student.arrivedAt || new Date().toISOString() : null,
-                  // 서버가 돌려준 결석 신고 상태로 맞춘다(정규 수강생만 값이 온다).
-                  ...absenceReportPatch(result),
-                }
-              : student,
-          ),
-        );
-        const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
-        if (absenceMessage) {
-          setMessage(absenceMessage);
-        } else if (result.notificationWarning) {
-          setMessage("출결은 저장됐지만 학부모 알림은 재전송이 필요합니다.");
-        }
-      } catch {
-        setMessage("출석을 저장하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.");
-      }
+  // tone: "error"=저장 실패(빨강·다시 눌러야 함) / "notice"=건너뜀·참고 안내(주의색·정보 아이콘, 검수 4)
+  function setRowNotice(rowId: string, text: string, tone: RowNoticeTone = "error") {
+    setRowNotices((current) => {
+      const next = { ...current };
+      if (text) next[rowId] = { text, tone }; else delete next[rowId];
+      return next;
     });
   }
 
+  /** 특강 좌석은 저장됐지만 정규 출석 기록이 실패했다는 표시(검수 2) — 그 줄에 «다시 눌러 주세요». */
+  function recordWarningOf(result: object): string | null {
+    return "recordWarning" in result ? String((result as { recordWarning?: string }).recordWarning || "") || null : null;
+  }
+
+  // 한 줄 저장 — 그 줄만 잠그고(다른 아이는 계속 누를 수 있다), 실패 문구는 그 줄 아래에 보인다(b5).
+  async function updateAttendance(rowId: string, status: AttendanceStatus, absenceReason?: "ILLNESS_INJURY" | null) {
+    const target = students.find((student) => student.id === rowId);
+    if (!target || savingRows[rowId]) return;
+    setRowNotice(rowId, "");
+    setSavingRows((current) => ({ ...current, [rowId]: true }));
+    try {
+      const result = await saveStaffAttendance({ sessionId: session.id, attendanceKey: target.attendanceKey, status, absenceReason });
+      if (!result.ok) {
+        setRowNotice(rowId, result.message);
+        if (isLoginFailure(result)) setNeedsLogin(true);
+        return;
+      }
+      // 일괄 요청이 아니면 건너뛰지 않지만, 형태상 올 수 있어 그대로 안내한다.
+      if ("skipped" in result) {
+        setRowNotice(rowId, result.message ?? "", "notice");
+        return;
+      }
+      setStudents((current) =>
+        current.map((student) =>
+          student.id === rowId
+            ? {
+                ...student,
+                status,
+                arrivedAt: status === "LATE" ? student.arrivedAt || new Date().toISOString() : null,
+                // 서버가 돌려준 결석 신고 상태로 맞춘다(정규 수강생만 값이 온다).
+                ...absenceReportPatch(result),
+              }
+            : student,
+        ),
+      );
+      const recordWarning = recordWarningOf(result);
+      const absenceMessage = (result as AbsenceResultExtra).absenceMessage;
+      if (recordWarning) setRowNotice(rowId, recordWarning, "error");
+      else if (absenceMessage) setRowNotice(rowId, absenceMessage, "notice");
+    } catch {
+      setRowNotice(rowId, "저장하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.");
+    } finally {
+      setSavingRows((current) => {
+        const next = { ...current };
+        delete next[rowId];
+        return next;
+      });
+    }
+  }
+
+  // 전체 출석 — 결석 신고(학부모 신고·원장 기간 결석)가 있는 아이는 빼고 보낸다(b1).
+  // 서버도 bulk 표시를 보고 한 번 더 걸러, 그사이 새로 들어온 신고도 건너뛴다.
+  const bulkSplit = useMemo(() => splitBulkPresent(students), [students]);
+  const bulkBusy = Boolean(bulkAttendanceProgress);
+  const anyRowSaving = Object.keys(savingRows).length > 0;
+
   function markAllPresent() {
-    const unchecked = students.filter((student) => !student.status);
+    const targets = bulkSplit.targets;
     setMessage("");
-    setBulkAttendanceProgress(`0/${unchecked.length} 처리 중`);
+    setBulkAttendanceProgress(`0/${targets.length} 처리 중`);
     startTransition(async () => {
+      let skipped = 0;
       try {
-        for (const [index, student] of unchecked.entries()) {
+        for (const [index, student] of targets.entries()) {
           const result = await saveStaffAttendance({
             sessionId: session.id,
             attendanceKey: student.attendanceKey,
             status: "PRESENT",
+            bulk: true,
           });
           if (!result.ok) {
-            setMessage(`${index}명은 저장됐습니다. ${result.message}`);
+            setMessage(`${index - skipped}명은 저장됐습니다. ${result.message}`);
+            if (isLoginFailure(result)) setNeedsLogin(true);
             return;
           }
-          setStudents((current) => current.map((row) => (
-            row.id === student.id
-              ? { ...row, status: "PRESENT", ...absenceReportPatch(result) }
-              : row
-          )));
-          setBulkAttendanceProgress(`${index + 1}/${unchecked.length} 처리 중`);
+          if ("skipped" in result) {
+            // 화면을 연 뒤에 결석 신고가 들어왔거나 다른 기기에서 이미 찍힌 아이 — 그 줄에 이유를 남기고 건너뜀으로 센다.
+            skipped += 1;
+            setRowNotice(student.id, result.message ?? "", "notice");
+          } else {
+            setStudents((current) => current.map((row) => (
+              row.id === student.id
+                ? { ...row, status: "PRESENT", ...absenceReportPatch(result) }
+                : row
+            )));
+            const recordWarning = recordWarningOf(result);
+            if (recordWarning) setRowNotice(student.id, recordWarning, "error");
+          }
+          setBulkAttendanceProgress(`${index + 1}/${targets.length} 처리 중`);
         }
-        if (unchecked.length > 0) {
-          setMessage("전체 출석을 저장했습니다. 알림 전달 상태는 관리자 장부에서 재확인할 수 있습니다.");
+        if (targets.length > 0) {
+          setMessage(skipped > 0
+            ? `전체 출석을 저장했습니다. ${skipped}명은 건너뛰었어요(결석 신고·이미 기록됨) — 그 줄의 안내를 확인해 주세요.`
+            : "전체 출석을 저장했습니다.");
         }
       } catch {
         setMessage("저장 중 연결이 끊겼습니다. 화면에 반영된 학생은 저장됐으니 남은 학생만 다시 처리해 주세요.");
@@ -413,6 +471,7 @@ export default function SessionInProgressClient({
         const result = await cancelClassSession({ sessionId: session.id });
         if (!result.ok) {
           setMessage(result.message);
+          if (isLoginFailure(result)) setNeedsLogin(true);
           return;
         }
         // 세션이 더 이상 IN_PROGRESS가 아니므로 진행 화면을 벗어난다.
@@ -442,20 +501,13 @@ export default function SessionInProgressClient({
         });
         if (!result.ok) {
           setFinishError(result.message);
+          if (isLoginFailure(result)) setNeedsLogin(true);
           return;
         }
         // 이미 종료된 수업도 성공으로 보고 교사용 홈으로 안전하게 복귀합니다.
-        if (result.notificationWarning) {
-          setShowEndConfirm(false);
-          setMessage(`수업은 종료됐지만 학부모 알림 ${result.notificationWarning.failedCount}건이 전달되지 않았습니다. 관리자가 재전송 상태를 확인해 주세요.`);
-          window.setTimeout(() => {
-            router.replace("/staff");
-            router.refresh();
-          }, 2500);
-        } else {
-          router.replace("/staff");
-          router.refresh();
-        }
+        // 학부모 알림은 서버가 응답 뒤에 끝까지 보낸다(after) — 화면은 기다리지 않는다.
+        router.replace("/staff");
+        router.refresh();
       } catch {
         setFinishError("수업 종료 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
@@ -472,9 +524,24 @@ export default function SessionInProgressClient({
     onClose={closeAttendanceBilling}
   />;
 
+  // 로그인이 풀렸을 때 — 다시 로그인하면 이 수업 화면으로 돌아온다(b5).
+  const reloginBanner = needsLogin && (
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
+      <span>로그인이 풀렸습니다. 다시 로그인하면 이 화면으로 돌아옵니다.</span>
+      <button
+        type="button"
+        onClick={() => window.location.assign(staffReloginHref(`${window.location.pathname}${window.location.search}`))}
+        className="academy-button-primary min-h-11 rounded-xl px-4 text-sm font-black"
+      >
+        다시 로그인
+      </button>
+    </div>
+  );
+
   if (view === "attendance") {
     return (
       <main className="mx-auto max-w-lg space-y-4 px-4 py-5 pb-32">
+        {reloginBanner}
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-[var(--color-academy-muted)]">{session.className}</p>
@@ -492,10 +559,17 @@ export default function SessionInProgressClient({
           <span className="text-[var(--color-academy-muted)]">미확인 {counts.UNCHECKED}</span>
         </section>
 
-        <button type="button" disabled={pending || counts.UNCHECKED === 0} aria-busy={pending && Boolean(bulkAttendanceProgress)} onClick={markAllPresent} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
+        <button type="button" disabled={pending || anyRowSaving || bulkSplit.targets.length === 0} aria-busy={pending && bulkBusy} onClick={markAllPresent} className="min-h-12 w-full rounded-xl bg-[var(--brand-accent)] font-black text-[var(--brand-accent-contrast)] disabled:opacity-50">
           {/* 미확인이면 보강 온 아이도 함께 출석 처리된다(원장 2026-11-09 «보강도 전체 출석에서 체크»). */}
           {bulkAttendanceProgress || (uncheckedMakeup > 0 ? `미확인 학생 전체 출석 (보강 ${uncheckedMakeup}명 포함)` : "미확인 학생 전체 출석")}
         </button>
+        {/* 결석 신고 아이는 전체 출석에서 빠진다(b1). 실제로 왔으면 그 줄의 «출석»을 직접 누르면 된다. */}
+        {bulkSplit.reported.length > 0 && (
+          <p role="status" className="flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
+            <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
+            {bulkReportedNotice(bulkSplit.reported.length)} 실제로 왔으면 그 줄의 «출석»을 눌러 주세요.
+          </p>
+        )}
         <p className="text-xs font-bold text-[var(--color-academy-muted)]">잘못 찍었으면 다른 버튼을 눌러 바로 고칠 수 있어요. 보강권도 함께 맞춰집니다.</p>
         {message && <p role="alert" aria-live="assertive" className="rounded-xl bg-[var(--color-academy-warning-soft)] p-3 text-sm font-bold text-[var(--color-academy-warning)]">{message}</p>}
 
@@ -549,7 +623,7 @@ export default function SessionInProgressClient({
               )}
               <div className="mt-2 grid grid-cols-3 gap-3">
                 {(["PRESENT", "LATE", "ABSENT"] as AttendanceStatus[]).map((status) => (
-                  <StatusChoiceButton key={status} tone={STATUS_TONE[status]} icon={STATUS_ICON[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={pending} onClick={() => updateAttendance(student.id, status)}>
+                  <StatusChoiceButton key={status} tone={STATUS_TONE[status]} icon={STATUS_ICON[status]} ariaLabel={`${student.name} ${STATUS_LABEL[status]}`} active={student.status === status} disabled={bulkBusy || Boolean(savingRows[student.id])} onClick={() => void updateAttendance(student.id, status)}>
                     {STATUS_LABEL[status]}
                   </StatusChoiceButton>
                 ))}
@@ -562,8 +636,8 @@ export default function SessionInProgressClient({
                 return <button
                   type="button"
                   aria-pressed={illness}
-                  disabled={pending || parentLocked}
-                  onClick={() => updateAttendance(student.id, "ABSENT", illness ? null : "ILLNESS_INJURY")}
+                  disabled={bulkBusy || Boolean(savingRows[student.id]) || parentLocked}
+                  onClick={() => void updateAttendance(student.id, "ABSENT", illness ? null : "ILLNESS_INJURY")}
                   className={`mt-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-sm font-black disabled:opacity-60 ${illness
                     ? "border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]"
                     : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-muted)]"}`}
@@ -573,6 +647,20 @@ export default function SessionInProgressClient({
                   {parentLocked && <span className="text-xs">(학부모 신고)</span>}
                 </button>;
               })()}
+              {/* 이 아이 줄의 저장 상태·실패 문구(b5) — 어느 아이 얘기인지 바로 보이게 그 줄 아래에 둔다. */}
+              {savingRows[student.id] && <p aria-live="polite" className="mt-1 text-xs font-bold text-[var(--color-academy-muted)]">저장 중…</p>}
+              {/* 저장 실패=빨강·error 아이콘, 건너뜀·참고 안내=주의색·info 아이콘(검수 4 — 결석 신고 안내를 오류처럼 보이지 않게) */}
+              {rowNotices[student.id] && (rowNotices[student.id].tone === "error" ? (
+                <p role="alert" className="mt-1 flex items-center gap-1 text-xs font-black text-[var(--color-academy-danger)]">
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">error</span>
+                  {rowNotices[student.id].text}
+                </p>
+              ) : (
+                <p role="status" className="mt-1 flex items-center gap-1 text-xs font-bold text-[var(--color-academy-warning)]">
+                  <span className="material-symbols-outlined text-sm" aria-hidden="true">info</span>
+                  {rowNotices[student.id].text}
+                </p>
+              ))}
             </article>;
           })}
         </section>
@@ -598,6 +686,8 @@ export default function SessionInProgressClient({
           <p className="font-mono text-3xl font-black tabular-nums" aria-label={`수업 경과 ${formatElapsed(elapsed)}`}>{formatElapsed(elapsed)}</p>
         </div>
       </section>
+
+      {reloginBanner}
 
       {!online && (
         <div className="flex items-center gap-2 rounded-2xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-4 text-sm font-bold text-[var(--color-academy-danger)]" role="status">

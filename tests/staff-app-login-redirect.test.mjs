@@ -22,7 +22,7 @@ test("설치된 선생님 앱에서 로그인하면 원장도 선생님 화면�
 
 test("앱에서 온 로그인은 역할별 시작 화면도 앱 안으로 잡는다", () => {
   assert.equal(resolveRedirectForRole("INSTRUCTOR", "/staff", inApp), "/staff");
-  assert.equal(resolveRedirectForRole("DRIVER", "/staff", inApp), "/staff/shuttle");
+  assert.equal(resolveRedirectForRole("DRIVER", "/staff", inApp), "/staff/driver");
 });
 
 test("앱에서 왔어도 그 역할이 쓸 수 없는 화면이면 제 화면으로 보낸다", () => {
@@ -44,7 +44,7 @@ test("앱에서 온 로그인은 앱 안의 원래 목적지는 그대로 지킨
   assert.equal(resolveRedirectForRole("ADMIN", "/staff/students", inApp), "/staff/students");
   assert.equal(resolveRedirectForRole("DRIVER", "/staff/shuttle", inApp), "/staff/shuttle");
   // 기사님은 수업 화면을 쓸 수 없으므로 제 화면으로 돌린다.
-  assert.equal(resolveRedirectForRole("DRIVER", "/staff/students", inApp), "/staff/shuttle");
+  assert.equal(resolveRedirectForRole("DRIVER", "/staff/students", inApp), "/staff/driver");
 });
 
 test("브라우저의 관리자 로그인은 기존대로 관리자 화면으로 간다", () => {

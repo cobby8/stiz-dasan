@@ -70,13 +70,24 @@ test("시스템 뒤로가기도 수업 기록 저장 성공 뒤에만 허용한�
 });
 
 test("전체 출석은 학생별 성공 결과를 즉시 반영하고 부분 실패를 안내한다", () => {
-  assert.match(sessionSource, /for \(const \[index, student\] of unchecked\.entries\(\)\)/);
+  // 2026-11-13 b1: 대상은 결석 신고 아이를 뺀 targets, 서버에도 bulk 표시를 보내 한 번 더 거른다.
+  assert.match(sessionSource, /for \(const \[index, student\] of targets\.entries\(\)\)/);
+  assert.match(sessionSource, /status: "PRESENT",\s*bulk: true,/);
   assert.match(sessionSource, /row\.id === student\.id\s*\?\s*\{ \.\.\.row, status: "PRESENT"/);
   assert.match(sessionSource, /화면에 반영된 학생은 저장됐으니 남은 학생만 다시 처리해 주세요/);
-  assert.match(sessionSource, /aria-busy=\{pending && Boolean\(bulkAttendanceProgress\)\}/);
+  assert.match(sessionSource, /aria-busy=\{pending && bulkBusy\}/);
+  // 결석 신고 아이 수를 버튼 바로 아래에 안내한다.
+  assert.match(sessionSource, /bulkReportedNotice\(bulkSplit\.reported\.length\)/);
 });
 
 test("개별 출석 네트워크 예외와 전체 처리 결과를 버튼 가까이 안내한다", () => {
-  assert.match(sessionSource, /출석을 저장하지 못했습니다\. 네트워크를 확인한 뒤 다시 시도해 주세요/);
+  // 2026-11-13 b5: 개별 저장 실패는 맨 위 한 칸이 아니라 그 아이 줄 아래에 보인다.
+  assert.match(sessionSource, /setRowNotice\(rowId, "저장하지 못했습니다\. 연결을 확인하고 다시 눌러 주세요\."\)/);
+  assert.match(sessionSource, /rowNotices\[student\.id\]\.tone === "error" \? \(\s*<p role="alert"/);
+  // 건너뜀·참고 안내는 오류색이 아니라 주의색 + info 아이콘(검수 4)
+  assert.match(sessionSource, /<p role="status" className="mt-1 flex items-center gap-1 text-xs font-bold text-\[var\(--color-academy-warning\)\]">\s*<span className="material-symbols-outlined text-sm" aria-hidden="true">info<\/span>/);
+  assert.match(sessionSource, /setRowNotice\(student\.id, result\.message \?\? "", "notice"\)/);
+  // 특강 정규 기록 실패는 그 줄에 «다시 눌러 주세요»(검수 2)
+  assert.match(sessionSource, /if \(recordWarning\) setRowNotice\(rowId, recordWarning, "error"\)/);
   assert.match(sessionSource, /role="alert" aria-live="assertive"/);
 });

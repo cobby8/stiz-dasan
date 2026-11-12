@@ -14,6 +14,7 @@ import { useStaffDialog } from "@/components/staff/useStaffDialog";
 import ListDetailPanel from "@/components/admin/list/ListDetailPanel";
 import { LiveStatusPill } from "@/components/staff/LiveStatusPill";
 import type { StaffTodayClass } from "@/lib/staff-session-queries";
+import { isStaleDateKey, STALE_DATE_MESSAGE, staffReloginHref } from "@/lib/staff-session-rules";
 
 function isSeasonalLesson(lesson: StaffTodayClass) {
   return lesson.kind === "SEASONAL";
@@ -31,11 +32,30 @@ const ClassBillingSheet = dynamic(
 export default function StaffHomeClient({
   dateKey,
   classes: initialClasses,
+  coachLinkMissing = false,
 }: {
   dateKey: string;
   classes: StaffTodayClass[];
+  /** 선생님 계정에 코치가 연결되지 않아 수업이 안 보이는 상태(b4). 원장·부원장은 항상 false. */
+  coachLinkMissing?: boolean;
 }) {
   const router = useRouter();
+  // 로그인이 풀렸을 때 «다시 로그인» 버튼(b5)
+  const [needsLogin, setNeedsLogin] = useState(false);
+
+  // 밤새 열어 둔 화면을 다음 날 다시 보면 어제 수업이 그대로 보인다(b2).
+  // 화면으로 돌아올 때(앱 전환·화면 켜기) 오늘(KST)과 화면 날짜가 다르면 새로 불러온다.
+  useEffect(() => {
+    const refreshIfStale = () => {
+      if (document.visibilityState === "visible" && isStaleDateKey(dateKey)) router.refresh();
+    };
+    document.addEventListener("visibilitychange", refreshIfStale);
+    window.addEventListener("focus", refreshIfStale);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshIfStale);
+      window.removeEventListener("focus", refreshIfStale);
+    };
+  }, [dateKey, router]);
   const [classes, setClasses] = useState(initialClasses);
   const [startTarget, setStartTarget] = useState<StaffTodayClass | null>(null);
   const [contentTarget, setContentTarget] = useState<StaffTodayClass | null>(null);
@@ -122,9 +142,18 @@ export default function StaffHomeClient({
     if (!contentTarget) return;
     setError(null);
     startTransition(async () => {
-      const result = await savePlannedClassContent({ classId: contentTarget.id, date: dateKey, plannedContent });
+      // 특강은 회차(sessionDateId)를 함께 보내야 특강 기록에 저장된다(G11) — 빠지면 정규 수업 기록으로 들어갔다.
+      const result = await savePlannedClassContent({
+        classId: contentTarget.id,
+        date: dateKey,
+        plannedContent,
+        ...(contentTarget.sessionDateId ? { sessionDateId: contentTarget.sessionDateId } : {}),
+      });
       if (!result.ok) {
         setError(result.message);
+        if ("needsLogin" in result && result.needsLogin) setNeedsLogin(true);
+        // 날짜가 바뀐 화면이면 오늘 화면으로 새로 불러온다(b2).
+        if (result.message === STALE_DATE_MESSAGE) router.refresh();
         return;
       }
       setClasses((current) => current.map((lesson) => lesson.id === contentTarget.id
@@ -145,10 +174,23 @@ export default function StaffHomeClient({
       });
       if (!result.ok) {
         if (result.code === "ACTIVE_SESSION" && result.activeSessionId) {
-          router.push(`/staff/sessions/${result.activeSessionId}`);
+          // 어제 끝내지 못한 수업일 수 있다(b6) — 말없이 넘기면 선생님이 왜 다른 수업이 열렸는지 모른다.
+          // «○○반(○월 ○일) 수업이 아직 진행 중입니다. 먼저 끝내 주세요» 를 먼저 보이고 이동한다.
+          setStartTarget(null);
+          if (window.confirm(`${result.message}\n\n그 수업 화면으로 이동할까요?`)) {
+            router.push(`/staff/sessions/${result.activeSessionId}`);
+          } else {
+            setError(result.message);
+          }
           return;
         }
         setError(result.message);
+        if (result.needsLogin) setNeedsLogin(true);
+        // 날짜가 바뀐 화면이면 오늘 화면으로 새로 불러온다(b2).
+        if (result.code === "STALE_DATE") {
+          setStartTarget(null);
+          router.refresh();
+        }
         return;
       }
       router.push(`/staff/sessions/${result.sessionId}?view=attendance`);
@@ -213,10 +255,26 @@ export default function StaffHomeClient({
         </section>
       )}
 
-      {classes.length === 0 ? (
-        <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-6 text-center">
-          <p className="font-bold text-[var(--color-academy-muted)]">오늘 배정된 수업이 없습니다.</p>
+      {needsLogin && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] p-3 text-sm font-bold text-[var(--color-academy-danger)]">
+          <span>로그인이 풀렸습니다. 다시 로그인해 주세요.</span>
+          <button type="button" onClick={() => window.location.assign(staffReloginHref("/staff"))} className="academy-button-primary min-h-11 rounded-xl px-4 text-sm font-black">다시 로그인</button>
         </div>
+      )}
+
+      {classes.length === 0 ? (
+        coachLinkMissing ? (
+          // 코치 연결이 없으면 수업이 하나도 안 보인다 — «오늘 수업 없음»과 구분해 알려 준다(b4).
+          <div role="status" className="rounded-2xl border border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] p-5 text-center">
+            <span className="material-symbols-outlined text-3xl text-[var(--color-academy-warning)]" aria-hidden="true">link_off</span>
+            <p className="mt-1 font-black text-[var(--color-academy-ink)]">코치 연결이 필요합니다 — 원장님께 문의해 주세요.</p>
+            <p className="mt-1 text-xs font-bold text-[var(--color-academy-muted)]">이 계정에 코치 정보가 연결되면 담당 수업이 여기에 나옵니다.</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-6 text-center">
+            <p className="font-bold text-[var(--color-academy-muted)]">오늘 배정된 수업이 없습니다.</p>
+          </div>
+        )
       ) : focusClass ? (
         <>
           <section>

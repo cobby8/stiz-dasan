@@ -52,8 +52,8 @@ test("승인된 추가 역할이 있으면 그 화면으로 보낸다", () => {
   // 학부모 + 선생님 승인 — 선생님 앱으로 로그인하면 선생님 화면.
   assert.equal(routes.resolveRedirectForRole("PARENT", "/staff", { stayInStaffApp: true, roles: access("PARENT", ["INSTRUCTOR"]) }), "/staff");
   assert.equal(routes.resolveRedirectForRole("PARENT", "/staff/students", { roles: access("PARENT", ["INSTRUCTOR"]) }), "/staff/students");
-  // 학부모 + 기사님 승인 — 앱 영역 안의 셔틀 화면.
-  assert.equal(routes.resolveRedirectForRole("PARENT", "/staff", { stayInStaffApp: true, roles: access("PARENT", ["DRIVER"]) }), "/staff/shuttle");
+  // 학부모 + 기사님 승인 — 앱 영역 안의 기사님 첫 화면(2026-11-13 b7).
+  assert.equal(routes.resolveRedirectForRole("PARENT", "/staff", { stayInStaffApp: true, roles: access("PARENT", ["DRIVER"]) }), "/staff/driver");
   // 선생님 + 기사님 — 둘 다 열린다.
   assert.equal(routes.canRoleAccessPath("INSTRUCTOR", "/staff/shuttle", { roles: access("INSTRUCTOR", ["DRIVER"]) }), true);
   assert.equal(routes.canRoleAccessPath("INSTRUCTOR", "/staff", { roles: access("INSTRUCTOR", ["DRIVER"]) }), true);
