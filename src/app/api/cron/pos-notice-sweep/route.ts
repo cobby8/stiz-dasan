@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPosNoticeSweep } from "@/lib/pos/paymentNoticeService";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
  * 여러 번 돌아도 안전하다: 알림은 결제 ID 로, DM 은 선점 UPDATE 로 한 번만 나간다.
  * 청구서(Payment)는 절대 건드리지 않는다.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
     if (
         process.env.NODE_ENV !== "development" &&
@@ -24,3 +25,6 @@ export async function GET(req: NextRequest) {
     const result = await runPosNoticeSweep();
     return NextResponse.json({ ok: true, ...result });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("pos-notice-sweep", handleGet);

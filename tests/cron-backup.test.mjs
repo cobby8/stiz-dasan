@@ -39,6 +39,7 @@ function fixture(options = {}) {
       if (options.failQuery && sql.includes(`"${options.failQuery}"`)) throw new Error(sensitive);
       return options.rows?.[sql.match(/FROM "([^"]+)"/)[1]] ?? [];
     } } },
+    '@/lib/cron/withCronAlert': { withCronAlert: (_name, handler) => handler }, // 실패 알림 래퍼(d4)는 cron-alert.test 에서 따로 검사
     '@/lib/supabase/admin': { createAdminClient: () => ({ storage }) },
   };
   const exports = {};

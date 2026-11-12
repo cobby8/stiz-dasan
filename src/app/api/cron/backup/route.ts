@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ async function requiredQuery(sql: string): Promise<Record<string, unknown>[]> {
     return prisma.$queryRawUnsafe<Record<string, unknown>[]>(sql);
 }
 
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     // Cron 인증 필수화 — CRON_SECRET 없으면 무조건 거부 (개발환경 예외)
     const cronSecret = process.env.CRON_SECRET;
     if (process.env.NODE_ENV !== "development") {
@@ -139,3 +140,6 @@ export async function GET(req: NextRequest) {
             error: "설정 백업 작업을 완료하지 못했습니다." }, { status: 500 });
     }
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("backup", handleGet);

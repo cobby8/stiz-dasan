@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sweepWaitingVirtualAccounts } from "@/lib/payment-ledger";
 import { sweepTrialVirtualAccounts } from "@/lib/trial-fee/trialFeePaymentService";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 // 토스 조회가 건마다 최대 10초 — 점검 함수는 45초 예산 안에서 멈추고, 함수 자체는 60초까지 허용
@@ -13,7 +14,7 @@ export const maxDuration = 60;
  * 입금된 돈이 «미납»으로 남는다. 입금 대기 거래를 토스에 다시 물어 입금(DONE)은 납부 완료로,
  * 만료·취소는 «입금 대기 해제»로 정리한다. 여러 번 돌아도 결과가 같다(같은 판정·반영 함수).
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
     if (
         process.env.NODE_ENV !== "development" &&
@@ -40,3 +41,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "가상계좌 점검에 실패했습니다." }, { status: 500 });
     }
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("virtual-account-sweep", handleGet);

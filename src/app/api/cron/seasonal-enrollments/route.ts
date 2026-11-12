@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { endFinishedSeasonalEnrollments } from "@/lib/seasonal/auto-end";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
  * 그 반의 ACTIVE·PAUSED 수강을 WITHDRAWN 으로 바꾸고 변경 이력을 남긴다.
  * 정규반은 대상이 아니다. 자세한 규칙은 src/lib/seasonal/auto-end.ts.
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (
     process.env.NODE_ENV !== "development" &&
@@ -22,3 +23,6 @@ export async function GET(req: NextRequest) {
   if (ended > 0) console.log(`[cron/seasonal-enrollments] 특강 수강 ${ended}건 퇴원 처리`);
   return NextResponse.json({ ok: true, ended, items });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("seasonal-enrollments", handleGet);

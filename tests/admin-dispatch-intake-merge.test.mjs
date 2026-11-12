@@ -29,6 +29,8 @@ async function intakeRedirect(month) {
   let to = null;
   const mocks = {
     "next/navigation": { redirect: (url) => { to = url; throw new Error("NEXT_REDIRECT"); } },
+    // 화면마다 관리자 확인(d3) — 여기서는 통과로 둔다
+    "@/lib/auth-guard": { requireAdmin: async () => ({}) },
     "@/lib/regular/serviceMonth": { isServiceMonth: (v) => /^20\d{2}-(0[1-9]|1[0-2])$/.test(v) },
   };
   vm.runInNewContext(js, { module, exports: module.exports, require: (n) => { if (n in mocks) return mocks[n]; throw new Error(`unexpected import ${n}`); }, Promise, Error, encodeURIComponent });

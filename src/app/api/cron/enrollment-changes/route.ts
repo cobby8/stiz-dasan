@@ -3,6 +3,7 @@ import { applyDueEnrollmentChangesWithSummary } from "@/lib/enrollment/admin-cha
 import { revalidateEnrollmentStatusCaches } from "@/lib/enrollment/change-cache";
 import { applyOpenPauseCarries } from "@/lib/enrollment/pause-settlement";
 import { prisma } from "@/lib/prisma";
+import { withCronAlert } from "@/lib/cron/withCronAlert";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * 반 변경은 보류(HELD) 원장만 만든다. 이미 처리한 건은 건너뛰므로 두 번 실행돼도 안전하다.
  * 휴원 수강료 «이월»(2026-11-10 m6)이 남아 있으면 그사이 생긴 다음 미납 청구에서 뺀다(전역 잠금 안, 두 번 실행돼도 안전).
  */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (
     process.env.NODE_ENV !== "development" &&
@@ -34,3 +35,6 @@ export async function GET(req: NextRequest) {
   // applied = 사이트에 실제 적용한 건수, held = 사람 확인이 필요해 보류 원장만 만든 건수, carryApplied = 이월을 뺀 청구 수
   return NextResponse.json({ ok: true, applied, held, carryApplied: carry.applied });
 }
+
+// 실패(예외·500 이상)하면 원장 슬랙으로 한 줄 알림 — 같은 작업은 1시간에 1번(d4)
+export const GET = withCronAlert("enrollment-changes", handleGet);
