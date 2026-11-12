@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     // 2026-11-13: Vercel 표준 빌드 머신(8GB)에서 webpack 빌드가 메모리 부족(OOM, SIGKILL)으로 3번 연속 실패했다.
     // 라우트가 늘어 한계에 닿은 것 — 빌드 속도를 조금 내주고 webpack 최대 메모리를 줄인다.
     webpackMemoryOptimizations: true,
+    // 서버 빌드 추적(build traces)을 컴파일과 동시에 돌리지 않는다 — 동시에 돌면 최대 메모리가 겹친다.
+    parallelServerBuildTraces: false,
+    parallelServerCompiles: false,
   },
   images: {
     remotePatterns: [
