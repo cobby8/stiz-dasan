@@ -130,8 +130,10 @@ export default function InviteAcceptForm({
         startTransition(async () => {
             const result = await acceptInvitation(token, password);
             if (result.error && "needsVerification" in result && result.needsVerification) {
-                // 문자 인증이 만료됐거나 다시 해야 한다 → 본인 인증 단계로(입력한 비밀번호는 그대로 둔다)
-                setVerifyMsg({ text: "본인 인증 시간이 지났어요. 인증번호를 다시 받아 주세요.", ok: false });
+                // 문자 인증부터 다시 해야 한다 → 본인 인증 단계로(입력한 비밀번호는 그대로 둔다).
+                // 서버가 준 이유를 버리지 않고 보여 주고, 인증 안내가 없으면 한 줄 덧붙인다.
+                const reason = userErrorMessage(result.error, "가입을 완료하지 못했어요.");
+                setVerifyMsg({ text: reason.includes("인증") ? reason : `${reason} 본인 인증부터 다시 해 주세요.`, ok: false });
                 setVerifyCode("");
                 setStep(1);
                 return;
@@ -140,7 +142,7 @@ export default function InviteAcceptForm({
                 // 약한 비밀번호 거절 등 — 같은 화면에서 비밀번호만 바꿔 바로 다시 할 수 있다(입력값 유지)
                 setPasswordError(userErrorMessage(result.error, isReset ? "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." : "가입을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."));
             } else {
-                setResultEmail(result.email || "");
+                setResultEmail(("email" in result && result.email) || "");
                 setStep(4);
             }
         });

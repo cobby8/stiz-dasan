@@ -19,6 +19,8 @@ export type AuthFailureLike = {
 export type AuthFailureKind =
   | "weak_password"   // 약한 비밀번호로 거절 — 다른 비밀번호로 바로 다시 하면 된다
   | "already_exists"  // 이미 같은 이메일 계정이 있음
+  | "rate_limited"    // 429 요청 과다 — 비밀번호 탓이 아니다, 잠시 뒤 다시
+  | "config_error"    // 401·403 — 서버 키·권한 문제, 비밀번호 탓이 아니다(관리자 확인)
   | "rejected"        // 그 밖의 4xx 검증 거절 — 만들어지지 않았다
   | "uncertain";      // 결과 모름 — 만들어졌을 수도 있어 관리자 확인(RECOVERY_REQUIRED) 필요
 
@@ -30,6 +32,9 @@ export function classifyAuthFailure(error: AuthFailureLike): AuthFailureKind {
   // 4xx 응답(408 시간 초과 제외)만 «서버가 보고 거절했다»로 믿는다
   const definite = status !== null && status >= 400 && status < 500 && status !== 408;
   if (!definite) return "uncertain";
+  // 비밀번호와 무관한 거절은 먼저 가른다 — 화면이 «다른 비밀번호를 써 주세요»로 오해시키지 않게
+  if (status === 429) return "rate_limited";
+  if (status === 401 || status === 403) return "config_error";
   const message = String(error.message ?? "").toLowerCase();
   if (error.code === "weak_password" || error.name === "AuthWeakPasswordError" || /weak|easy to guess|pwned/.test(message)) {
     return "weak_password";
@@ -47,8 +52,46 @@ export const STAFF_PASSWORD_MIN = 10;
 export const STAFF_WEAK_PASSWORD_MESSAGE = weakPasswordMessage(STAFF_PASSWORD_MIN);
 export const STAFF_AUTH_REJECTED_MESSAGE = "이 비밀번호로는 계정을 만들지 못했어요. 다른 비밀번호로 다시 시도해 주세요. 계속되면 원장에게 문의해 주세요.";
 export const STAFF_ALREADY_REGISTERED_MESSAGE = "이미 가입된 계정입니다. 로그인 페이지에서 로그인해주세요.";
+export const STAFF_RATE_LIMITED_MESSAGE = "요청이 많아요. 잠시 후 다시 시도해 주세요.";
+export const STAFF_CONFIG_ERROR_MESSAGE = "일시적인 문제예요. 관리자에게 알려 주세요.";
 /** 문자 인증 시간이 지나 다시 인증해야 할 때(화면은 needsVerification 표식으로 1단계로 돌아간다) */
-export const STAFF_NEEDS_VERIFICATION_MESSAGE = "전화번호 인증이 필요하거나 이미 처리 중인 초대입니다.";
+export const STAFF_NEEDS_VERIFICATION_MESSAGE = "본인 인증 시간이 지났어요. 인증번호를 다시 받아 주세요.";
+export const STAFF_PROCESSING_MESSAGE = "가입을 처리하고 있어요. 잠시만 기다려 주세요.";
+
+/** 가입 처리 시작(PENDING→PROCESSING)이 안 됐을 때, 그 초대의 지금 상태 */
+export type InviteClaimState = {
+  role: string;
+  status: string;
+  isExpired: boolean;      // 초대 링크 자체의 기한
+  otpVerified: boolean;    // 문자 인증을 마쳤는가
+  otpExpired: boolean;     // 인증번호 유효시간(5분)이 지났는가(없으면 true)
+  otpConsumed: boolean;    // 이번 인증을 이미 한 번 썼는가
+  locked: boolean;         // 인증 시도 5회 실패로 15분 잠김
+};
+
+/**
+ * 처리 시작 실패 사유를 사람 말로. 진짜 «인증부터 다시»일 때만 needsVerification(화면이 1단계로).
+ * 중복 클릭(이미 처리 중)·복구 필요·가입 완료를 «인증 만료»로 말하지 않는다.
+ */
+export function explainClaimFailure(state: InviteClaimState | null | undefined): { error: string; needsVerification?: true } {
+  if (!state) return { error: "존재하지 않는 초대입니다." };
+  if (state.role !== "INSTRUCTOR" && state.role !== "DRIVER") return { error: "스태프 전용 초대가 아닙니다." };
+  if (state.status === "PROCESSING" || state.status === "RECOVERING") return { error: STAFF_PROCESSING_MESSAGE };
+  if (state.status === "RECOVERY_REQUIRED") return { error: "가입 처리 상태를 확인 중입니다. 관리자에게 문의해주세요." };
+  if (state.status === "ACCEPTED") return { error: "이미 처리가 끝난 링크예요. 로그인 페이지에서 로그인해 주세요." };
+  if (state.status === "CANCELLED") return { error: "취소된 초대입니다." };
+  if (state.status !== "PENDING") return { error: "유효하지 않은 초대입니다." };
+  if (state.isExpired) return { error: "만료된 초대입니다. 원장에게 재발송을 요청해주세요." };
+  if (state.locked) return { error: "인증 시도가 잠겼습니다. 15분 후 새 인증번호를 요청해주세요.", needsVerification: true };
+  if (!state.otpVerified || state.otpExpired || state.otpConsumed) return { error: STAFF_NEEDS_VERIFICATION_MESSAGE, needsVerification: true };
+  // 모든 조건이 지금은 맞는다 = 방금 다른 요청이 처리를 시작했다가 되돌린 경합 → 다시 누르면 된다
+  return { error: STAFF_PROCESSING_MESSAGE };
+}
+
+/** 실패 결과 중 화면이 «본인 인증부터 다시»로 돌아가야 하는가(이미 있는 계정은 아니다 — 문구 그대로) */
+export function failureNeedsVerification(outcome: InviteFailureOutcome, kind: AuthFailureKind | null): boolean {
+  return outcome === "RESET_PENDING" && kind !== "already_exists";
+}
 
 /**
  * 가입 처리 실패 뒤 초대를 어떤 상태로 돌릴지 정한다.
@@ -65,7 +108,9 @@ export function decideInviteFailureOutcome(input: {
 }): InviteFailureOutcome {
   if (input.createdAuthUserId && input.authDeleteFailed) return "RECOVERY_REQUIRED";
   if (input.authFailure === "uncertain") return "RECOVERY_REQUIRED";
-  if (input.authFailure === "weak_password" || input.authFailure === "rejected") return "RETRY_KEEP_OTP";
+  // 확실히 안 만들어졌고 다시 하면 될 수 있는 거절 → 문자 인증 유지(요청 과다·서버 키 문제도 잠그지 않는다)
+  if (input.authFailure === "weak_password" || input.authFailure === "rejected"
+    || input.authFailure === "rate_limited" || input.authFailure === "config_error") return "RETRY_KEEP_OTP";
   return "RESET_PENDING";
 }
 
@@ -73,6 +118,8 @@ export function decideInviteFailureOutcome(input: {
 export function staffAuthFailureMessage(kind: AuthFailureKind): string {
   if (kind === "weak_password") return STAFF_WEAK_PASSWORD_MESSAGE;
   if (kind === "already_exists") return STAFF_ALREADY_REGISTERED_MESSAGE;
+  if (kind === "rate_limited") return STAFF_RATE_LIMITED_MESSAGE;
+  if (kind === "config_error") return STAFF_CONFIG_ERROR_MESSAGE;
   return STAFF_AUTH_REJECTED_MESSAGE;
 }
 

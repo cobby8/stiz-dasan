@@ -23,7 +23,10 @@ test("판정: 4xx 거절은 «확실히 안 만들어짐», 네트워크·5xx·4
   assert.equal(classifyAuthFailure({ status: 422, message: "Password is known to be weak and easy to guess" }), "weak_password");
   assert.equal(classifyAuthFailure({ status: 422, code: "email_exists", message: "A user with this email address has already been registered" }), "already_exists");
   assert.equal(classifyAuthFailure({ status: 400, code: "validation_failed", message: "Unable to validate email address: invalid format" }), "rejected");
-  assert.equal(classifyAuthFailure({ status: 429, code: "over_request_rate_limit", message: "rate limit" }), "rejected");
+  // 비밀번호와 무관한 거절 — «다른 비밀번호를 써 주세요»로 보이면 안 된다
+  assert.equal(classifyAuthFailure({ status: 429, code: "over_request_rate_limit", message: "rate limit" }), "rate_limited");
+  assert.equal(classifyAuthFailure({ status: 401, code: "no_authorization", message: "invalid JWT" }), "config_error");
+  assert.equal(classifyAuthFailure({ status: 403, code: "not_admin", message: "User not allowed" }), "config_error");
   // 결과 모름 — 만들어졌을 수 있다
   assert.equal(classifyAuthFailure({ name: "AuthRetryableFetchError", status: 0, message: "fetch failed" }), "uncertain");
   assert.equal(classifyAuthFailure({ name: "AuthRetryableFetchError", status: 503, message: "Service Unavailable" }), "uncertain");
@@ -56,6 +59,44 @@ test("안내 문구: 약한 비밀번호는 쉬운 한국어로, 공급자 영�
   }
 });
 
+test("429·401·403 은 비밀번호 탓처럼 보이지 않고, 잠그지도 않는다", () => {
+  assert.equal(staffAuthFailureMessage("rate_limited"), "요청이 많아요. 잠시 후 다시 시도해 주세요.");
+  assert.equal(staffAuthFailureMessage("config_error"), "일시적인 문제예요. 관리자에게 알려 주세요.");
+  for (const kind of ["rate_limited", "config_error"]) {
+    assert.doesNotMatch(staffAuthFailureMessage(kind), /비밀번호/);
+    assert.equal(decideInviteFailureOutcome({ createdAuthUserId: null, authDeleteFailed: false, authFailure: kind }), "RETRY_KEEP_OTP");
+  }
+});
+
+test("실패 뒤 «인증부터 다시» 표식: 이미 가입된 계정은 붙이지 않고(문구 그대로), 그 밖의 RESET_PENDING 만", () => {
+  const { failureNeedsVerification } = mod;
+  assert.equal(failureNeedsVerification("RESET_PENDING", "already_exists"), false);
+  assert.equal(failureNeedsVerification("RESET_PENDING", null), true, "DB 오류 등으로 인증까지 지웠다");
+  assert.equal(failureNeedsVerification("RETRY_KEEP_OTP", "weak_password"), false);
+  assert.equal(failureNeedsVerification("RECOVERY_REQUIRED", "uncertain"), false);
+});
+
+test("처리 시작 실패 사유: 중복 클릭·복구 필요·가입 완료는 «인증 만료»가 아니고, 진짜 만료만 인증부터 다시", () => {
+  const { explainClaimFailure, STAFF_PROCESSING_MESSAGE, STAFF_NEEDS_VERIFICATION_MESSAGE } = mod;
+  const ok = { role: "INSTRUCTOR", status: "PENDING", isExpired: false, otpVerified: true, otpExpired: false, otpConsumed: false, locked: false };
+  // 중복 클릭 — 앞 요청이 처리 중
+  assert.deepEqual(explainClaimFailure({ ...ok, status: "PROCESSING", otpConsumed: true }), { error: STAFF_PROCESSING_MESSAGE });
+  assert.deepEqual(explainClaimFailure({ ...ok, status: "RECOVERING" }), { error: STAFF_PROCESSING_MESSAGE });
+  assert.equal(explainClaimFailure({ ...ok, status: "RECOVERY_REQUIRED" }).needsVerification, undefined);
+  assert.match(explainClaimFailure({ ...ok, status: "RECOVERY_REQUIRED" }).error, /관리자/);
+  assert.match(explainClaimFailure({ ...ok, status: "ACCEPTED" }).error, /로그인/);
+  assert.equal(explainClaimFailure({ ...ok, status: "ACCEPTED" }).needsVerification, undefined);
+  assert.match(explainClaimFailure({ ...ok, status: "CANCELLED" }).error, /취소/);
+  assert.match(explainClaimFailure({ ...ok, isExpired: true }).error, /만료된 초대/);
+  assert.match(explainClaimFailure(null).error, /존재하지 않는/);
+  // 진짜 «인증부터 다시»
+  assert.deepEqual(explainClaimFailure({ ...ok, otpExpired: true }), { error: STAFF_NEEDS_VERIFICATION_MESSAGE, needsVerification: true });
+  assert.equal(explainClaimFailure({ ...ok, otpVerified: false }).needsVerification, true);
+  assert.equal(explainClaimFailure({ ...ok, locked: true }).needsVerification, true);
+  // 지금은 다 맞음 = 방금 경합 → 다시 누르면 된다(인증으로 보내지 않는다)
+  assert.deepEqual(explainClaimFailure(ok), { error: STAFF_PROCESSING_MESSAGE });
+});
+
 test("제출 전 사전 경고: 전화번호·생일·123456 류는 막고, 섞인 비밀번호는 통과", () => {
   for (const weak of ["01012345678", "1234567890", "19850315", "aaaaaaaaaa", "abcdefghij", "abcabcabcabc", "password12", "qwerty1234", "1212121212"]) {
     assert.ok(commonPasswordWarning(weak), `${weak} 는 경고해야 한다`);
@@ -82,10 +123,15 @@ test("acceptInvitation 연결부: 판정 함수를 쓰고, 확실한 거절은 �
   assert.doesNotMatch(retry, /"otpVerifiedAt" = NULL|"otpExpiresAt" = NULL/);
   // RECOVERY_REQUIRED 는 판정 결과로만 간다
   assert.match(accept, /if \(outcome === "RECOVERY_REQUIRED"\) \{\s*const recoveryRecorded/);
-  // 인증 만료 → 화면이 본인 인증 단계로
-  assert.match(accept, /needsVerification: true/);
+  // 처리 시작 실패는 상태를 읽어 사유별로, 끝의 표식은 already_exists 를 뺀 RESET_PENDING 만
+  assert.match(accept, /return explainClaimFailure\(states\[0\]\)/);
+  assert.match(accept, /failureNeedsVerification\(outcome, authFailure\)/);
+  assert.doesNotMatch(accept, /outcome === "RESET_PENDING" \? true/);
   const form = await readFile("src/app/invite/[token]/InviteAcceptForm.tsx", "utf8");
   assert.match(form, /result\.needsVerification/);
+  // 1단계로 돌아갈 때 서버 문구(result.error)를 버리지 않는다
+  const back = form.slice(form.indexOf("result.needsVerification"), form.indexOf("setStep(1)"));
+  assert.match(back, /userErrorMessage\(result\.error/);
   assert.match(form, /commonPasswordWarning\(password\)/);
   // 실패해도 입력한 비밀번호를 지우지 않는다
   assert.doesNotMatch(form, /setPassword\(""\)/);

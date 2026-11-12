@@ -8,12 +8,14 @@ import { sendAuthenticationSms } from "@/lib/message-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { linkMatchingCoachProfileToUser } from "@/lib/staff-coach-link";
 import {
-  STAFF_NEEDS_VERIFICATION_MESSAGE,
   STAFF_PASSWORD_MIN,
   classifyAuthFailure,
   decideInviteFailureOutcome,
+  explainClaimFailure,
+  failureNeedsVerification,
   staffAuthFailureMessage,
   type AuthFailureKind,
+  type InviteClaimState,
 } from "@/lib/staff/inviteAuthFailure";
 
 const MAX_OTP_ATTEMPTS = 5;
@@ -323,8 +325,20 @@ export async function acceptInvitation(token: string, password: string) {
       attemptId,
     );
     const invitation = rows[0];
-    // needsVerification: 문자 인증 유효시간이 지났거나 아직 안 했다 → 화면이 본인 인증 단계로 돌아간다
-    if (!invitation) return { error: STAFF_NEEDS_VERIFICATION_MESSAGE, needsVerification: true };
+    if (!invitation) {
+      // 처리를 시작하지 못했다 — 왜인지 지금 상태를 읽어 나눈다(중복 클릭·복구 필요·가입 완료를 «인증 만료»로 말하지 않게).
+      // 진짜 인증 만료일 때만 needsVerification → 화면이 본인 인증 단계로 돌아간다.
+      const states = await prisma.$queryRawUnsafe<InviteClaimState[]>(
+        `SELECT role::text AS role, status, ("expiresAt" <= NOW()) AS "isExpired",
+                ("otpVerifiedAt" IS NOT NULL) AS "otpVerified",
+                ("otpExpiresAt" IS NULL OR "otpExpiresAt" <= NOW()) AS "otpExpired",
+                ("otpConsumedAt" IS NOT NULL) AS "otpConsumed",
+                ("lockedAt" IS NOT NULL AND "lockedAt" > NOW() - INTERVAL '15 minutes') AS locked
+           FROM "StaffInvitation" WHERE token = $1 LIMIT 1`,
+        token,
+      );
+      return explainClaimFailure(states[0]);
+    }
     invitationId = invitation.id;
 
     await prisma.$executeRawUnsafe(
@@ -537,8 +551,9 @@ export async function acceptInvitation(token: string, password: string) {
     console.error("[acceptInvitation] failed:", error);
     return {
       error: outcome === "RECOVERY_REQUIRED" ? "계정 생성 상태 확인이 필요합니다. 관리자에게 문의해주세요." : error instanceof Error ? error.message : "가입 처리 실패",
-      // 문자 인증까지 지운 경우(RESET_PENDING)는 화면이 본인 인증 단계로 돌아간다
-      needsVerification: invitationId && outcome === "RESET_PENDING" ? true : undefined,
+      // 문자 인증까지 지운 경우(RESET_PENDING)는 화면이 본인 인증 단계로 돌아간다 — 화면은 위 error 도 함께 보여 준다.
+      // 이미 가입된 계정은 인증을 다시 해도 소용없으니 표식 없이 «로그인해 주세요» 문구만.
+      needsVerification: invitationId && failureNeedsVerification(outcome, authFailure) ? true : undefined,
     };
   }
 }
