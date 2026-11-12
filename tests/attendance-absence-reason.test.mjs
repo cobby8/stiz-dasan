@@ -220,9 +220,13 @@ test("보강 아이 출석·지각 알림은 반 수강 조회가 아니라 그 
 });
 
 test("전체 출석은 미확인이면 보강 아이도 포함하고, 수업 중 출결은 다시 눌러 고칠 수 있다", () => {
-  assert.match(client, /const unchecked = students\.filter\(\(student\) => !student\.status\)/, "보강 여부로 거르지 않는다");
-  // 출결 버튼은 이미 찍힌 상태여도 막지 않는다(pending 중에만 잠금)
-  assert.match(client, /active=\{student\.status === status\} disabled=\{pending\} onClick=\{\(\) => updateAttendance\(student\.id, status\)\}/);
+  // 전체 출석 대상은 공용 규칙(splitBulkPresent)이 고른다 — 보강 여부로 거르지 않고, 결석 신고 아이만 뺀다(2026-11-13 b1).
+  assert.match(client, /splitBulkPresent\(students\)/);
+  const rules = readFileSync("src/lib/staff-session-rules.ts", "utf8");
+  assert.match(rules, /const unchecked = rows\.filter\(\(row\) => !row\.status\)/, "보강 여부로 거르지 않는다");
+  assert.doesNotMatch(rules.slice(rules.indexOf("export function splitBulkPresent")), /makeup/);
+  // 출결 버튼은 이미 찍힌 상태여도 막지 않는다(저장 중인 그 줄·전체 출석 중에만 잠금 — b5)
+  assert.match(client, /active=\{student\.status === status\} disabled=\{bulkBusy \|\| Boolean\(savingRows\[student\.id\]\)\} onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
   // 질병·부상 버튼: 결석일 때만·정규만·44px
   assert.match(client, /student\.status === "ABSENT" && !student\.makeup && !session\.sessionDateId/);
   assert.match(client, /aria-pressed=\{illness\}[\s\S]*?min-h-11/);

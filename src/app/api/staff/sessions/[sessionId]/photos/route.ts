@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireStaffClassAccess } from "@/lib/staff-class-access";
+import { requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { ensureSocialPostDraftTable } from "@/lib/socialDrafts";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import {
@@ -52,7 +52,8 @@ export async function GET(_req: Request, context: { params: Promise<{ sessionId:
     );
     const session = sessions[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    await requireStaffClassAccess(session.classId);
+    // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
+    await requireStaffSessionAccess(sessionId);
     if (session.status !== "IN_PROGRESS") {
       return NextResponse.json({ error: "진행 중인 수업의 사진만 관리할 수 있습니다." }, { status: 409 });
     }
@@ -78,7 +79,8 @@ export async function POST(req: Request, context: { params: Promise<{ sessionId:
     );
     const session = sessions[0];
     if (!session) return NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 });
-    const access = await requireStaffClassAccess(session.classId);
+    // 수업 시작·출석과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
+    const { access } = await requireStaffSessionAccess(sessionId);
     if (session.status !== "IN_PROGRESS") {
       return NextResponse.json({ error: "진행 중인 수업에만 사진을 등록할 수 있습니다." }, { status: 409 });
     }

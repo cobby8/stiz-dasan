@@ -2,7 +2,7 @@ import { userFacingError } from "@/lib/user-facing-error";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireStaffClassAccess } from "@/lib/staff-class-access";
+import { requireStaffClassAccess, requireStaffSessionAccess } from "@/lib/staff-class-access";
 import { isValidPrivateSessionPhotoRef, parseSessionPhotoEntries, parseStoredSessionPhotos } from "@/lib/sessionPhotoStorage";
 import { requireVerifiedParent } from "@/lib/auth-guard";
 import { childAccessSql } from "@/lib/account/child-access";
@@ -116,7 +116,8 @@ async function requireManageablePhoto(sessionId: string, photoId: string) {
   );
   const session = sessions[0];
   if (!session) return { response: NextResponse.json({ error: "수업 기록을 찾을 수 없습니다." }, { status: 404 }) };
-  await requireStaffClassAccess(session.classId);
+  // 사진 등록과 같은 권한 함수(특강 회차면 특강 담당 강사 기준) — 2026-11-13 G11
+  await requireStaffSessionAccess(sessionId);
   if (session.status !== "IN_PROGRESS") {
     return { response: NextResponse.json({ error: "진행 중인 수업의 사진만 관리할 수 있습니다." }, { status: 409 }) };
   }

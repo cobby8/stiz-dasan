@@ -53,7 +53,7 @@ test("T-03 출석부: 출석 success·지각 warning·결석 danger + 아이콘,
   assert.match(session, /grid grid-cols-3 gap-3">\s*\{\(\["PRESENT", "LATE", "ABSENT"\] as AttendanceStatus\[\]\)\.map\(\(status\) => \(\s*<StatusChoiceButton/);
   assert.match(session, /<StatusPill tone=\{STATUS_TONE\[student\.status\]\}/);
   // 저장 함수는 그대로
-  assert.match(session, /onClick=\{\(\) => updateAttendance\(student\.id, status\)\}/);
+  assert.match(session, /onClick=\{\(\) => void updateAttendance\(student\.id, status\)\}/);
   assert.match(session, /saveStaffAttendance\(\{ sessionId: session\.id, attendanceKey: target\.attendanceKey, status, absenceReason \}\)/);
 });
 

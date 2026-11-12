@@ -188,6 +188,36 @@ export async function requireStaffSeasonalSessionAccess(
   return { access, seasonal: rows[0] };
 }
 
+export type StaffSessionAccessRow = {
+  id: string;
+  classId: string;
+  status: string;
+  className: string;
+  sessionDateId: string | null;
+  date: Date | string;
+};
+
+/**
+ * 수업 기록(Session) 하나에 대한 권한 — 수업 시작·출석·종료와 사진이 **같은 함수**를 쓴다(2026-11-13 G11).
+ * 정규 수업은 반 배정, 특강 회차(specialProgramSessionDateId 있음)는 특강 담당 강사 기준으로 본다.
+ * 예전엔 사진 API 만 반 배정(requireStaffClassAccess)으로 따로 봐서, 특강만 맡은 선생님이 사진을 못 올렸다.
+ */
+export async function requireStaffSessionAccess(
+  sessionId: string,
+  context?: StaffClassAccessContext,
+): Promise<{ session: StaffSessionAccessRow; access: StaffClassAccessContext }> {
+  const rows = await prisma.$queryRawUnsafe<StaffSessionAccessRow[]>(
+    `SELECT s.id, s."classId", s.date::date::text AS date, s.status, c.name AS "className", s."specialProgramSessionDateId" AS "sessionDateId"
+     FROM "Session" s JOIN "Class" c ON c.id = s."classId" WHERE s.id = $1 LIMIT 1`,
+    sessionId,
+  );
+  if (!rows[0]) throw new Error("수업 기록을 찾을 수 없습니다.");
+  const access = rows[0].sessionDateId
+    ? (await requireStaffSeasonalSessionAccess(rows[0].sessionDateId, context)).access
+    : await requireStaffClassAccess(rows[0].classId, context);
+  return { session: rows[0], access };
+}
+
 /**
  * 학생이 해당 수업에 실제로 등록되어 있는지 확인합니다.
  * 선생님이 주소나 요청 값을 바꿔 다른 반 학생을 조회하는 상황을 서버에서 차단합니다.

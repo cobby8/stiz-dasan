@@ -79,7 +79,9 @@ test("운행표로 가는 길이 두 곳에 있다", () => {
   assert.match(shuttlePage, /await authorizeAssign\(staff\)/);
   assert.match(shuttlePage, /getRegularDriverClasses\(date\)/);
   assert.match(shuttlePage, /<UnifiedDriverClient/);
-  assert.doesNotMatch(shuttlePage, /href="\/staff\/run"|findRollingDriverRunToken/);
+  assert.doesNotMatch(shuttlePage, /findRollingDriverRunToken/);
+  // 2026-11-13 b7: 이 운행표(계정용)엔 위치 전송이 없다 → 맨 위에 «운행 시작(위치 전송)» 진입 버튼으로 /staff/run 을 연다.
+  assert.match(shuttlePage, /href="\/staff\/run"[\s\S]*?운행 시작 \(위치 전송\)/);
   // 기사님 앱 첫 화면(링크를 기억 못 한 경우) — 로그인 후 운행표로 돌아오게.
   assert.match(driverHome, /redirect: "\/staff\/shuttle"/);
 });
