@@ -30,6 +30,7 @@ import {
     recordWarningOnce,
 } from "./paymentNoticePay";
 import { parseMemoNames, redactSecrets } from "./tossplace-match.mjs";
+import { autoMatchPosPayment, runPosAutoMatchSweep } from "./autoMatchService";
 import {
     NOTICE_KIND,
     PICK_KINDS,
@@ -378,7 +379,7 @@ const RESULT_DM_WANTED_SQL = `status = 'CONFIRMED'
  * 한 번만 가게: slackTs 를 SENDING 으로 먼저 선점(조건부 UPDATE)하고, 보내면 실제 채널·ts 로 바꾼다.
  * 실패하면 slackTs 를 비워 10분 스윕이 다시 시도한다(이레 안). 선점 뒤 서버가 죽은 SENDING 은 5분 뒤 다시 잡는다.
  */
-export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "SKIPPED" | "FAILED"> {
+export async function sendAutoResultNotice(noticeId: string, resultLineOverride?: string): Promise<"SENT" | "SKIPPED" | "FAILED"> {
     const claimed = await prisma.$queryRawUnsafe<{ id: string }[]>(
         `UPDATE "PosPaymentNotice"
             SET "slackTs" = $3, "updatedAt" = now()
@@ -397,7 +398,9 @@ export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "
         if (!notice) return "SKIPPED";
         const stamp = kstStamp() as string;
         const resultLine =
-            notice.decidedBySlackUser === CONFLICT_DECIDER ? `${CONFLICT_RESULT_TEXT} (${stamp})` : autoPaidResultLine(notice, stamp);
+            notice.decidedBySlackUser === CONFLICT_DECIDER
+                ? `${CONFLICT_RESULT_TEXT} (${stamp})`
+                : (resultLineOverride ?? autoPaidResultLine(notice, stamp));
         const message = await renderNotice(notice, { resultLine });
         const sent = await postMessage({ channel: owner, text: message.text, blocks: message.blocks });
         // 이중 수납 표시(error 의 CONFLICT: …)는 지우지 않는다 — 나중에 사람이 원인을 볼 수 있게.
@@ -423,6 +426,25 @@ export async function sendAutoResultNotice(noticeId: string): Promise<"SENT" | "
         );
         return "FAILED";
     }
+}
+
+/**
+ * 자동 매칭으로 닫힌 알림의 결과 알림. 이미 보낸 DM 이 있으면 버튼을 지우고 결과 줄(학생·반·금액)을 적고,
+ * 없으면 결과 전용 DM 을 한 번 보낸다(실패하면 10분 스윕이 일반 결과 줄로 다시 보낸다).
+ */
+export async function sendAutoMatchResult(noticeId: string, resultLine: string): Promise<void> {
+    const notice = await loadNotice(noticeId);
+    if (!notice) return;
+    if (notice.slackChannel && notice.slackTs && notice.slackTs !== SENDING_MARK) {
+        await refreshNoticeMessage(notice, { resultLine });
+    } else {
+        await sendAutoResultNotice(noticeId, resultLine);
+    }
+}
+
+/** 놓친 결제 다시 맞추기(크론 /api/cron/pos-auto-match). */
+export async function runPosAutoMatchCron() {
+    return runPosAutoMatchSweep({ onPaid: sendAutoMatchResult, redact });
 }
 
 // ───────────────────────────── 납부 반영 뒤 POS 취소 경고 ─────────────────────────────
@@ -634,6 +656,20 @@ export async function processPosWebhookEvent(eventRowId: string): Promise<{ noti
                 `SELECT id FROM "PosPaymentNotice" WHERE "tossPaymentId" = $1`,
                 p.tossPaymentId,
             );
+            // 자동 매칭(2026-11-12 사용자 확인 규칙): 단건 자동(AUTO_CANDIDATE)이 아닌 결제는 DM 보내기 «전에»
+            // 여러 반·형제·이름만·메모 없음까지 배정이 딱 한 가지인지 본다. 맞으면 버튼 없이 결과 DM 만, 아니면 지금처럼 버튼 DM.
+            if (ids[0] && result.kind !== NOTICE_KIND.AUTO_CANDIDATE) {
+                try {
+                    const matched = await autoMatchPosPayment({ order, tossPaymentId: p.tossPaymentId, noticeId: ids[0].id });
+                    if (matched.outcome === "PAID") {
+                        await sendAutoMatchResult(ids[0].id, matched.resultLine);
+                        continue;
+                    }
+                } catch (error) {
+                    // 자동 매칭이 터져도 원장 확인 DM(버튼)이 안전망이다.
+                    console.error("[pos-auto-match] 웹훅 자동 매칭 실패(원장 확인으로 남김):", redact((error as Error).message), { noticeId: ids[0].id });
+                }
+            }
             if (ids[0]) await sendNotice(ids[0].id);
             // 원장 결정(2026-11-10): 메모 이름·청구서가 딱 맞는(AUTO_CANDIDATE) POS 결제는 버튼 승인 없이 바로 납부 반영.
             // 금액 불일치·이중결제·원생 불명 등은 지금처럼 슬랙 버튼(원장 확인)으로 남는다.
