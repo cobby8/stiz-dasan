@@ -46,6 +46,8 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
     // 재원기간·유니폼 무료 링크(2026-11-05) — 목록이 아니라 학생 id·링크로 «그 학생 한 명»을 찾는 조회다.
     //   학생 상세는 흡수된 학생을 열어도 그 학생 자신의 기록을 보여야 하고, 링크는 발급 때 고른 학생에 묶여 있다.
     "lib/student-tenure-query.ts": { count: 1, reason: "학생 상세의 재원기간 — id 로 그 학생 한 명 조회" },
+    // 앱 가족 연결 관리(2026-11-13) — 학생 상세에서 고른 학생 한 명의 연결을 대표 보호자(parentId)와 비교한다.
+    "lib/account/family-access-admin.ts": { count: 1, reason: "학생 상세의 앱 가족 연결 — id 로 그 학생 한 명 조회" },
     "lib/uniform-free-grant.ts": { count: 3, reason: "무료 유니폼 링크 — 링크에 묶인 학생 한 명 조회(화면·잠금·저장 번호)" },
 
     // 청구·수납 — 흡수된 쪽에 청구가 남았을 때 화면에서 숨기면 미납이 사라진다.

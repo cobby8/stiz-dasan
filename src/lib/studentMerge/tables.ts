@@ -150,6 +150,29 @@ export const STUDENT_REF_TABLES: StudentRefTable[] = [
   { table: "TrialLead", column: "convertedStudentId" },
   { table: "Waitlist", column: "studentId", conflictKeys: ["classId"] },
 
+  // 앱 가족 연결(2026-11-13). 병합하면 흡수 학생의 연결이 숨겨진 학생에 남아 보호자가 자녀를 잃었다.
+  // 같은 보호자가 양쪽에 연결돼 있으면(UNIQUE studentId+userId) 대표 행이 흡수 쪽의 «살아있는» 상태를 승계한다.
+  {
+    table: "ParentStudentAccess",
+    column: "studentId",
+    conflictKeys: ["userId"],
+    promoteOnConflict: {
+      statusColumn: "status",
+      priority: { ACTIVE: 2, REVOKED: 1 },
+      copyColumns: ["status", "source", "approvedBy"],
+    },
+    mayBeMissing: true,
+  },
+  // 대기 중 연결 요청도 대표 학생으로 옮긴다. 같은 신청자의 대기 요청이 대표 쪽에 이미 있으면 흡수 쪽은 남긴다.
+  {
+    table: "ChildLinkRequest",
+    column: "studentId",
+    conflictKeys: ["requesterId"],
+    // ChildLinkRequest_pending_unique: WHERE status='PENDING'
+    conflictWhere: (a) => `${a}.status = 'PENDING'`,
+    mayBeMissing: true,
+  },
+
   // --- 스키마에는 있으나 2026-10-02 운영 DB에는 아직 없는 테이블 ---
   { table: "RegularShuttleLocationLink", column: "studentId", mayBeMissing: true },
   { table: "RegularShuttleNoticeBatch", column: "studentId", mayBeMissing: true },

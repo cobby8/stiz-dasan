@@ -18,6 +18,12 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import {
+  loadFamilyAccess,
+  revokeContactAccessForRemovedPhone,
+  revokeFamilyAccess,
+  type FamilyAccessRow,
+} from "@/lib/account/family-access-admin";
+import {
   canAddGuardian,
   MAX_GUARDIANS_PER_STUDENT,
   nextPrimaryAfterDelete,
@@ -45,11 +51,14 @@ type Executor = Pick<typeof prisma, "$queryRawUnsafe" | "$executeRawUnsafe">;
 class GuardianUserError extends Error {}
 
 /** 변경 결과 — 성공이면 새 목록, 거절이면 사유 */
-export type GuardianMutationResult = { guardians: StudentGuardian[] } | { error: string };
+export type GuardianMutationResult =
+  | { guardians: StudentGuardian[]; revokedFamilyAccess?: number }
+  | { error: string };
 
-async function asResult(work: () => Promise<StudentGuardian[]>): Promise<GuardianMutationResult> {
+async function asResult(work: () => Promise<StudentGuardian[] | { guardians: StudentGuardian[]; revokedFamilyAccess: number }>): Promise<GuardianMutationResult> {
   try {
-    return { guardians: await work() };
+    const done = await work();
+    return Array.isArray(done) ? { guardians: done } : done;
   } catch (error) {
     if (error instanceof GuardianUserError) return { error: error.message };
     throw error;
@@ -158,6 +167,7 @@ export async function updateStudentGuardian(
   return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
   const guardianId = assertId(guardianIdRaw, "보호자");
+  let revoked = 0;
 
   await prisma.$transaction(async (tx) => {
     await assertStudent(tx, studentId, true);
@@ -177,10 +187,15 @@ export async function updateStudentGuardian(
       studentId,
     );
     if (count !== 1) throw new GuardianUserError("보호자 정보를 수정하지 못했습니다.");
+    // 번호가 바뀌면 옛 번호로 자동 연결된 앱 가족 연결을 푼다(새 번호의 주인은 다시 본인인증해야 연결된다).
+    const before = existing.find((g) => g.id === guardianId)?.phone ?? "";
+    if (before.replace(/[^0-9]/g, "") !== checked.value.phone.replace(/[^0-9]/g, "")) {
+      revoked = await revokeContactAccessForRemovedPhone(tx, studentId, before);
+    }
   });
 
   revalidateStudent(studentId);
-  return loadGuardians(prisma, studentId);
+  return { guardians: await loadGuardians(prisma, studentId), revokedFamilyAccess: revoked };
   });
 }
 
@@ -190,6 +205,7 @@ export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw:
   return asResult(async () => {
   const studentId = assertId(studentIdRaw, "학생");
   const guardianId = assertId(guardianIdRaw, "보호자");
+  let revoked = 0;
 
   await prisma.$transaction(async (tx) => {
     await assertStudent(tx, studentId, true);
@@ -202,6 +218,8 @@ export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw:
       studentId,
     );
     if (count !== 1) throw new GuardianUserError("보호자를 삭제하지 못했습니다.");
+    // 지운 보호자 번호로 자동 연결된 앱 가족 연결도 푼다(지워도 계속 자녀 정보를 보던 문제, 2026-11-13).
+    revoked = await revokeContactAccessForRemovedPhone(tx, studentId, existing.find((g) => g.id === guardianId)?.phone ?? "");
 
     const nextPrimaryId = nextPrimaryAfterDelete(existing, guardianId);
     if (nextPrimaryId) {
@@ -214,7 +232,7 @@ export async function deleteStudentGuardian(studentIdRaw: string, guardianIdRaw:
   });
 
   revalidateStudent(studentId);
-  return loadGuardians(prisma, studentId);
+  return { guardians: await loadGuardians(prisma, studentId), revokedFamilyAccess: revoked };
   });
 }
 
@@ -246,4 +264,37 @@ export async function setPrimaryGuardian(studentIdRaw: string, guardianIdRaw: st
   revalidateStudent(studentId);
   return loadGuardians(prisma, studentId);
   });
+}
+
+// ── 앱 가족 연결(ParentStudentAccess) — 학생 상세 「보호자」 카드 아래 목록 ─────────────────
+
+export type { FamilyAccessRow };
+
+/** 이 학생에게 앱으로 연결된 가족(대표 보호자 제외). 전화는 끝 4자리만. */
+export async function listStudentFamilyAccess(studentIdRaw: string): Promise<FamilyAccessRow[]> {
+  await requireAdmin();
+  const studentId = assertId(studentIdRaw, "학생");
+  return loadFamilyAccess(prisma, studentId);
+}
+
+/** 연결 하나 해제 — 그 사람이 걸어 둔·받아 둔 대기 요청도 닫는다. */
+export async function revokeStudentFamilyAccess(
+  studentIdRaw: string,
+  accessIdRaw: string,
+): Promise<{ access: FamilyAccessRow[] } | { error: string }> {
+  await requireAdmin();
+  try {
+    const studentId = assertId(studentIdRaw, "학생");
+    const accessId = assertId(accessIdRaw, "연결");
+    const done = await prisma.$transaction(async (tx) => {
+      await assertStudent(tx, studentId, true);
+      return revokeFamilyAccess(tx, studentId, accessId);
+    });
+    if (!done) return { error: "이미 해제됐거나 이 학생의 연결이 아닙니다. 새로고침해 주세요." };
+    revalidateStudent(studentId);
+    return { access: await loadFamilyAccess(prisma, studentId) };
+  } catch (error) {
+    if (error instanceof GuardianUserError) return { error: error.message };
+    throw error;
+  }
 }

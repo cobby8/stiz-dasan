@@ -16,9 +16,12 @@ import AdminQuickActionMenu from "@/components/admin/AdminQuickActionMenu";
 import {
     addStudentGuardian,
     deleteStudentGuardian,
+    listStudentFamilyAccess,
     listStudentGuardians,
+    revokeStudentFamilyAccess,
     setPrimaryGuardian,
     updateStudentGuardian,
+    type FamilyAccessRow,
     type GuardianMutationResult,
     type StudentGuardian,
 } from "@/app/actions/guardians";
@@ -47,6 +50,13 @@ function Icon({ name, size = 14 }: { name: string; size?: number }) {
     );
 }
 
+/** 앱 가족 연결이 어떻게 생겼는지 — 관리자 화면 표시용 */
+const FAMILY_SOURCE_LABEL: Record<FamilyAccessRow["source"], string> = {
+    REGISTERED_CONTACT: "등록 연락처",
+    ADULT_SELF: "본인",
+    FAMILY_APPROVAL: "가족 승인",
+};
+
 export default function GuardianPanel({
     studentId,
     accountPhone,
@@ -66,11 +76,15 @@ export default function GuardianPanel({
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [isPending, startTransition] = useTransition();
+    // 앱 가족 연결(대표 보호자 제외) — 기능이 꺼져 있거나 연결이 없으면 빈 목록이라 화면에 아무것도 안 그린다.
+    const [familyAccess, setFamilyAccess] = useState<FamilyAccessRow[]>([]);
 
     const refresh = useCallback(async () => {
         const list = await listStudentGuardians(studentId);
         setGuardians(list);
         setLoaded(true);
+        // 가족 연결 목록은 보조 정보 — 못 불러와도 보호자 카드는 그대로 쓴다.
+        setFamilyAccess(await listStudentFamilyAccess(studentId).catch(() => []));
     }, [studentId]);
 
     useEffect(() => {
@@ -114,7 +128,9 @@ export default function GuardianPanel({
                     return;
                 }
                 setGuardians(result.guardians);
-                setMessage(successMessage);
+                const revoked = result.revokedFamilyAccess ?? 0;
+                setMessage(revoked > 0 ? `${successMessage} 이 번호로 연결된 앱 가족 연결 ${revoked}건도 해제했습니다.` : successMessage);
+                if (revoked > 0) setFamilyAccess(await listStudentFamilyAccess(studentId).catch(() => []));
                 afterSuccess?.();
             } catch (e) {
                 setError(adminErrorText(e, "처리하지 못했습니다."));
@@ -139,6 +155,26 @@ export default function GuardianPanel({
         if (!window.confirm(deleteConfirmMessage(g, guardians.length))) return;
         run(() => deleteStudentGuardian(studentId, g.id), "보호자를 삭제했습니다.", () => {
             if (editingId === g.id) closeForm();
+        });
+    }
+
+    function revokeAccess(row: FamilyAccessRow) {
+        if (!window.confirm(`${row.name}님의 앱 가족 연결을 해제할까요?
+해제하면 이 학생의 출결·결제·사진을 앱에서 볼 수 없습니다. 다시 연결하려면 본인인증부터 다시 해야 합니다.`)) return;
+        setError(null);
+        setMessage(null);
+        startTransition(async () => {
+            try {
+                const result = await revokeStudentFamilyAccess(studentId, row.id);
+                if ("error" in result) {
+                    setError(result.error);
+                    return;
+                }
+                setFamilyAccess(result.access);
+                setMessage("앱 가족 연결을 해제했습니다.");
+            } catch (e) {
+                setError(adminErrorText(e, "처리하지 못했습니다."));
+            }
         });
     }
 
@@ -265,6 +301,27 @@ export default function GuardianPanel({
                         <li className="py-3 text-center text-sm text-[var(--color-academy-faint)]">등록된 보호자가 없습니다.</li>
                     )}
                 </ul>
+            )}
+
+            {/* 앱 가족 연결 — 대표 보호자 말고 앱에서 이 학생을 보는 계정. 연결이 있을 때만 보인다(2026-11-13). */}
+            {familyAccess.length > 0 && (
+                <div className="mt-3 border-t border-[var(--color-academy-line)] pt-2">
+                    <p className="mb-1 text-xs font-bold text-[var(--color-academy-faint)]">앱 가족 연결 {familyAccess.length}명</p>
+                    <ul className="divide-y divide-[var(--color-academy-line)]">
+                        {familyAccess.map((row) => (
+                            <li key={row.id} className="flex min-h-11 items-center gap-2 py-1">
+                                <p className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-[13px] font-bold text-[var(--color-academy-ink)]">
+                                    <span className="truncate">{row.name}</span>
+                                    {row.phoneLast4 && <span className="text-xs font-medium text-[var(--color-academy-muted)]">···{row.phoneLast4}</span>}
+                                    <span className="rounded-md bg-[var(--color-academy-soft)] px-1.5 py-0.5 text-xs text-[var(--color-academy-muted)]">{FAMILY_SOURCE_LABEL[row.source] ?? "연결"}</span>
+                                </p>
+                                <button type="button" onClick={() => revokeAccess(row)} disabled={isPending} className={`${SMALL_BTN} min-h-11 lg:min-h-8`}>
+                                    해제
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             )}
 
             {/* 창 밖 결과 안내(창을 닫은 뒤 «추가했습니다» 등). 입력 오류는 창 안에 */}
