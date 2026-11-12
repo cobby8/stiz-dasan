@@ -7417,8 +7417,8 @@ const STAFF_ROLE_LABEL: Record<string, string> = { ADMIN: "원장", VICE_ADMIN: 
  * 초대 거절 사유 — throw 하면 운영 빌드에서 서버 액션 오류 문구가 가려져 화면엔 «만들지 못했습니다»만 보인다
  * (2026-11-12 김영중 기사: 이미 가입된 계정인데 이유가 안 보임). 예상된 거절은 값으로 돌려준다.
  */
-function inviteStaffRejected(error: string) {
-    return { rejected: true as const, error };
+function inviteStaffRejected(error: string, extra: { resetAvailable?: boolean } = {}) {
+    return { rejected: true as const, error, resetAvailable: extra.resetAvailable === true };
 }
 
 export async function inviteStaff(data: {
@@ -7457,8 +7457,8 @@ export async function inviteStaff(data: {
 
     // 이미 가입된 스태프인지 확인
     // 번호는 숫자만 비교한다(「010-1234-5678」과 「01012345678」을 같은 사람으로).
-    const existingUser = await prisma.$queryRawUnsafe<Array<{ name: string; role: string; createdAt: Date | null }>>(
-        `SELECT name, role::text AS role, "createdAt" FROM "User"
+    const existingUser = await prisma.$queryRawUnsafe<Array<{ name: string; role: string; createdAt: Date | null; email: string | null }>>(
+        `SELECT name, role::text AS role, "createdAt", email FROM "User"
           WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
             AND role IN ('ADMIN','VICE_ADMIN','INSTRUCTOR','DRIVER') AND "withdrawnAt" IS NULL
           LIMIT 1`,
@@ -7468,8 +7468,12 @@ export async function inviteStaff(data: {
         const found = existingUser[0];
         const roleLabel = STAFF_ROLE_LABEL[found.role] ?? "스태프";
         const joined = found.createdAt ? ` ${new Date(found.createdAt).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })} 가입` : "";
+        const resettable = found.role === "INSTRUCTOR" || found.role === "DRIVER";
+        const loginId = found.email ? ` 로그인 아이디는 ${found.email} 입니다.` : "";
         return inviteStaffRejected(
-            `이미 가입된 ${roleLabel} 계정이 있습니다(${found.name}${joined}). 새 초대 없이 전화번호(숫자만)와 비밀번호로 로그인하면 됩니다.`,
+            `이미 가입된 ${roleLabel} 계정이 있습니다(${found.name}${joined}). 새 초대는 필요 없습니다.${loginId}`
+                + (resettable ? " 비밀번호를 모르면 아래 [비밀번호 재설정 링크 보내기]를 눌러 주세요." : ""),
+            { resetAvailable: resettable },
         );
     }
 
@@ -7581,6 +7585,83 @@ export async function inviteStaff(data: {
 }
 
 /**
+ * sendStaffPasswordReset — 이미 가입된 선생님·기사의 비밀번호 재설정 링크 (requireOwner: 원장만, 2026-11-12)
+ * 직원 아이디는 가짜 메일(전화번호@staff.stiz.kr)이라 메일로는 재설정할 수 없다.
+ * 초대와 같은 절차(개인 링크 → 등록 번호 문자 인증 → 비밀번호 설정)를 쓰되, 새 계정을 만들지 않고
+ * 이 직원 계정의 로그인 비밀번호만 바꾼다(acceptInvitation 의 PASSWORD_RESET 분기).
+ */
+export async function sendStaffPasswordReset(data: { phone: string }) {
+    const user = await requireOwner();
+    await ensureStaffInvitationTable();
+    const cleanPhone = String(data.phone ?? "").replace(/\D/g, "");
+    if (!/^010\d{8}$/.test(cleanPhone)) {
+        return inviteStaffRejected("휴대전화 번호는 010으로 시작하는 11자리 숫자로 입력해 주세요.");
+    }
+    const staff = await prisma.$queryRawUnsafe<Array<{ id: string; name: string; role: string; email: string | null }>>(
+        `SELECT id, name, role::text AS role, email FROM "User"
+          WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+            AND role IN ('INSTRUCTOR','DRIVER') AND "withdrawnAt" IS NULL
+          LIMIT 2`,
+        cleanPhone,
+    );
+    if (staff.length !== 1) {
+        return inviteStaffRejected(
+            staff.length === 0
+                ? "이 번호로 가입된 선생님·기사 계정이 없습니다. 새 초대를 만들어 주세요."
+                : "이 번호로 가입된 직원 계정이 둘 이상이라 자동으로 고를 수 없습니다. 개발 담당에게 확인해 주세요.",
+        );
+    }
+    const target = staff[0];
+    const pending = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "StaffInvitation" WHERE phone = $1 AND status = 'PENDING' AND "expiresAt" > NOW() LIMIT 1`,
+        cleanPhone,
+    );
+    if (pending.length > 0) {
+        return inviteStaffRejected("이 번호로 대기 중인 초대·재설정 링크가 이미 있습니다. 대기 중인 초대 목록에서 다시 보내거나 취소해 주세요.");
+    }
+    const rows = await prisma.$queryRawUnsafe<Array<{ id: string; token: string }>>(
+        `INSERT INTO "StaffInvitation" (id, token, name, phone, role, status, "expiresAt", purpose, "targetUserId", "createdBy", "createdAt", "updatedAt")
+         VALUES ((gen_random_uuid())::text, (gen_random_uuid())::text, $1, $2, $3::"Role", 'PENDING',
+                 NOW() + INTERVAL '1 day', 'PASSWORD_RESET', $4, $5, NOW(), NOW())
+         RETURNING id, token`,
+        target.name,
+        cleanPhone,
+        target.role,
+        target.id,
+        user.id,
+    );
+    const invitationId = rows[0]?.id;
+    const token = rows[0]?.token;
+    if (!invitationId || !token) throw new Error("재설정 링크 생성 실패");
+    const inviteUrl = getStaffInvitationUrl(token);
+    const baseUrl = getStaffInvitationBaseUrl();
+    const smsResult = baseUrl
+        ? await sendFailClosedTrackedSms({
+            eventType: "STAFF_INVITATION",
+            eventId: invitationId,
+            recipientPhone: cleanPhone,
+            recipientRole: "ADMIN",
+            trigger: "SECURITY_STAFF_INVITATION",
+            source: "SECURITY",
+            body: `[STIZ 농구교실] ${target.name}님, 스태프 앱 비밀번호 재설정 링크입니다(24시간 유효).\n아래 링크에서 문자 인증 후 새 비밀번호를 정해 주세요:\n${inviteUrl}`,
+        })
+        : { ok: false, reason: SMS_SITE_URL_MISSING };
+    if (baseUrl && !smsResult.ok) {
+        console.error("[sendStaffPasswordReset SMS] failed:", "reason" in smsResult ? smsResult.reason : smsResult.errorCode);
+    }
+    revalidateStaffAdminCaches();
+    revalidatePath("/admin/staff");
+    return {
+        rejected: false as const,
+        name: target.name,
+        loginId: target.email,
+        inviteUrl,
+        smsSent: smsResult.ok,
+        smsError: smsResult.ok ? undefined : baseUrl ? SMS_SEND_FAILED : SMS_SITE_URL_MISSING,
+    };
+}
+
+/**
  * cancelInvitation — 초대 취소 (requireOwner: ADMIN만)
  * PENDING 상태인 초대만 취소 가능
  */
@@ -7618,7 +7699,7 @@ export async function resendInvitation(invitationId: string) {
     try {
         // 초대 정보 조회
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT token, name, phone, "expiresAt"
+            `SELECT token, name, phone, "expiresAt", purpose
              FROM "StaffInvitation"
              WHERE id = $1 AND status = 'PENDING'
              LIMIT 1`,
@@ -7657,7 +7738,11 @@ export async function resendInvitation(invitationId: string) {
                 recipientRole: "ADMIN",
                 trigger: "SECURITY_STAFF_INVITATION",
                 source: "SECURITY",
-                body: `[STIZ 농구교실] ${inv.name}님, 스태프 초대 링크를 재발송합니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
+                body: inv.purpose === "PASSWORD_RESET"
+                    ? `[STIZ 농구교실] ${inv.name}님, 비밀번호 재설정 링크를 다시 보냅니다.
+아래 링크에서 문자 인증 후 새 비밀번호를 정해 주세요:
+${inviteUrl}`
+                    : `[STIZ 농구교실] ${inv.name}님, 스태프 초대 링크를 재발송합니다.\n아래 링크에서 가입을 완료해주세요:\n${inviteUrl}`,
             })
             : { ok: false, reason: SMS_SITE_URL_MISSING };
 

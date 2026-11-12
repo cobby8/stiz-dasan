@@ -23,6 +23,8 @@ interface Props {
     role: string;
     roleLabel: string;      // "코치/강사"
     daysLeft: number;
+    /** SIGNUP = 새 직원 가입, PASSWORD_RESET = 가입된 직원의 비밀번호 재설정(2026-11-12) */
+    purpose?: "SIGNUP" | "PASSWORD_RESET";
 }
 
 // 역할별 색상
@@ -40,7 +42,9 @@ export default function InviteAcceptForm({
     role,
     roleLabel,
     daysLeft,
+    purpose = "SIGNUP",
 }: Props) {
+    const isReset = purpose === "PASSWORD_RESET";
     // 현재 단계: 1=정보확인, 2=폰인증, 3=비밀번호설정, 4=완료
     const [step, setStep] = useState(1);
 
@@ -118,7 +122,7 @@ export default function InviteAcceptForm({
         startTransition(async () => {
             const result = await acceptInvitation(token, password);
             if (result.error) {
-                setPasswordError(userErrorMessage(result.error, "가입을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."));
+                setPasswordError(userErrorMessage(result.error, isReset ? "비밀번호를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요." : "가입을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."));
             } else {
                 setResultEmail(result.email || "");
                 setStep(4);
@@ -131,7 +135,7 @@ export default function InviteAcceptForm({
             {/* 상단 브랜드 영역 */}
             <div className="bg-brand-navy-900 px-6 py-6 text-center">
                 <h1 className="text-white text-xl font-bold">STIZ 농구교실</h1>
-                <p className="text-brand-navy-300 text-sm mt-1">스태프 초대</p>
+                <p className="text-brand-navy-300 text-sm mt-1">{isReset ? "비밀번호 재설정" : "스태프 초대"}</p>
             </div>
 
             {/* 진행 상태 바 */}
@@ -157,9 +161,9 @@ export default function InviteAcceptForm({
             {step === 1 && (
                 <div className="p-6 space-y-5">
                     <div className="text-center">
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">{name}님, 환영합니다!</h2>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">{isReset ? `${name}님, 비밀번호를 다시 정합니다` : `${name}님, 환영합니다!`}</h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                            스태프로 초대되었습니다. 아래 정보를 확인해주세요.
+                            {isReset ? "등록된 휴대폰으로 본인 인증을 한 뒤 새 비밀번호를 정해 주세요." : "스태프로 초대되었습니다. 아래 정보를 확인해주세요."}
                         </p>
                     </div>
 
@@ -310,7 +314,7 @@ export default function InviteAcceptForm({
                         disabled={isPending || !password || !confirmPassword}
                         className="w-full py-3 bg-brand-navy-900 text-white rounded-lg font-medium text-sm hover:bg-brand-navy-800 transition-colors disabled:opacity-50"
                     >
-                        {isPending ? "가입 처리 중..." : "가입 완료"}
+                        {isPending ? (isReset ? "변경 중..." : "가입 처리 중...") : (isReset ? "비밀번호 변경" : "가입 완료")}
                     </button>
                 </div>
             )}
@@ -320,9 +324,9 @@ export default function InviteAcceptForm({
                 <div className="p-6 space-y-5 text-center">
                     <span className="material-symbols-outlined text-[48px] text-green-500">celebration</span>
                     <div>
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">가입이 완료되었습니다!</h2>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">{isReset ? "비밀번호를 바꿨습니다!" : "가입이 완료되었습니다!"}</h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                            {name}님, {roleLabel} 역할로 등록되었습니다.
+                            {isReset ? `${name}님, 아래 아이디와 새 비밀번호로 로그인해 주세요.` : `${name}님, ${roleLabel} 역할로 등록되었습니다.`}
                         </p>
                     </div>
 
@@ -335,7 +339,7 @@ export default function InviteAcceptForm({
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-sm text-gray-500 dark:text-gray-400">비밀번호</span>
-                            <span className="text-sm text-gray-700 dark:text-gray-200">방금 설정한 비밀번호</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-200">{isReset ? "방금 바꾼 비밀번호" : "방금 설정한 비밀번호"}</span>
                         </div>
                     </div>
 

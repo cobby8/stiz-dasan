@@ -50,7 +50,7 @@ export default async function InvitePage({
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
                 <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
                     <span className="material-symbols-outlined text-[48px] text-green-400">check_circle</span>
-                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">이미 수락된 초대</h1>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-4">{invitation.purpose === "PASSWORD_RESET" ? "이미 사용한 재설정 링크" : "이미 수락된 초대"}</h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                         {invitation.role === "INSTRUCTOR" || invitation.role === "DRIVER"
                             ? "이 초대는 이미 수락되었습니다. 스태프 앱을 설치하거나 열어주세요."
@@ -114,6 +114,7 @@ export default async function InvitePage({
                     maskedPhone={maskedPhone}
                     role={invitation.role}
                     roleLabel={ROLE_LABELS[invitation.role] || /* 모르는 역할값은 영어 원문 대신 일반 표현 */ "학원 구성원"}
+                    purpose={invitation.purpose}
                     daysLeft={Math.max(0, Math.ceil((expiresAt.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))}
                 />
             </div>

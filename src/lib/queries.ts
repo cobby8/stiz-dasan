@@ -4049,7 +4049,7 @@ export const getStaffInvitations = cache(async () => {
         const rows = await prisma.$queryRawUnsafe<any[]>(
             `SELECT id, token, name, phone, role, status,
                     "expiresAt", "acceptedAt", "acceptedUserId",
-                    "createdBy", "createdAt"
+                    "createdBy", "createdAt", COALESCE(purpose, 'SIGNUP') AS purpose
              FROM "StaffInvitation"
              ORDER BY "createdAt" DESC
              LIMIT 100`
@@ -4066,6 +4066,7 @@ export const getStaffInvitations = cache(async () => {
             acceptedUserId: r.acceptedUserId ?? r.accepteduserid ?? null,
             createdBy: r.createdBy ?? r.createdby,
             createdAt: r.createdAt ?? r.createdat,
+            purpose: (r.purpose === "PASSWORD_RESET" ? "PASSWORD_RESET" : "SIGNUP") as "SIGNUP" | "PASSWORD_RESET",
         }));
     } catch (e) {
         console.error("[getStaffInvitations] failed:", e);
@@ -4078,7 +4079,7 @@ export const getStaffInvitations = cache(async () => {
 export const getInvitationByToken = cache(async (token: string) => {
     try {
         const rows = await prisma.$queryRawUnsafe<any[]>(
-            `SELECT id, token, name, phone, role, status, "expiresAt", "createdAt"
+            `SELECT id, token, name, phone, role, status, "expiresAt", "createdAt", COALESCE(purpose, 'SIGNUP') AS purpose
              FROM "StaffInvitation"
              WHERE token = $1
              LIMIT 1`,
@@ -4095,6 +4096,7 @@ export const getInvitationByToken = cache(async (token: string) => {
             status: r.status,
             expiresAt: r.expiresAt ?? r.expiresat,
             createdAt: r.createdAt ?? r.createdat,
+            purpose: (r.purpose === "PASSWORD_RESET" ? "PASSWORD_RESET" : "SIGNUP") as "SIGNUP" | "PASSWORD_RESET",
         };
     } catch (e) {
         console.error("[getInvitationByToken] failed:", e);

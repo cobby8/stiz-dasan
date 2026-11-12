@@ -2,7 +2,7 @@
 import { adminErrorText } from "@/components/admin/adminDisplayText";
 
 import { useState, useTransition, type FormEvent } from "react";
-import { inviteStaff } from "@/app/actions/admin";
+import { inviteStaff, sendStaffPasswordReset } from "@/app/actions/admin";
 import AdminModal from "@/components/admin/AdminModal";
 
 function formatPhone(raw: string): string {
@@ -40,6 +40,9 @@ export default function InviteStaffModal({
     });
     const [result, setResult] = useState<InvitationResult | null>(null);
     const [copyMessage, setCopyMessage] = useState<string | null>(null);
+    // 이미 가입된 직원이면 초대 대신 비밀번호 재설정 링크를 보낼 수 있다(2026-11-12)
+    const [rejection, setRejection] = useState<{ error: string; resetAvailable: boolean } | null>(null);
+    const [resetMode, setResetMode] = useState(false);
     const [isPending, startTransition] = useTransition();
     const phoneComplete = form.phone.replace(/-/g, "").length >= 10;
 
@@ -56,13 +59,32 @@ export default function InviteStaffModal({
                 });
                 // 예상된 거절(이미 가입된 계정·대기 중 초대 등)은 이유를 그대로 보여 준다
                 if ("rejected" in invitation) {
-                    onError(invitation.error);
+                    setRejection({ error: invitation.error, resetAvailable: invitation.resetAvailable });
                     return;
                 }
+                setRejection(null);
                 setResult(invitation);
                 onSuccess();
             } catch (error) {
                 onError(adminErrorText(error, "스태프 초대를 만들지 못했습니다."));
+            }
+        });
+    }
+
+    function handlePasswordReset() {
+        startTransition(async () => {
+            try {
+                const reset = await sendStaffPasswordReset({ phone: form.phone.trim() });
+                if (reset.rejected) {
+                    setRejection({ error: reset.error, resetAvailable: false });
+                    return;
+                }
+                setRejection(null);
+                setResetMode(true);
+                setResult({ grantedExisting: false, accountName: null, inviteUrl: reset.inviteUrl, smsSent: reset.smsSent, smsError: reset.smsError });
+                onSuccess();
+            } catch (error) {
+                onError(adminErrorText(error, "비밀번호 재설정 링크를 만들지 못했습니다."));
             }
         });
     }
@@ -121,21 +143,21 @@ export default function InviteStaffModal({
                 ) : result ? (
                     <div className="space-y-4 p-6">
                         <div className={`rounded-xl border p-4 ${result.smsSent ? "border-[var(--color-academy-success)] bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]" : "border-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]"}`}>
-                            <p className="font-bold">초대 링크가 만들어졌습니다.</p>
+                            <p className="font-bold">{resetMode ? "비밀번호 재설정 링크가 만들어졌습니다." : "초대 링크가 만들어졌습니다."}</p>
                             <p className="mt-1 text-sm">
                                 {result.smsSent
-                                    ? "가입 안내 문자를 발송했습니다. 아래 링크를 카카오톡으로도 전달할 수 있습니다."
-                                    : "문자는 발송되지 않았습니다. 초대는 정상적으로 만들어졌으니 아래 링크를 복사해 전달해 주세요."}
+                                    ? `${resetMode ? "재설정" : "가입"} 안내 문자를 발송했습니다. 아래 링크를 카카오톡으로도 전달할 수 있습니다.`
+                                    : `문자는 발송되지 않았습니다. ${resetMode ? "재설정 링크" : "초대"}는 정상적으로 만들어졌으니 아래 링크를 복사해 전달해 주세요.`}
                             </p>
                             {!result.smsSent && result.smsError && <p className="mt-2 text-xs opacity-80">발송 사유: {result.smsError}</p>}
                         </div>
 
                         <div>
-                            <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">{form.name.trim()}님 개인 가입 링크</label>
+                            <label className="mb-1 block text-sm font-medium text-[var(--color-academy-muted)]">{form.name.trim()}님 {resetMode ? "비밀번호 재설정 링크" : "개인 가입 링크"}</label>
                             <div className="break-all rounded-lg border border-[var(--color-academy-line)] bg-[var(--color-academy-soft)] p-3 text-sm text-[var(--color-academy-muted)]">
                                 {absoluteInviteUrl(result.inviteUrl)}
                             </div>
-                            <p className="mt-2 text-xs text-[var(--color-academy-muted)]">이 링크는 해당 선생님만 사용해야 하며 7일 동안 유효합니다.</p>
+                            <p className="mt-2 text-xs text-[var(--color-academy-muted)]">{resetMode ? "이 링크는 본인만 사용해야 하며 24시간 동안 유효합니다. 등록된 휴대폰 문자 인증 후 새 비밀번호를 정합니다." : "이 링크는 해당 선생님만 사용해야 하며 7일 동안 유효합니다."}</p>
                         </div>
 
                         {copyMessage && <p role="status" aria-live="polite" className="text-sm font-medium text-[var(--color-academy-muted)]">{copyMessage}</p>}
@@ -182,6 +204,16 @@ export default function InviteStaffModal({
                                 선생님은 수업 앱으로, 기사는 셔틀 운행 화면으로 이동합니다.
                             </p>
                         </div>
+                        {rejection && (
+                            <div role="alert" className="rounded-lg border border-[var(--color-academy-danger)] bg-[var(--color-academy-danger-soft)] px-4 py-3 text-sm text-[var(--color-academy-danger)]">
+                                <p className="font-bold">{rejection.error}</p>
+                                {rejection.resetAvailable && (
+                                    <button type="button" onClick={handlePasswordReset} disabled={isPending} className="mt-2 rounded-lg bg-[var(--color-academy-primary-hover)] px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+                                        {isPending ? "보내는 중…" : "비밀번호 재설정 링크 보내기"}
+                                    </button>
+                                )}
+                            </div>
+                        )}
                         <div className="flex justify-end gap-3 pt-2">
                             <button type="button" onClick={onClose} className="rounded-lg bg-[var(--color-academy-soft)] px-4 py-2.5 text-sm font-medium text-[var(--color-academy-muted)]">취소</button>
                             <button type="submit" disabled={isPending || !form.name.trim() || !phoneComplete} className="rounded-lg bg-[var(--color-academy-primary-hover)] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50">

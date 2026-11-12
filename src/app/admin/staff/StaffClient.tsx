@@ -61,6 +61,8 @@ interface Invitation {
     acceptedUserId: string | null;
     createdBy: string;
     createdAt: string;
+    /** SIGNUP = 새 직원 가입 · PASSWORD_RESET = 가입된 직원 비밀번호 재설정 */
+    purpose?: "SIGNUP" | "PASSWORD_RESET";
 }
 
 type StaffPayload = {
@@ -431,7 +433,7 @@ export default function StaffClient({
                                     return (
                                         <tr key={inv.id} tabIndex={0} aria-label={`${inv.name} 초대 상세 보기`} onClick={() => setDetail({ kind: "invite", id: inv.id })} onKeyDown={(event) => handleRowKeyDown(event, { kind: "invite", id: inv.id })} className={rowClass}>
                                             <td className="px-2 py-1.5 font-bold text-[var(--color-academy-ink)]">{inv.name}</td>
-                                            <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${rc.color}`}>{rc.label}</span></td>
+                                            <td className="px-2 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${rc.color}`}>{rc.label}</span>{inv.purpose === "PASSWORD_RESET" && <span className="ml-1 rounded-full bg-[var(--color-academy-warning-soft)] px-2 py-0.5 text-xs font-bold text-[var(--color-academy-warning)]">비밀번호 재설정</span>}</td>
                                             <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</td>
                                             <td className="admin-cell-num px-2 py-1.5 text-[var(--color-academy-ink)]">{daysLeft}일 남음</td>
                                             {/* 관리: ⚡(복사·재발송·취소). 눌러도 행 클릭(패널)이 같이 일어나지 않게 전파 차단 */}
@@ -582,6 +584,7 @@ export default function StaffClient({
                                     <div className="flex items-center gap-3">
                                         <span className="font-bold text-[var(--color-academy-ink)]">{inv.name}</span>
                                         <span className={`rounded-full px-2 py-0.5 text-xs ${rc.color}`}>{rc.label}</span>
+                                        {inv.purpose === "PASSWORD_RESET" && <span className="text-xs font-bold text-[var(--color-academy-warning)]">비밀번호 재설정</span>}
                                         <span className="tabular-nums text-[var(--color-academy-muted)]">{formatPhone(inv.phone)}</span>
                                     </div>
                                     <div className="flex items-center gap-2">

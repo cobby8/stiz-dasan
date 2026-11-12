@@ -20,6 +20,8 @@ type InvitationRow = {
   status: string;
   expiresAt: Date;
   createdAt?: Date;
+  purpose?: string | null;
+  targetUserId?: string | null;
   otpHash?: string | null;
   otpExpiresAt?: Date | null;
   otpAttempts?: number;
@@ -127,7 +129,7 @@ export async function sendInviteVerification(token: string) {
     const code = generateCode();
     const invitation = await prisma.$transaction(async (tx) => {
       const initialRows = await tx.$queryRawUnsafe<InvitationRow[]>(
-        `SELECT id, phone, role, status, "expiresAt", ("expiresAt" <= NOW()) AS "isExpired"
+        `SELECT id, phone, role, status, "expiresAt", purpose, ("expiresAt" <= NOW()) AS "isExpired"
          FROM "StaffInvitation" WHERE token = $1 LIMIT 1`,
         token,
       );
@@ -140,7 +142,7 @@ export async function sendInviteVerification(token: string) {
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, requestHash);
 
       const rows = await tx.$queryRawUnsafe<InvitationRow[]>(
-        `SELECT id, token, name, phone, role, status, "expiresAt", "otpSentAt", "lockedAt",
+        `SELECT id, token, name, phone, role, status, "expiresAt", purpose, "otpSentAt", "lockedAt",
                 ("expiresAt" <= NOW()) AS "isExpired",
                 GREATEST(0, CEIL(EXTRACT(EPOCH FROM ("lockedAt" + INTERVAL '15 minutes' - NOW()))))::int
                   AS "lockRemainingSeconds",
@@ -198,7 +200,9 @@ export async function sendInviteVerification(token: string) {
 
     const result = await sendSmsWithTimeout(
       invitation.phone,
-      `[STIZ 농구교실] 스태프 가입 인증번호: ${code} (5분 내 입력)`,
+      invitation.purpose === "PASSWORD_RESET"
+        ? `[STIZ 농구교실] 비밀번호 재설정 인증번호: ${code} (5분 내 입력)`
+        : `[STIZ 농구교실] 스태프 가입 인증번호: ${code} (5분 내 입력)`,
     );
     if (result !== true) {
       const status = result === "TIMEOUT" ? "TIMEOUT" : "FAILED";
@@ -304,7 +308,7 @@ export async function acceptInvitation(token: string, password: string) {
        WHERE token = $1 AND role IN ('INSTRUCTOR'::"Role", 'DRIVER'::"Role") AND status = 'PENDING' AND "expiresAt" > NOW()
          AND "otpExpiresAt" > NOW() AND "otpVerifiedAt" IS NOT NULL AND "otpConsumedAt" IS NULL
          AND ("lockedAt" IS NULL OR "lockedAt" <= NOW() - INTERVAL '15 minutes')
-       RETURNING id, name, phone, role, status, "expiresAt"`,
+       RETURNING id, name, phone, role, status, "expiresAt", purpose, "targetUserId"`,
       token,
       attemptId,
     );
@@ -318,6 +322,39 @@ export async function acceptInvitation(token: string, password: string) {
       attemptId,
       invitation.id,
     );
+
+    if (invitation.purpose === "PASSWORD_RESET") {
+      // 비밀번호 재설정(2026-11-12): 새 계정을 만들지 않는다. 초대 대상과 같은 번호·역할의 기존 직원 계정만 바꾼다.
+      const targets = await prisma.$queryRawUnsafe<Array<{ id: string; authUserId: string | null; email: string | null }>>(
+        `SELECT id, "authUserId", email FROM "User"
+          WHERE id = $1 AND role = $2::"Role" AND "withdrawnAt" IS NULL
+            AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = regexp_replace($3, '[^0-9]', '', 'g')`,
+        invitation.targetUserId ?? "",
+        invitation.role,
+        invitation.phone,
+      );
+      const target = targets[0];
+      if (!target) throw new Error("재설정할 직원 계정을 찾지 못했습니다. 원장에게 문의해주세요.");
+      const { error: updateError } = await createAdminClient().auth.admin.updateUserById(target.authUserId ?? target.id, { password });
+      if (updateError) throw new Error(`비밀번호를 바꾸지 못했습니다: ${updateError.message}`);
+      await prisma.$transaction(async (tx) => {
+        const done = await tx.$executeRawUnsafe(
+          `UPDATE "StaffInvitation"
+           SET status = 'ACCEPTED', "acceptedAt" = NOW(), "acceptedUserId" = $1, "otpHash" = NULL,
+               "processingAttemptId" = NULL, "processingStartedAt" = NULL, "recoveryError" = NULL, "updatedAt" = NOW()
+           WHERE id = $2 AND status = 'PROCESSING' AND "processingAttemptId" = $3`,
+          target.id,
+          invitation.id,
+          attemptId,
+        );
+        if (done !== 1) throw new Error("초대 처리 상태가 변경되었습니다.");
+        await tx.$executeRawUnsafe(
+          `UPDATE "StaffInvitationAuthAttempt" SET status = 'COMPLETED', "updatedAt" = NOW() WHERE id = $1`,
+          attemptId,
+        );
+      });
+      return { ok: true, email: target.email ?? `${invitation.phone}@staff.stiz.kr`, passwordReset: true };
+    }
 
     const staffEmail = `${invitation.phone}@staff.stiz.kr`;
     const supabaseAdmin = createAdminClient();

@@ -2639,6 +2639,8 @@ model StaffInvitation {
   recoveryOperationId String? // 운영 복구 실행 식별자(원 가입 시도와 분리)
   recoveryAuthUserId  String? // 보상 삭제 실패 시 운영 복구할 Auth 사용자 ID
   recoveryError       String? // 운영 복구에 필요한 오류 요약
+  purpose             String                       @default("SIGNUP") // SIGNUP(새 직원 가입) · PASSWORD_RESET(가입된 직원 비밀번호 재설정)
+  targetUserId        String? // PASSWORD_RESET 대상 직원 User ID
   createdBy           String // 초대 생성자 (ADMIN User ID)
   createdAt           DateTime                     @default(now()) @db.Timestamptz(6)
   updatedAt           DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
