@@ -71,7 +71,12 @@ import {
     manualMessagePrefix,
     isParentAlimtalkTrigger,
     parentAlimtalkSmsTemplateBody,
+    BILLING_ALIMTALK_TEMPLATES,
+    billingPathForInvoices,
+    buildBillingAlimtalkMessage,
+    formatBillingDueDate,
 } from "@/lib/messaging/parent-alimtalk-templates";
+import { alimtalkTemplateIdForEnv } from "@/lib/messaging/alimtalk-config";
 import {
     ensureInvoiceForPayment,
     ensureInvoicesForMonth,
@@ -3923,6 +3928,112 @@ export async function refreshPaymentLedger(year: number, month: number) {
     };
 }
 
+// ── 수강료 청구 알림톡(2026-11-12) ──────────────────────────────────────────────
+// 학원 대표 전화 — 청구 틀의 «문의: #{학원전화}». 조회 실패는 빈 값(금고 기본값이 대신 채운다)
+async function billingAcademyPhone(): Promise<string> {
+    const rows = await prisma.$queryRawUnsafe<Array<{ contactPhone: string | null }>>(
+        `SELECT "contactPhone" FROM "AcademySettings" WHERE id = 'singleton' LIMIT 1`,
+    ).catch(() => [] as Array<{ contactPhone: string | null }>);
+    return String(rows[0]?.contactPhone ?? "").trim();
+}
+
+// 청구서 발행 안내 알림톡 — 템플릿 id(ALIMTALK_TPL_BILLING_INVOICE)가 있을 때만 보낸다.
+// id 가 비어 있으면 아무것도 보내지 않는다(지금처럼 앱 알림만 — 이번 작업으로 문자가 늘지 않게).
+// 알림톡이 안 되면 같은 본문 + «청구서 확인하기: 링크» 를 문자로 대신 보낸다(발송부가 처리).
+// 실패해도 청구서 «발송됨» 기록·앱 알림은 이미 끝났으므로 throw 하지 않고 건수만 돌려준다.
+async function sendBillingInvoiceAlimtalks(invoiceIds: string[], month: number, forceResend: boolean) {
+    const result = { attempted: false, sent: 0, failed: 0 };
+    const templateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.BILLING_INVOICE_PARENT.envKey);
+    if (!templateId || invoiceIds.length === 0) return result;
+    result.attempted = true;
+    try {
+        const placeholders = invoiceIds.map((_, index) => `$${index + 1}`).join(",");
+        const rows = await prisma.$queryRawUnsafe<Array<{
+            id: string;
+            studentName: string | null;
+            amount: number | null;
+            dueYmd: string | null;
+            phone: string | null;
+        }>>(
+            // dueDate 는 timestamptz 라 AT TIME ZONE 을 «한 번»만 건다(한국 달력 날짜)
+            `SELECT i.id, s.name AS "studentName", i.amount::int AS amount,
+                    TO_CHAR(i."dueDate" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "dueYmd",
+                    u.phone
+               FROM "PaymentInvoice" i
+               JOIN "Student" s ON s.id = i."studentId"
+               JOIN "User" u ON u.id = i."parentId"
+              WHERE i.id IN (${placeholders})`,
+            ...invoiceIds,
+        );
+        const academyPhone = await billingAcademyPhone();
+        // 재발송(forceResend)은 장부의 중복 방지에 걸리지 않게 사건 번호를 새로 만든다
+        const runKey = forceResend ? `:resend:${Date.now()}` : "";
+        for (const row of rows) {
+            if (!row.phone) { result.failed += 1; continue; }
+            const callerVariables = {
+                childName: String(row.studentName ?? ""),
+                billingMonth: `${month}월`,
+                amount: Number(row.amount ?? 0).toLocaleString("ko-KR"),
+                dueDate: formatBillingDueDate(row.dueYmd),
+                academyPhone,
+            };
+            let message;
+            try {
+                message = buildBillingAlimtalkMessage("BILLING_INVOICE_PARENT", callerVariables, `payments/${row.id}`);
+            } catch (error) {
+                // 빈 값(학생명·납부기한 등)이 있으면 빈칸 문장을 만들지 않고 이 건만 건너뛴다
+                console.warn("[billing-alimtalk] 청구서 안내 틀을 채우지 못했습니다:", (error as Error).message);
+                result.failed += 1;
+                continue;
+            }
+            const sent = await sendParentSmsWithResult(
+                row.phone,
+                "BILLING_INVOICE_PARENT",
+                callerVariables,
+                { eventType: "BILLING_INVOICE_LINK", eventId: `invoice-link:${row.id}${runKey}` },
+                {
+                    body: message.smsBody,
+                    alimtalk: { templateId, variables: message.variables, text: message.body, buttons: [message.button] },
+                },
+            );
+            if (sent.ok) result.sent += 1;
+            else result.failed += 1;
+        }
+    } catch (error) {
+        console.error("[billing-alimtalk] 청구서 안내 알림톡 발송 실패:", error);
+        result.failed = Math.max(result.failed, invoiceIds.length - result.sent);
+    }
+    return result;
+}
+
+// 미납 안내 알림톡 본문 — 템플릿 id(ALIMTALK_TPL_BILLING_UNPAID)가 있을 때만 만든다.
+// 없거나 틀을 못 채우면 undefined → 지금처럼 옛 DB 문자(UNPAID_PARENT)가 나간다.
+function prepareUnpaidAlimtalk(
+    templateId: string,
+    input: { childName: string; unpaidCount: number; totalAmount: number; invoiceIds: Array<string | undefined>; academyPhone: string },
+) {
+    if (!templateId) return undefined;
+    try {
+        const message = buildBillingAlimtalkMessage(
+            "UNPAID_PARENT",
+            {
+                childName: input.childName,
+                unpaidCount: String(input.unpaidCount),
+                totalAmount: input.totalAmount.toLocaleString("ko-KR"),
+                academyPhone: input.academyPhone,
+            },
+            billingPathForInvoices(input.invoiceIds),
+        );
+        return {
+            body: message.smsBody,
+            alimtalk: { templateId, variables: message.variables, text: message.body, buttons: [message.button] },
+        };
+    } catch (error) {
+        console.warn("[billing-alimtalk] 미납 안내 틀을 채우지 못해 옛 문자로 보냅니다:", (error as Error).message);
+        return undefined;
+    }
+}
+
 export async function sendInvoiceLinksForMonth(year: number, month: number, forceResend?: boolean) {
     await requireAdmin();
     // 학부모 청구 안내는 랠리즈 전담 — 잠금이면 DB 를 건드리기 전에 바로 돌려보낸다.
@@ -4049,9 +4160,17 @@ export async function sendInvoiceLinksForMonth(year: number, month: number, forc
         revalidateFinanceCaches();
         revalidatePath("/mypage");
 
+        // 카카오 알림톡(실패 시 문자) — 템플릿 id 가 있을 때만. 없으면 지금처럼 앱 알림만
+        const alimtalk = await sendBillingInvoiceAlimtalks(ids, month, Boolean(forceResend));
+
         return {
             sent: ids.length,
-            message: `${ids.length}건의 청구서 링크를 학부모 알림으로 발송했습니다.`,
+            alimtalkSent: alimtalk.sent,
+            alimtalkFailed: alimtalk.failed,
+            message: `${ids.length}건의 청구서 링크를 학부모 알림으로 발송했습니다.`
+                + (alimtalk.attempted
+                    ? ` 카카오 알림톡(실패 시 문자) ${alimtalk.sent}건 성공${alimtalk.failed > 0 ? `, ${alimtalk.failed}건 실패` : ""}.`
+                    : ""),
         };
     } catch (e) {
         console.error("Failed to send invoice links:", e);
@@ -4125,6 +4244,23 @@ export async function sendUnpaidReminders() {
             ...sidList,
         );
         const parentByStudent = new Map(stuParents.map((row) => [row.id, row]));
+
+        // 카카오 알림톡(초안 틀) — 템플릿 id(ALIMTALK_TPL_BILLING_UNPAID)가 있을 때만 청구서 번호·학원 전화를 읽는다.
+        // id 가 비어 있으면 DB 를 더 읽지 않고, 아래 발송은 지금처럼 옛 DB 문자 그대로다.
+        const unpaidTemplateId = alimtalkTemplateIdForEnv(BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT.envKey);
+        const invoiceByPayment = new Map<string, string>();
+        let unpaidAcademyPhone = "";
+        if (unpaidTemplateId) {
+            const paymentIds = unpaid.map((u: any) => String(u.id));
+            const invoiceRows = await prisma.$queryRawUnsafe<Array<{ id: string; paymentId: string }>>(
+                `SELECT id, "paymentId" FROM "PaymentInvoice"
+                  WHERE "paymentId" IN (${paymentIds.map((_: string, i: number) => `$${i + 1}`).join(",")})`,
+                ...paymentIds,
+            ).catch(() => [] as Array<{ id: string; paymentId: string }>);
+            for (const row of invoiceRows) invoiceByPayment.set(row.paymentId, row.id);
+            unpaidAcademyPhone = await billingAcademyPhone();
+        }
+
         const successfulPaymentIds: string[] = [];
         let successfulSms = 0;
         const smsErrors: string[] = [];
@@ -4149,6 +4285,14 @@ export async function sendUnpaidReminders() {
                     // 결제 ID 조합은 재호출해도 같은 사건 번호가 되어 성공 문자 중복을 막는다.
                     eventId: `unpaid:${info.paymentIds.slice().sort().join(",")}`,
                 },
+                // 알림톡 id 가 있으면 미납 안내 틀(버튼: 청구서 한 장이면 그 청구서, 여러 장이면 마이페이지 결제)
+                prepareUnpaidAlimtalk(unpaidTemplateId, {
+                    childName: String(studentParent.name ?? ""),
+                    unpaidCount: info.count,
+                    totalAmount: info.total,
+                    invoiceIds: info.paymentIds.map((paymentId) => invoiceByPayment.get(paymentId)),
+                    academyPhone: unpaidAcademyPhone,
+                }),
             );
             if (result.ok) {
                 successfulSms += 1;

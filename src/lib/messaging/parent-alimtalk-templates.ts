@@ -328,6 +328,166 @@ export function buildNoticeAlimtalkMessage(
   };
 }
 
+// ═════════════════════ 수강료 청구 알림톡 2종(2026-11-12) ═════════════════════
+//
+// 왜 따로 두나: 청구 안내는 «버튼(청구서 링크)»이 있는 틀이라 공지 3종처럼 버튼·문자 대체 본문을 함께 만든다.
+// 그리고 템플릿 id(환경변수)가 비어 있으면 «지금 동작 그대로»(청구서 링크 = 앱 알림만, 미납 = 옛 DB 문자)라서
+// 위 9종처럼 «문자 본문 = 알림톡 본문»을 항상 쓰지 않는다 — id 를 넣는 순간부터 이 틀이 나간다.
+// 규칙은 같다 — 빈 변수 금지, 문구를 바꾸면 심사 문서·카카오 템플릿도 같이(재심사), 문자 대체는 EUC-KR 안전 글자만.
+
+/** 청구 틀 버튼 — 도메인은 등록 문구에 고정, 경로만 변수(카카오 규칙). 경로 예: payments/<청구서id> */
+export const BILLING_BUTTON_NAME = "청구서 확인하기";
+export const BILLING_LINK_BASE = NOTICE_LINK_BASE;
+export const BILLING_BUTTON_LINK_TEMPLATE = `${BILLING_LINK_BASE}#{청구서경로}`;
+/** 청구서가 여러 장이라 한 장을 고를 수 없을 때 — 학부모 마이페이지 결제 화면 */
+export const DEFAULT_BILLING_PATH = "mypage/payments";
+
+export type BillingAlimtalkSpec = {
+  name: string;
+  envKey: string;
+  body: string;
+  /** 틀 변수 → 호출부 값 키 */
+  vars: Record<string, string>;
+  defaults?: Record<string, string>;
+  /** 원장 확인 상태 — APPROVED 는 원장 승인 원문, DRAFT 는 초안(원장 확인 뒤 등록) */
+  status: "APPROVED" | "DRAFT";
+};
+
+export const BILLING_ALIMTALK_TEMPLATES = {
+  /** B1 수강료 청구서 발행 안내 — 원장 승인 원문(2026-11-12) */
+  BILLING_INVOICE_PARENT: {
+    name: "수강료 청구서 발행 안내",
+    envKey: "ALIMTALK_TPL_BILLING_INVOICE",
+    status: "APPROVED",
+    body: [
+      `${P} #{학생명} 학생 #{청구월} 수강료 안내`,
+      "",
+      "안녕하세요, 스티즈농구교실입니다.",
+      "#{학생명} 학생의 #{청구월} 수강료 청구서가 발행되었습니다.",
+      "",
+      "■ 청구 금액: #{금액}원",
+      "■ 납부 기한: #{납부기한}",
+      "",
+      "아래 버튼에서 청구 내용 확인과 결제(카드·계좌이체)를 하실 수 있어요.",
+      "문의: #{학원전화}",
+    ].join("\n"),
+    vars: {
+      "#{학생명}": "childName", "#{청구월}": "billingMonth", "#{금액}": "amount",
+      "#{납부기한}": "dueDate", "#{학원전화}": "academyPhone",
+    },
+    defaults: { academyPhone: DEFAULT_ACADEMY_PHONE },
+  },
+  /**
+   * B2 미납 안내 — 초안(원장 확인 필요). 발송 대상에 «기한 전 미납(PENDING)»도 섞여 있어
+   * «납부 기한이 지난» 대신 «아직 납부가 확인되지 않은» 으로 썼다(기한 전 학부모에게 틀린 말이 되지 않게).
+   */
+  UNPAID_PARENT: {
+    name: "수강료 미납 안내",
+    envKey: "ALIMTALK_TPL_BILLING_UNPAID",
+    status: "DRAFT",
+    body: [
+      `${P} #{학생명} 학생 수강료 납부 안내`,
+      "",
+      "안녕하세요, 스티즈농구교실입니다.",
+      "#{학생명} 학생의 수강료 중 아직 납부가 확인되지 않은 청구가 있어 안내드립니다.",
+      "",
+      "■ 미납 청구: #{건수}건",
+      "■ 청구 금액: #{금액}원",
+      "",
+      "아래 버튼에서 청구 내용 확인과 결제(카드·계좌이체)를 하실 수 있어요.",
+      "이미 납부하셨다면 이 안내는 넘기셔도 됩니다.",
+      "문의: #{학원전화}",
+    ].join("\n"),
+    vars: {
+      "#{학생명}": "childName", "#{건수}": "unpaidCount", "#{금액}": "totalAmount", "#{학원전화}": "academyPhone",
+    },
+    defaults: { academyPhone: DEFAULT_ACADEMY_PHONE },
+  },
+} satisfies Record<string, BillingAlimtalkSpec>;
+
+export type BillingAlimtalkKind = keyof typeof BILLING_ALIMTALK_TEMPLATES;
+
+export type BillingAlimtalkMessage = {
+  kind: BillingAlimtalkKind;
+  envKey: string;
+  /** 알림톡 본문(등록 문구에 값을 넣은 것 — 솔라피 text 로 보낸다) */
+  body: string;
+  /** 문자로 보낼 때의 본문 — 버튼이 없으니 «청구서 확인하기: 링크» 한 줄을 끝에 붙인다 */
+  smsBody: string;
+  variables: Record<string, string>;
+  button: { buttonName: string; buttonType: "WL"; linkMo: string; linkPc: string };
+};
+
+/**
+ * 청구서 경로 정리 — 도메인 고정·경로만 변수라 «payments/아이디» 같은 상대 경로만 받는다.
+ * 앞 «/» 는 떼고, 영문·숫자·-_/ 밖의 글자가 있으면 마이페이지 결제 화면으로(남의 사이트로 못 보내게).
+ */
+export function normalizeBillingPath(value: string | null | undefined): string {
+  const path = String(value ?? "").trim().replace(/^\/+/, "");
+  if (!path || path.length > 120 || !/^[A-Za-z0-9][A-Za-z0-9_\-/]*$/.test(path) || path.includes("//")) return DEFAULT_BILLING_PATH;
+  return path;
+}
+
+/**
+ * 버튼 경로 고르기 — 청구서가 정확히 한 장이면 그 청구서(payments/<id>), 없거나 여러 장이면
+ * 마이페이지 결제 화면(한 장만 골라 보여 주면 나머지 미납을 놓친다).
+ * 청구서가 없는 결제(빈 값)가 하나라도 섞이면 역시 마이페이지 결제 화면으로 보낸다.
+ */
+export function billingPathForInvoices(invoiceIds: Array<string | null | undefined>): string {
+  const raw = invoiceIds.map((id) => String(id ?? "").trim());
+  if (raw.length === 0 || raw.some((id) => !id)) return DEFAULT_BILLING_PATH;
+  const ids = [...new Set(raw)];
+  return ids.length === 1 ? normalizeBillingPath(`payments/${ids[0]}`) : DEFAULT_BILLING_PATH;
+}
+
+/** "YYYY-MM-DD" → "2026년 12월 10일"(달력 숫자만 읽는다 — 시간대 개입 없음). 형식이 아니면 빈 값 */
+export function formatBillingDueDate(ymd: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
+  if (!m) return "";
+  return `${Number(m[1])}년 ${Number(m[2])}월 ${Number(m[3])}일`;
+}
+
+/**
+ * 호출부 값으로 청구 알림톡 본문·변수·버튼·문자 대체 본문을 같은 맵에서 만든다.
+ * 기본값 없는 값이 비면 오류(빈칸 문장 금지) → 발송부가 알림톡 없이 기존 동작으로 처리한다.
+ */
+export function buildBillingAlimtalkMessage(
+  kind: BillingAlimtalkKind,
+  callerVariables: Record<string, string | null | undefined>,
+  billingPath?: string | null,
+): BillingAlimtalkMessage {
+  const spec: BillingAlimtalkSpec = BILLING_ALIMTALK_TEMPLATES[kind];
+  const variables: Record<string, string> = {};
+  for (const key of templateVariableKeys(spec.body)) {
+    const callerKey = spec.vars[key];
+    if (!callerKey) throw new Error(`알림톡 변수 ${key} 의 연결이 없습니다.`);
+    const raw = String(callerVariables[callerKey] ?? "").trim();
+    variables[key] = raw || spec.defaults?.[callerKey] || "";
+  }
+  const path = normalizeBillingPath(billingPath);
+  const link = `${BILLING_LINK_BASE}${path}`;
+  const body = fillAlimtalkTemplate(spec.body, variables);
+  return {
+    kind,
+    envKey: spec.envKey,
+    body,
+    smsBody: `${body}\n${BILLING_BUTTON_NAME}: ${link}`,
+    // 버튼 링크의 경로 변수도 같은 맵에 넣는다(등록 템플릿 버튼에 정의된 변수)
+    variables: { ...variables, "#{청구서경로}": path },
+    button: { buttonName: BILLING_BUTTON_NAME, buttonType: "WL", linkMo: link, linkPc: link },
+  };
+}
+
+/**
+ * 청구 틀을 DB 문자 틀 표기({{childName}})로 — 관리자 문구 화면 표시용(실제 발송은 위 빌더가 만든다).
+ * 버튼 대신 붙는 «청구서 확인하기: 링크» 줄도 함께 보여 준다.
+ */
+export function billingAlimtalkSmsTemplateBody(kind: BillingAlimtalkKind): string {
+  const spec: BillingAlimtalkSpec = BILLING_ALIMTALK_TEMPLATES[kind];
+  const body = spec.body.replace(/#\{[^}]+\}/g, (key) => `{{${spec.vars[key]}}}`);
+  return `${body}\n${BILLING_BUTTON_NAME}: {{invoiceLink}}`;
+}
+
 /**
  * 금고 밖에서 학부모에게 «문자로만» 나가도 되는 트리거(가드 테스트가 이 목록과 금고만 허용한다).
  * 새 학부모 문자를 만들 때는 금고에 넣거나, 여기에 이유와 함께 적는다.
@@ -338,7 +498,8 @@ export const SMS_ONLY_PARENT_TRIGGERS: Record<string, string> = {
   TRIAL_PAID_GUIDE_PARENT: "체험비 결제 완료 → 체험 확정 안내(src/lib/trial-fee/guideMessages.ts, 스위치 기본 꺼짐)",
   ENROLL_WELCOME_GUIDE_PARENT: "등록 안내 — 담당 코치·셔틀 기사님 연락처 자동(guideMessages.ts, 스위치 기본 꺼짐)",
   ENROLL_CONFIRM_PARENT: "공개 폼 접수 확인(꺼짐 유지). 3차 후보",
-  UNPAID_PARENT: "미납 안내(잠금 — 토스 라이브 때 전환). 3차 후보",
+  // 2026-11-12: 알림톡 틀은 BILLING_ALIMTALK_TEMPLATES.UNPAID_PARENT(초안). id 가 비면 아래 옛 DB 문자 그대로
+  UNPAID_PARENT: "미납 안내(잠금 — 토스 라이브 때 전환). 알림톡 id(ALIMTALK_TPL_BILLING_UNPAID)가 없으면 옛 DB 문자",
   SPECIAL_APPLICATION_REJECTED_PARENT: "특강 반려(꺼짐). 2차 후보",
   SPECIAL_ACCOUNT_ACTIVATION_PARENT: "특강 보호자 가입 링크(꺼짐). 2차 후보",
   RENTAL_RECEIVED_APPLICANT: "대관 접수(꺼짐 유지). 대관 틀은 src/lib/rental 이 따로 관리",

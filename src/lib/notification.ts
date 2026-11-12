@@ -46,7 +46,13 @@ type SmsDeliveryOptions = {
     source?: MessageLedgerSource;
     // 알림톡 템플릿(선택). 넘긴 호출만 알림톡을 시도한다 — 템플릿 id·카카오 채널(PF ID)이 없거나
     // 규칙 채널이 문자면 지금처럼 문자로만 나간다. 본문(body)은 등록 템플릿에 변수를 넣은 결과와 같아야 한다.
-    alimtalk?: { templateId: string; variables?: Record<string, string> };
+    // text·buttons(선택): 버튼 있는 틀(청구 안내)용 — body 는 문자용(끝에 링크 줄), 알림톡은 text 를 보낸다
+    alimtalk?: {
+        templateId: string;
+        variables?: Record<string, string>;
+        text?: string;
+        buttons?: Array<{ buttonName: string; buttonType: string; linkMo: string; linkPc?: string }>;
+    };
 };
 
 type AutomationPolicy = {
@@ -1035,6 +1041,9 @@ export async function sendParentSmsWithResult(
     trigger: string,
     variables: Record<string, string>,
     options: { eventType: string; eventId: string; deliveryRunId?: string; forceSms?: boolean },
+    // 호출부가 이미 만든 본문·알림톡(청구 알림톡 — 버튼 있는 틀). 주면 금고/DB 문구 대신 이것을 보낸다.
+    // DB 문자 틀의 켜기/끄기(isActive)는 그대로 먼저 확인한다(끄면 이 본문도 안 나간다).
+    prepared?: { body: string; alimtalk?: SmsDeliveryOptions["alimtalk"] },
 ): Promise<SmsSendResult> {
     const recipientNo = normalizeSmsPhone(parentPhone);
     try {
@@ -1043,7 +1052,7 @@ export async function sendParentSmsWithResult(
         if (!msg) return { ok: false, to: recipientNo, reason: "SMS_TEMPLATE_UNAVAILABLE" };
 
         // 알림톡 금고 트리거(체험 일정 확정·수강신청서 안내·셔틀 등)는 코드 틀 본문 + 알림톡 정보
-        const resolved = resolveParentMessage(trigger, variables, msg);
+        const resolved = prepared ?? resolveParentMessage(trigger, variables, msg);
         return await sendSmsForNotification({
             ...options,
             recipientPhone: recipientNo,

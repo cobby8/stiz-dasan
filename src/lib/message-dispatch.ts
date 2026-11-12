@@ -35,6 +35,11 @@ export type MessageDispatchInput = {
     alimtalk?: {
         templateId: string;
         variables?: Record<string, string>;
+        // 알림톡 본문(등록 문구에 값을 넣은 것). 버튼 있는 틀(청구 안내)은 body 가 «문자용(끝에 링크 줄)»이라
+        // 알림톡에는 이 글자를 보낸다. 없으면 body 를 그대로 쓴다(기존 호출 동작 그대로).
+        text?: string;
+        // 등록 템플릿의 버튼(이름·유형이 같아야 한다). 없으면 넘기지 않는다(기존 호출 동작 그대로)
+        buttons?: Array<{ buttonName: string; buttonType: string; linkMo: string; linkPc?: string }>;
     };
     rcs?: {
         templateId: string;
@@ -148,6 +153,7 @@ async function sendSolapiAlimtalk(input: MessageDispatchInput): Promise<MessageD
                         pfId: process.env.SOLAPI_KAKAO_PF_ID,
                         templateId: input.alimtalk!.templateId,
                         variables: input.alimtalk?.variables,
+                        ...(input.alimtalk?.buttons?.length ? { buttons: input.alimtalk.buttons } : {}),
                         // 카카오 전달 실패(접수 뒤 — 카톡 미설치 등) 시 솔라피가 문자로 대체한다. 기본값이 false 지만
                         // 실수로 꺼지지 않게 명시한다. 대체 조건: disableSms=false + from(등록 발신번호).
                         // 근거: https://solapi.com/developers/api/messages-disablesms
@@ -248,7 +254,10 @@ export async function sendMessageDetailed(input: MessageDispatchInput): Promise<
         && input.alimtalk
         && isAlimtalkConfigured(input.alimtalk.templateId)
     ) {
-        const primary = await sendSolapiAlimtalk(input);
+        // 알림톡 전용 본문이 있으면 그 글자로 보낸다. 실패 시 문자 대체는 원래 input(문자용 본문)을 쓴다
+        const primary = await sendSolapiAlimtalk(
+            input.alimtalk.text ? { ...input, body: input.alimtalk.text } : input,
+        );
         if (primary.ok || !policy.fallbackAllowed) return primary;
         return sendTextFallback(input, requestedChannel, true, policy.fallbackChannel);
     }
