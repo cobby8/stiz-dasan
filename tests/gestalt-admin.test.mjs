@@ -164,28 +164,36 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   assert.ok(!shell.includes('label: "요청·신청함"'));
   assert.match(shell, /href="\/admin\/inbox"[^\n]*label="신청함"/);
   const requests = shell.slice(shell.indexOf("const INBOX_LEGACY_PATHS"), shell.indexOf("const EXTRA_GROUPS"));
-  const classes = shell.slice(shell.indexOf('label: "수업 운영"'), shell.indexOf('label: "돈·수납"'));
-  const money = shell.slice(shell.indexOf('label: "돈·수납"'), shell.indexOf('label: "홈페이지·소식"'));
   for (const href of ["/admin/requests", "/admin/enrollment-changes", "/admin/withdrawals", "/admin/role-requests", "/admin/kakao-requests"]) assert.ok(requests.includes(`"${href}"`), href);
-  for (const href of ["/admin/absence", "/admin/makeup", "/admin/schedule", "/admin/attendance/report", "/staff/quick-post", "/admin/seasonal"]) assert.ok(classes.includes(`"${href}"`), href);
-  for (const href of ["/admin/payment-requests", "/admin/payment-confirmations", "/admin/pos-reconcile", "/admin/uniform"]) assert.ok(money.includes(`"${href}"`), href);
+  // 2026-11-13 메뉴 정리: 묶음 3개(수업/홈페이지/설정). 결석·보강·리포트·돈·홈페이지 하위 화면은 탭 줄로
+  //   (묶음 내용·탭 연결은 tests/admin-menu-sections.test.mjs)
+  const classes = shell.slice(shell.indexOf('label: "수업"'), shell.indexOf('label: "홈페이지"'));
+  for (const href of ["/admin/schedule", "/admin/seasonal"]) assert.ok(classes.includes(`"${href}"`), href);
+  assert.ok(!shell.includes('label: "돈·수납"'));
   // 같은 기호가 두 메뉴에 붙지 않는다(카카오/문자, 사진 회수/개인정보, 홈페이지 보기/학원 소개)
-  assert.match(shell, /\["\/admin\/media-revocations", "사진 공개 회수", "🚫"\]/);
-  assert.match(shell, /label="홈페이지 보기" icon="🌐"/);
   assert.match(shell, /"🗨️": "forum", "🚫": "hide_image", "🌐": "public"/);
+  assert.match(shell, /aria-hidden="true">public<\/span>\s*홈페이지 보기/);
   assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
 });
 
-test("A-14 대시보드: 카드 두 줄에 소제목, 아이콘 색 muted 통일", () => {
+// 2026-11-13 대시보드·통계 개편: 접힌 «운영 현황»(운영 규모·매출·출석·미납)은 통계 탭으로 옮겼다.
+//   대시보드는 맨 위 카드 6개(큰 숫자는 재원생 하나), 통계는 칸마다 제목 + «기준 한 줄».
+test("A-14 대시보드·통계: 카드는 묶음마다 제목, 큰 숫자는 주인공 하나, 장식 색 없음", () => {
   const dash = read("../src/app/admin/AdminDashboardClient.tsx");
-  assert.match(dash, />운영 규모<\/h3>/);
-  assert.match(dash, />이번 달 매출·출석·미납<\/h3>/);
-  for (const name of ["groups", "menu_book", "person_check", "layers"]) {
-    assert.ok(dash.includes(`<SymbolIcon name="${name}" size={20} className="text-[var(--color-academy-muted)]" />`), name);
+  const cards = read("../src/components/admin/DashboardSummaryCards.tsx");
+  const stats = read("../src/app/admin/stats/StatsClient.tsx");
+  assert.doesNotMatch(dash, /운영 현황|상세 데이터 불러오기/);
+  assert.match(dash, /<DashboardSummaryCards summary=\{summary\} \/>/);
+  for (const title of ["재원생", "이번 달 수강료 수납률", "이번 달 출석률", "이번 달 신규·퇴원", "체험 → 등록 (30일)", "유니폼 보유율"]) {
+    assert.ok(cards.includes(`title="${title}"`), title);
   }
-  // 운영 현황 카드 구역만(백업 상태 아이콘의 의미색은 그대로 둔다)
-  const cards = dash.slice(dash.indexOf(">운영 규모</h3>"), dash.indexOf(">이번 달 매출·출석·미납</h3>"));
-  assert.doesNotMatch(cards, /text-blue-500|text-emerald-500|text-purple-500/);
+  assert.equal((cards.match(/text-3xl/g) ?? []).length, 1, "큰 숫자는 재원생 하나");
+  // 옛 운영 현황 내용(운영 규모·매출·미납·프로그램별·최근 7일 신규)은 통계 탭에 있다
+  for (const title of ["운영 규모", "매출 추이", "미납 상위", "프로그램별 원생", "최근 7일 신규 원생", "출석률 추이"]) {
+    assert.ok(stats.includes(`title="${title}"`) || stats.includes(`title={`), title);
+    assert.ok(stats.includes(title), title);
+  }
+  for (const src of [cards, stats]) assert.doesNotMatch(src, /text-blue-500|text-emerald-500|text-purple-500|#[0-9a-fA-F]{6}/);
 });
 
 test("A-15 12px 미만 글자 제거(우선 화면) + 특강 셔틀 취소 44px·위험색", () => {

@@ -119,23 +119,4 @@ test("실제 수납 점검 입력 오류는 상세 안내를 보존하고 DB에 
   assert.equal(calls.length, 0);
 });
 
-test("자료 가져오기 이력은 실패 원문만 숨기며 성공·경고 및 원본 저장값은 유지", async () => {
-  const batches = [
-    { id: "failed", status: "FAILED", message: "DB SQL private-value", createdAt: new Date("2026-10-01T00:00:00Z"), completedAt: null },
-    { id: "complete", status: "COMPLETED", message: "원생 3명의 자료를 가져왔습니다.", createdAt: new Date("2026-10-01T00:00:00Z"), completedAt: null },
-    { id: "warning", status: "COMPLETED", message: "연락처가 없는 학생 1명은 직접 확인해 주세요.", createdAt: new Date("2026-10-01T00:00:00Z"), completedAt: null },
-  ];
-  const original = structuredClone(batches);
-  const route = load("src/app/api/admin/import-students/history/route.ts", {
-    "@/lib/user-facing-error": errors,
-    "next/server": { NextResponse: { json: (body, options) => ({ body, status: options?.status ?? 200 }) } },
-    "@/lib/auth-guard": { requireAdmin: async () => undefined },
-    "@/lib/prisma": { prisma: { $queryRawUnsafe: async (sql) => sql.includes('FROM "StudentSheetImportBatch"') ? batches : [] } },
-  });
-  const result = await route.GET();
-  assert.equal(result.status, 200);
-  assert.equal(result.body.batches[0].message, "자료 가져오기를 완료하지 못했습니다. 다시 시도해 주세요.");
-  assert.equal(result.body.batches[1].message, batches[1].message);
-  assert.equal(result.body.batches[2].message, batches[2].message);
-  assert.deepEqual(batches, original);
-});
+// (자료 가져오기 이력 API 시험은 2026-11-13 수강생 이관 도구 삭제와 함께 뺐다)

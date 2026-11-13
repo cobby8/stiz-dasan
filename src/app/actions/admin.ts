@@ -1179,6 +1179,10 @@ export async function updateStudentUniform(id: string, data: {
     }
     revalidatePath(`/admin/students/${id}`);
     revalidatePath("/admin/students");
+    // 2026-11-13: 유니폼 보유율이 대시보드 카드·통계 «유니폼» 탭에 나온다 → 저장 즉시 두 화면도 새로
+    revalidateTag("admin-stats", { expire: 0 });
+    revalidatePath("/admin/stats");
+    revalidatePath("/admin");
 }
 
 export async function updateStudent(id: string, data: {

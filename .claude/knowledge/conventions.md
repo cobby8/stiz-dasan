@@ -135,6 +135,7 @@
 - **분류**: convention
 - **발견자**: pm
 - **내용**: 화면·서버 액션·권한까지 다 만들고 **사이드바 NavItem 만 빠지면 URL 을 직접 치지 않는 한 아무도 못 쓴다.** 빌드·tsc·테스트가 전부 통과해서 아무 신호가 없다. 실측 2회 — ①2026-08-05 `/admin/payment-confirmations`(현장 수납 승인)가 경로 배열에만 있고 NavItem 이 없어 돈 처리가 방치 ②2026-08-09 `/admin/payment-requests`·`/admin/enrollment-changes` 의 메뉴 추가분이 다른 세션의 디자인 커밋에 딸려 들어갔고, 그 커밋을 revert 하자 **메뉴만 조용히 함께 사라졌다**(화면은 멀쩡히 남아 더 못 알아챈다). 그래서 관리자 화면을 추가하면 그 기능의 테스트에 "관리자 메뉴에서 도달할 수 있다"를 넣는다 — `AdminShellClient.tsx` 를 읽어 그 경로의 메뉴 항목이 있는지 본다. ⚠️ **2026-10-25 정정**: 셸이 `EXTRA_GROUPS` 하나로 통합돼 `OPS_PATHS`·`MORE_OPS_PATHS` 가 **없어졌다** — 옛 기준("경로 문자열 3회 이상")은 이제 맞지 않는다. 지금은 `["/admin/<경로>", "<메뉴명>", "<이모지>"]` 항목이 알맞은 묶음(업무별 상세 메뉴 / 홈페이지·소식 / 설정·도구) 안에 있는지를 단언한다. 예: `tests/account-withdrawal-admin.test.mjs` 의 「관리자 메뉴에서 탈퇴 신청 화면에 도달할 수 있다」. 🚫 이 단언을 "화면 파일이 존재한다"로 대체하지 말 것 — 사라지는 것은 언제나 링크 쪽이다.
+  ⚠️ **2026-11-13 정정(메뉴 정리)**: 사이드바 = 맨 위 6 + 묶음 «수업/홈페이지/설정» 15칸. 비슷한 화면은 **탭 줄**로 묶었다 — 목록은 `src/lib/admin-sections.ts` 한 곳(attendance·finance·homepage·messaging·policy), 셸이 `findAdminSection()` 으로 부모 메뉴를 켜고 화면 위에 `SectionTabs` 를 그린다(화면 파일은 안 건드림). 새 화면을 묶음에 넣으려면 **admin-sections.ts 에 탭 한 줄**, 아니면 `EXTRA_GROUPS` 의 `{ href, label, icon, section? }` 한 칸. 도달 검사는 `renderAdminNavigation(경로)` 로 렌더해 탭/메뉴 링크의 `aria-current` 를 본다(`tests/admin-menu-sections.test.mjs` 가 탭 연결 표 전체를 못박는다).
 - **참조횟수**: 0
 
 ### [2026-08-12] 날짜·시간은 @/lib/datetime/kst 한 곳에서만 — 가드 테스트로 강제

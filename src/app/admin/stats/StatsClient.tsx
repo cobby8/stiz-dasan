@@ -1,634 +1,643 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+// 통계 화면 — 2026-11-13 대시보드·통계 개편(원장 결정표 6칸 «추천대로» 승인)
+// 구성: 머리 한 줄(제목 «통계» + «필터(n)» 버튼) → 탭 5개(원생|유입·전환|수업·출결|수납|유니폼) → 그 탭 내용.
+//   - 탭·지점·기간은 주소(?tab=&branch=&period=)에 있다. 바꾸면 주소가 바뀌고 서버가 그 탭만 다시 읽는다.
+//   - 히어로 없음, 필터는 버튼 하나 + 창(모바일은 아래 시트) — 전역 «컴팩트 UI 규칙».
+//   - 숫자는 명/건/정수%, 분모 0 → «–», 금액 1만원 이상 «42.5만원», 칸 아래에 «무엇을 세었는지» 한 줄.
+import { useMemo, useState, useTransition, type MouseEvent } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import LineChart from "@/components/charts/LineChart";
-import BarChart from "@/components/charts/BarChart";
 import DonutChart from "@/components/charts/DonutChart";
+import StackedBar from "@/components/charts/StackedBar";
 import { CHART_COLORS } from "@/components/charts/chartColors";
+import AdminModal from "@/components/admin/AdminModal";
+import { GENDER_COLORS, HBarList, KpiCell, StatPanel, SymbolIcon, UNIFORM_COLORS } from "@/components/admin/stats/StatsBits";
+import {
+    STATS_BRANCHES,
+    STATS_PERIODS,
+    STATS_TABS,
+    UNIFORM_GROUPS,
+    formatKRW,
+    formatPoint,
+    formatRate,
+    rate,
+    type StatsBranchKey,
+    type StatsTabKey,
+} from "@/lib/stats/statsRules";
+import { sourceLabel } from "@/lib/stats/sourceLabels";
+import type {
+    StatsAttendanceTab,
+    StatsBillingTab,
+    StatsFunnelTab,
+    StatsStudentsTab,
+    StatsTabPayload,
+    StatsUniformTab,
+} from "@/lib/stats/statsTypes";
 
-// ── 타입 정의 ────────────────────────────────────────────────────────────────
-
-interface MonthlyRevenue {
-    month: string;
-    label: string;
-    amount: number;
-    count: number;
+/** 주소 만들기 — 기본값(전체 지점·탭 첫 기간)은 주소에서 뺀다 */
+function statsHref(tab: StatsTabKey, branch: StatsBranchKey, period: string) {
+    const params = new URLSearchParams({ tab });
+    if (branch !== "all") params.set("branch", branch);
+    const defaultPeriod = STATS_PERIODS[tab][0]?.key ?? "";
+    if (period && period !== defaultPeriod) params.set("period", period);
+    return `/admin/stats?${params.toString()}`;
 }
-
-interface MonthlyAttendance {
-    month: string;
-    label: string;
-    rate: number;
-    total: number;
-    present: number;
-}
-
-interface EnrollmentTrend {
-    month: string;
-    label: string;
-    newCount: number;
-    dropCount: number;
-}
-
-interface ClassCapacity {
-    id: string;
-    name: string;
-    dayOfWeek: string;
-    startTime: string;
-    endTime: string;
-    capacity: number;
-    enrolled: number;
-    remaining: number;
-    waiting: number;
-}
-
-interface TrialStats {
-    NEW: number;
-    CONTACTED: number;
-    SCHEDULED: number;
-    ATTENDED: number;
-    CONVERTED: number;
-    LOST: number;
-    total: number;
-    conversionRate: number;
-}
-
-interface CoachWorkload {
-    id: string;
-    name: string;
-    imageUrl: string | null;
-    classCount: number;
-    studentCount: number;
-}
-
-interface CollectionRate {
-    total: number;
-    paid: number;
-    unpaid: number;
-    rate: number;
-}
-
-interface StatsPayload {
-    monthlyRevenue: MonthlyRevenue[];
-    monthlyAttendance: MonthlyAttendance[];
-    enrollmentTrend: EnrollmentTrend[];
-    classCapacity: ClassCapacity[];
-    trialStats: TrialStats;
-    coachWorkload: CoachWorkload[];
-    collectionRate: CollectionRate;
-}
-
-type StatsClientProps = Partial<StatsPayload>;
-
-// ── 금액 포맷 함수 ──────────────────────────────────────────────────────────
-
-function formatKRW(n: number): string {
-    if (n >= 10000) return `${(n / 10000).toFixed(n % 10000 === 0 ? 0 : 1)}만원`;
-    return n.toLocaleString("ko-KR") + "원";
-}
-
-function StatsLoadingFallback() {
-    return (
-        <div className="mx-auto max-w-7xl space-y-8">
-            <div>
-                <div className="h-8 w-44 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                <div className="mt-2 h-4 w-80 max-w-full rounded bg-[var(--color-academy-soft)] animate-pulse" />
-            </div>
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-5 shadow-sm"
-                    >
-                        <div className="h-4 w-24 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                        <div className="mt-3 h-8 w-28 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                        <div className="mt-2 h-4 w-32 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                    </div>
-                ))}
-            </div>
-            <div className="flex gap-2">
-                <div className="h-8 w-24 rounded-full bg-[var(--color-academy-soft)] animate-pulse" />
-                <div className="h-8 w-24 rounded-full bg-[var(--color-academy-soft)] animate-pulse" />
-            </div>
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                {Array.from({ length: 4 }).map((_, index) => (
-                    <div
-                        key={index}
-                        className="rounded-2xl border border-[var(--color-academy-line)] bg-white p-6 shadow-sm"
-                    >
-                        <div className="mb-4 flex items-center gap-2">
-                            <div className="h-6 w-6 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                            <div className="h-5 w-32 rounded bg-[var(--color-academy-soft)] animate-pulse" />
-                        </div>
-                        <div className="flex h-[220px] items-end gap-3">
-                            {Array.from({ length: 8 }).map((_, barIndex) => (
-                                <div
-                                    key={barIndex}
-                                    className="flex-1 rounded-t bg-[var(--color-academy-soft)] animate-pulse"
-                                    style={{ height: `${36 + ((barIndex * 17) % 58)}%` }}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function StatsErrorState({ onRetry }: { onRetry: () => void }) {
-    return (
-        <div className="mx-auto max-w-7xl rounded-2xl border border-[var(--color-academy-line)] bg-white p-8 text-center shadow-sm">
-            <span className="material-symbols-outlined mb-3 text-4xl text-[var(--color-academy-danger)]">error</span>
-            <p className="font-bold text-[var(--color-academy-ink)]">운영 통계를 불러오지 못했습니다.</p>
-            <button
-                type="button"
-                onClick={onRetry}
-                className="mt-4 rounded-xl bg-[var(--color-academy-primary)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--color-academy-primary-hover)]"
-            >
-                다시 시도
-            </button>
-        </div>
-    );
-}
-
-// ── 메인 컴포넌트 ───────────────────────────────────────────────────────────
 
 export default function StatsClient({
-    monthlyRevenue: initialMonthlyRevenue,
-    monthlyAttendance: initialMonthlyAttendance,
-    enrollmentTrend: initialEnrollmentTrend,
-    classCapacity: initialClassCapacity,
-    trialStats: initialTrialStats,
-    coachWorkload: initialCoachWorkload,
-    collectionRate: initialCollectionRate,
-}: StatsClientProps) {
-    const initialData = initialMonthlyRevenue
-        && initialMonthlyAttendance
-        && initialEnrollmentTrend
-        && initialClassCapacity
-        && initialTrialStats
-        && initialCoachWorkload
-        && initialCollectionRate
-        ? {
-            monthlyRevenue: initialMonthlyRevenue,
-            monthlyAttendance: initialMonthlyAttendance,
-            enrollmentTrend: initialEnrollmentTrend,
-            classCapacity: initialClassCapacity,
-            trialStats: initialTrialStats,
-            coachWorkload: initialCoachWorkload,
-            collectionRate: initialCollectionRate,
-        }
-        : null;
-    const [statsData, setStatsData] = useState<StatsPayload | null>(() => initialData);
-    const [loading, setLoading] = useState(!initialData);
-    // 매출 추이 기간 선택 (6개월/12개월)
-    const [revenuePeriod, setRevenuePeriod] = useState<6 | 12>(6);
-
-    const loadStats = useCallback(async () => {
-        setLoading(true);
-
-        try {
-            const res = await fetch("/api/admin/stats");
-            if (!res.ok) throw new Error("Stats request failed");
-            setStatsData((await res.json()) as StatsPayload);
-        } catch {
-            setStatsData(null);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (statsData) return;
-        void loadStats();
-    }, [loadStats, statsData]);
-
-    if (!statsData && loading) {
-        return <StatsLoadingFallback />;
-    }
-
-    if (!statsData) {
-        return <StatsErrorState onRetry={loadStats} />;
-    }
-
-    const {
-        monthlyRevenue,
-        monthlyAttendance,
-        enrollmentTrend,
-        classCapacity,
-        trialStats,
-        coachWorkload,
-        collectionRate,
-    } = statsData;
-
-    // 선택 기간에 맞춰 데이터 슬라이싱
-    const revenueData = monthlyRevenue.slice(-revenuePeriod);
-    const attendanceData = monthlyAttendance.slice(-revenuePeriod);
-    const enrollData = enrollmentTrend.slice(-revenuePeriod);
-
-    // 이번 달/지난 달 매출 비교
-    const thisMonth = monthlyRevenue[monthlyRevenue.length - 1];
-    const lastMonth = monthlyRevenue.length > 1 ? monthlyRevenue[monthlyRevenue.length - 2] : null;
-    const revDiff = lastMonth && lastMonth.amount > 0
-        ? Math.round(((thisMonth?.amount ?? 0) - lastMonth.amount) / lastMonth.amount * 100)
-        : 0;
-
-    // 이번 달 출석률
-    const thisMonthAtt = monthlyAttendance[monthlyAttendance.length - 1];
-
-    // 요일 라벨 매핑
-    const dayLabel: Record<string, string> = {
-        Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일",
-    };
-
-    return (
-        <div className="max-w-7xl mx-auto space-y-8">
-            {/* 페이지 헤더 */}
-            <div>
-                {/* 설명문구 제거: 제목 + 기간 토글로 이미 자명 */}
-                <h1 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">상세 운영 통계</h1>
-            </div>
-
-            {/* ── KPI 요약 카드 4개 ────────────────────────────────────────── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* 이번 달 매출 */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 매출</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">
-                        {formatKRW(thisMonth?.amount ?? 0)}
-                    </h3>
-                    {lastMonth && lastMonth.amount > 0 && (
-                        <div className={`flex items-center gap-1 mt-1 text-xs font-medium ${revDiff >= 0 ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
-                            {/* Material Symbols 아이콘: 상승/하락 */}
-                            <span className="material-symbols-outlined text-sm">
-                                {revDiff >= 0 ? "trending_up" : "trending_down"}
-                            </span>
-                            전월 대비 {revDiff > 0 ? "+" : ""}{revDiff}%
-                        </div>
-                    )}
-                </div>
-
-                {/* 이번 달 출석률 */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 출석률</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">
-                        {thisMonthAtt?.rate ?? 0}%
-                    </h3>
-                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                        {thisMonthAtt?.present ?? 0}/{thisMonthAtt?.total ?? 0}건 출석
-                    </p>
-                </div>
-
-                {/* 수납률 */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">이번 달 수납률</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{collectionRate.rate}%</h3>
-                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                        {collectionRate.paid}/{collectionRate.total}건 납부
-                    </p>
-                </div>
-
-                {/* 체험 전환율 */}
-                <div className="bg-white p-5 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <p className="text-xs font-medium text-[var(--color-academy-muted)] mb-1">체험 전환율</p>
-                    <h3 className="text-2xl font-extrabold text-[var(--color-academy-ink)]">{trialStats.conversionRate}%</h3>
-                    <p className="text-xs text-[var(--color-academy-faint)] mt-1">
-                        {trialStats.CONVERTED}명 전환 / 전체 {trialStats.total}명
-                    </p>
-                </div>
-            </div>
-
-            {/* ── 기간 선택 토글 ──────────────────────────────────────────── */}
-            <div className="flex gap-2">
-                <button
-                    onClick={() => setRevenuePeriod(6)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                        revenuePeriod === 6
-                            ? "bg-[var(--color-academy-primary)] text-white"
-                            : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
-                    }`}
-                >
-                    최근 6개월
-                </button>
-                <button
-                    onClick={() => setRevenuePeriod(12)}
-                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                        revenuePeriod === 12
-                            ? "bg-[var(--color-academy-primary)] text-white"
-                            : "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-line)]"
-                    }`}
-                >
-                    최근 12개월
-                </button>
-            </div>
-
-            {/* ── 매출 + 출석률 추이 (LineChart) ──────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 매출 추이 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">payments</span>
-                        매출 추이
-                    </h3>
-                    <LineChart
-                        data={revenueData.map((d) => ({ label: d.label, value: d.amount }))}
-                        color={CHART_COLORS.series}
-                        height={220}
-                        formatValue={formatKRW}
-                    />
-                </div>
-
-                {/* 출석률 추이 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">event_available</span>
-                        출석률 추이
-                    </h3>
-                    <LineChart
-                        data={attendanceData.map((d) => ({ label: d.label, value: d.rate }))}
-                        color={CHART_COLORS.success}
-                        height={220}
-                        unit="%"
-                    />
-                </div>
-            </div>
-
-            {/* ── 원생 현황: 신규/퇴원 추이 + 반별 정원 ──────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* 신규/퇴원 추이 — 두 개의 LineChart를 겹쳐서 표현 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">group</span>
-                        신규 등록 / 퇴원 추이
-                    </h3>
-                    <div className="space-y-4">
-                        {/* 신규 등록 */}
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="w-3 h-3 rounded-full bg-[var(--color-academy-neutral)] inline-block" />
-                                <span className="text-xs text-[var(--color-academy-muted)]">신규 등록</span>
-                            </div>
-                            <LineChart
-                                data={enrollData.map((d) => ({ label: d.label, value: d.newCount }))}
-                                color={CHART_COLORS.bar}
-                                height={100}
-                                unit="명"
-                            />
-                        </div>
-                        {/* 퇴원 */}
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="w-3 h-3 rounded-full bg-[var(--color-academy-danger)] inline-block" />
-                                <span className="text-xs text-[var(--color-academy-muted)]">퇴원</span>
-                            </div>
-                            <LineChart
-                                data={enrollData.map((d) => ({ label: d.label, value: d.dropCount }))}
-                                color={CHART_COLORS.danger}
-                                height={100}
-                                unit="명"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* 반별 정원 대비 등록률 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">school</span>
-                        반별 등록 현황
-                    </h3>
-                    {classCapacity.length === 0 ? (
-                        <p className="text-sm text-[var(--color-academy-faint)] py-8 text-center">등록된 반이 없습니다</p>
-                    ) : (
-                        <BarChart
-                            data={classCapacity.map((c) => ({
-                                label: `${c.name}(${dayLabel[c.dayOfWeek] ?? c.dayOfWeek})`,
-                                value: c.enrolled,
-                                max: c.capacity,
-                            }))}
-                            color={CHART_COLORS.bar}
-                            height={220}
-                            unit="명"
-                            showMax={true}
-                        />
-                    )}
-                </div>
-            </div>
-
-            {/* ── 체험 전환 + 수납률 (DonutChart) ─────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 체험 전환율 도넛 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">handshake</span>
-                        체험 전환율
-                    </h3>
-                    <div className="flex justify-center">
-                        <DonutChart
-                            value={trialStats.CONVERTED}
-                            max={trialStats.ATTENDED + trialStats.CONVERTED}
-                            label="체험 참석 대비 전환"
-                            color={CHART_COLORS.series}
-                            size={160}
-                        />
-                    </div>
-                    {/* 파이프라인 요약 */}
-                    <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                        <PipelineItem label="신규" count={trialStats.NEW} color="blue" />
-                        <PipelineItem label="연락완료" count={trialStats.CONTACTED} color="yellow" />
-                        <PipelineItem label="예약" count={trialStats.SCHEDULED} color="purple" />
-                        <PipelineItem label="체험완료" count={trialStats.ATTENDED} color="green" />
-                        <PipelineItem label="등록전환" count={trialStats.CONVERTED} color="green" />{/* 등록전환 = 정상(success), PM 결정 11-09 */}
-                        <PipelineItem label="이탈" count={trialStats.LOST} color="red" />
-                    </div>
-                </div>
-
-                {/* 수납률 도넛 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">account_balance_wallet</span>
-                        이번 달 수납률
-                    </h3>
-                    <div className="flex justify-center">
-                        <DonutChart
-                            value={collectionRate.paid}
-                            max={collectionRate.total}
-                            label="납부 완료 비율"
-                            color={CHART_COLORS.success}
-                            size={160}
-                        />
-                    </div>
-                    <div className="mt-4 space-y-2">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-[var(--color-academy-muted)]">납부 완료</span>
-                            <span className="font-bold text-[var(--color-academy-success)]">{collectionRate.paid}건</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-[var(--color-academy-muted)]">미납</span>
-                            <span className="font-bold text-[var(--color-academy-danger)]">{collectionRate.unpaid}건</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* 전체 원생 흐름 요약 */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                    <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[var(--color-academy-muted)]">summarize</span>
-                        이번 달 원생 흐름
-                    </h3>
-                    {(() => {
-                        // 이번 달 데이터
-                        const thisEnroll = enrollmentTrend[enrollmentTrend.length - 1];
-                        const lastEnroll = enrollmentTrend.length > 1 ? enrollmentTrend[enrollmentTrend.length - 2] : null;
-                        return (
-                            <div className="space-y-4">
-                                <FlowItem
-                                    icon="person_add"
-                                    label="신규 등록"
-                                    value={thisEnroll?.newCount ?? 0}
-                                    prev={lastEnroll?.newCount ?? 0}
-                                    color="blue"
-                                />
-                                <FlowItem
-                                    icon="person_remove"
-                                    label="퇴원"
-                                    value={thisEnroll?.dropCount ?? 0}
-                                    prev={lastEnroll?.dropCount ?? 0}
-                                    color="red"
-                                    invertTrend
-                                />
-                                <FlowItem
-                                    icon="diversity_3"
-                                    label="체험 신청"
-                                    value={trialStats.NEW + trialStats.CONTACTED + trialStats.SCHEDULED}
-                                    color="orange"
-                                />
-                                <FlowItem
-                                    icon="how_to_reg"
-                                    label="체험 → 등록"
-                                    value={trialStats.CONVERTED}
-                                    color="green"
-                                />
-                                <div className="pt-2 border-t">
-                                    <div className="flex justify-between">
-                                        <span className="text-sm text-[var(--color-academy-muted)]">총 대기자</span>
-                                        <span className="font-bold text-[var(--color-academy-ink)]">
-                                            {classCapacity.reduce((s, c) => s + c.waiting, 0)}명
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })()}
-                </div>
-            </div>
-
-            {/* ── 코치 워크로드 ───────────────────────────────────────────── */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-[var(--color-academy-line)]">
-                <h3 className="font-bold text-[var(--color-academy-ink)] mb-4 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[var(--color-academy-muted)]">sports</span>
-                    코치별 워크로드
-                </h3>
-                {coachWorkload.length === 0 ? (
-                    <p className="text-sm text-[var(--color-academy-faint)] py-4">등록된 코치가 없습니다</p>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* 수업 수 막대 그래프 */}
-                        <div>
-                            <p className="text-sm text-[var(--color-academy-muted)] mb-2">담당 수업 수</p>
-                            <BarChart
-                                data={coachWorkload.map((c) => ({
-                                    label: c.name,
-                                    value: c.classCount,
-                                }))}
-                                color={CHART_COLORS.bar}
-                                height={180}
-                                unit="개"
-                            />
-                        </div>
-                        {/* 원생 수 막대 그래프 */}
-                        <div>
-                            <p className="text-sm text-[var(--color-academy-muted)] mb-2">담당 원생 수</p>
-                            <BarChart
-                                data={coachWorkload.map((c) => ({
-                                    label: c.name,
-                                    value: c.studentCount,
-                                }))}
-                                color={CHART_COLORS.bar}
-                                height={180}
-                                unit="명"
-                            />
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// ── 서브 컴포넌트 ───────────────────────────────────────────────────────────
-
-// 체험 파이프라인 항목
-function PipelineItem({ label, count, color }: { label: string; count: number; color: string }) {
-    const colorMap: Record<string, string> = {
-        blue: "bg-[var(--color-academy-soft)] text-[var(--color-academy-muted)]",
-        yellow: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
-        purple: "bg-[var(--color-academy-neutral)] text-[var(--color-academy-on-primary)]", // 차콜(중립 단색)로 구분
-        green: "bg-[var(--color-academy-success-soft)] text-[var(--color-academy-success)]",
-        orange: "bg-[var(--color-academy-warning-soft)] text-[var(--color-academy-warning)]",
-        red: "bg-[var(--color-academy-danger-soft)] text-[var(--color-academy-danger)]",
-    };
-    return (
-        <div className={`rounded-lg py-1.5 px-2 ${colorMap[color] ?? colorMap.blue}`}>
-            <p className="text-xs font-medium">{label}</p>
-            <p className="text-lg font-extrabold">{count}</p>
-        </div>
-    );
-}
-
-// 원생 흐름 항목 (이번 달 vs 전월 비교)
-function FlowItem({
-    icon,
-    label,
-    value,
-    prev,
-    color,
-    invertTrend = false,
+    tab,
+    branch,
+    period,
+    data,
 }: {
-    icon: string;
-    label: string;
-    value: number;
-    prev?: number;
-    color: string;
-    invertTrend?: boolean;
+    tab: StatsTabKey;
+    branch: StatsBranchKey;
+    period: string;
+    data: StatsTabPayload | null;
 }) {
-    const colorMap: Record<string, string> = {
-        blue: "text-[var(--color-academy-muted)]",
-        red: "text-[var(--color-academy-muted)]",
-        orange: "text-[var(--color-academy-muted)]",
-        green: "text-[var(--color-academy-muted)]",
-    };
+    const router = useRouter();
+    const [pending, startTransition] = useTransition();
+    const [filterOpen, setFilterOpen] = useState(false);
+    const defaultPeriod = STATS_PERIODS[tab][0]?.key ?? "";
+    // 필터 버튼 숫자 = 기본값과 다른 항목 수
+    const filterCount = (branch !== "all" ? 1 : 0) + (period && period !== defaultPeriod ? 1 : 0);
+    const branchName = STATS_BRANCHES.find((b) => b.key === branch)?.label ?? "전체";
+    const periodName = STATS_PERIODS[tab].find((p) => p.key === period)?.label ?? "";
 
-    // 전월 대비 변화 표시
-    const diff = prev !== undefined ? value - prev : null;
-    // invertTrend: 퇴원처럼 줄어든 게 좋은 경우
-    const isGood = diff !== null ? (invertTrend ? diff <= 0 : diff >= 0) : true;
+    // 탭·필터를 바꿀 때 «불러오는 중»을 보이려고 router.push 를 transition 안에서 부른다(가운데 클릭은 그대로 새 탭)
+    function go(href: string, event?: MouseEvent) {
+        if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)) return;
+        event?.preventDefault();
+        startTransition(() => router.push(href));
+    }
 
     return (
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <span className={`material-symbols-outlined text-lg ${colorMap[color] ?? ""}`}>{icon}</span>
-                <span className="text-sm text-[var(--color-academy-muted)]">{label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-                <span className="font-bold text-[var(--color-academy-ink)]">{value}명</span>
-                {diff !== null && diff !== 0 && (
-                    <span className={`text-xs font-medium ${isGood ? "text-[var(--color-academy-success)]" : "text-[var(--color-academy-danger)]"}`}>
-                        {diff > 0 ? "+" : ""}{diff}
-                    </span>
+        <div className="mx-auto max-w-7xl space-y-3">
+            {/* 머리 한 줄 — 제목 + 지금 거른 조건 + 필터 버튼 */}
+            <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <h1 className="academy-heading">통계</h1>
+                <p className="min-w-0 flex-1 text-sm text-[var(--color-academy-muted)]">
+                    {branchName}{periodName ? ` · ${periodName}` : ""}
+                    {pending && <span role="status" className="ml-2 font-bold text-[var(--color-academy-primary)]">불러오는 중…</span>}
+                </p>
+                <button type="button" onClick={() => setFilterOpen(true)} className="academy-button-secondary" aria-haspopup="dialog">
+                    <SymbolIcon name="tune" />
+                    필터{filterCount > 0 ? ` ${filterCount}` : ""}
+                </button>
+            </header>
+
+            <nav aria-label="통계 탭" className="flex gap-1 overflow-x-auto rounded-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] p-1">
+                {STATS_TABS.map((t) => {
+                    const on = t.key === tab;
+                    // 탭을 바꾸면 기간은 그 탭의 기본값으로(탭마다 기간의 뜻이 다르다), 지점은 유지
+                    const href = statsHref(t.key, branch, "");
+                    return (
+                        <Link
+                            key={t.key}
+                            href={href}
+                            prefetch={false}
+                            onClick={(e) => go(href, e)}
+                            aria-current={on ? "page" : undefined}
+                            className={`flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-sm font-bold transition-colors ${on
+                                ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)]"
+                                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"}`}
+                        >
+                            <SymbolIcon name={t.icon} />
+                            {t.label}
+                        </Link>
+                    );
+                })}
+            </nav>
+
+            <div className={pending ? "opacity-60 transition-opacity" : ""}>
+                {!data ? (
+                    <div role="alert" className="academy-panel p-6 text-center text-sm font-bold text-[var(--color-academy-danger)]">
+                        통계를 불러오지 못했습니다.
+                        <button type="button" onClick={() => go(statsHref(tab, branch, period))} className="academy-button-secondary ml-3">다시 시도</button>
+                    </div>
+                ) : data.tab === "students" ? (
+                    <StudentsView d={data} />
+                ) : data.tab === "funnel" ? (
+                    <FunnelView d={data} branchFiltered={branch !== "all"} />
+                ) : data.tab === "attendance" ? (
+                    <AttendanceView d={data} branchFiltered={branch !== "all"} />
+                ) : data.tab === "billing" ? (
+                    <BillingView d={data} />
+                ) : (
+                    <UniformView d={data} />
                 )}
             </div>
+
+            {filterOpen && (
+                <FilterSheet
+                    tab={tab}
+                    branch={branch}
+                    period={period}
+                    onClose={() => setFilterOpen(false)}
+                    onApply={(nextBranch, nextPeriod) => {
+                        setFilterOpen(false);
+                        go(statsHref(tab, nextBranch, nextPeriod));
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// ── 필터 창(모바일 아래 시트) ────────────────────────────────────────────
+
+function FilterSheet({
+    tab,
+    branch,
+    period,
+    onClose,
+    onApply,
+}: {
+    tab: StatsTabKey;
+    branch: StatsBranchKey;
+    period: string;
+    onClose: () => void;
+    onApply: (branch: StatsBranchKey, period: string) => void;
+}) {
+    const [nextBranch, setNextBranch] = useState<StatsBranchKey>(branch);
+    const [nextPeriod, setNextPeriod] = useState(period);
+    const periods = STATS_PERIODS[tab];
+    const chip = (on: boolean) =>
+        `inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-bold ${on
+            ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-[var(--color-academy-on-primary)]"
+            : "border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"}`;
+
+    return (
+        <AdminModal onClose={onClose} titleId="stats-filter-title" panelClassName="max-w-md">
+            <div className="flex items-center justify-between border-b border-[var(--color-academy-line)] px-4 py-3">
+                <h2 id="stats-filter-title" className="text-base font-extrabold text-[var(--color-academy-ink)]">필터</h2>
+                <button type="button" onClick={onClose} aria-label="닫기" className="grid h-11 w-11 place-items-center rounded-full hover:bg-[var(--color-academy-soft)]">
+                    <SymbolIcon name="close" size={22} />
+                </button>
+            </div>
+            <div className="space-y-5 px-4 py-4">
+                <fieldset>
+                    <legend className="mb-2 text-sm font-bold text-[var(--color-academy-ink)]">지점</legend>
+                    <div className="flex flex-wrap gap-2">
+                        {STATS_BRANCHES.map((b) => (
+                            <button key={b.key} type="button" aria-pressed={nextBranch === b.key} onClick={() => setNextBranch(b.key)} className={chip(nextBranch === b.key)}>
+                                {b.label}
+                            </button>
+                        ))}
+                    </div>
+                    {tab === "funnel" && <p className="mt-2 text-xs text-[var(--color-academy-muted)]">체험 문의·신청서에는 지점이 없어, 지점은 «재원생 가입경로»에만 적용돼요.</p>}
+                </fieldset>
+                {periods.length > 0 && (
+                    <fieldset>
+                        <legend className="mb-2 text-sm font-bold text-[var(--color-academy-ink)]">기간</legend>
+                        <div className="flex flex-wrap gap-2">
+                            {periods.map((p) => (
+                                <button key={p.key} type="button" aria-pressed={nextPeriod === p.key} onClick={() => setNextPeriod(p.key)} className={chip(nextPeriod === p.key)}>
+                                    {p.label}
+                                </button>
+                            ))}
+                        </div>
+                    </fieldset>
+                )}
+            </div>
+            <div className="flex gap-2 border-t border-[var(--color-academy-line)] px-4 py-3">
+                <button type="button" onClick={() => { setNextBranch("all"); setNextPeriod(periods[0]?.key ?? ""); }} className="academy-button-secondary">
+                    초기화
+                </button>
+                <button type="button" onClick={() => onApply(nextBranch, nextPeriod)} className="academy-button-primary flex-1 justify-center">
+                    적용
+                </button>
+            </div>
+        </AdminModal>
+    );
+}
+
+// ── 작은 그림들 ────────────────────────────────────────────────────────
+
+/** 세로 막대(금액 등) — 막대 위에 값 글자. 값이 0이면 글자를 비운다 */
+function ColumnChart({ rows, format, color = CHART_COLORS.series, ariaLabel }: { rows: { label: string; value: number }[]; format: (v: number) => string; color?: string; ariaLabel: string }) {
+    const max = Math.max(1, ...rows.map((r) => r.value));
+    return (
+        <div role="img" aria-label={`${ariaLabel}: ${rows.map((r) => `${r.label} ${format(r.value)}`).join(", ")}`} className="flex h-36 items-end gap-1">
+            {rows.map((r) => (
+                <div key={r.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                    <span className="hidden text-xs tabular-nums text-[var(--color-academy-muted)] sm:block">{r.value > 0 ? format(r.value) : ""}</span>
+                    <span className="w-full max-w-8 rounded-t" style={{ height: `${(r.value / max) * 100}%`, minHeight: r.value > 0 ? 2 : 0, background: color }} />
+                    <span className="whitespace-nowrap text-xs text-[var(--color-academy-muted)]">{r.label}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/** 월별 신규·퇴원 겹친 막대(검정 = 신규, 빨강 = 퇴원) */
+function FlowChart({ rows }: { rows: { label: string; newCount: number; leftCount: number }[] }) {
+    const max = Math.max(1, ...rows.flatMap((r) => [r.newCount, r.leftCount]));
+    return (
+        <div>
+            <div role="img" aria-label={`월별 신규·퇴원: ${rows.map((r) => `${r.label} 신규 ${r.newCount} 퇴원 ${r.leftCount}`).join(", ")}`} className="flex h-32 items-end gap-1">
+                {rows.map((r) => (
+                    <div key={r.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
+                        <span className="flex h-full w-full items-end justify-center gap-0.5">
+                            <span className="w-1/2 max-w-3 rounded-t" style={{ height: `${(r.newCount / max) * 100}%`, minHeight: r.newCount > 0 ? 2 : 0, background: CHART_COLORS.series }} title={`${r.label} 신규 ${r.newCount}명`} />
+                            <span className="w-1/2 max-w-3 rounded-t" style={{ height: `${(r.leftCount / max) * 100}%`, minHeight: r.leftCount > 0 ? 2 : 0, background: CHART_COLORS.danger }} title={`${r.label} 퇴원 ${r.leftCount}명`} />
+                        </span>
+                        <span className="whitespace-nowrap text-xs text-[var(--color-academy-muted)]">{r.label}</span>
+                    </div>
+                ))}
+            </div>
+            <p className="mt-1 flex gap-3 text-xs text-[var(--color-academy-muted)]">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: CHART_COLORS.series }} aria-hidden="true" />신규</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ background: CHART_COLORS.danger }} aria-hidden="true" />퇴원</span>
+            </p>
+        </div>
+    );
+}
+
+/** 비율 줄(이름 · 막대 · 정수% (분자/분모)) — 지점별·학년별 보유율 */
+function RateRows({ rows }: { rows: { label: string; owned: number; total: number; rate: number | null }[] }) {
+    if (rows.length === 0) return <p className="py-3 text-sm text-[var(--color-academy-muted)]">자료가 없습니다</p>;
+    return (
+        <ul className="space-y-1">
+            {rows.map((r) => (
+                <li key={r.label} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-2 text-sm">
+                    <span className="text-[var(--color-academy-ink)]">{r.label}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
+                        <span className="block h-full rounded-full" style={{ width: `${r.rate ?? 0}%`, background: CHART_COLORS.success }} />
+                    </span>
+                    <span className="text-right tabular-nums">
+                        <b className="text-[var(--color-academy-ink)]">{formatRate(r.rate)}</b>
+                        <span className="ml-1 text-xs text-[var(--color-academy-muted)]">{r.owned}/{r.total}</span>
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+const ymText = (ym: string | null) => (ym ? `${ym.slice(0, 4)}년 ${Number(ym.slice(5, 7))}월` : "");
+
+// ── 원생 ──────────────────────────────────────────────────────────────
+
+function StudentsView({ d }: { d: StatsStudentsTab }) {
+    const genderSegments = (g: { male: number; female: number; unknown: number }) => [
+        { label: "남", value: g.male, color: GENDER_COLORS.male },
+        { label: "여", value: g.female, color: GENDER_COLORS.female },
+        { label: "미입력", value: g.unknown, color: GENDER_COLORS.unknown },
+    ];
+    return (
+        <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+                <KpiCell label="재원생" value={`${d.active}명`} />
+                <KpiCell label="이번 달 신규" value={`${d.newThisMonth}명`} />
+                <KpiCell label="이번 달 퇴원" value={`${d.leftThisMonth}명`} tone={d.leftThisMonth > 0 ? "danger" : "ink"} />
+            </div>
+            <div className="grid items-start gap-2 lg:grid-cols-2">
+                <StatPanel
+                    title="학년 구성"
+                    note="학년 = 생년월일·3월 학년도 기준(1·2월은 전년도) · 재원생"
+                    action={d.gradeNeedsCheck > 0 ? (
+                        <span className="rounded px-2 py-0.5 text-xs font-bold text-[var(--color-academy-warning)] bg-[var(--color-academy-warning-soft)]" title="원생 칸에 적힌 학년과 생년월일로 계산한 학년이 다른 원생">
+                            학년 확인 필요 {d.gradeNeedsCheck}명
+                        </span>
+                    ) : undefined}
+                >
+                    <HBarList rows={d.grades} />
+                </StatPanel>
+                <StatPanel title="성비" note="재원생 · 원생 칸 «성별» 기준(남자·남·MALE 등 표기는 하나로 모음)">
+                    <StackedBar segments={genderSegments(d.genderTotal)} ariaLabel="전체 성비" />
+                    <ul className="mt-3 space-y-1.5">
+                        {d.genderByBand.map((row) => (
+                            <li key={row.band} className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-sm">
+                                <span className="text-[var(--color-academy-ink)]">{row.band}</span>
+                                <StackedBar height={8} showLegend={false} segments={genderSegments(row)} ariaLabel={`${row.band} 성비`} />
+                                <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">남 {row.male} · 여 {row.female}{row.unknown ? ` · ? ${row.unknown}` : ""}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </StatPanel>
+                <StatPanel title="지점별 재원생" note="지점 = 원생 칸 «지점» → 비어 있으면 수강 반 장소 → 그래도 없으면 미지정">
+                    <StackedBar
+                        segments={d.branches.map((b, i) => ({ label: `${b.label} ${formatRate(rate(b.count, d.active))}`, value: b.count, color: [CHART_COLORS.series, CHART_COLORS.bar, "var(--color-academy-line)", "var(--color-academy-faint)"][i] ?? CHART_COLORS.bar }))}
+                        ariaLabel="지점별 재원생"
+                    />
+                </StatPanel>
+                <StatPanel title="신규·퇴원 (월별)" note={`원생 단위 · 신규 = 첫 수강 달, 퇴원 = 수강이 모두 끝난 달 · 사이트 기록 시작${d.flowSince ? `(${ymText(d.flowSince)})` : ""} 이후`}>
+                    <FlowChart rows={d.flow} />
+                </StatPanel>
+                <StatPanel title="프로그램별 원생" note="재원생의 수강 중인 프로그램(두 프로그램을 들으면 양쪽에 셈)">
+                    <HBarList rows={d.programs} emptyText="수강 중인 프로그램이 없습니다" />
+                </StatPanel>
+                <StatPanel title="최근 7일 신규 원생" note="원생 등록일 기준 · 최대 10명">
+                    {d.recent.length === 0 ? (
+                        <p className="py-2 text-sm text-[var(--color-academy-muted)]">최근 등록된 원생이 없습니다.</p>
+                    ) : (
+                        <ul className="divide-y divide-[var(--color-academy-line)]">
+                            {d.recent.map((s) => (
+                                <li key={s.id}>
+                                    <Link href={`/admin/students/${s.id}`} prefetch={false} className="flex min-h-11 items-center gap-3 rounded-lg px-1 text-sm hover:bg-[var(--color-academy-soft)]">
+                                        <span className="font-bold text-[var(--color-academy-ink)]">{s.name}</span>
+                                        <span className="min-w-0 flex-1 text-xs text-[var(--color-academy-muted)]">학부모 {s.parentName ?? "-"}</span>
+                                        <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">{s.createdLabel.replace("-", "/")}</span>
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </StatPanel>
+            </div>
+        </div>
+    );
+}
+
+// ── 유입·전환 ─────────────────────────────────────────────────────────
+
+const TRIAL_STATUS_CELLS: { key: keyof StatsFunnelTab["trialStatus"]; label: string }[] = [
+    { key: "NEW", label: "신규" },
+    { key: "CONTACTED", label: "연락완료" },
+    { key: "SCHEDULED", label: "체험예정" },
+    { key: "ATTENDED", label: "체험완료" },
+    { key: "CONVERTED", label: "등록전환" },
+    { key: "LOST", label: "이탈" },
+];
+
+function FunnelView({ d, branchFiltered }: { d: StatsFunnelTab; branchFiltered: boolean }) {
+    const maxTotal = d.sources.reduce((max, row) => Math.max(max, row.total), 0);
+    return (
+        <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <KpiCell label="체험 문의" value={`${d.inquiries}건`} />
+                <KpiCell label="체험 참석" value={`${d.attended}건`} sub={formatRate(rate(d.attended, d.inquiries))} />
+                <KpiCell label="등록" value={`${d.converted}건`} />
+                <KpiCell label="전환율" value={formatRate(d.conversionRate)} sub="등록 ÷ 문의" />
+            </div>
+            <div className="grid items-start gap-2 lg:grid-cols-2">
+                <StatPanel title="단계" note={`체험 참석 = 체험완료·등록전환 · 같은 기간 수강신청 ${d.applications}건(승인 ${d.approved}건)`}>
+                    <HBarList
+                        unit="건"
+                        color={CHART_COLORS.series}
+                        rows={[
+                            { label: "문의", count: d.inquiries },
+                            { label: "체험 참석", count: d.attended, sub: formatRate(rate(d.attended, d.inquiries)) },
+                            { label: "등록", count: d.converted, sub: formatRate(rate(d.converted, d.inquiries)) },
+                        ]}
+                    />
+                </StatPanel>
+                <StatPanel title="체험 상태" note={d.trialStatus.CANCELLED > 0 ? `취소 ${d.trialStatus.CANCELLED}건은 따로 셈` : "기간 안에 접수된 체험 문의의 지금 상태"}>
+                    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                        {TRIAL_STATUS_CELLS.map((c) => (
+                            <div key={c.key} className="rounded-lg bg-[var(--color-academy-soft)] px-2 py-1.5 text-center">
+                                <p className="text-base font-extrabold tabular-nums text-[var(--color-academy-ink)]">{d.trialStatus[c.key]}</p>
+                                <p className="text-xs text-[var(--color-academy-muted)]">{c.label}</p>
+                            </div>
+                        ))}
+                    </div>
+                </StatPanel>
+            </div>
+            {/* 신청 화면 «유입 통계» 탭에 있던 표를 옮겨 왔다(같은 쿼리·같은 라벨) */}
+            <StatPanel title="유입경로별" note="체험 문의 + 수강신청 · 등록 = 등록전환 + 승인 · 신청서에 고른 경로 기준">
+                <div className="-mx-3 overflow-x-auto sm:-mx-4">
+                    <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                        <thead className="bg-[var(--color-academy-soft)] text-xs font-bold text-[var(--color-academy-muted)]">
+                            <tr>
+                                <th className="px-3 py-2">유입경로</th>
+                                <th className="px-3 py-2 text-right">전체</th>
+                                <th className="px-3 py-2 text-right">체험</th>
+                                <th className="px-3 py-2 text-right">수강신청</th>
+                                <th className="px-3 py-2 text-right">등록</th>
+                                <th className="px-3 py-2 text-right">전환율</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--color-academy-line)] tabular-nums">
+                            {d.sources.length === 0 ? (
+                                <tr><td colSpan={6} className="px-3 py-6 text-center text-[var(--color-academy-muted)]">선택한 기간에 접수된 신청이 없습니다.</td></tr>
+                            ) : d.sources.map((row) => (
+                                <tr key={row.source}>
+                                    <td className="px-3 py-2">
+                                        <span className="font-bold text-[var(--color-academy-ink)]">{sourceLabel(row.source)}</span>
+                                        <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
+                                            <span className="block h-full rounded-full bg-[var(--color-academy-primary)]" style={{ width: `${maxTotal > 0 ? Math.max(8, Math.round((row.total / maxTotal) * 100)) : 0}%` }} />
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-bold">{row.total}</td>
+                                    <td className="px-3 py-2 text-right">{row.trialTotal}<span className="ml-1 text-xs text-[var(--color-academy-muted)]">완료 {row.trialAttended}</span></td>
+                                    <td className="px-3 py-2 text-right">{row.enrollTotal}<span className="ml-1 text-xs text-[var(--color-academy-muted)]">대기 {row.enrollPending}</span></td>
+                                    <td className="px-3 py-2 text-right">{row.trialConverted + row.enrollApproved}</td>
+                                    <td className="px-3 py-2 text-right font-bold">{row.total > 0 ? `${row.conversionRate}%` : "–"}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </StatPanel>
+            <StatPanel title="재원생 가입경로" note={`재원생 ${d.referralTotal}명 · 원생 칸 «가입경로» 기준(옛 시트 문장은 같은 이름으로 모음)${branchFiltered ? " · 지점 필터 적용" : ""}`}>
+                <HBarList rows={d.referral} />
+            </StatPanel>
+        </div>
+    );
+}
+
+// ── 수업·출결 ─────────────────────────────────────────────────────────
+
+const DAY_KO: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
+
+function AttendanceView({ d, branchFiltered }: { d: StatsAttendanceTab; branchFiltered: boolean }) {
+    // 꽉 찬 반이 먼저 보이게 채움 비율이 높은 순
+    const classes = useMemo(
+        () => [...d.classes].sort((a, b) => (b.capacity > 0 ? b.enrolled / b.capacity : 0) - (a.capacity > 0 ? a.enrolled / a.capacity : 0) || a.name.localeCompare(b.name, "ko")),
+        [d.classes],
+    );
+    const trend = d.series.filter((m) => m.rate !== null).map((m) => ({ label: m.label, value: m.rate ?? 0 }));
+    return (
+        <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <KpiCell label="이번 달 출석률" value={formatRate(d.rate)} sub={`전월 대비 ${formatPoint(d.diff)}`} />
+                <KpiCell label="결석" value={`${d.absent}건`} sub={`출결 기록 ${d.total}건 중`} />
+                <KpiCell label="지각" value={`${d.late}건`} sub="출석으로 셈" />
+                <KpiCell label="대기자" value={`${d.waiting}명`} sub="반 대기 명단" />
+            </div>
+            <div className="grid items-start gap-2 lg:grid-cols-2">
+                <StatPanel title="출석률 추이" note={`출석률 = (출석 + 지각) ÷ 출결 기록 전체(결석·사유결석 포함) · 수업 날짜(KST) 기준${branchFiltered ? " · 지점 필터 = 원생 지점" : ""}`}>
+                    <LineChart data={trend} unit="%" color={CHART_COLORS.success} height={180} />
+                </StatPanel>
+                <StatPanel title="운영 규모" note="지점 구분 없음 · 프로그램은 삭제한 것 제외">
+                    <div className="grid grid-cols-3 gap-2">
+                        <KpiCell label="운영 프로그램" value={`${d.scale.programs}개`} />
+                        <KpiCell label="개설 반" value={`${d.scale.classes}개`} />
+                        <KpiCell label="코치/강사진" value={`${d.scale.coaches}명`} />
+                    </div>
+                </StatPanel>
+                <StatPanel title="반별 정원 대비 인원" note="수강 중 인원 ÷ 반 정원 · 꽉 찬 반은 빨강 · 지점 = 반 장소">
+                    {classes.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">반이 없습니다.</p> : (
+                        <ul className="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
+                            {classes.map((c) => {
+                                const full = c.capacity > 0 && c.enrolled >= c.capacity;
+                                return (
+                                    <li key={c.id} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-sm">
+                                        <span className="min-w-0">
+                                            <span className="block truncate font-bold text-[var(--color-academy-ink)]" title={c.name}>{c.name}</span>
+                                            <span className="text-xs text-[var(--color-academy-muted)]">{DAY_KO[c.dayOfWeek] ?? c.dayOfWeek} {c.startTime}</span>
+                                        </span>
+                                        <span className="h-2 overflow-hidden rounded-full bg-[var(--color-academy-soft)]">
+                                            <span className="block h-full rounded-full" style={{ width: `${c.capacity > 0 ? Math.min(100, (c.enrolled / c.capacity) * 100) : 0}%`, background: full ? CHART_COLORS.danger : CHART_COLORS.bar }} />
+                                        </span>
+                                        <span className={`text-right tabular-nums ${full ? "font-bold text-[var(--color-academy-danger)]" : "text-[var(--color-academy-ink)]"}`}>
+                                            {c.enrolled}/{c.capacity}명{c.waiting > 0 ? <span className="ml-1 text-xs text-[var(--color-academy-muted)]">대기 {c.waiting}</span> : null}
+                                        </span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                </StatPanel>
+                <StatPanel title="코치별 담당" note="시간표에 배정된 반·그 반의 수강 중 원생 · 지점 구분 없음">
+                    {d.coaches.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">코치가 없습니다.</p> : (
+                        <ul className="divide-y divide-[var(--color-academy-line)] text-sm">
+                            {d.coaches.map((c) => (
+                                <li key={c.id} className="flex min-h-11 items-center gap-3">
+                                    <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">{c.name}</span>
+                                    <span className="tabular-nums text-[var(--color-academy-muted)]">반 <b className="text-[var(--color-academy-ink)]">{c.classCount}</b></span>
+                                    <span className="w-16 text-right tabular-nums text-[var(--color-academy-muted)]">원생 <b className="text-[var(--color-academy-ink)]">{c.studentCount}</b></span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </StatPanel>
+            </div>
+        </div>
+    );
+}
+
+// ── 수납 ──────────────────────────────────────────────────────────────
+
+function BillingView({ d }: { d: StatsBillingTab }) {
+    const monthName = `${Number(d.ym.slice(5, 7))}월`;
+    return (
+        <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <KpiCell label={`${monthName} 수납률`} value={formatRate(d.rateAmount)} sub={`금액 기준 · 건 기준 ${formatRate(d.rateCount)}`} />
+                <KpiCell label={`${monthName} 미납`} value={`${d.unpaidCount}건`} sub={formatKRW(d.unpaidAmount)} tone={d.unpaidCount > 0 ? "danger" : "ink"} />
+                <KpiCell
+                    label={`${monthName} 매출`}
+                    value={formatKRW(d.revenue)}
+                    sub={d.revenueDiffPct === null ? "전월 대비 –" : `전월 대비 ${d.revenueDiffPct > 0 ? "+" : ""}${d.revenueDiffPct}%`}
+                />
+                <KpiCell label="전월 매출" value={formatKRW(d.prevRevenue)} />
+            </div>
+            <div className="grid items-start gap-2 lg:grid-cols-2">
+                <StatPanel title={`${monthName} 수강료 수납`} note="수강료 청구 기준(청구 달 = 이번 달) · 취소·환불 제외 · 미납 = 대기·연체">
+                    <div className="flex flex-wrap items-center gap-4">
+                        <DonutChart value={d.paidAmount} max={d.billedAmount} label="금액 기준" color={CHART_COLORS.success} size={120} />
+                        <dl className="grid flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm tabular-nums">
+                            <dt className="text-[var(--color-academy-muted)]">청구</dt><dd className="text-right">{d.billedCount}건 · {formatKRW(d.billedAmount)}</dd>
+                            <dt className="text-[var(--color-academy-muted)]">수납</dt><dd className="text-right text-[var(--color-academy-success)]">{d.paidCount}건 · {formatKRW(d.paidAmount)}</dd>
+                            <dt className="text-[var(--color-academy-muted)]">미납</dt><dd className="text-right font-bold text-[var(--color-academy-danger)]">{d.unpaidCount}건 · {formatKRW(d.unpaidAmount)}</dd>
+                        </dl>
+                    </div>
+                </StatPanel>
+                <StatPanel title="매출 추이" note="매출 = 그 달(입금일 KST)에 수납 완료된 금액 · 수강료·셔틀·유니폼 등 모든 종류">
+                    <ColumnChart rows={d.revenueSeries.map((m) => ({ label: m.label, value: m.amount }))} format={formatKRW} ariaLabel="월별 매출" />
+                </StatPanel>
+            </div>
+            <StatPanel
+                title="미납 상위"
+                note={`누적 미납 ${d.overdue.count}건 · ${formatKRW(d.overdue.amount)} — 이번 달까지 청구분 중 대기·연체, 모든 종류`}
+                action={<Link href="/admin/finance" prefetch={false} className="inline-flex min-h-11 items-center text-sm font-bold text-[var(--color-academy-primary)]">청구·수납 열기 →</Link>}
+            >
+                {d.topUnpaid.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">미납이 없습니다.</p> : (
+                    <ul className="divide-y divide-[var(--color-academy-line)] text-sm">
+                        {d.topUnpaid.map((u) => (
+                            <li key={u.studentId}>
+                                <Link href={`/admin/students/${u.studentId}`} prefetch={false} className="flex min-h-11 items-center gap-3 rounded-lg px-1 hover:bg-[var(--color-academy-soft)]">
+                                    <span className="min-w-0 flex-1 font-bold text-[var(--color-academy-ink)]">{u.name}</span>
+                                    <span className="tabular-nums text-[var(--color-academy-muted)]">{u.count}건</span>
+                                    <span className="w-20 text-right font-bold tabular-nums text-[var(--color-academy-danger)]">{formatKRW(u.amount)}</span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </StatPanel>
+        </div>
+    );
+}
+
+// ── 유니폼 ────────────────────────────────────────────────────────────
+
+function UniformView({ d }: { d: StatsUniformTab }) {
+    const [group, setGroup] = useState<string>("전체");
+    const count = (label: string) => d.segments.find((s) => s.label === label)?.count ?? 0;
+    const list = group === "전체" ? d.list : d.list.filter((s) => s.group === group);
+    return (
+        <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <KpiCell label="보유율" value={formatRate(d.rate)} sub={`재원생 ${d.total}명 중`} tone="success" />
+                <KpiCell label="보유" value={`${d.owned}명`} sub="보유·수령완료" />
+                <KpiCell label="진행 중" value={`${count("진행 중")}명`} sub="신청·주문·미수령" />
+                <KpiCell label="확인 필요" value={`${count("확인 필요")}명`} sub="확인보류·빈칸" />
+            </div>
+            <div className="grid items-start gap-2 lg:grid-cols-2">
+                <StatPanel title="상태 비율" note="분모 = 재원생 전체(확인 필요·해당없음 포함) · 없음 = 미보유·미신청">
+                    <StackedBar segments={d.segments.map((s) => ({ label: s.label, value: s.count, color: UNIFORM_COLORS[s.label] ?? CHART_COLORS.bar }))} ariaLabel="유니폼 상태 비율" />
+                </StatPanel>
+                <StatPanel title="3년 무료 증정" note="수강 3년 이상 원생에게 발급한 무료 쿠폰(발급 = 아직 안 씀)">
+                    <div className="grid grid-cols-3 gap-2">
+                        <KpiCell label="발급(미사용)" value={`${d.grants.issued}건`} />
+                        <KpiCell label="사용" value={`${d.grants.used}건`} />
+                        <KpiCell label="회수" value={`${d.grants.revoked}건`} />
+                    </div>
+                </StatPanel>
+                <StatPanel title="지점별 보유율">
+                    <RateRows rows={d.byBranch} />
+                </StatPanel>
+                <StatPanel title="학년별 보유율" note="학년 = 생년월일·3월 학년도 기준">
+                    <RateRows rows={d.byGrade} />
+                </StatPanel>
+            </div>
+            <StatPanel title="원생별 명단" note="누르면 그 원생의 유니폼 칸으로 갑니다 · 수령일 = 학원 수령일">
+                {/* 상태 칩으로 거르기(알약 = 누르는 칩, 줄의 상태 표시는 4px 모서리) */}
+                <div role="group" aria-label="유니폼 상태로 거르기" className="mb-2 flex flex-wrap gap-1.5">
+                    {["전체", ...UNIFORM_GROUPS].map((g) => {
+                        const n = g === "전체" ? d.list.length : count(g);
+                        const on = group === g;
+                        return (
+                            <button key={g} type="button" aria-pressed={on} onClick={() => setGroup(g)}
+                                className={`inline-flex min-h-11 items-center gap-1 rounded-full border px-3 text-sm font-bold ${on
+                                    ? "border-[var(--color-academy-ink)] bg-[var(--color-academy-ink)] text-[var(--color-academy-on-primary)]"
+                                    : "border-[var(--color-academy-line-input)] text-[var(--color-academy-ink)] hover:bg-[var(--color-academy-soft)]"}`}>
+                                {g} <span className="tabular-nums">{n}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+                {list.length === 0 ? <p className="py-2 text-sm text-[var(--color-academy-muted)]">해당 원생이 없습니다.</p> : (
+                    <ul className="max-h-[32rem] divide-y divide-[var(--color-academy-line)] overflow-y-auto text-sm">
+                        {list.map((s) => (
+                            <li key={s.id}>
+                                <Link href={`/admin/students/${s.id}#student-uniform`} prefetch={false} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg px-1 py-1 hover:bg-[var(--color-academy-soft)]">
+                                    <span className="w-20 shrink-0 font-bold text-[var(--color-academy-ink)]">{s.name}</span>
+                                    <span className="rounded px-1.5 py-0.5 text-xs font-bold" style={{ color: UNIFORM_COLORS[s.group] ?? "var(--color-academy-muted)", background: "var(--color-academy-soft)" }}>{s.status}</span>
+                                    <span className="min-w-0 flex-1 text-xs text-[var(--color-academy-muted)]">{s.classes || "반 없음"} · {s.branch}</span>
+                                    <span className="text-xs tabular-nums text-[var(--color-academy-muted)]">{s.receivedYmd ? `수령 ${s.receivedYmd.slice(2).replace(/-/g, ".")}` : ""}</span>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </StatPanel>
+            <StatPanel title="주문 사이즈 분포" note={`주문 기준 — 유니폼 주문서의 학생 이름이 재원생 이름과 같은 ${d.sizes.matchedStudents}명의 주문 수량(취소 제외)`}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <h3 className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">상의</h3>
+                        <HBarList rows={d.sizes.top} unit="벌" emptyText="주문 기록이 없습니다" />
+                    </div>
+                    <div>
+                        <h3 className="mb-1 text-xs font-bold text-[var(--color-academy-muted)]">하의</h3>
+                        <HBarList rows={d.sizes.bottom} unit="벌" emptyText="주문 기록이 없습니다" />
+                    </div>
+                </div>
+            </StatPanel>
         </div>
     );
 }

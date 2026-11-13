@@ -1,5 +1,6 @@
 "use client";
 import { adminErrorText } from "@/components/admin/adminDisplayText";
+import { SOURCE_LABELS } from "@/lib/stats/sourceLabels";
 
 import { formatClassLabel } from "@/lib/application-display-format";
 import { formatEnrollmentMonthsShort, formatEnrollmentStartOn, formatPreferredSlotsShort } from "@/lib/enrollment-application-display";
@@ -261,23 +262,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string
     CANCELLED: { label: "취소", color: statusToneClass("neutral"), icon: "block" },
 };
 
-// 유입경로 라벨 (9개 + 레거시 호환)
-const SOURCE_LABELS: Record<string, string> = {
-    REFERRAL: "지인소개",
-    PASSBY: "지나가다 발견",
-    NAVER_SEARCH: "네이버 키워드 검색",
-    NAVER_BLOG: "네이버 블로그",
-    PORTAL_OTHER: "기타 포털검색",
-    INSTAGRAM: "인스타그램",
-    SOOMGO: "숨고",
-    EXISTING_STUDENT: "기존 수강생",
-    OTHER: "기타",
-    // 레거시 호환 (기존 데이터용)
-    WEBSITE: "홈페이지",
-    NAVER: "네이버",
-    FLYER: "전단지",
-    UNKNOWN: "미입력",
-};
+// 유입경로 라벨 (9개 + 레거시 호환) — 2026-11-13 통계 «유입·전환» 탭과 같은 표를 쓰도록 src/lib/stats/sourceLabels.ts 로 옮겼다
 
 const STATUS_ORDER = ["PENDING", "APPROVED", "REJECTED", "CANCELLED"] as const;
 const APPLICATION_PAGE_SIZE = 50;
@@ -471,7 +456,8 @@ export default function ApplyAdminClient({
     const [searchQuery, setSearchQuery] = useState("");
     const [visibleLimit, setVisibleLimit] = useState(APPLICATION_PAGE_SIZE);
     // 처음 열 탭 — 모드가 정한다(설정 모드는 유입 통계부터)
-    const [activeTab, setActiveTab] = useState<TabType>(embedded ? (mode as TabType) : mode === "settings" ? "sources" : "trial");
+    // 신청 설정(⚙)은 «안내 설정» 하나 — 유입 통계는 2026-11-13 통계 «유입·전환» 탭으로 옮겼다(옛 /admin/apply 전체 화면엔 남는다)
+    const [activeTab, setActiveTab] = useState<TabType>(embedded ? (mode as TabType) : mode === "settings" ? "settings" : "trial");
     const [feedback, setFeedback] = useState<FeedbackState>(null);
     const [sourceStatsRange, setSourceStatsRange] = useState<SourceStatsRange>("30D");
     const [sourceStatsData, setSourceStatsData] = useState<SourceStatsPayload | null>(null);
@@ -1055,7 +1041,7 @@ export default function ApplyAdminClient({
             )}
 
             {/* 업무 탭 — 드롭다운을 열지 않아도 다섯 업무와 처리할 건수가 한눈에 보이게 한 줄로 펼친다.
-                신청함에 끼운 화면은 탭 줄이 없다(신청함 탭이 대신한다). 신청 설정은 통계·안내 두 탭만. */}
+                신청함에 끼운 화면은 탭 줄이 없다(신청함 탭이 대신한다). 신청 설정은 «안내 설정» 한 탭만(유입 통계 → 통계 «유입·전환»). */}
             {!embedded && (
             <div role="group" aria-label="신청 관리 업무" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
                 {([
@@ -1064,7 +1050,7 @@ export default function ApplyAdminClient({
                     { key: "waitlist", label: "대기자", icon: "hourglass_top", count: 0, countLabel: "" },
                     { key: "sources", label: "유입 통계", icon: "insights", count: 0, countLabel: "" },
                     { key: "settings", label: "안내 설정", icon: "tune", count: 0, countLabel: "" },
-                ] as const).filter(tab => mode !== "settings" || tab.key === "sources" || tab.key === "settings").map(tab => {
+                ] as const).filter(tab => mode !== "settings" || tab.key === "settings").map(tab => {
                     const active = activeTab === tab.key;
                     return (
                         <button

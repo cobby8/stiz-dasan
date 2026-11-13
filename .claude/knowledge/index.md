@@ -3,7 +3,7 @@
 ## 파일별 요약
 | 파일 | 항목 수 | 최종 업데이트 |
 |------|--------|------------|
-| architecture.md | 20 (주제별 묶음, 11-10 정리) | 2026-11-13 |
+| architecture.md | 21 (주제별 묶음, 11-10 정리) | 2026-11-13 |
 | errors.md | 17 | 2026-11-12 |
 | conventions.md | 31 (30 초과 — 다음 추가 때 병합) | 2026-11-10 |
 | decisions.md | 20 | 2026-10-06 |
@@ -23,9 +23,8 @@
 - **apiSuccess snake_case 자동변환** · **IDOR** · **`prisma db push` 금지** → errors / decisions
 
 ## 최근 추가된 지식 (최근 5건)
-0. [architecture] architecture 48→19 주제별 묶음 정리 · 신청함 «변경» 휴원 승인 = 칸 열 때 미리보기(PauseSettlementBox, 수강 변경 화면과 문구 비교 테스트) (2026-11-10)
-1. [architecture] 대관 신청자 문자 = 알림톡 틀 하나(문자=알림톡 본문, sendTrackedSms alimtalk 전달) (2026-11-08)
-2. [architecture] 체육관 대관 = 순수 규칙+db 인자 연결부+EXCLUDE 제약, 신청자 문자 이중 스위치 (2026-11-07)
-3. [convention] 관리자 메뉴 등록 검사 기준 정정 — 셸이 EXTRA_GROUPS 로 통합돼 「경로 3회」 기준은 폐기 (2026-10-25)
-4. [error] 같은 규칙의 두 입력 경로 중 한쪽만 고쳐 DB 제약이 UPDATE 를 거부 — 관리자가 셔틀 취소 불가였던 막힌 길 (2026-10-24)
-5. [architecture] 체험↔수강신청 연결 = 순수 판정(trialLeadMatch)+연결부(trialLeadLinkService) 한 곳, 비교 시점 3곳 (2026-10-23)
+0. [architecture] 대시보드 카드·통계 탭 = 순수 규칙(statsRules)+새 조회(statsQueries), 지점 필터는 id 배열 (2026-11-13)
+1. [architecture] architecture 48→19 주제별 묶음 정리 · 신청함 «변경» 휴원 승인 = 칸 열 때 미리보기(PauseSettlementBox, 수강 변경 화면과 문구 비교 테스트) (2026-11-10)
+2. [architecture] 대관 신청자 문자 = 알림톡 틀 하나(문자=알림톡 본문, sendTrackedSms alimtalk 전달) (2026-11-08)
+3. [architecture] 체육관 대관 = 순수 규칙+db 인자 연결부+EXCLUDE 제약, 신청자 문자 이중 스위치 (2026-11-07)
+4. [convention] 관리자 메뉴 등록 검사 기준 정정 — 셸이 EXTRA_GROUPS 로 통합돼 「경로 3회」 기준은 폐기 (2026-10-25)

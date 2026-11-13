@@ -1576,7 +1576,8 @@ export default function StudentDetailClient({
                             {/* «이번 달/최근 장부 요약» 카드는 2차 정리에서 뺐다 — 위 요약 칸 «수납»과 같은 내용이라, 칸을 누르면 뜨는 창에서 본다 */}
 
                             {/* 유니폼 — 한 줄 요약(상태·최근 단계 날짜·출처) + [수정] → 입력은 창에서(2차 정리: 6칸 입력판을 화면에서 걷음) */}
-                            <div className="academy-panel flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
+                            {/* id: 통계 «유니폼» 명단에서 누르면 이 칸으로 바로 온다(#student-uniform) */}
+                            <div id="student-uniform" className="academy-panel flex min-h-11 scroll-mt-20 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
                                 <h3 className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-academy-ink)]">
                                     <SymbolIcon name="checkroom" size={17} />
                                     유니폼
