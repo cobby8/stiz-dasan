@@ -6,7 +6,7 @@ import { childConnectionsAvailable, childAccessSql } from "./child-access";
 import { canConnectSelf, identityName, identityPhone, validBirth, CHILD_LINK_UNAVAILABLE } from "./child-link-policy";
 import { fetchPortoneIdentityVerification, getPortoneConfig } from "@/lib/identity/portone";
 // 형제 간편 연결 순수 규칙(2026-11-13 f8)
-import { buildSiblingPlan, hasSiblingWork, toPublicSiblings, type SiblingCandidateRow } from "./sibling-link-rules";
+import { buildSiblingPlan, hasSiblingWork, isSingleFamily, toPublicSiblings, type SiblingCandidateRow } from "./sibling-link-rules";
 
 type Db = Prisma.TransactionClient;
 export type ChildActor = { id: string; authUserId: string };
@@ -118,7 +118,8 @@ export async function verifyChildIdentity(actor: ChildActor, sessionHash: string
     let count = 0;
     if (self.length === 1) count += await grant(tx,self[0].id,actor.id,"ADULT_SELF",null);
     // 형제는 함께 연결하지만 같은 연락처가 여러 가족 계정에 겹치면 추측하지 않는다.
-    if (new Set(children.map(row => row.parentId)).size === 1) {
+    // (형제 «바로 연결»과 같은 함수 — isSingleFamily)
+    if (isSingleFamily(children.map(row => row.parentId))) {
       for (const row of children) count += await grant(tx,row.id,actor.id,"REGISTERED_CONTACT",null);
     }
     return count;
@@ -236,9 +237,9 @@ async function loadSiblingRows(db: Db | typeof prisma, actorId: string, phoneLas
   return db.$queryRawUnsafe<SiblingCandidateRow[]>(`SELECT s.id AS "studentId", s.name AS "studentName",
       (SELECT string_agg(DISTINCT c.name, ', ' ORDER BY c.name) FROM "Enrollment" e JOIN "Class" c ON c.id=e."classId"
         WHERE e."studentId"=s.id AND e.status='ACTIVE') AS "className",
-      p.id AS "primaryId", p.role::text AS "primaryRole", p."authUserId" AS "primaryAuthUserId", p.email AS "primaryEmail", p.phone AS "primaryPhone",
+      p.id AS "primaryId", p.name AS "primaryName", p.role::text AS "primaryRole", p."authUserId" AS "primaryAuthUserId", p.email AS "primaryEmail", p.phone AS "primaryPhone",
       (p."withdrawnAt" IS NULL AND ${trustedFamilyLoginSql("p")} AND p."phoneVerifiedAt" IS NOT NULL) AS "primaryCanApprove",
-      ARRAY(SELECT g.phone FROM "Guardian" g WHERE g."studentId"=s.id) AS "guardianPhones",
+      COALESCE((SELECT json_agg(json_build_object('name', g.name, 'phone', g.phone)) FROM "Guardian" g WHERE g."studentId"=s.id), '[]'::json) AS "guardians",
       (s."parentId"=$1 OR EXISTS(SELECT 1 FROM "ParentStudentAccess" a WHERE a."studentId"=s.id AND a."userId"=$1 AND a.status='ACTIVE')) AS "alreadyLinked",
       EXISTS(SELECT 1 FROM "ChildLinkRequest" r WHERE r."studentId"=s.id AND r."requesterId"=$1 AND r.status='PENDING' AND r."expiresAt">NOW()) AS "pendingRequest",
       EXISTS(SELECT 1 FROM "ParentStudentAccess" a WHERE a."studentId"=s.id AND a."userId"=$1 AND a.status='REVOKED') AS "revokedAccess"
@@ -255,11 +256,14 @@ function proofMatcher(phoneHash: string) {
   return (digits: string) => childIdentityHash(`phone:${digits}`) === phoneHash;
 }
 
-/** 형제 연결 제안 목록(이름·반·처리 방법만). 본인인증 증명이 살아 있을 때만. 증명은 쓰지 않는다. */
+/**
+ * 형제 연결 제안 목록(이름·반·처리 방법만). 본인인증 증명이 살아 있을 때만. 증명은 쓰지 않는다.
+ * 번호+이름이 모두 맞는 아이만 담긴다 — 번호만 맞는 아이는 이름·반·개수 어느 것도 응답에 없다.
+ */
 export async function getSiblingProposal(actor: ChildActor, sessionHash: string) {
   await requireChildConnections();
   const proof = await readSiblingProof(prisma, actor, sessionHash, false);
-  const plan = buildSiblingPlan(await loadSiblingRows(prisma, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)));
+  const plan = buildSiblingPlan(await loadSiblingRows(prisma, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)), String(proof.verifiedName));
   return { items: toPublicSiblings(plan), canLinkAll: hasSiblingWork(plan) };
 }
 
@@ -280,7 +284,7 @@ export async function linkAllSiblings(actor: ChildActor, sessionHash: string, re
   return prisma.$transaction(async tx => {
     await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, `child-request:${actor.id}`);
     const proof = await readSiblingProof(tx, actor, sessionHash, true);
-    const plan = buildSiblingPlan(await loadSiblingRows(tx, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)));
+    const plan = buildSiblingPlan(await loadSiblingRows(tx, actor.id, String(proof.phoneLast4)), actor.id, proofMatcher(String(proof.phoneHash)), String(proof.verifiedName));
     if (!hasSiblingWork(plan)) throw new ChildConnectionError("새로 연결할 아이가 없습니다.", 409);
     // 마이그레이션 전에는 승인 요청을 1건만 만든다(인증 1건 = 요청 1건 제약). 나머지는 다음 인증 때 다시 제안된다.
     let requestSlots = await oneRequestPerProof(tx) ? 1 : Number.POSITIVE_INFINITY;

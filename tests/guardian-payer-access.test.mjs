@@ -147,63 +147,94 @@ test("결제 권한(순수): 같은 로그인 줄 중 학생 전부와 연결된
 // ───────────────────────────── 2. 형제 간편 연결 규칙 ─────────────────────────────
 
 const VERIFIED = "01055556666"; // 본인인증한 번호(숫자만)
+const VERIFIED_NAME = "김아빠";    // 본인인증한 이름
 const matches = (digits) => digits === VERIFIED;
 const ACTOR = "dad";
+const plan = (rows) => siblings.buildSiblingPlan(rows, ACTOR, matches, VERIFIED_NAME);
 function kid(over = {}) {
     return {
         studentId: "kid-1", studentName: "김하나", className: "초등 A반",
-        primaryId: "mom", primaryRole: "PARENT", primaryAuthUserId: "auth-mom", primaryEmail: "mom@x", primaryPhone: "010-1111-2222",
-        primaryCanApprove: true, guardianPhones: ["010-5555-6666"], alreadyLinked: false, pendingRequest: false, ...over,
+        primaryId: "mom", primaryName: "이엄마", primaryRole: "PARENT", primaryAuthUserId: "auth-mom", primaryEmail: "mom@x", primaryPhone: "010-1111-2222",
+        primaryCanApprove: true, guardians: [{ name: "김 아빠", phone: "010-5555-6666" }], alreadyLinked: false, pendingRequest: false, ...over,
     };
 }
+// 학원이 만든 빈 계정(로그인 없음·합성 이메일)이 주 보호자 — 이름·번호가 본인인증과 같다
+const PLACEHOLDER = { primaryId: "ph", primaryName: "김아빠", primaryAuthUserId: null, primaryEmail: "parent_01055556666@stiz.local",
+    primaryPhone: "010-5555-6666", primaryCanApprove: false, guardians: [] };
 
-test("형제 매칭: 같은 번호(하이픈·+82 형식 포함)만 고르고, 다른 번호는 제외", () => {
+test("형제 매칭: 같은 보호자 기록 안에서 번호+이름이 모두 같아야 한다(하이픈·+82·띄어쓰기 정리), 다른 번호는 제외", () => {
     const rows = [
-        kid({ studentId: "k1", studentName: "가", guardianPhones: ["010-5555-6666"] }),
-        kid({ studentId: "k2", studentName: "나", guardianPhones: ["+82 10-5555-6666"] }),
-        kid({ studentId: "k3", studentName: "다", guardianPhones: ["010-5555-6667"] }), // 끝자리 다름
-        kid({ studentId: "k4", studentName: "라", guardianPhones: [null, ""] }),
-        kid({ studentId: "k5", studentName: "마", guardianPhones: [], primaryPhone: "01055556666" }), // 주 보호자 계정 번호가 같음
+        kid({ studentId: "k1", studentName: "가", guardians: [{ name: "김아빠", phone: "010-5555-6666" }] }),
+        kid({ studentId: "k2", studentName: "나", guardians: [{ name: " 김 아빠 ", phone: "+82 10-5555-6666" }] }),
+        kid({ studentId: "k3", studentName: "다", guardians: [{ name: "김아빠", phone: "010-5555-6667" }] }), // 끝자리 다름
+        kid({ studentId: "k4", studentName: "라", guardians: [{ name: "김아빠", phone: null }, { name: null, phone: "" }] }),
+        kid({ studentId: "k5", studentName: "마", guardians: [], primaryPhone: "01055556666", primaryName: "김아빠" }), // 주 보호자 계정 기록
     ];
-    const plan = siblings.buildSiblingPlan(rows, ACTOR, matches);
-    assert.deepEqual(plan.map((p) => p.studentId).sort(), ["k1", "k2", "k5"]);
+    assert.deepEqual(plan(rows).map((p) => p.studentId).sort(), ["k1", "k2", "k5"]);
     // 자리채움 번호로 엉뚱한 아이가 맞지 않는다
     assert.equal(siblings.samePhone("010-0000-0000", () => true), false);
     assert.equal(siblings.samePhone("", () => true), false);
+    assert.deepEqual(siblings.buildSiblingPlan(rows, ACTOR, matches, "  "), [], "인증 이름이 비면 아무것도 제안하지 않는다");
 });
 
-test("형제 처리: 다른 사람이 쓰는 계정이 주 보호자면 자동 연결하지 않고 가족 승인 요청", () => {
-    const [item] = siblings.buildSiblingPlan([kid()], ACTOR, matches);
+test("형제 보안(HIGH): 번호만 같고 이름이 다르면 바로 연결·승인 요청 모두 안 하고, 목록에 이름·반도 내보내지 않는다", () => {
+    // 번호 재할당·학원 오입력·조부모 번호 — 빈 계정이 주 보호자여도 이름이 다르면 남의 아이일 수 있다
+    const reassigned = kid({ ...PLACEHOLDER, studentName: "남의아이", className: "중등 B반", primaryName: "박할머니" });
+    assert.deepEqual(plan([reassigned]), []);
+    // 다른 계정이 주 보호자, 보호자 기록 번호는 같지만 이름이 다름 → 승인 요청도 보내지 않는다
+    const otherGuardian = kid({ studentName: "남의아이2", guardians: [{ name: "박할머니", phone: "010-5555-6666" }] });
+    assert.deepEqual(plan([otherGuardian]), []);
+    // 번호와 이름이 «서로 다른 기록»에서 하나씩 맞는 것도 불인정(같은 기록 안에서 둘 다)
+    const split = kid({ primaryName: "김아빠", primaryPhone: "010-1111-2222", guardians: [{ name: "박할머니", phone: "010-5555-6666" }] });
+    assert.deepEqual(plan([split]), []);
+    // 화면 응답에도 흔적이 없다(이름·반·개수)
+    const pub = siblings.toPublicSiblings(plan([reassigned, otherGuardian, split]));
+    assert.deepEqual(pub, []);
+    assert.doesNotMatch(JSON.stringify(pub), /남의아이|중등 B반/);
+});
+
+test("형제 보안(HIGH): 같은 번호·이름이 서로 다른 대표 계정 여러 곳에 걸리면 바로 연결을 전부 막는다", () => {
+    const familyA = kid({ ...PLACEHOLDER, studentId: "a1", studentName: "가" });
+    const familyB = kid({ ...PLACEHOLDER, primaryId: "ph-2", studentId: "b1", studentName: "나" });
+    const items = plan([familyA, familyB]);
+    assert.deepEqual(items.map((p) => p.action), ["ASK_ACADEMY", "ASK_ACADEMY"]);
+    assert.equal(siblings.hasSiblingWork(items), false);
+    // 같은 대표 계정의 형제 둘이면 둘 다 바로 연결
+    const sameFamily = plan([familyA, kid({ ...PLACEHOLDER, studentId: "a2", studentName: "다" })]);
+    assert.deepEqual(sameFamily.map((p) => p.action), ["LINK", "LINK"]);
+    assert.equal(siblings.isSingleFamily(["x", "x"]), true);
+    assert.equal(siblings.isSingleFamily(["x", "y"]), false);
+    assert.equal(siblings.isSingleFamily([]), false);
+});
+
+test("형제 처리: 정상 형제(빈 계정 주 보호자·번호+이름 일치)는 바로 연결, 다른 사람이 쓰는 계정이면 가족 승인 요청", () => {
+    assert.equal(plan([kid(PLACEHOLDER)])[0].action, "LINK");
+    const [item] = plan([kid()]);
     assert.equal(item.action, "REQUEST_APPROVAL");
     assert.equal(item.approverId, "mom", "승인자 = 주 보호자 계정");
-});
-
-test("형제 처리: 학원이 만든 빈 계정(로그인 없음·합성 이메일)이 주 보호자이고 그 번호가 내 번호면 바로 연결", () => {
-    const placeholder = { primaryId: "ph", primaryAuthUserId: null, primaryEmail: "parent_01055556666@stiz.local", primaryPhone: "010-5555-6666", primaryCanApprove: false };
-    assert.equal(siblings.buildSiblingPlan([kid(placeholder)], ACTOR, matches)[0].action, "LINK");
     // 빈 계정인데 번호가 다르면(다른 보호자가 주 보호자) 바로 연결하지 않는다 — 승인해 줄 사람도 없어 학원 문의
-    const otherPlaceholder = { ...placeholder, primaryEmail: "parent_01011112222@stiz.local", primaryPhone: "010-1111-2222" };
-    assert.equal(siblings.buildSiblingPlan([kid(otherPlaceholder)], ACTOR, matches)[0].action, "ASK_ACADEMY");
+    const otherPlaceholder = { ...PLACEHOLDER, primaryName: "이엄마", primaryEmail: "parent_01011112222@stiz.local", primaryPhone: "010-1111-2222",
+        guardians: [{ name: "김아빠", phone: "010-5555-6666" }] };
+    assert.equal(plan([kid(otherPlaceholder)])[0].action, "ASK_ACADEMY");
     // 해제된 적 있는 연결은 «바로 연결»로 되살리지 않는다
-    assert.equal(siblings.buildSiblingPlan([kid({ ...placeholder, revokedAccess: true })], ACTOR, matches)[0].action, "ASK_ACADEMY");
-    // 로그인하는 실제 계정은 번호가 같아도 바로 연결하지 않는다(그 계정의 승인)
-    const realSamePhone = { primaryId: "other", primaryPhone: "010-5555-6666", primaryEmail: "other@x" };
-    assert.equal(siblings.buildSiblingPlan([kid(realSamePhone)], ACTOR, matches)[0].action, "REQUEST_APPROVAL");
+    assert.equal(plan([kid({ ...PLACEHOLDER, revokedAccess: true })])[0].action, "ASK_ACADEMY");
+    // 로그인하는 실제 계정은 번호·이름이 같아도 바로 연결하지 않는다(그 계정의 승인)
+    assert.equal(plan([kid({ primaryId: "other", primaryName: "김아빠", primaryPhone: "010-5555-6666", primaryEmail: "other@x" })])[0].action, "REQUEST_APPROVAL");
 });
 
 test("형제 처리: 이미 연결·승인 대기·승인 불가 계정", () => {
-    assert.equal(siblings.buildSiblingPlan([kid({ alreadyLinked: true })], ACTOR, matches)[0].action, "ALREADY_LINKED");
-    assert.equal(siblings.buildSiblingPlan([kid({ primaryId: ACTOR })], ACTOR, matches)[0].action, "ALREADY_LINKED");
-    assert.equal(siblings.buildSiblingPlan([kid({ pendingRequest: true })], ACTOR, matches)[0].action, "PENDING");
-    assert.equal(siblings.buildSiblingPlan([kid({ primaryCanApprove: false })], ACTOR, matches)[0].action, "ASK_ACADEMY");
+    assert.equal(plan([kid({ alreadyLinked: true })])[0].action, "ALREADY_LINKED");
+    assert.equal(plan([kid({ primaryId: ACTOR })])[0].action, "ALREADY_LINKED");
+    assert.equal(plan([kid({ pendingRequest: true })])[0].action, "PENDING");
+    assert.equal(plan([kid({ primaryCanApprove: false })])[0].action, "ASK_ACADEMY");
     assert.equal(siblings.hasSiblingWork([{ action: "ALREADY_LINKED" }, { action: "PENDING" }, { action: "ASK_ACADEMY" }]), false);
     assert.equal(siblings.hasSiblingWork([{ action: "ASK_ACADEMY" }, { action: "LINK" }]), true);
 });
 
 test("형제 제안: 화면에는 이름·반·처리 방법만 — 학생 id·승인자·번호를 내보내지 않는다, 같은 아이는 한 번", () => {
-    const plan = siblings.buildSiblingPlan([kid({ studentId: "k1", studentName: "나" }), kid({ studentId: "k1", studentName: "나" }), kid({ studentId: "k2", studentName: "가", className: null })], ACTOR, matches);
-    assert.equal(plan.length, 2);
-    const pub = siblings.toPublicSiblings(plan);
+    const items = plan([kid({ studentId: "k1", studentName: "나" }), kid({ studentId: "k1", studentName: "나" }), kid({ studentId: "k2", studentName: "가", className: null })]);
+    assert.equal(items.length, 2);
+    const pub = siblings.toPublicSiblings(items);
     assert.deepEqual(pub, [
         { name: "가", className: null, action: "REQUEST_APPROVAL" },
         { name: "나", className: "초등 A반", action: "REQUEST_APPROVAL" },
@@ -242,6 +273,10 @@ test("계약: 형제 «모두 연결»은 화면이 보낸 학생 id 를 받지 
     assert.match(routeSrc, /linkAllSiblings\(current,sessionHash,body\.relation\)/, "학생 id 는 받지 않는다");
     const proposal = linksSrc.slice(linksSrc.indexOf("export async function getSiblingProposal("), linksSrc.indexOf("async function oneRequestPerProof("));
     assert.match(proposal, /items: toPublicSiblings\(plan\)/, "응답은 이름·반·처리 방법만");
+    // 번호+이름 둘 다 — 본인인증 이름을 규칙에 넘긴다(목록·모두 연결 양쪽)
+    assert.equal((linksSrc.match(/proofMatcher\(String\(proof\.phoneHash\)\), String\(proof\.verifiedName\)\)/g) ?? []).length, 2);
+    // 같은 연락처 여러 가족 = 자동 연결 금지 — 본인인증 자동 연결과 형제 연결이 같은 함수
+    assert.match(linksSrc, /if \(isSingleFamily\(children\.map\(row => row\.parentId\)\)\)/);
     // 번호는 원본을 남기지 않는 인증 원장 해시로 비교한다
     assert.match(linksSrc, /childIdentityHash\(`phone:\$\{digits\}`\) === phoneHash/);
 });
