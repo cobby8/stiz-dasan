@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateMyName, changeMyPassword, saveMyPushPrefs, saveMyPreferredPaymentMethod } from "@/app/actions/parent-settings";
@@ -10,7 +10,10 @@ import { usePushSubscription } from "@/lib/push/usePushSubscription";
 import { useStoreAppLacks } from "@/components/storeApp/useStoreAppLacks";
 // 스토어 앱 알림(FCM) 상태 — 앱 안에서는 브라우저 웹푸시 대신 이것으로 그린다(d2, 2026-11-14)
 import { useNativePush } from "@/lib/push/useNativePush";
-import { NATIVE_PUSH_NOTES } from "@/lib/push/nativePushBridge";
+import { NATIVE_PUSH_NOTES, NATIVE_PUSH_UPDATE_NOTE, nativePushNotice } from "@/lib/push/nativePushBridge";
+// 옛 앱(알림 창구 없음)이면 «업데이트» 안내 — 판정·스토어 주소는 각 모듈 한 곳(2026-11-14)
+import { appBuildHasPush } from "@/lib/storeApp";
+import { appUpdateTarget } from "@/lib/app-install-links";
 import {
     FONT_SCALE_COOKIE,
     FONT_SCALES,
@@ -96,6 +99,9 @@ export function NameRow({ name }: { name: string }) {
 // ── 결제: 자주 쓰는 결제 방법(2026-11-13) ─────────────────────────────────
 // 고르면 결제 화면 맨 위 큰 버튼이 그 방법이 된다. 결제가 승인되면 그때 쓴 방법으로 자동으로 바뀐다.
 // 고르기는 기본 선택 상자(select) 하나 — 7가지를 버튼으로 펼치면 한 줄 행이 세 줄이 된다(컴팩트 규칙).
+// 2026-11-14 줄 깨짐 수정(원장 아이폰 캡처): 공용 입력칸(.academy-input)의 «width:100%» 가 레이어 밖 CSS 라
+// Tailwind 의 w-32 를 이겨, 선택 상자가 줄 전체 폭을 차지하고 이름이 한 글자씩 세로로 접혔다.
+// → 이름은 한 줄 고정(shrink-0·whitespace-nowrap), 선택 상자는 남은 폭을 감싼 칸(최대 10rem) 안에서만 넓어진다.
 export function PaymentMethodRow({ current }: { current: PreferredPaymentMethod | null }) {
     const [value, setValue] = useState<string>(current ?? "");
     const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
@@ -117,19 +123,22 @@ export function PaymentMethodRow({ current }: { current: PreferredPaymentMethod 
     return (
         <li>
             <div className={ROW}>
-                <label htmlFor="preferred-payment-method" className="flex-1 font-medium text-[var(--color-academy-ink)]">자주 쓰는 결제 방법</label>
-                <select
-                    id="preferred-payment-method"
-                    value={value}
-                    disabled={isPending}
-                    onChange={(e) => choose(e.target.value)}
-                    className="academy-input min-h-11 w-32 shrink-0 text-sm"
-                >
-                    <option value="">정하지 않음</option>
-                    {PAYMENT_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                </select>
+                <label htmlFor="preferred-payment-method" className="shrink-0 whitespace-nowrap font-medium text-[var(--color-academy-ink)]">자주 쓰는 결제 방법</label>
+                {/* 선택 상자 칸 — 남은 폭만 쓰고(min-w-0) 오른쪽에 붙는다. 상자는 칸 폭(100%)을 따른다 */}
+                <span className="ml-auto flex min-w-0 max-w-40 flex-1 justify-end">
+                    <select
+                        id="preferred-payment-method"
+                        value={value}
+                        disabled={isPending}
+                        onChange={(e) => choose(e.target.value)}
+                        className="academy-input min-h-11 min-w-0 truncate text-sm"
+                    >
+                        <option value="">정하지 않음</option>
+                        {PAYMENT_METHOD_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                </span>
             </div>
             <Message {...msg} />
         </li>
@@ -187,6 +196,12 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
     const app = useNativePush();
     // 앱 알림을 받을 수 있는 상태인가(받을 수 없으면 종류별 스위치도 의미가 없어 숨긴다)
     const appCanPush = app.view === "granted" || app.view === "default" || app.view === "denied";
+    // 사용자 에이전트(앱 버전 표식) — 서버 첫 그림에는 없어서 화면이 뜬 뒤 읽는다
+    const [userAgent, setUserAgent] = useState("");
+    useEffect(() => { setUserAgent(window.navigator.userAgent); }, []);
+    // 줄 아래 안내 하나: 옛 앱이면 «업데이트», 거절이면 «휴대폰 설정», 못 받으면 «문자·카카오톡»(판정은 nativePushNotice 한 곳)
+    const notice = appLacksPush ? nativePushNotice({ view: app.view, bridge: app.bridge, buildHasPush: appBuildHasPush(userAgent) }) : null;
+    const update = appUpdateTarget(userAgent);
     const [prefs, setPrefs] = useState<PushPrefs>(initialPrefs);
     const [msg, setMsg] = useState<{ text: string; tone: "ok" | "error" }>({ text: "", tone: "ok" });
     const [isPending, startTransition] = useTransition();
@@ -211,11 +226,16 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
         <>
             <li>
                 <div className={ROW}>
-                    <span className="flex-1 font-medium text-[var(--color-academy-ink)]">휴대폰 알림</span>
+                    <span className="flex-1 whitespace-nowrap font-medium text-[var(--color-academy-ink)]">휴대폰 알림</span>
                     {appLacksPush ? (
                         // 앱 안: 켜짐이면 글자, 아직 안 물어봤으면 켜기 스위치(누르면 휴대폰이 권한을 묻는다).
                         // 끄기는 휴대폰 설정에서만 할 수 있어 켜진 뒤에는 스위치를 두지 않는다.
-                        app.view === "granted" ? (
+                        notice === "update" ? (
+                            // 옛 앱: 스토어로 가는 «업데이트» 버튼(앱이 바깥 주소를 열 수 있을 때만 — 아이폰 1.0 은 글 안내만)
+                            update.url ? (
+                                <a href={update.url} className="academy-button-secondary academy-button-sm shrink-0 whitespace-nowrap">업데이트</a>
+                            ) : null
+                        ) : app.view === "granted" ? (
                             <span className="shrink-0 text-xs font-medium text-[var(--color-academy-success)]">켜짐</span>
                         ) : app.view === "default" ? (
                             <Switch on={false} busy={app.busy} label="휴대폰 알림" onToggle={() => void app.request()} />
@@ -228,10 +248,15 @@ export function NotificationRows({ initialPrefs, prefsAvailable }: { initialPref
                     )}
                 </div>
                 {/* 앱 안 안내(d2): 권한을 거절했으면 휴대폰 설정으로, 알림을 못 받는 앱이면 문자·카카오톡으로 간다고 */}
-                {appLacksPush && app.view === "denied" && (
+                {notice === "update" && (
+                    <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">
+                        {NATIVE_PUSH_UPDATE_NOTE}.{update.url ? "" : ` ${update.storeName}에서 «STIZ 농구교실»을 업데이트해 주세요.`}
+                    </p>
+                )}
+                {notice === "denied" && (
                     <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">{NATIVE_PUSH_NOTES.denied}.</p>
                 )}
-                {appLacksPush && app.view === "unavailable" && (
+                {notice === "unavailable" && (
                     <p className="px-4 pb-2 text-xs text-[var(--color-academy-muted)]">{NATIVE_PUSH_NOTES.unavailable}.</p>
                 )}
             </li>
@@ -284,7 +309,8 @@ export function FontScaleRow({ current }: { current: FontScaleKey }) {
     return (
         <li>
             <div className={`${ROW} flex-wrap`}>
-                <span className="flex-1 font-medium text-[var(--color-academy-ink)]">글자 크기</span>
+                {/* 이름은 한 줄 고정 — 좁은 폭(320px)·큰 글자에서 버튼 묶음이 다음 줄로 내려가고, 이름이 세로로 접히지 않게(11-14) */}
+                <span className="flex-1 whitespace-nowrap font-medium text-[var(--color-academy-ink)]">글자 크기</span>
                 <div role="group" aria-label="글자 크기" className="flex shrink-0 gap-1">
                     {FONT_SCALES.map((s) => (
                         <button

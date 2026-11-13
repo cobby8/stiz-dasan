@@ -35,6 +35,25 @@ export const PLAY_STORE_INTENT_URL =
   `intent://details?id=${STORE_APP_PACKAGE}#Intent;scheme=market;package=com.android.vending;`
   + `S.browser_fallback_url=${encodeURIComponent(PLAY_STORE_URL)};end`;
 
+/**
+ * 앱 «업데이트» 버튼이 갈 곳(2026-11-14 설정 화면 «휴대폰 알림»). 순수 — 사용자 에이전트 글자만 본다.
+ *   platform  : 아이폰·안드로이드(앱 표식 « (ios)»/« (android)» 또는 브라우저 식별 글자)
+ *   storeName : 안내에 쓸 스토어 이름
+ *   url       : 버튼 주소. 앱이 바깥 주소를 열 줄 모르면 null → 버튼 없이 «스토어에서 업데이트» 글만.
+ * ⚠️ 아이폰 1.0(표식 « STIZApp/» 없음)은 앱이 바깥 주소를 «이 주소는 앱에서 열 수 없습니다»로 막는다
+ *    (1.0 의 NavigationPolicy: 전화·메일·지도만 허용). 그래서 그 앱에는 눌러도 안 되는 버튼을 두지 않는다.
+ *    1.0.1 부터는 사용자가 누른 바깥 https 주소를 Safari·스토어 앱으로 연다.
+ */
+export function appUpdateTarget(userAgent: string | null | undefined): { platform: "ios" | "android" | "other"; storeName: string; url: string | null } {
+  const ua = String(userAgent ?? "");
+  const platform = / \(ios\)|iPhone|iPad|iPod/.test(ua) ? "ios" : / \(android\)|Android/.test(ua) ? "android" : "other";
+  // 바깥 주소를 열 수 있는 앱 = 사용자 에이전트 표식이 있는 1.0.1 이상(import 없는 모듈이라 표식 글자를 여기 적는다 — storeApp 의 STORE_APP_USER_AGENT_MARK 와 같아야 한다)
+  const canOpenOutside = ua.includes(" STIZApp/");
+  if (platform === "ios") return { platform, storeName: "App Store", url: canOpenOutside ? appStoreUrl() : null };
+  if (platform === "android") return { platform, storeName: "Play 스토어", url: canOpenOutside ? PLAY_STORE_URL : null };
+  return { platform, storeName: "앱 스토어", url: null };
+}
+
 export type AppInstallTarget =
   | { kind: "redirect"; url: string } // 바로 스토어로 보낸다
   | { kind: "android-in-app"; intentUrl: string; url: string } // 안드로이드 인앱 브라우저 → 버튼(intent)으로 Play 스토어 앱 열기

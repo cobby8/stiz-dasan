@@ -104,6 +104,7 @@
 
 | 날짜 | 작업 내용 | 상태 |
 |------|----------|------|
+| 11-14 | developer(학부모 설정 화면 손보기, claude/parent-settings-fix): 결제 방법 줄 세로 접힘(.academy-input width:100% 가 w-32 를 이김) · 옛 앱 알림 «업데이트» 안내(nativePushNotice·appUpdateTarget, 아이폰 1.0 은 버튼 없이 글) · 버전 «앱 1.0.2 / 화면 xxxxxxx»(appVersionLabels) · 아래 탭 64→48px+env 안전영역(pb-safe 는 정의 없던 글자) · tests/parent-settings-fix-1114 | 완료(전체 fail 0·tsc 0) |
 | 11-13 | developer(대시보드·통계 개편, claude/admin-stats 2커밋): 대시보드 맨 위 카드 6개(재원생·수납률·출석률·신규/퇴원·체험→등록·유니폼) + 통계 /admin/stats 탭 5개(?tab=&branch=&period=, 필터 버튼+창) · 순수 규칙 lib/stats/statsRules.ts(학년 KST 3월 기준·성별·지점·유니폼 5묶음) + 조회 statsQueries.ts(무tz 두 번·tz 한 번) · 접힌 «운영 현황» 제거(내용은 통계 탭) · 신청 설정 «유입 통계» 제거 · «통계» 메뉴 대시보드 아래 · 옛 /api/admin/stats 삭제. 운영 DB 대조: 재원생 133 = 목록 «활성» 133, 학년·성별·지점·유니폼 합 133. tests 4521-0 · tsc 0 · studentVisibility 4-1(payerAccess.ts 기존 실패, 이번 변경 무관) | 검수 대기 |
 | 11-13 | developer(관리자 메뉴 정리, claude/admin-menu): 사이드바 33→15칸(맨 위 6 + 수업 2·홈페이지 2·설정 5, «오늘 업무»→«대시보드») · 탭 줄 5묶음 = lib/admin-sections.ts 한 곳 + components/admin/SectionTabs(셸이 그림, 화면 파일 무변경) · 유니폼·빠른 업로드 메뉴만 뺌(갤러리 «빠른 업로드») · 수강생 이관 화면·API 6·전용 lib 4 삭제(11-05 9월분까지 반영, DB 무변경) · tests 4509-0·tsc 0 | 검수 대기 |
 | 11-14 | 비회원 결제 링크 /pay/<토큰>: PaymentInvoiceAccessToken(운영 적용)·미가입자 안내 자동 링크·⚡ 링크 복사/닫기. reviewer·security 통과(권장 5 반영), 전체 4462-0 | 완료 |

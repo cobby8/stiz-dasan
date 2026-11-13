@@ -66,7 +66,8 @@ export default async function MyPageLayout({
 
     return (
         // 학부모 앱은 밝은 스포츠 스타일을 적용하고 역할 경계를 유지한다.
-        <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-20 md:pb-0">
+        // 아래 여백 = 아래 탭 48px + 숨 쉴 틈 16px + 안전영역(2026-11-14 탭 64→48px 와 맞춤)
+        <AcademyTheme role="parent" className="min-h-screen flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
             {/* 글자 크기 «크게·아주 크게» — html 글자 배율. 학부모 화면을 떠나면 이 줄도 사라져 다른 화면엔 영향 없음 */}
             {fontPercent !== 100 && <style>{`html{font-size:${fontPercent}%}`}</style>}
             {/* 모바일 상단 헤더 — [뒤로 · 로고 · 학부모] …… [알림 N] [설정] (2026-11-10 원장 결정 k7) */}

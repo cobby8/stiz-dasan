@@ -27,9 +27,13 @@ async function viewOf(state: NativePushState | null): Promise<NativePushView> {
 export function useNativePush() {
     const [view, setView] = useState<NativePushView | "checking">("checking");
     const [busy, setBusy] = useState(false);
+    // 이 화면에 앱 알림 창구가 있나(확인 전 null) — 없으면 옛 앱이라 «업데이트» 안내를 고른다(nativePushNotice)
+    const [bridge, setBridge] = useState<boolean | null>(null);
 
     const refresh = useCallback(async () => {
-        if (!hasNativePushBridge()) {
+        const has = hasNativePushBridge();
+        setBridge(has);
+        if (!has) {
             setView("unavailable");
             return;
         }
@@ -63,5 +67,5 @@ export function useNativePush() {
         }
     }
 
-    return { view, busy, request };
+    return { view, busy, request, bridge };
 }

@@ -69,7 +69,30 @@ export const NATIVE_PUSH_NOTES: Record<Exclude<NativePushView, "granted" | "defa
   denied: "휴대폰 설정에서 알림을 켜 주세요",
 };
 
-type AndroidTransport = { postMessage: (message: string) => void; onmessage: ((event: { data: unknown }) => void) | null };
+/**
+ * 설정 화면 «휴대폰 알림» 줄 아래 안내(순수 — 2026-11-14 원장 «눌리지 않는다»).
+ *   update      : 알림 창구가 없는 옛 앱(아이폰 1.0·1.0.1 이하) → «앱을 업데이트하면 휴대폰 알림을 켤 수 있어요» + 업데이트
+ *   unavailable : 창구는 있는데 서버 미설정·Firebase 없는 앱 등 → «중요한 안내는 문자·카카오톡으로 보내드려요»(기존 그대로)
+ *   denied      : 휴대폰 설정에서 알림을 꺼 둠
+ *   null        : 확인 중·켜짐·아직 안 물어봄(«켜기» 스위치가 대신한다)
+ * bridge: 이 화면에 창구가 있나(hasNativePushBridge, 확인 전 null)
+ * buildHasPush: 사용자 에이전트로 본 «이 앱 빌드에 창구가 들어 있나»(appBuildHasPush) —
+ *   1.0.2 이상인데 창구가 없으면 업데이트로 풀리지 않으므로 «update» 가 아니라 «unavailable».
+ */
+export type NativePushNotice = "update" | "unavailable" | "denied" | null;
+
+export function nativePushNotice(input: { view: NativePushView | "checking"; bridge: boolean | null; buildHasPush: boolean }): NativePushNotice {
+  if (input.view === "checking" || input.bridge === null) return null;
+  if (!input.bridge && !input.buildHasPush) return "update";
+  if (input.view === "denied") return "denied";
+  if (input.view === "unavailable") return "unavailable";
+  return null;
+}
+
+/** «update» 안내 문구(한 곳) */
+export const NATIVE_PUSH_UPDATE_NOTE = "앱을 업데이트하면 휴대폰 알림을 켤 수 있어요";
+
+type AndroidTransport ={ postMessage: (message: string) => void; onmessage: ((event: { data: unknown }) => void) | null };
 type IosHandler = { postMessage: (message: string) => Promise<unknown> };
 
 function androidTransport(): AndroidTransport | null {

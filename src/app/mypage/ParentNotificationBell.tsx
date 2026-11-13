@@ -111,7 +111,7 @@ export default function ParentNotificationBell({ notifications, unreadCount }: {
                     <div
                         role="dialog"
                         aria-label="알림"
-                        className="fixed inset-x-0 bottom-16 z-[70] flex max-h-[75vh] flex-col overflow-hidden rounded-t-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-lg md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-12 md:max-h-[70vh] md:w-96 md:rounded-xl"
+                        className="fixed inset-x-0 bottom-[calc(3rem+env(safe-area-inset-bottom))] z-[70] flex max-h-[75vh] flex-col overflow-hidden rounded-t-2xl border border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] shadow-lg md:absolute md:inset-x-auto md:bottom-auto md:right-0 md:top-12 md:max-h-[70vh] md:w-96 md:rounded-xl"
                     >
                         {/* 머리: 제목 + 모두 읽음 + 닫기 (한 줄 44px) */}
                         <div className="flex min-h-11 items-center gap-1 border-b border-[var(--color-academy-line)] pl-4 pr-1">

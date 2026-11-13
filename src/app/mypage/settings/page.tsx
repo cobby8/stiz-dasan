@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { logout } from "@/app/actions/auth";
 import { requireVerifiedParent } from "@/lib/auth-guard";
@@ -10,7 +10,7 @@ import { notMergedStudent } from "@/lib/studentVisibility";
 import { readPushPrefs } from "@/lib/parent-notification-preferences";
 import { formatPhoneInput } from "@/lib/application-display-format";
 import { FONT_SCALE_COOKIE, parseFontScale, SHOW_THEME_SETTING } from "@/lib/mypage/parentSettings";
-import pkg from "../../../../package.json";
+import { appVersionLabels } from "@/lib/storeApp";
 import { readPreferredPaymentMethod } from "@/lib/payments/preferredMethodStore";
 import { NameRow, PasswordRow, NotificationRows, FontScaleRow, FeedbackRow, PaymentMethodRow } from "./SettingsClient";
 
@@ -54,7 +54,7 @@ export default async function ParentSettingsPage() {
 
     const supabase = await createClient();
     // 모든 조회의 대상 = 서버가 확인한 로그인 사용자(parent.appUserId) — 화면 값으로 남의 정보를 열 수 없다
-    const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod] = await Promise.all([
+    const [userRows, authResult, childRows, pushPrefs, cookieStore, preferredMethod, headerStore] = await Promise.all([
         prisma.$queryRawUnsafe<{ name: string; phone: string | null; username: string | null; role: string }[]>(
             `SELECT name, phone, username, role::text AS role FROM "User" WHERE id = $1 LIMIT 1`,
             parent.appUserId,
@@ -68,15 +68,18 @@ export default async function ParentSettingsPage() {
         cookies(),
         // 자주 쓰는 결제 방법(칸이 없거나 못 읽으면 null — 설정 화면은 그대로 열린다)
         readPreferredPaymentMethod(parent.appUserId),
+        // 요청 머리말 — 스토어 앱 버전 표식(« STIZApp/1.0.2 (ios)»)을 읽는다
+        headers(),
     ]);
     const me = userRows[0];
     const authUser = authResult.data?.user;
     // 아이디·비밀번호로 로그인하는 계정인가(간편로그인만 쓰는 계정은 비밀번호가 없다)
     const hasPasswordLogin = (authUser?.identities ?? []).some((identity) => identity.provider === "email");
     const fontScale = parseFontScale(cookieStore.get(FONT_SCALE_COOKIE)?.value);
-    // 앱 정보 — 웹 버전(package.json) + 배포 번호(Vercel 이 넣어 주는 커밋 앞 7자리, 없으면 생략)
-    const build = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
-    const versionLabel = build ? `${pkg.version} (${build})` : pkg.version;
+    // 앱 정보(2026-11-14 원장: «0.1.0» 은 학부모에게 틀린 정보처럼 보인다) —
+    // 스토어 앱이면 사용자 에이전트의 앱 버전(«앱 1.0.2»), 그리고 배포 번호(Vercel 커밋 앞 7자리)를 작게 «화면 1ac85e2».
+    // package.json 의 version(0.1.0)은 손대지 않은 개발 틀 값이라 더 쓰지 않는다.
+    const version = appVersionLabels({ userAgent: headerStore.get("user-agent"), build: process.env.VERCEL_GIT_COMMIT_SHA });
 
     return (
         <div className="mx-auto grid max-w-2xl gap-4">
@@ -142,7 +145,11 @@ export default async function ParentSettingsPage() {
             <Section title="앱 정보">
                 <li className={ROW}>
                     <span className="flex-1 font-medium text-[var(--color-academy-ink)]">버전</span>
-                    <span className="shrink-0 tabular-nums text-[var(--color-academy-muted)]">{versionLabel}</span>
+                    {/* 앱 버전이 주인공, 화면(웹) 배포 번호는 작게 — 브라우저면 배포 번호만 */}
+                    <span className="flex shrink-0 items-baseline gap-2 tabular-nums text-[var(--color-academy-muted)]">
+                        {version.app && <span>{version.app}</span>}
+                        <span className="text-xs text-[var(--color-academy-faint)]">{version.web}</span>
+                    </span>
                 </li>
                 <LinkRow href="/terms" label="이용약관" />
                 <LinkRow href="/privacy" label="개인정보처리방침" />

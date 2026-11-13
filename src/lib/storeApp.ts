@@ -148,3 +148,51 @@ export function storeAppSocialLogin(input: { userAgent: string | null | undefine
 export function storeAppSocialLoginHref(provider: string): string {
   return `/auth/oauth/${provider}?intent=login`;
 }
+
+/**
+ * 사용자 에이전트의 « STIZApp/1.0.2 (ios)» 에서 앱 버전·기기를 꺼낸다(2026-11-14 설정 화면 «앱 정보»).
+ * 표식이 없으면 null — 브라우저이거나 표식을 붙이기 전 옛 앱(아이폰 1.0).
+ * 버전 글자는 숫자·점·짧은 꼬리표만 받는다(엉뚱한 긴 글자를 화면에 그대로 찍지 않게).
+ */
+export function storeAppVersionOf(userAgent: string | null | undefined): { version: string; platform: "ios" | "android" } | null {
+  const match = /\bSTIZApp\/(\d+(?:\.\d+){0,3}(?:-[0-9A-Za-z.]{1,12})?) \((ios|android)\)/.exec(String(userAgent ?? ""));
+  return match ? { version: match[1], platform: match[2] as "ios" | "android" } : null;
+}
+
+/** "1.0.2" < "1.0.10" 처럼 점으로 나눈 숫자끼리 비교(a 가 b 보다 낮으면 true). 꼬리표(-beta)는 무시 */
+export function isAppVersionBelow(a: string, b: string): boolean {
+  const parts = (v: string) => v.split("-")[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const x = parts(a);
+  const y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
+
+/** 앱 알림 창구(stizPush·StizPushTransport)가 들어간 첫 앱 버전(아이폰·안드로이드 1.0.2) */
+export const NATIVE_PUSH_MIN_APP_VERSION = "1.0.2";
+
+/**
+ * 사용자 에이전트로 본 «이 앱 빌드에는 알림 창구가 들어 있나».
+ * 표식 없음(아이폰 1.0)·1.0.1 이하 → false = 업데이트하면 알림을 켤 수 있다.
+ * 1.0.2 이상인데 창구가 안 보이면 업데이트로 풀리지 않는 문제(휴대폰 웹뷰가 오래됨 등)라 «업데이트» 안내를 하지 않는다.
+ */
+export function appBuildHasPush(userAgent: string | null | undefined): boolean {
+  const app = storeAppVersionOf(userAgent);
+  return Boolean(app) && !isAppVersionBelow(app!.version, NATIVE_PUSH_MIN_APP_VERSION);
+}
+
+/**
+ * 설정 화면 «앱 정보 → 버전» 글자(순수 — 테스트로 못박는다).
+ * 학부모에게 package.json 의 «0.1.0» 은 틀린 정보처럼 보여서(원장 11-14) 빼고,
+ *   - 스토어 앱(표식 있음): app = «앱 1.0.2», web = «화면 1ac85e2»(작게)
+ *   - 브라우저·표식 없는 옛 앱: app = null, web = «화면 1ac85e2»
+ * build(배포 커밋 앞 7자리)가 없으면(내 컴퓨터 개발 서버) web = «화면 개발판».
+ */
+export function appVersionLabels(input: { userAgent: string | null | undefined; build: string | null | undefined }): { app: string | null; web: string } {
+  const app = storeAppVersionOf(input.userAgent);
+  const build = String(input.build ?? "").trim().slice(0, 7);
+  return { app: app ? `앱 ${app.version}` : null, web: build ? `화면 ${build}` : "화면 개발판" };
+}

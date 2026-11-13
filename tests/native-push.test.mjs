@@ -482,8 +482,10 @@ test("화면 연결: 자동 등록기는 루트 레이아웃에, 설정 화면�
   assert.match(registrar, /syncNativePushToken\(state, \{ userId \}\)/);
   assert.match(registrar, /configured !== true\) return;/, "서버 키가 없으면 권한을 묻지 않는다");
   const settings = read("src/app/mypage/settings/SettingsClient.tsx");
-  assert.match(settings, /app\.view === "denied" && \([\s\S]*?NATIVE_PUSH_NOTES\.denied/);
-  assert.match(settings, /app\.view === "unavailable" && \([\s\S]*?NATIVE_PUSH_NOTES\.unavailable/);
+  // 안내 하나는 nativePushNotice 한 곳이 고른다(2026-11-14 옛 앱 «업데이트» 추가)
+  assert.match(settings, /notice === "denied" && \([\s\S]*?NATIVE_PUSH_NOTES\.denied/);
+  assert.match(settings, /notice === "unavailable" && \([\s\S]*?NATIVE_PUSH_NOTES\.unavailable/);
+  assert.match(settings, /notice === "update" && \([\s\S]*?NATIVE_PUSH_UPDATE_NOTE/);
   assert.match(settings, /app\.view === "default" \? \(\s*<Switch on=\{false\} busy=\{app\.busy\} label="휴대폰 알림" onToggle=\{\(\) => void app\.request\(\)\} \/>/);
   assert.doesNotMatch(settings, /앱 알림은 준비 중이에요/, "잘못된 «준비 중» 안내 제거");
   // 종류별 받기 스위치는 앱 알림이 되는 앱에서도 보인다(웹·앱 같은 스위치 — 발송 함수가 둘 다 거른다)

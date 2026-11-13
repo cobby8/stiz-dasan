@@ -152,3 +152,9 @@
 - **발견자**: developer
 - **내용**: `acceptInvitation` 이 createUser 실패를 «메시지에 already 가 있으면 확실, 아니면 전부 결과 모름»으로 나눠, «Password is known to be weak…»(AuthWeakPasswordError·422) 같은 **명백한 거절**에도 초대를 RECOVERY_REQUIRED 로 잠갔다. 그 뒤 같은 링크는 «가입 처리 상태를 확인 중입니다»로 막혔고(실제 계정·User 행 없음), 시도 기록도 CREATING 으로 남았다. 수정: `src/lib/staff/inviteAuthFailure.ts` — **응답이 온 4xx(408 제외)만 «확실히 안 만들어짐»**, status 0/없음·408·5xx 는 «결과 모름». 약한 비밀번호·기타 4xx = 시도 DELETED(`NOT_CREATED:<사유>`, CHECK 에 FAILED 없음)+초대 PENDING(문자 인증 유지 → 같은 화면 재시도), 결과 모름만 RECOVERY_REQUIRED. 화면은 쉬운 문구·입력값 유지·흔한 비밀번호 사전 경고. **교훈**: 외부 API 실패를 «잠금»으로 처리할 땐 «서버가 보고 거절»인지 «결과 모름»인지 status 로 가른다 — 문구 포함 여부로 가르지 않는다. 가드 `tests/staff-invite-auth-failure.test.mjs`.
 - **참조횟수**: 0
+
+### [2026-11-14] .academy-input 의 width:100% 가 Tailwind 폭(w-32)을 이겨 옆 이름이 한 글자씩 세로로 접힘
+- **분류**: error
+- **발견자**: developer
+- **내용**: `academy-theme.css` 의 `.academy-app .academy-input { width:100% }` 는 레이어 밖 CSS 라 Tailwind 유틸리티(@layer)보다 우선한다. 그래서 `className="academy-input w-32 shrink-0"` 의 w-32 가 무시되고 선택 상자가 줄 전체를 차지 → 옆 `flex-1` 이름이 최소 폭(한글 한 글자)으로 접혔다(설정 «자주 쓰는 결제 방법», 원장 아이폰). **해결**: 입력칸은 폭을 정한 감싸개(`<span class="min-w-0 max-w-40 flex-1">`) 안에 넣고, 이름은 `shrink-0 whitespace-nowrap`. 같은 이유로 `academy-input` 에 `w-*` 를 직접 주지 말 것(`min-w-*`·`flex-1` 은 괜찮다). 가드 `tests/parent-settings-fix-1114.test.mjs`.
+- **참조횟수**: 0
