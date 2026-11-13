@@ -99,7 +99,7 @@ test("기본값(결석·오늘만 변경 끔) = 관리자 «월+요일» 기본�
 test("배선 가드 — 기사님 서버는 순수 조립 함수에 맡기고, 기사님 화면은 RunBoard(mode=driver)로 그린다", async () => {
   const route = await readFile("src/lib/shuttle/regularDriverRoute.ts", "utf8");
   assert.match(route, /import \{ buildRegularRunClasses \} from "\.\/regularRunRows"/);
-  assert.match(route, /return buildRegularRunClasses\(\{/);
+  assert.match(route, /= buildRegularRunClasses\(\{/); // 2026-11-14: 휴무 안내와 함께 돌려주려고 변수에 담는다
   // 서버가 조립을 따로 하면 관리자 운행표와 어긋난다 — 직접 호출 금지.
   assert.doesNotMatch(route, /assembleRegularDriverClasses\(|attachShuttleDayNotes\(|attachAbsenceLabels\(/);
   // 5단계: 저장 노선을 읽지 않는다(명단만).

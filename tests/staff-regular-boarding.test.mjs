@@ -5,6 +5,10 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 import { isKstYmd } from "../src/lib/datetime/kst.ts";
+import { loadTsModule } from "./_ts-module.mjs";
+
+// 휴원·휴무 줄 잠금 판정(실제 모듈) — 2026-11-14 원장 지시
+const dayRules = await loadTsModule("src/lib/shuttle/regularRunDayRules.ts");
 
 const require = createRequire(import.meta.url);
 const { NextRequest, NextResponse } = require("next/server");
@@ -45,11 +49,12 @@ function fixture({ loggedIn = true, access = true, readFails = false } = {}) {
     "@/lib/shuttle/regularDriverRoute": {
       async getRegularDriverClasses(requestDate) {
         return requestDate === date ? [{
-          board: [{ rows: [{ rowId: "pickup-row", name: "명단 이름" }] }],
+          board: [{ rows: [{ rowId: "pickup-row", name: "명단 이름" }, { rowId: "paused-row", name: "휴원 학생", blockedLabel: "휴원" }] }],
           alight: [{ rows: [{ rowId: "dropoff-row", name: "명단 이름" }] }],
         }] : [];
       },
     },
+    "@/lib/shuttle/regularRunDayRules": dayRules,
     "@/lib/shuttle/regularRun": {
       async setRegularBoarding(input) {
         writes.push(input);
@@ -125,4 +130,16 @@ test("정규 명단의 실제 이름으로 승하차를 기록하고 대기로 �
     { date, rowId: "dropoff-row", status: "BOARDED", studentName: "명단 이름" },
     { date, rowId: "pickup-row", status: null, studentName: "명단 이름" },
   ]);
+});
+
+test("휴원·휴무로 잠긴 줄은 체크를 409 로 거부하고, 대기로 되돌리기(null)만 받는다", async () => {
+  const api = fixture();
+  for (const status of ["BOARDED", "NOSHOW", "SELF"]) {
+    const response = await api.POST(post({ rowId: "paused-row", status }));
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).error, /휴원 학생은 체크하지 않습니다/);
+  }
+  assert.deepEqual(api.writes, []);
+  assert.deepEqual(await (await api.POST(post({ rowId: "paused-row", status: null }))).json(), { ok: true });
+  assert.deepEqual(api.writes.map((write) => ({ ...write })), [{ date, rowId: "paused-row", status: null, studentName: "휴원 학생" }]);
 });

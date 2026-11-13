@@ -6,6 +6,23 @@ import { isAnyDriverRunToken } from "@/lib/shuttle/driverToken";
 import { readDriverBoarding } from "@/lib/shuttle/driverStatusRead";
 // 운행 링크 스위치(원장이 끄면 토큰만으로는 못 연다 — 셔틀 권한 있는 로그인 사용자만 통과)
 import { driverLinkBlocked, driverLinkDisabledResponse } from "@/lib/shuttle/driverLinkAccess";
+// 휴원·퇴원·첫 수업 전·휴무 줄 잠금 — 기사님 화면과 같은 함수(getRegularDriverClasses → 줄의 blockedLabel)로 판정한다.
+import { getRegularDriverClasses } from "@/lib/shuttle/regularDriverRoute";
+import { boardingRejectedForBlock } from "@/lib/shuttle/regularRunDayRules";
+
+/**
+ * 그날 운행표에서 이 줄의 잠금 뱃지(없으면 null). 운행표를 못 읽거나 줄을 못 찾으면 null —
+ * 종전처럼 저장한다(이 확인 때문에 멀쩡한 체크가 막히면 기사님이 아이를 기록 못 한다).
+ */
+async function blockedLabelOf(date: string, rowId: string): Promise<string | null> {
+  try {
+    const classes = await getRegularDriverClasses(date);
+    const row = classes.flatMap(({ board, alight }) => [...board, ...alight]).flatMap(({ rows }) => rows).find((r) => r.rowId === rowId);
+    return row?.blockedLabel ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +69,13 @@ export async function POST(request: Request) {
       body?.status === "BOARDED" || body?.status === "NOSHOW" || body?.status === "SELF" ? body.status : null;
     // 화면이 표시하는 날짜(date)에 저장한다. 유효하면 그 날, 없으면 오늘(KST)로 폴백.
     const date = validDate(body?.date) ?? todayKST();
+    // 잠긴 줄에는 «대기로 되돌리기»(null)만 받는다 — 되돌리기는 확인 없이 바로 통과시킨다(조회 비용도 아낀다).
+    if (status !== null) {
+      const blockedLabel = await blockedLabelOf(date, rowId);
+      if (boardingRejectedForBlock(blockedLabel, status)) {
+        return NextResponse.json({ error: `${blockedLabel} 학생은 체크하지 않습니다.` }, { status: 409 });
+      }
+    }
     await setRegularBoarding({ date, rowId, status, studentName: body?.studentName ?? null });
     return NextResponse.json({ ok: true });
   } catch {

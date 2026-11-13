@@ -140,6 +140,9 @@ test("스위치 끔 → 토큰 API 가 410 으로 거부하고 DB(명단·탑승
     "@/lib/shuttle/driverToken": { async isAnyDriverRunToken(t) { return t === "a".repeat(32); } },
     "@/lib/shuttle/driverStatusRead": { async readDriverBoarding() { touched++; return { boarding: {}, checkedAt: {} }; } },
     "@/lib/shuttle/driverLinkAccess": access,
+    // 휴원·휴무 줄 잠금 확인도 명단을 읽는다 — 막힌 요청이면 여기도 손대지 않아야 한다.
+    "@/lib/shuttle/regularDriverRoute": { async getRegularDriverClasses() { touched++; return []; } },
+    "@/lib/shuttle/regularRunDayRules": { boardingRejectedForBlock: (label, status) => Boolean(label) && status !== null },
   });
   const get = await api.GET(new Request(`http://t/api?token=${"a".repeat(32)}&date=2026-11-13`));
   assert.equal(get.status, 410);

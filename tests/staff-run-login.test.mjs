@@ -77,7 +77,7 @@ test("경로 판정: 기사님은 운행표를 열고, 선생님만인 사람은
 test("운행표로 가는 길이 두 곳에 있다", () => {
   // 셔틀 화면 맨 위 — 로그인한 기사님·관리자.
   assert.match(shuttlePage, /await authorizeAssign\(staff\)/);
-  assert.match(shuttlePage, /getRegularDriverClasses\(date\)/);
+  assert.match(shuttlePage, /getRegularDriverDay\(date\)/); // 2026-11-14: 섹션 + 휴무 안내
   assert.match(shuttlePage, /<UnifiedDriverClient/);
   assert.doesNotMatch(shuttlePage, /findRollingDriverRunToken/);
   // 2026-11-13 b7: 이 운행표(계정용)엔 위치 전송이 없다 → 맨 위에 «운행 시작(위치 전송)» 진입 버튼으로 /staff/run 을 연다.
