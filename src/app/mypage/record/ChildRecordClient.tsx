@@ -280,8 +280,8 @@ export default function ChildRecordClient({
                 data={bars.map((b) => ({ label: String(Number(b.ym.slice(5, 7))), value: b.rate ?? 0, missing: b.rate === null, valueLabel: b.rate === null ? undefined : String(b.rate) }))}
                 color={CHART_COLORS.success}
                 height={150}
-                viewWidth={360}
-                fontSize={12}
+                viewWidth={300}
+                fontSize={13}
                 showValues
               />
             </div>
