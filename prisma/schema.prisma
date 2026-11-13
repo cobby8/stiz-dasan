@@ -781,6 +781,7 @@ model GymRentalRequest {
   rejectReason       String? // 거절 사유(신청자 문자에 나감)
   applicantSmsStatus String? // 마지막 신청자 문자 결과 «SENT|FAILED|OFF:종류»
   applicantUserId    String? // 로그인해서 신청한 계정(User.id)
+  calendarEventId    String? // 확정 대관의 «스티즈 다산점» 구글 캘린더 일정 ID(취소·수정 때 사용)
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @db.Timestamptz(6)
 

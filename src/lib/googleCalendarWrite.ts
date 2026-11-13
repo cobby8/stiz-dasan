@@ -108,6 +108,61 @@ export async function createCalendarEvent(event: {
 }
 
 /**
+ * 시간 지정 일정(체육관 대관처럼 «몇 시~몇 시»)을 만들거나 옮긴다.
+ * eventId 가 있으면 그 일정을 고치고, 없거나 이미 지워졌으면 새로 만든다.
+ * startIso/endIso = 실제 시각(UTC ISO). 캘린더에는 서울 시간으로 보인다.
+ * @returns 일정 ID (환경변수 없음·실패 시 null — 호출하는 쪽은 대관 처리를 되돌리지 않는다)
+ */
+export async function upsertTimedCalendarEvent(
+    eventId: string | null,
+    event: { title: string; startIso: string; endIso: string; description?: string | null },
+): Promise<string | null> {
+    const client = getCalendarClient();
+    if (!client) return null;
+    const requestBody = {
+        summary: event.title,
+        description: event.description || undefined,
+        start: { dateTime: event.startIso, timeZone: "Asia/Seoul" },
+        end: { dateTime: event.endIso, timeZone: "Asia/Seoul" },
+    };
+    if (eventId) {
+        try {
+            const res = await client.calendar.events.update({ calendarId: client.calendarId, eventId, requestBody });
+            return res.data.id || eventId;
+        } catch (e) {
+            // 캘린더에서 직접 지운 일정이면(404/410) 새로 만든다
+            const status = (e as { code?: number })?.code;
+            if (status !== 404 && status !== 410) {
+                console.error("[googleCalendarWrite] 시간 일정 수정 실패:", (e as Error)?.message);
+                return eventId;
+            }
+        }
+    }
+    try {
+        const res = await client.calendar.events.insert({ calendarId: client.calendarId, requestBody });
+        return res.data.id || null;
+    } catch (e) {
+        console.error("[googleCalendarWrite] 시간 일정 생성 실패:", (e as Error)?.message);
+        return null;
+    }
+}
+
+/** 일정 삭제 — 지워졌거나 이미 없으면(404/410) true, 실패하면 false(다시 지울 수 있게 ID 를 남기는 쪽에서 쓴다) */
+export async function deleteCalendarEventChecked(googleEventId: string): Promise<boolean> {
+    const client = getCalendarClient();
+    if (!client) return false;
+    try {
+        await client.calendar.events.delete({ calendarId: client.calendarId, eventId: googleEventId });
+        return true;
+    } catch (e) {
+        const status = (e as { code?: number })?.code;
+        if (status === 404 || status === 410) return true;
+        console.error("[googleCalendarWrite] 일정 삭제 실패:", (e as Error)?.message);
+        return false;
+    }
+}
+
+/**
  * 구글 캘린더 이벤트 수정
  * googleEventId가 없거나 실패하면 조용히 건너뛴다
  */

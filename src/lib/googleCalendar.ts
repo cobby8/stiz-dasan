@@ -177,6 +177,15 @@ async function fetchViaICS(icsUrl: string, options: GoogleCalendarReadOptions = 
     return result.sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
+/**
+ * 체육관 대관 확정 일정의 제목 앞머리(gym-rental-calendar.ts 가 같은 캘린더에 넣는다).
+ * 사이트 연간일정·청구 수업일 계산에는 학원 일정이 아니므로 읽지 않는다.
+ */
+export const RENTAL_CALENDAR_TITLE = "체육관 대관";
+// 자동으로 넣은 모양(«체육관 대관 · 6명») 그대로인 일정만 거른다 — 직원이 손으로 쓴 «체육관 대관 불가일» 같은 학원 일정은 남긴다
+const RENTAL_EVENT_RE = new RegExp(`^${RENTAL_CALENDAR_TITLE} · [0-9]+명$`);
+const notRental = (events: GoogleCalendarEvent[]) => events.filter((event) => !RENTAL_EVENT_RE.test(String(event.title ?? "").trim()));
+
 export async function fetchGoogleCalendarEvents(icsUrl: string, options: GoogleCalendarReadOptions = {}): Promise<GoogleCalendarEvent[]> {
     const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
 
@@ -185,7 +194,7 @@ export async function fetchGoogleCalendarEvents(icsUrl: string, options: GoogleC
         const calendarId = extractCalendarId(icsUrl);
         if (calendarId) {
             try {
-                return await fetchViaCalendarAPI(calendarId, apiKey, options);
+                return notRental(await fetchViaCalendarAPI(calendarId, apiKey, options));
             } catch (e) {
                 if (!options.strict) console.error("Calendar API failed, falling back to ICS:", e);
             }
@@ -194,7 +203,7 @@ export async function fetchGoogleCalendarEvents(icsUrl: string, options: GoogleC
 
     // fallback: ICS 파싱
     try {
-        return await fetchViaICS(icsUrl, options);
+        return notRental(await fetchViaICS(icsUrl, options));
     } catch (e) {
         if (options.strict) throw new Error("공식 일정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         console.error("Failed to fetch Google Calendar ICS:", e);
