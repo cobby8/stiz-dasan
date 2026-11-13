@@ -184,7 +184,7 @@ test("A-14 대시보드·통계: 카드는 묶음마다 제목, 큰 숫자는 �
   const stats = read("../src/app/admin/stats/StatsClient.tsx");
   assert.doesNotMatch(dash, /운영 현황|상세 데이터 불러오기/);
   assert.match(dash, /<DashboardSummaryCards summary=\{summary\} \/>/);
-  for (const title of ["재원생", "이번 달 수납률", "이번 달 출석률", "이번 달 신규·퇴원", "체험 → 등록 (30일)", "유니폼 보유율"]) {
+  for (const title of ["재원생", "이번 달 수강료 수납률", "이번 달 출석률", "이번 달 신규·퇴원", "체험 → 등록 (30일)", "유니폼 보유율"]) {
     assert.ok(cards.includes(`title="${title}"`), title);
   }
   assert.equal((cards.match(/text-3xl/g) ?? []).length, 1, "큰 숫자는 재원생 하나");

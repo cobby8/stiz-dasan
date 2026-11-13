@@ -38,7 +38,7 @@ export default function DashboardSummaryCards({ summary }: { summary: DashboardS
             </Card>
 
             {/* ② 이번 달 수납률 — 금액 기준, 미납은 빨강 */}
-            <Card title="이번 달 수납률" href="/admin/stats?tab=billing">
+            <Card title="이번 달 수강료 수납률" href="/admin/stats?tab=billing">
                 <span className="text-xl font-extrabold tabular-nums text-[var(--color-academy-ink)]">{formatRate(billing.rateAmount)}</span>
                 <StackedBar
                     height={6}

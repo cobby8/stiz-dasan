@@ -953,7 +953,7 @@ export function getCachedAdminApplySourceStatsPayload(range: AdminApplySourceSta
 
     return adminOnly(unstable_cache(
         () => loadApplySourceStats(normalizedRange),
-        ["admin-apply-source-stats-v2", normalizedRange, startIso ?? "all"],
+        ["admin-apply-source-stats-v3", normalizedRange, normalizedRange === "ALL" ? "all" : todayKst()],
         { revalidate: 60, tags: ["admin-apply", "admin-trial"] },
     ))();
 }
