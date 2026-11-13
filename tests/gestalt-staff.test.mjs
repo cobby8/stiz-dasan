@@ -126,9 +126,10 @@ test("T-09 행 안 반복 버튼은 tonal, 하나뿐인 이어하기만 primary"
 
 test("T-10 사진: 삭제는 오른쪽 휴지통 아이콘(확인 창 유지), 버튼·칩 44px", () => {
   // 2026-11-14 아이콘 완전 제거: 휴지통 아이콘 → 글자 «삭제» 위험 버튼(터치 화면 44px 은 테마 academy-button-sm 이 지킨다). 떨어진 자리·확인 창은 그대로.
-  assert.match(photo, /aria-label="사진 삭제"[^>]*onClick=\{\(\) => void deletePhoto\(photo\)\}[^>]*academy-button-danger academy-button-sm shrink-0">\s*삭제\s*</);
+  // 2026-11-14 수업 피드: «학생 수정» 버튼이 없어져(나온 학생 선택 제거) 사진 아래 «지우기» 위험 버튼 하나만 남았다. 확인 창은 그대로.
+  assert.match(photo, /aria-label=\{`사진 \$\{index \+ 1\} 지우기`\} onClick=\{\(\) => void deletePhoto\(photo\)\} className="academy-button-danger academy-button-sm[^"]*">\s*지우기\s*</);
   assert.doesNotMatch(photo, /material-symbols-outlined/);
-  assert.match(photo, /window\.confirm\("이 사진을 수업 기록과 관리자 검토 목록에서 삭제할까요\?"\)/);
+  assert.match(photo, /window\.confirm\("이 사진을 지울까요\? 학부모 소식에서도 사라집니다\."\)/);
   assert.doesNotMatch(photo, /min-h-(8|9|10)\b/);
 });
 

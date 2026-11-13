@@ -34,7 +34,8 @@ export function regularEtaKey(studentId: string, dayOfWeek: string, serviceMonth
 }
 
 // «8:05»·«08:05» → «08:05». 형식이 아니면 null.
-function hhmm(value: string | null | undefined): string | null {
+// 학부모 «아이 기록» 셔틀 칸(childShuttleRules)도 이 함수로 시각을 정리한다 — 같은 명단 칸을 두 방식으로 읽지 않게.
+export function hhmm(value: string | null | undefined): string | null {
   const m = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String(value ?? ""));
   if (!m) return null;
   const h = Number(m[1]), min = Number(m[2]);

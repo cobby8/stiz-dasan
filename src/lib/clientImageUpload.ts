@@ -43,6 +43,8 @@ export async function uploadImagesWithProgress(
   const skippedCount = allFiles.length - selected.length;
   const items: UploadedImageItem[] = [];
   const failedNames: string[] = [];
+  // 실패한 파일 자체 — «실패한 사진만 다시 올리기»에 쓴다(2026-11-14 수업 피드). 성공한 사진은 다시 올리지 않는다.
+  const failedFiles: File[] = [];
   let done = 0;
 
   for (let start = 0; start < selected.length; start += concurrency) {
@@ -51,9 +53,9 @@ export async function uploadImagesWithProgress(
       batch.map(async (file) => {
         try {
           const item = await uploadCompressedImage(file, folder, { endpoint, fields, compression });
-          return { item, name: file.name };
+          return { item, name: file.name, file };
         } catch {
-          return { item: null, name: file.name };
+          return { item: null, name: file.name, file };
         } finally {
           done += 1;
           onProgress?.(done, selected.length);
@@ -63,9 +65,9 @@ export async function uploadImagesWithProgress(
 
     for (const result of results) {
       if (result.item) items.push(result.item);
-      else failedNames.push(result.name);
+      else { failedNames.push(result.name); failedFiles.push(result.file); }
     }
   }
 
-  return { items, failedNames, skippedCount, total: selected.length };
+  return { items, failedNames, failedFiles, skippedCount, total: selected.length };
 }

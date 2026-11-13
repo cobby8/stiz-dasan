@@ -11,11 +11,17 @@
 //   ((col AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul') — 한 번만 걸면 9시간 밀린다(statsQueries 의 kstNaive 와 같은 식).
 //   시간대 있는 칸(timestamptz)은 한 번, 날짜 칸(@db.Date)·Payment.year/month 는 변환 없이.
 import { prisma } from "@/lib/prisma";
-import { childAccessSql } from "@/lib/account/child-access";
+import { childAccessSql, childConnectionsAvailable } from "@/lib/account/child-access";
 import { payerAccessSql } from "@/lib/payments/payerAccess";
 import { notMergedStudent } from "@/lib/studentVisibility";
 import { getStudentTenure } from "@/lib/student-tenure-query";
-import { todayKst } from "@/lib/datetime/kst";
+import { todayKst, toKstYmd } from "@/lib/datetime/kst";
+import { loadChildClasses, type ChildClassRow } from "@/lib/parent/childClassesQuery";
+import type { GuardianInfo } from "@/lib/parent/childProfileRules";
+import { loadChildRegularShuttle, type ChildRegularShuttle } from "@/lib/shuttle/childShuttleQuery";
+import { getParentShuttleOverview, getShuttleDriverContact, type ParentShuttleOverviewItem } from "@/lib/shuttle/parent";
+import { getMonthlyClassDates, loadAnnualPlanEvents } from "@/lib/enrollment/monthlyClassDates";
+import { isExpired, summarize, type MakeupCreditStatus } from "@/lib/makeup/credit-rules";
 import {
   homeRecordLine,
   yearAttendance,
@@ -39,8 +45,33 @@ export type UniformRecord = {
 };
 export type ReportRecord = { reports: number; feedbacks: number };
 
+/** «아이 정보» 칸 — 관리자 원생 상세 중 학부모에게 보여도 되는 것만(빼는 칸은 childProfileRules.PROFILE_HIDDEN_COLUMNS) */
+export type ChildProfile = {
+  birthYmd: string | null;
+  gender: string | null;
+  school: string | null;
+  /** Student.grade 원문(«2026년 초등 5학년» 등) — 화면은 생년월일 기준 학년과 함께 */
+  gradeText: string | null;
+  enrollYmd: string | null;
+  guardians: GuardianInfo | null;
+  classes: ChildClassRow[] | null;
+  makeup: { available: number; reserved: number; nearestExpiryYmd: string | null } | null;
+};
+
+/** «셔틀» 칸 — 정규는 셔틀 명단 기준(기사님·관리자 운행표와 같은 정본), 방학특강·신청 접수는 기존 학부모 셔틀 조회 그대로 */
+export type ChildShuttle = {
+  regular: ChildRegularShuttle;
+  /** 이 아이의 방학특강 셔틀·«정규 셔틀 신청 접수» 항목(getParentShuttleOverview 와 같은 값) */
+  others: ParentShuttleOverviewItem[];
+  /** 셔틀 기사님 연락처 — 홈과 같은 규칙(공용 기사 계정 이름·전화), 셔틀을 타는 아이에게만 */
+  driver: { name: string; phone: string } | null;
+};
+
 export type ChildRecord = {
   student: { id: string; name: string; canPay: boolean; hasBaseline: boolean };
+  /** 화면 렌더 테스트의 옛 모양(칸 없음)도 받는다 — 없으면 «불러오지 못했어요» 없이 칸을 숨긴다 */
+  profile?: ChildProfile | null;
+  shuttle?: ChildShuttle | null;
   today: string;
   /** 섹션마다 따로 — 한 조회가 실패하면 그 섹션만 null(화면은 «불러오지 못했어요» 한 줄) */
   payments: RecordPaymentRow[] | null;
@@ -124,6 +155,10 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     `SELECT s.id, s.name,
             (s."tenureBaselineMonths" IS NOT NULL AND COALESCE(s."tenureBaselineThrough", '') ~ '^[0-9]{4}-(0[1-9]|1[0-2])$') AS "hasBaseline",
             s."uniformStatus",
+            to_char(${kstNaive(`s."birthDate"`)}, 'YYYY-MM-DD') AS "birthYmd",
+            s.gender, s.school, s.grade AS "gradeText",
+            to_char(${kstNaive(`s."enrollDate"`)}, 'YYYY-MM-DD') AS "enrollYmd",
+            (s."parentId" = $1) AS "meIsRepresentative",
             to_char(s."uniformReceivedAt" AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS "uniformReceivedYmd",
             (${await payerAccessSql("s", "$1")}) AS "canPay"
        FROM "Student" s
@@ -136,8 +171,83 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
   if (!row) return null;
   const canPay = row.canPay === true;
   const sid = String(row.id);
+  const today = todayKst();
 
   // ② 권한 확인 뒤에만 나머지(섹션별 실패는 그 섹션만 null)
+  // 아이 정보 — 수강 반(수업 탭과 같은 조회)은 셔틀 칸도 쓰므로 한 번만 읽어 나눠 쓴다
+  const classesP = section("classes", () => loadChildClasses(db, sid, today));
+  const profileExtrasP = Promise.all([
+    // 보호자 — 대표 보호자 이름 + 로그인한 본인 이름·전화. 다른 사람의 전화는 고르지 않는다
+    section("guardians", async (): Promise<GuardianInfo> => {
+      const g = await db.$queryRawUnsafe<any[]>(
+        `SELECT rep.name AS "repName", me.name AS "meName", me.phone AS "mePhone"
+           FROM "Student" s
+           LEFT JOIN "User" rep ON rep.id = s."parentId"
+           LEFT JOIN "User" me ON me.id = $2
+          WHERE s.id = $1 AND ${notMergedStudent("s")}
+          LIMIT 1`,
+        sid,
+        parentUserId,
+      );
+      // 연결된 다른 가족(이름만) — 가족 연결 기능이 켜진 환경에서만. 실패해도 보호자 칸은 남긴다
+      let familyNames: string[] = [];
+      try {
+        if (await childConnectionsAvailable()) {
+          const fam = await db.$queryRawUnsafe<any[]>(
+            `SELECT u.name FROM "ParentStudentAccess" a
+               JOIN "User" u ON u.id = a."userId" AND u."withdrawnAt" IS NULL
+               JOIN "Student" s ON s.id = a."studentId"
+              WHERE a."studentId" = $1 AND a.status = 'ACTIVE' AND a."userId" <> $2 AND a."userId" <> s."parentId"
+                AND ${notMergedStudent("s")}
+              ORDER BY a."createdAt"`,
+            sid,
+            parentUserId,
+          );
+          familyNames = fam.map((f) => String(f.name ?? "").trim()).filter(Boolean);
+        }
+      } catch {
+        familyNames = [];
+      }
+      return {
+        representativeName: g[0]?.repName ?? null,
+        meIsRepresentative: row.meIsRepresentative === true,
+        me: { name: g[0]?.meName ?? null, phone: g[0]?.mePhone ?? null },
+        familyNames,
+      };
+    }),
+    // 보강권 — 보강 화면과 같은 집계(summarize: 만료 지난 AVAILABLE 은 만료로 센다)
+    section("makeup", async () => {
+      const rows = await db.$queryRawUnsafe<any[]>(
+        `SELECT mc.status, mc."expiresAt" FROM "MakeupCredit" mc WHERE mc."studentId" = $1`,
+        sid,
+      );
+      const now = new Date();
+      const credits = rows.map((r) => ({ status: String(r.status) as MakeupCreditStatus, expiresAt: new Date(r.expiresAt) }));
+      const counts = summarize(credits, now);
+      // 가장 먼저 끝나는 «사용 가능» 보강권의 만료일(KST 날짜)
+      const usable = credits
+        .filter((c) => c.status === "AVAILABLE" && !isExpired(c, now))
+        .sort((a, b) => a.expiresAt.getTime() - b.expiresAt.getTime());
+      return { available: counts.available, reserved: counts.reserved, nearestExpiryYmd: usable[0] ? toKstYmd(usable[0].expiresAt) : null };
+    }),
+  ]);
+  // 셔틀 — 정규는 명단 기준(childShuttleQuery), 방학특강·신청 접수는 기존 학부모 셔틀 조회(명단 항목 제외)를 이 아이로 거른다
+  const shuttleP = section("shuttle", async (): Promise<ChildShuttle> => {
+    const classes = await classesP;
+    if (classes === null) throw new Error("classes unavailable"); // 수강 상태 없이 운행을 판정하지 않는다
+    const planEvents = await loadAnnualPlanEvents().catch(() => null);
+    const monthlyDates = planEvents ? (ym: string, dow: string) => getMonthlyClassDates(planEvents, ym, dow) : null;
+    const [regular, all] = await Promise.all([
+      loadChildRegularShuttle(db, { studentId: sid, today, classes, monthlyDates }),
+      // 보는 아이 하나만(형제 셔틀 현황을 다시 돌지 않게) — 내 자녀 범위 확인은 함수 안에서 그대로 한다
+      getParentShuttleOverview(parentUserId, { includeRoster: false, studentIds: [sid] }).catch(() => [] as ParentShuttleOverviewItem[]),
+    ]);
+    const others = all.filter((item) => item.studentId === sid);
+    const rides = regular.weekly.length > 0 || others.some((item) => item.status === "CONFIRMED" || item.status === "COMPLETED");
+    const driver = rides ? await getShuttleDriverContact().catch(() => null) : null;
+    return { regular, others, driver };
+  });
+
   const [payments, attendance, timeline, seasonal, grant, reports, tenure] = await Promise.all([
     section("payments", async () => {
       const rows = await db.$queryRawUnsafe<any[]>(
@@ -249,10 +359,23 @@ export async function getChildRecord(parentUserId: string, studentId: string, db
     section("tenure", () => getStudentTenure(sid)),
   ]);
 
+  const [classes, [guardians, makeup], shuttle] = await Promise.all([classesP, profileExtrasP, shuttleP]);
+
   const g = grant?.[0];
   return {
     student: { id: sid, name: String(row.name ?? ""), canPay, hasBaseline: row.hasBaseline === true },
-    today: todayKst(),
+    profile: {
+      birthYmd: row.birthYmd ?? null,
+      gender: row.gender ?? null,
+      school: row.school ?? null,
+      gradeText: row.gradeText ?? null,
+      enrollYmd: row.enrollYmd ?? null,
+      guardians,
+      classes,
+      makeup,
+    },
+    shuttle,
+    today,
     payments,
     attendance,
     timeline,

@@ -3,10 +3,20 @@
 <!-- 프로젝트의 폴더 구조, 파일 역할, 핵심 패턴을 기록 -->
 <!-- 2026-11-10 정리: 48항목 → 주제별 19묶음. 원래 항목은 묶음 안 하위 항목(원래 날짜·제목)으로 내용 그대로 보존. 새 항목은 맞는 묶음에 하위 항목으로 넣는다 -->
 
+### [2026-11-14] 수업 피드 = «볼 수 있는가» 판정 하나(src/lib/feed) — 사진·영상·소식·홈 카드 공용
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 학부모 공개 = 완료+발행 수업(`feedVisibleSessionSql`) × 참여한 내 아이(`feedParticipantSql` = 출결 기록 또는 그 반 ACTIVE 수강·개시일 ≤ 수업일). 서버 판정은 `feed/server.ts` 의 `loadParentViewableSession`/`parentCanViewSession` 하나(사진 보기 라우트·영상 라우트·소식 상세가 호출, 목록·홈 카드는 같은 SQL 조각). 사진 공개 동의·«나온 학생» 태그는 보지 않는다(원장 결정, 동의 표는 보존·공개 게시 검사는 `PUBLIC_POST_CONSENT_GATE_ENABLED=false` 스위치). 상세·홈은 `listViewableSessionPhotos`(사진 원장 SocialPostDraft 에 실제로 있는 이 수업 사진만)로 넘겨 403/404 헛요청이 없다. Session.date(무tz) 수업일은 `sessionKstDateSql`(두 번 변환) — 옛 «전날 15:00» 행도 같은 날. 선생님 쪽: 한 줄(Session.content)은 `saveSessionFeedLine`(PLANNED~COMPLETED·당일 자정), 사진·영상 시간은 `canManageSessionMedia`(=영상 규칙). 테스트 tests/feed-rules.test.mjs·parent-report-render.test.mjs.
+- **참조횟수**: 0
+
 ### [2026-11-14] 수업 영상 = 브라우저→저장소 직접 업로드 + 예약 행 + 유튜브 이동 cron
 - **분류**: architecture
 - **발견자**: developer
 - **내용**: 영상은 Vercel 함수(본문 4.5MB 한계)를 거치지 않는다 — `POST …/videos/upload-url` 이 권한·시간·형식·크기 확인 후 `SessionVideo` «예약 행»(registeredAt NULL)+서명 업로드 주소 발급 → 브라우저 XHR PUT(진행률) → `POST …/videos` 가 저장소 `info()` 로 크기·형식 재확인 후 등록. 규칙은 `lib/sessionVideo/rules.ts`(순수, 테스트 session-video-rules), 서버 공용 `server.ts`(오늘 = SQL `NOW() AT TIME ZONE` 한 번, 보호자 = 출결 또는 ACTIVE 수강 + childAccessSql), cron `/api/cron/youtube-upload`(15분, 예약 3시간 만료·사본 삭제·UPLOADING 20분 복구·유튜브 삭제·하루 KST 5건 `YouTubeConnection.quotaUsed` 선점 UPDATE). 유튜브 토큰은 `lib/youtube/tokenCrypto.ts` AES-GCM, 백업에서 가림(archiveCore SECRET_COLUMNS_BY_TABLE). 재생 = UPLOADED+unlisted 만 youtube-nocookie, 나머지 10분 서명 주소.
+### [2026-11-14] 학부모 정규 셔틀 = 셔틀 명단(RegularShuttleStop) 기준 한 모듈 · «아이 기록» 아이 정보 칸
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 순수 `src/lib/shuttle/childShuttleRules.ts`(요일×수업시간 묶음·명단 순서 첫 행·시각 정리는 regularRosterEtaLogic.hhmm · 7일 운행 판정 순서 = 수강 상태(첫 수업 전·퇴원·휴원) → 휴무(연간일정 수업일 아님, classDatesForCalendarMonth+getMonthlyClassDates) → 결석(RegularAbsence REPORTED·CONFIRMED) → «오늘만»(ShuttleDayException, appliesToDirection·describeException) · `rosterOverviewItems` = 홈·수업 탭 항목 «HH:MM 승차/하차») + 조회 `childShuttleQuery.loadChildRegularShuttle(db, {studentId,…})`(명단 달 = 그 달 이하 최신, 모든 SQL studentId=$1, 전화·좌표·메모 미조회). `getParentShuttleOverview` 가 내 자녀(childAccessWhere)마다 이걸로 정규 항목을 만들고(옛 노선 승객과 같은 날·방향이면 승객 쪽), `{includeRoster:false}` 로 끌 수 있다. 반 목록은 `parent/childClassesQuery.loadChildClasses`(수업 탭과 같은 LATERAL·classStatusChip). 아이 정보 규칙 `parent/childProfileRules.ts`(숨길 칸 PROFILE_HIDDEN_COLUMNS — 테스트가 조회 SQL 에 없는지 본다, 남의 전화는 안 내림). 테스트 tests/parent-child-profile-shuttle.
 - **참조횟수**: 0
 
 ### [2026-11-14] 학부모 «아이 기록»(/mypage/record) = 순수 규칙 + 첫 SQL 권한 재확인 조회

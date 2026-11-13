@@ -75,7 +75,7 @@ test("선생님 홈: 남은·완료 수업은 한 줄 행 + 시트, 시작 잠�
   assert.match(homeClient, /function ClassRow[\s\S]*?if \(event\.target !== event\.currentTarget\) return;/);
   assert.match(homeClient, /onClick=\{\(event\) => \{ event\.stopPropagation\(\); onStart\(lesson\); \}\}/);
   // 시트의 동작은 기존 함수로(시트를 먼저 닫고)
-  assert.match(homeClient, /setDetailTarget\(null\);\s*if \(action === "start"\) openPrimaryAction\(lesson\);\s*else if \(action === "content"\) openContent\(lesson\);\s*else if \(action === "contacts"\) openContacts\(lesson\);\s*else if \(action === "billing"\) \{ if \(showFees\) setBillingTarget\(\{ lesson \}\); \}\s*else \{ setError\(null\); setNoticeTarget\(lesson\); \}/);
+  assert.match(homeClient, /setDetailTarget\(null\);\s*if \(action === "start"\) openPrimaryAction\(lesson\);\s*else if \(action === "content"\) openContent\(lesson\);\s*else if \(action === "feed"\) openFeed\(lesson\);\s*else if \(action === "contacts"\) openContacts\(lesson\);\s*else if \(action === "billing"\) \{ if \(showFees\) setBillingTarget\(\{ lesson \}\); \}\s*else \{ setError\(null\); setNoticeTarget\(lesson\); \}/);
   // 시트 시작 버튼도 진행 중 수업이 있으면 잠근다
   assert.match(homeClient, /startLocked=\{Boolean\(runningClass && detailTarget\.sessionStatus !== "IN_PROGRESS"\)\}/);
   // 시간·인원은 tabular-nums, 인원은 오른쪽

@@ -31,6 +31,10 @@ const statusTones = load("src/lib/ui/statusTones.ts"); // 상태색 공용 지�
 const link = { __esModule: true, default: ({ children, ...props }) => React.createElement("a", props, children) };
 const kst = load("src/lib/datetime/kst.ts");
 const summary = load("src/lib/mypage/summary.ts");
+// 2026-11-14 «최신 수업 피드» 카드 — 순수 규칙·카드 부품을 실제로 돌린다
+const sessionVideoRules = load("src/lib/sessionVideo/rules.ts", { "@/lib/datetime/kst": kst });
+const feedRules = load("src/lib/feed/rules.ts", { "@/lib/datetime/kst": kst, "@/lib/sessionVideo/rules": sessionVideoRules });
+const latestFeedCard = load("src/components/parent/LatestFeedCard.tsx", { "next/link": link, "@/lib/datetime/kst": kst });
 
 test("① 메뉴 4개 — 하위 화면에서도 소속 탭이 켜지고 방학특강 탭은 없다", () => {
   const nav = load("src/app/mypage/MyPageBottomNav.tsx", { "next/link": link, "next/navigation": { usePathname: () => "/mypage" } });
@@ -86,9 +90,62 @@ function renderHome(props) {
     "@/components/account/ChildConnectionNotice": nullComponent, "next/link": link,
     "@/app/actions/admin": {}, "@/lib/mypage/summary": summary, "@/lib/datetime/kst": kst,
     "@/components/parent/VirtualAccountNotice": { __esModule: true, default: ({ account }) => React.createElement("p", null, `계좌 ${account.accountNumber}`) },
+    "@/components/parent/LatestFeedCard": latestFeedCard, "@/lib/feed/rules": feedRules,
   }).default;
   return renderToStaticMarkup(React.createElement(Client, props));
 }
+
+// ── «최신 수업 피드» 카드(2026-11-14) ─────────────────────────────────
+const feedCandidate = (extra = {}) => ({
+  studentId: "a", sessionId: "s-a", ymd: "2026-11-13", publishedAtMs: 1, className: "초등 저학년반", coachName: "합성 코치",
+  content: "드리블 기본기 연습했습니다.", topic: null, photos: [], videoCount: 0, ...extra,
+});
+
+test("홈 피드 카드: «처리할 일» 바로 아래, 날짜·반·코치·본문 + 소식 더보기, 누르면 상세", () => {
+  const html = renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, feedCandidates: [feedCandidate({ photos: [{ src: "/api/staff/sessions/s-a/photos/p1" }] })] });
+  const todo = html.indexOf("처리할 일");
+  const card = html.indexOf("최신 수업 피드");
+  assert.ok(todo > 0 && card > todo, "처리할 일 다음");
+  assert.ok(html.indexOf("결석 알리기") > card, "빠른 실행보다 위");
+  assert.match(html, /11\/13\(금\)/);
+  assert.match(html, /초등 저학년반/);
+  assert.match(html, /합성 코치 코치/);
+  assert.match(html, /line-clamp-2[^"]*">드리블 기본기 연습했습니다\./);
+  assert.match(html, /href="\/mypage\/reports\/s-a"/);
+  assert.match(html, /href="\/mypage\/reports#news-reports"[^>]*>소식에서 더보기/);
+  assert.match(html, /src="\/api\/staff\/sessions\/s-a\/photos\/p1"/);
+  assert.equal((html.match(/academy-button-primary/g) || []).length, 0, "카드는 꽉 찬 버튼을 늘리지 않는다");
+});
+
+test("홈 피드 카드: 사진 없음·영상만·둘 다(사진은 최대 3장 + 나머지 수) / 공개 수업이 없으면 카드 숨김", () => {
+  const home = (cand) => renderHome({ data: { parent: { id: "p" }, children: [childA([])] }, feedCandidates: cand });
+  // 없음 → 카드 자체가 없다
+  assert.doesNotMatch(home([]), /최신 수업 피드/);
+  // 사진·영상 없음 → 본문만, 사진 줄 없음
+  const textOnly = home([feedCandidate()]);
+  assert.match(textOnly, /최신 수업 피드/);
+  assert.doesNotMatch(textOnly, /최신 수업 사진·영상/);
+  // 영상만 → «영상 2», 사진 칸 없음
+  const videoOnly = home([feedCandidate({ videoCount: 2 })]);
+  assert.match(videoOnly, />영상 2</);
+  assert.doesNotMatch(videoOnly, /<img/);
+  // 둘 다 + 사진 5장 → 3장만 보이고 «+2», 영상 1
+  const photos = [1, 2, 3, 4, 5].map((n) => ({ src: `/api/staff/sessions/s-a/photos/p${n}` }));
+  const both = home([feedCandidate({ photos, videoCount: 1 })]);
+  assert.equal((both.match(/<img/g) || []).length, 3);
+  assert.match(both, />\+2</);
+  assert.match(both, />영상 1</);
+});
+
+test("홈 피드 카드: 고른 아이 것만 — 형제의 수업이 섞이지 않는다", () => {
+  const html = renderHome({
+    data: { parent: { id: "p" }, children: [childA([]), { ...childA([]), id: "b", name: "합성 둘째" }] },
+    initialChildId: "a",
+    feedCandidates: [feedCandidate({ studentId: "b", sessionId: "s-b", content: "둘째 반 소식" })],
+  });
+  assert.doesNotMatch(html, /최신 수업 피드/, "첫째에게 공개 수업이 없으면 둘째 것을 대신 보이지 않는다");
+  assert.doesNotMatch(html, /둘째 반 소식/);
+});
 const childA = (payments, extra = {}) => ({
   id: "a", name: "합성 첫째", birthDate: "2016-01-01", gender: null,
   enrollments: [{ id: "e1", classId: "k1", className: "초등 저학년반", dayOfWeek: "Mon", startTime: "16:00", endTime: "17:00", programName: "정규" }],

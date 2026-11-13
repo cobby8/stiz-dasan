@@ -3,9 +3,9 @@
 /**
  * 관리자 «원생 등록» 창 — 창 하나 3단계(모바일은 아래에서 올라오는 시트). 2026-11-09 원장 승인 설계.
  *
- * ① 학생·보호자 → ② 수업·셔틀 → ③ 확인(사진 동의·메모·개인정보 동의 + 요약) → «등록» 한 번.
+ * ① 학생·보호자 → ② 수업·셔틀 → ③ 확인(메모·개인정보 동의 + 요약) → «등록» 한 번.
  * 2026-11-09 실사용 후 원장 지시: 반 줄에 대상 학년 · 셔틀 장소명 필수 · 유니폼은 주문 내역으로 자동(선택칸 없음) ·
- * 사진 동의는 체크박스 하나(확인 방법 = 대면 기본값).
+ * (사진 동의 체크박스는 2026-11-14 원장 결정으로 없앴다 — 수업 사진은 참여 학생 보호자만 본다.)
  * 저장은 서버 액션 registerStudent 하나(트랜잭션 하나)라 중간에 실패하면 아무것도 남지 않는다.
  * 목록 «원생 등록»과 체험 «원생 등록»(체험 정보를 미리 채움)이 같은 창을 쓴다.
  *
@@ -30,7 +30,6 @@ import {
     DEFAULT_BRANCH_VALUE,
     GUARDIAN_RELATION_CHOICES,
     REFERRAL_SOURCE_OPTIONS,
-    REGISTER_MEDIA_CONSENT_METHOD,
     SHUTTLE_PLACE_NAME_REQUIRED_MESSAGE,
     validateRegisterStep1,
     type DuplicateSuspect,
@@ -146,11 +145,7 @@ export default function StudentRegisterModal({
     const [dropoff, setDropoff] = useState<MapLocationData | null>(null);
     const [pickerKind, setPickerKind] = useState<"PICKUP" | "DROPOFF" | null>(null);
 
-    // ③ 확인 — 유니폼은 고르지 않는다(서버가 주문 내역으로 채움). 사진 동의는 체크박스 하나 + 범위 3칸
-    const [mediaChecked, setMediaChecked] = useState(false);
-    const [mediaInternal, setMediaInternal] = useState(false);
-    const [mediaGallery, setMediaGallery] = useState(false);
-    const [mediaInstagram, setMediaInstagram] = useState(false);
+    // ③ 확인 — 유니폼은 고르지 않는다(서버가 주문 내역으로 채움). 사진 동의 질문은 없앴다(2026-11-14)
     const [memo, setMemo] = useState(prefill?.memo ?? "");
     const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
 
@@ -269,10 +264,8 @@ export default function StudentRegisterModal({
                     pickup: shuttleNeeded ? pickup : null,
                     dropoff: shuttleNeeded ? dropoff : null,
                 },
-                // 체크했을 때만 동의 기록 — 확인 방법은 기본값(대면). 범위 3칸·정책 버전 저장 구조는 그대로
-                mediaConsent: mediaChecked
-                    ? { internalAllowed: mediaInternal, galleryAllowed: mediaGallery, instagramAllowed: mediaInstagram, method: REGISTER_MEDIA_CONSENT_METHOD }
-                    : null,
+                // 사진 동의는 묻지 않는다(2026-11-14 원장 결정) — 새 동의 기록을 만들지 않는다
+                mediaConsent: null,
                 memo,
                 privacyConfirmed,
                 force,
@@ -605,37 +598,8 @@ export default function StudentRegisterModal({
 
                 {step === 3 && (
                     <>
-                        {/* 사진 동의 — 체크하면 기록(범위 3칸은 기본 모두 켬, 필요하면 끔), 안 하면 기록 안 함 */}
-                        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-[var(--color-academy-ink)]">
-                            <input
-                                type="checkbox"
-                                checked={mediaChecked}
-                                onChange={(e) => {
-                                    const on = e.target.checked;
-                                    setMediaChecked(on);
-                                    // 켜면 내부 보관·갤러리만 켠다. 인스타그램(외부 공개)은 따로 확인받고 직접 켠다(옵트인). 끄면 범위도 비운다
-                                    setMediaInternal(on); setMediaGallery(on); setMediaInstagram(false);
-                                }}
-                                className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]"
-                            />
-                            사진·영상 활용 동의를 받았어요
-                        </label>
-                        {mediaChecked && (
-                            <fieldset className="-mt-2 flex flex-wrap gap-x-4 pl-7">
-                                <legend className="sr-only">사진 사용 동의 범위</legend>
-                                {([
-                                    // 범위를 모두 끄면 «동의 받음» 체크도 함께 끈다(빈 동의 기록을 남기지 않게)
-                                    ["내부 보관", mediaInternal, (v: boolean) => { setMediaInternal(v); if (!v) { setMediaGallery(false); setMediaInstagram(false); setMediaChecked(false); } }],
-                                    ["갤러리", mediaGallery, (v: boolean) => { setMediaGallery(v); if (v) setMediaInternal(true); else setMediaInstagram(false); }],
-                                    ["인스타그램", mediaInstagram, (v: boolean) => { setMediaInstagram(v); if (v) { setMediaInternal(true); setMediaGallery(true); } }],
-                                ] as const).map(([label, checked, set]) => (
-                                    <label key={label} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-[var(--color-academy-ink)]">
-                                        <input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)} className="h-5 w-5 shrink-0 accent-[var(--color-academy-primary)]" />
-                                        {label}
-                                    </label>
-                                ))}
-                            </fieldset>
-                        )}
+                        {/* 2026-11-14 원장 결정: 사진·영상 활용 동의 질문은 없앴다 — 수업 사진·영상은 그 수업 참여 학생의 보호자만 본다.
+                            (기존 동의 기록은 지우지 않는다. 서버는 값이 오면 기록하는 선택형 그대로라 이 창은 보내지 않는다.) */}
                         <label className="block">
                             <span className={LABEL}>메모</span>
                             <textarea value={memo} onChange={(e) => setMemo(e.target.value)} rows={2} className={`${INPUT} resize-none`} />

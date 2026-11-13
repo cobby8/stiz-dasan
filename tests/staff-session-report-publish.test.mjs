@@ -16,10 +16,13 @@ test("수업 종료와 리포트 발행이 한 번의 UPDATE 로 끝난다", () 
   assert.match(action, /"publishedAt" = CASE WHEN \$4 AND NOT published THEN NOW\(\)/);
 });
 
-test("한 줄을 비워도 종료는 되고, 기존 내용을 지우지 않는다", () => {
-  // COALESCE 가 없으면 빈 입력이 이미 적어둔 수업 내용을 덮어 지운다.
-  assert.match(action, /content = COALESCE\(\$3, content\)/);
+test("종료 창이 보낸 한 줄을 그대로 반영한다(지우고 종료하면 지움), 값을 안 보낸 옛 화면만 기존 내용 유지", () => {
+  // 2026-11-14 검수: 종료 창은 이미 저장된 한 줄로 채워져 열린다 — 사용자가 지운 것은 지운 것이다.
+  assert.match(action, /content = CASE WHEN \$5 THEN \$3 ELSE content END/);
+  assert.match(action, /const reportProvided = input\.report !== undefined;/);
+  assert.match(action, /input\.sessionId, access\.staff\.appUserId, report, publish, reportProvided,/);
   assert.match(action, /\(input\.report \?\? ""\)\.trim\(\)\.slice\(0, 2000\) \|\| null/);
+  assert.doesNotMatch(action, /content = COALESCE\(\$3, content\)/);
 });
 
 test("발행 여부는 화면이 정하고, 값이 없으면 발행한다", () => {

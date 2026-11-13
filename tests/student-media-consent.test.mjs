@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { evaluateMediaConsent, normalizeSubjectStudentIds } from "../src/lib/studentMediaConsentPolicy.ts";
 
@@ -46,4 +47,31 @@ test("학생 ID는 중복과 비정상 값을 제거해 저장한다", () => {
     "student-1",
     "student_2",
   ]);
+});
+
+// ── 2026-11-14 원장 결정: 사진 공개 동의 제거 ──────────────────────────
+// 위 동의 규칙(evaluateMediaConsent)은 «공개 게시 동의 검사»를 다시 켤 때 그대로 쓰도록 남겨 둔다.
+// 지금 정책: 학부모 보기 = 동의 없이 «그 수업 참여 학생의 보호자»만, 공개 게시 = 관리자·원장 수동 승인.
+const readSrc = (path) => readFileSync(path, "utf8");
+
+test("학부모 사진 보기는 동의를 보지 않고 «참여한 아이의 보호자»만(공용 판정 하나)", () => {
+  const route = readSrc("src/app/api/staff/sessions/[sessionId]/photos/[photoId]/route.ts");
+  assert.doesNotMatch(route, /FROM "StudentMediaConsent"/);
+  assert.match(route, /parentCanViewSession\(parent\.appUserId, sessionId\)/);
+  const feed = readSrc("src/lib/feed/server.ts");
+  assert.doesNotMatch(feed, /StudentMediaConsent/);
+  assert.match(feed, /feedParticipantSql\("st", "se"\)/);
+});
+
+test("공개 게시 동의 검사는 꺼졌지만(되돌릴 스위치 유지) 갤러리=관리자·인스타=원장 수동 승인은 그대로", () => {
+  const consent = readSrc("src/lib/studentMediaConsent.ts");
+  assert.match(consent, /export const PUBLIC_POST_CONSENT_GATE_ENABLED = false;/);
+  assert.match(consent, /if \(!PUBLIC_POST_CONSENT_GATE_ENABLED\) \{/);
+  // 기존 검사 본문은 지우지 않았다(스위치를 켜면 다시 돈다)
+  assert.match(consent, /FROM "StudentMediaConsent" c/);
+  const actions = readSrc("src/app/actions/social-posts.ts");
+  assert.match(actions, /export async function publishSocialPostDraftToGallery\(id: string\) \{\s*const staff = await requireAdmin\(\);/);
+  assert.match(actions, /export async function publishSocialPostDraftToInstagram\(id: string\) \{[\s\S]*?const owner = await requireOwner\(\);/);
+  // 대기열은 원장이 승인해 PUBLISHING 이 된 초안만 처리한다
+  assert.match(readSrc("src/lib/socialDrafts.ts"), /WHERE status = 'PUBLISHING'/);
 });
