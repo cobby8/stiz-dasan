@@ -1,6 +1,10 @@
-/* ── 색 토큰 정본 (2026-11-09 원장 결정 · 색상 정리 1단계) ─────────────────────────────
-   1) 주 버튼 = 검정 #15181c(올림 #2f343b)  2) 관리자·선생님·기사님·학부모 모두 같은 색
+/* ── 색 토큰 정본 (2026-11-09 원장 결정 · 색상 정리 1단계 → 2026-11-13 원장 재결정 «흑백 탈피») ─────
+   1) 주 색 = 네이비 #1e3a8a(올림 #1e40af) — 누르는 주 버튼·링크. 옛 검정 #15181c 는 «흑백으로만 보인다»로 폐기.
+      보조 색 = 하늘색 — 고른 것·지금 있는 곳(선택 칩·활성 메뉴·진행 막대). 역할을 섞지 않는다.
+   2) 관리자·선생님·기사님·학부모 모두 같은 색
    3) 바탕 = 맑은 연회색 #f6f7f9  4) STIZ 주황은 홈페이지 «체험 신청» 입구만(public-sport.css)  5) 다크모드는 나중
+   6) 굵기는 네 단계만(본문 400 · 라벨/버튼 500 · 강조 600 · 제목 700) — 아래 --font-weight-* 가 Tailwind 굵기 클래스를 한 번에 낮춘다.
+   7) 정보(info)는 주 색 네이비와 헷갈리지 않게 파랑 → 보라로 옮겼다.
    상태 뜻 다섯 갈래(진한 글자 / 연한 바탕) — 어느 화면이든 같은 뜻 = 같은 색. 상태 → 색 지도는 src/lib/ui/statusTones.ts 한 곳.
      정상 success(출석·납부·탑승·승인) · 주의 warning(지각·미납·대기) · 위험 danger(결석·연체·미탑승·반려·삭제)
      정보 info(보강·입금 확인 중·오늘만 변경) · 중립 neutral(휴무·취소·환불·자차)
@@ -17,8 +21,8 @@
   --color-academy-danger-fill: #dc2626;   /* 꽉 찬 위험 버튼(최종 확정만) — 흰 글자 4.83 */
   --color-academy-danger-fill-hover: #b91c1c;
   --color-academy-danger-line: #fecaca;   /* 위험 확인 상자의 얇은 테두리(장식선 — 왼쪽 띠가 위험색을 맡는다) */
-  --color-academy-info: #1d4ed8;          /* 신설 — 보강·입금 확인 중·오늘만 변경 */
-  --color-academy-info-soft: #eff6ff;
+  --color-academy-info: #6d28d9;          /* 보강·입금 확인 중·오늘만 변경 — 2026-11-13 파랑 #1d4ed8 → 보라(주 색 네이비와 구분) */
+  --color-academy-info-soft: #f5f3ff;
   --color-academy-neutral: #4b5563;       /* 신설 — 휴무·취소·환불·자차 */
   --color-academy-neutral-soft: #f3f4f6;
 }
@@ -33,10 +37,22 @@
   --color-academy-line: #e5e7eb;          /* 카드 테두리·구분선 */
   --color-academy-line-input: #848b96;    /* 입력칸·보조 버튼·안 고른 칩 테두리(화면 바탕 #f6f7f9 위 3.2 · 카드 위 3.4). 옛 #8a919c 는 바탕 위 2.96 */
   --color-academy-soft: #f3f4f6;          /* 옅은 면(올림·보조 영역) */
-  --color-academy-primary: #15181c;       /* 주 버튼 — 검정 */
-  --color-academy-primary-hover: #2f343b;
-  --color-academy-primary-soft: #e9ebee;  /* 행 안 작업(tonal)·고른 칩 바탕 */
+  --color-academy-primary: #1e3a8a;       /* 주 색 — 네이비(주 버튼·링크). 흰 글자 10.4 */
+  --color-academy-primary-hover: #1e40af;
+  --color-academy-primary-soft: #e8edf8;  /* 행 안 작업(tonal) 바탕 */
   --color-academy-on-primary: #ffffff;
+  /* 보조 색 — 하늘색. «고른 것·지금 있는 곳»에만 쓴다(주 버튼에 쓰지 않는다). */
+  --color-academy-secondary: #38bdf8;        /* 밝은 장식 채움 전용 — 흰 바탕 2.1 이라 진행 막대·글자·선에는 쓰지 않는다 */
+  --color-academy-secondary-strong: #0284c7; /* 선·진행 막대(고른 칩 테두리) — 흰 바탕 4.1. 글자로는 쓰지 않는다(4.5 미달) */
+  --color-academy-secondary-soft: #dff2fe;   /* 고른 칩·활성 메뉴 바탕 */
+  --color-academy-secondary-ink: #0c4a6e;    /* 그 위 글자 — soft 위 8.0 */
+  /* 굵기 네 단계(2026-11-13 원장 «글자가 두꺼워 보인다»). Tailwind v4 의 font-* 클래스가 이 변수를 읽는다.
+     font-black·font-extrabold → 700(제목) · font-bold·font-semibold → 600(강조) · font-medium → 500(라벨). */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 600;
+  --font-weight-extrabold: 700;
+  --font-weight-black: 700;
   /* 학부모 일정 달력 출결·일정 표시색 — 상태 다섯 갈래를 그대로 따른다(같은 뜻 = 같은 색).
      색만으로 구분하지 않고 모양도 다르다(출석 채운 점·지각 빈 고리·결석 ×·행사 별). */
   --color-academy-cal-present: var(--color-academy-success);  /* 출석 */
@@ -47,7 +63,7 @@
   --color-academy-cal-closed-soft: #eceef1; /* 휴무 칸 바탕 */
   --color-academy-cal-class-soft: #e6edf7;  /* 수업 예정 칸 바탕 — 상태색과 겹치지 않는 연한 청회색 */
   --color-academy-cal-class-line: #b9c7da;  /* 수업 칸 테두리(연한 바탕이 흰 화면에서 사라지지 않게) */
-  --color-academy-cal-today: #15181c;     /* 오늘 — 굵은 검정 테두리 */
+  --color-academy-cal-today: var(--color-academy-primary); /* 오늘 — 굵은 주 색(네이비) 테두리 */
   --color-academy-art: #d1d5db;           /* 히어로 장식 선 */
   --color-academy-band: #f6f7f9;
   --color-academy-band-end: #ffffff;
@@ -58,7 +74,7 @@
   --brand-accent-contrast: var(--color-academy-on-primary);
   --font-body: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-heading: var(--font-body);
-  /* 옛 brand-orange 버튼·강조도 주 색(검정)으로 잇는다. 상태색(빨강·초록 등)은 따로 둔다. */
+  /* 옛 brand-orange 버튼·강조도 주 색(네이비)으로 잇는다. 상태색(빨강·초록 등)은 따로 둔다. */
   --color-brand-orange-50: var(--color-academy-primary-soft);
   --color-brand-orange-400: var(--color-academy-primary);
   --color-brand-orange-500: var(--color-academy-primary);
@@ -126,9 +142,26 @@
   color: var(--color-academy-ink);
   font-size: clamp(1.35rem, 2vw, 1.65rem);
   line-height: 1.35;
-  font-weight: 750;
-  letter-spacing: -0.045em;
+  font-weight: 700;
+  letter-spacing: -0.03em;
   overflow-wrap: anywhere;
+}
+
+/* 페이지 제목 한 가지(2026-11-13) — 관리자 h1 이 20가지 모양이던 것을 이것 하나로 모은다. AdminPageHeader 가 쓴다. */
+.academy-app .academy-page-title {
+  color: var(--color-academy-ink);
+  font-size: 1.375rem;
+  line-height: 1.35;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.academy-app .academy-page-description {
+  color: var(--color-academy-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  font-weight: 400;
 }
 
 .academy-app .academy-section-title {
@@ -151,14 +184,22 @@
   border-radius: 0.375rem;
   font-size: 0.875rem;
   line-height: 1.4;
-  font-weight: 650;
+  font-weight: 500;
   text-decoration: none;
+}
+
+/* 행 안·표 안의 작은 버튼 — PC 에서 한 줄 행 높이를 지키려고 36px. 터치 화면에서는 아래 미디어 규칙이 44px 로 되돌린다. */
+.academy-app .academy-button-sm {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
 }
 
 .academy-app .academy-button-primary {
   border: 1px solid var(--color-academy-primary);
   background: var(--color-academy-primary);
   color: var(--color-academy-on-primary);
+  font-weight: 600;
 }
 
 .academy-app .academy-button-primary:hover:not(:disabled) {
@@ -229,7 +270,7 @@
   opacity: 0.5;
 }
 
-/* 고른 칩 — 제출 버튼(꽉 찬 색)과 구분: 연한 바탕 + 굵은 주 색 테두리 + 체크. 안 고른 칩 테두리는 입력선(3:1). */
+/* 고른 칩 — 제출 버튼(꽉 찬 주 색)과 구분: 보조 색(하늘색) 연한 바탕 + 굵은 테두리 + 체크. 안 고른 칩 테두리는 입력선(3:1). */
 .academy-app .academy-choice {
   display: inline-flex;
   align-items: center;
@@ -242,22 +283,23 @@
   background: var(--color-academy-surface);
   color: var(--color-academy-ink);
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .academy-app .academy-choice[aria-pressed="true"],
 .academy-app .academy-choice[aria-checked="true"],
 .academy-app .academy-choice.is-selected {
-  border: 2px solid var(--color-academy-primary);
-  background: var(--color-academy-primary-soft);
-  color: var(--color-academy-primary);
+  border: 2px solid var(--color-academy-secondary-strong);
+  background: var(--color-academy-secondary-soft);
+  color: var(--color-academy-secondary-ink);
+  font-weight: 600;
 }
 
 .academy-app .academy-choice[aria-pressed="true"]::before,
 .academy-app .academy-choice[aria-checked="true"]::before,
 .academy-app .academy-choice.is-selected::before {
   content: "✓";
-  font-weight: 800;
+  font-weight: 700;
 }
 
 /* 뒤로가기 — 누르는 영역 44×44 */
@@ -353,6 +395,11 @@
   .academy-app .academy-hero { padding: 1rem; border-radius: 0.5rem; }
   .academy-app .academy-panel { border-radius: 0.5rem; }
   .academy-app :is(.academy-button-primary, .academy-button-secondary) { min-height: 44px; }
+}
+
+/* 손가락으로 누르는 화면에서는 작은 버튼도 44px(터치 영역은 줄이지 않는다). */
+@media (any-pointer: coarse) {
+  .academy-app .academy-button-sm { min-height: 2.75rem; }
 }
 
 /* 가로로 든 휴대폰과 터치 태블릿도 작은 입력 글씨로 확대되지 않게 한다. */

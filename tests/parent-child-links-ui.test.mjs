@@ -102,13 +102,13 @@ test("서버 홈은 빈 자녀 판정 전에 특강 내역을 조회하고 해�
 
 test("업무 스포츠 테마는 네 역할 공통 경계와 성공·경고·실패 상태색 및 조작 크기를 보존한다", () => {
   const css = readFileSync("src/app/academy-theme.css", "utf8");
-  // 2026-11-09 원장 결정 색상 정리: 주 버튼 검정 · 상태 다섯 갈래(정상·주의·위험·정보·중립)
-  assert.match(css, /--color-academy-primary: #15181c/);
+  // 2026-11-13 원장 재결정: 주 색 네이비(옛 검정 #15181c 폐기) · 상태 다섯 갈래(정상·주의·위험·정보·중립)
+  assert.match(css, /--color-academy-primary: #1e3a8a/);
   assert.match(css, /--color-academy-ink: #111827/);
   assert.match(css, /--color-academy-success: #15803d/);
   assert.match(css, /--color-academy-warning: #b45309/);
   assert.match(css, /--color-academy-danger: #b91c1c/);
-  assert.match(css, /--color-academy-info: #1d4ed8/);
+  assert.match(css, /--color-academy-info: #6d28d9/); // 11-13 파랑 → 보라(주 색 네이비와 구분)
   assert.match(css, /--color-academy-neutral: #4b5563/);
   assert.match(css, /min-height: 44px/);
   assert.doesNotMatch(css, /#7444a3|#f7f4fb/);

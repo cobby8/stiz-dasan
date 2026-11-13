@@ -42,10 +42,11 @@ export default function StatusCountChips({
                         type="button"
                         aria-pressed={active}
                         onClick={() => onSelect(active ? allValue : item.value)}
-                        className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm font-bold transition ${
+                        // 고른 칩 = 보조 색(하늘색) — 꽉 찬 주 색은 주 버튼만 쓴다(2026-11-13 색 역할 나누기)
+                        className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm transition ${
                             active
-                                ? "border-[var(--color-academy-primary)] bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                                : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] text-[var(--color-academy-ink)] hover:border-[var(--color-academy-primary)]"
+                                ? "border-[var(--color-academy-secondary-strong)] bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)]"
+                                : "border-[var(--color-academy-line)] bg-[var(--color-academy-surface)] font-medium text-[var(--color-academy-ink)] hover:border-[var(--color-academy-secondary-strong)]"
                         }`}
                     >
                         {item.label}

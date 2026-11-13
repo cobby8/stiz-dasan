@@ -172,7 +172,8 @@ test("A-11·A-12 사이드바: 상세 메뉴 3묶음, 아이콘 겹침 해소, �
   // 같은 기호가 두 메뉴에 붙지 않는다(카카오/문자, 사진 회수/개인정보, 홈페이지 보기/학원 소개)
   assert.match(shell, /\["\/admin\/media-revocations", "사진 공개 회수", "🚫"\]/);
   assert.match(shell, /label="홈페이지 보기" icon="🌐"/);
-  assert.match(shell, /"🗨️": "forum", "🚫": "hide_image", "🌐": "public"/);
+  // 2026-11-13 원장 «아이콘 빼고 글자 깔끔하게» — 이모지→아이콘 표(NAV_SYMBOLS)를 없애고 메뉴는 글자만 그린다
+  assert.doesNotMatch(shell, /NAV_SYMBOLS|material-symbols-outlined/);
   assert.match(shell, /title="로그아웃"\s*aria-label="로그아웃"\s*className="inline-flex h-11 w-11/);
 });
 

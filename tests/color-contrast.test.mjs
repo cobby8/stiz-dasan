@@ -69,7 +69,13 @@ const academyPairs = [
   ["흐린 글자 / 옅은 면", A("faint"), A("soft"), TEXT], // 11-09 마무리: #6b7280(4.39) → #636a75(4.96)
   ["주 버튼 글자 / 주 버튼", A("on-primary"), A("primary"), TEXT],
   ["주 버튼 글자 / 주 버튼 올림", A("on-primary"), A("primary-hover"), TEXT],
-  ["행 안 작업·고른 칩 글자 / 그 바탕", A("primary"), A("primary-soft"), TEXT],
+  ["행 안 작업 글자 / 그 바탕", A("primary"), A("primary-soft"), TEXT],
+  // 2026-11-13 보조 색(하늘색) — 고른 칩·활성 메뉴
+  ["고른 칩·활성 메뉴 글자 / 보조 색 연한 바탕", A("secondary-ink"), A("secondary-soft"), TEXT],
+  ["고른 칩 테두리 / 카드", A("secondary-strong"), A("surface"), LINE],
+  ["고른 칩 테두리 / 화면 바탕", A("secondary-strong"), A("canvas"), LINE],
+  ["주 색 글자(링크) / 카드", A("primary"), A("surface"), TEXT],
+  ["주 색 글자(링크) / 화면 바탕", A("primary"), A("canvas"), TEXT],
   ["입력칸·보조 버튼 테두리 / 카드", A("line-input"), A("surface"), LINE],
   // 입력선: 옛 #8a919c 는 연회색 바탕 위 2.96 이라 기준(3) 미달 → 11-09 마무리에서 #848b96(3.20)으로 진하게.
   ["입력칸·보조 버튼 테두리 / 화면 바탕", A("line-input"), A("canvas"), LINE],
@@ -119,16 +125,21 @@ test("홈페이지 색 토큰 — 주 버튼 검정·체험 신청 주황 포함
   assert.deepEqual(fails, [], `대비 미달:\n${fails.join("\n")}`);
 });
 
-test("원장 결정 값(2026-11-09)이 토큰에 그대로 있다 — 주 버튼 검정·바탕 연회색·체험 신청 주황", () => {
-  assert.equal(A("primary"), "#15181c");
-  assert.equal(A("primary-hover"), "#2f343b");
+test("원장 결정 값이 토큰에 그대로 있다 — 주 색 네이비·보조 색 하늘색(2026-11-13)·바탕 연회색·체험 신청 주황(2026-11-09)", () => {
+  // 2026-11-13 원장 «흑백으로만 나온다» → 주 버튼 검정(#15181c)을 네이비로, 고른 것은 하늘색으로
+  assert.equal(A("primary"), "#1e3a8a");
+  assert.equal(A("primary-hover"), "#1e40af");
+  assert.deepEqual(
+    ["secondary", "secondary-strong", "secondary-soft", "secondary-ink"].map((t) => A(t)),
+    ["#38bdf8", "#0284c7", "#dff2fe", "#0c4a6e"],
+  );
   assert.equal(A("canvas"), "#f6f7f9");
   assert.equal(P("accent"), "#15181c");
   assert.equal(P("trial"), "#b94118");
-  // 상태 다섯 갈래 — 같은 뜻은 어디서나 같은 색
+  // 상태 다섯 갈래 — 같은 뜻은 어디서나 같은 색. 정보(info)는 11-13 에 파랑 → 보라(주 색 네이비와 구분)
   assert.deepEqual(
     ["success", "warning", "danger", "info", "neutral"].map((t) => [A(t), A(`${t}-soft`)]),
-    [["#15803d", "#f0fdf4"], ["#b45309", "#fffbeb"], ["#b91c1c", "#fef2f2"], ["#1d4ed8", "#eff6ff"], ["#4b5563", "#f3f4f6"]],
+    [["#15803d", "#f0fdf4"], ["#b45309", "#fffbeb"], ["#b91c1c", "#fef2f2"], ["#6d28d9", "#f5f3ff"], ["#4b5563", "#f3f4f6"]],
   );
   // 위험 채움·테두리(2026-11-09 2차): 맑은 빨강 채움 · 올림 진한 빨강 · 연한 빨강 장식선
   assert.deepEqual([A("danger-fill"), A("danger-fill-hover"), A("danger-line")], ["#dc2626", "#b91c1c", "#fecaca"]);

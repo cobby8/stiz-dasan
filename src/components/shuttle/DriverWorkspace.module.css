@@ -8,7 +8,7 @@
   --color-driver-note: var(--color-academy-info);
 }
 
-.runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 800; }
+.runSummary { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; font-size: 14px; font-weight: 700; }
 .runSummary span { color: var(--color-academy-muted); font-size: 13px; font-weight: 600; }
 /* 게슈탈트 T-01: GPS 표시와 «운행 종료»가 붙어 있지 않게 12px 띄운다. */
 .headerActions { display: flex; flex-shrink: 0; align-items: center; justify-content: flex-end; gap: 12px; }
@@ -30,17 +30,17 @@
 .stopHeading { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .stopHeading input[type="time"] { flex-basis: 100%; }
 /* 주 색(검정)은 버튼 전용 — 순번·시각 글자는 본문 글자색(ink) */
-.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-ink); font-size: 17px; font-weight: 900; }
+.sequence { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-ink); font-size: 17px; font-weight: 700; }
 .upcoming .sequence { background: var(--color-academy-primary); color: var(--color-academy-on-primary, var(--color-academy-surface)); }
-.stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 900; line-height: 1.35; overflow-wrap: anywhere; }
+.stopName { flex: 1 1 96px; min-width: 80px; font-size: 19px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
 .timeNavigation { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; margin-inline-start: auto; }
-.time { color: var(--color-academy-ink); font-size: 25px; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.time { color: var(--color-academy-ink); font-size: 25px; line-height: 1.1; font-weight: 700; font-variant-numeric: tabular-nums; }
 .upcoming .time { font-size: 28px; }
 .unknownTime { color: var(--color-academy-muted); font-size: 14px; font-weight: 700; }
-.navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 800; }
+.navigation { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 44px; padding: 0 8px; border-radius: 10px; background: var(--color-academy-primary-soft); color: var(--color-academy-primary); font-size: 14px; font-weight: 700; }
 .navigation:focus-visible, .contacts a:focus-visible { outline: 3px solid var(--color-academy-primary); outline-offset: 2px; }
 .stopMeta { flex: 1 0 calc(100% - 38px); margin-inline-start: 38px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--color-academy-muted); font-size: 13px; line-height: 1.4; font-weight: 600; }
-.upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-primary); font-size: 14px; font-weight: 900; }
+.upcomingBadge { display: inline-flex; align-items: center; min-height: 30px; margin-inline-start: 2px; padding: 4px 10px; border-radius: 9px; color: var(--color-academy-surface); background: var(--color-academy-primary); font-size: 14px; font-weight: 700; }
 .riders { margin-top: 8px; min-width: 0; }
 .rider { padding: 6px 8px; min-width: 0; }
 .riderMain { display: flex; align-items: center; justify-content: space-between; gap: 4px 3px; min-height: 44px; flex-wrap: wrap; }

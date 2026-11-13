@@ -149,8 +149,8 @@ export default function AdminShellClient({
                     <NavItem href="/admin/shuttle/regular-dispatch" active={isShuttlePath(pathname)} icon="🚌" label="셔틀" />
                     {EXTRA_GROUPS.map((group) => (
                         <details key={`${group.label}-${pathname}`} className="group border-t border-[var(--color-academy-line)] pt-1" open={group.items.some(([href]) => matchesNavPath(pathname, href) && !(href === "/admin/seasonal" && isShuttlePath(pathname)))}>
-                            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-2 text-sm font-bold text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">{group.icon}</span>
+                            {/* 묶음 이름 — 아이콘 없이 글자만. 펼침 화살표는 «열고 닫는다»는 조작 표시라 남긴다 */}
+                            <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-4 py-2 text-xs font-medium text-[var(--color-academy-faint)] hover:bg-[var(--color-academy-soft)]">
                                 <span className="min-w-0 flex-1">{group.label}</span>
                                 <FontFreeIcon name="expand_more" size={18} className="transition-transform group-open:rotate-180" />
                             </summary>
@@ -161,7 +161,7 @@ export default function AdminShellClient({
                                 {group.label === "홈페이지·소식" && <NavItem href="/" label="홈페이지 보기" icon="🌐" compact />}
                                 {group.label === "설정·도구" && <>
                                     <button type="button" aria-controls="admin-system-tools" aria-expanded={systemToolsOpen} onClick={() => setSystemToolsOpen((current) => !current)} className="flex min-h-11 w-full items-center gap-3 rounded-lg px-4 py-2 text-left text-sm text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)]">
-                                        <FontFreeIcon name="sync" size={18} /><span className="flex-1">시스템 도구</span><FontFreeIcon name="expand_more" size={18} />
+                                        <span className="flex-1">시스템 도구</span><FontFreeIcon name="expand_more" size={18} />
                                     </button>
                                     {systemToolsOpen && <div id="admin-system-tools"><LazyBackupButtons sheetRetired={sheetRetired} /></div>}
                                 </>}
@@ -226,21 +226,20 @@ export default function AdminShellClient({
     );
 }
 
-// 메뉴는 기능을 유지하고 공통 심볼로 바꿔 작은 화면에서도 같은 굵기로 읽히게 한다.
-const NAV_SYMBOLS: Record<string, string> = {"🏫": "school", "👤": "person", "🧑\u200d🏫": "sports", "📋": "assignment", "📅": "calendar_month", "📢": "campaign", "📸": "photo_library", "⚡": "bolt", "❓": "help", "⭐": "star", "📜": "description", "🔐": "lock", "📊": "dashboard", "📝": "edit_document", "🧑\u200d🎓": "groups", "✅": "fact_check", "🙅": "event_busy", "🔁": "swap_horiz", "🧾": "receipt_long", "💳": "payments", "👕": "checkroom", "🏀": "sports_basketball", "🚌": "directions_bus", "📩": "inbox", "💬": "chat", "📘": "menu_book", "🔔": "notifications", "🔄": "event_repeat", "📥": "download", "👥": "badge", "💵": "account_balance_wallet", "🧮": "calculate", "🗨️": "forum", "🚫": "hide_image", "🌐": "public", "🏟️": "stadium", "📨": "move_to_inbox"};
-
-function NavItem({ href, active, icon, label, badge, compact = false }: { href: string; active?: boolean; icon: string; label: string; badge?: number; compact?: boolean }) {
+// 메뉴는 아이콘 없이 글자만 쓴다(2026-11-13 원장 «아이콘이 어설퍼 보인다 — 빼고 글자 깔끔하게»).
+// icon 값은 메뉴 정의(EXTRA_GROUPS)와 테스트가 아직 들고 있어 받기만 하고 그리지 않는다.
+// 지금 있는 메뉴 = 보조 색(하늘색) 바탕 + 강조 굵기. 주 색(네이비)은 누르는 주 버튼 몫이다.
+function NavItem({ href, active, label, badge, compact = false }: { href: string; active?: boolean; icon?: string; label: string; badge?: number; compact?: boolean }) {
     return (
         <Link
             href={href}
             prefetch={false}
             aria-current={active ? "page" : undefined}
             className={`flex min-h-11 items-center gap-3 px-4 ${compact ? "py-2.5 text-sm" : "py-3"} rounded-lg transition-colors [@media(max-height:500px)]:min-h-11 ${active
-                ? "bg-[var(--color-academy-primary-soft)] text-[var(--color-academy-primary)] font-bold"
-                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-primary)]"
+                ? "bg-[var(--color-academy-secondary-soft)] text-[var(--color-academy-secondary-ink)] font-semibold"
+                : "text-[var(--color-academy-muted)] hover:bg-[var(--color-academy-soft)] hover:text-[var(--color-academy-ink)]"
                 }`}
         >
-            <span className="material-symbols-outlined text-xl leading-none" aria-hidden="true">{NAV_SYMBOLS[icon] ?? "folder"}</span>
             <span className="flex-1">{label}</span>
             {/* 배지 — 새 신청 건수 등 알림 표시 */}
             {badge != null && badge > 0 && (

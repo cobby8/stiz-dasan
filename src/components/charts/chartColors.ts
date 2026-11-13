@@ -20,7 +20,7 @@ export const CHART_COLORS = {
     axis: "var(--color-academy-faint)",
     /** 마우스를 올렸을 때 뜨는 값 상자 바탕(글자는 흰색) */
     tooltip: "var(--color-academy-ink)",
-    /** 뜻 없는 기본 계열(매출·체험 전환) — 주 색(검정) */
+    /** 뜻 없는 기본 계열(매출·체험 전환) — 주 색(네이비) */
     series: "var(--color-academy-primary)",
     /** 막대·보조 선(반별 등록·코치별·신규 등록) — 중간 회색 */
     bar: "var(--color-academy-neutral)",

@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 export type ListViewOption<T extends string> = {
     value: T;
     label: string;
-    /** Material Symbols Outlined 아이콘 이름 */
-    icon: string;
+    /** 옛 아이콘 이름 — 2026-11-13 부터 그리지 않는다(부르는 쪽 호환용으로만 받는다) */
+    icon?: string;
 };
 
 interface ListViewToggleProps<T extends string> {
@@ -40,13 +40,13 @@ export default function ListViewToggle<T extends string>({
                         type="button"
                         aria-pressed={selected}
                         onClick={() => onChange(item.value)}
-                        className={`inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-sm font-bold transition ${
+                        // 고른 보기 = 보조 색(하늘색). 아이콘 없이 글자만(2026-11-13 원장 «아이콘 빼고 글자 깔끔하게»)
+                        className={`inline-flex min-h-11 items-center gap-1 rounded-md px-3 text-sm transition ${
                             selected
-                                ? "bg-[var(--color-academy-primary)] text-[var(--color-academy-on-primary)]"
-                                : "text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
+                                ? "bg-[var(--color-academy-secondary-soft)] font-semibold text-[var(--color-academy-secondary-ink)] ring-1 ring-inset ring-[var(--color-academy-secondary-strong)]"
+                                : "font-medium text-[var(--color-academy-muted)] hover:text-[var(--color-academy-ink)]"
                         }`}
                     >
-                        <span className="material-symbols-outlined text-lg" aria-hidden="true">{item.icon}</span>
                         {item.label}
                     </button>
                 );
