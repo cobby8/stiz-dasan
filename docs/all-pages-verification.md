@@ -54,7 +54,6 @@
 | `/admin/finance/monthly-ledger` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
 | `/admin/finance/monthly-register` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
 | `/admin/gallery` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
-| `/admin/import` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
 | `/admin/kakao-policy` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
 | `/admin/kakao-requests` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |
 | `/admin/makeup` | 관리자 | 정적·빌드·합성역할/DB 실제Next 3폭 |

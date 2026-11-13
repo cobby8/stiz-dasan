@@ -4,8 +4,8 @@ import ApplyAdminClient from "@/app/admin/apply/ApplyAdminClient";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 // 신청 설정 — 신청함 오른쪽 위 ⚙ 버튼(2026-11-10 원장 결정 k4).
-// 옛 /admin/apply 의 «유입 통계»·«안내 설정» 두 탭과 «입학 점검» 링크를 여기로 모았다(같은 컴포넌트·같은 API).
-// 통계는 조회 범위를 바꿀 때마다 API 로 읽어 캐시할 게 없다.
+// 옛 /admin/apply 의 «안내 설정» 탭과 «입학 점검» 링크를 여기로 모았다(같은 컴포넌트·같은 API).
+// 2026-11-13: «유입 통계» 탭은 통계 화면 «유입·전환» 탭(/admin/stats?tab=funnel)으로 옮겼다.
 export const dynamic = "force-dynamic";
 
 export default async function InboxSettingsPage() {

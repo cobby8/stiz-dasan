@@ -350,8 +350,9 @@ export default function GalleryAdminClient({
       <AdminPageHeader
         title="사진/영상 갤러리"
         actions={<>
+          {/* 2026-11-13 메뉴 «사진 빠른 업로드»를 없애고 이 버튼으로 들어간다(주소 /staff/quick-post 그대로) */}
           <Link href="/staff/quick-post" prefetch={false} className="academy-button-secondary">
-            선생님 업로드
+            빠른 업로드
           </Link>
           <button
             type="button"

@@ -130,6 +130,10 @@ const ALLOWED_WITHOUT_FILTER: Record<string, { count: number; reason: string }> 
         count: 2,
         reason: "현장 결제 요청(청구서 id 지정)의 원생 이름 표시·웹훅 매칭 — 청구 조회라 숨기면 돈이 사라진다(미납 목록은 필터 적용)",
     },
+    "lib/stats/statsQueries.ts": {
+        count: 1,
+        reason: "통계 «미납 상위» 원생 이름 표시(LEFT JOIN) — 청구(돈)는 병합된 원생 것도 숨기지 않는다(재원생 집계는 필터 적용)",
+    },
     "lib/mediaRevocationQueue.ts": { count: 1, reason: "미디어 철회 작업 이력(LEFT JOIN, 학생 이름 표시)" },
     "app/admin/kakao-requests/kakaoRequestData.ts": { count: 1, reason: "카카오 접수 처리 목록(기록, LEFT JOIN)" },
     "app/api/admin/operational-deliveries/route.ts": { count: 1, reason: "알림 발송 이력(LEFT JOIN)" },

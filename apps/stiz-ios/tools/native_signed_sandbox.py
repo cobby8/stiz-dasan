@@ -19,7 +19,7 @@ CERTIFICATE_REFERENCE = "BDR iOS App Store Distribution"
 VERSION = "0.1.0"
 BUILD = "6"
 # codemagic.yaml 의 스토어 작업 블록(주석 제외) 지문. scripts/native-release-readiness.mjs 와 같은 값.
-APPROVED_STORE_WORKFLOW = "f7e44ba158e76d5d7ae4c6bcd96aab6e9974eff7308ed6b0538f0a025ea56251"
+APPROVED_STORE_WORKFLOW = "ad61fa89047d388be1e670ce1810c29f6f3650745ef6151cd4548de5c0728e5d"
 SANDBOX_ATS = {"NSExceptionDomains": {"172.30.1.25": {
     "NSExceptionAllowsInsecureHTTPLoads": False,
     "NSExceptionMinimumTLSVersion": "TLSv1.2",

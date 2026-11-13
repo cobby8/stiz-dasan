@@ -94,9 +94,7 @@ test('관리자 화면 문구에 개발 용어·영어 상태값이 다시 나�
 });
 
 test('대표 화면의 영어 코드·내부 번호 표시는 한국어 이름으로 바뀌었다', () => {
-  const import_ = read('src/app/admin/import/ImportClient.tsx');
-  assert.doesNotMatch(import_, /\{batch\.status\}/);
-  assert.match(import_, /COMPLETED: "완료"/);
+  // (수강생 이관 화면 ImportClient 는 2026-11-13 삭제 — 검사 대상에서 뺐다)
   const media = read('src/app/admin/media-revocations/page.tsx');
   assert.doesNotMatch(media, /\{job\.channel\}|리소스: \{job\.resourceId\}/);
   assert.match(media, /GALLERY: "갤러리", INSTAGRAM: "인스타그램"/);

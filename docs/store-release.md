@@ -93,6 +93,8 @@ Google 12명·14일 시험은 2023-11-13 이후 생성된 개인 계정 기준�
 
 ## 7-1. iOS 유니버설 링크 다시 켜기 (1.0.1 은 꺼 둔 채 출시)
 
+> **2026-11-13 1.0.2 에서 다시 켬** — 1(포털 Associated Domains·Push 켬)·4(Release 연결·검사 변경) 완료. 2(프로파일 재발급)·3(Vercel `APPLE_TEAM_ID`)·5(TestFlight 실기기 확인)는 빌드 때 진행.
+
 2026-11-13: 문자 속 링크를 앱으로 여는 코드(`AppDelegate` → `openUniversalLink`)와 권한 파일 `apps/stiz-ios/STIZ/STIZ.entitlements`(applinks·webcredentials)는 준비돼 있지만, 애플 포털 준비 전이라 Release 서명에는 붙이지 않았다(붙이면 프로파일 불일치로 서명 실패).
 
 1. Apple Developer → Identifiers → `kr.co.upturnlabs.stizdasan` → **Associated Domains** 켜기 (+ 앱 알림용 **Push Notifications** — 권한 파일에 `aps-environment` 가 함께 들어 있다, [앱 알림 문서](native-push.md))

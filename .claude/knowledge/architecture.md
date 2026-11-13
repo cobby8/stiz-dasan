@@ -201,6 +201,12 @@
 - **내용**: 규칙은 `src/lib/backup/archiveCore.ts` 한 곳(순수), DB 연결은 `lib/backup/archive.ts`. 같은 시각에 `stiz-backup-<시각>.json`(설정 7표, 복원 3경로가 읽는 유일한 파일, `_meta.archiveFile` 에 짝 경로) + `stiz-archive-<시각>.json.gz`(업무 자료). 담을 표 = information_schema public 표 전체 − `ARCHIVE_EXCLUDED_TABLES`(캐시·시트 가져오기 원본/오류·OTP 로그·짧은 인증 세션·푸시 키, 이유 필수) − 설정 7표 → **새 표·스키마에 없는 DB 표도 자동 포함**. 비밀 칸은 이름 규칙(…Hash·…Token·secret 등, JSON 속 키까지) + 표별 지정(`SECRET_COLUMNS_BY_TABLE`, 예 EnrollmentShortLink.code). 키셋 페이지는 `"id"::text`(uuid 표 대비) 5000줄씩, 페이지마다 gzip 조각으로 바로 압축(gzip 멤버 이어붙이기 = 하나로 풀림). 45MB 넘으면 큰 표부터 SIZE_LIMIT. 실패는 설정 저장 후 500 ARCHIVE_INCOMPLETE(슬랙). 함수 300초(vercel.json 개별 지정+route maxDuration). 클라우드 목록은 files(복원용)/archives 로 분리 — «최신 자동백업 복원»이 files[0] 을 쓰기 때문. 업무 자료는 `GET cloud-backups?archive=` 1분 서명 주소(원장·이름 규칙). 검사 `tests/backup-archive.test.mjs`.
 - **참조횟수**: 0
 
+### [2026-11-13] 대시보드 카드·통계 탭 = 순수 규칙 + 새 조회 경로(옛 queries.ts 통계 함수는 손대지 않음)
+- **분류**: architecture
+- **발견자**: developer
+- **내용**: 판정(학년=생년월일·KST 3월 학년도, 성별 정규화, 지점 «적힌 값→반 장소→미지정», 유니폼 9종→5묶음, rate 분모 0→null)은 `src/lib/stats/statsRules.ts` 한 곳(순수·테스트 `tests/admin-stats-rules.test.mjs`). 조회는 `statsQueries.ts` — 원생은 `loadStudentStatRows` 1명 1줄(재원 = ACTIVE 1개 이상)을 읽어 TS 로 묶고, 지점 필터는 그 결과의 id 배열을 `= ANY($n::text[])` 로 넘긴다(지점 규칙을 SQL 로 다시 쓰지 않기 위해). 시간대 없는 칼럼(Session.date·Payment.paidDate/dueDate·Enrollment.createdAt/updatedAt·Student.birthDate)은 AT TIME ZONE 두 번. 캐시 = adminReadPayloads `getCachedAdminDashboardSummary`·`getCachedAdminStatsTab(tab,branch,period)`(60초, 태그 admin-stats, 열쇠에 KST 달 포함). 유입경로 라벨은 `lib/stats/sourceLabels.ts`(신청 화면과 공유). 퇴원 시각은 Enrollment 에 전용 칼럼이 없어 WITHDRAWN 줄의 updatedAt 으로 센다(근사).
+- **참조횟수**: 0
+
 ### [2026-11-08] 청구 준비 제안값 = 순수 workbench-pricing
 - **분류**: architecture
 - **발견자**: developer
